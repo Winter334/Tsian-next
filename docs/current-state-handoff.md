@@ -137,6 +137,18 @@
 
 ## 4. 当前实现入口
 
+文档入口：
+
+- `README.md`
+- `current-state-handoff.md`
+- `implementation-plan.md`
+
+主干参考文档：
+
+- `memory-system-decisions.md`
+- `narrative-entity-archive-skeleton.md`
+- `patch-contract-skeleton.md`
+
 关键实现入口：
 
 - `packages/contracts/src/runtime.ts`
@@ -148,14 +160,6 @@
 - `apps/platform-web/src/storage/events.ts`
 - `apps/platform-web/src/storage/saves.ts`
 - `builtin/play-frontends/official-default/src/index.ts`
-
-关键文档入口：
-
-- `docs/system-architecture-skeleton.md`
-- `docs/memory-system-decisions.md`
-- `docs/narrative-entity-archive-skeleton.md`
-- `docs/patch-contract-skeleton.md`
-- `docs/implementation-plan.md`
 
 ## 5. 当前没有做的内容
 
@@ -189,9 +193,7 @@
 7. 检查档案是否更新 `situation/focus/linkedNames`
 8. 检查快照中是否只存在 `globals`，不再出现旧 `status`
 
-如果这轮验收通过，再进入下一阶段：
-
-`为 API 配置、提示词预设和 AI 调度做平台 WebUI 的最小可见配置入口。`
+如果这轮验收通过，再进入 `implementation-plan.md` 中的阶段 B。
 
 ## 7. 注意事项
 
@@ -203,4 +205,3 @@
 - 不提前设计复杂通用 patch 系统
 - 不提前实现多事件并行维护
 - 不提前抽象插件系统
-
