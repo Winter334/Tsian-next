@@ -19,8 +19,8 @@ Tsian 此间是一个 AIRP 专精框架。
 - `builtin/mods`
 - `docs`
 
-进一步的架构与技术决策见：
+文档入口见：
 
-- [docs/system-architecture-skeleton.md](/F:/workspace/Tsian/docs/system-architecture-skeleton.md)
-- [docs/development-skeleton.md](/F:/workspace/Tsian/docs/development-skeleton.md)
-- [docs/technical-stack-skeleton.md](/F:/workspace/Tsian/docs/technical-stack-skeleton.md)
+- [docs/README.md](docs/README.md)
+- [docs/active/current-state-handoff.md](docs/active/current-state-handoff.md)
+- [docs/active/implementation-plan.md](docs/active/implementation-plan.md)

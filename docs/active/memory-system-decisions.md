@@ -267,6 +267,6 @@
 
 与档案层骨架直接相关的进一步决策，单独记录在：
 
-- [narrative-entity-archive-skeleton.md](/F:/workspace/Tsian/docs/narrative-entity-archive-skeleton.md)
+- [narrative-entity-archive-skeleton.md](./narrative-entity-archive-skeleton.md)
 
 

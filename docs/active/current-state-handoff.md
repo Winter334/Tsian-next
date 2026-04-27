@@ -139,15 +139,15 @@
 
 文档入口：
 
-- `README.md`
-- `current-state-handoff.md`
-- `implementation-plan.md`
+- `../README.md`
+- `./current-state-handoff.md`
+- `./implementation-plan.md`
 
 主干参考文档：
 
-- `memory-system-decisions.md`
-- `narrative-entity-archive-skeleton.md`
-- `patch-contract-skeleton.md`
+- `./memory-system-decisions.md`
+- `./narrative-entity-archive-skeleton.md`
+- `./patch-contract-skeleton.md`
 
 关键实现入口：
 
@@ -193,7 +193,7 @@
 7. 检查档案是否更新 `situation/focus/linkedNames`
 8. 检查快照中是否只存在 `globals`，不再出现旧 `status`
 
-如果这轮验收通过，再进入 `implementation-plan.md` 中的阶段 B。
+如果这轮验收通过，再进入 `./implementation-plan.md` 中的阶段 B。
 
 ## 7. 注意事项
 

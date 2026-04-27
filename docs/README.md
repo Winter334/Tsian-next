@@ -18,7 +18,7 @@
 
 ### 2.1 当前状态
 
-- `current-state-handoff.md`
+- `active/current-state-handoff.md`
 
 用途：
 
@@ -29,7 +29,7 @@
 
 ### 2.2 下一阶段计划
 
-- `implementation-plan.md`
+- `active/implementation-plan.md`
 
 用途：
 
@@ -41,9 +41,9 @@
 
 以下文档记录轻易不会改变的主干决策：
 
-- `memory-system-decisions.md`
-- `narrative-entity-archive-skeleton.md`
-- `patch-contract-skeleton.md`
+- `active/memory-system-decisions.md`
+- `active/narrative-entity-archive-skeleton.md`
+- `active/patch-contract-skeleton.md`
 
 用途：
 
@@ -56,15 +56,15 @@
 
 以下文档主要是设计期讨论产物，后续默认不要求持续维护：
 
-- `ai-runtime-skeleton.md`
-- `development-skeleton.md`
-- `local-runtime-skeleton.md`
-- `local-storage-skeleton.md`
-- `mod-and-save-skeleton.md`
-- `prompt-preset-skeleton.md`
-- `system-architecture-skeleton.md`
-- `technical-stack-skeleton.md`
-- `webui-runtime-skeleton.md`
+- `reference/ai-runtime-skeleton.md`
+- `reference/development-skeleton.md`
+- `reference/local-runtime-skeleton.md`
+- `reference/local-storage-skeleton.md`
+- `reference/mod-and-save-skeleton.md`
+- `reference/prompt-preset-skeleton.md`
+- `reference/system-architecture-skeleton.md`
+- `reference/technical-stack-skeleton.md`
+- `reference/webui-runtime-skeleton.md`
 
 它们的价值是保留早期设计背景，不是描述当前实现状态。
 
@@ -88,17 +88,6 @@
 
 ## 5. 文档清理建议
 
-当前暂不物理删除历史文档。
+当前已经把历史文档移动到 `reference/`，避免与活跃入口混在一起。
 
-建议后续在用户明确确认后，再考虑删除或归档以下历史骨架：
-
-- `ai-runtime-skeleton.md`
-- `development-skeleton.md`
-- `local-runtime-skeleton.md`
-- `local-storage-skeleton.md`
-- `mod-and-save-skeleton.md`
-- `prompt-preset-skeleton.md`
-- `system-architecture-skeleton.md`
-- `technical-stack-skeleton.md`
-- `webui-runtime-skeleton.md`
-
+后续如果需要删除某份历史文档，必须先确认它的信息已经被 `active/` 下的主干文档吸收。

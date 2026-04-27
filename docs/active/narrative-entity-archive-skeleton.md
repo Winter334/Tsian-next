@@ -287,7 +287,7 @@
 
 与 patch 契约相关的进一步口径，单独记录在：
 
-- [patch-contract-skeleton.md](/F:/workspace/Tsian/docs/patch-contract-skeleton.md)
+- [patch-contract-skeleton.md](./patch-contract-skeleton.md)
 
 ## 10. 关于关键物件
 

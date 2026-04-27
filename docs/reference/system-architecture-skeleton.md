@@ -36,47 +36,47 @@
 
 与记忆系统相关的进一步决策，单独记录在：
 
-- [memory-system-decisions.md](/F:/workspace/Tsian/docs/memory-system-decisions.md)
+- [memory-system-decisions.md](../active/memory-system-decisions.md)
 
 与 AI 调度层相关的进一步决策，单独记录在：
 
-- [ai-runtime-skeleton.md](/F:/workspace/Tsian/docs/ai-runtime-skeleton.md)
+- [ai-runtime-skeleton.md](./ai-runtime-skeleton.md)
 
 与状态修改契约相关的进一步决策，单独记录在：
 
-- [patch-contract-skeleton.md](/F:/workspace/Tsian/docs/patch-contract-skeleton.md)
+- [patch-contract-skeleton.md](../active/patch-contract-skeleton.md)
 
 与提示词预设层相关的进一步决策，单独记录在：
 
-- [prompt-preset-skeleton.md](/F:/workspace/Tsian/docs/prompt-preset-skeleton.md)
+- [prompt-preset-skeleton.md](./prompt-preset-skeleton.md)
 
 与 WebUI 运行层相关的进一步决策，单独记录在：
 
-- [webui-runtime-skeleton.md](/F:/workspace/Tsian/docs/webui-runtime-skeleton.md)
+- [webui-runtime-skeleton.md](./webui-runtime-skeleton.md)
 
 与模组和存档相关的进一步决策，单独记录在：
 
-- [mod-and-save-skeleton.md](/F:/workspace/Tsian/docs/mod-and-save-skeleton.md)
+- [mod-and-save-skeleton.md](./mod-and-save-skeleton.md)
 
 与技术栈选型相关的进一步决策，单独记录在：
 
-- [technical-stack-skeleton.md](/F:/workspace/Tsian/docs/technical-stack-skeleton.md)
+- [technical-stack-skeleton.md](./technical-stack-skeleton.md)
 
 与默认本地运行时相关的进一步决策，单独记录在：
 
-- [local-runtime-skeleton.md](/F:/workspace/Tsian/docs/local-runtime-skeleton.md)
+- [local-runtime-skeleton.md](./local-runtime-skeleton.md)
 
 与本地数据存储相关的进一步决策，单独记录在：
 
-- [local-storage-skeleton.md](/F:/workspace/Tsian/docs/local-storage-skeleton.md)
+- [local-storage-skeleton.md](./local-storage-skeleton.md)
 
 与正式开发骨架相关的进一步决策，单独记录在：
 
-- [development-skeleton.md](/F:/workspace/Tsian/docs/development-skeleton.md)
+- [development-skeleton.md](./development-skeleton.md)
 
 与实施顺序相关的进一步决策，单独记录在：
 
-- [implementation-plan.md](/F:/workspace/Tsian/docs/implementation-plan.md)
+- [implementation-plan.md](../active/implementation-plan.md)
 
 ## 3. 当前已确定的核心原则
 
