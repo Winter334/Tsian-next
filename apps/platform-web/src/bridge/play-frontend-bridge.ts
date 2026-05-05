@@ -24,6 +24,15 @@ export function createPlayFrontendBridge(
       getPlatformContext() {
         return engine.getPlatformContext()
       },
+      async runAction() {
+        return {
+          ok: false,
+          error: {
+            code: "PLATFORM_ACTION_UNAVAILABLE",
+            message: "Platform action is not available in base runtime bridge.",
+          },
+        }
+      },
     },
   }
 }

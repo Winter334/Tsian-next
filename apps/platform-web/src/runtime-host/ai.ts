@@ -20,7 +20,74 @@ export interface GenerateEmbeddingOptions {
   config?: BrowserEmbeddingConfig | null
 }
 
+export interface AiDebugRecord {
+  id: string
+  kind: "chat" | "embedding"
+  label: string
+  model: string
+  createdAt: string
+  messages?: AiChatMessage[]
+  input?: string[]
+  responseText?: string
+  vectorCount?: number
+  dimensions?: number
+  error?: string
+}
+
 let aiDebugSequence = 0
+const aiDebugRecords: AiDebugRecord[] = []
+const MAX_AI_DEBUG_RECORDS = 20
+
+function pushAiDebugRecord(record: AiDebugRecord): void {
+  aiDebugRecords.unshift(record)
+  aiDebugRecords.splice(MAX_AI_DEBUG_RECORDS)
+}
+
+function updateAiDebugRecord(id: string, patch: Partial<AiDebugRecord>): void {
+  const index = aiDebugRecords.findIndex((record) => record.id === id)
+  if (index < 0) {
+    return
+  }
+
+  aiDebugRecords[index] = {
+    ...aiDebugRecords[index],
+    ...patch,
+  }
+}
+
+export function getAiDebugRecords(): AiDebugRecord[] {
+  return aiDebugRecords.map((record) => ({
+    ...record,
+    messages: record.messages?.map((message) => ({ ...message })),
+    input: record.input ? [...record.input] : undefined,
+  }))
+}
+
+function maskSecret(value: string): string {
+  if (value.length <= 8) {
+    return "***"
+  }
+
+  return `${value.slice(0, 4)}…${value.slice(-4)}`
+}
+
+function previewText(value: string, maxLength = 1600): string {
+  const normalized = value.trim()
+  if (normalized.length <= maxLength) {
+    return normalized
+  }
+
+  return `${normalized.slice(0, maxLength)}\n…[已截断 ${normalized.length - maxLength} 字]`
+}
+
+function logDebugGroup(
+  title: string,
+  payload: Record<string, unknown>,
+): void {
+  console.groupCollapsed(title)
+  console.debug(payload)
+  console.groupEnd()
+}
 
 function buildChatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/chat/completions`
@@ -75,11 +142,24 @@ export async function generateAssistantReply(
 
   const requestId = `${options.debugLabel ?? "chat"}-${++aiDebugSequence}`
   const url = buildChatCompletionsUrl(config.baseUrl)
+  pushAiDebugRecord({
+    id: requestId,
+    kind: "chat",
+    label: options.debugLabel ?? "chat",
+    model: config.model,
+    createdAt: new Date().toISOString(),
+    messages: messages.map((message) => ({ ...message })),
+  })
 
-  console.debug(`[Tsian AI ${requestId}] request`, {
+  logDebugGroup(`[Tsian AI ${requestId}] 请求`, {
     url,
     model: config.model,
-    messages,
+    apiKey: maskSecret(config.apiKey),
+    messages: messages.map((message, index) => ({
+      index,
+      role: message.role,
+      content: previewText(message.content),
+    })),
   })
 
   const response = await fetch(url, {
@@ -105,13 +185,15 @@ export async function generateAssistantReply(
       typeof payload?.error?.message === "string"
         ? payload.error.message
         : `AI request failed with status ${response.status}.`
+    updateAiDebugRecord(requestId, { error: message })
     throw new Error(message)
   }
 
   const content = extractAssistantText(payload)
+  updateAiDebugRecord(requestId, { responseText: content })
 
-  console.debug(`[Tsian AI ${requestId}] response`, {
-    content,
+  logDebugGroup(`[Tsian AI ${requestId}] 响应`, {
+    content: previewText(content, 2400),
     payload,
   })
 
@@ -158,11 +240,24 @@ export async function generateEmbeddings(
 
   const requestId = `${options.debugLabel ?? "embed"}-${++aiDebugSequence}`
   const url = buildEmbeddingsUrl(config.baseUrl)
+  pushAiDebugRecord({
+    id: requestId,
+    kind: "embedding",
+    label: options.debugLabel ?? "embed",
+    model: config.model,
+    createdAt: new Date().toISOString(),
+    input: [...input],
+  })
 
-  console.debug(`[Tsian AI ${requestId}] request`, {
+  logDebugGroup(`[Tsian Embedding ${requestId}] 请求`, {
     url,
     model: config.model,
-    input,
+    apiKey: maskSecret(config.apiKey),
+    inputCount: input.length,
+    input: input.map((item, index) => ({
+      index,
+      content: previewText(item, 500),
+    })),
   })
 
   const response = await fetch(url, {
@@ -188,12 +283,17 @@ export async function generateEmbeddings(
       typeof payload?.error?.message === "string"
         ? payload.error.message
         : `Embedding request failed with status ${response.status}.`
+    updateAiDebugRecord(requestId, { error: message })
     throw new Error(message)
   }
 
   const vectors = extractEmbeddingVectors(payload)
+  updateAiDebugRecord(requestId, {
+    vectorCount: vectors.length,
+    dimensions: vectors[0]?.length ?? 0,
+  })
 
-  console.debug(`[Tsian AI ${requestId}] response`, {
+  logDebugGroup(`[Tsian Embedding ${requestId}] 响应`, {
     count: vectors.length,
     dimensions: vectors[0]?.length ?? 0,
   })

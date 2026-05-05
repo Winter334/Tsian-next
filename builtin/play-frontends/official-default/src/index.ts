@@ -2,6 +2,7 @@ import type {
   ArchiveRecord,
   ConversationMessageRecord,
   EventRecord,
+  ModStaticContent,
   PlayFrontendBridge,
   PlayFrontendManifest,
   RuntimeSnapshotShell,
@@ -24,18 +25,65 @@ interface RetrievalArchiveDebugRecord {
   name: string
   presence: string
   score: number
+  source?: "direct" | "present" | "event" | "bridge" | "semantic"
+}
+
+interface RetrievalCatalogEventDebugRecord {
+  id: string
+  name: string
+  score: number
+  selected: boolean
+  content: string
+  guidance?: string
+}
+
+interface RetrievalSemanticDebugRecord {
+  enabled: boolean
+  keywords: string[]
+  eventIds: string[]
+  archiveIds: string[]
+  error?: string
 }
 
 interface RetrievalDebugRecord {
   input: string
+  settings?: Record<string, unknown>
+  semantic?: RetrievalSemanticDebugRecord
   directEntities: string[]
+  presentEntities?: string[]
   linkedEntities: string[]
   groups: string[][]
   candidates: RetrievalCandidateDebugRecord[]
   archives: RetrievalArchiveDebugRecord[]
+  catalogEvents?: RetrievalCatalogEventDebugRecord[]
 }
 
-type InspectorTab = "retrieval" | "events" | "archives" | "snapshot"
+interface AiDebugRecord {
+  id: string
+  kind: "chat" | "embedding"
+  label: string
+  model: string
+  createdAt: string
+  messages?: ConversationMessageRecord[]
+  input?: string[]
+  responseText?: string
+  vectorCount?: number
+  dimensions?: number
+  error?: string
+}
+
+interface CheckpointSummary {
+  id: string
+  turn: number
+  label: string
+  reason: "initial" | "after-turn" | "manual"
+  createdAt: number
+  messageCount: number
+  eventCount: number
+  archiveCount: number
+}
+
+type InspectorTab = "ai" | "retrieval" | "events" | "archives" | "checkpoints" | "snapshot"
 
 const STYLE_ID = "tsian-official-default-style"
 const ROLE_LABEL: Record<string, string> = {
@@ -67,6 +115,10 @@ function ensureStyles() {
     .od-eye{margin:0;color:var(--gold);font-size:11px;letter-spacing:.24em;text-transform:uppercase}
     .od-title{margin:8px 0 10px;font-family:"Iowan Old Style","Noto Serif SC","Source Han Serif SC",serif;font-size:clamp(30px,4vw,42px);line-height:1.04}
     .od-summary{margin:0;color:#c6d3e2;font-size:15px;line-height:1.75}
+    .od-mod-overview{margin-top:16px}
+    .od-mod-card{padding:16px 18px;border:1px solid rgba(148,163,184,.12);border-radius:18px;background:rgba(8,15,24,.46)}
+    .od-mod-title{margin:8px 0 0;font-size:18px;line-height:1.35}
+    .od-mod-summary{margin-top:10px;font-size:14px;line-height:1.75}
     .od-stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}
     .od-stat{padding:14px 16px;border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(8,15,24,.46)}
     .od-stat span{display:block;color:var(--muted);font-size:11px;letter-spacing:.12em;text-transform:uppercase}
@@ -78,11 +130,12 @@ function ensureStyles() {
     .od-scene-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
     .od-layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(320px,.95fr);gap:18px;align-items:start}
     .od-panel{display:flex;flex-direction:column;min-height:0;overflow:hidden}
+    .od-panel--play{height:min(820px,calc(100vh - 32px))}
     .od-panel--inspector{height:min(960px,calc(100vh - 32px))}
     .od-head{padding:18px 20px;border-bottom:1px solid var(--line)}
     .od-head h3{margin:0;font-family:"Iowan Old Style","Noto Serif SC","Source Han Serif SC",serif;font-size:24px}
     .od-head p{margin:8px 0 0;color:var(--muted);font-size:13px;line-height:1.6}
-    .od-history{flex:1;overflow:auto;display:flex;flex-direction:column;gap:14px;padding:20px;background:linear-gradient(180deg,rgba(8,15,24,.18),rgba(8,15,24,.08))}
+    .od-history{flex:1;min-height:280px;overflow:auto;overscroll-behavior:contain;display:flex;flex-direction:column;gap:14px;padding:20px;background:linear-gradient(180deg,rgba(8,15,24,.18),rgba(8,15,24,.08));scrollbar-color:rgba(246,185,79,.38) rgba(8,15,24,.64)}
     .history-item{max-width:88%;padding:16px 18px;border:1px solid rgba(148,163,184,.12);border-radius:18px;background:var(--bg)}
     .history-item--user{align-self:flex-end;background:linear-gradient(180deg,rgba(246,185,79,.16),rgba(246,185,79,.06)),rgba(12,18,28,.98);border-color:rgba(246,185,79,.18)}
     .history-item--assistant{align-self:flex-start;background:linear-gradient(180deg,rgba(117,184,255,.12),rgba(117,184,255,.04)),rgba(10,16,26,.98)}
@@ -93,7 +146,7 @@ function ensureStyles() {
     .composer-input{width:100%;min-height:56px;padding:16px 18px;border:1px solid rgba(148,163,184,.16);border-radius:18px;background:rgba(10,17,28,.94);color:var(--text);font:inherit}
     .composer-input:focus{outline:none;border-color:rgba(246,185,79,.42);box-shadow:0 0 0 4px rgba(246,185,79,.08)}
     .composer-button{min-width:132px;padding:0 20px;border:1px solid rgba(246,185,79,.24);border-radius:18px;background:linear-gradient(180deg,rgba(246,185,79,.22),rgba(246,185,79,.08)),rgba(15,22,34,.96);color:#fff7ea;font:inherit;font-weight:600;cursor:pointer}
-    .od-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:14px 16px 0;background:rgba(255,255,255,.02)}
+    .od-tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:14px 16px 0;background:rgba(255,255,255,.02)}
     .od-tab{padding:12px 10px;border:1px solid rgba(148,163,184,.12);border-radius:14px 14px 0 0;background:rgba(8,15,24,.56);color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
     .od-tab.is-active{color:var(--text);border-color:rgba(246,185,79,.2);background:linear-gradient(180deg,rgba(246,185,79,.12),rgba(246,185,79,0)),rgba(10,16,26,.96)}
     .od-tabpanes{flex:1;min-height:0;overflow:hidden;background:rgba(7,12,20,.72)}
@@ -108,12 +161,15 @@ function ensureStyles() {
     .od-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
     .od-row h4{margin:0;font-size:15px}
     .od-meta{margin:0;color:var(--muted);font-size:12px;text-align:right;line-height:1.6}
+    .ai-message{display:grid;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid rgba(148,163,184,.1)}
+    .ai-message:first-of-type{border-top:0;padding-top:0}
+    .ai-label{display:inline-flex;width:max-content;padding:4px 8px;border-radius:999px;background:rgba(117,184,255,.12);color:#b0d6ff;font-size:12px}
     .od-chips{display:flex;flex-wrap:wrap;gap:8px}
     .od-chip{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:rgba(246,185,79,.12);color:#f1d7a1;font-size:12px}
     .od-chip--soft{background:rgba(117,184,255,.12);color:#b0d6ff}
     .od-empty{margin:0;padding:16px;border:1px dashed var(--line);border-radius:18px;color:var(--muted);background:rgba(8,15,24,.3);font-size:13px}
-    @media (max-width:1080px){.od-layout{grid-template-columns:1fr}.od-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.od-scene{grid-template-columns:1fr}.od-panel--inspector{height:auto;max-height:none}}
-    @media (max-width:720px){.od-stats,.od-tabs,.od-composer{grid-template-columns:1fr}.history-item{max-width:100%}.od-hero,.od-head{padding:18px}}
+    @media (max-width:1080px){.od-layout{grid-template-columns:1fr}.od-stats{grid-template-columns:repeat(2,minmax(0,1fr))}.od-scene{grid-template-columns:1fr}.od-panel--play,.od-panel--inspector{height:auto;max-height:none}.od-history{max-height:58vh}}
+    @media (max-width:720px){.od-stats,.od-tabs,.od-composer{grid-template-columns:1fr}.od-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.history-item{max-width:100%}.od-hero,.od-head{padding:18px}}
   `
   document.head.append(style)
 }
@@ -141,7 +197,23 @@ function formatTime(value: string): string {
     return "未设置"
   }
 
-  return value.replace("T", " ").replace(/\.\d+Z?$/, "").replace("Z", "")
+  const narrativeMatch = value.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/)
+  if (narrativeMatch) {
+    const [, year, month, day, hour, minute] = narrativeMatch
+    return `${year}年${Number(month)}月${Number(day)}日 ${hour}:${minute}`
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+
+  const year = date.getFullYear()
+  const month = date.getMonth() + 1
+  const day = date.getDate()
+  const hour = String(date.getHours()).padStart(2, "0")
+  const minute = String(date.getMinutes()).padStart(2, "0")
+  return `${year}年${month}月${day}日 ${hour}:${minute}`
 }
 
 function formatGlobalValue(value: unknown): string {
@@ -174,6 +246,52 @@ function runtimeGlobals(snapshot: RuntimeSnapshotShell): Array<[string, string]>
 
     return [[key.trim(), formatGlobalValue(value)] as [string, string]]
   })
+}
+
+function renderModOverview(target: HTMLDivElement, mod: ModStaticContent | null) {
+  target.replaceChildren()
+
+  if (!mod) {
+    target.append(empty("当前没有装载模组静态内容。"))
+    return
+  }
+
+  const card = document.createElement("article")
+  card.className = "od-mod-card"
+  card.innerHTML = `
+    <div class="od-row">
+      <div>
+        <p class="od-eye">Active Mod</p>
+        <h3 class="od-mod-title"></h3>
+      </div>
+      <p class="od-meta"></p>
+    </div>
+    <p class="od-summary od-mod-summary"></p>
+    <div class="od-chips"></div>
+  `
+
+  ;(card.querySelector(".od-mod-title") as HTMLHeadingElement).textContent = mod.manifest.name
+  ;(card.querySelector(".od-meta") as HTMLParagraphElement).textContent = [
+    mod.manifest.id,
+    mod.manifest.version,
+  ].join(" · ")
+  ;(card.querySelector(".od-mod-summary") as HTMLParagraphElement).textContent =
+    mod.manifest.description || "当前模组未提供描述。"
+
+  const chips = card.querySelector(".od-chips") as HTMLDivElement
+  ;[
+    `前端：${mod.frontendConfig.frontendId ?? "未指定"}`,
+    `实体类型：${mod.entityTypeDefinitions.length}`,
+    `预设档案：${mod.archiveCatalog.length}`,
+    `预设事件：${mod.eventCatalog.length}`,
+  ].forEach((text) => {
+    const chip = document.createElement("span")
+    chip.className = "od-chip od-chip--soft"
+    chip.textContent = text
+    chips.append(chip)
+  })
+
+  target.append(card)
 }
 
 function renderSceneStatus(
@@ -209,6 +327,41 @@ function renderSnapshot(target: HTMLDivElement, snapshot: RuntimeSnapshotShell) 
   target.append(card)
 }
 
+function renderCheckpoints(
+  target: HTMLDivElement,
+  items: CheckpointSummary[],
+  onRestore: (checkpointId: string) => void,
+) {
+  target.replaceChildren()
+  if (items.length === 0) {
+    target.append(empty("当前还没有可回溯的状态切片。"))
+    return
+  }
+
+  for (const item of items) {
+    const card = document.createElement("article")
+    card.className = "od-card"
+    card.innerHTML = `
+      <div class="od-row">
+        <h4></h4>
+        <p class="od-meta"></p>
+      </div>
+      <div class="od-field"><span>切片内容</span><p></p></div>
+      <button class="composer-button checkpoint-restore" type="button">恢复到这里</button>
+    `
+    ;(card.querySelector("h4") as HTMLHeadingElement).textContent = item.label
+    ;(card.querySelector(".od-meta") as HTMLParagraphElement).textContent = `${formatTime(
+      new Date(item.createdAt).toISOString(),
+    )} · ${item.reason}`
+    ;(card.querySelector(".od-field p") as HTMLParagraphElement).textContent =
+      `回合 ${item.turn} · ${item.messageCount} 条对话 · ${item.eventCount} 个事件 · ${item.archiveCount} 个档案`
+    ;(card.querySelector("button") as HTMLButtonElement).addEventListener("click", () => {
+      onRestore(item.id)
+    })
+    target.append(card)
+  }
+}
+
 function renderHistory(target: HTMLDivElement, items: ConversationMessageRecord[]) {
   target.replaceChildren()
   if (items.length === 0) {
@@ -241,9 +394,12 @@ function renderEvents(target: HTMLDivElement, items: EventRecord[]) {
         <p class="od-meta"></p>
       </div>
       <div class="od-chips"></div>
+      <div class="od-field"><span>强绑定档案 ID</span><p class="event-ids"></p></div>
       <div class="od-field"><span>正文</span><p></p></div>
     `
-    ;(row.querySelector(".od-meta") as HTMLParagraphElement).textContent = item.time
+    ;(row.querySelector(".od-meta") as HTMLParagraphElement).textContent = `${formatTime(
+      item.time,
+    )}${item.id ? ` · ${item.id}` : ""}`
     const chips = row.querySelector(".od-chips") as HTMLDivElement
     if (item.entityTags.length > 0) {
       item.entityTags.forEach((tag) => {
@@ -253,7 +409,10 @@ function renderEvents(target: HTMLDivElement, items: EventRecord[]) {
         chips.append(chip)
       })
     }
-    ;(row.querySelector(".od-field p") as HTMLParagraphElement).textContent = item.content
+    const fields = row.querySelectorAll(".od-field p")
+    ;(fields[0] as HTMLParagraphElement).textContent =
+      item.entityArchiveIds?.join("、") || "无"
+    ;(fields[1] as HTMLParagraphElement).textContent = item.content
     target.append(row)
   }
 }
@@ -270,11 +429,12 @@ function renderArchives(target: HTMLDivElement, items: ArchiveRecord[]) {
     row.className = "archive-item"
     row.innerHTML = `
       <div class="od-row">
-        <h4>${item.name} · ${item.kind}</h4>
+        <h4>${item.name} · ${item.type}</h4>
         <p class="od-meta">${item.presence} · ${item.id}</p>
       </div>
       <div class="od-chips od-aliases"></div>
       <div class="od-field"><span>关联实体</span><div class="od-chips od-related"></div></div>
+      <div class="od-field"><span>强绑定档案 ID</span><p></p></div>
       <div class="od-field"><span>背景</span><p></p></div>
       <div class="od-field"><span>现状</span><p></p></div>
       <div class="od-field"><span>关注点</span><p></p></div>
@@ -307,9 +467,11 @@ function renderArchives(target: HTMLDivElement, items: ArchiveRecord[]) {
     }
 
     const fields = row.querySelectorAll(".od-field p")
-    ;(fields[0] as HTMLParagraphElement).textContent = item.background || "无"
-    ;(fields[1] as HTMLParagraphElement).textContent = item.situation || "无"
-    ;(fields[2] as HTMLParagraphElement).textContent = item.focus || "无"
+    ;(fields[0] as HTMLParagraphElement).textContent =
+      item.linkedArchiveIds?.join("、") || "无"
+    ;(fields[1] as HTMLParagraphElement).textContent = item.background || "无"
+    ;(fields[2] as HTMLParagraphElement).textContent = item.situation || "无"
+    ;(fields[3] as HTMLParagraphElement).textContent = item.focus || "该类型未提供关注点字段"
     target.append(row)
   }
 }
@@ -325,12 +487,15 @@ function renderRetrieval(target: HTMLDivElement, items: RetrievalDebugRecord[]) 
   const summary = document.createElement("article")
   summary.className = "od-card"
   summary.innerHTML = `
-    <p class="od-k">本轮检索规划</p>
+    <p class="od-k">本轮结构检索</p>
     <div class="od-field"><span>玩家输入</span><p></p></div>
     <div class="od-field"><span>直接命中实体</span><div class="od-chips od-direct"></div></div>
-    <div class="od-field"><span>高频关联实体</span><div class="od-chips od-related"></div></div>
-    <div class="od-field"><span>查询词组</span><div class="od-chips od-groups"></div></div>
-    <div class="od-field"><span>命中的档案</span><div class="od-chips od-archives"></div></div>
+    <div class="od-field"><span>当前在场实体</span><div class="od-chips od-present"></div></div>
+    <div class="od-field"><span>预设事件钩子</span><div class="od-chips od-catalog"></div></div>
+    <div class="od-field"><span>桥接关联实体</span><div class="od-chips od-related"></div></div>
+    <div class="od-field"><span>注入档案</span><div class="od-chips od-archives"></div></div>
+    <div class="od-field"><span>AI 增强检索</span><p class="od-semantic"></p></div>
+    <div class="od-field"><span>本轮参数</span><p class="od-settings"></p></div>
   `
   ;(summary.querySelector(".od-field p") as HTMLParagraphElement).textContent = current.input
   const direct = summary.querySelector(".od-direct") as HTMLDivElement
@@ -345,6 +510,30 @@ function renderRetrieval(target: HTMLDivElement, items: RetrievalDebugRecord[]) 
     direct.append(empty("这一轮没有命中直接实体。"))
   }
 
+  const present = summary.querySelector(".od-present") as HTMLDivElement
+  if ((current.presentEntities ?? []).length > 0) {
+    ;(current.presentEntities ?? []).forEach((name) => {
+      const chip = document.createElement("span")
+      chip.className = "od-chip"
+      chip.textContent = name
+      present.append(chip)
+    })
+  } else {
+    present.append(empty("当前没有额外在场实体。"))
+  }
+
+  const catalog = summary.querySelector(".od-catalog") as HTMLDivElement
+  if ((current.catalogEvents ?? []).length > 0) {
+    ;(current.catalogEvents ?? []).forEach((item) => {
+      const chip = document.createElement("span")
+      chip.className = `od-chip${item.selected ? "" : " od-chip--soft"}`
+      chip.textContent = `${item.name} · ${item.selected ? "已注入" : "候选"}`
+      catalog.append(chip)
+    })
+  } else {
+    catalog.append(empty("这一轮没有命中预设事件钩子。"))
+  }
+
   const related = summary.querySelector(".od-related") as HTMLDivElement
   if (current.linkedEntities.length > 0) {
     current.linkedEntities.forEach((name) => {
@@ -354,19 +543,7 @@ function renderRetrieval(target: HTMLDivElement, items: RetrievalDebugRecord[]) 
       related.append(chip)
     })
   } else {
-    related.append(empty("这一轮没有额外高频关联实体。"))
-  }
-
-  const groups = summary.querySelector(".od-groups") as HTMLDivElement
-  if (current.groups.length > 0) {
-    current.groups.forEach((group) => {
-      const chip = document.createElement("span")
-      chip.className = "od-chip"
-      chip.textContent = group.join(" · ")
-      groups.append(chip)
-    })
-  } else {
-    groups.append(empty("这一轮没有额外查询词组。"))
+    related.append(empty("这一轮没有桥接关联实体。"))
   }
 
   const archives = summary.querySelector(".od-archives") as HTMLDivElement
@@ -374,13 +551,52 @@ function renderRetrieval(target: HTMLDivElement, items: RetrievalDebugRecord[]) 
     current.archives.forEach((item) => {
       const chip = document.createElement("span")
       chip.className = "od-chip od-chip--soft"
-      chip.textContent = `${item.name} · ${item.presence} · ${item.score.toFixed(2)}`
+      chip.textContent = `${item.name} · ${item.source ?? "hit"} · ${item.presence}`
       archives.append(chip)
     })
   } else {
     archives.append(empty("这一轮没有额外命中档案。"))
   }
+  const semantic = summary.querySelector(".od-semantic") as HTMLParagraphElement
+  if (!current.semantic?.enabled) {
+    semantic.textContent = "未开启"
+  } else if (current.semantic.error) {
+    semantic.textContent = `开启，但失败：${current.semantic.error}`
+  } else {
+    semantic.textContent = [
+      `关键词：${current.semantic.keywords.join("、") || "无"}`,
+      `事件：${current.semantic.eventIds.join("、") || "无"}`,
+      `档案：${current.semantic.archiveIds.join("、") || "无"}`,
+    ].join("；")
+  }
+  const settings = summary.querySelector(".od-settings") as HTMLParagraphElement
+  settings.textContent = current.settings
+    ? Object.entries(current.settings)
+        .map(([key, value]) => `${key}=${value}`)
+        .join("；")
+    : "未返回参数"
   target.append(summary)
+
+  if ((current.catalogEvents ?? []).length > 0) {
+    for (const item of current.catalogEvents ?? []) {
+      const row = document.createElement("article")
+      row.className = `retrieval-item${item.selected ? " is-selected" : ""}`
+      row.innerHTML = `
+        <div class="od-row">
+          <h4>${item.selected ? "已注入预设钩子" : "候选预设钩子"}</h4>
+          <p class="od-meta">score=${item.score.toFixed(3)}</p>
+        </div>
+        <div class="od-field"><span>名称</span><p></p></div>
+        <div class="od-field"><span>剧情骨架</span><p></p></div>
+        <div class="od-field"><span>作者备注</span><p></p></div>
+      `
+      const fields = row.querySelectorAll(".od-field p")
+      ;(fields[0] as HTMLParagraphElement).textContent = item.name
+      ;(fields[1] as HTMLParagraphElement).textContent = item.content
+      ;(fields[2] as HTMLParagraphElement).textContent = item.guidance || "无"
+      target.append(row)
+    }
+  }
 
   if (current.candidates.length === 0) {
     target.append(empty("当前没有候选事件。"))
@@ -393,13 +609,13 @@ function renderRetrieval(target: HTMLDivElement, items: RetrievalDebugRecord[]) 
     row.innerHTML = `
       <div class="od-row">
         <h4>${item.selected ? "已注入事件" : "候选事件"}</h4>
-        <p class="od-meta">${item.status} · ${item.time}</p>
+        <p class="od-meta">${item.status} · ${formatTime(item.time)}</p>
       </div>
       <div class="od-field"><span>评分</span><p></p></div>
       <div class="od-chips"></div>
       <div class="od-field"><span>事件正文</span><p></p></div>
     `
-    const score = `final=${item.finalScore.toFixed(3)} / keyword=${item.keywordScore.toFixed(
+    const score = `final=${item.finalScore.toFixed(3)} / structure=${item.keywordScore.toFixed(
       3,
     )} / semantic=${item.semanticScore?.toFixed(3) ?? "n/a"}`
     const fields = row.querySelectorAll(".od-field p")
@@ -416,6 +632,51 @@ function renderRetrieval(target: HTMLDivElement, items: RetrievalDebugRecord[]) 
   }
 }
 
+function renderAiDebug(target: HTMLDivElement, items: AiDebugRecord[]) {
+  target.replaceChildren()
+  if (items.length === 0) {
+    target.append(empty("发送一轮消息后，这里会展示 AI 请求上下文和响应内容。"))
+    return
+  }
+
+  for (const item of items) {
+    const card = document.createElement("article")
+    card.className = "od-card"
+    const detail = document.createElement("div")
+    detail.className = "od-field"
+    detail.innerHTML = `
+      <div class="od-row">
+        <h4>${item.label} · ${item.kind}</h4>
+        <p class="od-meta">${item.model}<br />${formatTime(item.createdAt)}</p>
+      </div>
+    `
+
+    const sourceItems = item.messages ?? item.input?.map((content) => ({ role: "input", content })) ?? []
+    sourceItems.forEach((message, index) => {
+      const block = document.createElement("div")
+      block.className = "ai-message"
+      block.innerHTML = `<span class="ai-label">${index + 1}. ${ROLE_LABEL[message.role] ?? message.role}</span><p class="od-pre"></p>`
+      ;(block.querySelector("p") as HTMLParagraphElement).textContent = message.content
+      detail.append(block)
+    })
+
+    const response = document.createElement("div")
+    response.className = "ai-message"
+    const responseLabel = item.error
+      ? "错误"
+      : item.kind === "embedding"
+        ? `向量响应：${item.vectorCount ?? 0} 条 / ${item.dimensions ?? 0} 维`
+        : "AI 响应"
+    response.innerHTML = `<span class="ai-label">${responseLabel}</span><p class="od-pre"></p>`
+    ;(response.querySelector("p") as HTMLParagraphElement).textContent =
+      item.error ?? item.responseText ?? "暂无响应内容。"
+    detail.append(response)
+
+    card.append(detail)
+    target.append(card)
+  }
+}
+
 export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: PlayFrontendBridge): () => void {
   ensureStyles()
 
@@ -426,6 +687,7 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
       <p class="od-eye">Official Default</p>
       <h2 class="od-title">叙事主界面</h2>
       <p class="od-summary">左侧只保留对话主线，右侧用单栏标签页承载事件、档案、检索和快照，避免测试时视线被大量调试信息打断。</p>
+      <div class="od-mod-overview"></div>
       <div class="od-stats">
         <article class="od-stat"><span>Turn</span><strong data-stat="turn">0</strong></article>
         <article class="od-stat"><span>Messages</span><strong data-stat="messages">0</strong></article>
@@ -441,7 +703,7 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
       </div>
     </header>
     <div class="od-layout">
-      <section class="od-panel">
+      <section class="od-panel od-panel--play">
         <div class="od-head">
           <h3>对话主线</h3>
           <p>这里专注看玩家与叙事 AI 的往返，不把调试数据直接混进正文区域。</p>
@@ -458,15 +720,19 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
           <p>按需切换事件、档案、检索和快照，不再一次展开全部数据。</p>
         </div>
         <div class="od-tabs">
+          <button class="od-tab" data-tab="ai" type="button">AI</button>
           <button class="od-tab" data-tab="retrieval" type="button">检索</button>
           <button class="od-tab" data-tab="events" type="button">事件</button>
           <button class="od-tab" data-tab="archives" type="button">档案</button>
+          <button class="od-tab" data-tab="checkpoints" type="button">回溯</button>
           <button class="od-tab" data-tab="snapshot" type="button">快照</button>
         </div>
         <div class="od-tabpanes">
+          <div class="od-pane" data-pane="ai"></div>
           <div class="od-pane" data-pane="retrieval"></div>
           <div class="od-pane" data-pane="events"></div>
           <div class="od-pane" data-pane="archives"></div>
+          <div class="od-pane" data-pane="checkpoints"></div>
           <div class="od-pane" data-pane="snapshot"></div>
         </div>
       </aside>
@@ -484,19 +750,24 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
   const statArchives = root.querySelector('[data-stat="archives"]') as HTMLElement
   const sceneTime = root.querySelector("[data-current-time]") as HTMLElement
   const sceneStatus = root.querySelector(".od-scene-status") as HTMLDivElement
+  const modOverview = root.querySelector(".od-mod-overview") as HTMLDivElement
+  const aiDebugPane = root.querySelector('[data-pane="ai"]') as HTMLDivElement
   const retrievalPane = root.querySelector('[data-pane="retrieval"]') as HTMLDivElement
   const eventsPane = root.querySelector('[data-pane="events"]') as HTMLDivElement
   const archivesPane = root.querySelector('[data-pane="archives"]') as HTMLDivElement
+  const checkpointsPane = root.querySelector('[data-pane="checkpoints"]') as HTMLDivElement
   const snapshotPane = root.querySelector('[data-pane="snapshot"]') as HTMLDivElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".od-tab"))
   const panes: Array<{ name: InspectorTab; pane: HTMLDivElement }> = [
+    { name: "ai", pane: aiDebugPane },
     { name: "retrieval", pane: retrievalPane },
     { name: "events", pane: eventsPane },
     { name: "archives", pane: archivesPane },
+    { name: "checkpoints", pane: checkpointsPane },
     { name: "snapshot", pane: snapshotPane },
   ]
 
-  let activeTab: InspectorTab = "retrieval"
+  let activeTab: InspectorTab = "ai"
 
   const syncTabs = () => {
     tabs.forEach((tab) => {
@@ -521,8 +792,13 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     const historyResult = await bridge.query.query<ConversationMessageRecord>({ resource: "history" })
     const eventResult = await bridge.query.query<EventRecord>({ resource: "events" })
     const archiveResult = await bridge.query.query<ArchiveRecord>({ resource: "archives" })
+    const modResult = await bridge.query.query<ModStaticContent>({ resource: "mod-static" })
+    const aiDebugResult = await bridge.query.query<AiDebugRecord>({ resource: "ai-debug" })
     const retrievalResult = await bridge.query.query<RetrievalDebugRecord>({
       resource: "retrieval-debug",
+    })
+    const checkpointResult = await bridge.query.query<CheckpointSummary>({
+      resource: "checkpoints",
     })
 
     statTurn.textContent = String(turn(snapshot))
@@ -530,10 +806,24 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     statEvents.textContent = String(eventResult.items.length)
     statArchives.textContent = String(archiveResult.items.length)
 
+    renderModOverview(modOverview, modResult.items[0] ?? null)
     renderSceneStatus(sceneTime, sceneStatus, snapshot)
     renderHistory(history, historyResult.items)
+    renderAiDebug(aiDebugPane, aiDebugResult.items)
     renderEvents(eventsPane, eventResult.items)
     renderArchives(archivesPane, archiveResult.items)
+    renderCheckpoints(checkpointsPane, checkpointResult.items, async (checkpointId) => {
+      const result = await bridge.platform.runAction({
+        action: "restore-checkpoint",
+        params: { checkpointId },
+      })
+      if (!result.ok) {
+        window.alert(result.error?.message ?? "恢复 checkpoint 失败。")
+        return
+      }
+      await refresh()
+      history.scrollTo({ top: history.scrollHeight })
+    })
     renderRetrieval(retrievalPane, retrievalResult.items)
     renderSnapshot(snapshotPane, snapshot)
   }
@@ -549,7 +839,12 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     button.textContent = "发送中…"
 
     try {
-      await bridge.interaction.sendMessage({ content })
+      const snapshot = await bridge.runtime.getRuntimeSnapshot()
+      const rawTime = currentTime(snapshot)
+      await bridge.interaction.sendMessage({
+        content,
+        narrativeTimeText: rawTime ? formatTime(rawTime) : undefined,
+      })
       input.value = ""
       await refresh()
       history.scrollTo({ top: history.scrollHeight, behavior: "smooth" })

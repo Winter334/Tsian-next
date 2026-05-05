@@ -8,6 +8,7 @@ import type {
   RuntimeSnapshotShell,
 } from "@tsian/contracts"
 import type { RuntimeEngine } from "@tsian/runtime-core"
+import { getCurrentNarrativeTime } from "../narrative-time"
 import { generateAssistantReply } from "./ai"
 
 export interface RuntimeMemoryContext {
@@ -20,7 +21,7 @@ export class LocalRuntimeEngine implements RuntimeEngine {
     state: {
       turn: 0,
       messages: [],
-      currentTime: new Date().toISOString(),
+      currentTime: getCurrentNarrativeTime(),
       globals: {},
     },
   }

@@ -3,6 +3,8 @@ import type {
   DeepQueryResult,
   MessageInteractionRequest,
   MessageInteractionResult,
+  PlatformActionRequest,
+  PlatformActionResult,
   PlatformContextShell,
   RuntimeSnapshotShell,
 } from "./runtime"
@@ -21,6 +23,7 @@ export interface QueryBridge {
 
 export interface PlatformBridge {
   getPlatformContext(): Promise<PlatformContextShell>
+  runAction(request: PlatformActionRequest): Promise<PlatformActionResult>
 }
 
 export interface PlayFrontendBridge {

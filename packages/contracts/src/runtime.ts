@@ -29,42 +29,53 @@ export interface RuntimeSnapshotShell {
 }
 
 export interface EventRecord {
+  id?: string
   time: string
   status: string
   entityTags: string[]
+  entityArchiveIds?: string[]
   content: string
 }
 
-export type ArchiveBaseKind =
+export type ArchiveBaseType =
   | "character"
   | "location"
   | "item"
   | "organization"
   | "other"
 
-export type ArchiveKind = `${ArchiveBaseKind}:${string}` | ArchiveBaseKind
+export type ArchiveType = string
 
 export type ArchivePresence = "foreground" | "background" | "retired"
 
 export interface ArchiveRecord {
   id: string
-  kind: ArchiveKind
+  type: ArchiveType
   name: string
   aliases: string[]
   background: string
   situation: string
-  focus: string
+  focus?: string
   linkedNames: string[]
+  linkedArchiveIds?: string[]
   presence: ArchivePresence
   [key: string]: unknown
 }
 
 export interface EventPatchItem {
-  target: "active"
+  target?: string
   set?: {
     status?: "ongoing" | "done"
     time?: string
     entityTags?: string[]
+    entityArchiveIds?: string[]
+    content?: string
+  }
+  create?: {
+    status: "ongoing" | "done"
+    time?: string
+    entityTags?: string[]
+    entityArchiveIds?: string[]
     content?: string
   }
 }
@@ -86,6 +97,7 @@ export interface MaintenancePatchDocument {
 
 export interface MessageInteractionRequest {
   content: string
+  narrativeTimeText?: string
 }
 
 export interface MessageInteractionResult {
@@ -105,4 +117,61 @@ export interface PlatformContextShell {
   version: string
   activeFrontendId?: string
   activeModId?: string
+}
+
+export interface PlatformActionRequest {
+  action: string
+  params?: Record<string, unknown>
+}
+
+export interface PlatformActionError {
+  code: string
+  message: string
+  details?: Record<string, JsonValue>
+}
+
+export interface RuntimeWriteEventInput {
+  id?: string
+  time: string
+  status: "ongoing" | "done"
+  entityTags: string[]
+  entityArchiveIds?: string[]
+  content: string
+}
+
+export interface RuntimeWriteArchiveInput {
+  id?: string
+  type: ArchiveType
+  name: string
+  aliases: string[]
+  background: string
+  situation: string
+  focus?: string
+  linkedNames: string[]
+  linkedArchiveIds?: string[]
+  presence: ArchivePresence
+  [key: string]: unknown
+}
+
+export interface RuntimeWriteRequest {
+  turn?: number
+  currentTime?: string
+  globals?: RuntimeGlobalsMap
+  history?: ConversationMessageRecord[]
+  events?: RuntimeWriteEventInput[]
+  archives?: RuntimeWriteArchiveInput[]
+  checkpointLabel?: string
+}
+
+export interface RuntimeWriteResult {
+  snapshot: RuntimeSnapshotShell
+  historyCount: number
+  eventCount: number
+  archiveCount: number
+}
+
+export interface PlatformActionResult<T = unknown> {
+  ok: boolean
+  item?: T
+  error?: PlatformActionError
 }

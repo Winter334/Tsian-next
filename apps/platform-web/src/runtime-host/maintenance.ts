@@ -1,5 +1,4 @@
 import type {
-  ArchiveKind,
   ArchivePatchItem,
   ArchivePresence,
   ArchiveRecord,
@@ -12,14 +11,6 @@ import type {
 } from "@tsian/contracts"
 import { generateAssistantReply } from "./ai"
 
-const ALLOWED_BASE_KINDS = new Set([
-  "character",
-  "location",
-  "item",
-  "organization",
-  "other",
-])
-
 const ALLOWED_PRESENCE: ArchivePresence[] = [
   "foreground",
   "background",
@@ -27,58 +18,78 @@ const ALLOWED_PRESENCE: ArchivePresence[] = [
 ]
 
 const BASE_ARCHIVE_FIELDS = new Set([
-  "kind",
+  "type",
   "name",
   "aliases",
   "background",
   "situation",
   "focus",
   "linkedNames",
+  "linkedArchiveIds",
   "presence",
 ])
 
+function formatDefaultNarrativeTime(value: string): string {
+  return value.trim() || "未设置"
+}
+
 function buildMaintenancePrompt(input: {
   currentTime: string
+  narrativeTimeText: string
   globals: RuntimeGlobalsMap
   messages: ConversationMessageRecord[]
-  activeEvent: EventRecord | null
+  activeEvents: EventRecord[]
   archives: ArchiveRecord[]
 }): string {
   return [
-    "You maintain only narrative memory data.",
-    "Return JSON only. No markdown. No explanation.",
-    "If no maintenance change is needed, return {}.",
-    'If maintenance is needed, return a JSON object that may contain "currentTime", "globals", "events" and "archives".',
-    "For currentTime: only output it when the narrative time should move forward or be corrected.",
-    'For globals: output {"set":{...}} with only non-entity state fields that should be replaced this turn.',
-    "Global values may be strings, numbers, booleans, null, arrays, or plain JSON objects.",
+    "你是 AIRP 的叙事记忆维护 AI。你不写剧情，只把刚发生的剧情转成可持久化的运行时记忆 patch。",
+    "只输出 JSON，不要 markdown，不要解释。",
+    "你每一轮都应评估并维护 currentTime、events 与 archives；除非本轮只是系统错误或完全没有剧情正文，否则不要返回空对象 {}。",
+    '输出对象可包含 "currentTime", "globals", "events", "archives"。',
+    "不要输出空 set、空 globals 或没有实际字段变化的 archives 项；不改就省略该项。",
     "",
-    "For events: at most 1 item. Only allowed target is \"active\".",
-    'Event format: {"target":"active","set":{"status":"ongoing|done","time":"...","entityTags":["..."],"content":"..."}}.',
-    "Event entityTags must only use archive entity names that already exist or are also created/updated in this same response.",
-    "Event content should stay natural language and include enough time,人物,地点 information when the conversation supports it.",
-    'Do not write meta phrases like "the event is ongoing" or "the event is finished" inside event content.',
+    "currentTime 规则：",
+    "1. currentTime 是当前叙事时间，不是现实时间。",
+    "2. currentTime 和 event.time 必须使用 YYYY-MM-DD HH:mm 格式，例如 2026-04-27 13:58；不要输出 ISO、时区或秒。",
+    "3. 只要本轮剧情发生了动作、观察、交谈、移动、等待、战斗、施法、调查等推进，就应输出新的 currentTime。",
+    "4. 如果正文明确给出时间，使用正文时间；否则按叙事节奏从 Current narrative time 小幅推进，通常推进 1-10 分钟。",
+    "5. 剧情推进时，新的 currentTime 必须晚于 Current narrative time，不能原样复用旧时间。",
+    "6. events[0].set.time 通常应与新的 currentTime 一致，除非事件正文明确在回写历史事件。",
+    "7. 如果本轮只是同一瞬间的纯心理描写或系统报错，才可以不输出 currentTime。",
+    "8. Current formatted narrative time 只用于事件正文、档案正文等自然语言表达。",
     "",
-    "For archives: only keep important entities that are worth recurring in memory.",
-    "The provided archives are only the entities touched by the current scene, not the whole archive pool.",
-    "Archive update format: {\"target\":\"existing id\",\"set\":{...fields}}.",
-    "Archive create format: {\"create\":{...fields}}. Do not provide id when creating.",
-    "Allowed archive base kind values before ':' are: character, location, item, organization, other.",
-    "Allowed archive presence values: foreground, background, retired.",
-    "Allowed archive base fields are: kind, name, aliases, background, situation, focus, linkedNames, presence.",
-    "linkedNames should only contain stable strong-related existing entity names.",
-    "If you update a touched archive and its current strong relations are clear, rewrite linkedNames as the current full list for that archive.",
-    "Do not keep one-off historical co-occurrences in linkedNames after they are no longer strongly relevant.",
-    "Archive extension fields are allowed only when they are useful current state fields for that entity kind.",
-    "Use natural language short paragraphs for archive text fields.",
-    "Do not create archives for every passing mention.",
+    'globals 规则：输出 {"set":{...}}，只放不属于单个实体、但影响当前局面的状态，例如场所、焦点、风险、天气、章节。',
+    "Global values 可为 string, number, boolean, null, array 或普通 JSON object。",
     "",
-    "Missing fields mean no replacement for that field.",
-    "Do not invent unsupported facts.",
+    "events 规则：可以更新已有事件，也可以创建新事件。",
+    '更新格式：{"target":"event id 或 active","set":{"status":"ongoing|done","time":"...","entityTags":["..."],"content":"..."}}。',
+    '创建格式：{"create":{"status":"ongoing|done","time":"...","entityTags":["..."],"content":"..."}}，创建时不要提供 id。',
+    "当当前进行中事件完成时，把对应事件 status 改为 done；如果没有新的进行中事件，可以暂时不 create。",
+    "当剧情产生新的进行中事件时，用 create 新建 ongoing 事件；允许同时存在多个 ongoing 事件。",
+    "active event 是当前进行中事件摘要。本轮剧情有任何实质推进时，应更新相关事件 content 或创建新事件。",
+    "content 应用自然语言概括当前事件到最新状态，包含足以锚定的时间、地点、人物、物件或目标。",
+    "更新事件时，只要 set 里包含 status、time 或 content，就必须同时输出该事件当前完整 entityTags；entityTags 不是增量字段，而是这条事件当前关联实体名称的完整列表。",
+    "entityTags 只能使用已存在档案名称，或本次 archives.create / archives.set.name 同时创建或改名出的实体名称；不要输出 entityArchiveIds。",
+    "不要在 content 里写“事件正在进行/事件已结束”这类元描述。",
+    "",
+    "archives 规则：档案就是实体当前状态的唯一真源，只维护值得复用的重要实体。",
+    "输入的 Current archives 只是当前场景命中的实体，不是全量档案。",
+    "更新已有档案：{\"target\":\"existing id\",\"set\":{...fields}}。新建档案：{\"create\":{...fields}}，创建时不要提供 id。",
+    "type 规则：使用最终实体类型，例如 character、monster、location、equipment、consumable、material、organization、clue。",
+    "允许的 presence：foreground, background, retired。",
+    "基础字段：type, name, aliases, background, situation, linkedNames, presence。focus 只在该类型需要表达当前目标或诉求时使用。",
+    "situation 记录实体当前处境，background 只放低频长期事实。",
+    "linkedNames 只放稳定强关联实体名称；如果强关联已清楚，重写为当前完整列表，不保留一次性同场出现；不要输出 linkedArchiveIds。",
+    "可以输出对当前 type 有用的扁平扩展字段，但不要输出内部继承结构或嵌套类型实例。",
+    "不要为每个路人、随口提及或无持续价值的对象创建档案。",
+    "",
+    "缺字段表示不改；不要输出 del；不要编造正文没有支持的新事实。",
+    "如果不确定某个档案是否要改，优先更新 active event 和 currentTime，而不是返回空对象。",
     "",
     `Current narrative time: ${input.currentTime}`,
+    `Current formatted narrative time: ${input.narrativeTimeText}`,
     `Current globals: ${JSON.stringify(input.globals)}`,
-    `Current active event: ${JSON.stringify(input.activeEvent)}`,
+    `Current active events: ${JSON.stringify(input.activeEvents)}`,
     `Current archives: ${JSON.stringify(input.archives)}`,
     `Conversation: ${JSON.stringify(input.messages)}`,
   ].join("\n")
@@ -124,15 +135,6 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string")
 }
 
-function isArchiveKind(value: unknown): value is ArchiveKind {
-  if (typeof value !== "string" || !value.trim()) {
-    return false
-  }
-
-  const baseKind = value.split(":")[0]?.trim()
-  return !!baseKind && ALLOWED_BASE_KINDS.has(baseKind)
-}
-
 function isArchivePresence(value: unknown): value is ArchivePresence {
   return typeof value === "string" && ALLOWED_PRESENCE.includes(value as ArchivePresence)
 }
@@ -168,48 +170,65 @@ function normalizeGlobalsPatch(raw: unknown): MaintenancePatchDocument["globals"
   return entries.length > 0 ? { set: Object.fromEntries(entries) } : undefined
 }
 
+function normalizeEventSet(raw: Record<string, unknown>): NonNullable<EventPatchItem["set"]> {
+  const set: NonNullable<EventPatchItem["set"]> = {}
+
+  if (raw.status === "ongoing" || raw.status === "done") {
+    set.status = raw.status
+  }
+  if (typeof raw.time === "string" && raw.time.trim()) {
+    set.time = raw.time.trim()
+  }
+
+  const entityTags = normalizeStringArray(raw.entityTags)
+  if (entityTags) {
+    set.entityTags = entityTags
+  }
+
+  if (typeof raw.content === "string" && raw.content.trim()) {
+    set.content = raw.content.trim()
+  }
+
+  return set
+}
+
 function normalizeEventPatches(raw: unknown): EventPatchItem[] {
   if (!Array.isArray(raw) || raw.length === 0) {
     return []
   }
 
-  const first = raw[0]
-  if (typeof first !== "object" || first === null) {
-    return []
+  const patches: EventPatchItem[] = []
+
+  for (const rawItem of raw) {
+    if (typeof rawItem !== "object" || rawItem === null) {
+      continue
+    }
+
+    const item = rawItem as Record<string, unknown>
+    if (typeof item.target === "string" && typeof item.set === "object" && item.set !== null) {
+      const set = normalizeEventSet(item.set as Record<string, unknown>)
+      if (Object.keys(set).length > 0) {
+        patches.push({ target: item.target.trim(), set })
+      }
+      continue
+    }
+
+    if (typeof item.create === "object" && item.create !== null) {
+      const create = normalizeEventSet(item.create as Record<string, unknown>)
+      if (create.status) {
+        patches.push({ create: create as NonNullable<EventPatchItem["create"]> })
+      }
+    }
   }
 
-  const item = first as Record<string, unknown>
-  if (item.target !== "active" || typeof item.set !== "object" || item.set === null) {
-    return []
-  }
-
-  const rawSet = item.set as Record<string, unknown>
-  const set: NonNullable<EventPatchItem["set"]> = {}
-
-  if (rawSet.status === "ongoing" || rawSet.status === "done") {
-    set.status = rawSet.status
-  }
-  if (typeof rawSet.time === "string" && rawSet.time.trim()) {
-    set.time = rawSet.time.trim()
-  }
-
-  const entityTags = normalizeStringArray(rawSet.entityTags)
-  if (entityTags) {
-    set.entityTags = entityTags
-  }
-
-  if (typeof rawSet.content === "string" && rawSet.content.trim()) {
-    set.content = rawSet.content.trim()
-  }
-
-  return Object.keys(set).length > 0 ? [{ target: "active", set }] : []
+  return patches
 }
 
 function normalizeArchiveSet(raw: Record<string, unknown>): Partial<Omit<ArchiveRecord, "id">> {
   const set: Partial<Omit<ArchiveRecord, "id">> = {}
 
-  if (isArchiveKind(raw.kind)) {
-    set.kind = raw.kind
+  if (typeof raw.type === "string" && raw.type.trim()) {
+    set.type = raw.type.trim()
   }
   if (typeof raw.name === "string" && raw.name.trim()) {
     set.name = raw.name.trim()
@@ -275,7 +294,7 @@ function normalizeArchivePatches(raw: unknown): ArchivePatchItem[] {
 
     if (typeof record.create === "object" && record.create !== null) {
       const create = normalizeArchiveSet(record.create as Record<string, unknown>)
-      if (create.kind && create.name) {
+      if (create.type && create.name) {
         patches.push({ create: create as Omit<ArchiveRecord, "id"> })
       }
     }
@@ -318,9 +337,10 @@ function normalizeMaintenancePatchDocument(raw: unknown): MaintenancePatchDocume
 
 export async function generateMaintenancePatch(input: {
   currentTime: string
+  narrativeTimeText?: string
   globals: RuntimeGlobalsMap
   messages: ConversationMessageRecord[]
-  activeEvent: EventRecord | null
+  activeEvents: EventRecord[]
   archives: ArchiveRecord[]
 }): Promise<MaintenancePatchDocument> {
   const content = await generateAssistantReply([
@@ -331,11 +351,19 @@ export async function generateMaintenancePatch(input: {
     },
     {
       role: "user",
-      content: buildMaintenancePrompt(input),
+      content: buildMaintenancePrompt({
+        ...input,
+        narrativeTimeText:
+          input.narrativeTimeText ?? formatDefaultNarrativeTime(input.currentTime),
+      }),
     },
   ], {
     debugLabel: "maintenance",
   })
 
-  return normalizeMaintenancePatchDocument(JSON.parse(extractJsonObject(content)))
+  const patch = normalizeMaintenancePatchDocument(JSON.parse(extractJsonObject(content)))
+
+  console.debug("[Tsian maintenance] normalized patch", patch)
+
+  return patch
 }

@@ -74,7 +74,7 @@
 
 当前项目的稳定主干可以压缩为：
 
-`Tsian 是一个 AIRP 专精框架；平台 WebUI 承载本地运行时；游玩前端包只负责交互与渲染；记忆以事件为主，档案作为实体当前状态唯一真源，globals 承载非实体全局状态；维护 AI 通过 currentTime / globals / events / archives patch 修改运行时。`
+`Tsian 是一个 AIRP 专精框架；平台 WebUI 承载本地运行时；游玩前端包只负责交互与渲染；记忆以事件为主，档案作为实体当前状态唯一真源，globals 承载非实体全局状态；档案存储保持扁平对象，内部类型定义可用父类 / 子类复用字段，但 AI 只看最终 type 与合法字段；维护 AI 通过 currentTime / globals / events / archives patch 修改运行时。`
 
 当前主链为：
 

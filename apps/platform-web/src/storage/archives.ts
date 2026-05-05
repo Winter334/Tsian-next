@@ -1,13 +1,12 @@
 import type {
-  ArchiveBaseKind,
-  ArchiveKind,
+  ArchiveBaseType,
   ArchivePatchItem,
   ArchiveRecord,
   JsonValue,
 } from "@tsian/contracts"
 import { localDb, type LocalArchiveRecord } from "./db"
 
-const ARCHIVE_ID_PREFIX: Record<ArchiveBaseKind, string> = {
+const ARCHIVE_ID_PREFIX: Record<ArchiveBaseType, string> = {
   character: "C",
   location: "L",
   item: "I",
@@ -21,13 +20,14 @@ const ARCHIVE_ID_MAX_RETRY = 64
 
 const RESERVED_ARCHIVE_KEYS = new Set(["id", "saveId", "updatedAt"])
 const BASE_ARCHIVE_KEYS = new Set([
-  "kind",
+  "type",
   "name",
   "aliases",
   "background",
   "situation",
   "focus",
   "linkedNames",
+  "linkedArchiveIds",
   "presence",
 ])
 
@@ -47,14 +47,24 @@ function createRandomTail(length: number): string {
   }).join("")
 }
 
-function isArchiveBaseKind(value: string): value is ArchiveBaseKind {
+function isArchiveBaseType(value: string): value is ArchiveBaseType {
   return value in ARCHIVE_ID_PREFIX
 }
 
-function getArchiveBaseKind(kind: ArchiveKind | string): ArchiveBaseKind {
-  const base = kind.split(":")[0]?.trim()
-  if (base && isArchiveBaseKind(base)) {
-    return base
+function getArchiveBaseType(type: string): ArchiveBaseType {
+  const normalized = type.trim()
+  if (isArchiveBaseType(normalized)) {
+    return normalized
+  }
+
+  const itemTypes = new Set(["equipment", "consumable", "material", "clue", "relic"])
+  if (itemTypes.has(normalized)) {
+    return "item"
+  }
+
+  const characterTypes = new Set(["monster", "npc", "ally", "suspect"])
+  if (characterTypes.has(normalized)) {
+    return "character"
   }
 
   return "other"
@@ -104,8 +114,8 @@ function extractArchiveWriteFields(
 ): Record<string, unknown> {
   const fields: Record<string, unknown> = {}
 
-  if (typeof raw.kind === "string" && raw.kind.trim()) {
-    fields.kind = raw.kind.trim()
+  if (typeof raw.type === "string" && raw.type.trim()) {
+    fields.type = raw.type.trim()
   }
   if (typeof raw.name === "string" && raw.name.trim()) {
     fields.name = raw.name.trim()
@@ -129,6 +139,11 @@ function extractArchiveWriteFields(
   const linkedNames = normalizeStringArray(raw.linkedNames)
   if (linkedNames) {
     fields.linkedNames = linkedNames
+  }
+
+  const linkedArchiveIds = normalizeStringArray(raw.linkedArchiveIds)
+  if (linkedArchiveIds) {
+    fields.linkedArchiveIds = linkedArchiveIds
   }
 
   if (
@@ -157,10 +172,10 @@ async function archiveIdExists(id: string): Promise<boolean> {
 }
 
 export async function createArchiveId(
-  kind: ArchiveKind | string,
+  type: string,
   reservedIds: Set<string> = new Set(),
 ): Promise<string> {
-  const prefix = ARCHIVE_ID_PREFIX[getArchiveBaseKind(kind)]
+  const prefix = ARCHIVE_ID_PREFIX[getArchiveBaseType(type)]
 
   for (let index = 0; index < ARCHIVE_ID_MAX_RETRY; index += 1) {
     const candidate = `${prefix}${createRandomTail(ARCHIVE_ID_RANDOM_LENGTH)}`
@@ -199,9 +214,10 @@ export function toArchiveRecord(input: LocalArchiveRecord): ArchiveRecord {
 export async function applyArchivePatchesForSave(
   saveId: string,
   patches: ArchivePatchItem[],
-): Promise<void> {
+): Promise<LocalArchiveRecord[]> {
+  const changed: LocalArchiveRecord[] = []
   if (patches.length === 0) {
-    return
+    return changed
   }
 
   const existing = await listArchivesForSave(saveId)
@@ -225,6 +241,7 @@ export async function applyArchivePatchesForSave(
         existing[index] = updated
       }
       await localDb.archives.put(updated)
+      changed.push(updated)
       continue
     }
 
@@ -233,24 +250,27 @@ export async function applyArchivePatchesForSave(
     }
 
     const createFields = extractArchiveWriteFields(patch.create as Record<string, unknown>)
-    if (typeof createFields.kind !== "string" || typeof createFields.name !== "string") {
+    if (typeof createFields.type !== "string" || typeof createFields.name !== "string") {
       continue
     }
 
     const created: LocalArchiveRecord = {
-      id: await createArchiveId(createFields.kind),
+      id: await createArchiveId(createFields.type),
       saveId,
-      kind: createFields.kind as ArchiveKind,
+      type: createFields.type as string,
       name: createFields.name as string,
       aliases: Array.isArray(createFields.aliases) ? (createFields.aliases as string[]) : [],
       background:
         typeof createFields.background === "string" ? createFields.background : "",
       situation:
         typeof createFields.situation === "string" ? createFields.situation : "",
-      focus: typeof createFields.focus === "string" ? createFields.focus : "",
+      focus: typeof createFields.focus === "string" ? createFields.focus : undefined,
       linkedNames: Array.isArray(createFields.linkedNames)
         ? (createFields.linkedNames as string[])
         : [],
+      linkedArchiveIds: Array.isArray(createFields.linkedArchiveIds)
+        ? (createFields.linkedArchiveIds as string[])
+        : undefined,
       presence:
         createFields.presence === "foreground" ||
         createFields.presence === "background" ||
@@ -265,7 +285,10 @@ export async function applyArchivePatchesForSave(
     existing.unshift(created)
     reservedIds.add(created.id)
     await localDb.archives.put(created)
+    changed.push(created)
   }
+
+  return changed
 }
 
 export async function deleteArchivesForSave(saveId: string): Promise<void> {
