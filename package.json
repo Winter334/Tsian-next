@@ -4,13 +4,16 @@
   "workspaces": [
     "apps/platform-web",
     "packages/contracts",
-    "packages/runtime-core"
+    "packages/runtime-core",
+    "packages/prompt-engine"
   ],
   "scripts": {
     "dev:server": "go -C ./apps/platform-server run ./cmd/platform-server",
     "dev:web": "npm run dev --workspace platform-web",
     "build:web": "npm run build --workspace platform-web",
     "build:contracts": "npm run build --workspace @tsian/contracts",
-    "build:runtime-core": "npm run build --workspace @tsian/runtime-core"
+    "build:runtime-core": "npm run build --workspace @tsian/runtime-core",
+    "build:prompt-engine": "npm run build --workspace @tsian/prompt-engine",
+    "test:prompt-engine": "npm run test --workspace @tsian/prompt-engine"
   }
 }
