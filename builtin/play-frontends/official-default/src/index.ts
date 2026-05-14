@@ -83,7 +83,7 @@ interface CheckpointSummary {
   archiveCount: number
 }
 
-type InspectorTab = "ai" | "retrieval" | "events" | "archives" | "checkpoints" | "snapshot"
+type InspectorTab = "ai" | "retrieval" | "events" | "archives" | "checkpoints" | "snapshot" | "workflow"
 
 const STYLE_ID = "tsian-official-default-style"
 const ROLE_LABEL: Record<string, string> = {
@@ -146,7 +146,7 @@ function ensureStyles() {
     .composer-input{width:100%;min-height:56px;padding:16px 18px;border:1px solid rgba(148,163,184,.16);border-radius:18px;background:rgba(10,17,28,.94);color:var(--text);font:inherit}
     .composer-input:focus{outline:none;border-color:rgba(246,185,79,.42);box-shadow:0 0 0 4px rgba(246,185,79,.08)}
     .composer-button{min-width:132px;padding:0 20px;border:1px solid rgba(246,185,79,.24);border-radius:18px;background:linear-gradient(180deg,rgba(246,185,79,.22),rgba(246,185,79,.08)),rgba(15,22,34,.96);color:#fff7ea;font:inherit;font-weight:600;cursor:pointer}
-    .od-tabs{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;padding:14px 16px 0;background:rgba(255,255,255,.02)}
+    .od-tabs{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;padding:14px 16px 0;background:rgba(255,255,255,.02)}
     .od-tab{padding:12px 10px;border:1px solid rgba(148,163,184,.12);border-radius:14px 14px 0 0;background:rgba(8,15,24,.56);color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
     .od-tab.is-active{color:var(--text);border-color:rgba(246,185,79,.2);background:linear-gradient(180deg,rgba(246,185,79,.12),rgba(246,185,79,0)),rgba(10,16,26,.96)}
     .od-tabpanes{flex:1;min-height:0;overflow:hidden;background:rgba(7,12,20,.72)}
@@ -701,6 +701,15 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
         </article>
         <div class="od-scene-status"></div>
       </div>
+      <div class="od-demo" style="margin-top:16px;padding:14px 16px;border:1px solid rgba(148,163,184,.12);border-radius:16px;background:rgba(8,15,24,.46);display:grid;gap:10px">
+        <p class="od-k" style="margin:0">桥写 API Demo (I5)</p>
+        <p style="margin:0;color:#c6d3e2;font-size:13px;line-height:1.6">此 demo 验证桥 API updateGlobals → 下一轮工作流读 {{globals.demo.counter}}</p>
+        <p style="margin:0;font-size:14px">demo.counter 当前值：<strong data-demo-counter style="color:var(--gold)">undefined</strong></p>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="composer-button" data-demo-action="inc" type="button" style="min-width:80px">+1</button>
+          <button class="composer-button" data-demo-action="reset" type="button" style="min-width:80px">重置</button>
+        </div>
+      </div>
     </header>
     <div class="od-layout">
       <section class="od-panel od-panel--play">
@@ -726,6 +735,7 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
           <button class="od-tab" data-tab="archives" type="button">档案</button>
           <button class="od-tab" data-tab="checkpoints" type="button">回溯</button>
           <button class="od-tab" data-tab="snapshot" type="button">快照</button>
+          <button class="od-tab" data-tab="workflow" type="button">工作流</button>
         </div>
         <div class="od-tabpanes">
           <div class="od-pane" data-pane="ai"></div>
@@ -734,6 +744,7 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
           <div class="od-pane" data-pane="archives"></div>
           <div class="od-pane" data-pane="checkpoints"></div>
           <div class="od-pane" data-pane="snapshot"></div>
+          <div class="od-pane" data-pane="workflow"></div>
         </div>
       </aside>
     </div>
@@ -750,6 +761,9 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
   const statArchives = root.querySelector('[data-stat="archives"]') as HTMLElement
   const sceneTime = root.querySelector("[data-current-time]") as HTMLElement
   const sceneStatus = root.querySelector(".od-scene-status") as HTMLDivElement
+  const demoCounter = root.querySelector("[data-demo-counter]") as HTMLElement
+  const demoIncBtn = root.querySelector('[data-demo-action="inc"]') as HTMLButtonElement
+  const demoResetBtn = root.querySelector('[data-demo-action="reset"]') as HTMLButtonElement
   const modOverview = root.querySelector(".od-mod-overview") as HTMLDivElement
   const aiDebugPane = root.querySelector('[data-pane="ai"]') as HTMLDivElement
   const retrievalPane = root.querySelector('[data-pane="retrieval"]') as HTMLDivElement
@@ -757,6 +771,7 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
   const archivesPane = root.querySelector('[data-pane="archives"]') as HTMLDivElement
   const checkpointsPane = root.querySelector('[data-pane="checkpoints"]') as HTMLDivElement
   const snapshotPane = root.querySelector('[data-pane="snapshot"]') as HTMLDivElement
+  const workflowPane = root.querySelector('[data-pane="workflow"]') as HTMLDivElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".od-tab"))
   const panes: Array<{ name: InspectorTab; pane: HTMLDivElement }> = [
     { name: "ai", pane: aiDebugPane },
@@ -765,6 +780,7 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     { name: "archives", pane: archivesPane },
     { name: "checkpoints", pane: checkpointsPane },
     { name: "snapshot", pane: snapshotPane },
+    { name: "workflow", pane: workflowPane },
   ]
 
   let activeTab: InspectorTab = "ai"
@@ -800,11 +816,27 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     const checkpointResult = await bridge.query.query<CheckpointSummary>({
       resource: "checkpoints",
     })
+    // H11：工作流执行轨迹（WorkflowOutputsSnapshot）
+    const workflowDebugResult = await bridge.query.query<unknown>({
+      resource: "workflow-debug",
+    })
 
     statTurn.textContent = String(turn(snapshot))
     statMessages.textContent = String(historyResult.items.length)
     statEvents.textContent = String(eventResult.items.length)
     statArchives.textContent = String(archiveResult.items.length)
+
+    // I5 demo：从 snapshot.state.globals.demo.counter 读当前值
+    const rawGlobals = snapshot.state.globals
+    let demoCounterValue: unknown = undefined
+    if (typeof rawGlobals === "object" && rawGlobals !== null && !Array.isArray(rawGlobals)) {
+      const demoBucket = (rawGlobals as Record<string, unknown>).demo
+      if (typeof demoBucket === "object" && demoBucket !== null && !Array.isArray(demoBucket)) {
+        demoCounterValue = (demoBucket as Record<string, unknown>).counter
+      }
+    }
+    demoCounter.textContent =
+      demoCounterValue === undefined ? "undefined" : formatGlobalValue(demoCounterValue)
 
     renderModOverview(modOverview, modResult.items[0] ?? null)
     renderSceneStatus(sceneTime, sceneStatus, snapshot)
@@ -826,6 +858,23 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     })
     renderRetrieval(retrievalPane, retrievalResult.items)
     renderSnapshot(snapshotPane, snapshot)
+
+    // H11：工作流执行轨迹面板，直接 JSON.stringify 展示
+    workflowPane.replaceChildren()
+    const wfCard = document.createElement("article")
+    wfCard.className = "od-card"
+    // workflow-debug 资源返回 { data: WorkflowOutputsSnapshot | null } 而非 items
+    const wfRaw = (workflowDebugResult as unknown as { data: unknown }).data
+    const wfDetails = document.createElement("details")
+    wfDetails.open = true
+    const wfSummary = document.createElement("summary")
+    wfSummary.textContent = "工作流执行轨迹"
+    const wfPre = document.createElement("pre")
+    wfPre.className = "od-pre"
+    wfPre.textContent = wfRaw ? JSON.stringify(wfRaw, null, 2) : "这一轮还没有工作流执行轨迹。"
+    wfDetails.append(wfSummary, wfPre)
+    wfCard.append(wfDetails)
+    workflowPane.append(wfCard)
   }
 
   const onSubmit = async (event: SubmitEvent) => {
@@ -854,10 +903,56 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     }
   }
 
+  const readDemoCounter = async (): Promise<number> => {
+    const snapshot = await bridge.runtime.getRuntimeSnapshot()
+    const rawGlobals = snapshot.state.globals
+    if (typeof rawGlobals === "object" && rawGlobals !== null && !Array.isArray(rawGlobals)) {
+      const demoBucket = (rawGlobals as Record<string, unknown>).demo
+      if (typeof demoBucket === "object" && demoBucket !== null && !Array.isArray(demoBucket)) {
+        const value = (demoBucket as Record<string, unknown>).counter
+        if (typeof value === "number") {
+          return value
+        }
+      }
+    }
+    return 0
+  }
+
+  const onDemoInc = async () => {
+    demoIncBtn.disabled = true
+    try {
+      const current = await readDemoCounter()
+      await bridge.runtime.updateGlobals("demo.counter", current + 1)
+      await refresh()
+    } catch (error) {
+      window.alert(`demo +1 失败：${error instanceof Error ? error.message : String(error)}`)
+      throw error
+    } finally {
+      demoIncBtn.disabled = false
+    }
+  }
+
+  const onDemoReset = async () => {
+    demoResetBtn.disabled = true
+    try {
+      await bridge.runtime.updateGlobals("demo.counter", 0)
+      await refresh()
+    } catch (error) {
+      window.alert(`demo 重置失败：${error instanceof Error ? error.message : String(error)}`)
+      throw error
+    } finally {
+      demoResetBtn.disabled = false
+    }
+  }
+
+  demoIncBtn.addEventListener("click", onDemoInc)
+  demoResetBtn.addEventListener("click", onDemoReset)
   form.addEventListener("submit", onSubmit)
   void refresh().then(() => history.scrollTo({ top: history.scrollHeight }))
 
   return () => {
+    demoIncBtn.removeEventListener("click", onDemoInc)
+    demoResetBtn.removeEventListener("click", onDemoReset)
     form.removeEventListener("submit", onSubmit)
     container.replaceChildren()
   }

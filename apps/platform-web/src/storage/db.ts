@@ -16,6 +16,11 @@ export interface LocalSaveRecord {
   modId: string
   createdAt: number
   updatedAt: number
+  /**
+   * 玩家身份 archive id 列表。命中检索评分时 rarity 强制为 1.0。
+   * 由桥 API `markArchiveAsPlayer / unmarkArchiveAsPlayer` 写入，存档级别。
+   */
+  playerArchiveIds: string[]
 }
 
 export interface LocalSaveSnapshotRecord {
@@ -93,7 +98,7 @@ export class TsianLocalDb extends Dexie {
 
   constructor() {
     // 原型期直接换新库名，不做旧结构迁移。
-    super("tsian-local-v6")
+    super("tsian-local-v7")
 
     this.version(1).stores({
       meta: "&key",

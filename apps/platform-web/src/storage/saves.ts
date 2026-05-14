@@ -146,6 +146,7 @@ export async function createLocalSave(
     modId,
     createdAt: now,
     updatedAt: now,
+    playerArchiveIds: [],
   }
 
   const snapshotRecord: LocalSaveSnapshotRecord = {
@@ -267,6 +268,26 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
   await deleteEventsForSave(saveId)
   await deleteArchivesForSave(saveId)
   await deleteCheckpointsForSave(saveId)
+}
+
+export async function getPlayerArchiveIdsForSave(saveId: string): Promise<string[]> {
+  const record = await localDb.saves.get(saveId)
+  return record?.playerArchiveIds ?? []
+}
+
+export async function setPlayerArchiveIdsForSave(
+  saveId: string,
+  playerArchiveIds: string[],
+): Promise<void> {
+  const save = await localDb.saves.get(saveId)
+  if (!save) {
+    return
+  }
+  await localDb.saves.put({
+    ...save,
+    playerArchiveIds,
+    updatedAt: Date.now(),
+  })
 }
 
 export async function getHistoryForSave(

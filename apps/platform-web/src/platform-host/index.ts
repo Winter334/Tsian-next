@@ -1,9 +1,9 @@
 import type {
-  ArchivePatchItem,
+  ApplyPatchOutput,
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
-  EventPatchItem,
+  MaintenancePatchDocument,
   ModStaticContent,
   PlatformActionError,
   PlayFrontendBridge,
@@ -13,7 +13,9 @@ import type {
   RuntimeWriteResult,
   RuntimeGlobalsMap,
   RuntimeSnapshotShell,
+  WorkflowDefinition,
 } from "@tsian/contracts"
+import { executeWorkflow } from "@tsian/workflow-engine"
 import {
   defaultModId,
   getBuiltinMod,
@@ -24,8 +26,6 @@ import { createPlayFrontendBridge } from "../bridge"
 import { getBrowserRetrievalSettings } from "../config/ai"
 import { getCurrentNarrativeTime } from "../narrative-time"
 import {
-  applyEventPatchForSave,
-  applyArchivePatchesForSave,
   createLocalSave,
   createCheckpointForSave,
   deleteLocalSave,
@@ -33,6 +33,7 @@ import {
   getActiveSaveId,
   getHistoryForSave,
   getModIdForSave,
+  getPlayerArchiveIdsForSave,
   getSnapshotForSave,
   listActiveEventsForSave,
   listArchivesForSave,
@@ -44,133 +45,39 @@ import {
   saveHistoryForSave,
   saveSnapshotForSave,
   setActiveSaveId,
+  setPlayerArchiveIdsForSave,
   toArchiveRecord,
   toEventRecord,
-  type LocalArchiveRecord,
 } from "../storage"
 import { LocalRuntimeEngine } from "../runtime-host"
 import { getAiDebugRecords } from "../runtime-host/ai"
-import { generateMaintenancePatch } from "../runtime-host/maintenance"
+import { applyMaintenancePatch } from "../runtime-host/patch-applier"
 import {
   assembleRetrievalContext,
   type RetrievalDebugRecord,
 } from "../runtime-host/retrieval"
+import { builtinPresets } from "../workflow-host/builtin-presets"
+import { defaultWorkflow } from "../workflow-host/default-workflow"
+import { createWorkflowExecutionContext } from "../workflow-host"
+import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
+
+function resolveWorkflowForMod(_modId: string): {
+  def: WorkflowDefinition
+  isModWorkflow: boolean
+} {
+  // H8: 所有 mod 走平台 default-workflow；H10 改为读 mod.workflow
+  return { def: defaultWorkflow, isModWorkflow: false }
+}
 
 export const runtimeEngine = new LocalRuntimeEngine()
 const baseBridge = createPlayFrontendBridge(runtimeEngine)
 const retrievalDebugBySave = new Map<string, RetrievalDebugRecord>()
 
-function normalizeName(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[\s"'“”‘’，。！？、：；（）()\[\]【】<>《》]/g, "")
-}
-
-function archiveNameKeys(archive: { name: string; aliases?: string[] }): string[] {
-  return [archive.name, ...(archive.aliases ?? [])].map(normalizeName).filter(Boolean)
-}
-
-function resolveArchiveIdsByNames(
-  names: string[] | undefined,
-  visibleArchives: Array<{ id: string; name: string; aliases?: string[] }>,
-): string[] | undefined {
-  if (!names || names.length === 0) {
-    return undefined
-  }
-
-  const resolvedIds: string[] = []
-  for (const name of names) {
-    const normalized = normalizeName(name)
-    if (!normalized) {
-      continue
-    }
-
-    const matches = visibleArchives.filter((archive) => archiveNameKeys(archive).includes(normalized))
-    if (matches.length === 1 && !resolvedIds.includes(matches[0].id)) {
-      resolvedIds.push(matches[0].id)
-    }
-  }
-
-  return resolvedIds.length > 0 ? resolvedIds : undefined
-}
-
-function stringArray(value: unknown): string[] | undefined {
-  return Array.isArray(value) && value.every((item) => typeof item === "string")
-    ? value
-    : undefined
-}
-
-function attachArchiveStrongRefs(
-  patches: ArchivePatchItem[],
-  visibleArchives: Array<{ id: string; name: string; aliases?: string[] }>,
-): ArchivePatchItem[] {
-  return patches.map((patch) => {
-    const setLinkedIds = resolveArchiveIdsByNames(stringArray(patch.set?.linkedNames), visibleArchives)
-    const createLinkedIds = resolveArchiveIdsByNames(
-      stringArray(patch.create?.linkedNames),
-      visibleArchives,
-    )
-    return {
-      ...patch,
-      set: patch.set
-        ? {
-            ...patch.set,
-            linkedArchiveIds: setLinkedIds ?? patch.set.linkedArchiveIds,
-          }
-        : patch.set,
-      create: patch.create
-        ? {
-            ...patch.create,
-            linkedArchiveIds: createLinkedIds ?? patch.create.linkedArchiveIds,
-          }
-        : patch.create,
-    }
-  })
-}
-
-function attachEventStrongRefs(
-  patches: EventPatchItem[],
-  visibleArchives: Array<{ id: string; name: string; aliases?: string[] }>,
-): EventPatchItem[] {
-  return patches.map((patch) => {
-    const setEntityIds = resolveArchiveIdsByNames(patch.set?.entityTags, visibleArchives)
-    const createEntityIds = resolveArchiveIdsByNames(patch.create?.entityTags, visibleArchives)
-    return {
-      ...patch,
-      set: patch.set
-        ? {
-            ...patch.set,
-            entityArchiveIds: setEntityIds ?? patch.set.entityArchiveIds,
-          }
-        : patch.set,
-      create: patch.create
-        ? {
-            ...patch.create,
-            entityArchiveIds: createEntityIds ?? patch.create.entityArchiveIds,
-          }
-        : patch.create,
-    }
-  })
-}
-
-function archiveRecordFromLocal(archive: LocalArchiveRecord) {
-  return {
-    id: archive.id,
-    name: archive.name,
-    aliases: archive.aliases,
-  }
-}
-
-function mergeArchiveRefsById(
-  archives: Array<{ id: string; name: string; aliases?: string[] }>,
-): Array<{ id: string; name: string; aliases?: string[] }> {
-  const byId = new Map<string, { id: string; name: string; aliases?: string[] }>()
-  for (const archive of archives) {
-    byId.set(archive.id, archive)
-  }
-  return [...byId.values()]
-}
+// H12: per-turn AbortController 接入
+// 每轮 sendMessage 入口新建一个 controller；新轮入口会先 abort 上一个（旧轮若还在跑则通知其停止）。
+// 旧轮 abort 不阻塞新轮执行（abort 后立即继续）。
+// 轮次正常结束后置 null，避免下一轮误认为存在待 abort 的旧轮。
+let previousTurnController: AbortController | null = null
 
 function getSnapshotMessages(snapshot: RuntimeSnapshotShell): Array<{
   role: string
@@ -698,76 +605,105 @@ async function handleWriteRuntimeAction(
   }
 }
 
-async function persistActiveSnapshot(input?: {
-  maintenanceMessages?: Array<{ role: string; content: string }>
-  maintenanceArchiveNames?: string[]
-  narrativeTimeText?: string
-}) {
-  const activeSaveId = await getActiveSaveId()
-  if (!activeSaveId) {
-    return
-  }
-
-  const snapshot = await runtimeEngine.getSnapshot()
-  const messages = getSnapshotMessages(snapshot)
-  let latestSnapshot = snapshot
-
-  try {
-    const activeEvents = await listActiveEventsForSave(activeSaveId)
-    const allArchives = (await listArchivesForSave(activeSaveId)).map(toArchiveRecord)
-    const touchedArchiveNames = new Set(input?.maintenanceArchiveNames ?? [])
-    const maintenanceArchives = allArchives
-      .filter((item) => touchedArchiveNames.has(item.name))
-      .map((item) => ({
-        ...item,
-        // 维护 AI 只看当前命中的实体本体信息，不看旧的关联实体列表。
-        linkedNames: [],
-      }))
-    const patch = await generateMaintenancePatch({
-      currentTime: getSnapshotCurrentTime(snapshot),
-      narrativeTimeText: input?.narrativeTimeText,
-      globals: getSnapshotGlobals(snapshot),
-      messages: input?.maintenanceMessages ?? messages.slice(-2),
-      activeEvents: activeEvents.map(toEventRecord),
-      archives: maintenanceArchives,
-    })
-
-    runtimeEngine.applyRuntimeStatePatch({
-      currentTime: patch.currentTime,
-      globals: patch.globals?.set,
-    })
-    latestSnapshot = await runtimeEngine.getSnapshot()
-
-    const visibleBeforeArchives = [...maintenanceArchives]
-    const archivePatches = attachArchiveStrongRefs(patch.archives ?? [], visibleBeforeArchives)
-    const changedArchives = await applyArchivePatchesForSave(activeSaveId, archivePatches)
-    const visibleArchives = mergeArchiveRefsById([
-      ...visibleBeforeArchives,
-      ...changedArchives.map(archiveRecordFromLocal),
-    ])
-    const eventPatches = attachEventStrongRefs(patch.events ?? [], visibleArchives)
-    for (const eventPatch of eventPatches) {
-      await applyEventPatchForSave(activeSaveId, eventPatch)
-    }
-  } catch (error) {
-    // 原型期至少要把维护失败暴露到控制台，避免静默吞掉问题。
-    console.warn("Tsian maintenance failed.", error)
-  }
-
-  await saveSnapshotForSave(activeSaveId, latestSnapshot)
-  await saveHistoryForSave(activeSaveId, getSnapshotMessages(latestSnapshot))
-  await createCheckpointForSave(activeSaveId, {
-    snapshot: latestSnapshot,
-    history: getSnapshotMessages(latestSnapshot),
-    events: await listEventsForSave(activeSaveId),
-    archives: await listArchivesForSave(activeSaveId),
-    reason: "after-turn",
-    label: `回合 ${latestSnapshot.state.turn}`,
-  })
-}
-
 export const playFrontendBridge: PlayFrontendBridge = {
-  runtime: baseBridge.runtime,
+  runtime: {
+    ...baseBridge.runtime,
+    async markArchiveAsPlayer(archiveId: string) {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        throw new Error("No active save")
+      }
+      const current = await getPlayerArchiveIdsForSave(activeSaveId)
+      const set = new Set(current)
+      set.add(archiveId)
+      await setPlayerArchiveIdsForSave(activeSaveId, Array.from(set))
+      retrievalDebugBySave.delete(activeSaveId)
+    },
+    async unmarkArchiveAsPlayer(archiveId: string) {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) return
+      const current = await getPlayerArchiveIdsForSave(activeSaveId)
+      const next = current.filter((id) => id !== archiveId)
+      await setPlayerArchiveIdsForSave(activeSaveId, next)
+      retrievalDebugBySave.delete(activeSaveId)
+    },
+    async listPlayerArchiveIds() {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) return []
+      return getPlayerArchiveIdsForSave(activeSaveId)
+    },
+    // I4: 桥 API 写运行时入口（4 个方法，HC-14 / §13.9）
+    // patch 类写入走 applier；append 类直调 engine 同步方法后落库。
+    async applyPatch(patch: MaintenancePatchDocument): Promise<ApplyPatchOutput> {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        throw new Error("[bridge.applyPatch] 当前没有激活存档")
+      }
+      const result = await applyMaintenancePatch({
+        patch,
+        runtimeEngine,
+        saveId: activeSaveId,
+        // §13.9：桥 API 路径不打 checkpoint
+        pushCheckpointReason: undefined,
+      })
+      // 同步落盘 snapshot / history（applier 内部只改 engine 内存态 + archives/events 落库）
+      const snapshotAfter = await runtimeEngine.getSnapshot()
+      await saveSnapshotForSave(activeSaveId, snapshotAfter)
+      await saveHistoryForSave(activeSaveId, getSnapshotMessages(snapshotAfter))
+      retrievalDebugBySave.delete(activeSaveId)
+      return result
+    },
+    async updateGlobals(path: string, value: unknown): Promise<void> {
+      const parts = path.split(".").filter((p) => p.length > 0)
+      if (parts.length === 0) {
+        throw new Error("[bridge.updateGlobals] path 不能为空")
+      }
+      // dot-path → 嵌套对象；中间层不存在自动建对象（D2=A），applier 层负责非对象冲突 fail loud
+      const setValue: RuntimeGlobalsMap = {}
+      let cursor: Record<string, unknown> = setValue
+      for (let i = 0; i < parts.length - 1; i++) {
+        const next: Record<string, unknown> = {}
+        cursor[parts[i]] = next
+        cursor = next
+      }
+      cursor[parts[parts.length - 1]] = value as never
+
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        throw new Error("[bridge.updateGlobals] 当前没有激活存档")
+      }
+      await applyMaintenancePatch({
+        patch: { globals: { set: setValue } } as MaintenancePatchDocument,
+        runtimeEngine,
+        saveId: activeSaveId,
+        pushCheckpointReason: undefined,
+      })
+      const snapshotAfter = await runtimeEngine.getSnapshot()
+      await saveSnapshotForSave(activeSaveId, snapshotAfter)
+      retrievalDebugBySave.delete(activeSaveId)
+    },
+    async appendUserMessage(content: string): Promise<void> {
+      // D3=B：append 例外，直调 engine 同步方法（不递增 turn）
+      runtimeEngine.appendUserMessage(content)
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        throw new Error("[bridge.appendUserMessage] 当前没有激活存档")
+      }
+      const snapshotAfter = await runtimeEngine.getSnapshot()
+      await saveSnapshotForSave(activeSaveId, snapshotAfter)
+      await saveHistoryForSave(activeSaveId, getSnapshotMessages(snapshotAfter))
+    },
+    async appendAssistantMessage(content: string): Promise<void> {
+      runtimeEngine.appendAssistantMessage(content)
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        throw new Error("[bridge.appendAssistantMessage] 当前没有激活存档")
+      }
+      const snapshotAfter = await runtimeEngine.getSnapshot()
+      await saveSnapshotForSave(activeSaveId, snapshotAfter)
+      await saveHistoryForSave(activeSaveId, getSnapshotMessages(snapshotAfter))
+    },
+  },
   platform: {
     async getPlatformContext() {
       const activeSaveId = await getActiveSaveId()
@@ -919,6 +855,13 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } as DeepQueryResult<T>
       }
 
+      if (request.resource === "workflow-debug") {
+        // 套娃 ref：外层 currentTurnOutputsRef.value 是内层 TurnOutputsRef | null
+        // 内层 ref.value 才是 WorkflowOutputsSnapshot
+        const innerRef = currentTurnOutputsRef.value
+        return { data: innerRef ? innerRef.value : null } as unknown as DeepQueryResult<T>
+      }
+
       return baseBridge.query.query(request)
     },
   },
@@ -926,13 +869,14 @@ export const playFrontendBridge: PlayFrontendBridge = {
     async sendMessage(input) {
       const activeSaveId = await getActiveSaveId()
       if (!activeSaveId) {
+        // 无激活存档：走 base bridge（无工作流路径）
         await baseBridge.interaction.sendMessage(input)
-        await persistActiveSnapshot()
         return {
           snapshot: await runtimeEngine.getSnapshot(),
         }
       }
 
+      // === 1) 加载本轮上下文 ===
       const history = await getHistoryForSave(activeSaveId)
       const events = await listEventsForSave(activeSaveId)
       const activeEvents = await listActiveEventsForSave(activeSaveId)
@@ -943,6 +887,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const narrativeTimeText = getNarrativeTimeText(input.narrativeTimeText, currentTime)
       const modId = await getModIdForSave(activeSaveId)
       const mod = getBuiltinMod(modId) ?? getDefaultBuiltinMod()
+      const playerArchiveIds = await getPlayerArchiveIdsForSave(activeSaveId)
+
+      // === 2) β-1 旁路：retrieval 仍在 host 跑（H8 不替换） ===
       const retrieval = await assembleRetrievalContext({
         messages: history,
         userInput: input.content,
@@ -954,24 +901,116 @@ export const playFrontendBridge: PlayFrontendBridge = {
         currentTime,
         narrativeTimeText,
         globals: getSnapshotGlobals(currentSnapshot),
+        playerArchiveIds,
         settings: getBrowserRetrievalSettings(),
       })
 
+      // === 3) D5: retrieval debug 写入先于 turn++ ===
       retrievalDebugBySave.set(activeSaveId, retrieval.debug)
 
-      const result = await runtimeEngine.sendMessageWithContext(input, {
-        prompt: retrieval.prompt,
+      // === 4) D4: 备份当前 snapshot 用于失败回滚 ===
+      const snapshotBeforeBackup: RuntimeSnapshotShell = JSON.parse(
+        JSON.stringify(currentSnapshot),
+      )
+
+      // === 5) turn++（design §13.6） ===
+      runtimeEngine.loadSnapshot({
+        ...currentSnapshot,
+        state: {
+          ...currentSnapshot.state,
+          turn: currentSnapshot.state.turn + 1,
+        },
       })
-      const snapshot = result.snapshot
-      const snapshotMessages = getSnapshotMessages(snapshot)
-      await persistActiveSnapshot({
-        maintenanceMessages: snapshotMessages.slice(-2),
-        maintenanceArchiveNames: retrieval.debug.directEntities,
-        narrativeTimeText,
-      })
-      return {
-        snapshot: await runtimeEngine.getSnapshot(),
+      const turnedSnapshot = await runtimeEngine.getSnapshot()
+
+      // === 6) H12: per-turn AbortController 接入，旧轮 abort 在新轮入口触发 ===
+      // 如果上一轮工作流还在运行（例如用户快速连发），先通知其终止，不等待收尾。
+      if (previousTurnController) {
+        previousTurnController.abort("new-turn-started")
       }
+      const currentController = new AbortController()
+      previousTurnController = currentController
+
+      // === 7) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
+      const handle = createOutputsStore({
+        turn: turnedSnapshot.state.turn,
+        nodeIds: defaultWorkflow.nodes.map((n) => n.id),
+      })
+
+      // === 8) 推 user 消息（不递增 turn） ===
+      runtimeEngine.appendUserMessage(input.content)
+
+      // === 9) 组装 macros + workflow context ===
+      // retrieval.prompt 用 <prompt> tag 包裹，directEntities 单独成段。
+      // ai-call bypass 时按节点 outputs[].extract 用 tag 抽取，保证 chat/maintenance 不见到 directEntities 尾巴。
+      const directEntityIds = retrieval.debug.directEntities ?? []
+      const retrievalRawWithTags = `<prompt>${retrieval.prompt}</prompt>\n<directEntities>${JSON.stringify(directEntityIds)}</directEntities>`
+
+      // archives.recent.json: 取 retrieval 命中的全量 archive 切片
+      const hitArchiveIds = new Set(retrieval.debug.archives.map((r) => r.id))
+      const hitArchives = archives.filter((a) => hitArchiveIds.has(a.id))
+      const playerArchives = archives.filter((a) => playerArchiveIds.includes(a.id))
+
+      const wfContext = createWorkflowExecutionContext({
+        runtimeEngine,
+        saveId: activeSaveId,
+        presets: builtinPresets,
+        worldBooks: {},
+        history,
+        macros: {
+          "user.input": input.content,
+          "narrative.currentTime": getSnapshotCurrentTime(turnedSnapshot),
+          "narrative.formattedTime": narrativeTimeText,
+          "globals.json": JSON.stringify(getSnapshotGlobals(turnedSnapshot) ?? {}),
+          "events.active.json": JSON.stringify(activeEvents),
+          "events.recent.json": JSON.stringify(events.slice(-20)),
+          "archives.recent.json": JSON.stringify(hitArchives),
+          "archives.player.json": JSON.stringify(playerArchives),
+          "history.recent.json": JSON.stringify(history.slice(-10)),
+          "__retrieval.raw": retrievalRawWithTags,
+        },
+      })
+
+      // === 9) 跑工作流（H12: per-turn AbortController 接入，旧轮 abort 在新轮入口触发） ===
+      const { def, isModWorkflow } = resolveWorkflowForMod(modId ?? "")
+      let workflowResult
+      try {
+        workflowResult = await executeWorkflow(def, wfContext, {
+          outputsHooks: handle.writer,
+          isModWorkflow,
+          signal: currentController.signal,
+        })
+      } catch (err) {
+        // D4: 失败回滚 engine 内存态 + 清 retrieval debug
+        runtimeEngine.loadSnapshot(snapshotBeforeBackup)
+        retrievalDebugBySave.delete(activeSaveId)
+        throw err
+      }
+
+      // === 10) D10: 从 result 节点的 reply 取正文 ===
+      const replyText = workflowResult.results?.reply
+      if (typeof replyText !== "string") {
+        runtimeEngine.loadSnapshot(snapshotBeforeBackup)
+        retrievalDebugBySave.delete(activeSaveId)
+        throw new Error(
+          `workflow did not produce result.reply as string (got ${typeof replyText})`,
+        )
+      }
+
+      // === 11) 推 assistant 消息 ===
+      runtimeEngine.appendAssistantMessage(replyText)
+
+      // === 12) 持久化（patch/checkpoint 工作流内已完成） ===
+      const snapshotAfter = await runtimeEngine.getSnapshot()
+      await saveSnapshotForSave(activeSaveId, snapshotAfter)
+      await saveHistoryForSave(activeSaveId, getSnapshotMessages(snapshotAfter))
+
+      // H12: 本轮正常结束，释放 controller 引用（下轮入口不会误 abort 已完成的轮次）
+      if (previousTurnController === currentController) {
+        previousTurnController = null
+      }
+
+      return { snapshot: snapshotAfter }
     },
   },
 }

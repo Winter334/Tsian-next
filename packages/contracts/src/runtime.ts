@@ -95,6 +95,19 @@ export interface MaintenancePatchDocument {
   archives?: ArchivePatchItem[]
 }
 
+/**
+ * 维护 patch 应用结果（design.md §13.1 / §13.3）。
+ * 供 apply-patch 工作流节点与桥 API `applyPatch` 共用。
+ */
+export interface ApplyPatchOutput {
+  /** apply 过程中变更或新建的 archive id 列表。 */
+  appliedArchives: string[]
+  /** apply 过程中变更或新建的 event id 列表（暂未实现精确捕获，详见 §13.3）。 */
+  appliedEventIds: string[]
+  globalsChanged: boolean
+  currentTimeChanged: boolean
+}
+
 export interface MessageInteractionRequest {
   content: string
   narrativeTimeText?: string

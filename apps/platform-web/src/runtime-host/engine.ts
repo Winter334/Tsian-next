@@ -9,11 +9,6 @@ import type {
 } from "@tsian/contracts"
 import type { RuntimeEngine } from "@tsian/runtime-core"
 import { getCurrentNarrativeTime } from "../narrative-time"
-import { generateAssistantReply } from "./ai"
-
-export interface RuntimeMemoryContext {
-  prompt?: string
-}
 
 export class LocalRuntimeEngine implements RuntimeEngine {
   private snapshot: RuntimeSnapshotShell = {
@@ -31,65 +26,11 @@ export class LocalRuntimeEngine implements RuntimeEngine {
   }
 
   async sendMessage(
-    input: MessageInteractionRequest,
+    _input: MessageInteractionRequest,
   ): Promise<MessageInteractionResult> {
-    return this.sendMessageWithContext(input)
-  }
-
-  async sendMessageWithContext(
-    input: MessageInteractionRequest,
-    context: RuntimeMemoryContext = {},
-  ): Promise<MessageInteractionResult> {
-    const state = this.snapshot.state
-
-    const nextTurn = state.turn + 1
-    const nextMessages = [
-      ...state.messages,
-      { role: "user", content: input.content },
-    ]
-
-    let assistantContent = ""
-    const aiMessages = [
-      ...(context.prompt
-        ? ([{ role: "system", content: context.prompt }] as Array<{
-            role: "system"
-            content: string
-          }>)
-        : []),
-      ...(nextMessages as Array<{
-        role: "user" | "assistant" | "system"
-        content: string
-      }>),
-    ]
-
-    try {
-      assistantContent = await generateAssistantReply(aiMessages, {
-        debugLabel: "main",
-      })
-    } catch (error) {
-      assistantContent =
-        error instanceof Error ? `[AI error] ${error.message}` : "[AI error]"
-    }
-
-    this.snapshot = {
-      version: this.snapshot.version,
-      state: {
-        turn: nextTurn,
-        messages: [
-          ...nextMessages,
-          {
-            role: "assistant",
-            content: assistantContent,
-          },
-        ],
-        currentTime: state.currentTime,
-        globals: state.globals,
-      },
-    }
-
-    return {
-      snapshot: await this.getSnapshot(),
-    }
+    throw new Error(
+      "LocalRuntimeEngine.sendMessage is deprecated; platform-host runs the workflow path directly via interaction.sendMessage",
+    )
   }
 
   async query<T = unknown>(
@@ -108,6 +49,39 @@ export class LocalRuntimeEngine implements RuntimeEngine {
 
   loadSnapshot(snapshot: RuntimeSnapshotShell): void {
     this.snapshot = snapshot
+  }
+
+  /**
+   * H8: 把一条 user 消息推入当前 snapshot.state.messages（不递增 turn）。
+   *
+   * design §13.6：turn++ 是平台壳职责；本方法仅追加消息。
+   * 与旧 `sendMessageWithContext` 不同：不调 AI、不动 currentTime/globals。
+   */
+  appendUserMessage(content: string): void {
+    const state = this.snapshot.state
+    this.snapshot = {
+      ...this.snapshot,
+      state: {
+        ...state,
+        messages: [...state.messages, { role: "user", content }],
+      },
+    }
+  }
+
+  /**
+   * H8: 把一条 assistant 消息推入当前 snapshot.state.messages（不递增 turn）。
+   *
+   * 由 platform-host 在工作流跑完后用 result 节点的 reply 字符串调用。
+   */
+  appendAssistantMessage(content: string): void {
+    const state = this.snapshot.state
+    this.snapshot = {
+      ...this.snapshot,
+      state: {
+        ...state,
+        messages: [...state.messages, { role: "assistant", content }],
+      },
+    }
   }
 
   applyRuntimeStatePatch(input: {
