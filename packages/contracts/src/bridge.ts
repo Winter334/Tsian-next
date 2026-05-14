@@ -1,4 +1,9 @@
 import type {
+  AiDebugRecord,
+  RetrievalDebugRecord,
+  WorkflowOutputsSnapshot,
+} from "./debug"
+import type {
   ApplyPatchOutput,
   DeepQueryRequest,
   DeepQueryResult,
@@ -42,9 +47,35 @@ export interface PlatformBridge {
   runAction(request: PlatformActionRequest): Promise<PlatformActionResult>
 }
 
+/**
+ * 调试桥（B3 / D5）。
+ *
+ * 性质：**只读观测**，含流式 / 瞬时数据。与旧的 `query("ai-debug" | "retrieval-debug" |
+ * "workflow-debug")` 字符串路由并行存在（D12）；旧路径保留不删，next major 才下线。
+ *
+ * 设计要点：
+ *   - 回调风格 `subscribe(cb): unsubscribe`，**不暴露 Vue ref**（D9，框架无关）
+ *   - 实现方负责把内部 reactive 源（如 shallowRef / EventTarget）转成回调
+ */
+export interface DebugBridge {
+  /** 订阅当前轮工作流输出变更（节点 stream），返回 unsubscribe 函数。 */
+  subscribeWorkflow(cb: (snapshot: WorkflowOutputsSnapshot) => void): () => void
+  /** 读最新一轮的检索调试记录（无则 null）。 */
+  getRetrievalDebug(): Promise<RetrievalDebugRecord | null>
+  /** 读 AI 调试环形缓冲快照（最近 N 条，跨轮混排）。 */
+  getAiDebugRecords(): Promise<AiDebugRecord[]>
+  /** 每轮结束（应用 patch 之后）触发一次，参数为 turn 编号；返回 unsubscribe 函数。 */
+  onTurnDebugReady(cb: (turn: number) => void): () => void
+}
+
 export interface PlayFrontendBridge {
   runtime: RuntimeBridge
   interaction: InteractionBridge
   query: QueryBridge
   platform: PlatformBridge
+  /**
+   * B3：调试命名空间。原型期标记为可选以兼容只实现核心桥的旧前端；
+   * platform-host 注入时必填，调用方可在订阅前做存在性判断。
+   */
+  debug?: DebugBridge
 }

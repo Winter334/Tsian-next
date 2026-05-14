@@ -3,6 +3,13 @@ import type {
   CatalogEventRecord,
   ConversationMessageRecord,
   RuntimeGlobalsMap,
+  RetrievalAssemblyResult,
+  RetrievalArchiveDebugRecord,
+  RetrievalCandidateDebugRecord,
+  RetrievalCatalogEventDebugRecord,
+  RetrievalDebugRecord,
+  RetrievalHintEntityDebugRecord,
+  RetrievalSemanticDebugRecord,
 } from "@tsian/contracts"
 import {
   DEFAULT_BROWSER_RETRIEVAL_SETTINGS,
@@ -21,66 +28,15 @@ import {
   type LocalEventRecord,
 } from "../storage"
 
-export interface RetrievalCandidateDebugRecord {
-  id: string
-  time: string
-  status: string
-  tags: string[]
-  keywordScore: number
-  semanticScore: number | null
-  finalScore: number
-  selected: boolean
-  content: string
-}
-
-export interface RetrievalArchiveDebugRecord {
-  id: string
-  name: string
-  presence: string
-  score: number
-  source: "direct" | "present" | "event" | "bridge" | "semantic"
-}
-
-export interface RetrievalCatalogEventDebugRecord {
-  id: string
-  name: string
-  score: number
-  selected: boolean
-  content: string
-  guidance?: string
-}
-
-export interface RetrievalSemanticDebugRecord {
-  enabled: boolean
-  keywords: string[]
-  eventIds: string[]
-  archiveIds: string[]
-  error?: string
-}
-
-export interface RetrievalHintEntityDebugRecord {
-  archiveId: string
-  name: string
-  type: string
-}
-
-export interface RetrievalDebugRecord {
-  input: string
-  settings: BrowserRetrievalSettings
-  semantic: RetrievalSemanticDebugRecord
-  directEntities: string[]
-  presentEntities: string[]
-  linkedEntities: string[]
-  groups: string[][]
-  candidates: RetrievalCandidateDebugRecord[]
-  archives: RetrievalArchiveDebugRecord[]
-  catalogEvents: RetrievalCatalogEventDebugRecord[]
-  hintEntities?: RetrievalHintEntityDebugRecord[]
-}
-
-export interface RetrievalAssemblyResult {
-  prompt: string
-  debug: RetrievalDebugRecord
+// B1：调试类型已迁到 @tsian/contracts；此处 re-export 保持原 API
+export type {
+  RetrievalAssemblyResult,
+  RetrievalArchiveDebugRecord,
+  RetrievalCandidateDebugRecord,
+  RetrievalCatalogEventDebugRecord,
+  RetrievalDebugRecord,
+  RetrievalHintEntityDebugRecord,
+  RetrievalSemanticDebugRecord,
 }
 
 interface RankedEventRecord extends RetrievalCandidateDebugRecord {

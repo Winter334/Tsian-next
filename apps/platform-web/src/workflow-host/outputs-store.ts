@@ -24,42 +24,18 @@
 
 import { shallowRef, triggerRef, type ShallowRef } from "vue"
 
+import type {
+  NodeOutputState,
+  WorkflowOutputsSnapshot,
+} from "@tsian/contracts"
 import type { OutputsStoreWriter } from "@tsian/workflow-engine"
 
 // ============================================================================
 // 类型
 // ============================================================================
 
-/**
- * 单节点输出状态。
- *
- * 状态机：
- *   pending --(startNode)--> running
- *   running --(succeedNode)--> succeeded
- *   running --(failNode)--> failed
- *   pending|running --(abortNode)--> aborted
- *   succeeded|failed --(abortNode)--> 原状（abortNode 对已 settled 节点 no-op）
- */
-export interface NodeOutputState {
-  status: "pending" | "running" | "succeeded" | "failed" | "aborted"
-  /** 节点端口 → 值（仅 succeeded 时有值） */
-  outputs?: Record<string, unknown>
-  /** 失败原因（仅 failed 时有值） */
-  error?: { code: string; message: string }
-  /** 进入 running 时间戳（ms） */
-  startedAt?: number
-  /** 进入 succeeded/failed/aborted 时间戳（ms） */
-  finishedAt?: number
-}
-
-export interface WorkflowOutputsSnapshot {
-  /** nodeId → state */
-  nodes: Record<string, NodeOutputState>
-  /** result 节点的 config.name → outputs.value */
-  results: Record<string, unknown>
-  /** 当前轮序号（与 SaveState.turn 对齐） */
-  turn: number
-}
+// B1：调试类型已迁到 @tsian/contracts；此处 re-export 保持原 API
+export type { NodeOutputState, WorkflowOutputsSnapshot }
 
 export type TurnOutputsRef = ShallowRef<WorkflowOutputsSnapshot>
 

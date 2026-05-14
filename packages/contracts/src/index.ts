@@ -1,4 +1,5 @@
 export * from "./bridge"
+export * from "./debug"
 export * from "./frontend-package"
 export * from "./mod"
 export * from "./runtime"
