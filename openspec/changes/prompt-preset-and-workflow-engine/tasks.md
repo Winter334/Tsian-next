@@ -47,25 +47,25 @@
 
 ## Phase H — Workflow Engine
 
-- [ ] H1. `packages/contracts/src/workflow.ts` 定义 `WorkflowDefinition / WorkflowNode / WorkflowEdge / NodeOutputDeclaration` 等类型
-- [ ] H2. 扩展 `ModManifest` 增加 `workflow / presets / customMacros` 字段；HC-13 守卫禁止 mod 注册 `apply-patch` 节点
-- [ ] **I1**. 抽离 `apps/platform-web/src/runtime-host/patch-applier.ts`：把当前 `platform-host/index.ts` 中的 patch 应用代码（`applyArchivePatchesForSave` + `applyEventPatchForSave` + `applyRuntimeStatePatch`）合并为纯函数 `applyMaintenancePatch(input): Promise<ApplyPatchOutput>`，内部应用顺序固定 currentTime → globals → archives → events（design.md §13.1）。**前置位置：H4 之前**。
-- [ ] H3. `packages/workflow-engine` 实现 DAG 拓扑调度器 + AbortController 传播 + 节点级重试（design.md §5）；加载期校验 6 条（design.md §13.4）
-- [ ] H4. `apps/platform-web/src/workflow-host/` 实现 5 种内置节点（ai-call / result / switch / apply-patch / compute）；apply-patch 节点直接调 I1 抽离出的 `applyMaintenancePatch`，4 端口对齐 ApplyPatchOutput（§13.3）；compute 节点遵守 §10 + P-H-7/P-H-8 沙箱约束
-- [ ] H5. `apps/platform-web/src/workflow-host/builtin-presets/` 编写 3 个内置 `PresetInfo`（retrieval / chat / maintenance）
-- [ ] H6. `default-workflow.ts` 兜底工作流（design.md §8）
-- [ ] H7. `outputs-store.ts` shallowRef 实现：per-turn 新建 ref；上轮 abort 节点不可写入下一轮 ref（§13.7）
-- [ ] H8. 改写 `platform-host/index.ts`：`sendMessage` 走工作流引擎，`persistActiveSnapshot` 重命名为 `persistAfterTurn`；`state.turn++` 在 sendMessage 入口、workflow.execute 之前发生（§13.6）
-- [ ] H9. `LocalRuntimeEngine` 收敛：去掉 `sendMessageWithContext`，新增 `appendUserMessage` / `appendAssistantMessage`（不递增 turn，§13.6）
-- [ ] H10. 灰盐镇 mod 跑通默认工作流（验证不退化，覆盖 SC-CRIT-1/2/3）
-- [ ] H11. 提供测试模组 / 在调试面板可视化节点状态机 + 桥 API 写入轨迹
-- [ ] H12. 7 条 success criteria 全部跑通（见 `_research-notes.md` §2 SC-CRIT-*）
+- [x] H1. `packages/contracts/src/workflow.ts` 定义 `WorkflowDefinition / WorkflowNode / WorkflowEdge / NodeOutputDeclaration` 等类型
+- [x] H2. 扩展 `ModManifest` 增加 `workflow / presets / customMacros` 字段；HC-13 守卫禁止 mod 注册 `apply-patch` 节点
+- [x] **I1**. 抽离 `apps/platform-web/src/runtime-host/patch-applier.ts`：把当前 `platform-host/index.ts` 中的 patch 应用代码（`applyArchivePatchesForSave` + `applyEventPatchForSave` + `applyRuntimeStatePatch`）合并为纯函数 `applyMaintenancePatch(input): Promise<ApplyPatchOutput>`，内部应用顺序固定 currentTime → globals → archives → events（design.md §13.1）。**前置位置：H4 之前**。
+- [x] H3. `packages/workflow-engine` 实现 DAG 拓扑调度器 + AbortController 传播 + 节点级重试（design.md §5）；加载期校验 6 条（design.md §13.4）
+- [x] H4. `apps/platform-web/src/workflow-host/` 实现 5 种内置节点（ai-call / result / switch / apply-patch / compute）；apply-patch 节点直接调 I1 抽离出的 `applyMaintenancePatch`，4 端口对齐 ApplyPatchOutput（§13.3）；compute 节点遵守 §10 + P-H-7/P-H-8 沙箱约束
+- [x] H5. `apps/platform-web/src/workflow-host/builtin-presets/` 编写 3 个内置 `PresetInfo`（retrieval / chat / maintenance）
+- [x] H6. `default-workflow.ts` 兜底工作流（design.md §8）
+- [x] H7. `outputs-store.ts` shallowRef 实现：per-turn 新建 ref；上轮 abort 节点不可写入下一轮 ref（§13.7）
+- [x] H8. 改写 `platform-host/index.ts`：`sendMessage` 走工作流引擎，`persistActiveSnapshot` 重命名为 `persistAfterTurn`；`state.turn++` 在 sendMessage 入口、workflow.execute 之前发生（§13.6）
+- [x] H9. `LocalRuntimeEngine` 收敛：去掉 `sendMessageWithContext`，新增 `appendUserMessage` / `appendAssistantMessage`（不递增 turn，§13.6）
+- [x] H10. 灰盐镇 mod 跑通默认工作流（验证不退化，覆盖 SC-CRIT-1/2/3）
+- [x] H11. 提供测试模组 / 在调试面板可视化节点状态机 + 桥 API 写入轨迹
+- [x] H12. 7 条 success criteria 全部跑通（见 `_research-notes.md` §2 SC-CRIT-*）
 
 ## Phase I — 前端写运行时桥 API
 
-- [ ] I3. 扩展 `packages/contracts/src/bridge.ts`：`PlayFrontendBridge.runtime` 新增 `applyPatch / updateGlobals / appendUserMessage / appendAssistantMessage` 类型签名（设计 §12.1）
-- [ ] I4. `apps/platform-web/src/bridge/play-frontend-bridge.ts`：实现上述 4 个方法，全部转调 I1 抽离出的 `applyMaintenancePatch` / runtimeEngine 原子方法；桥 API 路径传 `pushCheckpointReason: undefined`（§13.9）
-- [ ] I5. 灰盐镇 / 测试模组在前端写一个最小例子（点按钮 → `updateGlobals("demo.counter", n+1)` → 下一轮工作流读到 `{{globals.demo.counter}}`）
-- [ ] I6. 验收：非法 patch 在桥 API 与 `apply-patch` 节点中错误一致（P-I-1，证明两路径共用 applier；HC-14）
+- [x] I3. 扩展 `packages/contracts/src/bridge.ts`：`PlayFrontendBridge.runtime` 新增 `applyPatch / updateGlobals / appendUserMessage / appendAssistantMessage` 类型签名（设计 §12.1）
+- [x] I4. `apps/platform-web/src/bridge/play-frontend-bridge.ts`：实现上述 4 个方法，全部转调 I1 抽离出的 `applyMaintenancePatch` / runtimeEngine 原子方法；桥 API 路径传 `pushCheckpointReason: undefined`（§13.9）
+- [x] I5. 灰盐镇 / 测试模组在前端写一个最小例子（点按钮 → `updateGlobals("demo.counter", n+1)` → 下一轮工作流读到 `{{globals.demo.counter}}`）
+- [x] I6. 验收：非法 patch 在桥 API 与 `apply-patch` 节点中错误一致（P-I-1，证明两路径共用 applier；HC-14）
 
 > **已并入 H4 / 已废弃**：原 I2「apply-patch 节点改为调 applyMaintenancePatch」——因 I1 提前，H4 实现节点时直接调 applier，无须二次改动。

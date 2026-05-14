@@ -190,11 +190,11 @@ export type WorkflowOutputsStore = ShallowRef<{
 ## 7. 模组 manifest 扩展字段
 
 ```ts
-// packages/contracts/src/runtime.ts (扩展 ModStaticContent / ModManifest)
+// packages/contracts/src/mod.ts (扩展 ModManifest)
 export interface ModManifest {
   // ...既有字段...
   workflow?: WorkflowDefinition
-  presets?: Record<string, PresetInfo>          // 按 key 索引；ai-call 节点 config.presetId 引用
+  presets?: Record<string, unknown>             // 按 key 索引；ai-call 节点 config.presetId 引用。形状由 @tsian/prompt-engine 校验为 PresetInfo（contracts 层不收紧以避免反向依赖）
   customMacros?: Record<string, string>         // { "weatherStat": "globals.weather.kind" }
   customNodeTypes?: never                       // 原型期保留口，工程上禁用（编译期强制 never）
 }
@@ -446,6 +446,8 @@ HC-13 原文："Mod cannot register a `type='apply-patch'` node. Writing runtime
 - **HC-13 修订**：写运行时入口收口在 `apps/platform-web/src/runtime-host/patch-applier.ts` 的 `applyMaintenancePatch` 函数。`apply-patch` 节点与 `bridge.runtime.applyPatch` 都是该函数的客户端，不可绕过。
 - **HC-1 不变**：compute 节点仍然不能拿 RuntimeEngine 引用、不能调桥 API、不能写运行时。
 - **新增 HC-14**：桥 API 写运行时与 `apply-patch` 节点必须共用同一份 patch 应用器代码；任何一方有特殊处理（前置校验、后置 hook）都必须放在 `applyMaintenancePatch` 内部，不允许其中一个调用方包一层差异化逻辑。
+  - **澄清（I6 补注）**："共用同一份代码"的约束**只**适用于 patch 类写入（`bridge.runtime.applyPatch` / `bridge.runtime.updateGlobals` ↔ `apply-patch` 节点）。`bridge.runtime.appendUserMessage` / `appendAssistantMessage` 属于 **append 例外**：append 不是 maintenance patch（不修改 `currentTime / globals / archives / events`），不走 `applyMaintenancePatch`，而是直调 `runtimeEngine.appendUserMessage / appendAssistantMessage`（§13.6）；它们也没有对应的工作流节点（platform-host 在 `sendMessage` 入口直接附加 user 消息）。HC-14 的同源约束在 append 路径上自动满足（无需对等节点）。
+  - 验收测试见 `packages/workflow-engine/test/p-i-1.test.ts`：通过静态源码证明 `bridge.applyPatch` / `bridge.updateGlobals` 与 `apply-patch` 节点 executor 都从 `runtime-host/patch-applier` 导入并直接调用 `applyMaintenancePatch`；同一非法 patch 在两路径下的抛错来自同一函数，必然一致。
 
 ### 12.5 验收清单
 
@@ -467,6 +469,8 @@ HC-13 原文："Mod cannot register a `type='apply-patch'` node. Writing runtime
 - **不做回滚**（HC-9 fail loud + HC-10 no migration）：任何子项 apply 失败立即 throw 并把已 apply 的部分留在原地
 - 调用方约束（apply-patch 节点 / bridge API）：**禁止 catch + 重试**；失败由调用栈向上抛到玩家界面，由玩家重发完整 patch
 - `ApplyPatchOutput.appliedArchives / appliedEventIds` 只反映成功 apply 的项；失败时这些字段仍然返回（但调用方拿不到，已 throw）
+- **I6 补注**：`ApplyPatchOutput` 类型已升级到 `@tsian/contracts`（`packages/contracts/src/runtime.ts`）作为公共类型；`apps/platform-web/src/runtime-host/patch-applier.ts` 通过 `export type { ApplyPatchOutput }` 二次导出，桥 API（platform-host）与 apply-patch 节点 executor 都从 contracts 拿到同一形状。
+- **I6 补注**：`appliedEventIds` 当前 applier 永远返回 `[]`（YAGNI）。底层 `applyEventPatchForSave` 暂未返回成功事件 id；如果未来需要精确返回，改 `storage/events.ts` 中的 `applyEventPatchForSave` 签名即可，无需改 applier 与节点契约。
 
 ### 13.2 switch 节点 `condition` 语法
 
@@ -484,6 +488,7 @@ HC-13 原文："Mod cannot register a `type='apply-patch'` node. Writing runtime
   - `globalsChanged: boolean`
   - `currentTimeChanged: boolean`
 - 两路径返回结构完全相同（HC-14 要求）
+- **I6 补注**：`apply-patch` 节点 executor 位于 `apps/platform-web/src/workflow-host/executors/apply-patch.ts`，其 4 个输出端口直接映射自 `ApplyPatchOutput` 同名字段，无任何重命名或包装。
 
 ### 13.4 工作流加载期校验清单
 
@@ -537,6 +542,7 @@ platform-builtin  <  mod.manifest.customMacros  <  edge-injection
   - 若前端确实需要打点：先调 `runAction({ kind: "push-checkpoint", reason })` 再调 applyPatch
 - 工作流路径：`apply-patch` 节点把 `config.pushCheckpointReason`（默认 `"after-turn"`）原样传给 applier → 创建 checkpoint
 - 两路径不允许在 applier 之外有任何"额外创建 checkpoint"的副作用
+- **I6 补注（持久化方式）**：原 design 提到的 `persistAfterTurn` 已实际拆解为 inline `saveSnapshotForSave + saveHistoryForSave` 两个同步落盘调用（应用层 platform-host），applier 内部只 mutate engine 内存态与 archives/events 的 Dexie 表；snapshot/history 同步落盘由调用方完成（4 个桥 API 方法各自在 applier 之后调一次）。这与"applier 单一职责 = patch 应用 + 可选 checkpoint"一致，不破坏 HC-14。
 
 ---
 
