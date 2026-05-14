@@ -39,18 +39,29 @@ npm run build --workspace platform-web # 等价于根目录 npm run build:web
 
 ```
 src/
-├── main.ts                 # Vue 入口
-├── App.vue                 # 平台壳 UI
+├── main.ts                 # Vue 入口（注册 vue-router）
+├── App.vue                 # 平台壳骨架（导航 + <router-view>，B4 拆分后 ~235 行）
 ├── style.css
+├── design-tokens.css       # B2：羊皮纸 Design System CSS 变量（57 个令牌）
+├── debug-events.ts         # B3：subscribeTurnDebugReady / emitTurnDebugReady（平台 → 调试视图事件总线）
 ├── narrative-time.ts       # 叙事时间格式工具（YYYY-MM-DD HH:mm）
 ├── config/
 │   └── ai.ts               # 浏览器 AI 配置（chat / retrieval / embedding）
+├── router/
+│   └── index.ts            # B4：vue-router 5 路由（home/play/mod/settings/debug）
+├── views/                  # B4：5 个顶层视图（懒加载）
+│   ├── HomeView.vue        # 大厅 / 存档管理
+│   ├── PlayView.vue        # 游玩视图（装载内置前端）
+│   ├── ModView.vue         # 模组页（builtin mod 元数据）
+│   ├── SettingsView.vue    # AI 配置与检索调参
+│   └── DebugView.vue       # B5：调试兜底面板（消费 bridge.debug 等三条路径渲染 6 类数据）
 ├── platform-host/
-│   └── index.ts            # 平台主调度器；扩展 PlayFrontendBridge
+│   └── index.ts            # 平台主调度器；扩展 PlayFrontendBridge（注入 debug 命名空间）
 ├── runtime-host/
 │   ├── index.ts            # 导出 engine
 │   ├── engine.ts           # LocalRuntimeEngine（实现 RuntimeEngine）
-│   ├── ai.ts               # OpenAI 兼容 chat / embedding 客户端 + 调试记录
+│   ├── ai.ts               # OpenAI 兼容 chat / embedding 客户端 + 调试记录 + token usage（B3）
+│   ├── patch-applier.ts    # applyMaintenancePatch（HC-14 统一收口）
 │   └── retrieval.ts        # 结构检索 + 可选 AI 增强 + 向量重排
 ├── storage/
 │   ├── index.ts            # 重导出
@@ -63,7 +74,8 @@ src/
 │   ├── runtime-write.ts    # write-runtime 入口（前端写入运行时）
 │   └── status.ts           # 存储健康探针
 ├── bridge/
-│   ├── index.ts
+│   ├── index.ts                 # 重导出（含 createDebugBridge）
+│   ├── debug.ts                 # B3：createDebugBridge（subscribeWorkflow / getRetrievalDebug / getAiDebugRecords / onTurnDebugReady）
 │   └── play-frontend-bridge.ts  # 基础桥工厂（platform-host 会扩展）
 ├── workflow-host/             # H4-H7：工作流节点 executor 注册 + 内置 preset + 默认工作流 + outputs store（H8 接主链）
 │   ├── index.ts               # createWorkflowExecutionContext 工厂
@@ -92,6 +104,10 @@ src/
 - `query.query<T>({ resource, params })` — 资源类型见下表
 - `platform.getPlatformContext()`
 - `platform.runAction({ action, params })`
+- `debug.subscribeWorkflow(cb)` → unsubscribe（B3：每轮 `WorkflowOutputsSnapshot` 推送）
+- `debug.getRetrievalDebug()` → `RetrievalDebugRecord | null`
+- `debug.getAiDebugRecords()` → `AiDebugRecord[]`
+- `debug.onTurnDebugReady(cb)` → unsubscribe（B3：每轮主链结束触发调试视图刷新）
 
 **资源 (`DeepQueryRequest.resource`)**：`history` / `events` / `archives` / `mod-static` / `ai-debug` / `retrieval-debug` / `checkpoints` / `workflow-debug`。
 
@@ -173,7 +189,7 @@ A：原型期默认清本地 IndexedDB 重建，不补迁移。
 | **JSON / 输入校验** | `227–425` | `isPlainObject`、`isJsonValue`、`normalizeStringList`、`duplicateIds`、`normalizeHistoryRecord`、`normalizeEventInput`、`normalizeArchiveInput` | `write-runtime` 入口的输入清洗：限制类型、收敛字段、检测重复 ID |
 | **`write-runtime` 校验主流程** | `428–622` | `validateRuntimeWriteRequest` | 把前端传入的 `{ turn, currentTime, globals, history, events, archives, checkpointLabel }` 整体校验为一个可写入对象，失败时返回结构化 `PlatformActionError` |
 | **`write-runtime` 执行** | `624–699` | `handleWriteRuntimeAction` | 拉当前切片 → 用请求覆盖未提供的分组 → `replaceRuntimeForSave` 一次性替换 → 重新加载 engine → 失败时归零 `retrievalDebugBySave`；写入成功后自动建一个 `manual` checkpoint |
-| **扩展版桥（默认导出）** | `769–977` | `playFrontendBridge` | 在 `baseBridge` 之上覆盖 `platform.runAction` 与 `query.query`、`interaction.sendMessage` |
+| **扩展版桥（默认导出）** | `769–977` | `playFrontendBridge` | 在 `baseBridge` 之上覆盖 `platform.runAction` 与 `query.query`、`interaction.sendMessage`；B3 起追加 `debug` 命名空间（`createDebugBridge` 注入，`sendMessage` 末尾 `emitTurnDebugReady(turn)`） |
 | └ `platform.getPlatformContext` | `771–778` | — | 返回 `{ version, activeModId }` |
 | └ `platform.runAction` | `779–835` | — | 实现 `restore-checkpoint`（恢复到指定 checkpoint，重置检索缓存）与 `write-runtime`（委托给 `handleWriteRuntimeAction`）；其它动作返回 `UNSUPPORTED_PLATFORM_ACTION` |
 | └ `query.query` | `837–924` | — | 路由 `history / events / checkpoints / archives / retrieval-debug / mod-static / builtin-mods / ai-debug`，未命中时回退 `baseBridge` |
@@ -187,6 +203,7 @@ A：原型期默认清本地 IndexedDB 重建，不补迁移。
 2. **`retrievalDebugBySave` 必须随 engine 状态同步失效**：任何"换一个 snapshot"的入口（restore-checkpoint、write-runtime）都要 `retrievalDebugBySave.delete(activeSaveId)`，否则调试面板会看到上一个时间线的检索结果。
 3. **维护逻辑已进 `apply-patch` 工作流节点，函数 `persistActiveSnapshot` 不再存在；fail loud 由节点异常冒泡保证**（design §13.1 / §13.9）。**这是 H8/H9 重构后的有意变更**：原型期暴露问题优于静默吞错。如未来需要保护主链，应在 `interaction.sendMessage` 外层挂顶层错误边界，而不是在 applier 里 catch。
 4. **patch 强引用挂载必须在落盘前完成**：`attachArchiveStrongRefs` / `attachEventStrongRefs` 把维护 AI 输出的"名字"替换为档案 ID 后再调用 `applyArchivePatchesForSave / applyEventPatchForSave`，避免把生成式名称漏到存储层。
+5. **DebugView 用 `nodeId` 模式过滤 patch 节点**：B5 视图按 `nodeId.includes("maintenance") || .includes("apply-patch") || .includes("applypatch")` 从 `WorkflowOutputsSnapshot` 中挑 patch 节点。**未来 `default-workflow.ts` 改节点名时需同步本视图的过滤规则**（`views/DebugView.vue` 内的 `patchNodes` 计算属性），否则调试面板的 patch 段会显示空。
 
 ### 何时需要拆分这个文件
 
@@ -305,6 +322,7 @@ mergeRetrievalSettings(settings)
 | 2026-05-07 | Phase 1 AIRP 优化落地：`rankEventsByEntityGraph` 6 处优化（玩家白名单 / 长度归一化 / status × 1.6 / 叙事时间衰减 / 共现 bonus / 无强命中淘汰）；`runSemanticRetrieval` 改为 contextText 直 embed；新增 L4 防幻觉提示位 `computeHintEntities`；`BrowserRetrievalSettings` 扩展 5 个字段 |
 | 2026-05-09 | Phase 1.5：玩家身份从 settings 兜底重构为桥 API + 存档字段。`RuntimeBridge` 新增 `markArchiveAsPlayer / unmarkArchiveAsPlayer / listPlayerArchiveIds`，`SaveRecord` 加 `playerArchiveIds: string[]`（DB v6→v7 破坏性升级）。`assembleRetrievalContext` 与 `rankEventsByEntityGraph` 入参改为必填 `playerArchiveIds`，`BrowserRetrievalSettings` 删除 `playerEntityIds` 字段及对应 env / localStorage 兜底 |
 | 2026-05-11 | I4：`bridge/play-frontend-bridge.ts` 实现 `runtime.applyPatch / updateGlobals / appendUserMessage / appendAssistantMessage` 4 个写方法；patch 类走 `runtime-host/patch-applier.ts` 的 `applyMaintenancePatch`（HC-14 同源），append 类直调 `runtimeEngine.appendUserMessage / appendAssistantMessage`（append 例外，§13.6 不递增 turn） |
+| 2026-05-14 | UI 重构（路径 C）B1-B5：调试类型契约迁到 contracts（`debug.ts` 11 个类型 + `DebugBridge` 接口）；platform-web 落地羊皮纸 Design System 57 个令牌（`design-tokens.css`）；`bridge.debug` 命名空间 + token usage + `debug-events.ts`；vue-router 5 路由 + `views/` 5 视图（`App.vue` 1259→235 行）；`DebugView` 接入 `bridge.debug` / `bridge.query` / `bridge.runtime` 三条桥路径渲染 6 类调试数据 |
 
 ---
 

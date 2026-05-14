@@ -191,6 +191,7 @@ npm run build:runtime-core   # 构建 @tsian/runtime-core
 | 2026-05-05 17:52:53 | 初始化架构师首次生成根级与模块级 CLAUDE.md，索引覆盖 apps / packages / builtin |
 | 2026-05-09 | §7 编码规范新增"兜底 / 降级原则（fail loud > fail silent）"小节，沉淀 Phase 1.5 主人对 `playerArchiveIds` 兜底的判断 |
 | 2026-05-11 | §4 模块索引补 `packages/prompt-engine` / `packages/workflow-engine`；§8 AI 使用指引补"工作流引擎已上线"与"桥写 API"两条调用约定（I6 收尾） |
+| 2026-05-14 | UI 重构（路径 C）B1-B5 完成：调试类型契约抽离到 contracts（`debug.ts` 11 个类型 + `DebugBridge` 接口）；platform-web 落地羊皮纸 Design System 57 个令牌（`design-tokens.css`）；`bridge.debug` 命名空间 + token usage；vue-router 5 路由 + `views/` 5 视图（`App.vue` 1259→235 行）；`DebugView` 接入 `bridge.debug` / `bridge.query` / `bridge.runtime` 三条桥路径渲染 6 类调试数据 |
 
 ---
 

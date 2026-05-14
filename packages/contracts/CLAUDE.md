@@ -16,7 +16,7 @@
 
 | 入口 | 路径 |
 |------|------|
-| 包入口 | `src/index.ts` → 重导出 `bridge` / `frontend-package` / `mod` / `runtime` / `workflow` |
+| 包入口 | `src/index.ts` → 重导出 `bridge` / `debug` / `frontend-package` / `mod` / `runtime` / `workflow` |
 | 构建命令 | `npm run build:contracts`（执行 `tsc -p tsconfig.json`） |
 
 ---
@@ -50,7 +50,8 @@
 - `InteractionBridge` (`sendMessage`)
 - `QueryBridge` (`query<T>`)
 - `PlatformBridge` (`getPlatformContext`, `runAction`)
-- `PlayFrontendBridge` 聚合体
+- `DebugBridge`（B1 新增）：`subscribeWorkflow(cb)` / `getRetrievalDebug()` / `getAiDebugRecords()` / `onTurnDebugReady(cb)`
+- `PlayFrontendBridge` 聚合体（B1 起新增可选 `debug?: DebugBridge`；平台壳在 `platform-host` 中注入，基础桥不实现）
 
 ### 3.3 `mod.ts` —— 模组静态内容契约
 
@@ -59,6 +60,16 @@
 - `CatalogEventTrigger`、`CatalogEventRecord`
 - `ModStaticContent`（manifest / frontendConfig / entityTypeDefinitions / archiveCatalog / eventCatalog / globalsDefaults）
 - `ModInitialSavePayload`（snapshot / events / archives）
+
+### 3.6 `debug.ts` —— 调试类型契约（B1 抽离）
+
+把 `apps/platform-web` 内的本地调试类型迁到 contracts，方便游玩前端通过 `bridge.debug` 类型对齐。
+
+- `AiDebugRecord`（含 `usage?: { input?, output?, total? }` + `turn?` —— B3 token usage 字段）
+- `RetrievalDebugRecord` / `RetrievalCandidateDebugRecord` / `RetrievalArchiveDebugRecord` / `RetrievalCatalogEventDebugRecord` / `RetrievalSemanticDebugRecord`
+- `WorkflowOutputsSnapshot` / `WorkflowNodeOutputs` / `WorkflowNodeStatus`
+- `BridgeDebugTurnContext`
+- 共 11 个类型
 
 ### 3.5 `workflow.ts` —— 工作流类型契约
 
@@ -113,7 +124,7 @@ A：见 `docs/active/patch-contract-skeleton.md` —— 当前刻意不引入删
 
 ## 8. 相关文件清单
 
-- `src/index.ts`、`src/runtime.ts`、`src/bridge.ts`、`src/mod.ts`、`src/frontend-package.ts`、`src/workflow.ts`
+- `src/index.ts`、`src/runtime.ts`、`src/bridge.ts`、`src/debug.ts`、`src/mod.ts`、`src/frontend-package.ts`、`src/workflow.ts`
 - `package.json`、`tsconfig.json`
 - 构建产物 `dist/*.d.ts`（不手工维护）
 
@@ -125,6 +136,7 @@ A：见 `docs/active/patch-contract-skeleton.md` —— 当前刻意不引入删
 |------|------|
 | 2026-05-05 17:52:53 | 初始化架构师首次生成模块文档 |
 | 2026-05-11 | I3：`RuntimeBridge` 新增 4 个写方法（applyPatch / updateGlobals / appendUserMessage / appendAssistantMessage）；`ApplyPatchOutput` 升级到 `runtime.ts` 作为公共类型（HC-14 收口） |
+| 2026-05-14 | B1：抽离调试类型契约 `debug.ts`（11 个类型，`AiDebugRecord` / `RetrievalDebugRecord` / `WorkflowOutputsSnapshot` 等）；`bridge.ts` 新增 `DebugBridge` 接口与 `PlayFrontendBridge.debug?` 可选字段 |
 
 ---
 
