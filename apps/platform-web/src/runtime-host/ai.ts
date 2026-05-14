@@ -1,3 +1,5 @@
+import type { AiChatMessage, AiDebugRecord } from "@tsian/contracts"
+
 import {
   getBrowserAiConfig,
   getBrowserEmbeddingConfig,
@@ -5,10 +7,8 @@ import {
   type BrowserEmbeddingConfig,
 } from "../config/ai"
 
-export interface AiChatMessage {
-  role: "user" | "assistant" | "system"
-  content: string
-}
+// B1：调试类型已迁到 @tsian/contracts；此处 re-export 保持原 API
+export type { AiChatMessage, AiDebugRecord }
 
 export interface GenerateAssistantReplyOptions {
   debugLabel?: string
@@ -23,20 +23,6 @@ export interface GenerateAssistantReplyOptions {
 export interface GenerateEmbeddingOptions {
   debugLabel?: string
   config?: BrowserEmbeddingConfig | null
-}
-
-export interface AiDebugRecord {
-  id: string
-  kind: "chat" | "embedding"
-  label: string
-  model: string
-  createdAt: string
-  messages?: AiChatMessage[]
-  input?: string[]
-  responseText?: string
-  vectorCount?: number
-  dimensions?: number
-  error?: string
 }
 
 let aiDebugSequence = 0
@@ -100,6 +86,41 @@ function buildChatCompletionsUrl(baseUrl: string): string {
 
 function buildEmbeddingsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/embeddings`
+}
+
+/**
+ * B3 / D11：从上游 API 响应解析 token usage。
+ *
+ * 兼容两种主流字段命名：
+ *   - OpenAI 兼容（chat/completions, embeddings）: `usage.prompt_tokens / completion_tokens / total_tokens`
+ *   - Anthropic 风格：`usage.input_tokens / output_tokens`
+ *
+ * 解析不到就返回 undefined，**不估算、不伪造**（fail loud 不适用于"上游字段缺失"，
+ * 这是正常容错）。
+ */
+function extractUsageFromPayload(
+  payload: unknown,
+): { input?: number; output?: number; total?: number } | undefined {
+  if (typeof payload !== "object" || payload === null) return undefined
+  const usage = (payload as { usage?: unknown }).usage
+  if (typeof usage !== "object" || usage === null) return undefined
+
+  const u = usage as Record<string, unknown>
+  const pickNum = (key: string): number | undefined => {
+    const v = u[key]
+    return typeof v === "number" && Number.isFinite(v) ? v : undefined
+  }
+
+  const input = pickNum("prompt_tokens") ?? pickNum("input_tokens")
+  const output = pickNum("completion_tokens") ?? pickNum("output_tokens")
+  const total =
+    pickNum("total_tokens") ??
+    (typeof input === "number" && typeof output === "number" ? input + output : undefined)
+
+  if (input === undefined && output === undefined && total === undefined) {
+    return undefined
+  }
+  return { input, output, total }
 }
 
 function extractAssistantText(payload: unknown): string {
@@ -196,7 +217,8 @@ export async function generateAssistantReply(
   }
 
   const content = extractAssistantText(payload)
-  updateAiDebugRecord(requestId, { responseText: content })
+  const usage = extractUsageFromPayload(payload)
+  updateAiDebugRecord(requestId, { responseText: content, usage })
 
   logDebugGroup(`[Tsian AI ${requestId}] 响应`, {
     content: previewText(content, 2400),
@@ -294,9 +316,11 @@ export async function generateEmbeddings(
   }
 
   const vectors = extractEmbeddingVectors(payload)
+  const usage = extractUsageFromPayload(payload)
   updateAiDebugRecord(requestId, {
     vectorCount: vectors.length,
     dimensions: vectors[0]?.length ?? 0,
+    usage,
   })
 
   logDebugGroup(`[Tsian Embedding ${requestId}] 响应`, {

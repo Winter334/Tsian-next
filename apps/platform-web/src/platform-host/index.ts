@@ -22,7 +22,8 @@ import {
   getDefaultBuiltinMod,
   listBuiltinMods,
 } from "../../../../builtin/mods"
-import { createPlayFrontendBridge } from "../bridge"
+import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
+import { emitTurnDebugReady } from "../debug-events"
 import { getBrowserRetrievalSettings } from "../config/ai"
 import { getCurrentNarrativeTime } from "../narrative-time"
 import {
@@ -1010,9 +1011,19 @@ export const playFrontendBridge: PlayFrontendBridge = {
         previousTurnController = null
       }
 
+      // B3 / D5：本轮 patch 已应用 + assistant 落库；广播给 debug 桥订阅方
+      emitTurnDebugReady(snapshotAfter.state.turn)
+
       return { snapshot: snapshotAfter }
     },
   },
+  debug: createDebugBridge({
+    latestRetrievalDebugProvider: async () => {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) return null
+      return retrievalDebugBySave.get(activeSaveId) ?? null
+    },
+  }),
 }
 
 export async function initializePlatformHost(): Promise<void> {
