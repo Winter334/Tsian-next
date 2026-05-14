@@ -1,23 +1,32 @@
-import type { ModInitialSavePayload, ModStaticContent, RuntimeSnapshotShell } from "@tsian/contracts"
+import type { ModInitialSavePayload, ModStaticContent, RuntimeSnapshotShell, WorkflowDefinition } from "@tsian/contracts"
 
-function formatNarrativeTime(date: Date): string {
-  const year = date.getFullYear()
-  const month = String(date.getMonth() + 1).padStart(2, "0")
-  const day = String(date.getDate()).padStart(2, "0")
-  const hour = String(date.getHours()).padStart(2, "0")
-  const minute = String(date.getMinutes()).padStart(2, "0")
+// === 叙事时间锚点（虚构纪元） ===
+// 设计原则：叙事时间是纯游戏内字段，不应绑定系统时钟（Date.now()）。
+// 当前 ModInitialSavePayload 契约仍透传 now: number（系统时间）作为兜底参数，
+// 但本模组完全忽略它，使用硬编码虚构纪元 0001 年作为故事起点。
+// 故事"当前"：0001-01-15 23:00（叶临蹲在驿馆后院旧井旁的那个雨夜）。
+// 未来契约层会让模组直接声明叙事锚点（独立 OpenSpec change），届时本模组改成完整自决。
+const NARRATIVE_ANCHOR_UTC_MS = Date.UTC(1, 0, 15, 23, 0, 0) // 0001-01-15 23:00 UTC
+
+function formatNarrativeTime(utcMs: number): string {
+  const date = new Date(utcMs)
+  const year = String(date.getUTCFullYear()).padStart(4, "0")
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0")
+  const day = String(date.getUTCDate()).padStart(2, "0")
+  const hour = String(date.getUTCHours()).padStart(2, "0")
+  const minute = String(date.getUTCMinutes()).padStart(2, "0")
   return `${year}-${month}-${day} ${hour}:${minute}`
 }
 
-function addNarrativeTimeOffset(now: number, offsetMs: number): string {
-  return formatNarrativeTime(new Date(now + offsetMs))
+function addNarrativeTimeOffset(offsetMs: number): string {
+  return formatNarrativeTime(NARRATIVE_ANCHOR_UTC_MS + offsetMs)
 }
-function createInitialSnapshot(now: number): RuntimeSnapshotShell {
+function createInitialSnapshot(): RuntimeSnapshotShell {
   return {
     version: "0.0.0",
     state: {
       turn: 3,
-      currentTime: addNarrativeTimeOffset(now, 0),
+      currentTime: addNarrativeTimeOffset(0),
       globals: {
         章节: "灰盐镇·雨夜验尸",
         当前地点: "灰盐镇驿馆后院",
@@ -68,15 +77,18 @@ function formatSeedTime(time: string): string {
   return `${year}年${Number(month)}月${Number(day)}日 ${hour}:${minute}`
 }
 
-export function createGreySaltTownInitialSavePayload(now: number): ModInitialSavePayload {
-  const snapshot = createInitialSnapshot(now)
-  const arrivalTime = addNarrativeTimeOffset(now, -1000 * 60 * 60 * 30)
-  const saltWarehouseTime = addNarrativeTimeOffset(now, -1000 * 60 * 60 * 18)
-  const bellTestTime = addNarrativeTimeOffset(now, -1000 * 60 * 60 * 6)
-  const distractorDemonTime = addNarrativeTimeOffset(now, -1000 * 60 * 60 * 4)
-  const distractorLedgerTime = addNarrativeTimeOffset(now, -1000 * 60 * 60 * 2)
-  const corpseFoundTime = addNarrativeTimeOffset(now, -1000 * 60 * 45)
-  const activeEventTime = addNarrativeTimeOffset(now, 0)
+// 临时修复：保留 now 参数以兼容现有 ModInitialSavePayload 契约入口，但本模组完全忽略它，
+// 所有时间均锚定在虚构纪元（NARRATIVE_ANCHOR_UTC_MS）。契约层修正后该参数会一并去除。
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export function createGreySaltTownInitialSavePayload(_now: number): ModInitialSavePayload {
+  const snapshot = createInitialSnapshot()
+  const arrivalTime = addNarrativeTimeOffset(-1000 * 60 * 60 * 30)
+  const saltWarehouseTime = addNarrativeTimeOffset(-1000 * 60 * 60 * 18)
+  const bellTestTime = addNarrativeTimeOffset(-1000 * 60 * 60 * 6)
+  const distractorDemonTime = addNarrativeTimeOffset(-1000 * 60 * 60 * 4)
+  const distractorLedgerTime = addNarrativeTimeOffset(-1000 * 60 * 60 * 2)
+  const corpseFoundTime = addNarrativeTimeOffset(-1000 * 60 * 45)
+  const activeEventTime = addNarrativeTimeOffset(0)
   const events: ModInitialSavePayload["events"] = [
     {
       time: arrivalTime,
@@ -393,6 +405,78 @@ export function createGreySaltTownInitialSavePayload(now: number): ModInitialSav
 
 const archiveCatalog = createGreySaltTownInitialSavePayload(0).archives
 
+/**
+ * 模组自带工作流声明（SC-CRIT-3 验证：mod 注册路径验证）。
+ *
+ * 形状与 platform-web 默认工作流一致（retrieval → chat → reply / maintenance，
+ * 不含 apply-patch）。
+ *
+ * HC-13 判定：platform-host 当前 resolveWorkflowForMod 实现中
+ * 所有 mod 走 default-workflow 且 isModWorkflow=false；
+ * 即使未来改为读 mod.workflow，也应以 isModWorkflow=true 加载，
+ * 因此本 workflow 绝对不能包含 apply-patch 节点，避免触发 MOD_REGISTERED_APPLY_PATCH 校验。
+ * apply-patch 由平台负责，mod 只声明检索 + 正文 AI 链路。
+ */
+const greySaltTownWorkflow: WorkflowDefinition = {
+  nodes: [
+    {
+      // retrieval：β-1 旁路，从宏 __retrieval.raw 读取 platform-host 组装好的检索 prompt
+      id: "retrieval",
+      type: "ai-call",
+      config: {
+        presetId: "builtin.retrieval",
+        bypass: { rawFromMacro: "__retrieval.raw" },
+      },
+      outputs: [
+        { name: "prompt", extract: { type: "tag", tag: "prompt" } },
+        { name: "directEntities", extract: { type: "tag", tag: "directEntities", parse: "json" } },
+      ],
+    },
+    {
+      // chat：正文 AI，注入检索 prompt，追加 user.input
+      id: "chat",
+      type: "ai-call",
+      config: { presetId: "builtin.chat", appendUserInput: true },
+    },
+    {
+      // reply：result 节点，把 chat 输出写入 results.reply
+      id: "reply",
+      type: "result",
+      config: { name: "reply" },
+    },
+    {
+      // maintenance：维护 AI，读取正文 + 直接实体，输出 patch JSON
+      id: "maintenance",
+      type: "ai-call",
+      config: { presetId: "builtin.maintenance" },
+      outputs: [
+        { name: "patch", extract: { type: "raw", parse: "json" } },
+      ],
+    },
+    // 注意：apply-patch 节点刻意省略。
+    // HC-13 强约束：mod 工作流不允许注册 apply-patch（MOD_REGISTERED_APPLY_PATCH）。
+    // patch 应用由平台（platform-host / default-workflow）负责，mod 只声明 AI 链路。
+  ],
+  edges: [
+    {
+      from: { nodeId: "retrieval", outputName: "prompt" },
+      to: { nodeId: "chat", varName: "retrieval.prompt" },
+    },
+    {
+      from: { nodeId: "chat", outputName: "raw" },
+      to: { nodeId: "reply", varName: "value" },
+    },
+    {
+      from: { nodeId: "chat", outputName: "raw" },
+      to: { nodeId: "maintenance", varName: "lastReply" },
+    },
+    {
+      from: { nodeId: "retrieval", outputName: "directEntities" },
+      to: { nodeId: "maintenance", varName: "directEntities" },
+    },
+  ],
+}
+
 export const greySaltTownMod: ModStaticContent = {
   manifest: {
     id: "grey-salt-town",
@@ -400,6 +484,8 @@ export const greySaltTownMod: ModStaticContent = {
     version: "0.1.0",
     author: "Tsian Prototype",
     description: "用于验证模组静态层、预设事件钩子和记忆系统的开发期内置测试模组。",
+    // SC-CRIT-3：声明 mod 自带工作流，验证 mod 注册路径
+    workflow: greySaltTownWorkflow,
   },
   frontendConfig: {
     frontendId: "official-default",

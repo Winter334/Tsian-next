@@ -14,3 +14,6 @@ export * from './core/modules/build';
 
 // 渠道转换层
 export * as Channels from './core/channels/index';
+
+// Tsian 高层 API（包装 buildPrompt + channel）
+export * from './tsian/assemble';

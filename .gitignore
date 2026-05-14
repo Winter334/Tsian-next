@@ -6,3 +6,12 @@ dist/
 Thumbs.db
 *.log
 .ace-tool/
+
+# AI / 工作环境配置（个人环境，不入库）
+.claude/
+.omc/
+
+# OpenSpec change 工作流过程产物
+openspec/changes/*/.debug-context.md
+openspec/changes/*/.plan-context.md
+openspec/changes/*/.session-state.md

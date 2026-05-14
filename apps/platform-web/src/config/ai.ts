@@ -41,6 +41,15 @@ export interface BrowserRetrievalSettings {
   semanticEventLimit: number
   semanticArchiveLimit: number
   semanticScoreThreshold: number
+  // —— AIRP Phase 1 评分函数与防幻觉相关 ——
+  /** 时间衰减半衰期（叙事小时）。设 0 关闭时间衰减 */
+  timeDecayHalfLifeHours: number
+  /** ongoing 状态事件的衰减半衰期放大倍数，进行中剧情几乎不衰减 */
+  ongoingDecayMultiplier: number
+  /** 无任何 direct/present 强命中时直接淘汰事件，宁可少召回也不要噪声 */
+  noStrongHitFilter: boolean
+  /** L4 防幻觉提示位回望窗口（最近 N 轮消息提到但本轮未展开的实体） */
+  hintEntityRecencyTurns: number
 }
 
 export const DEFAULT_BROWSER_RETRIEVAL_SETTINGS: BrowserRetrievalSettings = {
@@ -60,6 +69,10 @@ export const DEFAULT_BROWSER_RETRIEVAL_SETTINGS: BrowserRetrievalSettings = {
   semanticEventLimit: 3,
   semanticArchiveLimit: 4,
   semanticScoreThreshold: 0.72,
+  timeDecayHalfLifeHours: 72,
+  ongoingDecayMultiplier: 4,
+  noStrongHitFilter: true,
+  hintEntityRecencyTurns: 5,
 }
 
 const PLATFORM_CONFIG_STORAGE_KEY = "tsian-platform-config"
@@ -210,6 +223,19 @@ function normalizeBrowserRetrievalSettings(
       input?.semanticScoreThreshold,
       fallback.semanticScoreThreshold,
     ),
+    timeDecayHalfLifeHours: readStoredNumber(
+      input?.timeDecayHalfLifeHours,
+      fallback.timeDecayHalfLifeHours,
+    ),
+    ongoingDecayMultiplier: readStoredNumber(
+      input?.ongoingDecayMultiplier,
+      fallback.ongoingDecayMultiplier,
+    ),
+    noStrongHitFilter: readStoredBoolean(input?.noStrongHitFilter, fallback.noStrongHitFilter),
+    hintEntityRecencyTurns: readStoredInteger(
+      input?.hintEntityRecencyTurns,
+      fallback.hintEntityRecencyTurns,
+    ),
   }
 }
 
@@ -270,6 +296,22 @@ function readEnvRetrievalSettings(): BrowserRetrievalSettings {
     semanticScoreThreshold: readEnvNumber(
       "VITE_RETRIEVAL_SEMANTIC_SCORE_THRESHOLD",
       defaults.semanticScoreThreshold,
+    ),
+    timeDecayHalfLifeHours: readEnvNumber(
+      "VITE_RETRIEVAL_TIME_DECAY_HALF_LIFE_HOURS",
+      defaults.timeDecayHalfLifeHours,
+    ),
+    ongoingDecayMultiplier: readEnvNumber(
+      "VITE_RETRIEVAL_ONGOING_DECAY_MULTIPLIER",
+      defaults.ongoingDecayMultiplier,
+    ),
+    noStrongHitFilter: readEnvBoolean(
+      "VITE_RETRIEVAL_NO_STRONG_HIT_FILTER",
+      defaults.noStrongHitFilter,
+    ),
+    hintEntityRecencyTurns: readEnvInteger(
+      "VITE_RETRIEVAL_HINT_ENTITY_RECENCY_TURNS",
+      defaults.hintEntityRecencyTurns,
     ),
   }
 }

@@ -5,7 +5,8 @@
     "apps/platform-web",
     "packages/contracts",
     "packages/runtime-core",
-    "packages/prompt-engine"
+    "packages/prompt-engine",
+    "packages/workflow-engine"
   ],
   "scripts": {
     "dev:server": "go -C ./apps/platform-server run ./cmd/platform-server",
@@ -13,6 +14,7 @@
     "build:web": "npm run build --workspace platform-web",
     "build:contracts": "npm run build --workspace @tsian/contracts",
     "build:runtime-core": "npm run build --workspace @tsian/runtime-core",
+    "build:workflow-engine": "npm run build --workspace @tsian/workflow-engine",
     "build:prompt-engine": "npm run build --workspace @tsian/prompt-engine",
     "test:prompt-engine": "npm run test --workspace @tsian/prompt-engine"
   }

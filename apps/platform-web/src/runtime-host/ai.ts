@@ -13,6 +13,11 @@ export interface AiChatMessage {
 export interface GenerateAssistantReplyOptions {
   debugLabel?: string
   config?: BrowserAiConfig | null
+  /**
+   * 可选 AbortSignal：透传给 fetch，工作流引擎触发 abort 时可中断在途请求。
+   * 仅在请求阶段生效；进入"补丁应用阶段"后由调度器忽略 abort（design.md §13.1）。
+   */
+  signal?: AbortSignal
 }
 
 export interface GenerateEmbeddingOptions {
@@ -172,6 +177,7 @@ export async function generateAssistantReply(
       model: config.model,
       messages,
     }),
+    signal: options.signal,
   })
 
   const payload = await response.json().catch(() => null)

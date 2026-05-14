@@ -58,6 +58,12 @@ export interface RetrievalSemanticDebugRecord {
   error?: string
 }
 
+export interface RetrievalHintEntityDebugRecord {
+  archiveId: string
+  name: string
+  type: string
+}
+
 export interface RetrievalDebugRecord {
   input: string
   settings: BrowserRetrievalSettings
@@ -69,6 +75,7 @@ export interface RetrievalDebugRecord {
   candidates: RetrievalCandidateDebugRecord[]
   archives: RetrievalArchiveDebugRecord[]
   catalogEvents: RetrievalCatalogEventDebugRecord[]
+  hintEntities?: RetrievalHintEntityDebugRecord[]
 }
 
 export interface RetrievalAssemblyResult {
@@ -257,12 +264,51 @@ function rarityScore(normalizedName: string, frequency: Map<string, number>): nu
   return 0
 }
 
+function buildPlayerEntityTagSet(input: {
+  archives: ArchiveRecord[]
+  playerEntityIds: string[]
+}): Set<string> {
+  if (input.playerEntityIds.length === 0) {
+    return new Set()
+  }
+  const idSet = new Set(input.playerEntityIds)
+  const tags = new Set<string>()
+  for (const archive of input.archives) {
+    if (!idSet.has(archive.id)) {
+      continue
+    }
+    const candidates = [archive.name, ...(archive.aliases ?? [])]
+    for (const candidate of candidates) {
+      const normalized = normalizeToken(candidate)
+      if (normalized) {
+        tags.add(normalized)
+      }
+    }
+  }
+  return tags
+}
+
+function narrativeGapHours(currentTime: string | undefined, eventTime: string): number | null {
+  if (!currentTime || !eventTime) {
+    return null
+  }
+  const cur = parseNarrativeTime(currentTime)
+  const evt = parseNarrativeTime(eventTime)
+  if (cur === 0 || evt === 0) {
+    return null
+  }
+  return Math.max(0, (cur - evt) / 3_600_000)
+}
+
 function rankEventsByEntityGraph(input: {
   events: LocalEventRecord[]
   activeEvents: LocalEventRecord[]
   directArchives: ArchiveRecord[]
   presentArchives: ArchiveRecord[]
   bridgeArchives: ArchiveRecord[]
+  archives: ArchiveRecord[]
+  currentTime?: string
+  playerArchiveIds: string[]
   settings: BrowserRetrievalSettings
 }): RankedEventRecord[] {
   const direct = new Set(input.directArchives.map((item) => normalizeToken(item.name)))
@@ -273,33 +319,66 @@ function rankEventsByEntityGraph(input: {
     input.activeEvents.flatMap((event) => event.entityTags).map(normalizeToken).filter(Boolean),
   )
   const frequency = entityFrequency(input.events)
+  const playerTags = buildPlayerEntityTagSet({
+    archives: input.archives,
+    playerEntityIds: input.playerArchiveIds,
+  })
+  const halfH = Math.max(0, input.settings.timeDecayHalfLifeHours)
+  const ongoingMult = Math.max(1, input.settings.ongoingDecayMultiplier)
 
   return input.events
     .filter((event) => !activeIds.has(event.id))
-    .map((event) => {
+    .map((event): RankedEventRecord | null => {
       const tags = [...new Set(event.entityTags.map(normalizeToken).filter(Boolean))]
-      let score = 0
+      if (tags.length === 0) {
+        return null
+      }
+      let raw = 0
       let strongHitCount = 0
 
+      // 互斥分组：同一 tag 只在最高优先级桶里计分（避免 direct+bridge 双计）
       for (const tag of tags) {
+        const r = playerTags.has(tag) ? 1.0 : rarityScore(tag, frequency)
         if (direct.has(tag)) {
-          score += 4 + rarityScore(tag, frequency)
+          raw += 4 + r
           strongHitCount += 1
-        }
-        if (present.has(tag)) {
-          score += 3 + rarityScore(tag, frequency)
+        } else if (present.has(tag)) {
+          raw += 3 + r
           strongHitCount += 1
-        }
-        if (active.has(tag)) {
-          score += 2
-        }
-        if (bridge.has(tag)) {
-          score += 1
+        } else if (active.has(tag)) {
+          raw += 2.5
+        } else if (bridge.has(tag)) {
+          raw += 1.5
         }
       }
 
+      // AIRP 关键：无 direct/present 强命中则淘汰，宁可少召回也不要噪声
+      if (input.settings.noStrongHitFilter && strongHitCount === 0) {
+        return null
+      }
+
+      // 共现奖励：≥2 个 direct/present tag
       if (strongHitCount >= 2) {
-        score += 2
+        raw += Math.min(2, strongHitCount - 1)
+      }
+
+      // 长度归一化：避免长事件因 tag 多而被天然拉高
+      let score = raw / Math.sqrt(Math.max(1, tags.length))
+
+      // ongoing 加成：进行中的剧情线必须保
+      const isOngoing = event.status === "ongoing"
+      if (isOngoing) {
+        score *= 1.6
+      }
+
+      // 叙事时间衰减：远古事件影响力衰减，但保留 40% 基础分
+      if (halfH > 0) {
+        const gap = narrativeGapHours(input.currentTime, event.time)
+        if (gap !== null) {
+          const effectiveHalfLife = halfH * (isOngoing ? ongoingMult : 1)
+          const decay = Math.exp(-gap / effectiveHalfLife)
+          score *= 0.4 + 0.6 * decay
+        }
       }
 
       return {
@@ -315,7 +394,7 @@ function rankEventsByEntityGraph(input: {
         event,
       }
     })
-    .filter((item) => item.finalScore > 0)
+    .filter((item): item is RankedEventRecord => item !== null && item.finalScore > 0)
     .sort((left, right) => {
       if (right.finalScore !== left.finalScore) {
         return right.finalScore - left.finalScore
@@ -576,21 +655,23 @@ async function runSemanticRetrieval(input: {
       currentTime: input.currentTime,
       narrativeTimeText: input.narrativeTimeText,
     })
-    const keywords = await generateSemanticKeywords({ contextText })
-    if (keywords.length === 0) {
-      return { keywords, events: [], archives: [] }
+    if (!contextText.trim()) {
+      return { keywords: [], events: [], archives: [] }
     }
 
-    const queryText = keywords.join("\n")
+    // AIRP 改造：直接 embed 上下文文本，避免"上下文 → 关键词 → 向量"的双层信息损失。
+    // keywords 仅作为可观测调试输出，失败不影响主路径。
     const sources = buildEmbeddingSources(input)
     await ensureEmbeddingCache({ sources, embeddingModel: embeddingConfig.model })
-    const [queryVector] = await generateEmbeddings([queryText], {
+    const [queryVector] = await generateEmbeddings([contextText], {
       debugLabel: "retrieval-query",
     })
 
     if (!queryVector) {
-      return { keywords, events: [], archives: [], error: "语义查询 embedding 为空。" }
+      return { keywords: [], events: [], archives: [], error: "语义查询 embedding 为空。" }
     }
+
+    const keywords = await generateSemanticKeywords({ contextText }).catch(() => [] as string[])
 
     const events = await findSimilarEmbeddingSources({
       sources,
@@ -782,6 +863,62 @@ function archiveLine(archive: ArchiveRecord): string {
   }${archive.focus ? `｜关注点：${archive.focus}` : ""}`
 }
 
+interface HintEntityRecord {
+  archiveId: string
+  name: string
+  type: string
+}
+
+/**
+ * AIRP L4 防幻觉提示位：扫描最近 N 轮消息，挑出"被提到但本轮未在 L1-L3 召回"的实体。
+ * 给正文 AI 一个温和提示："这些你接触过，引用时保持已有事实一致；不确定别展开"。
+ * 比 Graphiti 时序边更直接解决"AI 看到当前态但要引用历史"的问题。
+ */
+function computeHintEntities(input: {
+  recentMessages: ConversationMessageRecord[]
+  archives: ArchiveRecord[]
+  excludedArchiveIds: Set<string>
+  recencyTurns: number
+}): HintEntityRecord[] {
+  if (input.recencyTurns <= 0) {
+    return []
+  }
+  const slice = input.recentMessages.slice(-input.recencyTurns)
+  if (slice.length === 0) {
+    return []
+  }
+  const text = slice.map((m) => m.content ?? "").join(" ")
+  const normalizedText = normalizeToken(text)
+  if (!normalizedText) {
+    return []
+  }
+  const result: HintEntityRecord[] = []
+  const seen = new Set<string>()
+  for (const archive of input.archives) {
+    if (input.excludedArchiveIds.has(archive.id)) {
+      continue
+    }
+    if (seen.has(archive.id)) {
+      continue
+    }
+    if (archive.presence === "retired") {
+      continue
+    }
+    const candidates = [archive.name, ...(archive.aliases ?? [])]
+    const tokens = candidates.map(normalizeToken).filter((token) => token.length >= 2)
+    const hit = tokens.some((token) => normalizedText.includes(token))
+    if (hit) {
+      result.push({
+        archiveId: archive.id,
+        name: archive.name,
+        type: archive.type ?? "实体",
+      })
+      seen.add(archive.id)
+    }
+  }
+  return result
+}
+
 function pushArchiveSection(
   lines: string[],
   title: string,
@@ -808,6 +945,7 @@ function buildMemoryPrompt(input: {
   eventArchives: ArchiveRecord[]
   bridgeArchives: ArchiveRecord[]
   semanticArchives: ArchiveRecord[]
+  hintEntities?: HintEntityRecord[]
 }): string {
   const memoryLines: string[] = [
     "你是 AIRP 正文叙事 AI，负责根据玩家输入生成本轮可游玩的剧情正文。",
@@ -871,6 +1009,18 @@ function buildMemoryPrompt(input: {
   pushArchiveSection(memoryLines, "回忆事件涉及的实体档案：", input.eventArchives)
   pushArchiveSection(memoryLines, "语义增强命中的实体档案：", input.semanticArchives)
   pushArchiveSection(memoryLines, "桥接关联实体档案：", input.bridgeArchives)
+
+  if (input.hintEntities && input.hintEntities.length > 0) {
+    memoryLines.push("")
+    memoryLines.push("最近提及但本轮未展开的实体：")
+    input.hintEntities.forEach((hint) => {
+      memoryLines.push(`- ${hint.name}（${hint.type}）`)
+    })
+    memoryLines.push("")
+    memoryLines.push(
+      "说明：你曾在剧情中接触过这些实体，引用时请保持已有事实一致；如不确定，倾向于不展开新细节，不要为之自行编造未确认的属性。",
+    )
+  }
 
   return memoryLines.join("\n")
 }
@@ -995,6 +1145,7 @@ export async function assembleRetrievalContext(input: {
   currentTime?: string
   narrativeTimeText?: string
   globals?: RuntimeGlobalsMap
+  playerArchiveIds: string[]
   settings?: Partial<BrowserRetrievalSettings>
 }): Promise<RetrievalAssemblyResult> {
   const settings = mergeRetrievalSettings(input.settings)
@@ -1033,6 +1184,9 @@ export async function assembleRetrievalContext(input: {
     directArchives,
     presentArchives,
     bridgeArchives,
+    archives: input.archives,
+    currentTime: input.currentTime,
+    playerArchiveIds: input.playerArchiveIds,
     settings,
   })
   const selectedEvents = selectEventChains({
@@ -1108,6 +1262,20 @@ export async function assembleRetrievalContext(input: {
     ...selectedBridgeArchives.map((archive) => archiveDebugRecord(archive, "bridge", 10)),
   ]
 
+  // AIRP L4 防幻觉提示位：把"被提到但本轮未召回"的实体喂给正文 AI 作温和提示
+  const excludedArchiveIds = new Set<string>()
+  for (const archive of directArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of presentArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of selectedEventArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of selectedSemanticArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of selectedBridgeArchives) excludedArchiveIds.add(archive.id)
+  const hintEntities = computeHintEntities({
+    recentMessages: input.messages,
+    archives: input.archives,
+    excludedArchiveIds,
+    recencyTurns: settings.hintEntityRecencyTurns,
+  })
+
   return {
     prompt: buildMemoryPrompt({
       currentTime: input.currentTime,
@@ -1123,6 +1291,7 @@ export async function assembleRetrievalContext(input: {
       eventArchives: selectedEventArchives,
       semanticArchives: selectedSemanticArchives,
       bridgeArchives: selectedBridgeArchives,
+      hintEntities,
     }),
     debug: {
       input: input.userInput,
@@ -1141,6 +1310,7 @@ export async function assembleRetrievalContext(input: {
       candidates,
       archives: archiveHits,
       catalogEvents: catalogCandidates,
+      hintEntities,
     },
   }
 }
