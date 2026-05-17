@@ -1,26 +1,177 @@
+@import "tailwindcss";
+@import "@fontsource/inter";
+@import "@fontsource/jetbrains-mono";
+
+/* ── Deep Phosphor Theme (Tailwind v4) ── */
+@theme {
+  /* Typography */
+  --font-sans: "Inter", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* ── Deep Phosphor Palette ── */
+  --color-void: #080C11;
+  --color-panel: #111A24;
+  --color-elevated: #1C2633;
+
+  --color-neon: #00F0FF;
+  --color-neon-deep: #008B8B;
+  --color-neon-muted: #4A767A;
+
+  --color-warning: #FF8C00;
+  --color-danger: #FF2A4D;
+
+  --color-text-main: #E0F7FA;
+  --color-text-dim: #608996;
+
+  /* Box shadows */
+  --shadow-neon-glow: 0 0 8px rgba(0, 240, 255, 0.3), inset 0 0 4px rgba(0, 240, 255, 0.15);
+  --shadow-neon-glow-active: 0 0 15px rgba(0, 240, 255, 0.5), inset 0 0 8px rgba(0, 240, 255, 0.2);
+
+  /* Sharp corners — brutalist aesthetic */
+  --radius-lg: 0px;
+  --radius-md: 0px;
+  --radius-sm: 0px;
+}
+
+/* ── shadcn-vue CSS Variables ── */
 :root {
-  color: #f8fafc;
-  background:
-    radial-gradient(circle at top, rgba(245, 158, 11, 0.18), transparent 28%),
-    linear-gradient(180deg, #0f172a 0%, #111827 100%);
-  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --background: 213 35% 5%;
+  --foreground: 188 64% 93%;
+
+  --muted: 212 29% 10%;
+  --muted-foreground: 197 22% 48%;
+
+  --popover: 212 29% 10%;
+  --popover-foreground: 188 64% 93%;
+
+  --card: 212 29% 10%;
+  --card-foreground: 188 64% 93%;
+
+  --border: 200 100% 27%;
+  --input: 213 29% 15%;
+
+  --primary: 184 100% 50%;
+  --primary-foreground: 213 35% 5%;
+
+  --secondary: 213 29% 15%;
+  --secondary-foreground: 188 64% 93%;
+
+  --accent: 213 29% 15%;
+  --accent-foreground: 188 64% 93%;
+
+  --destructive: 350 100% 58%;
+  --destructive-foreground: 0 0% 100%;
+
+  --ring: 184 100% 50%;
+  --radius: 0px;
+}
+
+/* ── Global Base ── */
+html {
+  color-scheme: dark;
 }
 
 * {
+  border-color: hsl(var(--border));
   box-sizing: border-box;
 }
 
-html,
-body,
-#app {
+body {
+  background-color: var(--color-void);
+  color: var(--color-text-main);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  overflow: hidden;
   margin: 0;
+}
+
+::selection {
+  background-color: var(--color-neon);
+  color: var(--color-void);
+}
+
+html, body, #app {
+  height: 100%;
   min-height: 100%;
 }
 
-body {
-  min-width: 320px;
+/* ── Retro-Futuristic Effects ── */
+
+/* Phosphor text glow */
+.glow-text {
+  text-shadow: 0 0 5px rgba(0, 240, 255, 0.6);
+}
+
+/* Phosphor box glow */
+.glow-box {
+  box-shadow: 0 0 8px rgba(0, 240, 255, 0.25), inset 0 0 4px rgba(0, 240, 255, 0.12);
+}
+
+/* Warning glow */
+.glow-warning {
+  box-shadow: 0 0 8px rgba(255, 140, 0, 0.35);
+}
+
+/* CRT scanline overlay — apply to a fixed overlay div, pointer-events:none */
+.crt-scanlines {
+  background: linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, 0) 50%,
+    rgba(0, 0, 0, 0.12) 50%
+  );
+  background-size: 100% 4px;
+}
+
+/* SVG noise texture */
+.bg-noise {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.04'/%3E%3C/svg%3E");
+}
+
+/* ── Route Transition ── */
+.fade-glitch-enter-active,
+.fade-glitch-leave-active {
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+.fade-glitch-enter-from,
+.fade-glitch-leave-to {
+  opacity: 0;
+  filter: blur(4px) brightness(1.5);
+}
+
+/* ── CRT Switch Transition (Splash Screen) ── */
+@keyframes crtSwitch {
+  0%   { transform: scaleY(1);    filter: brightness(1.2); }
+  20%  { transform: scaleY(0.02); filter: brightness(3) blur(1px); }
+  55%  { transform: scaleY(0.02); filter: brightness(0.1); }
+  75%  { transform: scaleY(1.04); filter: brightness(1.4); }
+  90%  { transform: scaleY(0.97); filter: brightness(0.9); }
+  100% { transform: scaleY(1);    filter: brightness(1); }
+}
+
+@keyframes simpleFade {
+  0%   { opacity: 1; filter: brightness(1.2); }
+  55%  { opacity: 0; filter: brightness(0.1); }
+  100% { opacity: 1; filter: brightness(1); }
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+.animate-crt-switch {
+  animation: crtSwitch 800ms cubic-bezier(0.23, 1, 0.32, 1) forwards;
+  will-change: transform, filter;
+  transform-origin: center center;
+}
+
+.animate-cursor-blink {
+  animation: cursorBlink 1s step-end infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-crt-switch {
+    animation: simpleFade 800ms ease-in-out forwards;
+  }
 }

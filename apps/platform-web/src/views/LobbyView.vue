@@ -1,68 +1,194 @@
 <template>
-  <!-- 大厅页：选择内置模组进入模组页 -->
-  <section class="page-section">
-    <div class="section-copy">
-      <p class="section-eyebrow">大厅</p>
-      <h2>选择一个模组</h2>
-      <p>模组页会只展示该模组自己的存档，不再把所有模组的存档混在一起。</p>
-    </div>
-    <div class="mod-grid">
-      <article v-for="mod in builtinMods" :key="mod.id" class="mod-card">
-        <div class="mod-card__head">
-          <div>
-            <p class="mod-kicker">{{ mod.id }}</p>
-            <h3>{{ mod.name }}</h3>
+  <!-- 平台大厅：平台状态、快速入口与未来玩家信息预留 -->
+  <section class="grid gap-6 mt-6">
+    <Card class="relative overflow-hidden bg-panel border-neon-deep/40">
+      <div class="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(0,240,255,0.16),transparent_32%),linear-gradient(135deg,rgba(0,240,255,0.08),transparent_42%)]" />
+      <CardContent class="relative grid gap-6 p-6 md:grid-cols-[1.2fr_0.8fr] md:p-8">
+        <div class="grid gap-4 content-center">
+          <p class="font-mono text-xs tracking-[0.35em] uppercase text-neon glow-text">
+            TSIAN PLATFORM
+          </p>
+          <div class="grid gap-3">
+            <h2 class="max-w-3xl text-4xl font-black tracking-tight text-text-main md:text-5xl">
+              此间大厅
+            </h2>
+            <p class="max-w-2xl text-base leading-relaxed text-text-dim">
+              本地运行时、模组入口与平台状态集中在这里。当前原型暂未接入账户系统，玩家档案与平台公告区域先保留为占位。
+            </p>
           </div>
-          <span class="mod-version">v{{ mod.version }}</span>
         </div>
-        <p class="mod-description">
-          {{ mod.description || "当前模组未提供描述。" }}
-        </p>
-        <div class="mod-meta">
-          <span>作者：{{ mod.author || "未填写" }}</span>
-          <span>存档：{{ countSavesForMod(mod.id) }}</span>
-          <span>实体类型：{{ mod.entityTypeCount }}</span>
-          <span>预设事件：{{ mod.eventCount }}</span>
+
+        <div class="grid content-center gap-3 border border-neon-deep/30 bg-void/60 p-4">
+          <div class="flex items-center justify-between gap-3 font-mono text-xs text-text-dim">
+            <span>ACTIVE SAVE</span>
+            <Badge
+              variant="outline"
+              class="border-neon-deep/60 text-neon-deep font-mono"
+            >
+              {{ activeSaveId ? "ONLINE" : "EMPTY" }}
+            </Badge>
+          </div>
+          <div>
+            <h3 class="text-xl font-bold text-text-main">{{ activeSaveName }}</h3>
+            <p class="mt-1 text-sm text-text-dim">{{ activeSaveMeta }}</p>
+          </div>
         </div>
-        <div class="mod-actions">
-          <button class="primary-button" type="button" @click="openModPage(mod.id)">
-            进入模组页
-          </button>
-        </div>
-      </article>
+      </CardContent>
+    </Card>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      <Card
+        class="bg-panel border-neon-deep/40 transition-all"
+        :class="activeSaveId ? 'hover:border-neon hover:glow-box' : 'opacity-70'"
+      >
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted">快速入口 01</p>
+          <CardTitle class="text-xl text-text-main">继续上次游戏</CardTitle>
+        </CardHeader>
+        <CardContent class="pt-0">
+          <p class="text-sm leading-normal text-text-dim">
+            {{ activeSaveId ? "直接进入当前激活存档。" : "暂无可继续的激活存档。" }}
+          </p>
+        </CardContent>
+        <CardFooter>
+          <Button
+            :disabled="!activeSaveId"
+            variant="outline"
+            class="border-neon-deep text-neon bg-neon/5 hover:bg-neon/15 hover:shadow-neon-glow transition-all font-mono tracking-wide disabled:cursor-not-allowed disabled:opacity-40"
+            @click="continueActiveSave"
+          >
+            进入游戏
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <Card class="bg-panel border-neon-deep/40 transition-all hover:border-neon hover:glow-box">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted">快速入口 02</p>
+          <CardTitle class="text-xl text-text-main">进入模组库</CardTitle>
+        </CardHeader>
+        <CardContent class="pt-0">
+          <p class="text-sm leading-normal text-text-dim">
+            浏览已获取模组，进入详情页管理该模组自己的存档。
+          </p>
+        </CardContent>
+        <CardFooter>
+          <Button
+            variant="outline"
+            class="border-neon text-neon bg-neon/5 hover:bg-neon/15 hover:shadow-neon-glow transition-all font-mono tracking-wide"
+            @click="goModLibrary"
+          >
+            打开模组库
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <Card class="bg-panel border-neon-deep/40 transition-all hover:border-neon-deep/70">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted">快速入口 03</p>
+          <CardTitle class="text-xl text-text-main">平台设置</CardTitle>
+        </CardHeader>
+        <CardContent class="pt-0">
+          <p class="text-sm leading-normal text-text-dim">
+            配置聊天、检索、嵌入模型与本地检索参数。
+          </p>
+        </CardContent>
+        <CardFooter>
+          <Button
+            variant="outline"
+            class="border-neon-deep text-neon bg-neon/5 hover:bg-neon/15 hover:shadow-neon-glow transition-all font-mono tracking-wide"
+            @click="goSettings"
+          >
+            打开设置
+          </Button>
+        </CardFooter>
+      </Card>
+    </div>
+
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+      <Card class="bg-panel border-neon-deep/40">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon glow-text">
+            平台状态
+          </p>
+          <CardTitle class="text-xl text-text-main">本地概览</CardTitle>
+        </CardHeader>
+        <CardContent class="grid grid-cols-3 gap-3 pt-0">
+          <div class="border border-neon-deep/30 bg-elevated/50 p-3">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">MODS</p>
+            <p class="mt-2 font-mono text-2xl font-bold text-neon glow-text">{{ builtinMods.length }}</p>
+          </div>
+          <div class="border border-neon-deep/30 bg-elevated/50 p-3">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">SAVES</p>
+            <p class="mt-2 font-mono text-2xl font-bold text-neon glow-text">{{ saveOptions.length }}</p>
+          </div>
+          <div class="border border-neon-deep/30 bg-elevated/50 p-3">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">ACTIVE</p>
+            <p class="mt-2 font-mono text-2xl font-bold text-neon glow-text">{{ activeSaveId ? "1" : "0" }}</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card class="bg-panel border-neon-deep/40">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon glow-text">
+            预留频道
+          </p>
+          <CardTitle class="text-xl text-text-main">玩家信息 / 平台公告</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-3 pt-0">
+          <div class="border border-dashed border-neon-deep/40 bg-void/50 p-4 crt-scanlines">
+            <p class="font-mono text-sm text-text-main">公告系统预留中</p>
+            <p class="mt-2 text-sm leading-normal text-text-dim">
+              未来账户、玩家身份、平台公告和工坊消息会放在这个区域。当前原型只展示本地运行时状态。
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import type { ModStaticContent } from "@tsian/contracts"
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { listPlatformSaves, playFrontendBridge } from "../platform-host"
+import {
+  getPlatformActiveSaveId,
+  listPlatformSaves,
+  playFrontendBridge,
+} from "../platform-host"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 
 interface BuiltinModSummary {
   id: string
   name: string
-  version: string
-  author?: string
-  description?: string
-  entityTypeCount: number
-  archiveCount: number
-  eventCount: number
 }
 
 interface SaveOption {
   id: string
+  name: string
   modId: string
+  updatedAt: number
 }
 
 const router = useRouter()
 const builtinMods = ref<BuiltinModSummary[]>([])
 const saveOptions = ref<SaveOption[]>([])
+const activeSaveId = ref("")
 
-function countSavesForMod(modId: string): number {
-  return saveOptions.value.filter((save) => save.modId === modId).length
-}
+const activeSave = computed(() => saveOptions.value.find((save) => save.id === activeSaveId.value) ?? null)
+
+const activeSaveName = computed(() => activeSave.value?.name ?? "暂无激活存档")
+
+const activeSaveMeta = computed(() => {
+  if (!activeSave.value) {
+    return "从模组库创建或继续一个存档后，这里会显示当前游玩入口。"
+  }
+  return `${activeSave.value.modId} · 更新于 ${formatDateTime(activeSave.value.updatedAt)}`
+})
 
 async function refreshBuiltinMods() {
   const result = await playFrontendBridge.query.query<ModStaticContent>({
@@ -71,24 +197,42 @@ async function refreshBuiltinMods() {
   builtinMods.value = result.items.map((mod) => ({
     id: mod.manifest.id,
     name: mod.manifest.name,
-    version: mod.manifest.version,
-    author: mod.manifest.author,
-    description: mod.manifest.description,
-    entityTypeCount: mod.entityTypeDefinitions.length,
-    archiveCount: mod.archiveCatalog.length,
-    eventCount: mod.eventCatalog.length,
   }))
 }
 
 async function refreshSaves() {
   saveOptions.value = (await listPlatformSaves()).map((save) => ({
     id: save.id,
+    name: save.name,
     modId: save.modId,
+    updatedAt: save.updatedAt,
   }))
+  activeSaveId.value = (await getPlatformActiveSaveId()) ?? ""
 }
 
-function openModPage(modId: string) {
-  router.push({ path: "/mod", query: { id: modId } })
+function formatDateTime(input: number): string {
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(input)
+}
+
+function continueActiveSave() {
+  if (!activeSaveId.value) {
+    return
+  }
+  router.push("/play")
+}
+
+function goModLibrary() {
+  router.push("/mod")
+}
+
+function goSettings() {
+  router.push("/settings")
 }
 
 onMounted(async () => {
@@ -96,135 +240,3 @@ onMounted(async () => {
   await refreshSaves()
 })
 </script>
-
-<style scoped>
-.page-section {
-  display: grid;
-  gap: var(--ts-space-6);
-  margin-top: var(--ts-space-6);
-}
-
-.section-copy {
-  display: grid;
-  gap: var(--ts-space-2);
-}
-
-.section-eyebrow,
-.mod-kicker {
-  margin: 0 0 var(--ts-space-3);
-  color: var(--ts-color-accent-default);
-  font-size: var(--ts-text-xs);
-  letter-spacing: var(--ts-tracking-wide);
-  text-transform: uppercase;
-}
-
-h2 {
-  margin: 0;
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-2xl);
-  line-height: var(--ts-leading-tight);
-  color: var(--ts-color-text-primary);
-}
-
-h3 {
-  margin: 0;
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-xl);
-  line-height: 1.3;
-  color: var(--ts-color-text-primary);
-}
-
-.section-copy p {
-  margin: 0;
-  color: var(--ts-color-text-secondary);
-  font-size: var(--ts-text-base);
-  line-height: var(--ts-leading-normal);
-}
-
-.mod-grid {
-  display: grid;
-  gap: var(--ts-space-4);
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-}
-
-.mod-card {
-  display: grid;
-  gap: var(--ts-space-3);
-  padding: var(--ts-space-4);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-xl);
-  background: var(--ts-color-surface-raised);
-  box-shadow: var(--ts-shadow-2);
-}
-
-.mod-card__head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--ts-space-3);
-}
-
-.mod-version {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--ts-space-1) var(--ts-space-2);
-  border-radius: var(--ts-radius-full);
-  background: var(--ts-color-accent-subtle);
-  color: var(--ts-color-accent-default);
-  font-size: var(--ts-text-xs);
-  line-height: 1;
-}
-
-.mod-description {
-  margin: 0;
-  color: var(--ts-color-text-secondary);
-  line-height: var(--ts-leading-normal);
-}
-
-.mod-meta {
-  display: grid;
-  gap: var(--ts-space-2);
-}
-
-.mod-meta span {
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-sm);
-  line-height: 1.7;
-}
-
-.mod-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ts-space-3);
-}
-
-.primary-button {
-  padding: var(--ts-space-3) var(--ts-space-4);
-  border: 1px solid var(--ts-color-accent-default);
-  border-radius: var(--ts-radius-lg);
-  background: var(--ts-color-accent-default);
-  color: var(--ts-color-accent-fg);
-  font: inherit;
-  font-weight: var(--ts-weight-medium);
-  cursor: pointer;
-  transition:
-    transform var(--ts-duration-default) var(--ts-ease-out),
-    background var(--ts-duration-default) var(--ts-ease-out);
-}
-
-.primary-button:hover {
-  transform: translateY(-1px);
-}
-
-@media (max-width: 720px) {
-  .mod-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .mod-card__head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-</style>

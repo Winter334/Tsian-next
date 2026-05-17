@@ -1,180 +1,300 @@
-<template>
+﻿<template>
   <!-- 调试页（B5）：消费 bridge.debug + bridge.query，渲染 6 类调试数据 -->
-  <section class="page-section">
-    <header class="section-copy">
-      <p class="section-eyebrow">调试</p>
-      <h2>调试面板</h2>
-      <p>平台兜底调试入口（按 Ctrl+Shift+D 唤起）。展示工作流节点、检索调试、AI 调试、patch 输出，以及历史 / Checkpoints / 快照数据；所有数据均通过 `bridge.debug` 或 `bridge.query` 拉取。</p>
-      <p v-if="!debugAvailable" class="warn-note">当前未注入 bridge.debug（基础桥模式）。所有面板将显示空状态。</p>
-    </header>
+  <section class="grid gap-6 mt-6">
+    <div class="grid gap-2">
+      <p class="font-mono text-xs tracking-wider uppercase text-neon glow-text">调试</p>
+      <h2 class="text-2xl font-bold text-text-main">调试面板</h2>
+      <p class="text-base text-text-dim leading-normal">
+        平台兜底调试入口（按 Ctrl+Shift+D 唤起）。展示工作流节点、检索调试、AI 调试、patch 输出，以及历史 / Checkpoints / 快照数据；所有数据均通过 `bridge.debug` 或 `bridge.query` 拉取。
+      </p>
+      <p v-if="!debugAvailable" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
+        当前未注入 bridge.debug（基础桥模式）。所有面板将显示空状态。
+      </p>
+    </div>
 
-    <article class="panel-card">
-      <h3>工作流快照</h3>
-      <template v-if="workflowSnapshot">
-        <div class="meta-row">
-          <span>turn: {{ workflowSnapshot.turn }}</span>
-          <span>节点数：{{ workflowNodeEntries.length }}</span>
-          <span>result 数：{{ workflowResultEntries.length }}</span>
-        </div>
+    <Card class="bg-panel border-neon-deep/40">
+      <CardHeader class="pb-3">
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">workflow</p>
+        <CardTitle class="text-xl text-text-main">工作流快照</CardTitle>
+      </CardHeader>
+      <CardContent class="grid gap-3 pt-0">
+        <template v-if="workflowSnapshot">
+          <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
+            <span>turn: {{ workflowSnapshot.turn }}</span>
+            <span>节点数：{{ workflowNodeEntries.length }}</span>
+            <span>result 数：{{ workflowResultEntries.length }}</span>
+          </div>
 
-        <div v-if="workflowNodeEntries.length > 0" class="node-grid">
+          <div v-if="workflowNodeEntries.length > 0" class="grid gap-3 grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
+            <div
+              v-for="entry in workflowNodeEntries"
+              :key="entry.id"
+              class="bg-elevated border border-neon-deep/30 rounded-lg p-3 grid gap-2"
+            >
+              <div class="flex items-center justify-between gap-3">
+                <span class="font-mono text-sm text-text-main">{{ entry.id }}</span>
+                <Badge
+                  :class="nodeStatusBadgeClass(entry.state.status)"
+                >
+                  {{ entry.state.status }}
+                </Badge>
+              </div>
+              <div v-if="entry.state.startedAt || entry.state.finishedAt" class="flex flex-wrap gap-2 text-text-dim text-xs font-mono">
+                <span v-if="entry.state.startedAt">start: {{ formatTimestamp(entry.state.startedAt) }}</span>
+                <span v-if="entry.state.finishedAt">end: {{ formatTimestamp(entry.state.finishedAt) }}</span>
+                <span v-if="entry.duration !== null">{{ entry.duration }}ms</span>
+              </div>
+              <p v-if="entry.state.error" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
+                [{{ entry.state.error.code }}] {{ entry.state.error.message }}
+              </p>
+              <details v-if="entry.state.outputs" class="group">
+                <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+                  outputs ▶
+                </summary>
+                <div class="mt-2 pl-2 border-l border-neon-deep/30">
+                  <ScrollArea class="max-h-80 rounded">
+                    <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(entry.state.outputs) }}</pre>
+                  </ScrollArea>
+                </div>
+              </details>
+            </div>
+          </div>
+
+          <details v-if="workflowResultEntries.length > 0" class="group">
+            <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+              results（{{ workflowResultEntries.length }}）▶
+            </summary>
+            <div class="mt-2 pl-2 border-l border-neon-deep/30">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(workflowSnapshot.results) }}</pre>
+              </ScrollArea>
+            </div>
+          </details>
+        </template>
+        <p v-else class="text-text-dim text-sm">暂无数据（尚未跑过一轮工作流）。</p>
+      </CardContent>
+    </Card>
+
+    <Card class="bg-panel border-neon-deep/40">
+      <CardHeader class="pb-3">
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">retrieval</p>
+        <CardTitle class="text-xl text-text-main">检索调试</CardTitle>
+      </CardHeader>
+      <CardContent class="grid gap-3 pt-0">
+        <template v-if="retrievalDebug">
+          <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
+            <span>turn: {{ retrievalDebug.turn ?? '-' }}</span>
+            <span>semantic: {{ retrievalDebug.semantic.enabled ? 'on' : 'off' }}</span>
+            <span>groups: {{ retrievalDebug.groups.length }}</span>
+            <span>candidates: {{ retrievalDebug.candidates.length }}</span>
+            <span>archives: {{ retrievalDebug.archives.length }}</span>
+            <span>catalogEvents: {{ retrievalDebug.catalogEvents.length }}</span>
+            <span v-if="retrievalDebug.hintEntities">hintEntities: {{ retrievalDebug.hintEntities.length }}</span>
+          </div>
+          <p class="text-sm text-text-dim">input: {{ retrievalDebug.input || '(空)' }}</p>
+          <p v-if="retrievalDebug.semantic.error" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
+            semantic error: {{ retrievalDebug.semantic.error }}
+          </p>
+          <details class="group">
+            <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+              完整记录 ▶
+            </summary>
+            <div class="mt-2 pl-2 border-l border-neon-deep/30">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(retrievalDebug) }}</pre>
+              </ScrollArea>
+            </div>
+          </details>
+        </template>
+        <p v-else class="text-text-dim text-sm">暂无数据（当前激活存档尚未进行过检索）。</p>
+      </CardContent>
+    </Card>
+
+    <Card class="bg-panel border-neon-deep/40">
+      <CardHeader class="pb-3">
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">AI debug</p>
+        <CardTitle class="text-xl text-text-main">AI 调试</CardTitle>
+      </CardHeader>
+      <CardContent class="grid gap-3 pt-0">
+        <template v-if="aiDebugRecords.length > 0">
+          <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
+            <span>共 {{ aiDebugRecords.length }} 条记录</span>
+          </div>
+          <ol class="grid gap-3 list-none m-0 p-0">
+            <li v-for="record in aiDebugRecords" :key="record.id" class="bg-elevated border border-neon-deep/30 rounded-lg p-3 grid gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <Badge class="bg-neon/10 text-neon border border-neon/30 font-mono text-xs">{{ record.kind }}</Badge>
+                <span class="font-mono text-sm text-text-main">{{ record.label }}</span>
+                <span class="text-text-dim text-sm">{{ record.model }}</span>
+              </div>
+              <div class="flex flex-wrap gap-3 text-text-dim text-xs font-mono">
+                <span>{{ record.createdAt }}</span>
+                <span v-if="record.turn !== undefined">turn {{ record.turn }}</span>
+                <span v-if="record.usage">
+                  usage: in {{ record.usage.input ?? '-' }} / out {{ record.usage.output ?? '-' }} / total {{ record.usage.total ?? '-' }}
+                </span>
+                <span v-if="record.vectorCount !== undefined">vectors: {{ record.vectorCount }}</span>
+                <span v-if="record.dimensions !== undefined">dim: {{ record.dimensions }}</span>
+              </div>
+              <p v-if="record.error" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
+                error: {{ record.error }}
+              </p>
+              <details v-if="record.messages" class="group">
+                <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+                  messages（{{ record.messages.length }}）▶
+                </summary>
+                <div class="mt-2 pl-2 border-l border-neon-deep/30">
+                  <ScrollArea class="max-h-80 rounded">
+                    <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(record.messages) }}</pre>
+                  </ScrollArea>
+                </div>
+              </details>
+              <details v-if="record.input" class="group">
+                <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+                  input（{{ record.input.length }}）▶
+                </summary>
+                <div class="mt-2 pl-2 border-l border-neon-deep/30">
+                  <ScrollArea class="max-h-80 rounded">
+                    <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(record.input) }}</pre>
+                  </ScrollArea>
+                </div>
+              </details>
+              <details v-if="record.responseText" class="group">
+                <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+                  responseText ▶
+                </summary>
+                <div class="mt-2 pl-2 border-l border-neon-deep/30">
+                  <ScrollArea class="max-h-80 rounded">
+                    <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ record.responseText }}</pre>
+                  </ScrollArea>
+                </div>
+              </details>
+            </li>
+          </ol>
+        </template>
+        <p v-else class="text-text-dim text-sm">暂无数据（尚未触发过 AI 调用）。</p>
+      </CardContent>
+    </Card>
+
+    <Card class="bg-panel border-neon-deep/40">
+      <CardHeader class="pb-3">
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">patch</p>
+        <CardTitle class="text-xl text-text-main">Patch（来自 maintenance / apply-patch 节点输出）</CardTitle>
+      </CardHeader>
+      <CardContent class="grid gap-3 pt-0">
+        <template v-if="patchNodeEntries.length > 0">
+          <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
+            <span>命中节点：{{ patchNodeEntries.length }}</span>
+          </div>
           <div
-            v-for="entry in workflowNodeEntries"
+            v-for="entry in patchNodeEntries"
             :key="entry.id"
-            class="node-card"
-            :data-status="entry.state.status"
+            class="bg-elevated border border-neon-deep/30 rounded-lg p-3 grid gap-2"
           >
-            <div class="node-card__head">
-              <span class="node-id">{{ entry.id }}</span>
-              <span class="node-status" :data-status="entry.state.status">
+            <div class="flex items-center justify-between gap-3">
+              <span class="font-mono text-sm text-text-main">{{ entry.id }}</span>
+              <Badge
+                :class="nodeStatusBadgeClass(entry.state.status)"
+              >
                 {{ entry.state.status }}
-              </span>
+              </Badge>
             </div>
-            <div v-if="entry.state.startedAt || entry.state.finishedAt" class="node-times">
-              <span v-if="entry.state.startedAt">start: {{ formatTimestamp(entry.state.startedAt) }}</span>
-              <span v-if="entry.state.finishedAt">end: {{ formatTimestamp(entry.state.finishedAt) }}</span>
-              <span v-if="entry.duration !== null">{{ entry.duration }}ms</span>
-            </div>
-            <p v-if="entry.state.error" class="node-error">
-              [{{ entry.state.error.code }}] {{ entry.state.error.message }}
-            </p>
-            <details v-if="entry.state.outputs" class="inline-details">
-              <summary>outputs</summary>
-              <pre class="debug-pre">{{ formatJson(entry.state.outputs) }}</pre>
-            </details>
+            <template v-if="entry.state.outputs">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(entry.state.outputs) }}</pre>
+              </ScrollArea>
+            </template>
+            <p v-else class="text-text-dim text-sm">该节点尚无 outputs。</p>
           </div>
+        </template>
+        <p v-else class="text-text-dim text-sm">暂无数据（工作流未跑出 patch 输出）。</p>
+      </CardContent>
+    </Card>
+
+    <Card class="bg-panel border-neon-deep/40">
+      <CardHeader class="pb-3">
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">history / checkpoints / snapshots</p>
+        <CardTitle class="text-xl text-text-main">历史 / Checkpoints / 快照</CardTitle>
+      </CardHeader>
+      <CardContent class="grid gap-3 pt-0">
+        <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
+          <span>history：{{ historyItems.length }} 条</span>
+          <span>events：{{ eventItems.length }} 条</span>
+          <span>archives：{{ archiveItems.length }} 条</span>
+          <span>checkpoints：{{ checkpointItems.length }} 条</span>
         </div>
 
-        <details v-if="workflowResultEntries.length > 0" class="inline-details">
-          <summary>results（{{ workflowResultEntries.length }}）</summary>
-          <pre class="debug-pre">{{ formatJson(workflowSnapshot.results) }}</pre>
-        </details>
-      </template>
-      <p v-else class="empty-note">暂无数据（尚未跑过一轮工作流）。</p>
-    </article>
-
-    <article class="panel-card">
-      <h3>检索调试</h3>
-      <template v-if="retrievalDebug">
-        <div class="meta-row">
-          <span>turn: {{ retrievalDebug.turn ?? "—" }}</span>
-          <span>semantic: {{ retrievalDebug.semantic.enabled ? "on" : "off" }}</span>
-          <span>groups: {{ retrievalDebug.groups.length }}</span>
-          <span>candidates: {{ retrievalDebug.candidates.length }}</span>
-          <span>archives: {{ retrievalDebug.archives.length }}</span>
-          <span>catalogEvents: {{ retrievalDebug.catalogEvents.length }}</span>
-          <span v-if="retrievalDebug.hintEntities">hintEntities: {{ retrievalDebug.hintEntities.length }}</span>
-        </div>
-        <p class="retrieval-input">input: {{ retrievalDebug.input || "(空)" }}</p>
-        <p v-if="retrievalDebug.semantic.error" class="node-error">
-          semantic error: {{ retrievalDebug.semantic.error }}
-        </p>
-        <details class="inline-details">
-          <summary>完整记录</summary>
-          <pre class="debug-pre">{{ formatJson(retrievalDebug) }}</pre>
-        </details>
-      </template>
-      <p v-else class="empty-note">暂无数据（当前激活存档尚未进行过检索）。</p>
-    </article>
-
-    <article class="panel-card">
-      <h3>AI 调试</h3>
-      <template v-if="aiDebugRecords.length > 0">
-        <p class="meta-row"><span>共 {{ aiDebugRecords.length }} 条记录</span></p>
-        <ol class="ai-list">
-          <li v-for="record in aiDebugRecords" :key="record.id" class="ai-item">
-            <div class="ai-item__head">
-              <span class="ai-kind" :data-kind="record.kind">{{ record.kind }}</span>
-              <span class="ai-label">{{ record.label }}</span>
-              <span class="ai-model">{{ record.model }}</span>
-            </div>
-            <div class="ai-item__meta">
-              <span>{{ record.createdAt }}</span>
-              <span v-if="record.turn !== undefined">turn {{ record.turn }}</span>
-              <span v-if="record.usage">
-                usage: in {{ record.usage.input ?? "—" }} / out {{ record.usage.output ?? "—" }} / total {{ record.usage.total ?? "—" }}
-              </span>
-              <span v-if="record.vectorCount !== undefined">vectors: {{ record.vectorCount }}</span>
-              <span v-if="record.dimensions !== undefined">dim: {{ record.dimensions }}</span>
-            </div>
-            <p v-if="record.error" class="node-error">error: {{ record.error }}</p>
-            <details v-if="record.messages" class="inline-details">
-              <summary>messages（{{ record.messages.length }}）</summary>
-              <pre class="debug-pre">{{ formatJson(record.messages) }}</pre>
-            </details>
-            <details v-if="record.input" class="inline-details">
-              <summary>input（{{ record.input.length }}）</summary>
-              <pre class="debug-pre">{{ formatJson(record.input) }}</pre>
-            </details>
-            <details v-if="record.responseText" class="inline-details">
-              <summary>responseText</summary>
-              <pre class="debug-pre">{{ record.responseText }}</pre>
-            </details>
-          </li>
-        </ol>
-      </template>
-      <p v-else class="empty-note">暂无数据（尚未触发过 AI 调用）。</p>
-    </article>
-
-    <article class="panel-card">
-      <h3>Patch（来自 maintenance / apply-patch 节点输出）</h3>
-      <template v-if="patchNodeEntries.length > 0">
-        <p class="meta-row"><span>命中节点：{{ patchNodeEntries.length }}</span></p>
-        <div
-          v-for="entry in patchNodeEntries"
-          :key="entry.id"
-          class="patch-block"
-        >
-          <div class="patch-block__head">
-            <span class="node-id">{{ entry.id }}</span>
-            <span class="node-status" :data-status="entry.state.status">{{ entry.state.status }}</span>
+        <details class="group">
+          <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+            runtime snapshot ▶
+          </summary>
+          <div class="mt-2 pl-2 border-l border-neon-deep/30">
+            <template v-if="runtimeSnapshot">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(runtimeSnapshot) }}</pre>
+              </ScrollArea>
+            </template>
+            <p v-else class="text-text-dim text-sm">暂无快照。</p>
           </div>
-          <pre v-if="entry.state.outputs" class="debug-pre">{{ formatJson(entry.state.outputs) }}</pre>
-          <p v-else class="empty-note">该节点尚无 outputs。</p>
-        </div>
-      </template>
-      <p v-else class="empty-note">暂无数据（工作流未跑出 patch 输出）。</p>
-    </article>
+        </details>
 
-    <article class="panel-card">
-      <h3>历史 / Checkpoints / 快照</h3>
-      <div class="meta-row">
-        <span>history：{{ historyItems.length }} 条</span>
-        <span>events：{{ eventItems.length }} 条</span>
-        <span>archives：{{ archiveItems.length }} 条</span>
-        <span>checkpoints：{{ checkpointItems.length }} 条</span>
-      </div>
+        <details class="group">
+          <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+            history（{{ historyItems.length }}）▶
+          </summary>
+          <div class="mt-2 pl-2 border-l border-neon-deep/30">
+            <template v-if="historyItems.length > 0">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(historyItems) }}</pre>
+              </ScrollArea>
+            </template>
+            <p v-else class="text-text-dim text-sm">暂无消息。</p>
+          </div>
+        </details>
 
-      <details class="inline-details">
-        <summary>runtime snapshot</summary>
-        <pre v-if="runtimeSnapshot" class="debug-pre">{{ formatJson(runtimeSnapshot) }}</pre>
-        <p v-else class="empty-note">暂无快照。</p>
-      </details>
+        <details class="group">
+          <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+            events（{{ eventItems.length }}）▶
+          </summary>
+          <div class="mt-2 pl-2 border-l border-neon-deep/30">
+            <template v-if="eventItems.length > 0">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(eventItems) }}</pre>
+              </ScrollArea>
+            </template>
+            <p v-else class="text-text-dim text-sm">暂无事件。</p>
+          </div>
+        </details>
 
-      <details class="inline-details">
-        <summary>history（{{ historyItems.length }}）</summary>
-        <pre v-if="historyItems.length > 0" class="debug-pre">{{ formatJson(historyItems) }}</pre>
-        <p v-else class="empty-note">暂无消息。</p>
-      </details>
+        <details class="group">
+          <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+            archives（{{ archiveItems.length }}）▶
+          </summary>
+          <div class="mt-2 pl-2 border-l border-neon-deep/30">
+            <template v-if="archiveItems.length > 0">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(archiveItems) }}</pre>
+              </ScrollArea>
+            </template>
+            <p v-else class="text-text-dim text-sm">暂无档案。</p>
+          </div>
+        </details>
 
-      <details class="inline-details">
-        <summary>events（{{ eventItems.length }}）</summary>
-        <pre v-if="eventItems.length > 0" class="debug-pre">{{ formatJson(eventItems) }}</pre>
-        <p v-else class="empty-note">暂无事件。</p>
-      </details>
-
-      <details class="inline-details">
-        <summary>archives（{{ archiveItems.length }}）</summary>
-        <pre v-if="archiveItems.length > 0" class="debug-pre">{{ formatJson(archiveItems) }}</pre>
-        <p v-else class="empty-note">暂无档案。</p>
-      </details>
-
-      <details class="inline-details">
-        <summary>checkpoints（{{ checkpointItems.length }}）</summary>
-        <pre v-if="checkpointItems.length > 0" class="debug-pre">{{ formatJson(checkpointItems) }}</pre>
-        <p v-else class="empty-note">暂无 checkpoint。</p>
-      </details>
-    </article>
+        <details class="group">
+          <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+            checkpoints（{{ checkpointItems.length }}）▶
+          </summary>
+          <div class="mt-2 pl-2 border-l border-neon-deep/30">
+            <template v-if="checkpointItems.length > 0">
+              <ScrollArea class="max-h-80 rounded">
+                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(checkpointItems) }}</pre>
+              </ScrollArea>
+            </template>
+            <p v-else class="text-text-dim text-sm">暂无 checkpoint。</p>
+          </div>
+        </details>
+      </CardContent>
+    </Card>
   </section>
 </template>
 
@@ -188,6 +308,11 @@ import type {
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 
 import { playFrontendBridge } from "../platform-host"
+
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Separator } from "@/components/ui/separator"
 
 const debugAvailable = ref<boolean>(Boolean(playFrontendBridge.debug))
 
@@ -217,6 +342,20 @@ function formatTimestamp(ms: number): string {
   } catch {
     return String(ms)
   }
+}
+
+function nodeStatusBadgeClass(status: string): string {
+  const s = status.toLowerCase()
+  if (s === 'succeeded' || s === 'completed') {
+    return 'bg-neon/10 text-neon border border-neon/30 font-mono text-xs'
+  }
+  if (s === 'failed' || s === 'aborted' || s === 'error') {
+    return 'bg-danger/10 text-danger border border-danger/30 font-mono text-xs'
+  }
+  if (s === 'running' || s === 'pending') {
+    return 'bg-warning/10 text-warning border border-warning/30 font-mono text-xs'
+  }
+  return 'border-neon-deep/60 text-neon-muted font-mono text-xs'
 }
 
 const workflowNodeEntries = computed(() => {
@@ -326,261 +465,3 @@ onBeforeUnmount(() => {
   unsubscribeTurnReady = null
 })
 </script>
-
-<style scoped>
-.page-section {
-  display: grid;
-  gap: var(--ts-space-6);
-  margin-top: var(--ts-space-6);
-}
-
-.section-copy {
-  display: grid;
-  gap: var(--ts-space-2);
-}
-
-.section-eyebrow {
-  margin: 0 0 var(--ts-space-3);
-  color: var(--ts-color-accent-default);
-  font-size: var(--ts-text-xs);
-  letter-spacing: var(--ts-tracking-wide);
-  text-transform: uppercase;
-}
-
-h2 {
-  margin: 0;
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-2xl);
-  line-height: var(--ts-leading-tight);
-  color: var(--ts-color-text-primary);
-}
-
-h3 {
-  margin: 0 0 var(--ts-space-3);
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-xl);
-  line-height: 1.3;
-  color: var(--ts-color-text-primary);
-}
-
-.section-copy p,
-.panel-card p {
-  margin: 0;
-  color: var(--ts-color-text-secondary);
-  font-size: var(--ts-text-base);
-  line-height: var(--ts-leading-normal);
-}
-
-.warn-note {
-  color: var(--ts-color-state-error-fg);
-  background: var(--ts-color-state-error-bg);
-  padding: var(--ts-space-2) var(--ts-space-3);
-  border-radius: var(--ts-radius-md);
-}
-
-.panel-card {
-  display: grid;
-  gap: var(--ts-space-3);
-  padding: var(--ts-space-4);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-xl);
-  background: var(--ts-color-surface-raised);
-  box-shadow: var(--ts-shadow-2);
-}
-
-.meta-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ts-space-3);
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-sm);
-  line-height: 1.5;
-}
-
-.empty-note {
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-sm);
-  line-height: 1.5;
-}
-
-.retrieval-input {
-  color: var(--ts-color-text-secondary);
-  font-size: var(--ts-text-sm);
-  line-height: 1.5;
-}
-
-.node-grid {
-  display: grid;
-  gap: var(--ts-space-3);
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-}
-
-.node-card {
-  display: grid;
-  gap: var(--ts-space-2);
-  padding: var(--ts-space-3);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-lg);
-  background: var(--ts-color-surface-overlay);
-  box-shadow: var(--ts-shadow-1);
-}
-
-.node-card__head,
-.patch-block__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--ts-space-2);
-}
-
-.node-id {
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-base);
-  color: var(--ts-color-text-primary);
-  font-weight: var(--ts-weight-medium);
-}
-
-.node-status {
-  font-size: var(--ts-text-xs);
-  letter-spacing: var(--ts-tracking-wide);
-  text-transform: uppercase;
-  padding: var(--ts-space-1) var(--ts-space-2);
-  border-radius: var(--ts-radius-sm);
-  color: var(--ts-color-text-muted);
-  background: var(--ts-color-surface-base);
-}
-
-.node-status[data-status="succeeded"] {
-  color: var(--ts-color-state-success-fg);
-  background: var(--ts-color-state-success-bg);
-}
-
-.node-status[data-status="failed"],
-.node-status[data-status="aborted"] {
-  color: var(--ts-color-state-error-fg);
-  background: var(--ts-color-state-error-bg);
-}
-
-.node-status[data-status="running"] {
-  color: var(--ts-color-accent-default);
-  background: var(--ts-color-accent-subtle);
-}
-
-.node-times {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ts-space-2);
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-xs);
-  line-height: 1.5;
-}
-
-.node-error {
-  margin: 0;
-  color: var(--ts-color-state-error-fg);
-  background: var(--ts-color-state-error-bg);
-  padding: var(--ts-space-2) var(--ts-space-3);
-  border-radius: var(--ts-radius-md);
-  font-size: var(--ts-text-sm);
-  line-height: 1.5;
-}
-
-.inline-details {
-  display: grid;
-  gap: var(--ts-space-2);
-  border-top: 1px solid var(--ts-color-border-default);
-  padding-top: var(--ts-space-2);
-}
-
-.inline-details > summary {
-  cursor: pointer;
-  color: var(--ts-color-accent-default);
-  font-size: var(--ts-text-sm);
-  line-height: 1.5;
-}
-
-.debug-pre {
-  margin: 0;
-  padding: var(--ts-space-3);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-md);
-  background: var(--ts-color-surface-base);
-  color: var(--ts-color-text-primary);
-  font-family: var(--ts-font-sans);
-  font-size: var(--ts-text-xs);
-  line-height: 1.5;
-  max-height: 320px;
-  overflow: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.ai-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: var(--ts-space-3);
-}
-
-.ai-item {
-  display: grid;
-  gap: var(--ts-space-2);
-  padding: var(--ts-space-3);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-lg);
-  background: var(--ts-color-surface-overlay);
-}
-
-.ai-item__head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--ts-space-2);
-}
-
-.ai-kind {
-  font-size: var(--ts-text-xs);
-  letter-spacing: var(--ts-tracking-wide);
-  text-transform: uppercase;
-  padding: var(--ts-space-1) var(--ts-space-2);
-  border-radius: var(--ts-radius-sm);
-  color: var(--ts-color-accent-fg);
-  background: var(--ts-color-accent-default);
-}
-
-.ai-kind[data-kind="embedding"] {
-  background: var(--ts-color-text-muted);
-}
-
-.ai-label {
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-base);
-  color: var(--ts-color-text-primary);
-  font-weight: var(--ts-weight-medium);
-}
-
-.ai-model {
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-sm);
-  line-height: 1.5;
-}
-
-.ai-item__meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ts-space-3);
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-xs);
-  line-height: 1.5;
-}
-
-.patch-block {
-  display: grid;
-  gap: var(--ts-space-2);
-  padding: var(--ts-space-3);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-lg);
-  background: var(--ts-color-surface-overlay);
-}
-</style>

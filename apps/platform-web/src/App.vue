@@ -1,65 +1,85 @@
 <template>
-  <main class="app-shell">
-    <!-- 平台壳：游戏路由 /play 下隐藏外壳，由游玩前端独占视口 -->
-    <template v-if="!isPlayRoute">
-      <section class="panel">
-        <header class="panel-header">
-          <div class="panel-copy">
-            <p class="eyebrow">Tsian</p>
-            <h1>Platform Lobby</h1>
-            <p class="summary">
-              先在平台大厅选择模组，再进入对应模组页管理存档与查看平台设置；只有真正进入游戏时，才挂载游玩前端。
-            </p>
+  <!-- ── Master Wrapper: CSS Grid 堆叠，用于 CRT 开屏动画 ── -->
+  <div
+    class="grid w-full min-h-dvh overflow-hidden bg-void"
+    :class="{ 'animate-crt-switch': splashState === 'animating' }"
+    @animationend="onCrtAnimationEnd"
+  >
+    <!-- ── 主应用层 (z-10, 始终挂载, splash 期间被遮盖) ── -->
+    <div class="col-start-1 row-start-1 z-10">
+      <!-- /play 路由：游玩前端独占视口，无平台壳 -->
+      <router-view v-if="isPlayRoute" />
+
+      <!-- 平台壳：赛博工业风侧边栏布局 -->
+      <div v-else class="flex h-screen w-screen overflow-hidden bg-void">
+        <!-- ── 左侧边栏 ── -->
+        <aside class="flex w-56 shrink-0 flex-col border-r border-neon-deep/40 bg-panel">
+          <!-- 标题区 -->
+          <div class="flex items-center gap-2 border-b border-neon-deep/30 px-4 py-5">
+            <div class="h-2 w-2 rounded-full bg-neon shadow-neon-glow animate-pulse" />
+            <h1 class="font-mono text-sm font-bold tracking-[0.25em] text-neon glow-text">
+              T S I A N
+            </h1>
           </div>
-          <div class="status-grid">
-            <article class="status-card">
-              <span>Storage</span>
-              <strong>{{ storageStatus }}</strong>
-            </article>
-            <article class="status-card">
-              <span>AI</span>
-              <strong>{{ aiStatus }}</strong>
-            </article>
-            <article class="status-card">
-              <span>Route</span>
-              <strong>{{ routeName }}</strong>
-            </article>
+
+          <!-- 导航链接 -->
+          <nav class="flex flex-1 flex-col gap-1 px-2 py-3">
+            <button
+              v-for="item in navItems"
+              :key="item.name"
+              type="button"
+              class="group flex items-center gap-3 px-3 py-2.5 font-mono text-xs uppercase tracking-wider transition-all duration-150"
+              :class="isRoute(item.name)
+                ? 'bg-neon/10 text-neon border-l-2 border-neon glow-box'
+                : 'text-text-dim hover:text-text-main hover:bg-elevated/50 border-l-2 border-transparent'"
+              @click="router.push(item.path)"
+            >
+              <span class="text-[10px] font-bold opacity-40">{{ item.index }}</span>
+              {{ item.label }}
+            </button>
+          </nav>
+
+          <!-- 底部状态区 -->
+          <div class="border-t border-neon-deep/30 px-4 py-3">
+            <div class="flex items-center gap-2 font-mono text-[10px] text-text-dim">
+              <div
+                class="h-1.5 w-1.5 rounded-full"
+                :class="storageStatus === 'ready' ? 'bg-neon' : 'bg-warning'"
+              />
+              STO:{{ storageStatus }}
+            </div>
+            <div class="mt-1 font-mono text-[10px] text-text-dim truncate">
+              AI:{{ aiStatusShort }}
+            </div>
           </div>
-        </header>
+        </aside>
 
-        <nav class="platform-nav">
-          <button
-            class="nav-button"
-            :class="{ 'nav-button--active': isRoute('lobby') }"
-            type="button"
-            @click="goLobby"
-          >
-            大厅
-          </button>
-          <button
-            class="nav-button"
-            :class="{ 'nav-button--active': isRoute('mod') }"
-            type="button"
-            @click="goMod"
-          >
-            模组页
-          </button>
-          <button
-            class="nav-button"
-            :class="{ 'nav-button--active': isRoute('settings') }"
-            type="button"
-            @click="goSettings"
-          >
-            设置
-          </button>
-        </nav>
+        <!-- ── 主内容区 ── -->
+        <main class="relative flex-1 overflow-y-auto overflow-x-hidden bg-void">
+          <router-view />
+        </main>
 
-        <router-view />
-      </section>
-    </template>
+        <!-- ── CRT 扫描线叠加层 ── -->
+        <div
+          class="pointer-events-none fixed inset-0 z-50 crt-scanlines opacity-30"
+          aria-hidden="true"
+        />
 
-    <router-view v-else />
-  </main>
+        <!-- ── 噪点纹理叠加层 ── -->
+        <div
+          class="pointer-events-none fixed inset-0 z-40 bg-noise"
+          aria-hidden="true"
+        />
+      </div>
+    </div>
+
+    <!-- ── 开屏动画层 (z-50) ── -->
+    <SplashScreen
+      v-if="splashState !== 'done'"
+      class="col-start-1 row-start-1 z-50"
+      @exit="startCrtTransition"
+    />
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -73,6 +93,33 @@ import {
 } from "./config/ai"
 import { initializePlatformHost } from "./platform-host"
 import { ensureLocalStorageReady } from "./storage"
+import SplashScreen from "./components/SplashScreen.vue"
+
+// ── 开屏动画状态机 ──
+// typing   = splash 可见，打字机运行中
+// animating = CRT 关机→开机动画播放中
+// done     = 动画结束，splash 永久移除
+type SplashState = "typing" | "animating" | "done"
+const splashState = ref<SplashState>("typing")
+
+/** 点击 splash 后触发 CRT 过渡动画 */
+const startCrtTransition = () => {
+  if (splashState.value !== "typing") return
+  splashState.value = "animating"
+
+  // 在 CRT 动画 55% 处 (800ms × 0.55 ≈ 440ms)，画面压缩到最暗的水平线
+  // 此刻移除 splash DOM，动画展开时露出的就是真正的平台 UI
+  setTimeout(() => {
+    if (splashState.value === "animating") {
+      splashState.value = "done"
+    }
+  }, 440)
+}
+
+/** CSS 动画结束回调（清理 will-change 等） */
+const onCrtAnimationEnd = () => {
+  splashState.value = "done"
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -80,34 +127,29 @@ const storageStatus = ref("checking...")
 const aiStatus = ref("checking...")
 
 const isPlayRoute = computed(() => route.name === "play")
-const routeName = computed(() => String(route.name ?? "—"))
+
+const navItems = [
+  { name: "lobby", path: "/", label: "大厅", index: "01" },
+  { name: "mod", path: "/mod", label: "模组", index: "02" },
+  { name: "settings", path: "/settings", label: "设置", index: "03" },
+  { name: "debug", path: "/debug", label: "调试", index: "04" },
+]
 
 function isRoute(name: string): boolean {
+  if (name === "mod") {
+    return route.name === "mod" || route.name === "mod-detail"
+  }
   return route.name === name
 }
 
-function platformStatusText(): string {
-  return [
-    `chat=${getBrowserAiConfig() ? "configured" : "missing"}`,
-    `retrieval=${getBrowserRetrievalConfig() ? "configured" : "missing"}`,
-    `embed=${getBrowserEmbeddingConfig() ? "configured" : "missing"}`,
-    `local=${getBrowserPlatformConfigStorageState()}`,
-  ].join(" | ")
-}
+const aiStatusShort = computed(() => {
+  const chat = getBrowserAiConfig() ? "OK" : "--"
+  const ret = getBrowserRetrievalConfig() ? "OK" : "--"
+  const embed = getBrowserEmbeddingConfig() ? "OK" : "--"
+  return `C:${chat} R:${ret} E:${embed}`
+})
 
-function goLobby() {
-  router.push("/")
-}
-
-function goMod() {
-  router.push("/mod")
-}
-
-function goSettings() {
-  router.push("/settings")
-}
-
-// 全局 Ctrl+Shift+D 跳转到调试页（D6）
+// Ctrl+Shift+D → 调试页
 function onKeydown(e: KeyboardEvent) {
   if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
     e.preventDefault()
@@ -119,148 +161,10 @@ onMounted(async () => {
   window.addEventListener("keydown", onKeydown)
   storageStatus.value = await ensureLocalStorageReady()
   await initializePlatformHost()
-  aiStatus.value = platformStatusText()
+  aiStatus.value = `chat=${getBrowserAiConfig() ? "configured" : "missing"} | retrieval=${getBrowserRetrievalConfig() ? "configured" : "missing"} | embed=${getBrowserEmbeddingConfig() ? "configured" : "missing"} | local=${getBrowserPlatformConfigStorageState()}`
 })
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown)
 })
 </script>
-
-<style scoped>
-.app-shell {
-  width: 100%;
-  min-height: 100vh;
-  padding: var(--ts-space-6);
-}
-
-.panel {
-  width: min(1440px, 100%);
-  min-width: 0;
-  margin: 0 auto;
-  padding: var(--ts-space-8);
-  border: 1px solid var(--ts-color-border-strong);
-  border-radius: var(--ts-radius-2xl);
-  background: var(--ts-bg-parchment);
-  box-shadow: var(--ts-shadow-4);
-}
-
-.panel-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.9fr);
-  gap: var(--ts-space-4);
-  align-items: start;
-}
-
-.panel-copy {
-  min-width: 0;
-}
-
-.eyebrow {
-  margin: 0 0 var(--ts-space-3);
-  color: var(--ts-color-accent-default);
-  font-size: var(--ts-text-xs);
-  letter-spacing: var(--ts-tracking-wide);
-  text-transform: uppercase;
-}
-
-h1 {
-  margin: 0 0 var(--ts-space-3);
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-3xl);
-  line-height: var(--ts-leading-tight);
-  color: var(--ts-color-text-primary);
-  font-weight: var(--ts-weight-bold);
-}
-
-.summary {
-  margin: 0;
-  color: var(--ts-color-text-secondary);
-  font-size: var(--ts-text-base);
-  line-height: var(--ts-leading-normal);
-}
-
-.status-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--ts-space-3);
-}
-
-.status-card {
-  padding: var(--ts-space-4);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-xl);
-  background: var(--ts-color-surface-raised);
-  box-shadow: var(--ts-shadow-1);
-}
-
-.status-card span {
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-sm);
-  line-height: 1.7;
-}
-
-.status-card strong {
-  display: block;
-  margin-top: var(--ts-space-2);
-  color: var(--ts-color-text-primary);
-  font-size: var(--ts-text-sm);
-  line-height: 1.6;
-  font-weight: var(--ts-weight-medium);
-}
-
-.platform-nav {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ts-space-3);
-  margin-top: var(--ts-space-6);
-}
-
-.nav-button {
-  padding: var(--ts-space-3) var(--ts-space-4);
-  border-radius: var(--ts-radius-lg);
-  border: 1px solid var(--ts-color-border-strong);
-  background: var(--ts-color-surface-overlay);
-  color: var(--ts-color-text-primary);
-  font: inherit;
-  cursor: pointer;
-  transition:
-    transform var(--ts-duration-default) var(--ts-ease-out),
-    border-color var(--ts-duration-default) var(--ts-ease-out),
-    background var(--ts-duration-default) var(--ts-ease-out);
-}
-
-.nav-button--active {
-  border-color: var(--ts-color-accent-default);
-  background: var(--ts-color-accent-default);
-  color: var(--ts-color-accent-fg);
-}
-
-.nav-button:hover {
-  transform: translateY(-1px);
-}
-
-@media (max-width: 1080px) {
-  .panel-header {
-    grid-template-columns: 1fr;
-  }
-
-  .status-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 720px) {
-  .app-shell {
-    padding: var(--ts-space-3);
-  }
-
-  .panel {
-    padding: var(--ts-space-4);
-  }
-
-  .status-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

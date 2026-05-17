@@ -16,7 +16,12 @@ const router = createRouter({
     {
       path: "/mod",
       name: "mod",
-      component: () => import("../views/ModView.vue"),
+      component: () => import("../views/ModListView.vue"),
+    },
+    {
+      path: "/mod/:id",
+      name: "mod-detail",
+      component: () => import("../views/ModDetailView.vue"),
     },
     {
       path: "/settings",

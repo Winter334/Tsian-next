@@ -1,251 +1,306 @@
 <template>
   <!-- 设置页：AI 配置与检索参数 -->
-  <section class="page-section">
-    <div class="section-copy">
-      <p class="section-eyebrow">设置</p>
-      <h2>平台设置</h2>
-      <p>当前阶段先提供最小可写入口：通用聊天 AI、检索 AI、Embedding 和检索参数都可以直接在浏览器本地保存。</p>
-    </div>
-
-    <div class="settings-actions">
-      <div class="quick-list">
-        <span>当前生效聊天模型：{{ chatModelSummary }}</span>
-        <span>当前生效检索模型：{{ retrievalModelSummary }}</span>
-        <span>当前生效嵌入模型：{{ embeddingModelSummary }}</span>
-        <span>当前检索增强：{{ retrievalEnhancedSummary }}</span>
-      </div>
-      <div class="mod-actions">
-        <button class="primary-button" type="button" @click="handleSaveSettings">
-          保存本地配置
-        </button>
-        <button class="ghost-button" type="button" @click="handleResetSettings">
-          重置为环境默认
-        </button>
-      </div>
-      <p v-if="settingsFeedback" class="settings-message settings-message--ok">
-        {{ settingsFeedback }}
-      </p>
-      <p v-if="settingsError" class="settings-message settings-message--error">
-        {{ settingsError }}
+  <section class="grid gap-6 mt-6">
+    <div class="grid gap-2">
+      <p class="font-mono text-xs tracking-wider uppercase text-neon glow-text">设置</p>
+      <h2 class="text-2xl font-bold text-text-main">平台设置</h2>
+      <p class="text-base text-text-dim leading-normal">
+        当前阶段先提供最小可写入口：通用聊天 AI、检索 AI、Embedding 和检索参数都可以直接在浏览器本地保存。
       </p>
     </div>
 
-    <div class="settings-grid">
-      <article class="feature-card settings-panel">
-        <div class="feature-card__head">
-          <div>
-            <p class="mod-kicker">AI</p>
-            <h3>通用聊天 AI</h3>
+    <Card class="bg-panel border-neon-deep/40">
+      <CardHeader class="pb-3">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div class="grid gap-2">
+            <p class="font-mono text-xs tracking-wider uppercase text-neon-muted">当前生效</p>
+            <CardTitle class="text-xl text-text-main">本地配置状态</CardTitle>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <Button
+              variant="outline"
+              class="border-neon text-neon bg-neon/5 hover:bg-neon/15 hover:shadow-neon-glow transition-all font-mono tracking-wide"
+              type="button"
+              @click="handleSaveSettings"
+            >
+              保存本地配置
+            </Button>
+            <Button
+              variant="outline"
+              class="border-neon-deep/60 text-text-dim hover:bg-elevated transition-colors font-mono tracking-wide"
+              type="button"
+              @click="handleResetSettings"
+            >
+              重置为环境默认
+            </Button>
           </div>
         </div>
-        <div class="form-grid">
-          <label class="field-group">
-            <span>Base URL</span>
-            <input
+      </CardHeader>
+      <CardContent class="grid gap-3 pt-0">
+        <div class="grid grid-cols-1 gap-2 md:grid-cols-2">
+          <Badge variant="outline" class="justify-start border-neon-deep/50 text-text-dim font-mono font-normal">
+            当前生效聊天模型：{{ chatModelSummary }}
+          </Badge>
+          <Badge variant="outline" class="justify-start border-neon-deep/50 text-text-dim font-mono font-normal">
+            当前生效检索模型：{{ retrievalModelSummary }}
+          </Badge>
+          <Badge variant="outline" class="justify-start border-neon-deep/50 text-text-dim font-mono font-normal">
+            当前生效嵌入模型：{{ embeddingModelSummary }}
+          </Badge>
+          <Badge variant="outline" class="justify-start border-neon-deep/50 text-text-dim font-mono font-normal">
+            当前检索增强：{{ retrievalEnhancedSummary }}
+          </Badge>
+        </div>
+        <p
+          v-if="settingsFeedback"
+          class="text-neon bg-neon/10 border border-neon-deep/40 rounded px-3 py-2 text-sm"
+        >
+          {{ settingsFeedback }}
+        </p>
+        <p
+          v-if="settingsError"
+          class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm"
+        >
+          {{ settingsError }}
+        </p>
+      </CardContent>
+    </Card>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <Card class="bg-panel border-neon-deep/40">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">AI 配置</p>
+          <CardTitle class="text-xl text-text-main">通用聊天 AI</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-4 pt-0">
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">Base URL</Label>
+            <Input
               v-model="platformConfigDraft.chat.baseUrl"
-              class="field-input"
               type="text"
               :placeholder="effectiveChatConfig?.baseUrl || 'https://example.com/v1'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-          <label class="field-group">
-            <span>Model</span>
-            <input
+          </div>
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">Model</Label>
+            <Input
               v-model="platformConfigDraft.chat.model"
-              class="field-input"
               type="text"
               :placeholder="effectiveChatConfig?.model || '模型名'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-          <label class="field-group">
-            <span>API Key</span>
-            <input
+          </div>
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">API Key</Label>
+            <Input
               v-model="platformConfigDraft.chat.apiKey"
-              class="field-input"
               type="password"
               :placeholder="effectiveChatConfig ? '已配置，可留空回退' : 'sk-...'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-        </div>
-        <p class="settings-note">这一组同时服务正文 AI 和维护 AI。留空表示回退到浏览器环境变量。</p>
-      </article>
-
-      <article class="feature-card settings-panel">
-        <div class="feature-card__head">
-          <div>
-            <p class="mod-kicker">AI</p>
-            <h3>检索 AI</h3>
           </div>
-        </div>
-        <div class="form-grid">
-          <label class="field-group">
-            <span>Base URL</span>
-            <input
+          <p class="text-xs text-text-dim">
+            这一组同时服务正文 AI 和维护 AI。留空表示回退到浏览器环境变量。
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card class="bg-panel border-neon-deep/40">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">AI 配置</p>
+          <CardTitle class="text-xl text-text-main">检索 AI</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-4 pt-0">
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">Base URL</Label>
+            <Input
               v-model="platformConfigDraft.retrieval.baseUrl"
-              class="field-input"
               type="text"
               :placeholder="effectiveRetrievalConfig?.baseUrl || '留空表示跟随通用聊天配置'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-          <label class="field-group">
-            <span>Model</span>
-            <input
+          </div>
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">Model</Label>
+            <Input
               v-model="platformConfigDraft.retrieval.model"
-              class="field-input"
               type="text"
               :placeholder="effectiveRetrievalConfig?.model || '留空表示跟随通用聊天配置'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-          <label class="field-group">
-            <span>API Key</span>
-            <input
+          </div>
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">API Key</Label>
+            <Input
               v-model="platformConfigDraft.retrieval.apiKey"
-              class="field-input"
               type="password"
               :placeholder="effectiveRetrievalConfig ? '已配置，可留空回退' : '留空表示跟随通用聊天配置'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-        </div>
-        <p class="settings-note">留空时按当前代码口径回退到 `VITE_RETRIEVAL_*`，再回退到通用聊天配置。</p>
-      </article>
-
-      <article class="feature-card settings-panel">
-        <div class="feature-card__head">
-          <div>
-            <p class="mod-kicker">AI</p>
-            <h3>Embedding</h3>
           </div>
-        </div>
-        <div class="form-grid">
-          <label class="field-group">
-            <span>Base URL</span>
-            <input
+          <p class="text-xs text-text-dim">
+            留空时按当前代码口径回退到 `VITE_RETRIEVAL_*`，再回退到通用聊天配置。
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card class="bg-panel border-neon-deep/40">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">AI 配置</p>
+          <CardTitle class="text-xl text-text-main">Embedding</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-4 pt-0">
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">Base URL</Label>
+            <Input
               v-model="platformConfigDraft.embedding.baseUrl"
-              class="field-input"
               type="text"
               :placeholder="effectiveEmbeddingConfig?.baseUrl || '留空表示沿用通用聊天配置'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-          <label class="field-group">
-            <span>Model</span>
-            <input
+          </div>
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">Model</Label>
+            <Input
               v-model="platformConfigDraft.embedding.model"
-              class="field-input"
               type="text"
               :placeholder="effectiveEmbeddingConfig?.model || 'Qwen/Qwen3-Embedding-8B'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-          <label class="field-group">
-            <span>API Key</span>
-            <input
+          </div>
+          <div class="grid gap-2">
+            <Label class="text-sm text-text-dim font-mono">API Key</Label>
+            <Input
               v-model="platformConfigDraft.embedding.apiKey"
-              class="field-input"
               type="password"
               :placeholder="effectiveEmbeddingConfig ? '已配置，可留空回退' : '留空表示沿用通用聊天配置'"
+              class="bg-elevated border-neon-deep/40 text-text-main placeholder:text-text-dim/50 focus:border-neon focus:ring-neon/20"
             />
-          </label>
-        </div>
-        <p class="settings-note">Embedding 的 `baseUrl / apiKey` 可沿用通用聊天配置，但 `model` 仍建议单独明确填写。</p>
-      </article>
-
-      <article class="feature-card settings-panel settings-panel--wide">
-        <div class="feature-card__head">
-          <div>
-            <p class="mod-kicker">检索</p>
-            <h3>检索参数</h3>
           </div>
-        </div>
-        <div class="toggle-row">
-          <label class="checkbox-field">
-            <input v-model="platformConfigDraft.retrievalSettings.aiEnhanced" type="checkbox" />
-            <span>开启 AI 增强检索</span>
-          </label>
-          <span class="settings-note">关闭时只走结构检索；开启后会额外触发关键词提取与向量检索。</span>
-        </div>
-        <div class="number-grid">
-          <label class="field-group">
-            <span>最近消息数</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.recentMessageLimit" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>候选事件上限</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.maxCandidates" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>预设事件注入上限</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.maxCatalogInjected" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>预设事件分数阈值</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.minCatalogEventScore" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>基础 seed 数量</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.baseSeedEventLimit" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>复杂剧情 seed 数量</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.complexSeedEventLimit" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>复杂实体阈值</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.complexEntityThreshold" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>相邻事件扩展数</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.maxChainNeighborsPerSeed" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>事件注入上限</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.maxInjectedEvents" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>seed 分数阈值</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.minSeedScore" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>桥接实体上限</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.bridgeEntityLimit" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>桥接实体分数阈值</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.minBridgeEntityScore" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>语义事件上限</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.semanticEventLimit" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>语义档案上限</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.semanticArchiveLimit" class="field-input" type="number" min="0" />
-          </label>
-          <label class="field-group">
-            <span>语义相似度阈值</span>
-            <input v-model.number="platformConfigDraft.retrievalSettings.semanticScoreThreshold" class="field-input" type="number" min="0" step="0.01" />
-          </label>
-        </div>
-      </article>
+          <p class="text-xs text-text-dim">
+            Embedding 的 `baseUrl / apiKey` 可沿用通用聊天配置，但 `model` 仍建议单独明确填写。
+          </p>
+        </CardContent>
+      </Card>
 
-      <article class="feature-card settings-panel">
-        <div class="feature-card__head">
-          <div>
-            <p class="mod-kicker">平台</p>
-            <h3>当前概况</h3>
+      <Card class="bg-panel border-neon-deep/40">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">平台</p>
+          <CardTitle class="text-xl text-text-main">当前概况</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-1.5 pt-0">
+          <span class="text-sm text-text-dim font-mono">内置模组：{{ builtinModCount }}</span>
+          <span class="text-sm text-text-dim font-mono">本地存档：{{ saveOptionCount }}</span>
+          <span class="text-sm text-text-dim font-mono">当前激活存档：{{ activeSaveId || "无" }}</span>
+          <span class="text-sm text-text-dim font-mono">当前 localStorage 覆盖：{{ aiStatus }}</span>
+        </CardContent>
+      </Card>
+
+      <Card class="bg-panel border-neon-deep/40 lg:col-span-2">
+        <CardHeader class="pb-3">
+          <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">参数</p>
+          <CardTitle class="text-xl text-text-main">检索参数</CardTitle>
+        </CardHeader>
+        <CardContent class="grid gap-4 pt-0">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div class="flex items-center gap-3">
+              <Switch
+                :checked="platformConfigDraft.retrievalSettings.aiEnhanced"
+                class="data-[state=checked]:bg-neon data-[state=unchecked]:bg-elevated"
+                @update:checked="platformConfigDraft.retrievalSettings.aiEnhanced = $event"
+              />
+              <Label class="text-sm text-text-main font-mono">开启 AI 增强检索</Label>
+            </div>
+            <span class="text-xs text-text-dim leading-normal">
+              关闭时只走结构检索；开启后会额外触发关键词提取与向量检索。
+            </span>
           </div>
-        </div>
-        <div class="quick-list">
-          <span>内置模组：{{ builtinModCount }}</span>
-          <span>本地存档：{{ saveOptionCount }}</span>
-          <span>当前激活存档：{{ activeSaveId || "无" }}</span>
-          <span>当前 localStorage 覆盖：{{ aiStatus }}</span>
-        </div>
-      </article>
+
+          <Separator class="bg-neon-deep/30" />
+
+          <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">最近消息数</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.recentMessageLimit" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">候选事件上限</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.maxCandidates" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">预设事件注入上限</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.maxCatalogInjected" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">预设事件分数阈值</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.minCatalogEventScore" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">基础 seed 数量</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.baseSeedEventLimit" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">复杂剧情 seed 数量</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.complexSeedEventLimit" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">复杂实体阈值</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.complexEntityThreshold" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">相邻事件扩展数</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.maxChainNeighborsPerSeed" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">事件注入上限</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.maxInjectedEvents" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">seed 分数阈值</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.minSeedScore" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">桥接实体上限</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.bridgeEntityLimit" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">桥接实体分数阈值</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.minBridgeEntityScore" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">语义事件上限</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.semanticEventLimit" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">语义档案上限</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.semanticArchiveLimit" type="number" min="0" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+            <div class="grid gap-1.5">
+              <Label class="text-xs text-text-dim font-mono">语义相似度阈值</Label>
+              <Input v-model.number="platformConfigDraft.retrievalSettings.semanticScoreThreshold" type="number" min="0" step="0.01" class="bg-elevated border-neon-deep/40 text-text-main focus:border-neon focus:ring-neon/20" />
+            </div>
+          </div>
+        </CardContent>
+        <CardFooter class="pt-0">
+          <p class="text-xs text-text-dim leading-normal">
+            检索参数会随保存动作写入浏览器本地配置。
+          </p>
+        </CardFooter>
+      </Card>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import type { ModStaticContent } from "@tsian/contracts"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
 import { onMounted, ref } from "vue"
 import {
   type BrowserAiConfig,
@@ -359,221 +414,3 @@ onMounted(async () => {
   await refreshOverview()
 })
 </script>
-
-<style scoped>
-.page-section {
-  display: grid;
-  gap: var(--ts-space-6);
-  margin-top: var(--ts-space-6);
-}
-
-.section-copy {
-  display: grid;
-  gap: var(--ts-space-2);
-}
-
-.section-eyebrow,
-.mod-kicker {
-  margin: 0 0 var(--ts-space-3);
-  color: var(--ts-color-accent-default);
-  font-size: var(--ts-text-xs);
-  letter-spacing: var(--ts-tracking-wide);
-  text-transform: uppercase;
-}
-
-h2 {
-  margin: 0;
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-2xl);
-  line-height: var(--ts-leading-tight);
-  color: var(--ts-color-text-primary);
-}
-
-h3 {
-  margin: 0;
-  font-family: var(--ts-font-serif);
-  font-size: var(--ts-text-xl);
-  line-height: 1.3;
-  color: var(--ts-color-text-primary);
-}
-
-.section-copy p {
-  margin: 0;
-  color: var(--ts-color-text-secondary);
-  font-size: var(--ts-text-base);
-  line-height: var(--ts-leading-normal);
-}
-
-.settings-actions {
-  display: grid;
-  gap: var(--ts-space-3);
-  padding: var(--ts-space-4);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-xl);
-  background: var(--ts-color-surface-raised);
-  box-shadow: var(--ts-shadow-1);
-}
-
-.settings-message {
-  margin: 0;
-  font-size: var(--ts-text-sm);
-  line-height: 1.7;
-  padding: var(--ts-space-2) var(--ts-space-3);
-  border-radius: var(--ts-radius-md);
-}
-
-.settings-message--ok {
-  color: var(--ts-color-state-success-fg);
-  background: var(--ts-color-state-success-bg);
-}
-
-.settings-message--error {
-  color: var(--ts-color-state-error-fg);
-  background: var(--ts-color-state-error-bg);
-}
-
-.mod-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--ts-space-3);
-}
-
-.primary-button,
-.ghost-button {
-  padding: var(--ts-space-3) var(--ts-space-4);
-  border-radius: var(--ts-radius-lg);
-  font: inherit;
-  font-weight: var(--ts-weight-medium);
-  cursor: pointer;
-  transition:
-    transform var(--ts-duration-default) var(--ts-ease-out),
-    background var(--ts-duration-default) var(--ts-ease-out);
-}
-
-.primary-button {
-  border: 1px solid var(--ts-color-accent-default);
-  background: var(--ts-color-accent-default);
-  color: var(--ts-color-accent-fg);
-}
-
-.ghost-button {
-  border: 1px solid var(--ts-color-border-strong);
-  background: var(--ts-color-surface-overlay);
-  color: var(--ts-color-text-primary);
-}
-
-.primary-button:hover,
-.ghost-button:hover {
-  transform: translateY(-1px);
-}
-
-.settings-grid {
-  display: grid;
-  gap: var(--ts-space-4);
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.feature-card {
-  display: grid;
-  gap: var(--ts-space-3);
-  padding: var(--ts-space-4);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-xl);
-  background: var(--ts-color-surface-raised);
-  box-shadow: var(--ts-shadow-2);
-}
-
-.feature-card__head {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: var(--ts-space-3);
-}
-
-.settings-panel {
-  align-content: start;
-}
-
-.settings-panel--wide {
-  grid-column: 1 / -1;
-}
-
-.quick-list {
-  display: grid;
-  gap: var(--ts-space-2);
-}
-
-.quick-list span,
-.settings-note {
-  color: var(--ts-color-text-muted);
-  font-size: var(--ts-text-sm);
-  line-height: 1.7;
-}
-
-.form-grid,
-.number-grid {
-  display: grid;
-  gap: var(--ts-space-3);
-}
-
-.form-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-}
-
-.number-grid {
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-}
-
-.field-group {
-  display: grid;
-  gap: var(--ts-space-2);
-}
-
-.field-group span,
-.checkbox-field span {
-  color: var(--ts-color-text-secondary);
-  font-size: var(--ts-text-sm);
-  line-height: 1.6;
-}
-
-.field-input {
-  width: 100%;
-  min-width: 0;
-  padding: var(--ts-space-3) var(--ts-space-3);
-  border: 1px solid var(--ts-color-border-default);
-  border-radius: var(--ts-radius-lg);
-  background: var(--ts-color-surface-overlay);
-  color: var(--ts-color-text-primary);
-  font: inherit;
-}
-
-.field-input:focus {
-  outline: none;
-  border-color: var(--ts-color-accent-default);
-  box-shadow: 0 0 0 4px var(--ts-color-accent-subtle);
-}
-
-.toggle-row {
-  display: grid;
-  gap: var(--ts-space-3);
-}
-
-.checkbox-field {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ts-space-2);
-}
-
-@media (max-width: 1080px) {
-  .settings-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 720px) {
-  .feature-card__head {
-    flex-direction: column;
-    align-items: stretch;
-  }
-}
-</style>

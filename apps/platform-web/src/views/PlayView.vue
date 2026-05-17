@@ -1,6 +1,6 @@
 <template>
   <!-- 游戏页：进入后挂载游玩前端，不再保留平台壳样式 -->
-  <div ref="frontendMount" class="frontend-stage"></div>
+  <div ref="frontendMount" class="w-full min-h-screen"></div>
 </template>
 
 <script setup lang="ts">
@@ -32,10 +32,3 @@ onBeforeUnmount(() => {
   unmountFrontend()
 })
 </script>
-
-<style scoped>
-.frontend-stage {
-  width: 100%;
-  min-height: 100vh;
-}
-</style>
