@@ -55,8 +55,10 @@
         </aside>
 
         <!-- ── 主内容区 ── -->
-        <main class="relative flex-1 overflow-y-auto overflow-x-hidden bg-void">
-          <router-view />
+        <main class="relative flex-1 overflow-x-hidden overflow-y-auto bg-void p-4 md:p-6 lg:p-8">
+          <div class="relative mx-auto h-full min-h-full max-w-[1520px] border border-neon-muted/30 bg-panel/30 p-4 shadow-[inset_0_0_32px_rgba(0,0,0,0.35)] md:p-6 lg:p-8">
+            <router-view />
+          </div>
         </main>
 
         <!-- ── CRT 扫描线叠加层 ── -->
@@ -131,8 +133,9 @@ const isPlayRoute = computed(() => route.name === "play")
 const navItems = [
   { name: "lobby", path: "/", label: "大厅", index: "01" },
   { name: "mod", path: "/mod", label: "模组", index: "02" },
-  { name: "settings", path: "/settings", label: "设置", index: "03" },
-  { name: "debug", path: "/debug", label: "调试", index: "04" },
+  { name: "resources", path: "/resources", label: "资源库", index: "03" },
+  { name: "settings", path: "/settings", label: "设置", index: "04" },
+  { name: "debug", path: "/debug", label: "调试", index: "05" },
 ]
 
 function isRoute(name: string): boolean {

@@ -477,6 +477,107 @@ const greySaltTownWorkflow: WorkflowDefinition = {
   ],
 }
 
+// === 世界书（Lorebook）：keyword 激活模式 ===
+// 世界书放静态设定（不随剧情变化的世界观规则），与 archives（动态状态）互补。
+// 条目通过 keyword 匹配对话内容自动激活，注入 AI 提示词。
+const greySaltTownWorldBooks: Record<string, unknown> = {
+  "grey-salt-town-lore": {
+    name: "灰盐镇世界观",
+    entries: [
+      {
+        index: 0,
+        name: "盐巡制度",
+        content:
+          "盐巡队由朝廷盐铁司直辖，驻于各盐路关隘。盐巡拥有临时封路、查验盐车、扣押可疑货物的权限，" +
+          "但不能直接审讯平民，需移交当地县衙或巡检司。灰盐镇是北路盐场到内陆集散地的必经驿站，" +
+          "每月至少有三批官盐过境，盐巡队因此常驻镇口雨棚。",
+        enabled: true,
+        activationMode: "keyword",
+        key: ["盐巡", "盐税", "封路", "盐铁司", "盐路"],
+        secondaryKey: [],
+        selectiveLogic: "andAny",
+        order: 100,
+        depth: 4,
+        position: "beforeChar",
+        role: null,
+        caseSensitive: null,
+        excludeRecursion: false,
+        preventRecursion: false,
+        probability: 100,
+        other: {},
+      },
+      {
+        index: 1,
+        name: "验妖铃原理",
+        content:
+          "青铜验妖铃是巡查者常备的旧式器具，铃体以含铜七成、锡三成的合金铸造，铃舌悬挂方式使其在妖气场中会偏转指向气源方向。" +
+          "铃声有三档反应：轻颤（微弱残留妖气）、半响（妖气被盐灰血气遮蔽）、全鸣（妖物近在咫尺）。" +
+          "验妖铃对已死或已封存的妖物残片不再反应，因此黑鳞被油纸袋隔离后铃声停止。",
+        enabled: true,
+        activationMode: "keyword",
+        key: ["验妖铃", "妖气", "铃声", "铃响"],
+        secondaryKey: [],
+        selectiveLogic: "andAny",
+        order: 100,
+        depth: 4,
+        position: "beforeChar",
+        role: null,
+        caseSensitive: null,
+        excludeRecursion: false,
+        preventRecursion: false,
+        probability: 100,
+        other: {},
+      },
+      {
+        index: 2,
+        name: "灰盐镇地理",
+        content:
+          "灰盐镇位于北路盐场与内陆集散地之间的丘陵河谷，因土壤含盐碱量高而得名'灰盐'。" +
+          "镇子依河而建，主街一条，东端是驿馆，西端是盐亭和渡口。" +
+          "雨季时河水上涨，镇外低洼处常积盐水，空气中弥漫咸腥味。" +
+          "旧井是早年取地下盐水的遗迹，后因水质变苦而废弃。",
+        enabled: true,
+        activationMode: "keyword",
+        key: ["灰盐镇", "镇子", "地形", "河谷", "盐碱"],
+        secondaryKey: [],
+        selectiveLogic: "andAny",
+        order: 90,
+        depth: 4,
+        position: "beforeChar",
+        role: null,
+        caseSensitive: null,
+        excludeRecursion: false,
+        preventRecursion: false,
+        probability: 100,
+        other: {},
+      },
+      {
+        index: 3,
+        name: "鳞妖分类常识",
+        content:
+          "在巡查者的妖物分类中，鳞妖泛指体表覆鳞的水生或半水生妖物。" +
+          "常见的白鳞鱼妖威胁低，多为受惊河鱼化形，妖气微弱且易散。" +
+          "黑鳞妖物则罕见得多，通常栖息在深井、地下水脉或废矿积水中，" +
+          "其鳞片即使脱落也能长时间保持完整不腐，是识别高阶水生妖物的重要特征。",
+        enabled: true,
+        activationMode: "keyword",
+        key: ["鳞妖", "黑鳞", "白鳞", "鱼妖", "水妖"],
+        secondaryKey: [],
+        selectiveLogic: "andAny",
+        order: 100,
+        depth: 4,
+        position: "beforeChar",
+        role: null,
+        caseSensitive: null,
+        excludeRecursion: false,
+        preventRecursion: false,
+        probability: 100,
+        other: {},
+      },
+    ],
+  },
+}
+
 export const greySaltTownMod: ModStaticContent = {
   manifest: {
     id: "grey-salt-town",
@@ -486,6 +587,7 @@ export const greySaltTownMod: ModStaticContent = {
     description: "用于验证模组静态层、预设事件钩子和记忆系统的开发期内置测试模组。",
     // SC-CRIT-3：声明 mod 自带工作流，验证 mod 注册路径
     workflow: greySaltTownWorkflow,
+    worldBooks: greySaltTownWorldBooks,
   },
   frontendConfig: {
     frontendId: "official-default",
@@ -507,6 +609,7 @@ export const greySaltTownMod: ModStaticContent = {
     当前目标: "确认驿馆命案、盐仓异响和旧井黑鳞是否有关",
     同行者: ["许砚"],
   },
+  worldBooks: greySaltTownWorldBooks,
   archiveCatalog,
   eventCatalog: [
     {

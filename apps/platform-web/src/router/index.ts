@@ -24,6 +24,11 @@ const router = createRouter({
       component: () => import("../views/ModDetailView.vue"),
     },
     {
+      path: "/resources",
+      name: "resources",
+      component: () => import("../views/ResourceLibraryView.vue"),
+    },
+    {
       path: "/settings",
       name: "settings",
       component: () => import("../views/SettingsView.vue"),

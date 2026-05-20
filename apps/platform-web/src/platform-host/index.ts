@@ -62,12 +62,15 @@ import { defaultWorkflow } from "../workflow-host/default-workflow"
 import { createWorkflowExecutionContext } from "../workflow-host"
 import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
 
-function resolveWorkflowForMod(_modId: string): {
+function resolveWorkflowForMod(modId: string): {
   def: WorkflowDefinition
   isModWorkflow: boolean
 } {
-  // H8: 所有 mod 走平台 default-workflow；H10 改为读 mod.workflow
-  return { def: defaultWorkflow, isModWorkflow: false }
+  const modWorkflow = getBuiltinMod(modId)?.manifest.workflow
+  return {
+    def: modWorkflow ?? defaultWorkflow,
+    isModWorkflow: modWorkflow !== undefined,
+  }
 }
 
 export const runtimeEngine = new LocalRuntimeEngine()
@@ -932,10 +935,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const currentController = new AbortController()
       previousTurnController = currentController
 
+      const { def, isModWorkflow } = resolveWorkflowForMod(modId ?? "")
+
       // === 7) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
       const handle = createOutputsStore({
         turn: turnedSnapshot.state.turn,
-        nodeIds: defaultWorkflow.nodes.map((n) => n.id),
+        nodeIds: def.nodes.map((n) => n.id),
       })
 
       // === 8) 推 user 消息（不递增 turn） ===
@@ -952,11 +957,14 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const hitArchives = archives.filter((a) => hitArchiveIds.has(a.id))
       const playerArchives = archives.filter((a) => playerArchiveIds.includes(a.id))
 
+      // 从模组静态内容读取世界书；模组未声明时退回空对象
+      const modWorldBooks = (mod as ModStaticContent).worldBooks ?? {}
+
       const wfContext = createWorkflowExecutionContext({
         runtimeEngine,
         saveId: activeSaveId,
         presets: builtinPresets,
-        worldBooks: {},
+        worldBooks: modWorldBooks,
         history,
         macros: {
           "user.input": input.content,
@@ -973,7 +981,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
       })
 
       // === 9) 跑工作流（H12: per-turn AbortController 接入，旧轮 abort 在新轮入口触发） ===
-      const { def, isModWorkflow } = resolveWorkflowForMod(modId ?? "")
       let workflowResult
       try {
         workflowResult = await executeWorkflow(def, wfContext, {

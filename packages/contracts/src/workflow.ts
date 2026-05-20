@@ -32,11 +32,15 @@ export type WorkflowNodeType = "ai-call" | "result" | "switch" | "apply-patch" |
 export interface WorkflowNodeBase<T extends WorkflowNodeType = WorkflowNodeType> {
   id: string
   type: T
+  /** 用户自定义节点名称；缺省时 UI 层回退到 nodeTypeRegistry 的 label */
+  label?: string
   /** 节点配置；具体形状由节点实现层按 type 解析（见各 *NodeConfig 类型） */
   config: Record<string, unknown>
   retry?: { maxRetries: number }
   /** ai-call / compute 节点用；其它节点忽略 */
   outputs?: NodeOutputDeclaration[]
+  /** 节点在可视化编辑器中的画布坐标 */
+  position?: { x: number; y: number }
 }
 
 export type WorkflowNode = WorkflowNodeBase

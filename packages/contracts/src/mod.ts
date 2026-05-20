@@ -27,6 +27,11 @@ export interface ModManifest {
    */
   customMacros?: Record<string, string>
   /**
+   * 模组世界书（Lorebook）库；ai-call 节点 config.worldBookKeys 引用其 key。
+   * 形状由 @tsian/prompt-engine 在使用期校验为 WorldBook；contracts 层不收紧（与 presets 同策略，避免反向依赖）。
+   */
+  worldBooks?: Record<string, unknown>
+  /**
    * HC-13 编译期辅助守卫：原型期不允许模组注册自定义节点类型。
    * 模组若声明此字段会触发 TS 编译错误（because never）；runtime 守卫由工作流引擎执行。
    */
@@ -76,6 +81,11 @@ export interface ModStaticContent {
   archiveCatalog: Array<Omit<ArchiveRecord, "id">>
   eventCatalog: CatalogEventRecord[]
   globalsDefaults: RuntimeGlobalsMap
+  /**
+   * 模组世界书实际数据（与 manifest.worldBooks 对齐）。
+   * 模组不带世界书时缺省为 undefined / 空对象。
+   */
+  worldBooks?: Record<string, unknown>
 }
 
 export interface ModInitialSavePayload {
