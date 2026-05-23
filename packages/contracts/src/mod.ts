@@ -13,11 +13,17 @@ export interface ModManifest {
   author?: string
   description?: string
   /**
+   * 引用平台资源库 workflow preset id；缺省时按旧字段 / 平台默认工作流解析。
+   */
+  workflowPresetId?: string
+  /**
+   * @deprecated 改用 workflowPresetId 引用平台资源库工作流预设；旧字段仅为兼容既有内置模组保留。
    * 模组自定义工作流；缺省时平台使用默认工作流（design.md §8）。
    * HC-13：不允许包含 type: "apply-patch" 的节点（runtime 守卫由工作流引擎在加载期校验，design.md §13.4 第 5 条）。
    */
   workflow?: WorkflowDefinition
   /**
+   * @deprecated 改用平台资源库 prompt preset；旧字段仅为兼容既有内置模组保留。
    * 模组私有 preset 库；ai-call 节点 config.presetId 引用其 key。
    * 形状由 @tsian/prompt-engine 在加载/使用期校验为 PresetInfo；contracts 层不收紧（避免反向依赖）。
    */
@@ -27,6 +33,7 @@ export interface ModManifest {
    */
   customMacros?: Record<string, string>
   /**
+   * @deprecated 改用平台资源库 world book；旧字段仅为兼容既有内置模组保留。
    * 模组世界书（Lorebook）库；ai-call 节点 config.worldBookKeys 引用其 key。
    * 形状由 @tsian/prompt-engine 在使用期校验为 WorldBook；contracts 层不收紧（与 presets 同策略，避免反向依赖）。
    */
@@ -82,6 +89,7 @@ export interface ModStaticContent {
   eventCatalog: CatalogEventRecord[]
   globalsDefaults: RuntimeGlobalsMap
   /**
+   * @deprecated 改用平台资源库 world book；旧字段仅为兼容既有内置模组保留。
    * 模组世界书实际数据（与 manifest.worldBooks 对齐）。
    * 模组不带世界书时缺省为 undefined / 空对象。
    */

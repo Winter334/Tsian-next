@@ -3,8 +3,8 @@
   <section class="flex h-full flex-col overflow-hidden">
     <!-- 三栏主体（全高） -->
     <div class="flex flex-1 overflow-hidden">
-      <!-- 左栏：节点面板 Palette -->
-      <aside class="flex w-56 flex-col border-r border-neon-deep/40 bg-panel">
+      <!-- 左栏：节点面板 Palette（readonly 时隐藏） -->
+      <aside v-if="!props.readonly" class="flex w-56 flex-col border-r border-neon-deep/40 bg-panel">
         <div class="border-b border-neon-deep/40 p-3">
           <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">
             节点面板
@@ -36,12 +36,14 @@
         <!-- 导入导出按钮 -->
         <div class="space-y-2 border-t border-neon-deep/40 p-3">
           <button
+            type="button"
             class="w-full border border-neon-deep/40 bg-elevated px-3 py-1.5 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
             @click="exportToJson"
           >
             导出 JSON
           </button>
           <button
+            type="button"
             class="w-full border border-neon-deep/40 bg-elevated px-3 py-1.5 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
             @click="handleImport"
           >
@@ -52,7 +54,9 @@
 
       <!-- 中栏：工具栏 + Vue Flow 画布 -->
       <div class="relative flex flex-1 flex-col">
+        <!-- 编辑模式工具栏 -->
         <EditorToolbar
+          v-if="!props.readonly"
           :has-selection="!!selectedNodeId"
           :save-status="props.saveStatus"
           :source-label="props.sourceLabel"
@@ -62,20 +66,49 @@
           @reset-workflow="$emit('resetWorkflow')"
           @save-workflow="emit('saveWorkflow', toWorkflowDefinition())"
         />
+        <!-- readonly 模式极简工具栏 -->
+        <div
+          v-if="props.readonly"
+          class="flex items-center gap-2 border-b border-neon-deep/40 bg-panel px-3 py-1.5"
+        >
+          <span class="mr-2 font-mono text-[10px] uppercase tracking-[0.2em] text-neon-muted">
+            SYS // PREVIEW
+          </span>
+          <span
+            v-if="props.sourceLabel"
+            class="border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-neon"
+          >
+            {{ props.sourceLabel }}
+          </span>
+          <span class="border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
+            {{ nodes.length }} 节点 / {{ edges.length }} 边
+          </span>
+          <span class="flex-1" />
+          <button
+            type="button"
+            class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+            @click="autoLayout"
+          >
+            自动布局
+          </button>
+        </div>
         <div class="relative flex-1">
           <VueFlow
             v-model:nodes="nodes"
             v-model:edges="edges"
             :node-types="nodeTypes"
             :edge-types="edgeTypes"
+            :nodes-draggable="!props.readonly"
+            :nodes-connectable="!props.readonly"
+            :elements-selectable="!props.readonly"
             fit-view-on-init
             class="workflow-canvas"
             @node-click="onNodeClick"
             @edge-click="onEdgeClick"
             @pane-click="onPaneClick"
-            @connect="onConnect"
-            @dragover.prevent="onDragOver"
-            @drop="onDrop"
+            @connect="!props.readonly && onConnect($event)"
+            @dragover.prevent="!props.readonly && onDragOver($event)"
+            @drop="!props.readonly && onDrop($event)"
           >
             <Background :gap="20" :size="1" pattern-color="#1C2633" />
             <MiniMap
@@ -90,6 +123,7 @@
           </VueFlow>
           <!-- 校验浮动条（左上角，避开左下角 Controls） -->
           <ValidationBar
+            v-if="!props.readonly"
             :errors="validationErrors"
             :node-count="nodes.length"
             :edge-count="edges.length"
@@ -98,8 +132,8 @@
         </div>
       </div>
 
-      <!-- 右栏：节点属性检查器（常驻） -->
-      <aside class="flex w-80 shrink-0 flex-col border-l border-neon-deep/40 bg-panel">
+      <!-- 右栏：节点属性检查器（readonly 时隐藏） -->
+      <aside v-if="!props.readonly" class="flex w-80 shrink-0 flex-col border-l border-neon-deep/40 bg-panel">
         <NodeInspector
           v-if="selectedNodeId"
           :node-id="selectedNodeId"
@@ -190,11 +224,14 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/minimap/dist/style.css'
 import '@vue-flow/controls/dist/style.css'
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   initialDefinition?: WorkflowDefinition
   saveStatus: 'saved' | 'dirty' | 'saving' | 'error'
   sourceLabel: string
-}>()
+  readonly?: boolean
+}>(), {
+  readonly: false,
+})
 
 const emit = defineEmits<{
   change: [definition: WorkflowDefinition]
@@ -316,7 +353,8 @@ watch([nodes, edges], () => {
 
   const def = toWorkflowDefinition()
   const defJson = JSON.stringify(def)
-  if (!isLoadingDefinition && defJson !== lastEmittedDefinitionJson) {
+  // readonly 模式下不 emit change
+  if (!props.readonly && !isLoadingDefinition && defJson !== lastEmittedDefinitionJson) {
     lastEmittedDefinitionJson = defJson
     emit('change', def)
   }
@@ -324,8 +362,6 @@ watch([nodes, edges], () => {
   if (validateTimer) clearTimeout(validateTimer)
   validateTimer = setTimeout(() => {
     try {
-      // validateWorkflowDefinition 成功时返回拓扑序（string[]），
-      // 失败时 throw WorkflowValidationError
       validateWorkflowDefinition(def)
       validationErrors.value = []
     } catch (e: any) {
@@ -430,12 +466,10 @@ function onDrop(event: DragEvent) {
   const type = event.dataTransfer?.getData('application/workflow-node-type')
   if (!type) return
 
-  // 获取画布容器的 bounding rect
   const vueFlowEl = document.querySelector('.workflow-canvas')
   if (!vueFlowEl) return
   const bounds = vueFlowEl.getBoundingClientRect()
 
-  // 用 project() 将屏幕坐标转换为画布坐标（考虑缩放和平移）
   const position = project({
     x: event.clientX - bounds.left,
     y: event.clientY - bounds.top,

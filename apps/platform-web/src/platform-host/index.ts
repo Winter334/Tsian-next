@@ -50,6 +50,11 @@ import {
   toArchiveRecord,
   toEventRecord,
 } from "../storage"
+import {
+  listPromptPresetResources,
+  listWorldBookResources,
+  seedBuiltinResourceLibraryResources,
+} from "../storage/resources"
 import { LocalRuntimeEngine } from "../runtime-host"
 import { getAiDebugRecords } from "../runtime-host/ai"
 import { applyMaintenancePatch } from "../runtime-host/patch-applier"
@@ -57,7 +62,6 @@ import {
   assembleRetrievalContext,
   type RetrievalDebugRecord,
 } from "../runtime-host/retrieval"
-import { builtinPresets } from "../workflow-host/builtin-presets"
 import { defaultWorkflow } from "../workflow-host/default-workflow"
 import { createWorkflowExecutionContext } from "../workflow-host"
 import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
@@ -76,6 +80,21 @@ function resolveWorkflowForMod(modId: string): {
 export const runtimeEngine = new LocalRuntimeEngine()
 const baseBridge = createPlayFrontendBridge(runtimeEngine)
 const retrievalDebugBySave = new Map<string, RetrievalDebugRecord>()
+
+async function loadWorkflowResourceContext() {
+  await seedBuiltinResourceLibraryResources()
+  const [promptRows, worldBookRows] = await Promise.all([
+    listPromptPresetResources(),
+    listWorldBookResources(),
+  ])
+
+  return {
+    presets: new Map(promptRows.map((row) => [row.id, row.preset ?? row.content])),
+    worldBooks: Object.fromEntries(
+      worldBookRows.map((row) => [row.id, row.worldBook ?? row.content]),
+    ),
+  }
+}
 
 // H12: per-turn AbortController 接入
 // 每轮 sendMessage 入口新建一个 controller；新轮入口会先 abort 上一个（旧轮若还在跑则通知其停止）。
@@ -957,14 +976,13 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const hitArchives = archives.filter((a) => hitArchiveIds.has(a.id))
       const playerArchives = archives.filter((a) => playerArchiveIds.includes(a.id))
 
-      // 从模组静态内容读取世界书；模组未声明时退回空对象
-      const modWorldBooks = (mod as ModStaticContent).worldBooks ?? {}
+      const workflowResources = await loadWorkflowResourceContext()
 
       const wfContext = createWorkflowExecutionContext({
         runtimeEngine,
         saveId: activeSaveId,
-        presets: builtinPresets,
-        worldBooks: modWorldBooks,
+        presets: workflowResources.presets,
+        worldBooks: workflowResources.worldBooks,
         history,
         macros: {
           "user.input": input.content,

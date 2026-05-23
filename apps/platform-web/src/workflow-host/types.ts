@@ -35,8 +35,8 @@ export type WorkflowWorldBookMap = Readonly<Record<string, unknown>>
  * - executors：5 种内置 NodeExecutor（由 createWorkflowExecutionContext 注入）
  * - runtimeEngine / saveId：apply-patch executor 调 applyMaintenancePatch 用
  * - macros：平台 + 模组 customMacros 合并后的最终宏 KV（design.md §3）
- * - presets：模组 manifest.presets ∪ 平台 builtin-presets，按 presetId 索引
- * - worldBooks：模组 worldBooks，按 key 过滤
+ * - presets：从平台资源库加载的 prompt preset，按 presetId 索引
+ * - worldBooks：从平台资源库加载的 world book，按 worldBookKeys 过滤
  * - history：本轮起点的会话历史（platform-host 在 sendMessage 入口准备好）
  */
 export interface PlatformWorkflowContext extends WorkflowExecutionContext {

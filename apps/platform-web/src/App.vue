@@ -56,7 +56,7 @@
 
         <!-- ── 主内容区 ── -->
         <main class="relative flex-1 overflow-x-hidden overflow-y-auto bg-void p-4 md:p-6 lg:p-8">
-          <div class="relative mx-auto h-full min-h-full max-w-[1520px] border border-neon-muted/30 bg-panel/30 p-4 shadow-[inset_0_0_32px_rgba(0,0,0,0.35)] md:p-6 lg:p-8">
+          <div class="relative mx-auto min-h-full max-w-[1520px] border border-neon-muted/30 bg-panel/30 p-4 shadow-[inset_0_0_32px_rgba(0,0,0,0.35)] md:p-6 lg:p-8">
             <router-view />
           </div>
         </main>

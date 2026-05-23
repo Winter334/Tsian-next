@@ -6,7 +6,7 @@
  *                                       ↓
  *                                   maintenance (ai-call) → applyPatch (apply-patch)
  *
- * preset id 与 builtin-presets/index.ts 中的 Map key 严格对齐：
+ * preset id 与资源库内置 prompt preset 种子 id 严格对齐：
  *   - builtin.retrieval
  *   - builtin.chat
  *   - builtin.maintenance

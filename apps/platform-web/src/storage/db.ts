@@ -2,6 +2,7 @@ import type {
   ArchivePresence,
   ArchiveType,
   RuntimeSnapshotShell,
+  WorkflowDefinition,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
 
@@ -86,6 +87,39 @@ export interface LocalEmbeddingRecord {
   updatedAt: number
 }
 
+export interface LocalPromptPresetResourceRecord {
+  id: string
+  name: string
+  description?: string
+  tags: string[]
+  preset: unknown
+  content: unknown
+  createdAt: number
+  updatedAt: number
+}
+
+export interface LocalWorldBookResourceRecord {
+  id: string
+  name: string
+  description?: string
+  tags: string[]
+  worldBook: unknown
+  content: unknown
+  createdAt: number
+  updatedAt: number
+}
+
+export interface LocalWorkflowPresetResourceRecord {
+  id: string
+  name: string
+  description?: string
+  tags: string[]
+  workflow: WorkflowDefinition
+  definition: WorkflowDefinition
+  createdAt: number
+  updatedAt: number
+}
+
 export class TsianLocalDb extends Dexie {
   meta!: Table<LocalMetaRecord, string>
   saves!: Table<LocalSaveRecord, string>
@@ -95,10 +129,13 @@ export class TsianLocalDb extends Dexie {
   events!: Table<LocalEventRecord, string>
   archives!: Table<LocalArchiveRecord, string>
   embeddings!: Table<LocalEmbeddingRecord, string>
+  promptPresets!: Table<LocalPromptPresetResourceRecord, string>
+  worldBooks!: Table<LocalWorldBookResourceRecord, string>
+  workflowPresets!: Table<LocalWorkflowPresetResourceRecord, string>
 
   constructor() {
     // 原型期直接换新库名，不做旧结构迁移。
-    super("tsian-local-v7")
+    super("tsian-local-v8")
 
     this.version(1).stores({
       meta: "&key",
@@ -109,6 +146,9 @@ export class TsianLocalDb extends Dexie {
       events: "&id, saveId, updatedAt",
       archives: "&id, saveId, updatedAt",
       embeddings: "&id, targetType, targetId, embeddingModel, updatedAt",
+      promptPresets: "&id, name, updatedAt",
+      worldBooks: "&id, name, updatedAt",
+      workflowPresets: "&id, name, updatedAt",
     })
   }
 }

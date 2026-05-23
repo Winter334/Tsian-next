@@ -185,15 +185,28 @@
           </div>
         </div>
 
-        <div v-else-if="activeTabId === 'workflow'" class="h-full overflow-hidden">
-          <WorkflowEditorCanvas
-            :initial-definition="currentModWorkflow"
-            :save-status="workflowSaveStatus"
-            :source-label="workflowSourceLabel"
-            @change="handleWorkflowChange"
-            @save-workflow="handleSaveWorkflowDraft"
-            @reset-workflow="handleResetWorkflowDraft"
-          />
+        <div v-else-if="activeTabId === 'workflow'" class="flex flex-col overflow-hidden">
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neon-muted/30 bg-panel px-4 py-3">
+            <div>
+              <p class="font-mono text-xs uppercase tracking-[0.25em] text-neon-muted">WORKFLOW // PREVIEW</p>
+              <p class="mt-1 font-mono text-[11px] text-text-dim">模组详情仅展示 manifest 工作流预览；编辑、导入与导出请进入全局资源库。</p>
+            </div>
+            <Button
+              variant="outline"
+              class="border-neon-deep bg-neon/5 font-mono tracking-wide text-neon transition-all hover:bg-neon/15 hover:shadow-neon-glow"
+              @click="goResources"
+            >
+              管理工作流预设
+            </Button>
+          </div>
+          <div class="h-[clamp(640px,72vh,860px)] min-h-[640px] overflow-hidden">
+            <WorkflowEditorCanvas
+              readonly
+              :initial-definition="currentModWorkflow"
+              :save-status="workflowSaveStatus"
+              source-label="内置工作流"
+            />
+          </div>
         </div>
 
         <div v-else-if="activeTabId === 'archives'" class="grid h-full place-items-center p-6">
@@ -233,7 +246,7 @@
 
 <script setup lang="ts">
 import type { ModStaticContent, WorkflowDefinition } from "@tsian/contracts"
-import { computed, defineComponent, h, onMounted, ref, watch } from "vue"
+import { defineComponent, h, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import {
   type BrowserAiConfig,
@@ -252,18 +265,12 @@ import {
   selectPlatformSave,
 } from "../platform-host"
 import WorkflowEditorCanvas from "../components/workflow/WorkflowEditorCanvas.vue"
-import {
-  deleteWorkflowDraft,
-  getWorkflowDraft,
-  saveWorkflowDraft,
-} from "../storage"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 
 type DetailTabId = "info" | "workflow" | "archives" | "events"
 type WorkflowSaveStatus = "saved" | "dirty" | "saving" | "error"
-type WorkflowSource = "builtin" | "draft"
 
 interface DetailTab {
   id: DetailTabId
@@ -328,9 +335,6 @@ const embeddingModelSummary = ref("未配置")
 const retrievalEnhancedSummary = ref("关闭")
 const activeTabId = ref<DetailTabId>("info")
 const workflowSaveStatus = ref<WorkflowSaveStatus>("saved")
-const workflowSource = ref<WorkflowSource>("builtin")
-const savedWorkflowJson = ref("")
-const workflowSourceLabel = computed(() => workflowSource.value === "draft" ? "本地草稿" : "内置工作流")
 
 function formatModelSummary(
   config: { baseUrl: string; model: string } | null,
@@ -371,16 +375,11 @@ async function syncCurrentModContext(modId: string) {
 
   if (!currentMod.value) {
     currentModWorkflow.value = undefined
-    workflowSource.value = "builtin"
-    savedWorkflowJson.value = ""
     workflowSaveStatus.value = "saved"
     return
   }
 
-  const draft = await getWorkflowDraft(modId)
-  currentModWorkflow.value = draft?.definition ?? currentMod.value.workflow
-  workflowSource.value = draft ? "draft" : "builtin"
-  savedWorkflowJson.value = currentModWorkflow.value ? JSON.stringify(currentModWorkflow.value) : ""
+  currentModWorkflow.value = currentMod.value.workflow
   workflowSaveStatus.value = "saved"
 }
 
@@ -458,47 +457,12 @@ async function handleDeleteSave(saveId: string) {
   }
 }
 
-function handleWorkflowChange(definition: WorkflowDefinition) {
-  currentModWorkflow.value = definition
-  const definitionJson = JSON.stringify(definition)
-  if (definitionJson !== savedWorkflowJson.value) {
-    workflowSaveStatus.value = "dirty"
-  } else if (workflowSaveStatus.value !== "saving") {
-    workflowSaveStatus.value = "saved"
-  }
-}
-
-async function handleSaveWorkflowDraft(definition: WorkflowDefinition) {
-  if (!currentMod.value) {
-    return
-  }
-
-  workflowSaveStatus.value = "saving"
-  try {
-    const draft = await saveWorkflowDraft(currentMod.value.id, definition)
-    currentModWorkflow.value = draft.definition
-    workflowSource.value = "draft"
-    savedWorkflowJson.value = JSON.stringify(draft.definition)
-    workflowSaveStatus.value = "saved"
-  } catch {
-    workflowSaveStatus.value = "error"
-  }
-}
-
-async function handleResetWorkflowDraft() {
-  if (!currentMod.value) {
-    return
-  }
-
-  await deleteWorkflowDraft(currentMod.value.id)
-  currentModWorkflow.value = currentMod.value.workflow
-  workflowSource.value = "builtin"
-  savedWorkflowJson.value = currentModWorkflow.value ? JSON.stringify(currentModWorkflow.value) : ""
-  workflowSaveStatus.value = "saved"
-}
-
 function goSettings() {
   router.push("/settings")
+}
+
+function goResources() {
+  router.push("/resources")
 }
 
 function goModLibrary() {

@@ -50,9 +50,9 @@ export type WorkflowNode = WorkflowNodeBase
 // ============================================================================
 
 export interface AiCallNodeConfig {
-  /** 引用 manifest.presets[key] 或平台内置 preset id */
+  /** 引用平台资源库 prompt preset id；builtin.* 仅表示内置种子资源 id */
   presetId: string
-  /** 启用哪些 lorebook */
+  /** 引用平台资源库 world book id；builtin.* 仅表示内置种子资源 id */
   worldBookKeys?: string[]
   /** 是否把 user.input 追加到 messages */
   appendUserInput?: boolean
@@ -110,3 +110,36 @@ export interface WorkflowDefinition {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
 }
+
+// ============================================================================
+// 平台资源库契约
+// ============================================================================
+
+export type PlatformResourceKind = "prompt-preset" | "world-book" | "workflow-preset"
+
+export interface PlatformResourceBase<K extends PlatformResourceKind = PlatformResourceKind> {
+  id: string
+  kind: K
+  name: string
+  description?: string
+  tags: string[]
+  createdAt: number
+  updatedAt: number
+}
+
+export interface PromptPresetResource extends PlatformResourceBase<"prompt-preset"> {
+  preset: unknown
+}
+
+export interface WorldBookResource extends PlatformResourceBase<"world-book"> {
+  worldBook: unknown
+}
+
+export interface WorkflowPresetResource extends PlatformResourceBase<"workflow-preset"> {
+  workflow: WorkflowDefinition
+}
+
+export type PlatformResource =
+  | PromptPresetResource
+  | WorldBookResource
+  | WorkflowPresetResource
