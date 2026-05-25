@@ -1,0 +1,12 @@
+{
+  "id": "refactor-resource-editor-ui",
+  "title": "资源库 UI 重构：全屏弹窗编辑器 + 模组页只读预览 + 清理 embedded 模式",
+  "status": "in_progress",
+  "strategy": "refactor-safely",
+  "currentPhase": "4-execute",
+  "nextAction": "Step 1: WorkflowEditorCanvas 加 readonly 模式，删除 embedded 模式",
+  "gate": null,
+  "branch": "master",
+  "scope": "refactor-resource-editor-ui",
+  "createdAt": "2026-05-21T00:00:00Z"
+}

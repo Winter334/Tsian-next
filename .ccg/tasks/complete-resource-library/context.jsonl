@@ -1,0 +1,10 @@
+{"_example":"Fill with {\"file\": \"path\", \"reason\": \"why\"}. Seed rows are skipped."}
+{"file":".ccg/tasks/complete-resource-library/requirements.md","reason":"Resource library completion requirements and scope."}
+{"file":".ccg/tasks/complete-resource-library/analysis.md","reason":"Phase 2 backend/frontend analysis synthesis."}
+{"file":"packages/contracts/src/mod.ts","reason":"Mod manifest currently owns workflow/presets/worldBooks and needs workflowPresetId planning."}
+{"file":"packages/contracts/src/workflow.ts","reason":"WorkflowDefinition and ai-call resource reference comments/types."}
+{"file":"apps/platform-web/src/storage/db.ts","reason":"Dexie schema source for local resource tables."}
+{"file":"apps/platform-web/src/storage/index.ts","reason":"Storage API export barrel."}
+{"file":"apps/platform-web/src/views/ResourceLibraryView.vue","reason":"Target resource library UI placeholder to complete."}
+{"file":"apps/platform-web/src/views/ModDetailView.vue","reason":"Mod workflow tab and future workflow preset binding touchpoint."}
+{"file":"apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue","reason":"Reusable workflow preset editor surface."}
