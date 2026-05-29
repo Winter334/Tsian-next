@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Platform-web frontend type safety and state/resource shape conventions for save metadata and UI integration."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Workflow preset resource reference contract, runtime precedence expectations, and cross-package shape update guidance."}
+{"file":".trellis/spec/workflow-engine/frontend/type-safety.md","reason":"Workflow editor and workflow definition type-safety expectations before changing workflow preset usage paths."}
+{"file":"docs/active/airp-workflow-platform-direction.md","reason":"Product direction and near-term workflow infrastructure roadmap that motivates save-level workflow preset override."}
+{"file":"docs/active/implementation-plan.md","reason":"Current recommended implementation order and acceptance context."}

@@ -224,17 +224,32 @@
 
 当前最建议先做：
 
-`阶段 F：前端包桥 API 收敛。`
+`存档级 workflow preset override。`
 
 原因：
 
-- 模组最小装载主链已经有最小落地，当前继续推进桥 API 更贴近后续玩法 UI
-- `write-runtime` 已经提供基础写口，下一步应让前端真正消费它来组装开局或玩法状态
-- 在正式玩法 UI 出现前，不需要继续扩更多平台工具层
+- 当前 AIRP 主方向已经收敛为工作流编辑和运行平台
+- workflow preset 已经能作为资源被编辑，也能通过 `ModManifest.workflowPresetId` 进入运行时
+- 但玩家还不能为单个存档选择不同 workflow，这会把工作流能力限制在模组作者侧
+- 存档级覆盖是最小、直接、可验证的一步，能让 workflow preset 正式成为玩家可选择的运行策略
 
-阶段 A 通过后，再进入：
+本轮之后推荐顺序：
 
-`阶段 F：前端包桥 API 收敛。`
+1. 存档级 workflow preset override
+2. 节点输入/输出 schema 与语义槽选择
+3. workflow run trace 和调试 UI
+4. 将当前记忆链条逐步节点化，包括 retrieval、memory compose、maintenance、patch normalize、apply patch
+5. 基础设施稳定后，再评估通用 MemoryStore 和第二类记忆架构
+
+当前不要做：
+
+- 不立即实现第二套记忆系统
+- 不提前设计完整 MemoryStore 插件平台
+- 不把平台存储、checkpoint、迁移、事务一致性和安全写回交给普通工作流节点
+
+详细方向见：
+
+- `./airp-workflow-platform-direction.md`
 
 ## 6. 阶段完成记录
 
