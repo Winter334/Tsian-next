@@ -40,3 +40,37 @@ Added visual prompt preset and world book editors, tightened shared resource pay
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Wire workflow presets into runtime
+
+**Date**: 2026-05-29
+**Task**: Wire workflow presets into runtime
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Closed the workflow preset runtime loop and improved workflow editor resource/output configuration UX.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa8be18` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
