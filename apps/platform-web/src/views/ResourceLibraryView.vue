@@ -176,32 +176,72 @@
             />
           </label>
 
-          <template v-if="activeTabId !== 'workflow-presets'">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <label :for="jsonTextareaId" class="font-mono text-xs uppercase tracking-wider text-text-dim">
-                JSON 内容
-              </label>
-              <button
-                type="button"
-                class="border border-neon-deep/40 bg-elevated px-3 py-1.5 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
-                @click="formatJson"
-              >
-                格式化 JSON
-              </button>
+          <!-- Prompt Preset: preview + open editor -->
+          <template v-if="activeTabId === 'prompt-presets'">
+            <div class="grid gap-3 font-mono text-xs uppercase tracking-wider text-text-dim">
+              提示词条目 prompts
+              <div class="grid gap-3 border border-neon-muted/30 bg-panel p-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p class="font-mono text-sm font-bold uppercase tracking-wider text-text-main">
+                      {{ (draftPreset?.prompts?.length ?? 0) }} ENTRIES
+                    </p>
+                    <p class="mt-1 font-mono text-[11px] normal-case tracking-normal text-text-dim">
+                      在全屏编辑器中管理条目；保存仍使用页面右上角"保存资源"。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="border border-neon bg-neon/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-neon transition-colors hover:bg-neon/20"
+                    @click="presetEditorOpen = true"
+                  >
+                    打开全屏编辑器
+                  </button>
+                </div>
+                <div class="max-h-[clamp(400px,50vh,600px)] overflow-y-auto border border-neon-deep/30 bg-void/40 p-3">
+                  <PromptPresetPreview
+                    v-if="draftPreset"
+                    :preset="draftPreset"
+                  />
+                </div>
+              </div>
             </div>
-            <textarea
-              :id="jsonTextareaId"
-              v-model="draft.jsonText"
-              rows="18"
-              class="resize-y border border-neon-muted/40 bg-panel px-3 py-2 font-mono text-xs text-text-main outline-none focus:border-neon"
-              spellcheck="false"
-            />
-            <p v-if="jsonError" role="alert" class="border border-danger/50 bg-danger/10 px-3 py-2 font-mono text-xs text-danger">
-              {{ jsonError }}
-            </p>
           </template>
 
-          <template v-else>
+          <!-- World Book: preview + open editor -->
+          <template v-if="activeTabId === 'world-books'">
+            <div class="grid gap-3 font-mono text-xs uppercase tracking-wider text-text-dim">
+              世界书条目 entries
+              <div class="grid gap-3 border border-neon-muted/30 bg-panel p-4">
+                <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <p class="font-mono text-sm font-bold uppercase tracking-wider text-text-main">
+                      {{ (draftWorldBook?.entries?.length ?? 0) }} ENTRIES
+                    </p>
+                    <p class="mt-1 font-mono text-[11px] normal-case tracking-normal text-text-dim">
+                      在全屏编辑器中管理条目；保存仍使用页面右上角"保存资源"。
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="border border-neon bg-neon/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-neon transition-colors hover:bg-neon/20"
+                    @click="worldBookEditorOpen = true"
+                  >
+                    打开全屏编辑器
+                  </button>
+                </div>
+                <div class="max-h-[clamp(400px,50vh,600px)] overflow-y-auto border border-neon-deep/30 bg-void/40 p-3">
+                  <WorldBookPreview
+                    v-if="draftWorldBook"
+                    :world-book="draftWorldBook"
+                  />
+                </div>
+              </div>
+            </div>
+          </template>
+
+          <!-- Workflow Preset: preview + open editor -->
+          <template v-if="activeTabId === 'workflow-presets'">
             <div class="grid gap-3 font-mono text-xs uppercase tracking-wider text-text-dim">
               工作流定义 definition
               <div class="grid gap-3 border border-neon-muted/30 bg-panel p-4">
@@ -211,7 +251,7 @@
                       {{ draft.definition.nodes.length }} NODES // {{ draft.definition.edges.length }} EDGES
                     </p>
                     <p class="mt-1 font-mono text-[11px] normal-case tracking-normal text-text-dim">
-                      在全屏编辑器中修改工作流；保存仍使用页面右上角“保存资源”。
+                      在全屏编辑器中修改工作流；保存仍使用页面右上角"保存资源"。
                     </p>
                   </div>
                   <button
@@ -302,14 +342,75 @@
         />
       </div>
     </div>
+    <!-- Prompt Preset Fullscreen Editor -->
+    <div
+      v-if="presetEditorOpen && draft && activeTabId === 'prompt-presets' && draftPreset"
+      class="fixed inset-0 z-50 flex flex-col bg-void/95 backdrop-blur"
+      role="dialog"
+      aria-modal="true"
+      aria-label="提示词预设全屏编辑器"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neon-muted/30 bg-panel px-5 py-3">
+        <div>
+          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">PROMPT PRESET // FULLSCREEN EDITOR</p>
+          <p class="mt-1 font-mono text-sm text-text-main">{{ draft.name || "未命名提示词预设" }}</p>
+        </div>
+        <button
+          type="button"
+          class="border border-neon-muted/40 bg-panel px-4 py-2 font-mono text-xs uppercase tracking-wider text-text-main transition-colors hover:border-neon hover:text-neon"
+          @click="presetEditorOpen = false"
+        >
+          关闭编辑器
+        </button>
+      </div>
+      <div class="min-h-0 flex-1">
+        <PromptPresetEditor
+          :preset="draftPreset"
+          @change="updatePresetFromEditor"
+        />
+      </div>
+    </div>
+
+    <!-- World Book Fullscreen Editor -->
+    <div
+      v-if="worldBookEditorOpen && draft && activeTabId === 'world-books' && draftWorldBook"
+      class="fixed inset-0 z-50 flex flex-col bg-void/95 backdrop-blur"
+      role="dialog"
+      aria-modal="true"
+      aria-label="世界书全屏编辑器"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neon-muted/30 bg-panel px-5 py-3">
+        <div>
+          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">WORLD BOOK // FULLSCREEN EDITOR</p>
+          <p class="mt-1 font-mono text-sm text-text-main">{{ draft.name || "未命名世界书" }}</p>
+        </div>
+        <button
+          type="button"
+          class="border border-neon-muted/40 bg-panel px-4 py-2 font-mono text-xs uppercase tracking-wider text-text-main transition-colors hover:border-neon hover:text-neon"
+          @click="worldBookEditorOpen = false"
+        >
+          关闭编辑器
+        </button>
+      </div>
+      <div class="min-h-0 flex-1">
+        <WorldBookEditor
+          :world-book="draftWorldBook"
+          @change="updateWorldBookFromEditor"
+        />
+      </div>
+    </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue"
-import type { WorkflowDefinition } from "@tsian/contracts"
+import type { WorkflowDefinition, PromptPreset, WorldBook } from "@tsian/contracts"
 import { Badge } from "@/components/ui/badge"
 import WorkflowEditorCanvas from "@/components/workflow/WorkflowEditorCanvas.vue"
+import PromptPresetPreview from "@/components/resource-library/PromptPresetPreview.vue"
+import WorldBookPreview from "@/components/resource-library/WorldBookPreview.vue"
+import PromptPresetEditor from "@/components/resource-library/PromptPresetEditor.vue"
+import WorldBookEditor from "@/components/resource-library/WorldBookEditor.vue"
 import {
   deletePromptPresetResource,
   deleteWorkflowPresetResource,
@@ -346,8 +447,8 @@ interface ResourceSummary {
 }
 
 interface JsonResource extends ResourceSummary {
-  preset?: unknown
-  worldBook?: unknown
+  preset?: PromptPreset
+  worldBook?: WorldBook
 }
 
 interface WorkflowResource extends ResourceSummary {
@@ -359,11 +460,25 @@ type Draft = {
   name: string
   description: string
   tagsText: string
-  jsonText: string
+  preset: PromptPreset
+  worldBook: WorldBook
   definition: WorkflowDefinition
 }
 
 const emptyDefinition = (): WorkflowDefinition => ({ nodes: [], edges: [] })
+
+const emptyPreset = (name = ""): PromptPreset => ({
+  name,
+  prompts: [],
+  utilityPrompts: {},
+  regexScripts: [],
+  other: {},
+})
+
+const emptyWorldBook = (name = ""): WorldBook => ({
+  name,
+  entries: [],
+})
 
 const activeTabId = ref<ResourceTabId>("prompt-presets")
 const promptPresets = ref<JsonResource[]>([])
@@ -378,6 +493,8 @@ const deleteBlockMessage = ref("")
 const workflowSaveStatus = ref<SaveStatus>("saved")
 const workflowCanvasKey = ref(0)
 const workflowEditorOpen = ref(false)
+const presetEditorOpen = ref(false)
+const worldBookEditorOpen = ref(false)
 
 const resourceTabs = computed<ResourceTab[]>(() => [
   {
@@ -411,21 +528,11 @@ const activeResources = computed<ResourceSummary[]>(() => {
   return workflowPresets.value
 })
 
-const jsonTextareaId = computed(() => `${activeTabId.value}-json-editor`)
-
-const jsonError = computed(() => {
-  if (!draft.value || activeTabId.value === "workflow-presets") return ""
-  try {
-    JSON.parse(draft.value.jsonText)
-    return ""
-  } catch (error) {
-    return `JSON 解析失败：${error instanceof Error ? error.message : String(error)}`
-  }
-})
+const draftPreset = computed<PromptPreset | null>(() => draft.value?.preset ?? null)
+const draftWorldBook = computed<WorldBook | null>(() => draft.value?.worldBook ?? null)
 
 const canSave = computed(() => {
   if (!draft.value?.name.trim()) return false
-  if (activeTabId.value !== "workflow-presets" && jsonError.value) return false
   return workflowSaveStatus.value !== "saving"
 })
 
@@ -437,6 +544,8 @@ watch(activeTabId, () => {
   selectedResourceId.value = null
   draft.value = null
   workflowEditorOpen.value = false
+  presetEditorOpen.value = false
+  worldBookEditorOpen.value = false
   resetDeleteState()
   statusMessage.value = ""
 })
@@ -471,7 +580,8 @@ function selectResource(id: string) {
       name: workflow.name,
       description: workflow.description ?? "",
       tagsText: workflow.tags.join(", "),
-      jsonText: "",
+      preset: emptyPreset(),
+      worldBook: emptyWorldBook(),
       definition: workflow.workflow ?? emptyDefinition(),
     }
     workflowSaveStatus.value = "saved"
@@ -480,12 +590,20 @@ function selectResource(id: string) {
   }
 
   const jsonResource = resource as JsonResource
+  const presetPayload = activeTabId.value === "prompt-presets"
+    ? (jsonResource.preset ?? emptyPreset(jsonResource.name))
+    : emptyPreset()
+  const worldBookPayload = activeTabId.value === "world-books"
+    ? (jsonResource.worldBook ?? emptyWorldBook(jsonResource.name))
+    : emptyWorldBook()
+
   draft.value = {
     id: jsonResource.id,
     name: jsonResource.name,
     description: jsonResource.description ?? "",
     tagsText: jsonResource.tags.join(", "),
-    jsonText: JSON.stringify((activeTabId.value === "prompt-presets" ? jsonResource.preset : jsonResource.worldBook) ?? {}, null, 2),
+    preset: presetPayload,
+    worldBook: worldBookPayload,
     definition: emptyDefinition(),
   }
   workflowSaveStatus.value = "saved"
@@ -495,14 +613,17 @@ function createDraft() {
   selectedResourceId.value = null
   resetDeleteState()
   statusMessage.value = ""
+  const name = `未命名${activeTab.value.label}`
   draft.value = {
-    name: `未命名${activeTab.value.label}`,
+    name,
     description: "",
     tagsText: "",
-    jsonText: "{}",
+    preset: emptyPreset(name),
+    worldBook: emptyWorldBook(name),
     definition: emptyDefinition(),
   }
-  workflowSaveStatus.value = activeTabId.value === "workflow-presets" ? "dirty" : "saved"
+  // Mark as dirty so create flow knows there's unsaved work
+  workflowSaveStatus.value = "dirty"
   workflowCanvasKey.value += 1
 }
 
@@ -526,13 +647,13 @@ async function saveDraft() {
     if (activeTabId.value === "prompt-presets") {
       const saved = await upsertPromptPresetResource({
         ...baseInput,
-        preset: JSON.parse(draft.value.jsonText),
+        preset: draft.value.preset,
       })
       selectedResourceId.value = saved.id
     } else if (activeTabId.value === "world-books") {
       const saved = await upsertWorldBookResource({
         ...baseInput,
-        worldBook: JSON.parse(draft.value.jsonText),
+        worldBook: draft.value.worldBook,
       })
       selectedResourceId.value = saved.id
     } else {
@@ -553,9 +674,16 @@ async function saveDraft() {
   }
 }
 
-function formatJson() {
-  if (!draft.value || jsonError.value) return
-  draft.value.jsonText = JSON.stringify(JSON.parse(draft.value.jsonText), null, 2)
+function updatePresetFromEditor(updated: PromptPreset) {
+  if (!draft.value || activeTabId.value !== "prompt-presets") return
+  draft.value.preset = updated
+  workflowSaveStatus.value = "dirty"
+}
+
+function updateWorldBookFromEditor(updated: WorldBook) {
+  if (!draft.value || activeTabId.value !== "world-books") return
+  draft.value.worldBook = updated
+  workflowSaveStatus.value = "dirty"
 }
 
 function openWorkflowEditor() {
@@ -574,9 +702,8 @@ function updateWorkflowDefinition(definition: WorkflowDefinition) {
 
 function resetWorkflowDraft() {
   if (!draft.value?.id) {
-    draft.value = {
-      ...(draft.value ?? { name: "", description: "", tagsText: "", jsonText: "{}" }),
-      definition: emptyDefinition(),
+    if (draft.value) {
+      draft.value.definition = emptyDefinition()
     }
     workflowCanvasKey.value += 1
     workflowSaveStatus.value = "dirty"
@@ -619,6 +746,8 @@ async function confirmDelete() {
   selectedResourceId.value = null
   draft.value = null
   workflowEditorOpen.value = false
+  presetEditorOpen.value = false
+  worldBookEditorOpen.value = false
   resetDeleteState()
   statusMessage.value = "资源已删除。"
 }

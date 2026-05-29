@@ -1,4 +1,4 @@
-import type { ModInitialSavePayload, ModStaticContent, RuntimeSnapshotShell, WorkflowDefinition } from "@tsian/contracts"
+import type { ModInitialSavePayload, ModStaticContent, RuntimeSnapshotShell, WorkflowDefinition, WorldBook } from "@tsian/contracts"
 
 // === 叙事时间锚点（虚构纪元） ===
 // 设计原则：叙事时间是纯游戏内字段，不应绑定系统时钟（Date.now()）。
@@ -480,7 +480,7 @@ const greySaltTownWorkflow: WorkflowDefinition = {
 // === 世界书（Lorebook）：keyword 激活模式 ===
 // 世界书放静态设定（不随剧情变化的世界观规则），与 archives（动态状态）互补。
 // 条目通过 keyword 匹配对话内容自动激活，注入 AI 提示词。
-const greySaltTownWorldBooks: Record<string, unknown> = {
+const greySaltTownWorldBooks: Record<string, WorldBook> = {
   "grey-salt-town-lore": {
     name: "灰盐镇世界观",
     entries: [

@@ -8,6 +8,8 @@
  * 加载期校验（design.md §13.4）由 workflow-engine 在执行前统一执行，不依赖 TS 编译期收紧。
  */
 
+import type { PromptPreset, WorldBook } from "./preset"
+
 // ============================================================================
 // 节点输出提取规则（design.md §4）
 // ============================================================================
@@ -128,11 +130,11 @@ export interface PlatformResourceBase<K extends PlatformResourceKind = PlatformR
 }
 
 export interface PromptPresetResource extends PlatformResourceBase<"prompt-preset"> {
-  preset: unknown
+  preset: PromptPreset
 }
 
 export interface WorldBookResource extends PlatformResourceBase<"world-book"> {
-  worldBook: unknown
+  worldBook: WorldBook
 }
 
 export interface WorkflowPresetResource extends PlatformResourceBase<"workflow-preset"> {

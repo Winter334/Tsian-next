@@ -141,7 +141,10 @@ export async function upsertPromptPresetResource(
   const id = normalizeResourceId(input.id, options)
   const existing = await localDb.promptPresets.get(id)
   const rawContent = input.content ?? input.preset
-  const content = toCloneable(rawContent, "提示词预设内容")
+  if (rawContent === undefined) {
+    throw new Error("提示词预设内容不能为空")
+  }
+  const content = toCloneable(rawContent, "提示词预设内容") as LocalPromptPresetResourceRecord["preset"]
   const record = await upsertResourceRecord(existing, { ...input, id }, (base, timestamps) => ({
     ...base,
     preset: content,
@@ -175,7 +178,10 @@ export async function upsertWorldBookResource(
   const id = normalizeResourceId(input.id, options)
   const existing = await localDb.worldBooks.get(id)
   const rawContent = input.content ?? input.worldBook
-  const content = toCloneable(rawContent, "世界书内容")
+  if (rawContent === undefined) {
+    throw new Error("世界书内容不能为空")
+  }
+  const content = toCloneable(rawContent, "世界书内容") as LocalWorldBookResourceRecord["worldBook"]
   const record = await upsertResourceRecord(existing, { ...input, id }, (base, timestamps) => ({
     ...base,
     worldBook: content,

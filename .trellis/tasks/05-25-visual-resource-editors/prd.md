@@ -14,7 +14,7 @@ Improve the resource library editing experience for prompt presets and world boo
 * Use the existing workflow editor interaction pattern: resource page preview outside, full-screen detailed editor for complex editing.
 * Keep existing resource tabs, create/select/save/delete flows, and workflow preset editing behavior.
 * Preserve unknown or advanced fields where the current structures allow them; do not silently discard fields not visualized by the MVP.
-* Keep a JSON fallback or advanced raw-data escape hatch for fields that are not visualized in the MVP.
+* Preserve advanced/raw fields through visual edits where the current structures allow them; a dedicated JSON/raw-data editor is deferred to a later task.
 * Treat SillyTavern as UX inspiration and compatibility context, not as a requirement to implement every upstream field.
 
 ## MVP Field Scope
@@ -59,9 +59,9 @@ World book fields to preserve but not fully visualize in MVP: other and unknown 
 
 Context: The user wants an editor like SillyTavern, but this project uses a prompt engine derived from SillyTavern with a trimmed compatibility surface.
 
-Decision: Build a SillyTavern-inspired entry management UI, but constrain editable fields to the current prompt-engine structures. Preserve advanced fields and provide a raw-data fallback instead of attempting full upstream SillyTavern parity.
+Decision: Build a SillyTavern-inspired entry management UI, but constrain editable fields to the current prompt-engine structures. Preserve advanced fields during visual edits and defer a dedicated raw-data editor instead of attempting full upstream SillyTavern parity.
 
-Consequences: The MVP remains compatible with the repository's actual engine and avoids overbuilding. Some imported SillyTavern fields will remain advanced/raw rather than receiving bespoke controls in the first task.
+Consequences: The MVP remains compatible with the repository's actual engine and avoids overbuilding. Some imported SillyTavern fields will remain preserved-but-not-directly-editable rather than receiving bespoke controls in the first task.
 
 ## Out of Scope
 
@@ -71,6 +71,7 @@ Consequences: The MVP remains compatible with the repository's actual engine and
 * Auth or permission systems.
 * Database migration unless a code-level compatibility issue makes it unavoidable.
 * Prompt-engine behavior changes unless required to preserve existing resource data safely.
+* Dedicated raw JSON / advanced data editing for prompt presets and world books; this will be opened in a later task.
 
 ## Technical Notes
 

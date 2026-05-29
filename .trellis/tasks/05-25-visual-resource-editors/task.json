@@ -3,7 +3,7 @@
   "name": "visual-resource-editors",
   "title": "Visual resource editors for prompt presets and world books",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

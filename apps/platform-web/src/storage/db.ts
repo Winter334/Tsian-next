@@ -1,8 +1,10 @@
 import type {
   ArchivePresence,
   ArchiveType,
+  PromptPreset,
   RuntimeSnapshotShell,
   WorkflowDefinition,
+  WorldBook,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
 
@@ -92,7 +94,7 @@ export interface LocalPromptPresetResourceRecord {
   name: string
   description?: string
   tags: string[]
-  preset: unknown
+  preset: PromptPreset
   content: unknown
   createdAt: number
   updatedAt: number
@@ -103,7 +105,7 @@ export interface LocalWorldBookResourceRecord {
   name: string
   description?: string
   tags: string[]
-  worldBook: unknown
+  worldBook: WorldBook
   content: unknown
   createdAt: number
   updatedAt: number

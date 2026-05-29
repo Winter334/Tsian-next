@@ -4,6 +4,7 @@ import type {
   RuntimeGlobalsMap,
   RuntimeSnapshotShell,
 } from "./runtime"
+import type { PromptPreset, WorldBook } from "./preset"
 import type { WorkflowDefinition } from "./workflow"
 
 export interface ModManifest {
@@ -25,9 +26,9 @@ export interface ModManifest {
   /**
    * @deprecated 改用平台资源库 prompt preset；旧字段仅为兼容既有内置模组保留。
    * 模组私有 preset 库；ai-call 节点 config.presetId 引用其 key。
-   * 形状由 @tsian/prompt-engine 在加载/使用期校验为 PresetInfo；contracts 层不收紧（避免反向依赖）。
+   * contracts 层复用共享 PromptPreset 形状；加载/使用期仍由 @tsian/prompt-engine 执行语义校验。
    */
-  presets?: Record<string, unknown>
+  presets?: Record<string, PromptPreset>
   /**
    * 模组扩展占位符；与平台内置宏 / edge 注入的覆盖顺序见 design.md §13.5。
    */
@@ -35,9 +36,9 @@ export interface ModManifest {
   /**
    * @deprecated 改用平台资源库 world book；旧字段仅为兼容既有内置模组保留。
    * 模组世界书（Lorebook）库；ai-call 节点 config.worldBookKeys 引用其 key。
-   * 形状由 @tsian/prompt-engine 在使用期校验为 WorldBook；contracts 层不收紧（与 presets 同策略，避免反向依赖）。
+   * contracts 层复用共享 WorldBook 形状；加载/使用期仍由 @tsian/prompt-engine 执行语义校验。
    */
-  worldBooks?: Record<string, unknown>
+  worldBooks?: Record<string, WorldBook>
   /**
    * HC-13 编译期辅助守卫：原型期不允许模组注册自定义节点类型。
    * 模组若声明此字段会触发 TS 编译错误（because never）；runtime 守卫由工作流引擎执行。
@@ -93,7 +94,7 @@ export interface ModStaticContent {
    * 模组世界书实际数据（与 manifest.worldBooks 对齐）。
    * 模组不带世界书时缺省为 undefined / 空对象。
    */
-  worldBooks?: Record<string, unknown>
+  worldBooks?: Record<string, WorldBook>
 }
 
 export interface ModInitialSavePayload {
