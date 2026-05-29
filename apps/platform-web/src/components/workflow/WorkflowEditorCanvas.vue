@@ -138,6 +138,8 @@
           v-if="selectedNodeId"
           :node-id="selectedNodeId"
           :nodes="nodes"
+          :prompt-preset-options="props.promptPresetOptions"
+          :world-book-options="props.worldBookOptions"
           :on-update-config="updateNodeConfig"
           :on-update-label="updateNodeLabel"
           :on-update-retry="updateNodeRetry"
@@ -224,13 +226,23 @@ import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/minimap/dist/style.css'
 import '@vue-flow/controls/dist/style.css'
 
+interface WorkflowResourceOption {
+  id: string
+  name: string
+  description?: string
+}
+
 const props = withDefaults(defineProps<{
   initialDefinition?: WorkflowDefinition
   saveStatus: 'saved' | 'dirty' | 'saving' | 'error'
   sourceLabel: string
   readonly?: boolean
+  promptPresetOptions?: WorkflowResourceOption[]
+  worldBookOptions?: WorkflowResourceOption[]
 }>(), {
   readonly: false,
+  promptPresetOptions: () => [],
+  worldBookOptions: () => [],
 })
 
 const emit = defineEmits<{

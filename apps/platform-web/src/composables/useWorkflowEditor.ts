@@ -7,6 +7,7 @@ import type {
   WorkflowEdge as TsianEdge,
   WorkflowNodeType,
   NodeOutputDeclaration,
+  NodeOutputExtractRule,
 } from '@tsian/contracts'
 
 // ---------------------------------------------------------------------------
@@ -40,6 +41,50 @@ function hasMissingOrStackedPositions(vfNodes: Node[]): boolean {
   return positions.length !== new Set(positions).size
 }
 
+function normalizeParse(value: unknown): NodeOutputExtractRule['parse'] {
+  return value === 'json' || value === 'number' ? value : undefined
+}
+
+function normalizeExtractRule(rule: unknown): NodeOutputExtractRule {
+  if (typeof rule !== 'object' || rule === null) return { type: 'raw' }
+  const candidate = rule as Partial<NodeOutputExtractRule>
+
+  if (candidate.type === 'tag') {
+    return {
+      type: 'tag',
+      tag: typeof candidate.tag === 'string' ? candidate.tag : '',
+      parse: normalizeParse(candidate.parse),
+    }
+  }
+
+  if (candidate.type === 'regex') {
+    return {
+      type: 'regex',
+      pattern: typeof candidate.pattern === 'string' ? candidate.pattern : '',
+      flags: typeof candidate.flags === 'string' ? candidate.flags : undefined,
+      group: typeof candidate.group === 'number' ? candidate.group : undefined,
+      parse: normalizeParse(candidate.parse),
+    }
+  }
+
+  return {
+    type: 'raw',
+    parse: normalizeParse(candidate.parse),
+  }
+}
+
+function normalizeOutputs(outputs: unknown): NodeOutputDeclaration[] {
+  if (!Array.isArray(outputs)) return []
+  return outputs
+    .filter((output): output is Partial<NodeOutputDeclaration> =>
+      typeof output === 'object' && output !== null,
+    )
+    .map((output) => ({
+      name: typeof output.name === 'string' ? output.name : '',
+      extract: normalizeExtractRule(output.extract),
+    }))
+}
+
 // ---------------------------------------------------------------------------
 // 类型映射：Tsian 契约 ↔ Vue Flow
 // ---------------------------------------------------------------------------
@@ -54,7 +99,7 @@ function toVfNode(node: WorkflowNode): Node {
       nodeType: node.type,
       label: node.label,
       config: node.config,
-      outputs: node.outputs ?? [],
+      outputs: normalizeOutputs(node.outputs),
       retry: node.retry,
     },
   }
@@ -62,13 +107,14 @@ function toVfNode(node: WorkflowNode): Node {
 
 /** Vue Flow 节点 → 契约节点 */
 function fromVfNode(vfNode: Node): WorkflowNode {
+  const outputs = normalizeOutputs(vfNode.data.outputs)
   return {
     id: vfNode.id,
     type: vfNode.data.nodeType as WorkflowNodeType,
     label: vfNode.data.label || undefined,
     config: vfNode.data.config as Record<string, unknown>,
     position: { x: vfNode.position.x, y: vfNode.position.y },
-    outputs: vfNode.data.outputs?.length ? vfNode.data.outputs : undefined,
+    outputs: outputs.length ? outputs : undefined,
     retry: vfNode.data.retry,
   }
 }
@@ -203,7 +249,7 @@ export function useWorkflowEditor() {
   function updateNodeOutputs(nodeId: string, outputs: NodeOutputDeclaration[]): void {
     const node = nodes.value.find((n) => n.id === nodeId)
     if (!node) return
-    node.data = { ...node.data, outputs }
+    node.data = { ...node.data, outputs: normalizeOutputs(outputs) }
   }
 
   /** 更新边上的运行时入参名与条件 */

@@ -8,9 +8,17 @@ import ApplyPatchForm from './inspector/ApplyPatchForm.vue'
 import ComputeForm from './inspector/ComputeForm.vue'
 import OutputsEditor from './inspector/OutputsEditor.vue'
 
+interface WorkflowResourceOption {
+  id: string
+  name: string
+  description?: string
+}
+
 const props = defineProps<{
   nodeId: string | null
   nodes: any[]
+  promptPresetOptions?: WorkflowResourceOption[]
+  worldBookOptions?: WorkflowResourceOption[]
   onUpdateConfig: (nodeId: string, config: Record<string, unknown>) => void
   onUpdateRetry: (nodeId: string, retry: { maxRetries: number } | undefined) => void
   onDeleteNode: (nodeId: string) => void
@@ -141,6 +149,8 @@ function handleDelete() {
       <AiCallForm
         v-if="selectedNode.data.nodeType === 'ai-call'"
         :config="selectedNode.data.config"
+        :prompt-preset-options="props.promptPresetOptions ?? []"
+        :world-book-options="props.worldBookOptions ?? []"
         :on-update="handleUpdateConfig"
       />
       <ResultForm

@@ -267,6 +267,8 @@
                     :key="`preview-${workflowCanvasKey}`"
                     readonly
                     :initial-definition="draft.definition"
+                    :prompt-preset-options="promptPresetOptions"
+                    :world-book-options="worldBookOptions"
                     save-status="saved"
                     source-label="资源库工作流预览"
                   />
@@ -335,6 +337,8 @@
         <WorkflowEditorCanvas
           :key="`editor-${workflowCanvasKey}`"
           :initial-definition="draft.definition"
+          :prompt-preset-options="promptPresetOptions"
+          :world-book-options="worldBookOptions"
           :save-status="workflowSaveStatus"
           source-label="资源库工作流预设"
           @change="updateWorkflowDefinition"
@@ -527,6 +531,14 @@ const activeResources = computed<ResourceSummary[]>(() => {
   if (activeTabId.value === "world-books") return worldBooks.value
   return workflowPresets.value
 })
+
+const promptPresetOptions = computed(() =>
+  promptPresets.value.map(({ id, name, description }) => ({ id, name, description })),
+)
+
+const worldBookOptions = computed(() =>
+  worldBooks.value.map(({ id, name, description }) => ({ id, name, description })),
+)
 
 const draftPreset = computed<PromptPreset | null>(() => draft.value?.preset ?? null)
 const draftWorldBook = computed<WorldBook | null>(() => draft.value?.worldBook ?? null)

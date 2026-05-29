@@ -119,6 +119,78 @@ interface PromptPresetResource {
 }
 ```
 
+### Scenario: Workflow Preset Resource References
+
+#### 1. Scope / Trigger
+
+- Trigger: `ModManifest.workflowPresetId` crosses contracts, platform resource
+  storage, and the runtime workflow host.
+- Use this when adding or changing workflow preset selection, mod manifest
+  loading, or resource-library workflow persistence.
+
+#### 2. Signatures
+
+- `ModManifest.workflowPresetId?: string`
+- `ModManifest.workflow?: WorkflowDefinition` remains deprecated legacy input.
+- `WorkflowPresetResource.workflow: WorkflowDefinition`
+- `getWorkflowPresetResource(id: string): Promise<LocalWorkflowPresetResourceRecord | undefined>`
+
+#### 3. Contracts
+
+- Runtime workflow precedence is:
+  1. `manifest.workflowPresetId`
+  2. deprecated `manifest.workflow`
+  3. platform `defaultWorkflow`
+- A referenced workflow preset is still mod-controlled input. Execute it with
+  `isModWorkflow: true` so workflow-engine validation rejects `apply-patch`.
+- Built-in/default platform workflows may contain platform-owned `apply-patch`;
+  mod referenced workflows may not.
+
+#### 4. Validation & Error Matrix
+
+- `workflowPresetId` points to no resource -> throw a clear missing workflow
+  preset error at runtime resolution.
+- Referenced workflow contains `apply-patch` and is run as a mod workflow ->
+  workflow-engine throws `MOD_REGISTERED_APPLY_PATCH`.
+- No `workflowPresetId` and no legacy `workflow` -> use `defaultWorkflow`.
+- Legacy `workflow` present without `workflowPresetId` -> run the legacy
+  definition with `isModWorkflow: true`.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: A mod sets `workflowPresetId`, the platform loads that resource, and
+  `executeWorkflow` receives `{ isModWorkflow: true }`.
+- Base: Existing mods omit `workflowPresetId`; legacy `manifest.workflow` or
+  `defaultWorkflow` behavior remains unchanged.
+- Bad: A missing `workflowPresetId` silently falls back to `defaultWorkflow`.
+- Bad: A mod-referenced workflow preset is treated as platform-owned and allowed
+  to apply patches directly.
+
+#### 6. Tests Required
+
+- Add or update a boundary test proving `platform-host` imports
+  `getWorkflowPresetResource`, resolves `workflowPresetId` before legacy
+  `manifest.workflow`, and passes `isModWorkflow` into `executeWorkflow`.
+- Keep workflow-engine validation coverage for `MOD_REGISTERED_APPLY_PATCH`.
+- Run `npm run build:web`; run `npm run build:contracts` when contract shapes
+  change.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```typescript
+const workflow = mod.manifest.workflow ?? defaultWorkflow
+await executeWorkflow(workflow, context, { isModWorkflow: false })
+```
+
+Correct:
+
+```typescript
+const { def, isModWorkflow } = await resolveWorkflowForMod(modId)
+await executeWorkflow(def, context, { isModWorkflow })
+```
+
 ---
 
 ## Forbidden Patterns

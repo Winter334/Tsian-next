@@ -51,6 +51,7 @@ import {
   toEventRecord,
 } from "../storage"
 import {
+  getWorkflowPresetResource,
   listPromptPresetResources,
   listWorldBookResources,
   seedBuiltinResourceLibraryResources,
@@ -66,11 +67,29 @@ import { defaultWorkflow } from "../workflow-host/default-workflow"
 import { createWorkflowExecutionContext } from "../workflow-host"
 import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
 
-function resolveWorkflowForMod(modId: string): {
+async function resolveWorkflowForMod(modId: string): Promise<{
   def: WorkflowDefinition
   isModWorkflow: boolean
-} {
-  const modWorkflow = getBuiltinMod(modId)?.manifest.workflow
+}> {
+  const mod = getBuiltinMod(modId)
+  const workflowPresetId = mod?.manifest.workflowPresetId?.trim()
+
+  if (workflowPresetId) {
+    await seedBuiltinResourceLibraryResources()
+    const resource = await getWorkflowPresetResource(workflowPresetId)
+    if (!resource) {
+      throw new Error(
+        `mod "${modId}" references missing workflow preset "${workflowPresetId}"`,
+      )
+    }
+
+    return {
+      def: resource.workflow,
+      isModWorkflow: true,
+    }
+  }
+
+  const modWorkflow = mod?.manifest.workflow
   return {
     def: modWorkflow ?? defaultWorkflow,
     isModWorkflow: modWorkflow !== undefined,
@@ -954,7 +973,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const currentController = new AbortController()
       previousTurnController = currentController
 
-      const { def, isModWorkflow } = resolveWorkflowForMod(modId ?? "")
+      const { def, isModWorkflow } = await resolveWorkflowForMod(modId ?? "")
 
       // === 7) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
       const handle = createOutputsStore({
