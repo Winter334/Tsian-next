@@ -74,3 +74,37 @@ Closed the workflow preset runtime loop and improved workflow editor resource/ou
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Record AIRP workflow platform direction
+
+**Date**: 2026-05-29
+**Task**: Record AIRP workflow platform direction
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Recorded Tsian's AIRP workflow platform direction, updated active docs and implementation plan, prepared the next save-level workflow preset override task, and archived the direction-recording task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `de962e5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
