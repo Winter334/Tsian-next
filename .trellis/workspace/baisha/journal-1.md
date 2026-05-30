@@ -108,3 +108,37 @@ Recorded Tsian's AIRP workflow platform direction, updated active docs and imple
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Save-level workflow preset override
+
+**Date**: 2026-05-31
+**Task**: Save-level workflow preset override
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added save-level workflow preset override with runtime precedence, resource-library apply/clear UI, contract guidance, and workflow-engine coverage. Verified build:web, build:contracts, build:workflow-engine, and workflow-engine tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `23b8add` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
