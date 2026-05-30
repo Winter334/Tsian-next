@@ -123,54 +123,82 @@ interface PromptPresetResource {
 
 #### 1. Scope / Trigger
 
-- Trigger: `ModManifest.workflowPresetId` crosses contracts, platform resource
-  storage, and the runtime workflow host.
-- Use this when adding or changing workflow preset selection, mod manifest
-  loading, or resource-library workflow persistence.
+- Trigger: `LocalSaveRecord.workflowPresetId` and
+  `ModManifest.workflowPresetId` cross platform resource storage, save storage,
+  UI selection, and the runtime workflow host.
+- Use this when adding or changing workflow preset selection, save metadata,
+  mod manifest loading, or resource-library workflow persistence.
 
 #### 2. Signatures
 
 - `ModManifest.workflowPresetId?: string`
 - `ModManifest.workflow?: WorkflowDefinition` remains deprecated legacy input.
+- `LocalSaveRecord.workflowPresetId?: string`
 - `WorkflowPresetResource.workflow: WorkflowDefinition`
 - `getWorkflowPresetResource(id: string): Promise<LocalWorkflowPresetResourceRecord | undefined>`
+- `getWorkflowPresetIdForSave(saveId: string): Promise<string | undefined>`
+- `setWorkflowPresetIdForSave(saveId: string, workflowPresetId: string | null): Promise<LocalSaveRecord | undefined>`
+- `getPlatformWorkflowSource(saveId?: string): Promise<PlatformWorkflowSource | null>`
+- `setPlatformSaveWorkflowPreset(workflowPresetId: string | null, saveId?: string): Promise<LocalSaveRecord>`
 
 #### 3. Contracts
 
 - Runtime workflow precedence is:
-  1. `manifest.workflowPresetId`
-  2. deprecated `manifest.workflow`
-  3. platform `defaultWorkflow`
-- A referenced workflow preset is still mod-controlled input. Execute it with
-  `isModWorkflow: true` so workflow-engine validation rejects `apply-patch`.
+  1. save-level `LocalSaveRecord.workflowPresetId`
+  2. `manifest.workflowPresetId`
+  3. deprecated `manifest.workflow`
+  4. platform `defaultWorkflow`
+- Save-level workflow presets are user-selected runtime workflows. Execute them
+  with `isModWorkflow: false` so platform-owned nodes such as `apply-patch` stay
+  available when the player explicitly selects the workflow.
+- Mod-referenced workflow presets and deprecated legacy mod workflows are still
+  mod-controlled input. Execute them with `isModWorkflow: true` so
+  workflow-engine validation rejects `apply-patch`.
 - Built-in/default platform workflows may contain platform-owned `apply-patch`;
   mod referenced workflows may not.
+- UI should display the source kind so users can distinguish `save-override`,
+  `mod-preset`, `legacy-mod-workflow`, and `platform-default`.
 
 #### 4. Validation & Error Matrix
 
-- `workflowPresetId` points to no resource -> throw a clear missing workflow
-  preset error at runtime resolution.
+- Save-level `workflowPresetId` points to no resource -> throw a clear
+  `save "<id>" references missing workflow preset "<preset>"` error at runtime
+  resolution; the resource-library UI may show the error and allow clearing the
+  save override, but runtime must not silently fall back.
+- Mod-level `workflowPresetId` points to no resource -> throw a clear
+  `mod "<id>" references missing workflow preset "<preset>"` error at runtime
+  resolution.
 - Referenced workflow contains `apply-patch` and is run as a mod workflow ->
   workflow-engine throws `MOD_REGISTERED_APPLY_PATCH`.
+- Save-selected workflow contains `apply-patch` -> allowed by passing
+  `isModWorkflow: false`.
+- Clearing the save override (`workflowPresetId: null`) -> remove the optional
+  field and return to the mod/default precedence chain.
 - No `workflowPresetId` and no legacy `workflow` -> use `defaultWorkflow`.
 - Legacy `workflow` present without `workflowPresetId` -> run the legacy
   definition with `isModWorkflow: true`.
 
 #### 5. Good/Base/Bad Cases
 
-- Good: A mod sets `workflowPresetId`, the platform loads that resource, and
-  `executeWorkflow` receives `{ isModWorkflow: true }`.
+- Good: A save sets `workflowPresetId`, the platform loads that resource before
+  checking the mod manifest, and `executeWorkflow` receives
+  `{ isModWorkflow: false }`.
+- Good: A mod sets `workflowPresetId`, the platform loads that resource when the
+  save has no override, and `executeWorkflow` receives
+  `{ isModWorkflow: true }`.
 - Base: Existing mods omit `workflowPresetId`; legacy `manifest.workflow` or
   `defaultWorkflow` behavior remains unchanged.
-- Bad: A missing `workflowPresetId` silently falls back to `defaultWorkflow`.
+- Bad: A missing save-level or mod-level `workflowPresetId` silently falls back
+  to `defaultWorkflow`.
 - Bad: A mod-referenced workflow preset is treated as platform-owned and allowed
   to apply patches directly.
 
 #### 6. Tests Required
 
 - Add or update a boundary test proving `platform-host` imports
-  `getWorkflowPresetResource`, resolves `workflowPresetId` before legacy
-  `manifest.workflow`, and passes `isModWorkflow` into `executeWorkflow`.
+  `getWorkflowPresetResource`, resolves save-level `workflowPresetId` before
+  mod-level `workflowPresetId`, resolves mod-level `workflowPresetId` before
+  legacy `manifest.workflow`, and passes `isModWorkflow` into `executeWorkflow`.
 - Keep workflow-engine validation coverage for `MOD_REGISTERED_APPLY_PATCH`.
 - Run `npm run build:web`; run `npm run build:contracts` when contract shapes
   change.
@@ -187,7 +215,7 @@ await executeWorkflow(workflow, context, { isModWorkflow: false })
 Correct:
 
 ```typescript
-const { def, isModWorkflow } = await resolveWorkflowForMod(modId)
+const { def, isModWorkflow } = await resolveWorkflowForSave(saveId)
 await executeWorkflow(def, context, { isModWorkflow })
 ```
 

@@ -254,12 +254,36 @@
                       在全屏编辑器中修改工作流；保存仍使用页面右上角"保存资源"。
                     </p>
                   </div>
+                  <div class="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      class="border border-neon-deep bg-neon/5 px-4 py-2 font-mono text-xs uppercase tracking-wider text-neon transition-colors hover:bg-neon/15 disabled:cursor-not-allowed disabled:opacity-40"
+                      :disabled="!draft.id || workflowSaveStatus !== 'saved' || !activeSaveId || currentWorkflowPresetId === draft.id"
+                      @click="applyWorkflowToActiveSave"
+                    >
+                      应用到当前存档
+                    </button>
+                    <button
+                      type="button"
+                      class="border border-neon bg-neon/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-neon transition-colors hover:bg-neon/20"
+                      @click="openWorkflowEditor"
+                    >
+                      打开全屏编辑器
+                    </button>
+                  </div>
+                </div>
+                <div class="border border-neon-deep/30 bg-void/40 p-3 font-mono text-[11px] normal-case tracking-normal text-text-dim">
+                  <p class="uppercase tracking-[0.2em] text-neon-muted">CURRENT SAVE WORKFLOW</p>
+                  <p class="mt-2 text-text-main">{{ currentWorkflowSourceLabel }}</p>
+                  <p v-if="activeSaveId" class="mt-1 break-all">SAVE // {{ activeSaveId }}</p>
                   <button
+                    v-if="currentWorkflowPresetId"
                     type="button"
-                    class="border border-neon bg-neon/10 px-4 py-2 font-mono text-xs uppercase tracking-wider text-neon transition-colors hover:bg-neon/20"
-                    @click="openWorkflowEditor"
+                    class="mt-3 border border-neon-muted/40 bg-panel px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-text-main transition-colors hover:border-neon-muted disabled:cursor-not-allowed disabled:opacity-40"
+                    :disabled="!activeSaveId"
+                    @click="clearActiveSaveWorkflowOverride"
                   >
-                    打开全屏编辑器
+                    移除存档覆盖
                   </button>
                 </div>
                 <div class="h-[clamp(640px,72vh,860px)] min-h-[640px] overflow-hidden border border-neon-deep/30 bg-void/40">
@@ -429,6 +453,13 @@ import {
   upsertWorkflowPresetResource,
   upsertWorldBookResource,
 } from "@/storage/resources"
+import {
+  getPlatformActiveSaveId,
+  getPlatformWorkflowSource,
+  listPlatformSaves,
+  setPlatformSaveWorkflowPreset,
+  type PlatformWorkflowSource,
+} from "@/platform-host"
 
 type ResourceTabId = "prompt-presets" | "world-books" | "workflow-presets"
 type SaveStatus = "saved" | "dirty" | "saving" | "error"
@@ -499,6 +530,10 @@ const workflowCanvasKey = ref(0)
 const workflowEditorOpen = ref(false)
 const presetEditorOpen = ref(false)
 const worldBookEditorOpen = ref(false)
+const activeSaveId = ref("")
+const currentSaveWorkflowPresetId = ref("")
+const currentWorkflowSource = ref<PlatformWorkflowSource | null>(null)
+const currentWorkflowSourceError = ref("")
 
 const resourceTabs = computed<ResourceTab[]>(() => [
   {
@@ -542,6 +577,24 @@ const worldBookOptions = computed(() =>
 
 const draftPreset = computed<PromptPreset | null>(() => draft.value?.preset ?? null)
 const draftWorldBook = computed<WorldBook | null>(() => draft.value?.worldBook ?? null)
+const currentWorkflowPresetId = computed(() => currentSaveWorkflowPresetId.value)
+const currentWorkflowSourceLabel = computed(() => {
+  const source = currentWorkflowSource.value
+  if (!activeSaveId.value) return "暂无激活存档，不能应用存档级工作流覆盖。"
+  if (currentWorkflowSourceError.value) {
+    const presetId = currentSaveWorkflowPresetId.value
+      ? ` // ${currentSaveWorkflowPresetId.value}`
+      : ""
+    return `当前存档工作流解析失败${presetId}：${currentWorkflowSourceError.value}`
+  }
+  if (!source) return "当前存档工作流来源未知。"
+
+  const name = source.workflowName ? ` // ${source.workflowName}` : ""
+  if (source.kind === "save-override") return `存档覆盖${name}`
+  if (source.kind === "mod-preset") return `模组预设${name}`
+  if (source.kind === "legacy-mod-workflow") return `旧版模组工作流${name}`
+  return `平台默认工作流${name}`
+})
 
 const canSave = computed(() => {
   if (!draft.value?.name.trim()) return false
@@ -550,6 +603,7 @@ const canSave = computed(() => {
 
 onMounted(() => {
   void reloadResources()
+  void refreshActiveSaveWorkflowSource()
 })
 
 watch(activeTabId, () => {
@@ -572,6 +626,24 @@ async function reloadResources() {
   promptPresets.value = promptRows
   worldBooks.value = worldBookRows
   workflowPresets.value = workflowRows
+}
+
+async function refreshActiveSaveWorkflowSource() {
+  activeSaveId.value = await getPlatformActiveSaveId() ?? ""
+  currentWorkflowSource.value = null
+  currentWorkflowSourceError.value = ""
+  currentSaveWorkflowPresetId.value = ""
+
+  if (!activeSaveId.value) return
+
+  const activeSave = (await listPlatformSaves()).find((save) => save.id === activeSaveId.value)
+  currentSaveWorkflowPresetId.value = activeSave?.workflowPresetId?.trim() ?? ""
+
+  try {
+    currentWorkflowSource.value = await getPlatformWorkflowSource(activeSaveId.value)
+  } catch (error) {
+    currentWorkflowSourceError.value = error instanceof Error ? error.message : String(error)
+  }
 }
 
 function selectTab(tabId: ResourceTabId) {
@@ -722,6 +794,27 @@ function resetWorkflowDraft() {
     return
   }
   selectResource(draft.value.id)
+}
+
+async function applyWorkflowToActiveSave() {
+  if (!draft.value?.id || workflowSaveStatus.value !== "saved") return
+  try {
+    await setPlatformSaveWorkflowPreset(draft.value.id)
+    await refreshActiveSaveWorkflowSource()
+    statusMessage.value = `已将工作流预设应用到当前存档：${draft.value.name}`
+  } catch (error) {
+    statusMessage.value = `应用失败：${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
+async function clearActiveSaveWorkflowOverride() {
+  try {
+    await setPlatformSaveWorkflowPreset(null)
+    await refreshActiveSaveWorkflowSource()
+    statusMessage.value = "已移除当前存档的工作流覆盖。"
+  } catch (error) {
+    statusMessage.value = `移除失败：${error instanceof Error ? error.message : String(error)}`
+  }
 }
 
 async function prepareDelete() {

@@ -36,6 +36,7 @@ import {
   getModIdForSave,
   getPlayerArchiveIdsForSave,
   getSnapshotForSave,
+  getWorkflowPresetIdForSave,
   listActiveEventsForSave,
   listArchivesForSave,
   listCheckpointsForSave,
@@ -47,6 +48,7 @@ import {
   saveSnapshotForSave,
   setActiveSaveId,
   setPlayerArchiveIdsForSave,
+  setWorkflowPresetIdForSave,
   toArchiveRecord,
   toEventRecord,
 } from "../storage"
@@ -67,9 +69,24 @@ import { defaultWorkflow } from "../workflow-host/default-workflow"
 import { createWorkflowExecutionContext } from "../workflow-host"
 import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
 
+export type PlatformWorkflowSourceKind =
+  | "save-override"
+  | "mod-preset"
+  | "legacy-mod-workflow"
+  | "platform-default"
+
+export interface PlatformWorkflowSource {
+  kind: PlatformWorkflowSourceKind
+  modId: string
+  saveId?: string
+  workflowPresetId?: string
+  workflowName?: string
+}
+
 async function resolveWorkflowForMod(modId: string): Promise<{
   def: WorkflowDefinition
   isModWorkflow: boolean
+  source: PlatformWorkflowSource
 }> {
   const mod = getBuiltinMod(modId)
   const workflowPresetId = mod?.manifest.workflowPresetId?.trim()
@@ -86,14 +103,70 @@ async function resolveWorkflowForMod(modId: string): Promise<{
     return {
       def: resource.workflow,
       isModWorkflow: true,
+      source: {
+        kind: "mod-preset",
+        modId,
+        workflowPresetId,
+        workflowName: resource.name,
+      },
     }
   }
 
   const modWorkflow = mod?.manifest.workflow
-  return {
-    def: modWorkflow ?? defaultWorkflow,
-    isModWorkflow: modWorkflow !== undefined,
+  if (modWorkflow) {
+    return {
+      def: modWorkflow,
+      isModWorkflow: true,
+      source: {
+        kind: "legacy-mod-workflow",
+        modId,
+        workflowName: mod?.manifest.name,
+      },
+    }
   }
+
+  return {
+    def: defaultWorkflow,
+    isModWorkflow: false,
+    source: {
+      kind: "platform-default",
+      modId,
+      workflowName: "平台默认工作流",
+    },
+  }
+}
+
+async function resolveWorkflowForSave(saveId: string): Promise<{
+  def: WorkflowDefinition
+  isModWorkflow: boolean
+  source: PlatformWorkflowSource
+}> {
+  const modId = await getModIdForSave(saveId)
+  const workflowPresetId = await getWorkflowPresetIdForSave(saveId)
+
+  if (workflowPresetId) {
+    await seedBuiltinResourceLibraryResources()
+    const resource = await getWorkflowPresetResource(workflowPresetId)
+    if (!resource) {
+      throw new Error(
+        `save "${saveId}" references missing workflow preset "${workflowPresetId}"`,
+      )
+    }
+
+    return {
+      def: resource.workflow,
+      isModWorkflow: false,
+      source: {
+        kind: "save-override",
+        saveId,
+        modId,
+        workflowPresetId,
+        workflowName: resource.name,
+      },
+    }
+  }
+
+  return resolveWorkflowForMod(modId)
 }
 
 export const runtimeEngine = new LocalRuntimeEngine()
@@ -973,7 +1046,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const currentController = new AbortController()
       previousTurnController = currentController
 
-      const { def, isModWorkflow } = await resolveWorkflowForMod(modId ?? "")
+      const { def, isModWorkflow } = await resolveWorkflowForSave(activeSaveId)
 
       // === 7) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
       const handle = createOutputsStore({
@@ -1112,6 +1185,45 @@ export async function createPlatformSave(input?: {
 export async function selectPlatformSave(saveId: string) {
   await setActiveSaveId(saveId)
   runtimeEngine.loadSnapshot(await getSnapshotForSave(saveId))
+}
+
+export async function getPlatformWorkflowSource(saveId?: string): Promise<PlatformWorkflowSource | null> {
+  const targetSaveId = saveId ?? await getActiveSaveId()
+  if (!targetSaveId) {
+    return null
+  }
+
+  const { source } = await resolveWorkflowForSave(targetSaveId)
+  return source
+}
+
+export async function setPlatformSaveWorkflowPreset(
+  workflowPresetId: string | null,
+  saveId?: string,
+) {
+  const targetSaveId = saveId ?? await getActiveSaveId()
+  if (!targetSaveId) {
+    throw new Error("当前没有激活中的存档")
+  }
+
+  const nextWorkflowPresetId = workflowPresetId?.trim() || null
+  if (nextWorkflowPresetId) {
+    await seedBuiltinResourceLibraryResources()
+    const resource = await getWorkflowPresetResource(nextWorkflowPresetId)
+    if (!resource) {
+      throw new Error(
+        `save "${targetSaveId}" references missing workflow preset "${nextWorkflowPresetId}"`,
+      )
+    }
+  }
+
+  const updated = await setWorkflowPresetIdForSave(targetSaveId, nextWorkflowPresetId)
+  if (!updated) {
+    throw new Error(`save "${targetSaveId}" not found`)
+  }
+
+  retrievalDebugBySave.delete(targetSaveId)
+  return updated
 }
 
 export async function deletePlatformSave(saveId: string) {

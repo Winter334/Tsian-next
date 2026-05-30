@@ -112,6 +112,37 @@ export async function getModIdForSave(saveId: string): Promise<string> {
   return save?.modId ?? defaultModId
 }
 
+export async function getWorkflowPresetIdForSave(saveId: string): Promise<string | undefined> {
+  const save = await localDb.saves.get(saveId)
+  const workflowPresetId = save?.workflowPresetId?.trim()
+  return workflowPresetId || undefined
+}
+
+export async function setWorkflowPresetIdForSave(
+  saveId: string,
+  workflowPresetId: string | null,
+): Promise<LocalSaveRecord | undefined> {
+  const save = await localDb.saves.get(saveId)
+  if (!save) {
+    return undefined
+  }
+
+  const nextWorkflowPresetId = workflowPresetId?.trim() || undefined
+  const nextSave: LocalSaveRecord = {
+    ...save,
+    updatedAt: Date.now(),
+  }
+
+  if (nextWorkflowPresetId) {
+    nextSave.workflowPresetId = nextWorkflowPresetId
+  } else {
+    delete nextSave.workflowPresetId
+  }
+
+  await localDb.saves.put(nextSave)
+  return nextSave
+}
+
 export async function setActiveSaveId(saveId: string | null): Promise<void> {
   if (!saveId) {
     await localDb.meta.delete(ACTIVE_SAVE_KEY)
@@ -306,7 +337,6 @@ export async function saveHistoryForSave(
     messages,
   })
 }
-
 
 
 

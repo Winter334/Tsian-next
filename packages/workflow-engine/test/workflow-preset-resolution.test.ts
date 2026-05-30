@@ -48,12 +48,34 @@ describe('workflow preset resource resolution static proof', () => {
     expect(legacyWorkflowIndex).toBeGreaterThan(workflowPresetIndex)
   })
 
-  it('sendMessage awaits resolved workflow metadata and passes isModWorkflow into executeWorkflow', () => {
+  it('sendMessage awaits save-level workflow metadata and passes isModWorkflow into executeWorkflow', () => {
     const src = readFileSync(PLATFORM_HOST_FILE, 'utf-8')
 
     expect(src).toMatch(
-      /const\s+\{\s*def,\s*isModWorkflow\s*\}\s*=\s*await\s+resolveWorkflowForMod/,
+      /const\s+\{\s*def,\s*isModWorkflow\s*\}\s*=\s*await\s+resolveWorkflowForSave\(\s*activeSaveId\s*\)/,
     )
     expect(src).toMatch(/executeWorkflow\s*\(\s*def,\s*wfContext,\s*\{[\s\S]*isModWorkflow/)
+  })
+
+  it('save-level workflow override resolves before mod-level workflow sources', () => {
+    const src = readFileSync(PLATFORM_HOST_FILE, 'utf-8')
+
+    const resolverStart = src.indexOf('async function resolveWorkflowForSave')
+    const resolverEnd = src.indexOf('export const runtimeEngine')
+    expect(resolverStart, 'resolveWorkflowForSave should exist').toBeGreaterThanOrEqual(0)
+    expect(resolverEnd, 'runtimeEngine should follow save resolver').toBeGreaterThan(resolverStart)
+    const resolver = src.slice(resolverStart, resolverEnd)
+
+    expect(resolver).toMatch(/getWorkflowPresetIdForSave\(saveId\)/)
+    expect(resolver).toMatch(/getWorkflowPresetResource\s*\(\s*workflowPresetId\s*\)/)
+    expect(resolver).toMatch(/save "\$\{saveId\}" references missing workflow preset/)
+    expect(resolver).toMatch(/kind:\s*"save-override"/)
+    expect(resolver).toMatch(/isModWorkflow:\s*false/)
+    expect(resolver).toMatch(/return\s+resolveWorkflowForMod\(modId\)/)
+
+    const savePresetIndex = resolver.indexOf('getWorkflowPresetIdForSave')
+    const modFallbackIndex = resolver.indexOf('resolveWorkflowForMod')
+    expect(savePresetIndex).toBeGreaterThanOrEqual(0)
+    expect(modFallbackIndex).toBeGreaterThan(savePresetIndex)
   })
 })

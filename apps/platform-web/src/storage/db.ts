@@ -17,6 +17,7 @@ export interface LocalSaveRecord {
   id: string
   name: string
   modId: string
+  workflowPresetId?: string
   createdAt: number
   updatedAt: number
   /**
@@ -156,5 +157,4 @@ export class TsianLocalDb extends Dexie {
 }
 
 export const localDb = new TsianLocalDb()
-
 
