@@ -176,3 +176,37 @@ Verified workflow node input/output schema slot implementation, archived the com
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Bootstrap Trellis coding specs
+
+**Date**: 2026-06-04
+**Task**: Bootstrap Trellis coding specs
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Replaced template Trellis spec files with source-backed package guidance, removed non-applicable template docs, marked bootstrap guidelines complete, and archived the bootstrap task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `93af90f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
