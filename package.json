@@ -4,6 +4,7 @@
   "workspaces": [
     "apps/platform-web",
     "packages/contracts",
+    "packages/memory-core",
     "packages/runtime-core",
     "packages/prompt-engine",
     "packages/workflow-engine"
@@ -13,6 +14,7 @@
     "dev:web": "npm run dev --workspace platform-web",
     "build:web": "npm run build --workspace platform-web",
     "build:contracts": "npm run build --workspace @tsian/contracts",
+    "build:memory-core": "npm run build --workspace @tsian/memory-core",
     "build:runtime-core": "npm run build --workspace @tsian/runtime-core",
     "build:workflow-engine": "npm run build --workspace @tsian/workflow-engine",
     "build:prompt-engine": "npm run build --workspace @tsian/prompt-engine",

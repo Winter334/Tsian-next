@@ -20,6 +20,7 @@ Use this layer when adding or changing shared shapes in `packages/contracts/src/
 - `packages/contracts/CLAUDE.md`
 - `packages/contracts/src/index.ts`
 - `packages/contracts/src/runtime.ts`
+- `packages/contracts/src/memory.ts`
 - `packages/contracts/src/bridge.ts`
 - `packages/contracts/src/mod.ts`
 - `packages/contracts/src/workflow.ts`

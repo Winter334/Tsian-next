@@ -11,6 +11,7 @@
 - `frontend-package.ts` owns play frontend manifest metadata.
 - `preset.ts` owns prompt preset and world book resource shapes imported from prompt-engine concepts.
 - `workflow.ts` owns workflow DAG definitions, node config shapes, edges, port metadata, and platform resource wrappers.
+- `memory.ts` owns memory schema type contracts, relation/index/render metadata shapes, validation issue payload shape, and normalized operation type aliases. Runtime schema values and validators live in `packages/memory-core`, not here.
 
 ## Export Rules
 

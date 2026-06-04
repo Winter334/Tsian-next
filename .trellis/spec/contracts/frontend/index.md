@@ -14,6 +14,7 @@ This layer documents how frontend/browser consumers should use `@tsian/contracts
 ## Source References
 
 - `packages/contracts/src/runtime.ts`
+- `packages/contracts/src/memory.ts`
 - `packages/contracts/src/bridge.ts`
 - `packages/contracts/src/debug.ts`
 - `packages/contracts/src/workflow.ts`

@@ -95,6 +95,8 @@ packages:
     path: apps/platform-web
   contracts:
     path: packages/contracts
+  memory-core:
+    path: packages/memory-core
   runtime-core:
     path: packages/runtime-core
   prompt-engine:

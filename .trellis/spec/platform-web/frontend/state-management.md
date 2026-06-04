@@ -26,8 +26,8 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 ### 2. Signatures
 
 - DB table: `localDb.memoryRecords`.
-- Record shape: `LocalMemoryRecord { id, saveId, namespace, collection, key?, data, createdAt, updatedAt }`.
-- Write API: `applyMemoryWriteOperations(saveId, operations, defaults?)`.
+- Record shape: `LocalMemoryRecord { id, saveId, namespace, collection, recordId, data, schemaVersion?, tags, updatedAt }`.
+- Write API: `applyMemoryWriteOperationsForSave(saveId, operations, defaults?)`.
 - Query API: `listMemoryRecords({ saveId, namespace?, collection?, query?, limit? })`.
 - Workflow node types: `memory-query`, `memory-write`, `template-compose`.
 
@@ -36,6 +36,8 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `memory-query` with `source: "event-archive"` calls runtime retrieval and outputs `prompt`, `directEntities`, `archives`, and `debug`.
 - `memory-query` with `source: "collection"` reads `memoryRecords` and outputs `records` and `count`.
 - `memory-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
+- `MemoryWriteOperation.type` currently supports `upsert`, `patch`, `delete`, and `clear`; platform storage must recognize all operation types declared by contracts.
+- `patch` is shallow over custom `memoryRecords`: it requires an existing record id, requires both existing `data` and patch `data` to be JSON objects, then merges top-level fields.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
 - `apply-patch` is a compatibility write node for `MaintenancePatchDocument`; mod/default workflows may declare it explicitly, and platform-host must not apply hidden host-managed patches outside the DAG.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
@@ -48,6 +50,10 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Mod workflow containing memory/template nodes -> allowed.
 - `memory-write` with non-array operations -> executor error.
 - `memory-write` upsert with non-JSON `data` -> executor/storage error.
+- `memory-write` patch without `id` -> storage error.
+- `memory-write` patch with non-object `data` -> storage error.
+- `memory-write` patch against a missing record -> storage error.
+- `memory-write` patch against existing non-object record data -> storage error.
 - `memory-query` collection source without collection identity -> executor error.
 
 ### 5. Good/Base/Bad Cases
@@ -59,7 +65,8 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 6. Tests Required
 
-- Contract/build checks: `npm run build:contracts`, `npm run build:web`.
+- Contract/build checks: `npm run build:contracts`, `npm run build:memory-core`, `npm run build:web`.
+- Memory schema/validator checks: `npm run test --workspace @tsian/memory-core`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
 - Regression assertion: built-in grey-salt-town workflow retrieval is `memory-query`, contains no `bypass` / `__retrieval.raw`, contains an explicit `maintenance.patch -> applyPatch.patch` edge, and remains valid as a mod workflow.
 - Browser smoke: resource workflow preview and fullscreen editor show `memory-query`, and new memory/template nodes can be dragged onto the canvas and inspected.

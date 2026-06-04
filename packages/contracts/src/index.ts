@@ -1,6 +1,7 @@
 export * from "./bridge"
 export * from "./debug"
 export * from "./frontend-package"
+export * from "./memory"
 export * from "./mod"
 export * from "./preset"
 export * from "./runtime"

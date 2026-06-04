@@ -27,13 +27,14 @@ export interface MemoryRecord {
   updatedAt?: number
 }
 
-export type MemoryWriteOperationType = "upsert" | "delete" | "clear"
+export type MemoryWriteOperationType = "upsert" | "patch" | "delete" | "clear"
 
 export interface MemoryWriteOperation {
   type: MemoryWriteOperationType
   namespace?: string
   collection?: string
   id?: string
+  /** upsert replaces record data; patch shallow-merges top-level record fields. */
   data?: JsonValue
   schemaVersion?: string
   tags?: string[]

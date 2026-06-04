@@ -34,6 +34,17 @@ function isJsonValue(value: unknown): value is JsonValue {
   return Object.values(value).every((item) => isJsonValue(item))
 }
 
+function isJsonObject(value: unknown): value is { [key: string]: JsonValue } {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return false
+  }
+  const prototype = Object.getPrototypeOf(value)
+  return (
+    (prototype === Object.prototype || prototype === null) &&
+    Object.values(value).every((item) => isJsonValue(item))
+  )
+}
+
 function createRandomId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID()
@@ -180,6 +191,38 @@ export async function applyMemoryWriteOperationsForSave(
           tableId(saveId, namespace, collection, recordId),
         )
         output.deletedIds.push(recordId)
+        continue
+      }
+
+      if (operation.type === "patch") {
+        if (!recordId) {
+          throw new Error("memory patch operation requires id")
+        }
+        if (!isJsonObject(operation.data)) {
+          throw new Error("memory patch operation requires JSON object data")
+        }
+
+        const id = tableId(saveId, namespace, collection, recordId)
+        const existing = await localDb.memoryRecords.get(id)
+        if (!existing) {
+          throw new Error(`memory patch target "${recordId}" not found`)
+        }
+        if (!isJsonObject(existing.data)) {
+          throw new Error("memory patch target data must be a JSON object")
+        }
+
+        await localDb.memoryRecords.put({
+          ...existing,
+          data: {
+            ...existing.data,
+            ...operation.data,
+          },
+          schemaVersion:
+            normalizeOptionalText(operation.schemaVersion) ?? existing.schemaVersion,
+          tags: operation.tags !== undefined ? normalizeTags(operation.tags) : existing.tags,
+          updatedAt: Date.now(),
+        })
+        output.upsertedIds.push(recordId)
         continue
       }
 
