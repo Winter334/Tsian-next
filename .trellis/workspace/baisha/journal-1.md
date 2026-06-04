@@ -278,3 +278,37 @@ Nodeized the memory chain into workflow-supported memory-query, memory-write, an
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: Explicit mod memory write workflow
+
+**Date**: 2026-06-04
+**Task**: Explicit mod memory write workflow
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Allowed mod/default workflows to declare explicit apply-patch write nodes, moved grey-salt-town maintenance writes into the workflow DAG, removed platform-host hidden patch scanning, updated workflow/contracts specs, and passed contracts/workflow/web verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5e73ed0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
