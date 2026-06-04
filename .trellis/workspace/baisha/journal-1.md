@@ -312,3 +312,37 @@ Allowed mod/default workflows to declare explicit apply-patch write nodes, moved
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: Generic memory schema core
+
+**Date**: 2026-06-04
+**Task**: Generic memory schema core
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added memory-core package with default AIRP runtime memory schema, validators, tests, contracts memory types, and custom memory patch support.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a823c6c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
