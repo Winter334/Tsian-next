@@ -7,6 +7,11 @@ import SwitchForm from './inspector/SwitchForm.vue'
 import ApplyPatchForm from './inspector/ApplyPatchForm.vue'
 import ComputeForm from './inspector/ComputeForm.vue'
 import OutputsEditor from './inspector/OutputsEditor.vue'
+import {
+  resolveWorkflowInputSlots,
+  resolveWorkflowOutputSlots,
+  type WorkflowPortDisplay,
+} from './node-schema'
 
 interface WorkflowResourceOption {
   id: string
@@ -37,6 +42,37 @@ const typeInfo = computed(() => {
   if (!selectedNode.value) return null
   return nodeTypeMap.get(selectedNode.value.data.nodeType) ?? null
 })
+
+const inputSlots = computed<WorkflowPortDisplay[]>(() => {
+  if (!selectedNode.value) return []
+  return resolveWorkflowInputSlots(
+    selectedNode.value.data.nodeType,
+    selectedNode.value.data.config,
+    selectedNode.value.data.inputs ?? [],
+  )
+})
+
+const outputSlots = computed<WorkflowPortDisplay[]>(() => {
+  if (!selectedNode.value) return []
+  return resolveWorkflowOutputSlots(
+    selectedNode.value.data.nodeType,
+    selectedNode.value.data.config,
+    selectedNode.value.data.outputs ?? [],
+  )
+})
+
+function portLabel(port: WorkflowPortDisplay): string {
+  return port.label || port.name
+}
+
+function portMeta(port: WorkflowPortDisplay): string {
+  return [
+    port.name,
+    port.valueType ? `type:${port.valueType}` : '',
+    port.semanticSlot ? `slot:${port.semanticSlot}` : '',
+    port.required ? 'required' : '',
+  ].filter(Boolean).join(' · ')
+}
 
 // 修改重试次数
 function handleRetryChange(event: Event) {
@@ -144,6 +180,48 @@ function handleDelete() {
       </div>
 
       <div class="border-t border-neon-deep/20" />
+
+      <div v-if="inputSlots.length || outputSlots.length">
+        <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
+          Schema Slots
+        </label>
+        <div class="mt-2 grid gap-2">
+          <div v-if="inputSlots.length" class="border border-neon-deep/20 bg-void/40 p-2">
+            <p class="font-mono text-[9px] uppercase tracking-wider text-neon-muted">
+              Inputs
+            </p>
+            <div
+              v-for="slot in inputSlots"
+              :key="`input-${slot.name}`"
+              class="mt-1 min-w-0"
+            >
+              <p class="truncate font-mono text-[10px] text-text-main">
+                {{ portLabel(slot) }}
+              </p>
+              <p class="truncate font-mono text-[9px] text-text-dim">
+                {{ portMeta(slot) }}
+              </p>
+            </div>
+          </div>
+          <div v-if="outputSlots.length" class="border border-neon-deep/20 bg-void/40 p-2">
+            <p class="font-mono text-[9px] uppercase tracking-wider text-neon-muted">
+              Outputs
+            </p>
+            <div
+              v-for="slot in outputSlots"
+              :key="`output-${slot.name}`"
+              class="mt-1 min-w-0"
+            >
+              <p class="truncate font-mono text-[10px] text-text-main">
+                {{ portLabel(slot) }}
+              </p>
+              <p class="truncate font-mono text-[9px] text-text-dim">
+                {{ portMeta(slot) }}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <!-- 按类型渲染配置表单 -->
       <AiCallForm

@@ -41,6 +41,43 @@
       </div>
 
       <div class="grid grid-cols-2 gap-1">
+        <input
+          :value="output.label ?? ''"
+          class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
+          placeholder="label"
+          @change="updateOutputMetadata(idx, { label: ($event.target as HTMLInputElement).value })"
+        />
+        <select
+          :value="output.valueType ?? ''"
+          class="border border-neon-deep/30 bg-void px-1 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
+          @change="updateValueType(idx, ($event.target as HTMLSelectElement).value as PortValueTypeOption)"
+        >
+          <option value="">type</option>
+          <option value="string">string</option>
+          <option value="number">number</option>
+          <option value="boolean">boolean</option>
+          <option value="object">object</option>
+          <option value="array">array</option>
+          <option value="unknown">unknown</option>
+        </select>
+      </div>
+
+      <div class="grid grid-cols-2 gap-1">
+        <input
+          :value="output.semanticSlot ?? ''"
+          class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
+          placeholder="semantic slot"
+          @change="updateOutputMetadata(idx, { semanticSlot: ($event.target as HTMLInputElement).value })"
+        />
+        <input
+          :value="output.description ?? ''"
+          class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
+          placeholder="description"
+          @change="updateOutputMetadata(idx, { description: ($event.target as HTMLInputElement).value })"
+        />
+      </div>
+
+      <div class="grid grid-cols-2 gap-1">
         <select
           :value="getExtract(output).parse ?? ''"
           class="border border-neon-deep/30 bg-void px-1 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
@@ -94,10 +131,12 @@
 import type {
   NodeOutputDeclaration,
   NodeOutputExtractRule,
+  WorkflowPortValueType,
 } from '@tsian/contracts'
 
 type ExtractType = NodeOutputExtractRule['type']
 type ParseValue = '' | 'json' | 'number'
+type PortValueTypeOption = '' | WorkflowPortValueType
 type TagExtractRule = Extract<NodeOutputExtractRule, { type: 'tag' }>
 type RegexExtractRule = Extract<NodeOutputExtractRule, { type: 'regex' }>
 
@@ -144,6 +183,24 @@ function updateOutputName(idx: number, value: string) {
   const current = props.outputs[idx]
   if (!current) return
   updateOutput(idx, { ...current, name: value.trim() })
+}
+
+function updateOutputMetadata(
+  idx: number,
+  patch: Partial<Pick<NodeOutputDeclaration, 'label' | 'description' | 'semanticSlot' | 'valueType'>>,
+) {
+  const current = props.outputs[idx]
+  if (!current) return
+  const next: NodeOutputDeclaration = { ...current, ...patch }
+  if (typeof next.label === 'string') next.label = next.label.trim() || undefined
+  if (typeof next.description === 'string') next.description = next.description.trim() || undefined
+  if (typeof next.semanticSlot === 'string') next.semanticSlot = next.semanticSlot.trim() || undefined
+  if (!next.valueType) delete next.valueType
+  updateOutput(idx, next)
+}
+
+function updateValueType(idx: number, valueType: PortValueTypeOption) {
+  updateOutputMetadata(idx, { valueType: valueType || undefined })
 }
 
 function updateExtractType(idx: number, type: ExtractType) {

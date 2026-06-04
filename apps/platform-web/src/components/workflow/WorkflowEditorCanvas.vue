@@ -196,7 +196,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, ref, watch } from 'vue'
+import { computed, markRaw, onBeforeUnmount, ref, watch } from 'vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
@@ -281,11 +281,30 @@ const selectedEdge = computed(() => {
 // ---------------------------------------------------------------------------
 
 const validationErrors = ref<string[]>([])
+const LOAD_SETTLE_MS = 100
 let isLoadingDefinition = false
+let loadVersion = 0
+let loadSettleTimer: ReturnType<typeof setTimeout> | null = null
 let lastEmittedDefinitionJson = ''
 let lastLoadedDefinitionJson = ''
 
 let validateTimer: ReturnType<typeof setTimeout> | null = null
+
+function clearLoadSettleTimer() {
+  if (!loadSettleTimer) return
+  clearTimeout(loadSettleTimer)
+  loadSettleTimer = null
+}
+
+function scheduleFinishDefinitionLoad(version: number) {
+  clearLoadSettleTimer()
+  loadSettleTimer = setTimeout(() => {
+    if (version !== loadVersion) return
+    lastEmittedDefinitionJson = JSON.stringify(toWorkflowDefinition())
+    isLoadingDefinition = false
+    loadSettleTimer = null
+  }, LOAD_SETTLE_MS)
+}
 
 watch(
   () => props.initialDefinition,
@@ -298,10 +317,12 @@ watch(
       return
     }
 
+    const currentLoadVersion = ++loadVersion
     isLoadingDefinition = true
     loadWorkflowDefinition(definition, { autoLayout })
     lastLoadedDefinitionJson = incomingJson
-    isLoadingDefinition = false
+    lastEmittedDefinitionJson = JSON.stringify(toWorkflowDefinition())
+    scheduleFinishDefinitionLoad(currentLoadVersion)
   },
   { immediate: true },
 )
@@ -365,6 +386,12 @@ watch([nodes, edges], () => {
 
   const def = toWorkflowDefinition()
   const defJson = JSON.stringify(def)
+
+  if (isLoadingDefinition) {
+    lastEmittedDefinitionJson = defJson
+    scheduleFinishDefinitionLoad(loadVersion)
+  }
+
   // readonly 模式下不 emit change
   if (!props.readonly && !isLoadingDefinition && defJson !== lastEmittedDefinitionJson) {
     lastEmittedDefinitionJson = defJson
@@ -381,6 +408,11 @@ watch([nodes, edges], () => {
     }
   }, 300)
 }, { deep: true })
+
+onBeforeUnmount(() => {
+  clearLoadSettleTimer()
+  if (validateTimer) clearTimeout(validateTimer)
+})
 
 // ---------------------------------------------------------------------------
 // Dagre 自动布局
@@ -528,13 +560,14 @@ function handleEdgeConditionChange(event: Event) {
 function onConnect(connection: Connection) {
   if (!connection.source || !connection.target) return
 
-  const varName = 'value'
+  const targetHandle = connection.targetHandle ?? 'input'
+  const varName = targetHandle !== 'input' ? targetHandle : 'value'
   const newEdge: Edge = {
     id: `${connection.source}:${connection.sourceHandle ?? 'raw'}->${connection.target}:${varName}`,
     source: connection.source,
     sourceHandle: connection.sourceHandle ?? 'raw',
     target: connection.target,
-    targetHandle: 'input',
+    targetHandle,
     type: 'neon-edge',
     data: { varName },
   }

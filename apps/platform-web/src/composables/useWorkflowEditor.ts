@@ -1,4 +1,4 @@
-import { nextTick, ref } from 'vue'
+import { ref } from 'vue'
 import type { Ref } from 'vue'
 import type { Node, Edge } from '@vue-flow/core'
 import type {
@@ -6,9 +6,12 @@ import type {
   WorkflowNode,
   WorkflowEdge as TsianEdge,
   WorkflowNodeType,
+  NodeInputDeclaration,
   NodeOutputDeclaration,
   NodeOutputExtractRule,
+  WorkflowPortValueType,
 } from '@tsian/contracts'
+import { resolveWorkflowInputSlots } from '../components/workflow/node-schema'
 
 // ---------------------------------------------------------------------------
 // ID 生成器（简单计数器）
@@ -45,6 +48,38 @@ function normalizeParse(value: unknown): NodeOutputExtractRule['parse'] {
   return value === 'json' || value === 'number' ? value : undefined
 }
 
+const VALUE_TYPES: ReadonlySet<WorkflowPortValueType> = new Set([
+  'string',
+  'number',
+  'boolean',
+  'object',
+  'array',
+  'unknown',
+])
+
+function normalizeValueType(value: unknown): WorkflowPortValueType | undefined {
+  return typeof value === 'string' && VALUE_TYPES.has(value as WorkflowPortValueType)
+    ? value as WorkflowPortValueType
+    : undefined
+}
+
+function normalizePortMetadata(port: {
+  label?: unknown
+  description?: unknown
+  valueType?: unknown
+  semanticSlot?: unknown
+}) {
+  const label = typeof port.label === 'string' ? port.label.trim() : ''
+  const description = typeof port.description === 'string' ? port.description.trim() : ''
+  const semanticSlot = typeof port.semanticSlot === 'string' ? port.semanticSlot.trim() : ''
+  return {
+    label: label || undefined,
+    description: description || undefined,
+    valueType: normalizeValueType(port.valueType),
+    semanticSlot: semanticSlot || undefined,
+  }
+}
+
 function normalizeExtractRule(rule: unknown): NodeOutputExtractRule {
   if (typeof rule !== 'object' || rule === null) return { type: 'raw' }
   const candidate = rule as Partial<NodeOutputExtractRule>
@@ -73,6 +108,19 @@ function normalizeExtractRule(rule: unknown): NodeOutputExtractRule {
   }
 }
 
+function normalizeInputs(inputs: unknown): NodeInputDeclaration[] {
+  if (!Array.isArray(inputs)) return []
+  return inputs
+    .filter((input): input is Partial<NodeInputDeclaration> =>
+      typeof input === 'object' && input !== null,
+    )
+    .map((input) => ({
+      name: typeof input.name === 'string' ? input.name.trim() : '',
+      ...normalizePortMetadata(input),
+      required: typeof input.required === 'boolean' ? input.required : undefined,
+    }))
+}
+
 function normalizeOutputs(outputs: unknown): NodeOutputDeclaration[] {
   if (!Array.isArray(outputs)) return []
   return outputs
@@ -82,6 +130,7 @@ function normalizeOutputs(outputs: unknown): NodeOutputDeclaration[] {
     .map((output) => ({
       name: typeof output.name === 'string' ? output.name : '',
       extract: normalizeExtractRule(output.extract),
+      ...normalizePortMetadata(output),
     }))
 }
 
@@ -99,6 +148,7 @@ function toVfNode(node: WorkflowNode): Node {
       nodeType: node.type,
       label: node.label,
       config: node.config,
+      inputs: normalizeInputs(node.inputs),
       outputs: normalizeOutputs(node.outputs),
       retry: node.retry,
     },
@@ -107,6 +157,7 @@ function toVfNode(node: WorkflowNode): Node {
 
 /** Vue Flow 节点 → 契约节点 */
 function fromVfNode(vfNode: Node): WorkflowNode {
+  const inputs = normalizeInputs(vfNode.data.inputs)
   const outputs = normalizeOutputs(vfNode.data.outputs)
   return {
     id: vfNode.id,
@@ -114,19 +165,31 @@ function fromVfNode(vfNode: Node): WorkflowNode {
     label: vfNode.data.label || undefined,
     config: vfNode.data.config as Record<string, unknown>,
     position: { x: vfNode.position.x, y: vfNode.position.y },
+    inputs: inputs.length ? inputs : undefined,
     outputs: outputs.length ? outputs : undefined,
     retry: vfNode.data.retry,
   }
 }
 
 /** 契约边 → Vue Flow 边 */
-function toVfEdge(edge: TsianEdge): Edge {
+function toVfEdge(
+  edge: TsianEdge,
+  nodeById?: ReadonlyMap<string, WorkflowNode>,
+): Edge {
+  const targetNode = nodeById?.get(edge.to.nodeId)
+  const targetSlots = targetNode
+    ? resolveWorkflowInputSlots(targetNode.type, targetNode.config, targetNode.inputs)
+    : []
+  const targetHandle = targetSlots.some((slot) => slot.name === edge.to.varName)
+    ? edge.to.varName
+    : TARGET_INPUT_HANDLE
+
   return {
     id: createEdgeId(edge),
     source: edge.from.nodeId,
     sourceHandle: normalizeSourceHandle(edge.from.outputName),
     target: edge.to.nodeId,
-    targetHandle: TARGET_INPUT_HANDLE,
+    targetHandle,
     type: 'neon-edge',
     data: {
       varName: edge.to.varName,
@@ -137,9 +200,12 @@ function toVfEdge(edge: TsianEdge): Edge {
 
 /** Vue Flow 边 → 契约边 */
 function fromVfEdge(vfEdge: Edge): TsianEdge {
+  const targetHandleVarName = vfEdge.targetHandle && vfEdge.targetHandle !== TARGET_INPUT_HANDLE
+    ? vfEdge.targetHandle
+    : undefined
   const varName = typeof vfEdge.data?.varName === 'string' && vfEdge.data.varName.trim()
     ? vfEdge.data.varName.trim()
-    : 'value'
+    : targetHandleVarName ?? 'value'
 
   return {
     from: {
@@ -154,6 +220,21 @@ function fromVfEdge(vfEdge: Edge): TsianEdge {
       ? vfEdge.data.condition.trim()
       : undefined,
   }
+}
+
+function resolveTargetHandleFromVfNode(
+  targetNode: Node | undefined,
+  varName: string,
+): string {
+  if (!targetNode) return TARGET_INPUT_HANDLE
+  const targetSlots = resolveWorkflowInputSlots(
+    targetNode.data.nodeType as WorkflowNodeType,
+    targetNode.data.config as Record<string, unknown>,
+    normalizeInputs(targetNode.data.inputs),
+  )
+  return targetSlots.some((slot) => slot.name === varName)
+    ? varName
+    : TARGET_INPUT_HANDLE
 }
 
 // ---------------------------------------------------------------------------
@@ -171,12 +252,13 @@ export function useWorkflowEditor() {
   /** 从契约类型加载到画布 */
   function loadWorkflowDefinition(def: WorkflowDefinition, options?: { autoLayout?: () => void }): void {
     const vfNodes = def.nodes.map(toVfNode)
+    const nodeById = new Map(def.nodes.map((node) => [node.id, node]))
     nodes.value = vfNodes
-    edges.value = def.edges.map(toVfEdge)
+    edges.value = def.edges.map((edge) => toVfEdge(edge, nodeById))
     selectedNodeId.value = null
 
     if (hasMissingOrStackedPositions(vfNodes) && options?.autoLayout) {
-      void nextTick(() => options.autoLayout?.())
+      options.autoLayout()
     }
 
     // 重置计数器，避免与已有节点 ID 冲突
@@ -212,6 +294,7 @@ export function useWorkflowEditor() {
       data: {
         nodeType: type,
         config: {},
+        inputs: [],
         outputs: [],
         retry: undefined,
       },
@@ -252,19 +335,35 @@ export function useWorkflowEditor() {
     node.data = { ...node.data, outputs: normalizeOutputs(outputs) }
   }
 
+  /** 更新节点输入声明 */
+  function updateNodeInputs(nodeId: string, inputs: NodeInputDeclaration[]): void {
+    const node = nodes.value.find((n) => n.id === nodeId)
+    if (!node) return
+    node.data = { ...node.data, inputs: normalizeInputs(inputs) }
+  }
+
   /** 更新边上的运行时入参名与条件 */
   function updateEdgeData(edgeId: string, data: { varName?: string; condition?: string }): void {
     edges.value = edges.value.map((edge) => {
       if (edge.id !== edgeId) return edge
+      const currentVarName =
+        typeof edge.data?.varName === 'string' && edge.data.varName.trim()
+          ? edge.data.varName.trim()
+          : 'value'
+      const nextVarName = data.varName !== undefined
+        ? data.varName.trim() || 'value'
+        : currentVarName
       const nextData = {
         ...edge.data,
-        varName: data.varName,
+        varName: nextVarName,
         condition: data.condition || undefined,
       }
+      const targetNode = nodes.value.find((node) => node.id === edge.target)
       const nextEdge = { ...edge, data: nextData }
       const contractEdge = fromVfEdge(nextEdge)
       return {
         ...nextEdge,
+        targetHandle: resolveTargetHandleFromVfNode(targetNode, nextVarName),
         id: createEdgeId(contractEdge),
       }
     })
@@ -328,6 +427,7 @@ export function useWorkflowEditor() {
     removeSelected,
     updateNodeConfig,
     updateNodeLabel,
+    updateNodeInputs,
     updateNodeOutputs,
     updateEdgeData,
     updateNodeRetry,

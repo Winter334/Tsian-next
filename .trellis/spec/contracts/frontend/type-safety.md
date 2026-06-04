@@ -219,6 +219,103 @@ const { def, isModWorkflow } = await resolveWorkflowForSave(saveId)
 await executeWorkflow(def, context, { isModWorkflow })
 ```
 
+### Scenario: Workflow Node Port Metadata
+
+#### 1. Scope / Trigger
+
+- Trigger: workflow node input/output slot metadata crosses contracts,
+  resource-library persistence, the workflow editor, and workflow-engine
+  consumers.
+- Use this when adding or changing workflow node port declarations, editor
+  handle labels, workflow JSON import/export, or default slot metadata for
+  built-in node types.
+
+#### 2. Signatures
+
+- `WorkflowPortValueType = "string" | "number" | "boolean" | "object" | "array" | "unknown"`
+- `NodePortMetadata.label?: string`
+- `NodePortMetadata.description?: string`
+- `NodePortMetadata.valueType?: WorkflowPortValueType`
+- `NodePortMetadata.semanticSlot?: string`
+- `NodeInputDeclaration.name: string`
+- `NodeInputDeclaration.required?: boolean`
+- `NodeOutputDeclaration extends NodePortMetadata`
+- `WorkflowNodeBase.inputs?: NodeInputDeclaration[]`
+- `WorkflowNodeBase.outputs?: NodeOutputDeclaration[]`
+- `WorkflowEdge.to.varName` remains the runtime input key.
+- `WorkflowEdge.from.outputName` remains the runtime output selector.
+
+#### 3. Contracts
+
+- Port metadata is editor/documentation metadata only. Runtime execution still
+  injects upstream values into downstream `inputs[varName]`.
+- `inputs` is optional so older workflows without input declarations remain
+  valid and loadable.
+- Output metadata extends the existing output declaration shape and must not
+  change `extract` behavior.
+- `semanticSlot` is an open string for UI semantics; do not treat it as a
+  permission, validator, or executable capability.
+- Editors may derive default display slots for built-in node types, but saved
+  workflow JSON must preserve explicit `inputs` and output metadata when
+  present.
+
+#### 4. Validation & Error Matrix
+
+- Missing `inputs` -> load as a legacy workflow and show derived/default UI
+  handles where possible.
+- Missing output metadata -> load the output using its `name` and `extract`
+  fields.
+- Unknown or empty metadata fields -> normalize at the editor boundary for
+  display/persistence hygiene; do not reject the workflow at the contracts
+  layer.
+- Type mismatch between connected ports -> no runtime error in the metadata-only
+  model. Add editor warnings in a later change only after the UX severity is
+  explicitly designed.
+- Required input metadata without an incoming edge -> no runtime or save-blocking
+  error in the metadata-only model.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: a result node declares/display-derives an input slot named `value`, and
+  an edge still serializes as `to.varName: "value"`.
+- Good: an AI node output has `label: "Patch"` and
+  `semanticSlot: "state.patch"` while execution still reads the value through
+  the existing output extraction path.
+- Base: an old workflow omits `inputs` and output metadata; the editor loads,
+  renders, exports, and executes it without migration.
+- Bad: `validateWorkflowDefinition` rejects a workflow because a metadata
+  `valueType` differs from a connected source.
+- Bad: the editor rewrites `WorkflowEdge.to.varName` into a separate target
+  handle schema and breaks existing executors.
+
+#### 6. Tests Required
+
+- Contracts changes: run `npm run build:contracts`.
+- UI/editor changes using port metadata: run `npm run build:web`.
+- When adding runtime validation in a future change, add workflow-engine
+  validator coverage and keep legacy workflows without `inputs` passing.
+- When changing editor serialization, verify workflow JSON round-trips explicit
+  `inputs`, output metadata, and existing `from.outputName -> to.varName`
+  edges.
+
+#### 7. Wrong vs Correct
+
+Wrong:
+
+```typescript
+if (source.valueType !== target.valueType) {
+  throw new Error("workflow port type mismatch")
+}
+```
+
+Correct:
+
+```typescript
+const targetHandle = declaredInputs.some((input) => input.name === edge.to.varName)
+  ? edge.to.varName
+  : "input"
+```
+
 ---
 
 ## Forbidden Patterns

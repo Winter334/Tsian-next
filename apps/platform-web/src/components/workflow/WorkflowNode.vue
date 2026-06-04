@@ -42,29 +42,69 @@
       </p>
     </div>
 
+    <div
+      v-if="inputSlots.length || outputSlots.length"
+      class="grid grid-cols-2 gap-3 border-t border-neon-deep/20 px-3 py-2"
+    >
+      <div class="min-w-0 space-y-1">
+        <p class="font-mono text-[9px] uppercase tracking-wider text-text-dim">
+          IN
+        </p>
+        <p
+          v-for="slot in inputSlots"
+          :key="`in-${slot.name}`"
+          class="truncate font-mono text-[10px] text-text-dim"
+          :title="portTitle(slot)"
+        >
+          ← {{ portLabel(slot) }}
+        </p>
+        <p
+          v-if="!inputSlots.length"
+          class="truncate font-mono text-[10px] text-text-dim"
+        >
+          ← any
+        </p>
+      </div>
+      <div class="min-w-0 space-y-1 text-right">
+        <p class="font-mono text-[9px] uppercase tracking-wider text-text-dim">
+          OUT
+        </p>
+        <p
+          v-for="slot in outputSlots"
+          :key="`out-${slot.name}`"
+          class="truncate font-mono text-[10px] text-text-dim"
+          :title="portTitle(slot)"
+        >
+          {{ portLabel(slot) }} →
+        </p>
+      </div>
+    </div>
+
     <!-- 输入端口（左侧） -->
     <Handle
+      v-if="!inputSlots.length"
       type="target"
       id="input"
       :position="Position.Left"
       class="!h-2 !w-2 !rounded-none !border !bg-elevated"
       :style="{ borderColor: typeInfo.color }"
     />
-
-    <!-- 默认 raw 输出端口（右侧，始终存在） -->
     <Handle
-      type="source"
-      id="raw"
-      :position="Position.Right"
+      v-for="(input, idx) in inputSlots"
+      :key="`input-handle-${input.name}`"
+      type="target"
+      :id="input.name"
+      :position="Position.Left"
       class="!h-2 !w-2 !rounded-none !border !bg-elevated"
       :style="{
         borderColor: typeInfo.color,
-        top: outputHandles.length ? '18%' : '50%',
+        top: handleTop(idx, inputSlots.length),
       }"
     />
-    <!-- 声明的输出端口 -->
+
+    <!-- 输出端口（右侧） -->
     <Handle
-      v-for="(output, idx) in outputHandles"
+      v-for="(output, idx) in outputSlots"
       :key="output.name"
       type="source"
       :id="output.name"
@@ -72,7 +112,7 @@
       class="!h-2 !w-2 !rounded-none !border !bg-elevated"
       :style="{
         borderColor: typeInfo.color,
-        top: `${30 + idx * 20}%`,
+        top: handleTop(idx, outputSlots.length),
       }"
     />
   </div>
@@ -82,7 +122,16 @@
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { nodeTypeMap } from './node-registry'
-import type { NodeOutputDeclaration } from '@tsian/contracts'
+import {
+  resolveWorkflowInputSlots,
+  resolveWorkflowOutputSlots,
+  type WorkflowPortDisplay,
+} from './node-schema'
+import type {
+  NodeInputDeclaration,
+  NodeOutputDeclaration,
+  WorkflowNodeType,
+} from '@tsian/contracts'
 import {
   Brain,
   Flag,
@@ -96,9 +145,10 @@ import {
 const props = defineProps<{
   id: string
   data: {
-    nodeType: string
+    nodeType: WorkflowNodeType
     label?: string
     config: Record<string, unknown>
+    inputs: NodeInputDeclaration[]
     outputs: NodeOutputDeclaration[]
     retry?: { maxRetries: number }
   }
@@ -107,7 +157,7 @@ const props = defineProps<{
 
 // 节点类型信息
 const typeInfo = computed(() => {
-  return nodeTypeMap.get(props.data.nodeType as any) ?? {
+  return nodeTypeMap.get(props.data.nodeType) ?? {
     type: props.data.nodeType,
     label: props.data.nodeType,
     description: '',
@@ -131,26 +181,39 @@ const iconComponent = computed(() => {
   return iconMap[typeInfo.value.icon] ?? HelpCircle
 })
 
-// 输出端口
-const outputHandles = computed(() => {
-  const declaredOutputs = props.data.outputs ?? []
-  if (props.data.nodeType !== 'switch') return declaredOutputs
-
-  const config = props.data.config as {
-    cases?: Array<{ outputName?: unknown }>
-    defaultOutputName?: unknown
-  }
-  const names = new Set<string>()
-  for (const item of config.cases ?? []) {
-    if (typeof item.outputName === 'string' && item.outputName.trim()) {
-      names.add(item.outputName.trim())
-    }
-  }
-  if (typeof config.defaultOutputName === 'string' && config.defaultOutputName.trim()) {
-    names.add(config.defaultOutputName.trim())
-  }
-  return Array.from(names).map((name) => ({ name }))
+const inputSlots = computed(() => {
+  return resolveWorkflowInputSlots(
+    props.data.nodeType,
+    props.data.config,
+    props.data.inputs ?? [],
+  )
 })
+
+const outputSlots = computed(() => {
+  return resolveWorkflowOutputSlots(
+    props.data.nodeType,
+    props.data.config,
+    props.data.outputs ?? [],
+  )
+})
+
+function handleTop(index: number, total: number): string {
+  if (total <= 1) return '50%'
+  const span = 60 / Math.max(total - 1, 1)
+  return `${20 + index * span}%`
+}
+
+function portLabel(port: WorkflowPortDisplay): string {
+  return port.label || port.name
+}
+
+function portTitle(port: WorkflowPortDisplay): string {
+  const parts = [port.name]
+  if (port.valueType) parts.push(`type: ${port.valueType}`)
+  if (port.semanticSlot) parts.push(`slot: ${port.semanticSlot}`)
+  if (port.description) parts.push(port.description)
+  return parts.join(' · ')
+}
 
 // 配置摘要（取关键字段简要显示）
 const configSummary = computed(() => {
