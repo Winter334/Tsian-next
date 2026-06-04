@@ -23,6 +23,17 @@ function generateNodeId(type: WorkflowNodeType): string {
   return `${type}-${++counter}`
 }
 
+function defaultNodeConfig(type: WorkflowNodeType): Record<string, unknown> {
+  if (type === 'memory-query') return { source: 'collection', queryVarName: 'query' }
+  if (type === 'memory-write') return { operationsVarName: 'operations', pushCheckpointReason: 'after-turn' }
+  if (type === 'template-compose') return { template: '{{data}}', outputName: 'text' }
+  if (type === 'apply-patch') return { patchVarName: 'patch' }
+  if (type === 'result') return { name: 'result' }
+  if (type === 'switch') return { cases: [], defaultOutputName: 'default' }
+  if (type === 'compute') return { script: 'return { value: inputs.value }', timeout: 5000 }
+  return {}
+}
+
 const DEFAULT_OUTPUT_HANDLE = 'raw'
 const TARGET_INPUT_HANDLE = 'input'
 
@@ -293,7 +304,7 @@ export function useWorkflowEditor() {
       position,
       data: {
         nodeType: type,
-        config: {},
+        config: defaultNodeConfig(type),
         inputs: [],
         outputs: [],
         retry: undefined,

@@ -420,17 +420,10 @@ const archiveCatalog = createGreySaltTownInitialSavePayload(0).archives
 const greySaltTownWorkflow: WorkflowDefinition = {
   nodes: [
     {
-      // retrieval：β-1 旁路，从宏 __retrieval.raw 读取 platform-host 组装好的检索 prompt
+      // retrieval：显式记忆查询节点，由 workflow-host 注入事件/档案上下文。
       id: "retrieval",
-      type: "ai-call",
-      config: {
-        presetId: "builtin.retrieval",
-        bypass: { rawFromMacro: "__retrieval.raw" },
-      },
-      outputs: [
-        { name: "prompt", extract: { type: "tag", tag: "prompt" } },
-        { name: "directEntities", extract: { type: "tag", tag: "directEntities", parse: "json" } },
-      ],
+      type: "memory-query",
+      config: { source: "event-archive" },
     },
     {
       // chat：正文 AI，注入检索 prompt，追加 user.input
@@ -473,7 +466,11 @@ const greySaltTownWorkflow: WorkflowDefinition = {
     },
     {
       from: { nodeId: "retrieval", outputName: "directEntities" },
-      to: { nodeId: "maintenance", varName: "directEntities" },
+      to: { nodeId: "maintenance", varName: "retrieval.directEntities" },
+    },
+    {
+      from: { nodeId: "retrieval", outputName: "archives" },
+      to: { nodeId: "maintenance", varName: "archives.recent.json" },
     },
   ],
 }
@@ -639,4 +636,3 @@ export const greySaltTownMod: ModStaticContent = {
     },
   ],
 }
-

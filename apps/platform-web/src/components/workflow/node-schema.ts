@@ -115,6 +115,38 @@ export function resolveWorkflowInputSlots(
     }]
   }
 
+  if (nodeType === 'memory-query') {
+    const name = readStringConfig(config, 'queryVarName', 'query')
+    return [{
+      name,
+      label: '查询文本',
+      valueType: 'string',
+      semanticSlot: 'memory.query',
+      required: false,
+    }]
+  }
+
+  if (nodeType === 'memory-write') {
+    const name = readStringConfig(config, 'operationsVarName', 'operations')
+    return [{
+      name,
+      label: '写入操作',
+      valueType: 'object',
+      semanticSlot: 'memory.operations',
+      required: true,
+    }]
+  }
+
+  if (nodeType === 'template-compose') {
+    return [{
+      name: 'data',
+      label: '模板数据',
+      valueType: 'unknown',
+      semanticSlot: 'template.data',
+      required: false,
+    }]
+  }
+
   return []
 }
 
@@ -172,6 +204,79 @@ export function resolveWorkflowOutputSlots(
     ]
   }
 
+  if (nodeType === 'memory-query') {
+    return [
+      {
+        name: 'prompt',
+        label: '记忆提示',
+        valueType: 'string',
+        semanticSlot: 'memory.prompt',
+      },
+      {
+        name: 'directEntities',
+        label: '直接实体',
+        valueType: 'array',
+        semanticSlot: 'memory.directEntities',
+      },
+      {
+        name: 'archives',
+        label: '命中档案',
+        valueType: 'array',
+        semanticSlot: 'memory.archives',
+      },
+      {
+        name: 'records',
+        label: '记忆记录',
+        valueType: 'array',
+        semanticSlot: 'memory.records',
+      },
+      {
+        name: 'count',
+        label: '记录数量',
+        valueType: 'number',
+        semanticSlot: 'memory.count',
+      },
+      {
+        name: 'debug',
+        label: '调试信息',
+        valueType: 'object',
+        semanticSlot: 'memory.debug',
+      },
+    ]
+  }
+
+  if (nodeType === 'memory-write') {
+    return [
+      {
+        name: 'upsertedIds',
+        label: '写入 ID',
+        valueType: 'array',
+        semanticSlot: 'memory.upsertedIds',
+      },
+      {
+        name: 'deletedIds',
+        label: '删除 ID',
+        valueType: 'array',
+        semanticSlot: 'memory.deletedIds',
+      },
+      {
+        name: 'clearedCollections',
+        label: '清空集合',
+        valueType: 'array',
+        semanticSlot: 'memory.clearedCollections',
+      },
+    ]
+  }
+
+  if (nodeType === 'template-compose') {
+    const name = readStringConfig(config, 'outputName', 'text')
+    return [{
+      name,
+      label: name,
+      valueType: config?.parse === 'json' ? 'object' : 'string',
+      semanticSlot: 'template.output',
+    }]
+  }
+
   return []
 }
-

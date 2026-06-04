@@ -211,6 +211,9 @@ import {
   GitBranch,
   FileEdit,
   Code,
+  Database,
+  Save,
+  FileText,
 } from 'lucide-vue-next'
 import { useWorkflowEditor } from '../../composables/useWorkflowEditor'
 import { nodeTypeRegistry } from './node-registry'
@@ -487,6 +490,9 @@ const paletteIcons: Record<string, any> = {
   GitBranch,
   FileEdit,
   Code,
+  Database,
+  Save,
+  FileText,
 }
 
 // 拖拽开始 — 存储节点类型到 dataTransfer
@@ -584,6 +590,9 @@ function miniMapNodeColor(node: any): string {
     'switch': '#FF8C00',
     'apply-patch': '#B388FF',
     'compute': '#FFD600',
+    'memory-query': '#4FD1C5',
+    'memory-write': '#F472B6',
+    'template-compose': '#A3E635',
   }
   return colors[node.data?.nodeType] ?? '#608996'
 }

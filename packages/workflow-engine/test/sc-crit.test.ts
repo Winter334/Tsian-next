@@ -7,6 +7,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { getDefaultBuiltinMod } from '../../../builtin/mods'
 import {
   executeWorkflow,
   validateWorkflowDefinition,
@@ -141,6 +142,47 @@ describe('SC-CRIT-6 — mod 工作流拒绝 apply-patch 节点', () => {
     expect(() =>
       validateWorkflowDefinition(def, { isModWorkflow: true }),
     ).not.toThrow()
+  })
+
+  it('isModWorkflow=true 时允许 memory/template 底层节点', () => {
+    const def: WorkflowDefinition = {
+      nodes: [
+        { id: 'query', type: 'memory-query', config: { source: 'collection' } },
+        { id: 'write', type: 'memory-write', config: { operationsVarName: 'operations' } },
+        { id: 'compose', type: 'template-compose', config: { template: '{{records.json}}' } },
+        { id: 'result', type: 'result', config: { name: 'reply' } },
+      ],
+      edges: [],
+    }
+
+    expect(() =>
+      validateWorkflowDefinition(def, { isModWorkflow: true }),
+    ).not.toThrow()
+  })
+})
+
+describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
+  it('灰盐镇 manifest workflow 不再依赖 legacy retrieval bypass', () => {
+    const workflow = getDefaultBuiltinMod().manifest.workflow
+    expect(workflow).toBeDefined()
+    expect(() =>
+      validateWorkflowDefinition(workflow!, { isModWorkflow: true }),
+    ).not.toThrow()
+
+    const retrieval = workflow!.nodes.find((node) => node.id === 'retrieval')
+    expect(retrieval?.type).toBe('memory-query')
+    expect(retrieval?.config).toEqual({ source: 'event-archive' })
+    expect(JSON.stringify(workflow)).not.toContain('__retrieval.raw')
+    expect(JSON.stringify(workflow)).not.toContain('"bypass"')
+    expect(workflow!.nodes.some((node) => node.type === 'apply-patch')).toBe(false)
+    expect(workflow!.edges).toContainEqual({
+      from: { nodeId: 'retrieval', outputName: 'directEntities' },
+      to: { nodeId: 'maintenance', varName: 'retrieval.directEntities' },
+    })
+    expect(workflow!.edges).toContainEqual({
+      from: { nodeId: 'retrieval', outputName: 'archives' },
+      to: { nodeId: 'maintenance', varName: 'archives.recent.json' },
+    })
   })
 })
 

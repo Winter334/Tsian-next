@@ -13,8 +13,11 @@ import {
 import { aiCallExecutor } from "./executors/ai-call"
 import { applyPatchExecutor } from "./executors/apply-patch"
 import { computeExecutor } from "./executors/compute"
+import { memoryQueryExecutor } from "./executors/memory-query"
+import { memoryWriteExecutor } from "./executors/memory-write"
 import { resultExecutor } from "./executors/result"
 import { switchExecutor } from "./executors/switch"
+import { templateComposeExecutor } from "./executors/template-compose"
 
 function buildBuiltinExecutors(): ReadonlyMap<string, NodeExecutor> {
   return new Map<string, NodeExecutor>([
@@ -23,6 +26,9 @@ function buildBuiltinExecutors(): ReadonlyMap<string, NodeExecutor> {
     ["switch", switchExecutor],
     ["apply-patch", applyPatchExecutor],
     ["compute", computeExecutor],
+    ["memory-query", memoryQueryExecutor],
+    ["memory-write", memoryWriteExecutor],
+    ["template-compose", templateComposeExecutor],
   ])
 }
 
@@ -33,10 +39,22 @@ export function createWorkflowExecutionContext(
     executors: buildBuiltinExecutors(),
     runtimeEngine: input.runtimeEngine,
     saveId: input.saveId,
+    turn: input.turn,
     macros: input.macros,
     presets: input.presets,
     worldBooks: input.worldBooks,
     history: input.history,
+    userInput: input.userInput,
+    events: input.events,
+    activeEvents: input.activeEvents,
+    archives: input.archives,
+    catalogEvents: input.catalogEvents,
+    currentTime: input.currentTime,
+    narrativeTimeText: input.narrativeTimeText,
+    globals: input.globals,
+    playerArchiveIds: input.playerArchiveIds,
+    retrievalSettings: input.retrievalSettings,
+    recordRetrievalDebug: input.recordRetrievalDebug,
   }
 }
 

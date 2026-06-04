@@ -17,6 +17,7 @@ import type {
   WorkflowRunSourceKind,
   WorkflowTraceError,
   WorkflowDefinition,
+  RetrievalDebugRecord,
 } from "@tsian/contracts"
 import {
   executeWorkflow,
@@ -50,6 +51,7 @@ import {
   listCheckpointsForSave,
   listEventsForSave,
   listLocalSaves,
+  listLocalMemoryRecordsForSave,
   replaceRuntimeForSave,
   restoreCheckpointForSave,
   saveHistoryForSave,
@@ -69,10 +71,6 @@ import {
 import { LocalRuntimeEngine } from "../runtime-host"
 import { getAiDebugRecords } from "../runtime-host/ai"
 import { applyMaintenancePatch } from "../runtime-host/patch-applier"
-import {
-  assembleRetrievalContext,
-  type RetrievalDebugRecord,
-} from "../runtime-host/retrieval"
 import { defaultWorkflow } from "../workflow-host/default-workflow"
 import { createWorkflowExecutionContext } from "../workflow-host"
 import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
@@ -762,6 +760,7 @@ async function handleWriteRuntimeAction(
       history: persisted.history,
       events: persisted.events,
       archives: persisted.archives,
+      memoryRecords: await listLocalMemoryRecordsForSave(activeSaveId),
       reason: "manual",
       label: request.checkpointLabel ?? "前端写入",
     })
@@ -1060,7 +1059,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const history = await getHistoryForSave(activeSaveId)
       const events = await listEventsForSave(activeSaveId)
       const activeEvents = await listActiveEventsForSave(activeSaveId)
-      const activeEvent = activeEvents[0] ?? null
       const archives = (await listArchivesForSave(activeSaveId)).map(toArchiveRecord)
       const currentSnapshot = await runtimeEngine.getSnapshot()
       const currentTime = getSnapshotCurrentTime(currentSnapshot)
@@ -1070,34 +1068,15 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const mod = getBuiltinMod(modId) ?? getDefaultBuiltinMod()
       const playerArchiveIds = await getPlayerArchiveIdsForSave(activeSaveId)
 
-      // === 2) β-1 旁路：retrieval 仍在 host 跑（H8 不替换） ===
-      const retrieval = await assembleRetrievalContext({
-        messages: history,
-        userInput: input.content,
-        events,
-        catalogEvents: mod.eventCatalog,
-        activeEvent,
-        activeEvents,
-        archives,
-        currentTime,
-        narrativeTimeText,
-        globals: getSnapshotGlobals(currentSnapshot),
-        playerArchiveIds,
-        settings: getBrowserRetrievalSettings(),
-      })
+      // === 2) retrieval 下沉到 workflow 节点；新轮先清旧 debug，节点成功后回写 ===
+      retrievalDebugBySave.delete(activeSaveId)
 
-      // === 3) D5: retrieval debug 写入先于 turn++ ===
-      retrievalDebugBySave.set(activeSaveId, {
-        ...retrieval.debug,
-        turn: nextTurn,
-      })
-
-      // === 4) D4: 备份当前 snapshot 用于失败回滚 ===
+      // === 3) D4: 备份当前 snapshot 用于失败回滚 ===
       const snapshotBeforeBackup: RuntimeSnapshotShell = JSON.parse(
         JSON.stringify(currentSnapshot),
       )
 
-      // === 5) turn++（design §13.6） ===
+      // === 4) turn++（design §13.6） ===
       runtimeEngine.loadSnapshot({
         ...currentSnapshot,
         state: {
@@ -1107,7 +1086,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
       })
       const turnedSnapshot = await runtimeEngine.getSnapshot()
 
-      // === 6) H12: per-turn AbortController 接入，旧轮 abort 在新轮入口触发 ===
+      // === 5) H12: per-turn AbortController 接入，旧轮 abort 在新轮入口触发 ===
       // 如果上一轮工作流还在运行（例如用户快速连发），先通知其终止，不等待收尾。
       if (previousTurnController) {
         previousTurnController.abort("new-turn-started")
@@ -1117,7 +1096,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
       const { def, isModWorkflow, source } = await resolveWorkflowForSave(activeSaveId)
 
-      // === 7) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
+      // === 6) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
       const handle = createOutputsStore({
         runId: `${activeSaveId}:${turnedSnapshot.state.turn}:${Date.now()}`,
         saveId: activeSaveId,
@@ -1127,18 +1106,10 @@ export const playFrontendBridge: PlayFrontendBridge = {
         nodes: def.nodes.map((node) => ({ id: node.id, type: node.type })),
       })
 
-      // === 8) 推 user 消息（不递增 turn） ===
+      // === 7) 推 user 消息（不递增 turn） ===
       runtimeEngine.appendUserMessage(input.content)
 
-      // === 9) 组装 macros + workflow context ===
-      // retrieval.prompt 用 <prompt> tag 包裹，directEntities 单独成段。
-      // ai-call bypass 时按节点 outputs[].extract 用 tag 抽取，保证 chat/maintenance 不见到 directEntities 尾巴。
-      const directEntityIds = retrieval.debug.directEntities ?? []
-      const retrievalRawWithTags = `<prompt>${retrieval.prompt}</prompt>\n<directEntities>${JSON.stringify(directEntityIds)}</directEntities>`
-
-      // archives.recent.json: 取 retrieval 命中的全量 archive 切片
-      const hitArchiveIds = new Set(retrieval.debug.archives.map((r) => r.id))
-      const hitArchives = archives.filter((a) => hitArchiveIds.has(a.id))
+      // === 8) 组装 macros + workflow context ===
       const playerArchives = archives.filter((a) => playerArchiveIds.includes(a.id))
 
       const workflowResources = await loadWorkflowResourceContext()
@@ -1146,9 +1117,23 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const wfContext = createWorkflowExecutionContext({
         runtimeEngine,
         saveId: activeSaveId,
+        turn: turnedSnapshot.state.turn,
         presets: workflowResources.presets,
         worldBooks: workflowResources.worldBooks,
         history,
+        userInput: input.content,
+        events,
+        activeEvents,
+        archives,
+        catalogEvents: mod.eventCatalog,
+        currentTime,
+        narrativeTimeText,
+        globals: getSnapshotGlobals(turnedSnapshot),
+        playerArchiveIds,
+        retrievalSettings: getBrowserRetrievalSettings(),
+        recordRetrievalDebug: (debug) => {
+          retrievalDebugBySave.set(activeSaveId, debug)
+        },
         macros: {
           "user.input": input.content,
           "narrative.currentTime": getSnapshotCurrentTime(turnedSnapshot),
@@ -1156,10 +1141,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
           "globals.json": JSON.stringify(getSnapshotGlobals(turnedSnapshot) ?? {}),
           "events.active.json": JSON.stringify(activeEvents),
           "events.recent.json": JSON.stringify(events.slice(-20)),
-          "archives.recent.json": JSON.stringify(hitArchives),
+          "archives.recent.json": JSON.stringify(archives.slice(0, 20)),
           "archives.player.json": JSON.stringify(playerArchives),
           "history.recent.json": JSON.stringify(history.slice(-10)),
-          "__retrieval.raw": retrievalRawWithTags,
         },
       })
 

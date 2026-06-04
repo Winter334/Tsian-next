@@ -1,6 +1,7 @@
 import type {
   ArchivePresence,
   ArchiveType,
+  JsonValue,
   PromptPreset,
   RuntimeSnapshotShell,
   WorkflowDefinition,
@@ -51,6 +52,7 @@ export interface LocalCheckpointRecord {
   history: LocalSaveHistoryRecord["messages"]
   events: Array<Omit<LocalEventRecord, "saveId" | "updatedAt">>
   archives: Array<Omit<LocalArchiveRecord, "saveId" | "updatedAt">>
+  memoryRecords: Array<Omit<LocalMemoryRecord, "saveId" | "updatedAt">>
 }
 
 export interface LocalEventRecord {
@@ -87,6 +89,20 @@ export interface LocalEmbeddingRecord {
   embeddingModel: string
   contentHash: string
   vector: number[]
+  updatedAt: number
+}
+
+export interface LocalMemoryRecord {
+  /** Internal deterministic table key. */
+  id: string
+  saveId: string
+  namespace: string
+  collection: string
+  /** Logical record id inside namespace + collection. */
+  recordId: string
+  data: JsonValue
+  schemaVersion?: string
+  tags: string[]
   updatedAt: number
 }
 
@@ -132,13 +148,14 @@ export class TsianLocalDb extends Dexie {
   events!: Table<LocalEventRecord, string>
   archives!: Table<LocalArchiveRecord, string>
   embeddings!: Table<LocalEmbeddingRecord, string>
+  memoryRecords!: Table<LocalMemoryRecord, string>
   promptPresets!: Table<LocalPromptPresetResourceRecord, string>
   worldBooks!: Table<LocalWorldBookResourceRecord, string>
   workflowPresets!: Table<LocalWorkflowPresetResourceRecord, string>
 
   constructor() {
     // 原型期直接换新库名，不做旧结构迁移。
-    super("tsian-local-v8")
+    super("tsian-local-v9")
 
     this.version(1).stores({
       meta: "&key",
@@ -149,6 +166,7 @@ export class TsianLocalDb extends Dexie {
       events: "&id, saveId, updatedAt",
       archives: "&id, saveId, updatedAt",
       embeddings: "&id, targetType, targetId, embeddingModel, updatedAt",
+      memoryRecords: "&id, saveId, namespace, collection, recordId, updatedAt",
       promptPresets: "&id, name, updatedAt",
       worldBooks: "&id, name, updatedAt",
       workflowPresets: "&id, name, updatedAt",
@@ -157,4 +175,3 @@ export class TsianLocalDb extends Dexie {
 }
 
 export const localDb = new TsianLocalDb()
-

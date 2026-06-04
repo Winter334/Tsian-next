@@ -10,6 +10,7 @@ import {
   createCheckpointForSave,
   listArchivesForSave,
   listEventsForSave,
+  listLocalMemoryRecordsForSave,
   toArchiveRecord,
   type LocalArchiveRecord,
 } from "../storage"
@@ -219,6 +220,7 @@ export async function applyMaintenancePatch(
       history: getSnapshotMessages(latestSnapshot),
       events: await listEventsForSave(saveId),
       archives: await listArchivesForSave(saveId),
+      memoryRecords: await listLocalMemoryRecordsForSave(saveId),
       reason: pushCheckpointReason,
       label: checkpointLabel ?? `回合 ${turn}`,
     })

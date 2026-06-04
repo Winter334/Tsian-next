@@ -13,6 +13,7 @@ import {
 } from "./archives"
 import { createCheckpointForSave, deleteCheckpointsForSave } from "./checkpoints"
 import { deleteEventsForSave, listEventsForSave } from "./events"
+import { deleteMemoryRecordsForSave, listLocalMemoryRecordsForSave } from "./memory"
 import {
   createBuiltinModInitialSavePayload,
   defaultModId,
@@ -248,6 +249,7 @@ export async function createLocalSave(
     history: initial.history,
     events: await listEventsForSave(save.id),
     archives: await listArchivesForSave(save.id),
+    memoryRecords: await listLocalMemoryRecordsForSave(save.id),
     reason: "initial",
     label: "初始状态",
   })
@@ -298,6 +300,7 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
 
   await deleteEventsForSave(saveId)
   await deleteArchivesForSave(saveId)
+  await deleteMemoryRecordsForSave(saveId)
   await deleteCheckpointsForSave(saveId)
 }
 
@@ -337,7 +340,6 @@ export async function saveHistoryForSave(
     messages,
   })
 }
-
 
 
 

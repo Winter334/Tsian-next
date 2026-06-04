@@ -14,7 +14,15 @@ import type {
   NodeExecutor,
   WorkflowExecutionContext,
 } from "@tsian/workflow-engine"
-import type { ConversationMessageRecord } from "@tsian/contracts"
+import type {
+  ArchiveRecord,
+  CatalogEventRecord,
+  ConversationMessageRecord,
+  RetrievalDebugRecord,
+  RuntimeGlobalsMap,
+} from "@tsian/contracts"
+import type { BrowserRetrievalSettings } from "../config/ai"
+import type { LocalEventRecord } from "../storage"
 import type { LocalRuntimeEngine } from "../runtime-host/engine"
 
 /**
@@ -32,8 +40,8 @@ export type WorkflowWorldBookMap = Readonly<Record<string, unknown>>
 /**
  * 平台扩展的工作流执行上下文。
  *
- * - executors：5 种内置 NodeExecutor（由 createWorkflowExecutionContext 注入）
- * - runtimeEngine / saveId：apply-patch executor 调 applyMaintenancePatch 用
+ * - executors：内置 NodeExecutor 集合（由 createWorkflowExecutionContext 注入）
+ * - runtimeEngine / saveId：apply-patch 与 memory-write 等副作用 executor 使用
  * - macros：平台 + 模组 customMacros 合并后的最终宏 KV（design.md §3）
  * - presets：从平台资源库加载的 prompt preset，按 presetId 索引
  * - worldBooks：从平台资源库加载的 world book，按 worldBookKeys 过滤
@@ -43,10 +51,22 @@ export interface PlatformWorkflowContext extends WorkflowExecutionContext {
   executors: ReadonlyMap<string, NodeExecutor>
   runtimeEngine: LocalRuntimeEngine
   saveId: string
+  turn: number
   macros: Record<string, string>
   presets: ReadonlyMap<string, WorkflowPresetEntry>
   worldBooks: WorkflowWorldBookMap
   history: ReadonlyArray<ConversationMessageRecord>
+  userInput: string
+  events: ReadonlyArray<LocalEventRecord>
+  activeEvents: ReadonlyArray<LocalEventRecord>
+  archives: ReadonlyArray<ArchiveRecord>
+  catalogEvents: ReadonlyArray<CatalogEventRecord>
+  currentTime?: string
+  narrativeTimeText?: string
+  globals?: RuntimeGlobalsMap
+  playerArchiveIds: ReadonlyArray<string>
+  retrievalSettings: BrowserRetrievalSettings
+  recordRetrievalDebug?: (debug: RetrievalDebugRecord) => void
 }
 
 /**
@@ -55,8 +75,20 @@ export interface PlatformWorkflowContext extends WorkflowExecutionContext {
 export interface CreateWorkflowExecutionContextInput {
   runtimeEngine: LocalRuntimeEngine
   saveId: string
+  turn: number
   macros: Record<string, string>
   presets: ReadonlyMap<string, WorkflowPresetEntry>
   worldBooks: WorkflowWorldBookMap
   history: ReadonlyArray<ConversationMessageRecord>
+  userInput: string
+  events: ReadonlyArray<LocalEventRecord>
+  activeEvents: ReadonlyArray<LocalEventRecord>
+  archives: ReadonlyArray<ArchiveRecord>
+  catalogEvents: ReadonlyArray<CatalogEventRecord>
+  currentTime?: string
+  narrativeTimeText?: string
+  globals?: RuntimeGlobalsMap
+  playerArchiveIds: ReadonlyArray<string>
+  retrievalSettings: BrowserRetrievalSettings
+  recordRetrievalDebug?: (debug: RetrievalDebugRecord) => void
 }

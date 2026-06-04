@@ -55,7 +55,15 @@ export interface NodeOutputDeclaration extends NodePortMetadata {
 // 节点类型与节点骨架（design.md §7）
 // ============================================================================
 
-export type WorkflowNodeType = "ai-call" | "result" | "switch" | "apply-patch" | "compute"
+export type WorkflowNodeType =
+  | "ai-call"
+  | "result"
+  | "switch"
+  | "apply-patch"
+  | "compute"
+  | "memory-query"
+  | "memory-write"
+  | "template-compose"
 
 export interface WorkflowNodeBase<T extends WorkflowNodeType = WorkflowNodeType> {
   id: string
@@ -87,9 +95,8 @@ export interface AiCallNodeConfig {
   /** 是否把 user.input 追加到 messages */
   appendUserInput?: boolean
   /**
-   * H8 β-1 旁路：跳过 AI 调用，直接从 context.macros[rawFromMacro] 读取作为 outputs.raw。
-   * 用于 retrieval 节点过渡期 — platform-host 仍调旧 assembleRetrievalContext 生成 prompt，
-   * 灌入此 macro 让节点形态保持完整。H10 下沉 retrieval 后应删除本字段。
+   * @deprecated legacy retrieval bypass for old workflow presets.
+   * 默认工作流改用 memory-query；新工作流不应再设置本字段。
    */
   bypass?: {
     rawFromMacro: string
@@ -119,6 +126,35 @@ export interface ComputeNodeConfig {
   script: string
   /** 默认 5000 ms */
   timeout?: number
+}
+
+export interface MemoryQueryNodeConfig {
+  /** event-archive: official memory query strategy; collection: custom save-scoped records. */
+  source: "event-archive" | "collection"
+  namespace?: string
+  collection?: string
+  /** Optional input key to read query text from; falls back to user.input macro. */
+  queryVarName?: string
+  /** Collection mode substring query over id/tags/data JSON. */
+  query?: string
+  limit?: number
+}
+
+export interface MemoryWriteNodeConfig {
+  /** Input key containing MemoryWriteOperation | MemoryWriteOperation[] | { operations }. */
+  operationsVarName: string
+  namespace?: string
+  collection?: string
+  /** 默认 "after-turn"；设为 "none" 时不创建 checkpoint。 */
+  pushCheckpointReason?: "after-turn" | "manual" | "none"
+}
+
+export interface TemplateComposeNodeConfig {
+  template: string
+  /** Output port name, default "text". */
+  outputName?: string
+  /** Optional parse mode for rendered output. */
+  parse?: "json"
 }
 
 // ============================================================================

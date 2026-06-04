@@ -16,6 +16,35 @@ export interface RuntimeGlobalsMap {
   [key: string]: JsonValue
 }
 
+export interface MemoryRecord {
+  /** Logical id inside a save-scoped namespace + collection. */
+  id: string
+  namespace: string
+  collection: string
+  data: JsonValue
+  schemaVersion?: string
+  tags?: string[]
+  updatedAt?: number
+}
+
+export type MemoryWriteOperationType = "upsert" | "delete" | "clear"
+
+export interface MemoryWriteOperation {
+  type: MemoryWriteOperationType
+  namespace?: string
+  collection?: string
+  id?: string
+  data?: JsonValue
+  schemaVersion?: string
+  tags?: string[]
+}
+
+export interface MemoryWriteOutput {
+  upsertedIds: string[]
+  deletedIds: string[]
+  clearedCollections: string[]
+}
+
 export interface RuntimeStateShell {
   turn: number
   messages: ConversationMessageRecord[]

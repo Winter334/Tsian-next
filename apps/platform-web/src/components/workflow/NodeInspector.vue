@@ -6,7 +6,10 @@ import ResultForm from './inspector/ResultForm.vue'
 import SwitchForm from './inspector/SwitchForm.vue'
 import ApplyPatchForm from './inspector/ApplyPatchForm.vue'
 import ComputeForm from './inspector/ComputeForm.vue'
+import MemoryQueryForm from './inspector/MemoryQueryForm.vue'
+import MemoryWriteForm from './inspector/MemoryWriteForm.vue'
 import OutputsEditor from './inspector/OutputsEditor.vue'
+import TemplateComposeForm from './inspector/TemplateComposeForm.vue'
 import {
   resolveWorkflowInputSlots,
   resolveWorkflowOutputSlots,
@@ -251,14 +254,29 @@ function handleDelete() {
         :config="selectedNode.data.config"
         :on-update="handleUpdateConfig"
       />
+      <MemoryQueryForm
+        v-else-if="selectedNode.data.nodeType === 'memory-query'"
+        :config="selectedNode.data.config"
+        :on-update="handleUpdateConfig"
+      />
+      <MemoryWriteForm
+        v-else-if="selectedNode.data.nodeType === 'memory-write'"
+        :config="selectedNode.data.config"
+        :on-update="handleUpdateConfig"
+      />
+      <TemplateComposeForm
+        v-else-if="selectedNode.data.nodeType === 'template-compose'"
+        :config="selectedNode.data.config"
+        :on-update="handleUpdateConfig"
+      />
 
       <!-- 通用兜底（未知类型） -->
       <div v-else>
         <pre class="border border-neon-deep/20 bg-void p-2 font-mono text-[10px] text-text-dim overflow-x-auto">{{ JSON.stringify(selectedNode.data.config, null, 2) }}</pre>
       </div>
 
-      <!-- 输出端口编辑器（仅 ai-call 和 compute） -->
-      <template v-if="selectedNode.data.nodeType === 'ai-call' || selectedNode.data.nodeType === 'compute'">
+      <!-- 输出端口编辑器（可声明动态输出的节点） -->
+      <template v-if="['ai-call', 'compute', 'template-compose'].includes(selectedNode.data.nodeType)">
         <div class="border-t border-neon-deep/20 pt-3">
           <OutputsEditor
             :outputs="selectedNode.data.outputs ?? []"

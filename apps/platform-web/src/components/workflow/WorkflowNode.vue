@@ -138,6 +138,9 @@ import {
   GitBranch,
   FileEdit,
   Code,
+  Database,
+  Save,
+  FileText,
   HelpCircle,
 } from 'lucide-vue-next'
 
@@ -174,6 +177,9 @@ const iconMap: Record<string, any> = {
   GitBranch,
   FileEdit,
   Code,
+  Database,
+  Save,
+  FileText,
   HelpCircle,
 }
 
@@ -229,6 +235,9 @@ const configSummary = computed(() => {
   }
   // apply-patch: 显示 patchVarName
   if (config.patchVarName) return `var: ${config.patchVarName}`
+  if (config.source) return `source: ${config.source}`
+  if (config.collection) return `collection: ${config.collection}`
+  if (config.outputName) return `output: ${config.outputName}`
   // 其他：显示第一个字段
   const firstKey = Object.keys(config)[0]
   return `${firstKey}: ${JSON.stringify(config[firstKey]).slice(0, 25)}`

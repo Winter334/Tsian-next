@@ -56,6 +56,30 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
     color: '#FFD600',
     colorClass: '[#FFD600]',
   },
+  {
+    type: 'memory-query',
+    label: '记忆查询',
+    description: '查询事件档案或自定义记忆集合',
+    icon: 'Database',
+    color: '#4FD1C5',
+    colorClass: '[#4FD1C5]',
+  },
+  {
+    type: 'memory-write',
+    label: '记忆写入',
+    description: '写入自定义记忆集合',
+    icon: 'Save',
+    color: '#F472B6',
+    colorClass: '[#F472B6]',
+  },
+  {
+    type: 'template-compose',
+    label: '模板组合',
+    description: '将输入变量组合为文本或 JSON',
+    icon: 'FileText',
+    color: '#A3E635',
+    colorClass: '[#A3E635]',
+  },
 ]
 
 /** 按 type 快速查找 */
