@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
-- **Last Active**: 2026-05-31
+- **Total Sessions**: 5
+- **Last Active**: 2026-06-04
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~144 | Active |
+| `journal-1.md` | ~178 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-06-04 | Workflow node schema slots | `ccf9b65` | `master` |
 | 4 | 2026-05-31 | Save-level workflow preset override | `23b8add` | `master` |
 | 3 | 2026-05-29 | Record AIRP workflow platform direction | `de962e5` | `master` |
 | 2 | 2026-05-29 | Wire workflow presets into runtime | `fa8be18` | `master` |

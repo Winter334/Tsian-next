@@ -142,3 +142,37 @@ Added save-level workflow preset override with runtime precedence, resource-libr
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Workflow node schema slots
+
+**Date**: 2026-06-04
+**Task**: Workflow node schema slots
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Verified workflow node input/output schema slot implementation, archived the completed task, and left unrelated config/agent-skill changes untouched.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ccf9b65` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
