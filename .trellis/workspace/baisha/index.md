@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
+- **Total Sessions**: 8
 - **Last Active**: 2026-06-04
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~246 | Active |
+| `journal-1.md` | ~280 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-06-04 | Memory chain nodeization | `9ddaa93` | `master` |
 | 7 | 2026-06-04 | Workflow trace debug UI and time macro fix | `67af203` | `master` |
 | 6 | 2026-06-04 | Bootstrap Trellis coding specs | `93af90f` | `master` |
 | 5 | 2026-06-04 | Workflow node schema slots | `ccf9b65` | `master` |

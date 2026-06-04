@@ -244,3 +244,37 @@ Added workflow run trace and richer debug UI, fixed dotted prompt macro expansio
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: Memory chain nodeization
+
+**Date**: 2026-06-04
+**Task**: Memory chain nodeization
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Nodeized the memory chain into workflow-supported memory-query, memory-write, and template-compose nodes; added save-scoped memoryRecords storage with checkpoint/restore coverage; migrated default and grey-salt-town workflows off retrieval bypass; verified contracts, workflow engine, web build, tests, and browser smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9ddaa93` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
