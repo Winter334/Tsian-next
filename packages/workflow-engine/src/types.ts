@@ -13,8 +13,8 @@
  * platform-web/workflow-host/outputs-store.ts 提供 shallowRef 版实现。
  *
  * 时机表（与 scheduler 严格一致）：
- *   - initNode(id)         workflow.execute 入口对每个节点调用一次
- *   - startNode(id)        节点从 ready 进入 running
+ *   - initNode(id, type)   workflow.execute 入口对每个节点调用一次
+ *   - startNode(id, in)    节点从 ready 进入 running，并附带本次绑定的 inputs
  *   - succeedNode(id, o)   executor resolve 成功
  *   - setResult(name, v)   succeedNode 之后，仅当节点 type === "result" 时触发
  *   - failNode(id, err)    重试用尽
@@ -25,8 +25,8 @@
  * 反向打挂调度器（fail loud > fail silent 的例外，但失败会经 console.warn）。
  */
 export interface OutputsStoreWriter {
-  initNode(nodeId: string): void
-  startNode(nodeId: string): void
+  initNode(nodeId: string, nodeType: string): void
+  startNode(nodeId: string, inputs: Record<string, unknown>): void
   succeedNode(nodeId: string, outputs: Record<string, unknown>): void
   failNode(nodeId: string, error: { code: string; message: string }): void
   abortNode(nodeId: string): void

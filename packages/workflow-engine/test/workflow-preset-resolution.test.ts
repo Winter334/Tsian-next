@@ -48,12 +48,13 @@ describe('workflow preset resource resolution static proof', () => {
     expect(legacyWorkflowIndex).toBeGreaterThan(workflowPresetIndex)
   })
 
-  it('sendMessage awaits save-level workflow metadata and passes isModWorkflow into executeWorkflow', () => {
+  it('sendMessage awaits save-level workflow metadata, passes isModWorkflow into executeWorkflow, and carries source into debug trace', () => {
     const src = readFileSync(PLATFORM_HOST_FILE, 'utf-8')
 
     expect(src).toMatch(
-      /const\s+\{\s*def,\s*isModWorkflow\s*\}\s*=\s*await\s+resolveWorkflowForSave\(\s*activeSaveId\s*\)/,
+      /const\s+\{\s*def,\s*isModWorkflow,\s*source\s*\}\s*=\s*await\s+resolveWorkflowForSave\(\s*activeSaveId\s*\)/,
     )
+    expect(src).toMatch(/createOutputsStore\s*\(\s*\{[\s\S]*source,/)
     expect(src).toMatch(/executeWorkflow\s*\(\s*def,\s*wfContext,\s*\{[\s\S]*isModWorkflow/)
   })
 

@@ -54,6 +54,7 @@ export const defaultWorkflow: WorkflowDefinition = {
       id: "maintenance",
       type: "ai-call",
       config: { presetId: "builtin.maintenance" },
+      retry: { maxRetries: 0 },
       outputs: [
         { name: "patch", extract: { type: "raw", parse: "json" } },
       ],

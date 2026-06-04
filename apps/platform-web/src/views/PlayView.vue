@@ -1,6 +1,6 @@
 <template>
   <!-- 游戏页：进入后挂载游玩前端，不再保留平台壳样式 -->
-  <div ref="frontendMount" class="w-full min-h-screen"></div>
+  <div ref="frontendMount" class="w-full min-h-dvh"></div>
 </template>
 
 <script setup lang="ts">

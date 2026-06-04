@@ -1,6 +1,10 @@
 import type { VariableContext } from '../variables';
 import { processVariableMacros } from '../variables';
 
+const BASIC_MACRO_KEY_PATTERN = '[a-zA-Z0-9_.:-]+';
+const BASIC_MACRO_CHEVRON_RE = new RegExp(`<<\\s*(${BASIC_MACRO_KEY_PATTERN})\\s*>>`, 'g');
+const BASIC_MACRO_CURLY_RE = new RegExp(`\\{\\{\\s*(${BASIC_MACRO_KEY_PATTERN})\\s*\\}\\}`, 'g');
+
 /**
  * 宏替换选项
  */
@@ -20,6 +24,9 @@ export interface ReplaceMacrosOptions {
  * - {{setvar::name::value}} - 设置局部变量
  * - {{getglobalvar::name}} - 获取全局变量
  * - {{setglobalvar::name::value}} - 设置全局变量
+ *
+ * 基础宏 key 允许字母、数字、下划线，以及 `.` `:` `-`，以兼容
+ * `narrative.currentTime` / `node:retrieval.events` 这类平台侧拍平键名。
  */
 export function replaceMacros(text: string, options: ReplaceMacrosOptions | Record<string, string>): string {
   if (!text) return '';
@@ -39,7 +46,7 @@ export function replaceMacros(text: string, options: ReplaceMacrosOptions | Reco
   }
 
   // 2. 处理 <<key>> 格式（包括 <<user>> 和 <<char>>）
-  out = out.replace(/<<\s*([a-zA-Z0-9_]+)\s*>>/g, (_m, key: string) => {
+  out = out.replace(BASIC_MACRO_CHEVRON_RE, (_m, key: string) => {
     const lowerKey = key.toLowerCase();
     // 先尝试精确匹配，再尝试小写匹配
     if (Object.prototype.hasOwnProperty.call(macros, key)) {
@@ -52,7 +59,7 @@ export function replaceMacros(text: string, options: ReplaceMacrosOptions | Reco
   });
 
   // 3. 处理 {{key}} 格式（排除已处理的变量宏）
-  out = out.replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, (_m, key: string) => {
+  out = out.replace(BASIC_MACRO_CURLY_RE, (_m, key: string) => {
     const lowerKey = key.toLowerCase();
     // 跳过变量宏关键字（已在上面处理）
     if (['getvar', 'setvar', 'getglobalvar', 'setglobalvar'].includes(lowerKey)) {

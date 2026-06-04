@@ -2,6 +2,10 @@ import type { RegexScriptData, RegexTarget, RegexView } from '../../types';
 import type { VariableContext } from '../variables';
 import { replaceMacros } from '../macro';
 
+const BASIC_MACRO_KEY_PATTERN = '[a-zA-Z0-9_.:-]+';
+const BASIC_MACRO_CURLY_RE = new RegExp(`\\{\\{\\s*(${BASIC_MACRO_KEY_PATTERN})\\s*\\}\\}`, 'g');
+const BASIC_MACRO_CHEVRON_RE = new RegExp(`<<\\s*(${BASIC_MACRO_KEY_PATTERN})\\s*>>`, 'g');
+
 function escapeRegExpLiteral(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -16,10 +20,10 @@ function replaceMacroTokens(
     // 例如 {{user}} 会被转成 \{\{user\}\}，避免 "{" 被当成量词语法。
     return pattern
       .replace(
-        /\{\{\s*[a-zA-Z0-9_]+\s*\}\}/g,
+        BASIC_MACRO_CURLY_RE,
         (m) => escapeRegExpLiteral(m)
       )
-      .replace(/<<\s*[a-zA-Z0-9_]+\s*>>/g, (m) => escapeRegExpLiteral(m));
+      .replace(BASIC_MACRO_CHEVRON_RE, (m) => escapeRegExpLiteral(m));
   }
 
   const pick = (key: string): string | null => {
@@ -38,8 +42,8 @@ function replaceMacroTokens(
   };
 
   return pattern
-    .replace(/\{\{\s*([a-zA-Z0-9_]+)\s*\}\}/g, replacer)
-    .replace(/<<\s*([a-zA-Z0-9_]+)\s*>>/g, replacer);
+    .replace(BASIC_MACRO_CURLY_RE, replacer)
+    .replace(BASIC_MACRO_CHEVRON_RE, replacer);
 }
 
 function parseFindRegex(input: string): { source: string; flags: string } {

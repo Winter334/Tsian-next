@@ -130,8 +130,8 @@ function ensureStyles() {
     .od-scene-status{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
     .od-layout{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(320px,.95fr);gap:18px;align-items:start}
     .od-panel{display:flex;flex-direction:column;min-height:0;overflow:hidden}
-    .od-panel--play{height:min(820px,calc(100vh - 32px))}
-    .od-panel--inspector{height:min(960px,calc(100vh - 32px))}
+    .od-panel--play{height:min(820px,calc(100dvh - 32px))}
+    .od-panel--inspector{height:min(960px,calc(100dvh - 32px))}
     .od-head{padding:18px 20px;border-bottom:1px solid var(--line)}
     .od-head h3{margin:0;font-family:"Iowan Old Style","Noto Serif SC","Source Han Serif SC",serif;font-size:24px}
     .od-head p{margin:8px 0 0;color:var(--muted);font-size:13px;line-height:1.6}
@@ -753,8 +753,8 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
 
   const history = root.querySelector(".od-history") as HTMLDivElement
   const form = root.querySelector(".od-composer") as HTMLFormElement
-  const input = root.querySelector(".composer-input") as HTMLInputElement
-  const button = root.querySelector(".composer-button") as HTMLButtonElement
+  const input = form.querySelector(".composer-input") as HTMLInputElement
+  const button = form.querySelector('button[type="submit"]') as HTMLButtonElement
   const statTurn = root.querySelector('[data-stat="turn"]') as HTMLElement
   const statMessages = root.querySelector('[data-stat="messages"]') as HTMLElement
   const statEvents = root.querySelector('[data-stat="events"]') as HTMLElement

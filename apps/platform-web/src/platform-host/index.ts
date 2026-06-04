@@ -13,9 +13,17 @@ import type {
   RuntimeWriteResult,
   RuntimeGlobalsMap,
   RuntimeSnapshotShell,
+  WorkflowRunSource,
+  WorkflowRunSourceKind,
+  WorkflowTraceError,
   WorkflowDefinition,
 } from "@tsian/contracts"
-import { executeWorkflow } from "@tsian/workflow-engine"
+import {
+  executeWorkflow,
+  WorkflowAbortError,
+  WorkflowNodeError,
+  type WorkflowResult,
+} from "@tsian/workflow-engine"
 import {
   defaultModId,
   getBuiltinMod,
@@ -69,19 +77,8 @@ import { defaultWorkflow } from "../workflow-host/default-workflow"
 import { createWorkflowExecutionContext } from "../workflow-host"
 import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
 
-export type PlatformWorkflowSourceKind =
-  | "save-override"
-  | "mod-preset"
-  | "legacy-mod-workflow"
-  | "platform-default"
-
-export interface PlatformWorkflowSource {
-  kind: PlatformWorkflowSourceKind
-  modId: string
-  saveId?: string
-  workflowPresetId?: string
-  workflowName?: string
-}
+export type PlatformWorkflowSourceKind = WorkflowRunSourceKind
+export type PlatformWorkflowSource = WorkflowRunSource
 
 async function resolveWorkflowForMod(modId: string): Promise<{
   def: WorkflowDefinition
@@ -172,6 +169,27 @@ async function resolveWorkflowForSave(saveId: string): Promise<{
 export const runtimeEngine = new LocalRuntimeEngine()
 const baseBridge = createPlayFrontendBridge(runtimeEngine)
 const retrievalDebugBySave = new Map<string, RetrievalDebugRecord>()
+let platformHostReady = false
+let resolvePlatformHostReady: (() => void) | null = null
+const platformHostReadyPromise = new Promise<void>((resolve) => {
+  resolvePlatformHostReady = resolve
+})
+
+function markPlatformHostReady() {
+  if (platformHostReady) {
+    return
+  }
+  platformHostReady = true
+  resolvePlatformHostReady?.()
+  resolvePlatformHostReady = null
+}
+
+export async function waitForPlatformHostReady(): Promise<void> {
+  if (platformHostReady) {
+    return
+  }
+  await platformHostReadyPromise
+}
 
 async function loadWorkflowResourceContext() {
   await seedBuiltinResourceLibraryResources()
@@ -246,8 +264,55 @@ function actionError(
   }
 }
 
+function toWorkflowTraceError(error: unknown): WorkflowTraceError {
+  if (error instanceof WorkflowNodeError) {
+    return {
+      code: error.code,
+      message: error.message,
+    }
+  }
+
+  if (error instanceof WorkflowAbortError) {
+    return {
+      code: "WORKFLOW_ABORTED",
+      message: error.message,
+    }
+  }
+
+  if (error instanceof Error) {
+    return {
+      code: error.name || "Error",
+      message: error.message,
+    }
+  }
+
+  return {
+    code: "UNKNOWN_ERROR",
+    message: String(error),
+  }
+}
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function findHostManagedWorkflowPatch(
+  def: WorkflowDefinition,
+  workflowResult: WorkflowResult,
+): MaintenancePatchDocument | null {
+  if (def.nodes.some((node) => node.type === "apply-patch")) {
+    return null
+  }
+
+  for (let index = workflowResult.order.length - 1; index >= 0; index -= 1) {
+    const outputs = workflowResult.nodeOutputs.get(workflowResult.order[index])
+    const patch = outputs?.patch
+    if (isPlainObject(patch)) {
+      return patch as MaintenancePatchDocument
+    }
+  }
+
+  return null
 }
 
 function isJsonValue(value: unknown): boolean {
@@ -999,6 +1064,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const archives = (await listArchivesForSave(activeSaveId)).map(toArchiveRecord)
       const currentSnapshot = await runtimeEngine.getSnapshot()
       const currentTime = getSnapshotCurrentTime(currentSnapshot)
+      const nextTurn = currentSnapshot.state.turn + 1
       const narrativeTimeText = getNarrativeTimeText(input.narrativeTimeText, currentTime)
       const modId = await getModIdForSave(activeSaveId)
       const mod = getBuiltinMod(modId) ?? getDefaultBuiltinMod()
@@ -1021,7 +1087,10 @@ export const playFrontendBridge: PlayFrontendBridge = {
       })
 
       // === 3) D5: retrieval debug 写入先于 turn++ ===
-      retrievalDebugBySave.set(activeSaveId, retrieval.debug)
+      retrievalDebugBySave.set(activeSaveId, {
+        ...retrieval.debug,
+        turn: nextTurn,
+      })
 
       // === 4) D4: 备份当前 snapshot 用于失败回滚 ===
       const snapshotBeforeBackup: RuntimeSnapshotShell = JSON.parse(
@@ -1033,7 +1102,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         ...currentSnapshot,
         state: {
           ...currentSnapshot.state,
-          turn: currentSnapshot.state.turn + 1,
+          turn: nextTurn,
         },
       })
       const turnedSnapshot = await runtimeEngine.getSnapshot()
@@ -1046,12 +1115,16 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const currentController = new AbortController()
       previousTurnController = currentController
 
-      const { def, isModWorkflow } = await resolveWorkflowForSave(activeSaveId)
+      const { def, isModWorkflow, source } = await resolveWorkflowForSave(activeSaveId)
 
       // === 7) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
       const handle = createOutputsStore({
+        runId: `${activeSaveId}:${turnedSnapshot.state.turn}:${Date.now()}`,
+        saveId: activeSaveId,
         turn: turnedSnapshot.state.turn,
-        nodeIds: def.nodes.map((n) => n.id),
+        isModWorkflow,
+        source,
+        nodes: def.nodes.map((node) => ({ id: node.id, type: node.type })),
       })
 
       // === 8) 推 user 消息（不递增 turn） ===
@@ -1099,21 +1172,59 @@ export const playFrontendBridge: PlayFrontendBridge = {
           signal: currentController.signal,
         })
       } catch (err) {
+        handle.finishRun(
+          err instanceof WorkflowAbortError ? "aborted" : "failed",
+          toWorkflowTraceError(err),
+        )
         // D4: 失败回滚 engine 内存态 + 清 retrieval debug
         runtimeEngine.loadSnapshot(snapshotBeforeBackup)
         retrievalDebugBySave.delete(activeSaveId)
+        if (previousTurnController === currentController) {
+          previousTurnController = null
+        }
         throw err
       }
 
       // === 10) D10: 从 result 节点的 reply 取正文 ===
       const replyText = workflowResult.results?.reply
       if (typeof replyText !== "string") {
+        handle.finishRun("failed", {
+          code: "INVALID_WORKFLOW_RESULT",
+          message: `workflow did not produce result.reply as string (got ${typeof replyText})`,
+        })
         runtimeEngine.loadSnapshot(snapshotBeforeBackup)
         retrievalDebugBySave.delete(activeSaveId)
+        if (previousTurnController === currentController) {
+          previousTurnController = null
+        }
         throw new Error(
           `workflow did not produce result.reply as string (got ${typeof replyText})`,
         )
       }
+
+      const hostManagedPatch = isModWorkflow
+        ? findHostManagedWorkflowPatch(def, workflowResult)
+        : null
+      if (hostManagedPatch) {
+        try {
+          await applyMaintenancePatch({
+            patch: hostManagedPatch,
+            runtimeEngine,
+            saveId: activeSaveId,
+            pushCheckpointReason: "after-turn",
+          })
+        } catch (err) {
+          handle.finishRun("failed", toWorkflowTraceError(err))
+          runtimeEngine.loadSnapshot(snapshotBeforeBackup)
+          retrievalDebugBySave.delete(activeSaveId)
+          if (previousTurnController === currentController) {
+            previousTurnController = null
+          }
+          throw err
+        }
+      }
+
+      handle.finishRun("succeeded")
 
       // === 11) 推 assistant 消息 ===
       runtimeEngine.appendAssistantMessage(replyText)
@@ -1151,6 +1262,7 @@ export async function initializePlatformHost(): Promise<void> {
     const activeSave = saves.find((save) => save.id === activeSaveId)
     if (activeSave) {
       runtimeEngine.loadSnapshot(await getSnapshotForSave(activeSaveId))
+      markPlatformHostReady()
       return
     }
 
@@ -1162,6 +1274,8 @@ export async function initializePlatformHost(): Promise<void> {
     await setActiveSaveId(next.id)
     runtimeEngine.loadSnapshot(await getSnapshotForSave(next.id))
   }
+
+  markPlatformHostReady()
 }
 
 export async function listPlatformSaves() {

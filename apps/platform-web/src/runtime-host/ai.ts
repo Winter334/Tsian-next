@@ -28,6 +28,8 @@ export interface GenerateEmbeddingOptions {
 let aiDebugSequence = 0
 const aiDebugRecords: AiDebugRecord[] = []
 const MAX_AI_DEBUG_RECORDS = 20
+const DEFAULT_CHAT_TIMEOUT_MS = 600_000
+const DEFAULT_EMBEDDING_TIMEOUT_MS = 30_000
 
 function pushAiDebugRecord(record: AiDebugRecord): void {
   aiDebugRecords.unshift(record)
@@ -80,6 +82,90 @@ function logDebugGroup(
   console.groupEnd()
 }
 
+function isAbortError(error: unknown): boolean {
+  return error instanceof Error && error.name === "AbortError"
+}
+
+async function readJsonPayload(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw error
+    }
+    return null
+  }
+}
+
+function createTimedAbortSignal(input: {
+  signal?: AbortSignal
+  timeoutMs: number
+  timeoutMessage: string
+}): {
+  signal: AbortSignal
+  cleanup: () => void
+  timedOut: () => boolean
+} {
+  const controller = new AbortController()
+  let didTimeout = false
+
+  const abortFromParent = () => {
+    controller.abort(input.signal?.reason)
+  }
+
+  if (input.signal?.aborted) {
+    abortFromParent()
+  } else if (input.signal) {
+    input.signal.addEventListener("abort", abortFromParent, { once: true })
+  }
+
+  const timeoutId = setTimeout(() => {
+    didTimeout = true
+    controller.abort(new Error(input.timeoutMessage))
+  }, input.timeoutMs)
+
+  return {
+    signal: controller.signal,
+    cleanup() {
+      clearTimeout(timeoutId)
+      input.signal?.removeEventListener("abort", abortFromParent)
+    },
+    timedOut() {
+      return didTimeout
+    },
+  }
+}
+
+async function fetchJsonWithTimeout(input: {
+  url: string
+  init: RequestInit
+  signal?: AbortSignal
+  timeoutMs: number
+  timeoutMessage: string
+}): Promise<{ response: Response; payload: unknown }> {
+  const timed = createTimedAbortSignal({
+    signal: input.signal,
+    timeoutMs: input.timeoutMs,
+    timeoutMessage: input.timeoutMessage,
+  })
+
+  try {
+    const response = await fetch(input.url, {
+      ...input.init,
+      signal: timed.signal,
+    })
+    const payload = await readJsonPayload(response)
+    return { response, payload }
+  } catch (error) {
+    if (timed.timedOut()) {
+      throw new Error(input.timeoutMessage)
+    }
+    throw error
+  } finally {
+    timed.cleanup()
+  }
+}
+
 function buildChatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/chat/completions`
 }
@@ -121,6 +207,20 @@ function extractUsageFromPayload(
     return undefined
   }
   return { input, output, total }
+}
+
+function extractErrorMessage(payload: unknown): string | undefined {
+  if (typeof payload !== "object" || payload === null) {
+    return undefined
+  }
+
+  const error = (payload as { error?: unknown }).error
+  if (typeof error !== "object" || error === null) {
+    return undefined
+  }
+
+  const message = (error as { message?: unknown }).message
+  return typeof message === "string" ? message : undefined
 }
 
 function extractAssistantText(payload: unknown): string {
@@ -188,30 +288,40 @@ export async function generateAssistantReply(
     })),
   })
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      messages,
-    }),
-    signal: options.signal,
-  })
-
-  const payload = await response.json().catch(() => null)
+  const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${DEFAULT_CHAT_TIMEOUT_MS} ms.`
+  let response: Response
+  let payload: unknown
+  try {
+    ;({ response, payload } = await fetchJsonWithTimeout({
+      url,
+      init: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages,
+        }),
+      },
+      signal: options.signal,
+      timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,
+      timeoutMessage,
+    }))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[Tsian AI ${requestId}] error`, { error })
+    updateAiDebugRecord(requestId, { error: message })
+    throw error
+  }
 
   if (!response.ok) {
     console.warn(`[Tsian AI ${requestId}] error`, {
       status: response.status,
       payload,
     })
-    const message =
-      typeof payload?.error?.message === "string"
-        ? payload.error.message
-        : `AI request failed with status ${response.status}.`
+    const message = extractErrorMessage(payload) ?? `AI request failed with status ${response.status}.`
     updateAiDebugRecord(requestId, { error: message })
     throw new Error(message)
   }
@@ -288,19 +398,33 @@ export async function generateEmbeddings(
     })),
   })
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${config.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: config.model,
-      input,
-    }),
-  })
-
-  const payload = await response.json().catch(() => null)
+  const timeoutMessage =
+    `[Tsian Embedding ${requestId}] request timed out after ${DEFAULT_EMBEDDING_TIMEOUT_MS} ms.`
+  let response: Response
+  let payload: unknown
+  try {
+    ;({ response, payload } = await fetchJsonWithTimeout({
+      url,
+      init: {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          input,
+        }),
+      },
+      timeoutMs: DEFAULT_EMBEDDING_TIMEOUT_MS,
+      timeoutMessage,
+    }))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[Tsian Embedding ${requestId}] error`, { error })
+    updateAiDebugRecord(requestId, { error: message })
+    throw error
+  }
 
   if (!response.ok) {
     console.warn(`[Tsian AI ${requestId}] error`, {
@@ -308,9 +432,7 @@ export async function generateEmbeddings(
       payload,
     })
     const message =
-      typeof payload?.error?.message === "string"
-        ? payload.error.message
-        : `Embedding request failed with status ${response.status}.`
+      extractErrorMessage(payload) ?? `Embedding request failed with status ${response.status}.`
     updateAiDebugRecord(requestId, { error: message })
     throw new Error(message)
   }

@@ -21,6 +21,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `LocalRuntimeEngine` owns the in-memory snapshot. It exposes `loadSnapshot`, append methods, and `applyRuntimeStatePatch`; it does not own persistence.
 - `platform-host/index.ts` coordinates save loading, workflow execution, bridge extension, retrieval debug cache, and snapshot persistence.
 - The base bridge in `bridge/play-frontend-bridge.ts` only delegates core engine methods and throws for platform-only write APIs. The platform host injects the full implementation.
+- Route views that query active-save resources on mount must wait until platform-host initialization has completed after a hard refresh. Otherwise `history` / `events` / `archives` / `checkpoints` reads can race the active-save restore path and render empty debug data.
 
 ## Workflow Output State
 

@@ -6,9 +6,11 @@
     @animationend="onCrtAnimationEnd"
   >
     <!-- ── 主应用层 (z-10, 始终挂载, splash 期间被遮盖) ── -->
-    <div class="col-start-1 row-start-1 z-10">
+    <div class="col-start-1 row-start-1 z-10 min-h-0">
       <!-- /play 路由：游玩前端独占视口，无平台壳 -->
-      <router-view v-if="isPlayRoute" />
+      <div v-if="isPlayRoute" class="h-dvh overflow-x-hidden overflow-y-auto bg-void">
+        <router-view />
+      </div>
 
       <!-- 平台壳：赛博工业风侧边栏布局 -->
       <div v-else class="flex h-screen w-screen overflow-hidden bg-void">

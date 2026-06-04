@@ -200,11 +200,8 @@ export async function deleteWorldBookResource(id: string): Promise<void> {
 export async function seedBuiltinPromptPresetResources(): Promise<void> {
   for (const seed of builtinPromptPresetSeeds) {
     const id = normalizeBuiltinResourceId(seed.id)
-    const existing = await localDb.promptPresets.get(id)
-    if (existing) {
-      continue
-    }
-
+    // 内置资源是平台随代码发布的内容；这里必须允许刷新已有记录，
+    // 否则 prompt/world-book 修复不会传播到已存在的本地资源库。
     await upsertPromptPresetResource({
       id,
       name: seed.name,
@@ -228,11 +225,6 @@ export async function seedBuiltinModWorldBookResources(): Promise<void> {
         throw new Error(`内置模组 ${mod.manifest.id} 的世界书 id 不能为空`)
       }
 
-      const existing = await localDb.worldBooks.get(id)
-      if (existing) {
-        continue
-      }
-
       await upsertWorldBookResource({
         id,
         name: `${mod.manifest.name} 世界书：${worldBookKey}`,
@@ -252,11 +244,6 @@ export async function seedBuiltinModWorkflowPresetResources(): Promise<void> {
     }
 
     const id = normalizeBuiltinResourceId(builtinModWorkflowResourceId(mod))
-    const existing = await localDb.workflowPresets.get(id)
-    if (existing) {
-      continue
-    }
-
     await upsertWorkflowPresetResource({
       id,
       name: `${mod.manifest.name} 工作流`,

@@ -99,6 +99,30 @@ export interface ExecuteWorkflowOptions {
   outputsHooks?: OutputsStoreWriter
 }
 
+interface IncomingEdgeBinding {
+  fromNodeId: string
+  fromOutputName: string
+  toVarName: string
+  condition?: string
+}
+
+function collectNodeInputs(
+  incoming: ReadonlyArray<IncomingEdgeBinding>,
+  nodeOutputs: ReadonlyMap<string, Record<string, unknown>>,
+): Record<string, unknown> {
+  const inputs: Record<string, unknown> = {}
+  for (const edge of incoming) {
+    const upstreamOutputs = nodeOutputs.get(edge.fromNodeId)
+    if (!upstreamOutputs) continue
+    const value = upstreamOutputs[edge.fromOutputName]
+    if (edge.condition !== undefined && String(value) !== edge.condition) {
+      continue
+    }
+    inputs[edge.toVarName] = value
+  }
+  return inputs
+}
+
 /**
  * 主入口：执行一个工作流定义。
  *
@@ -125,7 +149,7 @@ export async function executeWorkflow(
 
   // H7 钩子时机 A：所有节点初始化为 pending
   for (const node of def.nodes) {
-    safeHook("initNode", () => options.outputsHooks?.initNode(node.id))
+    safeHook("initNode", () => options.outputsHooks?.initNode(node.id, node.type))
   }
 
   const inDegree = new Map<string, number>()
@@ -164,12 +188,6 @@ export async function executeWorkflow(
   }
 
   // 4. 收集每条入边到 target 的反向索引（target → list of edges）
-  type IncomingEdgeBinding = {
-    fromNodeId: string
-    fromOutputName: string
-    toVarName: string
-    condition?: string
-  }
   const incomingByTarget = new Map<string, IncomingEdgeBinding[]>()
   for (const edge of def.edges) {
     const list = incomingByTarget.get(edge.to.nodeId) ?? []
@@ -191,12 +209,13 @@ export async function executeWorkflow(
     for (const [id, deg] of inDegree) {
       if (deg === 0 && !queued.has(id) && !finished.has(id) && !running.has(id)) {
         queued.add(id)
+        const incoming = incomingByTarget.get(id) ?? []
+        const inputs = collectNodeInputs(incoming, nodeOutputs)
         // H7 钩子时机 B：节点从 ready 进入 running
-        safeHook("startNode", () => options.outputsHooks?.startNode(id))
+        safeHook("startNode", () => options.outputsHooks?.startNode(id, inputs))
         const promise = runNodeWithRetry({
           node: nodeById.get(id)!,
-          incoming: incomingByTarget.get(id) ?? [],
-          nodeOutputs,
+          inputs,
           context,
           signal: internalSignal,
         }).then((outputs) => ({ id, outputs }))
@@ -322,13 +341,7 @@ export async function executeWorkflow(
 
 interface RunNodeArgs {
   node: WorkflowNode
-  incoming: Array<{
-    fromNodeId: string
-    fromOutputName: string
-    toVarName: string
-    condition?: string
-  }>
-  nodeOutputs: ReadonlyMap<string, Record<string, unknown>>
+  inputs: Record<string, unknown>
   context: WorkflowExecutionContext
   signal: AbortSignal
 }
@@ -339,19 +352,6 @@ async function runNodeWithRetry(
   const { node, signal } = args
   const maxRetries = node.retry?.maxRetries ?? 1
   const totalAttempts = Math.max(1, maxRetries + 1)
-
-  // 收集入边输入：condition 等值过滤（design §13.2）
-  const inputs: Record<string, unknown> = {}
-  for (const edge of args.incoming) {
-    const upstreamOutputs = args.nodeOutputs.get(edge.fromNodeId)
-    if (!upstreamOutputs) continue
-    const value = upstreamOutputs[edge.fromOutputName]
-    if (edge.condition !== undefined) {
-      // 简单字符串等值匹配
-      if (String(value) !== edge.condition) continue
-    }
-    inputs[edge.toVarName] = value
-  }
 
   let lastError: unknown
   for (let attempt = 1; attempt <= totalAttempts; attempt++) {
@@ -371,7 +371,7 @@ async function runNodeWithRetry(
     try {
       const result = await executor.execute({
         node,
-        inputs,
+        inputs: args.inputs,
         signal,
         context: args.context,
       })

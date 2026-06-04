@@ -15,15 +15,32 @@
     <Card class="bg-panel border-neon-deep/40">
       <CardHeader class="pb-3">
         <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">workflow</p>
-        <CardTitle class="text-xl text-text-main">工作流快照</CardTitle>
+        <CardTitle class="text-xl text-text-main">工作流 Run Trace</CardTitle>
       </CardHeader>
       <CardContent class="grid gap-3 pt-0">
         <template v-if="workflowSnapshot">
-          <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
-            <span>turn: {{ workflowSnapshot.turn }}</span>
+          <div class="flex flex-wrap items-center gap-3 text-text-dim text-sm font-mono">
+            <Badge :class="nodeStatusBadgeClass(workflowSnapshot.run.status)">
+              {{ workflowSnapshot.run.status }}
+            </Badge>
+            <span>turn: {{ workflowSnapshot.run.turn }}</span>
+            <span>source: {{ formatSourceKind(workflowSnapshot.run.source.kind) }}</span>
+            <span>mode: {{ workflowSnapshot.run.isModWorkflow ? 'mod' : 'save/platform' }}</span>
             <span>节点数：{{ workflowNodeEntries.length }}</span>
             <span>result 数：{{ workflowResultEntries.length }}</span>
           </div>
+          <div class="flex flex-wrap gap-3 text-text-dim text-xs font-mono">
+            <span>run: {{ workflowSnapshot.run.runId }}</span>
+            <span>save: {{ workflowSnapshot.run.saveId }}</span>
+            <span v-if="workflowSnapshot.run.source.workflowName">workflow: {{ workflowSnapshot.run.source.workflowName }}</span>
+            <span v-if="workflowSnapshot.run.source.workflowPresetId">preset: {{ workflowSnapshot.run.source.workflowPresetId }}</span>
+            <span>start: {{ formatTimestamp(workflowSnapshot.run.startedAt) }}</span>
+            <span v-if="workflowSnapshot.run.finishedAt">end: {{ formatTimestamp(workflowSnapshot.run.finishedAt) }}</span>
+            <span v-if="workflowRunDuration !== null">{{ workflowRunDuration }}ms</span>
+          </div>
+          <p v-if="workflowSnapshot.run.error" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
+            [{{ workflowSnapshot.run.error.code }}] {{ workflowSnapshot.run.error.message }}
+          </p>
 
           <div v-if="workflowNodeEntries.length > 0" class="grid gap-3 grid-cols-[repeat(auto-fit,minmax(240px,1fr))]">
             <div
@@ -32,7 +49,13 @@
               class="bg-elevated border border-neon-deep/30 rounded-lg p-3 grid gap-2"
             >
               <div class="flex items-center justify-between gap-3">
-                <span class="font-mono text-sm text-text-main">{{ entry.id }}</span>
+                <div class="grid gap-1">
+                  <span class="font-mono text-sm text-text-main">{{ entry.id }}</span>
+                  <div class="flex flex-wrap gap-2 text-text-dim text-xs font-mono">
+                    <span v-if="entry.state.type">type: {{ entry.state.type }}</span>
+                    <span v-if="entry.state.startOrder !== undefined">order: {{ entry.state.startOrder }}</span>
+                  </div>
+                </div>
                 <Badge
                   :class="nodeStatusBadgeClass(entry.state.status)"
                 >
@@ -47,9 +70,37 @@
               <p v-if="entry.state.error" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
                 [{{ entry.state.error.code }}] {{ entry.state.error.message }}
               </p>
+              <div v-if="entry.inputEntries.length > 0" class="grid gap-1">
+                <p class="font-mono text-[11px] tracking-wider uppercase text-neon-muted">inputs</p>
+                <div class="grid gap-1 text-xs font-mono text-text-dim">
+                  <div v-for="item in entry.inputEntries" :key="`${entry.id}-input-${item.name}`" class="flex items-start justify-between gap-3">
+                    <span class="text-text-main">{{ item.name }}</span>
+                    <span class="text-right break-all">{{ item.summary }}</span>
+                  </div>
+                </div>
+              </div>
+              <div v-if="entry.outputEntries.length > 0" class="grid gap-1">
+                <p class="font-mono text-[11px] tracking-wider uppercase text-neon-muted">outputs</p>
+                <div class="grid gap-1 text-xs font-mono text-text-dim">
+                  <div v-for="item in entry.outputEntries" :key="`${entry.id}-output-${item.name}`" class="flex items-start justify-between gap-3">
+                    <span class="text-text-main">{{ item.name }}</span>
+                    <span class="text-right break-all">{{ item.summary }}</span>
+                  </div>
+                </div>
+              </div>
+              <details v-if="entry.state.inputs" class="group">
+                <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
+                  inputs JSON ▶
+                </summary>
+                <div class="mt-2 pl-2 border-l border-neon-deep/30">
+                  <ScrollArea class="max-h-80 rounded">
+                    <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(entry.state.inputs) }}</pre>
+                  </ScrollArea>
+                </div>
+              </details>
               <details v-if="entry.state.outputs" class="group">
                 <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
-                  outputs ▶
+                  outputs JSON ▶
                 </summary>
                 <div class="mt-2 pl-2 border-l border-neon-deep/30">
                   <ScrollArea class="max-h-80 rounded">
@@ -307,12 +358,11 @@ import type {
 } from "@tsian/contracts"
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 
-import { playFrontendBridge } from "../platform-host"
+import { playFrontendBridge, waitForPlatformHostReady } from "../platform-host"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Separator } from "@/components/ui/separator"
 
 const debugAvailable = ref<boolean>(Boolean(playFrontendBridge.debug))
 
@@ -344,6 +394,60 @@ function formatTimestamp(ms: number): string {
   }
 }
 
+function previewText(value: string, max = 48): string {
+  const normalized = value.replace(/\s+/g, " ").trim()
+  if (normalized.length <= max) {
+    return normalized
+  }
+  return `${normalized.slice(0, Math.max(0, max - 3))}...`
+}
+
+function summarizeValue(value: unknown): string {
+  if (value === null) return "null"
+  if (value === undefined) return "undefined"
+  if (typeof value === "string") {
+    return `string(${value.length}) "${previewText(value)}"`
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return `${typeof value}(${String(value)})`
+  }
+  if (Array.isArray(value)) {
+    return `array(${value.length})`
+  }
+  if (typeof value === "object") {
+    const keys = Object.keys(value as Record<string, unknown>)
+    if (keys.length === 0) {
+      return "object(0)"
+    }
+    const head = keys.slice(0, 3).join(", ")
+    return keys.length > 3 ? `object(${keys.length}) ${head}, ...` : `object(${keys.length}) ${head}`
+  }
+  return typeof value
+}
+
+function summarizePortRecord(record?: Record<string, unknown>) {
+  if (!record) return []
+  return Object.entries(record).map(([name, value]) => ({
+    name,
+    summary: summarizeValue(value),
+  }))
+}
+
+function formatSourceKind(kind: string): string {
+  switch (kind) {
+    case "save-override":
+      return "save-override"
+    case "mod-preset":
+      return "mod-preset"
+    case "legacy-mod-workflow":
+      return "legacy-mod-workflow"
+    case "platform-default":
+      return "platform-default"
+    default:
+      return kind
+  }
+}
+
 function nodeStatusBadgeClass(status: string): string {
   const s = status.toLowerCase()
   if (s === 'succeeded' || s === 'completed') {
@@ -361,20 +465,37 @@ function nodeStatusBadgeClass(status: string): string {
 const workflowNodeEntries = computed(() => {
   const snapshot = workflowSnapshot.value
   if (!snapshot) return []
-  return Object.entries(snapshot.nodes).map(([id, state]) => ({
+  return Object.entries(snapshot.nodes)
+    .map(([id, state]) => ({
     id,
     state,
+    inputEntries: summarizePortRecord(state.inputs),
+    outputEntries: summarizePortRecord(state.outputs),
     duration:
       state.startedAt !== undefined && state.finishedAt !== undefined
         ? state.finishedAt - state.startedAt
         : null,
   }))
+    .sort((a, b) => {
+      const aOrder = a.state.startOrder ?? Number.MAX_SAFE_INTEGER
+      const bOrder = b.state.startOrder ?? Number.MAX_SAFE_INTEGER
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder
+      }
+      return a.id.localeCompare(b.id)
+    })
 })
 
 const workflowResultEntries = computed(() => {
   const snapshot = workflowSnapshot.value
   if (!snapshot) return []
   return Object.entries(snapshot.results)
+})
+
+const workflowRunDuration = computed(() => {
+  const run = workflowSnapshot.value?.run
+  if (!run?.finishedAt) return null
+  return run.finishedAt - run.startedAt
 })
 
 const patchNodeEntries = computed(() => {
@@ -444,6 +565,7 @@ async function refreshAll() {
 }
 
 onMounted(async () => {
+  await waitForPlatformHostReady()
   await refreshAll()
 
   if (playFrontendBridge.debug) {

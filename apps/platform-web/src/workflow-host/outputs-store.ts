@@ -26,6 +26,9 @@ import { shallowRef, triggerRef, type ShallowRef } from "vue"
 
 import type {
   NodeOutputState,
+  WorkflowRunSource,
+  WorkflowRunStatus,
+  WorkflowTraceError,
   WorkflowOutputsSnapshot,
 } from "@tsian/contracts"
 import type { OutputsStoreWriter } from "@tsian/workflow-engine"
@@ -55,10 +58,18 @@ export const currentTurnOutputsRef: ShallowRef<TurnOutputsRef | null> =
 // ============================================================================
 
 export interface CreateOutputsStoreInput {
+  /** 当前 run 的唯一标识（调试用途） */
+  runId: string
+  /** 当前激活存档 id */
+  saveId: string
   /** 当前轮序号（platform-host 在 sendMessage 入口 ++state.turn 后传入） */
   turn: number
-  /** 工作流定义中所有节点 id（已通过加载期校验） */
-  nodeIds: ReadonlyArray<string>
+  /** 本轮 workflow 是否按 mod 权限执行 */
+  isModWorkflow: boolean
+  /** 本轮 workflow 来源 */
+  source: WorkflowRunSource
+  /** 工作流定义中所有节点（已通过加载期校验） */
+  nodes: ReadonlyArray<{ id: string; type: string }>
 }
 
 export interface OutputsStoreHandle {
@@ -71,6 +82,8 @@ export interface OutputsStoreHandle {
    * platform-host 在 `abortPreviousTurn` 或异常退出路径调用。
    */
   abortAllPending(): void
+  /** 在 platform-host 收到 executeWorkflow 结果后写入本轮最终状态。 */
+  finishRun(status: Exclude<WorkflowRunStatus, "running">, error?: WorkflowTraceError): void
 }
 
 /**
@@ -86,17 +99,27 @@ export function createOutputsStore(
   input: CreateOutputsStoreInput,
 ): OutputsStoreHandle {
   const initialNodes: Record<string, NodeOutputState> = {}
-  for (const id of input.nodeIds) {
-    initialNodes[id] = { status: "pending" }
+  for (const node of input.nodes) {
+    initialNodes[node.id] = { status: "pending", type: node.type }
   }
 
   const initialSnapshot: WorkflowOutputsSnapshot = {
+    run: {
+      runId: input.runId,
+      saveId: input.saveId,
+      turn: input.turn,
+      status: "running",
+      isModWorkflow: input.isModWorkflow,
+      source: input.source,
+      startedAt: Date.now(),
+    },
     nodes: initialNodes,
     results: {},
     turn: input.turn,
   }
 
   const ref: TurnOutputsRef = shallowRef(initialSnapshot)
+  let nextStartOrder = 1
 
   // 替换模块级单例（外层 ref 触发响应式）
   currentTurnOutputsRef.value = ref
@@ -129,14 +152,22 @@ export function createOutputsStore(
 
   // ---- writer 6 方法 -----------------------------------------------------
   const writer: OutputsStoreWriter = {
-    initNode(nodeId) {
-      updateNode(nodeId, () => ({ status: "pending" }))
+    initNode(nodeId, nodeType) {
+      updateNode(nodeId, (prev) => ({
+        ...(prev ?? {}),
+        status: "pending",
+        type: nodeType,
+      }))
     },
 
-    startNode(nodeId) {
+    startNode(nodeId, inputs) {
+      const startOrder = nextStartOrder++
       updateNode(nodeId, (prev) => ({
         ...(prev ?? { status: "pending" }),
         status: "running",
+        type: prev?.type,
+        inputs,
+        startOrder: prev?.startOrder ?? startOrder,
         startedAt: Date.now(),
       }))
     },
@@ -190,5 +221,20 @@ export function createOutputsStore(
     }
   }
 
-  return { ref, writer, abortAllPending }
+  const finishRun = (
+    status: Exclude<WorkflowRunStatus, "running">,
+    error?: WorkflowTraceError,
+  ): void => {
+    replace((prev) => ({
+      ...prev,
+      run: {
+        ...prev.run,
+        status,
+        finishedAt: Date.now(),
+        error,
+      },
+    }))
+  }
+
+  return { ref, writer, abortAllPending, finishRun }
 }

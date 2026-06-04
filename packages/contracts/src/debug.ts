@@ -120,6 +120,39 @@ export interface RetrievalAssemblyResult {
 // 工作流输出快照（原 apps/platform-web/src/workflow-host/outputs-store.ts）
 // ============================================================================
 
+export type WorkflowRunStatus = "running" | "succeeded" | "failed" | "aborted"
+
+export type WorkflowRunSourceKind =
+  | "save-override"
+  | "mod-preset"
+  | "legacy-mod-workflow"
+  | "platform-default"
+
+export interface WorkflowRunSource {
+  kind: WorkflowRunSourceKind
+  modId: string
+  saveId?: string
+  workflowPresetId?: string
+  workflowName?: string
+}
+
+export interface WorkflowTraceError {
+  code: string
+  message: string
+}
+
+export interface WorkflowRunMetadata {
+  runId: string
+  saveId: string
+  turn: number
+  status: WorkflowRunStatus
+  isModWorkflow: boolean
+  source: WorkflowRunSource
+  startedAt: number
+  finishedAt?: number
+  error?: WorkflowTraceError
+}
+
 /**
  * 单节点输出状态。
  *
@@ -132,10 +165,16 @@ export interface RetrievalAssemblyResult {
  */
 export interface NodeOutputState {
   status: "pending" | "running" | "succeeded" | "failed" | "aborted"
+  /** 节点类型（来自 workflow definition） */
+  type?: string
+  /** 本轮调度开始顺序（running 时分配），便于 UI 按执行顺序展示 */
+  startOrder?: number
+  /** 节点输入端口 → 值（running/succeeded/failed/aborted 都可能保留） */
+  inputs?: Record<string, unknown>
   /** 节点端口 → 值（仅 succeeded 时有值） */
   outputs?: Record<string, unknown>
   /** 失败原因（仅 failed 时有值） */
-  error?: { code: string; message: string }
+  error?: WorkflowTraceError
   /** 进入 running 时间戳（ms） */
   startedAt?: number
   /** 进入 succeeded/failed/aborted 时间戳（ms） */
@@ -143,10 +182,12 @@ export interface NodeOutputState {
 }
 
 export interface WorkflowOutputsSnapshot {
+  /** 本轮工作流运行元数据 */
+  run: WorkflowRunMetadata
   /** nodeId → state */
   nodes: Record<string, NodeOutputState>
   /** result 节点的 config.name → outputs.value */
   results: Record<string, unknown>
-  /** 当前轮序号（与 SaveState.turn 对齐） */
+  /** 当前轮序号（与 SaveState.turn 对齐；等同于 run.turn） */
   turn: number
 }

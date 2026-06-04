@@ -206,9 +206,8 @@
           <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div class="flex items-center gap-3">
               <Switch
-                :checked="platformConfigDraft.retrievalSettings.aiEnhanced"
+                v-model="retrievalAiEnhancedDraft"
                 class="data-[state=checked]:bg-neon data-[state=unchecked]:bg-elevated"
-                @update:checked="platformConfigDraft.retrievalSettings.aiEnhanced = $event"
               />
               <Label class="text-sm text-text-main font-mono">开启 AI 增强检索</Label>
             </div>
@@ -301,7 +300,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
-import { onMounted, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import {
   type BrowserAiConfig,
   type BrowserEmbeddingConfig,
@@ -327,6 +326,18 @@ const effectiveRetrievalConfig = ref<BrowserAiConfig | null>(null)
 const effectiveEmbeddingConfig = ref<BrowserEmbeddingConfig | null>(null)
 const effectiveRetrievalSettings = ref<BrowserRetrievalSettings>(getBrowserRetrievalSettings())
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(getBrowserPlatformConfigDraft())
+const retrievalAiEnhancedDraft = computed({
+  get: () => platformConfigDraft.value.retrievalSettings.aiEnhanced,
+  set: (next: boolean) => {
+    platformConfigDraft.value = {
+      ...platformConfigDraft.value,
+      retrievalSettings: {
+        ...platformConfigDraft.value.retrievalSettings,
+        aiEnhanced: next,
+      },
+    }
+  },
+})
 const chatModelSummary = ref("未配置")
 const retrievalModelSummary = ref("未配置")
 const embeddingModelSummary = ref("未配置")

@@ -15,6 +15,22 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 - Do not add migrations or compatibility layers for local IndexedDB without explicit approval. The prototype rule is to clear and rebuild local data.
 - Keep bridge APIs framework-neutral. Do not leak Vue refs, Dexie tables, or component types into `@tsian/contracts`.
 
+### Convention: Viewport-Owned Fullscreen Routes
+
+When a route bypasses the normal platform shell while `body` or the app root keeps `overflow: hidden`, that route must own its viewport height and vertical scrolling.
+
+Why: the document cannot scroll, so short screens will clip chat panes, inspectors, and action areas unless the route provides its own bounded scroller.
+
+Example:
+
+```vue
+<div class="h-dvh overflow-x-hidden overflow-y-auto">
+  <router-view />
+</div>
+```
+
+Use `dvh` instead of `vh` for route wrappers and embedded fullscreen panels that should track the visible browser viewport.
+
 ## Review Checklist
 
 - If a resource or workflow JSON round-trips through the editor, verify unknown/advanced fields are preserved unless the task intentionally rewrites them.
@@ -22,6 +38,7 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 - If a patch path changes, verify bridge `applyPatch`/`updateGlobals` and apply-patch workflow node still share `applyMaintenancePatch`.
 - If runtime snapshot changes, verify `retrievalDebugBySave` or related debug state is invalidated when the active timeline changes.
 - If route/view code changes, verify lazy route names and links still match `router/index.ts`.
+- If a route owns the viewport outside the standard shell, verify short-height screens can still reach bottom content via route-level scrolling.
 
 ## Avoid
 
