@@ -19,9 +19,9 @@ Workflow-engine follows fail-loud behavior. Validation and execution errors must
 - apply-patch missing required input binding -> `APPLY_PATCH_INPUT_INCOMPLETE`
 - Missing result node -> `MISSING_RESULT_NODE`
 - Duplicate result names -> `DUPLICATE_RESULT_NAME`
-- Mod workflow with apply-patch -> `MOD_REGISTERED_APPLY_PATCH`
 
 Keep validation at load time when the condition is knowable before execution.
+`isModWorkflow` remains caller/source metadata and must not add a validation-time `apply-patch` ban.
 
 ## Execution Errors
 
@@ -39,4 +39,4 @@ Keep validation at load time when the condition is knowable before execution.
 
 - Do not swallow validation errors and continue execution.
 - Do not convert node failures to empty outputs.
-- Do not make mod workflow `apply-patch` checks editor-only; engine validation is the runtime guard.
+- Do not reintroduce a mod-source `apply-patch` permission gate; engine validation should keep source-agnostic DAG and port invariants.

@@ -40,12 +40,13 @@ applyMaintenancePatch({
 - 设计意图：前端写入是细颗粒变更，频繁 checkpoint 污染回溯链
 - 若前端确实需要打点：先 `runAction({ kind: "push-checkpoint", reason })` 再 `applyPatch`
 
-### 2.3 Authority (HC-13)
-桥 API 是**平台代码**，不是模组代码。HC-13 限制"writing-runtime authority is platform-only" 在本变更中表述为：
+### 2.3 Authority
 
-- `bridge.runtime.applyPatch` 与 `apply-patch` 节点都属于平台特权
-- 模组通过桥 API **可以**触发写运行时 —— 但调用者本身是平台代码（前端在浏览器内只能调桥 API，无 IndexedDB 直写权）
-- 模组**不可**在 manifest workflow 中声明 `apply-patch` 节点（加载期 reject）
+运行时写入是 AIRP 的基础能力，但必须通过平台实现的写入口收口：
+
+- `bridge.runtime.applyPatch` 与 `apply-patch` 节点都调用同一个 `applyMaintenancePatch`
+- 模组通过桥 API 可以触发写运行时；前端在浏览器内只能调桥 API，无 IndexedDB 直写权
+- mod/default workflow 都可以声明显式 `apply-patch` 节点；validator 只校验节点类型与 patch 输入端口完整性
 
 ### 2.4 Error Modes (HC-9 fail loud)
 | 场景 | 行为 |

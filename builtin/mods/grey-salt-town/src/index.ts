@@ -409,13 +409,11 @@ const archiveCatalog = createGreySaltTownInitialSavePayload(0).archives
  * 模组自带工作流声明（SC-CRIT-3 验证：mod 注册路径验证）。
  *
  * 形状与 platform-web 默认工作流一致（retrieval → chat → reply / maintenance，
- * 不含 apply-patch）。
+ * 并通过显式 apply-patch 节点写入维护 patch）。
  *
- * HC-13 判定：platform-host 当前 resolveWorkflowForMod 实现中
- * 所有 mod 走 default-workflow 且 isModWorkflow=false；
- * 即使未来改为读 mod.workflow，也应以 isModWorkflow=true 加载，
- * 因此本 workflow 绝对不能包含 apply-patch 节点，避免触发 MOD_REGISTERED_APPLY_PATCH 校验。
- * apply-patch 由平台负责，mod 只声明检索 + 正文 AI 链路。
+ * apply-patch 在当前阶段是兼容写入节点：它仍消费 MaintenancePatchDocument，
+ * 但必须作为 workflow 图中的显式副作用节点出现，而不是由 platform-host
+ * 在工作流结束后扫描 patch 输出并隐式应用。
  */
 const greySaltTownWorkflow: WorkflowDefinition = {
   nodes: [
@@ -447,9 +445,12 @@ const greySaltTownWorkflow: WorkflowDefinition = {
         { name: "patch", extract: { type: "raw", parse: "json" } },
       ],
     },
-    // 注意：apply-patch 节点刻意省略。
-    // HC-13 强约束：mod 工作流不允许注册 apply-patch（MOD_REGISTERED_APPLY_PATCH）。
-    // patch 应用由平台（platform-host / default-workflow）负责，mod 只声明 AI 链路。
+    {
+      // applyPatch：兼容写入节点，显式应用 maintenance 输出的 MaintenancePatchDocument。
+      id: "applyPatch",
+      type: "apply-patch",
+      config: { patchVarName: "patch", pushCheckpointReason: "after-turn" },
+    },
   ],
   edges: [
     {
@@ -471,6 +472,10 @@ const greySaltTownWorkflow: WorkflowDefinition = {
     {
       from: { nodeId: "retrieval", outputName: "archives" },
       to: { nodeId: "maintenance", varName: "archives.recent.json" },
+    },
+    {
+      from: { nodeId: "maintenance", outputName: "patch" },
+      to: { nodeId: "applyPatch", varName: "patch" },
     },
   ],
 }

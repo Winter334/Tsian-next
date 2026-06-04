@@ -20,7 +20,6 @@ export interface ModManifest {
   /**
    * @deprecated 改用 workflowPresetId 引用平台资源库工作流预设；旧字段仅为兼容既有内置模组保留。
    * 模组自定义工作流；缺省时平台使用默认工作流（design.md §8）。
-   * HC-13：不允许包含 type: "apply-patch" 的节点（runtime 守卫由工作流引擎在加载期校验，design.md §13.4 第 5 条）。
    */
   workflow?: WorkflowDefinition
   /**
@@ -40,8 +39,8 @@ export interface ModManifest {
    */
   worldBooks?: Record<string, WorldBook>
   /**
-   * HC-13 编译期辅助守卫：原型期不允许模组注册自定义节点类型。
-   * 模组若声明此字段会触发 TS 编译错误（because never）；runtime 守卫由工作流引擎执行。
+   * 编译期辅助守卫：原型期不允许模组注册自定义节点类型。
+   * 模组若声明此字段会触发 TS 编译错误（because never）；runtime 仍校验节点 type 必须在平台支持集合内。
    */
   customNodeTypes?: never
 }

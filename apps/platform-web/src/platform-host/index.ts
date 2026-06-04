@@ -23,7 +23,6 @@ import {
   executeWorkflow,
   WorkflowAbortError,
   WorkflowNodeError,
-  type WorkflowResult,
 } from "@tsian/workflow-engine"
 import {
   defaultModId,
@@ -292,25 +291,6 @@ function toWorkflowTraceError(error: unknown): WorkflowTraceError {
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-function findHostManagedWorkflowPatch(
-  def: WorkflowDefinition,
-  workflowResult: WorkflowResult,
-): MaintenancePatchDocument | null {
-  if (def.nodes.some((node) => node.type === "apply-patch")) {
-    return null
-  }
-
-  for (let index = workflowResult.order.length - 1; index >= 0; index -= 1) {
-    const outputs = workflowResult.nodeOutputs.get(workflowResult.order[index])
-    const patch = outputs?.patch
-    if (isPlainObject(patch)) {
-      return patch as MaintenancePatchDocument
-    }
-  }
-
-  return null
 }
 
 function isJsonValue(value: unknown): boolean {
@@ -1184,28 +1164,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
         throw new Error(
           `workflow did not produce result.reply as string (got ${typeof replyText})`,
         )
-      }
-
-      const hostManagedPatch = isModWorkflow
-        ? findHostManagedWorkflowPatch(def, workflowResult)
-        : null
-      if (hostManagedPatch) {
-        try {
-          await applyMaintenancePatch({
-            patch: hostManagedPatch,
-            runtimeEngine,
-            saveId: activeSaveId,
-            pushCheckpointReason: "after-turn",
-          })
-        } catch (err) {
-          handle.finishRun("failed", toWorkflowTraceError(err))
-          runtimeEngine.loadSnapshot(snapshotBeforeBackup)
-          retrievalDebugBySave.delete(activeSaveId)
-          if (previousTurnController === currentController) {
-            previousTurnController = null
-          }
-          throw err
-        }
       }
 
       handle.finishRun("succeeded")

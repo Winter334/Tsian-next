@@ -12,7 +12,10 @@ export type WorkflowNodeType =
   | 'result'
   | 'switch'
   | 'apply-patch'
-  | 'compute';
+  | 'compute'
+  | 'memory-query'
+  | 'memory-write'
+  | 'template-compose';
 
 export interface WorkflowDefinition {
   id: string;
@@ -104,7 +107,7 @@ export interface ModManifest {
 }
 ```
 
-模组**不可**注册新节点类型。`apply-patch` 节点若出现在 mod manifest 内，必须在加载期 reject（HC-13、`§13.4` 项 5）。
+模组不可注册新节点类型。mod manifest workflow 可以使用平台支持集合内的节点类型，包括作为兼容写入节点的 `apply-patch`；加载期仍校验未知节点类型和 `apply-patch` 输入端口完整性。
 
 ## 4. Re-exports
 

@@ -2,7 +2,7 @@
  * SC-CRIT-5 / SC-CRIT-6 / SC-CRIT-7 验收测试
  *
  * SC-CRIT-5：compute 节点 5s 超时后调度器正确处理（NODE_RETRY_EXHAUSTED）
- * SC-CRIT-6：mod 工作流含 apply-patch 节点时校验器 loud 拒绝（MOD_REGISTERED_APPLY_PATCH）
+ * SC-CRIT-6：mod 工作流允许显式 apply-patch 节点，但仍校验 patch 输入端口完整性
  * SC-CRIT-7：外部 abort signal 中止在途轮次，WorkflowAbortError 上抛
  */
 
@@ -11,7 +11,6 @@ import { getDefaultBuiltinMod } from '../../../builtin/mods'
 import {
   executeWorkflow,
   validateWorkflowDefinition,
-  WorkflowValidationError,
   WorkflowAbortError,
   WorkflowNodeError,
 } from '../src/index'
@@ -51,61 +50,43 @@ function makeSuccessExecutor(outputs: Record<string, unknown> = {}) {
 }
 
 // ============================================================================
-// SC-CRIT-6：mod 注册 apply-patch loud 拒绝
+// SC-CRIT-6：mod 工作流允许显式 apply-patch
 // ============================================================================
 
-describe('SC-CRIT-6 — mod 工作流拒绝 apply-patch 节点', () => {
+function makeApplyPatchDef(): WorkflowDefinition {
+  return {
+    nodes: [
+      { id: 'source', type: 'compute', config: { script: 'return {raw: "{}"}' } },
+      { id: 'patcher', type: 'apply-patch', config: { patchVarName: 'patch' } },
+      { id: 'result1', type: 'result', config: { name: 'out' } },
+    ],
+    edges: [
+      {
+        from: { nodeId: 'source', outputName: 'raw' },
+        to: { nodeId: 'patcher', varName: 'patch' },
+      },
+      {
+        from: { nodeId: 'patcher', outputName: 'raw' },
+        to: { nodeId: 'result1', varName: 'value' },
+      },
+    ],
+  }
+}
+
+describe('SC-CRIT-6 — mod 工作流允许显式 apply-patch 节点', () => {
   it('isModWorkflow=false 时含 apply-patch 节点不报错', () => {
-    const def: WorkflowDefinition = {
-      nodes: [
-        // apply-patch 节点：需要 patchVarName config + 有入边
-        {
-          id: 'patcher',
-          type: 'apply-patch',
-          config: { patchVarName: 'patch' },
-        },
-        { id: 'result1', type: 'result', config: { name: 'out' } },
-      ],
-      edges: [
-        // 给 apply-patch 节点提供 patchVarName='patch' 的入边（校验4需要）
-        {
-          from: { nodeId: 'patcher', outputName: 'raw' },
-          to: { nodeId: 'result1', varName: 'value' },
-        },
-        // 虚构一个 source → patcher，需要有节点来自外部
-        // 简化：用 patcher 自身充当 source（实际会自引用，但校验只检查 edge from/to 节点存在）
-        // 正确做法：给 apply-patch 加一个入边
-      ],
-    }
-
-    // 注意：patcher 节点没有入边覆盖 patchVarName='patch'，所以这里会报 APPLY_PATCH_INPUT_INCOMPLETE
-    // 我们需要一个完整的 apply-patch 设置
-    // 直接构造有效 def：source → patcher（with patch varName）→ result
-    const fullDef: WorkflowDefinition = {
-      nodes: [
-        { id: 'source', type: 'compute', config: { script: 'return {raw: "{}"}' } },
-        { id: 'patcher', type: 'apply-patch', config: { patchVarName: 'patch' } },
-        { id: 'result1', type: 'result', config: { name: 'out' } },
-      ],
-      edges: [
-        {
-          from: { nodeId: 'source', outputName: 'raw' },
-          to: { nodeId: 'patcher', varName: 'patch' },
-        },
-        {
-          from: { nodeId: 'patcher', outputName: 'raw' },
-          to: { nodeId: 'result1', varName: 'value' },
-        },
-      ],
-    }
-
-    // 非 mod 工作流：不应抛 MOD_REGISTERED_APPLY_PATCH
     expect(() =>
-      validateWorkflowDefinition(fullDef, { isModWorkflow: false }),
+      validateWorkflowDefinition(makeApplyPatchDef(), { isModWorkflow: false }),
     ).not.toThrow()
   })
 
-  it('isModWorkflow=true 时含 apply-patch 节点抛 WorkflowValidationError(MOD_REGISTERED_APPLY_PATCH)', () => {
+  it('isModWorkflow=true 时含 apply-patch 节点不报错', () => {
+    expect(() =>
+      validateWorkflowDefinition(makeApplyPatchDef(), { isModWorkflow: true }),
+    ).not.toThrow()
+  })
+
+  it('isModWorkflow=true 时仍校验 apply-patch 的 patch 输入端口', () => {
     const def: WorkflowDefinition = {
       nodes: [
         { id: 'source', type: 'compute', config: { script: 'return {raw: "{}"}' } },
@@ -115,7 +96,7 @@ describe('SC-CRIT-6 — mod 工作流拒绝 apply-patch 节点', () => {
       edges: [
         {
           from: { nodeId: 'source', outputName: 'raw' },
-          to: { nodeId: 'patcher', varName: 'patch' },
+          to: { nodeId: 'patcher', varName: 'notPatch' },
         },
         {
           from: { nodeId: 'patcher', outputName: 'raw' },
@@ -124,17 +105,9 @@ describe('SC-CRIT-6 — mod 工作流拒绝 apply-patch 节点', () => {
       ],
     }
 
-    let caught: unknown
-    try {
-      validateWorkflowDefinition(def, { isModWorkflow: true })
-    } catch (e) {
-      caught = e
-    }
-
-    // 断言：必须抛 WorkflowValidationError
-    expect(caught).toBeInstanceOf(WorkflowValidationError)
-    // 断言：code 精确为 MOD_REGISTERED_APPLY_PATCH
-    expect((caught as WorkflowValidationError).code).toBe('MOD_REGISTERED_APPLY_PATCH')
+    expect(() =>
+      validateWorkflowDefinition(def, { isModWorkflow: true }),
+    ).toThrow(/requires incoming edge with varName "patch"/)
   })
 
   it('isModWorkflow=true 但不含 apply-patch 节点时正常通过', () => {
@@ -174,7 +147,11 @@ describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
     expect(retrieval?.config).toEqual({ source: 'event-archive' })
     expect(JSON.stringify(workflow)).not.toContain('__retrieval.raw')
     expect(JSON.stringify(workflow)).not.toContain('"bypass"')
-    expect(workflow!.nodes.some((node) => node.type === 'apply-patch')).toBe(false)
+    expect(workflow!.nodes).toContainEqual({
+      id: 'applyPatch',
+      type: 'apply-patch',
+      config: { patchVarName: 'patch', pushCheckpointReason: 'after-turn' },
+    })
     expect(workflow!.edges).toContainEqual({
       from: { nodeId: 'retrieval', outputName: 'directEntities' },
       to: { nodeId: 'maintenance', varName: 'retrieval.directEntities' },
@@ -182,6 +159,10 @@ describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
     expect(workflow!.edges).toContainEqual({
       from: { nodeId: 'retrieval', outputName: 'archives' },
       to: { nodeId: 'maintenance', varName: 'archives.recent.json' },
+    })
+    expect(workflow!.edges).toContainEqual({
+      from: { nodeId: 'maintenance', outputName: 'patch' },
+      to: { nodeId: 'applyPatch', varName: 'patch' },
     })
   })
 })

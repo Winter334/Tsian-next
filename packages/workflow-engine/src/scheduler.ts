@@ -89,7 +89,7 @@ export interface WorkflowResult {
 export interface ExecuteWorkflowOptions {
   /** 外部 abort 信号；任何时刻 abort 都会向所有运行中节点广播。 */
   signal?: AbortSignal
-  /** 是否模组工作流（HC-13 校验开关），默认 false */
+  /** 是否模组工作流（来源元数据），默认 false；当前不因来源禁用 apply-patch。 */
   isModWorkflow?: boolean
   /**
    * H7：outputs 写入钩子。调度器在节点状态迁移时调用对应方法。
@@ -127,7 +127,7 @@ function collectNodeInputs(
  * 主入口：执行一个工作流定义。
  *
  * 流程：
- *   1. validateWorkflowDefinition（含 6 条加载期校验）
+ *   1. validateWorkflowDefinition（加载期 DAG / 节点端口校验）
  *   2. 构建入度表 + 邻接表
  *   3. while 仍有节点：
  *      a. 把所有入度=0 且未启动的节点丢进 ready 集合

@@ -115,30 +115,30 @@ interface OutputsStoreWriter {
 
 ---
 
-## 5. 6 条加载期校验（design §13.4）
+`isModWorkflow` 是调用方来源元数据；当前不因 mod 来源禁用 `apply-patch`。
+
+## 5. 加载期校验（design §13.4）
 
 任一失败立即 throw `WorkflowValidationError`：
 
 | # | 校验 | 错误码 |
 |---|------|--------|
 | 1 | 节点 ID 全局唯一 | `DUPLICATE_NODE_ID` |
-| 2 | 无环（拓扑排序成功） | `CYCLE_DETECTED` |
+| 2 | 节点类型必须在平台支持集合内 | `UNKNOWN_NODE_TYPE` |
 | 3 | 无悬挂边（edge.from/to.nodeId 必须在 nodes 内） | `DANGLING_EDGE` |
-| 4 | apply-patch 节点 input ports 完整性（patchVarName 必须有入边） | `APPLY_PATCH_INPUT_INCOMPLETE` |
-| 5 | 至少 1 个 result 节点 | `MISSING_RESULT_NODE` |
-| 6 | mod 工作流不允许 apply-patch（HC-13） | `MOD_REGISTERED_APPLY_PATCH` |
+| 4 | 无环（拓扑排序成功） | `CYCLE_DETECTED` |
+| 5 | apply-patch 节点 input ports 完整性（patchVarName 必须有入边） | `APPLY_PATCH_INPUT_INCOMPLETE` |
+| 6 | 至少 1 个 result 节点 | `MISSING_RESULT_NODE` |
+| 7 | result 节点 `config.name` 唯一 | `DUPLICATE_RESULT_NAME` |
 
-附加防御性校验：
-
-- 节点类型必须在五元组内 → `UNKNOWN_NODE_TYPE`
-- result 节点 `config.name` 唯一 → `DUPLICATE_RESULT_NAME`
+支持的内置节点类型：`ai-call` / `result` / `switch` / `apply-patch` / `compute` / `memory-query` / `memory-write` / `template-compose`。
 
 ---
 
 ## 6. 与其它包协作
 
 - **@tsian/contracts**：所有类型来源（`WorkflowDefinition / WorkflowNode / WorkflowEdge / NodeOutputDeclaration / WorkflowNodeType / *NodeConfig`）。
-- **apps/platform-web/src/workflow-host/**（H4 起）：注册 5 种 executor（ai-call / result / switch / apply-patch / compute），提供 `WorkflowExecutionContext.executors`。
+- **apps/platform-web/src/workflow-host/**（H4 起）：注册内置 executor（ai-call / result / switch / apply-patch / compute / memory-query / memory-write / template-compose），提供 `WorkflowExecutionContext.executors`。
 - **apps/platform-web/src/workflow-host/outputs-store.ts**（H7 已落地）：实现 `OutputsStoreWriter` 接口（套娃 shallowRef），platform-host 在 H8 通过 `ExecuteWorkflowOptions.outputsHooks` 注入。
 - **apps/platform-web/src/runtime-host/patch-applier.ts**（I1 已落地）：H4 的 apply-patch executor 直接调用，与桥 API 共享。
 

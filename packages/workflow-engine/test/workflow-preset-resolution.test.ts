@@ -58,6 +58,13 @@ describe('workflow preset resource resolution static proof', () => {
     expect(src).toMatch(/executeWorkflow\s*\(\s*def,\s*wfContext,\s*\{[\s\S]*isModWorkflow/)
   })
 
+  it('platform-host no longer applies mod patch outputs outside explicit workflow nodes', () => {
+    const src = readFileSync(PLATFORM_HOST_FILE, 'utf-8')
+
+    expect(src).not.toContain('findHostManagedWorkflowPatch')
+    expect(src).not.toContain('hostManagedPatch')
+  })
+
   it('save-level workflow override resolves before mod-level workflow sources', () => {
     const src = readFileSync(PLATFORM_HOST_FILE, 'utf-8')
 

@@ -30,9 +30,9 @@ export interface WorkflowExecutionContext {
 }
 ```
 
-## 3. Node Types (5-tuple)
+## 3. Node Types
 
-平台**只接受**这五种节点；模组中出现其它类型在加载期 throw（HC-13、§13.4 项 4）。
+平台只接受 contracts 中声明的内置节点类型；模组中出现其它类型在加载期 throw（§13.4）。当前内置集合为 `ai-call` / `result` / `switch` / `apply-patch` / `compute` / `memory-query` / `memory-write` / `template-compose`。
 
 ### 3.1 `ai-call`
 - Config: `{ presetRef, modelRef, appendUserInput?: boolean, retry? }`
@@ -60,7 +60,7 @@ export interface WorkflowExecutionContext {
   - `appliedEventIds: string[]`
   - `globalsChanged: boolean`
   - `currentTimeChanged: boolean`
-- 加载期校验：来源是 mod manifest 的 `apply-patch` 节点必须 reject（HC-13、§13.4 项 5）
+- 加载期校验：`apply-patch` 必须声明非空 `patchVarName`，且必须有入边绑定该 varName；mod 来源不再构成禁用条件。
 - Error: applier 抛错时节点 `failed`，错误向上抛（§13.1 fail loud）
 
 ### 3.5 `compute`
@@ -97,14 +97,15 @@ interface WorkflowEdge {
 
 ## 7. Load-time Validation (§13.4)
 
-`validate(definition)` 必须执行下列 6 项；任一失败立即 throw：
+`validate(definition)` 必须执行下列加载期校验；任一失败立即 throw：
 
 1. 节点 ID 全局唯一
 2. 无环（拓扑排序成功）
 3. 无悬挂边（`from.nodeId` 与 `to.nodeId` 都在 `nodes`）
-4. 节点类型在 5-tuple 内
-5. mod manifest 来源的 `apply-patch` 节点必须 reject
-6. `result.config.name` 唯一
+4. 节点类型在平台支持集合内
+5. `apply-patch` 的 `patchVarName` 必须被入边绑定
+6. 至少存在一个 `result` 节点
+7. `result.config.name` 唯一
 
 ## 8. Retry Policy (`design.md §5`)
 

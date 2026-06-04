@@ -23,7 +23,6 @@ export {
   validateApplyPatchPorts,
   validateHasResultNode,
   validateUniqueResultNames,
-  validateNoApplyPatchInModWorkflow,
   validateKnownNodeTypes,
 } from "./validator"
 

@@ -1,7 +1,7 @@
 /**
  * 工作流加载期校验器
  *
- * 实现 design.md §13.4 的 6 条加载期校验。
+ * 实现 workflow DAG 的加载期校验。
  * 任一失败立即 throw WorkflowValidationError（fail loud），不允许延迟到执行期。
  *
  * 校验项：
@@ -10,11 +10,8 @@
  *   3. 无悬挂边：edge.from.nodeId / edge.to.nodeId 必须存在（DANGLING_EDGE）
  *   4. apply-patch 节点 input ports 完整性（APPLY_PATCH_INPUT_INCOMPLETE）
  *   5. 必须存在至少 1 个 result 节点（MISSING_RESULT_NODE）
- *   6. mod 工作流不允许注册 apply-patch（MOD_REGISTERED_APPLY_PATCH，HC-13）
- *
- * 额外强约束（design §13.4 第 6 条延伸）：
- *   - result 节点 config.name 唯一（DUPLICATE_RESULT_NAME）
- *   - 节点 type 必须在五元组内（UNKNOWN_NODE_TYPE）
+ *   6. result 节点 config.name 唯一（DUPLICATE_RESULT_NAME）
+ *   7. 节点 type 必须在平台支持集合内（UNKNOWN_NODE_TYPE）
  */
 
 import type {
@@ -176,23 +173,6 @@ export function validateHasResultNode(def: WorkflowDefinition): void {
 }
 
 /**
- * 校验 6：mod 工作流不得包含 apply-patch（HC-13）。
- */
-export function validateNoApplyPatchInModWorkflow(
-  def: WorkflowDefinition,
-  isModWorkflow: boolean,
-): void {
-  if (!isModWorkflow) return
-  const offending = def.nodes.find((n) => n.type === "apply-patch")
-  if (offending) {
-    throw new WorkflowValidationError(
-      "MOD_REGISTERED_APPLY_PATCH",
-      `mod workflow is not allowed to register apply-patch node "${offending.id}" (HC-13)`,
-    )
-  }
-}
-
-/**
  * 附加校验：节点类型必须合法。
  */
 export function validateKnownNodeTypes(def: WorkflowDefinition): void {
@@ -235,12 +215,12 @@ export function validateUniqueResultNames(def: WorkflowDefinition): void {
  * 校验主入口。
  *
  * @param def 工作流定义
- * @param options.isModWorkflow 是否来自模组（HC-13 守卫开关）
+ * @param _options 保留调用方来源元数据兼容位；当前不因 mod 来源禁用 apply-patch。
  * @returns 拓扑排序后的节点 id 数组（调度器复用）
  */
 export function validateWorkflowDefinition(
   def: WorkflowDefinition,
-  options: { isModWorkflow?: boolean } = {},
+  _options: { isModWorkflow?: boolean } = {},
 ): string[] {
   validateUniqueNodeIds(def)
   validateKnownNodeTypes(def)
@@ -250,6 +230,5 @@ export function validateWorkflowDefinition(
   validateApplyPatchPorts(def)
   validateHasResultNode(def)
   validateUniqueResultNames(def)
-  validateNoApplyPatchInModWorkflow(def, options.isModWorkflow === true)
   return order
 }

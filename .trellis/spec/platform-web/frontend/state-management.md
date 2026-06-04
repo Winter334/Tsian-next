@@ -37,13 +37,14 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `memory-query` with `source: "collection"` reads `memoryRecords` and outputs `records` and `count`.
 - `memory-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
+- `apply-patch` is a compatibility write node for `MaintenancePatchDocument`; mod/default workflows may declare it explicitly, and platform-host must not apply hidden host-managed patches outside the DAG.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
 - Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `apply-patch`.
 
 ### 4. Validation & Error Matrix
 
 - Unknown node type -> `WorkflowValidationError`.
-- Mod workflow containing `apply-patch` -> `MOD_REGISTERED_APPLY_PATCH`.
+- `apply-patch` without a declared/bound patch input -> `APPLY_PATCH_INPUT_INCOMPLETE`.
 - Mod workflow containing memory/template nodes -> allowed.
 - `memory-write` with non-array operations -> executor error.
 - `memory-write` upsert with non-JSON `data` -> executor/storage error.
@@ -51,7 +52,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: default event/archive chain uses `memory-query { source: "event-archive" }`, feeds `retrieval.prompt` to chat, and feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance.
+- Good: default event/archive chain uses `memory-query { source: "event-archive" }`, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.patch` to an explicit `apply-patch` compatibility node.
 - Base: custom collection workflows use `memory-query { source: "collection" }` and `memory-write` with namespace/collection defaults for alternative memory structures.
 - Bad: reintroducing `ai-call.config.bypass.rawFromMacro = "__retrieval.raw"` hides retrieval outside the workflow and breaks replaceability.
 - Bad: assuming a failed later workflow node automatically undoes earlier `memory-write` storage operations without restoring a checkpoint.
@@ -60,7 +61,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 - Contract/build checks: `npm run build:contracts`, `npm run build:web`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
-- Regression assertion: built-in grey-salt-town workflow retrieval is `memory-query`, contains no `bypass` / `__retrieval.raw`, and remains valid as a mod workflow.
+- Regression assertion: built-in grey-salt-town workflow retrieval is `memory-query`, contains no `bypass` / `__retrieval.raw`, contains an explicit `maintenance.patch -> applyPatch.patch` edge, and remains valid as a mod workflow.
 - Browser smoke: resource workflow preview and fullscreen editor show `memory-query`, and new memory/template nodes can be dragged onto the canvas and inspected.
 
 ### 7. Wrong vs Correct
