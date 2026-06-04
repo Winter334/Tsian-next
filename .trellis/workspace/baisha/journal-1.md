@@ -210,3 +210,37 @@ Replaced template Trellis spec files with source-backed package guidance, remove
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: Workflow trace debug UI and time macro fix
+
+**Date**: 2026-06-04
+**Task**: Workflow trace debug UI and time macro fix
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added workflow run trace and richer debug UI, fixed dotted prompt macro expansion for narrative time/user input, removed incorrect host-side time fallback, and relaxed chat timeout for slow upstream maintenance calls.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `67af203` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
