@@ -1,51 +1,19 @@
 # Error Handling
 
-> How errors are handled in this project.
+`runtime-core` declares async interface methods; concrete error behavior belongs to implementations.
 
----
+## Interface Rule
 
-## Overview
+- Do not define runtime error classes in this package until multiple runtime implementations need the same thrown error type.
+- Use existing contract result types where errors are part of the API payload. Example: platform actions return `PlatformActionResult`.
+- Let implementations throw for unsupported deprecated paths. `LocalRuntimeEngine.sendMessage` throws because platform-host now owns workflow execution.
 
-<!--
-Document your project's error handling conventions here.
+## Boundary Rule
 
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
+- The interface should not hide failures with default snapshots or empty results unless the method contract explicitly says so.
+- If a new method needs structured failure data, put the payload shape in `@tsian/contracts` and keep runtime-core as the interface consumer.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+- Do not catch and convert all errors to `{ items: [] }` or similar in the interface package.
+- Do not add implementation-specific error codes here.

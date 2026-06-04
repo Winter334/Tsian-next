@@ -1,38 +1,15 @@
-# Backend Development Guidelines
+# runtime-core Authoring Specs
 
-> Best practices for backend development in this project.
+`packages/runtime-core` is a tiny shared interface package. It defines `RuntimeEngine` and re-exports it. The browser implementation lives in `apps/platform-web/src/runtime-host/engine.ts`.
 
----
+| Guide | Use When | Status |
+|-------|----------|--------|
+| [Directory Structure](./directory-structure.md) | Editing the interface package | Filled |
+| [Error Handling](./error-handling.md) | Deciding where runtime errors belong | Filled |
+| [Quality Guidelines](./quality-guidelines.md) | Verifying interface changes | Filled |
 
-## Overview
+## Required Checks
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
-
----
-
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+- Run `npm run build:runtime-core` for every runtime-core change.
+- Run `npm run build:web` if `RuntimeEngine` changes, because platform-web implements it.
+- Run `npm run build:contracts` first if the change depends on new contract types.

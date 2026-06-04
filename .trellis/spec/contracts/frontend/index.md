@@ -1,39 +1,21 @@
-# Frontend Development Guidelines
+# contracts Consumer Specs
 
-> Best practices for frontend development in this project.
+This layer documents how frontend/browser consumers should use `@tsian/contracts`. The package itself has no Vue components, hooks, or frontend state.
 
----
+| Guide | Use When | Status |
+|-------|----------|--------|
+| [Type Safety](./type-safety.md) | Consuming shared contracts from platform-web or play frontends | Filled |
 
-## Overview
+## Required Checks
 
-This directory contains guidelines for frontend development. Fill in each file with your project's specific conventions.
+- Run `npm run build:contracts` after editing contract source.
+- Run the consuming frontend build, usually `npm run build:web`.
 
----
+## Source References
 
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Component Guidelines](./component-guidelines.md) | Component patterns, props, composition | To fill |
-| [Hook Guidelines](./hook-guidelines.md) | Custom hooks, data fetching patterns | To fill |
-| [State Management](./state-management.md) | Local state, global state, server state | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Type Safety](./type-safety.md) | Type patterns, validation | Filled |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+- `packages/contracts/src/runtime.ts`
+- `packages/contracts/src/bridge.ts`
+- `packages/contracts/src/debug.ts`
+- `packages/contracts/src/workflow.ts`
+- `apps/platform-web/src/bridge/play-frontend-bridge.ts`
+- `apps/platform-web/src/platform-host/index.ts`

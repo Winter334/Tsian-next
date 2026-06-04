@@ -1,54 +1,31 @@
 # Directory Structure
 
-> How backend code is organized in this project.
+`packages/contracts/src/index.ts` re-exports every public module. Add contract files only when a shape has a clear cross-package owner.
 
----
+## File Ownership
 
-## Overview
+- `runtime.ts` owns runtime snapshots, messages, archives, events, maintenance patches, platform action shapes, deep query shapes, and write-runtime payloads.
+- `bridge.ts` owns `PlayFrontendBridge` and bridge namespace interfaces.
+- `debug.ts` owns debug records exposed to play frontends through `bridge.debug` and legacy query paths.
+- `mod.ts` owns mod manifests, static content, catalog events, entity field definitions, and mod initial save payloads.
+- `frontend-package.ts` owns play frontend manifest metadata.
+- `preset.ts` owns prompt preset and world book resource shapes imported from prompt-engine concepts.
+- `workflow.ts` owns workflow DAG definitions, node config shapes, edges, port metadata, and platform resource wrappers.
 
-<!--
-Document your project's backend directory structure here.
+## Export Rules
 
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
+- Every public type must be exported through `src/index.ts`.
+- Keep the package type-only. Do not add runtime helpers, validators, storage code, or browser-specific APIs here.
+- Prefer a single source of truth. If `platform-web` and `workflow-engine` both need a shape, define it in contracts and import it.
 
-(To be filled by the team)
+## Contract Granularity
 
----
+- Use explicit interfaces for stable payloads such as `RuntimeWriteRequest`, `ApplyPatchOutput`, `WorkflowDefinition`, and `ModManifest`.
+- Use open extension points only where the product intentionally allows external fields, such as `ArchiveRecord` extra fields, `PromptPresetEntry` compatibility fields, and `semanticSlot` strings.
+- Keep node `config` as `Record<string, unknown>` in `WorkflowNodeBase`; concrete parsing belongs to node executors and editor forms.
 
-## Directory Layout
+## Avoid
 
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+- Do not add implementation functions to this package.
+- Do not put UI-only labels or local storage metadata here unless they are intentionally shared across packages.
+- Do not make a field optional to hide a caller bug. Optionality must reflect real backward compatibility or feature semantics.

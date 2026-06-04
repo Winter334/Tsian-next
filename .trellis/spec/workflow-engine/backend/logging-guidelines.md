@@ -1,51 +1,22 @@
 # Logging Guidelines
 
-> How logging is done in this project.
+Workflow-engine has almost no logging. Diagnostics are allowed only when they do not affect execution semantics.
 
----
+## Current Logging
 
-## Overview
+- `safeHook` uses `console.warn` when an `outputsHooks.*` callback throws.
+- Abort paths use `console.debug` to report how many nodes were aborted.
+- Tests may spy on `console.debug` to prove abort diagnostics occur.
 
-<!--
-Document your project's logging conventions here.
+## Rules
 
-Questions to answer:
-- What logging library do you use?
-- What are the log levels and when to use each?
-- What should be logged?
-- What should NOT be logged (PII, secrets)?
--->
+- Do not log normal scheduler progress.
+- Do not log node inputs or outputs by default; they can contain prompt text, patches, or user content.
+- If a diagnostic is needed, keep it scoped to scheduler infrastructure and make tests resilient to it.
+- Logging must never replace throwing the correct workflow error.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## Log Levels
-
-<!-- When to use each level: debug, info, warn, error -->
-
-(To be filled by the team)
-
----
-
-## Structured Logging
-
-<!-- Log format, required fields -->
-
-(To be filled by the team)
-
----
-
-## What to Log
-
-<!-- Important events to log -->
-
-(To be filled by the team)
-
----
-
-## What NOT to Log
-
-<!-- Sensitive data, PII, secrets -->
-
-(To be filled by the team)
+- Do not add noisy per-node success logs.
+- Do not catch and log errors without rethrowing, except for outputs hook errors inside `safeHook`.
+- Do not introduce a logging dependency into this package.

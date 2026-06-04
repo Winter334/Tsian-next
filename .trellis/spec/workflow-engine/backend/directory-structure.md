@@ -1,54 +1,36 @@
 # Directory Structure
 
-> How backend code is organized in this project.
+The package is intentionally small and dependency-light.
 
----
+## Source Files
 
-## Overview
+- `src/index.ts` is the public export surface.
+- `src/scheduler.ts` owns `executeWorkflow`, node executor protocol, workflow execution context, result shape, retry, abort propagation, input collection, result aggregation, and outputs hook timing.
+- `src/validator.ts` owns load-time graph validation and returns topological order.
+- `src/errors.ts` owns workflow error classes and validation codes.
+- `src/types.ts` owns framework-neutral public interfaces such as `OutputsStoreWriter`.
 
-<!--
-Document your project's backend directory structure here.
+## Boundary Rules
 
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
+- Concrete node executors belong in `apps/platform-web/src/workflow-host/executors/`.
+- Patch application belongs in `apps/platform-web/src/runtime-host/patch-applier.ts`.
+- Vue output state belongs in `apps/platform-web/src/workflow-host/outputs-store.ts`; workflow-engine only sees the `OutputsStoreWriter` interface.
+- Shared workflow shapes come from `@tsian/contracts`.
 
-(To be filled by the team)
+## Scheduler Flow
 
----
+`executeWorkflow` should preserve this flow:
 
-## Directory Layout
+1. Call `validateWorkflowDefinition`.
+2. Build node lookup, in-degree map, adjacency map, and incoming edge bindings.
+3. Initialize output hooks for every node.
+4. Schedule all ready nodes concurrently.
+5. Run node executors with collected `inputs`, retry, and abort signal.
+6. On failure, abort in-flight nodes and rethrow the loud error.
+7. Aggregate `result` node outputs into `WorkflowResult.results`.
 
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
+## Avoid
 
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+- Do not add platform-web imports.
+- Do not add runtime node implementations.
+- Do not add JSON schema, expression language, or type coercion to the engine unless a task explicitly expands validation scope.

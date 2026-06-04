@@ -1,51 +1,27 @@
 # Type Safety
 
-> Type safety patterns in this project.
+Frontend code should treat `RuntimeEngine` as a narrow protocol, not as the platform host.
 
----
+## RuntimeEngine Contract
 
-## Overview
+`RuntimeEngine` currently exposes:
 
-<!--
-Document your project's type safety conventions here.
+- `getSnapshot(): Promise<RuntimeSnapshotShell>`
+- `sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult>`
+- `query<T = unknown>(request: DeepQueryRequest): Promise<DeepQueryResult<T>>`
+- `getPlatformContext(): Promise<PlatformContextShell>`
 
-Questions to answer:
-- What type system do you use?
-- How are types organized?
-- What validation library do you use?
-- How do you handle type inference?
--->
+The concrete browser implementation is `LocalRuntimeEngine` in `apps/platform-web/src/runtime-host/engine.ts`.
 
-(To be filled by the team)
+## Consumer Rules
 
----
+- Import the interface from `@tsian/runtime-core`, not from platform-web.
+- Keep bridge implementations typed against `RuntimeEngine` when they only need core runtime methods. `createPlayFrontendBridge` is the reference.
+- Use `@tsian/contracts` for payload shapes. Do not create parallel frontend-only versions of snapshots or query results.
+- Treat deprecated or platform-host-owned paths as implementation details. In the current browser runtime, `sendMessage` throws because `platform-host` runs workflow execution directly.
 
-## Type Organization
+## Avoid
 
-<!-- Where types are defined, shared types vs local types -->
-
-(To be filled by the team)
-
----
-
-## Validation
-
-<!-- Runtime validation patterns (Zod, Yup, io-ts, etc.) -->
-
-(To be filled by the team)
-
----
-
-## Common Patterns
-
-<!-- Type utilities, generics, type guards -->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- any, type assertions, etc. -->
-
-(To be filled by the team)
+- Do not assume `RuntimeEngine` implies Dexie persistence, local AI config, or workflow execution.
+- Do not downcast `RuntimeEngine` to `LocalRuntimeEngine` in shared bridge code.
+- Do not leak Vue state into this interface.

@@ -1,51 +1,42 @@
 # Error Handling
 
-> How errors are handled in this project.
-
----
-
-## Overview
-
-<!--
-Document your project's error handling conventions here.
-
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
-
-(To be filled by the team)
-
----
+Workflow-engine follows fail-loud behavior. Validation and execution errors must be visible to callers.
 
 ## Error Types
 
-<!-- Custom error classes/types -->
+- `WorkflowValidationError` is thrown by load-time validation and includes a stable `code`.
+- `WorkflowAbortError` is thrown when the workflow is aborted before or during execution.
+- `WorkflowNodeError` is thrown when a node has no executor, returns invalid output, or exhausts retries. It includes `nodeId`, `attempts`, `cause`, and `code`.
 
-(To be filled by the team)
+## Validation Errors
 
----
+`validateWorkflowDefinition` currently enforces:
 
-## Error Handling Patterns
+- Duplicate node IDs -> `DUPLICATE_NODE_ID`
+- Unknown node type -> `UNKNOWN_NODE_TYPE`
+- Dangling edges -> `DANGLING_EDGE`
+- Cycles -> `CYCLE_DETECTED`
+- apply-patch missing required input binding -> `APPLY_PATCH_INPUT_INCOMPLETE`
+- Missing result node -> `MISSING_RESULT_NODE`
+- Duplicate result names -> `DUPLICATE_RESULT_NAME`
+- Mod workflow with apply-patch -> `MOD_REGISTERED_APPLY_PATCH`
 
-<!-- Try-catch patterns, error propagation -->
+Keep validation at load time when the condition is knowable before execution.
 
-(To be filled by the team)
+## Execution Errors
 
----
+- Missing executor is configuration error and should not retry. It throws `WorkflowNodeError` with code `UNKNOWN_NODE_TYPE`.
+- Regular executor failures retry according to `node.retry?.maxRetries ?? 1`.
+- Exhausted retry throws `WorkflowNodeError` with code `NODE_RETRY_EXHAUSTED`.
+- Abort should pierce retry and throw `WorkflowAbortError`.
+- On node failure, abort all other running nodes, wait for them to settle, then rethrow the original error.
 
-## API Error Responses
+## Outputs Hook Exception
 
-<!-- Standard error response format -->
+`safeHook` catches outputs hook exceptions and logs a warning. This is the one explicit exception to fail-loud because debug/output hooks must not change scheduler correctness.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+- Do not swallow validation errors and continue execution.
+- Do not convert node failures to empty outputs.
+- Do not make mod workflow `apply-patch` checks editor-only; engine validation is the runtime guard.

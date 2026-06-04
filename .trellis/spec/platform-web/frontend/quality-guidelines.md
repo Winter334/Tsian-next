@@ -1,51 +1,30 @@
 # Quality Guidelines
 
-> Code quality standards for frontend development.
+Quality for `platform-web` is mostly type safety, build success, and preserving cross-layer runtime contracts.
 
----
+## Required Checks
 
-## Overview
+- Run `npm run build:web` after any change under `apps/platform-web`.
+- Run `npm run build:contracts` if a change imports or modifies contract shapes.
+- Run `npm run build:workflow-engine` and `npm run test --workspace @tsian/workflow-engine` when platform code changes workflow-engine behavior assumptions or static proof tests.
 
-<!--
-Document your project's quality standards here.
+## Project Rules
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+- Prefer fail loud over hidden fallback. The base bridge throws for unavailable write APIs, and platform actions return explicit `PlatformActionError` objects.
+- Do not expand scope opportunistically. The root project guidance says prototype work should stay on the current user-requested task.
+- Do not add migrations or compatibility layers for local IndexedDB without explicit approval. The prototype rule is to clear and rebuild local data.
+- Keep bridge APIs framework-neutral. Do not leak Vue refs, Dexie tables, or component types into `@tsian/contracts`.
 
-(To be filled by the team)
+## Review Checklist
 
----
+- If a resource or workflow JSON round-trips through the editor, verify unknown/advanced fields are preserved unless the task intentionally rewrites them.
+- If a workflow edge changes, verify it still serializes as `from.outputName -> to.varName`.
+- If a patch path changes, verify bridge `applyPatch`/`updateGlobals` and apply-patch workflow node still share `applyMaintenancePatch`.
+- If runtime snapshot changes, verify `retrievalDebugBySave` or related debug state is invalidated when the active timeline changes.
+- If route/view code changes, verify lazy route names and links still match `router/index.ts`.
 
-## Forbidden Patterns
+## Avoid
 
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- Do not add broad catch blocks around workflow execution or patch application just to keep the UI quiet.
+- Do not create duplicate storage helpers for the same table.
+- Do not write long-running business logic inside Vue templates; move it to script helpers, storage helpers, platform-host, or workflow-host as appropriate.

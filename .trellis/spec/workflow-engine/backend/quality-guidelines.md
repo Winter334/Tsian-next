@@ -1,51 +1,31 @@
 # Quality Guidelines
 
-> Code quality standards for backend development.
+Workflow-engine quality depends on preserving scheduler invariants and package purity.
 
----
+## Required Checks
 
-## Overview
+- Run `npm run build:workflow-engine`.
+- Run `npm run test --workspace @tsian/workflow-engine`.
+- Run `npm run build:web` when changing contracts or behavior used by platform-web executors or workflow editor validation.
 
-<!--
-Document your project's quality standards here.
+## Review Checklist
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+- Validation remains deterministic and throws `WorkflowValidationError` with a precise code.
+- Scheduler still validates before executing any node.
+- Ready nodes can run concurrently; dependency order is enforced by in-degree.
+- `edge.condition` remains simple string equality against upstream output.
+- Incoming edges still bind upstream `outputs[outputName ?? "raw"]` into downstream `inputs[varName]`.
+- Result aggregation still reads result node `outputs.value` into `results[config.name]`.
+- Outputs hook timing matches `OutputsStoreWriter` docs.
+- Package imports do not point into `apps/platform-web`.
 
-(To be filled by the team)
+## Test Patterns
 
----
+- Use Vitest for dynamic scheduler and validation behavior.
+- Use static proof tests when the invariant crosses package boundaries and importing platform-web would break layering. `p-i-1.test.ts` and `workflow-preset-resolution.test.ts` are the local examples.
 
-## Forbidden Patterns
+## Avoid
 
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- Do not weaken fail-loud validation for editor convenience.
+- Do not add browser APIs or Vue types.
+- Do not change retry or abort behavior without regression tests.

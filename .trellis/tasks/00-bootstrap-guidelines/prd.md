@@ -21,12 +21,12 @@ the rest conversationally.
 
 ## Status (update the checkboxes as you complete each item)
 
-- [ ] Fill guidelines for platform-web
-- [ ] Fill guidelines for @tsian/contracts
-- [ ] Fill guidelines for @tsian/runtime-core
-- [ ] Fill guidelines for @tsian/prompt-engine
-- [ ] Fill guidelines for @tsian/workflow-engine
-- [ ] Add code examples
+- [x] Fill guidelines for platform-web
+- [x] Fill guidelines for @tsian/contracts
+- [x] Fill guidelines for @tsian/runtime-core
+- [x] Fill guidelines for @tsian/prompt-engine
+- [x] Fill guidelines for @tsian/workflow-engine
+- [x] Add code examples
 
 ---
 

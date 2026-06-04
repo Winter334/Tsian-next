@@ -1,51 +1,35 @@
 # Type Safety
 
-> Type safety patterns in this project.
+Frontend consumers should use the Tsian wrapper API unless they are intentionally modifying prompt-engine internals.
 
----
+## Consumer API
 
-## Overview
+Use `assemblePromptFromPreset(input)` from `packages/prompt-engine/src/tsian/assemble.ts`.
 
-<!--
-Document your project's type safety conventions here.
+Important input fields:
 
-Questions to answer:
-- What type system do you use?
-- How are types organized?
-- What validation library do you use?
-- How do you handle type inference?
--->
+- `preset: PresetInfo`
+- `worldBooks?: WorldBook[]`
+- `regexScripts?: RegexScriptData[]`
+- `history?: ChatMessage[]`
+- `macros: Record<string, string>`
+- `channel?: "openai" | "text" | "tagged" | "gemini"`
+- `view?: "user" | "model"`
 
-(To be filled by the team)
+The wrapper returns:
 
----
+- `messages: ChatMessage[] | TaggedContent[]`
+- `rendered: string`
 
-## Type Organization
+## Frontend Rules
 
-<!-- Where types are defined, shared types vs local types -->
+- Pass platform/workflow macros as flattened strings. The wrapper does not resolve object paths such as `globals.weather.kind`; callers must compute those values before passing `macros`.
+- Use `view = "model"` for prompts sent to LLMs. Use `view = "user"` only for player-facing transformations.
+- Preserve prompt preset and world book payload shapes from `@tsian/contracts` resource records.
+- Treat `rendered` as debug/display output, not as the source of truth for model calls when structured `messages` are available.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## Validation
-
-<!-- Runtime validation patterns (Zod, Yup, io-ts, etc.) -->
-
-(To be filled by the team)
-
----
-
-## Common Patterns
-
-<!-- Type utilities, generics, type guards -->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- any, type assertions, etc. -->
-
-(To be filled by the team)
+- Do not call core pipeline modules directly from platform-web unless the task is specifically about prompt-engine internals.
+- Do not pass browser state objects, Vue refs, or Dexie records directly; extract plain prompt-engine payloads first.
+- Do not assume `text` channel returns the same message shape as `openai` or `gemini`; it returns a single user message containing merged text.

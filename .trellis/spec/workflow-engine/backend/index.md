@@ -1,38 +1,27 @@
-# Backend Development Guidelines
+# workflow-engine Authoring Specs
 
-> Best practices for backend development in this project.
+`packages/workflow-engine` is the pure workflow DAG scheduler and validator. It does not implement concrete nodes, browser storage, Vue state, or patch application.
 
----
+| Guide | Use When | Status |
+|-------|----------|--------|
+| [Directory Structure](./directory-structure.md) | Editing scheduler, validator, errors, or public exports | Filled |
+| [Error Handling](./error-handling.md) | Changing validation, abort, retry, or node failure behavior | Filled |
+| [Logging Guidelines](./logging-guidelines.md) | Adding scheduler diagnostics | Filled |
+| [Quality Guidelines](./quality-guidelines.md) | Verifying workflow-engine changes | Filled |
 
-## Overview
+## Required Checks
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+- Run `npm run build:workflow-engine`.
+- Run `npm run test --workspace @tsian/workflow-engine` for scheduler, validator, errors, outputs hooks, or static proof changes.
+- Run `npm run build:web` when engine behavior assumptions affect platform-web workflow host code.
 
----
+## Source References
 
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+- `packages/workflow-engine/CLAUDE.md`
+- `packages/workflow-engine/src/scheduler.ts`
+- `packages/workflow-engine/src/validator.ts`
+- `packages/workflow-engine/src/errors.ts`
+- `packages/workflow-engine/src/types.ts`
+- `packages/workflow-engine/test/sc-crit.test.ts`
+- `packages/workflow-engine/test/p-i-1.test.ts`
+- `packages/workflow-engine/test/workflow-preset-resolution.test.ts`

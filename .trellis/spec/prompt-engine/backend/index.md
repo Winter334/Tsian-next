@@ -1,38 +1,22 @@
-# Backend Development Guidelines
+# prompt-engine Authoring Specs
 
-> Best practices for backend development in this project.
+`packages/prompt-engine` builds prompts from preset, world book, regex, macro, variable, and history inputs. It is a pure TypeScript package with Vitest coverage for real SillyTavern preset round-trips.
 
----
+| Guide | Use When | Status |
+|-------|----------|--------|
+| [Directory Structure](./directory-structure.md) | Adding prompt-engine modules or exports | Filled |
+| [Error Handling](./error-handling.md) | Deciding how conversion and assembly handle invalid input | Filled |
+| [Quality Guidelines](./quality-guidelines.md) | Verifying prompt-engine behavior | Filled |
 
-## Overview
+## Required Checks
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+- Run `npm run build:prompt-engine` for package changes.
+- Run `npm run test:prompt-engine` for conversion, world book, regex, macro, variable, channel, or assembly behavior changes.
 
----
+## Source References
 
-## Guidelines Index
-
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+- `packages/prompt-engine/src/core/types.ts`
+- `packages/prompt-engine/src/core/modules/build/buildPrompt.ts`
+- `packages/prompt-engine/src/core/modules/inputs/convertFromSillyTavern.ts`
+- `packages/prompt-engine/src/tsian/assemble.ts`
+- `packages/prompt-engine/test/round-trip.test.ts`

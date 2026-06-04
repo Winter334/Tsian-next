@@ -1,38 +1,25 @@
-# Backend Development Guidelines
+# contracts Authoring Specs
 
-> Best practices for backend development in this project.
+`packages/contracts` is a pure TypeScript contract package. It has no runtime dependency, database layer, logging layer, Vue components, or business execution logic.
 
----
+Use this layer when adding or changing shared shapes in `packages/contracts/src/**`.
 
-## Overview
+| Guide | Use When | Status |
+|-------|----------|--------|
+| [Directory Structure](./directory-structure.md) | Choosing the contract source file and export boundary | Filled |
+| [Error Handling](./error-handling.md) | Modeling errors in shared interfaces | Filled |
+| [Quality Guidelines](./quality-guidelines.md) | Verifying cross-package contract changes | Filled |
 
-This directory contains guidelines for backend development. Fill in each file with your project's specific conventions.
+## Required Checks
 
----
+- Run `npm run build:contracts` for every contracts change.
+- Run the consuming package build when a changed type is used there, usually `npm run build:web` and sometimes `npm run build:workflow-engine`.
 
-## Guidelines Index
+## Source References
 
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
-| [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+- `packages/contracts/CLAUDE.md`
+- `packages/contracts/src/index.ts`
+- `packages/contracts/src/runtime.ts`
+- `packages/contracts/src/bridge.ts`
+- `packages/contracts/src/mod.ts`
+- `packages/contracts/src/workflow.ts`

@@ -1,51 +1,22 @@
 # Quality Guidelines
 
-> Code quality standards for backend development.
+Because `runtime-core` is a shared interface package, small changes can break platform-web and play frontend bridge assumptions.
 
----
+## Required Checks
 
-## Overview
+- Run `npm run build:runtime-core`.
+- Run `npm run build:web` when changing `RuntimeEngine`.
+- Run `npm run build:contracts` if imported contract types changed.
 
-<!--
-Document your project's quality standards here.
+## Review Checklist
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+- Confirm new methods are implementation-neutral.
+- Confirm all method inputs and outputs use contract types or locally declared interface-only types.
+- Confirm `src/index.ts` still re-exports the public interface.
+- Confirm platform-web `LocalRuntimeEngine` implements any new method.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## Forbidden Patterns
-
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- Do not add default implementations.
+- Do not add browser dependencies.
+- Do not use `unknown` return values where a shared contract type already exists.

@@ -1,39 +1,29 @@
-# Frontend Development Guidelines
+# platform-web Frontend Specs
 
-> Best practices for frontend development in this project.
+`apps/platform-web` is the browser platform shell. It owns the Vue app, local runtime host, Dexie persistence, bridge implementation, resource library, and workflow editor.
 
----
+Use these specs when changing `apps/platform-web/src/**`.
 
-## Overview
+| Guide | Use When | Status |
+|-------|----------|--------|
+| [Directory Structure](./directory-structure.md) | Choosing where code belongs | Filled |
+| [Component Guidelines](./component-guidelines.md) | Writing Vue SFCs and UI primitives | Filled |
+| [Hook Guidelines](./hook-guidelines.md) | Writing composables such as workflow editor state | Filled |
+| [State Management](./state-management.md) | Updating Vue refs, Dexie state, bridge state, and workflow output state | Filled |
+| [Quality Guidelines](./quality-guidelines.md) | Pre-commit checks and forbidden patterns | Filled |
+| [Type Safety](./type-safety.md) | Runtime boundary normalization and contract use | Filled |
 
-This directory contains guidelines for frontend development. Fill in each file with your project's specific conventions.
+## Required Checks
 
----
+- Run `npm run build:web` for any platform-web change.
+- Run `npm run build:contracts` too when imported contract shapes change.
+- For workflow execution or patch behavior, also run `npm run build:workflow-engine` and relevant workflow-engine tests when touched.
 
-## Guidelines Index
+## Source References
 
-| Guide | Description | Status |
-|-------|-------------|--------|
-| [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
-| [Component Guidelines](./component-guidelines.md) | Component patterns, props, composition | To fill |
-| [Hook Guidelines](./hook-guidelines.md) | Custom hooks, data fetching patterns | To fill |
-| [State Management](./state-management.md) | Local state, global state, server state | To fill |
-| [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
-
----
-
-## How to Fill These Guidelines
-
-For each guideline file:
-
-1. Document your project's **actual conventions** (not ideals)
-2. Include **code examples** from your codebase
-3. List **forbidden patterns** and why
-4. Add **common mistakes** your team has made
-
-The goal is to help AI assistants and new team members understand how YOUR project works.
-
----
-
-**Language**: All documentation should be written in **English**.
+- `apps/platform-web/CLAUDE.md`
+- `apps/platform-web/src/router/index.ts`
+- `apps/platform-web/src/storage/db.ts`
+- `apps/platform-web/src/platform-host/index.ts`
+- `apps/platform-web/src/composables/useWorkflowEditor.ts`
+- `apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue`

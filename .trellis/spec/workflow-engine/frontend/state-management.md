@@ -1,51 +1,35 @@
 # State Management
 
-> How state is managed in this project.
+Workflow-engine does not own frontend state. It exposes hook points that platform-web adapts into reactive debug state.
 
----
+## Outputs Hooks
 
-## Overview
+`OutputsStoreWriter` methods are synchronous and framework-neutral:
 
-<!--
-Document your project's state management conventions here.
+- `initNode(nodeId)`
+- `startNode(nodeId)`
+- `succeedNode(nodeId, outputs)`
+- `failNode(nodeId, error)`
+- `abortNode(nodeId)`
+- `setResult(name, value)`
 
-Questions to answer:
-- What state management solution do you use?
-- How is local vs global state decided?
-- How do you handle server state?
-- What are the patterns for derived state?
--->
+The scheduler calls these during node lifecycle transitions. Hook failures are caught by `safeHook` and must not break execution.
 
-(To be filled by the team)
+## Platform-Web Integration
 
----
+- `apps/platform-web/src/workflow-host/outputs-store.ts` implements the reactive output store.
+- `platform-host` passes the writer through `executeWorkflow` options.
+- Debug UI reads workflow output snapshots through bridge debug paths.
 
-## State Categories
+## Rules
 
-<!-- Local state, global state, server state, URL state -->
+- Keep hook implementations idempotent enough for UI/debug use.
+- Treat outputs as observation state, not as the source of scheduler truth.
+- Do not mutate scheduler `nodeOutputs` from hook implementations.
+- Do not add Vue imports to `packages/workflow-engine/src/types.ts`.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## When to Use Global State
-
-<!-- Criteria for promoting state to global -->
-
-(To be filled by the team)
-
----
-
-## Server State
-
-<!-- How server data is cached and synchronized -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- State management mistakes your team has made -->
-
-(To be filled by the team)
+- Do not use output hooks to recover from node failures.
+- Do not make hook errors affect workflow success.
+- Do not store long-lived UI state in workflow-engine.

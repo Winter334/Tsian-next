@@ -1,51 +1,21 @@
 # Error Handling
 
-> How errors are handled in this project.
+Contracts model error payloads but do not throw or validate at runtime.
 
----
+## Error Payloads
 
-## Overview
+- Use `PlatformActionError` for platform action failures exposed through bridge actions. It has `code`, `message`, and optional JSON-compatible `details`.
+- Use package-specific error classes outside contracts when runtime code needs throwing behavior. Example: `packages/workflow-engine/src/errors.ts` defines `WorkflowValidationError`, `WorkflowAbortError`, and `WorkflowNodeError`.
+- Keep error `details` JSON-compatible by using `JsonValue`. Do not place Error instances, functions, Dates, or class instances inside contract error payloads.
 
-<!--
-Document your project's error handling conventions here.
+## Boundary Responsibility
 
-Questions to answer:
-- What error types do you define?
-- How are errors propagated?
-- How are errors logged?
-- How are errors returned to clients?
--->
+- Contracts declare the shape; callers validate at feature boundaries. Example: `RuntimeWriteRequest` is normalized and checked in `apps/platform-web/src/platform-host/index.ts`.
+- Workflow validation errors are implemented by workflow-engine because validation behavior belongs to that package, not the type package.
+- Prompt preset and world book semantic validation belongs to prompt-engine or the consuming feature boundary, not to contracts.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## Error Types
-
-<!-- Custom error classes/types -->
-
-(To be filled by the team)
-
----
-
-## Error Handling Patterns
-
-<!-- Try-catch patterns, error propagation -->
-
-(To be filled by the team)
-
----
-
-## API Error Responses
-
-<!-- Standard error response format -->
-
-(To be filled by the team)
-
----
-
-## Common Mistakes
-
-<!-- Error handling mistakes your team has made -->
-
-(To be filled by the team)
+- Do not add a generic catch-all `error?: unknown` to shared payloads.
+- Do not encode UI language strings as contract error codes. Codes should be stable machine-readable identifiers; UI can translate messages separately.
+- Do not add runtime parsing helpers to contracts to support error validation.

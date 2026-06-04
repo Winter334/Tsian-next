@@ -1,54 +1,18 @@
 # Directory Structure
 
-> How backend code is organized in this project.
+`runtime-core` intentionally has only two source files:
 
----
+- `src/engine.ts` defines the `RuntimeEngine` interface.
+- `src/index.ts` re-exports `./engine`.
 
-## Overview
+## Ownership
 
-<!--
-Document your project's backend directory structure here.
+- Keep runtime implementation out of this package. `LocalRuntimeEngine` belongs in `apps/platform-web/src/runtime-host/engine.ts` because it depends on browser/platform behavior.
+- Keep data shapes in `@tsian/contracts`. `RuntimeEngine` imports `RuntimeSnapshotShell`, `MessageInteractionRequest`, `DeepQueryRequest`, and related result types from contracts.
+- Add methods here only when every runtime implementation should support them.
 
-Questions to answer:
-- How are modules/packages organized?
-- Where does business logic live?
-- Where are API endpoints defined?
-- How are utilities and helpers organized?
--->
+## Avoid
 
-(To be filled by the team)
-
----
-
-## Directory Layout
-
-```
-<!-- Replace with your actual structure -->
-src/
-├── ...
-└── ...
-```
-
----
-
-## Module Organization
-
-<!-- How should new features/modules be organized? -->
-
-(To be filled by the team)
-
----
-
-## Naming Conventions
-
-<!-- File and folder naming rules -->
-
-(To be filled by the team)
-
----
-
-## Examples
-
-<!-- Link to well-organized modules as examples -->
-
-(To be filled by the team)
+- Do not add storage, AI client, bridge, workflow, or platform-host logic here.
+- Do not add package dependencies beyond `@tsian/contracts` unless there is a strong cross-runtime reason.
+- Do not expose browser-only concepts such as Dexie, localStorage, Vue refs, or AbortController-specific implementation details in the interface unless the runtime contract truly requires them.

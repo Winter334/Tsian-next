@@ -1,51 +1,30 @@
 # Quality Guidelines
 
-> Code quality standards for backend development.
+Contract changes are high impact because they compile through multiple workspace packages.
 
----
+## Required Checks
 
-## Overview
+- Always run `npm run build:contracts`.
+- Run `npm run build:web` when platform-web imports the changed type.
+- Run `npm run build:workflow-engine` and workflow-engine tests when workflow contracts or validation expectations change.
+- Run `npm run test:prompt-engine` when prompt preset or world book shapes affect prompt-engine conversion or assembly.
 
-<!--
-Document your project's quality standards here.
+## Review Checklist
 
-Questions to answer:
-- What patterns are forbidden?
-- What linting rules do you enforce?
-- What are your testing requirements?
-- What code review standards apply?
--->
+- Confirm `src/index.ts` exports new public types.
+- Confirm each optional field is intentionally optional for backward compatibility or missing data semantics.
+- Confirm open extension points use `unknown`, `Record<string, unknown>`, or index signatures only where callers preserve external fields.
+- Confirm runtime validation did not move into contracts.
+- Confirm deprecated fields include enough comments for consumers to choose the new field.
 
-(To be filled by the team)
+## Local Examples
 
----
+- `ModManifest.workflowPresetId` is preferred while `workflow` remains deprecated legacy input.
+- `WorkflowNodeBase.inputs` is optional so old workflows without input declarations still load.
+- `ApplyPatchOutput` is shared by bridge APIs and apply-patch workflow nodes so both paths stay aligned.
 
-## Forbidden Patterns
+## Avoid
 
-<!-- Patterns that should never be used and why -->
-
-(To be filled by the team)
-
----
-
-## Required Patterns
-
-<!-- Patterns that must always be used -->
-
-(To be filled by the team)
-
----
-
-## Testing Requirements
-
-<!-- What level of testing is expected -->
-
-(To be filled by the team)
-
----
-
-## Code Review Checklist
-
-<!-- What reviewers should check -->
-
-(To be filled by the team)
+- Do not loosen concrete resource payloads back to `unknown`.
+- Do not add package dependencies here.
+- Do not change a contract without checking the consuming package builds.

@@ -1,51 +1,24 @@
 # Type Safety
 
-> Type safety patterns in this project.
+Frontend consumers use workflow-engine through typed definitions from `@tsian/contracts` and executor maps supplied by platform-web.
 
----
+## Consumer API
 
-## Overview
+- `executeWorkflow(def, context, options)` runs a `WorkflowDefinition`.
+- `validateWorkflowDefinition(def, options)` returns topological node order or throws.
+- `WorkflowExecutionContext.executors` maps node type strings to `NodeExecutor`.
+- `ExecuteWorkflowOptions.outputsHooks` accepts `OutputsStoreWriter`.
 
-<!--
-Document your project's type safety conventions here.
+## Frontend Rules
 
-Questions to answer:
-- What type system do you use?
-- How are types organized?
-- What validation library do you use?
-- How do you handle type inference?
--->
+- Build `WorkflowDefinition` with contracts types. The editor should normalize imported JSON before calling the validator.
+- Register concrete executors in platform-web, not in workflow-engine.
+- Pass `isModWorkflow: true` for mod-controlled workflow definitions so apply-patch is rejected.
+- Preserve `WorkflowEdge.to.varName`; it is the runtime input key.
+- Use `from.outputName ?? "raw"` when resolving upstream outputs.
 
-(To be filled by the team)
+## Avoid
 
----
-
-## Type Organization
-
-<!-- Where types are defined, shared types vs local types -->
-
-(To be filled by the team)
-
----
-
-## Validation
-
-<!-- Runtime validation patterns (Zod, Yup, io-ts, etc.) -->
-
-(To be filled by the team)
-
----
-
-## Common Patterns
-
-<!-- Type utilities, generics, type guards -->
-
-(To be filled by the team)
-
----
-
-## Forbidden Patterns
-
-<!-- any, type assertions, etc. -->
-
-(To be filled by the team)
+- Do not treat workflow port metadata as runtime type enforcement. Current metadata is editor/documentation-only.
+- Do not pass Vue refs into workflow-engine context unless an executor explicitly owns that framework-specific dependency.
+- Do not rely on result node config without validator coverage; `config.name` must be non-empty and unique.
