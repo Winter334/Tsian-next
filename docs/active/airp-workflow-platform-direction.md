@@ -202,7 +202,7 @@ Tsian 的核心定位是：
 当前需要特别警惕：
 
 - `apply-patch` 作为 workflow node surface 的存在理由已经减弱。它可以作为桥 API 或内部兼容 applier 继续被单独评估，但不应长期作为默认工作流原语。
-- `memory-query(source: "event-archive")` 是历史兼容形状，不是长期泛型记忆查询模型。长期方向应是 collection/schema 驱动的记忆查询。
+- `memory-query(source: "event-archive")` 已从 workflow node surface 退场。`memory-query` 应保持 collection/schema 驱动；旧 workflow 若仍声明该 source，应明确失败，而不是继续走隐藏 AIRP 检索分支。
 - legacy events / archives / snapshot slices 可以作为兼容投影存在，但默认 AIRP 读写权威应向 generic memory records 和 schema-aware workflow 边界收敛。
 
 兼容层不应被扩展成新的通用模型。若一个任务需要新增兼容逻辑，必须同时说明：
@@ -252,7 +252,7 @@ Tsian 的核心定位是：
 
 - 收紧节点类型集，移除或隐藏不再适合作为通用节点的兼容节点。
 - 清理 `apply-patch` workflow surface 与桥/API 兼容能力之间的边界。
-- 清理 `memory-query(source: "event-archive")` 这类高层历史分支。
+- 保持 `memory-query` collection-only，避免重新引入 `event-archive` 这类高层历史分支。
 - 让 memory schema、workflow preset 和 renderer 的职责更清晰。
 - 继续把默认 AIRP 事件/档案系统作为参考 preset，而不是唯一架构。
 - 为未来 block/subgraph、schema resources、renderer adapters 留出清晰位置。

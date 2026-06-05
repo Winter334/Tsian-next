@@ -1,22 +1,39 @@
 import type { MemoryQueryNodeConfig } from "@tsian/contracts"
 import type { NodeExecutor } from "@tsian/workflow-engine"
-import { assembleRetrievalContext } from "../../runtime-host/retrieval"
 import { listMemoryRecordsForSave } from "../../storage"
 import type { PlatformWorkflowContext } from "../types"
 
-function readMemoryQueryConfig(raw: unknown): MemoryQueryNodeConfig {
+type NormalizedMemoryQueryConfig = MemoryQueryNodeConfig & {
+  namespace: string
+  collection: string
+}
+
+function normalizeRequiredText(value: string | undefined, label: string): string {
+  const normalized = value?.trim()
+  if (!normalized) {
+    throw new Error(`memory-query node config is invalid: ${label} is required`)
+  }
+  return normalized
+}
+
+function readMemoryQueryConfig(raw: unknown): NormalizedMemoryQueryConfig {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(
-      `memory-query node config is invalid: expected { source: "event-archive" | "collection" }`,
+      `memory-query node config is invalid: expected { source: "collection" }`,
     )
   }
   const config = raw as Partial<MemoryQueryNodeConfig>
-  if (config.source !== "event-archive" && config.source !== "collection") {
+  if (config.source !== "collection") {
     throw new Error(
-      `memory-query node config is invalid: source must be "event-archive" or "collection"`,
+      `memory-query node config is invalid: source must be "collection"`,
     )
   }
-  return config as MemoryQueryNodeConfig
+  return {
+    ...config,
+    source: "collection",
+    namespace: normalizeRequiredText(config.namespace, "namespace"),
+    collection: normalizeRequiredText(config.collection, "collection"),
+  }
 }
 
 function castPlatformContext(raw: unknown): PlatformWorkflowContext {
@@ -51,50 +68,16 @@ export const memoryQueryExecutor: NodeExecutor = {
       ctx.macros["user.input"] ??
       ctx.userInput
 
-    if (config.source === "collection") {
-      const records = await listMemoryRecordsForSave(ctx.saveId, {
-        namespace: config.namespace,
-        collection: config.collection,
-        query,
-        limit: normalizeLimit(config.limit),
-      })
-      return {
-        outputs: {
-          records,
-          count: records.length,
-        },
-      }
-    }
-
-    const result = await assembleRetrievalContext({
-      messages: [...ctx.history],
-      userInput: query,
-      events: [...ctx.events],
-      catalogEvents: [...ctx.catalogEvents],
-      activeEvent: ctx.activeEvents[0] ?? null,
-      activeEvents: [...ctx.activeEvents],
-      archives: [...ctx.archives],
-      currentTime: ctx.currentTime,
-      narrativeTimeText: ctx.narrativeTimeText,
-      globals: ctx.globals,
-      playerArchiveIds: [...ctx.playerArchiveIds],
-      settings: ctx.retrievalSettings,
+    const records = await listMemoryRecordsForSave(ctx.saveId, {
+      namespace: config.namespace,
+      collection: config.collection,
+      query,
+      limit: normalizeLimit(config.limit),
     })
-
-    const debug = {
-      ...result.debug,
-      turn: ctx.turn,
-    }
-    ctx.recordRetrievalDebug?.(debug)
-    const hitArchiveIds = new Set(debug.archives.map((archive) => archive.id))
-    const hitArchives = ctx.archives.filter((archive) => hitArchiveIds.has(archive.id))
-
     return {
       outputs: {
-        prompt: result.prompt,
-        directEntities: debug.directEntities,
-        archives: hitArchives,
-        debug,
+        records,
+        count: records.length,
       },
     }
   },

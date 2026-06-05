@@ -93,4 +93,34 @@ describe("mixed AIRP default workflow", () => {
     expect(src).toContain("createDefaultAirpWorkflow")
     expect(src).toContain("export const defaultWorkflow")
   })
+
+  it("keeps memory-query collection-only across contracts and platform authoring", () => {
+    const files = [
+      "packages/contracts/src/workflow.ts",
+      "apps/platform-web/src/workflow-host/executors/memory-query.ts",
+      "apps/platform-web/src/components/workflow/inspector/MemoryQueryForm.vue",
+      "apps/platform-web/src/components/workflow/node-schema.ts",
+    ]
+
+    for (const file of files) {
+      const src = readFileSync(resolve(REPO_ROOT, file), "utf-8")
+      expect(src, file).not.toContain("event-archive")
+    }
+
+    const executorSrc = readFileSync(
+      resolve(REPO_ROOT, "apps/platform-web/src/workflow-host/executors/memory-query.ts"),
+      "utf-8",
+    )
+    expect(executorSrc).toContain("listMemoryRecordsForSave")
+    expect(executorSrc).not.toContain("assembleRetrievalContext")
+
+    const schemaSrc = readFileSync(
+      resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/node-schema.ts"),
+      "utf-8",
+    )
+    expect(schemaSrc).toContain("memory.records")
+    expect(schemaSrc).toContain("memory.count")
+    expect(schemaSrc).not.toContain("memory.prompt")
+    expect(schemaSrc).not.toContain("memory.debug")
+  })
 })

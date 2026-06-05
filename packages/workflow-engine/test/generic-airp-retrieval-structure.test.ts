@@ -2,9 +2,8 @@
  * Generic AIRP retrieval structure static proof.
  *
  * platform-web does not yet have a dedicated retrieval test harness. Keep this
- * proof here so the default AIRP retrieval path stays decomposed into internal
- * stage helpers while the public workflow graph still uses one high-level
- * memory-query node.
+ * proof here so the platform-internal AIRP retrieval helper stays decomposed
+ * into named stages instead of becoming an opaque compatibility block again.
  */
 
 import { describe, expect, it } from "vitest"

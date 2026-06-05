@@ -58,9 +58,10 @@
 - AIRP 当前权威记忆是 save-scoped generic `memoryRecords` 中的
   `airp/events`、`airp/archives`、`airp/globals/currentTime`。
   legacy snapshot/events/archives 是兼容投影，不再反向约束主链。
-- 默认 AIRP 检索不再依赖 `memory-query { source: "event-archive" }`
-  高层黑盒；默认工作流使用 AIRP collection query、公开 record 节点和
-  bounded compute 组成混合检索 preset。
+- `memory-query` workflow node 现在是 collection-only；旧
+  `source: "event-archive"` 分支已从 editor/runtime workflow surface 退场。
+  默认工作流使用 AIRP collection query、公开 record 节点和 bounded compute
+  组成混合检索 preset。
 - 默认维护写入走 `maintenance.operations -> memory-write.operations`。
   `apply-patch` 仍作为兼容写入口保留，并在写 legacy slices 后同步回
   generic AIRP memory。
@@ -383,10 +384,9 @@
 
 1. 收紧或退役不再适合作为通用 workflow surface 的兼容节点。
 2. 清理 `apply-patch` 节点、桥 API 和内部 applier 之间的边界。
-3. 清理 `memory-query(source: "event-archive")` 这类历史兼容形状。
-4. 继续把默认 AIRP 事件/档案系统表达为 schema + workflow preset +
+3. 继续把默认 AIRP 事件/档案系统表达为 schema + workflow preset +
    renderer，而不是平台通用节点语义。
-5. 为未来 schema resources、workflow blocks/subgraphs、renderer adapters
+4. 为未来 schema resources、workflow blocks/subgraphs、renderer adapters
    留出清晰位置。
 
 具体实现仍应通过 Trellis 任务 PRD 明确范围后再推进。

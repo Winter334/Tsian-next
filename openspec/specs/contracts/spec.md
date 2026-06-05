@@ -69,7 +69,7 @@ export interface ComputeNodeConfig {
 }
 
 export interface MemoryQueryNodeConfig {
-  source: 'event-archive' | 'collection';
+  source: 'collection';
   namespace?: string;
   collection?: string;
   queryVarName?: string;

@@ -243,8 +243,7 @@ export function resolveWorkflowOutputSlots(
   }
 
   if (nodeType === 'memory-query') {
-    const source = config?.source === 'event-archive' ? 'event-archive' : 'collection'
-    const collectionOutputs: WorkflowPortDisplay[] = [
+    return [
       {
         name: 'records',
         label: '记忆记录',
@@ -256,35 +255,6 @@ export function resolveWorkflowOutputSlots(
         label: '记录数量',
         valueType: 'number',
         semanticSlot: 'memory.count',
-      },
-    ]
-
-    if (source === 'collection') return collectionOutputs
-
-    return [
-      {
-        name: 'prompt',
-        label: '记忆提示',
-        valueType: 'string',
-        semanticSlot: 'memory.prompt',
-      },
-      {
-        name: 'directEntities',
-        label: '直接实体',
-        valueType: 'array',
-        semanticSlot: 'memory.directEntities',
-      },
-      {
-        name: 'archives',
-        label: '命中档案',
-        valueType: 'array',
-        semanticSlot: 'memory.archives',
-      },
-      {
-        name: 'debug',
-        label: '调试信息',
-        valueType: 'object',
-        semanticSlot: 'memory.debug',
       },
     ]
   }

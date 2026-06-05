@@ -34,9 +34,9 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 3. Contracts
 
-- `memory-query` with `source: "event-archive"` remains a compatibility/high-level strategy node that projects built-in AIRP `memoryRecords` into retrieval context and outputs `prompt`, `directEntities`, `archives`, and `debug`.
-- The platform default AIRP workflow should not rely on `memory-query { source: "event-archive" }` as its default retrieval black box. It should use the mixed AIRP workflow preset shape: AIRP collection queries (`airp/events`, `airp/archives`, `airp/globals`) -> public record-processing nodes -> bounded `compute` for AIRP-specific extraction/ranking/relation/assembly -> chat/maintenance.
-- `memory-query` with `source: "collection"` reads `memoryRecords` and outputs `records` and `count`.
+- `memory-query` is collection-only. It reads one save-scoped generic memory collection and outputs `records` and `count`.
+- The retired `memory-query { source: "event-archive" }` branch must not be exposed by the editor or executed as a hidden AIRP retrieval path. Old workflows that still set that source should fail loudly.
+- The platform default AIRP workflow should use the mixed AIRP workflow preset shape: AIRP collection queries (`airp/events`, `airp/archives`, `airp/globals`) -> public record-processing nodes -> bounded `compute` for AIRP-specific extraction/ranking/relation/assembly -> chat/maintenance.
 - `memory-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `record-filter` consumes an array input and filters items by limited predicates over record meta, tags, or `data` paths; it outputs a filtered array and `count`.
 - `record-merge` consumes configured array inputs, merges them in order, dedupes by a stable key path, and outputs a merged array and `count`.
@@ -73,11 +73,12 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `memory-write` patch against a missing record -> storage error.
 - `memory-write` patch against existing non-object record data -> storage error.
 - `memory-query` collection source without collection identity -> executor error.
+- `memory-query` with any source other than `"collection"` -> executor error.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, bounded `compute` for AIRP-specific retrieval glue, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.operations` to an explicit `memory-write` node.
-- Base: custom collection workflows use `memory-query { source: "collection" }` and `memory-write` with namespace/collection defaults for alternative memory structures.
+- Base: custom collection workflows use `memory-query { source: "collection", namespace, collection }` and `memory-write` with namespace/collection defaults for alternative memory structures.
 - Base: custom collection workflows can combine `memory-query { source: "collection" }`, `record-filter`, `record-merge`, `record-format`, `template-compose`, and `compute` for non-AIRP memory structures such as keyword -> snippet/summary.
 - Bad: reintroducing `ai-call.config.bypass.rawFromMacro = "__retrieval.raw"` hides retrieval outside the workflow and breaks replaceability.
 - Bad: collapsing ordinary record filtering/merging/formatting back into a long `compute` script when the public record nodes can express the behavior.
@@ -88,7 +89,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Contract/build checks: `npm run build:contracts`, `npm run build:memory-core`, `npm run build:web`.
 - Memory schema/validator checks: `npm run test --workspace @tsian/memory-core`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
-- Regression assertion: built-in grey-salt-town workflow uses the shared mixed AIRP workflow preset, contains AIRP collection query nodes and `record-filter` / `record-merge` / `record-format`, contains no `bypass` / `__retrieval.raw` / default `event-archive` retrieval black box, contains an explicit `maintenance.operations -> memoryWrite.operations` edge, and remains valid as a mod workflow.
+- Regression assertion: built-in grey-salt-town workflow uses the shared mixed AIRP workflow preset, contains AIRP collection query nodes and `record-filter` / `record-merge` / `record-format`, contains no `bypass` / `__retrieval.raw` / retired `event-archive` source, contains an explicit `maintenance.operations -> memoryWrite.operations` edge, and remains valid as a mod workflow.
 - Static proof: built-in mods reference workflow presets through
   `workflowPresetId`; built-in workflow preset seeding must use explicit seed
   definitions, not deprecated `manifest.workflow`.
@@ -97,7 +98,8 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
   overwritten by the after-turn generic-to-legacy sync.
 - Static proof: `memory-write` does not create a node-local checkpoint unless
   `pushCheckpointReason` is explicitly set to `"manual"` or `"after-turn"`.
-- Static proof or tests for retrieval refactors should verify that `assembleRetrievalContext()` still routes through named internal stages instead of collapsing new common behavior into a single opaque block or `compute`-like escape hatch.
+- Static proof should keep `memory-query` collection-only across contracts, editor slots, inspector forms, and executor behavior.
+- Static proof or tests for platform-internal AIRP retrieval refactors should verify that `assembleRetrievalContext()` still routes through named internal stages instead of collapsing AIRP-specific behavior into a single opaque block.
 - Browser smoke: resource workflow preview and fullscreen editor show `memory-query`, and new memory/template nodes can be dragged onto the canvas and inspected.
 
 ### 7. Wrong vs Correct

@@ -72,9 +72,9 @@ export interface WorkflowExecutionContext {
 - Output ports: `value`
 
 ### 3.6 `memory-query`
-- Config: `{ source: "collection" | "event-archive", namespace?, collection?, queryVarName?, query?, limit? }`
-- `collection` 是 save-scoped generic memory records 的主路径；`event-archive` 是兼容来源，不属于默认 AIRP 主链。
-- Output ports: `collection` 输出 `records` / `count`；`event-archive` 兼容输出 `prompt` / `directEntities` / `archives` / `debug`。
+- Config: `{ source: "collection", namespace?, collection?, queryVarName?, query?, limit? }`
+- 行为：读取一个 save-scoped generic memory collection；执行时 `namespace` 与 `collection` 必须非空，任何其它 `source` 都应作为无效配置失败。
+- Output ports: `records` / `count`。
 
 ### 3.7 `memory-write`
 - Config: `{ operationsVarName: string, namespace?, collection?, pushCheckpointReason?: "after-turn" | "manual" | "none" }`

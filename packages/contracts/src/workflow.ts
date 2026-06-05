@@ -135,8 +135,8 @@ export interface ComputeNodeConfig {
 }
 
 export interface MemoryQueryNodeConfig {
-  /** event-archive: compatibility source; collection: save-scoped generic memory records. */
-  source: "event-archive" | "collection"
+  /** Collection-only query over save-scoped generic memory records. */
+  source: "collection"
   namespace?: string
   collection?: string
   /** Optional input key to read query text from; falls back to user.input macro. */
