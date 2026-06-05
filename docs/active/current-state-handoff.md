@@ -333,13 +333,17 @@
 
 - `../README.md`
 - `./current-state-handoff.md`
-- `./implementation-plan.md`
+- `./airp-workflow-platform-direction.md`
 
-主干参考文档：
+历史参考文档：
 
-- `./memory-system-decisions.md`
-- `./narrative-entity-archive-skeleton.md`
-- `./patch-contract-skeleton.md`
+- `../archive/2026-06-05-workflow-as-system/implementation-plan.md`
+- `../archive/2026-06-05-workflow-as-system/memory-system-decisions.md`
+- `../archive/2026-06-05-workflow-as-system/narrative-entity-archive-skeleton.md`
+- `../archive/2026-06-05-workflow-as-system/patch-contract-skeleton.md`
+
+这些历史文档不再作为 active guidance。长期方向以
+`./airp-workflow-platform-direction.md` 为准。
 
 关键实现入口：
 
@@ -373,28 +377,27 @@
 
 当前最适合继续的方向是：
 
-`围绕已落地的新契约做一次真实运行验收。`
+`围绕 workflow-as-system 方向继续清理工作流节点语义、兼容边界和默认 AIRP 系统的配置化边界。`
 
-建议验收顺序：
+优先候选：
 
-1. 启动 `npm run dev:web`
-2. 新建存档，确保使用当前本地库
-3. 发送一轮真实游玩输入
-4. 检查检索调试是否使用实体名称生成查询组
-5. 检查维护 AI 是否输出 `globals/events/archives` 新 patch
-6. 检查事件是否更新 `entityTags/content/status`
-7. 检查档案是否更新 `situation/linkedNames`，需要时才更新 `focus`
-8. 检查快照中是否只存在 `globals`，不再出现旧 `status`
+1. 收紧或退役不再适合作为通用 workflow surface 的兼容节点。
+2. 清理 `apply-patch` 节点、桥 API 和内部 applier 之间的边界。
+3. 清理 `memory-query(source: "event-archive")` 这类历史兼容形状。
+4. 继续把默认 AIRP 事件/档案系统表达为 schema + workflow preset +
+   renderer，而不是平台通用节点语义。
+5. 为未来 schema resources、workflow blocks/subgraphs、renderer adapters
+   留出清晰位置。
 
-如果这轮验收通过，再进入 `./implementation-plan.md` 中的阶段 B。
+具体实现仍应通过 Trellis 任务 PRD 明确范围后再推进。
 
 ## 7. 注意事项
 
 当前仍处于快速原型期：
 
 - 不做旧 IndexedDB 数据迁移
-- 不做兼容层
+- 不把临时兼容层扩展成长期模型
 - 本地数据异常时优先新建存档或清空浏览器本地数据
 - 不提前设计复杂通用 patch 系统
-- 不提前实现多事件并行维护
-- 不提前抽象插件系统
+- 不把默认事件/档案系统误当成所有 AIRP 系统的唯一架构
+- 不用任意 compute 脚本替代应沉淀为平台原语的常见能力

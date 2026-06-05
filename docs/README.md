@@ -2,17 +2,17 @@
 
 ## 1. 当前维护口径
 
-`docs/` 里曾经沉淀了大量正式开发前的设计骨架。当前项目已经进入可运行原型阶段，因此后续不再要求所有历史骨架文档同步维护。
+`docs/` 里曾经沉淀了大量正式开发前的设计骨架。当前项目已经进入可运行原型阶段，并且方向已收敛为 workflow-as-system 平台，因此后续不再维护多份阶段性设计文档。
 
-当前文档维护原则如下：
+当前文档维护原则：
 
 - 以当前代码状态为准。
-- 以活跃入口文档为准。
-- 历史 `*-skeleton.md` 文档只作为设计背景参考。
-- 新增实现决策时，优先更新活跃入口文档，不要继续分散追加到大量旧骨架文档。
-- 如果活跃入口文档和历史骨架文档冲突，优先相信活跃入口文档与当前代码。
+- 以 `.trellis/spec/` 中的项目规范为准。
+- 以 `docs/active/` 中的精简入口文档为准。
+- 归档文档只作为历史背景，不作为当前任务规划的权威来源。
+- 如果 active 文档、spec、当前代码和归档文档冲突，优先相信 active 文档、spec 和当前代码。
 
-## 2. 活跃入口文档
+## 2. Active 文档
 
 当前只建议把以下文档作为日常维护入口。
 
@@ -24,70 +24,50 @@
 
 - 新会话接手
 - 查看当前已经实现什么
-- 查看当前还没有做什么
 - 查看关键代码入口
+- 查看仍需注意的实现边界
 
-### 2.2 下一阶段计划
+### 2.2 平台方向
 
-- `active/implementation-plan.md`
-
-用途：
-
-- 查看下一阶段做什么
-- 查看验收顺序
-- 避免过度设计和提前优化
-
-### 2.3 主干设计
-
-以下文档记录轻易不会改变的主干决策：
-
-- `active/memory-system-decisions.md`
-- `active/narrative-entity-archive-skeleton.md`
-- `active/patch-contract-skeleton.md`
+- `active/airp-workflow-platform-direction.md`
 
 用途：
 
-- 记忆系统为什么以事件为主
-- 档案为什么是实体当前状态唯一真源
-- patch 为什么使用 `currentTime / globals / events / archives`
-- 为什么当前不引入 `del`、RFC 6902 JSON Patch、多事件复杂定位
+- 查看 Tsian 的 workflow-as-system 平台定位
+- 判断新任务是否符合长期方向
+- 约束节点类型、schema、资源、renderer、platform capability 的边界
+- 避免把默认 AIRP 事件/档案系统误当成平台本体
 
-## 3. 历史参考文档
+## 3. Archive 文档
 
-以下文档主要是设计期讨论产物，后续默认不要求持续维护：
+`archive/` 保存曾经 active 但已不再持续维护的历史材料。
 
-- `reference/ai-runtime-skeleton.md`
-- `reference/development-skeleton.md`
-- `reference/local-runtime-skeleton.md`
-- `reference/local-storage-skeleton.md`
-- `reference/mod-and-save-skeleton.md`
-- `reference/prompt-preset-skeleton.md`
-- `reference/system-architecture-skeleton.md`
-- `reference/technical-stack-skeleton.md`
-- `reference/webui-runtime-skeleton.md`
+它们的价值是：
 
-它们的价值是保留早期设计背景，不是描述当前实现状态。
+- 保留早期设计背景
+- 帮助追踪某些实现为什么曾经这样做
+- 在需要时提供决策历史
 
-如果后续需要重新讨论某个方向，应把结论收敛回活跃入口文档，而不是继续维护所有历史骨架文档。
+它们的限制是：
 
-## 4. 当前稳定主干
+- 不保证描述当前代码
+- 不保证符合最新 workflow-as-system 方向
+- 不应作为新任务的唯一依据
+
+## 4. Reference 文档
+
+`reference/` 保存更早期的骨架文档和技术背景材料。
+
+如果后续需要重新讨论某个方向，应把新结论收敛回 `active/airp-workflow-platform-direction.md`，而不是继续维护所有历史骨架文档。
+
+## 5. 当前稳定主干
 
 当前项目的稳定主干可以压缩为：
 
-`Tsian 是一个 AIRP 专精框架；平台 WebUI 承载本地运行时；游玩前端包只负责交互与渲染；记忆以事件为主，档案作为实体当前状态唯一真源，globals 承载非实体全局状态；档案存储保持扁平对象，内部类型定义可用父类 / 子类复用字段，但 AI 只看最终 type 与合法字段；维护 AI 通过 currentTime / globals / events / archives patch 修改运行时。`
+`Tsian 是一个面向 AIRP 的 workflow-as-system 平台。系统由 workflow preset、schema/state、resources、platform capabilities 和 frontend renderer 组合而成。默认事件/档案记忆是参考系统，不是平台本体。平台负责存储、schema 校验、checkpoint、回滚、AI 调用和调试追踪等安全边界，玩家和作者通过配置工作流与资源来构建自己的 AIRP 系统。`
 
-当前主链为：
+阅读顺序：
 
-1. 玩家通过前端包发送输入。
-2. 平台 WebUI 调用检索 AI 生成实体查询组。
-3. 平台 WebUI 根据事件、档案和向量重排组装记忆补充。
-4. 正文 AI 生成本轮剧情正文。
-5. 维护 AI 读取本轮剧情并输出 patch。
-6. 平台 WebUI 应用 patch 到时间、globals、事件和档案。
-7. 前端包重新读取快照、事件、档案和调试信息进行渲染。
-
-## 5. 文档清理建议
-
-当前已经把历史文档移动到 `reference/`，避免与活跃入口混在一起。
-
-后续如果需要删除某份历史文档，必须先确认它的信息已经被 `active/` 下的主干文档吸收。
+1. `docs/active/current-state-handoff.md`
+2. `docs/active/airp-workflow-platform-direction.md`
+3. 需要历史背景时，再查 `docs/archive/` 或 `docs/reference/`

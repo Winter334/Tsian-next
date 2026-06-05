@@ -36,7 +36,7 @@
 
 与记忆系统相关的进一步决策，单独记录在：
 
-- [memory-system-decisions.md](../active/memory-system-decisions.md)
+- [memory-system-decisions.md](../archive/2026-06-05-workflow-as-system/memory-system-decisions.md)
 
 与 AI 调度层相关的进一步决策，单独记录在：
 
@@ -44,7 +44,7 @@
 
 与状态修改契约相关的进一步决策，单独记录在：
 
-- [patch-contract-skeleton.md](../active/patch-contract-skeleton.md)
+- [patch-contract-skeleton.md](../archive/2026-06-05-workflow-as-system/patch-contract-skeleton.md)
 
 与提示词预设层相关的进一步决策，单独记录在：
 
@@ -76,7 +76,7 @@
 
 与实施顺序相关的进一步决策，单独记录在：
 
-- [implementation-plan.md](../active/implementation-plan.md)
+- [implementation-plan.md](../archive/2026-06-05-workflow-as-system/implementation-plan.md)
 
 ## 3. 当前已确定的核心原则
 
