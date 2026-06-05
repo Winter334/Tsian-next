@@ -589,3 +589,37 @@ Made memory-query collection-only across contracts, platform executor, workflow 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 退役 apply-patch 工作流节点
+
+**Date**: 2026-06-05
+**Task**: 退役 apply-patch 工作流节点
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+完成 workflow-as-system 下一阶段 A2：从 contracts、workflow-engine、platform-web workflow host/editor 和测试中退役 apply-patch 工作流节点；保留 bridge/runtime patch 兼容 API 与 applyMaintenancePatch；同步 Trellis specs、方向文档和任务归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dc3813f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
