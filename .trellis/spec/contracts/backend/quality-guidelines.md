@@ -21,7 +21,7 @@ Contract changes are high impact because they compile through multiple workspace
 
 - `ModManifest.workflowPresetId` is preferred while `workflow` remains deprecated legacy input.
 - `WorkflowNodeBase.inputs` is optional so old workflows without input declarations still load.
-- `ApplyPatchOutput` is shared by bridge APIs and apply-patch workflow nodes so both paths stay aligned.
+- `ApplyPatchOutput` is shared by bridge/runtime patch APIs; workflow nodes no longer expose the patch compatibility path.
 
 ## Avoid
 

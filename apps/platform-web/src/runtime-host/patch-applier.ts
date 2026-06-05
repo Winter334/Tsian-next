@@ -25,7 +25,7 @@ import type { LocalRuntimeEngine } from "./engine"
  * checkpoint：仅当 input.pushCheckpointReason 存在时创建（§13.9）。
  *
  * name → id 强引用解析（attachArchiveStrongRefs / attachEventStrongRefs）
- * 整体封装在 applier 内部，桥 API 路径与 apply-patch 节点共用同一份解析。
+ * 整体封装在 applier 内部，桥 API patch 路径共用同一份解析。
  */
 
 export interface ApplyPatchInput {
@@ -212,7 +212,7 @@ export async function applyMaintenancePatch(
     await applyEventPatchForSave(saveId, eventPatch)
   }
 
-  // ── 7. 同步 generic AIRP memory authority（apply-patch 是兼容写入口） ──
+  // ── 7. 同步 generic AIRP memory authority（bridge patch 是兼容写入口） ──
   const latestSnapshot = await runtimeEngine.getSnapshot()
   const latestEvents = await listEventsForSave(saveId)
   const latestArchives = await listArchivesForSave(saveId)
@@ -239,7 +239,7 @@ export async function applyMaintenancePatch(
   return {
     appliedArchives: changedArchives.map((item) => item.id),
     // §13.3 注释：appliedEventIds 暂时返回空数组（YAGNI）；
-    // applyEventPatchForSave 当前不返回 id，apply-patch 节点目前未消费此字段。
+    // applyEventPatchForSave 当前不返回 id，暂未实现精确事件 id 捕获。
     // 如需精确返回，未来在 storage/events.ts 改 applyEventPatchForSave 签名。
     appliedEventIds: [],
     globalsChanged,

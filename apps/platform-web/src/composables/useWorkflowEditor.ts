@@ -30,7 +30,6 @@ function defaultNodeConfig(type: WorkflowNodeType): Record<string, unknown> {
   if (type === 'record-filter') return { inputVarName: 'records', outputName: 'records', match: 'all', predicates: [] }
   if (type === 'record-merge') return { inputVarNames: ['records'], keyPath: 'id', outputName: 'records' }
   if (type === 'record-format') return { inputVarName: 'records', itemTemplate: '{{item.data.content}}', separator: '\n', outputName: 'text' }
-  if (type === 'apply-patch') return { patchVarName: 'patch' }
   if (type === 'result') return { name: 'result' }
   if (type === 'switch') return { cases: [], defaultOutputName: 'default' }
   if (type === 'compute') return { script: 'return { value: inputs.value }', timeout: 5000 }

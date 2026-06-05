@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { readFileSync } from "node:fs"
+import { existsSync, readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import { createDefaultAirpWorkflow } from "../../../builtin/mods/default-airp-workflow"
 import { validateWorkflowDefinition } from "../src/index"
@@ -12,6 +12,7 @@ describe("mixed AIRP default workflow", () => {
 
     expect(() => validateWorkflowDefinition(workflow)).not.toThrow()
     expect(JSON.stringify(workflow)).not.toContain('"event-archive"')
+    expect(JSON.stringify(workflow)).not.toContain('"apply-patch"')
     expect(JSON.stringify(workflow)).not.toContain('"bypass"')
     expect(JSON.stringify(workflow)).not.toContain("__retrieval.raw")
 
@@ -122,5 +123,35 @@ describe("mixed AIRP default workflow", () => {
     expect(schemaSrc).toContain("memory.count")
     expect(schemaSrc).not.toContain("memory.prompt")
     expect(schemaSrc).not.toContain("memory.debug")
+  })
+
+  it("keeps apply-patch retired from workflow contracts and authoring", () => {
+    const files = [
+      "packages/contracts/src/workflow.ts",
+      "packages/workflow-engine/src/validator.ts",
+      "packages/workflow-engine/src/errors.ts",
+      "packages/workflow-engine/src/index.ts",
+      "apps/platform-web/src/workflow-host/index.ts",
+      "apps/platform-web/src/components/workflow/node-registry.ts",
+      "apps/platform-web/src/components/workflow/node-schema.ts",
+      "apps/platform-web/src/components/workflow/NodeInspector.vue",
+      "apps/platform-web/src/composables/useWorkflowEditor.ts",
+      "apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue",
+      "apps/platform-web/src/views/DebugView.vue",
+    ]
+
+    for (const file of files) {
+      const src = readFileSync(resolve(REPO_ROOT, file), "utf-8")
+      expect(src, file).not.toContain("apply-patch")
+      expect(src, file).not.toContain("ApplyPatchNodeConfig")
+      expect(src, file).not.toContain("APPLY_PATCH_INPUT_INCOMPLETE")
+    }
+
+    expect(
+      existsSync(resolve(REPO_ROOT, "apps/platform-web/src/workflow-host/executors/apply-patch.ts")),
+    ).toBe(false)
+    expect(
+      existsSync(resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/inspector/ApplyPatchForm.vue")),
+    ).toBe(false)
   })
 })

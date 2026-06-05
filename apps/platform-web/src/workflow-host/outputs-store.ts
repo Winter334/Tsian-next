@@ -13,9 +13,8 @@
  *   不允许节点执行过程中高频 mutation；scheduler 仅在状态迁移末尾调钩子。
  *
  * abort 关键防御（D6 第 6 项）：
- *   `abortNode` 仅对 `pending`/`running` 的节点生效；已 `succeeded`/`failed` 的节点
- *   保持原状（**关键**：apply-patch 在写入 IndexedDB 完成后才被外部 abort 时，
- *   节点已 succeeded，不应被改成 aborted）。
+ *   `abortNode` 仅对 `pending`/`running` 的节点生效；已 `succeeded`/`failed`
+ *   的节点保持原状，避免调试状态在节点 settle 后被外部 abort 覆盖。
  *
  * 当前阶段不实现 `Map<saveId:turn, TurnOutputsRef>`（YAGNI，D8 简化版）。
  *

@@ -4,7 +4,6 @@ import { nodeTypeMap } from './node-registry'
 import AiCallForm from './inspector/AiCallForm.vue'
 import ResultForm from './inspector/ResultForm.vue'
 import SwitchForm from './inspector/SwitchForm.vue'
-import ApplyPatchForm from './inspector/ApplyPatchForm.vue'
 import ComputeForm from './inspector/ComputeForm.vue'
 import MemoryQueryForm from './inspector/MemoryQueryForm.vue'
 import MemoryWriteForm from './inspector/MemoryWriteForm.vue'
@@ -241,11 +240,6 @@ function handleDelete() {
       />
       <SwitchForm
         v-else-if="selectedNode.data.nodeType === 'switch'"
-        :config="selectedNode.data.config"
-        :on-update="handleUpdateConfig"
-      />
-      <ApplyPatchForm
-        v-else-if="selectedNode.data.nodeType === 'apply-patch'"
         :config="selectedNode.data.config"
         :on-update="handleUpdateConfig"
       />

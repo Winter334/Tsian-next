@@ -13,7 +13,8 @@ Frontend integration should preserve engine invariants while presenting useful e
 - Editor validation uses `validateWorkflowDefinition` and translates messages without changing engine behavior.
 - Workflow editor import/export preserves `inputs`, output metadata, `from.outputName`, and `to.varName`.
 - Platform-host passes the correct `isModWorkflow` value based on workflow source for trace/source metadata.
-- apply-patch executor and bridge patch APIs still share `applyMaintenancePatch`.
+- Bridge patch APIs still share `applyMaintenancePatch`; the retired workflow
+  `apply-patch` node must not be restored as an executor.
 - Output store updates remain debug/observer state only.
 
 ## Avoid

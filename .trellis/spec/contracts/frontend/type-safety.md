@@ -152,14 +152,14 @@ interface PromptPresetResource {
   with `isModWorkflow: false` so traces and source-sensitive integration can
   distinguish player overrides.
 - Mod-referenced workflow presets and deprecated legacy mod workflows are still
-  mod-controlled input. Execute them with `isModWorkflow: true`, but do not use
-  that metadata as a permission gate for `apply-patch`.
+  mod-controlled input. Execute them with `isModWorkflow: true`; source metadata
+  must not change the supported workflow node set.
 - Built-in mods should declare `workflowPresetId` and seed the referenced
   workflow preset through the resource library seed path. Do not use deprecated
   `manifest.workflow` as the source of built-in workflow preset resources.
-- Built-in/default, save-selected, and mod-referenced workflows may all contain
-  explicit `apply-patch` compatibility write nodes when their patch input port
-  is correctly declared and bound.
+- Built-in/default, save-selected, and mod-referenced workflows must not contain
+  retired `apply-patch` nodes. Bridge/runtime patch APIs remain a separate
+  compatibility path and are not workflow preset syntax.
 - UI should display the source kind so users can distinguish `save-override`,
   `mod-preset`, `legacy-mod-workflow`, and `platform-default`.
 
@@ -172,10 +172,8 @@ interface PromptPresetResource {
 - Mod-level `workflowPresetId` points to no resource -> throw a clear
   `mod "<id>" references missing workflow preset "<preset>"` error at runtime
   resolution.
-- Referenced workflow contains `apply-patch` with a valid patch input binding ->
-  allowed regardless of workflow source.
-- Referenced workflow contains `apply-patch` without a valid patch input binding
-  -> workflow-engine throws `APPLY_PATCH_INPUT_INCOMPLETE`.
+- Referenced workflow contains retired node type `apply-patch` ->
+  workflow-engine throws `UNKNOWN_NODE_TYPE` regardless of workflow source.
 - Clearing the save override (`workflowPresetId: null`) -> remove the optional
   field and return to the mod/default precedence chain.
 - No `workflowPresetId` and no legacy `workflow` -> use `defaultWorkflow`.
@@ -197,8 +195,8 @@ interface PromptPresetResource {
   field into a workflow preset.
 - Bad: A missing save-level or mod-level `workflowPresetId` silently falls back
   to `defaultWorkflow`.
-- Bad: A mod-referenced workflow preset is rejected only because it contains an
-  explicit `apply-patch` node.
+- Bad: A mod-referenced workflow preset relies on retired `apply-patch` node
+  syntax instead of generic `memory-write` or bridge/runtime patch APIs.
 
 #### 6. Tests Required
 
@@ -206,9 +204,8 @@ interface PromptPresetResource {
   `getWorkflowPresetResource`, resolves save-level `workflowPresetId` before
   mod-level `workflowPresetId`, resolves mod-level `workflowPresetId` before
   legacy `manifest.workflow`, and passes `isModWorkflow` into `executeWorkflow`.
-- Keep workflow-engine validation coverage proving mod workflows may explicitly
-  contain `apply-patch` while `APPLY_PATCH_INPUT_INCOMPLETE` still fires for
-  invalid patch input wiring.
+- Keep workflow-engine validation coverage proving retired `apply-patch`
+  workflow nodes fail loudly with `UNKNOWN_NODE_TYPE`.
 - Run `npm run build:web`; run `npm run build:contracts` when contract shapes
   change.
 

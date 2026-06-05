@@ -11,7 +11,6 @@ import {
   type PlatformWorkflowContext,
 } from "./types"
 import { aiCallExecutor } from "./executors/ai-call"
-import { applyPatchExecutor } from "./executors/apply-patch"
 import { computeExecutor } from "./executors/compute"
 import { memoryQueryExecutor } from "./executors/memory-query"
 import { memoryWriteExecutor } from "./executors/memory-write"
@@ -27,7 +26,6 @@ function buildBuiltinExecutors(): ReadonlyMap<string, NodeExecutor> {
     ["ai-call", aiCallExecutor],
     ["result", resultExecutor],
     ["switch", switchExecutor],
-    ["apply-patch", applyPatchExecutor],
     ["compute", computeExecutor],
     ["memory-query", memoryQueryExecutor],
     ["memory-write", memoryWriteExecutor],

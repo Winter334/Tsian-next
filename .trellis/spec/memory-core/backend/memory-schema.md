@@ -73,7 +73,8 @@
 - Base: workflow `memory-write` for `namespace: "mod.example", collection: "fragments"` remains storage-only until a schema resource exists for that namespace/collection.
 - Bad: putting `defaultAirpMemorySchema` in contracts as an `export const`.
 - Bad: adding `event-query` or `archive-query` node types instead of schema metadata.
-- Bad: expanding `apply-patch` to become the generic memory operation model.
+- Bad: restoring retired `apply-patch` workflow node semantics instead of using
+  `memory-write` plus schema validation for generic memory operations.
 - Bad: making Dexie `storage/memory.ts` import `@tsian/memory-core` and decide schema policy.
 - Bad: rejecting all unknown custom memory collections with `UNKNOWN_COLLECTION` before schema resources exist.
 

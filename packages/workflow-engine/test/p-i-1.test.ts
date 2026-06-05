@@ -1,10 +1,10 @@
 /**
- * P-I-1：桥 API 与 apply-patch 节点错误一致性验收
+ * P-I-1：桥 API patch 路径错误一致性验收
  *
  * 设计目标（design.md HC-14）：
  *   桥 API 写运行时（applyPatch / updateGlobals / appendUserMessage / appendAssistantMessage 中
- *   "patch 类"两条路径）与工作流的 apply-patch 节点必须共用同一份 patch 应用器代码
- *   （`applyMaintenancePatch`）。同一非法 patch 通过两条路径触发时，错误 (cause)
+ *   "patch 类"两条路径）必须共用同一份 patch 应用器代码（`applyMaintenancePatch`）。
+ *   同一非法 patch 通过两条 bridge 路径触发时，错误 (cause)
  *   必然一致 —— 因为它们都源自同一函数同一行。
  *
  * 测试策略：静态代码证明（static proof）
@@ -18,10 +18,10 @@
  *     成本），原型期 YAGNI。
  *
  * 静态证明做法：
- *   1. 把"桥 API 路径"与"apply-patch 节点路径"的关键源文件作为字符串读入；
- *   2. 断言两条路径都 `import { applyMaintenancePatch }` 自同一相对模块
- *      （`runtime-host/patch-applier`）；
- *   3. 断言两条路径都直接调用 `applyMaintenancePatch(`；
+ *   1. 把桥 API 路径与 applier 的关键源文件作为字符串读入；
+ *   2. 断言 bridge patch API `import { applyMaintenancePatch }` 自
+ *      `runtime-host/patch-applier`；
+ *   3. 断言 applyPatch / updateGlobals 都直接调用 `applyMaintenancePatch(`；
  *   4. 由此推出：同一非法 patch 进入两条路径时，落点是同一函数 → 抛出的错误必然一致。
  *
  * 既然抛错来自同一函数同一行，逻辑等价于 "f(x) === f(x)"，无需运行时验证。
@@ -39,25 +39,12 @@ const BRIDGE_PATH_FILE = resolve(
   REPO_ROOT,
   'apps/platform-web/src/platform-host/index.ts',
 )
-const APPLY_PATCH_NODE_FILE = resolve(
-  REPO_ROOT,
-  'apps/platform-web/src/workflow-host/executors/apply-patch.ts',
-)
 const APPLIER_FILE = resolve(
   REPO_ROOT,
   'apps/platform-web/src/runtime-host/patch-applier.ts',
 )
 
-describe('P-I-1 桥 API ≡ apply-patch 节点 错误一致性（静态证明）', () => {
-  it('apply-patch 节点 executor 从 runtime-host/patch-applier 导入 applyMaintenancePatch', () => {
-    const src = readFileSync(APPLY_PATCH_NODE_FILE, 'utf-8')
-    expect(src).toMatch(
-      /import\s*\{\s*applyMaintenancePatch\s*\}\s*from\s*["']\.\.\/\.\.\/runtime-host\/patch-applier["']/,
-    )
-    // 直接调用而非包装
-    expect(src).toMatch(/applyMaintenancePatch\s*\(/)
-  })
-
+describe('P-I-1 桥 API patch 路径错误一致性（静态证明）', () => {
   it('platform-host 桥 API 从 ../runtime-host/patch-applier 导入 applyMaintenancePatch', () => {
     const src = readFileSync(BRIDGE_PATH_FILE, 'utf-8')
     expect(src).toMatch(
@@ -127,8 +114,8 @@ describe('P-I-1 桥 API ≡ apply-patch 节点 错误一致性（静态证明）
 
   it('结论：两条路径共用同一函数 → 同一非法 patch 抛错必然一致（HC-14 保证）', () => {
     // 这里不做更多断言；上面 5 条已经联合证明：
-    //   桥 API (applyPatch / updateGlobals) → applyMaintenancePatch ← apply-patch 节点 executor
-    // 三方对一函数 (f)，错误来自 f 的同一份代码 → throw 等价。
+    //   桥 API (applyPatch / updateGlobals) → applyMaintenancePatch
+    // 两条 bridge patch 路径对一函数 (f)，错误来自 f 的同一份代码 → throw 等价。
     expect(true).toBe(true)
   })
 })

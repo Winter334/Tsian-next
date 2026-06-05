@@ -115,7 +115,7 @@ interface OutputsStoreWriter {
 
 ---
 
-`isModWorkflow` 是调用方来源元数据；当前不因 mod 来源禁用 `apply-patch`。
+`isModWorkflow` 是调用方来源元数据；当前不参与节点类型权限判断。已退休的旧节点类型会按 `UNKNOWN_NODE_TYPE` fail loud。
 
 ## 5. 加载期校验（design §13.4）
 
@@ -127,20 +127,19 @@ interface OutputsStoreWriter {
 | 2 | 节点类型必须在平台支持集合内 | `UNKNOWN_NODE_TYPE` |
 | 3 | 无悬挂边（edge.from/to.nodeId 必须在 nodes 内） | `DANGLING_EDGE` |
 | 4 | 无环（拓扑排序成功） | `CYCLE_DETECTED` |
-| 5 | apply-patch 节点 input ports 完整性（patchVarName 必须有入边） | `APPLY_PATCH_INPUT_INCOMPLETE` |
-| 6 | 至少 1 个 result 节点 | `MISSING_RESULT_NODE` |
-| 7 | result 节点 `config.name` 唯一 | `DUPLICATE_RESULT_NAME` |
+| 5 | 至少 1 个 result 节点 | `MISSING_RESULT_NODE` |
+| 6 | result 节点 `config.name` 唯一 | `DUPLICATE_RESULT_NAME` |
 
-支持的内置节点类型：`ai-call` / `result` / `switch` / `apply-patch` / `compute` / `memory-query` / `memory-write` / `template-compose`。
+支持的内置节点类型：`ai-call` / `result` / `switch` / `compute` / `memory-query` / `memory-write` / `template-compose` / `record-filter` / `record-merge` / `record-format`。
 
 ---
 
 ## 6. 与其它包协作
 
 - **@tsian/contracts**：所有类型来源（`WorkflowDefinition / WorkflowNode / WorkflowEdge / NodeOutputDeclaration / WorkflowNodeType / *NodeConfig`）。
-- **apps/platform-web/src/workflow-host/**（H4 起）：注册内置 executor（ai-call / result / switch / apply-patch / compute / memory-query / memory-write / template-compose），提供 `WorkflowExecutionContext.executors`。
+- **apps/platform-web/src/workflow-host/**（H4 起）：注册内置 executor（ai-call / result / switch / compute / memory-query / memory-write / template-compose / record-filter / record-merge / record-format），提供 `WorkflowExecutionContext.executors`。
 - **apps/platform-web/src/workflow-host/outputs-store.ts**（H7 已落地）：实现 `OutputsStoreWriter` 接口（套娃 shallowRef），platform-host 在 H8 通过 `ExecuteWorkflowOptions.outputsHooks` 注入。
-- **apps/platform-web/src/runtime-host/patch-applier.ts**（I1 已落地）：H4 的 apply-patch executor 直接调用，与桥 API 共享。
+- **apps/platform-web/src/runtime-host/patch-applier.ts**（I1 已落地）：桥/API patch 兼容写入口共享的 applier；不再作为 workflow executor 暴露。
 
 ---
 
@@ -152,7 +151,7 @@ interface OutputsStoreWriter {
 2. **不要在此包实现具体节点**——具体节点形态属于 H4 范围，且依赖浏览器/runtime-engine 句柄，违背包的运行时无关定位。
 3. **不要在此包碰 outputs shallowRef / Vue**——H7 仅以 `OutputsStoreWriter` 接口形式承接（接口零 Vue 依赖）；shallowRef 实现位于 `apps/platform-web/src/workflow-host/outputs-store.ts`。
 4. **不引入第三方依赖**——DAG / 拓扑排序自己写，包尺寸/行为可控。
-5. **`MaintenancePatchDocument` 不要在此包导入**——apply-patch 节点的 patch 解析与 applier 调用属于 H4，调度器只透传 inputs/outputs。
+5. **`MaintenancePatchDocument` 不要在此包导入**——patch 解析与 applier 调用属于 platform bridge/runtime 兼容层，调度器只校验 DAG 与节点类型、透传 inputs/outputs。
 
 ---
 
@@ -160,7 +159,7 @@ interface OutputsStoreWriter {
 
 - H3 阶段：`npm run build:workflow-engine` 必须 0 error；
 - H12 阶段：`test/sc-crit.test.ts` 8 测试覆盖 SC-CRIT 不变量；
-- I6 阶段：`test/p-i-1.test.ts` 6 测试静态证明 P-I-1（桥 API 与 apply-patch 节点共用同一份 `applyMaintenancePatch`，HC-14 验收，详见测试文件顶部注释）；
+- I6 阶段：`test/p-i-1.test.ts` 静态证明 P-I-1（桥 API 的 `applyPatch / updateGlobals` 共用同一份 `applyMaintenancePatch`，append 例外不走 applier）；
 - 运行命令：`cd packages/workflow-engine && npm test`（vitest，当前 14 / 14 passed）；
 - 后续：H10/H12 通过 platform-web 主链 + 调试面板验证调度行为；PBT 属性 P-H-1/2/3/4 在 `_research-notes.md` 已登记。
 
@@ -183,7 +182,7 @@ interface OutputsStoreWriter {
 |------|------|
 | 2026-05-10 | H3 新建包：DAG 调度器 + AbortController 传播 + 节点级重试 + 6 条加载期校验 |
 | 2026-05-10 | H7 新增 `OutputsStoreWriter` 接口（`src/types.ts`）+ 调度器 6+1 时机钩子（`safeHook` try/catch 包裹，纯调度器定位保持不变） |
-| 2026-05-11 | I6：新增 `test/p-i-1.test.ts`（6 测试）静态证明桥 API（`platform-host` 的 `applyPatch / updateGlobals`）与 apply-patch 节点 executor 共用同一份 `applyMaintenancePatch`（HC-14 验收）；`appendUserMessage / appendAssistantMessage` 属 append 例外，不走 applier；vitest 共 14 / 14 passed |
+| 2026-05-11 | I6：新增 `test/p-i-1.test.ts` 静态证明桥 API（`platform-host` 的 `applyPatch / updateGlobals`）共用同一份 `applyMaintenancePatch`；`appendUserMessage / appendAssistantMessage` 属 append 例外，不走 applier |
 
 ---
 

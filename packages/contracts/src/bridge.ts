@@ -24,7 +24,7 @@ export interface RuntimeBridge {
   unmarkArchiveAsPlayer(archiveId: string): Promise<void>
   /** 查询当前所有玩家身份 archive id（调试 / UI 显示用） */
   listPlayerArchiveIds(): Promise<string[]>
-  /** 应用维护 patch（与 apply-patch 节点共用 applier，HC-14） */
+  /** 应用维护 patch（平台兼容写入口，走共享 applier）。 */
   applyPatch(patch: MaintenancePatchDocument): Promise<ApplyPatchOutput>
   /** 便捷写单个 globals 字段；path 为 dot-path 语法（如 "inventory.gold"） */
   updateGlobals(path: string, value: unknown): Promise<void>

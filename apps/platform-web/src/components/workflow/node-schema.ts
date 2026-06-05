@@ -104,17 +104,6 @@ export function resolveWorkflowInputSlots(
     }]
   }
 
-  if (nodeType === 'apply-patch') {
-    const name = readStringConfig(config, 'patchVarName', 'patch')
-    return [{
-      name,
-      label: 'Patch',
-      valueType: 'object',
-      semanticSlot: 'maintenance.patch',
-      required: true,
-    }]
-  }
-
   if (nodeType === 'memory-query') {
     const name = readStringConfig(config, 'queryVarName', 'query')
     return [{
@@ -212,35 +201,6 @@ export function resolveWorkflowOutputSlots(
   if (nodeType === 'compute') return explicit
 
   if (nodeType === 'switch') return switchOutputSlots(config)
-
-  if (nodeType === 'apply-patch') {
-    return [
-      {
-        name: 'appliedArchives',
-        label: '已应用档案',
-        valueType: 'array',
-        semanticSlot: 'patch.appliedArchives',
-      },
-      {
-        name: 'appliedEventIds',
-        label: '已应用事件',
-        valueType: 'array',
-        semanticSlot: 'patch.appliedEventIds',
-      },
-      {
-        name: 'globalsChanged',
-        label: '全局已变更',
-        valueType: 'boolean',
-        semanticSlot: 'patch.globalsChanged',
-      },
-      {
-        name: 'currentTimeChanged',
-        label: '时间已变更',
-        valueType: 'boolean',
-        semanticSlot: 'patch.currentTimeChanged',
-      },
-    ]
-  }
 
   if (nodeType === 'memory-query') {
     return [

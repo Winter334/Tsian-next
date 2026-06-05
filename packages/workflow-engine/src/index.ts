@@ -20,7 +20,6 @@ export {
   validateUniqueNodeIds,
   validateAcyclic,
   validateNoDanglingEdges,
-  validateApplyPatchPorts,
   validateHasResultNode,
   validateUniqueResultNames,
   validateKnownNodeTypes,

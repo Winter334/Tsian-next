@@ -8,10 +8,9 @@
  *   1. 节点 ID 全局唯一（DUPLICATE_NODE_ID）
  *   2. 无环：拓扑排序成功（CYCLE_DETECTED）
  *   3. 无悬挂边：edge.from.nodeId / edge.to.nodeId 必须存在（DANGLING_EDGE）
- *   4. apply-patch 节点 input ports 完整性（APPLY_PATCH_INPUT_INCOMPLETE）
- *   5. 必须存在至少 1 个 result 节点（MISSING_RESULT_NODE）
- *   6. result 节点 config.name 唯一（DUPLICATE_RESULT_NAME）
- *   7. 节点 type 必须在平台支持集合内（UNKNOWN_NODE_TYPE）
+ *   4. 必须存在至少 1 个 result 节点（MISSING_RESULT_NODE）
+ *   5. result 节点 config.name 唯一（DUPLICATE_RESULT_NAME）
+ *   6. 节点 type 必须在平台支持集合内（UNKNOWN_NODE_TYPE）
  */
 
 import type {
@@ -26,7 +25,6 @@ const VALID_NODE_TYPES: ReadonlySet<WorkflowNodeType> = new Set<WorkflowNodeType
   "ai-call",
   "result",
   "switch",
-  "apply-patch",
   "compute",
   "memory-query",
   "memory-write",
@@ -35,34 +33,6 @@ const VALID_NODE_TYPES: ReadonlySet<WorkflowNodeType> = new Set<WorkflowNodeType
   "record-merge",
   "record-format",
 ])
-
-/**
- * apply-patch 节点必备的 4 个 input port 名（来自 §13.3 配套约束）。
- * patchVarName 在 config 中声明，但 edge 必须把上游的 patch 端口接到这个 varName。
- *
- * H3 阶段简化策略（保守）：
- *   - 仅校验 apply-patch 节点声明的 patchVarName 必须在入边 varName 中出现
- *   - "完整性"在 H3 范围 = 至少有一条入边覆盖 patchVarName
- */
-function validateApplyPatchInputPorts(
-  node: WorkflowNode,
-  incomingVarNames: ReadonlySet<string>,
-): void {
-  const cfg = node.config as { patchVarName?: unknown }
-  const patchVarName = cfg?.patchVarName
-  if (typeof patchVarName !== "string" || patchVarName.length === 0) {
-    throw new WorkflowValidationError(
-      "APPLY_PATCH_INPUT_INCOMPLETE",
-      `apply-patch node "${node.id}" must declare config.patchVarName as non-empty string`,
-    )
-  }
-  if (!incomingVarNames.has(patchVarName)) {
-    throw new WorkflowValidationError(
-      "APPLY_PATCH_INPUT_INCOMPLETE",
-      `apply-patch node "${node.id}" requires incoming edge with varName "${patchVarName}"`,
-    )
-  }
-}
 
 /**
  * 校验 1：节点 ID 全局唯一。
@@ -143,28 +113,7 @@ export function validateNoDanglingEdges(def: WorkflowDefinition): void {
   }
 }
 
-/**
- * 校验 4：apply-patch 节点 input ports 完整性（见 validateApplyPatchInputPorts）。
- */
-export function validateApplyPatchPorts(def: WorkflowDefinition): void {
-  // 预聚合每个 target 节点的入边 varName 集合
-  const incomingByTarget = new Map<string, Set<string>>()
-  for (const edge of def.edges) {
-    if (!incomingByTarget.has(edge.to.nodeId)) {
-      incomingByTarget.set(edge.to.nodeId, new Set())
-    }
-    incomingByTarget.get(edge.to.nodeId)!.add(edge.to.varName)
-  }
-  for (const node of def.nodes) {
-    if (node.type !== "apply-patch") continue
-    const incoming = incomingByTarget.get(node.id) ?? new Set<string>()
-    validateApplyPatchInputPorts(node, incoming)
-  }
-}
-
-/**
- * 校验 5：至少 1 个 result 节点。
- */
+/** 校验 4：至少 1 个 result 节点。 */
 export function validateHasResultNode(def: WorkflowDefinition): void {
   const hasResult = def.nodes.some((n) => n.type === "result")
   if (!hasResult) {
@@ -218,7 +167,7 @@ export function validateUniqueResultNames(def: WorkflowDefinition): void {
  * 校验主入口。
  *
  * @param def 工作流定义
- * @param _options 保留调用方来源元数据兼容位；当前不因 mod 来源禁用 apply-patch。
+ * @param _options 保留调用方来源元数据兼容位；不参与节点类型权限判断。
  * @returns 拓扑排序后的节点 id 数组（调度器复用）
  */
 export function validateWorkflowDefinition(
@@ -230,7 +179,6 @@ export function validateWorkflowDefinition(
   validateNoDanglingEdges(def)
   // 拓扑排序在 dangling 之后做，确保只对合法图做
   const order = validateAcyclic(def)
-  validateApplyPatchPorts(def)
   validateHasResultNode(def)
   validateUniqueResultNames(def)
   return order

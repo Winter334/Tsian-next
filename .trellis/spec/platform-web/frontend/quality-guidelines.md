@@ -35,7 +35,9 @@ Use `dvh` instead of `vh` for route wrappers and embedded fullscreen panels that
 
 - If a resource or workflow JSON round-trips through the editor, verify unknown/advanced fields are preserved unless the task intentionally rewrites them.
 - If a workflow edge changes, verify it still serializes as `from.outputName -> to.varName`.
-- If a patch path changes, verify bridge `applyPatch`/`updateGlobals` and apply-patch workflow node still share `applyMaintenancePatch`.
+- If a patch path changes, verify bridge `applyPatch`/`updateGlobals` still
+  share `applyMaintenancePatch`, and do not restore the retired workflow
+  `apply-patch` executor.
 - If runtime snapshot changes, verify `retrievalDebugBySave` or related debug state is invalidated when the active timeline changes.
 - If route/view code changes, verify lazy route names and links still match `router/index.ts`.
 - If a route owns the viewport outside the standard shell, verify short-height screens can still reach bottom content via route-level scrolling.

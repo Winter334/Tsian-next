@@ -82,7 +82,7 @@ src/
 │   ├── types.ts               # PlatformWorkflowContext
 │   ├── default-workflow.ts    # H6：平台默认工作流（design.md §8）
 │   ├── outputs-store.ts       # H7：套娃 shallowRef 输出仓（per-turn ref + 模块级 currentTurnOutputsRef + OutputsStoreWriter 实现）
-│   ├── executors/             # ai-call / result / switch / apply-patch / compute
+│   ├── executors/             # ai-call / result / switch / compute / memory-query / memory-write / template-compose / record-*
 │   └── builtin-presets/       # H5：retrieval / chat / maintenance PresetInfo + index Map
 └── package-loader/
     └── official-default.ts # 直接 import 内置默认前端
@@ -201,9 +201,9 @@ A：原型期默认清本地 IndexedDB 重建，不补迁移。
 
 1. **engine 是单例**：`runtimeEngine` 在模块顶层 `new` 一次，`restore-checkpoint` / `write-runtime` / 启动期都通过 `loadSnapshot` 重置它，不会重新构造。
 2. **`retrievalDebugBySave` 必须随 engine 状态同步失效**：任何"换一个 snapshot"的入口（restore-checkpoint、write-runtime）都要 `retrievalDebugBySave.delete(activeSaveId)`，否则调试面板会看到上一个时间线的检索结果。
-3. **维护逻辑已进 `apply-patch` 工作流节点，函数 `persistActiveSnapshot` 不再存在；fail loud 由节点异常冒泡保证**（design §13.1 / §13.9）。**这是 H8/H9 重构后的有意变更**：原型期暴露问题优于静默吞错。如未来需要保护主链，应在 `interaction.sendMessage` 外层挂顶层错误边界，而不是在 applier 里 catch。
+3. **维护逻辑已从兼容 patch 工作流节点退场，函数 `persistActiveSnapshot` 不再存在；fail loud 由 `memory-write` 节点异常冒泡保证**。桥 API 的 `applyPatch / updateGlobals` 仍通过 applier 兼容旧写入；默认工作流维护写入应走 generic memory operations。
 4. **patch 强引用挂载必须在落盘前完成**：`attachArchiveStrongRefs` / `attachEventStrongRefs` 把维护 AI 输出的"名字"替换为档案 ID 后再调用 `applyArchivePatchesForSave / applyEventPatchForSave`，避免把生成式名称漏到存储层。
-5. **DebugView 用 `nodeId` 模式过滤维护写入节点**：B5 视图按 `nodeId.includes("maintenance") || .includes("memorywrite") || .includes("memory-write") || .includes("apply-patch") || .includes("applypatch")` 从 `WorkflowOutputsSnapshot` 中挑维护写入节点。**未来 `default-workflow.ts` 改节点名时需同步本视图的过滤规则**（`views/DebugView.vue` 内的 `maintenanceWriteNodeEntries` 计算属性），否则调试面板的维护写入段会显示空。
+5. **DebugView 用 `nodeId` 模式过滤维护写入节点**：B5 视图按 `nodeId.includes("maintenance") || .includes("memorywrite") || .includes("memory-write")` 从 `WorkflowOutputsSnapshot` 中挑维护写入节点。**未来 `default-workflow.ts` 改节点名时需同步本视图的过滤规则**（`views/DebugView.vue` 内的 `maintenanceWriteNodeEntries` 计算属性），否则调试面板的维护写入段会显示空。
 
 ### 何时需要拆分这个文件
 

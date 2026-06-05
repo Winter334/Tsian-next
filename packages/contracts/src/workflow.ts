@@ -60,7 +60,6 @@ export type WorkflowNodeType =
   | "ai-call"
   | "result"
   | "switch"
-  | "apply-patch"
   | "compute"
   | "memory-query"
   | "memory-write"
@@ -116,13 +115,6 @@ export interface SwitchNodeConfig {
   /** when = 简单等值字符串匹配（原型期，design.md §13.2） */
   cases: Array<{ when: string; outputName: string }>
   defaultOutputName?: string
-}
-
-export interface ApplyPatchNodeConfig {
-  /** 从 inputs[patchVarName] 取 patch JSON */
-  patchVarName: string
-  /** 默认 "none"；平台回合成功后统一创建 after-turn checkpoint。 */
-  pushCheckpointReason?: "after-turn" | "manual" | "none"
 }
 
 export interface ComputeNodeConfig {

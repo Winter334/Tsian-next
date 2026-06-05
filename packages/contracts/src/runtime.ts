@@ -125,10 +125,7 @@ export interface MaintenancePatchDocument {
   archives?: ArchivePatchItem[]
 }
 
-/**
- * 维护 patch 应用结果（design.md §13.1 / §13.3）。
- * 供 apply-patch 工作流节点与桥 API `applyPatch` 共用。
- */
+/** 维护 patch 应用结果，供桥 API `applyPatch` 使用。 */
 export interface ApplyPatchOutput {
   /** apply 过程中变更或新建的 archive id 列表。 */
   appliedArchives: string[]

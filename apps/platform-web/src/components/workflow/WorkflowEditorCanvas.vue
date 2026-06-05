@@ -335,15 +335,6 @@ watch(
 // ---------------------------------------------------------------------------
 
 const validationErrorTranslations: Record<string, string | ((msg: string) => string)> = {
-  'must declare config.patchVarName as non-empty string': (msg) => {
-    const match = msg.match(/apply-patch node "([^"]+)"/)
-    return `apply-patch 节点 "${match?.[1] ?? '?'}" 必须声明非空的 config.patchVarName`
-  },
-  'requires incoming edge with varName': (msg) => {
-    const nodeMatch = msg.match(/apply-patch node "([^"]+)"/)
-    const varMatch = msg.match(/varName "([^"]+)"/)
-    return `apply-patch 节点 "${nodeMatch?.[1] ?? '?'}" 需要接入 varName 为 "${varMatch?.[1] ?? '?'}" 的入边`
-  },
   'duplicate node id': (msg) => {
     const match = msg.match(/duplicate node id "([^"]+)"/)
     return `节点 ID "${match?.[1] ?? '?'}" 重复`
@@ -588,7 +579,6 @@ function miniMapNodeColor(node: any): string {
     'ai-call': '#00F0FF',
     'result': '#00FF88',
     'switch': '#FF8C00',
-    'apply-patch': '#B388FF',
     'compute': '#FFD600',
     'memory-query': '#4FD1C5',
     'memory-write': '#F472B6',

@@ -41,14 +41,6 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
     colorClass: 'warning',
   },
   {
-    type: 'apply-patch',
-    label: '应用补丁（兼容）',
-    description: '兼容旧 MaintenancePatchDocument 写入路径',
-    icon: 'FileEdit',
-    color: '#B388FF',
-    colorClass: '[#B388FF]',
-  },
-  {
     type: 'compute',
     label: '计算',
     description: '执行自定义脚本计算',

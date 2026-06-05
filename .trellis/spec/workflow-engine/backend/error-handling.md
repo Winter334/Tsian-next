@@ -16,12 +16,13 @@ Workflow-engine follows fail-loud behavior. Validation and execution errors must
 - Unknown node type -> `UNKNOWN_NODE_TYPE`
 - Dangling edges -> `DANGLING_EDGE`
 - Cycles -> `CYCLE_DETECTED`
-- apply-patch missing required input binding -> `APPLY_PATCH_INPUT_INCOMPLETE`
 - Missing result node -> `MISSING_RESULT_NODE`
 - Duplicate result names -> `DUPLICATE_RESULT_NAME`
 
 Keep validation at load time when the condition is knowable before execution.
-`isModWorkflow` remains caller/source metadata and must not add a validation-time `apply-patch` ban.
+`isModWorkflow` remains caller/source metadata and must not change the supported
+node type set. Retired node types such as `apply-patch` fail as
+`UNKNOWN_NODE_TYPE` for every workflow source.
 
 ## Execution Errors
 
@@ -39,4 +40,4 @@ Keep validation at load time when the condition is knowable before execution.
 
 - Do not swallow validation errors and continue execution.
 - Do not convert node failures to empty outputs.
-- Do not reintroduce a mod-source `apply-patch` permission gate; engine validation should keep source-agnostic DAG and port invariants.
+- Do not reintroduce source-dependent node permissions; engine validation should keep source-agnostic DAG and port invariants.

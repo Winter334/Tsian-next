@@ -59,7 +59,7 @@ export interface NodeExecuteArgs {
 }
 
 export interface NodeExecuteResult {
-  /** 节点输出端口 → 值。result/apply-patch 等无显式 outputs 的节点可返回 {}。 */
+  /** 节点输出端口 → 值。result 等无显式 outputs 的节点可返回 {}。 */
   outputs: Record<string, unknown>
 }
 
@@ -89,7 +89,7 @@ export interface WorkflowResult {
 export interface ExecuteWorkflowOptions {
   /** 外部 abort 信号；任何时刻 abort 都会向所有运行中节点广播。 */
   signal?: AbortSignal
-  /** 是否模组工作流（来源元数据），默认 false；当前不因来源禁用 apply-patch。 */
+  /** 是否模组工作流（来源元数据），默认 false。 */
   isModWorkflow?: boolean
   /**
    * H7：outputs 写入钩子。调度器在节点状态迁移时调用对应方法。

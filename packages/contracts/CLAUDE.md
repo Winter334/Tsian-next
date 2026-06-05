@@ -34,7 +34,7 @@
 - `ArchiveType` (string)、`ArchivePresence`（`foreground / background / retired`）
 - `ArchiveRecord`（扁平 + 任意扩展字段）
 - `EventPatchItem`、`ArchivePatchItem`、`MaintenancePatchDocument`
-- `ApplyPatchOutput`（I3 升级到 contracts 作为公共类型）：`appliedArchives: string[]` / `appliedEventIds: string[]` / `globalsChanged: boolean` / `currentTimeChanged: boolean`；桥 API 与 `apply-patch` 节点 4 端口都对齐此类型（HC-14）
+- `ApplyPatchOutput`（I3 升级到 contracts 作为公共类型）：`appliedArchives: string[]` / `appliedEventIds: string[]` / `globalsChanged: boolean` / `currentTimeChanged: boolean`；桥/API patch 兼容写入口对齐此类型
 - `MessageInteractionRequest/Result`
 - `DeepQueryRequest/Result<T>`
 - `PlatformContextShell`、`PlatformActionRequest/Result`、`PlatformActionError`
@@ -76,8 +76,8 @@
 H4-H7 阶段引入，定义工作流 DAG 的所有类型：
 
 - `WorkflowDefinition`、`WorkflowNode`、`WorkflowEdge`
-- `WorkflowNodeType`（`ai-call` / `result` / `switch` / `apply-patch` / `compute` / `memory-query` / `memory-write` / `template-compose`）
-- `AiCallNodeConfig`、`ResultNodeConfig`、`SwitchNodeConfig`、`ApplyPatchNodeConfig`、`ComputeNodeConfig`、`MemoryQueryNodeConfig`、`MemoryWriteNodeConfig`、`TemplateComposeNodeConfig`
+- `WorkflowNodeType`（`ai-call` / `result` / `switch` / `compute` / `memory-query` / `memory-write` / `template-compose` / `record-filter` / `record-merge` / `record-format`）
+- `AiCallNodeConfig`、`ResultNodeConfig`、`SwitchNodeConfig`、`ComputeNodeConfig`、`MemoryQueryNodeConfig`、`MemoryWriteNodeConfig`、`TemplateComposeNodeConfig`、`RecordFilterNodeConfig`、`RecordMergeNodeConfig`、`RecordFormatNodeConfig`
 - `NodeOutputDeclaration`、`NodeOutputExtractRule`
 
 ---

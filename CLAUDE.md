@@ -179,7 +179,7 @@ npm run build:runtime-core   # 构建 @tsian/runtime-core
 - 平台壳（`platform-host`）持有 `LocalRuntimeEngine` 与 Bridge 工厂
 - 游玩前端只允许通过 `PlayFrontendBridge` 与平台交互
 - 维护 AI 输出严格 JSON patch（见 `packages/contracts/src/runtime.ts` 中的 `MaintenancePatchDocument`）
-- **工作流引擎已上线（H/I 阶段）**：`sendMessage` 走 `default-workflow.ts`（5 节点 retrieval→chat→maintenance→apply-patch→result），DAG 调度器在 `packages/workflow-engine`，5 种内置节点 executor 在 `apps/platform-web/src/workflow-host/executors/`；patch 应用器统一收口在 `apps/platform-web/src/runtime-host/patch-applier.ts` 的 `applyMaintenancePatch`（HC-14）
+- **工作流引擎已上线（H/I 阶段）**：`sendMessage` 走 `default-workflow.ts` / `createDefaultAirpWorkflow()`，默认 AIRP 工作流通过 generic memory 查询、record 节点、`ai-call` 和 `memory-write` 组合完成检索/回复/维护；patch 兼容 API 仍统一收口在 `apps/platform-web/src/runtime-host/patch-applier.ts` 的 `applyMaintenancePatch`
 - **桥写 API（I 阶段）**：`bridge.runtime` 新增 `applyPatch / updateGlobals / appendUserMessage / appendAssistantMessage` 4 个方法；前两者走 applier，后两者走 engine append 同步方法（append 例外）
 
 ---

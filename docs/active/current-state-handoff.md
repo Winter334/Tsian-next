@@ -63,12 +63,12 @@
   默认工作流使用 AIRP collection query、公开 record 节点和 bounded compute
   组成混合检索 preset。
 - 默认维护写入走 `maintenance.operations -> memory-write.operations`。
-  `apply-patch` 仍作为兼容写入口保留，并在写 legacy slices 后同步回
-  generic AIRP memory。
-- `apply-patch` 与 `memory-write` 节点默认不创建节点本地 checkpoint；
+  `apply-patch` workflow node 已退场；桥/API patch 兼容写入口保留，并在写
+  legacy slices 后同步回 generic AIRP memory。
+- `memory-write` 节点默认不创建节点本地 checkpoint；
   平台回合成功后统一创建 after-turn checkpoint。
-- 当前 DebugView 的维护写入面板展示 maintenance / memory-write /
-  apply-patch 节点结果，不再把 legacy patch 视为唯一维护结果。
+- 当前 DebugView 的维护写入面板展示 maintenance / memory-write 节点结果，
+  不再把 legacy patch 视为唯一维护结果。
 
 当前新的边界已经确认，其中仍未继续展开的部分：
 
@@ -383,10 +383,9 @@
 优先候选：
 
 1. 收紧或退役不再适合作为通用 workflow surface 的兼容节点。
-2. 清理 `apply-patch` 节点、桥 API 和内部 applier 之间的边界。
-3. 继续把默认 AIRP 事件/档案系统表达为 schema + workflow preset +
+2. 继续把默认 AIRP 事件/档案系统表达为 schema + workflow preset +
    renderer，而不是平台通用节点语义。
-4. 为未来 schema resources、workflow blocks/subgraphs、renderer adapters
+3. 为未来 schema resources、workflow blocks/subgraphs、renderer adapters
    留出清晰位置。
 
 具体实现仍应通过 Trellis 任务 PRD 明确范围后再推进。

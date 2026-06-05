@@ -233,8 +233,6 @@ const configSummary = computed(() => {
   if (typeof config.script === 'string') {
     return `script: ${config.script.slice(0, 30)}${config.script.length > 30 ? '...' : ''}`
   }
-  // apply-patch: 显示 patchVarName
-  if (config.patchVarName) return `var: ${config.patchVarName}`
   if (config.source) return `source: ${config.source}`
   if (config.collection) return `collection: ${config.collection}`
   if (config.outputName) return `output: ${config.outputName}`

@@ -45,15 +45,19 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `patch` is shallow over custom `memoryRecords`: it requires an existing record id, requires both existing `data` and patch `data` to be JSON objects, then merges top-level fields.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
 - Built-in AIRP `globals/currentTime` is a reserved record whose `data` shape is `{ key: "currentTime", value: "YYYY-MM-DD HH:mm" }`; default retrieval treats that record as the authoritative narrative time.
-- `apply-patch` is a compatibility write node for `MaintenancePatchDocument`; compatibility workflows may declare it explicitly, and platform-host must not apply hidden host-managed patches outside the DAG.
+- `apply-patch` is retired from the workflow node surface. Workflows should use
+  `memory-write` for generic state maintenance; old workflow definitions that
+  still declare `apply-patch` should fail loudly as unknown node types.
+- Bridge/runtime patch APIs remain a platform compatibility path for
+  `MaintenancePatchDocument`; this path is separate from workflow preset syntax.
 - Because generic AIRP `memoryRecords` are the current authority, the
-  `apply-patch` compatibility path must sync its legacy event/archive/global
+  bridge patch compatibility path must sync its legacy event/archive/global
   writes back through `replaceAirpMemoryForSave()` before any optional
   checkpoint.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
-- Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `apply-patch`.
+- Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `memory-write`.
 - Default AIRP maintenance now writes generic `MemoryWriteOperation[]` through an explicit `memory-write` node; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
-- `memory-write` and `apply-patch` nodes default to no node-local checkpoint;
+- `memory-write` nodes default to no node-local checkpoint;
   platform-host owns the normal after-turn checkpoint after compatibility sync.
   Use `pushCheckpointReason: "manual"` or `"after-turn"` only when an explicit
   mid-workflow checkpoint is intentional.
@@ -64,7 +68,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 ### 4. Validation & Error Matrix
 
 - Unknown node type -> `WorkflowValidationError`.
-- `apply-patch` without a declared/bound patch input -> `APPLY_PATCH_INPUT_INCOMPLETE`.
+- Retired workflow node type `apply-patch` -> `UNKNOWN_NODE_TYPE`.
 - Mod workflow containing memory/template nodes -> allowed.
 - `memory-write` with non-array operations -> executor error.
 - `memory-write` upsert with non-JSON `data` -> executor/storage error.

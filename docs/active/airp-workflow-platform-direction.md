@@ -201,7 +201,8 @@ Tsian 的核心定位是：
 
 当前需要特别警惕：
 
-- `apply-patch` 作为 workflow node surface 的存在理由已经减弱。它可以作为桥 API 或内部兼容 applier 继续被单独评估，但不应长期作为默认工作流原语。
+- `apply-patch` 已从 workflow node surface 退场。桥 API 和内部 applier
+  可以继续作为平台兼容能力存在，但不再是 workflow preset 语法。
 - `memory-query(source: "event-archive")` 已从 workflow node surface 退场。`memory-query` 应保持 collection/schema 驱动；旧 workflow 若仍声明该 source，应明确失败，而不是继续走隐藏 AIRP 检索分支。
 - legacy events / archives / snapshot slices 可以作为兼容投影存在，但默认 AIRP 读写权威应向 generic memory records 和 schema-aware workflow 边界收敛。
 
@@ -251,7 +252,8 @@ Tsian 的核心定位是：
 当前更符合方向的工作包括：
 
 - 收紧节点类型集，移除或隐藏不再适合作为通用节点的兼容节点。
-- 清理 `apply-patch` workflow surface 与桥/API 兼容能力之间的边界。
+- 保持 `apply-patch` 退场后的边界：workflow preset 使用 `memory-write`
+  等泛型节点，桥/API patch 只作为平台兼容能力。
 - 保持 `memory-query` collection-only，避免重新引入 `event-archive` 这类高层历史分支。
 - 让 memory schema、workflow preset 和 renderer 的职责更清晰。
 - 继续把默认 AIRP 事件/档案系统作为参考 preset，而不是唯一架构。
