@@ -486,3 +486,37 @@ Refactored default AIRP retrieval into internal structural stages, added static 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Stabilize AIRP workflow compatibility boundaries
+
+**Date**: 2026-06-05
+**Task**: Stabilize AIRP workflow compatibility boundaries
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Reviewed and stabilized AIRP workflow compatibility debt: moved apply-patch sync ownership into the applier, removed implicit node-local checkpoint defaults, moved Grey Salt Town to explicit workflow preset seeding, updated debug/editor/docs surfaces, and verified builds/tests/browser smoke.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c8d2394` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
