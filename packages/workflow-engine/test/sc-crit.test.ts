@@ -135,7 +135,7 @@ describe('SC-CRIT-6 — mod 工作流允许显式 apply-patch 节点', () => {
 })
 
 describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
-  it('灰盐镇 manifest workflow 不再依赖 legacy retrieval bypass', () => {
+  it('灰盐镇 manifest workflow 通过 memory-write 显式承接 maintenance operations', () => {
     const workflow = getDefaultBuiltinMod().manifest.workflow
     expect(workflow).toBeDefined()
     expect(() =>
@@ -143,14 +143,23 @@ describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
     ).not.toThrow()
 
     const retrieval = workflow!.nodes.find((node) => node.id === 'retrieval')
+    const maintenance = workflow!.nodes.find((node) => node.id === 'maintenance')
     expect(retrieval?.type).toBe('memory-query')
     expect(retrieval?.config).toEqual({ source: 'event-archive' })
+    expect(maintenance).toMatchObject({
+      id: 'maintenance',
+      type: 'ai-call',
+      config: { presetId: 'builtin.maintenance' },
+      outputs: [
+        { name: 'operations', extract: { type: 'raw', parse: 'json' } },
+      ],
+    })
     expect(JSON.stringify(workflow)).not.toContain('__retrieval.raw')
     expect(JSON.stringify(workflow)).not.toContain('"bypass"')
     expect(workflow!.nodes).toContainEqual({
-      id: 'applyPatch',
-      type: 'apply-patch',
-      config: { patchVarName: 'patch', pushCheckpointReason: 'after-turn' },
+      id: 'memoryWrite',
+      type: 'memory-write',
+      config: { operationsVarName: 'operations', pushCheckpointReason: 'none' },
     })
     expect(workflow!.edges).toContainEqual({
       from: { nodeId: 'retrieval', outputName: 'directEntities' },
@@ -161,8 +170,8 @@ describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
       to: { nodeId: 'maintenance', varName: 'archives.recent.json' },
     })
     expect(workflow!.edges).toContainEqual({
-      from: { nodeId: 'maintenance', outputName: 'patch' },
-      to: { nodeId: 'applyPatch', varName: 'patch' },
+      from: { nodeId: 'maintenance', outputName: 'operations' },
+      to: { nodeId: 'memoryWrite', varName: 'operations' },
     })
   })
 })
