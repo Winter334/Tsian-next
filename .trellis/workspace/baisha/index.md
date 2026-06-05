@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
-- **Last Active**: 2026-06-05
+- **Total Sessions**: 19
+- **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~625 | Active |
+| `journal-1.md` | ~659 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 19 | 2026-06-06 | 迁移持久状态写入节点 | `eeea261` | `master` |
 | 18 | 2026-06-05 | 退役 apply-patch 工作流节点 | `dc3813f` | `master` |
 | 17 | 2026-06-05 | Retire event-archive memory query source | `a8d5c09` | `master` |
 | 16 | 2026-06-05 | Workflow-as-system direction refresh | `ba857c1`, `34b6af6` | `master` |

@@ -623,3 +623,37 @@ Made memory-query collection-only across contracts, platform executor, workflow 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: 迁移持久状态写入节点
+
+**Date**: 2026-06-06
+**Task**: 迁移持久状态写入节点
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+将公开 durable write 节点从 memory-write 迁移为 state-write，默认 AIRP 工作流改为节点携带 schema，并更新验证、编辑器、测试、spec 与方向文档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eeea261` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
