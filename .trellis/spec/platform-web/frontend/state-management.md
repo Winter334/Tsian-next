@@ -46,9 +46,17 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
 - Built-in AIRP `globals/currentTime` is a reserved record whose `data` shape is `{ key: "currentTime", value: "YYYY-MM-DD HH:mm" }`; default retrieval treats that record as the authoritative narrative time.
 - `apply-patch` is a compatibility write node for `MaintenancePatchDocument`; compatibility workflows may declare it explicitly, and platform-host must not apply hidden host-managed patches outside the DAG.
+- Because generic AIRP `memoryRecords` are the current authority, the
+  `apply-patch` compatibility path must sync its legacy event/archive/global
+  writes back through `replaceAirpMemoryForSave()` before any optional
+  checkpoint.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
 - Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `apply-patch`.
 - Default AIRP maintenance now writes generic `MemoryWriteOperation[]` through an explicit `memory-write` node; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
+- `memory-write` and `apply-patch` nodes default to no node-local checkpoint;
+  platform-host owns the normal after-turn checkpoint after compatibility sync.
+  Use `pushCheckpointReason: "manual"` or `"after-turn"` only when an explicit
+  mid-workflow checkpoint is intentional.
 - Semantic AIRP retrieval remains a bounded internal stage in this slice. It should not force the first public generic node vocabulary, and no temporary visual stage-trace UI is required before the next workflow-publication phase.
 - `compute` is a legitimate workflow primitive, including in official presets. Use it for special, AIRP-specific, experimental, or not-yet-generic logic; do not use it as a dumping ground for stable record filtering, merging, or formatting behavior that now has public nodes.
 - When a compute node is explicitly configured with `recordRetrievalDebugOutputName`, the platform compute executor may record that output through the retrieval debug bridge. Ordinary compute nodes must not write retrieval debug implicitly.
@@ -81,6 +89,14 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Memory schema/validator checks: `npm run test --workspace @tsian/memory-core`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
 - Regression assertion: built-in grey-salt-town workflow uses the shared mixed AIRP workflow preset, contains AIRP collection query nodes and `record-filter` / `record-merge` / `record-format`, contains no `bypass` / `__retrieval.raw` / default `event-archive` retrieval black box, contains an explicit `maintenance.operations -> memoryWrite.operations` edge, and remains valid as a mod workflow.
+- Static proof: built-in mods reference workflow presets through
+  `workflowPresetId`; built-in workflow preset seeding must use explicit seed
+  definitions, not deprecated `manifest.workflow`.
+- Static proof: `applyMaintenancePatch()` calls `replaceAirpMemoryForSave()`
+  before optional checkpoint creation so compatibility patch writes are not
+  overwritten by the after-turn generic-to-legacy sync.
+- Static proof: `memory-write` does not create a node-local checkpoint unless
+  `pushCheckpointReason` is explicitly set to `"manual"` or `"after-turn"`.
 - Static proof or tests for retrieval refactors should verify that `assembleRetrievalContext()` still routes through named internal stages instead of collapsing new common behavior into a single opaque block or `compute`-like escape hatch.
 - Browser smoke: resource workflow preview and fullscreen editor show `memory-query`, and new memory/template nodes can be dragged onto the canvas and inspected.
 

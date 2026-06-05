@@ -5,7 +5,7 @@
       <p class="font-mono text-xs tracking-wider uppercase text-neon glow-text">调试</p>
       <h2 class="text-2xl font-bold text-text-main">调试面板</h2>
       <p class="text-base text-text-dim leading-normal">
-        平台兜底调试入口（按 Ctrl+Shift+D 唤起）。展示工作流节点、检索调试、AI 调试、patch 输出，以及历史 / Checkpoints / 快照数据；所有数据均通过 `bridge.debug` 或 `bridge.query` 拉取。
+        平台兜底调试入口（按 Ctrl+Shift+D 唤起）。展示工作流节点、检索调试、AI 调试、维护写入输出，以及历史 / Checkpoints / 快照数据；所有数据均通过 `bridge.debug` 或 `bridge.query` 拉取。
       </p>
       <p v-if="!debugAvailable" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
         当前未注入 bridge.debug（基础桥模式）。所有面板将显示空状态。
@@ -229,16 +229,16 @@
 
     <Card class="bg-panel border-neon-deep/40">
       <CardHeader class="pb-3">
-        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">patch</p>
-        <CardTitle class="text-xl text-text-main">Patch（来自 maintenance / apply-patch 节点输出）</CardTitle>
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">memory write</p>
+        <CardTitle class="text-xl text-text-main">维护写入（maintenance / memory-write / apply-patch）</CardTitle>
       </CardHeader>
       <CardContent class="grid gap-3 pt-0">
-        <template v-if="patchNodeEntries.length > 0">
+        <template v-if="maintenanceWriteNodeEntries.length > 0">
           <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
-            <span>命中节点：{{ patchNodeEntries.length }}</span>
+            <span>命中节点：{{ maintenanceWriteNodeEntries.length }}</span>
           </div>
           <div
-            v-for="entry in patchNodeEntries"
+            v-for="entry in maintenanceWriteNodeEntries"
             :key="entry.id"
             class="bg-elevated border border-neon-deep/30 rounded-lg p-3 grid gap-2"
           >
@@ -258,7 +258,7 @@
             <p v-else class="text-text-dim text-sm">该节点尚无 outputs。</p>
           </div>
         </template>
-        <p v-else class="text-text-dim text-sm">暂无数据（工作流未跑出 patch 输出）。</p>
+        <p v-else class="text-text-dim text-sm">暂无数据（工作流未跑出维护写入输出）。</p>
       </CardContent>
     </Card>
 
@@ -498,12 +498,14 @@ const workflowRunDuration = computed(() => {
   return run.finishedAt - run.startedAt
 })
 
-const patchNodeEntries = computed(() => {
+const maintenanceWriteNodeEntries = computed(() => {
   const entries = workflowNodeEntries.value
   return entries.filter((entry) => {
     const id = entry.id.toLowerCase()
     return (
       id.includes("maintenance") ||
+      id.includes("memorywrite") ||
+      id.includes("memory-write") ||
       id.includes("apply-patch") ||
       id.includes("applypatch")
     )

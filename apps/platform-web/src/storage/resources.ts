@@ -1,10 +1,10 @@
 import type {
   AiCallNodeConfig,
-  ModStaticContent,
   WorkflowDefinition,
   WorkflowNode,
 } from "@tsian/contracts"
 import { listBuiltinMods } from "../../../../builtin/mods"
+import { builtinWorkflowPresetSeeds } from "../../../../builtin/mods/workflow-presets"
 import { builtinPromptPresetSeeds } from "../workflow-host/builtin-presets"
 import {
   localDb,
@@ -45,10 +45,6 @@ function normalizeBuiltinResourceId(id: string): string {
     throw new Error("内置资源 id 必须以 builtin. 开头")
   }
   return normalized
-}
-
-function builtinModWorkflowResourceId(mod: ModStaticContent): string {
-  return `${BUILTIN_RESOURCE_ID_PREFIX}mod.${mod.manifest.id}.workflow`
 }
 
 function builtinModWorldBookResourceId(worldBookId: string): string {
@@ -237,19 +233,14 @@ export async function seedBuiltinModWorldBookResources(): Promise<void> {
 }
 
 export async function seedBuiltinModWorkflowPresetResources(): Promise<void> {
-  for (const mod of listBuiltinMods()) {
-    const workflow = mod.manifest.workflow
-    if (!workflow) {
-      continue
-    }
-
-    const id = normalizeBuiltinResourceId(builtinModWorkflowResourceId(mod))
+  for (const seed of builtinWorkflowPresetSeeds) {
+    const id = normalizeBuiltinResourceId(seed.id)
     await upsertWorkflowPresetResource({
       id,
-      name: `${mod.manifest.name} 工作流`,
-      description: `来自内置模组 ${mod.manifest.name} (${mod.manifest.id}) manifest.workflow 的工作流预设。`,
-      tags: normalizeTags(["builtin", "mod", mod.manifest.id, "workflow-preset"]),
-      workflow,
+      name: seed.name,
+      description: seed.description,
+      tags: normalizeTags(seed.tags),
+      workflow: seed.workflow,
     }, { allowBuiltinId: true })
   }
 }

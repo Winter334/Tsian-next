@@ -4,9 +4,9 @@
 
 ## 1. Scope of Change
 
-平台壳 (`apps/platform-web/src/platform-host/`) 不再硬编码"检索 → 正文 → 维护"三段链路；改为读取 mod 或默认工作流定义，交给 workflow-engine 调度，自身只负责：
+平台壳 (`apps/platform-web/src/platform-host/`) 不再硬编码"检索 → 正文 → 维护"三段链路；改为读取 save override、mod workflow preset 或默认工作流定义，交给 workflow-engine 调度，自身只负责：
 
-1. 解析当前 mod 的工作流来源
+1. 解析当前 save/mod 的工作流来源
 2. 组装平台层 macros（`{{user.input}} / {{globals.*}} / {{archives.*}} / {{currentTime}}` ...）
 3. 创建 per-turn outputs store ref
 4. 抗 abort（保证下一轮入口先 abort 上一轮）
@@ -18,7 +18,8 @@
 sendMessage(input):
   1. await abortPreviousTurn()
   2. state.turn++              (§13.6 唯一递增点)
-  3. workflow = resolveWorkflow(mod)   (mod.manifest.workflow ?? defaultWorkflow)
+  3. workflow = resolveWorkflow(save, mod)
+              (save override -> mod.workflowPresetId resource -> deprecated manifest.workflow -> defaultWorkflow)
   4. workflowEngine.validate(workflow) (首次 cache)
   5. macros = buildBuiltinMacros(input, snapshot)
               .merge(mod.manifest.customMacros)   (§13.5)
@@ -32,12 +33,12 @@ sendMessage(input):
   9. await persistAfterTurn(outputsRef.value)
 ```
 
-## 3. `persistAfterTurn`
+## 3. After-turn Persistence
 
-- 重命名自原 `persistActiveSnapshot`
-- 不再调 patch 应用器 —— patch 已由 workflow 中的 `apply-patch` 节点写入运行时
-- 仅做：`saveSnapshot`、`appendHistory`、可选 `pushCheckpoint`（仅当工作流没有 apply-patch 节点的兜底场景）
-- 大多数情况是 no-op；保留是为了非工作流路径（如 `runAction` write-runtime）
+- 工作流成功后统一落盘 snapshot / history，并把 save-scoped generic AIRP memory 投影回 legacy snapshot/events/archives 兼容切片。
+- 平台回合成功后统一创建 after-turn checkpoint；`apply-patch` 与 `memory-write` 节点默认不创建节点本地 checkpoint。
+- `apply-patch` 作为兼容写入口时，applier 负责先同步 generic AIRP memory，再执行可选节点本地 checkpoint。
+- `write-runtime` 仍是手动覆盖入口，成功后创建 `manual` checkpoint。
 
 ## 4. `runAction` (unchanged)
 
@@ -58,8 +59,11 @@ sendMessage(input):
 |------|---------|
 | 用户连续点两次 send | 第二次入口 abort 第一次；turn 递增 1 次（第二次） |
 | 工作流执行失败（内部 throw） | sendMessage 重新 throw；outputs ref 保留失败时的 partial 状态供调试 |
-| mod 无 manifest.workflow | 使用 `default-workflow.ts` |
-| mod manifest.workflow 校验失败 | 在 `loadMod` 时 throw（fail loud），不退化到默认 |
+| save 配置 workflow preset | 优先使用 save-scoped workflow preset |
+| mod 声明 workflowPresetId | 从平台资源库读取 workflow preset；缺失时 fail loud |
+| 仅历史 mod 声明 manifest.workflow | 作为 deprecated legacy fallback 使用 |
+| 无任何 workflow 来源 | 使用 `default-workflow.ts` |
+| workflow 校验失败 | fail loud，不退化到默认 |
 
 ## 7. Cross-references
 

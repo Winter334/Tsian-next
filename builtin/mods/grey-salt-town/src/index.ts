@@ -1,5 +1,5 @@
 import type { ModInitialSavePayload, ModStaticContent, RuntimeSnapshotShell, WorldBook } from "@tsian/contracts"
-import { createDefaultAirpWorkflow } from "../../default-airp-workflow"
+import { GREY_SALT_TOWN_WORKFLOW_PRESET_ID } from "../../workflow-presets"
 
 // === 叙事时间锚点（虚构纪元） ===
 // 设计原则：叙事时间是纯游戏内字段，不应绑定系统时钟（Date.now()）。
@@ -406,8 +406,6 @@ export function createGreySaltTownInitialSavePayload(_now: number): ModInitialSa
 
 const archiveCatalog = createGreySaltTownInitialSavePayload(0).archives
 
-const greySaltTownWorkflow = createDefaultAirpWorkflow()
-
 // === 世界书（Lorebook）：keyword 激活模式 ===
 // 世界书放静态设定（不随剧情变化的世界观规则），与 archives（动态状态）互补。
 // 条目通过 keyword 匹配对话内容自动激活，注入 AI 提示词。
@@ -516,8 +514,7 @@ export const greySaltTownMod: ModStaticContent = {
     version: "0.1.0",
     author: "Tsian Prototype",
     description: "用于验证模组静态层、预设事件钩子和记忆系统的开发期内置测试模组。",
-    // SC-CRIT-3：声明 mod 自带工作流，验证 mod 注册路径
-    workflow: greySaltTownWorkflow,
+    workflowPresetId: GREY_SALT_TOWN_WORKFLOW_PRESET_ID,
     worldBooks: greySaltTownWorldBooks,
   },
   frontendConfig: {

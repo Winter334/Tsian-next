@@ -17,6 +17,12 @@
 
 当前项目已经进入可运行原型阶段。
 
+> 2026-06-05 更新：本 `docs/active` 目录中的部分阶段性路线早于
+> Trellis 工作流/记忆迁移任务。当前 workflow 与 AIRP generic memory 的
+> 真源以 `.trellis/spec/`、`openspec/specs/` 和代码为准；本文保留早期
+> 状态说明，同时在下方记录最新增量，避免后续继续按旧 patch-only
+> 主链理解系统。
+
 已完成：
 
 - Git 仓库初始化
@@ -40,6 +46,28 @@
 - `npm run build:contracts`
 - `npm run build:runtime-core`
 - `npm run build:web`
+
+2026-06-05 workflow / memory 增量：
+
+- 平台工作流来源顺序为：save-level workflow preset override ->
+  mod `workflowPresetId` resource -> deprecated `manifest.workflow` ->
+  platform default workflow。
+- 内置模组不应再通过 deprecated `manifest.workflow` 携带当前工作流；
+  built-in workflow preset 由显式 seed 写入资源库，灰盐镇通过
+  `workflowPresetId` 引用该资源。
+- AIRP 当前权威记忆是 save-scoped generic `memoryRecords` 中的
+  `airp/events`、`airp/archives`、`airp/globals/currentTime`。
+  legacy snapshot/events/archives 是兼容投影，不再反向约束主链。
+- 默认 AIRP 检索不再依赖 `memory-query { source: "event-archive" }`
+  高层黑盒；默认工作流使用 AIRP collection query、公开 record 节点和
+  bounded compute 组成混合检索 preset。
+- 默认维护写入走 `maintenance.operations -> memory-write.operations`。
+  `apply-patch` 仍作为兼容写入口保留，并在写 legacy slices 后同步回
+  generic AIRP memory。
+- `apply-patch` 与 `memory-write` 节点默认不创建节点本地 checkpoint；
+  平台回合成功后统一创建 after-turn checkpoint。
+- 当前 DebugView 的维护写入面板展示 maintenance / memory-write /
+  apply-patch 节点结果，不再把 legacy patch 视为唯一维护结果。
 
 当前新的边界已经确认，其中仍未继续展开的部分：
 
@@ -129,7 +157,7 @@
 当前平台已有最小线性 checkpoint：
 
 - checkpoint 是完整游戏状态切片，不是只保存 `RuntimeSnapshotShell`
-- 每个 checkpoint 包含 `snapshot / history / events / archives`
+- 每个 checkpoint 包含 `snapshot / history / events / archives / memoryRecords`
 - 创建存档时写入 `initial` checkpoint
 - 每轮 AI 调度完成并持久化后写入 `after-turn` checkpoint
 - 官方默认前端通过“回溯”页签列出 checkpoint，并可恢复到指定切片

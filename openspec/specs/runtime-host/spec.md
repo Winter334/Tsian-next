@@ -32,7 +32,10 @@ interface LocalRuntimeEngine {
 ```ts
 export interface ApplyMaintenancePatchInput {
   patch: MaintenancePatchDocument;
-  pushCheckpointReason?: string;
+  runtimeEngine: LocalRuntimeEngine;
+  saveId: string;
+  pushCheckpointReason?: "after-turn" | "manual";
+  checkpointLabel?: string;
 }
 
 export interface ApplyPatchOutput {
@@ -51,7 +54,8 @@ export async function applyMaintenancePatch(
 - 内部应用顺序固定：`currentTime → globals → archives → events`（`§13.1`）
 - **不做回滚**：任何子项失败立即 throw，已 apply 的部分留在原地（HC-9 fail loud）
 - 调用方禁止 catch + 重试；失败由调用栈向上抛
-- 仅当 `input.pushCheckpointReason` 存在时创建 checkpoint（`§13.9`）
+- apply-patch 是兼容写入口；应用 legacy snapshot/events/archives 后，必须先同步 save-scoped generic AIRP memory，再进入可选 checkpoint。
+- 仅当 `input.pushCheckpointReason` 存在时创建 checkpoint（`§13.9`）；默认由平台回合成功后统一创建 after-turn checkpoint。
 
 ## 2. Behavior Contract
 

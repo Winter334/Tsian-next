@@ -72,9 +72,9 @@ function getSnapshotMessages(snapshot: {
 function checkpointReason(
   raw: MemoryWriteNodeConfig["pushCheckpointReason"],
 ): "after-turn" | "manual" | null {
-  if (raw === "none") return null
   if (raw === "manual") return "manual"
-  return "after-turn"
+  if (raw === "after-turn") return "after-turn"
+  return null
 }
 
 function optionalText(value: unknown): string | undefined {

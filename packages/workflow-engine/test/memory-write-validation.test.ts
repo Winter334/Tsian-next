@@ -83,4 +83,12 @@ describe("memory-write schema validation boundary", () => {
     expect(src).toContain("issue.path")
     expect(src).toContain("issue.message")
   })
+
+  it("memory-write does not create a node-local checkpoint unless explicitly requested", () => {
+    const src = readFileSync(MEMORY_WRITE_EXECUTOR_FILE, "utf-8")
+
+    expect(src).toMatch(
+      /if\s*\(raw\s*===\s*"manual"\)\s*return\s*"manual"[\s\S]*if\s*\(raw\s*===\s*"after-turn"\)\s*return\s*"after-turn"[\s\S]*return\s+null/,
+    )
+  })
 })

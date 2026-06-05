@@ -24,7 +24,7 @@ interface PlayFrontendBridge {
 ## 2. Behavior Contract
 
 ### 2.1 Single Collapse Point (HC-14)
-所有 4 个方法在实现内部都转调 `runtime-host/patch-applier.ts` 的 `applyMaintenancePatch`（HC-14 + `§13.1`）。`updateGlobals(path, value)` 是 sugar：
+`applyPatch` / `updateGlobals` 在实现内部转调 `runtime-host/patch-applier.ts` 的 `applyMaintenancePatch`（HC-14 + `§13.1`）。`updateGlobals(path, value)` 是 sugar：
 
 ```
 applyMaintenancePatch({
@@ -38,13 +38,13 @@ applyMaintenancePatch({
 ### 2.2 Checkpoint Behavior (`§13.9`)
 - 桥 API 路径**始终**传 `pushCheckpointReason: undefined` —— 不创建 checkpoint
 - 设计意图：前端写入是细颗粒变更，频繁 checkpoint 污染回溯链
-- 若前端确实需要打点：先 `runAction({ kind: "push-checkpoint", reason })` 再 `applyPatch`
+- 若前端确实需要打点，应通过平台动作设计显式 manual checkpoint 入口；当前桥 runtime 写入口不隐式打点。
 
 ### 2.3 Authority
 
 运行时写入是 AIRP 的基础能力，但必须通过平台实现的写入口收口：
 
-- `bridge.runtime.applyPatch` 与 `apply-patch` 节点都调用同一个 `applyMaintenancePatch`
+- `bridge.runtime.applyPatch` 与 `apply-patch` 节点都调用同一个 `applyMaintenancePatch`；applier 负责把 legacy patch 写入同步回 generic AIRP memory authority。
 - 模组通过桥 API 可以触发写运行时；前端在浏览器内只能调桥 API，无 IndexedDB 直写权
 - mod/default workflow 都可以声明显式 `apply-patch` 节点；validator 只校验节点类型与 patch 输入端口完整性
 

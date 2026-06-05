@@ -38,13 +38,13 @@
         Checkpoint
       </label>
       <select
-        :value="config.pushCheckpointReason ?? 'after-turn'"
+        :value="config.pushCheckpointReason ?? 'none'"
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
         @change="updateOptional('pushCheckpointReason', ($event.target as HTMLSelectElement).value)"
       >
-        <option value="after-turn">after-turn</option>
-        <option value="manual">manual</option>
         <option value="none">none</option>
+        <option value="manual">manual</option>
+        <option value="after-turn">after-turn</option>
       </select>
     </div>
   </div>

@@ -121,8 +121,8 @@ export interface SwitchNodeConfig {
 export interface ApplyPatchNodeConfig {
   /** 从 inputs[patchVarName] 取 patch JSON */
   patchVarName: string
-  /** 默认 "after-turn"；桥 API 路径为 undefined（design.md §13.9） */
-  pushCheckpointReason?: string
+  /** 默认 "none"；平台回合成功后统一创建 after-turn checkpoint。 */
+  pushCheckpointReason?: "after-turn" | "manual" | "none"
 }
 
 export interface ComputeNodeConfig {
@@ -135,7 +135,7 @@ export interface ComputeNodeConfig {
 }
 
 export interface MemoryQueryNodeConfig {
-  /** event-archive: official memory query strategy; collection: custom save-scoped records. */
+  /** event-archive: compatibility source; collection: save-scoped generic memory records. */
   source: "event-archive" | "collection"
   namespace?: string
   collection?: string
@@ -151,7 +151,7 @@ export interface MemoryWriteNodeConfig {
   operationsVarName: string
   namespace?: string
   collection?: string
-  /** 默认 "after-turn"；设为 "none" 时不创建 checkpoint。 */
+  /** 默认 "none"；平台回合成功后统一创建 after-turn checkpoint。 */
   pushCheckpointReason?: "after-turn" | "manual" | "none"
 }
 

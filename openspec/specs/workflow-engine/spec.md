@@ -4,7 +4,7 @@
 
 ## 1. Purpose
 
-把 Tsian 一轮交互的"检索 → 正文 → 维护"三段链路抽象为可声明、可调度、可中断、可调试的 DAG。模组通过 `mod.manifest.workflow` 替换默认工作流；平台通过 `default-workflow.ts` 提供兜底。
+把 Tsian 一轮交互的"检索 → 正文 → 维护"三段链路抽象为可声明、可调度、可中断、可调试的 DAG。平台按 save workflow override / mod `workflowPresetId` / deprecated `manifest.workflow` / `default-workflow.ts` 的顺序解析工作流；内置模组必须通过资源库 workflow preset 引用工作流。
 
 ## 2. Public API
 
@@ -32,7 +32,7 @@ export interface WorkflowExecutionContext {
 
 ## 3. Node Types
 
-平台只接受 contracts 中声明的内置节点类型；模组中出现其它类型在加载期 throw（§13.4）。当前内置集合为 `ai-call` / `result` / `switch` / `apply-patch` / `compute` / `memory-query` / `memory-write` / `template-compose`。
+平台只接受 contracts 中声明的内置节点类型；模组中出现其它类型在加载期 throw（§13.4）。当前内置集合为 `ai-call` / `result` / `switch` / `apply-patch` / `compute` / `memory-query` / `memory-write` / `template-compose` / `record-filter` / `record-merge` / `record-format`。
 
 ### 3.1 `ai-call`
 - Config: `{ presetRef, modelRef, appendUserInput?: boolean, retry? }`
@@ -53,8 +53,9 @@ export interface WorkflowExecutionContext {
 - Output ports: `match: boolean`, `value: any`
 
 ### 3.4 `apply-patch`
-- Config: `{ pushCheckpointReason?: string }`
+- Config: `{ patchVarName: string, pushCheckpointReason?: "after-turn" | "manual" | "none" }`
 - 行为：取上游 `patch` 端口（`MaintenancePatchDocument`）调 `context.applyMaintenancePatch`
+- Checkpoint：默认 `none`；平台回合成功后统一创建 after-turn checkpoint，节点本地 checkpoint 只允许显式开启。
 - Output ports（与 `ApplyPatchOutput` 字段严格对齐，§13.3）：
   - `appliedArchives: string[]`
   - `appliedEventIds: string[]`
@@ -70,11 +71,21 @@ export interface WorkflowExecutionContext {
 - 超时（P-H-7）：超时后 reject with code `TIMEOUT`，setTimeout 句柄须清理
 - Output ports: `value`
 
+### 3.6 `memory-query`
+- Config: `{ source: "collection" | "event-archive", namespace?, collection?, queryVarName?, query?, limit? }`
+- `collection` 是 save-scoped generic memory records 的主路径；`event-archive` 是兼容来源，不属于默认 AIRP 主链。
+- Output ports: `collection` 输出 `records` / `count`；`event-archive` 兼容输出 `prompt` / `directEntities` / `archives` / `debug`。
+
+### 3.7 `memory-write`
+- Config: `{ operationsVarName: string, namespace?, collection?, pushCheckpointReason?: "after-turn" | "manual" | "none" }`
+- 行为：取上游 operations 写入 save-scoped generic memory records；AIRP 内置 schema 覆盖的 collection 走 schema normalize/validation。
+- Checkpoint：默认 `none`；平台回合成功后统一创建 after-turn checkpoint，节点本地 checkpoint 只允许显式开启。
+
 ## 4. Edge Contract
 
 ```ts
 interface WorkflowEdge {
-  from: { nodeId: string; port: string };
+  from: { nodeId: string; outputName?: string };
   to: { nodeId: string; varName: string };
 }
 ```
@@ -136,7 +147,7 @@ interface WorkflowEdge {
 
 ## 11. Cross-references
 
-- design.md §4（NodeOutputExtractRule）、§5（retry）、§6（outputs store）、§7（manifest）、§8（default workflow）、§10（compute 沙箱）、§13.x、§14
+- design.md §4（NodeOutputExtractRule）、§5（retry）、§6（outputs store）、§7（manifest / legacy manifest compatibility）、§8（default workflow）、§10（compute 沙箱）、§13.x、§14
 - _research-notes.md HC-1..15、SC-CRIT-1..7、R-1..6
 
 ## 12. Out of Scope

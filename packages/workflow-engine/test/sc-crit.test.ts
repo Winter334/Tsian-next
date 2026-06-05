@@ -9,6 +9,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { getDefaultBuiltinMod } from '../../../builtin/mods'
 import {
+  builtinWorkflowPresetSeeds,
+  GREY_SALT_TOWN_WORKFLOW_PRESET_ID,
+} from '../../../builtin/mods/workflow-presets'
+import {
   executeWorkflow,
   validateWorkflowDefinition,
   WorkflowAbortError,
@@ -137,9 +141,23 @@ describe('SC-CRIT-6 — mod 工作流允许显式 apply-patch 节点', () => {
   })
 })
 
-describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
-  it('灰盐镇 manifest workflow 通过 memory-write 显式承接 maintenance operations', () => {
-    const workflow = getDefaultBuiltinMod().manifest.workflow
+describe('SC-CRIT-6 — 内置模组工作流使用资源库预设和显式记忆节点', () => {
+  it('灰盐镇 manifest 通过 workflowPresetId 引用内置工作流预设', () => {
+    const mod = getDefaultBuiltinMod()
+    expect(mod.manifest.workflowPresetId).toBe(GREY_SALT_TOWN_WORKFLOW_PRESET_ID)
+    expect(mod.manifest.workflow).toBeUndefined()
+
+    const seed = builtinWorkflowPresetSeeds.find(
+      (item) => item.id === mod.manifest.workflowPresetId,
+    )
+    expect(seed).toBeDefined()
+    expect(seed?.modId).toBe(mod.manifest.id)
+  })
+
+  it('灰盐镇内置工作流预设通过 memory-write 显式承接 maintenance operations', () => {
+    const workflow = builtinWorkflowPresetSeeds.find(
+      (item) => item.id === GREY_SALT_TOWN_WORKFLOW_PRESET_ID,
+    )?.workflow
     expect(workflow).toBeDefined()
     expect(() =>
       validateWorkflowDefinition(workflow!, { isModWorkflow: true }),

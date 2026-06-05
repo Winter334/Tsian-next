@@ -264,6 +264,10 @@ import {
   playFrontendBridge,
   selectPlatformSave,
 } from "../platform-host"
+import {
+  getWorkflowPresetResource,
+  seedBuiltinResourceLibraryResources,
+} from "../storage/resources"
 import WorkflowEditorCanvas from "../components/workflow/WorkflowEditorCanvas.vue"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -294,7 +298,7 @@ interface BuiltinModSummary {
   entityTypeCount: number
   archiveCount: number
   eventCount: number
-  workflow?: WorkflowDefinition
+  workflowPresetId?: string
 }
 
 const detailTabs: DetailTab[] = [
@@ -379,7 +383,13 @@ async function syncCurrentModContext(modId: string) {
     return
   }
 
-  currentModWorkflow.value = currentMod.value.workflow
+  if (currentMod.value.workflowPresetId) {
+    await seedBuiltinResourceLibraryResources()
+    const resource = await getWorkflowPresetResource(currentMod.value.workflowPresetId)
+    currentModWorkflow.value = resource?.workflow
+  } else {
+    currentModWorkflow.value = undefined
+  }
   workflowSaveStatus.value = "saved"
 }
 
@@ -408,7 +418,7 @@ async function refreshBuiltinMods() {
     entityTypeCount: mod.entityTypeDefinitions.length,
     archiveCount: mod.archiveCatalog.length,
     eventCount: mod.eventCatalog.length,
-    workflow: mod.manifest.workflow,
+    workflowPresetId: mod.manifest.workflowPresetId,
   }))
 }
 

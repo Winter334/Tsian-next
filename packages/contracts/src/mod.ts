@@ -18,7 +18,7 @@ export interface ModManifest {
    */
   workflowPresetId?: string
   /**
-   * @deprecated 改用 workflowPresetId 引用平台资源库工作流预设；旧字段仅为兼容既有内置模组保留。
+   * @deprecated 改用 workflowPresetId 引用平台资源库工作流预设；旧字段仅为兼容历史模组保留。
    * 模组自定义工作流；缺省时平台使用默认工作流（design.md §8）。
    */
   workflow?: WorkflowDefinition

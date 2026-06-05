@@ -203,7 +203,7 @@ A：原型期默认清本地 IndexedDB 重建，不补迁移。
 2. **`retrievalDebugBySave` 必须随 engine 状态同步失效**：任何"换一个 snapshot"的入口（restore-checkpoint、write-runtime）都要 `retrievalDebugBySave.delete(activeSaveId)`，否则调试面板会看到上一个时间线的检索结果。
 3. **维护逻辑已进 `apply-patch` 工作流节点，函数 `persistActiveSnapshot` 不再存在；fail loud 由节点异常冒泡保证**（design §13.1 / §13.9）。**这是 H8/H9 重构后的有意变更**：原型期暴露问题优于静默吞错。如未来需要保护主链，应在 `interaction.sendMessage` 外层挂顶层错误边界，而不是在 applier 里 catch。
 4. **patch 强引用挂载必须在落盘前完成**：`attachArchiveStrongRefs` / `attachEventStrongRefs` 把维护 AI 输出的"名字"替换为档案 ID 后再调用 `applyArchivePatchesForSave / applyEventPatchForSave`，避免把生成式名称漏到存储层。
-5. **DebugView 用 `nodeId` 模式过滤 patch 节点**：B5 视图按 `nodeId.includes("maintenance") || .includes("apply-patch") || .includes("applypatch")` 从 `WorkflowOutputsSnapshot` 中挑 patch 节点。**未来 `default-workflow.ts` 改节点名时需同步本视图的过滤规则**（`views/DebugView.vue` 内的 `patchNodes` 计算属性），否则调试面板的 patch 段会显示空。
+5. **DebugView 用 `nodeId` 模式过滤维护写入节点**：B5 视图按 `nodeId.includes("maintenance") || .includes("memorywrite") || .includes("memory-write") || .includes("apply-patch") || .includes("applypatch")` 从 `WorkflowOutputsSnapshot` 中挑维护写入节点。**未来 `default-workflow.ts` 改节点名时需同步本视图的过滤规则**（`views/DebugView.vue` 内的 `maintenanceWriteNodeEntries` 计算属性），否则调试面板的维护写入段会显示空。
 
 ### 何时需要拆分这个文件
 

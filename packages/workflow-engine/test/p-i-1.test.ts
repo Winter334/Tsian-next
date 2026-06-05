@@ -111,6 +111,20 @@ describe('P-I-1 桥 API ≡ apply-patch 节点 错误一致性（静态证明）
     expect(defMatches!.length).toBe(1)
   })
 
+  it('applyMaintenancePatch 同步 generic AIRP memory，避免兼容 patch 被回合末投影覆盖', () => {
+    const src = readFileSync(APPLIER_FILE, 'utf-8')
+
+    expect(src).toMatch(
+      /import\s*\{[\s\S]*replaceAirpMemoryForSave[\s\S]*\}\s*from\s*["']\.\.\/storage["']/,
+    )
+    expect(src).toMatch(/await\s+replaceAirpMemoryForSave\s*\(\s*saveId,\s*\{/)
+
+    const syncIndex = src.indexOf('await replaceAirpMemoryForSave(saveId')
+    const checkpointIndex = src.indexOf('if (pushCheckpointReason)')
+    expect(syncIndex).toBeGreaterThan(-1)
+    expect(checkpointIndex).toBeGreaterThan(syncIndex)
+  })
+
   it('结论：两条路径共用同一函数 → 同一非法 patch 抛错必然一致（HC-14 保证）', () => {
     // 这里不做更多断言；上面 5 条已经联合证明：
     //   桥 API (applyPatch / updateGlobals) → applyMaintenancePatch ← apply-patch 节点 executor

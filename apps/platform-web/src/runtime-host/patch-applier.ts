@@ -11,6 +11,7 @@ import {
   listArchivesForSave,
   listEventsForSave,
   listLocalMemoryRecordsForSave,
+  replaceAirpMemoryForSave,
   toArchiveRecord,
   type LocalArchiveRecord,
 } from "../storage"
@@ -211,15 +212,24 @@ export async function applyMaintenancePatch(
     await applyEventPatchForSave(saveId, eventPatch)
   }
 
-  // ── 7. 可选 checkpoint（§13.9） ──
+  // ── 7. 同步 generic AIRP memory authority（apply-patch 是兼容写入口） ──
+  const latestSnapshot = await runtimeEngine.getSnapshot()
+  const latestEvents = await listEventsForSave(saveId)
+  const latestArchives = await listArchivesForSave(saveId)
+  await replaceAirpMemoryForSave(saveId, {
+    snapshot: latestSnapshot,
+    events: latestEvents,
+    archives: latestArchives.map(toArchiveRecord),
+  })
+
+  // ── 8. 可选 checkpoint（§13.9） ──
   if (pushCheckpointReason) {
-    const latestSnapshot = await runtimeEngine.getSnapshot()
     const turn = getSnapshotTurn(latestSnapshot)
     await createCheckpointForSave(saveId, {
       snapshot: latestSnapshot,
       history: getSnapshotMessages(latestSnapshot),
-      events: await listEventsForSave(saveId),
-      archives: await listArchivesForSave(saveId),
+      events: latestEvents,
+      archives: latestArchives,
       memoryRecords: await listLocalMemoryRecordsForSave(saveId),
       reason: pushCheckpointReason,
       label: checkpointLabel ?? `回合 ${turn}`,

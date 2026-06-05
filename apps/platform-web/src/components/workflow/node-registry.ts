@@ -42,8 +42,8 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
   },
   {
     type: 'apply-patch',
-    label: '应用补丁',
-    description: '将 AI 输出的 patch 应用到运行时',
+    label: '应用补丁（兼容）',
+    description: '兼容旧 MaintenancePatchDocument 写入路径',
     icon: 'FileEdit',
     color: '#B388FF',
     colorClass: '[#B388FF]',
@@ -59,7 +59,7 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
   {
     type: 'memory-query',
     label: '记忆查询',
-    description: '查询事件档案或自定义记忆集合',
+    description: '查询 save-scoped 记忆集合',
     icon: 'Database',
     color: '#4FD1C5',
     colorClass: '[#4FD1C5]',
@@ -67,7 +67,7 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
   {
     type: 'memory-write',
     label: '记忆写入',
-    description: '写入自定义记忆集合',
+    description: '写入 save-scoped 记忆集合',
     icon: 'Save',
     color: '#F472B6',
     colorClass: '[#F472B6]',

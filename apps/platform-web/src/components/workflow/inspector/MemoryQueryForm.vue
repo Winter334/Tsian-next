@@ -9,8 +9,8 @@
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
         @change="update('source', ($event.target as HTMLSelectElement).value)"
       >
-        <option value="event-archive">event-archive</option>
         <option value="collection">collection</option>
+        <option value="event-archive">event-archive (compat)</option>
       </select>
     </div>
 
@@ -103,4 +103,3 @@ function updateLimit(raw: string) {
   props.onUpdate({ ...props.config, limit: Number.isFinite(value) && value > 0 ? value : undefined })
 }
 </script>
-

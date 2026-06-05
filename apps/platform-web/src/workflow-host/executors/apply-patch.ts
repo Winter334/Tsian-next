@@ -53,10 +53,10 @@ function castPlatformContext(raw: unknown): PlatformWorkflowContext {
 }
 
 function normalizePushReason(
-  raw: string | undefined,
-): "after-turn" | "manual" {
+  raw: ApplyPatchNodeConfig["pushCheckpointReason"],
+): "after-turn" | "manual" | undefined {
   if (raw === "after-turn" || raw === "manual") return raw
-  return "after-turn"
+  return undefined
 }
 
 export const applyPatchExecutor: NodeExecutor = {

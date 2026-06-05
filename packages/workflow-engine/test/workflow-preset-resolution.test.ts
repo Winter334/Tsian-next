@@ -16,6 +16,10 @@ const PLATFORM_HOST_FILE = resolve(
   'apps/platform-web/src/platform-host/index.ts',
 )
 const CONTRACT_MOD_FILE = resolve(REPO_ROOT, 'packages/contracts/src/mod.ts')
+const RESOURCE_STORAGE_FILE = resolve(
+  REPO_ROOT,
+  'apps/platform-web/src/storage/resources.ts',
+)
 
 describe('workflow preset resource resolution static proof', () => {
   it('ModManifest exposes workflowPresetId as the preferred workflow reference', () => {
@@ -46,6 +50,21 @@ describe('workflow preset resource resolution static proof', () => {
     const legacyWorkflowIndex = resolver.indexOf('manifest.workflow')
     expect(workflowPresetIndex).toBeGreaterThanOrEqual(0)
     expect(legacyWorkflowIndex).toBeGreaterThan(workflowPresetIndex)
+  })
+
+  it('builtin workflow preset seeding uses explicit seeds instead of deprecated manifest.workflow', () => {
+    const src = readFileSync(RESOURCE_STORAGE_FILE, 'utf-8')
+
+    expect(src).toMatch(/builtinWorkflowPresetSeeds/)
+
+    const seedStart = src.indexOf('export async function seedBuiltinModWorkflowPresetResources')
+    const seedEnd = src.indexOf('export async function seedBuiltinResourceLibraryResources')
+    expect(seedStart, 'seedBuiltinModWorkflowPresetResources should exist').toBeGreaterThanOrEqual(0)
+    expect(seedEnd, 'seedBuiltinResourceLibraryResources should follow workflow seed').toBeGreaterThan(seedStart)
+    const seedBody = src.slice(seedStart, seedEnd)
+
+    expect(seedBody).toMatch(/for\s*\(\s*const\s+seed\s+of\s+builtinWorkflowPresetSeeds\s*\)/)
+    expect(seedBody).not.toContain('manifest.workflow')
   })
 
   it('sendMessage awaits save-level workflow metadata, passes isModWorkflow into executeWorkflow, and carries source into debug trace', () => {

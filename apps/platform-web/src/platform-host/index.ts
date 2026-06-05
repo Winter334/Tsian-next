@@ -812,13 +812,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
         // §13.9：桥 API 路径不打 checkpoint
         pushCheckpointReason: undefined,
       })
-      // 同步落盘 snapshot / history（applier 内部只改 engine 内存态 + archives/events 落库）
+      // 同步落盘 snapshot / history（applier 内部同步 generic AIRP memory）
       const snapshotAfter = await runtimeEngine.getSnapshot()
-      await replaceAirpMemoryForSave(activeSaveId, {
-        snapshot: snapshotAfter,
-        events: await listEventsForSave(activeSaveId),
-        archives: (await listArchivesForSave(activeSaveId)).map(toArchiveRecord),
-      })
       await saveSnapshotForSave(activeSaveId, snapshotAfter)
       await saveHistoryForSave(activeSaveId, getSnapshotMessages(snapshotAfter))
       retrievalDebugBySave.delete(activeSaveId)
@@ -850,11 +845,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
         pushCheckpointReason: undefined,
       })
       const snapshotAfter = await runtimeEngine.getSnapshot()
-      await replaceAirpMemoryForSave(activeSaveId, {
-        snapshot: snapshotAfter,
-        events: await listEventsForSave(activeSaveId),
-        archives: (await listArchivesForSave(activeSaveId)).map(toArchiveRecord),
-      })
       await saveSnapshotForSave(activeSaveId, snapshotAfter)
       retrievalDebugBySave.delete(activeSaveId)
     },

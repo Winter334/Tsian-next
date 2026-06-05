@@ -154,6 +154,9 @@ interface PromptPresetResource {
 - Mod-referenced workflow presets and deprecated legacy mod workflows are still
   mod-controlled input. Execute them with `isModWorkflow: true`, but do not use
   that metadata as a permission gate for `apply-patch`.
+- Built-in mods should declare `workflowPresetId` and seed the referenced
+  workflow preset through the resource library seed path. Do not use deprecated
+  `manifest.workflow` as the source of built-in workflow preset resources.
 - Built-in/default, save-selected, and mod-referenced workflows may all contain
   explicit `apply-patch` compatibility write nodes when their patch input port
   is correctly declared and bound.
@@ -189,6 +192,9 @@ interface PromptPresetResource {
   `{ isModWorkflow: true }`.
 - Base: Existing mods omit `workflowPresetId`; legacy `manifest.workflow` or
   `defaultWorkflow` behavior remains unchanged.
+- Bad: A built-in mod carries its current workflow only through deprecated
+  `manifest.workflow` and relies on resource seeding to convert that legacy
+  field into a workflow preset.
 - Bad: A missing save-level or mod-level `workflowPresetId` silently falls back
   to `defaultWorkflow`.
 - Bad: A mod-referenced workflow preset is rejected only because it contains an
@@ -211,8 +217,8 @@ interface PromptPresetResource {
 Wrong:
 
 ```typescript
-const workflow = mod.manifest.workflow ?? defaultWorkflow
-await executeWorkflow(workflow, context, { isModWorkflow: false })
+const legacyWorkflow = mod.manifest.workflow
+await executeWorkflow(legacyWorkflow ?? defaultWorkflow, context, { isModWorkflow: false })
 ```
 
 Correct:

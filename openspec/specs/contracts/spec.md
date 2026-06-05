@@ -15,10 +15,12 @@ export type WorkflowNodeType =
   | 'compute'
   | 'memory-query'
   | 'memory-write'
-  | 'template-compose';
+  | 'template-compose'
+  | 'record-filter'
+  | 'record-merge'
+  | 'record-format';
 
 export interface WorkflowDefinition {
-  id: string;
   nodes: WorkflowNode[];
   edges: WorkflowEdge[];
 }
@@ -26,55 +28,71 @@ export interface WorkflowDefinition {
 export interface WorkflowNode {
   id: string;
   type: WorkflowNodeType;
-  config: NodeConfig;
-  retry?: { max: number; backoffMs: number };
+  config: Record<string, unknown>;
+  retry?: { maxRetries: number };
+  inputs?: NodeInputDeclaration[];
+  outputs?: NodeOutputDeclaration[];
+  position?: { x: number; y: number };
 }
 
 export interface WorkflowEdge {
-  from: { nodeId: string; port: string };
+  from: { nodeId: string; outputName?: string };
   to: { nodeId: string; varName: string };
+  condition?: string;
 }
 
-export type NodeConfig =
-  | AiCallNodeConfig
-  | ResultNodeConfig
-  | SwitchNodeConfig
-  | ApplyPatchNodeConfig
-  | ComputeNodeConfig;
-
 export interface AiCallNodeConfig {
-  presetRef: string;
-  modelRef: string;
+  presetId: string;
+  worldBookKeys?: string[];
   appendUserInput?: boolean;
+  /** @deprecated old workflow preset bypass */
+  bypass?: { rawFromMacro: string };
 }
 
 export interface ResultNodeConfig {
   name: string;
-  value: NodeOutputExtractRule;
 }
 
 export interface SwitchNodeConfig {
-  condition: string; // §13.2 字面量等值
+  cases: Array<{ when: string; outputName: string }>;
+  defaultOutputName?: string;
 }
 
 export interface ApplyPatchNodeConfig {
-  pushCheckpointReason?: string;
+  patchVarName: string;
+  pushCheckpointReason?: 'after-turn' | 'manual' | 'none';
 }
 
 export interface ComputeNodeConfig {
-  source: string;
+  script: string;
   timeout?: number;
+}
+
+export interface MemoryQueryNodeConfig {
+  source: 'event-archive' | 'collection';
+  namespace?: string;
+  collection?: string;
+  queryVarName?: string;
+  query?: string;
+  limit?: number;
+}
+
+export interface MemoryWriteNodeConfig {
+  operationsVarName: string;
+  namespace?: string;
+  collection?: string;
+  pushCheckpointReason?: 'after-turn' | 'manual' | 'none';
 }
 
 export interface NodeOutputDeclaration {
   name: string;
-  type: 'string' | 'json' | 'messages';
+  extract: NodeOutputExtractRule;
 }
 
 export type NodeOutputExtractRule =
-  | { fromPort: string }
-  | { literal: string }
-  | { jsonPath: string };
+  | { type: 'tag'; tag: string; parse?: 'json' | 'number' }
+  | { type: 'regex'; pattern: string; flags?: string; group?: number; parse?: 'json' | 'number' }
+  | { type: 'raw'; parse?: 'json' | 'number' };
 ```
 
 ## 2. `ApplyPatchOutput` (re-export from runtime contracts)
@@ -97,9 +115,13 @@ export interface ModManifest {
   id: string;
   // ... existing fields ...
 
-  // NEW
+  // Current
+  workflowPresetId?: string;
+
+  // Deprecated legacy compatibility
   workflow?: WorkflowDefinition;
-  presets?: PresetInfo[];
+  presets?: Record<string, PromptPreset>;
+  worldBooks?: Record<string, WorldBook>;
   customMacros?: Record<string, string>;
 
   // INTENTIONALLY NOT EXTENDED:
