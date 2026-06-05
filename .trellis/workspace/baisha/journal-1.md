@@ -555,3 +555,37 @@ Refreshed active platform direction around workflow-as-system, archived stale ac
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: Retire event-archive memory query source
+
+**Date**: 2026-06-05
+**Task**: Retire event-archive memory query source
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Made memory-query collection-only across contracts, platform executor, workflow editor slots/forms, tests, and current specs/docs. Verified contracts, workflow-engine, workflow-engine tests, and web build.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a8d5c09` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

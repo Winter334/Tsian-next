@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
+- **Total Sessions**: 17
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~557 | Active |
+| `journal-1.md` | ~591 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-06-05 | Retire event-archive memory query source | `a8d5c09` | `master` |
 | 16 | 2026-06-05 | Workflow-as-system direction refresh | `ba857c1`, `34b6af6` | `master` |
 | 15 | 2026-06-05 | Stabilize AIRP workflow compatibility boundaries | `c8d2394` | `master` |
 | 14 | 2026-06-05 | 发布检索基础节点并替换默认 AIRP 检索 | `5afa0a2`, `279d549` | `master` |
