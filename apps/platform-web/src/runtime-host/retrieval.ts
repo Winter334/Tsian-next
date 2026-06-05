@@ -50,6 +50,42 @@ interface SemanticRetrievalResult {
   error?: string
 }
 
+// Internal-only retrieval stage contracts. These are candidate workflow
+// primitives for a later public node vocabulary; the public workflow graph stays
+// unchanged in this slice.
+interface QueryStageResult {
+  recentMessages: ConversationMessageRecord[]
+}
+
+interface ExtractionStageResult {
+  directArchives: ArchiveRecord[]
+  presentArchives: ArchiveRecord[]
+  catalogCandidates: RetrievalCatalogEventDebugRecord[]
+  selectedCatalogEvents: RetrievalCatalogEventDebugRecord[]
+}
+
+interface RelationStageResult {
+  bridgeArchives: ArchiveRecord[]
+}
+
+interface RankingStageResult {
+  rankedEvents: RankedEventRecord[]
+  structuralEvents: RetrievalCandidateDebugRecord[]
+}
+
+interface SemanticStageResult {
+  semantic: SemanticRetrievalResult
+}
+
+interface MergeStageResult {
+  mergedEvents: RetrievalCandidateDebugRecord[]
+  presentArchivesWithoutDirect: ArchiveRecord[]
+  selectedEventArchives: ArchiveRecord[]
+  selectedSemanticArchives: ArchiveRecord[]
+  selectedBridgeArchives: ArchiveRecord[]
+  hintEntities: HintEntityRecord[]
+}
+
 function mergeRetrievalSettings(
   settings?: Partial<BrowserRetrievalSettings>,
 ): BrowserRetrievalSettings {
@@ -71,6 +107,15 @@ function buildRecentMessages(
   settings: BrowserRetrievalSettings,
 ): ConversationMessageRecord[] {
   return messages.slice(-settings.recentMessageLimit)
+}
+
+function runQueryStage(input: {
+  messages: ConversationMessageRecord[]
+  settings: BrowserRetrievalSettings
+}): QueryStageResult {
+  return {
+    recentMessages: buildRecentMessages(input.messages, input.settings),
+  }
 }
 
 function archiveNameMap(archives: ArchiveRecord[]): Map<string, ArchiveRecord> {
@@ -809,6 +854,265 @@ function selectCatalogEventCandidates(input: {
     }
   })
 }
+
+function runExtractionStage(input: {
+  userInput: string
+  recentMessages: ConversationMessageRecord[]
+  activeEvents: LocalEventRecord[]
+  catalogEvents: CatalogEventRecord[]
+  archives: ArchiveRecord[]
+  currentTime?: string
+  globals?: RuntimeGlobalsMap
+  settings: BrowserRetrievalSettings
+}): ExtractionStageResult {
+  const directArchives = selectDirectArchives({
+    messages: input.recentMessages,
+    userInput: input.userInput,
+    archives: input.archives,
+  })
+  const presentArchives = selectPresentArchives({
+    activeEvents: input.activeEvents,
+    archives: input.archives,
+  })
+  const catalogCandidates = selectCatalogEventCandidates({
+    catalogEvents: input.catalogEvents,
+    currentTime: input.currentTime,
+    globals: input.globals,
+    userInput: input.userInput,
+    recentMessages: input.recentMessages,
+    directArchives,
+    presentArchives,
+    activeEvents: input.activeEvents,
+    settings: input.settings,
+  })
+
+  return {
+    directArchives,
+    presentArchives,
+    catalogCandidates,
+    selectedCatalogEvents: catalogCandidates.filter((item) => item.selected),
+  }
+}
+
+function runRelationStage(input: {
+  directArchives: ArchiveRecord[]
+  presentArchives: ArchiveRecord[]
+  archives: ArchiveRecord[]
+  settings: BrowserRetrievalSettings
+}): RelationStageResult {
+  return {
+    bridgeArchives: selectBridgeArchives({
+      directArchives: input.directArchives,
+      presentArchives: input.presentArchives,
+      archives: input.archives,
+      settings: input.settings,
+    }),
+  }
+}
+
+function runRankingStage(input: {
+  events: LocalEventRecord[]
+  activeEvents: LocalEventRecord[]
+  directArchives: ArchiveRecord[]
+  presentArchives: ArchiveRecord[]
+  bridgeArchives: ArchiveRecord[]
+  archives: ArchiveRecord[]
+  currentTime?: string
+  playerArchiveIds: string[]
+  settings: BrowserRetrievalSettings
+}): RankingStageResult {
+  const rankedEvents = rankEventsByEntityGraph({
+    events: input.events,
+    activeEvents: input.activeEvents,
+    directArchives: input.directArchives,
+    presentArchives: input.presentArchives,
+    bridgeArchives: input.bridgeArchives,
+    archives: input.archives,
+    currentTime: input.currentTime,
+    playerArchiveIds: input.playerArchiveIds,
+    settings: input.settings,
+  })
+
+  return {
+    rankedEvents,
+    structuralEvents: selectEventChains({
+      ranked: rankedEvents,
+      events: input.events,
+      seedLimit: getSeedLimit({
+        directArchives: input.directArchives,
+        presentArchives: input.presentArchives,
+        activeEvents: input.activeEvents,
+        settings: input.settings,
+      }),
+      settings: input.settings,
+    }),
+  }
+}
+
+async function runSemanticStage(input: {
+  settings: BrowserRetrievalSettings
+  recentMessages: ConversationMessageRecord[]
+  userInput: string
+  events: LocalEventRecord[]
+  archives: ArchiveRecord[]
+  currentTime?: string
+  narrativeTimeText?: string
+}): Promise<SemanticStageResult> {
+  return {
+    semantic: await runSemanticRetrieval(input),
+  }
+}
+
+function runMergeStage(input: {
+  structuralEvents: RetrievalCandidateDebugRecord[]
+  semantic: SemanticRetrievalResult
+  events: LocalEventRecord[]
+  archives: ArchiveRecord[]
+  directArchives: ArchiveRecord[]
+  presentArchives: ArchiveRecord[]
+  bridgeArchives: ArchiveRecord[]
+  messages: ConversationMessageRecord[]
+  settings: BrowserRetrievalSettings
+}): MergeStageResult {
+  const mergedEvents = mergeSelectedEvents({
+    structuralEvents: input.structuralEvents,
+    semanticEvents: input.semantic.events,
+    events: input.events,
+    settings: input.settings,
+  })
+  const baseArchiveIds = new Set(
+    [...input.directArchives, ...input.presentArchives].map((archive) => archive.id),
+  )
+  const selectedEventArchives = eventArchives({
+    selectedEvents: mergedEvents,
+    archives: input.archives,
+    excludedArchiveIds: baseArchiveIds,
+  })
+  const eventArchiveIds = new Set(selectedEventArchives.map((archive) => archive.id))
+  const selectedSemanticArchives = semanticArchives({
+    semanticMatches: input.semantic.archives,
+    archives: input.archives,
+    excludedArchiveIds: new Set([...baseArchiveIds, ...eventArchiveIds]),
+  })
+  const semanticArchiveIds = new Set(selectedSemanticArchives.map((archive) => archive.id))
+  const selectedBridgeArchives = input.bridgeArchives.filter(
+    (archive) =>
+      !baseArchiveIds.has(archive.id) &&
+      !eventArchiveIds.has(archive.id) &&
+      !semanticArchiveIds.has(archive.id),
+  )
+
+  const excludedArchiveIds = new Set<string>()
+  for (const archive of input.directArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of input.presentArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of selectedEventArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of selectedSemanticArchives) excludedArchiveIds.add(archive.id)
+  for (const archive of selectedBridgeArchives) excludedArchiveIds.add(archive.id)
+
+  return {
+    mergedEvents,
+    presentArchivesWithoutDirect: input.presentArchives.filter(
+      (archive) => !input.directArchives.some((item) => item.id === archive.id),
+    ),
+    selectedEventArchives,
+    selectedSemanticArchives,
+    selectedBridgeArchives,
+    hintEntities: computeHintEntities({
+      recentMessages: input.messages,
+      archives: input.archives,
+      excludedArchiveIds,
+      recencyTurns: input.settings.hintEntityRecencyTurns,
+    }),
+  }
+}
+
+function composeRetrievalAssembly(input: {
+  userInput: string
+  settings: BrowserRetrievalSettings
+  semantic: SemanticRetrievalResult
+  currentTime?: string
+  narrativeTimeText?: string
+  globals?: RuntimeGlobalsMap
+  activeEvents: LocalEventRecord[]
+  directArchives: ArchiveRecord[]
+  presentArchives: ArchiveRecord[]
+  bridgeArchives: ArchiveRecord[]
+  rankedEvents: RankedEventRecord[]
+  catalogCandidates: RetrievalCatalogEventDebugRecord[]
+  selectedCatalogEvents: RetrievalCatalogEventDebugRecord[]
+  mergedEvents: RetrievalCandidateDebugRecord[]
+  presentArchivesWithoutDirect: ArchiveRecord[]
+  selectedEventArchives: ArchiveRecord[]
+  selectedSemanticArchives: ArchiveRecord[]
+  selectedBridgeArchives: ArchiveRecord[]
+  hintEntities: HintEntityRecord[]
+}): RetrievalAssemblyResult {
+  const selectedIds = new Set(input.mergedEvents.map((item) => item.id))
+  const semanticScoreByEventId = new Map(
+    input.semantic.events.map((item) => [item.targetId, item.score]),
+  )
+  const rankedCandidateIds = new Set(input.rankedEvents.map((item) => item.id))
+  const candidates: RetrievalCandidateDebugRecord[] = input.rankedEvents.map((item) => ({
+    ...item,
+    semanticScore: semanticScoreByEventId.get(item.id) ?? item.semanticScore,
+    finalScore: item.finalScore + (semanticScoreByEventId.get(item.id) ?? 0),
+    selected: selectedIds.has(item.id),
+  }))
+  for (const item of input.mergedEvents) {
+    if (!rankedCandidateIds.has(item.id)) {
+      candidates.push(item)
+    }
+  }
+
+  const archiveHits = [
+    ...input.directArchives.map((archive) => archiveDebugRecord(archive, "direct", 100)),
+    ...input.presentArchivesWithoutDirect.map((archive) =>
+      archiveDebugRecord(archive, "present", 90),
+    ),
+    ...input.selectedEventArchives.map((archive) => archiveDebugRecord(archive, "event", 80)),
+    ...input.selectedSemanticArchives.map((archive) =>
+      archiveDebugRecord(archive, "semantic", 70),
+    ),
+    ...input.selectedBridgeArchives.map((archive) => archiveDebugRecord(archive, "bridge", 10)),
+  ]
+
+  return {
+    prompt: buildMemoryPrompt({
+      currentTime: input.currentTime,
+      narrativeTimeText: input.narrativeTimeText,
+      globals: input.globals,
+      catalogEvents: input.selectedCatalogEvents,
+      activeEvents: input.activeEvents,
+      selectedEvents: input.mergedEvents,
+      directArchives: input.directArchives,
+      presentArchives: input.presentArchivesWithoutDirect,
+      eventArchives: input.selectedEventArchives,
+      semanticArchives: input.selectedSemanticArchives,
+      bridgeArchives: input.selectedBridgeArchives,
+      hintEntities: input.hintEntities,
+    }),
+    debug: {
+      input: input.userInput,
+      settings: input.settings,
+      semantic: {
+        enabled: input.settings.aiEnhanced,
+        keywords: input.semantic.keywords,
+        eventIds: input.semantic.events.map((item) => item.targetId),
+        archiveIds: input.semantic.archives.map((item) => item.targetId),
+        error: input.semantic.error,
+      },
+      directEntities: input.directArchives.map((item) => item.name),
+      presentEntities: input.presentArchives.map((item) => item.name),
+      linkedEntities: input.bridgeArchives.map((item) => item.name),
+      groups: [],
+      candidates,
+      archives: archiveHits,
+      catalogEvents: input.catalogCandidates,
+      hintEntities: input.hintEntities,
+    },
+  }
+}
+
 function formatDefaultNarrativeTime(value: string): string {
   return value.trim() || "未设置"
 }
@@ -1106,35 +1410,32 @@ export async function assembleRetrievalContext(input: {
 }): Promise<RetrievalAssemblyResult> {
   const settings = mergeRetrievalSettings(input.settings)
   const activeEvents = input.activeEvents ?? (input.activeEvent ? [input.activeEvent] : [])
-  const recentMessages = buildRecentMessages(input.messages, settings)
-  const directArchives = selectDirectArchives({
-    messages: recentMessages,
-    userInput: input.userInput,
-    archives: input.archives,
+  const { recentMessages } = runQueryStage({
+    messages: input.messages,
+    settings,
   })
-  const presentArchives = selectPresentArchives({
-    activeEvents,
-    archives: input.archives,
-  })
-  const catalogCandidates = selectCatalogEventCandidates({
-    catalogEvents: input.catalogEvents ?? [],
-    currentTime: input.currentTime,
-    globals: input.globals,
+  const {
+    directArchives,
+    presentArchives,
+    catalogCandidates,
+    selectedCatalogEvents,
+  } = runExtractionStage({
     userInput: input.userInput,
     recentMessages,
-    directArchives,
-    presentArchives,
     activeEvents,
+    catalogEvents: input.catalogEvents ?? [],
+    archives: input.archives,
+    currentTime: input.currentTime,
+    globals: input.globals,
     settings,
   })
-  const selectedCatalogEvents = catalogCandidates.filter((item) => item.selected)
-  const bridgeArchives = selectBridgeArchives({
+  const { bridgeArchives } = runRelationStage({
     directArchives,
     presentArchives,
     archives: input.archives,
     settings,
   })
-  const ranked = rankEventsByEntityGraph({
+  const { rankedEvents, structuralEvents } = runRankingStage({
     events: input.events,
     activeEvents,
     directArchives,
@@ -1145,18 +1446,7 @@ export async function assembleRetrievalContext(input: {
     playerArchiveIds: input.playerArchiveIds,
     settings,
   })
-  const selectedEvents = selectEventChains({
-    ranked,
-    events: input.events,
-    seedLimit: getSeedLimit({
-      directArchives,
-      presentArchives,
-      activeEvents,
-      settings,
-    }),
-    settings,
-  })
-  const semantic = await runSemanticRetrieval({
+  const { semantic } = await runSemanticStage({
     settings,
     recentMessages,
     userInput: input.userInput,
@@ -1165,111 +1455,46 @@ export async function assembleRetrievalContext(input: {
     currentTime: input.currentTime,
     narrativeTimeText: input.narrativeTimeText,
   })
-  const mergedEvents = mergeSelectedEvents({
-    structuralEvents: selectedEvents,
-    semanticEvents: semantic.events,
+  const {
+    mergedEvents,
+    presentArchivesWithoutDirect,
+    selectedEventArchives,
+    selectedSemanticArchives,
+    selectedBridgeArchives,
+    hintEntities,
+  } = runMergeStage({
+    structuralEvents,
+    semantic,
     events: input.events,
+    archives: input.archives,
+    directArchives,
+    presentArchives,
+    bridgeArchives,
+    messages: input.messages,
     settings,
   })
-  const baseArchiveIds = new Set(
-    [...directArchives, ...presentArchives].map((archive) => archive.id),
-  )
-  const selectedEventArchives = eventArchives({
-    selectedEvents: mergedEvents,
-    archives: input.archives,
-    excludedArchiveIds: baseArchiveIds,
-  })
-  const eventArchiveIds = new Set(selectedEventArchives.map((archive) => archive.id))
-  const selectedSemanticArchives = semanticArchives({
-    semanticMatches: semantic.archives,
-    archives: input.archives,
-    excludedArchiveIds: new Set([...baseArchiveIds, ...eventArchiveIds]),
-  })
-  const semanticArchiveIds = new Set(selectedSemanticArchives.map((archive) => archive.id))
-  const selectedBridgeArchives = bridgeArchives.filter(
-    (archive) =>
-      !baseArchiveIds.has(archive.id) &&
-      !eventArchiveIds.has(archive.id) &&
-      !semanticArchiveIds.has(archive.id),
-  )
-  const selectedIds = new Set(mergedEvents.map((item) => item.id))
-  const semanticScoreByEventId = new Map(
-    semantic.events.map((item) => [item.targetId, item.score]),
-  )
-  const rankedCandidateIds = new Set(ranked.map((item) => item.id))
-  const candidates: RetrievalCandidateDebugRecord[] = ranked.map((item) => ({
-    ...item,
-    semanticScore: semanticScoreByEventId.get(item.id) ?? item.semanticScore,
-    finalScore: item.finalScore + (semanticScoreByEventId.get(item.id) ?? 0),
-    selected: selectedIds.has(item.id),
-  }))
-  for (const item of mergedEvents) {
-    if (!rankedCandidateIds.has(item.id)) {
-      candidates.push(item)
-    }
-  }
-  const archiveHits = [
-    ...directArchives.map((archive) => archiveDebugRecord(archive, "direct", 100)),
-    ...presentArchives
-      .filter((archive) => !directArchives.some((item) => item.id === archive.id))
-      .map((archive) => archiveDebugRecord(archive, "present", 90)),
-    ...selectedEventArchives.map((archive) => archiveDebugRecord(archive, "event", 80)),
-    ...selectedSemanticArchives.map((archive) => archiveDebugRecord(archive, "semantic", 70)),
-    ...selectedBridgeArchives.map((archive) => archiveDebugRecord(archive, "bridge", 10)),
-  ]
 
-  // AIRP L4 防幻觉提示位：把"被提到但本轮未召回"的实体喂给正文 AI 作温和提示
-  const excludedArchiveIds = new Set<string>()
-  for (const archive of directArchives) excludedArchiveIds.add(archive.id)
-  for (const archive of presentArchives) excludedArchiveIds.add(archive.id)
-  for (const archive of selectedEventArchives) excludedArchiveIds.add(archive.id)
-  for (const archive of selectedSemanticArchives) excludedArchiveIds.add(archive.id)
-  for (const archive of selectedBridgeArchives) excludedArchiveIds.add(archive.id)
-  const hintEntities = computeHintEntities({
-    recentMessages: input.messages,
-    archives: input.archives,
-    excludedArchiveIds,
-    recencyTurns: settings.hintEntityRecencyTurns,
+  return composeRetrievalAssembly({
+    userInput: input.userInput,
+    settings,
+    semantic,
+    currentTime: input.currentTime,
+    narrativeTimeText: input.narrativeTimeText,
+    globals: input.globals,
+    activeEvents,
+    directArchives,
+    presentArchives,
+    bridgeArchives,
+    rankedEvents,
+    catalogCandidates,
+    selectedCatalogEvents,
+    mergedEvents,
+    presentArchivesWithoutDirect,
+    selectedEventArchives,
+    selectedSemanticArchives,
+    selectedBridgeArchives,
+    hintEntities,
   })
-
-  return {
-    prompt: buildMemoryPrompt({
-      currentTime: input.currentTime,
-      narrativeTimeText: input.narrativeTimeText,
-      globals: input.globals,
-      catalogEvents: selectedCatalogEvents,
-      activeEvents,
-      selectedEvents: mergedEvents,
-      directArchives,
-      presentArchives: presentArchives.filter(
-        (archive) => !directArchives.some((item) => item.id === archive.id),
-      ),
-      eventArchives: selectedEventArchives,
-      semanticArchives: selectedSemanticArchives,
-      bridgeArchives: selectedBridgeArchives,
-      hintEntities,
-    }),
-    debug: {
-      input: input.userInput,
-      settings,
-      semantic: {
-        enabled: settings.aiEnhanced,
-        keywords: semantic.keywords,
-        eventIds: semantic.events.map((item) => item.targetId),
-        archiveIds: semantic.archives.map((item) => item.targetId),
-        error: semantic.error,
-      },
-      directEntities: directArchives.map((item) => item.name),
-      presentEntities: presentArchives.map((item) => item.name),
-      linkedEntities: bridgeArchives.map((item) => item.name),
-      groups: [],
-      candidates,
-      archives: archiveHits,
-      catalogEvents: catalogCandidates,
-      hintEntities,
-    },
-  }
 }
-
 
 
