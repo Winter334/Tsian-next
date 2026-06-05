@@ -9,6 +9,7 @@
  */
 
 import type { PromptPreset, WorldBook } from "./preset"
+import type { JsonValue } from "./runtime"
 
 // ============================================================================
 // 节点输出提取规则（design.md §4）
@@ -64,6 +65,9 @@ export type WorkflowNodeType =
   | "memory-query"
   | "memory-write"
   | "template-compose"
+  | "record-filter"
+  | "record-merge"
+  | "record-format"
 
 export interface WorkflowNodeBase<T extends WorkflowNodeType = WorkflowNodeType> {
   id: string
@@ -126,6 +130,8 @@ export interface ComputeNodeConfig {
   script: string
   /** 默认 5000 ms */
   timeout?: number
+  /** Platform debug bridge hook: record this output as retrieval debug when present. */
+  recordRetrievalDebugOutputName?: string
 }
 
 export interface MemoryQueryNodeConfig {
@@ -155,6 +161,57 @@ export interface TemplateComposeNodeConfig {
   outputName?: string
   /** Optional parse mode for rendered output. */
   parse?: "json"
+}
+
+export type RecordFilterPredicateOperator =
+  | "exists"
+  | "equals"
+  | "not-equals"
+  | "contains"
+  | "in"
+
+export interface RecordFilterPredicate {
+  /** Dot path resolved against each item, e.g. "data.status", "tags", or "id". */
+  path: string
+  op: RecordFilterPredicateOperator
+  value?: JsonValue
+  caseSensitive?: boolean
+}
+
+export interface RecordFilterNodeConfig {
+  /** Input key containing the array to filter, default "records". */
+  inputVarName?: string
+  /** Output port name, default "records". */
+  outputName?: string
+  /** Whether all or any predicates must match, default "all". */
+  match?: "all" | "any"
+  predicates?: RecordFilterPredicate[]
+  limit?: number
+}
+
+export interface RecordMergeNodeConfig {
+  /** Input keys containing arrays to merge, in priority/order. */
+  inputVarNames: string[]
+  /** Dot path used for dedupe, default "id". Missing keys are preserved. */
+  keyPath?: string
+  /** Which duplicate wins, default "first". */
+  strategy?: "first" | "last"
+  /** Output port name, default "records". */
+  outputName?: string
+  limit?: number
+}
+
+export interface RecordFormatNodeConfig {
+  /** Input key containing the array to format, default "records". */
+  inputVarName?: string
+  /** Output port name, default "text". */
+  outputName?: string
+  /** Template rendered once per item; tokens can reference item.*, record.*, inputs.*, or macros.*. */
+  itemTemplate: string
+  separator?: string
+  prefix?: string
+  suffix?: string
+  emptyText?: string
 }
 
 // ============================================================================

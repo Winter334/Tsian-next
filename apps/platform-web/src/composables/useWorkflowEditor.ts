@@ -27,6 +27,9 @@ function defaultNodeConfig(type: WorkflowNodeType): Record<string, unknown> {
   if (type === 'memory-query') return { source: 'collection', queryVarName: 'query' }
   if (type === 'memory-write') return { operationsVarName: 'operations', pushCheckpointReason: 'after-turn' }
   if (type === 'template-compose') return { template: '{{data}}', outputName: 'text' }
+  if (type === 'record-filter') return { inputVarName: 'records', outputName: 'records', match: 'all', predicates: [] }
+  if (type === 'record-merge') return { inputVarNames: ['records'], keyPath: 'id', outputName: 'records' }
+  if (type === 'record-format') return { inputVarName: 'records', itemTemplate: '{{item.data.content}}', separator: '\n', outputName: 'text' }
   if (type === 'apply-patch') return { patchVarName: 'patch' }
   if (type === 'result') return { name: 'result' }
   if (type === 'switch') return { cases: [], defaultOutputName: 'default' }

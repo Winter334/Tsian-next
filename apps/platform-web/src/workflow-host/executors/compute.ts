@@ -16,7 +16,7 @@
  */
 
 import type { NodeExecutor } from "@tsian/workflow-engine"
-import type { ComputeNodeConfig, WorkflowNode } from "@tsian/contracts"
+import type { ComputeNodeConfig, RetrievalDebugRecord, WorkflowNode } from "@tsian/contracts"
 
 type ComputeFunction = (
   inputs: Record<string, unknown>,
@@ -81,6 +81,26 @@ export const computeExecutor: NodeExecutor = {
       )
     }
 
-    return { outputs: result as Record<string, unknown> }
+    const outputs = result as Record<string, unknown>
+    const debugOutputName =
+      typeof config.recordRetrievalDebugOutputName === "string" &&
+      config.recordRetrievalDebugOutputName.trim()
+        ? config.recordRetrievalDebugOutputName.trim()
+        : undefined
+    const recordRetrievalDebug = (context as {
+      recordRetrievalDebug?: (debug: RetrievalDebugRecord) => void
+    }).recordRetrievalDebug
+    if (debugOutputName && typeof recordRetrievalDebug === "function") {
+      const debug = outputs[debugOutputName]
+      if (debug && typeof debug === "object" && !Array.isArray(debug)) {
+        const turn = (context as { turn?: unknown }).turn
+        recordRetrievalDebug({
+          ...(debug as RetrievalDebugRecord),
+          turn: typeof turn === "number" ? turn : (debug as RetrievalDebugRecord).turn,
+        })
+      }
+    }
+
+    return { outputs }
   },
 }

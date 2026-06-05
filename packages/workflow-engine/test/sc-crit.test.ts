@@ -123,6 +123,9 @@ describe('SC-CRIT-6 — mod 工作流允许显式 apply-patch 节点', () => {
         { id: 'query', type: 'memory-query', config: { source: 'collection' } },
         { id: 'write', type: 'memory-write', config: { operationsVarName: 'operations' } },
         { id: 'compose', type: 'template-compose', config: { template: '{{records.json}}' } },
+        { id: 'filter', type: 'record-filter', config: { inputVarName: 'records', predicates: [] } },
+        { id: 'merge', type: 'record-merge', config: { inputVarNames: ['records'] } },
+        { id: 'format', type: 'record-format', config: { itemTemplate: '{{item.id}}' } },
         { id: 'result', type: 'result', config: { name: 'reply' } },
       ],
       edges: [],
@@ -144,8 +147,46 @@ describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
 
     const retrieval = workflow!.nodes.find((node) => node.id === 'retrieval')
     const maintenance = workflow!.nodes.find((node) => node.id === 'maintenance')
-    expect(retrieval?.type).toBe('memory-query')
-    expect(retrieval?.config).toEqual({ source: 'event-archive' })
+    expect(retrieval?.type).toBe('compute')
+    expect(retrieval?.config).toMatchObject({
+      recordRetrievalDebugOutputName: 'debug',
+    })
+    expect(workflow!.nodes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'airpEvents',
+          type: 'memory-query',
+          config: expect.objectContaining({
+            source: 'collection',
+            namespace: 'airp',
+            collection: 'events',
+          }),
+        }),
+        expect.objectContaining({
+          id: 'airpArchives',
+          type: 'memory-query',
+          config: expect.objectContaining({
+            source: 'collection',
+            namespace: 'airp',
+            collection: 'archives',
+          }),
+        }),
+        expect.objectContaining({
+          id: 'airpGlobals',
+          type: 'memory-query',
+          config: expect.objectContaining({
+            source: 'collection',
+            namespace: 'airp',
+            collection: 'globals',
+          }),
+        }),
+        expect.objectContaining({ id: 'ongoingEvents', type: 'record-filter' }),
+        expect.objectContaining({ id: 'foregroundArchives', type: 'record-filter' }),
+        expect.objectContaining({ id: 'selectedArchiveMerge', type: 'record-merge' }),
+        expect.objectContaining({ id: 'selectedEventsText', type: 'record-format' }),
+        expect.objectContaining({ id: 'selectedArchivesText', type: 'record-format' }),
+      ]),
+    )
     expect(maintenance).toMatchObject({
       id: 'maintenance',
       type: 'ai-call',
@@ -156,6 +197,7 @@ describe('SC-CRIT-6 — 内置模组工作流使用显式记忆节点', () => {
     })
     expect(JSON.stringify(workflow)).not.toContain('__retrieval.raw')
     expect(JSON.stringify(workflow)).not.toContain('"bypass"')
+    expect(JSON.stringify(workflow)).not.toContain('"event-archive"')
     expect(workflow!.nodes).toContainEqual({
       id: 'memoryWrite',
       type: 'memory-write',

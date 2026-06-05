@@ -15,6 +15,9 @@ import { applyPatchExecutor } from "./executors/apply-patch"
 import { computeExecutor } from "./executors/compute"
 import { memoryQueryExecutor } from "./executors/memory-query"
 import { memoryWriteExecutor } from "./executors/memory-write"
+import { recordFilterExecutor } from "./executors/record-filter"
+import { recordFormatExecutor } from "./executors/record-format"
+import { recordMergeExecutor } from "./executors/record-merge"
 import { resultExecutor } from "./executors/result"
 import { switchExecutor } from "./executors/switch"
 import { templateComposeExecutor } from "./executors/template-compose"
@@ -29,6 +32,9 @@ function buildBuiltinExecutors(): ReadonlyMap<string, NodeExecutor> {
     ["memory-query", memoryQueryExecutor],
     ["memory-write", memoryWriteExecutor],
     ["template-compose", templateComposeExecutor],
+    ["record-filter", recordFilterExecutor],
+    ["record-merge", recordMergeExecutor],
+    ["record-format", recordFormatExecutor],
   ])
 }
 

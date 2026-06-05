@@ -147,6 +147,44 @@ export function resolveWorkflowInputSlots(
     }]
   }
 
+  if (nodeType === 'record-filter') {
+    const name = readStringConfig(config, 'inputVarName', 'records')
+    return [{
+      name,
+      label: '记录',
+      valueType: 'array',
+      semanticSlot: 'record.input',
+      required: true,
+    }]
+  }
+
+  if (nodeType === 'record-merge') {
+    const rawInputVarNames = config?.inputVarNames
+    const names = Array.isArray(rawInputVarNames)
+      ? rawInputVarNames
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .map((item) => item.trim())
+      : ['records']
+    return dedupePorts(names.map((name, index) => ({
+      name,
+      label: index === 0 ? '记录' : `记录 ${index + 1}`,
+      valueType: 'array',
+      semanticSlot: 'record.input',
+      required: index === 0,
+    })))
+  }
+
+  if (nodeType === 'record-format') {
+    const name = readStringConfig(config, 'inputVarName', 'records')
+    return [{
+      name,
+      label: '记录',
+      valueType: 'array',
+      semanticSlot: 'record.input',
+      required: true,
+    }]
+  }
+
   return []
 }
 
@@ -276,6 +314,60 @@ export function resolveWorkflowOutputSlots(
       valueType: config?.parse === 'json' ? 'object' : 'string',
       semanticSlot: 'template.output',
     }]
+  }
+
+  if (nodeType === 'record-filter') {
+    const name = readStringConfig(config, 'outputName', 'records')
+    return [
+      {
+        name,
+        label: '记录',
+        valueType: 'array',
+        semanticSlot: 'record.records',
+      },
+      {
+        name: 'count',
+        label: '记录数量',
+        valueType: 'number',
+        semanticSlot: 'record.count',
+      },
+    ]
+  }
+
+  if (nodeType === 'record-merge') {
+    const name = readStringConfig(config, 'outputName', 'records')
+    return [
+      {
+        name,
+        label: '记录',
+        valueType: 'array',
+        semanticSlot: 'record.records',
+      },
+      {
+        name: 'count',
+        label: '记录数量',
+        valueType: 'number',
+        semanticSlot: 'record.count',
+      },
+    ]
+  }
+
+  if (nodeType === 'record-format') {
+    const name = readStringConfig(config, 'outputName', 'text')
+    return [
+      {
+        name,
+        label: name,
+        valueType: 'string',
+        semanticSlot: 'record.text',
+      },
+      {
+        name: 'count',
+        label: '记录数量',
+        valueType: 'number',
+        semanticSlot: 'record.count',
+      },
+    ]
   }
 
   return []

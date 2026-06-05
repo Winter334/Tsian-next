@@ -1,4 +1,5 @@
-import type { ModInitialSavePayload, ModStaticContent, RuntimeSnapshotShell, WorkflowDefinition, WorldBook } from "@tsian/contracts"
+import type { ModInitialSavePayload, ModStaticContent, RuntimeSnapshotShell, WorldBook } from "@tsian/contracts"
+import { createDefaultAirpWorkflow } from "../../default-airp-workflow"
 
 // === 叙事时间锚点（虚构纪元） ===
 // 设计原则：叙事时间是纯游戏内字段，不应绑定系统时钟（Date.now()）。
@@ -405,79 +406,7 @@ export function createGreySaltTownInitialSavePayload(_now: number): ModInitialSa
 
 const archiveCatalog = createGreySaltTownInitialSavePayload(0).archives
 
-/**
- * 模组自带工作流声明（SC-CRIT-3 验证：mod 注册路径验证）。
- *
- * 形状与 platform-web 默认工作流一致（retrieval → chat → reply / maintenance，
- * 并通过显式 memory-write 节点写入通用记忆操作）。
- *
- * maintenance 输出 `{ operations: MemoryWriteOperation[] }`，
- * memory-write 节点在 workflow 图中显式承担默认 AIRP 运行时记忆写入。
- */
-const greySaltTownWorkflow: WorkflowDefinition = {
-  nodes: [
-    {
-      // retrieval：显式记忆查询节点，由 workflow-host 注入事件/档案上下文。
-      id: "retrieval",
-      type: "memory-query",
-      config: { source: "event-archive" },
-    },
-    {
-      // chat：正文 AI，注入检索 prompt，追加 user.input
-      id: "chat",
-      type: "ai-call",
-      config: { presetId: "builtin.chat", appendUserInput: true },
-    },
-    {
-      // reply：result 节点，把 chat 输出写入 results.reply
-      id: "reply",
-      type: "result",
-      config: { name: "reply" },
-    },
-    {
-      // maintenance：维护 AI，读取正文 + 直接实体，输出 memory write operations JSON
-      id: "maintenance",
-      type: "ai-call",
-      config: { presetId: "builtin.maintenance" },
-      retry: { maxRetries: 0 },
-      outputs: [
-        { name: "operations", extract: { type: "raw", parse: "json" } },
-      ],
-    },
-    {
-      // memoryWrite：显式应用 maintenance 输出的 MemoryWriteOperation[]。
-      id: "memoryWrite",
-      type: "memory-write",
-      config: { operationsVarName: "operations", pushCheckpointReason: "none" },
-    },
-  ],
-  edges: [
-    {
-      from: { nodeId: "retrieval", outputName: "prompt" },
-      to: { nodeId: "chat", varName: "retrieval.prompt" },
-    },
-    {
-      from: { nodeId: "chat", outputName: "raw" },
-      to: { nodeId: "reply", varName: "value" },
-    },
-    {
-      from: { nodeId: "chat", outputName: "raw" },
-      to: { nodeId: "maintenance", varName: "lastReply" },
-    },
-    {
-      from: { nodeId: "retrieval", outputName: "directEntities" },
-      to: { nodeId: "maintenance", varName: "retrieval.directEntities" },
-    },
-    {
-      from: { nodeId: "retrieval", outputName: "archives" },
-      to: { nodeId: "maintenance", varName: "archives.recent.json" },
-    },
-    {
-      from: { nodeId: "maintenance", outputName: "operations" },
-      to: { nodeId: "memoryWrite", varName: "operations" },
-    },
-  ],
-}
+const greySaltTownWorkflow = createDefaultAirpWorkflow()
 
 // === 世界书（Lorebook）：keyword 激活模式 ===
 // 世界书放静态设定（不随剧情变化的世界观规则），与 archives（动态状态）互补。

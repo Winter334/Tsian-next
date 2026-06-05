@@ -80,6 +80,30 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
     color: '#A3E635',
     colorClass: '[#A3E635]',
   },
+  {
+    type: 'record-filter',
+    label: '记录筛选',
+    description: '按字段或标签筛选记录数组',
+    icon: 'Filter',
+    color: '#38BDF8',
+    colorClass: '[#38BDF8]',
+  },
+  {
+    type: 'record-merge',
+    label: '记录合并',
+    description: '合并并去重多组记录',
+    icon: 'Combine',
+    color: '#FB7185',
+    colorClass: '[#FB7185]',
+  },
+  {
+    type: 'record-format',
+    label: '记录格式化',
+    description: '将记录数组格式化为文本',
+    icon: 'Rows3',
+    color: '#FACC15',
+    colorClass: '[#FACC15]',
+  },
 ]
 
 /** 按 type 快速查找 */
