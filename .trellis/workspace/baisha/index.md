@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~522 | Active |
+| `journal-1.md` | ~557 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-06-05 | Workflow-as-system direction refresh | `ba857c1`, `34b6af6` | `master` |
 | 15 | 2026-06-05 | Stabilize AIRP workflow compatibility boundaries | `c8d2394` | `master` |
 | 14 | 2026-06-05 | 发布检索基础节点并替换默认 AIRP 检索 | `5afa0a2`, `279d549` | `master` |
 | 13 | 2026-06-05 | AIRP 检索结构阶段抽象 | `2559901`, `27f2a26` | `master` |

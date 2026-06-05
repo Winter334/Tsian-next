@@ -520,3 +520,38 @@ Reviewed and stabilized AIRP workflow compatibility debt: moved apply-patch sync
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: Workflow-as-system direction refresh
+
+**Date**: 2026-06-05
+**Task**: Workflow-as-system direction refresh
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Refreshed active platform direction around workflow-as-system, archived stale active docs, and recorded the Trellis task for the documentation cleanup.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ba857c1` | (see git log) |
+| `34b6af6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
