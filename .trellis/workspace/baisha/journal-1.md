@@ -346,3 +346,37 @@ Added memory-core package with default AIRP runtime memory schema, validators, t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: Schema-validated memory-write boundary
+
+**Date**: 2026-06-05
+**Task**: Schema-validated memory-write boundary
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Connected memory-write to memory-core schema normalization for built-in AIRP collections, preserved custom collection pass-through, added cross-layer proof coverage, and updated memory schema specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f23c377` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
