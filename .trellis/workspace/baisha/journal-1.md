@@ -451,3 +451,38 @@ Refactored default AIRP retrieval into internal structural stages, added static 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 发布检索基础节点并替换默认 AIRP 检索
+
+**Date**: 2026-06-05
+**Task**: 发布检索基础节点并替换默认 AIRP 检索
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+发布 record-filter、record-merge、record-format 三个记录处理节点，将默认 AIRP 检索替换为 collection query + record nodes + bounded compute 的混合工作流，并更新相关规格与回归验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5afa0a2` | (see git log) |
+| `279d549` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

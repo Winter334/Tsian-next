@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
+- **Total Sessions**: 14
 - **Last Active**: 2026-06-05
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~453 | Active |
+| `journal-1.md` | ~488 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-06-05 | 发布检索基础节点并替换默认 AIRP 检索 | `5afa0a2`, `279d549` | `master` |
 | 13 | 2026-06-05 | AIRP 检索结构阶段抽象 | `2559901`, `27f2a26` | `master` |
 | 12 | 2026-06-05 | Generic maintenance write migration | `823e147`, `0da996b`, `815677e` | `master` |
 | 11 | 2026-06-05 | Schema-validated memory-write boundary | `f23c377` | `master` |
