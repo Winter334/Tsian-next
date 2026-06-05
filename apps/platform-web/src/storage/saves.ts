@@ -6,10 +6,12 @@ import {
   type LocalSaveRecord,
   type LocalSaveSnapshotRecord,
 } from "./db"
+import { replaceAirpMemoryForSave } from "./airp-memory"
 import {
   createArchiveId,
   deleteArchivesForSave,
   listArchivesForSave,
+  toArchiveRecord,
 } from "./archives"
 import { createCheckpointForSave, deleteCheckpointsForSave } from "./checkpoints"
 import { deleteEventsForSave, listEventsForSave } from "./events"
@@ -244,11 +246,19 @@ export async function createLocalSave(
     },
   )
 
+  const seededEvents = await listEventsForSave(save.id)
+  const seededArchives = await listArchivesForSave(save.id)
+  await replaceAirpMemoryForSave(save.id, {
+    snapshot: initial.snapshot,
+    events: seededEvents,
+    archives: seededArchives.map(toArchiveRecord),
+  })
+
   await createCheckpointForSave(save.id, {
     snapshot: initial.snapshot,
     history: initial.history,
-    events: await listEventsForSave(save.id),
-    archives: await listArchivesForSave(save.id),
+    events: seededEvents,
+    archives: seededArchives,
     memoryRecords: await listLocalMemoryRecordsForSave(save.id),
     reason: "initial",
     label: "初始状态",
@@ -340,7 +350,5 @@ export async function saveHistoryForSave(
     messages,
   })
 }
-
-
 
 

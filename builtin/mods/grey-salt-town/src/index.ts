@@ -409,11 +409,10 @@ const archiveCatalog = createGreySaltTownInitialSavePayload(0).archives
  * 模组自带工作流声明（SC-CRIT-3 验证：mod 注册路径验证）。
  *
  * 形状与 platform-web 默认工作流一致（retrieval → chat → reply / maintenance，
- * 并通过显式 apply-patch 节点写入维护 patch）。
+ * 并通过显式 memory-write 节点写入通用记忆操作）。
  *
- * apply-patch 在当前阶段是兼容写入节点：它仍消费 MaintenancePatchDocument，
- * 但必须作为 workflow 图中的显式副作用节点出现，而不是由 platform-host
- * 在工作流结束后扫描 patch 输出并隐式应用。
+ * maintenance 输出 `{ operations: MemoryWriteOperation[] }`，
+ * memory-write 节点在 workflow 图中显式承担默认 AIRP 运行时记忆写入。
  */
 const greySaltTownWorkflow: WorkflowDefinition = {
   nodes: [
@@ -436,20 +435,20 @@ const greySaltTownWorkflow: WorkflowDefinition = {
       config: { name: "reply" },
     },
     {
-      // maintenance：维护 AI，读取正文 + 直接实体，输出 patch JSON
+      // maintenance：维护 AI，读取正文 + 直接实体，输出 memory write operations JSON
       id: "maintenance",
       type: "ai-call",
       config: { presetId: "builtin.maintenance" },
       retry: { maxRetries: 0 },
       outputs: [
-        { name: "patch", extract: { type: "raw", parse: "json" } },
+        { name: "operations", extract: { type: "raw", parse: "json" } },
       ],
     },
     {
-      // applyPatch：兼容写入节点，显式应用 maintenance 输出的 MaintenancePatchDocument。
-      id: "applyPatch",
-      type: "apply-patch",
-      config: { patchVarName: "patch", pushCheckpointReason: "after-turn" },
+      // memoryWrite：显式应用 maintenance 输出的 MemoryWriteOperation[]。
+      id: "memoryWrite",
+      type: "memory-write",
+      config: { operationsVarName: "operations", pushCheckpointReason: "none" },
     },
   ],
   edges: [
@@ -474,8 +473,8 @@ const greySaltTownWorkflow: WorkflowDefinition = {
       to: { nodeId: "maintenance", varName: "archives.recent.json" },
     },
     {
-      from: { nodeId: "maintenance", outputName: "patch" },
-      to: { nodeId: "applyPatch", varName: "patch" },
+      from: { nodeId: "maintenance", outputName: "operations" },
+      to: { nodeId: "memoryWrite", varName: "operations" },
     },
   ],
 }

@@ -4,7 +4,7 @@
  * 模组未声明 manifest.workflow 时使用。复刻当前三段链路：
  *   retrieval (memory-query) → chat (ai-call) → reply (result)
  *                                             ↓
- *                                         maintenance (ai-call) → applyPatch (apply-patch)
+ *                                         maintenance (ai-call) → memoryWrite (memory-write)
  *
  * preset id 与资源库内置 prompt preset 种子 id 严格对齐：
  *   - builtin.retrieval
@@ -42,13 +42,13 @@ export const defaultWorkflow: WorkflowDefinition = {
       config: { presetId: "builtin.maintenance" },
       retry: { maxRetries: 0 },
       outputs: [
-        { name: "patch", extract: { type: "raw", parse: "json" } },
+        { name: "operations", extract: { type: "raw", parse: "json" } },
       ],
     },
     {
-      id: "applyPatch",
-      type: "apply-patch",
-      config: { patchVarName: "patch", pushCheckpointReason: "after-turn" },
+      id: "memoryWrite",
+      type: "memory-write",
+      config: { operationsVarName: "operations", pushCheckpointReason: "none" },
     },
   ],
   edges: [
@@ -73,8 +73,8 @@ export const defaultWorkflow: WorkflowDefinition = {
       to: { nodeId: "maintenance", varName: "archives.recent.json" },
     },
     {
-      from: { nodeId: "maintenance", outputName: "patch" },
-      to: { nodeId: "applyPatch", varName: "patch" },
+      from: { nodeId: "maintenance", outputName: "operations" },
+      to: { nodeId: "memoryWrite", varName: "operations" },
     },
   ],
 }

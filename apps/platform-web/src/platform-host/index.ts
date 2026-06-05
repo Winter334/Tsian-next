@@ -35,17 +35,17 @@ import { emitTurnDebugReady } from "../debug-events"
 import { getBrowserRetrievalSettings } from "../config/ai"
 import { getCurrentNarrativeTime } from "../narrative-time"
 import {
+  loadAirpMemoryProjectionForSave,
+  replaceAirpMemoryForSave,
   createLocalSave,
   createCheckpointForSave,
   deleteLocalSave,
-  getActiveEventForSave,
   getActiveSaveId,
   getHistoryForSave,
   getModIdForSave,
   getPlayerArchiveIdsForSave,
   getSnapshotForSave,
   getWorkflowPresetIdForSave,
-  listActiveEventsForSave,
   listArchivesForSave,
   listCheckpointsForSave,
   listEventsForSave,
@@ -58,6 +58,7 @@ import {
   setActiveSaveId,
   setPlayerArchiveIdsForSave,
   setWorkflowPresetIdForSave,
+  syncAirpCompatibilityStateForSave,
   toArchiveRecord,
   toEventRecord,
 } from "../storage"
@@ -732,6 +733,12 @@ async function handleWriteRuntimeAction(
       archives: request.archives ?? currentArchives,
     })
 
+    await replaceAirpMemoryForSave(activeSaveId, {
+      snapshot: persisted.snapshot,
+      events: persisted.events,
+      archives: persisted.archives.map(toArchiveRecord),
+    })
+
     runtimeEngine.loadSnapshot(persisted.snapshot)
     retrievalDebugBySave.delete(activeSaveId)
 
@@ -807,6 +814,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
       })
       // 同步落盘 snapshot / history（applier 内部只改 engine 内存态 + archives/events 落库）
       const snapshotAfter = await runtimeEngine.getSnapshot()
+      await replaceAirpMemoryForSave(activeSaveId, {
+        snapshot: snapshotAfter,
+        events: await listEventsForSave(activeSaveId),
+        archives: (await listArchivesForSave(activeSaveId)).map(toArchiveRecord),
+      })
       await saveSnapshotForSave(activeSaveId, snapshotAfter)
       await saveHistoryForSave(activeSaveId, getSnapshotMessages(snapshotAfter))
       retrievalDebugBySave.delete(activeSaveId)
@@ -838,6 +850,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
         pushCheckpointReason: undefined,
       })
       const snapshotAfter = await runtimeEngine.getSnapshot()
+      await replaceAirpMemoryForSave(activeSaveId, {
+        snapshot: snapshotAfter,
+        events: await listEventsForSave(activeSaveId),
+        archives: (await listArchivesForSave(activeSaveId)).map(toArchiveRecord),
+      })
       await saveSnapshotForSave(activeSaveId, snapshotAfter)
       retrievalDebugBySave.delete(activeSaveId)
     },
@@ -1037,11 +1054,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
       // === 1) 加载本轮上下文 ===
       const history = await getHistoryForSave(activeSaveId)
-      const events = await listEventsForSave(activeSaveId)
-      const activeEvents = await listActiveEventsForSave(activeSaveId)
-      const archives = (await listArchivesForSave(activeSaveId)).map(toArchiveRecord)
+      const airpMemory = await loadAirpMemoryProjectionForSave(activeSaveId)
+      const events = airpMemory.events
+      const activeEvents = airpMemory.activeEvents
+      const archives = airpMemory.archives
       const currentSnapshot = await runtimeEngine.getSnapshot()
-      const currentTime = getSnapshotCurrentTime(currentSnapshot)
+      const currentTime = airpMemory.currentTime ?? getSnapshotCurrentTime(currentSnapshot)
       const nextTurn = currentSnapshot.state.turn + 1
       const narrativeTimeText = getNarrativeTimeText(input.narrativeTimeText, currentTime)
       const modId = await getModIdForSave(activeSaveId)
@@ -1108,7 +1126,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         catalogEvents: mod.eventCatalog,
         currentTime,
         narrativeTimeText,
-        globals: getSnapshotGlobals(turnedSnapshot),
+        globals: airpMemory.globals,
         playerArchiveIds,
         retrievalSettings: getBrowserRetrievalSettings(),
         recordRetrievalDebug: (debug) => {
@@ -1116,9 +1134,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
         },
         macros: {
           "user.input": input.content,
-          "narrative.currentTime": getSnapshotCurrentTime(turnedSnapshot),
+          "narrative.currentTime": currentTime,
           "narrative.formattedTime": narrativeTimeText,
-          "globals.json": JSON.stringify(getSnapshotGlobals(turnedSnapshot) ?? {}),
+          "globals.json": JSON.stringify(airpMemory.globals ?? {}),
           "events.active.json": JSON.stringify(activeEvents),
           "events.recent.json": JSON.stringify(events.slice(-20)),
           "archives.recent.json": JSON.stringify(archives.slice(0, 20)),
@@ -1171,10 +1189,21 @@ export const playFrontendBridge: PlayFrontendBridge = {
       // === 11) 推 assistant 消息 ===
       runtimeEngine.appendAssistantMessage(replyText)
 
-      // === 12) 持久化（patch/checkpoint 工作流内已完成） ===
+      // === 12) generic AIRP memory 为权威；回合同步 legacy 兼容切片并创建 checkpoint ===
       const snapshotAfter = await runtimeEngine.getSnapshot()
-      await saveSnapshotForSave(activeSaveId, snapshotAfter)
-      await saveHistoryForSave(activeSaveId, getSnapshotMessages(snapshotAfter))
+      const persisted = await syncAirpCompatibilityStateForSave(
+        activeSaveId,
+        snapshotAfter,
+      )
+      runtimeEngine.loadSnapshot(persisted.snapshot)
+      await createCheckpointForSave(activeSaveId, {
+        snapshot: persisted.snapshot,
+        history: persisted.history,
+        events: persisted.events,
+        archives: persisted.archives,
+        memoryRecords: await listLocalMemoryRecordsForSave(activeSaveId),
+        reason: "after-turn",
+      })
 
       // H12: 本轮正常结束，释放 controller 引用（下轮入口不会误 abort 已完成的轮次）
       if (previousTurnController === currentController) {
@@ -1182,9 +1211,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
       }
 
       // B3 / D5：本轮 patch 已应用 + assistant 落库；广播给 debug 桥订阅方
-      emitTurnDebugReady(snapshotAfter.state.turn)
+      emitTurnDebugReady(persisted.snapshot.state.turn)
 
-      return { snapshot: snapshotAfter }
+      return { snapshot: persisted.snapshot }
     },
   },
   debug: createDebugBridge({

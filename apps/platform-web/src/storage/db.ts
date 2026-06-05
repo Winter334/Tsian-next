@@ -155,7 +155,7 @@ export class TsianLocalDb extends Dexie {
 
   constructor() {
     // 原型期直接换新库名，不做旧结构迁移。
-    super("tsian-local-v9")
+    super("tsian-local-v10")
 
     this.version(1).stores({
       meta: "&key",
