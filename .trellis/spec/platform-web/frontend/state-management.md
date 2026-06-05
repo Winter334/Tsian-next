@@ -33,15 +33,17 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 3. Contracts
 
-- `memory-query` with `source: "event-archive"` calls runtime retrieval and outputs `prompt`, `directEntities`, `archives`, and `debug`.
+- `memory-query` with `source: "event-archive"` projects built-in AIRP `memoryRecords` into retrieval context and outputs `prompt`, `directEntities`, `archives`, and `debug`.
 - `memory-query` with `source: "collection"` reads `memoryRecords` and outputs `records` and `count`.
 - `memory-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `MemoryWriteOperation.type` currently supports `upsert`, `patch`, `delete`, and `clear`; platform storage must recognize all operation types declared by contracts.
 - `patch` is shallow over custom `memoryRecords`: it requires an existing record id, requires both existing `data` and patch `data` to be JSON objects, then merges top-level fields.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
-- `apply-patch` is a compatibility write node for `MaintenancePatchDocument`; mod/default workflows may declare it explicitly, and platform-host must not apply hidden host-managed patches outside the DAG.
+- Built-in AIRP `globals/currentTime` is a reserved record whose `data` shape is `{ key: "currentTime", value: "YYYY-MM-DD HH:mm" }`; default retrieval treats that record as the authoritative narrative time.
+- `apply-patch` is a compatibility write node for `MaintenancePatchDocument`; compatibility workflows may declare it explicitly, and platform-host must not apply hidden host-managed patches outside the DAG.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
 - Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `apply-patch`.
+- Default AIRP maintenance now writes generic `MemoryWriteOperation[]` through an explicit `memory-write` node; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
 
 ### 4. Validation & Error Matrix
 
@@ -58,7 +60,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: default event/archive chain uses `memory-query { source: "event-archive" }`, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.patch` to an explicit `apply-patch` compatibility node.
+- Good: default event/archive chain uses `memory-query { source: "event-archive" }`, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.operations` to an explicit `memory-write` node.
 - Base: custom collection workflows use `memory-query { source: "collection" }` and `memory-write` with namespace/collection defaults for alternative memory structures.
 - Bad: reintroducing `ai-call.config.bypass.rawFromMacro = "__retrieval.raw"` hides retrieval outside the workflow and breaks replaceability.
 - Bad: assuming a failed later workflow node automatically undoes earlier `memory-write` storage operations without restoring a checkpoint.
@@ -68,7 +70,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Contract/build checks: `npm run build:contracts`, `npm run build:memory-core`, `npm run build:web`.
 - Memory schema/validator checks: `npm run test --workspace @tsian/memory-core`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
-- Regression assertion: built-in grey-salt-town workflow retrieval is `memory-query`, contains no `bypass` / `__retrieval.raw`, contains an explicit `maintenance.patch -> applyPatch.patch` edge, and remains valid as a mod workflow.
+- Regression assertion: built-in grey-salt-town workflow retrieval is `memory-query`, contains no `bypass` / `__retrieval.raw`, contains an explicit `maintenance.operations -> memoryWrite.operations` edge, and remains valid as a mod workflow.
 - Browser smoke: resource workflow preview and fullscreen editor show `memory-query`, and new memory/template nodes can be dragged onto the canvas and inspected.
 
 ### 7. Wrong vs Correct

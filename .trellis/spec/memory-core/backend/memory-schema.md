@@ -34,6 +34,7 @@
   - `events`
   - `archives`
   - `globals`
+- Under the current default AIRP runtime convention, `globals` reserves record id/key `currentTime` for narrative time with data shaped like `{ key: "currentTime", value: "YYYY-MM-DD HH:mm" }`.
 - Catalog events are author/static mod content and belong to a future author-content schema, not runtime memory schema.
 - Field schema uses the project lightweight model, not JSON Schema. Additive extensions should be new optional fields or new field types.
 - Relationships are field metadata, such as `entityArchiveIds -> archives.id`.
