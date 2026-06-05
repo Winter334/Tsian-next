@@ -16,6 +16,7 @@
     "paths": {
       "@/*": ["./src/*"],
       "@tsian/contracts": ["../../packages/contracts/src/index.ts"],
+      "@tsian/memory-core": ["../../packages/memory-core/src/index.ts"],
       "@tsian/runtime-core": ["../../packages/runtime-core/src/index.ts"]
     },
     "types": ["vite/client"]

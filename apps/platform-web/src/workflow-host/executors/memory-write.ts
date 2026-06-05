@@ -1,4 +1,9 @@
 import type { MemoryWriteNodeConfig, MemoryWriteOperation } from "@tsian/contracts"
+import {
+  defaultAirpMemorySchema,
+  MemoryValidationError,
+  normalizeMemoryWriteOperation,
+} from "@tsian/memory-core"
 import type { NodeExecutor } from "@tsian/workflow-engine"
 import {
   applyMemoryWriteOperationsForSave,
@@ -72,15 +77,79 @@ function checkpointReason(
   return "after-turn"
 }
 
+function optionalText(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function usesBuiltInAirpSchema(
+  operation: MemoryWriteOperation,
+  defaults: { namespace?: string; collection?: string },
+): boolean {
+  const collection =
+    optionalText(operation.collection) ?? optionalText(defaults.collection)
+  if (!collection || !defaultAirpMemorySchema.collections[collection]) {
+    return false
+  }
+
+  const namespace =
+    optionalText(operation.namespace) ??
+    optionalText(defaults.namespace) ??
+    defaultAirpMemorySchema.defaultNamespace
+
+  return namespace === defaultAirpMemorySchema.defaultNamespace
+}
+
+function formatValidationError(error: MemoryValidationError): string {
+  const details = error.issues
+    .map((issue) => `${issue.code} at ${issue.path}: ${issue.message}`)
+    .join("; ")
+  return details
+    ? `memory-write schema validation failed: ${details}`
+    : "memory-write schema validation failed"
+}
+
+function normalizeSchemaCoveredOperations(
+  operations: MemoryWriteOperation[],
+  defaults: { namespace?: string; collection?: string },
+): MemoryWriteOperation[] {
+  return operations.map((operation) => {
+    if (!usesBuiltInAirpSchema(operation, defaults)) {
+      return operation
+    }
+
+    try {
+      return normalizeMemoryWriteOperation(
+        defaultAirpMemorySchema,
+        operation,
+        defaults,
+      )
+    } catch (error) {
+      if (error instanceof MemoryValidationError) {
+        throw new Error(formatValidationError(error))
+      }
+      throw error
+    }
+  })
+}
+
 export const memoryWriteExecutor: NodeExecutor = {
   async execute({ node, inputs, context }) {
     const config = readMemoryWriteConfig(node.config)
     const ctx = castPlatformContext(context)
     const operations = readOperations(inputs[config.operationsVarName])
-    const result = await applyMemoryWriteOperationsForSave(ctx.saveId, operations, {
+    const defaults = {
       namespace: config.namespace,
       collection: config.collection,
-    })
+    }
+    const normalizedOperations = normalizeSchemaCoveredOperations(
+      operations,
+      defaults,
+    )
+    const result = await applyMemoryWriteOperationsForSave(
+      ctx.saveId,
+      normalizedOperations,
+      defaults,
+    )
     const reason = checkpointReason(config.pushCheckpointReason)
     if (reason) {
       const latestSnapshot = await ctx.runtimeEngine.getSnapshot()
