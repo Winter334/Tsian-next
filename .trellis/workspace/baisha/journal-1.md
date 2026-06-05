@@ -416,3 +416,38 @@ Completed the generic AIRP maintenance migration, switched default retrieval/wri
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: AIRP 检索结构阶段抽象
+
+**Date**: 2026-06-05
+**Task**: AIRP 检索结构阶段抽象
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Refactored default AIRP retrieval into internal structural stages, added static proof coverage, and documented the internal-stage convention for the next workflow-publication phase.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2559901` | (see git log) |
+| `27f2a26` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
