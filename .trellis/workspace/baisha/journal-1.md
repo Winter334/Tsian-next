@@ -380,3 +380,39 @@ Connected memory-write to memory-core schema normalization for built-in AIRP col
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: Generic maintenance write migration
+
+**Date**: 2026-06-05
+**Task**: Generic maintenance write migration
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Completed the generic AIRP maintenance migration, switched default retrieval/write flow to generic memory, added regression coverage, and updated specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `823e147` | (see git log) |
+| `0da996b` | (see git log) |
+| `815677e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
