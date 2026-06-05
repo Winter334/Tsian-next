@@ -34,6 +34,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 ### 3. Contracts
 
 - `memory-query` with `source: "event-archive"` projects built-in AIRP `memoryRecords` into retrieval context and outputs `prompt`, `directEntities`, `archives`, and `debug`.
+- `memory-query` with `source: "event-archive"` remains the public high-level workflow node for the default AIRP path in this slice, but its implementation may be internally decomposed into candidate generic retrieval stages such as query, extract, relate, rank, merge, and compose.
 - `memory-query` with `source: "collection"` reads `memoryRecords` and outputs `records` and `count`.
 - `memory-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `MemoryWriteOperation.type` currently supports `upsert`, `patch`, `delete`, and `clear`; platform storage must recognize all operation types declared by contracts.
@@ -44,6 +45,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
 - Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `apply-patch`.
 - Default AIRP maintenance now writes generic `MemoryWriteOperation[]` through an explicit `memory-write` node; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
+- Semantic AIRP retrieval remains a bounded internal stage in this slice. It should not force the first public generic node vocabulary, and no temporary visual stage-trace UI is required before the next workflow-publication phase.
 
 ### 4. Validation & Error Matrix
 
@@ -71,6 +73,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Memory schema/validator checks: `npm run test --workspace @tsian/memory-core`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
 - Regression assertion: built-in grey-salt-town workflow retrieval is `memory-query`, contains no `bypass` / `__retrieval.raw`, contains an explicit `maintenance.operations -> memoryWrite.operations` edge, and remains valid as a mod workflow.
+- Static proof or tests for retrieval refactors should verify that `assembleRetrievalContext()` still routes through named internal stages instead of collapsing new common behavior into a single opaque block or `compute`-like escape hatch.
 - Browser smoke: resource workflow preview and fullscreen editor show `memory-query`, and new memory/template nodes can be dragged onto the canvas and inspected.
 
 ### 7. Wrong vs Correct
