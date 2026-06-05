@@ -62,12 +62,12 @@
   `source: "event-archive"` 分支已从 editor/runtime workflow surface 退场。
   默认工作流使用 AIRP collection query、公开 record 节点和 bounded compute
   组成混合检索 preset。
-- 默认维护写入走 `maintenance.operations -> memory-write.operations`。
+- 默认维护写入走 `maintenance.operations -> stateWrite.operations`。
   `apply-patch` workflow node 已退场；桥/API patch 兼容写入口保留，并在写
   legacy slices 后同步回 generic AIRP memory。
-- `memory-write` 节点默认不创建节点本地 checkpoint；
+- `state-write` 节点默认不创建节点本地 checkpoint；
   平台回合成功后统一创建 after-turn checkpoint。
-- 当前 DebugView 的维护写入面板展示 maintenance / memory-write 节点结果，
+- 当前 DebugView 的维护写入面板展示 maintenance / state-write 节点结果，
   不再把 legacy patch 视为唯一维护结果。
 
 当前新的边界已经确认，其中仍未继续展开的部分：

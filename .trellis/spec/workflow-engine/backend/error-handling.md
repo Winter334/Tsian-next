@@ -21,7 +21,7 @@ Workflow-engine follows fail-loud behavior. Validation and execution errors must
 
 Keep validation at load time when the condition is knowable before execution.
 `isModWorkflow` remains caller/source metadata and must not change the supported
-node type set. Retired node types such as `apply-patch` fail as
+node type set. Retired node types such as `apply-patch` and `memory-write` fail as
 `UNKNOWN_NODE_TYPE` for every workflow source.
 
 ## Execution Errors

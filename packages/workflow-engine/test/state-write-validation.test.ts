@@ -1,5 +1,5 @@
 /**
- * memory-write schema validation boundary static proof.
+ * state-write schema validation boundary static proof.
  *
  * platform-web owns concrete workflow executors, while workflow-engine remains a
  * pure scheduler package. Until platform-web has its own Vitest setup, this test
@@ -12,9 +12,9 @@ import { resolve } from "node:path"
 
 const REPO_ROOT = resolve(__dirname, "../../..")
 
-const MEMORY_WRITE_EXECUTOR_FILE = resolve(
+const STATE_WRITE_EXECUTOR_FILE = resolve(
   REPO_ROOT,
-  "apps/platform-web/src/workflow-host/executors/memory-write.ts",
+  "apps/platform-web/src/workflow-host/executors/state-write.ts",
 )
 const PLATFORM_WEB_PACKAGE_FILE = resolve(
   REPO_ROOT,
@@ -29,7 +29,7 @@ const PLATFORM_WEB_VITE_CONFIG_FILE = resolve(
   "apps/platform-web/vite.config.ts",
 )
 
-describe("memory-write schema validation boundary", () => {
+describe("state-write schema validation boundary", () => {
   it("platform-web declares and resolves @tsian/memory-core explicitly", () => {
     const packageJson = JSON.parse(
       readFileSync(PLATFORM_WEB_PACKAGE_FILE, "utf-8"),
@@ -45,15 +45,17 @@ describe("memory-write schema validation boundary", () => {
     expect(viteConfig).toContain("../../packages/memory-core/src/index.ts")
   })
 
-  it("memory-write executor normalizes built-in schema operations before storage writes", () => {
-    const src = readFileSync(MEMORY_WRITE_EXECUTOR_FILE, "utf-8")
+  it("state-write executor normalizes schema-covered operations before storage writes", () => {
+    const src = readFileSync(STATE_WRITE_EXECUTOR_FILE, "utf-8")
 
     expect(src).toMatch(
-      /import\s*\{[\s\S]*defaultAirpMemorySchema[\s\S]*MemoryValidationError[\s\S]*normalizeMemoryWriteOperation[\s\S]*\}\s*from\s*["@']@tsian\/memory-core["@']/,
+      /import\s*\{[\s\S]*assertValidMemorySchema[\s\S]*MemoryValidationError[\s\S]*normalizeMemoryWriteOperation[\s\S]*\}\s*from\s*["@']@tsian\/memory-core["@']/,
     )
+    expect(src).not.toContain("defaultAirpMemorySchema")
     expect(src).toContain("normalizeSchemaCoveredOperations(")
     expect(src).toContain("normalizeMemoryWriteOperation(")
     expect(src).toContain("applyMemoryWriteOperationsForSave(")
+    expect(src).toContain("config.schema")
 
     const normalizeIndex = src.indexOf(
       "const normalizedOperations = normalizeSchemaCoveredOperations",
@@ -64,28 +66,28 @@ describe("memory-write schema validation boundary", () => {
     expect(normalizeIndex).toBeLessThan(storageIndex)
   })
 
-  it("custom memory collections remain storage-only in this slice", () => {
-    const src = readFileSync(MEMORY_WRITE_EXECUTOR_FILE, "utf-8")
+  it("custom collections remain storage-only when the node schema does not cover them", () => {
+    const src = readFileSync(STATE_WRITE_EXECUTOR_FILE, "utf-8")
 
-    expect(src).toContain("function usesBuiltInAirpSchema")
-    expect(src).toContain("!defaultAirpMemorySchema.collections[collection]")
+    expect(src).toContain("function usesConfiguredSchema")
+    expect(src).toContain("!schema.collections[collection]")
     expect(src).toMatch(
-      /if\s*\(!usesBuiltInAirpSchema\(operation,\s*defaults\)\)\s*\{\s*return operation\s*\}/,
+      /if\s*\(!usesConfiguredSchema\(schema,\s*operation,\s*defaults\)\)\s*\{\s*return operation\s*\}/,
     )
   })
 
   it("validation issues are surfaced in the thrown workflow node error message", () => {
-    const src = readFileSync(MEMORY_WRITE_EXECUTOR_FILE, "utf-8")
+    const src = readFileSync(STATE_WRITE_EXECUTOR_FILE, "utf-8")
 
     expect(src).toContain("formatValidationError")
-    expect(src).toContain("memory-write schema validation failed")
+    expect(src).toContain("state-write schema validation failed")
     expect(src).toContain("issue.code")
     expect(src).toContain("issue.path")
     expect(src).toContain("issue.message")
   })
 
-  it("memory-write does not create a node-local checkpoint unless explicitly requested", () => {
-    const src = readFileSync(MEMORY_WRITE_EXECUTOR_FILE, "utf-8")
+  it("state-write does not create a node-local checkpoint unless explicitly requested", () => {
+    const src = readFileSync(STATE_WRITE_EXECUTOR_FILE, "utf-8")
 
     expect(src).toMatch(
       /if\s*\(raw\s*===\s*"manual"\)\s*return\s*"manual"[\s\S]*if\s*\(raw\s*===\s*"after-turn"\)\s*return\s*"after-turn"[\s\S]*return\s+null/,

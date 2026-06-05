@@ -29,7 +29,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Record shape: `LocalMemoryRecord { id, saveId, namespace, collection, recordId, data, schemaVersion?, tags, updatedAt }`.
 - Write API: `applyMemoryWriteOperationsForSave(saveId, operations, defaults?)`.
 - Query API: `listMemoryRecords({ saveId, namespace?, collection?, query?, limit? })`.
-- Workflow node types: `memory-query`, `memory-write`, `template-compose`,
+- Workflow node types: `memory-query`, `state-write`, `template-compose`,
   `record-filter`, `record-merge`, and `record-format`.
 
 ### 3. Contracts
@@ -37,7 +37,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `memory-query` is collection-only. It reads one save-scoped generic memory collection and outputs `records` and `count`.
 - The retired `memory-query { source: "event-archive" }` branch must not be exposed by the editor or executed as a hidden AIRP retrieval path. Old workflows that still set that source should fail loudly.
 - The platform default AIRP workflow should use the mixed AIRP workflow preset shape: AIRP collection queries (`airp/events`, `airp/archives`, `airp/globals`) -> public record-processing nodes -> bounded `compute` for AIRP-specific extraction/ranking/relation/assembly -> chat/maintenance.
-- `memory-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
+- `state-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `record-filter` consumes an array input and filters items by limited predicates over record meta, tags, or `data` paths; it outputs a filtered array and `count`.
 - `record-merge` consumes configured array inputs, merges them in order, dedupes by a stable key path, and outputs a merged array and `count`.
 - `record-format` consumes an array input and renders each item through an item template, outputting text and `count`.
@@ -45,9 +45,10 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `patch` is shallow over custom `memoryRecords`: it requires an existing record id, requires both existing `data` and patch `data` to be JSON objects, then merges top-level fields.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
 - Built-in AIRP `globals/currentTime` is a reserved record whose `data` shape is `{ key: "currentTime", value: "YYYY-MM-DD HH:mm" }`; default retrieval treats that record as the authoritative narrative time.
-- `apply-patch` is retired from the workflow node surface. Workflows should use
-  `memory-write` for generic state maintenance; old workflow definitions that
-  still declare `apply-patch` should fail loudly as unknown node types.
+- `apply-patch` and the public workflow node type `memory-write` are retired
+  from the workflow node surface. Workflows should use `state-write` for
+  generic durable state maintenance; old workflow definitions that still
+  declare either retired type should fail loudly as unknown node types.
 - Bridge/runtime patch APIs remain a platform compatibility path for
   `MaintenancePatchDocument`; this path is separate from workflow preset syntax.
 - Because generic AIRP `memoryRecords` are the current authority, the
@@ -55,9 +56,9 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
   writes back through `replaceAirpMemoryForSave()` before any optional
   checkpoint.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
-- Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `memory-write`.
-- Default AIRP maintenance now writes generic `MemoryWriteOperation[]` through an explicit `memory-write` node; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
-- `memory-write` nodes default to no node-local checkpoint;
+- Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `state-write`.
+- Default AIRP maintenance now writes generic `MemoryWriteOperation[]` through an explicit `state-write` node carrying the default AIRP runtime schema; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
+- `state-write` nodes default to no node-local checkpoint;
   platform-host owns the normal after-turn checkpoint after compatibility sync.
   Use `pushCheckpointReason: "manual"` or `"after-turn"` only when an explicit
   mid-workflow checkpoint is intentional.
@@ -70,37 +71,37 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Unknown node type -> `WorkflowValidationError`.
 - Retired workflow node type `apply-patch` -> `UNKNOWN_NODE_TYPE`.
 - Mod workflow containing memory/template nodes -> allowed.
-- `memory-write` with non-array operations -> executor error.
-- `memory-write` upsert with non-JSON `data` -> executor/storage error.
-- `memory-write` patch without `id` -> storage error.
-- `memory-write` patch with non-object `data` -> storage error.
-- `memory-write` patch against a missing record -> storage error.
-- `memory-write` patch against existing non-object record data -> storage error.
+- `state-write` with non-array operations -> executor error.
+- `state-write` upsert with non-JSON `data` -> executor/storage error.
+- `state-write` patch without `id` -> storage error.
+- `state-write` patch with non-object `data` -> storage error.
+- `state-write` patch against a missing record -> storage error.
+- `state-write` patch against existing non-object record data -> storage error.
 - `memory-query` collection source without collection identity -> executor error.
 - `memory-query` with any source other than `"collection"` -> executor error.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, bounded `compute` for AIRP-specific retrieval glue, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.operations` to an explicit `memory-write` node.
-- Base: custom collection workflows use `memory-query { source: "collection", namespace, collection }` and `memory-write` with namespace/collection defaults for alternative memory structures.
+- Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, bounded `compute` for AIRP-specific retrieval glue, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.operations` to an explicit `state-write` node.
+- Base: custom collection workflows use `memory-query { source: "collection", namespace, collection }` and `state-write` with namespace/collection defaults for alternative memory structures.
 - Base: custom collection workflows can combine `memory-query { source: "collection" }`, `record-filter`, `record-merge`, `record-format`, `template-compose`, and `compute` for non-AIRP memory structures such as keyword -> snippet/summary.
 - Bad: reintroducing `ai-call.config.bypass.rawFromMacro = "__retrieval.raw"` hides retrieval outside the workflow and breaks replaceability.
 - Bad: collapsing ordinary record filtering/merging/formatting back into a long `compute` script when the public record nodes can express the behavior.
-- Bad: assuming a failed later workflow node automatically undoes earlier `memory-write` storage operations without restoring a checkpoint.
+- Bad: assuming a failed later workflow node automatically undoes earlier `state-write` storage operations without restoring a checkpoint.
 
 ### 6. Tests Required
 
 - Contract/build checks: `npm run build:contracts`, `npm run build:memory-core`, `npm run build:web`.
 - Memory schema/validator checks: `npm run test --workspace @tsian/memory-core`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
-- Regression assertion: built-in grey-salt-town workflow uses the shared mixed AIRP workflow preset, contains AIRP collection query nodes and `record-filter` / `record-merge` / `record-format`, contains no `bypass` / `__retrieval.raw` / retired `event-archive` source, contains an explicit `maintenance.operations -> memoryWrite.operations` edge, and remains valid as a mod workflow.
+- Regression assertion: built-in grey-salt-town workflow uses the shared mixed AIRP workflow preset, contains AIRP collection query nodes and `record-filter` / `record-merge` / `record-format`, contains no `bypass` / `__retrieval.raw` / retired `event-archive` source, contains an explicit `maintenance.operations -> stateWrite.operations` edge, and remains valid as a mod workflow.
 - Static proof: built-in mods reference workflow presets through
   `workflowPresetId`; built-in workflow preset seeding must use explicit seed
   definitions, not deprecated `manifest.workflow`.
 - Static proof: `applyMaintenancePatch()` calls `replaceAirpMemoryForSave()`
   before optional checkpoint creation so compatibility patch writes are not
   overwritten by the after-turn generic-to-legacy sync.
-- Static proof: `memory-write` does not create a node-local checkpoint unless
+- Static proof: `state-write` does not create a node-local checkpoint unless
   `pushCheckpointReason` is explicitly set to `"manual"` or `"after-turn"`.
 - Static proof should keep `memory-query` collection-only across contracts, editor slots, inspector forms, and executor behavior.
 - Static proof or tests for platform-internal AIRP retrieval refactors should verify that `assembleRetrievalContext()` still routes through named internal stages instead of collapsing AIRP-specific behavior into a single opaque block.

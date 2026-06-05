@@ -86,7 +86,7 @@ Tsian 的核心定位是：
 - **控制流**：条件分支、结果输出、子流程或未来 block/subgraph。
 - **AI 调用**：调用某个 prompt preset 或模型配置。
 - **模板组合**：把输入数据组合成文本或 JSON。
-- **泛型记忆读写**：按 namespace / collection / schema 查询和写入记录。
+- **泛型状态读写**：按 namespace / collection / schema 查询和写入持久状态记录。
 - **记录处理**：筛选、合并、格式化、排序、去重、关系选择、字段提取。
 - **受限计算**：高级作者用于局部转换和原型实验的 bounded compute。
 - **受控平台能力**：通过平台拥有的 executor 触发安全写入、checkpoint、外部能力调用等。
@@ -96,7 +96,7 @@ Tsian 的核心定位是：
 - `event-query`
 - `archive-query`
 - `map-update`
-- `relationship-memory-write`
+- `relationship-state-write`
 - 任何只对某个默认系统成立、但被注册成平台通用节点的业务动作
 
 判断标准：
@@ -147,7 +147,7 @@ Tsian 的核心定位是：
 - workflow：从当前上下文提取关键词，查询片段或摘要，按相似度和 recency 排序，组合上下文
 - renderer：关键词面板、摘要管理视图、命中来源调试
 
-它不需要 `event-query` 或 `archive-query` 节点。它需要的是泛型集合查询、记录筛选、排序、模板组合和安全写入。
+它不需要 `event-query` 或 `archive-query` 节点。它需要的是泛型集合查询、记录筛选、排序、模板组合和受控状态写入。
 
 ### 7.3 正文二次处理系统
 
@@ -189,7 +189,7 @@ Tsian 的核心定位是：
 
 这条边界尤其适用于：
 
-- `memory-write`
+- `state-write`
 - runtime bridge 写入口
 - checkpoint 创建
 - 旧兼容路径
@@ -203,6 +203,9 @@ Tsian 的核心定位是：
 
 - `apply-patch` 已从 workflow node surface 退场。桥 API 和内部 applier
   可以继续作为平台兼容能力存在，但不再是 workflow preset 语法。
+- `memory-write` 已从 workflow node surface 退场。持久状态写入使用
+  `state-write`；旧 workflow 若仍声明 `memory-write`，应明确按未知节点
+  失败，而不是保留 alias。
 - `memory-query(source: "event-archive")` 已从 workflow node surface 退场。`memory-query` 应保持 collection/schema 驱动；旧 workflow 若仍声明该 source，应明确失败，而不是继续走隐藏 AIRP 检索分支。
 - legacy events / archives / snapshot slices 可以作为兼容投影存在，但默认 AIRP 读写权威应向 generic memory records 和 schema-aware workflow 边界收敛。
 
@@ -252,7 +255,7 @@ Tsian 的核心定位是：
 当前更符合方向的工作包括：
 
 - 收紧节点类型集，移除或隐藏不再适合作为通用节点的兼容节点。
-- 保持 `apply-patch` 退场后的边界：workflow preset 使用 `memory-write`
+- 保持 `apply-patch` 退场后的边界：workflow preset 使用 `state-write`
   等泛型节点，桥/API patch 只作为平台兼容能力。
 - 保持 `memory-query` collection-only，避免重新引入 `event-archive` 这类高层历史分支。
 - 让 memory schema、workflow preset 和 renderer 的职责更清晰。

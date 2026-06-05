@@ -6,7 +6,7 @@ import ResultForm from './inspector/ResultForm.vue'
 import SwitchForm from './inspector/SwitchForm.vue'
 import ComputeForm from './inspector/ComputeForm.vue'
 import MemoryQueryForm from './inspector/MemoryQueryForm.vue'
-import MemoryWriteForm from './inspector/MemoryWriteForm.vue'
+import StateWriteForm from './inspector/StateWriteForm.vue'
 import OutputsEditor from './inspector/OutputsEditor.vue'
 import TemplateComposeForm from './inspector/TemplateComposeForm.vue'
 import {
@@ -253,8 +253,8 @@ function handleDelete() {
         :config="selectedNode.data.config"
         :on-update="handleUpdateConfig"
       />
-      <MemoryWriteForm
-        v-else-if="selectedNode.data.nodeType === 'memory-write'"
+      <StateWriteForm
+        v-else-if="selectedNode.data.nodeType === 'state-write'"
         :config="selectedNode.data.config"
         :on-update="handleUpdateConfig"
       />

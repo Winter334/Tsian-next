@@ -1,6 +1,10 @@
-import type { MemoryWriteNodeConfig, MemoryWriteOperation } from "@tsian/contracts"
+import type {
+  MemorySchemaDefinition,
+  MemoryWriteOperation,
+  StateWriteNodeConfig,
+} from "@tsian/contracts"
 import {
-  defaultAirpMemorySchema,
+  assertValidMemorySchema,
   MemoryValidationError,
   normalizeMemoryWriteOperation,
 } from "@tsian/memory-core"
@@ -14,13 +18,13 @@ import {
 } from "../../storage"
 import type { PlatformWorkflowContext } from "../types"
 
-function readMemoryWriteConfig(raw: unknown): MemoryWriteNodeConfig {
+function readStateWriteConfig(raw: unknown): StateWriteNodeConfig {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(
-      `memory-write node config is invalid: expected { operationsVarName: string }`,
+      `state-write node config is invalid: expected { operationsVarName: string }`,
     )
   }
-  const config = raw as Partial<MemoryWriteNodeConfig>
+  const config = raw as Partial<StateWriteNodeConfig>
   return {
     ...config,
     operationsVarName:
@@ -33,7 +37,7 @@ function readMemoryWriteConfig(raw: unknown): MemoryWriteNodeConfig {
 function castPlatformContext(raw: unknown): PlatformWorkflowContext {
   const ctx = raw as Partial<PlatformWorkflowContext>
   if (!ctx || typeof ctx.saveId !== "string") {
-    throw new Error(`memory-write node requires PlatformWorkflowContext`)
+    throw new Error(`state-write node requires PlatformWorkflowContext`)
   }
   return ctx as PlatformWorkflowContext
 }
@@ -46,7 +50,7 @@ function readOperations(raw: unknown): MemoryWriteOperation[] {
   if (Array.isArray(raw)) {
     return raw.map((item) => {
       if (!isPlainObject(item)) {
-        throw new Error("memory-write operations array contains non-object item")
+        throw new Error("state-write operations array contains non-object item")
       }
       return item as unknown as MemoryWriteOperation
     })
@@ -60,7 +64,7 @@ function readOperations(raw: unknown): MemoryWriteOperation[] {
     return [raw as unknown as MemoryWriteOperation]
   }
 
-  throw new Error("memory-write node expected operations input to be an object or array")
+  throw new Error("state-write node expected operations input to be an object or array")
 }
 
 function getSnapshotMessages(snapshot: {
@@ -70,7 +74,7 @@ function getSnapshotMessages(snapshot: {
 }
 
 function checkpointReason(
-  raw: MemoryWriteNodeConfig["pushCheckpointReason"],
+  raw: StateWriteNodeConfig["pushCheckpointReason"],
 ): "after-turn" | "manual" | null {
   if (raw === "manual") return "manual"
   if (raw === "after-turn") return "after-turn"
@@ -81,22 +85,23 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
 
-function usesBuiltInAirpSchema(
+function usesConfiguredSchema(
+  schema: MemorySchemaDefinition,
   operation: MemoryWriteOperation,
   defaults: { namespace?: string; collection?: string },
 ): boolean {
   const collection =
     optionalText(operation.collection) ?? optionalText(defaults.collection)
-  if (!collection || !defaultAirpMemorySchema.collections[collection]) {
+  if (!collection || !schema.collections[collection]) {
     return false
   }
 
   const namespace =
     optionalText(operation.namespace) ??
     optionalText(defaults.namespace) ??
-    defaultAirpMemorySchema.defaultNamespace
+    schema.defaultNamespace
 
-  return namespace === defaultAirpMemorySchema.defaultNamespace
+  return !schema.defaultNamespace || namespace === schema.defaultNamespace
 }
 
 function formatValidationError(error: MemoryValidationError): string {
@@ -104,22 +109,36 @@ function formatValidationError(error: MemoryValidationError): string {
     .map((issue) => `${issue.code} at ${issue.path}: ${issue.message}`)
     .join("; ")
   return details
-    ? `memory-write schema validation failed: ${details}`
-    : "memory-write schema validation failed"
+    ? `state-write schema validation failed: ${details}`
+    : "state-write schema validation failed"
 }
 
 function normalizeSchemaCoveredOperations(
   operations: MemoryWriteOperation[],
   defaults: { namespace?: string; collection?: string },
+  schema: MemorySchemaDefinition | undefined,
 ): MemoryWriteOperation[] {
+  if (!schema) {
+    return operations
+  }
+
+  try {
+    assertValidMemorySchema(schema)
+  } catch (error) {
+    if (error instanceof MemoryValidationError) {
+      throw new Error(formatValidationError(error))
+    }
+    throw error
+  }
+
   return operations.map((operation) => {
-    if (!usesBuiltInAirpSchema(operation, defaults)) {
+    if (!usesConfiguredSchema(schema, operation, defaults)) {
       return operation
     }
 
     try {
       return normalizeMemoryWriteOperation(
-        defaultAirpMemorySchema,
+        schema,
         operation,
         defaults,
       )
@@ -132,9 +151,9 @@ function normalizeSchemaCoveredOperations(
   })
 }
 
-export const memoryWriteExecutor: NodeExecutor = {
+export const stateWriteExecutor: NodeExecutor = {
   async execute({ node, inputs, context }) {
-    const config = readMemoryWriteConfig(node.config)
+    const config = readStateWriteConfig(node.config)
     const ctx = castPlatformContext(context)
     const operations = readOperations(inputs[config.operationsVarName])
     const defaults = {
@@ -144,6 +163,7 @@ export const memoryWriteExecutor: NodeExecutor = {
     const normalizedOperations = normalizeSchemaCoveredOperations(
       operations,
       defaults,
+      config.schema,
     )
     const result = await applyMemoryWriteOperationsForSave(
       ctx.saveId,

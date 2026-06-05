@@ -57,9 +57,9 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
     colorClass: '[#4FD1C5]',
   },
   {
-    type: 'memory-write',
-    label: '记忆写入',
-    description: '写入 save-scoped 记忆集合',
+    type: 'state-write',
+    label: '状态写入',
+    description: '写入 save-scoped 持久状态集合',
     icon: 'Save',
     color: '#F472B6',
     colorClass: '[#F472B6]',

@@ -115,13 +115,13 @@ export function resolveWorkflowInputSlots(
     }]
   }
 
-  if (nodeType === 'memory-write') {
+  if (nodeType === 'state-write') {
     const name = readStringConfig(config, 'operationsVarName', 'operations')
     return [{
       name,
-      label: '写入操作',
+      label: '状态操作',
       valueType: 'object',
-      semanticSlot: 'memory.operations',
+      semanticSlot: 'state.operations',
       required: true,
     }]
   }
@@ -219,25 +219,25 @@ export function resolveWorkflowOutputSlots(
     ]
   }
 
-  if (nodeType === 'memory-write') {
+  if (nodeType === 'state-write') {
     return [
       {
         name: 'upsertedIds',
         label: '写入 ID',
         valueType: 'array',
-        semanticSlot: 'memory.upsertedIds',
+        semanticSlot: 'state.upsertedIds',
       },
       {
         name: 'deletedIds',
         label: '删除 ID',
         valueType: 'array',
-        semanticSlot: 'memory.deletedIds',
+        semanticSlot: 'state.deletedIds',
       },
       {
         name: 'clearedCollections',
         label: '清空集合',
         valueType: 'array',
-        semanticSlot: 'memory.clearedCollections',
+        semanticSlot: 'state.clearedCollections',
       },
     ]
   }

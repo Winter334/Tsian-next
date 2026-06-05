@@ -10,6 +10,7 @@
 
 import type { PromptPreset, WorldBook } from "./preset"
 import type { JsonValue } from "./runtime"
+import type { MemorySchemaDefinition } from "./memory"
 
 // ============================================================================
 // 节点输出提取规则（design.md §4）
@@ -62,7 +63,7 @@ export type WorkflowNodeType =
   | "switch"
   | "compute"
   | "memory-query"
-  | "memory-write"
+  | "state-write"
   | "template-compose"
   | "record-filter"
   | "record-merge"
@@ -138,11 +139,13 @@ export interface MemoryQueryNodeConfig {
   limit?: number
 }
 
-export interface MemoryWriteNodeConfig {
+export interface StateWriteNodeConfig {
   /** Input key containing MemoryWriteOperation | MemoryWriteOperation[] | { operations }. */
   operationsVarName: string
   namespace?: string
   collection?: string
+  /** Optional durable state schema carried by this persistence node. */
+  schema?: MemorySchemaDefinition
   /** 默认 "none"；平台回合成功后统一创建 after-turn checkpoint。 */
   pushCheckpointReason?: "after-turn" | "manual" | "none"
 }

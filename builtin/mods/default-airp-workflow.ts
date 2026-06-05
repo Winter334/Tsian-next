@@ -1,4 +1,5 @@
 import type { WorkflowDefinition } from "@tsian/contracts"
+import { defaultAirpMemorySchema } from "@tsian/memory-core"
 
 const AIRP_RETRIEVAL_STRATEGY_SCRIPT = `
 function arrayInput(name) {
@@ -395,9 +396,13 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
         ],
       },
       {
-        id: "memoryWrite",
-        type: "memory-write",
-        config: { operationsVarName: "operations", pushCheckpointReason: "none" },
+        id: "stateWrite",
+        type: "state-write",
+        config: {
+          operationsVarName: "operations",
+          pushCheckpointReason: "none",
+          schema: defaultAirpMemorySchema,
+        },
       },
     ],
     edges: [
@@ -495,7 +500,7 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
       },
       {
         from: { nodeId: "maintenance", outputName: "operations" },
-        to: { nodeId: "memoryWrite", varName: "operations" },
+        to: { nodeId: "stateWrite", varName: "operations" },
       },
     ],
   }

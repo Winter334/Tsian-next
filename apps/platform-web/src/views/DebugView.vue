@@ -229,8 +229,8 @@
 
     <Card class="bg-panel border-neon-deep/40">
       <CardHeader class="pb-3">
-        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">memory write</p>
-        <CardTitle class="text-xl text-text-main">维护写入（maintenance / memory-write）</CardTitle>
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">state write</p>
+        <CardTitle class="text-xl text-text-main">维护写入（maintenance / state-write）</CardTitle>
       </CardHeader>
       <CardContent class="grid gap-3 pt-0">
         <template v-if="maintenanceWriteNodeEntries.length > 0">
@@ -504,8 +504,8 @@ const maintenanceWriteNodeEntries = computed(() => {
     const id = entry.id.toLowerCase()
     return (
       id.includes("maintenance") ||
-      id.includes("memorywrite") ||
-      id.includes("memory-write")
+      id.includes("statewrite") ||
+      id.includes("state-write")
     )
   })
 })

@@ -13,6 +13,7 @@ describe("mixed AIRP default workflow", () => {
     expect(() => validateWorkflowDefinition(workflow)).not.toThrow()
     expect(JSON.stringify(workflow)).not.toContain('"event-archive"')
     expect(JSON.stringify(workflow)).not.toContain('"apply-patch"')
+    expect(JSON.stringify(workflow)).not.toContain('"memory-write"')
     expect(JSON.stringify(workflow)).not.toContain('"bypass"')
     expect(JSON.stringify(workflow)).not.toContain("__retrieval.raw")
 
@@ -60,6 +61,18 @@ describe("mixed AIRP default workflow", () => {
             recordRetrievalDebugOutputName: "debug",
           }),
         }),
+        expect.objectContaining({
+          id: "stateWrite",
+          type: "state-write",
+          config: expect.objectContaining({
+            operationsVarName: "operations",
+            pushCheckpointReason: "none",
+            schema: expect.objectContaining({
+              id: "builtin.airp.runtime-memory",
+              defaultNamespace: "airp",
+            }),
+          }),
+        }),
       ]),
     )
 
@@ -79,7 +92,7 @@ describe("mixed AIRP default workflow", () => {
         },
         {
           from: { nodeId: "maintenance", outputName: "operations" },
-          to: { nodeId: "memoryWrite", varName: "operations" },
+          to: { nodeId: "stateWrite", varName: "operations" },
         },
       ]),
     )
@@ -152,6 +165,35 @@ describe("mixed AIRP default workflow", () => {
     ).toBe(false)
     expect(
       existsSync(resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/inspector/ApplyPatchForm.vue")),
+    ).toBe(false)
+  })
+
+  it("keeps memory-write retired from public workflow contracts and authoring", () => {
+    const files = [
+      "packages/contracts/src/workflow.ts",
+      "packages/workflow-engine/src/validator.ts",
+      "apps/platform-web/src/workflow-host/index.ts",
+      "apps/platform-web/src/components/workflow/node-registry.ts",
+      "apps/platform-web/src/components/workflow/node-schema.ts",
+      "apps/platform-web/src/components/workflow/NodeInspector.vue",
+      "apps/platform-web/src/composables/useWorkflowEditor.ts",
+      "apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue",
+      "apps/platform-web/src/views/DebugView.vue",
+    ]
+
+    for (const file of files) {
+      const src = readFileSync(resolve(REPO_ROOT, file), "utf-8")
+      expect(src, file).not.toContain('"memory-write"')
+      expect(src, file).not.toContain("'memory-write'")
+      expect(src, file).not.toContain("MemoryWriteNodeConfig")
+      expect(src, file).not.toContain("MemoryWriteForm")
+    }
+
+    expect(
+      existsSync(resolve(REPO_ROOT, "apps/platform-web/src/workflow-host/executors/memory-write.ts")),
+    ).toBe(false)
+    expect(
+      existsSync(resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/inspector/MemoryWriteForm.vue")),
     ).toBe(false)
   })
 })
