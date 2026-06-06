@@ -10,7 +10,7 @@
 
 当前答案是：
 
-`Tsian 是一个 workflow-as-system 平台。AIRP 中的记忆、润色、地图、关系、规则、调试和其它系统，都应尽量由工作流、schema、资源、平台能力和前端渲染共同配置出来，而不是固化为平台内置的单一玩法链路。`
+`Tsian 是一个 workflow-as-system 平台。AIRP 中的记忆、润色、地图、关系、规则、调试和其它系统，都应尽量由工作流、工作流携带的状态契约、资源、平台能力和前端渲染共同配置出来，而不是固化为平台内置的单一玩法链路。`
 
 本文档是后续任务规划和代码 review 的方向约束。若旧文档、旧任务 PRD 或历史实现与本文档冲突，除非另有明确新决策，优先相信本文档、当前代码和 `.trellis/spec/`。
 
@@ -40,16 +40,27 @@ Tsian 的核心定位是：
 一个 Tsian 系统由以下部分组合而成：
 
 1. **Workflow preset**：描述信息流和执行顺序，例如查询、筛选、合并、模板组合、AI 调用、写回。
-2. **Schema / state model**：描述系统维护的数据结构，例如事件/档案、关键词/片段、地图节点/边、风格规则。
-3. **Resources**：提供 prompt preset、workflow preset、schema、静态内容、默认配置等可复用材料。
+2. **Workflow-carried state contract**：由工作流中的持久状态读写、节点输入输出、记录处理和写入校验共同形成，描述系统维护的数据结构，例如事件/档案、关键词/片段、地图节点/边、风格规则。
+3. **Resources**：提供 prompt preset、workflow preset、静态内容、默认配置等可复用材料。schema 可以作为某些高级系统包的派生或辅助材料存在，但不应默认成为脱离工作流单独维护的主复用单位。
 4. **Platform capabilities**：提供受控能力，例如存储写入、checkpoint、回滚、AI 调用、schema 校验、调试追踪。
 5. **Frontend renderer**：读取平台状态或资源，将其渲染成聊天界面、地图、关系网、调试面板或其它交互体验。
 
 简化表达：
 
-`System = workflow + schema/state + resources + platform capabilities + renderer`
+`System = workflow + carried state contract + resources + platform capabilities + renderer`
 
 这句话比“所有东西都变成节点”更重要。工作流是系统组织方式，但不是让任意节点接管所有底层风险。
+
+系统复用的优先单位不应是孤立 schema，而应是未来的 **workflow block / subworkflow / system package**：
+
+- block/subworkflow 打包一组节点、内部执行顺序和输入输出端口。
+- block/subworkflow 随身携带或暴露它形成的 state contract。
+- block/subworkflow 可以声明所需 prompt preset、world book、静态内容或 renderer 约定。
+- schema resource 若出现，应优先作为系统包或工作流契约的派生/共享材料，而不是作者配置系统的前置入口。
+
+判断标准：
+
+`只抽出 schema 只能复用数据形状；抽出 workflow block 才能复用一个可运行系统。`
 
 ## 4. 工作流在平台中的位置
 
@@ -103,7 +114,7 @@ Tsian 的核心定位是：
 
 `如果一个节点名字只有事件/档案系统能解释，它很可能不该是通用节点。`
 
-事件、档案、关键词、片段、地图坐标、图边、阵营关系，都应该优先作为 schema / collection / workflow preset / renderer 的配置，而不是绑定到节点类型。
+事件、档案、关键词、片段、地图坐标、图边、阵营关系，都应该优先作为 workflow-carried state contract / collection / workflow preset / renderer 的配置，而不是绑定到节点类型。
 
 ## 6. 默认 AIRP 事件/档案系统的定位
 
@@ -117,7 +128,7 @@ Tsian 的核心定位是：
 
 正确定位是：
 
-`事件/档案是默认 AIRP memory schema + workflow preset 的一个强参考实现。`
+`事件/档案是默认 AIRP workflow preset 携带的 state contract 的一个强参考实现。`
 
 这意味着：
 
@@ -125,7 +136,7 @@ Tsian 的核心定位是：
 - 默认前端可以提供事件、档案、调试视图。
 - 文档可以总结事件/档案为何适合叙事连续性。
 - 但平台不应把事件/档案语义焊死进通用节点类型。
-- 玩家和作者可以替换 schema，构建其它记忆或状态系统。
+- 玩家和作者可以替换 workflow preset 或未来 block/subworkflow，从而替换随工作流形成的状态契约，构建其它记忆或状态系统。
 
 ## 7. 可配置系统示例
 
@@ -133,7 +144,7 @@ Tsian 的核心定位是：
 
 配置：
 
-- schema：`airp/events`、`airp/archives`、`airp/globals`
+- carried state contract：`airp/events`、`airp/archives`、`airp/globals`
 - workflow：查询集合、筛选当前相关记录、组合记忆 prompt、维护 AI 输出写入操作
 - renderer：事件列表、档案页、检索调试面板
 
@@ -143,7 +154,7 @@ Tsian 的核心定位是：
 
 配置：
 
-- schema：`keywords`、`fragments`、`summaries`
+- carried state contract：`keywords`、`fragments`、`summaries`
 - workflow：从当前上下文提取关键词，查询片段或摘要，按相似度和 recency 排序，组合上下文
 - renderer：关键词面板、摘要管理视图、命中来源调试
 
@@ -153,7 +164,7 @@ Tsian 的核心定位是：
 
 配置：
 
-- schema：可选的风格规则、禁用词、角色口吻、文本质量配置
+- carried state contract：可选的风格规则、禁用词、角色口吻、文本质量配置
 - workflow：主 AI 生成正文后，进入润色、风格化、审校、压缩或扩写节点链
 - renderer：展示最终正文，也可以在调试面板显示原文和二次处理结果
 
@@ -163,11 +174,11 @@ Tsian 的核心定位是：
 
 配置：
 
-- schema：地图节点、区域、坐标、边、可达性、占领状态、可见状态
+- carried state contract：地图节点、区域、坐标、边、可达性、占领状态、可见状态
 - workflow：根据剧情事件或玩家操作更新图数据，维护坐标、路径或区域状态
 - renderer：前端读取图数据，渲染成地图、路线、区域面板或空间关系图
 
-地图本身不应该要求平台新增 `map-update` 通用节点。它应该复用 schema、泛型写入、记录处理和前端 renderer。
+地图本身不应该要求平台新增 `map-update` 通用节点。它应该复用 workflow-carried state contract、泛型写入、记录处理和前端 renderer。
 
 ## 8. 平台安全边界
 
@@ -245,7 +256,7 @@ PRD 中。
 规划新任务或 review 实现时，先问：
 
 1. 这个需求是在增强通用 workflow primitive，还是在硬编码一个默认 AIRP 系统？
-2. 这个能力更适合成为节点、schema、workflow preset、resource、renderer，还是 platform capability？
+2. 这个能力更适合成为节点、workflow-carried state contract、workflow preset / block、resource、renderer，还是 platform capability？
 3. 如果换成关键词/片段记忆、地图系统或正文后处理系统，这个原语还能复用吗？
 4. 是否把事件/档案语义绑定进了通用节点类型？
 5. 是否把临时兼容层扩展成了长期模型？
@@ -265,8 +276,8 @@ PRD 中。
 - 保持 `apply-patch` 退场后的边界：workflow preset 使用 `state-write`
   等泛型节点，桥/API patch 只作为平台兼容能力。
 - 保持 `state-query` collection-only，避免重新引入 `event-archive` 这类高层历史分支。
-- 让 memory schema、workflow preset 和 renderer 的职责更清晰。
+- 让 workflow-carried state contract、workflow preset / block 和 renderer 的职责更清晰。
 - 继续把默认 AIRP 事件/档案系统作为参考 preset，而不是唯一架构。
-- 为未来 block/subgraph、schema resources、renderer adapters 留出清晰位置。
+- 为未来 block/subgraph、system package、renderer adapters 留出清晰位置；schema resource 若出现，应作为系统包或工作流契约的辅助/派生产物，而不是下一阶段的默认主线。
 
-这条路允许“一切皆有可能”，但不是“一切都无约束”。Tsian 的开放性应来自清晰的工作流、schema、资源和能力边界，而不是来自任意硬编码和任意脚本逃生口。
+这条路允许“一切皆有可能”，但不是“一切都无约束”。Tsian 的开放性应来自清晰的工作流、状态契约、资源和能力边界，而不是来自任意硬编码和任意脚本逃生口。

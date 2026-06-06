@@ -17,6 +17,35 @@ Vue components use `<script setup lang="ts">` and keep behavior close to the UI 
 - Edge editing should use the edge dialog or edge context menu and still serialize through the existing workflow edge contract: `from.outputName` feeds `to.varName`.
 - Workflow-level diagnostics and future state-contract summaries belong in the collapsible bottom drawer so the graph canvas remains the dominant workspace.
 
+### Convention: Workflow-Carried State Contracts
+
+**What**: The workflow editor derives state-contract visibility from `state-query`
+and `state-write` nodes in the current draft workflow. Workflow-level summaries
+belong in the bottom drawer; detailed schema authoring for the current MVP
+belongs in the `state-write.config.schema` form.
+
+**Why**: In the workflow-as-system direction, a state contract is carried by a
+configured workflow rather than authored first as an isolated schema resource.
+Keeping schema authoring node-local and summaries derived prevents the editor
+from drifting toward a schema-first resource model before workflow blocks or
+system packages exist.
+
+**Example**:
+
+```vue
+<StateWriteForm
+  v-else-if="selectedNode.data.nodeType === 'state-write'"
+  :config="selectedNode.data.config"
+  :on-update="handleUpdateConfig"
+/>
+```
+
+**Validation**: Editor UI may surface schema self-consistency issues by reusing
+the memory-core schema validator, but it must not attempt whole-workflow semantic
+proofs of AI output shapes, runtime record existence, renderer compatibility, or
+edge value payloads. Runtime `state-write` validation remains the final write
+safety boundary.
+
 ## Props And Events
 
 - Prefer explicit `defineProps` and `defineEmits` signatures. Example: `WorkflowEditorCanvas.vue` emits `change`, `resetWorkflow`, and `saveWorkflow` with concrete payloads.

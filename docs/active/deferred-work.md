@@ -110,35 +110,39 @@ Scope guard:
 
 ## DW-003 Show Node-Carried Durable State Schema In Workflow Authoring
 
-Status: deferred
+Status: completed in `06-06-workflow-carried-state-contract-authoring`
 Source: persistence node-carried schema decision, 2026-06-06
 
-Temporary state:
-- `state-write` can carry a `MemorySchemaDefinition` in node config.
-- The editor does not yet provide a focused view of that durable state contract.
+Result:
+- The workflow editor bottom drawer now derives a state-contract summary from
+  `state-query` and `state-write` nodes.
+- `state-write.config.schema` can be inspected and edited through a focused MVP
+  form for schema metadata, collections, fields, relations, and indexes.
+- `record-filter`, `record-merge`, and `record-format` have focused forms so the
+  default AIRP workflow can be understood without raw JSON for those nodes.
 
-Why deferred:
-- The first schema-boundary task needed to establish execution behavior and
-  fail-loud validation before adding authoring UX.
-- A rich schema editor would be larger than the current workflow-surface
-  cleanup tasks.
+Remaining limits:
+- State contracts are still carried by workflow nodes rather than extracted into
+  reusable workflow blocks or system packages.
+- The editor performs schema self-consistency checks only; runtime `state-write`
+  validation remains the final write boundary.
 
-Revisit when:
-- Authors need to inspect why a `state-write` validates or rejects operations.
-- Workflow preview needs to communicate the state model formed by a preset.
+Follow-up direction:
+- Continue toward workflow block / subworkflow / system package boundaries
+  instead of introducing standalone schema resources as the next default step.
 
 Suggested next task:
-- `workflow-state-schema-visibility`
+- N/A; superseded by future system-package work.
 
 Scope guard:
 - Add inspection/preview for existing node-carried schema.
 - Do not build a full schema form editor or reusable schema resource system in
   the same task.
 
-## DW-004 Extract Reusable State Schema Resources
+## DW-004 Revisit Schema Resources As System-Package Artifacts
 
 Status: deferred
-Source: workflow-as-system direction and state schema boundary discussion
+Source: workflow-as-system direction and workflow-carried state contract discussion
 
 Temporary state:
 - Default AIRP schema is a runtime constant from `@tsian/memory-core`.
@@ -147,21 +151,31 @@ Temporary state:
   presets, but not state schema resources.
 
 Why deferred:
-- The selected MVP keeps schema close to the persistence node so workflow
-  authoring remains coherent.
-- Reusable schema resources need reference semantics, seed behavior, deletion
-  checks, and authoring affordances.
+- In the current direction, a schema by itself only reuses a data shape. It does
+  not reuse the configured query, filtering, prompt composition, maintenance,
+  writeback, debug, or renderer-facing behavior that makes a system runnable.
+- The preferred reuse unit is a future workflow block / subworkflow / system
+  package that carries its state contract along with nodes, ports, and required
+  resources.
+- Standalone schema resources would need reference semantics, seed behavior,
+  deletion checks, extraction rules, and authoring affordances, and could pull
+  the product back toward schema-first authoring before workflow-carried state
+  contracts are visible.
 
 Revisit when:
-- Multiple workflows need to share the same state schema.
-- Mods/packages need to ship keyword, map, relationship, or style-rule schemas
-  as reusable assets.
+- Workflow-carried state contracts are visible in the editor.
+- A block/subworkflow/system package MVP exists or is being designed.
+- Multiple packaged systems need to expose or share a stable state contract for
+  renderer adapters, package dependencies, or compatibility checks.
 
 Suggested next task:
-- `state-schema-resources-mvp`
+- `workflow-block-state-contract-mvp`
 
 Scope guard:
-- Introduce reusable schema resource storage and references.
+- Do not introduce schema resources as an isolated authoring prerequisite.
+- If schema resources are introduced later, treat them as extracted/shared
+  artifacts of workflow-carried contracts or system packages, not as the main
+  reusable system unit.
 - Do not build renderer adapters or a full visual schema editor in the same
   task.
 
@@ -177,13 +191,14 @@ Temporary state:
   as a map, relationship graph, keyword panel, or state inspector.
 
 Why deferred:
-- Renderer adapters depend on clearer state schema/resource boundaries.
+- Renderer adapters depend on clearer workflow-carried state contract and
+  system-package boundaries.
 - Building renderers before the state model boundary stabilizes would likely
   hard-code the current AIRP event/archive system again.
 
 Revisit when:
-- State schema resources or workflow-carried state contracts are stable enough
-  for frontends to discover them.
+- Workflow-carried state contracts or system packages are stable enough for
+  frontends to discover them.
 - A concrete non-event/archive system, such as map graph state, needs a
   renderer.
 

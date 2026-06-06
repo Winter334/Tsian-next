@@ -70,8 +70,11 @@
   平台回合成功后统一创建 after-turn checkpoint。
 - 当前 DebugView 的维护写入面板展示 maintenance / state-write 节点结果，
   不再把 legacy patch 视为唯一维护结果。
-- 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括 schema
-  可见性、schema resources 和 renderer adapters。
+- 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括未来
+  block/subworkflow/system package 边界，以及 renderer adapters。workflow
+  editor 已具备 workflow-carried state contract 的基础可见性和 MVP 编辑
+  能力；schema resources 不再作为下一步默认复用主线，若未来出现，应
+  作为系统包或工作流契约的派生/共享材料。
 
 当前新的边界已经确认，其中仍未继续展开的部分：
 
@@ -387,10 +390,10 @@
 优先候选：
 
 1. 收紧或退役不再适合作为通用 workflow surface 的兼容节点。
-2. 继续把默认 AIRP 事件/档案系统表达为 schema + workflow preset +
-   renderer，而不是平台通用节点语义。
-3. 为未来 schema resources、workflow blocks/subgraphs、renderer adapters
-   留出清晰位置。
+2. 继续把默认 AIRP 事件/档案系统表达为 workflow preset 携带的 state
+   contract + renderer，而不是平台通用节点语义。
+3. 为未来 workflow blocks/subgraphs、system packages、renderer adapters
+   留出清晰位置；不要把孤立 schema resource 误当成主要系统复用单位。
 
 已知但刻意暂缓的任务不要只留在聊天上下文里；登记到
 `./deferred-work.md`，并在真正实现时按条目里的 scope guard 单独开

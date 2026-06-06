@@ -9,6 +9,9 @@ import StateQueryForm from './inspector/StateQueryForm.vue'
 import StateWriteForm from './inspector/StateWriteForm.vue'
 import OutputsEditor from './inspector/OutputsEditor.vue'
 import TemplateComposeForm from './inspector/TemplateComposeForm.vue'
+import RecordFilterForm from './inspector/RecordFilterForm.vue'
+import RecordMergeForm from './inspector/RecordMergeForm.vue'
+import RecordFormatForm from './inspector/RecordFormatForm.vue'
 import {
   resolveWorkflowInputSlots,
   resolveWorkflowOutputSlots,
@@ -260,6 +263,21 @@ function handleDelete() {
       />
       <TemplateComposeForm
         v-else-if="selectedNode.data.nodeType === 'template-compose'"
+        :config="selectedNode.data.config"
+        :on-update="handleUpdateConfig"
+      />
+      <RecordFilterForm
+        v-else-if="selectedNode.data.nodeType === 'record-filter'"
+        :config="selectedNode.data.config"
+        :on-update="handleUpdateConfig"
+      />
+      <RecordMergeForm
+        v-else-if="selectedNode.data.nodeType === 'record-merge'"
+        :config="selectedNode.data.config"
+        :on-update="handleUpdateConfig"
+      />
+      <RecordFormatForm
+        v-else-if="selectedNode.data.nodeType === 'record-format'"
         :config="selectedNode.data.config"
         :on-update="handleUpdateConfig"
       />

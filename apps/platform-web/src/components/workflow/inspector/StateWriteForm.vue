@@ -47,10 +47,18 @@
         <option value="after-turn">after-turn</option>
       </select>
     </div>
+
+    <StateSchemaEditor
+      :schema="config.schema"
+      :on-update="updateSchema"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import type { MemorySchemaDefinition } from '@tsian/contracts'
+import StateSchemaEditor from './StateSchemaEditor.vue'
+
 const props = defineProps<{
   config: Record<string, unknown>
   onUpdate: (config: Record<string, unknown>) => void
@@ -59,5 +67,15 @@ const props = defineProps<{
 function updateOptional(key: string, raw: string) {
   const value = raw.trim()
   props.onUpdate({ ...props.config, [key]: value || undefined })
+}
+
+function updateSchema(schema: MemorySchemaDefinition | undefined) {
+  const next = { ...props.config }
+  if (schema) {
+    next.schema = schema
+  } else {
+    delete next.schema
+  }
+  props.onUpdate(next)
 }
 </script>

@@ -228,10 +228,79 @@
               </div>
             </div>
 
-            <div v-else class="grid gap-2 font-mono text-xs text-text-dim">
-              <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                STATE CONTRACT // RESERVED
+            <div v-else class="grid gap-3 font-mono text-xs text-text-dim">
+              <div class="grid gap-2 sm:grid-cols-4">
+                <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                  COLLECTIONS // <span class="text-text-main">{{ stateContractReport.collections.length }}</span>
+                </p>
+                <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                  COVERED // <span class="text-[#00FF88]">{{ stateContractCoveredCount }}</span>
+                </p>
+                <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                  STORAGE ONLY // <span class="text-warning">{{ stateContractStorageOnlyCount }}</span>
+                </p>
+                <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                  ISSUES // <span :class="stateContractReport.issues.length ? 'text-danger' : 'text-[#00FF88]'">{{ stateContractReport.issues.length }}</span>
+                </p>
+              </div>
+
+              <div
+                v-if="stateContractReport.issues.length"
+                class="grid gap-1"
+              >
+                <p
+                  v-for="issue in stateContractReport.issues"
+                  :key="`${issue.nodeId}-${issue.message}`"
+                  class="border border-danger/40 bg-danger/10 px-3 py-2 text-danger"
+                >
+                  {{ issue.nodeId }} // {{ issue.message }}
+                </p>
+              </div>
+
+              <p
+                v-if="stateContractReport.dynamicWriteNodeIds.length"
+                class="border border-neon-muted/30 bg-void/50 px-3 py-2 text-text-dim"
+              >
+                RUNTIME-TARGET WRITES // {{ stateContractReport.dynamicWriteNodeIds.join(', ') }}
               </p>
+
+              <p
+                v-if="stateContractReport.collections.length === 0"
+                class="border border-neon-muted/30 bg-void/50 px-3 py-2"
+              >
+                未发现 state-query / state-write 集合契约。
+              </p>
+
+              <div class="grid gap-2 lg:grid-cols-2">
+                <article
+                  v-for="collection in stateContractReport.collections"
+                  :key="collection.key"
+                  class="grid gap-2 border border-neon-muted/25 bg-void/40 px-3 py-2"
+                >
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="text-text-main">{{ collection.namespace }}/{{ collection.collection }}</span>
+                    <span
+                      class="border px-2 py-0.5 text-[10px] uppercase"
+                      :class="collection.storageOnly
+                        ? 'border-warning/50 text-warning'
+                        : 'border-[#00FF88]/50 text-[#00FF88]'"
+                    >
+                      {{ collection.storageOnly ? 'storage-only' : 'schema-covered' }}
+                    </span>
+                  </div>
+                  <p v-if="collection.schemaId" class="text-[10px] text-text-dim">
+                    SCHEMA // {{ collection.schemaId }}@{{ collection.schemaVersion ?? '?' }}
+                  </p>
+                  <div class="grid gap-1 text-[10px]">
+                    <p>READ // <span class="text-text-main">{{ formatNodeList(collection.readNodeIds) }}</span></p>
+                    <p>WRITE // <span class="text-text-main">{{ formatNodeList(collection.writeNodeIds) }}</span></p>
+                    <p>SCHEMA // <span class="text-text-main">{{ formatNodeList(collection.schemaNodeIds) }}</span></p>
+                  </div>
+                  <p v-if="collection.schemaCollection" class="text-[10px] text-text-dim">
+                    FIELDS // {{ Object.keys(collection.schemaCollection.fields ?? {}).join(', ') || 'none' }}
+                  </p>
+                </article>
+              </div>
             </div>
           </div>
         </div>
@@ -283,6 +352,7 @@ import NeonEdge from './NeonEdge.vue'
 import EditorToolbar from './EditorToolbar.vue'
 import WorkflowNodeEditorDialog from './WorkflowNodeEditorDialog.vue'
 import WorkflowEdgeEditorDialog from './WorkflowEdgeEditorDialog.vue'
+import { analyzeWorkflowStateContract } from './state-contract'
 
 // 引入 Vue Flow 默认样式
 import '@vue-flow/core/dist/style.css'
@@ -387,6 +457,22 @@ const nodeTypeCounts = computed(() => {
     }))
     .filter((item) => item.count > 0)
 })
+
+const stateContractReport = computed(() =>
+  analyzeWorkflowStateContract(toWorkflowDefinition()),
+)
+
+const stateContractCoveredCount = computed(() =>
+  stateContractReport.value.collections.filter((collection) => !collection.storageOnly).length,
+)
+
+const stateContractStorageOnlyCount = computed(() =>
+  stateContractReport.value.collections.filter((collection) => collection.storageOnly).length,
+)
+
+function formatNodeList(nodeIds: string[]): string {
+  return nodeIds.length > 0 ? nodeIds.join(', ') : '-'
+}
 
 // ---------------------------------------------------------------------------
 // 校验逻辑（防抖 300ms）
