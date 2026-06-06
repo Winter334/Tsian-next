@@ -69,6 +69,9 @@
   平台回合成功后统一创建 after-turn checkpoint。
 - 当前 DebugView 的维护写入面板展示 maintenance / state-write 节点结果，
   不再把 legacy patch 视为唯一维护结果。
+- 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括内部
+  `memoryRecords` 存储命名迁移、`memory-query -> state-query`、
+  schema 可见性、schema resources 和 renderer adapters。
 
 当前新的边界已经确认，其中仍未继续展开的部分：
 
@@ -335,6 +338,7 @@
 - `../README.md`
 - `./current-state-handoff.md`
 - `./airp-workflow-platform-direction.md`
+- `./deferred-work.md`
 
 历史参考文档：
 
@@ -387,6 +391,10 @@
    renderer，而不是平台通用节点语义。
 3. 为未来 schema resources、workflow blocks/subgraphs、renderer adapters
    留出清晰位置。
+
+已知但刻意暂缓的任务不要只留在聊天上下文里；登记到
+`./deferred-work.md`，并在真正实现时按条目里的 scope guard 单独开
+Trellis 任务。
 
 具体实现仍应通过 Trellis 任务 PRD 明确范围后再推进。
 

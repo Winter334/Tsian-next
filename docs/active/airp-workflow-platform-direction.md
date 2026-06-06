@@ -221,6 +221,7 @@ Tsian 的核心定位是：
 
 - `current-state-handoff.md`
 - `airp-workflow-platform-direction.md`
+- `deferred-work.md`
 - `README.md`
 
 历史设计、旧实施计划和阶段性 skeleton 进入归档。它们可以作为背景材料被引用，但不再作为当前任务规划的权威来源。
@@ -229,9 +230,12 @@ Tsian 的核心定位是：
 
 - `current-state-handoff.md`：当前实现状态和接手入口。
 - `airp-workflow-platform-direction.md`：长期方向、架构原则和未来任务决策标准。
+- `deferred-work.md`：明确知道但刻意暂缓的后续工作，记录为什么暂缓、何时回看和范围护栏。
 - `README.md`：active 目录阅读顺序和维护规则。
 
 新方向优先收敛到本文档，而不是继续追加到多份旧骨架文档。
+暂缓事项优先收敛到 `deferred-work.md`，不要只留在聊天上下文或临时任务
+PRD 中。
 
 ## 11. 未来任务决策检查表
 
