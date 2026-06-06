@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 22
+- **Total Sessions**: 23
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~761 | Active |
+| `journal-1.md` | ~795 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 23 | 2026-06-06 | 升级工作流编辑器画布化编辑体验 | `561a0e9` | `master` |
 | 22 | 2026-06-06 | 持久状态底座迁移为 state records | `2026593` | `master` |
 | 21 | 2026-06-06 | 公开状态读取节点迁移为 state-query | `0732b11` | `master` |
 | 20 | 2026-06-06 | 新增暂缓事项登记表 | `9fae461` | `master` |

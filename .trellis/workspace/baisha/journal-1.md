@@ -759,3 +759,37 @@ Made memory-query collection-only across contracts, platform executor, workflow 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 23: 升级工作流编辑器画布化编辑体验
+
+**Date**: 2026-06-06
+**Task**: 升级工作流编辑器画布化编辑体验
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+完成工作流编辑器画布优先改造：右键添加节点，节点/边弹窗编辑，底部诊断抽屉，JSON 导入导出，并验证构建与浏览器烟测。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `561a0e9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
