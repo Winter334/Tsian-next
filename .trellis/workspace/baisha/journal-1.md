@@ -691,3 +691,37 @@ Made memory-query collection-only across contracts, platform executor, workflow 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: 公开状态读取节点迁移为 state-query
+
+**Date**: 2026-06-06
+**Task**: 公开状态读取节点迁移为 state-query
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+将公开 workflow 读取节点从 memory-query 迁移为 state-query，更新默认 AIRP workflow、platform-web executor/editor、workflow-engine validator/tests、active docs 与 Trellis spec，并保持旧 memory-query fail loud。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0732b11` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

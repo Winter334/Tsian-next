@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
+- **Total Sessions**: 21
 - **Last Active**: 2026-06-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~693 | Active |
+| `journal-1.md` | ~727 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-06-06 | 公开状态读取节点迁移为 state-query | `0732b11` | `master` |
 | 20 | 2026-06-06 | 新增暂缓事项登记表 | `9fae461` | `master` |
 | 19 | 2026-06-06 | 迁移持久状态写入节点 | `eeea261` | `master` |
 | 18 | 2026-06-05 | 退役 apply-patch 工作流节点 | `dc3813f` | `master` |
