@@ -9,6 +9,14 @@ Vue components use `<script setup lang="ts">` and keep behavior close to the UI 
 - Primitive UI components live under `components/ui/<primitive>/` and export through `index.ts`. `components/ui/button/Button.vue` wraps `reka-ui` `Primitive` and composes classes with `cn`.
 - Inspector/form components receive data and callbacks instead of importing persistence. `NodeInspector.vue` delegates config updates through `onUpdateConfig`, `onUpdateOutputs`, `onDeleteNode`, and related props.
 
+## Workflow Editor Authoring Surface
+
+- Fullscreen workflow editing is canvas-first. Do not reintroduce a permanent left palette or narrow right inspector as the primary editing path for authorable workflows.
+- Add nodes from the canvas context menu and open node editors through double-click or node context-menu actions. Complex node configuration belongs in a large dialog that can host the existing form inspector plus advanced fallback controls.
+- Node raw editing is limited to the authoring payload fields `label`, `config`, `inputs`, `outputs`, and `retry`. It must reject graph identity or layout fields such as `id`, `type`, and `position`.
+- Edge editing should use the edge dialog or edge context menu and still serialize through the existing workflow edge contract: `from.outputName` feeds `to.varName`.
+- Workflow-level diagnostics and future state-contract summaries belong in the collapsible bottom drawer so the graph canvas remains the dominant workspace.
+
 ## Props And Events
 
 - Prefer explicit `defineProps` and `defineEmits` signatures. Example: `WorkflowEditorCanvas.vue` emits `change`, `resetWorkflow`, and `saveWorkflow` with concrete payloads.

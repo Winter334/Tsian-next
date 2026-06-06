@@ -1,197 +1,267 @@
 <template>
-  <!-- 外层容器：适配父容器 h-full/flex -->
-  <section class="flex h-full flex-col overflow-hidden">
-    <!-- 三栏主体（全高） -->
-    <div class="flex flex-1 overflow-hidden">
-      <!-- 左栏：节点面板 Palette（readonly 时隐藏） -->
-      <aside v-if="!props.readonly" class="flex w-56 flex-col border-r border-neon-deep/40 bg-panel">
-        <div class="border-b border-neon-deep/40 p-3">
-          <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">
-            节点面板
-          </p>
-        </div>
-        <div class="flex-1 space-y-2 overflow-y-auto p-3">
-          <div
-            v-for="info in nodeTypeRegistry"
-            :key="info.type"
-            class="flex cursor-grab items-center gap-2 border border-neon-deep/30 bg-elevated p-2 transition-colors hover:border-neon-deep/60 active:cursor-grabbing"
-            draggable="true"
-            @dragstart="onDragStart($event, info.type)"
-          >
-            <component
-              :is="paletteIcons[info.icon]"
-              class="h-4 w-4 shrink-0"
-              :style="{ color: info.color }"
-            />
-            <div class="min-w-0 flex-1">
-              <p class="truncate text-xs font-semibold text-text-main">
-                {{ info.label }}
-              </p>
-              <p class="truncate text-[10px] text-text-dim">
-                {{ info.description }}
-              </p>
-            </div>
-          </div>
-        </div>
-        <!-- 导入导出按钮 -->
-        <div class="space-y-2 border-t border-neon-deep/40 p-3">
-          <button
-            type="button"
-            class="w-full border border-neon-deep/40 bg-elevated px-3 py-1.5 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
-            @click="exportToJson"
-          >
-            导出 JSON
-          </button>
-          <button
-            type="button"
-            class="w-full border border-neon-deep/40 bg-elevated px-3 py-1.5 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
-            @click="handleImport"
-          >
-            导入 JSON
-          </button>
-        </div>
-      </aside>
+  <section
+    ref="editorRootRef"
+    class="relative flex h-full flex-col overflow-hidden bg-void"
+    @click="closeContextMenu"
+  >
+    <EditorToolbar
+      v-if="!props.readonly"
+      :has-selection="hasSelection"
+      :save-status="props.saveStatus"
+      :source-label="props.sourceLabel"
+      @auto-layout="autoLayout"
+      @delete-selected="removeSelectedElement"
+      @export-json="exportToJson"
+      @import-json="handleImport"
+      @clear-canvas="clearCanvas"
+      @reset-workflow="$emit('resetWorkflow')"
+      @save-workflow="emit('saveWorkflow', toWorkflowDefinition())"
+    />
 
-      <!-- 中栏：工具栏 + Vue Flow 画布 -->
-      <div class="relative flex flex-1 flex-col">
-        <!-- 编辑模式工具栏 -->
-        <EditorToolbar
-          v-if="!props.readonly"
-          :has-selection="!!selectedNodeId"
-          :save-status="props.saveStatus"
-          :source-label="props.sourceLabel"
-          @auto-layout="autoLayout"
-          @delete-selected="removeSelected"
-          @clear-canvas="clearCanvas"
-          @reset-workflow="$emit('resetWorkflow')"
-          @save-workflow="emit('saveWorkflow', toWorkflowDefinition())"
+    <div
+      v-if="props.readonly"
+      class="flex items-center gap-2 border-b border-neon-deep/40 bg-panel px-3 py-1.5"
+    >
+      <span class="mr-2 font-mono text-[10px] uppercase tracking-[0.2em] text-neon-muted">
+        SYS // PREVIEW
+      </span>
+      <span
+        v-if="props.sourceLabel"
+        class="border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-neon"
+      >
+        {{ props.sourceLabel }}
+      </span>
+      <span class="border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
+        {{ nodes.length }} 节点 / {{ edges.length }} 边
+      </span>
+      <span class="flex-1" />
+      <button
+        type="button"
+        class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+        @click="autoLayout"
+      >
+        自动布局
+      </button>
+    </div>
+
+    <div ref="canvasWrapRef" class="relative min-h-0 flex-1 overflow-hidden">
+      <VueFlow
+        v-model:nodes="nodes"
+        v-model:edges="edges"
+        :node-types="nodeTypes"
+        :edge-types="edgeTypes"
+        :nodes-draggable="!props.readonly"
+        :nodes-connectable="!props.readonly"
+        :elements-selectable="!props.readonly"
+        fit-view-on-init
+        class="workflow-canvas"
+        @node-click="onNodeClick"
+        @node-double-click="onNodeDoubleClick"
+        @node-context-menu="onNodeContextMenu"
+        @edge-click="onEdgeClick"
+        @edge-double-click="onEdgeDoubleClick"
+        @edge-context-menu="onEdgeContextMenu"
+        @pane-click="onPaneClick"
+        @pane-context-menu="onPaneContextMenu"
+        @connect="!props.readonly && onConnect($event)"
+      >
+        <Background :gap="20" :size="1" pattern-color="#1C2633" />
+        <MiniMap
+          position="top-right"
+          :node-color="miniMapNodeColor"
+          class="!bg-panel !border !border-neon-deep/40"
         />
-        <!-- readonly 模式极简工具栏 -->
-        <div
-          v-if="props.readonly"
-          class="flex items-center gap-2 border-b border-neon-deep/40 bg-panel px-3 py-1.5"
-        >
-          <span class="mr-2 font-mono text-[10px] uppercase tracking-[0.2em] text-neon-muted">
-            SYS // PREVIEW
-          </span>
-          <span
-            v-if="props.sourceLabel"
-            class="border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-neon"
-          >
-            {{ props.sourceLabel }}
-          </span>
-          <span class="border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
-            {{ nodes.length }} 节点 / {{ edges.length }} 边
-          </span>
-          <span class="flex-1" />
+        <Controls
+          position="top-left"
+          class="!bg-panel !border !border-neon-deep/40"
+        />
+      </VueFlow>
+
+      <div
+        v-if="contextMenu && !props.readonly"
+        class="absolute z-30 min-w-56 overflow-hidden border border-neon-muted/50 bg-panel shadow-xl"
+        :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        @click.stop
+      >
+        <template v-if="contextMenu.kind === 'pane'">
+          <p class="border-b border-neon-muted/30 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-neon-muted">
+            ADD NODE
+          </p>
+          <div class="max-h-[420px] overflow-y-auto p-1">
+            <button
+              v-for="info in nodeTypeRegistry"
+              :key="info.type"
+              type="button"
+              class="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-neon/10"
+              @click="addNodeFromContextMenu(info.type)"
+            >
+              <span class="mt-1 h-2 w-2 shrink-0" :style="{ backgroundColor: info.color }" />
+              <span class="min-w-0">
+                <span class="block font-mono text-xs font-bold text-text-main">{{ info.label }}</span>
+                <span class="block truncate font-mono text-[10px] text-text-dim">{{ info.type }}</span>
+              </span>
+            </button>
+          </div>
+        </template>
+
+        <template v-else-if="contextMenu.kind === 'node'">
+          <p class="border-b border-neon-muted/30 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-neon-muted">
+            NODE
+          </p>
           <button
             type="button"
-            class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
-            @click="autoLayout"
+            class="block w-full px-3 py-2 text-left font-mono text-xs text-text-main transition-colors hover:bg-neon/10 hover:text-neon"
+            @click="openNodeEditor(contextMenu.nodeId)"
           >
-            自动布局
+            编辑节点
           </button>
-        </div>
-        <div class="relative flex-1">
-          <VueFlow
-            v-model:nodes="nodes"
-            v-model:edges="edges"
-            :node-types="nodeTypes"
-            :edge-types="edgeTypes"
-            :nodes-draggable="!props.readonly"
-            :nodes-connectable="!props.readonly"
-            :elements-selectable="!props.readonly"
-            fit-view-on-init
-            class="workflow-canvas"
-            @node-click="onNodeClick"
-            @edge-click="onEdgeClick"
-            @pane-click="onPaneClick"
-            @connect="!props.readonly && onConnect($event)"
-            @dragover.prevent="!props.readonly && onDragOver($event)"
-            @drop="!props.readonly && onDrop($event)"
+          <button
+            type="button"
+            class="block w-full px-3 py-2 text-left font-mono text-xs text-danger transition-colors hover:bg-danger/10"
+            @click="deleteNodeFromContextMenu(contextMenu.nodeId)"
           >
-            <Background :gap="20" :size="1" pattern-color="#1C2633" />
-            <MiniMap
-              position="bottom-right"
-              :node-color="miniMapNodeColor"
-              class="!bg-panel !border !border-neon-deep/40"
-            />
-            <Controls
-              position="bottom-left"
-              class="!bg-panel !border !border-neon-deep/40"
-            />
-          </VueFlow>
-          <!-- 校验浮动条（左上角，避开左下角 Controls） -->
-          <ValidationBar
-            v-if="!props.readonly"
-            :errors="validationErrors"
-            :node-count="nodes.length"
-            :edge-count="edges.length"
-            class="absolute left-2 top-2 z-10"
-          />
-        </div>
+            删除节点
+          </button>
+        </template>
+
+        <template v-else>
+          <p class="border-b border-neon-muted/30 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-neon-muted">
+            EDGE
+          </p>
+          <button
+            type="button"
+            class="block w-full px-3 py-2 text-left font-mono text-xs text-text-main transition-colors hover:bg-neon/10 hover:text-neon"
+            @click="openEdgeEditor(contextMenu.edgeId)"
+          >
+            编辑边
+          </button>
+          <button
+            type="button"
+            class="block w-full px-3 py-2 text-left font-mono text-xs text-danger transition-colors hover:bg-danger/10"
+            @click="deleteEdgeFromContextMenu(contextMenu.edgeId)"
+          >
+            删除边
+          </button>
+        </template>
       </div>
 
-      <!-- 右栏：节点属性检查器（readonly 时隐藏） -->
-      <aside v-if="!props.readonly" class="flex w-80 shrink-0 flex-col border-l border-neon-deep/40 bg-panel">
-        <NodeInspector
-          v-if="selectedNodeId"
-          :node-id="selectedNodeId"
-          :nodes="nodes"
-          :prompt-preset-options="props.promptPresetOptions"
-          :world-book-options="props.worldBookOptions"
-          :on-update-config="updateNodeConfig"
-          :on-update-label="updateNodeLabel"
-          :on-update-retry="updateNodeRetry"
-          :on-delete-node="handleDeleteNode"
-          :on-update-outputs="updateNodeOutputs"
-        />
-        <div v-else-if="selectedEdge" class="flex h-full flex-col overflow-hidden">
-          <div class="border-b border-neon-deep/40 p-3">
-            <p class="font-mono text-xs font-bold uppercase text-text-main">
-              边属性
-            </p>
-            <p class="mt-1 break-all font-mono text-[10px] text-text-dim">
-              {{ selectedEdge.source }} → {{ selectedEdge.target }}
-            </p>
+      <div
+        v-if="!props.readonly"
+        class="absolute inset-x-0 bottom-0 z-20 border-t border-neon-muted/40 bg-panel/95 backdrop-blur"
+      >
+        <button
+          type="button"
+          class="flex w-full items-center gap-3 px-4 py-2 text-left"
+          @click="drawerExpanded = !drawerExpanded"
+        >
+          <component
+            :is="drawerExpanded ? ChevronDown : ChevronUp"
+            class="h-4 w-4 shrink-0 text-neon"
+          />
+          <span
+            class="font-mono text-xs font-bold uppercase tracking-wider"
+            :class="validationErrors.length > 0 ? 'text-danger' : 'text-[#00FF88]'"
+          >
+            {{ validationErrors.length > 0 ? `${validationErrors.length} 错误` : '校验通过' }}
+          </span>
+          <span class="font-mono text-[11px] text-text-dim">
+            {{ nodes.length }} 节点 / {{ edges.length }} 边
+          </span>
+          <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-text-dim">
+            {{ validationErrors[0] ?? props.sourceLabel }}
+          </span>
+        </button>
+
+        <div v-if="drawerExpanded" class="max-h-[34dvh] overflow-hidden border-t border-neon-muted/20">
+          <div class="flex gap-2 border-b border-neon-muted/20 bg-void/40 px-4 py-2">
+            <button
+              v-for="tab in drawerTabs"
+              :key="tab.id"
+              type="button"
+              class="border px-3 py-1 font-mono text-[10px] uppercase tracking-wider transition-colors"
+              :class="drawerTab === tab.id
+                ? 'border-neon bg-neon/10 text-neon'
+                : 'border-neon-muted/30 bg-panel text-text-dim hover:border-neon-muted hover:text-text-main'"
+              @click="drawerTab = tab.id"
+            >
+              {{ tab.label }}
+            </button>
           </div>
-          <div class="flex-1 space-y-4 overflow-y-auto p-3">
-            <div>
-              <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-                输入变量名 varName
-              </label>
-              <input
-                type="text"
-                :value="selectedEdge.data?.varName ?? 'value'"
-                class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
-                @change="handleEdgeVarNameChange"
-              />
+          <div class="max-h-[calc(34dvh-44px)] overflow-y-auto p-4">
+            <div v-if="drawerTab === 'diagnostics'" class="grid gap-2">
+              <p
+                v-if="validationErrors.length === 0"
+                class="font-mono text-xs text-[#00FF88]"
+              >
+                工作流校验通过。
+              </p>
+              <p
+                v-for="error in validationErrors"
+                v-else
+                :key="error"
+                class="border border-danger/40 bg-danger/10 px-3 py-2 font-mono text-xs text-danger"
+              >
+                {{ error }}
+              </p>
             </div>
-            <div>
-              <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-                条件 condition
-              </label>
-              <input
-                type="text"
-                :value="selectedEdge.data?.condition ?? ''"
-                placeholder="可选"
-                class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon placeholder:text-text-dim/40"
-                @change="handleEdgeConditionChange"
-              />
+
+            <div v-else-if="drawerTab === 'summary'" class="grid gap-3 font-mono text-xs text-text-dim">
+              <div class="grid gap-1 sm:grid-cols-3">
+                <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                  NODES // <span class="text-text-main">{{ nodes.length }}</span>
+                </p>
+                <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                  EDGES // <span class="text-text-main">{{ edges.length }}</span>
+                </p>
+                <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                  SOURCE // <span class="text-text-main">{{ props.sourceLabel }}</span>
+                </p>
+              </div>
+              <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                <p
+                  v-for="item in nodeTypeCounts"
+                  :key="item.type"
+                  class="border border-neon-muted/20 bg-void/30 px-3 py-2"
+                >
+                  {{ item.label }} // <span class="text-text-main">{{ item.count }}</span>
+                </p>
+              </div>
             </div>
-            <p class="border border-neon-deep/20 bg-void p-2 font-mono text-[10px] leading-relaxed text-text-dim">
-              端口决定视觉连线位置；varName 决定运行时把上游输出写入目标节点 inputs 的哪个字段。
-            </p>
+
+            <div v-else class="grid gap-2 font-mono text-xs text-text-dim">
+              <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
+                STATE CONTRACT // RESERVED
+              </p>
+            </div>
           </div>
         </div>
-        <!-- 空态占位 -->
-        <div v-else class="flex flex-1 flex-col items-center justify-center p-6">
-          <p class="font-mono text-xs text-text-dim opacity-60">
-            点击节点以编辑属性
-          </p>
-        </div>
-      </aside>
+      </div>
     </div>
+
+    <WorkflowNodeEditorDialog
+      v-if="!props.readonly"
+      :open="!!nodeEditorNodeId"
+      :node-id="nodeEditorNodeId"
+      :nodes="nodes"
+      :prompt-preset-options="props.promptPresetOptions"
+      :world-book-options="props.worldBookOptions"
+      :on-update-config="updateNodeConfig"
+      :on-update-label="updateNodeLabel"
+      :on-update-retry="updateNodeRetry"
+      :on-update-inputs="updateNodeInputs"
+      :on-delete-node="handleDeleteNode"
+      :on-update-outputs="updateNodeOutputs"
+      :on-close="closeNodeEditor"
+    />
+
+    <WorkflowEdgeEditorDialog
+      v-if="!props.readonly"
+      :open="!!edgeEditorEdgeId"
+      :edge="edgeEditorEdge"
+      :on-update="updateEdgeData"
+      :on-delete="deleteEdge"
+      :on-close="closeEdgeEditor"
+    />
   </section>
 </template>
 
@@ -205,23 +275,14 @@ import { Graph, layout } from '@dagrejs/dagre'
 import { validateWorkflowDefinition } from '@tsian/workflow-engine'
 import type { NodeMouseEvent, NodeTypesObject, EdgeTypesObject, Connection, Edge, EdgeMouseEvent } from '@vue-flow/core'
 import type { WorkflowDefinition, WorkflowNodeType } from '@tsian/contracts'
-import {
-  Brain,
-  Flag,
-  GitBranch,
-  FileEdit,
-  Code,
-  Database,
-  Save,
-  FileText,
-} from 'lucide-vue-next'
+import { ChevronDown, ChevronUp } from 'lucide-vue-next'
 import { useWorkflowEditor } from '../../composables/useWorkflowEditor'
 import { nodeTypeRegistry } from './node-registry'
 import WorkflowNode from './WorkflowNode.vue'
 import NeonEdge from './NeonEdge.vue'
-import ValidationBar from './ValidationBar.vue'
 import EditorToolbar from './EditorToolbar.vue'
-import NodeInspector from './NodeInspector.vue'
+import WorkflowNodeEditorDialog from './WorkflowNodeEditorDialog.vue'
+import WorkflowEdgeEditorDialog from './WorkflowEdgeEditorDialog.vue'
 
 // 引入 Vue Flow 默认样式
 import '@vue-flow/core/dist/style.css'
@@ -234,6 +295,28 @@ interface WorkflowResourceOption {
   name: string
   description?: string
 }
+
+type DrawerTabId = 'diagnostics' | 'summary' | 'state-contract'
+
+type ContextMenuState =
+  | {
+    kind: 'pane'
+    x: number
+    y: number
+    flowPosition: { x: number; y: number }
+  }
+  | {
+    kind: 'node'
+    x: number
+    y: number
+    nodeId: string
+  }
+  | {
+    kind: 'edge'
+    x: number
+    y: number
+    edgeId: string
+  }
 
 const props = withDefaults(defineProps<{
   initialDefinition?: WorkflowDefinition
@@ -265,18 +348,44 @@ const {
   updateNodeConfig,
   updateNodeLabel,
   updateNodeRetry,
+  updateNodeInputs,
   updateNodeOutputs,
   updateEdgeData,
   exportToJson,
   importFromJson,
 } = useWorkflowEditor()
 
-const { project } = useVueFlow()
+const { screenToFlowCoordinate } = useVueFlow()
+const editorRootRef = ref<HTMLElement | null>(null)
+const canvasWrapRef = ref<HTMLElement | null>(null)
 const selectedEdgeId = ref<string | null>(null)
+const nodeEditorNodeId = ref<string | null>(null)
+const edgeEditorEdgeId = ref<string | null>(null)
+const contextMenu = ref<ContextMenuState | null>(null)
+const drawerExpanded = ref(false)
+const drawerTab = ref<DrawerTabId>('diagnostics')
 
-const selectedEdge = computed(() => {
-  if (!selectedEdgeId.value) return null
-  return edges.value.find((edge) => edge.id === selectedEdgeId.value) ?? null
+const drawerTabs: Array<{ id: DrawerTabId; label: string }> = [
+  { id: 'diagnostics', label: '诊断' },
+  { id: 'summary', label: '摘要' },
+  { id: 'state-contract', label: '状态契约' },
+]
+
+const hasSelection = computed(() => !!selectedNodeId.value || !!selectedEdgeId.value)
+
+const edgeEditorEdge = computed(() => {
+  if (!edgeEditorEdgeId.value) return null
+  return edges.value.find((edge) => edge.id === edgeEditorEdgeId.value) ?? null
+})
+
+const nodeTypeCounts = computed(() => {
+  return nodeTypeRegistry
+    .map((info) => ({
+      type: info.type,
+      label: info.label,
+      count: nodes.value.filter((node) => node.data?.nodeType === info.type).length,
+    }))
+    .filter((item) => item.count > 0)
 })
 
 // ---------------------------------------------------------------------------
@@ -377,6 +486,12 @@ watch([nodes, edges], () => {
   if (selectedEdgeId.value && !edges.value.some((edge) => edge.id === selectedEdgeId.value)) {
     selectedEdgeId.value = null
   }
+  if (edgeEditorEdgeId.value && !edges.value.some((edge) => edge.id === edgeEditorEdgeId.value)) {
+    edgeEditorEdgeId.value = null
+  }
+  if (nodeEditorNodeId.value && !nodes.value.some((node) => node.id === nodeEditorNodeId.value)) {
+    nodeEditorNodeId.value = null
+  }
 
   const def = toWorkflowDefinition()
   const defJson = JSON.stringify(def)
@@ -447,6 +562,9 @@ function clearCanvas() {
   edges.value = []
   selectedNodeId.value = null
   selectedEdgeId.value = null
+  nodeEditorNodeId.value = null
+  edgeEditorEdgeId.value = null
+  closeContextMenu()
 }
 
 function handleDeleteNode(nodeId: string) {
@@ -460,6 +578,31 @@ function handleDeleteNode(nodeId: string) {
   if (selectedEdgeId.value && !edges.value.some((edge) => edge.id === selectedEdgeId.value)) {
     selectedEdgeId.value = null
   }
+  if (nodeEditorNodeId.value === nodeId) {
+    nodeEditorNodeId.value = null
+  }
+  closeContextMenu()
+}
+
+function deleteEdge(edgeId: string) {
+  edges.value = edges.value.filter((edge) => edge.id !== edgeId)
+  if (selectedEdgeId.value === edgeId) {
+    selectedEdgeId.value = null
+  }
+  if (edgeEditorEdgeId.value === edgeId) {
+    edgeEditorEdgeId.value = null
+  }
+  closeContextMenu()
+}
+
+function removeSelectedElement() {
+  if (selectedNodeId.value) {
+    handleDeleteNode(selectedNodeId.value)
+    return
+  }
+  if (selectedEdgeId.value) {
+    deleteEdge(selectedEdgeId.value)
+  }
 }
 
 // 导入 JSON 处理
@@ -468,89 +611,146 @@ async function handleImport() {
   if (errors.length > 0) {
     validationErrors.value = errors
   }
+  closeContextMenu()
 }
 
 // 自定义节点/边类型注册
 const nodeTypes: NodeTypesObject = { 'workflow-node': markRaw(WorkflowNode) as any }
 const edgeTypes: EdgeTypesObject = { 'neon-edge': markRaw(NeonEdge) as any }
 
-// 面板图标映射
-const paletteIcons: Record<string, any> = {
-  Brain,
-  Flag,
-  GitBranch,
-  FileEdit,
-  Code,
-  Database,
-  Save,
-  FileText,
-}
-
-// 拖拽开始 — 存储节点类型到 dataTransfer
-function onDragStart(event: DragEvent, type: WorkflowNodeType) {
-  if (event.dataTransfer) {
-    event.dataTransfer.setData('application/workflow-node-type', type)
-    event.dataTransfer.effectAllowed = 'move'
-  }
-}
-
-// 拖拽经过画布 — 允许放置
-function onDragOver(event: DragEvent) {
-  event.preventDefault()
-  if (event.dataTransfer) {
-    event.dataTransfer.dropEffect = 'move'
-  }
-}
-
-// 放置到画布 — 在鼠标位置创建新节点
-function onDrop(event: DragEvent) {
-  const type = event.dataTransfer?.getData('application/workflow-node-type')
-  if (!type) return
-
-  const vueFlowEl = document.querySelector('.workflow-canvas')
-  if (!vueFlowEl) return
-  const bounds = vueFlowEl.getBoundingClientRect()
-
-  const position = project({
-    x: event.clientX - bounds.left,
-    y: event.clientY - bounds.top,
-  })
-
-  addNode(type as WorkflowNodeType, position)
-}
-
 // 节点点击 → 选中
 function onNodeClick({ node }: NodeMouseEvent) {
   selectedNodeId.value = node.id
   selectedEdgeId.value = null
+  closeContextMenu()
+}
+
+function onNodeDoubleClick({ node }: NodeMouseEvent) {
+  if (props.readonly) return
+  openNodeEditor(node.id)
+}
+
+function onNodeContextMenu({ event, node }: NodeMouseEvent) {
+  if (props.readonly) return
+  const mouse = asMouseEvent(event)
+  if (!mouse) return
+  mouse.preventDefault()
+  mouse.stopPropagation()
+  selectedNodeId.value = node.id
+  selectedEdgeId.value = null
+  const point = menuPoint(mouse)
+  contextMenu.value = {
+    kind: 'node',
+    ...point,
+    nodeId: node.id,
+  }
 }
 
 // 画布点击 → 取消选中
 function onPaneClick() {
   selectedNodeId.value = null
   selectedEdgeId.value = null
+  closeContextMenu()
+}
+
+function onPaneContextMenu(event: MouseEvent) {
+  if (props.readonly) return
+  event.preventDefault()
+  event.stopPropagation()
+  const point = menuPoint(event)
+  contextMenu.value = {
+    kind: 'pane',
+    ...point,
+    flowPosition: screenToFlowCoordinate({ x: event.clientX, y: event.clientY }),
+  }
 }
 
 // 边点击 → 选中边属性
 function onEdgeClick({ edge }: EdgeMouseEvent) {
   selectedNodeId.value = null
   selectedEdgeId.value = edge.id
+  closeContextMenu()
 }
 
-function handleEdgeVarNameChange(event: Event) {
-  if (!selectedEdge.value) return
-  updateEdgeData(selectedEdge.value.id, {
-    varName: (event.target as HTMLInputElement).value.trim() || 'value',
-    condition: selectedEdge.value.data?.condition,
-  })
+function onEdgeDoubleClick({ edge }: EdgeMouseEvent) {
+  if (props.readonly) return
+  openEdgeEditor(edge.id)
 }
 
-function handleEdgeConditionChange(event: Event) {
-  if (!selectedEdge.value) return
-  updateEdgeData(selectedEdge.value.id, {
-    varName: selectedEdge.value.data?.varName ?? 'value',
-    condition: (event.target as HTMLInputElement).value.trim(),
-  })
+function onEdgeContextMenu({ event, edge }: EdgeMouseEvent) {
+  if (props.readonly) return
+  const mouse = asMouseEvent(event)
+  if (!mouse) return
+  mouse.preventDefault()
+  mouse.stopPropagation()
+  selectedNodeId.value = null
+  selectedEdgeId.value = edge.id
+  const point = menuPoint(mouse)
+  contextMenu.value = {
+    kind: 'edge',
+    ...point,
+    edgeId: edge.id,
+  }
+}
+
+function asMouseEvent(event: MouseEvent | TouchEvent): MouseEvent | null {
+  return event instanceof MouseEvent ? event : null
+}
+
+function menuPoint(event: MouseEvent): { x: number; y: number } {
+  const bounds = canvasWrapRef.value?.getBoundingClientRect()
+  if (!bounds) {
+    return { x: event.clientX, y: event.clientY }
+  }
+  return {
+    x: Math.max(8, Math.min(event.clientX - bounds.left, bounds.width - 240)),
+    y: Math.max(8, Math.min(event.clientY - bounds.top, bounds.height - 80)),
+  }
+}
+
+function closeContextMenu() {
+  contextMenu.value = null
+}
+
+function addNodeFromContextMenu(type: WorkflowNodeType) {
+  if (!contextMenu.value || contextMenu.value.kind !== 'pane') return
+  const nodeId = addNode(type, contextMenu.value.flowPosition)
+  selectedNodeId.value = nodeId
+  selectedEdgeId.value = null
+  nodeEditorNodeId.value = nodeId
+  closeContextMenu()
+}
+
+function openNodeEditor(nodeId: string) {
+  selectedNodeId.value = nodeId
+  selectedEdgeId.value = null
+  nodeEditorNodeId.value = nodeId
+  closeContextMenu()
+}
+
+function closeNodeEditor() {
+  nodeEditorNodeId.value = null
+}
+
+function deleteNodeFromContextMenu(nodeId: string) {
+  handleDeleteNode(nodeId)
+  closeContextMenu()
+}
+
+function openEdgeEditor(edgeId: string) {
+  selectedNodeId.value = null
+  selectedEdgeId.value = edgeId
+  edgeEditorEdgeId.value = edgeId
+  closeContextMenu()
+}
+
+function closeEdgeEditor() {
+  edgeEditorEdgeId.value = null
+}
+
+function deleteEdgeFromContextMenu(edgeId: string) {
+  deleteEdge(edgeId)
+  closeContextMenu()
 }
 
 // 连接创建 → 添加新边
@@ -583,6 +783,9 @@ function miniMapNodeColor(node: any): string {
     'state-query': '#4FD1C5',
     'state-write': '#F472B6',
     'template-compose': '#A3E635',
+    'record-filter': '#38BDF8',
+    'record-merge': '#FB7185',
+    'record-format': '#FACC15',
   }
   return colors[node.data?.nodeType] ?? '#608996'
 }

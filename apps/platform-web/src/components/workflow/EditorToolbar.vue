@@ -24,6 +24,18 @@
     </button>
     <button
       class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      @click="$emit('exportJson')"
+    >
+      导出 JSON
+    </button>
+    <button
+      class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      @click="$emit('importJson')"
+    >
+      导入 JSON
+    </button>
+    <button
+      class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
       :disabled="!hasSelection"
       :class="{ 'opacity-40 cursor-not-allowed': !hasSelection }"
       @click="$emit('deleteSelected')"
@@ -70,6 +82,8 @@ defineEmits<{
   autoLayout: []
   clearCanvas: []
   deleteSelected: []
+  exportJson: []
+  importJson: []
   resetWorkflow: []
   saveWorkflow: []
 }>()

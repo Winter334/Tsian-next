@@ -141,6 +141,9 @@ import {
   Database,
   Save,
   FileText,
+  Filter,
+  Combine,
+  Rows3,
   HelpCircle,
 } from 'lucide-vue-next'
 
@@ -180,6 +183,9 @@ const iconMap: Record<string, any> = {
   Database,
   Save,
   FileText,
+  Filter,
+  Combine,
+  Rows3,
   HelpCircle,
 }
 
