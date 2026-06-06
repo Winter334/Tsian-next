@@ -725,3 +725,37 @@ Made memory-query collection-only across contracts, platform executor, workflow 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: 持久状态底座迁移为 state records
+
+**Date**: 2026-06-06
+**Task**: 持久状态底座迁移为 state records
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+将通用持久状态底座从 memoryRecords/MemoryWriteOperation 收敛为 stateRecords/StateWriteOperation，更新 Dexie、checkpoint、state-query/state-write executor、默认维护 prompt、测试、active docs 与 Trellis specs；旧 IndexedDB 原型数据按新库名重建，不做迁移。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2026593` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
