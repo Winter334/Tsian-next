@@ -1,6 +1,6 @@
 import type { StateQueryNodeConfig } from "@tsian/contracts"
 import type { NodeExecutor } from "@tsian/workflow-engine"
-import { listMemoryRecordsForSave } from "../../storage"
+import { listStateRecordsForSave } from "../../storage"
 import type { PlatformWorkflowContext } from "../types"
 
 type NormalizedStateQueryConfig = StateQueryNodeConfig & {
@@ -68,7 +68,7 @@ export const stateQueryExecutor: NodeExecutor = {
       ctx.macros["user.input"] ??
       ctx.userInput
 
-    const records = await listMemoryRecordsForSave(ctx.saveId, {
+    const records = await listStateRecordsForSave(ctx.saveId, {
       namespace: config.namespace,
       collection: config.collection,
       query,

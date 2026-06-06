@@ -49,18 +49,18 @@ describe("state-write schema validation boundary", () => {
     const src = readFileSync(STATE_WRITE_EXECUTOR_FILE, "utf-8")
 
     expect(src).toMatch(
-      /import\s*\{[\s\S]*assertValidMemorySchema[\s\S]*MemoryValidationError[\s\S]*normalizeMemoryWriteOperation[\s\S]*\}\s*from\s*["@']@tsian\/memory-core["@']/,
+      /import\s*\{[\s\S]*assertValidMemorySchema[\s\S]*MemoryValidationError[\s\S]*normalizeStateWriteOperation[\s\S]*\}\s*from\s*["@']@tsian\/memory-core["@']/,
     )
     expect(src).not.toContain("defaultAirpMemorySchema")
     expect(src).toContain("normalizeSchemaCoveredOperations(")
-    expect(src).toContain("normalizeMemoryWriteOperation(")
-    expect(src).toContain("applyMemoryWriteOperationsForSave(")
+    expect(src).toContain("normalizeStateWriteOperation(")
+    expect(src).toContain("applyStateWriteOperationsForSave(")
     expect(src).toContain("config.schema")
 
     const normalizeIndex = src.indexOf(
       "const normalizedOperations = normalizeSchemaCoveredOperations",
     )
-    const storageIndex = src.indexOf("const result = await applyMemoryWriteOperationsForSave")
+    const storageIndex = src.indexOf("const result = await applyStateWriteOperationsForSave")
     expect(normalizeIndex).toBeGreaterThan(-1)
     expect(storageIndex).toBeGreaterThan(-1)
     expect(normalizeIndex).toBeLessThan(storageIndex)

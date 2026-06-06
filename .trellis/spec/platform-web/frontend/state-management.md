@@ -25,10 +25,10 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 2. Signatures
 
-- DB table: `localDb.memoryRecords`.
-- Record shape: `LocalMemoryRecord { id, saveId, namespace, collection, recordId, data, schemaVersion?, tags, updatedAt }`.
-- Write API: `applyMemoryWriteOperationsForSave(saveId, operations, defaults?)`.
-- Query API: `listMemoryRecordsForSave(saveId, { namespace?, collection?, query?, limit? })`.
+- DB table: `localDb.stateRecords`.
+- Record shape: `LocalStateRecord { id, saveId, namespace, collection, recordId, data, schemaVersion?, tags, updatedAt }`.
+- Write API: `applyStateWriteOperationsForSave(saveId, operations, defaults?)`.
+- Query API: `listStateRecordsForSave(saveId, { namespace?, collection?, query?, limit? })`.
 - Workflow node types: `state-query`, `state-write`, `template-compose`,
   `record-filter`, `record-merge`, and `record-format`.
 
@@ -38,12 +38,12 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - The retired `memory-query` node type must not be exposed by the editor or registered by the workflow host. Old workflows that still declare it should fail loudly as unknown node types.
 - The retired `{ source: "event-archive" }` query branch must not be exposed by the editor or executed as a hidden AIRP retrieval path. `state-query` only accepts `source: "collection"` in this MVP.
 - The platform default AIRP workflow should use the mixed AIRP workflow preset shape: AIRP collection queries (`airp/events`, `airp/archives`, `airp/globals`) -> public record-processing nodes -> bounded `compute` for AIRP-specific extraction/ranking/relation/assembly -> chat/maintenance.
-- `state-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
+- `state-write` consumes `StateWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `record-filter` consumes an array input and filters items by limited predicates over record meta, tags, or `data` paths; it outputs a filtered array and `count`.
 - `record-merge` consumes configured array inputs, merges them in order, dedupes by a stable key path, and outputs a merged array and `count`.
 - `record-format` consumes an array input and renders each item through an item template, outputting text and `count`.
-- `MemoryWriteOperation.type` currently supports `upsert`, `patch`, `delete`, and `clear`; platform storage must recognize all operation types declared by contracts.
-- `patch` is shallow over custom `memoryRecords`: it requires an existing record id, requires both existing `data` and patch `data` to be JSON objects, then merges top-level fields.
+- `StateWriteOperation.type` currently supports `upsert`, `patch`, `delete`, and `clear`; platform storage must recognize all operation types declared by contracts.
+- `patch` is shallow over custom `stateRecords`: it requires an existing record id, requires both existing `data` and patch `data` to be JSON objects, then merges top-level fields.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
 - Built-in AIRP `globals/currentTime` is a reserved record whose `data` shape is `{ key: "currentTime", value: "YYYY-MM-DD HH:mm" }`; default retrieval treats that record as the authoritative narrative time.
 - `apply-patch`, `memory-write`, and `memory-query` are retired from the
@@ -53,13 +53,17 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
   types.
 - Bridge/runtime patch APIs remain a platform compatibility path for
   `MaintenancePatchDocument`; this path is separate from workflow preset syntax.
-- Because generic AIRP `memoryRecords` are the current authority, the
+- Because generic AIRP `stateRecords` are the current authority, the
   bridge patch compatibility path must sync its legacy event/archive/global
   writes back through `replaceAirpMemoryForSave()` before any optional
   checkpoint.
 - Custom memory records are save-scoped. They must be included in save deletion, initial checkpoint creation, checkpoint push, and checkpoint restore.
+- Prototype storage vocabulary renames, such as `memoryRecords` -> `stateRecords`,
+  use a new Dexie database name and require local prototype saves to be
+  recreated. Do not add old-table compatibility reads or dual writes unless a
+  future task explicitly chooses a migration strategy.
 - Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `state-write`.
-- Default AIRP maintenance now writes generic `MemoryWriteOperation[]` through an explicit `state-write` node carrying the default AIRP runtime schema; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
+- Default AIRP maintenance now writes generic `StateWriteOperation[]` through an explicit `state-write` node carrying the default AIRP runtime schema; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
 - `state-write` nodes default to no node-local checkpoint;
   platform-host owns the normal after-turn checkpoint after compatibility sync.
   Use `pushCheckpointReason: "manual"` or `"after-turn"` only when an explicit

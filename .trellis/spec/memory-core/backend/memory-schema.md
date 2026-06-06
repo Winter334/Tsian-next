@@ -4,7 +4,7 @@
 
 ### 1. Scope / Trigger
 
-- Trigger: changing `packages/contracts/src/memory.ts`, `packages/memory-core/src/default-airp-schema.ts`, `packages/memory-core/src/validation.ts`, or `apps/platform-web/src/storage/memory.ts`.
+- Trigger: changing `packages/contracts/src/memory.ts`, `packages/memory-core/src/default-airp-schema.ts`, `packages/memory-core/src/validation.ts`, or `apps/platform-web/src/storage/state-records.ts`.
 - Goal: keep memory schema shapes, default AIRP runtime schema, validators, and current custom memory write operation behavior aligned.
 
 ### 2. Signatures
@@ -17,14 +17,14 @@
   - `MemoryIndexDefinition`
   - `MemoryValidationIssue`
 - Operation owner: `packages/contracts/src/runtime.ts`
-  - `MemoryWriteOperationType = "upsert" | "patch" | "delete" | "clear"`
-  - `MemoryWriteOperation`
+  - `StateWriteOperationType = "upsert" | "patch" | "delete" | "clear"`
+  - `StateWriteOperation`
 - Runtime value/validator owner: `packages/memory-core`
   - `defaultAirpMemorySchema`
   - `validateMemorySchema(schema)`
   - `assertValidMemorySchema(schema)`
-  - `validateMemoryWriteOperation(schema, operation, defaults?)`
-  - `normalizeMemoryWriteOperation(schema, operation, defaults?)`
+  - `validateStateWriteOperation(schema, operation, defaults?)`
+  - `normalizeStateWriteOperation(schema, operation, defaults?)`
 
 ### 3. Contracts
 
@@ -40,7 +40,7 @@
 - Relationships are field metadata, such as `entityArchiveIds -> archives.id`.
 - Unknown fields are rejected by default; a collection may explicitly opt in with `additionalFields: { type: "json" }`.
 - `patch` is shallow: it updates top-level record fields only. Nested objects are replaced as complete values.
-- Platform custom memory storage must recognize every `MemoryWriteOperationType` exposed by contracts. It does not need to apply default AIRP event/archive storage migration.
+- Platform custom state storage must recognize every `StateWriteOperationType` exposed by contracts. It does not need to apply default AIRP event/archive storage migration.
 - The `state-write` workflow executor is the current schema validation boundary for workflow-provided operations. Dexie storage helpers stay storage-only and must not own schema semantics.
 - MVP schema policy: validate operations whose resolved target is covered by the `MemorySchemaDefinition` carried on the `state-write` node; custom namespace/collection targets remain storage-only when the node schema does not cover them.
 - Schema-covered operations may be normalized with the schema default namespace before storage writes. Custom storage-only operations must not silently inherit the built-in AIRP namespace just because the schema has one.
@@ -75,7 +75,7 @@
 - Bad: adding `event-query` or `archive-query` node types instead of schema metadata.
 - Bad: restoring retired `apply-patch` workflow node semantics instead of using
   `state-write` plus schema validation for generic durable state operations.
-- Bad: making Dexie `storage/memory.ts` import `@tsian/memory-core` and decide schema policy.
+- Bad: making Dexie `storage/state-records.ts` import `@tsian/memory-core` and decide schema policy.
 - Bad: rejecting all unknown custom memory collections with `UNKNOWN_COLLECTION` before schema resources exist.
 
 ### 6. Tests Required

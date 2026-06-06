@@ -140,7 +140,7 @@ export interface StateQueryNodeConfig {
 }
 
 export interface StateWriteNodeConfig {
-  /** Input key containing MemoryWriteOperation | MemoryWriteOperation[] | { operations }. */
+  /** Input key containing StateWriteOperation | StateWriteOperation[] | { operations }. */
   operationsVarName: string
   namespace?: string
   collection?: string

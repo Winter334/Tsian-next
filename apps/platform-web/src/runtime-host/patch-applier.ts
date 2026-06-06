@@ -10,7 +10,7 @@ import {
   createCheckpointForSave,
   listArchivesForSave,
   listEventsForSave,
-  listLocalMemoryRecordsForSave,
+  listLocalStateRecordsForSave,
   replaceAirpMemoryForSave,
   toArchiveRecord,
   type LocalArchiveRecord,
@@ -230,7 +230,7 @@ export async function applyMaintenancePatch(
       history: getSnapshotMessages(latestSnapshot),
       events: latestEvents,
       archives: latestArchives,
-      memoryRecords: await listLocalMemoryRecordsForSave(saveId),
+      stateRecords: await listLocalStateRecordsForSave(saveId),
       reason: pushCheckpointReason,
       label: checkpointLabel ?? `回合 ${turn}`,
     })

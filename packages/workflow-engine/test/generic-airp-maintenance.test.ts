@@ -22,9 +22,10 @@ const MAINTENANCE_PRESET_FILE = resolve(
 )
 
 describe("generic AIRP maintenance migration", () => {
-  it("maintenance preset instructs the model to emit MemoryWriteOperation JSON", () => {
+  it("maintenance preset instructs the model to emit StateWriteOperation JSON", () => {
     const src = readFileSync(MAINTENANCE_PRESET_FILE, "utf-8")
 
+    expect(src).toContain("StateWriteOperation")
     expect(src).toContain("固定输出形状：{\\\"operations\\\":[...]}。")
     expect(src).toContain("每个 operation 默认写入 AIRP 内置命名空间")
     expect(src).toContain("currentTime 是保留的 globals 记录")
@@ -54,7 +55,7 @@ describe("generic AIRP maintenance migration", () => {
       /const\s+persisted\s*=\s*await\s+syncAirpCompatibilityStateForSave\(\s*activeSaveId,\s*snapshotAfter,\s*\)/,
     )
     expect(sendMessageBody).toMatch(
-      /await\s+createCheckpointForSave\(\s*activeSaveId,\s*\{[\s\S]*memoryRecords:\s*await\s+listLocalMemoryRecordsForSave\(activeSaveId\),[\s\S]*reason:\s*"after-turn"/,
+      /await\s+createCheckpointForSave\(\s*activeSaveId,\s*\{[\s\S]*stateRecords:\s*await\s+listLocalStateRecordsForSave\(activeSaveId\),[\s\S]*reason:\s*"after-turn"/,
     )
 
     const loadIndex = sendMessageBody.indexOf("loadAirpMemoryProjectionForSave(activeSaveId)")

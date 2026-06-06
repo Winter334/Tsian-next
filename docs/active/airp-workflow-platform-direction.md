@@ -210,7 +210,7 @@ Tsian 的核心定位是：
   `state-query` 且保持 collection/schema 驱动；旧 workflow 若仍声明
   `memory-query`，或把 `state-query` 配成旧 `source: "event-archive"`，
   应明确失败，而不是继续走隐藏 AIRP 检索分支。
-- legacy events / archives / snapshot slices 可以作为兼容投影存在，但默认 AIRP 读写权威应向 generic memory records 和 schema-aware workflow 边界收敛。
+- legacy events / archives / snapshot slices 可以作为兼容投影存在，但默认 AIRP 读写权威应向 generic state records 和 schema-aware workflow 边界收敛。
 
 兼容层不应被扩展成新的通用模型。若一个任务需要新增兼容逻辑，必须同时说明：
 

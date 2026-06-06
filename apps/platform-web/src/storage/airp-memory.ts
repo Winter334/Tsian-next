@@ -3,21 +3,21 @@ import type {
   ConversationMessageRecord,
   EventRecord,
   JsonValue,
-  MemoryWriteOperation,
   RuntimeGlobalsMap,
   RuntimeSnapshotShell,
   RuntimeWriteArchiveInput,
   RuntimeWriteEventInput,
+  StateWriteOperation,
 } from "@tsian/contracts"
 import {
   defaultAirpMemorySchema,
   DEFAULT_AIRP_MEMORY_NAMESPACE,
 } from "@tsian/memory-core"
-import type { LocalArchiveRecord, LocalEventRecord, LocalMemoryRecord } from "./db"
+import type { LocalArchiveRecord, LocalEventRecord, LocalStateRecord } from "./db"
 import {
-  applyMemoryWriteOperationsForSave,
-  listLocalMemoryRecordsForSave,
-} from "./memory"
+  applyStateWriteOperationsForSave,
+  listLocalStateRecordsForSave,
+} from "./state-records"
 import { replaceRuntimeForSave } from "./runtime-write"
 
 export const AIRP_MEMORY_NAMESPACE =
@@ -77,7 +77,7 @@ function stringArray(value: unknown): string[] | undefined {
 
 function requireText(
   value: unknown,
-  record: LocalMemoryRecord,
+  record: LocalStateRecord,
   field: string,
 ): string {
   const text = optionalText(value)
@@ -91,7 +91,7 @@ function requireText(
 
 function requireJsonValue(
   value: unknown,
-  record: LocalMemoryRecord,
+  record: LocalStateRecord,
   field: string,
 ): JsonValue {
   if (!isJsonValue(value)) {
@@ -104,7 +104,7 @@ function requireJsonValue(
 
 function requireStringArray(
   value: unknown,
-  record: LocalMemoryRecord,
+  record: LocalStateRecord,
   field: string,
 ): string[] {
   const items = stringArray(value)
@@ -118,7 +118,7 @@ function requireStringArray(
 
 function requireArchivePresence(
   value: unknown,
-  record: LocalMemoryRecord,
+  record: LocalStateRecord,
 ): ArchiveRecord["presence"] {
   if (
     value === "foreground" ||
@@ -262,7 +262,7 @@ function toRuntimeWriteArchiveInput(
   return next
 }
 
-function projectEventRecord(record: LocalMemoryRecord): LocalEventRecord {
+function projectEventRecord(record: LocalStateRecord): LocalEventRecord {
   if (!isPlainObject(record.data)) {
     throw new Error(
       `AIRP memory projection failed: events/${record.recordId} data must be an object`,
@@ -288,7 +288,7 @@ function projectEventRecord(record: LocalMemoryRecord): LocalEventRecord {
   }
 }
 
-function projectArchiveRecord(record: LocalMemoryRecord): ArchiveRecord {
+function projectArchiveRecord(record: LocalStateRecord): ArchiveRecord {
   if (!isPlainObject(record.data)) {
     throw new Error(
       `AIRP memory projection failed: archives/${record.recordId} data must be an object`,
@@ -339,7 +339,7 @@ function projectArchiveRecord(record: LocalMemoryRecord): ArchiveRecord {
 
 function applyGlobalRecord(
   globals: RuntimeGlobalsMap,
-  record: LocalMemoryRecord,
+  record: LocalStateRecord,
 ): string | undefined {
   if (!isPlainObject(record.data)) {
     throw new Error(
@@ -370,7 +370,7 @@ function snapshotMessages(snapshot: RuntimeSnapshotShell): ConversationMessageRe
   return Array.isArray(snapshot.state.messages) ? snapshot.state.messages : []
 }
 
-function createGlobalsOperations(globals: RuntimeGlobalsMap): MemoryWriteOperation[] {
+function createGlobalsOperations(globals: RuntimeGlobalsMap): StateWriteOperation[] {
   return Object.entries(globals).map(([key, value]) => ({
     type: "upsert",
     namespace: AIRP_MEMORY_NAMESPACE,
@@ -385,7 +385,7 @@ function createGlobalsOperations(globals: RuntimeGlobalsMap): MemoryWriteOperati
 
 function createEventOperations(
   events: ReadonlyArray<Pick<EventRecord, "id" | "time" | "status" | "entityTags" | "entityArchiveIds" | "content">>,
-): MemoryWriteOperation[] {
+): StateWriteOperation[] {
   return events.flatMap((event) => {
     const id = optionalText(event.id)
     if (!id) {
@@ -405,7 +405,7 @@ function createEventOperations(
 
 function createArchiveOperations(
   archives: ReadonlyArray<ArchiveRecord>,
-): MemoryWriteOperation[] {
+): StateWriteOperation[] {
   return archives.map((archive) => {
     return {
       type: "upsert",
@@ -419,7 +419,7 @@ function createArchiveOperations(
 
 function createCurrentTimeOperation(
   snapshot: RuntimeSnapshotShell,
-): MemoryWriteOperation[] {
+): StateWriteOperation[] {
   const currentTime = optionalText(snapshot.state.currentTime)
   if (!currentTime) {
     return []
@@ -456,7 +456,7 @@ export async function replaceAirpMemoryForSave(
       ? (input.snapshot.state.globals as RuntimeGlobalsMap)
       : {}
 
-  const operations: MemoryWriteOperation[] = [
+  const operations: StateWriteOperation[] = [
     {
       type: "clear",
       namespace: AIRP_MEMORY_NAMESPACE,
@@ -478,7 +478,7 @@ export async function replaceAirpMemoryForSave(
     ...createArchiveOperations(input.archives),
   ]
 
-  await applyMemoryWriteOperationsForSave(saveId, operations, {
+  await applyStateWriteOperationsForSave(saveId, operations, {
     namespace: AIRP_MEMORY_NAMESPACE,
   })
 }
@@ -486,7 +486,7 @@ export async function replaceAirpMemoryForSave(
 export async function loadAirpMemoryProjectionForSave(
   saveId: string,
 ): Promise<AirpMemoryProjection> {
-  const records = await listLocalMemoryRecordsForSave(saveId, {
+  const records = await listLocalStateRecordsForSave(saveId, {
     namespace: AIRP_MEMORY_NAMESPACE,
   })
 

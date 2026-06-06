@@ -2,7 +2,7 @@
 
 `packages/memory-core` owns runtime memory schema values and validation helpers. It depends on `@tsian/contracts` for shared shapes and must not own platform storage, Dexie tables, Vue state, workflow scheduling, or AIRP retrieval algorithms.
 
-Use this layer when adding or changing default memory schemas, memory schema validation, or generic memory write operation validation.
+Use this layer when adding or changing default memory schemas, memory schema validation, or generic state write operation validation.
 
 | Guide | Use When | Status |
 |-------|----------|--------|
@@ -21,4 +21,4 @@ Use this layer when adding or changing default memory schemas, memory schema val
 - `packages/contracts/src/runtime.ts`
 - `packages/memory-core/src/default-airp-schema.ts`
 - `packages/memory-core/src/validation.ts`
-- `apps/platform-web/src/storage/memory.ts`
+- `apps/platform-web/src/storage/state-records.ts`

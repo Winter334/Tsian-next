@@ -1,4 +1,4 @@
-import type { JsonValue, MemoryWriteOperation } from "./runtime"
+import type { JsonValue, StateWriteOperation } from "./runtime"
 
 export type MemoryFieldType =
   | "string"
@@ -71,12 +71,12 @@ export interface MemorySchemaDefinition {
   collections: Record<string, MemoryCollectionDefinition>
 }
 
-export interface MemoryWriteOperationDefaults {
+export interface StateWriteOperationDefaults {
   namespace?: string
   collection?: string
 }
 
-export interface NormalizedMemoryWriteOperation extends MemoryWriteOperation {
+export interface NormalizedStateWriteOperation extends StateWriteOperation {
   namespace: string
   collection: string
 }

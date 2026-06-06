@@ -16,7 +16,7 @@ export interface RuntimeGlobalsMap {
   [key: string]: JsonValue
 }
 
-export interface MemoryRecord {
+export interface StateRecord {
   /** Logical id inside a save-scoped namespace + collection. */
   id: string
   namespace: string
@@ -27,10 +27,10 @@ export interface MemoryRecord {
   updatedAt?: number
 }
 
-export type MemoryWriteOperationType = "upsert" | "patch" | "delete" | "clear"
+export type StateWriteOperationType = "upsert" | "patch" | "delete" | "clear"
 
-export interface MemoryWriteOperation {
-  type: MemoryWriteOperationType
+export interface StateWriteOperation {
+  type: StateWriteOperationType
   namespace?: string
   collection?: string
   id?: string
@@ -40,7 +40,7 @@ export interface MemoryWriteOperation {
   tags?: string[]
 }
 
-export interface MemoryWriteOutput {
+export interface StateWriteOutput {
   upsertedIds: string[]
   deletedIds: string[]
   clearedCollections: string[]

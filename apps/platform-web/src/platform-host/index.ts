@@ -50,7 +50,7 @@ import {
   listCheckpointsForSave,
   listEventsForSave,
   listLocalSaves,
-  listLocalMemoryRecordsForSave,
+  listLocalStateRecordsForSave,
   replaceRuntimeForSave,
   restoreCheckpointForSave,
   saveHistoryForSave,
@@ -747,7 +747,7 @@ async function handleWriteRuntimeAction(
       history: persisted.history,
       events: persisted.events,
       archives: persisted.archives,
-      memoryRecords: await listLocalMemoryRecordsForSave(activeSaveId),
+      stateRecords: await listLocalStateRecordsForSave(activeSaveId),
       reason: "manual",
       label: request.checkpointLabel ?? "前端写入",
     })
@@ -1191,7 +1191,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         history: persisted.history,
         events: persisted.events,
         archives: persisted.archives,
-        memoryRecords: await listLocalMemoryRecordsForSave(activeSaveId),
+        stateRecords: await listLocalStateRecordsForSave(activeSaveId),
         reason: "after-turn",
       })
 

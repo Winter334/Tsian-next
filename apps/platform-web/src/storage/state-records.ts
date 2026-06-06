@@ -1,12 +1,12 @@
 import type {
   JsonValue,
-  MemoryRecord,
-  MemoryWriteOperation,
-  MemoryWriteOutput,
+  StateRecord,
+  StateWriteOperation,
+  StateWriteOutput,
 } from "@tsian/contracts"
-import { localDb, type LocalMemoryRecord } from "./db"
+import { localDb, type LocalStateRecord } from "./db"
 
-export interface MemoryRecordFilter {
+export interface StateRecordFilter {
   namespace?: string
   collection?: string
   query?: string
@@ -81,14 +81,14 @@ function tableId(
 ): string {
   return [
     saveId,
-    "memory",
+    "state",
     encodeURIComponent(namespace),
     encodeURIComponent(collection),
     encodeURIComponent(recordId),
   ].join(":")
 }
 
-function toMemoryRecord(record: LocalMemoryRecord): MemoryRecord {
+function toStateRecord(record: LocalStateRecord): StateRecord {
   return {
     id: record.recordId,
     namespace: record.namespace,
@@ -100,7 +100,7 @@ function toMemoryRecord(record: LocalMemoryRecord): MemoryRecord {
   }
 }
 
-function recordMatches(record: LocalMemoryRecord, filter: MemoryRecordFilter): boolean {
+function recordMatches(record: LocalStateRecord, filter: StateRecordFilter): boolean {
   const namespace = normalizeOptionalText(filter.namespace)
   const collection = normalizeOptionalText(filter.collection)
   if (namespace && record.namespace !== namespace) return false
@@ -119,57 +119,57 @@ function recordMatches(record: LocalMemoryRecord, filter: MemoryRecordFilter): b
   return haystack.includes(query)
 }
 
-export async function listMemoryRecordsForSave(
+export async function listStateRecordsForSave(
   saveId: string,
-  filter: MemoryRecordFilter = {},
-): Promise<MemoryRecord[]> {
-  return (await listLocalMemoryRecordsForSave(saveId, filter)).map(toMemoryRecord)
+  filter: StateRecordFilter = {},
+): Promise<StateRecord[]> {
+  return (await listLocalStateRecordsForSave(saveId, filter)).map(toStateRecord)
 }
 
-export async function listLocalMemoryRecordsForSave(
+export async function listLocalStateRecordsForSave(
   saveId: string,
-  filter: MemoryRecordFilter = {},
-): Promise<LocalMemoryRecord[]> {
+  filter: StateRecordFilter = {},
+): Promise<LocalStateRecord[]> {
   const limit =
     typeof filter.limit === "number" && filter.limit > 0
       ? Math.floor(filter.limit)
       : undefined
-  const records = await localDb.memoryRecords.where("saveId").equals(saveId).toArray()
+  const records = await localDb.stateRecords.where("saveId").equals(saveId).toArray()
   const filtered = records
     .filter((record) => recordMatches(record, filter))
     .sort((left, right) => right.updatedAt - left.updatedAt)
   return limit ? filtered.slice(0, limit) : filtered
 }
 
-export async function deleteMemoryRecordsForSave(saveId: string): Promise<void> {
-  const rows = await localDb.memoryRecords.where("saveId").equals(saveId).toArray()
-  await Promise.all(rows.map((item) => localDb.memoryRecords.delete(item.id)))
+export async function deleteStateRecordsForSave(saveId: string): Promise<void> {
+  const rows = await localDb.stateRecords.where("saveId").equals(saveId).toArray()
+  await Promise.all(rows.map((item) => localDb.stateRecords.delete(item.id)))
 }
 
-export async function applyMemoryWriteOperationsForSave(
+export async function applyStateWriteOperationsForSave(
   saveId: string,
-  inputOperations: MemoryWriteOperation[],
+  inputOperations: StateWriteOperation[],
   defaults: { namespace?: string; collection?: string } = {},
-): Promise<MemoryWriteOutput> {
-  const output: MemoryWriteOutput = {
+): Promise<StateWriteOutput> {
+  const output: StateWriteOutput = {
     upsertedIds: [],
     deletedIds: [],
     clearedCollections: [],
   }
 
-  await localDb.transaction("rw", localDb.memoryRecords, async () => {
+  await localDb.transaction("rw", localDb.stateRecords, async () => {
     for (const operation of inputOperations) {
       const namespace = normalizeRequiredText(
         operation.namespace ?? defaults.namespace,
-        "memory operation namespace",
+        "state operation namespace",
       )
       const collection = normalizeRequiredText(
         operation.collection ?? defaults.collection,
-        "memory operation collection",
+        "state operation collection",
       )
 
       if (operation.type === "clear") {
-        const rows = await localDb.memoryRecords
+        const rows = await localDb.stateRecords
           .where("saveId")
           .equals(saveId)
           .filter(
@@ -177,7 +177,7 @@ export async function applyMemoryWriteOperationsForSave(
               record.namespace === namespace && record.collection === collection,
           )
           .toArray()
-        await Promise.all(rows.map((record) => localDb.memoryRecords.delete(record.id)))
+        await Promise.all(rows.map((record) => localDb.stateRecords.delete(record.id)))
         output.clearedCollections.push(`${namespace}/${collection}`)
         continue
       }
@@ -185,9 +185,9 @@ export async function applyMemoryWriteOperationsForSave(
       const recordId = normalizeOptionalText(operation.id)
       if (operation.type === "delete") {
         if (!recordId) {
-          throw new Error("memory delete operation requires id")
+          throw new Error("state delete operation requires id")
         }
-        await localDb.memoryRecords.delete(
+        await localDb.stateRecords.delete(
           tableId(saveId, namespace, collection, recordId),
         )
         output.deletedIds.push(recordId)
@@ -196,22 +196,22 @@ export async function applyMemoryWriteOperationsForSave(
 
       if (operation.type === "patch") {
         if (!recordId) {
-          throw new Error("memory patch operation requires id")
+          throw new Error("state patch operation requires id")
         }
         if (!isJsonObject(operation.data)) {
-          throw new Error("memory patch operation requires JSON object data")
+          throw new Error("state patch operation requires JSON object data")
         }
 
         const id = tableId(saveId, namespace, collection, recordId)
-        const existing = await localDb.memoryRecords.get(id)
+        const existing = await localDb.stateRecords.get(id)
         if (!existing) {
-          throw new Error(`memory patch target "${recordId}" not found`)
+          throw new Error(`state patch target "${recordId}" not found`)
         }
         if (!isJsonObject(existing.data)) {
-          throw new Error("memory patch target data must be a JSON object")
+          throw new Error("state patch target data must be a JSON object")
         }
 
-        await localDb.memoryRecords.put({
+        await localDb.stateRecords.put({
           ...existing,
           data: {
             ...existing.data,
@@ -227,16 +227,16 @@ export async function applyMemoryWriteOperationsForSave(
       }
 
       if (operation.type !== "upsert") {
-        throw new Error(`unknown memory operation type "${String(operation.type)}"`)
+        throw new Error(`unknown state operation type "${String(operation.type)}"`)
       }
 
       if (!isJsonValue(operation.data)) {
-        throw new Error("memory upsert operation requires JSON-compatible data")
+        throw new Error("state upsert operation requires JSON-compatible data")
       }
 
       const nextRecordId = recordId ?? createRandomId()
       const now = Date.now()
-      const record: LocalMemoryRecord = {
+      const record: LocalStateRecord = {
         id: tableId(saveId, namespace, collection, nextRecordId),
         saveId,
         namespace,
@@ -247,7 +247,7 @@ export async function applyMemoryWriteOperationsForSave(
         tags: normalizeTags(operation.tags),
         updatedAt: now,
       }
-      await localDb.memoryRecords.put(record)
+      await localDb.stateRecords.put(record)
       output.upsertedIds.push(nextRecordId)
     }
   })

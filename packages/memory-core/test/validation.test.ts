@@ -4,9 +4,9 @@ import {
   assertValidMemorySchema,
   defaultAirpMemorySchema,
   MemoryValidationError,
-  normalizeMemoryWriteOperation,
+  normalizeStateWriteOperation,
   validateMemorySchema,
-  validateMemoryWriteOperation,
+  validateStateWriteOperation,
 } from "../src"
 
 function cloneSchema(): MemorySchemaDefinition {
@@ -45,9 +45,9 @@ describe("memory schema validation", () => {
   })
 })
 
-describe("memory write operation validation", () => {
+describe("state write operation validation", () => {
   it("normalizes a valid upsert with the schema default namespace", () => {
-    const normalized = normalizeMemoryWriteOperation(defaultAirpMemorySchema, {
+    const normalized = normalizeStateWriteOperation(defaultAirpMemorySchema, {
       type: "upsert",
       collection: "events",
       id: "event-1",
@@ -65,7 +65,7 @@ describe("memory write operation validation", () => {
 
   it("rejects an upsert missing required fields", () => {
     expect(
-      validateMemoryWriteOperation(defaultAirpMemorySchema, {
+      validateStateWriteOperation(defaultAirpMemorySchema, {
         type: "upsert",
         collection: "events",
         data: {
@@ -83,7 +83,7 @@ describe("memory write operation validation", () => {
 
   it("rejects unknown fields by default", () => {
     expect(
-      validateMemoryWriteOperation(defaultAirpMemorySchema, {
+      validateStateWriteOperation(defaultAirpMemorySchema, {
         type: "upsert",
         collection: "events",
         data: {
@@ -103,7 +103,7 @@ describe("memory write operation validation", () => {
 
   it("allows archive additional fields when the collection opts in", () => {
     expect(
-      validateMemoryWriteOperation(defaultAirpMemorySchema, {
+      validateStateWriteOperation(defaultAirpMemorySchema, {
         type: "upsert",
         collection: "archives",
         id: "archive-1",
@@ -123,7 +123,7 @@ describe("memory write operation validation", () => {
 
   it("treats patch as shallow field validation and requires id", () => {
     expect(
-      validateMemoryWriteOperation(defaultAirpMemorySchema, {
+      validateStateWriteOperation(defaultAirpMemorySchema, {
         type: "patch",
         collection: "events",
         data: {
@@ -137,7 +137,7 @@ describe("memory write operation validation", () => {
     )
 
     expect(
-      validateMemoryWriteOperation(defaultAirpMemorySchema, {
+      validateStateWriteOperation(defaultAirpMemorySchema, {
         type: "patch",
         collection: "events",
         id: "event-1",
@@ -150,7 +150,7 @@ describe("memory write operation validation", () => {
 
   it("rejects invalid operation types and delete without id", () => {
     expect(
-      validateMemoryWriteOperation(defaultAirpMemorySchema, {
+      validateStateWriteOperation(defaultAirpMemorySchema, {
         type: "merge",
         collection: "events",
       }),
@@ -161,7 +161,7 @@ describe("memory write operation validation", () => {
     )
 
     expect(
-      validateMemoryWriteOperation(defaultAirpMemorySchema, {
+      validateStateWriteOperation(defaultAirpMemorySchema, {
         type: "delete",
         collection: "events",
       }),
@@ -174,7 +174,7 @@ describe("memory write operation validation", () => {
 
   it("throws a structured validation error when normalization fails", () => {
     expect(() =>
-      normalizeMemoryWriteOperation(defaultAirpMemorySchema, {
+      normalizeStateWriteOperation(defaultAirpMemorySchema, {
         type: "clear",
         collection: "missing",
       }),

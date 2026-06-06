@@ -5,9 +5,9 @@ import type {
   MemoryFieldType,
   MemorySchemaDefinition,
   MemoryValidationIssue,
-  MemoryWriteOperation,
-  MemoryWriteOperationDefaults,
-  NormalizedMemoryWriteOperation,
+  StateWriteOperation,
+  StateWriteOperationDefaults,
+  NormalizedStateWriteOperation,
 } from "@tsian/contracts"
 
 const FIELD_TYPES = new Set<MemoryFieldType>([
@@ -409,10 +409,10 @@ function validateRecordData(
   }
 }
 
-export function validateMemoryWriteOperation(
+export function validateStateWriteOperation(
   schema: MemorySchemaDefinition,
   operation: unknown,
-  defaults: MemoryWriteOperationDefaults = {},
+  defaults: StateWriteOperationDefaults = {},
 ): MemoryValidationIssue[] {
   const issues = validateMemorySchema(schema)
   if (issues.length > 0) {
@@ -424,12 +424,12 @@ export function validateMemoryWriteOperation(
       {
         code: "INVALID_OPERATION",
         path: "operation",
-        message: "memory write operation must be an object",
+        message: "state write operation must be an object",
       },
     ]
   }
 
-  const op = operation as Partial<MemoryWriteOperation>
+  const op = operation as Partial<StateWriteOperation>
   if (!OPERATION_TYPES.has(String(op.type))) {
     issue(issues, "INVALID_OPERATION_TYPE", "operation.type", "operation type is invalid")
     return issues
@@ -472,17 +472,17 @@ export function validateMemoryWriteOperation(
   return issues
 }
 
-export function normalizeMemoryWriteOperation(
+export function normalizeStateWriteOperation(
   schema: MemorySchemaDefinition,
   operation: unknown,
-  defaults: MemoryWriteOperationDefaults = {},
-): NormalizedMemoryWriteOperation {
-  const issues = validateMemoryWriteOperation(schema, operation, defaults)
+  defaults: StateWriteOperationDefaults = {},
+): NormalizedStateWriteOperation {
+  const issues = validateStateWriteOperation(schema, operation, defaults)
   if (issues.length > 0) {
-    throw new MemoryValidationError("memory write operation is invalid", issues)
+    throw new MemoryValidationError("state write operation is invalid", issues)
   }
 
-  const op = operation as MemoryWriteOperation
+  const op = operation as StateWriteOperation
   return {
     ...op,
     namespace: op.namespace ?? defaults.namespace ?? schema.defaultNamespace!,

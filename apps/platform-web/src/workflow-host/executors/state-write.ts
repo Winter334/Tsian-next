@@ -1,20 +1,20 @@
 import type {
   MemorySchemaDefinition,
-  MemoryWriteOperation,
+  StateWriteOperation,
   StateWriteNodeConfig,
 } from "@tsian/contracts"
 import {
   assertValidMemorySchema,
   MemoryValidationError,
-  normalizeMemoryWriteOperation,
+  normalizeStateWriteOperation,
 } from "@tsian/memory-core"
 import type { NodeExecutor } from "@tsian/workflow-engine"
 import {
-  applyMemoryWriteOperationsForSave,
+  applyStateWriteOperationsForSave,
   createCheckpointForSave,
   listArchivesForSave,
   listEventsForSave,
-  listLocalMemoryRecordsForSave,
+  listLocalStateRecordsForSave,
 } from "../../storage"
 import type { PlatformWorkflowContext } from "../types"
 
@@ -46,13 +46,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function readOperations(raw: unknown): MemoryWriteOperation[] {
+function readOperations(raw: unknown): StateWriteOperation[] {
   if (Array.isArray(raw)) {
     return raw.map((item) => {
       if (!isPlainObject(item)) {
         throw new Error("state-write operations array contains non-object item")
       }
-      return item as unknown as MemoryWriteOperation
+      return item as unknown as StateWriteOperation
     })
   }
 
@@ -61,7 +61,7 @@ function readOperations(raw: unknown): MemoryWriteOperation[] {
     if (Array.isArray(operations)) {
       return readOperations(operations)
     }
-    return [raw as unknown as MemoryWriteOperation]
+    return [raw as unknown as StateWriteOperation]
   }
 
   throw new Error("state-write node expected operations input to be an object or array")
@@ -87,7 +87,7 @@ function optionalText(value: unknown): string | undefined {
 
 function usesConfiguredSchema(
   schema: MemorySchemaDefinition,
-  operation: MemoryWriteOperation,
+  operation: StateWriteOperation,
   defaults: { namespace?: string; collection?: string },
 ): boolean {
   const collection =
@@ -114,10 +114,10 @@ function formatValidationError(error: MemoryValidationError): string {
 }
 
 function normalizeSchemaCoveredOperations(
-  operations: MemoryWriteOperation[],
+  operations: StateWriteOperation[],
   defaults: { namespace?: string; collection?: string },
   schema: MemorySchemaDefinition | undefined,
-): MemoryWriteOperation[] {
+): StateWriteOperation[] {
   if (!schema) {
     return operations
   }
@@ -137,7 +137,7 @@ function normalizeSchemaCoveredOperations(
     }
 
     try {
-      return normalizeMemoryWriteOperation(
+      return normalizeStateWriteOperation(
         schema,
         operation,
         defaults,
@@ -165,7 +165,7 @@ export const stateWriteExecutor: NodeExecutor = {
       defaults,
       config.schema,
     )
-    const result = await applyMemoryWriteOperationsForSave(
+    const result = await applyStateWriteOperationsForSave(
       ctx.saveId,
       normalizedOperations,
       defaults,
@@ -178,7 +178,7 @@ export const stateWriteExecutor: NodeExecutor = {
         history: getSnapshotMessages(latestSnapshot),
         events: await listEventsForSave(ctx.saveId),
         archives: await listArchivesForSave(ctx.saveId),
-        memoryRecords: await listLocalMemoryRecordsForSave(ctx.saveId),
+        stateRecords: await listLocalStateRecordsForSave(ctx.saveId),
         reason,
       })
     }

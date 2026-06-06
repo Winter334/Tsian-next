@@ -49,14 +49,18 @@ Scope guard:
 
 ## DW-001 Rename Internal Memory Storage Vocabulary
 
-Status: deferred
+Status: resolved
 Source: `state-write` migration, 2026-06-06
 
 Temporary state:
-- Public workflow durable writes use `state-write`.
-- Internal storage, checkpoint, and helper vocabulary still uses names such as
-  `memoryRecords`, `applyMemoryWriteOperationsForSave`, and generic memory
-  storage helpers.
+- Public workflow durable reads/writes use `state-query` / `state-write`.
+- Internal generic durable state storage now uses names such as `stateRecords`,
+  `listStateRecordsForSave`, and `applyStateWriteOperationsForSave`.
+
+Resolution:
+- Resolved by `state-record-storage-rename`, 2026-06-06.
+- Prototype IndexedDB data was intentionally not migrated; the Dexie database
+  name was bumped and local prototype saves should be recreated.
 
 Why deferred:
 - Renaming this layer touches Dexie table shape, checkpoint slices, restore
@@ -64,17 +68,15 @@ Why deferred:
 - It is a storage-contract migration, not just a public workflow node rename.
 
 Revisit when:
-- Public read/write node vocabulary has been unified around state terminology.
-- Before schema resources or renderer adapters rely on generic state wording.
+- N/A for the storage vocabulary rename itself. Future schema resources or
+  renderer adapters should be tracked as separate tasks.
 
 Suggested next task:
-- `state-record-storage-rename`
+- N/A
 
 Scope guard:
-- Deliberately rename storage/checkpoint/helper vocabulary and decide whether
-  prototype data is cleared or compatibility-read.
-- Do not add schema resource UI, renderer adapters, or query DSL changes in the
-  same task.
+- Historical guard: this task did not add schema resource UI, renderer
+  adapters, query DSL changes, or old `memoryRecords` compatibility reads.
 
 ## DW-002 Rename Public Memory Query Node To State Query
 

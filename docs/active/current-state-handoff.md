@@ -18,7 +18,7 @@
 当前项目已经进入可运行原型阶段。
 
 > 2026-06-05 更新：本 `docs/active` 目录中的部分阶段性路线早于
-> Trellis 工作流/记忆迁移任务。当前 workflow 与 AIRP generic memory 的
+> Trellis 工作流/记忆迁移任务。当前 workflow 与 AIRP generic state records 的
 > 真源以 `.trellis/spec/`、`openspec/specs/` 和代码为准；本文保留早期
 > 状态说明，同时在下方记录最新增量，避免后续继续按旧 patch-only
 > 主链理解系统。
@@ -55,7 +55,7 @@
 - 内置模组不应再通过 deprecated `manifest.workflow` 携带当前工作流；
   built-in workflow preset 由显式 seed 写入资源库，灰盐镇通过
   `workflowPresetId` 引用该资源。
-- AIRP 当前权威记忆是 save-scoped generic `memoryRecords` 中的
+- AIRP 当前权威记忆是 save-scoped generic `stateRecords` 中的
   `airp/events`、`airp/archives`、`airp/globals/currentTime`。
   legacy snapshot/events/archives 是兼容投影，不再反向约束主链。
 - `state-query` workflow node 现在是 collection-only；旧
@@ -70,9 +70,8 @@
   平台回合成功后统一创建 after-turn checkpoint。
 - 当前 DebugView 的维护写入面板展示 maintenance / state-write 节点结果，
   不再把 legacy patch 视为唯一维护结果。
-- 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括内部
-  `memoryRecords` 存储命名迁移、schema 可见性、schema resources 和
-  renderer adapters。
+- 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括 schema
+  可见性、schema resources 和 renderer adapters。
 
 当前新的边界已经确认，其中仍未继续展开的部分：
 
@@ -162,7 +161,7 @@
 当前平台已有最小线性 checkpoint：
 
 - checkpoint 是完整游戏状态切片，不是只保存 `RuntimeSnapshotShell`
-- 每个 checkpoint 包含 `snapshot / history / events / archives / memoryRecords`
+- 每个 checkpoint 包含 `snapshot / history / events / archives / stateRecords`
 - 创建存档时写入 `initial` checkpoint
 - 每轮 AI 调度完成并持久化后写入 `after-turn` checkpoint
 - 官方默认前端通过“回溯”页签列出 checkpoint，并可恢复到指定切片

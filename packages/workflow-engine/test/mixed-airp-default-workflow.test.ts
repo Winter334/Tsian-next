@@ -126,7 +126,7 @@ describe("mixed AIRP default workflow", () => {
       resolve(REPO_ROOT, "apps/platform-web/src/workflow-host/executors/state-query.ts"),
       "utf-8",
     )
-    expect(executorSrc).toContain("listMemoryRecordsForSave")
+    expect(executorSrc).toContain("listStateRecordsForSave")
     expect(executorSrc).not.toContain("assembleRetrievalContext")
 
     const schemaSrc = readFileSync(
