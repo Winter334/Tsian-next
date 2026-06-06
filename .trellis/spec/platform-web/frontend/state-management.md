@@ -16,11 +16,11 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Multi-table writes should use `localDb.transaction`. `createLocalSave` writes save, snapshot, history, initial events, and archives transactionally before creating the initial checkpoint.
 - Save-level metadata belongs on `LocalSaveRecord`. Examples: `workflowPresetId` and `playerArchiveIds`.
 
-## Scenario: Save-Scoped Workflow Memory Records
+## Scenario: Save-Scoped Workflow State Records
 
 ### 1. Scope / Trigger
 
-- Trigger: workflow nodes can now query/write memory beyond the built-in event/archive store, so storage, checkpoint restore, workflow execution, editor schemas, and mod workflow validation share one contract.
+- Trigger: workflow nodes can query/write durable state beyond the built-in event/archive store, so storage, checkpoint restore, workflow execution, editor schemas, and mod workflow validation share one contract.
 - Goal: advanced users can replace or remove the default memory chain without hardcoded platform-host retrieval fallback.
 
 ### 2. Signatures
@@ -28,14 +28,15 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - DB table: `localDb.memoryRecords`.
 - Record shape: `LocalMemoryRecord { id, saveId, namespace, collection, recordId, data, schemaVersion?, tags, updatedAt }`.
 - Write API: `applyMemoryWriteOperationsForSave(saveId, operations, defaults?)`.
-- Query API: `listMemoryRecords({ saveId, namespace?, collection?, query?, limit? })`.
-- Workflow node types: `memory-query`, `state-write`, `template-compose`,
+- Query API: `listMemoryRecordsForSave(saveId, { namespace?, collection?, query?, limit? })`.
+- Workflow node types: `state-query`, `state-write`, `template-compose`,
   `record-filter`, `record-merge`, and `record-format`.
 
 ### 3. Contracts
 
-- `memory-query` is collection-only. It reads one save-scoped generic memory collection and outputs `records` and `count`.
-- The retired `memory-query { source: "event-archive" }` branch must not be exposed by the editor or executed as a hidden AIRP retrieval path. Old workflows that still set that source should fail loudly.
+- `state-query` is collection-only. It reads one save-scoped generic durable state collection and outputs `records` and `count`.
+- The retired `memory-query` node type must not be exposed by the editor or registered by the workflow host. Old workflows that still declare it should fail loudly as unknown node types.
+- The retired `{ source: "event-archive" }` query branch must not be exposed by the editor or executed as a hidden AIRP retrieval path. `state-query` only accepts `source: "collection"` in this MVP.
 - The platform default AIRP workflow should use the mixed AIRP workflow preset shape: AIRP collection queries (`airp/events`, `airp/archives`, `airp/globals`) -> public record-processing nodes -> bounded `compute` for AIRP-specific extraction/ranking/relation/assembly -> chat/maintenance.
 - `state-write` consumes `MemoryWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `record-filter` consumes an array input and filters items by limited predicates over record meta, tags, or `data` paths; it outputs a filtered array and `count`.
@@ -45,10 +46,11 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `patch` is shallow over custom `memoryRecords`: it requires an existing record id, requires both existing `data` and patch `data` to be JSON objects, then merges top-level fields.
 - `template-compose` renders `{{token}}` / `{{token.json}}` from workflow inputs and outputs either text or parsed JSON.
 - Built-in AIRP `globals/currentTime` is a reserved record whose `data` shape is `{ key: "currentTime", value: "YYYY-MM-DD HH:mm" }`; default retrieval treats that record as the authoritative narrative time.
-- `apply-patch` and the public workflow node type `memory-write` are retired
-  from the workflow node surface. Workflows should use `state-write` for
-  generic durable state maintenance; old workflow definitions that still
-  declare either retired type should fail loudly as unknown node types.
+- `apply-patch`, `memory-write`, and `memory-query` are retired from the
+  workflow node surface. Workflows should use `state-query` / `state-write`
+  for generic durable state access and maintenance; old workflow definitions
+  that still declare retired node types should fail loudly as unknown node
+  types.
 - Bridge/runtime patch APIs remain a platform compatibility path for
   `MaintenancePatchDocument`; this path is separate from workflow preset syntax.
 - Because generic AIRP `memoryRecords` are the current authority, the
@@ -70,21 +72,23 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 - Unknown node type -> `WorkflowValidationError`.
 - Retired workflow node type `apply-patch` -> `UNKNOWN_NODE_TYPE`.
-- Mod workflow containing memory/template nodes -> allowed.
+- Retired workflow node type `memory-write` -> `UNKNOWN_NODE_TYPE`.
+- Retired workflow node type `memory-query` -> `UNKNOWN_NODE_TYPE`.
+- Mod workflow containing state/template nodes -> allowed.
 - `state-write` with non-array operations -> executor error.
 - `state-write` upsert with non-JSON `data` -> executor/storage error.
 - `state-write` patch without `id` -> storage error.
 - `state-write` patch with non-object `data` -> storage error.
 - `state-write` patch against a missing record -> storage error.
 - `state-write` patch against existing non-object record data -> storage error.
-- `memory-query` collection source without collection identity -> executor error.
-- `memory-query` with any source other than `"collection"` -> executor error.
+- `state-query` collection source without collection identity -> executor error.
+- `state-query` with any source other than `"collection"` -> executor error.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, bounded `compute` for AIRP-specific retrieval glue, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.operations` to an explicit `state-write` node.
-- Base: custom collection workflows use `memory-query { source: "collection", namespace, collection }` and `state-write` with namespace/collection defaults for alternative memory structures.
-- Base: custom collection workflows can combine `memory-query { source: "collection" }`, `record-filter`, `record-merge`, `record-format`, `template-compose`, and `compute` for non-AIRP memory structures such as keyword -> snippet/summary.
+- Base: custom collection workflows use `state-query { source: "collection", namespace, collection }` and `state-write` with namespace/collection defaults for alternative memory structures.
+- Base: custom collection workflows can combine `state-query { source: "collection" }`, `record-filter`, `record-merge`, `record-format`, `template-compose`, and `compute` for non-AIRP state structures such as keyword -> snippet/summary.
 - Bad: reintroducing `ai-call.config.bypass.rawFromMacro = "__retrieval.raw"` hides retrieval outside the workflow and breaks replaceability.
 - Bad: collapsing ordinary record filtering/merging/formatting back into a long `compute` script when the public record nodes can express the behavior.
 - Bad: assuming a failed later workflow node automatically undoes earlier `state-write` storage operations without restoring a checkpoint.
@@ -103,9 +107,9 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
   overwritten by the after-turn generic-to-legacy sync.
 - Static proof: `state-write` does not create a node-local checkpoint unless
   `pushCheckpointReason` is explicitly set to `"manual"` or `"after-turn"`.
-- Static proof should keep `memory-query` collection-only across contracts, editor slots, inspector forms, and executor behavior.
+- Static proof should keep `state-query` collection-only across contracts, editor slots, inspector forms, and executor behavior, and keep retired `memory-query` out of public workflow contracts and authoring.
 - Static proof or tests for platform-internal AIRP retrieval refactors should verify that `assembleRetrievalContext()` still routes through named internal stages instead of collapsing AIRP-specific behavior into a single opaque block.
-- Browser smoke: resource workflow preview and fullscreen editor show `memory-query`, and new memory/template nodes can be dragged onto the canvas and inspected.
+- Browser smoke: resource workflow preview and fullscreen editor show `state-query`, and new state/template nodes can be dragged onto the canvas and inspected.
 
 ### 7. Wrong vs Correct
 
@@ -124,7 +128,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 ```ts
 {
   id: "airpEvents",
-  type: "memory-query",
+  type: "state-query",
   config: { source: "collection", namespace: "airp", collection: "events", query: "" },
 }
 {

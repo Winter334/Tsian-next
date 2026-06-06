@@ -58,8 +58,9 @@
 - AIRP 当前权威记忆是 save-scoped generic `memoryRecords` 中的
   `airp/events`、`airp/archives`、`airp/globals/currentTime`。
   legacy snapshot/events/archives 是兼容投影，不再反向约束主链。
-- `memory-query` workflow node 现在是 collection-only；旧
-  `source: "event-archive"` 分支已从 editor/runtime workflow surface 退场。
+- `state-query` workflow node 现在是 collection-only；旧
+  `memory-query` 节点和旧 `source: "event-archive"` 分支已从
+  editor/runtime workflow surface 退场。
   默认工作流使用 AIRP collection query、公开 record 节点和 bounded compute
   组成混合检索 preset。
 - 默认维护写入走 `maintenance.operations -> stateWrite.operations`。
@@ -70,8 +71,8 @@
 - 当前 DebugView 的维护写入面板展示 maintenance / state-write 节点结果，
   不再把 legacy patch 视为唯一维护结果。
 - 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括内部
-  `memoryRecords` 存储命名迁移、`memory-query -> state-query`、
-  schema 可见性、schema resources 和 renderer adapters。
+  `memoryRecords` 存储命名迁移、schema 可见性、schema resources 和
+  renderer adapters。
 
 当前新的边界已经确认，其中仍未继续展开的部分：
 

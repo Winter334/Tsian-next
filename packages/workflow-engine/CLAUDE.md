@@ -130,14 +130,14 @@ interface OutputsStoreWriter {
 | 5 | 至少 1 个 result 节点 | `MISSING_RESULT_NODE` |
 | 6 | result 节点 `config.name` 唯一 | `DUPLICATE_RESULT_NAME` |
 
-支持的内置节点类型：`ai-call` / `result` / `switch` / `compute` / `memory-query` / `state-write` / `template-compose` / `record-filter` / `record-merge` / `record-format`。
+支持的内置节点类型：`ai-call` / `result` / `switch` / `compute` / `state-query` / `state-write` / `template-compose` / `record-filter` / `record-merge` / `record-format`。
 
 ---
 
 ## 6. 与其它包协作
 
 - **@tsian/contracts**：所有类型来源（`WorkflowDefinition / WorkflowNode / WorkflowEdge / NodeOutputDeclaration / WorkflowNodeType / *NodeConfig`）。
-- **apps/platform-web/src/workflow-host/**（H4 起）：注册内置 executor（ai-call / result / switch / compute / memory-query / state-write / template-compose / record-filter / record-merge / record-format），提供 `WorkflowExecutionContext.executors`。
+- **apps/platform-web/src/workflow-host/**（H4 起）：注册内置 executor（ai-call / result / switch / compute / state-query / state-write / template-compose / record-filter / record-merge / record-format），提供 `WorkflowExecutionContext.executors`。
 - **apps/platform-web/src/workflow-host/outputs-store.ts**（H7 已落地）：实现 `OutputsStoreWriter` 接口（套娃 shallowRef），platform-host 在 H8 通过 `ExecuteWorkflowOptions.outputsHooks` 注入。
 - **apps/platform-web/src/runtime-host/patch-applier.ts**（I1 已落地）：桥/API patch 兼容写入口共享的 applier；不再作为 workflow executor 暴露。
 

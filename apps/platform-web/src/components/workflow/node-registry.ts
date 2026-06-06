@@ -49,9 +49,9 @@ export const nodeTypeRegistry: NodeTypeInfo[] = [
     colorClass: '[#FFD600]',
   },
   {
-    type: 'memory-query',
-    label: '记忆查询',
-    description: '查询 save-scoped 记忆集合',
+    type: 'state-query',
+    label: '状态查询',
+    description: '查询 save-scoped 持久状态集合',
     icon: 'Database',
     color: '#4FD1C5',
     colorClass: '[#4FD1C5]',

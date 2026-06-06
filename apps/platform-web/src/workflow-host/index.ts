@@ -12,11 +12,11 @@ import {
 } from "./types"
 import { aiCallExecutor } from "./executors/ai-call"
 import { computeExecutor } from "./executors/compute"
-import { memoryQueryExecutor } from "./executors/memory-query"
 import { recordFilterExecutor } from "./executors/record-filter"
 import { recordFormatExecutor } from "./executors/record-format"
 import { recordMergeExecutor } from "./executors/record-merge"
 import { resultExecutor } from "./executors/result"
+import { stateQueryExecutor } from "./executors/state-query"
 import { stateWriteExecutor } from "./executors/state-write"
 import { switchExecutor } from "./executors/switch"
 import { templateComposeExecutor } from "./executors/template-compose"
@@ -27,7 +27,7 @@ function buildBuiltinExecutors(): ReadonlyMap<string, NodeExecutor> {
     ["result", resultExecutor],
     ["switch", switchExecutor],
     ["compute", computeExecutor],
-    ["memory-query", memoryQueryExecutor],
+    ["state-query", stateQueryExecutor],
     ["state-write", stateWriteExecutor],
     ["template-compose", templateComposeExecutor],
     ["record-filter", recordFilterExecutor],

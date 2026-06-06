@@ -104,13 +104,13 @@ export function resolveWorkflowInputSlots(
     }]
   }
 
-  if (nodeType === 'memory-query') {
+  if (nodeType === 'state-query') {
     const name = readStringConfig(config, 'queryVarName', 'query')
     return [{
       name,
       label: '查询文本',
       valueType: 'string',
-      semanticSlot: 'memory.query',
+      semanticSlot: 'state.query',
       required: false,
     }]
   }
@@ -202,19 +202,19 @@ export function resolveWorkflowOutputSlots(
 
   if (nodeType === 'switch') return switchOutputSlots(config)
 
-  if (nodeType === 'memory-query') {
+  if (nodeType === 'state-query') {
     return [
       {
         name: 'records',
-        label: '记忆记录',
+        label: '状态记录',
         valueType: 'array',
-        semanticSlot: 'memory.records',
+        semanticSlot: 'state.records',
       },
       {
         name: 'count',
         label: '记录数量',
         valueType: 'number',
-        semanticSlot: 'memory.count',
+        semanticSlot: 'state.count',
       },
     ]
   }

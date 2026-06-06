@@ -13,6 +13,7 @@ describe("mixed AIRP default workflow", () => {
     expect(() => validateWorkflowDefinition(workflow)).not.toThrow()
     expect(JSON.stringify(workflow)).not.toContain('"event-archive"')
     expect(JSON.stringify(workflow)).not.toContain('"apply-patch"')
+    expect(JSON.stringify(workflow)).not.toContain('"memory-query"')
     expect(JSON.stringify(workflow)).not.toContain('"memory-write"')
     expect(JSON.stringify(workflow)).not.toContain('"bypass"')
     expect(JSON.stringify(workflow)).not.toContain("__retrieval.raw")
@@ -21,7 +22,7 @@ describe("mixed AIRP default workflow", () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: "airpEvents",
-          type: "memory-query",
+          type: "state-query",
           config: expect.objectContaining({
             source: "collection",
             namespace: "airp",
@@ -31,7 +32,7 @@ describe("mixed AIRP default workflow", () => {
         }),
         expect.objectContaining({
           id: "airpArchives",
-          type: "memory-query",
+          type: "state-query",
           config: expect.objectContaining({
             source: "collection",
             namespace: "airp",
@@ -41,7 +42,7 @@ describe("mixed AIRP default workflow", () => {
         }),
         expect.objectContaining({
           id: "airpGlobals",
-          type: "memory-query",
+          type: "state-query",
           config: expect.objectContaining({
             source: "collection",
             namespace: "airp",
@@ -108,11 +109,11 @@ describe("mixed AIRP default workflow", () => {
     expect(src).toContain("export const defaultWorkflow")
   })
 
-  it("keeps memory-query collection-only across contracts and platform authoring", () => {
+  it("keeps state-query collection-only across contracts and platform authoring", () => {
     const files = [
       "packages/contracts/src/workflow.ts",
-      "apps/platform-web/src/workflow-host/executors/memory-query.ts",
-      "apps/platform-web/src/components/workflow/inspector/MemoryQueryForm.vue",
+      "apps/platform-web/src/workflow-host/executors/state-query.ts",
+      "apps/platform-web/src/components/workflow/inspector/StateQueryForm.vue",
       "apps/platform-web/src/components/workflow/node-schema.ts",
     ]
 
@@ -122,7 +123,7 @@ describe("mixed AIRP default workflow", () => {
     }
 
     const executorSrc = readFileSync(
-      resolve(REPO_ROOT, "apps/platform-web/src/workflow-host/executors/memory-query.ts"),
+      resolve(REPO_ROOT, "apps/platform-web/src/workflow-host/executors/state-query.ts"),
       "utf-8",
     )
     expect(executorSrc).toContain("listMemoryRecordsForSave")
@@ -132,10 +133,38 @@ describe("mixed AIRP default workflow", () => {
       resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/node-schema.ts"),
       "utf-8",
     )
-    expect(schemaSrc).toContain("memory.records")
-    expect(schemaSrc).toContain("memory.count")
+    expect(schemaSrc).toContain("state.records")
+    expect(schemaSrc).toContain("state.count")
     expect(schemaSrc).not.toContain("memory.prompt")
     expect(schemaSrc).not.toContain("memory.debug")
+  })
+
+  it("keeps memory-query retired from public workflow contracts and authoring", () => {
+    const files = [
+      "packages/contracts/src/workflow.ts",
+      "packages/workflow-engine/src/validator.ts",
+      "apps/platform-web/src/workflow-host/index.ts",
+      "apps/platform-web/src/components/workflow/node-registry.ts",
+      "apps/platform-web/src/components/workflow/node-schema.ts",
+      "apps/platform-web/src/components/workflow/NodeInspector.vue",
+      "apps/platform-web/src/composables/useWorkflowEditor.ts",
+      "apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue",
+    ]
+
+    for (const file of files) {
+      const src = readFileSync(resolve(REPO_ROOT, file), "utf-8")
+      expect(src, file).not.toContain('"memory-query"')
+      expect(src, file).not.toContain("'memory-query'")
+      expect(src, file).not.toContain("MemoryQueryNodeConfig")
+      expect(src, file).not.toContain("MemoryQueryForm")
+    }
+
+    expect(
+      existsSync(resolve(REPO_ROOT, "apps/platform-web/src/workflow-host/executors/memory-query.ts")),
+    ).toBe(false)
+    expect(
+      existsSync(resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/inspector/MemoryQueryForm.vue")),
+    ).toBe(false)
   })
 
   it("keeps apply-patch retired from workflow contracts and authoring", () => {

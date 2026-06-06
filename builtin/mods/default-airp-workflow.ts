@@ -248,7 +248,7 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
     nodes: [
       {
         id: "airpEvents",
-        type: "memory-query",
+        type: "state-query",
         config: {
           source: "collection",
           namespace: "airp",
@@ -259,7 +259,7 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
       },
       {
         id: "airpArchives",
-        type: "memory-query",
+        type: "state-query",
         config: {
           source: "collection",
           namespace: "airp",
@@ -270,7 +270,7 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
       },
       {
         id: "airpGlobals",
-        type: "memory-query",
+        type: "state-query",
         config: {
           source: "collection",
           namespace: "airp",

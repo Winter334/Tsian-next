@@ -580,7 +580,7 @@ function miniMapNodeColor(node: any): string {
     'result': '#00FF88',
     'switch': '#FF8C00',
     'compute': '#FFD600',
-    'memory-query': '#4FD1C5',
+    'state-query': '#4FD1C5',
     'state-write': '#F472B6',
     'template-compose': '#A3E635',
   }

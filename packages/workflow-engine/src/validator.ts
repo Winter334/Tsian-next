@@ -26,7 +26,7 @@ const VALID_NODE_TYPES: ReadonlySet<WorkflowNodeType> = new Set<WorkflowNodeType
   "result",
   "switch",
   "compute",
-  "memory-query",
+  "state-query",
   "state-write",
   "template-compose",
   "record-filter",

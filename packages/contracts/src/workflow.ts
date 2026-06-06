@@ -62,7 +62,7 @@ export type WorkflowNodeType =
   | "result"
   | "switch"
   | "compute"
-  | "memory-query"
+  | "state-query"
   | "state-write"
   | "template-compose"
   | "record-filter"
@@ -100,7 +100,7 @@ export interface AiCallNodeConfig {
   appendUserInput?: boolean
   /**
    * @deprecated legacy retrieval bypass for old workflow presets.
-   * 默认工作流改用 memory-query；新工作流不应再设置本字段。
+   * 默认工作流改用 state-query；新工作流不应再设置本字段。
    */
   bypass?: {
     rawFromMacro: string
@@ -127,8 +127,8 @@ export interface ComputeNodeConfig {
   recordRetrievalDebugOutputName?: string
 }
 
-export interface MemoryQueryNodeConfig {
-  /** Collection-only query over save-scoped generic memory records. */
+export interface StateQueryNodeConfig {
+  /** Collection-only query over save-scoped generic durable state records. */
   source: "collection"
   namespace?: string
   collection?: string

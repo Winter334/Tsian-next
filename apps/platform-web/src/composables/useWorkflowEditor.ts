@@ -24,7 +24,7 @@ function generateNodeId(type: WorkflowNodeType): string {
 }
 
 function defaultNodeConfig(type: WorkflowNodeType): Record<string, unknown> {
-  if (type === 'memory-query') return { source: 'collection', queryVarName: 'query' }
+  if (type === 'state-query') return { source: 'collection', queryVarName: 'query' }
   if (type === 'state-write') return { operationsVarName: 'operations', pushCheckpointReason: 'none' }
   if (type === 'template-compose') return { template: '{{data}}', outputName: 'text' }
   if (type === 'record-filter') return { inputVarName: 'records', outputName: 'records', match: 'all', predicates: [] }

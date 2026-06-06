@@ -206,7 +206,10 @@ Tsian 的核心定位是：
 - `memory-write` 已从 workflow node surface 退场。持久状态写入使用
   `state-write`；旧 workflow 若仍声明 `memory-write`，应明确按未知节点
   失败，而不是保留 alias。
-- `memory-query(source: "event-archive")` 已从 workflow node surface 退场。`memory-query` 应保持 collection/schema 驱动；旧 workflow 若仍声明该 source，应明确失败，而不是继续走隐藏 AIRP 检索分支。
+- `memory-query` 已从 workflow node surface 退场。持久状态读取使用
+  `state-query` 且保持 collection/schema 驱动；旧 workflow 若仍声明
+  `memory-query`，或把 `state-query` 配成旧 `source: "event-archive"`，
+  应明确失败，而不是继续走隐藏 AIRP 检索分支。
 - legacy events / archives / snapshot slices 可以作为兼容投影存在，但默认 AIRP 读写权威应向 generic memory records 和 schema-aware workflow 边界收敛。
 
 兼容层不应被扩展成新的通用模型。若一个任务需要新增兼容逻辑，必须同时说明：
@@ -261,7 +264,7 @@ PRD 中。
 - 收紧节点类型集，移除或隐藏不再适合作为通用节点的兼容节点。
 - 保持 `apply-patch` 退场后的边界：workflow preset 使用 `state-write`
   等泛型节点，桥/API patch 只作为平台兼容能力。
-- 保持 `memory-query` collection-only，避免重新引入 `event-archive` 这类高层历史分支。
+- 保持 `state-query` collection-only，避免重新引入 `event-archive` 这类高层历史分支。
 - 让 memory schema、workflow preset 和 renderer 的职责更清晰。
 - 继续把默认 AIRP 事件/档案系统作为参考 preset，而不是唯一架构。
 - 为未来 block/subgraph、schema resources、renderer adapters 留出清晰位置。

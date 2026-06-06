@@ -1,9 +1,9 @@
-import type { MemoryQueryNodeConfig } from "@tsian/contracts"
+import type { StateQueryNodeConfig } from "@tsian/contracts"
 import type { NodeExecutor } from "@tsian/workflow-engine"
 import { listMemoryRecordsForSave } from "../../storage"
 import type { PlatformWorkflowContext } from "../types"
 
-type NormalizedMemoryQueryConfig = MemoryQueryNodeConfig & {
+type NormalizedStateQueryConfig = StateQueryNodeConfig & {
   namespace: string
   collection: string
 }
@@ -11,21 +11,21 @@ type NormalizedMemoryQueryConfig = MemoryQueryNodeConfig & {
 function normalizeRequiredText(value: string | undefined, label: string): string {
   const normalized = value?.trim()
   if (!normalized) {
-    throw new Error(`memory-query node config is invalid: ${label} is required`)
+    throw new Error(`state-query node config is invalid: ${label} is required`)
   }
   return normalized
 }
 
-function readMemoryQueryConfig(raw: unknown): NormalizedMemoryQueryConfig {
+function readStateQueryConfig(raw: unknown): NormalizedStateQueryConfig {
   if (typeof raw !== "object" || raw === null) {
     throw new Error(
-      `memory-query node config is invalid: expected { source: "collection" }`,
+      `state-query node config is invalid: expected { source: "collection" }`,
     )
   }
-  const config = raw as Partial<MemoryQueryNodeConfig>
+  const config = raw as Partial<StateQueryNodeConfig>
   if (config.source !== "collection") {
     throw new Error(
-      `memory-query node config is invalid: source must be "collection"`,
+      `state-query node config is invalid: source must be "collection"`,
     )
   }
   return {
@@ -39,7 +39,7 @@ function readMemoryQueryConfig(raw: unknown): NormalizedMemoryQueryConfig {
 function castPlatformContext(raw: unknown): PlatformWorkflowContext {
   const ctx = raw as Partial<PlatformWorkflowContext>
   if (!ctx || typeof ctx.saveId !== "string" || !ctx.runtimeEngine) {
-    throw new Error(`memory-query node requires PlatformWorkflowContext`)
+    throw new Error(`state-query node requires PlatformWorkflowContext`)
   }
   return ctx as PlatformWorkflowContext
 }
@@ -58,9 +58,9 @@ function normalizeLimit(raw: number | undefined): number | undefined {
   return Math.floor(raw)
 }
 
-export const memoryQueryExecutor: NodeExecutor = {
+export const stateQueryExecutor: NodeExecutor = {
   async execute({ node, inputs, context }) {
-    const config = readMemoryQueryConfig(node.config)
+    const config = readStateQueryConfig(node.config)
     const ctx = castPlatformContext(context)
     const query =
       readStringInput(inputs, config.queryVarName) ??

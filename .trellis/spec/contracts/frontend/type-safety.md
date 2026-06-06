@@ -158,8 +158,9 @@ interface PromptPresetResource {
   workflow preset through the resource library seed path. Do not use deprecated
   `manifest.workflow` as the source of built-in workflow preset resources.
 - Built-in/default, save-selected, and mod-referenced workflows must not contain
-  retired `apply-patch` or `memory-write` nodes. Bridge/runtime patch APIs
-  remain a separate compatibility path and are not workflow preset syntax.
+  retired `apply-patch`, `memory-write`, or `memory-query` nodes.
+  Bridge/runtime patch APIs remain a separate compatibility path and are not
+  workflow preset syntax.
 - UI should display the source kind so users can distinguish `save-override`,
   `mod-preset`, `legacy-mod-workflow`, and `platform-default`.
 
@@ -172,7 +173,8 @@ interface PromptPresetResource {
 - Mod-level `workflowPresetId` points to no resource -> throw a clear
   `mod "<id>" references missing workflow preset "<preset>"` error at runtime
   resolution.
-- Referenced workflow contains retired node type `apply-patch` or `memory-write` ->
+- Referenced workflow contains retired node type `apply-patch`, `memory-write`,
+  or `memory-query` ->
   workflow-engine throws `UNKNOWN_NODE_TYPE` regardless of workflow source.
 - Clearing the save override (`workflowPresetId: null`) -> remove the optional
   field and return to the mod/default precedence chain.
@@ -195,8 +197,9 @@ interface PromptPresetResource {
   field into a workflow preset.
 - Bad: A missing save-level or mod-level `workflowPresetId` silently falls back
   to `defaultWorkflow`.
-- Bad: A mod-referenced workflow preset relies on retired `apply-patch` node
-  syntax instead of generic `state-write` or bridge/runtime patch APIs.
+- Bad: A mod-referenced workflow preset relies on retired `apply-patch`,
+  `memory-write`, or `memory-query` node syntax instead of generic
+  `state-query` / `state-write` nodes or bridge/runtime patch APIs.
 
 #### 6. Tests Required
 
@@ -204,8 +207,9 @@ interface PromptPresetResource {
   `getWorkflowPresetResource`, resolves save-level `workflowPresetId` before
   mod-level `workflowPresetId`, resolves mod-level `workflowPresetId` before
   legacy `manifest.workflow`, and passes `isModWorkflow` into `executeWorkflow`.
-- Keep workflow-engine validation coverage proving retired `apply-patch` and `memory-write`
-  workflow nodes fail loudly with `UNKNOWN_NODE_TYPE`.
+- Keep workflow-engine validation coverage proving retired `apply-patch`,
+  `memory-write`, and `memory-query` workflow nodes fail loudly with
+  `UNKNOWN_NODE_TYPE`.
 - Run `npm run build:web`; run `npm run build:contracts` when contract shapes
   change.
 

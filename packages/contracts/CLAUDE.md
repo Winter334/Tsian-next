@@ -76,8 +76,8 @@
 H4-H7 阶段引入，定义工作流 DAG 的所有类型：
 
 - `WorkflowDefinition`、`WorkflowNode`、`WorkflowEdge`
-- `WorkflowNodeType`（`ai-call` / `result` / `switch` / `compute` / `memory-query` / `state-write` / `template-compose` / `record-filter` / `record-merge` / `record-format`）
-- `AiCallNodeConfig`、`ResultNodeConfig`、`SwitchNodeConfig`、`ComputeNodeConfig`、`MemoryQueryNodeConfig`、`StateWriteNodeConfig`、`TemplateComposeNodeConfig`、`RecordFilterNodeConfig`、`RecordMergeNodeConfig`、`RecordFormatNodeConfig`
+- `WorkflowNodeType`（`ai-call` / `result` / `switch` / `compute` / `state-query` / `state-write` / `template-compose` / `record-filter` / `record-merge` / `record-format`）
+- `AiCallNodeConfig`、`ResultNodeConfig`、`SwitchNodeConfig`、`ComputeNodeConfig`、`StateQueryNodeConfig`、`StateWriteNodeConfig`、`TemplateComposeNodeConfig`、`RecordFilterNodeConfig`、`RecordMergeNodeConfig`、`RecordFormatNodeConfig`
 - `NodeOutputDeclaration`、`NodeOutputExtractRule`
 
 ---

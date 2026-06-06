@@ -5,7 +5,7 @@ import AiCallForm from './inspector/AiCallForm.vue'
 import ResultForm from './inspector/ResultForm.vue'
 import SwitchForm from './inspector/SwitchForm.vue'
 import ComputeForm from './inspector/ComputeForm.vue'
-import MemoryQueryForm from './inspector/MemoryQueryForm.vue'
+import StateQueryForm from './inspector/StateQueryForm.vue'
 import StateWriteForm from './inspector/StateWriteForm.vue'
 import OutputsEditor from './inspector/OutputsEditor.vue'
 import TemplateComposeForm from './inspector/TemplateComposeForm.vue'
@@ -248,8 +248,8 @@ function handleDelete() {
         :config="selectedNode.data.config"
         :on-update="handleUpdateConfig"
       />
-      <MemoryQueryForm
-        v-else-if="selectedNode.data.nodeType === 'memory-query'"
+      <StateQueryForm
+        v-else-if="selectedNode.data.nodeType === 'state-query'"
         :config="selectedNode.data.config"
         :on-update="handleUpdateConfig"
       />

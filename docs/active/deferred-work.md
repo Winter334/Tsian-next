@@ -78,30 +78,33 @@ Scope guard:
 
 ## DW-002 Rename Public Memory Query Node To State Query
 
-Status: deferred
+Status: resolved
 Source: post `state-write` planning, 2026-06-06
 
 Temporary state:
-- Public workflow writes use `state-write`.
-- Public workflow reads still use `memory-query`, currently collection-only.
+- Public workflow reads now use `state-query`.
+- Old `memory-query` workflow nodes fail loudly as unknown node types.
+
+Resolution:
+- Resolved by `workflow-state-boundary-cleanup`, 2026-06-06.
 
 Why deferred:
 - The write-side migration was kept small to avoid mixing public node-surface
   cleanup with read-side defaults, editor copy, tests, and docs.
-- `memory-query` behavior is already collection-only, so the semantic issue is
-  naming and workflow vocabulary rather than hidden AIRP retrieval behavior.
+- At the time, `memory-query` behavior was already collection-only, so the
+  semantic issue was naming and workflow vocabulary rather than hidden AIRP
+  retrieval behavior.
 
 Revisit when:
-- The next workflow-surface cleanup task starts.
+- N/A for the rename itself. Future richer state query behavior should be
+  tracked as a separate task.
 
 Suggested next task:
-- `state-query-boundary-mvp`
+- N/A
 
 Scope guard:
-- Rename public read node vocabulary and keep existing collection query
-  behavior.
-- Do not rename internal storage vocabulary or add a richer query language in
-  the same task.
+- Historical guard: this rename did not rename internal storage vocabulary or
+  add a richer query language.
 
 ## DW-003 Show Node-Carried Durable State Schema In Workflow Authoring
 
