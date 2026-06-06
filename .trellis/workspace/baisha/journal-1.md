@@ -657,3 +657,37 @@ Made memory-query collection-only across contracts, platform executor, workflow 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 20: 新增暂缓事项登记表
+
+**Date**: 2026-06-06
+**Task**: 新增暂缓事项登记表
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+新增 docs/active/deferred-work.md，用结构化条目记录刻意暂缓的后续工作，并更新 active docs README、方向文档和 handoff 入口。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9fae461` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
