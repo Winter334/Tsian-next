@@ -793,3 +793,38 @@ Made memory-query collection-only across contracts, platform executor, workflow 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: Workflow-carried state contract authoring wrap-up
+
+**Date**: 2026-06-07
+**Task**: Workflow-carried state contract authoring wrap-up
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Completed workflow-carried state contract authoring, removed retired OpenSpec materials, recorded frontend rendering as workflow/frontend convention, and archived the completed task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f4f9048` | (see git log) |
+| `74c970d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
