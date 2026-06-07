@@ -80,7 +80,7 @@ src/
 ├── workflow-host/             # H4-H7：工作流节点 executor 注册 + 内置 preset + 默认工作流 + outputs store（H8 接主链）
 │   ├── index.ts               # createWorkflowExecutionContext 工厂
 │   ├── types.ts               # PlatformWorkflowContext
-│   ├── default-workflow.ts    # H6：平台默认工作流（design.md §8）
+│   ├── default-workflow.ts    # H6：平台默认工作流
 │   ├── outputs-store.ts       # H7：套娃 shallowRef 输出仓（per-turn ref + 模块级 currentTurnOutputsRef + OutputsStoreWriter 实现）
 │   ├── executors/             # ai-call / result / switch / compute / state-query / state-write / template-compose / record-*
 │   └── builtin-presets/       # H5：retrieval / chat / maintenance PresetInfo + index Map

@@ -1,5 +1,5 @@
 /**
- * Workflow outputs store（H7 / design.md §13.7 §13.8）
+ * Workflow outputs store
  *
  * 套娃 ref 形态（D8）：
  *   - 内层（每轮）：`TurnOutputsRef = ShallowRef<WorkflowOutputsSnapshot>`，

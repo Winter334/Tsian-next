@@ -23,4 +23,5 @@ Tsian 此间是一个 AIRP 专精框架。
 
 - [docs/README.md](docs/README.md)
 - [docs/active/current-state-handoff.md](docs/active/current-state-handoff.md)
-- [docs/active/implementation-plan.md](docs/active/implementation-plan.md)
+- [docs/active/airp-workflow-platform-direction.md](docs/active/airp-workflow-platform-direction.md)
+- [docs/active/deferred-work.md](docs/active/deferred-work.md)

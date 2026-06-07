@@ -6,7 +6,7 @@ import { GREY_SALT_TOWN_WORKFLOW_PRESET_ID } from "../../workflow-presets"
 // 当前 ModInitialSavePayload 契约仍透传 now: number（系统时间）作为兜底参数，
 // 但本模组完全忽略它，使用硬编码虚构纪元 0001 年作为故事起点。
 // 故事"当前"：0001-01-15 23:00（叶临蹲在驿馆后院旧井旁的那个雨夜）。
-// 未来契约层会让模组直接声明叙事锚点（独立 OpenSpec change），届时本模组改成完整自决。
+// 未来契约层会让模组直接声明叙事锚点，届时本模组改成完整自决。
 const NARRATIVE_ANCHOR_UTC_MS = Date.UTC(1, 0, 15, 23, 0, 0) // 0001-01-15 23:00 UTC
 
 function formatNarrativeTime(utcMs: number): string {

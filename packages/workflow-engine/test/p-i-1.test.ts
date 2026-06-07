@@ -1,7 +1,7 @@
 /**
  * P-I-1：桥 API patch 路径错误一致性验收
  *
- * 设计目标（design.md HC-14）：
+ * 设计目标：
  *   桥 API 写运行时（applyPatch / updateGlobals / appendUserMessage / appendAssistantMessage 中
  *   "patch 类"两条路径）必须共用同一份 patch 应用器代码（`applyMaintenancePatch`）。
  *   同一非法 patch 通过两条 bridge 路径触发时，错误 (cause)

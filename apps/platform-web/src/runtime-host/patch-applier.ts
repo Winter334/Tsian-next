@@ -18,7 +18,7 @@ import {
 import type { LocalRuntimeEngine } from "./engine"
 
 /**
- * 维护 AI patch 应用器（design.md §12.1 / §13.1 / §13.3 / §13.9）。
+ * 维护 AI patch 应用器。
  *
  * 应用顺序：currentTime → globals → archives → events
  * fail loud：任一子项失败立即 throw，不 catch、不回滚已 apply 的部分。
@@ -32,7 +32,7 @@ export interface ApplyPatchInput {
   patch: MaintenancePatchDocument
   runtimeEngine: LocalRuntimeEngine
   saveId: string
-  /** §13.9：传值时创建 checkpoint；undefined 则不创建。 */
+  /** 传值时创建 checkpoint；undefined 则不创建。 */
   pushCheckpointReason?: "after-turn" | "manual"
   /** checkpoint label，未传时默认 `回合 ${turn}`。 */
   checkpointLabel?: string

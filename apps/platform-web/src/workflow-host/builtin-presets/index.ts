@@ -1,5 +1,5 @@
 /**
- * 平台默认 prompt preset 种子数据（H5 / design.md §8）。
+ * 平台默认 prompt preset 种子数据。
  *
  * 默认工作流通过 3 个固定资源 id 引用：
  *   - builtin.retrieval   → retrieval.preset.json

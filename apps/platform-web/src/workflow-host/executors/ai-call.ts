@@ -1,5 +1,5 @@
 /**
- * ai-call 节点 executor（design.md §3 / §4 / §13.5）
+ * ai-call 节点 executor
  *
  * 流程：
  *   1. 从 context.presets 取 PresetInfo（缺失 → fail loud throw）
@@ -125,7 +125,7 @@ function toAiChatMessages(
   return result
 }
 
-// ── 输出端口提取（design.md §4） ─────────────────────────────────────────────
+// ── 输出端口提取 ────────────────────────────────────────────────────────────
 
 function extractByTag(text: string, tag: string): string {
   // 贪婪到最近的 </tag>：用非贪婪 .*? + 第一个匹配
@@ -207,7 +207,7 @@ export const aiCallExecutor: NodeExecutor = {
     const config = readAiCallConfig(node.config)
     const ctx = castPlatformContext(context)
 
-    // 宏合并：平台 macros 在前，inputs 同名覆盖（design.md §13.5 边注入覆盖顺序）
+    // 宏合并：平台 macros 在前，inputs 同名覆盖。
     const macros: Record<string, string> = {
       ...ctx.macros,
       ...inputsToMacros(inputs),

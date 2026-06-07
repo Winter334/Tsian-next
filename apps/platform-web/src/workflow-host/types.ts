@@ -6,7 +6,7 @@
  *
  * 字段使用宽松类型（unknown / Record）的原因：
  *   - PresetInfo / WorldBook 的强类型来自 @tsian/prompt-engine；本文件不引入硬依赖以免
- *     把 prompt-engine 的类型披露到 contracts 链路（design.md §1.2 / §7 一致策略）。
+ *     把 prompt-engine 的类型披露到 contracts 链路。
  *   - executor 在自己内部 cast 后再消费，便于按节点单独演进。
  */
 
@@ -42,7 +42,7 @@ export type WorkflowWorldBookMap = Readonly<Record<string, unknown>>
  *
  * - executors：内置 NodeExecutor 集合（由 createWorkflowExecutionContext 注入）
  * - runtimeEngine / saveId：state-write 等副作用 executor 使用
- * - macros：平台 + 模组 customMacros 合并后的最终宏 KV（design.md §3）
+ * - macros：平台 + 模组 customMacros 合并后的最终宏 KV
  * - presets：从平台资源库加载的 prompt preset，按 presetId 索引
  * - worldBooks：从平台资源库加载的 world book，按 worldBookKeys 过滤
  * - history：本轮起点的会话历史（platform-host 在 sendMessage 入口准备好）

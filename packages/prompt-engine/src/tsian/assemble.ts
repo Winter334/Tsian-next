@@ -13,7 +13,7 @@
  * - 不重写 convert/macro/regex/channel pipeline（buildPrompt 内部已编排）
  * - 不引入新依赖
  *
- * 详见 openspec/changes/prompt-preset-and-workflow-engine/design.md §1.2
+ * 当前维护来源：.trellis/spec/prompt-engine/backend/ 与本文件实现。
  */
 
 import type {
@@ -31,7 +31,7 @@ import { buildPrompt } from '../core/modules/build/buildPrompt';
  *
  * 与 fast-tavern BuildPromptParams 的关系：本接口是面向 Tsian 平台/模组的最小子集，
  * 字段命名与默认值由 Tsian 决定，不直接暴露 fast-tavern 的 `globals` / `outputFormat` / `systemRolePolicy`
- * 等概念。映射规则见 design.md §1.2。
+ * 等概念。映射规则由本 wrapper 保持收口。
  */
 export interface AssembleInput {
   /** 预设（PresetInfo）：来自模组 manifest.presets[key] 或平台 builtin-presets/*.json */

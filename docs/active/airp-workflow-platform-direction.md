@@ -51,11 +51,37 @@ Tsian 的核心定位是：
 
 这句话比“所有东西都变成节点”更重要。工作流是系统组织方式，但不是让任意节点接管所有底层风险。
 
+### 3.1 前端渲染边界
+
+前端渲染不应被平台强制成一套通用 adapter 层。
+
+工作流负责产出和维护数据：
+
+- `result` 节点、调试输出和本轮 workflow outputs 可以作为临时结果。
+- `state-query` / `state-write` 相关的 namespace、collection、schema 和 records 可以作为持久状态。
+
+前端包自行决定如何解释这些数据：
+
+- 可以读取某些 result name，也可以完全忽略其它 result。
+- 可以读取某些 state collection，也可以只把它们作为调试信息。
+- 可以把某些字段解释为地图、关系图、事件列表、角色档案、关键词面板或其它 UI 语义。
+- 可以决定哪些状态只读展示，哪些状态允许通过平台正式写入口修改。
+
+平台最多提供“可发现性”和“协作辅助”：
+
+- 列出当前 workflow 暴露了哪些 result。
+- 列出当前 workflow 读写了哪些 namespace / collection。
+- 展示哪些 collection 有 schema、字段、关系、索引，哪些只是 storage-only。
+- 展示哪些节点参与读写，以及示例记录或调试来源。
+- 帮助 workflow 作者和前端作者在不是同一个人时对齐数据约定。
+
+平台不应把“某个 collection 必须渲染成某种 UI”作为通用规则。renderer 语义优先由 workflow preset、前端包、资源说明或未来系统包的可选约定共同决定。
+
 系统复用的优先单位不应是孤立 schema，而应是未来的 **workflow block / subworkflow / system package**：
 
 - block/subworkflow 打包一组节点、内部执行顺序和输入输出端口。
 - block/subworkflow 随身携带或暴露它形成的 state contract。
-- block/subworkflow 可以声明所需 prompt preset、world book、静态内容或 renderer 约定。
+- block/subworkflow 可以声明所需 prompt preset、world book、静态内容或可选前端渲染约定。
 - schema resource 若出现，应优先作为系统包或工作流契约的派生/共享材料，而不是作者配置系统的前置入口。
 
 判断标准：
@@ -268,16 +294,15 @@ PRD 中。
 
 ## 12. 当前优先方向
 
-短期优先级不是立刻实现所有可能系统，而是清理方向漂移，让基础设施朝可配置系统平台收敛。
+短期优先级不是继续展开所有可能系统，而是停下来打磨已经落地的内容，让当前 workflow-as-system 原型更稳定、可理解、可编辑。
 
 当前更符合方向的工作包括：
 
-- 收紧节点类型集，移除或隐藏不再适合作为通用节点的兼容节点。
-- 保持 `apply-patch` 退场后的边界：workflow preset 使用 `state-write`
-  等泛型节点，桥/API patch 只作为平台兼容能力。
-- 保持 `state-query` collection-only，避免重新引入 `event-archive` 这类高层历史分支。
-- 让 workflow-carried state contract、workflow preset / block 和 renderer 的职责更清晰。
-- 继续把默认 AIRP 事件/档案系统作为参考 preset，而不是唯一架构。
-- 为未来 block/subgraph、system package、renderer adapters 留出清晰位置；schema resource 若出现，应作为系统包或工作流契约的辅助/派生产物，而不是下一阶段的默认主线。
+- 打磨当前 workflow editor、节点表单、状态契约抽屉、导入导出和调试体验。
+- 打磨默认 AIRP workflow preset，让它作为参考系统更易读、易改、易验证。
+- 保持 `apply-patch` / `memory-query` / `memory-write` 退场后的边界，不重新引入旧兼容节点语义。
+- 保持 `state-query` collection-only、`state-write` schema-aware，并继续让写入、checkpoint、回滚和校验由平台控制。
+- 提供更好的数据发现视图，帮助前端作者理解 workflow 暴露的 result 和持久 state collection，但不强制渲染方式。
+- 暂缓 block/subgraph、system package、schema resource 和通用 renderer adapter 层；若未来出现，应围绕具体系统需求单独设计。
 
 这条路允许“一切皆有可能”，但不是“一切都无约束”。Tsian 的开放性应来自清晰的工作流、状态契约、资源和能力边界，而不是来自任意硬编码和任意脚本逃生口。

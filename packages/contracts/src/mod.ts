@@ -19,7 +19,7 @@ export interface ModManifest {
   workflowPresetId?: string
   /**
    * @deprecated 改用 workflowPresetId 引用平台资源库工作流预设；旧字段仅为兼容历史模组保留。
-   * 模组自定义工作流；缺省时平台使用默认工作流（design.md §8）。
+   * 模组自定义工作流；缺省时平台使用默认工作流。
    */
   workflow?: WorkflowDefinition
   /**
@@ -29,7 +29,7 @@ export interface ModManifest {
    */
   presets?: Record<string, PromptPreset>
   /**
-   * 模组扩展占位符；与平台内置宏 / edge 注入的覆盖顺序见 design.md §13.5。
+   * 模组扩展占位符；与平台内置宏 / edge 注入的覆盖顺序由 platform-host 维护。
    */
   customMacros?: Record<string, string>
   /**

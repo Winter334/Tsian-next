@@ -1,7 +1,7 @@
 /**
  * 工作流 DAG 调度器
  *
- * 设计来源：design.md §5（重试机制）+ §13.4 校验 + §13.5 错误冒泡 + §13.7 输出生命周期。
+ * 当前维护来源：.trellis/spec/workflow-engine/backend/。
  *
  * H3 范围：
  *   - 拓扑调度（Kahn）+ 并发执行无依赖节点
@@ -12,7 +12,7 @@
  * H3 不做：
  *   - 具体节点实现（H4）
  *   - outputs-store shallowRef（H7）
- *   - token 级流式（design §13.8）
+ *   - token 级流式
  *
  * 节点 executor 通过 context.executors 注入（依赖反转）。
  */

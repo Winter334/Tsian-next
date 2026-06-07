@@ -1,11 +1,11 @@
 /**
  * 工作流引擎跨包类型契约
  *
- * 设计来源：openspec/changes/prompt-preset-and-workflow-engine/design.md §4 + §7
+ * 当前维护来源：.trellis/spec/contracts/*、.trellis/spec/workflow-engine/* 和 active docs。
  *
  * 形态选择：契约层只描述"形状骨架"，节点 config 用 Record<string, unknown>。
  * 节点实现层（apps/platform-web/src/workflow-host/*）负责把 config 解析成各 NodeConfig 并校验字段。
- * 加载期校验（design.md §13.4）由 workflow-engine 在执行前统一执行，不依赖 TS 编译期收紧。
+ * 加载期校验由 workflow-engine 在执行前统一执行，不依赖 TS 编译期收紧。
  */
 
 import type { PromptPreset, WorldBook } from "./preset"
@@ -13,7 +13,7 @@ import type { JsonValue } from "./runtime"
 import type { MemorySchemaDefinition } from "./memory"
 
 // ============================================================================
-// 节点输出提取规则（design.md §4）
+// 节点输出提取规则
 // ============================================================================
 
 export type NodeOutputExtractRule =
@@ -54,7 +54,7 @@ export interface NodeOutputDeclaration extends NodePortMetadata {
 }
 
 // ============================================================================
-// 节点类型与节点骨架（design.md §7）
+// 节点类型与节点骨架
 // ============================================================================
 
 export type WorkflowNodeType =
@@ -113,7 +113,7 @@ export interface ResultNodeConfig {
 }
 
 export interface SwitchNodeConfig {
-  /** when = 简单等值字符串匹配（原型期，design.md §13.2） */
+  /** when = 简单等值字符串匹配（原型期） */
   cases: Array<{ when: string; outputName: string }>
   defaultOutputName?: string
 }
@@ -210,18 +210,18 @@ export interface RecordFormatNodeConfig {
 }
 
 // ============================================================================
-// 边（design.md §7）
+// 边
 // ============================================================================
 
 export interface WorkflowEdge {
   from: { nodeId: string; outputName?: string }
   to: { nodeId: string; varName: string }
-  /** 原型期：简单字符串等值匹配上游端口值（design.md §13.2） */
+  /** 原型期：简单字符串等值匹配上游端口值 */
   condition?: string
 }
 
 // ============================================================================
-// 顶层定义（design.md §7）
+// 顶层定义
 // ============================================================================
 
 export interface WorkflowDefinition {

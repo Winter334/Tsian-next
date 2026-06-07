@@ -1,7 +1,7 @@
 /**
  * switch 节点 executor
  *
- * 职责（design.md §13.2）：
+ * 职责：
  *   - 入边端口名固定 `value`
  *   - 按 `String(inputs.value) === case.when` 等值匹配（原型期不做字段路径访问 / 复杂表达式）
  *   - 命中：outputs[case.outputName] = inputs.value

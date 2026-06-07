@@ -1,7 +1,7 @@
 /**
  * compute 节点 executor（HC-1 / P-H-7 / P-H-8 沙箱守卫）
  *
- * 安全约束（design.md §10）：
+ * 安全约束：
  *   - 绝不透传 WorkflowExecutionContext / runtimeEngine / signal 给 script
  *   - 仅注入两个白名单变量：inputs（浅拷贝）/ macros（浅拷贝）
  *   - 用 new Function 构造 async IIFE，"use strict" 预防隐式全局

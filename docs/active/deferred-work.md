@@ -69,14 +69,14 @@ Why deferred:
 
 Revisit when:
 - N/A for the storage vocabulary rename itself. Future schema resources or
-  renderer adapters should be tracked as separate tasks.
+  frontend rendering bindings should be tracked as separate tasks.
 
 Suggested next task:
 - N/A
 
 Scope guard:
-- Historical guard: this task did not add schema resource UI, renderer
-  adapters, query DSL changes, or old `memoryRecords` compatibility reads.
+- Historical guard: this task did not add schema resource UI, generic renderer
+  binding layers, query DSL changes, or old `memoryRecords` compatibility reads.
 
 ## DW-002 Rename Public Memory Query Node To State Query
 
@@ -153,7 +153,7 @@ Temporary state:
 Why deferred:
 - In the current direction, a schema by itself only reuses a data shape. It does
   not reuse the configured query, filtering, prompt composition, maintenance,
-  writeback, debug, or renderer-facing behavior that makes a system runnable.
+  writeback, debug, or frontend-facing behavior that makes a system runnable.
 - The preferred reuse unit is a future workflow block / subworkflow / system
   package that carries its state contract along with nodes, ports, and required
   resources.
@@ -166,7 +166,7 @@ Revisit when:
 - Workflow-carried state contracts are visible in the editor.
 - A block/subworkflow/system package MVP exists or is being designed.
 - Multiple packaged systems need to expose or share a stable state contract for
-  renderer adapters, package dependencies, or compatibility checks.
+  frontend discovery, package dependencies, or compatibility checks.
 
 Suggested next task:
 - `workflow-block-state-contract-mvp`
@@ -176,36 +176,43 @@ Scope guard:
 - If schema resources are introduced later, treat them as extracted/shared
   artifacts of workflow-carried contracts or system packages, not as the main
   reusable system unit.
-- Do not build renderer adapters or a full visual schema editor in the same
+- Do not build a generic renderer binding layer or a full visual schema editor in the same
   task.
 
-## DW-005 Add Renderer Adapters For Schema/State Models
+## DW-005 Generic Renderer Adapter Layer
 
-Status: deferred
-Source: workflow-as-system direction document
+Status: resolved by direction decision
+Source: workflow-as-system direction document; renderer boundary discussion, 2026-06-07
 
-Temporary state:
+Current decision:
 - Frontends can read platform state and resources through existing bridge/query
   paths.
-- There is no generic adapter layer that maps a state schema to a renderer such
-  as a map, relationship graph, keyword panel, or state inspector.
+- Workflow outputs and durable state collections are conventions between the
+  workflow preset and the frontend package.
+- Platform should not introduce a mandatory generic adapter layer that maps
+  state schema to renderer semantics such as maps, relationship graphs, keyword
+  panels, or state inspectors.
 
-Why deferred:
-- Renderer adapters depend on clearer workflow-carried state contract and
-  system-package boundaries.
-- Building renderers before the state model boundary stabilizes would likely
-  hard-code the current AIRP event/archive system again.
+Resolution:
+- Reframed from future platform work into an authoring/discovery boundary.
+- Platform may provide discovery views listing workflow result names, state
+  namespaces/collections, schema coverage, participating nodes, sample records,
+  and debug provenance.
+- Frontend packages decide which outputs/collections to render, how to interpret
+  fields, and which state is editable through platform write APIs.
 
 Revisit when:
-- Workflow-carried state contracts or system packages are stable enough for
-  frontends to discover them.
-- A concrete non-event/archive system, such as map graph state, needs a
-  renderer.
+- A concrete frontend package needs a reusable optional binding description for
+  its own workflow contract.
+- Multiple frontends independently duplicate the same non-AIRP rendering
+  convention and the duplication becomes painful.
 
 Suggested next task:
-- `state-renderer-adapters-exploration`
+- N/A. Prefer polishing the existing workflow editor and state-contract
+  discovery surfaces before opening new platform-layer work.
 
 Scope guard:
-- Start with one concrete renderer scenario and a minimal adapter contract.
-- Do not attempt a complete UI framework or marketplace packaging model in the
-  same task.
+- Do not make platform responsible for deciding how a collection must render.
+- Do not add a generic adapter registry as a default next step.
+- Keep renderer interpretation optional and owned by frontend packages or
+  future system/package-level conventions.

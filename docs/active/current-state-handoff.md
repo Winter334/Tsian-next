@@ -19,7 +19,7 @@
 
 > 2026-06-05 更新：本 `docs/active` 目录中的部分阶段性路线早于
 > Trellis 工作流/记忆迁移任务。当前 workflow 与 AIRP generic state records 的
-> 真源以 `.trellis/spec/`、`openspec/specs/` 和代码为准；本文保留早期
+> 真源以 `.trellis/spec/`、当前 active docs 和代码为准；本文保留早期
 > 状态说明，同时在下方记录最新增量，避免后续继续按旧 patch-only
 > 主链理解系统。
 
@@ -71,10 +71,12 @@
 - 当前 DebugView 的维护写入面板展示 maintenance / state-write 节点结果，
   不再把 legacy patch 视为唯一维护结果。
 - 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括未来
-  block/subworkflow/system package 边界，以及 renderer adapters。workflow
-  editor 已具备 workflow-carried state contract 的基础可见性和 MVP 编辑
-  能力；schema resources 不再作为下一步默认复用主线，若未来出现，应
-  作为系统包或工作流契约的派生/共享材料。
+  block/subworkflow/system package 边界。workflow editor 已具备
+  workflow-carried state contract 的基础可见性和 MVP 编辑能力；schema
+  resources 不再作为下一步默认复用主线，若未来出现，应作为系统包或
+  工作流契约的派生/共享材料。通用 renderer adapter 层不再作为默认
+  后续平台方向；前端渲染优先由 workflow preset 与前端包自行约定，
+  平台只提供 result / state collection / schema coverage 的发现和调试视图。
 
 当前新的边界已经确认，其中仍未继续展开的部分：
 
@@ -385,15 +387,14 @@
 
 当前最适合继续的方向是：
 
-`围绕 workflow-as-system 方向继续清理工作流节点语义、兼容边界和默认 AIRP 系统的配置化边界。`
+`暂停继续展开大方向，先打磨已落地的 workflow editor、默认 AIRP workflow、状态契约可见性、调试体验和文档一致性。`
 
 优先候选：
 
-1. 收紧或退役不再适合作为通用 workflow surface 的兼容节点。
-2. 继续把默认 AIRP 事件/档案系统表达为 workflow preset 携带的 state
-   contract + renderer，而不是平台通用节点语义。
-3. 为未来 workflow blocks/subgraphs、system packages、renderer adapters
-   留出清晰位置；不要把孤立 schema resource 误当成主要系统复用单位。
+1. 打磨 workflow editor 的节点表单、状态契约抽屉、导入导出和默认工作流可读性。
+2. 打磨默认 AIRP 事件/档案系统作为参考 preset 的运行、调试和文档说明。
+3. 提供更好的 result / state collection / schema coverage 发现视图，帮助
+   workflow 作者和前端作者对齐数据约定，但不强制前端如何渲染。
 
 已知但刻意暂缓的任务不要只留在聊天上下文里；登记到
 `./deferred-work.md`，并在真正实现时按条目里的 scope guard 单独开

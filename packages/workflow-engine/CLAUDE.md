@@ -10,7 +10,7 @@
 
 包名：`@tsian/workflow-engine`，依赖 `@tsian/contracts`，无运行时第三方依赖。
 
-设计来源：`openspec/changes/prompt-preset-and-workflow-engine/design.md` §5（重试机制）+ §13.4（加载期校验）+ §13.5（错误冒泡）+ §13.7（输出生命周期约束）。
+当前维护来源：`.trellis/spec/workflow-engine/`、`packages/contracts/src/workflow.ts` 与 active docs。旧规约材料已退役，不再作为本包实现依据。
 
 ---
 
