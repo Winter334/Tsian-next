@@ -828,3 +828,38 @@ Completed workflow-carried state contract authoring, removed retired OpenSpec ma
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: 优化工作流编辑器易用性
+
+**Date**: 2026-06-07
+**Task**: 优化工作流编辑器易用性
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+完成工作流编辑器中文化、可见添加节点入口、保存链路、编辑器层诊断、边输入槽选择与窄屏工具栏验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8b7dc35` | (see git log) |
+| `5c02aff` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
