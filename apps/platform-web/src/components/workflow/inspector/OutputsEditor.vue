@@ -28,9 +28,9 @@
           class="w-20 border border-neon-deep/40 bg-void px-1 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
           @change="updateExtractType(idx, ($event.target as HTMLSelectElement).value as ExtractType)"
         >
-          <option value="raw">raw</option>
-          <option value="tag">tag</option>
-          <option value="regex">regex</option>
+          <option value="raw">原文</option>
+          <option value="tag">标签</option>
+          <option value="regex">正则</option>
         </select>
         <button
           class="px-1 font-mono text-xs text-danger hover:text-danger/80"
@@ -44,7 +44,7 @@
         <input
           :value="output.label ?? ''"
           class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-          placeholder="label"
+          placeholder="显示名"
           @change="updateOutputMetadata(idx, { label: ($event.target as HTMLInputElement).value })"
         />
         <select
@@ -52,13 +52,13 @@
           class="border border-neon-deep/30 bg-void px-1 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
           @change="updateValueType(idx, ($event.target as HTMLSelectElement).value as PortValueTypeOption)"
         >
-          <option value="">type</option>
-          <option value="string">string</option>
-          <option value="number">number</option>
-          <option value="boolean">boolean</option>
-          <option value="object">object</option>
-          <option value="array">array</option>
-          <option value="unknown">unknown</option>
+          <option value="">值类型</option>
+          <option value="string">文本</option>
+          <option value="number">数字</option>
+          <option value="boolean">开关</option>
+          <option value="object">对象</option>
+          <option value="array">数组</option>
+          <option value="unknown">未知</option>
         </select>
       </div>
 
@@ -66,13 +66,13 @@
         <input
           :value="output.semanticSlot ?? ''"
           class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-          placeholder="semantic slot"
+          placeholder="语义槽"
           @change="updateOutputMetadata(idx, { semanticSlot: ($event.target as HTMLInputElement).value })"
         />
         <input
           :value="output.description ?? ''"
           class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-          placeholder="description"
+          placeholder="说明"
           @change="updateOutputMetadata(idx, { description: ($event.target as HTMLInputElement).value })"
         />
       </div>
@@ -83,19 +83,19 @@
           class="border border-neon-deep/30 bg-void px-1 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
           @change="updateParse(idx, ($event.target as HTMLSelectElement).value as ParseValue)"
         >
-          <option value="">text</option>
-          <option value="json">json</option>
-          <option value="number">number</option>
+          <option value="">文本</option>
+          <option value="json">JSON</option>
+          <option value="number">数字</option>
         </select>
         <input
           v-if="getExtract(output).type === 'tag'"
           :value="getTagExtract(output).tag"
           class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-          placeholder="tag"
+          placeholder="标签名"
           @change="updateTag(idx, ($event.target as HTMLInputElement).value)"
         />
         <span v-else class="border border-neon-deep/10 bg-void px-2 py-1 font-mono text-[10px] text-text-dim">
-          {{ getExtract(output).type }}
+          {{ extractTypeLabel(getExtract(output).type) }}
         </span>
       </div>
 
@@ -103,14 +103,14 @@
         <input
           :value="getRegexExtract(output).pattern"
           class="w-full border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-          placeholder="regex pattern"
+          placeholder="正则表达式"
           @change="updateRegex(idx, { pattern: ($event.target as HTMLInputElement).value })"
         />
         <div class="grid grid-cols-2 gap-1">
           <input
             :value="getRegexExtract(output).flags ?? ''"
             class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-            placeholder="flags"
+            placeholder="标记"
             @change="updateRegex(idx, { flags: ($event.target as HTMLInputElement).value })"
           />
           <input
@@ -118,7 +118,7 @@
             min="0"
             :value="getRegexExtract(output).group ?? ''"
             class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-            placeholder="group"
+            placeholder="捕获组"
             @change="updateRegexGroup(idx, ($event.target as HTMLInputElement).value)"
           />
         </div>
@@ -165,6 +165,12 @@ function getTagExtract(output: NodeOutputDeclaration): TagExtractRule {
 function getRegexExtract(output: NodeOutputDeclaration): RegexExtractRule {
   const extract = getExtract(output)
   return extract.type === 'regex' ? extract : { type: 'regex', pattern: '' }
+}
+
+function extractTypeLabel(type: ExtractType): string {
+  if (type === 'tag') return '标签'
+  if (type === 'regex') return '正则'
+  return '原文'
 }
 
 function updateOutput(idx: number, next: NodeOutputDeclaration) {

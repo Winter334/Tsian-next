@@ -73,9 +73,9 @@ function portLabel(port: WorkflowPortDisplay): string {
 function portMeta(port: WorkflowPortDisplay): string {
   return [
     port.name,
-    port.valueType ? `type:${port.valueType}` : '',
-    port.semanticSlot ? `slot:${port.semanticSlot}` : '',
-    port.required ? 'required' : '',
+    port.valueType ? `类型:${port.valueType}` : '',
+    port.semanticSlot ? `语义槽:${port.semanticSlot}` : '',
+    port.required ? '必需' : '',
   ].filter(Boolean).join(' · ')
 }
 
@@ -188,12 +188,12 @@ function handleDelete() {
 
       <div v-if="inputSlots.length || outputSlots.length">
         <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-          Schema Slots
+          端口信息
         </label>
         <div class="mt-2 grid gap-2">
           <div v-if="inputSlots.length" class="border border-neon-deep/20 bg-void/40 p-2">
             <p class="font-mono text-[9px] uppercase tracking-wider text-neon-muted">
-              Inputs
+              输入
             </p>
             <div
               v-for="slot in inputSlots"
@@ -210,7 +210,7 @@ function handleDelete() {
           </div>
           <div v-if="outputSlots.length" class="border border-neon-deep/20 bg-void/40 p-2">
             <p class="font-mono text-[9px] uppercase tracking-wider text-neon-muted">
-              Outputs
+              输出
             </p>
             <div
               v-for="slot in outputSlots"

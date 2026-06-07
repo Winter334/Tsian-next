@@ -9,6 +9,7 @@
       :has-selection="hasSelection"
       :save-status="props.saveStatus"
       :source-label="props.sourceLabel"
+      @add-node="openNodeMenuFromToolbar"
       @auto-layout="autoLayout"
       @delete-selected="removeSelectedElement"
       @export-json="exportToJson"
@@ -23,7 +24,7 @@
       class="flex items-center gap-2 border-b border-neon-deep/40 bg-panel px-3 py-1.5"
     >
       <span class="mr-2 font-mono text-[10px] uppercase tracking-[0.2em] text-neon-muted">
-        SYS // PREVIEW
+        工作流预览
       </span>
       <span
         v-if="props.sourceLabel"
@@ -85,7 +86,7 @@
       >
         <template v-if="contextMenu.kind === 'pane'">
           <p class="border-b border-neon-muted/30 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-neon-muted">
-            ADD NODE
+            添加节点
           </p>
           <div class="max-h-[420px] overflow-y-auto p-1">
             <button
@@ -106,7 +107,7 @@
 
         <template v-else-if="contextMenu.kind === 'node'">
           <p class="border-b border-neon-muted/30 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-neon-muted">
-            NODE
+            节点
           </p>
           <button
             type="button"
@@ -126,7 +127,7 @@
 
         <template v-else>
           <p class="border-b border-neon-muted/30 px-3 py-2 font-mono text-[10px] uppercase tracking-[0.25em] text-neon-muted">
-            EDGE
+            边
           </p>
           <button
             type="button"
@@ -208,13 +209,13 @@
             <div v-else-if="drawerTab === 'summary'" class="grid gap-3 font-mono text-xs text-text-dim">
               <div class="grid gap-1 sm:grid-cols-3">
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  NODES // <span class="text-text-main">{{ nodes.length }}</span>
+                  节点 // <span class="text-text-main">{{ nodes.length }}</span>
                 </p>
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  EDGES // <span class="text-text-main">{{ edges.length }}</span>
+                  边 // <span class="text-text-main">{{ edges.length }}</span>
                 </p>
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  SOURCE // <span class="text-text-main">{{ props.sourceLabel }}</span>
+                  来源 // <span class="text-text-main">{{ props.sourceLabel }}</span>
                 </p>
               </div>
               <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -231,16 +232,16 @@
             <div v-else class="grid gap-3 font-mono text-xs text-text-dim">
               <div class="grid gap-2 sm:grid-cols-4">
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  COLLECTIONS // <span class="text-text-main">{{ stateContractReport.collections.length }}</span>
+                  集合 // <span class="text-text-main">{{ stateContractReport.collections.length }}</span>
                 </p>
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  COVERED // <span class="text-[#00FF88]">{{ stateContractCoveredCount }}</span>
+                  有契约 // <span class="text-[#00FF88]">{{ stateContractCoveredCount }}</span>
                 </p>
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  STORAGE ONLY // <span class="text-warning">{{ stateContractStorageOnlyCount }}</span>
+                  仅存储 // <span class="text-warning">{{ stateContractStorageOnlyCount }}</span>
                 </p>
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  ISSUES // <span :class="stateContractReport.issues.length ? 'text-danger' : 'text-[#00FF88]'">{{ stateContractReport.issues.length }}</span>
+                  问题 // <span :class="stateContractReport.issues.length ? 'text-danger' : 'text-[#00FF88]'">{{ stateContractReport.issues.length }}</span>
                 </p>
               </div>
 
@@ -261,14 +262,14 @@
                 v-if="stateContractReport.dynamicWriteNodeIds.length"
                 class="border border-neon-muted/30 bg-void/50 px-3 py-2 text-text-dim"
               >
-                RUNTIME-TARGET WRITES // {{ stateContractReport.dynamicWriteNodeIds.join(', ') }}
+                运行时决定目标的写入节点 // {{ stateContractReport.dynamicWriteNodeIds.join(', ') }}
               </p>
 
               <p
                 v-if="stateContractReport.collections.length === 0"
                 class="border border-neon-muted/30 bg-void/50 px-3 py-2"
               >
-                未发现 state-query / state-write 集合契约。
+                未发现状态查询或状态写入集合契约。
               </p>
 
               <div class="grid gap-2 lg:grid-cols-2">
@@ -285,19 +286,19 @@
                         ? 'border-warning/50 text-warning'
                         : 'border-[#00FF88]/50 text-[#00FF88]'"
                     >
-                      {{ collection.storageOnly ? 'storage-only' : 'schema-covered' }}
+                      {{ collection.storageOnly ? '仅存储' : '有契约' }}
                     </span>
                   </div>
                   <p v-if="collection.schemaId" class="text-[10px] text-text-dim">
-                    SCHEMA // {{ collection.schemaId }}@{{ collection.schemaVersion ?? '?' }}
+                    契约 // {{ collection.schemaId }}@{{ collection.schemaVersion ?? '?' }}
                   </p>
                   <div class="grid gap-1 text-[10px]">
-                    <p>READ // <span class="text-text-main">{{ formatNodeList(collection.readNodeIds) }}</span></p>
-                    <p>WRITE // <span class="text-text-main">{{ formatNodeList(collection.writeNodeIds) }}</span></p>
-                    <p>SCHEMA // <span class="text-text-main">{{ formatNodeList(collection.schemaNodeIds) }}</span></p>
+                    <p>读取 // <span class="text-text-main">{{ formatNodeList(collection.readNodeIds) }}</span></p>
+                    <p>写入 // <span class="text-text-main">{{ formatNodeList(collection.writeNodeIds) }}</span></p>
+                    <p>契约 // <span class="text-text-main">{{ formatNodeList(collection.schemaNodeIds) }}</span></p>
                   </div>
                   <p v-if="collection.schemaCollection" class="text-[10px] text-text-dim">
-                    FIELDS // {{ Object.keys(collection.schemaCollection.fields ?? {}).join(', ') || 'none' }}
+                    字段 // {{ Object.keys(collection.schemaCollection.fields ?? {}).join(', ') || '无' }}
                   </p>
                 </article>
               </div>
@@ -327,6 +328,7 @@
       v-if="!props.readonly"
       :open="!!edgeEditorEdgeId"
       :edge="edgeEditorEdge"
+      :nodes="nodes"
       :on-update="updateEdgeData"
       :on-delete="deleteEdge"
       :on-close="closeEdgeEditor"
@@ -353,6 +355,7 @@ import EditorToolbar from './EditorToolbar.vue'
 import WorkflowNodeEditorDialog from './WorkflowNodeEditorDialog.vue'
 import WorkflowEdgeEditorDialog from './WorkflowEdgeEditorDialog.vue'
 import { analyzeWorkflowStateContract } from './state-contract'
+import { collectWorkflowEditorDiagnostics } from './workflow-diagnostics'
 
 // 引入 Vue Flow 默认样式
 import '@vue-flow/core/dist/style.css'
@@ -568,7 +571,24 @@ function translateValidationError(message: string): string {
   return message
 }
 
-watch([nodes, edges], () => {
+function runValidation(def: WorkflowDefinition): void {
+  const messages: string[] = []
+  try {
+    validateWorkflowDefinition(def)
+  } catch (e: any) {
+    messages.push(translateValidationError(e.message ?? String(e)))
+  }
+
+  messages.push(
+    ...collectWorkflowEditorDiagnostics(def, {
+      promptPresetOptions: props.promptPresetOptions,
+    }),
+  )
+
+  validationErrors.value = Array.from(new Set(messages))
+}
+
+watch([nodes, edges, () => props.promptPresetOptions], () => {
   if (selectedEdgeId.value && !edges.value.some((edge) => edge.id === selectedEdgeId.value)) {
     selectedEdgeId.value = null
   }
@@ -595,12 +615,7 @@ watch([nodes, edges], () => {
 
   if (validateTimer) clearTimeout(validateTimer)
   validateTimer = setTimeout(() => {
-    try {
-      validateWorkflowDefinition(def)
-      validationErrors.value = []
-    } catch (e: any) {
-      validationErrors.value = [translateValidationError(e.message ?? String(e))]
-    }
+    runValidation(def)
   }, 300)
 }, { deep: true })
 
@@ -748,6 +763,26 @@ function onPaneContextMenu(event: MouseEvent) {
     kind: 'pane',
     ...point,
     flowPosition: screenToFlowCoordinate({ x: event.clientX, y: event.clientY }),
+  }
+}
+
+function openNodeMenuFromToolbar() {
+  if (props.readonly) return
+  const bounds = canvasWrapRef.value?.getBoundingClientRect()
+  const screenPoint = bounds
+    ? {
+      x: bounds.left + Math.max(80, bounds.width / 2),
+      y: bounds.top + Math.max(80, bounds.height / 2),
+    }
+    : {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2,
+    }
+  contextMenu.value = {
+    kind: 'pane',
+    x: 8,
+    y: 8,
+    flowPosition: screenToFlowCoordinate(screenPoint),
   }
 }
 

@@ -8,7 +8,7 @@
         :value="(config.script as string) ?? ''"
         rows="8"
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon resize-y"
-        placeholder="// JavaScript code..."
+        placeholder="// 在这里编写 JavaScript 脚本"
         @change="props.onUpdate({ ...props.config, script: ($event.target as HTMLTextAreaElement).value })"
       />
     </div>

@@ -2,7 +2,7 @@
   <div class="space-y-3">
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Operations Var
+        操作输入变量
       </label>
       <input
         :value="config.operationsVarName ?? 'operations'"
@@ -13,7 +13,7 @@
     </div>
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Default Namespace
+        默认命名空间
       </label>
       <input
         :value="config.namespace ?? ''"
@@ -24,7 +24,7 @@
     </div>
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Default Collection
+        默认集合
       </label>
       <input
         :value="config.collection ?? ''"
@@ -35,16 +35,16 @@
     </div>
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Checkpoint
+        检查点策略
       </label>
       <select
         :value="config.pushCheckpointReason ?? 'none'"
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
         @change="updateOptional('pushCheckpointReason', ($event.target as HTMLSelectElement).value)"
       >
-        <option value="none">none</option>
-        <option value="manual">manual</option>
-        <option value="after-turn">after-turn</option>
+        <option value="none">不创建</option>
+        <option value="manual">手动检查点</option>
+        <option value="after-turn">回合后检查点</option>
       </select>
     </div>
 

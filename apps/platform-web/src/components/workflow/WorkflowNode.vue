@@ -48,7 +48,7 @@
     >
       <div class="min-w-0 space-y-1">
         <p class="font-mono text-[9px] uppercase tracking-wider text-text-dim">
-          IN
+          输入
         </p>
         <p
           v-for="slot in inputSlots"
@@ -62,12 +62,12 @@
           v-if="!inputSlots.length"
           class="truncate font-mono text-[10px] text-text-dim"
         >
-          ← any
+          ← 任意
         </p>
       </div>
       <div class="min-w-0 space-y-1 text-right">
         <p class="font-mono text-[9px] uppercase tracking-wider text-text-dim">
-          OUT
+          输出
         </p>
         <p
           v-for="slot in outputSlots"
@@ -221,10 +221,16 @@ function portLabel(port: WorkflowPortDisplay): string {
 
 function portTitle(port: WorkflowPortDisplay): string {
   const parts = [port.name]
-  if (port.valueType) parts.push(`type: ${port.valueType}`)
-  if (port.semanticSlot) parts.push(`slot: ${port.semanticSlot}`)
+  if (port.valueType) parts.push(`类型: ${port.valueType}`)
+  if (port.semanticSlot) parts.push(`语义槽: ${port.semanticSlot}`)
   if (port.description) parts.push(port.description)
   return parts.join(' · ')
+}
+
+function sourceLabel(value: unknown): string {
+  if (value === 'collection') return '集合'
+  if (typeof value === 'string') return value
+  return String(value)
 }
 
 // 配置摘要（取关键字段简要显示）
@@ -232,19 +238,19 @@ const configSummary = computed(() => {
   const config = props.data.config
   if (!config || Object.keys(config).length === 0) return ''
   // ai-call: 显示 presetId
-  if (config.presetId) return `preset: ${config.presetId}`
+  if (config.presetId) return `提示词: ${config.presetId}`
   // result: 显示 name
-  if (config.name) return `name: ${config.name}`
+  if (config.name) return `结果名: ${config.name}`
   // compute: 显示 script 前 30 字符
   if (typeof config.script === 'string') {
-    return `script: ${config.script.slice(0, 30)}${config.script.length > 30 ? '...' : ''}`
+    return `脚本: ${config.script.slice(0, 30)}${config.script.length > 30 ? '...' : ''}`
   }
-  if (config.source) return `source: ${config.source}`
-  if (config.collection) return `collection: ${config.collection}`
-  if (config.outputName) return `output: ${config.outputName}`
+  if (config.source) return `来源: ${sourceLabel(config.source)}`
+  if (config.collection) return `集合: ${config.collection}`
+  if (config.outputName) return `输出: ${config.outputName}`
   // 其他：显示第一个字段
   const firstKey = Object.keys(config)[0]
-  return `${firstKey}: ${JSON.stringify(config[firstKey]).slice(0, 25)}`
+  return `配置项 ${firstKey}: ${JSON.stringify(config[firstKey]).slice(0, 25)}`
 })
 </script>
 

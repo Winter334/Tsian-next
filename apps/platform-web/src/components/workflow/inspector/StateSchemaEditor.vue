@@ -2,7 +2,7 @@
   <section class="space-y-4 border-t border-neon-deep/20 pt-4">
     <div class="flex items-center justify-between gap-3">
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        State Contract
+        状态契约
       </label>
       <div class="flex gap-2">
         <button
@@ -25,7 +25,7 @@
     </div>
 
     <div v-if="!schema" class="border border-neon-deep/20 bg-void/40 p-3 font-mono text-xs text-text-dim">
-      当前 state-write 不携带 schema。
+      当前状态写入节点不携带状态契约。
     </div>
 
     <div v-else class="space-y-4">
@@ -44,7 +44,7 @@
 
       <div class="grid gap-2 md:grid-cols-2">
         <label class="grid gap-1">
-          <span class="field-label">Schema ID</span>
+          <span class="field-label">契约 ID</span>
           <input
             :value="schema.id"
             class="field-input"
@@ -53,7 +53,7 @@
           />
         </label>
         <label class="grid gap-1">
-          <span class="field-label">Version</span>
+          <span class="field-label">版本</span>
           <input
             :value="schema.version"
             class="field-input"
@@ -62,16 +62,16 @@
           />
         </label>
         <label class="grid gap-1">
-          <span class="field-label">Name</span>
+          <span class="field-label">名称</span>
           <input
             :value="schema.name ?? ''"
             class="field-input"
-            placeholder="Runtime State"
+            placeholder="运行时状态"
             @change="updateSchemaOptionalText('name', ($event.target as HTMLInputElement).value)"
           />
         </label>
         <label class="grid gap-1">
-          <span class="field-label">Default Namespace</span>
+          <span class="field-label">默认命名空间</span>
           <input
             :value="schema.defaultNamespace ?? ''"
             class="field-input"
@@ -82,7 +82,7 @@
       </div>
 
       <label class="grid gap-1">
-        <span class="field-label">Description</span>
+        <span class="field-label">说明</span>
         <textarea
           :value="schema.description ?? ''"
           rows="2"
@@ -93,13 +93,13 @@
 
       <div class="space-y-3">
         <div class="flex items-center justify-between">
-          <span class="field-label">Collections</span>
+          <span class="field-label">集合</span>
           <button
             type="button"
             class="font-mono text-[10px] text-neon transition-colors hover:text-neon/80"
             @click="addCollection"
           >
-            + 添加 Collection
+            + 添加集合
           </button>
         </div>
 
@@ -111,7 +111,7 @@
           <div class="flex items-start justify-between gap-3">
             <div class="grid min-w-0 flex-1 gap-2 md:grid-cols-2">
               <label class="grid gap-1">
-                <span class="field-label">Collection</span>
+                <span class="field-label">集合名</span>
                 <input
                   :value="entry.name"
                   class="field-input"
@@ -120,7 +120,7 @@
                 />
               </label>
               <label class="grid gap-1">
-                <span class="field-label">Primary Key</span>
+                <span class="field-label">主键</span>
                 <input
                   :value="entry.collection.primaryKey ?? ''"
                   class="field-input"
@@ -140,7 +140,7 @@
 
           <div class="grid gap-2 md:grid-cols-2">
             <label class="grid gap-1">
-              <span class="field-label">Label</span>
+              <span class="field-label">显示名</span>
               <input
                 :value="entry.collection.label ?? ''"
                 class="field-input"
@@ -148,7 +148,7 @@
               />
             </label>
             <label class="grid gap-1">
-              <span class="field-label">Version</span>
+              <span class="field-label">版本</span>
               <input
                 :value="entry.collection.version ?? ''"
                 class="field-input"
@@ -158,7 +158,7 @@
           </div>
 
           <label class="grid gap-1">
-            <span class="field-label">Description</span>
+            <span class="field-label">说明</span>
             <textarea
               :value="entry.collection.description ?? ''"
               rows="2"
@@ -174,18 +174,18 @@
               class="accent-cyan-400"
               @change="toggleAdditionalFields(entry.name, ($event.target as HTMLInputElement).checked)"
             />
-            additionalFields: json
+              允许额外 JSON 字段
           </label>
 
           <div class="space-y-2">
             <div class="flex items-center justify-between">
-              <span class="field-label">Fields</span>
+              <span class="field-label">字段</span>
               <button
                 type="button"
                 class="font-mono text-[10px] text-neon transition-colors hover:text-neon/80"
                 @click="addField(entry.name)"
               >
-                + 添加 Field
+                + 添加字段
               </button>
             </div>
 
@@ -198,7 +198,7 @@
                 <input
                   :value="fieldEntry.name"
                   class="field-input"
-                  placeholder="field"
+                  placeholder="字段名"
                   @change="renameField(entry.name, fieldEntry.name, ($event.target as HTMLInputElement).value)"
                 />
                 <select
@@ -207,7 +207,7 @@
                   @change="updateFieldType(entry.name, fieldEntry.name, ($event.target as HTMLSelectElement).value as MemoryFieldType)"
                 >
                   <option v-for="type in fieldTypes" :key="type" :value="type">
-                    {{ type }}
+                    {{ fieldTypeLabel(type) }}
                   </option>
                 </select>
                 <button
@@ -223,7 +223,7 @@
                 <input
                   :value="fieldEntry.field.label ?? ''"
                   class="field-input"
-                  placeholder="label"
+                  placeholder="显示名"
                   @change="updateFieldOptionalText(entry.name, fieldEntry.name, 'label', ($event.target as HTMLInputElement).value)"
                 />
                 <label class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-text-dim">
@@ -233,7 +233,7 @@
                     class="accent-cyan-400"
                     @change="updateField(entry.name, fieldEntry.name, { required: ($event.target as HTMLInputElement).checked || undefined })"
                   />
-                  required
+                  必填
                 </label>
               </div>
 
@@ -241,7 +241,7 @@
                 :value="fieldEntry.field.description ?? ''"
                 rows="2"
                 class="field-textarea"
-                placeholder="description"
+                placeholder="说明"
                 @change="updateFieldOptionalText(entry.name, fieldEntry.name, 'description', ($event.target as HTMLTextAreaElement).value)"
               />
 
@@ -249,34 +249,34 @@
                 <input
                   :value="formatJsonInput(fieldEntry.field.enum)"
                   class="field-input"
-                  placeholder="enum JSON array"
+                  placeholder="枚举 JSON 数组"
                   @change="updateFieldJson(entry.name, fieldEntry.name, 'enum', ($event.target as HTMLInputElement).value, 'array')"
                 />
                 <input
                   :value="formatJsonInput(fieldEntry.field.default)"
                   class="field-input"
-                  placeholder="default JSON"
+                  placeholder="默认值 JSON"
                   @change="updateFieldJson(entry.name, fieldEntry.name, 'default', ($event.target as HTMLInputElement).value, 'value')"
                 />
               </div>
 
               <div v-if="fieldEntry.field.type === 'array'" class="grid gap-1">
-                <span class="field-label">Item Type</span>
+                <span class="field-label">数组项类型</span>
                 <select
                   :value="fieldEntry.field.item?.type ?? ''"
                   class="field-input"
                   @change="updateArrayItemType(entry.name, fieldEntry.name, ($event.target as HTMLSelectElement).value as MemoryFieldType | '')"
                 >
-                  <option value="">none</option>
+                  <option value="">不指定</option>
                   <option v-for="type in fieldTypes" :key="type" :value="type">
-                    {{ type }}
+                    {{ fieldTypeLabel(type) }}
                   </option>
                 </select>
               </div>
 
               <div class="space-y-2 border-t border-neon-deep/20 pt-2">
                 <div class="flex items-center justify-between">
-                  <span class="field-label">Relation</span>
+                  <span class="field-label">关联</span>
                   <button
                     v-if="!fieldEntry.field.relation"
                     type="button"
@@ -314,7 +314,7 @@
                     class="field-input"
                     @change="updateRelation(entry.name, fieldEntry.name, { targetField: ($event.target as HTMLSelectElement).value || undefined })"
                   >
-                    <option value="">primary/id</option>
+                    <option value="">主键 / id</option>
                     <option
                       v-for="targetField in relationTargetFields(fieldEntry.field.relation.targetCollection)"
                       :key="targetField"
@@ -328,8 +328,8 @@
                     class="field-input"
                     @change="updateRelation(entry.name, fieldEntry.name, { cardinality: ($event.target as HTMLSelectElement).value as MemoryRelationCardinality })"
                   >
-                    <option value="one">one</option>
-                    <option value="many">many</option>
+                    <option value="one">单个</option>
+                    <option value="many">多个</option>
                   </select>
                 </div>
               </div>
@@ -338,13 +338,13 @@
 
           <div class="space-y-2 border-t border-neon-deep/20 pt-3">
             <div class="flex items-center justify-between">
-              <span class="field-label">Indexes</span>
+              <span class="field-label">索引</span>
               <button
                 type="button"
                 class="font-mono text-[10px] text-neon transition-colors hover:text-neon/80"
                 @click="addIndex(entry.name)"
               >
-                + 添加 Index
+                + 添加索引
               </button>
             </div>
 
@@ -356,13 +356,13 @@
               <input
                 :value="index.name ?? ''"
                 class="field-input"
-                placeholder="name"
+                placeholder="索引名"
                 @change="updateIndex(entry.name, indexPosition, { name: optionalText(($event.target as HTMLInputElement).value) })"
               />
               <input
                 :value="index.fields.join(', ')"
                 class="field-input"
-                placeholder="fields"
+                placeholder="字段，用逗号分隔"
                 @change="updateIndexFields(entry.name, indexPosition, ($event.target as HTMLInputElement).value)"
               />
               <label class="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-text-dim">
@@ -372,7 +372,7 @@
                   class="accent-cyan-400"
                   @change="updateIndex(entry.name, indexPosition, { unique: ($event.target as HTMLInputElement).checked || undefined })"
                 />
-                unique
+                唯一
               </label>
               <button
                 type="button"
@@ -384,7 +384,7 @@
               <input
                 :value="index.description ?? ''"
                 class="field-input md:col-span-4"
-                placeholder="description"
+                placeholder="说明"
                 @change="updateIndex(entry.name, indexPosition, { description: optionalText(($event.target as HTMLInputElement).value) })"
               />
             </div>
@@ -419,6 +419,15 @@ const fieldTypes: MemoryFieldType[] = [
   'array',
   'json',
 ]
+
+const fieldTypeLabels: Record<MemoryFieldType, string> = {
+  string: '文本',
+  number: '数字',
+  boolean: '开关',
+  object: '对象',
+  array: '数组',
+  json: 'JSON',
+}
 
 const props = defineProps<{
   schema: unknown
@@ -669,12 +678,16 @@ function parseJsonInput(raw: string, mode: 'array' | 'value'): JsonValue | JsonV
   if (!value) return undefined
   const parsed = JSON.parse(value) as unknown
   if (mode === 'array' && !Array.isArray(parsed)) {
-    throw new Error('enum must be a JSON array')
+    throw new Error('枚举必须是 JSON 数组')
   }
   if (!isJsonValue(parsed)) {
-    throw new Error('value must be JSON-compatible')
+    throw new Error('值必须兼容 JSON')
   }
   return parsed
+}
+
+function fieldTypeLabel(type: MemoryFieldType): string {
+  return fieldTypeLabels[type]
 }
 
 function updateFieldJson(

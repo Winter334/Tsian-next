@@ -4,7 +4,7 @@
       <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div class="grid gap-2">
           <p class="font-mono text-xs uppercase tracking-[0.35em] text-neon-muted">
-            SYS.DIR // RESOURCES
+            资源目录
           </p>
           <h2 class="text-3xl font-black uppercase tracking-widest text-text-main md:text-4xl">
             全局资源库
@@ -17,7 +17,7 @@
           variant="outline"
           class="w-fit rounded-none border-neon/50 bg-neon/10 px-3 py-1 font-mono text-xs uppercase tracking-wider text-neon"
         >
-          {{ activeTab.itemCount }} ITEMS
+          {{ activeTab.itemCount }} 个资源
         </Badge>
       </div>
     </header>
@@ -53,7 +53,7 @@
       <aside class="min-h-[520px] border border-neon-muted/30 bg-void/35">
         <div class="border-b border-neon-muted/30 p-3">
           <p class="font-mono text-xs uppercase tracking-[0.25em] text-neon-muted">
-            LIST // {{ activeTab.code }}
+            列表 // {{ activeTab.label }}
           </p>
           <p class="mt-1 font-mono text-[11px] text-text-dim">
             {{ activeTab.description }}
@@ -62,7 +62,7 @@
 
         <div v-if="activeResources.length === 0" class="grid min-h-80 place-items-center p-6 text-center">
           <div class="grid gap-2">
-            <p class="font-mono text-xs uppercase tracking-[0.25em] text-neon-muted">EMPTY</p>
+            <p class="font-mono text-xs uppercase tracking-[0.25em] text-neon-muted">暂无资源</p>
             <p class="font-mono text-sm text-text-dim">暂无资源，点击右上角创建。</p>
           </div>
         </div>
@@ -106,7 +106,7 @@
       <main class="min-h-[520px] border border-neon-muted/30 bg-void/35 p-4">
         <div v-if="!draft" class="grid h-full min-h-80 place-items-center text-center">
           <div class="grid gap-2">
-            <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">NO SELECTION</p>
+            <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">未选择资源</p>
             <p class="font-mono text-sm text-text-dim">选择左侧资源，或创建一个新资源。</p>
           </div>
         </div>
@@ -115,7 +115,7 @@
           <div class="flex flex-col gap-3 border-b border-neon-muted/30 pb-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">
-                EDIT // {{ activeTab.code }}
+                编辑 // {{ activeTab.label }}
               </p>
               <p class="mt-1 break-all font-mono text-[11px] text-text-dim">
                 {{ draft.id || "NEW RESOURCE" }}
@@ -148,7 +148,7 @@
 
           <div class="grid gap-4 lg:grid-cols-2">
             <label class="grid gap-2 font-mono text-xs uppercase tracking-wider text-text-dim">
-              名称 name
+              名称
               <input
                 v-model="draft.name"
                 type="text"
@@ -157,7 +157,7 @@
               />
             </label>
             <label class="grid gap-2 font-mono text-xs uppercase tracking-wider text-text-dim">
-              标签 tagsText（逗号分隔）
+              标签（逗号分隔）
               <input
                 v-model="draft.tagsText"
                 type="text"
@@ -168,7 +168,7 @@
           </div>
 
           <label class="grid gap-2 font-mono text-xs uppercase tracking-wider text-text-dim">
-            描述 description
+            描述
             <textarea
               v-model="draft.description"
               rows="3"
@@ -179,12 +179,12 @@
           <!-- Prompt Preset: preview + open editor -->
           <template v-if="activeTabId === 'prompt-presets'">
             <div class="grid gap-3 font-mono text-xs uppercase tracking-wider text-text-dim">
-              提示词条目 prompts
+              提示词条目
               <div class="grid gap-3 border border-neon-muted/30 bg-panel p-4">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p class="font-mono text-sm font-bold uppercase tracking-wider text-text-main">
-                      {{ (draftPreset?.prompts?.length ?? 0) }} ENTRIES
+                      {{ (draftPreset?.prompts?.length ?? 0) }} 条目
                     </p>
                     <p class="mt-1 font-mono text-[11px] normal-case tracking-normal text-text-dim">
                       在全屏编辑器中管理条目；保存仍使用页面右上角"保存资源"。
@@ -211,12 +211,12 @@
           <!-- World Book: preview + open editor -->
           <template v-if="activeTabId === 'world-books'">
             <div class="grid gap-3 font-mono text-xs uppercase tracking-wider text-text-dim">
-              世界书条目 entries
+              世界书条目
               <div class="grid gap-3 border border-neon-muted/30 bg-panel p-4">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p class="font-mono text-sm font-bold uppercase tracking-wider text-text-main">
-                      {{ (draftWorldBook?.entries?.length ?? 0) }} ENTRIES
+                      {{ (draftWorldBook?.entries?.length ?? 0) }} 条目
                     </p>
                     <p class="mt-1 font-mono text-[11px] normal-case tracking-normal text-text-dim">
                       在全屏编辑器中管理条目；保存仍使用页面右上角"保存资源"。
@@ -243,15 +243,15 @@
           <!-- Workflow Preset: preview + open editor -->
           <template v-if="activeTabId === 'workflow-presets'">
             <div class="grid gap-3 font-mono text-xs uppercase tracking-wider text-text-dim">
-              工作流定义 definition
+              工作流定义
               <div class="grid gap-3 border border-neon-muted/30 bg-panel p-4">
                 <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                   <div>
                     <p class="font-mono text-sm font-bold uppercase tracking-wider text-text-main">
-                      {{ draft.definition.nodes.length }} NODES // {{ draft.definition.edges.length }} EDGES
+                      {{ draft.definition.nodes.length }} 节点 // {{ draft.definition.edges.length }} 边
                     </p>
                     <p class="mt-1 font-mono text-[11px] normal-case tracking-normal text-text-dim">
-                      在全屏编辑器中修改工作流；保存仍使用页面右上角"保存资源"。
+                      在全屏编辑器中修改工作流；可在编辑器内保存，也可回到资源表单保存。
                     </p>
                   </div>
                   <div class="flex flex-wrap gap-2">
@@ -273,9 +273,9 @@
                   </div>
                 </div>
                 <div class="border border-neon-deep/30 bg-void/40 p-3 font-mono text-[11px] normal-case tracking-normal text-text-dim">
-                  <p class="uppercase tracking-[0.2em] text-neon-muted">CURRENT SAVE WORKFLOW</p>
+                  <p class="uppercase tracking-[0.2em] text-neon-muted">当前存档工作流</p>
                   <p class="mt-2 text-text-main">{{ currentWorkflowSourceLabel }}</p>
-                  <p v-if="activeSaveId" class="mt-1 break-all">SAVE // {{ activeSaveId }}</p>
+                  <p v-if="activeSaveId" class="mt-1 break-all">存档 // {{ activeSaveId }}</p>
                   <button
                     v-if="currentWorkflowPresetId"
                     type="button"
@@ -346,7 +346,7 @@
     >
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neon-muted/30 bg-panel px-5 py-3">
         <div>
-          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">WORKFLOW // FULLSCREEN EDITOR</p>
+          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">工作流全屏编辑器</p>
           <p class="mt-1 font-mono text-sm text-text-main">{{ draft.name || "未命名工作流预设" }}</p>
         </div>
         <button
@@ -367,6 +367,7 @@
           source-label="资源库工作流预设"
           @change="updateWorkflowDefinition"
           @reset-workflow="resetWorkflowDraft"
+          @save-workflow="saveWorkflowFromEditor"
         />
       </div>
     </div>
@@ -380,7 +381,7 @@
     >
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neon-muted/30 bg-panel px-5 py-3">
         <div>
-          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">PROMPT PRESET // FULLSCREEN EDITOR</p>
+          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">提示词预设全屏编辑器</p>
           <p class="mt-1 font-mono text-sm text-text-main">{{ draft.name || "未命名提示词预设" }}</p>
         </div>
         <button
@@ -409,7 +410,7 @@
     >
       <div class="flex flex-wrap items-center justify-between gap-3 border-b border-neon-muted/30 bg-panel px-5 py-3">
         <div>
-          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">WORLD BOOK // FULLSCREEN EDITOR</p>
+          <p class="font-mono text-xs uppercase tracking-[0.3em] text-neon-muted">世界书全屏编辑器</p>
           <p class="mt-1 font-mono text-sm text-text-main">{{ draft.name || "未命名世界书" }}</p>
         </div>
         <button
@@ -554,7 +555,7 @@ const resourceTabs = computed<ResourceTab[]>(() => [
     id: "workflow-presets",
     label: "工作流预设",
     code: "WORKFLOW_PRESETS",
-    description: "用于管理可复用的 AI 主链 DAG 模板与节点编排预设。",
+    description: "用于管理可复用的 AI 主链工作流模板与节点编排预设。",
     itemCount: workflowPresets.value.length,
   },
 ])
@@ -782,6 +783,12 @@ function updateWorkflowDefinition(definition: WorkflowDefinition) {
   if (!draft.value || activeTabId.value !== "workflow-presets") return
   draft.value.definition = definition
   workflowSaveStatus.value = "dirty"
+}
+
+async function saveWorkflowFromEditor(definition: WorkflowDefinition) {
+  if (!draft.value || activeTabId.value !== "workflow-presets") return
+  draft.value.definition = definition
+  await saveDraft()
 }
 
 function resetWorkflowDraft() {

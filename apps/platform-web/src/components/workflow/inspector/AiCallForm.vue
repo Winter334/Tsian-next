@@ -2,13 +2,13 @@
   <div class="space-y-3">
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Prompt Preset
+        提示词预设
       </label>
       <input
         :value="config.presetId ?? ''"
         list="workflow-prompt-preset-options"
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
-        placeholder="e.g. builtin.chat"
+        placeholder="如 builtin.chat"
         @change="update('presetId', ($event.target as HTMLInputElement).value)"
       />
       <datalist id="workflow-prompt-preset-options">
@@ -27,7 +27,7 @@
 
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        World Books
+        世界书
       </label>
       <input
         :value="worldBookKeys.join(', ')"

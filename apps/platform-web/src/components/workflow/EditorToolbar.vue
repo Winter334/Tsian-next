@@ -1,41 +1,55 @@
 <template>
-  <div class="flex items-center gap-2 border-b border-neon-deep/40 bg-panel px-3 py-1.5">
+  <div
+    class="flex flex-wrap items-center gap-2 border-b border-neon-deep/40 bg-panel px-3 py-1.5"
+    @click.stop
+  >
     <!-- 标题区 -->
-    <span class="mr-2 font-mono text-[10px] uppercase tracking-[0.2em] text-neon-muted">
-      SYS // WORKFLOW
+    <span class="shrink-0 font-mono text-[10px] uppercase tracking-[0.2em] text-neon-muted">
+      系统工作流
     </span>
-    <span class="text-xs font-bold uppercase tracking-widest text-text-main">
+    <span class="shrink-0 text-xs font-bold uppercase tracking-widest text-text-main">
       工作流编辑器
     </span>
-    <span class="border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
+    <span class="max-w-[min(22rem,100%)] truncate border border-neon-deep/30 bg-void px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
       来源：{{ sourceLabel }}
     </span>
     <span
-      class="mr-auto border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider"
+      class="mr-auto shrink-0 border px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider"
       :class="statusClass"
     >
       {{ statusLabel }}
     </span>
     <button
-      class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      @click="$emit('addNode')"
+    >
+      添加节点
+    </button>
+    <button
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
       @click="$emit('autoLayout')"
     >
       自动布局
     </button>
     <button
-      class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
       @click="$emit('exportJson')"
     >
       导出 JSON
     </button>
     <button
-      class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
       @click="$emit('importJson')"
     >
       导入 JSON
     </button>
     <button
-      class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
       :disabled="!hasSelection"
       :class="{ 'opacity-40 cursor-not-allowed': !hasSelection }"
       @click="$emit('deleteSelected')"
@@ -43,7 +57,8 @@
       删除选中
     </button>
     <button
-      class="border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-neon-deep/40 bg-elevated px-3 py-1 font-mono text-xs text-text-main transition-colors hover:border-neon-deep/60 hover:text-neon"
       :disabled="saveStatus === 'saving'"
       :class="{ 'opacity-40 cursor-not-allowed': saveStatus === 'saving' }"
       @click="$emit('resetWorkflow')"
@@ -51,7 +66,8 @@
       重置更改
     </button>
     <button
-      class="border border-neon bg-neon/5 px-3 py-1 font-mono text-xs text-neon transition-colors hover:bg-neon/15"
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-neon bg-neon/5 px-3 py-1 font-mono text-xs text-neon transition-colors hover:bg-neon/15"
       :disabled="saveStatus === 'saving' || saveStatus === 'saved'"
       :class="{ 'opacity-40 cursor-not-allowed': saveStatus === 'saving' || saveStatus === 'saved' }"
       @click="$emit('saveWorkflow')"
@@ -59,7 +75,8 @@
       保存工作流
     </button>
     <button
-      class="border border-danger/40 bg-elevated px-3 py-1 font-mono text-xs text-danger transition-colors hover:border-danger/60 hover:bg-danger/10"
+      type="button"
+      class="shrink-0 whitespace-nowrap border border-danger/40 bg-elevated px-3 py-1 font-mono text-xs text-danger transition-colors hover:border-danger/60 hover:bg-danger/10"
       @click="$emit('clearCanvas')"
     >
       清空画布
@@ -79,6 +96,7 @@ const props = defineProps<{
 }>()
 
 defineEmits<{
+  addNode: []
   autoLayout: []
   clearCanvas: []
   deleteSelected: []

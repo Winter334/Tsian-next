@@ -1,7 +1,7 @@
 <template>
   <div class="space-y-3">
     <label class="grid gap-1">
-      <span class="form-label">Input Vars</span>
+      <span class="form-label">输入变量列表</span>
       <input
         :value="inputNamesText"
         class="form-input"
@@ -12,7 +12,7 @@
 
     <div class="grid gap-2 md:grid-cols-2">
       <label class="grid gap-1">
-        <span class="form-label">Key Path</span>
+        <span class="form-label">去重字段路径</span>
         <input
           :value="config.keyPath ?? 'id'"
           class="form-input"
@@ -21,18 +21,18 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Strategy</span>
+        <span class="form-label">重复记录策略</span>
         <select
           :value="config.strategy ?? 'first'"
           class="form-input"
           @change="updateStrategy(($event.target as HTMLSelectElement).value)"
         >
-          <option value="first">first</option>
-          <option value="last">last</option>
+          <option value="first">保留先出现</option>
+          <option value="last">保留后出现</option>
         </select>
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Output Name</span>
+        <span class="form-label">输出名称</span>
         <input
           :value="config.outputName ?? 'records'"
           class="form-input"
@@ -41,7 +41,7 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Limit</span>
+        <span class="form-label">数量上限</span>
         <input
           type="number"
           min="1"

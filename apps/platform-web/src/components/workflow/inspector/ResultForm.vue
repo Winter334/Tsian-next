@@ -7,7 +7,7 @@
       <input
         :value="config.name ?? ''"
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
-        placeholder="e.g. chatResult"
+        placeholder="如 chatResult"
         @change="props.onUpdate({ ...props.config, name: ($event.target as HTMLInputElement).value })"
       />
     </div>

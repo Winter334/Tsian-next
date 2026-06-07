@@ -2,7 +2,7 @@
   <div class="space-y-3">
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Namespace
+        命名空间
       </label>
       <input
         :value="config.namespace ?? ''"
@@ -14,7 +14,7 @@
 
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Collection
+        集合名
       </label>
       <input
         :value="config.collection ?? ''"
@@ -26,7 +26,7 @@
 
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Query Var
+        查询输入变量
       </label>
       <input
         :value="config.queryVarName ?? ''"
@@ -38,19 +38,19 @@
 
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Fallback Query
+        静态查询文本
       </label>
       <input
         :value="config.query ?? ''"
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
-        placeholder="optional static query"
+        placeholder="可选静态查询"
         @change="updateOptional('query', ($event.target as HTMLInputElement).value)"
       />
     </div>
 
     <div>
       <label class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-        Limit
+        数量上限
       </label>
       <input
         type="number"

@@ -22,13 +22,13 @@
           <input
             :value="c.when"
             class="flex-1 border border-neon-deep/40 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-            placeholder="when"
+            placeholder="匹配值"
             @change="updateCase(idx, 'when', ($event.target as HTMLInputElement).value)"
           />
           <input
             :value="c.outputName"
             class="w-24 border border-neon-deep/40 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-            placeholder="output"
+            placeholder="输出名"
             @change="updateCase(idx, 'outputName', ($event.target as HTMLInputElement).value)"
           />
           <button
@@ -49,7 +49,7 @@
       <input
         :value="config.defaultOutputName ?? ''"
         class="mt-1 w-full border border-neon-deep/40 bg-void px-2 py-1 font-mono text-xs text-text-main outline-none focus:border-neon"
-        placeholder="default"
+        placeholder="未命中时的输出名"
         @change="props.onUpdate({ ...props.config, defaultOutputName: ($event.target as HTMLInputElement).value })"
       />
     </div>

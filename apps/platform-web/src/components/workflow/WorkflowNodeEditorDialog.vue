@@ -11,7 +11,7 @@
       <header class="flex items-center justify-between gap-3 border-b border-neon-muted/30 px-4 py-3">
         <div class="min-w-0">
           <p class="font-mono text-[10px] uppercase tracking-[0.3em] text-neon-muted">
-            NODE // CONFIG
+            节点配置
           </p>
           <p class="mt-1 truncate font-mono text-sm font-bold text-text-main">
             {{ selectedNode.data.label || selectedNode.data.nodeType }} // {{ selectedNode.id }}
@@ -45,7 +45,7 @@
             : 'border-neon-muted/30 bg-panel text-text-dim hover:border-neon-muted hover:text-text-main'"
           @click="activeTab = 'raw'"
         >
-          Raw
+          原始配置
         </button>
       </div>
 
@@ -77,7 +77,7 @@
               class="min-w-0 flex-1 font-mono text-xs"
               :class="rawError ? 'text-danger' : 'text-text-dim'"
             >
-              {{ rawError || 'Raw payload: label / config / inputs / outputs / retry' }}
+              {{ rawError || '原始配置包含：label / config / inputs / outputs / retry' }}
             </p>
             <div class="flex gap-2">
               <button
@@ -92,7 +92,7 @@
                 class="border border-neon bg-neon/10 px-3 py-1.5 font-mono text-xs text-neon transition-colors hover:bg-neon/20"
                 @click="applyRawPayload"
               >
-                应用 Raw
+                应用原始配置
               </button>
             </div>
           </footer>
@@ -182,7 +182,7 @@ function resetRawText() {
 function normalizeRetry(value: unknown): { maxRetries: number } | undefined {
   if (value === null || value === undefined) return undefined
   if (!isRecord(value) || typeof value.maxRetries !== 'number') {
-    throw new Error('retry 必须是 { "maxRetries": number } 或 null')
+    throw new Error('retry 必须是 { "maxRetries": 数字 } 或 null')
   }
   const maxRetries = Math.max(0, Math.floor(value.maxRetries))
   return maxRetries > 0 ? { maxRetries } : undefined
@@ -194,36 +194,36 @@ function readRawPayload(): Required<Pick<RawPayload, 'config' | 'inputs' | 'outp
 } {
   const parsed = JSON.parse(rawText.value) as unknown
   if (!isRecord(parsed)) {
-    throw new Error('Raw payload 必须是 JSON object')
+    throw new Error('原始配置必须是 JSON 对象')
   }
 
   if ('id' in parsed || 'type' in parsed || 'position' in parsed) {
-    throw new Error('Raw payload 不能包含 id / type / position')
+    throw new Error('原始配置不能包含 id / type / position')
   }
   for (const key of Object.keys(parsed)) {
     if (!RAW_PAYLOAD_KEYS.has(key)) {
-      throw new Error('Raw payload 只能包含 label / config / inputs / outputs / retry')
+      throw new Error('原始配置只能包含 label / config / inputs / outputs / retry')
     }
   }
 
   const label = parsed.label
   if (label !== undefined && label !== null && typeof label !== 'string') {
-    throw new Error('label 必须是 string')
+    throw new Error('label 必须是字符串')
   }
 
   const config = parsed.config ?? {}
   if (!isRecord(config)) {
-    throw new Error('config 必须是 JSON object')
+    throw new Error('config 必须是 JSON 对象')
   }
 
   const inputs = parsed.inputs ?? []
   if (!Array.isArray(inputs)) {
-    throw new Error('inputs 必须是 array')
+    throw new Error('inputs 必须是数组')
   }
 
   const outputs = parsed.outputs ?? []
   if (!Array.isArray(outputs)) {
-    throw new Error('outputs 必须是 array')
+    throw new Error('outputs 必须是数组')
   }
 
   return {

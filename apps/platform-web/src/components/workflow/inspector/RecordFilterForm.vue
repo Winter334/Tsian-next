@@ -2,7 +2,7 @@
   <div class="space-y-3">
     <div class="grid gap-2 md:grid-cols-2">
       <label class="grid gap-1">
-        <span class="form-label">Input Var</span>
+        <span class="form-label">输入变量</span>
         <input
           :value="config.inputVarName ?? 'records'"
           class="form-input"
@@ -11,7 +11,7 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Output Name</span>
+        <span class="form-label">输出名称</span>
         <input
           :value="config.outputName ?? 'records'"
           class="form-input"
@@ -20,18 +20,18 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Match</span>
+        <span class="form-label">匹配方式</span>
         <select
           :value="config.match ?? 'all'"
           class="form-input"
           @change="updateMatch(($event.target as HTMLSelectElement).value)"
         >
-          <option value="all">all</option>
-          <option value="any">any</option>
+          <option value="all">全部条件</option>
+          <option value="any">任一条件</option>
         </select>
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Limit</span>
+        <span class="form-label">数量上限</span>
         <input
           type="number"
           min="1"
@@ -44,7 +44,7 @@
 
     <div class="space-y-2">
       <div class="flex items-center justify-between">
-        <span class="form-label">Predicates</span>
+        <span class="form-label">筛选条件</span>
         <button
           type="button"
           class="font-mono text-[10px] text-neon transition-colors hover:text-neon/80"
@@ -70,11 +70,11 @@
           class="form-input"
           @change="updatePredicate(index, { op: ($event.target as HTMLSelectElement).value as PredicateOperator })"
         >
-          <option value="exists">exists</option>
-          <option value="equals">equals</option>
-          <option value="not-equals">not-equals</option>
-          <option value="contains">contains</option>
-          <option value="in">in</option>
+          <option value="exists">存在</option>
+          <option value="equals">等于</option>
+          <option value="not-equals">不等于</option>
+          <option value="contains">包含</option>
+          <option value="in">属于列表</option>
         </select>
         <input
           :value="formatPredicateValue(predicate.value)"
@@ -96,7 +96,7 @@
             class="accent-cyan-400"
             @change="updatePredicate(index, { caseSensitive: ($event.target as HTMLInputElement).checked || undefined })"
           />
-          case sensitive
+          区分大小写
         </label>
       </div>
     </div>

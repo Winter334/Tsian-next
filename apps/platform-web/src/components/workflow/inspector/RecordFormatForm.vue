@@ -2,7 +2,7 @@
   <div class="space-y-3">
     <div class="grid gap-2 md:grid-cols-2">
       <label class="grid gap-1">
-        <span class="form-label">Input Var</span>
+        <span class="form-label">输入变量</span>
         <input
           :value="config.inputVarName ?? 'records'"
           class="form-input"
@@ -11,7 +11,7 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Output Name</span>
+        <span class="form-label">输出名称</span>
         <input
           :value="config.outputName ?? 'text'"
           class="form-input"
@@ -22,7 +22,7 @@
     </div>
 
     <label class="grid gap-1">
-      <span class="form-label">Item Template</span>
+      <span class="form-label">单条记录模板</span>
       <textarea
         :value="textValue(config.itemTemplate)"
         rows="6"
@@ -34,7 +34,7 @@
 
     <div class="grid gap-2 md:grid-cols-2">
       <label class="grid gap-1">
-        <span class="form-label">Separator</span>
+        <span class="form-label">分隔符</span>
         <input
           :value="config.separator ?? ''"
           class="form-input"
@@ -43,7 +43,7 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Empty Text</span>
+        <span class="form-label">空结果文本</span>
         <input
           :value="config.emptyText ?? ''"
           class="form-input"
@@ -51,7 +51,7 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Prefix</span>
+        <span class="form-label">前缀</span>
         <input
           :value="config.prefix ?? ''"
           class="form-input"
@@ -59,7 +59,7 @@
         />
       </label>
       <label class="grid gap-1">
-        <span class="form-label">Suffix</span>
+        <span class="form-label">后缀</span>
         <input
           :value="config.suffix ?? ''"
           class="form-input"
