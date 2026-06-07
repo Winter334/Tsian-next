@@ -53,34 +53,115 @@ function runValidation(def: WorkflowDefinition): void {
 - Keep edge checks aligned with the runtime contract: `from.outputName -> to.varName`.
 - Only warn about missing external resources when the relevant option list has been loaded.
 
-### Convention: Workflow-Carried State Contracts
+### Scenario: Workflow-Carried State Database Model
 
-**What**: The workflow editor derives state-contract visibility from `state-query`
-and `state-write` nodes in the current draft workflow. Workflow-level summaries
-belong in the bottom drawer; detailed schema authoring for the current MVP
-belongs in the `state-write.config.schema` form.
+#### 1. Scope / Trigger
 
-**Why**: In the workflow-as-system direction, a state contract is carried by a
-configured workflow rather than authored first as an isolated schema resource.
-Keeping schema authoring node-local and summaries derived prevents the editor
-from drifting toward a schema-first resource model before workflow blocks or
-system packages exist.
+- Trigger: authorable workflows need visible durable-state data flow, including
+  collection schema, database read links, and database write links.
+- Goal: the editor shows a state database model without turning database anchors
+  into executable workflow nodes or state links into runtime DAG edges.
 
-**Example**:
+#### 2. Signatures
 
-```vue
-<StateWriteForm
-  v-else-if="selectedNode.data.nodeType === 'state-write'"
-  :config="selectedNode.data.config"
-  :on-update="handleUpdateConfig"
-/>
+- Contract owner: `WorkflowDefinition.stateModel`.
+- Schema owner: `stateModel.schema?: MemorySchemaDefinition`.
+- Visual anchors: `stateModel.anchors?: WorkflowStateModelAnchor[]`.
+- Visual read/write bindings: `stateModel.links?: WorkflowStateModelLink[]`.
+- Runtime compile boundary:
+  `compileWorkflowStateModel(def: WorkflowDefinition): WorkflowDefinition`.
+
+#### 3. Contracts
+
+- `stateModel.schema` is the source of truth for collection definitions. Do not
+  create new schema-authoring UI under `state-write.config.schema`.
+- Database anchors are editor-only Vue Flow nodes rendered from
+  `stateModel.anchors`; they must be filtered out of executable
+  `WorkflowDefinition.nodes` on export.
+- Database links are editor-only Vue Flow edges rendered from
+  `stateModel.links`; they must be filtered out of executable
+  `WorkflowDefinition.edges` on export.
+- Read links are `database collection -> state-query`; write links are
+  `state-write -> database collection`.
+- Runtime execution uses a temporary compiled definition. The source workflow
+  keeps `stateModel` clean, while the compiled definition injects
+  `namespace`, `collection`, and schema into existing `state-query` /
+  `state-write` configs.
+- Node cards and inspector forms may read `stateModel.links` to display
+  database read/write target summaries. If Vue Flow node data carries an
+  editor-only `stateModel` snapshot for that display, export code must strip it
+  and must not serialize it into executable `WorkflowNode` payloads.
+- The bottom drawer is a read-only state database/field-definition view. Field
+  editing belongs in the database node editor dialog. Field rows should expose
+  usable input paths such as `records[].data.<field>` so authors can map schema
+  fields to structured workflow variables.
+
+#### 4. Validation & Error Matrix
+
+- Missing linked anchor/port/node -> editor diagnostic and compile-time error.
+- Unbound database port -> editor diagnostic and compile-time error.
+- Read link targeting non-`state-query` -> diagnostic/compile error.
+- Write link targeting non-`state-write` -> diagnostic/compile error.
+- Multiple read links for one `state-query` -> MVP diagnostic/compile error.
+- Write link to multiple collections -> allowed; operations must carry explicit
+  `collection` unless there is only one target.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: a workflow stores `archives/events/globals` definitions in
+  `stateModel.schema`, renders two database anchors for read/write layout, and
+  compiles links only immediately before execution.
+- Base: an advanced imported workflow still carries manual
+  `state-query.config.namespace/collection`; editor diagnostics treat it as a
+  compatibility path when no state link exists.
+- Bad: adding a no-op `state-database` executable node type so the scheduler can
+  "run" database anchors.
+- Bad: saving state link handle IDs into normal `WorkflowEdge` objects.
+- Bad: editing collection fields from both the database dialog and the
+  `state-write` form, creating two apparent schema sources.
+
+#### 6. Tests Required
+
+- Run `npm run build:contracts` when `WorkflowDefinition.stateModel` changes.
+- Run `npm run build:web` for editor rendering, import/export, or compiler
+  integration changes.
+- Run `npm run build:workflow-engine` and
+  `npm run test --workspace @tsian/workflow-engine` when default workflow static
+  proofs or scheduler-facing assumptions change.
+- Browser smoke should verify resource workflow preview/fullscreen editor show
+  database anchors, state links, node read/write target summaries, bottom-drawer
+  field paths, and the database editor dialog.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```ts
+const workflow: WorkflowDefinition = {
+  nodes: [{ id: "db", type: "state-database", config: {} }],
+  edges: [{ from: { nodeId: "db" }, to: { nodeId: "query", varName: "collection" } }],
+}
 ```
 
-**Validation**: Editor UI may surface schema self-consistency issues by reusing
-the memory-core schema validator, but it must not attempt whole-workflow semantic
-proofs of AI output shapes, runtime record existence, renderer compatibility, or
-edge value payloads. Runtime `state-write` validation remains the final write
-safety boundary.
+##### Correct
+
+```ts
+const workflow: WorkflowDefinition = {
+  nodes: [{ id: "query", type: "state-query", config: { source: "collection" } }],
+  edges: [],
+  stateModel: {
+    schema,
+    anchors: [{ id: "dbRead", kind: "database", ports: [{ id: "archives", collection: "archives" }] }],
+    links: [{ id: "readArchives", kind: "read", anchorId: "dbRead", portId: "archives", nodeId: "query" }],
+  },
+}
+```
+
+Editor UI may surface schema self-consistency issues by reusing the memory-core
+schema validator, but it must not attempt whole-workflow semantic proofs of AI
+output shapes, runtime record existence, renderer compatibility, or edge value
+payloads. Runtime `state-write` validation remains the final write safety
+boundary.
 
 ## Props And Events
 

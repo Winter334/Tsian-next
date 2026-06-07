@@ -63,7 +63,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
   recreated. Do not add old-table compatibility reads or dual writes unless a
   future task explicitly chooses a migration strategy.
 - Workflow side effects are not a full transaction across all nodes. A failed workflow run rolls back the in-memory runtime snapshot, while storage side effects follow the same fail-loud/checkpoint model as `state-write`.
-- Default AIRP maintenance now writes generic `StateWriteOperation[]` through an explicit `state-write` node carrying the default AIRP runtime schema; platform-host then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
+- Default AIRP maintenance now writes generic `StateWriteOperation[]` through an explicit `state-write` node. The default AIRP runtime schema lives on workflow-level `stateModel.schema`; `platform-host` compiles state-model links into runtime `state-query` / `state-write` config before execution, then syncs the resulting AIRP memory back into legacy compatibility slices before the authoritative after-turn checkpoint.
 - `state-write` nodes default to no node-local checkpoint;
   platform-host owns the normal after-turn checkpoint after compatibility sync.
   Use `pushCheckpointReason: "manual"` or `"after-turn"` only when an explicit
@@ -102,7 +102,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - Contract/build checks: `npm run build:contracts`, `npm run build:memory-core`, `npm run build:web`.
 - Memory schema/validator checks: `npm run test --workspace @tsian/memory-core`.
 - Workflow checks: `npm run build:workflow-engine`, `npm run test --workspace @tsian/workflow-engine`.
-- Regression assertion: built-in grey-salt-town workflow uses the shared mixed AIRP workflow preset, contains AIRP collection query nodes and `record-filter` / `record-merge` / `record-format`, contains no `bypass` / `__retrieval.raw` / retired `event-archive` source, contains an explicit `maintenance.operations -> stateWrite.operations` edge, and remains valid as a mod workflow.
+- Regression assertion: built-in grey-salt-town workflow uses the shared mixed AIRP workflow preset, contains AIRP collection query nodes and `record-filter` / `record-merge` / `record-format`, carries AIRP collection definitions under workflow-level `stateModel.schema`, contains no `bypass` / `__retrieval.raw` / retired `event-archive` source, contains an explicit `maintenance.operations -> stateWrite.operations` edge, and remains valid as a mod workflow.
 - Static proof: built-in mods reference workflow presets through
   `workflowPresetId`; built-in workflow preset seeding must use explicit seed
   definitions, not deprecated `manifest.workflow`.
@@ -113,7 +113,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
   `pushCheckpointReason` is explicitly set to `"manual"` or `"after-turn"`.
 - Static proof should keep `state-query` collection-only across contracts, editor slots, inspector forms, and executor behavior, and keep retired `memory-query` out of public workflow contracts and authoring.
 - Static proof or tests for platform-internal AIRP retrieval refactors should verify that `assembleRetrievalContext()` still routes through named internal stages instead of collapsing AIRP-specific behavior into a single opaque block.
-- Browser smoke: resource workflow preview and fullscreen editor show `state-query`, and new state/template nodes can be dragged onto the canvas and inspected.
+- Browser smoke: resource workflow preview and fullscreen editor show `state-query`, state database anchors, and state-model links; the database editor dialog can show collection ports and field definitions.
 
 ### 7. Wrong vs Correct
 
