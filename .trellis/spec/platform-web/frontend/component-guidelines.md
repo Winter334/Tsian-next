@@ -17,6 +17,42 @@ Vue components use `<script setup lang="ts">` and keep behavior close to the UI 
 - Edge editing should use the edge dialog or edge context menu and still serialize through the existing workflow edge contract: `from.outputName` feeds `to.varName`.
 - Workflow-level diagnostics and future state-contract summaries belong in the collapsible bottom drawer so the graph canvas remains the dominant workspace.
 
+### Convention: Editor-Only Workflow Diagnostics
+
+**What**: Platform workflow editors may add authoring diagnostics on top of
+`validateWorkflowDefinition`, but the engine validator remains the structural
+contract. Editor diagnostics should live in feature-local helpers such as
+`components/workflow/workflow-diagnostics.ts` and return user-facing Chinese
+messages for missing config, missing resource references, and invalid
+declared/derived ports.
+
+**Why**: Runtime validation proves graph structure, while authors need earlier
+feedback for configuration that would fail or behave surprisingly at execution
+time. Keeping these checks editor-local prevents platform-web UI guidance from
+changing `packages/workflow-engine` scheduling semantics.
+
+**Example**:
+
+```typescript
+function runValidation(def: WorkflowDefinition): void {
+  const messages: string[] = []
+  try {
+    validateWorkflowDefinition(def)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    messages.push(translateValidationError(message))
+  }
+  messages.push(...collectWorkflowEditorDiagnostics(def, { promptPresetOptions }))
+  validationErrors.value = Array.from(new Set(messages))
+}
+```
+
+**Rules**:
+- Do not contradict or suppress `validateWorkflowDefinition` errors.
+- Do not save editor-only handle IDs or diagnostics into the workflow runtime schema.
+- Keep edge checks aligned with the runtime contract: `from.outputName -> to.varName`.
+- Only warn about missing external resources when the relevant option list has been loaded.
+
 ### Convention: Workflow-Carried State Contracts
 
 **What**: The workflow editor derives state-contract visibility from `state-query`
