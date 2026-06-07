@@ -74,6 +74,7 @@ import { applyMaintenancePatch } from "../runtime-host/patch-applier"
 import { defaultWorkflow } from "../workflow-host/default-workflow"
 import { createWorkflowExecutionContext } from "../workflow-host"
 import { createOutputsStore, currentTurnOutputsRef } from "../workflow-host/outputs-store"
+import { compileWorkflowStateModel } from "../workflow-host/state-model-compiler"
 
 export type PlatformWorkflowSourceKind = WorkflowRunSourceKind
 export type PlatformWorkflowSource = WorkflowRunSource
@@ -1083,6 +1084,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
       previousTurnController = currentController
 
       const { def, isModWorkflow, source } = await resolveWorkflowForSave(activeSaveId)
+      const runtimeDef = compileWorkflowStateModel(def)
 
       // === 6) outputs store（套娃 ref；自动替换 currentTurnOutputsRef） ===
       const handle = createOutputsStore({
@@ -1091,7 +1093,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         turn: turnedSnapshot.state.turn,
         isModWorkflow,
         source,
-        nodes: def.nodes.map((node) => ({ id: node.id, type: node.type })),
+        nodes: runtimeDef.nodes.map((node) => ({ id: node.id, type: node.type })),
       })
 
       // === 7) 推 user 消息（不递增 turn） ===
@@ -1138,7 +1140,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
       // === 9) 跑工作流（H12: per-turn AbortController 接入，旧轮 abort 在新轮入口触发） ===
       let workflowResult
       try {
-        workflowResult = await executeWorkflow(def, wfContext, {
+        workflowResult = await executeWorkflow(runtimeDef, wfContext, {
           outputsHooks: handle.writer,
           isModWorkflow,
           signal: currentController.signal,

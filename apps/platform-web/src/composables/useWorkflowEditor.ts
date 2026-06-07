@@ -10,17 +10,66 @@ import type {
   NodeOutputDeclaration,
   NodeOutputExtractRule,
   WorkflowPortValueType,
+  WorkflowStateModel,
+  WorkflowStateModelAnchor,
+  WorkflowStateModelAnchorPort,
+  WorkflowStateModelLink,
+  WorkflowStateModelLinkKind,
 } from '@tsian/contracts'
 import { resolveWorkflowInputSlots } from '../components/workflow/node-schema'
+
+export const WORKFLOW_NODE_VUE_TYPE = 'workflow-node'
+export const STATE_DATABASE_NODE_VUE_TYPE = 'state-database-node'
+export const WORKFLOW_EDGE_VUE_TYPE = 'neon-edge'
+export const STATE_LINK_EDGE_VUE_TYPE = 'state-link-edge'
+export const STATE_ANCHOR_NODE_ID_PREFIX = 'state-anchor:'
+export const STATE_READ_HANDLE_PREFIX = 'state-read:'
+export const STATE_WRITE_HANDLE_PREFIX = 'state-write:'
+
+export function toStateAnchorVueNodeId(anchorId: string): string {
+  return `${STATE_ANCHOR_NODE_ID_PREFIX}${anchorId}`
+}
+
+export function fromStateAnchorVueNodeId(nodeId: string): string {
+  return nodeId.startsWith(STATE_ANCHOR_NODE_ID_PREFIX)
+    ? nodeId.slice(STATE_ANCHOR_NODE_ID_PREFIX.length)
+    : nodeId
+}
+
+export function toStateReadHandleId(portId: string): string {
+  return `${STATE_READ_HANDLE_PREFIX}${portId}`
+}
+
+export function toStateWriteHandleId(portId: string): string {
+  return `${STATE_WRITE_HANDLE_PREFIX}${portId}`
+}
+
+export function readStatePortIdFromHandle(
+  handle: string | null | undefined,
+): string | undefined {
+  if (!handle) return undefined
+  if (handle.startsWith(STATE_READ_HANDLE_PREFIX)) {
+    return handle.slice(STATE_READ_HANDLE_PREFIX.length)
+  }
+  if (handle.startsWith(STATE_WRITE_HANDLE_PREFIX)) {
+    return handle.slice(STATE_WRITE_HANDLE_PREFIX.length)
+  }
+  return undefined
+}
 
 // ---------------------------------------------------------------------------
 // ID 生成器（简单计数器）
 // ---------------------------------------------------------------------------
 
 let counter = 0
+let stateAnchorCounter = 0
 
 function generateNodeId(type: WorkflowNodeType): string {
   return `${type}-${++counter}`
+}
+
+function generateStateAnchorId(): string {
+  return `state-db-${++stateAnchorCounter}`
 }
 
 function defaultNodeConfig(type: WorkflowNodeType): Record<string, unknown> {
@@ -147,23 +196,129 @@ function normalizeOutputs(outputs: unknown): NodeOutputDeclaration[] {
     }))
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function optionalText(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined
+}
+
+function normalizeStateAnchorPort(
+  port: unknown,
+  index: number,
+): WorkflowStateModelAnchorPort {
+  const record = isRecord(port) ? port : {}
+  const collection = optionalText(record.collection)
+  return {
+    id: optionalText(record.id) ?? collection ?? `port-${index + 1}`,
+    collection,
+    label: optionalText(record.label),
+  }
+}
+
+function normalizeStateAnchor(anchor: unknown, index: number): WorkflowStateModelAnchor {
+  const record = isRecord(anchor) ? anchor : {}
+  const rawPosition = isRecord(record.position) ? record.position : undefined
+  const ports = Array.isArray(record.ports)
+    ? record.ports.map(normalizeStateAnchorPort)
+    : []
+  return {
+    id: optionalText(record.id) ?? `state-db-${index + 1}`,
+    kind: record.kind === 'database' ? 'database' : 'database',
+    label: optionalText(record.label),
+    position: rawPosition &&
+      typeof rawPosition.x === 'number' &&
+      typeof rawPosition.y === 'number'
+      ? { x: rawPosition.x, y: rawPosition.y }
+      : undefined,
+    ports,
+  }
+}
+
+function normalizeStateModel(value: unknown): WorkflowStateModel | undefined {
+  if (!isRecord(value)) return undefined
+  const anchors = Array.isArray(value.anchors)
+    ? value.anchors.map(normalizeStateAnchor)
+    : undefined
+  const links = Array.isArray(value.links)
+    ? value.links
+      .filter((link): link is Partial<WorkflowStateModelLink> => isRecord(link))
+      .map((link, index): WorkflowStateModelLink => {
+        const kind: WorkflowStateModelLinkKind = link.kind === 'write' ? 'write' : 'read'
+        return {
+          id: optionalText(link.id) ?? `state-link-${index + 1}`,
+          kind,
+          anchorId: optionalText(link.anchorId) ?? '',
+          portId: optionalText(link.portId) ?? '',
+          nodeId: optionalText(link.nodeId) ?? '',
+        }
+      })
+    : undefined
+  const next: WorkflowStateModel = {
+    schema: isRecord(value.schema)
+      ? value.schema as unknown as WorkflowStateModel['schema']
+      : undefined,
+    globalsCollection: optionalText(value.globalsCollection),
+    anchors,
+    links,
+  }
+  return next.schema || next.globalsCollection || anchors?.length || links?.length
+    ? next
+    : undefined
+}
+
+function isStateAnchorNode(vfNode: Node): boolean {
+  return vfNode.type === STATE_DATABASE_NODE_VUE_TYPE ||
+    vfNode.data?.editorKind === 'state-anchor'
+}
+
+function isStateLinkEdge(vfEdge: Edge): boolean {
+  return vfEdge.type === STATE_LINK_EDGE_VUE_TYPE ||
+    vfEdge.data?.edgeKind === 'state-link'
+}
+
 // ---------------------------------------------------------------------------
 // 类型映射：Tsian 契约 ↔ Vue Flow
 // ---------------------------------------------------------------------------
 
 /** 契约节点 → Vue Flow 节点 */
-function toVfNode(node: WorkflowNode): Node {
+function toVfNode(
+  node: WorkflowNode,
+  stateModel: WorkflowStateModel | undefined,
+): Node {
   return {
     id: node.id,
-    type: 'workflow-node',
+    type: WORKFLOW_NODE_VUE_TYPE,
     position: node.position ?? { x: 0, y: 0 },
     data: {
+      editorKind: 'workflow',
       nodeType: node.type,
       label: node.label,
       config: node.config,
       inputs: normalizeInputs(node.inputs),
       outputs: normalizeOutputs(node.outputs),
       retry: node.retry,
+      stateModel,
+    },
+  }
+}
+
+function toVfStateAnchor(
+  anchor: WorkflowStateModelAnchor,
+  stateModel: WorkflowStateModel | undefined,
+): Node {
+  return {
+    id: toStateAnchorVueNodeId(anchor.id),
+    type: STATE_DATABASE_NODE_VUE_TYPE,
+    position: anchor.position ?? { x: 0, y: 0 },
+    data: {
+      editorKind: 'state-anchor',
+      anchorKind: anchor.kind,
+      label: anchor.label,
+      ports: anchor.ports.map((port) => ({ ...port })),
+      schema: stateModel?.schema,
+      globalsCollection: stateModel?.globalsCollection,
     },
   }
 }
@@ -182,6 +337,32 @@ function fromVfNode(vfNode: Node): WorkflowNode {
     outputs: outputs.length ? outputs : undefined,
     retry: vfNode.data.retry,
   }
+}
+
+function fromVfStateAnchor(vfNode: Node): WorkflowStateModelAnchor {
+  const rawPorts = Array.isArray(vfNode.data?.ports) ? vfNode.data.ports : []
+  return {
+    id: fromStateAnchorVueNodeId(vfNode.id),
+    kind: 'database',
+    label: optionalText(vfNode.data?.label),
+    position: { x: vfNode.position.x, y: vfNode.position.y },
+    ports: rawPorts.map(normalizeStateAnchorPort),
+  }
+}
+
+function stateAnchorsFromNodes(vfNodes: Node[]): WorkflowStateModelAnchor[] {
+  return vfNodes
+    .filter(isStateAnchorNode)
+    .map(fromVfStateAnchor)
+}
+
+function hasStateModelContent(model: WorkflowStateModel | undefined): boolean {
+  return !!(
+    model?.schema ||
+    model?.globalsCollection ||
+    model?.anchors?.length ||
+    model?.links?.length
+  )
 }
 
 /** 契约边 → Vue Flow 边 */
@@ -203,10 +384,35 @@ function toVfEdge(
     sourceHandle: normalizeSourceHandle(edge.from.outputName),
     target: edge.to.nodeId,
     targetHandle,
-    type: 'neon-edge',
+    type: WORKFLOW_EDGE_VUE_TYPE,
     data: {
+      edgeKind: 'workflow',
       varName: edge.to.varName,
       condition: edge.condition,
+    },
+  }
+}
+
+function createStateLinkId(link: Omit<WorkflowStateModelLink, 'id'>): string {
+  return `state:${link.kind}:${link.anchorId}:${link.portId}->${link.nodeId}`
+}
+
+function toVfStateLink(link: WorkflowStateModelLink): Edge {
+  const anchorNodeId = toStateAnchorVueNodeId(link.anchorId)
+  const isRead = link.kind === 'read'
+  return {
+    id: link.id || createStateLinkId(link),
+    source: isRead ? anchorNodeId : link.nodeId,
+    sourceHandle: isRead ? toStateReadHandleId(link.portId) : undefined,
+    target: isRead ? link.nodeId : anchorNodeId,
+    targetHandle: isRead ? undefined : toStateWriteHandleId(link.portId),
+    type: STATE_LINK_EDGE_VUE_TYPE,
+    data: {
+      edgeKind: 'state-link',
+      stateLinkKind: link.kind,
+      anchorId: link.anchorId,
+      portId: link.portId,
+      nodeId: link.nodeId,
     },
   }
 }
@@ -235,6 +441,26 @@ function fromVfEdge(vfEdge: Edge): TsianEdge {
   }
 }
 
+function fromVfStateLink(vfEdge: Edge): WorkflowStateModelLink | null {
+  const rawKind = vfEdge.data?.stateLinkKind
+  const kind: WorkflowStateModelLinkKind = rawKind === 'write' ? 'write' : 'read'
+  const anchorNodeId = kind === 'read' ? vfEdge.source : vfEdge.target
+  const workflowNodeId = kind === 'read' ? vfEdge.target : vfEdge.source
+  const handle = kind === 'read' ? vfEdge.sourceHandle : vfEdge.targetHandle
+  const anchorId = optionalText(vfEdge.data?.anchorId) ?? fromStateAnchorVueNodeId(anchorNodeId)
+  const portId = optionalText(vfEdge.data?.portId) ?? readStatePortIdFromHandle(handle)
+  const nodeId = optionalText(vfEdge.data?.nodeId) ?? workflowNodeId
+  if (!anchorId || !portId || !nodeId) return null
+  const link = {
+    id: vfEdge.id || createStateLinkId({ kind, anchorId, portId, nodeId }),
+    kind,
+    anchorId,
+    portId,
+    nodeId,
+  }
+  return link
+}
+
 function resolveTargetHandleFromVfNode(
   targetNode: Node | undefined,
   varName: string,
@@ -258,16 +484,26 @@ export function useWorkflowEditor() {
   // === 响应式状态 ===
   const nodes: Ref<Node[]> = ref([])
   const edges: Ref<Edge[]> = ref([])
+  const stateModel: Ref<WorkflowStateModel | undefined> = ref(undefined)
   const selectedNodeId: Ref<string | null> = ref(null)
 
   // === 核心方法 ===
 
   /** 从契约类型加载到画布 */
   function loadWorkflowDefinition(def: WorkflowDefinition, options?: { autoLayout?: () => void }): void {
-    const vfNodes = def.nodes.map(toVfNode)
+    const normalizedStateModel = normalizeStateModel(def.stateModel)
+    stateModel.value = normalizedStateModel
+    const stateAnchors = normalizedStateModel?.anchors ?? []
+    const vfNodes = [
+      ...def.nodes.map((node) => toVfNode(node, normalizedStateModel)),
+      ...stateAnchors.map((anchor) => toVfStateAnchor(anchor, normalizedStateModel)),
+    ]
     const nodeById = new Map(def.nodes.map((node) => [node.id, node]))
     nodes.value = vfNodes
-    edges.value = def.edges.map((edge) => toVfEdge(edge, nodeById))
+    edges.value = [
+      ...def.edges.map((edge) => toVfEdge(edge, nodeById)),
+      ...(normalizedStateModel?.links ?? []).map(toVfStateLink),
+    ]
     selectedNodeId.value = null
 
     if (hasMissingOrStackedPositions(vfNodes) && options?.autoLayout) {
@@ -284,6 +520,15 @@ export function useWorkflowEditor() {
       }
     }
     counter = maxId
+    let maxStateAnchorId = 0
+    for (const anchor of stateAnchors) {
+      const match = anchor.id.match(/state-db-(\d+)$/)
+      if (match) {
+        const num = parseInt(match[1], 10)
+        if (num > maxStateAnchorId) maxStateAnchorId = num
+      }
+    }
+    stateAnchorCounter = maxStateAnchorId
   }
 
   /** @deprecated 使用 loadWorkflowDefinition。 */
@@ -291,10 +536,38 @@ export function useWorkflowEditor() {
 
   /** 从画布导出为契约类型 */
   function toWorkflowDefinition(): WorkflowDefinition {
-    return {
-      nodes: nodes.value.map(fromVfNode),
-      edges: edges.value.map(fromVfEdge),
+    const workflowNodes = nodes.value
+      .filter((node) => !isStateAnchorNode(node))
+      .map(fromVfNode)
+    const workflowEdges = edges.value
+      .filter((edge) => !isStateLinkEdge(edge))
+      .map(fromVfEdge)
+    const stateAnchors = nodes.value
+      .filter(isStateAnchorNode)
+      .map(fromVfStateAnchor)
+    const stateLinks = edges.value
+      .filter(isStateLinkEdge)
+      .map(fromVfStateLink)
+      .filter((link): link is WorkflowStateModelLink => link !== null)
+    const nextStateModel: WorkflowStateModel | undefined =
+      stateModel.value?.schema ||
+      stateModel.value?.globalsCollection ||
+      stateAnchors.length ||
+      stateLinks.length
+        ? {
+          schema: stateModel.value?.schema,
+          globalsCollection: stateModel.value?.globalsCollection,
+          anchors: stateAnchors.length ? stateAnchors : undefined,
+          links: stateLinks.length ? stateLinks : undefined,
+        }
+        : undefined
+
+    const def: WorkflowDefinition = {
+      nodes: workflowNodes,
+      edges: workflowEdges,
     }
+    if (nextStateModel) def.stateModel = nextStateModel
+    return def
   }
 
   /** 添加节点（拖拽到画布时调用），返回新节点 ID */
@@ -302,18 +575,230 @@ export function useWorkflowEditor() {
     const id = generateNodeId(type)
     const node: Node = {
       id,
-      type: 'workflow-node',
+      type: WORKFLOW_NODE_VUE_TYPE,
       position,
       data: {
+        editorKind: 'workflow',
         nodeType: type,
         config: defaultNodeConfig(type),
         inputs: [],
         outputs: [],
         retry: undefined,
+        stateModel: toWorkflowDefinition().stateModel,
       },
     }
     nodes.value = [...nodes.value, node]
     return id
+  }
+
+  function addStateDatabaseAnchor(position: { x: number; y: number }): string {
+    const anchorId = generateStateAnchorId()
+    const firstCollection = Object.keys(stateModel.value?.schema?.collections ?? {})[0]
+    const anchor: WorkflowStateModelAnchor = {
+      id: anchorId,
+      kind: 'database',
+      label: '状态数据库',
+      position,
+      ports: [
+        {
+          id: firstCollection ?? 'port-1',
+          collection: firstCollection,
+          label: firstCollection,
+        },
+      ],
+    }
+    const currentModel = stateModel.value ?? {}
+    stateModel.value = {
+      ...currentModel,
+      anchors: [...(currentModel.anchors ?? []), anchor],
+    }
+    const node = toVfStateAnchor(anchor, stateModel.value)
+    nodes.value = [...nodes.value, node]
+    return node.id
+  }
+
+  function addStateModelLink(
+    kind: WorkflowStateModelLinkKind,
+    anchorNodeId: string,
+    portId: string,
+    workflowNodeId: string,
+  ): string {
+    const link: WorkflowStateModelLink = {
+      id: createStateLinkId({
+        kind,
+        anchorId: fromStateAnchorVueNodeId(anchorNodeId),
+        portId,
+        nodeId: workflowNodeId,
+      }),
+      kind,
+      anchorId: fromStateAnchorVueNodeId(anchorNodeId),
+      portId,
+      nodeId: workflowNodeId,
+    }
+    edges.value = [
+      ...edges.value.filter((edge) => edge.id !== link.id),
+      toVfStateLink(link),
+    ]
+    refreshStateModelNodeMetadata()
+    return link.id
+  }
+
+  function syncStateModelNodeMetadata(nextModel: WorkflowStateModel | undefined): void {
+    nodes.value = nodes.value.map((node) => {
+      if (!isStateAnchorNode(node)) {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            stateModel: nextModel,
+          },
+        }
+      }
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          schema: nextModel?.schema,
+          globalsCollection: nextModel?.globalsCollection,
+        },
+      }
+    })
+  }
+
+  function setStateModel(nextModel: WorkflowStateModel | undefined): void {
+    stateModel.value = hasStateModelContent(nextModel) ? nextModel : undefined
+    syncStateModelNodeMetadata(stateModel.value)
+  }
+
+  function refreshStateModelNodeMetadata(): void {
+    syncStateModelNodeMetadata(toWorkflowDefinition().stateModel)
+  }
+
+  function updateStateModelSchema(
+    schema: WorkflowStateModel['schema'] | undefined,
+    globalsCollection: string | undefined,
+  ): void {
+    const anchors = stateAnchorsFromNodes(nodes.value)
+    const links = edges.value
+      .filter(isStateLinkEdge)
+      .map(fromVfStateLink)
+      .filter((link): link is WorkflowStateModelLink => link !== null)
+    setStateModel({
+      ...(stateModel.value ?? {}),
+      schema,
+      globalsCollection,
+      anchors: anchors.length ? anchors : undefined,
+      links: links.length ? links : undefined,
+    })
+  }
+
+  function updateStateDatabaseAnchor(
+    anchorNodeId: string,
+    patch: {
+      label?: string
+      ports?: WorkflowStateModelAnchorPort[]
+    },
+  ): void {
+    const nextPortIds = new Set((patch.ports ?? []).map((port) => port.id))
+    const shouldPrunePortLinks = patch.ports !== undefined
+
+    nodes.value = nodes.value.map((node) => {
+      if (node.id !== anchorNodeId || !isStateAnchorNode(node)) return node
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          label: patch.label !== undefined ? patch.label : node.data.label,
+          ports: patch.ports
+            ? patch.ports.map((port, index) => normalizeStateAnchorPort(port, index))
+            : node.data.ports,
+        },
+      }
+    })
+
+    if (shouldPrunePortLinks) {
+      const anchorId = fromStateAnchorVueNodeId(anchorNodeId)
+      edges.value = edges.value.filter((edge) => {
+        if (!isStateLinkEdge(edge)) return true
+        const link = fromVfStateLink(edge)
+        return !link ||
+          link.anchorId !== anchorId ||
+          nextPortIds.has(link.portId)
+      })
+    }
+
+    setStateModel({
+      ...(stateModel.value ?? {}),
+      anchors: stateAnchorsFromNodes(nodes.value),
+    })
+  }
+
+  function renameStateModelCollectionReference(previousName: string, nextName: string): void {
+    const previous = previousName.trim()
+    const next = nextName.trim()
+    if (!previous || !next || previous === next) return
+
+    nodes.value = nodes.value.map((node) => {
+      if (!isStateAnchorNode(node)) return node
+      const rawPorts: unknown[] = Array.isArray(node.data?.ports) ? node.data.ports : []
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          ports: rawPorts.map((port, index) => {
+            const normalized = normalizeStateAnchorPort(port, index)
+            if (normalized.collection !== previous) return normalized
+            return {
+              ...normalized,
+              collection: next,
+              label: normalized.label === previous ? next : normalized.label,
+            }
+          }),
+        },
+      }
+    })
+
+    setStateModel({
+      ...(stateModel.value ?? {}),
+      anchors: stateAnchorsFromNodes(nodes.value),
+    })
+  }
+
+  function removeStateModelCollectionReference(collectionName: string): void {
+    const collection = collectionName.trim()
+    if (!collection) return
+
+    nodes.value = nodes.value.map((node) => {
+      if (!isStateAnchorNode(node)) return node
+      const rawPorts: unknown[] = Array.isArray(node.data?.ports) ? node.data.ports : []
+      return {
+        ...node,
+        data: {
+          ...node.data,
+          ports: rawPorts.map((port, index) => {
+            const normalized = normalizeStateAnchorPort(port, index)
+            if (normalized.collection !== collection) return normalized
+            return {
+              ...normalized,
+              collection: undefined,
+              label: normalized.label === collection ? undefined : normalized.label,
+            }
+          }),
+        },
+      }
+    })
+
+    setStateModel({
+      ...(stateModel.value ?? {}),
+      anchors: stateAnchorsFromNodes(nodes.value),
+      globalsCollection: stateModel.value?.globalsCollection === collection
+        ? undefined
+        : stateModel.value?.globalsCollection,
+    })
+  }
+
+  function clearStateModel(): void {
+    stateModel.value = undefined
   }
 
   /** 删除选中的节点及其关联边 */
@@ -432,11 +917,20 @@ export function useWorkflowEditor() {
   return {
     nodes,
     edges,
+    stateModel,
     selectedNodeId,
     fromWorkflowDefinition,
     loadWorkflowDefinition,
     toWorkflowDefinition,
     addNode,
+    addStateDatabaseAnchor,
+    addStateModelLink,
+    updateStateModelSchema,
+    updateStateDatabaseAnchor,
+    renameStateModelCollectionReference,
+    removeStateModelCollectionReference,
+    clearStateModel,
+    refreshStateModelNodeMetadata,
     removeSelected,
     updateNodeConfig,
     updateNodeLabel,

@@ -17,6 +17,7 @@ import {
   resolveWorkflowOutputSlots,
   type WorkflowPortDisplay,
 } from './node-schema'
+import type { WorkflowStateModel } from '@tsian/contracts'
 
 interface WorkflowResourceOption {
   id: string
@@ -27,6 +28,7 @@ interface WorkflowResourceOption {
 const props = defineProps<{
   nodeId: string | null
   nodes: any[]
+  stateModel?: WorkflowStateModel
   promptPresetOptions?: WorkflowResourceOption[]
   worldBookOptions?: WorkflowResourceOption[]
   onUpdateConfig: (nodeId: string, config: Record<string, unknown>) => void
@@ -254,11 +256,15 @@ function handleDelete() {
       <StateQueryForm
         v-else-if="selectedNode.data.nodeType === 'state-query'"
         :config="selectedNode.data.config"
+        :node-id="nodeId"
+        :state-model="props.stateModel"
         :on-update="handleUpdateConfig"
       />
       <StateWriteForm
         v-else-if="selectedNode.data.nodeType === 'state-write'"
         :config="selectedNode.data.config"
+        :node-id="nodeId"
+        :state-model="props.stateModel"
         :on-update="handleUpdateConfig"
       />
       <TemplateComposeForm

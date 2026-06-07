@@ -54,6 +54,7 @@
           <NodeInspector
             :node-id="nodeId"
             :nodes="nodes"
+            :state-model="stateModel"
             :prompt-preset-options="promptPresetOptions"
             :world-book-options="worldBookOptions"
             :on-update-config="onUpdateConfig"
@@ -107,6 +108,7 @@ import { computed, ref, watch } from 'vue'
 import type {
   NodeInputDeclaration,
   NodeOutputDeclaration,
+  WorkflowStateModel,
 } from '@tsian/contracts'
 import NodeInspector from './NodeInspector.vue'
 
@@ -130,6 +132,7 @@ const props = defineProps<{
   open: boolean
   nodeId: string | null
   nodes: any[]
+  stateModel?: WorkflowStateModel
   promptPresetOptions?: WorkflowResourceOption[]
   worldBookOptions?: WorkflowResourceOption[]
   onUpdateConfig: (nodeId: string, config: Record<string, unknown>) => void

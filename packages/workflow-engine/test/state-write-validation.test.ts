@@ -28,6 +28,10 @@ const PLATFORM_WEB_VITE_CONFIG_FILE = resolve(
   REPO_ROOT,
   "apps/platform-web/vite.config.ts",
 )
+const PLATFORM_HOST_FILE = resolve(
+  REPO_ROOT,
+  "apps/platform-web/src/platform-host/index.ts",
+)
 
 describe("state-write schema validation boundary", () => {
   it("platform-web declares and resolves @tsian/memory-core explicitly", () => {
@@ -64,6 +68,15 @@ describe("state-write schema validation boundary", () => {
     expect(normalizeIndex).toBeGreaterThan(-1)
     expect(storageIndex).toBeGreaterThan(-1)
     expect(normalizeIndex).toBeLessThan(storageIndex)
+  })
+
+  it("platform host compiles workflow-level stateModel before execution", () => {
+    const src = readFileSync(PLATFORM_HOST_FILE, "utf-8")
+
+    expect(src).toContain("compileWorkflowStateModel")
+    expect(src).toContain("const runtimeDef = compileWorkflowStateModel(def)")
+    expect(src).toContain("nodes: runtimeDef.nodes.map")
+    expect(src).toContain("executeWorkflow(runtimeDef")
   })
 
   it("custom collections remain storage-only when the node schema does not cover them", () => {

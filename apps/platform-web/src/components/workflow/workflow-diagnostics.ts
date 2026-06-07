@@ -2,6 +2,7 @@ import type {
   NodeInputDeclaration,
   NodeOutputDeclaration,
   WorkflowDefinition,
+  WorkflowStateModelLink,
   WorkflowNode,
 } from '@tsian/contracts'
 import {
@@ -31,6 +32,16 @@ function nodeName(node: WorkflowNode): string {
   return label ? `${label}（${node.id}）` : node.id
 }
 
+function stateLinksForNode(
+  def: WorkflowDefinition,
+  nodeId: string,
+  kind: WorkflowStateModelLink['kind'],
+): WorkflowStateModelLink[] {
+  return (def.stateModel?.links ?? []).filter((link) =>
+    link.nodeId === nodeId && link.kind === kind,
+  )
+}
+
 function hasTextConfig(node: WorkflowNode, key: string): boolean {
   return text(node.config?.[key]).length > 0
 }
@@ -40,6 +51,7 @@ function addUnique(messages: string[], message: string): void {
 }
 
 function validateNodeConfig(
+  def: WorkflowDefinition,
   node: WorkflowNode,
   messages: string[],
   options: WorkflowEditorDiagnosticOptions,
@@ -65,14 +77,28 @@ function validateNodeConfig(
   }
 
   if (node.type === 'state-query') {
+    const readLinks = stateLinksForNode(def, node.id, 'read')
     if (node.config.source !== 'collection') {
       addUnique(messages, `${name} 的状态查询来源必须是集合。`)
     }
-    if (!hasTextConfig(node, 'namespace')) {
+    if (readLinks.length === 0 && !hasTextConfig(node, 'namespace')) {
       addUnique(messages, `${name} 需要填写命名空间。`)
     }
-    if (!hasTextConfig(node, 'collection')) {
+    if (readLinks.length === 0 && !hasTextConfig(node, 'collection')) {
       addUnique(messages, `${name} 需要填写集合名。`)
+    }
+    return
+  }
+
+  if (node.type === 'state-write') {
+    const writeLinks = stateLinksForNode(def, node.id, 'write')
+    if (
+      writeLinks.length === 0 &&
+      !hasTextConfig(node, 'namespace') &&
+      !hasTextConfig(node, 'collection') &&
+      !isRecord(node.config.schema)
+    ) {
+      addUnique(messages, `${name} 需要连接状态数据库 collection，或在高级配置中填写写入目标。`)
     }
     return
   }
@@ -119,6 +145,102 @@ function validateNodeConfig(
       if (!isRecord(item) || !text(item.when) || !text(item.outputName)) {
         addUnique(messages, `${name} 的第 ${index + 1} 个分支需要填写匹配值和输出名。`)
       }
+    }
+  }
+}
+
+function validateStateModel(def: WorkflowDefinition, messages: string[]): void {
+  const stateModel = def.stateModel
+  if (!stateModel) return
+
+  const nodesById = new Map(def.nodes.map((node) => [node.id, node]))
+  const collectionNames = new Set(Object.keys(stateModel.schema?.collections ?? {}))
+  const anchorsById = new Map<string, NonNullable<typeof stateModel.anchors>[number]>()
+  const linkKindsByAnchorId = new Map<string, Set<WorkflowStateModelLink['kind']>>()
+
+  for (const anchor of stateModel.anchors ?? []) {
+    if (!text(anchor.id)) {
+      addUnique(messages, '状态数据库节点缺少锚点 ID。')
+      continue
+    }
+    if (anchorsById.has(anchor.id)) {
+      addUnique(messages, `状态数据库节点 ID "${anchor.id}" 重复。`)
+    }
+    anchorsById.set(anchor.id, anchor)
+
+    const portIds = new Set<string>()
+    for (const port of anchor.ports ?? []) {
+      if (!text(port.id)) {
+        addUnique(messages, `状态数据库节点 "${anchor.id}" 有一个端口缺少 ID。`)
+        continue
+      }
+      if (portIds.has(port.id)) {
+        addUnique(messages, `状态数据库节点 "${anchor.id}" 的端口 "${port.id}" 重复。`)
+      }
+      portIds.add(port.id)
+      if (text(port.collection) && collectionNames.size > 0 && !collectionNames.has(port.collection!)) {
+        addUnique(messages, `状态数据库端口 "${anchor.id}/${port.id}" 引用了不存在的 collection：${port.collection}`)
+      }
+    }
+  }
+
+  const readLinkCounts = new Map<string, number>()
+  for (const link of stateModel.links ?? []) {
+    const anchor = anchorsById.get(link.anchorId)
+    const port = anchor?.ports.find((item) => item.id === link.portId)
+    const targetNode = nodesById.get(link.nodeId)
+
+    if (!anchor) {
+      addUnique(messages, `状态模型连线 "${link.id}" 引用了不存在的数据库节点：${link.anchorId}`)
+      continue
+    }
+    if (!port) {
+      addUnique(messages, `状态模型连线 "${link.id}" 引用了不存在的数据库端口：${link.portId}`)
+      continue
+    }
+    if (!text(port.collection)) {
+      addUnique(messages, `状态模型连线 "${link.id}" 的数据库端口未绑定 collection。`)
+      continue
+    }
+    if (!targetNode) {
+      addUnique(messages, `状态模型连线 "${link.id}" 引用了不存在的工作流节点：${link.nodeId}`)
+      continue
+    }
+    if (link.kind === 'read') {
+      if (targetNode.type !== 'state-query') {
+        addUnique(messages, `状态模型读取连线 "${link.id}" 只能连接到状态查询节点。`)
+      }
+      const kinds = linkKindsByAnchorId.get(link.anchorId) ?? new Set()
+      kinds.add('read')
+      linkKindsByAnchorId.set(link.anchorId, kinds)
+      readLinkCounts.set(link.nodeId, (readLinkCounts.get(link.nodeId) ?? 0) + 1)
+      continue
+    }
+    if (link.kind === 'write') {
+      if (targetNode.type !== 'state-write') {
+        addUnique(messages, `状态模型写入连线 "${link.id}" 只能从状态写入节点连接。`)
+      }
+      const kinds = linkKindsByAnchorId.get(link.anchorId) ?? new Set()
+      kinds.add('write')
+      linkKindsByAnchorId.set(link.anchorId, kinds)
+      continue
+    }
+    addUnique(messages, `状态模型连线 "${link.id}" 的类型无效。`)
+  }
+
+  for (const [anchorId, kinds] of linkKindsByAnchorId) {
+    if (!kinds.has('read') || !kinds.has('write')) continue
+    const anchor = anchorsById.get(anchorId)
+    const label = text(anchor?.label)
+    addUnique(
+      messages,
+      `状态数据库节点 "${label || anchorId}" 同时读出和写回。请放置另一个状态数据库节点作为写入目标，避免画布形成闭环。`,
+    )
+  }
+
+  for (const [nodeId, count] of readLinkCounts) {
+    if (count > 1) {
+      addUnique(messages, `状态查询节点 "${nodeId}" 在 MVP 中只能连接一个数据库 collection。`)
     }
   }
 }
@@ -198,8 +320,9 @@ export function collectWorkflowEditorDiagnostics(
   options: WorkflowEditorDiagnosticOptions = {},
 ): string[] {
   const messages: string[] = []
+  validateStateModel(def, messages)
   for (const node of def.nodes) {
-    validateNodeConfig(node, messages, options)
+    validateNodeConfig(def, node, messages, options)
     validatePorts(node, messages)
   }
   validateEdges(def, messages)

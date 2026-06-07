@@ -221,12 +221,60 @@ export interface WorkflowEdge {
 }
 
 // ============================================================================
+// 工作流级状态模型
+// ============================================================================
+
+export type WorkflowStateModelAnchorKind = "database"
+
+export interface WorkflowStateModelAnchorPort {
+  /** Editor-local stable port id inside the anchor. */
+  id: string
+  /** Collection key inside stateModel.schema.collections. */
+  collection?: string
+  /** Optional editor display label. */
+  label?: string
+}
+
+export interface WorkflowStateModelAnchor {
+  /** Editor-local stable visual anchor id. Not an executable workflow node id. */
+  id: string
+  kind: WorkflowStateModelAnchorKind
+  label?: string
+  position?: { x: number; y: number }
+  ports: WorkflowStateModelAnchorPort[]
+}
+
+export type WorkflowStateModelLinkKind = "read" | "write"
+
+export interface WorkflowStateModelLink {
+  /** Editor-local stable visual link id. Not an executable workflow edge id. */
+  id: string
+  kind: WorkflowStateModelLinkKind
+  anchorId: string
+  portId: string
+  /** Executable workflow node bound by this state-model link. */
+  nodeId: string
+}
+
+export interface WorkflowStateModel {
+  /** Workflow-level state schema. Source of truth for database anchors. */
+  schema?: MemorySchemaDefinition
+  /** Collection rendered as a special globals/key-value table in authoring UI. */
+  globalsCollection?: string
+  /** Visual database anchor nodes. These are not executable workflow nodes. */
+  anchors?: WorkflowStateModelAnchor[]
+  /** Visual read/write bindings. These are not runtime DAG edges. */
+  links?: WorkflowStateModelLink[]
+}
+
+// ============================================================================
 // 顶层定义
 // ============================================================================
 
 export interface WorkflowDefinition {
   nodes: WorkflowNode[]
   edges: WorkflowEdge[]
+  stateModel?: WorkflowStateModel
 }
 
 // ============================================================================

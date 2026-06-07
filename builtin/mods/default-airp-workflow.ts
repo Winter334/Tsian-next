@@ -251,8 +251,6 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
         type: "state-query",
         config: {
           source: "collection",
-          namespace: "airp",
-          collection: "events",
           query: "",
           limit: 80,
         },
@@ -262,8 +260,6 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
         type: "state-query",
         config: {
           source: "collection",
-          namespace: "airp",
-          collection: "archives",
           query: "",
           limit: 120,
         },
@@ -273,8 +269,6 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
         type: "state-query",
         config: {
           source: "collection",
-          namespace: "airp",
-          collection: "globals",
           query: "",
           limit: 20,
         },
@@ -401,7 +395,6 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
         config: {
           operationsVarName: "operations",
           pushCheckpointReason: "none",
-          schema: defaultAirpMemorySchema,
         },
       },
     ],
@@ -503,5 +496,77 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
         to: { nodeId: "stateWrite", varName: "operations" },
       },
     ],
+    stateModel: {
+      schema: defaultAirpMemorySchema,
+      globalsCollection: "globals",
+      anchors: [
+        {
+          id: "airpStateRead",
+          kind: "database",
+          label: "AIRP 状态数据库",
+          position: { x: -280, y: 120 },
+          ports: [
+            { id: "events", collection: "events", label: "事件" },
+            { id: "archives", collection: "archives", label: "档案" },
+            { id: "globals", collection: "globals", label: "全局状态" },
+          ],
+        },
+        {
+          id: "airpStateWrite",
+          kind: "database",
+          label: "AIRP 状态数据库",
+          position: { x: 1880, y: 360 },
+          ports: [
+            { id: "events", collection: "events", label: "事件" },
+            { id: "archives", collection: "archives", label: "档案" },
+            { id: "globals", collection: "globals", label: "全局状态" },
+          ],
+        },
+      ],
+      links: [
+        {
+          id: "airpStateReadEvents",
+          kind: "read",
+          anchorId: "airpStateRead",
+          portId: "events",
+          nodeId: "airpEvents",
+        },
+        {
+          id: "airpStateReadArchives",
+          kind: "read",
+          anchorId: "airpStateRead",
+          portId: "archives",
+          nodeId: "airpArchives",
+        },
+        {
+          id: "airpStateReadGlobals",
+          kind: "read",
+          anchorId: "airpStateRead",
+          portId: "globals",
+          nodeId: "airpGlobals",
+        },
+        {
+          id: "airpStateWriteEvents",
+          kind: "write",
+          anchorId: "airpStateWrite",
+          portId: "events",
+          nodeId: "stateWrite",
+        },
+        {
+          id: "airpStateWriteArchives",
+          kind: "write",
+          anchorId: "airpStateWrite",
+          portId: "archives",
+          nodeId: "stateWrite",
+        },
+        {
+          id: "airpStateWriteGlobals",
+          kind: "write",
+          anchorId: "airpStateWrite",
+          portId: "globals",
+          nodeId: "stateWrite",
+        },
+      ],
+    },
   }
 }

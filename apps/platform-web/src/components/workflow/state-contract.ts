@@ -5,6 +5,7 @@ import type {
   StateWriteNodeConfig,
   WorkflowDefinition,
   WorkflowNode,
+  WorkflowStateModelLink,
 } from '@tsian/contracts'
 import { validateMemorySchema } from '@tsian/memory-core'
 
@@ -93,12 +94,83 @@ function addUnique(list: string[], value: string): void {
   if (!list.includes(value)) list.push(value)
 }
 
+function stateModelLinkTarget(
+  workflow: WorkflowDefinition,
+  link: WorkflowStateModelLink,
+): { namespace?: string; collection?: string } {
+  const stateModel = workflow.stateModel
+  const anchor = stateModel?.anchors?.find((item) => item.id === link.anchorId)
+  const port = anchor?.ports.find((item) => item.id === link.portId)
+  return {
+    namespace: readText(stateModel?.schema?.defaultNamespace),
+    collection: readText(port?.collection),
+  }
+}
+
+function addStateModelCollections(
+  workflow: WorkflowDefinition,
+  collections: Map<string, StateContractCollectionSummary>,
+  issues: StateContractIssue[],
+  dynamicWriteNodeIds: string[],
+): void {
+  const schema = readSchema(workflow.stateModel?.schema)
+  const namespace = readText(schema?.defaultNamespace)
+
+  if (schema) {
+    for (const issue of validateMemorySchema(schema)) {
+      issues.push({
+        nodeId: 'stateModel',
+        message: `${issue.code} at ${formatIssuePath(issue.path)}: ${issue.message}`,
+      })
+    }
+  }
+
+  if (schema && namespace && isRecord(schema.collections)) {
+    const schemaNodeIds = workflow.stateModel?.anchors?.map((anchor) => anchor.id) ?? ['stateModel']
+    for (const [collection, schemaCollection] of Object.entries(schema.collections)) {
+      const summary = ensureCollection(collections, namespace, collection)
+      if (!summary) continue
+      for (const id of schemaNodeIds) addUnique(summary.schemaNodeIds, id)
+      summary.schemaId = readText(schema.id)
+      summary.schemaVersion = readText(schema.version)
+      summary.schemaCollection = schemaCollection
+      summary.storageOnly = false
+    }
+  }
+
+  const writeLinkCounts = new Map<string, number>()
+  for (const link of workflow.stateModel?.links ?? []) {
+    const target = stateModelLinkTarget(workflow, link)
+    const summary = ensureCollection(collections, target.namespace, target.collection)
+    if (!summary) {
+      issues.push({
+        nodeId: link.nodeId || 'stateModel',
+        message: `状态模型连线 ${link.id} 缺少有效 collection 端口。`,
+      })
+      continue
+    }
+
+    if (link.kind === 'read') {
+      addUnique(summary.readNodeIds, link.nodeId)
+    } else {
+      addUnique(summary.writeNodeIds, link.nodeId)
+      writeLinkCounts.set(link.nodeId, (writeLinkCounts.get(link.nodeId) ?? 0) + 1)
+    }
+  }
+
+  for (const [nodeId, count] of writeLinkCounts) {
+    if (count > 1) addUnique(dynamicWriteNodeIds, nodeId)
+  }
+}
+
 export function analyzeWorkflowStateContract(
   workflow: WorkflowDefinition,
 ): StateContractReport {
   const collections = new Map<string, StateContractCollectionSummary>()
   const issues: StateContractIssue[] = []
   const dynamicWriteNodeIds: string[] = []
+
+  addStateModelCollections(workflow, collections, issues, dynamicWriteNodeIds)
 
   for (const node of workflow.nodes) {
     const queryConfig = readStateQueryConfig(node)

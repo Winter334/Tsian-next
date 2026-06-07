@@ -119,7 +119,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
 import { nodeTypeMap } from './node-registry'
 import {
@@ -127,9 +127,14 @@ import {
   resolveWorkflowOutputSlots,
   type WorkflowPortDisplay,
 } from './node-schema'
+import {
+  formatStateNodeTargetSummary,
+  workflowStateModelContextKey,
+} from './state-model-view'
 import type {
   NodeInputDeclaration,
   NodeOutputDeclaration,
+  WorkflowStateModel,
   WorkflowNodeType,
 } from '@tsian/contracts'
 import {
@@ -157,6 +162,7 @@ const props = defineProps<{
     inputs: NodeInputDeclaration[]
     outputs: NodeOutputDeclaration[]
     retry?: { maxRetries: number }
+    stateModel?: WorkflowStateModel
   }
   selected: boolean
 }>()
@@ -192,6 +198,8 @@ const iconMap: Record<string, any> = {
 const iconComponent = computed(() => {
   return iconMap[typeInfo.value.icon] ?? HelpCircle
 })
+
+const stateModelContext = inject(workflowStateModelContextKey, undefined)
 
 const inputSlots = computed(() => {
   return resolveWorkflowInputSlots(
@@ -237,6 +245,15 @@ function sourceLabel(value: unknown): string {
 const configSummary = computed(() => {
   const config = props.data.config
   if (!config || Object.keys(config).length === 0) return ''
+  const stateTargetSummary = formatStateNodeTargetSummary(
+    props.data.stateModel ?? stateModelContext?.value,
+    {
+      id: props.id,
+      type: props.data.nodeType,
+      config,
+    },
+  )
+  if (stateTargetSummary) return stateTargetSummary
   // ai-call: 显示 presetId
   if (config.presetId) return `提示词: ${config.presetId}`
   // result: 显示 name

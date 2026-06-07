@@ -4,7 +4,7 @@
  * 流程：
  *   1. 从 context.presets 取 PresetInfo（缺失 → fail loud throw）
  *   2. 按 config.worldBookKeys 过滤 context.worldBooks（未声明 = 全集）
- *   3. 合并宏：context.macros ∪ inputs（inputs 同名覆盖 macros）
+ *   3. 合并宏：context.macros ∪ inputs（inputs 同名覆盖 macros；结构化 inputs 额外展开路径宏）
  *   4. 调 assemblePromptFromPreset（channel='openai', view='model'）
  *   5. 若 config.appendUserInput === true：把 { role: 'user', content: macros['user.input'] } 追加到末尾
  *   6. 调 generateAssistantReply(messages, { signal, debugLabel })
@@ -79,19 +79,55 @@ function selectWorldBooks(
 function inputsToMacros(inputs: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {}
   for (const [k, v] of Object.entries(inputs)) {
-    if (typeof v === "string") {
-      out[k] = v
-    } else if (v === undefined || v === null) {
-      out[k] = ""
-    } else {
-      try {
-        out[k] = JSON.stringify(v)
-      } catch {
-        out[k] = String(v)
-      }
-    }
+    out[k] = stringifyMacroValue(v)
+    flattenInputMacroPaths(out, k, v)
   }
   return out
+}
+
+function stringifyMacroValue(value: unknown): string {
+  if (typeof value === "string") return value
+  if (value === undefined || value === null) return ""
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
+function isTraversable(value: unknown): value is Record<string, unknown> | unknown[] {
+  return typeof value === "object" && value !== null
+}
+
+function flattenInputMacroPaths(
+  out: Record<string, string>,
+  prefix: string,
+  value: unknown,
+): void {
+  const seen = new WeakSet<object>()
+  let emitted = 0
+  const maxEntries = 500
+  const maxDepth = 6
+
+  function visit(currentPrefix: string, current: unknown, depth: number): void {
+    if (!isTraversable(current) || depth >= maxDepth || emitted >= maxEntries) return
+    if (seen.has(current)) return
+    seen.add(current)
+
+    const entries = Array.isArray(current)
+      ? current.map((item, index) => [String(index), item] as const)
+      : Object.entries(current)
+
+    for (const [key, child] of entries) {
+      if (!key || emitted >= maxEntries) continue
+      const nextPrefix = `${currentPrefix}.${key}`
+      out[nextPrefix] = stringifyMacroValue(child)
+      emitted += 1
+      visit(nextPrefix, child, depth + 1)
+    }
+  }
+
+  visit(prefix, value, 0)
 }
 
 function toAiChatMessages(

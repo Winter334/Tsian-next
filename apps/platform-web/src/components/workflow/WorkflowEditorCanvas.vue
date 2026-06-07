@@ -90,6 +90,17 @@
           </p>
           <div class="max-h-[420px] overflow-y-auto p-1">
             <button
+              type="button"
+              class="flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-neon/10"
+              @click="addStateDatabaseFromContextMenu"
+            >
+              <span class="mt-1 h-2 w-2 shrink-0 bg-[#00FF88]" />
+              <span class="min-w-0">
+                <span class="block font-mono text-xs font-bold text-text-main">状态数据库</span>
+                <span class="block truncate font-mono text-[10px] text-text-dim">stateModel</span>
+              </span>
+            </button>
+            <button
               v-for="info in nodeTypeRegistry"
               :key="info.type"
               type="button"
@@ -110,6 +121,15 @@
             节点
           </p>
           <button
+            v-if="isStateAnchorNodeId(contextMenu.nodeId)"
+            type="button"
+            class="block w-full px-3 py-2 text-left font-mono text-xs text-text-main transition-colors hover:bg-neon/10 hover:text-neon"
+            @click="openStateDatabaseEditor(contextMenu.nodeId)"
+          >
+            编辑数据库
+          </button>
+          <button
+            v-else
             type="button"
             class="block w-full px-3 py-2 text-left font-mono text-xs text-text-main transition-colors hover:bg-neon/10 hover:text-neon"
             @click="openNodeEditor(contextMenu.nodeId)"
@@ -130,6 +150,7 @@
             边
           </p>
           <button
+            v-if="!isStateLinkEdgeId(contextMenu.edgeId)"
             type="button"
             class="block w-full px-3 py-2 text-left font-mono text-xs text-text-main transition-colors hover:bg-neon/10 hover:text-neon"
             @click="openEdgeEditor(contextMenu.edgeId)"
@@ -235,7 +256,7 @@
                   集合 // <span class="text-text-main">{{ stateContractReport.collections.length }}</span>
                 </p>
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
-                  有契约 // <span class="text-[#00FF88]">{{ stateContractCoveredCount }}</span>
+                  已定义 // <span class="text-[#00FF88]">{{ stateContractCoveredCount }}</span>
                 </p>
                 <p class="border border-neon-muted/30 bg-void/50 px-3 py-2">
                   仅存储 // <span class="text-warning">{{ stateContractStorageOnlyCount }}</span>
@@ -269,7 +290,7 @@
                 v-if="stateContractReport.collections.length === 0"
                 class="border border-neon-muted/30 bg-void/50 px-3 py-2"
               >
-                未发现状态查询或状态写入集合契约。
+                未发现状态数据库集合。
               </p>
 
               <div class="grid gap-2 lg:grid-cols-2">
@@ -286,20 +307,54 @@
                         ? 'border-warning/50 text-warning'
                         : 'border-[#00FF88]/50 text-[#00FF88]'"
                     >
-                      {{ collection.storageOnly ? '仅存储' : '有契约' }}
+                      {{ collection.storageOnly ? '仅存储' : '已定义' }}
                     </span>
                   </div>
                   <p v-if="collection.schemaId" class="text-[10px] text-text-dim">
-                    契约 // {{ collection.schemaId }}@{{ collection.schemaVersion ?? '?' }}
+                    模型 // {{ collection.schemaId }}@{{ collection.schemaVersion ?? '?' }}
                   </p>
                   <div class="grid gap-1 text-[10px]">
                     <p>读取 // <span class="text-text-main">{{ formatNodeList(collection.readNodeIds) }}</span></p>
                     <p>写入 // <span class="text-text-main">{{ formatNodeList(collection.writeNodeIds) }}</span></p>
-                    <p>契约 // <span class="text-text-main">{{ formatNodeList(collection.schemaNodeIds) }}</span></p>
+                    <p>定义 // <span class="text-text-main">{{ formatNodeList(collection.schemaNodeIds) }}</span></p>
                   </div>
-                  <p v-if="collection.schemaCollection" class="text-[10px] text-text-dim">
-                    字段 // {{ Object.keys(collection.schemaCollection.fields ?? {}).join(', ') || '无' }}
-                  </p>
+                  <div
+                    v-if="collection.schemaCollection"
+                    class="grid gap-1 border-t border-neon-muted/15 pt-2 text-[10px]"
+                  >
+                    <p class="uppercase tracking-wider text-text-dim">字段</p>
+                    <div
+                      v-for="field in collectionFieldPathRows(collection.schemaCollection)"
+                      :key="field.name"
+                      class="grid gap-1 border border-neon-muted/15 bg-panel/40 px-2 py-1"
+                    >
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="text-text-main">{{ field.label }}</span>
+                        <span class="text-text-dim">({{ field.name }})</span>
+                        <span class="border border-neon-muted/30 px-1.5 py-0.5 text-[9px] text-neon">
+                          {{ field.typeLabel }}
+                        </span>
+                        <span
+                          v-if="field.required"
+                          class="border border-warning/40 px-1.5 py-0.5 text-[9px] text-warning"
+                        >
+                          必填
+                        </span>
+                      </div>
+                      <p v-if="field.description" class="text-text-dim">
+                        {{ field.description }}
+                      </p>
+                      <p class="truncate text-text-dim">
+                        路径 // <span class="text-text-main">{{ field.path }}</span>
+                      </p>
+                    </div>
+                    <p
+                      v-if="collectionFieldPathRows(collection.schemaCollection).length === 0"
+                      class="text-text-dim"
+                    >
+                      无字段定义
+                    </p>
+                  </div>
                 </article>
               </div>
             </div>
@@ -313,6 +368,7 @@
       :open="!!nodeEditorNodeId"
       :node-id="nodeEditorNodeId"
       :nodes="nodes"
+      :state-model="currentStateModel"
       :prompt-preset-options="props.promptPresetOptions"
       :world-book-options="props.worldBookOptions"
       :on-update-config="updateNodeConfig"
@@ -322,6 +378,19 @@
       :on-delete-node="handleDeleteNode"
       :on-update-outputs="updateNodeOutputs"
       :on-close="closeNodeEditor"
+    />
+
+    <StateDatabaseEditorDialog
+      v-if="!props.readonly"
+      :open="!!stateDatabaseEditorNodeId"
+      :anchor-node-id="stateDatabaseEditorNodeId"
+      :nodes="nodes"
+      :state-model="currentStateModel"
+      :on-update-anchor="updateStateDatabaseAnchor"
+      :on-update-state-schema="updateStateModelSchema"
+      :on-rename-collection-reference="renameStateModelCollectionReference"
+      :on-remove-collection-reference="removeStateModelCollectionReference"
+      :on-close="closeStateDatabaseEditor"
     />
 
     <WorkflowEdgeEditorDialog
@@ -337,7 +406,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, markRaw, onBeforeUnmount, provide, ref, watch } from 'vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { MiniMap } from '@vue-flow/minimap'
@@ -347,15 +416,30 @@ import { validateWorkflowDefinition } from '@tsian/workflow-engine'
 import type { NodeMouseEvent, NodeTypesObject, EdgeTypesObject, Connection, Edge, EdgeMouseEvent } from '@vue-flow/core'
 import type { WorkflowDefinition, WorkflowNodeType } from '@tsian/contracts'
 import { ChevronDown, ChevronUp } from 'lucide-vue-next'
-import { useWorkflowEditor } from '../../composables/useWorkflowEditor'
+import {
+  readStatePortIdFromHandle,
+  STATE_ANCHOR_NODE_ID_PREFIX,
+  STATE_DATABASE_NODE_VUE_TYPE,
+  STATE_LINK_EDGE_VUE_TYPE,
+  WORKFLOW_EDGE_VUE_TYPE,
+  WORKFLOW_NODE_VUE_TYPE,
+  useWorkflowEditor,
+} from '../../composables/useWorkflowEditor'
 import { nodeTypeRegistry } from './node-registry'
 import WorkflowNode from './WorkflowNode.vue'
 import NeonEdge from './NeonEdge.vue'
+import StateDatabaseNode from './StateDatabaseNode.vue'
+import StateLinkEdge from './StateLinkEdge.vue'
+import StateDatabaseEditorDialog from './StateDatabaseEditorDialog.vue'
 import EditorToolbar from './EditorToolbar.vue'
 import WorkflowNodeEditorDialog from './WorkflowNodeEditorDialog.vue'
 import WorkflowEdgeEditorDialog from './WorkflowEdgeEditorDialog.vue'
 import { analyzeWorkflowStateContract } from './state-contract'
 import { collectWorkflowEditorDiagnostics } from './workflow-diagnostics'
+import {
+  collectionFieldPathRows,
+  workflowStateModelContextKey,
+} from './state-model-view'
 
 // 引入 Vue Flow 默认样式
 import '@vue-flow/core/dist/style.css'
@@ -415,6 +499,14 @@ const {
   edges,
   selectedNodeId,
   addNode,
+  addStateDatabaseAnchor,
+  addStateModelLink,
+  updateStateModelSchema,
+  updateStateDatabaseAnchor,
+  renameStateModelCollectionReference,
+  removeStateModelCollectionReference,
+  clearStateModel,
+  refreshStateModelNodeMetadata,
   removeSelected,
   toWorkflowDefinition,
   loadWorkflowDefinition,
@@ -433,6 +525,7 @@ const editorRootRef = ref<HTMLElement | null>(null)
 const canvasWrapRef = ref<HTMLElement | null>(null)
 const selectedEdgeId = ref<string | null>(null)
 const nodeEditorNodeId = ref<string | null>(null)
+const stateDatabaseEditorNodeId = ref<string | null>(null)
 const edgeEditorEdgeId = ref<string | null>(null)
 const contextMenu = ref<ContextMenuState | null>(null)
 const drawerExpanded = ref(false)
@@ -441,10 +534,14 @@ const drawerTab = ref<DrawerTabId>('diagnostics')
 const drawerTabs: Array<{ id: DrawerTabId; label: string }> = [
   { id: 'diagnostics', label: '诊断' },
   { id: 'summary', label: '摘要' },
-  { id: 'state-contract', label: '状态契约' },
+  { id: 'state-contract', label: '状态数据库' },
 ]
 
 const hasSelection = computed(() => !!selectedNodeId.value || !!selectedEdgeId.value)
+const editorDefinition = computed(() => toWorkflowDefinition())
+const currentStateModel = computed(() => editorDefinition.value.stateModel)
+
+provide(workflowStateModelContextKey, currentStateModel)
 
 const edgeEditorEdge = computed(() => {
   if (!edgeEditorEdgeId.value) return null
@@ -462,7 +559,7 @@ const nodeTypeCounts = computed(() => {
 })
 
 const stateContractReport = computed(() =>
-  analyzeWorkflowStateContract(toWorkflowDefinition()),
+  analyzeWorkflowStateContract(editorDefinition.value),
 )
 
 const stateContractCoveredCount = computed(() =>
@@ -475,6 +572,24 @@ const stateContractStorageOnlyCount = computed(() =>
 
 function formatNodeList(nodeIds: string[]): string {
   return nodeIds.length > 0 ? nodeIds.join(', ') : '-'
+}
+
+function isStateAnchorNodeId(nodeId: string | null | undefined): boolean {
+  return typeof nodeId === 'string' && nodeId.startsWith(STATE_ANCHOR_NODE_ID_PREFIX)
+}
+
+function isStateLinkEdgeId(edgeId: string | null | undefined): boolean {
+  return typeof edgeId === 'string' &&
+    edges.value.some((edge) =>
+      edge.id === edgeId &&
+      (edge.type === STATE_LINK_EDGE_VUE_TYPE || edge.data?.edgeKind === 'state-link'),
+    )
+}
+
+function workflowNodeType(nodeId: string | null | undefined): WorkflowNodeType | undefined {
+  if (!nodeId || isStateAnchorNodeId(nodeId)) return undefined
+  const node = nodes.value.find((item) => item.id === nodeId)
+  return node?.data?.nodeType as WorkflowNodeType | undefined
 }
 
 // ---------------------------------------------------------------------------
@@ -598,6 +713,12 @@ watch([nodes, edges, () => props.promptPresetOptions], () => {
   if (nodeEditorNodeId.value && !nodes.value.some((node) => node.id === nodeEditorNodeId.value)) {
     nodeEditorNodeId.value = null
   }
+  if (
+    stateDatabaseEditorNodeId.value &&
+    !nodes.value.some((node) => node.id === stateDatabaseEditorNodeId.value)
+  ) {
+    stateDatabaseEditorNodeId.value = null
+  }
 
   const def = toWorkflowDefinition()
   const defJson = JSON.stringify(def)
@@ -661,9 +782,11 @@ function autoLayout() {
 function clearCanvas() {
   nodes.value = []
   edges.value = []
+  clearStateModel()
   selectedNodeId.value = null
   selectedEdgeId.value = null
   nodeEditorNodeId.value = null
+  stateDatabaseEditorNodeId.value = null
   edgeEditorEdgeId.value = null
   closeContextMenu()
 }
@@ -682,11 +805,18 @@ function handleDeleteNode(nodeId: string) {
   if (nodeEditorNodeId.value === nodeId) {
     nodeEditorNodeId.value = null
   }
+  if (stateDatabaseEditorNodeId.value === nodeId) {
+    stateDatabaseEditorNodeId.value = null
+  }
   closeContextMenu()
 }
 
 function deleteEdge(edgeId: string) {
+  const wasStateLink = isStateLinkEdgeId(edgeId)
   edges.value = edges.value.filter((edge) => edge.id !== edgeId)
+  if (wasStateLink) {
+    refreshStateModelNodeMetadata()
+  }
   if (selectedEdgeId.value === edgeId) {
     selectedEdgeId.value = null
   }
@@ -716,8 +846,14 @@ async function handleImport() {
 }
 
 // 自定义节点/边类型注册
-const nodeTypes: NodeTypesObject = { 'workflow-node': markRaw(WorkflowNode) as any }
-const edgeTypes: EdgeTypesObject = { 'neon-edge': markRaw(NeonEdge) as any }
+const nodeTypes: NodeTypesObject = {
+  [WORKFLOW_NODE_VUE_TYPE]: markRaw(WorkflowNode) as any,
+  [STATE_DATABASE_NODE_VUE_TYPE]: markRaw(StateDatabaseNode) as any,
+}
+const edgeTypes: EdgeTypesObject = {
+  [WORKFLOW_EDGE_VUE_TYPE]: markRaw(NeonEdge) as any,
+  [STATE_LINK_EDGE_VUE_TYPE]: markRaw(StateLinkEdge) as any,
+}
 
 // 节点点击 → 选中
 function onNodeClick({ node }: NodeMouseEvent) {
@@ -728,6 +864,10 @@ function onNodeClick({ node }: NodeMouseEvent) {
 
 function onNodeDoubleClick({ node }: NodeMouseEvent) {
   if (props.readonly) return
+  if (isStateAnchorNodeId(node.id)) {
+    openStateDatabaseEditor(node.id)
+    return
+  }
   openNodeEditor(node.id)
 }
 
@@ -795,6 +935,7 @@ function onEdgeClick({ edge }: EdgeMouseEvent) {
 
 function onEdgeDoubleClick({ edge }: EdgeMouseEvent) {
   if (props.readonly) return
+  if (isStateLinkEdgeId(edge.id)) return
   openEdgeEditor(edge.id)
 }
 
@@ -839,18 +980,51 @@ function addNodeFromContextMenu(type: WorkflowNodeType) {
   selectedNodeId.value = nodeId
   selectedEdgeId.value = null
   nodeEditorNodeId.value = nodeId
+  stateDatabaseEditorNodeId.value = null
+  edgeEditorEdgeId.value = null
+  closeContextMenu()
+}
+
+function addStateDatabaseFromContextMenu() {
+  if (!contextMenu.value || contextMenu.value.kind !== 'pane') return
+  const nodeId = addStateDatabaseAnchor(contextMenu.value.flowPosition)
+  selectedNodeId.value = nodeId
+  selectedEdgeId.value = null
+  nodeEditorNodeId.value = null
+  stateDatabaseEditorNodeId.value = nodeId
+  edgeEditorEdgeId.value = null
   closeContextMenu()
 }
 
 function openNodeEditor(nodeId: string) {
+  if (isStateAnchorNodeId(nodeId)) {
+    openStateDatabaseEditor(nodeId)
+    return
+  }
   selectedNodeId.value = nodeId
   selectedEdgeId.value = null
+  stateDatabaseEditorNodeId.value = null
   nodeEditorNodeId.value = nodeId
+  edgeEditorEdgeId.value = null
   closeContextMenu()
 }
 
 function closeNodeEditor() {
   nodeEditorNodeId.value = null
+}
+
+function openStateDatabaseEditor(nodeId: string) {
+  if (!isStateAnchorNodeId(nodeId)) return
+  selectedNodeId.value = nodeId
+  selectedEdgeId.value = null
+  nodeEditorNodeId.value = null
+  stateDatabaseEditorNodeId.value = nodeId
+  edgeEditorEdgeId.value = null
+  closeContextMenu()
+}
+
+function closeStateDatabaseEditor() {
+  stateDatabaseEditorNodeId.value = null
 }
 
 function deleteNodeFromContextMenu(nodeId: string) {
@@ -859,8 +1033,11 @@ function deleteNodeFromContextMenu(nodeId: string) {
 }
 
 function openEdgeEditor(edgeId: string) {
+  if (isStateLinkEdgeId(edgeId)) return
   selectedNodeId.value = null
   selectedEdgeId.value = edgeId
+  nodeEditorNodeId.value = null
+  stateDatabaseEditorNodeId.value = null
   edgeEditorEdgeId.value = edgeId
   closeContextMenu()
 }
@@ -878,6 +1055,37 @@ function deleteEdgeFromContextMenu(edgeId: string) {
 function onConnect(connection: Connection) {
   if (!connection.source || !connection.target) return
 
+  const sourceIsStateAnchor = isStateAnchorNodeId(connection.source)
+  const targetIsStateAnchor = isStateAnchorNodeId(connection.target)
+
+  if (sourceIsStateAnchor || targetIsStateAnchor) {
+    if (sourceIsStateAnchor && !targetIsStateAnchor) {
+      const portId = readStatePortIdFromHandle(connection.sourceHandle)
+      if (portId && workflowNodeType(connection.target) === 'state-query') {
+        const edgeId = addStateModelLink('read', connection.source, portId, connection.target)
+        selectedEdgeId.value = edgeId
+        selectedNodeId.value = null
+        return
+      }
+    }
+
+    if (targetIsStateAnchor && !sourceIsStateAnchor) {
+      const portId = readStatePortIdFromHandle(connection.targetHandle)
+      if (portId && workflowNodeType(connection.source) === 'state-write') {
+        const edgeId = addStateModelLink('write', connection.target, portId, connection.source)
+        selectedEdgeId.value = edgeId
+        selectedNodeId.value = null
+        return
+      }
+    }
+
+    validationErrors.value = Array.from(new Set([
+      ...validationErrors.value,
+      '状态数据库连线只能是：数据库 collection → 状态查询，或状态写入 → 数据库 collection。',
+    ]))
+    return
+  }
+
   const targetHandle = connection.targetHandle ?? 'input'
   const varName = targetHandle !== 'input' ? targetHandle : 'value'
   const newEdge: Edge = {
@@ -886,8 +1094,8 @@ function onConnect(connection: Connection) {
     sourceHandle: connection.sourceHandle ?? 'raw',
     target: connection.target,
     targetHandle,
-    type: 'neon-edge',
-    data: { varName },
+    type: WORKFLOW_EDGE_VUE_TYPE,
+    data: { edgeKind: 'workflow', varName },
   }
   edges.value = [...edges.value, newEdge]
   selectedEdgeId.value = newEdge.id
@@ -896,6 +1104,9 @@ function onConnect(connection: Connection) {
 
 // MiniMap 节点颜色
 function miniMapNodeColor(node: any): string {
+  if (node.type === STATE_DATABASE_NODE_VUE_TYPE || node.data?.editorKind === 'state-anchor') {
+    return '#00FF88'
+  }
   const colors: Record<string, string> = {
     'ai-call': '#00F0FF',
     'result': '#00FF88',

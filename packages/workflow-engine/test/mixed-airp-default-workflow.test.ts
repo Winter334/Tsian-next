@@ -25,8 +25,6 @@ describe("mixed AIRP default workflow", () => {
           type: "state-query",
           config: expect.objectContaining({
             source: "collection",
-            namespace: "airp",
-            collection: "events",
             query: "",
           }),
         }),
@@ -35,8 +33,6 @@ describe("mixed AIRP default workflow", () => {
           type: "state-query",
           config: expect.objectContaining({
             source: "collection",
-            namespace: "airp",
-            collection: "archives",
             query: "",
           }),
         }),
@@ -45,8 +41,6 @@ describe("mixed AIRP default workflow", () => {
           type: "state-query",
           config: expect.objectContaining({
             source: "collection",
-            namespace: "airp",
-            collection: "globals",
             query: "",
           }),
         }),
@@ -68,11 +62,57 @@ describe("mixed AIRP default workflow", () => {
           config: expect.objectContaining({
             operationsVarName: "operations",
             pushCheckpointReason: "none",
-            schema: expect.objectContaining({
-              id: "builtin.airp.runtime-memory",
-              defaultNamespace: "airp",
-            }),
           }),
+        }),
+      ]),
+    )
+
+    expect(workflow.stateModel?.schema).toMatchObject({
+      id: "builtin.airp.runtime-memory",
+      defaultNamespace: "airp",
+      collections: expect.objectContaining({
+        events: expect.any(Object),
+        archives: expect.any(Object),
+        globals: expect.any(Object),
+      }),
+    })
+    expect(workflow.stateModel?.links).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "read",
+          anchorId: "airpStateRead",
+          portId: "events",
+          nodeId: "airpEvents",
+        }),
+        expect.objectContaining({
+          kind: "read",
+          anchorId: "airpStateRead",
+          portId: "archives",
+          nodeId: "airpArchives",
+        }),
+        expect.objectContaining({
+          kind: "read",
+          anchorId: "airpStateRead",
+          portId: "globals",
+          nodeId: "airpGlobals",
+        }),
+        expect.objectContaining({
+          kind: "write",
+          anchorId: "airpStateWrite",
+          portId: "events",
+          nodeId: "stateWrite",
+        }),
+        expect.objectContaining({
+          kind: "write",
+          anchorId: "airpStateWrite",
+          portId: "archives",
+          nodeId: "stateWrite",
+        }),
+        expect.objectContaining({
+          kind: "write",
+          anchorId: "airpStateWrite",
+          portId: "globals",
+          nodeId: "stateWrite",
         }),
       ]),
     )

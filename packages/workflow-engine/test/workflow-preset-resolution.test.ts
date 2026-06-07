@@ -67,14 +67,15 @@ describe('workflow preset resource resolution static proof', () => {
     expect(seedBody).not.toContain('manifest.workflow')
   })
 
-  it('sendMessage awaits save-level workflow metadata, passes isModWorkflow into executeWorkflow, and carries source into debug trace', () => {
+  it('sendMessage awaits save-level workflow metadata, compiles runtime workflow, passes isModWorkflow into executeWorkflow, and carries source into debug trace', () => {
     const src = readFileSync(PLATFORM_HOST_FILE, 'utf-8')
 
     expect(src).toMatch(
       /const\s+\{\s*def,\s*isModWorkflow,\s*source\s*\}\s*=\s*await\s+resolveWorkflowForSave\(\s*activeSaveId\s*\)/,
     )
+    expect(src).toMatch(/const\s+runtimeDef\s*=\s*compileWorkflowStateModel\(\s*def\s*\)/)
     expect(src).toMatch(/createOutputsStore\s*\(\s*\{[\s\S]*source,/)
-    expect(src).toMatch(/executeWorkflow\s*\(\s*def,\s*wfContext,\s*\{[\s\S]*isModWorkflow/)
+    expect(src).toMatch(/executeWorkflow\s*\(\s*runtimeDef,\s*wfContext,\s*\{[\s\S]*isModWorkflow/)
   })
 
   it('platform-host no longer applies mod patch outputs outside explicit workflow nodes', () => {
