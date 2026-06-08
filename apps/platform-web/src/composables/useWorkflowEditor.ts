@@ -16,6 +16,7 @@ import type {
   WorkflowStateModelLink,
   WorkflowStateModelLinkKind,
 } from '@tsian/contracts'
+import { defaultWorkflowNodeConfig } from '../components/workflow/node-definitions'
 import { resolveWorkflowInputSlots } from '../components/workflow/node-schema'
 
 export const WORKFLOW_NODE_VUE_TYPE = 'workflow-node'
@@ -72,19 +73,6 @@ function generateStateAnchorId(): string {
   return `state-db-${++stateAnchorCounter}`
 }
 
-function defaultNodeConfig(type: WorkflowNodeType): Record<string, unknown> {
-  if (type === 'state-query') return { source: 'collection', queryVarName: 'query' }
-  if (type === 'state-write') return { operationsVarName: 'operations', pushCheckpointReason: 'none' }
-  if (type === 'template-compose') return { template: '{{data}}', outputName: 'text' }
-  if (type === 'record-filter') return { inputVarName: 'records', outputName: 'records', match: 'all', predicates: [] }
-  if (type === 'record-merge') return { inputVarNames: ['records'], keyPath: 'id', outputName: 'records' }
-  if (type === 'record-format') return { inputVarName: 'records', itemTemplate: '{{item.data.content}}', separator: '\n', outputName: 'text' }
-  if (type === 'result') return { name: 'result' }
-  if (type === 'switch') return { cases: [], defaultOutputName: 'default' }
-  if (type === 'compute') return { script: 'return { value: inputs.value }', timeout: 5000 }
-  return {}
-}
-
 const DEFAULT_OUTPUT_HANDLE = 'raw'
 const TARGET_INPUT_HANDLE = 'input'
 
@@ -97,7 +85,7 @@ function denormalizeSourceHandle(handle?: string | null): string | undefined {
 }
 
 function createEdgeId(edge: TsianEdge): string {
-  return `${edge.from.nodeId}:${normalizeSourceHandle(edge.from.outputName)}->${edge.to.nodeId}:${edge.to.varName}`
+  return `${edge.from.nodeId}:${normalizeSourceHandle(edge.from.outputName)}->${edge.to.nodeId}:${edge.to.inputName}`
 }
 
 function hasMissingOrStackedPositions(vfNodes: Node[]): boolean {
@@ -129,16 +117,13 @@ function normalizePortMetadata(port: {
   label?: unknown
   description?: unknown
   valueType?: unknown
-  semanticSlot?: unknown
 }) {
   const label = typeof port.label === 'string' ? port.label.trim() : ''
   const description = typeof port.description === 'string' ? port.description.trim() : ''
-  const semanticSlot = typeof port.semanticSlot === 'string' ? port.semanticSlot.trim() : ''
   return {
     label: label || undefined,
     description: description || undefined,
     valueType: normalizeValueType(port.valueType),
-    semanticSlot: semanticSlot || undefined,
   }
 }
 
@@ -374,8 +359,8 @@ function toVfEdge(
   const targetSlots = targetNode
     ? resolveWorkflowInputSlots(targetNode.type, targetNode.config, targetNode.inputs)
     : []
-  const targetHandle = targetSlots.some((slot) => slot.name === edge.to.varName)
-    ? edge.to.varName
+  const targetHandle = targetSlots.some((slot) => slot.name === edge.to.inputName)
+    ? edge.to.inputName
     : TARGET_INPUT_HANDLE
 
   return {
@@ -387,8 +372,7 @@ function toVfEdge(
     type: WORKFLOW_EDGE_VUE_TYPE,
     data: {
       edgeKind: 'workflow',
-      varName: edge.to.varName,
-      condition: edge.condition,
+      inputName: edge.to.inputName,
     },
   }
 }
@@ -419,12 +403,12 @@ function toVfStateLink(link: WorkflowStateModelLink): Edge {
 
 /** Vue Flow 边 → 契约边 */
 function fromVfEdge(vfEdge: Edge): TsianEdge {
-  const targetHandleVarName = vfEdge.targetHandle && vfEdge.targetHandle !== TARGET_INPUT_HANDLE
+  const targetHandleInputName = vfEdge.targetHandle && vfEdge.targetHandle !== TARGET_INPUT_HANDLE
     ? vfEdge.targetHandle
     : undefined
-  const varName = typeof vfEdge.data?.varName === 'string' && vfEdge.data.varName.trim()
-    ? vfEdge.data.varName.trim()
-    : targetHandleVarName ?? 'value'
+  const inputName = typeof vfEdge.data?.inputName === 'string' && vfEdge.data.inputName.trim()
+    ? vfEdge.data.inputName.trim()
+    : targetHandleInputName ?? 'value'
 
   return {
     from: {
@@ -433,11 +417,8 @@ function fromVfEdge(vfEdge: Edge): TsianEdge {
     },
     to: {
       nodeId: vfEdge.target,
-      varName,
+      inputName,
     },
-    condition: typeof vfEdge.data?.condition === 'string' && vfEdge.data.condition.trim()
-      ? vfEdge.data.condition.trim()
-      : undefined,
   }
 }
 
@@ -459,21 +440,6 @@ function fromVfStateLink(vfEdge: Edge): WorkflowStateModelLink | null {
     nodeId,
   }
   return link
-}
-
-function resolveTargetHandleFromVfNode(
-  targetNode: Node | undefined,
-  varName: string,
-): string {
-  if (!targetNode) return TARGET_INPUT_HANDLE
-  const targetSlots = resolveWorkflowInputSlots(
-    targetNode.data.nodeType as WorkflowNodeType,
-    targetNode.data.config as Record<string, unknown>,
-    normalizeInputs(targetNode.data.inputs),
-  )
-  return targetSlots.some((slot) => slot.name === varName)
-    ? varName
-    : TARGET_INPUT_HANDLE
 }
 
 // ---------------------------------------------------------------------------
@@ -580,7 +546,7 @@ export function useWorkflowEditor() {
       data: {
         editorKind: 'workflow',
         nodeType: type,
-        config: defaultNodeConfig(type),
+        config: defaultWorkflowNodeConfig(type),
         inputs: [],
         outputs: [],
         retry: undefined,
@@ -840,33 +806,6 @@ export function useWorkflowEditor() {
     node.data = { ...node.data, inputs: normalizeInputs(inputs) }
   }
 
-  /** 更新边上的运行时入参名与条件 */
-  function updateEdgeData(edgeId: string, data: { varName?: string; condition?: string }): void {
-    edges.value = edges.value.map((edge) => {
-      if (edge.id !== edgeId) return edge
-      const currentVarName =
-        typeof edge.data?.varName === 'string' && edge.data.varName.trim()
-          ? edge.data.varName.trim()
-          : 'value'
-      const nextVarName = data.varName !== undefined
-        ? data.varName.trim() || 'value'
-        : currentVarName
-      const nextData = {
-        ...edge.data,
-        varName: nextVarName,
-        condition: data.condition || undefined,
-      }
-      const targetNode = nodes.value.find((node) => node.id === edge.target)
-      const nextEdge = { ...edge, data: nextData }
-      const contractEdge = fromVfEdge(nextEdge)
-      return {
-        ...nextEdge,
-        targetHandle: resolveTargetHandleFromVfNode(targetNode, nextVarName),
-        id: createEdgeId(contractEdge),
-      }
-    })
-  }
-
   /** 更新节点重试配置 */
   function updateNodeRetry(nodeId: string, retry: { maxRetries: number } | undefined): void {
     const node = nodes.value.find((n) => n.id === nodeId)
@@ -936,7 +875,6 @@ export function useWorkflowEditor() {
     updateNodeLabel,
     updateNodeInputs,
     updateNodeOutputs,
-    updateEdgeData,
     updateNodeRetry,
     exportToJson,
     importFromJson,

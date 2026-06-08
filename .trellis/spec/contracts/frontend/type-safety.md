@@ -237,7 +237,7 @@ await executeWorkflow(def, context, { isModWorkflow })
   resource-library persistence, the workflow editor, and workflow-engine
   consumers.
 - Use this when adding or changing workflow node port declarations, editor
-  handle labels, workflow JSON import/export, or default slot metadata for
+  handle labels, workflow JSON import/export, or standard node definitions for
   built-in node types.
 
 #### 2. Signatures
@@ -246,28 +246,38 @@ await executeWorkflow(def, context, { isModWorkflow })
 - `NodePortMetadata.label?: string`
 - `NodePortMetadata.description?: string`
 - `NodePortMetadata.valueType?: WorkflowPortValueType`
-- `NodePortMetadata.semanticSlot?: string`
 - `NodeInputDeclaration.name: string`
 - `NodeInputDeclaration.required?: boolean`
 - `NodeOutputDeclaration extends NodePortMetadata`
 - `WorkflowNodeBase.inputs?: NodeInputDeclaration[]`
 - `WorkflowNodeBase.outputs?: NodeOutputDeclaration[]`
-- `WorkflowEdge.to.varName` remains the runtime input key.
+- `WorkflowEdge.to.inputName` is the runtime input port key.
 - `WorkflowEdge.from.outputName` remains the runtime output selector.
 
 #### 3. Contracts
 
-- Port metadata is editor/documentation metadata only. Runtime execution still
-  injects upstream values into downstream `inputs[varName]`.
+- Port metadata is editor/documentation metadata only. Runtime execution
+  injects upstream values into downstream `inputs[inputName]`.
+- A workflow edge is a pure port connection:
+  `from { nodeId, outputName? } -> to { nodeId, inputName }`.
+- Edges must not carry conditions, transforms, scripts, or an independent
+  variable-name override. Conditional routing belongs in executable nodes such
+  as `switch`.
 - `inputs` is optional so older workflows without input declarations remain
   valid and loadable.
 - Output metadata extends the existing output declaration shape and must not
   change `extract` behavior.
-- `semanticSlot` is an open string for UI semantics; do not treat it as a
-  permission, validator, or executable capability.
 - Editors may derive default display slots for built-in node types, but saved
   workflow JSON must preserve explicit `inputs` and output metadata when
   present.
+- Built-in executable node display/default/port metadata lives in the platform
+  workflow node definition registry. Contract types describe the persisted
+  shape; contracts do not own UI labels or executor implementation.
+- Some built-in node configs intentionally drive their port names. Examples:
+  `state-write.config.operationsVarName`, `record-filter.config.inputVarName`,
+  `record-merge.config.inputVarNames`, and
+  `template-compose.config.outputName`. Edges connect to the resulting port
+  name through `to.inputName`.
 
 #### 4. Validation & Error Matrix
 
@@ -283,46 +293,61 @@ await executeWorkflow(def, context, { isModWorkflow })
   explicitly designed.
 - Required input metadata without an incoming edge -> no runtime or save-blocking
   error in the metadata-only model.
+- Edge points at a non-declared source/target port -> editor diagnostic only;
+  workflow-engine still validates graph structure and executable node types,
+  not metadata-level port compatibility.
 
 #### 5. Good/Base/Bad Cases
 
 - Good: a result node declares/display-derives an input slot named `value`, and
-  an edge still serializes as `to.varName: "value"`.
-- Good: an AI node output has `label: "Patch"` and
-  `semanticSlot: "state.patch"` while execution still reads the value through
-  the existing output extraction path.
+  an edge serializes as `to.inputName: "value"`.
+- Good: a `state-write` node has `config.operationsVarName: "operations"` and
+  the upstream maintenance edge connects to `to.inputName: "operations"`.
+- Good: a `switch` node routes by producing named output ports, and downstream
+  edges connect to those output ports.
 - Base: an old workflow omits `inputs` and output metadata; the editor loads,
-  renders, exports, and executes it without migration.
+  derives handles from the standard node definition registry, exports, and
+  executes it without metadata migration.
 - Bad: `validateWorkflowDefinition` rejects a workflow because a metadata
   `valueType` differs from a connected source.
-- Bad: the editor rewrites `WorkflowEdge.to.varName` into a separate target
-  handle schema and breaks existing executors.
+- Bad: edge data stores a conditional branch or mapping script instead of using
+  an executable node.
+- Bad: the editor persists Vue Flow private handle IDs that are not contract
+  port names.
 
 #### 6. Tests Required
 
 - Contracts changes: run `npm run build:contracts`.
 - UI/editor changes using port metadata: run `npm run build:web`.
-- When adding runtime validation in a future change, add workflow-engine
-  validator coverage and keep legacy workflows without `inputs` passing.
+- Edge contract or scheduler changes: run `npm run build:workflow-engine` and
+  `npm run test --workspace @tsian/workflow-engine`.
 - When changing editor serialization, verify workflow JSON round-trips explicit
-  `inputs`, output metadata, and existing `from.outputName -> to.varName`
-  edges.
+  `inputs`, output metadata, and `from.outputName -> to.inputName` edges.
+- When moving built-in port defaults, update static proof tests so they inspect
+  the actual standard node definition source of truth.
 
 #### 7. Wrong vs Correct
 
 Wrong:
 
 ```typescript
-if (source.valueType !== target.valueType) {
-  throw new Error("workflow port type mismatch")
+const edge = {
+  from: { nodeId: "retrieval", outputName: "prompt" },
+  to: { nodeId: "chat", handle: "retrieval.prompt" },
+  data: { branchWhen: "ok" },
 }
 ```
 
 Correct:
 
 ```typescript
-const targetHandle = declaredInputs.some((input) => input.name === edge.to.varName)
-  ? edge.to.varName
+const edge = {
+  from: { nodeId: "retrieval", outputName: "prompt" },
+  to: { nodeId: "chat", inputName: "retrieval.prompt" },
+}
+
+const targetHandle = declaredInputs.some((input) => input.name === edge.to.inputName)
+  ? edge.to.inputName
   : "input"
 ```
 

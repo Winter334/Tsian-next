@@ -121,19 +121,19 @@ describe("mixed AIRP default workflow", () => {
       expect.arrayContaining([
         {
           from: { nodeId: "retrieval", outputName: "prompt" },
-          to: { nodeId: "chat", varName: "retrieval.prompt" },
+          to: { nodeId: "chat", inputName: "retrieval.prompt" },
         },
         {
           from: { nodeId: "retrieval", outputName: "directEntities" },
-          to: { nodeId: "maintenance", varName: "retrieval.directEntities" },
+          to: { nodeId: "maintenance", inputName: "retrieval.directEntities" },
         },
         {
           from: { nodeId: "retrieval", outputName: "archives" },
-          to: { nodeId: "maintenance", varName: "archives.recent.json" },
+          to: { nodeId: "maintenance", inputName: "archives.recent.json" },
         },
         {
           from: { nodeId: "maintenance", outputName: "operations" },
-          to: { nodeId: "stateWrite", varName: "operations" },
+          to: { nodeId: "stateWrite", inputName: "operations" },
         },
       ]),
     )
@@ -154,7 +154,7 @@ describe("mixed AIRP default workflow", () => {
       "packages/contracts/src/workflow.ts",
       "apps/platform-web/src/workflow-host/executors/state-query.ts",
       "apps/platform-web/src/components/workflow/inspector/StateQueryForm.vue",
-      "apps/platform-web/src/components/workflow/node-schema.ts",
+      "apps/platform-web/src/components/workflow/node-definitions.ts",
     ]
 
     for (const file of files) {
@@ -169,14 +169,15 @@ describe("mixed AIRP default workflow", () => {
     expect(executorSrc).toContain("listStateRecordsForSave")
     expect(executorSrc).not.toContain("assembleRetrievalContext")
 
-    const schemaSrc = readFileSync(
-      resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/node-schema.ts"),
+    const definitionSrc = readFileSync(
+      resolve(REPO_ROOT, "apps/platform-web/src/components/workflow/node-definitions.ts"),
       "utf-8",
     )
-    expect(schemaSrc).toContain("state.records")
-    expect(schemaSrc).toContain("state.count")
-    expect(schemaSrc).not.toContain("memory.prompt")
-    expect(schemaSrc).not.toContain("memory.debug")
+    expect(definitionSrc).toContain("type: 'state-query'")
+    expect(definitionSrc).toContain("name: 'records'")
+    expect(definitionSrc).toContain("name: 'count'")
+    expect(definitionSrc).not.toContain("memory.prompt")
+    expect(definitionSrc).not.toContain("memory.debug")
   })
 
   it("keeps memory-query retired from public workflow contracts and authoring", () => {
@@ -186,6 +187,7 @@ describe("mixed AIRP default workflow", () => {
       "apps/platform-web/src/workflow-host/index.ts",
       "apps/platform-web/src/components/workflow/node-registry.ts",
       "apps/platform-web/src/components/workflow/node-schema.ts",
+      "apps/platform-web/src/components/workflow/node-definitions.ts",
       "apps/platform-web/src/components/workflow/NodeInspector.vue",
       "apps/platform-web/src/composables/useWorkflowEditor.ts",
       "apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue",
@@ -216,6 +218,7 @@ describe("mixed AIRP default workflow", () => {
       "apps/platform-web/src/workflow-host/index.ts",
       "apps/platform-web/src/components/workflow/node-registry.ts",
       "apps/platform-web/src/components/workflow/node-schema.ts",
+      "apps/platform-web/src/components/workflow/node-definitions.ts",
       "apps/platform-web/src/components/workflow/NodeInspector.vue",
       "apps/platform-web/src/composables/useWorkflowEditor.ts",
       "apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue",
@@ -244,6 +247,7 @@ describe("mixed AIRP default workflow", () => {
       "apps/platform-web/src/workflow-host/index.ts",
       "apps/platform-web/src/components/workflow/node-registry.ts",
       "apps/platform-web/src/components/workflow/node-schema.ts",
+      "apps/platform-web/src/components/workflow/node-definitions.ts",
       "apps/platform-web/src/components/workflow/NodeInspector.vue",
       "apps/platform-web/src/composables/useWorkflowEditor.ts",
       "apps/platform-web/src/components/workflow/WorkflowEditorCanvas.vue",

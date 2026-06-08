@@ -22,7 +22,9 @@
 ## Contract Granularity
 
 - Use explicit interfaces for stable payloads such as `RuntimeWriteRequest`, `ApplyPatchOutput`, `WorkflowDefinition`, and `ModManifest`.
-- Use open extension points only where the product intentionally allows external fields, such as `ArchiveRecord` extra fields, `PromptPresetEntry` compatibility fields, and `semanticSlot` strings.
+- Use open extension points only where the product intentionally allows external
+  fields, such as `ArchiveRecord` extra fields and `PromptPresetEntry`
+  compatibility fields.
 - Keep node `config` as `Record<string, unknown>` in `WorkflowNodeBase`; concrete parsing belongs to node executors and editor forms.
 
 ## Avoid

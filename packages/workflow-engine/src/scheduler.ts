@@ -43,7 +43,7 @@ function safeHook(label: string, fn: () => void): void {
  * 节点执行器契约。具体实现由 H4 在 apps/platform-web/src/workflow-host/ 注册。
  *
  * 调度器对每个待执行节点调用一次 execute；返回值进入 outputs map。
- * - inputs：所有入边按 to.varName 收集到的端口值（已解析上游 outputs[outputName ?? "raw"]）
+ * - inputs：所有入边按 to.inputName 收集到的端口值（已解析上游 outputs[outputName ?? "raw"]）
  * - signal：与全局 abort 共享；executor 必须在 signal.aborted 时尽快终止
  * - context：外部注入的运行上下文（H3 透传，调度器不解析）
  */
@@ -102,8 +102,7 @@ export interface ExecuteWorkflowOptions {
 interface IncomingEdgeBinding {
   fromNodeId: string
   fromOutputName: string
-  toVarName: string
-  condition?: string
+  toInputName: string
 }
 
 function collectNodeInputs(
@@ -115,10 +114,7 @@ function collectNodeInputs(
     const upstreamOutputs = nodeOutputs.get(edge.fromNodeId)
     if (!upstreamOutputs) continue
     const value = upstreamOutputs[edge.fromOutputName]
-    if (edge.condition !== undefined && String(value) !== edge.condition) {
-      continue
-    }
-    inputs[edge.toVarName] = value
+    inputs[edge.toInputName] = value
   }
   return inputs
 }
@@ -194,8 +190,7 @@ export async function executeWorkflow(
     list.push({
       fromNodeId: edge.from.nodeId,
       fromOutputName: edge.from.outputName ?? "raw",
-      toVarName: edge.to.varName,
-      condition: edge.condition,
+      toInputName: edge.to.inputName,
     })
     incomingByTarget.set(edge.to.nodeId, list)
   }

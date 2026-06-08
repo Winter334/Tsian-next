@@ -34,16 +34,11 @@ describe("workflow outputs hooks", () => {
       edges: [
         {
           from: { nodeId: "source", outputName: "raw" },
-          to: { nodeId: "consumer", varName: "text" },
-        },
-        {
-          from: { nodeId: "source", outputName: "flag" },
-          to: { nodeId: "consumer", varName: "ignored" },
-          condition: "keep",
+          to: { nodeId: "consumer", inputName: "text" },
         },
         {
           from: { nodeId: "consumer", outputName: "raw" },
-          to: { nodeId: "result1", varName: "value" },
+          to: { nodeId: "result1", inputName: "value" },
         },
       ],
     }

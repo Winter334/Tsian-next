@@ -96,10 +96,11 @@ interface OutputsStoreWriter {
 - H3 仅定义 `NodeExecutor` 协议；具体 executor 通过 `context.executors: Map<NodeKind, NodeExecutor>` 由调用方（H4 起 platform-web/workflow-host）注入；
 - 节点类型未注册 → 抛 `WorkflowNodeError`（不重试）。
 
-### 4.5 边解析与 condition
+### 4.5 边解析
 
-- 入边按 `to.varName` 收集到 `inputs` 字典；
-- `edge.condition` 走简单字符串等值（design §13.2）：`String(upstreamValue) === condition` 不匹配则该边丢弃，varName 不进 inputs。
+- 入边按 `to.inputName` 收集到 `inputs` 字典；
+- 边只表达 `from.outputName -> to.inputName` 的端口传值，不承载条件、脚本、转换或独立变量名配置；
+- 条件路由属于可执行节点（例如 `switch`）的输出端口，不属于边。
 
 ### 4.6 result 节点汇总
 
@@ -183,6 +184,7 @@ interface OutputsStoreWriter {
 | 2026-05-10 | H3 新建包：DAG 调度器 + AbortController 传播 + 节点级重试 + 6 条加载期校验 |
 | 2026-05-10 | H7 新增 `OutputsStoreWriter` 接口（`src/types.ts`）+ 调度器 6+1 时机钩子（`safeHook` try/catch 包裹，纯调度器定位保持不变） |
 | 2026-05-11 | I6：新增 `test/p-i-1.test.ts` 静态证明桥 API（`platform-host` 的 `applyPatch / updateGlobals`）共用同一份 `applyMaintenancePatch`；`appendUserMessage / appendAssistantMessage` 属 append 例外，不走 applier |
+| 2026-06-08 | 工作流边模型改为纯端口连接：`from.outputName -> to.inputName`，移除边级 `condition` |
 
 ---
 

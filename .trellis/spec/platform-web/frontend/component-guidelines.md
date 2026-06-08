@@ -14,7 +14,9 @@ Vue components use `<script setup lang="ts">` and keep behavior close to the UI 
 - Fullscreen workflow editing is canvas-first. Do not reintroduce a permanent left palette or narrow right inspector as the primary editing path for authorable workflows.
 - Add nodes from the canvas context menu and open node editors through double-click or node context-menu actions. Complex node configuration belongs in a large dialog that can host the existing form inspector plus advanced fallback controls.
 - Node raw editing is limited to the authoring payload fields `label`, `config`, `inputs`, `outputs`, and `retry`. It must reject graph identity or layout fields such as `id`, `type`, and `position`.
-- Edge editing should use the edge dialog or edge context menu and still serialize through the existing workflow edge contract: `from.outputName` feeds `to.varName`.
+- Edge dialogs and edge context menus should treat workflow edges as pure
+  connections. They may show/delete a connection, but must serialize through
+  the workflow edge contract: `from.outputName` feeds `to.inputName`.
 - Workflow-level diagnostics and future state-contract summaries belong in the collapsible bottom drawer so the graph canvas remains the dominant workspace.
 
 ### Convention: Editor-Only Workflow Diagnostics
@@ -50,7 +52,7 @@ function runValidation(def: WorkflowDefinition): void {
 **Rules**:
 - Do not contradict or suppress `validateWorkflowDefinition` errors.
 - Do not save editor-only handle IDs or diagnostics into the workflow runtime schema.
-- Keep edge checks aligned with the runtime contract: `from.outputName -> to.varName`.
+- Keep edge checks aligned with the runtime contract: `from.outputName -> to.inputName`.
 - Only warn about missing external resources when the relevant option list has been loaded.
 
 ### Scenario: Workflow-Carried State Database Model
@@ -139,7 +141,7 @@ function runValidation(def: WorkflowDefinition): void {
 ```ts
 const workflow: WorkflowDefinition = {
   nodes: [{ id: "db", type: "state-database", config: {} }],
-  edges: [{ from: { nodeId: "db" }, to: { nodeId: "query", varName: "collection" } }],
+  edges: [{ from: { nodeId: "db" }, to: { nodeId: "query", inputName: "collection" } }],
 }
 ```
 

@@ -36,12 +36,10 @@ export interface NodePortMetadata {
   description?: string
   /** 轻量值类型提示；不参与运行时强校验。 */
   valueType?: WorkflowPortValueType
-  /** 开放字符串语义槽位，用于表达端口含义；不作为权限或执行约束。 */
-  semanticSlot?: string
 }
 
 export interface NodeInputDeclaration extends NodePortMetadata {
-  /** 运行时 inputs[name] 的建议键名（边里 to.varName 引用） */
+  /** 运行时 inputs[name] 的键名（边里 to.inputName 引用） */
   name: string
   /** 是否建议用户接入该输入；当前仅为编辑器元数据。 */
   required?: boolean
@@ -77,7 +75,7 @@ export interface WorkflowNodeBase<T extends WorkflowNodeType = WorkflowNodeType>
   /** 节点配置；具体形状由节点实现层按 type 解析（见各 *NodeConfig 类型） */
   config: Record<string, unknown>
   retry?: { maxRetries: number }
-  /** 编辑器元数据：建议输入槽位；执行仍以边注入 inputs[varName] 为准。 */
+  /** 编辑器元数据：建议输入端口；执行以边连接的 inputName 注入 inputs[inputName]。 */
   inputs?: NodeInputDeclaration[]
   /** ai-call / compute 节点用；其它节点忽略 */
   outputs?: NodeOutputDeclaration[]
@@ -215,9 +213,7 @@ export interface RecordFormatNodeConfig {
 
 export interface WorkflowEdge {
   from: { nodeId: string; outputName?: string }
-  to: { nodeId: string; varName: string }
-  /** 原型期：简单字符串等值匹配上游端口值 */
-  condition?: string
+  to: { nodeId: string; inputName: string }
 }
 
 // ============================================================================

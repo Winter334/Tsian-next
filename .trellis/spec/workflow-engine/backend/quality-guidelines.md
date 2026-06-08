@@ -13,8 +13,10 @@ Workflow-engine quality depends on preserving scheduler invariants and package p
 - Validation remains deterministic and throws `WorkflowValidationError` with a precise code.
 - Scheduler still validates before executing any node.
 - Ready nodes can run concurrently; dependency order is enforced by in-degree.
-- `edge.condition` remains simple string equality against upstream output.
-- Incoming edges still bind upstream `outputs[outputName ?? "raw"]` into downstream `inputs[varName]`.
+- Workflow edges remain pure port connections and must not carry conditions,
+  scripts, transforms, or independent variable-name configuration.
+- Incoming edges bind upstream `outputs[outputName ?? "raw"]` into downstream
+  `inputs[inputName]`.
 - Result aggregation still reads result node `outputs.value` into `results[config.name]`.
 - Outputs hook timing matches `OutputsStoreWriter` docs.
 - Package imports do not point into `apps/platform-web`.

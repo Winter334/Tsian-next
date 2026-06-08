@@ -169,7 +169,7 @@ export interface NodeOutputState {
   type?: string
   /** 本轮调度开始顺序（running 时分配），便于 UI 按执行顺序展示 */
   startOrder?: number
-  /** 节点输入端口 → 值（running/succeeded/failed/aborted 都可能保留） */
+  /** 节点输入端口名 → 值（running/succeeded/failed/aborted 都可能保留） */
   inputs?: Record<string, unknown>
   /** 节点端口 → 值（仅 succeeded 时有值） */
   outputs?: Record<string, unknown>

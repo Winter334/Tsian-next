@@ -34,7 +34,7 @@ Use `dvh` instead of `vh` for route wrappers and embedded fullscreen panels that
 ## Review Checklist
 
 - If a resource or workflow JSON round-trips through the editor, verify unknown/advanced fields are preserved unless the task intentionally rewrites them.
-- If a workflow edge changes, verify it still serializes as `from.outputName -> to.varName`.
+- If a workflow edge changes, verify it still serializes as `from.outputName -> to.inputName`.
 - If a patch path changes, verify bridge `applyPatch`/`updateGlobals` still
   share `applyMaintenancePatch`, and do not restore the retired workflow
   `apply-patch` executor.

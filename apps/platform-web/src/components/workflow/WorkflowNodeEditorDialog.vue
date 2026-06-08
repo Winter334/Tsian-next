@@ -61,6 +61,7 @@
             :on-update-label="onUpdateLabel"
             :on-update-retry="onUpdateRetry"
             :on-delete-node="handleDeleteNode"
+            :on-update-inputs="onUpdateInputs"
             :on-update-outputs="onUpdateOutputs"
           />
         </div>

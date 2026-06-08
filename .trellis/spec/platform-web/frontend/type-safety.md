@@ -29,5 +29,6 @@
 ## Avoid
 
 - Do not loosen contract fields to `unknown` to bypass a platform-web error. Fix the caller or add normalization.
-- Do not save editor-only handle IDs as a new runtime edge schema. Edges still use `to.varName` and optional `from.outputName`.
+- Do not save editor-only handle IDs as private runtime schema. Workflow edges
+  use contract port names: `to.inputName` and optional `from.outputName`.
 - Do not silently swallow invalid platform action input. Return a structured `PlatformActionError` or throw at the correct boundary.

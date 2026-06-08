@@ -16,7 +16,9 @@ Composables are used for reusable Vue state and contract mapping. They should no
 - Keep contract normalization inside the composable when the state is editor-specific. Example: `normalizeInputs`, `normalizeOutputs`, and `normalizeExtractRule` keep imported workflow JSON safe for the editor.
 - Keep persistence outside the composable unless the composable name and scope make persistence explicit. `useWorkflowEditor` does not call Dexie.
 - Return commands, not hidden watchers, for domain mutations. The caller should decide when to save, emit, or validate.
-- Preserve existing contract semantics when mapping to UI. Workflow edges still serialize as `from.outputName -> to.varName`; visual handles are derived from declarations.
+- Preserve existing contract semantics when mapping to UI. Workflow edges
+  serialize as `from.outputName -> to.inputName`; visual handles are derived
+  from declarations.
 
 ## Watcher Use
 

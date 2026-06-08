@@ -62,20 +62,12 @@
         </select>
       </div>
 
-      <div class="grid grid-cols-2 gap-1">
-        <input
-          :value="output.semanticSlot ?? ''"
-          class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-          placeholder="语义槽"
-          @change="updateOutputMetadata(idx, { semanticSlot: ($event.target as HTMLInputElement).value })"
-        />
-        <input
-          :value="output.description ?? ''"
-          class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
-          placeholder="说明"
-          @change="updateOutputMetadata(idx, { description: ($event.target as HTMLInputElement).value })"
-        />
-      </div>
+      <input
+        :value="output.description ?? ''"
+        class="border border-neon-deep/30 bg-void px-2 py-1 font-mono text-[10px] text-text-main outline-none focus:border-neon"
+        placeholder="说明"
+        @change="updateOutputMetadata(idx, { description: ($event.target as HTMLInputElement).value })"
+      />
 
       <div class="grid grid-cols-2 gap-1">
         <select
@@ -193,14 +185,13 @@ function updateOutputName(idx: number, value: string) {
 
 function updateOutputMetadata(
   idx: number,
-  patch: Partial<Pick<NodeOutputDeclaration, 'label' | 'description' | 'semanticSlot' | 'valueType'>>,
+  patch: Partial<Pick<NodeOutputDeclaration, 'label' | 'description' | 'valueType'>>,
 ) {
   const current = props.outputs[idx]
   if (!current) return
   const next: NodeOutputDeclaration = { ...current, ...patch }
   if (typeof next.label === 'string') next.label = next.label.trim() || undefined
   if (typeof next.description === 'string') next.description = next.description.trim() || undefined
-  if (typeof next.semanticSlot === 'string') next.semanticSlot = next.semanticSlot.trim() || undefined
   if (!next.valueType) delete next.valueType
   updateOutput(idx, next)
 }

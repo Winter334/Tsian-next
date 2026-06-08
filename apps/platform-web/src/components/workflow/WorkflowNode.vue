@@ -230,7 +230,6 @@ function portLabel(port: WorkflowPortDisplay): string {
 function portTitle(port: WorkflowPortDisplay): string {
   const parts = [port.name]
   if (port.valueType) parts.push(`类型: ${port.valueType}`)
-  if (port.semanticSlot) parts.push(`语义槽: ${port.semanticSlot}`)
   if (port.description) parts.push(port.description)
   return parts.join(' · ')
 }

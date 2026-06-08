@@ -36,7 +36,7 @@ function makeMinimalDef(overrides?: Partial<WorkflowDefinition>): WorkflowDefini
       { id: 'result1', type: 'result', config: { name: 'out' } },
     ],
     edges: [
-      { from: { nodeId: 'source', outputName: 'raw' }, to: { nodeId: 'result1', varName: 'value' } },
+      { from: { nodeId: 'source', outputName: 'raw' }, to: { nodeId: 'result1', inputName: 'value' } },
     ],
     ...overrides,
   }
@@ -68,11 +68,11 @@ function makeRetiredApplyPatchDef(): WorkflowDefinition {
     edges: [
       {
         from: { nodeId: 'source', outputName: 'raw' },
-        to: { nodeId: 'patcher', varName: 'patch' },
+        to: { nodeId: 'patcher', inputName: 'patch' },
       },
       {
         from: { nodeId: 'patcher', outputName: 'raw' },
-        to: { nodeId: 'result1', varName: 'value' },
+        to: { nodeId: 'result1', inputName: 'value' },
       },
     ],
   } as unknown as WorkflowDefinition
@@ -312,15 +312,15 @@ describe('SC-CRIT-6 — 内置模组工作流使用资源库预设和显式记�
     )
     expect(workflow!.edges).toContainEqual({
       from: { nodeId: 'retrieval', outputName: 'directEntities' },
-      to: { nodeId: 'maintenance', varName: 'retrieval.directEntities' },
+      to: { nodeId: 'maintenance', inputName: 'retrieval.directEntities' },
     })
     expect(workflow!.edges).toContainEqual({
       from: { nodeId: 'retrieval', outputName: 'archives' },
-      to: { nodeId: 'maintenance', varName: 'archives.recent.json' },
+      to: { nodeId: 'maintenance', inputName: 'archives.recent.json' },
     })
     expect(workflow!.edges).toContainEqual({
       from: { nodeId: 'maintenance', outputName: 'operations' },
-      to: { nodeId: 'stateWrite', varName: 'operations' },
+      to: { nodeId: 'stateWrite', inputName: 'operations' },
     })
   })
 })
@@ -371,7 +371,7 @@ describe('SC-CRIT-5 — compute 节点 5s 超时后调度器抛 NODE_RETRY_EXHAU
       edges: [
         {
           from: { nodeId: 'slow-compute', outputName: 'raw' },
-          to: { nodeId: 'result1', varName: 'value' },
+          to: { nodeId: 'result1', inputName: 'value' },
         },
       ],
     }
@@ -433,7 +433,7 @@ describe('SC-CRIT-5 — compute 节点 5s 超时后调度器抛 NODE_RETRY_EXHAU
       edges: [
         {
           from: { nodeId: 'slow-compute', outputName: 'raw' },
-          to: { nodeId: 'result1', varName: 'value' },
+          to: { nodeId: 'result1', inputName: 'value' },
         },
       ],
     }
@@ -500,11 +500,11 @@ describe('SC-CRIT-7 — 外部 abort signal 中止在途轮次', () => {
       edges: [
         {
           from: { nodeId: 'nodeA', outputName: 'raw' },
-          to: { nodeId: 'nodeB', varName: 'a_out' },
+          to: { nodeId: 'nodeB', inputName: 'a_out' },
         },
         {
           from: { nodeId: 'nodeB', outputName: 'raw' },
-          to: { nodeId: 'result1', varName: 'value' },
+          to: { nodeId: 'result1', inputName: 'value' },
         },
       ],
     }
@@ -592,11 +592,11 @@ describe('SC-CRIT-7 — 外部 abort signal 中止在途轮次', () => {
       edges: [
         {
           from: { nodeId: 'nodeA', outputName: 'raw' },
-          to: { nodeId: 'result1', varName: 'a_val' },
+          to: { nodeId: 'result1', inputName: 'a_val' },
         },
         {
           from: { nodeId: 'nodeB', outputName: 'raw' },
-          to: { nodeId: 'result1', varName: 'b_val' },
+          to: { nodeId: 'result1', inputName: 'b_val' },
         },
       ],
     }

@@ -305,11 +305,11 @@ function validateEdges(def: WorkflowDefinition, messages: string[]): void {
     )
     if (
       targetSlots.length > 0 &&
-      !targetSlots.some((slot) => slot.name === edge.to.varName)
+      !targetSlots.some((slot) => slot.name === edge.to.inputName)
     ) {
       addUnique(
         messages,
-        `${nodeName(target)} 没有名为 "${edge.to.varName}" 的输入变量。`,
+        `${nodeName(target)} 没有名为 "${edge.to.inputName}" 的输入端口。`,
       )
     }
   }

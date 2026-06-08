@@ -299,11 +299,11 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
           timeout: 5000,
         },
         inputs: [
-          { name: "events.records", valueType: "array", semanticSlot: "memory.events", required: true },
-          { name: "archives.records", valueType: "array", semanticSlot: "memory.archives", required: true },
-          { name: "globals.records", valueType: "array", semanticSlot: "memory.globals", required: false },
-          { name: "ongoingEvents", valueType: "array", semanticSlot: "memory.events.ongoing", required: false },
-          { name: "foregroundArchives", valueType: "array", semanticSlot: "memory.archives.foreground", required: false },
+          { name: "events.records", valueType: "array", required: true },
+          { name: "archives.records", valueType: "array", required: true },
+          { name: "globals.records", valueType: "array", required: false },
+          { name: "ongoingEvents", valueType: "array", required: false },
+          { name: "foregroundArchives", valueType: "array", required: false },
         ],
         outputs: [
           { name: "directArchives", extract: { type: "raw" }, valueType: "array" },
@@ -356,12 +356,12 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
           recordRetrievalDebugOutputName: "debug",
         },
         inputs: [
-          { name: "globals.records", valueType: "array", semanticSlot: "memory.globals", required: false },
-          { name: "directEntities", valueType: "array", semanticSlot: "memory.directEntities", required: false },
-          { name: "strategyDebug", valueType: "object", semanticSlot: "memory.debug", required: false },
-          { name: "archives", valueType: "array", semanticSlot: "memory.archives", required: false },
-          { name: "eventsText", valueType: "string", semanticSlot: "memory.events.text", required: false },
-          { name: "archivesText", valueType: "string", semanticSlot: "memory.archives.text", required: false },
+          { name: "globals.records", valueType: "array", required: false },
+          { name: "directEntities", valueType: "array", required: false },
+          { name: "strategyDebug", valueType: "object", required: false },
+          { name: "archives", valueType: "array", required: false },
+          { name: "eventsText", valueType: "string", required: false },
+          { name: "archivesText", valueType: "string", required: false },
         ],
         outputs: [
           { name: "prompt", extract: { type: "raw" }, valueType: "string" },
@@ -401,99 +401,99 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
     edges: [
       {
         from: { nodeId: "airpEvents", outputName: "records" },
-        to: { nodeId: "ongoingEvents", varName: "records" },
+        to: { nodeId: "ongoingEvents", inputName: "records" },
       },
       {
         from: { nodeId: "airpArchives", outputName: "records" },
-        to: { nodeId: "foregroundArchives", varName: "records" },
+        to: { nodeId: "foregroundArchives", inputName: "records" },
       },
       {
         from: { nodeId: "airpEvents", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", varName: "events.records" },
+        to: { nodeId: "retrievalStrategy", inputName: "events.records" },
       },
       {
         from: { nodeId: "airpArchives", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", varName: "archives.records" },
+        to: { nodeId: "retrievalStrategy", inputName: "archives.records" },
       },
       {
         from: { nodeId: "airpGlobals", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", varName: "globals.records" },
+        to: { nodeId: "retrievalStrategy", inputName: "globals.records" },
       },
       {
         from: { nodeId: "ongoingEvents", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", varName: "ongoingEvents" },
+        to: { nodeId: "retrievalStrategy", inputName: "ongoingEvents" },
       },
       {
         from: { nodeId: "foregroundArchives", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", varName: "foregroundArchives" },
+        to: { nodeId: "retrievalStrategy", inputName: "foregroundArchives" },
       },
       {
         from: { nodeId: "retrievalStrategy", outputName: "directArchives" },
-        to: { nodeId: "selectedArchiveMerge", varName: "directArchives" },
+        to: { nodeId: "selectedArchiveMerge", inputName: "directArchives" },
       },
       {
         from: { nodeId: "retrievalStrategy", outputName: "foregroundArchives" },
-        to: { nodeId: "selectedArchiveMerge", varName: "foregroundArchives" },
+        to: { nodeId: "selectedArchiveMerge", inputName: "foregroundArchives" },
       },
       {
         from: { nodeId: "retrievalStrategy", outputName: "relatedArchives" },
-        to: { nodeId: "selectedArchiveMerge", varName: "relatedArchives" },
+        to: { nodeId: "selectedArchiveMerge", inputName: "relatedArchives" },
       },
       {
         from: { nodeId: "retrievalStrategy", outputName: "selectedEvents" },
-        to: { nodeId: "selectedEventsText", varName: "records" },
+        to: { nodeId: "selectedEventsText", inputName: "records" },
       },
       {
         from: { nodeId: "selectedArchiveMerge", outputName: "records" },
-        to: { nodeId: "selectedArchivesText", varName: "records" },
+        to: { nodeId: "selectedArchivesText", inputName: "records" },
       },
       {
         from: { nodeId: "airpGlobals", outputName: "records" },
-        to: { nodeId: "retrieval", varName: "globals.records" },
+        to: { nodeId: "retrieval", inputName: "globals.records" },
       },
       {
         from: { nodeId: "retrievalStrategy", outputName: "directEntities" },
-        to: { nodeId: "retrieval", varName: "directEntities" },
+        to: { nodeId: "retrieval", inputName: "directEntities" },
       },
       {
         from: { nodeId: "retrievalStrategy", outputName: "debug" },
-        to: { nodeId: "retrieval", varName: "strategyDebug" },
+        to: { nodeId: "retrieval", inputName: "strategyDebug" },
       },
       {
         from: { nodeId: "selectedArchiveMerge", outputName: "records" },
-        to: { nodeId: "retrieval", varName: "archives" },
+        to: { nodeId: "retrieval", inputName: "archives" },
       },
       {
         from: { nodeId: "selectedEventsText", outputName: "text" },
-        to: { nodeId: "retrieval", varName: "eventsText" },
+        to: { nodeId: "retrieval", inputName: "eventsText" },
       },
       {
         from: { nodeId: "selectedArchivesText", outputName: "text" },
-        to: { nodeId: "retrieval", varName: "archivesText" },
+        to: { nodeId: "retrieval", inputName: "archivesText" },
       },
       {
         from: { nodeId: "retrieval", outputName: "prompt" },
-        to: { nodeId: "chat", varName: "retrieval.prompt" },
+        to: { nodeId: "chat", inputName: "retrieval.prompt" },
       },
       {
         from: { nodeId: "chat", outputName: "raw" },
-        to: { nodeId: "reply", varName: "value" },
+        to: { nodeId: "reply", inputName: "value" },
       },
       {
         from: { nodeId: "chat", outputName: "raw" },
-        to: { nodeId: "maintenance", varName: "lastReply" },
+        to: { nodeId: "maintenance", inputName: "lastReply" },
       },
       {
         from: { nodeId: "retrieval", outputName: "directEntities" },
-        to: { nodeId: "maintenance", varName: "retrieval.directEntities" },
+        to: { nodeId: "maintenance", inputName: "retrieval.directEntities" },
       },
       {
         from: { nodeId: "retrieval", outputName: "archives" },
-        to: { nodeId: "maintenance", varName: "archives.recent.json" },
+        to: { nodeId: "maintenance", inputName: "archives.recent.json" },
       },
       {
         from: { nodeId: "maintenance", outputName: "operations" },
-        to: { nodeId: "stateWrite", varName: "operations" },
+        to: { nodeId: "stateWrite", inputName: "operations" },
       },
     ],
     stateModel: {

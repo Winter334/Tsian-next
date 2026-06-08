@@ -7,6 +7,7 @@ import SwitchForm from './inspector/SwitchForm.vue'
 import ComputeForm from './inspector/ComputeForm.vue'
 import StateQueryForm from './inspector/StateQueryForm.vue'
 import StateWriteForm from './inspector/StateWriteForm.vue'
+import InputsEditor from './inspector/InputsEditor.vue'
 import OutputsEditor from './inspector/OutputsEditor.vue'
 import TemplateComposeForm from './inspector/TemplateComposeForm.vue'
 import RecordFilterForm from './inspector/RecordFilterForm.vue'
@@ -17,7 +18,12 @@ import {
   resolveWorkflowOutputSlots,
   type WorkflowPortDisplay,
 } from './node-schema'
-import type { WorkflowStateModel } from '@tsian/contracts'
+import { getWorkflowNodeDefinition } from './node-definitions'
+import type {
+  NodeInputDeclaration,
+  NodeOutputDeclaration,
+  WorkflowStateModel,
+} from '@tsian/contracts'
 
 interface WorkflowResourceOption {
   id: string
@@ -34,7 +40,8 @@ const props = defineProps<{
   onUpdateConfig: (nodeId: string, config: Record<string, unknown>) => void
   onUpdateRetry: (nodeId: string, retry: { maxRetries: number } | undefined) => void
   onDeleteNode: (nodeId: string) => void
-  onUpdateOutputs: (nodeId: string, outputs: any[]) => void
+  onUpdateInputs: (nodeId: string, inputs: NodeInputDeclaration[]) => void
+  onUpdateOutputs: (nodeId: string, outputs: NodeOutputDeclaration[]) => void
   onUpdateLabel: (nodeId: string, label: string) => void
 }>()
 
@@ -48,6 +55,11 @@ const selectedNode = computed(() => {
 const typeInfo = computed(() => {
   if (!selectedNode.value) return null
   return nodeTypeMap.get(selectedNode.value.data.nodeType) ?? null
+})
+
+const nodeDefinition = computed(() => {
+  if (!selectedNode.value) return null
+  return getWorkflowNodeDefinition(selectedNode.value.data.nodeType) ?? null
 })
 
 const inputSlots = computed<WorkflowPortDisplay[]>(() => {
@@ -76,7 +88,6 @@ function portMeta(port: WorkflowPortDisplay): string {
   return [
     port.name,
     port.valueType ? `类型:${port.valueType}` : '',
-    port.semanticSlot ? `语义槽:${port.semanticSlot}` : '',
     port.required ? '必需' : '',
   ].filter(Boolean).join(' · ')
 }
@@ -102,9 +113,15 @@ function handleUpdateConfig(newConfig: Record<string, unknown>) {
 }
 
 // 输出端口编辑回调
-function handleUpdateOutputs(newOutputs: any[]) {
+function handleUpdateOutputs(newOutputs: NodeOutputDeclaration[]) {
   if (!props.nodeId) return
   props.onUpdateOutputs(props.nodeId, newOutputs)
+}
+
+// 输入端口编辑回调
+function handleUpdateInputs(newInputs: NodeInputDeclaration[]) {
+  if (!props.nodeId) return
+  props.onUpdateInputs(props.nodeId, newInputs)
 }
 
 // 修改节点名称
@@ -293,8 +310,18 @@ function handleDelete() {
         <pre class="border border-neon-deep/20 bg-void p-2 font-mono text-[10px] text-text-dim overflow-x-auto">{{ JSON.stringify(selectedNode.data.config, null, 2) }}</pre>
       </div>
 
+      <!-- 输入端口编辑器（可声明动态输入的节点） -->
+      <template v-if="nodeDefinition?.allowCustomInputs">
+        <div class="border-t border-neon-deep/20 pt-3">
+          <InputsEditor
+            :inputs="selectedNode.data.inputs ?? []"
+            :on-update="handleUpdateInputs"
+          />
+        </div>
+      </template>
+
       <!-- 输出端口编辑器（可声明动态输出的节点） -->
-      <template v-if="['ai-call', 'compute', 'template-compose'].includes(selectedNode.data.nodeType)">
+      <template v-if="nodeDefinition?.allowCustomOutputs">
         <div class="border-t border-neon-deep/20 pt-3">
           <OutputsEditor
             :outputs="selectedNode.data.outputs ?? []"

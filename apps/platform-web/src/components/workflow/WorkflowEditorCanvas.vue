@@ -155,7 +155,7 @@
             class="block w-full px-3 py-2 text-left font-mono text-xs text-text-main transition-colors hover:bg-neon/10 hover:text-neon"
             @click="openEdgeEditor(contextMenu.edgeId)"
           >
-            编辑边
+            查看连线
           </button>
           <button
             type="button"
@@ -397,8 +397,6 @@
       v-if="!props.readonly"
       :open="!!edgeEditorEdgeId"
       :edge="edgeEditorEdge"
-      :nodes="nodes"
-      :on-update="updateEdgeData"
       :on-delete="deleteEdge"
       :on-close="closeEdgeEditor"
     />
@@ -515,7 +513,6 @@ const {
   updateNodeRetry,
   updateNodeInputs,
   updateNodeOutputs,
-  updateEdgeData,
   exportToJson,
   importFromJson,
 } = useWorkflowEditor()
@@ -1087,15 +1084,15 @@ function onConnect(connection: Connection) {
   }
 
   const targetHandle = connection.targetHandle ?? 'input'
-  const varName = targetHandle !== 'input' ? targetHandle : 'value'
+  const inputName = targetHandle !== 'input' ? targetHandle : 'value'
   const newEdge: Edge = {
-    id: `${connection.source}:${connection.sourceHandle ?? 'raw'}->${connection.target}:${varName}`,
+    id: `${connection.source}:${connection.sourceHandle ?? 'raw'}->${connection.target}:${inputName}`,
     source: connection.source,
     sourceHandle: connection.sourceHandle ?? 'raw',
     target: connection.target,
     targetHandle,
     type: WORKFLOW_EDGE_VUE_TYPE,
-    data: { edgeKind: 'workflow', varName },
+    data: { edgeKind: 'workflow', inputName },
   }
   edges.value = [...edges.value, newEdge]
   selectedEdgeId.value = newEdge.id

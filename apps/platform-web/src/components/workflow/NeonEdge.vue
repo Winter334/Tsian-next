@@ -24,9 +24,6 @@ const props = defineProps<{
   targetPosition: Position
   selected?: boolean
   markerEnd?: string
-  data?: {
-    condition?: string
-  }
 }>()
 
 const edgePath = computed(() => {
