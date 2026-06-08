@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 26
+- **Total Sessions**: 27
 - **Last Active**: 2026-06-08
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~900 | Active |
+| `journal-1.md` | ~934 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 27 | 2026-06-08 | 标准化工作流节点定义 | `01e141f` | `master` |
 | 26 | 2026-06-08 | 工作流状态数据库心智模型优化 | `e987d6e`, `b64a0bf` | `master` |
 | 25 | 2026-06-07 | 优化工作流编辑器易用性 | `8b7dc35`, `5c02aff` | `master` |
 | 24 | 2026-06-07 | Workflow-carried state contract authoring wrap-up | `f4f9048`, `74c970d` | `master` |

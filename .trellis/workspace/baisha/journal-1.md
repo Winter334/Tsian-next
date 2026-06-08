@@ -898,3 +898,37 @@ Completed workflow-carried state contract authoring, removed retired OpenSpec ma
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: 标准化工作流节点定义
+
+**Date**: 2026-06-08
+**Task**: 标准化工作流节点定义
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+移除 semanticSlot 与边级条件配置，统一工作流节点定义 registry，将边模型收敛为 from.outputName 到 to.inputName 的纯端口连接，并同步编辑器、运行时、测试与规格文档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `01e141f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
