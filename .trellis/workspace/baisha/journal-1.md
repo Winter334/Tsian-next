@@ -966,3 +966,37 @@ Completed workflow-carried state contract authoring, removed retired OpenSpec ma
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: Upgrade Trellis to 0.6 beta
+
+**Date**: 2026-06-10
+**Task**: Upgrade Trellis to 0.6 beta
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Upgraded Trellis project/runtime files to 0.6.0-beta.23, installed the WSL-native CLI, and verified context loading, channel smoke, builds, and tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ef9cabd` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
