@@ -333,7 +333,7 @@ Wrong:
 ```typescript
 const edge = {
   from: { nodeId: "retrieval", outputName: "prompt" },
-  to: { nodeId: "chat", handle: "retrieval.prompt" },
+  to: { nodeId: "chat", handle: "memoryPrompt" },
   data: { branchWhen: "ok" },
 }
 ```
@@ -343,7 +343,7 @@ Correct:
 ```typescript
 const edge = {
   from: { nodeId: "retrieval", outputName: "prompt" },
-  to: { nodeId: "chat", inputName: "retrieval.prompt" },
+  to: { nodeId: "chat", inputName: "memoryPrompt" },
 }
 
 const targetHandle = declaredInputs.some((input) => input.name === edge.to.inputName)

@@ -90,7 +90,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, bounded `compute` for AIRP-specific retrieval glue, feeds `retrieval.prompt` to chat, feeds `retrieval.directEntities` plus `archives.recent.json` to maintenance, and feeds `maintenance.operations` to an explicit `state-write` node.
+- Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, bounded `compute` for AIRP-specific retrieval glue, feeds `memoryPrompt` to chat, feeds `entityNames` plus `recentArchives` to maintenance, and feeds `maintenance.operations` to an explicit `state-write` node.
 - Base: custom collection workflows use `state-query { source: "collection", namespace, collection }` and `state-write` with namespace/collection defaults for alternative memory structures.
 - Base: custom collection workflows can combine `state-query { source: "collection" }`, `record-filter`, `record-merge`, `record-format`, `template-compose`, and `compute` for non-AIRP state structures such as keyword -> snippet/summary.
 - Bad: reintroducing `ai-call.config.bypass.rawFromMacro = "__retrieval.raw"` hides retrieval outside the workflow and breaks replaceability.

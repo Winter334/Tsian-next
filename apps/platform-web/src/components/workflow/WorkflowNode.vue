@@ -50,70 +50,75 @@
         <p class="font-mono text-[9px] uppercase tracking-wider text-text-dim">
           输入
         </p>
-        <p
+        <div
           v-for="slot in inputSlots"
           :key="`in-${slot.name}`"
-          class="truncate font-mono text-[10px] text-text-dim"
-          :title="portTitle(slot)"
+          class="workflow-port-row relative flex min-w-0 items-center"
         >
-          ← {{ portLabel(slot) }}
-        </p>
-        <p
+          <Handle
+            type="target"
+            :id="slot.name"
+            :position="Position.Left"
+            class="workflow-port-handle workflow-port-handle--input !border !bg-elevated"
+            :style="{ borderColor: typeInfo.color }"
+          />
+          <p
+            class="min-w-0 truncate font-mono text-[10px] text-text-dim"
+            :title="portTitle(slot)"
+          >
+            ← {{ portLabel(slot) }}
+          </p>
+        </div>
+        <div
           v-if="!inputSlots.length"
-          class="truncate font-mono text-[10px] text-text-dim"
+          class="workflow-port-row relative flex min-w-0 items-center"
         >
-          ← 任意
-        </p>
+          <Handle
+            type="target"
+            id="input"
+            :position="Position.Left"
+            class="workflow-port-handle workflow-port-handle--input !border !bg-elevated"
+            :style="{ borderColor: typeInfo.color }"
+          />
+          <p class="min-w-0 truncate font-mono text-[10px] text-text-dim">
+            ← 任意
+          </p>
+        </div>
       </div>
       <div class="min-w-0 space-y-1 text-right">
         <p class="font-mono text-[9px] uppercase tracking-wider text-text-dim">
           输出
         </p>
-        <p
+        <div
           v-for="slot in outputSlots"
           :key="`out-${slot.name}`"
-          class="truncate font-mono text-[10px] text-text-dim"
-          :title="portTitle(slot)"
+          class="workflow-port-row relative flex min-w-0 items-center justify-end"
         >
-          {{ portLabel(slot) }} →
-        </p>
+          <p
+            class="min-w-0 truncate font-mono text-[10px] text-text-dim"
+            :title="portTitle(slot)"
+          >
+            {{ portLabel(slot) }} →
+          </p>
+          <Handle
+            type="source"
+            :id="slot.name"
+            :position="Position.Right"
+            class="workflow-port-handle workflow-port-handle--output !border !bg-elevated"
+            :style="{ borderColor: typeInfo.color }"
+          />
+        </div>
       </div>
     </div>
 
     <!-- 输入端口（左侧） -->
     <Handle
-      v-if="!inputSlots.length"
+      v-if="!inputSlots.length && !outputSlots.length"
       type="target"
       id="input"
       :position="Position.Left"
       class="!h-2 !w-2 !rounded-none !border !bg-elevated"
       :style="{ borderColor: typeInfo.color }"
-    />
-    <Handle
-      v-for="(input, idx) in inputSlots"
-      :key="`input-handle-${input.name}`"
-      type="target"
-      :id="input.name"
-      :position="Position.Left"
-      class="!h-2 !w-2 !rounded-none !border !bg-elevated"
-      :style="{
-        borderColor: typeInfo.color,
-        top: handleTop(idx, inputSlots.length),
-      }"
-    />
-
-    <!-- 输出端口（右侧） -->
-    <Handle
-      v-for="(output, idx) in outputSlots"
-      :key="output.name"
-      type="source"
-      :id="output.name"
-      :position="Position.Right"
-      class="!h-2 !w-2 !rounded-none !border !bg-elevated"
-      :style="{
-        borderColor: typeInfo.color,
-        top: handleTop(idx, outputSlots.length),
-      }"
     />
   </div>
 </template>
@@ -217,12 +222,6 @@ const outputSlots = computed(() => {
   )
 })
 
-function handleTop(index: number, total: number): string {
-  if (total <= 1) return '50%'
-  const span = 60 / Math.max(total - 1, 1)
-  return `${20 + index * span}%`
-}
-
 function portLabel(port: WorkflowPortDisplay): string {
   return port.label || port.name
 }
@@ -273,5 +272,27 @@ const configSummary = computed(() => {
 <style scoped>
 .workflow-node {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.workflow-port-row {
+  min-height: 1rem;
+}
+
+.workflow-port-handle {
+  position: absolute !important;
+  height: 0.5rem !important;
+  width: 0.5rem !important;
+  border-radius: 0 !important;
+  top: 50% !important;
+}
+
+.workflow-port-handle--input {
+  left: -0.75rem !important;
+  transform: translate(-50%, -50%) !important;
+}
+
+.workflow-port-handle--output {
+  right: -0.75rem !important;
+  transform: translate(50%, -50%) !important;
 }
 </style>

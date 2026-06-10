@@ -19,6 +19,38 @@ Vue components use `<script setup lang="ts">` and keep behavior close to the UI 
   the workflow edge contract: `from.outputName` feeds `to.inputName`.
 - Workflow-level diagnostics and future state-contract summaries belong in the collapsible bottom drawer so the graph canvas remains the dominant workspace.
 
+### Convention: Node Port Handle Alignment
+
+**What**: Workflow node cards should render each Vue Flow `Handle` inside the
+same DOM row as its visible input/output port label, then offset the handle to
+the card edge from that row.
+
+**Why**: Node headers and config summaries can change height. Independent
+percentage-based handle positioning drifts away from the visible port labels
+and makes authors connect the wrong input/output.
+
+**Example**:
+
+```vue
+<div class="workflow-port-row relative flex items-center">
+  <Handle
+    type="target"
+    :id="slot.name"
+    :position="Position.Left"
+    class="workflow-port-handle workflow-port-handle--input"
+  />
+  <p>{{ portLabel(slot) }}</p>
+</div>
+```
+
+**Rules**:
+- Keep the runtime contract as `from.outputName -> to.inputName`; handle IDs
+  must remain contract port names, not visual-only IDs.
+- Preserve the fallback `input` handle for legacy/custom nodes without explicit
+  input declarations.
+- Avoid calculating port handle `top` from the whole card unless there is no
+  corresponding visible port row.
+
 ### Convention: Editor-Only Workflow Diagnostics
 
 **What**: Platform workflow editors may add authoring diagnostics on top of

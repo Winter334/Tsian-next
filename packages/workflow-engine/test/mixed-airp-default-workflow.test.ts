@@ -121,15 +121,15 @@ describe("mixed AIRP default workflow", () => {
       expect.arrayContaining([
         {
           from: { nodeId: "retrieval", outputName: "prompt" },
-          to: { nodeId: "chat", inputName: "retrieval.prompt" },
+          to: { nodeId: "chat", inputName: "memoryPrompt" },
         },
         {
           from: { nodeId: "retrieval", outputName: "directEntities" },
-          to: { nodeId: "maintenance", inputName: "retrieval.directEntities" },
+          to: { nodeId: "maintenance", inputName: "entityNames" },
         },
         {
           from: { nodeId: "retrieval", outputName: "archives" },
-          to: { nodeId: "maintenance", inputName: "archives.recent.json" },
+          to: { nodeId: "maintenance", inputName: "recentArchives" },
         },
         {
           from: { nodeId: "maintenance", outputName: "operations" },

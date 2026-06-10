@@ -76,8 +76,8 @@ const queryText = normalize([
   ...history.map((message) => text(message && message.content)),
 ].join("\\n"))
 
-const events = arrayInput("events.records").map(toEvent).filter((event) => event.id && event.content)
-const archives = arrayInput("archives.records").map(toArchive).filter((archive) => archive.id && archive.name)
+const events = arrayInput("eventRecords").map(toEvent).filter((event) => event.id && event.content)
+const archives = arrayInput("archiveRecords").map(toArchive).filter((archive) => archive.id && archive.name)
 const ongoingEvents = arrayInput("ongoingEvents").map(toEvent).filter((event) => event.id)
 const foregroundArchives = arrayInput("foregroundArchives").map(toArchive).filter((archive) => archive.id && archive.name)
 
@@ -191,7 +191,7 @@ const directEntities = arrayInput("directEntities").filter((item) => typeof item
 const strategyDebug = inputs.strategyDebug && typeof inputs.strategyDebug === "object"
   ? inputs.strategyDebug
   : {}
-const globals = toGlobalMap(arrayInput("globals.records"))
+const globals = toGlobalMap(arrayInput("globalRecords"))
 const currentTime = text(globals.currentTime) || text(macros["narrative.currentTime"])
 const formattedTime = text(macros["narrative.formattedTime"]) || currentTime
 const eventText = text(inputs.eventsText)
@@ -299,19 +299,18 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
           timeout: 5000,
         },
         inputs: [
-          { name: "events.records", valueType: "array", required: true },
-          { name: "archives.records", valueType: "array", required: true },
-          { name: "globals.records", valueType: "array", required: false },
-          { name: "ongoingEvents", valueType: "array", required: false },
-          { name: "foregroundArchives", valueType: "array", required: false },
+          { name: "eventRecords", label: "全部事件", valueType: "array", required: true },
+          { name: "archiveRecords", label: "全部档案", valueType: "array", required: true },
+          { name: "ongoingEvents", label: "进行中事件", valueType: "array", required: false },
+          { name: "foregroundArchives", label: "在场档案", valueType: "array", required: false },
         ],
         outputs: [
-          { name: "directArchives", extract: { type: "raw" }, valueType: "array" },
-          { name: "foregroundArchives", extract: { type: "raw" }, valueType: "array" },
-          { name: "relatedArchives", extract: { type: "raw" }, valueType: "array" },
-          { name: "selectedEvents", extract: { type: "raw" }, valueType: "array" },
-          { name: "directEntities", extract: { type: "raw" }, valueType: "array" },
-          { name: "debug", extract: { type: "raw" }, valueType: "object" },
+          { name: "directArchives", label: "直接命中档案", extract: { type: "raw" }, valueType: "array" },
+          { name: "foregroundArchives", label: "在场档案", extract: { type: "raw" }, valueType: "array" },
+          { name: "relatedArchives", label: "关联档案", extract: { type: "raw" }, valueType: "array" },
+          { name: "selectedEvents", label: "相关事件", extract: { type: "raw" }, valueType: "array" },
+          { name: "directEntities", label: "命中实体", extract: { type: "raw" }, valueType: "array" },
+          { name: "debug", label: "检索调试", extract: { type: "raw" }, valueType: "object" },
         ],
       },
       {
@@ -356,24 +355,27 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
           recordRetrievalDebugOutputName: "debug",
         },
         inputs: [
-          { name: "globals.records", valueType: "array", required: false },
-          { name: "directEntities", valueType: "array", required: false },
-          { name: "strategyDebug", valueType: "object", required: false },
-          { name: "archives", valueType: "array", required: false },
-          { name: "eventsText", valueType: "string", required: false },
-          { name: "archivesText", valueType: "string", required: false },
+          { name: "globalRecords", label: "全局状态", valueType: "array", required: false },
+          { name: "directEntities", label: "命中实体", valueType: "array", required: false },
+          { name: "strategyDebug", label: "检索调试", valueType: "object", required: false },
+          { name: "archives", label: "相关档案", valueType: "array", required: false },
+          { name: "eventsText", label: "事件文本", valueType: "string", required: false },
+          { name: "archivesText", label: "档案文本", valueType: "string", required: false },
         ],
         outputs: [
-          { name: "prompt", extract: { type: "raw" }, valueType: "string" },
-          { name: "directEntities", extract: { type: "raw" }, valueType: "array" },
-          { name: "archives", extract: { type: "raw" }, valueType: "array" },
-          { name: "debug", extract: { type: "raw" }, valueType: "object" },
+          { name: "prompt", label: "记忆补充", extract: { type: "raw" }, valueType: "string" },
+          { name: "directEntities", label: "命中实体", extract: { type: "raw" }, valueType: "array" },
+          { name: "archives", label: "相关档案", extract: { type: "raw" }, valueType: "array" },
+          { name: "debug", label: "检索调试", extract: { type: "raw" }, valueType: "object" },
         ],
       },
       {
         id: "chat",
         type: "ai-call",
         config: { presetId: "builtin.chat", appendUserInput: true },
+        inputs: [
+          { name: "memoryPrompt", label: "记忆补充", valueType: "string", required: true },
+        ],
       },
       {
         id: "reply",
@@ -385,8 +387,13 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
         type: "ai-call",
         config: { presetId: "builtin.maintenance" },
         retry: { maxRetries: 0 },
+        inputs: [
+          { name: "lastReply", label: "本轮回复", valueType: "string", required: true },
+          { name: "entityNames", label: "命中实体", valueType: "array", required: false },
+          { name: "recentArchives", label: "相关档案", valueType: "array", required: false },
+        ],
         outputs: [
-          { name: "operations", extract: { type: "raw", parse: "json" } },
+          { name: "operations", label: "状态操作", extract: { type: "raw", parse: "json" }, valueType: "object" },
         ],
       },
       {
@@ -409,15 +416,11 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
       },
       {
         from: { nodeId: "airpEvents", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", inputName: "events.records" },
+        to: { nodeId: "retrievalStrategy", inputName: "eventRecords" },
       },
       {
         from: { nodeId: "airpArchives", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", inputName: "archives.records" },
-      },
-      {
-        from: { nodeId: "airpGlobals", outputName: "records" },
-        to: { nodeId: "retrievalStrategy", inputName: "globals.records" },
+        to: { nodeId: "retrievalStrategy", inputName: "archiveRecords" },
       },
       {
         from: { nodeId: "ongoingEvents", outputName: "records" },
@@ -449,7 +452,7 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
       },
       {
         from: { nodeId: "airpGlobals", outputName: "records" },
-        to: { nodeId: "retrieval", inputName: "globals.records" },
+        to: { nodeId: "retrieval", inputName: "globalRecords" },
       },
       {
         from: { nodeId: "retrievalStrategy", outputName: "directEntities" },
@@ -473,7 +476,7 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
       },
       {
         from: { nodeId: "retrieval", outputName: "prompt" },
-        to: { nodeId: "chat", inputName: "retrieval.prompt" },
+        to: { nodeId: "chat", inputName: "memoryPrompt" },
       },
       {
         from: { nodeId: "chat", outputName: "raw" },
@@ -485,11 +488,11 @@ export function createDefaultAirpWorkflow(): WorkflowDefinition {
       },
       {
         from: { nodeId: "retrieval", outputName: "directEntities" },
-        to: { nodeId: "maintenance", inputName: "retrieval.directEntities" },
+        to: { nodeId: "maintenance", inputName: "entityNames" },
       },
       {
         from: { nodeId: "retrieval", outputName: "archives" },
-        to: { nodeId: "maintenance", inputName: "archives.recent.json" },
+        to: { nodeId: "maintenance", inputName: "recentArchives" },
       },
       {
         from: { nodeId: "maintenance", outputName: "operations" },
