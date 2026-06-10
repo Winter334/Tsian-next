@@ -19,3 +19,9 @@ If you're using Codex or another agent-capable tool, additional project-scoped h
 Managed by Trellis. Edits outside this block are preserved; edits inside may be overwritten by a future `trellis update`.
 
 <!-- TRELLIS:END -->
+
+## Code Search Preference
+
+When searching this codebase, prefer `fast_context_search` as the primary code discovery tool when the scenario fits: semantic or business-domain searches, unfamiliar feature areas, cross-module tracing, or finding implementation entry points.
+
+Use `rg` and `rg --files` alongside it for exact symbols, string literals, config keys, file lists, and pre-change reverse searches.

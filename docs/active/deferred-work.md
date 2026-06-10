@@ -141,43 +141,33 @@ Scope guard:
 
 ## DW-004 Revisit Schema Resources As System-Package Artifacts
 
-Status: deferred
+Status: resolved by state database model
 Source: workflow-as-system direction and workflow-carried state contract discussion
 
-Temporary state:
-- Default AIRP schema is a runtime constant from `@tsian/memory-core`.
-- The default workflow carries that schema through `state-write` node config.
-- Platform resources currently cover prompt presets, world books, and workflow
-  presets, but not state schema resources.
+Resolution:
+- Resolved by the workflow-level `stateModel` and state database node authoring
+  model, 2026-06-09.
+- Persistent state schema is now authored through state database nodes and stored
+  under the workflow's `stateModel`.
+- Intermediate shapes created by other nodes are owned by those node definitions
+  and their input/output ports; they do not need a separate global schema
+  resource layer.
 
-Why deferred:
-- In the current direction, a schema by itself only reuses a data shape. It does
-  not reuse the configured query, filtering, prompt composition, maintenance,
-  writeback, debug, or frontend-facing behavior that makes a system runnable.
-- The preferred reuse unit is a future workflow block / subworkflow / system
-  package that carries its state contract along with nodes, ports, and required
-  resources.
-- Standalone schema resources would need reference semantics, seed behavior,
-  deletion checks, extraction rules, and authoring affordances, and could pull
-  the product back toward schema-first authoring before workflow-carried state
-  contracts are visible.
-
-Revisit when:
-- Workflow-carried state contracts are visible in the editor.
-- A block/subworkflow/system package MVP exists or is being designed.
-- Multiple packaged systems need to expose or share a stable state contract for
-  frontend discovery, package dependencies, or compatibility checks.
+Current decision:
+- Do not create standalone schema resources as a future default work item.
+- If future workflow blocks, subworkflows, or system packages exist, they should
+  carry or expose the relevant `stateModel`/state contract as part of the
+  package, not depend on a separate schema-resource-first authoring path.
 
 Suggested next task:
-- `workflow-block-state-contract-mvp`
+- N/A for standalone schema resources.
 
 Scope guard:
-- Do not introduce schema resources as an isolated authoring prerequisite.
-- If schema resources are introduced later, treat them as extracted/shared
-  artifacts of workflow-carried contracts or system packages, not as the main
-  reusable system unit.
-- Do not build a generic renderer binding layer or a full visual schema editor in the same
-  task.
+- Historical guard: this resolved item did not introduce workflow blocks,
+  subworkflows, system packages, generic renderer binding, or a second schema
+  editor.
+- Future package work should carry the existing `stateModel` boundary forward
+  instead of reopening standalone schema resources as a default prerequisite.
 
 ## DW-005 Generic Renderer Adapter Layer
 
@@ -216,3 +206,49 @@ Scope guard:
 - Do not add a generic adapter registry as a default next step.
 - Keep renderer interpretation optional and owned by frontend packages or
   future system/package-level conventions.
+
+## DW-006 Player-Facing Custom Node Script Authoring
+
+Status: deferred
+Source: node definition standardization follow-up discussion, 2026-06-09
+
+Temporary state:
+- Workflow node definitions have been standardized, and the editor model now
+  treats node ports as function-like inputs/outputs connected by data-flow
+  edges.
+- Existing `compute` remains available as a prototype-era script execution node
+  and may still appear in default workflow internals while the workflow system
+  is being validated.
+- There is no player-facing custom node authoring surface for editing arbitrary
+  node scripts, replacing official node implementations, or creating a full new
+  reusable node definition from scratch.
+
+Why deferred:
+- The team explicitly wants custom nodes to mean script/body editing plus port
+  and config definition, not a half-finished JSON or textarea escape hatch.
+- A serious node authoring system needs script editing, input/output signature
+  editing, config/default parameter editing, test-run fixtures, useful runtime
+  errors, copy/modify/replace flows for official node definitions, import/export
+  and versioning behavior, plus clear safety boundaries.
+- The workflow editor, state model, and node definition registry have just gone
+  through several large changes and need to run through real AIRP validation
+  before the authoring surface is frozen.
+
+Revisit when:
+- The standardized workflow editor and default AIRP workflow have been exercised
+  through real chat/maintenance/debug loops.
+- Repeated or AIRP-specific `compute` logic has shown which scripts should be
+  promoted into named official node definitions.
+- The team is ready to design the full custom node authoring contract instead
+  of exposing only raw JSON or a bare script textarea.
+
+Suggested next task:
+- `custom-node-authoring-system`
+
+Scope guard:
+- Do not implement this as only a JSON editor, only a script textarea, or only a
+  palette entry for `compute`.
+- Do not remove the internal compute/script execution capability before a
+  replacement execution model exists.
+- Do not combine this with block/subworkflow/system-package design unless a
+  separate PRD explicitly chooses that larger scope.

@@ -72,9 +72,9 @@
   不再把 legacy patch 视为唯一维护结果。
 - 已知但刻意暂缓的后续工作记录在 `./deferred-work.md`，包括未来
   block/subworkflow/system package 边界。workflow editor 已具备
-  workflow-carried state contract 的基础可见性和 MVP 编辑能力；schema
-  resources 不再作为下一步默认复用主线，若未来出现，应作为系统包或
-  工作流契约的派生/共享材料。通用 renderer adapter 层不再作为默认
+  workflow-carried state contract 的基础可见性和 MVP 编辑能力；持久状态
+  schema 由 workflow-level `stateModel` 和状态数据库节点定义，standalone
+  schema resources 不再作为独立未来任务保留。通用 renderer adapter 层不再作为默认
   后续平台方向；前端渲染优先由 workflow preset 与前端包自行约定，
   平台只提供 result / state collection / schema coverage 的发现和调试视图。
 

@@ -37,7 +37,7 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 - `state-query` is collection-only. It reads one save-scoped generic durable state collection and outputs `records` and `count`.
 - The retired `memory-query` node type must not be exposed by the editor or registered by the workflow host. Old workflows that still declare it should fail loudly as unknown node types.
 - The retired `{ source: "event-archive" }` query branch must not be exposed by the editor or executed as a hidden AIRP retrieval path. `state-query` only accepts `source: "collection"` in this MVP.
-- The platform default AIRP workflow should use the mixed AIRP workflow preset shape: AIRP collection queries (`airp/events`, `airp/archives`, `airp/globals`) -> public record-processing nodes -> bounded `compute` for AIRP-specific extraction/ranking/relation/assembly -> chat/maintenance.
+- The platform default AIRP workflow should use the mixed AIRP workflow preset shape: AIRP collection queries (`airp/events`, `airp/archives`, `airp/globals`) -> public record-processing nodes -> bounded `compute` only for AIRP-specific extraction/ranking/relation/assembly that has not yet been validated as a stable node definition -> chat/maintenance.
 - `state-write` consumes `StateWriteOperation[]` and outputs `upsertedIds`, `deletedIds`, and `clearedCollections`.
 - `record-filter` consumes an array input and filters items by limited predicates over record meta, tags, or `data` paths; it outputs a filtered array and `count`.
 - `record-merge` consumes configured array inputs, merges them in order, dedupes by a stable key path, and outputs a merged array and `count`.
@@ -69,7 +69,9 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
   Use `pushCheckpointReason: "manual"` or `"after-turn"` only when an explicit
   mid-workflow checkpoint is intentional.
 - Semantic AIRP retrieval remains a bounded internal stage in this slice. It should not force the first public generic node vocabulary, and no temporary visual stage-trace UI is required before the next workflow-publication phase.
-- `compute` is a legitimate workflow primitive, including in official presets. Use it for special, AIRP-specific, experimental, or not-yet-generic logic; do not use it as a dumping ground for stable record filtering, merging, or formatting behavior that now has public nodes.
+- After node definition standardization, the product model is node-as-function: a node definition declares inputs, outputs, config/default parameters, and an implementation, while workflow edges pass `from.outputName` into `to.inputName`.
+- Do not treat the current `compute` node UI as the finished player custom-node system. `compute` is a prototype/development script execution primitive and observation point for logic that may later become named official node definitions.
+- Do not open a player-facing custom node script authoring surface until it can cover script editing, port/config definition, test-run/debug fixtures, error feedback, official-node copy/replace flows, import/export/versioning, and safety boundaries together. A bare JSON editor or textarea-only entry is intentionally deferred.
 - When a compute node is explicitly configured with `recordRetrievalDebugOutputName`, the platform compute executor may record that output through the retrieval debug bridge. Ordinary compute nodes must not write retrieval debug implicitly.
 
 ### 4. Validation & Error Matrix
@@ -90,11 +92,12 @@ The app uses Vue local state, Dexie persistence, and bridge/platform-host state.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, bounded `compute` for AIRP-specific retrieval glue, feeds `memoryPrompt` to chat, feeds `entityNames` plus `recentArchives` to maintenance, and feeds `maintenance.operations` to an explicit `state-write` node.
+- Good: default AIRP retrieval uses collection queries for `airp/events`, `airp/archives`, and `airp/globals`, public record nodes for common filtering/merging/formatting, temporary bounded `compute` for AIRP-specific retrieval glue that is still being validated, feeds `memoryPrompt` to chat, feeds `entityNames` plus `recentArchives` to maintenance, and feeds `maintenance.operations` to an explicit `state-write` node.
 - Base: custom collection workflows use `state-query { source: "collection", namespace, collection }` and `state-write` with namespace/collection defaults for alternative memory structures.
 - Base: custom collection workflows can combine `state-query { source: "collection" }`, `record-filter`, `record-merge`, `record-format`, `template-compose`, and `compute` for non-AIRP state structures such as keyword -> snippet/summary.
 - Bad: reintroducing `ai-call.config.bypass.rawFromMacro = "__retrieval.raw"` hides retrieval outside the workflow and breaks replaceability.
 - Bad: collapsing ordinary record filtering/merging/formatting back into a long `compute` script when the public record nodes can express the behavior.
+- Bad: exposing custom node authoring as only raw JSON or a script textarea before the workflow model has been validated and the full authoring contract is designed.
 - Bad: assuming a failed later workflow node automatically undoes earlier `state-write` storage operations without restoring a checkpoint.
 
 ### 6. Tests Required

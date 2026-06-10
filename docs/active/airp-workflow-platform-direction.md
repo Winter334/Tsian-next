@@ -41,7 +41,7 @@ Tsian 的核心定位是：
 
 1. **Workflow preset**：描述信息流和执行顺序，例如查询、筛选、合并、模板组合、AI 调用、写回。
 2. **Workflow-carried state contract**：由工作流中的持久状态读写、节点输入输出、记录处理和写入校验共同形成，描述系统维护的数据结构，例如事件/档案、关键词/片段、地图节点/边、风格规则。
-3. **Resources**：提供 prompt preset、workflow preset、静态内容、默认配置等可复用材料。schema 可以作为某些高级系统包的派生或辅助材料存在，但不应默认成为脱离工作流单独维护的主复用单位。
+3. **Resources**：提供 prompt preset、workflow preset、静态内容、默认配置等可复用材料。持久状态 schema 由 workflow-level `stateModel` 和状态数据库节点承载，不作为脱离工作流的主资源类型。
 4. **Platform capabilities**：提供受控能力，例如存储写入、checkpoint、回滚、AI 调用、schema 校验、调试追踪。
 5. **Frontend renderer**：读取平台状态或资源，将其渲染成聊天界面、地图、关系网、调试面板或其它交互体验。
 
@@ -80,13 +80,12 @@ Tsian 的核心定位是：
 系统复用的优先单位不应是孤立 schema，而应是未来的 **workflow block / subworkflow / system package**：
 
 - block/subworkflow 打包一组节点、内部执行顺序和输入输出端口。
-- block/subworkflow 随身携带或暴露它形成的 state contract。
+- block/subworkflow 随身携带或暴露它形成的 `stateModel` / state contract。
 - block/subworkflow 可以声明所需 prompt preset、world book、静态内容或可选前端渲染约定。
-- schema resource 若出现，应优先作为系统包或工作流契约的派生/共享材料，而不是作者配置系统的前置入口。
 
 判断标准：
 
-`只抽出 schema 只能复用数据形状；抽出 workflow block 才能复用一个可运行系统。`
+`状态数据库节点负责定义持久状态形状；节点自身负责处理中间数据形状；抽出 workflow block 才能复用一个可运行系统。`
 
 ## 4. 工作流在平台中的位置
 
@@ -117,6 +116,27 @@ Tsian 的核心定位是：
 ## 5. 节点类型原则
 
 节点类型应尽量是通用原语，而不是 AIRP 默认系统的业务名词。
+
+节点作者模型采用“函数 / 方法”心智模型：
+
+- 节点定义类似函数定义：名称、说明、输入参数、输出返回值、配置项和实现体。
+- 节点实例类似一次函数引用：在某个 workflow 中放置并配置这个定义。
+- 节点 `config` 类似固定参数或默认参数。
+- 连线是变量数据流：把上游节点的某个输出传给下游节点的某个输入。
+- 工作流是由这些函数调用组成的数据流图。
+
+长期看，普通官方节点也应理解为由默认模组 / 官方资源预置的节点定义，
+而不是不可修改的神秘内置功能块。玩家自定义节点的核心能力不是“能多填一段
+JSON”，而是能编辑或替换节点实现体、端口和配置，从而真正定义新的函数。
+但这个能力只有在脚本编辑、端口声明、测试运行、错误反馈、导入导出、版本兼容
+和安全边界一起设计清楚时才应开放；不要为了赶进度先做一个 textarea + JSON
+的半成品入口。
+
+当前阶段应先验证和打磨已经标准化的 workflow editor、默认 AIRP workflow
+和状态模型。`compute` 可以继续作为现有原型期脚本执行节点存在，用于观察哪些
+逻辑值得沉淀为正式节点定义；它不应被当作已经完成的玩家自定义节点系统。
+未来重启自定义节点作者系统时，再决定 `compute` 是隐藏为高级入口、迁移为
+脚本型节点定义的内部执行器，还是从普通节点库中退场。
 
 推荐的节点语义类别：
 
@@ -303,6 +323,6 @@ PRD 中。
 - 保持 `apply-patch` / `memory-query` / `memory-write` 退场后的边界，不重新引入旧兼容节点语义。
 - 保持 `state-query` collection-only、`state-write` schema-aware，并继续让写入、checkpoint、回滚和校验由平台控制。
 - 提供更好的数据发现视图，帮助前端作者理解 workflow 暴露的 result 和持久 state collection，但不强制渲染方式。
-- 暂缓 block/subgraph、system package、schema resource 和通用 renderer adapter 层；若未来出现，应围绕具体系统需求单独设计。
+- 暂缓玩家可见的完整自定义节点脚本作者系统、block/subgraph、system package 和通用 renderer adapter 层；若未来出现，应围绕具体系统需求单独设计。Standalone schema resource 主线已由 `stateModel` + 状态数据库节点模型吸收，不再作为独立未来任务保留。
 
 这条路允许“一切皆有可能”，但不是“一切都无约束”。Tsian 的开放性应来自清晰的工作流、状态契约、资源和能力边界，而不是来自任意硬编码和任意脚本逃生口。
