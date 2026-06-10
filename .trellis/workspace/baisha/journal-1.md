@@ -932,3 +932,37 @@ Completed workflow-carried state contract authoring, removed retired OpenSpec ma
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 优化工作流编辑器端口体验
+
+**Date**: 2026-06-10
+**Task**: 优化工作流编辑器端口体验
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+对齐工作流节点端口 handle 与文本行，简化默认 AIRP 工作流端口命名并同步内置 preset、测试和规范。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8d7f592` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
