@@ -1073,3 +1073,37 @@ Reset the prototype workflow/prompt/content surfaces and landed the first conten
 ### Next Steps
 
 - None - task complete
+
+
+## Session 32: Record Agent Framework Runtime Workspace Direction
+
+**Date**: 2026-06-12
+**Task**: Record Agent Framework Runtime Workspace Direction
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Recorded the agreed Tsian Agent Framework and Runtime Workspace direction in active docs, covering AGENT.md/SKILL.md, progressive skill loading, agent-call collaboration, workspace-backed save data, shared/local skills, and lightweight execution-boundary validation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8c1d141` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

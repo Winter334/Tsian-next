@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 31
+- **Total Sessions**: 32
 - **Last Active**: 2026-06-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1075 | Active |
+| `journal-1.md` | ~1109 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 32 | 2026-06-12 | Record Agent Framework Runtime Workspace Direction | `8c1d141` | `master` |
 | 31 | 2026-06-12 | Agent Runtime MVP vertical slice | `5131fb2` | `master` |
 | 30 | 2026-06-12 | 记录 Agent Runtime 平台方向 | `55ef35b` | `master` |
 | 29 | 2026-06-10 | Upgrade Trellis to 0.6 beta | `ef9cabd` | `master` |
