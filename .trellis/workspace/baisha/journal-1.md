@@ -1141,3 +1141,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: 实现 Agent/Skill 注册表 MVP
+
+**Date**: 2026-06-12
+**Task**: 实现 Agent/Skill 注册表 MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现 Runtime Workspace 中 AGENT.md 与 SKILL.md 的轻量注册表索引：新增共享 AgentRegistryEntry/SkillRegistryEntry 类型，默认 master/narrative agent workspace 文件，纯 registry 解析器，以及 agent-registry 和 skill-registry bridge query；补充相关 type-safety spec，并通过 build:contracts 与 build:web 验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3e367e3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
