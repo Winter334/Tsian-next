@@ -12,6 +12,8 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views.
 - `AgentRegistryEntry` describes lightweight `agents/<agent>/AGENT.md` index entries.
 - `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries.
+- `SkillDetailEntry` describes a loaded `SKILL.md` plus resource index for `skill-detail`.
+- `SkillResourceEntry` describes a bundled skill resource file without its content.
 
 ## Bridge Consumption
 
@@ -21,6 +23,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `bridge.debug?.onTurnDebugReady(cb)` is a signal to refresh data, not the source of truth.
 - Use `AgentRegistryEntry` for `bridge.query.query({ resource: "agent-registry" })` results.
 - Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results.
+- Use `SkillDetailEntry` for `bridge.query.query({ resource: "skill-detail", params: { path } })` results.
 
 ## Avoid
 

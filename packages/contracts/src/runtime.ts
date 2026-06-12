@@ -89,6 +89,21 @@ export interface SkillRegistryEntry {
   updatedAt: number
 }
 
+export interface SkillResourceEntry {
+  path: string
+  name: string
+  relativePath: string
+  mediaType: string
+  size: number
+  updatedAt: number
+}
+
+export interface SkillDetailEntry {
+  registry: SkillRegistryEntry
+  file: WorkspaceFile
+  resources: SkillResourceEntry[]
+}
+
 export interface WorkspaceListResult {
   path: string
   entries: WorkspaceEntry[]

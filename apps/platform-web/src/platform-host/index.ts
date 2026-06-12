@@ -6,10 +6,11 @@ import type {
   PlatformActionError,
   PlayFrontendBridge,
   RuntimeSnapshotShell,
+  SkillDetailEntry,
   SkillRegistryEntry,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
-import { buildAgentRegistry, buildSkillRegistry } from "../agent-runtime/registry"
+import { buildAgentRegistry, buildSkillRegistry, loadSkillDetail } from "../agent-runtime/registry"
 import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
@@ -28,6 +29,7 @@ import {
   listStateRecordsForSave,
   listWorkspaceEntriesForSave,
   listWorkspaceFilesForSave,
+  normalizeWorkspaceFilePath,
   readWorkspaceFileForSave,
   restoreCheckpointForSave,
   saveRuntimeForSave,
@@ -384,6 +386,23 @@ export const playFrontendBridge: PlayFrontendBridge = {
             includeLocal,
           }) as SkillRegistryEntry[] as T[],
         } as DeepQueryResult<T>
+      }
+
+      if (request.resource === "skill-detail") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        try {
+          const path = normalizeWorkspaceFilePath(request.params?.path)
+          const files = await listWorkspaceFilesForSave(activeSaveId)
+          const detail = loadSkillDetail(files, path)
+          return {
+            items: (detail ? [detail] : []) as SkillDetailEntry[] as T[],
+          } as DeepQueryResult<T>
+        } catch {
+          return { items: [] } as DeepQueryResult<T>
+        }
       }
 
       if (request.resource === "ai-debug") {

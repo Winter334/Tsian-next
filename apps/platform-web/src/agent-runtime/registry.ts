@@ -1,6 +1,9 @@
 import type {
   AgentRegistryEntry,
+  SkillDetailEntry,
   SkillRegistryEntry,
+  SkillRegistryScope,
+  SkillResourceEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
 
@@ -16,6 +19,13 @@ export interface SkillRegistryQueryOptions {
 interface ParsedMarkdown {
   metadata: Metadata
   body: string
+}
+
+interface SkillPathInfo {
+  scope: SkillRegistryScope
+  skillId: string
+  directoryPath: string
+  agentId?: string
 }
 
 const AGENT_FILE_PATH_PATTERN = /^agents\/([^/]+)\/AGENT\.md$/
@@ -221,6 +231,68 @@ function compareText(left: string, right: string): number {
   return left.localeCompare(right)
 }
 
+function fileName(path: string): string {
+  const parts = path.split("/")
+  return parts[parts.length - 1] || path
+}
+
+function skillPathInfo(path: string): SkillPathInfo | null {
+  const sharedMatch = SHARED_SKILL_FILE_PATH_PATTERN.exec(path)
+  if (sharedMatch?.[1]) {
+    const skillId = sharedMatch[1]
+    return {
+      scope: "shared",
+      skillId,
+      directoryPath: `skills/${skillId}`,
+    }
+  }
+
+  const localMatch = AGENT_LOCAL_SKILL_FILE_PATH_PATTERN.exec(path)
+  if (localMatch?.[1] && localMatch[2]) {
+    const agentId = localMatch[1]
+    const skillId = localMatch[2]
+    return {
+      scope: "agent-local",
+      agentId,
+      skillId,
+      directoryPath: `agents/${agentId}/skills/${skillId}`,
+    }
+  }
+
+  return null
+}
+
+function buildSkillRegistryEntry(
+  file: WorkspaceFile,
+  pathInfo: SkillPathInfo,
+): SkillRegistryEntry {
+  const parsed = parseMarkdown(file.content)
+  const id = metadataString(parsed.metadata, ["id", "name"]) ?? pathInfo.skillId
+  const title =
+    metadataString(parsed.metadata, ["title", "name"]) ??
+    firstHeading(parsed.body) ??
+    id
+
+  const entry: SkillRegistryEntry = {
+    id,
+    title,
+    summary:
+      metadataString(parsed.metadata, ["summary", "description"]) ??
+      firstBodyParagraph(parsed.body),
+    path: file.path,
+    scope: pathInfo.scope,
+    triggers: metadataArray(parsed.metadata, ["triggers"]),
+    appliesTo: metadataArray(parsed.metadata, ["appliesTo", "applicability"]),
+    updatedAt: file.updatedAt,
+  }
+
+  if (pathInfo.agentId) {
+    entry.agentId = pathInfo.agentId
+  }
+
+  return entry
+}
+
 function compareAgentEntries(
   left: AgentRegistryEntry,
   right: AgentRegistryEntry,
@@ -251,6 +323,18 @@ function compareSkillEntries(
   const idComparison = compareText(left.id, right.id)
   if (idComparison !== 0) {
     return idComparison
+  }
+
+  return compareText(left.path, right.path)
+}
+
+function compareResourceEntries(
+  left: SkillResourceEntry,
+  right: SkillResourceEntry,
+): number {
+  const relativePathComparison = compareText(left.relativePath, right.relativePath)
+  if (relativePathComparison !== 0) {
+    return relativePathComparison
   }
 
   return compareText(left.path, right.path)
@@ -298,47 +382,66 @@ export function buildSkillRegistry(
 
   return files
     .flatMap((file): SkillRegistryEntry[] => {
-      const sharedMatch = SHARED_SKILL_FILE_PATH_PATTERN.exec(file.path)
-      const localMatch = AGENT_LOCAL_SKILL_FILE_PATH_PATTERN.exec(file.path)
-      if (!sharedMatch?.[1] && !localMatch?.[1]) {
+      const pathInfo = skillPathInfo(file.path)
+      if (!pathInfo) {
         return []
       }
 
-      const scope = sharedMatch ? "shared" : "agent-local"
-      const ownerAgentId = localMatch?.[1]
-      if (scope === "shared" && !includeShared) {
+      if (pathInfo.scope === "shared" && !includeShared) {
         return []
       }
-      if (scope === "agent-local" && (!includeLocal || (agentId && ownerAgentId !== agentId))) {
+      if (
+        pathInfo.scope === "agent-local" &&
+        (!includeLocal || (agentId && pathInfo.agentId !== agentId))
+      ) {
         return []
       }
 
-      const parsed = parseMarkdown(file.content)
-      const pathSkillId = sharedMatch?.[1] ?? localMatch?.[2] ?? file.path
-      const id = metadataString(parsed.metadata, ["id", "name"]) ?? pathSkillId
-      const title =
-        metadataString(parsed.metadata, ["title", "name"]) ??
-        firstHeading(parsed.body) ??
-        id
-
-      const entry: SkillRegistryEntry = {
-        id,
-        title,
-        summary:
-          metadataString(parsed.metadata, ["summary", "description"]) ??
-          firstBodyParagraph(parsed.body),
-        path: file.path,
-        scope,
-        triggers: metadataArray(parsed.metadata, ["triggers"]),
-        appliesTo: metadataArray(parsed.metadata, ["appliesTo", "applicability"]),
-        updatedAt: file.updatedAt,
-      }
-
-      if (ownerAgentId) {
-        entry.agentId = ownerAgentId
-      }
-
-      return [entry]
+      return [buildSkillRegistryEntry(file, pathInfo)]
     })
     .sort(compareSkillEntries)
+}
+
+export function loadSkillDetail(
+  files: WorkspaceFile[],
+  path: string,
+): SkillDetailEntry | null {
+  const pathInfo = skillPathInfo(path)
+  if (!pathInfo) {
+    return null
+  }
+
+  const file = files.find((candidate) => candidate.path === path)
+  if (!file) {
+    return null
+  }
+
+  const resourcePrefix = `${pathInfo.directoryPath}/`
+  const resources = files
+    .flatMap((candidate): SkillResourceEntry[] => {
+      if (candidate.path === file.path || !candidate.path.startsWith(resourcePrefix)) {
+        return []
+      }
+
+      const relativePath = candidate.path.slice(resourcePrefix.length)
+      if (!relativePath) {
+        return []
+      }
+
+      return [{
+        path: candidate.path,
+        name: fileName(candidate.path),
+        relativePath,
+        mediaType: candidate.mediaType,
+        size: candidate.content.length,
+        updatedAt: candidate.updatedAt,
+      }]
+    })
+    .sort(compareResourceEntries)
+
+  return {
+    registry: buildSkillRegistryEntry(file, pathInfo),
+    file,
+    resources,
+  }
 }
