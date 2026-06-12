@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 35
+- **Total Sessions**: 36
 - **Last Active**: 2026-06-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1211 | Active |
+| `journal-1.md` | ~1245 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 36 | 2026-06-12 | 实现 Agent 上下文组装 MVP | `2f4bc40` | `master` |
 | 35 | 2026-06-12 | 实现 Skill 按需加载 MVP | `575aae1` | `master` |
 | 34 | 2026-06-12 | 实现 Agent/Skill 注册表 MVP | `3e367e3` | `master` |
 | 33 | 2026-06-12 | Runtime Workspace Storage API MVP | `e492c69` | `master` |

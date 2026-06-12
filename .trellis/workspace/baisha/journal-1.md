@@ -1209,3 +1209,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: 实现 Agent 上下文组装 MVP
+
+**Date**: 2026-06-12
+**Task**: 实现 Agent 上下文组装 MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现 Runtime Workspace Agent 上下文组装：新增 AgentContextEntry 合约、纯 assembleAgentContext helper、agent-context bridge query，并同步 active docs 与 type-safety specs；验证 build:contracts、build:web 和内存 helper 探测通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f4bc40` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
