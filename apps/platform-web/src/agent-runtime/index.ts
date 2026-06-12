@@ -7,6 +7,12 @@ import type {
   WorkspaceFile,
 } from "@tsian/contracts"
 import { assembleAgentContext } from "./context"
+import {
+  executeRuntimeWorkspaceToolCalls,
+  formatRuntimeWorkspaceToolObservationMessage,
+  parseRuntimeWorkspaceToolCalls,
+  stripRuntimeWorkspaceToolCallBlocks,
+} from "./workspace-tools"
 
 export interface AgentRuntimeTurnInput {
   userInput: string
@@ -48,11 +54,27 @@ const NARRATIVE_AGENT_PLATFORM_GUARD = [
   "以第二人称或贴近玩家视角的叙事为主，保持可互动性，在结尾自然留下玩家下一步可以回应的空间。",
 ].join("\n")
 
+const WORKSPACE_TOOL_INSTRUCTIONS = [
+  "你可以按需使用只读 Runtime Workspace 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
+  "如果需要加载 Skill 详情，使用可见 Skill Index 中的 path 调用 workspace.read 读取对应 SKILL.md。资源、README、世界资料和记忆文件也通过同一套 workspace 工具读取。",
+  "可用工具：",
+  "- workspace.read arguments={\"path\":\"skills/example/SKILL.md\"}",
+  "- workspace.list arguments={\"path\":\"skills\"}，path 可省略表示根目录",
+  "- workspace.search arguments={\"query\":\"关键词\",\"limit\":10}",
+  "工具调用格式必须独占一个块：",
+  "<tsian-tool-call>",
+  "{\"name\":\"workspace.read\",\"arguments\":{\"path\":\"skills/example/SKILL.md\"}}",
+  "</tsian-tool-call>",
+  "收到 observation 后继续完成任务。最终输出不要包含工具调用块、observation、工具细节或实现说明。",
+].join("\n")
+
 const LEGACY_MASTER_AGENT_SYSTEM_PROMPT = [
   "你是 Tsian AIRP 的主控 Agent，负责理解玩家本轮输入并给正文 Agent 一个简洁、可执行的写作 brief。",
   "你不直接输出给玩家看的正文。你要判断本轮应如何推进剧情、保持沉浸、尊重已有对话，并指出需要延续的情绪、冲突、信息或节奏。",
   "输出普通文本即可，不要 JSON，不要 Markdown 标题，控制在 300 字以内。",
 ].join("\n")
+
+const MAX_WORKSPACE_TOOL_ROUNDS_PER_AGENT = 2
 
 const LEGACY_NARRATIVE_AGENT_SYSTEM_PROMPT = [
   "你是 Tsian AIRP 的正文 Agent，负责写出玩家可直接阅读的沉浸式剧情回复。",
@@ -196,6 +218,9 @@ function buildWorkspaceAgentSystemPrompt(
     "下面是当前 Agent 的 AGENT.md 内容，优先遵循它定义的职责、输出习惯和协作边界。",
     "",
     formatWorkspaceFile(context.agentFile),
+    "",
+    "Runtime Workspace 工具说明：",
+    WORKSPACE_TOOL_INSTRUCTIONS,
   ].join("\n")
 }
 
@@ -295,21 +320,78 @@ function buildNarrativeMessages(
   ]
 }
 
+async function callAgentModelWithWorkspaceTools(
+  messages: AiChatMessage[],
+  input: AgentRuntimeTurnInput,
+  capabilities: AgentRuntimeCapabilities,
+  options: AgentRuntimeModelCallOptions,
+): Promise<string> {
+  if (!input.workspaceFiles) {
+    return (await capabilities.callModel(messages, options)).trim()
+  }
+
+  let nextMessages = messages
+  for (let round = 0; round <= MAX_WORKSPACE_TOOL_ROUNDS_PER_AGENT; round += 1) {
+    assertNotAborted(options.signal)
+
+    const response = await capabilities.callModel(nextMessages, options)
+    assertNotAborted(options.signal)
+
+    const toolCalls = parseRuntimeWorkspaceToolCalls(response)
+    if (toolCalls.length === 0) {
+      return stripRuntimeWorkspaceToolCallBlocks(response).trim()
+    }
+
+    if (round >= MAX_WORKSPACE_TOOL_ROUNDS_PER_AGENT) {
+      const finalText = stripRuntimeWorkspaceToolCallBlocks(response).trim()
+      if (finalText) {
+        return finalText
+      }
+
+      throw new Error(
+        `${options.debugLabel} reached the workspace tool round limit without a final response.`,
+      )
+    }
+
+    const observations = executeRuntimeWorkspaceToolCalls(input.workspaceFiles, toolCalls)
+    nextMessages = [
+      ...nextMessages,
+      {
+        role: "assistant",
+        content: response,
+      },
+      {
+        role: "user",
+        content: formatRuntimeWorkspaceToolObservationMessage(observations),
+      },
+    ]
+  }
+
+  throw new Error(`${options.debugLabel} failed to complete workspace tool handling.`)
+}
+
 export async function runAgentRuntimeTurn(
   input: AgentRuntimeTurnInput,
   capabilities: AgentRuntimeCapabilities,
 ): Promise<AgentRuntimeTurnResult> {
   assertNotAborted(input.signal)
 
-  const masterPlan = (await capabilities.callModel(buildMasterMessages(input), {
-    debugLabel: "master-agent",
-    signal: input.signal,
-  })).trim()
+  const masterPlan = (await callAgentModelWithWorkspaceTools(
+    buildMasterMessages(input),
+    input,
+    capabilities,
+    {
+      debugLabel: "master-agent",
+      signal: input.signal,
+    },
+  )).trim()
 
   assertNotAborted(input.signal)
 
-  const replyText = (await capabilities.callModel(
+  const replyText = (await callAgentModelWithWorkspaceTools(
     buildNarrativeMessages(input, masterPlan),
+    input,
+    capabilities,
     {
       debugLabel: "narrative-agent",
       signal: input.signal,

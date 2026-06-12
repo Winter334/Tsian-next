@@ -189,6 +189,105 @@ await runAgentRuntimeTurn({
 }, capabilities)
 ```
 
+## Scenario: Runtime Workspace Tool Calls
+
+### 1. Scope / Trigger
+
+- Trigger: Agent Runtime lets a model request read-only Runtime Workspace data during a turn.
+- Applies when changing `apps/platform-web/src/agent-runtime/index.ts` or `apps/platform-web/src/agent-runtime/workspace-tools.ts`.
+
+### 2. Signatures
+
+- Textual tool-call block:
+
+```md
+<tsian-tool-call>
+{"name":"workspace.read","arguments":{"path":"skills/example/SKILL.md"}}
+</tsian-tool-call>
+```
+
+- Internal parsed shape:
+
+```typescript
+interface RuntimeWorkspaceToolCall {
+  name: string
+  arguments: Record<string, unknown>
+}
+```
+
+- Supported tool names:
+  - `workspace.read`
+  - `workspace.list`
+  - `workspace.search`
+
+### 3. Contracts
+
+- Runtime tools are read-only and execute against the `WorkspaceFile[]` already passed into `runAgentRuntimeTurn`.
+- `agent-runtime` must not import Dexie, storage helpers, bridge objects, or `platform-host`.
+- Use the same workspace path rules as storage-facing APIs:
+  - normalize backslashes to slashes;
+  - trim leading slashes;
+  - reject empty file paths, trailing slash file paths, `.`, `..`, and empty path segments;
+  - allow empty directory path for root listing.
+- `workspace.read` arguments: `{ path: string }`; success returns a `WorkspaceFile`.
+- `workspace.list` arguments: `{ path?: string }`; success returns `{ path, entries }` with direct child `WorkspaceEntry[]`.
+- `workspace.search` arguments: `{ query: string, limit?: number }`; success returns `WorkspaceSearchResult[]`; empty query returns `[]`.
+- Tool observations are returned to the same Agent as a normal user message containing `<tsian-tool-observation>`.
+- Final master/narrative outputs must strip tool-call blocks and must not expose tool observations to players.
+- Skill details are loaded by reading the `SkillRegistryEntry.path` file with `workspace.read`, not by a dedicated `skill.load` runtime tool.
+
+### 4. Validation & Error Matrix
+
+- Malformed JSON block -> error observation with `TOOL_CALL_JSON_INVALID`.
+- Non-object tool payload -> error observation with `TOOL_CALL_INVALID`.
+- Missing or blank `name` -> error observation with `TOOL_NAME_REQUIRED`.
+- Non-object `arguments` -> error observation with `TOOL_ARGUMENTS_INVALID`.
+- Unknown tool name -> error observation with `UNSUPPORTED_WORKSPACE_TOOL`.
+- Invalid path -> error observation with workspace path error code.
+- Missing file on `workspace.read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
+- Model keeps requesting tools past the per-Agent round limit -> return stripped final text if present; otherwise throw a clear runtime error.
+
+### 5. Good/Base/Bad Cases
+
+- Good: master sees a Skill Index entry with `path=skills/continuity/SKILL.md`, calls `workspace.read`, receives `SKILL.md` content as observation, then returns a plain brief.
+- Good: narrative reads `agents/narrative/skills/prose/SKILL.md` through the same `workspace.read` tool.
+- Good: Agent uses `workspace.list` for a directory and receives entries without file contents.
+- Good: Agent uses `workspace.search` and receives previews, then explicitly reads a chosen file if full content is needed.
+- Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
+- Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
+- Bad: adding write/delete/script/remote execution tools to this read-only path.
+- Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
+
+### 6. Tests Required
+
+- Assert a model response containing `workspace.read` produces a second same-Agent model call with a `WorkspaceFile` observation.
+- Assert shared Skill paths and Agent-local Skill paths can both be read via `workspace.read`.
+- Assert `workspace.list` returns directory entries without file contents.
+- Assert `workspace.search` returns scored previews and respects limit caps.
+- Assert invalid JSON, unsupported tools, invalid paths, and missing files become observations, not uncaught runtime crashes.
+- Assert final `replyText` does not contain `<tsian-tool-call>` markup.
+- Assert no-tool turns still return the current `{ replyText, masterPlan }` shape.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const detail = loadSkillDetail(workspaceFiles, skill.path)
+messages.push({ role: "system", content: detail.file.content })
+```
+
+#### Correct
+
+```typescript
+const calls = parseRuntimeWorkspaceToolCalls(modelText)
+const observations = executeRuntimeWorkspaceToolCalls(workspaceFiles, calls)
+messages.push({
+  role: "user",
+  content: formatRuntimeWorkspaceToolObservationMessage(observations),
+})
+```
+
 ## Avoid
 
 - Do not reintroduce old prompt/world-book/workflow resource contracts for new Agent Runtime work.

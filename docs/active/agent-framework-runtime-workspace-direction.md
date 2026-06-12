@@ -113,10 +113,13 @@ Skill 必须支持渐进披露。
 回合开始
   -> Orchestrator 注入相关 Agent 可见的 Skill Index
   -> Agent 判断需要加载哪些 Skill
-  -> Skill Registry 读取被选中的 SKILL.md 和相关文件
-  -> Agent 获得该 Skill 的详细指导与 action
+  -> Agent 通过 Runtime Workspace 只读工具读取 Skill Index 中的 SKILL.md path
+  -> Runtime 将文件内容作为 observation 回灌给同一 Agent
+  -> Agent 获得该 Skill 的详细指导与 action 说明
   -> Agent 才能调用已加载 Skill 的 action
 ```
+
+在 live Agent Runtime 中，Skill 详情不需要专用 `skill.load` 工具。主路径应复用虚拟文件系统工具，例如 `workspace.read("skills/example/SKILL.md")`。`skill-detail` 这类查询可以作为 UI、调试或外部 bridge 能力保留，但不应取代 Agent 通过 workspace 自主读取文件的模型。
 
 这能避免 prompt 常驻内容膨胀，也能避免 Agent 被未加载 Skill 的 action 名称诱导乱调用。
 
