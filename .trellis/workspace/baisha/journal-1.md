@@ -1107,3 +1107,37 @@ Recorded the agreed Tsian Agent Framework and Runtime Workspace direction in act
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: Runtime Workspace Storage API MVP
+
+**Date**: 2026-06-12
+**Task**: Runtime Workspace Storage API MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Implemented save-scoped Runtime Workspace storage and bridge API: added shared workspace contracts, Dexie workspaceFiles persistence with default workspace files, workspace list/read/search/write/delete helpers, save lifecycle cleanup, and checkpoint preservation/restoration for workspace files. Verified with npm run build:contracts and npm run build:web.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e492c69` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
