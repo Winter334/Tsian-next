@@ -1243,3 +1243,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: 实现 Workspace Agent Runtime MVP
+
+**Date**: 2026-06-13
+**Task**: 实现 Workspace Agent Runtime MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+接入 Workspace-defined Agent Runtime：sendMessage 在回合前初始化并读取 Runtime Workspace，runAgentRuntimeTurn 使用 master/narrative 的 AGENT.md、Agent context、notes/session、context files 和轻量 skill index 组装模型消息；缺关键 Agent 明确失败；同步 active docs 与 platform-web type-safety spec；验证 build:web、build:contracts 和内存 runtime probe 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a58ba22` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
