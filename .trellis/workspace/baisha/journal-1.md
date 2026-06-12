@@ -1175,3 +1175,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: 实现 Skill 按需加载 MVP
+
+**Date**: 2026-06-12
+**Task**: 实现 Skill 按需加载 MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现 Runtime Workspace Skill 按需加载：新增 SkillDetailEntry/SkillResourceEntry 合约，扩展 registry 纯函数以按 SKILL.md path 加载选中 skill 正文并索引同目录资源，新增 skill-detail bridge query；资源索引不返回 sibling file content，保持 progressive disclosure；补充相关 type-safety spec，并通过 build:contracts、build:web 和内存行为探测验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `575aae1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
