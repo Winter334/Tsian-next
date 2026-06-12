@@ -5,6 +5,10 @@ import {
   type LocalSaveHistoryRecord,
   type LocalStateRecord,
 } from "./db"
+import {
+  createLocalWorkspaceFileRecord,
+  listCheckpointWorkspaceFilesForSave,
+} from "./workspace"
 
 export interface LocalCheckpointSummary extends CheckpointSummary {
   saveId: string
@@ -69,6 +73,7 @@ export async function createCheckpointForSave(
     stateRecords: input.stateRecords.map(
       ({ saveId: _saveId, updatedAt: _updatedAt, ...stateRecord }) => stateRecord,
     ),
+    workspaceFiles: await listCheckpointWorkspaceFilesForSave(saveId),
   }
 
   await localDb.checkpoints.put(record)
@@ -94,10 +99,13 @@ export async function restoreCheckpointForSave(
   const now = Date.now()
   await localDb.transaction(
     "rw",
-    localDb.saves,
-    localDb.saveSnapshots,
-    localDb.saveHistory,
-    localDb.stateRecords,
+    [
+      localDb.saves,
+      localDb.saveSnapshots,
+      localDb.saveHistory,
+      localDb.stateRecords,
+      localDb.workspaceFiles,
+    ],
     async () => {
       await localDb.saveSnapshots.put({
         saveId,
@@ -112,6 +120,14 @@ export async function restoreCheckpointForSave(
       await Promise.all(stateRecords.map((item) => localDb.stateRecords.delete(item.id)))
       for (const [index, stateRecord] of checkpoint.stateRecords.entries()) {
         await localDb.stateRecords.put(toLocalStateRecord(stateRecord, saveId, now + index))
+      }
+
+      const workspaceFiles = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+      await Promise.all(workspaceFiles.map((item) => localDb.workspaceFiles.delete(item.id)))
+      for (const workspaceFile of checkpoint.workspaceFiles) {
+        await localDb.workspaceFiles.put(
+          createLocalWorkspaceFileRecord(saveId, workspaceFile),
+        )
       }
 
       const save = await localDb.saves.get(saveId)

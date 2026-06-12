@@ -41,6 +41,18 @@ export interface LocalStateRecord {
   updatedAt: number
 }
 
+export interface LocalWorkspaceFileRecord {
+  /** Internal deterministic table key. */
+  id: string
+  saveId: string
+  /** Root-relative normalized workspace path without a leading slash. */
+  path: string
+  content: string
+  mediaType: string
+  createdAt: number
+  updatedAt: number
+}
+
 export interface LocalCheckpointRecord {
   id: string
   saveId: string
@@ -51,6 +63,7 @@ export interface LocalCheckpointRecord {
   snapshot: RuntimeSnapshotShell
   history: ConversationMessageRecord[]
   stateRecords: Array<Omit<LocalStateRecord, "saveId" | "updatedAt">>
+  workspaceFiles: Array<Omit<LocalWorkspaceFileRecord, "id" | "saveId">>
 }
 
 export class TsianLocalDb extends Dexie {
@@ -60,10 +73,11 @@ export class TsianLocalDb extends Dexie {
   saveHistory!: Table<LocalSaveHistoryRecord, string>
   checkpoints!: Table<LocalCheckpointRecord, string>
   stateRecords!: Table<LocalStateRecord, string>
+  workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
 
   constructor() {
     // Prototype reset: no migration from workflow/prompt AIRP-memory schemas.
-    super("tsian-agent-runtime-v1")
+    super("tsian-agent-runtime-v2")
 
     this.version(1).stores({
       meta: "&key",
@@ -72,6 +86,7 @@ export class TsianLocalDb extends Dexie {
       saveHistory: "&saveId",
       checkpoints: "&id, saveId, createdAt, turn",
       stateRecords: "&id, saveId, namespace, collection, recordId, updatedAt",
+      workspaceFiles: "&id, saveId, path, updatedAt",
     })
   }
 }

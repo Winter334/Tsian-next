@@ -44,6 +44,40 @@ export interface StateWriteOutput {
   clearedCollections: string[]
 }
 
+export type WorkspaceEntryKind = "file" | "directory"
+
+export interface WorkspaceEntry {
+  path: string
+  name: string
+  kind: WorkspaceEntryKind
+  updatedAt?: number
+  mediaType?: string
+  size?: number
+  childCount?: number
+}
+
+export interface WorkspaceFile {
+  path: string
+  content: string
+  mediaType: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface WorkspaceListResult {
+  path: string
+  entries: WorkspaceEntry[]
+}
+
+export interface WorkspaceSearchResult {
+  path: string
+  name: string
+  mediaType: string
+  updatedAt: number
+  score: number
+  preview: string
+}
+
 export interface RuntimeStateShell {
   turn: number
   messages: ConversationMessageRecord[]

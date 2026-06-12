@@ -10,6 +10,7 @@ import {
 } from "./db"
 import { createCheckpointForSave, deleteCheckpointsForSave } from "./checkpoints"
 import { deleteStateRecordsForSave, listLocalStateRecordsForSave } from "./state-records"
+import { deleteWorkspaceForSave, initializeWorkspaceForSave } from "./workspace"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
 
@@ -112,6 +113,8 @@ export async function createLocalSave(
     },
   )
 
+  await initializeWorkspaceForSave(save.id)
+
   await createCheckpointForSave(save.id, {
     snapshot: snapshotRecord.snapshot,
     history,
@@ -193,6 +196,7 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
   )
 
   await deleteStateRecordsForSave(saveId)
+  await deleteWorkspaceForSave(saveId)
   await deleteCheckpointsForSave(saveId)
 }
 

@@ -23,9 +23,15 @@ import {
   listLocalSaves,
   listLocalStateRecordsForSave,
   listStateRecordsForSave,
+  listWorkspaceEntriesForSave,
+  readWorkspaceFileForSave,
   restoreCheckpointForSave,
   saveRuntimeForSave,
+  searchWorkspaceFilesForSave,
   setActiveSaveId,
+  writeWorkspaceFileForSave,
+  deleteWorkspacePathForSave,
+  WorkspaceStorageError,
 } from "../storage"
 
 export const runtimeEngine = new LocalRuntimeEngine()
@@ -95,6 +101,18 @@ function actionError(
   }
 }
 
+function workspaceActionError(error: unknown, fallbackCode: string, fallbackMessage: string) {
+  if (error instanceof WorkspaceStorageError) {
+    return actionError(error.code, error.message)
+  }
+
+  return actionError(
+    fallbackCode,
+    fallbackMessage,
+    error instanceof Error ? { reason: error.message } : undefined,
+  )
+}
+
 async function activeSaveExists(saveId: string): Promise<boolean> {
   return (await listLocalSaves()).some((save) => save.id === saveId)
 }
@@ -162,6 +180,56 @@ export const playFrontendBridge: PlayFrontendBridge = {
         }
       }
 
+      if (request.action === "workspace-write") {
+        const activeSaveId = await getActiveSaveId()
+        if (!activeSaveId) {
+          return actionError(
+            "ACTIVE_SAVE_REQUIRED",
+            "当前没有激活中的会话。",
+          )
+        }
+
+        try {
+          return {
+            ok: true,
+            item: await writeWorkspaceFileForSave(activeSaveId, {
+              path: request.params?.path,
+              content: request.params?.content,
+              mediaType: request.params?.mediaType,
+            }),
+          }
+        } catch (error) {
+          return workspaceActionError(
+            error,
+            "WORKSPACE_WRITE_FAILED",
+            "写入 workspace 文件失败。",
+          )
+        }
+      }
+
+      if (request.action === "workspace-delete") {
+        const activeSaveId = await getActiveSaveId()
+        if (!activeSaveId) {
+          return actionError(
+            "ACTIVE_SAVE_REQUIRED",
+            "当前没有激活中的会话。",
+          )
+        }
+
+        try {
+          return {
+            ok: true,
+            item: await deleteWorkspacePathForSave(activeSaveId, request.params?.path),
+          }
+        } catch (error) {
+          return workspaceActionError(
+            error,
+            "WORKSPACE_DELETE_FAILED",
+            "删除 workspace 路径失败。",
+          )
+        }
+      }
+
       return actionError(
         "UNSUPPORTED_PLATFORM_ACTION",
         `不支持的平台动作：${request.action}`,
@@ -221,6 +289,56 @@ export const playFrontendBridge: PlayFrontendBridge = {
             collection,
             query,
             limit,
+          })) as T[],
+        } as DeepQueryResult<T>
+      }
+
+      if (request.resource === "workspace-list") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        try {
+          return {
+            items: (await listWorkspaceEntriesForSave(activeSaveId, {
+              path: request.params?.path,
+            })) as T[],
+          } as DeepQueryResult<T>
+        } catch {
+          return { items: [] } as DeepQueryResult<T>
+        }
+      }
+
+      if (request.resource === "workspace-read") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        try {
+          const file = await readWorkspaceFileForSave(activeSaveId, request.params?.path)
+          return {
+            items: (file ? [file] : []) as T[],
+          } as DeepQueryResult<T>
+        } catch {
+          return { items: [] } as DeepQueryResult<T>
+        }
+      }
+
+      if (request.resource === "workspace-search") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        return {
+          items: (await searchWorkspaceFilesForSave(activeSaveId, {
+            query:
+              typeof request.params?.query === "string"
+                ? request.params.query
+                : undefined,
+            limit:
+              typeof request.params?.limit === "number"
+                ? request.params.limit
+                : undefined,
           })) as T[],
         } as DeepQueryResult<T>
       }
