@@ -1034,3 +1034,42 @@ Upgraded Trellis project/runtime files to 0.6.0-beta.23, installed the WSL-nativ
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: Agent Runtime MVP vertical slice
+
+**Date**: 2026-06-12
+**Task**: Agent Runtime MVP vertical slice
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Reset the prototype workflow/prompt/content surfaces and landed the first contentless browser-hosted Agent Runtime vertical slice.
+
+### Main Changes
+
+- Removed retired workflow-engine, prompt-engine, memory-core, builtin Grey Salt Town content, workflow/resource UI, and OpenSpec legacy skills from active project surfaces.
+- Added the browser-hosted Agent Runtime MVP under apps/platform-web/src/agent-runtime with two model calls: master-agent planning followed by narrative-agent output.
+- Rewired the platform host, storage, bridge/debug contracts, Lobby/Debug/Settings views, and official default frontend around contentless AIRP sessions, generic state records, AI debug, snapshots, and checkpoints.
+- Updated README, active docs, CLAUDE guidance, and Trellis specs so future searches point at the Agent Runtime direction instead of the retired workflow/prompt architecture.
+- Validation completed: npm run build:contracts, npm run build:runtime-core, npm run build:web, git diff --check, and old-architecture residual rg searches. Root npm test is unavailable because the root package currently has no test script.
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5131fb2` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
