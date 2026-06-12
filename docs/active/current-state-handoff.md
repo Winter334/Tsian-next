@@ -27,8 +27,9 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - `agent-registry` / `skill-registry` bridge query 已实现，可从 workspace 扫描轻量 Agent/Skill 索引。
 - `skill-detail` bridge query 已实现，可按选中的 `SKILL.md` path 加载 Skill 正文和资源索引，并保持资源内容按需读取。
 - `agent-context` bridge query 已实现，可为指定 Agent 组装 `AGENT.md`、notes/session、可见 Skill Index 和声明的 context files。
+- 当前 AIRP 回合已开始消费 Runtime Workspace 中的 `agents/master/AGENT.md` 与 `agents/narrative/AGENT.md`，并将 Agent context 注入 master/narrative 两次模型调用。
 
-当前代码尚未实现 agent-call 协作、action executor registry、脚本/远程执行适配，固定 `master-agent -> narrative-agent` 回合链路也尚未迁移为 workspace-defined Agent。
+当前代码尚未实现 agent-call 协作、action executor registry、脚本/远程执行适配、Skill detail 自动注入或 Agent notes/session 写回。默认回合仍是 master -> narrative 两次调用，但其 Agent 定义与上下文已来自 Runtime Workspace。
 
 ## 3. 当前有效边界
 
@@ -59,13 +60,14 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 
 优先从这些方向继续：
 
-1. 将当前固定 `master-agent` -> `narrative-agent` 流迁移为 workspace 定义的 Agent，并消费 `agent-context`。
-2. 实现通用 `agent.call` Skill / action，让 Agent 协作从联系人声明自然形成。
+1. 实现通用 `agent.call` Skill / action，让 Agent 协作从联系人声明自然形成。
+2. 让 Agent 按需加载 Skill detail，并将已加载 Skill 指令/actions 注入后续模型上下文。
 3. 设计统一 action 调用与执行器适配，包括浏览器脚本和远程执行。
-4. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
-5. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
-6. 为 Runtime Workspace、Agent、Skill 提供浏览和编辑 UI。
-7. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。
+4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。
+5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
+6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
+7. 为 Runtime Workspace、Agent、Skill 提供浏览和编辑 UI。
+8. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。
 
 ## 6. 历史来源
 

@@ -122,6 +122,73 @@ return {
 - `RuntimeGlobalsMap` and state record `data` must remain JSON-compatible.
 - Do not loosen contract fields to `unknown` to hide caller bugs.
 
+## Scenario: Workspace-Defined Agent Runtime
+
+### 1. Scope / Trigger
+
+- Trigger: `interaction.sendMessage` runs AIRP turns using Runtime Workspace Agent definitions.
+- Applies when changing `apps/platform-web/src/agent-runtime/index.ts`, `apps/platform-web/src/agent-runtime/context.ts`, or the `sendMessage` path in `apps/platform-web/src/platform-host/index.ts`.
+
+### 2. Signatures
+
+- Production turn input includes `workspaceFiles: WorkspaceFile[]`.
+- `runAgentRuntimeTurn(input, capabilities)` still returns `{ replyText, masterPlan }`.
+- Debug labels remain `"master-agent"` and `"narrative-agent"`.
+
+### 3. Contracts
+
+- `platform-host` owns storage access. It must call `initializeWorkspaceForSave(activeSaveId)` before listing workspace files for a turn, then pass `listWorkspaceFilesForSave(activeSaveId)` into Agent Runtime.
+- `agent-runtime` owns prompt composition. It must use `assembleAgentContext(workspaceFiles, { agentId: "master" })` and `{ agentId: "narrative" }` for the two default calls.
+- Model messages may include `AGENT.md`, notes/session files, declared context files, missing context paths, lightweight skill index, recent history, stateRecords, turn number, player input, and master brief.
+- Skill indexes inside runtime prompts must remain lightweight `SkillRegistryEntry[]`; do not call `loadSkillDetail` from the default turn path.
+- `agent-runtime` must not import Dexie tables, platform bridge objects, or platform-host helpers.
+
+### 4. Validation & Error Matrix
+
+- Empty workspace on an active save -> `initializeWorkspaceForSave` fills defaults before runtime reads files.
+- Non-empty workspace missing `agents/master/AGENT.md` -> `sendMessage` fails with a clear runtime error; do not fall back to legacy hardcoded prompts.
+- Non-empty workspace missing `agents/narrative/AGENT.md` -> same as above.
+- Missing declared `contextPaths` -> include missing path diagnostics in prompt context; do not fail the turn for that reason alone.
+- Model returns empty narrative reply -> keep existing empty-reply error behavior.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a new save uses `agents/master/AGENT.md` and `agents/narrative/AGENT.md` in the two model system prompts.
+- Good: old local save with zero workspace files receives default workspace files before the turn.
+- Base: direct unit-style calls without `workspaceFiles` may exercise legacy prompt assembly, but production `sendMessage` must pass workspace files.
+- Bad: production `sendMessage` omits workspace files and silently uses hardcoded prompts.
+- Bad: missing required Agent definitions are auto-recreated in a non-empty workspace, hiding user/content configuration problems.
+
+### 6. Tests Required
+
+- Assert `sendMessage` passes workspace files into `runAgentRuntimeTurn`.
+- Assert default master/narrative Agent definitions appear in generated model messages for a new save.
+- Assert missing declared context paths are included as diagnostics.
+- Assert skill detail contents are not included unless a future task explicitly loads them.
+- Assert missing required Agent definitions in a non-empty workspace fail clearly.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await runAgentRuntimeTurn({ userInput, recentHistory, snapshot, stateRecords }, capabilities)
+```
+
+#### Correct
+
+```typescript
+await initializeWorkspaceForSave(activeSaveId)
+const workspaceFiles = await listWorkspaceFilesForSave(activeSaveId)
+await runAgentRuntimeTurn({
+  userInput,
+  recentHistory,
+  snapshot,
+  stateRecords,
+  workspaceFiles,
+}, capabilities)
+```
+
 ## Avoid
 
 - Do not reintroduce old prompt/world-book/workflow resource contracts for new Agent Runtime work.

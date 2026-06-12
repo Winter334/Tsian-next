@@ -25,6 +25,7 @@ import {
   getActiveSaveId,
   getHistoryForSave,
   getSnapshotForSave,
+  initializeWorkspaceForSave,
   listCheckpointsForSave,
   listLocalSaves,
   listLocalStateRecordsForSave,
@@ -454,6 +455,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
       previousTurnController = currentController
 
       try {
+        await initializeWorkspaceForSave(activeSaveId)
+        const workspaceFiles = await listWorkspaceFilesForSave(activeSaveId)
         const stateRecords = await listStateRecordsForSave(activeSaveId)
         const result = await runAgentRuntimeTurn(
           {
@@ -461,6 +464,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             recentHistory: historyBefore,
             snapshot: snapshotBefore,
             stateRecords,
+            workspaceFiles,
             signal: currentController.signal,
           },
           {

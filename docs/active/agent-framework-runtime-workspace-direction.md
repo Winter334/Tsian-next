@@ -298,11 +298,13 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
+- 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
 
 后续实现应逐步：
 
-1. 将当前固定 master/narrative 流迁移为 workspace 定义的 Agent，并消费 `agent-context`。
-2. 实现通用 `agent.call` Skill / action。
+1. 实现通用 `agent.call` Skill / action。
+2. 让 Agent 按需加载 Skill detail，并将已加载 Skill 指令/actions 注入后续上下文。
 3. 实现统一 action 调用和执行器适配。
-4. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
-5. 为 workspace、Agent 和 Skill 提供浏览与编辑 UI。
+4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。
+5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
+6. 为 workspace、Agent 和 Skill 提供浏览与编辑 UI。
