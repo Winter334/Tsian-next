@@ -1,27 +1,15 @@
-import type { RuntimeSnapshotShell } from "@tsian/contracts"
+import type { CheckpointSummary, RuntimeSnapshotShell } from "@tsian/contracts"
 import {
   localDb,
-  type LocalArchiveRecord,
   type LocalCheckpointRecord,
-  type LocalEventRecord,
   type LocalSaveHistoryRecord,
   type LocalStateRecord,
 } from "./db"
 
-export interface CheckpointSummary {
-  id: string
+export interface LocalCheckpointSummary extends CheckpointSummary {
   saveId: string
-  turn: number
-  label: string
-  reason: LocalCheckpointRecord["reason"]
-  createdAt: number
-  messageCount: number
-  eventCount: number
-  archiveCount: number
-  stateRecordCount: number
 }
 
-type CheckpointArchiveRecord = LocalCheckpointRecord["archives"][number]
 type CheckpointStateRecord = LocalCheckpointRecord["stateRecords"][number]
 
 function createCheckpointId(saveId: string, createdAt: number): string {
@@ -32,7 +20,7 @@ function snapshotTurn(snapshot: RuntimeSnapshotShell): number {
   return typeof snapshot.state.turn === "number" ? snapshot.state.turn : 0
 }
 
-function toCheckpointSummary(record: LocalCheckpointRecord): CheckpointSummary {
+function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpointSummary {
   return {
     id: record.id,
     saveId: record.saveId,
@@ -41,61 +29,8 @@ function toCheckpointSummary(record: LocalCheckpointRecord): CheckpointSummary {
     reason: record.reason,
     createdAt: record.createdAt,
     messageCount: record.history.length,
-    eventCount: record.events.length,
-    archiveCount: record.archives.length,
     stateRecordCount: record.stateRecords.length,
   }
-}
-
-export async function createCheckpointForSave(
-  saveId: string,
-  input: {
-    snapshot: RuntimeSnapshotShell
-    history: LocalSaveHistoryRecord["messages"]
-    events: LocalEventRecord[]
-    archives: LocalArchiveRecord[]
-    stateRecords: LocalStateRecord[]
-    reason: LocalCheckpointRecord["reason"]
-    label?: string
-  },
-): Promise<CheckpointSummary> {
-  const createdAt = Date.now()
-  const turn = snapshotTurn(input.snapshot)
-  const record: LocalCheckpointRecord = {
-    id: createCheckpointId(saveId, createdAt),
-    saveId,
-    turn,
-    label: input.label?.trim() || `回合 ${turn}`,
-    reason: input.reason,
-    createdAt,
-    snapshot: input.snapshot,
-    history: input.history,
-    events: input.events.map(({ saveId: _saveId, updatedAt: _updatedAt, ...event }) => event),
-    archives: input.archives.map(({ saveId: _saveId, updatedAt: _updatedAt, ...archive }) => archive),
-    stateRecords: input.stateRecords.map(
-      ({ saveId: _saveId, updatedAt: _updatedAt, ...stateRecord }) => stateRecord,
-    ),
-  }
-
-  await localDb.checkpoints.put(record)
-  return toCheckpointSummary(record)
-}
-
-export async function listCheckpointsForSave(saveId: string): Promise<CheckpointSummary[]> {
-  const records = await localDb.checkpoints.where("saveId").equals(saveId).toArray()
-  return records.sort((left, right) => right.createdAt - left.createdAt).map(toCheckpointSummary)
-}
-
-function toLocalArchiveRecord(
-  archive: CheckpointArchiveRecord,
-  saveId: string,
-  updatedAt: number,
-): LocalArchiveRecord {
-  return {
-    ...archive,
-    saveId,
-    updatedAt,
-  } as LocalArchiveRecord
 }
 
 function toLocalStateRecord(
@@ -110,6 +45,43 @@ function toLocalStateRecord(
   }
 }
 
+export async function createCheckpointForSave(
+  saveId: string,
+  input: {
+    snapshot: RuntimeSnapshotShell
+    history: LocalSaveHistoryRecord["messages"]
+    stateRecords: LocalStateRecord[]
+    reason: LocalCheckpointRecord["reason"]
+    label?: string
+  },
+): Promise<LocalCheckpointSummary> {
+  const createdAt = Date.now()
+  const turn = snapshotTurn(input.snapshot)
+  const record: LocalCheckpointRecord = {
+    id: createCheckpointId(saveId, createdAt),
+    saveId,
+    turn,
+    label: input.label?.trim() || `回合 ${turn}`,
+    reason: input.reason,
+    createdAt,
+    snapshot: input.snapshot,
+    history: input.history,
+    stateRecords: input.stateRecords.map(
+      ({ saveId: _saveId, updatedAt: _updatedAt, ...stateRecord }) => stateRecord,
+    ),
+  }
+
+  await localDb.checkpoints.put(record)
+  return toCheckpointSummary(record)
+}
+
+export async function listCheckpointsForSave(
+  saveId: string,
+): Promise<LocalCheckpointSummary[]> {
+  const records = await localDb.checkpoints.where("saveId").equals(saveId).toArray()
+  return records.sort((left, right) => right.createdAt - left.createdAt).map(toCheckpointSummary)
+}
+
 export async function restoreCheckpointForSave(
   saveId: string,
   checkpointId: string,
@@ -122,7 +94,10 @@ export async function restoreCheckpointForSave(
   const now = Date.now()
   await localDb.transaction(
     "rw",
-    localDb.tables,
+    localDb.saves,
+    localDb.saveSnapshots,
+    localDb.saveHistory,
+    localDb.stateRecords,
     async () => {
       await localDb.saveSnapshots.put({
         saveId,
@@ -132,22 +107,6 @@ export async function restoreCheckpointForSave(
         saveId,
         messages: checkpoint.history,
       })
-
-      const events = await localDb.events.where("saveId").equals(saveId).toArray()
-      await Promise.all(events.map((item) => localDb.events.delete(item.id)))
-      for (const [index, event] of checkpoint.events.entries()) {
-        await localDb.events.put({
-          ...event,
-          saveId,
-          updatedAt: now + index,
-        })
-      }
-
-      const archives = await localDb.archives.where("saveId").equals(saveId).toArray()
-      await Promise.all(archives.map((item) => localDb.archives.delete(item.id)))
-      for (const [index, archive] of checkpoint.archives.entries()) {
-        await localDb.archives.put(toLocalArchiveRecord(archive, saveId, now + index))
-      }
 
       const stateRecords = await localDb.stateRecords.where("saveId").equals(saveId).toArray()
       await Promise.all(stateRecords.map((item) => localDb.stateRecords.delete(item.id)))

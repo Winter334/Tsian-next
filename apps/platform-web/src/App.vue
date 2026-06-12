@@ -91,9 +91,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import {
   getBrowserAiConfig,
-  getBrowserEmbeddingConfig,
   getBrowserPlatformConfigStorageState,
-  getBrowserRetrievalConfig,
 } from "./config/ai"
 import { initializePlatformHost } from "./platform-host"
 import { ensureLocalStorageReady } from "./storage"
@@ -134,24 +132,17 @@ const isPlayRoute = computed(() => route.name === "play")
 
 const navItems = [
   { name: "lobby", path: "/", label: "大厅", index: "01" },
-  { name: "mod", path: "/mod", label: "模组", index: "02" },
-  { name: "resources", path: "/resources", label: "资源库", index: "03" },
-  { name: "settings", path: "/settings", label: "设置", index: "04" },
-  { name: "debug", path: "/debug", label: "调试", index: "05" },
+  { name: "settings", path: "/settings", label: "设置", index: "02" },
+  { name: "debug", path: "/debug", label: "调试", index: "03" },
 ]
 
 function isRoute(name: string): boolean {
-  if (name === "mod") {
-    return route.name === "mod" || route.name === "mod-detail"
-  }
   return route.name === name
 }
 
 const aiStatusShort = computed(() => {
   const chat = getBrowserAiConfig() ? "OK" : "--"
-  const ret = getBrowserRetrievalConfig() ? "OK" : "--"
-  const embed = getBrowserEmbeddingConfig() ? "OK" : "--"
-  return `C:${chat} R:${ret} E:${embed}`
+  return `CHAT:${chat}`
 })
 
 // Ctrl+Shift+D → 调试页
@@ -166,7 +157,7 @@ onMounted(async () => {
   window.addEventListener("keydown", onKeydown)
   storageStatus.value = await ensureLocalStorageReady()
   await initializePlatformHost()
-  aiStatus.value = `chat=${getBrowserAiConfig() ? "configured" : "missing"} | retrieval=${getBrowserRetrievalConfig() ? "configured" : "missing"} | embed=${getBrowserEmbeddingConfig() ? "configured" : "missing"} | local=${getBrowserPlatformConfigStorageState()}`
+  aiStatus.value = `chat=${getBrowserAiConfig() ? "configured" : "missing"} | local=${getBrowserPlatformConfigStorageState()}`
 })
 
 onBeforeUnmount(() => {

@@ -13,7 +13,7 @@ Use this layer when adding or changing shared shapes in `packages/contracts/src/
 ## Required Checks
 
 - Run `npm run build:contracts` for every contracts change.
-- Run the consuming package build when a changed type is used there, usually `npm run build:web` and sometimes `npm run build:workflow-engine`.
+- Run the consuming package build when a changed type is used there, usually `npm run build:web` and sometimes `npm run build:runtime-core`.
 
 ## Source References
 
@@ -22,5 +22,5 @@ Use this layer when adding or changing shared shapes in `packages/contracts/src/
 - `packages/contracts/src/runtime.ts`
 - `packages/contracts/src/memory.ts`
 - `packages/contracts/src/bridge.ts`
-- `packages/contracts/src/mod.ts`
-- `packages/contracts/src/workflow.ts`
+- `packages/contracts/src/debug.ts`
+- `packages/contracts/src/frontend-package.ts`

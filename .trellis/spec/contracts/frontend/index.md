@@ -17,6 +17,6 @@ This layer documents how frontend/browser consumers should use `@tsian/contracts
 - `packages/contracts/src/memory.ts`
 - `packages/contracts/src/bridge.ts`
 - `packages/contracts/src/debug.ts`
-- `packages/contracts/src/workflow.ts`
+- `packages/contracts/src/frontend-package.ts`
 - `apps/platform-web/src/bridge/play-frontend-bridge.ts`
 - `apps/platform-web/src/platform-host/index.ts`

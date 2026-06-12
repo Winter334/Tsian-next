@@ -1,33 +1,34 @@
 # Directory Structure
 
-`platform-web` is organized by runtime responsibility, not by generic Vue feature folders. Place new code where the state owner already lives.
+`platform-web` is organized by runtime responsibility.
 
 ## Top-Level Areas
 
-- `src/views/` contains route-level screens loaded by `src/router/index.ts`. Keep route names kebab-case and view filenames PascalCase, as in `ResourceLibraryView.vue` and `DebugView.vue`.
-- `src/components/` contains reusable Vue SFCs. Domain components live under subdirectories such as `components/workflow/` and `components/resource-library/`; primitive UI wrappers live under `components/ui/<primitive>/`.
-- `src/composables/` contains reusable Vue state logic. `useWorkflowEditor.ts` is the reference for translating platform contracts into Vue Flow state.
-- `src/storage/` owns Dexie tables and persistence helpers. Table interfaces and schema are centralized in `storage/db.ts`.
-- `src/platform-host/` owns platform orchestration, bridge extension, workflow source resolution, and the main `interaction.sendMessage` path.
-- `src/runtime-host/` owns browser runtime engine pieces: AI client, retrieval, patch applier, and `LocalRuntimeEngine`.
-- `src/workflow-host/` owns platform-specific workflow executors, built-in workflow presets, and output state bridging.
-- `src/bridge/` owns the base `PlayFrontendBridge`. Platform-specific capabilities are added in `platform-host`.
+- `src/agent-runtime/` owns browser-hosted Agent Runtime orchestration.
+- `src/platform-host/` owns local platform orchestration, save lifecycle, bridge implementation, model-call injection, checkpoint creation, and the active `interaction.sendMessage` path.
+- `src/runtime-host/` owns `LocalRuntimeEngine` and browser AI client/debug records.
+- `src/storage/` owns Dexie schema and persistence helpers. Table interfaces and schema stay in `storage/db.ts`.
+- `src/bridge/` owns framework-neutral bridge adapters.
+- `src/views/` owns route-level Vue screens.
+- `src/package-loader/` owns builtin frontend loading.
+- `src/components/ui/` owns reusable UI primitives.
 
 ## Placement Rules
 
-- Put browser persistence in `storage/`, not in view components. Example: resource CRUD lives in `storage/resources.ts`, while `ResourceLibraryView.vue` calls it.
-- Put contract-to-editor mapping in composables or workflow helper files, not inline in templates. Example: `useWorkflowEditor.ts` normalizes `WorkflowDefinition` to Vue Flow nodes and edges.
-- Put workflow executor behavior in `workflow-host/executors/`, not in `workflow-engine`. The engine package is pure scheduling and validation.
-- Keep `platform-host/index.ts` as the orchestration boundary until a behavior is reused by multiple actions. The module document explicitly keeps this file cohesive because bridge, validation, and main-chain execution are tightly coupled.
+- Put Agent Runtime turn composition in `agent-runtime`, not in Vue components or play frontends.
+- Inject platform capabilities into Agent Runtime from `platform-host`; Agent Runtime should not import bridge objects or Dexie tables directly.
+- Put browser persistence in `storage/`, not in route views.
+- Keep `platform-host/index.ts` as the orchestration boundary until behavior is reused by multiple actions.
+- Keep official frontend package behavior under `builtin/play-frontends/official-default`.
 
 ## Import Rules
 
-- Use `@/` for platform-web local imports when the file already uses alias style, as in `ResourceLibraryView.vue`.
-- Use relative imports inside tightly coupled feature folders, as in `components/workflow/WorkflowEditorCanvas.vue`.
-- Import shared shapes from `@tsian/contracts` and runtime interface types from `@tsian/runtime-core`; Vite and TS config map these aliases directly to workspace source.
+- Import shared shapes from `@tsian/contracts`.
+- Import `RuntimeEngine` from `@tsian/runtime-core`.
+- Use `@/` for local platform-web imports when the file already uses alias style.
 
 ## Avoid
 
-- Do not add a new global store library. The current app uses Vue refs/computed/watch plus Dexie and bridge state.
+- Do not reintroduce workflow-host, workflow editor, prompt preset resource UI, or builtin mod dependencies as active runtime surfaces.
 - Do not place IndexedDB schema fields outside `storage/db.ts`.
-- Do not implement concrete workflow nodes in `packages/workflow-engine`; use `apps/platform-web/src/workflow-host/executors/`.
+- Do not add a global store library; use Vue refs/computed/watch plus Dexie and explicit platform APIs.

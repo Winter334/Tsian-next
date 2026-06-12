@@ -1,9 +1,13 @@
 # contracts
 
-跨应用稳定契约。
+`@tsian/contracts` 是跨包共享的 TypeScript 类型契约包。
 
-当前建议放在这里的内容：
+当前公开边界包括：
 
-- 模组清单契约
-- 游玩前端包清单契约
-- 平台与游玩前端包之间的桥接契约
+- runtime snapshot、conversation message、generic state record、platform action、deep query。
+- play frontend bridge。
+- AI debug 和 checkpoint summary。
+- play frontend manifest。
+- generic memory schema 类型。
+
+契约包保持 type-only，不放运行时验证、存储、Vue 状态或模型调用实现。

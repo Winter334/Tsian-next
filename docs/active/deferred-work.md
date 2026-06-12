@@ -17,9 +17,10 @@ Use this file to prevent old prototype ideas from re-entering planning as if the
 
 Status: retired as long-term core direction
 
-Temporary state:
+Implementation state:
 
-- The current prototype still contains workflow-engine, workflow-host, workflow editor, workflow preset resources, stateModel, and workflow debug surfaces.
+- Active workspace code has removed the old workflow engine, workflow host, workflow editor, workflow preset resources, stateModel, and workflow debug surfaces.
+- Historical details remain in Trellis archived tasks and git history.
 
 Why retired:
 
@@ -40,9 +41,10 @@ Scope guard:
 
 Status: retired as long-term core direction
 
-Temporary state:
+Implementation state:
 
-- The current prototype still contains `packages/prompt-engine`, builtin prompt presets, world book resources, regex, macro replacement, and AI node prompt preset wiring.
+- Active workspace code has removed `packages/prompt-engine`, builtin prompt presets, world book resources, regex/macro prompt assembly, and AI node prompt preset wiring.
+- Historical details remain in Trellis archived tasks and git history.
 
 Why retired:
 
@@ -63,7 +65,7 @@ Scope guard:
 
 Status: not current
 
-Temporary state:
+Implementation state:
 
 - No platform-level renderer adapter, RenderBlocks, widget DSL, or generic UI slot standard is planned.
 
@@ -85,7 +87,7 @@ Scope guard:
 
 Status: not current
 
-Temporary state:
+Implementation state:
 
 - Old workflow/stateModel work explored schema authoring for workflow state.
 

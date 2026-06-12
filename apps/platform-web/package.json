@@ -9,17 +9,11 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@dagrejs/dagre": "^3.0.0",
     "@fontsource/inter": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@lucide/vue": "^1.16.0",
     "@tsian/contracts": "0.0.0",
-    "@tsian/memory-core": "0.0.0",
     "@tsian/runtime-core": "0.0.0",
-    "@vue-flow/background": "^1.3.2",
-    "@vue-flow/controls": "^1.1.3",
-    "@vue-flow/core": "^1.48.2",
-    "@vue-flow/minimap": "^1.5.4",
     "@vueuse/core": "^14.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

@@ -1,104 +1,50 @@
-import type { ModInitialSavePayload, RuntimeSnapshotShell } from "@tsian/contracts"
+import type {
+  ConversationMessageRecord,
+  RuntimeSnapshotShell,
+} from "@tsian/contracts"
 import {
   localDb,
-  type LocalArchiveRecord,
   type LocalSaveHistoryRecord,
   type LocalSaveRecord,
   type LocalSaveSnapshotRecord,
 } from "./db"
-import { replaceAirpMemoryForSave } from "./airp-memory"
-import {
-  createArchiveId,
-  deleteArchivesForSave,
-  listArchivesForSave,
-  toArchiveRecord,
-} from "./archives"
 import { createCheckpointForSave, deleteCheckpointsForSave } from "./checkpoints"
-import { deleteEventsForSave, listEventsForSave } from "./events"
 import { deleteStateRecordsForSave, listLocalStateRecordsForSave } from "./state-records"
-import {
-  createBuiltinModInitialSavePayload,
-  defaultModId,
-  getBuiltinMod,
-  getDefaultBuiltinMod,
-} from "../../../../builtin/mods"
-import { parseNarrativeTimeMs } from "../narrative-time"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
 
-interface InitialArchiveRecord {
-  type: string
-  name: string
-  aliases: string[]
-  background: string
-  situation: string
-  focus?: string
-  linkedNames: string[]
-  linkedArchiveIds?: string[]
-  presence: LocalArchiveRecord["presence"]
-  [key: string]: unknown
-}
-
-interface InitialSavePayload extends Omit<ModInitialSavePayload, "archives"> {
-  history: Array<{ role: string; content: string }>
-  archives: InitialArchiveRecord[]
-}
-
-function getMessagesFromSnapshot(
-  snapshot: RuntimeSnapshotShell,
-): Array<{ role: string; content: string }> {
-  const rawMessages = snapshot.state.messages
-  if (!Array.isArray(rawMessages)) {
-    return []
-  }
-
-  return rawMessages.flatMap((item) => {
-    if (
-      typeof item === "object" &&
-      item !== null &&
-      typeof (item as { role?: unknown }).role === "string" &&
-      typeof (item as { content?: unknown }).content === "string"
-    ) {
-      return [
-        {
-          role: (item as { role: string }).role,
-          content: (item as { content: string }).content,
-        },
-      ]
-    }
-
-    return []
-  })
-}
-
-function createInitialSavePayload(now: number, modId = defaultModId): InitialSavePayload {
-  const mod = getBuiltinMod(modId) ?? getDefaultBuiltinMod()
-  const payload = createBuiltinModInitialSavePayload(now, modId)
-  const archives = payload.archives as InitialArchiveRecord[]
-  const snapshot: RuntimeSnapshotShell = {
-    ...payload.snapshot,
-    state: {
-      ...payload.snapshot.state,
-      globals: {
-        ...mod.globalsDefaults,
-        ...(payload.snapshot.state.globals ?? {}),
-      },
-    },
-  }
-
-  return {
-    ...payload,
-    archives,
-    snapshot,
-    history: getMessagesFromSnapshot(snapshot),
-  }
-}
 function createSaveId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID()
   }
 
   return `save-${Date.now()}`
+}
+
+function normalizeMessages(
+  messages: ConversationMessageRecord[] | undefined,
+): ConversationMessageRecord[] {
+  if (!Array.isArray(messages)) {
+    return []
+  }
+
+  return messages.flatMap((item) => {
+    if (typeof item?.role === "string" && typeof item.content === "string") {
+      return [{ role: item.role, content: item.content }]
+    }
+    return []
+  })
+}
+
+export function createEmptyRuntimeSnapshot(): RuntimeSnapshotShell {
+  return {
+    version: "0.0.0",
+    state: {
+      turn: 0,
+      messages: [],
+      globals: {},
+    },
+  }
 }
 
 export async function listLocalSaves(): Promise<LocalSaveRecord[]> {
@@ -108,42 +54,6 @@ export async function listLocalSaves(): Promise<LocalSaveRecord[]> {
 export async function getActiveSaveId(): Promise<string | null> {
   const record = await localDb.meta.get(ACTIVE_SAVE_KEY)
   return record?.value ?? null
-}
-
-export async function getModIdForSave(saveId: string): Promise<string> {
-  const save = await localDb.saves.get(saveId)
-  return save?.modId ?? defaultModId
-}
-
-export async function getWorkflowPresetIdForSave(saveId: string): Promise<string | undefined> {
-  const save = await localDb.saves.get(saveId)
-  const workflowPresetId = save?.workflowPresetId?.trim()
-  return workflowPresetId || undefined
-}
-
-export async function setWorkflowPresetIdForSave(
-  saveId: string,
-  workflowPresetId: string | null,
-): Promise<LocalSaveRecord | undefined> {
-  const save = await localDb.saves.get(saveId)
-  if (!save) {
-    return undefined
-  }
-
-  const nextWorkflowPresetId = workflowPresetId?.trim() || undefined
-  const nextSave: LocalSaveRecord = {
-    ...save,
-    updatedAt: Date.now(),
-  }
-
-  if (nextWorkflowPresetId) {
-    nextSave.workflowPresetId = nextWorkflowPresetId
-  } else {
-    delete nextSave.workflowPresetId
-  }
-
-  await localDb.saves.put(nextSave)
-  return nextSave
 }
 
 export async function setActiveSaveId(saveId: string | null): Promise<void> {
@@ -160,106 +70,52 @@ export async function setActiveSaveId(saveId: string | null): Promise<void> {
 
 export async function createLocalSave(
   name?: string,
-  snapshot?: RuntimeSnapshotShell,
-  modId = defaultModId,
+  snapshot: RuntimeSnapshotShell = createEmptyRuntimeSnapshot(),
 ): Promise<LocalSaveRecord> {
   const existing = await localDb.saves.count()
   const now = Date.now()
-  const initial: InitialSavePayload = snapshot
-    ? {
-        snapshot,
-        history: getMessagesFromSnapshot(snapshot),
-        events: [],
-        archives: [],
-      }
-    : createInitialSavePayload(now, modId)
+  const history = normalizeMessages(snapshot.state.messages)
 
   const save: LocalSaveRecord = {
     id: createSaveId(),
-    name: name?.trim() || `Save ${existing + 1}`,
-    modId,
+    name: name?.trim() || `Session ${existing + 1}`,
     createdAt: now,
     updatedAt: now,
-    playerArchiveIds: [],
   }
 
   const snapshotRecord: LocalSaveSnapshotRecord = {
     saveId: save.id,
-    snapshot: initial.snapshot,
+    snapshot: {
+      ...snapshot,
+      state: {
+        ...snapshot.state,
+        messages: history,
+        globals: snapshot.state.globals ?? {},
+      },
+    },
   }
 
   const historyRecord: LocalSaveHistoryRecord = {
     saveId: save.id,
-    messages: initial.history,
+    messages: history,
   }
 
   await localDb.transaction(
     "rw",
-    localDb.tables,
+    localDb.saves,
+    localDb.saveSnapshots,
+    localDb.saveHistory,
     async () => {
       await localDb.saves.put(save)
       await localDb.saveSnapshots.put(snapshotRecord)
       await localDb.saveHistory.put(historyRecord)
-
-      for (const [index, event] of initial.events.entries()) {
-        const parsedTime = parseNarrativeTimeMs(event.time)
-        await localDb.events.put({
-          id: `${save.id}:event:${now}:${index}`,
-          saveId: save.id,
-          ...event,
-          updatedAt: parsedTime !== null ? parsedTime + index : now + index,
-        })
-      }
-
-      const reservedArchiveIds = new Set<string>()
-      for (const archive of initial.archives) {
-        const nextArchive = archive as InitialArchiveRecord
-        const {
-          type,
-          name,
-          aliases,
-          background,
-          situation,
-          focus,
-          linkedNames,
-          linkedArchiveIds,
-          presence,
-          ...extraFields
-        } = nextArchive
-        const localArchive: LocalArchiveRecord = {
-          id: await createArchiveId(type, reservedArchiveIds),
-          saveId: save.id,
-          type,
-          name,
-          aliases,
-          background,
-          situation,
-          focus,
-          linkedNames,
-          linkedArchiveIds,
-          presence,
-          updatedAt: now,
-          ...extraFields,
-        }
-        await localDb.archives.put(localArchive)
-      }
     },
   )
 
-  const seededEvents = await listEventsForSave(save.id)
-  const seededArchives = await listArchivesForSave(save.id)
-  await replaceAirpMemoryForSave(save.id, {
-    snapshot: initial.snapshot,
-    events: seededEvents,
-    archives: seededArchives.map(toArchiveRecord),
-  })
-
   await createCheckpointForSave(save.id, {
-    snapshot: initial.snapshot,
-    history: initial.history,
-    events: seededEvents,
-    archives: seededArchives,
-    stateRecords: await listLocalStateRecordsForSave(save.id),
+    snapshot: snapshotRecord.snapshot,
+    history,
+    stateRecords: [],
     reason: "initial",
     label: "初始状态",
   })
@@ -271,28 +127,56 @@ export async function getSnapshotForSave(
   saveId: string,
 ): Promise<RuntimeSnapshotShell> {
   const record = await localDb.saveSnapshots.get(saveId)
-  return record?.snapshot ?? createInitialSavePayload(Date.now()).snapshot
+  return record?.snapshot ?? createEmptyRuntimeSnapshot()
+}
+
+export async function saveRuntimeForSave(
+  saveId: string,
+  snapshot: RuntimeSnapshotShell,
+  messages: ConversationMessageRecord[],
+): Promise<void> {
+  const now = Date.now()
+  const normalizedMessages = normalizeMessages(messages)
+  const nextSnapshot: RuntimeSnapshotShell = {
+    ...snapshot,
+    state: {
+      ...snapshot.state,
+      messages: normalizedMessages,
+      globals: snapshot.state.globals ?? {},
+    },
+  }
+
+  await localDb.transaction(
+    "rw",
+    localDb.saves,
+    localDb.saveSnapshots,
+    localDb.saveHistory,
+    async () => {
+      await localDb.saveSnapshots.put({
+        saveId,
+        snapshot: nextSnapshot,
+      })
+      await localDb.saveHistory.put({
+        saveId,
+        messages: normalizedMessages,
+      })
+
+      const save = await localDb.saves.get(saveId)
+      if (save) {
+        await localDb.saves.put({
+          ...save,
+          updatedAt: now,
+        })
+      }
+    },
+  )
 }
 
 export async function saveSnapshotForSave(
   saveId: string,
   snapshot: RuntimeSnapshotShell,
 ): Promise<void> {
-  const now = Date.now()
-  await localDb.transaction("rw", localDb.saves, localDb.saveSnapshots, async () => {
-    await localDb.saveSnapshots.put({
-      saveId,
-      snapshot,
-    })
-
-    const save = await localDb.saves.get(saveId)
-    if (save) {
-      await localDb.saves.put({
-        ...save,
-        updatedAt: now,
-      })
-    }
-  })
+  await saveRuntimeForSave(saveId, snapshot, normalizeMessages(snapshot.state.messages))
 }
 
 export async function deleteLocalSave(saveId: string): Promise<void> {
@@ -308,46 +192,41 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
     },
   )
 
-  await deleteEventsForSave(saveId)
-  await deleteArchivesForSave(saveId)
   await deleteStateRecordsForSave(saveId)
   await deleteCheckpointsForSave(saveId)
 }
 
-export async function getPlayerArchiveIdsForSave(saveId: string): Promise<string[]> {
-  const record = await localDb.saves.get(saveId)
-  return record?.playerArchiveIds ?? []
-}
-
-export async function setPlayerArchiveIdsForSave(
-  saveId: string,
-  playerArchiveIds: string[],
-): Promise<void> {
-  const save = await localDb.saves.get(saveId)
-  if (!save) {
-    return
-  }
-  await localDb.saves.put({
-    ...save,
-    playerArchiveIds,
-    updatedAt: Date.now(),
-  })
-}
-
 export async function getHistoryForSave(
   saveId: string,
-): Promise<Array<{ role: string; content: string }>> {
+): Promise<ConversationMessageRecord[]> {
   const record = await localDb.saveHistory.get(saveId)
-  return record?.messages ?? []
+  return normalizeMessages(record?.messages)
 }
 
 export async function saveHistoryForSave(
   saveId: string,
-  messages: Array<{ role: string; content: string }>,
+  messages: ConversationMessageRecord[],
 ): Promise<void> {
-  await localDb.saveHistory.put({
-    saveId,
-    messages,
-  })
+  const snapshot = await getSnapshotForSave(saveId)
+  await saveRuntimeForSave(saveId, {
+    ...snapshot,
+    state: {
+      ...snapshot.state,
+      messages,
+    },
+  }, messages)
 }
 
+export async function createCheckpointFromCurrentSave(
+  saveId: string,
+  reason: "initial" | "after-turn" | "manual",
+  label?: string,
+) {
+  return createCheckpointForSave(saveId, {
+    snapshot: await getSnapshotForSave(saveId),
+    history: await getHistoryForSave(saveId),
+    stateRecords: await listLocalStateRecordsForSave(saveId),
+    reason,
+    label,
+  })
+}

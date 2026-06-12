@@ -1,30 +1,32 @@
 # Tsian 此间
 
-Tsian 此间是一个 AIRP 专精框架。
+Tsian 是一个面向 AIRP 的 Agent-Orchestrated Runtime 平台原型。
 
-当前项目方向已经转为：
+当前核心不再是可视 DAG 工作流或 SillyTavern 风格提示词预设，而是：
 
-`Agent-Orchestrated AIRP Runtime`
-
-Tsian 的核心不再是可视 DAG 工作流或 SillyTavern 风格提示词预设，而是一套由主控 Agent、专业 Agent、通用工具、运行时数据和可替换前端包组成的 AIRP 平台。
-
-## 当前边界
-
-- 平台负责包加载、沙箱、桥 API、模型调用、权限、通用存储、存档实例生命周期、导入导出。
-- Agent Runtime 负责 AIRP 回合组织、主控 Agent 调度、专业 Agent 协作、工具使用和运行时数据产出。
-- 前端包负责游戏界面、交互和渲染。运行时产出的数据如何展示，由 runtime 与前端包自行约定。
-- 存档是一次 AIRP 会话 / 世界实例的数据容器，类似网页 AI 聊天的会话记录。平台托管生命周期，但不理解内部玩法语义。
+- 平台托管模型调用、桥 API、本地会话、通用存储和 checkpoint。
+- Agent Runtime 组织 AIRP 回合，当前 MVP 使用 `master-agent` → `narrative-agent` 两步调用。
+- 前端包负责游戏界面和渲染，通过受控 bridge 读取数据和发送玩家输入。
+- 存档就是一次 AIRP 会话的数据容器，平台不理解事件、档案、任务或状态表等玩法语义。
 
 ## 当前仓库骨架
 
-- `apps/platform-web` - 平台 WebUI、本地运行时宿主、存储、桥接和包加载。
-- `packages/contracts` - 跨应用稳定契约。
-- `packages/runtime-core` - 与运行环境弱耦合的核心接口和运行时骨架。
+- `apps/platform-web` - Vue 平台壳、本地 Agent Runtime 宿主、Dexie 存储、桥接和默认会话 UI。
+- `packages/contracts` - 平台、运行时和前端包共享的 TypeScript 契约。
+- `packages/runtime-core` - 极薄的 `RuntimeEngine` 接口包。
 - `builtin/play-frontends/official-default` - 官方默认游玩前端包。
-- `builtin/mods` - 官方内置内容包。
-- `docs` - 当前方向和接手文档。
+- `docs` - 当前方向、接手文档和已退役方向说明。
 
-旧 workflow / prompt-engine / workflow editor 代码仍可能存在于原型实现中，但不代表当前长期方向。
+## 常用命令
+
+```bash
+npm run dev:web
+npm run build:contracts
+npm run build:runtime-core
+npm run build:web
+```
+
+原型期 IndexedDB schema 允许破坏性重置，不为旧本地数据补迁移。
 
 ## 文档入口
 

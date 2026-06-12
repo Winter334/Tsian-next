@@ -4,31 +4,20 @@
 
 ## File Ownership
 
-- `runtime.ts` owns runtime snapshots, messages, archives, events, maintenance patches, platform action shapes, deep query shapes, and write-runtime payloads.
+- `runtime.ts` owns runtime snapshots, conversation messages, JSON value types, generic state records/write operations, message interaction, deep query, platform context, and platform action shapes.
 - `bridge.ts` owns `PlayFrontendBridge` and bridge namespace interfaces.
-- `debug.ts` owns debug records exposed to play frontends through `bridge.debug` and legacy query paths.
-- `mod.ts` owns mod manifests, static content, catalog events, entity field definitions, and mod initial save payloads.
+- `debug.ts` owns AI debug and checkpoint summary types exposed to play frontends.
 - `frontend-package.ts` owns play frontend manifest metadata.
-- `preset.ts` owns prompt preset and world book resource shapes imported from prompt-engine concepts.
-- `workflow.ts` owns workflow DAG definitions, node config shapes, edges, port metadata, and platform resource wrappers.
-- `memory.ts` owns memory schema type contracts, relation/index/render metadata shapes, validation issue payload shape, and normalized operation type aliases. Runtime schema values and validators live in `packages/memory-core`, not here.
+- `memory.ts` owns generic memory schema type contracts only.
 
 ## Export Rules
 
 - Every public type must be exported through `src/index.ts`.
-- Keep the package type-only. Do not add runtime helpers, validators, storage code, or browser-specific APIs here.
-- Prefer a single source of truth. If `platform-web` and `workflow-engine` both need a shape, define it in contracts and import it.
-
-## Contract Granularity
-
-- Use explicit interfaces for stable payloads such as `RuntimeWriteRequest`, `ApplyPatchOutput`, `WorkflowDefinition`, and `ModManifest`.
-- Use open extension points only where the product intentionally allows external
-  fields, such as `ArchiveRecord` extra fields and `PromptPresetEntry`
-  compatibility fields.
-- Keep node `config` as `Record<string, unknown>` in `WorkflowNodeBase`; concrete parsing belongs to node executors and editor forms.
+- Keep the package type-only. Do not add runtime helpers, validators, storage code, or browser-specific APIs.
+- Prefer a single source of truth. If `platform-web` and a frontend package both need a shape, define it in contracts and import it.
 
 ## Avoid
 
-- Do not add implementation functions to this package.
-- Do not put UI-only labels or local storage metadata here unless they are intentionally shared across packages.
-- Do not make a field optional to hide a caller bug. Optionality must reflect real backward compatibility or feature semantics.
+- Do not restore mod, preset, workflow, event/archive, or maintenance patch contracts as active public modules without a new accepted design.
+- Do not put UI-only labels or local storage metadata here unless intentionally shared across packages.
+- Do not make a field optional to hide a caller bug.

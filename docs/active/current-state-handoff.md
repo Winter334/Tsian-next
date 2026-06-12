@@ -1,78 +1,61 @@
 # Tsian Current State Handoff
 
-## 1. 文档目的
+## 1. 当前方向
 
-本文档用于新会话快速接手当前项目状态。
-
-它记录：
-
-- 当前代码大致落地到什么程度。
-- 哪些实现属于旧原型遗留。
-- 当前项目方向应看哪里。
-- 下一步最适合从哪里继续。
-
-## 2. 当前项目方向
-
-当前项目方向已经转为 Agent-Orchestrated AIRP Runtime。
+Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 
 权威方向文档：
 
 - `docs/active/airp-workflow-platform-direction.md`
 
-旧 workflow-as-system、可视 DAG workflow editor、SillyTavern prompt-engine 和 workflow preset 不再作为长期主线。
+旧 workflow-as-system、可视 DAG workflow editor、SillyTavern prompt-engine、workflow preset、事件/档案记忆模型不再是当前主线。
 
-## 3. 当前代码状态
+## 2. 当前实现状态
 
-当前代码仍是可运行原型，包含不少旧方向实现：
+当前代码已经完成第一版 Agent Runtime MVP 纵切：
 
 - 平台 WebUI 位于 `apps/platform-web`。
-- 官方默认游玩前端包位于 `builtin/play-frontends/official-default`。
-- 前端包通过 `PlayFrontendBridge` 与平台宿主通信。
-- `platform-host` 当前仍通过 workflow 路径处理 `interaction.sendMessage`。
-- `workflow-engine`、`workflow-host`、workflow editor、stateModel、prompt-engine 仍存在。
-- 本地存储仍使用 Dexie / IndexedDB。
-- 当前默认 AIRP 原型仍包含事件、档案、globals、stateRecords、checkpoint 和调试视图。
+- `interaction.sendMessage` 由 `platform-host` 调度 Agent Runtime，而不是执行旧 workflow。
+- Agent Runtime 位于 `apps/platform-web/src/agent-runtime`。
+- MVP 每轮调用两次模型：`master-agent` 先产出写作 brief，`narrative-agent` 再产出玩家可读剧情正文。
+- 官方默认前端位于 `builtin/play-frontends/official-default`，负责内容为空的会话聊天、AI debug、checkpoint、snapshot 和 stateRecords 展示。
+- 本地 Dexie schema 已重置为 `meta / saves / saveSnapshots / saveHistory / checkpoints / stateRecords`。
+- 平台可在没有内置内容包的情况下启动，并可创建内容为空的 AIRP 会话。
 
-这些说明当前实现是什么，不代表未来架构必须继续沿用。
+## 3. 当前有效边界
 
-## 4. 当前有效边界
+- Platform：模型调用、桥 API、通用存储、会话生命周期、checkpoint、前端包装载。
+- Agent Runtime：AIRP 回合组织、Agent 分工、工具使用和运行时数据产出。
+- Frontend Package：游戏 UI、交互和渲染，只通过 bridge 访问平台能力。
+- Save Instance：一次 AIRP 会话的数据容器，内容语义由 runtime 和前端包约定。
 
-即使旧 workflow 主线退场，下列边界仍然有效：
+平台不硬编码记忆结构、事件/档案语义、MVU 状态表或前端渲染协议。
 
-- 平台负责包加载、沙箱、桥 API、模型调用、权限、通用存储和存档实例生命周期。
-- Runtime 负责 AIRP 系统逻辑和运行时数据产出。
-- Frontend Package 负责游戏 UI、交互和渲染。
-- 存档是 AIRP 会话 / 世界实例的数据容器，平台不理解内部玩法语义。
-- 前端包不能直接接触平台内部存储、模型 key 或未授权能力。
+## 4. 关键代码入口
 
-## 5. 关键代码入口
-
-- `README.md`
-- `docs/active/airp-workflow-platform-direction.md`
 - `apps/platform-web/src/platform-host/index.ts`
+- `apps/platform-web/src/agent-runtime/index.ts`
+- `apps/platform-web/src/storage/db.ts`
 - `apps/platform-web/src/bridge/play-frontend-bridge.ts`
+- `apps/platform-web/src/views/LobbyView.vue`
 - `apps/platform-web/src/views/PlayView.vue`
-- `packages/contracts/src/bridge.ts`
+- `apps/platform-web/src/views/DebugView.vue`
 - `packages/contracts/src/runtime.ts`
+- `packages/contracts/src/bridge.ts`
+- `packages/contracts/src/debug.ts`
 - `builtin/play-frontends/official-default/src/index.ts`
 
-旧 workflow 相关入口仍可用于理解当前原型：
+## 5. 下一步建议
 
-- `packages/workflow-engine`
-- `apps/platform-web/src/workflow-host`
-- `apps/platform-web/src/components/workflow`
-- `packages/prompt-engine`
+优先从这些方向继续：
 
-## 6. 下一步建议
+1. 设计 Agent Runtime 的工具/capability 体系。
+2. 增加记忆 Agent 或通用记忆工具，但不要把默认事件/档案模型写回平台。
+3. 增加状态/MVU Agent 与前端包约定的数据产出。
+4. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。
+5. 为内容包/runtime 包格式建立最小配置边界。
 
-当前最适合继续的方向：
-
-1. 先完成 Agent Runtime 平台方向文档和旧文档清理。
-2. 之后规划 Agent Runtime MVP，而不是继续扩展 workflow editor 或 prompt-engine。
-3. 规划时优先定义平台 / runtime / frontend package / content / save instance 边界。
-4. 代码迁移应另开任务，不在方向文档任务中实现。
-
-## 7. 历史来源
+## 6. 历史来源
 
 旧开发历史优先查：
 
@@ -80,4 +63,4 @@
 - `.trellis/workspace/`
 - git history
 
-不要把已清理的旧 reference/archive 文档当作当前规划依据。
+不要把已退役的旧 workflow/prompt/memory 文档当作当前规划依据。
