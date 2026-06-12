@@ -7,6 +7,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 权威方向文档：
 
 - `docs/active/airp-workflow-platform-direction.md`
+- `docs/active/agent-framework-runtime-workspace-direction.md`
 
 旧 workflow-as-system、可视 DAG workflow editor、SillyTavern prompt-engine、workflow preset、事件/档案记忆模型不再是当前主线。
 
@@ -22,6 +23,8 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - 本地 Dexie schema 已重置为 `meta / saves / saveSnapshots / saveHistory / checkpoints / stateRecords`。
 - 平台可在没有内置内容包的情况下启动，并可创建内容为空的 AIRP 会话。
 
+当前代码尚未实现 Runtime Workspace、`AGENT.md`、`SKILL.md`、Skill 按需加载、agent-call 协作或 action executor registry。这些是下一阶段 Agent Framework 方向，不是当前已落地行为。
+
 ## 3. 当前有效边界
 
 - Platform：模型调用、桥 API、通用存储、会话生命周期、checkpoint、前端包装载。
@@ -30,6 +33,8 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - Save Instance：一次 AIRP 会话的数据容器，内容语义由 runtime 和前端包约定。
 
 平台不硬编码记忆结构、事件/档案语义、MVU 状态表或前端渲染协议。
+
+下一阶段的 Save Instance 数据抽象是 Runtime Workspace：一个存档级虚拟文件系统，用工作区文件/目录承载 Agent 定义、Skill、历史、世界数据、记忆、前端数据、归档和平台 metadata。结构化游戏状态也应融入工作区文件，而不是作为平台理解的固定玩法模型。
 
 ## 4. 关键代码入口
 
@@ -49,11 +54,13 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 
 优先从这些方向继续：
 
-1. 设计 Agent Runtime 的工具/capability 体系。
-2. 增加记忆 Agent 或通用记忆工具，但不要把默认事件/档案模型写回平台。
-3. 增加状态/MVU Agent 与前端包约定的数据产出。
-4. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。
-5. 为内容包/runtime 包格式建立最小配置边界。
+1. 设计 Runtime Workspace 文件 API 和存储形态。
+2. 引入 `AGENT.md` / `SKILL.md` 的解析、索引和按需加载。
+3. 将当前固定 `master-agent` -> `narrative-agent` 流迁移为 workspace 定义的 Agent。
+4. 设计统一 action 调用与执行器适配，包括浏览器脚本和远程执行。
+5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
+6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
+7. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。
 
 ## 6. 历史来源
 

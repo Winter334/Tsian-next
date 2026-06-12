@@ -33,4 +33,5 @@ npm run build:web
 - [docs/README.md](docs/README.md)
 - [docs/active/current-state-handoff.md](docs/active/current-state-handoff.md)
 - [docs/active/airp-workflow-platform-direction.md](docs/active/airp-workflow-platform-direction.md)
+- [docs/active/agent-framework-runtime-workspace-direction.md](docs/active/agent-framework-runtime-workspace-direction.md)
 - [docs/active/deferred-work.md](docs/active/deferred-work.md)

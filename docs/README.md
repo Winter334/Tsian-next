@@ -16,7 +16,8 @@
 
 1. [active/current-state-handoff.md](active/current-state-handoff.md)
 2. [active/airp-workflow-platform-direction.md](active/airp-workflow-platform-direction.md)
-3. [active/deferred-work.md](active/deferred-work.md)
+3. [active/agent-framework-runtime-workspace-direction.md](active/agent-framework-runtime-workspace-direction.md)
+4. [active/deferred-work.md](active/deferred-work.md)
 
 如果 active 文档、`.trellis/spec/`、当前代码和旧任务记录冲突：
 
@@ -30,11 +31,11 @@ Tsian 是一个面向 AIRP 的 Agent Runtime 平台。
 
 平台负责运行条件和边界：包加载、沙箱、桥 API、模型调用、权限、通用存储、存档实例生命周期、导入导出。
 
-Agent Runtime 负责玩法系统：主控 Agent、专业 Agent、通用工具、AIRP 回合组织、运行时数据产出。
+Agent Runtime 负责玩法系统：主控 Agent、专业 Agent、Skill、Action、AIRP 回合组织、运行时数据产出。
 
 Frontend Package 负责体验呈现：游戏界面、交互和渲染。运行时产出的数据如何展示，是 runtime 与前端包之间的约定，平台不定义通用 UI DSL 或玩法字段语义。
 
-存档是一次 AIRP 会话 / 世界实例的数据容器。平台托管存档生命周期，但不要求里面一定有事件、档案、globals 或某个固定状态表。
+存档是一次 AIRP 会话 / 世界实例的数据容器。后续方向是将它表达为 Runtime Workspace：一个虚拟文件系统式工作区，承载 Agent 定义、Skill、对话、世界数据、记忆、前端数据和平台 metadata。结构化游戏状态也应作为工作区文件/目录约定存在，而不是平台硬编码的玩法模型。
 
 ## Historical Docs
 
