@@ -12,13 +12,11 @@
 
 - 当前实现状态只更新 `current-state-handoff.md`。
 - 产品与架构方向只更新 `airp-workflow-platform-direction.md`。
-- 已知但刻意暂缓的工作只记录到 `deferred-work.md`；这里记录为什么暂缓和何时回看，不展开成路线图。
-- 旧实施计划、阶段性 skeleton 和细分设计记录不再作为 active guidance。
-- 历史材料保存在 `../archive/`，可查阅，但不要求持续维护。
-- 如果归档文档与 active 文档、`.trellis/spec/` 或当前代码冲突，优先相信 active 文档、spec 和当前代码。
-- 新增长期方向时，优先收敛回 `airp-workflow-platform-direction.md`，不要重新扩散成多份 active 文档。
+- 已知退场、暂缓或不再推进的方向记录到 `deferred-work.md`。
+- 不在 active 文档中保留旧 workflow-as-system 全文；历史通过 Trellis tasks 和 git history 查询。
+- 如果 active 文档与旧任务、旧 reference 或旧 archive 材料冲突，优先相信 active 文档和当前代码。
 
-当前 active 集合应保持精简：
+当前 active 集合：
 
 - `README.md`
 - `current-state-handoff.md`

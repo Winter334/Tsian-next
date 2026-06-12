@@ -1,73 +1,47 @@
 # Tsian Documentation Guide
 
-## 1. 当前维护口径
+## 当前维护口径
 
-`docs/` 里曾经沉淀了大量正式开发前的设计骨架。当前项目已经进入可运行原型阶段，并且方向已收敛为 workflow-as-system 平台，因此后续不再维护多份阶段性设计文档。
+`docs/` 只维护当前仍能指导项目开发的文档。
 
-当前文档维护原则：
+项目方向已经从早期 workflow-as-system 原型转为：
 
-- 以当前代码状态为准。
-- 以 `.trellis/spec/` 中的项目规范为准。
-- 以 `docs/active/` 中的精简入口文档为准。
-- 归档文档只作为历史背景，不作为当前任务规划的权威来源。
-- 如果 active 文档、spec、当前代码和归档文档冲突，优先相信 active 文档、spec 和当前代码。
+`Agent-Orchestrated AIRP Runtime`
 
-## 2. Active 文档
+旧的可视 DAG workflow、workflow preset、SillyTavern prompt-engine、schema resource、generic renderer adapter 等设计材料不再作为当前规划依据。历史开发内容由 Trellis task 记录和 git history 承载；不再为了保存历史而保留会污染检索的旧文档全文。
 
-当前只建议把以下文档作为日常维护入口。
+## Active 文档
 
-### 2.1 当前状态
+当前只建议阅读和维护：
 
-- `active/current-state-handoff.md`
+1. [active/current-state-handoff.md](active/current-state-handoff.md)
+2. [active/airp-workflow-platform-direction.md](active/airp-workflow-platform-direction.md)
+3. [active/deferred-work.md](active/deferred-work.md)
 
-用途：
+如果 active 文档、`.trellis/spec/`、当前代码和旧任务记录冲突：
 
-- 新会话接手
-- 查看当前已经实现什么
-- 查看关键代码入口
-- 查看仍需注意的实现边界
+- 当前代码说明“现在实现是什么”。
+- active 文档说明“未来方向是什么”。
+- Trellis task 记录说明“过去为什么那样做”。
 
-### 2.2 平台方向
+## 当前稳定主干
 
-- `active/airp-workflow-platform-direction.md`
+Tsian 是一个面向 AIRP 的 Agent Runtime 平台。
 
-用途：
+平台负责运行条件和边界：包加载、沙箱、桥 API、模型调用、权限、通用存储、存档实例生命周期、导入导出。
 
-- 查看 Tsian 的 workflow-as-system 平台定位
-- 判断新任务是否符合长期方向
-- 约束节点类型、schema、资源、renderer、platform capability 的边界
-- 避免把默认 AIRP 事件/档案系统误当成平台本体
+Agent Runtime 负责玩法系统：主控 Agent、专业 Agent、通用工具、AIRP 回合组织、运行时数据产出。
 
-## 3. Archive 文档
+Frontend Package 负责体验呈现：游戏界面、交互和渲染。运行时产出的数据如何展示，是 runtime 与前端包之间的约定，平台不定义通用 UI DSL 或玩法字段语义。
 
-`archive/` 保存曾经 active 但已不再持续维护的历史材料。
+存档是一次 AIRP 会话 / 世界实例的数据容器。平台托管存档生命周期，但不要求里面一定有事件、档案、globals 或某个固定状态表。
 
-它们的价值是：
+## Historical Docs
 
-- 保留早期设计背景
-- 帮助追踪某些实现为什么曾经这样做
-- 在需要时提供决策历史
+早期 reference 和 archive 文档已经清理，以减少语义检索中的旧方向噪音。
 
-它们的限制是：
+需要追踪历史时，优先查看：
 
-- 不保证描述当前代码
-- 不保证符合最新 workflow-as-system 方向
-- 不应作为新任务的唯一依据
-
-## 4. Reference 文档
-
-`reference/` 保存更早期的骨架文档和技术背景材料。
-
-如果后续需要重新讨论某个方向，应把新结论收敛回 `active/airp-workflow-platform-direction.md`，而不是继续维护所有历史骨架文档。
-
-## 5. 当前稳定主干
-
-当前项目的稳定主干可以压缩为：
-
-`Tsian 是一个面向 AIRP 的 workflow-as-system 平台。系统由 workflow preset、schema/state、resources、platform capabilities 和 frontend renderer 组合而成。默认事件/档案记忆是参考系统，不是平台本体。平台负责存储、schema 校验、checkpoint、回滚、AI 调用和调试追踪等安全边界，玩家和作者通过配置工作流与资源来构建自己的 AIRP 系统。`
-
-阅读顺序：
-
-1. `docs/active/current-state-handoff.md`
-2. `docs/active/airp-workflow-platform-direction.md`
-3. 需要历史背景时，再查 `docs/archive/` 或 `docs/reference/`
+- `.trellis/tasks/archive/`
+- `.trellis/workspace/`
+- git history

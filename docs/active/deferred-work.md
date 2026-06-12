@@ -1,254 +1,103 @@
-# Deferred Work Register
+# Deferred And Retired Work Register
 
 ## Purpose
 
-This register records work that Tsian intentionally defers during scoped tasks.
-It is not a roadmap, backlog replacement, or design essay. Its job is to keep
-"not now" decisions visible after chat context, task PRDs, or review notes fade
-from memory.
+This register records known directions that are deferred, retired, or no longer current after the Agent Runtime direction change.
 
-Use this document when a task leaves a known gap on purpose because doing it
-now would widen scope, touch a riskier contract, or require a separate design
-decision.
+Use this file to prevent old prototype ideas from re-entering planning as if they were still active roadmap items.
 
-## Maintenance Rules
+## Rules
 
-- Add an entry only when the team explicitly knows the gap exists and chooses
-  to defer it.
-- Keep each entry short, actionable, and tied to a revisit trigger.
-- Record why the work was deferred, not just that it exists.
-- Include a scope guard so the future task does not accidentally absorb
-  unrelated platform work.
-- Remove or mark an entry as resolved when the follow-up task lands.
-- Do not duplicate long-term architecture rationale from
-  `airp-workflow-platform-direction.md`.
+- Keep entries short.
+- Record why the item is not current.
+- Point to the new boundary when possible.
+- Do not preserve full old design text here; use Trellis task history or git history for archaeology.
 
-## Entry Format
+## DW-001 Visual DAG Workflow As Core Runtime
 
-```md
-## DW-000 Short Title
-
-Status: deferred
-Source: where the deferral came from
+Status: retired as long-term core direction
 
 Temporary state:
-- What is intentionally left as-is today.
 
-Why deferred:
-- Why it was not included in the current task.
+- The current prototype still contains workflow-engine, workflow-host, workflow editor, workflow preset resources, stateModel, and workflow debug surfaces.
+
+Why retired:
+
+- The fixed DAG model is too low-level for the desired AIRP runtime.
+- It makes authoring difficult and tends to push behavior into compute scripts, macro prompts, and editor-specific configuration.
+- The new direction is 主控 Agent + 专业 Agent + 通用工具, with runtime data consumed by frontend packages.
 
 Revisit when:
-- Concrete trigger for picking it back up.
 
-Suggested next task:
-- Short task title or slug.
+- A future Agent Runtime needs an internal deterministic plan format for a narrow subsystem.
 
 Scope guard:
-- What the future task should not expand into.
-```
 
-## DW-001 Rename Internal Memory Storage Vocabulary
+- Do not rebuild the AIRP main loop around visual DAG workflow.
+- Do not extend workflow editor as the default authoring experience.
 
-Status: resolved
-Source: `state-write` migration, 2026-06-06
+## DW-002 SillyTavern Prompt Engine As Core AI Abstraction
+
+Status: retired as long-term core direction
 
 Temporary state:
-- Public workflow durable reads/writes use `state-query` / `state-write`.
-- Internal generic durable state storage now uses names such as `stateRecords`,
-  `listStateRecordsForSave`, and `applyStateWriteOperationsForSave`.
 
-Resolution:
-- Resolved by `state-record-storage-rename`, 2026-06-06.
-- Prototype IndexedDB data was intentionally not migrated; the Dexie database
-  name was bumped and local prototype saves should be recreated.
+- The current prototype still contains `packages/prompt-engine`, builtin prompt presets, world book resources, regex, macro replacement, and AI node prompt preset wiring.
 
-Why deferred:
-- Renaming this layer touches Dexie table shape, checkpoint slices, restore
-  paths, save deletion, debug/query views, storage helpers, specs, and tests.
-- It is a storage-contract migration, not just a public workflow node rename.
+Why retired:
+
+- Macro prompt assembly hurts cache locality and hides data binding inside text.
+- AI node configuration becomes difficult because changing runtime data often means editing prompt text.
+- The Agent Runtime direction prefers structured context packages, tools, agent responsibilities, and platform-controlled model calls.
 
 Revisit when:
-- N/A for the storage vocabulary rename itself. Future schema resources or
-  frontend rendering bindings should be tracked as separate tasks.
 
-Suggested next task:
-- N/A
+- A future compatibility/import feature explicitly needs to read old SillyTavern materials.
 
 Scope guard:
-- Historical guard: this task did not add schema resource UI, generic renderer
-  binding layers, query DSL changes, or old `memoryRecords` compatibility reads.
 
-## DW-002 Rename Public Memory Query Node To State Query
+- Do not make SillyTavern prompt preset compatibility a prerequisite for the new runtime.
+- Do not design new core Agent APIs around flattened string macros.
 
-Status: resolved
-Source: post `state-write` planning, 2026-06-06
+## DW-003 Platform-Level Generic Renderer Or UI DSL
+
+Status: not current
 
 Temporary state:
-- Public workflow reads now use `state-query`.
-- Old `memory-query` workflow nodes fail loudly as unknown node types.
 
-Resolution:
-- Resolved by `workflow-state-boundary-cleanup`, 2026-06-06.
+- No platform-level renderer adapter, RenderBlocks, widget DSL, or generic UI slot standard is planned.
 
-Why deferred:
-- The write-side migration was kept small to avoid mixing public node-surface
-  cleanup with read-side defaults, editor copy, tests, and docs.
-- At the time, `memory-query` behavior was already collection-only, so the
-  semantic issue was naming and workflow vocabulary rather than hidden AIRP
-  retrieval behavior.
+Why not current:
+
+- Runtime output and frontend package rendering can use private agreements.
+- Platform should not understand gameplay UI semantics.
+- Premature UI DSL design would harden unvalidated assumptions.
 
 Revisit when:
-- N/A for the rename itself. Future richer state query behavior should be
-  tracked as a separate task.
 
-Suggested next task:
-- N/A
+- Multiple frontend packages independently need the same optional rendering contract and the duplication becomes painful.
 
 Scope guard:
-- Historical guard: this rename did not rename internal storage vocabulary or
-  add a richer query language.
 
-## DW-003 Show Node-Carried Durable State Schema In Workflow Authoring
+- Keep platform responsible for bridge and sandbox boundaries, not for deciding how data renders.
 
-Status: completed in `06-06-workflow-carried-state-contract-authoring`
-Source: persistence node-carried schema decision, 2026-06-06
+## DW-004 Standalone Schema Resource Mainline
 
-Result:
-- The workflow editor bottom drawer now derives a state-contract summary from
-  `state-query` and `state-write` nodes.
-- `state-write.config.schema` can be inspected and edited through a focused MVP
-  form for schema metadata, collections, fields, relations, and indexes.
-- `record-filter`, `record-merge`, and `record-format` have focused forms so the
-  default AIRP workflow can be understood without raw JSON for those nodes.
-
-Remaining limits:
-- State contracts are still carried by workflow nodes rather than extracted into
-  reusable workflow blocks or system packages.
-- The editor performs schema self-consistency checks only; runtime `state-write`
-  validation remains the final write boundary.
-
-Follow-up direction:
-- Continue toward workflow block / subworkflow / system package boundaries
-  instead of introducing standalone schema resources as the next default step.
-
-Suggested next task:
-- N/A; superseded by future system-package work.
-
-Scope guard:
-- Add inspection/preview for existing node-carried schema.
-- Do not build a full schema form editor or reusable schema resource system in
-  the same task.
-
-## DW-004 Revisit Schema Resources As System-Package Artifacts
-
-Status: resolved by state database model
-Source: workflow-as-system direction and workflow-carried state contract discussion
-
-Resolution:
-- Resolved by the workflow-level `stateModel` and state database node authoring
-  model, 2026-06-09.
-- Persistent state schema is now authored through state database nodes and stored
-  under the workflow's `stateModel`.
-- Intermediate shapes created by other nodes are owned by those node definitions
-  and their input/output ports; they do not need a separate global schema
-  resource layer.
-
-Current decision:
-- Do not create standalone schema resources as a future default work item.
-- If future workflow blocks, subworkflows, or system packages exist, they should
-  carry or expose the relevant `stateModel`/state contract as part of the
-  package, not depend on a separate schema-resource-first authoring path.
-
-Suggested next task:
-- N/A for standalone schema resources.
-
-Scope guard:
-- Historical guard: this resolved item did not introduce workflow blocks,
-  subworkflows, system packages, generic renderer binding, or a second schema
-  editor.
-- Future package work should carry the existing `stateModel` boundary forward
-  instead of reopening standalone schema resources as a default prerequisite.
-
-## DW-005 Generic Renderer Adapter Layer
-
-Status: resolved by direction decision
-Source: workflow-as-system direction document; renderer boundary discussion, 2026-06-07
-
-Current decision:
-- Frontends can read platform state and resources through existing bridge/query
-  paths.
-- Workflow outputs and durable state collections are conventions between the
-  workflow preset and the frontend package.
-- Platform should not introduce a mandatory generic adapter layer that maps
-  state schema to renderer semantics such as maps, relationship graphs, keyword
-  panels, or state inspectors.
-
-Resolution:
-- Reframed from future platform work into an authoring/discovery boundary.
-- Platform may provide discovery views listing workflow result names, state
-  namespaces/collections, schema coverage, participating nodes, sample records,
-  and debug provenance.
-- Frontend packages decide which outputs/collections to render, how to interpret
-  fields, and which state is editable through platform write APIs.
-
-Revisit when:
-- A concrete frontend package needs a reusable optional binding description for
-  its own workflow contract.
-- Multiple frontends independently duplicate the same non-AIRP rendering
-  convention and the duplication becomes painful.
-
-Suggested next task:
-- N/A. Prefer polishing the existing workflow editor and state-contract
-  discovery surfaces before opening new platform-layer work.
-
-Scope guard:
-- Do not make platform responsible for deciding how a collection must render.
-- Do not add a generic adapter registry as a default next step.
-- Keep renderer interpretation optional and owned by frontend packages or
-  future system/package-level conventions.
-
-## DW-006 Player-Facing Custom Node Script Authoring
-
-Status: deferred
-Source: node definition standardization follow-up discussion, 2026-06-09
+Status: not current
 
 Temporary state:
-- Workflow node definitions have been standardized, and the editor model now
-  treats node ports as function-like inputs/outputs connected by data-flow
-  edges.
-- Existing `compute` remains available as a prototype-era script execution node
-  and may still appear in default workflow internals while the workflow system
-  is being validated.
-- There is no player-facing custom node authoring surface for editing arbitrary
-  node scripts, replacing official node implementations, or creating a full new
-  reusable node definition from scratch.
 
-Why deferred:
-- The team explicitly wants custom nodes to mean script/body editing plus port
-  and config definition, not a half-finished JSON or textarea escape hatch.
-- A serious node authoring system needs script editing, input/output signature
-  editing, config/default parameter editing, test-run fixtures, useful runtime
-  errors, copy/modify/replace flows for official node definitions, import/export
-  and versioning behavior, plus clear safety boundaries.
-- The workflow editor, state model, and node definition registry have just gone
-  through several large changes and need to run through real AIRP validation
-  before the authoring surface is frozen.
+- Old workflow/stateModel work explored schema authoring for workflow state.
+
+Why not current:
+
+- In the Agent Runtime direction, runtime owns its internal data semantics and frontend package owns rendering interpretation.
+- Platform should provide generic storage and validation capabilities, but not require a platform-wide schema resource mainline before gameplay can evolve.
 
 Revisit when:
-- The standardized workflow editor and default AIRP workflow have been exercised
-  through real chat/maintenance/debug loops.
-- Repeated or AIRP-specific `compute` logic has shown which scripts should be
-  promoted into named official node definitions.
-- The team is ready to design the full custom node authoring contract instead
-  of exposing only raw JSON or a bare script textarea.
 
-Suggested next task:
-- `custom-node-authoring-system`
+- A concrete runtime/package format needs reusable schema assets as part of content distribution.
 
 Scope guard:
-- Do not implement this as only a JSON editor, only a script textarea, or only a
-  palette entry for `compute`.
-- Do not remove the internal compute/script execution capability before a
-  replacement execution model exists.
-- Do not combine this with block/subworkflow/system-package design unless a
-  separate PRD explicitly chooses that larger scope.
+
+- Do not reopen standalone schema resources as a default prerequisite for Agent Runtime.

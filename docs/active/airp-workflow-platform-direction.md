@@ -1,328 +1,167 @@
-# Tsian Workflow-As-System Direction
+# Tsian Agent Runtime Platform Direction
 
 ## 1. 文档目的
 
 本文档记录 Tsian 当前可信的产品与架构方向。
 
-它不是阶段任务清单，也不是旧实现细节的堆叠。它回答一个核心问题：
-
-`Tsian 要成为怎样的 AIRP 平台？`
-
 当前答案是：
 
-`Tsian 是一个 workflow-as-system 平台。AIRP 中的记忆、润色、地图、关系、规则、调试和其它系统，都应尽量由工作流、工作流携带的状态契约、资源、平台能力和前端渲染共同配置出来，而不是固化为平台内置的单一玩法链路。`
+`Tsian 是一个面向 AIRP 的 Agent-Orchestrated Runtime 平台。`
 
-本文档是后续任务规划和代码 review 的方向约束。若旧文档、旧任务 PRD 或历史实现与本文档冲突，除非另有明确新决策，优先相信本文档、当前代码和 `.trellis/spec/`。
+AIRP 的核心运行不再以固定 DAG 工作流、可视 workflow editor、SillyTavern prompt preset 或宏变量组装为长期主线。新的主线是：玩家与主控 Agent 进行 AIRP，会话中的主控 Agent 根据玩家输入、上下文和运行时数据，按需调用专业 Agent 和通用工具，组织剧情正文、记忆管理、状态维护和前端可渲染数据。
+
+旧 workflow / prompt-engine 代码仍可能作为原型实现留在仓库中，但它们不再代表当前长期方向。
 
 ## 2. 核心定位
 
-Tsian 不是单纯的 AI 角色扮演内容应用，也不是只服务一套官方事件/档案记忆系统的固定框架。
+Tsian 不是单纯的 AI 聊天壳，也不是只服务一套事件/档案记忆模型的固定框架。
 
 Tsian 的核心定位是：
 
-`面向 AIRP 的可配置工作流运行平台。`
+`面向 AIRP 的可配置 Agent Runtime 平台。`
 
-平台应让玩家和作者配置出自己的 AIRP 系统：
+平台应让作者和玩家组合自己的 AIRP 系统：
 
-- 如何收集上下文
-- 如何检索记忆
-- 如何组织 prompt
-- 如何调用 AI
-- 如何解析输出
-- 如何维护状态
-- 如何把状态渲染成前端体验
-- 如何追踪和调试这一切
+- 主控 Agent 如何理解玩家输入并组织本轮回合。
+- 专业 Agent 如何负责正文、记忆、状态表、规则、审校或其它领域。
+- 通用工具如何读取历史、检索记忆、调用模型、访问存储、提出状态变更。
+- 运行时产出的数据如何被前端包解释和渲染。
+- 存档实例如何保存、恢复、导入、导出和回滚。
 
-默认 AIRP 体验可以很强，但它应该是一个参考 preset，而不是平台本体。
+默认 AIRP 体验可以很强，但它应该是一个默认 runtime/content/frontend 组合，而不是平台本体。
 
 ## 3. 系统模型
 
 一个 Tsian 系统由以下部分组合而成：
 
-1. **Workflow preset**：描述信息流和执行顺序，例如查询、筛选、合并、模板组合、AI 调用、写回。
-2. **Workflow-carried state contract**：由工作流中的持久状态读写、节点输入输出、记录处理和写入校验共同形成，描述系统维护的数据结构，例如事件/档案、关键词/片段、地图节点/边、风格规则。
-3. **Resources**：提供 prompt preset、workflow preset、静态内容、默认配置等可复用材料。持久状态 schema 由 workflow-level `stateModel` 和状态数据库节点承载，不作为脱离工作流的主资源类型。
-4. **Platform capabilities**：提供受控能力，例如存储写入、checkpoint、回滚、AI 调用、schema 校验、调试追踪。
-5. **Frontend renderer**：读取平台状态或资源，将其渲染成聊天界面、地图、关系网、调试面板或其它交互体验。
+1. **Platform**：包加载、沙箱、桥 API、模型调用、权限、通用存储、存档实例生命周期、导入导出。
+2. **Agent Runtime**：主控 Agent、专业 Agent、通用工具、AIRP 回合组织、运行时数据产出。
+3. **Frontend Package**：游戏界面、交互和渲染。它按自身约定解释 runtime 产出的数据。
+4. **Content / Mod**：世界观、玩法规则、agent 配置、初始数据、资源、可选的 runtime/frontend 绑定。
+5. **Save Instance**：一次 AIRP 会话 / 世界实例的数据容器。
 
 简化表达：
 
-`System = workflow + carried state contract + resources + platform capabilities + renderer`
+`System = platform boundary + agent runtime + frontend package + content + save instance`
 
-这句话比“所有东西都变成节点”更重要。工作流是系统组织方式，但不是让任意节点接管所有底层风险。
+## 4. Agent Runtime
 
-### 3.1 前端渲染边界
+Agent Runtime 是 AIRP 回合的核心。
 
-前端渲染不应被平台强制成一套通用 adapter 层。
+推荐默认心智模型：
 
-工作流负责产出和维护数据：
+- **主控 Agent**：玩家实际交互对象。负责理解玩家输入、判断本轮目标、选择工具、调用专业 Agent、决定是否需要记忆整理或状态更新。
+- **正文 Agent**：负责生成玩家可读剧情正文。它接收主控给出的写作任务和受控上下文，可按权限使用只读工具补查历史、记忆或设定。
+- **记忆 Agent**：负责长期记忆治理，例如归档、摘要、合并、压缩、整理索引。它不垄断检索；检索可以是通用工具。
+- **状态 / MVU Agent**：负责维护前端包可渲染的状态表，例如位置、任务、关系、资源、风险、时间等。状态语义由 runtime 与前端包约定，不由平台硬编码。
 
-- `result` 节点、调试输出和本轮 workflow outputs 可以作为临时结果。
-- `state-query` / `state-write` 相关的 namespace、collection、schema 和 records 可以作为持久状态。
+专业 Agent 不必每轮都调用。主控 Agent 可以根据玩家意图、上下文长度、剧情变化程度和状态变化需求决定是否调动它们。
 
-前端包自行决定如何解释这些数据：
+## 5. 工具原则
 
-- 可以读取某些 result name，也可以完全忽略其它 result。
-- 可以读取某些 state collection，也可以只把它们作为调试信息。
-- 可以把某些字段解释为地图、关系图、事件列表、角色档案、关键词面板或其它 UI 语义。
-- 可以决定哪些状态只读展示，哪些状态允许通过平台正式写入口修改。
+工具应尽量通用，避免重新陷入底层节点泥潭。
 
-平台最多提供“可发现性”和“协作辅助”：
+推荐工具类别：
 
-- 列出当前 workflow 暴露了哪些 result。
-- 列出当前 workflow 读写了哪些 namespace / collection。
-- 展示哪些 collection 有 schema、字段、关系、索引，哪些只是 storage-only。
-- 展示哪些节点参与读写，以及示例记录或调试来源。
-- 帮助 workflow 作者和前端作者在不是同一个人时对齐数据约定。
+- 读取最近历史。
+- 搜索或读取记忆记录。
+- 读取或写入运行时数据。
+- 读取内容资源或设定。
+- 调用模型。
+- 调用另一个 Agent。
+- 校验结构化输出或状态变更。
+- 压缩上下文或生成摘要。
 
-平台不应把“某个 collection 必须渲染成某种 UI”作为通用规则。renderer 语义优先由 workflow preset、前端包、资源说明或未来系统包的可选约定共同决定。
+AIRP 特色优先放在 Agent 职责、skill、content 和 runtime 数据结构中，而不是注册大量只服务默认事件/档案系统的窄工具。
 
-系统复用的优先单位不应是孤立 schema，而应是未来的 **workflow block / subworkflow / system package**：
+## 6. 平台边界
 
-- block/subworkflow 打包一组节点、内部执行顺序和输入输出端口。
-- block/subworkflow 随身携带或暴露它形成的 `stateModel` / state contract。
-- block/subworkflow 可以声明所需 prompt preset、world book、静态内容或可选前端渲染约定。
+平台负责运行条件和安全边界。
 
-判断标准：
+平台应该负责：
 
-`状态数据库节点负责定义持久状态形状；节点自身负责处理中间数据形状；抽出 workflow block 才能复用一个可运行系统。`
+- 加载 runtime 包、前端包和内容包。
+- 为前端包提供 iframe 或类似沙箱。
+- 提供 Bridge API / Capability API。
+- 托管模型提供商配置、API key、模型调用、速率限制和缓存策略。
+- 托管通用存储、存档实例、checkpoint、导入导出。
+- 管理权限，避免前端包或 runtime 直接接触未授权能力。
+- 执行受控工具能力，例如模型调用、存储访问、资源读取。
 
-## 4. 工作流在平台中的位置
+平台不应该负责：
 
-工作流是 AIRP 系统能力的主组织方式。
+- 记忆系统具体怎么设计。
+- 哪些字段表示事件、档案、任务、地图、关系或 MVU 状态。
+- 前端如何渲染运行时数据。
+- Agent 之间具体如何分工。
+- 默认 AIRP 事件/档案模型。
+- 通用 UI 插槽、渲染块 DSL 或 HTML/JS 产出标准。
 
-一轮 AIRP 可以抽象为：
+## 7. 前端包边界
 
-`用户输入 -> 上下文读取 -> 记忆/状态查询 -> 记录处理 -> prompt 组合 -> AI 调用 -> 输出解析 -> 状态维护 -> 受控写回 -> 调试追踪 -> 前端渲染`
+前端包负责游戏界面和玩家体验。
 
-不同玩法、不同记忆模型、不同前端体验，应该尽量通过替换或重组这条链上的配置来实现，而不是为每一种玩法新增平台硬编码路径。
+前端包通过 Bridge API 获取授权数据和执行动作，例如：
 
-工作流应具备：
+- 发送玩家输入。
+- 读取当前存档实例的运行时数据。
+- 订阅或拉取会话消息。
+- 执行平台允许的动作，例如保存、回滚、导入导出或设置更新。
 
-- 可配置
-- 可复用
-- 可调试
-- 可追踪
-- 可逐步拆解
-- 可被默认 preset 包装成易用体验
+运行时产出的数据如何渲染，是 runtime 与前端包之间的私有约定。平台不需要显式理解该约定。
 
-工作流不应承担：
+同一 runtime 可以搭配不同前端包，形成不同风格的 AIRP 游戏界面。一个前端包也可以完全自定义本地 UI 逻辑，只在需要平台能力时通过 Bridge API 调用。
 
-- 直接绕过平台写底层存储
-- 自行维护 checkpoint 和回滚一致性
-- 以任意脚本替代所有通用平台能力
-- 把某个默认 AIRP 数据模型固化成所有用户必须接受的节点语义
+当前代码中的直接对象式 `PlayFrontendBridge` 是原型实现。长期可以演进为 iframe / worker / postMessage 风格的 RPC Bridge，但这属于通信和沙箱技术选择，不改变“前端包只通过受控能力访问平台”的边界。
 
-## 5. 节点类型原则
+## 8. 存档实例
 
-节点类型应尽量是通用原语，而不是 AIRP 默认系统的业务名词。
+存档不是固定事件/档案/状态表结构。
 
-节点作者模型采用“函数 / 方法”心智模型：
+在新方向中，存档是：
 
-- 节点定义类似函数定义：名称、说明、输入参数、输出返回值、配置项和实现体。
-- 节点实例类似一次函数引用：在某个 workflow 中放置并配置这个定义。
-- 节点 `config` 类似固定参数或默认参数。
-- 连线是变量数据流：把上游节点的某个输出传给下游节点的某个输入。
-- 工作流是由这些函数调用组成的数据流图。
+`一次 AIRP 会话 / 世界实例的数据容器。`
 
-长期看，普通官方节点也应理解为由默认模组 / 官方资源预置的节点定义，
-而不是不可修改的神秘内置功能块。玩家自定义节点的核心能力不是“能多填一段
-JSON”，而是能编辑或替换节点实现体、端口和配置，从而真正定义新的函数。
-但这个能力只有在脚本编辑、端口声明、测试运行、错误反馈、导入导出、版本兼容
-和安全边界一起设计清楚时才应开放；不要为了赶进度先做一个 textarea + JSON
-的半成品入口。
+它类似网页 AI 聊天中的会话记录，但可以包含更丰富的 runtime 数据。
 
-当前阶段应先验证和打磨已经标准化的 workflow editor、默认 AIRP workflow
-和状态模型。`compute` 可以继续作为现有原型期脚本执行节点存在，用于观察哪些
-逻辑值得沉淀为正式节点定义；它不应被当作已经完成的玩家自定义节点系统。
-未来重启自定义节点作者系统时，再决定 `compute` 是隐藏为高级入口、迁移为
-脚本型节点定义的内部执行器，还是从普通节点库中退场。
+平台关心：
 
-推荐的节点语义类别：
+- 这个实例属于哪个内容包、runtime 包和前端包。
+- 如何创建、选择、保存、恢复、导入、导出和删除。
+- 如何保存 checkpoint 或回滚点。
+- 如何提供通用存储容器。
 
-- **控制流**：条件分支、结果输出、子流程或未来 block/subgraph。
-- **AI 调用**：调用某个 prompt preset 或模型配置。
-- **模板组合**：把输入数据组合成文本或 JSON。
-- **泛型状态读写**：按 namespace / collection / schema 查询和写入持久状态记录。
-- **记录处理**：筛选、合并、格式化、排序、去重、关系选择、字段提取。
-- **受限计算**：高级作者用于局部转换和原型实验的 bounded compute。
-- **受控平台能力**：通过平台拥有的 executor 触发安全写入、checkpoint、外部能力调用等。
+平台不关心：
 
-不推荐的节点语义：
+- runtime 内部是否有 events、archives、globals、memory fragments、quests、map nodes、relationships 或 UI state。
+- 某个字段应该如何被前端渲染。
+- 哪个 Agent 负责维护某类数据。
 
-- `event-query`
-- `archive-query`
-- `map-update`
-- `relationship-state-write`
-- 任何只对某个默认系统成立、但被注册成平台通用节点的业务动作
+## 9. 旧方向定位
 
-判断标准：
+以下内容不再作为长期主线：
 
-`如果一个节点名字只有事件/档案系统能解释，它很可能不该是通用节点。`
+- workflow-as-system 作为平台核心定位。
+- 可视 DAG workflow editor 作为默认作者体验。
+- workflow preset 作为 AIRP 主链配置中心。
+- SillyTavern prompt preset / world book / macro pipeline 作为核心 AI 节点抽象。
+- 平台级 generic renderer adapter。
+- 平台级 schema resource 主线。
 
-事件、档案、关键词、片段、地图坐标、图边、阵营关系，都应该优先作为 workflow-carried state contract / collection / workflow preset / renderer 的配置，而不是绑定到节点类型。
+这些实现和文档曾帮助项目验证记忆、状态写入、前端渲染和平台边界，但未来新功能不应以适配它们为默认目标。
 
-## 6. 默认 AIRP 事件/档案系统的定位
+## 10. 当前实施口径
 
-事件/档案记忆仍然重要。它是当前默认 AIRP 体验的参考系统：
+短期内，代码中仍可能保留 workflow-engine、prompt-engine、workflow editor、stateModel 和旧调试页面。
 
-- `events` 表达剧情中已经发生或正在发生的事实。
-- `archives` 表达人物、地点、物品、组织等叙事实体的当前状态。
-- `globals` 表达非实体全局状态，例如当前时间、章节、天气、局势变量。
+这表示当前实现状态，不表示未来方向。
 
-但它不是平台本体，也不是未来所有记忆系统必须继承的内核。
+后续规划新任务时，先问：
 
-正确定位是：
+1. 这个能力属于 Platform、Agent Runtime、Frontend Package、Content / Mod，还是 Save Instance？
+2. 它是否把默认 AIRP 事件/档案语义硬编码进平台？
+3. 它是否要求平台理解前端渲染语义？
+4. 它是否把旧 workflow / prompt-engine 作为必须兼容的主线？
+5. 它是否保持模型调用、存储、权限和存档生命周期由平台掌控？
 
-`事件/档案是默认 AIRP workflow preset 携带的 state contract 的一个强参考实现。`
-
-这意味着：
-
-- 默认工作流可以使用事件/档案作为优秀起点。
-- 默认前端可以提供事件、档案、调试视图。
-- 文档可以总结事件/档案为何适合叙事连续性。
-- 但平台不应把事件/档案语义焊死进通用节点类型。
-- 玩家和作者可以替换 workflow preset 或未来 block/subworkflow，从而替换随工作流形成的状态契约，构建其它记忆或状态系统。
-
-## 7. 可配置系统示例
-
-### 7.1 事件/档案记忆系统
-
-配置：
-
-- carried state contract：`airp/events`、`airp/archives`、`airp/globals`
-- workflow：查询集合、筛选当前相关记录、组合记忆 prompt、维护 AI 输出写入操作
-- renderer：事件列表、档案页、检索调试面板
-
-这是默认参考系统，不是唯一系统。
-
-### 7.2 关键词 -> 片段/摘要记忆系统
-
-配置：
-
-- carried state contract：`keywords`、`fragments`、`summaries`
-- workflow：从当前上下文提取关键词，查询片段或摘要，按相似度和 recency 排序，组合上下文
-- renderer：关键词面板、摘要管理视图、命中来源调试
-
-它不需要 `event-query` 或 `archive-query` 节点。它需要的是泛型集合查询、记录筛选、排序、模板组合和受控状态写入。
-
-### 7.3 正文二次处理系统
-
-配置：
-
-- carried state contract：可选的风格规则、禁用词、角色口吻、文本质量配置
-- workflow：主 AI 生成正文后，进入润色、风格化、审校、压缩或扩写节点链
-- renderer：展示最终正文，也可以在调试面板显示原文和二次处理结果
-
-这说明 Tsian 的系统不只等于记忆系统。工作流可以围绕文本处理、风格控制和后处理构建系统。
-
-### 7.4 地图 / 坐标 / 图数据系统
-
-配置：
-
-- carried state contract：地图节点、区域、坐标、边、可达性、占领状态、可见状态
-- workflow：根据剧情事件或玩家操作更新图数据，维护坐标、路径或区域状态
-- renderer：前端读取图数据，渲染成地图、路线、区域面板或空间关系图
-
-地图本身不应该要求平台新增 `map-update` 通用节点。它应该复用 workflow-carried state contract、泛型写入、记录处理和前端 renderer。
-
-## 8. 平台安全边界
-
-工作流越强，平台边界越重要。
-
-以下能力应由平台拥有：
-
-- 本地存储结构
-- schema 校验
-- checkpoint 和回滚
-- 写入一致性
-- AI 调用封装
-- 调试追踪
-- 资源解析
-- 高风险能力权限
-- 兼容投影和迁移策略
-
-工作流可以配置何时调用这些能力，以及如何把数据交给这些能力。工作流不应该绕开它们。
-
-这条边界尤其适用于：
-
-- `state-write`
-- runtime bridge 写入口
-- checkpoint 创建
-- 旧兼容路径
-- 未来外部文件、网络、插件能力
-
-## 9. 兼容结构的处理原则
-
-兼容结构应该明确、收口、可退场。
-
-当前需要特别警惕：
-
-- `apply-patch` 已从 workflow node surface 退场。桥 API 和内部 applier
-  可以继续作为平台兼容能力存在，但不再是 workflow preset 语法。
-- `memory-write` 已从 workflow node surface 退场。持久状态写入使用
-  `state-write`；旧 workflow 若仍声明 `memory-write`，应明确按未知节点
-  失败，而不是保留 alias。
-- `memory-query` 已从 workflow node surface 退场。持久状态读取使用
-  `state-query` 且保持 collection/schema 驱动；旧 workflow 若仍声明
-  `memory-query`，或把 `state-query` 配成旧 `source: "event-archive"`，
-  应明确失败，而不是继续走隐藏 AIRP 检索分支。
-- legacy events / archives / snapshot slices 可以作为兼容投影存在，但默认 AIRP 读写权威应向 generic state records 和 schema-aware workflow 边界收敛。
-
-兼容层不应被扩展成新的通用模型。若一个任务需要新增兼容逻辑，必须同时说明：
-
-- 它保护什么旧入口
-- 它何时可以退场
-- 它是否污染了通用节点或 schema 设计
-
-## 10. 文档维护原则
-
-`docs/active` 只保留当前仍应维护的入口文档：
-
-- `current-state-handoff.md`
-- `airp-workflow-platform-direction.md`
-- `deferred-work.md`
-- `README.md`
-
-历史设计、旧实施计划和阶段性 skeleton 进入归档。它们可以作为背景材料被引用，但不再作为当前任务规划的权威来源。
-
-活跃文档职责：
-
-- `current-state-handoff.md`：当前实现状态和接手入口。
-- `airp-workflow-platform-direction.md`：长期方向、架构原则和未来任务决策标准。
-- `deferred-work.md`：明确知道但刻意暂缓的后续工作，记录为什么暂缓、何时回看和范围护栏。
-- `README.md`：active 目录阅读顺序和维护规则。
-
-新方向优先收敛到本文档，而不是继续追加到多份旧骨架文档。
-暂缓事项优先收敛到 `deferred-work.md`，不要只留在聊天上下文或临时任务
-PRD 中。
-
-## 11. 未来任务决策检查表
-
-规划新任务或 review 实现时，先问：
-
-1. 这个需求是在增强通用 workflow primitive，还是在硬编码一个默认 AIRP 系统？
-2. 这个能力更适合成为节点、workflow-carried state contract、workflow preset / block、resource、renderer，还是 platform capability？
-3. 如果换成关键词/片段记忆、地图系统或正文后处理系统，这个原语还能复用吗？
-4. 是否把事件/档案语义绑定进了通用节点类型？
-5. 是否把临时兼容层扩展成了长期模型？
-6. 写入、checkpoint、回滚和校验是否仍由平台控制？
-7. 用户是否能通过配置替换默认系统，而不是只能接受平台硬编码路径？
-8. Debug trace 能否解释这个系统为什么这样运行？
-
-若答案显示实现正在把默认系统焊死进平台，应回到本文档重新切分边界。
-
-## 12. 当前优先方向
-
-短期优先级不是继续展开所有可能系统，而是停下来打磨已经落地的内容，让当前 workflow-as-system 原型更稳定、可理解、可编辑。
-
-当前更符合方向的工作包括：
-
-- 打磨当前 workflow editor、节点表单、状态契约抽屉、导入导出和调试体验。
-- 打磨默认 AIRP workflow preset，让它作为参考系统更易读、易改、易验证。
-- 保持 `apply-patch` / `memory-query` / `memory-write` 退场后的边界，不重新引入旧兼容节点语义。
-- 保持 `state-query` collection-only、`state-write` schema-aware，并继续让写入、checkpoint、回滚和校验由平台控制。
-- 提供更好的数据发现视图，帮助前端作者理解 workflow 暴露的 result 和持久 state collection，但不强制渲染方式。
-- 暂缓玩家可见的完整自定义节点脚本作者系统、block/subgraph、system package 和通用 renderer adapter 层；若未来出现，应围绕具体系统需求单独设计。Standalone schema resource 主线已由 `stateModel` + 状态数据库节点模型吸收，不再作为独立未来任务保留。
-
-这条路允许“一切皆有可能”，但不是“一切都无约束”。Tsian 的开放性应来自清晰的工作流、状态契约、资源和能力边界，而不是来自任意硬编码和任意脚本逃生口。
+若答案显示实现正在重建旧 workflow 主线，应回到本文档重新切分边界。
