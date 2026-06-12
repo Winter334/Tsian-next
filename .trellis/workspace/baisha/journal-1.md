@@ -1000,3 +1000,37 @@ Upgraded Trellis project/runtime files to 0.6.0-beta.23, installed the WSL-nativ
 ### Next Steps
 
 - None - task complete
+
+
+## Session 30: 记录 Agent Runtime 平台方向
+
+**Date**: 2026-06-12
+**Task**: 记录 Agent Runtime 平台方向
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+将项目当前方向切换为 Agent-Orchestrated AIRP Runtime，更新 active 文档与仓库 README，清理旧 workflow/reference/archive 文档以减少检索噪音，并归档方向变更任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `55ef35b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
