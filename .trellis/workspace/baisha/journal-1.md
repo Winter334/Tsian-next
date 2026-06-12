@@ -1277,3 +1277,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: Agent 按需读取 Workspace Skill
+
+**Date**: 2026-06-13
+**Task**: Agent 按需读取 Workspace Skill
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现只读 Runtime Workspace 工具循环，让 master/narrative Agent 可通过 workspace.read/list/search 按需读取 Skill 和上下文；更新方向文档与 platform-web 类型安全规范，并通过内存探针和 build:web 验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `df5f453` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
