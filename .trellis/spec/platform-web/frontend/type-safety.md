@@ -20,11 +20,12 @@
 ### 1. Scope / Trigger
 
 - Trigger: platform-web exposes cross-layer bridge query resources backed by Runtime Workspace files.
-- Applies when adding or changing `agent-registry`, `skill-registry`, or `skill-detail` behavior in `platform-host`.
+- Applies when adding or changing `agent-registry`, `agent-context`, `skill-registry`, or `skill-detail` behavior in `platform-host`.
 
 ### 2. Signatures
 
 - `bridge.query.query<AgentRegistryEntry>({ resource: "agent-registry" })`
+- `bridge.query.query<AgentContextEntry>({ resource: "agent-context", params: { agentId } })`
 - `bridge.query.query<SkillRegistryEntry>({ resource: "skill-registry", params })`
 - `bridge.query.query<SkillDetailEntry>({ resource: "skill-detail", params: { path } })`
 - `params.agentId?: string`
@@ -35,17 +36,22 @@
 ### 3. Contracts
 
 - `agent-registry` returns lightweight `AgentRegistryEntry[]` built from `agents/*/AGENT.md`.
+- `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's `AGENT.md`, notes/session files, visible skill index, and declared `contextPaths`.
 - `skill-registry` returns lightweight `SkillRegistryEntry[]` built from `skills/*/SKILL.md` and `agents/*/skills/*/SKILL.md`.
 - `skill-detail` returns zero or one `SkillDetailEntry` for a selected `SKILL.md` path.
 - Registry entries include path and metadata fields only. Do not expose full skill instructions, actions, schemas, examples, scripts, or references through the registry query.
+- Agent context skill indexes must remain lightweight `SkillRegistryEntry[]`; do not load `SKILL.md` bodies through `agent-context`.
 - Skill detail entries include the selected `SKILL.md` `WorkspaceFile` content and a `SkillResourceEntry[]` resource index. Resource entries must not include file contents.
 - Shared registry shapes live in `@tsian/contracts`; platform-web must not redefine them locally.
 - Registry parsing is owned by `src/agent-runtime/registry.ts` and must stay pure: pass workspace files in, return entries out. It must not import Dexie tables or bridge objects.
 - Skill detail loading belongs beside registry parsing in `src/agent-runtime/registry.ts` and follows the same purity rule.
+- Agent context assembly belongs in `src/agent-runtime/` beside registry parsing and follows the same purity rule.
 
 ### 4. Validation & Error Matrix
 
 - No active save -> return `{ items: [] }`.
+- `agent-context` missing, blank, non-string, or unknown `params.agentId` -> return `{ items: [] }`.
+- `agent-context` missing declared `contextPaths` -> return the context entry with `missingContextPaths` populated.
 - `skill-detail` missing, blank, invalid, non-skill, or absent `params.path` -> return `{ items: [] }`.
 - Missing or partial frontmatter -> infer safe fallbacks from path, first H1, and first body paragraph.
 - Malformed frontmatter -> do not throw from the whole registry query; degrade to path/body fallbacks.
@@ -55,6 +61,7 @@
 ### 5. Good/Base/Bad Cases
 
 - Good: `skill-registry` with `{ agentId: "narrative" }` returns shared skills plus `agents/narrative/skills/*/SKILL.md`.
+- Good: `agent-context` with `{ agentId: "narrative" }` returns narrative `AGENT.md`, narrative notes/session if present, shared skills, and narrative-local skills only.
 - Good: `skill-detail` with `{ path: "skills/example/SKILL.md" }` returns the selected `SKILL.md` content and resource metadata for files under `skills/example/`.
 - Base: `skill-registry` without params returns shared skills and all agent-local skills.
 - Base: `skill-detail` for a valid skill with no sibling resources returns one detail entry with `resources: []`.
@@ -71,6 +78,8 @@
 - Assert `skill-detail` loads shared and agent-local skill paths.
 - Assert `skill-detail` rejects non-skill and missing paths.
 - Assert `SkillResourceEntry` has no `content` field.
+- Assert `agent-context` returns declared existing context files and missing context paths without throwing.
+- Assert `agent-context` skill index does not include other agents' local skills.
 
 ### 7. Wrong vs Correct
 

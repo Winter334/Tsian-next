@@ -1,4 +1,5 @@
 import type {
+  AgentContextEntry,
   AgentRegistryEntry,
   ConversationMessageRecord,
   DeepQueryRequest,
@@ -10,6 +11,7 @@ import type {
   SkillRegistryEntry,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
+import { assembleAgentContext } from "../agent-runtime/context"
 import { buildAgentRegistry, buildSkillRegistry, loadSkillDetail } from "../agent-runtime/registry"
 import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
@@ -357,6 +359,26 @@ export const playFrontendBridge: PlayFrontendBridge = {
         const files = await listWorkspaceFilesForSave(activeSaveId)
         return {
           items: buildAgentRegistry(files) as AgentRegistryEntry[] as T[],
+        } as DeepQueryResult<T>
+      }
+
+      if (request.resource === "agent-context") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        const agentId =
+          typeof request.params?.agentId === "string" && request.params.agentId.trim()
+            ? request.params.agentId.trim()
+            : undefined
+        if (!agentId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        const files = await listWorkspaceFilesForSave(activeSaveId)
+        const context = assembleAgentContext(files, { agentId })
+        return {
+          items: (context ? [context] : []) as AgentContextEntry[] as T[],
         } as DeepQueryResult<T>
       }
 

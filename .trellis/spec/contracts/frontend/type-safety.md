@@ -11,6 +11,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.
 - `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views.
 - `AgentRegistryEntry` describes lightweight `agents/<agent>/AGENT.md` index entries.
+- `AgentContextEntry` describes one assembled Agent context bundle for `agent-context`.
 - `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries.
 - `SkillDetailEntry` describes a loaded `SKILL.md` plus resource index for `skill-detail`.
 - `SkillResourceEntry` describes a bundled skill resource file without its content.
@@ -22,6 +23,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - Play frontends use `bridge.platform.runAction(...)` for allowed platform actions such as `restore-checkpoint`.
 - `bridge.debug?.onTurnDebugReady(cb)` is a signal to refresh data, not the source of truth.
 - Use `AgentRegistryEntry` for `bridge.query.query({ resource: "agent-registry" })` results.
+- Use `AgentContextEntry` for `bridge.query.query({ resource: "agent-context", params: { agentId } })` results.
 - Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results.
 - Use `SkillDetailEntry` for `bridge.query.query({ resource: "skill-detail", params: { path } })` results.
 

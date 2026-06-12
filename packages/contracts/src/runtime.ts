@@ -75,6 +75,16 @@ export interface AgentRegistryEntry {
   updatedAt: number
 }
 
+export interface AgentContextEntry {
+  agent: AgentRegistryEntry
+  agentFile: WorkspaceFile
+  notesFile?: WorkspaceFile
+  sessionFile?: WorkspaceFile
+  skillIndex: SkillRegistryEntry[]
+  contextFiles: WorkspaceFile[]
+  missingContextPaths: string[]
+}
+
 export type SkillRegistryScope = "shared" | "agent-local"
 
 export interface SkillRegistryEntry {

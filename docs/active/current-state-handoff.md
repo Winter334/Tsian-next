@@ -22,8 +22,13 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - 官方默认前端位于 `builtin/play-frontends/official-default`，负责内容为空的会话聊天、AI debug、checkpoint、snapshot 和 stateRecords 展示。
 - 本地 Dexie schema 已重置为 `meta / saves / saveSnapshots / saveHistory / checkpoints / stateRecords`。
 - 平台可在没有内置内容包的情况下启动，并可创建内容为空的 AIRP 会话。
+- Runtime Workspace storage/API 已实现，工作区文件随 save 和 checkpoint 生命周期保存、恢复和删除。
+- 新存档默认包含 `AGENT.md`、agent notes/session、共享目录 README、world/memory/frontend/archive 入口文件和 `.tsian` 平台目录。
+- `agent-registry` / `skill-registry` bridge query 已实现，可从 workspace 扫描轻量 Agent/Skill 索引。
+- `skill-detail` bridge query 已实现，可按选中的 `SKILL.md` path 加载 Skill 正文和资源索引，并保持资源内容按需读取。
+- `agent-context` bridge query 已实现，可为指定 Agent 组装 `AGENT.md`、notes/session、可见 Skill Index 和声明的 context files。
 
-当前代码尚未实现 Runtime Workspace、`AGENT.md`、`SKILL.md`、Skill 按需加载、agent-call 协作或 action executor registry。这些是下一阶段 Agent Framework 方向，不是当前已落地行为。
+当前代码尚未实现 agent-call 协作、action executor registry、脚本/远程执行适配，固定 `master-agent -> narrative-agent` 回合链路也尚未迁移为 workspace-defined Agent。
 
 ## 3. 当前有效边界
 
@@ -54,12 +59,12 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 
 优先从这些方向继续：
 
-1. 设计 Runtime Workspace 文件 API 和存储形态。
-2. 引入 `AGENT.md` / `SKILL.md` 的解析、索引和按需加载。
-3. 将当前固定 `master-agent` -> `narrative-agent` 流迁移为 workspace 定义的 Agent。
-4. 设计统一 action 调用与执行器适配，包括浏览器脚本和远程执行。
-5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
-6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
+1. 将当前固定 `master-agent` -> `narrative-agent` 流迁移为 workspace 定义的 Agent，并消费 `agent-context`。
+2. 实现通用 `agent.call` Skill / action，让 Agent 协作从联系人声明自然形成。
+3. 设计统一 action 调用与执行器适配，包括浏览器脚本和远程执行。
+4. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
+5. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
+6. 为 Runtime Workspace、Agent、Skill 提供浏览和编辑 UI。
 7. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。
 
 ## 6. 历史来源
