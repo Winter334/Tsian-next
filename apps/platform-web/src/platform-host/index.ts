@@ -1,12 +1,15 @@
 import type {
+  AgentRegistryEntry,
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
   PlatformActionError,
   PlayFrontendBridge,
   RuntimeSnapshotShell,
+  SkillRegistryEntry,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
+import { buildAgentRegistry, buildSkillRegistry } from "../agent-runtime/registry"
 import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
@@ -24,6 +27,7 @@ import {
   listLocalStateRecordsForSave,
   listStateRecordsForSave,
   listWorkspaceEntriesForSave,
+  listWorkspaceFilesForSave,
   readWorkspaceFileForSave,
   restoreCheckpointForSave,
   saveRuntimeForSave,
@@ -340,6 +344,45 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 ? request.params.limit
                 : undefined,
           })) as T[],
+        } as DeepQueryResult<T>
+      }
+
+      if (request.resource === "agent-registry") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        const files = await listWorkspaceFilesForSave(activeSaveId)
+        return {
+          items: buildAgentRegistry(files) as AgentRegistryEntry[] as T[],
+        } as DeepQueryResult<T>
+      }
+
+      if (request.resource === "skill-registry") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        const agentId =
+          typeof request.params?.agentId === "string" && request.params.agentId.trim()
+            ? request.params.agentId.trim()
+            : undefined
+        const includeShared =
+          typeof request.params?.includeShared === "boolean"
+            ? request.params.includeShared
+            : undefined
+        const includeLocal =
+          typeof request.params?.includeLocal === "boolean"
+            ? request.params.includeLocal
+            : undefined
+
+        const files = await listWorkspaceFilesForSave(activeSaveId)
+        return {
+          items: buildSkillRegistry(files, {
+            agentId,
+            includeShared,
+            includeLocal,
+          }) as SkillRegistryEntry[] as T[],
         } as DeepQueryResult<T>
       }
 

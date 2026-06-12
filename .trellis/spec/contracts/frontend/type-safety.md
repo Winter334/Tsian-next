@@ -10,6 +10,8 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `DeepQueryRequest` / `DeepQueryResult<T>` wrap bridge query resources.
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.
 - `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views.
+- `AgentRegistryEntry` describes lightweight `agents/<agent>/AGENT.md` index entries.
+- `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries.
 
 ## Bridge Consumption
 
@@ -17,6 +19,8 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - Play frontends read data through `bridge.runtime.getRuntimeSnapshot()` and `bridge.query.query(...)`.
 - Play frontends use `bridge.platform.runAction(...)` for allowed platform actions such as `restore-checkpoint`.
 - `bridge.debug?.onTurnDebugReady(cb)` is a signal to refresh data, not the source of truth.
+- Use `AgentRegistryEntry` for `bridge.query.query({ resource: "agent-registry" })` results.
+- Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results.
 
 ## Avoid
 

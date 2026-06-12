@@ -63,6 +63,72 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     ].join("\n"),
   },
   {
+    path: "agents/master/AGENT.md",
+    content: [
+      "---",
+      "id: master",
+      "title: Master Agent",
+      "summary: Coordinates each AIRP turn, manages shared context, and delegates narrative work when useful.",
+      "contacts:",
+      "  - narrative",
+      "defaultSkills:",
+      "contextPaths:",
+      "  - README.md",
+      "  - history/timeline.md",
+      "  - world/README.md",
+      "  - memory/summaries/current.md",
+      "---",
+      "",
+      "# Master Agent",
+      "",
+      "You are the entry agent for an AIRP turn.",
+      "Read the relevant workspace context, decide what needs to happen next, and contact specialist agents when their responsibilities match the current situation.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "agents/master/notes.md",
+    content: "# Master Notes\n\n",
+  },
+  {
+    path: "agents/master/session.jsonl",
+    content: "",
+    mediaType: "application/x-ndjson",
+  },
+  {
+    path: "agents/narrative/AGENT.md",
+    content: [
+      "---",
+      "id: narrative",
+      "title: Narrative Agent",
+      "summary: Turns plans, world facts, and character state into player-facing prose.",
+      "contacts:",
+      "  - master",
+      "defaultSkills:",
+      "contextPaths:",
+      "  - history/timeline.md",
+      "  - world/README.md",
+      "  - world/canon.md",
+      "  - memory/summaries/current.md",
+      "---",
+      "",
+      "# Narrative Agent",
+      "",
+      "You write the player-facing narrative for a turn.",
+      "Use established world facts and recent history, preserve continuity, and ask the master agent when the requested direction needs coordination.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "agents/narrative/notes.md",
+    content: "# Narrative Notes\n\n",
+  },
+  {
+    path: "agents/narrative/session.jsonl",
+    content: "",
+    mediaType: "application/x-ndjson",
+  },
+  {
     path: "skills/README.md",
     content: [
       "# Shared Skills",
@@ -347,6 +413,12 @@ export async function listLocalWorkspaceFilesForSave(
 ): Promise<LocalWorkspaceFileRecord[]> {
   const records = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
   return records.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+export async function listWorkspaceFilesForSave(
+  saveId: string,
+): Promise<WorkspaceFile[]> {
+  return (await listLocalWorkspaceFilesForSave(saveId)).map(toWorkspaceFile)
 }
 
 export async function listCheckpointWorkspaceFilesForSave(

@@ -64,6 +64,31 @@ export interface WorkspaceFile {
   updatedAt: number
 }
 
+export interface AgentRegistryEntry {
+  id: string
+  title: string
+  summary: string
+  path: string
+  contacts: string[]
+  defaultSkills: string[]
+  contextPaths: string[]
+  updatedAt: number
+}
+
+export type SkillRegistryScope = "shared" | "agent-local"
+
+export interface SkillRegistryEntry {
+  id: string
+  title: string
+  summary: string
+  path: string
+  scope: SkillRegistryScope
+  agentId?: string
+  triggers: string[]
+  appliesTo: string[]
+  updatedAt: number
+}
+
 export interface WorkspaceListResult {
   path: string
   entries: WorkspaceEntry[]
