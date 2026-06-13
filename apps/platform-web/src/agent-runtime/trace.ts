@@ -9,11 +9,12 @@ export type RuntimeTraceEventType =
   | "agent_step_failed"
   | "model_call_completed"
   | "skill_loaded"
+  | "agent_called"
   | "workspace_tool_called"
   | "action_called"
   | "workspace_mutation"
 
-export type RuntimeTraceDebugLabel = "master-agent" | "narrative-agent"
+export type RuntimeTraceDebugLabel = "master-agent" | "narrative-agent" | `agent:${string}`
 
 export interface RuntimeTraceEvent {
   type: RuntimeTraceEventType

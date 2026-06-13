@@ -59,7 +59,7 @@ agents/
 - 一个入口 Agent，通常是 `agents/master/AGENT.md`。
 - 从工作区文件扫描出的 Agent registry。
 - `AGENT.md` 中声明的联系人。
-- 一个通用 `agent_call` Skill / action。
+- 一个通用 `agent_call` runtime tool。
 
 团队由 Agent 联系关系自然形成。每个 Agent 只需要知道与自己业务有承接关系的其它 Agent。
 
@@ -151,9 +151,28 @@ Agent 发起 action_call
   -> 记录 trace
 ```
 
-当前 MVP 中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，以及通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力，用于 Skill 封装 AIRP 业务状态维护；真实脚本、远程调用和 `agent_call` 仍是后续任务。
+当前 MVP 中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，以及通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力，用于 Skill 封装 AIRP 业务状态维护；真实脚本和远程调用仍是后续任务。
 
 这允许 Tsian 复用网络上的 Skill 思路，也允许把 CLI Skill 中的脚本通过浏览器脚本或远程执行适配进来。
+
+### 工具边界标准
+
+Tsian 不应因为 Web 端没有 Bash，就把所有可能能力都做成平台内置工具。CLI Agent 可以用 Bash 覆盖大量临时能力，但 Bash 本身不提供 AIRP 语义、上下文组装、checkpoint、trace 或玩法边界。Tsian 需要的是少量稳定 runtime primitive，加上可替换 Skill 和平台受控执行器。
+
+工具体系分四层：
+
+1. Platform runtime primitives：平台基础能力，数量少、稳定、跨玩法通用。只有需要 runtime 内部状态、模型调用、上下文组装、trace、checkpoint、workspace 索引或 Agent registry 才能正确执行，或者 Skill 无法自行实现的能力，才进入这一层。例子：`skill_load`、`agent_call`、`workspace_read`、`workspace_list`、`workspace_search`、基础 `action_call`。
+2. Platform controlled actions / executors：平台受控执行层，不一定常驻暴露给 Agent。涉及副作用、浏览器限制、远程调用、脚本执行、workspace 写入、前端约定数据变更、abort / timeout / 结果归一化的能力放在这里。例子：`workspace-write`、`workspace-delete`、未来 browser script、remote HTTP、WASM、托管执行。
+3. Skill actions：可替换、可扩展、可分发的业务能力。凡是依赖具体玩法、世界设定、数据结构、规则系统、记忆策略、叙事风格或作者偏好的能力，应该用 Skill 包装平台 primitives / controlled actions。例子：世界状态维护、关系更新、记忆压缩、规则裁判、战斗结算、剧情审校、风格改写。
+4. Workspace data / README / schemas：玩法数据结构和前端约定放在 workspace 文件里，让 Agent、Skill 和前端解耦。
+
+判断一个能力是否应做成 runtime tool：
+
+- 如果没有它，Agent 无法可靠发现、加载或联系其它能力，它倾向 runtime primitive。
+- 如果它跨所有玩法都成立，且需要平台内部信息才能安全执行，它倾向 runtime primitive。
+- 如果它只是把多个基础动作包装成更高层业务流程，它倾向 Skill action。
+- 如果它会改变世界状态但语义由玩法决定，它倾向 Skill action 调用平台 controlled action，而不是平台直接理解玩法。
+- 如果它是可替换策略，例如“怎么总结记忆”“怎么判定关系变化”，它倾向 Skill。
 
 ## 8. Runtime Workspace
 
@@ -305,19 +324,20 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
 - 默认流程仍是固定 `master-agent` -> `narrative-agent`。
 - 存储包含 snapshot、history、checkpoint、stateRecords，以及 save-scoped Runtime Workspace files。
-- 新存档默认写入 Runtime Workspace 目录入口、`agents/master/AGENT.md`、`agents/narrative/AGENT.md`、agent notes/session、world/memory/frontend/archive 和 `.tsian` 入口文件。
+- 新存档默认写入 Runtime Workspace 目录入口、`agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、agent notes/session、world/memory/frontend/archive 和 `.tsian` 入口文件。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
 - 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
 - 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；当前支持 `builtin/validation`、`builtin/echo` 和 allow-listed `platform_action`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`，不会执行脚本或远程调用。
-- Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、workspace 工具、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 list/search 默认隐藏 `.tsian/traces/`。
+- 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；MVP 禁止嵌套 `agent_call`，并按 root turn 限制调用次数。
+- Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 list/search 默认隐藏 `.tsian/traces/`。
 
 后续实现应逐步：
 
-1. 为 action executor registry 接入浏览器脚本、远程执行、`agent_call` 和更丰富的受控平台动作。
-2. 实现通用 `agent_call` Skill / action。
-3. 扩展 trace 覆盖 `agent_call`、脚本/远程 executor、保留策略和调试 UI。
+1. 为 action executor registry 接入浏览器脚本、远程执行和更丰富的受控平台动作。
+2. 扩展 `agent_call` 到更成熟的协作策略，例如可配置预算、有限递归、协作 Skill 或调试 UI。
+3. 扩展 trace 覆盖脚本/远程 executor、保留策略和调试 UI。
 4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
 6. 为 workspace、Agent 和 Skill 提供浏览与编辑 UI。

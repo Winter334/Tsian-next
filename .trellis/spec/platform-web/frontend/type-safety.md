@@ -125,6 +125,87 @@ return {
 - `RuntimeGlobalsMap` and state record `data` must remain JSON-compatible.
 - Do not loosen contract fields to `unknown` to hide caller bugs.
 
+## Scenario: Runtime Tool Boundary Classification
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web adds or changes Agent Runtime tools, action executors, platform actions, or Skill action conventions.
+- Applies when changing `apps/platform-web/src/agent-runtime/index.ts`, `apps/platform-web/src/agent-runtime/workspace-tools.ts`, `apps/platform-web/src/platform-host/index.ts`, `apps/platform-web/src/storage/workspace.ts`, default workspace files, or Skill action declarations.
+
+### 2. Signatures
+
+- Runtime tool call shape remains:
+
+```typescript
+interface RuntimeWorkspaceToolCall {
+  name: string
+  arguments: Record<string, unknown>
+}
+```
+
+- Skill actions still route through `action_call`:
+
+```json
+{
+  "name": "example_action",
+  "inputSchema": { "type": "object" },
+  "executor": { "type": "platform_action", "name": "workspace-write" }
+}
+```
+
+### 3. Contracts
+
+- Add a platform runtime primitive only when the ability is small, stable, cross-playstyle, and requires runtime internals such as Agent registry, Skill registry, context assembly, model invocation, trace, checkpoint behavior, workspace indexes, or tool/session state.
+- Keep primitives few. Current examples are `skill_load`, workspace read/list/search, `action_call`, and contacts-gated `agent_call`.
+- Add a platform controlled action / executor when the ability performs side effects or needs platform execution control such as workspace writes/deletes, browser-limited script execution, remote HTTP, WASM, abort/timeout, result normalization, or frontend-data mutation.
+- Add a Skill action when the ability is gameplay, world, memory, rules, narrative, style, or author-policy specific, or when it packages several primitive/controlled actions into a reusable business operation.
+- Keep gameplay data structures in Runtime Workspace files, README files, and schemas. Platform code should not hardcode world-state semantics when a Skill plus workspace schema can own them.
+- Do not add platform tools merely because Web lacks Bash. Bash-like breadth should be approximated through controlled executors plus reusable Skill actions, not an unbounded built-in tool list.
+
+### 4. Validation & Error Matrix
+
+- New runtime primitive without runtime-internal dependency -> reject in review; implement as Skill action.
+- New platform action that mutates workspace/state without allow-listing and input validation -> reject in review.
+- New Skill action that bypasses loaded Skill gating -> reject in review.
+- New platform code that hardcodes gameplay-specific state semantics -> reject in review unless a task explicitly promotes that semantic to platform scope.
+- New tool/action that can produce large raw prompt/context output -> require summary behavior, pagination, or explicit read-by-path semantics.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `agent_call` as a contacts-gated runtime primitive, because it needs Agent registry, target context assembly, model invocation, call-depth limits, and trace.
+- Good: `workspace-write` as a platform controlled action, called through a loaded Skill action after schema validation.
+- Good: `relationship-maintainer` as a Skill that reads workspace schemas and calls controlled workspace writes.
+- Base: a Skill action using built-in `validation` to declare a high-level business operation before a real executor exists.
+- Bad: adding `update_relationship_score` as a platform runtime tool; relationship semantics belong to Skill + workspace schema.
+- Bad: exposing a broad browser/remote/script executor directly as an always-visible runtime tool without Skill gating or execution controls.
+
+### 6. Tests Required
+
+- Assert new runtime primitives validate arguments and return structured observations on invalid input.
+- Assert new platform actions are allow-listed before Agent Runtime can invoke them.
+- Assert Skill actions remain unavailable until their declaring Skill is loaded.
+- Assert gameplay-specific mutations flow through Skill action declarations and controlled platform actions, not direct platform semantic helpers.
+- Assert trace records the primitive/action boundary without storing large raw payloads by default.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
+```
+
+#### Correct
+
+```json
+{
+  "name": "update_relationship_score",
+  "description": "Update relationship state according to this world's schema.",
+  "inputSchema": { "type": "object" },
+  "executor": { "type": "platform_action", "name": "workspace-write" }
+}
+```
+
 ## Scenario: Workspace-Defined Agent Runtime
 
 ### 1. Scope / Trigger
@@ -221,6 +302,7 @@ interface RuntimeWorkspaceToolCall {
 - Supported tool names:
   - `skill_load`
   - `action_call`
+  - `agent_call`
   - `workspace_read`
   - `workspace_list`
   - `workspace_search`
@@ -240,6 +322,15 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` requires that the named Skill has already been loaded by the same Agent during the same tool loop.
 - `action_call` validates action availability and input before invoking any executor.
 - `action_call` routes to the action declaration's executor through the runtime action executor registry.
+- `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene" }`.
+- `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts and the current tool loop allows Agent calls.
+- `agent_call` validates the target against the caller Agent's `contacts`; contacts are a runtime stability boundary, not a full security model.
+- `agent_call` builds the target Agent's own `AgentContextEntry`, including its `AGENT.md`, notes/session, declared context files, and lightweight Skill Index.
+- `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, response }`; the target Agent response does not directly become player-visible history.
+- `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
+- Delegated Agents may use `workspace_read`, `workspace_list`, `workspace_search`, `skill_load`, and non-`agent_call` `action_call` inside their own tool loop.
+- Delegated Agents must not receive a nested `agent_call` runner for the MVP; direct nested attempts return `AGENT_CALL_UNAVAILABLE` as a normal observation.
+- The root turn shares one `agent_call` budget across master and narrative steps.
 - Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
 - Built-in executors are side-effect-free:
   - `validation`: returns `status: "validated"` and `output: null`.
@@ -318,6 +409,15 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` before the Skill is loaded -> error observation with `SKILL_ACTION_NOT_LOADED`.
 - `action_call` for an undeclared action on a loaded Skill -> error observation with `ACTION_NOT_FOUND`.
 - `action_call` with schema-invalid input -> error observation with `ACTION_INPUT_INVALID`.
+- Missing or blank `agent_call.arguments.agentId` -> error observation with `AGENT_CALL_TARGET_REQUIRED`.
+- Missing or blank `agent_call.arguments.request` -> error observation with `AGENT_CALL_REQUEST_REQUIRED`.
+- Invalid `agent_call.arguments.historyMode` -> error observation with `AGENT_CALL_HISTORY_MODE_INVALID`.
+- `agent_call` without an active Agent context -> error observation with `AGENT_CALL_CONTEXT_REQUIRED`.
+- `agent_call` in a tool loop where Agent calls are disabled, including delegated nested attempts -> error observation with `AGENT_CALL_UNAVAILABLE`.
+- `agent_call` target not found in the Agent registry -> error observation with `AGENT_CALL_TARGET_NOT_FOUND`.
+- `agent_call` target exists but is not in caller contacts -> error observation with `AGENT_CALL_TARGET_NOT_CONTACT`.
+- Per-turn `agent_call` budget exhausted -> error observation with `AGENT_CALL_LIMIT_EXCEEDED`.
+- Delegated Agent execution failure -> error observation with `AGENT_CALL_FAILED`.
 - Malformed action executor declarations -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
 - Platform action executor declarations without a non-empty `name` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
 - Unsupported executor types -> error observation with `ACTION_EXECUTOR_UNSUPPORTED`.
@@ -339,12 +439,16 @@ interface RuntimeWorkspaceToolCall {
 - Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
 - Good: action with `{ "type": "platform_action", "name": "workspace-write" }` calls the injected platform action capability after gating and validation, then returns the platform result item as `output`.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
+- Good: master sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its own brief.
+- Good: a delegated memory Agent loads a Skill and calls a non-`agent_call` action in its own tool loop.
 - Good: Agent uses `workspace_list` for a directory and receives entries without file contents.
 - Good: Agent uses `workspace_search` and receives previews, then explicitly reads a chosen file if full content is needed.
 - Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
 - Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
 - Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
 - Bad: allowing `action_call` before `skill_load`; this bypasses Skill gating.
+- Bad: exposing the full Agent registry instead of only the current Agent's contacts.
+- Bad: allowing delegated Agents to recursively call `agent_call` during the MVP.
 - Bad: making built-in executors execute write/delete/script/remote behavior.
 - Bad: letting Agent Runtime call broad platform actions such as checkpoint restore through `platform_action`.
 - Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
@@ -368,6 +472,14 @@ interface RuntimeWorkspaceToolCall {
 - Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
 - Assert unknown actions return `ACTION_NOT_FOUND`.
 - Assert schema-invalid action input returns `ACTION_INPUT_INVALID`.
+- Assert current Agents with contacts see `agent_call` instructions listing only visible contacts.
+- Assert current Agents without contacts do not get encouraged to use `agent_call`, and direct calls return structured errors.
+- Assert valid `agent_call` invokes the target contact Agent with its own context and returns the response as observation.
+- Assert non-contact and missing target `agent_call` attempts return structured errors without model calls.
+- Assert nested `agent_call` attempts from delegated Agents return `AGENT_CALL_UNAVAILABLE`.
+- Assert invalid `historyMode` is rejected and omitted `historyMode` defaults to `recent`.
+- Assert delegated Agents can still use workspace tools, `skill_load`, and non-`agent_call` `action_call`.
+- Assert per-turn `agent_call` budget is shared across master and narrative steps.
 - Assert successful built-in action calls do not mutate workspace/state and do not execute scripts.
 - Assert successful `platform_action` calls mutate workspace/state only through allow-listed platform actions.
 - Assert missing Skill names become structured observations, not uncaught runtime crashes.
@@ -430,6 +542,7 @@ return `- ${skill.name}: ${skill.description}`
 - Trace must record summaries, not large raw payloads:
   - model calls: message count, output length, tool-call count;
   - Skill loads: skill name/path/scope, action count, declaration error count;
+  - Agent calls: caller/target ids, target title, history mode, input/output summaries, status or error;
   - workspace tools: path/query/limit, result count, file metadata for reads, no file content;
   - action calls: skill/action/executor, input/output summaries, status or error;
   - workspace mutations: write path/mediaType/size or delete `deletedPaths`.
@@ -449,6 +562,7 @@ return `- ${skill.name}: ${skill.description}`
 ### 5. Good/Base/Bad Cases
 
 - Good: trace records `workspace_read` path and content size without copying file content.
+- Good: trace records `agent_called` for both successful delegation and structured delegation errors without storing full delegated prompts.
 - Good: trace records `action_called` for `platform_action` plus a `workspace_mutation` event for `workspace-write`.
 - Good: restoring an earlier checkpoint removes later trace files for the discarded branch.
 - Base: a no-tool turn still records turn, agent step, and model call summary events.
@@ -461,6 +575,7 @@ return `- ${skill.name}: ${skill.description}`
 - Assert successful turns write valid JSONL trace before checkpoint creation.
 - Assert failed turns include a `turn_failed` event when trace persistence is available.
 - Assert model call summary events omit full prompt/messages.
+- Assert `agent_called` events include caller/target summary data and omit full prompt/messages.
 - Assert workspace read trace omits file content.
 - Assert `workspace-write` / `workspace-delete` platform actions produce `workspace_mutation`.
 - Assert bridge and runtime workspace list/search exclude `.tsian/traces/` by default.

@@ -21,6 +21,7 @@ export interface RuntimeWorkspaceToolCall {
 export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   skillLoad: "skill_load",
   actionCall: "action_call",
+  agentCall: "agent_call",
   workspaceRead: "workspace_read",
   workspaceList: "workspace_list",
   workspaceSearch: "workspace_search",
@@ -66,6 +67,21 @@ interface RuntimeActionExecutorResult {
   output: unknown
 }
 
+export type RuntimeAgentCallHistoryMode = "minimal" | "recent" | "scene"
+
+export interface RuntimeAgentCallArguments {
+  agentId: string
+  request: string
+  reason?: string
+  contextSummary?: string
+  expectedOutput?: string
+  historyMode: RuntimeAgentCallHistoryMode
+}
+
+type RuntimeAgentCallRunner = (
+  input: RuntimeAgentCallArguments,
+) => Promise<unknown>
+
 type RuntimePlatformActionRunner = (
   request: PlatformActionRequest,
 ) => Promise<PlatformActionResult>
@@ -98,6 +114,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   workspaceFiles: WorkspaceFile[]
   agentContext?: AgentContextEntry
   sessionState?: RuntimeWorkspaceToolSessionState
+  runAgentCall?: RuntimeAgentCallRunner
   runPlatformAction?: RuntimePlatformActionRunner
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
@@ -109,6 +126,12 @@ const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
 const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
 const PLATFORM_TRACE_PATH_PREFIX = ".tsian/traces/"
+const DEFAULT_AGENT_CALL_HISTORY_MODE: RuntimeAgentCallHistoryMode = "recent"
+const AGENT_CALL_HISTORY_MODES = new Set<RuntimeAgentCallHistoryMode>([
+  "minimal",
+  "recent",
+  "scene",
+])
 const DEFAULT_ACTION_EXECUTOR: RuntimeActionExecutorReference = {
   type: "builtin",
   name: "validation",
@@ -340,11 +363,54 @@ function emitActionCallTrace(
   })
 }
 
+function emitAgentCallTrace(
+  context: RuntimeWorkspaceToolExecutionContext,
+  call: RuntimeWorkspaceToolCall,
+  observation: RuntimeWorkspaceToolObservation,
+): void {
+  if (call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.agentCall) {
+    return
+  }
+
+  const result = isRecord(observation.result) ? observation.result : {}
+  const targetAgent = isRecord(result.targetAgent) ? result.targetAgent : {}
+  const data: Record<string, unknown> = {
+    targetAgentId: typeof targetAgent.id === "string"
+      ? targetAgent.id
+      : typeof call.arguments.agentId === "string"
+        ? call.arguments.agentId
+        : undefined,
+    targetAgentTitle: typeof targetAgent.title === "string" ? targetAgent.title : undefined,
+    historyMode: typeof result.historyMode === "string"
+      ? result.historyMode
+      : typeof call.arguments.historyMode === "string"
+        ? call.arguments.historyMode
+        : DEFAULT_AGENT_CALL_HISTORY_MODE,
+    inputSummary: summarizeTraceValue(call.arguments),
+  }
+
+  if (observation.ok) {
+    data.outputSummary = summarizeTraceValue(
+      typeof result.response === "string" ? result.response : observation.result,
+    )
+  } else if (observation.error) {
+    data.error = observation.error
+  }
+
+  context.emitTrace?.({
+    type: "agent_called",
+    ...traceBase(context),
+    ok: observation.ok,
+    data,
+  })
+}
+
 function emitToolObservationTrace(
   context: RuntimeWorkspaceToolExecutionContext,
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
 ): void {
+  emitAgentCallTrace(context, call, observation)
   emitWorkspaceToolTrace(context, call, observation)
   emitActionCallTrace(context, call, observation)
 }
@@ -624,6 +690,53 @@ function normalizeActionExecutorReference(
   const name = explicitName || (type === "builtin" ? DEFAULT_ACTION_EXECUTOR.name : "")
 
   return { type, name }
+}
+
+function normalizeOptionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function normalizeAgentCallHistoryMode(value: unknown): RuntimeAgentCallHistoryMode {
+  if (value === undefined) {
+    return DEFAULT_AGENT_CALL_HISTORY_MODE
+  }
+
+  if (typeof value !== "string" || !AGENT_CALL_HISTORY_MODES.has(value as RuntimeAgentCallHistoryMode)) {
+    throw toolError(
+      "AGENT_CALL_HISTORY_MODE_INVALID",
+      "agent_call historyMode must be one of: minimal, recent, scene.",
+      { historyMode: value },
+    )
+  }
+
+  return value as RuntimeAgentCallHistoryMode
+}
+
+function normalizeAgentCallArguments(
+  input: Record<string, unknown>,
+): RuntimeAgentCallArguments {
+  const agentId = normalizeRequiredString(
+    input.agentId,
+    "AGENT_CALL_TARGET_REQUIRED",
+    "agent_call requires a non-empty string agentId.",
+  )
+  const request = normalizeRequiredString(
+    input.request,
+    "AGENT_CALL_REQUEST_REQUIRED",
+    "agent_call requires a non-empty string request.",
+  )
+  const reason = normalizeOptionalString(input.reason)
+  const contextSummary = normalizeOptionalString(input.contextSummary)
+  const expectedOutput = normalizeOptionalString(input.expectedOutput)
+
+  return {
+    agentId,
+    request,
+    ...(reason ? { reason } : {}),
+    ...(contextSummary ? { contextSummary } : {}),
+    ...(expectedOutput ? { expectedOutput } : {}),
+    historyMode: normalizeAgentCallHistoryMode(input.historyMode),
+  }
 }
 
 function skillCandidateDetails(skill: SkillRegistryEntry): Record<string, unknown> {
@@ -1166,6 +1279,25 @@ async function executeRuntimeWorkspaceToolCall(
         name: call.name,
         ok: true,
         result: await validateSkillActionCall(context, call.arguments),
+      }
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.agentCall) {
+      if (!context.agentContext) {
+        throw toolError(
+          "AGENT_CALL_CONTEXT_REQUIRED",
+          "agent_call requires an active Agent context.",
+        )
+      }
+      if (!context.runAgentCall) {
+        throw toolError(
+          "AGENT_CALL_UNAVAILABLE",
+          "agent_call is not available in this Agent step.",
+        )
+      }
+      observation = {
+        index,
+        name: call.name,
+        ok: true,
+        result: await context.runAgentCall(normalizeAgentCallArguments(call.arguments)),
       }
     } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead) {
       observation = {
