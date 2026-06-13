@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Lists required platform-web specs and build checks for runtime-shell changes."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Defines Runtime tool boundary classification, action executor contracts, platform actions, and trace expectations."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Executor completion spans agent-runtime, platform-host, contracts, storage, and trace boundaries."}
+{"file":"docs/active/agent-framework-runtime-workspace-direction.md","reason":"Authoritative product direction for Agent Runtime, Skill actions, controlled executors, and Runtime Workspace."}
+{"file":"docs/active/current-state-handoff.md","reason":"Current implementation status and next-step list for runtime foundation work."}
