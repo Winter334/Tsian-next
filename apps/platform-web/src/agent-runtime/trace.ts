@@ -12,6 +12,7 @@ export type RuntimeTraceEventType =
   | "agent_called"
   | "workspace_tool_called"
   | "action_called"
+  | "script_log"
   | "workspace_mutation"
 
 export type RuntimeTraceDebugLabel = "master-agent" | "narrative-agent" | `agent:${string}`

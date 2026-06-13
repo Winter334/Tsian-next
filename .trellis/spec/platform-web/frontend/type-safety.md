@@ -338,7 +338,11 @@ interface RuntimeWorkspaceToolCall {
 - `platform_action` executors route through an injected `runPlatformAction` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, or storage helpers.
 - `platform_action` declarations require `{ type: "platform_action", name: string }`, where `name` maps to `PlatformActionRequest.action` and validated action input becomes `params`.
 - `platform-host` must allow-list Agent Runtime platform actions; current MVP allows `workspace-write` and `workspace-delete`, and does not allow `restore-checkpoint`.
-- The MVP must not execute browser scripts, call remote resources, or mutate workspace/state except through allow-listed `platform_action`.
+- `browser_script` executors route through an injected `runBrowserScript` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, storage helpers, or Worker code.
+- `browser_script` declarations require `{ type: "browser_script", path: string, timeoutMs?: number }`; `path` resolves relative to the declaring Skill directory and must stay under that directory.
+- Controlled async executors have bounded timeout/abort behavior. `timeoutMs` must be positive and must not exceed the platform maximum.
+- The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/write/delete, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output.
+- The first browser script slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs. Worker hard limits still apply, and this is a third-party trust boundary rather than a guarantee that arbitrary third-party code is safe.
 - `action_call` success returns a structured observation with `status`, `executor`, `input`, and `output`.
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`:
   ````md
@@ -374,6 +378,18 @@ interface RuntimeWorkspaceToolCall {
       "executor": {
         "type": "platform_action",
         "name": "workspace-write"
+      }
+    },
+    {
+      "name": "run_skill_script",
+      "description": "Run a trusted Skill-local browser script through the Tsian SDK.",
+      "inputSchema": {
+        "type": "object"
+      },
+      "executor": {
+        "type": "browser_script",
+        "path": "scripts/run.js",
+        "timeoutMs": 10000
       }
     }
   ]
@@ -420,10 +436,17 @@ interface RuntimeWorkspaceToolCall {
 - Delegated Agent execution failure -> error observation with `AGENT_CALL_FAILED`.
 - Malformed action executor declarations -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
 - Platform action executor declarations without a non-empty `name` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
+- Browser script executor declarations without a non-empty `path`, or with invalid `timeoutMs` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
 - Unsupported executor types -> error observation with `ACTION_EXECUTOR_UNSUPPORTED`.
 - Unknown built-in executor names -> error observation with `ACTION_EXECUTOR_NOT_FOUND`.
+- Controlled executor timeout -> error observation with `ACTION_EXECUTOR_TIMEOUT`.
+- Controlled executor abort -> error observation with `ACTION_EXECUTOR_ABORTED`.
 - `platform_action` without an injected capability -> error observation with `PLATFORM_ACTION_UNAVAILABLE`.
 - `platform_action` whose injected handler returns `ok: false` -> error observation with `PLATFORM_ACTION_FAILED` and platform error details.
+- `browser_script` without an injected capability -> error observation with `BROWSER_SCRIPT_UNAVAILABLE`.
+- Missing browser script file -> error observation with `BROWSER_SCRIPT_NOT_FOUND`.
+- Browser script path outside the declaring Skill directory -> error observation with `BROWSER_SCRIPT_PATH_INVALID`.
+- Browser script failure, SDK failure, Worker failure, or Worker message failure -> structured error observation with a `BROWSER_SCRIPT_*` code.
 - Agent Runtime attempts to call a non-allow-listed platform action -> platform handler returns `AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED`, surfaced through `PLATFORM_ACTION_FAILED`.
 - Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `skill_load` metadata without failing the whole Skill load.
 - Invalid path -> error observation with workspace path error code.
@@ -438,6 +461,7 @@ interface RuntimeWorkspaceToolCall {
 - Good: action without an executor declaration uses built-in `validation`.
 - Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
 - Good: action with `{ "type": "platform_action", "name": "workspace-write" }` calls the injected platform action capability after gating and validation, then returns the platform result item as `output`.
+- Good: action with `{ "type": "browser_script", "path": "scripts/run.js", "timeoutMs": 10000 }` runs a Skill-local script through the Tsian SDK after Skill gating and input validation.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
 - Good: master sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its own brief.
 - Good: a delegated memory Agent loads a Skill and calls a non-`agent_call` action in its own tool loop.
@@ -451,6 +475,7 @@ interface RuntimeWorkspaceToolCall {
 - Bad: allowing delegated Agents to recursively call `agent_call` during the MVP.
 - Bad: making built-in executors execute write/delete/script/remote behavior.
 - Bad: letting Agent Runtime call broad platform actions such as checkpoint restore through `platform_action`.
+- Bad: making raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals supported browser script APIs in the first strong-SDK slice.
 - Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
 
 ### 6. Tests Required
@@ -469,6 +494,11 @@ interface RuntimeWorkspaceToolCall {
 - Assert `platform-host` rejects non-allow-listed Agent Runtime platform actions such as `restore-checkpoint`.
 - Assert unsupported executor types return `ACTION_EXECUTOR_UNSUPPORTED`.
 - Assert unknown built-in executor names return `ACTION_EXECUTOR_NOT_FOUND`.
+- Assert invalid `browser_script` declarations report `ACTION_EXECUTOR_INVALID` during `skill_load`.
+- Assert `browser_script` runs a Skill-local script through the injected runner only after Skill loading and input validation.
+- Assert `browser_script` can use SDK workspace read/list/search/write/delete and keeps workspace mutation trace/synchronization.
+- Assert `browser_script` timeout and abort return structured observations.
+- Assert `browser_script` paths outside the declaring Skill directory are rejected.
 - Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
 - Assert unknown actions return `ACTION_NOT_FOUND`.
 - Assert schema-invalid action input returns `ACTION_INPUT_INVALID`.
@@ -613,6 +643,7 @@ interface RawAirpHistoryTurnRecord {
   - Agent calls: caller/target ids, target title, history mode, input/output summaries, status or error;
   - workspace tools: path/query/limit, result count, file metadata for reads, no file content;
   - action calls: skill/action/executor, input/output summaries, status or error;
+  - browser scripts: script path/source size/start events and script log/trace summaries, no script source or large raw data;
   - workspace mutations: write path/mediaType/size or delete `deletedPaths`.
 - `agent-runtime` still must not import Dexie, storage helpers, bridge objects, or `platform-host`; it emits trace through an injected callback.
 - `platform-host` owns trace persistence through workspace storage helpers.
@@ -632,6 +663,7 @@ interface RawAirpHistoryTurnRecord {
 - Good: trace records `workspace_read` path and content size without copying file content.
 - Good: trace records `agent_called` for both successful delegation and structured delegation errors without storing full delegated prompts.
 - Good: trace records `action_called` for `platform_action` plus a `workspace_mutation` event for `workspace-write`.
+- Good: trace records `script_log` summaries for `browser_script` start/log/fetch events and `workspace_mutation` for SDK writes/deletes.
 - Good: restoring an earlier checkpoint removes later trace files for the discarded branch.
 - Base: a no-tool turn still records turn, agent step, and model call summary events.
 - Bad: persisting full prompt/message arrays into `.tsian/traces` by default.
@@ -646,6 +678,7 @@ interface RawAirpHistoryTurnRecord {
 - Assert `agent_called` events include caller/target summary data and omit full prompt/messages.
 - Assert workspace read trace omits file content.
 - Assert `workspace-write` / `workspace-delete` platform actions produce `workspace_mutation`.
+- Assert `browser_script` SDK logs/fetch summaries emit `script_log` without script source or large raw payloads.
 - Assert bridge and runtime workspace list/search exclude `.tsian/traces/` by default.
 
 ## Avoid

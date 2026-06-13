@@ -60,6 +60,8 @@ interface RuntimeSkillActionDeclaration {
 interface RuntimeActionExecutorReference {
   type: string
   name: string
+  path?: string
+  timeoutMs?: number
 }
 
 interface RuntimeActionExecutorResult {
@@ -86,9 +88,26 @@ type RuntimePlatformActionRunner = (
   request: PlatformActionRequest,
 ) => Promise<PlatformActionResult>
 
+export interface RuntimeBrowserScriptExecutorRequest {
+  skillName: string
+  skillPath: string
+  actionName: string
+  scriptPath: string
+  input: Record<string, unknown>
+  timeoutMs: number
+}
+
+type RuntimeBrowserScriptRunner = (
+  request: RuntimeBrowserScriptExecutorRequest,
+) => Promise<PlatformActionResult>
+
 interface RuntimeActionExecutorContext {
   input: Record<string, unknown>
+  loadedSkill: RuntimeLoadedSkill
+  workspaceFiles: WorkspaceFile[]
   runPlatformAction?: RuntimePlatformActionRunner
+  runBrowserScript?: RuntimeBrowserScriptRunner
+  signal?: AbortSignal
 }
 
 interface RuntimeLoadedSkill {
@@ -116,6 +135,8 @@ export interface RuntimeWorkspaceToolExecutionContext {
   sessionState?: RuntimeWorkspaceToolSessionState
   runAgentCall?: RuntimeAgentCallRunner
   runPlatformAction?: RuntimePlatformActionRunner
+  runBrowserScript?: RuntimeBrowserScriptRunner
+  signal?: AbortSignal
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
 }
@@ -137,6 +158,9 @@ const DEFAULT_ACTION_EXECUTOR: RuntimeActionExecutorReference = {
   name: "validation",
 }
 const PLATFORM_ACTION_EXECUTOR_TYPE = "platform_action"
+const BROWSER_SCRIPT_EXECUTOR_TYPE = "browser_script"
+const DEFAULT_CONTROLLED_EXECUTOR_TIMEOUT_MS = 10_000
+const MAX_CONTROLLED_EXECUTOR_TIMEOUT_MS = 60_000
 const SUPPORTED_ACTION_INPUT_TYPES = new Set([
   "array",
   "boolean",
@@ -650,6 +674,44 @@ function normalizeRequiredString(
   return normalized
 }
 
+function normalizeExecutorTimeoutMs(
+  value: unknown,
+  actionName: string,
+  index: number,
+): number | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (
+    typeof value !== "number"
+    || !Number.isFinite(value)
+    || value <= 0
+  ) {
+    throw toolError(
+      "ACTION_EXECUTOR_INVALID",
+      `Action executor timeoutMs must be a positive finite number: ${actionName}`,
+      { index, name: actionName, timeoutMs: value },
+    )
+  }
+
+  const timeoutMs = Math.floor(value)
+  if (timeoutMs > MAX_CONTROLLED_EXECUTOR_TIMEOUT_MS) {
+    throw toolError(
+      "ACTION_EXECUTOR_INVALID",
+      `Action executor timeoutMs exceeds the maximum ${MAX_CONTROLLED_EXECUTOR_TIMEOUT_MS}ms: ${actionName}`,
+      {
+        index,
+        name: actionName,
+        timeoutMs,
+        maxTimeoutMs: MAX_CONTROLLED_EXECUTOR_TIMEOUT_MS,
+      },
+    )
+  }
+
+  return timeoutMs
+}
+
 function normalizeActionExecutorReference(
   value: unknown,
   actionName: string,
@@ -687,9 +749,35 @@ function normalizeActionExecutorReference(
     )
   }
 
+  const timeoutMs = normalizeExecutorTimeoutMs(value.timeoutMs, actionName, index)
+
+  if (type === BROWSER_SCRIPT_EXECUTOR_TYPE) {
+    const path = typeof value.path === "string" && value.path.trim()
+      ? value.path.trim()
+      : explicitName
+    if (!path) {
+      throw toolError(
+        "ACTION_EXECUTOR_INVALID",
+        `Browser script executor requires a non-empty string path: ${actionName}`,
+        { index, name: actionName },
+      )
+    }
+
+    return {
+      type,
+      name: explicitName || path,
+      path,
+      ...(timeoutMs ? { timeoutMs } : {}),
+    }
+  }
+
   const name = explicitName || (type === "builtin" ? DEFAULT_ACTION_EXECUTOR.name : "")
 
-  return { type, name }
+  return {
+    type,
+    name,
+    ...(timeoutMs ? { timeoutMs } : {}),
+  }
 }
 
 function normalizeOptionalString(value: unknown): string | undefined {
@@ -1052,6 +1140,117 @@ function validateActionInputSchema(
   }
 }
 
+function effectiveExecutorTimeoutMs(executor: RuntimeActionExecutorReference): number {
+  return executor.timeoutMs ?? DEFAULT_CONTROLLED_EXECUTOR_TIMEOUT_MS
+}
+
+function actionExecutorAbortError(
+  executor: RuntimeActionExecutorReference,
+): RuntimeWorkspaceToolError {
+  return toolError(
+    "ACTION_EXECUTOR_ABORTED",
+    `Action executor was aborted: ${executor.type}/${executor.name}`,
+    { executor },
+  )
+}
+
+function runWithExecutorTimeout<T>(
+  executor: RuntimeActionExecutorReference,
+  signal: AbortSignal | undefined,
+  run: () => Promise<T>,
+): Promise<T> {
+  if (signal?.aborted) {
+    return Promise.reject(actionExecutorAbortError(executor))
+  }
+
+  const timeoutMs = effectiveExecutorTimeoutMs(executor)
+  return new Promise<T>((resolve, reject) => {
+    let settled = false
+    let timeoutId: ReturnType<typeof setTimeout> | undefined
+
+    const cleanup = () => {
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId)
+      }
+      signal?.removeEventListener("abort", onAbort)
+    }
+
+    const settle = (
+      callback: typeof resolve | typeof reject,
+      value: T | RuntimeWorkspaceToolError,
+    ) => {
+      if (settled) {
+        return
+      }
+      settled = true
+      cleanup()
+      callback(value as never)
+    }
+
+    const onAbort = () => {
+      settle(reject, actionExecutorAbortError(executor))
+    }
+
+    timeoutId = setTimeout(() => {
+      settle(reject, toolError(
+        "ACTION_EXECUTOR_TIMEOUT",
+        `Action executor timed out after ${timeoutMs}ms: ${executor.type}/${executor.name}`,
+        { executor, timeoutMs },
+      ))
+    }, timeoutMs)
+
+    signal?.addEventListener("abort", onAbort, { once: true })
+
+    try {
+      run().then(
+        (result) => settle(resolve, result),
+        (error) => settle(reject, error),
+      )
+    } catch (error) {
+      settle(reject, error as RuntimeWorkspaceToolError)
+    }
+  })
+}
+
+function skillDirectoryPath(skillPath: string): string {
+  const slashIndex = skillPath.lastIndexOf("/")
+  return slashIndex >= 0 ? skillPath.slice(0, slashIndex) : ""
+}
+
+function resolveBrowserScriptPath(
+  skill: SkillRegistryEntry,
+  executor: RuntimeActionExecutorReference,
+): string {
+  const rawPath = executor.path || executor.name
+  const normalizedPath = normalizeWorkspaceFilePath(rawPath)
+  const skillDirectory = skillDirectoryPath(skill.path)
+  if (!skillDirectory) {
+    throw toolError(
+      "BROWSER_SCRIPT_PATH_INVALID",
+      `Browser script executor requires a skill directory: ${skill.name}`,
+      { executor, skillPath: skill.path },
+    )
+  }
+
+  const resolvedPath = normalizedPath.startsWith(`${skillDirectory}/`)
+    ? normalizedPath
+    : `${skillDirectory}/${normalizedPath}`
+
+  if (!resolvedPath.startsWith(`${skillDirectory}/`)) {
+    throw toolError(
+      "BROWSER_SCRIPT_PATH_INVALID",
+      `Browser script path must stay under the declaring Skill directory: ${executor.name}`,
+      {
+        executor,
+        skillPath: skill.path,
+        resolvedPath,
+      },
+    )
+  }
+
+  return resolvedPath
+}
+
 const BUILTIN_ACTION_EXECUTORS: Record<
   string,
   (context: RuntimeActionExecutorContext) => RuntimeActionExecutorResult
@@ -1067,6 +1266,7 @@ const BUILTIN_ACTION_EXECUTORS: Record<
 }
 
 async function executeSkillAction(
+  loadedSkill: RuntimeLoadedSkill,
   action: RuntimeSkillActionDeclaration,
   input: Record<string, unknown>,
   context: RuntimeActionExecutorContext,
@@ -1084,7 +1284,7 @@ async function executeSkillAction(
       )
     }
 
-    return executor({ input })
+    return executor(context)
   }
 
   if (action.executor.type === PLATFORM_ACTION_EXECUTOR_TYPE) {
@@ -1096,10 +1296,20 @@ async function executeSkillAction(
       )
     }
 
-    const result = await context.runPlatformAction({
-      action: action.executor.name,
-      params: input,
-    })
+    const result = await runWithExecutorTimeout(
+      action.executor,
+      context.signal,
+      () => context.runPlatformAction?.({
+        action: action.executor.name,
+        params: input,
+      }) ?? Promise.resolve({
+        ok: false,
+        error: {
+          code: "PLATFORM_ACTION_UNAVAILABLE",
+          message: "Platform action executor is not available in this runtime.",
+        },
+      }),
+    )
     if (!result.ok) {
       throw toolError(
         "PLATFORM_ACTION_FAILED",
@@ -1107,6 +1317,64 @@ async function executeSkillAction(
         {
           action: action.executor.name,
           platformError: result.error ?? null,
+        },
+      )
+    }
+
+    return {
+      status: "executed",
+      output: result.item ?? null,
+    }
+  }
+
+  if (action.executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE) {
+    if (!context.runBrowserScript) {
+      throw toolError(
+        "BROWSER_SCRIPT_UNAVAILABLE",
+        "Browser script executor is not available in this runtime.",
+        { executor: action.executor },
+      )
+    }
+
+    const scriptPath = resolveBrowserScriptPath(loadedSkill.skill, action.executor)
+    if (!context.workspaceFiles.some((file) => file.path === scriptPath)) {
+      throw toolError(
+        "BROWSER_SCRIPT_NOT_FOUND",
+        `Browser script file was not found: ${scriptPath}`,
+        {
+          executor: action.executor,
+          scriptPath,
+          skillPath: loadedSkill.skill.path,
+        },
+      )
+    }
+
+    const result = await runWithExecutorTimeout(
+      action.executor,
+      context.signal,
+      () => context.runBrowserScript?.({
+        skillName: loadedSkill.skill.name,
+        skillPath: loadedSkill.skill.path,
+        actionName: action.name,
+        scriptPath,
+        input,
+        timeoutMs: effectiveExecutorTimeoutMs(action.executor),
+      }) ?? Promise.resolve({
+        ok: false,
+        error: {
+          code: "BROWSER_SCRIPT_UNAVAILABLE",
+          message: "Browser script executor is not available in this runtime.",
+        },
+      }),
+    )
+    if (!result.ok) {
+      throw toolError(
+        result.error?.code ?? "BROWSER_SCRIPT_FAILED",
+        result.error?.message ?? `Browser script failed: ${scriptPath}`,
+        {
+          executor: action.executor,
+          scriptPath,
+          scriptError: result.error ?? null,
         },
       )
     }
@@ -1213,9 +1481,13 @@ async function validateSkillActionCall(
   }
 
   validateActionInputSchema(action.inputSchema, actionInput)
-  const execution = await executeSkillAction(action, actionInput, {
+  const execution = await executeSkillAction(loadedSkill, action, actionInput, {
     input: actionInput,
+    loadedSkill,
+    workspaceFiles: context.workspaceFiles,
     runPlatformAction: context.runPlatformAction,
+    runBrowserScript: context.runBrowserScript,
+    signal: context.signal,
   })
 
   return {

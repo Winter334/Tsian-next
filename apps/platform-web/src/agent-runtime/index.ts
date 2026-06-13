@@ -22,6 +22,7 @@ import {
   stripRuntimeWorkspaceToolCallBlocks,
   type RuntimeAgentCallArguments,
   type RuntimeAgentCallHistoryMode,
+  type RuntimeBrowserScriptExecutorRequest,
 } from "./workspace-tools"
 
 export interface AgentRuntimeTurnInput {
@@ -50,6 +51,9 @@ export interface AgentRuntimeCapabilities {
   ): Promise<string>
   runPlatformAction?(
     request: PlatformActionRequest,
+  ): Promise<PlatformActionResult>
+  runBrowserScript?(
+    request: RuntimeBrowserScriptExecutorRequest,
   ): Promise<PlatformActionResult>
   emitTrace?: RuntimeTraceEmitter
 }
@@ -260,8 +264,9 @@ function buildWorkspaceToolInstructions(
     "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
     `如果需要加载 Skill 详情，使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}，并传入可见 Skill Index 中的 name。不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件。`,
     `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。`,
-    `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前支持内置 executor 和平台允许的 platform_action executor；不会执行浏览器脚本或远程调用。`,
+    `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前支持内置 executor、平台允许的 platform_action executor，以及受信任第三方 Skill 可声明的 browser_script executor。`,
     "platform_action 可能写入 Runtime Workspace，只在已加载 Skill 明确要求维护状态、地图、记忆、线索或前端约定数据时使用。",
+    "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。",
     ...(canCallAgents
       ? [
           `如果当前任务需要联系人 Agent 的专业判断，可以使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 发起一次性会诊。被调用 Agent 的输出只会作为 observation 返回给你，不会直接成为玩家回复。`,
@@ -765,6 +770,8 @@ async function callAgentModelWithWorkspaceTools(
           )
         : undefined,
       runPlatformAction: capabilities.runPlatformAction,
+      runBrowserScript: capabilities.runBrowserScript,
+      signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
     }, toolCalls)

@@ -27,6 +27,7 @@ import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
 import { generateAssistantReply, getAiDebugRecords } from "../runtime-host/ai"
+import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
   createEmptyRuntimeSnapshot,
   createLocalSave,
@@ -770,6 +771,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
               workspaceFiles,
               trace.emit,
             ),
+            runBrowserScript: createBrowserSkillScriptRunner({
+              saveId: activeSaveId,
+              workspaceFiles,
+              signal: currentController.signal,
+              emitTrace: trace.emit,
+            }),
             emitTrace: trace.emit,
           },
         )
