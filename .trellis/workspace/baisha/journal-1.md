@@ -1481,3 +1481,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: Agent Call MVP
+
+**Date**: 2026-06-13
+**Task**: Agent Call MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Implemented contacts-gated runtime agent_call with delegated Agent execution, memory Agent defaults, trace coverage, specs/docs updates, and validation probes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1de3cb4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
