@@ -1549,3 +1549,37 @@ Added native raw AIRP turn writeback into Runtime Workspace: successful turns no
 ### Next Steps
 
 - None - task complete
+
+
+## Session 46: Browser skill script executor
+
+**Date**: 2026-06-13
+**Task**: Browser skill script executor
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added a strong-SDK browser_script action executor for trusted Skill-local Worker scripts, with workspace/fetch/log SDK access, timeout handling, trace coverage, docs, and validation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4981ffe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
