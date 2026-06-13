@@ -1311,3 +1311,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: 按名称加载 Skill
+
+**Date**: 2026-06-13
+**Task**: 按名称加载 Skill
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现 name-based skill.load 工具作为 Skill 第二层加载：Skill Index 面向 Agent 展示 name/description，skill.load 只返回 SKILL.md 入口正文，workspace 工具保留为第三层资源读取；同步 contracts、runtime prompt、方向文档与规范，并通过探针和构建验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8c73e5c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
