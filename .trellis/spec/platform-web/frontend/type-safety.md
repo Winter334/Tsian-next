@@ -241,10 +241,13 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` validates action availability and input before invoking any executor.
 - `action_call` routes to the action declaration's executor through the runtime action executor registry.
 - Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
-- The MVP supports only side-effect-free built-in executors:
+- Built-in executors are side-effect-free:
   - `validation`: returns `status: "validated"` and `output: null`.
   - `echo`: returns `status: "executed"` and echoes validated `input` as `output`.
-- The MVP must not execute scripts, call remote resources, mutate workspace/state, or invoke platform actions.
+- `platform_action` executors route through an injected `runPlatformAction` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, or storage helpers.
+- `platform_action` declarations require `{ type: "platform_action", name: string }`, where `name` maps to `PlatformActionRequest.action` and validated action input becomes `params`.
+- `platform-host` must allow-list Agent Runtime platform actions; current MVP allows `workspace-write` and `workspace-delete`, and does not allow `restore-checkpoint`.
+- The MVP must not execute browser scripts, call remote resources, or mutate workspace/state except through allow-listed `platform_action`.
 - `action_call` success returns a structured observation with `status`, `executor`, `input`, and `output`.
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`:
   ````md
@@ -263,6 +266,23 @@ interface RuntimeWorkspaceToolCall {
       "executor": {
         "type": "builtin",
         "name": "echo"
+      }
+    },
+    {
+      "name": "write_world_note",
+      "description": "Write a workspace file through an allow-listed platform action.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["path", "content"],
+        "properties": {
+          "path": { "type": "string" },
+          "content": { "type": "string" },
+          "mediaType": { "type": "string" }
+        }
+      },
+      "executor": {
+        "type": "platform_action",
+        "name": "workspace-write"
       }
     }
   ]
@@ -299,8 +319,12 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` for an undeclared action on a loaded Skill -> error observation with `ACTION_NOT_FOUND`.
 - `action_call` with schema-invalid input -> error observation with `ACTION_INPUT_INVALID`.
 - Malformed action executor declarations -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
+- Platform action executor declarations without a non-empty `name` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
 - Unsupported executor types -> error observation with `ACTION_EXECUTOR_UNSUPPORTED`.
 - Unknown built-in executor names -> error observation with `ACTION_EXECUTOR_NOT_FOUND`.
+- `platform_action` without an injected capability -> error observation with `PLATFORM_ACTION_UNAVAILABLE`.
+- `platform_action` whose injected handler returns `ok: false` -> error observation with `PLATFORM_ACTION_FAILED` and platform error details.
+- Agent Runtime attempts to call a non-allow-listed platform action -> platform handler returns `AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED`, surfaced through `PLATFORM_ACTION_FAILED`.
 - Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `skill_load` metadata without failing the whole Skill load.
 - Invalid path -> error observation with workspace path error code.
 - Missing file on `workspace_read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
@@ -313,6 +337,7 @@ interface RuntimeWorkspaceToolCall {
 - Good: loaded `SKILL.md` declares `tsian-actions`; the same Agent can call one declared action with `action_call` and receives a structured executor observation.
 - Good: action without an executor declaration uses built-in `validation`.
 - Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
+- Good: action with `{ "type": "platform_action", "name": "workspace-write" }` calls the injected platform action capability after gating and validation, then returns the platform result item as `output`.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
 - Good: Agent uses `workspace_list` for a directory and receives entries without file contents.
 - Good: Agent uses `workspace_search` and receives previews, then explicitly reads a chosen file if full content is needed.
@@ -320,7 +345,8 @@ interface RuntimeWorkspaceToolCall {
 - Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
 - Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
 - Bad: allowing `action_call` before `skill_load`; this bypasses Skill gating.
-- Bad: making MVP built-in executors execute write/delete/script/remote behavior.
+- Bad: making built-in executors execute write/delete/script/remote behavior.
+- Bad: letting Agent Runtime call broad platform actions such as checkpoint restore through `platform_action`.
 - Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
 
 ### 6. Tests Required
@@ -333,12 +359,17 @@ interface RuntimeWorkspaceToolCall {
 - Assert `action_call` succeeds after loading the declaring Skill and routes through built-in executors.
 - Assert an action without executor uses `validation` and returns `status: "validated"`.
 - Assert an action with built-in `echo` returns `status: "executed"` and echoes validated input as `output`.
+- Assert `platform_action` sends `{ action: executor.name, params: input }` to the injected handler only after loaded Skill gating and input schema validation pass.
+- Assert missing platform action capability returns `PLATFORM_ACTION_UNAVAILABLE`.
+- Assert injected platform action failure returns `PLATFORM_ACTION_FAILED`.
+- Assert `platform-host` rejects non-allow-listed Agent Runtime platform actions such as `restore-checkpoint`.
 - Assert unsupported executor types return `ACTION_EXECUTOR_UNSUPPORTED`.
 - Assert unknown built-in executor names return `ACTION_EXECUTOR_NOT_FOUND`.
 - Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
 - Assert unknown actions return `ACTION_NOT_FOUND`.
 - Assert schema-invalid action input returns `ACTION_INPUT_INVALID`.
-- Assert successful MVP action calls do not mutate workspace/state and do not execute scripts.
+- Assert successful built-in action calls do not mutate workspace/state and do not execute scripts.
+- Assert successful `platform_action` calls mutate workspace/state only through allow-listed platform actions.
 - Assert missing Skill names become structured observations, not uncaught runtime crashes.
 - Assert a loaded `SKILL.md` can chain to `workspace_read` for referenced resources.
 - Assert `workspace_list` returns directory entries without file contents.
@@ -359,9 +390,10 @@ return `- ${skill.id}: ${skill.summary} path=${skill.path}`
 
 ```typescript
 const calls = parseRuntimeWorkspaceToolCalls(modelText)
-const observations = executeRuntimeWorkspaceToolCalls({
+const observations = await executeRuntimeWorkspaceToolCalls({
   workspaceFiles,
   agentContext,
+  runPlatformAction,
 }, calls)
 messages.push({
   role: "user",

@@ -5,10 +5,13 @@ import type {
   DeepQueryRequest,
   DeepQueryResult,
   PlatformActionError,
+  PlatformActionRequest,
+  PlatformActionResult,
   PlayFrontendBridge,
   RuntimeSnapshotShell,
   SkillDetailEntry,
   SkillRegistryEntry,
+  WorkspaceFile,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
@@ -122,6 +125,19 @@ function workspaceActionError(error: unknown, fallbackCode: string, fallbackMess
   )
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isWorkspaceFile(value: unknown): value is WorkspaceFile {
+  return isRecord(value)
+    && typeof value.path === "string"
+    && typeof value.content === "string"
+    && typeof value.mediaType === "string"
+    && typeof value.createdAt === "number"
+    && typeof value.updatedAt === "number"
+}
+
 async function activeSaveExists(saveId: string): Promise<boolean> {
   return (await listLocalSaves()).some((save) => save.id === saveId)
 }
@@ -144,6 +160,166 @@ async function restoreActiveSnapshotFromStorage(saveId: string): Promise<Runtime
   return snapshot
 }
 
+async function executePlatformAction(
+  request: PlatformActionRequest,
+): Promise<PlatformActionResult> {
+  if (request.action === "restore-checkpoint") {
+    const activeSaveId = await getActiveSaveId()
+    if (!activeSaveId) {
+      return actionError(
+        "ACTIVE_SAVE_REQUIRED",
+        "当前没有激活中的会话。",
+      )
+    }
+
+    const checkpointId = request.params?.checkpointId
+    if (typeof checkpointId !== "string" || !checkpointId.trim()) {
+      return actionError(
+        "CHECKPOINT_ID_REQUIRED",
+        "restore-checkpoint 需要非空 checkpointId。",
+      )
+    }
+
+    const snapshot = await restoreCheckpointForSave(activeSaveId, checkpointId.trim())
+    if (!snapshot) {
+      return actionError(
+        "CHECKPOINT_NOT_FOUND",
+        "指定的 checkpoint 不存在。",
+        { checkpointId: checkpointId.trim() },
+      )
+    }
+
+    runtimeEngine.loadSnapshot(snapshot)
+    return {
+      ok: true,
+      item: snapshot,
+    }
+  }
+
+  if (request.action === "workspace-write") {
+    const activeSaveId = await getActiveSaveId()
+    if (!activeSaveId) {
+      return actionError(
+        "ACTIVE_SAVE_REQUIRED",
+        "当前没有激活中的会话。",
+      )
+    }
+
+    try {
+      return {
+        ok: true,
+        item: await writeWorkspaceFileForSave(activeSaveId, {
+          path: request.params?.path,
+          content: request.params?.content,
+          mediaType: request.params?.mediaType,
+        }),
+      }
+    } catch (error) {
+      return workspaceActionError(
+        error,
+        "WORKSPACE_WRITE_FAILED",
+        "写入 workspace 文件失败。",
+      )
+    }
+  }
+
+  if (request.action === "workspace-delete") {
+    const activeSaveId = await getActiveSaveId()
+    if (!activeSaveId) {
+      return actionError(
+        "ACTIVE_SAVE_REQUIRED",
+        "当前没有激活中的会话。",
+      )
+    }
+
+    try {
+      return {
+        ok: true,
+        item: await deleteWorkspacePathForSave(activeSaveId, request.params?.path),
+      }
+    } catch (error) {
+      return workspaceActionError(
+        error,
+        "WORKSPACE_DELETE_FAILED",
+        "删除 workspace 路径失败。",
+      )
+    }
+  }
+
+  return actionError(
+    "UNSUPPORTED_PLATFORM_ACTION",
+    `不支持的平台动作：${request.action}`,
+    { action: request.action },
+  )
+}
+
+const AGENT_RUNTIME_PLATFORM_ACTIONS = new Set([
+  "workspace-write",
+  "workspace-delete",
+])
+
+async function runAgentRuntimePlatformAction(
+  request: PlatformActionRequest,
+): Promise<PlatformActionResult> {
+  if (!AGENT_RUNTIME_PLATFORM_ACTIONS.has(request.action)) {
+    return actionError(
+      "AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED",
+      `Agent Runtime 不允许调用平台动作：${request.action}`,
+      { action: request.action },
+    )
+  }
+
+  return executePlatformAction(request)
+}
+
+function syncWorkspaceFilesAfterPlatformAction(
+  workspaceFiles: WorkspaceFile[],
+  request: PlatformActionRequest,
+  result: PlatformActionResult,
+): void {
+  if (!result.ok) {
+    return
+  }
+
+  if (request.action === "workspace-write" && isWorkspaceFile(result.item)) {
+    const item = result.item
+    const existingIndex = workspaceFiles.findIndex((file) => file.path === item.path)
+    if (existingIndex >= 0) {
+      workspaceFiles[existingIndex] = item
+    } else {
+      workspaceFiles.push(item)
+      workspaceFiles.sort((left, right) => left.path.localeCompare(right.path))
+    }
+    return
+  }
+
+  if (request.action === "workspace-delete" && isRecord(result.item)) {
+    const deletedPaths = Array.isArray(result.item.deletedPaths)
+      ? new Set(result.item.deletedPaths.filter((path): path is string => typeof path === "string"))
+      : new Set<string>()
+    if (deletedPaths.size === 0) {
+      return
+    }
+
+    for (let index = workspaceFiles.length - 1; index >= 0; index -= 1) {
+      const file = workspaceFiles[index]
+      if (file && deletedPaths.has(file.path)) {
+        workspaceFiles.splice(index, 1)
+      }
+    }
+  }
+}
+
+function createAgentRuntimePlatformActionRunner(
+  workspaceFiles: WorkspaceFile[],
+) {
+  return async (request: PlatformActionRequest): Promise<PlatformActionResult> => {
+    const result = await runAgentRuntimePlatformAction(request)
+    syncWorkspaceFilesAfterPlatformAction(workspaceFiles, request, result)
+    return result
+  }
+}
+
 export const playFrontendBridge: PlayFrontendBridge = {
   runtime: baseBridge.runtime,
   platform: {
@@ -156,94 +332,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
     },
 
     async runAction(request) {
-      if (request.action === "restore-checkpoint") {
-        const activeSaveId = await getActiveSaveId()
-        if (!activeSaveId) {
-          return actionError(
-            "ACTIVE_SAVE_REQUIRED",
-            "当前没有激活中的会话。",
-          )
-        }
-
-        const checkpointId = request.params?.checkpointId
-        if (typeof checkpointId !== "string" || !checkpointId.trim()) {
-          return actionError(
-            "CHECKPOINT_ID_REQUIRED",
-            "restore-checkpoint 需要非空 checkpointId。",
-          )
-        }
-
-        const snapshot = await restoreCheckpointForSave(activeSaveId, checkpointId.trim())
-        if (!snapshot) {
-          return actionError(
-            "CHECKPOINT_NOT_FOUND",
-            "指定的 checkpoint 不存在。",
-            { checkpointId: checkpointId.trim() },
-          )
-        }
-
-        runtimeEngine.loadSnapshot(snapshot)
-        return {
-          ok: true,
-          item: snapshot,
-        }
-      }
-
-      if (request.action === "workspace-write") {
-        const activeSaveId = await getActiveSaveId()
-        if (!activeSaveId) {
-          return actionError(
-            "ACTIVE_SAVE_REQUIRED",
-            "当前没有激活中的会话。",
-          )
-        }
-
-        try {
-          return {
-            ok: true,
-            item: await writeWorkspaceFileForSave(activeSaveId, {
-              path: request.params?.path,
-              content: request.params?.content,
-              mediaType: request.params?.mediaType,
-            }),
-          }
-        } catch (error) {
-          return workspaceActionError(
-            error,
-            "WORKSPACE_WRITE_FAILED",
-            "写入 workspace 文件失败。",
-          )
-        }
-      }
-
-      if (request.action === "workspace-delete") {
-        const activeSaveId = await getActiveSaveId()
-        if (!activeSaveId) {
-          return actionError(
-            "ACTIVE_SAVE_REQUIRED",
-            "当前没有激活中的会话。",
-          )
-        }
-
-        try {
-          return {
-            ok: true,
-            item: await deleteWorkspacePathForSave(activeSaveId, request.params?.path),
-          }
-        } catch (error) {
-          return workspaceActionError(
-            error,
-            "WORKSPACE_DELETE_FAILED",
-            "删除 workspace 路径失败。",
-          )
-        }
-      }
-
-      return actionError(
-        "UNSUPPORTED_PLATFORM_ACTION",
-        `不支持的平台动作：${request.action}`,
-        { action: request.action },
-      )
+      return executePlatformAction(request)
     },
   },
   query: {
@@ -474,6 +563,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 signal: options.signal,
               })
             },
+            runPlatformAction: createAgentRuntimePlatformActionRunner(workspaceFiles),
           },
         )
 

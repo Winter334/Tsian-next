@@ -151,7 +151,7 @@ Agent 发起 action_call
   -> 记录 trace
 ```
 
-当前 MVP 中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到内置无副作用 executor。已支持 `builtin/validation` 和 `builtin/echo`；真实脚本、远程调用、平台 action 或状态写入 executor 仍是后续任务。
+当前 MVP 中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，以及通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力，用于 Skill 封装 AIRP 业务状态维护；真实脚本、远程调用、`agent_call` 和持久化 trace 仍是后续任务。
 
 这允许 Tsian 复用网络上的 Skill 思路，也允许把 CLI Skill 中的脚本通过浏览器脚本或远程执行适配进来。
 
@@ -306,11 +306,11 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
 - 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
-- 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到内置 action executor registry；当前内置 executor 只有 `validation` 和 `echo`，不会执行脚本、远程调用、平台 action 或写入状态。
+- 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；当前支持 `builtin/validation`、`builtin/echo` 和 allow-listed `platform_action`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`，不会执行脚本或远程调用。
 
 后续实现应逐步：
 
-1. 为 action executor registry 接入平台 action、浏览器脚本、远程执行和状态写入等真实执行器。
+1. 为 action executor registry 接入浏览器脚本、远程执行、`agent_call` 和更丰富的受控平台动作。
 2. 实现通用 `agent_call` Skill / action。
 3. 将 action 调用、loaded Skill、文件读写和 Agent 调用 trace 持久化。
 4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。

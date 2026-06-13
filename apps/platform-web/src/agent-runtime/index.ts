@@ -2,6 +2,8 @@ import type {
   AgentContextEntry,
   AiChatMessage,
   ConversationMessageRecord,
+  PlatformActionRequest,
+  PlatformActionResult,
   RuntimeSnapshotShell,
   StateRecord,
   WorkspaceFile,
@@ -40,6 +42,9 @@ export interface AgentRuntimeCapabilities {
     messages: AiChatMessage[],
     options: AgentRuntimeModelCallOptions,
   ): Promise<string>
+  runPlatformAction?(
+    request: PlatformActionRequest,
+  ): Promise<PlatformActionResult>
 }
 
 const MASTER_AGENT_PLATFORM_GUARD = [
@@ -60,7 +65,8 @@ const WORKSPACE_TOOL_INSTRUCTIONS = [
   "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
   `如果需要加载 Skill 详情，使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}，并传入可见 Skill Index 中的 name。不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件。`,
   `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。`,
-  `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前 MVP 只支持内置无副作用 executor，不会执行脚本、远程调用或写入状态。`,
+  `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前支持内置 executor 和平台允许的 platform_action executor；不会执行浏览器脚本或远程调用。`,
+  "platform_action 可能写入 Runtime Workspace，只在已加载 Skill 明确要求维护状态、地图、记忆、线索或前端约定数据时使用。",
   "可用工具：",
   `- ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad} arguments={"name":"prose-style"}`,
   `- ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} arguments={"skill":"prose-style","action":"example_action","input":{"text":"示例"}}`,
@@ -363,10 +369,11 @@ async function callAgentModelWithWorkspaceTools(
       )
     }
 
-    const observations = executeRuntimeWorkspaceToolCalls({
+    const observations = await executeRuntimeWorkspaceToolCalls({
       workspaceFiles: input.workspaceFiles,
       agentContext,
       sessionState: workspaceToolSession,
+      runPlatformAction: capabilities.runPlatformAction,
     }, toolCalls)
     nextMessages = [
       ...nextMessages,

@@ -1,5 +1,7 @@
 import type {
   AgentContextEntry,
+  PlatformActionRequest,
+  PlatformActionResult,
   SkillRegistryEntry,
   WorkspaceEntry,
   WorkspaceFile,
@@ -59,8 +61,13 @@ interface RuntimeActionExecutorResult {
   output: unknown
 }
 
+type RuntimePlatformActionRunner = (
+  request: PlatformActionRequest,
+) => Promise<PlatformActionResult>
+
 interface RuntimeActionExecutorContext {
   input: Record<string, unknown>
+  runPlatformAction?: RuntimePlatformActionRunner
 }
 
 interface RuntimeLoadedSkill {
@@ -86,6 +93,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   workspaceFiles: WorkspaceFile[]
   agentContext?: AgentContextEntry
   sessionState?: RuntimeWorkspaceToolSessionState
+  runPlatformAction?: RuntimePlatformActionRunner
 }
 
 const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
@@ -97,6 +105,7 @@ const DEFAULT_ACTION_EXECUTOR: RuntimeActionExecutorReference = {
   type: "builtin",
   name: "validation",
 }
+const PLATFORM_ACTION_EXECUTOR_TYPE = "platform_action"
 const SUPPORTED_ACTION_INPUT_TYPES = new Set([
   "array",
   "boolean",
@@ -469,11 +478,18 @@ function normalizeActionExecutorReference(
     )
   }
 
-  const name = typeof value.name === "string" && value.name.trim()
+  const explicitName = typeof value.name === "string" && value.name.trim()
     ? value.name.trim()
-    : type === "builtin"
-      ? DEFAULT_ACTION_EXECUTOR.name
-      : ""
+    : ""
+  if (type === PLATFORM_ACTION_EXECUTOR_TYPE && !explicitName) {
+    throw toolError(
+      "ACTION_EXECUTOR_INVALID",
+      `Platform action executor requires a non-empty string name: ${actionName}`,
+      { index, name: actionName },
+    )
+  }
+
+  const name = explicitName || (type === "builtin" ? DEFAULT_ACTION_EXECUTOR.name : "")
 
   return { type, name }
 }
@@ -805,31 +821,62 @@ const BUILTIN_ACTION_EXECUTORS: Record<
   }),
 }
 
-function executeSkillAction(
+async function executeSkillAction(
   action: RuntimeSkillActionDeclaration,
   input: Record<string, unknown>,
-): RuntimeActionExecutorResult {
-  if (action.executor.type !== "builtin") {
-    throw toolError(
-      "ACTION_EXECUTOR_UNSUPPORTED",
-      `Action executor type is not supported: ${action.executor.type}`,
-      { executor: action.executor },
-    )
+  context: RuntimeActionExecutorContext,
+): Promise<RuntimeActionExecutorResult> {
+  if (action.executor.type === "builtin") {
+    const executor = BUILTIN_ACTION_EXECUTORS[action.executor.name]
+    if (!executor) {
+      throw toolError(
+        "ACTION_EXECUTOR_NOT_FOUND",
+        `Built-in action executor was not found: ${action.executor.name}`,
+        {
+          executor: action.executor,
+          availableExecutors: Object.keys(BUILTIN_ACTION_EXECUTORS).sort(),
+        },
+      )
+    }
+
+    return executor({ input })
   }
 
-  const executor = BUILTIN_ACTION_EXECUTORS[action.executor.name]
-  if (!executor) {
-    throw toolError(
-      "ACTION_EXECUTOR_NOT_FOUND",
-      `Built-in action executor was not found: ${action.executor.name}`,
-      {
-        executor: action.executor,
-        availableExecutors: Object.keys(BUILTIN_ACTION_EXECUTORS).sort(),
-      },
-    )
+  if (action.executor.type === PLATFORM_ACTION_EXECUTOR_TYPE) {
+    if (!context.runPlatformAction) {
+      throw toolError(
+        "PLATFORM_ACTION_UNAVAILABLE",
+        "Platform action executor is not available in this runtime.",
+        { executor: action.executor },
+      )
+    }
+
+    const result = await context.runPlatformAction({
+      action: action.executor.name,
+      params: input,
+    })
+    if (!result.ok) {
+      throw toolError(
+        "PLATFORM_ACTION_FAILED",
+        `Platform action failed: ${action.executor.name}`,
+        {
+          action: action.executor.name,
+          platformError: result.error ?? null,
+        },
+      )
+    }
+
+    return {
+      status: "executed",
+      output: result.item ?? null,
+    }
   }
 
-  return executor({ input })
+  throw toolError(
+    "ACTION_EXECUTOR_UNSUPPORTED",
+    `Action executor type is not supported: ${action.executor.type}`,
+    { executor: action.executor },
+  )
 }
 
 function loadSkillByName(
@@ -858,10 +905,10 @@ function loadSkillByName(
   }
 }
 
-function validateSkillActionCall(
+async function validateSkillActionCall(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
-): Record<string, unknown> {
+): Promise<Record<string, unknown>> {
   const skillName = normalizeRequiredString(
     input.skill,
     "ACTION_SKILL_REQUIRED",
@@ -906,7 +953,10 @@ function validateSkillActionCall(
   }
 
   validateActionInputSchema(action.inputSchema, actionInput)
-  const execution = executeSkillAction(action, actionInput)
+  const execution = await executeSkillAction(action, actionInput, {
+    input: actionInput,
+    runPlatformAction: context.runPlatformAction,
+  })
 
   return {
     status: execution.status,
@@ -927,11 +977,11 @@ function validateSkillActionCall(
   }
 }
 
-function executeRuntimeWorkspaceToolCall(
+async function executeRuntimeWorkspaceToolCall(
   context: RuntimeWorkspaceToolExecutionContext,
   parsed: ParsedRuntimeWorkspaceToolCall,
   index: number,
-): RuntimeWorkspaceToolObservation {
+): Promise<RuntimeWorkspaceToolObservation> {
   if (parsed.error) {
     return {
       index,
@@ -969,7 +1019,7 @@ function executeRuntimeWorkspaceToolCall(
         index,
         name: call.name,
         ok: true,
-        result: validateSkillActionCall(context, call.arguments),
+        result: await validateSkillActionCall(context, call.arguments),
       }
     }
 
@@ -1028,11 +1078,16 @@ function executeRuntimeWorkspaceToolCall(
   }
 }
 
-export function executeRuntimeWorkspaceToolCalls(
+export async function executeRuntimeWorkspaceToolCalls(
   context: RuntimeWorkspaceToolExecutionContext,
   calls: ParsedRuntimeWorkspaceToolCall[],
-): RuntimeWorkspaceToolObservation[] {
-  return calls.map((call, index) => executeRuntimeWorkspaceToolCall(context, call, index))
+): Promise<RuntimeWorkspaceToolObservation[]> {
+  const observations: RuntimeWorkspaceToolObservation[] = []
+  for (const [index, call] of calls.entries()) {
+    observations.push(await executeRuntimeWorkspaceToolCall(context, call, index))
+  }
+
+  return observations
 }
 
 export function formatRuntimeWorkspaceToolObservationMessage(
