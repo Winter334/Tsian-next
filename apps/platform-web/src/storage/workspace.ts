@@ -9,11 +9,13 @@ export type CheckpointWorkspaceFile = Omit<LocalWorkspaceFileRecord, "id" | "sav
 
 export interface WorkspaceListInput {
   path?: unknown
+  includePlatformTraces?: boolean
 }
 
 export interface WorkspaceSearchInput {
   query?: string
   limit?: number
+  includePlatformTraces?: boolean
 }
 
 export interface WorkspaceWriteInput {
@@ -34,6 +36,7 @@ export class WorkspaceStorageError extends Error {
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
+const PLATFORM_TRACE_PATH_PREFIX = ".tsian/traces/"
 
 const DEFAULT_WORKSPACE_FILES: Array<{
   path: string
@@ -322,6 +325,21 @@ function fileName(path: string): string {
   return parts[parts.length - 1] || path
 }
 
+function isPlatformTracePath(path: string): boolean {
+  return path === ".tsian/traces" || path.startsWith(PLATFORM_TRACE_PATH_PREFIX)
+}
+
+function filterPlatformTraceRecords(
+  records: LocalWorkspaceFileRecord[],
+  includePlatformTraces: boolean | undefined,
+): LocalWorkspaceFileRecord[] {
+  if (includePlatformTraces) {
+    return records
+  }
+
+  return records.filter((record) => !isPlatformTracePath(record.path))
+}
+
 function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
   return {
     path: record.path,
@@ -433,7 +451,10 @@ export async function listWorkspaceEntriesForSave(
 ): Promise<WorkspaceEntry[]> {
   const directoryPath = normalizeDirectoryPath(input.path)
   const prefix = directoryPath ? `${directoryPath}/` : ""
-  const records = await listLocalWorkspaceFilesForSave(saveId)
+  const records = filterPlatformTraceRecords(
+    await listLocalWorkspaceFilesForSave(saveId),
+    input.includePlatformTraces,
+  )
   const files = new Map<string, WorkspaceEntry>()
   const directories = new Map<string, WorkspaceEntry & { children: Set<string> }>()
 
@@ -581,7 +602,10 @@ export async function searchWorkspaceFilesForSave(
   }
 
   const limit = normalizeLimit(input.limit)
-  const records = await listLocalWorkspaceFilesForSave(saveId)
+  const records = filterPlatformTraceRecords(
+    await listLocalWorkspaceFilesForSave(saveId),
+    input.includePlatformTraces,
+  )
   return records
     .flatMap((record): WorkspaceSearchResult[] => {
       const lowerPath = record.path.toLowerCase()

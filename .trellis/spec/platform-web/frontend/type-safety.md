@@ -407,6 +407,64 @@ messages.push({
 return `- ${skill.name}: ${skill.description}`
 ```
 
+## Scenario: Runtime Trace Persistence
+
+### 1. Scope / Trigger
+
+- Trigger: Agent Runtime emits turn/tool/action trace and platform-host persists it into Runtime Workspace.
+- Applies when changing `apps/platform-web/src/agent-runtime/index.ts`, `apps/platform-web/src/agent-runtime/workspace-tools.ts`, `apps/platform-web/src/agent-runtime/trace.ts`, `apps/platform-web/src/platform-host/index.ts`, or `apps/platform-web/src/storage/workspace.ts`.
+
+### 2. Signatures
+
+- Trace files live under `.tsian/traces/turns/turn-000001.jsonl`.
+- Failed turn trace files may use `.tsian/traces/turns/turn-000001-failed-<timestamp>.jsonl`.
+- Each line is one JSON object with `type`, `timestamp`, `turn`, optional `agentId`, optional `debugLabel`, optional `ok`, and optional `data`.
+- Runtime trace event input may accept unknown data, but the collector must normalize persisted `data` to JSON-compatible values.
+
+### 3. Contracts
+
+- Trace is platform-owned workspace content: platform writes it, Agent context does not inject it by default, and normal list/search hides it.
+- Trace follows checkpoint/restore because it is stored as normal Runtime Workspace files under `.tsian/traces/`.
+- Successful turns write trace before the after-turn checkpoint is created, so the checkpoint includes the trace for that branch.
+- Failed turns attempt to write `turn_failed` trace if workspace files are already available, but failed-turn trace persistence must not mask the original runtime error.
+- Trace must record summaries, not large raw payloads:
+  - model calls: message count, output length, tool-call count;
+  - Skill loads: skill name/path/scope, action count, declaration error count;
+  - workspace tools: path/query/limit, result count, file metadata for reads, no file content;
+  - action calls: skill/action/executor, input/output summaries, status or error;
+  - workspace mutations: write path/mediaType/size or delete `deletedPaths`.
+- `agent-runtime` still must not import Dexie, storage helpers, bridge objects, or `platform-host`; it emits trace through an injected callback.
+- `platform-host` owns trace persistence through workspace storage helpers.
+- `workspace_read` can still read an exact trace path for MVP; `workspace_list` and `workspace_search` hide `.tsian/traces/` by default.
+- Bridge `workspace-list` and `workspace-search` also hide `.tsian/traces/` by default, with `includePlatformTraces` reserved for explicit inclusion.
+
+### 4. Validation & Error Matrix
+
+- Successful turn -> one valid JSONL trace file under `.tsian/traces/turns/`.
+- Runtime failure after workspace is available -> failed trace is attempted and original error is rethrown.
+- Trace write failure on successful turn -> fail loudly before checkpoint creation.
+- Trace `data` contains non-JSON values -> collector normalizes to JSON-compatible values.
+- Workspace list/search root or `.tsian` path -> trace files/directories hidden unless `includePlatformTraces` is true.
+
+### 5. Good/Base/Bad Cases
+
+- Good: trace records `workspace_read` path and content size without copying file content.
+- Good: trace records `action_called` for `platform_action` plus a `workspace_mutation` event for `workspace-write`.
+- Good: restoring an earlier checkpoint removes later trace files for the discarded branch.
+- Base: a no-tool turn still records turn, agent step, and model call summary events.
+- Bad: persisting full prompt/message arrays into `.tsian/traces` by default.
+- Bad: allowing ordinary workspace search to surface trace noise to Agents.
+- Bad: importing storage helpers into `agent-runtime` to persist trace directly.
+
+### 6. Tests Required
+
+- Assert successful turns write valid JSONL trace before checkpoint creation.
+- Assert failed turns include a `turn_failed` event when trace persistence is available.
+- Assert model call summary events omit full prompt/messages.
+- Assert workspace read trace omits file content.
+- Assert `workspace-write` / `workspace-delete` platform actions produce `workspace_mutation`.
+- Assert bridge and runtime workspace list/search exclude `.tsian/traces/` by default.
+
 ## Avoid
 
 - Do not reintroduce old prompt/world-book/workflow resource contracts for new Agent Runtime work.

@@ -151,7 +151,7 @@ Agent 发起 action_call
   -> 记录 trace
 ```
 
-当前 MVP 中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，以及通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力，用于 Skill 封装 AIRP 业务状态维护；真实脚本、远程调用、`agent_call` 和持久化 trace 仍是后续任务。
+当前 MVP 中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，以及通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力，用于 Skill 封装 AIRP 业务状态维护；真实脚本、远程调用和 `agent_call` 仍是后续任务。
 
 这允许 Tsian 复用网络上的 Skill 思路，也允许把 CLI Skill 中的脚本通过浏览器脚本或远程执行适配进来。
 
@@ -253,7 +253,11 @@ Runtime Workspace 是一个存档级虚拟文件系统。
 
 不要默认为每个回合在普通工作区里生成大量文件。
 
-详细 trace 应进入 `.tsian/traces/` 或类似平台调试区，并有保留策略。普通工作区只保存长期有用的内容，例如：
+详细 trace 进入 `.tsian/traces/` 平台调试区。Trace 是平台拥有、工作区承载、默认隐藏的 JSONL 文件；普通 `workspace_list` / `workspace_search` 不暴露 trace，精确路径读取可作为 MVP 调试入口保留。
+
+Trace 跟随 workspace checkpoint / restore。成功回合会在创建回合后 checkpoint 前写入 `.tsian/traces/turns/turn-000001.jsonl` 这类文件；如果玩家回滚到旧 checkpoint，后续分支的 trace 也会一起消失。这符合 AIRP 分支调试材料的定位，而不是 OpenClaw 式 append-only 安全审计日志。
+
+普通工作区只保存长期有用的内容，例如：
 
 - 对话历史；
 - 时间线摘要；
@@ -307,12 +311,13 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
 - 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
 - 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；当前支持 `builtin/validation`、`builtin/echo` 和 allow-listed `platform_action`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`，不会执行脚本或远程调用。
+- Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、workspace 工具、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 list/search 默认隐藏 `.tsian/traces/`。
 
 后续实现应逐步：
 
 1. 为 action executor registry 接入浏览器脚本、远程执行、`agent_call` 和更丰富的受控平台动作。
 2. 实现通用 `agent_call` Skill / action。
-3. 将 action 调用、loaded Skill、文件读写和 Agent 调用 trace 持久化。
+3. 扩展 trace 覆盖 `agent_call`、脚本/远程 executor、保留策略和调试 UI。
 4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
 6. 为 workspace、Agent 和 Skill 提供浏览与编辑 UI。

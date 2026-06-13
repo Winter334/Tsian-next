@@ -16,6 +16,13 @@ import type {
 import { runAgentRuntimeTurn } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
 import { buildAgentRegistry, buildSkillRegistry, loadSkillDetail } from "../agent-runtime/registry"
+import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
+import {
+  createRuntimeTraceCollector,
+  errorToTraceData,
+  formatRuntimeTracePath,
+  serializeRuntimeTraceEvents,
+} from "../agent-runtime/trace"
 import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
@@ -136,6 +143,19 @@ function isWorkspaceFile(value: unknown): value is WorkspaceFile {
     && typeof value.mediaType === "string"
     && typeof value.createdAt === "number"
     && typeof value.updatedAt === "number"
+}
+
+function syncWorkspaceFileWrite(
+  workspaceFiles: WorkspaceFile[],
+  item: WorkspaceFile,
+): void {
+  const existingIndex = workspaceFiles.findIndex((file) => file.path === item.path)
+  if (existingIndex >= 0) {
+    workspaceFiles[existingIndex] = item
+  } else {
+    workspaceFiles.push(item)
+    workspaceFiles.sort((left, right) => left.path.localeCompare(right.path))
+  }
 }
 
 async function activeSaveExists(saveId: string): Promise<boolean> {
@@ -282,14 +302,7 @@ function syncWorkspaceFilesAfterPlatformAction(
   }
 
   if (request.action === "workspace-write" && isWorkspaceFile(result.item)) {
-    const item = result.item
-    const existingIndex = workspaceFiles.findIndex((file) => file.path === item.path)
-    if (existingIndex >= 0) {
-      workspaceFiles[existingIndex] = item
-    } else {
-      workspaceFiles.push(item)
-      workspaceFiles.sort((left, right) => left.path.localeCompare(right.path))
-    }
+    syncWorkspaceFileWrite(workspaceFiles, result.item)
     return
   }
 
@@ -310,14 +323,84 @@ function syncWorkspaceFilesAfterPlatformAction(
   }
 }
 
+function emitWorkspaceMutationTrace(
+  emitTrace: RuntimeTraceEmitter | undefined,
+  request: PlatformActionRequest,
+  result: PlatformActionResult,
+): void {
+  if (request.action !== "workspace-write" && request.action !== "workspace-delete") {
+    return
+  }
+
+  if (!result.ok) {
+    emitTrace?.({
+      type: "workspace_mutation",
+      ok: false,
+      data: {
+        platformAction: request.action,
+        error: result.error ?? null,
+      },
+    })
+    return
+  }
+
+  if (request.action === "workspace-write" && isWorkspaceFile(result.item)) {
+    emitTrace?.({
+      type: "workspace_mutation",
+      ok: true,
+      data: {
+        platformAction: request.action,
+        mutation: "write",
+        path: result.item.path,
+        mediaType: result.item.mediaType,
+        size: result.item.content.length,
+        updatedAt: result.item.updatedAt,
+      },
+    })
+    return
+  }
+
+  if (request.action === "workspace-delete" && isRecord(result.item)) {
+    const deletedPaths = Array.isArray(result.item.deletedPaths)
+      ? result.item.deletedPaths.filter((path): path is string => typeof path === "string")
+      : []
+    emitTrace?.({
+      type: "workspace_mutation",
+      ok: true,
+      data: {
+        platformAction: request.action,
+        mutation: "delete",
+        deletedPaths,
+        deletedCount: deletedPaths.length,
+      },
+    })
+  }
+}
+
 function createAgentRuntimePlatformActionRunner(
   workspaceFiles: WorkspaceFile[],
+  emitTrace?: RuntimeTraceEmitter,
 ) {
   return async (request: PlatformActionRequest): Promise<PlatformActionResult> => {
     const result = await runAgentRuntimePlatformAction(request)
     syncWorkspaceFilesAfterPlatformAction(workspaceFiles, request, result)
+    emitWorkspaceMutationTrace(emitTrace, request, result)
     return result
   }
+}
+
+async function writeRuntimeTraceFileForSave(
+  saveId: string,
+  workspaceFiles: WorkspaceFile[],
+  path: string,
+  events: ReturnType<typeof createRuntimeTraceCollector>["events"],
+): Promise<void> {
+  const file = await writeWorkspaceFileForSave(saveId, {
+    path,
+    content: serializeRuntimeTraceEvents(events),
+    mediaType: "application/x-ndjson",
+  })
+  syncWorkspaceFileWrite(workspaceFiles, file)
 }
 
 export const playFrontendBridge: PlayFrontendBridge = {
@@ -400,6 +483,10 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return {
             items: (await listWorkspaceEntriesForSave(activeSaveId, {
               path: request.params?.path,
+              includePlatformTraces:
+                typeof request.params?.includePlatformTraces === "boolean"
+                  ? request.params.includePlatformTraces
+                  : undefined,
             })) as T[],
           } as DeepQueryResult<T>
         } catch {
@@ -436,6 +523,10 @@ export const playFrontendBridge: PlayFrontendBridge = {
             limit:
               typeof request.params?.limit === "number"
                 ? request.params.limit
+                : undefined,
+            includePlatformTraces:
+              typeof request.params?.includePlatformTraces === "boolean"
+                ? request.params.includePlatformTraces
                 : undefined,
           })) as T[],
         } as DeepQueryResult<T>
@@ -536,6 +627,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const activeSaveId = await ensureActiveSave()
       const snapshotBefore = cloneSnapshot(await getSnapshotForSave(activeSaveId))
       const historyBefore = await getHistoryForSave(activeSaveId)
+      const nextTurn = snapshotBefore.state.turn + 1
+      const trace = createRuntimeTraceCollector(nextTurn)
+      trace.emit({
+        type: "turn_started",
+        ok: true,
+        data: {
+          userInputLength: content.length,
+          historyCount: historyBefore.length,
+        },
+      })
+      let workspaceFiles: WorkspaceFile[] | null = null
 
       if (previousTurnController) {
         previousTurnController.abort("new-turn-started")
@@ -545,7 +647,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
       try {
         await initializeWorkspaceForSave(activeSaveId)
-        const workspaceFiles = await listWorkspaceFilesForSave(activeSaveId)
+        workspaceFiles = await listWorkspaceFilesForSave(activeSaveId)
         const stateRecords = await listStateRecordsForSave(activeSaveId)
         const result = await runAgentRuntimeTurn(
           {
@@ -563,7 +665,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 signal: options.signal,
               })
             },
-            runPlatformAction: createAgentRuntimePlatformActionRunner(workspaceFiles),
+            runPlatformAction: createAgentRuntimePlatformActionRunner(
+              workspaceFiles,
+              trace.emit,
+            ),
+            emitTrace: trace.emit,
           },
         )
 
@@ -571,7 +677,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
           throw new DOMException("Agent Runtime turn was aborted.", "AbortError")
         }
 
-        const nextTurn = snapshotBefore.state.turn + 1
         const nextHistory: ConversationMessageRecord[] = [
           ...historyBefore,
           { role: "user", content },
@@ -581,6 +686,21 @@ export const playFrontendBridge: PlayFrontendBridge = {
           snapshotBefore,
           nextTurn,
           nextHistory,
+        )
+
+        trace.emit({
+          type: "turn_completed",
+          ok: true,
+          data: {
+            replyLength: result.replyText.length,
+            historyCount: nextHistory.length,
+          },
+        })
+        await writeRuntimeTraceFileForSave(
+          activeSaveId,
+          workspaceFiles,
+          formatRuntimeTracePath(nextTurn),
+          trace.events,
         )
 
         runtimeEngine.loadSnapshot(snapshotAfter)
@@ -597,6 +717,23 @@ export const playFrontendBridge: PlayFrontendBridge = {
         return { snapshot: snapshotAfter }
       } catch (error) {
         runtimeEngine.loadSnapshot(snapshotBefore)
+        trace.emit({
+          type: "turn_failed",
+          ok: false,
+          data: errorToTraceData(error),
+        })
+        if (workspaceFiles) {
+          try {
+            await writeRuntimeTraceFileForSave(
+              activeSaveId,
+              workspaceFiles,
+              formatRuntimeTracePath(nextTurn, Date.now()),
+              trace.events,
+            )
+          } catch {
+            // Failed-turn trace is best-effort and must not mask the original error.
+          }
+        }
         throw error
       } finally {
         if (previousTurnController === currentController) {

@@ -30,8 +30,9 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - 当前 AIRP 回合已开始消费 Runtime Workspace 中的 `agents/master/AGENT.md` 与 `agents/narrative/AGENT.md`，并将 Agent context 注入 master/narrative 两次模型调用。
 - 默认 AIRP 回合已支持 runtime 工具循环：Agent 可通过 `<tsian-tool-call>` 请求 `skill_load`、`action_call`、`workspace_read`、`workspace_list`、`workspace_search`，runtime 将 observation 回灌给同一 Agent。Skill 详情主路径是 `skill_load(name)`；workspace 工具用于 `SKILL.md` 链式引用后的第三层资源读取。
 - `skill_load` 会解析已加载 `SKILL.md` 中的 `tsian-actions` fenced JSON 声明，并在同一 Agent 工具循环中解锁对应 action；`action_call` 会先做 loaded Skill gating、action 存在性校验和输入 schema 校验，再路由到 action executor registry。当前支持 `builtin/validation`、`builtin/echo` 和 allow-listed `platform_action`；`platform_action` 通过 runtime capability 调用 platform-host 受控动作，当前允许 `workspace-write` / `workspace-delete`，不执行脚本或远程调用。
+- Runtime Trace Persistence MVP 已实现。每个成功回合会写入 `.tsian/traces/turns/turn-*.jsonl`，失败回合在可写时写入 failed trace；trace 记录回合、Agent step、模型调用摘要、Skill 加载、workspace 工具、action 调用和 workspace mutation。普通 bridge/runtime `workspace_list` / `workspace_search` 默认隐藏 `.tsian/traces/`，trace 作为 workspace 文件跟随 checkpoint/restore 回滚。
 
-当前代码尚未实现 `agent_call` 协作、真实脚本/远程 executor 适配、Agent notes/session 写回，或把工具/action 调用 trace 持久化。默认回合仍是 master -> narrative 两个 Agent 步骤；每个步骤可能因为 `skill_load`、`action_call` 或 workspace 工具 observation 产生额外模型调用。
+当前代码尚未实现 `agent_call` 协作、真实脚本/远程 executor 适配，或 Agent notes/session 写回。默认回合仍是 master -> narrative 两个 Agent 步骤；每个步骤可能因为 `skill_load`、`action_call` 或 workspace 工具 observation 产生额外模型调用。
 
 ## 3. 当前有效边界
 
@@ -64,7 +65,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 
 1. 为 action executor registry 接入浏览器脚本、远程执行、`agent_call` 和更丰富的受控平台动作。
 2. 实现通用 `agent_call` Skill / action，让 Agent 协作从联系人声明自然形成。
-3. 将 loaded Skill、action 调用、文件读写和 Agent 调用 trace 持久化。
+3. 扩展 trace 覆盖 `agent_call`、脚本/远程 executor、保留策略和调试 UI。
 4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
 6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。

@@ -9,6 +9,8 @@ import type {
   WorkspaceFile,
 } from "@tsian/contracts"
 import { assembleAgentContext } from "./context"
+import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
+import { errorToTraceData } from "./trace"
 import {
   createRuntimeWorkspaceToolSessionState,
   executeRuntimeWorkspaceToolCalls,
@@ -45,6 +47,7 @@ export interface AgentRuntimeCapabilities {
   runPlatformAction?(
     request: PlatformActionRequest,
   ): Promise<PlatformActionResult>
+  emitTrace?: RuntimeTraceEmitter
 }
 
 const MASTER_AGENT_PLATFORM_GUARD = [
@@ -334,6 +337,16 @@ function buildNarrativeMessages(
   ]
 }
 
+function traceAgentBase(
+  context: AgentContextEntry | null,
+  debugLabel: RuntimeTraceDebugLabel,
+) {
+  return {
+    ...(context ? { agentId: context.agent.id } : {}),
+    debugLabel,
+  }
+}
+
 async function callAgentModelWithWorkspaceTools(
   messages: AiChatMessage[],
   input: AgentRuntimeTurnInput,
@@ -342,7 +355,20 @@ async function callAgentModelWithWorkspaceTools(
   agentContext: AgentContextEntry | null,
 ): Promise<string> {
   if (!input.workspaceFiles || !agentContext) {
-    return (await capabilities.callModel(messages, options)).trim()
+    const response = await capabilities.callModel(messages, options)
+    capabilities.emitTrace?.({
+      type: "model_call_completed",
+      debugLabel: options.debugLabel,
+      ok: true,
+      data: {
+        messageCount: messages.length,
+        outputLength: response.length,
+        hasToolCalls: false,
+        toolCallCount: 0,
+        round: 0,
+      },
+    })
+    return response.trim()
   }
 
   let nextMessages = messages
@@ -354,6 +380,19 @@ async function callAgentModelWithWorkspaceTools(
     assertNotAborted(options.signal)
 
     const toolCalls = parseRuntimeWorkspaceToolCalls(response)
+    capabilities.emitTrace?.({
+      type: "model_call_completed",
+      agentId: agentContext.agent.id,
+      debugLabel: options.debugLabel,
+      ok: true,
+      data: {
+        messageCount: nextMessages.length,
+        outputLength: response.length,
+        hasToolCalls: toolCalls.length > 0,
+        toolCallCount: toolCalls.length,
+        round,
+      },
+    })
     if (toolCalls.length === 0) {
       return stripRuntimeWorkspaceToolCallBlocks(response).trim()
     }
@@ -374,6 +413,8 @@ async function callAgentModelWithWorkspaceTools(
       agentContext,
       sessionState: workspaceToolSession,
       runPlatformAction: capabilities.runPlatformAction,
+      debugLabel: options.debugLabel,
+      emitTrace: capabilities.emitTrace,
     }, toolCalls)
     nextMessages = [
       ...nextMessages,
@@ -398,33 +439,87 @@ export async function runAgentRuntimeTurn(
   assertNotAborted(input.signal)
 
   const masterContext = getWorkspaceAgentContext(input, "master")
-  const masterPlan = (await callAgentModelWithWorkspaceTools(
-    buildMasterMessages(input, masterContext),
-    input,
-    capabilities,
-    {
-      debugLabel: "master-agent",
-      signal: input.signal,
+  capabilities.emitTrace?.({
+    type: "agent_step_started",
+    ...traceAgentBase(masterContext, "master-agent"),
+    data: {
+      ...(masterContext ? { agentTitle: masterContext.agent.title } : {}),
     },
-    masterContext,
-  )).trim()
+  })
+
+  let masterPlan: string
+  try {
+    masterPlan = (await callAgentModelWithWorkspaceTools(
+      buildMasterMessages(input, masterContext),
+      input,
+      capabilities,
+      {
+        debugLabel: "master-agent",
+        signal: input.signal,
+      },
+      masterContext,
+    )).trim()
+    capabilities.emitTrace?.({
+      type: "agent_step_completed",
+      ...traceAgentBase(masterContext, "master-agent"),
+      ok: true,
+      data: {
+        outputLength: masterPlan.length,
+      },
+    })
+  } catch (error) {
+    capabilities.emitTrace?.({
+      type: "agent_step_failed",
+      ...traceAgentBase(masterContext, "master-agent"),
+      ok: false,
+      data: errorToTraceData(error),
+    })
+    throw error
+  }
 
   assertNotAborted(input.signal)
 
   const narrativeContext = getWorkspaceAgentContext(input, "narrative")
-  const replyText = (await callAgentModelWithWorkspaceTools(
-    buildNarrativeMessages(input, masterPlan, narrativeContext),
-    input,
-    capabilities,
-    {
-      debugLabel: "narrative-agent",
-      signal: input.signal,
+  capabilities.emitTrace?.({
+    type: "agent_step_started",
+    ...traceAgentBase(narrativeContext, "narrative-agent"),
+    data: {
+      ...(narrativeContext ? { agentTitle: narrativeContext.agent.title } : {}),
     },
-    narrativeContext,
-  )).trim()
+  })
 
-  if (!replyText) {
-    throw new Error("narrative-agent returned an empty reply.")
+  let replyText: string
+  try {
+    replyText = (await callAgentModelWithWorkspaceTools(
+      buildNarrativeMessages(input, masterPlan, narrativeContext),
+      input,
+      capabilities,
+      {
+        debugLabel: "narrative-agent",
+        signal: input.signal,
+      },
+      narrativeContext,
+    )).trim()
+    if (!replyText) {
+      throw new Error("narrative-agent returned an empty reply.")
+    }
+
+    capabilities.emitTrace?.({
+      type: "agent_step_completed",
+      ...traceAgentBase(narrativeContext, "narrative-agent"),
+      ok: true,
+      data: {
+        outputLength: replyText.length,
+      },
+    })
+  } catch (error) {
+    capabilities.emitTrace?.({
+      type: "agent_step_failed",
+      ...traceAgentBase(narrativeContext, "narrative-agent"),
+      ok: false,
+      data: errorToTraceData(error),
+    })
+    throw error
   }
 
   return {

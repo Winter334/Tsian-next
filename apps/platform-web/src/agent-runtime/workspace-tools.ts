@@ -7,6 +7,11 @@ import type {
   WorkspaceFile,
   WorkspaceSearchResult,
 } from "@tsian/contracts"
+import type {
+  RuntimeTraceDebugLabel,
+  RuntimeTraceEmitter,
+} from "./trace"
+import { summarizeTraceValue } from "./trace"
 
 export interface RuntimeWorkspaceToolCall {
   name: string
@@ -94,6 +99,8 @@ export interface RuntimeWorkspaceToolExecutionContext {
   agentContext?: AgentContextEntry
   sessionState?: RuntimeWorkspaceToolSessionState
   runPlatformAction?: RuntimePlatformActionRunner
+  debugLabel?: RuntimeTraceDebugLabel
+  emitTrace?: RuntimeTraceEmitter
 }
 
 const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
@@ -101,6 +108,7 @@ const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
 const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
+const PLATFORM_TRACE_PATH_PREFIX = ".tsian/traces/"
 const DEFAULT_ACTION_EXECUTOR: RuntimeActionExecutorReference = {
   type: "builtin",
   name: "validation",
@@ -217,6 +225,130 @@ function createPreview(content: string, index: number): string {
   return `${prefix}${content.slice(start, end)}${suffix}`.replace(/\s+/g, " ").trim()
 }
 
+function isPlatformTracePath(path: string): boolean {
+  return path === ".tsian/traces" || path.startsWith(PLATFORM_TRACE_PATH_PREFIX)
+}
+
+function visibleWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
+  return files.filter((file) => !isPlatformTracePath(file.path))
+}
+
+function traceBase(context: RuntimeWorkspaceToolExecutionContext) {
+  return {
+    ...(context.agentContext ? { agentId: context.agentContext.agent.id } : {}),
+    ...(context.debugLabel ? { debugLabel: context.debugLabel } : {}),
+  }
+}
+
+function countResultItems(result: unknown): number | undefined {
+  if (Array.isArray(result)) return result.length
+  if (isRecord(result) && Array.isArray(result.entries)) return result.entries.length
+  return undefined
+}
+
+function summarizeWorkspaceReadResult(result: unknown): Record<string, unknown> {
+  if (!isRecord(result)) {
+    return {}
+  }
+
+  return {
+    path: typeof result.path === "string" ? result.path : undefined,
+    mediaType: typeof result.mediaType === "string" ? result.mediaType : undefined,
+    size: typeof result.content === "string" ? result.content.length : undefined,
+    updatedAt: typeof result.updatedAt === "number" ? result.updatedAt : undefined,
+  }
+}
+
+function emitWorkspaceToolTrace(
+  context: RuntimeWorkspaceToolExecutionContext,
+  call: RuntimeWorkspaceToolCall,
+  observation: RuntimeWorkspaceToolObservation,
+): void {
+  if (
+    call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead
+    && call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList
+    && call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch
+  ) {
+    return
+  }
+
+  const data: Record<string, unknown> = {
+    tool: call.name,
+  }
+  if (typeof call.arguments.path === "string") {
+    data.path = call.arguments.path
+  }
+  if (typeof call.arguments.query === "string") {
+    data.query = call.arguments.query
+    data.queryLength = call.arguments.query.length
+  }
+  if (typeof call.arguments.limit === "number") {
+    data.limit = call.arguments.limit
+  }
+  if (observation.ok) {
+    data.resultCount = countResultItems(observation.result)
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead) {
+      data.result = summarizeWorkspaceReadResult(observation.result)
+    }
+  } else if (observation.error) {
+    data.error = observation.error
+  }
+
+  context.emitTrace?.({
+    type: "workspace_tool_called",
+    ...traceBase(context),
+    ok: observation.ok,
+    data,
+  })
+}
+
+function emitActionCallTrace(
+  context: RuntimeWorkspaceToolExecutionContext,
+  call: RuntimeWorkspaceToolCall,
+  observation: RuntimeWorkspaceToolObservation,
+): void {
+  if (call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.actionCall) {
+    return
+  }
+
+  const data: Record<string, unknown> = {
+    skill: typeof call.arguments.skill === "string" ? call.arguments.skill : undefined,
+    action: typeof call.arguments.action === "string" ? call.arguments.action : undefined,
+    inputSummary: summarizeTraceValue(call.arguments.input ?? {}),
+  }
+
+  if (observation.ok && isRecord(observation.result)) {
+    const result = observation.result
+    if (isRecord(result.skill) && typeof result.skill.name === "string") {
+      data.skill = result.skill.name
+    }
+    if (isRecord(result.action) && typeof result.action.name === "string") {
+      data.action = result.action.name
+    }
+    data.executor = isRecord(result.executor) ? result.executor : undefined
+    data.status = typeof result.status === "string" ? result.status : undefined
+    data.outputSummary = summarizeTraceValue(result.output)
+  } else if (observation.error) {
+    data.error = observation.error
+  }
+
+  context.emitTrace?.({
+    type: "action_called",
+    ...traceBase(context),
+    ok: observation.ok,
+    data,
+  })
+}
+
+function emitToolObservationTrace(
+  context: RuntimeWorkspaceToolExecutionContext,
+  call: RuntimeWorkspaceToolCall,
+  observation: RuntimeWorkspaceToolObservation,
+): void {
+  emitWorkspaceToolTrace(context, call, observation)
+  emitActionCallTrace(context, call, observation)
+}
+
 function parseToolCall(raw: string): ParsedRuntimeWorkspaceToolCall {
   let parsed: unknown
   try {
@@ -296,7 +428,7 @@ function listWorkspaceEntries(
   const fileEntries = new Map<string, WorkspaceEntry>()
   const directoryEntries = new Map<string, WorkspaceEntry & { children: Set<string> }>()
 
-  for (const file of files) {
+  for (const file of visibleWorkspaceFiles(files)) {
     if (directoryPath && !file.path.startsWith(prefix)) {
       continue
     }
@@ -384,7 +516,7 @@ function searchWorkspaceFiles(
   }
 
   const limit = normalizeSearchLimit(input.limit)
-  return files
+  return visibleWorkspaceFiles(files)
     .flatMap((file): WorkspaceSearchResult[] => {
       const lowerPath = file.path.toLowerCase()
       const lowerContent = file.content.toLowerCase()
@@ -894,6 +1026,21 @@ function loadSkillByName(
   const file = loadSkillEntryFile(context.workspaceFiles, skill)
   const { actions, errors: actionDeclarationErrors } = parseActionDeclarations(file.content)
   registerLoadedSkill(context.sessionState, skill, actions)
+  context.emitTrace?.({
+    type: "skill_loaded",
+    ...traceBase(context),
+    ok: true,
+    data: {
+      skill: {
+        name: skill.name,
+        path: skill.path,
+        scope: skill.scope,
+        ...(skill.agentId ? { agentId: skill.agentId } : {}),
+      },
+      actionCount: actions.length,
+      declarationErrorCount: actionDeclarationErrors.length,
+    },
+  })
 
   return {
     loadedSkill: loadedSkillDetails(skill, actions, actionDeclarationErrors),
@@ -1004,63 +1151,56 @@ async function executeRuntimeWorkspaceToolCall(
     }
   }
 
+  let observation: RuntimeWorkspaceToolObservation
   try {
     if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad) {
-      return {
+      observation = {
         index,
         name: call.name,
         ok: true,
         result: loadSkillByName(context, call.arguments),
       }
-    }
-
-    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.actionCall) {
-      return {
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.actionCall) {
+      observation = {
         index,
         name: call.name,
         ok: true,
         result: await validateSkillActionCall(context, call.arguments),
       }
-    }
-
-    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead) {
-      return {
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead) {
+      observation = {
         index,
         name: call.name,
         ok: true,
         result: readWorkspaceFile(context.workspaceFiles, call.arguments.path),
       }
-    }
-
-    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList) {
-      return {
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList) {
+      observation = {
         index,
         name: call.name,
         ok: true,
         result: listWorkspaceEntries(context.workspaceFiles, call.arguments.path),
       }
-    }
-
-    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch) {
-      return {
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch) {
+      observation = {
         index,
         name: call.name,
         ok: true,
         result: searchWorkspaceFiles(context.workspaceFiles, call.arguments),
       }
-    }
-
-    return {
-      index,
-      name: call.name,
-      ok: false,
-      error: toolError(
-        "UNSUPPORTED_WORKSPACE_TOOL",
-        `Unsupported workspace tool: ${call.name}`,
-      ),
+    } else {
+      observation = {
+        index,
+        name: call.name,
+        ok: false,
+        error: toolError(
+          "UNSUPPORTED_WORKSPACE_TOOL",
+          `Unsupported workspace tool: ${call.name}`,
+        ),
+      }
     }
   } catch (error) {
-    return {
+    observation = {
       index,
       name: call.name,
       ok: false,
@@ -1076,6 +1216,9 @@ async function executeRuntimeWorkspaceToolCall(
           ),
     }
   }
+
+  emitToolObservationTrace(context, call, observation)
+  return observation
 }
 
 export async function executeRuntimeWorkspaceToolCalls(
