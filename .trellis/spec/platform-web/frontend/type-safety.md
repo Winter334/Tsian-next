@@ -238,8 +238,14 @@ interface RuntimeWorkspaceToolCall {
 - Declared Skill actions are not included in eager Skill Index or `agent-context`.
 - `action_call` arguments: `{ skill: string, action: string, input?: Record<string, unknown> }`.
 - `action_call` requires that the named Skill has already been loaded by the same Agent during the same tool loop.
-- `action_call` only validates action availability and input for the MVP; it must not execute scripts, call remote resources, mutate workspace/state, or invoke platform actions.
-- `action_call` success returns a structured validation observation with `status: "validated"`.
+- `action_call` validates action availability and input before invoking any executor.
+- `action_call` routes to the action declaration's executor through the runtime action executor registry.
+- Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
+- The MVP supports only side-effect-free built-in executors:
+  - `validation`: returns `status: "validated"` and `output: null`.
+  - `echo`: returns `status: "executed"` and echoes validated `input` as `output`.
+- The MVP must not execute scripts, call remote resources, mutate workspace/state, or invoke platform actions.
+- `action_call` success returns a structured observation with `status`, `executor`, `input`, and `output`.
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`:
   ````md
   ```json tsian-actions
@@ -253,6 +259,10 @@ interface RuntimeWorkspaceToolCall {
         "properties": {
           "text": { "type": "string" }
         }
+      },
+      "executor": {
+        "type": "builtin",
+        "name": "echo"
       }
     }
   ]
@@ -288,6 +298,9 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` before the Skill is loaded -> error observation with `SKILL_ACTION_NOT_LOADED`.
 - `action_call` for an undeclared action on a loaded Skill -> error observation with `ACTION_NOT_FOUND`.
 - `action_call` with schema-invalid input -> error observation with `ACTION_INPUT_INVALID`.
+- Malformed action executor declarations -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
+- Unsupported executor types -> error observation with `ACTION_EXECUTOR_UNSUPPORTED`.
+- Unknown built-in executor names -> error observation with `ACTION_EXECUTOR_NOT_FOUND`.
 - Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `skill_load` metadata without failing the whole Skill load.
 - Invalid path -> error observation with workspace path error code.
 - Missing file on `workspace_read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
@@ -297,7 +310,9 @@ interface RuntimeWorkspaceToolCall {
 
 - Good: master sees a Skill Index entry named `continuity`, calls `skill_load`, receives `SKILL.md` entry content as observation, then returns a plain brief.
 - Good: narrative loads `prose-style` with `skill_load`; if an agent-local and shared Skill share that name, the narrative-local Skill wins.
-- Good: loaded `SKILL.md` declares `tsian-actions`; the same Agent can call one declared action with `action_call` and receives a validation-only observation.
+- Good: loaded `SKILL.md` declares `tsian-actions`; the same Agent can call one declared action with `action_call` and receives a structured executor observation.
+- Good: action without an executor declaration uses built-in `validation`.
+- Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
 - Good: Agent uses `workspace_list` for a directory and receives entries without file contents.
 - Good: Agent uses `workspace_search` and receives previews, then explicitly reads a chosen file if full content is needed.
@@ -305,7 +320,7 @@ interface RuntimeWorkspaceToolCall {
 - Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
 - Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
 - Bad: allowing `action_call` before `skill_load`; this bypasses Skill gating.
-- Bad: making MVP `action_call` execute write/delete/script/remote behavior before the executor registry task exists.
+- Bad: making MVP built-in executors execute write/delete/script/remote behavior.
 - Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
 
 ### 6. Tests Required
@@ -315,7 +330,11 @@ interface RuntimeWorkspaceToolCall {
 - Assert local/shared duplicate Skill names prefer the current Agent's local Skill.
 - Assert `skill_load` does not return a resource index by default.
 - Assert `skill_load` registers actions declared in a `tsian-actions` fenced JSON block.
-- Assert `action_call` succeeds after loading the declaring Skill and returns `status: "validated"`.
+- Assert `action_call` succeeds after loading the declaring Skill and routes through built-in executors.
+- Assert an action without executor uses `validation` and returns `status: "validated"`.
+- Assert an action with built-in `echo` returns `status: "executed"` and echoes validated input as `output`.
+- Assert unsupported executor types return `ACTION_EXECUTOR_UNSUPPORTED`.
+- Assert unknown built-in executor names return `ACTION_EXECUTOR_NOT_FOUND`.
 - Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
 - Assert unknown actions return `ACTION_NOT_FOUND`.
 - Assert schema-invalid action input returns `ACTION_INPUT_INVALID`.

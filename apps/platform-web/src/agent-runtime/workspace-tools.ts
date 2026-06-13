@@ -46,6 +46,21 @@ interface RuntimeSkillActionDeclaration {
   name: string
   description: string
   inputSchema?: Record<string, unknown>
+  executor: RuntimeActionExecutorReference
+}
+
+interface RuntimeActionExecutorReference {
+  type: string
+  name: string
+}
+
+interface RuntimeActionExecutorResult {
+  status: "validated" | "executed"
+  output: unknown
+}
+
+interface RuntimeActionExecutorContext {
+  input: Record<string, unknown>
 }
 
 interface RuntimeLoadedSkill {
@@ -78,6 +93,10 @@ const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
 const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
+const DEFAULT_ACTION_EXECUTOR: RuntimeActionExecutorReference = {
+  type: "builtin",
+  name: "validation",
+}
 const SUPPORTED_ACTION_INPUT_TYPES = new Set([
   "array",
   "boolean",
@@ -424,6 +443,41 @@ function normalizeRequiredString(
   return normalized
 }
 
+function normalizeActionExecutorReference(
+  value: unknown,
+  actionName: string,
+  index: number,
+): RuntimeActionExecutorReference {
+  if (value === undefined) {
+    return { ...DEFAULT_ACTION_EXECUTOR }
+  }
+
+  if (!isRecord(value)) {
+    throw toolError(
+      "ACTION_EXECUTOR_INVALID",
+      `Action executor must be an object: ${actionName}`,
+      { index, name: actionName },
+    )
+  }
+
+  const type = typeof value.type === "string" ? value.type.trim() : ""
+  if (!type) {
+    throw toolError(
+      "ACTION_EXECUTOR_INVALID",
+      `Action executor requires a non-empty string type: ${actionName}`,
+      { index, name: actionName },
+    )
+  }
+
+  const name = typeof value.name === "string" && value.name.trim()
+    ? value.name.trim()
+    : type === "builtin"
+      ? DEFAULT_ACTION_EXECUTOR.name
+      : ""
+
+  return { type, name }
+}
+
 function skillCandidateDetails(skill: SkillRegistryEntry): Record<string, unknown> {
   const details: Record<string, unknown> = {
     name: skill.name,
@@ -550,13 +604,25 @@ function parseActionDeclarations(content: string): SkillActionParseResult {
         continue
       }
 
-      const action: RuntimeSkillActionDeclaration = {
-        name,
-        description: typeof rawAction.description === "string"
-          ? rawAction.description.trim()
-          : "",
+      let executor: RuntimeActionExecutorReference
+      try {
+        executor = normalizeActionExecutorReference(rawAction.executor, name, index)
+      } catch (error) {
+        errors.push(isRecord(error) && typeof error.code === "string" && typeof error.message === "string"
+          ? {
+              code: error.code,
+              message: error.message,
+              ...(error.details === undefined ? {} : { details: error.details }),
+            }
+          : toolError(
+              "ACTION_EXECUTOR_INVALID",
+              error instanceof Error ? error.message : `Action executor is invalid: ${name}`,
+              { index, name },
+            ))
+        continue
       }
 
+      let inputSchema: Record<string, unknown> | undefined
       if (rawAction.inputSchema !== undefined) {
         if (!isRecord(rawAction.inputSchema)) {
           errors.push(toolError(
@@ -567,7 +633,16 @@ function parseActionDeclarations(content: string): SkillActionParseResult {
           continue
         }
 
-        action.inputSchema = rawAction.inputSchema
+        inputSchema = rawAction.inputSchema
+      }
+
+      const action: RuntimeSkillActionDeclaration = {
+        name,
+        description: typeof rawAction.description === "string"
+          ? rawAction.description.trim()
+          : "",
+        executor,
+        ...(inputSchema ? { inputSchema } : {}),
       }
 
       seenNames.add(normalizedName)
@@ -594,6 +669,7 @@ function loadedSkillDetails(
       name: action.name,
       description: action.description,
       hasInputSchema: action.inputSchema !== undefined,
+      executor: action.executor,
     })),
   }
   if (skill.agentId) {
@@ -715,6 +791,47 @@ function validateActionInputSchema(
   }
 }
 
+const BUILTIN_ACTION_EXECUTORS: Record<
+  string,
+  (context: RuntimeActionExecutorContext) => RuntimeActionExecutorResult
+> = {
+  validation: () => ({
+    status: "validated",
+    output: null,
+  }),
+  echo: ({ input }) => ({
+    status: "executed",
+    output: input,
+  }),
+}
+
+function executeSkillAction(
+  action: RuntimeSkillActionDeclaration,
+  input: Record<string, unknown>,
+): RuntimeActionExecutorResult {
+  if (action.executor.type !== "builtin") {
+    throw toolError(
+      "ACTION_EXECUTOR_UNSUPPORTED",
+      `Action executor type is not supported: ${action.executor.type}`,
+      { executor: action.executor },
+    )
+  }
+
+  const executor = BUILTIN_ACTION_EXECUTORS[action.executor.name]
+  if (!executor) {
+    throw toolError(
+      "ACTION_EXECUTOR_NOT_FOUND",
+      `Built-in action executor was not found: ${action.executor.name}`,
+      {
+        executor: action.executor,
+        availableExecutors: Object.keys(BUILTIN_ACTION_EXECUTORS).sort(),
+      },
+    )
+  }
+
+  return executor({ input })
+}
+
 function loadSkillByName(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
@@ -789,9 +906,10 @@ function validateSkillActionCall(
   }
 
   validateActionInputSchema(action.inputSchema, actionInput)
+  const execution = executeSkillAction(action, actionInput)
 
   return {
-    status: "validated",
+    status: execution.status,
     skill: {
       name: loadedSkill.skill.name,
       title: loadedSkill.skill.title,
@@ -803,7 +921,9 @@ function validateSkillActionCall(
       description: action.description,
       hasInputSchema: action.inputSchema !== undefined,
     },
+    executor: action.executor,
     input: actionInput,
+    output: execution.output,
   }
 }
 
