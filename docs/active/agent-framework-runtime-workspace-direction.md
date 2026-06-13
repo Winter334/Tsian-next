@@ -116,7 +116,7 @@ Skill 必须支持渐进披露。
   -> Runtime 在当前 Agent 可见 Skill 中解析 name，并将入口正文作为 observation 回灌给同一 Agent
   -> Agent 根据 SKILL.md 的链式引用，按需使用 workspace_read/workspace_list/workspace_search 读取 references、examples、schemas 或 scripts
   -> Agent 获得该 Skill 的详细指导与 action 说明，且只读取当前步骤真正需要的资源
-  -> Agent 才能调用已加载 Skill 的 action
+  -> Agent 通过 action_call 调用已加载 Skill 声明的 action
 ```
 
 在 live Agent Runtime 中，Skill 详情加载应使用专用 `skill_load` 工具。Agent 使用 Skill 的 `name`，不需要理解 path、id、scope 或 ref。`skill_load` 只加载 `SKILL.md` 入口正文和最小加载元信息，不默认返回 resource index。第三层资源读取才使用 Runtime Workspace 文件工具。
@@ -143,13 +143,15 @@ Agent 看到的是统一的可调用 action，而不是执行细节。
 统一调用路径：
 
 ```text
-Agent 发起 action call
+Agent 发起 action_call
   -> 平台校验输入
   -> 选择 executor 执行
   -> 按声明校验或归一化结果
   -> 将结果作为 observation / context 返回
   -> 记录 trace
 ```
+
+当前 MVP 中，`action_call` 只做 loaded Skill gating 和输入校验，不执行脚本、远程调用、平台 action 或状态写入。真实 executor registry 应在这个边界之后接入。
 
 这允许 Tsian 复用网络上的 Skill 思路，也允许把 CLI Skill 中的脚本通过浏览器脚本或远程执行适配进来。
 
@@ -304,12 +306,13 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
 - 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
+- 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 做验证型调用；当前不会执行脚本或写入状态。
 
 后续实现应逐步：
 
-1. 实现通用 `agent_call` Skill / action。
-2. 让 Agent 按需加载 Skill detail，并将已加载 Skill 指令/actions 注入后续上下文。
-3. 实现统一 action 调用和执行器适配。
+1. 实现统一 action executor registry，接入平台 action、浏览器脚本、远程执行和状态写入等执行器。
+2. 实现通用 `agent_call` Skill / action。
+3. 将 action 调用、loaded Skill、文件读写和 Agent 调用 trace 持久化。
 4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
 6. 为 workspace、Agent 和 Skill 提供浏览与编辑 UI。

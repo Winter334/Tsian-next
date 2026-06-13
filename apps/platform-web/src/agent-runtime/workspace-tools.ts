@@ -13,6 +13,7 @@ export interface RuntimeWorkspaceToolCall {
 
 export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   skillLoad: "skill_load",
+  actionCall: "action_call",
   workspaceRead: "workspace_read",
   workspaceList: "workspace_list",
   workspaceSearch: "workspace_search",
@@ -41,6 +42,26 @@ export interface RuntimeWorkspaceToolObservation {
   error?: RuntimeWorkspaceToolError
 }
 
+interface RuntimeSkillActionDeclaration {
+  name: string
+  description: string
+  inputSchema?: Record<string, unknown>
+}
+
+interface RuntimeLoadedSkill {
+  skill: SkillRegistryEntry
+  actions: RuntimeSkillActionDeclaration[]
+}
+
+export interface RuntimeWorkspaceToolSessionState {
+  loadedSkills: RuntimeLoadedSkill[]
+}
+
+interface SkillActionParseResult {
+  actions: RuntimeSkillActionDeclaration[]
+  errors: RuntimeWorkspaceToolError[]
+}
+
 interface NormalizePathOptions {
   allowEmpty: boolean
   rejectTrailingSlash: boolean
@@ -49,11 +70,23 @@ interface NormalizePathOptions {
 export interface RuntimeWorkspaceToolExecutionContext {
   workspaceFiles: WorkspaceFile[]
   agentContext?: AgentContextEntry
+  sessionState?: RuntimeWorkspaceToolSessionState
 }
 
 const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
+const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
+const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
+const SUPPORTED_ACTION_INPUT_TYPES = new Set([
+  "array",
+  "boolean",
+  "integer",
+  "null",
+  "number",
+  "object",
+  "string",
+])
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -65,6 +98,12 @@ function toolError(
   details?: unknown,
 ): RuntimeWorkspaceToolError {
   return details === undefined ? { code, message } : { code, message, details }
+}
+
+export function createRuntimeWorkspaceToolSessionState(): RuntimeWorkspaceToolSessionState {
+  return {
+    loadedSkills: [],
+  }
 }
 
 function normalizePathBase(value: unknown, options: NormalizePathOptions): string {
@@ -368,6 +407,23 @@ function normalizedLookupKey(value: string): string {
   return value.trim().toLowerCase()
 }
 
+function normalizeRequiredString(
+  value: unknown,
+  code: string,
+  message: string,
+): string {
+  if (typeof value !== "string") {
+    throw toolError(code, message)
+  }
+
+  const normalized = value.trim()
+  if (!normalized) {
+    throw toolError(code, message)
+  }
+
+  return normalized
+}
+
 function skillCandidateDetails(skill: SkillRegistryEntry): Record<string, unknown> {
   const details: Record<string, unknown> = {
     name: skill.name,
@@ -441,6 +497,224 @@ function loadSkillEntryFile(
   return file
 }
 
+function parseActionDeclarations(content: string): SkillActionParseResult {
+  const actions: RuntimeSkillActionDeclaration[] = []
+  const errors: RuntimeWorkspaceToolError[] = []
+  const seenNames = new Set<string>()
+
+  for (const match of content.matchAll(SKILL_ACTIONS_FENCE_PATTERN)) {
+    const info = (match[1] ?? "").toLowerCase()
+    if (!info.split(/\s+/).includes(SKILL_ACTIONS_FENCE_LABEL)) {
+      continue
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(match[2] ?? "")
+    } catch (error) {
+      errors.push(toolError(
+        "ACTION_DECLARATION_JSON_INVALID",
+        error instanceof Error ? error.message : "Action declaration JSON is invalid.",
+      ))
+      continue
+    }
+
+    const rawActions = Array.isArray(parsed) ? parsed : [parsed]
+    for (const [index, rawAction] of rawActions.entries()) {
+      if (!isRecord(rawAction)) {
+        errors.push(toolError(
+          "ACTION_DECLARATION_INVALID",
+          "Action declaration must be a JSON object.",
+          { index },
+        ))
+        continue
+      }
+
+      const name = typeof rawAction.name === "string" ? rawAction.name.trim() : ""
+      if (!name) {
+        errors.push(toolError(
+          "ACTION_DECLARATION_NAME_REQUIRED",
+          "Action declaration requires a non-empty string name.",
+          { index },
+        ))
+        continue
+      }
+
+      const normalizedName = normalizedLookupKey(name)
+      if (seenNames.has(normalizedName)) {
+        errors.push(toolError(
+          "ACTION_DECLARATION_DUPLICATE",
+          `Duplicate action declaration: ${name}`,
+          { index, name },
+        ))
+        continue
+      }
+
+      const action: RuntimeSkillActionDeclaration = {
+        name,
+        description: typeof rawAction.description === "string"
+          ? rawAction.description.trim()
+          : "",
+      }
+
+      if (rawAction.inputSchema !== undefined) {
+        if (!isRecord(rawAction.inputSchema)) {
+          errors.push(toolError(
+            "ACTION_INPUT_SCHEMA_INVALID",
+            `Action inputSchema must be an object: ${name}`,
+            { index, name },
+          ))
+          continue
+        }
+
+        action.inputSchema = rawAction.inputSchema
+      }
+
+      seenNames.add(normalizedName)
+      actions.push(action)
+    }
+  }
+
+  return { actions, errors }
+}
+
+function loadedSkillDetails(
+  skill: SkillRegistryEntry,
+  actions: RuntimeSkillActionDeclaration[],
+  actionDeclarationErrors: RuntimeWorkspaceToolError[],
+): Record<string, unknown> {
+  const details: Record<string, unknown> = {
+    name: skill.name,
+    title: skill.title,
+    description: skill.description,
+    triggers: skill.triggers,
+    appliesTo: skill.appliesTo,
+    scope: skill.scope,
+    actions: actions.map((action) => ({
+      name: action.name,
+      description: action.description,
+      hasInputSchema: action.inputSchema !== undefined,
+    })),
+  }
+  if (skill.agentId) {
+    details.agentId = skill.agentId
+  }
+  if (actionDeclarationErrors.length) {
+    details.actionDeclarationErrors = actionDeclarationErrors
+  }
+  return details
+}
+
+function registerLoadedSkill(
+  state: RuntimeWorkspaceToolSessionState | undefined,
+  skill: SkillRegistryEntry,
+  actions: RuntimeSkillActionDeclaration[],
+): void {
+  if (!state) {
+    return
+  }
+
+  const existingIndex = state.loadedSkills.findIndex((entry) => entry.skill.path === skill.path)
+  const loadedSkill = { skill, actions }
+  if (existingIndex >= 0) {
+    state.loadedSkills[existingIndex] = loadedSkill
+    return
+  }
+
+  state.loadedSkills.push(loadedSkill)
+}
+
+function findLoadedSkill(
+  state: RuntimeWorkspaceToolSessionState | undefined,
+  skillName: string,
+): RuntimeLoadedSkill | null {
+  if (!state) {
+    return null
+  }
+
+  const requestedKey = normalizedLookupKey(skillName)
+  return state.loadedSkills.find((entry) =>
+    normalizedLookupKey(entry.skill.name) === requestedKey
+      || normalizedLookupKey(entry.skill.id) === requestedKey
+  ) ?? null
+}
+
+function findDeclaredAction(
+  loadedSkill: RuntimeLoadedSkill,
+  actionName: string,
+): RuntimeSkillActionDeclaration | null {
+  const requestedKey = normalizedLookupKey(actionName)
+  return loadedSkill.actions.find((action) => normalizedLookupKey(action.name) === requestedKey) ?? null
+}
+
+function schemaTypeMatches(type: string, value: unknown): boolean {
+  if (type === "array") return Array.isArray(value)
+  if (type === "boolean") return typeof value === "boolean"
+  if (type === "integer") return Number.isInteger(value)
+  if (type === "null") return value === null
+  if (type === "number") return typeof value === "number" && Number.isFinite(value)
+  if (type === "object") return isRecord(value)
+  if (type === "string") return typeof value === "string"
+  return true
+}
+
+function validateActionInputSchema(
+  schema: Record<string, unknown> | undefined,
+  input: Record<string, unknown>,
+): void {
+  if (!schema) {
+    return
+  }
+
+  const rootType = typeof schema.type === "string" ? schema.type : "object"
+  if (rootType !== "object") {
+    throw toolError(
+      "ACTION_INPUT_SCHEMA_UNSUPPORTED",
+      "Action inputSchema root type must be object for the MVP.",
+      { type: rootType },
+    )
+  }
+
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : []
+  for (const field of required) {
+    if (input[field] === undefined) {
+      throw toolError(
+        "ACTION_INPUT_INVALID",
+        `Action input is missing required field: ${field}`,
+        { field },
+      )
+    }
+  }
+
+  const properties = isRecord(schema.properties) ? schema.properties : {}
+  for (const [field, rawPropertySchema] of Object.entries(properties)) {
+    if (input[field] === undefined || !isRecord(rawPropertySchema)) {
+      continue
+    }
+
+    const fieldType = typeof rawPropertySchema.type === "string"
+      ? rawPropertySchema.type
+      : ""
+    if (!fieldType || !SUPPORTED_ACTION_INPUT_TYPES.has(fieldType)) {
+      continue
+    }
+
+    if (!schemaTypeMatches(fieldType, input[field])) {
+      throw toolError(
+        "ACTION_INPUT_INVALID",
+        `Action input field has invalid type: ${field}`,
+        {
+          field,
+          expected: fieldType,
+          actual: Array.isArray(input[field]) ? "array" : input[field] === null ? "null" : typeof input[field],
+        },
+      )
+    }
+  }
+}
+
 function loadSkillByName(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
@@ -454,25 +728,82 @@ function loadSkillByName(
 
   const skill = resolveVisibleSkillByName(context.agentContext, input.name)
   const file = loadSkillEntryFile(context.workspaceFiles, skill)
-  const loadedSkill: Record<string, unknown> = {
-    name: skill.name,
-    title: skill.title,
-    description: skill.description,
-    triggers: skill.triggers,
-    appliesTo: skill.appliesTo,
-    scope: skill.scope,
-  }
-  if (skill.agentId) {
-    loadedSkill.agentId = skill.agentId
-  }
+  const { actions, errors: actionDeclarationErrors } = parseActionDeclarations(file.content)
+  registerLoadedSkill(context.sessionState, skill, actions)
 
   return {
-    loadedSkill,
+    loadedSkill: loadedSkillDetails(skill, actions, actionDeclarationErrors),
     file: {
       mediaType: file.mediaType,
       content: file.content,
       updatedAt: file.updatedAt,
     },
+  }
+}
+
+function validateSkillActionCall(
+  context: RuntimeWorkspaceToolExecutionContext,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  const skillName = normalizeRequiredString(
+    input.skill,
+    "ACTION_SKILL_REQUIRED",
+    "action_call requires a non-empty string skill.",
+  )
+  const actionName = normalizeRequiredString(
+    input.action,
+    "ACTION_NAME_REQUIRED",
+    "action_call requires a non-empty string action.",
+  )
+  const actionInput = input.input === undefined ? {} : input.input
+  if (!isRecord(actionInput)) {
+    throw toolError(
+      "ACTION_INPUT_INVALID",
+      "action_call input must be a JSON object when provided.",
+    )
+  }
+
+  const loadedSkill = findLoadedSkill(context.sessionState, skillName)
+  if (!loadedSkill) {
+    throw toolError(
+      "SKILL_ACTION_NOT_LOADED",
+      `Skill must be loaded before calling its actions: ${skillName}`,
+      { skill: skillName },
+    )
+  }
+
+  const action = findDeclaredAction(loadedSkill, actionName)
+  if (!action) {
+    throw toolError(
+      "ACTION_NOT_FOUND",
+      `Action is not declared by loaded Skill "${loadedSkill.skill.name}": ${actionName}`,
+      {
+        skill: loadedSkill.skill.name,
+        action: actionName,
+        availableActions: loadedSkill.actions.map((candidate) => ({
+          name: candidate.name,
+          description: candidate.description,
+        })),
+      },
+    )
+  }
+
+  validateActionInputSchema(action.inputSchema, actionInput)
+
+  return {
+    status: "validated",
+    skill: {
+      name: loadedSkill.skill.name,
+      title: loadedSkill.skill.title,
+      scope: loadedSkill.skill.scope,
+      ...(loadedSkill.skill.agentId ? { agentId: loadedSkill.skill.agentId } : {}),
+    },
+    action: {
+      name: action.name,
+      description: action.description,
+      hasInputSchema: action.inputSchema !== undefined,
+    },
+    input: actionInput,
   }
 }
 
@@ -510,6 +841,15 @@ function executeRuntimeWorkspaceToolCall(
         name: call.name,
         ok: true,
         result: loadSkillByName(context, call.arguments),
+      }
+    }
+
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.actionCall) {
+      return {
+        index,
+        name: call.name,
+        ok: true,
+        result: validateSkillActionCall(context, call.arguments),
       }
     }
 

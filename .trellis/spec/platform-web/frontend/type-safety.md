@@ -220,6 +220,7 @@ interface RuntimeWorkspaceToolCall {
 
 - Supported tool names:
   - `skill_load`
+  - `action_call`
   - `workspace_read`
   - `workspace_list`
   - `workspace_search`
@@ -233,6 +234,30 @@ interface RuntimeWorkspaceToolCall {
 - `skill_load` should match `SkillRegistryEntry.name` first, then fall back to `id` for compatibility.
 - If a local and shared Skill share a name, prefer the current Agent's local Skill.
 - `skill_load` success returns the loaded Skill's `SKILL.md` entry content and minimal metadata; it must not return a resource index or resource file contents by default.
+- `skill_load` parses `tsian-actions` fenced JSON blocks from the loaded `SKILL.md` body and registers declared actions only for the same Agent's current tool loop.
+- Declared Skill actions are not included in eager Skill Index or `agent-context`.
+- `action_call` arguments: `{ skill: string, action: string, input?: Record<string, unknown> }`.
+- `action_call` requires that the named Skill has already been loaded by the same Agent during the same tool loop.
+- `action_call` only validates action availability and input for the MVP; it must not execute scripts, call remote resources, mutate workspace/state, or invoke platform actions.
+- `action_call` success returns a structured validation observation with `status: "validated"`.
+- `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`:
+  ````md
+  ```json tsian-actions
+  [
+    {
+      "name": "example_action",
+      "description": "Validate an example action payload.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": { "type": "string" }
+        }
+      }
+    }
+  ]
+  ```
+  ````
 - Runtime prompts should display Skill Index entries as `name/description/triggers/applicability` and should not default to exposing `path=...`.
 - Use `workspace_read/workspace_list/workspace_search` for third-layer files only: files explicitly referenced by the loaded `SKILL.md`, world data, memory, README files, or other current-task context.
 - Use the same workspace path rules as storage-facing APIs:
@@ -257,6 +282,13 @@ interface RuntimeWorkspaceToolCall {
 - Unknown or invisible Skill name -> error observation with `SKILL_NOT_FOUND`.
 - Ambiguous Skill name after local/shared priority -> error observation with `SKILL_NAME_AMBIGUOUS` and lightweight candidates.
 - Missing `SKILL.md` after registry resolution -> error observation with `SKILL_DETAIL_NOT_FOUND`.
+- Missing or blank `action_call.arguments.skill` -> error observation with `ACTION_SKILL_REQUIRED`.
+- Missing or blank `action_call.arguments.action` -> error observation with `ACTION_NAME_REQUIRED`.
+- `action_call.arguments.input` non-object -> error observation with `ACTION_INPUT_INVALID`.
+- `action_call` before the Skill is loaded -> error observation with `SKILL_ACTION_NOT_LOADED`.
+- `action_call` for an undeclared action on a loaded Skill -> error observation with `ACTION_NOT_FOUND`.
+- `action_call` with schema-invalid input -> error observation with `ACTION_INPUT_INVALID`.
+- Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `skill_load` metadata without failing the whole Skill load.
 - Invalid path -> error observation with workspace path error code.
 - Missing file on `workspace_read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
 - Model keeps requesting tools past the per-Agent round limit -> return stripped final text if present; otherwise throw a clear runtime error.
@@ -265,13 +297,15 @@ interface RuntimeWorkspaceToolCall {
 
 - Good: master sees a Skill Index entry named `continuity`, calls `skill_load`, receives `SKILL.md` entry content as observation, then returns a plain brief.
 - Good: narrative loads `prose-style` with `skill_load`; if an agent-local and shared Skill share that name, the narrative-local Skill wins.
+- Good: loaded `SKILL.md` declares `tsian-actions`; the same Agent can call one declared action with `action_call` and receives a validation-only observation.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
 - Good: Agent uses `workspace_list` for a directory and receives entries without file contents.
 - Good: Agent uses `workspace_search` and receives previews, then explicitly reads a chosen file if full content is needed.
 - Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
 - Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
 - Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
-- Bad: adding write/delete/script/remote execution tools to this read-only path.
+- Bad: allowing `action_call` before `skill_load`; this bypasses Skill gating.
+- Bad: making MVP `action_call` execute write/delete/script/remote behavior before the executor registry task exists.
 - Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
 
 ### 6. Tests Required
@@ -280,6 +314,12 @@ interface RuntimeWorkspaceToolCall {
 - Assert shared Skills and Agent-local Skills can both be loaded by `name`.
 - Assert local/shared duplicate Skill names prefer the current Agent's local Skill.
 - Assert `skill_load` does not return a resource index by default.
+- Assert `skill_load` registers actions declared in a `tsian-actions` fenced JSON block.
+- Assert `action_call` succeeds after loading the declaring Skill and returns `status: "validated"`.
+- Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
+- Assert unknown actions return `ACTION_NOT_FOUND`.
+- Assert schema-invalid action input returns `ACTION_INPUT_INVALID`.
+- Assert successful MVP action calls do not mutate workspace/state and do not execute scripts.
 - Assert missing Skill names become structured observations, not uncaught runtime crashes.
 - Assert a loaded `SKILL.md` can chain to `workspace_read` for referenced resources.
 - Assert `workspace_list` returns directory entries without file contents.
