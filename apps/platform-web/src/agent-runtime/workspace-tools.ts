@@ -1,4 +1,6 @@
 import type {
+  AgentContextEntry,
+  SkillRegistryEntry,
   WorkspaceEntry,
   WorkspaceFile,
   WorkspaceSearchResult,
@@ -18,6 +20,7 @@ export interface ParsedRuntimeWorkspaceToolCall {
 export interface RuntimeWorkspaceToolError {
   code: string
   message: string
+  details?: unknown
 }
 
 export interface RuntimeWorkspaceToolObservation {
@@ -33,6 +36,11 @@ interface NormalizePathOptions {
   rejectTrailingSlash: boolean
 }
 
+export interface RuntimeWorkspaceToolExecutionContext {
+  workspaceFiles: WorkspaceFile[]
+  agentContext?: AgentContextEntry
+}
+
 const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
@@ -41,8 +49,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function toolError(code: string, message: string): RuntimeWorkspaceToolError {
-  return { code, message }
+function toolError(
+  code: string,
+  message: string,
+  details?: unknown,
+): RuntimeWorkspaceToolError {
+  return details === undefined ? { code, message } : { code, message, details }
 }
 
 function normalizePathBase(value: unknown, options: NormalizePathOptions): string {
@@ -323,8 +335,139 @@ function searchWorkspaceFiles(
     .slice(0, limit)
 }
 
-function executeRuntimeWorkspaceToolCall(
+function normalizeSkillName(value: unknown): string {
+  if (typeof value !== "string") {
+    throw toolError(
+      "SKILL_NAME_REQUIRED",
+      "Skill name must be a string.",
+    )
+  }
+
+  const name = value.trim()
+  if (!name) {
+    throw toolError(
+      "SKILL_NAME_REQUIRED",
+      "Skill name is required.",
+    )
+  }
+
+  return name
+}
+
+function normalizedLookupKey(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function skillCandidateDetails(skill: SkillRegistryEntry): Record<string, unknown> {
+  const details: Record<string, unknown> = {
+    name: skill.name,
+    title: skill.title,
+    description: skill.description,
+    scope: skill.scope,
+  }
+  if (skill.agentId) {
+    details.agentId = skill.agentId
+  }
+  return details
+}
+
+function narrowSkillCandidates(
+  candidates: SkillRegistryEntry[],
+  agentContext: AgentContextEntry,
+): SkillRegistryEntry[] {
+  const localCandidates = candidates.filter((skill) =>
+    skill.scope === "agent-local" && skill.agentId === agentContext.agent.id
+  )
+
+  return localCandidates.length ? localCandidates : candidates
+}
+
+function resolveVisibleSkillByName(
+  agentContext: AgentContextEntry,
+  value: unknown,
+): SkillRegistryEntry {
+  const requestedName = normalizeSkillName(value)
+  const requestedKey = normalizedLookupKey(requestedName)
+  const nameMatches = agentContext.skillIndex.filter((skill) =>
+    normalizedLookupKey(skill.name) === requestedKey
+  )
+  const candidates = nameMatches.length
+    ? nameMatches
+    : agentContext.skillIndex.filter((skill) => normalizedLookupKey(skill.id) === requestedKey)
+
+  if (candidates.length === 0) {
+    throw toolError(
+      "SKILL_NOT_FOUND",
+      `Skill was not found or is not visible to this agent: ${requestedName}`,
+    )
+  }
+
+  const narrowed = narrowSkillCandidates(candidates, agentContext)
+  if (narrowed.length !== 1) {
+    throw toolError(
+      "SKILL_NAME_AMBIGUOUS",
+      `Skill name is ambiguous for this agent: ${requestedName}`,
+      {
+        candidates: narrowed.map(skillCandidateDetails),
+      },
+    )
+  }
+
+  return narrowed[0]
+}
+
+function loadSkillEntryFile(
   files: WorkspaceFile[],
+  skill: SkillRegistryEntry,
+): WorkspaceFile {
+  const file = files.find((candidate) => candidate.path === skill.path)
+  if (!file) {
+    throw toolError(
+      "SKILL_DETAIL_NOT_FOUND",
+      `Skill detail file was not found for skill: ${skill.name}`,
+    )
+  }
+
+  return file
+}
+
+function loadSkillByName(
+  context: RuntimeWorkspaceToolExecutionContext,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (!context.agentContext) {
+    throw toolError(
+      "SKILL_CONTEXT_REQUIRED",
+      "skill.load requires an active Agent context.",
+    )
+  }
+
+  const skill = resolveVisibleSkillByName(context.agentContext, input.name)
+  const file = loadSkillEntryFile(context.workspaceFiles, skill)
+  const loadedSkill: Record<string, unknown> = {
+    name: skill.name,
+    title: skill.title,
+    description: skill.description,
+    triggers: skill.triggers,
+    appliesTo: skill.appliesTo,
+    scope: skill.scope,
+  }
+  if (skill.agentId) {
+    loadedSkill.agentId = skill.agentId
+  }
+
+  return {
+    loadedSkill,
+    file: {
+      mediaType: file.mediaType,
+      content: file.content,
+      updatedAt: file.updatedAt,
+    },
+  }
+}
+
+function executeRuntimeWorkspaceToolCall(
+  context: RuntimeWorkspaceToolExecutionContext,
   parsed: ParsedRuntimeWorkspaceToolCall,
   index: number,
 ): RuntimeWorkspaceToolObservation {
@@ -351,12 +494,21 @@ function executeRuntimeWorkspaceToolCall(
   }
 
   try {
+    if (call.name === "skill.load") {
+      return {
+        index,
+        name: call.name,
+        ok: true,
+        result: loadSkillByName(context, call.arguments),
+      }
+    }
+
     if (call.name === "workspace.read") {
       return {
         index,
         name: call.name,
         ok: true,
-        result: readWorkspaceFile(files, call.arguments.path),
+        result: readWorkspaceFile(context.workspaceFiles, call.arguments.path),
       }
     }
 
@@ -365,7 +517,7 @@ function executeRuntimeWorkspaceToolCall(
         index,
         name: call.name,
         ok: true,
-        result: listWorkspaceEntries(files, call.arguments.path),
+        result: listWorkspaceEntries(context.workspaceFiles, call.arguments.path),
       }
     }
 
@@ -374,7 +526,7 @@ function executeRuntimeWorkspaceToolCall(
         index,
         name: call.name,
         ok: true,
-        result: searchWorkspaceFiles(files, call.arguments),
+        result: searchWorkspaceFiles(context.workspaceFiles, call.arguments),
       }
     }
 
@@ -396,6 +548,7 @@ function executeRuntimeWorkspaceToolCall(
         ? {
             code: error.code,
             message: error.message,
+            ...(error.details === undefined ? {} : { details: error.details }),
           }
         : toolError(
             "WORKSPACE_TOOL_FAILED",
@@ -406,10 +559,10 @@ function executeRuntimeWorkspaceToolCall(
 }
 
 export function executeRuntimeWorkspaceToolCalls(
-  files: WorkspaceFile[],
+  context: RuntimeWorkspaceToolExecutionContext,
   calls: ParsedRuntimeWorkspaceToolCall[],
 ): RuntimeWorkspaceToolObservation[] {
-  return calls.map((call, index) => executeRuntimeWorkspaceToolCall(files, call, index))
+  return calls.map((call, index) => executeRuntimeWorkspaceToolCall(context, call, index))
 }
 
 export function formatRuntimeWorkspaceToolObservationMessage(

@@ -89,7 +89,9 @@ export type SkillRegistryScope = "shared" | "agent-local"
 
 export interface SkillRegistryEntry {
   id: string
+  name: string
   title: string
+  description: string
   summary: string
   path: string
   scope: SkillRegistryScope

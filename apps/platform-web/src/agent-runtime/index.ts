@@ -55,15 +55,17 @@ const NARRATIVE_AGENT_PLATFORM_GUARD = [
 ].join("\n")
 
 const WORKSPACE_TOOL_INSTRUCTIONS = [
-  "你可以按需使用只读 Runtime Workspace 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
-  "如果需要加载 Skill 详情，使用可见 Skill Index 中的 path 调用 workspace.read 读取对应 SKILL.md。资源、README、世界资料和记忆文件也通过同一套 workspace 工具读取。",
+  "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
+  "如果需要加载 Skill 详情，使用 skill.load，并传入可见 Skill Index 中的 name。不要用 workspace.read 读取 Skill 入口文件。",
+  "加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 workspace.read/list/search 读取具体资源。",
   "可用工具：",
-  "- workspace.read arguments={\"path\":\"skills/example/SKILL.md\"}",
+  "- skill.load arguments={\"name\":\"prose-style\"}",
+  "- workspace.read arguments={\"path\":\"world/canon.md\"}",
   "- workspace.list arguments={\"path\":\"skills\"}，path 可省略表示根目录",
   "- workspace.search arguments={\"query\":\"关键词\",\"limit\":10}",
   "工具调用格式必须独占一个块：",
   "<tsian-tool-call>",
-  "{\"name\":\"workspace.read\",\"arguments\":{\"path\":\"skills/example/SKILL.md\"}}",
+  "{\"name\":\"skill.load\",\"arguments\":{\"name\":\"prose-style\"}}",
   "</tsian-tool-call>",
   "收到 observation 后继续完成任务。最终输出不要包含工具调用块、observation、工具细节或实现说明。",
 ].join("\n")
@@ -174,7 +176,7 @@ function formatSkillIndex(context: AgentContextEntry): string {
   return context.skillIndex
     .map((skill) => {
       const scope = skill.scope === "agent-local"
-        ? `agent-local:${skill.agentId ?? "unknown"}`
+        ? "local"
         : "shared"
       const triggers = skill.triggers.length
         ? ` triggers=${skill.triggers.join(", ")}`
@@ -182,7 +184,7 @@ function formatSkillIndex(context: AgentContextEntry): string {
       const appliesTo = skill.appliesTo.length
         ? ` appliesTo=${skill.appliesTo.join(", ")}`
         : ""
-      return `- ${skill.id} (${scope}) ${skill.title}: ${skill.summary || "（无摘要）"} path=${skill.path}${triggers}${appliesTo}`
+      return `- ${skill.name} [${scope}]: ${skill.description || skill.summary || "（无描述）"}${triggers}${appliesTo}`
     })
     .join("\n")
 }
@@ -242,9 +244,11 @@ function getWorkspaceAgentContext(
   return context
 }
 
-function buildMasterMessages(input: AgentRuntimeTurnInput): AiChatMessage[] {
+function buildMasterMessages(
+  input: AgentRuntimeTurnInput,
+  context: AgentContextEntry | null = getWorkspaceAgentContext(input, "master"),
+): AiChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
-  const context = getWorkspaceAgentContext(input, "master")
   return [
     {
       role: "system",
@@ -281,9 +285,9 @@ function buildMasterMessages(input: AgentRuntimeTurnInput): AiChatMessage[] {
 function buildNarrativeMessages(
   input: AgentRuntimeTurnInput,
   masterPlan: string,
+  context: AgentContextEntry | null = getWorkspaceAgentContext(input, "narrative"),
 ): AiChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
-  const context = getWorkspaceAgentContext(input, "narrative")
   return [
     {
       role: "system",
@@ -325,8 +329,9 @@ async function callAgentModelWithWorkspaceTools(
   input: AgentRuntimeTurnInput,
   capabilities: AgentRuntimeCapabilities,
   options: AgentRuntimeModelCallOptions,
+  agentContext: AgentContextEntry | null,
 ): Promise<string> {
-  if (!input.workspaceFiles) {
+  if (!input.workspaceFiles || !agentContext) {
     return (await capabilities.callModel(messages, options)).trim()
   }
 
@@ -353,7 +358,10 @@ async function callAgentModelWithWorkspaceTools(
       )
     }
 
-    const observations = executeRuntimeWorkspaceToolCalls(input.workspaceFiles, toolCalls)
+    const observations = executeRuntimeWorkspaceToolCalls({
+      workspaceFiles: input.workspaceFiles,
+      agentContext,
+    }, toolCalls)
     nextMessages = [
       ...nextMessages,
       {
@@ -376,26 +384,30 @@ export async function runAgentRuntimeTurn(
 ): Promise<AgentRuntimeTurnResult> {
   assertNotAborted(input.signal)
 
+  const masterContext = getWorkspaceAgentContext(input, "master")
   const masterPlan = (await callAgentModelWithWorkspaceTools(
-    buildMasterMessages(input),
+    buildMasterMessages(input, masterContext),
     input,
     capabilities,
     {
       debugLabel: "master-agent",
       signal: input.signal,
     },
+    masterContext,
   )).trim()
 
   assertNotAborted(input.signal)
 
+  const narrativeContext = getWorkspaceAgentContext(input, "narrative")
   const replyText = (await callAgentModelWithWorkspaceTools(
-    buildNarrativeMessages(input, masterPlan),
+    buildNarrativeMessages(input, masterPlan, narrativeContext),
     input,
     capabilities,
     {
       debugLabel: "narrative-agent",
       signal: input.signal,
     },
+    narrativeContext,
   )).trim()
 
   if (!replyText) {

@@ -99,13 +99,12 @@ Skill 必须支持渐进披露。
 
 常驻上下文只放 Skill Index，且只包含：
 
-- id；
-- title；
-- summary；
+- name；
+- description；
 - triggers；
 - appliesTo / applicability。
 
-常驻 Skill Index 不暴露 action 列表。Agent 先根据 summary / triggers 判断是否需要加载某个 Skill；加载后才看到详细 instructions、examples、schemas、actions、scripts 或 references。
+常驻 Skill Index 不暴露 action 列表，也不默认暴露 `SKILL.md` 的虚拟文件路径。Agent 先根据 name / description / triggers 判断是否需要加载某个 Skill；加载后才看到详细 instructions，以及在什么情况下读取 examples、schemas、actions、scripts 或 references。
 
 推荐流程：
 
@@ -113,13 +112,16 @@ Skill 必须支持渐进披露。
 回合开始
   -> Orchestrator 注入相关 Agent 可见的 Skill Index
   -> Agent 判断需要加载哪些 Skill
-  -> Agent 通过 Runtime Workspace 只读工具读取 Skill Index 中的 SKILL.md path
-  -> Runtime 将文件内容作为 observation 回灌给同一 Agent
-  -> Agent 获得该 Skill 的详细指导与 action 说明
+  -> Agent 通过 skill.load(name) 加载 Skill 的 SKILL.md 入口正文
+  -> Runtime 在当前 Agent 可见 Skill 中解析 name，并将入口正文作为 observation 回灌给同一 Agent
+  -> Agent 根据 SKILL.md 的链式引用，按需使用 workspace.read/list/search 读取 references、examples、schemas 或 scripts
+  -> Agent 获得该 Skill 的详细指导与 action 说明，且只读取当前步骤真正需要的资源
   -> Agent 才能调用已加载 Skill 的 action
 ```
 
-在 live Agent Runtime 中，Skill 详情不需要专用 `skill.load` 工具。主路径应复用虚拟文件系统工具，例如 `workspace.read("skills/example/SKILL.md")`。`skill-detail` 这类查询可以作为 UI、调试或外部 bridge 能力保留，但不应取代 Agent 通过 workspace 自主读取文件的模型。
+在 live Agent Runtime 中，Skill 详情加载应使用专用 `skill.load` 工具。Agent 使用 Skill 的 `name`，不需要理解 path、id、scope 或 ref。`skill.load` 只加载 `SKILL.md` 入口正文和最小加载元信息，不默认返回 resource index。第三层资源读取才使用 Runtime Workspace 文件工具。
+
+`skill-detail` 这类 path-based 查询可以作为 UI、调试或外部 bridge 能力保留，但不应成为 live Agent Runtime 的主路径。
 
 这能避免 prompt 常驻内容膨胀，也能避免 Agent 被未加载 Skill 的 action 名称诱导乱调用。
 

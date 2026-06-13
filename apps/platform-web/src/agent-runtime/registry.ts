@@ -267,18 +267,25 @@ function buildSkillRegistryEntry(
   pathInfo: SkillPathInfo,
 ): SkillRegistryEntry {
   const parsed = parseMarkdown(file.content)
-  const id = metadataString(parsed.metadata, ["id", "name"]) ?? pathInfo.skillId
+  const name = metadataString(parsed.metadata, ["name", "id"]) ?? pathInfo.skillId
+  const id = metadataString(parsed.metadata, ["id", "name"]) ?? name
   const title =
     metadataString(parsed.metadata, ["title", "name"]) ??
     firstHeading(parsed.body) ??
-    id
+    name
+  const description =
+    metadataString(parsed.metadata, ["description", "summary"]) ??
+    firstBodyParagraph(parsed.body)
+  const summary =
+    metadataString(parsed.metadata, ["summary", "description"]) ??
+    description
 
   const entry: SkillRegistryEntry = {
     id,
+    name,
     title,
-    summary:
-      metadataString(parsed.metadata, ["summary", "description"]) ??
-      firstBodyParagraph(parsed.body),
+    description,
+    summary,
     path: file.path,
     scope: pathInfo.scope,
     triggers: metadataArray(parsed.metadata, ["triggers"]),
