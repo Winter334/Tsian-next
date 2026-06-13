@@ -14,7 +14,7 @@
 
 - Agent 可配置、可替换、可扩展。
 - Skill 是按需加载的能力包，不是常驻工具列表。
-- Agent 协作通过联系人声明和 `agent.call` 自然形成，不使用显式团队配置作为主模型。
+- Agent 协作通过联系人声明和 `agent_call` 自然形成，不使用显式团队配置作为主模型。
 - 普通 Agent 输出是软协议，由 `AGENT.md` 和 Skill 指导；平台不强制校验每段文本或 brief。
 - 硬校验只发生在工具 / action 调用、结构化写入、远程执行结果和平台提交边界。
 - Runtime Workspace 是存档的数据容器；上下文、记忆、结构化状态、Agent 定义、Skill 定义、前端数据都可以是工作区文件。
@@ -59,13 +59,13 @@ agents/
 - 一个入口 Agent，通常是 `agents/master/AGENT.md`。
 - 从工作区文件扫描出的 Agent registry。
 - `AGENT.md` 中声明的联系人。
-- 一个通用 `agent.call` Skill / action。
+- 一个通用 `agent_call` Skill / action。
 
 团队由 Agent 联系关系自然形成。每个 Agent 只需要知道与自己业务有承接关系的其它 Agent。
 
-例如，master 可以知道 narrative、state、memory；narrative 可以只知道 style 或 critic；某个战斗 runtime 可以额外提供 rule-referee。只要相关 Agent 被声明为联系人，并能被 `agent.call` 调用，就不需要额外维护一份全局团队装配表。
+例如，master 可以知道 narrative、state、memory；narrative 可以只知道 style 或 critic；某个战斗 runtime 可以额外提供 rule-referee。只要相关 Agent 被声明为联系人，并能被 `agent_call` 调用，就不需要额外维护一份全局团队装配表。
 
-Agent 之间的即时交接应走 `agent.call`。工作区文件只用于记录值得长期保留或后续复用的内容，不应强迫每次协作都绕一圈写入 handoff 文件。
+Agent 之间的即时交接应走 `agent_call`。工作区文件只用于记录值得长期保留或后续复用的内容，不应强迫每次协作都绕一圈写入 handoff 文件。
 
 ## 5. Skill
 
@@ -112,14 +112,14 @@ Skill 必须支持渐进披露。
 回合开始
   -> Orchestrator 注入相关 Agent 可见的 Skill Index
   -> Agent 判断需要加载哪些 Skill
-  -> Agent 通过 skill.load(name) 加载 Skill 的 SKILL.md 入口正文
+  -> Agent 通过 skill_load(name) 加载 Skill 的 SKILL.md 入口正文
   -> Runtime 在当前 Agent 可见 Skill 中解析 name，并将入口正文作为 observation 回灌给同一 Agent
-  -> Agent 根据 SKILL.md 的链式引用，按需使用 workspace.read/list/search 读取 references、examples、schemas 或 scripts
+  -> Agent 根据 SKILL.md 的链式引用，按需使用 workspace_read/workspace_list/workspace_search 读取 references、examples、schemas 或 scripts
   -> Agent 获得该 Skill 的详细指导与 action 说明，且只读取当前步骤真正需要的资源
   -> Agent 才能调用已加载 Skill 的 action
 ```
 
-在 live Agent Runtime 中，Skill 详情加载应使用专用 `skill.load` 工具。Agent 使用 Skill 的 `name`，不需要理解 path、id、scope 或 ref。`skill.load` 只加载 `SKILL.md` 入口正文和最小加载元信息，不默认返回 resource index。第三层资源读取才使用 Runtime Workspace 文件工具。
+在 live Agent Runtime 中，Skill 详情加载应使用专用 `skill_load` 工具。Agent 使用 Skill 的 `name`，不需要理解 path、id、scope 或 ref。`skill_load` 只加载 `SKILL.md` 入口正文和最小加载元信息，不默认返回 resource index。第三层资源读取才使用 Runtime Workspace 文件工具。
 
 `skill-detail` 这类 path-based 查询可以作为 UI、调试或外部 bridge 能力保留，但不应成为 live Agent Runtime 的主路径。
 
@@ -307,7 +307,7 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 
 后续实现应逐步：
 
-1. 实现通用 `agent.call` Skill / action。
+1. 实现通用 `agent_call` Skill / action。
 2. 让 Agent 按需加载 Skill detail，并将已加载 Skill 指令/actions 注入后续上下文。
 3. 实现统一 action 调用和执行器适配。
 4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。

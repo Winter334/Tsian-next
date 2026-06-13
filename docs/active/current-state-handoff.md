@@ -28,9 +28,9 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - `skill-detail` bridge query 已实现，可按选中的 `SKILL.md` path 加载 Skill 正文和资源索引，并保持资源内容按需读取。
 - `agent-context` bridge query 已实现，可为指定 Agent 组装 `AGENT.md`、notes/session、可见 Skill Index 和声明的 context files。
 - 当前 AIRP 回合已开始消费 Runtime Workspace 中的 `agents/master/AGENT.md` 与 `agents/narrative/AGENT.md`，并将 Agent context 注入 master/narrative 两次模型调用。
-- 默认 AIRP 回合已支持 runtime 工具循环：Agent 可通过 `<tsian-tool-call>` 请求 `skill.load`、`workspace.read`、`workspace.list`、`workspace.search`，runtime 将 observation 回灌给同一 Agent。Skill 详情主路径是 `skill.load(name)`；workspace 工具用于 `SKILL.md` 链式引用后的第三层资源读取。
+- 默认 AIRP 回合已支持 runtime 工具循环：Agent 可通过 `<tsian-tool-call>` 请求 `skill_load`、`workspace_read`、`workspace_list`、`workspace_search`，runtime 将 observation 回灌给同一 Agent。Skill 详情主路径是 `skill_load(name)`；workspace 工具用于 `SKILL.md` 链式引用后的第三层资源读取。
 
-当前代码尚未实现 agent-call 协作、action executor registry、脚本/远程执行适配、Agent notes/session 写回，或把工具/action 调用 trace 持久化。默认回合仍是 master -> narrative 两个 Agent 步骤；每个步骤可能因为 `skill.load` 或 workspace 工具 observation 产生额外模型调用。
+当前代码尚未实现 `agent_call` 协作、action executor registry、脚本/远程执行适配、Agent notes/session 写回，或把工具/action 调用 trace 持久化。默认回合仍是 master -> narrative 两个 Agent 步骤；每个步骤可能因为 `skill_load` 或 workspace 工具 observation 产生额外模型调用。
 
 ## 3. 当前有效边界
 
@@ -61,7 +61,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 
 优先从这些方向继续：
 
-1. 实现通用 `agent.call` Skill / action，让 Agent 协作从联系人声明自然形成。
+1. 实现通用 `agent_call` Skill / action，让 Agent 协作从联系人声明自然形成。
 2. 让 Agent 按需加载 Skill detail，并将已加载 Skill 指令/actions 注入后续模型上下文。
 3. 设计统一 action 调用与执行器适配，包括浏览器脚本和远程执行。
 4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。

@@ -11,6 +11,16 @@ export interface RuntimeWorkspaceToolCall {
   arguments: Record<string, unknown>
 }
 
+export const RUNTIME_WORKSPACE_TOOL_NAMES = {
+  skillLoad: "skill_load",
+  workspaceRead: "workspace_read",
+  workspaceList: "workspace_list",
+  workspaceSearch: "workspace_search",
+} as const
+
+export type RuntimeWorkspaceToolName =
+  (typeof RUNTIME_WORKSPACE_TOOL_NAMES)[keyof typeof RUNTIME_WORKSPACE_TOOL_NAMES]
+
 export interface ParsedRuntimeWorkspaceToolCall {
   raw: string
   call?: RuntimeWorkspaceToolCall
@@ -438,7 +448,7 @@ function loadSkillByName(
   if (!context.agentContext) {
     throw toolError(
       "SKILL_CONTEXT_REQUIRED",
-      "skill.load requires an active Agent context.",
+      "skill_load requires an active Agent context.",
     )
   }
 
@@ -494,7 +504,7 @@ function executeRuntimeWorkspaceToolCall(
   }
 
   try {
-    if (call.name === "skill.load") {
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad) {
       return {
         index,
         name: call.name,
@@ -503,7 +513,7 @@ function executeRuntimeWorkspaceToolCall(
       }
     }
 
-    if (call.name === "workspace.read") {
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead) {
       return {
         index,
         name: call.name,
@@ -512,7 +522,7 @@ function executeRuntimeWorkspaceToolCall(
       }
     }
 
-    if (call.name === "workspace.list") {
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList) {
       return {
         index,
         name: call.name,
@@ -521,7 +531,7 @@ function executeRuntimeWorkspaceToolCall(
       }
     }
 
-    if (call.name === "workspace.search") {
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch) {
       return {
         index,
         name: call.name,

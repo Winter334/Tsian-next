@@ -205,7 +205,7 @@ await runAgentRuntimeTurn({
 
 ```md
 <tsian-tool-call>
-{"name":"skill.load","arguments":{"name":"prose-style"}}
+{"name":"skill_load","arguments":{"name":"prose-style"}}
 </tsian-tool-call>
 ```
 
@@ -219,30 +219,30 @@ interface RuntimeWorkspaceToolCall {
 ```
 
 - Supported tool names:
-  - `skill.load`
-  - `workspace.read`
-  - `workspace.list`
-  - `workspace.search`
+  - `skill_load`
+  - `workspace_read`
+  - `workspace_list`
+  - `workspace_search`
 
 ### 3. Contracts
 
 - Runtime tools execute against the `WorkspaceFile[]` and `AgentContextEntry` already assembled inside `runAgentRuntimeTurn`.
 - `agent-runtime` must not import Dexie, storage helpers, bridge objects, or `platform-host`.
-- `skill.load` arguments: `{ name: string }`.
-- `skill.load` resolves only against the current Agent's visible `skillIndex`.
-- `skill.load` should match `SkillRegistryEntry.name` first, then fall back to `id` for compatibility.
+- `skill_load` arguments: `{ name: string }`.
+- `skill_load` resolves only against the current Agent's visible `skillIndex`.
+- `skill_load` should match `SkillRegistryEntry.name` first, then fall back to `id` for compatibility.
 - If a local and shared Skill share a name, prefer the current Agent's local Skill.
-- `skill.load` success returns the loaded Skill's `SKILL.md` entry content and minimal metadata; it must not return a resource index or resource file contents by default.
+- `skill_load` success returns the loaded Skill's `SKILL.md` entry content and minimal metadata; it must not return a resource index or resource file contents by default.
 - Runtime prompts should display Skill Index entries as `name/description/triggers/applicability` and should not default to exposing `path=...`.
-- Use `workspace.read/list/search` for third-layer files only: files explicitly referenced by the loaded `SKILL.md`, world data, memory, README files, or other current-task context.
+- Use `workspace_read/workspace_list/workspace_search` for third-layer files only: files explicitly referenced by the loaded `SKILL.md`, world data, memory, README files, or other current-task context.
 - Use the same workspace path rules as storage-facing APIs:
   - normalize backslashes to slashes;
   - trim leading slashes;
   - reject empty file paths, trailing slash file paths, `.`, `..`, and empty path segments;
   - allow empty directory path for root listing.
-- `workspace.read` arguments: `{ path: string }`; success returns a `WorkspaceFile`.
-- `workspace.list` arguments: `{ path?: string }`; success returns `{ path, entries }` with direct child `WorkspaceEntry[]`.
-- `workspace.search` arguments: `{ query: string, limit?: number }`; success returns `WorkspaceSearchResult[]`; empty query returns `[]`.
+- `workspace_read` arguments: `{ path: string }`; success returns a `WorkspaceFile`.
+- `workspace_list` arguments: `{ path?: string }`; success returns `{ path, entries }` with direct child `WorkspaceEntry[]`.
+- `workspace_search` arguments: `{ query: string, limit?: number }`; success returns `WorkspaceSearchResult[]`; empty query returns `[]`.
 - Tool observations are returned to the same Agent as a normal user message containing `<tsian-tool-observation>`.
 - Final master/narrative outputs must strip tool-call blocks and must not expose tool observations to players.
 
@@ -253,37 +253,37 @@ interface RuntimeWorkspaceToolCall {
 - Missing or blank `name` -> error observation with `TOOL_NAME_REQUIRED`.
 - Non-object `arguments` -> error observation with `TOOL_ARGUMENTS_INVALID`.
 - Unknown tool name -> error observation with `UNSUPPORTED_WORKSPACE_TOOL`.
-- Missing or blank `skill.load.arguments.name` -> error observation with `SKILL_NAME_REQUIRED`.
+- Missing or blank `skill_load.arguments.name` -> error observation with `SKILL_NAME_REQUIRED`.
 - Unknown or invisible Skill name -> error observation with `SKILL_NOT_FOUND`.
 - Ambiguous Skill name after local/shared priority -> error observation with `SKILL_NAME_AMBIGUOUS` and lightweight candidates.
 - Missing `SKILL.md` after registry resolution -> error observation with `SKILL_DETAIL_NOT_FOUND`.
 - Invalid path -> error observation with workspace path error code.
-- Missing file on `workspace.read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
+- Missing file on `workspace_read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
 - Model keeps requesting tools past the per-Agent round limit -> return stripped final text if present; otherwise throw a clear runtime error.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: master sees a Skill Index entry named `continuity`, calls `skill.load`, receives `SKILL.md` entry content as observation, then returns a plain brief.
-- Good: narrative loads `prose-style` with `skill.load`; if an agent-local and shared Skill share that name, the narrative-local Skill wins.
-- Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace.read` only when that reference is needed.
-- Good: Agent uses `workspace.list` for a directory and receives entries without file contents.
-- Good: Agent uses `workspace.search` and receives previews, then explicitly reads a chosen file if full content is needed.
+- Good: master sees a Skill Index entry named `continuity`, calls `skill_load`, receives `SKILL.md` entry content as observation, then returns a plain brief.
+- Good: narrative loads `prose-style` with `skill_load`; if an agent-local and shared Skill share that name, the narrative-local Skill wins.
+- Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
+- Good: Agent uses `workspace_list` for a directory and receives entries without file contents.
+- Good: Agent uses `workspace_search` and receives previews, then explicitly reads a chosen file if full content is needed.
 - Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
 - Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
-- Bad: returning a resource index from `skill.load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
+- Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
 - Bad: adding write/delete/script/remote execution tools to this read-only path.
 - Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
 
 ### 6. Tests Required
 
-- Assert a model response containing `skill.load` produces a second same-Agent model call with loaded `SKILL.md` content.
+- Assert a model response containing `skill_load` produces a second same-Agent model call with loaded `SKILL.md` content.
 - Assert shared Skills and Agent-local Skills can both be loaded by `name`.
 - Assert local/shared duplicate Skill names prefer the current Agent's local Skill.
-- Assert `skill.load` does not return a resource index by default.
+- Assert `skill_load` does not return a resource index by default.
 - Assert missing Skill names become structured observations, not uncaught runtime crashes.
-- Assert a loaded `SKILL.md` can chain to `workspace.read` for referenced resources.
-- Assert `workspace.list` returns directory entries without file contents.
-- Assert `workspace.search` returns scored previews and respects limit caps.
+- Assert a loaded `SKILL.md` can chain to `workspace_read` for referenced resources.
+- Assert `workspace_list` returns directory entries without file contents.
+- Assert `workspace_search` returns scored previews and respects limit caps.
 - Assert invalid JSON, unsupported tools, invalid paths, and missing files become observations, not uncaught runtime crashes.
 - Assert final `replyText` does not contain `<tsian-tool-call>` markup.
 - Assert no-tool turns still return the current `{ replyText, masterPlan }` shape.

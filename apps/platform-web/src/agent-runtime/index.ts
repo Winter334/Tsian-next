@@ -11,6 +11,7 @@ import {
   executeRuntimeWorkspaceToolCalls,
   formatRuntimeWorkspaceToolObservationMessage,
   parseRuntimeWorkspaceToolCalls,
+  RUNTIME_WORKSPACE_TOOL_NAMES,
   stripRuntimeWorkspaceToolCallBlocks,
 } from "./workspace-tools"
 
@@ -56,16 +57,16 @@ const NARRATIVE_AGENT_PLATFORM_GUARD = [
 
 const WORKSPACE_TOOL_INSTRUCTIONS = [
   "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
-  "如果需要加载 Skill 详情，使用 skill.load，并传入可见 Skill Index 中的 name。不要用 workspace.read 读取 Skill 入口文件。",
-  "加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 workspace.read/list/search 读取具体资源。",
+  `如果需要加载 Skill 详情，使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}，并传入可见 Skill Index 中的 name。不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件。`,
+  `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。`,
   "可用工具：",
-  "- skill.load arguments={\"name\":\"prose-style\"}",
-  "- workspace.read arguments={\"path\":\"world/canon.md\"}",
-  "- workspace.list arguments={\"path\":\"skills\"}，path 可省略表示根目录",
-  "- workspace.search arguments={\"query\":\"关键词\",\"limit\":10}",
+  `- ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad} arguments={"name":"prose-style"}`,
+  `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} arguments={"path":"world/canon.md"}`,
+  `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList} arguments={"path":"skills"}，path 可省略表示根目录`,
+  `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} arguments={"query":"关键词","limit":10}`,
   "工具调用格式必须独占一个块：",
   "<tsian-tool-call>",
-  "{\"name\":\"skill.load\",\"arguments\":{\"name\":\"prose-style\"}}",
+  `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}","arguments":{"name":"prose-style"}}`,
   "</tsian-tool-call>",
   "收到 observation 后继续完成任务。最终输出不要包含工具调用块、observation、工具细节或实现说明。",
 ].join("\n")
