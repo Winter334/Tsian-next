@@ -1345,3 +1345,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: Skill Action 调用门控 MVP
+
+**Date**: 2026-06-13
+**Task**: Skill Action 调用门控 MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现 Skill 加载后的 action_call 门控 MVP：skill_load 解析 SKILL.md 中的 tsian-actions fenced JSON 声明，同一 Agent 工具循环内解锁已加载 Skill 的 action；action_call 校验 Skill 已加载、action 已声明和输入 schema，并返回 validation-only observation。同步方向文档和 platform-web type-safety spec，验证 build:web、git diff --check 和内存 runtime 探针。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6e8f0e1` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

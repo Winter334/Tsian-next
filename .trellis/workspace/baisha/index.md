@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 39
+- **Total Sessions**: 40
 - **Last Active**: 2026-06-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1347 | Active |
+| `journal-1.md` | ~1381 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 40 | 2026-06-13 | Skill Action 调用门控 MVP | `6e8f0e1` | `master` |
 | 39 | 2026-06-13 | 按名称加载 Skill | `8c73e5c` | `master` |
 | 38 | 2026-06-13 | Agent 按需读取 Workspace Skill | `df5f453` | `master` |
 | 37 | 2026-06-13 | 实现 Workspace Agent Runtime MVP | `a58ba22` | `master` |
