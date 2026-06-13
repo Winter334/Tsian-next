@@ -519,6 +519,74 @@ messages.push({
 return `- ${skill.name}: ${skill.description}`
 ```
 
+## Scenario: Native AIRP History Writeback
+
+### 1. Scope / Trigger
+
+- Trigger: `interaction.sendMessage` persists player-facing AIRP history into Runtime Workspace.
+- Applies when changing the successful-turn persistence path in `apps/platform-web/src/platform-host/index.ts` or default workspace history files in `apps/platform-web/src/storage/workspace.ts`.
+
+### 2. Signatures
+
+- Raw AIRP history turn files live under `history/turns/turn-000001.json`.
+- Each successful turn writes one `application/json` workspace file.
+- File content uses schema string `tsian.airp.history.turn.v1`.
+- The minimum file shape is:
+
+```typescript
+interface RawAirpHistoryTurnRecord {
+  schema: "tsian.airp.history.turn.v1"
+  turn: number
+  createdAt: string
+  source: {
+    kind: "agent-runtime"
+    masterAgentId: "master"
+    narrativeAgentId: "narrative"
+  }
+  messages: ConversationMessageRecord[]
+}
+```
+
+### 3. Contracts
+
+- Raw AIRP history is the native fallback memory substrate: complete, reliable, minimally interpreted, and checkpoint-scoped.
+- Raw history stores only the player input and final assistant narrative output for a successful turn.
+- Raw history must not store model prompts, master briefs, tool observations, trace events, delegated Agent intermediate outputs, or hidden debug data.
+- Store raw history at turn granularity, not as a monolithic all-history JSONL file, so workspace search can return matching individual turns.
+- Keep raw history separate from `.tsian/traces/`; trace is platform debug material and normal workspace list/search hides it by default.
+- Enhanced AIRP memory such as timelines, summaries, world facts, character state, relationships, vector indexes, or semantic retrieval are derived workspace projections and belong to Skills, Agents, or content-specific conventions.
+- Do not add a platform-owned gameplay memory schema when implementing raw history writeback.
+- Direct future manual correction of a raw turn file is acceptable; do not add an amendment/revision overlay unless a future task explicitly chooses it.
+- Successful raw history writes must happen before after-turn checkpoint creation so restore follows the rest of workspace state.
+- Failed or aborted turns must not leave ordinary raw history records. If a later success-path write fails after raw history was written, best-effort restore the previous file or delete the new path before rethrowing.
+- Existing `saveHistory` and snapshots remain the current chat display source; raw workspace history intentionally duplicates the player-facing exchange for runtime memory/feedstock use.
+
+### 4. Validation & Error Matrix
+
+- Successful turn -> `history/turns/turn-000001.json` exists and includes exactly one user and one assistant message for that turn.
+- Aborted turn before final acceptance -> no raw history turn file is written.
+- Agent Runtime failure -> no raw history turn file is written.
+- Later storage failure after raw history write -> raw history writeback rollback is attempted and the original error is rethrown.
+- Existing saves -> no backfill required; they start writing per-turn raw history on future successful turns.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `workspace_search({ query: "lantern" })` returns a matching `history/turns/turn-000012.json` file preview.
+- Good: a memory Skill reads raw turn files and creates `world/characters.json` or `memory/facts.jsonl` as derived, correctable projections.
+- Base: current UI chat history still reads `saveHistory` while Agent/Skill context can inspect workspace raw history when needed.
+- Bad: writing all history into `history/conversation.jsonl` only; workspace search can no longer identify the matching turn cleanly.
+- Bad: adding automatic timeline/current-summary maintenance as part of raw history persistence.
+- Bad: treating raw history as low-quality fallback and replacing it with derived summaries as the only source record.
+- Bad: hiding raw turn files under `.tsian/`; they are ordinary gameplay memory feedstock, not platform trace.
+
+### 6. Tests Required
+
+- Assert successful turns write one raw history JSON file before checkpoint creation.
+- Assert raw history content includes player input and final assistant output.
+- Assert raw history content omits prompts, master brief, trace events, tool observations, and delegated Agent outputs.
+- Assert workspace list/read/search can surface individual raw turn files.
+- Assert failed or aborted turns do not persist raw history files.
+
 ## Scenario: Runtime Trace Persistence
 
 ### 1. Scope / Trigger

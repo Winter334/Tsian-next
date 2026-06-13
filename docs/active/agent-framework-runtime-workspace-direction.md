@@ -223,7 +223,9 @@ Runtime Workspace 是一个存档级虚拟文件系统。
       scripts/
 
   history/
-    conversation.jsonl
+    turns/
+      README.md
+      turn-000001.json
     timeline.md
 
   world/
@@ -261,7 +263,7 @@ Runtime Workspace 是一个存档级虚拟文件系统。
 - `agents/` 存 Agent 定义和 Agent 自己的工作状态。
 - `skills/` 存共享 Skill。
 - `agents/<agent>/skills/` 存 Agent-local Skill。
-- `history/` 存对话和压缩后的剧情时间线，不存所有中间过程。
+- `history/` 存玩家面对的原始 AIRP 回合记录和压缩后的剧情时间线，不存所有中间过程。原始记录推荐按 `history/turns/turn-*.json` 一回合一文件保存，便于 workspace 搜索直接定位具体回合。
 - `world/` 存当前世界事实、规则和结构化状态。
 - `memory/` 存长期记忆、摘要和可检索事实。
 - `frontend/` 存前端包约定读取的数据。

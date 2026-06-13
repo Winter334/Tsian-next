@@ -64,6 +64,26 @@ const platformHostReadyPromise = new Promise<void>((resolve) => {
 
 let previousTurnController: AbortController | null = null
 
+const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v1"
+const AIRP_HISTORY_TURN_PATH_PREFIX = "history/turns/"
+
+interface RawAirpHistoryTurnRecord {
+  schema: typeof AIRP_HISTORY_TURN_SCHEMA
+  turn: number
+  createdAt: string
+  source: {
+    kind: "agent-runtime"
+    masterAgentId: "master"
+    narrativeAgentId: "narrative"
+  }
+  messages: ConversationMessageRecord[]
+}
+
+interface RawAirpHistoryWriteback {
+  path: string
+  previousFile: WorkspaceFile | null
+}
+
 function markPlatformHostReady() {
   if (platformHostReady) {
     return
@@ -156,6 +176,86 @@ function syncWorkspaceFileWrite(
     workspaceFiles.push(item)
     workspaceFiles.sort((left, right) => left.path.localeCompare(right.path))
   }
+}
+
+function syncWorkspaceFileDelete(workspaceFiles: WorkspaceFile[], path: string): void {
+  const existingIndex = workspaceFiles.findIndex((file) => file.path === path)
+  if (existingIndex >= 0) {
+    workspaceFiles.splice(existingIndex, 1)
+  }
+}
+
+function formatRawAirpHistoryTurnPath(turn: number): string {
+  return `${AIRP_HISTORY_TURN_PATH_PREFIX}turn-${String(turn).padStart(6, "0")}.json`
+}
+
+function serializeRawAirpHistoryTurnRecord(
+  turn: number,
+  createdAt: Date,
+  userInput: string,
+  assistantOutput: string,
+): string {
+  const record: RawAirpHistoryTurnRecord = {
+    schema: AIRP_HISTORY_TURN_SCHEMA,
+    turn,
+    createdAt: createdAt.toISOString(),
+    source: {
+      kind: "agent-runtime",
+      masterAgentId: "master",
+      narrativeAgentId: "narrative",
+    },
+    messages: [
+      { role: "user", content: userInput },
+      { role: "assistant", content: assistantOutput },
+    ],
+  }
+
+  return `${JSON.stringify(record, null, 2)}\n`
+}
+
+async function writeRawAirpHistoryTurnFileForSave(
+  saveId: string,
+  workspaceFiles: WorkspaceFile[],
+  input: {
+    turn: number
+    userInput: string
+    assistantOutput: string
+  },
+): Promise<RawAirpHistoryWriteback> {
+  const path = formatRawAirpHistoryTurnPath(input.turn)
+  const previousFile = await readWorkspaceFileForSave(saveId, path)
+  const file = await writeWorkspaceFileForSave(saveId, {
+    path,
+    content: serializeRawAirpHistoryTurnRecord(
+      input.turn,
+      new Date(),
+      input.userInput,
+      input.assistantOutput,
+    ),
+    mediaType: "application/json",
+  })
+  syncWorkspaceFileWrite(workspaceFiles, file)
+
+  return { path, previousFile }
+}
+
+async function rollbackRawAirpHistoryWritebackForSave(
+  saveId: string,
+  workspaceFiles: WorkspaceFile[],
+  writeback: RawAirpHistoryWriteback,
+): Promise<void> {
+  if (writeback.previousFile) {
+    const file = await writeWorkspaceFileForSave(saveId, {
+      path: writeback.previousFile.path,
+      content: writeback.previousFile.content,
+      mediaType: writeback.previousFile.mediaType,
+    })
+    syncWorkspaceFileWrite(workspaceFiles, file)
+    return
+  }
+
+  await deleteWorkspacePathForSave(saveId, writeback.path)
+  syncWorkspaceFileDelete(workspaceFiles, writeback.path)
 }
 
 async function activeSaveExists(saveId: string): Promise<boolean> {
@@ -638,6 +738,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         },
       })
       let workspaceFiles: WorkspaceFile[] | null = null
+      let rawAirpHistoryWriteback: RawAirpHistoryWriteback | null = null
 
       if (previousTurnController) {
         previousTurnController.abort("new-turn-started")
@@ -688,6 +789,16 @@ export const playFrontendBridge: PlayFrontendBridge = {
           nextHistory,
         )
 
+        rawAirpHistoryWriteback = await writeRawAirpHistoryTurnFileForSave(
+          activeSaveId,
+          workspaceFiles,
+          {
+            turn: nextTurn,
+            userInput: content,
+            assistantOutput: result.replyText,
+          },
+        )
+
         trace.emit({
           type: "turn_completed",
           ok: true,
@@ -717,6 +828,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
         return { snapshot: snapshotAfter }
       } catch (error) {
         runtimeEngine.loadSnapshot(snapshotBefore)
+        if (workspaceFiles && rawAirpHistoryWriteback) {
+          try {
+            await rollbackRawAirpHistoryWritebackForSave(
+              activeSaveId,
+              workspaceFiles,
+              rawAirpHistoryWriteback,
+            )
+          } catch {
+            // Raw AIRP history rollback is best-effort; preserve the original turn error.
+          }
+        }
         trace.emit({
           type: "turn_failed",
           ok: false,
