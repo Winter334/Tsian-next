@@ -1379,3 +1379,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: Action Executor Registry MVP
+
+**Date**: 2026-06-13
+**Task**: Action Executor Registry MVP
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现 action_call 背后的 Action Executor Registry MVP：Skill action 声明支持 executor 引用，缺省路由到 builtin/validation，新增 builtin/echo 返回已校验输入；action_call 现在按 loaded Skill gating 和 input schema 校验后解析 executor，并对 unsupported type、unknown builtin executor 返回结构化 observation。同步方向文档、current handoff 和 platform-web type-safety spec，验证 build:web、git diff --check 和内存 runtime 探针。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3198c76` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
