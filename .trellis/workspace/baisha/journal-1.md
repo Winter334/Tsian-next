@@ -1515,3 +1515,37 @@ Implemented contacts-gated runtime agent_call with delegated Agent execution, me
 ### Next Steps
 
 - None - task complete
+
+
+## Session 45: Native AIRP history writeback
+
+**Date**: 2026-06-13
+**Task**: Native AIRP history writeback
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added native raw AIRP turn writeback into Runtime Workspace: successful turns now persist player input and final narrative output as per-turn history/turns JSON files, default workspace docs/specs were updated, and validation covered build, diff check, browser write/search/checkpoint behavior, and failed-turn no-write behavior.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eeb10cc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
