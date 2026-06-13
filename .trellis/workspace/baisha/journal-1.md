@@ -1447,3 +1447,37 @@ Implemented save-scoped Runtime Workspace storage and bridge API: added shared w
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: 持久化运行时追踪
+
+**Date**: 2026-06-13
+**Task**: 持久化运行时追踪
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+完成 Runtime Trace Persistence MVP：新增平台拥有、workspace 承载、默认隐藏的 JSONL trace；记录回合、Agent step、模型调用摘要、Skill 加载、workspace 工具、action 调用和 workspace mutation；成功 trace 进入 checkpoint，失败 trace best-effort 写入；更新方向文档、handoff 与 platform-web type-safety spec，并通过 build、diff check、runtime/browser 探针验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e6387b5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
