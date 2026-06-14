@@ -23,7 +23,8 @@
     "06-14-runtime-workspace-maintenance-pipeline",
     "06-14-runtime-controlled-execution-completeness",
     "06-14-agent-facing-runtime-diagnostics",
-    "06-14-runtime-workspace-completeness"
+    "06-14-runtime-workspace-completeness",
+    "06-14-remote-hosted-execution-adapter-completion"
   ],
   "parent": null,
   "relatedFiles": [],

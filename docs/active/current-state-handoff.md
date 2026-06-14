@@ -37,7 +37,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - Agent Session Transcript MVP 已实现。成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。该文件是会话记录，不是 bounded operational log。
 - Skill-triggered Memory Maintenance MVP 已实现。默认共享 `memory-maintenance` Skill 需要先 `skill_load` 再 `action_call apply_maintenance_plan`，通过 `browser_script` 和 Tsian SDK 在 staged transaction 中写入 `agents/<agent>/notes.md`、`history/timeline.md`、`memory/summaries/current.md` 或 `memory/summaries/long-term.md`。没有显式 Skill action 就不会运行增强记忆维护；空 `writes` 代表显式 no-op。
 
-当前代码尚未实现远程 executor、WASM/托管执行、session transcript 压缩/归档、标准 operational logging、固定每回合记忆维护，或 `agent_call` 的有限递归 / UI 配置。默认回合仍是 master -> narrative 两个固定 Agent 步骤；每个步骤可能因为 `skill_load`、`action_call`、`agent_call` 或 workspace 工具 observation 产生额外模型调用。
+当前 foundation phase 已明确不新增独立的远程 executor、WASM、远程脚本加载或托管执行环境。远程 API 交互优先通过现有 `browser_script` + `fetch` 承载，未来只有具体 Skill 无法合理使用 `browser_script`、`platform_action` 或脚本调用远程 API 时才重开 executor 设计。当前代码尚未实现 session transcript 压缩/归档、标准 operational logging、固定每回合记忆维护，或 `agent_call` 的有限递归 / UI 配置。默认回合仍是 master -> narrative 两个固定 Agent 步骤；每个步骤可能因为 `skill_load`、`action_call`、`agent_call` 或 workspace 工具 observation 产生额外模型调用。
 
 ## 3. 当前有效边界
 
@@ -68,9 +68,9 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 
 优先从这些方向继续：
 
-1. 继续完善 action executor registry：远程执行、WASM/托管执行、更丰富的受控平台动作，以及必要时扩展轻量 executor policy 的审计/调试能力。
+1. 按具体 Skill 需求增强现有 `browser_script` / Tsian SDK / 受控平台动作；不要把独立 `remote_http`、WASM 或托管执行作为默认 foundation 后续项。
 2. 扩展 `agent_call` 到更成熟的协作策略，例如可配置预算、有限递归、协作 Skill 或调试 UI。
-3. 在 `runtime-diagnostics` facts-only 视图之上扩展远程 executor/WASM/托管执行诊断事实，并设计未来管理 Agent / 诊断 Skill / UI 体验。
+3. 在 `runtime-diagnostics` facts-only 视图之上继续设计未来管理 Agent / 诊断 Skill / UI 体验；若未来出现新 executor，再按事实补充对应诊断字段。
 4. 在 raw history 与 session transcript 底账之上继续完善记忆策略，例如维护 Skill 的提示质量、diff/review UI、summary 压缩、检索索引和 transcript 归档。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
 6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。

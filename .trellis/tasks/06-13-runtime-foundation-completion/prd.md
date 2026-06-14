@@ -17,8 +17,8 @@ This task is the parent planning task for that phase. It should identify the MVP
 
 - The current active direction is Agent-Orchestrated AIRP Runtime, with Runtime Workspace as the save-scoped data container.
 - Recent completed MVPs include workspace storage, Agent/Skill registry, `skill_load`, Skill action gating, `platform_action`, Runtime trace persistence, `agent_call`, raw AIRP history writeback, and strong-SDK `browser_script`.
-- Active docs say the current code still lacks remote executors, WASM/hosted execution, Agent notes/session automatic writeback, timeline/current-summary maintenance, limited `agent_call` recursion, and runtime configuration UI.
-- Active docs recommend continuing action executor registry, mature `agent_call`, trace coverage/retention, Runtime Workspace derived files, stateRecords migration, and workspace/Agent/Skill browsing/editing UI.
+- Active docs now say the foundation phase should not add independent `remote_http`, WASM, remote script loading, or hosted execution; remote API interaction should use existing `browser_script` + `fetch` unless a future concrete Skill proves that insufficient.
+- Active docs recommend strengthening existing `browser_script` / Tsian SDK / controlled platform actions as concrete Skill needs appear, plus mature `agent_call`, trace/diagnostic experience, Runtime Workspace derived files, stateRecords migration, and workspace/Agent/Skill browsing/editing UI.
 - The previous executor foundation task explicitly set the user-facing direction as completing lower runtime layers before UI, concrete AIRP Agents, or gameplay-specific Skill design.
 - Current action executor support in code is `builtin`, `platform_action`, and `browser_script`; unsupported executor types fail structurally.
 - Current controlled executor timeout is implemented for `platform_action` and `browser_script`, with a default of 10 seconds and maximum of 60 seconds.
@@ -33,8 +33,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 
 ### A. Controlled Execution Completeness
 
-- Remote HTTP executor and/or remote script execution policy.
-- WASM / hosted execution shape, if it is needed before UI and Skill design.
+- Remote/WASM/hosted execution disposition: do not add independent `remote_http`, WASM, remote script loading, or hosted execution in the foundation phase; route remote API interaction through `browser_script` unless a future concrete Skill proves that insufficient.
 - Executor trust and enable/disable policy, especially for high-power `browser_script`.
 - Executor declaration normalization, result validation, error taxonomy, timeout/abort behavior, and trace summaries.
 - Richer platform-controlled actions only when they are gameplay-neutral and belong at the platform boundary.
@@ -43,7 +42,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 
 - Staged workspace mutations for runtime turns, or an equivalent rollback/checkpoint boundary.
 - Consistent read-after-write semantics inside a turn.
-- Failure behavior for platform actions, browser script SDK writes, future remote executors, trace writes, and raw history writeback.
+- Failure behavior for platform actions, browser script SDK writes, any future new executor, trace writes, and raw history writeback.
 - Clear contract for which files are ordinary user-editable workspace data and which are platform metadata.
 
 ### C. Agent-Facing Runtime Diagnostics
@@ -102,11 +101,12 @@ This task is the parent planning task for that phase. It should identify the MVP
    - Validation: probes must show successful turns append checkpoint-scoped session records, validated maintenance writes commit with the turn, failed/aborted turns leave no ordinary maintenance files behind, and invalid maintenance plans do not fail the player-facing turn.
    - Why before UI/Agent/Skill design: future UI, concrete Agent roles, and memory Skills need stable maintenance conventions for existing workspace files such as `agents/*/session.jsonl`, `history/timeline.md`, and `memory/summaries/current.md`.
 
-3. Controlled Execution Completeness
+3. Controlled Execution Policy And Result Contract
+   - Child task: `.trellis/tasks/06-14-runtime-controlled-execution-completeness`
    - Boundary: Skill action executor declarations and platform-controlled executor adapters.
-   - Expected output: remote/WASM/hosted execution decisions can build on the transaction boundary instead of each inventing failure semantics.
-   - Validation: executor-specific probes for enablement, timeout/abort, structured errors, trace summaries, and rollback behavior.
-   - Why before UI/Agent/Skill design: executable Skills need stable execution guarantees before they become author-facing.
+   - Expected output: lightweight executor-class policy and optional action `outputSchema` validation, so any future new executor can build on stable policy, result, timeout, trace, and rollback semantics.
+   - Validation: executor policy and output-schema probes cover allow/deny behavior, structured observations, trace summaries, timeout/abort compatibility, and staged workspace rollback.
+   - Why before any future new executor: new executor power should reuse the existing policy/result contract instead of inventing its own control surface.
 
 4. Agent-Facing Runtime Diagnostics
    - Child task: `.trellis/tasks/06-14-agent-facing-runtime-diagnostics`
@@ -122,13 +122,20 @@ This task is the parent planning task for that phase. It should identify the MVP
    - Validation: workspace list/search/read/import/export/checkpoint probes cover visible and platform-owned paths.
    - Why before UI/Agent/Skill design: UI and Skills will encode workspace assumptions unless the filesystem contract is settled.
 
-6. Agent Runtime Collaboration Completeness
+6. Remote / Hosted Execution Disposition
+   - Child task: `.trellis/tasks/06-14-remote-hosted-execution-adapter-completion`
+   - Boundary: action executor adapter roadmap beyond local `builtin`, `platform_action`, and Skill-local `browser_script`.
+   - Expected output: no-code decision and documentation cleanup confirming `remote_http`, WASM, remote script loading, and hosted execution are not foundation-phase implementation targets because existing `browser_script` + `fetch` covers remote API interaction sufficiently for current needs.
+   - Validation: active docs and parent roadmap no longer present remote/WASM/hosted execution as mandatory next foundation work; future revisit criteria require a concrete Skill that cannot be reasonably expressed through `browser_script`, `platform_action`, or remote APIs called from script.
+   - Why before UI/Agent/Skill design: author-facing Skill design should know that `browser_script` is the supported extension point for remote service interaction, instead of designing against unimplemented executor classes.
+
+7. Agent Runtime Collaboration Completeness
    - Boundary: `agent_call`, context/history policy, tool loop limits, Agent session/notes writeback contract.
    - Expected output: mature delegation limits and persistence hooks without designing concrete AIRP role behavior.
    - Validation: delegated Agent probes cover budgets, optional limited recursion if approved, and trace/failure behavior.
    - Why before UI/Agent/Skill design: concrete Agent teams need a stable collaboration substrate.
 
-7. Transitional State Cleanup
+8. Transitional State Cleanup
    - Boundary: current `stateRecords` compatibility storage versus workspace-backed state files.
    - Expected output: decision and migration/adapter plan that keeps platform gameplay-neutral.
    - Validation: existing frontend/debug behavior remains compatible or has an explicit migration.
@@ -145,6 +152,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - [x] The third child implementation slice is selected: Runtime Controlled Execution Completeness.
 - [x] The fourth child implementation slice is selected: Agent-Facing Runtime Diagnostics.
 - [x] The fifth child implementation slice is selected: Runtime Workspace Completeness.
+- [x] The remote/WASM/hosted execution gap is handled as its own remaining roadmap item or child, not hidden under the completed policy/result-contract child.
 - [ ] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
 - [ ] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
 - [ ] Active direction docs are updated if the roadmap changes the project direction.
@@ -163,4 +171,5 @@ This task is the parent planning task for that phase. It should identify the MVP
 
 ## Resolved Questions
 
-- Executor trust/enable policy comes before `remote_http`: the third child implements a lightweight code-level executor-class policy plus optional action `outputSchema`, while `remote_http`, WASM, hosted execution, per-Skill trust state, and trust UI remain deferred.
+- Executor trust/enable policy comes before `remote_http` inside the completed third child: that child implements a lightweight code-level executor-class policy plus optional action `outputSchema`, while `remote_http`, WASM, hosted execution, per-Skill trust state, and trust UI are out of scope for that child only.
+- Remote/WASM/hosted execution remained a parent-level Controlled Execution gap after the policy/result-contract child, but the user later confirmed the gap should be handled by no-code disposition rather than implementation: do not add `remote_http`, WASM, remote script loading, or hosted execution in the foundation phase; route remote API interaction through `browser_script` unless a future concrete Skill proves that insufficient.
