@@ -1753,3 +1753,37 @@ Completed Runtime Workspace metadata visibility and mutation contract: ordinary 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 52: Remote Execution Disposition
+
+**Date**: 2026-06-14
+**Task**: Remote Execution Disposition
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Recorded the decision to avoid adding remote_http, WASM, remote script loading, or hosted execution in the foundation phase; active docs now route remote API interaction through browser_script + fetch unless a concrete Skill proves that insufficient.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `971bde0` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 51
+- **Total Sessions**: 52
 - **Last Active**: 2026-06-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1755 | Active |
+| `journal-1.md` | ~1789 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 52 | 2026-06-14 | Remote Execution Disposition | `971bde0` | `master` |
 | 51 | 2026-06-14 | Runtime Workspace Metadata Contract | `2d9ff87` | `master` |
 | 50 | 2026-06-14 | Agent-Facing Runtime Diagnostics | `0fb944a` | `master` |
 | 49 | 2026-06-14 | Controlled execution policy | `3fb8c34` | `master` |
