@@ -1685,3 +1685,37 @@ Completed lightweight executor-class policy, optional Skill action outputSchema 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 50: Agent-Facing Runtime Diagnostics
+
+**Date**: 2026-06-14
+**Task**: Agent-Facing Runtime Diagnostics
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added a facts-only runtime-diagnostics query over raw trace files, with shared contracts, bounded summaries, docs/spec updates, and task planning artifacts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0fb944a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
