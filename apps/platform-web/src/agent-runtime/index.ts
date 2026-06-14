@@ -20,6 +20,7 @@ import {
   parseRuntimeWorkspaceToolCalls,
   RUNTIME_WORKSPACE_TOOL_NAMES,
   stripRuntimeWorkspaceToolCallBlocks,
+  type RuntimeActionExecutorPolicy,
   type ParsedRuntimeWorkspaceToolCall,
   type RuntimeAgentCallArguments,
   type RuntimeAgentCallHistoryMode,
@@ -58,6 +59,7 @@ export interface AgentRuntimeCapabilities {
   runBrowserScript?(
     request: RuntimeBrowserScriptExecutorRequest,
   ): Promise<PlatformActionResult>
+  actionExecutorPolicy?: RuntimeActionExecutorPolicy
   emitTrace?: RuntimeTraceEmitter
 }
 
@@ -891,6 +893,7 @@ async function callAgentModelWithWorkspaceTools(
         : undefined,
       runPlatformAction: capabilities.runPlatformAction,
       runBrowserScript: capabilities.runBrowserScript,
+      actionExecutorPolicy: capabilities.actionExecutorPolicy,
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,

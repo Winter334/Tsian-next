@@ -11,6 +11,7 @@ export type RuntimeTraceEventType =
   | "skill_loaded"
   | "agent_called"
   | "workspace_tool_called"
+  | "action_executor_policy_checked"
   | "action_called"
   | "agent_session_transcripts_staged"
   | "script_log"

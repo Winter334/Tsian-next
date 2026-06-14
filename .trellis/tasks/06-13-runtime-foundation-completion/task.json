@@ -20,7 +20,8 @@
   "subtasks": [],
   "children": [
     "06-13-runtime-side-effect-transactions",
-    "06-14-runtime-workspace-maintenance-pipeline"
+    "06-14-runtime-workspace-maintenance-pipeline",
+    "06-14-runtime-controlled-execution-completeness"
   ],
   "parent": null,
   "relatedFiles": [],

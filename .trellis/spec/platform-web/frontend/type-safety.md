@@ -149,6 +149,7 @@ interface RuntimeWorkspaceToolCall {
 {
   "name": "example_action",
   "inputSchema": { "type": "object" },
+  "outputSchema": { "type": "object" },
   "executor": { "type": "platform_action", "name": "workspace-write" }
 }
 ```
@@ -322,6 +323,8 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` requires that the named Skill has already been loaded by the same Agent during the same tool loop.
 - `action_call` validates action availability and input before invoking any executor.
 - `action_call` routes to the action declaration's executor through the runtime action executor registry.
+- `action_call` checks the lightweight executor-class policy before running supported executors. The default code-level policy allows `builtin`, `platform_action`, and `browser_script`; injected policy may deny them for tests or future host policy. Do not add Settings UI, localStorage persistence, runtime prompts, or per-Skill trust state for this slice.
+- `action_call` may validate successful executor output when the loaded action declares optional `outputSchema`. Actions without `outputSchema` keep existing output behavior.
 - `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene" }`.
 - `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts and the current tool loop allows Agent calls.
 - `agent_call` validates the target against the caller Agent's `contacts`; contacts are a runtime stability boundary, not a full security model.
@@ -348,6 +351,7 @@ interface RuntimeWorkspaceToolCall {
 - The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/write/delete, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output.
 - The first browser script slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs. Worker hard limits still apply, and this is a third-party trust boundary rather than a guarantee that arbitrary third-party code is safe.
 - `action_call` success returns a structured observation with `status`, `executor`, `input`, and `output`.
+- `outputSchema` uses the same lightweight JSON-compatible type vocabulary as `inputSchema`: `array`, `boolean`, `integer`, `null`, `number`, `object`, and `string`. For object outputs, `required` and property `type` checks are supported; unsupported JSON Schema keywords are ignored.
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`:
   ````md
   ```json tsian-actions
@@ -356,6 +360,13 @@ interface RuntimeWorkspaceToolCall {
       "name": "example_action",
       "description": "Validate an example action payload.",
       "inputSchema": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": { "type": "string" }
+        }
+      },
+      "outputSchema": {
         "type": "object",
         "required": ["text"],
         "properties": {
@@ -388,6 +399,9 @@ interface RuntimeWorkspaceToolCall {
       "name": "run_skill_script",
       "description": "Run a trusted Skill-local browser script through the Tsian SDK.",
       "inputSchema": {
+        "type": "object"
+      },
+      "outputSchema": {
         "type": "object"
       },
       "executor": {
@@ -441,6 +455,8 @@ interface RuntimeWorkspaceToolCall {
 - Malformed action executor declarations -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
 - Platform action executor declarations without a non-empty `name` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
 - Browser script executor declarations without a non-empty `path`, or with invalid `timeoutMs` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
+- Malformed action `outputSchema` declarations -> report `ACTION_OUTPUT_SCHEMA_INVALID` in `skill_load` metadata and do not register that action.
+- Executor denied by lightweight policy -> error observation with `ACTION_EXECUTOR_DISABLED` and compact policy metadata; no AIRP-turn UI prompt.
 - Unsupported executor types -> error observation with `ACTION_EXECUTOR_UNSUPPORTED`.
 - Unknown built-in executor names -> error observation with `ACTION_EXECUTOR_NOT_FOUND`.
 - Controlled executor timeout -> error observation with `ACTION_EXECUTOR_TIMEOUT`.
@@ -451,6 +467,7 @@ interface RuntimeWorkspaceToolCall {
 - Missing browser script file -> error observation with `BROWSER_SCRIPT_NOT_FOUND`.
 - Browser script path outside the declaring Skill directory -> error observation with `BROWSER_SCRIPT_PATH_INVALID`.
 - Browser script failure, SDK failure, Worker failure, or Worker message failure -> structured error observation with a `BROWSER_SCRIPT_*` code.
+- Successful executor output that fails declared `outputSchema` -> error observation with `ACTION_OUTPUT_INVALID` and output summary metadata, not raw large output payloads.
 - Agent Runtime attempts to call a non-allow-listed platform action -> platform handler returns `AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED`, surfaced through `PLATFORM_ACTION_FAILED`.
 - Agent/Skill attempts to write or delete `.tsian/*` through ordinary `workspace-write`, `workspace-delete`, or browser script SDK workspace mutation -> structured workspace error observation.
 - Runtime turn fails or aborts after staged ordinary workspace writes -> persisted workspace state remains equivalent to the pre-turn accepted state, except for host-owned failed trace diagnostics.
@@ -466,8 +483,10 @@ interface RuntimeWorkspaceToolCall {
 - Good: loaded `SKILL.md` declares `tsian-actions`; the same Agent can call one declared action with `action_call` and receives a structured executor observation.
 - Good: action without an executor declaration uses built-in `validation`.
 - Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
+- Good: action with `outputSchema` validates successful executor output before returning a success observation.
 - Good: action with `{ "type": "platform_action", "name": "workspace-write" }` calls the injected platform action capability after gating and validation, then returns the platform result item as `output`.
 - Good: action with `{ "type": "browser_script", "path": "scripts/run.js", "timeoutMs": 10000 }` runs a Skill-local script through the Tsian SDK after Skill gating and input validation.
+- Good: an injected policy disables `browser_script` and `action_call` returns `ACTION_EXECUTOR_DISABLED` as a normal failed observation without prompting the player.
 - Good: an action writes a workspace file, then a later same-turn workspace read or browser script SDK read observes the staged file before the turn commits.
 - Good: a failed turn after staged workspace writes leaves no ordinary persisted workspace file from those staged writes.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
@@ -484,6 +503,8 @@ interface RuntimeWorkspaceToolCall {
 - Bad: making built-in executors execute write/delete/script/remote behavior.
 - Bad: letting Agent Runtime call broad platform actions such as checkpoint restore through `platform_action`.
 - Bad: making raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals supported browser script APIs in the first strong-SDK slice.
+- Bad: adding player-facing trust prompts, Settings toggles, or per-Skill trust records to the first lightweight executor policy slice.
+- Bad: treating `outputSchema` as full JSON Schema support before the runtime explicitly implements it.
 - Bad: making ordinary Agent output JSON-only to support tools; ordinary output remains a soft protocol.
 
 ### 6. Tests Required
@@ -496,6 +517,11 @@ interface RuntimeWorkspaceToolCall {
 - Assert `action_call` succeeds after loading the declaring Skill and routes through built-in executors.
 - Assert an action without executor uses `validation` and returns `status: "validated"`.
 - Assert an action with built-in `echo` returns `status: "executed"` and echoes validated input as `output`.
+- Assert malformed `outputSchema` declarations report `ACTION_OUTPUT_SCHEMA_INVALID` during `skill_load`.
+- Assert actions without `outputSchema` keep existing output behavior.
+- Assert actions with `outputSchema` validate executor output and return `ACTION_OUTPUT_INVALID` on mismatch without storing raw large output in trace.
+- Assert injected executor policy can return `ACTION_EXECUTOR_DISABLED` for supported executors.
+- Assert default executor policy allows existing `builtin`, `platform_action`, and `browser_script` behavior.
 - Assert `platform_action` sends `{ action: executor.name, params: input }` to the injected handler only after loaded Skill gating and input schema validation pass.
 - Assert `platform_action/workspace-write` and `workspace-delete` stage ordinary Runtime Workspace mutations during `interaction.sendMessage` and commit only on successful turns.
 - Assert failed or aborted turns discard ordinary staged workspace mutations.
@@ -752,6 +778,7 @@ stageAgentSessionTranscriptFiles(
   - Skill loads: skill name/path/scope, action count, declaration error count;
   - Agent calls: caller/target ids, target title, history mode, input/output summaries, status or error;
   - workspace tools: path/query/limit, result count, file metadata for reads, no file content;
+  - action executor policy checks: skill/action/executor metadata and compact allow/deny reason/source, no action input or script content;
   - action calls: skill/action/executor, input/output summaries, status or error;
   - browser scripts: script path/source size/start events and script log/trace summaries, no script source or large raw data;
   - workspace mutations: write path/mediaType/size or delete `deletedPaths`.
@@ -772,6 +799,7 @@ stageAgentSessionTranscriptFiles(
 
 - Good: trace records `workspace_read` path and content size without copying file content.
 - Good: trace records `agent_called` for both successful delegation and structured delegation errors without storing full delegated prompts.
+- Good: trace records `action_executor_policy_checked` with executor metadata and policy source/reason but no action input or script source.
 - Good: trace records `action_called` for `platform_action` plus a `workspace_mutation` event for `workspace-write`.
 - Good: trace records `script_log` summaries for `browser_script` start/log/fetch events and `workspace_mutation` for SDK writes/deletes.
 - Good: restoring an earlier checkpoint removes later trace files for the discarded branch.

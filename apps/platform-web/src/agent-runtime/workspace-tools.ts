@@ -54,10 +54,11 @@ interface RuntimeSkillActionDeclaration {
   name: string
   description: string
   inputSchema?: Record<string, unknown>
+  outputSchema?: Record<string, unknown>
   executor: RuntimeActionExecutorReference
 }
 
-interface RuntimeActionExecutorReference {
+export interface RuntimeActionExecutorReference {
   type: string
   name: string
   path?: string
@@ -101,6 +102,29 @@ type RuntimeBrowserScriptRunner = (
   request: RuntimeBrowserScriptExecutorRequest,
 ) => Promise<PlatformActionResult>
 
+export interface RuntimeActionExecutorPolicyRequest {
+  skill: {
+    name: string
+    path: string
+    scope: string
+    agentId?: string
+  }
+  action: {
+    name: string
+  }
+  executor: RuntimeActionExecutorReference
+}
+
+export interface RuntimeActionExecutorPolicyDecision {
+  enabled: boolean
+  reason?: string
+  source?: string
+}
+
+export type RuntimeActionExecutorPolicy = (
+  request: RuntimeActionExecutorPolicyRequest,
+) => RuntimeActionExecutorPolicyDecision | boolean
+
 interface RuntimeActionExecutorContext {
   input: Record<string, unknown>
   loadedSkill: RuntimeLoadedSkill
@@ -136,6 +160,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   runAgentCall?: RuntimeAgentCallRunner
   runPlatformAction?: RuntimePlatformActionRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
+  actionExecutorPolicy?: RuntimeActionExecutorPolicy
   signal?: AbortSignal
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
@@ -161,7 +186,7 @@ const PLATFORM_ACTION_EXECUTOR_TYPE = "platform_action"
 const BROWSER_SCRIPT_EXECUTOR_TYPE = "browser_script"
 const DEFAULT_CONTROLLED_EXECUTOR_TIMEOUT_MS = 10_000
 const MAX_CONTROLLED_EXECUTOR_TIMEOUT_MS = 60_000
-const SUPPORTED_ACTION_INPUT_TYPES = new Set([
+const SUPPORTED_ACTION_SCHEMA_TYPES = new Set([
   "array",
   "boolean",
   "integer",
@@ -780,6 +805,234 @@ function normalizeActionExecutorReference(
   }
 }
 
+function actionExecutionMetadata(
+  loadedSkill: RuntimeLoadedSkill,
+  action: RuntimeSkillActionDeclaration,
+): RuntimeActionExecutorPolicyRequest {
+  return {
+    skill: {
+      name: loadedSkill.skill.name,
+      path: loadedSkill.skill.path,
+      scope: loadedSkill.skill.scope,
+      ...(loadedSkill.skill.agentId ? { agentId: loadedSkill.skill.agentId } : {}),
+    },
+    action: {
+      name: action.name,
+    },
+    executor: action.executor,
+  }
+}
+
+function defaultActionExecutorPolicy(): RuntimeActionExecutorPolicyDecision {
+  return {
+    enabled: true,
+    source: "default",
+  }
+}
+
+function normalizePolicyDecision(
+  value: RuntimeActionExecutorPolicyDecision | boolean,
+): RuntimeActionExecutorPolicyDecision {
+  if (typeof value === "boolean") {
+    return {
+      enabled: value,
+    }
+  }
+
+  if (!isRecord(value) || typeof value.enabled !== "boolean") {
+    throw toolError(
+      "ACTION_EXECUTOR_POLICY_INVALID",
+      "Action executor policy must return a boolean or an object with enabled.",
+    )
+  }
+
+  return {
+    enabled: value.enabled,
+    ...(typeof value.reason === "string" && value.reason.trim()
+      ? { reason: value.reason.trim() }
+      : {}),
+    ...(typeof value.source === "string" && value.source.trim()
+      ? { source: value.source.trim() }
+      : {}),
+  }
+}
+
+function shouldCheckActionExecutorPolicy(executor: RuntimeActionExecutorReference): boolean {
+  return executor.type === "builtin"
+    || executor.type === PLATFORM_ACTION_EXECUTOR_TYPE
+    || executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE
+}
+
+function checkActionExecutorPolicy(
+  context: RuntimeWorkspaceToolExecutionContext,
+  loadedSkill: RuntimeLoadedSkill,
+  action: RuntimeSkillActionDeclaration,
+): void {
+  if (!shouldCheckActionExecutorPolicy(action.executor)) {
+    return
+  }
+
+  const request = actionExecutionMetadata(loadedSkill, action)
+  let decision: RuntimeActionExecutorPolicyDecision
+  try {
+    const policy = context.actionExecutorPolicy ?? defaultActionExecutorPolicy
+    decision = normalizePolicyDecision(policy(request))
+  } catch (error) {
+    context.emitTrace?.({
+      type: "action_executor_policy_checked",
+      ...traceBase(context),
+      ok: false,
+      data: {
+        ...request,
+        policy: {
+          enabled: false,
+          source: "policy-error",
+        },
+        error: error instanceof Error ? error.message : "Action executor policy failed.",
+      },
+    })
+    throw isRecord(error) && typeof error.code === "string" && typeof error.message === "string"
+      ? error
+      : toolError(
+          "ACTION_EXECUTOR_POLICY_FAILED",
+          "Action executor policy failed.",
+          {
+            ...request,
+            policyError: error instanceof Error ? error.message : String(error),
+          },
+        )
+  }
+
+  context.emitTrace?.({
+    type: "action_executor_policy_checked",
+    ...traceBase(context),
+    ok: decision.enabled,
+    data: {
+      ...request,
+      policy: {
+        enabled: decision.enabled,
+        ...(decision.source ? { source: decision.source } : {}),
+        ...(decision.reason ? { reason: decision.reason } : {}),
+      },
+    },
+  })
+
+  if (!decision.enabled) {
+    throw toolError(
+      "ACTION_EXECUTOR_DISABLED",
+      `Action executor is disabled by policy: ${action.executor.type}`,
+      {
+        ...request,
+        policy: {
+          enabled: false,
+          ...(decision.source ? { source: decision.source } : {}),
+          ...(decision.reason ? { reason: decision.reason } : {}),
+        },
+      },
+    )
+  }
+}
+
+function normalizeActionOutputSchema(
+  value: unknown,
+  actionName: string,
+  index: number,
+): Record<string, unknown> | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
+  if (!isRecord(value)) {
+    throw toolError(
+      "ACTION_OUTPUT_SCHEMA_INVALID",
+      `Action outputSchema must be an object: ${actionName}`,
+      { index, name: actionName },
+    )
+  }
+
+  validateDeclaredActionSchema(value, "outputSchema", actionName, index)
+  return value
+}
+
+function validateDeclaredActionSchema(
+  schema: Record<string, unknown>,
+  schemaName: "outputSchema",
+  actionName: string,
+  index: number,
+): void {
+  if (
+    schema.type !== undefined
+    && (
+      typeof schema.type !== "string"
+      || !SUPPORTED_ACTION_SCHEMA_TYPES.has(schema.type)
+    )
+  ) {
+    throw toolError(
+      "ACTION_OUTPUT_SCHEMA_INVALID",
+      `Action ${schemaName} has an unsupported root type: ${actionName}`,
+      {
+        index,
+        name: actionName,
+        type: schema.type,
+        supportedTypes: Array.from(SUPPORTED_ACTION_SCHEMA_TYPES).sort(),
+      },
+    )
+  }
+
+  if (
+    schema.required !== undefined
+    && (
+      !Array.isArray(schema.required)
+      || schema.required.some((item) => typeof item !== "string" || !item.trim())
+    )
+  ) {
+    throw toolError(
+      "ACTION_OUTPUT_SCHEMA_INVALID",
+      `Action ${schemaName} required fields must be non-empty strings: ${actionName}`,
+      { index, name: actionName },
+    )
+  }
+
+  if (schema.properties !== undefined && !isRecord(schema.properties)) {
+    throw toolError(
+      "ACTION_OUTPUT_SCHEMA_INVALID",
+      `Action ${schemaName} properties must be an object: ${actionName}`,
+      { index, name: actionName },
+    )
+  }
+
+  const properties = isRecord(schema.properties) ? schema.properties : {}
+  for (const [field, rawPropertySchema] of Object.entries(properties)) {
+    if (!isRecord(rawPropertySchema)) {
+      throw toolError(
+        "ACTION_OUTPUT_SCHEMA_INVALID",
+        `Action ${schemaName} property schema must be an object: ${actionName}`,
+        { index, name: actionName, field },
+      )
+    }
+
+    if (
+      rawPropertySchema.type !== undefined
+      && (
+        typeof rawPropertySchema.type !== "string"
+        || !SUPPORTED_ACTION_SCHEMA_TYPES.has(rawPropertySchema.type)
+      )
+    ) {
+      throw toolError(
+        "ACTION_OUTPUT_SCHEMA_INVALID",
+        `Action ${schemaName} property has an unsupported type: ${actionName}.${field}`,
+        {
+          index,
+          name: actionName,
+          field,
+          type: rawPropertySchema.type,
+          supportedTypes: Array.from(SUPPORTED_ACTION_SCHEMA_TYPES).sort(),
+        },
+      )
+    }
+  }
+}
+
 function normalizeOptionalString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
 }
@@ -985,6 +1238,24 @@ function parseActionDeclarations(content: string): SkillActionParseResult {
         inputSchema = rawAction.inputSchema
       }
 
+      let outputSchema: Record<string, unknown> | undefined
+      try {
+        outputSchema = normalizeActionOutputSchema(rawAction.outputSchema, name, index)
+      } catch (error) {
+        errors.push(isRecord(error) && typeof error.code === "string" && typeof error.message === "string"
+          ? {
+              code: error.code,
+              message: error.message,
+              ...(error.details === undefined ? {} : { details: error.details }),
+            }
+          : toolError(
+              "ACTION_OUTPUT_SCHEMA_INVALID",
+              error instanceof Error ? error.message : `Action outputSchema is invalid: ${name}`,
+              { index, name },
+            ))
+        continue
+      }
+
       const action: RuntimeSkillActionDeclaration = {
         name,
         description: typeof rawAction.description === "string"
@@ -992,6 +1263,7 @@ function parseActionDeclarations(content: string): SkillActionParseResult {
           : "",
         executor,
         ...(inputSchema ? { inputSchema } : {}),
+        ...(outputSchema ? { outputSchema } : {}),
       }
 
       seenNames.add(normalizedName)
@@ -1018,6 +1290,7 @@ function loadedSkillDetails(
       name: action.name,
       description: action.description,
       hasInputSchema: action.inputSchema !== undefined,
+      hasOutputSchema: action.outputSchema !== undefined,
       executor: action.executor,
     })),
   }
@@ -1122,7 +1395,7 @@ function validateActionInputSchema(
     const fieldType = typeof rawPropertySchema.type === "string"
       ? rawPropertySchema.type
       : ""
-    if (!fieldType || !SUPPORTED_ACTION_INPUT_TYPES.has(fieldType)) {
+    if (!fieldType || !SUPPORTED_ACTION_SCHEMA_TYPES.has(fieldType)) {
       continue
     }
 
@@ -1135,6 +1408,99 @@ function validateActionInputSchema(
           expected: fieldType,
           actual: Array.isArray(input[field]) ? "array" : input[field] === null ? "null" : typeof input[field],
         },
+      )
+    }
+  }
+}
+
+function actualSchemaType(value: unknown): string {
+  if (Array.isArray(value)) return "array"
+  if (value === null) return "null"
+  if (Number.isInteger(value)) return "integer"
+  return typeof value
+}
+
+function outputValidationDetails(
+  loadedSkill: RuntimeLoadedSkill,
+  action: RuntimeSkillActionDeclaration,
+  extra: Record<string, unknown>,
+): Record<string, unknown> {
+  return {
+    ...actionExecutionMetadata(loadedSkill, action),
+    ...extra,
+  }
+}
+
+function validateActionOutputSchema(
+  schema: Record<string, unknown> | undefined,
+  output: unknown,
+  loadedSkill: RuntimeLoadedSkill,
+  action: RuntimeSkillActionDeclaration,
+): void {
+  if (!schema) {
+    return
+  }
+
+  const rootType = typeof schema.type === "string" ? schema.type : "object"
+  if (!schemaTypeMatches(rootType, output)) {
+    throw toolError(
+      "ACTION_OUTPUT_INVALID",
+      "Action output root value has invalid type.",
+      outputValidationDetails(loadedSkill, action, {
+        expected: rootType,
+        actual: actualSchemaType(output),
+        outputSummary: summarizeTraceValue(output),
+      }),
+    )
+  }
+
+  if (rootType !== "object") {
+    return
+  }
+
+  if (!isRecord(output)) {
+    return
+  }
+
+  const required = Array.isArray(schema.required)
+    ? schema.required.filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+    : []
+  for (const field of required) {
+    if (output[field] === undefined) {
+      throw toolError(
+        "ACTION_OUTPUT_INVALID",
+        `Action output is missing required field: ${field}`,
+        outputValidationDetails(loadedSkill, action, {
+          field,
+          outputSummary: summarizeTraceValue(output),
+        }),
+      )
+    }
+  }
+
+  const properties = isRecord(schema.properties) ? schema.properties : {}
+  for (const [field, rawPropertySchema] of Object.entries(properties)) {
+    if (output[field] === undefined || !isRecord(rawPropertySchema)) {
+      continue
+    }
+
+    const fieldType = typeof rawPropertySchema.type === "string"
+      ? rawPropertySchema.type
+      : ""
+    if (!fieldType || !SUPPORTED_ACTION_SCHEMA_TYPES.has(fieldType)) {
+      continue
+    }
+
+    if (!schemaTypeMatches(fieldType, output[field])) {
+      throw toolError(
+        "ACTION_OUTPUT_INVALID",
+        `Action output field has invalid type: ${field}`,
+        outputValidationDetails(loadedSkill, action, {
+          field,
+          expected: fieldType,
+          actual: actualSchemaType(output[field]),
+          outputSummary: summarizeTraceValue(output),
+        }),
       )
     }
   }
@@ -1481,6 +1847,7 @@ async function validateSkillActionCall(
   }
 
   validateActionInputSchema(action.inputSchema, actionInput)
+  checkActionExecutorPolicy(context, loadedSkill, action)
   const execution = await executeSkillAction(loadedSkill, action, actionInput, {
     input: actionInput,
     loadedSkill,
@@ -1489,6 +1856,7 @@ async function validateSkillActionCall(
     runBrowserScript: context.runBrowserScript,
     signal: context.signal,
   })
+  validateActionOutputSchema(action.outputSchema, execution.output, loadedSkill, action)
 
   return {
     status: execution.status,
@@ -1502,6 +1870,7 @@ async function validateSkillActionCall(
       name: action.name,
       description: action.description,
       hasInputSchema: action.inputSchema !== undefined,
+      hasOutputSchema: action.outputSchema !== undefined,
     },
     executor: action.executor,
     input: actionInput,

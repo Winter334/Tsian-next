@@ -140,6 +140,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - [x] The first child implementation slice is selected: Runtime Side-Effect Transactions.
 - [x] The first child implementation slice is scoped tightly enough for planning.
 - [x] The second child implementation slice is selected: Runtime Workspace Maintenance Pipeline.
+- [x] The third child implementation slice is selected: Runtime Controlled Execution Completeness.
 - [ ] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
 - [ ] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
 - [ ] Active direction docs are updated if the roadmap changes the project direction.
@@ -155,4 +156,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 ## Open Questions
 
 - Should `stateRecords` migration be part of foundation completion before UI, or deferred until workspace UI makes the migration observable?
-- Should executor trust/enable policy come before `remote_http`, or can `remote_http` itself drive that policy design?
+
+## Resolved Questions
+
+- Executor trust/enable policy comes before `remote_http`: the third child implements a lightweight code-level executor-class policy plus optional action `outputSchema`, while `remote_http`, WASM, hosted execution, per-Skill trust state, and trust UI remain deferred.
