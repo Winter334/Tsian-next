@@ -1651,3 +1651,37 @@ Implemented checkpoint-scoped Agent session transcript JSONL persistence, seeded
 ### Next Steps
 
 - None - task complete
+
+
+## Session 49: Controlled execution policy
+
+**Date**: 2026-06-14
+**Task**: Controlled execution policy
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Completed lightweight executor-class policy, optional Skill action outputSchema validation, policy trace events, default maintenance Skill output contract, and synchronized runtime docs/specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3fb8c34` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
