@@ -1617,3 +1617,37 @@ Implemented staged Runtime Workspace transactions for Agent Runtime turns, atomi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: Runtime workspace maintenance pipeline
+
+**Date**: 2026-06-14
+**Task**: Runtime workspace maintenance pipeline
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Implemented checkpoint-scoped Agent session transcript JSONL persistence, seeded the default memory-maintenance Skill with browser_script validation, added manifest-gated default workspace upgrade for existing saves, and updated runtime workspace docs/specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `645e999` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
