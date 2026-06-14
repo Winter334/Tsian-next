@@ -1,16 +1,26 @@
 import type {
   ConversationMessageRecord,
   RuntimeSnapshotShell,
+  WorkspaceFile,
 } from "@tsian/contracts"
 import {
   localDb,
   type LocalSaveHistoryRecord,
   type LocalSaveRecord,
   type LocalSaveSnapshotRecord,
+  type LocalStateRecord,
 } from "./db"
-import { createCheckpointForSave, deleteCheckpointsForSave } from "./checkpoints"
+import {
+  createCheckpointForSave,
+  createCheckpointRecordForSave,
+  deleteCheckpointsForSave,
+} from "./checkpoints"
 import { deleteStateRecordsForSave, listLocalStateRecordsForSave } from "./state-records"
-import { deleteWorkspaceForSave, initializeWorkspaceForSave } from "./workspace"
+import {
+  createLocalWorkspaceFileRecord,
+  deleteWorkspaceForSave,
+  initializeWorkspaceForSave,
+} from "./workspace"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
 
@@ -163,6 +173,82 @@ export async function saveRuntimeForSave(
         saveId,
         messages: normalizedMessages,
       })
+
+      const save = await localDb.saves.get(saveId)
+      if (save) {
+        await localDb.saves.put({
+          ...save,
+          updatedAt: now,
+        })
+      }
+    },
+  )
+}
+
+export async function commitSuccessfulRuntimeTurnForSave(
+  saveId: string,
+  input: {
+    snapshot: RuntimeSnapshotShell
+    history: ConversationMessageRecord[]
+    stateRecords: LocalStateRecord[]
+    workspaceFiles: WorkspaceFile[]
+    checkpointReason: "after-turn"
+  },
+): Promise<void> {
+  const now = Date.now()
+  const normalizedMessages = normalizeMessages(input.history)
+  const nextSnapshot: RuntimeSnapshotShell = {
+    ...input.snapshot,
+    state: {
+      ...input.snapshot.state,
+      messages: normalizedMessages,
+      globals: input.snapshot.state.globals ?? {},
+    },
+  }
+
+  const workspaceRecords = new Map<string, ReturnType<typeof createLocalWorkspaceFileRecord>>()
+  for (const file of input.workspaceFiles) {
+    const record = createLocalWorkspaceFileRecord(saveId, file)
+    workspaceRecords.set(record.path, record)
+  }
+
+  const checkpointWorkspaceFiles = Array.from(workspaceRecords.values())
+    .map(({ id: _id, saveId: _saveId, ...file }) => file)
+    .sort((left, right) => left.path.localeCompare(right.path))
+  const checkpoint = createCheckpointRecordForSave(saveId, {
+    snapshot: nextSnapshot,
+    history: normalizedMessages,
+    stateRecords: input.stateRecords,
+    reason: input.checkpointReason,
+    workspaceFiles: checkpointWorkspaceFiles,
+  }, now)
+
+  await localDb.transaction(
+    "rw",
+    [
+      localDb.saves,
+      localDb.saveSnapshots,
+      localDb.saveHistory,
+      localDb.workspaceFiles,
+      localDb.checkpoints,
+    ],
+    async () => {
+      await localDb.saveSnapshots.put({
+        saveId,
+        snapshot: nextSnapshot,
+      })
+      await localDb.saveHistory.put({
+        saveId,
+        messages: normalizedMessages,
+      })
+
+      const existingWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+      await Promise.all(existingWorkspace.map((record) => localDb.workspaceFiles.delete(record.id)))
+      for (const record of workspaceRecords.values()) {
+        await localDb.workspaceFiles.put(record)
+      }
+
+      await localDb.checkpoints.put(checkpoint)
 
       const save = await localDb.saves.get(saveId)
       if (save) {

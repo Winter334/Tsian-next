@@ -8,17 +8,15 @@ import type { RuntimeBrowserScriptExecutorRequest } from "../agent-runtime/works
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import { summarizeTraceValue } from "../agent-runtime/trace"
 import {
-  deleteWorkspacePathForSave,
-  listWorkspaceEntriesForSave,
-  readWorkspaceFileForSave,
-  searchWorkspaceFilesForSave,
-  writeWorkspaceFileForSave,
+  listWorkspaceEntriesFromFiles,
+  readWorkspaceFileFromFiles,
+  searchWorkspaceFilesFromFiles,
+  type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
 
 interface BrowserSkillScriptRunnerOptions {
-  saveId: string
-  workspaceFiles: WorkspaceFile[]
+  workspaceTransaction: Pick<RuntimeWorkspaceTransaction, "workspaceFiles" | "write" | "delete">
   signal?: AbortSignal
   emitTrace?: RuntimeTraceEmitter
 }
@@ -359,26 +357,6 @@ function errorResult(
   )
 }
 
-function syncWorkspaceFileWrite(
-  workspaceFiles: WorkspaceFile[],
-  item: WorkspaceFile,
-): void {
-  const existingIndex = workspaceFiles.findIndex((file) => file.path === item.path)
-  if (existingIndex >= 0) {
-    workspaceFiles[existingIndex] = item
-  } else {
-    workspaceFiles.push(item)
-    workspaceFiles.sort((left, right) => left.path.localeCompare(right.path))
-  }
-}
-
-function syncWorkspaceFileDelete(workspaceFiles: WorkspaceFile[], path: string): void {
-  const existingIndex = workspaceFiles.findIndex((file) => file.path === path)
-  if (existingIndex >= 0) {
-    workspaceFiles.splice(existingIndex, 1)
-  }
-}
-
 function emitWorkspaceWriteTrace(
   emitTrace: RuntimeTraceEmitter | undefined,
   file: WorkspaceFile,
@@ -453,7 +431,7 @@ async function handleSdkRequest(
   const args = isRecord(message.args) ? message.args : {}
 
   if (op === "workspace.read") {
-    const file = await readWorkspaceFileForSave(options.saveId, args.path)
+    const file = readWorkspaceFileFromFiles(options.workspaceTransaction.workspaceFiles, args.path)
     if (!file) {
       throw {
         code: "WORKSPACE_FILE_NOT_FOUND",
@@ -464,7 +442,7 @@ async function handleSdkRequest(
   }
 
   if (op === "workspace.list") {
-    const entries = await listWorkspaceEntriesForSave(options.saveId, {
+    const entries = listWorkspaceEntriesFromFiles(options.workspaceTransaction.workspaceFiles, {
       path: args.path,
     })
     return {
@@ -474,28 +452,24 @@ async function handleSdkRequest(
   }
 
   if (op === "workspace.search") {
-    return searchWorkspaceFilesForSave(options.saveId, {
+    return searchWorkspaceFilesFromFiles(options.workspaceTransaction.workspaceFiles, {
       query: typeof args.query === "string" ? args.query : undefined,
       limit: typeof args.limit === "number" ? args.limit : undefined,
     })
   }
 
   if (op === "workspace.write") {
-    const file = await writeWorkspaceFileForSave(options.saveId, {
+    const file = options.workspaceTransaction.write({
       path: args.path,
       content: args.content,
       mediaType: args.mediaType,
     })
-    syncWorkspaceFileWrite(options.workspaceFiles, file)
     emitWorkspaceWriteTrace(options.emitTrace, file)
     return file
   }
 
   if (op === "workspace.delete") {
-    const result = await deleteWorkspacePathForSave(options.saveId, args.path)
-    for (const path of result.deletedPaths) {
-      syncWorkspaceFileDelete(options.workspaceFiles, path)
-    }
+    const result = options.workspaceTransaction.delete(args.path)
     emitWorkspaceDeleteTrace(options.emitTrace, result.deletedPaths)
     return result
   }
@@ -689,7 +663,10 @@ export function createBrowserSkillScriptRunner(
       )
     }
 
-    const scriptFile = await readWorkspaceFileForSave(options.saveId, request.scriptPath)
+    const scriptFile = readWorkspaceFileFromFiles(
+      options.workspaceTransaction.workspaceFiles,
+      request.scriptPath,
+    )
     if (!scriptFile) {
       return actionError(
         "BROWSER_SCRIPT_NOT_FOUND",

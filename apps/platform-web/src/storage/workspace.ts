@@ -24,6 +24,15 @@ export interface WorkspaceWriteInput {
   mediaType?: unknown
 }
 
+export interface RuntimeWorkspaceTransaction {
+  readonly workspaceFiles: WorkspaceFile[]
+  write(input: WorkspaceWriteInput): WorkspaceFile
+  writePlatformFile(input: WorkspaceWriteInput): WorkspaceFile
+  delete(path: unknown): { deletedPaths: string[] }
+  finalWorkspaceFiles(): WorkspaceFile[]
+  discard(): void
+}
+
 export class WorkspaceStorageError extends Error {
   constructor(
     readonly code: string,
@@ -380,6 +389,21 @@ function isPlatformTracePath(path: string): boolean {
   return path === ".tsian/traces" || path.startsWith(PLATFORM_TRACE_PATH_PREFIX)
 }
 
+export function isPlatformMetadataPath(path: string): boolean {
+  return path === ".tsian" || path.startsWith(".tsian/")
+}
+
+function assertOrdinaryMutationPath(path: string): void {
+  if (!isPlatformMetadataPath(path)) {
+    return
+  }
+
+  throw new WorkspaceStorageError(
+    "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
+    "Platform metadata paths under .tsian are host-owned.",
+  )
+}
+
 function filterPlatformTraceRecords(
   records: LocalWorkspaceFileRecord[],
   includePlatformTraces: boolean | undefined,
@@ -398,6 +422,16 @@ function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
     mediaType: record.mediaType,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  }
+}
+
+function cloneWorkspaceFile(file: WorkspaceFile): WorkspaceFile {
+  return {
+    path: file.path,
+    content: file.content,
+    mediaType: file.mediaType,
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
   }
 }
 
@@ -496,40 +530,40 @@ export async function listCheckpointWorkspaceFilesForSave(
   return (await listLocalWorkspaceFilesForSave(saveId)).map(toCheckpointWorkspaceFile)
 }
 
-export async function listWorkspaceEntriesForSave(
-  saveId: string,
+export function listWorkspaceEntriesFromFiles(
+  workspaceFiles: WorkspaceFile[],
   input: WorkspaceListInput = {},
-): Promise<WorkspaceEntry[]> {
+): WorkspaceEntry[] {
   const directoryPath = normalizeDirectoryPath(input.path)
   const prefix = directoryPath ? `${directoryPath}/` : ""
-  const records = filterPlatformTraceRecords(
-    await listLocalWorkspaceFilesForSave(saveId),
-    input.includePlatformTraces,
-  )
   const files = new Map<string, WorkspaceEntry>()
   const directories = new Map<string, WorkspaceEntry & { children: Set<string> }>()
 
-  for (const record of records) {
-    if (directoryPath && !record.path.startsWith(prefix)) {
+  const visibleFiles = input.includePlatformTraces
+    ? workspaceFiles
+    : workspaceFiles.filter((file) => !isPlatformTracePath(file.path))
+
+  for (const file of visibleFiles) {
+    if (directoryPath && !file.path.startsWith(prefix)) {
       continue
     }
 
     const remainder = directoryPath
-      ? record.path.slice(prefix.length)
-      : record.path
+      ? file.path.slice(prefix.length)
+      : file.path
     if (!remainder) {
       continue
     }
 
     const slashIndex = remainder.indexOf("/")
     if (slashIndex === -1) {
-      files.set(record.path, {
-        path: record.path,
-        name: fileName(record.path),
+      files.set(file.path, {
+        path: file.path,
+        name: fileName(file.path),
         kind: "file",
-        mediaType: record.mediaType,
-        size: record.content.length,
-        updatedAt: record.updatedAt,
+        mediaType: file.mediaType,
+        size: file.content.length,
+        updatedAt: file.updatedAt,
       })
       continue
     }
@@ -539,7 +573,7 @@ export async function listWorkspaceEntriesForSave(
     const nextSegment = remainder.slice(slashIndex + 1).split("/")[0]
     const existing = directories.get(childPath)
     if (existing) {
-      existing.updatedAt = Math.max(existing.updatedAt ?? 0, record.updatedAt)
+      existing.updatedAt = Math.max(existing.updatedAt ?? 0, file.updatedAt)
       if (nextSegment) existing.children.add(nextSegment)
       continue
     }
@@ -550,7 +584,7 @@ export async function listWorkspaceEntriesForSave(
       path: childPath,
       name: childName,
       kind: "directory",
-      updatedAt: record.updatedAt,
+      updatedAt: file.updatedAt,
       childCount: 0,
       children,
     })
@@ -569,6 +603,20 @@ export async function listWorkspaceEntriesForSave(
   ]
 }
 
+export async function listWorkspaceEntriesForSave(
+  saveId: string,
+  input: WorkspaceListInput = {},
+): Promise<WorkspaceEntry[]> {
+  const records = filterPlatformTraceRecords(
+    await listLocalWorkspaceFilesForSave(saveId),
+    input.includePlatformTraces,
+  )
+  return listWorkspaceEntriesFromFiles(records.map(toWorkspaceFile), {
+    ...input,
+    includePlatformTraces: true,
+  })
+}
+
 export async function readWorkspaceFileForSave(
   saveId: string,
   pathInput: unknown,
@@ -576,6 +624,118 @@ export async function readWorkspaceFileForSave(
   const path = normalizeWorkspaceFilePath(pathInput)
   const record = await localDb.workspaceFiles.get(createTableId(saveId, path))
   return record ? toWorkspaceFile(record) : null
+}
+
+export function readWorkspaceFileFromFiles(
+  workspaceFiles: WorkspaceFile[],
+  pathInput: unknown,
+): WorkspaceFile | null {
+  const path = normalizeWorkspaceFilePath(pathInput)
+  const file = workspaceFiles.find((candidate) => candidate.path === path)
+  return file ? cloneWorkspaceFile(file) : null
+}
+
+function writeWorkspaceFileToFiles(
+  workspaceFiles: WorkspaceFile[],
+  input: WorkspaceWriteInput,
+  options: { rejectPlatformMetadata: boolean },
+): WorkspaceFile {
+  const path = normalizeWorkspaceFilePath(input.path)
+  if (options.rejectPlatformMetadata) {
+    assertOrdinaryMutationPath(path)
+  }
+
+  if (typeof input.content !== "string") {
+    throw new WorkspaceStorageError(
+      "WORKSPACE_CONTENT_REQUIRED",
+      "Workspace file content must be a string.",
+    )
+  }
+
+  const now = Date.now()
+  const existingIndex = workspaceFiles.findIndex((file) => file.path === path)
+  const existing = existingIndex >= 0 ? workspaceFiles[existingIndex] : undefined
+  const nextFile: WorkspaceFile = {
+    path,
+    content: input.content,
+    mediaType: normalizeMediaType(input.mediaType, path),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+
+  if (existingIndex >= 0) {
+    workspaceFiles[existingIndex] = nextFile
+  } else {
+    workspaceFiles.push(nextFile)
+  }
+  workspaceFiles.sort((left, right) => left.path.localeCompare(right.path))
+  return cloneWorkspaceFile(nextFile)
+}
+
+function deleteWorkspacePathFromFiles(
+  workspaceFiles: WorkspaceFile[],
+  pathInput: unknown,
+  options: { rejectPlatformMetadata: boolean },
+): { deletedPaths: string[] } {
+  const path = normalizeWorkspaceTargetPath(pathInput)
+  if (options.rejectPlatformMetadata) {
+    assertOrdinaryMutationPath(path)
+  }
+
+  const prefix = `${path}/`
+  const deletedPaths = workspaceFiles
+    .filter((file) => file.path === path || file.path.startsWith(prefix))
+    .map((file) => file.path)
+    .sort()
+
+  if (deletedPaths.length === 0) {
+    return { deletedPaths: [] }
+  }
+
+  const deletedPathSet = new Set(deletedPaths)
+  for (let index = workspaceFiles.length - 1; index >= 0; index -= 1) {
+    const file = workspaceFiles[index]
+    if (file && deletedPathSet.has(file.path)) {
+      workspaceFiles.splice(index, 1)
+    }
+  }
+
+  return { deletedPaths }
+}
+
+export function createRuntimeWorkspaceTransaction(
+  baselineFiles: WorkspaceFile[],
+): RuntimeWorkspaceTransaction {
+  const stagedFiles = baselineFiles
+    .map(cloneWorkspaceFile)
+    .sort((left, right) => left.path.localeCompare(right.path))
+
+  return {
+    workspaceFiles: stagedFiles,
+    write(input) {
+      return writeWorkspaceFileToFiles(stagedFiles, input, {
+        rejectPlatformMetadata: true,
+      })
+    },
+    writePlatformFile(input) {
+      return writeWorkspaceFileToFiles(stagedFiles, input, {
+        rejectPlatformMetadata: false,
+      })
+    },
+    delete(path) {
+      return deleteWorkspacePathFromFiles(stagedFiles, path, {
+        rejectPlatformMetadata: true,
+      })
+    },
+    finalWorkspaceFiles() {
+      return stagedFiles
+        .map(cloneWorkspaceFile)
+        .sort((left, right) => left.path.localeCompare(right.path))
+    },
+    discard() {
+      stagedFiles.splice(0, stagedFiles.length)
+    },
+  }
 }
 
 export async function writeWorkspaceFileForSave(
@@ -647,20 +807,29 @@ export async function searchWorkspaceFilesForSave(
   saveId: string,
   input: WorkspaceSearchInput = {},
 ): Promise<WorkspaceSearchResult[]> {
+  return searchWorkspaceFilesFromFiles(
+    (await listLocalWorkspaceFilesForSave(saveId)).map(toWorkspaceFile),
+    input,
+  )
+}
+
+export function searchWorkspaceFilesFromFiles(
+  workspaceFiles: WorkspaceFile[],
+  input: WorkspaceSearchInput = {},
+): WorkspaceSearchResult[] {
   const query = typeof input.query === "string" ? input.query.trim().toLowerCase() : ""
   if (!query) {
     return []
   }
 
   const limit = normalizeLimit(input.limit)
-  const records = filterPlatformTraceRecords(
-    await listLocalWorkspaceFilesForSave(saveId),
-    input.includePlatformTraces,
-  )
-  return records
-    .flatMap((record): WorkspaceSearchResult[] => {
-      const lowerPath = record.path.toLowerCase()
-      const lowerContent = record.content.toLowerCase()
+  const visibleFiles = input.includePlatformTraces
+    ? workspaceFiles
+    : workspaceFiles.filter((file) => !isPlatformTracePath(file.path))
+  return visibleFiles
+    .flatMap((file): WorkspaceSearchResult[] => {
+      const lowerPath = file.path.toLowerCase()
+      const lowerContent = file.content.toLowerCase()
       const contentIndex = lowerContent.indexOf(query)
       const matchesPath = lowerPath.includes(query)
       if (!matchesPath && contentIndex < 0) {
@@ -668,12 +837,12 @@ export async function searchWorkspaceFilesForSave(
       }
 
       return [{
-        path: record.path,
-        name: fileName(record.path),
-        mediaType: record.mediaType,
-        updatedAt: record.updatedAt,
+        path: file.path,
+        name: fileName(file.path),
+        mediaType: file.mediaType,
+        updatedAt: file.updatedAt,
         score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
-        preview: contentIndex >= 0 ? createPreview(record.content, contentIndex) : record.path,
+        preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,
       }]
     })
     .sort((left, right) => {

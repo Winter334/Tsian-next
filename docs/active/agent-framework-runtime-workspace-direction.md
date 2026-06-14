@@ -151,7 +151,7 @@ Agent 发起 action_call
   -> 记录 trace
 ```
 
-当前实现中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`，以及受信任第三方 Skill 使用的 `browser_script`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力；`browser_script` 运行 Skill 目录下的浏览器 Worker 脚本，并通过强 Tsian SDK 暴露 workspace read/list/search/write/delete、fetch、log/trace 和 timeout/abort。第一版不把 raw DOM、`window`、内部 bridge、Vue 状态或 platform-host 内部对象作为受支持脚本 API。远程 HTTP、WASM、托管执行和原生宿主文件/终端能力仍是后续任务。
+当前实现中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`，以及受信任第三方 Skill 使用的 `browser_script`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力；`browser_script` 运行 Skill 目录下的浏览器 Worker 脚本，并通过强 Tsian SDK 暴露 workspace read/list/search/write/delete、fetch、log/trace 和 timeout/abort。`interaction.sendMessage` 内的 Agent Runtime workspace 写入/删除使用 staged transaction：同轮工具可读 staged view，成功回合与 snapshot/history/checkpoint 原子提交，失败或 abort 丢弃普通 workspace mutation；前端 bridge 的手动 `platform.runAction` 仍是即时平台动作。第一版不把 raw DOM、`window`、内部 bridge、Vue 状态或 platform-host 内部对象作为受支持脚本 API。远程 HTTP、WASM、托管执行和原生宿主文件/终端能力仍是后续任务。
 
 这允许 Tsian 复用网络上的 Skill 思路，也允许把 CLI Skill 中的脚本通过浏览器脚本或远程执行适配进来。
 
@@ -268,7 +268,7 @@ Runtime Workspace 是一个存档级虚拟文件系统。
 - `memory/` 存长期记忆、摘要和可检索事实。
 - `frontend/` 存前端包约定读取的数据。
 - `archive/` 存退役、压缩或不再活跃的材料。
-- `.tsian/` 是平台 metadata、trace、checkpoint、索引和缓存空间。
+- `.tsian/` 是平台 metadata、trace、checkpoint、索引和缓存空间。普通 Agent/Skill workspace 写入和删除不能修改 `.tsian/*`；平台内部需要通过 host-owned 路径写入 trace、index 或 cache。
 
 ## 10. 回合与 Trace
 
@@ -331,7 +331,7 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
 - 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
-- 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；当前支持 `builtin/validation`、`builtin/echo`、allow-listed `platform_action` 和 strong-SDK `browser_script`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。
+- 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；当前支持 `builtin/validation`、`builtin/echo`、allow-listed `platform_action` 和 strong-SDK `browser_script`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
 - 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；MVP 禁止嵌套 `agent_call`，并按 root turn 限制调用次数。
 - Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 list/search 默认隐藏 `.tsian/traces/`。
 

@@ -338,6 +338,10 @@ interface RuntimeWorkspaceToolCall {
 - `platform_action` executors route through an injected `runPlatformAction` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, or storage helpers.
 - `platform_action` declarations require `{ type: "platform_action", name: string }`, where `name` maps to `PlatformActionRequest.action` and validated action input becomes `params`.
 - `platform-host` must allow-list Agent Runtime platform actions; current MVP allows `workspace-write` and `workspace-delete`, and does not allow `restore-checkpoint`.
+- Inside `interaction.sendMessage`, Agent Runtime `workspace-write` / `workspace-delete` run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
+- Successful turns commit the staged workspace final state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
+- Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets. `.tsian/*` is platform-owned metadata space for trace/checkpoint/index/cache behavior.
+- Frontend bridge `platform.runAction` workspace writes/deletes remain immediate platform actions and are not part of the Agent Runtime turn transaction.
 - `browser_script` executors route through an injected `runBrowserScript` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, storage helpers, or Worker code.
 - `browser_script` declarations require `{ type: "browser_script", path: string, timeoutMs?: number }`; `path` resolves relative to the declaring Skill directory and must stay under that directory.
 - Controlled async executors have bounded timeout/abort behavior. `timeoutMs` must be positive and must not exceed the platform maximum.
@@ -448,6 +452,8 @@ interface RuntimeWorkspaceToolCall {
 - Browser script path outside the declaring Skill directory -> error observation with `BROWSER_SCRIPT_PATH_INVALID`.
 - Browser script failure, SDK failure, Worker failure, or Worker message failure -> structured error observation with a `BROWSER_SCRIPT_*` code.
 - Agent Runtime attempts to call a non-allow-listed platform action -> platform handler returns `AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED`, surfaced through `PLATFORM_ACTION_FAILED`.
+- Agent/Skill attempts to write or delete `.tsian/*` through ordinary `workspace-write`, `workspace-delete`, or browser script SDK workspace mutation -> structured workspace error observation.
+- Runtime turn fails or aborts after staged ordinary workspace writes -> persisted workspace state remains equivalent to the pre-turn accepted state, except for host-owned failed trace diagnostics.
 - Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `skill_load` metadata without failing the whole Skill load.
 - Invalid path -> error observation with workspace path error code.
 - Missing file on `workspace_read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
@@ -462,6 +468,8 @@ interface RuntimeWorkspaceToolCall {
 - Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
 - Good: action with `{ "type": "platform_action", "name": "workspace-write" }` calls the injected platform action capability after gating and validation, then returns the platform result item as `output`.
 - Good: action with `{ "type": "browser_script", "path": "scripts/run.js", "timeoutMs": 10000 }` runs a Skill-local script through the Tsian SDK after Skill gating and input validation.
+- Good: an action writes a workspace file, then a later same-turn workspace read or browser script SDK read observes the staged file before the turn commits.
+- Good: a failed turn after staged workspace writes leaves no ordinary persisted workspace file from those staged writes.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
 - Good: master sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its own brief.
 - Good: a delegated memory Agent loads a Skill and calls a non-`agent_call` action in its own tool loop.
@@ -489,6 +497,10 @@ interface RuntimeWorkspaceToolCall {
 - Assert an action without executor uses `validation` and returns `status: "validated"`.
 - Assert an action with built-in `echo` returns `status: "executed"` and echoes validated input as `output`.
 - Assert `platform_action` sends `{ action: executor.name, params: input }` to the injected handler only after loaded Skill gating and input schema validation pass.
+- Assert `platform_action/workspace-write` and `workspace-delete` stage ordinary Runtime Workspace mutations during `interaction.sendMessage` and commit only on successful turns.
+- Assert failed or aborted turns discard ordinary staged workspace mutations.
+- Assert ordinary Agent/Skill workspace mutations under `.tsian/*` fail structurally.
+- Assert frontend bridge `platform.runAction` workspace write/delete remains immediate.
 - Assert missing platform action capability returns `PLATFORM_ACTION_UNAVAILABLE`.
 - Assert injected platform action failure returns `PLATFORM_ACTION_FAILED`.
 - Assert `platform-host` rejects non-allow-listed Agent Runtime platform actions such as `restore-checkpoint`.
@@ -496,7 +508,7 @@ interface RuntimeWorkspaceToolCall {
 - Assert unknown built-in executor names return `ACTION_EXECUTOR_NOT_FOUND`.
 - Assert invalid `browser_script` declarations report `ACTION_EXECUTOR_INVALID` during `skill_load`.
 - Assert `browser_script` runs a Skill-local script through the injected runner only after Skill loading and input validation.
-- Assert `browser_script` can use SDK workspace read/list/search/write/delete and keeps workspace mutation trace/synchronization.
+- Assert `browser_script` can use SDK workspace read/list/search/write/delete against the staged workspace view and keeps workspace mutation trace/synchronization.
 - Assert `browser_script` timeout and abort return structured observations.
 - Assert `browser_script` paths outside the declaring Skill directory are rejected.
 - Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
@@ -587,8 +599,8 @@ interface RawAirpHistoryTurnRecord {
 - Enhanced AIRP memory such as timelines, summaries, world facts, character state, relationships, vector indexes, or semantic retrieval are derived workspace projections and belong to Skills, Agents, or content-specific conventions.
 - Do not add a platform-owned gameplay memory schema when implementing raw history writeback.
 - Direct future manual correction of a raw turn file is acceptable; do not add an amendment/revision overlay unless a future task explicitly chooses it.
-- Successful raw history writes must happen before after-turn checkpoint creation so restore follows the rest of workspace state.
-- Failed or aborted turns must not leave ordinary raw history records. If a later success-path write fails after raw history was written, best-effort restore the previous file or delete the new path before rethrowing.
+- Successful raw history writes are staged as ordinary Runtime Workspace files and committed atomically with accepted snapshot/history and after-turn checkpoint creation.
+- Failed or aborted turns must not leave ordinary raw history records.
 - Existing `saveHistory` and snapshots remain the current chat display source; raw workspace history intentionally duplicates the player-facing exchange for runtime memory/feedstock use.
 
 ### 4. Validation & Error Matrix
@@ -596,7 +608,7 @@ interface RawAirpHistoryTurnRecord {
 - Successful turn -> `history/turns/turn-000001.json` exists and includes exactly one user and one assistant message for that turn.
 - Aborted turn before final acceptance -> no raw history turn file is written.
 - Agent Runtime failure -> no raw history turn file is written.
-- Later storage failure after raw history write -> raw history writeback rollback is attempted and the original error is rethrown.
+- Later successful-turn commit failure -> no partial raw history / snapshot / checkpoint state is accepted.
 - Existing saves -> no backfill required; they start writing per-turn raw history on future successful turns.
 
 ### 5. Good/Base/Bad Cases
@@ -611,7 +623,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 6. Tests Required
 
-- Assert successful turns write one raw history JSON file before checkpoint creation.
+- Assert successful turns write one raw history JSON file in the same successful-turn commit captured by checkpoint creation.
 - Assert raw history content includes player input and final assistant output.
 - Assert raw history content omits prompts, master brief, trace events, tool observations, and delegated Agent outputs.
 - Assert workspace list/read/search can surface individual raw turn files.
@@ -635,7 +647,7 @@ interface RawAirpHistoryTurnRecord {
 
 - Trace is platform-owned workspace content: platform writes it, Agent context does not inject it by default, and normal list/search hides it.
 - Trace follows checkpoint/restore because it is stored as normal Runtime Workspace files under `.tsian/traces/`.
-- Successful turns write trace before the after-turn checkpoint is created, so the checkpoint includes the trace for that branch.
+- Successful turns include trace in the accepted workspace state before the after-turn checkpoint is created, so the checkpoint includes the trace for that branch.
 - Failed turns attempt to write `turn_failed` trace if workspace files are already available, but failed-turn trace persistence must not mask the original runtime error.
 - Trace must record summaries, not large raw payloads:
   - model calls: message count, output length, tool-call count;

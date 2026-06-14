@@ -7,6 +7,7 @@ import {
 } from "./db"
 import {
   createLocalWorkspaceFileRecord,
+  type CheckpointWorkspaceFile,
   listCheckpointWorkspaceFilesForSave,
 } from "./workspace"
 
@@ -24,7 +25,7 @@ function snapshotTurn(snapshot: RuntimeSnapshotShell): number {
   return typeof snapshot.state.turn === "number" ? snapshot.state.turn : 0
 }
 
-function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpointSummary {
+export function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpointSummary {
   return {
     id: record.id,
     saveId: record.saveId,
@@ -34,6 +35,35 @@ function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpointSumm
     createdAt: record.createdAt,
     messageCount: record.history.length,
     stateRecordCount: record.stateRecords.length,
+  }
+}
+
+export function createCheckpointRecordForSave(
+  saveId: string,
+  input: {
+    snapshot: RuntimeSnapshotShell
+    history: LocalSaveHistoryRecord["messages"]
+    stateRecords: LocalStateRecord[]
+    reason: LocalCheckpointRecord["reason"]
+    label?: string
+    workspaceFiles: CheckpointWorkspaceFile[]
+  },
+  createdAt: number = Date.now(),
+): LocalCheckpointRecord {
+  const turn = snapshotTurn(input.snapshot)
+  return {
+    id: createCheckpointId(saveId, createdAt),
+    saveId,
+    turn,
+    label: input.label?.trim() || `回合 ${turn}`,
+    reason: input.reason,
+    createdAt,
+    snapshot: input.snapshot,
+    history: input.history,
+    stateRecords: input.stateRecords.map(
+      ({ saveId: _saveId, updatedAt: _updatedAt, ...stateRecord }) => stateRecord,
+    ),
+    workspaceFiles: input.workspaceFiles,
   }
 }
 
@@ -59,22 +89,10 @@ export async function createCheckpointForSave(
     label?: string
   },
 ): Promise<LocalCheckpointSummary> {
-  const createdAt = Date.now()
-  const turn = snapshotTurn(input.snapshot)
-  const record: LocalCheckpointRecord = {
-    id: createCheckpointId(saveId, createdAt),
-    saveId,
-    turn,
-    label: input.label?.trim() || `回合 ${turn}`,
-    reason: input.reason,
-    createdAt,
-    snapshot: input.snapshot,
-    history: input.history,
-    stateRecords: input.stateRecords.map(
-      ({ saveId: _saveId, updatedAt: _updatedAt, ...stateRecord }) => stateRecord,
-    ),
+  const record = createCheckpointRecordForSave(saveId, {
+    ...input,
     workspaceFiles: await listCheckpointWorkspaceFilesForSave(saveId),
-  }
+  })
 
   await localDb.checkpoints.put(record)
   return toCheckpointSummary(record)

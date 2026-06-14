@@ -29,9 +29,10 @@ import { LocalRuntimeEngine } from "../runtime-host"
 import { generateAssistantReply, getAiDebugRecords } from "../runtime-host/ai"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
+  commitSuccessfulRuntimeTurnForSave,
+  createRuntimeWorkspaceTransaction,
   createEmptyRuntimeSnapshot,
   createLocalSave,
-  createCheckpointForSave,
   deleteLocalSave,
   getActiveSaveId,
   getHistoryForSave,
@@ -46,11 +47,11 @@ import {
   normalizeWorkspaceFilePath,
   readWorkspaceFileForSave,
   restoreCheckpointForSave,
-  saveRuntimeForSave,
   searchWorkspaceFilesForSave,
   setActiveSaveId,
   writeWorkspaceFileForSave,
   deleteWorkspacePathForSave,
+  type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
 
@@ -78,11 +79,6 @@ interface RawAirpHistoryTurnRecord {
     narrativeAgentId: "narrative"
   }
   messages: ConversationMessageRecord[]
-}
-
-interface RawAirpHistoryWriteback {
-  path: string
-  previousFile: WorkspaceFile | null
 }
 
 function markPlatformHostReady() {
@@ -179,13 +175,6 @@ function syncWorkspaceFileWrite(
   }
 }
 
-function syncWorkspaceFileDelete(workspaceFiles: WorkspaceFile[], path: string): void {
-  const existingIndex = workspaceFiles.findIndex((file) => file.path === path)
-  if (existingIndex >= 0) {
-    workspaceFiles.splice(existingIndex, 1)
-  }
-}
-
 function formatRawAirpHistoryTurnPath(turn: number): string {
   return `${AIRP_HISTORY_TURN_PATH_PREFIX}turn-${String(turn).padStart(6, "0")}.json`
 }
@@ -214,18 +203,16 @@ function serializeRawAirpHistoryTurnRecord(
   return `${JSON.stringify(record, null, 2)}\n`
 }
 
-async function writeRawAirpHistoryTurnFileForSave(
-  saveId: string,
-  workspaceFiles: WorkspaceFile[],
+function stageRawAirpHistoryTurnFile(
+  workspaceTransaction: RuntimeWorkspaceTransaction,
   input: {
     turn: number
     userInput: string
     assistantOutput: string
   },
-): Promise<RawAirpHistoryWriteback> {
+): WorkspaceFile {
   const path = formatRawAirpHistoryTurnPath(input.turn)
-  const previousFile = await readWorkspaceFileForSave(saveId, path)
-  const file = await writeWorkspaceFileForSave(saveId, {
+  return workspaceTransaction.write({
     path,
     content: serializeRawAirpHistoryTurnRecord(
       input.turn,
@@ -235,28 +222,6 @@ async function writeRawAirpHistoryTurnFileForSave(
     ),
     mediaType: "application/json",
   })
-  syncWorkspaceFileWrite(workspaceFiles, file)
-
-  return { path, previousFile }
-}
-
-async function rollbackRawAirpHistoryWritebackForSave(
-  saveId: string,
-  workspaceFiles: WorkspaceFile[],
-  writeback: RawAirpHistoryWriteback,
-): Promise<void> {
-  if (writeback.previousFile) {
-    const file = await writeWorkspaceFileForSave(saveId, {
-      path: writeback.previousFile.path,
-      content: writeback.previousFile.content,
-      mediaType: writeback.previousFile.mediaType,
-    })
-    syncWorkspaceFileWrite(workspaceFiles, file)
-    return
-  }
-
-  await deleteWorkspacePathForSave(saveId, writeback.path)
-  syncWorkspaceFileDelete(workspaceFiles, writeback.path)
 }
 
 async function activeSaveExists(saveId: string): Promise<boolean> {
@@ -379,51 +344,6 @@ const AGENT_RUNTIME_PLATFORM_ACTIONS = new Set([
   "workspace-delete",
 ])
 
-async function runAgentRuntimePlatformAction(
-  request: PlatformActionRequest,
-): Promise<PlatformActionResult> {
-  if (!AGENT_RUNTIME_PLATFORM_ACTIONS.has(request.action)) {
-    return actionError(
-      "AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED",
-      `Agent Runtime 不允许调用平台动作：${request.action}`,
-      { action: request.action },
-    )
-  }
-
-  return executePlatformAction(request)
-}
-
-function syncWorkspaceFilesAfterPlatformAction(
-  workspaceFiles: WorkspaceFile[],
-  request: PlatformActionRequest,
-  result: PlatformActionResult,
-): void {
-  if (!result.ok) {
-    return
-  }
-
-  if (request.action === "workspace-write" && isWorkspaceFile(result.item)) {
-    syncWorkspaceFileWrite(workspaceFiles, result.item)
-    return
-  }
-
-  if (request.action === "workspace-delete" && isRecord(result.item)) {
-    const deletedPaths = Array.isArray(result.item.deletedPaths)
-      ? new Set(result.item.deletedPaths.filter((path): path is string => typeof path === "string"))
-      : new Set<string>()
-    if (deletedPaths.size === 0) {
-      return
-    }
-
-    for (let index = workspaceFiles.length - 1; index >= 0; index -= 1) {
-      const file = workspaceFiles[index]
-      if (file && deletedPaths.has(file.path)) {
-        workspaceFiles.splice(index, 1)
-      }
-    }
-  }
-}
-
 function emitWorkspaceMutationTrace(
   emitTrace: RuntimeTraceEmitter | undefined,
   request: PlatformActionRequest,
@@ -478,13 +398,61 @@ function emitWorkspaceMutationTrace(
   }
 }
 
+function runAgentRuntimeStagedPlatformAction(
+  workspaceTransaction: RuntimeWorkspaceTransaction,
+  request: PlatformActionRequest,
+): PlatformActionResult {
+  if (!AGENT_RUNTIME_PLATFORM_ACTIONS.has(request.action)) {
+    return actionError(
+      "AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED",
+      `Agent Runtime 不允许调用平台动作：${request.action}`,
+      { action: request.action },
+    )
+  }
+
+  try {
+    if (request.action === "workspace-write") {
+      return {
+        ok: true,
+        item: workspaceTransaction.write({
+          path: request.params?.path,
+          content: request.params?.content,
+          mediaType: request.params?.mediaType,
+        }),
+      }
+    }
+
+    if (request.action === "workspace-delete") {
+      return {
+        ok: true,
+        item: workspaceTransaction.delete(request.params?.path),
+      }
+    }
+  } catch (error) {
+    return workspaceActionError(
+      error,
+      request.action === "workspace-delete"
+        ? "WORKSPACE_DELETE_FAILED"
+        : "WORKSPACE_WRITE_FAILED",
+      request.action === "workspace-delete"
+        ? "删除 workspace 路径失败。"
+        : "写入 workspace 文件失败。",
+    )
+  }
+
+  return actionError(
+    "AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED",
+    `Agent Runtime 不允许调用平台动作：${request.action}`,
+    { action: request.action },
+  )
+}
+
 function createAgentRuntimePlatformActionRunner(
-  workspaceFiles: WorkspaceFile[],
+  workspaceTransaction: RuntimeWorkspaceTransaction,
   emitTrace?: RuntimeTraceEmitter,
 ) {
   return async (request: PlatformActionRequest): Promise<PlatformActionResult> => {
-    const result = await runAgentRuntimePlatformAction(request)
-    syncWorkspaceFilesAfterPlatformAction(workspaceFiles, request, result)
+    const result = runAgentRuntimeStagedPlatformAction(workspaceTransaction, request)
     emitWorkspaceMutationTrace(emitTrace, request, result)
     return result
   }
@@ -502,6 +470,18 @@ async function writeRuntimeTraceFileForSave(
     mediaType: "application/x-ndjson",
   })
   syncWorkspaceFileWrite(workspaceFiles, file)
+}
+
+function stageRuntimeTraceFile(
+  workspaceTransaction: RuntimeWorkspaceTransaction,
+  path: string,
+  events: ReturnType<typeof createRuntimeTraceCollector>["events"],
+): WorkspaceFile {
+  return workspaceTransaction.writePlatformFile({
+    path,
+    content: serializeRuntimeTraceEvents(events),
+    mediaType: "application/x-ndjson",
+  })
 }
 
 export const playFrontendBridge: PlayFrontendBridge = {
@@ -738,8 +718,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           historyCount: historyBefore.length,
         },
       })
-      let workspaceFiles: WorkspaceFile[] | null = null
-      let rawAirpHistoryWriteback: RawAirpHistoryWriteback | null = null
+      let workspaceTransaction: RuntimeWorkspaceTransaction | null = null
 
       if (previousTurnController) {
         previousTurnController.abort("new-turn-started")
@@ -749,7 +728,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
       try {
         await initializeWorkspaceForSave(activeSaveId)
-        workspaceFiles = await listWorkspaceFilesForSave(activeSaveId)
+        workspaceTransaction = createRuntimeWorkspaceTransaction(
+          await listWorkspaceFilesForSave(activeSaveId),
+        )
         const stateRecords = await listStateRecordsForSave(activeSaveId)
         const result = await runAgentRuntimeTurn(
           {
@@ -757,7 +738,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             recentHistory: historyBefore,
             snapshot: snapshotBefore,
             stateRecords,
-            workspaceFiles,
+            workspaceFiles: workspaceTransaction.workspaceFiles,
             signal: currentController.signal,
           },
           {
@@ -768,12 +749,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
               })
             },
             runPlatformAction: createAgentRuntimePlatformActionRunner(
-              workspaceFiles,
+              workspaceTransaction,
               trace.emit,
             ),
             runBrowserScript: createBrowserSkillScriptRunner({
-              saveId: activeSaveId,
-              workspaceFiles,
+              workspaceTransaction,
               signal: currentController.signal,
               emitTrace: trace.emit,
             }),
@@ -796,15 +776,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
           nextHistory,
         )
 
-        rawAirpHistoryWriteback = await writeRawAirpHistoryTurnFileForSave(
-          activeSaveId,
-          workspaceFiles,
-          {
-            turn: nextTurn,
-            userInput: content,
-            assistantOutput: result.replyText,
-          },
-        )
+        stageRawAirpHistoryTurnFile(workspaceTransaction, {
+          turn: nextTurn,
+          userInput: content,
+          assistantOutput: result.replyText,
+        })
 
         trace.emit({
           type: "turn_completed",
@@ -814,48 +790,36 @@ export const playFrontendBridge: PlayFrontendBridge = {
             historyCount: nextHistory.length,
           },
         })
-        await writeRuntimeTraceFileForSave(
-          activeSaveId,
-          workspaceFiles,
+        stageRuntimeTraceFile(
+          workspaceTransaction,
           formatRuntimeTracePath(nextTurn),
           trace.events,
         )
 
         runtimeEngine.loadSnapshot(snapshotAfter)
-        await saveRuntimeForSave(activeSaveId, snapshotAfter, nextHistory)
-
-        await createCheckpointForSave(activeSaveId, {
+        await commitSuccessfulRuntimeTurnForSave(activeSaveId, {
           snapshot: snapshotAfter,
           history: nextHistory,
           stateRecords: await listLocalStateRecordsForSave(activeSaveId),
-          reason: "after-turn",
+          workspaceFiles: workspaceTransaction.finalWorkspaceFiles(),
+          checkpointReason: "after-turn",
         })
 
         emitTurnDebugReady(snapshotAfter.state.turn)
         return { snapshot: snapshotAfter }
       } catch (error) {
         runtimeEngine.loadSnapshot(snapshotBefore)
-        if (workspaceFiles && rawAirpHistoryWriteback) {
-          try {
-            await rollbackRawAirpHistoryWritebackForSave(
-              activeSaveId,
-              workspaceFiles,
-              rawAirpHistoryWriteback,
-            )
-          } catch {
-            // Raw AIRP history rollback is best-effort; preserve the original turn error.
-          }
-        }
+        workspaceTransaction?.discard()
         trace.emit({
           type: "turn_failed",
           ok: false,
           data: errorToTraceData(error),
         })
-        if (workspaceFiles) {
+        if (workspaceTransaction) {
           try {
             await writeRuntimeTraceFileForSave(
               activeSaveId,
-              workspaceFiles,
+              workspaceTransaction.workspaceFiles,
               formatRuntimeTracePath(nextTurn, Date.now()),
               trace.events,
             )
