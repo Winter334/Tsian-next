@@ -46,13 +46,13 @@ This task is the parent planning task for that phase. It should identify the MVP
 - Failure behavior for platform actions, browser script SDK writes, future remote executors, trace writes, and raw history writeback.
 - Clear contract for which files are ordinary user-editable workspace data and which are platform metadata.
 
-### C. Trace And Debug Substrate
+### C. Agent-Facing Runtime Diagnostics
 
-- Trace retention and pruning strategy.
-- Stronger trace coverage for future remote/WASM/hosted executors.
-- Script log/error audit shape without persisting large raw payloads.
+- Agent-facing diagnostic summaries over runtime trace facts.
+- Query-time lookback/result/summary limits without destructive pruning.
+- Script log/error facts without persisting large raw payloads.
 - Failure trace guarantees and restore behavior.
-- Debug-read APIs sufficient for future UI without designing the UI now.
+- Diagnostic query APIs sufficient for future management Agent / Skill / UI use without designing the UI now.
 
 ### D. Runtime Workspace Completeness
 
@@ -108,11 +108,12 @@ This task is the parent planning task for that phase. It should identify the MVP
    - Validation: executor-specific probes for enablement, timeout/abort, structured errors, trace summaries, and rollback behavior.
    - Why before UI/Agent/Skill design: executable Skills need stable execution guarantees before they become author-facing.
 
-4. Trace And Debug Substrate
-   - Boundary: runtime trace event contract, platform trace persistence, and debug read APIs.
-   - Expected output: retention/read/audit contracts sufficient for future UI without designing visual surfaces yet.
-   - Validation: trace files remain summary-only, restorable with checkpoints, and useful for failed executor diagnosis.
-   - Why before UI/Agent/Skill design: debug UI should expose a stable trace model rather than normalize MVP leftovers.
+4. Agent-Facing Runtime Diagnostics
+   - Child task: `.trellis/tasks/06-14-agent-facing-runtime-diagnostics`
+   - Boundary: runtime trace event contract, platform trace persistence, and on-demand diagnostic query view.
+   - Expected output: compact facts-only diagnostic summaries over raw trace, suitable for future management Agent / Skill / UI use.
+   - Validation: diagnostics remain bounded, facts-only, summary-sized, generated on demand, checkpoint-compatible, and useful for failed executor/Skill/Agent diagnosis without exposing raw payloads.
+   - Why before UI/Agent/Skill design: future management UI and self-repair Agents should consume a stable diagnostic model rather than normalize MVP trace leftovers.
 
 5. Runtime Workspace Completeness
    - Boundary: save-scoped virtual filesystem, platform metadata paths, indexes/cache, import/export/migration rules.
@@ -141,6 +142,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - [x] The first child implementation slice is scoped tightly enough for planning.
 - [x] The second child implementation slice is selected: Runtime Workspace Maintenance Pipeline.
 - [x] The third child implementation slice is selected: Runtime Controlled Execution Completeness.
+- [x] The fourth child implementation slice is selected: Agent-Facing Runtime Diagnostics.
 - [ ] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
 - [ ] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
 - [ ] Active direction docs are updated if the roadmap changes the project direction.

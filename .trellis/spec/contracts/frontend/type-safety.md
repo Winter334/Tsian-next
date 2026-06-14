@@ -15,6 +15,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries. Use `name` / `description` for model-facing Skill identity and keep `id` / `summary` / `path` for compatibility and bridge/UI/debug consumers.
 - `SkillDetailEntry` describes a loaded `SKILL.md` plus resource index for `skill-detail`.
 - `SkillResourceEntry` describes a bundled skill resource file without its content.
+- `RuntimeDiagnosticSummary`, `RuntimeDiagnosticFact`, `RuntimeDiagnosticHealth`, and `RuntimeDiagnosticsQueryParams` describe compact Agent-facing diagnostics returned by `runtime-diagnostics`.
 
 ## Bridge Consumption
 
@@ -26,6 +27,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - Use `AgentContextEntry` for `bridge.query.query({ resource: "agent-context", params: { agentId } })` results.
 - Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results. Prefer `name` and `description` when presenting skills to an Agent; use `path` only for platform/debug queries such as `skill-detail`.
 - Use `SkillDetailEntry` for `bridge.query.query({ resource: "skill-detail", params: { path } })` results.
+- Use `RuntimeDiagnosticSummary` for `bridge.query.query({ resource: "runtime-diagnostics", params })` results. Diagnostics are facts-only summaries, not raw trace lines or repair instructions.
 
 ## Avoid
 

@@ -8,6 +8,8 @@ import type {
   PlatformActionRequest,
   PlatformActionResult,
   PlayFrontendBridge,
+  RuntimeDiagnosticSummary,
+  RuntimeDiagnosticsQueryParams,
   RuntimeSnapshotShell,
   SkillDetailEntry,
   SkillRegistryEntry,
@@ -15,6 +17,7 @@ import type {
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn, type AgentSessionTranscriptRecord } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
+import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
 import { buildAgentRegistry, buildSkillRegistry, loadSkillDetail } from "../agent-runtime/registry"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import {
@@ -537,6 +540,25 @@ function stageRuntimeTraceFile(
   })
 }
 
+function normalizeRuntimeDiagnosticsQueryParams(
+  params: Record<string, unknown> | undefined,
+): RuntimeDiagnosticsQueryParams {
+  return {
+    ...(typeof params?.turn === "number" && Number.isFinite(params.turn)
+      ? { turn: params.turn }
+      : {}),
+    ...(typeof params?.limit === "number" && Number.isFinite(params.limit)
+      ? { limit: params.limit }
+      : {}),
+    ...(typeof params?.lookbackTurns === "number" && Number.isFinite(params.lookbackTurns)
+      ? { lookbackTurns: params.lookbackTurns }
+      : {}),
+    ...(typeof params?.includeHealth === "boolean"
+      ? { includeHealth: params.includeHealth }
+      : {}),
+  }
+}
+
 export const playFrontendBridge: PlayFrontendBridge = {
   runtime: baseBridge.runtime,
   platform: {
@@ -747,6 +769,21 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } catch {
           return { items: [] } as DeepQueryResult<T>
         }
+      }
+
+      if (request.resource === "runtime-diagnostics") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        await initializeWorkspaceForSave(activeSaveId)
+        const files = await listWorkspaceFilesForSave(activeSaveId)
+        return {
+          items: buildRuntimeDiagnostics(
+            files,
+            normalizeRuntimeDiagnosticsQueryParams(request.params),
+          ) as RuntimeDiagnosticSummary[] as T[],
+        } as DeepQueryResult<T>
       }
 
       if (request.resource === "ai-debug") {

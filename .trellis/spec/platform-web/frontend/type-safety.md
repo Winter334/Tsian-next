@@ -819,6 +819,64 @@ stageAgentSessionTranscriptFiles(
 - Assert `browser_script` SDK logs/fetch summaries emit `script_log` without script source or large raw payloads.
 - Assert bridge and runtime workspace list/search exclude `.tsian/traces/` by default.
 
+## Scenario: Agent-Facing Runtime Diagnostics
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web exposes compact Agent-facing diagnostics derived from Runtime Trace files.
+- Applies when changing `packages/contracts/src/runtime.ts`, `apps/platform-web/src/agent-runtime/diagnostics.ts`, `apps/platform-web/src/platform-host/index.ts`, or trace event fields consumed by diagnostics.
+
+### 2. Signatures
+
+- Bridge query resource: `runtime-diagnostics`.
+- Query shape: `RuntimeDiagnosticsQueryParams` with optional `turn`, `limit`, `lookbackTurns`, and `includeHealth`.
+- Result shape: `RuntimeDiagnosticSummary[]`.
+- Diagnostic summaries use schema string `tsian.runtime.diagnostic.v1`.
+
+### 3. Contracts
+
+- Diagnostics are an on-demand query view over `.tsian/traces/turns/*.jsonl`; do not persist derived diagnostic workspace files.
+- `runtime-diagnostics` returns one summary per trace file / turn attempt, not one top-level item per raw trace event.
+- Default behavior prioritizes failed/anomalous traces. Successful-turn health summaries are returned only when `includeHealth` is true or an exact `turn` query requests them.
+- Summaries are facts-only. Do not add platform-authored repair suggestions, probable-cause narratives, or hardcoded `nextChecks`.
+- Lightweight normalization is allowed for runtime-area identification: `source`, `eventType`, raw `code`/`message`, Agent id/debug label, Skill/action/tool/executor names, and directly related workspace paths.
+- Related paths must come from direct trace facts such as Agent ids, Skill paths, script paths, workspace read/write/delete paths, or session files. Drop `.tsian/*` paths from Agent-facing `relatedPaths`.
+- Diagnostics must stay bounded: result limit, lookback window, per-summary fact limit, related path limit, and message/details previews.
+- Malformed trace lines must not crash the whole query; return compact trace parse facts or counts.
+- `agent-runtime/diagnostics.ts` must stay pure: pass `WorkspaceFile[]` in and return `RuntimeDiagnosticSummary[]` out. It must not import Dexie, storage helpers, bridge objects, or `platform-host`.
+- `platform-host` owns the bridge query wiring: active save lookup, workspace initialization, file listing, query param normalization, and delegation to the pure builder.
+- Do not add `runtime-diagnostics` as a default live-turn Agent tool or prompt instruction.
+
+### 4. Validation & Error Matrix
+
+- No active save -> query returns `{ items: [] }`.
+- No trace files -> query returns `{ items: [] }`.
+- Failed trace file -> query returns a failed summary with raw error code/message facts when present.
+- Successful trace with `includeHealth` false and no anomalies -> omitted from default results.
+- Successful trace with `includeHealth` true -> compact health summary only; no raw event stream.
+- Trace with malformed JSONL line -> query still returns valid summaries and records malformed-line facts/counts.
+- Trace paths or details under `.tsian/*` -> omitted from `relatedPaths`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `runtime-diagnostics` maps an `ACTION_OUTPUT_INVALID` action trace to `source: "action"`, Skill/action names, raw code/message, executor label, and related Skill/script paths.
+- Good: a failed turn exposes `turn_failed` / `agent_step_failed` facts without full prompts, full model output, or tool observations.
+- Good: a successful turn health summary includes Agent ids, Skill/action names, mutation counts/paths, and call counts.
+- Base: exact `turn` queries can return successful-turn health even when `includeHealth` is omitted.
+- Bad: writing `.tsian/diagnostics/*.json` as derived state for this slice.
+- Bad: returning raw JSONL trace lines through `runtime-diagnostics`.
+- Bad: adding repair suggestions such as "rewrite this Skill" to platform diagnostics.
+- Bad: exposing diagnostics to ordinary master/narrative prompts by default.
+
+### 6. Tests Required
+
+- Assert `runtime-diagnostics` returns failed/anomalous summaries by default.
+- Assert `includeHealth` returns compact successful-turn health summaries.
+- Assert summary facts preserve raw error codes/messages and add only lightweight source/entity normalization.
+- Assert summaries omit full prompts, full model outputs, file contents, script source, provider internals, bridge internals, storage internals, API keys, and `.tsian/*` related paths.
+- Assert malformed trace lines are bounded facts/counts rather than thrown errors.
+- Assert no derived diagnostic workspace files are written.
+
 ## Avoid
 
 - Do not reintroduce old prompt/world-book/workflow resource contracts for new Agent Runtime work.

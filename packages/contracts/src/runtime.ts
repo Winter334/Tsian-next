@@ -130,6 +130,80 @@ export interface WorkspaceSearchResult {
   preview: string
 }
 
+export type RuntimeDiagnosticSource =
+  | "turn"
+  | "agent"
+  | "model"
+  | "skill"
+  | "action"
+  | "agent_call"
+  | "workspace"
+  | "script"
+  | "session"
+  | "trace"
+
+export type RuntimeDiagnosticStatus = "completed" | "failed" | "anomalous"
+
+export type RuntimeDiagnosticSeverity = "info" | "warning" | "error"
+
+export type RuntimeDiagnosticTraceKind = "success" | "failed"
+
+export interface RuntimeDiagnosticsQueryParams {
+  turn?: number
+  limit?: number
+  lookbackTurns?: number
+  includeHealth?: boolean
+}
+
+export interface RuntimeDiagnosticFact {
+  source: RuntimeDiagnosticSource
+  eventType?: string
+  severity: RuntimeDiagnosticSeverity
+  timestamp?: number
+  ok?: boolean
+  agentId?: string
+  debugLabel?: string
+  code?: string
+  message?: string
+  detailsSummary?: Record<string, JsonValue>
+  skill?: string
+  action?: string
+  tool?: string
+  executor?: string
+  relatedPaths: string[]
+}
+
+export interface RuntimeDiagnosticHealth {
+  agentIds: string[]
+  skillNames: string[]
+  actionNames: string[]
+  workspaceMutationPaths: string[]
+  modelCallCount: number
+  workspaceToolCallCount: number
+  actionCallCount: number
+  agentCallCount: number
+  scriptLogCount: number
+  workspaceMutationCount: number
+  warningCount: number
+  errorCount: number
+}
+
+export interface RuntimeDiagnosticSummary {
+  schema: "tsian.runtime.diagnostic.v1"
+  turn: number
+  status: RuntimeDiagnosticStatus
+  severity: RuntimeDiagnosticSeverity
+  traceKind: RuntimeDiagnosticTraceKind
+  startedAt?: number
+  endedAt?: number
+  updatedAt?: number
+  eventCount: number
+  malformedLineCount: number
+  omittedFactCount: number
+  health?: RuntimeDiagnosticHealth
+  facts: RuntimeDiagnosticFact[]
+}
+
 export interface RuntimeStateShell {
   turn: number
   messages: ConversationMessageRecord[]
