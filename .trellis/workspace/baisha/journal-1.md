@@ -1787,3 +1787,37 @@ Recorded the decision to avoid adding remote_http, WASM, remote script loading, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 53: Complete agent runtime collaboration policy
+
+**Date**: 2026-06-14
+**Task**: Complete agent runtime collaboration policy
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Completed the agent runtime collaboration child task: added code-level collaboration policy, enabled contacts-gated limited nested agent_call with shared budget/depth metadata, updated trace/docs/specs, validated with build:web and in-memory runtime probes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `05ac442` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
