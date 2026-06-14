@@ -328,8 +328,8 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
 - 默认流程仍是固定 `master-agent` -> `narrative-agent`。
-- 存储包含 snapshot、history、checkpoint、stateRecords，以及 save-scoped Runtime Workspace files。
-- 新存档默认写入 Runtime Workspace 目录入口、`agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、world/memory/frontend/archive 和 `.tsian` 入口文件；旧存档通过 workspace manifest 版本安全补入缺失的官方维护 Skill，且不覆盖同路径用户文件。
+- 存储包含 snapshot、history、checkpoint，以及 save-scoped Runtime Workspace files；结构化状态不再使用独立平台表。
+- 新存档默认写入 Runtime Workspace 目录入口、`agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、state/world/memory/frontend/archive 和 `.tsian` 入口文件；旧存档通过 workspace manifest 版本安全补入缺失的官方默认文件，且不覆盖同路径用户文件。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
@@ -346,5 +346,5 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 2. 在现有 `agent_call` 策略之上继续完善协作体验，例如管理 Agent、协作 Skill、调试 UI、可观察性或未来 host-owned 配置；不要恢复固定团队 DAG。
 3. 在 Agent-facing diagnostics 基础上完善未来管理 Agent / Skill / UI 体验；若未来出现新 executor，再按事实补充对应诊断字段。
 4. 继续完善记忆策略与体验：维护 Skill 提示质量、diff/review UI、summary 压缩、检索索引和 session transcript 归档。
-5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
+5. 围绕 workspace-native state 继续完善默认约定、Skill 维护策略和前端可读取数据文件；不要恢复独立平台状态表。
 6. 为 workspace、Agent 和 Skill 提供浏览与编辑 UI。

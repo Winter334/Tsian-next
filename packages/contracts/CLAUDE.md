@@ -4,13 +4,13 @@
 
 ## Public Modules
 
-- `runtime.ts`：conversation message、JSON 值、runtime snapshot、generic state record/write operation、message interaction、deep query、platform action。
+- `runtime.ts`：conversation message、JSON 值、runtime snapshot、workspace/query/runtime diagnostic、message interaction、deep query、platform action。
 - `bridge.ts`：`PlayFrontendBridge` 及 runtime/interaction/query/platform/debug 子桥。
 - `debug.ts`：`AiDebugRecord`、`AiChatMessage`、`CheckpointSummary`。
 - `frontend-package.ts`：`PlayFrontendManifest`。
 - `memory.ts`：generic memory schema 类型。当前没有 `memory-core` 运行时包。
 
-Removed old active contracts: mod manifests, prompt presets, world books, workflow DAG definitions, events/archives, maintenance patch/write-runtime compatibility shapes, workflow/retrieval debug types.
+Removed old active contracts: mod manifests, prompt presets, world books, workflow DAG definitions, events/archives, retired generic platform-state write shapes, maintenance patch/write-runtime compatibility shapes, workflow/retrieval debug types.
 
 ## Build
 

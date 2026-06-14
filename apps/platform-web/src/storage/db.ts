@@ -1,6 +1,5 @@
 import type {
   ConversationMessageRecord,
-  JsonValue,
   RuntimeSnapshotShell,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
@@ -27,20 +26,6 @@ export interface LocalSaveHistoryRecord {
   messages: ConversationMessageRecord[]
 }
 
-export interface LocalStateRecord {
-  /** Internal deterministic table key. */
-  id: string
-  saveId: string
-  namespace: string
-  collection: string
-  /** Logical record id inside namespace + collection. */
-  recordId: string
-  data: JsonValue
-  schemaVersion?: string
-  tags: string[]
-  updatedAt: number
-}
-
 export interface LocalWorkspaceFileRecord {
   /** Internal deterministic table key. */
   id: string
@@ -62,7 +47,6 @@ export interface LocalCheckpointRecord {
   createdAt: number
   snapshot: RuntimeSnapshotShell
   history: ConversationMessageRecord[]
-  stateRecords: Array<Omit<LocalStateRecord, "saveId" | "updatedAt">>
   workspaceFiles: Array<Omit<LocalWorkspaceFileRecord, "id" | "saveId">>
 }
 
@@ -72,12 +56,11 @@ export class TsianLocalDb extends Dexie {
   saveSnapshots!: Table<LocalSaveSnapshotRecord, string>
   saveHistory!: Table<LocalSaveHistoryRecord, string>
   checkpoints!: Table<LocalCheckpointRecord, string>
-  stateRecords!: Table<LocalStateRecord, string>
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
 
   constructor() {
-    // Prototype reset: no migration from workflow/prompt AIRP-memory schemas.
-    super("tsian-agent-runtime-v2")
+    // Prototype reset: no migration from the retired transitional state table.
+    super("tsian-agent-runtime-v3")
 
     this.version(1).stores({
       meta: "&key",
@@ -85,7 +68,6 @@ export class TsianLocalDb extends Dexie {
       saveSnapshots: "&saveId",
       saveHistory: "&saveId",
       checkpoints: "&id, saveId, createdAt, turn",
-      stateRecords: "&id, saveId, namespace, collection, recordId, updatedAt",
       workspaceFiles: "&id, saveId, path, updatedAt",
     })
   }

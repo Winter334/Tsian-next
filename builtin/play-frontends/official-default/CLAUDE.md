@@ -6,7 +6,7 @@
 
 - 渲染对话主线。
 - 提交玩家输入到 `bridge.interaction.sendMessage({ content })`。
-- 展示 AI debug、checkpoint、runtime snapshot、stateRecords。
+- 展示 AI debug、checkpoint 和 runtime snapshot。
 - 通过 `platform.runAction({ action: "restore-checkpoint" })` 恢复 checkpoint。
 
 ## 当前数据来源
@@ -15,7 +15,6 @@
 - `bridge.query.query({ resource: "history" })`
 - `bridge.query.query({ resource: "ai-debug" })`
 - `bridge.query.query({ resource: "checkpoints" })`
-- `bridge.query.query({ resource: "state-records" })`
 - `bridge.debug?.onTurnDebugReady(cb)`
 
 Removed old panels: mod overview, events, archives, retrieval debug, workflow debug, globals write demo.

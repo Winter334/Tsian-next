@@ -19,11 +19,11 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - `interaction.sendMessage` 由 `platform-host` 调度 Agent Runtime，而不是执行旧 workflow。
 - Agent Runtime 位于 `apps/platform-web/src/agent-runtime`。
 - MVP 每轮调用两次模型：`master-agent` 先产出写作 brief，`narrative-agent` 再产出玩家可读剧情正文。
-- 官方默认前端位于 `builtin/play-frontends/official-default`，负责内容为空的会话聊天、AI debug、checkpoint、snapshot 和 stateRecords 展示。
-- 本地 Dexie schema 已重置为 `meta / saves / saveSnapshots / saveHistory / checkpoints / stateRecords / workspaceFiles`。
+- 官方默认前端位于 `builtin/play-frontends/official-default`，负责内容为空的会话聊天、AI debug、checkpoint 和 snapshot 展示。
+- 本地 Dexie schema 已重置为 `meta / saves / saveSnapshots / saveHistory / checkpoints / workspaceFiles`。
 - 平台可在没有内置内容包的情况下启动，并可创建内容为空的 AIRP 会话。
 - Runtime Workspace storage/API 已实现，工作区文件随 save 和 checkpoint 生命周期保存、恢复和删除。
-- 新存档默认包含 master/narrative/memory `AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、共享目录 README、world/memory/frontend/archive 入口文件和 `.tsian` 平台目录；旧存档会通过 workspace manifest 版本安全补入缺失的官方维护 Skill，且不覆盖同路径用户文件。
+- 新存档默认包含 master/narrative/memory `AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、共享目录 README、state/world/memory/frontend/archive 入口文件和 `.tsian` 平台目录；旧存档会通过 workspace manifest 版本安全补入缺失的官方默认文件，且不覆盖同路径用户文件。
 - `agent-registry` / `skill-registry` bridge query 已实现，可从 workspace 扫描轻量 Agent/Skill 索引。
 - `skill-detail` bridge query 已实现，可按选中的 `SKILL.md` path 加载 Skill 正文和资源索引，并保持资源内容按需读取。
 - `agent-context` bridge query 已实现，可为指定 Agent 组装 `AGENT.md`、notes/session、可见 Skill Index 和声明的 context files。
@@ -72,7 +72,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 2. 在现有 `agent_call` 策略之上继续完善协作体验，例如管理 Agent、协作 Skill、调试 UI、可观察性或未来 host-owned 配置；不要恢复固定团队 DAG。
 3. 在 `runtime-diagnostics` facts-only 视图之上继续设计未来管理 Agent / 诊断 Skill / UI 体验；若未来出现新 executor，再按事实补充对应诊断字段。
 4. 在 raw history 与 session transcript 底账之上继续完善记忆策略，例如维护 Skill 的提示质量、diff/review UI、summary 压缩、检索索引和 transcript 归档。
-5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
+5. 围绕 workspace-native state 继续完善默认约定、Skill 维护策略和前端可读取数据文件；不要恢复独立平台状态表。
 6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
 7. 为 Runtime Workspace、Agent、Skill 提供浏览和编辑 UI。
 8. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。

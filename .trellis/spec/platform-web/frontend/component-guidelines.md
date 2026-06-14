@@ -6,7 +6,7 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 
 - `LobbyView.vue` owns contentless session create/select/delete flows.
 - `SettingsView.vue` owns browser chat model configuration.
-- `DebugView.vue` owns read-only observability for AI debug, history, checkpoints, snapshot, and stateRecords.
+- `DebugView.vue` owns read-only observability for AI debug, history, checkpoints, and snapshot.
 - `PlayView.vue` mounts the active play frontend and should remain a thin loader.
 
 ## UI Rules

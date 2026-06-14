@@ -4,7 +4,7 @@
       <p class="font-mono text-xs tracking-wider uppercase text-neon glow-text">调试</p>
       <h2 class="text-2xl font-bold text-text-main">Agent Runtime 调试面板</h2>
       <p class="text-base text-text-dim leading-normal">
-        展示当前会话的 AI 调用、历史、Checkpoint、状态记录与运行时快照。
+        展示当前会话的 AI 调用、历史、Checkpoint 与运行时快照。
       </p>
       <div class="flex flex-wrap gap-2">
         <Button
@@ -83,7 +83,6 @@
         <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
           <span>history：{{ historyItems.length }} 条</span>
           <span>checkpoints：{{ checkpointItems.length }} 条</span>
-          <span>stateRecords：{{ stateRecordItems.length }} 条</span>
         </div>
 
         <details class="group" open>
@@ -142,19 +141,6 @@
           </div>
         </details>
 
-        <details class="group">
-          <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
-            stateRecords（{{ stateRecordItems.length }}）▶
-          </summary>
-          <div class="mt-2 pl-2 border-l border-neon-deep/30">
-            <template v-if="stateRecordItems.length > 0">
-              <ScrollArea class="max-h-80 rounded">
-                <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(stateRecordItems) }}</pre>
-              </ScrollArea>
-            </template>
-            <p v-else class="text-text-dim text-sm">暂无状态记录。</p>
-          </div>
-        </details>
       </CardContent>
     </Card>
   </section>
@@ -178,7 +164,6 @@ const aiDebugRecords = shallowRef<AiDebugRecord[]>([])
 const runtimeSnapshot = shallowRef<RuntimeSnapshotShell | null>(null)
 const historyItems = shallowRef<unknown[]>([])
 const checkpointItems = shallowRef<unknown[]>([])
-const stateRecordItems = shallowRef<unknown[]>([])
 
 let unsubscribeTurnReady: (() => void) | null = null
 
@@ -243,7 +228,6 @@ async function refreshAll() {
     refreshRuntimeSnapshot(),
     refreshQueryResource("history", (items) => (historyItems.value = items)),
     refreshQueryResource("checkpoints", (items) => (checkpointItems.value = items)),
-    refreshQueryResource("state-records", (items) => (stateRecordItems.value = items)),
   ])
 }
 

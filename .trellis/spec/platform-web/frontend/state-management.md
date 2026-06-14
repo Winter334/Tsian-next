@@ -13,8 +13,8 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Table shapes live in `storage/db.ts`.
 - Prototype schema changes use a new database name, not migrations.
 - Multi-table writes should use `localDb.transaction`.
-- Current active tables are `meta`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, and `stateRecords`.
-- Checkpoints store snapshot, history, and generic state records only.
+- Current active tables are `meta`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, and `workspaceFiles`.
+- Checkpoints store snapshot, history, and workspace files.
 
 ## Runtime State
 

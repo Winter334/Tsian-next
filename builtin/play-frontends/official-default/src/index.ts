@@ -5,10 +5,9 @@ import type {
   PlayFrontendBridge,
   PlayFrontendManifest,
   RuntimeSnapshotShell,
-  StateRecord,
 } from "@tsian/contracts"
 
-type InspectorTab = "ai" | "checkpoints" | "snapshot" | "state"
+type InspectorTab = "ai" | "checkpoints" | "snapshot"
 
 const STYLE_ID = "tsian-official-default-style"
 const ROLE_LABEL: Record<string, string> = {
@@ -62,7 +61,7 @@ function ensureStyles() {
     .composer-input:focus{outline:none;border-color:rgba(246,185,79,.42);box-shadow:0 0 0 4px rgba(246,185,79,.08)}
     .composer-button{min-width:112px;padding:0 18px;border:1px solid rgba(246,185,79,.24);border-radius:8px;background:linear-gradient(180deg,rgba(246,185,79,.22),rgba(246,185,79,.08)),rgba(15,22,34,.96);color:#fff7ea;font:inherit;font-weight:600;cursor:pointer}
     .composer-button:disabled{cursor:not-allowed;opacity:.55}
-    .od-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;padding:14px 16px 0;background:rgba(255,255,255,.02)}
+    .od-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;padding:14px 16px 0;background:rgba(255,255,255,.02)}
     .od-tab{padding:11px 10px;border:1px solid rgba(148,163,184,.12);border-radius:8px 8px 0 0;background:rgba(8,15,24,.56);color:var(--muted);font:inherit;font-size:13px;cursor:pointer}
     .od-tab.is-active{color:var(--text);border-color:rgba(246,185,79,.2);background:linear-gradient(180deg,rgba(246,185,79,.12),rgba(246,185,79,0)),rgba(10,16,26,.96)}
     .od-tabpanes{flex:1;min-height:0;overflow:hidden;background:rgba(7,12,20,.72)}
@@ -143,32 +142,6 @@ function renderSnapshot(target: HTMLDivElement, snapshot: RuntimeSnapshotShell) 
   target.append(card)
 }
 
-function renderStateRecords(target: HTMLDivElement, items: StateRecord[]) {
-  target.replaceChildren()
-  if (items.length === 0) {
-    target.append(empty("当前会话还没有状态记录。"))
-    return
-  }
-
-  for (const item of items) {
-    const card = document.createElement("article")
-    card.className = "od-card"
-    card.innerHTML = `
-      <div class="od-row">
-        <h4></h4>
-        <p class="od-meta"></p>
-      </div>
-      <pre class="od-pre"></pre>
-    `
-    ;(card.querySelector("h4") as HTMLHeadingElement).textContent =
-      `${item.namespace}/${item.collection}/${item.id}`
-    ;(card.querySelector(".od-meta") as HTMLParagraphElement).textContent =
-      item.updatedAt ? formatTime(item.updatedAt) : ""
-    ;(card.querySelector("pre") as HTMLPreElement).textContent = formatJson(item.data)
-    target.append(card)
-  }
-}
-
 function renderCheckpoints(
   target: HTMLDivElement,
   items: CheckpointSummary[],
@@ -195,7 +168,7 @@ function renderCheckpoints(
     ;(card.querySelector(".od-meta") as HTMLParagraphElement).textContent =
       `${formatTime(item.createdAt)} · ${item.reason}`
     ;(card.querySelector(".od-field p") as HTMLParagraphElement).textContent =
-      `回合 ${item.turn} · ${item.messageCount} 条对话 · ${item.stateRecordCount} 条状态记录`
+      `回合 ${item.turn} · ${item.messageCount} 条对话 · ${item.workspaceFileCount} 个工作区文件`
     ;(card.querySelector("button") as HTMLButtonElement).addEventListener("click", () => {
       onRestore(item.id)
     })
@@ -280,13 +253,11 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
           <button class="od-tab" data-tab="ai" type="button">AI</button>
           <button class="od-tab" data-tab="checkpoints" type="button">回溯</button>
           <button class="od-tab" data-tab="snapshot" type="button">快照</button>
-          <button class="od-tab" data-tab="state" type="button">状态</button>
         </div>
         <div class="od-tabpanes">
           <div class="od-pane" data-pane="ai"></div>
           <div class="od-pane" data-pane="checkpoints"></div>
           <div class="od-pane" data-pane="snapshot"></div>
-          <div class="od-pane" data-pane="state"></div>
         </div>
       </aside>
     </div>
@@ -303,13 +274,11 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
   const aiDebugPane = root.querySelector('[data-pane="ai"]') as HTMLDivElement
   const checkpointsPane = root.querySelector('[data-pane="checkpoints"]') as HTMLDivElement
   const snapshotPane = root.querySelector('[data-pane="snapshot"]') as HTMLDivElement
-  const statePane = root.querySelector('[data-pane="state"]') as HTMLDivElement
   const tabs = Array.from(root.querySelectorAll<HTMLButtonElement>(".od-tab"))
   const panes: Array<{ name: InspectorTab; pane: HTMLDivElement }> = [
     { name: "ai", pane: aiDebugPane },
     { name: "checkpoints", pane: checkpointsPane },
     { name: "snapshot", pane: snapshotPane },
-    { name: "state", pane: statePane },
   ]
 
   let activeTab: InspectorTab = "ai"
@@ -339,7 +308,6 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
     const checkpointResult = await bridge.query.query<CheckpointSummary>({
       resource: "checkpoints",
     })
-    const stateResult = await bridge.query.query<StateRecord>({ resource: "state-records" })
 
     statTurn.textContent = String(turn(snapshot))
     statMessages.textContent = String(historyResult.items.length)
@@ -360,7 +328,6 @@ export function mountOfficialDefaultFrontend(container: HTMLElement, bridge: Pla
       history.scrollTo({ top: history.scrollHeight })
     })
     renderSnapshot(snapshotPane, snapshot)
-    renderStateRecords(statePane, stateResult.items)
   }
 
   const onSubmit = async (event: SubmitEvent) => {

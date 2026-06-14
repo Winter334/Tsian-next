@@ -30,5 +30,5 @@ export interface CheckpointSummary {
   reason: "initial" | "after-turn" | "manual"
   createdAt: number
   messageCount: number
-  stateRecordCount: number
+  workspaceFileCount: number
 }

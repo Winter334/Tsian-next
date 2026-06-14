@@ -6,7 +6,6 @@ import type {
   PlatformActionRequest,
   PlatformActionResult,
   RuntimeSnapshotShell,
-  StateRecord,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { assembleAgentContext } from "./context"
@@ -32,7 +31,6 @@ export interface AgentRuntimeTurnInput {
   userInput: string
   recentHistory: ConversationMessageRecord[]
   snapshot: RuntimeSnapshotShell
-  stateRecords: StateRecord[]
   workspaceFiles?: WorkspaceFile[]
   signal?: AbortSignal
 }
@@ -79,14 +77,14 @@ export type AgentRuntimeCollaborationPolicyInput =
 
 const MASTER_AGENT_PLATFORM_GUARD = [
   "你是 Tsian AIRP 的主控 Agent。",
-  "你会收到自己的 AGENT.md、工作区上下文、最近对话、状态记录和玩家本轮输入。",
+  "你会收到自己的 AGENT.md、工作区上下文、最近对话和玩家本轮输入。",
   "你不直接输出给玩家看的正文。你要判断本轮应如何推进剧情、保持沉浸、尊重已有对话，并指出需要延续的情绪、冲突、信息或节奏。",
   "输出普通文本即可，不要 JSON，不要 Markdown 标题，控制在 300 字以内。",
 ].join("\n")
 
 const NARRATIVE_AGENT_PLATFORM_GUARD = [
   "你是 Tsian AIRP 的正文 Agent。",
-  "你会收到自己的 AGENT.md、工作区上下文、最近对话、状态记录、主控 Agent brief 和玩家本轮输入。",
+  "你会收到自己的 AGENT.md、工作区上下文、最近对话、主控 Agent brief 和玩家本轮输入。",
   "根据主控 Agent 的 brief、最近对话和玩家本轮输入继续剧情。不要解释系统行为，不要提到 Agent、brief、工具或提示词。",
   "以第二人称或贴近玩家视角的叙事为主，保持可互动性，在结尾自然留下玩家下一步可以回应的空间。",
 ].join("\n")
@@ -235,20 +233,6 @@ function formatHistory(history: ConversationMessageRecord[]): string {
 
 function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
   return input.snapshot.state.turn + 1
-}
-
-function formatStateRecords(records: StateRecord[]): string {
-  if (records.length === 0) {
-    return "（暂无状态记录）"
-  }
-
-  return records
-    .slice(0, 20)
-    .map((record) => {
-      const tags = record.tags?.length ? ` tags=${record.tags.join(",")}` : ""
-      return `- ${record.namespace}/${record.collection}/${record.id}${tags}: ${JSON.stringify(record.data)}`
-    })
-    .join("\n")
 }
 
 function formatWorkspaceFile(file: WorkspaceFile): string {
@@ -493,9 +477,6 @@ function buildMasterMessages(
         "最近对话：",
         formatHistory(history),
         "",
-        "可用状态记录：",
-        formatStateRecords(input.stateRecords),
-        "",
         "玩家本轮输入：",
         input.userInput,
         "",
@@ -544,9 +525,6 @@ function buildNarrativeMessages(
           : []),
         "最近对话：",
         formatHistory(history),
-        "",
-        "可用状态记录：",
-        formatStateRecords(input.stateRecords),
         "",
         "主控 Agent brief：",
         masterPlan.trim(),
@@ -766,9 +744,6 @@ function buildDelegatedAgentMessages(
           : []),
         "最近对话窗口：",
         formatHistory(history),
-        "",
-        "可用状态记录：",
-        formatStateRecords(input.stateRecords),
         "",
         "玩家本轮输入：",
         input.userInput,

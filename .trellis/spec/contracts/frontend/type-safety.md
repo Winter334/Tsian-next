@@ -5,7 +5,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 ## Current Shared Shapes
 
 - `RuntimeSnapshotShell` and `ConversationMessageRecord` describe frontend-readable session state.
-- `StateRecord` describes generic runtime data exposed through `state-records`.
+- `WorkspaceFile`, `WorkspaceEntry`, and `WorkspaceSearchResult` describe Runtime Workspace files and discovery results.
 - `MessageInteractionRequest` is currently `{ content: string }`.
 - `DeepQueryRequest` / `DeepQueryResult<T>` wrap bridge query resources.
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.

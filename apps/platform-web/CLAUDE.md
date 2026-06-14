@@ -20,7 +20,7 @@ src/
   package-loader/       builtin official-default frontend loader
   platform-host/        local platform orchestrator
   runtime-host/         LocalRuntimeEngine and AI client
-  storage/              Dexie schema and save/checkpoint/state helpers
+  storage/              Dexie schema, save/checkpoint helpers, and workspace files
   views/                Lobby / Play / Settings / Debug
 ```
 
@@ -42,12 +42,19 @@ Current query resources:
 
 - `history`
 - `checkpoints`
-- `state-records`
+- `workspace-list`
+- `workspace-read`
+- `workspace-search`
+- `agent-registry`
+- `agent-context`
+- `skill-registry`
+- `skill-detail`
+- `runtime-diagnostics`
 - `ai-debug`
 
 ## Storage
 
-Dexie database name: `tsian-agent-runtime-v1`.
+Dexie database name: `tsian-agent-runtime-v3`.
 
 Tables:
 
@@ -56,7 +63,7 @@ Tables:
 - `saveSnapshots`
 - `saveHistory`
 - `checkpoints`
-- `stateRecords`
+- `workspaceFiles`
 
 No old local data migration is expected.
 
@@ -70,4 +77,4 @@ npm run build:runtime-core
 npm run build:web
 ```
 
-For browser smoke, create a contentless session, send one message, confirm two AI debug records (`master-agent`, `narrative-agent`), history update, checkpoint creation, and checkpoint restore.
+For browser smoke, create a contentless session, send one message, confirm AI debug records, history update, workspace files, checkpoint creation, and checkpoint restore.

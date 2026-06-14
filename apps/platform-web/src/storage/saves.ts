@@ -8,14 +8,12 @@ import {
   type LocalSaveHistoryRecord,
   type LocalSaveRecord,
   type LocalSaveSnapshotRecord,
-  type LocalStateRecord,
 } from "./db"
 import {
   createCheckpointForSave,
   createCheckpointRecordForSave,
   deleteCheckpointsForSave,
 } from "./checkpoints"
-import { deleteStateRecordsForSave, listLocalStateRecordsForSave } from "./state-records"
 import {
   createLocalWorkspaceFileRecord,
   deleteWorkspaceForSave,
@@ -128,7 +126,6 @@ export async function createLocalSave(
   await createCheckpointForSave(save.id, {
     snapshot: snapshotRecord.snapshot,
     history,
-    stateRecords: [],
     reason: "initial",
     label: "初始状态",
   })
@@ -190,7 +187,6 @@ export async function commitSuccessfulRuntimeTurnForSave(
   input: {
     snapshot: RuntimeSnapshotShell
     history: ConversationMessageRecord[]
-    stateRecords: LocalStateRecord[]
     workspaceFiles: WorkspaceFile[]
     checkpointReason: "after-turn"
   },
@@ -218,7 +214,6 @@ export async function commitSuccessfulRuntimeTurnForSave(
   const checkpoint = createCheckpointRecordForSave(saveId, {
     snapshot: nextSnapshot,
     history: normalizedMessages,
-    stateRecords: input.stateRecords,
     reason: input.checkpointReason,
     workspaceFiles: checkpointWorkspaceFiles,
   }, now)
@@ -281,7 +276,6 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
     },
   )
 
-  await deleteStateRecordsForSave(saveId)
   await deleteWorkspaceForSave(saveId)
   await deleteCheckpointsForSave(saveId)
 }
@@ -315,7 +309,6 @@ export async function createCheckpointFromCurrentSave(
   return createCheckpointForSave(saveId, {
     snapshot: await getSnapshotForSave(saveId),
     history: await getHistoryForSave(saveId),
-    stateRecords: await listLocalStateRecordsForSave(saveId),
     reason,
     label,
   })

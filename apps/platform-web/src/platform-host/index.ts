@@ -43,8 +43,6 @@ import {
   initializeWorkspaceForSave,
   listCheckpointsForSave,
   listLocalSaves,
-  listLocalStateRecordsForSave,
-  listStateRecordsForSave,
   listWorkspaceEntriesForSave,
   listWorkspaceFilesForSave,
   normalizeWorkspaceFilePath,
@@ -599,38 +597,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } as DeepQueryResult<T>
       }
 
-      if (request.resource === "state-records") {
-        if (!activeSaveId) {
-          return { items: [] } as DeepQueryResult<T>
-        }
-
-        const namespace =
-          typeof request.params?.namespace === "string"
-            ? request.params.namespace
-            : undefined
-        const collection =
-          typeof request.params?.collection === "string"
-            ? request.params.collection
-            : undefined
-        const query =
-          typeof request.params?.query === "string"
-            ? request.params.query
-            : undefined
-        const limit =
-          typeof request.params?.limit === "number"
-            ? request.params.limit
-            : undefined
-
-        return {
-          items: (await listStateRecordsForSave(activeSaveId, {
-            namespace,
-            collection,
-            query,
-            limit,
-          })) as T[],
-        } as DeepQueryResult<T>
-      }
-
       if (request.resource === "workspace-list") {
         if (!activeSaveId) {
           return { items: [] } as DeepQueryResult<T>
@@ -821,13 +787,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
         workspaceTransaction = createRuntimeWorkspaceTransaction(
           await listWorkspaceFilesForSave(activeSaveId),
         )
-        const stateRecords = await listStateRecordsForSave(activeSaveId)
         const result = await runAgentRuntimeTurn(
           {
             userInput: content,
             recentHistory: historyBefore,
             snapshot: snapshotBefore,
-            stateRecords,
             workspaceFiles: workspaceTransaction.workspaceFiles,
             signal: currentController.signal,
           },
@@ -903,7 +867,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
         await commitSuccessfulRuntimeTurnForSave(activeSaveId, {
           snapshot: snapshotAfter,
           history: nextHistory,
-          stateRecords: await listLocalStateRecordsForSave(activeSaveId),
           workspaceFiles: workspaceTransaction.finalWorkspaceFiles(),
           checkpointReason: "after-turn",
         })

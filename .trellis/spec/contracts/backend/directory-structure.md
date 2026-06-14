@@ -4,7 +4,7 @@
 
 ## File Ownership
 
-- `runtime.ts` owns runtime snapshots, conversation messages, JSON value types, generic state records/write operations, message interaction, deep query, platform context, and platform action shapes.
+- `runtime.ts` owns runtime snapshots, conversation messages, JSON value types, Runtime Workspace shapes, diagnostics, message interaction, deep query, platform context, and platform action shapes.
 - `bridge.ts` owns `PlayFrontendBridge` and bridge namespace interfaces.
 - `debug.ts` owns AI debug and checkpoint summary types exposed to play frontends.
 - `frontend-package.ts` owns play frontend manifest metadata.

@@ -4,7 +4,7 @@
 
 ## Shared Contracts
 
-- Import bridge, runtime, debug, frontend package, and state record shapes from `@tsian/contracts`.
+- Import bridge, runtime, debug, frontend package, workspace, Agent, Skill, and diagnostic shapes from `@tsian/contracts`.
 - Import `RuntimeEngine` from `@tsian/runtime-core`.
 - Do not redefine cross-package payloads in platform-web.
 
@@ -12,7 +12,7 @@
 
 - Treat AI responses as untrusted strings unless a later task adds structured output validation.
 - Validate bridge/platform action inputs before mutating storage.
-- Keep `StateWriteOperation` handling JSON-compatible and fail loudly on invalid writes.
+- Keep workspace write/delete inputs normalized at platform-host or storage boundaries and fail loudly on invalid writes.
 - Convert query params at the platform-host boundary before passing to storage helpers.
 
 ## Scenario: Runtime Workspace Registry And Detail Queries
@@ -120,9 +120,10 @@ return {
 }
 ```
 
-## JSON State
+## Workspace State
 
-- `RuntimeGlobalsMap` and state record `data` must remain JSON-compatible.
+- `RuntimeGlobalsMap` and workspace JSON file content should remain JSON-compatible when a local convention declares JSON data.
+- Structured state belongs in Runtime Workspace files documented by README, schema, Agent, or Skill conventions; do not add a platform-owned table or universal record model for gameplay state.
 - Do not loosen contract fields to `unknown` to hide caller bugs.
 
 ## Scenario: Runtime Tool Boundary Classification
@@ -224,7 +225,7 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
 
 - `platform-host` owns storage access. It must call `initializeWorkspaceForSave(activeSaveId)` before listing workspace files for a turn, then pass `listWorkspaceFilesForSave(activeSaveId)` into Agent Runtime.
 - `agent-runtime` owns prompt composition. It must use `assembleAgentContext(workspaceFiles, { agentId: "master" })` and `{ agentId: "narrative" }` for the two default calls.
-- Model messages may include `AGENT.md`, notes/session files, declared context files, missing context paths, lightweight skill index, recent history, stateRecords, turn number, player input, and master brief.
+- Model messages may include `AGENT.md`, notes/session files, declared context files, missing context paths, lightweight skill index, recent history, turn number, player input, and master brief.
 - Skill indexes inside runtime prompts must remain lightweight `SkillRegistryEntry[]`; do not call `loadSkillDetail` from the default turn path.
 - `agent-runtime` must not import Dexie tables, platform bridge objects, or platform-host helpers.
 
@@ -257,7 +258,7 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
 #### Wrong
 
 ```typescript
-await runAgentRuntimeTurn({ userInput, recentHistory, snapshot, stateRecords }, capabilities)
+await runAgentRuntimeTurn({ userInput, recentHistory, snapshot }, capabilities)
 ```
 
 #### Correct
@@ -269,7 +270,6 @@ await runAgentRuntimeTurn({
   userInput,
   recentHistory,
   snapshot,
-  stateRecords,
   workspaceFiles,
 }, capabilities)
 ```

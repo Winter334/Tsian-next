@@ -3,7 +3,6 @@ import {
   localDb,
   type LocalCheckpointRecord,
   type LocalSaveHistoryRecord,
-  type LocalStateRecord,
 } from "./db"
 import {
   createLocalWorkspaceFileRecord,
@@ -14,8 +13,6 @@ import {
 export interface LocalCheckpointSummary extends CheckpointSummary {
   saveId: string
 }
-
-type CheckpointStateRecord = LocalCheckpointRecord["stateRecords"][number]
 
 function createCheckpointId(saveId: string, createdAt: number): string {
   return `${saveId}:checkpoint:${createdAt}:${Math.random().toString(36).slice(2, 8)}`
@@ -34,7 +31,7 @@ export function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpo
     reason: record.reason,
     createdAt: record.createdAt,
     messageCount: record.history.length,
-    stateRecordCount: record.stateRecords.length,
+    workspaceFileCount: record.workspaceFiles.length,
   }
 }
 
@@ -43,7 +40,6 @@ export function createCheckpointRecordForSave(
   input: {
     snapshot: RuntimeSnapshotShell
     history: LocalSaveHistoryRecord["messages"]
-    stateRecords: LocalStateRecord[]
     reason: LocalCheckpointRecord["reason"]
     label?: string
     workspaceFiles: CheckpointWorkspaceFile[]
@@ -60,22 +56,7 @@ export function createCheckpointRecordForSave(
     createdAt,
     snapshot: input.snapshot,
     history: input.history,
-    stateRecords: input.stateRecords.map(
-      ({ saveId: _saveId, updatedAt: _updatedAt, ...stateRecord }) => stateRecord,
-    ),
     workspaceFiles: input.workspaceFiles,
-  }
-}
-
-function toLocalStateRecord(
-  stateRecord: CheckpointStateRecord,
-  saveId: string,
-  updatedAt: number,
-): LocalStateRecord {
-  return {
-    ...stateRecord,
-    saveId,
-    updatedAt,
   }
 }
 
@@ -84,7 +65,6 @@ export async function createCheckpointForSave(
   input: {
     snapshot: RuntimeSnapshotShell
     history: LocalSaveHistoryRecord["messages"]
-    stateRecords: LocalStateRecord[]
     reason: LocalCheckpointRecord["reason"]
     label?: string
   },
@@ -121,7 +101,6 @@ export async function restoreCheckpointForSave(
       localDb.saves,
       localDb.saveSnapshots,
       localDb.saveHistory,
-      localDb.stateRecords,
       localDb.workspaceFiles,
     ],
     async () => {
@@ -133,12 +112,6 @@ export async function restoreCheckpointForSave(
         saveId,
         messages: checkpoint.history,
       })
-
-      const stateRecords = await localDb.stateRecords.where("saveId").equals(saveId).toArray()
-      await Promise.all(stateRecords.map((item) => localDb.stateRecords.delete(item.id)))
-      for (const [index, stateRecord] of checkpoint.stateRecords.entries()) {
-        await localDb.stateRecords.put(toLocalStateRecord(stateRecord, saveId, now + index))
-      }
 
       const workspaceFiles = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
       await Promise.all(workspaceFiles.map((item) => localDb.workspaceFiles.delete(item.id)))

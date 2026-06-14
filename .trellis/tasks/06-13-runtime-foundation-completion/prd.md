@@ -18,7 +18,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - The current active direction is Agent-Orchestrated AIRP Runtime, with Runtime Workspace as the save-scoped data container.
 - Recent completed MVPs include workspace storage, Agent/Skill registry, `skill_load`, Skill action gating, `platform_action`, Runtime trace persistence, `agent_call`, raw AIRP history writeback, and strong-SDK `browser_script`.
 - Active docs now say the foundation phase should not add independent `remote_http`, WASM, remote script loading, or hosted execution; remote API interaction should use existing `browser_script` + `fetch` unless a future concrete Skill proves that insufficient.
-- Active docs recommend strengthening existing `browser_script` / Tsian SDK / controlled platform actions as concrete Skill needs appear, plus mature `agent_call`, trace/diagnostic experience, Runtime Workspace derived files, stateRecords migration, and workspace/Agent/Skill browsing/editing UI.
+- Active docs recommend strengthening existing `browser_script` / Tsian SDK / controlled platform actions as concrete Skill needs appear, plus mature `agent_call`, trace/diagnostic experience, Runtime Workspace derived files, transitional `stateRecords` cleanup, and workspace/Agent/Skill browsing/editing UI.
 - The previous executor foundation task explicitly set the user-facing direction as completing lower runtime layers before UI, concrete AIRP Agents, or gameplay-specific Skill design.
 - Current action executor support in code is `builtin`, `platform_action`, and `browser_script`; unsupported executor types fail structurally.
 - Current controlled executor timeout is implemented for `platform_action` and `browser_script`, with a default of 10 seconds and maximum of 60 seconds.
@@ -27,7 +27,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - Runtime trace currently records turn, Agent step, model calls, Skill loads, Agent calls, workspace read/list/search, action calls, script logs, and workspace mutations as JSONL files under `.tsian/traces/`.
 - Runtime Workspace already seeds files such as `history/timeline.md`, `memory/summaries/current.md`, `memory/summaries/long-term.md`, and `agents/*/session.jsonl`, but current runtime does not maintain them automatically.
 - `agent_call` is currently contacts-gated, bounded by a shared root-turn call count, and supports limited nested delegation under a code-level default collaboration policy.
-- `stateRecords` still exists as transitional platform storage outside ordinary Runtime Workspace files.
+- `stateRecords` still exists as transitional platform storage outside ordinary Runtime Workspace files, and the selected cleanup direction is to hard-remove it as an active model and make workspace-native state the default.
 
 ## Foundation Completion Areas
 
@@ -137,10 +137,11 @@ This task is the parent planning task for that phase. It should identify the MVP
    - Why before UI/Agent/Skill design: concrete Agent teams need a stable collaboration substrate.
 
 8. Transitional State Cleanup
-   - Boundary: current `stateRecords` compatibility storage versus workspace-backed state files.
-   - Expected output: decision and migration/adapter plan that keeps platform gameplay-neutral.
-   - Validation: existing frontend/debug behavior remains compatible or has an explicit migration.
-   - Why before UI/Agent/Skill design: future UI should not accidentally make transitional platform state look like the long-term model.
+   - Child task: `.trellis/tasks/06-14-transitional-state-cleanup`
+   - Boundary: legacy `stateRecords` contracts/storage/prompt/query/checkpoint/frontend surfaces versus workspace-native state files.
+   - Expected output: hard removal of active `stateRecords` surfaces, plus a default optional `state/` workspace convention that does not preserve `namespace/collection/id`.
+   - Validation: builds and active-surface searches show no active `stateRecords` model, new saves seed state convention docs, and docs/specs point future work at workspace-native state.
+   - Why before UI/Agent/Skill design: future UI and Agent/Skill design should not make transitional platform state look like the long-term model.
 
 ## Acceptance Criteria
 
@@ -155,9 +156,10 @@ This task is the parent planning task for that phase. It should identify the MVP
 - [x] The fifth child implementation slice is selected: Runtime Workspace Completeness.
 - [x] The remote/WASM/hosted execution gap is handled as its own remaining roadmap item or child, not hidden under the completed policy/result-contract child.
 - [x] The next child implementation slice is selected: Agent Runtime Collaboration Completeness.
-- [ ] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
-- [ ] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
-- [ ] Active direction docs are updated if the roadmap changes the project direction.
+- [x] The transitional state cleanup slice is selected and assigned to a child task.
+- [x] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
+- [x] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
+- [x] Active direction docs are updated if the roadmap changes the project direction.
 
 ## Out Of Scope For This Parent Task
 
@@ -169,9 +171,10 @@ This task is the parent planning task for that phase. It should identify the MVP
 
 ## Open Questions
 
-- Should `stateRecords` migration be part of foundation completion before UI, or deferred until workspace UI makes the migration observable?
+- None currently blocking the selected foundation cleanup path.
 
 ## Resolved Questions
 
 - Executor trust/enable policy comes before `remote_http` inside the completed third child: that child implements a lightweight code-level executor-class policy plus optional action `outputSchema`, while `remote_http`, WASM, hosted execution, per-Skill trust state, and trust UI are out of scope for that child only.
 - Remote/WASM/hosted execution remained a parent-level Controlled Execution gap after the policy/result-contract child, but the user later confirmed the gap should be handled by no-code disposition rather than implementation: do not add `remote_http`, WASM, remote script loading, or hosted execution in the foundation phase; route remote API interaction through `browser_script` unless a future concrete Skill proves that insufficient.
+- `stateRecords` cleanup belongs before UI/Agent/Skill design. The selected child task should hard-remove active `stateRecords` surfaces and establish workspace-native state as the default model rather than preserving old `namespace/collection/id` semantics through migration or adapter layers.

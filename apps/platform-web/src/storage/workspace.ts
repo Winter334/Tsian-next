@@ -43,9 +43,12 @@ export class WorkspaceStorageError extends Error {
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
-const DEFAULT_WORKSPACE_VERSION = 2
+const DEFAULT_WORKSPACE_VERSION = 3
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 const DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS = new Set([
+  "state/README.md",
+  "state/schemas/README.md",
+  "state/data/README.md",
   "skills/memory-maintenance/SKILL.md",
   "skills/memory-maintenance/scripts/apply-maintenance-plan.js",
 ])
@@ -264,7 +267,7 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "# Runtime Workspace",
       "",
       "This save-scoped workspace stores runtime data as virtual files.",
-      "Agents, skills, world data, memory, frontend data, and platform metadata can all live here.",
+      "Agents, skills, world data, generic state, memory, frontend data, and platform metadata can all live here.",
       "Ordinary workspace file content is text; binary/blob content is not part of this workspace version.",
       "The `.tsian/` directory is platform-owned metadata and is hidden from ordinary Agent, Skill, and frontend workspace APIs.",
       "",
@@ -296,6 +299,7 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "  - README.md",
       "  - history/timeline.md",
       "  - world/README.md",
+      "  - state/README.md",
       "  - memory/summaries/current.md",
       "---",
       "",
@@ -445,6 +449,40 @@ const DEFAULT_WORKSPACE_FILES: Array<{
   {
     path: "world/canon.md",
     content: "# Canon\n\n",
+  },
+  {
+    path: "state/README.md",
+    content: [
+      "# State",
+      "",
+      "Use this directory for generic structured state only when no more specific workspace directory exists.",
+      "Prefer `world/`, `memory/`, `frontend/`, Skill-owned paths, or Agent-owned paths when those conventions are clearer.",
+      "State files are ordinary Runtime Workspace files. Document local file layouts near the data with README files, schemas, or Skill instructions.",
+      "Do not treat this directory as a universal record table; it does not define namespace, collection, or record id semantics.",
+      "Generated indexes, caches, embeddings, and semantic retrieval belong to general workspace capabilities, not to state-specific platform code.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "state/schemas/README.md",
+    content: [
+      "# State Schemas",
+      "",
+      "Place optional schemas, examples, or convention notes for generic `state/` files here.",
+      "These files are documentation for Agents, Skills, frontends, and authors; they are not a platform schema registry.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "state/data/README.md",
+    content: [
+      "# State Data",
+      "",
+      "Store generic structured state here only when a local convention needs this neutral area.",
+      "Use whatever file layout the local README, schema, Agent, or Skill defines.",
+      "Do not mirror the retired namespace/collection/id record model here.",
+      "",
+    ].join("\n"),
   },
   {
     path: "memory/README.md",

@@ -16,34 +16,6 @@ export interface RuntimeGlobalsMap {
   [key: string]: JsonValue
 }
 
-export interface StateRecord {
-  id: string
-  namespace: string
-  collection: string
-  data: JsonValue
-  schemaVersion?: string
-  tags?: string[]
-  updatedAt?: number
-}
-
-export type StateWriteOperationType = "upsert" | "patch" | "delete" | "clear"
-
-export interface StateWriteOperation {
-  type: StateWriteOperationType
-  namespace?: string
-  collection?: string
-  id?: string
-  data?: JsonValue
-  schemaVersion?: string
-  tags?: string[]
-}
-
-export interface StateWriteOutput {
-  upsertedIds: string[]
-  deletedIds: string[]
-  clearedCollections: string[]
-}
-
 export type WorkspaceEntryKind = "file" | "directory"
 
 export interface WorkspaceEntry {
