@@ -335,7 +335,7 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
 - 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
 - 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；action 调用会经过 loaded Skill gating、输入校验、轻量 executor-class policy 检查，并可按可选 `outputSchema` 校验成功输出。当前支持 `builtin/validation`、`builtin/echo`、allow-listed `platform_action` 和 strong-SDK `browser_script`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
-- 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；MVP 禁止嵌套 `agent_call`，并按 root turn 限制调用次数。
+- 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；协作策略为代码级默认值，当前 `maxCallsPerTurn=4`、`maxDepth=2`、语义 history window 为 `minimal/recent/scene`，并按 root turn 共享调用预算。有限嵌套已启用：root depth `0` 可调用 depth `1` Agent，depth `1` Agent 可调用自己的 contacts 到 depth `2`，depth `2` 再调用会返回带深度/预算事实的结构化 observation。
 - Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action executor policy 检查、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 workspace read/list/search 不暴露 `.tsian/*`。`runtime-diagnostics` query 已提供面向 Agent/未来管理 UI 的 facts-only 诊断摘要视图；它按需从 raw trace 生成，不写派生文件、不做 pruning、不默认暴露给普通 live-turn Agent。
 - Agent Session Transcript MVP 已落地：成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。
 - Skill-triggered Memory Maintenance MVP 已落地：默认 `memory-maintenance` Skill 的 `apply_maintenance_plan` 使用 `browser_script` 和 Tsian SDK staged 写入 `agents/<agent>/notes.md`、`history/timeline.md`、`memory/summaries/current.md` 或 `memory/summaries/long-term.md`。没有显式 Skill action 就不会维护增强记忆，空 writes 仅表示显式 no-op。
@@ -343,7 +343,7 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 后续实现应逐步：
 
 1. 按具体 Skill 需求增强现有 `browser_script` / Tsian SDK / 受控平台动作；不要把独立 `remote_http`、WASM 或托管执行作为默认 foundation 后续项。
-2. 扩展 `agent_call` 到更成熟的协作策略，例如可配置预算、有限递归、协作 Skill 或调试 UI。
+2. 在现有 `agent_call` 策略之上继续完善协作体验，例如管理 Agent、协作 Skill、调试 UI、可观察性或未来 host-owned 配置；不要恢复固定团队 DAG。
 3. 在 Agent-facing diagnostics 基础上完善未来管理 Agent / Skill / UI 体验；若未来出现新 executor，再按事实补充对应诊断字段。
 4. 继续完善记忆策略与体验：维护 Skill 提示质量、diff/review UI、summary 压缩、检索索引和 session transcript 归档。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。

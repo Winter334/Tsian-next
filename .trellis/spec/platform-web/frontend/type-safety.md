@@ -329,11 +329,12 @@ interface RuntimeWorkspaceToolCall {
 - `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts and the current tool loop allows Agent calls.
 - `agent_call` validates the target against the caller Agent's `contacts`; contacts are a runtime stability boundary, not a full security model.
 - `agent_call` builds the target Agent's own `AgentContextEntry`, including its `AGENT.md`, notes/session, declared context files, and lightweight Skill Index.
-- `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, response }`; the target Agent response does not directly become player-visible history.
+- `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, metadata, response }`; the target Agent response does not directly become player-visible history.
 - `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
-- Delegated Agents may use `workspace_read`, `workspace_list`, `workspace_search`, `skill_load`, and non-`agent_call` `action_call` inside their own tool loop.
-- Delegated Agents must not receive a nested `agent_call` runner for the MVP; direct nested attempts return `AGENT_CALL_UNAVAILABLE` as a normal observation.
-- The root turn shares one `agent_call` budget across master and narrative steps.
+- Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxCallsPerTurn=4`, `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`, and `maxToolRoundsPerAgent=3`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state.
+- Delegated Agents may use `workspace_read`, `workspace_list`, `workspace_search`, `skill_load`, `action_call` for loaded Skills, and limited nested `agent_call` inside their own tool loop.
+- Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, root master/narrative steps at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
+- The root turn shares one `agent_call` budget across master, narrative, and nested delegated steps.
 - Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
 - Built-in executors are side-effect-free:
   - `validation`: returns `status: "validated"` and `output: null`.
@@ -447,7 +448,7 @@ interface RuntimeWorkspaceToolCall {
 - Missing or blank `agent_call.arguments.request` -> error observation with `AGENT_CALL_REQUEST_REQUIRED`.
 - Invalid `agent_call.arguments.historyMode` -> error observation with `AGENT_CALL_HISTORY_MODE_INVALID`.
 - `agent_call` without an active Agent context -> error observation with `AGENT_CALL_CONTEXT_REQUIRED`.
-- `agent_call` in a tool loop where Agent calls are disabled, including delegated nested attempts -> error observation with `AGENT_CALL_UNAVAILABLE`.
+- `agent_call` in a tool loop where Agent calls are unavailable, including attempts beyond the collaboration depth limit -> error observation with `AGENT_CALL_UNAVAILABLE` and compact caller/target/depth/budget metadata when available.
 - `agent_call` target not found in the Agent registry -> error observation with `AGENT_CALL_TARGET_NOT_FOUND`.
 - `agent_call` target exists but is not in caller contacts -> error observation with `AGENT_CALL_TARGET_NOT_CONTACT`.
 - Per-turn `agent_call` budget exhausted -> error observation with `AGENT_CALL_LIMIT_EXCEEDED`.
@@ -491,7 +492,7 @@ interface RuntimeWorkspaceToolCall {
 - Good: a failed turn after staged workspace writes leaves no ordinary persisted workspace file from those staged writes.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
 - Good: master sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its own brief.
-- Good: a delegated memory Agent loads a Skill and calls a non-`agent_call` action in its own tool loop.
+- Good: a delegated memory Agent loads a Skill, calls a non-`agent_call` action, or calls one of its own contact Agents when depth and budget policy allow it.
 - Good: Agent uses `workspace_list` for a directory and receives entries without file contents.
 - Good: Agent uses `workspace_search` and receives previews, then explicitly reads a chosen file if full content is needed.
 - Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
@@ -499,7 +500,7 @@ interface RuntimeWorkspaceToolCall {
 - Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
 - Bad: allowing `action_call` before `skill_load`; this bypasses Skill gating.
 - Bad: exposing the full Agent registry instead of only the current Agent's contacts.
-- Bad: allowing delegated Agents to recursively call `agent_call` during the MVP.
+- Bad: allowing delegated Agents to call arbitrary non-contact Agents, exceed the shared root-turn budget, or exceed the policy depth limit.
 - Bad: making built-in executors execute write/delete/script/remote behavior.
 - Bad: letting Agent Runtime call broad platform actions such as checkpoint restore through `platform_action`.
 - Bad: making raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals supported browser script APIs in the first strong-SDK slice.
@@ -544,7 +545,8 @@ interface RuntimeWorkspaceToolCall {
 - Assert current Agents without contacts do not get encouraged to use `agent_call`, and direct calls return structured errors.
 - Assert valid `agent_call` invokes the target contact Agent with its own context and returns the response as observation.
 - Assert non-contact and missing target `agent_call` attempts return structured errors without model calls.
-- Assert nested `agent_call` attempts from delegated Agents return `AGENT_CALL_UNAVAILABLE`.
+- Assert a delegated Agent can perform one nested `agent_call` to its own contact when depth and budget allow it.
+- Assert nested `agent_call` attempts beyond `maxDepth` return `AGENT_CALL_UNAVAILABLE` with structured depth/budget metadata.
 - Assert invalid `historyMode` is rejected and omitted `historyMode` defaults to `recent`.
 - Assert delegated Agents can still use workspace tools, `skill_load`, and non-`agent_call` `action_call`.
 - Assert per-turn `agent_call` budget is shared across master and narrative steps.

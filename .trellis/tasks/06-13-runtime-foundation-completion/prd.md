@@ -26,7 +26,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - Current turn failure handling rolls back the runtime snapshot and best-effort rolls back raw AIRP history writeback, but there is no general staged workspace mutation / turn-level rollback contract for all runtime workspace writes.
 - Runtime trace currently records turn, Agent step, model calls, Skill loads, Agent calls, workspace read/list/search, action calls, script logs, and workspace mutations as JSONL files under `.tsian/traces/`.
 - Runtime Workspace already seeds files such as `history/timeline.md`, `memory/summaries/current.md`, `memory/summaries/long-term.md`, and `agents/*/session.jsonl`, but current runtime does not maintain them automatically.
-- `agent_call` is currently contacts-gated, bounded by a root-turn call count, and deliberately blocks nested `agent_call` as an MVP limit.
+- `agent_call` is currently contacts-gated, bounded by a shared root-turn call count, and supports limited nested delegation under a code-level default collaboration policy.
 - `stateRecords` still exists as transitional platform storage outside ordinary Runtime Workspace files.
 
 ## Foundation Completion Areas
@@ -63,7 +63,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 
 ### E. Agent Runtime Collaboration Completeness
 
-- `agent_call` budget configuration and limited recursion strategy.
+- `agent_call` budget policy and limited recursion contract.
 - Context/history policy for delegated Agents.
 - Tool loop stability limits and failure reporting.
 - Agent session/notes writeback contract as runtime data, without yet designing concrete role workflows.
@@ -130,9 +130,10 @@ This task is the parent planning task for that phase. It should identify the MVP
    - Why before UI/Agent/Skill design: author-facing Skill design should know that `browser_script` is the supported extension point for remote service interaction, instead of designing against unimplemented executor classes.
 
 7. Agent Runtime Collaboration Completeness
+   - Child task: `.trellis/tasks/06-14-agent-runtime-collaboration-completeness`
    - Boundary: `agent_call`, context/history policy, tool loop limits, Agent session/notes writeback contract.
    - Expected output: mature delegation limits and persistence hooks without designing concrete AIRP role behavior.
-   - Validation: delegated Agent probes cover budgets, optional limited recursion if approved, and trace/failure behavior.
+   - Validation: delegated Agent probes cover budgets, default limited recursion, and trace/failure behavior.
    - Why before UI/Agent/Skill design: concrete Agent teams need a stable collaboration substrate.
 
 8. Transitional State Cleanup
@@ -153,6 +154,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - [x] The fourth child implementation slice is selected: Agent-Facing Runtime Diagnostics.
 - [x] The fifth child implementation slice is selected: Runtime Workspace Completeness.
 - [x] The remote/WASM/hosted execution gap is handled as its own remaining roadmap item or child, not hidden under the completed policy/result-contract child.
+- [x] The next child implementation slice is selected: Agent Runtime Collaboration Completeness.
 - [ ] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
 - [ ] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
 - [ ] Active direction docs are updated if the roadmap changes the project direction.

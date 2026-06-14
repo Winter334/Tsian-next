@@ -423,18 +423,35 @@ function emitAgentCallTrace(
 
   const result = isRecord(observation.result) ? observation.result : {}
   const targetAgent = isRecord(result.targetAgent) ? result.targetAgent : {}
+  const resultMetadata = isRecord(result.metadata) ? result.metadata : {}
+  const errorDetails = isRecord(observation.error?.details) ? observation.error.details : {}
+  const metadata = Object.keys(resultMetadata).length > 0 ? resultMetadata : errorDetails
   const data: Record<string, unknown> = {
+    callerAgentId: typeof metadata.callerAgentId === "string"
+      ? metadata.callerAgentId
+      : context.agentContext?.agent.id,
     targetAgentId: typeof targetAgent.id === "string"
       ? targetAgent.id
+      : typeof metadata.targetAgentId === "string"
+        ? metadata.targetAgentId
       : typeof call.arguments.agentId === "string"
         ? call.arguments.agentId
         : undefined,
     targetAgentTitle: typeof targetAgent.title === "string" ? targetAgent.title : undefined,
-    historyMode: typeof result.historyMode === "string"
-      ? result.historyMode
-      : typeof call.arguments.historyMode === "string"
-        ? call.arguments.historyMode
-        : DEFAULT_AGENT_CALL_HISTORY_MODE,
+    callerDepth: typeof metadata.callerDepth === "number" ? metadata.callerDepth : undefined,
+    depth: typeof metadata.targetDepth === "number" ? metadata.targetDepth : undefined,
+    maxDepth: typeof metadata.maxDepth === "number" ? metadata.maxDepth : undefined,
+    callCount: typeof metadata.callCount === "number" ? metadata.callCount : undefined,
+    maxCallsPerTurn: typeof metadata.maxCallsPerTurn === "number"
+      ? metadata.maxCallsPerTurn
+      : undefined,
+    historyMode: typeof metadata.historyMode === "string"
+      ? metadata.historyMode
+      : typeof result.historyMode === "string"
+        ? result.historyMode
+        : typeof call.arguments.historyMode === "string"
+          ? call.arguments.historyMode
+          : DEFAULT_AGENT_CALL_HISTORY_MODE,
     inputSummary: summarizeTraceValue(call.arguments),
   }
 

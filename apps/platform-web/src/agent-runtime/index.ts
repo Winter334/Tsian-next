@@ -60,8 +60,22 @@ export interface AgentRuntimeCapabilities {
     request: RuntimeBrowserScriptExecutorRequest,
   ): Promise<PlatformActionResult>
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
+  collaborationPolicy?: AgentRuntimeCollaborationPolicyInput
   emitTrace?: RuntimeTraceEmitter
 }
+
+export interface AgentRuntimeCollaborationPolicy {
+  maxCallsPerTurn: number
+  maxDepth: number
+  historyWindows: Record<RuntimeAgentCallHistoryMode, number>
+  maxToolRoundsPerAgent: number
+}
+
+export type AgentRuntimeCollaborationPolicyInput =
+  Partial<Omit<AgentRuntimeCollaborationPolicy, "historyWindows">>
+  & {
+    historyWindows?: Partial<Record<RuntimeAgentCallHistoryMode, number>>
+  }
 
 const MASTER_AGENT_PLATFORM_GUARD = [
   "你是 Tsian AIRP 的主控 Agent。",
@@ -82,7 +96,7 @@ const DELEGATED_AGENT_PLATFORM_GUARD = [
   "你会收到自己的 AGENT.md、工作区上下文、调用方请求、必要的最近对话和玩家本轮输入。",
   "你不直接面对玩家；你的输出会作为 observation 返回给调用方，由调用方决定如何使用。",
   "请专注回答调用方请求，返回建议、判断、草案、连续性检查或需要沉淀的事实提示。",
-  "MVP 中不要再次调用 agent_call；如果需要其它 Agent 参与，请把建议写在输出里。",
+  "如果工具说明中列出了可联系 Agent，你可以在确有必要时通过 agent_call 咨询自己的联系人；否则请把需要协作的建议写在输出里。",
 ].join("\n")
 
 const LEGACY_MASTER_AGENT_SYSTEM_PROMPT = [
@@ -91,13 +105,15 @@ const LEGACY_MASTER_AGENT_SYSTEM_PROMPT = [
   "输出普通文本即可，不要 JSON，不要 Markdown 标题，控制在 300 字以内。",
 ].join("\n")
 
-const MAX_WORKSPACE_TOOL_ROUNDS_PER_AGENT = 3
-const MAX_AGENT_CALLS_PER_TURN = 4
-const MAX_AGENT_CALL_DEPTH = 1
-const AGENT_CALL_HISTORY_WINDOW_BY_MODE: Record<RuntimeAgentCallHistoryMode, number> = {
-  minimal: 0,
-  recent: 6,
-  scene: 12,
+const DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY: AgentRuntimeCollaborationPolicy = {
+  maxCallsPerTurn: 4,
+  maxDepth: 2,
+  historyWindows: {
+    minimal: 0,
+    recent: 6,
+    scene: 12,
+  },
+  maxToolRoundsPerAgent: 3,
 }
 
 interface AgentCallTurnState {
@@ -105,9 +121,20 @@ interface AgentCallTurnState {
 }
 
 interface WorkspaceToolLoopOptions {
-  allowAgentCall: boolean
   agentCallState: AgentCallTurnState
   agentCallDepth: number
+  collaborationPolicy: AgentRuntimeCollaborationPolicy
+}
+
+interface AgentCallRuntimeMetadata {
+  callerAgentId: string
+  targetAgentId: string
+  callerDepth: number
+  targetDepth: number
+  maxDepth: number
+  callCount: number
+  maxCallsPerTurn: number
+  historyMode: RuntimeAgentCallHistoryMode
 }
 
 export const AGENT_SESSION_TRANSCRIPT_SCHEMA = "tsian.agent.session.transcript.v1"
@@ -143,6 +170,33 @@ const LEGACY_NARRATIVE_AGENT_SYSTEM_PROMPT = [
   "根据主控 Agent 的 brief、最近对话和玩家本轮输入继续剧情。不要解释系统行为，不要提到 Agent、brief、工具或提示词。",
   "以第二人称或贴近玩家视角的叙事为主，保持可互动性，在结尾自然留下玩家下一步可以回应的空间。",
 ].join("\n")
+
+function normalizePolicyInteger(value: unknown, fallback: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return fallback
+  }
+
+  return Math.floor(value)
+}
+
+function normalizeAgentRuntimeCollaborationPolicy(
+  input: AgentRuntimeCollaborationPolicyInput | undefined,
+): AgentRuntimeCollaborationPolicy {
+  const defaults = DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY
+  return {
+    maxCallsPerTurn: normalizePolicyInteger(input?.maxCallsPerTurn, defaults.maxCallsPerTurn),
+    maxDepth: normalizePolicyInteger(input?.maxDepth, defaults.maxDepth),
+    historyWindows: {
+      minimal: normalizePolicyInteger(input?.historyWindows?.minimal, defaults.historyWindows.minimal),
+      recent: normalizePolicyInteger(input?.historyWindows?.recent, defaults.historyWindows.recent),
+      scene: normalizePolicyInteger(input?.historyWindows?.scene, defaults.historyWindows.scene),
+    },
+    maxToolRoundsPerAgent: normalizePolicyInteger(
+      input?.maxToolRoundsPerAgent,
+      defaults.maxToolRoundsPerAgent,
+    ),
+  }
+}
 
 function assertNotAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
@@ -278,6 +332,17 @@ function getVisibleAgentContacts(
   return contacts
 }
 
+function canExposeAgentCallInPrompt(
+  policy: AgentRuntimeCollaborationPolicy,
+  state: AgentCallTurnState,
+  depth: number,
+  visibleContacts: AgentRegistryEntry[],
+): boolean {
+  return visibleContacts.length > 0
+    && depth < policy.maxDepth
+    && state.callCount < policy.maxCallsPerTurn
+}
+
 function formatVisibleAgentContacts(contacts: AgentRegistryEntry[]): string {
   if (contacts.length === 0) {
     return "（暂无可联系 Agent）"
@@ -391,7 +456,9 @@ function getWorkspaceAgentContext(
 
 function buildMasterMessages(
   input: AgentRuntimeTurnInput,
-  context: AgentContextEntry | null = getWorkspaceAgentContext(input, "master"),
+  context: AgentContextEntry | null,
+  collaborationPolicy: AgentRuntimeCollaborationPolicy,
+  agentCallState: AgentCallTurnState,
 ): AiChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
   const visibleContacts = context && input.workspaceFiles
@@ -402,7 +469,12 @@ function buildMasterMessages(
       role: "system",
       content: context
         ? buildWorkspaceAgentSystemPrompt(MASTER_AGENT_PLATFORM_GUARD, context, {
-            allowAgentCall: true,
+            allowAgentCall: canExposeAgentCallInPrompt(
+              collaborationPolicy,
+              agentCallState,
+              0,
+              visibleContacts,
+            ),
             visibleContacts,
           })
         : LEGACY_MASTER_AGENT_SYSTEM_PROMPT,
@@ -436,7 +508,9 @@ function buildMasterMessages(
 function buildNarrativeMessages(
   input: AgentRuntimeTurnInput,
   masterPlan: string,
-  context: AgentContextEntry | null = getWorkspaceAgentContext(input, "narrative"),
+  context: AgentContextEntry | null,
+  collaborationPolicy: AgentRuntimeCollaborationPolicy,
+  agentCallState: AgentCallTurnState,
 ): AiChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
   const visibleContacts = context && input.workspaceFiles
@@ -447,7 +521,12 @@ function buildNarrativeMessages(
       role: "system",
       content: context
         ? buildWorkspaceAgentSystemPrompt(NARRATIVE_AGENT_PLATFORM_GUARD, context, {
-            allowAgentCall: true,
+            allowAgentCall: canExposeAgentCallInPrompt(
+              collaborationPolicy,
+              agentCallState,
+              0,
+              visibleContacts,
+            ),
             visibleContacts,
           })
         : LEGACY_NARRATIVE_AGENT_SYSTEM_PROMPT,
@@ -569,13 +648,45 @@ function delegatedAgentDebugLabel(agentId: string): RuntimeTraceDebugLabel {
 function selectHistoryForAgentCall(
   history: ConversationMessageRecord[],
   historyMode: RuntimeAgentCallHistoryMode,
+  collaborationPolicy: AgentRuntimeCollaborationPolicy,
 ): ConversationMessageRecord[] {
-  const windowSize = AGENT_CALL_HISTORY_WINDOW_BY_MODE[historyMode]
+  const windowSize = collaborationPolicy.historyWindows[historyMode]
   if (windowSize <= 0) {
     return []
   }
 
   return normalizeHistory(history).slice(-windowSize)
+}
+
+function createAgentCallRuntimeMetadata(
+  callerContext: AgentContextEntry,
+  agentCall: RuntimeAgentCallArguments,
+  state: AgentCallTurnState,
+  collaborationPolicy: AgentRuntimeCollaborationPolicy,
+  callerDepth: number,
+  targetAgentId: string = agentCall.agentId,
+): AgentCallRuntimeMetadata {
+  return {
+    callerAgentId: callerContext.agent.id,
+    targetAgentId,
+    callerDepth,
+    targetDepth: callerDepth + 1,
+    maxDepth: collaborationPolicy.maxDepth,
+    callCount: state.callCount,
+    maxCallsPerTurn: collaborationPolicy.maxCallsPerTurn,
+    historyMode: agentCall.historyMode,
+  }
+}
+
+function agentCallTraceFacts(metadata: AgentCallRuntimeMetadata): Record<string, unknown> {
+  return {
+    callerAgentId: metadata.callerAgentId,
+    callerDepth: metadata.callerDepth,
+    depth: metadata.targetDepth,
+    maxDepth: metadata.maxDepth,
+    callCount: metadata.callCount,
+    maxCallsPerTurn: metadata.maxCallsPerTurn,
+  }
 }
 
 function contactIdSet(context: AgentContextEntry): Set<string> {
@@ -591,14 +702,29 @@ function buildDelegatedAgentMessages(
   callerContext: AgentContextEntry,
   targetContext: AgentContextEntry,
   agentCall: RuntimeAgentCallArguments,
+  collaborationPolicy: AgentRuntimeCollaborationPolicy,
+  agentCallState: AgentCallTurnState,
+  agentCallDepth: number,
 ): AiChatMessage[] {
-  const history = selectHistoryForAgentCall(input.recentHistory, agentCall.historyMode)
+  const history = selectHistoryForAgentCall(
+    input.recentHistory,
+    agentCall.historyMode,
+    collaborationPolicy,
+  )
+  const visibleContacts = input.workspaceFiles
+    ? getVisibleAgentContacts(input.workspaceFiles, targetContext)
+    : []
   return [
     {
       role: "system",
       content: buildWorkspaceAgentSystemPrompt(DELEGATED_AGENT_PLATFORM_GUARD, targetContext, {
-        allowAgentCall: false,
-        visibleContacts: [],
+        allowAgentCall: canExposeAgentCallInPrompt(
+          collaborationPolicy,
+          agentCallState,
+          agentCallDepth,
+          visibleContacts,
+        ),
+        visibleContacts,
       }),
     },
     {
@@ -659,21 +785,31 @@ function createAgentCallRunner(
   callerContext: AgentContextEntry,
   state: AgentCallTurnState,
   depth: number,
+  collaborationPolicy: AgentRuntimeCollaborationPolicy,
   transcriptCollector: AgentSessionTranscriptCollector | undefined,
 ): (agentCall: RuntimeAgentCallArguments) => Promise<unknown> {
   return async (agentCall) => {
     assertNotAborted(input.signal)
+    const initialMetadata = createAgentCallRuntimeMetadata(
+      callerContext,
+      agentCall,
+      state,
+      collaborationPolicy,
+      depth,
+    )
     if (!input.workspaceFiles) {
       throw agentCallError(
         "AGENT_CALL_UNAVAILABLE",
         "agent_call requires Runtime Workspace files.",
+        initialMetadata,
       )
     }
 
-    if (depth >= MAX_AGENT_CALL_DEPTH) {
+    if (depth >= collaborationPolicy.maxDepth) {
       throw agentCallError(
         "AGENT_CALL_UNAVAILABLE",
-        "Nested agent_call is not available in the MVP.",
+        "agent_call is not available because the collaboration depth limit has been reached.",
+        initialMetadata,
       )
     }
 
@@ -683,7 +819,7 @@ function createAgentCallRunner(
       throw agentCallError(
         "AGENT_CALL_TARGET_NOT_FOUND",
         `Agent was not found: ${agentCall.agentId}`,
-        { agentId: agentCall.agentId },
+        initialMetadata,
       )
     }
 
@@ -691,21 +827,15 @@ function createAgentCallRunner(
       throw agentCallError(
         "AGENT_CALL_TARGET_NOT_CONTACT",
         `Agent "${agentCall.agentId}" is not listed in ${callerContext.agent.id}'s contacts.`,
-        {
-          callerAgentId: callerContext.agent.id,
-          targetAgentId: agentCall.agentId,
-        },
+        initialMetadata,
       )
     }
 
-    if (state.callCount >= MAX_AGENT_CALLS_PER_TURN) {
+    if (state.callCount >= collaborationPolicy.maxCallsPerTurn) {
       throw agentCallError(
         "AGENT_CALL_LIMIT_EXCEEDED",
         "agent_call limit exceeded for this turn.",
-        {
-          maxCallsPerTurn: MAX_AGENT_CALLS_PER_TURN,
-          callCount: state.callCount,
-        },
+        initialMetadata,
       )
     }
 
@@ -716,25 +846,41 @@ function createAgentCallRunner(
       throw agentCallError(
         "AGENT_CALL_TARGET_NOT_FOUND",
         `Agent context was not found: ${targetAgent.id}`,
-        { agentId: targetAgent.id },
+        initialMetadata,
       )
     }
 
     state.callCount += 1
+    const metadata = createAgentCallRuntimeMetadata(
+      callerContext,
+      agentCall,
+      state,
+      collaborationPolicy,
+      depth,
+      targetContext.agent.id,
+    )
     const debugLabel = delegatedAgentDebugLabel(targetContext.agent.id)
     capabilities.emitTrace?.({
       type: "agent_step_started",
       ...traceAgentBase(targetContext, debugLabel),
       data: {
         agentTitle: targetContext.agent.title,
-        callerAgentId: callerContext.agent.id,
+        ...agentCallTraceFacts(metadata),
         delegated: true,
       },
     })
 
     try {
       const response = (await callAgentModelWithWorkspaceTools(
-        buildDelegatedAgentMessages(input, callerContext, targetContext, agentCall),
+        buildDelegatedAgentMessages(
+          input,
+          callerContext,
+          targetContext,
+          agentCall,
+          collaborationPolicy,
+          state,
+          metadata.targetDepth,
+        ),
         input,
         capabilities,
         {
@@ -743,19 +889,27 @@ function createAgentCallRunner(
         },
         targetContext,
         {
-          allowAgentCall: false,
           agentCallState: state,
-          agentCallDepth: depth + 1,
+          agentCallDepth: metadata.targetDepth,
+          collaborationPolicy,
         },
         transcriptCollector,
       )).trim()
+      const completedMetadata = createAgentCallRuntimeMetadata(
+        callerContext,
+        agentCall,
+        state,
+        collaborationPolicy,
+        depth,
+        targetContext.agent.id,
+      )
       capabilities.emitTrace?.({
         type: "agent_step_completed",
         ...traceAgentBase(targetContext, debugLabel),
         ok: true,
         data: {
           outputLength: response.length,
-          callerAgentId: callerContext.agent.id,
+          ...agentCallTraceFacts(completedMetadata),
           delegated: true,
         },
       })
@@ -768,23 +922,35 @@ function createAgentCallRunner(
           summary: targetContext.agent.summary,
         },
         historyMode: agentCall.historyMode,
+        metadata: completedMetadata,
         response,
       }
     } catch (error) {
+      const failedMetadata = createAgentCallRuntimeMetadata(
+        callerContext,
+        agentCall,
+        state,
+        collaborationPolicy,
+        depth,
+        targetContext.agent.id,
+      )
       capabilities.emitTrace?.({
         type: "agent_step_failed",
         ...traceAgentBase(targetContext, debugLabel),
         ok: false,
         data: {
           ...errorToTraceData(error),
-          callerAgentId: callerContext.agent.id,
+          ...agentCallTraceFacts(failedMetadata),
           delegated: true,
         },
       })
       throw agentCallError(
         "AGENT_CALL_FAILED",
         `agent_call failed for Agent "${targetContext.agent.id}".`,
-        errorToTraceData(error),
+        {
+          ...failedMetadata,
+          cause: errorToTraceData(error),
+        },
       )
     }
   }
@@ -826,7 +992,9 @@ async function callAgentModelWithWorkspaceTools(
 
   let nextMessages = messages
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
-  for (let round = 0; round <= MAX_WORKSPACE_TOOL_ROUNDS_PER_AGENT; round += 1) {
+  const maxToolRounds = toolOptions?.collaborationPolicy.maxToolRoundsPerAgent
+    ?? DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY.maxToolRoundsPerAgent
+  for (let round = 0; round <= maxToolRounds; round += 1) {
     assertNotAborted(options.signal)
 
     const response = await capabilities.callModel(nextMessages, options)
@@ -858,7 +1026,7 @@ async function callAgentModelWithWorkspaceTools(
       return stripRuntimeWorkspaceToolCallBlocks(response).trim()
     }
 
-    if (round >= MAX_WORKSPACE_TOOL_ROUNDS_PER_AGENT) {
+    if (round >= maxToolRounds) {
       const finalText = stripRuntimeWorkspaceToolCallBlocks(response).trim()
       if (finalText) {
         recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
@@ -881,13 +1049,14 @@ async function callAgentModelWithWorkspaceTools(
       workspaceFiles: input.workspaceFiles,
       agentContext,
       sessionState: workspaceToolSession,
-      runAgentCall: toolOptions?.allowAgentCall
+      runAgentCall: toolOptions
         ? createAgentCallRunner(
             input,
             capabilities,
             agentContext,
             toolOptions.agentCallState,
             toolOptions.agentCallDepth,
+            toolOptions.collaborationPolicy,
             transcriptCollector,
           )
         : undefined,
@@ -927,6 +1096,9 @@ export async function runAgentRuntimeTurn(
   capabilities: AgentRuntimeCapabilities,
 ): Promise<AgentRuntimeTurnResult> {
   assertNotAborted(input.signal)
+  const collaborationPolicy = normalizeAgentRuntimeCollaborationPolicy(
+    capabilities.collaborationPolicy,
+  )
   const agentCallState = createAgentCallTurnState()
   const transcriptCollector = createAgentSessionTranscriptCollector()
 
@@ -942,7 +1114,7 @@ export async function runAgentRuntimeTurn(
   let masterPlan: string
   try {
     masterPlan = (await callAgentModelWithWorkspaceTools(
-      buildMasterMessages(input, masterContext),
+      buildMasterMessages(input, masterContext, collaborationPolicy, agentCallState),
       input,
       capabilities,
       {
@@ -951,9 +1123,9 @@ export async function runAgentRuntimeTurn(
       },
       masterContext,
       {
-        allowAgentCall: true,
         agentCallState,
         agentCallDepth: 0,
+        collaborationPolicy,
       },
       transcriptCollector,
     )).trim()
@@ -989,7 +1161,13 @@ export async function runAgentRuntimeTurn(
   let replyText: string
   try {
     replyText = (await callAgentModelWithWorkspaceTools(
-      buildNarrativeMessages(input, masterPlan, narrativeContext),
+      buildNarrativeMessages(
+        input,
+        masterPlan,
+        narrativeContext,
+        collaborationPolicy,
+        agentCallState,
+      ),
       input,
       capabilities,
       {
@@ -998,9 +1176,9 @@ export async function runAgentRuntimeTurn(
       },
       narrativeContext,
       {
-        allowAgentCall: true,
         agentCallState,
         agentCallDepth: 0,
+        collaborationPolicy,
       },
       transcriptCollector,
     )).trim()
