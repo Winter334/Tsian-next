@@ -116,6 +116,7 @@ This task is the parent planning task for that phase. It should identify the MVP
    - Why before UI/Agent/Skill design: future management UI and self-repair Agents should consume a stable diagnostic model rather than normalize MVP trace leftovers.
 
 5. Runtime Workspace Completeness
+   - Child task: `.trellis/tasks/06-14-runtime-workspace-completeness`
    - Boundary: save-scoped virtual filesystem, platform metadata paths, indexes/cache, import/export/migration rules.
    - Expected output: workspace path visibility, media type, version, and metadata rules that future UI and Skills can rely on.
    - Validation: workspace list/search/read/import/export/checkpoint probes cover visible and platform-owned paths.
@@ -135,14 +136,15 @@ This task is the parent planning task for that phase. It should identify the MVP
 
 ## Acceptance Criteria
 
-- [ ] The task records a prioritized foundation-completion roadmap with clear rationale.
-- [ ] Each roadmap item names its platform/runtime boundary, expected output, validation method, and reason it must happen before UI/Agent/Skill design.
-- [ ] The roadmap distinguishes parent-level phase direction from child implementation slices.
+- [x] The task records a prioritized foundation-completion roadmap with clear rationale.
+- [x] Each roadmap item names its platform/runtime boundary, expected output, validation method, and reason it must happen before UI/Agent/Skill design.
+- [x] The roadmap distinguishes parent-level phase direction from child implementation slices.
 - [x] The first child implementation slice is selected: Runtime Side-Effect Transactions.
 - [x] The first child implementation slice is scoped tightly enough for planning.
 - [x] The second child implementation slice is selected: Runtime Workspace Maintenance Pipeline.
 - [x] The third child implementation slice is selected: Runtime Controlled Execution Completeness.
 - [x] The fourth child implementation slice is selected: Agent-Facing Runtime Diagnostics.
+- [x] The fifth child implementation slice is selected: Runtime Workspace Completeness.
 - [ ] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
 - [ ] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
 - [ ] Active direction docs are updated if the roadmap changes the project direction.

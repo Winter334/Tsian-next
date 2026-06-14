@@ -52,6 +52,7 @@ import {
   restoreCheckpointForSave,
   searchWorkspaceFilesForSave,
   setActiveSaveId,
+  writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
   deleteWorkspacePathForSave,
   type RuntimeWorkspaceTransaction,
@@ -520,7 +521,7 @@ async function writeRuntimeTraceFileForSave(
   path: string,
   events: ReturnType<typeof createRuntimeTraceCollector>["events"],
 ): Promise<void> {
-  const file = await writeWorkspaceFileForSave(saveId, {
+  const file = await writePlatformWorkspaceFileForSave(saveId, {
     path,
     content: serializeRuntimeTraceEvents(events),
     mediaType: "application/x-ndjson",
@@ -640,10 +641,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return {
             items: (await listWorkspaceEntriesForSave(activeSaveId, {
               path: request.params?.path,
-              includePlatformTraces:
-                typeof request.params?.includePlatformTraces === "boolean"
-                  ? request.params.includePlatformTraces
-                  : undefined,
             })) as T[],
           } as DeepQueryResult<T>
         } catch {
@@ -682,10 +679,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
             limit:
               typeof request.params?.limit === "number"
                 ? request.params.limit
-                : undefined,
-            includePlatformTraces:
-              typeof request.params?.includePlatformTraces === "boolean"
-                ? request.params.includePlatformTraces
                 : undefined,
           })) as T[],
         } as DeepQueryResult<T>

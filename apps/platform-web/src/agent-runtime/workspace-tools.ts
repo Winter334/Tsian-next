@@ -171,7 +171,7 @@ const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
 const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
-const PLATFORM_TRACE_PATH_PREFIX = ".tsian/traces/"
+const PLATFORM_METADATA_PATH_PREFIX = ".tsian/"
 const DEFAULT_AGENT_CALL_HISTORY_MODE: RuntimeAgentCallHistoryMode = "recent"
 const AGENT_CALL_HISTORY_MODES = new Set<RuntimeAgentCallHistoryMode>([
   "minimal",
@@ -297,12 +297,12 @@ function createPreview(content: string, index: number): string {
   return `${prefix}${content.slice(start, end)}${suffix}`.replace(/\s+/g, " ").trim()
 }
 
-function isPlatformTracePath(path: string): boolean {
-  return path === ".tsian/traces" || path.startsWith(PLATFORM_TRACE_PATH_PREFIX)
+function isPlatformMetadataPath(path: string): boolean {
+  return path === ".tsian" || path.startsWith(PLATFORM_METADATA_PATH_PREFIX)
 }
 
 function visibleWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
-  return files.filter((file) => !isPlatformTracePath(file.path))
+  return files.filter((file) => !isPlatformMetadataPath(file.path))
 }
 
 function traceBase(context: RuntimeWorkspaceToolExecutionContext) {
@@ -610,6 +610,13 @@ function readWorkspaceFile(
   pathInput: unknown,
 ): WorkspaceFile {
   const path = normalizeWorkspaceFilePath(pathInput)
+  if (isPlatformMetadataPath(path)) {
+    throw toolError(
+      "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
+      "Platform metadata paths under .tsian are not available through ordinary workspace reads.",
+    )
+  }
+
   const file = files.find((candidate) => candidate.path === path)
   if (!file) {
     throw toolError(

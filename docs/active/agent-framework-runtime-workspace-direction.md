@@ -270,13 +270,13 @@ Runtime Workspace 是一个存档级虚拟文件系统。
 - `memory/` 存长期记忆、摘要和可检索事实。
 - `frontend/` 存前端包约定读取的数据。
 - `archive/` 存退役、压缩或不再活跃的材料。
-- `.tsian/` 是平台 metadata、trace、checkpoint、索引和缓存空间。普通 Agent/Skill workspace 写入和删除不能修改 `.tsian/*`；平台内部需要通过 host-owned 路径写入 trace、index 或 cache。
+- `.tsian/` 是平台 metadata、trace、checkpoint、索引和缓存空间。普通 Agent/Skill/frontend workspace read/list/search 不暴露 `.tsian/*`，普通 workspace 写入和删除也不能修改 `.tsian/*`；平台内部需要通过 host-owned 路径写入 trace、index 或 cache。
 
 ## 10. 回合与 Trace
 
 不要默认为每个回合在普通工作区里生成大量文件。
 
-详细 trace 进入 `.tsian/traces/` 平台调试区。Trace 是平台拥有、工作区承载、默认隐藏的 JSONL 文件；普通 `workspace_list` / `workspace_search` 不暴露 trace，精确路径读取可作为 MVP 调试入口保留。
+详细 trace 进入 `.tsian/traces/` 平台调试区。Trace 是平台拥有、工作区承载、普通 workspace read/list/search 都不暴露的 JSONL 文件；需要面向 Agent 或管理界面消费时，应通过 `runtime-diagnostics` 或未来专用 debug/management resource，而不是普通 workspace 查询。
 
 Trace 跟随 workspace checkpoint / restore。成功回合会在创建回合后 checkpoint 前写入 `.tsian/traces/turns/turn-000001.jsonl` 这类文件；如果玩家回滚到旧 checkpoint，后续分支的 trace 也会一起消失。这符合 AIRP 分支调试材料的定位，而不是 OpenClaw 式 append-only 安全审计日志。
 
@@ -337,7 +337,7 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
 - 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；action 调用会经过 loaded Skill gating、输入校验、轻量 executor-class policy 检查，并可按可选 `outputSchema` 校验成功输出。当前支持 `builtin/validation`、`builtin/echo`、allow-listed `platform_action` 和 strong-SDK `browser_script`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
 - 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；MVP 禁止嵌套 `agent_call`，并按 root turn 限制调用次数。
-- Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action executor policy 检查、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 list/search 默认隐藏 `.tsian/traces/`。`runtime-diagnostics` query 已提供面向 Agent/未来管理 UI 的 facts-only 诊断摘要视图；它按需从 raw trace 生成，不写派生文件、不做 pruning、不默认暴露给普通 live-turn Agent。
+- Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action executor policy 检查、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 workspace read/list/search 不暴露 `.tsian/*`。`runtime-diagnostics` query 已提供面向 Agent/未来管理 UI 的 facts-only 诊断摘要视图；它按需从 raw trace 生成，不写派生文件、不做 pruning、不默认暴露给普通 live-turn Agent。
 - Agent Session Transcript MVP 已落地：成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。
 - Skill-triggered Memory Maintenance MVP 已落地：默认 `memory-maintenance` Skill 的 `apply_maintenance_plan` 使用 `browser_script` 和 Tsian SDK staged 写入 `agents/<agent>/notes.md`、`history/timeline.md`、`memory/summaries/current.md` 或 `memory/summaries/long-term.md`。没有显式 Skill action 就不会维护增强记忆，空 writes 仅表示显式 no-op。
 

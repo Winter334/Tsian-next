@@ -9,13 +9,11 @@ export type CheckpointWorkspaceFile = Omit<LocalWorkspaceFileRecord, "id" | "sav
 
 export interface WorkspaceListInput {
   path?: unknown
-  includePlatformTraces?: boolean
 }
 
 export interface WorkspaceSearchInput {
   query?: string
   limit?: number
-  includePlatformTraces?: boolean
 }
 
 export interface WorkspaceWriteInput {
@@ -45,7 +43,6 @@ export class WorkspaceStorageError extends Error {
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
-const PLATFORM_TRACE_PATH_PREFIX = ".tsian/traces/"
 const DEFAULT_WORKSPACE_VERSION = 2
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 const DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS = new Set([
@@ -268,6 +265,8 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "",
       "This save-scoped workspace stores runtime data as virtual files.",
       "Agents, skills, world data, memory, frontend data, and platform metadata can all live here.",
+      "Ordinary workspace file content is text; binary/blob content is not part of this workspace version.",
+      "The `.tsian/` directory is platform-owned metadata and is hidden from ordinary Agent, Skill, and frontend workspace APIs.",
       "",
       "Read directory README files before changing data conventions.",
       "",
@@ -488,24 +487,49 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: JSON.stringify({
       version: "0.0.0",
       workspaceVersion: DEFAULT_WORKSPACE_VERSION,
+      contentModel: {
+        fileContent: "text",
+        binaryContent: false,
+      },
+      platformMetadata: {
+        path: ".tsian/",
+        ordinaryWorkspaceVisible: false,
+      },
     }, null, 2) + "\n",
     mediaType: "application/json",
   },
   {
+    path: ".tsian/README.md",
+    content: [
+      "# Tsian Platform Metadata",
+      "",
+      "Files under `.tsian/` are owned by the platform.",
+      "They are preserved by full save/checkpoint snapshots but hidden from ordinary Agent, Skill, and frontend workspace APIs.",
+      "Use dedicated platform or debug resources for diagnostics instead of reading raw metadata through normal workspace tools.",
+      "",
+    ].join("\n"),
+  },
+  {
     path: ".tsian/traces/README.md",
-    content: "# Traces\n\nPlatform trace metadata can live here when exposed as workspace files.\n",
+    content: [
+      "# Traces",
+      "",
+      "Runtime trace files are platform-owned diagnostics input.",
+      "Agent-facing summaries are exposed through `runtime-diagnostics`, not ordinary workspace browsing.",
+      "",
+    ].join("\n"),
   },
   {
     path: ".tsian/checkpoints/README.md",
-    content: "# Checkpoints\n\nPlatform checkpoint metadata can live here when exposed as workspace files.\n",
+    content: "# Checkpoints\n\nCheckpoint metadata is platform-owned and preserved with full save snapshots.\n",
   },
   {
     path: ".tsian/indexes/README.md",
-    content: "# Indexes\n\nGenerated or cached workspace indexes can live here.\n",
+    content: "# Indexes\n\nGenerated workspace indexes are platform-owned derived data and may be rebuilt.\n",
   },
   {
     path: ".tsian/cache/README.md",
-    content: "# Cache\n\nTemporary platform cache data can live here.\n",
+    content: "# Cache\n\nTemporary platform cache data is platform-owned and may be dropped or rebuilt.\n",
   },
 ]
 
@@ -603,12 +627,12 @@ function fileName(path: string): string {
   return parts[parts.length - 1] || path
 }
 
-function isPlatformTracePath(path: string): boolean {
-  return path === ".tsian/traces" || path.startsWith(PLATFORM_TRACE_PATH_PREFIX)
-}
-
 export function isPlatformMetadataPath(path: string): boolean {
   return path === ".tsian" || path.startsWith(".tsian/")
+}
+
+export function isOrdinaryWorkspacePath(path: string): boolean {
+  return !isPlatformMetadataPath(path)
 }
 
 function assertOrdinaryMutationPath(path: string): void {
@@ -622,15 +646,19 @@ function assertOrdinaryMutationPath(path: string): void {
   )
 }
 
-function filterPlatformTraceRecords(
-  records: LocalWorkspaceFileRecord[],
-  includePlatformTraces: boolean | undefined,
-): LocalWorkspaceFileRecord[] {
-  if (includePlatformTraces) {
-    return records
+function assertOrdinaryReadPath(path: string): void {
+  if (!isPlatformMetadataPath(path)) {
+    return
   }
 
-  return records.filter((record) => !isPlatformTracePath(record.path))
+  throw new WorkspaceStorageError(
+    "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
+    "Platform metadata paths under .tsian are not available through ordinary workspace reads.",
+  )
+}
+
+function ordinaryWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
+  return files.filter((file) => isOrdinaryWorkspacePath(file.path))
 }
 
 function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
@@ -737,6 +765,12 @@ function parseWorkspaceManifestVersion(content: string | undefined): number {
   return 0
 }
 
+function plainRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {}
+}
+
 function serializeWorkspaceManifest(content: string | undefined): string {
   let base: Record<string, unknown> = {}
   if (content) {
@@ -754,6 +788,16 @@ function serializeWorkspaceManifest(content: string | undefined): string {
     ...base,
     version: typeof base.version === "string" ? base.version : "0.0.0",
     workspaceVersion: DEFAULT_WORKSPACE_VERSION,
+    contentModel: {
+      ...plainRecord(base.contentModel),
+      fileContent: "text",
+      binaryContent: false,
+    },
+    platformMetadata: {
+      ...plainRecord(base.platformMetadata),
+      path: ".tsian/",
+      ordinaryWorkspaceVisible: false,
+    },
   }, null, 2) + "\n"
 }
 
@@ -852,11 +896,7 @@ export function listWorkspaceEntriesFromFiles(
   const files = new Map<string, WorkspaceEntry>()
   const directories = new Map<string, WorkspaceEntry & { children: Set<string> }>()
 
-  const visibleFiles = input.includePlatformTraces
-    ? workspaceFiles
-    : workspaceFiles.filter((file) => !isPlatformTracePath(file.path))
-
-  for (const file of visibleFiles) {
+  for (const file of ordinaryWorkspaceFiles(workspaceFiles)) {
     if (directoryPath && !file.path.startsWith(prefix)) {
       continue
     }
@@ -920,14 +960,10 @@ export async function listWorkspaceEntriesForSave(
   saveId: string,
   input: WorkspaceListInput = {},
 ): Promise<WorkspaceEntry[]> {
-  const records = filterPlatformTraceRecords(
-    await listLocalWorkspaceFilesForSave(saveId),
-    input.includePlatformTraces,
+  return listWorkspaceEntriesFromFiles(
+    (await listLocalWorkspaceFilesForSave(saveId)).map(toWorkspaceFile),
+    input,
   )
-  return listWorkspaceEntriesFromFiles(records.map(toWorkspaceFile), {
-    ...input,
-    includePlatformTraces: true,
-  })
 }
 
 export async function readWorkspaceFileForSave(
@@ -935,6 +971,7 @@ export async function readWorkspaceFileForSave(
   pathInput: unknown,
 ): Promise<WorkspaceFile | null> {
   const path = normalizeWorkspaceFilePath(pathInput)
+  assertOrdinaryReadPath(path)
   const record = await localDb.workspaceFiles.get(createTableId(saveId, path))
   return record ? toWorkspaceFile(record) : null
 }
@@ -944,6 +981,16 @@ export function readWorkspaceFileFromFiles(
   pathInput: unknown,
 ): WorkspaceFile | null {
   const path = normalizeWorkspaceFilePath(pathInput)
+  const file = workspaceFiles.find((candidate) => candidate.path === path)
+  return file ? cloneWorkspaceFile(file) : null
+}
+
+export function readOrdinaryWorkspaceFileFromFiles(
+  workspaceFiles: WorkspaceFile[],
+  pathInput: unknown,
+): WorkspaceFile | null {
+  const path = normalizeWorkspaceFilePath(pathInput)
+  assertOrdinaryReadPath(path)
   const file = workspaceFiles.find((candidate) => candidate.path === path)
   return file ? cloneWorkspaceFile(file) : null
 }
@@ -1051,11 +1098,16 @@ export function createRuntimeWorkspaceTransaction(
   }
 }
 
-export async function writeWorkspaceFileForSave(
+async function writeWorkspaceFileForSaveWithOptions(
   saveId: string,
   input: WorkspaceWriteInput,
+  options: { rejectPlatformMetadata: boolean },
 ): Promise<WorkspaceFile> {
   const path = normalizeWorkspaceFilePath(input.path)
+  if (options.rejectPlatformMetadata) {
+    assertOrdinaryMutationPath(path)
+  }
+
   if (typeof input.content !== "string") {
     throw new WorkspaceStorageError(
       "WORKSPACE_CONTENT_REQUIRED",
@@ -1092,11 +1144,30 @@ export async function writeWorkspaceFileForSave(
   return toWorkspaceFile(nextRecord)
 }
 
+export async function writeWorkspaceFileForSave(
+  saveId: string,
+  input: WorkspaceWriteInput,
+): Promise<WorkspaceFile> {
+  return writeWorkspaceFileForSaveWithOptions(saveId, input, {
+    rejectPlatformMetadata: true,
+  })
+}
+
+export async function writePlatformWorkspaceFileForSave(
+  saveId: string,
+  input: WorkspaceWriteInput,
+): Promise<WorkspaceFile> {
+  return writeWorkspaceFileForSaveWithOptions(saveId, input, {
+    rejectPlatformMetadata: false,
+  })
+}
+
 export async function deleteWorkspacePathForSave(
   saveId: string,
   pathInput: unknown,
 ): Promise<{ deletedPaths: string[] }> {
   const path = normalizeWorkspaceTargetPath(pathInput)
+  assertOrdinaryMutationPath(path)
   const prefix = `${path}/`
   const rows = (await listLocalWorkspaceFilesForSave(saveId))
     .filter((record) => record.path === path || record.path.startsWith(prefix))
@@ -1136,10 +1207,7 @@ export function searchWorkspaceFilesFromFiles(
   }
 
   const limit = normalizeLimit(input.limit)
-  const visibleFiles = input.includePlatformTraces
-    ? workspaceFiles
-    : workspaceFiles.filter((file) => !isPlatformTracePath(file.path))
-  return visibleFiles
+  return ordinaryWorkspaceFiles(workspaceFiles)
     .flatMap((file): WorkspaceSearchResult[] => {
       const lowerPath = file.path.toLowerCase()
       const lowerContent = file.content.toLowerCase()

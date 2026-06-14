@@ -769,7 +769,7 @@ stageAgentSessionTranscriptFiles(
 
 ### 3. Contracts
 
-- Trace is platform-owned workspace content: platform writes it, Agent context does not inject it by default, and normal list/search hides it.
+- Trace is platform-owned workspace content: platform writes it, Agent context does not inject it by default, and ordinary workspace read/list/search hides it as part of `.tsian/*` metadata.
 - Trace follows checkpoint/restore because it is stored as normal Runtime Workspace files under `.tsian/traces/`.
 - Successful turns include trace in the accepted workspace state before the after-turn checkpoint is created, so the checkpoint includes the trace for that branch.
 - Failed turns attempt to write `turn_failed` trace if workspace files are already available, but failed-turn trace persistence must not mask the original runtime error.
@@ -783,9 +783,9 @@ stageAgentSessionTranscriptFiles(
   - browser scripts: script path/source size/start events and script log/trace summaries, no script source or large raw data;
   - workspace mutations: write path/mediaType/size or delete `deletedPaths`.
 - `agent-runtime` still must not import Dexie, storage helpers, bridge objects, or `platform-host`; it emits trace through an injected callback.
-- `platform-host` owns trace persistence through workspace storage helpers.
-- `workspace_read` can still read an exact trace path for MVP; `workspace_list` and `workspace_search` hide `.tsian/traces/` by default.
-- Bridge `workspace-list` and `workspace-search` also hide `.tsian/traces/` by default, with `includePlatformTraces` reserved for explicit inclusion.
+- `platform-host` owns trace persistence through explicit platform-owned workspace storage helpers.
+- Ordinary `workspace_read`, `workspace_list`, and `workspace_search` must not expose `.tsian/*`, including exact trace paths.
+- Bridge `workspace-read`, `workspace-list`, and `workspace-search` must not provide an ordinary opt-in flag for `.tsian/*`; use dedicated resources such as `runtime-diagnostics` for Agent-facing facts and future debug/management resources for raw metadata.
 
 ### 4. Validation & Error Matrix
 
@@ -793,7 +793,7 @@ stageAgentSessionTranscriptFiles(
 - Runtime failure after workspace is available -> failed trace is attempted and original error is rethrown.
 - Trace write failure on successful turn -> fail loudly before checkpoint creation.
 - Trace `data` contains non-JSON values -> collector normalizes to JSON-compatible values.
-- Workspace list/search root or `.tsian` path -> trace files/directories hidden unless `includePlatformTraces` is true.
+- Workspace read/list/search root or `.tsian` path -> no platform metadata contents are exposed.
 
 ### 5. Good/Base/Bad Cases
 
@@ -817,7 +817,7 @@ stageAgentSessionTranscriptFiles(
 - Assert workspace read trace omits file content.
 - Assert `workspace-write` / `workspace-delete` platform actions produce `workspace_mutation`.
 - Assert `browser_script` SDK logs/fetch summaries emit `script_log` without script source or large raw payloads.
-- Assert bridge and runtime workspace list/search exclude `.tsian/traces/` by default.
+- Assert bridge and runtime workspace read/list/search exclude or reject `.tsian/*`.
 
 ## Scenario: Agent-Facing Runtime Diagnostics
 

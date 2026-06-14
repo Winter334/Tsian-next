@@ -9,6 +9,7 @@ import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import { summarizeTraceValue } from "../agent-runtime/trace"
 import {
   listWorkspaceEntriesFromFiles,
+  readOrdinaryWorkspaceFileFromFiles,
   readWorkspaceFileFromFiles,
   searchWorkspaceFilesFromFiles,
   type RuntimeWorkspaceTransaction,
@@ -431,7 +432,10 @@ async function handleSdkRequest(
   const args = isRecord(message.args) ? message.args : {}
 
   if (op === "workspace.read") {
-    const file = readWorkspaceFileFromFiles(options.workspaceTransaction.workspaceFiles, args.path)
+    const file = readOrdinaryWorkspaceFileFromFiles(
+      options.workspaceTransaction.workspaceFiles,
+      args.path,
+    )
     if (!file) {
       throw {
         code: "WORKSPACE_FILE_NOT_FOUND",
