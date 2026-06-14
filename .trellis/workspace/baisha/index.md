@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 50
+- **Total Sessions**: 51
 - **Last Active**: 2026-06-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1721 | Active |
+| `journal-1.md` | ~1755 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 51 | 2026-06-14 | Runtime Workspace Metadata Contract | `2d9ff87` | `master` |
 | 50 | 2026-06-14 | Agent-Facing Runtime Diagnostics | `0fb944a` | `master` |
 | 49 | 2026-06-14 | Controlled execution policy | `3fb8c34` | `master` |
 | 48 | 2026-06-14 | Runtime workspace maintenance pipeline | `645e999` | `master` |

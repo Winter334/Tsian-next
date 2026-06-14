@@ -1719,3 +1719,37 @@ Added a facts-only runtime-diagnostics query over raw trace files, with shared c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 51: Runtime Workspace Metadata Contract
+
+**Date**: 2026-06-14
+**Task**: Runtime Workspace Metadata Contract
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Completed Runtime Workspace metadata visibility and mutation contract: ordinary workspace APIs hide or reject .tsian metadata, platform trace writes remain explicit, diagnostics still consume raw trace facts, and active docs/specs were updated.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2d9ff87` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
