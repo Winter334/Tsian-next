@@ -1583,3 +1583,37 @@ Added a strong-SDK browser_script action executor for trusted Skill-local Worker
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: Runtime side-effect transactions
+
+**Date**: 2026-06-14
+**Task**: Runtime side-effect transactions
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Implemented staged Runtime Workspace transactions for Agent Runtime turns, atomic successful-turn workspace/snapshot/history/checkpoint commits, failed-turn discard semantics, platform-owned .tsian metadata protection, and staged browser script SDK workspace operations.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2c34855` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
