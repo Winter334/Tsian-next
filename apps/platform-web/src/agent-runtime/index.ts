@@ -20,9 +20,11 @@ import {
   parseRuntimeWorkspaceToolCalls,
   RUNTIME_WORKSPACE_TOOL_NAMES,
   stripRuntimeWorkspaceToolCallBlocks,
+  type ParsedRuntimeWorkspaceToolCall,
   type RuntimeAgentCallArguments,
   type RuntimeAgentCallHistoryMode,
   type RuntimeBrowserScriptExecutorRequest,
+  type RuntimeWorkspaceToolObservation,
 } from "./workspace-tools"
 
 export interface AgentRuntimeTurnInput {
@@ -37,6 +39,7 @@ export interface AgentRuntimeTurnInput {
 export interface AgentRuntimeTurnResult {
   replyText: string
   masterPlan: string
+  agentSessionTranscripts: AgentSessionTranscriptRecord[]
 }
 
 export interface AgentRuntimeModelCallOptions {
@@ -105,6 +108,34 @@ interface WorkspaceToolLoopOptions {
   agentCallDepth: number
 }
 
+export const AGENT_SESSION_TRANSCRIPT_SCHEMA = "tsian.agent.session.transcript.v1"
+
+export type AgentSessionTranscriptRole = "master" | "narrative" | "delegated"
+export type AgentSessionTranscriptStatus = "completed" | "tool-continued"
+
+export interface AgentSessionTranscriptRecord {
+  schema: typeof AGENT_SESSION_TRANSCRIPT_SCHEMA
+  turn: number
+  createdAt: string
+  agentId: string
+  agentTitle: string
+  agentPath: string
+  role: AgentSessionTranscriptRole
+  debugLabel: RuntimeTraceDebugLabel
+  modelCallIndex: number
+  round: number
+  status: AgentSessionTranscriptStatus
+  messages: AiChatMessage[]
+  modelOutput: string
+  toolCalls: ParsedRuntimeWorkspaceToolCall[]
+  toolObservations: RuntimeWorkspaceToolObservation[]
+}
+
+interface AgentSessionTranscriptCollector {
+  records: AgentSessionTranscriptRecord[]
+  nextModelCallIndex: number
+}
+
 const LEGACY_NARRATIVE_AGENT_SYSTEM_PROMPT = [
   "你是 Tsian AIRP 的正文 Agent，负责写出玩家可直接阅读的沉浸式剧情回复。",
   "根据主控 Agent 的 brief、最近对话和玩家本轮输入继续剧情。不要解释系统行为，不要提到 Agent、brief、工具或提示词。",
@@ -144,6 +175,10 @@ function formatHistory(history: ConversationMessageRecord[]): string {
       return `${index + 1}. ${role}: ${message.content}`
     })
     .join("\n")
+}
+
+function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
+  return input.snapshot.state.turn + 1
 }
 
 function formatStateRecords(records: StateRecord[]): string {
@@ -373,7 +408,7 @@ function buildMasterMessages(
     {
       role: "user",
       content: [
-        `当前回合：${input.snapshot.state.turn}`,
+        `当前回合：${currentRuntimeTurnNumber(input)}`,
         ...(context
           ? [
               "Workspace Agent 上下文：",
@@ -418,7 +453,7 @@ function buildNarrativeMessages(
     {
       role: "user",
       content: [
-        `当前回合：${input.snapshot.state.turn}`,
+        `当前回合：${currentRuntimeTurnNumber(input)}`,
         ...(context
           ? [
               "Workspace Agent 上下文：",
@@ -468,6 +503,63 @@ function createAgentCallTurnState(): AgentCallTurnState {
   }
 }
 
+function createAgentSessionTranscriptCollector(): AgentSessionTranscriptCollector {
+  return {
+    records: [],
+    nextModelCallIndex: 0,
+  }
+}
+
+function agentSessionTranscriptRole(
+  debugLabel: RuntimeTraceDebugLabel,
+): AgentSessionTranscriptRole {
+  if (debugLabel === "master-agent") return "master"
+  if (debugLabel === "narrative-agent") return "narrative"
+  return "delegated"
+}
+
+function cloneAiChatMessages(messages: AiChatMessage[]): AiChatMessage[] {
+  return messages.map((message) => ({ ...message }))
+}
+
+function recordAgentSessionTranscript(
+  collector: AgentSessionTranscriptCollector | undefined,
+  input: AgentRuntimeTurnInput,
+  context: AgentContextEntry | null,
+  options: AgentRuntimeModelCallOptions,
+  record: {
+    messages: AiChatMessage[]
+    modelOutput: string
+    toolCalls: ParsedRuntimeWorkspaceToolCall[]
+    toolObservations: RuntimeWorkspaceToolObservation[]
+    round: number
+    status: AgentSessionTranscriptStatus
+  },
+): void {
+  if (!collector || !context) {
+    return
+  }
+
+  collector.records.push({
+    schema: AGENT_SESSION_TRANSCRIPT_SCHEMA,
+    turn: currentRuntimeTurnNumber(input),
+    createdAt: new Date().toISOString(),
+    agentId: context.agent.id,
+    agentTitle: context.agent.title,
+    agentPath: context.agent.path,
+    role: agentSessionTranscriptRole(options.debugLabel),
+    debugLabel: options.debugLabel,
+    modelCallIndex: collector.nextModelCallIndex,
+    round: record.round,
+    status: record.status,
+    messages: cloneAiChatMessages(record.messages),
+    modelOutput: record.modelOutput,
+    toolCalls: record.toolCalls,
+    toolObservations: record.toolObservations,
+  })
+  collector.nextModelCallIndex += 1
+}
+
 function delegatedAgentDebugLabel(agentId: string): RuntimeTraceDebugLabel {
   return `agent:${agentId}`
 }
@@ -510,7 +602,7 @@ function buildDelegatedAgentMessages(
     {
       role: "user",
       content: [
-        `当前回合：${input.snapshot.state.turn}`,
+        `当前回合：${currentRuntimeTurnNumber(input)}`,
         `historyMode：${agentCall.historyMode}`,
         "",
         "目标 Agent 上下文：",
@@ -565,6 +657,7 @@ function createAgentCallRunner(
   callerContext: AgentContextEntry,
   state: AgentCallTurnState,
   depth: number,
+  transcriptCollector: AgentSessionTranscriptCollector | undefined,
 ): (agentCall: RuntimeAgentCallArguments) => Promise<unknown> {
   return async (agentCall) => {
     assertNotAborted(input.signal)
@@ -652,6 +745,7 @@ function createAgentCallRunner(
           agentCallState: state,
           agentCallDepth: depth + 1,
         },
+        transcriptCollector,
       )).trim()
       capabilities.emitTrace?.({
         type: "agent_step_completed",
@@ -701,9 +795,18 @@ async function callAgentModelWithWorkspaceTools(
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry | null,
   toolOptions?: WorkspaceToolLoopOptions,
+  transcriptCollector?: AgentSessionTranscriptCollector,
 ): Promise<string> {
   if (!input.workspaceFiles || !agentContext) {
     const response = await capabilities.callModel(messages, options)
+    recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+      messages,
+      modelOutput: response,
+      toolCalls: [],
+      toolObservations: [],
+      round: 0,
+      status: "completed",
+    })
     capabilities.emitTrace?.({
       type: "model_call_completed",
       debugLabel: options.debugLabel,
@@ -742,12 +845,28 @@ async function callAgentModelWithWorkspaceTools(
       },
     })
     if (toolCalls.length === 0) {
+      recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+        messages: nextMessages,
+        modelOutput: response,
+        toolCalls,
+        toolObservations: [],
+        round,
+        status: "completed",
+      })
       return stripRuntimeWorkspaceToolCallBlocks(response).trim()
     }
 
     if (round >= MAX_WORKSPACE_TOOL_ROUNDS_PER_AGENT) {
       const finalText = stripRuntimeWorkspaceToolCallBlocks(response).trim()
       if (finalText) {
+        recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+          messages: nextMessages,
+          modelOutput: response,
+          toolCalls,
+          toolObservations: [],
+          round,
+          status: "completed",
+        })
         return finalText
       }
 
@@ -767,6 +886,7 @@ async function callAgentModelWithWorkspaceTools(
             agentContext,
             toolOptions.agentCallState,
             toolOptions.agentCallDepth,
+            transcriptCollector,
           )
         : undefined,
       runPlatformAction: capabilities.runPlatformAction,
@@ -775,6 +895,14 @@ async function callAgentModelWithWorkspaceTools(
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
     }, toolCalls)
+    recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+      messages: nextMessages,
+      modelOutput: response,
+      toolCalls,
+      toolObservations: observations,
+      round,
+      status: "tool-continued",
+    })
     nextMessages = [
       ...nextMessages,
       {
@@ -797,6 +925,7 @@ export async function runAgentRuntimeTurn(
 ): Promise<AgentRuntimeTurnResult> {
   assertNotAborted(input.signal)
   const agentCallState = createAgentCallTurnState()
+  const transcriptCollector = createAgentSessionTranscriptCollector()
 
   const masterContext = getWorkspaceAgentContext(input, "master")
   capabilities.emitTrace?.({
@@ -823,6 +952,7 @@ export async function runAgentRuntimeTurn(
         agentCallState,
         agentCallDepth: 0,
       },
+      transcriptCollector,
     )).trim()
     capabilities.emitTrace?.({
       type: "agent_step_completed",
@@ -869,6 +999,7 @@ export async function runAgentRuntimeTurn(
         agentCallState,
         agentCallDepth: 0,
       },
+      transcriptCollector,
     )).trim()
     if (!replyText) {
       throw new Error("narrative-agent returned an empty reply.")
@@ -895,5 +1026,6 @@ export async function runAgentRuntimeTurn(
   return {
     replyText,
     masterPlan,
+    agentSessionTranscripts: transcriptCollector.records,
   }
 }

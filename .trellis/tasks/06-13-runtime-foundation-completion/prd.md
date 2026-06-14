@@ -95,31 +95,38 @@ This task is the parent planning task for that phase. It should identify the MVP
    - Validation: probes must show successful turns commit writes, failed/aborted turns do not leave ordinary workspace writes behind, and same-turn read-after-write still works.
    - Why before UI/Agent/Skill design: future remote executors, Agent notes, timeline maintenance, and gameplay Skills all depend on predictable write semantics.
 
-2. Controlled Execution Completeness
+2. Runtime Workspace Maintenance Pipeline
+   - Child task: `.trellis/tasks/06-14-runtime-workspace-maintenance-pipeline`
+   - Boundary: post-turn platform-host orchestration, Runtime Workspace staged transaction, Agent session files, timeline/current/long-term summary files, and storage-free Agent Runtime maintenance helpers if needed.
+   - Expected output: a generic maintenance pipeline for Agent session logs and derived AIRP files, without hardcoding gameplay-specific world or memory schemas in platform code.
+   - Validation: probes must show successful turns append checkpoint-scoped session records, validated maintenance writes commit with the turn, failed/aborted turns leave no ordinary maintenance files behind, and invalid maintenance plans do not fail the player-facing turn.
+   - Why before UI/Agent/Skill design: future UI, concrete Agent roles, and memory Skills need stable maintenance conventions for existing workspace files such as `agents/*/session.jsonl`, `history/timeline.md`, and `memory/summaries/current.md`.
+
+3. Controlled Execution Completeness
    - Boundary: Skill action executor declarations and platform-controlled executor adapters.
    - Expected output: remote/WASM/hosted execution decisions can build on the transaction boundary instead of each inventing failure semantics.
    - Validation: executor-specific probes for enablement, timeout/abort, structured errors, trace summaries, and rollback behavior.
    - Why before UI/Agent/Skill design: executable Skills need stable execution guarantees before they become author-facing.
 
-3. Trace And Debug Substrate
+4. Trace And Debug Substrate
    - Boundary: runtime trace event contract, platform trace persistence, and debug read APIs.
    - Expected output: retention/read/audit contracts sufficient for future UI without designing visual surfaces yet.
    - Validation: trace files remain summary-only, restorable with checkpoints, and useful for failed executor diagnosis.
    - Why before UI/Agent/Skill design: debug UI should expose a stable trace model rather than normalize MVP leftovers.
 
-4. Runtime Workspace Completeness
+5. Runtime Workspace Completeness
    - Boundary: save-scoped virtual filesystem, platform metadata paths, indexes/cache, import/export/migration rules.
    - Expected output: workspace path visibility, media type, version, and metadata rules that future UI and Skills can rely on.
    - Validation: workspace list/search/read/import/export/checkpoint probes cover visible and platform-owned paths.
    - Why before UI/Agent/Skill design: UI and Skills will encode workspace assumptions unless the filesystem contract is settled.
 
-5. Agent Runtime Collaboration Completeness
+6. Agent Runtime Collaboration Completeness
    - Boundary: `agent_call`, context/history policy, tool loop limits, Agent session/notes writeback contract.
    - Expected output: mature delegation limits and persistence hooks without designing concrete AIRP role behavior.
    - Validation: delegated Agent probes cover budgets, optional limited recursion if approved, and trace/failure behavior.
    - Why before UI/Agent/Skill design: concrete Agent teams need a stable collaboration substrate.
 
-6. Transitional State Cleanup
+7. Transitional State Cleanup
    - Boundary: current `stateRecords` compatibility storage versus workspace-backed state files.
    - Expected output: decision and migration/adapter plan that keeps platform gameplay-neutral.
    - Validation: existing frontend/debug behavior remains compatible or has an explicit migration.
@@ -132,6 +139,7 @@ This task is the parent planning task for that phase. It should identify the MVP
 - [ ] The roadmap distinguishes parent-level phase direction from child implementation slices.
 - [x] The first child implementation slice is selected: Runtime Side-Effect Transactions.
 - [x] The first child implementation slice is scoped tightly enough for planning.
+- [x] The second child implementation slice is selected: Runtime Workspace Maintenance Pipeline.
 - [ ] Known MVP gaps from recent runtime tasks are either assigned to a roadmap item or explicitly deferred with a reason.
 - [ ] Out-of-scope UI, concrete Agent role behavior, and gameplay Skill design remain out of the foundation phase unless later re-approved.
 - [ ] Active direction docs are updated if the roadmap changes the project direction.

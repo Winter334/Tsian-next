@@ -46,6 +46,206 @@ export class WorkspaceStorageError extends Error {
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
 const PLATFORM_TRACE_PATH_PREFIX = ".tsian/traces/"
+const DEFAULT_WORKSPACE_VERSION = 2
+const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
+const DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS = new Set([
+  "skills/memory-maintenance/SKILL.md",
+  "skills/memory-maintenance/scripts/apply-maintenance-plan.js",
+])
+
+const MEMORY_MAINTENANCE_SKILL_MD = [
+  "---",
+  "name: memory-maintenance",
+  "title: Memory Maintenance",
+  "description: Apply explicit workspace maintenance plans for Agent notes, timeline, and memory summaries.",
+  "triggers:",
+  "  - Agent notes need a durable update",
+  "  - timeline or memory summaries should be refreshed",
+  "appliesTo:",
+  "  - master",
+  "  - narrative",
+  "  - memory",
+  "---",
+  "",
+  "# Memory Maintenance",
+  "",
+  "Use this Skill only when this turn has produced durable information that should be written to Agent notes, the timeline, or memory summaries. Do not run it automatically every turn.",
+  "",
+  "Before calling the action, read any file you intend to replace and prepare the full next content. The action only accepts explicit replacement writes.",
+  "",
+  "Allowed targets:",
+  "",
+  "- `agents/<agent>/notes.md`",
+  "- `history/timeline.md`",
+  "- `memory/summaries/current.md`",
+  "- `memory/summaries/long-term.md`",
+  "",
+  "Use an empty `writes` array only when you explicitly considered maintenance and decided no files should change.",
+  "",
+  "```json tsian-actions",
+  "[",
+  "  {",
+  "    \"name\": \"apply_maintenance_plan\",",
+  "    \"description\": \"Validate and apply an explicit memory maintenance plan through staged workspace writes.\",",
+  "    \"inputSchema\": {",
+  "      \"type\": \"object\",",
+  "      \"required\": [\"schema\", \"writes\"],",
+  "      \"properties\": {",
+  "        \"schema\": { \"type\": \"string\" },",
+  "        \"writes\": { \"type\": \"array\" }",
+  "      }",
+  "    },",
+  "    \"executor\": {",
+  "      \"type\": \"browser_script\",",
+  "      \"path\": \"scripts/apply-maintenance-plan.js\",",
+  "      \"timeoutMs\": 10000",
+  "    }",
+  "  }",
+  "]",
+  "```",
+  "",
+  "Plan schema:",
+  "",
+  "```json",
+  "{",
+  "  \"schema\": \"tsian.runtime.maintenance.plan.v1\",",
+  "  \"writes\": [",
+  "    {",
+  "      \"path\": \"memory/summaries/current.md\",",
+  "      \"mode\": \"replace\",",
+  "      \"content\": \"# Current Summary\\n\\n...\\n\",",
+  "      \"reason\": \"The current scene changed enough to refresh the summary.\"",
+  "    }",
+  "  ]",
+  "}",
+  "```",
+  "",
+].join("\n")
+
+const MEMORY_MAINTENANCE_SCRIPT_JS = [
+  "const PLAN_SCHEMA = \"tsian.runtime.maintenance.plan.v1\";",
+  "const MAX_WRITES = 12;",
+  "const MAX_CONTENT_LENGTH = 200000;",
+  "",
+  "function isRecord(value) {",
+  "  return typeof value === \"object\" && value !== null && !Array.isArray(value);",
+  "}",
+  "",
+  "function fail(code, message, details) {",
+  "  const error = new Error(message);",
+  "  error.code = code;",
+  "  if (details !== undefined) error.details = details;",
+  "  throw error;",
+  "}",
+  "",
+  "function normalizePath(value) {",
+  "  if (typeof value !== \"string\") {",
+  "    fail(\"MAINTENANCE_PATH_REQUIRED\", \"Maintenance write path must be a string.\");",
+  "  }",
+  "  const raw = value.trim();",
+  "  const hadTrailingSlash = /[\\\\/]$/.test(raw);",
+  "  const normalized = raw",
+  "    .replace(/\\\\/g, \"/\")",
+  "    .replace(/^\\/+/, \"\")",
+  "    .replace(/\\/+/g, \"/\")",
+  "    .replace(/\\/+$/, \"\");",
+  "  if (!normalized) {",
+  "    fail(\"MAINTENANCE_PATH_REQUIRED\", \"Maintenance write path is required.\");",
+  "  }",
+  "  if (hadTrailingSlash) {",
+  "    fail(\"MAINTENANCE_FILE_PATH_REQUIRED\", \"Maintenance write path must not end with a slash.\", { path: value });",
+  "  }",
+  "  const segments = normalized.split(\"/\");",
+  "  if (segments.some((segment) => segment === \".\" || segment === \"..\" || segment === \"\")) {",
+  "    fail(\"MAINTENANCE_PATH_INVALID\", \"Maintenance write path must not contain empty, current, or parent directory segments.\", { path: value });",
+  "  }",
+  "  if (normalized === \".tsian\" || normalized.startsWith(\".tsian/\")) {",
+  "    fail(\"MAINTENANCE_PLATFORM_METADATA_FORBIDDEN\", \"Maintenance writes cannot target .tsian platform metadata.\", { path: normalized });",
+  "  }",
+  "  return normalized;",
+  "}",
+  "",
+  "function isAllowedTarget(path) {",
+  "  return /^agents\\/[^/]+\\/notes\\.md$/.test(path)",
+  "    || path === \"history/timeline.md\"",
+  "    || path === \"memory/summaries/current.md\"",
+  "    || path === \"memory/summaries/long-term.md\";",
+  "}",
+  "",
+  "function validateWrite(rawWrite, index) {",
+  "  if (!isRecord(rawWrite)) {",
+  "    fail(\"MAINTENANCE_WRITE_INVALID\", \"Each maintenance write must be an object.\", { index });",
+  "  }",
+  "  const path = normalizePath(rawWrite.path);",
+  "  if (!isAllowedTarget(path)) {",
+  "    fail(\"MAINTENANCE_TARGET_NOT_ALLOWED\", \"Maintenance write target is not allowed in this Skill.\", { index, path });",
+  "  }",
+  "  if (rawWrite.mode !== \"replace\") {",
+  "    fail(\"MAINTENANCE_MODE_UNSUPPORTED\", \"Maintenance write mode must be replace.\", { index, path, mode: rawWrite.mode });",
+  "  }",
+  "  if (typeof rawWrite.content !== \"string\") {",
+  "    fail(\"MAINTENANCE_CONTENT_REQUIRED\", \"Maintenance write content must be a string.\", { index, path });",
+  "  }",
+  "  if (rawWrite.content.length > MAX_CONTENT_LENGTH) {",
+  "    fail(\"MAINTENANCE_CONTENT_TOO_LARGE\", \"Maintenance write content exceeds the allowed size.\", { index, path, size: rawWrite.content.length, maxSize: MAX_CONTENT_LENGTH });",
+  "  }",
+  "  if (typeof rawWrite.reason !== \"string\" || !rawWrite.reason.trim()) {",
+  "    fail(\"MAINTENANCE_REASON_REQUIRED\", \"Maintenance write reason must be a non-empty string.\", { index, path });",
+  "  }",
+  "  return {",
+  "    path,",
+  "    mode: \"replace\",",
+  "    content: rawWrite.content,",
+  "    reason: rawWrite.reason.trim(),",
+  "  };",
+  "}",
+  "",
+  "function validatePlan(plan) {",
+  "  if (!isRecord(plan)) {",
+  "    fail(\"MAINTENANCE_PLAN_INVALID\", \"Maintenance plan must be an object.\");",
+  "  }",
+  "  if (plan.schema !== PLAN_SCHEMA) {",
+  "    fail(\"MAINTENANCE_SCHEMA_INVALID\", \"Maintenance plan schema is invalid.\", { expected: PLAN_SCHEMA, actual: plan.schema });",
+  "  }",
+  "  if (!Array.isArray(plan.writes)) {",
+  "    fail(\"MAINTENANCE_WRITES_INVALID\", \"Maintenance plan writes must be an array.\");",
+  "  }",
+  "  if (plan.writes.length > MAX_WRITES) {",
+  "    fail(\"MAINTENANCE_TOO_MANY_WRITES\", \"Maintenance plan contains too many writes.\", { count: plan.writes.length, maxWrites: MAX_WRITES });",
+  "  }",
+  "  return plan.writes.map(validateWrite);",
+  "}",
+  "",
+  "async function applyMaintenancePlan(input, tsian, signal) {",
+  "  try {",
+  "    signal.throwIfAborted();",
+  "    const writes = validatePlan(input);",
+  "    tsian.trace(\"maintenance_started\", { schema: PLAN_SCHEMA, writeCount: writes.length, paths: writes.map((write) => write.path) });",
+  "    if (writes.length === 0) {",
+  "      tsian.trace(\"maintenance_completed\", { status: \"noop\", writeCount: 0 });",
+  "      return { schema: PLAN_SCHEMA, status: \"noop\", writes: [] };",
+  "    }",
+  "    const applied = [];",
+  "    for (const write of writes) {",
+  "      signal.throwIfAborted();",
+  "      const file = await tsian.workspace.write({",
+  "        path: write.path,",
+  "        content: write.content,",
+  "        mediaType: \"text/markdown\",",
+  "      });",
+  "      applied.push({ path: file.path, size: file.content.length, reason: write.reason });",
+  "    }",
+  "    tsian.trace(\"maintenance_completed\", { status: \"applied\", writeCount: applied.length, writes: applied });",
+  "    return { schema: PLAN_SCHEMA, status: \"applied\", writes: applied };",
+  "  } catch (error) {",
+  "    tsian.trace(\"maintenance_failed\", { code: error && error.code || \"MAINTENANCE_FAILED\", message: error && error.message || String(error), details: error && error.details });",
+  "    throw error;",
+  "  }",
+  "}",
+  "",
+  "return applyMaintenancePlan(input, tsian, signal);",
+  "",
+].join("\n")
 
 const DEFAULT_WORKSPACE_FILES: Array<{
   path: string
@@ -189,6 +389,15 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     ].join("\n"),
   },
   {
+    path: "skills/memory-maintenance/SKILL.md",
+    content: MEMORY_MAINTENANCE_SKILL_MD,
+  },
+  {
+    path: "skills/memory-maintenance/scripts/apply-maintenance-plan.js",
+    content: MEMORY_MAINTENANCE_SCRIPT_JS,
+    mediaType: "text/javascript",
+  },
+  {
     path: "history/README.md",
     content: [
       "# History",
@@ -266,10 +475,10 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: "# Archive\n\nRetired, compressed, or inactive workspace material can live here.\n",
   },
   {
-    path: ".tsian/manifest.json",
+    path: WORKSPACE_MANIFEST_PATH,
     content: JSON.stringify({
       version: "0.0.0",
-      workspaceVersion: 1,
+      workspaceVersion: DEFAULT_WORKSPACE_VERSION,
     }, null, 2) + "\n",
     mediaType: "application/json",
   },
@@ -488,9 +697,104 @@ async function touchSave(saveId: string, updatedAt: number): Promise<void> {
   })
 }
 
+function defaultWorkspaceFileByPath(path: string): {
+  path: string
+  content: string
+  mediaType?: string
+} | undefined {
+  return DEFAULT_WORKSPACE_FILES.find((file) => file.path === path)
+}
+
+function parseWorkspaceManifestVersion(content: string | undefined): number {
+  if (!content) {
+    return 0
+  }
+
+  try {
+    const parsed = JSON.parse(content) as unknown
+    if (
+      typeof parsed === "object"
+      && parsed !== null
+      && !Array.isArray(parsed)
+      && typeof (parsed as { workspaceVersion?: unknown }).workspaceVersion === "number"
+      && Number.isFinite((parsed as { workspaceVersion: number }).workspaceVersion)
+    ) {
+      return Math.max(0, Math.floor((parsed as { workspaceVersion: number }).workspaceVersion))
+    }
+  } catch {
+    return 0
+  }
+
+  return 0
+}
+
+function serializeWorkspaceManifest(content: string | undefined): string {
+  let base: Record<string, unknown> = {}
+  if (content) {
+    try {
+      const parsed = JSON.parse(content) as unknown
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+        base = parsed as Record<string, unknown>
+      }
+    } catch {
+      base = {}
+    }
+  }
+
+  return JSON.stringify({
+    ...base,
+    version: typeof base.version === "string" ? base.version : "0.0.0",
+    workspaceVersion: DEFAULT_WORKSPACE_VERSION,
+  }, null, 2) + "\n"
+}
+
+async function upgradeDefaultWorkspaceFilesForSave(saveId: string): Promise<void> {
+  const existingRecords = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+  const existingByPath = new Map(existingRecords.map((record) => [record.path, record]))
+  const manifest = existingByPath.get(WORKSPACE_MANIFEST_PATH)
+  if (parseWorkspaceManifestVersion(manifest?.content) >= DEFAULT_WORKSPACE_VERSION) {
+    return
+  }
+
+  const now = Date.now()
+  await localDb.transaction("rw", localDb.workspaceFiles, async () => {
+    for (const path of DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS) {
+      if (existingByPath.has(path)) {
+        continue
+      }
+
+      const defaultFile = defaultWorkspaceFileByPath(path)
+      if (!defaultFile) {
+        continue
+      }
+
+      await localDb.workspaceFiles.put({
+        id: createTableId(saveId, path),
+        saveId,
+        path,
+        content: defaultFile.content,
+        mediaType: normalizeMediaType(defaultFile.mediaType, path),
+        createdAt: now,
+        updatedAt: now,
+      })
+    }
+
+    await localDb.workspaceFiles.put({
+      id: createTableId(saveId, WORKSPACE_MANIFEST_PATH),
+      saveId,
+      path: WORKSPACE_MANIFEST_PATH,
+      content: serializeWorkspaceManifest(manifest?.content),
+      mediaType: "application/json",
+      createdAt: manifest?.createdAt ?? now,
+      updatedAt: now,
+    })
+  })
+}
+
 export async function initializeWorkspaceForSave(saveId: string): Promise<void> {
   const existingCount = await localDb.workspaceFiles.where("saveId").equals(saveId).count()
   if (existingCount > 0) {
+    await upgradeDefaultWorkspaceFilesForSave(saveId)
     return
   }
 

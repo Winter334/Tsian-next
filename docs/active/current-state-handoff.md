@@ -23,7 +23,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - 本地 Dexie schema 已重置为 `meta / saves / saveSnapshots / saveHistory / checkpoints / stateRecords / workspaceFiles`。
 - 平台可在没有内置内容包的情况下启动，并可创建内容为空的 AIRP 会话。
 - Runtime Workspace storage/API 已实现，工作区文件随 save 和 checkpoint 生命周期保存、恢复和删除。
-- 新存档默认包含 master/narrative/memory `AGENT.md`、agent notes/session、共享目录 README、world/memory/frontend/archive 入口文件和 `.tsian` 平台目录。
+- 新存档默认包含 master/narrative/memory `AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、共享目录 README、world/memory/frontend/archive 入口文件和 `.tsian` 平台目录；旧存档会通过 workspace manifest 版本安全补入缺失的官方维护 Skill，且不覆盖同路径用户文件。
 - `agent-registry` / `skill-registry` bridge query 已实现，可从 workspace 扫描轻量 Agent/Skill 索引。
 - `skill-detail` bridge query 已实现，可按选中的 `SKILL.md` path 加载 Skill 正文和资源索引，并保持资源内容按需读取。
 - `agent-context` bridge query 已实现，可为指定 Agent 组装 `AGENT.md`、notes/session、可见 Skill Index 和声明的 context files。
@@ -33,8 +33,10 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - contacts-gated `agent_call` MVP 已实现。默认 master contacts 包含 memory；被调用 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环，结果作为 observation 返回调用方；MVP 禁止嵌套 `agent_call` 并共享 root turn 调用预算。
 - Runtime Trace Persistence MVP 已实现。每个成功回合会写入 `.tsian/traces/turns/turn-*.jsonl`，失败回合在可写时写入 failed trace；trace 记录回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action 调用和 workspace mutation。普通 bridge/runtime `workspace_list` / `workspace_search` 默认隐藏 `.tsian/traces/`，trace 作为 workspace 文件跟随 checkpoint/restore 回滚。`.tsian/*` 是平台 metadata 空间，普通 Agent/Skill workspace 写删不能改它。
 - Native AIRP History Writeback MVP 已实现。每个成功回合会写入 `history/turns/turn-*.json`，只包含玩家输入和最终 narrative 输出；这些文件是普通 Runtime Workspace 文件，可被 read/list/search 命中并随 checkpoint/restore 回滚，失败回合不会留下普通 raw history 记录。raw history 现在随成功回合 staged transaction 一起提交。
+- Agent Session Transcript MVP 已实现。成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。该文件是会话记录，不是 bounded operational log。
+- Skill-triggered Memory Maintenance MVP 已实现。默认共享 `memory-maintenance` Skill 需要先 `skill_load` 再 `action_call apply_maintenance_plan`，通过 `browser_script` 和 Tsian SDK 在 staged transaction 中写入 `agents/<agent>/notes.md`、`history/timeline.md`、`memory/summaries/current.md` 或 `memory/summaries/long-term.md`。没有显式 Skill action 就不会运行增强记忆维护；空 `writes` 代表显式 no-op。
 
-当前代码尚未实现远程 executor、WASM/托管执行、Agent notes/session 自动写回、timeline/current-summary 自动维护，或 `agent_call` 的有限递归 / UI 配置。默认回合仍是 master -> narrative 两个固定 Agent 步骤；每个步骤可能因为 `skill_load`、`action_call`、`agent_call` 或 workspace 工具 observation 产生额外模型调用。
+当前代码尚未实现远程 executor、WASM/托管执行、session transcript 压缩/归档、标准 operational logging、固定每回合记忆维护，或 `agent_call` 的有限递归 / UI 配置。默认回合仍是 master -> narrative 两个固定 Agent 步骤；每个步骤可能因为 `skill_load`、`action_call`、`agent_call` 或 workspace 工具 observation 产生额外模型调用。
 
 ## 3. 当前有效边界
 
@@ -68,7 +70,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 1. 继续完善 action executor registry：远程执行、WASM/托管执行、更丰富的受控平台动作，以及 browser script 的信任/启用策略。
 2. 扩展 `agent_call` 到更成熟的协作策略，例如可配置预算、有限递归、协作 Skill 或调试 UI。
 3. 扩展 trace 覆盖远程 executor、保留策略、脚本调试 UI 和更细的执行审计。
-4. 在 raw history 底账之上写回 Agent session/notes、history timeline、memory summaries 等派生 Runtime Workspace 文件。
+4. 在 raw history 与 session transcript 底账之上继续完善记忆策略，例如维护 Skill 的提示质量、diff/review UI、summary 压缩、检索索引和 transcript 归档。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
 6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
 7. 为 Runtime Workspace、Agent、Skill 提供浏览和编辑 UI。

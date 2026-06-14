@@ -13,7 +13,7 @@ import type {
   SkillRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
-import { runAgentRuntimeTurn } from "../agent-runtime"
+import { runAgentRuntimeTurn, type AgentSessionTranscriptRecord } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
 import { buildAgentRegistry, buildSkillRegistry, loadSkillDetail } from "../agent-runtime/registry"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
@@ -68,6 +68,7 @@ let previousTurnController: AbortController | null = null
 
 const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v1"
 const AIRP_HISTORY_TURN_PATH_PREFIX = "history/turns/"
+const AGENT_SESSION_TRANSCRIPT_MEDIA_TYPE = "application/x-ndjson"
 
 interface RawAirpHistoryTurnRecord {
   schema: typeof AIRP_HISTORY_TURN_SCHEMA
@@ -222,6 +223,58 @@ function stageRawAirpHistoryTurnFile(
     ),
     mediaType: "application/json",
   })
+}
+
+function agentSessionTranscriptPath(record: AgentSessionTranscriptRecord): string {
+  const suffix = "/AGENT.md"
+  if (!record.agentPath.endsWith(suffix)) {
+    throw new Error(
+      `Agent session transcript requires an AGENT.md path: ${record.agentPath}`,
+    )
+  }
+
+  return `${record.agentPath.slice(0, -suffix.length)}/session.jsonl`
+}
+
+function appendJsonlRecords(
+  currentContent: string,
+  records: AgentSessionTranscriptRecord[],
+): string {
+  const prefix = currentContent && !currentContent.endsWith("\n")
+    ? `${currentContent}\n`
+    : currentContent
+  return `${prefix}${records.map((record) => JSON.stringify(record)).join("\n")}\n`
+}
+
+function stageAgentSessionTranscriptFiles(
+  workspaceTransaction: RuntimeWorkspaceTransaction,
+  records: AgentSessionTranscriptRecord[],
+): Array<{ path: string; recordCount: number; size: number }> {
+  const recordsByPath = new Map<string, AgentSessionTranscriptRecord[]>()
+  for (const record of records) {
+    const path = agentSessionTranscriptPath(record)
+    const existing = recordsByPath.get(path) ?? []
+    existing.push(record)
+    recordsByPath.set(path, existing)
+  }
+
+  const staged: Array<{ path: string; recordCount: number; size: number }> = []
+  for (const [path, pathRecords] of recordsByPath.entries()) {
+    const existing = workspaceTransaction.workspaceFiles.find((file) => file.path === path)
+    const nextContent = appendJsonlRecords(existing?.content ?? "", pathRecords)
+    const file = workspaceTransaction.write({
+      path,
+      content: nextContent,
+      mediaType: AGENT_SESSION_TRANSCRIPT_MEDIA_TYPE,
+    })
+    staged.push({
+      path: file.path,
+      recordCount: pathRecords.length,
+      size: file.content.length,
+    })
+  }
+
+  return staged
 }
 
 async function activeSaveExists(saveId: string): Promise<boolean> {
@@ -561,6 +614,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         }
 
         try {
+          await initializeWorkspaceForSave(activeSaveId)
           return {
             items: (await listWorkspaceEntriesForSave(activeSaveId, {
               path: request.params?.path,
@@ -581,6 +635,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         }
 
         try {
+          await initializeWorkspaceForSave(activeSaveId)
           const file = await readWorkspaceFileForSave(activeSaveId, request.params?.path)
           return {
             items: (file ? [file] : []) as T[],
@@ -595,6 +650,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return { items: [] } as DeepQueryResult<T>
         }
 
+        await initializeWorkspaceForSave(activeSaveId)
         return {
           items: (await searchWorkspaceFilesForSave(activeSaveId, {
             query:
@@ -618,6 +674,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return { items: [] } as DeepQueryResult<T>
         }
 
+        await initializeWorkspaceForSave(activeSaveId)
         const files = await listWorkspaceFilesForSave(activeSaveId)
         return {
           items: buildAgentRegistry(files) as AgentRegistryEntry[] as T[],
@@ -637,6 +694,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return { items: [] } as DeepQueryResult<T>
         }
 
+        await initializeWorkspaceForSave(activeSaveId)
         const files = await listWorkspaceFilesForSave(activeSaveId)
         const context = assembleAgentContext(files, { agentId })
         return {
@@ -662,6 +720,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             ? request.params.includeLocal
             : undefined
 
+        await initializeWorkspaceForSave(activeSaveId)
         const files = await listWorkspaceFilesForSave(activeSaveId)
         return {
           items: buildSkillRegistry(files, {
@@ -679,6 +738,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
         try {
           const path = normalizeWorkspaceFilePath(request.params?.path)
+          await initializeWorkspaceForSave(activeSaveId)
           const files = await listWorkspaceFilesForSave(activeSaveId)
           const detail = loadSkillDetail(files, path)
           return {
@@ -780,6 +840,19 @@ export const playFrontendBridge: PlayFrontendBridge = {
           turn: nextTurn,
           userInput: content,
           assistantOutput: result.replyText,
+        })
+        const transcriptWrites = stageAgentSessionTranscriptFiles(
+          workspaceTransaction,
+          result.agentSessionTranscripts,
+        )
+        trace.emit({
+          type: "agent_session_transcripts_staged",
+          ok: true,
+          data: {
+            recordCount: result.agentSessionTranscripts.length,
+            fileCount: transcriptWrites.length,
+            files: transcriptWrites,
+          },
         })
 
         trace.emit({

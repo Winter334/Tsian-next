@@ -12,6 +12,7 @@ export type RuntimeTraceEventType =
   | "agent_called"
   | "workspace_tool_called"
   | "action_called"
+  | "agent_session_transcripts_staged"
   | "script_log"
   | "workspace_mutation"
 

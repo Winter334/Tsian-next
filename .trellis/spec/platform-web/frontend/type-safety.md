@@ -629,6 +629,104 @@ interface RawAirpHistoryTurnRecord {
 - Assert workspace list/read/search can surface individual raw turn files.
 - Assert failed or aborted turns do not persist raw history files.
 
+## Scenario: Agent Session Transcript And Skill-Triggered Maintenance
+
+### 1. Scope / Trigger
+
+- Trigger: successful Agent Runtime turns persist Agent-facing transcripts or a loaded Skill action applies notes/timeline/summary maintenance.
+- Applies when changing `apps/platform-web/src/agent-runtime/index.ts`, `apps/platform-web/src/platform-host/index.ts`, `apps/platform-web/src/storage/workspace.ts`, default Skill files, or successful-turn persistence.
+
+### 2. Signatures
+
+- Agent transcripts live under `agents/<agent>/session.jsonl`.
+- Each JSONL line uses schema string `tsian.agent.session.transcript.v1`.
+- Runtime returns transcript records as plain data; `platform-host` appends them to workspace files during successful-turn staging.
+- The default maintenance Skill lives at `skills/memory-maintenance/SKILL.md` and declares `apply_maintenance_plan`.
+- Maintenance plans use schema string `tsian.runtime.maintenance.plan.v1` with `writes: [{ path, mode: "replace", content, reason }]`.
+
+### 3. Contracts
+
+- Session transcripts are Agent-facing replay/debug substrate, not platform operational logs.
+- Transcript records may include model messages sent to the Agent, injected context snapshots inside those messages, model output, parsed tool calls, tool observations, Agent id/path/title, debug label, model-call index, round, status, timestamp, and turn.
+- Transcript records must exclude storage internals such as Dexie ids, hidden transaction snapshots, and full trace payloads not returned to the Agent.
+- Session transcript writes are append-only for this slice. Do not segment, trim, compress, or archive them here.
+- Session transcript writes are staged after Agent Runtime succeeds and committed atomically with raw history, trace, snapshot/history, and checkpoint.
+- Failed or aborted turns must discard ordinary session transcript writes.
+- Enhanced memory maintenance does not run automatically every turn. It runs only when an Agent loads a Skill that declares an action and calls that action.
+- The official maintenance Skill uses the existing `browser_script` executor and Tsian SDK workspace writes. Do not add a maintenance-specific platform action unless a future task explicitly revises this contract.
+- Valid maintenance writes are limited to `agents/<agent>/notes.md`, `history/timeline.md`, `memory/summaries/current.md`, and `memory/summaries/long-term.md`.
+- Empty `writes` is a valid explicit no-op maintenance decision.
+- Invalid maintenance plans become structured action/script observations and trace summaries; they must not mutate ordinary workspace files.
+- `.tsian/*` remains host-owned platform metadata and is never a valid ordinary maintenance target.
+- New saves include the official maintenance Skill. Existing non-empty saves receive missing official maintenance Skill files through a versioned default workspace upgrade that preserves same-path user files and does not recreate the Skill after the upgrade marker is current.
+
+### 4. Validation & Error Matrix
+
+- Successful no-tool turn -> master and narrative session JSONL records are appended.
+- Successful `agent_call` -> the delegated Agent also receives its own session JSONL records.
+- Successful turn with no maintenance action -> no notes/timeline/summary maintenance mutation is synthesized.
+- Loaded maintenance Skill plus valid plan -> approved target files are written through the staged workspace transaction.
+- Loaded maintenance Skill plus empty plan -> action returns no-op and no maintenance files are mutated.
+- Invalid schema, invalid path, invalid mode, non-string content/reason, oversized content, or `.tsian/*` target -> action observation is an error and no maintenance writes are applied.
+- Existing save with workspaceVersion below current -> missing official maintenance Skill files are created, existing same-path files are preserved, and manifest advances.
+- Existing save with current workspaceVersion -> deleted official maintenance Skill files are not recreated on every turn.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a successful turn with master, narrative, and a delegated memory Agent appends JSONL records under each participating Agent's own directory.
+- Good: memory Agent loads `memory-maintenance`, calls `apply_maintenance_plan`, and writes `memory/summaries/current.md` through the staged browser-script SDK.
+- Good: an empty maintenance plan returns no-op output and does not mutate notes/timeline/summary files.
+- Base: a successful turn with no loaded maintenance Skill still appends session transcripts and raw history, but produces no enhanced memory file updates.
+- Bad: platform-host runs memory maintenance after every turn without a Skill action.
+- Bad: Runtime Trace stores full Agent prompt/message arrays instead of only summary events.
+- Bad: default workspace upgrade overwrites a user-authored `skills/memory-maintenance/SKILL.md`.
+
+### 6. Tests Required
+
+- Assert transcript JSONL lines parse and include Agent-facing messages/output/tool material.
+- Assert failed or aborted turns leave no ordinary transcript or maintenance writes.
+- Assert transcript staging creates `session.jsonl` for custom Agents that participate.
+- Assert maintenance action is unavailable until the declaring Skill is loaded.
+- Assert default maintenance Skill is discoverable through `skill-registry`, loadable through `skill_load`, and runs through `browser_script`.
+- Assert valid maintenance plans write only allowed paths and invalid plans write nothing.
+- Assert default workspace upgrade is non-overwriting and manifest-gated.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+await runMemoryMaintenanceEveryTurn()
+await writeWorkspaceFileForSave(saveId, {
+  path: "memory/summaries/current.md",
+  content: summary,
+})
+```
+
+#### Correct
+
+```typescript
+const result = await runAgentRuntimeTurn(input, {
+  runBrowserScript: createBrowserSkillScriptRunner({ workspaceTransaction }),
+})
+stageAgentSessionTranscriptFiles(
+  workspaceTransaction,
+  result.agentSessionTranscripts,
+)
+```
+
+#### Correct
+
+```json
+{
+  "name": "apply_maintenance_plan",
+  "executor": {
+    "type": "browser_script",
+    "path": "scripts/apply-maintenance-plan.js"
+  }
+}
+```
+
 ## Scenario: Runtime Trace Persistence
 
 ### 1. Scope / Trigger

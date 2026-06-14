@@ -153,6 +153,8 @@ Agent 发起 action_call
 
 当前实现中，`action_call` 会先做 loaded Skill gating 和输入校验，再通过 action executor registry 路由到具体 executor。已支持无副作用的 `builtin/validation`、`builtin/echo`，通过 capability 注入并由 platform-host allow-list 控制的 `platform_action`，以及受信任第三方 Skill 使用的 `browser_script`。当前 `platform_action` 允许接入 `workspace-write` / `workspace-delete` 这类平台受控能力；`browser_script` 运行 Skill 目录下的浏览器 Worker 脚本，并通过强 Tsian SDK 暴露 workspace read/list/search/write/delete、fetch、log/trace 和 timeout/abort。`interaction.sendMessage` 内的 Agent Runtime workspace 写入/删除使用 staged transaction：同轮工具可读 staged view，成功回合与 snapshot/history/checkpoint 原子提交，失败或 abort 丢弃普通 workspace mutation；前端 bridge 的手动 `platform.runAction` 仍是即时平台动作。第一版不把 raw DOM、`window`、内部 bridge、Vue 状态或 platform-host 内部对象作为受支持脚本 API。远程 HTTP、WASM、托管执行和原生宿主文件/终端能力仍是后续任务。
 
+默认共享 `memory-maintenance` Skill 复用这套 action/executor 机制。它不会被平台每回合自动运行；Agent 必须先 `skill_load`，再调用 `apply_maintenance_plan`。维护计划只允许显式替换 Agent notes、timeline、current summary 和 long-term summary，空 writes 代表显式 no-op。
+
 这允许 Tsian 复用网络上的 Skill 思路，也允许把 CLI Skill 中的脚本通过浏览器脚本或远程执行适配进来。
 
 ### 工具边界标准
@@ -326,7 +328,7 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
 - 默认流程仍是固定 `master-agent` -> `narrative-agent`。
 - 存储包含 snapshot、history、checkpoint、stateRecords，以及 save-scoped Runtime Workspace files。
-- 新存档默认写入 Runtime Workspace 目录入口、`agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、agent notes/session、world/memory/frontend/archive 和 `.tsian` 入口文件。
+- 新存档默认写入 Runtime Workspace 目录入口、`agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、world/memory/frontend/archive 和 `.tsian` 入口文件；旧存档通过 workspace manifest 版本安全补入缺失的官方维护 Skill，且不覆盖同路径用户文件。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
@@ -334,12 +336,14 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；当前支持 `builtin/validation`、`builtin/echo`、allow-listed `platform_action` 和 strong-SDK `browser_script`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
 - 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；MVP 禁止嵌套 `agent_call`，并按 root turn 限制调用次数。
 - Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 list/search 默认隐藏 `.tsian/traces/`。
+- Agent Session Transcript MVP 已落地：成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。
+- Skill-triggered Memory Maintenance MVP 已落地：默认 `memory-maintenance` Skill 的 `apply_maintenance_plan` 使用 `browser_script` 和 Tsian SDK staged 写入 `agents/<agent>/notes.md`、`history/timeline.md`、`memory/summaries/current.md` 或 `memory/summaries/long-term.md`。没有显式 Skill action 就不会维护增强记忆，空 writes 仅表示显式 no-op。
 
 后续实现应逐步：
 
 1. 继续完善 action executor registry：扩展远程执行、WASM、托管执行、更丰富的受控平台动作，以及 browser script 的信任/启用策略。
 2. 扩展 `agent_call` 到更成熟的协作策略，例如可配置预算、有限递归、协作 Skill 或调试 UI。
 3. 扩展 trace 覆盖远程 executor、保留策略、脚本调试 UI 和更细的执行审计。
-4. 写回 Agent session/notes、history timeline、memory summaries 等 Runtime Workspace 文件。
+4. 继续完善记忆策略与体验：维护 Skill 提示质量、diff/review UI、summary 压缩、检索索引和 session transcript 归档。
 5. 将当前 `stateRecords` 语义迁入 workspace 文件/目录，或作为过渡兼容层。
 6. 为 workspace、Agent 和 Skill 提供浏览与编辑 UI。
