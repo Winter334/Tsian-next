@@ -7,7 +7,7 @@ export interface GameCardManifest {
   description?: string
   author?: GameCardAuthor
   cover?: GameCardCover
-  frontend: GameCardFrontendBinding
+  frontend?: GameCardFrontendBinding
   assistant?: GameCardAssistant
 }
 
@@ -37,10 +37,6 @@ export type GameCardFrontendBinding =
       kind: "packaged"
       entry: string
       bridgeVersion: "tsian.play-bridge.v1"
-    }
-  | {
-      kind: "builtin"
-      id: "official-default" | string
     }
 
 export interface GameCardWorkspaceTemplateFile {

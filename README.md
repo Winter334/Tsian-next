@@ -14,7 +14,6 @@ Tsian 是一个面向 AIRP 的 Agent-Orchestrated Runtime 平台原型。
 - `apps/platform-web` - Vue 平台壳、本地 Agent Runtime 宿主、Dexie 存储、桥接和默认会话 UI。
 - `packages/contracts` - 平台、运行时和前端包共享的 TypeScript 契约。
 - `packages/runtime-core` - 极薄的 `RuntimeEngine` 接口包。
-- `builtin/play-frontends/official-default` - 官方默认游玩前端包。
 - `docs` - 当前方向、接手文档和已退役方向说明。
 
 ## 常用命令

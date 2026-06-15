@@ -76,11 +76,8 @@ function normalizePackageFilePath(value: string, fieldName: string): string {
 
 function normalizeFrontendBinding(manifest: GameCardManifest): GameCardManifest["frontend"] {
   const frontend = manifest.frontend
-  if (frontend.kind === "builtin") {
-    return {
-      kind: "builtin",
-      id: requireNonEmptyString(frontend.id, "frontend.id"),
-    }
+  if (!frontend) {
+    return undefined
   }
 
   if (frontend.kind === "remote") {
@@ -91,11 +88,17 @@ function normalizeFrontendBinding(manifest: GameCardManifest): GameCardManifest[
     }
   }
 
-  return {
-    kind: "packaged",
-    entry: normalizePackageFilePath(frontend.entry, "frontend.entry"),
-    bridgeVersion: frontend.bridgeVersion,
+  if (frontend.kind === "packaged") {
+    return {
+      kind: "packaged",
+      entry: normalizePackageFilePath(frontend.entry, "frontend.entry"),
+      bridgeVersion: frontend.bridgeVersion,
+    }
   }
+
+  throw new Error(
+    `Unsupported game card frontend kind: ${String((frontend as { kind?: unknown }).kind)}`,
+  )
 }
 
 function normalizeManifest(manifest: GameCardManifest): GameCardManifest {
@@ -237,6 +240,10 @@ function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): boolean {
     return false
   }
 
+  if (record.manifest.frontend !== undefined) {
+    return false
+  }
+
   return createDefaultWorkspaceTemplateFiles()
     .every((file) => hasTemplateFile(record.workspaceTemplateFiles, file))
 }
@@ -251,11 +258,7 @@ function createBuiltinBlankGameCardRecord(
     name: "Blank Agent Runtime",
     version: "0.0.0",
     summary: "A default empty Tsian Runtime Workspace with official Agent and Skill templates.",
-    description: "The compatibility card used when a player starts without importing or selecting a custom game card.",
-    frontend: {
-      kind: "builtin",
-      id: "official-default",
-    },
+    description: "The built-in blank workspace template used before a custom game frontend is configured.",
     assistant: {
       agentId: BUILTIN_BLANK_GAME_CARD_ASSISTANT_ID,
       summary: "Use the default Studio Assistant Agent as the workspace assistant entrypoint.",

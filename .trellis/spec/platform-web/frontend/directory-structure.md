@@ -10,7 +10,7 @@
 - `src/storage/` owns Dexie schema and persistence helpers. Table interfaces and schema stay in `storage/db.ts`.
 - `src/bridge/` owns framework-neutral bridge adapters.
 - `src/views/` owns route-level Vue screens.
-- `src/package-loader/` owns builtin frontend loading.
+- `src/package-loader/` owns packaged frontend virtual URL loading.
 - `src/components/ui/` owns reusable UI primitives.
 
 ## Placement Rules
@@ -19,7 +19,7 @@
 - Inject platform capabilities into Agent Runtime from `platform-host`; Agent Runtime should not import bridge objects or Dexie tables directly.
 - Put browser persistence in `storage/`, not in route views.
 - Keep `platform-host/index.ts` as the orchestration boundary until behavior is reused by multiple actions.
-- Keep official frontend package behavior under `builtin/play-frontends/official-default`.
+- Do not add a same-realm built-in game frontend; default playable UI should be a remote or packaged Game Card frontend.
 
 ## Import Rules
 

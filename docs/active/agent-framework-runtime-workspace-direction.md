@@ -18,7 +18,7 @@
 - 普通 Agent 输出是软协议，由 `AGENT.md` 和 Skill 指导；平台不强制校验每段文本或 brief。
 - 硬校验只发生在工具 / action 调用、结构化写入、远程执行结果和平台提交边界。
 - Runtime Workspace 是存档的数据容器；上下文、记忆、结构化状态、Agent 定义、Skill 定义、前端数据都可以是工作区文件。
-- Game Card 提供可复用的 Runtime Workspace 初始模板和前端绑定；Save Instance 持有玩家实际游玩的独立 workspace 副本。
+- Game Card 提供可复用的 Runtime Workspace 初始模板和可选前端绑定；Save Instance 持有玩家实际游玩的独立 workspace 副本。
 - 平台提供模型调用、工作区文件 API、checkpoint、trace、执行器和提交边界，不理解玩法字段语义。
 
 ## 3. Agent

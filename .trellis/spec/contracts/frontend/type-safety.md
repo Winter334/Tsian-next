@@ -11,7 +11,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.
 - `RemotePlayBridge*` types describe the serializable `tsian.play-bridge.v1` postMessage protocol used by remote iframe frontends.
 - `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views.
-- `GameCardManifest`, `GameCardFrontendBinding`, `GameCardPackageManifest`, `GameCardPackageFileEntry`, and `GameCardWorkspaceTemplateFile` describe reusable game cards, package files, frontend bindings, and workspace templates.
+- `GameCardManifest`, `GameCardFrontendBinding`, `GameCardPackageManifest`, `GameCardPackageFileEntry`, and `GameCardWorkspaceTemplateFile` describe reusable game cards, package files, frontend bindings, and workspace templates. `GameCardManifest.frontend` is optional; when present, frontend bindings are remote or packaged only.
 - `AgentRegistryEntry` describes lightweight `agents/<agent>/AGENT.md` index entries.
 - `AgentContextEntry` describes one assembled Agent context bundle for `agent-context`.
 - `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries. Use `name` / `description` for model-facing Skill identity and keep `id` / `summary` / `path` for compatibility and bridge/UI/debug consumers.

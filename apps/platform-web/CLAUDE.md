@@ -1,6 +1,6 @@
 # platform-web — 模块接手说明
 
-`apps/platform-web` 是浏览器侧平台壳。它拥有 Vue UI、本地平台 host、Agent Runtime 宿主、Dexie 存储、bridge 和官方默认前端装载。
+`apps/platform-web` 是浏览器侧平台壳。它拥有 Vue UI、本地平台 host、Agent Runtime 宿主、Dexie 存储、bridge 和 remote/packaged 前端装载。
 
 ## 当前职责
 
@@ -17,7 +17,7 @@ src/
   agent-runtime/        MVP Agent Runtime turn flow
   bridge/               PlayFrontendBridge factory, debug bridge, and remote iframe adapter
   config/               browser AI config
-  package-loader/       builtin official-default frontend loader
+  package-loader/       packaged frontend virtual URL loader
   platform-host/        local platform orchestrator
   runtime-host/         LocalRuntimeEngine and AI client
   storage/              Dexie schema, save/checkpoint helpers, and workspace files
@@ -28,17 +28,14 @@ Removed old active surfaces: workflow host/editor, resource library, prompt pres
 
 ## Bridge Surface
 
-Current `PlayFrontendBridge` exposes:
+Same-realm `PlayFrontendBridge` remains the internal platform object shape. Game frontends should use the remote/packaged iframe bridge surface:
 
 - `runtime.getRuntimeSnapshot()`
 - `interaction.sendMessage({ content })`
 - `query.query({ resource })`
 - `platform.getPlatformContext()`
 - `platform.runAction({ action: "restore-checkpoint", params })`
-- `debug.getAiDebugRecords()`
-- `debug.onTurnDebugReady(cb)`
-
-Remote iframe frontends use the `tsian.play-bridge.v1` postMessage protocol over a sandboxed iframe. The default remote bridge exposes runtime snapshot, player input, query, platform context, and platform action methods; it does not expose the `debug` namespace and rejects `ai-debug` queries. Packaged frontends are built static files stored with a Game Card and served to an iframe through the local Service Worker virtual URL path.
+Remote iframe frontends use the `tsian.play-bridge.v1` postMessage protocol over a sandboxed iframe. The default remote bridge exposes runtime snapshot, player input, query, platform context, and platform action methods; it does not expose the `debug` namespace and rejects `ai-debug` queries. Packaged frontends are built static files stored with a Game Card and served to an iframe through the local Service Worker virtual URL path. Game Cards may temporarily omit `frontend`; `/play` then shows a not-configured error.
 
 Current query resources:
 

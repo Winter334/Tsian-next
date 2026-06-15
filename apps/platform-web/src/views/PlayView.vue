@@ -35,7 +35,6 @@ import {
   mountRemoteIframeFrontend,
   resolveRemoteFrontendUrl,
 } from "../bridge"
-import { loadOfficialDefaultFrontend } from "../package-loader/official-default"
 import { resolvePackagedFrontendUrl } from "../package-loader/packaged-frontend"
 import {
   getPlatformActiveGameCard,
@@ -45,7 +44,6 @@ import {
 
 type PlayFrontendStatus =
   | "resolving"
-  | "builtin-ready"
   | "remote-loading"
   | "remote-ready"
   | "packaged-loading"
@@ -56,10 +54,6 @@ const frontendMount = ref<HTMLElement | null>(null)
 const status = ref<PlayFrontendStatus>("resolving")
 const errorTitle = ref("")
 const errorMessage = ref("")
-const fallbackFrontend: GameCardFrontendBinding & { kind: "builtin" } = {
-  kind: "builtin",
-  id: "official-default",
-}
 const packagedFrontendSandbox = "allow-scripts allow-same-origin allow-forms"
 
 let disposeFrontend: (() => void) | null = null
@@ -86,23 +80,13 @@ function setError(title: string, message: string) {
   errorMessage.value = message
 }
 
-function mountBuiltinFrontend(frontend: GameCardFrontendBinding & { kind: "builtin" }) {
-  if (frontend.id !== "official-default") {
-    setError(
-      "UNSUPPORTED BUILTIN FRONTEND",
-      `当前内置前端尚不支持：${frontend.id}`,
-    )
-    return
-  }
-
-  if (!frontendMount.value) {
-    setError("FRONTEND MOUNT FAILED", "游戏前端挂载点不可用。")
-    return
-  }
-
-  const builtinFrontend = loadOfficialDefaultFrontend()
-  disposeFrontend = builtinFrontend.mount(frontendMount.value, playFrontendBridge)
-  status.value = "builtin-ready"
+function setMissingFrontendError(cardName: string | undefined) {
+  setError(
+    "GAME FRONTEND NOT CONFIGURED",
+    cardName
+      ? `游戏卡「${cardName}」尚未配置 remote 或 packaged 前端。`
+      : "当前没有可用的游戏卡前端。请先导入或创建带 remote/packaged 前端的 Game Card。",
+  )
 }
 
 function mountRemoteFrontend(
@@ -196,9 +180,9 @@ async function mountActiveFrontend() {
       return
     }
 
-    const frontend = activeCard?.manifest.frontend ?? fallbackFrontend
-    if (frontend.kind === "builtin") {
-      mountBuiltinFrontend(frontend)
+    const frontend = activeCard?.manifest.frontend
+    if (!frontend) {
+      setMissingFrontendError(activeCard?.manifest.name)
       return
     }
 
@@ -207,12 +191,19 @@ async function mountActiveFrontend() {
       return
     }
 
-    if (!activeCard) {
-      mountBuiltinFrontend(fallbackFrontend)
+    if (frontend.kind === "packaged") {
+      if (!activeCard) {
+        setMissingFrontendError(undefined)
+        return
+      }
+      await mountPackagedFrontend(frontend, activeCard.id, activeCard.manifest.name, version)
       return
     }
 
-    await mountPackagedFrontend(frontend, activeCard.id, activeCard.manifest.name, version)
+    setError(
+      "UNSUPPORTED GAME FRONTEND",
+      `当前游戏前端类型不受支持：${String((frontend as { kind?: unknown }).kind)}`,
+    )
   } catch (error) {
     if (!isDisposed && mountVersion === version) {
       setError(

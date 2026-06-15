@@ -19,10 +19,9 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - `interaction.sendMessage` 由 `platform-host` 调度 Agent Runtime，而不是执行旧 workflow。
 - Agent Runtime 位于 `apps/platform-web/src/agent-runtime`。
 - MVP 每轮调用两次模型：`master-agent` 先产出写作 brief，`narrative-agent` 再产出玩家可读剧情正文。
-- 官方默认前端位于 `builtin/play-frontends/official-default`，负责内容为空的会话聊天、AI debug、checkpoint 和 snapshot 展示。
-- `/play` 会解析 active Game Card 的 frontend binding：`builtin/official-default` 继续走内置前端，`remote` URL 会以 sandboxed iframe 加载，`packaged` 会以本地 Service Worker 虚拟资源 URL 加载已导入的静态前端文件；远程/打包前端都通过 `tsian.play-bridge.v1` postMessage bridge 调用 runtime snapshot、玩家输入、query、platform context 和 platform action。远程 bridge 会过滤 mounted iframe source、handshake session 和 origin，默认屏蔽 `ai-debug` raw records；workspace write/delete 对远程/打包前端仍是即时 `platform.runAction`。当前本地 packaged frontend 依赖 Service Worker 控制同源 iframe client，因此 sandbox 保留 `allow-same-origin`。
+- `/play` 会解析 active Game Card 的 frontend binding：`remote` URL 会以 sandboxed iframe 加载，`packaged` 会以本地 Service Worker 虚拟资源 URL 加载已导入的静态前端文件；两者都通过 `tsian.play-bridge.v1` postMessage bridge 调用 runtime snapshot、玩家输入、query、platform context 和 platform action。远程 bridge 会过滤 mounted iframe source、handshake session 和 origin，默认屏蔽 `ai-debug` raw records；workspace write/delete 对远程/打包前端仍是即时 `platform.runAction`。当前本地 packaged frontend 依赖 Service Worker 控制同源 iframe client，因此 sandbox 保留 `allow-same-origin`。Game Card 可以暂时没有 frontend；这种卡可作为 workspace/Agent/Skill 模板存在，但进入 `/play` 时会显示未配置前端错误。
 - 本地 Dexie schema 已重置为 `meta / gameCards / gameCardFrontendFiles / saves / saveSnapshots / saveHistory / checkpoints / workspaceFiles`。
-- Game Card / Save Instance 本地模型已建立：Game Card 是可复用 workspace 模板和前端绑定，Save Instance 是从 Game Card 创建的独立游玩副本，checkpoint 仍是 Save Instance 内部回滚点。
+- Game Card / Save Instance 本地模型已建立：Game Card 是可复用 workspace 模板和可选前端绑定，Save Instance 是从 Game Card 创建的独立游玩副本，checkpoint 仍是 Save Instance 内部回滚点。
 - Game Card 本地包格式已建立：`*.tsian-card.zip` 包含 `game-card.json`、`workspace/*` 和可选 `frontend/*` built static files；导入会创建/更新 reusable Game Card，不会默认创建 Save Instance；导出不会包含 save history、checkpoint 或玩家演进后的 save workspace。
 - 平台会 seed 内置空白 Game Card；现有 `createPlatformSave()` 兼容路径会从这张卡复制默认 workspace 模板并创建初始 checkpoint。
 - 平台可在没有内置内容包的情况下启动，并可创建内容为空的 AIRP 会话。
@@ -47,7 +46,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 ## 3. 当前有效边界
 
 - Platform：模型调用、桥 API、通用存储、会话生命周期、checkpoint、前端包装载。
-- Game Card：可分发的 workspace 模板、前端绑定和默认内容入口。
+- Game Card：可分发的 workspace 模板、可选前端绑定和默认内容入口。
 - Agent Runtime：AIRP 回合组织、Agent 分工、工具使用和运行时数据产出。
 - Frontend Package：游戏 UI、交互和渲染，只通过 bridge 访问平台能力。
 - Save Instance：由 Game Card 创建的一次 AIRP 会话数据容器，内容语义由 runtime 和前端包约定。
@@ -70,7 +69,6 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - `packages/contracts/src/bridge.ts`
 - `packages/contracts/src/debug.ts`
 - `packages/contracts/src/game-card.ts`
-- `builtin/play-frontends/official-default/src/index.ts`
 
 ## 5. 下一步建议
 

@@ -21,26 +21,65 @@
 
 - Trigger: platform-web imports/exports `*.tsian-card.zip`, changes `src/storage/game-card-packages.ts`, changes packaged frontend storage, or loads `frontend.kind === "packaged"` in `PlayView.vue`.
 
-### 2. Contracts
+### 2. Signatures
+
+- `GameCardManifest.frontend?: GameCardFrontendBinding`
+- `GameCardFrontendBinding = { kind: "remote"; url; bridgeVersion } | { kind: "packaged"; entry; bridgeVersion }`
+- `GameCardPackageManifest.manifest: GameCardManifest`
+- `GameCardPackageManifest.frontendFiles?: GameCardPackageFileEntry[]`
+
+### 3. Contracts
 
 - Game Card packages are reusable templates, not Save Instance exports. They must not include save snapshots, save history, checkpoints, traces, or player-mutated save workspace files.
 - The first package container is zip with `game-card.json`, `workspace/*`, optional `frontend/*`, and reserved `cover/*`.
 - `game-card.json` uses `GameCardPackageManifest` with schema `tsian.game-card.package.v1` and embeds the authoritative `GameCardManifest`.
+- `GameCardManifest.frontend` is optional. A frontend-less Game Card is a reusable workspace/Agent/Skill template, not a playable card.
+- When provided, `frontend` must be `remote` or `packaged`. Same-realm `builtin` game frontends are not supported.
 - Packaged frontends are built static files under `frontend/`; Tsian must not run source builds, npm install, or framework-specific bundling.
 - Packaged frontend files are stored beside the reusable Game Card in `gameCardFrontendFiles`; saves created from a card do not copy those files.
 - `frontend.kind === "packaged"` must run in an iframe and reuse the `tsian.play-bridge.v1` bridge. It must not run in the platform JS realm.
 - Packaged frontends use a same-origin virtual resource URL backed by Service Worker/IndexedDB. The first packaged iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Keep `allow-same-origin` while this loader relies on Service Worker-controlled same-origin iframe clients; sandboxed opaque-origin navigations bypass the local virtual resource layer.
 - The virtual resource layer should return CORS-friendly headers for module chunks and other built assets.
 
-### 3. Validation & Error Matrix
+### 4. Validation & Error Matrix
 
 - Missing/unsupported package schema -> reject import with a clear package error.
 - Missing or malformed embedded manifest -> reject import.
 - Built-in blank card id -> reject import; built-in templates are refreshed by platform seed helpers only.
+- `frontend.kind === "builtin"` -> reject import/write with a clear unsupported frontend-kind error.
+- Missing frontend -> allow import/write, but `/play` must show a not-configured error until a remote or packaged frontend is configured.
 - Packaged frontend without a matching entry file -> reject import.
 - Absolute paths, path traversal, empty paths, NUL bytes, or unknown top-level roots -> reject import.
 - Importing a package creates or updates the reusable Game Card only; it does not create a Save Instance.
 - Exporting a Game Card writes manifest, workspace template files, and stored packaged frontend files only.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a package with `frontend.kind === "packaged"` includes `frontend/index.html` and lists that file in `frontendFiles`.
+- Good: a package with `frontend.kind === "remote"` omits `frontendFiles` and uses a browser-loadable URL.
+- Base: a package omits `frontend`; it imports as a non-playable workspace template.
+- Bad: a package uses `frontend.kind === "builtin"` or includes save snapshots/checkpoints.
+
+### 6. Tests Required
+
+- Assert package import accepts missing frontend.
+- Assert package import rejects `builtin` frontend kind.
+- Assert packaged frontend entries must exist under `frontend/`.
+- Assert package export omits save-scoped state.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```json
+{ "frontend": { "kind": "builtin", "id": "legacy-default" } }
+```
+
+#### Correct
+
+```json
+{ "frontend": { "kind": "packaged", "entry": "frontend/index.html", "bridgeVersion": "tsian.play-bridge.v1" } }
+```
 
 ## Scenario: Remote Iframe Play Frontend Bridge
 
@@ -48,9 +87,16 @@
 
 - Trigger: platform-web loads a Game Card `frontend.kind === "remote"` binding or changes `src/bridge/remote-iframe-bridge.ts` / `PlayView.vue` frontend loading.
 
-### 2. Contracts
+### 2. Signatures
 
-- `PlayView.vue` remains a thin active frontend loader: wait for `waitForPlatformHostReady()`, read `getPlatformActiveGameCard()`, mount `official-default` for supported builtin bindings, or mount a sandboxed iframe for remote bindings.
+- `GameCardManifest.frontend?: GameCardFrontendBinding`
+- `mountRemoteIframeFrontend(container, { url, bridge, title, sandbox?, onLoad, onError })`
+- `resolvePackagedFrontendUrl({ gameCardId, entry }): Promise<string>`
+
+### 3. Contracts
+
+- `PlayView.vue` remains a thin active frontend loader: wait for `waitForPlatformHostReady()`, read `getPlatformActiveGameCard()`, then mount a sandboxed iframe for remote or packaged bindings.
+- `PlayView.vue` must not mount same-realm built-in game UI. If the active Game Card has no frontend, show a compact not-configured error state.
 - Remote frontend URLs are normalized at the iframe adapter boundary. Accept browser-loadable `http:` / `https:` URLs and relative URLs resolving to those schemes; reject dangerous or non-web schemes such as `javascript:`, `data:`, and `vbscript:` before iframe creation.
 - The first iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Do not add top navigation, popups, downloads, or broader permissions without a new product/security decision.
 - Remote bridge messages use shared `RemotePlayBridge*` contract types. Runtime validation belongs in platform-web, not in `@tsian/contracts`.
@@ -59,14 +105,47 @@
 - The default remote bridge must not expose the `debug` namespace and must reject `query.query({ resource: "ai-debug" })`. A `turn-debug-ready` notification may be sent without debug records.
 - Workspace read/list/search should reuse existing platform-host query behavior. Workspace write/delete and checkpoint restore should reuse existing `platform.runAction` behavior.
 
-### 3. Validation & Error Matrix
+### 4. Validation & Error Matrix
 
-- Missing active Game Card -> fall back to `official-default`.
-- Unsupported builtin frontend id -> show a compact error state instead of silently mounting a different frontend.
+- Missing active Game Card or missing frontend binding -> show a compact not-configured error state.
+- Unsupported persisted frontend kind, including stale `builtin` records -> show a compact unsupported frontend error state instead of silently mounting a different frontend.
 - Invalid or forbidden remote URL -> show a compact error state before iframe creation.
 - Malformed remote request payload -> return a structured bridge error response when the request has a valid session/id; otherwise ignore.
 - Remote `ai-debug` query -> structured forbidden error response.
 - Iframe load error -> show a compact error state and do not mutate save data.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a card with `frontend.kind === "remote"` loads through `mountRemoteIframeFrontend`.
+- Good: a card with `frontend.kind === "packaged"` resolves a Service Worker-backed virtual URL and loads through the same iframe bridge.
+- Base: a built-in blank card has no `frontend`; it can seed workspaces and saves, but `/play` reports that no game frontend is configured.
+- Bad: `PlayView.vue` imports a game UI module directly and passes the object bridge into the same JS realm.
+- Bad: package import accepts `frontend.kind === "builtin"`.
+
+### 6. Tests Required
+
+- Assert remote frontend bindings still resolve and mount.
+- Assert packaged frontend bindings validate their `frontend/` entry and mount through iframe bridge.
+- Assert frontend-less cards produce a not-configured `/play` error.
+- Assert stale/unsupported `builtin` frontend records do not mount same-realm UI.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const frontend = activeCard?.manifest.frontend ?? { kind: "builtin", id: "legacy-default" }
+```
+
+#### Correct
+
+```typescript
+const frontend = activeCard?.manifest.frontend
+if (!frontend) {
+  setMissingFrontendError(activeCard?.manifest.name)
+  return
+}
+```
 
 ## Scenario: Runtime Workspace Registry And Detail Queries
 

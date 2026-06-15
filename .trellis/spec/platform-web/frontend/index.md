@@ -1,6 +1,6 @@
 # platform-web Frontend Specs
 
-`apps/platform-web` is the browser platform shell. It owns the Vue app, local platform host, Agent Runtime MVP implementation, Dexie persistence, bridge implementation, AI client/debug records, and official-default frontend loader.
+`apps/platform-web` is the browser platform shell. It owns the Vue app, local platform host, Agent Runtime MVP implementation, Dexie persistence, bridge implementation, AI client/debug records, and remote/packaged frontend loading.
 
 Use these specs when changing `apps/platform-web/src/**`.
 

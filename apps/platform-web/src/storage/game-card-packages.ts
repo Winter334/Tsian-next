@@ -154,24 +154,24 @@ function normalizePackageFileEntries(
   return value.map((entry) => normalizePackageFileEntry(entry, fieldName))
 }
 
-function normalizeFrontendBinding(value: unknown): GameCardFrontendBinding {
+function normalizeFrontendBinding(value: unknown): GameCardFrontendBinding | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+
   if (!isRecord(value)) {
     throw new GameCardPackageError(
       "GAME_CARD_FRONTEND_INVALID",
-      "Game card frontend binding is required.",
+      "Game card frontend binding must be an object when provided.",
     )
   }
 
   const kind = value.kind
   if (kind === "builtin") {
-    return {
-      kind,
-      id: requireString(
-        value.id,
-        "GAME_CARD_FRONTEND_BUILTIN_ID_REQUIRED",
-        "Builtin frontend id is required.",
-      ),
-    }
+    throw new GameCardPackageError(
+      "GAME_CARD_FRONTEND_KIND_UNSUPPORTED",
+      "Builtin game frontends are no longer supported.",
+    )
   }
 
   if (kind === "remote") {
@@ -346,7 +346,7 @@ function validatePackagedFrontendEntry(
   frontendFiles: Array<{ path: string }>,
 ): void {
   const frontend = manifest.manifest.frontend
-  if (frontend.kind !== "packaged") {
+  if (!frontend || frontend.kind !== "packaged") {
     return
   }
   if (!frontend.entry.startsWith(FRONTEND_PREFIX)) {

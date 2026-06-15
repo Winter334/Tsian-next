@@ -14,7 +14,7 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Prototype schema changes use a new database name, not migrations.
 - Multi-table writes should use `localDb.transaction`.
 - Current active tables are `meta`, `gameCards`, `gameCardFrontendFiles`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, and `workspaceFiles`.
-- Game cards are reusable workspace templates and frontend bindings; saves are independent card-derived play instances and may store `gameCardId` / `gameCardVersion`.
+- Game cards are reusable workspace templates with optional frontend bindings; saves are independent card-derived play instances and may store `gameCardId` / `gameCardVersion`.
 - Packaged frontend files are reusable Game Card assets stored beside game cards, not copied into save workspaces.
 - Built-in game cards may be refreshed by platform seed helpers when their source is `builtin` and their template/manifest is stale. This refresh updates the reusable template only; existing save workspaces still rely on non-overwriting workspace-version upgrades.
 - Checkpoints store snapshot, history, and workspace files.

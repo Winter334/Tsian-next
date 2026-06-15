@@ -332,7 +332,7 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "- Tsian is an Agent-Orchestrated Runtime platform for AIRP.",
   "- Platform owns model configuration, API-key boundaries, local storage, checkpoints, bridge APIs, execution policy, and sandboxing.",
-  "- A Game Card is a reusable workspace template plus frontend binding and metadata.",
+  "- A Game Card is a reusable workspace template plus optional frontend binding and metadata.",
   "- A Save Instance is the playable copy created from a Game Card. Its workspace is independent and mutates during play.",
   "- A Checkpoint is a rollback point inside one Save Instance, not a top-level game card or save card.",
   "- Game frontends are supplied by Game Cards. Platform UI should not become a universal gameplay renderer.",

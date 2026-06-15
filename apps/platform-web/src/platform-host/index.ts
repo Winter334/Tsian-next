@@ -566,13 +566,9 @@ function normalizeRuntimeDiagnosticsQueryParams(
   }
 }
 
-function formatActiveFrontendId(frontend: GameCardFrontendBinding | undefined): string {
+function formatActiveFrontendId(frontend: GameCardFrontendBinding | undefined): string | undefined {
   if (!frontend) {
-    return "official-default"
-  }
-
-  if (frontend.kind === "builtin") {
-    return frontend.id
+    return undefined
   }
 
   if (frontend.kind === "remote") {
