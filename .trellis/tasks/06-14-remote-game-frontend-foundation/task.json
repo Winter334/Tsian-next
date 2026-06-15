@@ -1,0 +1,31 @@
+{
+  "id": "remote-game-frontend-foundation",
+  "name": "remote-game-frontend-foundation",
+  "title": "Game Card And Remote Frontend Foundation",
+  "description": "Parent roadmap for game cards, save instances, remote sandboxed game frontends, workspace assistant templates, and future game card import/export.",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-14",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-14-game-card-library-save-model",
+    "06-14-remote-iframe-frontend-bridge",
+    "06-14-workspace-assistant-agent-template",
+    "06-14-game-card-import-export-package-format"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

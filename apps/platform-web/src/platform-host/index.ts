@@ -4,6 +4,7 @@ import type {
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
+  GameCardFrontendBinding,
   PlatformActionError,
   PlatformActionRequest,
   PlatformActionResult,
@@ -36,12 +37,20 @@ import {
   createRuntimeWorkspaceTransaction,
   createEmptyRuntimeSnapshot,
   createLocalSave,
+  createLocalSaveFromGameCard,
+  deleteWorkspacePathForSave,
   deleteLocalSave,
+  ensureBuiltinBlankGameCard,
+  exportGameCardPackage,
   getActiveSaveId,
+  getBuiltinBlankGameCard,
   getHistoryForSave,
+  getLocalGameCard,
   getSnapshotForSave,
+  importGameCardPackage,
   initializeWorkspaceForSave,
   listCheckpointsForSave,
+  listLocalGameCards,
   listLocalSaves,
   listWorkspaceEntriesForSave,
   listWorkspaceFilesForSave,
@@ -52,7 +61,6 @@ import {
   setActiveSaveId,
   writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
-  deleteWorkspacePathForSave,
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
@@ -558,13 +566,30 @@ function normalizeRuntimeDiagnosticsQueryParams(
   }
 }
 
+function formatActiveFrontendId(frontend: GameCardFrontendBinding | undefined): string {
+  if (!frontend) {
+    return "official-default"
+  }
+
+  if (frontend.kind === "builtin") {
+    return frontend.id
+  }
+
+  if (frontend.kind === "remote") {
+    return frontend.url
+  }
+
+  return frontend.entry
+}
+
 export const playFrontendBridge: PlayFrontendBridge = {
   runtime: baseBridge.runtime,
   platform: {
     async getPlatformContext() {
+      const activeCard = await getPlatformActiveGameCard()
       return {
         version: "0.0.0",
-        activeFrontendId: "official-default",
+        activeFrontendId: formatActiveFrontendId(activeCard?.manifest.frontend),
         activeSaveId: (await getActiveSaveId()) ?? undefined,
       }
     },
@@ -905,6 +930,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
 }
 
 export async function initializePlatformHost(): Promise<void> {
+  await ensureBuiltinBlankGameCard()
+
   const saves = await listLocalSaves()
   const activeSaveId = await getActiveSaveId()
 
@@ -941,6 +968,58 @@ export async function createPlatformSave(input?: {
   await setActiveSaveId(created.id)
   await restoreActiveSnapshotFromStorage(created.id)
   return created
+}
+
+export async function listPlatformGameCards() {
+  await ensureBuiltinBlankGameCard()
+  return listLocalGameCards()
+}
+
+export async function getPlatformGameCard(cardId: string) {
+  return getLocalGameCard(cardId)
+}
+
+export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | Uint8Array) {
+  await ensureBuiltinBlankGameCard()
+  return importGameCardPackage(input)
+}
+
+export async function exportPlatformGameCardPackage(cardId: string) {
+  await ensureBuiltinBlankGameCard()
+  return exportGameCardPackage(cardId)
+}
+
+export async function createPlatformSaveFromGameCard(
+  cardId: string,
+  input?: { name?: string },
+) {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+
+  const created = await createLocalSaveFromGameCard(card, input)
+  await setActiveSaveId(created.id)
+  await restoreActiveSnapshotFromStorage(created.id)
+  return created
+}
+
+export async function getPlatformActiveGameCard() {
+  const activeSaveId = await getActiveSaveId()
+  if (!activeSaveId) {
+    return null
+  }
+
+  const activeSave = (await listLocalSaves()).find((save) => save.id === activeSaveId)
+  if (!activeSave) {
+    return null
+  }
+
+  if (!activeSave.gameCardId) {
+    return getBuiltinBlankGameCard()
+  }
+
+  return getLocalGameCard(activeSave.gameCardId)
 }
 
 export async function selectPlatformSave(saveId: string) {

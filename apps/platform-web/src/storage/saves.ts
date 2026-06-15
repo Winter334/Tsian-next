@@ -5,6 +5,7 @@ import type {
 } from "@tsian/contracts"
 import {
   localDb,
+  type LocalGameCardRecord,
   type LocalSaveHistoryRecord,
   type LocalSaveRecord,
   type LocalSaveSnapshotRecord,
@@ -14,10 +15,10 @@ import {
   createCheckpointRecordForSave,
   deleteCheckpointsForSave,
 } from "./checkpoints"
+import { getBuiltinBlankGameCard } from "./game-cards"
 import {
   createLocalWorkspaceFileRecord,
   deleteWorkspaceForSave,
-  initializeWorkspaceForSave,
 } from "./workspace"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
@@ -81,13 +82,27 @@ export async function createLocalSave(
   name?: string,
   snapshot: RuntimeSnapshotShell = createEmptyRuntimeSnapshot(),
 ): Promise<LocalSaveRecord> {
+  const card = await getBuiltinBlankGameCard()
+  return createLocalSaveFromGameCard(card, { name, snapshot })
+}
+
+export async function createLocalSaveFromGameCard(
+  card: LocalGameCardRecord,
+  input: {
+    name?: string
+    snapshot?: RuntimeSnapshotShell
+  } = {},
+): Promise<LocalSaveRecord> {
   const existing = await localDb.saves.count()
   const now = Date.now()
+  const snapshot = input.snapshot ?? createEmptyRuntimeSnapshot()
   const history = normalizeMessages(snapshot.state.messages)
 
   const save: LocalSaveRecord = {
     id: createSaveId(),
-    name: name?.trim() || `Session ${existing + 1}`,
+    name: input.name?.trim() || `Session ${existing + 1}`,
+    gameCardId: card.manifest.id,
+    gameCardVersion: card.manifest.version,
     createdAt: now,
     updatedAt: now,
   }
@@ -109,26 +124,46 @@ export async function createLocalSave(
     messages: history,
   }
 
-  await localDb.transaction(
-    "rw",
-    localDb.saves,
-    localDb.saveSnapshots,
-    localDb.saveHistory,
-    async () => {
-      await localDb.saves.put(save)
-      await localDb.saveSnapshots.put(snapshotRecord)
-      await localDb.saveHistory.put(historyRecord)
+  const workspaceRecords = card.workspaceTemplateFiles.map((file) => createLocalWorkspaceFileRecord(
+    save.id,
+    {
+      ...file,
+      mediaType: file.mediaType ?? "",
+      createdAt: now,
+      updatedAt: now,
     },
-  )
-
-  await initializeWorkspaceForSave(save.id)
-
-  await createCheckpointForSave(save.id, {
+  ))
+  const checkpointWorkspaceFiles = workspaceRecords
+    .map(({ id: _id, saveId: _saveId, ...file }) => file)
+    .sort((left, right) => left.path.localeCompare(right.path))
+  const checkpoint = createCheckpointRecordForSave(save.id, {
     snapshot: snapshotRecord.snapshot,
     history,
     reason: "initial",
     label: "初始状态",
-  })
+    workspaceFiles: checkpointWorkspaceFiles,
+  }, now)
+
+  await localDb.transaction(
+    "rw",
+    [
+      localDb.saves,
+      localDb.saveSnapshots,
+      localDb.saveHistory,
+      localDb.workspaceFiles,
+      localDb.checkpoints,
+    ],
+    async () => {
+      await localDb.saves.put(save)
+      await localDb.saveSnapshots.put(snapshotRecord)
+      await localDb.saveHistory.put(historyRecord)
+
+      for (const record of workspaceRecords) {
+        await localDb.workspaceFiles.put(record)
+      }
+      await localDb.checkpoints.put(checkpoint)
+    },
+  )
 
   return save
 }

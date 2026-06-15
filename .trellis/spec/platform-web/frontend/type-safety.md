@@ -15,6 +15,59 @@
 - Keep workspace write/delete inputs normalized at platform-host or storage boundaries and fail loudly on invalid writes.
 - Convert query params at the platform-host boundary before passing to storage helpers.
 
+## Scenario: Game Card Package And Packaged Frontend
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web imports/exports `*.tsian-card.zip`, changes `src/storage/game-card-packages.ts`, changes packaged frontend storage, or loads `frontend.kind === "packaged"` in `PlayView.vue`.
+
+### 2. Contracts
+
+- Game Card packages are reusable templates, not Save Instance exports. They must not include save snapshots, save history, checkpoints, traces, or player-mutated save workspace files.
+- The first package container is zip with `game-card.json`, `workspace/*`, optional `frontend/*`, and reserved `cover/*`.
+- `game-card.json` uses `GameCardPackageManifest` with schema `tsian.game-card.package.v1` and embeds the authoritative `GameCardManifest`.
+- Packaged frontends are built static files under `frontend/`; Tsian must not run source builds, npm install, or framework-specific bundling.
+- Packaged frontend files are stored beside the reusable Game Card in `gameCardFrontendFiles`; saves created from a card do not copy those files.
+- `frontend.kind === "packaged"` must run in an iframe and reuse the `tsian.play-bridge.v1` bridge. It must not run in the platform JS realm.
+- Packaged frontends use a same-origin virtual resource URL backed by Service Worker/IndexedDB. The first packaged iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Keep `allow-same-origin` while this loader relies on Service Worker-controlled same-origin iframe clients; sandboxed opaque-origin navigations bypass the local virtual resource layer.
+- The virtual resource layer should return CORS-friendly headers for module chunks and other built assets.
+
+### 3. Validation & Error Matrix
+
+- Missing/unsupported package schema -> reject import with a clear package error.
+- Missing or malformed embedded manifest -> reject import.
+- Built-in blank card id -> reject import; built-in templates are refreshed by platform seed helpers only.
+- Packaged frontend without a matching entry file -> reject import.
+- Absolute paths, path traversal, empty paths, NUL bytes, or unknown top-level roots -> reject import.
+- Importing a package creates or updates the reusable Game Card only; it does not create a Save Instance.
+- Exporting a Game Card writes manifest, workspace template files, and stored packaged frontend files only.
+
+## Scenario: Remote Iframe Play Frontend Bridge
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web loads a Game Card `frontend.kind === "remote"` binding or changes `src/bridge/remote-iframe-bridge.ts` / `PlayView.vue` frontend loading.
+
+### 2. Contracts
+
+- `PlayView.vue` remains a thin active frontend loader: wait for `waitForPlatformHostReady()`, read `getPlatformActiveGameCard()`, mount `official-default` for supported builtin bindings, or mount a sandboxed iframe for remote bindings.
+- Remote frontend URLs are normalized at the iframe adapter boundary. Accept browser-loadable `http:` / `https:` URLs and relative URLs resolving to those schemes; reject dangerous or non-web schemes such as `javascript:`, `data:`, and `vbscript:` before iframe creation.
+- The first iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Do not add top navigation, popups, downloads, or broader permissions without a new product/security decision.
+- Remote bridge messages use shared `RemotePlayBridge*` contract types. Runtime validation belongs in platform-web, not in `@tsian/contracts`.
+- The adapter must filter by mounted `iframe.contentWindow`, generated session id, and accepted handshake origin before dispatching requests.
+- The allowed remote methods are `runtime.getRuntimeSnapshot`, `interaction.sendMessage`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`.
+- The default remote bridge must not expose the `debug` namespace and must reject `query.query({ resource: "ai-debug" })`. A `turn-debug-ready` notification may be sent without debug records.
+- Workspace read/list/search should reuse existing platform-host query behavior. Workspace write/delete and checkpoint restore should reuse existing `platform.runAction` behavior.
+
+### 3. Validation & Error Matrix
+
+- Missing active Game Card -> fall back to `official-default`.
+- Unsupported builtin frontend id -> show a compact error state instead of silently mounting a different frontend.
+- Invalid or forbidden remote URL -> show a compact error state before iframe creation.
+- Malformed remote request payload -> return a structured bridge error response when the request has a valid session/id; otherwise ignore.
+- Remote `ai-debug` query -> structured forbidden error response.
+- Iframe load error -> show a compact error state and do not mutate save data.
+
 ## Scenario: Runtime Workspace Registry And Detail Queries
 
 ### 1. Scope / Trigger
@@ -39,6 +92,7 @@
 - `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's `AGENT.md`, notes/session files, visible skill index, and declared `contextPaths`.
 - `skill-registry` returns lightweight `SkillRegistryEntry[]` built from `skills/*/SKILL.md` and `agents/*/skills/*/SKILL.md`.
 - `skill-detail` returns zero or one `SkillDetailEntry` for a selected `SKILL.md` path.
+- Default blank workspaces may include `agents/studio-assistant/AGENT.md`, assistant notes/session, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`. These are ordinary workspace files and must flow through the same registry/detail/context mechanisms as author-provided Agents and Skills.
 - Registry entries include path and metadata fields only. Do not expose full skill instructions, actions, schemas, examples, scripts, or references through the registry query.
 - `SkillRegistryEntry.name` and `description` are the model-facing Skill identifiers. Build them from frontmatter `name` / `description`, with compatibility fallbacks to `id` / `summary` / path-derived values.
 - Keep `id`, `title`, `summary`, and `path` for compatibility with bridge/UI/debug consumers.
@@ -73,7 +127,9 @@
 ### 6. Tests Required
 
 - Assert new saves include default `agents/master/AGENT.md` and `agents/narrative/AGENT.md`.
+- Assert new saves include default `agents/studio-assistant/AGENT.md`, `agents/studio-assistant/skills/framework-knowledge/SKILL.md`, and `docs/tsian-framework-knowledge.md`.
 - Assert `agent-registry` returns master and narrative entries for a new save.
+- Assert `agent-registry` returns `studio-assistant` for a new save without changing the default master/narrative turn entrypoint.
 - Assert shared and agent-local skills are discovered and sorted deterministically.
 - Assert `name` / `description` prefer current Skill frontmatter and fall back to legacy `id` / `summary`.
 - Assert malformed or missing frontmatter does not crash parsing.
@@ -686,7 +742,7 @@ interface RawAirpHistoryTurnRecord {
 - Empty `writes` is a valid explicit no-op maintenance decision.
 - Invalid maintenance plans become structured action/script observations and trace summaries; they must not mutate ordinary workspace files.
 - `.tsian/*` remains host-owned platform metadata and is never a valid ordinary maintenance target.
-- New saves include the official maintenance Skill. Existing non-empty saves receive missing official maintenance Skill files through a versioned default workspace upgrade that preserves same-path user files and does not recreate the Skill after the upgrade marker is current.
+- New saves include the official maintenance Skill and the official workspace-assistant substrate. Existing non-empty saves receive missing official default files through a versioned default workspace upgrade that preserves same-path user files and does not recreate those files after the upgrade marker is current.
 
 ### 4. Validation & Error Matrix
 
@@ -696,7 +752,7 @@ interface RawAirpHistoryTurnRecord {
 - Loaded maintenance Skill plus valid plan -> approved target files are written through the staged workspace transaction.
 - Loaded maintenance Skill plus empty plan -> action returns no-op and no maintenance files are mutated.
 - Invalid schema, invalid path, invalid mode, non-string content/reason, oversized content, or `.tsian/*` target -> action observation is an error and no maintenance writes are applied.
-- Existing save with workspaceVersion below current -> missing official maintenance Skill files are created, existing same-path files are preserved, and manifest advances.
+- Existing save with workspaceVersion below current -> missing official maintenance Skill, workspace-assistant, and framework-knowledge files are created, existing same-path files are preserved, and manifest advances.
 - Existing save with current workspaceVersion -> deleted official maintenance Skill files are not recreated on every turn.
 
 ### 5. Good/Base/Bad Cases
@@ -707,7 +763,7 @@ interface RawAirpHistoryTurnRecord {
 - Base: a successful turn with no loaded maintenance Skill still appends session transcripts and raw history, but produces no enhanced memory file updates.
 - Bad: platform-host runs memory maintenance after every turn without a Skill action.
 - Bad: Runtime Trace stores full Agent prompt/message arrays instead of only summary events.
-- Bad: default workspace upgrade overwrites a user-authored `skills/memory-maintenance/SKILL.md`.
+- Bad: default workspace upgrade overwrites a user-authored `skills/memory-maintenance/SKILL.md`, `agents/studio-assistant/AGENT.md`, or `docs/tsian-framework-knowledge.md`.
 
 ### 6. Tests Required
 
@@ -717,7 +773,7 @@ interface RawAirpHistoryTurnRecord {
 - Assert maintenance action is unavailable until the declaring Skill is loaded.
 - Assert default maintenance Skill is discoverable through `skill-registry`, loadable through `skill_load`, and runs through `browser_script`.
 - Assert valid maintenance plans write only allowed paths and invalid plans write nothing.
-- Assert default workspace upgrade is non-overwriting and manifest-gated.
+- Assert default workspace upgrade is non-overwriting and manifest-gated for official Skills, workspace-assistant files, and framework knowledge docs.
 
 ### 7. Wrong vs Correct
 

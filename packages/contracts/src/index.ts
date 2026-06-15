@@ -1,5 +1,6 @@
 export * from "./bridge"
 export * from "./debug"
 export * from "./frontend-package"
+export * from "./game-card"
 export * from "./memory"
 export * from "./runtime"

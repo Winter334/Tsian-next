@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Verify registry/Skill/workspace behavior remains aligned after default template changes."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Verify local persistence and save/workspace semantics remain stable."}
+{"file": ".trellis/spec/contracts/backend/directory-structure.md", "reason": "Verify contract/docs wording remains aligned with game-card shared types."}
+{"file": "docs/active/agent-framework-runtime-workspace-direction.md", "reason": "Verify the final docs preserve the current Agent/Skill/workspace model."}
+{"file": "docs/active/airp-workflow-platform-direction.md", "reason": "Verify product direction still states assistant/game frontend boundaries accurately."}

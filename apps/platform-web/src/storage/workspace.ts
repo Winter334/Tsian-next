@@ -1,4 +1,5 @@
 import type {
+  GameCardWorkspaceTemplateFile,
   WorkspaceEntry,
   WorkspaceFile,
   WorkspaceSearchResult,
@@ -43,7 +44,7 @@ export class WorkspaceStorageError extends Error {
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
-const DEFAULT_WORKSPACE_VERSION = 3
+const DEFAULT_WORKSPACE_VERSION = 4
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 const DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS = new Set([
   "state/README.md",
@@ -51,6 +52,12 @@ const DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS = new Set([
   "state/data/README.md",
   "skills/memory-maintenance/SKILL.md",
   "skills/memory-maintenance/scripts/apply-maintenance-plan.js",
+  "docs/README.md",
+  "docs/tsian-framework-knowledge.md",
+  "agents/studio-assistant/AGENT.md",
+  "agents/studio-assistant/notes.md",
+  "agents/studio-assistant/session.jsonl",
+  "agents/studio-assistant/skills/framework-knowledge/SKILL.md",
 ])
 
 const MEMORY_MAINTENANCE_SKILL_MD = [
@@ -256,6 +263,132 @@ const MEMORY_MAINTENANCE_SCRIPT_JS = [
   "",
 ].join("\n")
 
+const STUDIO_ASSISTANT_AGENT_MD = [
+  "---",
+  "id: studio-assistant",
+  "title: Studio Assistant",
+  "summary: Helps players and authors understand, inspect, and maintain this Tsian workspace.",
+  "contacts:",
+  "defaultSkills:",
+  "  - framework-knowledge",
+  "contextPaths:",
+  "  - README.md",
+  "  - docs/tsian-framework-knowledge.md",
+  "  - agents/README.md",
+  "  - skills/README.md",
+  "  - state/README.md",
+  "  - frontend/README.md",
+  "---",
+  "",
+  "# Studio Assistant",
+  "",
+  "You are the workspace assistant for this game card and save instance.",
+  "Help players and authors understand the Tsian framework, inspect workspace conventions, and plan safe changes to Agents, Skills, state files, frontend data, memory, diagnostics, and game-card content.",
+  "",
+  "When the user asks framework, authoring, workspace, or diagnostics questions, load the `framework-knowledge` Skill before giving a confident answer.",
+  "Treat current workspace files as the source of truth for this save. Read local README files, schemas, Agent definitions, Skill definitions, and diagnostics when the answer depends on local content.",
+  "",
+  "Do not claim hidden platform powers. You are ordinary workspace content and can only use the tools, bridge APIs, or future UI actions explicitly made available to you.",
+  "Do not edit files unless the current UI/tooling asks you to perform or prepare a concrete change.",
+  "",
+  "The polished first-launch world creation flow is future content-layer work. For now, help authors clarify world settings and point them to the files that would hold those settings.",
+  "",
+].join("\n")
+
+const FRAMEWORK_KNOWLEDGE_SKILL_MD = [
+  "---",
+  "name: framework-knowledge",
+  "title: Framework Knowledge",
+  "description: Consult the official Tsian framework knowledge base and local workspace conventions before answering authoring, diagnostics, or workspace-management questions.",
+  "triggers:",
+  "  - The user asks how Tsian, Game Cards, Save Instances, checkpoints, Runtime Workspace, Agents, Skills, frontend bridge, traces, or diagnostics work",
+  "  - The user asks how to edit, fix, or design workspace files",
+  "  - The assistant is unsure whether an answer depends on platform or workspace conventions",
+  "appliesTo:",
+  "  - studio-assistant",
+  "---",
+  "",
+  "# Framework Knowledge",
+  "",
+  "Use this Skill when answering questions about Tsian framework behavior, workspace layout, game-card authoring, diagnostics, or maintenance decisions.",
+  "",
+  "Procedure:",
+  "",
+  "1. Read `docs/tsian-framework-knowledge.md` first. If the question uses terms you cannot find directly, search the workspace for those terms.",
+  "2. If the answer depends on local content, inspect the relevant files before answering. Common files include `README.md`, `agents/README.md`, `skills/README.md`, `state/README.md`, `frontend/README.md`, Agent `AGENT.md` files, Skill `SKILL.md` files, and schemas near the data being discussed.",
+  "3. Answer from workspace facts. Mention the specific files or conventions you relied on when that helps the user verify the answer.",
+  "4. If the knowledge base is incomplete or the requested behavior is future work, say that clearly and separate current facts from suggestions.",
+  "",
+  "This Skill declares no actions. It uses ordinary workspace read, list, and search tools.",
+  "",
+].join("\n")
+
+const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
+  "# Tsian Framework Knowledge",
+  "",
+  "This is a temporary official knowledge base for the workspace assistant. It is intentionally compact and will be expanded as the project matures.",
+  "",
+  "## Product Model",
+  "",
+  "- Tsian is an Agent-Orchestrated Runtime platform for AIRP.",
+  "- Platform owns model configuration, API-key boundaries, local storage, checkpoints, bridge APIs, execution policy, and sandboxing.",
+  "- A Game Card is a reusable workspace template plus frontend binding and metadata.",
+  "- A Save Instance is the playable copy created from a Game Card. Its workspace is independent and mutates during play.",
+  "- A Checkpoint is a rollback point inside one Save Instance, not a top-level game card or save card.",
+  "- Game frontends are supplied by Game Cards. Platform UI should not become a universal gameplay renderer.",
+  "",
+  "## Runtime Workspace",
+  "",
+  "Runtime Workspace is the save-scoped virtual file system. It can contain Agents, Skills, world data, memory, state files, frontend data, history, archives, and platform-owned metadata.",
+  "",
+  "Ordinary workspace paths are visible to Agents, Skills, and game frontends. `.tsian/` is platform-owned metadata and is hidden from ordinary workspace read/list/search APIs.",
+  "",
+  "Directory README files are important. They explain local conventions for data that the platform intentionally does not hardcode.",
+  "",
+  "## Agents",
+  "",
+  "Agents are ordinary workspace participants under `agents/<agent>/AGENT.md`. Agent directories may also include `notes.md`, `session.jsonl`, and local Skills under `agents/<agent>/skills/`.",
+  "",
+  "The default AIRP runtime still uses `master` and `narrative` as the normal turn path. The `studio-assistant` Agent is for future/player-facing workspace help and should not change normal AIRP turn behavior by existing alone.",
+  "",
+  "An Agent definition should state responsibility, when to act, output expectations, contacts, default or optional Skills, and useful context paths.",
+  "",
+  "## Skills",
+  "",
+  "Skills are on-demand capability packages. Shared Skills live under `skills/<skill>/SKILL.md`; Agent-local Skills live under `agents/<agent>/skills/<skill>/SKILL.md`.",
+  "",
+  "Only Skill names, descriptions, triggers, and applicability belong in the eager Skill Index. Detailed instructions load through `skill_load` only when needed.",
+  "",
+  "Skill actions must stay gated behind a loaded Skill. Gameplay-specific behavior belongs in Skills and workspace conventions instead of hardcoded platform tools.",
+  "",
+  "## State And Frontend Data",
+  "",
+  "Structured state is not a platform-owned table model. It belongs in workspace files documented by README files, schemas, Agents, Skills, or frontend conventions.",
+  "",
+  "The `frontend/` directory is for data agreed between the runtime and the active game frontend. The platform does not interpret those gameplay fields.",
+  "",
+  "## Memory, History, And Diagnostics",
+  "",
+  "Raw AIRP turn history under `history/turns/` stores successful player input and final narrative output. It is ordinary memory feedstock, not trace data.",
+  "",
+  "Enhanced memory such as timeline summaries, durable facts, or long-term summaries is derived workspace content maintained by Agents and Skills.",
+  "",
+  "Runtime traces live under `.tsian/traces/` as platform-owned diagnostics. Agent-facing diagnostics should expose compact facts, not raw prompts, full tool observations, or repair guesses.",
+  "",
+  "## Assistant Boundary",
+  "",
+  "The workspace assistant is game-card/workspace content. It is not a hidden official persona baked into the platform.",
+  "",
+  "A Game Card may replace or remove the assistant. The manifest assistant metadata tells future platform UI which Agent should be used as the workspace assistant entrypoint.",
+  "",
+  "The assistant should consult this knowledge base and local workspace files before giving framework advice. If current docs do not answer a question, it should say so rather than inventing platform behavior.",
+  "",
+  "## Deferred Content Work",
+  "",
+  "A polished first-launch world creation flow is not part of the current foundation. The likely future flow will collect world/theme/settings from the player while using official default Agents, Skills, state contracts, and frontend content, then write the result into ordinary workspace files.",
+  "",
+].join("\n")
+
 const DEFAULT_WORKSPACE_FILES: Array<{
   path: string
   content: string
@@ -282,6 +415,7 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "",
       "Agent definitions live under `agents/<agent>/AGENT.md`.",
       "Agent-local skills can live under `agents/<agent>/skills/`.",
+      "A game card can declare a workspace assistant Agent in its manifest; the built-in blank card uses `agents/studio-assistant/AGENT.md`.",
       "",
     ].join("\n"),
   },
@@ -391,6 +525,23 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     mediaType: "application/x-ndjson",
   },
   {
+    path: "agents/studio-assistant/AGENT.md",
+    content: STUDIO_ASSISTANT_AGENT_MD,
+  },
+  {
+    path: "agents/studio-assistant/notes.md",
+    content: "# Studio Assistant Notes\n\n",
+  },
+  {
+    path: "agents/studio-assistant/session.jsonl",
+    content: "",
+    mediaType: "application/x-ndjson",
+  },
+  {
+    path: "agents/studio-assistant/skills/framework-knowledge/SKILL.md",
+    content: FRAMEWORK_KNOWLEDGE_SKILL_MD,
+  },
+  {
     path: "skills/README.md",
     content: [
       "# Shared Skills",
@@ -408,6 +559,20 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     path: "skills/memory-maintenance/scripts/apply-maintenance-plan.js",
     content: MEMORY_MAINTENANCE_SCRIPT_JS,
     mediaType: "text/javascript",
+  },
+  {
+    path: "docs/README.md",
+    content: [
+      "# Docs",
+      "",
+      "Official and game-card-authored documentation for Agents, Skills, frontends, and authors can live here.",
+      "The built-in `docs/tsian-framework-knowledge.md` file is temporary official framework knowledge used by the workspace assistant.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "docs/tsian-framework-knowledge.md",
+    content: TSIAN_FRAMEWORK_KNOWLEDGE_MD,
   },
   {
     path: "history/README.md",
@@ -658,6 +823,17 @@ function normalizeMediaType(value: unknown, path: string): string {
   if (path.endsWith(".ts")) return "text/typescript"
   if (path.endsWith(".js")) return "text/javascript"
   return "text/plain"
+}
+
+export function createDefaultWorkspaceTemplateFiles(): GameCardWorkspaceTemplateFile[] {
+  return DEFAULT_WORKSPACE_FILES.map((file) => {
+    const path = normalizeWorkspaceFilePath(file.path)
+    return {
+      path,
+      content: file.content,
+      mediaType: normalizeMediaType(file.mediaType, path),
+    }
+  })
 }
 
 function fileName(path: string): string {

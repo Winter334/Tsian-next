@@ -9,7 +9,9 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `MessageInteractionRequest` is currently `{ content: string }`.
 - `DeepQueryRequest` / `DeepQueryResult<T>` wrap bridge query resources.
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.
+- `RemotePlayBridge*` types describe the serializable `tsian.play-bridge.v1` postMessage protocol used by remote iframe frontends.
 - `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views.
+- `GameCardManifest`, `GameCardFrontendBinding`, `GameCardPackageManifest`, `GameCardPackageFileEntry`, and `GameCardWorkspaceTemplateFile` describe reusable game cards, package files, frontend bindings, and workspace templates.
 - `AgentRegistryEntry` describes lightweight `agents/<agent>/AGENT.md` index entries.
 - `AgentContextEntry` describes one assembled Agent context bundle for `agent-context`.
 - `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries. Use `name` / `description` for model-facing Skill identity and keep `id` / `summary` / `path` for compatibility and bridge/UI/debug consumers.
@@ -23,6 +25,8 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - Play frontends read data through `bridge.runtime.getRuntimeSnapshot()` and `bridge.query.query(...)`.
 - Play frontends use `bridge.platform.runAction(...)` for allowed platform actions such as `restore-checkpoint`.
 - `bridge.debug?.onTurnDebugReady(cb)` is a signal to refresh data, not the source of truth.
+- Remote iframe frontends use `RemotePlayBridgeMessage` envelopes over `postMessage`; they must expect explicit `{ ok: true, result }` / `{ ok: false, error }` responses instead of thrown exceptions crossing the frame boundary.
+- The default remote iframe bridge exposes `runtime.getRuntimeSnapshot`, `interaction.sendMessage`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`; it does not expose the `debug` namespace and must not expose `query.query({ resource: "ai-debug" })`.
 - Use `AgentRegistryEntry` for `bridge.query.query({ resource: "agent-registry" })` results.
 - Use `AgentContextEntry` for `bridge.query.query({ resource: "agent-context", params: { agentId } })` results.
 - Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results. Prefer `name` and `description` when presenting skills to an Agent; use `path` only for platform/debug queries such as `skill-detail`.

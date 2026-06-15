@@ -1,5 +1,7 @@
 import type {
   ConversationMessageRecord,
+  GameCardManifest,
+  GameCardWorkspaceTemplateFile,
   RuntimeSnapshotShell,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
@@ -12,6 +14,30 @@ export interface LocalMetaRecord {
 export interface LocalSaveRecord {
   id: string
   name: string
+  gameCardId?: string
+  gameCardVersion?: string
+  createdAt: number
+  updatedAt: number
+}
+
+export interface LocalGameCardRecord {
+  id: string
+  manifest: GameCardManifest
+  workspaceTemplateFiles: GameCardWorkspaceTemplateFile[]
+  source: "builtin" | "local" | "imported"
+  createdAt: number
+  updatedAt: number
+}
+
+export interface LocalGameCardFrontendFileRecord {
+  /** Internal deterministic table key. */
+  id: string
+  gameCardId: string
+  /** Package-root path, normally under frontend/. */
+  path: string
+  data: Blob
+  mediaType: string
+  size: number
   createdAt: number
   updatedAt: number
 }
@@ -52,6 +78,8 @@ export interface LocalCheckpointRecord {
 
 export class TsianLocalDb extends Dexie {
   meta!: Table<LocalMetaRecord, string>
+  gameCards!: Table<LocalGameCardRecord, string>
+  gameCardFrontendFiles!: Table<LocalGameCardFrontendFileRecord, string>
   saves!: Table<LocalSaveRecord, string>
   saveSnapshots!: Table<LocalSaveSnapshotRecord, string>
   saveHistory!: Table<LocalSaveHistoryRecord, string>
@@ -59,11 +87,13 @@ export class TsianLocalDb extends Dexie {
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
 
   constructor() {
-    // Prototype reset: no migration from the retired transitional state table.
-    super("tsian-agent-runtime-v3")
+    // Prototype reset: no migration from retired local IndexedDB schemas.
+    super("tsian-agent-runtime-v5")
 
     this.version(1).stores({
       meta: "&key",
+      gameCards: "&id, source, updatedAt",
+      gameCardFrontendFiles: "&id, gameCardId, path, updatedAt",
       saves: "&id, updatedAt",
       saveSnapshots: "&saveId",
       saveHistory: "&saveId",

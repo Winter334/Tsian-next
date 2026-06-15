@@ -13,7 +13,10 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Table shapes live in `storage/db.ts`.
 - Prototype schema changes use a new database name, not migrations.
 - Multi-table writes should use `localDb.transaction`.
-- Current active tables are `meta`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, and `workspaceFiles`.
+- Current active tables are `meta`, `gameCards`, `gameCardFrontendFiles`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, and `workspaceFiles`.
+- Game cards are reusable workspace templates and frontend bindings; saves are independent card-derived play instances and may store `gameCardId` / `gameCardVersion`.
+- Packaged frontend files are reusable Game Card assets stored beside game cards, not copied into save workspaces.
+- Built-in game cards may be refreshed by platform seed helpers when their source is `builtin` and their template/manifest is stale. This refresh updates the reusable template only; existing save workspaces still rely on non-overwriting workspace-version upgrades.
 - Checkpoints store snapshot, history, and workspace files.
 
 ## Runtime State
@@ -26,6 +29,8 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 
 - Bridge payloads must stay framework-neutral and serializable.
 - `debug.onTurnDebugReady` is a notification to re-read debug/query resources, not a data transport.
+- Remote iframe frontend state is per-mount: the adapter owns the generated bridge session id, accepted iframe origin, and `message` listener cleanup. Do not persist bridge session ids in Dexie or workspace files.
+- Remote iframe workspace writes/deletes call `platform.runAction` immediately. They are not part of the Agent Runtime staged transaction used inside `interaction.sendMessage`.
 
 ## Avoid
 

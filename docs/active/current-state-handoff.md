@@ -20,10 +20,14 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - Agent Runtime 位于 `apps/platform-web/src/agent-runtime`。
 - MVP 每轮调用两次模型：`master-agent` 先产出写作 brief，`narrative-agent` 再产出玩家可读剧情正文。
 - 官方默认前端位于 `builtin/play-frontends/official-default`，负责内容为空的会话聊天、AI debug、checkpoint 和 snapshot 展示。
-- 本地 Dexie schema 已重置为 `meta / saves / saveSnapshots / saveHistory / checkpoints / workspaceFiles`。
+- `/play` 会解析 active Game Card 的 frontend binding：`builtin/official-default` 继续走内置前端，`remote` URL 会以 sandboxed iframe 加载，`packaged` 会以本地 Service Worker 虚拟资源 URL 加载已导入的静态前端文件；远程/打包前端都通过 `tsian.play-bridge.v1` postMessage bridge 调用 runtime snapshot、玩家输入、query、platform context 和 platform action。远程 bridge 会过滤 mounted iframe source、handshake session 和 origin，默认屏蔽 `ai-debug` raw records；workspace write/delete 对远程/打包前端仍是即时 `platform.runAction`。当前本地 packaged frontend 依赖 Service Worker 控制同源 iframe client，因此 sandbox 保留 `allow-same-origin`。
+- 本地 Dexie schema 已重置为 `meta / gameCards / gameCardFrontendFiles / saves / saveSnapshots / saveHistory / checkpoints / workspaceFiles`。
+- Game Card / Save Instance 本地模型已建立：Game Card 是可复用 workspace 模板和前端绑定，Save Instance 是从 Game Card 创建的独立游玩副本，checkpoint 仍是 Save Instance 内部回滚点。
+- Game Card 本地包格式已建立：`*.tsian-card.zip` 包含 `game-card.json`、`workspace/*` 和可选 `frontend/*` built static files；导入会创建/更新 reusable Game Card，不会默认创建 Save Instance；导出不会包含 save history、checkpoint 或玩家演进后的 save workspace。
+- 平台会 seed 内置空白 Game Card；现有 `createPlatformSave()` 兼容路径会从这张卡复制默认 workspace 模板并创建初始 checkpoint。
 - 平台可在没有内置内容包的情况下启动，并可创建内容为空的 AIRP 会话。
 - Runtime Workspace storage/API 已实现，工作区文件随 save 和 checkpoint 生命周期保存、恢复和删除。
-- 新存档默认包含 master/narrative/memory `AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、共享目录 README、state/world/memory/frontend/archive 入口文件和 `.tsian` 平台目录；旧存档会通过 workspace manifest 版本安全补入缺失的官方默认文件，且不覆盖同路径用户文件。
+- 新存档默认包含 master/narrative/memory `AGENT.md`、workspace assistant `agents/studio-assistant/AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、助手本地 `framework-knowledge` Skill、临时官方知识库 `docs/tsian-framework-knowledge.md`、共享目录 README、state/world/memory/frontend/archive 入口文件和 `.tsian` 平台目录；旧存档会通过 workspace manifest 版本安全补入缺失的官方默认文件，且不覆盖同路径用户文件。
 - `agent-registry` / `skill-registry` bridge query 已实现，可从 workspace 扫描轻量 Agent/Skill 索引。
 - `skill-detail` bridge query 已实现，可按选中的 `SKILL.md` path 加载 Skill 正文和资源索引，并保持资源内容按需读取。
 - `agent-context` bridge query 已实现，可为指定 Agent 组装 `AGENT.md`、notes/session、可见 Skill Index 和声明的 context files。
@@ -36,15 +40,17 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - Native AIRP History Writeback MVP 已实现。每个成功回合会写入 `history/turns/turn-*.json`，只包含玩家输入和最终 narrative 输出；这些文件是普通 Runtime Workspace 文件，可被 read/list/search 命中并随 checkpoint/restore 回滚，失败回合不会留下普通 raw history 记录。raw history 现在随成功回合 staged transaction 一起提交。
 - Agent Session Transcript MVP 已实现。成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。该文件是会话记录，不是 bounded operational log。
 - Skill-triggered Memory Maintenance MVP 已实现。默认共享 `memory-maintenance` Skill 需要先 `skill_load` 再 `action_call apply_maintenance_plan`，通过 `browser_script` 和 Tsian SDK 在 staged transaction 中写入 `agents/<agent>/notes.md`、`history/timeline.md`、`memory/summaries/current.md` 或 `memory/summaries/long-term.md`。没有显式 Skill action 就不会运行增强记忆维护；空 `writes` 代表显式 no-op。
+- Workspace Assistant Template MVP 已实现。内置空白 Game Card 的 `manifest.assistant.agentId` 指向 `studio-assistant`；助手、助手 notes/session、本地 `framework-knowledge` Skill 和临时官方知识库都作为普通 workspace 模板文件分发。它只提供事实查询和管理入口底座，不包含最终助手聊天 UI 或完整首次启动世界创建流程。
 
 当前 foundation phase 已明确不新增独立的远程 executor、WASM、远程脚本加载或托管执行环境。远程 API 交互优先通过现有 `browser_script` + `fetch` 承载，未来只有具体 Skill 无法合理使用 `browser_script`、`platform_action` 或脚本调用远程 API 时才重开 executor 设计。当前代码尚未实现 session transcript 压缩/归档、标准 operational logging、固定每回合记忆维护，或 `agent_call` 的 UI 配置。默认回合仍是 master -> narrative 两个固定 Agent 步骤；每个步骤可能因为 `skill_load`、`action_call`、`agent_call` 或 workspace 工具 observation 产生额外模型调用。
 
 ## 3. 当前有效边界
 
 - Platform：模型调用、桥 API、通用存储、会话生命周期、checkpoint、前端包装载。
+- Game Card：可分发的 workspace 模板、前端绑定和默认内容入口。
 - Agent Runtime：AIRP 回合组织、Agent 分工、工具使用和运行时数据产出。
 - Frontend Package：游戏 UI、交互和渲染，只通过 bridge 访问平台能力。
-- Save Instance：一次 AIRP 会话的数据容器，内容语义由 runtime 和前端包约定。
+- Save Instance：由 Game Card 创建的一次 AIRP 会话数据容器，内容语义由 runtime 和前端包约定。
 
 平台不硬编码记忆结构、事件/档案语义、MVU 状态表或前端渲染协议。
 
@@ -55,6 +61,7 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - `apps/platform-web/src/platform-host/index.ts`
 - `apps/platform-web/src/agent-runtime/index.ts`
 - `apps/platform-web/src/storage/db.ts`
+- `apps/platform-web/src/storage/game-cards.ts`
 - `apps/platform-web/src/bridge/play-frontend-bridge.ts`
 - `apps/platform-web/src/views/LobbyView.vue`
 - `apps/platform-web/src/views/PlayView.vue`
@@ -62,20 +69,21 @@ Tsian 当前方向是 Agent-Orchestrated AIRP Runtime。
 - `packages/contracts/src/runtime.ts`
 - `packages/contracts/src/bridge.ts`
 - `packages/contracts/src/debug.ts`
+- `packages/contracts/src/game-card.ts`
 - `builtin/play-frontends/official-default/src/index.ts`
 
 ## 5. 下一步建议
 
 优先从这些方向继续：
 
-1. 按具体 Skill 需求增强现有 `browser_script` / Tsian SDK / 受控平台动作；不要把独立 `remote_http`、WASM 或托管执行作为默认 foundation 后续项。
-2. 在现有 `agent_call` 策略之上继续完善协作体验，例如管理 Agent、协作 Skill、调试 UI、可观察性或未来 host-owned 配置；不要恢复固定团队 DAG。
-3. 在 `runtime-diagnostics` facts-only 视图之上继续设计未来管理 Agent / 诊断 Skill / UI 体验；若未来出现新 executor，再按事实补充对应诊断字段。
-4. 在 raw history 与 session transcript 底账之上继续完善记忆策略，例如维护 Skill 的提示质量、diff/review UI、summary 压缩、检索索引和 transcript 归档。
-5. 围绕 workspace-native state 继续完善默认约定、Skill 维护策略和前端可读取数据文件；不要恢复独立平台状态表。
-6. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
-7. 为 Runtime Workspace、Agent、Skill 提供浏览和编辑 UI。
-8. 规划前端包 sandbox/RPC bridge，而不是恢复平台级 renderer DSL。
+1. 继续实现 Game Card 方向的下一片：新的平台 UI、游戏卡库/导入导出入口、或未来工作坊/账号系统。
+2. 按具体 Skill 需求增强现有 `browser_script` / Tsian SDK / 受控平台动作；不要把独立 `remote_http`、WASM 或托管执行作为默认 foundation 后续项。
+3. 在现有 `agent_call` 策略之上继续完善协作体验，例如管理 Agent、协作 Skill、调试 UI、可观察性或未来 host-owned 配置；不要恢复固定团队 DAG。
+4. 在 `runtime-diagnostics` facts-only 视图之上继续设计未来管理 Agent / 诊断 Skill / UI 体验；若未来出现新 executor，再按事实补充对应诊断字段。
+5. 在 raw history 与 session transcript 底账之上继续完善记忆策略，例如维护 Skill 的提示质量、diff/review UI、summary 压缩、检索索引和 transcript 归档。
+6. 围绕 workspace-native state 继续完善默认约定、Skill 维护策略和前端可读取数据文件；不要恢复独立平台状态表。
+7. 增加记忆 Agent、状态 Agent 或相关 Skill，但不要把默认事件/档案模型写回平台。
+8. 为 Runtime Workspace、Agent、Skill 和 workspace assistant 提供浏览、编辑和管理 UI。
 
 ## 6. 历史来源
 
