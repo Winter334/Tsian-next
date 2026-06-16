@@ -1958,3 +1958,37 @@ Replaced hard-scoped runtime workspace tools with generic scoped workspace opera
 ### Next Steps
 
 - None - task complete
+
+
+## Session 58: My Apps Game Card Launcher
+
+**Date**: 2026-06-16
+**Task**: My Apps Game Card Launcher
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Reworked Game Card UX around the RetroOS desktop: App Market placeholder, My Apps Explorer view, launcher details, Workspace folder tab, and save-slot validation.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f0df71b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
