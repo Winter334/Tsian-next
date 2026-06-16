@@ -24,19 +24,20 @@
 ### 2. Signatures
 
 - `GameCardManifest.frontend?: GameCardFrontendBinding`
+- `LocalGameCardRecord.contentFiles: GameCardContentFile[]`
 - `GameCardFrontendBinding = { kind: "remote"; url; bridgeVersion } | { kind: "packaged"; entry; bridgeVersion }`
 - `GameCardPackageManifest.manifest: GameCardManifest`
 - `GameCardPackageManifest.frontendFiles?: GameCardPackageFileEntry[]`
 
 ### 3. Contracts
 
-- Game Card packages are reusable templates, not Save Instance exports. They must not include save snapshots, save history, checkpoints, traces, or player-mutated save workspace files.
-- The first package container is zip with `game-card.json`, `workspace/*`, optional `frontend/*`, and reserved `cover/*`.
+- Game Card packages are reusable card-content packages, not Save Instance exports. They must not include save snapshots, save history, checkpoints, traces, or player-mutated save runtime files.
+- The first package container is zip with `game-card.json`, card-owned content under `workspace/*`, optional `frontend/*`, and reserved `cover/*`.
 - `game-card.json` uses `GameCardPackageManifest` with schema `tsian.game-card.package.v1` and embeds the authoritative `GameCardManifest`.
-- `GameCardManifest.frontend` is optional. A frontend-less Game Card is a reusable workspace/Agent/Skill template, not a playable card.
+- `GameCardManifest.frontend` is optional. A frontend-less Game Card is reusable card content, not a playable card.
 - When provided, `frontend` must be `remote` or `packaged`. Same-realm `builtin` game frontends are not supported.
 - Packaged frontends are built static files under `frontend/`; Tsian must not run source builds, npm install, or framework-specific bundling.
-- Packaged frontend files are stored beside the reusable Game Card in `gameCardFrontendFiles`; saves created from a card do not copy those files.
+- Packaged frontend files are stored beside the reusable Game Card in `gameCardFrontendFiles`; saves created from a card do not copy those files or card content files.
 - `frontend.kind === "packaged"` must run in an iframe and reuse the `tsian.play-bridge.v1` bridge. It must not run in the platform JS realm.
 - Packaged frontends use a same-origin virtual resource URL backed by Service Worker/IndexedDB. The first packaged iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Keep `allow-same-origin` while this loader relies on Service Worker-controlled same-origin iframe clients; sandboxed opaque-origin navigations bypass the local virtual resource layer.
 - The virtual resource layer should return CORS-friendly headers for module chunks and other built assets.
@@ -51,13 +52,14 @@
 - Packaged frontend without a matching entry file -> reject import.
 - Absolute paths, path traversal, empty paths, NUL bytes, or unknown top-level roots -> reject import.
 - Importing a package creates or updates the reusable Game Card only; it does not create a Save Instance.
-- Exporting a Game Card writes manifest, workspace template files, and stored packaged frontend files only.
+- Importing card content under reserved `workspace/save/*` or `workspace/.tsian/*` must fail; those roots are runtime/platform-owned in effective workspaces.
+- Exporting a Game Card writes manifest, card content files, and stored packaged frontend files only.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a package with `frontend.kind === "packaged"` includes `frontend/index.html` and lists that file in `frontendFiles`.
 - Good: a package with `frontend.kind === "remote"` omits `frontendFiles` and uses a browser-loadable URL.
-- Base: a package omits `frontend`; it imports as a non-playable workspace template.
+- Base: a package omits `frontend`; it imports as non-playable card content.
 - Bad: a package uses `frontend.kind === "builtin"` or includes save snapshots/checkpoints.
 
 ### 6. Tests Required
@@ -65,7 +67,7 @@
 - Assert package import accepts missing frontend.
 - Assert package import rejects `builtin` frontend kind.
 - Assert packaged frontend entries must exist under `frontend/`.
-- Assert package export omits save-scoped state.
+- Assert package export omits save runtime data.
 
 ### 7. Wrong vs Correct
 
@@ -168,10 +170,10 @@ if (!frontend) {
 ### 3. Contracts
 
 - `agent-registry` returns lightweight `AgentRegistryEntry[]` built from `agents/*/AGENT.md`.
-- `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's `AGENT.md`, notes/session files, visible skill index, and declared `contextPaths`.
+- `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's card-owned `AGENT.md`, save runtime notes/session files, visible skill index, and declared `contextPaths`.
 - `skill-registry` returns lightweight `SkillRegistryEntry[]` built from `skills/*/SKILL.md` and `agents/*/skills/*/SKILL.md`.
 - `skill-detail` returns zero or one `SkillDetailEntry` for a selected `SKILL.md` path.
-- Default blank workspaces may include `agents/studio-assistant/AGENT.md`, assistant notes/session, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`. These are ordinary workspace files and must flow through the same registry/detail/context mechanisms as author-provided Agents and Skills.
+- Default blank Game Card content may include `agents/studio-assistant/AGENT.md`, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`; default save runtime data includes assistant notes/session under `save/agents/studio-assistant/`.
 - Registry entries include path and metadata fields only. Do not expose full skill instructions, actions, schemas, examples, scripts, or references through the registry query.
 - `SkillRegistryEntry.name` and `description` are the model-facing Skill identifiers. Build them from frontmatter `name` / `description`, with compatibility fallbacks to `id` / `summary` / path-derived values.
 - Keep `id`, `title`, `summary`, and `path` for compatibility with bridge/UI/debug consumers.
@@ -232,7 +234,10 @@ return {
 #### Correct
 
 ```typescript
-const files = await listWorkspaceFilesForSave(activeSaveId)
+const activeCard = await getPlatformActiveGameCard()
+const files = activeCard
+  ? await listEffectiveWorkspaceFilesForSave(activeSaveId, activeCard)
+  : []
 return {
   items: buildSkillRegistry(files, { agentId, includeShared, includeLocal }),
 }
@@ -260,6 +265,68 @@ return {
 - `RuntimeGlobalsMap` and workspace JSON file content should remain JSON-compatible when a local convention declares JSON data.
 - Structured state belongs in Runtime Workspace files documented by README, schema, Agent, or Skill conventions; do not add a platform-owned table or universal record model for gameplay state.
 - Do not loosen contract fields to `unknown` to hide caller bugs.
+
+## Scenario: Card Content And Save Runtime Effective Workspace
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web creates saves, imports/exports Game Cards, lists Runtime Workspace files, runs Agent Runtime turns, commits workspace mutations, checkpoints, or restores checkpoints.
+
+### 2. Signatures
+
+- `LocalGameCardRecord.contentFiles: GameCardContentFile[]`
+- `LocalWorkspaceFileRecord.path` stores save runtime files only: `save/...` and platform-owned `.tsian/...`.
+- Runtime reads use `listEffectiveWorkspaceFilesForSave(saveId, card)` and receive card content plus selected save runtime data.
+- Runtime commits use `saveRuntimeFilesFromEffectiveWorkspace(files)` before replacing `workspaceFiles`.
+
+### 3. Contracts
+
+- Game Card content owns Agents, Skills, schemas, rules, docs, frontend definitions, manifest metadata, assistant metadata, and frontend binding.
+- Save runtime data owns dialogue/history, generated entities, maps, relationships, memory summaries, frontend view state, Agent notes/session transcripts, and `.tsian` diagnostics for one playthrough.
+- Effective workspace composition is deterministic: card content appears at its card path, active save runtime data appears under `save/`, and `.tsian/` remains hidden from ordinary read/list/search.
+- Game Card content must not define `save/...` or `.tsian/...`.
+- Ordinary Agent/Skill/frontend workspace writes and deletes must target `save/...`; platform writes may target `save/...` or `.tsian/...`.
+- Checkpoints snapshot and restore save runtime files only. Restored checkpoints continue to use current Game Card content.
+
+### 4. Validation & Error Matrix
+
+- Card content path under `save/...` or `.tsian/...` -> reject card write/import.
+- Ordinary workspace write/delete outside `save/...` -> `WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED`.
+- Ordinary workspace write/delete under `.tsian/...` -> `WORKSPACE_PLATFORM_METADATA_FORBIDDEN`.
+- Platform runtime write outside `save/...` or `.tsian/...` -> `WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED`.
+- Effective workspace read/list/search -> hides `.tsian/...` and can surface both card content and `save/...` files.
+
+### 5. Good/Base/Bad Cases
+
+- Good: editing `agents/master/AGENT.md` on the Game Card affects existing saves on the next effective workspace read.
+- Good: a turn writes `save/history/turns/turn-000001.json` and checkpoints that save runtime file.
+- Base: a frontend-less blank card has content but no playable frontend binding.
+- Bad: save creation copies `agents/*` or `skills/*` into `workspaceFiles`.
+- Bad: checkpoint restore rolls back Game Card content.
+
+### 6. Tests Required
+
+- Assert save creation seeds runtime files under `save/...` without copying card content.
+- Assert effective workspace registry/detail queries see card Agents/Skills and active save runtime files.
+- Assert ordinary runtime writes outside `save/...` fail.
+- Assert commit/checkpoint persistence filters out card content and keeps save runtime data.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```typescript
+const workspaceFiles = card.contentFiles.map((file) =>
+  createLocalWorkspaceFileRecord(saveId, file),
+)
+```
+
+#### Correct
+
+```typescript
+const effectiveFiles = await listEffectiveWorkspaceFilesForSave(saveId, card)
+const runtimeFiles = saveRuntimeFilesFromEffectiveWorkspace(effectiveFiles)
+```
 
 ## Scenario: Runtime Tool Boundary Classification
 
@@ -358,7 +425,7 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
 
 ### 3. Contracts
 
-- `platform-host` owns storage access. It must call `initializeWorkspaceForSave(activeSaveId)` before listing workspace files for a turn, then pass `listWorkspaceFilesForSave(activeSaveId)` into Agent Runtime.
+- `platform-host` owns storage access. It must initialize the save runtime defaults, assemble `listEffectiveWorkspaceFilesForSave(activeSaveId, activeCard)`, then pass that effective workspace into Agent Runtime.
 - `agent-runtime` owns prompt composition. It must use `assembleAgentContext(workspaceFiles, { agentId: "master" })` and `{ agentId: "narrative" }` for the two default calls.
 - Model messages may include `AGENT.md`, notes/session files, declared context files, missing context paths, lightweight skill index, recent history, turn number, player input, and master brief.
 - Skill indexes inside runtime prompts must remain lightweight `SkillRegistryEntry[]`; do not call `loadSkillDetail` from the default turn path.
@@ -366,16 +433,16 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
 
 ### 4. Validation & Error Matrix
 
-- Empty workspace on an active save -> `initializeWorkspaceForSave` fills defaults before runtime reads files.
-- Non-empty workspace missing `agents/master/AGENT.md` -> `sendMessage` fails with a clear runtime error; do not fall back to legacy hardcoded prompts.
-- Non-empty workspace missing `agents/narrative/AGENT.md` -> same as above.
+- Empty save runtime data on an active save -> `initializeWorkspaceForSave` fills `save/...` defaults before runtime reads files.
+- Effective workspace missing `agents/master/AGENT.md` -> `sendMessage` fails with a clear runtime error; do not fall back to legacy hardcoded prompts.
+- Effective workspace missing `agents/narrative/AGENT.md` -> same as above.
 - Missing declared `contextPaths` -> include missing path diagnostics in prompt context; do not fail the turn for that reason alone.
 - Model returns empty narrative reply -> keep existing empty-reply error behavior.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a new save uses `agents/master/AGENT.md` and `agents/narrative/AGENT.md` in the two model system prompts.
-- Good: old local save with zero workspace files receives default workspace files before the turn.
+- Good: old local save with zero runtime files receives default `save/...` files before the turn.
 - Base: direct unit-style calls without `workspaceFiles` may exercise legacy prompt assembly, but production `sendMessage` must pass workspace files.
 - Bad: production `sendMessage` omits workspace files and silently uses hardcoded prompts.
 - Bad: missing required Agent definitions are auto-recreated in a non-empty workspace, hiding user/content configuration problems.
@@ -400,7 +467,10 @@ await runAgentRuntimeTurn({ userInput, recentHistory, snapshot }, capabilities)
 
 ```typescript
 await initializeWorkspaceForSave(activeSaveId)
-const workspaceFiles = await listWorkspaceFilesForSave(activeSaveId)
+const activeCard = await getPlatformActiveGameCard()
+const workspaceFiles = activeCard
+  ? await listEffectiveWorkspaceFilesForSave(activeSaveId, activeCard)
+  : []
 await runAgentRuntimeTurn({
   userInput,
   recentHistory,
@@ -733,7 +803,7 @@ return `- ${skill.name}: ${skill.description}`
 
 ### 2. Signatures
 
-- Raw AIRP history turn files live under `history/turns/turn-000001.json`.
+- Raw AIRP history turn files live under `save/history/turns/turn-000001.json`.
 - Each successful turn writes one `application/json` workspace file.
 - File content uses schema string `tsian.airp.history.turn.v1`.
 - The minimum file shape is:
@@ -768,7 +838,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 4. Validation & Error Matrix
 
-- Successful turn -> `history/turns/turn-000001.json` exists and includes exactly one user and one assistant message for that turn.
+- Successful turn -> `save/history/turns/turn-000001.json` exists and includes exactly one user and one assistant message for that turn.
 - Aborted turn before final acceptance -> no raw history turn file is written.
 - Agent Runtime failure -> no raw history turn file is written.
 - Later successful-turn commit failure -> no partial raw history / snapshot / checkpoint state is accepted.
@@ -776,7 +846,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `workspace_search({ query: "lantern" })` returns a matching `history/turns/turn-000012.json` file preview.
+- Good: `workspace_search({ query: "lantern" })` returns a matching `save/history/turns/turn-000012.json` file preview.
 - Good: a memory Skill reads raw turn files and creates `world/characters.json` or `memory/facts.jsonl` as derived, correctable projections.
 - Base: current UI chat history still reads `saveHistory` while Agent/Skill context can inspect workspace raw history when needed.
 - Bad: writing all history into `history/conversation.jsonl` only; workspace search can no longer identify the matching turn cleanly.
@@ -801,7 +871,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 2. Signatures
 
-- Agent transcripts live under `agents/<agent>/session.jsonl`.
+- Agent transcripts live under `save/agents/<agent>/session.jsonl`.
 - Each JSONL line uses schema string `tsian.agent.session.transcript.v1`.
 - Runtime returns transcript records as plain data; `platform-host` appends them to workspace files during successful-turn staging.
 - The default maintenance Skill lives at `skills/memory-maintenance/SKILL.md` and declares `apply_maintenance_plan`.
@@ -817,7 +887,7 @@ interface RawAirpHistoryTurnRecord {
 - Failed or aborted turns must discard ordinary session transcript writes.
 - Enhanced memory maintenance does not run automatically every turn. It runs only when an Agent loads a Skill that declares an action and calls that action.
 - The official maintenance Skill uses the existing `browser_script` executor and Tsian SDK workspace writes. Do not add a maintenance-specific platform action unless a future task explicitly revises this contract.
-- Valid maintenance writes are limited to `agents/<agent>/notes.md`, `history/timeline.md`, `memory/summaries/current.md`, and `memory/summaries/long-term.md`.
+- Valid maintenance writes are limited to `save/agents/<agent>/notes.md`, `save/history/timeline.md`, `save/memory/summaries/current.md`, and `save/memory/summaries/long-term.md`.
 - Empty `writes` is a valid explicit no-op maintenance decision.
 - Invalid maintenance plans become structured action/script observations and trace summaries; they must not mutate ordinary workspace files.
 - `.tsian/*` remains host-owned platform metadata and is never a valid ordinary maintenance target.
@@ -831,18 +901,18 @@ interface RawAirpHistoryTurnRecord {
 - Loaded maintenance Skill plus valid plan -> approved target files are written through the staged workspace transaction.
 - Loaded maintenance Skill plus empty plan -> action returns no-op and no maintenance files are mutated.
 - Invalid schema, invalid path, invalid mode, non-string content/reason, oversized content, or `.tsian/*` target -> action observation is an error and no maintenance writes are applied.
-- Existing save with workspaceVersion below current -> missing official maintenance Skill, workspace-assistant, and framework-knowledge files are created, existing same-path files are preserved, and manifest advances.
-- Existing save with current workspaceVersion -> deleted official maintenance Skill files are not recreated on every turn.
+- Existing save with runtime workspaceVersion below current -> missing official save runtime files are created, existing same-path files are preserved, and manifest advances.
+- Existing save with current runtime workspaceVersion -> deleted official save runtime files are not recreated on every turn.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a successful turn with master, narrative, and a delegated memory Agent appends JSONL records under each participating Agent's own directory.
-- Good: memory Agent loads `memory-maintenance`, calls `apply_maintenance_plan`, and writes `memory/summaries/current.md` through the staged browser-script SDK.
+- Good: memory Agent loads `memory-maintenance`, calls `apply_maintenance_plan`, and writes `save/memory/summaries/current.md` through the staged browser-script SDK.
 - Good: an empty maintenance plan returns no-op output and does not mutate notes/timeline/summary files.
 - Base: a successful turn with no loaded maintenance Skill still appends session transcripts and raw history, but produces no enhanced memory file updates.
 - Bad: platform-host runs memory maintenance after every turn without a Skill action.
 - Bad: Runtime Trace stores full Agent prompt/message arrays instead of only summary events.
-- Bad: default workspace upgrade overwrites a user-authored `skills/memory-maintenance/SKILL.md`, `agents/studio-assistant/AGENT.md`, or `docs/tsian-framework-knowledge.md`.
+- Bad: default runtime upgrade overwrites a user-authored `save/agents/memory/notes.md` or `save/memory/summaries/current.md`.
 
 ### 6. Tests Required
 
@@ -861,7 +931,7 @@ interface RawAirpHistoryTurnRecord {
 ```typescript
 await runMemoryMaintenanceEveryTurn()
 await writeWorkspaceFileForSave(saveId, {
-  path: "memory/summaries/current.md",
+  path: "save/memory/summaries/current.md",
   content: summary,
 })
 ```

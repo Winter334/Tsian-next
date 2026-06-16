@@ -17,8 +17,10 @@ import {
 } from "./checkpoints"
 import { getBuiltinBlankGameCard } from "./game-cards"
 import {
+  createDefaultSaveRuntimeFiles,
   createLocalWorkspaceFileRecord,
   deleteWorkspaceForSave,
+  saveRuntimeFilesFromEffectiveWorkspace,
 } from "./workspace"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
@@ -124,15 +126,9 @@ export async function createLocalSaveFromGameCard(
     messages: history,
   }
 
-  const workspaceRecords = card.workspaceTemplateFiles.map((file) => createLocalWorkspaceFileRecord(
-    save.id,
-    {
-      ...file,
-      mediaType: file.mediaType ?? "",
-      createdAt: now,
-      updatedAt: now,
-    },
-  ))
+  const workspaceRecords = createDefaultSaveRuntimeFiles().map((file) =>
+    createLocalWorkspaceFileRecord(save.id, file)
+  )
   const checkpointWorkspaceFiles = workspaceRecords
     .map(({ id: _id, saveId: _saveId, ...file }) => file)
     .sort((left, right) => left.path.localeCompare(right.path))
@@ -238,7 +234,7 @@ export async function commitSuccessfulRuntimeTurnForSave(
   }
 
   const workspaceRecords = new Map<string, ReturnType<typeof createLocalWorkspaceFileRecord>>()
-  for (const file of input.workspaceFiles) {
+  for (const file of saveRuntimeFilesFromEffectiveWorkspace(input.workspaceFiles)) {
     const record = createLocalWorkspaceFileRecord(saveId, file)
     workspaceRecords.set(record.path, record)
   }

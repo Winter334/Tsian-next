@@ -1,6 +1,6 @@
 import type {
+  GameCardContentFile,
   GameCardManifest,
-  GameCardWorkspaceTemplateFile,
 } from "@tsian/contracts"
 import {
   localDb,
@@ -19,7 +19,7 @@ type GameCardSource = LocalGameCardRecord["source"]
 
 export interface PutLocalGameCardInput {
   manifest: GameCardManifest
-  workspaceTemplateFiles: GameCardWorkspaceTemplateFile[]
+  contentFiles: GameCardContentFile[]
   frontendFiles?: PutLocalGameCardFrontendFileInput[]
   source?: GameCardSource
 }
@@ -113,8 +113,8 @@ function normalizeManifest(manifest: GameCardManifest): GameCardManifest {
 }
 
 function normalizeTemplateFile(
-  file: GameCardWorkspaceTemplateFile,
-): GameCardWorkspaceTemplateFile {
+  file: GameCardContentFile,
+): GameCardContentFile {
   return {
     path: normalizeWorkspaceFilePath(file.path),
     content: typeof file.content === "string" ? file.content : "",
@@ -125,11 +125,17 @@ function normalizeTemplateFile(
 }
 
 function normalizeTemplateFiles(
-  files: GameCardWorkspaceTemplateFile[],
-): GameCardWorkspaceTemplateFile[] {
-  const filesByPath = new Map<string, GameCardWorkspaceTemplateFile>()
+  files: GameCardContentFile[],
+): GameCardContentFile[] {
+  const filesByPath = new Map<string, GameCardContentFile>()
   for (const file of files) {
     const normalized = normalizeTemplateFile(file)
+    if (normalized.path === "save" || normalized.path.startsWith("save/")) {
+      throw new Error("Game card content cannot use reserved save/ paths.")
+    }
+    if (normalized.path === ".tsian" || normalized.path.startsWith(".tsian/")) {
+      throw new Error("Game card content cannot use reserved .tsian/ paths.")
+    }
     filesByPath.set(normalized.path, normalized)
   }
   return Array.from(filesByPath.values()).sort((left, right) => left.path.localeCompare(right.path))
@@ -216,13 +222,13 @@ function cloneLocalGameCardRecord(record: LocalGameCardRecord): LocalGameCardRec
   return {
     ...record,
     manifest: { ...record.manifest },
-    workspaceTemplateFiles: record.workspaceTemplateFiles.map((file) => ({ ...file })),
+    contentFiles: record.contentFiles.map((file) => ({ ...file })),
   }
 }
 
 function hasTemplateFile(
-  files: GameCardWorkspaceTemplateFile[],
-  expected: GameCardWorkspaceTemplateFile,
+  files: GameCardContentFile[],
+  expected: GameCardContentFile,
 ): boolean {
   return files.some((file) =>
     file.path === expected.path
@@ -245,7 +251,7 @@ function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): boolean {
   }
 
   return createDefaultWorkspaceTemplateFiles()
-    .every((file) => hasTemplateFile(record.workspaceTemplateFiles, file))
+    .every((file) => hasTemplateFile(record.contentFiles, file))
 }
 
 function createBuiltinBlankGameCardRecord(
@@ -268,7 +274,7 @@ function createBuiltinBlankGameCardRecord(
   return {
     id: manifest.id,
     manifest,
-    workspaceTemplateFiles: createDefaultWorkspaceTemplateFiles(),
+    contentFiles: createDefaultWorkspaceTemplateFiles(),
     source: "builtin",
     createdAt,
     updatedAt,
@@ -302,7 +308,7 @@ export async function putLocalGameCard(
   const record: LocalGameCardRecord = {
     id: manifest.id,
     manifest,
-    workspaceTemplateFiles: normalizeTemplateFiles(input.workspaceTemplateFiles),
+    contentFiles: normalizeTemplateFiles(input.contentFiles),
     source: input.source ?? existing?.source ?? "local",
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,

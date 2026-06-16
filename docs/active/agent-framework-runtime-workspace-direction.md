@@ -275,21 +275,21 @@ Runtime Workspace 是一个存档级虚拟文件系统。
 目录约定：
 
 - 根 `README.md` 说明工作区用途和重要入口。
-- `agents/` 存 Agent 定义和 Agent 自己的工作状态。
+- `agents/` 存 Game Card 拥有的 Agent 定义。
 - `agents/studio-assistant/` 可作为游戏卡声明的工作区助手入口。它仍是普通 workspace 内容，游戏卡作者可以替换、删除或改造。
 - `skills/` 存共享 Skill。
 - `agents/<agent>/skills/` 存 Agent-local Skill。
 - `docs/` 存官方或游戏卡作者维护的说明文档。默认 `docs/tsian-framework-knowledge.md` 是临时官方知识库，供助手 Agent 通过查询型 Skill 参考。
-- `history/` 存玩家面对的原始 AIRP 回合记录和压缩后的剧情时间线，不存所有中间过程。原始记录推荐按 `history/turns/turn-*.json` 一回合一文件保存，便于 workspace 搜索直接定位具体回合。
-- `world/` 存当前世界事实、规则和结构化状态。
-- `memory/` 存长期记忆、摘要和可检索事实。
-- `frontend/` 存前端包约定读取的数据。
+- `save/history/` 存玩家面对的原始 AIRP 回合记录和压缩后的剧情时间线，不存所有中间过程。原始记录推荐按 `save/history/turns/turn-*.json` 一回合一文件保存，便于 workspace 搜索直接定位具体回合。
+- `world/` 存 Game Card 拥有的世界 canon、规则和默认约定；`save/world/` 存本次游玩的生成世界状态。
+- `save/memory/` 存本次游玩的长期记忆、摘要和可检索事实。
+- `frontend/` 存前端包约定的卡内容定义；`save/frontend/` 存本次游玩的前端 view state。
 - `archive/` 存退役、压缩或不再活跃的材料。
 - `.tsian/` 是平台 metadata、trace、checkpoint、索引和缓存空间。普通 Agent/Skill/frontend workspace read/list/search 不暴露 `.tsian/*`，普通 workspace 写入和删除也不能修改 `.tsian/*`；平台内部需要通过 host-owned 路径写入 trace、index 或 cache。
 
 ## 10. Workspace Assistant
 
-Game Card 可以在 manifest 中声明一个助手 Agent，例如内置空白卡默认使用 `studio-assistant`。这个助手不是平台隐藏人格，而是随 Game Card / Runtime Workspace 一起分发和复制的普通内容。未来平台助手 UI 可以把它作为入口，但它的指令、备注、会话记录和本地 Skill 都应保存在 workspace 文件里。
+Game Card 可以在 manifest 中声明一个助手 Agent，例如内置空白卡默认使用 `studio-assistant`。这个助手不是平台隐藏人格，而是随 Game Card content 分发的普通 Agent 定义。未来平台助手 UI 可以把它作为入口；它的指令和本地 Skill 属于卡内容，备注和会话记录属于当前存档运行时数据。
 
 默认 `studio-assistant` 的第一版职责是帮助玩家和作者理解、检查和维护当前 workspace：Agent/Skill 定义、状态约定、前端数据、诊断事实、游戏卡内容等。它不应获得绕过 bridge/tool/action 边界的特殊能力，也不应声称可以直接访问宿主文件系统、API key 或平台内部对象。
 
@@ -354,8 +354,8 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
 - 默认流程仍是固定 `master-agent` -> `narrative-agent`。
-- 存储包含 snapshot、history、checkpoint，以及 save-scoped Runtime Workspace files；结构化状态不再使用独立平台表。
-- 新存档默认写入 Runtime Workspace 目录入口、`agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、`agents/studio-assistant/AGENT.md`、agent notes/session、官方共享 `memory-maintenance` Skill、助手本地 `framework-knowledge` Skill、`docs/tsian-framework-knowledge.md`、state/world/memory/frontend/archive 和 `.tsian` 入口文件；旧存档通过 workspace manifest 版本安全补入缺失的官方默认文件，且不覆盖同路径用户文件。
+- 存储包含 snapshot、history、checkpoint、Game Card content files，以及 save runtime workspace files；结构化状态不再使用独立平台表。
+- 新 Game Card 默认写入 `agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、`agents/studio-assistant/AGENT.md`、官方共享 `memory-maintenance` Skill、助手本地 `framework-knowledge` Skill、`docs/tsian-framework-knowledge.md`、state/world/frontend/archive 等卡内容；新存档默认写入 `save/agents/*` notes/session、`save/history/*`、`save/world/*`、`save/state/*`、`save/memory/*`、`save/frontend/*` 和 `.tsian` 入口文件。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
@@ -363,8 +363,8 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 - 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；action 调用会经过 loaded Skill gating、输入校验、轻量 executor-class policy 检查，并可按可选 `outputSchema` 校验成功输出。当前支持 `builtin/validation`、`builtin/echo`、allow-listed `platform_action` 和 strong-SDK `browser_script`。`platform_action` 通过 capability 注入平台受控动作，当前可用于 `workspace-write` / `workspace-delete`；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
 - 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；协作策略为代码级默认值，当前 `maxCallsPerTurn=4`、`maxDepth=2`、语义 history window 为 `minimal/recent/scene`，并按 root turn 共享调用预算。有限嵌套已启用：root depth `0` 可调用 depth `1` Agent，depth `1` Agent 可调用自己的 contacts 到 depth `2`，depth `2` 再调用会返回带深度/预算事实的结构化 observation。
 - Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action executor policy 检查、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 workspace read/list/search 不暴露 `.tsian/*`。`runtime-diagnostics` query 已提供面向 Agent/未来管理 UI 的 facts-only 诊断摘要视图；它按需从 raw trace 生成，不写派生文件、不做 pruning、不默认暴露给普通 live-turn Agent。
-- Agent Session Transcript MVP 已落地：成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。
-- Skill-triggered Memory Maintenance MVP 已落地：默认 `memory-maintenance` Skill 的 `apply_maintenance_plan` 使用 `browser_script` 和 Tsian SDK staged 写入 `agents/<agent>/notes.md`、`history/timeline.md`、`memory/summaries/current.md` 或 `memory/summaries/long-term.md`。没有显式 Skill action 就不会维护增强记忆，空 writes 仅表示显式 no-op。
+- Agent Session Transcript MVP 已落地：成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `save/agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。
+- Skill-triggered Memory Maintenance MVP 已落地：默认 `memory-maintenance` Skill 的 `apply_maintenance_plan` 使用 `browser_script` 和 Tsian SDK staged 写入 `save/agents/<agent>/notes.md`、`save/history/timeline.md`、`save/memory/summaries/current.md` 或 `save/memory/summaries/long-term.md`。没有显式 Skill action 就不会维护增强记忆，空 writes 仅表示显式 no-op。
 
 后续实现应逐步：
 

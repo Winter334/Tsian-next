@@ -8,7 +8,7 @@
 - `bridge.ts` owns `PlayFrontendBridge`, bridge namespace interfaces, and the shared remote play bridge RPC envelope types for iframe/postMessage consumers.
 - `debug.ts` owns AI debug and checkpoint summary types exposed to play frontends.
 - `frontend-package.ts` owns play frontend manifest metadata.
-- `game-card.ts` owns game card manifest metadata, frontend binding, package manifest metadata, assistant metadata, and workspace template file shapes shared by platform-web and future game-card tooling.
+- `game-card.ts` owns game card manifest metadata, frontend binding, package manifest metadata, assistant metadata, and card content file shapes shared by platform-web and future game-card tooling.
 - `memory.ts` owns generic memory schema type contracts only.
 
 ## Export Rules

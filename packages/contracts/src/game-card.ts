@@ -39,11 +39,13 @@ export type GameCardFrontendBinding =
       bridgeVersion: "tsian.play-bridge.v1"
     }
 
-export interface GameCardWorkspaceTemplateFile {
+export interface GameCardContentFile {
   path: string
   content: string
   mediaType?: string
 }
+
+export type GameCardWorkspaceTemplateFile = GameCardContentFile
 
 export interface GameCardPackageFileEntry {
   path: string

@@ -1,9 +1,9 @@
 import type {
+  GameCardContentFile,
   GameCardFrontendBinding,
   GameCardManifest,
   GameCardPackageFileEntry,
   GameCardPackageManifest,
-  GameCardWorkspaceTemplateFile,
 } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
 import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardFrontendFiles, putLocalGameCard } from "./game-cards"
@@ -377,7 +377,7 @@ export async function importGameCardPackage(
     )
   }
 
-  const workspaceTemplateFiles: GameCardWorkspaceTemplateFile[] = []
+  const contentFiles: GameCardContentFile[] = []
   const frontendFiles: Array<{ path: string; data: Uint8Array; mediaType: string }> = []
 
   for (const [rawPath, bytes] of Object.entries(entries)) {
@@ -394,7 +394,7 @@ export async function importGameCardPackage(
 
     if (path.startsWith(WORKSPACE_PREFIX)) {
       const workspacePath = workspacePathFromPackagePath(path)
-      workspaceTemplateFiles.push({
+      contentFiles.push({
         path: workspacePath,
         content: decodeText(bytes, path),
         mediaType: indexedMediaType(path, packageManifest.workspaceFiles),
@@ -415,7 +415,7 @@ export async function importGameCardPackage(
 
   return putLocalGameCard({
     manifest,
-    workspaceTemplateFiles,
+    contentFiles,
     frontendFiles,
     source: "imported",
   })
@@ -434,7 +434,7 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
   const packageManifest: GameCardPackageManifest = {
     schema: GAME_CARD_PACKAGE_SCHEMA,
     manifest: card.manifest,
-    workspaceFiles: card.workspaceTemplateFiles.map((file) => ({
+    workspaceFiles: card.contentFiles.map((file) => ({
       path: `${WORKSPACE_PREFIX}${file.path}`,
       ...(file.mediaType ? { mediaType: file.mediaType } : {}),
       size: file.content.length,
@@ -455,7 +455,7 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
     [PACKAGE_MANIFEST_PATH]: strToU8(`${JSON.stringify(packageManifest, null, 2)}\n`),
   }
 
-  for (const file of card.workspaceTemplateFiles) {
+  for (const file of card.contentFiles) {
     zipInput[`${WORKSPACE_PREFIX}${file.path}`] = strToU8(file.content)
   }
 

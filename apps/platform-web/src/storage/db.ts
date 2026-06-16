@@ -1,7 +1,7 @@
 import type {
   ConversationMessageRecord,
+  GameCardContentFile,
   GameCardManifest,
-  GameCardWorkspaceTemplateFile,
   RuntimeSnapshotShell,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
@@ -23,7 +23,7 @@ export interface LocalSaveRecord {
 export interface LocalGameCardRecord {
   id: string
   manifest: GameCardManifest
-  workspaceTemplateFiles: GameCardWorkspaceTemplateFile[]
+  contentFiles: GameCardContentFile[]
   source: "builtin" | "local" | "imported"
   createdAt: number
   updatedAt: number
@@ -88,7 +88,7 @@ export class TsianLocalDb extends Dexie {
 
   constructor() {
     // Prototype reset: no migration from retired local IndexedDB schemas.
-    super("tsian-agent-runtime-v5")
+    super("tsian-agent-runtime-v6")
 
     this.version(1).stores({
       meta: "&key",

@@ -50,14 +50,14 @@ import {
   importGameCardPackage,
   initializeWorkspaceForSave,
   listCheckpointsForSave,
+  listEffectiveWorkspaceFilesForSave,
   listLocalGameCards,
   listLocalSaves,
-  listWorkspaceEntriesForSave,
-  listWorkspaceFilesForSave,
+  listWorkspaceEntriesFromFiles,
   normalizeWorkspaceFilePath,
-  readWorkspaceFileForSave,
+  readOrdinaryWorkspaceFileFromFiles,
   restoreCheckpointForSave,
-  searchWorkspaceFilesForSave,
+  searchWorkspaceFilesFromFiles,
   setActiveSaveId,
   writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
@@ -77,7 +77,7 @@ const platformHostReadyPromise = new Promise<void>((resolve) => {
 let previousTurnController: AbortController | null = null
 
 const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v1"
-const AIRP_HISTORY_TURN_PATH_PREFIX = "history/turns/"
+const AIRP_HISTORY_TURN_PATH_PREFIX = "save/history/turns/"
 const AGENT_SESSION_TRANSCRIPT_MEDIA_TYPE = "application/x-ndjson"
 
 interface RawAirpHistoryTurnRecord {
@@ -243,7 +243,7 @@ function agentSessionTranscriptPath(record: AgentSessionTranscriptRecord): strin
     )
   }
 
-  return `${record.agentPath.slice(0, -suffix.length)}/session.jsonl`
+  return `save/${record.agentPath.slice(0, -suffix.length)}/session.jsonl`
 }
 
 function appendJsonlRecords(
@@ -307,6 +307,16 @@ async function restoreActiveSnapshotFromStorage(saveId: string): Promise<Runtime
   const snapshot = await getSnapshotForSave(saveId)
   runtimeEngine.loadSnapshot(snapshot)
   return snapshot
+}
+
+async function listEffectiveWorkspaceFilesForActiveSave(saveId: string): Promise<WorkspaceFile[]> {
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    return []
+  }
+
+  await initializeWorkspaceForSave(saveId)
+  return listEffectiveWorkspaceFilesForSave(saveId, activeCard)
 }
 
 async function executePlatformAction(
@@ -624,11 +634,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
         }
 
         try {
-          await initializeWorkspaceForSave(activeSaveId)
+          const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
           return {
-            items: (await listWorkspaceEntriesForSave(activeSaveId, {
+            items: listWorkspaceEntriesFromFiles(files, {
               path: request.params?.path,
-            })) as T[],
+            }) as T[],
           } as DeepQueryResult<T>
         } catch {
           return { items: [] } as DeepQueryResult<T>
@@ -641,8 +651,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
         }
 
         try {
-          await initializeWorkspaceForSave(activeSaveId)
-          const file = await readWorkspaceFileForSave(activeSaveId, request.params?.path)
+          const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
+          const file = readOrdinaryWorkspaceFileFromFiles(files, request.params?.path)
           return {
             items: (file ? [file] : []) as T[],
           } as DeepQueryResult<T>
@@ -656,9 +666,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return { items: [] } as DeepQueryResult<T>
         }
 
-        await initializeWorkspaceForSave(activeSaveId)
+        const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
         return {
-          items: (await searchWorkspaceFilesForSave(activeSaveId, {
+          items: searchWorkspaceFilesFromFiles(files, {
             query:
               typeof request.params?.query === "string"
                 ? request.params.query
@@ -667,7 +677,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
               typeof request.params?.limit === "number"
                 ? request.params.limit
                 : undefined,
-          })) as T[],
+          }) as T[],
         } as DeepQueryResult<T>
       }
 
@@ -676,8 +686,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return { items: [] } as DeepQueryResult<T>
         }
 
-        await initializeWorkspaceForSave(activeSaveId)
-        const files = await listWorkspaceFilesForSave(activeSaveId)
+        const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
         return {
           items: buildAgentRegistry(files) as AgentRegistryEntry[] as T[],
         } as DeepQueryResult<T>
@@ -696,8 +705,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return { items: [] } as DeepQueryResult<T>
         }
 
-        await initializeWorkspaceForSave(activeSaveId)
-        const files = await listWorkspaceFilesForSave(activeSaveId)
+        const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
         const context = assembleAgentContext(files, { agentId })
         return {
           items: (context ? [context] : []) as AgentContextEntry[] as T[],
@@ -722,8 +730,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             ? request.params.includeLocal
             : undefined
 
-        await initializeWorkspaceForSave(activeSaveId)
-        const files = await listWorkspaceFilesForSave(activeSaveId)
+        const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
         return {
           items: buildSkillRegistry(files, {
             agentId,
@@ -740,8 +747,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
         try {
           const path = normalizeWorkspaceFilePath(request.params?.path)
-          await initializeWorkspaceForSave(activeSaveId)
-          const files = await listWorkspaceFilesForSave(activeSaveId)
+          const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
           const detail = loadSkillDetail(files, path)
           return {
             items: (detail ? [detail] : []) as SkillDetailEntry[] as T[],
@@ -756,8 +762,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           return { items: [] } as DeepQueryResult<T>
         }
 
-        await initializeWorkspaceForSave(activeSaveId)
-        const files = await listWorkspaceFilesForSave(activeSaveId)
+        const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
         return {
           items: buildRuntimeDiagnostics(
             files,
@@ -804,9 +809,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
       previousTurnController = currentController
 
       try {
-        await initializeWorkspaceForSave(activeSaveId)
         workspaceTransaction = createRuntimeWorkspaceTransaction(
-          await listWorkspaceFilesForSave(activeSaveId),
+          await listEffectiveWorkspaceFilesForActiveSave(activeSaveId),
         )
         const result = await runAgentRuntimeTurn(
           {

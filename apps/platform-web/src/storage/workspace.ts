@@ -1,10 +1,14 @@
 import type {
-  GameCardWorkspaceTemplateFile,
+  GameCardContentFile,
   WorkspaceEntry,
   WorkspaceFile,
   WorkspaceSearchResult,
 } from "@tsian/contracts"
-import { localDb, type LocalWorkspaceFileRecord } from "./db"
+import {
+  localDb,
+  type LocalGameCardRecord,
+  type LocalWorkspaceFileRecord,
+} from "./db"
 
 export type CheckpointWorkspaceFile = Omit<LocalWorkspaceFileRecord, "id" | "saveId">
 
@@ -44,20 +48,30 @@ export class WorkspaceStorageError extends Error {
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
-const DEFAULT_WORKSPACE_VERSION = 4
+const DEFAULT_WORKSPACE_VERSION = 5
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
-const DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS = new Set([
-  "state/README.md",
-  "state/schemas/README.md",
-  "state/data/README.md",
-  "skills/memory-maintenance/SKILL.md",
-  "skills/memory-maintenance/scripts/apply-maintenance-plan.js",
-  "docs/README.md",
-  "docs/tsian-framework-knowledge.md",
-  "agents/studio-assistant/AGENT.md",
-  "agents/studio-assistant/notes.md",
-  "agents/studio-assistant/session.jsonl",
-  "agents/studio-assistant/skills/framework-knowledge/SKILL.md",
+const DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS = new Set([
+  "save/README.md",
+  "save/agents/master/notes.md",
+  "save/agents/master/session.jsonl",
+  "save/agents/narrative/notes.md",
+  "save/agents/narrative/session.jsonl",
+  "save/agents/memory/notes.md",
+  "save/agents/memory/session.jsonl",
+  "save/state/README.md",
+  "save/state/schemas/README.md",
+  "save/state/data/README.md",
+  "save/agents/studio-assistant/notes.md",
+  "save/agents/studio-assistant/session.jsonl",
+  "save/history/README.md",
+  "save/history/turns/README.md",
+  "save/history/timeline.md",
+  "save/world/README.md",
+  "save/memory/README.md",
+  "save/memory/summaries/current.md",
+  "save/memory/summaries/long-term.md",
+  "save/frontend/README.md",
+  "save/frontend/view-state.json",
 ])
 
 const MEMORY_MAINTENANCE_SKILL_MD = [
@@ -82,10 +96,10 @@ const MEMORY_MAINTENANCE_SKILL_MD = [
   "",
   "Allowed targets:",
   "",
-  "- `agents/<agent>/notes.md`",
-  "- `history/timeline.md`",
-  "- `memory/summaries/current.md`",
-  "- `memory/summaries/long-term.md`",
+  "- `save/agents/<agent>/notes.md`",
+  "- `save/history/timeline.md`",
+  "- `save/memory/summaries/current.md`",
+  "- `save/memory/summaries/long-term.md`",
   "",
   "Use an empty `writes` array only when you explicitly considered maintenance and decided no files should change.",
   "",
@@ -127,7 +141,7 @@ const MEMORY_MAINTENANCE_SKILL_MD = [
   "  \"schema\": \"tsian.runtime.maintenance.plan.v1\",",
   "  \"writes\": [",
   "    {",
-  "      \"path\": \"memory/summaries/current.md\",",
+  "      \"path\": \"save/memory/summaries/current.md\",",
   "      \"mode\": \"replace\",",
   "      \"content\": \"# Current Summary\\n\\n...\\n\",",
   "      \"reason\": \"The current scene changed enough to refresh the summary.\"",
@@ -182,10 +196,10 @@ const MEMORY_MAINTENANCE_SCRIPT_JS = [
   "}",
   "",
   "function isAllowedTarget(path) {",
-  "  return /^agents\\/[^/]+\\/notes\\.md$/.test(path)",
-  "    || path === \"history/timeline.md\"",
-  "    || path === \"memory/summaries/current.md\"",
-  "    || path === \"memory/summaries/long-term.md\";",
+  "  return /^save\\/agents\\/[^/]+\\/notes\\.md$/.test(path)",
+  "    || path === \"save/history/timeline.md\"",
+  "    || path === \"save/memory/summaries/current.md\"",
+  "    || path === \"save/memory/summaries/long-term.md\";",
   "}",
   "",
   "function validateWrite(rawWrite, index) {",
@@ -332,14 +346,14 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "- Tsian is an Agent-Orchestrated Runtime platform for AIRP.",
   "- Platform owns model configuration, API-key boundaries, local storage, checkpoints, bridge APIs, execution policy, and sandboxing.",
-  "- A Game Card is a reusable workspace template plus optional frontend binding and metadata.",
-  "- A Save Instance is the playable copy created from a Game Card. Its workspace is independent and mutates during play.",
+  "- A Game Card is reusable content definition plus optional frontend binding and metadata.",
+  "- A Save Instance stores runtime play data for one playthrough.",
   "- A Checkpoint is a rollback point inside one Save Instance, not a top-level game card or save card.",
   "- Game frontends are supplied by Game Cards. Platform UI should not become a universal gameplay renderer.",
   "",
   "## Runtime Workspace",
   "",
-  "Runtime Workspace is the save-scoped virtual file system. It can contain Agents, Skills, world data, memory, state files, frontend data, history, archives, and platform-owned metadata.",
+  "Runtime Workspace is an effective virtual file system composed from Game Card content plus the active save slot mounted at `save/`.",
   "",
   "Ordinary workspace paths are visible to Agents, Skills, and game frontends. `.tsian/` is platform-owned metadata and is hidden from ordinary workspace read/list/search APIs.",
   "",
@@ -347,7 +361,7 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "## Agents",
   "",
-  "Agents are ordinary workspace participants under `agents/<agent>/AGENT.md`. Agent directories may also include `notes.md`, `session.jsonl`, and local Skills under `agents/<agent>/skills/`.",
+  "Agent definitions are Game Card content under `agents/<agent>/AGENT.md`. Runtime notes and session transcripts live under `save/agents/<agent>/`.",
   "",
   "The default AIRP runtime still uses `master` and `narrative` as the normal turn path. The `studio-assistant` Agent is for future/player-facing workspace help and should not change normal AIRP turn behavior by existing alone.",
   "",
@@ -365,11 +379,11 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "Structured state is not a platform-owned table model. It belongs in workspace files documented by README files, schemas, Agents, Skills, or frontend conventions.",
   "",
-  "The `frontend/` directory is for data agreed between the runtime and the active game frontend. The platform does not interpret those gameplay fields.",
+  "The `save/frontend/` directory is for runtime data agreed between the save and the active game frontend. The platform does not interpret those gameplay fields.",
   "",
   "## Memory, History, And Diagnostics",
   "",
-  "Raw AIRP turn history under `history/turns/` stores successful player input and final narrative output. It is ordinary memory feedstock, not trace data.",
+  "Raw AIRP turn history under `save/history/turns/` stores successful player input and final narrative output. It is ordinary memory feedstock, not trace data.",
   "",
   "Enhanced memory such as timeline summaries, durable facts, or long-term summaries is derived workspace content maintained by Agents and Skills.",
   "",
@@ -399,8 +413,9 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: [
       "# Runtime Workspace",
       "",
-      "This save-scoped workspace stores runtime data as virtual files.",
-      "Agents, skills, world data, generic state, memory, frontend data, and platform metadata can all live here.",
+      "This effective workspace combines Game Card content with active save runtime data.",
+      "Agents, Skills, rules, docs, schemas, and frontend definitions are Game Card content.",
+      "Runtime play data lives under `save/`.",
       "Ordinary workspace file content is text; binary/blob content is not part of this workspace version.",
       "The `.tsian/` directory is platform-owned metadata and is hidden from ordinary Agent, Skill, and frontend workspace APIs.",
       "",
@@ -431,10 +446,11 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "defaultSkills:",
       "contextPaths:",
       "  - README.md",
-      "  - history/timeline.md",
       "  - world/README.md",
-      "  - state/README.md",
-      "  - memory/summaries/current.md",
+      "  - save/history/timeline.md",
+      "  - save/world/README.md",
+      "  - save/state/README.md",
+      "  - save/memory/summaries/current.md",
       "---",
       "",
       "# Master Agent",
@@ -466,10 +482,10 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "  - master",
       "defaultSkills:",
       "contextPaths:",
-      "  - history/timeline.md",
+      "  - save/history/timeline.md",
       "  - world/README.md",
       "  - world/canon.md",
-      "  - memory/summaries/current.md",
+      "  - save/memory/summaries/current.md",
       "---",
       "",
       "# Narrative Agent",
@@ -499,10 +515,10 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "defaultSkills:",
       "contextPaths:",
       "  - README.md",
-      "  - history/timeline.md",
-      "  - memory/README.md",
-      "  - memory/summaries/current.md",
-      "  - memory/summaries/long-term.md",
+      "  - save/history/timeline.md",
+      "  - save/memory/README.md",
+      "  - save/memory/summaries/current.md",
+      "  - save/memory/summaries/long-term.md",
       "  - world/canon.md",
       "---",
       "",
@@ -736,6 +752,225 @@ const DEFAULT_WORKSPACE_FILES: Array<{
   },
 ]
 
+const RUNTIME_DEFAULT_CARD_PATHS = new Set([
+  "agents/master/notes.md",
+  "agents/master/session.jsonl",
+  "agents/narrative/notes.md",
+  "agents/narrative/session.jsonl",
+  "agents/memory/notes.md",
+  "agents/memory/session.jsonl",
+  "agents/studio-assistant/notes.md",
+  "agents/studio-assistant/session.jsonl",
+  "history/README.md",
+  "history/turns/README.md",
+  "history/timeline.md",
+  "memory/README.md",
+  "memory/summaries/current.md",
+  "memory/summaries/long-term.md",
+  "frontend/view-state.json",
+  WORKSPACE_MANIFEST_PATH,
+  ".tsian/README.md",
+  ".tsian/traces/README.md",
+  ".tsian/checkpoints/README.md",
+  ".tsian/indexes/README.md",
+  ".tsian/cache/README.md",
+])
+
+const DEFAULT_SAVE_RUNTIME_FILES: Array<{
+  path: string
+  content: string
+  mediaType?: string
+}> = [
+  {
+    path: "save/README.md",
+    content: [
+      "# Save Runtime Data",
+      "",
+      "This directory contains runtime data for the active save slot.",
+      "Game Card content such as Agents, Skills, rules, schemas, and docs lives outside this directory.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/agents/master/notes.md",
+    content: "# Master Notes\n\n",
+  },
+  {
+    path: "save/agents/master/session.jsonl",
+    content: "",
+    mediaType: "application/x-ndjson",
+  },
+  {
+    path: "save/agents/narrative/notes.md",
+    content: "# Narrative Notes\n\n",
+  },
+  {
+    path: "save/agents/narrative/session.jsonl",
+    content: "",
+    mediaType: "application/x-ndjson",
+  },
+  {
+    path: "save/agents/memory/notes.md",
+    content: "# Memory Notes\n\n",
+  },
+  {
+    path: "save/agents/memory/session.jsonl",
+    content: "",
+    mediaType: "application/x-ndjson",
+  },
+  {
+    path: "save/agents/studio-assistant/notes.md",
+    content: "# Studio Assistant Notes\n\n",
+  },
+  {
+    path: "save/agents/studio-assistant/session.jsonl",
+    content: "",
+    mediaType: "application/x-ndjson",
+  },
+  {
+    path: "save/history/README.md",
+    content: [
+      "# History",
+      "",
+      "Keep this playthrough's durable conversation records and timeline summaries here.",
+      "Raw player-facing AIRP turns are stored under `save/history/turns/` as one JSON file per successful turn.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/history/turns/README.md",
+    content: [
+      "# Raw AIRP Turns",
+      "",
+      "Each successful AIRP turn is stored here as `turn-000001.json`, `turn-000002.json`, and so on.",
+      "Turn files contain the player input and final assistant narrative only.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/history/timeline.md",
+    content: "# Timeline\n\n",
+  },
+  {
+    path: "save/world/README.md",
+    content: [
+      "# Runtime World Data",
+      "",
+      "Generated characters, places, relationships, maps, and other playthrough world state can live here.",
+      "Card-owned world canon and rules live outside `save/`.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/state/README.md",
+    content: [
+      "# Runtime State",
+      "",
+      "Use this directory for generic runtime state when no more specific save directory exists.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/state/schemas/README.md",
+    content: [
+      "# Runtime State Schemas",
+      "",
+      "Prefer card-owned schemas outside `save/`; use this directory only for save-local schema notes.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/state/data/README.md",
+    content: [
+      "# Runtime State Data",
+      "",
+      "Store generic structured runtime data here only when a local convention needs this neutral area.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/memory/README.md",
+    content: [
+      "# Runtime Memory",
+      "",
+      "Store this playthrough's long-term summaries, durable facts, and retrieval-oriented notes here.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/memory/summaries/current.md",
+    content: "# Current Summary\n\n",
+  },
+  {
+    path: "save/memory/summaries/long-term.md",
+    content: "# Long-Term Summary\n\n",
+  },
+  {
+    path: "save/frontend/README.md",
+    content: [
+      "# Runtime Frontend Data",
+      "",
+      "Store data agreed between this save and the active frontend package here.",
+      "The platform does not interpret these fields.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "save/frontend/view-state.json",
+    content: "{}\n",
+    mediaType: "application/json",
+  },
+  {
+    path: WORKSPACE_MANIFEST_PATH,
+    content: JSON.stringify({
+      version: "0.0.0",
+      workspaceVersion: DEFAULT_WORKSPACE_VERSION,
+      contentModel: {
+        fileContent: "text",
+        binaryContent: false,
+        cardContentRoot: "/",
+        activeSaveRoot: "save/",
+      },
+      platformMetadata: {
+        path: ".tsian/",
+        ordinaryWorkspaceVisible: false,
+      },
+    }, null, 2) + "\n",
+    mediaType: "application/json",
+  },
+  {
+    path: ".tsian/README.md",
+    content: [
+      "# Tsian Platform Metadata",
+      "",
+      "Files under `.tsian/` are owned by the platform for this save slot.",
+      "They are hidden from ordinary Agent, Skill, and frontend workspace APIs.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: ".tsian/traces/README.md",
+    content: [
+      "# Traces",
+      "",
+      "Runtime trace files are platform-owned diagnostics input for this save.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: ".tsian/checkpoints/README.md",
+    content: "# Checkpoints\n\nCheckpoint metadata is platform-owned and preserved with save snapshots.\n",
+  },
+  {
+    path: ".tsian/indexes/README.md",
+    content: "# Indexes\n\nGenerated save indexes are platform-owned derived data and may be rebuilt.\n",
+  },
+  {
+    path: ".tsian/cache/README.md",
+    content: "# Cache\n\nTemporary platform cache data is platform-owned and may be dropped or rebuilt.\n",
+  },
+]
+
 function createTableId(saveId: string, path: string): string {
   return [
     saveId,
@@ -825,13 +1060,35 @@ function normalizeMediaType(value: unknown, path: string): string {
   return "text/plain"
 }
 
-export function createDefaultWorkspaceTemplateFiles(): GameCardWorkspaceTemplateFile[] {
-  return DEFAULT_WORKSPACE_FILES.map((file) => {
+function toContentFile(file: {
+  path: string
+  content: string
+  mediaType?: string
+}): GameCardContentFile {
+  const path = normalizeWorkspaceFilePath(file.path)
+  return {
+    path,
+    content: file.content,
+    mediaType: normalizeMediaType(file.mediaType, path),
+  }
+}
+
+export function createDefaultWorkspaceTemplateFiles(): GameCardContentFile[] {
+  return DEFAULT_WORKSPACE_FILES
+    .filter((file) => !RUNTIME_DEFAULT_CARD_PATHS.has(file.path))
+    .map(toContentFile)
+}
+
+export function createDefaultSaveRuntimeFiles(): CheckpointWorkspaceFile[] {
+  const now = Date.now()
+  return DEFAULT_SAVE_RUNTIME_FILES.map((file) => {
     const path = normalizeWorkspaceFilePath(file.path)
     return {
       path,
       content: file.content,
       mediaType: normalizeMediaType(file.mediaType, path),
+      createdAt: now,
+      updatedAt: now,
     }
   })
 }
@@ -845,18 +1102,33 @@ export function isPlatformMetadataPath(path: string): boolean {
   return path === ".tsian" || path.startsWith(".tsian/")
 }
 
+export function isActiveSaveRuntimePath(path: string): boolean {
+  return path === "save" || path.startsWith("save/")
+}
+
+export function isSaveRuntimePersistencePath(path: string): boolean {
+  return isActiveSaveRuntimePath(path) || isPlatformMetadataPath(path)
+}
+
 export function isOrdinaryWorkspacePath(path: string): boolean {
   return !isPlatformMetadataPath(path)
 }
 
-function assertOrdinaryMutationPath(path: string): void {
-  if (!isPlatformMetadataPath(path)) {
+function assertOrdinarySaveRuntimeMutationPath(path: string): void {
+  if (isPlatformMetadataPath(path)) {
+    throw new WorkspaceStorageError(
+      "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
+      "Platform metadata paths under .tsian are host-owned.",
+    )
+  }
+
+  if (isActiveSaveRuntimePath(path)) {
     return
   }
 
   throw new WorkspaceStorageError(
-    "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
-    "Platform metadata paths under .tsian are host-owned.",
+    "WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED",
+    "Runtime workspace mutations must target the active save under save/.",
   )
 }
 
@@ -871,6 +1143,17 @@ function assertOrdinaryReadPath(path: string): void {
   )
 }
 
+function assertPlatformSaveRuntimeMutationPath(path: string): void {
+  if (isSaveRuntimePersistencePath(path)) {
+    return
+  }
+
+  throw new WorkspaceStorageError(
+    "WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED",
+    "Platform runtime workspace mutations must target save/ or .tsian/.",
+  )
+}
+
 function ordinaryWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
   return files.filter((file) => isOrdinaryWorkspacePath(file.path))
 }
@@ -882,6 +1165,20 @@ function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
     mediaType: record.mediaType,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
+  }
+}
+
+function toWorkspaceFileFromGameCardContent(
+  file: GameCardContentFile,
+  updatedAt: number,
+): WorkspaceFile {
+  const path = normalizeWorkspaceFilePath(file.path)
+  return {
+    path,
+    content: typeof file.content === "string" ? file.content : "",
+    mediaType: normalizeMediaType(file.mediaType, path),
+    createdAt: updatedAt,
+    updatedAt,
   }
 }
 
@@ -953,7 +1250,7 @@ function defaultWorkspaceFileByPath(path: string): {
   content: string
   mediaType?: string
 } | undefined {
-  return DEFAULT_WORKSPACE_FILES.find((file) => file.path === path)
+  return DEFAULT_SAVE_RUNTIME_FILES.find((file) => file.path === path)
 }
 
 function parseWorkspaceManifestVersion(content: string | undefined): number {
@@ -1006,6 +1303,8 @@ function serializeWorkspaceManifest(content: string | undefined): string {
       ...plainRecord(base.contentModel),
       fileContent: "text",
       binaryContent: false,
+      cardContentRoot: "/",
+      activeSaveRoot: "save/",
     },
     platformMetadata: {
       ...plainRecord(base.platformMetadata),
@@ -1025,7 +1324,7 @@ async function upgradeDefaultWorkspaceFilesForSave(saveId: string): Promise<void
 
   const now = Date.now()
   await localDb.transaction("rw", localDb.workspaceFiles, async () => {
-    for (const path of DEFAULT_WORKSPACE_UPGRADE_FILE_PATHS) {
+    for (const path of DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS) {
       if (existingByPath.has(path)) {
         continue
       }
@@ -1067,7 +1366,7 @@ export async function initializeWorkspaceForSave(saveId: string): Promise<void> 
 
   const now = Date.now()
   await localDb.transaction("rw", localDb.workspaceFiles, async () => {
-    for (const file of DEFAULT_WORKSPACE_FILES) {
+    for (const file of createDefaultSaveRuntimeFiles()) {
       const path = normalizeWorkspaceFilePath(file.path)
       await localDb.workspaceFiles.put({
         id: createTableId(saveId, path),
@@ -1095,10 +1394,53 @@ export async function listWorkspaceFilesForSave(
   return (await listLocalWorkspaceFilesForSave(saveId)).map(toWorkspaceFile)
 }
 
+export async function listEffectiveWorkspaceFilesForSave(
+  saveId: string,
+  card: LocalGameCardRecord,
+): Promise<WorkspaceFile[]> {
+  const filesByPath = new Map<string, WorkspaceFile>()
+  for (const file of card.contentFiles) {
+    const workspaceFile = toWorkspaceFileFromGameCardContent(file, card.updatedAt)
+    filesByPath.set(workspaceFile.path, workspaceFile)
+  }
+
+  for (const record of await listLocalWorkspaceFilesForSave(saveId)) {
+    const workspaceFile = toWorkspaceFile(record)
+    filesByPath.set(workspaceFile.path, workspaceFile)
+  }
+
+  return Array.from(filesByPath.values())
+    .map(cloneWorkspaceFile)
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
 export async function listCheckpointWorkspaceFilesForSave(
   saveId: string,
 ): Promise<CheckpointWorkspaceFile[]> {
   return (await listLocalWorkspaceFilesForSave(saveId)).map(toCheckpointWorkspaceFile)
+}
+
+export function saveRuntimeFilesFromEffectiveWorkspace(
+  workspaceFiles: WorkspaceFile[],
+): CheckpointWorkspaceFile[] {
+  const filesByPath = new Map<string, CheckpointWorkspaceFile>()
+  for (const file of workspaceFiles) {
+    const path = normalizeWorkspaceFilePath(file.path)
+    if (!isSaveRuntimePersistencePath(path)) {
+      continue
+    }
+
+    filesByPath.set(path, {
+      path,
+      content: typeof file.content === "string" ? file.content : "",
+      mediaType: normalizeMediaType(file.mediaType, path),
+      createdAt: typeof file.createdAt === "number" ? file.createdAt : Date.now(),
+      updatedAt: typeof file.updatedAt === "number" ? file.updatedAt : Date.now(),
+    })
+  }
+
+  return Array.from(filesByPath.values())
+    .sort((left, right) => left.path.localeCompare(right.path))
 }
 
 export function listWorkspaceEntriesFromFiles(
@@ -1212,11 +1554,13 @@ export function readOrdinaryWorkspaceFileFromFiles(
 function writeWorkspaceFileToFiles(
   workspaceFiles: WorkspaceFile[],
   input: WorkspaceWriteInput,
-  options: { rejectPlatformMetadata: boolean },
+  options: { allowPlatformMetadata: boolean },
 ): WorkspaceFile {
   const path = normalizeWorkspaceFilePath(input.path)
-  if (options.rejectPlatformMetadata) {
-    assertOrdinaryMutationPath(path)
+  if (options.allowPlatformMetadata) {
+    assertPlatformSaveRuntimeMutationPath(path)
+  } else {
+    assertOrdinarySaveRuntimeMutationPath(path)
   }
 
   if (typeof input.content !== "string") {
@@ -1249,11 +1593,13 @@ function writeWorkspaceFileToFiles(
 function deleteWorkspacePathFromFiles(
   workspaceFiles: WorkspaceFile[],
   pathInput: unknown,
-  options: { rejectPlatformMetadata: boolean },
+  options: { allowPlatformMetadata: boolean },
 ): { deletedPaths: string[] } {
   const path = normalizeWorkspaceTargetPath(pathInput)
-  if (options.rejectPlatformMetadata) {
-    assertOrdinaryMutationPath(path)
+  if (options.allowPlatformMetadata) {
+    assertPlatformSaveRuntimeMutationPath(path)
+  } else {
+    assertOrdinarySaveRuntimeMutationPath(path)
   }
 
   const prefix = `${path}/`
@@ -1288,17 +1634,17 @@ export function createRuntimeWorkspaceTransaction(
     workspaceFiles: stagedFiles,
     write(input) {
       return writeWorkspaceFileToFiles(stagedFiles, input, {
-        rejectPlatformMetadata: true,
+        allowPlatformMetadata: false,
       })
     },
     writePlatformFile(input) {
       return writeWorkspaceFileToFiles(stagedFiles, input, {
-        rejectPlatformMetadata: false,
+        allowPlatformMetadata: true,
       })
     },
     delete(path) {
       return deleteWorkspacePathFromFiles(stagedFiles, path, {
-        rejectPlatformMetadata: true,
+        allowPlatformMetadata: false,
       })
     },
     finalWorkspaceFiles() {
@@ -1315,11 +1661,13 @@ export function createRuntimeWorkspaceTransaction(
 async function writeWorkspaceFileForSaveWithOptions(
   saveId: string,
   input: WorkspaceWriteInput,
-  options: { rejectPlatformMetadata: boolean },
+  options: { allowPlatformMetadata: boolean },
 ): Promise<WorkspaceFile> {
   const path = normalizeWorkspaceFilePath(input.path)
-  if (options.rejectPlatformMetadata) {
-    assertOrdinaryMutationPath(path)
+  if (options.allowPlatformMetadata) {
+    assertPlatformSaveRuntimeMutationPath(path)
+  } else {
+    assertOrdinarySaveRuntimeMutationPath(path)
   }
 
   if (typeof input.content !== "string") {
@@ -1363,7 +1711,7 @@ export async function writeWorkspaceFileForSave(
   input: WorkspaceWriteInput,
 ): Promise<WorkspaceFile> {
   return writeWorkspaceFileForSaveWithOptions(saveId, input, {
-    rejectPlatformMetadata: true,
+    allowPlatformMetadata: false,
   })
 }
 
@@ -1372,7 +1720,7 @@ export async function writePlatformWorkspaceFileForSave(
   input: WorkspaceWriteInput,
 ): Promise<WorkspaceFile> {
   return writeWorkspaceFileForSaveWithOptions(saveId, input, {
-    rejectPlatformMetadata: false,
+    allowPlatformMetadata: true,
   })
 }
 
@@ -1381,7 +1729,7 @@ export async function deleteWorkspacePathForSave(
   pathInput: unknown,
 ): Promise<{ deletedPaths: string[] }> {
   const path = normalizeWorkspaceTargetPath(pathInput)
-  assertOrdinaryMutationPath(path)
+  assertOrdinarySaveRuntimeMutationPath(path)
   const prefix = `${path}/`
   const rows = (await listLocalWorkspaceFilesForSave(saveId))
     .filter((record) => record.path === path || record.path.startsWith(prefix))

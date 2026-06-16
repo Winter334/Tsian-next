@@ -86,10 +86,10 @@ export function assembleAgentContext(
 
   const agentDirectory = agentDirectoryPath(agent.path)
   const notesFile = agentDirectory
-    ? filesByPath.get(`${agentDirectory}/notes.md`)
+    ? filesByPath.get(`save/${agentDirectory}/notes.md`)
     : undefined
   const sessionFile = agentDirectory
-    ? filesByPath.get(`${agentDirectory}/session.jsonl`)
+    ? filesByPath.get(`save/${agentDirectory}/session.jsonl`)
     : undefined
   const contextFiles: WorkspaceFile[] = []
   const missingContextPaths: string[] = []
