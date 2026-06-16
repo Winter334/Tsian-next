@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 56
+- **Total Sessions**: 57
 - **Last Active**: 2026-06-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1926 | Active |
+| `journal-1.md` | ~1960 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 57 | 2026-06-16 | Generic workspace operation tools | `d0fcd15` | `master` |
 | 56 | 2026-06-16 | Split card content from save runtime data | `e28bcb2`, `6dec22e` | `master` |
 | 55 | 2026-06-15 | Remote Game Frontend Foundation | `7e34d93` | `master` |
 | 54 | 2026-06-14 | Runtime Foundation Completion | `e9844eb` | `master` |

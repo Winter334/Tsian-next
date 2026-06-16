@@ -1924,3 +1924,37 @@ Planned the platform UI development phase and implemented the card-owned content
 ### Next Steps
 
 - None - task complete
+
+
+## Session 57: Generic workspace operation tools
+
+**Date**: 2026-06-16
+**Task**: Generic workspace operation tools
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Replaced hard-scoped runtime workspace tools with generic scoped workspace operations, added read/edit level and operation exposure handling, routed runtime tools, Skill actions, browser SDK, bridge actions, and docs/specs through the new model.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d0fcd15` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
