@@ -10,13 +10,29 @@ const router = createRouter({
   routes: [
     {
       path: "/",
-      name: "lobby",
-      component: () => import("../views/LobbyView.vue"),
+      name: "desktop",
+      component: () => import("../views/DesktopView.vue"),
+    },
+    {
+      path: "/market",
+      name: "app-market",
+      component: () => import("../views/AppMarketView.vue"),
     },
     {
       path: "/settings",
       name: "settings",
       component: () => import("../views/SettingsView.vue"),
+    },
+    {
+      path: "/library",
+      name: "library",
+      component: () => import("../views/GameCardLibraryView.vue"),
+    },
+    {
+      path: "/cards/:cardId",
+      name: "game-card-detail",
+      component: () => import("../views/GameCardDetailView.vue"),
+      props: true,
     },
     {
       path: "/play",

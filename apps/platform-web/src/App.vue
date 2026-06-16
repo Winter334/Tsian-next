@@ -1,83 +1,136 @@
 <template>
-  <!-- ── Master Wrapper: CSS Grid 堆叠，用于 CRT 开屏动画 ── -->
   <div
-    class="grid w-full min-h-dvh overflow-hidden bg-void"
+    class="grid min-h-dvh w-full overflow-hidden bg-void"
     :class="{ 'animate-crt-switch': splashState === 'animating' }"
     @animationend="onCrtAnimationEnd"
   >
-    <!-- ── 主应用层 (z-10, 始终挂载, splash 期间被遮盖) ── -->
     <div class="col-start-1 row-start-1 z-10 min-h-0">
-      <!-- /play 路由：游玩前端独占视口，无平台壳 -->
       <div v-if="isPlayRoute" class="h-dvh overflow-x-hidden overflow-y-auto bg-void">
         <router-view />
       </div>
 
-      <!-- 平台壳：赛博工业风侧边栏布局 -->
-      <div v-else class="flex h-screen w-screen overflow-hidden bg-void">
-        <!-- ── 左侧边栏 ── -->
-        <aside class="flex w-56 shrink-0 flex-col border-r border-neon-deep/40 bg-panel">
-          <!-- 标题区 -->
-          <div class="flex items-center gap-2 border-b border-neon-deep/30 px-4 py-5">
-            <div class="h-2 w-2 rounded-full bg-neon shadow-neon-glow animate-pulse" />
-            <h1 class="font-mono text-sm font-bold tracking-[0.25em] text-neon glow-text">
-              T S I A N
-            </h1>
+      <div
+        v-else
+        class="desktop-shell"
+        @click="clearDesktopSelection"
+        @contextmenu.prevent="openDesktopContextMenu"
+      >
+        <header class="desktop-menubar">
+          <button
+            type="button"
+            class="desktop-start-button"
+            @click.stop="router.push('/')"
+          >
+            <MonitorDot class="h-4 w-4" aria-hidden="true" />
+            TSian
+          </button>
+          <div class="desktop-menu-tabs" aria-label="System menus">
+            <span>File</span>
+            <span>View</span>
+            <span>System</span>
           </div>
+          <div class="desktop-system-readout">
+            <span>STO:{{ storageStatus }}</span>
+            <span>AI:{{ aiStatusShort }}</span>
+          </div>
+        </header>
 
-          <!-- 导航链接 -->
-          <nav class="flex flex-1 flex-col gap-1 px-2 py-3">
+        <main class="desktop-stage">
+          <nav class="desktop-icon-grid" aria-label="Desktop applications">
             <button
-              v-for="item in navItems"
-              :key="item.name"
+              v-for="icon in desktopIcons"
+              :key="icon.id"
               type="button"
-              class="group flex items-center gap-3 px-3 py-2.5 font-mono text-xs uppercase tracking-wider transition-all duration-150"
-              :class="isRoute(item.name)
-                ? 'bg-neon/10 text-neon border-l-2 border-neon glow-box'
-                : 'text-text-dim hover:text-text-main hover:bg-elevated/50 border-l-2 border-transparent'"
-              @click="router.push(item.path)"
+              class="desktop-icon retro-focus"
+              :class="{ 'desktop-icon--selected': selectedDesktopIcon === icon.id || isIconActive(icon.id) }"
+              :aria-label="`Open ${icon.label}`"
+              @click.stop="selectDesktopIcon(icon.id)"
+              @dblclick.stop="openDesktopIcon(icon)"
+              @contextmenu.prevent.stop="openIconContextMenu(icon, $event)"
+              @keydown.enter.prevent="openDesktopIcon(icon)"
+              @keydown.space.prevent="openDesktopIcon(icon)"
             >
-              <span class="text-[10px] font-bold opacity-40">{{ item.index }}</span>
-              {{ item.label }}
+              <span class="desktop-icon-glyph">
+                <component :is="icon.icon" class="h-7 w-7" aria-hidden="true" />
+              </span>
+              <span class="desktop-icon-label">{{ icon.label }}</span>
             </button>
           </nav>
 
-          <!-- 底部状态区 -->
-          <div class="border-t border-neon-deep/30 px-4 py-3">
-            <div class="flex items-center gap-2 font-mono text-[10px] text-text-dim">
-              <div
-                class="h-1.5 w-1.5 rounded-full"
-                :class="storageStatus === 'ready' ? 'bg-neon' : 'bg-warning'"
-              />
-              STO:{{ storageStatus }}
-            </div>
-            <div class="mt-1 font-mono text-[10px] text-text-dim truncate">
-              AI:{{ aiStatusShort }}
-            </div>
+          <div v-if="isWindowRoute" class="desktop-window-wrap">
+            <section
+              class="desktop-window"
+              :class="activeWindow?.wide ? 'desktop-window--wide' : 'desktop-window--normal'"
+              :aria-label="activeWindow?.title ?? 'Tsian application window'"
+            >
+              <header class="desktop-window-titlebar">
+                <div class="flex min-w-0 items-center gap-2">
+                  <span class="desktop-window-icon">
+                    <component :is="activeWindow?.icon ?? MonitorDot" class="h-4 w-4" aria-hidden="true" />
+                  </span>
+                  <div class="min-w-0">
+                    <h1 class="truncate font-mono text-sm font-bold">
+                      {{ activeWindow?.title ?? "Tsian" }}
+                    </h1>
+                    <p class="truncate font-mono text-[10px] uppercase tracking-wider">
+                      {{ activeWindow?.caption ?? "Application window" }}
+                    </p>
+                  </div>
+                </div>
+                <div class="desktop-window-controls">
+                  <button type="button" aria-label="Minimize window" @click="router.push('/')">
+                    <Minus class="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                  <button type="button" aria-label="Close window" @click="router.push('/')">
+                    <X class="h-3.5 w-3.5" aria-hidden="true" />
+                  </button>
+                </div>
+              </header>
+              <div class="desktop-window-content">
+                <router-view />
+              </div>
+            </section>
           </div>
-        </aside>
 
-        <!-- ── 主内容区 ── -->
-        <main class="relative flex-1 overflow-x-hidden overflow-y-auto bg-void p-4 md:p-6 lg:p-8">
-          <div class="relative mx-auto min-h-full max-w-[1520px] border border-neon-muted/30 bg-panel/30 p-4 shadow-[inset_0_0_32px_rgba(0,0,0,0.35)] md:p-6 lg:p-8">
-            <router-view />
+          <div
+            v-if="contextMenu"
+            class="desktop-context-menu"
+            :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+            @click.stop
+          >
+            <button
+              v-if="contextMenu.icon"
+              type="button"
+              @click="openDesktopIcon(contextMenu.icon)"
+            >
+              Open
+            </button>
+            <button type="button" @click="router.push('/')">
+              Show Desktop
+            </button>
           </div>
         </main>
 
-        <!-- ── CRT 扫描线叠加层 ── -->
-        <div
-          class="pointer-events-none fixed inset-0 z-50 crt-scanlines opacity-30"
-          aria-hidden="true"
-        />
+        <footer class="desktop-taskbar">
+          <button
+            v-for="icon in desktopIcons"
+            :key="`task-${icon.id}`"
+            type="button"
+            class="desktop-task-button"
+            :class="{ 'desktop-task-button--active': isIconActive(icon.id) }"
+            @click="openDesktopIcon(icon)"
+          >
+            <component :is="icon.icon" class="h-3.5 w-3.5" aria-hidden="true" />
+            {{ icon.shortLabel }}
+          </button>
+          <div class="desktop-clock">{{ desktopClock }}</div>
+        </footer>
 
-        <!-- ── 噪点纹理叠加层 ── -->
-        <div
-          class="pointer-events-none fixed inset-0 z-40 bg-noise"
-          aria-hidden="true"
-        />
+        <div class="pointer-events-none fixed inset-0 z-40 crt-scanlines opacity-20" aria-hidden="true" />
+        <div class="pointer-events-none fixed inset-0 z-30 bg-noise" aria-hidden="true" />
       </div>
     </div>
 
-    <!-- ── 开屏动画层 (z-50) ── -->
     <SplashScreen
       v-if="splashState !== 'done'"
       class="col-start-1 row-start-1 z-50"
@@ -87,30 +140,139 @@
 </template>
 
 <script setup lang="ts">
+import type { Component } from "vue"
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRoute, useRouter } from "vue-router"
+import {
+  Activity,
+  FolderOpen,
+  FolderKanban,
+  Minus,
+  MonitorDot,
+  Settings,
+  Store,
+  X,
+} from "lucide-vue-next"
+import SplashScreen from "./components/SplashScreen.vue"
 import {
   getBrowserAiConfig,
   getBrowserPlatformConfigStorageState,
 } from "./config/ai"
 import { initializePlatformHost } from "./platform-host"
 import { ensureLocalStorageReady } from "./storage"
-import SplashScreen from "./components/SplashScreen.vue"
 
-// ── 开屏动画状态机 ──
-// typing   = splash 可见，打字机运行中
-// animating = CRT 关机→开机动画播放中
-// done     = 动画结束，splash 永久移除
 type SplashState = "typing" | "animating" | "done"
+
+interface DesktopIcon {
+  id: string
+  label: string
+  shortLabel: string
+  path: string
+  routeNames: string[]
+  icon: Component
+  title: string
+  caption: string
+  wide?: boolean
+}
+
+interface ContextMenuState {
+  x: number
+  y: number
+  icon: DesktopIcon | null
+}
+
 const splashState = ref<SplashState>("typing")
+const route = useRoute()
+const router = useRouter()
+const storageStatus = ref("checking...")
+const aiStatus = ref("checking...")
+const selectedDesktopIcon = ref("")
+const contextMenu = ref<ContextMenuState | null>(null)
+const desktopClock = ref("")
+let clockTimer: number | null = null
 
-/** 点击 splash 后触发 CRT 过渡动画 */
-const startCrtTransition = () => {
-  if (splashState.value !== "typing") return
+const desktopIcons: DesktopIcon[] = [
+  {
+    id: "market",
+    label: "App Market",
+    shortLabel: "Market",
+    path: "/market",
+    routeNames: ["app-market"],
+    icon: Store,
+    title: "App Market",
+    caption: "Browse and install Game Cards",
+    wide: true,
+  },
+  {
+    id: "my-apps",
+    label: "My Apps",
+    shortLabel: "My Apps",
+    path: "/library",
+    routeNames: ["library", "game-card-detail"],
+    icon: FolderOpen,
+    title: "My Apps",
+    caption: "Installed Game Cards",
+    wide: true,
+  },
+  {
+    id: "settings",
+    label: "Control Panel",
+    shortLabel: "Settings",
+    path: "/settings",
+    routeNames: ["settings"],
+    icon: Settings,
+    title: "Control Panel",
+    caption: "Platform settings",
+  },
+  {
+    id: "debug",
+    label: "System Monitor",
+    shortLabel: "Monitor",
+    path: "/debug",
+    routeNames: ["debug"],
+    icon: Activity,
+    title: "System Monitor",
+    caption: "Runtime diagnostics",
+    wide: true,
+  },
+]
+
+const isPlayRoute = computed(() => route.name === "play")
+const isWindowRoute = computed(() => route.name !== "desktop" && !isPlayRoute.value)
+const fallbackWindow: DesktopIcon = {
+    id: "workspace",
+    label: "Tsian",
+    shortLabel: "Tsian",
+    path: "/",
+    routeNames: [],
+    icon: FolderKanban,
+    title: "Tsian",
+    caption: "Application window",
+}
+const activeWindow = computed<DesktopIcon>(() => {
+  if (route.name === "game-card-detail") {
+    const library = desktopIcons.find((icon) => icon.id === "my-apps") ?? desktopIcons[0]
+    return {
+      ...library,
+      title: "Game Launcher",
+      caption: "Play, saves, and workspace",
+    }
+  }
+
+  return desktopIcons.find((icon) => icon.routeNames.includes(String(route.name))) ?? fallbackWindow
+})
+
+const aiStatusShort = computed(() => {
+  const chat = getBrowserAiConfig() ? "OK" : "--"
+  return `CHAT:${chat}`
+})
+
+function startCrtTransition() {
+  if (splashState.value !== "typing") {
+    return
+  }
+
   splashState.value = "animating"
-
-  // 在 CRT 动画 55% 处 (800ms × 0.55 ≈ 440ms)，画面压缩到最暗的水平线
-  // 此刻移除 splash DOM，动画展开时露出的就是真正的平台 UI
   setTimeout(() => {
     if (splashState.value === "animating") {
       splashState.value = "done"
@@ -118,43 +280,70 @@ const startCrtTransition = () => {
   }, 440)
 }
 
-/** CSS 动画结束回调（清理 will-change 等） */
-const onCrtAnimationEnd = () => {
+function onCrtAnimationEnd() {
   splashState.value = "done"
 }
 
-const route = useRoute()
-const router = useRouter()
-const storageStatus = ref("checking...")
-const aiStatus = ref("checking...")
-
-const isPlayRoute = computed(() => route.name === "play")
-
-const navItems = [
-  { name: "lobby", path: "/", label: "大厅", index: "01" },
-  { name: "settings", path: "/settings", label: "设置", index: "02" },
-  { name: "debug", path: "/debug", label: "调试", index: "03" },
-]
-
-function isRoute(name: string): boolean {
-  return route.name === name
+function selectDesktopIcon(id: string) {
+  selectedDesktopIcon.value = id
+  contextMenu.value = null
 }
 
-const aiStatusShort = computed(() => {
-  const chat = getBrowserAiConfig() ? "OK" : "--"
-  return `CHAT:${chat}`
-})
+function clearDesktopSelection() {
+  selectedDesktopIcon.value = ""
+  contextMenu.value = null
+}
 
-// Ctrl+Shift+D → 调试页
-function onKeydown(e: KeyboardEvent) {
-  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "d") {
-    e.preventDefault()
+function openDesktopIcon(icon: DesktopIcon) {
+  selectedDesktopIcon.value = icon.id
+  contextMenu.value = null
+  router.push(icon.path)
+}
+
+function openIconContextMenu(icon: DesktopIcon, event: MouseEvent) {
+  selectedDesktopIcon.value = icon.id
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    icon,
+  }
+}
+
+function openDesktopContextMenu(event: MouseEvent) {
+  selectedDesktopIcon.value = ""
+  contextMenu.value = {
+    x: event.clientX,
+    y: event.clientY,
+    icon: null,
+  }
+}
+
+function isIconActive(id: string): boolean {
+  return activeWindow.value?.id === id && isWindowRoute.value
+}
+
+function updateClock() {
+  desktopClock.value = new Intl.DateTimeFormat("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(Date.now())
+}
+
+function onKeydown(event: KeyboardEvent) {
+  if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "d") {
+    event.preventDefault()
     router.push("/debug")
+  }
+
+  if (event.key === "Escape") {
+    contextMenu.value = null
   }
 }
 
 onMounted(async () => {
   window.addEventListener("keydown", onKeydown)
+  updateClock()
+  clockTimer = window.setInterval(updateClock, 30_000)
   storageStatus.value = await ensureLocalStorageReady()
   await initializePlatformHost()
   aiStatus.value = `chat=${getBrowserAiConfig() ? "configured" : "missing"} | local=${getBrowserPlatformConfigStorageState()}`
@@ -162,5 +351,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown)
+  if (clockTimer !== null) {
+    window.clearInterval(clockTimer)
+  }
 })
 </script>

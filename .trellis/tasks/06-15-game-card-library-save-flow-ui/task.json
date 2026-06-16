@@ -1,9 +1,9 @@
 {
   "id": "game-card-library-save-flow-ui",
   "name": "game-card-library-save-flow-ui",
-  "title": "Game Card Library And Save Flow UI",
-  "description": "Build the local Game Card library and Save Instance management UI, including card selection, save creation, and play entry.",
-  "status": "planning",
+  "title": "My Apps And Game Card Launcher UI",
+  "description": "Build the desktop-backed My Apps, App Market placeholder, Game Card launcher, and Save Instance management UI.",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

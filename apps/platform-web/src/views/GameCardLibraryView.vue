@@ -1,0 +1,189 @@
+<template>
+  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
+      <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+            @click="refreshCards"
+          >
+            <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />
+            Refresh
+          </button>
+          <button
+            type="button"
+            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+            @click="router.push('/market')"
+          >
+            <Store class="h-3.5 w-3.5" aria-hidden="true" />
+            App Market
+          </button>
+          <button
+            type="button"
+            class="retro-button retro-focus hidden h-8 items-center gap-2 px-3 font-mono text-xs sm:inline-flex"
+            disabled
+          >
+            <Image class="h-3.5 w-3.5" aria-hidden="true" />
+            Large Icons
+          </button>
+        </div>
+        <p class="font-mono text-[11px] uppercase tracking-wider text-text-dim">
+          {{ cards.length }} installed app{{ cards.length === 1 ? "" : "s" }}
+        </p>
+      </div>
+
+      <div class="retro-inset m-3 min-h-[420px] overflow-auto p-3">
+        <div v-if="loading" class="grid min-h-[360px] place-items-center">
+          <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
+            Loading game cards
+          </p>
+        </div>
+
+        <div v-else-if="errorMessage" class="grid min-h-[360px] place-items-center px-4">
+          <div class="max-w-lg border border-danger/40 bg-danger/10 p-4">
+            <p class="font-mono text-xs uppercase tracking-wider text-danger">
+              Library unavailable
+            </p>
+            <p class="mt-2 text-sm leading-6 text-text-dim">
+              {{ errorMessage }}
+            </p>
+          </div>
+        </div>
+
+        <div v-else-if="cards.length === 0" class="grid min-h-[360px] place-items-center px-4">
+          <div class="grid justify-items-center gap-3 text-center">
+            <FolderOpen class="h-10 w-10 text-neon-muted" aria-hidden="true" />
+            <p class="font-mono text-sm text-text-main">My Apps is empty.</p>
+            <button
+              type="button"
+              class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+              @click="router.push('/market')"
+            >
+              <Store class="h-3.5 w-3.5" aria-hidden="true" />
+              Open App Market
+            </button>
+          </div>
+        </div>
+
+        <div
+          v-else
+          class="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] content-start gap-x-4 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(164px,1fr))]"
+          role="list"
+          aria-label="Installed Game Card applications"
+        >
+          <button
+            v-for="card in cards"
+            :key="card.id"
+            type="button"
+            class="library-app-icon retro-focus group grid min-w-0 gap-2 border border-transparent p-2 text-center"
+            :class="selectedCardId === card.id ? 'border-neon bg-neon/10 shadow-neon-glow-active' : 'hover:border-neon-deep/50 hover:bg-elevated/40'"
+            :aria-label="`Open ${getGameCardTitle(card)}`"
+            role="listitem"
+            @focus="selectedCardId = card.id"
+            @mouseenter="selectedCardId = card.id"
+            @click="openCard(card.id)"
+          >
+            <div class="library-app-preview relative mx-auto aspect-square w-full max-w-[142px] overflow-hidden border border-neon-deep/55 bg-elevated">
+              <img
+                v-if="getGameCardCoverUrl(card)"
+                :src="getGameCardCoverUrl(card) ?? ''"
+                :alt="card.manifest.cover?.alt || ''"
+                class="h-full w-full object-cover"
+              />
+              <div v-else class="grid h-full place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(243,197,109,0.22),transparent_28%),linear-gradient(135deg,#3f4d3a,#1e2420)]">
+                <Gamepad2 class="h-10 w-10 text-neon-muted" aria-hidden="true" />
+              </div>
+
+              <div
+                class="absolute inset-0 grid content-end bg-gradient-to-t from-void via-void/72 to-transparent p-2 opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+                :class="selectedCardId === card.id ? 'opacity-100' : ''"
+              >
+                <p class="line-clamp-3 text-left text-[11px] leading-4 text-text-main">
+                  {{ getGameCardSummary(card) }}
+                </p>
+              </div>
+            </div>
+
+            <span class="library-app-label mx-auto line-clamp-2 max-w-[150px] px-1 font-mono text-[11px] leading-4 text-text-main">
+                {{ getGameCardTitle(card) }}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
+        <p class="font-mono text-[11px] text-text-dim">
+          My Apps - {{ cards.length }} Game Card{{ cards.length === 1 ? "" : "s" }}
+        </p>
+        <p class="min-w-0 truncate font-mono text-[11px] text-text-dim">
+          {{ selectedStatus }}
+        </p>
+      </footer>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, ref } from "vue"
+import { useRouter } from "vue-router"
+import { FolderOpen, Gamepad2, Image, RefreshCw, Store } from "lucide-vue-next"
+import type { LocalGameCardRecord } from "@/storage/db"
+import {
+  getGameCardCoverUrl,
+  getGameCardSummary,
+  getGameCardTitle,
+} from "@/lib/game-card-display"
+import { listPlatformGameCards } from "../platform-host"
+
+const router = useRouter()
+const cards = ref<LocalGameCardRecord[]>([])
+const selectedCardId = ref("")
+const loading = ref(false)
+const errorMessage = ref("")
+
+const selectedCard = computed(() =>
+  cards.value.find((card) => card.id === selectedCardId.value) ?? cards.value[0] ?? null
+)
+
+const selectedStatus = computed(() => {
+  if (!selectedCard.value) {
+    return "No selection"
+  }
+  return `${getGameCardTitle(selectedCard.value)} - ${getGameCardSummary(selectedCard.value)}`
+})
+
+async function refreshCards() {
+  loading.value = true
+  errorMessage.value = ""
+
+  try {
+    cards.value = await listPlatformGameCards()
+    if (!cards.value.some((card) => card.id === selectedCardId.value)) {
+      selectedCardId.value = cards.value[0]?.id ?? ""
+    }
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "Unable to load Game Cards."
+  } finally {
+    loading.value = false
+  }
+}
+
+function openCard(cardId: string) {
+  router.push({ name: "game-card-detail", params: { cardId } })
+}
+
+onMounted(() => {
+  void refreshCards()
+})
+</script>
+
+<style scoped>
+.library-app-preview {
+  box-shadow:
+    inset 1px 1px 0 rgba(246, 236, 215, 0.12),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.65);
+}
+
+.library-app-label {
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.78);
+}
+</style>
