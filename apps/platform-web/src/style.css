@@ -5,8 +5,8 @@
 /* ── Tsian RetroOS Theme (Tailwind v4) ── */
 @theme {
   /* Typography */
-  --font-sans: "JetBrains Mono", "MS Sans Serif", monospace;
-  --font-mono: "JetBrains Mono", monospace;
+  --font-sans: "JetBrains Mono", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", sans-serif;
+  --font-mono: "JetBrains Mono", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "WenQuanYi Micro Hei", monospace;
 
   /* ── Warm CRT Desktop Palette ── */
   --color-void: #203832;
@@ -275,20 +275,11 @@ html, body, #app {
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
-.desktop-window-wrap {
-  position: absolute;
-  inset: 1rem;
-  z-index: 38;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-}
-
 .desktop-window {
+  position: absolute;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   min-width: 0;
-  max-height: min(760px, calc(100dvh - 108px));
   overflow: hidden;
   border: 1px solid rgba(246, 236, 215, 0.42);
   background: #2d2a23;
@@ -298,14 +289,27 @@ html, body, #app {
     inset -1px -1px 0 rgba(0, 0, 0, 0.6),
     0 30px 80px rgba(0, 0, 0, 0.46);
   pointer-events: auto;
+  transform: translateZ(0);
 }
 
-.desktop-window--normal {
-  width: min(980px, calc(100vw - 2rem));
+.desktop-window--active {
+  border-color: rgba(243, 197, 109, 0.68);
+  box-shadow:
+    inset 1px 1px 0 rgba(246, 236, 215, 0.24),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.68),
+    0 28px 74px rgba(0, 0, 0, 0.52),
+    0 0 0 1px rgba(243, 197, 109, 0.18);
 }
 
-.desktop-window--wide {
-  width: min(1320px, calc(100vw - 2rem));
+.desktop-window--inactive {
+  border-color: rgba(246, 236, 215, 0.28);
+  filter: saturate(0.82) brightness(0.9);
+}
+
+.desktop-window--fullscreen {
+  inset: 0.65rem;
+  width: auto;
+  height: auto;
 }
 
 .desktop-window-titlebar {
@@ -319,10 +323,30 @@ html, body, #app {
   background: linear-gradient(90deg, #6d5836, #3f4d3a 58%, #2d2a23);
   padding: 0.45rem 0.65rem;
   color: #fff6dd;
+  user-select: none;
 }
 
 .desktop-window-titlebar p {
   color: rgba(255, 246, 221, 0.7);
+}
+
+.desktop-window--inactive .desktop-window-titlebar {
+  background: linear-gradient(90deg, #4f4739, #354036 58%, #2d2a23);
+  color: rgba(255, 246, 221, 0.78);
+}
+
+.desktop-window-drag-region {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  cursor: move;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.desktop-window--fullscreen .desktop-window-drag-region,
+.desktop-shell--narrow .desktop-window-drag-region {
+  cursor: default;
 }
 
 .desktop-window-icon {
@@ -367,6 +391,79 @@ html, body, #app {
     #24251f;
 }
 
+.desktop-window--fullscreen .desktop-window-content {
+  padding: 0.45rem;
+}
+
+.desktop-resize-handle {
+  position: absolute;
+  z-index: 4;
+}
+
+.desktop-resize-handle--n,
+.desktop-resize-handle--s {
+  left: 8px;
+  right: 8px;
+  height: 8px;
+  cursor: ns-resize;
+}
+
+.desktop-resize-handle--n {
+  top: -4px;
+}
+
+.desktop-resize-handle--s {
+  bottom: -4px;
+}
+
+.desktop-resize-handle--e,
+.desktop-resize-handle--w {
+  bottom: 8px;
+  top: 8px;
+  width: 8px;
+  cursor: ew-resize;
+}
+
+.desktop-resize-handle--e {
+  right: -4px;
+}
+
+.desktop-resize-handle--w {
+  left: -4px;
+}
+
+.desktop-resize-handle--ne,
+.desktop-resize-handle--nw,
+.desktop-resize-handle--se,
+.desktop-resize-handle--sw {
+  height: 14px;
+  width: 14px;
+}
+
+.desktop-resize-handle--ne {
+  cursor: nesw-resize;
+  right: -5px;
+  top: -5px;
+}
+
+.desktop-resize-handle--nw {
+  cursor: nwse-resize;
+  left: -5px;
+  top: -5px;
+}
+
+.desktop-resize-handle--se {
+  bottom: -5px;
+  cursor: nwse-resize;
+  right: -5px;
+}
+
+.desktop-resize-handle--sw {
+  bottom: -5px;
+  cursor: nesw-resize;
+  left: -5px;
+}
+
 .desktop-context-menu {
   position: fixed;
   z-index: 60;
@@ -401,8 +498,34 @@ html, body, #app {
   padding: 0.25rem 0.45rem;
 }
 
+.desktop-task-list {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  gap: 0.4rem;
+  overflow-x: auto;
+}
+
+.desktop-task-button {
+  max-width: 180px;
+  min-width: 0;
+  flex: 0 0 auto;
+}
+
+.desktop-task-button--active {
+  background: linear-gradient(180deg, #2f2a23, #514737);
+  box-shadow:
+    inset 1px 1px 0 rgba(0, 0, 0, 0.42),
+    inset -1px -1px 0 rgba(246, 236, 215, 0.16);
+}
+
+.desktop-task-button--minimized {
+  border-style: dashed;
+  color: var(--color-text-dim);
+}
+
 .desktop-clock {
-  margin-left: auto;
+  flex: 0 0 auto;
   border: 1px solid rgba(246, 236, 215, 0.22);
   padding: 0.32rem 0.58rem;
   color: var(--color-text-dim);
@@ -492,16 +615,18 @@ html, body, #app {
     display: none;
   }
 
-  .desktop-window-wrap {
-    inset: 0.6rem;
-    align-items: start;
-    padding-top: 0.4rem;
+  .desktop-window {
+    bottom: 0.6rem;
+    display: none;
+    left: 0.6rem;
+    right: 0.6rem;
+    top: 0.6rem;
+    width: auto;
+    height: auto;
   }
 
-  .desktop-window {
-    width: calc(100vw - 1.2rem);
-    max-width: calc(100vw - 1.2rem);
-    max-height: calc(100dvh - 92px);
+  .desktop-window--active {
+    display: grid;
   }
 
   .desktop-window-content {

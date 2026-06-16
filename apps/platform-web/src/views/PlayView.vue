@@ -1,6 +1,6 @@
 <template>
-  <div class="relative min-h-dvh bg-void text-text-main">
-    <div ref="frontendMount" class="min-h-dvh w-full"></div>
+  <div class="relative h-full min-h-0 overflow-hidden bg-void text-text-main">
+    <div ref="frontendMount" class="h-full min-h-0 w-full"></div>
 
     <div
       v-if="status === 'resolving' || status === 'remote-loading' || status === 'packaged-loading'"

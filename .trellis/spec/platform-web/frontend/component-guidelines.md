@@ -20,18 +20,18 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 
 ### Convention: RetroOS Desktop Shell And Route Chrome
 
-**What**: The platform shell should present non-`/play` routes through the RetroOS desktop in `App.vue`: splash -> desktop wallpaper -> desktop application icons -> route-backed application window. Desktop icons are the primary entry points and support double-click plus a right-click `Open` menu. Route views should provide window contents such as toolbars, property tabs, inset panes, and status bars; they should not add a second outer title bar when the desktop shell already owns the application window frame.
+**What**: The platform shell presents platform routes through a RetroOS desktop compositor: splash -> desktop wallpaper -> desktop application icons -> multiple desktop application windows -> taskbar entries for open windows. `App.vue` owns app boot and shell mounting; `components/desktop/*`, `desktop-apps.ts`, and `useDesktopWindows.ts` own window registration, open/focus/minimize/close/fullscreen state, route sync, and taskbar behavior. Desktop icons are launcher shortcuts and support double-click plus a right-click `Open` menu. Route views provide window contents such as toolbars, property tabs, inset panes, and status bars; they should not add a second outer title bar when the desktop shell already owns the application window frame.
 
-**Why**: Tsian's RetroOS direction depends on an operating-system mental model, not a conventional admin sidebar. Keeping the desktop shell in one place preserves the app metaphor while letting route views stay focused on domain content.
+**Why**: Tsian's RetroOS direction depends on an operating-system mental model, not a conventional admin sidebar. Keeping window/session behavior in desktop shell modules preserves the app metaphor while letting route views stay focused on domain content.
 
 **Example**:
 
 ```vue
-<!-- App.vue owns the desktop window frame. -->
+<!-- DesktopWindow.vue owns the desktop window frame. -->
 <section class="desktop-window">
   <header class="desktop-window-titlebar">...</header>
   <div class="desktop-window-content">
-    <router-view />
+    <component :is="window.component" v-bind="window.props" />
   </div>
 </section>
 
@@ -43,11 +43,13 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 
 **Rules**:
 - Keep `desktop-*` classes for the OS shell and `retro-*` classes for content-level chrome.
-- Keep `/play` outside the desktop shell so the active game frontend owns the viewport.
+- Keep `/play` as a desktop application window. `PlayView.vue` should remain a thin loader and fill its parent pane (`h-full` / `min-h-0`) instead of assuming it owns the browser viewport.
+- Keep the Play window singleton while play frontend bridge/runtime state is keyed to the global active save/card. Do not add multiple simultaneous gameplay windows without a broader runtime-session design.
+- Use the URL as the active/deep-linked surface, not as a serialization of every open window. Refresh may rebuild the deep-linked window with default geometry, but it should not restore the previous in-memory window session unless a task explicitly adds persistence.
 - Keep the old lobby out of the main UX; users enter play from Game Card launchers and save slots.
 - Use `retro-focus` on custom interactive controls so keyboard focus remains visible.
-- On narrow viewports, the desktop shell may still show a window, but controls and route panes must remain reachable without the old sidebar squeezing content.
-- Do not build draggable multi-window management unless a task explicitly asks for a desktop compositor; route-backed single active windows are enough for the current shell.
+- On narrow viewports, show the active window as a maximized/stacked panel and use the taskbar/start affordance for switching or showing the desktop; do not let overlapping windows make route panes unreachable.
+- Keep draggable/resizable window behavior in the desktop shell/composable layer, not in route views.
 
 ## Bridge And Persistence
 
