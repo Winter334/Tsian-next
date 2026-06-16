@@ -1889,3 +1889,38 @@ Completed and archived the Game Card / Save Instance split, remote iframe bridge
 ### Next Steps
 
 - None - task complete
+
+
+## Session 56: Split card content from save runtime data
+
+**Date**: 2026-06-16
+**Task**: Split card content from save runtime data
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Planned the platform UI development phase and implemented the card-owned content / save runtime data split. Game Cards now own content files, saves persist only save runtime data under save/ plus .tsian metadata, effective workspace reads combine card content with active save runtime files, runtime writes are constrained to save paths, package import/export uses card content, and docs/specs were updated.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e28bcb2` | (see git log) |
+| `6dec22e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
