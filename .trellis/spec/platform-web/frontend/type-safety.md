@@ -353,15 +353,20 @@ interface RuntimeWorkspaceToolCall {
   "name": "example_action",
   "inputSchema": { "type": "object" },
   "outputSchema": { "type": "object" },
-  "executor": { "type": "platform_action", "name": "workspace-write" }
+  "executor": {
+    "type": "workspace_operation",
+    "operation": "patch",
+    "scope": "save-runtime",
+    "path": "save/world/notes.md"
+  }
 }
 ```
 
 ### 3. Contracts
 
 - Add a platform runtime primitive only when the ability is small, stable, cross-playstyle, and requires runtime internals such as Agent registry, Skill registry, context assembly, model invocation, trace, checkpoint behavior, workspace indexes, or tool/session state.
-- Keep primitives few. Current examples are `skill_load`, workspace read/list/search, `action_call`, and contacts-gated `agent_call`.
-- Add a platform controlled action / executor when the ability performs side effects or needs platform execution control such as workspace writes/deletes, browser-limited script execution, remote HTTP, WASM, abort/timeout, result normalization, or frontend-data mutation.
+- Keep primitives few. Current examples are `skill_load`, generic workspace operations exposed as `workspace.read/list/search/...`, `action_call`, and contacts-gated `agent_call`.
+- Add a platform controlled action / executor when the ability performs side effects or needs platform execution control such as scoped workspace mutation, browser-limited script execution, remote HTTP, WASM, abort/timeout, result normalization, or frontend-data mutation.
 - Add a Skill action when the ability is gameplay, world, memory, rules, narrative, style, or author-policy specific, or when it packages several primitive/controlled actions into a reusable business operation.
 - Keep gameplay data structures in Runtime Workspace files, README files, and schemas. Platform code should not hardcode world-state semantics when a Skill plus workspace schema can own them.
 - Do not add platform tools merely because Web lacks Bash. Bash-like breadth should be approximated through controlled executors plus reusable Skill actions, not an unbounded built-in tool list.
@@ -377,7 +382,7 @@ interface RuntimeWorkspaceToolCall {
 ### 5. Good/Base/Bad Cases
 
 - Good: `agent_call` as a contacts-gated runtime primitive, because it needs Agent registry, target context assembly, model invocation, call-depth limits, and trace.
-- Good: `workspace-write` as a platform controlled action, called through a loaded Skill action after schema validation.
+- Good: a Skill action with a `workspace_operation` executor that narrows operation, scope, and path before calling the generic workspace operation layer.
 - Good: `relationship-maintainer` as a Skill that reads workspace schemas and calls controlled workspace writes.
 - Base: a Skill action using built-in `validation` to declare a high-level business operation before a real executor exists.
 - Bad: adding `update_relationship_score` as a platform runtime tool; relationship semantics belong to Skill + workspace schema.
@@ -406,7 +411,12 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
   "name": "update_relationship_score",
   "description": "Update relationship state according to this world's schema.",
   "inputSchema": { "type": "object" },
-  "executor": { "type": "platform_action", "name": "workspace-write" }
+  "executor": {
+    "type": "workspace_operation",
+    "operation": "patch",
+    "scope": "save-runtime",
+    "path": "save/world/relationship-state.json"
+  }
 }
 ```
 
@@ -509,9 +519,15 @@ interface RuntimeWorkspaceToolCall {
   - `skill_load`
   - `action_call`
   - `agent_call`
-  - `workspace_read`
-  - `workspace_list`
-  - `workspace_search`
+  - `workspace.read`
+  - `workspace.list`
+  - `workspace.search`
+  - `workspace.diff`
+  - `workspace.patch`
+  - `workspace.write`
+  - `workspace.move`
+  - `workspace.delete`
+  - `workspace.validate`
 
 ### 3. Contracts
 
@@ -528,7 +544,7 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` requires that the named Skill has already been loaded by the same Agent during the same tool loop.
 - `action_call` validates action availability and input before invoking any executor.
 - `action_call` routes to the action declaration's executor through the runtime action executor registry.
-- `action_call` checks the lightweight executor-class policy before running supported executors. The default code-level policy allows `builtin`, `platform_action`, and `browser_script`; injected policy may deny them for tests or future host policy. Do not add Settings UI, localStorage persistence, runtime prompts, or per-Skill trust state for this slice.
+- `action_call` checks the lightweight executor-class policy before running supported executors. The default code-level policy allows `builtin`, `platform_action`, `workspace_operation`, and `browser_script`; injected policy may deny them for tests or future host policy. Do not add Settings UI, localStorage persistence, runtime prompts, or per-Skill trust state for this slice.
 - `action_call` may validate successful executor output when the loaded action declares optional `outputSchema`. Actions without `outputSchema` keep existing output behavior.
 - `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene" }`.
 - `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts and the current tool loop allows Agent calls.
@@ -537,24 +553,24 @@ interface RuntimeWorkspaceToolCall {
 - `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, metadata, response }`; the target Agent response does not directly become player-visible history.
 - `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
 - Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxCallsPerTurn=4`, `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`, and `maxToolRoundsPerAgent=3`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state.
-- Delegated Agents may use `workspace_read`, `workspace_list`, `workspace_search`, `skill_load`, `action_call` for loaded Skills, and limited nested `agent_call` inside their own tool loop.
+- Delegated Agents may use exposed generic workspace operations, `skill_load`, `action_call` for loaded Skills, and limited nested `agent_call` inside their own tool loop.
 - Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, root master/narrative steps at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
 - The root turn shares one `agent_call` budget across master, narrative, and nested delegated steps.
 - Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
 - Built-in executors are side-effect-free:
   - `validation`: returns `status: "validated"` and `output: null`.
   - `echo`: returns `status: "executed"` and echoes validated `input` as `output`.
-- `platform_action` executors route through an injected `runPlatformAction` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, or storage helpers.
-- `platform_action` declarations require `{ type: "platform_action", name: string }`, where `name` maps to `PlatformActionRequest.action` and validated action input becomes `params`.
-- `platform-host` must allow-list Agent Runtime platform actions; current MVP allows `workspace-write` and `workspace-delete`, and does not allow `restore-checkpoint`.
-- Inside `interaction.sendMessage`, Agent Runtime `workspace-write` / `workspace-delete` run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
+- `platform_action` executors route through an injected `runPlatformAction` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, or storage helpers. Platform actions remain available for non-workspace host actions and legacy-controlled host capabilities, not as the primary workspace edit surface.
+- `workspace_operation` declarations require a supported `operation`, may narrow `scope` and `path`, and merge validated action input into a `WorkspaceOperationRequest`.
+- Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing or invalid Agent `workspaceAccess.level` defaults to `1`.
+- Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
 - Successful turns commit the staged workspace final state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
 - Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets. `.tsian/*` is platform-owned metadata space for trace/checkpoint/index/cache behavior.
-- Frontend bridge `platform.runAction` workspace writes/deletes remain immediate platform actions and are not part of the Agent Runtime turn transaction.
+- Frontend bridge `platform.runAction` generic workspace actions such as `workspace.write`, `workspace.patch`, and `workspace.delete` remain immediate platform actions and are not part of the Agent Runtime turn transaction.
 - `browser_script` executors route through an injected `runBrowserScript` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, storage helpers, or Worker code.
 - `browser_script` declarations require `{ type: "browser_script", path: string, timeoutMs?: number }`; `path` resolves relative to the declaring Skill directory and must stay under that directory.
 - Controlled async executors have bounded timeout/abort behavior. `timeoutMs` must be positive and must not exceed the platform maximum.
-- The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/write/delete, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output.
+- The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/diff/patch/write/move/delete/validate, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output.
 - The first browser script slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs. Worker hard limits still apply, and this is a third-party trust boundary rather than a guarantee that arbitrary third-party code is safe.
 - `action_call` success returns a structured observation with `status`, `executor`, `input`, and `output`.
 - `outputSchema` uses the same lightweight JSON-compatible type vocabulary as `inputSchema`: `array`, `boolean`, `integer`, `null`, `number`, `object`, and `string`. For object outputs, `required` and property `type` checks are supported; unsupported JSON Schema keywords are ignored.
@@ -586,7 +602,7 @@ interface RuntimeWorkspaceToolCall {
     },
     {
       "name": "write_world_note",
-      "description": "Write a workspace file through an allow-listed platform action.",
+      "description": "Patch a narrowed save-runtime workspace file.",
       "inputSchema": {
         "type": "object",
         "required": ["path", "content"],
@@ -597,8 +613,10 @@ interface RuntimeWorkspaceToolCall {
         }
       },
       "executor": {
-        "type": "platform_action",
-        "name": "workspace-write"
+        "type": "workspace_operation",
+        "operation": "patch",
+        "scope": "save-runtime",
+        "path": "save/world/notes.md"
       }
     },
     {
@@ -620,15 +638,16 @@ interface RuntimeWorkspaceToolCall {
   ```
   ````
 - Runtime prompts should display Skill Index entries as `name/description/triggers/applicability` and should not default to exposing `path=...`.
-- Use `workspace_read/workspace_list/workspace_search` for third-layer files only: files explicitly referenced by the loaded `SKILL.md`, world data, memory, README files, or other current-task context.
+- Use `workspace.read/workspace.list/workspace.search` for third-layer files only: files explicitly referenced by the loaded `SKILL.md`, world data, memory, README files, or other current-task context.
 - Use the same workspace path rules as storage-facing APIs:
   - normalize backslashes to slashes;
   - trim leading slashes;
   - reject empty file paths, trailing slash file paths, `.`, `..`, and empty path segments;
   - allow empty directory path for root listing.
-- `workspace_read` arguments: `{ path: string }`; success returns a `WorkspaceFile`.
-- `workspace_list` arguments: `{ path?: string }`; success returns `{ path, entries }` with direct child `WorkspaceEntry[]`.
-- `workspace_search` arguments: `{ query: string, limit?: number }`; success returns `WorkspaceSearchResult[]`; empty query returns `[]`.
+- `workspace.read` arguments: `{ scope: "effective" | "card-content" | "save-runtime" | "platform-meta", path: string }`; success returns a `WorkspaceFile`.
+- `workspace.list` arguments: `{ scope: "...", path?: string }`; success returns `{ path, entries }` with direct child `WorkspaceEntry[]`.
+- `workspace.search` arguments: `{ scope: "...", query: string, limit?: number }`; success returns `WorkspaceSearchResult[]`; empty query returns `[]`.
+- `workspace.diff/patch/write/move/delete/validate` use the shared `WorkspaceOperationRequest` shape from `@tsian/contracts`.
 - Tool observations are returned to the same Agent as a normal user message containing `<tsian-tool-observation>`.
 - Final master/narrative outputs must strip tool-call blocks and must not expose tool observations to players.
 
@@ -669,17 +688,19 @@ interface RuntimeWorkspaceToolCall {
 - Controlled executor abort -> error observation with `ACTION_EXECUTOR_ABORTED`.
 - `platform_action` without an injected capability -> error observation with `PLATFORM_ACTION_UNAVAILABLE`.
 - `platform_action` whose injected handler returns `ok: false` -> error observation with `PLATFORM_ACTION_FAILED` and platform error details.
+- Unexposed workspace operation -> error observation with `WORKSPACE_OPERATION_NOT_EXPOSED`.
+- Actor level below target read/edit level -> error observation with `WORKSPACE_READ_ACCESS_DENIED` or `WORKSPACE_EDIT_ACCESS_DENIED`.
 - `browser_script` without an injected capability -> error observation with `BROWSER_SCRIPT_UNAVAILABLE`.
 - Missing browser script file -> error observation with `BROWSER_SCRIPT_NOT_FOUND`.
 - Browser script path outside the declaring Skill directory -> error observation with `BROWSER_SCRIPT_PATH_INVALID`.
 - Browser script failure, SDK failure, Worker failure, or Worker message failure -> structured error observation with a `BROWSER_SCRIPT_*` code.
 - Successful executor output that fails declared `outputSchema` -> error observation with `ACTION_OUTPUT_INVALID` and output summary metadata, not raw large output payloads.
 - Agent Runtime attempts to call a non-allow-listed platform action -> platform handler returns `AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED`, surfaced through `PLATFORM_ACTION_FAILED`.
-- Agent/Skill attempts to write or delete `.tsian/*` through ordinary `workspace-write`, `workspace-delete`, or browser script SDK workspace mutation -> structured workspace error observation.
+- Agent/Skill attempts to write or delete `.tsian/*` without level `4` through generic workspace operations or browser script SDK workspace mutation -> structured workspace error observation.
 - Runtime turn fails or aborts after staged ordinary workspace writes -> persisted workspace state remains equivalent to the pre-turn accepted state, except for host-owned failed trace diagnostics.
 - Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `skill_load` metadata without failing the whole Skill load.
 - Invalid path -> error observation with workspace path error code.
-- Missing file on `workspace_read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
+- Missing file on `workspace.read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
 - Model keeps requesting tools past the per-Agent round limit -> return stripped final text if present; otherwise throw a clear runtime error.
 
 ### 5. Good/Base/Bad Cases
@@ -690,16 +711,16 @@ interface RuntimeWorkspaceToolCall {
 - Good: action without an executor declaration uses built-in `validation`.
 - Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
 - Good: action with `outputSchema` validates successful executor output before returning a success observation.
-- Good: action with `{ "type": "platform_action", "name": "workspace-write" }` calls the injected platform action capability after gating and validation, then returns the platform result item as `output`.
+- Good: action with `{ "type": "workspace_operation", "operation": "patch", "scope": "save-runtime", "path": "save/world/notes.md" }` calls the generic workspace operation layer after Skill gating and validation, then returns the operation result as `output`.
 - Good: action with `{ "type": "browser_script", "path": "scripts/run.js", "timeoutMs": 10000 }` runs a Skill-local script through the Tsian SDK after Skill gating and input validation.
 - Good: an injected policy disables `browser_script` and `action_call` returns `ACTION_EXECUTOR_DISABLED` as a normal failed observation without prompting the player.
 - Good: an action writes a workspace file, then a later same-turn workspace read or browser script SDK read observes the staged file before the turn commits.
 - Good: a failed turn after staged workspace writes leaves no ordinary persisted workspace file from those staged writes.
-- Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace_read` only when that reference is needed.
+- Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace.read` only when that reference is needed.
 - Good: master sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its own brief.
 - Good: a delegated memory Agent loads a Skill, calls a non-`agent_call` action, or calls one of its own contact Agents when depth and budget policy allow it.
-- Good: Agent uses `workspace_list` for a directory and receives entries without file contents.
-- Good: Agent uses `workspace_search` and receives previews, then explicitly reads a chosen file if full content is needed.
+- Good: Agent uses `workspace.list` for a directory and receives entries without file contents.
+- Good: Agent uses `workspace.search` and receives previews, then explicitly reads a chosen file if full content is needed.
 - Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
 - Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
 - Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
@@ -727,12 +748,12 @@ interface RuntimeWorkspaceToolCall {
 - Assert actions without `outputSchema` keep existing output behavior.
 - Assert actions with `outputSchema` validate executor output and return `ACTION_OUTPUT_INVALID` on mismatch without storing raw large output in trace.
 - Assert injected executor policy can return `ACTION_EXECUTOR_DISABLED` for supported executors.
-- Assert default executor policy allows existing `builtin`, `platform_action`, and `browser_script` behavior.
+- Assert default executor policy allows existing `builtin`, `platform_action`, `workspace_operation`, and `browser_script` behavior.
 - Assert `platform_action` sends `{ action: executor.name, params: input }` to the injected handler only after loaded Skill gating and input schema validation pass.
-- Assert `platform_action/workspace-write` and `workspace-delete` stage ordinary Runtime Workspace mutations during `interaction.sendMessage` and commit only on successful turns.
+- Assert `workspace_operation` and generic `workspace.write/patch/delete` stage ordinary save-runtime workspace mutations during `interaction.sendMessage` and commit only on successful turns.
 - Assert failed or aborted turns discard ordinary staged workspace mutations.
 - Assert ordinary Agent/Skill workspace mutations under `.tsian/*` fail structurally.
-- Assert frontend bridge `platform.runAction` workspace write/delete remains immediate.
+- Assert frontend bridge `platform.runAction` generic workspace write/patch/delete remains immediate.
 - Assert missing platform action capability returns `PLATFORM_ACTION_UNAVAILABLE`.
 - Assert injected platform action failure returns `PLATFORM_ACTION_FAILED`.
 - Assert `platform-host` rejects non-allow-listed Agent Runtime platform actions such as `restore-checkpoint`.
@@ -740,7 +761,7 @@ interface RuntimeWorkspaceToolCall {
 - Assert unknown built-in executor names return `ACTION_EXECUTOR_NOT_FOUND`.
 - Assert invalid `browser_script` declarations report `ACTION_EXECUTOR_INVALID` during `skill_load`.
 - Assert `browser_script` runs a Skill-local script through the injected runner only after Skill loading and input validation.
-- Assert `browser_script` can use SDK workspace read/list/search/write/delete against the staged workspace view and keeps workspace mutation trace/synchronization.
+- Assert `browser_script` can use SDK workspace read/list/search/diff/patch/write/move/delete/validate against the staged workspace view and keeps workspace mutation trace/synchronization.
 - Assert `browser_script` timeout and abort return structured observations.
 - Assert `browser_script` paths outside the declaring Skill directory are rejected.
 - Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
@@ -756,11 +777,11 @@ interface RuntimeWorkspaceToolCall {
 - Assert delegated Agents can still use workspace tools, `skill_load`, and non-`agent_call` `action_call`.
 - Assert per-turn `agent_call` budget is shared across master and narrative steps.
 - Assert successful built-in action calls do not mutate workspace/state and do not execute scripts.
-- Assert successful `platform_action` calls mutate workspace/state only through allow-listed platform actions.
+- Assert successful workspace mutations flow through the generic workspace operation layer.
 - Assert missing Skill names become structured observations, not uncaught runtime crashes.
-- Assert a loaded `SKILL.md` can chain to `workspace_read` for referenced resources.
-- Assert `workspace_list` returns directory entries without file contents.
-- Assert `workspace_search` returns scored previews and respects limit caps.
+- Assert a loaded `SKILL.md` can chain to `workspace.read` for referenced resources.
+- Assert `workspace.list` returns directory entries without file contents.
+- Assert `workspace.search` returns scored previews and respects limit caps.
 - Assert invalid JSON, unsupported tools, invalid paths, and missing files become observations, not uncaught runtime crashes.
 - Assert final `replyText` does not contain `<tsian-tool-call>` markup.
 - Assert no-tool turns still return the current `{ replyText, masterPlan }` shape.
@@ -846,7 +867,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `workspace_search({ query: "lantern" })` returns a matching `save/history/turns/turn-000012.json` file preview.
+- Good: `workspace.search({ scope: "effective", query: "lantern" })` returns a matching `save/history/turns/turn-000012.json` file preview.
 - Good: a memory Skill reads raw turn files and creates `world/characters.json` or `memory/facts.jsonl` as derived, correctable projections.
 - Base: current UI chat history still reads `saveHistory` while Agent/Skill context can inspect workspace raw history when needed.
 - Bad: writing all history into `history/conversation.jsonl` only; workspace search can no longer identify the matching turn cleanly.
@@ -991,8 +1012,7 @@ stageAgentSessionTranscriptFiles(
   - workspace mutations: write path/mediaType/size or delete `deletedPaths`.
 - `agent-runtime` still must not import Dexie, storage helpers, bridge objects, or `platform-host`; it emits trace through an injected callback.
 - `platform-host` owns trace persistence through explicit platform-owned workspace storage helpers.
-- Ordinary `workspace_read`, `workspace_list`, and `workspace_search` must not expose `.tsian/*`, including exact trace paths.
-- Bridge `workspace-read`, `workspace-list`, and `workspace-search` must not provide an ordinary opt-in flag for `.tsian/*`; use dedicated resources such as `runtime-diagnostics` for Agent-facing facts and future debug/management resources for raw metadata.
+- Ordinary generic workspace reads must not expose `.tsian/*` unless the actor has platform-meta read level. Use dedicated resources such as `runtime-diagnostics` for Agent-facing facts and future debug/management resources for raw metadata.
 
 ### 4. Validation & Error Matrix
 
@@ -1004,10 +1024,10 @@ stageAgentSessionTranscriptFiles(
 
 ### 5. Good/Base/Bad Cases
 
-- Good: trace records `workspace_read` path and content size without copying file content.
+- Good: trace records `workspace.read` path and content size without copying file content.
 - Good: trace records `agent_called` for both successful delegation and structured delegation errors without storing full delegated prompts.
 - Good: trace records `action_executor_policy_checked` with executor metadata and policy source/reason but no action input or script source.
-- Good: trace records `action_called` for `platform_action` plus a `workspace_mutation` event for `workspace-write`.
+- Good: trace records `action_called` for `workspace_operation` plus a `workspace_mutation` event for `workspace.patch` or `workspace.write`.
 - Good: trace records `script_log` summaries for `browser_script` start/log/fetch events and `workspace_mutation` for SDK writes/deletes.
 - Good: restoring an earlier checkpoint removes later trace files for the discarded branch.
 - Base: a no-tool turn still records turn, agent step, and model call summary events.
@@ -1022,7 +1042,7 @@ stageAgentSessionTranscriptFiles(
 - Assert model call summary events omit full prompt/messages.
 - Assert `agent_called` events include caller/target summary data and omit full prompt/messages.
 - Assert workspace read trace omits file content.
-- Assert `workspace-write` / `workspace-delete` platform actions produce `workspace_mutation`.
+- Assert `workspace.write` / `workspace.patch` / `workspace.delete` platform actions produce `workspace_mutation`.
 - Assert `browser_script` SDK logs/fetch summaries emit `script_log` without script source or large raw payloads.
 - Assert bridge and runtime workspace read/list/search exclude or reject `.tsian/*`.
 

@@ -259,6 +259,7 @@ const MEMORY_MAINTENANCE_SCRIPT_JS = [
   "    for (const write of writes) {",
   "      signal.throwIfAborted();",
   "      const file = await tsian.workspace.write({",
+  "        scope: \"save-runtime\",",
   "        path: write.path,",
   "        content: write.content,",
   "        mediaType: \"text/markdown\",",

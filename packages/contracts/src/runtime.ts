@@ -36,6 +36,78 @@ export interface WorkspaceFile {
   updatedAt: number
 }
 
+export type WorkspaceScope =
+  | "effective"
+  | "card-content"
+  | "save-runtime"
+  | "platform-meta"
+
+export type WorkspaceOperationName =
+  | "list"
+  | "search"
+  | "read"
+  | "diff"
+  | "patch"
+  | "write"
+  | "move"
+  | "delete"
+  | "validate"
+
+export interface WorkspaceOperationRequest {
+  operation: WorkspaceOperationName
+  scope: WorkspaceScope
+  path?: string
+  targetPath?: string
+  query?: string
+  limit?: number
+  content?: string
+  mediaType?: string
+  expectedContent?: string
+  validator?: "json" | "frontmatter"
+  autoFix?: boolean
+}
+
+export interface WorkspaceDiffResult {
+  path: string
+  scope: WorkspaceScope
+  currentContent: string
+  nextContent: string
+  changed: boolean
+  currentSize: number
+  nextSize: number
+}
+
+export interface WorkspacePatchResult {
+  path: string
+  scope: WorkspaceScope
+  file: WorkspaceFile
+  changed: boolean
+}
+
+export interface WorkspaceMoveResult {
+  scope: WorkspaceScope
+  fromPath: string
+  toPath: string
+  movedPaths: string[]
+}
+
+export interface WorkspaceDeleteResult {
+  scope: WorkspaceScope
+  deletedPaths: string[]
+}
+
+export interface WorkspaceValidationResult {
+  scope: WorkspaceScope
+  path?: string
+  valid: boolean
+  validator: string
+  errors: Array<{
+    code: string
+    message: string
+    path?: string
+  }>
+}
+
 export interface AgentRegistryEntry {
   id: string
   title: string

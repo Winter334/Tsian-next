@@ -2,16 +2,18 @@ import type {
   JsonValue,
   PlatformActionError,
   PlatformActionResult,
+  WorkspaceOperationRequest,
   WorkspaceFile,
 } from "@tsian/contracts"
 import type { RuntimeBrowserScriptExecutorRequest } from "../agent-runtime/workspace-tools"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import { summarizeTraceValue } from "../agent-runtime/trace"
 import {
-  listWorkspaceEntriesFromFiles,
-  readOrdinaryWorkspaceFileFromFiles,
+  AUTHORING_WORKSPACE_OPERATIONS,
+  executeWorkspaceOperation,
+} from "../agent-runtime/workspace-operations"
+import {
   readWorkspaceFileFromFiles,
-  searchWorkspaceFilesFromFiles,
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
@@ -166,20 +168,32 @@ async function sdkFetch(resource, init) {
 
 const tsian = Object.freeze({
   workspace: Object.freeze({
-    read(path) {
-      return rpc("workspace.read", { path });
+    read(input) {
+      return rpc("workspace.read", typeof input === "string" ? { scope: "effective", path: input } : input);
     },
-    list(path) {
-      return rpc("workspace.list", { path });
+    list(input) {
+      return rpc("workspace.list", typeof input === "string" || input === undefined ? { scope: "effective", path: input } : input);
     },
     search(query, limit) {
-      return rpc("workspace.search", { query, limit });
+      return rpc("workspace.search", isRecord(query) ? query : { scope: "effective", query, limit });
+    },
+    diff(input) {
+      return rpc("workspace.diff", input);
+    },
+    patch(input) {
+      return rpc("workspace.patch", input);
     },
     write(input) {
-      return rpc("workspace.write", input);
+      return rpc("workspace.write", input).then((result) => isRecord(result) && isRecord(result.file) ? result.file : result);
     },
-    delete(path) {
-      return rpc("workspace.delete", { path });
+    move(input) {
+      return rpc("workspace.move", input);
+    },
+    delete(input) {
+      return rpc("workspace.delete", typeof input === "string" ? { scope: "save-runtime", path: input } : input);
+    },
+    validate(input) {
+      return rpc("workspace.validate", input);
     }
   }),
   fetch: sdkFetch,
@@ -431,50 +445,40 @@ async function handleSdkRequest(
   const op = typeof message.op === "string" ? message.op : ""
   const args = isRecord(message.args) ? message.args : {}
 
-  if (op === "workspace.read") {
-    const file = readOrdinaryWorkspaceFileFromFiles(
-      options.workspaceTransaction.workspaceFiles,
-      args.path,
-    )
-    if (!file) {
-      throw {
-        code: "WORKSPACE_FILE_NOT_FOUND",
-        message: `Workspace file was not found: ${String(args.path ?? "")}`,
-      }
-    }
-    return file
-  }
-
-  if (op === "workspace.list") {
-    const entries = listWorkspaceEntriesFromFiles(options.workspaceTransaction.workspaceFiles, {
-      path: args.path,
+  if (op.startsWith("workspace.")) {
+    const operation = op.slice("workspace.".length)
+    const request = {
+      ...args,
+      operation,
+      scope: args.scope ?? (
+        operation === "read" || operation === "list" || operation === "search"
+          ? "effective"
+          : "save-runtime"
+      ),
+    } as WorkspaceOperationRequest
+    const result = await executeWorkspaceOperation(request, {
+      workspaceFiles: options.workspaceTransaction.workspaceFiles,
+      exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+      mutations: {
+        write: (input) => {
+          const file = options.workspaceTransaction.write({
+            path: input.path,
+            content: input.content,
+            mediaType: input.mediaType,
+          })
+          emitWorkspaceWriteTrace(options.emitTrace, file)
+          return file
+        },
+        delete: (input) => {
+          const result = options.workspaceTransaction.delete(input.path)
+          emitWorkspaceDeleteTrace(options.emitTrace, result.deletedPaths)
+          return {
+            scope: input.scope,
+            deletedPaths: result.deletedPaths,
+          }
+        },
+      },
     })
-    return {
-      path: typeof args.path === "string" ? args.path : "",
-      entries,
-    }
-  }
-
-  if (op === "workspace.search") {
-    return searchWorkspaceFilesFromFiles(options.workspaceTransaction.workspaceFiles, {
-      query: typeof args.query === "string" ? args.query : undefined,
-      limit: typeof args.limit === "number" ? args.limit : undefined,
-    })
-  }
-
-  if (op === "workspace.write") {
-    const file = options.workspaceTransaction.write({
-      path: args.path,
-      content: args.content,
-      mediaType: args.mediaType,
-    })
-    emitWorkspaceWriteTrace(options.emitTrace, file)
-    return file
-  }
-
-  if (op === "workspace.delete") {
-    const result = options.workspaceTransaction.delete(args.path)
-    emitWorkspaceDeleteTrace(options.emitTrace, result.deletedPaths)
     return result
   }
 

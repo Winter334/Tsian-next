@@ -5,7 +5,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 ## Current Shared Shapes
 
 - `RuntimeSnapshotShell` and `ConversationMessageRecord` describe frontend-readable session state.
-- `WorkspaceFile`, `WorkspaceEntry`, and `WorkspaceSearchResult` describe Runtime Workspace files and discovery results.
+- `WorkspaceFile`, `WorkspaceEntry`, `WorkspaceSearchResult`, `WorkspaceScope`, `WorkspaceOperationName`, `WorkspaceOperationRequest`, `WorkspaceDiffResult`, `WorkspacePatchResult`, `WorkspaceMoveResult`, `WorkspaceDeleteResult`, and `WorkspaceValidationResult` describe generic Runtime Workspace files, scoped operation requests, and operation results.
 - `MessageInteractionRequest` is currently `{ content: string }`.
 - `DeepQueryRequest` / `DeepQueryResult<T>` wrap bridge query resources.
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.

@@ -7,6 +7,7 @@ import type {
   PlatformActionResult,
   RuntimeSnapshotShell,
   WorkspaceFile,
+  WorkspaceOperationName,
 } from "@tsian/contracts"
 import { assembleAgentContext } from "./context"
 import { buildAgentRegistry } from "./registry"
@@ -26,6 +27,7 @@ import {
   type RuntimeBrowserScriptExecutorRequest,
   type RuntimeWorkspaceToolObservation,
 } from "./workspace-tools"
+import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
 
 export interface AgentRuntimeTurnInput {
   userInput: string
@@ -58,6 +60,8 @@ export interface AgentRuntimeCapabilities {
     request: RuntimeBrowserScriptExecutorRequest,
   ): Promise<PlatformActionResult>
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
+  workspaceMutations?: WorkspaceOperationMutationAdapter
+  exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   collaborationPolicy?: AgentRuntimeCollaborationPolicyInput
   emitTrace?: RuntimeTraceEmitter
 }
@@ -349,9 +353,9 @@ function buildWorkspaceToolInstructions(
   return [
     "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
     `如果需要加载 Skill 详情，使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}，并传入可见 Skill Index 中的 name。不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件。`,
-    `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。`,
-    `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前支持内置 executor、平台允许的 platform_action executor，以及受信任第三方 Skill 可声明的 browser_script executor。`,
-    "platform_action 可能写入 Runtime Workspace，只在已加载 Skill 明确要求维护状态、地图、记忆、线索或前端约定数据时使用。",
+    `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
+    `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前支持内置 executor、平台允许的 platform_action executor、workspace_operation executor，以及受信任第三方 Skill 可声明的 browser_script executor。`,
+    "workspace_operation 和 browser_script 可能写入 Runtime Workspace，只在已加载 Skill 明确要求维护状态、地图、记忆、线索或前端约定数据时使用。",
     "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。",
     ...(canCallAgents
       ? [
@@ -368,9 +372,9 @@ function buildWorkspaceToolInstructions(
           `- ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} arguments={"agentId":"${options.visibleContacts[0].id}","request":"请检查当前场景的连续性。","historyMode":"recent"}`,
         ]
       : []),
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} arguments={"path":"world/canon.md"}`,
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList} arguments={"path":"skills"}，path 可省略表示根目录`,
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} arguments={"query":"关键词","limit":10}`,
+    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} arguments={"scope":"effective","path":"world/canon.md"}`,
+    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList} arguments={"scope":"effective","path":"skills"}，path 可省略表示根目录`,
+    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} arguments={"scope":"effective","query":"关键词","limit":10}`,
     "工具调用格式必须独占一个块：",
     "<tsian-tool-call>",
     `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}","arguments":{"name":"prose-style"}}`,
@@ -1038,6 +1042,8 @@ async function callAgentModelWithWorkspaceTools(
       runPlatformAction: capabilities.runPlatformAction,
       runBrowserScript: capabilities.runBrowserScript,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
+      workspaceMutations: capabilities.workspaceMutations,
+      exposedWorkspaceOperations: capabilities.exposedWorkspaceOperations,
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,

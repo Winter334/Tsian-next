@@ -26,7 +26,8 @@
     "06-15-agent-skill-assistant-studio-ui",
     "06-15-runtime-diagnostics-settings-ui",
     "06-15-default-packaged-game-frontend",
-    "06-15-card-owned-content-save-runtime-data-model"
+    "06-15-card-owned-content-save-runtime-data-model",
+    "06-16-generic-workspace-authoring-tools"
   ],
   "parent": null,
   "relatedFiles": [],

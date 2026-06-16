@@ -3,15 +3,21 @@ import type {
   PlatformActionRequest,
   PlatformActionResult,
   SkillRegistryEntry,
-  WorkspaceEntry,
   WorkspaceFile,
-  WorkspaceSearchResult,
+  WorkspaceOperationName,
+  WorkspaceOperationRequest,
+  WorkspaceScope,
 } from "@tsian/contracts"
 import type {
   RuntimeTraceDebugLabel,
   RuntimeTraceEmitter,
 } from "./trace"
 import { summarizeTraceValue } from "./trace"
+import {
+  DEFAULT_RUNTIME_WORKSPACE_OPERATIONS,
+  executeWorkspaceOperation,
+  type WorkspaceOperationMutationAdapter,
+} from "./workspace-operations"
 
 export interface RuntimeWorkspaceToolCall {
   name: string
@@ -22,9 +28,15 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   skillLoad: "skill_load",
   actionCall: "action_call",
   agentCall: "agent_call",
-  workspaceRead: "workspace_read",
-  workspaceList: "workspace_list",
-  workspaceSearch: "workspace_search",
+  workspaceRead: "workspace.read",
+  workspaceList: "workspace.list",
+  workspaceSearch: "workspace.search",
+  workspaceDiff: "workspace.diff",
+  workspacePatch: "workspace.patch",
+  workspaceWrite: "workspace.write",
+  workspaceMove: "workspace.move",
+  workspaceDelete: "workspace.delete",
+  workspaceValidate: "workspace.validate",
 } as const
 
 export type RuntimeWorkspaceToolName =
@@ -61,6 +73,8 @@ interface RuntimeSkillActionDeclaration {
 export interface RuntimeActionExecutorReference {
   type: string
   name: string
+  operation?: WorkspaceOperationName
+  scope?: WorkspaceScope
   path?: string
   timeoutMs?: number
 }
@@ -129,6 +143,9 @@ interface RuntimeActionExecutorContext {
   input: Record<string, unknown>
   loadedSkill: RuntimeLoadedSkill
   workspaceFiles: WorkspaceFile[]
+  agentContext?: AgentContextEntry
+  workspaceMutations?: WorkspaceOperationMutationAdapter
+  exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   runPlatformAction?: RuntimePlatformActionRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
   signal?: AbortSignal
@@ -161,6 +178,8 @@ export interface RuntimeWorkspaceToolExecutionContext {
   runPlatformAction?: RuntimePlatformActionRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
+  workspaceMutations?: WorkspaceOperationMutationAdapter
+  exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   signal?: AbortSignal
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
@@ -168,10 +187,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
 
 const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
 const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
-const DEFAULT_SEARCH_LIMIT = 50
-const MAX_SEARCH_LIMIT = 200
 const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
-const PLATFORM_METADATA_PATH_PREFIX = ".tsian/"
 const DEFAULT_AGENT_CALL_HISTORY_MODE: RuntimeAgentCallHistoryMode = "recent"
 const AGENT_CALL_HISTORY_MODES = new Set<RuntimeAgentCallHistoryMode>([
   "minimal",
@@ -184,6 +200,7 @@ const DEFAULT_ACTION_EXECUTOR: RuntimeActionExecutorReference = {
 }
 const PLATFORM_ACTION_EXECUTOR_TYPE = "platform_action"
 const BROWSER_SCRIPT_EXECUTOR_TYPE = "browser_script"
+const WORKSPACE_OPERATION_EXECUTOR_TYPE = "workspace_operation"
 const DEFAULT_CONTROLLED_EXECUTOR_TIMEOUT_MS = 10_000
 const MAX_CONTROLLED_EXECUTOR_TIMEOUT_MS = 60_000
 const SUPPORTED_ACTION_SCHEMA_TYPES = new Set([
@@ -265,46 +282,6 @@ function normalizeWorkspaceFilePath(value: unknown): string {
   })
 }
 
-function normalizeDirectoryPath(value: unknown): string {
-  return normalizePathBase(value ?? "", {
-    allowEmpty: true,
-    rejectTrailingSlash: false,
-  })
-}
-
-function normalizeSearchLimit(value: unknown): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return DEFAULT_SEARCH_LIMIT
-  }
-
-  return Math.min(Math.floor(value), MAX_SEARCH_LIMIT)
-}
-
-function fileName(path: string): string {
-  const parts = path.split("/")
-  return parts[parts.length - 1] || path
-}
-
-function createPreview(content: string, index: number): string {
-  if (index < 0) {
-    return ""
-  }
-
-  const start = Math.max(0, index - 48)
-  const end = Math.min(content.length, index + 96)
-  const prefix = start > 0 ? "..." : ""
-  const suffix = end < content.length ? "..." : ""
-  return `${prefix}${content.slice(start, end)}${suffix}`.replace(/\s+/g, " ").trim()
-}
-
-function isPlatformMetadataPath(path: string): boolean {
-  return path === ".tsian" || path.startsWith(PLATFORM_METADATA_PATH_PREFIX)
-}
-
-function visibleWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
-  return files.filter((file) => !isPlatformMetadataPath(file.path))
-}
-
 function traceBase(context: RuntimeWorkspaceToolExecutionContext) {
   return {
     ...(context.agentContext ? { agentId: context.agentContext.agent.id } : {}),
@@ -336,19 +313,21 @@ function emitWorkspaceToolTrace(
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
 ): void {
-  if (
-    call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead
-    && call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList
-    && call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch
-  ) {
+  if (!call.name.startsWith("workspace.")) {
     return
   }
 
   const data: Record<string, unknown> = {
     tool: call.name,
   }
+  if (typeof call.arguments.scope === "string") {
+    data.scope = call.arguments.scope
+  }
   if (typeof call.arguments.path === "string") {
     data.path = call.arguments.path
+  }
+  if (typeof call.arguments.targetPath === "string") {
+    data.targetPath = call.arguments.targetPath
   }
   if (typeof call.arguments.query === "string") {
     data.query = call.arguments.query
@@ -551,138 +530,6 @@ export function stripRuntimeWorkspaceToolCallBlocks(text: string): string {
   return text.replace(TOOL_CALL_PATTERN, "").trim()
 }
 
-function listWorkspaceEntries(
-  files: WorkspaceFile[],
-  pathInput: unknown,
-): { path: string; entries: WorkspaceEntry[] } {
-  const directoryPath = normalizeDirectoryPath(pathInput)
-  const prefix = directoryPath ? `${directoryPath}/` : ""
-  const fileEntries = new Map<string, WorkspaceEntry>()
-  const directoryEntries = new Map<string, WorkspaceEntry & { children: Set<string> }>()
-
-  for (const file of visibleWorkspaceFiles(files)) {
-    if (directoryPath && !file.path.startsWith(prefix)) {
-      continue
-    }
-
-    const remainder = directoryPath
-      ? file.path.slice(prefix.length)
-      : file.path
-    if (!remainder) {
-      continue
-    }
-
-    const slashIndex = remainder.indexOf("/")
-    if (slashIndex === -1) {
-      fileEntries.set(file.path, {
-        path: file.path,
-        name: fileName(file.path),
-        kind: "file",
-        mediaType: file.mediaType,
-        size: file.content.length,
-        updatedAt: file.updatedAt,
-      })
-      continue
-    }
-
-    const childName = remainder.slice(0, slashIndex)
-    const childPath = prefix ? `${prefix}${childName}` : childName
-    const nextSegment = remainder.slice(slashIndex + 1).split("/")[0]
-    const existing = directoryEntries.get(childPath)
-    if (existing) {
-      existing.updatedAt = Math.max(existing.updatedAt ?? 0, file.updatedAt)
-      if (nextSegment) existing.children.add(nextSegment)
-      continue
-    }
-
-    const children = new Set<string>()
-    if (nextSegment) children.add(nextSegment)
-    directoryEntries.set(childPath, {
-      path: childPath,
-      name: childName,
-      kind: "directory",
-      updatedAt: file.updatedAt,
-      childCount: 0,
-      children,
-    })
-  }
-
-  return {
-    path: directoryPath,
-    entries: [
-      ...Array.from(directoryEntries.values())
-        .map(({ children, ...entry }) => ({
-          ...entry,
-          childCount: children.size,
-        }))
-        .sort((left, right) => left.name.localeCompare(right.name)),
-      ...Array.from(fileEntries.values())
-        .sort((left, right) => left.name.localeCompare(right.name)),
-    ],
-  }
-}
-
-function readWorkspaceFile(
-  files: WorkspaceFile[],
-  pathInput: unknown,
-): WorkspaceFile {
-  const path = normalizeWorkspaceFilePath(pathInput)
-  if (isPlatformMetadataPath(path)) {
-    throw toolError(
-      "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
-      "Platform metadata paths under .tsian are not available through ordinary workspace reads.",
-    )
-  }
-
-  const file = files.find((candidate) => candidate.path === path)
-  if (!file) {
-    throw toolError(
-      "WORKSPACE_FILE_NOT_FOUND",
-      `Workspace file was not found: ${path}`,
-    )
-  }
-
-  return file
-}
-
-function searchWorkspaceFiles(
-  files: WorkspaceFile[],
-  input: Record<string, unknown>,
-): WorkspaceSearchResult[] {
-  const query = typeof input.query === "string" ? input.query.trim().toLowerCase() : ""
-  if (!query) {
-    return []
-  }
-
-  const limit = normalizeSearchLimit(input.limit)
-  return visibleWorkspaceFiles(files)
-    .flatMap((file): WorkspaceSearchResult[] => {
-      const lowerPath = file.path.toLowerCase()
-      const lowerContent = file.content.toLowerCase()
-      const contentIndex = lowerContent.indexOf(query)
-      const matchesPath = lowerPath.includes(query)
-      if (!matchesPath && contentIndex < 0) {
-        return []
-      }
-
-      return [{
-        path: file.path,
-        name: fileName(file.path),
-        mediaType: file.mediaType,
-        updatedAt: file.updatedAt,
-        score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
-        preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,
-      }]
-    })
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score
-      }
-      return right.updatedAt - left.updatedAt
-    })
-    .slice(0, limit)
-}
-
 function normalizeSkillName(value: unknown): string {
   if (typeof value !== "string") {
     throw toolError(
@@ -800,6 +647,58 @@ function normalizeActionExecutorReference(
 
   const timeoutMs = normalizeExecutorTimeoutMs(value.timeoutMs, actionName, index)
 
+  if (type === WORKSPACE_OPERATION_EXECUTOR_TYPE) {
+    const operation = typeof value.operation === "string" && value.operation.trim()
+      ? value.operation.trim()
+      : explicitName
+    const supportedOperations = [
+      "list",
+      "search",
+      "read",
+      "diff",
+      "patch",
+      "write",
+      "move",
+      "delete",
+      "validate",
+    ]
+    if (!supportedOperations.includes(operation)) {
+      throw toolError(
+        "ACTION_EXECUTOR_INVALID",
+        `Workspace operation executor requires a supported operation: ${actionName}`,
+        { index, name: actionName, operation, supportedOperations },
+      )
+    }
+
+    const scope = typeof value.scope === "string" && value.scope.trim()
+      ? value.scope.trim()
+      : undefined
+    if (
+      scope !== undefined
+      && scope !== "effective"
+      && scope !== "card-content"
+      && scope !== "save-runtime"
+      && scope !== "platform-meta"
+    ) {
+      throw toolError(
+        "ACTION_EXECUTOR_INVALID",
+        `Workspace operation executor scope is invalid: ${actionName}`,
+        { index, name: actionName, scope },
+      )
+    }
+
+    return {
+      type,
+      name: operation,
+      operation: operation as WorkspaceOperationName,
+      ...(scope ? { scope: scope as WorkspaceScope } : {}),
+      ...(typeof value.path === "string" && value.path.trim()
+        ? { path: value.path.trim() }
+        : {}),
+      ...(timeoutMs ? { timeoutMs } : {}),
+    }
+  }
+
   if (type === BROWSER_SCRIPT_EXECUTOR_TYPE) {
     const path = typeof value.path === "string" && value.path.trim()
       ? value.path.trim()
@@ -885,6 +784,7 @@ function shouldCheckActionExecutorPolicy(executor: RuntimeActionExecutorReferenc
   return executor.type === "builtin"
     || executor.type === PLATFORM_ACTION_EXECUTOR_TYPE
     || executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE
+    || executor.type === WORKSPACE_OPERATION_EXECUTOR_TYPE
 }
 
 function checkActionExecutorPolicy(
@@ -1655,6 +1555,43 @@ const BUILTIN_ACTION_EXECUTORS: Record<
   }),
 }
 
+function workspaceOperationRequestFromExecutor(
+  executor: RuntimeActionExecutorReference,
+  input: Record<string, unknown>,
+): WorkspaceOperationRequest {
+  const operation = executor.operation ?? executor.name as WorkspaceOperationName
+  const scope = executor.scope ?? input.scope
+  const path = executor.path ?? input.path
+
+  return {
+    ...input,
+    operation,
+    scope,
+    ...(typeof path === "string" ? { path } : {}),
+  } as WorkspaceOperationRequest
+}
+
+function workspaceOperationRequestFromToolCall(
+  call: RuntimeWorkspaceToolCall,
+): WorkspaceOperationRequest {
+  const operation = call.name.slice("workspace.".length)
+  return {
+    ...call.arguments,
+    operation,
+  } as WorkspaceOperationRequest
+}
+
+function exposedOperationsForWorkspaceAction(
+  context: RuntimeActionExecutorContext,
+  operation: WorkspaceOperationName,
+): WorkspaceOperationName[] {
+  return Array.from(new Set([
+    ...DEFAULT_RUNTIME_WORKSPACE_OPERATIONS,
+    ...(context.exposedWorkspaceOperations ?? []),
+    operation,
+  ]))
+}
+
 async function executeSkillAction(
   loadedSkill: RuntimeLoadedSkill,
   action: RuntimeSkillActionDeclaration,
@@ -1675,6 +1612,28 @@ async function executeSkillAction(
     }
 
     return executor(context)
+  }
+
+  if (action.executor.type === WORKSPACE_OPERATION_EXECUTOR_TYPE) {
+    const operation = action.executor.operation ?? action.executor.name as WorkspaceOperationName
+    const output = await runWithExecutorTimeout(
+      action.executor,
+      context.signal,
+      () => executeWorkspaceOperation(
+        workspaceOperationRequestFromExecutor(action.executor, input),
+        {
+          workspaceFiles: context.workspaceFiles,
+          agentContext: context.agentContext,
+          mutations: context.workspaceMutations,
+          exposedOperations: exposedOperationsForWorkspaceAction(context, operation),
+        },
+      ),
+    )
+
+    return {
+      status: "executed",
+      output,
+    }
   }
 
   if (action.executor.type === PLATFORM_ACTION_EXECUTOR_TYPE) {
@@ -1876,6 +1835,9 @@ async function validateSkillActionCall(
     input: actionInput,
     loadedSkill,
     workspaceFiles: context.workspaceFiles,
+    agentContext: context.agentContext,
+    workspaceMutations: context.workspaceMutations,
+    exposedWorkspaceOperations: context.exposedWorkspaceOperations,
     runPlatformAction: context.runPlatformAction,
     runBrowserScript: context.runBrowserScript,
     signal: context.signal,
@@ -1964,26 +1926,20 @@ async function executeRuntimeWorkspaceToolCall(
         ok: true,
         result: await context.runAgentCall(normalizeAgentCallArguments(call.arguments)),
       }
-    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead) {
+    } else if (call.name.startsWith("workspace.")) {
       observation = {
         index,
         name: call.name,
         ok: true,
-        result: readWorkspaceFile(context.workspaceFiles, call.arguments.path),
-      }
-    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList) {
-      observation = {
-        index,
-        name: call.name,
-        ok: true,
-        result: listWorkspaceEntries(context.workspaceFiles, call.arguments.path),
-      }
-    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch) {
-      observation = {
-        index,
-        name: call.name,
-        ok: true,
-        result: searchWorkspaceFiles(context.workspaceFiles, call.arguments),
+        result: await executeWorkspaceOperation(
+          workspaceOperationRequestFromToolCall(call),
+          {
+            workspaceFiles: context.workspaceFiles,
+            agentContext: context.agentContext,
+            mutations: context.workspaceMutations,
+            exposedOperations: context.exposedWorkspaceOperations,
+          },
+        ),
       }
     } else {
       observation = {

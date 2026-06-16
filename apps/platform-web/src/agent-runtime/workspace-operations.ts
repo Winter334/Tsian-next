@@ -1,0 +1,880 @@
+import type {
+  AgentContextEntry,
+  WorkspaceDeleteResult,
+  WorkspaceDiffResult,
+  WorkspaceEntry,
+  WorkspaceFile,
+  WorkspaceMoveResult,
+  WorkspaceOperationName,
+  WorkspaceOperationRequest,
+  WorkspacePatchResult,
+  WorkspaceScope,
+  WorkspaceSearchResult,
+  WorkspaceValidationResult,
+} from "@tsian/contracts"
+
+export interface WorkspaceOperationError {
+  code: string
+  message: string
+  details?: unknown
+}
+
+export interface WorkspaceOperationMutationAdapter {
+  write(input: {
+    scope: WorkspaceScope
+    path: string
+    content: string
+    mediaType?: string
+  }): WorkspaceFile | Promise<WorkspaceFile>
+  delete(input: {
+    scope: WorkspaceScope
+    path: string
+  }): WorkspaceDeleteResult | Promise<WorkspaceDeleteResult>
+}
+
+export interface WorkspaceOperationExecutionContext {
+  workspaceFiles: WorkspaceFile[]
+  agentContext?: AgentContextEntry
+  actorLevel?: number
+  exposedOperations?: Iterable<WorkspaceOperationName>
+  mutations?: WorkspaceOperationMutationAdapter
+}
+
+export const WORKSPACE_OPERATION_NAMES = {
+  list: "list",
+  search: "search",
+  read: "read",
+  diff: "diff",
+  patch: "patch",
+  write: "write",
+  move: "move",
+  delete: "delete",
+  validate: "validate",
+} as const satisfies Record<WorkspaceOperationName, WorkspaceOperationName>
+
+export const DEFAULT_RUNTIME_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
+  "list",
+  "search",
+  "read",
+]
+
+export const AUTHORING_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
+  "list",
+  "search",
+  "read",
+  "diff",
+  "patch",
+  "write",
+  "move",
+  "delete",
+  "validate",
+]
+
+const DEFAULT_SEARCH_LIMIT = 50
+const MAX_SEARCH_LIMIT = 200
+const DEFAULT_AGENT_ACCESS_LEVEL = 1
+const MAX_ACCESS_LEVEL = 4
+const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
+const EDIT_OPERATIONS = new Set<WorkspaceOperationName>([
+  "patch",
+  "write",
+  "move",
+  "delete",
+])
+
+interface AccessLevels {
+  readLevel: number
+  editLevel: number
+}
+
+const DEFAULT_SCOPE_ACCESS: Record<Exclude<WorkspaceScope, "effective">, AccessLevels> = {
+  "card-content": {
+    readLevel: 0,
+    editLevel: 2,
+  },
+  "save-runtime": {
+    readLevel: 0,
+    editLevel: 1,
+  },
+  "platform-meta": {
+    readLevel: 4,
+    editLevel: 4,
+  },
+}
+
+function workspaceOperationError(
+  code: string,
+  message: string,
+  details?: unknown,
+): WorkspaceOperationError {
+  return details === undefined ? { code, message } : { code, message, details }
+}
+
+function normalizePathBase(
+  value: unknown,
+  options: { allowEmpty: boolean; rejectTrailingSlash: boolean },
+): string {
+  if (typeof value !== "string") {
+    throw workspaceOperationError(
+      "WORKSPACE_PATH_REQUIRED",
+      "Workspace path must be a string.",
+    )
+  }
+
+  const raw = value.trim()
+  const hadTrailingSlash = /[\\/]$/.test(raw)
+  const normalized = raw
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "")
+    .replace(/\/+/g, "/")
+    .replace(/\/+$/, "")
+
+  if (!normalized) {
+    if (options.allowEmpty) {
+      return ""
+    }
+    throw workspaceOperationError(
+      "WORKSPACE_PATH_REQUIRED",
+      "Workspace path is required.",
+    )
+  }
+
+  if (options.rejectTrailingSlash && hadTrailingSlash) {
+    throw workspaceOperationError(
+      "WORKSPACE_FILE_PATH_REQUIRED",
+      "Workspace file path must not end with a slash.",
+    )
+  }
+
+  if (normalized.includes("\0")) {
+    throw workspaceOperationError(
+      "WORKSPACE_PATH_INVALID",
+      "Workspace path must not contain NUL bytes.",
+    )
+  }
+
+  const segments = normalized.split("/")
+  if (segments.some((segment) => segment === "." || segment === ".." || segment === "")) {
+    throw workspaceOperationError(
+      "WORKSPACE_PATH_INVALID",
+      "Workspace path must not contain empty, current, or parent directory segments.",
+    )
+  }
+
+  return normalized
+}
+
+export function normalizeWorkspaceOperationFilePath(value: unknown): string {
+  return normalizePathBase(value, {
+    allowEmpty: false,
+    rejectTrailingSlash: true,
+  })
+}
+
+function normalizeWorkspaceOperationTargetPath(value: unknown): string {
+  return normalizePathBase(value, {
+    allowEmpty: false,
+    rejectTrailingSlash: false,
+  })
+}
+
+function normalizeWorkspaceOperationDirectoryPath(value: unknown): string {
+  return normalizePathBase(value ?? "", {
+    allowEmpty: true,
+    rejectTrailingSlash: false,
+  })
+}
+
+function normalizeWorkspaceOperationName(value: unknown): WorkspaceOperationName {
+  if (typeof value !== "string") {
+    throw workspaceOperationError(
+      "WORKSPACE_OPERATION_REQUIRED",
+      "Workspace operation must be a string.",
+    )
+  }
+
+  if (value in WORKSPACE_OPERATION_NAMES) {
+    return value as WorkspaceOperationName
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_OPERATION_UNSUPPORTED",
+    `Unsupported workspace operation: ${value}`,
+    {
+      operation: value,
+      supportedOperations: Object.values(WORKSPACE_OPERATION_NAMES),
+    },
+  )
+}
+
+function normalizeWorkspaceScope(value: unknown): WorkspaceScope {
+  if (
+    value === "effective"
+    || value === "card-content"
+    || value === "save-runtime"
+    || value === "platform-meta"
+  ) {
+    return value
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_SCOPE_REQUIRED",
+    "Workspace operation requires an explicit scope.",
+    {
+      supportedScopes: [
+        "effective",
+        "card-content",
+        "save-runtime",
+        "platform-meta",
+      ],
+    },
+  )
+}
+
+function normalizeSearchLimit(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_SEARCH_LIMIT
+  }
+
+  return Math.min(Math.floor(value), MAX_SEARCH_LIMIT)
+}
+
+function fileName(path: string): string {
+  const parts = path.split("/")
+  return parts[parts.length - 1] || path
+}
+
+function createPreview(content: string, index: number): string {
+  if (index < 0) {
+    return ""
+  }
+
+  const start = Math.max(0, index - 48)
+  const end = Math.min(content.length, index + 96)
+  const prefix = start > 0 ? "..." : ""
+  const suffix = end < content.length ? "..." : ""
+  return `${prefix}${content.slice(start, end)}${suffix}`.replace(/\s+/g, " ").trim()
+}
+
+export function isPlatformMetadataPath(path: string): boolean {
+  return path === ".tsian" || path.startsWith(".tsian/")
+}
+
+export function isSaveRuntimePath(path: string): boolean {
+  return path === "save" || path.startsWith("save/")
+}
+
+function scopeForPath(path: string): Exclude<WorkspaceScope, "effective"> {
+  if (isPlatformMetadataPath(path)) {
+    return "platform-meta"
+  }
+  if (isSaveRuntimePath(path)) {
+    return "save-runtime"
+  }
+  return "card-content"
+}
+
+function pathMatchesScope(path: string, scope: WorkspaceScope): boolean {
+  if (scope === "effective") {
+    return true
+  }
+  return scopeForPath(path) === scope
+}
+
+function accessForPath(path: string): AccessLevels {
+  return DEFAULT_SCOPE_ACCESS[scopeForPath(path)]
+}
+
+function normalizeAccessLevel(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined
+  }
+
+  return Math.max(0, Math.min(MAX_ACCESS_LEVEL, Math.floor(value)))
+}
+
+function parseAgentWorkspaceAccessLevel(agentFile: WorkspaceFile | undefined): number | undefined {
+  if (!agentFile) {
+    return undefined
+  }
+
+  const frontmatter = agentFile.content.match(FRONTMATTER_PATTERN)?.[1]
+  if (!frontmatter) {
+    return undefined
+  }
+
+  const inlineMatch = frontmatter.match(/^\s*workspaceAccess\s*:\s*\{[^}\n]*level\s*:\s*(\d+)[^}\n]*\}\s*$/m)
+  if (inlineMatch?.[1]) {
+    return normalizeAccessLevel(Number(inlineMatch[1]))
+  }
+
+  const lines = frontmatter.split(/\r?\n/)
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? ""
+    const header = line.match(/^(\s*)workspaceAccess\s*:\s*$/)
+    if (!header) {
+      continue
+    }
+
+    const baseIndent = header[1].length
+    for (let childIndex = index + 1; childIndex < lines.length; childIndex += 1) {
+      const childLine = lines[childIndex] ?? ""
+      if (!childLine.trim()) {
+        continue
+      }
+
+      const childIndent = childLine.match(/^\s*/)?.[0].length ?? 0
+      if (childIndent <= baseIndent) {
+        break
+      }
+
+      const levelMatch = childLine.match(/^\s*level\s*:\s*(\d+)\s*(?:#.*)?$/)
+      if (levelMatch?.[1]) {
+        return normalizeAccessLevel(Number(levelMatch[1]))
+      }
+    }
+  }
+
+  return undefined
+}
+
+export function resolveWorkspaceActorLevel(
+  context: Pick<WorkspaceOperationExecutionContext, "actorLevel" | "agentContext">,
+): number {
+  return normalizeAccessLevel(context.actorLevel)
+    ?? parseAgentWorkspaceAccessLevel(context.agentContext?.agentFile)
+    ?? DEFAULT_AGENT_ACCESS_LEVEL
+}
+
+function assertOperationExposed(
+  operation: WorkspaceOperationName,
+  exposedOperations: Iterable<WorkspaceOperationName> | undefined,
+): void {
+  const exposed = new Set(exposedOperations ?? DEFAULT_RUNTIME_WORKSPACE_OPERATIONS)
+  if (exposed.has(operation)) {
+    return
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_OPERATION_NOT_EXPOSED",
+    `Workspace operation is not exposed in this context: ${operation}`,
+    {
+      operation,
+      exposedOperations: Array.from(exposed).sort(),
+    },
+  )
+}
+
+function assertReadAccess(path: string, actorLevel: number): void {
+  const access = accessForPath(path)
+  if (actorLevel >= access.readLevel) {
+    return
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_READ_ACCESS_DENIED",
+    `Workspace read level ${access.readLevel} is required for: ${path}`,
+    {
+      path,
+      actorLevel,
+      readLevel: access.readLevel,
+    },
+  )
+}
+
+function assertEditAccess(path: string, actorLevel: number): void {
+  const access = accessForPath(path)
+  if (actorLevel >= access.editLevel) {
+    return
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_EDIT_ACCESS_DENIED",
+    `Workspace edit level ${access.editLevel} is required for: ${path}`,
+    {
+      path,
+      actorLevel,
+      editLevel: access.editLevel,
+    },
+  )
+}
+
+function cloneWorkspaceFile(file: WorkspaceFile): WorkspaceFile {
+  return { ...file }
+}
+
+function scopedReadableFiles(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  actorLevel: number,
+): WorkspaceFile[] {
+  return files
+    .filter((file) => pathMatchesScope(file.path, scope))
+    .filter((file) => actorLevel >= accessForPath(file.path).readLevel)
+    .map(cloneWorkspaceFile)
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function findScopedFile(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  path: string,
+): WorkspaceFile | undefined {
+  if (!pathMatchesScope(path, scope)) {
+    return undefined
+  }
+
+  return files.find((file) => file.path === path)
+}
+
+function listWorkspaceEntries(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  pathInput: unknown,
+  actorLevel: number,
+): { path: string; entries: WorkspaceEntry[] } {
+  const directoryPath = normalizeWorkspaceOperationDirectoryPath(pathInput)
+  const prefix = directoryPath ? `${directoryPath}/` : ""
+  const fileEntries = new Map<string, WorkspaceEntry>()
+  const directoryEntries = new Map<string, WorkspaceEntry & { children: Set<string> }>()
+
+  for (const file of scopedReadableFiles(files, scope, actorLevel)) {
+    if (directoryPath && file.path !== directoryPath && !file.path.startsWith(prefix)) {
+      continue
+    }
+
+    const remainder = directoryPath
+      ? file.path.slice(prefix.length)
+      : file.path
+    if (!remainder) {
+      continue
+    }
+
+    const slashIndex = remainder.indexOf("/")
+    if (slashIndex === -1) {
+      fileEntries.set(file.path, {
+        path: file.path,
+        name: fileName(file.path),
+        kind: "file",
+        mediaType: file.mediaType,
+        size: file.content.length,
+        updatedAt: file.updatedAt,
+      })
+      continue
+    }
+
+    const childName = remainder.slice(0, slashIndex)
+    const childPath = prefix ? `${prefix}${childName}` : childName
+    const nextSegment = remainder.slice(slashIndex + 1).split("/")[0]
+    const existing = directoryEntries.get(childPath)
+    if (existing) {
+      existing.updatedAt = Math.max(existing.updatedAt ?? 0, file.updatedAt)
+      if (nextSegment) existing.children.add(nextSegment)
+      continue
+    }
+
+    const children = new Set<string>()
+    if (nextSegment) children.add(nextSegment)
+    directoryEntries.set(childPath, {
+      path: childPath,
+      name: childName,
+      kind: "directory",
+      updatedAt: file.updatedAt,
+      childCount: 0,
+      children,
+    })
+  }
+
+  return {
+    path: directoryPath,
+    entries: [
+      ...Array.from(directoryEntries.values())
+        .map(({ children, ...entry }) => ({
+          ...entry,
+          childCount: children.size,
+        }))
+        .sort((left, right) => left.name.localeCompare(right.name)),
+      ...Array.from(fileEntries.values())
+        .sort((left, right) => left.name.localeCompare(right.name)),
+    ],
+  }
+}
+
+function readWorkspaceFile(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  pathInput: unknown,
+  actorLevel: number,
+): WorkspaceFile {
+  const path = normalizeWorkspaceOperationFilePath(pathInput)
+  assertReadAccess(path, actorLevel)
+  const file = findScopedFile(files, scope, path)
+  if (!file) {
+    throw workspaceOperationError(
+      "WORKSPACE_FILE_NOT_FOUND",
+      `Workspace file was not found in ${scope}: ${path}`,
+      { scope, path },
+    )
+  }
+
+  return cloneWorkspaceFile(file)
+}
+
+function searchWorkspaceFiles(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  input: WorkspaceOperationRequest,
+  actorLevel: number,
+): WorkspaceSearchResult[] {
+  const query = typeof input.query === "string" ? input.query.trim().toLowerCase() : ""
+  if (!query) {
+    return []
+  }
+
+  const limit = normalizeSearchLimit(input.limit)
+  return scopedReadableFiles(files, scope, actorLevel)
+    .flatMap((file): WorkspaceSearchResult[] => {
+      const lowerPath = file.path.toLowerCase()
+      const lowerContent = file.content.toLowerCase()
+      const contentIndex = lowerContent.indexOf(query)
+      const matchesPath = lowerPath.includes(query)
+      if (!matchesPath && contentIndex < 0) {
+        return []
+      }
+
+      return [{
+        path: file.path,
+        name: fileName(file.path),
+        mediaType: file.mediaType,
+        updatedAt: file.updatedAt,
+        score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
+        preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,
+      }]
+    })
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score
+      }
+      return right.updatedAt - left.updatedAt
+    })
+    .slice(0, limit)
+}
+
+function normalizeContent(value: unknown): string {
+  if (typeof value !== "string") {
+    throw workspaceOperationError(
+      "WORKSPACE_CONTENT_REQUIRED",
+      "Workspace content must be a string.",
+    )
+  }
+
+  return value
+}
+
+function assertMutableScope(scope: WorkspaceScope): asserts scope is Exclude<WorkspaceScope, "effective"> {
+  if (scope !== "effective") {
+    return
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_EFFECTIVE_SCOPE_READ_ONLY",
+    "The effective workspace scope is read-only. Choose card-content, save-runtime, or platform-meta for writes.",
+  )
+}
+
+function assertMutationAdapter(
+  mutations: WorkspaceOperationMutationAdapter | undefined,
+): WorkspaceOperationMutationAdapter {
+  if (mutations) {
+    return mutations
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_MUTATION_UNAVAILABLE",
+    "Workspace mutation is not available in this context.",
+  )
+}
+
+function diffWorkspaceFile(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  request: WorkspaceOperationRequest,
+  actorLevel: number,
+): WorkspaceDiffResult {
+  const path = normalizeWorkspaceOperationFilePath(request.path)
+  assertReadAccess(path, actorLevel)
+  const existing = findScopedFile(files, scope, path)
+  if (!existing) {
+    throw workspaceOperationError(
+      "WORKSPACE_FILE_NOT_FOUND",
+      `Workspace file was not found in ${scope}: ${path}`,
+      { scope, path },
+    )
+  }
+
+  const nextContent = normalizeContent(request.content)
+  return {
+    path,
+    scope,
+    currentContent: existing.content,
+    nextContent,
+    changed: existing.content !== nextContent,
+    currentSize: existing.content.length,
+    nextSize: nextContent.length,
+  }
+}
+
+async function writeWorkspaceFile(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  request: WorkspaceOperationRequest,
+  context: WorkspaceOperationExecutionContext,
+  options: { checkExpectedContent: boolean },
+): Promise<WorkspacePatchResult> {
+  assertMutableScope(scope)
+  const path = normalizeWorkspaceOperationFilePath(request.path)
+  assertEditAccess(path, resolveWorkspaceActorLevel(context))
+  if (!pathMatchesScope(path, scope)) {
+    throw workspaceOperationError(
+      "WORKSPACE_SCOPE_PATH_MISMATCH",
+      `Workspace path does not belong to ${scope}: ${path}`,
+      { scope, path, pathScope: scopeForPath(path) },
+    )
+  }
+
+  const content = normalizeContent(request.content)
+  const existing = findScopedFile(files, scope, path)
+  if (
+    options.checkExpectedContent
+    && typeof request.expectedContent === "string"
+    && existing?.content !== request.expectedContent
+  ) {
+    throw workspaceOperationError(
+      "WORKSPACE_EXPECTED_CONTENT_MISMATCH",
+      `Workspace file changed before patch: ${path}`,
+      { scope, path },
+    )
+  }
+
+  const file = await assertMutationAdapter(context.mutations).write({
+    scope,
+    path,
+    content,
+    mediaType: request.mediaType,
+  })
+  return {
+    path,
+    scope,
+    file,
+    changed: existing?.content !== content,
+  }
+}
+
+async function deleteWorkspacePath(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  request: WorkspaceOperationRequest,
+  context: WorkspaceOperationExecutionContext,
+): Promise<WorkspaceDeleteResult> {
+  assertMutableScope(scope)
+  const path = normalizeWorkspaceOperationTargetPath(request.path)
+  const actorLevel = resolveWorkspaceActorLevel(context)
+  assertEditAccess(path, actorLevel)
+  if (!pathMatchesScope(path, scope)) {
+    throw workspaceOperationError(
+      "WORKSPACE_SCOPE_PATH_MISMATCH",
+      `Workspace path does not belong to ${scope}: ${path}`,
+      { scope, path, pathScope: scopeForPath(path) },
+    )
+  }
+
+  return assertMutationAdapter(context.mutations).delete({ scope, path })
+}
+
+async function moveWorkspacePath(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  request: WorkspaceOperationRequest,
+  context: WorkspaceOperationExecutionContext,
+): Promise<WorkspaceMoveResult> {
+  assertMutableScope(scope)
+  const fromPath = normalizeWorkspaceOperationTargetPath(request.path)
+  const toPath = normalizeWorkspaceOperationTargetPath(request.targetPath)
+  const actorLevel = resolveWorkspaceActorLevel(context)
+  assertEditAccess(fromPath, actorLevel)
+  assertEditAccess(toPath, actorLevel)
+  if (!pathMatchesScope(fromPath, scope) || !pathMatchesScope(toPath, scope)) {
+    throw workspaceOperationError(
+      "WORKSPACE_SCOPE_PATH_MISMATCH",
+      `Workspace move paths must both belong to ${scope}.`,
+      {
+        scope,
+        fromPath,
+        toPath,
+        fromScope: scopeForPath(fromPath),
+        toScope: scopeForPath(toPath),
+      },
+    )
+  }
+
+  const prefix = `${fromPath}/`
+  const matches = files
+    .filter((file) =>
+      pathMatchesScope(file.path, scope)
+      && (file.path === fromPath || file.path.startsWith(prefix))
+    )
+    .sort((left, right) => left.path.localeCompare(right.path))
+  if (matches.length === 0) {
+    throw workspaceOperationError(
+      "WORKSPACE_FILE_NOT_FOUND",
+      `Workspace path was not found in ${scope}: ${fromPath}`,
+      { scope, path: fromPath },
+    )
+  }
+
+  const mutations = assertMutationAdapter(context.mutations)
+  const movedPaths: string[] = []
+  for (const file of matches) {
+    const nextPath = file.path === fromPath
+      ? toPath
+      : `${toPath}/${file.path.slice(prefix.length)}`
+    assertEditAccess(nextPath, actorLevel)
+    await mutations.write({
+      scope,
+      path: nextPath,
+      content: file.content,
+      mediaType: file.mediaType,
+    })
+    movedPaths.push(nextPath)
+  }
+  await mutations.delete({ scope, path: fromPath })
+
+  return {
+    scope,
+    fromPath,
+    toPath,
+    movedPaths,
+  }
+}
+
+function validateJsonFile(file: WorkspaceFile): WorkspaceValidationResult["errors"] {
+  try {
+    JSON.parse(file.content)
+    return []
+  } catch (error) {
+    return [{
+      code: "WORKSPACE_JSON_INVALID",
+      message: error instanceof Error ? error.message : "JSON is invalid.",
+      path: file.path,
+    }]
+  }
+}
+
+function validateFrontmatterFile(file: WorkspaceFile): WorkspaceValidationResult["errors"] {
+  if (FRONTMATTER_PATTERN.test(file.content)) {
+    return []
+  }
+
+  return [{
+    code: "WORKSPACE_FRONTMATTER_MISSING",
+    message: "File does not start with YAML frontmatter.",
+    path: file.path,
+  }]
+}
+
+function validateWorkspaceFile(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  request: WorkspaceOperationRequest,
+  actorLevel: number,
+): WorkspaceValidationResult {
+  if (request.autoFix) {
+    throw workspaceOperationError(
+      "WORKSPACE_VALIDATE_AUTOFIX_UNSUPPORTED",
+      "Workspace validate autoFix is not supported yet.",
+    )
+  }
+
+  const path = request.path === undefined
+    ? undefined
+    : normalizeWorkspaceOperationFilePath(request.path)
+  const validator = request.validator
+    ?? (path?.endsWith(".json") ? "json" : "frontmatter")
+
+  if (!path) {
+    return {
+      scope,
+      valid: true,
+      validator,
+      errors: [],
+    }
+  }
+
+  assertReadAccess(path, actorLevel)
+  const file = readWorkspaceFile(files, scope, path, actorLevel)
+  const errors = validator === "json"
+    ? validateJsonFile(file)
+    : validateFrontmatterFile(file)
+  return {
+    scope,
+    path,
+    valid: errors.length === 0,
+    validator,
+    errors,
+  }
+}
+
+export async function executeWorkspaceOperation(
+  requestInput: WorkspaceOperationRequest,
+  context: WorkspaceOperationExecutionContext,
+): Promise<unknown> {
+  const operation = normalizeWorkspaceOperationName(requestInput.operation)
+  const scope = normalizeWorkspaceScope(requestInput.scope)
+  const actorLevel = resolveWorkspaceActorLevel(context)
+
+  assertOperationExposed(operation, context.exposedOperations)
+
+  if (EDIT_OPERATIONS.has(operation) && scope === "effective") {
+    assertMutableScope(scope)
+  }
+  if (EDIT_OPERATIONS.has(operation) && !context.mutations) {
+    assertMutationAdapter(context.mutations)
+  }
+
+  if (operation === "list") {
+    return listWorkspaceEntries(context.workspaceFiles, scope, requestInput.path, actorLevel)
+  }
+  if (operation === "search") {
+    return searchWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
+  }
+  if (operation === "read") {
+    return readWorkspaceFile(context.workspaceFiles, scope, requestInput.path, actorLevel)
+  }
+  if (operation === "diff") {
+    return diffWorkspaceFile(context.workspaceFiles, scope, requestInput, actorLevel)
+  }
+  if (operation === "patch") {
+    return writeWorkspaceFile(context.workspaceFiles, scope, requestInput, context, {
+      checkExpectedContent: true,
+    })
+  }
+  if (operation === "write") {
+    return writeWorkspaceFile(context.workspaceFiles, scope, requestInput, context, {
+      checkExpectedContent: false,
+    })
+  }
+  if (operation === "move") {
+    return moveWorkspacePath(context.workspaceFiles, scope, requestInput, context)
+  }
+  if (operation === "delete") {
+    return deleteWorkspacePath(context.workspaceFiles, scope, requestInput, context)
+  }
+  if (operation === "validate") {
+    return validateWorkspaceFile(context.workspaceFiles, scope, requestInput, actorLevel)
+  }
+
+  throw workspaceOperationError(
+    "WORKSPACE_OPERATION_UNSUPPORTED",
+    `Unsupported workspace operation: ${operation}`,
+  )
+}

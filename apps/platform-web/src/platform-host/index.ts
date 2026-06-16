@@ -15,6 +15,8 @@ import type {
   SkillDetailEntry,
   SkillRegistryEntry,
   WorkspaceFile,
+  WorkspaceOperationRequest,
+  WorkspaceScope,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn, type AgentSessionTranscriptRecord } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
@@ -27,6 +29,10 @@ import {
   formatRuntimeTracePath,
   serializeRuntimeTraceEvents,
 } from "../agent-runtime/trace"
+import {
+  AUTHORING_WORKSPACE_OPERATIONS,
+  executeWorkspaceOperation,
+} from "../agent-runtime/workspace-operations"
 import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
@@ -53,11 +59,9 @@ import {
   listEffectiveWorkspaceFilesForSave,
   listLocalGameCards,
   listLocalSaves,
-  listWorkspaceEntriesFromFiles,
   normalizeWorkspaceFilePath,
-  readOrdinaryWorkspaceFileFromFiles,
+  putLocalGameCard,
   restoreCheckpointForSave,
-  searchWorkspaceFilesFromFiles,
   setActiveSaveId,
   writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
@@ -153,6 +157,10 @@ function workspaceActionError(error: unknown, fallbackCode: string, fallbackMess
     return actionError(error.code, error.message)
   }
 
+  if (isRecord(error) && typeof error.code === "string" && typeof error.message === "string") {
+    return actionError(error.code, error.message)
+  }
+
   return actionError(
     fallbackCode,
     fallbackMessage,
@@ -171,6 +179,12 @@ function isWorkspaceFile(value: unknown): value is WorkspaceFile {
     && typeof value.mediaType === "string"
     && typeof value.createdAt === "number"
     && typeof value.updatedAt === "number"
+}
+
+function isWorkspaceDeleteResult(value: unknown): value is { deletedPaths: string[] } {
+  return isRecord(value)
+    && Array.isArray(value.deletedPaths)
+    && value.deletedPaths.every((path) => typeof path === "string")
 }
 
 function syncWorkspaceFileWrite(
@@ -319,6 +333,178 @@ async function listEffectiveWorkspaceFilesForActiveSave(saveId: string): Promise
   return listEffectiveWorkspaceFilesForSave(saveId, activeCard)
 }
 
+function normalizeWorkspaceActionRequest(
+  request: PlatformActionRequest,
+): WorkspaceOperationRequest | null {
+  if (!request.action.startsWith("workspace.")) {
+    return null
+  }
+
+  const params = isRecord(request.params) ? request.params : {}
+  const operation = request.action.slice("workspace.".length)
+  return {
+    ...params,
+    operation,
+    scope: params.scope ?? (
+      operation === "read" || operation === "list" || operation === "search"
+        ? "effective"
+        : "save-runtime"
+    ),
+  } as WorkspaceOperationRequest
+}
+
+function normalizeContentMediaType(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+async function writeCardContentFileForActiveCard(input: {
+  path: string
+  content: string
+  mediaType?: string
+}): Promise<WorkspaceFile> {
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("当前没有激活中的游戏卡。")
+  }
+
+  const now = Date.now()
+  const existing = activeCard.contentFiles.find((file) => file.path === input.path)
+  const contentFiles = activeCard.contentFiles
+    .filter((file) => file.path !== input.path)
+    .concat({
+      path: input.path,
+      content: input.content,
+      ...(normalizeContentMediaType(input.mediaType ?? existing?.mediaType)
+        ? { mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) }
+        : {}),
+    })
+    .sort((left, right) => left.path.localeCompare(right.path))
+
+  await putLocalGameCard({
+    manifest: activeCard.manifest,
+    contentFiles,
+    source: activeCard.source,
+  })
+
+  return {
+    path: input.path,
+    content: input.content,
+    mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) ?? "text/plain",
+    createdAt: activeCard.createdAt,
+    updatedAt: now,
+  }
+}
+
+async function deleteCardContentPathForActiveCard(
+  path: string,
+): Promise<{ scope: WorkspaceScope; deletedPaths: string[] }> {
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("当前没有激活中的游戏卡。")
+  }
+
+  const prefix = `${path}/`
+  const deletedPaths = activeCard.contentFiles
+    .filter((file) => file.path === path || file.path.startsWith(prefix))
+    .map((file) => file.path)
+    .sort()
+  if (deletedPaths.length === 0) {
+    return {
+      scope: "card-content",
+      deletedPaths: [],
+    }
+  }
+
+  const deleted = new Set(deletedPaths)
+  await putLocalGameCard({
+    manifest: activeCard.manifest,
+    contentFiles: activeCard.contentFiles.filter((file) => !deleted.has(file.path)),
+    source: activeCard.source,
+  })
+
+  return {
+    scope: "card-content",
+    deletedPaths,
+  }
+}
+
+async function executeWorkspaceOperationForActiveSave(
+  saveId: string,
+  request: WorkspaceOperationRequest,
+  input: {
+    actorLevel: number
+    workspaceTransaction?: RuntimeWorkspaceTransaction
+  },
+): Promise<unknown> {
+  const workspaceFiles = input.workspaceTransaction?.workspaceFiles
+    ?? await listEffectiveWorkspaceFilesForActiveSave(saveId)
+
+  return executeWorkspaceOperation(request, {
+    workspaceFiles,
+    actorLevel: input.actorLevel,
+    exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+    mutations: {
+      async write(writeInput) {
+        if (input.workspaceTransaction) {
+          if (writeInput.scope === "platform-meta") {
+            return input.workspaceTransaction.writePlatformFile({
+              path: writeInput.path,
+              content: writeInput.content,
+              mediaType: writeInput.mediaType,
+            })
+          }
+          if (writeInput.scope === "save-runtime") {
+            return input.workspaceTransaction.write({
+              path: writeInput.path,
+              content: writeInput.content,
+              mediaType: writeInput.mediaType,
+            })
+          }
+          throw new Error("Runtime turn staging cannot mutate card-content.")
+        }
+
+        if (writeInput.scope === "card-content") {
+          return writeCardContentFileForActiveCard(writeInput)
+        }
+        if (writeInput.scope === "platform-meta") {
+          return writePlatformWorkspaceFileForSave(saveId, {
+            path: writeInput.path,
+            content: writeInput.content,
+            mediaType: writeInput.mediaType,
+          })
+        }
+        return writeWorkspaceFileForSave(saveId, {
+          path: writeInput.path,
+          content: writeInput.content,
+          mediaType: writeInput.mediaType,
+        })
+      },
+      async delete(deleteInput) {
+        if (input.workspaceTransaction) {
+          if (deleteInput.scope !== "save-runtime") {
+            throw new Error("Runtime turn staging can only delete save-runtime paths.")
+          }
+          return {
+            scope: deleteInput.scope,
+            ...input.workspaceTransaction.delete(deleteInput.path),
+          }
+        }
+
+        if (deleteInput.scope === "card-content") {
+          return deleteCardContentPathForActiveCard(deleteInput.path)
+        }
+        if (deleteInput.scope === "platform-meta") {
+          throw new Error("Platform metadata delete is not supported yet.")
+        }
+        return {
+          scope: deleteInput.scope,
+          ...await deleteWorkspacePathForSave(saveId, deleteInput.path),
+        }
+      },
+    },
+  })
+}
+
 async function executePlatformAction(
   request: PlatformActionRequest,
 ): Promise<PlatformActionResult> {
@@ -355,7 +541,8 @@ async function executePlatformAction(
     }
   }
 
-  if (request.action === "workspace-write") {
+  const workspaceRequest = normalizeWorkspaceActionRequest(request)
+  if (workspaceRequest) {
     const activeSaveId = await getActiveSaveId()
     if (!activeSaveId) {
       return actionError(
@@ -367,40 +554,15 @@ async function executePlatformAction(
     try {
       return {
         ok: true,
-        item: await writeWorkspaceFileForSave(activeSaveId, {
-          path: request.params?.path,
-          content: request.params?.content,
-          mediaType: request.params?.mediaType,
+        item: await executeWorkspaceOperationForActiveSave(activeSaveId, workspaceRequest, {
+          actorLevel: 1,
         }),
       }
     } catch (error) {
       return workspaceActionError(
         error,
-        "WORKSPACE_WRITE_FAILED",
-        "写入 workspace 文件失败。",
-      )
-    }
-  }
-
-  if (request.action === "workspace-delete") {
-    const activeSaveId = await getActiveSaveId()
-    if (!activeSaveId) {
-      return actionError(
-        "ACTIVE_SAVE_REQUIRED",
-        "当前没有激活中的会话。",
-      )
-    }
-
-    try {
-      return {
-        ok: true,
-        item: await deleteWorkspacePathForSave(activeSaveId, request.params?.path),
-      }
-    } catch (error) {
-      return workspaceActionError(
-        error,
-        "WORKSPACE_DELETE_FAILED",
-        "删除 workspace 路径失败。",
+        "WORKSPACE_OPERATION_FAILED",
+        "执行 workspace 操作失败。",
       )
     }
   }
@@ -412,17 +574,12 @@ async function executePlatformAction(
   )
 }
 
-const AGENT_RUNTIME_PLATFORM_ACTIONS = new Set([
-  "workspace-write",
-  "workspace-delete",
-])
-
 function emitWorkspaceMutationTrace(
   emitTrace: RuntimeTraceEmitter | undefined,
   request: PlatformActionRequest,
   result: PlatformActionResult,
 ): void {
-  if (request.action !== "workspace-write" && request.action !== "workspace-delete") {
+  if (!request.action.startsWith("workspace.")) {
     return
   }
 
@@ -438,44 +595,48 @@ function emitWorkspaceMutationTrace(
     return
   }
 
-  if (request.action === "workspace-write" && isWorkspaceFile(result.item)) {
+  const item = result.item
+  if (
+    (request.action === "workspace.write" || request.action === "workspace.patch")
+    && isRecord(item)
+    && isWorkspaceFile(item.file)
+  ) {
     emitTrace?.({
       type: "workspace_mutation",
       ok: true,
       data: {
         platformAction: request.action,
-        mutation: "write",
-        path: result.item.path,
-        mediaType: result.item.mediaType,
-        size: result.item.content.length,
-        updatedAt: result.item.updatedAt,
+        mutation: request.action === "workspace.patch" ? "patch" : "write",
+        path: item.file.path,
+        mediaType: item.file.mediaType,
+        size: item.file.content.length,
+        updatedAt: item.file.updatedAt,
       },
     })
     return
   }
 
-  if (request.action === "workspace-delete" && isRecord(result.item)) {
-    const deletedPaths = Array.isArray(result.item.deletedPaths)
-      ? result.item.deletedPaths.filter((path): path is string => typeof path === "string")
-      : []
+  if (request.action === "workspace.delete" && isWorkspaceDeleteResult(item)) {
     emitTrace?.({
       type: "workspace_mutation",
       ok: true,
       data: {
         platformAction: request.action,
         mutation: "delete",
-        deletedPaths,
-        deletedCount: deletedPaths.length,
+        deletedPaths: item.deletedPaths,
+        deletedCount: item.deletedPaths.length,
       },
     })
   }
 }
 
-function runAgentRuntimeStagedPlatformAction(
+async function runAgentRuntimeStagedPlatformAction(
   workspaceTransaction: RuntimeWorkspaceTransaction,
+  activeSaveId: string,
   request: PlatformActionRequest,
-): PlatformActionResult {
-  if (!AGENT_RUNTIME_PLATFORM_ACTIONS.has(request.action)) {
+): Promise<PlatformActionResult> {
+  const workspaceRequest = normalizeWorkspaceActionRequest(request)
+  if (!workspaceRequest) {
     return actionError(
       "AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED",
       `Agent Runtime 不允许调用平台动作：${request.action}`,
@@ -484,48 +645,33 @@ function runAgentRuntimeStagedPlatformAction(
   }
 
   try {
-    if (request.action === "workspace-write") {
-      return {
-        ok: true,
-        item: workspaceTransaction.write({
-          path: request.params?.path,
-          content: request.params?.content,
-          mediaType: request.params?.mediaType,
-        }),
-      }
-    }
-
-    if (request.action === "workspace-delete") {
-      return {
-        ok: true,
-        item: workspaceTransaction.delete(request.params?.path),
-      }
+    return {
+      ok: true,
+      item: await executeWorkspaceOperationForActiveSave(activeSaveId, workspaceRequest, {
+        actorLevel: 1,
+        workspaceTransaction,
+      }),
     }
   } catch (error) {
     return workspaceActionError(
       error,
-      request.action === "workspace-delete"
-        ? "WORKSPACE_DELETE_FAILED"
-        : "WORKSPACE_WRITE_FAILED",
-      request.action === "workspace-delete"
-        ? "删除 workspace 路径失败。"
-        : "写入 workspace 文件失败。",
+      "WORKSPACE_OPERATION_FAILED",
+      "执行 workspace 操作失败。",
     )
   }
-
-  return actionError(
-    "AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED",
-    `Agent Runtime 不允许调用平台动作：${request.action}`,
-    { action: request.action },
-  )
 }
 
 function createAgentRuntimePlatformActionRunner(
   workspaceTransaction: RuntimeWorkspaceTransaction,
+  activeSaveId: string,
   emitTrace?: RuntimeTraceEmitter,
 ) {
   return async (request: PlatformActionRequest): Promise<PlatformActionResult> => {
-    const result = runAgentRuntimeStagedPlatformAction(workspaceTransaction, request)
+    const result = await runAgentRuntimeStagedPlatformAction(
+      workspaceTransaction,
+      activeSaveId,
+      request,
+    )
     emitWorkspaceMutationTrace(emitTrace, request, result)
     return result
   }
@@ -628,47 +774,61 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } as DeepQueryResult<T>
       }
 
-      if (request.resource === "workspace-list") {
+      if (request.resource === "workspace.list") {
         if (!activeSaveId) {
           return { items: [] } as DeepQueryResult<T>
         }
 
         try {
-          const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
           return {
-            items: listWorkspaceEntriesFromFiles(files, {
+            items: [await executeWorkspaceOperationForActiveSave(activeSaveId, {
+              operation: "list",
+              scope: "effective",
+              ...(typeof request.params?.path === "string"
+                ? { path: request.params.path }
+                : {}),
+            }, {
+              actorLevel: 1,
+            })] as T[],
+          } as DeepQueryResult<T>
+        } catch {
+          return { items: [] } as DeepQueryResult<T>
+        }
+      }
+
+      if (request.resource === "workspace.read") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        try {
+          return {
+            items: [await executeWorkspaceOperationForActiveSave(activeSaveId, {
+              operation: "read",
+              scope: typeof request.params?.scope === "string"
+                ? request.params.scope
+                : "effective",
               path: request.params?.path,
-            }) as T[],
+            } as WorkspaceOperationRequest, {
+              actorLevel: 1,
+            })] as T[],
           } as DeepQueryResult<T>
         } catch {
           return { items: [] } as DeepQueryResult<T>
         }
       }
 
-      if (request.resource === "workspace-read") {
+      if (request.resource === "workspace.search") {
         if (!activeSaveId) {
           return { items: [] } as DeepQueryResult<T>
         }
 
-        try {
-          const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
-          const file = readOrdinaryWorkspaceFileFromFiles(files, request.params?.path)
-          return {
-            items: (file ? [file] : []) as T[],
-          } as DeepQueryResult<T>
-        } catch {
-          return { items: [] } as DeepQueryResult<T>
-        }
-      }
-
-      if (request.resource === "workspace-search") {
-        if (!activeSaveId) {
-          return { items: [] } as DeepQueryResult<T>
-        }
-
-        const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
         return {
-          items: searchWorkspaceFilesFromFiles(files, {
+          items: await executeWorkspaceOperationForActiveSave(activeSaveId, {
+            operation: "search",
+            scope: typeof request.params?.scope === "string"
+              ? request.params.scope
+              : "effective",
             query:
               typeof request.params?.query === "string"
                 ? request.params.query
@@ -677,6 +837,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
               typeof request.params?.limit === "number"
                 ? request.params.limit
                 : undefined,
+          } as WorkspaceOperationRequest, {
+            actorLevel: 1,
           }) as T[],
         } as DeepQueryResult<T>
       }
@@ -812,6 +974,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         workspaceTransaction = createRuntimeWorkspaceTransaction(
           await listEffectiveWorkspaceFilesForActiveSave(activeSaveId),
         )
+        const activeWorkspaceTransaction = workspaceTransaction
         const result = await runAgentRuntimeTurn(
           {
             userInput: content,
@@ -828,14 +991,43 @@ export const playFrontendBridge: PlayFrontendBridge = {
               })
             },
             runPlatformAction: createAgentRuntimePlatformActionRunner(
-              workspaceTransaction,
+              activeWorkspaceTransaction,
+              activeSaveId,
               trace.emit,
             ),
             runBrowserScript: createBrowserSkillScriptRunner({
-              workspaceTransaction,
+              workspaceTransaction: activeWorkspaceTransaction,
               signal: currentController.signal,
               emitTrace: trace.emit,
             }),
+            workspaceMutations: {
+              write: (writeInput) => {
+                if (writeInput.scope === "platform-meta") {
+                  return activeWorkspaceTransaction.writePlatformFile({
+                    path: writeInput.path,
+                    content: writeInput.content,
+                    mediaType: writeInput.mediaType,
+                  })
+                }
+                if (writeInput.scope !== "save-runtime") {
+                  throw new Error("Runtime Agent turns can only stage save-runtime workspace writes.")
+                }
+                return activeWorkspaceTransaction.write({
+                  path: writeInput.path,
+                  content: writeInput.content,
+                  mediaType: writeInput.mediaType,
+                })
+              },
+              delete: (deleteInput) => {
+                if (deleteInput.scope !== "save-runtime") {
+                  throw new Error("Runtime Agent turns can only stage save-runtime workspace deletes.")
+                }
+                return {
+                  scope: deleteInput.scope,
+                  ...activeWorkspaceTransaction.delete(deleteInput.path),
+                }
+              },
+            },
             emitTrace: trace.emit,
           },
         )
