@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-1.md`
-- **Total Sessions**: 58
+- **Active File**: `journal-2.md`
+- **Total Sessions**: 59
 - **Last Active**: 2026-06-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1994 | Active |
+| `journal-2.md` | ~41 | Active |
+| `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 59 | 2026-06-16 | RetroOS multi-window desktop shell | `392d7ff` | `master` |
 | 58 | 2026-06-16 | My Apps Game Card Launcher | `f0df71b` | `master` |
 | 57 | 2026-06-16 | Generic workspace operation tools | `d0fcd15` | `master` |
 | 56 | 2026-06-16 | Split card content from save runtime data | `e28bcb2`, `6dec22e` | `master` |
