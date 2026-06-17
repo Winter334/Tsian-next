@@ -277,3 +277,37 @@ Added browser-local OpenAI-compatible provider presets with model fetching, defa
 ### Next Steps
 
 - None - task complete
+
+
+## Session 67: Agent model parameters settings
+
+**Date**: 2026-06-18
+**Task**: Agent model parameters settings
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Polished Control Panel provider settings by removing developer status blocks, replacing the summary panel with visible model parameter controls, adding provider-local model parameter storage and validation, safely merging OpenAI-compatible request params, and updating provider secret/config specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aa5c24a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

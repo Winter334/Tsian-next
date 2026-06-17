@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 66
-- **Last Active**: 2026-06-17
+- **Total Sessions**: 67
+- **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~279 | Active |
+| `journal-2.md` | ~313 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 67 | 2026-06-18 | Agent model parameters settings | `aa5c24a` | `master` |
 | 66 | 2026-06-17 | Agent provider presets | `aa829b4` | `master` |
 | 65 | 2026-06-17 | Runtime monitor and settings UI redesign | `1740bfb` | `master` |
 | 64 | 2026-06-17 | Game Card Studio workspace | `c71e70b` | `master` |
