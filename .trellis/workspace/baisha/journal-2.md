@@ -175,3 +175,37 @@ Simplified Game Card metadata UI to name and intro, removed GameCardManifest des
 ### Next Steps
 
 - None - task complete
+
+
+## Session 64: Game Card Studio workspace
+
+**Date**: 2026-06-17
+**Task**: Game Card Studio workspace
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added a current-game-card Studio desktop app with active card state, Agent/Skill overview and detail views, and documented the active card versus active save contract.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c71e70b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
