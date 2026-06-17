@@ -8,6 +8,10 @@ Add a default playable game frontend later, using the same packaged frontend pat
 
 - `.trellis/tasks/06-15-platform-ui-development-phase`
 
+## Current Alignment
+
+Keep this task, but leave it low priority until package/frontend binding and management UI are stable. It is independent of the platform shell style as long as it remains a packaged iframe frontend using `tsian.play-bridge.v1` and does not reintroduce a same-realm builtin game renderer.
+
 ## Requirements
 
 - Implement a default game frontend as a built static package, not as a same-realm builtin frontend.

@@ -8,6 +8,10 @@ Turn runtime diagnostics, settings, traces, checkpoints, and debug data into a u
 
 - `.trellis/tasks/06-15-platform-ui-development-phase`
 
+## Current Alignment
+
+Keep this task. The shell pivot changes presentation, not the underlying goal. Treat Settings as a Control Panel style window and Diagnostics as a System Monitor / Event Viewer style window in the current RetroOS desktop shell, while keeping raw AI/debug material platform-only and bridge-safe.
+
 ## Requirements
 
 - Improve model settings UI beyond the current minimal chat config form.

@@ -9,7 +9,7 @@ This parent task owns the UI roadmap and cross-child acceptance criteria. Implem
 ## User Value
 
 - Players and authors can manage Game Cards, Save Instances, settings, diagnostics, workspace files, Agents, and Skills through the platform instead of only through debug surfaces.
-- The platform has a visually memorable home screen that can later accommodate account identity, online services, and high-frequency shortcuts without becoming a traditional persistent navigation bar.
+- The platform has a visually memorable RetroOS desktop home that can later accommodate account identity, online services, and high-frequency shortcuts without becoming a traditional persistent navigation bar.
 - Players can start or continue play from the home screen when a playable Game Card / Save Instance is available, while deeper management lives in dedicated library and detail pages.
 - Future default game frontend work can plug into a coherent Game Card and frontend-binding UI rather than recreating legacy same-realm defaults.
 - UI work can proceed without reopening foundation questions that have already been settled: no old workflow editor, no prompt preset mainline, no platform-level gameplay renderer, and no built-in same-realm game frontend.
@@ -26,43 +26,61 @@ This parent task owns the UI roadmap and cross-child acceptance criteria. Implem
 - Game Card package import/export exists for `.tsian-card.zip`, including `workspace/*` and optional built `frontend/*` files.
 - Runtime Workspace storage, checkpoint, history, traces, diagnostics, Agent registry, Skill registry, Skill detail, Agent context, and workspace tools exist at the bridge/platform-host layer.
 - Existing UI is still mostly foundation/debug UI: lobby is session-oriented, settings only covers chat model config, debug is raw observability, and there is no full card library, workspace studio, Agent/Skill studio, assistant UI, or default packaged frontend.
-- Desired UX direction: the home page should be a visually expressive navigation hub with quick actions, not a conventional sidebar/topbar shell; Game Cards should be browsed in a dedicated card library and edited through a Game Card detail surface.
+- Desired UX direction: use a Tsian RetroOS design language inspired by classic Windows desktop UX. The home page should feel like an operating-system desktop with shortcuts and quick actions, not a conventional sidebar/topbar shell; Game Cards should be browsed in a dedicated card-library window and edited through a Game Card detail/properties surface.
 - Project specs require `npm run build:web` for platform-web changes, `npm run build:contracts` for contract changes, and `npm run build:runtime-core` when runtime-core changes.
 
 ## Child Roadmap
 
-1. `06-15-platform-shell-navigation-ui`
-   - Boundary: home navigation hub, route structure, page-level wayfinding, empty states, current product vocabulary.
-   - Output: a memorable first screen with route entry points and quick actions, without relying on a traditional persistent navigation bar.
+### Current Alignment
 
-2. `06-15-card-owned-content-save-runtime-data-model`
-   - Boundary: foundation data model for card-owned content, save-owned runtime data, effective workspace assembly, checkpoint/export behavior, and compatibility with current local storage.
-   - Output: Game Cards own Agent/Skill/schema/rule/frontend-definition content; Save Instances own runtime data in save-slot directories/files.
+The UI direction pivoted after the initial child roadmap was created. The current product direction is now the archived `06-16-retroos-multi-window-desktop-shell`: a real RetroOS multi-window desktop shell with desktop icons, application windows, taskbar entries, window focus/minimize/close behavior, and `/play` as a desktop application window.
 
-3. `06-15-game-card-library-save-flow-ui`
-   - Boundary: local Game Card library, Game Card detail page, Save Instance list, active save/card context, create/select/delete flows, play entry.
-   - Output: users can browse cards visually, open a card detail surface, and operate the Game Card -> Save Instance -> Play model.
+Keep child tasks whose product goal is independent of the shell's visual style. Retire or merge tasks whose goal was replaced by the multi-window shell pivot.
 
-4. `06-15-game-card-package-frontend-binding-ui`
-   - Boundary: `.tsian-card.zip` import/export, remote frontend URL binding, packaged frontend visibility, frontend-not-configured handling.
-   - Output: users can bring in or configure a playable frontend without editing storage manually.
+### Completed / Superseded Children
 
-5. `06-15-runtime-workspace-studio-ui`
+1. `06-15-card-owned-content-save-runtime-data-model` — completed.
+   - Result: Game Cards own reusable content; Save Instances own runtime data; effective workspace combines card content plus selected save data at `save/...`.
+
+2. `06-15-game-card-library-save-flow-ui` — completed.
+   - Result: My Apps, Game Card launcher/detail, Save Instance creation/selection/deletion, App Market placeholder, and player-first card detail entry points.
+
+3. `06-16-generic-workspace-authoring-tools` — completed.
+   - Result: generic workspace operations for list/search/read/diff/patch/write/move/delete/validate across card-content, save-runtime, and platform-meta scopes.
+
+4. `06-16-retroos-multi-window-desktop-shell` — completed.
+   - Result: current RetroOS desktop shell direction and route/window model.
+
+5. `06-15-platform-shell-navigation-ui` — superseded; archive instead of continuing as a direct implementation target.
+   - Reason: its original home-hub / page-wayfinding scope was overtaken by the multi-window RetroOS desktop shell. Any remaining shell polish should be tracked as focused follow-up work, not by resurrecting the old home-navigation task.
+
+### Remaining Active Children
+
+1. `06-15-runtime-workspace-studio-ui`
    - Boundary: Runtime Workspace browse/read/search/write/delete UI for ordinary workspace files.
    - Output: authors can inspect and edit card-owned content and, when scoped by a save, runtime save data through the platform.
+   - Alignment note: keep this task. Update its PRD to start from the current folder-browse prototype, current card/save effective workspace model, and generic workspace authoring tools.
 
-6. `06-15-agent-skill-assistant-studio-ui`
+2. `06-15-agent-skill-assistant-studio-ui`
    - Boundary: Agent registry, Agent context, Skill registry, Skill detail, Studio Assistant entrypoint.
    - Output: authors can inspect and manage Agent/Skill/assistant content as workspace-owned material.
+   - Alignment note: keep this task. Update its PRD to plug into the current Game Card detail / Workspace Studio surfaces and existing registry/detail/context APIs.
 
-7. `06-15-runtime-diagnostics-settings-ui`
+3. `06-15-game-card-package-frontend-binding-ui`
+   - Boundary: `.tsian-card.zip` import/export, remote frontend URL binding, packaged frontend visibility, frontend-not-configured handling.
+   - Output: users can bring in or configure a playable frontend without editing storage manually.
+   - Alignment note: keep this task. Entry points should live in App Market and the Game Card detail Frontend tab.
+
+4. `06-15-runtime-diagnostics-settings-ui`
    - Boundary: model settings, runtime diagnostics, trace summaries, history/checkpoints/snapshot, debug data presentation.
    - Output: runtime behavior is understandable without raw JSON-only debug pages.
+   - Alignment note: keep this task. Update its PRD to target Control Panel / System Monitor style surfaces in the current desktop shell.
 
-8. `06-15-default-packaged-game-frontend`
+5. `06-15-default-packaged-game-frontend`
    - Boundary: later default playable frontend package and blank-card frontend binding.
    - Output: built-in blank Game Card can become playable through the same `packaged` frontend path as any other Game Card.
    - Ordering note: intentionally later than core platform management UI unless the user reprioritizes it.
+   - Alignment note: keep this task but leave it low priority until package/frontend binding and management UI are stable.
 
 ## Requirements
 
@@ -73,8 +91,10 @@ This parent task owns the UI roadmap and cross-child acceptance criteria. Implem
 - Do not restore retired workflow editor, prompt preset UI, mod/resource surfaces, event/archive platform tables, or generic renderer DSL.
 - Do not reintroduce same-realm built-in game frontends.
 - Prefer existing UI primitives under `apps/platform-web/src/components/ui/`.
-- Make the home page visually distinctive and navigation-oriented, but keep it functional: quick start, continue, library entry, settings, diagnostics, and future account affordances should be reachable as actions rather than static marketing copy.
+- Make the home page visually distinctive and navigation-oriented as a Tsian RetroOS desktop, but keep it functional: quick start, continue, library entry, settings, diagnostics, and future account affordances should be reachable as desktop/start-menu-style actions rather than static marketing copy.
 - Avoid a traditional persistent navigation bar as the primary IA. Use the home page as the main hub, with page-level back/breadcrumb/context actions inside deeper surfaces.
+- Borrow proven classic Windows UX patterns where they reduce product-design burden: desktop shortcuts, start-menu-like launch affordances, Explorer-like resource management, properties/detail dialogs, control-panel settings, status bars, menu bars, tabs, and explicit confirmation dialogs.
+- Use the RetroOS treatment as a visual and interaction metaphor, not as a requirement to build a fully draggable overlapping-window manager in the first UI slices. Route-backed pages may present as windows while keeping navigation and state simple.
 - Keep management pages operational and dense enough for repeated use; avoid turning Game Card detail, workspace, Agent/Skill, settings, or diagnostics surfaces into marketing-style pages.
 - Update active docs/specs when UI work makes a contract or convention authoritative.
 - Run required builds and focused browser smoke checks for each child.
@@ -84,7 +104,7 @@ This parent task owns the UI roadmap and cross-child acceptance criteria. Implem
 - [ ] Parent task records the UI phase goal, scope, child roadmap, ordering, and cross-child constraints.
 - [ ] Each child task has an initial PRD with testable acceptance criteria.
 - [ ] The first implementation slice is selected after user review.
-- [ ] Home page works as a visually expressive navigation hub with quick start/continue and route entry points.
+- [ ] Home page works as a Tsian RetroOS desktop navigation hub with quick start/continue and route entry points.
 - [ ] Game Card Library shows Game Cards as cards and links to a Game Card detail surface for full editing/management.
 - [ ] Complex child tasks receive `design.md` and `implement.md` before `task.py start`.
 - [ ] UI work does not depend on the removed builtin `official-default` frontend.
@@ -110,6 +130,8 @@ This parent task owns the UI roadmap and cross-child acceptance criteria. Implem
 - A future default game frontend should be `remote` or `packaged`, not a same-realm builtin path.
 - Parent/child task structure is desired for the UI phase.
 - The platform should not use a conventional persistent navigation bar as its primary UX. The home page should be a visually memorable navigation hub with quick actions and future account-system affordances.
+- The platform UI design language should pivot to Tsian RetroOS: a retro desktop operating-system metaphor inspired by classic Windows UX. This replaces the previous dark cyber/terminal visual direction as the preferred UI phase style.
+- The RetroOS direction should borrow Windows-like UX patterns to reduce invention burden, but first implementation slices should not require a real draggable multi-window desktop.
 - Game Card management should use a card-based library page and a Game Card detail page where save management, workspace studio, frontend binding, and related editing surfaces can live.
 - Game Card Library should be cover-first and minimal: resting cards show only cover/fallback art; selected/hovered cards reveal name and short summary overlay.
 - Game Card Detail should be player-first: poster-like cover/description/author presentation on the left, Save Instance management on the right, and local navigation to deeper editing surfaces.

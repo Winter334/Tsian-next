@@ -8,6 +8,10 @@ Build management UI for Game Card-defined Agents, Skills, Skill details, and the
 
 - `.trellis/tasks/06-15-platform-ui-development-phase`
 
+## Current Alignment
+
+Keep this task. It is a content-management surface, not a shell-style task. Build it within the current Game Card detail / desktop-window model, reuse `agent-registry`, `agent-context`, `skill-registry`, and `skill-detail`, and route edit affordances through Workspace Studio or the same generic workspace operations rather than inventing a separate editor stack.
+
 ## Requirements
 
 - Show Agent registry entries from the selected Game Card content.

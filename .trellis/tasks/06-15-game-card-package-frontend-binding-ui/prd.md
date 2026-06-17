@@ -8,6 +8,10 @@ Expose Game Card package import/export and frontend-binding workflows in the pla
 
 - `.trellis/tasks/06-15-platform-ui-development-phase`
 
+## Current Alignment
+
+Keep this task. It is not affected by the RetroOS shell pivot because the core goal is package import/export and frontend binding. Implement it inside the current desktop shell: App Market should own package import/export entry points, and the Game Card detail `Frontend` tab should own per-card remote/packaged binding inspection and editing.
+
 ## Requirements
 
 - Let users import `.tsian-card.zip` packages through the browser UI.
