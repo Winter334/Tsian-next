@@ -107,3 +107,37 @@ Implemented local game card package import/export UI, Game Card Detail frontend 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: Game card package export fixes
+
+**Date**: 2026-06-17
+**Task**: Game card package export fixes
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Fixed built-in Game Card frontend binding persistence, bundled local cover assets into exported packages, imported cover assets into card-owned content, added default cover asset, and added basic Game Card metadata/local-copy UI for importable package testing.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f6bc04f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
