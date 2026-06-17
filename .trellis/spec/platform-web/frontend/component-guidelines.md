@@ -50,6 +50,8 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 - Use `retro-focus` on custom interactive controls so keyboard focus remains visible.
 - On narrow viewports, show the active window as a maximized/stacked panel and use the taskbar/start affordance for switching or showing the desktop; do not let overlapping windows make route panes unreachable.
 - Keep draggable/resizable window behavior in the desktop shell/composable layer, not in route views.
+- Position route-level context menus relative to the route view container, not with viewport `position: fixed` coordinates. `.desktop-window` uses `transform: translateZ(0)`, so a fixed child inside a window gets a transformed containing block and can appear offset from the pointer. Use a `relative` route root, an `absolute` menu, and translate `MouseEvent.clientX/clientY` through `getBoundingClientRect()`.
+- Keep file creation and rename path decisions in resource-manager views. Lightweight editor windows may display file identity and edit content/media type, but they should not expose a path field for renaming; use Explorer-style context menu/F2 rename affordances instead.
 
 ## Bridge And Persistence
 

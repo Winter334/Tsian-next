@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Required platform-web frontend spec index and build checks."}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "Route view and RetroOS content chrome rules for GameCardDetailView."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Vue local state, Dexie boundary, and refresh-after-mutation expectations."}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Card content / save runtime workspace contracts and .tsian restrictions."}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "Required verification and platform-web safety constraints."}

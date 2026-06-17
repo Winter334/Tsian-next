@@ -1,1 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Confirm required platform-web checks are run."}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "Review build, runtime boundary, and no-migration constraints."}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Verify workspace authoring respects card-content/save-runtime/.tsian contracts."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Verify UI refreshes from host APIs after mutations instead of relying on stale local state."}

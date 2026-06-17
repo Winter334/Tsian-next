@@ -29,6 +29,16 @@ const router = createRouter({
       component: () => import("../views/GameCardLibraryView.vue"),
     },
     {
+      path: "/workspace",
+      name: "workspace",
+      component: () => import("../views/WorkspaceExplorerView.vue"),
+    },
+    {
+      path: "/workspace/editor",
+      name: "workspace-editor",
+      component: () => import("../views/WorkspaceEditorView.vue"),
+    },
+    {
       path: "/cards/:cardId",
       name: "game-card-detail",
       component: () => import("../views/GameCardDetailView.vue"),

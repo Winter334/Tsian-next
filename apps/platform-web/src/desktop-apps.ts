@@ -3,8 +3,10 @@ import { defineAsyncComponent } from "vue"
 import type { RouteLocationNormalizedLoaded } from "vue-router"
 import {
   Activity,
+  FilePenLine,
   FolderOpen,
   Gamepad2,
+  HardDrive,
   MonitorCog,
   PlaySquare,
   Settings,
@@ -14,6 +16,8 @@ import {
 export type DesktopAppId =
   | "market"
   | "my-apps"
+  | "workspace-explorer"
+  | "workspace-editor"
   | "game-launcher"
   | "play"
   | "settings"
@@ -67,6 +71,8 @@ interface DesktopAppDefinition {
 
 const AppMarketView = defineAsyncComponent(() => import("./views/AppMarketView.vue"))
 const GameCardLibraryView = defineAsyncComponent(() => import("./views/GameCardLibraryView.vue"))
+const WorkspaceExplorerView = defineAsyncComponent(() => import("./views/WorkspaceExplorerView.vue"))
+const WorkspaceEditorView = defineAsyncComponent(() => import("./views/WorkspaceEditorView.vue"))
 const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDetailView.vue"))
 const PlayView = defineAsyncComponent(() => import("./views/PlayView.vue"))
 const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"))
@@ -75,12 +81,12 @@ const DebugView = defineAsyncComponent(() => import("./views/DebugView.vue"))
 const desktopApps: DesktopAppDefinition[] = [
   {
     appId: "market",
-    label: "App Market",
-    shortLabel: "Market",
+    label: "应用市场",
+    shortLabel: "市场",
     routeName: "app-market",
     routePath: "/market",
-    title: "App Market",
-    caption: "Browse and install Game Cards",
+    title: "应用市场",
+    caption: "浏览与安装游戏卡",
     icon: Store,
     component: AppMarketView,
     defaultWidth: 980,
@@ -90,12 +96,12 @@ const desktopApps: DesktopAppDefinition[] = [
   },
   {
     appId: "my-apps",
-    label: "My Apps",
-    shortLabel: "My Apps",
+    label: "我的应用",
+    shortLabel: "应用",
     routeName: "library",
     routePath: "/library",
-    title: "My Apps",
-    caption: "Installed Game Cards",
+    title: "我的应用",
+    caption: "已安装的游戏卡",
     icon: FolderOpen,
     component: GameCardLibraryView,
     defaultWidth: 1120,
@@ -104,13 +110,29 @@ const desktopApps: DesktopAppDefinition[] = [
     minHeight: 440,
   },
   {
+    appId: "workspace-explorer",
+    label: "资源管理器",
+    shortLabel: "资源管理器",
+    routeName: "workspace",
+    routePath: "/workspace",
+    title: "资源管理器",
+    caption: "游戏卡内容与存档文件",
+    icon: HardDrive,
+    component: WorkspaceExplorerView,
+    defaultWidth: 1180,
+    defaultHeight: 720,
+    minWidth: 720,
+    minHeight: 460,
+    fullscreenable: true,
+  },
+  {
     appId: "play",
-    label: "Play",
-    shortLabel: "Play",
+    label: "开始游戏",
+    shortLabel: "游戏",
     routeName: "play",
     routePath: "/play",
-    title: "Game Frontend",
-    caption: "Active Game Card play window",
+    title: "游戏前端",
+    caption: "当前游戏卡的游玩窗口",
     icon: PlaySquare,
     component: PlayView,
     defaultWidth: 1180,
@@ -121,12 +143,12 @@ const desktopApps: DesktopAppDefinition[] = [
   },
   {
     appId: "settings",
-    label: "Control Panel",
-    shortLabel: "Settings",
+    label: "控制面板",
+    shortLabel: "设置",
     routeName: "settings",
     routePath: "/settings",
-    title: "Control Panel",
-    caption: "Platform settings",
+    title: "控制面板",
+    caption: "平台设置",
     icon: Settings,
     component: SettingsView,
     defaultWidth: 860,
@@ -136,12 +158,12 @@ const desktopApps: DesktopAppDefinition[] = [
   },
   {
     appId: "debug",
-    label: "System Monitor",
-    shortLabel: "Monitor",
+    label: "系统监视器",
+    shortLabel: "监视器",
     routeName: "debug",
     routePath: "/debug",
-    title: "System Monitor",
-    caption: "Runtime diagnostics",
+    title: "系统监视器",
+    caption: "运行时诊断",
     icon: Activity,
     component: DebugView,
     defaultWidth: 1180,
@@ -153,18 +175,35 @@ const desktopApps: DesktopAppDefinition[] = [
 
 const gameLauncherDefinition: DesktopAppDefinition = {
   appId: "game-launcher",
-  label: "Game Launcher",
-  shortLabel: "Launcher",
+  label: "游戏启动器",
+  shortLabel: "启动器",
   routeName: "game-card-detail",
   routePath: "/cards",
-  title: "Game Launcher",
-  caption: "Play, saves, and workspace",
+  title: "游戏启动器",
+  caption: "游玩与存档",
   icon: Gamepad2,
   component: GameCardDetailView,
   defaultWidth: 1180,
   defaultHeight: 720,
   minWidth: 720,
   minHeight: 460,
+}
+
+const workspaceEditorDefinition: DesktopAppDefinition = {
+  appId: "workspace-editor",
+  label: "编辑器",
+  shortLabel: "编辑",
+  routeName: "workspace-editor",
+  routePath: "/workspace/editor",
+  title: "编辑器",
+  caption: "工作区文件",
+  icon: FilePenLine,
+  component: WorkspaceEditorView,
+  defaultWidth: 1040,
+  defaultHeight: 680,
+  minWidth: 680,
+  minHeight: 460,
+  fullscreenable: true,
 }
 
 export const desktopLaunchers: DesktopLauncher[] = desktopApps.map((app) => ({
@@ -211,6 +250,27 @@ export function desktopWindowForRoute(
     })
   }
 
+  if (routeName === "workspace-editor") {
+    const cardId = queryString(route.query.cardId)
+    const path = queryString(route.query.path)
+    const mode = queryString(route.query.mode) === "create" ? "create" : "edit"
+    const editorId = queryString(route.query.editorId)
+    if (!cardId) {
+      return null
+    }
+
+    const titlePath = path ? fileName(path) : "新建文件"
+    return windowInputFromDefinition(workspaceEditorDefinition, {
+      id: editorId
+        ? `${workspaceEditorDefinition.appId}:${cardId}:${editorId}`
+        : `${workspaceEditorDefinition.appId}:${cardId}:${mode}:${path || "untitled"}`,
+      routePath: route.fullPath,
+      props: { cardId, path, mode },
+      title: mode === "create" ? "新建文件" : titlePath,
+      caption: path || "工作区文件",
+    })
+  }
+
   const app = desktopApps.find((candidate) => candidate.routeName === routeName)
   if (!app) {
     return null
@@ -229,6 +289,8 @@ function windowInputFromDefinition(
     id: string
     routePath: string
     props: Record<string, unknown>
+    title?: string
+    caption?: string
   },
 ): DesktopWindowInput {
   return {
@@ -238,8 +300,8 @@ function windowInputFromDefinition(
     shortLabel: app.shortLabel,
     routeName: app.routeName,
     routePath: input.routePath,
-    title: app.title,
-    caption: app.caption,
+    title: input.title ?? app.title,
+    caption: input.caption ?? app.caption,
     icon: app.icon,
     component: app.component,
     props: input.props,
@@ -252,3 +314,12 @@ function windowInputFromDefinition(
 }
 
 export const fallbackDesktopIcon = MonitorCog
+
+function queryString(value: unknown): string {
+  return typeof value === "string" ? value : ""
+}
+
+function fileName(path: string): string {
+  const segments = path.split("/").filter(Boolean)
+  return segments[segments.length - 1] ?? path
+}

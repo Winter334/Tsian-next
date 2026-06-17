@@ -1,13 +1,13 @@
 <template>
   <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
-      <nav class="retro-toolbar flex gap-1 overflow-x-auto border-b px-3 pt-2" aria-label="Game Card sections">
+      <nav class="retro-toolbar flex gap-1 overflow-x-auto border-b px-3 pt-2" aria-label="游戏卡栏目">
         <button
           type="button"
           class="retro-focus inline-flex h-9 shrink-0 items-center gap-2 border border-b-0 border-neon-deep/45 bg-elevated px-3 font-mono text-xs text-text-dim hover:text-text-main"
           @click="router.push('/library')"
         >
           <ArrowLeft class="h-3.5 w-3.5" aria-hidden="true" />
-          Library
+          应用库
         </button>
         <button
           v-for="tab in tabs"
@@ -25,15 +25,15 @@
       </nav>
 
       <div v-if="loading" class="retro-inset m-3 grid min-h-[480px] place-items-center p-4">
-        <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
-          Loading card properties
+          <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
+          正在加载游戏卡属性
         </p>
       </div>
 
       <div v-else-if="errorMessage" class="retro-inset m-3 grid min-h-[480px] place-items-center p-4">
         <div class="max-w-lg border border-danger/40 bg-danger/10 p-4">
           <p class="font-mono text-xs uppercase tracking-wider text-danger">
-            Card unavailable
+            游戏卡不可用
           </p>
           <p class="mt-2 text-sm leading-6 text-text-dim">
             {{ errorMessage }}
@@ -66,15 +66,15 @@
                 </p>
                 <dl class="mt-5 grid gap-3 text-sm text-text-dim sm:grid-cols-3">
                   <div>
-                    <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">Author</dt>
+                    <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">作者</dt>
                     <dd class="mt-1 truncate text-text-main">{{ cardAuthor }}</dd>
                   </div>
                   <div>
-                    <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">Version</dt>
+                    <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">版本</dt>
                     <dd class="mt-1 truncate text-text-main">{{ card.manifest.version }}</dd>
                   </div>
                   <div>
-                    <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">Source</dt>
+                    <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">来源</dt>
                     <dd class="mt-1 truncate text-text-main">{{ card.source }}</dd>
                   </div>
                 </dl>
@@ -86,14 +86,14 @@
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p class="font-mono text-xs uppercase tracking-wider text-neon">
-                  Save Slots
+                  存档槽
                 </p>
                 <p class="mt-1 text-sm leading-6 text-text-dim">
                   {{ frontendStatusDescription }}
                 </p>
               </div>
               <span class="border border-neon-deep/50 bg-elevated px-2 py-1 font-mono text-[11px] text-text-dim">
-                {{ cardSaves.length }} slot{{ cardSaves.length === 1 ? "" : "s" }}
+                {{ cardSaves.length }} 个槽位
               </span>
             </div>
 
@@ -102,7 +102,7 @@
                 v-model="newSaveName"
                 type="text"
                 class="retro-focus h-9 min-w-0 border border-neon-deep/55 bg-elevated px-3 text-sm text-text-main placeholder:text-text-dim/60"
-                placeholder="New save name"
+                placeholder="新存档名称"
                 @keyup.enter="createSave"
               />
               <button
@@ -111,7 +111,7 @@
                 @click="createSave"
               >
                 <Plus class="h-3.5 w-3.5" aria-hidden="true" />
-                New Save
+                新建存档
               </button>
             </div>
 
@@ -119,30 +119,9 @@
               {{ feedback }}
             </p>
 
-            <div class="border border-neon-deep/35 bg-elevated/35 p-3">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="min-w-0">
-                  <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">
-                    Workspace Folder
-                  </p>
-                  <p class="mt-1 text-sm leading-6 text-text-dim">
-                    Card content and save runtime files are browsed from the Workspace tab.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                  @click="activeTab = 'workspace'"
-                >
-                  <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
-                  Open Folder
-                </button>
-              </div>
-            </div>
-
             <div class="grid gap-2">
               <p v-if="cardSaves.length === 0" class="border border-neon-deep/35 bg-elevated/50 p-3 text-sm text-text-dim">
-                No save slots have been created for this Game Card.
+                这张游戏卡还没有创建存档槽。
               </p>
 
               <article
@@ -161,17 +140,17 @@
                       {{ save.name }}
                     </span>
                     <span class="mt-1 block font-mono text-[11px] leading-5 text-text-dim">
-                      Source: {{ cardTitle }} · Created {{ formatDateTime(save.createdAt) }}
+                      来源：{{ cardTitle }} · 创建于 {{ formatDateTime(save.createdAt) }}
                     </span>
                     <span class="block font-mono text-[11px] leading-5 text-text-dim">
-                      Last used {{ formatDateTime(save.updatedAt) }}
+                      上次使用 {{ formatDateTime(save.updatedAt) }}
                     </span>
                   </button>
                   <span
                     v-if="save.id === activeSaveId"
                     class="shrink-0 border border-neon px-2 py-1 font-mono text-[10px] uppercase text-neon"
                   >
-                    Active
+                    当前
                   </span>
                 </div>
                 <div class="flex flex-wrap gap-2">
@@ -181,7 +160,7 @@
                     @click="selectSave(save.id)"
                   >
                     <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
-                    Select
+                    选择
                   </button>
                   <button
                     type="button"
@@ -190,7 +169,7 @@
                     @click="continueSave(save.id)"
                   >
                     <Play class="h-3.5 w-3.5" aria-hidden="true" />
-                    Continue
+                    继续
                   </button>
                   <button
                     type="button"
@@ -198,7 +177,7 @@
                     @click="deleteSave(save.id)"
                   >
                     <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
-                    Delete
+                    删除
                   </button>
                 </div>
               </article>
@@ -210,10 +189,10 @@
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="font-mono text-xs uppercase tracking-wider text-neon">
-                Save Slot Manager
+                存档槽管理器
               </p>
               <p class="mt-1 text-sm text-text-dim">
-                Slots are playthrough data for this Game Card only.
+                槽位只保存这张游戏卡的游玩数据。
               </p>
             </div>
             <button
@@ -222,7 +201,7 @@
               @click="createSave"
             >
               <Plus class="h-3.5 w-3.5" aria-hidden="true" />
-              New Save
+              新建存档
             </button>
           </div>
           <div class="grid gap-2">
@@ -234,64 +213,18 @@
               <div class="min-w-0">
                 <h3 class="truncate text-base font-bold text-text-main">{{ save.name }}</h3>
                 <p class="mt-1 font-mono text-xs text-text-dim">
-                  Source: {{ cardTitle }} · Created {{ formatDateTime(save.createdAt) }} · Updated {{ formatDateTime(save.updatedAt) }}
+                  来源：{{ cardTitle }} · 创建于 {{ formatDateTime(save.createdAt) }} · 更新于 {{ formatDateTime(save.updatedAt) }}
                 </p>
               </div>
               <div class="flex flex-wrap items-center gap-2">
-                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs" @click="selectSave(save.id)">Select</button>
-                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs" :disabled="!isPlayable" @click="continueSave(save.id)">Continue</button>
-                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs text-danger" @click="deleteSave(save.id)">Delete</button>
+                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs" @click="selectSave(save.id)">选择</button>
+                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs" :disabled="!isPlayable" @click="continueSave(save.id)">继续</button>
+                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs text-danger" @click="deleteSave(save.id)">删除</button>
               </div>
             </article>
             <p v-if="cardSaves.length === 0" class="border border-neon-deep/35 bg-elevated/50 p-3 text-sm text-text-dim">
-              No save slots have been created for this Game Card.
+              这张游戏卡还没有创建存档槽。
             </p>
-          </div>
-        </div>
-
-        <div v-else-if="activeTab === 'workspace'" class="retro-inset grid gap-3 p-3">
-          <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border px-3 py-2">
-            <div class="flex min-w-0 items-center gap-2">
-              <FolderOpen class="h-4 w-4 shrink-0 text-neon" aria-hidden="true" />
-              <p class="truncate font-mono text-xs text-text-main">
-                {{ cardTitle }} / Workspace
-              </p>
-            </div>
-            <span class="font-mono text-[11px] uppercase tracking-wider text-text-dim">
-              Large Icons
-            </span>
-          </div>
-
-          <div class="grid gap-3 md:grid-cols-[220px_minmax(0,1fr)]">
-            <aside class="border border-neon-deep/35 bg-elevated/35 p-2">
-              <button
-                v-for="folder in workspaceFolders"
-                :key="folder.id"
-                type="button"
-                class="retro-focus flex w-full items-center gap-2 border border-transparent px-2 py-2 text-left font-mono text-xs text-text-dim first:border-neon first:bg-neon/10 first:text-neon hover:border-neon-deep/45 hover:text-text-main"
-              >
-                <component :is="folder.icon" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                <span class="truncate">{{ folder.label }}</span>
-              </button>
-            </aside>
-
-            <div class="grid content-start grid-cols-[repeat(auto-fill,minmax(128px,1fr))] gap-4 border border-neon-deep/35 bg-void/50 p-4">
-              <article
-                v-for="folder in workspaceFolders"
-                :key="`tile-${folder.id}`"
-                class="grid justify-items-center gap-2 border border-transparent p-2 text-center hover:border-neon-deep/45 hover:bg-elevated/30"
-              >
-                <span class="grid h-14 w-16 place-items-center border border-neon-deep/50 bg-elevated text-neon">
-                  <component :is="folder.icon" class="h-7 w-7" aria-hidden="true" />
-                </span>
-                <h3 class="line-clamp-2 font-mono text-[11px] leading-4 text-text-main">
-                  {{ folder.label }}
-                </h3>
-                <p class="font-mono text-[10px] text-text-dim">
-                  {{ folder.meta }}
-                </p>
-              </article>
-            </div>
           </div>
         </div>
 
@@ -313,7 +246,7 @@
           {{ frontendStatusLabel }}
         </p>
         <p class="min-w-0 truncate font-mono text-[11px] text-text-dim">
-          Active save: {{ activeSaveName }}
+          当前存档：{{ activeSaveName }}
         </p>
       </footer>
   </section>
@@ -325,14 +258,10 @@ import { useRouter } from "vue-router"
 import {
   Activity,
   ArrowLeft,
-  Blocks,
   Bot,
   CheckCircle2,
   Disc3,
-  FileCog,
-  FolderOpen,
   Gamepad2,
-  HardDrive,
   MonitorCog,
   Play,
   Plus,
@@ -360,7 +289,7 @@ import {
   selectPlatformSave,
 } from "../platform-host"
 
-type TabId = "overview" | "saves" | "workspace" | "frontend" | "agents" | "diagnostics"
+type TabId = "overview" | "saves" | "frontend" | "agents" | "diagnostics"
 
 interface TabItem {
   id: TabId
@@ -374,33 +303,27 @@ const props = defineProps<{
 
 const router = useRouter()
 const tabs: TabItem[] = [
-  { id: "overview", label: "Overview", icon: Disc3 },
-  { id: "saves", label: "Saves", icon: Save },
-  { id: "workspace", label: "Workspace", icon: Blocks },
-  { id: "frontend", label: "Frontend", icon: MonitorCog },
-  { id: "agents", label: "Agents", icon: Bot },
-  { id: "diagnostics", label: "Diagnostics", icon: Activity },
+  { id: "overview", label: "概览", icon: Disc3 },
+  { id: "saves", label: "存档", icon: Save },
+  { id: "frontend", label: "前端", icon: MonitorCog },
+  { id: "agents", label: "Agent", icon: Bot },
+  { id: "diagnostics", label: "诊断", icon: Activity },
 ]
 
 const placeholders: Record<Exclude<TabId, "overview" | "saves">, { title: string, copy: string, icon: Component }> = {
-  workspace: {
-    title: "Workspace folder",
-    copy: "Card content, save runtime files, and platform metadata share one virtual root.",
-    icon: FolderOpen,
-  },
   frontend: {
-    title: "Frontend binding is managed later.",
-    copy: "This page reports the current frontend state without exposing import or binding tools in this slice.",
+    title: "前端绑定稍后管理",
+    copy: "这一页只展示当前前端状态，导入与绑定工具会在后续功能中开放。",
     icon: MonitorCog,
   },
   agents: {
-    title: "Agent and Skill management is reserved.",
-    copy: "Card-owned Agents and Skills remain reusable card content and are not copied into save slots.",
+    title: "Agent 与 Skill 管理预留中",
+    copy: "游戏卡自带的 Agent 与 Skill 仍是可复用的游戏卡内容，不会复制进存档槽。",
     icon: Bot,
   },
   diagnostics: {
-    title: "Runtime diagnostics stay in the diagnostics surface.",
-    copy: "Save-specific traces and checkpoints remain runtime internals for this library flow.",
+    title: "运行时诊断保留在诊断界面",
+    copy: "面向存档的追踪与检查点仍属于运行时内部数据。",
     icon: Activity,
   },
 }
@@ -429,31 +352,11 @@ const frontendStatusLabel = computed(() => getFrontendStatusLabel(card.value))
 const frontendStatusDescription = computed(() => getFrontendStatusDescription(card.value))
 const isPlayable = computed(() => hasPlayableFrontend(card.value))
 const activeSaveName = computed(() =>
-  allSaves.value.find((save) => save.id === activeSaveId.value)?.name ?? "None"
+  allSaves.value.find((save) => save.id === activeSaveId.value)?.name ?? "无"
 )
-const workspaceFolders = computed(() => [
-  {
-    id: "card-content",
-    label: "Card Content",
-    meta: `${card.value?.contentFiles.length ?? 0} file${card.value?.contentFiles.length === 1 ? "" : "s"}`,
-    icon: FolderOpen,
-  },
-  {
-    id: "save-runtime",
-    label: "save",
-    meta: `${cardSaves.value.length} slot${cardSaves.value.length === 1 ? "" : "s"}`,
-    icon: HardDrive,
-  },
-  {
-    id: "platform",
-    label: ".tsian",
-    meta: "metadata",
-    icon: FileCog,
-  },
-])
 const activePlaceholder = computed(() => {
   if (activeTab.value === "overview" || activeTab.value === "saves") {
-    return placeholders.workspace
+    return placeholders.frontend
   }
   return placeholders[activeTab.value]
 })
@@ -470,7 +373,7 @@ async function refreshData() {
     ])
 
     if (!loadedCard) {
-      throw new Error(`Game Card "${props.cardId}" was not found.`)
+      throw new Error(`未找到游戏卡「${props.cardId}」。`)
     }
 
     card.value = loadedCard
@@ -483,8 +386,9 @@ async function refreshData() {
         ?? scopedSaves[0]?.id
         ?? ""
     }
+
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "Unable to load Game Card details."
+    errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡详情。"
   } finally {
     loading.value = false
   }
@@ -496,24 +400,24 @@ async function createSave() {
   }
 
   const created = await createPlatformSaveFromGameCard(card.value.id, {
-    name: newSaveName.value || `${cardTitle.value} Save ${cardSaves.value.length + 1}`,
+    name: newSaveName.value || `${cardTitle.value} 存档 ${cardSaves.value.length + 1}`,
   })
   newSaveName.value = ""
   selectedSaveId.value = created.id
-  feedback.value = `Created save slot: ${created.name}`
+  feedback.value = `已创建存档槽：${created.name}`
   await refreshData()
 }
 
 async function selectSave(saveId: string) {
   await selectPlatformSave(saveId)
   selectedSaveId.value = saveId
-  feedback.value = "Save slot selected."
+  feedback.value = "已选择存档槽。"
   await refreshData()
 }
 
 async function continueSave(saveId: string) {
   if (!isPlayable.value) {
-    feedback.value = "This Game Card does not have a playable frontend yet."
+    feedback.value = "这张游戏卡还没有可游玩的前端。"
     return
   }
 
@@ -523,16 +427,16 @@ async function continueSave(saveId: string) {
 
 async function deleteSave(saveId: string) {
   const save = allSaves.value.find((item) => item.id === saveId)
-  const saveName = save?.name ?? "this save slot"
+  const saveName = save?.name ?? "这个存档槽"
   const confirmed = window.confirm(
-    `Delete save slot "${saveName}"?\n\nThe reusable Game Card "${cardTitle.value}" will not be deleted.`,
+    `删除存档槽「${saveName}」？\n\n可复用的游戏卡「${cardTitle.value}」不会被删除。`,
   )
   if (!confirmed) {
     return
   }
 
   await deletePlatformSave(saveId)
-  feedback.value = `Deleted save slot: ${saveName}`
+  feedback.value = `已删除存档槽：${saveName}`
   if (selectedSaveId.value === saveId) {
     selectedSaveId.value = ""
   }

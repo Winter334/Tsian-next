@@ -14,9 +14,15 @@ import type {
   RuntimeSnapshotShell,
   SkillDetailEntry,
   SkillRegistryEntry,
+  WorkspaceDeleteResult,
+  WorkspaceListResult,
   WorkspaceFile,
+  WorkspaceMoveResult,
   WorkspaceOperationRequest,
+  WorkspacePatchResult,
+  WorkspaceSearchResult,
   WorkspaceScope,
+  WorkspaceValidationResult,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn, type AgentSessionTranscriptRecord } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
@@ -59,6 +65,7 @@ import {
   listEffectiveWorkspaceFilesForSave,
   listLocalGameCards,
   listLocalSaves,
+  listWorkspaceFilesForSave,
   normalizeWorkspaceFilePath,
   putLocalGameCard,
   restoreCheckpointForSave,
@@ -83,6 +90,40 @@ let previousTurnController: AbortController | null = null
 const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v1"
 const AIRP_HISTORY_TURN_PATH_PREFIX = "save/history/turns/"
 const AGENT_SESSION_TRANSCRIPT_MEDIA_TYPE = "application/x-ndjson"
+
+export interface PlatformWorkspaceRootEntry {
+  cardId: string
+  title: string
+  summary: string
+  source: string
+  contentFileCount: number
+  saveCount: number
+  updatedAt: number
+}
+
+interface StudioSaveSlot {
+  alias: string
+  saveId: string
+}
+
+interface StudioWorkspaceContext {
+  card: NonNullable<Awaited<ReturnType<typeof getLocalGameCard>>>
+  saveSlots: StudioSaveSlot[]
+}
+
+type StudioResolvedPath =
+  | {
+      scope: "card-content"
+      displayPath: string
+      storagePath: string
+    }
+  | {
+      scope: "save-runtime"
+      displayPath: string
+      storagePath: string
+      saveId: string
+      alias: string
+    }
 
 interface RawAirpHistoryTurnRecord {
   schema: typeof AIRP_HISTORY_TURN_SCHEMA
@@ -333,6 +374,174 @@ async function listEffectiveWorkspaceFilesForActiveSave(saveId: string): Promise
   return listEffectiveWorkspaceFilesForSave(saveId, activeCard)
 }
 
+function workspaceStudioError(code: string, message: string): Error & { code: string } {
+  const error = new Error(message) as Error & { code: string }
+  error.code = code
+  return error
+}
+
+function normalizeStudioDirectoryPath(value: unknown): string {
+  if (value === undefined || value === null || value === "") {
+    return ""
+  }
+
+  const path = normalizeWorkspaceFilePath(value)
+  return path
+}
+
+function cardContentFilesToWorkspaceFiles(
+  card: NonNullable<Awaited<ReturnType<typeof getLocalGameCard>>>,
+): WorkspaceFile[] {
+  return card.contentFiles.map((file) => ({
+    path: file.path,
+    content: file.content,
+    mediaType: file.mediaType ?? "text/plain",
+    createdAt: card.createdAt,
+    updatedAt: card.updatedAt,
+  }))
+}
+
+function formatStudioSaveDirectoryName(index: number): string {
+  return `save-${String(index + 1).padStart(2, "0")}`
+}
+
+async function loadStudioWorkspaceContext(cardId: string): Promise<StudioWorkspaceContext> {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+
+  const saves = (await listLocalSaves())
+    .filter((save) => save.gameCardId === card.manifest.id)
+    .sort((left, right) => left.createdAt - right.createdAt || left.id.localeCompare(right.id))
+
+  return {
+    card,
+    saveSlots: saves.map((save, index) => ({
+      alias: formatStudioSaveDirectoryName(index),
+      saveId: save.id,
+    })),
+  }
+}
+
+async function listStudioWorkspaceFilesForGameCard(cardId: string): Promise<WorkspaceFile[]> {
+  const { card, saveSlots } = await loadStudioWorkspaceContext(cardId)
+  const files: WorkspaceFile[] = cardContentFilesToWorkspaceFiles(card)
+
+  for (const saveSlot of saveSlots) {
+    await initializeWorkspaceForSave(saveSlot.saveId)
+
+    for (const file of await listWorkspaceFilesForSave(saveSlot.saveId)) {
+      if (!file.path.startsWith("save/")) {
+        continue
+      }
+
+      files.push({
+        ...file,
+        path: `save/${saveSlot.alias}/${file.path.slice("save/".length)}`,
+      })
+    }
+  }
+
+  return files.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function resolveStudioWorkspacePath(
+  context: StudioWorkspaceContext,
+  pathInput: unknown,
+): StudioResolvedPath {
+  const displayPath = normalizeWorkspaceFilePath(pathInput)
+  if (displayPath === ".tsian" || displayPath.startsWith(".tsian/")) {
+    throw workspaceStudioError(
+      "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
+      "资源管理器不能打开 .tsian 平台元数据。",
+    )
+  }
+
+  if (displayPath === "save" || displayPath.startsWith("save/")) {
+    const segments = displayPath.split("/")
+    const alias = segments[1]
+    if (!alias) {
+      throw workspaceStudioError(
+        "WORKSPACE_SAVE_SLOT_REQUIRED",
+        "需要先进入 save/ 下的具体存档槽，才能打开或编辑存档运行时文件。",
+      )
+    }
+
+    const saveSlot = context.saveSlots.find((candidate) => candidate.alias === alias)
+    if (!saveSlot) {
+      throw workspaceStudioError(
+        "WORKSPACE_SAVE_SLOT_NOT_FOUND",
+        `这张游戏卡工作区中不存在存档槽 "${alias}"。`,
+      )
+    }
+
+    const relativePath = segments.slice(2).join("/")
+    if (!relativePath) {
+      throw workspaceStudioError(
+        "WORKSPACE_VIRTUAL_DIRECTORY_NOT_FILE",
+        `路径 "${displayPath}" 是虚拟存档槽目录，不是文件。`,
+      )
+    }
+
+    return {
+      scope: "save-runtime",
+      displayPath,
+      storagePath: `save/${relativePath}`,
+      saveId: saveSlot.saveId,
+      alias,
+    }
+  }
+
+  return {
+    scope: "card-content",
+    displayPath,
+    storagePath: displayPath,
+  }
+}
+
+function storageFileToStudioFile(file: WorkspaceFile, resolvedPath: StudioResolvedPath): WorkspaceFile {
+  return {
+    ...file,
+    path: resolvedPath.displayPath,
+  }
+}
+
+function storagePathToStudioPath(path: string, resolvedPath: StudioResolvedPath): string {
+  if (resolvedPath.scope === "card-content") {
+    return path
+  }
+
+  if (path === "save") {
+    return `save/${resolvedPath.alias}`
+  }
+
+  return `save/${resolvedPath.alias}/${path.slice("save/".length)}`
+}
+
+function assertCompatibleStudioMove(
+  source: StudioResolvedPath,
+  target: StudioResolvedPath,
+): void {
+  if (source.scope !== target.scope) {
+    throw workspaceStudioError(
+      "WORKSPACE_MOVE_SCOPE_MISMATCH",
+      "重命名不能跨越游戏卡内容与存档运行时边界。",
+    )
+  }
+
+  if (
+    source.scope === "save-runtime"
+    && target.scope === "save-runtime"
+    && source.saveId !== target.saveId
+  ) {
+    throw workspaceStudioError(
+      "WORKSPACE_MOVE_SAVE_SLOT_MISMATCH",
+      "重命名不能跨越不同的存档槽。",
+    )
+  }
+}
+
 function normalizeWorkspaceActionRequest(
   request: PlatformActionRequest,
 ): WorkspaceOperationRequest | null {
@@ -355,6 +564,47 @@ function normalizeWorkspaceActionRequest(
 
 function normalizeContentMediaType(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+async function writeCardContentFileForCard(
+  cardId: string,
+  input: {
+    path: string
+    content: string
+    mediaType?: string
+  },
+): Promise<WorkspaceFile> {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+
+  const now = Date.now()
+  const existing = card.contentFiles.find((file) => file.path === input.path)
+  const contentFiles = card.contentFiles
+    .filter((file) => file.path !== input.path)
+    .concat({
+      path: input.path,
+      content: input.content,
+      ...(normalizeContentMediaType(input.mediaType ?? existing?.mediaType)
+        ? { mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) }
+        : {}),
+    })
+    .sort((left, right) => left.path.localeCompare(right.path))
+
+  await putLocalGameCard({
+    manifest: card.manifest,
+    contentFiles,
+    source: card.source,
+  })
+
+  return {
+    path: input.path,
+    content: input.content,
+    mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) ?? "text/plain",
+    createdAt: card.createdAt,
+    updatedAt: now,
+  }
 }
 
 async function writeCardContentFileForActiveCard(input: {
@@ -392,6 +642,40 @@ async function writeCardContentFileForActiveCard(input: {
     mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) ?? "text/plain",
     createdAt: activeCard.createdAt,
     updatedAt: now,
+  }
+}
+
+async function deleteCardContentPathForCard(
+  cardId: string,
+  path: string,
+): Promise<{ scope: WorkspaceScope; deletedPaths: string[] }> {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+
+  const prefix = `${path}/`
+  const deletedPaths = card.contentFiles
+    .filter((file) => file.path === path || file.path.startsWith(prefix))
+    .map((file) => file.path)
+    .sort()
+  if (deletedPaths.length === 0) {
+    return {
+      scope: "card-content",
+      deletedPaths: [],
+    }
+  }
+
+  const deleted = new Set(deletedPaths)
+  await putLocalGameCard({
+    manifest: card.manifest,
+    contentFiles: card.contentFiles.filter((file) => !deleted.has(file.path)),
+    source: card.source,
+  })
+
+  return {
+    scope: "card-content",
+    deletedPaths,
   }
 }
 
@@ -1246,4 +1530,315 @@ export async function deletePlatformSave(saveId: string) {
 
 export async function getPlatformActiveSaveId() {
   return getActiveSaveId()
+}
+
+export async function listPlatformWorkspaceDirectory(input: {
+  cardId?: string
+  saveId?: string
+  path?: string
+} = {}): Promise<WorkspaceListResult> {
+  if (input.cardId) {
+    const path = normalizeStudioDirectoryPath(input.path)
+    if (path === ".tsian" || path.startsWith(".tsian/")) {
+      throw workspaceStudioError(
+        "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
+        "资源管理器不能浏览 .tsian 平台元数据。",
+      )
+    }
+
+    return await executeWorkspaceOperation({
+      operation: "list",
+      scope: "effective",
+      ...(path ? { path } : {}),
+    }, {
+      workspaceFiles: await listStudioWorkspaceFilesForGameCard(input.cardId),
+      actorLevel: 1,
+      exposedOperations: ["list"],
+    }) as WorkspaceListResult
+  }
+
+  const saveId = input.saveId ?? await getActiveSaveId()
+  if (!saveId) {
+    return { path: "", entries: [] }
+  }
+
+  const save = (await listLocalSaves()).find((item) => item.id === saveId)
+  if (!save) {
+    throw new Error(`会话 "${saveId}" 不存在。`)
+  }
+
+  const sourceCard = save.gameCardId
+    ? await getLocalGameCard(save.gameCardId)
+    : await getBuiltinBlankGameCard()
+  if (!sourceCard) {
+    throw new Error(`存档 "${saveId}" 的游戏卡不存在。`)
+  }
+
+  await initializeWorkspaceForSave(saveId)
+
+  return await executeWorkspaceOperation({
+    operation: "list",
+    scope: "effective",
+    ...(input.path ? { path: input.path } : {}),
+  }, {
+    workspaceFiles: await listEffectiveWorkspaceFilesForSave(saveId, sourceCard),
+    actorLevel: 1,
+    exposedOperations: ["list"],
+  }) as WorkspaceListResult
+}
+
+export async function listPlatformWorkspaceRoots(): Promise<PlatformWorkspaceRootEntry[]> {
+  await ensureBuiltinBlankGameCard()
+
+  const [cards, saves] = await Promise.all([
+    listLocalGameCards(),
+    listLocalSaves(),
+  ])
+
+  return cards.map((card) => ({
+    cardId: card.id,
+    title: card.manifest.name?.trim() || "未命名游戏卡",
+    summary: card.manifest.summary?.trim() || card.manifest.description?.trim() || "暂无摘要。",
+    source: card.source,
+    contentFileCount: card.contentFiles.length,
+    saveCount: saves.filter((save) => save.gameCardId === card.manifest.id).length,
+    updatedAt: card.updatedAt,
+  }))
+}
+
+async function executeStudioWorkspaceOperation(
+  cardId: string,
+  request: WorkspaceOperationRequest,
+): Promise<unknown> {
+  const context = await loadStudioWorkspaceContext(cardId)
+
+  if (request.operation === "list") {
+    return executeWorkspaceOperation({
+      ...request,
+      path: normalizeStudioDirectoryPath(request.path),
+      scope: "effective",
+    }, {
+      workspaceFiles: await listStudioWorkspaceFilesForGameCard(cardId),
+      actorLevel: 1,
+      exposedOperations: ["list"],
+    })
+  }
+
+  if (request.operation === "search") {
+    const directoryPath = normalizeStudioDirectoryPath(request.path)
+    const prefix = directoryPath ? `${directoryPath}/` : ""
+    const workspaceFiles = (await listStudioWorkspaceFilesForGameCard(cardId))
+      .filter((file) => !directoryPath || file.path === directoryPath || file.path.startsWith(prefix))
+
+    return executeWorkspaceOperation({
+      ...request,
+      path: undefined,
+      scope: "effective",
+    }, {
+      workspaceFiles,
+      actorLevel: 1,
+      exposedOperations: ["search"],
+    })
+  }
+
+  const resolvedPath = resolveStudioWorkspacePath(context, request.path)
+  const targetResolvedPath = request.operation === "move"
+    ? resolveStudioWorkspacePath(context, request.targetPath)
+    : null
+  if (targetResolvedPath) {
+    assertCompatibleStudioMove(resolvedPath, targetResolvedPath)
+  }
+
+  const operationRequest: WorkspaceOperationRequest = {
+    ...request,
+    path: resolvedPath.storagePath,
+    ...(targetResolvedPath ? { targetPath: targetResolvedPath.storagePath } : {}),
+    scope: resolvedPath.scope,
+  }
+
+  if (resolvedPath.scope === "save-runtime") {
+    await initializeWorkspaceForSave(resolvedPath.saveId)
+    const result = await executeWorkspaceOperation(operationRequest, {
+      workspaceFiles: await listEffectiveWorkspaceFilesForSave(resolvedPath.saveId, context.card),
+      actorLevel: 2,
+      exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+      mutations: {
+        write(writeInput) {
+          return writeWorkspaceFileForSave(resolvedPath.saveId, {
+            path: writeInput.path,
+            content: writeInput.content,
+            mediaType: writeInput.mediaType,
+          })
+        },
+        async delete(deleteInput) {
+          return {
+            scope: deleteInput.scope,
+            ...await deleteWorkspacePathForSave(resolvedPath.saveId, deleteInput.path),
+          }
+        },
+      },
+    })
+
+    if (request.operation === "read") {
+      return storageFileToStudioFile(result as WorkspaceFile, resolvedPath)
+    }
+    if (request.operation === "write" || request.operation === "patch") {
+      const patchResult = result as WorkspacePatchResult
+      return {
+        ...patchResult,
+        path: resolvedPath.displayPath,
+        file: storageFileToStudioFile(patchResult.file, resolvedPath),
+      }
+    }
+    if (request.operation === "delete") {
+      const deleteResult = result as WorkspaceDeleteResult
+      return {
+        ...deleteResult,
+        deletedPaths: deleteResult.deletedPaths.map((path) =>
+          storagePathToStudioPath(path, resolvedPath)
+        ),
+      }
+    }
+    if (request.operation === "move" && targetResolvedPath) {
+      const moveResult = result as WorkspaceMoveResult
+      return {
+        ...moveResult,
+        fromPath: resolvedPath.displayPath,
+        toPath: targetResolvedPath.displayPath,
+        movedPaths: moveResult.movedPaths.map((path) =>
+          storagePathToStudioPath(path, targetResolvedPath)
+        ),
+      }
+    }
+    if (request.operation === "validate") {
+      const validationResult = result as WorkspaceValidationResult
+      return {
+        ...validationResult,
+        path: validationResult.path
+          ? storagePathToStudioPath(validationResult.path, resolvedPath)
+          : undefined,
+        errors: validationResult.errors.map((error) => ({
+          ...error,
+          path: error.path ? storagePathToStudioPath(error.path, resolvedPath) : undefined,
+        })),
+      }
+    }
+
+    return result
+  }
+
+  const result = await executeWorkspaceOperation(operationRequest, {
+    workspaceFiles: cardContentFilesToWorkspaceFiles(context.card),
+    actorLevel: 2,
+    exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+    mutations: {
+      write(writeInput) {
+        return writeCardContentFileForCard(cardId, {
+          path: writeInput.path,
+          content: writeInput.content,
+          mediaType: writeInput.mediaType,
+        })
+      },
+      delete(deleteInput) {
+        return deleteCardContentPathForCard(cardId, deleteInput.path)
+      },
+    },
+  })
+
+  return result
+}
+
+export async function searchPlatformWorkspace(input: {
+  cardId: string
+  query: string
+  path?: string
+  limit?: number
+}): Promise<WorkspaceSearchResult[]> {
+  return await executeStudioWorkspaceOperation(input.cardId, {
+    operation: "search",
+    scope: "effective",
+    query: input.query,
+    path: input.path,
+    limit: input.limit,
+  }) as WorkspaceSearchResult[]
+}
+
+export async function readPlatformWorkspaceFile(input: {
+  cardId: string
+  path: string
+}): Promise<WorkspaceFile> {
+  return await executeStudioWorkspaceOperation(input.cardId, {
+    operation: "read",
+    scope: "effective",
+    path: input.path,
+  }) as WorkspaceFile
+}
+
+export async function writePlatformWorkspaceFile(input: {
+  cardId: string
+  path: string
+  content: string
+  mediaType?: string
+}): Promise<WorkspacePatchResult> {
+  return await executeStudioWorkspaceOperation(input.cardId, {
+    operation: "write",
+    scope: "save-runtime",
+    path: input.path,
+    content: input.content,
+    mediaType: input.mediaType,
+  }) as WorkspacePatchResult
+}
+
+export async function patchPlatformWorkspaceFile(input: {
+  cardId: string
+  path: string
+  content: string
+  expectedContent?: string
+  mediaType?: string
+}): Promise<WorkspacePatchResult> {
+  return await executeStudioWorkspaceOperation(input.cardId, {
+    operation: "patch",
+    scope: "save-runtime",
+    path: input.path,
+    content: input.content,
+    expectedContent: input.expectedContent,
+    mediaType: input.mediaType,
+  }) as WorkspacePatchResult
+}
+
+export async function deletePlatformWorkspacePath(input: {
+  cardId: string
+  path: string
+}): Promise<WorkspaceDeleteResult> {
+  return await executeStudioWorkspaceOperation(input.cardId, {
+    operation: "delete",
+    scope: "save-runtime",
+    path: input.path,
+  }) as WorkspaceDeleteResult
+}
+
+export async function movePlatformWorkspacePath(input: {
+  cardId: string
+  path: string
+  targetPath: string
+}): Promise<WorkspaceMoveResult> {
+  return await executeStudioWorkspaceOperation(input.cardId, {
+    operation: "move",
+    scope: "save-runtime",
+    path: input.path,
+    targetPath: input.targetPath,
+  }) as WorkspaceMoveResult
+}
+
+export async function validatePlatformWorkspaceFile(input: {
+  cardId: string
+  path: string
+  validator?: "json" | "frontmatter"
+}): Promise<WorkspaceValidationResult> {
+  return await executeStudioWorkspaceOperation(input.cardId, {
+    operation: "validate",
+    scope: "effective",
+    path: input.path,
+    validator: input.validator,
+  }) as WorkspaceValidationResult
 }
