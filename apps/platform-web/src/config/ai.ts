@@ -5,6 +5,19 @@ export interface BrowserAiModelEntry {
   label?: string
 }
 
+export type BrowserAiReasoningEffort = "" | "low" | "medium" | "high"
+
+export interface BrowserAiModelParameters {
+  contextWindow: number | null
+  maxOutputTokens: number | null
+  temperature: number | null
+  topP: number | null
+  frequencyPenalty: number | null
+  presencePenalty: number | null
+  reasoningEffort: BrowserAiReasoningEffort
+  customRequestParamsText: string
+}
+
 export interface BrowserAiProviderPreset {
   id: string
   name: string
@@ -12,6 +25,7 @@ export interface BrowserAiProviderPreset {
   baseUrl: string
   apiKey: string
   defaultModel: string
+  parameters: BrowserAiModelParameters
   fetchedModels: BrowserAiModelEntry[]
   modelsFetchedAt: string
 }
@@ -22,6 +36,7 @@ export interface BrowserAiConfig {
   baseUrl: string
   apiKey: string
   model: string
+  parameters: BrowserAiModelParameters
 }
 
 export interface BrowserPlatformConfigDraft {
@@ -45,6 +60,15 @@ const PLATFORM_CONFIG_STORAGE_KEY = "tsian-platform-config"
 const LEGACY_PROVIDER_ID = "local-chat-provider"
 const DEFAULT_PROVIDER_NAME = "OpenAI 兼容服务"
 const MODEL_FETCH_TIMEOUT_MS = 60_000
+const PROTECTED_CUSTOM_REQUEST_KEYS = new Set([
+  "apikey",
+  "authorization",
+  "baseurl",
+  "headers",
+  "messages",
+  "model",
+  "stream",
+])
 
 function readEnvText(key: string): string {
   const value = import.meta.env[key]
@@ -102,6 +126,74 @@ function normalizeModelEntries(input: unknown): BrowserAiModelEntry[] {
   return models
 }
 
+function normalizeNullableNumber(input: unknown): number | null {
+  if (input === null || input === undefined || input === "") {
+    return null
+  }
+
+  const value = typeof input === "number"
+    ? input
+    : typeof input === "string"
+      ? Number(input.trim())
+      : Number.NaN
+
+  return Number.isFinite(value) ? value : null
+}
+
+function normalizePositiveInteger(input: unknown): number | null {
+  const value = normalizeNullableNumber(input)
+  if (value === null || value <= 0) {
+    return null
+  }
+
+  return Math.floor(value)
+}
+
+function normalizeReasoningEffort(input: unknown): BrowserAiReasoningEffort {
+  if (input === "low" || input === "medium" || input === "high") {
+    return input
+  }
+
+  return ""
+}
+
+export function createDefaultBrowserAiModelParameters(): BrowserAiModelParameters {
+  return {
+    contextWindow: null,
+    maxOutputTokens: null,
+    temperature: null,
+    topP: null,
+    frequencyPenalty: null,
+    presencePenalty: null,
+    reasoningEffort: "",
+    customRequestParamsText: "",
+  }
+}
+
+function normalizeModelParameters(input: unknown): BrowserAiModelParameters {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultBrowserAiModelParameters()
+  }
+
+  const record = input as Record<string, unknown>
+  return {
+    contextWindow: normalizePositiveInteger(record.contextWindow),
+    maxOutputTokens: normalizePositiveInteger(record.maxOutputTokens ?? record.maxTokens),
+    temperature: normalizeNullableNumber(record.temperature),
+    topP: normalizeNullableNumber(record.topP ?? record.top_p),
+    frequencyPenalty: normalizeNullableNumber(record.frequencyPenalty ?? record.frequency_penalty),
+    presencePenalty: normalizeNullableNumber(record.presencePenalty ?? record.presence_penalty),
+    reasoningEffort: normalizeReasoningEffort(record.reasoningEffort ?? record.reasoning_effort),
+    customRequestParamsText: readStoredText(record.customRequestParamsText),
+  }
+}
+
+function cloneModelParameters(input: BrowserAiModelParameters): BrowserAiModelParameters {
+  return {
+    ...input,
+  }
+}
+
 function normalizeProviderPreset(input: unknown, index: number): BrowserAiProviderPreset | null {
   if (typeof input !== "object" || input === null) {
     return null
@@ -125,6 +217,7 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
     baseUrl,
     apiKey,
     defaultModel,
+    parameters: normalizeModelParameters(record.parameters),
     fetchedModels: normalizeModelEntries(record.fetchedModels),
     modelsFetchedAt: readStoredText(record.modelsFetchedAt),
   }
@@ -146,6 +239,7 @@ function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): Brows
     baseUrl,
     apiKey,
     defaultModel,
+    parameters: createDefaultBrowserAiModelParameters(),
     fetchedModels: [],
     modelsFetchedAt: "",
   }
@@ -220,6 +314,7 @@ function getEnvAiConfig(): BrowserAiConfig | null {
     baseUrl,
     apiKey,
     model,
+    parameters: createDefaultBrowserAiModelParameters(),
   }
 }
 
@@ -234,6 +329,7 @@ function resolveProviderConfig(provider: BrowserAiProviderPreset | undefined): B
     baseUrl: provider.baseUrl,
     apiKey: provider.apiKey,
     model: provider.defaultModel,
+    parameters: cloneModelParameters(provider.parameters),
   }
 }
 
@@ -247,6 +343,7 @@ export function createBrowserAiProviderPreset(
     baseUrl: readStoredText(input.baseUrl),
     apiKey: readStoredText(input.apiKey),
     defaultModel: readStoredText(input.defaultModel ?? input.model),
+    parameters: normalizeModelParameters(input.parameters),
     fetchedModels: normalizeModelEntries(input.fetchedModels),
     modelsFetchedAt: readStoredText(input.modelsFetchedAt),
   }
@@ -263,7 +360,10 @@ export function getBrowserPlatformConfigDraft(): BrowserPlatformConfigDraft {
 }
 
 export function saveBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void {
-  writeStoredPlatformConfigDraft(normalizePlatformConfigDraft(input))
+  validateBrowserPlatformConfigDraft(input)
+  const normalized = normalizePlatformConfigDraft(input)
+  validateBrowserPlatformConfigDraft(normalized)
+  writeStoredPlatformConfigDraft(normalized)
 }
 
 export function resetBrowserPlatformConfigDraft(): void {
@@ -277,6 +377,83 @@ export function resetBrowserPlatformConfigDraft(): void {
 
 export function getBrowserPlatformConfigStorageState(): "ready" | "unavailable" {
   return getBrowserLocalStorage() ? "ready" : "unavailable"
+}
+
+function isPlainJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+export function parseBrowserAiCustomRequestParams(input: string): Record<string, unknown> {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return {}
+  }
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error("自定义请求参数必须是有效的 JSON 对象。")
+  }
+
+  if (!isPlainJsonObject(parsed)) {
+    throw new Error("自定义请求参数必须是 JSON 对象，不能是数组或其它类型。")
+  }
+
+  for (const key of Object.keys(parsed)) {
+    if (PROTECTED_CUSTOM_REQUEST_KEYS.has(key.toLowerCase())) {
+      throw new Error(`自定义请求参数不能覆盖运行时字段：${key}`)
+    }
+  }
+
+  return parsed
+}
+
+function assertIntegerParameter(value: number | null, label: string): void {
+  if (value === null) {
+    return
+  }
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${label} 必须是大于 0 的整数。`)
+  }
+}
+
+function assertRangeParameter(
+  value: number | null,
+  label: string,
+  min: number,
+  max: number,
+): void {
+  if (value === null) {
+    return
+  }
+  if (!Number.isFinite(value) || value < min || value > max) {
+    throw new Error(`${label} 必须在 ${min} 到 ${max} 之间。`)
+  }
+}
+
+export function validateBrowserAiModelParameters(parameters: BrowserAiModelParameters): void {
+  assertIntegerParameter(parameters.contextWindow, "上下文窗口")
+  assertIntegerParameter(parameters.maxOutputTokens, "最大输出 token")
+  assertRangeParameter(parameters.temperature, "温度", 0, 2)
+  assertRangeParameter(parameters.topP, "top_p", 0, 2)
+  assertRangeParameter(parameters.frequencyPenalty, "频率惩罚", -2, 2)
+  assertRangeParameter(parameters.presencePenalty, "存在惩罚", -2, 2)
+
+  if (!["", "low", "medium", "high"].includes(parameters.reasoningEffort)) {
+    throw new Error("推理程度只能是低、中、高或留空。")
+  }
+
+  parseBrowserAiCustomRequestParams(parameters.customRequestParamsText)
+}
+
+export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void {
+  for (const provider of input.providers) {
+    if (!provider.parameters) {
+      throw new Error("模型参数缺失。")
+    }
+    validateBrowserAiModelParameters(provider.parameters)
+  }
 }
 
 function buildModelsUrl(baseUrl: string): string {

@@ -39,13 +39,18 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - `saveBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void`
 - `resetBrowserPlatformConfigDraft(): void`
 - `fetchBrowserAiProviderModels(provider, options?): Promise<BrowserAiModelEntry[]>`
+- `validateBrowserAiModelParameters(parameters: BrowserAiModelParameters): void`
+- `parseBrowserAiCustomRequestParams(input: string): Record<string, unknown>`
 - Environment fallback keys: `VITE_AI_BASE_URL`, `VITE_AI_API_KEY`, `VITE_AI_MODEL`.
 
 ### 3. Contracts
 
 - Browser AI provider presets are platform-local player secrets stored under localStorage key `tsian-platform-config`.
-- Provider presets currently support only OpenAI-compatible APIs: `baseUrl`, `apiKey`, and provider default model.
-- `getBrowserAiConfig()` returns only the resolved active runtime config needed for a model call: provider identity/name when available plus `baseUrl`, `apiKey`, and `model`.
+- Provider presets currently support only OpenAI-compatible APIs: `baseUrl`, `apiKey`, provider default model, fetched model IDs, and model parameters.
+- Model parameters are provider-local settings. Supported request fields include `max_tokens`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `reasoning_effort`, and custom JSON-object request params.
+- `contextWindow` is saved as model capability/budget metadata only until a token-counting prompt-truncation task implements enforcement.
+- Custom request params must be a JSON object and must not override runtime-owned/protected fields such as `model`, `messages`, `stream`, `apiKey`, `baseUrl`, or `headers`.
+- `getBrowserAiConfig()` returns only the resolved active runtime config needed for a model call: provider identity/name when available plus `baseUrl`, `apiKey`, `model`, and normalized model parameters.
 - When no complete local provider is active, `getBrowserAiConfig()` may fall back to complete `VITE_AI_*` environment values.
 - Existing old localStorage shape `{ chat: { baseUrl, apiKey, model } }` is compatibility input and should normalize into a local OpenAI-compatible provider.
 - API keys must not be written into Game Card manifests, Game Card packages, Runtime Workspace files, remote/packaged frontend bridge payloads, debug summaries, or visible non-password UI summaries.
@@ -60,13 +65,19 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Model fetch with blank API key -> throw a clear local error before network fetch.
 - Model fetch HTTP error -> surface provider error message when present, otherwise status-based error.
 - Model fetch returns no usable IDs -> surface an error and preserve the provider's existing default model.
+- Numeric model parameter outside its supported range -> saving provider config fails with a clear field-specific error.
+- Custom request params are invalid JSON or not an object -> saving provider config fails with a clear error.
+- Custom request params include a protected key -> saving provider config fails and the key is named in the error.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: Settings saves a local provider preset; Agent Runtime uses that provider's default model on the next turn.
+- Good: Settings saves `temperature: 0.8` and `maxOutputTokens: 4096`; Agent Runtime sends `temperature` and `max_tokens` in the next chat-completions body.
+- Good: custom request params `{ "seed": 42 }` are merged into the chat-completions body.
 - Good: `/models` returns `{ data: [{ id: "model-name" }] }`; Settings lets the player choose `model-name`.
 - Base: fresh browser with complete `VITE_AI_*` values has no local providers but still reports AI configured.
 - Base: a provider whose `/models` endpoint is incompatible can still use manual model input.
+- Bad: custom request params `{ "model": "override" }` replace the runtime-selected model.
 - Bad: exporting a Game Card writes `apiKey` into `game-card.json`, `workspace/*`, `frontend/*`, or package metadata.
 - Bad: a remote/packaged frontend can query provider config or API keys through the bridge.
 
@@ -74,8 +85,11 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 
 - Assert env-only configuration still resolves a usable `BrowserAiConfig`.
 - Assert old `{ chat }` localStorage shape resolves to one local provider.
+- Assert existing provider presets without `parameters` receive default model parameters.
 - Assert reset removes local provider config and restores env fallback behavior.
 - Assert model-fetch failure preserves the previous default model.
+- Assert invalid custom request param JSON and protected custom keys fail before saving or request execution.
+- Assert configured non-empty model parameters appear in chat-completions request bodies.
 - Assert Game Card package export and bridge/query surfaces do not include provider config or API keys when those areas change.
 
 ### 7. Wrong vs Correct
@@ -101,6 +115,13 @@ await generateAssistantReply(messages, { config })
 ```
 
 Game Card or Agent content may later reference a provider/model preference, but the API credential stays in local browser platform config.
+
+Custom request params are merged only after validation:
+
+```typescript
+parseBrowserAiCustomRequestParams('{ "seed": 42 }')
+parseBrowserAiCustomRequestParams('{ "model": "override" }') // throws
+```
 
 ## Scenario: Current Game Card And Active Save State
 

@@ -2,7 +2,9 @@ import type { AiChatMessage, AiDebugRecord } from "@tsian/contracts"
 
 import {
   getBrowserAiConfig,
+  parseBrowserAiCustomRequestParams,
   type BrowserAiConfig,
+  type BrowserAiModelParameters,
 } from "../config/ai"
 
 export type { AiChatMessage, AiDebugRecord }
@@ -157,6 +159,44 @@ function buildChatCompletionsUrl(baseUrl: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/chat/completions`
 }
 
+function putOptionalNumber(
+  target: Record<string, unknown>,
+  key: string,
+  value: number | null,
+): void {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    target[key] = value
+  }
+}
+
+function buildChatCompletionsRequestBody(input: {
+  model: string
+  messages: AiChatMessage[]
+  parameters: BrowserAiModelParameters
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = {
+    model: input.model,
+    messages: input.messages,
+  }
+
+  putOptionalNumber(body, "max_tokens", input.parameters.maxOutputTokens)
+  putOptionalNumber(body, "temperature", input.parameters.temperature)
+  putOptionalNumber(body, "top_p", input.parameters.topP)
+  putOptionalNumber(body, "frequency_penalty", input.parameters.frequencyPenalty)
+  putOptionalNumber(body, "presence_penalty", input.parameters.presencePenalty)
+
+  if (input.parameters.reasoningEffort) {
+    body.reasoning_effort = input.parameters.reasoningEffort
+  }
+
+  return {
+    ...body,
+    ...parseBrowserAiCustomRequestParams(input.parameters.customRequestParamsText),
+    model: input.model,
+    messages: input.messages,
+  }
+}
+
 function extractUsageFromPayload(
   payload: unknown,
 ): { input?: number; output?: number; total?: number } | undefined {
@@ -241,6 +281,11 @@ export async function generateAssistantReply(
 
   const requestId = `${options.debugLabel ?? "chat"}-${++aiDebugSequence}`
   const url = buildChatCompletionsUrl(config.baseUrl)
+  const requestBody = buildChatCompletionsRequestBody({
+    model: config.model,
+    messages,
+    parameters: config.parameters,
+  })
   pushAiDebugRecord({
     id: requestId,
     kind: "chat",
@@ -254,6 +299,7 @@ export async function generateAssistantReply(
     url,
     model: config.model,
     apiKey: maskSecret(config.apiKey),
+    requestKeys: Object.keys(requestBody),
     messages: messages.map((message, index) => ({
       index,
       role: message.role,
@@ -273,10 +319,7 @@ export async function generateAssistantReply(
           "Content-Type": "application/json",
           Authorization: `Bearer ${config.apiKey}`,
         },
-        body: JSON.stringify({
-          model: config.model,
-          messages,
-        }),
+        body: JSON.stringify(requestBody),
       },
       signal: options.signal,
       timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,

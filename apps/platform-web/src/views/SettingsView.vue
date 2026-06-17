@@ -34,72 +34,53 @@
     </header>
 
     <main class="min-h-0 overflow-auto p-3">
-      <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_320px]">
-        <section class="retro-inset grid gap-4 p-4">
-          <div class="grid gap-3 border-b border-neon-deep/25 pb-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-            <div class="min-w-0">
-              <p class="font-mono text-xs uppercase tracking-wider text-neon">Agent Provider</p>
-              <h2 class="mt-1 text-sm font-bold text-text-main">OpenAI 兼容服务商</h2>
-            </div>
-            <div class="grid min-w-56 gap-1 border border-neon-deep/35 bg-elevated/35 p-3 font-mono text-[11px] text-text-dim">
-              <span>localStorage: {{ aiStatus }}</span>
-              <span>本地预设: {{ providerCount }}</span>
-              <span class="truncate">活动存档: {{ activeSaveId || "无" }}</span>
-            </div>
+      <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <section class="retro-inset grid content-start gap-4 p-4">
+          <div class="border-b border-neon-deep/25 pb-4">
+            <p class="font-mono text-xs uppercase tracking-wider text-neon">Agent Provider</p>
+            <h2 class="mt-1 text-sm font-bold text-text-main">OpenAI 兼容服务商</h2>
           </div>
 
-          <div class="grid gap-3 md:grid-cols-2">
-            <div class="grid gap-2">
-              <Label class="font-mono text-xs uppercase tracking-wider text-text-dim">服务商</Label>
-              <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
-                <Select v-if="providerCount > 0" v-model="selectedProviderId">
-                  <SelectTrigger class="retro-focus h-9 border-neon-deep/55 bg-elevated font-mono text-xs text-text-main">
-                    <SelectValue placeholder="选择服务商" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem
-                      v-for="provider in platformConfigDraft.providers"
-                      :key="provider.id"
-                      :value="provider.id"
-                    >
-                      {{ provider.name || "未命名服务商" }}
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-                <div
-                  v-else
-                  class="grid h-9 items-center border border-neon-deep/35 bg-panel/55 px-3 font-mono text-xs text-text-dim"
-                >
-                  尚无本地预设
-                </div>
-                <button
-                  type="button"
-                  class="retro-button retro-focus inline-flex h-9 items-center justify-center gap-2 px-3 font-mono text-xs"
-                  @click="addProvider"
-                >
-                  <Plus class="h-3.5 w-3.5" aria-hidden="true" />
-                  新增
-                </button>
-                <button
-                  type="button"
-                  class="retro-button retro-focus inline-flex h-9 items-center justify-center gap-2 px-3 font-mono text-xs disabled:opacity-45"
-                  :disabled="!activeProvider"
-                  @click="deleteActiveProvider"
-                >
-                  <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
-                  删除
-                </button>
-              </div>
-            </div>
-
-            <div class="grid gap-2">
-              <Label class="font-mono text-xs uppercase tracking-wider text-text-dim">当前生效</Label>
+          <div class="grid gap-2">
+            <Label class="font-mono text-xs uppercase tracking-wider text-text-dim">服务商</Label>
+            <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto_auto]">
+              <Select v-if="providerCount > 0" v-model="selectedProviderId">
+                <SelectTrigger class="retro-focus h-9 border-neon-deep/55 bg-elevated font-mono text-xs text-text-main">
+                  <SelectValue placeholder="选择服务商" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="provider in platformConfigDraft.providers"
+                    :key="provider.id"
+                    :value="provider.id"
+                  >
+                    {{ provider.name || "未命名服务商" }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
               <div
-                class="grid h-9 items-center border px-3 font-mono text-xs"
-                :class="effectiveChatConfig ? 'border-neon/35 bg-neon/10 text-neon' : 'border-warning/35 bg-warning/10 text-warning'"
+                v-else
+                class="grid h-9 items-center border border-neon-deep/35 bg-panel/55 px-3 font-mono text-xs text-text-dim"
               >
-                {{ effectiveProviderSummary }}
+                尚无本地预设
               </div>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-9 items-center justify-center gap-2 px-3 font-mono text-xs"
+                @click="addProvider"
+              >
+                <Plus class="h-3.5 w-3.5" aria-hidden="true" />
+                新增
+              </button>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-9 items-center justify-center gap-2 px-3 font-mono text-xs disabled:opacity-45"
+                :disabled="!activeProvider"
+                @click="deleteActiveProvider"
+              >
+                <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+                删除
+              </button>
             </div>
           </div>
 
@@ -138,7 +119,7 @@
             <div class="grid gap-3 border border-neon-deep/30 bg-panel/50 p-3">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div class="min-w-0">
-                  <Label class="font-mono text-xs uppercase tracking-wider text-text-dim">默认模型</Label>
+                  <Label class="font-mono text-xs uppercase tracking-wider text-text-dim">模型</Label>
                   <p class="mt-1 truncate font-mono text-[11px] text-text-dim">{{ modelFetchSummary }}</p>
                 </div>
                 <button
@@ -203,23 +184,92 @@
         </section>
 
         <aside class="retro-inset grid content-start gap-3 p-4">
-          <div class="grid h-12 w-12 place-items-center border border-neon-deep/45 bg-elevated/50 text-neon">
-            <SlidersHorizontal class="h-5 w-5" aria-hidden="true" />
-          </div>
-          <div>
-            <p class="font-mono text-xs uppercase tracking-wider text-neon">配置摘要</p>
-            <p class="mt-2 text-sm leading-6 text-text-dim">服务商预设只保存在当前浏览器。</p>
-          </div>
-          <div class="grid gap-2">
-            <div
-              v-for="item in effectiveConfigTiles"
-              :key="item.label"
-              class="grid gap-1 border border-neon-deep/30 bg-panel/55 px-3 py-2"
-            >
-              <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">{{ item.label }}</span>
-              <span class="truncate font-mono text-xs font-bold text-text-main">{{ item.value }}</span>
-              <span class="font-mono text-[11px]" :class="item.local ? 'text-neon' : 'text-text-dim'">{{ item.source }}</span>
+          <div class="flex items-start gap-3">
+            <div class="grid h-12 w-12 shrink-0 place-items-center border border-neon-deep/45 bg-elevated/50 text-neon">
+              <SlidersHorizontal class="h-5 w-5" aria-hidden="true" />
             </div>
+            <div class="min-w-0">
+              <p class="font-mono text-xs uppercase tracking-wider text-neon">模型参数</p>
+              <p class="mt-2 text-sm leading-6 text-text-dim">这些参数随当前服务商预设保存。</p>
+            </div>
+          </div>
+
+          <div v-if="activeProvider" class="grid gap-3">
+            <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+              <ModelNumberField
+                label="上下文窗口"
+                placeholder="例如 128000"
+                :model-value="parameterValue('contextWindow')"
+                @update:model-value="setNumberParameter('contextWindow', $event)"
+              />
+              <ModelNumberField
+                label="最大输出 token"
+                placeholder="例如 4096"
+                :model-value="parameterValue('maxOutputTokens')"
+                @update:model-value="setNumberParameter('maxOutputTokens', $event)"
+              />
+              <ModelNumberField
+                label="温度"
+                placeholder="0 - 2"
+                step="0.1"
+                :model-value="parameterValue('temperature')"
+                @update:model-value="setNumberParameter('temperature', $event)"
+              />
+              <ModelNumberField
+                label="top_p"
+                placeholder="0 - 2"
+                step="0.1"
+                :model-value="parameterValue('topP')"
+                @update:model-value="setNumberParameter('topP', $event)"
+              />
+              <ModelNumberField
+                label="频率惩罚"
+                placeholder="-2 - 2"
+                step="0.1"
+                :model-value="parameterValue('frequencyPenalty')"
+                @update:model-value="setNumberParameter('frequencyPenalty', $event)"
+              />
+              <ModelNumberField
+                label="存在惩罚"
+                placeholder="-2 - 2"
+                step="0.1"
+                :model-value="parameterValue('presencePenalty')"
+                @update:model-value="setNumberParameter('presencePenalty', $event)"
+              />
+            </div>
+
+            <div class="grid gap-2">
+              <Label class="font-mono text-[11px] uppercase tracking-wider text-text-dim">推理程度</Label>
+              <Select v-model="selectedReasoningEffort">
+                <SelectTrigger class="retro-focus h-9 border-neon-deep/55 bg-elevated font-mono text-xs text-text-main">
+                  <SelectValue placeholder="不发送" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem
+                    v-for="option in reasoningEffortOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div class="grid gap-2">
+              <Label class="font-mono text-[11px] uppercase tracking-wider text-text-dim">自定义请求参数</Label>
+              <textarea
+                v-model="activeProvider.parameters.customRequestParamsText"
+                rows="6"
+                spellcheck="false"
+                placeholder="{&#10;  &quot;seed&quot;: 42&#10;}"
+                class="retro-focus min-h-28 resize-y border border-neon-deep/55 bg-elevated px-3 py-2 font-mono text-xs leading-5 text-text-main placeholder:text-text-dim/60"
+              />
+            </div>
+          </div>
+
+          <div v-else class="border border-neon-deep/30 bg-panel/55 px-3 py-4 text-sm leading-6 text-text-dim">
+            新增本地服务商预设后，可以在这里配置模型参数。
           </div>
         </aside>
       </div>
@@ -257,34 +307,67 @@ import {
   SlidersHorizontal,
   Trash2,
 } from "lucide-vue-next"
-import { computed, onMounted, ref } from "vue"
+import { computed, defineComponent, h, onMounted, ref } from "vue"
 import {
   type BrowserAiConfig,
   type BrowserAiModelEntry,
+  type BrowserAiModelParameters,
   type BrowserAiProviderPreset,
+  type BrowserAiReasoningEffort,
   type BrowserPlatformConfigDraft,
   createBrowserAiProviderPreset,
   fetchBrowserAiProviderModels,
   getBrowserAiConfig,
   getBrowserPlatformConfigDraft,
-  getBrowserPlatformConfigStorageState,
   resetBrowserPlatformConfigDraft,
   saveBrowserPlatformConfigDraft,
 } from "../config/ai"
-import {
-  getPlatformActiveSaveId,
-  listPlatformSaves,
-} from "../platform-host"
+
+type NumericParameterKey = Exclude<
+  keyof BrowserAiModelParameters,
+  "reasoningEffort" | "customRequestParamsText"
+>
+
+const inputClass = "retro-focus h-9 border border-neon-deep/55 bg-elevated px-3 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+
+const ModelNumberField = defineComponent({
+  props: {
+    label: { type: String, required: true },
+    modelValue: { type: String, required: true },
+    placeholder: { type: String, default: "" },
+    step: { type: String, default: "1" },
+  },
+  emits: ["update:modelValue"],
+  setup(props, { emit }) {
+    return () => h("div", { class: "grid gap-2" }, [
+      h(Label, { class: "font-mono text-[11px] uppercase tracking-wider text-text-dim" }, () => props.label),
+      h(Input, {
+        class: inputClass,
+        modelValue: props.modelValue,
+        type: "number",
+        step: props.step,
+        placeholder: props.placeholder,
+        "onUpdate:modelValue": (value: string | number) => emit("update:modelValue", value),
+      }),
+    ])
+  },
+})
 
 const effectiveChatConfig = ref<BrowserAiConfig | null>(null)
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(clonePlatformConfigDraft(getBrowserPlatformConfigDraft()))
 const chatModelSummary = ref("未配置")
-const aiStatus = ref("检查中")
 const settingsFeedback = ref("")
 const settingsError = ref("")
-const saveOptionCount = ref(0)
-const activeSaveId = ref("")
 const fetchingModels = ref(false)
+
+const NO_REASONING_EFFORT = "__none"
+
+const reasoningEffortOptions: Array<{ value: BrowserAiReasoningEffort | typeof NO_REASONING_EFFORT; label: string }> = [
+  { value: NO_REASONING_EFFORT, label: "不发送" },
+  { value: "low", label: "低" },
+  { value: "medium", label: "中" },
+  { value: "high", label: "高" },
+]
 
 const providerCount = computed(() => platformConfigDraft.value.providers.length)
 
@@ -307,6 +390,19 @@ const selectedModel = computed({
       return
     }
     activeProvider.value.defaultModel = value
+    clearFeedback()
+  },
+})
+
+const selectedReasoningEffort = computed({
+  get: () => activeProvider.value?.parameters.reasoningEffort || NO_REASONING_EFFORT,
+  set: (value: string) => {
+    if (!activeProvider.value) {
+      return
+    }
+    activeProvider.value.parameters.reasoningEffort = value === NO_REASONING_EFFORT
+      ? ""
+      : value as BrowserAiReasoningEffort
     clearFeedback()
   },
 })
@@ -349,23 +445,6 @@ const modelFetchSummary = computed(() => {
   return "尚未拉取模型"
 })
 
-const effectiveProviderSummary = computed(() => {
-  if (!effectiveChatConfig.value) {
-    return "未配置"
-  }
-  return `${effectiveChatConfig.value.providerName ?? "本地服务商"} · ${effectiveChatConfig.value.model}`
-})
-
-const effectiveConfigTiles = computed(() => {
-  const config = effectiveChatConfig.value
-  return [
-    configTile("Provider", config?.providerName ?? "未配置", Boolean(config?.providerId)),
-    configTile("Base URL", config?.baseUrl ?? "未配置", Boolean(config?.providerId)),
-    configTile("Model", config?.model ?? "未配置", Boolean(config?.providerId)),
-    configTile("API Key", config ? maskSecret() : "未配置", Boolean(config?.providerId)),
-  ]
-})
-
 function formatModelSummary(config: BrowserAiConfig | null): string {
   if (!config) {
     return "未配置"
@@ -376,6 +455,7 @@ function formatModelSummary(config: BrowserAiConfig | null): string {
 function cloneProvider(input: BrowserAiProviderPreset): BrowserAiProviderPreset {
   return {
     ...input,
+    parameters: { ...input.parameters },
     fetchedModels: input.fetchedModels.map((model) => ({ ...model })),
   }
 }
@@ -387,21 +467,19 @@ function clonePlatformConfigDraft(input: BrowserPlatformConfigDraft): BrowserPla
   }
 }
 
-function configTile(
-  label: string,
-  value: string,
-  local: boolean,
-): { label: string; value: string; source: string; local: boolean } {
-  return {
-    label,
-    value,
-    source: local ? "本地预设" : "环境默认",
-    local,
-  }
+function parameterValue(key: NumericParameterKey): string {
+  const value = activeProvider.value?.parameters[key]
+  return typeof value === "number" && Number.isFinite(value) ? String(value) : ""
 }
 
-function maskSecret(): string {
-  return "已配置（未明文显示）"
+function setNumberParameter(key: NumericParameterKey, value: string | number) {
+  if (!activeProvider.value) {
+    return
+  }
+
+  const normalized = String(value).trim()
+  activeProvider.value.parameters[key] = normalized ? Number(normalized) : null
+  clearFeedback()
 }
 
 function formatFetchedAt(value: string): string {
@@ -425,7 +503,6 @@ function clearFeedback() {
 function refreshPlatformConfigState(options: { reloadDraft?: boolean } = {}) {
   effectiveChatConfig.value = getBrowserAiConfig()
   chatModelSummary.value = formatModelSummary(effectiveChatConfig.value)
-  aiStatus.value = getBrowserPlatformConfigStorageState()
 
   if (options.reloadDraft) {
     platformConfigDraft.value = clonePlatformConfigDraft(getBrowserPlatformConfigDraft())
@@ -439,6 +516,7 @@ function addProvider() {
     baseUrl: seed?.baseUrl ?? "",
     apiKey: "",
     defaultModel: seed?.model ?? "",
+    parameters: seed?.parameters,
   })
   platformConfigDraft.value.providers.push(provider)
   platformConfigDraft.value.activeProviderId = provider.id
@@ -488,7 +566,7 @@ function handleSaveSettings() {
     saveBrowserPlatformConfigDraft(platformConfigDraft.value)
     refreshPlatformConfigState({ reloadDraft: true })
     settingsError.value = ""
-    settingsFeedback.value = "服务商预设已保存，新一轮 Agent Runtime 调用将使用当前默认模型。"
+    settingsFeedback.value = "服务商预设已保存，新一轮 Agent Runtime 调用将使用当前设置。"
   } catch (error) {
     settingsFeedback.value = ""
     settingsError.value =
@@ -503,14 +581,7 @@ function handleResetSettings() {
   settingsFeedback.value = "本地服务商预设已清空，当前已回到环境默认配置。"
 }
 
-async function refreshOverview() {
-  const saves = await listPlatformSaves()
-  saveOptionCount.value = saves.length
-  activeSaveId.value = (await getPlatformActiveSaveId()) ?? ""
-}
-
-onMounted(async () => {
+onMounted(() => {
   refreshPlatformConfigState({ reloadDraft: true })
-  await refreshOverview()
 })
 </script>
