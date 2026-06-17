@@ -243,3 +243,37 @@ Redesigned the Runtime Diagnostics and Settings UI task: replaced the legacy Deb
 ### Next Steps
 
 - None - task complete
+
+
+## Session 66: Agent provider presets
+
+**Date**: 2026-06-17
+**Task**: Agent provider presets
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Added browser-local OpenAI-compatible provider presets with model fetching, default-model selection, Settings UI updates, legacy chat config compatibility, and local-secret boundary spec coverage.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aa829b4` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
