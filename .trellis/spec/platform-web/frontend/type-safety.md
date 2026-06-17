@@ -34,6 +34,8 @@
 - Game Card packages are reusable card-content packages, not Save Instance exports. They must not include save snapshots, save history, checkpoints, traces, or player-mutated save runtime files.
 - The first package container is zip with `game-card.json`, card-owned content under `workspace/*`, optional `frontend/*`, and reserved `cover/*`.
 - `game-card.json` uses `GameCardPackageManifest` with schema `tsian.game-card.package.v1` and embeds the authoritative `GameCardManifest`.
+- `GameCardManifest.summary` is the single player-facing intro field. Do not add or persist a parallel Game Card `description`; legacy imported package manifests may fold old `description` into `summary` only when `summary` is missing or blank.
+- `GameCardManifest.id` and `GameCardManifest.version` remain package/runtime metadata, but ordinary player-facing UI should not expose them as editable fields.
 - `GameCardManifest.frontend` is optional. A frontend-less Game Card is reusable card content, not a playable card.
 - When provided, `frontend` must be `remote` or `packaged`. Same-realm `builtin` game frontends are not supported.
 - Packaged frontends are built static files under `frontend/`; Tsian must not run source builds, npm install, or framework-specific bundling.
@@ -46,6 +48,7 @@
 
 - Missing/unsupported package schema -> reject import with a clear package error.
 - Missing or malformed embedded manifest -> reject import.
+- Legacy embedded manifest with blank/missing `summary` and non-empty `description` -> import by storing that text as `summary`, then omit `description` from future storage/export.
 - Built-in blank card id -> reject import; built-in templates are refreshed by platform seed helpers only.
 - `frontend.kind === "builtin"` -> reject import/write with a clear unsupported frontend-kind error.
 - Missing frontend -> allow import/write, but `/play` must show a not-configured error until a remote or packaged frontend is configured.
@@ -60,11 +63,14 @@
 - Good: a package with `frontend.kind === "packaged"` includes `frontend/index.html` and lists that file in `frontendFiles`.
 - Good: a package with `frontend.kind === "remote"` omits `frontendFiles` and uses a browser-loadable URL.
 - Base: a package omits `frontend`; it imports as non-playable card content.
+- Base: a legacy package includes `description`; after import/export the Game Card uses only `summary`.
 - Bad: a package uses `frontend.kind === "builtin"` or includes save snapshots/checkpoints.
+- Bad: ordinary UI exposes Game Card `id`, `version`, or a second `description` text area.
 
 ### 6. Tests Required
 
 - Assert package import accepts missing frontend.
+- Assert legacy package import folds `description` into `summary` when needed and export omits `description`.
 - Assert package import rejects `builtin` frontend kind.
 - Assert packaged frontend entries must exist under `frontend/`.
 - Assert package export omits save runtime data.

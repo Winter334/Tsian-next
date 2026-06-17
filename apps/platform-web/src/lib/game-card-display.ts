@@ -5,13 +5,11 @@ export function getGameCardTitle(card: LocalGameCardRecord | null | undefined): 
 }
 
 export function getGameCardSummary(card: LocalGameCardRecord | null | undefined): string {
-  return card?.manifest.summary?.trim() || "暂无摘要。"
+  return card?.manifest.summary?.trim() || "暂无简介。"
 }
 
 export function getGameCardDescription(card: LocalGameCardRecord | null | undefined): string {
-  return card?.manifest.description?.trim()
-    || card?.manifest.summary?.trim()
-    || "这张游戏卡还没有提供描述。"
+  return getGameCardSummary(card)
 }
 
 export function getGameCardAuthor(card: LocalGameCardRecord | null | undefined): string {

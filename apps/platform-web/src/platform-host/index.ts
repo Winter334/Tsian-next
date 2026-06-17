@@ -50,6 +50,7 @@ import {
   createEmptyRuntimeSnapshot,
   createLocalSave,
   createLocalSaveFromGameCard,
+  deleteLocalGameCard,
   deleteWorkspacePathForSave,
   deleteLocalSave,
   ensureBuiltinBlankGameCard,
@@ -111,13 +112,14 @@ export interface PlatformGameCardFrontendFileSummary {
 
 export interface PlatformGameCardMetadataInput {
   name: string
-  version: string
   summary: string
-  description?: string
 }
 
-export interface PlatformGameCardCopyInput extends PlatformGameCardMetadataInput {
-  id: string
+export type PlatformGameCardCopyInput = PlatformGameCardMetadataInput
+
+export interface PlatformGameCardDeleteResult {
+  deletedCardId: string
+  deletedSaveIds: string[]
 }
 
 interface StudioSaveSlot {
@@ -652,32 +654,32 @@ function requireMetadataText(value: string, fieldName: string): string {
   return normalized
 }
 
-function normalizeOptionalMetadataText(value: string | undefined): string | undefined {
-  const normalized = value?.trim()
-  return normalized ? normalized : undefined
-}
-
-function normalizeGameCardCopyId(value: string): string {
-  const normalized = value.trim()
-  if (!normalized) {
-    throw new Error("本地副本 ID 不能为空。")
-  }
-  if (normalized === "tsian.builtin.blank") {
-    throw new Error("本地副本不能使用内置游戏卡 ID。")
-  }
-  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(normalized)) {
-    throw new Error("游戏卡 ID 只能包含字母、数字、点、下划线和连字符，并且必须以字母或数字开头。")
-  }
-  return normalized
-}
-
 function metadataManifestPatch(input: PlatformGameCardMetadataInput) {
   return {
     name: requireMetadataText(input.name, "名称"),
-    version: requireMetadataText(input.version, "版本"),
-    summary: requireMetadataText(input.summary, "摘要"),
-    description: normalizeOptionalMetadataText(input.description),
+    summary: requireMetadataText(input.summary, "简介"),
   }
+}
+
+function slugifyGameCardIdSegment(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .replace(/[^a-z0-9]+$/, "")
+    || "game-card"
+}
+
+async function createUniqueLocalGameCardId(name: string): Promise<string> {
+  const base = `local.${slugifyGameCardIdSegment(name)}`
+  let candidate = base
+  let index = 2
+  while (await getLocalGameCard(candidate)) {
+    candidate = `${base}-${index}`
+    index += 1
+  }
+  return candidate
 }
 
 async function writeCardContentFileForCard(
@@ -1601,16 +1603,9 @@ export async function copyPlatformGameCardAsLocal(
     throw new Error(`游戏卡 "${cardId}" 不存在。`)
   }
 
-  const id = normalizeGameCardCopyId(input.id)
-  if (id === card.id) {
-    throw new Error("本地副本 ID 需要和原游戏卡不同。")
-  }
-  if (await getLocalGameCard(id)) {
-    throw new Error(`游戏卡 "${id}" 已存在。`)
-  }
-
   const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
   const patch = metadataManifestPatch(input)
+  const id = await createUniqueLocalGameCardId(patch.name)
   return putLocalGameCard({
     manifest: {
       ...card.manifest,
@@ -1625,6 +1620,42 @@ export async function copyPlatformGameCardAsLocal(
     })),
     source: "local",
   })
+}
+
+export async function deletePlatformGameCard(
+  cardId: string,
+): Promise<PlatformGameCardDeleteResult> {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+  if (card.source === "builtin") {
+    throw new Error("内置游戏卡不能删除。")
+  }
+
+  const activeSaveId = await getActiveSaveId()
+  const saves = (await listLocalSaves()).filter((save) => save.gameCardId === card.manifest.id)
+  const deletedSaveIds = saves.map((save) => save.id)
+  for (const saveId of deletedSaveIds) {
+    await deleteLocalSave(saveId)
+  }
+  await deleteLocalGameCard(card.id)
+
+  if (activeSaveId && deletedSaveIds.includes(activeSaveId)) {
+    const remainingSaves = await listLocalSaves()
+    if (remainingSaves.length > 0) {
+      await setActiveSaveId(remainingSaves[0].id)
+      await restoreActiveSnapshotFromStorage(remainingSaves[0].id)
+    } else {
+      await setActiveSaveId(null)
+      runtimeEngine.loadSnapshot(createEmptyRuntimeSnapshot())
+    }
+  }
+
+  return {
+    deletedCardId: card.id,
+    deletedSaveIds,
+  }
 }
 
 export async function listPlatformGameCardFrontendFiles(
@@ -1807,7 +1838,7 @@ export async function listPlatformWorkspaceRoots(): Promise<PlatformWorkspaceRoo
   return cards.map((card) => ({
     cardId: card.id,
     title: card.manifest.name?.trim() || "未命名游戏卡",
-    summary: card.manifest.summary?.trim() || card.manifest.description?.trim() || "暂无摘要。",
+    summary: card.manifest.summary?.trim() || "暂无简介。",
     source: card.source,
     contentFileCount: card.contentFiles.length,
     saveCount: saves.filter((save) => save.gameCardId === card.manifest.id).length,

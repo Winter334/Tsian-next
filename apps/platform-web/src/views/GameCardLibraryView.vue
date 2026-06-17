@@ -42,6 +42,15 @@
             <Image class="h-3.5 w-3.5" aria-hidden="true" />
             大图标
           </button>
+          <button
+            type="button"
+            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
+            :disabled="!selectedCard || selectedCard.source === 'builtin' || deleting"
+            @click="deleteSelectedCard"
+          >
+            <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+            删除应用
+          </button>
         </div>
         <p class="font-mono text-[11px] uppercase tracking-wider text-text-dim">
           已安装 {{ cards.length }} 个应用
@@ -149,20 +158,26 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { Download, FolderOpen, Gamepad2, Image, RefreshCw, Store } from "lucide-vue-next"
+import { Download, FolderOpen, Gamepad2, Image, RefreshCw, Store, Trash2 } from "lucide-vue-next"
 import type { LocalGameCardRecord } from "@/storage/db"
 import {
   getGameCardCoverUrl,
   getGameCardSummary,
   getGameCardTitle,
 } from "@/lib/game-card-display"
-import { importPlatformGameCardPackage, listPlatformGameCards } from "../platform-host"
+import {
+  deletePlatformGameCard,
+  importPlatformGameCardPackage,
+  listPlatformGameCards,
+  listPlatformSaves,
+} from "../platform-host"
 
 const router = useRouter()
 const cards = ref<LocalGameCardRecord[]>([])
 const selectedCardId = ref("")
 const loading = ref(false)
 const importing = ref(false)
+const deleting = ref(false)
 const errorMessage = ref("")
 const importError = ref("")
 const feedback = ref("")
@@ -224,6 +239,38 @@ async function handlePackageSelected(event: Event) {
     importError.value = error instanceof Error ? error.message : "导入游戏卡包失败。"
   } finally {
     importing.value = false
+  }
+}
+
+async function deleteSelectedCard() {
+  const card = selectedCard.value
+  if (!card || card.source === "builtin") {
+    return
+  }
+
+  deleting.value = true
+  importError.value = ""
+  feedback.value = ""
+  try {
+    const saveCount = (await listPlatformSaves())
+      .filter((save) => save.gameCardId === card.manifest.id)
+      .length
+    const title = getGameCardTitle(card)
+    const confirmed = window.confirm(
+      `删除应用「${title}」？\n\n这会同时删除 ${saveCount} 个关联存档，无法撤销。`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    await deletePlatformGameCard(card.id)
+    feedback.value = `已删除应用：${title}`
+    selectedCardId.value = ""
+    await refreshCards()
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : "删除应用失败。"
+  } finally {
+    deleting.value = false
   }
 }
 

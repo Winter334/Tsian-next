@@ -266,8 +266,12 @@ function normalizeGameCardManifest(value: unknown): GameCardManifest {
     )
   }
 
+  const summarySource = typeof value.summary === "string" && value.summary.trim()
+    ? value.summary
+    : value.description
+  const manifest = value as unknown as GameCardManifest
+
   return {
-    ...(value as unknown as GameCardManifest),
     schema: GAME_CARD_MANIFEST_SCHEMA,
     id: requireString(value.id, "GAME_CARD_ID_REQUIRED", "Game card id is required."),
     name: requireString(value.name, "GAME_CARD_NAME_REQUIRED", "Game card name is required."),
@@ -277,10 +281,13 @@ function normalizeGameCardManifest(value: unknown): GameCardManifest {
       "Game card version is required.",
     ),
     summary: requireString(
-      value.summary,
+      summarySource,
       "GAME_CARD_SUMMARY_REQUIRED",
       "Game card summary is required.",
     ),
+    ...(manifest.author ? { author: manifest.author } : {}),
+    ...(manifest.cover ? { cover: manifest.cover } : {}),
+    ...(manifest.assistant ? { assistant: manifest.assistant } : {}),
     frontend: normalizeFrontendBinding(value.frontend),
   }
 }
@@ -613,7 +620,7 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
     : card.contentFiles
   const packageManifest: GameCardPackageManifest = {
     schema: GAME_CARD_PACKAGE_SCHEMA,
-    manifest: card.manifest,
+    manifest: normalizeGameCardManifest(card.manifest),
     workspaceFiles: contentFiles.map((file) => ({
       path: `${WORKSPACE_PREFIX}${file.path}`,
       ...(file.mediaType ? { mediaType: file.mediaType } : {}),

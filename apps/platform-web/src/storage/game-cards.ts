@@ -102,14 +102,24 @@ function normalizeFrontendBinding(manifest: GameCardManifest): GameCardManifest[
   )
 }
 
+function legacyManifestDescription(manifest: GameCardManifest): string | undefined {
+  const value = (manifest as { description?: unknown }).description
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
 function normalizeManifest(manifest: GameCardManifest): GameCardManifest {
+  const summary = manifest.summary?.trim() || legacyManifestDescription(manifest)
+  const frontend = normalizeFrontendBinding(manifest)
   return {
-    ...manifest,
+    schema: manifest.schema,
     id: requireNonEmptyString(manifest.id, "id"),
     name: requireNonEmptyString(manifest.name, "name"),
     version: requireNonEmptyString(manifest.version, "version"),
-    summary: requireNonEmptyString(manifest.summary, "summary"),
-    frontend: normalizeFrontendBinding(manifest),
+    summary: requireNonEmptyString(summary ?? "", "summary"),
+    ...(manifest.author ? { author: manifest.author } : {}),
+    ...(manifest.cover ? { cover: manifest.cover } : {}),
+    ...(manifest.assistant ? { assistant: manifest.assistant } : {}),
+    ...(frontend ? { frontend } : {}),
   }
 }
 
@@ -222,7 +232,7 @@ function cloneGameCardFrontendFileRecord(
 function cloneLocalGameCardRecord(record: LocalGameCardRecord): LocalGameCardRecord {
   return {
     ...record,
-    manifest: { ...record.manifest },
+    manifest: normalizeManifest(record.manifest),
     contentFiles: record.contentFiles.map((file) => ({ ...file })),
   }
 }
@@ -269,7 +279,6 @@ function createBuiltinBlankGameCardRecord(
     name: "Blank Agent Runtime",
     version: "0.0.0",
     summary: "A default empty Tsian Runtime Workspace with official Agent and Skill templates.",
-    description: "The built-in blank workspace template used before a custom game frontend is configured.",
     cover: {
       url: BUILTIN_BLANK_GAME_CARD_COVER_URL,
       alt: "Blank Agent Runtime cover",
@@ -341,6 +350,33 @@ export async function putLocalGameCard(
     },
   )
   return cloneLocalGameCardRecord(record)
+}
+
+export async function deleteLocalGameCard(cardId: string): Promise<void> {
+  const id = cardId.trim()
+  if (!id) {
+    return
+  }
+
+  const existing = await localDb.gameCards.get(id)
+  if (!existing) {
+    return
+  }
+  if (existing.source === "builtin") {
+    throw new Error("Built-in game cards cannot be deleted.")
+  }
+
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCards, localDb.gameCardFrontendFiles],
+    async () => {
+      await localDb.gameCards.delete(id)
+      await localDb.gameCardFrontendFiles
+        .where("gameCardId")
+        .equals(id)
+        .delete()
+    },
+  )
 }
 
 export async function listLocalGameCardFrontendFiles(

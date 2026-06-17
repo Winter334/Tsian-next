@@ -73,14 +73,10 @@
                 <p class="mt-4 max-w-2xl text-sm leading-7 text-text-main md:text-base">
                   {{ cardDescription }}
                 </p>
-                <dl class="mt-5 grid gap-3 text-sm text-text-dim sm:grid-cols-3">
+                <dl class="mt-5 grid gap-3 text-sm text-text-dim sm:grid-cols-2">
                   <div>
                     <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">作者</dt>
                     <dd class="mt-1 truncate text-text-main">{{ cardAuthor }}</dd>
-                  </div>
-                  <div>
-                    <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">版本</dt>
-                    <dd class="mt-1 truncate text-text-main">{{ card.manifest.version }}</dd>
                   </div>
                   <div>
                     <dt class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">来源</dt>
@@ -99,7 +95,7 @@
                     卡片属性
                   </p>
                   <p class="mt-1 text-xs leading-5 text-text-dim">
-                    {{ card.source === 'builtin' ? '内置卡需要先另存为本地副本再分发。' : '保存会更新这张本地游戏卡的 manifest。' }}
+                    {{ card.source === 'builtin' ? '内置卡需要先另存为本地副本再分发。' : '这里只保留玩家需要看到的应用信息。' }}
                   </p>
                 </div>
                 <span class="border border-neon-deep/50 bg-panel px-2 py-1 font-mono text-[10px] uppercase text-text-dim">
@@ -107,50 +103,21 @@
                 </span>
               </div>
 
-              <div class="grid gap-2 sm:grid-cols-2">
-                <label class="grid gap-1">
-                  <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">名称</span>
-                  <input
-                    v-model="metadataName"
-                    type="text"
-                    class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
-                  />
-                </label>
-                <label class="grid gap-1">
-                  <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">版本</span>
-                  <input
-                    v-model="metadataVersion"
-                    type="text"
-                    class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
-                  />
-                </label>
-              </div>
-
               <label class="grid gap-1">
-                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">摘要</span>
+                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">名称</span>
                 <input
-                  v-model="metadataSummary"
+                  v-model="metadataName"
                   type="text"
                   class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
                 />
               </label>
 
               <label class="grid gap-1">
-                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">描述</span>
+                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">简介</span>
                 <textarea
-                  v-model="metadataDescription"
+                  v-model="metadataIntro"
                   rows="3"
                   class="retro-focus min-h-20 resize-y border border-neon-deep/55 bg-panel px-2 py-2 text-xs leading-5 text-text-main"
-                />
-              </label>
-
-              <label class="grid gap-1">
-                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">本地副本 ID</span>
-                <input
-                  v-model="metadataCopyId"
-                  type="text"
-                  class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
-                  placeholder="local.example-card"
                 />
               </label>
 
@@ -172,6 +139,15 @@
                 >
                   <Copy class="h-3.5 w-3.5" aria-hidden="true" />
                   另存为本地副本
+                </button>
+                <button
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
+                  :disabled="metadataSaving || card.source === 'builtin'"
+                  @click="deleteCurrentCard"
+                >
+                  <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+                  删除应用
                 </button>
               </div>
             </div>
@@ -531,6 +507,7 @@ import {
 import {
   copyPlatformGameCardAsLocal,
   createPlatformSaveFromGameCard,
+  deletePlatformGameCard,
   deletePlatformSave,
   exportPlatformGameCardPackage,
   getPlatformActiveSaveId,
@@ -594,10 +571,7 @@ const frontendMode = ref<FrontendMode>("none")
 const remoteUrl = ref("")
 const packagedEntry = ref("")
 const metadataName = ref("")
-const metadataVersion = ref("")
-const metadataSummary = ref("")
-const metadataDescription = ref("")
-const metadataCopyId = ref("")
+const metadataIntro = ref("")
 const loading = ref(false)
 const exporting = ref(false)
 const frontendSaving = ref(false)
@@ -649,21 +623,9 @@ function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
   packagedEntry.value = frontend.entry
 }
 
-function defaultCopyId(loadedCard: LocalGameCardRecord): string {
-  const base = loadedCard.id
-    .replace(/^tsian\.builtin\./, "")
-    .replace(/[^a-zA-Z0-9._-]+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    || "game-card"
-  return `local.${base}`
-}
-
 function syncMetadataDraft(loadedCard: LocalGameCardRecord) {
   metadataName.value = loadedCard.manifest.name
-  metadataVersion.value = loadedCard.manifest.version
-  metadataSummary.value = loadedCard.manifest.summary
-  metadataDescription.value = loadedCard.manifest.description ?? ""
-  metadataCopyId.value = defaultCopyId(loadedCard)
+  metadataIntro.value = loadedCard.manifest.summary
 }
 
 async function refreshData() {
@@ -706,9 +668,7 @@ async function refreshData() {
 function metadataInput() {
   return {
     name: metadataName.value,
-    version: metadataVersion.value,
-    summary: metadataSummary.value,
-    description: metadataDescription.value,
+    summary: metadataIntro.value,
   }
 }
 
@@ -738,14 +698,35 @@ async function copyAsLocalCard() {
   metadataSaving.value = true
   feedback.value = ""
   try {
-    const copied = await copyPlatformGameCardAsLocal(card.value.id, {
-      id: metadataCopyId.value,
-      ...metadataInput(),
-    })
+    const copied = await copyPlatformGameCardAsLocal(card.value.id, metadataInput())
     feedback.value = `已创建本地副本：${copied.manifest.name}`
     router.push({ name: "game-card-detail", params: { cardId: copied.id } })
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : "创建本地副本失败。"
+  } finally {
+    metadataSaving.value = false
+  }
+}
+
+async function deleteCurrentCard() {
+  if (!card.value || card.value.source === "builtin") {
+    return
+  }
+
+  const confirmed = window.confirm(
+    `删除应用「${cardTitle.value}」？\n\n这会同时删除 ${cardSaves.value.length} 个关联存档，无法撤销。`,
+  )
+  if (!confirmed) {
+    return
+  }
+
+  metadataSaving.value = true
+  feedback.value = ""
+  try {
+    await deletePlatformGameCard(card.value.id)
+    router.push("/library")
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "删除应用失败。"
   } finally {
     metadataSaving.value = false
   }
@@ -758,8 +739,7 @@ function packageFilename(): string {
     .replace(/\s+/g, "-")
     .replace(/^-+|-+$/g, "")
     || "game-card"
-  const version = card.value?.manifest.version?.trim()
-  return `${name}${version ? `-${version}` : ""}.tsian-card.zip`
+  return `${name}.tsian-card.zip`
 }
 
 function downloadBlob(blob: Blob, filename: string) {

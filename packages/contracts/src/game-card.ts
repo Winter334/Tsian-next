@@ -4,7 +4,6 @@ export interface GameCardManifest {
   name: string
   version: string
   summary: string
-  description?: string
   author?: GameCardAuthor
   cover?: GameCardCover
   frontend?: GameCardFrontendBinding
