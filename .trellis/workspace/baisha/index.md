@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 64
+- **Total Sessions**: 65
 - **Last Active**: 2026-06-17
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~211 | Active |
+| `journal-2.md` | ~245 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 65 | 2026-06-17 | Runtime monitor and settings UI redesign | `1740bfb` | `master` |
 | 64 | 2026-06-17 | Game Card Studio workspace | `c71e70b` | `master` |
 | 63 | 2026-06-17 | Simplify game card metadata | `c742c77` | `master` |
 | 62 | 2026-06-17 | Game card package export fixes | `f6bc04f` | `master` |
