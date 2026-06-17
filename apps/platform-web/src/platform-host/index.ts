@@ -39,7 +39,7 @@ import {
   AUTHORING_WORKSPACE_OPERATIONS,
   executeWorkspaceOperation,
 } from "../agent-runtime/workspace-operations"
-import { createDebugBridge, createPlayFrontendBridge } from "../bridge"
+import { createDebugBridge, createPlayFrontendBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
 import { generateAssistantReply, getAiDebugRecords } from "../runtime-host/ai"
@@ -63,6 +63,7 @@ import {
   initializeWorkspaceForSave,
   listCheckpointsForSave,
   listEffectiveWorkspaceFilesForSave,
+  listLocalGameCardFrontendFiles,
   listLocalGameCards,
   listLocalSaves,
   listWorkspaceFilesForSave,
@@ -98,6 +99,13 @@ export interface PlatformWorkspaceRootEntry {
   source: string
   contentFileCount: number
   saveCount: number
+  updatedAt: number
+}
+
+export interface PlatformGameCardFrontendFileSummary {
+  path: string
+  mediaType: string
+  size: number
   updatedAt: number
 }
 
@@ -564,6 +572,65 @@ function normalizeWorkspaceActionRequest(
 
 function normalizeContentMediaType(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function normalizePackagedFrontendEntry(value: string): string {
+  const raw = value.trim().replace(/\\/g, "/")
+  if (!raw) {
+    throw new Error("打包前端入口不能为空。")
+  }
+  if (raw.startsWith("/") || raw.includes("\0")) {
+    throw new Error("打包前端入口必须是相对 package 路径。")
+  }
+
+  const parts: string[] = []
+  for (const part of raw.split("/")) {
+    if (!part || part === ".") {
+      continue
+    }
+    if (part === "..") {
+      throw new Error("打包前端入口不能包含 '..'。")
+    }
+    parts.push(part)
+  }
+
+  const normalized = parts.join("/")
+  if (!normalized.startsWith("frontend/")) {
+    throw new Error("打包前端入口必须位于 frontend/ 下。")
+  }
+  return normalized
+}
+
+function normalizeGameCardFrontendBinding(
+  frontend: GameCardFrontendBinding | null | undefined,
+): GameCardFrontendBinding | undefined {
+  if (!frontend) {
+    return undefined
+  }
+
+  if (frontend.kind === "remote") {
+    const resolved = resolveRemoteFrontendUrl(frontend.url)
+    if (!resolved.ok) {
+      throw new Error(resolved.error.message)
+    }
+    return {
+      kind: "remote",
+      url: frontend.url.trim(),
+      bridgeVersion: "tsian.play-bridge.v1",
+    }
+  }
+
+  if (frontend.kind === "packaged") {
+    return {
+      kind: "packaged",
+      entry: normalizePackagedFrontendEntry(frontend.entry),
+      bridgeVersion: "tsian.play-bridge.v1",
+    }
+  }
+
+  throw new Error(
+    `不支持的游戏卡前端类型：${String((frontend as { kind?: unknown }).kind)}`,
+  )
 }
 
 async function writeCardContentFileForCard(
@@ -1453,6 +1520,43 @@ export async function listPlatformGameCards() {
 
 export async function getPlatformGameCard(cardId: string) {
   return getLocalGameCard(cardId)
+}
+
+export async function listPlatformGameCardFrontendFiles(
+  cardId: string,
+): Promise<PlatformGameCardFrontendFileSummary[]> {
+  return (await listLocalGameCardFrontendFiles(cardId)).map((file) => ({
+    path: file.path,
+    mediaType: file.mediaType,
+    size: file.size,
+    updatedAt: file.updatedAt,
+  }))
+}
+
+export async function updatePlatformGameCardFrontend(
+  cardId: string,
+  frontend: GameCardFrontendBinding | null | undefined,
+) {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+  const normalizedFrontend = normalizeGameCardFrontendBinding(frontend)
+  if (normalizedFrontend?.kind === "packaged") {
+    const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
+    if (!frontendFiles.some((file) => file.path === normalizedFrontend.entry)) {
+      throw new Error(`打包前端入口不存在：${normalizedFrontend.entry}`)
+    }
+  }
+
+  return putLocalGameCard({
+    manifest: {
+      ...card.manifest,
+      frontend: normalizedFrontend,
+    },
+    contentFiles: card.contentFiles,
+    source: card.source,
+  })
 }
 
 export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | Uint8Array) {

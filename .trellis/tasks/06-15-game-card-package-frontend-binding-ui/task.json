@@ -3,7 +3,7 @@
   "name": "game-card-package-frontend-binding-ui",
   "title": "Game Card Package And Frontend Binding UI",
   "description": "Expose Game Card import/export and remote/packaged frontend binding workflows in the platform UI.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

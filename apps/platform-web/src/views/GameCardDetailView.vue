@@ -22,6 +22,15 @@
           <component :is="tab.icon" class="h-3.5 w-3.5" aria-hidden="true" />
           {{ tab.label }}
         </button>
+        <button
+          type="button"
+          class="retro-button retro-focus ml-auto inline-flex h-8 shrink-0 items-center gap-2 px-3 font-mono text-xs"
+          :disabled="!card || exporting"
+          @click="exportCard"
+        >
+          <Download class="h-3.5 w-3.5" aria-hidden="true" />
+          导出卡包
+        </button>
       </nav>
 
       <div v-if="loading" class="retro-inset m-3 grid min-h-[480px] place-items-center p-4">
@@ -228,6 +237,154 @@
           </div>
         </div>
 
+        <div v-else-if="activeTab === 'frontend'" class="retro-inset grid gap-4 p-4">
+          <div class="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p class="font-mono text-xs uppercase tracking-wider text-neon">
+                前端绑定
+              </p>
+              <p class="mt-1 text-sm leading-6 text-text-dim">
+                {{ frontendStatusDescription }}
+              </p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="border border-neon-deep/50 bg-elevated px-2 py-1 font-mono text-[11px] text-text-dim">
+                {{ frontendStatusLabel }}
+              </span>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                :disabled="!isPlayable"
+                @click="openPlayFromCard"
+              >
+                <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+                打开游玩窗口
+              </button>
+            </div>
+          </div>
+
+          <p v-if="feedback" class="border border-neon-deep/40 bg-neon/10 px-3 py-2 text-sm text-neon">
+            {{ feedback }}
+          </p>
+
+          <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.65fr)]">
+            <section class="grid content-start gap-4 border border-neon-deep/35 bg-elevated/35 p-3">
+              <div class="grid gap-2 sm:grid-cols-3" role="group" aria-label="前端类型">
+                <button
+                  type="button"
+                  class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
+                  :class="frontendMode === 'none' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
+                  @click="frontendMode = 'none'"
+                >
+                  <XCircle class="h-4 w-4" aria-hidden="true" />
+                  <span class="font-mono text-xs">未配置</span>
+                  <span class="text-xs leading-5">保留为内容模板。</span>
+                </button>
+                <button
+                  type="button"
+                  class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
+                  :class="frontendMode === 'remote' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
+                  @click="frontendMode = 'remote'"
+                >
+                  <Link2 class="h-4 w-4" aria-hidden="true" />
+                  <span class="font-mono text-xs">Remote URL</span>
+                  <span class="text-xs leading-5">通过 iframe 加载。</span>
+                </button>
+                <button
+                  type="button"
+                  class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
+                  :class="frontendMode === 'packaged' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
+                  @click="frontendMode = 'packaged'"
+                >
+                  <PackageOpen class="h-4 w-4" aria-hidden="true" />
+                  <span class="font-mono text-xs">Packaged</span>
+                  <span class="text-xs leading-5">使用卡包内文件。</span>
+                </button>
+              </div>
+
+              <label v-if="frontendMode === 'remote'" class="grid gap-2">
+                <span class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">远程 URL</span>
+                <input
+                  v-model="remoteUrl"
+                  type="url"
+                  class="retro-focus h-9 border border-neon-deep/55 bg-panel px-3 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+                  placeholder="https://example.com/tsian-game/"
+                  @keyup.enter="saveFrontendBinding"
+                />
+              </label>
+
+              <div v-if="frontendMode === 'packaged'" class="grid gap-2">
+                <label class="grid gap-2">
+                  <span class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">入口文件</span>
+                  <input
+                    v-model="packagedEntry"
+                    list="packaged-frontend-files"
+                    type="text"
+                    class="retro-focus h-9 border border-neon-deep/55 bg-panel px-3 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+                    placeholder="frontend/index.html"
+                    @keyup.enter="saveFrontendBinding"
+                  />
+                </label>
+                <datalist id="packaged-frontend-files">
+                  <option
+                    v-for="file in frontendFiles"
+                    :key="file.path"
+                    :value="file.path"
+                  />
+                </datalist>
+              </div>
+
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
+                  :disabled="frontendSaving"
+                  @click="saveFrontendBinding"
+                >
+                  <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
+                  保存绑定
+                </button>
+                <button
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs text-danger"
+                  :disabled="frontendSaving || !card?.manifest.frontend"
+                  @click="clearFrontendBinding"
+                >
+                  <XCircle class="h-3.5 w-3.5" aria-hidden="true" />
+                  清除绑定
+                </button>
+              </div>
+            </section>
+
+            <section class="grid content-start gap-3 border border-neon-deep/35 bg-elevated/35 p-3">
+              <div class="flex items-center justify-between gap-2">
+                <p class="font-mono text-xs uppercase tracking-wider text-neon">
+                  Packaged 文件
+                </p>
+                <span class="font-mono text-[11px] text-text-dim">{{ frontendFiles.length }} 个</span>
+              </div>
+              <div v-if="frontendFiles.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm leading-6 text-text-dim">
+                当前游戏卡没有存储打包前端文件。
+              </div>
+              <div v-else class="max-h-[340px] overflow-auto border border-neon-deep/35 bg-panel/55">
+                <button
+                  v-for="file in frontendFiles"
+                  :key="file.path"
+                  type="button"
+                  class="retro-focus grid w-full grid-cols-[1fr_auto] gap-3 border-b border-neon-deep/20 px-3 py-2 text-left last:border-b-0 hover:bg-elevated"
+                  @click="packagedEntry = file.path; frontendMode = 'packaged'"
+                >
+                  <span class="min-w-0">
+                    <span class="block truncate font-mono text-xs text-text-main">{{ file.path }}</span>
+                    <span class="mt-1 block truncate font-mono text-[11px] text-text-dim">{{ file.mediaType }}</span>
+                  </span>
+                  <span class="font-mono text-[11px] text-text-dim">{{ formatBytes(file.size) }}</span>
+                </button>
+              </div>
+            </section>
+          </div>
+        </div>
+
         <div v-else class="retro-inset grid min-h-[360px] place-items-center p-6 text-center">
           <div class="max-w-md">
             <component :is="activePlaceholder.icon" class="mx-auto h-10 w-10 text-neon-muted" aria-hidden="true" />
@@ -253,6 +410,7 @@
 </template>
 
 <script setup lang="ts">
+import type { GameCardFrontendBinding } from "@tsian/contracts"
 import { computed, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import {
@@ -261,12 +419,17 @@ import {
   Bot,
   CheckCircle2,
   Disc3,
+  Download,
+  ExternalLink,
   Gamepad2,
+  Link2,
   MonitorCog,
+  PackageOpen,
   Play,
   Plus,
   Save,
   Trash2,
+  XCircle,
 } from "lucide-vue-next"
 import type { Component } from "vue"
 import type { LocalGameCardRecord, LocalSaveRecord } from "@/storage/db"
@@ -283,13 +446,18 @@ import {
 import {
   createPlatformSaveFromGameCard,
   deletePlatformSave,
+  exportPlatformGameCardPackage,
   getPlatformActiveSaveId,
   getPlatformGameCard,
+  listPlatformGameCardFrontendFiles,
   listPlatformSaves,
   selectPlatformSave,
+  updatePlatformGameCardFrontend,
+  type PlatformGameCardFrontendFileSummary,
 } from "../platform-host"
 
 type TabId = "overview" | "saves" | "frontend" | "agents" | "diagnostics"
+type FrontendMode = "none" | "remote" | "packaged"
 
 interface TabItem {
   id: TabId
@@ -334,7 +502,13 @@ const allSaves = ref<LocalSaveRecord[]>([])
 const activeSaveId = ref("")
 const selectedSaveId = ref("")
 const newSaveName = ref("")
+const frontendFiles = ref<PlatformGameCardFrontendFileSummary[]>([])
+const frontendMode = ref<FrontendMode>("none")
+const remoteUrl = ref("")
+const packagedEntry = ref("")
 const loading = ref(false)
+const exporting = ref(false)
+const frontendSaving = ref(false)
 const errorMessage = ref("")
 const feedback = ref("")
 
@@ -361,15 +535,37 @@ const activePlaceholder = computed(() => {
   return placeholders[activeTab.value]
 })
 
+function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
+  const frontend = loadedCard.manifest.frontend
+  if (!frontend) {
+    frontendMode.value = "none"
+    remoteUrl.value = ""
+    packagedEntry.value = frontendFiles.value.find((file) => file.path.endsWith(".html"))?.path
+      ?? frontendFiles.value[0]?.path
+      ?? ""
+    return
+  }
+
+  if (frontend.kind === "remote") {
+    frontendMode.value = "remote"
+    remoteUrl.value = frontend.url
+    return
+  }
+
+  frontendMode.value = "packaged"
+  packagedEntry.value = frontend.entry
+}
+
 async function refreshData() {
   loading.value = true
   errorMessage.value = ""
 
   try {
-    const [loadedCard, saves, loadedActiveSaveId] = await Promise.all([
+    const [loadedCard, saves, loadedActiveSaveId, loadedFrontendFiles] = await Promise.all([
       getPlatformGameCard(props.cardId),
       listPlatformSaves(),
       getPlatformActiveSaveId(),
+      listPlatformGameCardFrontendFiles(props.cardId),
     ])
 
     if (!loadedCard) {
@@ -379,6 +575,8 @@ async function refreshData() {
     card.value = loadedCard
     allSaves.value = saves
     activeSaveId.value = loadedActiveSaveId ?? ""
+    frontendFiles.value = loadedFrontendFiles
+    syncFrontendDraft(loadedCard)
 
     const scopedSaves = saves.filter((save) => save.gameCardId === loadedCard.manifest.id)
     if (!scopedSaves.some((save) => save.id === selectedSaveId.value)) {
@@ -392,6 +590,126 @@ async function refreshData() {
   } finally {
     loading.value = false
   }
+}
+
+function packageFilename(): string {
+  const name = cardTitle.value
+    .trim()
+    .replace(/[\\/:*?"<>|]+/g, "-")
+    .replace(/\s+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "game-card"
+  const version = card.value?.manifest.version?.trim()
+  return `${name}${version ? `-${version}` : ""}.tsian-card.zip`
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement("a")
+  link.href = url
+  link.download = filename
+  link.rel = "noopener"
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  window.setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+async function exportCard() {
+  if (!card.value) {
+    return
+  }
+
+  exporting.value = true
+  feedback.value = ""
+  try {
+    const blob = await exportPlatformGameCardPackage(card.value.id)
+    downloadBlob(blob, packageFilename())
+    feedback.value = `已导出卡包：${packageFilename()}`
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "导出游戏卡包失败。"
+  } finally {
+    exporting.value = false
+  }
+}
+
+function frontendBindingDraft(): GameCardFrontendBinding | undefined {
+  if (frontendMode.value === "none") {
+    return undefined
+  }
+
+  if (frontendMode.value === "remote") {
+    return {
+      kind: "remote",
+      url: remoteUrl.value,
+      bridgeVersion: "tsian.play-bridge.v1",
+    }
+  }
+
+  return {
+    kind: "packaged",
+    entry: packagedEntry.value,
+    bridgeVersion: "tsian.play-bridge.v1",
+  }
+}
+
+async function saveFrontendBinding() {
+  if (!card.value) {
+    return
+  }
+
+  frontendSaving.value = true
+  feedback.value = ""
+  try {
+    const updated = await updatePlatformGameCardFrontend(card.value.id, frontendBindingDraft())
+    feedback.value = updated.manifest.frontend
+      ? "已保存前端绑定。"
+      : "已清除前端绑定。"
+    await refreshData()
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "保存前端绑定失败。"
+  } finally {
+    frontendSaving.value = false
+  }
+}
+
+async function clearFrontendBinding() {
+  if (!card.value?.manifest.frontend) {
+    return
+  }
+  const confirmed = window.confirm("清除这张游戏卡的前端绑定？游戏卡内容、存档和打包前端文件都会保留。")
+  if (!confirmed) {
+    return
+  }
+
+  frontendMode.value = "none"
+  await saveFrontendBinding()
+}
+
+async function openPlayFromCard() {
+  if (!isPlayable.value) {
+    feedback.value = "这张游戏卡还没有可游玩的前端。"
+    return
+  }
+  if (!selectedSaveId.value) {
+    feedback.value = "请先创建或选择一个存档槽。"
+    return
+  }
+
+  await continueSave(selectedSaveId.value)
+}
+
+function formatBytes(size: number): string {
+  if (!Number.isFinite(size) || size <= 0) {
+    return "0 B"
+  }
+  if (size < 1024) {
+    return `${size} B`
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`
+  }
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
 async function createSave() {

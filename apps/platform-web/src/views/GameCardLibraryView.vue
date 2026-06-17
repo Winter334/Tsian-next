@@ -20,6 +20,22 @@
           </button>
           <button
             type="button"
+            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+            :disabled="importing"
+            @click="openPackagePicker"
+          >
+            <Download class="h-3.5 w-3.5" aria-hidden="true" />
+            导入卡包
+          </button>
+          <input
+            ref="packageInput"
+            type="file"
+            class="hidden"
+            accept=".tsian-card.zip,application/zip"
+            @change="handlePackageSelected"
+          />
+          <button
+            type="button"
             class="retro-button retro-focus hidden h-8 items-center gap-2 px-3 font-mono text-xs sm:inline-flex"
             disabled
           >
@@ -65,8 +81,16 @@
           </div>
         </div>
 
+        <p v-if="feedback" class="mb-3 border border-neon-deep/40 bg-neon/10 px-3 py-2 text-sm text-neon">
+          {{ feedback }}
+        </p>
+
+        <p v-if="importError" class="mb-3 border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
+          {{ importError }}
+        </p>
+
         <div
-          v-else
+          v-if="cards.length > 0"
           class="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] content-start gap-x-4 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(164px,1fr))]"
           role="list"
           aria-label="已安装的游戏卡应用"
@@ -125,20 +149,24 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { FolderOpen, Gamepad2, Image, RefreshCw, Store } from "lucide-vue-next"
+import { Download, FolderOpen, Gamepad2, Image, RefreshCw, Store } from "lucide-vue-next"
 import type { LocalGameCardRecord } from "@/storage/db"
 import {
   getGameCardCoverUrl,
   getGameCardSummary,
   getGameCardTitle,
 } from "@/lib/game-card-display"
-import { listPlatformGameCards } from "../platform-host"
+import { importPlatformGameCardPackage, listPlatformGameCards } from "../platform-host"
 
 const router = useRouter()
 const cards = ref<LocalGameCardRecord[]>([])
 const selectedCardId = ref("")
 const loading = ref(false)
+const importing = ref(false)
 const errorMessage = ref("")
+const importError = ref("")
+const feedback = ref("")
+const packageInput = ref<HTMLInputElement | null>(null)
 
 const selectedCard = computed(() =>
   cards.value.find((card) => card.id === selectedCardId.value) ?? cards.value[0] ?? null
@@ -169,6 +197,34 @@ async function refreshCards() {
 
 function openCard(cardId: string) {
   router.push({ name: "game-card-detail", params: { cardId } })
+}
+
+function openPackagePicker() {
+  packageInput.value?.click()
+}
+
+async function handlePackageSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ""
+  if (!file) {
+    return
+  }
+
+  importing.value = true
+  importError.value = ""
+  feedback.value = ""
+  try {
+    const imported = await importPlatformGameCardPackage(file)
+    feedback.value = `已导入：${getGameCardTitle(imported)}`
+    selectedCardId.value = imported.id
+    await refreshCards()
+    openCard(imported.id)
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : "导入游戏卡包失败。"
+  } finally {
+    importing.value = false
+  }
 }
 
 onMounted(() => {
