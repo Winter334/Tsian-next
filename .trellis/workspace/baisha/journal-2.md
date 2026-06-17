@@ -141,3 +141,37 @@ Fixed built-in Game Card frontend binding persistence, bundled local cover asset
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: Simplify game card metadata
+
+**Date**: 2026-06-17
+**Task**: Simplify game card metadata
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Simplified Game Card metadata UI to name and intro, removed GameCardManifest description, folded legacy descriptions into summary, auto-generated local copy ids, and added delete app actions with save cleanup.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c742c77` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
