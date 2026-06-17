@@ -26,6 +26,82 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - `platform-host/index.ts` owns loading snapshots from storage, assembling the effective workspace from card content plus save runtime data, running Agent Runtime turns, persisting successful turns, checkpoint creation, and rollback on failure.
 - `interaction.sendMessage` should not persist partial user/assistant messages when the Agent Runtime turn fails.
 
+## Scenario: Browser AI Provider Config And Secrets
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web changes browser AI provider configuration, `VITE_AI_*` fallback behavior, model fetching, Agent Runtime model-call config resolution, Game Card package import/export, or bridge/query payloads that might expose platform secrets.
+
+### 2. Signatures
+
+- `getBrowserAiConfig(): BrowserAiConfig | null`
+- `getBrowserPlatformConfigDraft(): BrowserPlatformConfigDraft`
+- `saveBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void`
+- `resetBrowserPlatformConfigDraft(): void`
+- `fetchBrowserAiProviderModels(provider, options?): Promise<BrowserAiModelEntry[]>`
+- Environment fallback keys: `VITE_AI_BASE_URL`, `VITE_AI_API_KEY`, `VITE_AI_MODEL`.
+
+### 3. Contracts
+
+- Browser AI provider presets are platform-local player secrets stored under localStorage key `tsian-platform-config`.
+- Provider presets currently support only OpenAI-compatible APIs: `baseUrl`, `apiKey`, and provider default model.
+- `getBrowserAiConfig()` returns only the resolved active runtime config needed for a model call: provider identity/name when available plus `baseUrl`, `apiKey`, and `model`.
+- When no complete local provider is active, `getBrowserAiConfig()` may fall back to complete `VITE_AI_*` environment values.
+- Existing old localStorage shape `{ chat: { baseUrl, apiKey, model } }` is compatibility input and should normalize into a local OpenAI-compatible provider.
+- API keys must not be written into Game Card manifests, Game Card packages, Runtime Workspace files, remote/packaged frontend bridge payloads, debug summaries, or visible non-password UI summaries.
+- Future account-system work may manage identity or sync UX, but must not move API credentials into distributable Game Card or Agent content.
+
+### 4. Validation & Error Matrix
+
+- Missing/blank local provider fields plus incomplete env fallback -> `getBrowserAiConfig()` returns `null`.
+- Malformed localStorage JSON -> ignore stored config and fall back to environment defaults.
+- Old `chat` shape present -> normalize as one local provider without requiring a manual migration.
+- Model fetch with blank base URL -> throw a clear local error before network fetch.
+- Model fetch with blank API key -> throw a clear local error before network fetch.
+- Model fetch HTTP error -> surface provider error message when present, otherwise status-based error.
+- Model fetch returns no usable IDs -> surface an error and preserve the provider's existing default model.
+
+### 5. Good/Base/Bad Cases
+
+- Good: Settings saves a local provider preset; Agent Runtime uses that provider's default model on the next turn.
+- Good: `/models` returns `{ data: [{ id: "model-name" }] }`; Settings lets the player choose `model-name`.
+- Base: fresh browser with complete `VITE_AI_*` values has no local providers but still reports AI configured.
+- Base: a provider whose `/models` endpoint is incompatible can still use manual model input.
+- Bad: exporting a Game Card writes `apiKey` into `game-card.json`, `workspace/*`, `frontend/*`, or package metadata.
+- Bad: a remote/packaged frontend can query provider config or API keys through the bridge.
+
+### 6. Tests Required
+
+- Assert env-only configuration still resolves a usable `BrowserAiConfig`.
+- Assert old `{ chat }` localStorage shape resolves to one local provider.
+- Assert reset removes local provider config and restores env fallback behavior.
+- Assert model-fetch failure preserves the previous default model.
+- Assert Game Card package export and bridge/query surfaces do not include provider config or API keys when those areas change.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```json
+{
+  "manifest": { "id": "my-card" },
+  "aiProvider": {
+    "baseUrl": "https://api.example/v1",
+    "apiKey": "sk-secret",
+    "model": "example-model"
+  }
+}
+```
+
+#### Correct
+
+```typescript
+const config = getBrowserAiConfig()
+await generateAssistantReply(messages, { config })
+```
+
+Game Card or Agent content may later reference a provider/model preference, but the API credential stays in local browser platform config.
+
 ## Scenario: Current Game Card And Active Save State
 
 ### 1. Scope / Trigger

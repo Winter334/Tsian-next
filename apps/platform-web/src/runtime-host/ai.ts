@@ -235,7 +235,7 @@ export async function generateAssistantReply(
 
   if (!config) {
     throw new Error(
-      "AI config is missing. Please set VITE_AI_BASE_URL, VITE_AI_API_KEY and VITE_AI_MODEL.",
+      "AI config is missing. Please configure an OpenAI-compatible provider in Control Panel.",
     )
   }
 
