@@ -3,7 +3,7 @@
   "name": "runtime-diagnostics-settings-ui",
   "title": "Runtime Diagnostics And Settings UI",
   "description": "Turn runtime diagnostics, model settings, traces, checkpoints, and debug data into a usable platform observability UI.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

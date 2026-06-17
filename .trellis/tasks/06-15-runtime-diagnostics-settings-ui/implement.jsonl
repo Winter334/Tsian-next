@@ -1,1 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Required platform-web frontend entrypoint and build checks."}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "Vue view/component structure and UI conventions for route views."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Refs, bridge state, Dexie/runtime state, and refresh behavior."}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Runtime boundary normalization and typed contract consumption."}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "Required quality gate for platform-web changes."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Task reads UI, bridge, platform-host, and contract-shaped diagnostic data."}
