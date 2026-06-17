@@ -454,6 +454,15 @@
             <p class="mt-2 text-sm leading-6 text-text-dim">
               {{ activePlaceholder.copy }}
             </p>
+            <button
+              v-if="activeTab === 'agents'"
+              type="button"
+              class="retro-button retro-focus mt-4 inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
+              @click="openStudio"
+            >
+              <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
+              打开工作室
+            </button>
           </div>
         </div>
       </div>
@@ -515,6 +524,7 @@ import {
   listPlatformGameCardFrontendFiles,
   listPlatformSaves,
   selectPlatformSave,
+  setPlatformActiveGameCard,
   updatePlatformGameCardMetadata,
   updatePlatformGameCardFrontend,
   type PlatformGameCardFrontendFileSummary,
@@ -643,6 +653,7 @@ async function refreshData() {
     if (!loadedCard) {
       throw new Error(`未找到游戏卡「${props.cardId}」。`)
     }
+    await setPlatformActiveGameCard(loadedCard.id)
 
     card.value = loadedCard
     allSaves.value = saves
@@ -836,6 +847,10 @@ async function openPlayFromCard() {
   }
 
   await continueSave(selectedSaveId.value)
+}
+
+function openStudio() {
+  router.push("/studio")
 }
 
 function formatBytes(size: number): string {

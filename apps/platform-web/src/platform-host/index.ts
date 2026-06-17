@@ -55,6 +55,7 @@ import {
   deleteLocalSave,
   ensureBuiltinBlankGameCard,
   exportGameCardPackage,
+  getActiveGameCardId,
   getActiveSaveId,
   getBuiltinBlankGameCard,
   getHistoryForSave,
@@ -71,9 +72,12 @@ import {
   normalizeWorkspaceFilePath,
   putLocalGameCard,
   restoreCheckpointForSave,
+  setActiveGameCardId,
   setActiveSaveId,
   writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
+  type LocalGameCardRecord,
+  type LocalSaveRecord,
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
@@ -108,6 +112,19 @@ export interface PlatformGameCardFrontendFileSummary {
   mediaType: string
   size: number
   updatedAt: number
+}
+
+export interface PlatformStudioSnapshot {
+  card: LocalGameCardRecord
+  activeSaveId?: string
+  usingSaveContext: boolean
+  agents: AgentRegistryEntry[]
+  skills: SkillRegistryEntry[]
+  assistant?: {
+    agentId: string
+    summary: string
+    agent?: AgentRegistryEntry
+  }
 }
 
 export interface PlatformGameCardMetadataInput {
@@ -367,14 +384,62 @@ async function activeSaveExists(saveId: string): Promise<boolean> {
   return (await listLocalSaves()).some((save) => save.id === saveId)
 }
 
+async function gameCardForSave(save: LocalSaveRecord): Promise<LocalGameCardRecord | null> {
+  if (!save.gameCardId) {
+    return getBuiltinBlankGameCard()
+  }
+
+  return getLocalGameCard(save.gameCardId)
+}
+
+async function gameCardForSaveId(saveId: string): Promise<LocalGameCardRecord | null> {
+  const save = (await listLocalSaves()).find((item) => item.id === saveId)
+  return save ? gameCardForSave(save) : null
+}
+
+async function syncActiveGameCardFromSave(saveId: string | null): Promise<void> {
+  if (!saveId) {
+    return
+  }
+
+  const save = (await listLocalSaves()).find((item) => item.id === saveId)
+  if (!save) {
+    return
+  }
+
+  await setActiveGameCardId(save.gameCardId ?? (await getBuiltinBlankGameCard()).id)
+}
+
+async function ensureActiveGameCardId(saves?: LocalSaveRecord[]): Promise<string> {
+  const existingId = await getActiveGameCardId()
+  if (existingId && await getLocalGameCard(existingId)) {
+    return existingId
+  }
+
+  const activeSaveId = await getActiveSaveId()
+  const knownSaves = saves ?? await listLocalSaves()
+  const activeSave = activeSaveId
+    ? knownSaves.find((save) => save.id === activeSaveId)
+    : undefined
+  const sourceSave = activeSave ?? knownSaves[0]
+  const card = sourceSave
+    ? await gameCardForSave(sourceSave)
+    : await getBuiltinBlankGameCard()
+  const cardId = card?.id ?? (await getBuiltinBlankGameCard()).id
+  await setActiveGameCardId(cardId)
+  return cardId
+}
+
 async function ensureActiveSave(): Promise<string> {
   const activeSaveId = await getActiveSaveId()
   if (activeSaveId && await activeSaveExists(activeSaveId)) {
+    await syncActiveGameCardFromSave(activeSaveId)
     return activeSaveId
   }
 
   const created = await createLocalSave()
   await setActiveSaveId(created.id)
+  await setActiveGameCardId(created.gameCardId ?? (await getBuiltinBlankGameCard()).id)
   runtimeEngine.loadSnapshot(await getSnapshotForSave(created.id))
   return created.id
 }
@@ -386,13 +451,13 @@ async function restoreActiveSnapshotFromStorage(saveId: string): Promise<Runtime
 }
 
 async function listEffectiveWorkspaceFilesForActiveSave(saveId: string): Promise<WorkspaceFile[]> {
-  const activeCard = await getPlatformActiveGameCard()
-  if (!activeCard) {
+  const sourceCard = await gameCardForSaveId(saveId)
+  if (!sourceCard) {
     return []
   }
 
   await initializeWorkspaceForSave(saveId)
-  return listEffectiveWorkspaceFilesForSave(saveId, activeCard)
+  return listEffectiveWorkspaceFilesForSave(saveId, sourceCard)
 }
 
 function workspaceStudioError(code: string, message: string): Error & { code: string } {
@@ -1526,10 +1591,16 @@ export async function initializePlatformHost(): Promise<void> {
 
   const saves = await listLocalSaves()
   const activeSaveId = await getActiveSaveId()
+  const storedActiveCardId = await getActiveGameCardId()
+  const hasStoredActiveCard = Boolean(storedActiveCardId && await getLocalGameCard(storedActiveCardId))
+  await ensureActiveGameCardId(saves)
 
   if (activeSaveId) {
     const activeSave = saves.find((save) => save.id === activeSaveId)
     if (activeSave) {
+      if (!hasStoredActiveCard) {
+        await syncActiveGameCardFromSave(activeSaveId)
+      }
       await restoreActiveSnapshotFromStorage(activeSaveId)
       markPlatformHostReady()
       return
@@ -1541,6 +1612,9 @@ export async function initializePlatformHost(): Promise<void> {
   if (saves.length > 0) {
     const next = saves[0]
     await setActiveSaveId(next.id)
+    if (!hasStoredActiveCard) {
+      await syncActiveGameCardFromSave(next.id)
+    }
     await restoreActiveSnapshotFromStorage(next.id)
   } else {
     runtimeEngine.loadSnapshot(createEmptyRuntimeSnapshot())
@@ -1558,6 +1632,7 @@ export async function createPlatformSave(input?: {
 }) {
   const created = await createLocalSave(input?.name)
   await setActiveSaveId(created.id)
+  await setActiveGameCardId(created.gameCardId ?? (await getBuiltinBlankGameCard()).id)
   await restoreActiveSnapshotFromStorage(created.id)
   return created
 }
@@ -1641,10 +1716,16 @@ export async function deletePlatformGameCard(
   }
   await deleteLocalGameCard(card.id)
 
+  if (await getActiveGameCardId() === card.id) {
+    const remainingCards = await listLocalGameCards()
+    await setActiveGameCardId(remainingCards[0]?.id ?? (await getBuiltinBlankGameCard()).id)
+  }
+
   if (activeSaveId && deletedSaveIds.includes(activeSaveId)) {
     const remainingSaves = await listLocalSaves()
     if (remainingSaves.length > 0) {
       await setActiveSaveId(remainingSaves[0].id)
+      await syncActiveGameCardFromSave(remainingSaves[0].id)
       await restoreActiveSnapshotFromStorage(remainingSaves[0].id)
     } else {
       await setActiveSaveId(null)
@@ -1716,26 +1797,29 @@ export async function createPlatformSaveFromGameCard(
 
   const created = await createLocalSaveFromGameCard(card, input)
   await setActiveSaveId(created.id)
+  await setActiveGameCardId(card.id)
   await restoreActiveSnapshotFromStorage(created.id)
   return created
 }
 
 export async function getPlatformActiveGameCard() {
+  const activeCardId = await ensureActiveGameCardId()
+  const activeCard = await getLocalGameCard(activeCardId)
+  if (activeCard) {
+    return activeCard
+  }
+
   const activeSaveId = await getActiveSaveId()
   if (!activeSaveId) {
-    return null
+    return getBuiltinBlankGameCard()
   }
 
   const activeSave = (await listLocalSaves()).find((save) => save.id === activeSaveId)
   if (!activeSave) {
-    return null
-  }
-
-  if (!activeSave.gameCardId) {
     return getBuiltinBlankGameCard()
   }
 
-  return getLocalGameCard(activeSave.gameCardId)
+  return gameCardForSave(activeSave)
 }
 
 export async function selectPlatformSave(saveId: string) {
@@ -1744,6 +1828,7 @@ export async function selectPlatformSave(saveId: string) {
   }
 
   await setActiveSaveId(saveId)
+  await syncActiveGameCardFromSave(saveId)
   await restoreActiveSnapshotFromStorage(saveId)
 }
 
@@ -1764,12 +1849,120 @@ export async function deletePlatformSave(saveId: string) {
   if (activeSaveId === saveId) {
     const next = remaining[0]
     await setActiveSaveId(next.id)
+    await syncActiveGameCardFromSave(next.id)
     await restoreActiveSnapshotFromStorage(next.id)
   }
 }
 
 export async function getPlatformActiveSaveId() {
   return getActiveSaveId()
+}
+
+export async function getPlatformActiveGameCardId() {
+  return ensureActiveGameCardId()
+}
+
+export async function setPlatformActiveGameCard(cardId: string): Promise<LocalGameCardRecord> {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+
+  await setActiveGameCardId(card.id)
+  return card
+}
+
+async function activeStudioWorkspaceFiles(
+  card: LocalGameCardRecord,
+): Promise<{
+  files: WorkspaceFile[]
+  activeSaveId?: string
+  usingSaveContext: boolean
+}> {
+  const activeSaveId = await getActiveSaveId()
+  const activeSave = activeSaveId
+    ? (await listLocalSaves()).find((save) => save.id === activeSaveId)
+    : undefined
+  const activeSaveCard = activeSave ? await gameCardForSave(activeSave) : null
+  if (activeSave && activeSaveCard?.id === card.id) {
+    await initializeWorkspaceForSave(activeSave.id)
+    return {
+      files: await listEffectiveWorkspaceFilesForSave(activeSave.id, card),
+      activeSaveId: activeSave.id,
+      usingSaveContext: true,
+    }
+  }
+
+  return {
+    files: cardContentFilesToWorkspaceFiles(card),
+    ...(activeSaveId ? { activeSaveId } : {}),
+    usingSaveContext: false,
+  }
+}
+
+export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapshot> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agents = buildAgentRegistry(context.files)
+  const skills = buildSkillRegistry(context.files)
+  const assistantManifest = card.manifest.assistant
+  const assistantAgent = assistantManifest
+    ? agents.find((agent) => agent.id === assistantManifest.agentId)
+    : undefined
+
+  return {
+    card,
+    ...(context.activeSaveId ? { activeSaveId: context.activeSaveId } : {}),
+    usingSaveContext: context.usingSaveContext,
+    agents,
+    skills,
+    ...(assistantManifest
+      ? {
+          assistant: {
+            agentId: assistantManifest.agentId,
+            summary: assistantManifest.summary?.trim() || "这张游戏卡提供了一个工作室助手入口。",
+            ...(assistantAgent ? { agent: assistantAgent } : {}),
+          },
+        }
+      : {}),
+  }
+}
+
+export async function getPlatformStudioAgentContext(
+  agentId: string,
+): Promise<AgentContextEntry | null> {
+  const normalizedAgentId = agentId.trim()
+  if (!normalizedAgentId) {
+    return null
+  }
+
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    return null
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  return assembleAgentContext(context.files, { agentId: normalizedAgentId })
+}
+
+export async function getPlatformStudioSkillDetail(
+  path: string,
+): Promise<SkillDetailEntry | null> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    return null
+  }
+
+  try {
+    const context = await activeStudioWorkspaceFiles(card)
+    return loadSkillDetail(context.files, normalizeWorkspaceFilePath(path))
+  } catch {
+    return null
+  }
 }
 
 export async function listPlatformWorkspaceDirectory(input: {

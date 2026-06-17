@@ -3,6 +3,7 @@ import { defineAsyncComponent } from "vue"
 import type { RouteLocationNormalizedLoaded } from "vue-router"
 import {
   Activity,
+  Bot,
   FilePenLine,
   FolderOpen,
   Gamepad2,
@@ -18,6 +19,7 @@ export type DesktopAppId =
   | "my-apps"
   | "workspace-explorer"
   | "workspace-editor"
+  | "studio"
   | "game-launcher"
   | "play"
   | "settings"
@@ -73,6 +75,7 @@ const AppMarketView = defineAsyncComponent(() => import("./views/AppMarketView.v
 const GameCardLibraryView = defineAsyncComponent(() => import("./views/GameCardLibraryView.vue"))
 const WorkspaceExplorerView = defineAsyncComponent(() => import("./views/WorkspaceExplorerView.vue"))
 const WorkspaceEditorView = defineAsyncComponent(() => import("./views/WorkspaceEditorView.vue"))
+const StudioView = defineAsyncComponent(() => import("./views/StudioView.vue"))
 const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDetailView.vue"))
 const PlayView = defineAsyncComponent(() => import("./views/PlayView.vue"))
 const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"))
@@ -124,6 +127,21 @@ const desktopApps: DesktopAppDefinition[] = [
     minWidth: 720,
     minHeight: 460,
     fullscreenable: true,
+  },
+  {
+    appId: "studio",
+    label: "工作室",
+    shortLabel: "工作室",
+    routeName: "studio",
+    routePath: "/studio",
+    title: "工作室",
+    caption: "当前游戏卡的角色与能力",
+    icon: Bot,
+    component: StudioView,
+    defaultWidth: 1080,
+    defaultHeight: 680,
+    minWidth: 680,
+    minHeight: 460,
   },
   {
     appId: "play",

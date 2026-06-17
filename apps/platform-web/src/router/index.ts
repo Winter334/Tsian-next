@@ -39,6 +39,11 @@ const router = createRouter({
       component: () => import("../views/WorkspaceEditorView.vue"),
     },
     {
+      path: "/studio",
+      name: "studio",
+      component: () => import("../views/StudioView.vue"),
+    },
+    {
       path: "/cards/:cardId",
       name: "game-card-detail",
       component: () => import("../views/GameCardDetailView.vue"),

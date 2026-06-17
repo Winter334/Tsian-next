@@ -64,7 +64,7 @@ Keep child tasks whose product goal is independent of the shell's visual style. 
 2. `06-15-agent-skill-assistant-studio-ui`
    - Boundary: Agent registry, Agent context, Skill registry, Skill detail, Studio Assistant entrypoint.
    - Output: authors can inspect and manage Agent/Skill/assistant content as workspace-owned material.
-   - Alignment note: keep this task. Update its PRD to plug into the current Game Card detail / Workspace Studio surfaces and existing registry/detail/context APIs.
+   - Alignment note: keep this task, but keep the first UI lightweight and player-readable. Assistant chat should become a separate desktop app bound to the currently loaded Game Card rather than a dense panel inside Studio.
 
 3. `06-15-game-card-package-frontend-binding-ui`
    - Boundary: `.tsian-card.zip` import/export, remote frontend URL binding, packaged frontend visibility, frontend-not-configured handling.
@@ -140,6 +140,11 @@ Keep child tasks whose product goal is independent of the shell's visual style. 
 - Save Instances should feel like mainstream game saves: under a larger save directory, each save slot/file/directory represents one playthrough and contains that playthrough's runtime data.
 - Runtime-facing effective workspaces should expose the selected save slot at `save/...`; broader management UI may show all slots under `saves/<save-id>/...`.
 - First implementation slice is `06-15-card-owned-content-save-runtime-data-model`, before deep Game Card detail, Workspace Studio, or Agent/Skill Studio. A thin home hub can still be built independently later if useful.
+- The desktop should use one currently loaded Game Card context, not simultaneous multi-card loading.
+- The Game Card loader should choose/import/manage/load cards; after loading, desktop apps operate against that current card by default.
+- The current card does not need a separate desktop status banner. The game entry icon/title/cover can carry that context.
+- Assistant should be a desktop chat app that reads the current Game Card's assistant configuration.
+- Agent/Skill Studio should stay lightweight and understandable, presenting roles and abilities before technical registry details.
 
 ## Product Decisions To Resolve
 

@@ -15,6 +15,7 @@ import {
 export const BUILTIN_BLANK_GAME_CARD_ID = "tsian.builtin.blank"
 const BUILTIN_BLANK_GAME_CARD_ASSISTANT_ID = "studio-assistant"
 const BUILTIN_BLANK_GAME_CARD_COVER_URL = "/default-card-cover.webp"
+const ACTIVE_GAME_CARD_KEY = "active-game-card-id"
 
 type GameCardSource = LocalGameCardRecord["source"]
 
@@ -313,6 +314,24 @@ export async function getLocalGameCard(cardId: string): Promise<LocalGameCardRec
 
   const record = await localDb.gameCards.get(id)
   return record ? cloneLocalGameCardRecord(record) : null
+}
+
+export async function getActiveGameCardId(): Promise<string | null> {
+  const record = await localDb.meta.get(ACTIVE_GAME_CARD_KEY)
+  return record?.value ?? null
+}
+
+export async function setActiveGameCardId(cardId: string | null): Promise<void> {
+  const normalized = cardId?.trim()
+  if (!normalized) {
+    await localDb.meta.delete(ACTIVE_GAME_CARD_KEY)
+    return
+  }
+
+  await localDb.meta.put({
+    key: ACTIVE_GAME_CARD_KEY,
+    value: normalized,
+  })
 }
 
 export async function putLocalGameCard(

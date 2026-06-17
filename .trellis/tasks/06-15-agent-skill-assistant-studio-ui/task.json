@@ -3,7 +3,7 @@
   "name": "agent-skill-assistant-studio-ui",
   "title": "Agent Skill And Assistant Studio UI",
   "description": "Build management UI for workspace Agents, Skills, Skill detail loading, and the Studio Assistant entrypoint.",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
