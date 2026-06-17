@@ -89,6 +89,34 @@
 
           <section class="retro-inset grid content-start gap-4 p-4">
             <div class="grid gap-3 border border-neon-deep/35 bg-elevated/35 p-3">
+              <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="min-w-0">
+                  <p class="font-mono text-xs uppercase tracking-wider text-neon">
+                    游戏卡加载
+                  </p>
+                  <p class="mt-1 text-xs leading-5 text-text-dim">
+                    {{ isLoadedCard ? '桌面应用正在使用这张游戏卡。' : '加载后，开始游戏、工作室和后续助手会使用这张游戏卡。' }}
+                  </p>
+                </div>
+                <span
+                  class="border px-2 py-1 font-mono text-[10px] uppercase"
+                  :class="isLoadedCard ? 'border-neon text-neon' : 'border-neon-deep/50 text-text-dim'"
+                >
+                  {{ isLoadedCard ? 'loaded' : 'not loaded' }}
+                </span>
+              </div>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-9 w-fit items-center gap-2 px-3 font-mono text-xs"
+                :disabled="isLoadedCard"
+                @click="loadCurrentCard"
+              >
+                <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
+                {{ isLoadedCard ? '已加载' : '加载游戏卡' }}
+              </button>
+            </div>
+
+            <div class="grid gap-3 border border-neon-deep/35 bg-elevated/35 p-3">
               <div class="flex flex-wrap items-start justify-between gap-2">
                 <div>
                   <p class="font-mono text-xs uppercase tracking-wider text-neon">
@@ -444,27 +472,6 @@
             </section>
           </div>
         </div>
-
-        <div v-else class="retro-inset grid min-h-[360px] place-items-center p-6 text-center">
-          <div class="max-w-md">
-            <component :is="activePlaceholder.icon" class="mx-auto h-10 w-10 text-neon-muted" aria-hidden="true" />
-            <h3 class="mt-4 text-lg font-bold text-text-main">
-              {{ activePlaceholder.title }}
-            </h3>
-            <p class="mt-2 text-sm leading-6 text-text-dim">
-              {{ activePlaceholder.copy }}
-            </p>
-            <button
-              v-if="activeTab === 'agents'"
-              type="button"
-              class="retro-button retro-focus mt-4 inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
-              @click="openStudio"
-            >
-              <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
-              打开工作室
-            </button>
-          </div>
-        </div>
       </div>
 
       <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
@@ -483,9 +490,7 @@ import type { GameCardFrontendBinding } from "@tsian/contracts"
 import { computed, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import {
-  Activity,
   ArrowLeft,
-  Bot,
   CheckCircle2,
   Copy,
   Disc3,
@@ -519,6 +524,7 @@ import {
   deletePlatformGameCard,
   deletePlatformSave,
   exportPlatformGameCardPackage,
+  getPlatformActiveGameCardId,
   getPlatformActiveSaveId,
   getPlatformGameCard,
   listPlatformGameCardFrontendFiles,
@@ -530,7 +536,7 @@ import {
   type PlatformGameCardFrontendFileSummary,
 } from "../platform-host"
 
-type TabId = "overview" | "saves" | "frontend" | "agents" | "diagnostics"
+type TabId = "overview" | "saves" | "frontend"
 type FrontendMode = "none" | "remote" | "packaged"
 
 interface TabItem {
@@ -548,31 +554,12 @@ const tabs: TabItem[] = [
   { id: "overview", label: "概览", icon: Disc3 },
   { id: "saves", label: "存档", icon: Save },
   { id: "frontend", label: "前端", icon: MonitorCog },
-  { id: "agents", label: "Agent", icon: Bot },
-  { id: "diagnostics", label: "诊断", icon: Activity },
 ]
-
-const placeholders: Record<Exclude<TabId, "overview" | "saves">, { title: string, copy: string, icon: Component }> = {
-  frontend: {
-    title: "前端绑定稍后管理",
-    copy: "这一页只展示当前前端状态，导入与绑定工具会在后续功能中开放。",
-    icon: MonitorCog,
-  },
-  agents: {
-    title: "Agent 与 Skill 管理预留中",
-    copy: "游戏卡自带的 Agent 与 Skill 仍是可复用的游戏卡内容，不会复制进存档槽。",
-    icon: Bot,
-  },
-  diagnostics: {
-    title: "运行时诊断保留在诊断界面",
-    copy: "面向存档的追踪与检查点仍属于运行时内部数据。",
-    icon: Activity,
-  },
-}
 
 const activeTab = ref<TabId>("overview")
 const card = ref<LocalGameCardRecord | null>(null)
 const allSaves = ref<LocalSaveRecord[]>([])
+const activeGameCardId = ref("")
 const activeSaveId = ref("")
 const selectedSaveId = ref("")
 const newSaveName = ref("")
@@ -602,15 +589,10 @@ const coverUrl = computed(() => getGameCardCoverUrl(card.value))
 const frontendStatusLabel = computed(() => getFrontendStatusLabel(card.value))
 const frontendStatusDescription = computed(() => getFrontendStatusDescription(card.value))
 const isPlayable = computed(() => hasPlayableFrontend(card.value))
+const isLoadedCard = computed(() => Boolean(card.value && activeGameCardId.value === card.value.id))
 const activeSaveName = computed(() =>
   allSaves.value.find((save) => save.id === activeSaveId.value)?.name ?? "无"
 )
-const activePlaceholder = computed(() => {
-  if (activeTab.value === "overview" || activeTab.value === "saves") {
-    return placeholders.frontend
-  }
-  return placeholders[activeTab.value]
-})
 
 function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
   const frontend = loadedCard.manifest.frontend
@@ -643,21 +625,22 @@ async function refreshData() {
   errorMessage.value = ""
 
   try {
-    const [loadedCard, saves, loadedActiveSaveId, loadedFrontendFiles] = await Promise.all([
+    const [loadedCard, saves, loadedActiveSaveId, loadedActiveGameCardId, loadedFrontendFiles] = await Promise.all([
       getPlatformGameCard(props.cardId),
       listPlatformSaves(),
       getPlatformActiveSaveId(),
+      getPlatformActiveGameCardId(),
       listPlatformGameCardFrontendFiles(props.cardId),
     ])
 
     if (!loadedCard) {
       throw new Error(`未找到游戏卡「${props.cardId}」。`)
     }
-    await setPlatformActiveGameCard(loadedCard.id)
 
     card.value = loadedCard
     allSaves.value = saves
     activeSaveId.value = loadedActiveSaveId ?? ""
+    activeGameCardId.value = loadedActiveGameCardId
     frontendFiles.value = loadedFrontendFiles
     syncFrontendDraft(loadedCard)
     syncMetadataDraft(loadedCard)
@@ -849,8 +832,14 @@ async function openPlayFromCard() {
   await continueSave(selectedSaveId.value)
 }
 
-function openStudio() {
-  router.push("/studio")
+async function loadCurrentCard() {
+  if (!card.value || isLoadedCard.value) {
+    return
+  }
+
+  const loaded = await setPlatformActiveGameCard(card.value.id)
+  activeGameCardId.value = loaded.id
+  feedback.value = `已加载游戏卡：${loaded.manifest.name}`
 }
 
 function formatBytes(size: number): string {

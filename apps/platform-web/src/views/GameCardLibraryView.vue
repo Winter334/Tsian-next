@@ -13,6 +13,15 @@
           <button
             type="button"
             class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+            :disabled="!selectedCard || isSelectedCardLoaded || loadingCard"
+            @click="loadSelectedCard"
+          >
+            <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
+            {{ isSelectedCardLoaded ? '已加载' : '加载' }}
+          </button>
+          <button
+            type="button"
+            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
             @click="router.push('/market')"
           >
             <Store class="h-3.5 w-3.5" aria-hidden="true" />
@@ -135,6 +144,12 @@
                   {{ getGameCardSummary(card) }}
                 </p>
               </div>
+              <span
+                v-if="activeGameCardId === card.id"
+                class="absolute left-2 top-2 border border-neon bg-void/85 px-2 py-1 font-mono text-[10px] uppercase text-neon"
+              >
+                loaded
+              </span>
             </div>
 
             <span class="library-app-label mx-auto line-clamp-2 max-w-[150px] px-1 font-mono text-[11px] leading-4 text-text-main">
@@ -158,7 +173,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { Download, FolderOpen, Gamepad2, Image, RefreshCw, Store, Trash2 } from "lucide-vue-next"
+import { CheckCircle2, Download, FolderOpen, Gamepad2, Image, RefreshCw, Store, Trash2 } from "lucide-vue-next"
 import type { LocalGameCardRecord } from "@/storage/db"
 import {
   getGameCardCoverUrl,
@@ -167,17 +182,21 @@ import {
 } from "@/lib/game-card-display"
 import {
   deletePlatformGameCard,
+  getPlatformActiveGameCardId,
   importPlatformGameCardPackage,
   listPlatformGameCards,
   listPlatformSaves,
+  setPlatformActiveGameCard,
 } from "../platform-host"
 
 const router = useRouter()
 const cards = ref<LocalGameCardRecord[]>([])
 const selectedCardId = ref("")
+const activeGameCardId = ref("")
 const loading = ref(false)
 const importing = ref(false)
 const deleting = ref(false)
+const loadingCard = ref(false)
 const errorMessage = ref("")
 const importError = ref("")
 const feedback = ref("")
@@ -185,6 +204,9 @@ const packageInput = ref<HTMLInputElement | null>(null)
 
 const selectedCard = computed(() =>
   cards.value.find((card) => card.id === selectedCardId.value) ?? cards.value[0] ?? null
+)
+const isSelectedCardLoaded = computed(() =>
+  Boolean(selectedCard.value && selectedCard.value.id === activeGameCardId.value)
 )
 
 const selectedStatus = computed(() => {
@@ -199,7 +221,12 @@ async function refreshCards() {
   errorMessage.value = ""
 
   try {
-    cards.value = await listPlatformGameCards()
+    const [loadedCards, loadedActiveGameCardId] = await Promise.all([
+      listPlatformGameCards(),
+      getPlatformActiveGameCardId(),
+    ])
+    cards.value = loadedCards
+    activeGameCardId.value = loadedActiveGameCardId
     if (!cards.value.some((card) => card.id === selectedCardId.value)) {
       selectedCardId.value = cards.value[0]?.id ?? ""
     }
@@ -216,6 +243,26 @@ function openCard(cardId: string) {
 
 function openPackagePicker() {
   packageInput.value?.click()
+}
+
+async function loadSelectedCard() {
+  const card = selectedCard.value
+  if (!card || activeGameCardId.value === card.id) {
+    return
+  }
+
+  loadingCard.value = true
+  importError.value = ""
+  feedback.value = ""
+  try {
+    const loaded = await setPlatformActiveGameCard(card.id)
+    activeGameCardId.value = loaded.id
+    feedback.value = `已加载：${getGameCardTitle(loaded)}`
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : "加载游戏卡失败。"
+  } finally {
+    loadingCard.value = false
+  }
 }
 
 async function handlePackageSelected(event: Event) {
