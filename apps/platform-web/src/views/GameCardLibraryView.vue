@@ -8,7 +8,7 @@
             @click="refreshCards"
           >
             <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />
-            Refresh
+            刷新
           </button>
           <button
             type="button"
@@ -16,7 +16,7 @@
             @click="router.push('/market')"
           >
             <Store class="h-3.5 w-3.5" aria-hidden="true" />
-            App Market
+            应用市场
           </button>
           <button
             type="button"
@@ -24,25 +24,25 @@
             disabled
           >
             <Image class="h-3.5 w-3.5" aria-hidden="true" />
-            Large Icons
+            大图标
           </button>
         </div>
         <p class="font-mono text-[11px] uppercase tracking-wider text-text-dim">
-          {{ cards.length }} installed app{{ cards.length === 1 ? "" : "s" }}
+          已安装 {{ cards.length }} 个应用
         </p>
       </div>
 
       <div class="retro-inset m-3 min-h-[420px] overflow-auto p-3">
         <div v-if="loading" class="grid min-h-[360px] place-items-center">
           <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
-            Loading game cards
+            正在加载游戏卡
           </p>
         </div>
 
         <div v-else-if="errorMessage" class="grid min-h-[360px] place-items-center px-4">
           <div class="max-w-lg border border-danger/40 bg-danger/10 p-4">
             <p class="font-mono text-xs uppercase tracking-wider text-danger">
-              Library unavailable
+              应用库不可用
             </p>
             <p class="mt-2 text-sm leading-6 text-text-dim">
               {{ errorMessage }}
@@ -53,14 +53,14 @@
         <div v-else-if="cards.length === 0" class="grid min-h-[360px] place-items-center px-4">
           <div class="grid justify-items-center gap-3 text-center">
             <FolderOpen class="h-10 w-10 text-neon-muted" aria-hidden="true" />
-            <p class="font-mono text-sm text-text-main">My Apps is empty.</p>
+            <p class="font-mono text-sm text-text-main">我的应用还是空的。</p>
             <button
               type="button"
               class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
               @click="router.push('/market')"
             >
               <Store class="h-3.5 w-3.5" aria-hidden="true" />
-              Open App Market
+              打开应用市场
             </button>
           </div>
         </div>
@@ -69,7 +69,7 @@
           v-else
           class="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] content-start gap-x-4 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(164px,1fr))]"
           role="list"
-          aria-label="Installed Game Card applications"
+          aria-label="已安装的游戏卡应用"
         >
           <button
             v-for="card in cards"
@@ -77,7 +77,7 @@
             type="button"
             class="library-app-icon retro-focus group grid min-w-0 gap-2 border border-transparent p-2 text-center"
             :class="selectedCardId === card.id ? 'border-neon bg-neon/10 shadow-neon-glow-active' : 'hover:border-neon-deep/50 hover:bg-elevated/40'"
-            :aria-label="`Open ${getGameCardTitle(card)}`"
+            :aria-label="`打开${getGameCardTitle(card)}`"
             role="listitem"
             @focus="selectedCardId = card.id"
             @mouseenter="selectedCardId = card.id"
@@ -113,7 +113,7 @@
 
       <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
         <p class="font-mono text-[11px] text-text-dim">
-          My Apps - {{ cards.length }} Game Card{{ cards.length === 1 ? "" : "s" }}
+          我的应用 - {{ cards.length }} 张游戏卡
         </p>
         <p class="min-w-0 truncate font-mono text-[11px] text-text-dim">
           {{ selectedStatus }}
@@ -146,7 +146,7 @@ const selectedCard = computed(() =>
 
 const selectedStatus = computed(() => {
   if (!selectedCard.value) {
-    return "No selection"
+    return "未选择"
   }
   return `${getGameCardTitle(selectedCard.value)} - ${getGameCardSummary(selectedCard.value)}`
 })
@@ -161,7 +161,7 @@ async function refreshCards() {
       selectedCardId.value = cards.value[0]?.id ?? ""
     }
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "Unable to load Game Cards."
+    errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡。"
   } finally {
     loading.value = false
   }

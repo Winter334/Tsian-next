@@ -1,41 +1,41 @@
 import type { LocalGameCardRecord } from "@/storage/db"
 
 export function getGameCardTitle(card: LocalGameCardRecord | null | undefined): string {
-  return card?.manifest.name?.trim() || "Untitled Game Card"
+  return card?.manifest.name?.trim() || "未命名游戏卡"
 }
 
 export function getGameCardSummary(card: LocalGameCardRecord | null | undefined): string {
-  return card?.manifest.summary?.trim() || "No summary available."
+  return card?.manifest.summary?.trim() || "暂无摘要。"
 }
 
 export function getGameCardDescription(card: LocalGameCardRecord | null | undefined): string {
   return card?.manifest.description?.trim()
     || card?.manifest.summary?.trim()
-    || "This Game Card has not provided a description yet."
+    || "这张游戏卡还没有提供描述。"
 }
 
 export function getGameCardAuthor(card: LocalGameCardRecord | null | undefined): string {
-  return card?.manifest.author?.name?.trim() || "Unknown author"
+  return card?.manifest.author?.name?.trim() || "未知作者"
 }
 
 export function getFrontendStatusLabel(card: LocalGameCardRecord | null | undefined): string {
   const frontend = card?.manifest.frontend
   if (!frontend) {
-    return "No frontend"
+    return "未配置前端"
   }
 
-  return frontend.kind === "remote" ? "Remote frontend" : "Packaged frontend"
+  return frontend.kind === "remote" ? "远程前端" : "打包前端"
 }
 
 export function getFrontendStatusDescription(card: LocalGameCardRecord | null | undefined): string {
   const frontend = card?.manifest.frontend
   if (!frontend) {
-    return "Save slots can be created, but /play is unavailable until a frontend is configured."
+    return "可以创建存档槽，但需要先配置前端才能进入 /play。"
   }
 
   return frontend.kind === "remote"
-    ? "This card launches through a remote play frontend."
-    : "This card launches through a packaged play frontend."
+    ? "这张游戏卡会通过远程游玩前端启动。"
+    : "这张游戏卡会通过打包游玩前端启动。"
 }
 
 export function hasPlayableFrontend(card: LocalGameCardRecord | null | undefined): boolean {
@@ -81,7 +81,7 @@ export function getGameCardCoverUrl(card: LocalGameCardRecord | null | undefined
 
 export function formatDateTime(input: number | undefined): string {
   if (!input) {
-    return "Unknown"
+    return "未知"
   }
 
   return new Intl.DateTimeFormat("zh-CN", {

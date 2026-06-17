@@ -62,10 +62,10 @@ let mountVersion = 0
 
 const loadingLabel = computed(() =>
   status.value === "packaged-loading"
-    ? "LOADING PACKAGED FRONTEND"
+    ? "正在加载打包前端"
     : status.value === "remote-loading"
-    ? "LOADING REMOTE FRONTEND"
-    : "RESOLVING FRONTEND",
+    ? "正在加载远程前端"
+    : "正在解析前端",
 )
 
 function unmountFrontend() {
@@ -82,10 +82,10 @@ function setError(title: string, message: string) {
 
 function setMissingFrontendError(cardName: string | undefined) {
   setError(
-    "GAME FRONTEND NOT CONFIGURED",
+    "游戏前端未配置",
     cardName
-      ? `游戏卡「${cardName}」尚未配置 remote 或 packaged 前端。`
-      : "当前没有可用的游戏卡前端。请先导入或创建带 remote/packaged 前端的 Game Card。",
+      ? `游戏卡「${cardName}」尚未配置远程或打包前端。`
+      : "当前没有可用的游戏卡前端。请先导入或创建带远程/打包前端的游戏卡。",
   )
 }
 
@@ -96,12 +96,12 @@ function mountRemoteFrontend(
 ) {
   const resolvedUrl = resolveRemoteFrontendUrl(frontend.url)
   if (!resolvedUrl.ok) {
-    setError("REMOTE FRONTEND REJECTED", resolvedUrl.error.message)
+    setError("远程前端被拒绝", resolvedUrl.error.message)
     return
   }
 
   if (!frontendMount.value) {
-    setError("FRONTEND MOUNT FAILED", "游戏前端挂载点不可用。")
+    setError("前端挂载失败", "游戏前端挂载点不可用。")
     return
   }
 
@@ -117,7 +117,7 @@ function mountRemoteFrontend(
     },
     onError(message) {
       if (!isDisposed && mountVersion === version) {
-        setError("REMOTE FRONTEND LOAD FAILED", message)
+        setError("远程前端加载失败", message)
       }
     },
   })
@@ -130,7 +130,7 @@ async function mountPackagedFrontend(
   version: number,
 ) {
   if (!frontendMount.value) {
-    setError("FRONTEND MOUNT FAILED", "游戏前端挂载点不可用。")
+    setError("前端挂载失败", "游戏前端挂载点不可用。")
     return
   }
 
@@ -156,7 +156,7 @@ async function mountPackagedFrontend(
     },
     onError(message) {
       if (!isDisposed && mountVersion === version) {
-        setError("PACKAGED FRONTEND LOAD FAILED", message)
+        setError("打包前端加载失败", message)
       }
     },
   })
@@ -201,13 +201,13 @@ async function mountActiveFrontend() {
     }
 
     setError(
-      "UNSUPPORTED GAME FRONTEND",
+      "不支持的游戏前端",
       `当前游戏前端类型不受支持：${String((frontend as { kind?: unknown }).kind)}`,
     )
   } catch (error) {
     if (!isDisposed && mountVersion === version) {
       setError(
-        "FRONTEND RESOLUTION FAILED",
+        "前端解析失败",
         error instanceof Error ? error.message : "解析游戏前端失败。",
       )
     }

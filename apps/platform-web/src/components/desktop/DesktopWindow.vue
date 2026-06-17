@@ -33,7 +33,7 @@
         <button
           type="button"
           class="retro-focus"
-          aria-label="Minimize window"
+          aria-label="最小化窗口"
           @pointerdown.stop
           @click.stop="$emit('minimize', window.id)"
         >
@@ -43,7 +43,7 @@
           v-if="window.fullscreenable"
           type="button"
           class="retro-focus"
-          :aria-label="window.fullscreen ? 'Restore window' : 'Fullscreen window'"
+          :aria-label="window.fullscreen ? '还原窗口' : '全屏窗口'"
           @pointerdown.stop
           @click.stop="$emit('fullscreen', window.id, !window.fullscreen)"
         >
@@ -53,7 +53,7 @@
         <button
           type="button"
           class="retro-focus"
-          aria-label="Close window"
+          aria-label="关闭窗口"
           @pointerdown.stop
           @click.stop="$emit('close', window.id)"
         >

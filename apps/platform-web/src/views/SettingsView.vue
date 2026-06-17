@@ -62,7 +62,7 @@
         </CardHeader>
         <CardContent class="grid gap-4 pt-0">
           <div class="grid gap-2">
-            <Label class="text-sm text-text-dim font-mono">Base URL</Label>
+            <Label class="text-sm text-text-dim font-mono">接口地址</Label>
             <Input
               v-model="platformConfigDraft.chat.baseUrl"
               type="text"
@@ -71,7 +71,7 @@
             />
           </div>
           <div class="grid gap-2">
-            <Label class="text-sm text-text-dim font-mono">Model</Label>
+            <Label class="text-sm text-text-dim font-mono">模型</Label>
             <Input
               v-model="platformConfigDraft.chat.model"
               type="text"
@@ -80,7 +80,7 @@
             />
           </div>
           <div class="grid gap-2">
-            <Label class="text-sm text-text-dim font-mono">API Key</Label>
+            <Label class="text-sm text-text-dim font-mono">API 密钥</Label>
             <Input
               v-model="platformConfigDraft.chat.apiKey"
               type="password"
@@ -133,7 +133,7 @@ import {
 const effectiveChatConfig = ref<BrowserAiConfig | null>(null)
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(getBrowserPlatformConfigDraft())
 const chatModelSummary = ref("未配置")
-const aiStatus = ref("checking...")
+const aiStatus = ref("检查中")
 const settingsFeedback = ref("")
 const settingsError = ref("")
 const saveOptionCount = ref(0)

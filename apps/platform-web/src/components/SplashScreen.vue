@@ -8,18 +8,18 @@ const emit = defineEmits<{
 
 const textGroups: string[][] = [
   [
-    'INITIALIZING NEURAL LINK...',
-    'ESTABLISHING HANDSHAKE',
-    'CONNECTION: SECURE',
+    '正在初始化神经连接...',
+    '正在建立握手',
+    '连接状态：安全',
   ],
   [
-    'LOADING SYSTEM MODULES...',
-    'MOUNTING VIRTUAL DOMAINS',
-    'PHOSPHOR CORE: ACTIVE',
+    '正在加载系统模块...',
+    '正在挂载虚拟域',
+    '荧光核心：已激活',
   ],
   [
-    'AWAITING USER INPUT...',
-    'SYSTEM READY',
+    '等待用户输入...',
+    '系统就绪',
   ],
 ]
 
@@ -64,7 +64,7 @@ const handleExit = () => {
 
     <!-- Bottom hint -->
     <div class="absolute bottom-12 z-10 text-xs text-neon/50 tracking-[0.2em] animate-pulse">
-      [ CLICK ANYWHERE TO INITIALIZE ]
+      [ 点击任意位置进入系统 ]
     </div>
   </div>
 </template>

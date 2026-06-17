@@ -14,13 +14,13 @@
         <MonitorDot class="h-4 w-4" aria-hidden="true" />
         TSian
       </button>
-      <div class="desktop-menu-tabs" aria-label="System menus">
-        <span>File</span>
-        <span>View</span>
-        <span>System</span>
+      <div class="desktop-menu-tabs" aria-label="系统菜单">
+        <span>文件</span>
+        <span>视图</span>
+        <span>系统</span>
       </div>
       <div class="desktop-system-readout">
-        <span>STO:{{ storageStatus }}</span>
+        <span>存储:{{ storageStatus }}</span>
         <span>AI:{{ aiStatusShort }}</span>
       </div>
     </header>
@@ -29,7 +29,7 @@
       ref="stageRef"
       class="desktop-stage"
     >
-      <nav class="desktop-icon-grid" aria-label="Desktop applications">
+      <nav class="desktop-icon-grid" aria-label="桌面应用">
         <button
           v-for="icon in desktopLaunchers"
           :key="icon.id"
@@ -38,7 +38,7 @@
           :class="{
             'desktop-icon--selected': selectedDesktopIcon === icon.id || isIconActive(icon.id),
           }"
-          :aria-label="`Open ${icon.label}`"
+          :aria-label="`打开${icon.label}`"
           @click.stop="selectDesktopIcon(icon.id)"
           @dblclick.stop="openDesktopIcon(icon.id)"
           @contextmenu.prevent.stop="openIconContextMenu(icon, $event)"
@@ -77,16 +77,16 @@
           type="button"
           @click="openDesktopIcon(contextMenu.icon.id)"
         >
-          Open
+          打开
         </button>
         <button type="button" @click="showDesktop">
-          Show Desktop
+          显示桌面
         </button>
       </div>
     </main>
 
     <footer class="desktop-taskbar">
-      <div class="desktop-task-list" aria-label="Open windows">
+      <div class="desktop-task-list" aria-label="已打开的窗口">
         <button
           v-for="window in desktop.windows.value"
           :key="`task-${window.id}`"

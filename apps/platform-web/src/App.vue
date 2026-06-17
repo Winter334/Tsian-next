@@ -29,7 +29,7 @@ import { ensureLocalStorageReady } from "./storage"
 type SplashState = "typing" | "animating" | "done"
 
 const splashState = ref<SplashState>("typing")
-const storageStatus = ref("checking...")
+const storageStatus = ref("检查中")
 
 const aiStatusShort = computed(() => {
   const chat = getBrowserAiConfig() ? "OK" : "--"
@@ -54,7 +54,8 @@ function onCrtAnimationEnd() {
 }
 
 onMounted(async () => {
-  storageStatus.value = await ensureLocalStorageReady()
+  const status = await ensureLocalStorageReady()
+  storageStatus.value = status === "ready" ? "就绪" : "不可用"
   await initializePlatformHost()
 })
 </script>

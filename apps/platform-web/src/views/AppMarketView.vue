@@ -8,7 +8,7 @@
           disabled
         >
           <Download class="h-3.5 w-3.5" aria-hidden="true" />
-          Install
+          安装
         </button>
         <button
           type="button"
@@ -16,7 +16,7 @@
           disabled
         >
           <Upload class="h-3.5 w-3.5" aria-hidden="true" />
-          Upload
+          上传
         </button>
       </div>
       <label class="flex min-w-[220px] items-center gap-2 border border-neon-deep/45 bg-elevated px-2 py-1">
@@ -25,7 +25,7 @@
           type="search"
           disabled
           value=""
-          placeholder="Search market"
+          placeholder="搜索市场"
           class="min-w-0 flex-1 bg-transparent font-mono text-xs text-text-main placeholder:text-text-dim/60"
         />
       </label>
@@ -38,7 +38,7 @@
           :key="category"
           type="button"
           class="retro-focus flex h-8 items-center justify-between border px-2 font-mono text-xs"
-          :class="category === 'All Game Cards'
+          :class="category === '全部游戏卡'
             ? 'border-neon bg-neon/10 text-neon'
             : 'border-transparent text-text-dim hover:border-neon-deep/40 hover:text-text-main'"
         >
@@ -50,9 +50,9 @@
       <section class="retro-inset grid place-items-center p-6">
         <div class="max-w-lg text-center">
           <Store class="mx-auto h-12 w-12 text-neon-muted" aria-hidden="true" />
-          <h2 class="mt-4 text-xl font-bold text-text-main">App Market</h2>
+          <h2 class="mt-4 text-xl font-bold text-text-main">应用市场</h2>
           <p class="mt-2 text-sm leading-6 text-text-dim">
-            Community Game Card discovery will live here. Installed cards are available from My Apps.
+            这里会承载社区游戏卡的发现、上传与安装。已安装的游戏卡可以从“我的应用”打开。
           </p>
           <button
             type="button"
@@ -60,15 +60,15 @@
             @click="router.push('/library')"
           >
             <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
-            Open My Apps
+            打开我的应用
           </button>
         </div>
       </section>
     </main>
 
     <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
-      <p class="font-mono text-[11px] text-text-dim">0 market items</p>
-      <p class="font-mono text-[11px] text-text-dim">Offline catalog</p>
+      <p class="font-mono text-[11px] text-text-dim">0 个市场项目</p>
+      <p class="font-mono text-[11px] text-text-dim">离线目录</p>
     </footer>
   </section>
 </template>
@@ -78,5 +78,5 @@ import { useRouter } from "vue-router"
 import { Download, FolderOpen, Search, Store, Upload } from "lucide-vue-next"
 
 const router = useRouter()
-const categories = ["All Game Cards", "Installed", "Playable", "Templates", "Tools"]
+const categories = ["全部游戏卡", "已安装", "可游玩", "模板", "工具"]
 </script>

@@ -19,7 +19,7 @@
 
     <Card class="bg-panel border-neon-deep/40">
       <CardHeader class="pb-3">
-        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">AI debug</p>
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">AI 调试</p>
         <CardTitle class="text-xl text-text-main">模型调用</CardTitle>
       </CardHeader>
       <CardContent class="grid gap-3 pt-0">
@@ -41,15 +41,15 @@
               <div class="flex flex-wrap gap-3 text-text-dim text-xs font-mono">
                 <span>{{ record.createdAt }}</span>
                 <span v-if="record.usage">
-                  usage: in {{ record.usage.input ?? '-' }} / out {{ record.usage.output ?? '-' }} / total {{ record.usage.total ?? '-' }}
+                  用量：输入 {{ record.usage.input ?? '-' }} / 输出 {{ record.usage.output ?? '-' }} / 合计 {{ record.usage.total ?? '-' }}
                 </span>
               </div>
               <p v-if="record.error" class="text-danger bg-danger/10 border border-danger/40 rounded px-3 py-2 text-sm">
-                error: {{ record.error }}
+                错误：{{ record.error }}
               </p>
               <details v-if="record.messages" class="group">
                 <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
-                  messages（{{ record.messages.length }}）▶
+                  消息（{{ record.messages.length }}）▶
                 </summary>
                 <div class="mt-2 pl-2 border-l border-neon-deep/30">
                   <ScrollArea class="max-h-80 rounded">
@@ -59,7 +59,7 @@
               </details>
               <details v-if="record.responseText" class="group">
                 <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
-                  responseText ▶
+                  响应文本 ▶
                 </summary>
                 <div class="mt-2 pl-2 border-l border-neon-deep/30">
                   <ScrollArea class="max-h-80 rounded">
@@ -76,18 +76,18 @@
 
     <Card class="bg-panel border-neon-deep/40">
       <CardHeader class="pb-3">
-        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">session</p>
-        <CardTitle class="text-xl text-text-main">历史 / Checkpoints / 状态</CardTitle>
+        <p class="font-mono text-xs tracking-wider uppercase text-neon-muted mb-1">会话</p>
+        <CardTitle class="text-xl text-text-main">历史 / 检查点 / 状态</CardTitle>
       </CardHeader>
       <CardContent class="grid gap-3 pt-0">
         <div class="flex flex-wrap gap-3 text-text-dim text-sm font-mono">
-          <span>history：{{ historyItems.length }} 条</span>
-          <span>checkpoints：{{ checkpointItems.length }} 条</span>
+          <span>历史：{{ historyItems.length }} 条</span>
+          <span>检查点：{{ checkpointItems.length }} 条</span>
         </div>
 
         <details class="group" open>
           <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
-            runtime snapshot ▶
+            运行时快照 ▶
           </summary>
           <div class="mt-2 pl-2 border-l border-neon-deep/30">
             <template v-if="runtimeSnapshot">
@@ -101,7 +101,7 @@
 
         <details class="group">
           <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
-            history（{{ historyItems.length }}）▶
+            历史（{{ historyItems.length }}）▶
           </summary>
           <div class="mt-2 pl-2 border-l border-neon-deep/30">
             <template v-if="historyItems.length > 0">
@@ -115,7 +115,7 @@
 
         <details class="group">
           <summary class="text-neon text-sm cursor-pointer font-mono hover:text-neon/80 select-none">
-            checkpoints（{{ checkpointItems.length }}）▶
+            检查点（{{ checkpointItems.length }}）▶
           </summary>
           <div class="mt-2 pl-2 border-l border-neon-deep/30 grid gap-2">
             <template v-if="checkpointItems.length > 0">
@@ -137,7 +137,7 @@
                 <pre class="bg-void border border-neon-deep/30 rounded p-3 font-mono text-xs text-text-main whitespace-pre-wrap break-words">{{ formatJson(item) }}</pre>
               </div>
             </template>
-            <p v-else class="text-text-dim text-sm">暂无 checkpoint。</p>
+            <p v-else class="text-text-dim text-sm">暂无检查点。</p>
           </div>
         </details>
 
@@ -186,7 +186,7 @@ function checkpointLabel(value: unknown): string {
   if (typeof value === "object" && value !== null && typeof (value as { label?: unknown }).label === "string") {
     return (value as { label: string }).label
   }
-  return checkpointId(value) || "checkpoint"
+  return checkpointId(value) || "检查点"
 }
 
 async function refreshAiDebug() {
@@ -238,7 +238,7 @@ async function restoreCheckpoint(checkpointIdValue: string) {
     params: { checkpointId: checkpointIdValue },
   })
   if (!result.ok) {
-    window.alert(result.error?.message ?? "恢复 checkpoint 失败。")
+    window.alert(result.error?.message ?? "恢复检查点失败。")
     return
   }
   await refreshAll()
