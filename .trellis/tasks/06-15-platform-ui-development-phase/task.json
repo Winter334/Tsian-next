@@ -28,7 +28,8 @@
     "06-15-default-packaged-game-frontend",
     "06-15-card-owned-content-save-runtime-data-model",
     "06-16-generic-workspace-authoring-tools",
-    "06-16-retroos-multi-window-desktop-shell"
+    "06-16-retroos-multi-window-desktop-shell",
+    "06-17-game-card-package-export-metadata-fixes"
   ],
   "parent": null,
   "relatedFiles": [],

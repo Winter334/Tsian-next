@@ -109,6 +109,17 @@ export interface PlatformGameCardFrontendFileSummary {
   updatedAt: number
 }
 
+export interface PlatformGameCardMetadataInput {
+  name: string
+  version: string
+  summary: string
+  description?: string
+}
+
+export interface PlatformGameCardCopyInput extends PlatformGameCardMetadataInput {
+  id: string
+}
+
 interface StudioSaveSlot {
   alias: string
   saveId: string
@@ -631,6 +642,42 @@ function normalizeGameCardFrontendBinding(
   throw new Error(
     `不支持的游戏卡前端类型：${String((frontend as { kind?: unknown }).kind)}`,
   )
+}
+
+function requireMetadataText(value: string, fieldName: string): string {
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new Error(`${fieldName} 不能为空。`)
+  }
+  return normalized
+}
+
+function normalizeOptionalMetadataText(value: string | undefined): string | undefined {
+  const normalized = value?.trim()
+  return normalized ? normalized : undefined
+}
+
+function normalizeGameCardCopyId(value: string): string {
+  const normalized = value.trim()
+  if (!normalized) {
+    throw new Error("本地副本 ID 不能为空。")
+  }
+  if (normalized === "tsian.builtin.blank") {
+    throw new Error("本地副本不能使用内置游戏卡 ID。")
+  }
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(normalized)) {
+    throw new Error("游戏卡 ID 只能包含字母、数字、点、下划线和连字符，并且必须以字母或数字开头。")
+  }
+  return normalized
+}
+
+function metadataManifestPatch(input: PlatformGameCardMetadataInput) {
+  return {
+    name: requireMetadataText(input.name, "名称"),
+    version: requireMetadataText(input.version, "版本"),
+    summary: requireMetadataText(input.summary, "摘要"),
+    description: normalizeOptionalMetadataText(input.description),
+  }
 }
 
 async function writeCardContentFileForCard(
@@ -1520,6 +1567,64 @@ export async function listPlatformGameCards() {
 
 export async function getPlatformGameCard(cardId: string) {
   return getLocalGameCard(cardId)
+}
+
+export async function updatePlatformGameCardMetadata(
+  cardId: string,
+  input: PlatformGameCardMetadataInput,
+) {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+  if (card.source === "builtin") {
+    throw new Error("内置游戏卡不能直接改名。请先另存为本地副本。")
+  }
+
+  const patch = metadataManifestPatch(input)
+  return putLocalGameCard({
+    manifest: {
+      ...card.manifest,
+      ...patch,
+    },
+    contentFiles: card.contentFiles,
+    source: card.source,
+  })
+}
+
+export async function copyPlatformGameCardAsLocal(
+  cardId: string,
+  input: PlatformGameCardCopyInput,
+) {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+
+  const id = normalizeGameCardCopyId(input.id)
+  if (id === card.id) {
+    throw new Error("本地副本 ID 需要和原游戏卡不同。")
+  }
+  if (await getLocalGameCard(id)) {
+    throw new Error(`游戏卡 "${id}" 已存在。`)
+  }
+
+  const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
+  const patch = metadataManifestPatch(input)
+  return putLocalGameCard({
+    manifest: {
+      ...card.manifest,
+      ...patch,
+      id,
+    },
+    contentFiles: card.contentFiles,
+    frontendFiles: frontendFiles.map((file) => ({
+      path: file.path,
+      data: file.data,
+      mediaType: file.mediaType,
+    })),
+    source: "local",
+  })
 }
 
 export async function listPlatformGameCardFrontendFiles(

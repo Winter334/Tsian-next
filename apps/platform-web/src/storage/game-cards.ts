@@ -14,6 +14,7 @@ import {
 
 export const BUILTIN_BLANK_GAME_CARD_ID = "tsian.builtin.blank"
 const BUILTIN_BLANK_GAME_CARD_ASSISTANT_ID = "studio-assistant"
+const BUILTIN_BLANK_GAME_CARD_COVER_URL = "/default-card-cover.webp"
 
 type GameCardSource = LocalGameCardRecord["source"]
 
@@ -246,7 +247,10 @@ function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): boolean {
     return false
   }
 
-  if (record.manifest.frontend !== undefined) {
+  if (
+    record.manifest.cover?.url !== BUILTIN_BLANK_GAME_CARD_COVER_URL
+    || record.manifest.cover?.alt !== "Blank Agent Runtime cover"
+  ) {
     return false
   }
 
@@ -257,6 +261,7 @@ function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): boolean {
 function createBuiltinBlankGameCardRecord(
   createdAt: number,
   updatedAt: number = createdAt,
+  frontend: GameCardManifest["frontend"] = undefined,
 ): LocalGameCardRecord {
   const manifest: GameCardManifest = {
     schema: "tsian.game-card.v1",
@@ -265,10 +270,15 @@ function createBuiltinBlankGameCardRecord(
     version: "0.0.0",
     summary: "A default empty Tsian Runtime Workspace with official Agent and Skill templates.",
     description: "The built-in blank workspace template used before a custom game frontend is configured.",
+    cover: {
+      url: BUILTIN_BLANK_GAME_CARD_COVER_URL,
+      alt: "Blank Agent Runtime cover",
+    },
     assistant: {
       agentId: BUILTIN_BLANK_GAME_CARD_ASSISTANT_ID,
       summary: "Use the default Studio Assistant Agent as the workspace assistant entrypoint.",
     },
+    ...(frontend ? { frontend } : {}),
   }
 
   return {
@@ -371,7 +381,11 @@ export async function ensureBuiltinBlankGameCard(): Promise<LocalGameCardRecord>
   }
 
   const now = Date.now()
-  const record = createBuiltinBlankGameCardRecord(existing?.createdAt ?? now, now)
+  const record = createBuiltinBlankGameCardRecord(
+    existing?.createdAt ?? now,
+    now,
+    existing?.manifest.frontend,
+  )
   await localDb.gameCards.put(record)
   return cloneLocalGameCardRecord(record)
 }

@@ -16,6 +16,7 @@ const WORKSPACE_PREFIX = "workspace/"
 const FRONTEND_PREFIX = "frontend/"
 const COVER_PREFIX = "cover/"
 const TEXT_DECODER = new TextDecoder("utf-8", { fatal: true })
+const TEXT_ENCODER = new TextEncoder()
 
 export class GameCardPackageError extends Error {
   constructor(
@@ -97,6 +98,50 @@ function inferMediaType(path: string): string {
   if (path.endsWith(".woff2")) return "font/woff2"
   if (path.endsWith(".wasm")) return "application/wasm"
   return "application/octet-stream"
+}
+
+function extensionForMediaType(mediaType: string): string {
+  if (mediaType === "image/png") return "png"
+  if (mediaType === "image/jpeg") return "jpg"
+  if (mediaType === "image/webp") return "webp"
+  if (mediaType === "image/gif") return "gif"
+  if (mediaType === "image/svg+xml") return "svg"
+  return "bin"
+}
+
+function basename(path: string): string {
+  const parts = path.split("/").filter(Boolean)
+  return parts[parts.length - 1] ?? "cover"
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+  return btoa(binary)
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const binary = atob(value.trim())
+  const bytes = new Uint8Array(binary.length)
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index)
+  }
+  return bytes
+}
+
+function parseDataUrl(value: string): { mediaType: string; data: Uint8Array } | null {
+  const match = /^data:([^;,]+);base64,(.*)$/s.exec(value.trim())
+  if (!match) {
+    return null
+  }
+  return {
+    mediaType: match[1],
+    data: base64ToBytes(match[2]),
+  }
 }
 
 function decodeText(bytes: Uint8Array, path: string): string {
@@ -341,6 +386,107 @@ function workspacePathFromPackagePath(path: string): string {
   return workspacePath
 }
 
+function coverContentPathFromPackagePath(path: string): string {
+  return `.cover/${basename(path)}`
+}
+
+async function fetchBundledCoverUrl(rawUrl: string): Promise<{ mediaType: string; data: Uint8Array } | null> {
+  const dataUrl = parseDataUrl(rawUrl)
+  if (dataUrl) {
+    return dataUrl
+  }
+
+  if (typeof window === "undefined") {
+    return null
+  }
+
+  let url: URL
+  try {
+    url = new URL(rawUrl, window.location.href)
+  } catch {
+    return null
+  }
+
+  if (url.origin !== window.location.origin) {
+    return null
+  }
+
+  const response = await fetch(url.href)
+  if (!response.ok) {
+    return null
+  }
+
+  const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim()
+    || inferMediaType(url.pathname)
+  return {
+    mediaType,
+    data: new Uint8Array(await response.arrayBuffer()),
+  }
+}
+
+async function resolveCoverExportFile(
+  card: LocalGameCardRecord,
+): Promise<{ path: string; mediaType: string; data: Uint8Array; contentPath?: string } | null> {
+  const cover = card.manifest.cover
+  if (!cover) {
+    return null
+  }
+
+  if (cover.workspacePath?.trim()) {
+    const contentPath = cover.workspacePath.trim()
+    const file = card.contentFiles.find((item) => item.path === contentPath)
+    if (!file) {
+      return null
+    }
+
+    const dataUrl = parseDataUrl(file.content)
+    if (dataUrl) {
+      return {
+        path: `${COVER_PREFIX}${basename(contentPath)}`,
+        mediaType: dataUrl.mediaType,
+        data: dataUrl.data,
+        contentPath,
+      }
+    }
+
+    const mediaType = file.mediaType?.trim() || inferMediaType(contentPath)
+    if (!mediaType.startsWith("image/")) {
+      return null
+    }
+
+    if (mediaType === "image/svg+xml" && file.content.trim().startsWith("<svg")) {
+      return {
+        path: `${COVER_PREFIX}${basename(contentPath)}`,
+        mediaType,
+        data: TEXT_ENCODER.encode(file.content),
+        contentPath,
+      }
+    }
+
+    return {
+      path: `${COVER_PREFIX}${basename(contentPath)}`,
+      mediaType,
+      data: base64ToBytes(file.content),
+      contentPath,
+    }
+  }
+
+  if (cover.url?.trim()) {
+    const fetched = await fetchBundledCoverUrl(cover.url)
+    if (!fetched || !fetched.mediaType.startsWith("image/")) {
+      return null
+    }
+
+    return {
+      path: `${COVER_PREFIX}cover.${extensionForMediaType(fetched.mediaType)}`,
+      mediaType: fetched.mediaType,
+      data: fetched.data,
+    }
+  }
+
+  return null
+}
+
 function validatePackagedFrontendEntry(
   manifest: GameCardPackageManifest,
   frontendFiles: Array<{ path: string }>,
@@ -368,7 +514,7 @@ export async function importGameCardPackage(
 ): Promise<LocalGameCardRecord> {
   const entries = zipEntries(await toUint8Array(input))
   const packageManifest = packageManifestFromEntries(entries)
-  const manifest = packageManifest.manifest
+  let manifest = packageManifest.manifest
 
   if (manifest.id === BUILTIN_BLANK_GAME_CARD_ID) {
     throw new GameCardPackageError(
@@ -379,6 +525,7 @@ export async function importGameCardPackage(
 
   const contentFiles: GameCardContentFile[] = []
   const frontendFiles: Array<{ path: string; data: Uint8Array; mediaType: string }> = []
+  const coverFiles: Array<{ path: string; data: Uint8Array; mediaType: string }> = []
 
   for (const [rawPath, bytes] of Object.entries(entries)) {
     if (rawPath.endsWith("/")) {
@@ -408,6 +555,35 @@ export async function importGameCardPackage(
         data: bytes,
         mediaType: indexedMediaType(path, packageManifest.frontendFiles),
       })
+      continue
+    }
+
+    if (path.startsWith(COVER_PREFIX)) {
+      const mediaType = indexedMediaType(path, packageManifest.coverFiles)
+      if (mediaType.startsWith("image/")) {
+        coverFiles.push({
+          path,
+          data: bytes,
+          mediaType,
+        })
+      }
+    }
+  }
+
+  const primaryCoverFile = coverFiles[0]
+  if (primaryCoverFile) {
+    const coverContentPath = coverContentPathFromPackagePath(primaryCoverFile.path)
+    contentFiles.push({
+      path: coverContentPath,
+      content: bytesToBase64(primaryCoverFile.data),
+      mediaType: primaryCoverFile.mediaType,
+    })
+    manifest = {
+      ...manifest,
+      cover: {
+        ...(manifest.cover?.alt ? { alt: manifest.cover.alt } : {}),
+        workspacePath: coverContentPath,
+      },
     }
   }
 
@@ -431,10 +607,14 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
   }
 
   const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
+  const coverFile = await resolveCoverExportFile(card)
+  const contentFiles = coverFile?.contentPath
+    ? card.contentFiles.filter((file) => file.path !== coverFile.contentPath)
+    : card.contentFiles
   const packageManifest: GameCardPackageManifest = {
     schema: GAME_CARD_PACKAGE_SCHEMA,
     manifest: card.manifest,
-    workspaceFiles: card.contentFiles.map((file) => ({
+    workspaceFiles: contentFiles.map((file) => ({
       path: `${WORKSPACE_PREFIX}${file.path}`,
       ...(file.mediaType ? { mediaType: file.mediaType } : {}),
       size: file.content.length,
@@ -444,6 +624,15 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
       mediaType: file.mediaType,
       size: file.size,
     })),
+    ...(coverFile
+      ? {
+          coverFiles: [{
+            path: coverFile.path,
+            mediaType: coverFile.mediaType,
+            size: coverFile.data.byteLength,
+          }],
+        }
+      : {}),
     exportedAt: new Date().toISOString(),
     exporter: {
       name: "platform-web",
@@ -455,12 +644,16 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
     [PACKAGE_MANIFEST_PATH]: strToU8(`${JSON.stringify(packageManifest, null, 2)}\n`),
   }
 
-  for (const file of card.contentFiles) {
+  for (const file of contentFiles) {
     zipInput[`${WORKSPACE_PREFIX}${file.path}`] = strToU8(file.content)
   }
 
   for (const file of frontendFiles) {
     zipInput[file.path] = new Uint8Array(await file.data.arrayBuffer())
+  }
+
+  if (coverFile) {
+    zipInput[coverFile.path] = coverFile.data
   }
 
   const zipped = zipSync(zipInput, { level: 6 })

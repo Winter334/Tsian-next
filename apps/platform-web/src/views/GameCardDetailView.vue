@@ -92,6 +92,90 @@
           </section>
 
           <section class="retro-inset grid content-start gap-4 p-4">
+            <div class="grid gap-3 border border-neon-deep/35 bg-elevated/35 p-3">
+              <div class="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p class="font-mono text-xs uppercase tracking-wider text-neon">
+                    卡片属性
+                  </p>
+                  <p class="mt-1 text-xs leading-5 text-text-dim">
+                    {{ card.source === 'builtin' ? '内置卡需要先另存为本地副本再分发。' : '保存会更新这张本地游戏卡的 manifest。' }}
+                  </p>
+                </div>
+                <span class="border border-neon-deep/50 bg-panel px-2 py-1 font-mono text-[10px] uppercase text-text-dim">
+                  {{ card.source }}
+                </span>
+              </div>
+
+              <div class="grid gap-2 sm:grid-cols-2">
+                <label class="grid gap-1">
+                  <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">名称</span>
+                  <input
+                    v-model="metadataName"
+                    type="text"
+                    class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
+                  />
+                </label>
+                <label class="grid gap-1">
+                  <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">版本</span>
+                  <input
+                    v-model="metadataVersion"
+                    type="text"
+                    class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
+                  />
+                </label>
+              </div>
+
+              <label class="grid gap-1">
+                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">摘要</span>
+                <input
+                  v-model="metadataSummary"
+                  type="text"
+                  class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
+                />
+              </label>
+
+              <label class="grid gap-1">
+                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">描述</span>
+                <textarea
+                  v-model="metadataDescription"
+                  rows="3"
+                  class="retro-focus min-h-20 resize-y border border-neon-deep/55 bg-panel px-2 py-2 text-xs leading-5 text-text-main"
+                />
+              </label>
+
+              <label class="grid gap-1">
+                <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">本地副本 ID</span>
+                <input
+                  v-model="metadataCopyId"
+                  type="text"
+                  class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
+                  placeholder="local.example-card"
+                />
+              </label>
+
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                  :disabled="metadataSaving || card.source === 'builtin'"
+                  @click="saveMetadata"
+                >
+                  <Save class="h-3.5 w-3.5" aria-hidden="true" />
+                  保存属性
+                </button>
+                <button
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                  :disabled="metadataSaving"
+                  @click="copyAsLocalCard"
+                >
+                  <Copy class="h-3.5 w-3.5" aria-hidden="true" />
+                  另存为本地副本
+                </button>
+              </div>
+            </div>
+
             <div class="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p class="font-mono text-xs uppercase tracking-wider text-neon">
@@ -418,6 +502,7 @@ import {
   ArrowLeft,
   Bot,
   CheckCircle2,
+  Copy,
   Disc3,
   Download,
   ExternalLink,
@@ -444,6 +529,7 @@ import {
   hasPlayableFrontend,
 } from "@/lib/game-card-display"
 import {
+  copyPlatformGameCardAsLocal,
   createPlatformSaveFromGameCard,
   deletePlatformSave,
   exportPlatformGameCardPackage,
@@ -452,6 +538,7 @@ import {
   listPlatformGameCardFrontendFiles,
   listPlatformSaves,
   selectPlatformSave,
+  updatePlatformGameCardMetadata,
   updatePlatformGameCardFrontend,
   type PlatformGameCardFrontendFileSummary,
 } from "../platform-host"
@@ -506,9 +593,15 @@ const frontendFiles = ref<PlatformGameCardFrontendFileSummary[]>([])
 const frontendMode = ref<FrontendMode>("none")
 const remoteUrl = ref("")
 const packagedEntry = ref("")
+const metadataName = ref("")
+const metadataVersion = ref("")
+const metadataSummary = ref("")
+const metadataDescription = ref("")
+const metadataCopyId = ref("")
 const loading = ref(false)
 const exporting = ref(false)
 const frontendSaving = ref(false)
+const metadataSaving = ref(false)
 const errorMessage = ref("")
 const feedback = ref("")
 
@@ -556,6 +649,23 @@ function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
   packagedEntry.value = frontend.entry
 }
 
+function defaultCopyId(loadedCard: LocalGameCardRecord): string {
+  const base = loadedCard.id
+    .replace(/^tsian\.builtin\./, "")
+    .replace(/[^a-zA-Z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    || "game-card"
+  return `local.${base}`
+}
+
+function syncMetadataDraft(loadedCard: LocalGameCardRecord) {
+  metadataName.value = loadedCard.manifest.name
+  metadataVersion.value = loadedCard.manifest.version
+  metadataSummary.value = loadedCard.manifest.summary
+  metadataDescription.value = loadedCard.manifest.description ?? ""
+  metadataCopyId.value = defaultCopyId(loadedCard)
+}
+
 async function refreshData() {
   loading.value = true
   errorMessage.value = ""
@@ -577,6 +687,7 @@ async function refreshData() {
     activeSaveId.value = loadedActiveSaveId ?? ""
     frontendFiles.value = loadedFrontendFiles
     syncFrontendDraft(loadedCard)
+    syncMetadataDraft(loadedCard)
 
     const scopedSaves = saves.filter((save) => save.gameCardId === loadedCard.manifest.id)
     if (!scopedSaves.some((save) => save.id === selectedSaveId.value)) {
@@ -589,6 +700,54 @@ async function refreshData() {
     errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡详情。"
   } finally {
     loading.value = false
+  }
+}
+
+function metadataInput() {
+  return {
+    name: metadataName.value,
+    version: metadataVersion.value,
+    summary: metadataSummary.value,
+    description: metadataDescription.value,
+  }
+}
+
+async function saveMetadata() {
+  if (!card.value) {
+    return
+  }
+
+  metadataSaving.value = true
+  feedback.value = ""
+  try {
+    await updatePlatformGameCardMetadata(card.value.id, metadataInput())
+    feedback.value = "已保存游戏卡属性。"
+    await refreshData()
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "保存游戏卡属性失败。"
+  } finally {
+    metadataSaving.value = false
+  }
+}
+
+async function copyAsLocalCard() {
+  if (!card.value) {
+    return
+  }
+
+  metadataSaving.value = true
+  feedback.value = ""
+  try {
+    const copied = await copyPlatformGameCardAsLocal(card.value.id, {
+      id: metadataCopyId.value,
+      ...metadataInput(),
+    })
+    feedback.value = `已创建本地副本：${copied.manifest.name}`
+    router.push({ name: "game-card-detail", params: { cardId: copied.id } })
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "创建本地副本失败。"
+  } finally {
+    metadataSaving.value = false
   }
 }
 
