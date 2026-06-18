@@ -2,14 +2,6 @@
   <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden">
       <nav class="retro-toolbar flex gap-1 overflow-x-auto border-b px-3 pt-2" aria-label="游戏卡栏目">
         <button
-          type="button"
-          class="retro-focus inline-flex h-9 shrink-0 items-center gap-2 border border-b-0 border-neon-deep/45 bg-elevated px-3 font-mono text-xs text-text-dim hover:text-text-main"
-          @click="router.push('/library')"
-        >
-          <ArrowLeft class="h-3.5 w-3.5" aria-hidden="true" />
-          应用库
-        </button>
-        <button
           v-for="tab in tabs"
           :key="tab.id"
           type="button"
@@ -451,7 +443,6 @@ import type { GameCardFrontendBinding } from "@tsian/contracts"
 import { computed, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import {
-  ArrowLeft,
   CheckCircle2,
   Copy,
   Disc3,
