@@ -222,11 +222,18 @@ html, body, #app {
   position: relative;
   z-index: 35;
   display: grid;
-  width: min-content;
-  grid-auto-flow: row;
-  grid-template-columns: repeat(2, 76px);
-  grid-auto-rows: 96px;
+  /* Windows-style vertical fill: icons flow top-to-bottom down a column,
+     then wrap to the next column to the right. Columns are capped by the
+     stage height (grid-auto-rows) so the layout never overflows behind
+     the taskbar; extra columns scroll horizontally instead. */
+  grid-auto-flow: column;
+  grid-template-rows: repeat(auto-fill, 96px);
+  grid-auto-columns: 76px;
   gap: 0.75rem 0.65rem;
+  align-content: start;
+  justify-content: start;
+  max-height: 100%;
+  overflow-x: auto;
 }
 
 .desktop-icon {
@@ -605,8 +612,7 @@ html, body, #app {
   }
 
   .desktop-icon-grid {
-    grid-template-columns: 84px;
-    grid-auto-rows: 102px;
+    grid-template-rows: repeat(auto-fill, 102px);
   }
 }
 
