@@ -355,6 +355,34 @@ export function getBrowserAiConfig(): BrowserAiConfig | null {
   return resolveProviderConfig(activeProvider) ?? getEnvAiConfig()
 }
 
+/**
+ * Resolve a runtime AI config for a specific provider preset id.
+ * Returns null when the preset is missing or incomplete so callers can
+ * fall back to the platform-global active provider.
+ */
+export function resolveBrowserAiConfigForProviderId(providerId: string): BrowserAiConfig | null {
+  const normalized = providerId.trim()
+  if (!normalized) {
+    return null
+  }
+
+  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const provider = stored.providers.find((item) => item.id === normalized)
+  return resolveProviderConfig(provider)
+}
+
+/**
+ * List saved provider presets with id and name only (no credentials).
+ * Used by Studio UI to populate the per-Agent provider dropdown.
+ */
+export function listBrowserAiProviderPresetOptions(): Array<{ id: string; name: string }> {
+  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  return stored.providers.map((provider) => ({
+    id: provider.id,
+    name: provider.name || "未命名服务商",
+  }))
+}
+
 export function getBrowserPlatformConfigDraft(): BrowserPlatformConfigDraft {
   return normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
 }

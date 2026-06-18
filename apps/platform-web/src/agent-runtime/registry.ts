@@ -532,6 +532,7 @@ function buildAgentRegistryEntry(
   const summary = jsonString(config.summary) ?? ""
 
   const knowledgeMount = jsonString(config.knowledgeMount)
+  const providerPresetId = jsonString(config.providerPresetId)
 
   return {
     id,
@@ -547,6 +548,7 @@ function buildAgentRegistryEntry(
     workspaceAccess: normalizeAgentWorkspaceAccessConfig(config.workspaceAccess),
     contextPaths: jsonStringArray(config.contextPaths),
     ...(knowledgeMount ? { knowledgeMount } : {}),
+    ...(providerPresetId ? { providerPresetId } : {}),
     updatedAt: file.updatedAt,
   }
 }

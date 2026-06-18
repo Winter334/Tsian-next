@@ -53,6 +53,7 @@ export interface AgentRuntimeTurnResult {
 export interface AgentRuntimeModelCallOptions {
   debugLabel: RuntimeTraceDebugLabel
   signal?: AbortSignal
+  agentId?: string
 }
 
 export interface AgentRuntimeCapabilities {
@@ -849,6 +850,7 @@ function createAgentCallRunner(
         {
           debugLabel,
           signal: input.signal,
+          agentId: targetContext.agent.id,
         },
         targetContext,
         {
@@ -1087,6 +1089,7 @@ export async function runAgentRuntimeTurn(
       {
         debugLabel: "entry-agent",
         signal: input.signal,
+        agentId: entryContext.agent.id,
       },
       entryContext,
       {

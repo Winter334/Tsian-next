@@ -137,6 +137,7 @@ export interface AgentConfig {
   platformTools: AgentPlatformToolConfig
   workspaceAccess: AgentWorkspaceAccessConfig
   knowledgeMount?: string
+  providerPresetId?: string
 }
 
 export interface AgentRegistryEntry {
@@ -153,6 +154,7 @@ export interface AgentRegistryEntry {
   workspaceAccess: AgentWorkspaceAccessConfig
   contextPaths: string[]
   knowledgeMount?: string
+  providerPresetId?: string
   updatedAt: number
 }
 

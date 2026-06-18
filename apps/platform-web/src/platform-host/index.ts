@@ -64,6 +64,11 @@ import { createDebugBridge, createPlayFrontendBridge, resolveRemoteFrontendUrl }
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
 import { generateAssistantReply, getAiDebugRecords } from "../runtime-host/ai"
+import {
+  listBrowserAiProviderPresetOptions,
+  resolveBrowserAiConfigForProviderId,
+  type BrowserAiConfig,
+} from "../config/ai"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
   commitSuccessfulRuntimeTurnForSave,
@@ -138,12 +143,18 @@ export interface PlatformGameCardFrontendFileSummary {
   updatedAt: number
 }
 
+export interface PlatformStudioProviderPresetOption {
+  id: string
+  name: string
+}
+
 export interface PlatformStudioSnapshot {
   card: LocalGameCardRecord
   activeSaveId?: string
   usingSaveContext: boolean
   agents: AgentRegistryEntry[]
   skills: SkillRegistryEntry[]
+  providerPresets: PlatformStudioProviderPresetOption[]
 }
 
 export interface PlatformGameCardMetadataInput {
@@ -179,6 +190,11 @@ export interface PlatformStudioAgentPlatformToolToggleInput {
 export interface PlatformStudioAgentWorkspaceAccessInput {
   agentId: string
   level: number
+}
+
+export interface PlatformStudioAgentProviderPresetInput {
+  agentId: string
+  providerPresetId: string | null
 }
 
 interface StudioSaveSlot {
@@ -1492,6 +1508,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
           await listEffectiveWorkspaceFilesForActiveSave(activeSaveId),
         )
         const activeWorkspaceTransaction = workspaceTransaction
+        const providerPresetMap = buildAgentProviderPresetMap(
+          activeWorkspaceTransaction.workspaceFiles,
+        )
         const result = await runAgentRuntimeTurn(
           {
             agentId: "master",
@@ -1503,9 +1522,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
           },
           {
             callModel(messages, options) {
+              const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
               return generateAssistantReply(messages, {
                 debugLabel: options.debugLabel,
                 signal: options.signal,
+                ...(agentConfig ? { config: agentConfig } : {}),
               })
             },
             runPlatformAction: createAgentRuntimePlatformActionRunner(
@@ -1702,6 +1723,9 @@ export async function runAssistantChat(
   const controller = new AbortController()
   const workspaceTransaction = createRuntimeWorkspaceTransaction(workspaceFiles)
   const activeWorkspaceTransaction = workspaceTransaction
+  const providerPresetMap = buildAgentProviderPresetMap(
+    activeWorkspaceTransaction.workspaceFiles,
+  )
 
   try {
     const result = await runAgentRuntimeTurn(
@@ -1715,9 +1739,11 @@ export async function runAssistantChat(
       },
       {
         callModel(messages, options) {
+          const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
           return generateAssistantReply(messages, {
             debugLabel: options.debugLabel,
             signal: options.signal,
+            ...(agentConfig ? { config: agentConfig } : {}),
           })
         },
         runPlatformAction: createAgentRuntimePlatformActionRunner(
@@ -2189,6 +2215,7 @@ export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapsho
     usingSaveContext: context.usingSaveContext,
     agents,
     skills,
+    providerPresets: listBrowserAiProviderPresetOptions(),
   }
 }
 
@@ -2335,6 +2362,32 @@ function parseAgentConfigRecord(file: WorkspaceFile): Record<string, unknown> {
   }
 
   throw new Error(`Agent 配置文件 "${file.path}" 不是有效 JSON 对象。`)
+}
+
+function buildAgentProviderPresetMap(
+  files: WorkspaceFile[],
+): Map<string, string> {
+  const map = new Map<string, string>()
+  for (const agent of buildAgentRegistry(files)) {
+    if (agent.providerPresetId) {
+      map.set(agent.id, agent.providerPresetId)
+    }
+  }
+  return map
+}
+
+function resolveAgentModelConfig(
+  agentId: string | undefined,
+  presetMap: Map<string, string>,
+): BrowserAiConfig | null {
+  if (!agentId) {
+    return null
+  }
+  const presetId = presetMap.get(agentId)
+  if (!presetId) {
+    return null
+  }
+  return resolveBrowserAiConfigForProviderId(presetId)
 }
 
 function writeAgentConfigRecord(
@@ -2498,6 +2551,30 @@ export async function updatePlatformStudioAgentWorkspaceAccess(
       level: normalizeWorkspaceAccessLevel(input.level),
     },
   })
+}
+
+export async function updatePlatformStudioAgentProviderPreset(
+  input: PlatformStudioAgentProviderPresetInput,
+): Promise<WorkspaceFile> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  const configFile = agentConfigFileForAgent(context.files, agent)
+  const config = parseAgentConfigRecord(configFile)
+
+  const nextConfig: Record<string, unknown> = { ...config }
+  const presetId = input.providerPresetId?.trim() ?? ""
+  if (presetId) {
+    nextConfig.providerPresetId = presetId
+  } else {
+    delete nextConfig.providerPresetId
+  }
+
+  return writeAgentConfigRecord(card.id, agent, nextConfig)
 }
 
 export async function listPlatformWorkspaceDirectory(input: {

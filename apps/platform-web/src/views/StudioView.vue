@@ -236,6 +236,35 @@
                       </p>
                     </div>
                   </section>
+
+                  <section class="border border-neon-deep/35 bg-panel/55 xl:col-span-2">
+                    <div class="border-b border-neon-deep/25 px-3 py-2">
+                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">API 服务商</p>
+                    </div>
+                    <div class="grid gap-3 p-3">
+                      <label class="grid gap-2">
+                        <span class="text-xs font-bold text-text-main">服务商预设</span>
+                        <select
+                          class="retro-input retro-focus h-9 w-full px-2 text-sm"
+                          :disabled="updatingProviderPreset"
+                          :value="selectedAgent?.providerPresetId ?? ''"
+                          @change="updateProviderPreset(($event.target as HTMLSelectElement).value)"
+                        >
+                          <option value="">使用平台默认</option>
+                          <option
+                            v-for="preset in providerPresetOptions"
+                            :key="preset.id"
+                            :value="preset.id"
+                          >
+                            {{ preset.name }}
+                          </option>
+                        </select>
+                      </label>
+                      <p class="text-xs leading-5 text-text-dim">
+                        {{ providerPresetDescription }}
+                      </p>
+                    </div>
+                  </section>
                 </div>
               </div>
             </div>
@@ -284,6 +313,7 @@ import {
   updatePlatformStudioAgentPlatformToolEnabled,
   updatePlatformStudioAgentSkillEnabled,
   updatePlatformStudioAgentWorkspaceAccess,
+  updatePlatformStudioAgentProviderPreset,
   waitForPlatformHostReady,
   type PlatformStudioSnapshot,
 } from "../platform-host"
@@ -361,6 +391,17 @@ const soulDraft = ref("")
 const togglingSkillPath = ref("")
 const togglingPlatformTool = ref<AgentPlatformToolName | "">("")
 const updatingWorkspaceAccess = ref(false)
+const updatingProviderPreset = ref(false)
+
+const providerPresetOptions = computed(() => snapshot.value?.providerPresets ?? [])
+const providerPresetDescription = computed(() => {
+  const presetId = selectedAgent.value?.providerPresetId
+  if (!presetId) {
+    return "未选择时使用平台默认服务商。"
+  }
+  const preset = providerPresetOptions.value.find((item) => item.id === presetId)
+  return preset ? `当前使用：${preset.name}` : "所选预设已失效，将回退到平台默认服务商。"
+})
 
 const selectedAgent = computed(() =>
   snapshot.value?.agents.find((agent) => agent.id === selectedAgentId.value) ?? null
@@ -558,6 +599,27 @@ async function updateWorkspaceAccessLevel(level: number) {
     await reloadSnapshotAndSelectedAgent()
   } finally {
     updatingWorkspaceAccess.value = false
+  }
+}
+
+async function updateProviderPreset(presetId: string) {
+  if (!selectedAgent.value) {
+    return
+  }
+
+  updatingProviderPreset.value = true
+  try {
+    await updatePlatformStudioAgentProviderPreset({
+      agentId: selectedAgent.value.id,
+      providerPresetId: presetId || null,
+    })
+    await reloadSnapshotAndSelectedAgent()
+    setFeedback(presetId ? "API 服务商已更新。" : "已清除服务商选择，使用平台默认。", "ok")
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "无法更新 API 服务商。", "error")
+    await reloadSnapshotAndSelectedAgent()
+  } finally {
+    updatingProviderPreset.value = false
   }
 }
 
