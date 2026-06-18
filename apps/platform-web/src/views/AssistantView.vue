@@ -85,6 +85,25 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
+          <label class="retro-focus relative inline-flex items-center" :title="`API 服务商：${assistantProviderPresetId ? (providerPresets.find(p => p.id === assistantProviderPresetId)?.name ?? '所选预设已失效，回退到平台默认') : '使用平台默认服务商'}`">
+            <span class="sr-only">API 服务商</span>
+            <select
+              class="retro-input retro-focus h-8 max-w-[160px] truncate appearance-none pr-7 pl-2 font-mono text-[11px] text-text-main"
+              :disabled="updatingProviderPreset || providerPresets.length === 0"
+              :value="assistantProviderPresetId"
+              @change="handleProviderPresetChange(($event.target as HTMLSelectElement).value)"
+            >
+              <option value="">默认服务商</option>
+              <option
+                v-for="preset in providerPresets"
+                :key="preset.id"
+                :value="preset.id"
+              >
+                {{ preset.name }}
+              </option>
+            </select>
+            <ChevronDown class="pointer-events-none absolute right-1.5 h-3.5 w-3.5 text-text-dim" aria-hidden="true" />
+          </label>
           <button
             type="button"
             class="retro-button retro-focus inline-flex h-8 items-center justify-center gap-2 px-3 font-mono text-xs"
