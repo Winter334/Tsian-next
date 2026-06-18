@@ -31,7 +31,8 @@
     "06-16-retroos-multi-window-desktop-shell",
     "06-17-game-card-package-export-metadata-fixes",
     "06-17-simplify-game-card-metadata-delete-apps",
-    "06-18-desktop-assistant-card-knowledge"
+    "06-18-desktop-assistant-card-knowledge",
+    "06-18-unify-agent-entry-pipeline"
   ],
   "parent": null,
   "relatedFiles": [],

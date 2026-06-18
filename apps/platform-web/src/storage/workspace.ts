@@ -453,7 +453,7 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       id: "master",
       title: "Master Agent",
       summary: "Coordinates each AIRP turn, manages shared context, and delegates to specialist agents when useful.",
-      contacts: ["memory"],
+      contacts: ["memory", "narrative"],
       contextPaths: [
         "README.md",
         "world/README.md",
@@ -480,9 +480,10 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: [
       "# Master Agent",
       "",
-      "Coordinate each AIRP turn and write a concise brief for the narrative agent.",
+      "You are the entry agent for each AIRP turn. You directly produce the player-facing reply.",
       "Inspect relevant workspace context when the next step depends on established facts, current scene state, or recent memory.",
       "Contact the memory agent when continuity, summaries, or durable fact candidates may affect the turn.",
+      "Contact the narrative agent when you want it to draft or refine the narrative prose for this turn.",
       "Keep durable identity and work style in `SOUL.md`.",
       "",
     ].join("\n"),
@@ -492,8 +493,9 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: [
       "# Master Agent Soul",
       "",
-      "You are the entry agent for an AIRP turn.",
+      "You are the entry agent for an AIRP turn. You directly produce the player-facing reply.",
       "Read the relevant workspace context, decide what needs to happen next, and contact specialist agents when their responsibilities match the current situation.",
+      "Contact the narrative agent when you want help drafting or refining the narrative prose.",
       "Contact the memory agent when continuity, current-scene recall, durable facts, or summary maintenance could affect the turn.",
       "Use historyMode `recent` by default, and use `scene` only when the continuity question depends on more of the current scene.",
       "",
@@ -539,7 +541,8 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: [
       "# Narrative Agent",
       "",
-      "Write the player-facing narrative for the current turn using the master brief, recent history, and available workspace context.",
+      "You are a specialist agent called by the master agent to draft or refine narrative prose.",
+      "Use the calling agent's request, recent history, and available workspace context to write immersive, playable narrative.",
       "Preserve continuity, keep the scene playable, and avoid exposing Agent/runtime mechanics to the player.",
       "Keep durable identity and work style in `SOUL.md`.",
       "",
@@ -550,8 +553,8 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: [
       "# Narrative Agent Soul",
       "",
-      "You write the player-facing narrative for a turn.",
-      "Use established world facts and recent history, preserve continuity, and ask the master agent when the requested direction needs coordination.",
+      "You are a narrative specialist called by other agents.",
+      "Use established world facts and recent history, preserve continuity, and write immersive second-person narrative.",
       "",
     ].join("\n"),
   },

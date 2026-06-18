@@ -37,6 +37,7 @@ import {
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
 
 export interface AgentRuntimeTurnInput {
+  agentId: string
   userInput: string
   recentHistory: ConversationMessageRecord[]
   snapshot: RuntimeSnapshotShell
@@ -46,7 +47,6 @@ export interface AgentRuntimeTurnInput {
 
 export interface AgentRuntimeTurnResult {
   replyText: string
-  masterPlan: string
   agentSessionTranscripts: AgentSessionTranscriptRecord[]
 }
 
@@ -88,18 +88,11 @@ export type AgentRuntimeCollaborationPolicyInput =
     historyWindows?: Partial<Record<RuntimeAgentCallHistoryMode, number>>
   }
 
-const MASTER_AGENT_PLATFORM_GUARD = [
-  "你是 Tsian AIRP 的主控 Agent。",
+const ENTRY_AGENT_PLATFORM_GUARD = [
+  "你是当前回合的入口 Agent。",
   "你会收到自己的 AGENT.md、可选 SOUL.md、工作区上下文、最近对话和玩家本轮输入。",
-  "你不直接输出给玩家看的正文。你要判断本轮应如何推进剧情、保持沉浸、尊重已有对话，并指出需要延续的情绪、冲突、信息或节奏。",
-  "输出普通文本即可，不要 JSON，不要 Markdown 标题，控制在 300 字以内。",
-].join("\n")
-
-const NARRATIVE_AGENT_PLATFORM_GUARD = [
-  "你是 Tsian AIRP 的正文 Agent。",
-  "你会收到自己的 AGENT.md、可选 SOUL.md、工作区上下文、最近对话、主控 Agent brief 和玩家本轮输入。",
-  "根据主控 Agent 的 brief、最近对话和玩家本轮输入继续剧情。不要解释系统行为，不要提到 Agent、brief、工具或提示词。",
-  "以第二人称或贴近玩家视角的叙事为主，保持可互动性，在结尾自然留下玩家下一步可以回应的空间。",
+  "根据 AGENT.md 的指引决定如何处理本轮输入。如果需要，可以通过 agent_call 联系你的联系人 Agent 获取专业判断。",
+  "你的输出是对话的最终回复，直接面向玩家或用户。",
 ].join("\n")
 
 const DELEGATED_AGENT_PLATFORM_GUARD = [
@@ -108,12 +101,6 @@ const DELEGATED_AGENT_PLATFORM_GUARD = [
   "你不直接面对玩家；你的输出会作为 observation 返回给调用方，由调用方决定如何使用。",
   "请专注回答调用方请求，返回建议、判断、草案、连续性检查或需要沉淀的事实提示。",
   "如果工具说明中列出了可联系 Agent，你可以在确有必要时通过 agent_call 咨询自己的联系人；否则请把需要协作的建议写在输出里。",
-].join("\n")
-
-const LEGACY_MASTER_AGENT_SYSTEM_PROMPT = [
-  "你是 Tsian AIRP 的主控 Agent，负责理解玩家本轮输入并给正文 Agent 一个简洁、可执行的写作 brief。",
-  "你不直接输出给玩家看的正文。你要判断本轮应如何推进剧情、保持沉浸、尊重已有对话，并指出需要延续的情绪、冲突、信息或节奏。",
-  "输出普通文本即可，不要 JSON，不要 Markdown 标题，控制在 300 字以内。",
 ].join("\n")
 
 const DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY: AgentRuntimeCollaborationPolicy = {
@@ -150,7 +137,7 @@ interface AgentCallRuntimeMetadata {
 
 export const AGENT_SESSION_TRANSCRIPT_SCHEMA = "tsian.agent.session.transcript.v1"
 
-export type AgentSessionTranscriptRole = "master" | "narrative" | "delegated"
+export type AgentSessionTranscriptRole = "entry" | "delegated"
 export type AgentSessionTranscriptStatus = "completed" | "tool-continued"
 
 export interface AgentSessionTranscriptRecord {
@@ -175,12 +162,6 @@ interface AgentSessionTranscriptCollector {
   records: AgentSessionTranscriptRecord[]
   nextModelCallIndex: number
 }
-
-const LEGACY_NARRATIVE_AGENT_SYSTEM_PROMPT = [
-  "你是 Tsian AIRP 的正文 Agent，负责写出玩家可直接阅读的沉浸式剧情回复。",
-  "根据主控 Agent 的 brief、最近对话和玩家本轮输入继续剧情。不要解释系统行为，不要提到 Agent、brief、工具或提示词。",
-  "以第二人称或贴近玩家视角的叙事为主，保持可互动性，在结尾自然留下玩家下一步可以回应的空间。",
-].join("\n")
 
 function normalizePolicyInteger(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
@@ -479,127 +460,64 @@ function buildWorkspaceAgentSystemPrompt(
   ].join("\n")
 }
 
-function getWorkspaceAgentContext(
+function getEntryAgentContext(
   input: AgentRuntimeTurnInput,
-  agentId: "master" | "narrative",
-): AgentContextEntry | null {
+): AgentContextEntry {
   if (!input.workspaceFiles) {
-    return null
+    throw new Error(
+      `Entry Agent "${input.agentId}" requires workspace files.`,
+    )
   }
 
-  const context = assembleAgentContext(input.workspaceFiles, { agentId })
+  const context = assembleAgentContext(input.workspaceFiles, { agentId: input.agentId })
   if (!context) {
     throw new Error(
-      `Workspace Agent "${agentId}" is required but was not found. Restore agents/${agentId}/AGENT.md or recreate the default workspace.`,
+      `Entry Agent "${input.agentId}" was not found. Restore agents/${input.agentId}/AGENT.md or recreate the default workspace.`,
     )
   }
 
   return context
 }
 
-function buildMasterMessages(
+function buildEntryAgentMessages(
   input: AgentRuntimeTurnInput,
-  context: AgentContextEntry | null,
+  context: AgentContextEntry,
   collaborationPolicy: AgentRuntimeCollaborationPolicy,
   agentCallState: AgentCallTurnState,
 ): AiChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
-  const visibleContacts = context && input.workspaceFiles
+  const visibleContacts = input.workspaceFiles
     ? getVisibleAgentContacts(input.workspaceFiles, context)
     : []
-  const permissions = context ? deriveAgentRuntimePermissionProfile(context.agent) : null
+  const permissions = deriveAgentRuntimePermissionProfile(context.agent)
   return [
     {
       role: "system",
-      content: context
-        ? buildWorkspaceAgentSystemPrompt(MASTER_AGENT_PLATFORM_GUARD, context, {
-            allowAgentCall:
-              isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
-              && canExposeAgentCallInPrompt(
-                collaborationPolicy,
-                agentCallState,
-                0,
-                visibleContacts,
-              ),
+      content: buildWorkspaceAgentSystemPrompt(ENTRY_AGENT_PLATFORM_GUARD, context, {
+        allowAgentCall:
+          isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
+          && canExposeAgentCallInPrompt(
+            collaborationPolicy,
+            agentCallState,
+            0,
             visibleContacts,
-            enabledPlatformTools: permissions?.enabledTools ?? [],
-          })
-        : LEGACY_MASTER_AGENT_SYSTEM_PROMPT,
+          ),
+        visibleContacts,
+        enabledPlatformTools: permissions.enabledTools,
+      }),
     },
     {
       role: "user",
       content: [
         `当前回合：${currentRuntimeTurnNumber(input)}`,
-        ...(context
-          ? [
-              "Workspace Agent 上下文：",
-              formatAgentRuntimeContext(context),
-              "",
-            ]
-          : []),
+        "Workspace Agent 上下文：",
+        formatAgentRuntimeContext(context),
+        "",
         "最近对话：",
         formatHistory(history),
         "",
         "玩家本轮输入：",
         input.userInput,
-        "",
-        "请给正文 Agent 一个本轮写作 brief。",
-      ].join("\n"),
-    },
-  ]
-}
-
-function buildNarrativeMessages(
-  input: AgentRuntimeTurnInput,
-  masterPlan: string,
-  context: AgentContextEntry | null,
-  collaborationPolicy: AgentRuntimeCollaborationPolicy,
-  agentCallState: AgentCallTurnState,
-): AiChatMessage[] {
-  const history = normalizeHistory(input.recentHistory)
-  const visibleContacts = context && input.workspaceFiles
-    ? getVisibleAgentContacts(input.workspaceFiles, context)
-    : []
-  const permissions = context ? deriveAgentRuntimePermissionProfile(context.agent) : null
-  return [
-    {
-      role: "system",
-      content: context
-        ? buildWorkspaceAgentSystemPrompt(NARRATIVE_AGENT_PLATFORM_GUARD, context, {
-            allowAgentCall:
-              isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
-              && canExposeAgentCallInPrompt(
-                collaborationPolicy,
-                agentCallState,
-                0,
-                visibleContacts,
-              ),
-            visibleContacts,
-            enabledPlatformTools: permissions?.enabledTools ?? [],
-          })
-        : LEGACY_NARRATIVE_AGENT_SYSTEM_PROMPT,
-    },
-    {
-      role: "user",
-      content: [
-        `当前回合：${currentRuntimeTurnNumber(input)}`,
-        ...(context
-          ? [
-              "Workspace Agent 上下文：",
-              formatAgentRuntimeContext(context),
-              "",
-            ]
-          : []),
-        "最近对话：",
-        formatHistory(history),
-        "",
-        "主控 Agent brief：",
-        masterPlan.trim(),
-        "",
-        "玩家本轮输入：",
-        input.userInput,
-        "",
-        "请输出给玩家看的剧情正文。",
       ].join("\n"),
     },
   ]
@@ -639,8 +557,7 @@ function createAgentSessionTranscriptCollector(): AgentSessionTranscriptCollecto
 function agentSessionTranscriptRole(
   debugLabel: RuntimeTraceDebugLabel,
 ): AgentSessionTranscriptRole {
-  if (debugLabel === "master-agent") return "master"
-  if (debugLabel === "narrative-agent") return "narrative"
+  if (debugLabel === "entry-agent") return "entry"
   return "delegated"
 }
 
@@ -1154,79 +1071,24 @@ export async function runAgentRuntimeTurn(
   const agentCallState = createAgentCallTurnState()
   const transcriptCollector = createAgentSessionTranscriptCollector()
 
-  const masterContext = getWorkspaceAgentContext(input, "master")
+  const entryContext = getEntryAgentContext(input)
   capabilities.emitTrace?.({
     type: "agent_step_started",
-    ...traceAgentBase(masterContext, "master-agent"),
-    data: {
-      ...(masterContext ? { agentTitle: masterContext.agent.title } : {}),
-    },
-  })
-
-  let masterPlan: string
-  try {
-    masterPlan = (await callAgentModelWithWorkspaceTools(
-      buildMasterMessages(input, masterContext, collaborationPolicy, agentCallState),
-      input,
-      capabilities,
-      {
-        debugLabel: "master-agent",
-        signal: input.signal,
-      },
-      masterContext,
-      {
-        agentCallState,
-        agentCallDepth: 0,
-        collaborationPolicy,
-      },
-      transcriptCollector,
-    )).trim()
-    capabilities.emitTrace?.({
-      type: "agent_step_completed",
-      ...traceAgentBase(masterContext, "master-agent"),
-      ok: true,
-      data: {
-        outputLength: masterPlan.length,
-      },
-    })
-  } catch (error) {
-    capabilities.emitTrace?.({
-      type: "agent_step_failed",
-      ...traceAgentBase(masterContext, "master-agent"),
-      ok: false,
-      data: errorToTraceData(error),
-    })
-    throw error
-  }
-
-  assertNotAborted(input.signal)
-
-  const narrativeContext = getWorkspaceAgentContext(input, "narrative")
-  capabilities.emitTrace?.({
-    type: "agent_step_started",
-    ...traceAgentBase(narrativeContext, "narrative-agent"),
-    data: {
-      ...(narrativeContext ? { agentTitle: narrativeContext.agent.title } : {}),
-    },
+    ...traceAgentBase(entryContext, "entry-agent"),
+    data: { agentTitle: entryContext.agent.title },
   })
 
   let replyText: string
   try {
     replyText = (await callAgentModelWithWorkspaceTools(
-      buildNarrativeMessages(
-        input,
-        masterPlan,
-        narrativeContext,
-        collaborationPolicy,
-        agentCallState,
-      ),
+      buildEntryAgentMessages(input, entryContext, collaborationPolicy, agentCallState),
       input,
       capabilities,
       {
-        debugLabel: "narrative-agent",
+        debugLabel: "entry-agent",
         signal: input.signal,
       },
-      narrativeContext,
+      entryContext,
       {
         agentCallState,
         agentCallDepth: 0,
@@ -1235,174 +1097,18 @@ export async function runAgentRuntimeTurn(
       transcriptCollector,
     )).trim()
     if (!replyText) {
-      throw new Error("narrative-agent returned an empty reply.")
-    }
-
-    capabilities.emitTrace?.({
-      type: "agent_step_completed",
-      ...traceAgentBase(narrativeContext, "narrative-agent"),
-      ok: true,
-      data: {
-        outputLength: replyText.length,
-      },
-    })
-  } catch (error) {
-    capabilities.emitTrace?.({
-      type: "agent_step_failed",
-      ...traceAgentBase(narrativeContext, "narrative-agent"),
-      ok: false,
-      data: errorToTraceData(error),
-    })
-    throw error
-  }
-
-  return {
-    replyText,
-    masterPlan,
-    agentSessionTranscripts: transcriptCollector.records,
-  }
-}
-
-export interface AssistantAgentTurnInput {
-  agentId: string
-  userInput: string
-  recentHistory: ConversationMessageRecord[]
-  workspaceFiles?: WorkspaceFile[]
-  signal?: AbortSignal
-}
-
-export interface AssistantAgentTurnResult {
-  replyText: string
-  agentSessionTranscripts: AgentSessionTranscriptRecord[]
-}
-
-const ASSISTANT_AGENT_PLATFORM_GUARD = "你是当前游戏卡的桌面助手 Agent。你可以读取工作区文件、回答关于游戏卡的问题，并通过工作区工具帮助玩家编辑内容。"
-
-function buildAssistantAgentMessages(
-  input: AssistantAgentTurnInput,
-  context: AgentContextEntry | null,
-): AiChatMessage[] {
-  const history = normalizeHistory(input.recentHistory)
-  if (!context) {
-    return [
-      { role: "system", content: ASSISTANT_AGENT_PLATFORM_GUARD },
-      {
-        role: "user",
-        content: [
-          "最近对话：",
-          formatHistory(history),
-          "",
-          "玩家输入：",
-          input.userInput,
-        ].join("\n"),
-      },
-    ]
-  }
-
-  const visibleContacts = input.workspaceFiles
-    ? getVisibleAgentContacts(input.workspaceFiles, context)
-    : []
-  const permissions = deriveAgentRuntimePermissionProfile(context.agent)
-  const collaborationPolicy = DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY
-  const agentCallState = createAgentCallTurnState()
-
-  return [
-    {
-      role: "system",
-      content: buildWorkspaceAgentSystemPrompt(ASSISTANT_AGENT_PLATFORM_GUARD, context, {
-        allowAgentCall:
-          isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
-          && canExposeAgentCallInPrompt(
-            collaborationPolicy,
-            agentCallState,
-            0,
-            visibleContacts,
-          ),
-        visibleContacts,
-        enabledPlatformTools: permissions.enabledTools,
-      }),
-    },
-    {
-      role: "user",
-      content: [
-        "Workspace Agent 上下文：",
-        formatAgentRuntimeContext(context),
-        "",
-        "最近对话：",
-        formatHistory(history),
-        "",
-        "玩家输入：",
-        input.userInput,
-      ].join("\n"),
-    },
-  ]
-}
-
-export async function runAssistantAgentTurn(
-  input: AssistantAgentTurnInput,
-  capabilities: AgentRuntimeCapabilities,
-): Promise<AssistantAgentTurnResult> {
-  assertNotAborted(input.signal)
-  const collaborationPolicy = normalizeAgentRuntimeCollaborationPolicy(
-    capabilities.collaborationPolicy,
-  )
-  const transcriptCollector = createAgentSessionTranscriptCollector()
-
-  const agentContext = input.workspaceFiles
-    ? assembleAgentContext(input.workspaceFiles, { agentId: input.agentId })
-    : null
-
-  if (!agentContext) {
-    throw new Error(
-      `Assistant Agent "${input.agentId}" was not found. Restore agents/${input.agentId}/AGENT.md or recreate the default workspace.`,
-    )
-  }
-
-  capabilities.emitTrace?.({
-    type: "agent_step_started",
-    ...traceAgentBase(agentContext, "assistant-agent"),
-    data: { agentTitle: agentContext.agent.title },
-  })
-
-  const messages = buildAssistantAgentMessages(input, agentContext)
-
-  let replyText: string
-  try {
-    replyText = (await callAgentModelWithWorkspaceTools(
-      messages,
-      {
-        userInput: input.userInput,
-        recentHistory: input.recentHistory,
-        snapshot: { version: "tsian.runtime.snapshot.v1", state: { turn: 0, messages: [] } },
-        workspaceFiles: input.workspaceFiles,
-        signal: input.signal,
-      },
-      capabilities,
-      {
-        debugLabel: "assistant-agent",
-        signal: input.signal,
-      },
-      agentContext,
-      {
-        agentCallState: createAgentCallTurnState(),
-        agentCallDepth: 0,
-        collaborationPolicy,
-      },
-      transcriptCollector,
-    )).trim()
-    if (!replyText) {
-      throw new Error("assistant-agent returned an empty reply.")
+      throw new Error(`Entry agent "${input.agentId}" returned an empty reply.`)
     }
     capabilities.emitTrace?.({
       type: "agent_step_completed",
-      ...traceAgentBase(agentContext, "assistant-agent"),
+      ...traceAgentBase(entryContext, "entry-agent"),
       ok: true,
       data: { outputLength: replyText.length },
     })
   } catch (error) {
     capabilities.emitTrace?.({
       type: "agent_step_failed",
-      ...traceAgentBase(agentContext, "assistant-agent"),
+      ...traceAgentBase(entryContext, "entry-agent"),
       ok: false,
       data: errorToTraceData(error),
     })
@@ -1414,3 +1120,4 @@ export async function runAssistantAgentTurn(
     agentSessionTranscripts: transcriptCollector.records,
   }
 }
+

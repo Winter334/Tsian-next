@@ -29,7 +29,6 @@ import type {
 } from "@tsian/contracts"
 import {
   runAgentRuntimeTurn,
-  runAssistantAgentTurn,
   type AgentSessionTranscriptRecord,
 } from "../agent-runtime"
 import type { RuntimeControlledExecutorContext } from "../agent-runtime/workspace-tools"
@@ -1491,6 +1490,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         const activeWorkspaceTransaction = workspaceTransaction
         const result = await runAgentRuntimeTurn(
           {
+            agentId: "master",
             userInput: content,
             recentHistory: historyBefore,
             snapshot: snapshotBefore,
@@ -1703,11 +1703,12 @@ export async function runAssistantChat(
   const activeWorkspaceTransaction = workspaceTransaction
 
   try {
-    const result = await runAssistantAgentTurn(
+    const result = await runAgentRuntimeTurn(
       {
         agentId,
         userInput: content,
         recentHistory: history,
+        snapshot: { version: "tsian.runtime.snapshot.v1", state: { turn: 0, messages: [] } },
         workspaceFiles: workspaceTransaction.workspaceFiles,
         signal: controller.signal,
       },
