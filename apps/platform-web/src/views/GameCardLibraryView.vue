@@ -55,8 +55,8 @@
             v-for="card in cards"
             :key="card.id"
             type="button"
-            class="library-app-icon retro-focus group grid min-w-0 gap-2 border-0 p-1 text-center transition-colors"
-            :class="selectedCardId === card.id ? 'bg-transparent' : 'hover:bg-elevated/30'"
+            class="library-app-icon retro-focus selection-tile group grid min-w-0 gap-2 p-0.5 text-center"
+            :class="{ 'selection-tile--active': selectedCardId === card.id }"
             :aria-label="`打开${getGameCardTitle(card)}`"
             role="listitem"
             @focus="selectedCardId = card.id"
@@ -65,10 +65,7 @@
             @contextmenu.prevent.stop="openCardContextMenu(card, $event)"
           >
             <div
-              class="library-app-preview relative mx-auto aspect-square w-full max-w-[142px] overflow-hidden border bg-elevated transition-all"
-              :class="selectedCardId === card.id
-                ? 'border-neon shadow-neon-glow-active'
-                : 'border-neon-deep/55 group-hover:border-neon-deep'"
+              class="library-app-preview relative mx-auto aspect-square w-full max-w-[142px] overflow-hidden border border-neon-deep/55 bg-elevated"
             >
               <img
                 v-if="getGameCardCoverUrl(card)"

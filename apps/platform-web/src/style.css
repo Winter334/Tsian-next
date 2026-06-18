@@ -224,9 +224,16 @@ html, body, #app {
   min-width: 0;
   border: 1px solid transparent;
   background: transparent;
-  padding: 0.35rem 0.2rem;
+  padding: 0.2rem 0.15rem;
   color: #f8efd9;
   text-align: center;
+  transition: background-color 0.1s ease, border-color 0.1s ease;
+}
+
+.desktop-icon:hover,
+.desktop-icon--selected {
+  background: rgba(243, 197, 109, 0.2);
+  border-color: rgba(243, 197, 109, 0.34);
 }
 
 .desktop-icon-glyph {
@@ -241,16 +248,6 @@ html, body, #app {
   color: var(--color-neon);
   box-shadow:
     inset 1px 1px 0 rgba(246, 236, 215, 0.22),
-    0 8px 18px rgba(0, 0, 0, 0.28);
-  transition: border-color 0.12s ease, box-shadow 0.12s ease;
-}
-
-.desktop-icon:hover .desktop-icon-glyph,
-.desktop-icon--selected .desktop-icon-glyph {
-  border-color: rgba(243, 197, 109, 0.85);
-  box-shadow:
-    inset 1px 1px 0 rgba(246, 236, 215, 0.22),
-    0 0 0 1px rgba(243, 197, 109, 0.32),
     0 8px 18px rgba(0, 0, 0, 0.28);
 }
 
@@ -576,6 +573,26 @@ html, body, #app {
 .retro-focus:focus-visible {
   outline: 2px solid var(--color-neon);
   outline-offset: 2px;
+}
+
+/* ── Selection tile — Windows-style frosted block ──
+   A translucent neon wash with a same-hue hairline border and no glow,
+   so the highlight reads as a single glass slab hugging the content
+   (cover/icon + label) rather than a framed box. Used by the desktop
+   icons and the game-card library grid. */
+.selection-tile {
+  border: 1px solid transparent;
+  background: transparent;
+  transition: background-color 0.1s ease, border-color 0.1s ease;
+}
+.selection-tile:hover {
+  background: rgba(243, 197, 109, 0.1);
+  border-color: rgba(243, 197, 109, 0.16);
+}
+.selection-tile--active,
+.selection-tile--active:hover {
+  background: rgba(243, 197, 109, 0.2);
+  border-color: rgba(243, 197, 109, 0.34);
 }
 
 @media (min-width: 760px) {
