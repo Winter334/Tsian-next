@@ -50,44 +50,38 @@
           </div>
 
           <div class="min-h-0 overflow-auto p-2">
-            <button
+            <div
               v-for="agent in snapshot.agents"
               :key="agent.path"
-              type="button"
-              class="retro-focus mb-2 grid w-full gap-1 border p-3 text-left last:mb-0"
+              class="mb-2 grid grid-cols-[minmax(0,1fr)_auto] border last:mb-0"
               :class="selectedAgent?.id === agent.id ? 'border-neon bg-neon/10' : 'border-neon-deep/35 bg-panel/55 hover:bg-panel'"
-              @click="selectAgent(agent)"
             >
-              <span class="truncate text-sm font-bold text-text-main">{{ agent.title }}</span>
-              <span class="line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(agent.summary) }}</span>
-              <span class="font-mono text-[11px] text-neon-muted">{{ enabledSkillCount(agent) }} 个已启用 Skill</span>
-            </button>
+              <button
+                type="button"
+                class="retro-focus grid min-w-0 gap-1 p-3 text-left"
+                @click="selectAgent(agent)"
+              >
+                <span class="truncate text-sm font-bold text-text-main">{{ agent.title }}</span>
+                <span class="line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(agent.summary) }}</span>
+                <span class="font-mono text-[11px] text-neon-muted">{{ enabledSkillCount(agent) }} 个已启用 Skill</span>
+              </button>
+              <button
+                type="button"
+                class="retro-focus m-2 inline-flex h-8 w-8 items-center justify-center border border-neon-deep/40 bg-elevated text-text-dim hover:text-neon"
+                :aria-label="`打开 ${agent.title} 目录`"
+                title="打开目录"
+                @click.stop="openPathDirectory(agent.path)"
+              >
+                <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
             <p v-if="snapshot.agents.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
               这张游戏卡还没有定义 Agent。
             </p>
           </div>
         </aside>
 
-        <section v-if="selectedAgent" class="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/25">
-          <div class="grid gap-3 border-b border-neon-deep/35 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
-            <div class="min-w-0">
-              <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Selected Agent</p>
-              <h2 class="mt-1 truncate text-lg font-bold text-text-main">{{ selectedAgent.title }}</h2>
-              <p class="mt-1 line-clamp-2 text-sm leading-6 text-text-dim">{{ entrySummary(selectedAgent.summary) }}</p>
-              <p class="mt-2 break-all font-mono text-[11px] text-neon-muted">{{ selectedAgent.path }}</p>
-            </div>
-            <div class="flex flex-wrap gap-2">
-              <button
-                type="button"
-                class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                @click="openPathDirectory(selectedAgent.path)"
-              >
-                <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
-                打开目录
-              </button>
-            </div>
-          </div>
-
+        <section v-if="selectedAgent" class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/25">
           <div class="flex flex-wrap gap-2 border-b border-neon-deep/35 bg-void/45 p-2" role="tablist" aria-label="Agent 管理">
             <button
               v-for="section in sections"
@@ -117,63 +111,29 @@
             <div v-else-if="activeSection === 'agent'" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
               <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
                 <p class="min-w-0 break-all font-mono text-[11px] text-neon-muted">{{ agentFilePath }}</p>
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                    :disabled="savingFile === 'AGENT.md' || !hasAgentDraftChanges"
-                    @click="resetAgentDraft"
-                  >
-                    <RotateCcw class="h-3.5 w-3.5" aria-hidden="true" />
-                    还原
-                  </button>
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                    :disabled="savingFile === 'AGENT.md' || !hasAgentDraftChanges"
-                    @click="saveAgentMarkdown('AGENT.md')"
-                  >
-                    <Save class="h-3.5 w-3.5" aria-hidden="true" />
-                    {{ savingFile === "AGENT.md" ? "保存中" : "保存" }}
-                  </button>
-                </div>
               </div>
               <WorkspaceCodeEditor
                 v-model="agentDraft"
                 :path="agentFilePath"
                 media-type="text/markdown"
+                readonly
               />
             </div>
 
             <div v-else-if="activeSection === 'soul'" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
               <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
                 <p class="min-w-0 break-all font-mono text-[11px] text-neon-muted">{{ soulFilePath }}</p>
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                    :disabled="savingFile === 'SOUL.md' || !hasSoulDraftChanges"
-                    @click="resetSoulDraft"
-                  >
-                    <RotateCcw class="h-3.5 w-3.5" aria-hidden="true" />
-                    还原
-                  </button>
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                    :disabled="savingFile === 'SOUL.md' || !hasSoulDraftChanges"
-                    @click="saveAgentMarkdown('SOUL.md')"
-                  >
-                    <Save class="h-3.5 w-3.5" aria-hidden="true" />
-                    {{ savingFile === "SOUL.md" ? "保存中" : "保存" }}
-                  </button>
-                </div>
               </div>
               <WorkspaceCodeEditor
+                v-if="agentContext.soulFile"
                 v-model="soulDraft"
                 :path="soulFilePath"
                 media-type="text/markdown"
+                readonly
               />
+              <div v-else class="grid h-full place-items-center p-4">
+                <p class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">未找到 SOUL.md。</p>
+              </div>
             </div>
 
             <div v-else class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
@@ -244,8 +204,6 @@ import {
   FileText,
   FolderOpen,
   RefreshCw,
-  RotateCcw,
-  Save,
   Wrench,
 } from "lucide-vue-next"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
@@ -255,12 +213,10 @@ import {
   getPlatformStudioSnapshot,
   updatePlatformStudioAgentSkillEnabled,
   waitForPlatformHostReady,
-  writePlatformStudioAgentFile,
   type PlatformStudioSnapshot,
 } from "../platform-host"
 
 type StudioSection = "agent" | "soul" | "skills"
-type StudioEditableFile = "AGENT.md" | "SOUL.md"
 
 const sections: Array<{
   id: StudioSection
@@ -283,10 +239,7 @@ const feedbackKind = ref<"idle" | "ok" | "error">("idle")
 const activeSection = ref<StudioSection>("agent")
 const selectedAgentId = ref("")
 const agentDraft = ref("")
-const originalAgentDraft = ref("")
 const soulDraft = ref("")
-const originalSoulDraft = ref("")
-const savingFile = ref<StudioEditableFile | null>(null)
 const togglingSkillPath = ref("")
 
 const selectedAgent = computed(() =>
@@ -308,12 +261,6 @@ const soulFilePath = computed(() => {
     ? `${path.slice(0, -"/AGENT.md".length)}/SOUL.md`
     : ""
 })
-const hasAgentDraftChanges = computed(() =>
-  agentDraft.value !== originalAgentDraft.value
-)
-const hasSoulDraftChanges = computed(() =>
-  soulDraft.value !== originalSoulDraft.value
-)
 const skillsForSelectedAgent = computed(() => {
   if (!snapshot.value || !selectedAgent.value) {
     return []
@@ -346,11 +293,6 @@ function directoryOf(path: string): string {
   const parts = path.split("/").filter(Boolean)
   parts.pop()
   return parts.join("/")
-}
-
-function defaultSoulDraft(agent: AgentRegistryEntry | null): string {
-  const title = agent?.title?.trim() || agent?.id || "Agent"
-  return `# ${title} Soul\n\n`
 }
 
 function setFeedback(message: string, kind: "idle" | "ok" | "error" = "idle") {
@@ -400,9 +342,7 @@ async function loadSelectedAgentContext() {
   const agentId = selectedAgentId.value
   agentContext.value = null
   agentDraft.value = ""
-  originalAgentDraft.value = ""
   soulDraft.value = ""
-  originalSoulDraft.value = ""
   if (!agentId) {
     return
   }
@@ -412,9 +352,7 @@ async function loadSelectedAgentContext() {
     const context = await getPlatformStudioAgentContext(agentId)
     agentContext.value = context
     agentDraft.value = context?.agentFile.content ?? ""
-    originalAgentDraft.value = agentDraft.value
-    soulDraft.value = context?.soulFile?.content ?? defaultSoulDraft(selectedAgent.value)
-    originalSoulDraft.value = soulDraft.value
+    soulDraft.value = context?.soulFile?.content ?? ""
   } catch (error) {
     setFeedback(error instanceof Error ? error.message : "无法读取 Agent。", "error")
   } finally {
@@ -426,35 +364,6 @@ async function selectAgent(agent: AgentRegistryEntry) {
   selectedAgentId.value = agent.id
   setFeedback(`已选择：${agent.title}`, "idle")
   await loadSelectedAgentContext()
-}
-
-function resetAgentDraft() {
-  agentDraft.value = originalAgentDraft.value
-}
-
-function resetSoulDraft() {
-  soulDraft.value = originalSoulDraft.value
-}
-
-async function saveAgentMarkdown(fileName: StudioEditableFile) {
-  if (!selectedAgent.value) {
-    return
-  }
-
-  savingFile.value = fileName
-  try {
-    await writePlatformStudioAgentFile({
-      agentId: selectedAgent.value.id,
-      fileName,
-      content: fileName === "AGENT.md" ? agentDraft.value : soulDraft.value,
-    })
-    await reloadSnapshotAndSelectedAgent()
-    setFeedback(`已保存：${fileName}`, "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : `无法保存 ${fileName}。`, "error")
-  } finally {
-    savingFile.value = null
-  }
 }
 
 async function toggleSkill(skill: SkillRegistryEntry, enabled: boolean) {
