@@ -484,3 +484,58 @@ Verified the per-Agent provider preset selection implementation against implemen
 ### Next Steps
 
 - None - task complete
+
+
+## Session 73: Frontend package spec — stage 5 E2E verify + stage 6 spec
+
+**Date**: 2026-06-19
+**Task**: 06-19-frontend-package-spec (前端包打包规范与平台内替换)
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Resumed the in-progress frontend-package-spec task after the prior session broke on a screenshot attempt (the API does not support multimodal reads). Completed the remaining stage 5 end-to-end verification with a no-screenshot Playwright flow (DOM text snapshot + `browser_evaluate` direct IndexedDB/SW-fetch reads) and the stage 6 spec update.
+
+Stages 0-4 were already committed (R0 SW DB-name fix + inferMediaType, stage 1 contracts, stage 2 storage, stage 3+4 host+UI). This session executed stages 5-6 only.
+
+### Main Changes
+
+- Stage 5 E2E (no screenshots, all via Playwright snapshot text + in-page evaluate):
+  - Build: `npm run build` (apps/platform-web = vue-tsc -b && vite build) passes, 2480 modules, exit 0.
+  - Dev server on :5176. Created a local card `local.blank-agent-runtime` via "另存为本地副本" (the library only had the built-in blank card, which rejects frontend edits).
+  - Upload: uploaded `test-frontend-package.tsian-frontend.zip` (frontend.json + index.html + assets/logo.png). UI showed "已上传并替换前端包", entry `frontend/index.html`, 2 files with `frontend/` prefix. Direct IndexedDB read confirmed `manifest.frontend = {kind:"packaged", entry:"frontend/index.html", bridgeVersion:"tsian.play-bridge.v1"}`, `gameCardFrontendFiles` records keyed `local.blank-agent-runtime::frontend/...`, data as Blob, mediaType image/png + text/html. DB name `tsian-agent-runtime-v6` present (SW fix effective).
+  - Load: registered the SW and fetched `/__tsian_game_card_frontends/local.blank-agent-runtime/frontend/index.html` (200, text/html, correct body) and `/frontend/assets/logo.png` (200, image/png, 69B, valid PNG signature); missing file 404. SW DB-name fix verified end-to-end.
+  - AV + whole-replace: built a package with index.html + a.mp3 + v.mp4, uploaded onto the same card. Old logo.png/index.html gone, new 3 files present. SW served a.mp3 as `audio/mpeg` (124B) and v.mp4 as `video/mp4` (520B); old logo.png now 404. IndexedDB showed only the 3 new files (no stale leftovers).
+  - Export round-trip + clear: exported the card's frontend to `local.blank-agent-runtime.tsian-frontend.zip` (captured via playwright download). Zip inspection: frontend.json + a.mp3 + index.html + v.mp4, manifest.schema `tsian.frontend-package.v1`, entry `index.html` (prefix stripped), files with raw paths. Duplicated the card to `local.blank-agent-runtime-2`, cleared its copied frontend (confirm dialog accepted; UI -> "未配置前端", 0 files), then uploaded the exported zip -> card restored to 3 files / entry frontend/index.html, identical to the source. Clear + round-trip both verified.
+  - Error paths: uploaded (a) zip missing frontend.json -> "Frontend package is missing frontend.json."; (b) entry not in files -> "Frontend package entry is not in file list: missing.html"; (c) schema `tsian.frontend-package.v9` -> "Unsupported frontend package schema: tsian.frontend-package.v9". In all three the existing frontend stayed intact (3 files, entry preserved). Built-in card `tsian.builtin.blank`: upload/export/clear buttons all `:disabled`.
+  - Regression: `git diff f85445f~1 HEAD -- src/storage/game-card-packages.ts` shows only +2 import lines at top and +288 appended after `exportGameCardPackage` — `importGameCardPackage`/`exportGameCardPackage` bodies untouched, so whole-card import still brings frontends in. Remote URL mode renders its input box and toggles active (packaged改造并存).
+- Stage 6 spec: appended "Scenario: Frontend Package Import/Export" to `.trellis/spec/platform-web/frontend/state-management.md` (scope, signatures, contracts incl. the no-prefix-in-manifest / prefix-on-landing rule, error matrix, good/base/bad, tests, wrong-vs-correct) and a Dexie State note pinning the SW DB name to `storage/db.ts`.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| (this session) | spec(platform-web): frontend package import/export scenario + SW DB-name pin (stage 6) |
+
+### Testing
+
+- [OK] npm run build (apps/platform-web) passes.
+- [OK] Upload + IndexedDB direct read: prefix, entry, bridgeVersion, Blob data, mediaTypes correct.
+- [OK] SW serve: index.html 200 text/html, logo.png 200 image/png (valid PNG), missing 404.
+- [OK] AV: a.mp3 audio/mpeg, v.mp4 video/mp4 served; old files 404 after replace.
+- [OK] Export zip structure correct (schema/entry/files, prefix stripped).
+- [OK] Round-trip: cleared card + uploaded exported zip restores identical frontend.
+- [OK] Clear: files emptied, manifest.frontend unset.
+- [OK] Errors: 3 bad packages rejected with clear messages, existing frontend intact.
+- [OK] Built-in card: upload/export/clear disabled.
+- [OK] Regression: whole-card import code unchanged (diff-verified); Remote URL UI intact.
+
+### Status
+
+[OK] **Completed** — stages 5-6 done; acceptance criteria all verified.
+
+### Next Steps
+
+- Commit the stage 6 spec change (only working-tree change this session; stages 0-4 already committed).
+- Optional follow-up: localize the storage-layer error messages (currently English: "Frontend package is missing frontend.json." etc.) to match the Chinese UI tone.
