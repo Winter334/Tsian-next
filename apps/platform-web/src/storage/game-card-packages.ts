@@ -1,10 +1,12 @@
 import type {
+  FrontendPackageManifest,
   GameCardContentFile,
   GameCardFrontendBinding,
   GameCardManifest,
   GameCardPackageFileEntry,
   GameCardPackageManifest,
 } from "@tsian/contracts"
+import { FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
 import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardFrontendFiles, putLocalGameCard } from "./game-cards"
 import type { LocalGameCardRecord } from "./db"
@@ -669,6 +671,291 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
 
   if (coverFile) {
     zipInput[coverFile.path] = coverFile.data
+  }
+
+  const zipped = zipSync(zipInput, { level: 6 })
+  return new Blob([zipped], { type: "application/zip" })
+}
+
+// ── Frontend package (.tsian-frontend.zip) ──
+
+const FRONTEND_PACKAGE_MANIFEST_PATH = "frontend.json"
+const FRONTEND_BRIDGE_VERSION = "tsian.play-bridge.v1" as const
+
+function assertSafeRelativePath(path: string, code: string): void {
+  if (!path) {
+    throw new GameCardPackageError(code, "Frontend package file path is required.")
+  }
+  if (path.startsWith("/") || path.includes("\0") || path.includes("..")) {
+    throw new GameCardPackageError(code, `Unsafe frontend package path: ${path}`)
+  }
+}
+
+function normalizeFrontendPackageFileEntry(
+  value: unknown,
+): { path: string; mediaType: string; size: number } {
+  if (!isRecord(value)) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_FILE_ENTRY_INVALID",
+      "Frontend package file entry must be an object.",
+    )
+  }
+  const path = requireString(
+    value.path,
+    "FRONTEND_PACKAGE_FILE_PATH_REQUIRED",
+    "Frontend package file entry path is required.",
+  )
+  const mediaType =
+    typeof value.mediaType === "string" && value.mediaType.trim()
+      ? value.mediaType.trim()
+      : inferMediaType(path)
+  const size =
+    typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0
+      ? Math.floor(value.size)
+      : 0
+  return { path, mediaType, size }
+}
+
+function normalizeFrontendPackageManifest(value: unknown): FrontendPackageManifest {
+  if (!isRecord(value)) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_MANIFEST_INVALID",
+      "frontend.json must be an object.",
+    )
+  }
+  const schema = requireString(
+    value.schema,
+    "FRONTEND_PACKAGE_SCHEMA_REQUIRED",
+    "frontend.json schema is required.",
+  )
+  if (schema !== FRONTEND_PACKAGE_SCHEMA) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_SCHEMA_UNSUPPORTED",
+      `Unsupported frontend package schema: ${schema}`,
+    )
+  }
+
+  const entry = requireString(
+    value.entry,
+    "FRONTEND_PACKAGE_ENTRY_REQUIRED",
+    "frontend.json entry is required.",
+  )
+  const bridgeVersion = requireString(
+    value.bridgeVersion,
+    "FRONTEND_PACKAGE_BRIDGE_VERSION_REQUIRED",
+    "frontend.json bridgeVersion is required.",
+  )
+  if (bridgeVersion !== FRONTEND_BRIDGE_VERSION) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_BRIDGE_VERSION_UNSUPPORTED",
+      `Unsupported frontend bridge version: ${bridgeVersion}`,
+    )
+  }
+
+  if (!Array.isArray(value.files) || value.files.length === 0) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_FILES_EMPTY",
+      "frontend.json must list at least one file.",
+    )
+  }
+  const files = value.files.map((item) => normalizeFrontendPackageFileEntry(item))
+
+  const manifest: FrontendPackageManifest = {
+    schema: FRONTEND_PACKAGE_SCHEMA,
+    entry,
+    bridgeVersion: FRONTEND_BRIDGE_VERSION,
+    files,
+  }
+  if (typeof value.exportedAt === "string" && value.exportedAt.trim()) {
+    manifest.exportedAt = value.exportedAt.trim()
+  }
+  if (isRecord(value.exporter)) {
+    manifest.exporter = {
+      name: requireString(
+        value.exporter.name,
+        "FRONTEND_PACKAGE_EXPORTER_NAME_REQUIRED",
+        "Frontend package exporter name is required when exporter is provided.",
+      ),
+      ...(typeof value.exporter.version === "string" && value.exporter.version.trim()
+        ? { version: value.exporter.version.trim() }
+        : {}),
+    }
+  }
+  return manifest
+}
+
+function frontendPackageManifestFromEntries(
+  entries: Record<string, Uint8Array>,
+): FrontendPackageManifest {
+  const manifestBytes = entries[FRONTEND_PACKAGE_MANIFEST_PATH]
+  if (!manifestBytes) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_MANIFEST_MISSING",
+      "Frontend package is missing frontend.json.",
+    )
+  }
+  try {
+    return normalizeFrontendPackageManifest(
+      JSON.parse(decodeText(manifestBytes, FRONTEND_PACKAGE_MANIFEST_PATH)),
+    )
+  } catch (error) {
+    if (error instanceof GameCardPackageError) {
+      throw error
+    }
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_MANIFEST_PARSE_FAILED",
+      "frontend.json is not valid JSON.",
+    )
+  }
+}
+
+export async function importGameCardFrontendPackage(
+  cardId: string,
+  input: Blob | ArrayBuffer | Uint8Array,
+): Promise<LocalGameCardRecord> {
+  const trimmedCardId = cardId.trim()
+  if (!trimmedCardId) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_CARD_ID_REQUIRED",
+      "Game card id is required.",
+    )
+  }
+
+  const entries = zipEntries(await toUint8Array(input))
+  const manifest = frontendPackageManifestFromEntries(entries)
+
+  // Collect file bytes keyed by normalized path.
+  const fileBytes = new Map<string, Uint8Array>()
+  for (const [rawPath, bytes] of Object.entries(entries)) {
+    if (rawPath.endsWith("/")) {
+      continue
+    }
+    if (rawPath === FRONTEND_PACKAGE_MANIFEST_PATH) {
+      continue
+    }
+    const path = normalizePackagePath(rawPath, "FRONTEND_PACKAGE_PATH_INVALID")
+    assertSafeRelativePath(path, "FRONTEND_PACKAGE_PATH_INVALID")
+    fileBytes.set(path, bytes)
+  }
+
+  // Bidirectional consistency: manifest files vs archive entries.
+  const manifestPaths = new Set(manifest.files.map((file) => file.path))
+  for (const file of manifest.files) {
+    assertSafeRelativePath(file.path, "FRONTEND_PACKAGE_PATH_INVALID")
+    if (!fileBytes.has(file.path)) {
+      throw new GameCardPackageError(
+        "FRONTEND_PACKAGE_FILE_MISMATCH",
+        `Frontend package file is missing in archive: ${file.path}`,
+      )
+    }
+  }
+  for (const path of fileBytes.keys()) {
+    if (!manifestPaths.has(path)) {
+      throw new GameCardPackageError(
+        "FRONTEND_PACKAGE_FILE_MISMATCH",
+        `Frontend package archive entry is not listed in manifest: ${path}`,
+      )
+    }
+  }
+
+  // Entry must exist in manifest files.
+  if (!manifestPaths.has(manifest.entry)) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_ENTRY_MISSING",
+      `Frontend package entry is not in file list: ${manifest.entry}`,
+    )
+  }
+
+  const card = await getLocalGameCard(trimmedCardId)
+  if (!card) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_CARD_NOT_FOUND",
+      `Game card not found: ${trimmedCardId}`,
+    )
+  }
+
+  const frontendFiles = manifest.files.map((file) => ({
+    path: `${FRONTEND_PREFIX}${file.path}`,
+    data: fileBytes.get(file.path)!,
+    mediaType: file.mediaType,
+  }))
+
+  const frontendBinding: GameCardFrontendBinding = {
+    kind: "packaged",
+    entry: `${FRONTEND_PREFIX}${manifest.entry}`,
+    bridgeVersion: manifest.bridgeVersion,
+  }
+
+  return putLocalGameCard({
+    manifest: {
+      ...card.manifest,
+      frontend: frontendBinding,
+    },
+    contentFiles: card.contentFiles,
+    frontendFiles,
+    source: card.source,
+  })
+}
+
+export async function exportGameCardFrontendPackage(cardId: string): Promise<Blob> {
+  const trimmedCardId = cardId.trim()
+  if (!trimmedCardId) {
+    throw new GameCardPackageError(
+      "FRONTEND_EXPORT_CARD_ID_REQUIRED",
+      "Game card id is required.",
+    )
+  }
+
+  const card = await getLocalGameCard(trimmedCardId)
+  if (!card) {
+    throw new GameCardPackageError(
+      "FRONTEND_EXPORT_CARD_NOT_FOUND",
+      `Game card not found: ${trimmedCardId}`,
+    )
+  }
+
+  const frontend = card.manifest.frontend
+  if (!frontend || frontend.kind !== "packaged") {
+    throw new GameCardPackageError(
+      "FRONTEND_EXPORT_NOT_PACKAGED",
+      "Game card does not have a packaged frontend to export.",
+    )
+  }
+
+  const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
+  if (frontendFiles.length === 0) {
+    throw new GameCardPackageError(
+      "FRONTEND_EXPORT_NO_FILES",
+      "Game card has no packaged frontend files to export.",
+    )
+  }
+
+  // Strip the frontend/ prefix for the package-internal paths.
+  const stripPrefix = (path: string): string =>
+    path.startsWith(FRONTEND_PREFIX) ? path.slice(FRONTEND_PREFIX.length) : path
+
+  const entryPath = stripPrefix(frontend.entry)
+  const packageManifest: FrontendPackageManifest = {
+    schema: FRONTEND_PACKAGE_SCHEMA,
+    entry: entryPath,
+    bridgeVersion: frontend.bridgeVersion,
+    files: frontendFiles.map((file) => ({
+      path: stripPrefix(file.path),
+      mediaType: file.mediaType,
+      size: file.size,
+    })),
+    exportedAt: new Date().toISOString(),
+    exporter: {
+      name: "platform-web",
+      version: "0.0.0",
+    },
+  }
+
+  const zipInput: Record<string, Uint8Array> = {
+    [FRONTEND_PACKAGE_MANIFEST_PATH]: strToU8(`${JSON.stringify(packageManifest, null, 2)}\n`),
+  }
+  for (const file of frontendFiles) {
+    zipInput[stripPrefix(file.path)] = new Uint8Array(await file.data.arrayBuffer())
   }
 
   const zipped = zipSync(zipInput, { level: 6 })
