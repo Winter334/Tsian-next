@@ -47,7 +47,7 @@
 
         <div
           v-if="cards.length > 0"
-          class="grid grid-cols-[repeat(auto-fill,minmax(132px,1fr))] content-start gap-x-4 gap-y-5 sm:grid-cols-[repeat(auto-fill,minmax(164px,1fr))]"
+          class="grid grid-cols-[repeat(auto-fill,142px)] content-start justify-start gap-x-4 gap-y-5"
           role="list"
           aria-label="已安装的游戏卡应用"
         >
@@ -65,7 +65,7 @@
             @contextmenu.prevent.stop="openCardContextMenu(card, $event)"
           >
             <div
-              class="library-app-preview relative mx-auto aspect-square w-full max-w-[142px] overflow-hidden border border-neon-deep/55 bg-elevated"
+              class="library-app-preview relative aspect-square w-full overflow-hidden border border-neon-deep/55 bg-elevated"
             >
               <img
                 v-if="getGameCardCoverUrl(card)"
@@ -93,7 +93,7 @@
               </span>
             </div>
 
-            <span class="library-app-label mx-auto line-clamp-2 max-w-[150px] px-1 font-mono text-[11px] leading-4 text-text-main">
+            <span class="library-app-label mx-auto line-clamp-2 max-w-full px-1 font-mono text-[11px] leading-4 text-text-main">
                 {{ getGameCardTitle(card) }}
             </span>
           </button>

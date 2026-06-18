@@ -207,7 +207,7 @@ html, body, #app {
      stage height (grid-auto-rows) so the layout never overflows behind
      the taskbar; extra columns scroll horizontally instead. */
   grid-auto-flow: column;
-  grid-template-rows: repeat(auto-fill, 96px);
+  grid-template-rows: repeat(auto-fill, 84px);
   grid-auto-columns: 76px;
   gap: 0.75rem 0.65rem;
   align-content: start;
@@ -601,7 +601,7 @@ html, body, #app {
   }
 
   .desktop-icon-grid {
-    grid-template-rows: repeat(auto-fill, 102px);
+    grid-template-rows: repeat(auto-fill, 84px);
   }
 }
 
