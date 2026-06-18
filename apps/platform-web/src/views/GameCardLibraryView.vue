@@ -55,7 +55,7 @@
             v-for="card in cards"
             :key="card.id"
             type="button"
-            class="library-app-icon retro-focus group grid min-w-0 gap-2 border border-transparent p-1 text-center transition-colors"
+            class="library-app-icon retro-focus group grid min-w-0 gap-2 border-0 p-1 text-center transition-colors"
             :class="selectedCardId === card.id ? 'bg-transparent' : 'hover:bg-elevated/30'"
             :aria-label="`打开${getGameCardTitle(card)}`"
             role="listitem"
