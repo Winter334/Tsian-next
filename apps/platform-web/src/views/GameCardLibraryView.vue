@@ -93,7 +93,7 @@
               </span>
             </div>
 
-            <span class="library-app-label mx-auto line-clamp-2 max-w-full px-1 font-mono text-[11px] leading-4 text-text-main">
+            <span class="library-app-label mx-auto line-clamp-2 max-w-full font-mono text-[11px] leading-4 text-text-main">
                 {{ getGameCardTitle(card) }}
             </span>
           </button>
