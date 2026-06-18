@@ -135,7 +135,7 @@ const desktopApps: DesktopAppDefinition[] = [
     routeName: "studio",
     routePath: "/studio",
     title: "工作室",
-    caption: "当前游戏卡的角色与能力",
+    caption: "当前游戏卡的 Agent 配置",
     icon: Bot,
     component: StudioView,
     defaultWidth: 1080,

@@ -175,15 +175,16 @@ if (!frontend) {
 
 ### 3. Contracts
 
-- `agent-registry` returns lightweight `AgentRegistryEntry[]` built from `agents/*/AGENT.md`.
-- `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's card-owned `AGENT.md`, save runtime notes/session files, visible skill index, and declared `contextPaths`.
+- `agent-registry` returns lightweight `AgentRegistryEntry[]` built from `agents/*/AGENT.md`. Entries include `defaultSkills`, `enabledSkills`, and `disabledSkills`; `defaultSkills` is compatibility input, while Studio writes the explicit enable/disable fields.
+- `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's card-owned `AGENT.md`, optional card-owned `SOUL.md`, save runtime notes/session files, visible skill index, and declared `contextPaths`.
 - `skill-registry` returns lightweight `SkillRegistryEntry[]` built from `skills/*/SKILL.md` and `agents/*/skills/*/SKILL.md`.
 - `skill-detail` returns zero or one `SkillDetailEntry` for a selected `SKILL.md` path.
-- Default blank Game Card content may include `agents/studio-assistant/AGENT.md`, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`; default save runtime data includes assistant notes/session under `save/agents/studio-assistant/`.
+- Default blank Game Card content may include `agents/<agent>/SOUL.md` files, `agents/studio-assistant/AGENT.md`, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`; default save runtime data includes assistant notes/session under `save/agents/studio-assistant/`.
 - Registry entries include path and metadata fields only. Do not expose full skill instructions, actions, schemas, examples, scripts, or references through the registry query.
 - `SkillRegistryEntry.name` and `description` are the model-facing Skill identifiers. Build them from frontmatter `name` / `description`, with compatibility fallbacks to `id` / `summary` / path-derived values.
 - Keep `id`, `title`, `summary`, and `path` for compatibility with bridge/UI/debug consumers.
 - Agent context skill indexes must remain lightweight `SkillRegistryEntry[]`; do not load `SKILL.md` bodies through `agent-context`.
+- Agent context skill indexes are filtered through the selected Agent's Skill enablement: `disabledSkills` always removes matching Skills; non-empty `enabledSkills` allows only matching Skills; otherwise compatibility defaults come from `defaultSkills`, `appliesTo`, shared Skills without `appliesTo`, and selected-Agent-local Skills.
 - Skill detail entries include the selected `SKILL.md` `WorkspaceFile` content and a `SkillResourceEntry[]` resource index. Resource entries must not include file contents.
 - Shared registry shapes live in `@tsian/contracts`; platform-web must not redefine them locally.
 - Registry parsing is owned by `src/agent-runtime/registry.ts` and must stay pure: pass workspace files in, return entries out. It must not import Dexie tables or bridge objects.
@@ -194,6 +195,7 @@ if (!frontend) {
 
 - No active save -> return `{ items: [] }`.
 - `agent-context` missing, blank, non-string, or unknown `params.agentId` -> return `{ items: [] }`.
+- `agent-context` missing `SOUL.md` -> return the context entry without `soulFile`; existing cards remain valid.
 - `agent-context` missing declared `contextPaths` -> return the context entry with `missingContextPaths` populated.
 - `skill-detail` missing, blank, invalid, non-skill, or absent `params.path` -> return `{ items: [] }`.
 - Missing or partial frontmatter -> infer safe fallbacks from path, first H1, and first body paragraph.
@@ -204,9 +206,11 @@ if (!frontend) {
 ### 5. Good/Base/Bad Cases
 
 - Good: `skill-registry` with `{ agentId: "narrative" }` returns shared skills plus `agents/narrative/skills/*/SKILL.md`, with model-facing `name` and `description`.
-- Good: `agent-context` with `{ agentId: "narrative" }` returns narrative `AGENT.md`, narrative notes/session if present, shared skills, and narrative-local skills only.
+- Good: `agent-context` with `{ agentId: "narrative" }` returns narrative `AGENT.md`, optional `SOUL.md`, narrative notes/session if present, and only Skills enabled for narrative.
+- Good: disabling `memory-maintenance` in `agents/narrative/AGENT.md` removes it from narrative `agent-context.skillIndex`.
 - Good: `skill-detail` with `{ path: "skills/example/SKILL.md" }` returns the selected `SKILL.md` content and resource metadata for files under `skills/example/`.
 - Base: `skill-registry` without params returns shared skills and all agent-local skills.
+- Base: an existing card without `SOUL.md`, `enabledSkills`, or `disabledSkills` still loads through compatibility defaults.
 - Base: `skill-detail` for a valid skill with no sibling resources returns one detail entry with `resources: []`.
 - Bad: registry query returns `SKILL.md` body text or parsed `actions`; this breaks progressive disclosure.
 - Bad: `skill-detail` returns `references/*`, `examples/*`, `actions/*`, `schemas/*`, or `scripts/*` content by default; resource contents must be loaded separately by explicit workspace reads or a future resource query.
@@ -214,6 +218,7 @@ if (!frontend) {
 ### 6. Tests Required
 
 - Assert new saves include default `agents/master/AGENT.md` and `agents/narrative/AGENT.md`.
+- Assert default built-in card content includes `agents/master/SOUL.md`, `agents/narrative/SOUL.md`, `agents/memory/SOUL.md`, and `agents/studio-assistant/SOUL.md`.
 - Assert new saves include default `agents/studio-assistant/AGENT.md`, `agents/studio-assistant/skills/framework-knowledge/SKILL.md`, and `docs/tsian-framework-knowledge.md`.
 - Assert `agent-registry` returns master and narrative entries for a new save.
 - Assert `agent-registry` returns `studio-assistant` for a new save without changing the default master/narrative turn entrypoint.
@@ -226,6 +231,9 @@ if (!frontend) {
 - Assert `SkillResourceEntry` has no `content` field.
 - Assert `agent-context` returns declared existing context files and missing context paths without throwing.
 - Assert `agent-context` skill index does not include other agents' local skills.
+- Assert `agent-context` includes `soulFile` when `SOUL.md` exists and omits it when missing.
+- Assert `agent-context.skillIndex` excludes Skills listed in `disabledSkills`.
+- Assert non-empty `enabledSkills` narrows visible Skills to matching id/name/title/path-derived ids.
 
 ### 7. Wrong vs Correct
 
@@ -443,7 +451,7 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
 
 - `platform-host` owns storage access. It must initialize the save runtime defaults, assemble `listEffectiveWorkspaceFilesForSave(activeSaveId, activeCard)`, then pass that effective workspace into Agent Runtime.
 - `agent-runtime` owns prompt composition. It must use `assembleAgentContext(workspaceFiles, { agentId: "master" })` and `{ agentId: "narrative" }` for the two default calls.
-- Model messages may include `AGENT.md`, notes/session files, declared context files, missing context paths, lightweight skill index, recent history, turn number, player input, and master brief.
+- Model messages may include `AGENT.md`, optional `SOUL.md`, notes/session files, declared context files, missing context paths, filtered lightweight skill index, recent history, turn number, player input, and master brief.
 - Skill indexes inside runtime prompts must remain lightweight `SkillRegistryEntry[]`; do not call `loadSkillDetail` from the default turn path.
 - `agent-runtime` must not import Dexie tables, platform bridge objects, or platform-host helpers.
 
@@ -452,12 +460,13 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
 - Empty save runtime data on an active save -> `initializeWorkspaceForSave` fills `save/...` defaults before runtime reads files.
 - Effective workspace missing `agents/master/AGENT.md` -> `sendMessage` fails with a clear runtime error; do not fall back to legacy hardcoded prompts.
 - Effective workspace missing `agents/narrative/AGENT.md` -> same as above.
+- Effective workspace missing `agents/<agent>/SOUL.md` -> continue without `soulFile`; this is compatibility input, not a runtime error.
 - Missing declared `contextPaths` -> include missing path diagnostics in prompt context; do not fail the turn for that reason alone.
 - Model returns empty narrative reply -> keep existing empty-reply error behavior.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: a new save uses `agents/master/AGENT.md` and `agents/narrative/AGENT.md` in the two model system prompts.
+- Good: a new save uses `agents/master/AGENT.md` plus optional `agents/master/SOUL.md`, and `agents/narrative/AGENT.md` plus optional `agents/narrative/SOUL.md`, in the two model system prompts.
 - Good: old local save with zero runtime files receives default `save/...` files before the turn.
 - Base: direct unit-style calls without `workspaceFiles` may exercise legacy prompt assembly, but production `sendMessage` must pass workspace files.
 - Bad: production `sendMessage` omits workspace files and silently uses hardcoded prompts.
@@ -541,6 +550,7 @@ interface RuntimeWorkspaceToolCall {
 - `agent-runtime` must not import Dexie, storage helpers, bridge objects, or `platform-host`.
 - `skill_load` arguments: `{ name: string }`.
 - `skill_load` resolves only against the current Agent's visible `skillIndex`.
+- `skill_load` must not load a Skill that exists on disk but was removed from the current Agent's `skillIndex` by `disabledSkills` or a non-matching non-empty `enabledSkills` list.
 - `skill_load` should match `SkillRegistryEntry.name` first, then fall back to `id` for compatibility.
 - If a local and shared Skill share a name, prefer the current Agent's local Skill.
 - `skill_load` success returns the loaded Skill's `SKILL.md` entry content and minimal metadata; it must not return a resource index or resource file contents by default.
@@ -555,7 +565,7 @@ interface RuntimeWorkspaceToolCall {
 - `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene" }`.
 - `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts and the current tool loop allows Agent calls.
 - `agent_call` validates the target against the caller Agent's `contacts`; contacts are a runtime stability boundary, not a full security model.
-- `agent_call` builds the target Agent's own `AgentContextEntry`, including its `AGENT.md`, notes/session, declared context files, and lightweight Skill Index.
+- `agent_call` builds the target Agent's own `AgentContextEntry`, including its `AGENT.md`, optional `SOUL.md`, notes/session, declared context files, and filtered lightweight Skill Index.
 - `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, metadata, response }`; the target Agent response does not directly become player-visible history.
 - `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
 - Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxCallsPerTurn=4`, `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`, and `maxToolRoundsPerAgent=3`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state.
@@ -745,6 +755,7 @@ interface RuntimeWorkspaceToolCall {
 - Assert a model response containing `skill_load` produces a second same-Agent model call with loaded `SKILL.md` content.
 - Assert shared Skills and Agent-local Skills can both be loaded by `name`.
 - Assert local/shared duplicate Skill names prefer the current Agent's local Skill.
+- Assert `skill_load` returns `SKILL_NOT_FOUND` for a Skill disabled for the current Agent even when the `SKILL.md` file exists.
 - Assert `skill_load` does not return a resource index by default.
 - Assert `skill_load` registers actions declared in a `tsian-actions` fenced JSON block.
 - Assert `action_call` succeeds after loading the declaring Skill and routes through built-in executors.

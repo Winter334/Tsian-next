@@ -27,7 +27,14 @@ import type {
 import { runAgentRuntimeTurn, type AgentSessionTranscriptRecord } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
 import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
-import { buildAgentRegistry, buildSkillRegistry, loadSkillDetail } from "../agent-runtime/registry"
+import {
+  buildAgentRegistry,
+  buildSkillRegistry,
+  isSkillEnabledForAgent,
+  loadSkillDetail,
+  skillMatchesReference,
+  skillMetadataReference,
+} from "../agent-runtime/registry"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import {
   createRuntimeTraceCollector,
@@ -137,6 +144,18 @@ export type PlatformGameCardCopyInput = PlatformGameCardMetadataInput
 export interface PlatformGameCardDeleteResult {
   deletedCardId: string
   deletedSaveIds: string[]
+}
+
+export interface PlatformStudioAgentFileWriteInput {
+  agentId: string
+  fileName: "AGENT.md" | "SOUL.md"
+  content: string
+}
+
+export interface PlatformStudioAgentSkillToggleInput {
+  agentId: string
+  skillPath: string
+  enabled: boolean
 }
 
 interface StudioSaveSlot {
@@ -1963,6 +1982,215 @@ export async function getPlatformStudioSkillDetail(
   } catch {
     return null
   }
+}
+
+function agentDirectoryFromFilePath(path: string): string {
+  const suffix = "/AGENT.md"
+  if (!path.endsWith(suffix)) {
+    throw new Error(`Agent path must end with AGENT.md: ${path}`)
+  }
+  return path.slice(0, -suffix.length)
+}
+
+function soulPathForAgent(agent: AgentRegistryEntry): string {
+  return `${agentDirectoryFromFilePath(agent.path)}/SOUL.md`
+}
+
+function findStudioAgent(files: WorkspaceFile[], agentId: string): AgentRegistryEntry {
+  const normalizedAgentId = agentId.trim()
+  const agent = buildAgentRegistry(files).find((candidate) => candidate.id === normalizedAgentId)
+  if (!agent) {
+    throw new Error(`Agent "${normalizedAgentId}" 不存在。`)
+  }
+  return agent
+}
+
+function findStudioSkill(files: WorkspaceFile[], path: string): SkillRegistryEntry {
+  const normalizedPath = normalizeWorkspaceFilePath(path)
+  const skill = buildSkillRegistry(files).find((candidate) => candidate.path === normalizedPath)
+  if (!skill) {
+    throw new Error(`Skill "${normalizedPath}" 不存在。`)
+  }
+  return skill
+}
+
+function normalizeSkillList(values: string[]): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const value of values) {
+    const item = value.trim()
+    const key = item.toLowerCase()
+    if (!item || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    normalized.push(item)
+  }
+  return normalized
+}
+
+function removeSkillReferences(
+  values: string[],
+  skill: SkillRegistryEntry,
+): string[] {
+  return normalizeSkillList(values)
+    .filter((value) => !skillMatchesReference(skill, value))
+}
+
+function appendSkillReference(
+  values: string[],
+  skill: SkillRegistryEntry,
+): string[] {
+  return normalizeSkillList([
+    ...removeSkillReferences(values, skill),
+    skillMetadataReference(skill),
+  ])
+}
+
+function formatMarkdownListField(key: string, values: string[]): string[] {
+  const normalized = normalizeSkillList(values)
+  if (normalized.length === 0) {
+    return []
+  }
+
+  return [
+    `${key}:`,
+    ...normalized.map((value) => `  - ${value}`),
+  ]
+}
+
+function isFrontmatterKeyLine(line: string): boolean {
+  return /^([A-Za-z][A-Za-z0-9_-]*):(?:\s*.*)?$/.test(line.trim())
+}
+
+function replaceMarkdownListFields(
+  content: string,
+  fields: Record<string, string[]>,
+): string {
+  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
+  const lines = normalized.split("\n")
+  const fieldKeys = new Set(Object.keys(fields).map((key) => key.toLowerCase()))
+  let frontmatterLines: string[] = []
+  let bodyLines = lines
+
+  if (lines[0]?.trim() === "---") {
+    const closingIndex = lines.findIndex((line, index) => index > 0 && line.trim() === "---")
+    if (closingIndex > 0) {
+      frontmatterLines = lines.slice(1, closingIndex)
+      bodyLines = lines.slice(closingIndex + 1)
+    }
+  }
+
+  const nextFrontmatter: string[] = []
+  for (let index = 0; index < frontmatterLines.length;) {
+    const line = frontmatterLines[index] ?? ""
+    const keyMatch = /^([A-Za-z][A-Za-z0-9_-]*):/.exec(line.trim())
+    if (keyMatch?.[1] && fieldKeys.has(keyMatch[1].toLowerCase())) {
+      index += 1
+      while (index < frontmatterLines.length) {
+        const nextLine = frontmatterLines[index] ?? ""
+        if (isFrontmatterKeyLine(nextLine)) {
+          break
+        }
+        index += 1
+      }
+      continue
+    }
+
+    nextFrontmatter.push(line)
+    index += 1
+  }
+
+  for (const [key, values] of Object.entries(fields)) {
+    nextFrontmatter.push(...formatMarkdownListField(key, values))
+  }
+
+  return [
+    "---",
+    ...nextFrontmatter,
+    "---",
+    ...bodyLines,
+  ].join("\n")
+}
+
+export async function writePlatformStudioAgentFile(
+  input: PlatformStudioAgentFileWriteInput,
+): Promise<WorkspaceFile> {
+  if (typeof input.content !== "string") {
+    throw new Error("文件内容必须是字符串。")
+  }
+
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  const path = input.fileName === "AGENT.md"
+    ? agent.path
+    : soulPathForAgent(agent)
+
+  return writeCardContentFileForCard(card.id, {
+    path,
+    content: input.content,
+    mediaType: "text/markdown",
+  })
+}
+
+export async function updatePlatformStudioAgentSkillEnabled(
+  input: PlatformStudioAgentSkillToggleInput,
+): Promise<WorkspaceFile> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  const skill = findStudioSkill(context.files, input.skillPath)
+  if (skill.scope === "agent-local" && skill.agentId !== agent.id) {
+    throw new Error("这个 Agent 不能启用其它 Agent 目录下的 Skill。")
+  }
+
+  const agentFile = context.files.find((file) => file.path === agent.path)
+  if (!agentFile) {
+    throw new Error(`Agent 文件 "${agent.path}" 不存在。`)
+  }
+
+  let enabledSkills = removeSkillReferences(agent.enabledSkills, skill)
+  let disabledSkills = removeSkillReferences(agent.disabledSkills, skill)
+
+  if (input.enabled) {
+    const nextAgent = {
+      ...agent,
+      enabledSkills,
+      disabledSkills,
+    }
+    if (!isSkillEnabledForAgent(skill, nextAgent)) {
+      enabledSkills = appendSkillReference(enabledSkills, skill)
+    }
+  } else {
+    const nextAgent = {
+      ...agent,
+      enabledSkills,
+      disabledSkills,
+    }
+    if (isSkillEnabledForAgent(skill, nextAgent)) {
+      disabledSkills = appendSkillReference(disabledSkills, skill)
+    }
+  }
+
+  const content = replaceMarkdownListFields(agentFile.content, {
+    enabledSkills,
+    disabledSkills,
+  })
+
+  return writeCardContentFileForCard(card.id, {
+    path: agent.path,
+    content,
+    mediaType: agentFile.mediaType,
+  })
 }
 
 export async function listPlatformWorkspaceDirectory(input: {

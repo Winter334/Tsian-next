@@ -231,6 +231,10 @@ function compareText(left: string, right: string): number {
   return left.localeCompare(right)
 }
 
+function normalizedLookupKey(value: string | undefined): string {
+  return value?.trim().toLowerCase() ?? ""
+}
+
 function fileName(path: string): string {
   const parts = path.split("/")
   return parts[parts.length - 1] || path
@@ -260,6 +264,48 @@ function skillPathInfo(path: string): SkillPathInfo | null {
   }
 
   return null
+}
+
+function pathDerivedSkillId(path: string): string | undefined {
+  return skillPathInfo(path)?.skillId
+}
+
+function addLookupKey(keys: Set<string>, value: string | undefined): void {
+  const key = normalizedLookupKey(value)
+  if (key) {
+    keys.add(key)
+  }
+}
+
+function skillReferenceKeys(skill: SkillRegistryEntry): Set<string> {
+  const keys = new Set<string>()
+  addLookupKey(keys, skill.id)
+  addLookupKey(keys, skill.name)
+  addLookupKey(keys, skill.title)
+  addLookupKey(keys, pathDerivedSkillId(skill.path))
+  return keys
+}
+
+function agentReferenceKeys(agent: AgentRegistryEntry): Set<string> {
+  const keys = new Set<string>()
+  addLookupKey(keys, agent.id)
+  addLookupKey(keys, agent.title)
+  return keys
+}
+
+function referencesContainSkill(
+  references: string[],
+  skill: SkillRegistryEntry,
+): boolean {
+  return references.some((reference) => skillMatchesReference(skill, reference))
+}
+
+function referencesContainAgent(
+  references: string[],
+  agent: AgentRegistryEntry,
+): boolean {
+  const agentKeys = agentReferenceKeys(agent)
+  return references.some((reference) => agentKeys.has(normalizedLookupKey(reference)))
 }
 
 function buildSkillRegistryEntry(
@@ -372,6 +418,8 @@ export function buildAgentRegistry(files: WorkspaceFile[]): AgentRegistryEntry[]
         path: file.path,
         contacts: metadataArray(parsed.metadata, ["contacts"]),
         defaultSkills: metadataArray(parsed.metadata, ["defaultSkills"]),
+        enabledSkills: metadataArray(parsed.metadata, ["enabledSkills"]),
+        disabledSkills: metadataArray(parsed.metadata, ["disabledSkills"]),
         contextPaths: metadataArray(parsed.metadata, ["contextPaths"]),
         updatedAt: file.updatedAt,
       }]
@@ -407,6 +455,55 @@ export function buildSkillRegistry(
       return [buildSkillRegistryEntry(file, pathInfo)]
     })
     .sort(compareSkillEntries)
+}
+
+export function skillMetadataReference(skill: SkillRegistryEntry): string {
+  return pathDerivedSkillId(skill.path) ?? (skill.name || skill.id || skill.title)
+}
+
+export function skillMatchesReference(
+  skill: SkillRegistryEntry,
+  reference: string,
+): boolean {
+  return skillReferenceKeys(skill).has(normalizedLookupKey(reference))
+}
+
+export function isSkillEnabledForAgent(
+  skill: SkillRegistryEntry,
+  agent: AgentRegistryEntry,
+): boolean {
+  if (skill.scope === "agent-local" && skill.agentId !== agent.id) {
+    return false
+  }
+
+  if (referencesContainSkill(agent.disabledSkills, skill)) {
+    return false
+  }
+
+  if (agent.enabledSkills.length > 0) {
+    return referencesContainSkill(agent.enabledSkills, skill)
+  }
+
+  if (referencesContainSkill(agent.defaultSkills, skill)) {
+    return true
+  }
+
+  if (skill.scope === "agent-local") {
+    return skill.agentId === agent.id
+  }
+
+  if (skill.appliesTo.length > 0) {
+    return referencesContainAgent(skill.appliesTo, agent)
+  }
+
+  return true
+}
+
+export function filterSkillsForAgent(
+  skills: SkillRegistryEntry[],
+  agent: AgentRegistryEntry,
+): SkillRegistryEntry[] {
+  return skills.filter((skill) => isSkillEnabledForAgent(skill, agent))
 }
 
 export function loadSkillDetail(

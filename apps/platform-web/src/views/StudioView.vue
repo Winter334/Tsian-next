@@ -9,6 +9,7 @@
         <button
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+          :disabled="loading"
           @click="refresh"
         >
           <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />
@@ -26,218 +27,205 @@
       </div>
     </header>
 
-    <main class="min-h-0 overflow-auto p-3">
-      <div v-if="loading" class="retro-inset grid min-h-[360px] place-items-center p-4">
+    <main class="min-h-0 overflow-hidden p-3">
+      <div v-if="loading" class="retro-inset grid h-full min-h-[360px] place-items-center p-4">
         <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">正在读取工作室</p>
       </div>
 
-      <div v-else-if="errorMessage" class="retro-inset grid min-h-[360px] place-items-center p-4">
+      <div v-else-if="errorMessage" class="retro-inset grid h-full min-h-[360px] place-items-center p-4">
         <div class="max-w-lg border border-danger/40 bg-danger/10 p-4">
           <p class="font-mono text-xs uppercase tracking-wider text-danger">工作室不可用</p>
           <p class="mt-2 text-sm leading-6 text-text-dim">{{ errorMessage }}</p>
         </div>
       </div>
 
-      <div v-else-if="snapshot" class="grid gap-3">
-        <section class="grid min-h-[460px] gap-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
-          <div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/35">
-            <div class="flex border-b border-neon-deep/35 p-2" role="tablist" aria-label="工作室栏目">
-              <button
-                type="button"
-                class="retro-focus inline-flex h-8 flex-1 items-center justify-center gap-2 border px-3 font-mono text-xs"
-                :class="activePanel === 'agents' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel text-text-dim hover:text-text-main'"
-                @click="activePanel = 'agents'"
-              >
-                <Bot class="h-3.5 w-3.5" aria-hidden="true" />
-                角色
-              </button>
-              <button
-                type="button"
-                class="retro-focus inline-flex h-8 flex-1 items-center justify-center gap-2 border px-3 font-mono text-xs"
-                :class="activePanel === 'skills' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel text-text-dim hover:text-text-main'"
-                @click="activePanel = 'skills'"
-              >
-                <Wrench class="h-3.5 w-3.5" aria-hidden="true" />
-                能力
-              </button>
+      <div v-else-if="snapshot" class="grid h-full min-h-0 gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
+        <aside class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/35">
+          <div class="flex items-center justify-between gap-3 border-b border-neon-deep/35 px-3 py-2">
+            <div class="min-w-0">
+              <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Agents</p>
+              <p class="mt-1 font-mono text-[11px] text-text-dim">{{ snapshot.agents.length }} 个 Agent</p>
             </div>
+            <Bot class="h-4 w-4 shrink-0 text-neon-muted" aria-hidden="true" />
+          </div>
 
-            <div class="min-h-0 overflow-auto p-2">
-              <div v-if="activePanel === 'agents'" class="grid gap-2">
-                <button
-                  v-for="agent in snapshot.agents"
-                  :key="agent.path"
-                  type="button"
-                  class="retro-focus grid gap-1 border p-3 text-left"
-                  :class="selectedAgent?.id === agent.id ? 'border-neon bg-neon/10' : 'border-neon-deep/35 bg-panel/55 hover:bg-panel'"
-                  @click="selectAgent(agent)"
-                >
-                  <span class="truncate text-sm font-bold text-text-main">{{ agent.title }}</span>
-                  <span class="line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(agent.summary) }}</span>
-                  <span class="font-mono text-[11px] text-neon-muted">{{ abilityCountForAgent(agent) }} 个关联能力</span>
-                </button>
-                <p v-if="snapshot.agents.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
-                  这张游戏卡还没有定义角色。
-                </p>
-              </div>
+          <div class="min-h-0 overflow-auto p-2">
+            <button
+              v-for="agent in snapshot.agents"
+              :key="agent.path"
+              type="button"
+              class="retro-focus mb-2 grid w-full gap-1 border p-3 text-left last:mb-0"
+              :class="selectedAgent?.id === agent.id ? 'border-neon bg-neon/10' : 'border-neon-deep/35 bg-panel/55 hover:bg-panel'"
+              @click="selectAgent(agent)"
+            >
+              <span class="truncate text-sm font-bold text-text-main">{{ agent.title }}</span>
+              <span class="line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(agent.summary) }}</span>
+              <span class="font-mono text-[11px] text-neon-muted">{{ enabledSkillCount(agent) }} 个已启用 Skill</span>
+            </button>
+            <p v-if="snapshot.agents.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
+              这张游戏卡还没有定义 Agent。
+            </p>
+          </div>
+        </aside>
 
-              <div v-else class="grid gap-2">
-                <button
-                  v-for="skill in snapshot.skills"
-                  :key="skill.path"
-                  type="button"
-                  class="retro-focus grid gap-1 border p-3 text-left"
-                  :class="selectedSkill?.path === skill.path ? 'border-neon bg-neon/10' : 'border-neon-deep/35 bg-panel/55 hover:bg-panel'"
-                  @click="selectSkill(skill)"
-                >
-                  <span class="truncate text-sm font-bold text-text-main">{{ skill.title }}</span>
-                  <span class="line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.summary || skill.description) }}</span>
-                  <span class="font-mono text-[11px] text-neon-muted">{{ skillAssignmentLabel(skill) }}</span>
-                </button>
-                <p v-if="snapshot.skills.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
-                  这张游戏卡还没有定义能力。
-                </p>
-              </div>
+        <section v-if="selectedAgent" class="grid min-h-0 grid-rows-[auto_auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/25">
+          <div class="grid gap-3 border-b border-neon-deep/35 p-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-start">
+            <div class="min-w-0">
+              <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Selected Agent</p>
+              <h2 class="mt-1 truncate text-lg font-bold text-text-main">{{ selectedAgent.title }}</h2>
+              <p class="mt-1 line-clamp-2 text-sm leading-6 text-text-dim">{{ entrySummary(selectedAgent.summary) }}</p>
+              <p class="mt-2 break-all font-mono text-[11px] text-neon-muted">{{ selectedAgent.path }}</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                @click="openPathDirectory(selectedAgent.path)"
+              >
+                <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
+                打开目录
+              </button>
             </div>
           </div>
 
-          <aside class="retro-inset min-h-[420px] overflow-auto p-4">
-            <div v-if="activePanel === 'agents' && selectedAgent" class="grid gap-4">
-              <div>
-                <p class="font-mono text-xs uppercase tracking-wider text-neon">角色详情</p>
-                <h2 class="mt-1 text-xl font-bold text-text-main">{{ selectedAgent.title }}</h2>
-                <p class="mt-2 text-sm leading-6 text-text-dim">{{ entrySummary(selectedAgent.summary) }}</p>
-              </div>
+          <div class="flex flex-wrap gap-2 border-b border-neon-deep/35 bg-void/45 p-2" role="tablist" aria-label="Agent 管理">
+            <button
+              v-for="section in sections"
+              :key="section.id"
+              type="button"
+              class="retro-focus inline-flex h-8 items-center gap-2 border px-3 font-mono text-xs"
+              :class="activeSection === section.id ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel text-text-dim hover:text-text-main'"
+              @click="activeSection = section.id"
+            >
+              <component :is="section.icon" class="h-3.5 w-3.5" aria-hidden="true" />
+              {{ section.label }}
+            </button>
+          </div>
 
-              <div v-if="assignedSkillsForSelectedAgent.length" class="grid gap-2">
-                <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">已分配能力</p>
+          <div class="min-h-0 overflow-hidden">
+            <div v-if="contextLoading" class="grid h-full min-h-[320px] place-items-center">
+              <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">正在读取 Agent</p>
+            </div>
+
+            <div v-else-if="!agentContext" class="grid h-full min-h-[320px] place-items-center p-4">
+              <div class="max-w-lg border border-danger/40 bg-danger/10 p-4">
+                <p class="font-mono text-xs uppercase tracking-wider text-danger">Agent 不可用</p>
+                <p class="mt-2 text-sm leading-6 text-text-dim">无法读取选中的 Agent。</p>
+              </div>
+            </div>
+
+            <div v-else-if="activeSection === 'agent'" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
+                <p class="min-w-0 break-all font-mono text-[11px] text-neon-muted">{{ agentFilePath }}</p>
                 <div class="flex flex-wrap gap-2">
                   <button
-                    v-for="skill in assignedSkillsForSelectedAgent"
+                    type="button"
+                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                    :disabled="savingFile === 'AGENT.md' || !hasAgentDraftChanges"
+                    @click="resetAgentDraft"
+                  >
+                    <RotateCcw class="h-3.5 w-3.5" aria-hidden="true" />
+                    还原
+                  </button>
+                  <button
+                    type="button"
+                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                    :disabled="savingFile === 'AGENT.md' || !hasAgentDraftChanges"
+                    @click="saveAgentMarkdown('AGENT.md')"
+                  >
+                    <Save class="h-3.5 w-3.5" aria-hidden="true" />
+                    {{ savingFile === "AGENT.md" ? "保存中" : "保存" }}
+                  </button>
+                </div>
+              </div>
+              <WorkspaceCodeEditor
+                v-model="agentDraft"
+                :path="agentFilePath"
+                media-type="text/markdown"
+              />
+            </div>
+
+            <div v-else-if="activeSection === 'soul'" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
+                <p class="min-w-0 break-all font-mono text-[11px] text-neon-muted">{{ soulFilePath }}</p>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                    :disabled="savingFile === 'SOUL.md' || !hasSoulDraftChanges"
+                    @click="resetSoulDraft"
+                  >
+                    <RotateCcw class="h-3.5 w-3.5" aria-hidden="true" />
+                    还原
+                  </button>
+                  <button
+                    type="button"
+                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                    :disabled="savingFile === 'SOUL.md' || !hasSoulDraftChanges"
+                    @click="saveAgentMarkdown('SOUL.md')"
+                  >
+                    <Save class="h-3.5 w-3.5" aria-hidden="true" />
+                    {{ savingFile === "SOUL.md" ? "保存中" : "保存" }}
+                  </button>
+                </div>
+              </div>
+              <WorkspaceCodeEditor
+                v-model="soulDraft"
+                :path="soulFilePath"
+                media-type="text/markdown"
+              />
+            </div>
+
+            <div v-else class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
+                <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Skills</p>
+                <p class="font-mono text-[11px] text-text-dim">{{ selectedEnabledSkillCount }} / {{ skillsForSelectedAgent.length }} 已启用</p>
+              </div>
+
+              <div class="min-h-0 overflow-auto p-3">
+                <div class="grid gap-2">
+                  <label
+                    v-for="skill in skillsForSelectedAgent"
                     :key="skill.path"
-                    type="button"
-                    class="retro-focus border border-neon-deep/40 bg-panel px-2 py-1 font-mono text-[11px] text-text-dim hover:text-text-main"
-                    @click="selectSkill(skill)"
+                    class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/35 bg-panel/55 p-3 hover:bg-panel sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
                   >
-                    {{ skill.title }}
-                  </button>
-                </div>
-              </div>
-
-              <details class="border border-neon-deep/35 bg-elevated/35 p-3">
-                <summary class="cursor-pointer font-mono text-xs uppercase tracking-wider text-neon-muted">高级信息</summary>
-                <dl class="mt-3 grid gap-2 text-xs text-text-dim">
-                  <div>
-                    <dt class="font-mono text-[10px] uppercase text-neon-muted">文件</dt>
-                    <dd class="mt-1 break-all font-mono">{{ selectedAgent.path }}</dd>
-                  </div>
-                </dl>
-              </details>
-
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs" @click="editPath(selectedAgent.path)">
-                  <FilePenLine class="h-3.5 w-3.5" aria-hidden="true" />
-                  编辑定义
-                </button>
-                <button type="button" class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs" @click="openPathDirectory(selectedAgent.path)">
-                  <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
-                  打开目录
-                </button>
-              </div>
-            </div>
-
-            <div v-else-if="activePanel === 'skills' && selectedSkill" class="grid gap-4">
-              <div>
-                <p class="font-mono text-xs uppercase tracking-wider text-neon">能力详情</p>
-                <h2 class="mt-1 text-xl font-bold text-text-main">{{ selectedSkill.title }}</h2>
-                <p class="mt-2 text-sm leading-6 text-text-dim">{{ entrySummary(selectedSkill.summary || selectedSkill.description) }}</p>
-              </div>
-
-              <div class="grid gap-2 sm:grid-cols-3">
-                <div class="border border-neon-deep/35 bg-elevated/45 p-3">
-                  <p class="font-mono text-lg text-neon">{{ skillAssignedAgents(selectedSkill).length }}</p>
-                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">分配角色</p>
-                </div>
-                <div class="border border-neon-deep/35 bg-elevated/45 p-3">
-                  <p class="font-mono text-lg text-neon">{{ selectedSkill.triggers.length }}</p>
-                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">触发提示</p>
-                </div>
-                <div class="border border-neon-deep/35 bg-elevated/45 p-3">
-                  <p class="font-mono text-lg text-neon">{{ skillDetail?.resources.length ?? 0 }}</p>
-                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">资源</p>
-                </div>
-              </div>
-
-              <p v-if="detailLoading" class="font-mono text-xs uppercase tracking-wider text-neon">正在读取详情</p>
-
-              <div v-if="skillAssignedAgents(selectedSkill).length" class="grid gap-2">
-                <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">分配给</p>
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    v-for="agent in skillAssignedAgents(selectedSkill)"
-                    :key="agent.id"
-                    type="button"
-                    class="retro-focus border border-neon-deep/40 bg-panel px-2 py-1 font-mono text-[11px] text-text-dim hover:text-text-main"
-                    @click="selectAgent(agent)"
-                  >
-                    {{ agent.title }}
-                  </button>
-                </div>
-              </div>
-
-              <div v-if="skillDetail?.resources.length" class="grid gap-2">
-                <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">资源索引</p>
-                <div class="max-h-48 overflow-auto border border-neon-deep/35 bg-panel/55">
-                  <button
-                    v-for="resource in skillDetail.resources"
-                    :key="resource.path"
-                    type="button"
-                    class="retro-focus grid w-full grid-cols-[1fr_auto] gap-3 border-b border-neon-deep/20 px-3 py-2 text-left last:border-b-0 hover:bg-elevated"
-                    @click="openPathDirectory(resource.path)"
-                  >
+                    <input
+                      class="mt-1 h-4 w-4 accent-[#f3c56d]"
+                      type="checkbox"
+                      :checked="skillEnabled(skill)"
+                      :disabled="togglingSkillPath === skill.path"
+                      @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)"
+                    >
                     <span class="min-w-0">
-                      <span class="block truncate font-mono text-xs text-text-main">{{ resource.name }}</span>
-                      <span class="mt-1 block truncate font-mono text-[11px] text-text-dim">{{ resource.mediaType }}</span>
+                      <span class="block truncate text-sm font-bold text-text-main">{{ skill.title }}</span>
+                      <span class="mt-1 block line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.description || skill.summary) }}</span>
+                      <span class="mt-2 block break-all font-mono text-[11px] text-neon-muted">{{ skill.path }}</span>
                     </span>
-                    <span class="font-mono text-[11px] text-text-dim">{{ formatBytes(resource.size) }}</span>
-                  </button>
+                    <span class="font-mono text-[11px]" :class="skillEnabled(skill) ? 'text-neon' : 'text-text-dim'">
+                      {{ skillEnabled(skill) ? "启用" : "禁用" }}
+                    </span>
+                  </label>
+
+                  <p v-if="skillsForSelectedAgent.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
+                    这个 Agent 还没有可管理的 Skill。
+                  </p>
                 </div>
               </div>
-
-              <details class="border border-neon-deep/35 bg-elevated/35 p-3">
-                <summary class="cursor-pointer font-mono text-xs uppercase tracking-wider text-neon-muted">高级信息</summary>
-                <dl class="mt-3 grid gap-2 text-xs text-text-dim">
-                  <div>
-                    <dt class="font-mono text-[10px] uppercase text-neon-muted">文件</dt>
-                    <dd class="mt-1 break-all font-mono">{{ selectedSkill.path }}</dd>
-                  </div>
-                </dl>
-              </details>
-
-              <div class="flex flex-wrap gap-2">
-                <button type="button" class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs" @click="editPath(selectedSkill.path)">
-                  <FilePenLine class="h-3.5 w-3.5" aria-hidden="true" />
-                  编辑定义
-                </button>
-                <button type="button" class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs" @click="openPathDirectory(selectedSkill.path)">
-                  <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
-                  打开目录
-                </button>
-              </div>
             </div>
+          </div>
+        </section>
 
-            <div v-else class="grid min-h-[300px] place-items-center text-center">
-              <div class="max-w-sm">
-                <PanelRight class="mx-auto h-10 w-10 text-neon-muted" aria-hidden="true" />
-                <p class="mt-3 text-sm leading-6 text-text-dim">选择一个角色或能力查看详情。</p>
-              </div>
-            </div>
-          </aside>
+        <section v-else class="retro-inset grid min-h-[360px] place-items-center p-4">
+          <div class="max-w-sm text-center">
+            <Bot class="mx-auto h-10 w-10 text-neon-muted" aria-hidden="true" />
+            <p class="mt-3 text-sm leading-6 text-text-dim">选择一个 Agent。</p>
+          </div>
         </section>
       </div>
     </main>
 
-    <footer class="retro-statusbar flex min-h-9 flex-wrap items-center border-t px-3 py-2">
+    <footer class="retro-statusbar grid min-h-9 gap-2 border-t px-3 py-2 lg:grid-cols-[1fr_auto] lg:items-center">
+      <p class="min-w-0 truncate text-sm" :class="feedbackTone">{{ feedbackMessage }}</p>
       <p class="font-mono text-[11px] text-text-dim">{{ statusLabel }}</p>
     </footer>
   </section>
@@ -245,138 +233,138 @@
 
 <script setup lang="ts">
 import type {
+  AgentContextEntry,
   AgentRegistryEntry,
-  SkillDetailEntry,
   SkillRegistryEntry,
 } from "@tsian/contracts"
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import {
   Bot,
-  FilePenLine,
+  FileText,
   FolderOpen,
-  PanelRight,
   RefreshCw,
+  RotateCcw,
+  Save,
   Wrench,
 } from "lucide-vue-next"
+import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
+import { isSkillEnabledForAgent } from "../agent-runtime/registry"
 import {
-  getPlatformStudioSkillDetail,
+  getPlatformStudioAgentContext,
   getPlatformStudioSnapshot,
+  updatePlatformStudioAgentSkillEnabled,
   waitForPlatformHostReady,
+  writePlatformStudioAgentFile,
   type PlatformStudioSnapshot,
 } from "../platform-host"
 
-type StudioPanel = "agents" | "skills"
+type StudioSection = "agent" | "soul" | "skills"
+type StudioEditableFile = "AGENT.md" | "SOUL.md"
+
+const sections: Array<{
+  id: StudioSection
+  label: string
+  icon: typeof FileText
+}> = [
+  { id: "agent", label: "AGENT.md", icon: FileText },
+  { id: "soul", label: "SOUL.md", icon: FileText },
+  { id: "skills", label: "Skills", icon: Wrench },
+]
 
 const router = useRouter()
 const snapshot = ref<PlatformStudioSnapshot | null>(null)
+const agentContext = ref<AgentContextEntry | null>(null)
 const loading = ref(false)
-const detailLoading = ref(false)
+const contextLoading = ref(false)
 const errorMessage = ref("")
-const activePanel = ref<StudioPanel>("agents")
+const feedbackMessage = ref("未加载游戏卡")
+const feedbackKind = ref<"idle" | "ok" | "error">("idle")
+const activeSection = ref<StudioSection>("agent")
 const selectedAgentId = ref("")
-const selectedSkillPath = ref("")
-const skillDetail = ref<SkillDetailEntry | null>(null)
-let detailRequestId = 0
+const agentDraft = ref("")
+const originalAgentDraft = ref("")
+const soulDraft = ref("")
+const originalSoulDraft = ref("")
+const savingFile = ref<StudioEditableFile | null>(null)
+const togglingSkillPath = ref("")
 
 const selectedAgent = computed(() =>
   snapshot.value?.agents.find((agent) => agent.id === selectedAgentId.value) ?? null
 )
-const selectedSkill = computed(() =>
-  snapshot.value?.skills.find((skill) => skill.path === selectedSkillPath.value) ?? null
+const cardTitle = computed(() =>
+  snapshot.value?.card.manifest.name?.trim() || "工作室"
 )
-const assignedSkillsForSelectedAgent = computed(() => {
+const agentFilePath = computed(() =>
+  agentContext.value?.agentFile.path ?? selectedAgent.value?.path ?? ""
+)
+const soulFilePath = computed(() => {
+  if (agentContext.value?.soulFile?.path) {
+    return agentContext.value.soulFile.path
+  }
+
+  const path = selectedAgent.value?.path ?? ""
+  return path.endsWith("/AGENT.md")
+    ? `${path.slice(0, -"/AGENT.md".length)}/SOUL.md`
+    : ""
+})
+const hasAgentDraftChanges = computed(() =>
+  agentDraft.value !== originalAgentDraft.value
+)
+const hasSoulDraftChanges = computed(() =>
+  soulDraft.value !== originalSoulDraft.value
+)
+const skillsForSelectedAgent = computed(() => {
   if (!snapshot.value || !selectedAgent.value) {
     return []
   }
+
   return snapshot.value.skills.filter((skill) =>
-    skillAssignedAgents(skill).some((agent) => agent.id === selectedAgent.value?.id)
+    skill.scope === "shared" || skill.agentId === selectedAgent.value?.id
   )
 })
-const cardTitle = computed(() =>
-  snapshot.value?.card.manifest.name?.trim() || "工作室"
+const selectedEnabledSkillCount = computed(() =>
+  skillsForSelectedAgent.value.filter(skillEnabled).length
 )
 const statusLabel = computed(() => {
   if (!snapshot.value) {
     return "未加载游戏卡"
   }
-  return `${snapshot.value.agents.length} 个角色 · ${snapshot.value.skills.length} 个能力`
+  return `${snapshot.value.agents.length} 个 Agent · ${snapshot.value.skills.length} 个 Skill`
+})
+const feedbackTone = computed(() => {
+  if (feedbackKind.value === "ok") return "text-neon"
+  if (feedbackKind.value === "error") return "text-danger"
+  return "text-text-dim"
 })
 
 function entrySummary(value: string | undefined): string {
   return value?.trim() || "暂无简介。"
 }
 
-function normalizedKey(value: string): string {
-  return value.trim().toLowerCase()
-}
-
-function skillMatchesAgentDefault(skill: SkillRegistryEntry, agent: AgentRegistryEntry): boolean {
-  const skillKeys = new Set([
-    normalizedKey(skill.id),
-    normalizedKey(skill.name),
-    normalizedKey(skill.title),
-  ])
-  return agent.defaultSkills.some((defaultSkill) =>
-    skillKeys.has(normalizedKey(defaultSkill))
-  )
-}
-
-function skillAssignedAgents(skill: SkillRegistryEntry): AgentRegistryEntry[] {
-  const agents = snapshot.value?.agents ?? []
-  if (agents.length === 0) {
-    return []
-  }
-
-  if (skill.scope === "agent-local") {
-    return agents.filter((agent) => agent.id === skill.agentId)
-  }
-
-  const explicitTargets = new Set(skill.appliesTo.map(normalizedKey))
-  const assigned = agents.filter((agent) =>
-    explicitTargets.has(normalizedKey(agent.id))
-    || explicitTargets.has(normalizedKey(agent.title))
-    || skillMatchesAgentDefault(skill, agent)
-  )
-
-  return assigned.length ? assigned : agents
-}
-
-function skillAssignmentLabel(skill: SkillRegistryEntry): string {
-  const agents = skillAssignedAgents(skill)
-  if (agents.length === 0) {
-    return "未分配角色"
-  }
-  if (agents.length === 1) {
-    return `分配给：${agents[0].title}`
-  }
-  return `分配给 ${agents.length} 个角色`
-}
-
-function abilityCountForAgent(agent: AgentRegistryEntry): number {
-  const skills = snapshot.value?.skills ?? []
-  return skills.filter((skill) =>
-    skillAssignedAgents(skill).some((assignedAgent) => assignedAgent.id === agent.id)
-  ).length
-}
-
-function formatBytes(size: number): string {
-  if (!Number.isFinite(size) || size <= 0) {
-    return "0 B"
-  }
-  if (size < 1024) {
-    return `${size} B`
-  }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`
-  }
-  return `${(size / 1024 / 1024).toFixed(1)} MB`
-}
-
 function directoryOf(path: string): string {
   const parts = path.split("/").filter(Boolean)
   parts.pop()
   return parts.join("/")
+}
+
+function defaultSoulDraft(agent: AgentRegistryEntry | null): string {
+  const title = agent?.title?.trim() || agent?.id || "Agent"
+  return `# ${title} Soul\n\n`
+}
+
+function setFeedback(message: string, kind: "idle" | "ok" | "error" = "idle") {
+  feedbackMessage.value = message
+  feedbackKind.value = kind
+}
+
+function skillEnabled(skill: SkillRegistryEntry): boolean {
+  return selectedAgent.value ? isSkillEnabledForAgent(skill, selectedAgent.value) : false
+}
+
+function enabledSkillCount(agent: AgentRegistryEntry): number {
+  const skills = snapshot.value?.skills ?? []
+  return skills.filter((skill) => isSkillEnabledForAgent(skill, agent)).length
 }
 
 async function refresh() {
@@ -389,44 +377,106 @@ async function refresh() {
     if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
       selectedAgentId.value = next.assistant?.agent?.id ?? next.agents[0]?.id ?? ""
     }
-    if (!next.skills.some((skill) => skill.path === selectedSkillPath.value)) {
-      selectedSkillPath.value = next.skills[0]?.path ?? ""
-    }
-    if (activePanel.value === "skills" && selectedSkillPath.value) {
-      await selectSkillByPath(selectedSkillPath.value)
-    }
+    await loadSelectedAgentContext()
+    setFeedback("工作室已刷新。", "ok")
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "无法读取工作室。"
+    setFeedback(errorMessage.value, "error")
   } finally {
     loading.value = false
   }
 }
 
-async function selectSkillByPath(path: string) {
-  const requestId = ++detailRequestId
-  detailLoading.value = true
-  skillDetail.value = null
+async function reloadSnapshotAndSelectedAgent() {
+  const next = await getPlatformStudioSnapshot()
+  snapshot.value = next
+  if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
+    selectedAgentId.value = next.assistant?.agent?.id ?? next.agents[0]?.id ?? ""
+  }
+  await loadSelectedAgentContext()
+}
+
+async function loadSelectedAgentContext() {
+  const agentId = selectedAgentId.value
+  agentContext.value = null
+  agentDraft.value = ""
+  originalAgentDraft.value = ""
+  soulDraft.value = ""
+  originalSoulDraft.value = ""
+  if (!agentId) {
+    return
+  }
+
+  contextLoading.value = true
   try {
-    const detail = await getPlatformStudioSkillDetail(path)
-    if (requestId === detailRequestId) {
-      skillDetail.value = detail
-    }
+    const context = await getPlatformStudioAgentContext(agentId)
+    agentContext.value = context
+    agentDraft.value = context?.agentFile.content ?? ""
+    originalAgentDraft.value = agentDraft.value
+    soulDraft.value = context?.soulFile?.content ?? defaultSoulDraft(selectedAgent.value)
+    originalSoulDraft.value = soulDraft.value
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "无法读取 Agent。", "error")
   } finally {
-    if (requestId === detailRequestId) {
-      detailLoading.value = false
-    }
+    contextLoading.value = false
   }
 }
 
-function selectAgent(agent: AgentRegistryEntry) {
-  activePanel.value = "agents"
+async function selectAgent(agent: AgentRegistryEntry) {
   selectedAgentId.value = agent.id
+  setFeedback(`已选择：${agent.title}`, "idle")
+  await loadSelectedAgentContext()
 }
 
-function selectSkill(skill: SkillRegistryEntry) {
-  activePanel.value = "skills"
-  selectedSkillPath.value = skill.path
-  void selectSkillByPath(skill.path)
+function resetAgentDraft() {
+  agentDraft.value = originalAgentDraft.value
+}
+
+function resetSoulDraft() {
+  soulDraft.value = originalSoulDraft.value
+}
+
+async function saveAgentMarkdown(fileName: StudioEditableFile) {
+  if (!selectedAgent.value) {
+    return
+  }
+
+  savingFile.value = fileName
+  try {
+    await writePlatformStudioAgentFile({
+      agentId: selectedAgent.value.id,
+      fileName,
+      content: fileName === "AGENT.md" ? agentDraft.value : soulDraft.value,
+    })
+    await reloadSnapshotAndSelectedAgent()
+    setFeedback(`已保存：${fileName}`, "ok")
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : `无法保存 ${fileName}。`, "error")
+  } finally {
+    savingFile.value = null
+  }
+}
+
+async function toggleSkill(skill: SkillRegistryEntry, enabled: boolean) {
+  if (!selectedAgent.value) {
+    return
+  }
+
+  togglingSkillPath.value = skill.path
+  try {
+    await updatePlatformStudioAgentSkillEnabled({
+      agentId: selectedAgent.value.id,
+      skillPath: skill.path,
+      enabled,
+    })
+    await reloadSnapshotAndSelectedAgent()
+    setFeedback(`${enabled ? "已启用" : "已禁用"}：${skill.title}`, "ok")
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "无法更新 Skill。", "error")
+    await reloadSnapshotAndSelectedAgent()
+  } finally {
+    togglingSkillPath.value = ""
+  }
 }
 
 function openWorkspace() {
@@ -448,20 +498,6 @@ function openPathDirectory(path: string) {
     query: {
       cardId: snapshot.value.card.id,
       path: directoryOf(path),
-    },
-  })
-}
-
-function editPath(path: string) {
-  if (!snapshot.value) {
-    return
-  }
-  router.push({
-    name: "workspace-editor",
-    query: {
-      cardId: snapshot.value.card.id,
-      path,
-      mode: "edit",
     },
   })
 }

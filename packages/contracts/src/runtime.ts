@@ -115,6 +115,8 @@ export interface AgentRegistryEntry {
   path: string
   contacts: string[]
   defaultSkills: string[]
+  enabledSkills: string[]
+  disabledSkills: string[]
   contextPaths: string[]
   updatedAt: number
 }
@@ -122,6 +124,7 @@ export interface AgentRegistryEntry {
 export interface AgentContextEntry {
   agent: AgentRegistryEntry
   agentFile: WorkspaceFile
+  soulFile?: WorkspaceFile
   notesFile?: WorkspaceFile
   sessionFile?: WorkspaceFile
   skillIndex: SkillRegistryEntry[]

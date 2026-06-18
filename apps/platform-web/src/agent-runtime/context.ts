@@ -3,7 +3,7 @@ import type {
   AgentRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
-import { buildAgentRegistry, buildSkillRegistry } from "./registry"
+import { buildAgentRegistry, buildSkillRegistry, filterSkillsForAgent } from "./registry"
 
 export interface AgentContextAssemblyOptions {
   agentId?: string
@@ -11,6 +11,7 @@ export interface AgentContextAssemblyOptions {
 }
 
 const AGENT_FILE_NAME = "AGENT.md"
+const SOUL_FILE_NAME = "SOUL.md"
 
 function cleanString(value: string | undefined): string | undefined {
   const cleaned = value?.trim()
@@ -91,6 +92,9 @@ export function assembleAgentContext(
   const sessionFile = agentDirectory
     ? filesByPath.get(`save/${agentDirectory}/session.jsonl`)
     : undefined
+  const soulFile = agentDirectory
+    ? filesByPath.get(`${agentDirectory}/${SOUL_FILE_NAME}`)
+    : undefined
   const contextFiles: WorkspaceFile[] = []
   const missingContextPaths: string[] = []
 
@@ -108,11 +112,17 @@ export function assembleAgentContext(
   const entry: AgentContextEntry = {
     agent,
     agentFile,
-    skillIndex: buildSkillRegistry(files, { agentId: agent.id }),
+    skillIndex: filterSkillsForAgent(
+      buildSkillRegistry(files, { agentId: agent.id }),
+      agent,
+    ),
     contextFiles,
     missingContextPaths,
   }
 
+  if (soulFile) {
+    entry.soulFile = soulFile
+  }
   if (notesFile) {
     entry.notesFile = notesFile
   }

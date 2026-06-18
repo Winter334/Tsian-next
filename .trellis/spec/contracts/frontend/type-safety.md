@@ -12,8 +12,8 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `RemotePlayBridge*` types describe the serializable `tsian.play-bridge.v1` postMessage protocol used by remote iframe frontends.
 - `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views.
 - `GameCardManifest`, `GameCardFrontendBinding`, `GameCardPackageManifest`, `GameCardPackageFileEntry`, and `GameCardContentFile` describe reusable game cards, package files, frontend bindings, and card-owned content files. `GameCardWorkspaceTemplateFile` is a compatibility alias for `GameCardContentFile`. `GameCardManifest.summary` is the single Game Card intro field; there is no parallel Game Card `description` field. `GameCardManifest.frontend` is optional; when present, frontend bindings are remote or packaged only.
-- `AgentRegistryEntry` describes lightweight `agents/<agent>/AGENT.md` index entries.
-- `AgentContextEntry` describes one assembled Agent context bundle for `agent-context`.
+- `AgentRegistryEntry` describes lightweight `agents/<agent>/AGENT.md` index entries, including compatibility `defaultSkills` plus Studio-written `enabledSkills` and `disabledSkills`.
+- `AgentContextEntry` describes one assembled Agent context bundle for `agent-context`, including `agentFile`, optional `soulFile`, save runtime notes/session files, filtered Skill Index, declared context files, and missing context paths.
 - `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries. Use `name` / `description` for model-facing Skill identity and keep `id` / `summary` / `path` for compatibility and bridge/UI/debug consumers.
 - `SkillDetailEntry` describes a loaded `SKILL.md` plus resource index for `skill-detail`.
 - `SkillResourceEntry` describes a bundled skill resource file without its content.

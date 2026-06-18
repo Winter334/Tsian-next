@@ -53,17 +53,17 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 - Position route-level context menus relative to the route view container, not with viewport `position: fixed` coordinates. `.desktop-window` uses `transform: translateZ(0)`, so a fixed child inside a window gets a transformed containing block and can appear offset from the pointer. Use a `relative` route root, an `absolute` menu, and translate `MouseEvent.clientX/clientY` through `getBoundingClientRect()`.
 - Keep file creation and rename path decisions in resource-manager views. Lightweight editor windows may display file identity and edit content/media type, but they should not expose a path field for renaming; use Explorer-style context menu/F2 rename affordances instead.
 
-### Convention: Studio Skill Assignment Wording
+### Convention: Studio Agent Skill Management
 
-**What**: Studio should present Skills as one assignable collection. Player-facing labels should say which Agents a Skill is assigned to, not whether the registry entry is `shared` or `agent-local`.
+**What**: Studio should be Agent-centered: select one Agent, then manage literal files such as `AGENT.md` and `SOUL.md` plus one enable/disable Skill list for that Agent. Player-facing labels should say whether the selected Agent can use a Skill, not whether the registry entry is `shared` or `agent-local`.
 
-**Why**: `shared` / `agent-local` are runtime workspace storage details. Showing them as primary categories makes players manage file layout concepts instead of the actual question: which Agents can use this Skill.
+**Why**: `shared` / `agent-local` are runtime workspace storage details. Showing them as primary categories makes players manage file layout concepts instead of the actual question: can this Agent use this Skill?
 
 **Example**:
 
 ```vue
-<!-- Good: player-facing assignment. -->
-<span>{{ skillAssignmentLabel(skill) }}</span>
+<!-- Good: selected-Agent capability state. -->
+<span>{{ skillEnabled(skill) ? "启用" : "禁用" }}</span>
 
 <!-- Bad: storage-scope category as product language. -->
 <span>{{ skill.scope === "shared" ? "共享能力" : "专用能力" }}</span>

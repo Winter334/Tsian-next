@@ -297,6 +297,14 @@ const STUDIO_ASSISTANT_AGENT_MD = [
   "",
   "# Studio Assistant",
   "",
+  "This file registers the Studio Assistant Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+  "Keep durable identity and work style in `SOUL.md`.",
+  "",
+].join("\n")
+
+const STUDIO_ASSISTANT_SOUL_MD = [
+  "# Studio Assistant Soul",
+  "",
   "You are the workspace assistant for this game card and save instance.",
   "Help players and authors understand the Tsian framework, inspect workspace conventions, and plan safe changes to Agents, Skills, state files, frontend data, memory, diagnostics, and game-card content.",
   "",
@@ -362,11 +370,11 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "## Agents",
   "",
-  "Agent definitions are Game Card content under `agents/<agent>/AGENT.md`. Runtime notes and session transcripts live under `save/agents/<agent>/`.",
+  "Agent registry definitions are Game Card content under `agents/<agent>/AGENT.md`. Durable identity and work-style prompts live under optional `agents/<agent>/SOUL.md` files. Runtime notes and session transcripts live under `save/agents/<agent>/`.",
   "",
   "The default AIRP runtime still uses `master` and `narrative` as the normal turn path. The `studio-assistant` Agent is for future/player-facing workspace help and should not change normal AIRP turn behavior by existing alone.",
   "",
-  "An Agent definition should state responsibility, when to act, output expectations, contacts, default or optional Skills, and useful context paths.",
+  "`AGENT.md` should state responsibility, routing contacts, default or optional Skills, and useful context paths. `SOUL.md` should hold durable identity, work style, and expression preferences.",
   "",
   "## Skills",
   "",
@@ -429,7 +437,8 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: [
       "# Agents",
       "",
-      "Agent definitions live under `agents/<agent>/AGENT.md`.",
+      "Agent registry definitions live under `agents/<agent>/AGENT.md`.",
+      "Durable Agent identity and work style can live under `agents/<agent>/SOUL.md`.",
       "Agent-local skills can live under `agents/<agent>/skills/`.",
       "A game card can declare a workspace assistant Agent in its manifest; the built-in blank card uses `agents/studio-assistant/AGENT.md`.",
       "",
@@ -455,6 +464,16 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "---",
       "",
       "# Master Agent",
+      "",
+      "This file registers the master Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+      "Keep durable identity and work style in `SOUL.md`.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "agents/master/SOUL.md",
+    content: [
+      "# Master Agent Soul",
       "",
       "You are the entry agent for an AIRP turn.",
       "Read the relevant workspace context, decide what needs to happen next, and contact specialist agents when their responsibilities match the current situation.",
@@ -491,6 +510,16 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "",
       "# Narrative Agent",
       "",
+      "This file registers the narrative Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+      "Keep durable identity and work style in `SOUL.md`.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "agents/narrative/SOUL.md",
+    content: [
+      "# Narrative Agent Soul",
+      "",
       "You write the player-facing narrative for a turn.",
       "Use established world facts and recent history, preserve continuity, and ask the master agent when the requested direction needs coordination.",
       "",
@@ -525,6 +554,16 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "",
       "# Memory Agent",
       "",
+      "This file registers the memory Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+      "Keep durable identity and work style in `SOUL.md`.",
+      "",
+    ].join("\n"),
+  },
+  {
+    path: "agents/memory/SOUL.md",
+    content: [
+      "# Memory Agent Soul",
+      "",
       "You support AIRP continuity and memory decisions for the calling agent.",
       "Check whether the current request conflicts with known timeline, summaries, canon, character facts, or recent scene details.",
       "Return concise findings, current-scene summary suggestions, long-term memory candidates, and any facts worth preserving.",
@@ -544,6 +583,10 @@ const DEFAULT_WORKSPACE_FILES: Array<{
   {
     path: "agents/studio-assistant/AGENT.md",
     content: STUDIO_ASSISTANT_AGENT_MD,
+  },
+  {
+    path: "agents/studio-assistant/SOUL.md",
+    content: STUDIO_ASSISTANT_SOUL_MD,
   },
   {
     path: "agents/studio-assistant/notes.md",
