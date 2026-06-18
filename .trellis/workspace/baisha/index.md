@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 71
+- **Total Sessions**: 72
 - **Last Active**: 2026-06-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~449 | Active |
+| `journal-2.md` | ~486 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 72 | 2026-06-18 | Finish agent-provider model selection: verify + spec | `eda8dca`, `ba0a3a6`, `a6f8578`, `5bc3dbe` | `chore/trellis-upgrade-0.6.2` |
 | 71 | 2026-06-18 | Assistant chat UI polish + multi-session + archive | `583e77a` | `master` |
 | 70 | 2026-06-18 | Agent tool permission runtime enforcement | `bfcdbd8` | `master` |
 | 69 | 2026-06-18 | Agent-centered Studio management UI | `ad4d77f` | `master` |

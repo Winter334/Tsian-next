@@ -447,3 +447,40 @@ Redesigned AssistantView into Codex-desktop-style chat with markdown rendering (
 ### Next Steps
 
 - None - task complete
+
+
+## Session 72: Finish agent-provider model selection: verify + spec
+
+**Date**: 2026-06-18
+**Task**: Finish agent-provider model selection: verify + spec
+**Package**: platform-web
+**Branch**: `chore/trellis-upgrade-0.6.2`
+
+### Summary
+
+Verified the per-Agent provider preset selection implementation against implement.md (5/5 changes landed: contracts providerPresetId field, resolveBrowserAiConfigForProviderId, registry normalization, platform-host callModel closures for both AIRP+Assistant turns + local assistant preset APIs, StudioView dropdown). Ran build:contracts and build:web — both pass. Cross-checked the resolution chain (Agent preset -> global active -> env defaults) in generateAssistantReply. Updated state-management.md spec with the per-Agent provider preset resolution contract (signatures, contracts, error matrix, cases, tests, wrong-vs-correct). Archived the task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eda8dca` | (see git log) |
+| `ba0a3a6` | (see git log) |
+| `a6f8578` | (see git log) |
+| `5bc3dbe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
