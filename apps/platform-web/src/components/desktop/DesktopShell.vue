@@ -5,26 +5,6 @@
     @click="clearDesktopSelection"
     @contextmenu.prevent="openDesktopContextMenu"
   >
-    <header class="desktop-menubar">
-      <button
-        type="button"
-        class="desktop-start-button retro-focus"
-        @click.stop="showDesktop"
-      >
-        <MonitorDot class="h-4 w-4" aria-hidden="true" />
-        TSian
-      </button>
-      <div class="desktop-menu-tabs" aria-label="系统菜单">
-        <span>文件</span>
-        <span>视图</span>
-        <span>系统</span>
-      </div>
-      <div class="desktop-system-readout">
-        <span>存储:{{ storageStatus }}</span>
-        <span>AI:{{ aiStatusShort }}</span>
-      </div>
-    </header>
-
     <main
       ref="stageRef"
       class="desktop-stage"
@@ -86,6 +66,15 @@
     </main>
 
     <footer class="desktop-taskbar">
+      <button
+        type="button"
+        class="desktop-start-button retro-focus"
+        aria-label="显示桌面"
+        @click.stop="showDesktop"
+      >
+        <MonitorDot class="h-4 w-4" aria-hidden="true" />
+        TSian
+      </button>
       <div class="desktop-task-list" aria-label="已打开的窗口">
         <button
           v-for="window in desktop.windows.value"
@@ -127,11 +116,6 @@ import {
   type DesktopBounds,
   type DesktopWindowGeometry,
 } from "@/composables/useDesktopWindows"
-
-defineProps<{
-  storageStatus: string
-  aiStatusShort: string
-}>()
 
 interface ContextMenuState {
   x: number
