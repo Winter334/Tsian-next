@@ -60,3 +60,21 @@ export interface GameCardPackageManifest {
   exportedAt?: string
   exporter?: GameCardPackageExporter
 }
+
+export const FRONTEND_PACKAGE_SCHEMA = "tsian.frontend-package.v1"
+
+export interface FrontendPackageFileEntry {
+  path: string
+  mediaType: string
+  size: number
+}
+
+export interface FrontendPackageManifest {
+  schema: typeof FRONTEND_PACKAGE_SCHEMA
+  /** Package-root-relative entry path without a leading slash or frontend/ prefix. Must exist in files. */
+  entry: string
+  bridgeVersion: "tsian.play-bridge.v1"
+  files: FrontendPackageFileEntry[]
+  exportedAt?: string
+  exporter?: GameCardPackageExporter
+}
