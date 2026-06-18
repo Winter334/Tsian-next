@@ -39,46 +39,6 @@
       </div>
 
       <div v-else-if="snapshot" class="grid gap-3">
-        <section class="retro-inset grid gap-3 p-4 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-          <div class="min-w-0">
-            <p class="text-sm leading-6 text-text-main">{{ cardIntro }}</p>
-            <p class="mt-2 text-xs leading-5 text-text-dim">
-              {{ snapshot.usingSaveContext ? "当前存档上下文已合并进角色详情。" : "未使用存档上下文，正在展示游戏卡自带内容。" }}
-            </p>
-          </div>
-          <div class="grid grid-cols-3 gap-2 text-center">
-            <div class="min-w-20 border border-neon-deep/40 bg-elevated/50 px-3 py-2">
-              <p class="font-mono text-lg font-bold text-neon">{{ snapshot.agents.length }}</p>
-              <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">角色</p>
-            </div>
-            <div class="min-w-20 border border-neon-deep/40 bg-elevated/50 px-3 py-2">
-              <p class="font-mono text-lg font-bold text-neon">{{ snapshot.skills.length }}</p>
-              <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">能力</p>
-            </div>
-            <div class="min-w-20 border border-neon-deep/40 bg-elevated/50 px-3 py-2">
-              <p class="font-mono text-lg font-bold" :class="snapshot.assistant ? 'text-neon' : 'text-text-dim'">
-                {{ snapshot.assistant ? "ON" : "--" }}
-              </p>
-              <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">助手</p>
-            </div>
-          </div>
-        </section>
-
-        <section
-          v-if="snapshot.assistant"
-          class="grid gap-3 border border-neon-deep/35 bg-elevated/35 p-3 md:grid-cols-[auto_minmax(0,1fr)] md:items-center"
-        >
-          <span class="grid h-10 w-10 place-items-center border border-neon-deep/50 bg-panel text-neon">
-            <Sparkles class="h-5 w-5" aria-hidden="true" />
-          </span>
-          <div class="min-w-0">
-            <p class="font-mono text-xs uppercase tracking-wider text-neon">卡片助手</p>
-            <p class="mt-1 text-sm leading-6 text-text-dim">
-              {{ snapshot.assistant.summary }}
-            </p>
-          </div>
-        </section>
-
         <section class="grid min-h-[460px] gap-3 xl:grid-cols-[minmax(320px,0.9fr)_minmax(0,1.1fr)]">
           <div class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/35">
             <div class="flex border-b border-neon-deep/35 p-2" role="tablist" aria-label="工作室栏目">
@@ -132,7 +92,7 @@
                 >
                   <span class="truncate text-sm font-bold text-text-main">{{ skill.title }}</span>
                   <span class="line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.summary || skill.description) }}</span>
-                  <span class="font-mono text-[11px] text-neon-muted">{{ skillScopeLabel(skill) }}</span>
+                  <span class="font-mono text-[11px] text-neon-muted">{{ skillAssignmentLabel(skill) }}</span>
                 </button>
                 <p v-if="snapshot.skills.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
                   这张游戏卡还没有定义能力。
@@ -149,30 +109,11 @@
                 <p class="mt-2 text-sm leading-6 text-text-dim">{{ entrySummary(selectedAgent.summary) }}</p>
               </div>
 
-              <div class="grid gap-2 sm:grid-cols-3">
-                <div class="border border-neon-deep/35 bg-elevated/45 p-3">
-                  <p class="font-mono text-lg text-neon">{{ selectedAgent.contacts.length }}</p>
-                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">联系人</p>
-                </div>
-                <div class="border border-neon-deep/35 bg-elevated/45 p-3">
-                  <p class="font-mono text-lg text-neon">{{ selectedAgent.defaultSkills.length }}</p>
-                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">默认能力</p>
-                </div>
-                <div class="border border-neon-deep/35 bg-elevated/45 p-3">
-                  <p class="font-mono text-lg" :class="agentContext?.missingContextPaths.length ? 'text-warning' : 'text-neon'">
-                    {{ agentContext?.missingContextPaths.length ?? 0 }}
-                  </p>
-                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">缺失上下文</p>
-                </div>
-              </div>
-
-              <p v-if="detailLoading" class="font-mono text-xs uppercase tracking-wider text-neon">正在读取详情</p>
-
-              <div v-if="agentContext?.skillIndex.length" class="grid gap-2">
-                <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">可用能力</p>
+              <div v-if="assignedSkillsForSelectedAgent.length" class="grid gap-2">
+                <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">已分配能力</p>
                 <div class="flex flex-wrap gap-2">
                   <button
-                    v-for="skill in agentContext.skillIndex"
+                    v-for="skill in assignedSkillsForSelectedAgent"
                     :key="skill.path"
                     type="button"
                     class="retro-focus border border-neon-deep/40 bg-panel px-2 py-1 font-mono text-[11px] text-text-dim hover:text-text-main"
@@ -189,12 +130,6 @@
                   <div>
                     <dt class="font-mono text-[10px] uppercase text-neon-muted">文件</dt>
                     <dd class="mt-1 break-all font-mono">{{ selectedAgent.path }}</dd>
-                  </div>
-                  <div v-if="agentContext?.missingContextPaths.length">
-                    <dt class="font-mono text-[10px] uppercase text-warning">缺失路径</dt>
-                    <dd class="mt-1 grid gap-1">
-                      <span v-for="path in agentContext.missingContextPaths" :key="path" class="break-all font-mono">{{ path }}</span>
-                    </dd>
                   </div>
                 </dl>
               </details>
@@ -220,8 +155,8 @@
 
               <div class="grid gap-2 sm:grid-cols-3">
                 <div class="border border-neon-deep/35 bg-elevated/45 p-3">
-                  <p class="font-mono text-sm text-neon">{{ skillScopeLabel(selectedSkill) }}</p>
-                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">范围</p>
+                  <p class="font-mono text-lg text-neon">{{ skillAssignedAgents(selectedSkill).length }}</p>
+                  <p class="mt-1 font-mono text-[10px] uppercase text-text-dim">分配角色</p>
                 </div>
                 <div class="border border-neon-deep/35 bg-elevated/45 p-3">
                   <p class="font-mono text-lg text-neon">{{ selectedSkill.triggers.length }}</p>
@@ -234,6 +169,21 @@
               </div>
 
               <p v-if="detailLoading" class="font-mono text-xs uppercase tracking-wider text-neon">正在读取详情</p>
+
+              <div v-if="skillAssignedAgents(selectedSkill).length" class="grid gap-2">
+                <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">分配给</p>
+                <div class="flex flex-wrap gap-2">
+                  <button
+                    v-for="agent in skillAssignedAgents(selectedSkill)"
+                    :key="agent.id"
+                    type="button"
+                    class="retro-focus border border-neon-deep/40 bg-panel px-2 py-1 font-mono text-[11px] text-text-dim hover:text-text-main"
+                    @click="selectAgent(agent)"
+                  >
+                    {{ agent.title }}
+                  </button>
+                </div>
+              </div>
 
               <div v-if="skillDetail?.resources.length" class="grid gap-2">
                 <p class="font-mono text-xs uppercase tracking-wider text-neon-muted">资源索引</p>
@@ -261,10 +211,6 @@
                     <dt class="font-mono text-[10px] uppercase text-neon-muted">文件</dt>
                     <dd class="mt-1 break-all font-mono">{{ selectedSkill.path }}</dd>
                   </div>
-                  <div v-if="selectedSkill.appliesTo.length">
-                    <dt class="font-mono text-[10px] uppercase text-neon-muted">适用对象</dt>
-                    <dd class="mt-1">{{ selectedSkill.appliesTo.join(", ") }}</dd>
-                  </div>
                 </dl>
               </details>
 
@@ -291,16 +237,14 @@
       </div>
     </main>
 
-    <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
+    <footer class="retro-statusbar flex min-h-9 flex-wrap items-center border-t px-3 py-2">
       <p class="font-mono text-[11px] text-text-dim">{{ statusLabel }}</p>
-      <p class="min-w-0 truncate font-mono text-[11px] text-text-dim">{{ contextLabel }}</p>
     </footer>
   </section>
 </template>
 
 <script setup lang="ts">
 import type {
-  AgentContextEntry,
   AgentRegistryEntry,
   SkillDetailEntry,
   SkillRegistryEntry,
@@ -313,11 +257,9 @@ import {
   FolderOpen,
   PanelRight,
   RefreshCw,
-  Sparkles,
   Wrench,
 } from "lucide-vue-next"
 import {
-  getPlatformStudioAgentContext,
   getPlatformStudioSkillDetail,
   getPlatformStudioSnapshot,
   waitForPlatformHostReady,
@@ -334,7 +276,6 @@ const errorMessage = ref("")
 const activePanel = ref<StudioPanel>("agents")
 const selectedAgentId = ref("")
 const selectedSkillPath = ref("")
-const agentContext = ref<AgentContextEntry | null>(null)
 const skillDetail = ref<SkillDetailEntry | null>(null)
 let detailRequestId = 0
 
@@ -344,11 +285,16 @@ const selectedAgent = computed(() =>
 const selectedSkill = computed(() =>
   snapshot.value?.skills.find((skill) => skill.path === selectedSkillPath.value) ?? null
 )
+const assignedSkillsForSelectedAgent = computed(() => {
+  if (!snapshot.value || !selectedAgent.value) {
+    return []
+  }
+  return snapshot.value.skills.filter((skill) =>
+    skillAssignedAgents(skill).some((agent) => agent.id === selectedAgent.value?.id)
+  )
+})
 const cardTitle = computed(() =>
   snapshot.value?.card.manifest.name?.trim() || "工作室"
-)
-const cardIntro = computed(() =>
-  snapshot.value?.card.manifest.summary?.trim() || "这张游戏卡还没有简介。"
 )
 const statusLabel = computed(() => {
   if (!snapshot.value) {
@@ -356,33 +302,61 @@ const statusLabel = computed(() => {
   }
   return `${snapshot.value.agents.length} 个角色 · ${snapshot.value.skills.length} 个能力`
 })
-const contextLabel = computed(() => {
-  if (!snapshot.value) {
-    return ""
-  }
-  return snapshot.value.usingSaveContext
-    ? "使用当前存档上下文"
-    : "仅使用游戏卡内容"
-})
 
 function entrySummary(value: string | undefined): string {
   return value?.trim() || "暂无简介。"
 }
 
-function skillScopeLabel(skill: SkillRegistryEntry): string {
-  if (skill.scope === "agent-local") {
-    return skill.agentId ? `角色能力：${skill.agentId}` : "角色能力"
+function normalizedKey(value: string): string {
+  return value.trim().toLowerCase()
+}
+
+function skillMatchesAgentDefault(skill: SkillRegistryEntry, agent: AgentRegistryEntry): boolean {
+  const skillKeys = new Set([
+    normalizedKey(skill.id),
+    normalizedKey(skill.name),
+    normalizedKey(skill.title),
+  ])
+  return agent.defaultSkills.some((defaultSkill) =>
+    skillKeys.has(normalizedKey(defaultSkill))
+  )
+}
+
+function skillAssignedAgents(skill: SkillRegistryEntry): AgentRegistryEntry[] {
+  const agents = snapshot.value?.agents ?? []
+  if (agents.length === 0) {
+    return []
   }
-  return "共享能力"
+
+  if (skill.scope === "agent-local") {
+    return agents.filter((agent) => agent.id === skill.agentId)
+  }
+
+  const explicitTargets = new Set(skill.appliesTo.map(normalizedKey))
+  const assigned = agents.filter((agent) =>
+    explicitTargets.has(normalizedKey(agent.id))
+    || explicitTargets.has(normalizedKey(agent.title))
+    || skillMatchesAgentDefault(skill, agent)
+  )
+
+  return assigned.length ? assigned : agents
+}
+
+function skillAssignmentLabel(skill: SkillRegistryEntry): string {
+  const agents = skillAssignedAgents(skill)
+  if (agents.length === 0) {
+    return "未分配角色"
+  }
+  if (agents.length === 1) {
+    return `分配给：${agents[0].title}`
+  }
+  return `分配给 ${agents.length} 个角色`
 }
 
 function abilityCountForAgent(agent: AgentRegistryEntry): number {
   const skills = snapshot.value?.skills ?? []
-  const defaultSkills = new Set(agent.defaultSkills)
   return skills.filter((skill) =>
-    skill.agentId === agent.id
-    || defaultSkills.has(skill.id)
-    || defaultSkills.has(skill.name)
+    skillAssignedAgents(skill).some((assignedAgent) => assignedAgent.id === agent.id)
   ).length
 }
 
@@ -418,31 +392,13 @@ async function refresh() {
     if (!next.skills.some((skill) => skill.path === selectedSkillPath.value)) {
       selectedSkillPath.value = next.skills[0]?.path ?? ""
     }
-    if (activePanel.value === "agents" && selectedAgentId.value) {
-      await selectAgentById(selectedAgentId.value)
-    } else if (activePanel.value === "skills" && selectedSkillPath.value) {
+    if (activePanel.value === "skills" && selectedSkillPath.value) {
       await selectSkillByPath(selectedSkillPath.value)
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "无法读取工作室。"
   } finally {
     loading.value = false
-  }
-}
-
-async function selectAgentById(agentId: string) {
-  const requestId = ++detailRequestId
-  detailLoading.value = true
-  agentContext.value = null
-  try {
-    const context = await getPlatformStudioAgentContext(agentId)
-    if (requestId === detailRequestId) {
-      agentContext.value = context
-    }
-  } finally {
-    if (requestId === detailRequestId) {
-      detailLoading.value = false
-    }
   }
 }
 
@@ -465,7 +421,6 @@ async function selectSkillByPath(path: string) {
 function selectAgent(agent: AgentRegistryEntry) {
   activePanel.value = "agents"
   selectedAgentId.value = agent.id
-  void selectAgentById(agent.id)
 }
 
 function selectSkill(skill: SkillRegistryEntry) {
