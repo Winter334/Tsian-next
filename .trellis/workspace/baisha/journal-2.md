@@ -379,3 +379,37 @@ Redesigned Studio around selected Agent management, added SOUL.md runtime suppor
 ### Next Steps
 
 - None - task complete
+
+
+## Session 70: Agent tool permission runtime enforcement
+
+**Date**: 2026-06-18
+**Task**: Agent tool permission runtime enforcement
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Implemented agent.json-backed Agent configuration, Studio tool and workspace permission controls, and runtime enforcement for agent_call and workspace read/write permissions, including Skill workspace side-effect gates and spec updates.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bfcdbd8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
