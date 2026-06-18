@@ -82,6 +82,7 @@ import {
   deleteWorkspacePathForSave,
   deleteLocalSave,
   ensureBuiltinBlankGameCard,
+  exportGameCardFrontendPackage,
   exportGameCardPackage,
   getActiveGameCardId,
   getActiveSaveId,
@@ -89,6 +90,7 @@ import {
   getHistoryForSave,
   getLocalGameCard,
   getSnapshotForSave,
+  importGameCardFrontendPackage,
   importGameCardPackage,
   initializeWorkspaceForSave,
   listCheckpointsForSave,
@@ -2073,6 +2075,10 @@ export async function updatePlatformGameCardFrontend(
       frontend: normalizedFrontend,
     },
     contentFiles: card.contentFiles,
+    // When clearing the binding, also delete all packaged frontend files.
+    // putLocalGameCard treats frontendFiles: [] as "delete all existing
+    // frontend files for this card" (enters the delete branch, writes none).
+    frontendFiles: normalizedFrontend ? undefined : [],
     source: card.source,
   })
 }
@@ -2184,6 +2190,26 @@ export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | 
 export async function exportPlatformGameCardPackage(cardId: string) {
   await ensureBuiltinBlankGameCard()
   return exportGameCardPackage(cardId)
+}
+
+export async function importPlatformGameCardFrontendPackage(
+  cardId: string,
+  input: Blob | ArrayBuffer | Uint8Array,
+) {
+  await ensureBuiltinBlankGameCard()
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+  if (card.source === "builtin") {
+    throw new Error("内置游戏卡不能直接替换前端，请先另存为本地副本。")
+  }
+  return importGameCardFrontendPackage(cardId, input)
+}
+
+export async function exportPlatformGameCardFrontendPackage(cardId: string): Promise<Blob> {
+  await ensureBuiltinBlankGameCard()
+  return exportGameCardFrontendPackage(cardId)
 }
 
 export async function createPlatformSaveFromGameCard(
