@@ -413,3 +413,37 @@ Implemented agent.json-backed Agent configuration, Studio tool and workspace per
 ### Next Steps
 
 - None - task complete
+
+
+## Session 71: Assistant chat UI polish + multi-session + archive
+
+**Date**: 2026-06-18
+**Task**: Assistant chat UI polish + multi-session + archive
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Redesigned AssistantView into Codex-desktop-style chat with markdown rendering (marked + highlight.js), multi-session persistence with session sidebar, optimistic switching, and touch-based reordering. Archived desktop-assistant-card-knowledge task; remaining work (local assistant independence + .tsian explorer) split to a new task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `583e77a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
