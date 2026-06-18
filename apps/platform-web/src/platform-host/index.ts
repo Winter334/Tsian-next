@@ -6,6 +6,8 @@ import type {
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
+  GameCardContentFile,
+  GameCardCover,
   GameCardFrontendBinding,
   PlatformActionError,
   PlatformActionRequest,
@@ -2073,6 +2075,105 @@ export async function updatePlatformGameCardFrontend(
     contentFiles: card.contentFiles,
     source: card.source,
   })
+}
+
+const COVER_CONTENT_PREFIX = ".cover/"
+
+function coverExtensionForMediaType(mediaType: string): string {
+  if (mediaType === "image/png") return "png"
+  if (mediaType === "image/jpeg") return "jpg"
+  if (mediaType === "image/webp") return "webp"
+  if (mediaType === "image/gif") return "gif"
+  if (mediaType === "image/svg+xml") return "svg"
+  return "bin"
+}
+
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = ""
+  const chunkSize = 0x8000
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    const chunk = bytes.subarray(offset, offset + chunkSize)
+    binary += String.fromCharCode(...chunk)
+  }
+  return btoa(binary)
+}
+
+export type PlatformGameCardCoverInput =
+  | { kind: "upload"; file: Blob; alt?: string }
+  | { kind: "url"; url: string; alt?: string }
+  | { kind: "clear" }
+
+export async function setPlatformGameCardCover(
+  cardId: string,
+  input: PlatformGameCardCoverInput,
+) {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+  if (card.source === "builtin") {
+    throw new Error("内置游戏卡不能直接修改封面。请先另存为本地副本。")
+  }
+
+  if (input.kind === "url") {
+    const url = input.url.trim()
+    if (!url) {
+      throw new Error("封面 URL 不能为空。")
+    }
+    const nextCover: GameCardCover = { url }
+    if (input.alt?.trim()) {
+      nextCover.alt = input.alt.trim()
+    }
+    return putLocalGameCard({
+      manifest: { ...card.manifest, cover: nextCover },
+      contentFiles: stripExistingCoverFiles(card.contentFiles, card.manifest.cover),
+      source: card.source,
+    })
+  }
+
+  if (input.kind === "clear") {
+    return putLocalGameCard({
+      manifest: { ...card.manifest, cover: undefined },
+      contentFiles: stripExistingCoverFiles(card.contentFiles, card.manifest.cover),
+      source: card.source,
+    })
+  }
+
+  // kind === "upload"
+  const mediaType = input.file.type || "image/png"
+  if (!mediaType.startsWith("image/")) {
+    throw new Error("封面文件必须是图片。")
+  }
+  const extension = coverExtensionForMediaType(mediaType)
+  const coverPath = `${COVER_CONTENT_PREFIX}cover.${extension}`
+  const bytes = new Uint8Array(await input.file.arrayBuffer())
+  const base64 = bytesToBase64(bytes)
+  const dataUri = `data:${mediaType};base64,${base64}`
+
+  const remainingFiles = stripExistingCoverFiles(card.contentFiles, card.manifest.cover)
+  const nextCover: GameCardCover = { workspacePath: coverPath }
+  if (input.alt?.trim()) {
+    nextCover.alt = input.alt.trim()
+  }
+  return putLocalGameCard({
+    manifest: { ...card.manifest, cover: nextCover },
+    contentFiles: [
+      ...remainingFiles,
+      { path: coverPath, content: dataUri, mediaType },
+    ],
+    source: card.source,
+  })
+}
+
+function stripExistingCoverFiles(
+  contentFiles: GameCardContentFile[],
+  cover: GameCardCover | undefined,
+): GameCardContentFile[] {
+  const coverPath = cover?.workspacePath?.trim()
+  if (!coverPath) {
+    return contentFiles
+  }
+  return contentFiles.filter((file) => file.path !== coverPath)
 }
 
 export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | Uint8Array) {

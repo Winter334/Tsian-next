@@ -131,6 +131,77 @@
                 </span>
               </div>
 
+              <div class="grid gap-2 border border-neon-deep/30 bg-panel/40 p-3">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">封面</span>
+                  <span v-if="coverUrl" class="font-mono text-[10px] text-text-dim">{{ coverSourceLabel }}</span>
+                </div>
+                <div class="flex flex-wrap items-start gap-3">
+                  <div class="relative h-24 w-24 shrink-0 overflow-hidden border border-neon-deep/55 bg-elevated">
+                    <img
+                      v-if="coverUrl"
+                      :src="coverUrl"
+                      :alt="card.manifest.cover?.alt || ''"
+                      class="h-full w-full object-cover"
+                    />
+                    <div v-else class="grid h-full place-items-center bg-[radial-gradient(circle_at_30%_20%,rgba(243,197,109,0.22),transparent_28%),linear-gradient(135deg,#3f4d3a,#1e2420)]">
+                      <Gamepad2 class="h-8 w-8 text-neon-muted" aria-hidden="true" />
+                    </div>
+                  </div>
+                  <div class="grid min-w-0 content-start gap-2">
+                    <div class="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                        :disabled="coverSaving || card.source === 'builtin'"
+                        @click="openCoverPicker"
+                      >
+                        <ImageUp class="h-3.5 w-3.5" aria-hidden="true" />
+                        {{ coverUrl ? '更换封面' : '上传封面' }}
+                      </button>
+                      <button
+                        v-if="coverUrl"
+                        type="button"
+                        class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
+                        :disabled="coverSaving || card.source === 'builtin'"
+                        @click="clearCover"
+                      >
+                        <XCircle class="h-3.5 w-3.5" aria-hidden="true" />
+                        移除
+                      </button>
+                    </div>
+                    <label class="grid gap-1">
+                      <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">或粘贴图片 URL</span>
+                      <div class="flex gap-2">
+                        <input
+                          v-model="coverUrlDraft"
+                          type="url"
+                          class="retro-focus h-8 min-w-0 flex-1 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+                          placeholder="https://example.com/cover.png"
+                        />
+                        <button
+                          type="button"
+                          class="retro-button retro-focus inline-flex h-8 shrink-0 items-center gap-2 px-3 font-mono text-xs"
+                          :disabled="coverSaving || !coverUrlDraft.trim() || card.source === 'builtin'"
+                          @click="saveCoverUrl"
+                        >
+                          <Link2 class="h-3.5 w-3.5" aria-hidden="true" />
+                          应用
+                        </button>
+                      </div>
+                    </label>
+                    <input
+                      ref="coverInput"
+                      type="file"
+                      accept="image/*"
+                      class="hidden"
+                      @change="handleCoverSelected"
+                    />
+                  </div>
+                </div>
+                <p v-if="coverError" class="text-xs leading-5 text-danger">{{ coverError }}</p>
+              </div>
+
               <label class="grid gap-1">
                 <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">名称</span>
                 <input
@@ -178,106 +249,6 @@
                   删除应用
                 </button>
               </div>
-            </div>
-
-            <div class="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <p class="font-mono text-xs uppercase tracking-wider text-neon">
-                  存档槽
-                </p>
-                <p class="mt-1 text-sm leading-6 text-text-dim">
-                  {{ frontendStatusDescription }}
-                </p>
-              </div>
-              <span class="border border-neon-deep/50 bg-elevated px-2 py-1 font-mono text-[11px] text-text-dim">
-                {{ cardSaves.length }} 个槽位
-              </span>
-            </div>
-
-            <div class="grid gap-2 sm:grid-cols-[1fr_auto]">
-              <input
-                v-model="newSaveName"
-                type="text"
-                class="retro-focus h-9 min-w-0 border border-neon-deep/55 bg-elevated px-3 text-sm text-text-main placeholder:text-text-dim/60"
-                placeholder="新存档名称"
-                @keyup.enter="createSave"
-              />
-              <button
-                type="button"
-                class="retro-button retro-focus inline-flex h-9 items-center justify-center gap-2 px-3 font-mono text-xs"
-                @click="createSave"
-              >
-                <Plus class="h-3.5 w-3.5" aria-hidden="true" />
-                新建存档
-              </button>
-            </div>
-
-            <p v-if="feedback" class="border border-neon-deep/40 bg-neon/10 px-3 py-2 text-sm text-neon">
-              {{ feedback }}
-            </p>
-
-            <div class="grid gap-2">
-              <p v-if="cardSaves.length === 0" class="border border-neon-deep/35 bg-elevated/50 p-3 text-sm text-text-dim">
-                这张游戏卡还没有创建存档槽。
-              </p>
-
-              <article
-                v-for="save in cardSaves"
-                :key="save.id"
-                class="slot-row grid gap-3 border p-3"
-                :class="selectedSaveId === save.id ? 'border-neon bg-neon/10' : 'border-neon-deep/40 bg-elevated/45'"
-              >
-                <div class="flex items-start justify-between gap-3">
-                  <button
-                    type="button"
-                    class="retro-focus min-w-0 text-left"
-                    @click="selectSave(save.id)"
-                  >
-                    <span class="block truncate text-sm font-bold text-text-main">
-                      {{ save.name }}
-                    </span>
-                    <span class="mt-1 block font-mono text-[11px] leading-5 text-text-dim">
-                      来源：{{ cardTitle }} · 创建于 {{ formatDateTime(save.createdAt) }}
-                    </span>
-                    <span class="block font-mono text-[11px] leading-5 text-text-dim">
-                      上次使用 {{ formatDateTime(save.updatedAt) }}
-                    </span>
-                  </button>
-                  <span
-                    v-if="save.id === activeSaveId"
-                    class="shrink-0 border border-neon px-2 py-1 font-mono text-[10px] uppercase text-neon"
-                  >
-                    当前
-                  </span>
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                    @click="selectSave(save.id)"
-                  >
-                    <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
-                    选择
-                  </button>
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                    :disabled="!isPlayable"
-                    @click="continueSave(save.id)"
-                  >
-                    <Play class="h-3.5 w-3.5" aria-hidden="true" />
-                    继续
-                  </button>
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
-                    @click="deleteSave(save.id)"
-                  >
-                    <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
-                    删除
-                  </button>
-                </div>
-              </article>
             </div>
           </section>
         </div>
@@ -488,6 +459,7 @@ import {
   Download,
   ExternalLink,
   Gamepad2,
+  ImageUp,
   Link2,
   MonitorCog,
   PackageOpen,
@@ -522,6 +494,7 @@ import {
   listPlatformSaves,
   selectPlatformSave,
   setPlatformActiveGameCard,
+  setPlatformGameCardCover,
   updatePlatformGameCardMetadata,
   updatePlatformGameCardFrontend,
   type PlatformGameCardFrontendFileSummary,
@@ -560,6 +533,10 @@ const remoteUrl = ref("")
 const packagedEntry = ref("")
 const metadataName = ref("")
 const metadataIntro = ref("")
+const coverUrlDraft = ref("")
+const coverInput = ref<HTMLInputElement | null>(null)
+const coverSaving = ref(false)
+const coverError = ref("")
 const loading = ref(false)
 const exporting = ref(false)
 const frontendSaving = ref(false)
@@ -577,6 +554,13 @@ const cardTitle = computed(() => getGameCardTitle(card.value))
 const cardDescription = computed(() => getGameCardDescription(card.value))
 const cardAuthor = computed(() => getGameCardAuthor(card.value))
 const coverUrl = computed(() => getGameCardCoverUrl(card.value))
+const coverSourceLabel = computed(() => {
+  const cover = card.value?.manifest.cover
+  if (!cover) return ""
+  if (cover.url?.trim()) return "URL"
+  if (cover.workspacePath?.trim()) return "本地"
+  return ""
+})
 const frontendStatusLabel = computed(() => getFrontendStatusLabel(card.value))
 const frontendStatusDescription = computed(() => getFrontendStatusDescription(card.value))
 const isPlayable = computed(() => hasPlayableFrontend(card.value))
@@ -606,6 +590,78 @@ function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
 function syncMetadataDraft(loadedCard: LocalGameCardRecord) {
   metadataName.value = loadedCard.manifest.name
   metadataIntro.value = loadedCard.manifest.summary
+  coverUrlDraft.value = loadedCard.manifest.cover?.url ?? ""
+}
+
+function openCoverPicker() {
+  coverError.value = ""
+  coverInput.value?.click()
+}
+
+async function handleCoverSelected(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ""
+  if (!file || !card.value) {
+    return
+  }
+  if (card.value.source === "builtin") {
+    coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
+    return
+  }
+  coverSaving.value = true
+  coverError.value = ""
+  try {
+    const updated = await setPlatformGameCardCover(card.value.id, { kind: "upload", file })
+    card.value = updated
+    coverUrlDraft.value = updated.manifest.cover?.url ?? ""
+  } catch (error) {
+    coverError.value = error instanceof Error ? error.message : "上传封面失败。"
+  } finally {
+    coverSaving.value = false
+  }
+}
+
+async function saveCoverUrl() {
+  const url = coverUrlDraft.value.trim()
+  if (!url || !card.value) {
+    return
+  }
+  if (card.value.source === "builtin") {
+    coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
+    return
+  }
+  coverSaving.value = true
+  coverError.value = ""
+  try {
+    const updated = await setPlatformGameCardCover(card.value.id, { kind: "url", url })
+    card.value = updated
+  } catch (error) {
+    coverError.value = error instanceof Error ? error.message : "设置封面 URL 失败。"
+  } finally {
+    coverSaving.value = false
+  }
+}
+
+async function clearCover() {
+  if (!card.value) {
+    return
+  }
+  if (card.value.source === "builtin") {
+    coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
+    return
+  }
+  coverSaving.value = true
+  coverError.value = ""
+  try {
+    const updated = await setPlatformGameCardCover(card.value.id, { kind: "clear" })
+    card.value = updated
+    coverUrlDraft.value = ""
+  } catch (error) {
+    coverError.value = error instanceof Error ? error.message : "移除封面失败。"
+  } finally {
+    coverSaving.value = false
+  }
 }
 
 async function refreshData() {

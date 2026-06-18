@@ -216,12 +216,12 @@ const desktopApps: DesktopAppDefinition[] = [
 
 const gameLauncherDefinition: DesktopAppDefinition = {
   appId: "game-launcher",
-  label: "游戏启动器",
-  shortLabel: "启动器",
+  label: "应用属性",
+  shortLabel: "属性",
   routeName: "game-card-detail",
   routePath: "/cards",
-  title: "游戏启动器",
-  caption: "游玩与存档",
+  title: "应用属性",
+  caption: "游戏卡属性与存档",
   icon: Gamepad2,
   component: GameCardDetailView,
   defaultWidth: 1180,
