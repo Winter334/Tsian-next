@@ -446,7 +446,7 @@ async function refresh() {
     const next = await getPlatformStudioSnapshot()
     snapshot.value = next
     if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
-      selectedAgentId.value = next.assistant?.agent?.id ?? next.agents[0]?.id ?? ""
+      selectedAgentId.value = next.agents[0]?.id ?? ""
     }
     await loadSelectedAgentContext()
     setFeedback("工作室已刷新。", "ok")
@@ -462,7 +462,7 @@ async function reloadSnapshotAndSelectedAgent() {
   const next = await getPlatformStudioSnapshot()
   snapshot.value = next
   if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
-    selectedAgentId.value = next.assistant?.agent?.id ?? next.agents[0]?.id ?? ""
+    selectedAgentId.value = next.agents[0]?.id ?? ""
   }
   await loadSelectedAgentContext()
 }

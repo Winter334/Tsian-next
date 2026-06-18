@@ -287,7 +287,6 @@ function normalizeGameCardManifest(value: unknown): GameCardManifest {
     ),
     ...(manifest.author ? { author: manifest.author } : {}),
     ...(manifest.cover ? { cover: manifest.cover } : {}),
-    ...(manifest.assistant ? { assistant: manifest.assistant } : {}),
     frontend: normalizeFrontendBinding(value.frontend),
   }
 }

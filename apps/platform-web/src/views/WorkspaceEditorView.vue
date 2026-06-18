@@ -122,7 +122,7 @@ type EditorMode = "create" | "edit"
 type EditorValidator = "json" | "frontmatter"
 
 const props = withDefaults(defineProps<{
-  cardId: string
+  cardId?: string
   path?: string
   mode?: EditorMode
 }>(), {
@@ -396,7 +396,7 @@ async function saveDraft() {
       applySavedFile(result.file.path, result.file.content, result.file.mediaType)
       mode.value = "edit"
       feedback.value = `已保存：${result.file.path}`
-      emitWorkspaceContentChanged({ cardId: props.cardId, path: result.file.path })
+      emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: result.file.path })
       await syncEditorRoute(result.file.path)
       await validateSavedFile()
       return
@@ -412,7 +412,7 @@ async function saveDraft() {
       })
       applySavedFile(result.file.path, result.file.content, result.file.mediaType)
       feedback.value = `已保存：${result.file.path}`
-      emitWorkspaceContentChanged({ cardId: props.cardId, path: result.file.path })
+      emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: result.file.path })
       await syncEditorRoute(result.file.path)
       await validateSavedFile()
       return
@@ -454,7 +454,7 @@ async function syncEditorRoute(path: string) {
 }
 
 async function loadFile() {
-  loadedCardId.value = props.cardId
+  loadedCardId.value = props.cardId ?? ""
   mode.value = props.mode
   const initialPath = normalizeDisplayPath(props.path)
   loading.value = false

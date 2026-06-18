@@ -302,9 +302,9 @@ return {
 
 ### 3. Contracts
 
-- Game Card content owns Agents, Skills, schemas, rules, docs, frontend definitions, manifest metadata, assistant metadata, and frontend binding.
+- Game Card content owns Agents, Skills, schemas, rules, docs, frontend definitions, manifest metadata, and frontend binding. The assistant agent identity is platform-local under `.tsian/local/assistant/`, not Game Card content.
 - Save runtime data owns dialogue/history, generated entities, maps, relationships, memory summaries, frontend view state, Agent notes/session transcripts, and `.tsian` diagnostics for one playthrough.
-- Effective workspace composition is deterministic: card content appears at its card path, active save runtime data appears under `save/`, and `.tsian/` remains hidden from ordinary read/list/search.
+- Effective workspace composition is deterministic: card content appears at its card path, active save runtime data appears under `save/`, and `.tsian/` is visible in the resource manager (C-drive model) but remains hidden from ordinary Agent/Skill/frontend read/list/search APIs (actor level 4 required).
 - Game Card content must not define `save/...` or `.tsian/...`.
 - Ordinary Agent/Skill/frontend workspace writes and deletes must target `save/...`; platform writes may target `save/...` or `.tsian/...`.
 - Checkpoints snapshot and restore save runtime files only. Restored checkpoints continue to use current Game Card content.

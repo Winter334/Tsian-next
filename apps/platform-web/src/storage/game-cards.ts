@@ -13,7 +13,6 @@ import {
 } from "./workspace"
 
 export const BUILTIN_BLANK_GAME_CARD_ID = "tsian.builtin.blank"
-const BUILTIN_BLANK_GAME_CARD_ASSISTANT_ID = "studio-assistant"
 const BUILTIN_BLANK_GAME_CARD_COVER_URL = "/default-card-cover.webp"
 const ACTIVE_GAME_CARD_KEY = "active-game-card-id"
 
@@ -119,7 +118,6 @@ function normalizeManifest(manifest: GameCardManifest): GameCardManifest {
     summary: requireNonEmptyString(summary ?? "", "summary"),
     ...(manifest.author ? { author: manifest.author } : {}),
     ...(manifest.cover ? { cover: manifest.cover } : {}),
-    ...(manifest.assistant ? { assistant: manifest.assistant } : {}),
     ...(frontend ? { frontend } : {}),
   }
 }
@@ -254,10 +252,6 @@ function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): boolean {
     return true
   }
 
-  if (record.manifest.assistant?.agentId !== BUILTIN_BLANK_GAME_CARD_ASSISTANT_ID) {
-    return false
-  }
-
   if (
     record.manifest.cover?.url !== BUILTIN_BLANK_GAME_CARD_COVER_URL
     || record.manifest.cover?.alt !== "Blank Agent Runtime cover"
@@ -283,10 +277,6 @@ function createBuiltinBlankGameCardRecord(
     cover: {
       url: BUILTIN_BLANK_GAME_CARD_COVER_URL,
       alt: "Blank Agent Runtime cover",
-    },
-    assistant: {
-      agentId: BUILTIN_BLANK_GAME_CARD_ASSISTANT_ID,
-      summary: "Use the default Studio Assistant Agent as the workspace assistant entrypoint.",
     },
     ...(frontend ? { frontend } : {}),
   }

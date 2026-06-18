@@ -10,7 +10,7 @@
         <button
           type="button"
           class="retro-focus inline-flex h-7 shrink-0 items-center gap-1.5 border px-2 font-mono text-[11px]"
-          :class="!selectedCardId ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/35 bg-elevated/45 text-text-main hover:text-neon'"
+          :class="!isBrowsing ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/35 bg-elevated/45 text-text-main hover:text-neon'"
           @click.stop="returnToRoot"
         >
           <HardDrive class="h-3.5 w-3.5" aria-hidden="true" />
@@ -28,6 +28,33 @@
           </button>
           <template
             v-for="crumb in workspaceBreadcrumbs"
+            :key="crumb.path"
+          >
+            <ChevronRight class="h-3.5 w-3.5 shrink-0 text-text-dim/70" aria-hidden="true" />
+            <button
+              type="button"
+              class="retro-focus h-7 max-w-[12rem] shrink-0 truncate border px-2 font-mono text-[11px]"
+              :class="currentPath === crumb.path
+                ? 'border-neon bg-neon/10 text-neon'
+                : 'border-neon-deep/35 bg-elevated/45 text-text-main hover:text-neon'"
+              @click.stop="openPath(crumb.path)"
+            >
+              {{ crumb.name }}
+            </button>
+          </template>
+        </template>
+        <template v-else-if="selectedLocalRoot && (currentPath === '.tsian' || currentPath.startsWith('.tsian/'))">
+          <ChevronRight class="h-3.5 w-3.5 shrink-0 text-text-dim/70" aria-hidden="true" />
+          <button
+            type="button"
+            class="retro-focus h-7 max-w-[14rem] shrink-0 truncate border px-2 font-mono text-[11px]"
+            :class="currentPath === '.tsian' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/35 bg-elevated/45 text-text-main hover:text-neon'"
+            @click.stop="openPath('.tsian')"
+          >
+            {{ selectedLocalRoot.title }}
+          </button>
+          <template
+            v-for="crumb in localBreadcrumbs"
             :key="crumb.path"
           >
             <ChevronRight class="h-3.5 w-3.5 shrink-0 text-text-dim/70" aria-hidden="true" />
@@ -62,7 +89,7 @@
         <button
           type="submit"
           class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-          :disabled="!selectedCardId"
+          :disabled="!isBrowsing"
         >
           <Search class="h-3.5 w-3.5" aria-hidden="true" />
           搜索
@@ -80,7 +107,7 @@
     </div>
 
     <main class="min-h-0 overflow-auto p-3">
-      <div v-if="!selectedCardId" class="retro-inset min-h-[420px] p-3">
+      <div v-if="!isBrowsing" class="retro-inset min-h-[420px] p-3">
         <div v-if="rootsLoading" class="grid min-h-[360px] place-items-center">
           <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
             正在加载工作区根目录
@@ -97,42 +124,47 @@
           </div>
         </div>
         <div v-else-if="workspaceRoots.length === 0" class="grid min-h-[360px] place-items-center">
-          <p class="font-mono text-sm text-text-dim">没有可用的游戏卡。</p>
+          <p class="font-mono text-sm text-text-dim">没有可用的工作区。</p>
         </div>
         <div
           v-else
-          class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] content-start gap-3"
+          class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] content-start gap-3"
           role="list"
-          aria-label="游戏卡工作区"
+          aria-label="工作区根"
         >
           <button
             v-for="root in workspaceRoots"
-            :key="root.cardId"
+            :key="root.kind + root.cardId"
             type="button"
             class="retro-focus grid min-h-36 min-w-0 content-between gap-3 border p-3 text-left"
-            :class="selectedRootCardId === root.cardId ? 'border-neon bg-neon/10 shadow-neon-glow-active' : 'border-neon-deep/40 bg-elevated/45 hover:border-neon-deep hover:bg-elevated/70'"
+            :class="selectedRootCardId === root.cardId && selectedRootKind === root.kind ? 'border-neon bg-neon/10 shadow-neon-glow-active' : 'border-neon-deep/40 bg-elevated/45 hover:border-neon-deep hover:bg-elevated/70'"
             role="listitem"
-            @click.stop="selectedRootCardId = root.cardId"
-            @dblclick.stop="openCard(root.cardId)"
-            @keydown.enter.prevent="openCard(root.cardId)"
-            @keydown.space.prevent="openCard(root.cardId)"
+            @click.stop="selectRoot(root)"
+            @dblclick.stop="openRoot(root)"
+            @keydown.enter.prevent="openRoot(root)"
+            @keydown.space.prevent="openRoot(root)"
           >
             <span class="flex min-w-0 items-start gap-3">
               <span class="grid h-12 w-12 shrink-0 place-items-center border border-neon-deep/55 bg-void text-neon">
-                <HardDrive class="h-7 w-7" aria-hidden="true" />
+                <component :is="root.kind === 'local' ? HardDrive : Gamepad2" class="h-7 w-7" aria-hidden="true" />
               </span>
               <span class="min-w-0">
                 <span class="line-clamp-2 text-sm font-bold leading-5 text-text-main">
                   {{ root.title }}
                 </span>
                 <span class="mt-1 block truncate font-mono text-[11px] text-text-dim">
-                  {{ root.source }}
+                  {{ root.kind === 'local' ? '平台本地' : root.source }}
                 </span>
               </span>
             </span>
             <span class="grid gap-1 font-mono text-[11px] leading-5 text-text-dim">
-              <span>{{ root.contentFileCount }} 个内容文件</span>
-              <span>{{ root.saveCount }} 个存档槽</span>
+              <template v-if="root.kind === 'card'">
+                <span>{{ root.contentFileCount }} 个内容文件</span>
+                <span>{{ root.saveCount }} 个存档槽</span>
+              </template>
+              <template v-else>
+                <span>不随游戏卡分发</span>
+              </template>
               <span>{{ formatDateTime(root.updatedAt) }}</span>
             </span>
           </button>
@@ -294,7 +326,7 @@
         刷新
       </button>
       <button
-        v-if="!contextMenu.entry && selectedCardId"
+        v-if="!contextMenu.entry && isBrowsing"
         type="button"
         class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
         @click="openCreateEditorFromContextMenu"
@@ -318,6 +350,7 @@ import {
   FilePlus2,
   FileText,
   FolderOpen,
+  Gamepad2,
   HardDrive,
   RefreshCw,
   Search,
@@ -354,6 +387,7 @@ const router = useRouter()
 
 const workspaceRoots = ref<PlatformWorkspaceRootEntry[]>([])
 const selectedRootCardId = ref("")
+const selectedRootKind = ref<"local" | "card">("card")
 const selectedCardId = ref("")
 const currentPath = ref("")
 const directoryEntries = ref<WorkspaceEntry[]>([])
@@ -375,7 +409,24 @@ let directoryRequestId = 0
 let searchRequestId = 0
 
 const selectedCard = computed(() =>
-  workspaceRoots.value.find((root) => root.cardId === selectedCardId.value) ?? null
+  workspaceRoots.value.find((root) => root.cardId === selectedCardId.value && root.kind === "card") ?? null
+)
+
+const selectedLocalRoot = computed(() =>
+  workspaceRoots.value.find((root) => root.kind === "local") ?? null
+)
+
+const localBreadcrumbs = computed(() => {
+  if (!currentPath.value.startsWith(".tsian/")) return []
+  const segments = currentPath.value.split("/").filter(Boolean).slice(1)
+  return segments.map((name, index) => ({
+    name,
+    path: [".tsian", ...segments.slice(0, index + 1)].join("/"),
+  }))
+})
+
+const isBrowsing = computed(() =>
+  Boolean(selectedCardId.value) || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/"),
 )
 
 const workspaceBreadcrumbs = computed(() => {
@@ -391,8 +442,8 @@ const selectedEntry = computed(() =>
 )
 
 const statusLabel = computed(() => {
-  if (!selectedCardId.value) {
-    return `${workspaceRoots.value.length} 张游戏卡`
+  if (!isBrowsing.value) {
+    return `${workspaceRoots.value.length} 个根`
   }
   if (activeSearchQuery.value) {
     return `${searchResults.value.length} 个结果`
@@ -417,7 +468,8 @@ function syncStateFromRoute() {
   const nextCardId = routeQueryString(route.query.cardId)
   const nextPath = normalizeDisplayPath(routeQueryString(route.query.path))
   selectedCardId.value = nextCardId
-  currentPath.value = nextCardId ? nextPath : ""
+  // Support .tsian/ browsing with no cardId.
+  currentPath.value = nextCardId ? nextPath : (nextPath === ".tsian" || nextPath.startsWith(".tsian/") ? nextPath : "")
 }
 
 function syncRouteState() {
@@ -425,7 +477,7 @@ function syncRouteState() {
   if (selectedCardId.value) {
     query.cardId = selectedCardId.value
   }
-  if (selectedCardId.value && currentPath.value) {
+  if (currentPath.value && (selectedCardId.value || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/"))) {
     query.path = currentPath.value
   }
 
@@ -518,7 +570,7 @@ async function refreshRoots() {
 }
 
 async function refreshDirectory() {
-  if (!selectedCardId.value) {
+  if (!selectedCardId.value && currentPath.value !== ".tsian" && !currentPath.value.startsWith(".tsian/")) {
     directoryEntries.value = []
     return
   }
@@ -529,7 +581,7 @@ async function refreshDirectory() {
 
   try {
     const result = await listPlatformWorkspaceDirectory({
-      cardId: selectedCardId.value,
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path: currentPath.value,
     })
     if (requestId !== directoryRequestId) {
@@ -558,7 +610,7 @@ async function refreshDirectory() {
 }
 
 function refreshCurrentView() {
-  if (selectedCardId.value) {
+  if (selectedCardId.value || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/")) {
     void refreshDirectory()
     if (activeSearchQuery.value) {
       void runSearch()
@@ -569,9 +621,30 @@ function refreshCurrentView() {
   void refreshRoots()
 }
 
+function selectRoot(root: PlatformWorkspaceRootEntry) {
+  selectedRootCardId.value = root.cardId
+  selectedRootKind.value = root.kind
+}
+
+function openRoot(root: PlatformWorkspaceRootEntry) {
+  if (root.kind === "local") {
+    selectedCardId.value = ""
+    selectedRootCardId.value = root.cardId
+    selectedRootKind.value = "local"
+    currentPath.value = ".tsian"
+    selectedEntryPath.value = ""
+    clearSearch()
+    syncRouteState()
+    void refreshDirectory()
+    return
+  }
+  openCard(root.cardId)
+}
+
 function openCard(cardId: string) {
   selectedCardId.value = cardId
   selectedRootCardId.value = cardId
+  selectedRootKind.value = "card"
   currentPath.value = ""
   selectedEntryPath.value = ""
   clearSearch()
@@ -651,7 +724,7 @@ function openCreateEditorFromContextMenu() {
 }
 
 function startRenameEntry(entry: WorkspaceEntry) {
-  if (!selectedCardId.value || !canRenameEntry(entry)) {
+  if (!isBrowsing.value || !canRenameEntry(entry)) {
     return
   }
 
@@ -672,7 +745,7 @@ function cancelRename() {
 }
 
 async function commitRename(entry: WorkspaceEntry) {
-  if (!selectedCardId.value || renamingEntryPath.value !== entry.path || !canRenameEntry(entry)) {
+  if (!isBrowsing.value || renamingEntryPath.value !== entry.path || !canRenameEntry(entry)) {
     return
   }
 
@@ -695,7 +768,7 @@ async function commitRename(entry: WorkspaceEntry) {
   const targetPath = siblingPath(entry.path, nextName)
   try {
     const result = await movePlatformWorkspacePath({
-      cardId: selectedCardId.value,
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path: entry.path,
       targetPath,
     })
@@ -726,7 +799,7 @@ function siblingPath(path: string, nextName: string): string {
 }
 
 async function runSearch() {
-  if (!selectedCardId.value) {
+  if (!isBrowsing.value) {
     return
   }
 
@@ -742,7 +815,7 @@ async function runSearch() {
 
   try {
     const results = await searchPlatformWorkspace({
-      cardId: selectedCardId.value,
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       query,
       path: currentPath.value || undefined,
       limit: 100,
@@ -774,7 +847,7 @@ function defaultNewFileName(): string {
 }
 
 function openCreateEditor() {
-  if (!selectedCardId.value) {
+  if (!isBrowsing.value) {
     return
   }
   if (currentPath.value === "save") {
@@ -801,7 +874,7 @@ function openCreateEditor() {
 }
 
 function openEditorForFile(path: string) {
-  if (!selectedCardId.value) {
+  if (!isBrowsing.value) {
     return
   }
 
@@ -813,7 +886,7 @@ function openEditorRoute(mode: "create" | "edit", path: string) {
   void router.push({
     name: "workspace-editor",
     query: {
-      cardId: selectedCardId.value,
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path,
       mode,
       editorId: createEditorSessionId(),
@@ -826,7 +899,7 @@ function createEditorSessionId(): string {
 }
 
 async function deleteEntry(entry: WorkspaceEntry) {
-  if (!selectedCardId.value || !canDeleteEntry(entry)) {
+  if (!isBrowsing.value || !canDeleteEntry(entry)) {
     return
   }
 
@@ -839,7 +912,7 @@ async function deleteEntry(entry: WorkspaceEntry) {
 
   try {
     const result = await deletePlatformWorkspacePath({
-      cardId: selectedCardId.value,
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path: entry.path,
     })
     feedback.value = `已删除 ${result.deletedPaths.length} 项。`
@@ -893,7 +966,7 @@ watch(() => route.fullPath, () => {
     return
   }
   syncStateFromRoute()
-  if (selectedCardId.value) {
+  if (selectedCardId.value || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/")) {
     void refreshDirectory()
   }
 }, { immediate: true })

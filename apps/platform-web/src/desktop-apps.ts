@@ -290,15 +290,17 @@ export function desktopWindowForRoute(
     const path = queryString(route.query.path)
     const mode = queryString(route.query.mode) === "create" ? "create" : "edit"
     const editorId = queryString(route.query.editorId)
-    if (!cardId) {
+    // Allow opening editors for .tsian/ paths without a cardId.
+    if (!cardId && !(path === ".tsian" || path.startsWith(".tsian/"))) {
       return null
     }
 
     const titlePath = path ? fileName(path) : "新建文件"
+    const scopeKey = cardId || "tsian-local"
     return windowInputFromDefinition(workspaceEditorDefinition, {
       id: editorId
-        ? `${workspaceEditorDefinition.appId}:${cardId}:${editorId}`
-        : `${workspaceEditorDefinition.appId}:${cardId}:${mode}:${path || "untitled"}`,
+        ? `${workspaceEditorDefinition.appId}:${scopeKey}:${editorId}`
+        : `${workspaceEditorDefinition.appId}:${scopeKey}:${mode}:${path || "untitled"}`,
       routePath: route.fullPath,
       props: { cardId, path, mode },
       title: mode === "create" ? "新建文件" : titlePath,

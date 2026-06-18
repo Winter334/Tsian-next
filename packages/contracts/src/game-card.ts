@@ -7,7 +7,6 @@ export interface GameCardManifest {
   author?: GameCardAuthor
   cover?: GameCardCover
   frontend?: GameCardFrontendBinding
-  assistant?: GameCardAssistant
 }
 
 export interface GameCardAuthor {
@@ -19,11 +18,6 @@ export interface GameCardCover {
   url?: string
   workspacePath?: string
   alt?: string
-}
-
-export interface GameCardAssistant {
-  agentId: string
-  summary?: string
 }
 
 export type GameCardFrontendBinding =

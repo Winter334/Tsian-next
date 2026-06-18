@@ -85,24 +85,6 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <div v-if="hasCardAssistant" class="flex items-center gap-0 border border-neon-deep/40 bg-[#3a352b]">
-            <button
-              type="button"
-              class="retro-focus px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors"
-              :class="mode === 'local' ? 'bg-neon/15 text-neon' : 'text-text-dim hover:text-text-main'"
-              @click="switchMode('local')"
-            >
-              本地
-            </button>
-            <button
-              type="button"
-              class="retro-focus px-2.5 py-1 font-mono text-[11px] uppercase tracking-wider transition-colors"
-              :class="mode === 'card' ? 'bg-neon/15 text-neon' : 'text-text-dim hover:text-text-main'"
-              @click="switchMode('card')"
-            >
-              卡片
-            </button>
-          </div>
           <button
             type="button"
             class="retro-button retro-focus inline-flex h-8 items-center justify-center gap-2 px-3 font-mono text-xs"
@@ -299,7 +281,6 @@ import {
   renameAssistantSession,
   saveAssistantSessionMessages,
   setActiveAssistantSessionId,
-  type AssistantMode,
   type AssistantSessionSummary,
 } from "../storage"
 
@@ -321,9 +302,7 @@ const inputText = ref("")
 const sending = ref(false)
 const refreshing = ref(false)
 const errorMessage = ref("")
-const mode = ref<AssistantMode>("local")
 const cardName = ref("")
-const cardAssistantAgentId = ref<string | null>(null)
 const messageListRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const showJumpToBottom = ref(false)
@@ -334,8 +313,6 @@ const renaming = ref("")
 const renameInputRef = ref<HTMLInputElement | null>(null)
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
-const hasCardAssistant = computed(() => Boolean(cardAssistantAgentId.value))
-
 function formatSessionTime(timestamp: number): string {
   const date = new Date(timestamp)
   const now = new Date()
@@ -358,10 +335,8 @@ async function refresh() {
     const card = await getPlatformActiveGameCard()
     if (card) {
       cardName.value = card.manifest.name
-      cardAssistantAgentId.value = card.manifest.assistant?.agentId ?? null
     } else {
       cardName.value = ""
-      cardAssistantAgentId.value = null
     }
   } finally {
     refreshing.value = false
@@ -369,11 +344,11 @@ async function refresh() {
 }
 
 async function refreshSessions() {
-  sessions.value = await listAssistantSessions(mode.value)
+  sessions.value = await listAssistantSessions("local")
 }
 
 async function loadActiveSession() {
-  const session = await ensureAssistantSession(mode.value)
+  const session = await ensureAssistantSession("local")
   activeSessionId.value = session.id
   const stored = await getAssistantSessionMessages(session.id)
   messages.value = stored.map((msg) => ({
@@ -407,9 +382,9 @@ async function handleSelectSession(id: string) {
 
   // Background persistence of the session we just left. Silent (touch=false):
   // merely selecting another session must not bump this one's sort order.
-  void setActiveAssistantSessionId(mode.value, id)
+  void setActiveAssistantSessionId("local", id)
   if (previousId) {
-    void saveAssistantSessionMessages(mode.value, previousId, previousMessages, {
+    void saveAssistantSessionMessages("local", previousId, previousMessages, {
       touch: false,
     })
   }
@@ -425,11 +400,11 @@ async function handleCreateSession() {
       content: msg.content,
     }))
     if (previousId) {
-      void saveAssistantSessionMessages(mode.value, previousId, previousMessages, {
+      void saveAssistantSessionMessages("local", previousId, previousMessages, {
         touch: false,
       })
     }
-    const session = await createAssistantSession(mode.value)
+    const session = await createAssistantSession("local")
     activeSessionId.value = session.id
     messages.value = []
     await refreshSessions()
@@ -456,7 +431,7 @@ async function handleConfirmRename() {
   }
   sessionRenaming.value = true
   try {
-    await renameAssistantSession(mode.value, id, renaming.value.trim())
+    await renameAssistantSession("local", id, renaming.value.trim())
     await refreshSessions()
   } finally {
     sessionRenaming.value = false
@@ -471,10 +446,10 @@ async function handleDeleteSession() {
   }
   sessionDeleting.value = true
   try {
-    await deleteAssistantSession(mode.value, id)
+    await deleteAssistantSession("local", id)
     await refreshSessions()
     // Pick the next active session or create one.
-    const nextId = await getActiveAssistantSessionId(mode.value)
+    const nextId = await getActiveAssistantSessionId("local")
     if (nextId) {
       activeSessionId.value = nextId
       const stored = await getAssistantSessionMessages(nextId)
@@ -483,7 +458,7 @@ async function handleDeleteSession() {
         content: msg.content,
       }))
     } else {
-      const session = await createAssistantSession(mode.value)
+      const session = await createAssistantSession("local")
       activeSessionId.value = session.id
       messages.value = []
       await refreshSessions()
@@ -502,17 +477,8 @@ async function persistCurrentSession() {
     role: msg.role,
     content: msg.content,
   }))
-  await saveAssistantSessionMessages(mode.value, activeSessionId.value, toStore)
+  await saveAssistantSessionMessages("local", activeSessionId.value, toStore)
   await refreshSessions()
-}
-
-async function switchMode(target: AssistantMode) {
-  if (target === mode.value) {
-    return
-  }
-  await persistCurrentSession()
-  mode.value = target
-  await loadActiveSession()
 }
 
 function sendSuggestion(message: string) {
@@ -542,7 +508,6 @@ async function send() {
     const result = await runAssistantChat({
       message: content,
       history,
-      mode: mode.value,
     })
     messages.value.push({ role: "assistant", content: result.replyText })
     await persistCurrentSession()

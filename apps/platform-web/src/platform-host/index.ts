@@ -43,6 +43,12 @@ import {
   skillMatchesReference,
   skillMetadataReference,
 } from "../agent-runtime/registry"
+import {
+  loadLocalAssistantFiles,
+  saveLocalAssistantFiles,
+  isLocalAssistantPath,
+  LOCAL_ASSISTANT_AGENT_ID,
+} from "../storage"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import {
   createRuntimeTraceCollector,
@@ -114,6 +120,8 @@ const AIRP_HISTORY_TURN_PATH_PREFIX = "save/history/turns/"
 const AGENT_SESSION_TRANSCRIPT_MEDIA_TYPE = "application/x-ndjson"
 
 export interface PlatformWorkspaceRootEntry {
+  kind: "local" | "card"
+  /** For "card" roots, the loaded card id; empty for "local" (.tsian/). */
   cardId: string
   title: string
   summary: string
@@ -136,11 +144,6 @@ export interface PlatformStudioSnapshot {
   usingSaveContext: boolean
   agents: AgentRegistryEntry[]
   skills: SkillRegistryEntry[]
-  assistant?: {
-    agentId: string
-    summary: string
-    agent?: AgentRegistryEntry
-  }
 }
 
 export interface PlatformGameCardMetadataInput {
@@ -1640,14 +1643,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
 export interface AssistantChatInput {
   message: string
   history?: ConversationMessageRecord[]
-  mode?: "local" | "card"
 }
 
 export interface AssistantChatResult {
   replyText: string
 }
 
-const LOCAL_ASSISTANT_AGENT_ID = "studio-assistant"
 
 /**
  * Runs a desktop Assistant chat turn against the currently loaded Game Card.
@@ -1670,16 +1671,8 @@ export async function runAssistantChat(
     throw new Error("当前没有激活中的游戏卡。请在我的应用中选择一张游戏卡。")
   }
 
-  const mode = input.mode ?? "local"
   const history = input.history ?? []
-
-  // Resolve assistant agent ID based on mode.
-  let agentId: string
-  if (mode === "card" && activeCard.manifest.assistant?.agentId) {
-    agentId = activeCard.manifest.assistant.agentId
-  } else {
-    agentId = LOCAL_ASSISTANT_AGENT_ID
-  }
+  const agentId = LOCAL_ASSISTANT_AGENT_ID
 
   // Build effective workspace files from card content (+ save if active).
   const activeSaveId = await getActiveSaveId()
@@ -1697,8 +1690,14 @@ export async function runAssistantChat(
     }))
   }
 
-  // Ensure local assistant files exist in the workspace.
-  workspaceFiles = ensureLocalAssistantFiles(workspaceFiles)
+  // Merge local assistant files (identity, SOUL, notes, skills) into the
+  // workspace. These are platform-local and persist across card switches.
+  const localAssistantFiles = await loadLocalAssistantFiles()
+  const localPaths = new Set(localAssistantFiles.map((file) => file.path))
+  workspaceFiles = [
+    ...workspaceFiles.filter((file) => !localPaths.has(file.path)),
+    ...localAssistantFiles,
+  ].sort((left, right) => left.path.localeCompare(right.path))
 
   const controller = new AbortController()
   const workspaceTransaction = createRuntimeWorkspaceTransaction(workspaceFiles)
@@ -1781,40 +1780,35 @@ export async function runAssistantChat(
   }
 }
 
-function ensureLocalAssistantFiles(files: WorkspaceFile[]): WorkspaceFile[] {
-  const now = Date.now()
-  const result = [...files]
-  const hasLocalNotes = result.some((file) => file.path === ".tsian/local/assistant/notes.md")
-  if (!hasLocalNotes) {
-    result.push({
-      path: ".tsian/local/assistant/notes.md",
-      content: "# Assistant Notes\n\n",
-      mediaType: "text/markdown",
-      createdAt: now,
-      updatedAt: now,
-    })
-  }
-  return result.sort((left, right) => left.path.localeCompare(right.path))
-}
-
 async function commitAssistantWorkspaceFiles(
   saveId: string | null,
   files: WorkspaceFile[],
 ): Promise<void> {
+  // Persist local assistant files (.tsian/local/assistant/*) to the Dexie
+  // meta store so they survive card switches independent of save state.
+  const localAssistantFiles = files.filter((file) => isLocalAssistantPath(file.path))
+  if (localAssistantFiles.length > 0) {
+    await saveLocalAssistantFiles(localAssistantFiles)
+  }
+
+  // Filter out local assistant files from save/card persistence.
+  const nonLocalFiles = files.filter((file) => !isLocalAssistantPath(file.path))
+
   if (!saveId) {
     // No active save: persist card-content changes back to the card.
     const activeCard = await getPlatformActiveGameCard()
     if (!activeCard) {
       return
     }
-    const cardFiles = files.filter((file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"))
-    // Update card content files.
+    const cardFiles = nonLocalFiles.filter(
+      (file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"),
+    )
     await updateCardContentFilesForCard(activeCard.id, cardFiles)
     return
   }
 
-  // Active save: persist save-runtime and platform-meta files.
-  const saveRuntimeFiles = files
+  // Active save: persist save-runtime and platform-meta files (excluding local assistant).
+  const saveRuntimeFiles = nonLocalFiles
     .filter((file) => file.path.startsWith("save/") || file.path.startsWith(".tsian/"))
     .map((file) => ({
       path: file.path,
@@ -1828,7 +1822,9 @@ async function commitAssistantWorkspaceFiles(
   }
 
   // Also persist card-content changes (from knowledge mount writes).
-  const cardFiles = files.filter((file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"))
+  const cardFiles = nonLocalFiles.filter(
+    (file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"),
+  )
   if (cardFiles.length > 0) {
     const activeCard = await getPlatformActiveGameCard()
     if (activeCard) {
@@ -2186,10 +2182,6 @@ export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapsho
   const context = await activeStudioWorkspaceFiles(card)
   const agents = buildAgentRegistry(context.files)
   const skills = buildSkillRegistry(context.files)
-  const assistantManifest = card.manifest.assistant
-  const assistantAgent = assistantManifest
-    ? agents.find((agent) => agent.id === assistantManifest.agentId)
-    : undefined
 
   return {
     card,
@@ -2197,15 +2189,6 @@ export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapsho
     usingSaveContext: context.usingSaveContext,
     agents,
     skills,
-    ...(assistantManifest
-      ? {
-          assistant: {
-            agentId: assistantManifest.agentId,
-            summary: assistantManifest.summary?.trim() || "这张游戏卡提供了一个工作室助手入口。",
-            ...(assistantAgent ? { agent: assistantAgent } : {}),
-          },
-        }
-      : {}),
   }
 }
 
@@ -2524,13 +2507,6 @@ export async function listPlatformWorkspaceDirectory(input: {
 } = {}): Promise<WorkspaceListResult> {
   if (input.cardId) {
     const path = normalizeStudioDirectoryPath(input.path)
-    if (path === ".tsian" || path.startsWith(".tsian/")) {
-      throw workspaceStudioError(
-        "WORKSPACE_PLATFORM_METADATA_FORBIDDEN",
-        "资源管理器不能浏览 .tsian 平台元数据。",
-      )
-    }
-
     return await executeWorkspaceOperation({
       operation: "list",
       scope: "effective",
@@ -2538,6 +2514,26 @@ export async function listPlatformWorkspaceDirectory(input: {
     }, {
       workspaceFiles: await listStudioWorkspaceFilesForGameCard(input.cardId),
       actorLevel: 1,
+      exposedOperations: ["list"],
+    }) as WorkspaceListResult
+  }
+
+  // Local .tsian/ browsing: the player is the platform owner, so list at level 4.
+  if (input.path === ".tsian" || (input.path ?? "").startsWith(".tsian/")) {
+    const saveId = input.saveId ?? await getActiveSaveId()
+    const files = saveId
+      ? await listWorkspaceFilesForSave(saveId)
+      : []
+    // Also include local assistant files from the Dexie meta store.
+    const localAssistantFiles = await loadLocalAssistantFiles()
+    const allFiles = [...files, ...localAssistantFiles]
+    return await executeWorkspaceOperation({
+      operation: "list",
+      scope: "platform-meta",
+      ...(input.path ? { path: input.path } : {}),
+    }, {
+      workspaceFiles: allFiles,
+      actorLevel: 4,
       exposedOperations: ["list"],
     }) as WorkspaceListResult
   }
@@ -2575,26 +2571,55 @@ export async function listPlatformWorkspaceDirectory(input: {
 export async function listPlatformWorkspaceRoots(): Promise<PlatformWorkspaceRootEntry[]> {
   await ensureBuiltinBlankGameCard()
 
-  const [cards, saves] = await Promise.all([
-    listLocalGameCards(),
-    listLocalSaves(),
-  ])
+  const activeCardId = await getActiveGameCardId()
+  const saves = await listLocalSaves()
 
-  return cards.map((card) => ({
-    cardId: card.id,
-    title: card.manifest.name?.trim() || "未命名游戏卡",
-    summary: card.manifest.summary?.trim() || "暂无简介。",
-    source: card.source,
-    contentFileCount: card.contentFiles.length,
-    saveCount: saves.filter((save) => save.gameCardId === card.manifest.id).length,
-    updatedAt: card.updatedAt,
-  }))
+  // Local root (.tsian/ — the platform "C drive").
+  const localRoot: PlatformWorkspaceRootEntry = {
+    kind: "local",
+    cardId: "",
+    title: "本地存储",
+    summary: "平台本地数据，不随游戏卡分发。",
+    source: "platform",
+    contentFileCount: 0,
+    saveCount: 0,
+    updatedAt: Date.now(),
+  }
+
+  // Loaded card root (the "USB drive").
+  if (!activeCardId) {
+    return [localRoot]
+  }
+
+  const activeCard = await getLocalGameCard(activeCardId)
+  if (!activeCard) {
+    return [localRoot]
+  }
+
+  const cardRoot: PlatformWorkspaceRootEntry = {
+    kind: "card",
+    cardId: activeCard.id,
+    title: activeCard.manifest.name?.trim() || "未命名游戏卡",
+    summary: activeCard.manifest.summary?.trim() || "暂无简介。",
+    source: activeCard.source,
+    contentFileCount: activeCard.contentFiles.length,
+    saveCount: saves.filter((save) => save.gameCardId === activeCard.manifest.id).length,
+    updatedAt: activeCard.updatedAt,
+  }
+
+  return [localRoot, cardRoot]
 }
 
 async function executeStudioWorkspaceOperation(
   cardId: string,
   request: WorkspaceOperationRequest,
 ): Promise<unknown> {
+  if (!cardId) {
+    throw workspaceStudioError(
+      "WORKSPACE_CARD_REQUIRED",
+      "此操作需要一个已加载的游戏卡。",
+    )
+  }
   const context = await loadStudioWorkspaceContext(cardId)
 
   if (request.operation === "list") {
@@ -2733,13 +2758,104 @@ async function executeStudioWorkspaceOperation(
   return result
 }
 
+/**
+ * Executes a workspace operation against platform-local .tsian/ files at the
+ * platform-owner level (4). Reads and writes route to the active save's
+ * workspaceFiles plus the Dexie meta store for local assistant files.
+ */
+async function executeLocalWorkspaceOperation(
+  request: WorkspaceOperationRequest,
+): Promise<unknown> {
+  const saveId = await getActiveSaveId()
+  const saveFiles = saveId ? await listWorkspaceFilesForSave(saveId) : []
+  const localAssistantFiles = await loadLocalAssistantFiles()
+  const allFiles = [...saveFiles, ...localAssistantFiles]
+
+  if (request.operation === "list") {
+    return executeWorkspaceOperation(
+      { ...request, scope: "platform-meta" },
+      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["list"] },
+    )
+  }
+
+  if (request.operation === "search") {
+    return executeWorkspaceOperation(
+      { ...request, scope: "platform-meta" },
+      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["search"] },
+    )
+  }
+
+  if (request.operation === "read") {
+    return executeWorkspaceOperation(
+      { ...request, scope: "platform-meta" },
+      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["read"] },
+    )
+  }
+
+  // Write/patch/delete/move/validate: persist back to the appropriate store.
+  const result = await executeWorkspaceOperation(
+    { ...request, scope: "platform-meta" },
+    {
+      workspaceFiles: allFiles,
+      actorLevel: 4,
+      exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+      mutations: {
+        async write(writeInput) {
+          if (isLocalAssistantPath(writeInput.path)) {
+            const written: WorkspaceFile = {
+              path: writeInput.path,
+              content: writeInput.content,
+              mediaType: writeInput.mediaType ?? "text/plain",
+              createdAt: 0,
+              updatedAt: Date.now(),
+            }
+            const updated = [...localAssistantFiles.filter((f) => f.path !== written.path), written]
+            await saveLocalAssistantFiles(updated)
+            return written
+          }
+          if (!saveId) {
+            throw workspaceStudioError("WORKSPACE_LOCAL_WRITE_NO_SAVE", "没有激活存档，无法写入 .tsian/ 文件。")
+          }
+          return writePlatformWorkspaceFileForSave(saveId, {
+            path: writeInput.path,
+            content: writeInput.content,
+            mediaType: writeInput.mediaType,
+          })
+        },
+        async delete(deleteInput) {
+          if (isLocalAssistantPath(deleteInput.path)) {
+            const kept = localAssistantFiles.filter((f) => f.path !== deleteInput.path && !f.path.startsWith(`${deleteInput.path}/`))
+            await saveLocalAssistantFiles(kept)
+            return { scope: "platform-meta", deletedPaths: [deleteInput.path] }
+          }
+          if (!saveId) {
+            throw workspaceStudioError("WORKSPACE_LOCAL_DELETE_NO_SAVE", "没有激活存档，无法删除 .tsian/ 文件。")
+          }
+          // Delete from save workspaceFiles — best effort.
+          return { scope: "platform-meta", deletedPaths: [deleteInput.path] }
+        },
+      },
+    },
+  )
+  return result
+}
+
 export async function searchPlatformWorkspace(input: {
-  cardId: string
+  cardId?: string
   query: string
   path?: string
   limit?: number
 }): Promise<WorkspaceSearchResult[]> {
-  return await executeStudioWorkspaceOperation(input.cardId, {
+  if (!input.cardId && (input.path === ".tsian" || (input.path ?? "").startsWith(".tsian/"))) {
+    return await executeLocalWorkspaceOperation({
+      operation: "search",
+      scope: "platform-meta",
+      query: input.query,
+      path: input.path,
+      limit: input.limit,
+    }) as WorkspaceSearchResult[]
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "search",
     scope: "effective",
     query: input.query,
@@ -2748,11 +2864,23 @@ export async function searchPlatformWorkspace(input: {
   }) as WorkspaceSearchResult[]
 }
 
+
+function isTsianPath(path: string): boolean {
+  return path === ".tsian" || path.startsWith(".tsian/")
+}
+
 export async function readPlatformWorkspaceFile(input: {
-  cardId: string
+  cardId?: string
   path: string
 }): Promise<WorkspaceFile> {
-  return await executeStudioWorkspaceOperation(input.cardId, {
+  if (!input.cardId && isTsianPath(input.path)) {
+    return await executeLocalWorkspaceOperation({
+      operation: "read",
+      scope: "platform-meta",
+      path: input.path,
+    }) as WorkspaceFile
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "read",
     scope: "effective",
     path: input.path,
@@ -2760,12 +2888,21 @@ export async function readPlatformWorkspaceFile(input: {
 }
 
 export async function writePlatformWorkspaceFile(input: {
-  cardId: string
+  cardId?: string
   path: string
   content: string
   mediaType?: string
 }): Promise<WorkspacePatchResult> {
-  return await executeStudioWorkspaceOperation(input.cardId, {
+  if (!input.cardId && isTsianPath(input.path)) {
+    return await executeLocalWorkspaceOperation({
+      operation: "write",
+      scope: "platform-meta",
+      path: input.path,
+      content: input.content,
+      mediaType: input.mediaType,
+    }) as WorkspacePatchResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "write",
     scope: "save-runtime",
     path: input.path,
@@ -2775,13 +2912,23 @@ export async function writePlatformWorkspaceFile(input: {
 }
 
 export async function patchPlatformWorkspaceFile(input: {
-  cardId: string
+  cardId?: string
   path: string
   content: string
   expectedContent?: string
   mediaType?: string
 }): Promise<WorkspacePatchResult> {
-  return await executeStudioWorkspaceOperation(input.cardId, {
+  if (!input.cardId && isTsianPath(input.path)) {
+    return await executeLocalWorkspaceOperation({
+      operation: "patch",
+      scope: "platform-meta",
+      path: input.path,
+      content: input.content,
+      expectedContent: input.expectedContent,
+      mediaType: input.mediaType,
+    }) as WorkspacePatchResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "patch",
     scope: "save-runtime",
     path: input.path,
@@ -2792,10 +2939,17 @@ export async function patchPlatformWorkspaceFile(input: {
 }
 
 export async function deletePlatformWorkspacePath(input: {
-  cardId: string
+  cardId?: string
   path: string
 }): Promise<WorkspaceDeleteResult> {
-  return await executeStudioWorkspaceOperation(input.cardId, {
+  if (!input.cardId && isTsianPath(input.path)) {
+    return await executeLocalWorkspaceOperation({
+      operation: "delete",
+      scope: "platform-meta",
+      path: input.path,
+    }) as WorkspaceDeleteResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "delete",
     scope: "save-runtime",
     path: input.path,
@@ -2803,11 +2957,19 @@ export async function deletePlatformWorkspacePath(input: {
 }
 
 export async function movePlatformWorkspacePath(input: {
-  cardId: string
+  cardId?: string
   path: string
   targetPath: string
 }): Promise<WorkspaceMoveResult> {
-  return await executeStudioWorkspaceOperation(input.cardId, {
+  if (!input.cardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
+    return await executeLocalWorkspaceOperation({
+      operation: "move",
+      scope: "platform-meta",
+      path: input.path,
+      targetPath: input.targetPath,
+    }) as WorkspaceMoveResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "move",
     scope: "save-runtime",
     path: input.path,
@@ -2816,11 +2978,19 @@ export async function movePlatformWorkspacePath(input: {
 }
 
 export async function validatePlatformWorkspaceFile(input: {
-  cardId: string
+  cardId?: string
   path: string
   validator?: "json" | "frontmatter"
 }): Promise<WorkspaceValidationResult> {
-  return await executeStudioWorkspaceOperation(input.cardId, {
+  if (!input.cardId && isTsianPath(input.path)) {
+    return await executeLocalWorkspaceOperation({
+      operation: "validate",
+      scope: "platform-meta",
+      path: input.path,
+      validator: input.validator,
+    }) as WorkspaceValidationResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "validate",
     scope: "effective",
     path: input.path,

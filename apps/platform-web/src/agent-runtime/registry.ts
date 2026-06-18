@@ -36,9 +36,9 @@ interface SkillPathInfo {
   agentId?: string
 }
 
-const AGENT_CONFIG_FILE_PATH_PATTERN = /^agents\/([^/]+)\/agent\.json$/
+const AGENT_CONFIG_FILE_PATH_PATTERN = /^(?:agents\/([^/]+)|\.tsian\/local\/([^/]+))\/agent\.json$/
 const SHARED_SKILL_FILE_PATH_PATTERN = /^skills\/([^/]+)\/SKILL\.md$/
-const AGENT_LOCAL_SKILL_FILE_PATH_PATTERN = /^agents\/([^/]+)\/skills\/([^/]+)\/SKILL\.md$/
+const AGENT_LOCAL_SKILL_FILE_PATH_PATTERN = /^(?:agents\/([^/]+)|\.tsian\/local\/([^/]+))\/skills\/([^/]+)\/SKILL\.md$/
 const DEFAULT_AGENT_ACCESS_LEVEL = 1
 const MAX_AGENT_ACCESS_LEVEL = 4
 const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
@@ -267,14 +267,20 @@ function skillPathInfo(path: string): SkillPathInfo | null {
   }
 
   const localMatch = AGENT_LOCAL_SKILL_FILE_PATH_PATTERN.exec(path)
-  if (localMatch?.[1] && localMatch[2]) {
-    const agentId = localMatch[1]
-    const skillId = localMatch[2]
+  // Group 1: agents/<agent>/skills/<skill> ; Group 2: .tsian/local/<agent>/skills/<skill>
+  // Group 3: <skill> in both cases.
+  const localAgentId = localMatch?.[1] ?? localMatch?.[2]
+  if (localAgentId && localMatch?.[3]) {
+    const skillId = localMatch[3]
+    const isLocal = Boolean(localMatch?.[2])
+    const directoryPath = isLocal
+      ? `.tsian/local/${localAgentId}/skills/${skillId}`
+      : `agents/${localAgentId}/skills/${skillId}`
     return {
       scope: "agent-local",
-      agentId,
+      agentId: localAgentId,
       skillId,
-      directoryPath: `agents/${agentId}/skills/${skillId}`,
+      directoryPath,
     }
   }
 
@@ -283,12 +289,18 @@ function skillPathInfo(path: string): SkillPathInfo | null {
 
 function agentPathInfo(path: string): AgentPathInfo | null {
   const match = AGENT_CONFIG_FILE_PATH_PATTERN.exec(path)
-  if (!match?.[1]) {
+  if (!match) {
     return null
   }
 
-  const agentId = match[1]
-  const directoryPath = `agents/${agentId}`
+  // Group 1: agents/<id>/agent.json ; Group 2: .tsian/local/<id>/agent.json
+  const agentId = match[1] ?? match[2]
+  if (!agentId) {
+    return null
+  }
+
+  const isLocal = Boolean(match[2])
+  const directoryPath = isLocal ? `.tsian/local/${agentId}` : `agents/${agentId}`
   return {
     agentId,
     directoryPath,
