@@ -1,4 +1,5 @@
-const DB_NAME = "tsian-agent-runtime-v5"
+// DB 名须与 src/storage/db.ts 的 TsianLocalDb 构造参数保持一致。
+const DB_NAME = "tsian-agent-runtime-v6"
 const STORE_NAME = "gameCardFrontendFiles"
 const FRONTEND_PREFIX = "/__tsian_game_card_frontends/"
 

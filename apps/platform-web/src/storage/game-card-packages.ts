@@ -94,9 +94,18 @@ function inferMediaType(path: string): string {
   if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg"
   if (path.endsWith(".webp")) return "image/webp"
   if (path.endsWith(".gif")) return "image/gif"
+  if (path.endsWith(".avif")) return "image/avif"
   if (path.endsWith(".woff")) return "font/woff"
   if (path.endsWith(".woff2")) return "font/woff2"
   if (path.endsWith(".wasm")) return "application/wasm"
+  if (path.endsWith(".mp3")) return "audio/mpeg"
+  if (path.endsWith(".ogg")) return "audio/ogg"
+  if (path.endsWith(".wav")) return "audio/wav"
+  if (path.endsWith(".m4a")) return "audio/mp4"
+  if (path.endsWith(".flac")) return "audio/flac"
+  if (path.endsWith(".mp4")) return "video/mp4"
+  if (path.endsWith(".webm")) return "video/webm"
+  if (path.endsWith(".mov")) return "video/quicktime"
   return "application/octet-stream"
 }
 
