@@ -2577,6 +2577,77 @@ export async function updatePlatformStudioAgentProviderPreset(
   return writeAgentConfigRecord(card.id, agent, nextConfig)
 }
 
+const LOCAL_ASSISTANT_AGENT_CONFIG_PATH = ".tsian/local/assistant/agent.json"
+
+/**
+ * Read the local assistant's current provider preset id and available presets.
+ * Used by the Assistant chat UI to render the provider selection control.
+ */
+export async function getLocalAssistantProviderPreset(): Promise<{
+  providerPresetId: string
+  presets: PlatformStudioProviderPresetOption[]
+}> {
+  const files = await loadLocalAssistantFiles()
+  const configFile = files.find((file) => file.path === LOCAL_ASSISTANT_AGENT_CONFIG_PATH)
+  let providerPresetId = ""
+  if (configFile) {
+    try {
+      const parsed = JSON.parse(configFile.content) as unknown
+      if (isRecord(parsed) && typeof parsed.providerPresetId === "string") {
+        providerPresetId = parsed.providerPresetId
+      }
+    } catch {
+      // Ignore parse errors; treat as no selection.
+    }
+  }
+  return {
+    providerPresetId,
+    presets: listBrowserAiProviderPresetOptions(),
+  }
+}
+
+/**
+ * Update the local assistant's provider preset selection by rewriting
+ * .tsian/local/assistant/agent.json via the Dexie meta store.
+ */
+export async function updateLocalAssistantProviderPreset(
+  providerPresetId: string | null,
+): Promise<void> {
+  const files = await loadLocalAssistantFiles()
+  const configIndex = files.findIndex((file) => file.path === LOCAL_ASSISTANT_AGENT_CONFIG_PATH)
+  const presetId = providerPresetId?.trim() ?? ""
+
+  if (configIndex >= 0) {
+    const config = parseAgentConfigRecord(files[configIndex])
+    const nextConfig = { ...config }
+    if (presetId) {
+      nextConfig.providerPresetId = presetId
+    } else {
+      delete nextConfig.providerPresetId
+    }
+    files[configIndex] = {
+      ...files[configIndex],
+      content: JSON.stringify(nextConfig, null, 2) + "\n",
+      updatedAt: Date.now(),
+    }
+  } else {
+    // agent.json should always exist (seeded on first load), but handle gracefully.
+    const nextConfig: Record<string, unknown> = {}
+    if (presetId) {
+      nextConfig.providerPresetId = presetId
+    }
+    files.push({
+      path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
+      content: JSON.stringify(nextConfig, null, 2) + "\n",
+      mediaType: "application/json",
+      createdAt: 0,
+      updatedAt: Date.now(),
+    })
+  }
+
+  await saveLocalAssistantFiles(files)
+}
+
 export async function listPlatformWorkspaceDirectory(input: {
   cardId?: string
   saveId?: string

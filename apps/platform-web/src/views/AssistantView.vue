@@ -269,6 +269,8 @@ import {
   runAssistantChat,
   getPlatformActiveGameCard,
   waitForPlatformHostReady,
+  getLocalAssistantProviderPreset,
+  updateLocalAssistantProviderPreset,
 } from "../platform-host"
 import { renderMarkdown } from "../lib/markdown"
 import {
@@ -311,6 +313,9 @@ const sessionRenaming = ref(false)
 const sessionDeleting = ref(false)
 const renaming = ref("")
 const renameInputRef = ref<HTMLInputElement | null>(null)
+const providerPresets = ref<Array<{ id: string; name: string }>>([])
+const assistantProviderPresetId = ref("")
+const updatingProviderPreset = ref(false)
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
 function formatSessionTime(timestamp: number): string {
@@ -338,6 +343,7 @@ async function refresh() {
     } else {
       cardName.value = ""
     }
+    await loadProviderPreset()
   } finally {
     refreshing.value = false
   }
@@ -554,9 +560,32 @@ async function scrollToBottom(force = false) {
   }
 }
 
+async function loadProviderPreset() {
+  try {
+    const result = await getLocalAssistantProviderPreset()
+    providerPresets.value = result.presets
+    assistantProviderPresetId.value = result.providerPresetId
+  } catch {
+    // Non-fatal: provider selection just won't show.
+  }
+}
+
+async function handleProviderPresetChange(presetId: string) {
+  updatingProviderPreset.value = true
+  try {
+    await updateLocalAssistantProviderPreset(presetId || null)
+    assistantProviderPresetId.value = presetId
+  } catch {
+    await loadProviderPreset()
+  } finally {
+    updatingProviderPreset.value = false
+  }
+}
+
 onMounted(async () => {
   await refresh()
   await loadActiveSession()
+  await loadProviderPreset()
   nextTick(() => inputRef.value?.focus())
 })
 </script>
