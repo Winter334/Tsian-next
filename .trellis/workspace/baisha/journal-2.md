@@ -311,3 +311,37 @@ Polished Control Panel provider settings by removing developer status blocks, re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 68: Simplify Studio Agent Skill UI
+
+**Date**: 2026-06-18
+**Task**: Simplify Studio Agent Skill UI
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Removed noisy Studio summary and assistant blocks, simplified Agent details, and presented Skills through Agent assignment wording instead of shared/private categories.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e522ac9` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
