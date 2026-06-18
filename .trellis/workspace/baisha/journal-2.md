@@ -345,3 +345,37 @@ Removed noisy Studio summary and assistant blocks, simplified Agent details, and
 ### Next Steps
 
 - None - task complete
+
+
+## Session 69: Agent-centered Studio management UI
+
+**Date**: 2026-06-18
+**Task**: Agent-centered Studio management UI
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Redesigned Studio around selected Agent management, added SOUL.md runtime support, persisted per-Agent Skill enablement, refreshed default Agent content, and updated specs.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ad4d77f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
