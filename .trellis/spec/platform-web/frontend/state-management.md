@@ -41,6 +41,12 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - `fetchBrowserAiProviderModels(provider, options?): Promise<BrowserAiModelEntry[]>`
 - `validateBrowserAiModelParameters(parameters: BrowserAiModelParameters): void`
 - `parseBrowserAiCustomRequestParams(input: string): Record<string, unknown>`
+- `resolveBrowserAiConfigForProviderId(providerId: string): BrowserAiConfig | null` — resolve a specific saved preset by id; null when missing/incomplete so callers fall back to the global active provider.
+- `listBrowserAiProviderPresetOptions(): Array<{ id: string; name: string }>` — id+name only (no credentials), used to populate the per-Agent provider dropdown in Studio.
+- `buildAgentProviderPresetMap(files: WorkspaceFile[]): Map<string, string>` — maps agent id -> `providerPresetId` from parsed registry entries.
+- `resolveAgentModelConfig(agentId, presetMap): BrowserAiConfig | null` — resolves a per-Agent config override from the preset map.
+- `updatePlatformStudioAgentProviderPreset(input: PlatformStudioAgentProviderPresetInput): Promise<WorkspaceFile>` — sets/clears `providerPresetId` in a card Agent's `agent.json`.
+- `getLocalAssistantProviderPreset()` / `updateLocalAssistantProviderPreset(providerPresetId)` — same for the local Assistant agent in `.tsian/local/assistant/agent.json`.
 - Environment fallback keys: `VITE_AI_BASE_URL`, `VITE_AI_API_KEY`, `VITE_AI_MODEL`.
 
 ### 3. Contracts
@@ -54,6 +60,12 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - When no complete local provider is active, `getBrowserAiConfig()` may fall back to complete `VITE_AI_*` environment values.
 - Existing old localStorage shape `{ chat: { baseUrl, apiKey, model } }` is compatibility input and should normalize into a local OpenAI-compatible provider.
 - API keys must not be written into Game Card manifests, Game Card packages, Runtime Workspace files, remote/packaged frontend bridge payloads, debug summaries, or visible non-password UI summaries.
+- Per-Agent provider selection stores **only a provider preset id reference** (`providerPresetId?: string`) on `AgentConfig` / `AgentRegistryEntry` (`packages/contracts/src/runtime.ts`). The preset (with `apiKey`/`baseUrl`) stays in platform-local localStorage and is never distributed with game-card content.
+- Resolution order for every model call: Agent-selected preset (`resolveBrowserAiConfigForProviderId`) -> platform-global active provider (`getBrowserAiConfig()`) -> `VITE_AI_*` environment defaults. `generateAssistantReply` applies this via `const config = options.config ?? getBrowserAiConfig()`.
+- Both the AIRP play turn and the desktop Assistant chat turn must resolve the active Agent's provider config in their `callModel` closure and pass it as `config` only when it is non-null (omit the key otherwise so the global fallback applies).
+- The local Assistant agent (`.tsian/local/assistant/agent.json`) participates in the same registry and the same provider selection/resolution path as card Agents.
+- `PlatformStudioSnapshot.providerPresets` exposes only `{ id, name }` options (no credentials) so the Studio dropdown can list saved presets without leaking keys.
+- Distributing a game card to another player with a `providerPresetId` set must resolve gracefully: the preset id is unlikely to exist in the recipient's localStorage, so resolution falls back to their global active provider without crashing.
 - Future account-system work may manage identity or sync UX, but must not move API credentials into distributable Game Card or Agent content.
 
 ### 4. Validation & Error Matrix
@@ -68,6 +80,8 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Numeric model parameter outside its supported range -> saving provider config fails with a clear field-specific error.
 - Custom request params are invalid JSON or not an object -> saving provider config fails with a clear error.
 - Custom request params include a protected key -> saving provider config fails and the key is named in the error.
+- Per-Agent `providerPresetId` is blank/whitespace -> `resolveBrowserAiConfigForProviderId` returns `null` -> the call falls back to the global active provider.
+- Per-Agent selected preset id no longer exists in saved presets (deleted by the player, or a card distributed to a player without that preset) -> `resolveBrowserAiConfigForProviderId` returns `null` -> falls back to the global active provider without crashing.
 
 ### 5. Good/Base/Bad Cases
 
@@ -80,6 +94,11 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Bad: custom request params `{ "model": "override" }` replace the runtime-selected model.
 - Bad: exporting a Game Card writes `apiKey` into `game-card.json`, `workspace/*`, `frontend/*`, or package metadata.
 - Bad: a remote/packaged frontend can query provider config or API keys through the bridge.
+- Good: a player selects a different saved provider preset for each Agent in Studio; each Agent's next model call uses that preset's endpoint, key, model, and parameters.
+- Good: clearing an Agent's provider selection (empty dropdown) makes its next model call fall back to the platform-global active provider.
+- Good: the desktop Assistant agent selects its own provider preset via the AssistantView header dropdown and uses it for chat turns.
+- Bad: an Agent's `agent.json` stores `apiKey` or `baseUrl` directly instead of a `providerPresetId` reference.
+- Bad: a card with `providerPresetId` set crashes when opened by a player who lacks that preset; it must instead fall back to their global active provider.
 
 ### 6. Tests Required
 
@@ -91,6 +110,11 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Assert invalid custom request param JSON and protected custom keys fail before saving or request execution.
 - Assert configured non-empty model parameters appear in chat-completions request bodies.
 - Assert Game Card package export and bridge/query surfaces do not include provider config or API keys when those areas change.
+- Assert an Agent with a `providerPresetId` pointing to an existing preset uses that preset's endpoint/key/model/parameters on its next model call.
+- Assert an Agent with no `providerPresetId` (or an empty/whitespace one) falls back to the platform-global active provider.
+- Assert an Agent whose `providerPresetId` was deleted resolves to the global active provider without throwing.
+- Assert `agent.json` / Game Card packages never contain `apiKey` or `baseUrl`, only the `providerPresetId` reference.
+- Assert `PlatformStudioSnapshot.providerPresets` exposes only `{ id, name }` with no credential fields.
 
 ### 7. Wrong vs Correct
 
@@ -115,6 +139,33 @@ await generateAssistantReply(messages, { config })
 ```
 
 Game Card or Agent content may later reference a provider/model preference, but the API credential stays in local browser platform config.
+
+Per-Agent provider selection stores only a preset id reference and resolves at call time:
+
+```typescript
+// Correct — callModel closure resolves the Agent's preset, omits config when null
+callModel(messages, options) {
+  const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+  return generateAssistantReply(messages, {
+    debugLabel: options.debugLabel,
+    signal: options.signal,
+    ...(agentConfig ? { config: agentConfig } : {}),
+  })
+}
+```
+
+```json
+// Wrong — Agent config stores credentials directly instead of a preset id reference
+{
+  "id": "my-agent",
+  "provider": { "baseUrl": "https://api.example/v1", "apiKey": "sk-secret" }
+}
+```
+
+```json
+// Correct — Agent config stores only the preset id reference
+{ "id": "my-agent", "providerPresetId": "preset-abc-123" }
+```
 
 Custom request params are merged only after validation:
 
