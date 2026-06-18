@@ -381,6 +381,60 @@ function findScopedFile(
   return files.find((file) => file.path === path)
 }
 
+const KNOWLEDGE_MOUNT_DIR = "knowledge"
+
+/**
+ * Resolves a knowledge mount virtual path to its real card-content path.
+ * If the agent declares a knowledgeMount (e.g. "docs/"), paths under
+ * agents/<agentId>/knowledge/ are translated to the real mount target.
+ * Returns the original path when no mount applies.
+ */
+function resolveKnowledgeMountPath(
+  path: string,
+  agentContext: AgentContextEntry | undefined,
+): string {
+  if (!agentContext?.agent.knowledgeMount) {
+    return path
+  }
+  const agentDir = agentContext.agent.path.replace(/\/AGENT\.md$/, "")
+  const mountVirtualDir = `${agentDir}/${KNOWLEDGE_MOUNT_DIR}`
+  const mountTarget = agentContext.agent.knowledgeMount.replace(/\/+$/, "")
+
+  if (path === mountVirtualDir) {
+    return mountTarget
+  }
+  const prefix = `${mountVirtualDir}/`
+  if (path.startsWith(prefix)) {
+    return `${mountTarget}/${path.slice(prefix.length)}`
+  }
+  return path
+}
+
+/**
+ * Resolves a real card-content path back to its knowledge mount virtual path
+ * for result normalization. Used when listing entries under the mount.
+ */
+function resolveKnowledgeMountPathReverse(
+  path: string,
+  agentContext: AgentContextEntry | undefined,
+): string {
+  if (!agentContext?.agent.knowledgeMount) {
+    return path
+  }
+  const agentDir = agentContext.agent.path.replace(/\/AGENT\.md$/, "")
+  const mountVirtualDir = `${agentDir}/${KNOWLEDGE_MOUNT_DIR}`
+  const mountTarget = agentContext.agent.knowledgeMount.replace(/\/+$/, "")
+
+  if (path === mountTarget) {
+    return mountVirtualDir
+  }
+  const prefix = `${mountTarget}/`
+  if (path.startsWith(prefix)) {
+    return `${mountVirtualDir}/${path.slice(prefix.length)}`
+  }
+  return path
+}
+
 function listWorkspaceEntries(
   files: WorkspaceFile[],
   scope: WorkspaceScope,

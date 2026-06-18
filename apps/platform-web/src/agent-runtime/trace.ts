@@ -17,7 +17,7 @@ export type RuntimeTraceEventType =
   | "script_log"
   | "workspace_mutation"
 
-export type RuntimeTraceDebugLabel = "master-agent" | "narrative-agent" | `agent:${string}`
+export type RuntimeTraceDebugLabel = "master-agent" | "narrative-agent" | "assistant-agent" | `agent:${string}`
 
 export interface RuntimeTraceEvent {
   type: RuntimeTraceEventType

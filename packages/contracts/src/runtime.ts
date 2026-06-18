@@ -136,6 +136,7 @@ export interface AgentConfig {
   skills: AgentSkillConfig
   platformTools: AgentPlatformToolConfig
   workspaceAccess: AgentWorkspaceAccessConfig
+  knowledgeMount?: string
 }
 
 export interface AgentRegistryEntry {
@@ -151,6 +152,7 @@ export interface AgentRegistryEntry {
   platformTools: AgentPlatformToolConfig
   workspaceAccess: AgentWorkspaceAccessConfig
   contextPaths: string[]
+  knowledgeMount?: string
   updatedAt: number
 }
 
@@ -162,6 +164,7 @@ export interface AgentContextEntry {
   sessionFile?: WorkspaceFile
   skillIndex: SkillRegistryEntry[]
   contextFiles: WorkspaceFile[]
+  knowledgeFiles: WorkspaceFile[]
   missingContextPaths: string[]
 }
 

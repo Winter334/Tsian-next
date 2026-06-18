@@ -109,6 +109,17 @@ export function assembleAgentContext(
     missingContextPaths.push(path ?? declaredPath)
   }
 
+  const knowledgeFiles: WorkspaceFile[] = []
+  if (agent.knowledgeMount) {
+    const mountDir = agent.knowledgeMount.replace(/\/+$/, "")
+    const prefix = `${mountDir}/`
+    for (const file of files) {
+      if (file.path === mountDir || file.path.startsWith(prefix)) {
+        knowledgeFiles.push(file)
+      }
+    }
+  }
+
   const entry: AgentContextEntry = {
     agent,
     agentFile,
@@ -117,6 +128,7 @@ export function assembleAgentContext(
       agent,
     ),
     contextFiles,
+    knowledgeFiles,
     missingContextPaths,
   }
 

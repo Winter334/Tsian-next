@@ -1262,3 +1262,155 @@ export async function runAgentRuntimeTurn(
     agentSessionTranscripts: transcriptCollector.records,
   }
 }
+
+export interface AssistantAgentTurnInput {
+  agentId: string
+  userInput: string
+  recentHistory: ConversationMessageRecord[]
+  workspaceFiles?: WorkspaceFile[]
+  signal?: AbortSignal
+}
+
+export interface AssistantAgentTurnResult {
+  replyText: string
+  agentSessionTranscripts: AgentSessionTranscriptRecord[]
+}
+
+const ASSISTANT_AGENT_PLATFORM_GUARD = "你是当前游戏卡的桌面助手 Agent。你可以读取工作区文件、回答关于游戏卡的问题，并通过工作区工具帮助玩家编辑内容。"
+
+function buildAssistantAgentMessages(
+  input: AssistantAgentTurnInput,
+  context: AgentContextEntry | null,
+): AiChatMessage[] {
+  const history = normalizeHistory(input.recentHistory)
+  if (!context) {
+    return [
+      { role: "system", content: ASSISTANT_AGENT_PLATFORM_GUARD },
+      {
+        role: "user",
+        content: [
+          "最近对话：",
+          formatHistory(history),
+          "",
+          "玩家输入：",
+          input.userInput,
+        ].join("\n"),
+      },
+    ]
+  }
+
+  const visibleContacts = input.workspaceFiles
+    ? getVisibleAgentContacts(input.workspaceFiles, context)
+    : []
+  const permissions = deriveAgentRuntimePermissionProfile(context.agent)
+  const collaborationPolicy = DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY
+  const agentCallState = createAgentCallTurnState()
+
+  return [
+    {
+      role: "system",
+      content: buildWorkspaceAgentSystemPrompt(ASSISTANT_AGENT_PLATFORM_GUARD, context, {
+        allowAgentCall:
+          isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
+          && canExposeAgentCallInPrompt(
+            collaborationPolicy,
+            agentCallState,
+            0,
+            visibleContacts,
+          ),
+        visibleContacts,
+        enabledPlatformTools: permissions.enabledTools,
+      }),
+    },
+    {
+      role: "user",
+      content: [
+        "Workspace Agent 上下文：",
+        formatAgentRuntimeContext(context),
+        "",
+        "最近对话：",
+        formatHistory(history),
+        "",
+        "玩家输入：",
+        input.userInput,
+      ].join("\n"),
+    },
+  ]
+}
+
+export async function runAssistantAgentTurn(
+  input: AssistantAgentTurnInput,
+  capabilities: AgentRuntimeCapabilities,
+): Promise<AssistantAgentTurnResult> {
+  assertNotAborted(input.signal)
+  const collaborationPolicy = normalizeAgentRuntimeCollaborationPolicy(
+    capabilities.collaborationPolicy,
+  )
+  const transcriptCollector = createAgentSessionTranscriptCollector()
+
+  const agentContext = input.workspaceFiles
+    ? assembleAgentContext(input.workspaceFiles, { agentId: input.agentId })
+    : null
+
+  if (!agentContext) {
+    throw new Error(
+      `Assistant Agent "${input.agentId}" was not found. Restore agents/${input.agentId}/AGENT.md or recreate the default workspace.`,
+    )
+  }
+
+  capabilities.emitTrace?.({
+    type: "agent_step_started",
+    ...traceAgentBase(agentContext, "assistant-agent"),
+    data: { agentTitle: agentContext.agent.title },
+  })
+
+  const messages = buildAssistantAgentMessages(input, agentContext)
+
+  let replyText: string
+  try {
+    replyText = (await callAgentModelWithWorkspaceTools(
+      messages,
+      {
+        userInput: input.userInput,
+        recentHistory: input.recentHistory,
+        snapshot: { version: "tsian.runtime.snapshot.v1", state: { turn: 0, messages: [] } },
+        workspaceFiles: input.workspaceFiles,
+        signal: input.signal,
+      },
+      capabilities,
+      {
+        debugLabel: "assistant-agent",
+        signal: input.signal,
+      },
+      agentContext,
+      {
+        agentCallState: createAgentCallTurnState(),
+        agentCallDepth: 0,
+        collaborationPolicy,
+      },
+      transcriptCollector,
+    )).trim()
+    if (!replyText) {
+      throw new Error("assistant-agent returned an empty reply.")
+    }
+    capabilities.emitTrace?.({
+      type: "agent_step_completed",
+      ...traceAgentBase(agentContext, "assistant-agent"),
+      ok: true,
+      data: { outputLength: replyText.length },
+    })
+  } catch (error) {
+    capabilities.emitTrace?.({
+      type: "agent_step_failed",
+      ...traceAgentBase(agentContext, "assistant-agent"),
+      ok: false,
+      data: errorToTraceData(error),
+    })
+    throw error
+  }
+
+  return {
+    replyText,
+    agentSessionTranscripts: transcriptCollector.records,
+  }
+}

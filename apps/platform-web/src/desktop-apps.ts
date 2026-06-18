@@ -20,6 +20,7 @@ export type DesktopAppId =
   | "workspace-explorer"
   | "workspace-editor"
   | "studio"
+  | "assistant"
   | "game-launcher"
   | "play"
   | "settings"
@@ -76,6 +77,7 @@ const GameCardLibraryView = defineAsyncComponent(() => import("./views/GameCardL
 const WorkspaceExplorerView = defineAsyncComponent(() => import("./views/WorkspaceExplorerView.vue"))
 const WorkspaceEditorView = defineAsyncComponent(() => import("./views/WorkspaceEditorView.vue"))
 const StudioView = defineAsyncComponent(() => import("./views/StudioView.vue"))
+const AssistantView = defineAsyncComponent(() => import("./views/AssistantView.vue"))
 const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDetailView.vue"))
 const PlayView = defineAsyncComponent(() => import("./views/PlayView.vue"))
 const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"))
@@ -142,6 +144,21 @@ const desktopApps: DesktopAppDefinition[] = [
     defaultHeight: 680,
     minWidth: 680,
     minHeight: 460,
+  },
+  {
+    appId: "assistant",
+    label: "助手",
+    shortLabel: "助手",
+    routeName: "assistant",
+    routePath: "/assistant",
+    title: "桌面助手",
+    caption: "游戏卡问答与编辑辅助",
+    icon: Bot,
+    component: AssistantView,
+    defaultWidth: 900,
+    defaultHeight: 640,
+    minWidth: 600,
+    minHeight: 420,
   },
   {
     appId: "play",

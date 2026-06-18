@@ -290,6 +290,18 @@ const STUDIO_ASSISTANT_AGENT_MD = [
   "Keep durable identity and work style in `SOUL.md`.",
   "Read relevant workspace docs and Skill instructions before giving framework or maintenance advice.",
   "",
+  "## Knowledge Base",
+  "",
+  "Your `knowledge/` directory is a mount to the current game card's `docs/` directory.",
+  "Files you read and write there are distributable card knowledge.",
+  "When you learn something useful about this card that other players' assistants would benefit from, write it to your knowledge base.",
+  "",
+  "## Self-Improvement",
+  "",
+  "Your personal notes live at `.tsian/local/assistant/notes.md`.",
+  "When the player corrects you, shares a preference, or you notice a recurring pattern, append a concise note there.",
+  "These notes are local to this player and do not distribute with the game card.",
+  "",
 ].join("\n")
 
 const STUDIO_ASSISTANT_SOUL_MD = [
@@ -633,12 +645,13 @@ const DEFAULT_WORKSPACE_FILES: Array<{
         disabled: [],
       },
       platformTools: {
-        enabled: ["workspace_read"],
+        enabled: ["workspace_read", "workspace_write"],
         disabled: [],
       },
       workspaceAccess: {
-        level: 1,
+        level: 4,
       },
+      knowledgeMount: "docs/",
     }),
   },
   {
@@ -1212,7 +1225,14 @@ export function isActiveSaveRuntimePath(path: string): boolean {
 }
 
 export function isSaveRuntimePersistencePath(path: string): boolean {
-  return isActiveSaveRuntimePath(path) || isPlatformMetadataPath(path)
+  if (isActiveSaveRuntimePath(path)) {
+    return true
+  }
+  // .tsian/local/ is local-only data excluded from save checkpoint/restore.
+  if (path === ".tsian/local" || path.startsWith(".tsian/local/")) {
+    return false
+  }
+  return isPlatformMetadataPath(path)
 }
 
 export function isOrdinaryWorkspacePath(path: string): boolean {

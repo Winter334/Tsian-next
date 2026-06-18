@@ -50,6 +50,11 @@ const router = createRouter({
       props: true,
     },
     {
+      path: "/assistant",
+      name: "assistant",
+      component: () => import("../views/AssistantView.vue"),
+    },
+    {
       path: "/play",
       name: "play",
       component: () => import("../views/PlayView.vue"),

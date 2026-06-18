@@ -27,7 +27,11 @@ import type {
   WorkspaceScope,
   WorkspaceValidationResult,
 } from "@tsian/contracts"
-import { runAgentRuntimeTurn, type AgentSessionTranscriptRecord } from "../agent-runtime"
+import {
+  runAgentRuntimeTurn,
+  runAssistantAgentTurn,
+  type AgentSessionTranscriptRecord,
+} from "../agent-runtime"
 import type { RuntimeControlledExecutorContext } from "../agent-runtime/workspace-tools"
 import { assembleAgentContext } from "../agent-runtime/context"
 import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
@@ -83,6 +87,7 @@ import {
   listWorkspaceFilesForSave,
   normalizeWorkspaceFilePath,
   putLocalGameCard,
+  replaceWorkspaceFilesForSave,
   restoreCheckpointForSave,
   setActiveGameCardId,
   setActiveSaveId,
@@ -1628,6 +1633,231 @@ export const playFrontendBridge: PlayFrontendBridge = {
     },
   },
   debug: createDebugBridge(),
+}
+
+export interface AssistantChatInput {
+  message: string
+  history?: ConversationMessageRecord[]
+  mode?: "local" | "card"
+}
+
+export interface AssistantChatResult {
+  replyText: string
+}
+
+const LOCAL_ASSISTANT_AGENT_ID = "studio-assistant"
+
+/**
+ * Runs a desktop Assistant chat turn against the currently loaded Game Card.
+ * Unlike the AIRP play turn, this does not increment the turn counter,
+ * create checkpoints, or stage AIRP history. It runs a single agent runtime
+ * turn for Q&A and workspace assistance.
+ */
+export async function runAssistantChat(
+  input: AssistantChatInput,
+): Promise<AssistantChatResult> {
+  await waitForPlatformHostReady()
+
+  const content = normalizeMessageContent(input.message)
+  if (!content) {
+    throw new Error("Assistant chat requires non-empty message.")
+  }
+
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("当前没有激活中的游戏卡。请在我的应用中选择一张游戏卡。")
+  }
+
+  const mode = input.mode ?? "local"
+  const history = input.history ?? []
+
+  // Resolve assistant agent ID based on mode.
+  let agentId: string
+  if (mode === "card" && activeCard.manifest.assistant?.agentId) {
+    agentId = activeCard.manifest.assistant.agentId
+  } else {
+    agentId = LOCAL_ASSISTANT_AGENT_ID
+  }
+
+  // Build effective workspace files from card content (+ save if active).
+  const activeSaveId = await getActiveSaveId()
+  let workspaceFiles: WorkspaceFile[]
+  if (activeSaveId) {
+    workspaceFiles = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
+  } else {
+    // No active save: use card content only.
+    workspaceFiles = activeCard.contentFiles.map((file) => ({
+      path: file.path,
+      content: typeof file.content === "string" ? file.content : "",
+      mediaType: file.mediaType ?? "text/plain",
+      createdAt: activeCard.updatedAt,
+      updatedAt: activeCard.updatedAt,
+    }))
+  }
+
+  // Ensure local assistant files exist in the workspace.
+  workspaceFiles = ensureLocalAssistantFiles(workspaceFiles)
+
+  const controller = new AbortController()
+  const workspaceTransaction = createRuntimeWorkspaceTransaction(workspaceFiles)
+  const activeWorkspaceTransaction = workspaceTransaction
+
+  try {
+    const result = await runAssistantAgentTurn(
+      {
+        agentId,
+        userInput: content,
+        recentHistory: history,
+        workspaceFiles: workspaceTransaction.workspaceFiles,
+        signal: controller.signal,
+      },
+      {
+        callModel(messages, options) {
+          return generateAssistantReply(messages, {
+            debugLabel: options.debugLabel,
+            signal: options.signal,
+          })
+        },
+        runPlatformAction: createAgentRuntimePlatformActionRunner(
+          activeWorkspaceTransaction,
+          activeSaveId ?? "",
+          () => {},
+        ),
+        runBrowserScript: createBrowserSkillScriptRunner({
+          workspaceTransaction: activeWorkspaceTransaction,
+          signal: controller.signal,
+          emitTrace: () => {},
+        }),
+        workspaceMutations: {
+          write: (writeInput) => {
+            if (writeInput.scope === "platform-meta") {
+              return activeWorkspaceTransaction.writePlatformFile({
+                path: writeInput.path,
+                content: writeInput.content,
+                mediaType: writeInput.mediaType,
+              })
+            }
+            if (writeInput.scope === "card-content") {
+              return activeWorkspaceTransaction.write({
+                path: writeInput.path,
+                content: writeInput.content,
+                mediaType: writeInput.mediaType,
+              })
+            }
+            if (writeInput.scope === "save-runtime") {
+              return activeWorkspaceTransaction.write({
+                path: writeInput.path,
+                content: writeInput.content,
+                mediaType: writeInput.mediaType,
+              })
+            }
+            throw new Error(`Assistant workspace write scope not supported: ${writeInput.scope}`)
+          },
+          delete: (deleteInput) => {
+            if (deleteInput.scope === "card-content" || deleteInput.scope === "save-runtime") {
+              return {
+                scope: deleteInput.scope,
+                ...activeWorkspaceTransaction.delete(deleteInput.path),
+              }
+            }
+            throw new Error(`Assistant workspace delete scope not supported: ${deleteInput.scope}`)
+          },
+        },
+        emitTrace: () => {},
+      },
+    )
+
+    // Commit workspace changes (no checkpoint, no turn increment).
+    const finalFiles = activeWorkspaceTransaction.finalWorkspaceFiles()
+    await commitAssistantWorkspaceFiles(activeSaveId, finalFiles)
+
+    return { replyText: result.replyText }
+  } catch (error) {
+    activeWorkspaceTransaction.discard()
+    throw error
+  }
+}
+
+function ensureLocalAssistantFiles(files: WorkspaceFile[]): WorkspaceFile[] {
+  const now = Date.now()
+  const result = [...files]
+  const hasLocalNotes = result.some((file) => file.path === ".tsian/local/assistant/notes.md")
+  if (!hasLocalNotes) {
+    result.push({
+      path: ".tsian/local/assistant/notes.md",
+      content: "# Assistant Notes\n\n",
+      mediaType: "text/markdown",
+      createdAt: now,
+      updatedAt: now,
+    })
+  }
+  return result.sort((left, right) => left.path.localeCompare(right.path))
+}
+
+async function commitAssistantWorkspaceFiles(
+  saveId: string | null,
+  files: WorkspaceFile[],
+): Promise<void> {
+  if (!saveId) {
+    // No active save: persist card-content changes back to the card.
+    const activeCard = await getPlatformActiveGameCard()
+    if (!activeCard) {
+      return
+    }
+    const cardFiles = files.filter((file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"))
+    // Update card content files.
+    await updateCardContentFilesForCard(activeCard.id, cardFiles)
+    return
+  }
+
+  // Active save: persist save-runtime and platform-meta files.
+  const saveRuntimeFiles = files
+    .filter((file) => file.path.startsWith("save/") || file.path.startsWith(".tsian/"))
+    .map((file) => ({
+      path: file.path,
+      content: file.content,
+      mediaType: file.mediaType,
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    }))
+  if (saveRuntimeFiles.length > 0) {
+    await replaceWorkspaceFilesForSave(saveId, saveRuntimeFiles)
+  }
+
+  // Also persist card-content changes (from knowledge mount writes).
+  const cardFiles = files.filter((file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"))
+  if (cardFiles.length > 0) {
+    const activeCard = await getPlatformActiveGameCard()
+    if (activeCard) {
+      await updateCardContentFilesForCard(activeCard.id, cardFiles)
+    }
+  }
+}
+
+async function updateCardContentFilesForCard(
+  cardId: string,
+  files: WorkspaceFile[],
+): Promise<void> {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    return
+  }
+  const filesByPath = new Map(card.contentFiles.map((file) => [file.path, file]))
+  for (const file of files) {
+    filesByPath.set(file.path, {
+      path: file.path,
+      content: file.content,
+      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
+    })
+  }
+  const contentFiles = Array.from(filesByPath.values()).sort((left, right) =>
+    left.path.localeCompare(right.path),
+  )
+  await putLocalGameCard({
+    manifest: card.manifest,
+    contentFiles,
+    source: card.source,
+  })
 }
 
 export async function initializePlatformHost(): Promise<void> {
