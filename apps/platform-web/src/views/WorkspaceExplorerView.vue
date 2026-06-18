@@ -83,7 +83,7 @@
             type="search"
             class="retro-focus h-8 w-full border border-neon-deep/55 bg-elevated px-3 font-mono text-xs text-text-main placeholder:text-text-dim/60"
             placeholder="搜索路径或内容"
-            :disabled="!selectedCardId"
+            :disabled="!isBrowsing"
           />
         </label>
         <button
