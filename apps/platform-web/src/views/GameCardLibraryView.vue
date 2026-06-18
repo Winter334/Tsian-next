@@ -5,14 +5,6 @@
           <button
             type="button"
             class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-            @click="refreshCards"
-          >
-            <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />
-            刷新
-          </button>
-          <button
-            type="button"
-            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
             :disabled="!selectedCard || isSelectedCardLoaded || loadingCard"
             @click="loadSelectedCard"
           >
@@ -164,7 +156,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { CheckCircle2, Download, FolderOpen, Gamepad2, Image, RefreshCw, Store, Trash2 } from "lucide-vue-next"
+import { CheckCircle2, Download, FolderOpen, Gamepad2, Image, Store, Trash2 } from "lucide-vue-next"
 import type { LocalGameCardRecord } from "@/storage/db"
 import {
   getGameCardCoverUrl,
