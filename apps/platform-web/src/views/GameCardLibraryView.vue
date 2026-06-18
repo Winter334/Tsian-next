@@ -1,5 +1,5 @@
 <template>
-  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
+  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden">
       <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
         <div class="flex flex-wrap items-center gap-2">
           <button
@@ -158,15 +158,6 @@
           </button>
         </div>
       </div>
-
-      <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
-        <p class="font-mono text-[11px] text-text-dim">
-          我的应用 - {{ cards.length }} 张游戏卡
-        </p>
-        <p class="min-w-0 truncate font-mono text-[11px] text-text-dim">
-          {{ selectedStatus }}
-        </p>
-      </footer>
   </section>
 </template>
 
@@ -208,13 +199,6 @@ const selectedCard = computed(() =>
 const isSelectedCardLoaded = computed(() =>
   Boolean(selectedCard.value && selectedCard.value.id === activeGameCardId.value)
 )
-
-const selectedStatus = computed(() => {
-  if (!selectedCard.value) {
-    return "未选择"
-  }
-  return `${getGameCardTitle(selectedCard.value)} - ${getGameCardSummary(selectedCard.value)}`
-})
 
 async function refreshCards() {
   loading.value = true

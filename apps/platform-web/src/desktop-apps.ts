@@ -98,6 +98,7 @@ const desktopApps: DesktopAppDefinition[] = [
     defaultHeight: 620,
     minWidth: 560,
     minHeight: 420,
+    fullscreenable: true,
   },
   {
     appId: "my-apps",
@@ -113,6 +114,7 @@ const desktopApps: DesktopAppDefinition[] = [
     defaultHeight: 680,
     minWidth: 620,
     minHeight: 440,
+    fullscreenable: true,
   },
   {
     appId: "workspace-explorer",
@@ -144,6 +146,7 @@ const desktopApps: DesktopAppDefinition[] = [
     defaultHeight: 680,
     minWidth: 680,
     minHeight: 460,
+    fullscreenable: true,
   },
   {
     appId: "assistant",
@@ -159,6 +162,7 @@ const desktopApps: DesktopAppDefinition[] = [
     defaultHeight: 640,
     minWidth: 600,
     minHeight: 420,
+    fullscreenable: true,
   },
   {
     appId: "play",
@@ -190,6 +194,7 @@ const desktopApps: DesktopAppDefinition[] = [
     defaultHeight: 600,
     minWidth: 520,
     minHeight: 400,
+    fullscreenable: true,
   },
   {
     appId: "debug",
@@ -205,6 +210,7 @@ const desktopApps: DesktopAppDefinition[] = [
     defaultHeight: 720,
     minWidth: 720,
     minHeight: 460,
+    fullscreenable: true,
   },
 ]
 
@@ -222,6 +228,7 @@ const gameLauncherDefinition: DesktopAppDefinition = {
   defaultHeight: 720,
   minWidth: 720,
   minHeight: 460,
+  fullscreenable: true,
 }
 
 const workspaceEditorDefinition: DesktopAppDefinition = {

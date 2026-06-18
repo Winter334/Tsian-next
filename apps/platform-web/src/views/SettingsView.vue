@@ -1,5 +1,5 @@
 <template>
-  <section class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+  <section class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
     <header class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
       <div class="min-w-0">
         <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Control Panel</p>
@@ -274,14 +274,6 @@
         </aside>
       </div>
     </main>
-
-    <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
-      <span class="font-mono text-[11px] text-text-dim">当前模型：{{ chatModelSummary }}</span>
-      <span class="inline-flex items-center gap-1 font-mono text-[11px] text-text-dim">
-        <KeyRound class="h-3 w-3" aria-hidden="true" />
-        API key 不进入游戏卡或导出包
-      </span>
-    </footer>
   </section>
 </template>
 
@@ -298,7 +290,6 @@ import {
 import {
   AlertTriangle,
   CheckCircle2,
-  KeyRound,
   Plus,
   RefreshCw,
   RotateCcw,
@@ -355,7 +346,6 @@ const ModelNumberField = defineComponent({
 
 const effectiveChatConfig = ref<BrowserAiConfig | null>(null)
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(clonePlatformConfigDraft(getBrowserPlatformConfigDraft()))
-const chatModelSummary = ref("未配置")
 const settingsFeedback = ref("")
 const settingsError = ref("")
 const fetchingModels = ref(false)
@@ -445,13 +435,6 @@ const modelFetchSummary = computed(() => {
   return "尚未拉取模型"
 })
 
-function formatModelSummary(config: BrowserAiConfig | null): string {
-  if (!config) {
-    return "未配置"
-  }
-  return `${config.model} · ${config.providerName ?? config.baseUrl}`
-}
-
 function cloneProvider(input: BrowserAiProviderPreset): BrowserAiProviderPreset {
   return {
     ...input,
@@ -502,7 +485,6 @@ function clearFeedback() {
 
 function refreshPlatformConfigState(options: { reloadDraft?: boolean } = {}) {
   effectiveChatConfig.value = getBrowserAiConfig()
-  chatModelSummary.value = formatModelSummary(effectiveChatConfig.value)
 
   if (options.reloadDraft) {
     platformConfigDraft.value = clonePlatformConfigDraft(getBrowserPlatformConfigDraft())

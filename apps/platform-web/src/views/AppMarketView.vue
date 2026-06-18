@@ -1,5 +1,5 @@
 <template>
-  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
     <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
       <div class="flex flex-wrap items-center gap-2">
         <button
@@ -79,11 +79,6 @@
         </div>
       </section>
     </main>
-
-    <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
-      <p class="font-mono text-[11px] text-text-dim">0 个市场项目</p>
-      <p class="font-mono text-[11px] text-text-dim">离线目录</p>
-    </footer>
   </section>
 </template>
 

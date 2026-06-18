@@ -380,9 +380,8 @@
       </div>
     </main>
 
-    <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
+    <footer class="retro-statusbar flex min-h-9 flex-wrap items-center gap-2 border-t px-3 py-2">
       <span class="font-mono text-[11px] text-text-dim">{{ lastRefreshAt ? `上次刷新：${lastRefreshAt}` : "尚未刷新" }}</span>
-      <span class="font-mono text-[11px] text-text-dim">AI debug 仅平台可见 · remote bridge blocks ai-debug</span>
     </footer>
   </section>
 </template>

@@ -1,5 +1,5 @@
 <template>
-  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden">
+  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden">
       <nav class="retro-toolbar flex gap-1 overflow-x-auto border-b px-3 pt-2" aria-label="游戏卡栏目">
         <button
           type="button"
@@ -473,15 +473,6 @@
           </div>
         </div>
       </div>
-
-      <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
-        <p class="font-mono text-[11px] text-text-dim">
-          {{ frontendStatusLabel }}
-        </p>
-        <p class="min-w-0 truncate font-mono text-[11px] text-text-dim">
-          当前存档：{{ activeSaveName }}
-        </p>
-      </footer>
   </section>
 </template>
 
@@ -590,9 +581,6 @@ const frontendStatusLabel = computed(() => getFrontendStatusLabel(card.value))
 const frontendStatusDescription = computed(() => getFrontendStatusDescription(card.value))
 const isPlayable = computed(() => hasPlayableFrontend(card.value))
 const isLoadedCard = computed(() => Boolean(card.value && activeGameCardId.value === card.value.id))
-const activeSaveName = computed(() =>
-  allSaves.value.find((save) => save.id === activeSaveId.value)?.name ?? "无"
-)
 
 function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
   const frontend = loadedCard.manifest.frontend
