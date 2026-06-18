@@ -17,6 +17,7 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Game cards own reusable content files (`contentFiles`) such as Agents, Skills, rules, schemas, docs, assistant metadata, and optional frontend bindings.
 - Saves are playthrough slots linked to `gameCardId` / `gameCardVersion`; `workspaceFiles` stores only save runtime data mounted at `save/...` plus host-owned `.tsian/...` metadata.
 - Packaged frontend files are reusable Game Card assets stored beside game cards, not copied into save runtime data.
+- Packaged frontends are served by a Service Worker (`apps/platform-web/public/tsian-game-card-frontend-sw.js`) that reads `gameCardFrontendFiles` from IndexedDB. The SW DB name **must** stay in sync with `storage/db.ts`'s `TsianLocalDb` constructor database name (currently `tsian-agent-runtime-v6`). The SW is a standalone static asset that cannot import the TS constant, so the SW file carries the same literal plus a comment pointing back to `db.ts`. Update both together whenever the database name changes; a mismatch makes every packaged frontend serve 404.
 - Built-in game cards may be refreshed by platform seed helpers when their source is `builtin` and their content/manifest is stale. This refresh updates reusable card content; existing saves see the updated card content through the effective workspace layer.
 - Checkpoints store snapshot, history, and save runtime files. They do not snapshot card-owned content.
 
@@ -256,3 +257,118 @@ return sourceCard
 - Do not add compatibility migrations unless explicitly requested.
 - Do not store AI/runtime state only in component refs when it must survive navigation.
 - Do not reintroduce events/archives as platform-owned required memory tables.
+
+## Scenario: Frontend Package Import/Export
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web changes standalone frontend package (`.tsian-frontend.zip`) import/export, the `tsian.frontend-package.v1` manifest shape, packaged frontend file path conventions, `inferMediaType` media-type mapping, or the frontend tab UI in `GameCardDetailView.vue`.
+
+### 2. Signatures
+
+- `FRONTEND_PACKAGE_SCHEMA = "tsian.frontend-package.v1"` and `FrontendPackageManifest` / `FrontendPackageFileEntry` in `packages/contracts/src/game-card.ts`.
+- `importGameCardFrontendPackage(cardId, input): Promise<LocalGameCardRecord>` in `storage/game-card-packages.ts`.
+- `exportGameCardFrontendPackage(cardId): Promise<Blob>` in `storage/game-card-packages.ts`.
+- `importPlatformGameCardFrontendPackage(cardId, input)` / `exportPlatformGameCardFrontendPackage(cardId)` in `platform-host/index.ts`.
+- `assertSafeRelativePath(path)` (frontend-package paths do not carry `workspace/`/`frontend/`/`cover/` prefixes, so it must not reuse `assertAllowedPackagePath`).
+- `inferMediaType(path)` extended with audio/video/avif mappings.
+
+### 3. Contracts
+
+- A frontend package is a focused, frontend-only distribution unit (`.tsian-frontend.zip`), distinct from the whole-card `.tsian-card.zip`. Whole-card import (`importGameCardPackage`) is unchanged and still brings frontends in; the frontend package only replaces the frontend portion of an already-existing card.
+- Package structure: root `frontend.json` manifest (schema `tsian.frontend-package.v1`) with `entry`, `bridgeVersion: "tsian.play-bridge.v1"`, and `files: [{ path, mediaType, size }]`; build-output files placed at their manifest `path`.
+- **Manifest `path` values do NOT carry the `frontend/` prefix.** The package mirrors the build output's original structure (`index.html`, `assets/app.js`). The platform adds the `frontend/` prefix in exactly one place — when writing into `gameCardFrontendFiles` — so stored paths align with the existing whole-card convention (`frontend/index.html`) and the SW route key `${gameCardId}::frontend/index.html`.
+- On import the manifest `entry` is stored on `manifest.frontend.entry` **with** the `frontend/` prefix added (e.g. manifest `index.html` -> stored `frontend/index.html`), matching how whole-card import lands it and how the SW resolves the entry.
+- Import is an **atomic whole-replacement**: the card's existing `gameCardFrontendFiles` are deleted in the same `putLocalGameCard` transaction, then the new package's files are written. There is no incremental add/edit of individual frontend files in this scope.
+- `manifest.frontend` after import is `{ kind: "packaged", entry: "frontend/" + manifest.entry, bridgeVersion }`.
+- `mediaType` resolution on import: manifest `files[i].mediaType` wins; blank/missing falls back to `inferMediaType(path)`; final fallback `application/octet-stream`. Export reuses the stored `mediaType` verbatim.
+- Export strips the `frontend/` prefix from stored paths when building the manifest and zip entries, and strips it from `manifest.frontend.entry` for the manifest `entry`.
+- Built-in cards (`source === "builtin"`) reject import/export/clear with "请先另存为本地副本"; the UI also `:disabled` those three buttons for built-in cards.
+- Clearing a packaged binding (`updatePlatformGameCardFrontend(cardId, null)`) must delete all of the card's `gameCardFrontendFiles` and clear `manifest.frontend`, not just the manifest binding.
+- `putLocalGameCard` `frontendFiles` semantics: `undefined`/omitted = keep existing frontend files; `[]` = delete all of the card's frontend files inside the write transaction. Clear passes `[]`.
+- The SW DB name in `public/tsian-game-card-frontend-sw.js` must equal `storage/db.ts`'s DB name (see Dexie State above).
+
+### 4. Validation & Error Matrix
+
+- Package missing `frontend.json` -> `FRONTEND_PACKAGE_MANIFEST_MISSING` ("Frontend package is missing frontend.json."); existing frontend untouched.
+- `frontend.json` schema not `tsian.frontend-package.v1` -> `FRONTEND_PACKAGE_SCHEMA_UNSUPPORTED` ("Unsupported frontend package schema: <value>").
+- Manifest `entry` not present in `files` -> `FRONTEND_PACKAGE_ENTRY_MISSING` ("Frontend package entry is not in file list: <entry>").
+- Manifest `files` and actual zip entries disagree (either direction) -> `FRONTEND_PACKAGE_FILE_MISMATCH`.
+- A file path is unsafe (`..`, absolute, NUL) -> `FRONTEND_PACKAGE_PATH_INVALID`.
+- Export of a card with no frontend files -> `FRONTEND_EXPORT_NO_FILES`.
+- Export of a card whose `manifest.frontend` is not packaged -> `FRONTEND_EXPORT_NOT_PACKAGED`.
+- Import/export/clear on a built-in card -> rejected before any storage mutation.
+- A failed import must never partially overwrite the existing frontend (validation runs before the `putLocalGameCard` transaction).
+
+### 5. Good/Base/Bad Cases
+
+- Good: upload a `.tsian-frontend.zip` with `frontend.json` + `index.html` + `assets/logo.png`; file list shows `frontend/index.html` and `frontend/assets/logo.png`, entry shows `frontend/index.html`, play window loads both via the SW.
+- Good: upload a package containing `.mp3`/`.mp4`; stored mediaType is `audio/mpeg`/`video/mp4` and the SW serves those Content-Types so `<audio>`/`<video>` can decode.
+- Good: export a card's frontend to `.tsian-frontend.zip`, then import that zip into another local card; the second card shows the same files, entry, and play behavior.
+- Good: uploading a new package onto a card that already had a frontend removes the old files entirely (no stale leftovers).
+- Good: clearing a packaged frontend leaves `gameCardFrontendFiles` empty for that card and `manifest.frontend` unset.
+- Base: a fresh local card (e.g. duplicated from the built-in blank) has no packaged frontend; upload is enabled, export/clear are disabled, file list shows the empty hint.
+- Bad: the frontend package manifest stores paths with the `frontend/` prefix already applied (double-prefix after import, SW route mismatch, 404).
+- Bad: import writes new files without deleting the old ones (stale leftovers, ambiguous entry).
+- Bad: the SW DB name diverges from `db.ts` (every packaged frontend serve returns 404 because the SW opens an empty/old database).
+- Bad: built-in card frontend buttons are clickable instead of disabled.
+
+### 6. Tests Required
+
+- Assert upload writes files with the `frontend/` prefix and sets `manifest.frontend.entry` to `frontend/<entry>` with `bridgeVersion: "tsian.play-bridge.v1"`.
+- Assert the SW serves a packaged entry and assets with correct Content-Type and body after the DB-name fix (read via `/__tsian_game_card_frontends/<cardId>/<path>`).
+- Assert uploading an audio/video package stores and serves `audio/mpeg` / `video/mp4`.
+- Assert re-uploading replaces (old files gone, new files only).
+- Assert export -> import round-trip reproduces the same file set, entry, and mediaTypes.
+- Assert clear empties `gameCardFrontendFiles` for the card and unsets `manifest.frontend`.
+- Assert each error case throws the documented error and leaves the existing frontend intact.
+- Assert built-in cards reject import/export/clear and the UI disables the buttons.
+- Assert `npm run build:web` passes; assert whole-card import (`importGameCardPackage`) and Remote URL mode are unaffected.
+
+### 7. Wrong vs Correct
+
+#### Wrong — manifest paths already carry the `frontend/` prefix
+
+```json
+{
+  "schema": "tsian.frontend-package.v1",
+  "entry": "frontend/index.html",
+  "files": [{ "path": "frontend/index.html", "mediaType": "text/html", "size": 390 }]
+}
+```
+
+#### Correct — manifest paths are the raw build output; the platform adds the prefix on landing
+
+```json
+{
+  "schema": "tsian.frontend-package.v1",
+  "entry": "index.html",
+  "bridgeVersion": "tsian.play-bridge.v1",
+  "files": [{ "path": "index.html", "mediaType": "text/html", "size": 390 }]
+}
+```
+
+```typescript
+// Correct — single prefix-add site on import
+const frontendFiles = entries.map((e) => ({
+  path: `frontend/${e.path}`,
+  data: e.data,
+  mediaType: e.mediaType ?? inferMediaType(e.path),
+}))
+await putLocalGameCard({
+  id: cardId,
+  manifest: { ...card.manifest, frontend: { kind: "packaged", entry: `frontend/${manifest.entry}`, bridgeVersion: manifest.bridgeVersion } },
+  contentFiles: card.contentFiles,
+  frontendFiles,
+})
+```
+
+```typescript
+// Wrong — import writes new files without clearing old ones first
+await localDb.gameCardFrontendFiles.bulkPut(newFiles) // leaves stale old files
+```
+
+```javascript
+// Wrong — SW hardcodes a DB name that drifts from db.ts
+const DB_NAME = "tsian-agent-runtime-v5" // db.ts already moved to v6 -> every serve 404s
+```
