@@ -208,8 +208,7 @@ interface RawAirpHistoryTurnRecord {
   createdAt: string
   source: {
     kind: "agent-runtime"
-    masterAgentId: "master"
-    narrativeAgentId: "narrative"
+    entryAgentId: string
   }
   messages: ConversationMessageRecord[]
 }
@@ -325,6 +324,7 @@ function formatRawAirpHistoryTurnPath(turn: number): string {
 function serializeRawAirpHistoryTurnRecord(
   turn: number,
   createdAt: Date,
+  entryAgentId: string,
   userInput: string,
   assistantOutput: string,
 ): string {
@@ -334,8 +334,7 @@ function serializeRawAirpHistoryTurnRecord(
     createdAt: createdAt.toISOString(),
     source: {
       kind: "agent-runtime",
-      masterAgentId: "master",
-      narrativeAgentId: "narrative",
+      entryAgentId,
     },
     messages: [
       { role: "user", content: userInput },
@@ -350,6 +349,7 @@ function stageRawAirpHistoryTurnFile(
   workspaceTransaction: RuntimeWorkspaceTransaction,
   input: {
     turn: number
+    entryAgentId: string
     userInput: string
     assistantOutput: string
   },
@@ -360,6 +360,7 @@ function stageRawAirpHistoryTurnFile(
     content: serializeRawAirpHistoryTurnRecord(
       input.turn,
       new Date(),
+      input.entryAgentId,
       input.userInput,
       input.assistantOutput,
     ),
@@ -1563,6 +1564,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
         stageRawAirpHistoryTurnFile(workspaceTransaction, {
           turn: nextTurn,
+          entryAgentId: "master",
           userInput: content,
           assistantOutput: result.replyText,
         })

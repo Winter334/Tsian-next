@@ -225,10 +225,10 @@ if (!frontend) {
 - Assert new saves include default `agents/master/agent.json`, `agents/master/AGENT.md`, `agents/narrative/agent.json`, and `agents/narrative/AGENT.md`.
 - Assert default built-in card content includes `agents/master/SOUL.md`, `agents/narrative/SOUL.md`, `agents/memory/SOUL.md`, and `agents/studio-assistant/SOUL.md`.
 - Assert new saves include default `agents/studio-assistant/agent.json`, `agents/studio-assistant/AGENT.md`, `agents/studio-assistant/skills/framework-knowledge/SKILL.md`, and `docs/tsian-framework-knowledge.md`.
-- Assert `agent-registry` returns master and narrative entries for a new save.
+- Assert `agent-registry` returns the default Agent entries for a new save.
 - Assert `agent-registry` returns `configPath` as `agents/<agent>/agent.json` while `path` remains `agents/<agent>/AGENT.md`.
 - Assert malformed `agent.json` and Agent directories missing `AGENT.md` do not crash registry parsing and are omitted.
-- Assert `agent-registry` returns `studio-assistant` for a new save without changing the default master/narrative turn entrypoint.
+- Assert `agent-registry` returns `studio-assistant` for a new save without changing the default turn entrypoint.
 - Assert shared and agent-local skills are discovered and sorted deterministically.
 - Assert `name` / `description` prefer current Skill frontmatter and fall back to legacy `id` / `summary`.
 - Assert malformed or missing Skill frontmatter does not crash parsing.
@@ -451,38 +451,38 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
 ### 2. Signatures
 
 - Production turn input includes `workspaceFiles: WorkspaceFile[]`.
-- `runAgentRuntimeTurn(input, capabilities)` still returns `{ replyText, masterPlan }`.
-- Debug labels remain `"master-agent"` and `"narrative-agent"`.
+- `runAgentRuntimeTurn(input, capabilities)` returns `{ replyText, agentSessionTranscripts }`. The input includes `agentId` to specify the entry agent.
+- Debug labels use `"entry-agent"` for the entry agent and `agent:<id>` for delegated agents.
 
 ### 3. Contracts
 
 - `platform-host` owns storage access. It must initialize the save runtime defaults, assemble `listEffectiveWorkspaceFilesForSave(activeSaveId, activeCard)`, then pass that effective workspace into Agent Runtime.
-- `agent-runtime` owns prompt composition. It must use `assembleAgentContext(workspaceFiles, { agentId: "master" })` and `{ agentId: "narrative" }` for the two default calls.
-- Model messages may include `AGENT.md`, optional `SOUL.md`, notes/session files, declared context files, missing context paths, filtered lightweight skill index, recent history, turn number, player input, and master brief.
+- `agent-runtime` owns prompt composition. It uses `assembleAgentContext(workspaceFiles, { agentId: input.agentId })` for the single entry agent call. The entry agent orchestrates other agents through `agent_call` as directed by its AGENT.md, SOUL.md, and contacts configuration.
+- Model messages may include `AGENT.md`, optional `SOUL.md`, notes/session files, declared context files, missing context paths, filtered lightweight skill index, recent history, turn number, and player input.
 - Skill indexes inside runtime prompts must remain lightweight `SkillRegistryEntry[]`; do not call `loadSkillDetail` from the default turn path.
 - `agent-runtime` must not import Dexie tables, platform bridge objects, or platform-host helpers.
 
 ### 4. Validation & Error Matrix
 
 - Empty save runtime data on an active save -> `initializeWorkspaceForSave` fills `save/...` defaults before runtime reads files.
-- Effective workspace missing `agents/master/AGENT.md` -> `sendMessage` fails with a clear runtime error; do not fall back to legacy hardcoded prompts.
-- Effective workspace missing `agents/narrative/AGENT.md` -> same as above.
+- Effective workspace missing the entry agent definition -> `sendMessage` fails with a clear runtime error; do not fall back to legacy hardcoded prompts.
+
 - Effective workspace missing `agents/<agent>/SOUL.md` -> continue without `soulFile`; this is compatibility input, not a runtime error.
 - Missing declared `contextPaths` -> include missing path diagnostics in prompt context; do not fail the turn for that reason alone.
-- Model returns empty narrative reply -> keep existing empty-reply error behavior.
+- Model returns empty reply -> keep existing empty-reply error behavior.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: a new save uses `agents/master/AGENT.md` plus optional `agents/master/SOUL.md`, and `agents/narrative/AGENT.md` plus optional `agents/narrative/SOUL.md`, in the two model system prompts.
+- Good: a new save uses the entry agent AGENT.md plus optional SOUL.md in the model system prompt. The entry agent may contact other agents through agent_call.
 - Good: old local save with zero runtime files receives default `save/...` files before the turn.
-- Base: direct unit-style calls without `workspaceFiles` may exercise legacy prompt assembly, but production `sendMessage` must pass workspace files.
+- Base: production `sendMessage` must pass workspace files; there are no legacy fallback prompts.
 - Bad: production `sendMessage` omits workspace files and silently uses hardcoded prompts.
 - Bad: missing required Agent definitions are auto-recreated in a non-empty workspace, hiding user/content configuration problems.
 
 ### 6. Tests Required
 
 - Assert `sendMessage` passes workspace files into `runAgentRuntimeTurn`.
-- Assert default master/narrative Agent definitions appear in generated model messages for a new save.
+- Assert the entry agent definition appears in generated model messages for a new save.
 - Assert missing declared context paths are included as diagnostics.
 - Assert skill detail contents are not included unless a future task explicitly loads them.
 - Assert missing required Agent definitions in a non-empty workspace fail clearly.
@@ -587,8 +587,8 @@ interface RuntimeWorkspaceToolCall {
 - Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxCallsPerTurn=4`, `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`, and `maxToolRoundsPerAgent=3`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state.
 - Delegated Agents derive their own runtime permissions from the target Agent's `agent.json`; the caller Agent's permissions must not leak into the target Agent step.
 - Delegated Agents may use their own exposed generic workspace operations, `skill_load`, `action_call` for loaded Skills, and limited nested `agent_call` inside their own tool loop.
-- Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, root master/narrative steps at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
-- The root turn shares one `agent_call` budget across master, narrative, and nested delegated steps.
+- Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, the root entry agent at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
+- The root turn shares one `agent_call` budget across the entry agent and nested delegated steps.
 - Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
 - Built-in executors are side-effect-free:
   - `validation`: returns `status: "validated"` and `output: null`.
@@ -683,7 +683,7 @@ interface RuntimeWorkspaceToolCall {
 - `workspace.search` arguments: `{ scope: "...", query: string, limit?: number }`; success returns `WorkspaceSearchResult[]`; empty query returns `[]`.
 - `workspace.diff/patch/write/move/delete/validate` use the shared `WorkspaceOperationRequest` shape from `@tsian/contracts`.
 - Tool observations are returned to the same Agent as a normal user message containing `<tsian-tool-observation>`.
-- Final master/narrative outputs must strip tool-call blocks and must not expose tool observations to players.
+- Final entry agent output must strip tool-call blocks and must not expose tool observations to players.
 
 ### 4. Validation & Error Matrix
 
@@ -740,7 +740,7 @@ interface RuntimeWorkspaceToolCall {
 
 ### 5. Good/Base/Bad Cases
 
-- Good: master sees a Skill Index entry named `continuity`, calls `skill_load`, receives `SKILL.md` entry content as observation, then returns a plain brief.
+- Good: the entry agent sees a Skill Index entry named `continuity`, calls `skill_load`, receives `SKILL.md` entry content as observation, then returns its final reply.
 - Good: narrative loads `prose-style` with `skill_load`; if an agent-local and shared Skill share that name, the narrative-local Skill wins.
 - Good: loaded `SKILL.md` declares `tsian-actions`; the same Agent can call one declared action with `action_call` and receives a structured executor observation.
 - Good: action without an executor declaration uses built-in `validation`.
@@ -752,7 +752,7 @@ interface RuntimeWorkspaceToolCall {
 - Good: an action writes a workspace file, then a later same-turn workspace read or browser script SDK read observes the staged file before the turn commits.
 - Good: a failed turn after staged workspace writes leaves no ordinary persisted workspace file from those staged writes.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace.read` only when that reference is needed.
-- Good: master sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its own brief.
+- Good: the entry agent sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its final reply.
 - Good: a delegated memory Agent loads a Skill, calls a non-`agent_call` action, or calls one of its own contact Agents when its own `agent.json` permissions plus depth and budget policy allow it.
 - Good: an Agent with `workspace_read` enabled and `workspace_write` disabled can list/search/read context, but generic workspace writes and Skill workspace writes return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Good: Agent uses `workspace.list` for a directory and receives entries without file contents.
@@ -814,7 +814,7 @@ interface RuntimeWorkspaceToolCall {
 - Assert nested `agent_call` attempts beyond `maxDepth` return `AGENT_CALL_UNAVAILABLE` with structured depth/budget metadata.
 - Assert invalid `historyMode` is rejected and omitted `historyMode` defaults to `recent`.
 - Assert delegated Agents can still use workspace tools, `skill_load`, and non-`agent_call` `action_call` according to their own Agent permissions.
-- Assert per-turn `agent_call` budget is shared across master and narrative steps.
+- Assert per-turn `agent_call` budget is shared across the entry agent and nested delegated steps.
 - Assert disabled `workspace_read` omits read/list/search prompt examples and direct generic read/list/search calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Assert disabled `workspace_write` omits write examples and direct generic diff/patch/write/move/delete/validate calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Assert Skill `workspace_operation`, Agent Runtime platform-action workspace requests, and browser script SDK workspace calls cannot bypass disabled Agent workspace tool groups.
@@ -889,7 +889,7 @@ interface RawAirpHistoryTurnRecord {
 
 - Raw AIRP history is the native fallback memory substrate: complete, reliable, minimally interpreted, and checkpoint-scoped.
 - Raw history stores only the player input and final assistant narrative output for a successful turn.
-- Raw history must not store model prompts, master briefs, tool observations, trace events, delegated Agent intermediate outputs, or hidden debug data.
+- Raw history must not store model prompts, tool observations, trace events, delegated Agent intermediate outputs, or hidden debug data.
 - Store raw history at turn granularity, not as a monolithic all-history JSONL file, so workspace search can return matching individual turns.
 - Keep raw history separate from `.tsian/traces/`; trace is platform debug material and normal workspace list/search hides it by default.
 - Enhanced AIRP memory such as timelines, summaries, world facts, character state, relationships, vector indexes, or semantic retrieval are derived workspace projections and belong to Skills, Agents, or content-specific conventions.
@@ -921,7 +921,7 @@ interface RawAirpHistoryTurnRecord {
 
 - Assert successful turns write one raw history JSON file in the same successful-turn commit captured by checkpoint creation.
 - Assert raw history content includes player input and final assistant output.
-- Assert raw history content omits prompts, master brief, trace events, tool observations, and delegated Agent outputs.
+- Assert raw history content omits prompts, trace events, tool observations, and delegated Agent outputs.
 - Assert workspace list/read/search can surface individual raw turn files.
 - Assert failed or aborted turns do not persist raw history files.
 
@@ -958,7 +958,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 4. Validation & Error Matrix
 
-- Successful no-tool turn -> master and narrative session JSONL records are appended.
+- Successful no-tool turn -> entry agent session JSONL record is appended.
 - Successful `agent_call` -> the delegated Agent also receives its own session JSONL records.
 - Successful turn with no maintenance action -> no notes/timeline/summary maintenance mutation is synthesized.
 - Loaded maintenance Skill plus valid plan -> approved target files are written through the staged workspace transaction.
@@ -969,7 +969,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 5. Good/Base/Bad Cases
 
-- Good: a successful turn with master, narrative, and a delegated memory Agent appends JSONL records under each participating Agent's own directory.
+- Good: a successful turn with the entry agent and a delegated memory Agent appends JSONL records under each participating Agent's own directory.
 - Good: memory Agent loads `memory-maintenance`, calls `apply_maintenance_plan`, and writes `save/memory/summaries/current.md` through the staged browser-script SDK.
 - Good: an empty maintenance plan returns no-op output and does not mutate notes/timeline/summary files.
 - Base: a successful turn with no loaded maintenance Skill still appends session transcripts and raw history, but produces no enhanced memory file updates.
@@ -1135,7 +1135,7 @@ stageAgentSessionTranscriptFiles(
 - Bad: writing `.tsian/diagnostics/*.json` as derived state for this slice.
 - Bad: returning raw JSONL trace lines through `runtime-diagnostics`.
 - Bad: adding repair suggestions such as "rewrite this Skill" to platform diagnostics.
-- Bad: exposing diagnostics to ordinary master/narrative prompts by default.
+- Bad: exposing diagnostics to ordinary entry agent prompts by default.
 
 ### 6. Tests Required
 
