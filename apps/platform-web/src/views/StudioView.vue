@@ -136,7 +136,7 @@
               </div>
             </div>
 
-            <div v-else class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+            <div v-else-if="activeSection === 'skills'" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
               <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
                 <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Skills</p>
                 <p class="font-mono text-[11px] text-text-dim">{{ selectedEnabledSkillCount }} / {{ skillsForSelectedAgent.length }} 已启用</p>
@@ -172,6 +172,73 @@
                 </div>
               </div>
             </div>
+
+            <div v-else class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+              <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
+                <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Tools</p>
+                <p class="font-mono text-[11px] text-text-dim">平台工具与 Workspace 权限</p>
+              </div>
+
+              <div class="min-h-0 overflow-auto p-3">
+                <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
+                  <section class="border border-neon-deep/35 bg-panel/55">
+                    <div class="border-b border-neon-deep/25 px-3 py-2">
+                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">平台工具</p>
+                    </div>
+                    <div class="grid gap-2 p-3">
+                      <label
+                        v-for="tool in platformToolControls"
+                        :key="tool.id"
+                        class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/30 bg-elevated/45 p-3 hover:bg-elevated sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+                      >
+                        <input
+                          class="mt-1 h-4 w-4 accent-[#f3c56d]"
+                          type="checkbox"
+                          :checked="platformToolEnabled(tool.id)"
+                          :disabled="togglingPlatformTool === tool.id"
+                          @change="togglePlatformTool(tool.id, ($event.target as HTMLInputElement).checked)"
+                        >
+                        <span class="min-w-0">
+                          <span class="block text-sm font-bold text-text-main">{{ tool.label }}</span>
+                          <span class="mt-1 block text-xs leading-5 text-text-dim">{{ tool.description }}</span>
+                        </span>
+                        <span class="font-mono text-[11px]" :class="platformToolEnabled(tool.id) ? 'text-neon' : 'text-text-dim'">
+                          {{ platformToolEnabled(tool.id) ? "启用" : "禁用" }}
+                        </span>
+                      </label>
+                    </div>
+                  </section>
+
+                  <section class="border border-neon-deep/35 bg-panel/55">
+                    <div class="border-b border-neon-deep/25 px-3 py-2">
+                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">Workspace 权限</p>
+                    </div>
+                    <div class="grid gap-3 p-3">
+                      <label class="grid gap-2">
+                        <span class="text-xs font-bold text-text-main">权限等级</span>
+                        <select
+                          class="retro-input retro-focus h-9 w-full px-2 text-sm"
+                          :disabled="updatingWorkspaceAccess"
+                          :value="selectedAgent?.workspaceAccess.level ?? 1"
+                          @change="updateWorkspaceAccessLevel(Number(($event.target as HTMLSelectElement).value))"
+                        >
+                          <option
+                            v-for="option in workspaceAccessOptions"
+                            :key="option.level"
+                            :value="option.level"
+                          >
+                            {{ option.label }}
+                          </option>
+                        </select>
+                      </label>
+                      <p class="text-xs leading-5 text-text-dim">
+                        {{ workspaceAccessDescription }}
+                      </p>
+                    </div>
+                  </section>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -193,6 +260,7 @@
 
 <script setup lang="ts">
 import type {
+  AgentPlatformToolName,
   AgentContextEntry,
   AgentRegistryEntry,
   SkillRegistryEntry,
@@ -204,19 +272,23 @@ import {
   FileText,
   FolderOpen,
   RefreshCw,
+  ShieldCheck,
   Wrench,
 } from "lucide-vue-next"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
+import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import { isSkillEnabledForAgent } from "../agent-runtime/registry"
 import {
   getPlatformStudioAgentContext,
   getPlatformStudioSnapshot,
+  updatePlatformStudioAgentPlatformToolEnabled,
   updatePlatformStudioAgentSkillEnabled,
+  updatePlatformStudioAgentWorkspaceAccess,
   waitForPlatformHostReady,
   type PlatformStudioSnapshot,
 } from "../platform-host"
 
-type StudioSection = "agent" | "soul" | "skills"
+type StudioSection = "agent" | "soul" | "skills" | "tools"
 
 const sections: Array<{
   id: StudioSection
@@ -226,6 +298,52 @@ const sections: Array<{
   { id: "agent", label: "AGENT.md", icon: FileText },
   { id: "soul", label: "SOUL.md", icon: FileText },
   { id: "skills", label: "Skills", icon: Wrench },
+  { id: "tools", label: "工具/权限", icon: ShieldCheck },
+]
+
+const platformToolControls: Array<{
+  id: AgentPlatformToolName
+  label: string
+  description: string
+}> = [
+  {
+    id: "agent_call",
+    label: "Agent 协作",
+    description: "允许向联系人 Agent 发起一次性咨询。",
+  },
+  {
+    id: "workspace_read",
+    label: "读取 Workspace",
+    description: "允许读取、列出和搜索可见 Workspace 文件。",
+  },
+  {
+    id: "workspace_write",
+    label: "维护 Workspace",
+    description: "允许通过平台工具或 Skill 动作写入、移动、删除或校验文件。",
+  },
+]
+
+const workspaceAccessOptions = [
+  {
+    level: 0,
+    label: "只读",
+    description: "只能读取普通游戏卡和存档内容。",
+  },
+  {
+    level: 1,
+    label: "可维护存档",
+    description: "可以维护当前存档的运行时文件。",
+  },
+  {
+    level: 2,
+    label: "可编辑游戏卡",
+    description: "可以编辑游戏卡内容；当前运行时仍会优先限制普通写入到存档。",
+  },
+  {
+    level: 4,
+    label: "平台维护",
+    description: "允许访问平台元数据能力，仅适合受信任的维护 Agent。",
+  },
 ]
 
 const router = useRouter()
@@ -241,6 +359,8 @@ const selectedAgentId = ref("")
 const agentDraft = ref("")
 const soulDraft = ref("")
 const togglingSkillPath = ref("")
+const togglingPlatformTool = ref<AgentPlatformToolName | "">("")
+const updatingWorkspaceAccess = ref(false)
 
 const selectedAgent = computed(() =>
   snapshot.value?.agents.find((agent) => agent.id === selectedAgentId.value) ?? null
@@ -273,6 +393,11 @@ const skillsForSelectedAgent = computed(() => {
 const selectedEnabledSkillCount = computed(() =>
   skillsForSelectedAgent.value.filter(skillEnabled).length
 )
+const workspaceAccessDescription = computed(() => {
+  const level = selectedAgent.value?.workspaceAccess.level ?? 1
+  return workspaceAccessOptions.find((option) => option.level === level)?.description
+    ?? "使用默认 Workspace 权限。"
+})
 const statusLabel = computed(() => {
   if (!snapshot.value) {
     return "未加载游戏卡"
@@ -302,6 +427,10 @@ function setFeedback(message: string, kind: "idle" | "ok" | "error" = "idle") {
 
 function skillEnabled(skill: SkillRegistryEntry): boolean {
   return selectedAgent.value ? isSkillEnabledForAgent(skill, selectedAgent.value) : false
+}
+
+function platformToolEnabled(tool: AgentPlatformToolName): boolean {
+  return selectedAgent.value ? isAgentPlatformToolEnabled(selectedAgent.value, tool) : false
 }
 
 function enabledSkillCount(agent: AgentRegistryEntry): number {
@@ -385,6 +514,50 @@ async function toggleSkill(skill: SkillRegistryEntry, enabled: boolean) {
     await reloadSnapshotAndSelectedAgent()
   } finally {
     togglingSkillPath.value = ""
+  }
+}
+
+async function togglePlatformTool(tool: AgentPlatformToolName, enabled: boolean) {
+  if (!selectedAgent.value) {
+    return
+  }
+
+  togglingPlatformTool.value = tool
+  try {
+    await updatePlatformStudioAgentPlatformToolEnabled({
+      agentId: selectedAgent.value.id,
+      tool,
+      enabled,
+    })
+    await reloadSnapshotAndSelectedAgent()
+    const label = platformToolControls.find((control) => control.id === tool)?.label ?? tool
+    setFeedback(`${enabled ? "已启用" : "已禁用"}：${label}`, "ok")
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "无法更新工具权限。", "error")
+    await reloadSnapshotAndSelectedAgent()
+  } finally {
+    togglingPlatformTool.value = ""
+  }
+}
+
+async function updateWorkspaceAccessLevel(level: number) {
+  if (!selectedAgent.value) {
+    return
+  }
+
+  updatingWorkspaceAccess.value = true
+  try {
+    await updatePlatformStudioAgentWorkspaceAccess({
+      agentId: selectedAgent.value.id,
+      level,
+    })
+    await reloadSnapshotAndSelectedAgent()
+    setFeedback("Workspace 权限已更新。", "ok")
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "无法更新 Workspace 权限。", "error")
+    await reloadSnapshotAndSelectedAgent()
+  } finally {
+    updatingWorkspaceAccess.value = false
   }
 }
 

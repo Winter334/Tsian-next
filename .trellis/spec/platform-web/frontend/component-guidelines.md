@@ -55,18 +55,20 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 
 ### Convention: Studio Agent Skill Management
 
-**What**: Studio should be Agent-centered: select one Agent, then manage literal files such as `AGENT.md` and `SOUL.md` plus one enable/disable Skill list for that Agent. Player-facing labels should say whether the selected Agent can use a Skill, not whether the registry entry is `shared` or `agent-local`.
+**What**: Studio should be Agent-centered: select one Agent, then preview literal files such as `AGENT.md` and `SOUL.md`, manage one enable/disable Skill list for that Agent, and expose only runtime-enforced platform tool / Workspace permission controls backed by `agent.json`. Player-facing labels should say whether the selected Agent can use a Skill or capability, not whether the registry entry is `shared`, `agent-local`, or an executor implementation detail.
 
-**Why**: `shared` / `agent-local` are runtime workspace storage details. Showing them as primary categories makes players manage file layout concepts instead of the actual question: can this Agent use this Skill?
+**Why**: `shared` / `agent-local` and executor names are runtime workspace storage details. Showing them as primary categories makes players manage file layout concepts instead of the actual question: can this Agent use this Skill, ask another Agent, read Workspace context, or maintain Workspace files?
 
 **Example**:
 
 ```vue
 <!-- Good: selected-Agent capability state. -->
 <span>{{ skillEnabled(skill) ? "启用" : "禁用" }}</span>
+<span>{{ platformToolEnabled("workspace_write") ? "启用" : "禁用" }}</span>
 
 <!-- Bad: storage-scope category as product language. -->
 <span>{{ skill.scope === "shared" ? "共享能力" : "专用能力" }}</span>
+<span>{{ action.executor.type }}</span>
 ```
 
 ## Bridge And Persistence

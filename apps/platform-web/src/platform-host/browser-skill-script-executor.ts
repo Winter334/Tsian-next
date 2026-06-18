@@ -5,13 +5,13 @@ import type {
   WorkspaceOperationRequest,
   WorkspaceFile,
 } from "@tsian/contracts"
-import type { RuntimeBrowserScriptExecutorRequest } from "../agent-runtime/workspace-tools"
+import type {
+  RuntimeBrowserScriptExecutorRequest,
+  RuntimeControlledExecutorContext,
+} from "../agent-runtime/workspace-tools"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import { summarizeTraceValue } from "../agent-runtime/trace"
-import {
-  AUTHORING_WORKSPACE_OPERATIONS,
-  executeWorkspaceOperation,
-} from "../agent-runtime/workspace-operations"
+import { executeWorkspaceOperation } from "../agent-runtime/workspace-operations"
 import {
   readWorkspaceFileFromFiles,
   type RuntimeWorkspaceTransaction,
@@ -441,6 +441,7 @@ function isScriptUnderSkillDirectory(request: RuntimeBrowserScriptExecutorReques
 async function handleSdkRequest(
   options: BrowserSkillScriptRunnerOptions,
   message: BrowserScriptWorkerMessage,
+  executorContext: RuntimeControlledExecutorContext | undefined,
 ): Promise<unknown> {
   const op = typeof message.op === "string" ? message.op : ""
   const args = isRecord(message.args) ? message.args : {}
@@ -458,7 +459,9 @@ async function handleSdkRequest(
     } as WorkspaceOperationRequest
     const result = await executeWorkspaceOperation(request, {
       workspaceFiles: options.workspaceTransaction.workspaceFiles,
-      exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+      agentContext: executorContext?.agentContext,
+      exposedOperations: executorContext?.exposedWorkspaceOperations
+        ?? [],
       mutations: {
         write: (input) => {
           const file = options.workspaceTransaction.write({
@@ -519,6 +522,7 @@ async function runWorkerScript(
   options: BrowserSkillScriptRunnerOptions,
   request: RuntimeBrowserScriptExecutorRequest,
   source: string,
+  executorContext: RuntimeControlledExecutorContext | undefined,
 ): Promise<PlatformActionResult> {
   if (typeof Worker === "undefined" || typeof Blob === "undefined") {
     return actionError(
@@ -604,7 +608,7 @@ async function runWorkerScript(
       }
 
       if (message.type === "sdk-request") {
-        void handleSdkRequest(options, message)
+        void handleSdkRequest(options, message, executorContext)
           .then((item) => {
             if (!settled) {
               postSdkResponse(worker, message, { ok: true, item })
@@ -659,6 +663,7 @@ export function createBrowserSkillScriptRunner(
 ) {
   return async (
     request: RuntimeBrowserScriptExecutorRequest,
+    executorContext?: RuntimeControlledExecutorContext,
   ): Promise<PlatformActionResult> => {
     if (!isScriptUnderSkillDirectory(request)) {
       return actionError(
@@ -697,6 +702,6 @@ export function createBrowserSkillScriptRunner(
       },
     })
 
-    return runWorkerScript(options, request, scriptFile.content)
+    return runWorkerScript(options, request, scriptFile.content, executorContext)
   }
 }

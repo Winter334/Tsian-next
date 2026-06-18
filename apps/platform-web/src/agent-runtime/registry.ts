@@ -1,4 +1,6 @@
 import type {
+  AgentConfig,
+  AgentPlatformToolName,
   AgentRegistryEntry,
   SkillDetailEntry,
   SkillRegistryEntry,
@@ -21,6 +23,12 @@ interface ParsedMarkdown {
   body: string
 }
 
+interface AgentPathInfo {
+  agentId: string
+  directoryPath: string
+  agentFilePath: string
+}
+
 interface SkillPathInfo {
   scope: SkillRegistryScope
   skillId: string
@@ -28,9 +36,16 @@ interface SkillPathInfo {
   agentId?: string
 }
 
-const AGENT_FILE_PATH_PATTERN = /^agents\/([^/]+)\/AGENT\.md$/
+const AGENT_CONFIG_FILE_PATH_PATTERN = /^agents\/([^/]+)\/agent\.json$/
 const SHARED_SKILL_FILE_PATH_PATTERN = /^skills\/([^/]+)\/SKILL\.md$/
 const AGENT_LOCAL_SKILL_FILE_PATH_PATTERN = /^agents\/([^/]+)\/skills\/([^/]+)\/SKILL\.md$/
+const DEFAULT_AGENT_ACCESS_LEVEL = 1
+const MAX_AGENT_ACCESS_LEVEL = 4
+const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
+  "agent_call",
+  "workspace_read",
+  "workspace_write",
+])
 
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
@@ -266,6 +281,21 @@ function skillPathInfo(path: string): SkillPathInfo | null {
   return null
 }
 
+function agentPathInfo(path: string): AgentPathInfo | null {
+  const match = AGENT_CONFIG_FILE_PATH_PATTERN.exec(path)
+  if (!match?.[1]) {
+    return null
+  }
+
+  const agentId = match[1]
+  const directoryPath = `agents/${agentId}`
+  return {
+    agentId,
+    directoryPath,
+    agentFilePath: `${directoryPath}/AGENT.md`,
+  }
+}
+
 function pathDerivedSkillId(path: string): string | undefined {
   return skillPathInfo(path)?.skillId
 }
@@ -393,36 +423,130 @@ function compareResourceEntries(
   return compareText(left.path, right.path)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function jsonString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim()
+    ? value.trim()
+    : undefined
+}
+
+function jsonStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  const items: string[] = []
+  for (const entry of value) {
+    const item = jsonString(entry)
+    const key = item?.toLowerCase() ?? ""
+    if (!item || seen.has(key)) {
+      continue
+    }
+    seen.add(key)
+    items.push(item)
+  }
+
+  return items
+}
+
+function jsonPlatformToolArray(value: unknown): AgentPlatformToolName[] {
+  return jsonStringArray(value)
+    .filter((item): item is AgentPlatformToolName =>
+      AGENT_PLATFORM_TOOL_NAMES.has(item as AgentPlatformToolName)
+    )
+}
+
+function normalizeAgentAccessLevel(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_AGENT_ACCESS_LEVEL
+  }
+
+  return Math.max(0, Math.min(MAX_AGENT_ACCESS_LEVEL, Math.floor(value)))
+}
+
+function parseAgentConfigFile(file: WorkspaceFile): Partial<AgentConfig> | null {
+  try {
+    const parsed = JSON.parse(file.content) as unknown
+    return isRecord(parsed) ? parsed as Partial<AgentConfig> : null
+  } catch {
+    return null
+  }
+}
+
+function normalizeAgentSkillConfig(value: unknown): AgentConfig["skills"] {
+  const record = isRecord(value) ? value : {}
+  return {
+    enabled: jsonStringArray(record.enabled),
+    disabled: jsonStringArray(record.disabled),
+  }
+}
+
+function normalizeAgentPlatformToolConfig(
+  value: unknown,
+): AgentConfig["platformTools"] {
+  const record = isRecord(value) ? value : {}
+  return {
+    enabled: jsonPlatformToolArray(record.enabled),
+    disabled: jsonPlatformToolArray(record.disabled),
+  }
+}
+
+function normalizeAgentWorkspaceAccessConfig(
+  value: unknown,
+): AgentConfig["workspaceAccess"] {
+  const record = isRecord(value) ? value : {}
+  return {
+    level: normalizeAgentAccessLevel(record.level),
+  }
+}
+
+function buildAgentRegistryEntry(
+  file: WorkspaceFile,
+  pathInfo: AgentPathInfo,
+): AgentRegistryEntry | null {
+  const config = parseAgentConfigFile(file)
+  if (!config) {
+    return null
+  }
+
+  const skills = normalizeAgentSkillConfig(config.skills)
+  const platformTools = normalizeAgentPlatformToolConfig(config.platformTools)
+  const id = jsonString(config.id) ?? pathInfo.agentId
+  const title = jsonString(config.title) ?? id
+  const summary = jsonString(config.summary) ?? ""
+
+  return {
+    id,
+    title,
+    summary,
+    configPath: file.path,
+    path: pathInfo.agentFilePath,
+    contacts: jsonStringArray(config.contacts),
+    defaultSkills: [],
+    enabledSkills: skills.enabled,
+    disabledSkills: skills.disabled,
+    platformTools,
+    workspaceAccess: normalizeAgentWorkspaceAccessConfig(config.workspaceAccess),
+    contextPaths: jsonStringArray(config.contextPaths),
+    updatedAt: file.updatedAt,
+  }
+}
+
 export function buildAgentRegistry(files: WorkspaceFile[]): AgentRegistryEntry[] {
+  const filesByPath = new Map(files.map((file) => [file.path, file]))
   return files
     .flatMap((file): AgentRegistryEntry[] => {
-      const match = AGENT_FILE_PATH_PATTERN.exec(file.path)
-      if (!match?.[1]) {
+      const pathInfo = agentPathInfo(file.path)
+      if (!pathInfo || !filesByPath.has(pathInfo.agentFilePath)) {
         return []
       }
 
-      const parsed = parseMarkdown(file.content)
-      const pathAgentId = match[1]
-      const id = metadataString(parsed.metadata, ["id", "name"]) ?? pathAgentId
-      const title =
-        metadataString(parsed.metadata, ["title", "name"]) ??
-        firstHeading(parsed.body) ??
-        id
-
-      return [{
-        id,
-        title,
-        summary:
-          metadataString(parsed.metadata, ["summary", "description"]) ??
-          firstBodyParagraph(parsed.body),
-        path: file.path,
-        contacts: metadataArray(parsed.metadata, ["contacts"]),
-        defaultSkills: metadataArray(parsed.metadata, ["defaultSkills"]),
-        enabledSkills: metadataArray(parsed.metadata, ["enabledSkills"]),
-        disabledSkills: metadataArray(parsed.metadata, ["disabledSkills"]),
-        contextPaths: metadataArray(parsed.metadata, ["contextPaths"]),
-        updatedAt: file.updatedAt,
-      }]
+      const entry = buildAgentRegistryEntry(file, pathInfo)
+      return entry ? [entry] : []
     })
     .sort(compareAgentEntries)
 }

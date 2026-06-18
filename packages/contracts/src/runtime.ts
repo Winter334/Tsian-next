@@ -108,15 +108,48 @@ export interface WorkspaceValidationResult {
   }>
 }
 
+export type AgentPlatformToolName =
+  | "agent_call"
+  | "workspace_read"
+  | "workspace_write"
+
+export interface AgentSkillConfig {
+  enabled: string[]
+  disabled: string[]
+}
+
+export interface AgentPlatformToolConfig {
+  enabled: AgentPlatformToolName[]
+  disabled: AgentPlatformToolName[]
+}
+
+export interface AgentWorkspaceAccessConfig {
+  level: number
+}
+
+export interface AgentConfig {
+  id: string
+  title: string
+  summary: string
+  contacts: string[]
+  contextPaths: string[]
+  skills: AgentSkillConfig
+  platformTools: AgentPlatformToolConfig
+  workspaceAccess: AgentWorkspaceAccessConfig
+}
+
 export interface AgentRegistryEntry {
   id: string
   title: string
   summary: string
+  configPath: string
   path: string
   contacts: string[]
   defaultSkills: string[]
   enabledSkills: string[]
   disabledSkills: string[]
+  platformTools: AgentPlatformToolConfig
+  workspaceAccess: AgentWorkspaceAccessConfig
   contextPaths: string[]
   updatedAt: number
 }

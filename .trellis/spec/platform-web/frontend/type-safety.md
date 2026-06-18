@@ -168,6 +168,8 @@ if (!frontend) {
 - `bridge.query.query<AgentContextEntry>({ resource: "agent-context", params: { agentId } })`
 - `bridge.query.query<SkillRegistryEntry>({ resource: "skill-registry", params })`
 - `bridge.query.query<SkillDetailEntry>({ resource: "skill-detail", params: { path } })`
+- `AgentConfig` card file path: `agents/<agent>/agent.json`
+- `AgentRegistryEntry.configPath` points to `agent.json`; `AgentRegistryEntry.path` points to the required SOP file `AGENT.md`.
 - `params.agentId?: string`
 - `params.includeShared?: boolean`
 - `params.includeLocal?: boolean`
@@ -175,16 +177,17 @@ if (!frontend) {
 
 ### 3. Contracts
 
-- `agent-registry` returns lightweight `AgentRegistryEntry[]` built from `agents/*/AGENT.md`. Entries include `defaultSkills`, `enabledSkills`, and `disabledSkills`; `defaultSkills` is compatibility input, while Studio writes the explicit enable/disable fields.
-- `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's card-owned `AGENT.md`, optional card-owned `SOUL.md`, save runtime notes/session files, visible skill index, and declared `contextPaths`.
+- `agent-registry` returns lightweight `AgentRegistryEntry[]` built from `agents/*/agent.json`; each entry is valid only when the same directory also has a required card-owned `AGENT.md` SOP file.
+- `AgentRegistryEntry` includes `configPath`, `path`, `enabledSkills`, `disabledSkills`, `platformTools`, `workspaceAccess`, and declared `contextPaths`. `defaultSkills` remains a compatibility field in the shared shape, but new Agent config must use `agent.json.skills`.
+- `agent-context` returns zero or one `AgentContextEntry` assembled from one agent's card-owned `AGENT.md`, optional card-owned `SOUL.md`, save runtime notes/session files, visible skill index, and `contextPaths` declared in `agent.json`.
 - `skill-registry` returns lightweight `SkillRegistryEntry[]` built from `skills/*/SKILL.md` and `agents/*/skills/*/SKILL.md`.
 - `skill-detail` returns zero or one `SkillDetailEntry` for a selected `SKILL.md` path.
-- Default blank Game Card content may include `agents/<agent>/SOUL.md` files, `agents/studio-assistant/AGENT.md`, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`; default save runtime data includes assistant notes/session under `save/agents/studio-assistant/`.
+- Default blank Game Card content may include `agents/<agent>/agent.json`, `agents/<agent>/AGENT.md`, `agents/<agent>/SOUL.md`, `agents/studio-assistant/agent.json`, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`; default save runtime data includes assistant notes/session under `save/agents/studio-assistant/`.
 - Registry entries include path and metadata fields only. Do not expose full skill instructions, actions, schemas, examples, scripts, or references through the registry query.
 - `SkillRegistryEntry.name` and `description` are the model-facing Skill identifiers. Build them from frontmatter `name` / `description`, with compatibility fallbacks to `id` / `summary` / path-derived values.
 - Keep `id`, `title`, `summary`, and `path` for compatibility with bridge/UI/debug consumers.
 - Agent context skill indexes must remain lightweight `SkillRegistryEntry[]`; do not load `SKILL.md` bodies through `agent-context`.
-- Agent context skill indexes are filtered through the selected Agent's Skill enablement: `disabledSkills` always removes matching Skills; non-empty `enabledSkills` allows only matching Skills; otherwise compatibility defaults come from `defaultSkills`, `appliesTo`, shared Skills without `appliesTo`, and selected-Agent-local Skills.
+- Agent context skill indexes are filtered through the selected Agent's `agent.json.skills` enablement: `disabledSkills` always removes matching Skills; non-empty `enabledSkills` allows only matching Skills; otherwise compatibility defaults come from `defaultSkills`, `appliesTo`, shared Skills without `appliesTo`, and selected-Agent-local Skills.
 - Skill detail entries include the selected `SKILL.md` `WorkspaceFile` content and a `SkillResourceEntry[]` resource index. Resource entries must not include file contents.
 - Shared registry shapes live in `@tsian/contracts`; platform-web must not redefine them locally.
 - Registry parsing is owned by `src/agent-runtime/registry.ts` and must stay pure: pass workspace files in, return entries out. It must not import Dexie tables or bridge objects.
@@ -194,37 +197,41 @@ if (!frontend) {
 ### 4. Validation & Error Matrix
 
 - No active save -> return `{ items: [] }`.
+- Missing `agent.json`, malformed `agent.json`, non-object `agent.json`, or missing adjacent `AGENT.md` -> omit that Agent from `agent-registry`.
 - `agent-context` missing, blank, non-string, or unknown `params.agentId` -> return `{ items: [] }`.
 - `agent-context` missing `SOUL.md` -> return the context entry without `soulFile`; existing cards remain valid.
 - `agent-context` missing declared `contextPaths` -> return the context entry with `missingContextPaths` populated.
 - `skill-detail` missing, blank, invalid, non-skill, or absent `params.path` -> return `{ items: [] }`.
-- Missing or partial frontmatter -> infer safe fallbacks from path, first H1, and first body paragraph.
-- Malformed frontmatter -> do not throw from the whole registry query; degrade to path/body fallbacks.
+- Missing or partial Skill frontmatter -> infer safe Skill fallbacks from path, first H1, and first body paragraph.
+- Malformed Skill frontmatter -> do not throw from the whole registry query; degrade to path/body fallbacks.
 - Non-boolean `includeShared` / `includeLocal` -> treat as omitted.
 - Blank or non-string `agentId` -> treat as omitted.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: `skill-registry` with `{ agentId: "narrative" }` returns shared skills plus `agents/narrative/skills/*/SKILL.md`, with model-facing `name` and `description`.
-- Good: `agent-context` with `{ agentId: "narrative" }` returns narrative `AGENT.md`, optional `SOUL.md`, narrative notes/session if present, and only Skills enabled for narrative.
-- Good: disabling `memory-maintenance` in `agents/narrative/AGENT.md` removes it from narrative `agent-context.skillIndex`.
+- Good: `agent-context` with `{ agentId: "narrative" }` resolves narrative from `agents/narrative/agent.json`, returns narrative `AGENT.md`, optional `SOUL.md`, narrative notes/session if present, and only Skills enabled for narrative.
+- Good: disabling `memory-maintenance` in `agents/narrative/agent.json` removes it from narrative `agent-context.skillIndex`.
 - Good: `skill-detail` with `{ path: "skills/example/SKILL.md" }` returns the selected `SKILL.md` content and resource metadata for files under `skills/example/`.
 - Base: `skill-registry` without params returns shared skills and all agent-local skills.
-- Base: an existing card without `SOUL.md`, `enabledSkills`, or `disabledSkills` still loads through compatibility defaults.
+- Base: an Agent without `SOUL.md`, `enabledSkills`, or `disabledSkills` still loads through safe defaults when `agent.json` and `AGENT.md` exist.
 - Base: `skill-detail` for a valid skill with no sibling resources returns one detail entry with `resources: []`.
+- Bad: treating `AGENT.md` frontmatter as the Agent configuration source; Agent machine configuration belongs in `agent.json`.
 - Bad: registry query returns `SKILL.md` body text or parsed `actions`; this breaks progressive disclosure.
 - Bad: `skill-detail` returns `references/*`, `examples/*`, `actions/*`, `schemas/*`, or `scripts/*` content by default; resource contents must be loaded separately by explicit workspace reads or a future resource query.
 
 ### 6. Tests Required
 
-- Assert new saves include default `agents/master/AGENT.md` and `agents/narrative/AGENT.md`.
+- Assert new saves include default `agents/master/agent.json`, `agents/master/AGENT.md`, `agents/narrative/agent.json`, and `agents/narrative/AGENT.md`.
 - Assert default built-in card content includes `agents/master/SOUL.md`, `agents/narrative/SOUL.md`, `agents/memory/SOUL.md`, and `agents/studio-assistant/SOUL.md`.
-- Assert new saves include default `agents/studio-assistant/AGENT.md`, `agents/studio-assistant/skills/framework-knowledge/SKILL.md`, and `docs/tsian-framework-knowledge.md`.
+- Assert new saves include default `agents/studio-assistant/agent.json`, `agents/studio-assistant/AGENT.md`, `agents/studio-assistant/skills/framework-knowledge/SKILL.md`, and `docs/tsian-framework-knowledge.md`.
 - Assert `agent-registry` returns master and narrative entries for a new save.
+- Assert `agent-registry` returns `configPath` as `agents/<agent>/agent.json` while `path` remains `agents/<agent>/AGENT.md`.
+- Assert malformed `agent.json` and Agent directories missing `AGENT.md` do not crash registry parsing and are omitted.
 - Assert `agent-registry` returns `studio-assistant` for a new save without changing the default master/narrative turn entrypoint.
 - Assert shared and agent-local skills are discovered and sorted deterministically.
 - Assert `name` / `description` prefer current Skill frontmatter and fall back to legacy `id` / `summary`.
-- Assert malformed or missing frontmatter does not crash parsing.
+- Assert malformed or missing Skill frontmatter does not crash parsing.
 - Assert `includeShared`, `includeLocal`, and `agentId` filtering behavior.
 - Assert `skill-detail` loads shared and agent-local skill paths.
 - Assert `skill-detail` rejects non-skill and missing paths.
@@ -543,11 +550,20 @@ interface RuntimeWorkspaceToolCall {
   - `workspace.move`
   - `workspace.delete`
   - `workspace.validate`
+- Agent platform tool groups from `AgentRegistryEntry.platformTools`:
+  - `agent_call`
+  - `workspace_read`
+  - `workspace_write`
 
 ### 3. Contracts
 
 - Runtime tools execute against the `WorkspaceFile[]` and `AgentContextEntry` already assembled inside `runAgentRuntimeTurn`.
 - `agent-runtime` must not import Dexie, storage helpers, bridge objects, or `platform-host`.
+- Effective runtime permissions are derived from the current Agent's `agent.json` via `AgentRegistryEntry.platformTools` and `AgentRegistryEntry.workspaceAccess`.
+- `skill_load` and `action_call` remain available by default because Skill installation/enablement is player/card-author controlled. Skill executor side effects still obey the current Agent's platform workspace permissions.
+- `agent_call` is advertised and executable only when the current Agent's `agent_call` platform tool is enabled and normal contact/depth/budget checks also allow it.
+- `workspace_read` maps to generic `workspace.list`, `workspace.search`, and `workspace.read`.
+- `workspace_write` maps to generic `workspace.diff`, `workspace.patch`, `workspace.write`, `workspace.move`, `workspace.delete`, and `workspace.validate`.
 - `skill_load` arguments: `{ name: string }`.
 - `skill_load` resolves only against the current Agent's visible `skillIndex`.
 - `skill_load` must not load a Skill that exists on disk but was removed from the current Agent's `skillIndex` by `disabledSkills` or a non-matching non-empty `enabledSkills` list.
@@ -563,13 +579,14 @@ interface RuntimeWorkspaceToolCall {
 - `action_call` checks the lightweight executor-class policy before running supported executors. The default code-level policy allows `builtin`, `platform_action`, `workspace_operation`, and `browser_script`; injected policy may deny them for tests or future host policy. Do not add Settings UI, localStorage persistence, runtime prompts, or per-Skill trust state for this slice.
 - `action_call` may validate successful executor output when the loaded action declares optional `outputSchema`. Actions without `outputSchema` keep existing output behavior.
 - `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene" }`.
-- `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts and the current tool loop allows Agent calls.
+- `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts, the current tool loop allows Agent calls, and the current Agent's platform tool config enables `agent_call`.
 - `agent_call` validates the target against the caller Agent's `contacts`; contacts are a runtime stability boundary, not a full security model.
 - `agent_call` builds the target Agent's own `AgentContextEntry`, including its `AGENT.md`, optional `SOUL.md`, notes/session, declared context files, and filtered lightweight Skill Index.
 - `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, metadata, response }`; the target Agent response does not directly become player-visible history.
 - `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
 - Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxCallsPerTurn=4`, `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`, and `maxToolRoundsPerAgent=3`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state.
-- Delegated Agents may use exposed generic workspace operations, `skill_load`, `action_call` for loaded Skills, and limited nested `agent_call` inside their own tool loop.
+- Delegated Agents derive their own runtime permissions from the target Agent's `agent.json`; the caller Agent's permissions must not leak into the target Agent step.
+- Delegated Agents may use their own exposed generic workspace operations, `skill_load`, `action_call` for loaded Skills, and limited nested `agent_call` inside their own tool loop.
 - Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, root master/narrative steps at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
 - The root turn shares one `agent_call` budget across master, narrative, and nested delegated steps.
 - Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
@@ -578,7 +595,8 @@ interface RuntimeWorkspaceToolCall {
   - `echo`: returns `status: "executed"` and echoes validated `input` as `output`.
 - `platform_action` executors route through an injected `runPlatformAction` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, or storage helpers. Platform actions remain available for non-workspace host actions and legacy-controlled host capabilities, not as the primary workspace edit surface.
 - `workspace_operation` declarations require a supported `operation`, may narrow `scope` and `path`, and merge validated action input into a `WorkspaceOperationRequest`.
-- Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing or invalid Agent `workspaceAccess.level` defaults to `1`.
+- Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing or invalid Agent `workspaceAccess.level` in `agent.json` defaults to `1`.
+- Skill `workspace_operation` executors, Agent Runtime `platform_action` workspace requests, and browser script SDK workspace methods must receive the same current Agent context and exposed workspace operations. Action-local declarations must not add an operation that the Agent's `workspace_read` / `workspace_write` groups disabled.
 - Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
 - Successful turns commit the staged workspace final state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
 - Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets. `.tsian/*` is platform-owned metadata space for trace/checkpoint/index/cache behavior.
@@ -688,7 +706,7 @@ interface RuntimeWorkspaceToolCall {
 - Missing or blank `agent_call.arguments.request` -> error observation with `AGENT_CALL_REQUEST_REQUIRED`.
 - Invalid `agent_call.arguments.historyMode` -> error observation with `AGENT_CALL_HISTORY_MODE_INVALID`.
 - `agent_call` without an active Agent context -> error observation with `AGENT_CALL_CONTEXT_REQUIRED`.
-- `agent_call` in a tool loop where Agent calls are unavailable, including attempts beyond the collaboration depth limit -> error observation with `AGENT_CALL_UNAVAILABLE` and compact caller/target/depth/budget metadata when available.
+- `agent_call` in a tool loop where Agent calls are unavailable, including disabled Agent platform tool config or attempts beyond the collaboration depth limit -> error observation with `AGENT_CALL_UNAVAILABLE` and compact caller/target/depth/budget metadata when available.
 - `agent_call` target not found in the Agent registry -> error observation with `AGENT_CALL_TARGET_NOT_FOUND`.
 - `agent_call` target exists but is not in caller contacts -> error observation with `AGENT_CALL_TARGET_NOT_CONTACT`.
 - Per-turn `agent_call` budget exhausted -> error observation with `AGENT_CALL_LIMIT_EXCEEDED`.
@@ -705,6 +723,7 @@ interface RuntimeWorkspaceToolCall {
 - `platform_action` without an injected capability -> error observation with `PLATFORM_ACTION_UNAVAILABLE`.
 - `platform_action` whose injected handler returns `ok: false` -> error observation with `PLATFORM_ACTION_FAILED` and platform error details.
 - Unexposed workspace operation -> error observation with `WORKSPACE_OPERATION_NOT_EXPOSED`.
+- Workspace operation from generic tools, Skill `workspace_operation`, platform-action workspace handling, or browser script SDK whose read/write group is disabled -> error observation with `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Actor level below target read/edit level -> error observation with `WORKSPACE_READ_ACCESS_DENIED` or `WORKSPACE_EDIT_ACCESS_DENIED`.
 - `browser_script` without an injected capability -> error observation with `BROWSER_SCRIPT_UNAVAILABLE`.
 - Missing browser script file -> error observation with `BROWSER_SCRIPT_NOT_FOUND`.
@@ -734,7 +753,8 @@ interface RuntimeWorkspaceToolCall {
 - Good: a failed turn after staged workspace writes leaves no ordinary persisted workspace file from those staged writes.
 - Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace.read` only when that reference is needed.
 - Good: master sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its own brief.
-- Good: a delegated memory Agent loads a Skill, calls a non-`agent_call` action, or calls one of its own contact Agents when depth and budget policy allow it.
+- Good: a delegated memory Agent loads a Skill, calls a non-`agent_call` action, or calls one of its own contact Agents when its own `agent.json` permissions plus depth and budget policy allow it.
+- Good: an Agent with `workspace_read` enabled and `workspace_write` disabled can list/search/read context, but generic workspace writes and Skill workspace writes return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Good: Agent uses `workspace.list` for a directory and receives entries without file contents.
 - Good: Agent uses `workspace.search` and receives previews, then explicitly reads a chosen file if full content is needed.
 - Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
@@ -743,6 +763,7 @@ interface RuntimeWorkspaceToolCall {
 - Bad: allowing `action_call` before `skill_load`; this bypasses Skill gating.
 - Bad: exposing the full Agent registry instead of only the current Agent's contacts.
 - Bad: allowing delegated Agents to call arbitrary non-contact Agents, exceed the shared root-turn budget, or exceed the policy depth limit.
+- Bad: letting Skill actions, platform-action workspace handling, or browser script SDK workspace methods bypass an Agent-level disabled `workspace_read` or `workspace_write` group.
 - Bad: making built-in executors execute write/delete/script/remote behavior.
 - Bad: letting Agent Runtime call broad platform actions such as checkpoint restore through `platform_action`.
 - Bad: making raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals supported browser script APIs in the first strong-SDK slice.
@@ -785,14 +806,18 @@ interface RuntimeWorkspaceToolCall {
 - Assert unknown actions return `ACTION_NOT_FOUND`.
 - Assert schema-invalid action input returns `ACTION_INPUT_INVALID`.
 - Assert current Agents with contacts see `agent_call` instructions listing only visible contacts.
-- Assert current Agents without contacts do not get encouraged to use `agent_call`, and direct calls return structured errors.
+- Assert current Agents without contacts or with disabled `agent_call` do not get encouraged to use `agent_call`, and direct calls return structured errors.
 - Assert valid `agent_call` invokes the target contact Agent with its own context and returns the response as observation.
+- Assert delegated `agent_call` uses the target Agent's own `platformTools`, `workspaceAccess`, Skill enablement, and prompt shaping.
 - Assert non-contact and missing target `agent_call` attempts return structured errors without model calls.
 - Assert a delegated Agent can perform one nested `agent_call` to its own contact when depth and budget allow it.
 - Assert nested `agent_call` attempts beyond `maxDepth` return `AGENT_CALL_UNAVAILABLE` with structured depth/budget metadata.
 - Assert invalid `historyMode` is rejected and omitted `historyMode` defaults to `recent`.
-- Assert delegated Agents can still use workspace tools, `skill_load`, and non-`agent_call` `action_call`.
+- Assert delegated Agents can still use workspace tools, `skill_load`, and non-`agent_call` `action_call` according to their own Agent permissions.
 - Assert per-turn `agent_call` budget is shared across master and narrative steps.
+- Assert disabled `workspace_read` omits read/list/search prompt examples and direct generic read/list/search calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
+- Assert disabled `workspace_write` omits write examples and direct generic diff/patch/write/move/delete/validate calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
+- Assert Skill `workspace_operation`, Agent Runtime platform-action workspace requests, and browser script SDK workspace calls cannot bypass disabled Agent workspace tool groups.
 - Assert successful built-in action calls do not mutate workspace/state and do not execute scripts.
 - Assert successful workspace mutations flow through the generic workspace operation layer.
 - Assert missing Skill names become structured observations, not uncaught runtime crashes.

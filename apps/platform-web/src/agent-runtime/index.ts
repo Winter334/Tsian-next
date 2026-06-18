@@ -3,6 +3,7 @@ import type {
   AgentContextEntry,
   AiChatMessage,
   ConversationMessageRecord,
+  AgentPlatformToolName,
   PlatformActionRequest,
   PlatformActionResult,
   RuntimeSnapshotShell,
@@ -10,6 +11,11 @@ import type {
   WorkspaceOperationName,
 } from "@tsian/contracts"
 import { assembleAgentContext } from "./context"
+import {
+  AGENT_PLATFORM_TOOL_NAMES,
+  deriveAgentRuntimePermissionProfile,
+  isAgentPlatformToolEnabled,
+} from "./permissions"
 import { buildAgentRegistry } from "./registry"
 import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
 import { errorToTraceData } from "./trace"
@@ -21,6 +27,7 @@ import {
   RUNTIME_WORKSPACE_TOOL_NAMES,
   stripRuntimeWorkspaceToolCallBlocks,
   type RuntimeActionExecutorPolicy,
+  type RuntimeControlledExecutorContext,
   type ParsedRuntimeWorkspaceToolCall,
   type RuntimeAgentCallArguments,
   type RuntimeAgentCallHistoryMode,
@@ -55,9 +62,11 @@ export interface AgentRuntimeCapabilities {
   ): Promise<string>
   runPlatformAction?(
     request: PlatformActionRequest,
+    context?: RuntimeControlledExecutorContext,
   ): Promise<PlatformActionResult>
   runBrowserScript?(
     request: RuntimeBrowserScriptExecutorRequest,
+    context?: RuntimeControlledExecutorContext,
   ): Promise<PlatformActionResult>
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
@@ -343,20 +352,66 @@ function formatVisibleAgentContacts(contacts: AgentRegistryEntry[]): string {
     .join("\n")
 }
 
+function platformToolEnabled(
+  tools: AgentPlatformToolName[],
+  tool: AgentPlatformToolName,
+): boolean {
+  return tools.includes(tool)
+}
+
 function buildWorkspaceToolInstructions(
   options: {
     allowAgentCall: boolean
     visibleContacts: AgentRegistryEntry[]
+    enabledPlatformTools: AgentPlatformToolName[]
   },
 ): string {
   const canCallAgents = options.allowAgentCall && options.visibleContacts.length > 0
+  const canReadWorkspace = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.workspaceRead,
+  )
+  const canWriteWorkspace = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.workspaceWrite,
+  )
+  const availableTools = [
+    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad} arguments={"name":"prose-style"}`,
+    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} arguments={"skill":"prose-style","action":"example_action","input":{"text":"示例"}}`,
+    ...(canCallAgents
+      ? [
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} arguments={"agentId":"${options.visibleContacts[0].id}","request":"请检查当前场景的连续性。","historyMode":"recent"}`,
+        ]
+      : []),
+    ...(canReadWorkspace
+      ? [
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} arguments={"scope":"effective","path":"world/canon.md"}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList} arguments={"scope":"effective","path":"skills"}，path 可省略表示根目录`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} arguments={"scope":"effective","query":"关键词","limit":10}`,
+        ]
+      : []),
+    ...(canWriteWorkspace
+      ? [
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspacePatch} arguments={"scope":"save-runtime","path":"save/world/notes.md","content":"..."}`,
+        ]
+      : []),
+  ]
   return [
     "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
-    `如果需要加载 Skill 详情，使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}，并传入可见 Skill Index 中的 name。不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件。`,
-    `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
+    `如果需要加载 Skill 详情，使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}，并传入可见 Skill Index 中的 name。`,
+    ...(canReadWorkspace
+      ? [
+          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件；使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}。`,
+          `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
+        ]
+      : []),
     `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前支持内置 executor、平台允许的 platform_action executor、workspace_operation executor，以及受信任第三方 Skill 可声明的 browser_script executor。`,
-    "workspace_operation 和 browser_script 可能写入 Runtime Workspace，只在已加载 Skill 明确要求维护状态、地图、记忆、线索或前端约定数据时使用。",
-    "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。",
+    ...(canWriteWorkspace
+      ? [
+          "workspace_operation 和 browser_script 可能写入 Runtime Workspace，只在已加载 Skill 明确要求维护状态、地图、记忆、线索或前端约定数据时使用。",
+        ]
+      : []),
+    "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。脚本中的 workspace 读写仍受当前 Agent 权限限制。",
     ...(canCallAgents
       ? [
           `如果当前任务需要联系人 Agent 的专业判断，可以使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 发起一次性会诊。被调用 Agent 的输出只会作为 observation 返回给你，不会直接成为玩家回复。`,
@@ -365,16 +420,7 @@ function buildWorkspaceToolInstructions(
         ]
       : []),
     "可用工具：",
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad} arguments={"name":"prose-style"}`,
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} arguments={"skill":"prose-style","action":"example_action","input":{"text":"示例"}}`,
-    ...(canCallAgents
-      ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} arguments={"agentId":"${options.visibleContacts[0].id}","request":"请检查当前场景的连续性。","historyMode":"recent"}`,
-        ]
-      : []),
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} arguments={"scope":"effective","path":"world/canon.md"}`,
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList} arguments={"scope":"effective","path":"skills"}，path 可省略表示根目录`,
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} arguments={"scope":"effective","query":"关键词","limit":10}`,
+    ...availableTools,
     "工具调用格式必须独占一个块：",
     "<tsian-tool-call>",
     `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}","arguments":{"name":"prose-style"}}`,
@@ -410,6 +456,7 @@ function buildWorkspaceAgentSystemPrompt(
   options: {
     allowAgentCall: boolean
     visibleContacts: AgentRegistryEntry[]
+    enabledPlatformTools: AgentPlatformToolName[]
   },
 ): string {
   return [
@@ -460,18 +507,22 @@ function buildMasterMessages(
   const visibleContacts = context && input.workspaceFiles
     ? getVisibleAgentContacts(input.workspaceFiles, context)
     : []
+  const permissions = context ? deriveAgentRuntimePermissionProfile(context.agent) : null
   return [
     {
       role: "system",
       content: context
         ? buildWorkspaceAgentSystemPrompt(MASTER_AGENT_PLATFORM_GUARD, context, {
-            allowAgentCall: canExposeAgentCallInPrompt(
-              collaborationPolicy,
-              agentCallState,
-              0,
-              visibleContacts,
-            ),
+            allowAgentCall:
+              isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
+              && canExposeAgentCallInPrompt(
+                collaborationPolicy,
+                agentCallState,
+                0,
+                visibleContacts,
+              ),
             visibleContacts,
+            enabledPlatformTools: permissions?.enabledTools ?? [],
           })
         : LEGACY_MASTER_AGENT_SYSTEM_PROMPT,
     },
@@ -509,18 +560,22 @@ function buildNarrativeMessages(
   const visibleContacts = context && input.workspaceFiles
     ? getVisibleAgentContacts(input.workspaceFiles, context)
     : []
+  const permissions = context ? deriveAgentRuntimePermissionProfile(context.agent) : null
   return [
     {
       role: "system",
       content: context
         ? buildWorkspaceAgentSystemPrompt(NARRATIVE_AGENT_PLATFORM_GUARD, context, {
-            allowAgentCall: canExposeAgentCallInPrompt(
-              collaborationPolicy,
-              agentCallState,
-              0,
-              visibleContacts,
-            ),
+            allowAgentCall:
+              isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
+              && canExposeAgentCallInPrompt(
+                collaborationPolicy,
+                agentCallState,
+                0,
+                visibleContacts,
+              ),
             visibleContacts,
+            enabledPlatformTools: permissions?.enabledTools ?? [],
           })
         : LEGACY_NARRATIVE_AGENT_SYSTEM_PROMPT,
     },
@@ -704,17 +759,21 @@ function buildDelegatedAgentMessages(
   const visibleContacts = input.workspaceFiles
     ? getVisibleAgentContacts(input.workspaceFiles, targetContext)
     : []
+  const permissions = deriveAgentRuntimePermissionProfile(targetContext.agent)
   return [
     {
       role: "system",
       content: buildWorkspaceAgentSystemPrompt(DELEGATED_AGENT_PLATFORM_GUARD, targetContext, {
-        allowAgentCall: canExposeAgentCallInPrompt(
-          collaborationPolicy,
-          agentCallState,
-          agentCallDepth,
-          visibleContacts,
-        ),
+        allowAgentCall:
+          isAgentPlatformToolEnabled(targetContext.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
+          && canExposeAgentCallInPrompt(
+            collaborationPolicy,
+            agentCallState,
+            agentCallDepth,
+            visibleContacts,
+          ),
         visibleContacts,
+        enabledPlatformTools: permissions.enabledTools,
       }),
     },
     {
@@ -979,6 +1038,7 @@ async function callAgentModelWithWorkspaceTools(
 
   let nextMessages = messages
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
+  const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
   const maxToolRounds = toolOptions?.collaborationPolicy.maxToolRoundsPerAgent
     ?? DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY.maxToolRoundsPerAgent
   for (let round = 0; round <= maxToolRounds; round += 1) {
@@ -1036,7 +1096,10 @@ async function callAgentModelWithWorkspaceTools(
       workspaceFiles: input.workspaceFiles,
       agentContext,
       sessionState: workspaceToolSession,
-      runAgentCall: toolOptions
+      runAgentCall: toolOptions && isAgentPlatformToolEnabled(
+        agentContext.agent,
+        AGENT_PLATFORM_TOOL_NAMES.agentCall,
+      )
         ? createAgentCallRunner(
             input,
             capabilities,
@@ -1051,7 +1114,7 @@ async function callAgentModelWithWorkspaceTools(
       runBrowserScript: capabilities.runBrowserScript,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
-      exposedWorkspaceOperations: capabilities.exposedWorkspaceOperations,
+      exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,

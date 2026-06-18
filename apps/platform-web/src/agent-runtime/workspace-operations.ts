@@ -72,7 +72,6 @@ export const AUTHORING_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
-const DEFAULT_AGENT_ACCESS_LEVEL = 1
 const MAX_ACCESS_LEVEL = 4
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
 const EDIT_OPERATIONS = new Set<WorkspaceOperationName>([
@@ -293,57 +292,12 @@ function normalizeAccessLevel(value: unknown): number | undefined {
   return Math.max(0, Math.min(MAX_ACCESS_LEVEL, Math.floor(value)))
 }
 
-function parseAgentWorkspaceAccessLevel(agentFile: WorkspaceFile | undefined): number | undefined {
-  if (!agentFile) {
-    return undefined
-  }
-
-  const frontmatter = agentFile.content.match(FRONTMATTER_PATTERN)?.[1]
-  if (!frontmatter) {
-    return undefined
-  }
-
-  const inlineMatch = frontmatter.match(/^\s*workspaceAccess\s*:\s*\{[^}\n]*level\s*:\s*(\d+)[^}\n]*\}\s*$/m)
-  if (inlineMatch?.[1]) {
-    return normalizeAccessLevel(Number(inlineMatch[1]))
-  }
-
-  const lines = frontmatter.split(/\r?\n/)
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index] ?? ""
-    const header = line.match(/^(\s*)workspaceAccess\s*:\s*$/)
-    if (!header) {
-      continue
-    }
-
-    const baseIndent = header[1].length
-    for (let childIndex = index + 1; childIndex < lines.length; childIndex += 1) {
-      const childLine = lines[childIndex] ?? ""
-      if (!childLine.trim()) {
-        continue
-      }
-
-      const childIndent = childLine.match(/^\s*/)?.[0].length ?? 0
-      if (childIndent <= baseIndent) {
-        break
-      }
-
-      const levelMatch = childLine.match(/^\s*level\s*:\s*(\d+)\s*(?:#.*)?$/)
-      if (levelMatch?.[1]) {
-        return normalizeAccessLevel(Number(levelMatch[1]))
-      }
-    }
-  }
-
-  return undefined
-}
-
 export function resolveWorkspaceActorLevel(
   context: Pick<WorkspaceOperationExecutionContext, "actorLevel" | "agentContext">,
 ): number {
   return normalizeAccessLevel(context.actorLevel)
-    ?? parseAgentWorkspaceAccessLevel(context.agentContext?.agentFile)
-    ?? DEFAULT_AGENT_ACCESS_LEVEL
+    ?? normalizeAccessLevel(context.agentContext?.agent.workspaceAccess.level)
+    ?? 1
 }
 
 function assertOperationExposed(

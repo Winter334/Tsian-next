@@ -1,4 +1,5 @@
 import type {
+  AgentConfig,
   GameCardContentFile,
   WorkspaceEntry,
   WorkspaceFile,
@@ -48,7 +49,7 @@ export class WorkspaceStorageError extends Error {
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
-const DEFAULT_WORKSPACE_VERSION = 5
+const DEFAULT_WORKSPACE_VERSION = 6
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 const DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS = new Set([
   "save/README.md",
@@ -278,27 +279,16 @@ const MEMORY_MAINTENANCE_SCRIPT_JS = [
   "",
 ].join("\n")
 
+function agentConfigContent(config: AgentConfig): string {
+  return JSON.stringify(config, null, 2) + "\n"
+}
+
 const STUDIO_ASSISTANT_AGENT_MD = [
-  "---",
-  "id: studio-assistant",
-  "title: Studio Assistant",
-  "summary: Helps players and authors understand, inspect, and maintain this Tsian workspace.",
-  "contacts:",
-  "defaultSkills:",
-  "  - framework-knowledge",
-  "contextPaths:",
-  "  - README.md",
-  "  - docs/tsian-framework-knowledge.md",
-  "  - agents/README.md",
-  "  - skills/README.md",
-  "  - state/README.md",
-  "  - frontend/README.md",
-  "---",
-  "",
   "# Studio Assistant",
   "",
-  "This file registers the Studio Assistant Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+  "This SOP helps the Studio Assistant answer questions about the current game card and workspace.",
   "Keep durable identity and work style in `SOUL.md`.",
+  "Read relevant workspace docs and Skill instructions before giving framework or maintenance advice.",
   "",
 ].join("\n")
 
@@ -370,11 +360,11 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "## Agents",
   "",
-  "Agent registry definitions are Game Card content under `agents/<agent>/AGENT.md`. Durable identity and work-style prompts live under optional `agents/<agent>/SOUL.md` files. Runtime notes and session transcripts live under `save/agents/<agent>/`.",
+  "Agent configuration is Game Card content under `agents/<agent>/agent.json`. Required Agent SOP instructions live under `agents/<agent>/AGENT.md`. Durable identity and work-style prompts live under optional `agents/<agent>/SOUL.md` files. Runtime notes and session transcripts live under `save/agents/<agent>/`.",
   "",
   "The default AIRP runtime still uses `master` and `narrative` as the normal turn path. The `studio-assistant` Agent is for future/player-facing workspace help and should not change normal AIRP turn behavior by existing alone.",
   "",
-  "`AGENT.md` should state responsibility, routing contacts, default or optional Skills, and useful context paths. `SOUL.md` should hold durable identity, work style, and expression preferences.",
+  "`agent.json` stores title, summary, contacts, context paths, Skill enablement, platform tool permissions, and workspace access. `AGENT.md` should state the Agent SOP and procedures. `SOUL.md` should hold durable identity, work style, and expression preferences.",
   "",
   "## Skills",
   "",
@@ -437,35 +427,50 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: [
       "# Agents",
       "",
-      "Agent registry definitions live under `agents/<agent>/AGENT.md`.",
-      "Durable Agent identity and work style can live under `agents/<agent>/SOUL.md`.",
+      "Agent configuration lives under `agents/<agent>/agent.json`.",
+      "`AGENT.md` is the required SOP/instruction file for that Agent.",
+      "Durable Agent identity and work style can live under `SOUL.md`.",
       "Agent-local skills can live under `agents/<agent>/skills/`.",
-      "A game card can declare a workspace assistant Agent in its manifest; the built-in blank card uses `agents/studio-assistant/AGENT.md`.",
+      "A game card can declare a workspace assistant Agent in its manifest; the built-in blank card uses `agents/studio-assistant/agent.json`.",
       "",
     ].join("\n"),
   },
   {
+    path: "agents/master/agent.json",
+    content: agentConfigContent({
+      id: "master",
+      title: "Master Agent",
+      summary: "Coordinates each AIRP turn, manages shared context, and delegates to specialist agents when useful.",
+      contacts: ["memory"],
+      contextPaths: [
+        "README.md",
+        "world/README.md",
+        "save/history/timeline.md",
+        "save/world/README.md",
+        "save/state/README.md",
+        "save/memory/summaries/current.md",
+      ],
+      skills: {
+        enabled: [],
+        disabled: [],
+      },
+      platformTools: {
+        enabled: ["agent_call", "workspace_read"],
+        disabled: [],
+      },
+      workspaceAccess: {
+        level: 1,
+      },
+    }),
+  },
+  {
     path: "agents/master/AGENT.md",
     content: [
-      "---",
-      "id: master",
-      "title: Master Agent",
-      "summary: Coordinates each AIRP turn, manages shared context, and delegates to specialist agents when useful.",
-      "contacts:",
-      "  - memory",
-      "defaultSkills:",
-      "contextPaths:",
-      "  - README.md",
-      "  - world/README.md",
-      "  - save/history/timeline.md",
-      "  - save/world/README.md",
-      "  - save/state/README.md",
-      "  - save/memory/summaries/current.md",
-      "---",
-      "",
       "# Master Agent",
       "",
-      "This file registers the master Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+      "Coordinate each AIRP turn and write a concise brief for the narrative agent.",
+      "Inspect relevant workspace context when the next step depends on established facts, current scene state, or recent memory.",
+      "Contact the memory agent when continuity, summaries, or durable fact candidates may affect the turn.",
       "Keep durable identity and work style in `SOUL.md`.",
       "",
     ].join("\n"),
@@ -492,25 +497,38 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     mediaType: "application/x-ndjson",
   },
   {
+    path: "agents/narrative/agent.json",
+    content: agentConfigContent({
+      id: "narrative",
+      title: "Narrative Agent",
+      summary: "Turns plans, world facts, and character state into player-facing prose.",
+      contacts: ["master"],
+      contextPaths: [
+        "save/history/timeline.md",
+        "world/README.md",
+        "world/canon.md",
+        "save/memory/summaries/current.md",
+      ],
+      skills: {
+        enabled: [],
+        disabled: [],
+      },
+      platformTools: {
+        enabled: ["agent_call", "workspace_read"],
+        disabled: [],
+      },
+      workspaceAccess: {
+        level: 1,
+      },
+    }),
+  },
+  {
     path: "agents/narrative/AGENT.md",
     content: [
-      "---",
-      "id: narrative",
-      "title: Narrative Agent",
-      "summary: Turns plans, world facts, and character state into player-facing prose.",
-      "contacts:",
-      "  - master",
-      "defaultSkills:",
-      "contextPaths:",
-      "  - save/history/timeline.md",
-      "  - world/README.md",
-      "  - world/canon.md",
-      "  - save/memory/summaries/current.md",
-      "---",
-      "",
       "# Narrative Agent",
       "",
-      "This file registers the narrative Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+      "Write the player-facing narrative for the current turn using the master brief, recent history, and available workspace context.",
+      "Preserve continuity, keep the scene playable, and avoid exposing Agent/runtime mechanics to the player.",
       "Keep durable identity and work style in `SOUL.md`.",
       "",
     ].join("\n"),
@@ -535,26 +553,41 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     mediaType: "application/x-ndjson",
   },
   {
+    path: "agents/memory/agent.json",
+    content: agentConfigContent({
+      id: "memory",
+      title: "Memory Agent",
+      summary: "Checks continuity, current-scene memory, and durable fact candidates for AIRP turns.",
+      contacts: [],
+      contextPaths: [
+        "README.md",
+        "save/history/timeline.md",
+        "save/memory/README.md",
+        "save/memory/summaries/current.md",
+        "save/memory/summaries/long-term.md",
+        "world/canon.md",
+      ],
+      skills: {
+        enabled: [],
+        disabled: [],
+      },
+      platformTools: {
+        enabled: ["workspace_read", "workspace_write"],
+        disabled: [],
+      },
+      workspaceAccess: {
+        level: 1,
+      },
+    }),
+  },
+  {
     path: "agents/memory/AGENT.md",
     content: [
-      "---",
-      "id: memory",
-      "title: Memory Agent",
-      "summary: Checks continuity, current-scene memory, and durable fact candidates for AIRP turns.",
-      "contacts:",
-      "defaultSkills:",
-      "contextPaths:",
-      "  - README.md",
-      "  - save/history/timeline.md",
-      "  - save/memory/README.md",
-      "  - save/memory/summaries/current.md",
-      "  - save/memory/summaries/long-term.md",
-      "  - world/canon.md",
-      "---",
-      "",
       "# Memory Agent",
       "",
-      "This file registers the memory Agent for runtime discovery, routing, contacts, Skills, and context paths.",
+      "Answer continuity, recall, and memory-maintenance questions for calling agents.",
+      "Return concise findings and clearly separate established facts from candidates that should be preserved.",
+      "Only claim that you updated memory files after using an available Skill action or workspace tool that actually performed the write.",
       "Keep durable identity and work style in `SOUL.md`.",
       "",
     ].join("\n"),
@@ -579,6 +612,34 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     path: "agents/memory/session.jsonl",
     content: "",
     mediaType: "application/x-ndjson",
+  },
+  {
+    path: "agents/studio-assistant/agent.json",
+    content: agentConfigContent({
+      id: "studio-assistant",
+      title: "Studio Assistant",
+      summary: "Helps players and authors understand, inspect, and maintain this Tsian workspace.",
+      contacts: [],
+      contextPaths: [
+        "README.md",
+        "docs/tsian-framework-knowledge.md",
+        "agents/README.md",
+        "skills/README.md",
+        "state/README.md",
+        "frontend/README.md",
+      ],
+      skills: {
+        enabled: ["framework-knowledge"],
+        disabled: [],
+      },
+      platformTools: {
+        enabled: ["workspace_read"],
+        disabled: [],
+      },
+      workspaceAccess: {
+        level: 1,
+      },
+    }),
   },
   {
     path: "agents/studio-assistant/AGENT.md",

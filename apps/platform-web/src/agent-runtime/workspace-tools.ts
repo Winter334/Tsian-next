@@ -14,7 +14,6 @@ import type {
 } from "./trace"
 import { summarizeTraceValue } from "./trace"
 import {
-  DEFAULT_RUNTIME_WORKSPACE_OPERATIONS,
   executeWorkspaceOperation,
   type WorkspaceOperationMutationAdapter,
 } from "./workspace-operations"
@@ -99,8 +98,14 @@ type RuntimeAgentCallRunner = (
   input: RuntimeAgentCallArguments,
 ) => Promise<unknown>
 
+export interface RuntimeControlledExecutorContext {
+  agentContext?: AgentContextEntry
+  exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
+}
+
 type RuntimePlatformActionRunner = (
   request: PlatformActionRequest,
+  context?: RuntimeControlledExecutorContext,
 ) => Promise<PlatformActionResult>
 
 export interface RuntimeBrowserScriptExecutorRequest {
@@ -114,6 +119,7 @@ export interface RuntimeBrowserScriptExecutorRequest {
 
 type RuntimeBrowserScriptRunner = (
   request: RuntimeBrowserScriptExecutorRequest,
+  context?: RuntimeControlledExecutorContext,
 ) => Promise<PlatformActionResult>
 
 export interface RuntimeActionExecutorPolicyRequest {
@@ -1581,17 +1587,6 @@ function workspaceOperationRequestFromToolCall(
   } as WorkspaceOperationRequest
 }
 
-function exposedOperationsForWorkspaceAction(
-  context: RuntimeActionExecutorContext,
-  operation: WorkspaceOperationName,
-): WorkspaceOperationName[] {
-  return Array.from(new Set([
-    ...DEFAULT_RUNTIME_WORKSPACE_OPERATIONS,
-    ...(context.exposedWorkspaceOperations ?? []),
-    operation,
-  ]))
-}
-
 async function executeSkillAction(
   loadedSkill: RuntimeLoadedSkill,
   action: RuntimeSkillActionDeclaration,
@@ -1615,7 +1610,6 @@ async function executeSkillAction(
   }
 
   if (action.executor.type === WORKSPACE_OPERATION_EXECUTOR_TYPE) {
-    const operation = action.executor.operation ?? action.executor.name as WorkspaceOperationName
     const output = await runWithExecutorTimeout(
       action.executor,
       context.signal,
@@ -1625,7 +1619,7 @@ async function executeSkillAction(
           workspaceFiles: context.workspaceFiles,
           agentContext: context.agentContext,
           mutations: context.workspaceMutations,
-          exposedOperations: exposedOperationsForWorkspaceAction(context, operation),
+          exposedOperations: context.exposedWorkspaceOperations,
         },
       ),
     )
@@ -1648,16 +1642,22 @@ async function executeSkillAction(
     const result = await runWithExecutorTimeout(
       action.executor,
       context.signal,
-      () => context.runPlatformAction?.({
-        action: action.executor.name,
-        params: input,
-      }) ?? Promise.resolve({
-        ok: false,
-        error: {
-          code: "PLATFORM_ACTION_UNAVAILABLE",
-          message: "Platform action executor is not available in this runtime.",
+      () => context.runPlatformAction?.(
+        {
+          action: action.executor.name,
+          params: input,
         },
-      }),
+        {
+          agentContext: context.agentContext,
+          exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+        },
+      ) ?? Promise.resolve({
+          ok: false,
+          error: {
+            code: "PLATFORM_ACTION_UNAVAILABLE",
+            message: "Platform action executor is not available in this runtime.",
+          },
+        }),
     )
     if (!result.ok) {
       throw toolError(
@@ -1701,20 +1701,26 @@ async function executeSkillAction(
     const result = await runWithExecutorTimeout(
       action.executor,
       context.signal,
-      () => context.runBrowserScript?.({
-        skillName: loadedSkill.skill.name,
-        skillPath: loadedSkill.skill.path,
-        actionName: action.name,
-        scriptPath,
-        input,
-        timeoutMs: effectiveExecutorTimeoutMs(action.executor),
-      }) ?? Promise.resolve({
-        ok: false,
-        error: {
-          code: "BROWSER_SCRIPT_UNAVAILABLE",
-          message: "Browser script executor is not available in this runtime.",
+      () => context.runBrowserScript?.(
+        {
+          skillName: loadedSkill.skill.name,
+          skillPath: loadedSkill.skill.path,
+          actionName: action.name,
+          scriptPath,
+          input,
+          timeoutMs: effectiveExecutorTimeoutMs(action.executor),
         },
-      }),
+        {
+          agentContext: context.agentContext,
+          exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+        },
+      ) ?? Promise.resolve({
+          ok: false,
+          error: {
+            code: "BROWSER_SCRIPT_UNAVAILABLE",
+            message: "Browser script executor is not available in this runtime.",
+          },
+        }),
     )
     if (!result.ok) {
       throw toolError(

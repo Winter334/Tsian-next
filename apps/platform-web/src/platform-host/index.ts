@@ -1,4 +1,6 @@
 import type {
+  AgentConfig,
+  AgentPlatformToolName,
   AgentContextEntry,
   AgentRegistryEntry,
   ConversationMessageRecord,
@@ -18,6 +20,7 @@ import type {
   WorkspaceListResult,
   WorkspaceFile,
   WorkspaceMoveResult,
+  WorkspaceOperationName,
   WorkspaceOperationRequest,
   WorkspacePatchResult,
   WorkspaceSearchResult,
@@ -25,8 +28,10 @@ import type {
   WorkspaceValidationResult,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn, type AgentSessionTranscriptRecord } from "../agent-runtime"
+import type { RuntimeControlledExecutorContext } from "../agent-runtime/workspace-tools"
 import { assembleAgentContext } from "../agent-runtime/context"
 import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
+import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import {
   buildAgentRegistry,
   buildSkillRegistry,
@@ -156,6 +161,17 @@ export interface PlatformStudioAgentSkillToggleInput {
   agentId: string
   skillPath: string
   enabled: boolean
+}
+
+export interface PlatformStudioAgentPlatformToolToggleInput {
+  agentId: string
+  tool: AgentPlatformToolName
+  enabled: boolean
+}
+
+export interface PlatformStudioAgentWorkspaceAccessInput {
+  agentId: string
+  level: number
 }
 
 interface StudioSaveSlot {
@@ -916,7 +932,9 @@ async function executeWorkspaceOperationForActiveSave(
   saveId: string,
   request: WorkspaceOperationRequest,
   input: {
-    actorLevel: number
+    actorLevel?: number
+    agentContext?: AgentContextEntry
+    exposedOperations?: Iterable<WorkspaceOperationName>
     workspaceTransaction?: RuntimeWorkspaceTransaction
   },
 ): Promise<unknown> {
@@ -926,7 +944,8 @@ async function executeWorkspaceOperationForActiveSave(
   return executeWorkspaceOperation(request, {
     workspaceFiles,
     actorLevel: input.actorLevel,
-    exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+    agentContext: input.agentContext,
+    exposedOperations: input.exposedOperations ?? AUTHORING_WORKSPACE_OPERATIONS,
     mutations: {
       async write(writeInput) {
         if (input.workspaceTransaction) {
@@ -1118,6 +1137,7 @@ async function runAgentRuntimeStagedPlatformAction(
   workspaceTransaction: RuntimeWorkspaceTransaction,
   activeSaveId: string,
   request: PlatformActionRequest,
+  executorContext: RuntimeControlledExecutorContext | undefined,
 ): Promise<PlatformActionResult> {
   const workspaceRequest = normalizeWorkspaceActionRequest(request)
   if (!workspaceRequest) {
@@ -1132,7 +1152,8 @@ async function runAgentRuntimeStagedPlatformAction(
     return {
       ok: true,
       item: await executeWorkspaceOperationForActiveSave(activeSaveId, workspaceRequest, {
-        actorLevel: 1,
+        agentContext: executorContext?.agentContext,
+        exposedOperations: executorContext?.exposedWorkspaceOperations ?? [],
         workspaceTransaction,
       }),
     }
@@ -1150,11 +1171,15 @@ function createAgentRuntimePlatformActionRunner(
   activeSaveId: string,
   emitTrace?: RuntimeTraceEmitter,
 ) {
-  return async (request: PlatformActionRequest): Promise<PlatformActionResult> => {
+  return async (
+    request: PlatformActionRequest,
+    executorContext?: RuntimeControlledExecutorContext,
+  ): Promise<PlatformActionResult> => {
     const result = await runAgentRuntimeStagedPlatformAction(
       workspaceTransaction,
       activeSaveId,
       request,
+      executorContext,
     )
     emitWorkspaceMutationTrace(emitTrace, request, result)
     return result
@@ -2047,70 +2072,65 @@ function appendSkillReference(
   ])
 }
 
-function formatMarkdownListField(key: string, values: string[]): string[] {
-  const normalized = normalizeSkillList(values)
-  if (normalized.length === 0) {
-    return []
-  }
-
-  return [
-    `${key}:`,
-    ...normalized.map((value) => `  - ${value}`),
-  ]
+function removePlatformToolReference(
+  values: AgentPlatformToolName[],
+  tool: AgentPlatformToolName,
+): AgentPlatformToolName[] {
+  return values.filter((value) => value !== tool)
 }
 
-function isFrontmatterKeyLine(line: string): boolean {
-  return /^([A-Za-z][A-Za-z0-9_-]*):(?:\s*.*)?$/.test(line.trim())
+function appendPlatformToolReference(
+  values: AgentPlatformToolName[],
+  tool: AgentPlatformToolName,
+): AgentPlatformToolName[] {
+  return Array.from(new Set([
+    ...removePlatformToolReference(values, tool),
+    tool,
+  ]))
 }
 
-function replaceMarkdownListFields(
-  content: string,
-  fields: Record<string, string[]>,
-): string {
-  const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
-  const lines = normalized.split("\n")
-  const fieldKeys = new Set(Object.keys(fields).map((key) => key.toLowerCase()))
-  let frontmatterLines: string[] = []
-  let bodyLines = lines
+function normalizeWorkspaceAccessLevel(value: number): number {
+  if (!Number.isFinite(value)) {
+    return 1
+  }
 
-  if (lines[0]?.trim() === "---") {
-    const closingIndex = lines.findIndex((line, index) => index > 0 && line.trim() === "---")
-    if (closingIndex > 0) {
-      frontmatterLines = lines.slice(1, closingIndex)
-      bodyLines = lines.slice(closingIndex + 1)
+  return Math.max(0, Math.min(4, Math.floor(value)))
+}
+
+function agentConfigFileForAgent(
+  files: WorkspaceFile[],
+  agent: AgentRegistryEntry,
+): WorkspaceFile {
+  const file = files.find((candidate) => candidate.path === agent.configPath)
+  if (!file) {
+    throw new Error(`Agent 配置文件 "${agent.configPath}" 不存在。`)
+  }
+  return file
+}
+
+function parseAgentConfigRecord(file: WorkspaceFile): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(file.content) as unknown
+    if (isRecord(parsed)) {
+      return parsed
     }
+  } catch {
+    // Fall through to the normalized error below.
   }
 
-  const nextFrontmatter: string[] = []
-  for (let index = 0; index < frontmatterLines.length;) {
-    const line = frontmatterLines[index] ?? ""
-    const keyMatch = /^([A-Za-z][A-Za-z0-9_-]*):/.exec(line.trim())
-    if (keyMatch?.[1] && fieldKeys.has(keyMatch[1].toLowerCase())) {
-      index += 1
-      while (index < frontmatterLines.length) {
-        const nextLine = frontmatterLines[index] ?? ""
-        if (isFrontmatterKeyLine(nextLine)) {
-          break
-        }
-        index += 1
-      }
-      continue
-    }
+  throw new Error(`Agent 配置文件 "${file.path}" 不是有效 JSON 对象。`)
+}
 
-    nextFrontmatter.push(line)
-    index += 1
-  }
-
-  for (const [key, values] of Object.entries(fields)) {
-    nextFrontmatter.push(...formatMarkdownListField(key, values))
-  }
-
-  return [
-    "---",
-    ...nextFrontmatter,
-    "---",
-    ...bodyLines,
-  ].join("\n")
+function writeAgentConfigRecord(
+  cardId: string,
+  agent: AgentRegistryEntry,
+  config: Record<string, unknown>,
+): Promise<WorkspaceFile> {
+  return writeCardContentFileForCard(cardId, {
+    path: agent.configPath,
+    content: JSON.stringify(config, null, 2) + "\n",
+    mediaType: "application/json",
+  })
 }
 
 export async function writePlatformStudioAgentFile(
@@ -2153,11 +2173,6 @@ export async function updatePlatformStudioAgentSkillEnabled(
     throw new Error("这个 Agent 不能启用其它 Agent 目录下的 Skill。")
   }
 
-  const agentFile = context.files.find((file) => file.path === agent.path)
-  if (!agentFile) {
-    throw new Error(`Agent 文件 "${agent.path}" 不存在。`)
-  }
-
   let enabledSkills = removeSkillReferences(agent.enabledSkills, skill)
   let disabledSkills = removeSkillReferences(agent.disabledSkills, skill)
 
@@ -2181,15 +2196,91 @@ export async function updatePlatformStudioAgentSkillEnabled(
     }
   }
 
-  const content = replaceMarkdownListFields(agentFile.content, {
-    enabledSkills,
-    disabledSkills,
-  })
+  const configFile = agentConfigFileForAgent(context.files, agent)
+  const config = parseAgentConfigRecord(configFile)
+  const existingSkills = isRecord(config.skills) ? config.skills : {}
 
-  return writeCardContentFileForCard(card.id, {
-    path: agent.path,
-    content,
-    mediaType: agentFile.mediaType,
+  return writeAgentConfigRecord(card.id, agent, {
+    ...config,
+    skills: {
+      ...existingSkills,
+      enabled: enabledSkills,
+      disabled: disabledSkills,
+    },
+  })
+}
+
+export async function updatePlatformStudioAgentPlatformToolEnabled(
+  input: PlatformStudioAgentPlatformToolToggleInput,
+): Promise<WorkspaceFile> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  let enabled = removePlatformToolReference(agent.platformTools.enabled, input.tool)
+  let disabled = removePlatformToolReference(agent.platformTools.disabled, input.tool)
+
+  if (input.enabled) {
+    const nextAgent = {
+      ...agent,
+      platformTools: {
+        enabled,
+        disabled,
+      },
+    }
+    if (!isAgentPlatformToolEnabled(nextAgent, input.tool)) {
+      enabled = appendPlatformToolReference(enabled, input.tool)
+    }
+  } else {
+    const nextAgent = {
+      ...agent,
+      platformTools: {
+        enabled,
+        disabled,
+      },
+    }
+    if (isAgentPlatformToolEnabled(nextAgent, input.tool)) {
+      disabled = appendPlatformToolReference(disabled, input.tool)
+    }
+  }
+
+  const configFile = agentConfigFileForAgent(context.files, agent)
+  const config = parseAgentConfigRecord(configFile)
+  const existingTools = isRecord(config.platformTools) ? config.platformTools : {}
+
+  return writeAgentConfigRecord(card.id, agent, {
+    ...config,
+    platformTools: {
+      ...existingTools,
+      enabled,
+      disabled,
+    },
+  })
+}
+
+export async function updatePlatformStudioAgentWorkspaceAccess(
+  input: PlatformStudioAgentWorkspaceAccessInput,
+): Promise<WorkspaceFile> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  const configFile = agentConfigFileForAgent(context.files, agent)
+  const config = parseAgentConfigRecord(configFile)
+  const existingAccess = isRecord(config.workspaceAccess) ? config.workspaceAccess : {}
+
+  return writeAgentConfigRecord(card.id, agent, {
+    ...config,
+    workspaceAccess: {
+      ...existingAccess,
+      level: normalizeWorkspaceAccessLevel(input.level),
+    },
   })
 }
 
