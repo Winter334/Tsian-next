@@ -1,64 +1,14 @@
 <template>
-  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden">
-      <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-            :disabled="!selectedCard || isSelectedCardLoaded || loadingCard"
-            @click="loadSelectedCard"
-          >
-            <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
-            {{ isSelectedCardLoaded ? '已加载' : '加载' }}
-          </button>
-          <button
-            type="button"
-            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-            @click="router.push('/market')"
-          >
-            <Store class="h-3.5 w-3.5" aria-hidden="true" />
-            应用市场
-          </button>
-          <button
-            type="button"
-            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-            :disabled="importing"
-            @click="openPackagePicker"
-          >
-            <Download class="h-3.5 w-3.5" aria-hidden="true" />
-            导入卡包
-          </button>
-          <input
-            ref="packageInput"
-            type="file"
-            class="hidden"
-            accept=".tsian-card.zip,application/zip"
-            @change="handlePackageSelected"
-          />
-          <button
-            type="button"
-            class="retro-button retro-focus hidden h-8 items-center gap-2 px-3 font-mono text-xs sm:inline-flex"
-            disabled
-          >
-            <Image class="h-3.5 w-3.5" aria-hidden="true" />
-            大图标
-          </button>
-          <button
-            type="button"
-            class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
-            :disabled="!selectedCard || selectedCard.source === 'builtin' || deleting"
-            @click="deleteSelectedCard"
-          >
-            <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
-            删除应用
-          </button>
-        </div>
-        <p class="font-mono text-[11px] uppercase tracking-wider text-text-dim">
-          已安装 {{ cards.length }} 个应用
-        </p>
-      </div>
-
-      <div class="retro-inset m-3 min-h-[420px] overflow-auto p-3">
+  <section
+    ref="libraryRef"
+    class="relative grid min-h-full grid-rows-[minmax(0,1fr)_auto] gap-0 overflow-hidden"
+    @click="contextMenu = null"
+    @contextmenu.prevent.stop="openBlankContextMenu"
+  >
+      <div
+        class="retro-inset m-3 min-h-[420px] overflow-auto p-3"
+        @contextmenu.prevent.stop="openBlankContextMenu"
+      >
         <div v-if="loading" class="grid min-h-[360px] place-items-center">
           <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
             正在加载游戏卡
@@ -91,10 +41,6 @@
           </div>
         </div>
 
-        <p v-if="feedback" class="mb-3 border border-neon-deep/40 bg-neon/10 px-3 py-2 text-sm text-neon">
-          {{ feedback }}
-        </p>
-
         <p v-if="importError" class="mb-3 border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-danger">
           {{ importError }}
         </p>
@@ -116,6 +62,7 @@
             @focus="selectedCardId = card.id"
             @mouseenter="selectedCardId = card.id"
             @click="openCard(card.id)"
+            @contextmenu.prevent.stop="openCardContextMenu(card, $event)"
           >
             <div class="library-app-preview relative mx-auto aspect-square w-full max-w-[142px] overflow-hidden border border-neon-deep/55 bg-elevated">
               <img
@@ -150,13 +97,72 @@
           </button>
         </div>
       </div>
+
+      <footer class="retro-statusbar flex min-h-9 flex-wrap items-center justify-between gap-2 border-t px-3 py-2">
+        <p class="font-mono text-[11px] uppercase tracking-wider text-text-dim">
+          {{ cards.length }} 个应用
+        </p>
+        <p v-if="feedback" class="min-w-0 truncate font-mono text-[11px] text-text-dim">{{ feedback }}</p>
+      </footer>
+
+      <input
+        ref="packageInput"
+        type="file"
+        class="hidden"
+        accept=".tsian-card.zip,application/zip"
+        @change="handlePackageSelected"
+      />
+
+      <div
+        v-if="contextMenu"
+        class="absolute z-50 min-w-36 border border-neon-deep/70 bg-elevated p-1 shadow-neon-glow-active"
+        :style="{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }"
+        @click.stop
+      >
+        <button
+          v-if="contextMenu.card"
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+          @click="openCardFromMenu(contextMenu.card.id)"
+        >
+          <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
+          打开
+        </button>
+        <button
+          v-if="contextMenu.card && canLoadCard(contextMenu.card)"
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+          @click="loadCardFromMenu(contextMenu.card)"
+        >
+          <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
+          加载
+        </button>
+        <button
+          v-if="contextMenu.card && canDeleteCard(contextMenu.card)"
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-danger hover:bg-danger/10"
+          @click="deleteCardFromMenu(contextMenu.card)"
+        >
+          <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+          删除
+        </button>
+        <button
+          v-if="!contextMenu.card"
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+          @click="importFromMenu"
+        >
+          <Download class="h-3.5 w-3.5" aria-hidden="true" />
+          导入卡包
+        </button>
+      </div>
   </section>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { CheckCircle2, Download, FolderOpen, Gamepad2, Image, Store, Trash2 } from "lucide-vue-next"
+import { CheckCircle2, Download, FolderOpen, Gamepad2, Store, Trash2 } from "lucide-vue-next"
 import type { LocalGameCardRecord } from "@/storage/db"
 import {
   getGameCardCoverUrl,
@@ -184,12 +190,18 @@ const errorMessage = ref("")
 const importError = ref("")
 const feedback = ref("")
 const packageInput = ref<HTMLInputElement | null>(null)
+const libraryRef = ref<HTMLElement | null>(null)
+
+interface ContextMenuState {
+  x: number
+  y: number
+  card: LocalGameCardRecord | null
+}
+
+const contextMenu = ref<ContextMenuState | null>(null)
 
 const selectedCard = computed(() =>
   cards.value.find((card) => card.id === selectedCardId.value) ?? cards.value[0] ?? null
-)
-const isSelectedCardLoaded = computed(() =>
-  Boolean(selectedCard.value && selectedCard.value.id === activeGameCardId.value)
 )
 
 async function refreshCards() {
@@ -219,6 +231,67 @@ function openCard(cardId: string) {
 
 function openPackagePicker() {
   packageInput.value?.click()
+}
+
+function canLoadCard(card: LocalGameCardRecord): boolean {
+  return card.id !== activeGameCardId.value && !loadingCard.value
+}
+
+function canDeleteCard(card: LocalGameCardRecord): boolean {
+  return card.source !== "builtin" && !deleting.value
+}
+
+function openCardContextMenu(card: LocalGameCardRecord, event: MouseEvent) {
+  selectedCardId.value = card.id
+  contextMenu.value = contextMenuStateFromMouse(event, card)
+}
+
+function openBlankContextMenu(event: MouseEvent) {
+  contextMenu.value = contextMenuStateFromMouse(event, null)
+}
+
+function contextMenuStateFromMouse(event: MouseEvent, card: LocalGameCardRecord | null): ContextMenuState {
+  const menuWidth = 176
+  const menuHeight = card ? (canDeleteCard(card) ? 148 : 104) : 48
+  const rect = libraryRef.value?.getBoundingClientRect() ?? {
+    left: 0,
+    top: 0,
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }
+  const rawX = event.clientX - rect.left
+  const rawY = event.clientY - rect.top
+  return {
+    x: clampMenuCoordinate(rawX, rect.width, menuWidth),
+    y: clampMenuCoordinate(rawY, rect.height, menuHeight),
+    card,
+  }
+}
+
+function clampMenuCoordinate(value: number, containerSize: number, menuSize: number): number {
+  return Math.min(Math.max(value, 8), Math.max(8, containerSize - menuSize - 8))
+}
+
+function openCardFromMenu(cardId: string) {
+  contextMenu.value = null
+  openCard(cardId)
+}
+
+async function loadCardFromMenu(card: LocalGameCardRecord) {
+  contextMenu.value = null
+  selectedCardId.value = card.id
+  await loadSelectedCard()
+}
+
+async function deleteCardFromMenu(card: LocalGameCardRecord) {
+  contextMenu.value = null
+  selectedCardId.value = card.id
+  await deleteSelectedCard()
+}
+
+function importFromMenu() {
+  contextMenu.value = null
+  openPackagePicker()
 }
 
 async function loadSelectedCard() {
