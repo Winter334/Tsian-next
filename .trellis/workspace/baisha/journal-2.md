@@ -539,3 +539,38 @@ Stages 0-4 were already committed (R0 SW DB-name fix + inferMediaType, stage 1 c
 
 - Commit the stage 6 spec change (only working-tree change this session; stages 0-4 already committed).
 - Optional follow-up: localize the storage-layer error messages (currently English: "Frontend package is missing frontend.json." etc.) to match the Chinese UI tone.
+
+
+## Session 73: 子2a 质量门 + 子2b 工具过程可见与并行执行全流程
+
+**Date**: 2026-06-19
+**Task**: 子2a 质量门 + 子2b 工具过程可见与并行执行全流程
+**Package**: platform-web
+**Branch**: `feat/ai-streaming-response`
+
+### Summary
+
+2a 质量门通过（build + spec 合规 + 跨层数据流核对，代码已在 bace0b2）。2b 全流程：design/implement 规划（方案 A 并行分组）→ Phase A-H 实现（turn-round-end/turn-tool 事件 + streaming-events 两对 pub/sub + remote-iframe-bridge 转发 + runtime onRoundEnd/onTool 透传 + workspace-tools 并行化 + callId 写入 + platform-host 绑 turn + AssistantView 工具过程行 + native prompt 并行引导）→ 质量门通过 + spec 同步 → 真实 API 实测：deepseek-v4-pro-auto 简单对话流式正常、工具过程行渲染正常、并行执行生效。排查 round-limit 报错定位为模型在 blank card 空转（非 2b 回归）。2b 提交 ffb717f，2a/2b 归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bace0b2` | (see git log) |
+| `ffb717f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
