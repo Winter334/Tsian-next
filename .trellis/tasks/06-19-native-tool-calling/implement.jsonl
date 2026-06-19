@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web 前端 spec 入口；任务主体在 apps/platform-web/src/**，列出了各指南与必跑构建。"}
+{"file": ".trellis/spec/platform-web/frontend/directory-structure.md", "reason": "新建 agent-runtime/tool-schemas.ts、adapter 层新增原生工具方法、UI 组件归属，需按目录规范落位。"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "normalizeModelConfig 对 toolCallMode 必填校验/丢弃、resolveProviderConfig 透传、RuntimeChatMessage 与 AiChatMessage 的边界规范化，属运行时边界规范化核心场景。"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "config 字段 auto-save 复用 debounced watch、AssistantView 模式开关的响应式状态与持久化。"}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "ModelParamsFields 加「工具调用模式」Select、AssistantView 加开关，需按 Vue 路由视图与 UI 原子规范编写。"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "AiChatMessage（contracts/src/debug.ts）任务明确不改，但需理解其形状以保持 adapter 转换与 transcript 降级正确，不越界修改契约。"}
+{"file": ".trellis/spec/contracts/frontend/index.md", "reason": "前端消费 @tsian/contracts 的类型安全约定，RuntimeChatMessage 与 AiChatMessage 分离设计需遵循消费侧规范。"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享思维指南入口；本任务跨层且新增工具函数，需在编码前查阅对应指南。"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "特性跨 config→agent-runtime→runtime-host→platform-host→UI 多层，且 RuntimeChatMessage/AiChatMessage 间数据格式转换，属典型跨层场景。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "新增 buildEnabledToolSchemas 工具函数前应先搜索复用；toolCallMode 字段加入多处配置，修改常量/配置前先全局检索。"}

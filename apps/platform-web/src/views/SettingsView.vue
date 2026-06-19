@@ -80,6 +80,7 @@
       :model-id="editingModelId"
       :kind="activeTypeKind"
       :initial-parameters="editingModelParameters"
+      :initial-tool-call-mode="editingModelToolCallMode"
       @confirm="handleEditModelParamsConfirm"
     />
   </section>
@@ -100,6 +101,7 @@ import {
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
   type BrowserAiProviderPreset,
+  type BrowserAiToolCallMode,
   type BrowserPlatformConfigDraft,
   createBrowserAiModelConfig,
   createBrowserAiProviderPreset,
@@ -126,6 +128,10 @@ const editingModel = computed(() =>
 
 const editingModelParameters = computed<BrowserAiModelParameters>(
   () => editingModel.value?.parameters ?? createDefaultBrowserAiModelParameters(),
+)
+
+const editingModelToolCallMode = computed<BrowserAiToolCallMode>(
+  () => editingModel.value?.toolCallMode ?? "text",
 )
 
 const activeTypeId = ref("")
@@ -311,7 +317,7 @@ function handlePatchPreset(payload: { typeId: string; presetId: string; patch: P
   Object.assign(preset, payload.patch)
 }
 
-function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModelParameters }): void {
+function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void {
   const preset = activePreset.value
   if (!preset) {
     return
@@ -324,7 +330,7 @@ function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModel
     toast.error("该模型已存在。")
     return
   }
-  preset.models.push(createBrowserAiModelConfig({ id, parameters: payload.parameters }))
+  preset.models.push(createBrowserAiModelConfig({ id, parameters: payload.parameters, toolCallMode: payload.toolCallMode }))
 }
 
 async function handleDeleteModel(modelId: string): Promise<void> {
@@ -388,12 +394,13 @@ function handleEditModelParams(modelId: string): void {
   editParamsOpen.value = true
 }
 
-function handleEditModelParamsConfirm(parameters: BrowserAiModelParameters): void {
+function handleEditModelParamsConfirm(payload: { parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void {
   const model = editingModel.value
   if (!model) {
     return
   }
-  model.parameters = parameters
+  model.parameters = payload.parameters
+  model.toolCallMode = payload.toolCallMode
   toast.success("模型参数已更新。")
 }
 

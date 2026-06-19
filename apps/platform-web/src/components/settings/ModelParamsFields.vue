@@ -85,6 +85,23 @@
     </label>
 
     <label class="grid gap-1">
+      <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim/80">工具调用模式</span>
+      <Select
+        :model-value="toolCallMode"
+        @update:model-value="(value) => emit('update:toolCallMode', value as BrowserAiToolCallMode)"
+      >
+        <SelectTrigger class="h-8 w-full">
+          <SelectValue placeholder="文本" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="text">文本（兼容）</SelectItem>
+          <SelectItem value="native">原生（function calling）</SelectItem>
+        </SelectContent>
+      </Select>
+      <p class="font-mono text-[10px] leading-4 text-text-dim/60">{{ toolCallModeHint }}</p>
+    </label>
+
+    <label class="grid gap-1">
       <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim/80">自定义请求参数 (JSON)</span>
       <textarea
         :value="parameters.customRequestParamsText"
@@ -112,20 +129,29 @@ import {
   reasoningEffortHintForKind,
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
+  type BrowserAiToolCallMode,
 } from "@/config/ai"
 
 const props = defineProps<{
   parameters: BrowserAiModelParameters
   kind: BrowserAiProviderKind
+  toolCallMode: BrowserAiToolCallMode
 }>()
 
 const emit = defineEmits<{
   (e: "update:parameters", value: BrowserAiModelParameters): void
+  (e: "update:toolCallMode", value: BrowserAiToolCallMode): void
 }>()
 
 const NO_REASONING = "__none"
 
 const reasoningHint = computed(() => reasoningEffortHintForKind(props.kind))
+
+const toolCallModeHint = computed(() =>
+  props.toolCallMode === "native"
+    ? "使用 API 原生 function calling，结构化工具调用边界，支持流式。请确认你的接口支持原生工具调用。"
+    : "使用 <tsian-tool-call> 文本协议，兼容所有接口，不支持流式。",
+)
 
 function numToText(value: number | null): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : ""

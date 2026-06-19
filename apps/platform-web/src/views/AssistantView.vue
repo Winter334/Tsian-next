@@ -105,6 +105,11 @@
               </SelectItem>
             </SelectContent>
           </Select>
+          <span
+            class="inline-flex h-8 items-center rounded border border-neon-deep/40 bg-panel/60 px-2 font-mono text-[10px] uppercase tracking-wider"
+            :class="assistantToolCallMode === 'native' ? 'text-neon' : 'text-text-dim'"
+            :title="`工具调用模式：${assistantToolCallMode === 'native' ? '原生 function calling' : '文本协议（兼容）'}。在控制面板模型参数中切换。`"
+          >{{ assistantToolCallMode === "native" ? "原生工具" : "文本工具" }}</span>
           <button
             type="button"
             class="retro-button retro-focus inline-flex h-8 items-center justify-center gap-2 px-3 font-mono text-xs"
@@ -297,6 +302,7 @@ import {
   getPlatformActiveGameCard,
   waitForPlatformHostReady,
   getLocalAssistantProviderPreset,
+  getLocalAssistantToolCallMode,
   updateLocalAssistantProviderPreset,
 } from "../platform-host"
 import { renderMarkdown } from "../lib/markdown"
@@ -344,6 +350,7 @@ const renameInputRef = ref<HTMLInputElement | null>(null)
 const providerPresets = ref<Array<{ id: string; name: string }>>([])
 const assistantProviderPresetId = ref("")
 const updatingProviderPreset = ref(false)
+const assistantToolCallMode = ref<"native" | "text">("text")
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
 function formatSessionTime(timestamp: number): string {
@@ -601,6 +608,11 @@ async function loadProviderPreset() {
   } catch {
     // Non-fatal: provider selection just won't show.
   }
+  try {
+    assistantToolCallMode.value = await getLocalAssistantToolCallMode()
+  } catch {
+    assistantToolCallMode.value = "text"
+  }
 }
 
 async function handleProviderPresetChange(presetId: string) {
@@ -608,6 +620,8 @@ async function handleProviderPresetChange(presetId: string) {
   try {
     await updateLocalAssistantProviderPreset(presetId || null)
     assistantProviderPresetId.value = presetId
+    // The effective tool-call mode follows the newly selected preset's model.
+    assistantToolCallMode.value = await getLocalAssistantToolCallMode()
   } catch {
     await loadProviderPreset()
   } finally {

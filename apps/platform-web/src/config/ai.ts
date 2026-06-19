@@ -7,6 +7,17 @@ export interface BrowserAiModelEntry {
 
 export type BrowserAiReasoningEffort = "" | "minimal" | "low" | "medium" | "high" | "xhigh"
 
+/**
+ * How the Agent Runtime asks the model to invoke tools.
+ * - `native`: API-native function calling (OpenAI `tools`/`tool_calls`,
+ *   Gemini `functionDeclarations`/`functionCall`, Claude `tools`/`tool_use`).
+ *   Provides structured text/tool-call event boundaries, enabling streaming.
+ * - `text`: the legacy `<tsian-tool-call>` text-embedding protocol. Kept as a
+ *   manual fallback for endpoints without native tool support (no streaming).
+ * No `auto` mode: the user configures this explicitly per model.
+ */
+export type BrowserAiToolCallMode = "native" | "text"
+
 export interface BrowserAiModelParameters {
   contextWindow: number | null
   maxOutputTokens: number | null
@@ -29,6 +40,13 @@ export interface BrowserAiModelConfig {
   label?: string
   parameters: BrowserAiModelParameters
   enabled: boolean
+  /**
+   * Required tool-call mode for this model. Lives on the model (not the preset
+   * or parameters) because support varies per model under one endpoint. Missing
+   * on stored data → the model is dropped at read time (prototype-period
+   * destructive update, no migration); new models default to `text`.
+   */
+  toolCallMode: BrowserAiToolCallMode
 }
 
 export type BrowserAiFallbackStrategy = "primary-only" | "ordered"
@@ -67,6 +85,8 @@ export interface BrowserAiConfig {
   apiKey: string
   model: string
   parameters: BrowserAiModelParameters
+  /** Tool-call mode, resolved from the primary model's `toolCallMode`. */
+  toolCallMode: BrowserAiToolCallMode
   /**
    * Ordered fallback models (id + parameters) following the primary, when the
    * preset uses the "ordered" strategy. Forward-compatible: the runtime only
@@ -203,6 +223,10 @@ function normalizeReasoningEffort(input: unknown): BrowserAiReasoningEffort {
   return ""
 }
 
+function normalizeToolCallMode(input: unknown): BrowserAiToolCallMode | null {
+  return input === "native" || input === "text" ? input : null
+}
+
 export function createDefaultBrowserAiModelParameters(): BrowserAiModelParameters {
   return {
     contextWindow: null,
@@ -249,11 +273,19 @@ function normalizeModelConfig(input: unknown): BrowserAiModelConfig | null {
   if (!id) {
     return null
   }
+  // Prototype-period destructive update: toolCallMode is required and not
+  // migrated. A missing/invalid value drops the model so the user must
+  // reconfigure it explicitly (no silent default fallback on the read path).
+  const toolCallMode = normalizeToolCallMode(record.toolCallMode)
+  if (!toolCallMode) {
+    return null
+  }
   return {
     id,
     label: readStoredText(record.label) || undefined,
     parameters: normalizeModelParameters(record.parameters),
     enabled: record.enabled !== false,
+    toolCallMode,
   }
 }
 
@@ -294,6 +326,9 @@ export function createBrowserAiModelConfig(
     label: readStoredText(input.label) || undefined,
     parameters: normalizeModelParameters(input.parameters),
     enabled: input.enabled !== false,
+    // New models default to the conservative text protocol; an explicit
+    // native/text input is honored.
+    toolCallMode: normalizeToolCallMode(input.toolCallMode) ?? "text",
   }
 }
 
@@ -323,6 +358,7 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
         id: legacyDefaultModel,
         parameters: normalizeModelParameters(record.parameters),
         enabled: true,
+        toolCallMode: "text",
       },
     ]
   }
@@ -428,7 +464,7 @@ function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): Brows
     baseUrl,
     apiKey,
     models: defaultModel
-      ? [{ id: defaultModel, parameters: createDefaultBrowserAiModelParameters(), enabled: true }]
+      ? [{ id: defaultModel, parameters: createDefaultBrowserAiModelParameters(), enabled: true, toolCallMode: "text" }]
       : [],
     fallbackStrategy: "primary-only",
     fetchedModels: [],
@@ -525,6 +561,7 @@ function getEnvAiConfig(): BrowserAiConfig | null {
     apiKey,
     model,
     parameters: createDefaultBrowserAiModelParameters(),
+    toolCallMode: "text",
   }
 }
 
@@ -560,6 +597,7 @@ function resolveProviderConfig(
     apiKey: provider.apiKey,
     model: primary.id,
     parameters: cloneModelParameters(primary.parameters),
+    toolCallMode: primary.toolCallMode,
     ...(fallbacks && fallbacks.length > 0 ? { fallbacks } : {}),
   }
 }
@@ -597,6 +635,7 @@ export function createBrowserAiProviderPreset(
           id: seedModel,
           parameters: normalizeModelParameters(input.parameters),
           enabled: true,
+          toolCallMode: "text",
         },
       ]
     }
@@ -771,6 +810,9 @@ export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigD
       for (const model of provider.models) {
         if (!model.parameters) {
           throw new Error("模型参数缺失。")
+        }
+        if (model.toolCallMode !== "native" && model.toolCallMode !== "text") {
+          throw new Error("工具调用模式必须是「原生」或「文本」。")
         }
         validateBrowserAiModelParameters(model.parameters)
       }

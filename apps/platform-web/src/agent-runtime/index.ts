@@ -17,6 +17,10 @@ import {
   isAgentPlatformToolEnabled,
 } from "./permissions"
 import { buildAgentRegistry } from "./registry"
+import {
+  buildEnabledToolSchemas,
+  type ToolSchema,
+} from "./tool-schemas"
 import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
 import { errorToTraceData } from "./trace"
 import {
@@ -34,6 +38,12 @@ import {
   type RuntimeBrowserScriptExecutorRequest,
   type RuntimeWorkspaceToolObservation,
 } from "./workspace-tools"
+import type {
+  ModelCallResult,
+  NativeToolCall,
+  RuntimeChatMessage,
+} from "../runtime-host/ai"
+import type { BrowserAiToolCallMode } from "../config/ai"
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
 
 export interface AgentRuntimeTurnInput {
@@ -61,6 +71,24 @@ export interface AgentRuntimeCapabilities {
     messages: AiChatMessage[],
     options: AgentRuntimeModelCallOptions,
   ): Promise<string>
+  /**
+   * Native function-calling model call. Returns a structured `ModelCallResult`
+   * (text / toolCalls / finishReason) instead of a flat string. The runtime
+   * dispatches this when the active model's `toolCallMode === "native"`; the
+   * text-protocol `callModel` path is unchanged otherwise. `messages` use the
+   * structured `RuntimeChatMessage[]` shape so tool calls and tool observations
+   * can be threaded back with their provider ids.
+   */
+  callModelNative?(
+    messages: RuntimeChatMessage[],
+    options: AgentRuntimeModelCallOptions,
+    tools: ToolSchema[],
+  ): Promise<ModelCallResult>
+  /**
+   * Active model's tool-call mode. Defaults to `"text"` when omitted so the
+   * runtime falls back to the legacy text-protocol tool loop.
+   */
+  toolCallMode?: BrowserAiToolCallMode
   runPlatformAction?(
     request: PlatformActionRequest,
     context?: RuntimeControlledExecutorContext,
@@ -346,6 +374,7 @@ function buildWorkspaceToolInstructions(
     allowAgentCall: boolean
     visibleContacts: AgentRegistryEntry[]
     enabledPlatformTools: AgentPlatformToolName[]
+    toolCallMode?: BrowserAiToolCallMode
   },
 ): string {
   const canCallAgents = options.allowAgentCall && options.visibleContacts.length > 0
@@ -357,6 +386,7 @@ function buildWorkspaceToolInstructions(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.workspaceWrite,
   )
+  const isNative = options.toolCallMode === "native"
   const availableTools = [
     `- ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad} arguments={"name":"prose-style"}`,
     `- ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} arguments={"skill":"prose-style","action":"example_action","input":{"text":"示例"}}`,
@@ -401,13 +431,22 @@ function buildWorkspaceToolInstructions(
           formatVisibleAgentContacts(options.visibleContacts),
         ]
       : []),
-    "可用工具：",
-    ...availableTools,
-    "工具调用格式必须独占一个块：",
-    "<tsian-tool-call>",
-    `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}","arguments":{"name":"prose-style"}}`,
-    "</tsian-tool-call>",
-    "收到 observation 后继续完成任务。最终输出不要包含工具调用块、observation、工具细节或实现说明。",
+    ...(isNative
+      ? [
+          "可用工具通过 API 原生 function calling 调用：直接使用提供的工具函数，不要在回复正文中嵌入任何工具调用文本块。",
+          "工具用途参考（实际参数 schema 由 API 提供）：",
+          ...availableTools,
+          "收到 observation 后继续完成任务。最终输出只包含给玩家的正文，不要包含工具调用、observation、工具细节或实现说明。",
+        ]
+      : [
+          "可用工具：",
+          ...availableTools,
+          "工具调用格式必须独占一个块：",
+          "<tsian-tool-call>",
+          `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}","arguments":{"name":"prose-style"}}`,
+          "</tsian-tool-call>",
+          "收到 observation 后继续完成任务。最终输出不要包含工具调用块、observation、工具细节或实现说明。",
+        ]),
   ].join("\n")
 }
 
@@ -439,6 +478,7 @@ function buildWorkspaceAgentSystemPrompt(
     allowAgentCall: boolean
     visibleContacts: AgentRegistryEntry[]
     enabledPlatformTools: AgentPlatformToolName[]
+    toolCallMode?: BrowserAiToolCallMode
   },
 ): string {
   return [
@@ -485,6 +525,7 @@ function buildEntryAgentMessages(
   context: AgentContextEntry,
   collaborationPolicy: AgentRuntimeCollaborationPolicy,
   agentCallState: AgentCallTurnState,
+  toolCallMode?: BrowserAiToolCallMode,
 ): AiChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
   const visibleContacts = input.workspaceFiles
@@ -505,6 +546,7 @@ function buildEntryAgentMessages(
           ),
         visibleContacts,
         enabledPlatformTools: permissions.enabledTools,
+        toolCallMode,
       }),
     },
     {
@@ -668,6 +710,7 @@ function buildDelegatedAgentMessages(
   collaborationPolicy: AgentRuntimeCollaborationPolicy,
   agentCallState: AgentCallTurnState,
   agentCallDepth: number,
+  toolCallMode?: BrowserAiToolCallMode,
 ): AiChatMessage[] {
   const history = selectHistoryForAgentCall(
     input.recentHistory,
@@ -692,6 +735,7 @@ function buildDelegatedAgentMessages(
           ),
         visibleContacts,
         enabledPlatformTools: permissions.enabledTools,
+        toolCallMode,
       }),
     },
     {
@@ -844,6 +888,7 @@ function createAgentCallRunner(
           collaborationPolicy,
           state,
           metadata.targetDepth,
+          capabilities.toolCallMode,
         ),
         input,
         capabilities,
@@ -921,6 +966,164 @@ function createAgentCallRunner(
   }
 }
 
+/** Wrap a parsed native tool call into the text-loop's `ParsedRuntimeWorkspaceToolCall` shape so `executeRuntimeWorkspaceToolCalls` is reused unchanged. */
+function nativeToolCallsToParsed(
+  calls: NativeToolCall[],
+): ParsedRuntimeWorkspaceToolCall[] {
+  return calls.map((call) => ({
+    raw: JSON.stringify({ name: call.name, arguments: call.arguments }),
+    call: { name: call.name, arguments: call.arguments },
+  }))
+}
+
+/** Convert the flat entry-agent `AiChatMessage[]` to structured `RuntimeChatMessage[]` for the first native round. */
+function aiChatMessagesToRuntime(
+  messages: AiChatMessage[],
+): RuntimeChatMessage[] {
+  return messages.map((message) => {
+    if (message.role === "assistant") {
+      return { role: "assistant", content: message.content }
+    }
+    return { role: message.role, content: message.content }
+  })
+}
+
+async function callAgentModelWithWorkspaceToolsNative(
+  messages: AiChatMessage[],
+  input: AgentRuntimeTurnInput,
+  capabilities: AgentRuntimeCapabilities,
+  options: AgentRuntimeModelCallOptions,
+  agentContext: AgentContextEntry,
+  toolOptions: WorkspaceToolLoopOptions,
+  transcriptCollector: AgentSessionTranscriptCollector | undefined,
+): Promise<string> {
+  const runtimeMessages = aiChatMessagesToRuntime(messages)
+  const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
+  const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
+  const maxToolRounds = toolOptions.collaborationPolicy.maxToolRoundsPerAgent
+    ?? DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY.maxToolRoundsPerAgent
+  const visibleContacts = input.workspaceFiles
+    ? getVisibleAgentContacts(input.workspaceFiles, agentContext)
+    : []
+  const allowAgentCall =
+    toolOptions.agentCallState !== undefined
+    && isAgentPlatformToolEnabled(agentContext.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
+    && canExposeAgentCallInPrompt(
+      toolOptions.collaborationPolicy,
+      toolOptions.agentCallState,
+      toolOptions.agentCallDepth,
+      visibleContacts,
+    )
+  const tools = buildEnabledToolSchemas({
+    enabledPlatformTools: permissions.enabledTools,
+    allowAgentCall,
+    visibleContacts,
+  })
+
+  for (let round = 0; round <= maxToolRounds; round += 1) {
+    assertNotAborted(options.signal)
+
+    const result = await capabilities.callModelNative!(runtimeMessages, options, tools)
+    assertNotAborted(options.signal)
+
+    const toolCalls = nativeToolCallsToParsed(result.toolCalls)
+    capabilities.emitTrace?.({
+      type: "model_call_completed",
+      agentId: agentContext.agent.id,
+      debugLabel: options.debugLabel,
+      ok: true,
+      data: {
+        messageCount: runtimeMessages.length,
+        outputLength: result.text.length,
+        hasToolCalls: result.toolCalls.length > 0,
+        toolCallCount: result.toolCalls.length,
+        round,
+      },
+    })
+
+    if (result.finishReason === "stop" || result.toolCalls.length === 0) {
+      recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+        messages,
+        modelOutput: result.raw,
+        toolCalls,
+        toolObservations: [],
+        round,
+        status: "completed",
+      })
+      return result.text.trim()
+    }
+
+    if (round >= maxToolRounds) {
+      const finalText = result.text.trim()
+      if (finalText) {
+        recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+          messages,
+          modelOutput: result.raw,
+          toolCalls,
+          toolObservations: [],
+          round,
+          status: "completed",
+        })
+        return finalText
+      }
+      throw new Error(
+        `${options.debugLabel} reached the workspace tool round limit without a final response.`,
+      )
+    }
+
+    const observations = await executeRuntimeWorkspaceToolCalls({
+      workspaceFiles: input.workspaceFiles!,
+      agentContext,
+      sessionState: workspaceToolSession,
+      runAgentCall: allowAgentCall
+        ? createAgentCallRunner(
+          input,
+          capabilities,
+          agentContext,
+          toolOptions.agentCallState,
+          toolOptions.agentCallDepth,
+          toolOptions.collaborationPolicy,
+          transcriptCollector,
+        )
+        : undefined,
+      runPlatformAction: capabilities.runPlatformAction,
+      runBrowserScript: capabilities.runBrowserScript,
+      actionExecutorPolicy: capabilities.actionExecutorPolicy,
+      workspaceMutations: capabilities.workspaceMutations,
+      exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
+      signal: options.signal,
+      debugLabel: options.debugLabel,
+      emitTrace: capabilities.emitTrace,
+    }, toolCalls)
+
+    recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+      messages,
+      modelOutput: result.raw,
+      toolCalls,
+      toolObservations: observations,
+      round,
+      status: "tool-continued",
+    })
+
+    // Thread the assistant tool calls + tool observations back in native shape.
+    runtimeMessages.push({
+      role: "assistant",
+      content: result.text,
+      ...(result.toolCalls.length > 0 ? { toolCalls: result.toolCalls } : {}),
+    })
+    for (const [index, observation] of observations.entries()) {
+      const callId = result.toolCalls[index]?.id ?? `tool-${index}`
+      runtimeMessages.push({
+        role: "tool",
+        toolCallId: callId,
+        content: formatRuntimeWorkspaceToolObservationMessage([observation]),
+      })
+    }
+  }
+
+  throw new Error(`${options.debugLabel} failed to complete workspace tool handling.`)
+}
+
 async function callAgentModelWithWorkspaceTools(
   messages: AiChatMessage[],
   input: AgentRuntimeTurnInput,
@@ -953,6 +1156,24 @@ async function callAgentModelWithWorkspaceTools(
       },
     })
     return response.trim()
+  }
+
+  // Native function-calling dispatch: when the active model opts into native
+  // tools and the host provides `callModelNative`, run the structured tool
+  // loop. Otherwise fall through to the text-protocol loop (unchanged).
+  const useNativeToolCalling =
+    capabilities.toolCallMode === "native"
+    && typeof capabilities.callModelNative === "function"
+  if (useNativeToolCalling && toolOptions) {
+    return callAgentModelWithWorkspaceToolsNative(
+      messages,
+      input,
+      capabilities,
+      options,
+      agentContext,
+      toolOptions,
+      transcriptCollector,
+    )
   }
 
   let nextMessages = messages
@@ -1083,7 +1304,13 @@ export async function runAgentRuntimeTurn(
   let replyText: string
   try {
     replyText = (await callAgentModelWithWorkspaceTools(
-      buildEntryAgentMessages(input, entryContext, collaborationPolicy, agentCallState),
+      buildEntryAgentMessages(
+        input,
+        entryContext,
+        collaborationPolicy,
+        agentCallState,
+        capabilities.toolCallMode,
+      ),
       input,
       capabilities,
       {

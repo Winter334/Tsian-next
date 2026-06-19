@@ -555,10 +555,40 @@ interface RuntimeWorkspaceToolCall {
   - `workspace_read`
   - `workspace_write`
 
+- Native function-calling tool schema (`agent-runtime/tool-schemas.ts`):
+
+```typescript
+interface ToolSchema { name: string; description: string; parameters: Record<string, unknown> }
+function buildEnabledToolSchemas(options: {
+  enabledPlatformTools: AgentPlatformToolName[]
+  allowAgentCall: boolean
+  visibleContacts: AgentRegistryEntry[]
+}): ToolSchema[]
+```
+
+- Native model-call result (`runtime-host/ai.ts`):
+
+```typescript
+interface NativeToolCall { id: string; name: string; arguments: Record<string, unknown> }
+type RuntimeChatMessage =
+  | { role: "user" | "system"; content: string }
+  | { role: "assistant"; content: string; toolCalls?: NativeToolCall[] }
+  | { role: "tool"; toolCallId: string; content: string }
+interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: string; finishReason: "stop" | "tool_calls" }
+```
+
 ### 3. Contracts
 
 - Runtime tools execute against the `WorkspaceFile[]` and `AgentContextEntry` already assembled inside `runAgentRuntimeTurn`.
 - `agent-runtime` must not import Dexie, storage helpers, bridge objects, or `platform-host`.
+- The Agent Runtime supports two tool-call modes, selected per model via `BrowserAiModelConfig.toolCallMode` (threaded into `BrowserAiConfig.toolCallMode` and the `AgentRuntimeCapabilities.toolCallMode` field):
+  - `text` (default): the legacy `<tsian-tool-call>` text-embedding protocol. `callModel` returns `Promise<string>`; the tool loop parses calls with `parseRuntimeWorkspaceToolCalls` and threads observations back as user messages. This path is unchanged.
+  - `native`: API-native function calling. The runtime dispatches `callAgentModelWithWorkspaceToolsNative` only when `capabilities.toolCallMode === "native"` and the host provides `callModelNative`. `callModelNative(messages: RuntimeChatMessage[], options, tools: ToolSchema[]): Promise<ModelCallResult>` sends the provider's native `tools` field and structured messages (assistant `toolCalls` + `tool` observation role with `toolCallId`), and returns a structured `ModelCallResult`. `executeRuntimeWorkspaceToolCalls` is reused unchanged: `NativeToolCall[]` are wrapped into `ParsedRuntimeWorkspaceToolCall` (`nativeToolCallsToParsed`) so tool execution stays single-implementation.
+- `buildEnabledToolSchemas` reuses the same gating as the text-protocol prompt (`AGENT_PLATFORM_TOOL_NAMES`, `platformToolEnabled`, contacts + `allowAgentCall`): `skill_load`/`action_call` always; `agent_call` only with contacts + `agent_call` enabled; workspace read tools under `workspace_read`; workspace write/delete/move/validate under `workspace_write`. Tool `description` text is declarative (what it does + key parameter constraints), not tutorial-style.
+- `buildWorkspaceToolInstructions` branches on `toolCallMode`: native mode removes the `<tsian-tool-call>` format teaching (the API owns tool-call formatting) and tells the model to use the provided function tools; text mode keeps the existing format teaching unchanged.
+- Provider adapters (`runtime-host/ai.ts`) extend `ProviderAdapter` with `buildNativeRequestBody(config, messages, tools)` and `extractNativeResult(payload): ModelCallResult`. OpenAI/DeepSeek use `tools:[{type:"function",function:{...}}]`, `role:"tool"`+`tool_call_id`, parse `choices[0].message.{content,tool_calls}`+`finish_reason`. Gemini uses `tools:[{functionDeclarations}]`, `functionCall`/`functionResponse` parts, parses `candidates[0].content.parts[]`+`finishReason`. Claude uses `tools:[{name,description,input_schema}]`, `tool_use`/`tool_result` blocks, parses `content[]`+`stop_reason`. `generateAssistantReplyNative` mirrors `generateAssistantReply`'s fetch/debug structure.
+- `AiChatMessage` (contracts) is unchanged. `RuntimeChatMessage` is an internal type; debug/transcript records downgrade tool observations to `AiChatMessage` (tool role -> user + `[tool:id]` observation text).
+- The `toolCallMode` capability field is resolved once per turn from the entry/local-assistant agent's model config and drives the whole turn's dispatch. Delegated `agent_call` targets resolve their own model config inside the `callModelNative` closure via `options.agentId`; if their model is `text` while the turn is `native`, the turn's native dispatch still applies (single-turn mode assumption — configure all contacted Agents' models consistently for now).
 - Effective runtime permissions are derived from the current Agent's `agent.json` via `AgentRegistryEntry.platformTools` and `AgentRegistryEntry.workspaceAccess`.
 - `skill_load` and `action_call` remain available by default because Skill installation/enablement is player/card-author controlled. Skill executor side effects still obey the current Agent's platform workspace permissions.
 - `agent_call` is advertised and executable only when the current Agent's `agent_call` platform tool is enabled and normal contact/depth/budget checks also allow it.

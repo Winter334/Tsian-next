@@ -61,7 +61,9 @@
           <ModelParamsFields
             :parameters="params"
             :kind="kind"
+            :tool-call-mode="toolCallMode"
             @update:parameters="params = $event"
+            @update:tool-call-mode="toolCallMode = $event"
           />
         </div>
       </div>
@@ -100,6 +102,7 @@ import {
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
   type BrowserAiProviderPreset,
+  type BrowserAiToolCallMode,
 } from "@/config/ai"
 
 const props = defineProps<{
@@ -110,7 +113,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:open", value: boolean): void
-  (e: "confirm", payload: { id: string; parameters: BrowserAiModelParameters }): void
+  (e: "confirm", payload: { id: string; parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void
 }>()
 
 const modelId = ref("")
@@ -120,6 +123,7 @@ const fetchError = ref("")
 const error = ref("")
 const inputRef = ref<HTMLInputElement | null>(null)
 const params = ref<BrowserAiModelParameters>(createDefaultBrowserAiModelParameters())
+const toolCallMode = ref<BrowserAiToolCallMode>("text")
 
 const canFetch = computed(
   () => Boolean(props.preset?.baseUrl.trim() && props.preset?.apiKey.trim()),
@@ -134,6 +138,7 @@ watch(
       fetchError.value = ""
       error.value = ""
       params.value = createDefaultBrowserAiModelParameters()
+      toolCallMode.value = "text"
       nextTick(() => inputRef.value?.focus())
     }
   },
@@ -187,7 +192,7 @@ function confirm(): void {
     reasoningEffort: params.value.reasoningEffort,
     customRequestParamsText: params.value.customRequestParamsText,
   }
-  emit("confirm", { id, parameters: normalized })
+  emit("confirm", { id, parameters: normalized, toolCallMode: toolCallMode.value })
   emit("update:open", false)
 }
 </script>

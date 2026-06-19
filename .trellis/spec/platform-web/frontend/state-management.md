@@ -56,6 +56,7 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Provider presets currently support only OpenAI-compatible APIs: `baseUrl`, `apiKey`, provider default model, fetched model IDs, and model parameters.
 - Model parameters are provider-local settings. Supported request fields include `max_tokens`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `reasoning_effort`, and custom JSON-object request params.
 - `contextWindow` is saved as model capability/budget metadata only until a token-counting prompt-truncation task implements enforcement.
+- `toolCallMode: "native" | "text"` is a **required** field on `BrowserAiModelConfig` (model layer, not preset or parameters) and a required field on the resolved `BrowserAiConfig`. No `auto` mode. It selects how the Agent Runtime asks the model to invoke tools: `native` uses API-native function calling (OpenAI `tools`/`tool_calls`, Gemini `functionDeclarations`/`functionCall`, Claude `tools`/`tool_use`) and provides structured text/tool-call boundaries; `text` uses the legacy `<tsian-tool-call>` text-embedding protocol and is the conservative default. Prototype-period destructive update: `normalizeModelConfig` drops a model missing/invalid `toolCallMode` (no migration fallback); `validateBrowserPlatformConfigDraft` throws on an invalid value; `createBrowserAiModelConfig` defaults new models to `text`. `resolveProviderConfig` threads the primary model's `toolCallMode` into `BrowserAiConfig`; the env fallback config defaults to `text`.
 - Custom request params must be a JSON object and must not override runtime-owned/protected fields such as `model`, `messages`, `stream`, `apiKey`, `baseUrl`, or `headers`.
 - `getBrowserAiConfig()` returns only the resolved active runtime config needed for a model call: provider identity/name when available plus `baseUrl`, `apiKey`, `model`, and normalized model parameters.
 - When no complete local provider is active, `getBrowserAiConfig()` may fall back to complete `VITE_AI_*` environment values.
@@ -81,6 +82,8 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Numeric model parameter outside its supported range -> saving provider config fails with a clear field-specific error.
 - Custom request params are invalid JSON or not an object -> saving provider config fails with a clear error.
 - Custom request params include a protected key -> saving provider config fails and the key is named in the error.
+- Stored model config missing/invalid `toolCallMode` -> `normalizeModelConfig` drops the model (prototype-period destructive update; the user must reconfigure it). A preset left with zero models after this drop is caught by the existing "at least one model" validation.
+- `toolCallMode` value other than `native`/`text` at save time -> `validateBrowserPlatformConfigDraft` throws "工具调用模式必须是「原生」或「文本」".
 - Per-Agent `providerPresetId` is blank/whitespace -> `resolveBrowserAiConfigForProviderId` returns `null` -> the call falls back to the global active provider.
 - Per-Agent selected preset id no longer exists in saved presets (deleted by the player, or a card distributed to a player without that preset) -> `resolveBrowserAiConfigForProviderId` returns `null` -> falls back to the global active provider without crashing.
 

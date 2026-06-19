@@ -65,11 +65,18 @@ import {
 import { createDebugBridge, createPlayFrontendBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { LocalRuntimeEngine } from "../runtime-host"
-import { generateAssistantReply, getAiDebugRecords } from "../runtime-host/ai"
 import {
+  generateAssistantReply,
+  generateAssistantReplyNative,
+  getAiDebugRecords,
+  type RuntimeChatMessage,
+} from "../runtime-host/ai"
+import {
+  getBrowserAiConfig,
   listBrowserAiProviderPresetOptions,
   resolveBrowserAiConfigForProviderId,
   type BrowserAiConfig,
+  type BrowserAiToolCallMode,
 } from "../config/ai"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
@@ -1533,6 +1540,18 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 ...(agentConfig ? { config: agentConfig } : {}),
               })
             },
+            async callModelNative(messages, options, tools) {
+              const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+              return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+                debugLabel: options.debugLabel,
+                signal: options.signal,
+                tools,
+                ...(agentConfig ? { config: agentConfig } : {}),
+              })
+            },
+            toolCallMode: resolveAgentModelConfig("master", providerPresetMap)?.toolCallMode
+              ?? getBrowserAiConfig()?.toolCallMode
+              ?? "text",
             runPlatformAction: createAgentRuntimePlatformActionRunner(
               activeWorkspaceTransaction,
               activeSaveId,
@@ -1730,6 +1749,10 @@ export async function runAssistantChat(
   const providerPresetMap = buildAgentProviderPresetMap(
     activeWorkspaceTransaction.workspaceFiles,
   )
+  const localAssistantToolCallMode =
+    resolveAgentModelConfig(agentId, providerPresetMap)?.toolCallMode
+    ?? getBrowserAiConfig()?.toolCallMode
+    ?? "text"
 
   try {
     const result = await runAgentRuntimeTurn(
@@ -1750,6 +1773,16 @@ export async function runAssistantChat(
             ...(agentConfig ? { config: agentConfig } : {}),
           })
         },
+        async callModelNative(messages, options, tools) {
+          const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+          return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+            debugLabel: options.debugLabel,
+            signal: options.signal,
+            tools,
+            ...(agentConfig ? { config: agentConfig } : {}),
+          })
+        },
+        toolCallMode: localAssistantToolCallMode,
         runPlatformAction: createAgentRuntimePlatformActionRunner(
           activeWorkspaceTransaction,
           activeSaveId ?? "",
@@ -2773,6 +2806,19 @@ export async function updateLocalAssistantProviderPreset(
   }
 
   await saveLocalAssistantFiles(files)
+}
+
+/**
+ * Resolve the local assistant agent's currently effective tool-call mode.
+ * Mirrors the resolution used by the chat turn: the selected provider preset's
+ * primary model `toolCallMode`, falling back to the platform-global active
+ * provider, then to `"text"`. Used by AssistantView to surface the active mode.
+ */
+export async function getLocalAssistantToolCallMode(): Promise<BrowserAiToolCallMode> {
+  const files = await loadLocalAssistantFiles()
+  const presetMap = buildAgentProviderPresetMap(files)
+  const resolved = resolveAgentModelConfig(LOCAL_ASSISTANT_AGENT_ID, presetMap)
+  return resolved?.toolCallMode ?? getBrowserAiConfig()?.toolCallMode ?? "text"
 }
 
 export async function listPlatformWorkspaceDirectory(input: {

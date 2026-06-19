@@ -17,7 +17,9 @@
           <ModelParamsFields
             :parameters="params"
             :kind="kind"
+            :tool-call-mode="toolCallMode"
             @update:parameters="params = $event"
+            @update:tool-call-mode="toolCallMode = $event"
           />
         </div>
 
@@ -50,6 +52,7 @@ import ModelParamsFields from "./ModelParamsFields.vue"
 import {
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
+  type BrowserAiToolCallMode,
 } from "@/config/ai"
 
 const props = defineProps<{
@@ -57,14 +60,16 @@ const props = defineProps<{
   modelId: string
   kind: BrowserAiProviderKind
   initialParameters: BrowserAiModelParameters
+  initialToolCallMode: BrowserAiToolCallMode
 }>()
 
 const emit = defineEmits<{
   (e: "update:open", value: boolean): void
-  (e: "confirm", parameters: BrowserAiModelParameters): void
+  (e: "confirm", payload: { parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void
 }>()
 
 const params = ref<BrowserAiModelParameters>({ ...props.initialParameters })
+const toolCallMode = ref<BrowserAiToolCallMode>(props.initialToolCallMode)
 const error = ref("")
 
 watch(
@@ -73,6 +78,7 @@ watch(
     if (isOpen) {
       // Fresh copy so cancel discards edits.
       params.value = { ...props.initialParameters }
+      toolCallMode.value = props.initialToolCallMode
       error.value = ""
     }
   },
@@ -83,7 +89,7 @@ function cancel(): void {
 }
 
 function confirm(): void {
-  emit("confirm", params.value)
+  emit("confirm", { parameters: params.value, toolCallMode: toolCallMode.value })
   emit("update:open", false)
 }
 </script>

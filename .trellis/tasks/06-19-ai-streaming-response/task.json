@@ -1,8 +1,8 @@
 {
   "id": "ai-streaming-response",
   "name": "ai-streaming-response",
-  "title": "AI 回复流式输出（SSE 逐字渲染）",
-  "description": "将 generateAssistantReply 从一次性 Promise<string> 改为流式增量输出，对话界面逐字渲染。涉及 adapter 层三家 SSE 解析、fetch 改 ReadableStream、调用方与 UI 层增量消费。",
+  "title": "AI 原生工具调用与流式输出",
+  "description": "父任务：将工具调用从文本嵌入协议（<tsian-tool-call>）升级为 API 原生 function calling，并在此基础上实现流式输出（SSE 逐字渲染）。原生工具调用提供结构化的 text/tool_call 事件边界，使真流式成为可能（文本实时推 UI、工具调用后台累积，无回滚）。文本工具协议保留为端点不支持原生工具时的降级方案（降级时不流式）。两个子任务：原生工具调用（先）、流式输出（后，依赖前者）。",
   "status": "pending",
   "dev_type": "feature",
   "scope": null,
@@ -18,10 +18,13 @@
   "commit": null,
   "pr_url": null,
   "subtasks": [],
-  "children": [],
+  "children": [
+    "06-19-native-tool-calling",
+    "06-19-ai-streaming-sse"
+  ],
   "parent": null,
   "relatedFiles": [],
-  "notes": "来源：06-19-control-panel-rework 收尾时用户确认流式为后续任务。当前 generateAssistantReply 返回 Promise<string>，stream 被列入 PROTECTED_CUSTOM_REQUEST_KEYS 禁用。",
+  "notes": "来源：06-19-control-panel-rework 收尾时用户确认流式为后续任务。讨论后确定：流式依赖原生工具调用（文本协议无法干净分离 text/tool 边界），故升级为父任务拆两个子任务。原生工具调用先做（子1），流式后做（子2，依赖子1的结构化边界）。父任务本身不做实现，只持有需求集 + 子任务映射 + 集成验收。",
   "meta": {
     "source_task": "06-19-control-panel-rework"
   }
