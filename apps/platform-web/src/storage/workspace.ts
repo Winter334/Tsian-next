@@ -315,7 +315,7 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "Skills are on-demand capability packages. Shared Skills live under `skills/<skill>/SKILL.md`; Agent-local Skills live under `agents/<agent>/skills/<skill>/SKILL.md`.",
   "",
-  "Only Skill names, descriptions, triggers, and applicability belong in the eager Skill Index. Detailed instructions load through `skill_load` only when needed.",
+  "Only Skill names, descriptions, triggers, applicability, and action summaries belong in the eager Skill Index. Detailed instructions are injected by the framework after `use_skill` declares intent; full SKILL.md never loads eagerly.",
   "",
   "Skill actions must stay gated behind a loaded Skill. Gameplay-specific behavior belongs in Skills and workspace conventions instead of hardcoded platform tools.",
   "",

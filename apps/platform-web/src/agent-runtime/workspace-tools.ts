@@ -1924,11 +1924,11 @@ async function executeRuntimeWorkspaceToolCall(
 /**
  * Tool names that are safe to run in parallel within a single tool-loop round:
  * all are read-only, stateless, and have no shared mutable budget (unlike
- * `agent_call`'s callCount/depth budget). `action_call` is kept serial as a
- * whole because resolving its executor type requires a skill load + action
- * resolution up front, and its builtin/workspace_operation.read cases are
- * either millisecond-fast or rarely the model's primary parallel pattern
- * (the model prefers the top-level `workspace.read` for multi-file queries).
+ * `agent_call`'s callCount/depth budget). `run_script` is kept serial as a
+ * whole because it runs a browser_script (side effects + bounded timeout) and
+ * resolving its action requires a use_skill activation + action resolution up
+ * front. `use_skill` is parallel-safe: it only registers actions into session
+ * state and does not mutate the workspace.
  * See `06-19-ai-agent-process-visible` design §2 (scheme A).
  */
 const PARALLEL_TOOL_NAMES = new Set<string>([
@@ -1949,7 +1949,7 @@ export async function executeRuntimeWorkspaceToolCalls(
   calls: ParsedRuntimeWorkspaceToolCall[],
 ): Promise<RuntimeWorkspaceToolObservation[]> {
   // Split into a parallel group (read-only, stateless) and a serial group
-  // (writes, agent_call, action_call, and unparseable calls). Observations are
+  // (writes, agent_call, run_script, and unparseable calls). Observations are
   // collected in a Map keyed by the original call index so the returned array
   // stays aligned with `calls` — the native loop relies on this to pair each
   // observation with `result.toolCalls[index].id` when threading tool messages.
