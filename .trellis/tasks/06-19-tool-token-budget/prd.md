@@ -2,8 +2,12 @@
 
 > 父任务：`06-19-tool-runtime-performance`。**依赖子1（tool-skill-decouple）**——子1 改了工具循环形态（use_skill 注入、run_script 执行），token 预算机制需在新循环上实现。
 
-> **⚠️ 状态：搁置，待重写（2026-06-19）**
-> 规划讨论中发现本任务原设想的"工具循环内 token 压缩"建立在错误假设上（以为历史对话是上下文大头、压缩可只在 turn 内做）。经厘清，AIRP 的 master agent 上下文生命周期 + 压缩持久化是更底层的基础，需先落实。本任务的 design.md / implement.md 已偏离，保留作历史参考，**待新基础任务 `agent-session-context-lifecycle` 完成后重写**。下方"讨论结论沉淀"记录真实范围，供重写时依据。
+> **⚠️ 状态：待重写（2026-06-20 更新）—— 新会话从此接续**
+> 规划讨论中发现本任务原设想的"工具循环内 token 压缩"建立在错误假设上（以为历史对话是上下文大头、压缩可只在 turn 内做）。经厘清，AIRP 的 master agent 上下文生命周期 + 压缩持久化是更底层的基础，需先落实。
+>
+> **底层任务 `agent-session-context-lifecycle` 已实现并提交**（commit 05d9da2，master agent 上下文记录与 saveHistory 分离、context.json 持久化、跨 turn 稳态、85% 压缩、叙事梗概摘要）。本任务现在可以在其上重写。
+>
+> **新会话接续点**：重写本任务的 design.md + implement.md（当前的已过时，保留作历史参考）。真实范围见下方"讨论结论沉淀"——在新基础上做"工具循环内 tool 交互体积兜底 + 去 maxToolRoundsPerAgent 轮次限制"。重写时可复用 context-lifecycle.ts 的 token 估算函数（estimateTokenCount/resolveTokenBudget），考虑抽取共享 util 或直接引用。
 
 ---
 
