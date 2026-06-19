@@ -183,7 +183,7 @@ if (!frontend) {
 - `skill-registry` returns lightweight `SkillRegistryEntry[]` built from `skills/*/SKILL.md` and `agents/*/skills/*/SKILL.md`.
 - `skill-detail` returns zero or one `SkillDetailEntry` for a selected `SKILL.md` path.
 - Default blank Game Card content may include `agents/<agent>/agent.json`, `agents/<agent>/AGENT.md`, `agents/<agent>/SOUL.md`, `agents/studio-assistant/agent.json`, a local `framework-knowledge` Skill, and `docs/tsian-framework-knowledge.md`; default save runtime data includes assistant notes/session under `save/agents/studio-assistant/`.
-- Registry entries include path and metadata fields only. Do not expose full skill instructions, actions, schemas, examples, scripts, or references through the registry query.
+- Registry entries include path, metadata, and lightweight `SkillActionSummary[]` (name + description + `browser_script` executor type) only. Do not expose full skill instructions, full action declarations (inputSchema/outputSchema/executor path), schemas, examples, scripts, or references through the registry query.
 - `SkillRegistryEntry.name` and `description` are the model-facing Skill identifiers. Build them from frontmatter `name` / `description`, with compatibility fallbacks to `id` / `summary` / path-derived values.
 - Keep `id`, `title`, `summary`, and `path` for compatibility with bridge/UI/debug consumers.
 - Agent context skill indexes must remain lightweight `SkillRegistryEntry[]`; do not load `SKILL.md` bodies through `agent-context`.
@@ -217,7 +217,7 @@ if (!frontend) {
 - Base: an Agent without `SOUL.md`, `enabledSkills`, or `disabledSkills` still loads through safe defaults when `agent.json` and `AGENT.md` exist.
 - Base: `skill-detail` for a valid skill with no sibling resources returns one detail entry with `resources: []`.
 - Bad: treating `AGENT.md` frontmatter as the Agent configuration source; Agent machine configuration belongs in `agent.json`.
-- Bad: registry query returns `SKILL.md` body text or parsed `actions`; this breaks progressive disclosure.
+- Bad: registry query returns `SKILL.md` body text or full parsed action declarations (inputSchema/outputSchema/executor path); this breaks progressive disclosure. Lightweight `SkillActionSummary` (name + description + `browser_script` executor type) IS allowed in `SkillRegistryEntry.actions` so the model can see which actions a Skill offers before `use_skill`.
 - Bad: `skill-detail` returns `references/*`, `examples/*`, `actions/*`, `schemas/*`, or `scripts/*` content by default; resource contents must be loaded separately by explicit workspace reads or a future resource query.
 
 ### 6. Tests Required
@@ -367,26 +367,28 @@ interface RuntimeWorkspaceToolCall {
 }
 ```
 
-- Skill actions still route through `action_call`:
+- Skill actions route through `run_script`, which only executes `browser_script` actions:
 
 ```json
 {
   "name": "example_action",
+  "description": "Run a trusted Skill-local browser script through the Tsian SDK.",
   "inputSchema": { "type": "object" },
   "outputSchema": { "type": "object" },
   "executor": {
-    "type": "workspace_operation",
-    "operation": "patch",
-    "scope": "save-runtime",
-    "path": "save/world/notes.md"
+    "type": "browser_script",
+    "path": "scripts/run.js",
+    "timeoutMs": 10000
   }
 }
 ```
 
+> After the tool/skill decouple task, `browser_script` is the **only** supported action executor. `builtin`, `platform_action`, and `workspace_operation` executor types are rejected at parse time (`ACTION_EXECUTOR_INVALID`) and registry build (reported in `actionDeclarationErrors`). Single workspace operations use the top-level `workspace.read/write/...` tools directly; multi-step workspace orchestration is written as a `browser_script` that chains SDK calls.
+
 ### 3. Contracts
 
 - Add a platform runtime primitive only when the ability is small, stable, cross-playstyle, and requires runtime internals such as Agent registry, Skill registry, context assembly, model invocation, trace, checkpoint behavior, workspace indexes, or tool/session state.
-- Keep primitives few. Current examples are `skill_load`, generic workspace operations exposed as `workspace.read/list/search/...`, `action_call`, and contacts-gated `agent_call`.
+- Keep primitives few. Current examples are `use_skill` (declare intent + framework injects full SKILL.md next round), `run_script` (execute a Skill's `browser_script` action), generic workspace operations exposed as `workspace.read/list/search/...`, and contacts-gated `agent_call`.
 - Add a platform controlled action / executor when the ability performs side effects or needs platform execution control such as scoped workspace mutation, browser-limited script execution, remote HTTP, WASM, abort/timeout, result normalization, or frontend-data mutation.
 - Add a Skill action when the ability is gameplay, world, memory, rules, narrative, style, or author-policy specific, or when it packages several primitive/controlled actions into a reusable business operation.
 - Keep gameplay data structures in Runtime Workspace files, README files, and schemas. Platform code should not hardcode world-state semantics when a Skill plus workspace schema can own them.
@@ -396,25 +398,28 @@ interface RuntimeWorkspaceToolCall {
 
 - New runtime primitive without runtime-internal dependency -> reject in review; implement as Skill action.
 - New platform action that mutates workspace/state without allow-listing and input validation -> reject in review.
-- New Skill action that bypasses loaded Skill gating -> reject in review.
+- New Skill action that bypasses `use_skill` activation gating -> reject in review.
+- New Skill action declaring a non-`browser_script` executor (`builtin`/`platform_action`/`workspace_operation`) -> reject in review; only `browser_script` is supported.
 - New platform code that hardcodes gameplay-specific state semantics -> reject in review unless a task explicitly promotes that semantic to platform scope.
 - New tool/action that can produce large raw prompt/context output -> require summary behavior, pagination, or explicit read-by-path semantics.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: `agent_call` as a contacts-gated runtime primitive, because it needs Agent registry, target context assembly, model invocation, call-depth limits, and trace.
-- Good: a Skill action with a `workspace_operation` executor that narrows operation, scope, and path before calling the generic workspace operation layer.
-- Good: `relationship-maintainer` as a Skill that reads workspace schemas and calls controlled workspace writes.
-- Base: a Skill action using built-in `validation` to declare a high-level business operation before a real executor exists.
+- Good: a Skill action with a `browser_script` executor that chains workspace SDK reads/writes inside the script to orchestrate a multi-step business operation.
+- Good: `relationship-maintainer` as a Skill that reads workspace schemas and calls controlled workspace writes (either top-level `workspace.write` for single ops, or a `browser_script` for multi-step).
+- Base: a Skill action declaring `browser_script` for a single read+transform+write flow; the model uses `run_script` once instead of repeated top-level tool calls.
 - Bad: adding `update_relationship_score` as a platform runtime tool; relationship semantics belong to Skill + workspace schema.
+- Bad: a Skill action declaring a `workspace_operation` or `builtin` executor; these types are no longer supported — use `browser_script` or guide the model to top-level workspace tools.
 - Bad: exposing a broad browser/remote/script executor directly as an always-visible runtime tool without Skill gating or execution controls.
 
 ### 6. Tests Required
 
 - Assert new runtime primitives validate arguments and return structured observations on invalid input.
 - Assert new platform actions are allow-listed before Agent Runtime can invoke them.
-- Assert Skill actions remain unavailable until their declaring Skill is loaded.
-- Assert gameplay-specific mutations flow through Skill action declarations and controlled platform actions, not direct platform semantic helpers.
+- Assert Skill actions remain unavailable until their declaring Skill is activated via `use_skill`.
+- Assert Skill actions declaring non-`browser_script` executors are rejected with `ACTION_EXECUTOR_INVALID` and reported in registry `actionDeclarationErrors`.
+- Assert gameplay-specific mutations flow through Skill `browser_script` actions and top-level workspace tools, not direct platform semantic helpers.
 - Assert trace records the primitive/action boundary without storing large raw payloads by default.
 
 ### 7. Wrong vs Correct
@@ -433,10 +438,9 @@ RUNTIME_WORKSPACE_TOOL_NAMES.updateRelationship = "update_relationship_score"
   "description": "Update relationship state according to this world's schema.",
   "inputSchema": { "type": "object" },
   "executor": {
-    "type": "workspace_operation",
-    "operation": "patch",
-    "scope": "save-runtime",
-    "path": "save/world/relationship-state.json"
+    "type": "browser_script",
+    "path": "scripts/update_relationship.js",
+    "timeoutMs": 10000
   }
 }
 ```
@@ -524,7 +528,7 @@ await runAgentRuntimeTurn({
 
 ```md
 <tsian-tool-call>
-{"name":"skill_load","arguments":{"name":"prose-style"}}
+{"name":"use_skill","arguments":{"name":"prose-style"}}
 </tsian-tool-call>
 ```
 
@@ -538,8 +542,8 @@ interface RuntimeWorkspaceToolCall {
 ```
 
 - Supported tool names:
-  - `skill_load`
-  - `action_call`
+  - `use_skill`
+  - `run_script`
   - `agent_call`
   - `workspace.read`
   - `workspace.list`
@@ -584,7 +588,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - The Agent Runtime supports two tool-call modes, selected per model via `BrowserAiModelConfig.toolCallMode` (threaded into `BrowserAiConfig.toolCallMode` and the `AgentRuntimeCapabilities.toolCallMode` field):
   - `text` (default): the legacy `<tsian-tool-call>` text-embedding protocol. `callModel` returns `Promise<string>`; the tool loop parses calls with `parseRuntimeWorkspaceToolCalls` and threads observations back as user messages. This path is unchanged.
   - `native`: API-native function calling. The runtime dispatches `callAgentModelWithWorkspaceToolsNative` only when `capabilities.toolCallMode === "native"` and the host provides `callModelNative`. `callModelNative(messages: RuntimeChatMessage[], options, tools: ToolSchema[]): Promise<ModelCallResult>` sends the provider's native `tools` field and structured messages (assistant `toolCalls` + `tool` observation role with `toolCallId`), and returns a structured `ModelCallResult`. `executeRuntimeWorkspaceToolCalls` is reused unchanged: `NativeToolCall[]` are wrapped into `ParsedRuntimeWorkspaceToolCall` (`nativeToolCallsToParsed`) so tool execution stays single-implementation.
-- `buildEnabledToolSchemas` reuses the same gating as the text-protocol prompt (`AGENT_PLATFORM_TOOL_NAMES`, `platformToolEnabled`, contacts + `allowAgentCall`): `skill_load`/`action_call` always; `agent_call` only with contacts + `agent_call` enabled; workspace read tools under `workspace_read`; workspace write/delete/move/validate under `workspace_write`. Tool `description` text is declarative (what it does + key parameter constraints), not tutorial-style.
+- `buildEnabledToolSchemas` reuses the same gating as the text-protocol prompt (`AGENT_PLATFORM_TOOL_NAMES`, `platformToolEnabled`, contacts + `allowAgentCall`): `use_skill`/`run_script` always; `agent_call` only with contacts + `agent_call` enabled; workspace read tools under `workspace_read`; workspace write/delete/move/validate under `workspace_write`. Tool `description` text is declarative (what it does + key parameter constraints), not tutorial-style.
 - `buildWorkspaceToolInstructions` branches on `toolCallMode`: native mode removes the `<tsian-tool-call>` format teaching (the API owns tool-call formatting) and tells the model to use the provided function tools; text mode keeps the existing format teaching unchanged.
 - Provider adapters (`runtime-host/ai.ts`) extend `ProviderAdapter` with `buildNativeRequestBody(config, messages, tools)` and `extractNativeResult(payload): ModelCallResult`. OpenAI/DeepSeek use `tools:[{type:"function",function:{...}}]`, `role:"tool"`+`tool_call_id`, parse `choices[0].message.{content,tool_calls}`+`finish_reason`. Gemini uses `tools:[{functionDeclarations}]`, `functionCall`/`functionResponse` parts, parses `candidates[0].content.parts[]`+`finishReason`. Claude uses `tools:[{name,description,input_schema}]`, `tool_use`/`tool_result` blocks, parses `content[]`+`stop_reason`. `generateAssistantReplyNative` mirrors `generateAssistantReply`'s fetch/debug structure.
 - Streaming (SSE) is native-mode only and lives in a parallel `streamAssistantReplyNative(messages, options): Promise<ModelCallResult>` plus five adapter methods: `buildStreamUrl`, `buildStreamRequestBody`, `extractStreamDelta`, `extractStreamToolCalls`, `extractStreamFinish`. OpenAI/Claude inject `stream: true` after the custom-params merge (so a user `stream` value cannot override the adapter); Gemini switches the URL to `:streamGenerateContent?alt=sse` and leaves the body unchanged. Claude SSE is event-based: the stream loop maintains `currentEvent` and dispatches `content_block_delta`/`content_block_start`(tool_use)/`input_json_delta`/`message_delta` to the right extractor. OpenAI tool-call arguments stream incrementally keyed by `index`; Gemini `functionCall` arrives complete. The stream loop pushes every text delta to `onDelta` (thought-round text included — there is no `onReset`; the whole turn streams) and accumulates tool calls in the background. A non-`text/event-stream` response falls back to one-shot `response.json()` + `extractNativeResult` (no `onDelta`). `config/ai.ts` `PROTECTED_CUSTOM_REQUEST_KEYS` no longer includes `"stream"` because the adapter owns it.
@@ -592,24 +596,26 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - `AiChatMessage` (contracts) is unchanged. `RuntimeChatMessage` is an internal type; debug/transcript records downgrade tool observations to `AiChatMessage` (tool role -> user + `[tool:id]` observation text).
 - The `toolCallMode` capability field is resolved once per turn from the entry/local-assistant agent's model config and drives the whole turn's dispatch. Delegated `agent_call` targets resolve their own model config inside the `callModelNative` closure via `options.agentId`; if their model is `text` while the turn is `native`, the turn's native dispatch still applies (single-turn mode assumption — configure all contacted Agents' models consistently for now).
 - Effective runtime permissions are derived from the current Agent's `agent.json` via `AgentRegistryEntry.platformTools` and `AgentRegistryEntry.workspaceAccess`.
-- `skill_load` and `action_call` remain available by default because Skill installation/enablement is player/card-author controlled. Skill executor side effects still obey the current Agent's platform workspace permissions.
+- `use_skill` and `run_script` remain available by default because Skill installation/enablement is player/card-author controlled. Skill executor side effects still obey the current Agent's platform workspace permissions.
 - `agent_call` is advertised and executable only when the current Agent's `agent_call` platform tool is enabled and normal contact/depth/budget checks also allow it.
 - `workspace_read` maps to generic `workspace.list`, `workspace.search`, and `workspace.read`.
 - `workspace_write` maps to generic `workspace.diff`, `workspace.patch`, `workspace.write`, `workspace.move`, `workspace.delete`, and `workspace.validate`.
-- `skill_load` arguments: `{ name: string }`.
-- `skill_load` resolves only against the current Agent's visible `skillIndex`.
-- `skill_load` must not load a Skill that exists on disk but was removed from the current Agent's `skillIndex` by `disabledSkills` or a non-matching non-empty `enabledSkills` list.
-- `skill_load` should match `SkillRegistryEntry.name` first, then fall back to `id` for compatibility.
+- `use_skill` arguments: `{ name: string }`.
+- `use_skill` resolves only against the current Agent's visible `skillIndex`.
+- `use_skill` must not activate a Skill that exists on disk but was removed from the current Agent's `skillIndex` by `disabledSkills` or a non-matching non-empty `enabledSkills` list.
+- `use_skill` should match `SkillRegistryEntry.name` first, then fall back to `id` for compatibility.
 - If a local and shared Skill share a name, prefer the current Agent's local Skill.
-- `skill_load` success returns the loaded Skill's `SKILL.md` entry content and minimal metadata; it must not return a resource index or resource file contents by default.
-- `skill_load` parses `tsian-actions` fenced JSON blocks from the loaded `SKILL.md` body and registers declared actions only for the same Agent's current tool loop.
-- Declared Skill actions are not included in eager Skill Index or `agent-context`.
-- `action_call` arguments: `{ skill: string, action: string, input?: Record<string, unknown> }`.
-- `action_call` requires that the named Skill has already been loaded by the same Agent during the same tool loop.
-- `action_call` validates action availability and input before invoking any executor.
-- `action_call` routes to the action declaration's executor through the runtime action executor registry.
-- `action_call` checks the lightweight executor-class policy before running supported executors. The default code-level policy allows `builtin`, `platform_action`, `workspace_operation`, and `browser_script`; injected policy may deny them for tests or future host policy. Do not add Settings UI, localStorage persistence, runtime prompts, or per-Skill trust state for this slice.
-- `action_call` may validate successful executor output when the loaded action declares optional `outputSchema`. Actions without `outputSchema` keep existing output behavior.
+- `use_skill` is the B-scheme two-step flow's first step: it declares intent, parses `tsian-actions` fenced JSON blocks from the `SKILL.md` body, and registers declared actions into the current tool loop's session state. Its observation returns only a lightweight confirmation `{ skill, activated: true, actions: [{ name, description, executorType, executable }], actionDeclarationErrors? }` — it must NOT return the full `SKILL.md` content, a resource index, or resource file contents.
+- After a round in which `use_skill` activated new skills, the framework injects each newly-activated skill's full `SKILL.md` as an extra user message (after that round's tool observations, before the next model call). Injection is de-duplicated via `RuntimeWorkspaceToolSessionState.injectedSkillPaths` so repeated `use_skill` on the same skill does not re-inject. The model sees the full SKILL.md in the next round's context without spending a tool-result round on it.
+- `use_skill` is parallel-safe (only mutates session state, not workspace) and listed in `PARALLEL_TOOL_NAMES`.
+- Declared Skill action summaries (name + description + `browser_script` executor type) are parsed at registry build time into `SkillRegistryEntry.actions` so the model can see which actions a Skill offers before `use_skill`. Full action declarations (inputSchema/outputSchema/executor path) are NOT in the eager Skill Index or `agent-context` — progressive disclosure is preserved.
+- `run_script` arguments: `{ skill: string, script: string, input?: Record<string, unknown> }`. `script` is the action name returned by `use_skill`.
+- `run_script` requires that the named Skill has already been activated via `use_skill` by the same Agent during the same tool loop; otherwise `SKILL_NOT_ACTIVATED`.
+- `run_script` validates action availability, executor type (`browser_script` only — otherwise `ACTION_NOT_BROWSER_SCRIPT`), and input before invoking the executor.
+- `run_script` routes to the action's `browser_script` executor through `executeSkillAction`, which resolves the script path relative to the declaring Skill directory and runs it via the injected `runBrowserScript` capability.
+- `run_script` checks the lightweight executor-class policy before running. The default code-level policy allows `browser_script`; injected policy may deny it for tests or future host policy (subtask 4 wires the actual host policy). Do not add Settings UI, localStorage persistence, runtime prompts, or per-Skill trust state for this slice.
+- `run_script` may validate successful executor output when the action declares optional `outputSchema`. Actions without `outputSchema` keep existing output behavior.
+- `run_script` is kept serial (not in `PARALLEL_TOOL_NAMES`) because `browser_script` has side effects and a bounded timeout.
 - `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene" }`.
 - `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts, the current tool loop allows Agent calls, and the current Agent's platform tool config enables `agent_call`.
 - `agent_call` validates the target against the caller Agent's `contacts`; contacts are a runtime stability boundary, not a full security model.
@@ -618,73 +624,27 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
 - Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxCallsPerTurn=4`, `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`, and `maxToolRoundsPerAgent=3`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state.
 - Delegated Agents derive their own runtime permissions from the target Agent's `agent.json`; the caller Agent's permissions must not leak into the target Agent step.
-- Delegated Agents may use their own exposed generic workspace operations, `skill_load`, `action_call` for loaded Skills, and limited nested `agent_call` inside their own tool loop.
+- Delegated Agents may use their own exposed generic workspace operations, `use_skill`/`run_script` for activated Skills, and limited nested `agent_call` inside their own tool loop.
 - Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, the root entry agent at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
 - The root turn shares one `agent_call` budget across the entry agent and nested delegated steps.
-- Missing action executor declarations use `{ type: "builtin", name: "validation" }`.
-- Built-in executors are side-effect-free:
-  - `validation`: returns `status: "validated"` and `output: null`.
-  - `echo`: returns `status: "executed"` and echoes validated `input` as `output`.
-- `platform_action` executors route through an injected `runPlatformAction` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, or storage helpers. Platform actions remain available for non-workspace host actions and legacy-controlled host capabilities, not as the primary workspace edit surface.
-- `workspace_operation` declarations require a supported `operation`, may narrow `scope` and `path`, and merge validated action input into a `WorkspaceOperationRequest`.
-- Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing or invalid Agent `workspaceAccess.level` in `agent.json` defaults to `1`.
-- Skill `workspace_operation` executors, Agent Runtime `platform_action` workspace requests, and browser script SDK workspace methods must receive the same current Agent context and exposed workspace operations. Action-local declarations must not add an operation that the Agent's `workspace_read` / `workspace_write` groups disabled.
-- Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
-- Successful turns commit the staged workspace final state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
-- Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets. `.tsian/*` is platform-owned metadata space for trace/checkpoint/index/cache behavior.
-- Frontend bridge `platform.runAction` generic workspace actions such as `workspace.write`, `workspace.patch`, and `workspace.delete` remain immediate platform actions and are not part of the Agent Runtime turn transaction.
+- Action executor declarations MUST specify `{ type: "browser_script", path: string, timeoutMs?: number }`. Missing executor or non-`browser_script` types (`builtin`/`platform_action`/`workspace_operation`) are rejected with `ACTION_EXECUTOR_INVALID` at parse time and reported in registry `actionDeclarationErrors`.
 - `browser_script` executors route through an injected `runBrowserScript` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, storage helpers, or Worker code.
 - `browser_script` declarations require `{ type: "browser_script", path: string, timeoutMs?: number }`; `path` resolves relative to the declaring Skill directory and must stay under that directory.
 - Controlled async executors have bounded timeout/abort behavior. `timeoutMs` must be positive and must not exceed the platform maximum.
-- The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/diff/patch/write/move/delete/validate, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output.
+- The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/diff/patch/write/move/delete/validate, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output. Multi-step workspace orchestration (read -> transform -> write) is written as a `browser_script` that chains SDK calls; the model invokes it with one `run_script` call.
 - The first browser script slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs. Worker hard limits still apply, and this is a third-party trust boundary rather than a guarantee that arbitrary third-party code is safe.
-- `action_call` success returns a structured observation with `status`, `executor`, `input`, and `output`.
+- Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing or invalid Agent `workspaceAccess.level` in `agent.json` defaults to `1`.
+- Browser script SDK workspace methods must receive the same current Agent context and exposed workspace operations as the top-level workspace tools. A `browser_script` must not perform an operation that the Agent's `workspace_read` / `workspace_write` groups disabled.
+- Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
+- Successful turns commit the staged workspace final state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
+- Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets. `.tsian/*` is platform-owned metadata space for trace/checkpoint/index/cache behavior.
+- Frontend bridge `platform.runAction` generic workspace actions such as `workspace.write`, `workspace.patch`, and `workspace.delete` remain immediate platform actions and are not part of the Agent Runtime turn transaction. (The Agent Runtime's `runPlatformAction` action-executor capability was removed in the tool/skill decouple task; the frontend bridge channel is independent and unchanged.)
+- `run_script` success returns a structured observation with `status`, `executor`, `input`, and `output`.
 - `outputSchema` uses the same lightweight JSON-compatible type vocabulary as `inputSchema`: `array`, `boolean`, `integer`, `null`, `number`, `object`, and `string`. For object outputs, `required` and property `type` checks are supported; unsupported JSON Schema keywords are ignored.
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`:
   ````md
   ```json tsian-actions
   [
-    {
-      "name": "example_action",
-      "description": "Validate an example action payload.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["text"],
-        "properties": {
-          "text": { "type": "string" }
-        }
-      },
-      "outputSchema": {
-        "type": "object",
-        "required": ["text"],
-        "properties": {
-          "text": { "type": "string" }
-        }
-      },
-      "executor": {
-        "type": "builtin",
-        "name": "echo"
-      }
-    },
-    {
-      "name": "write_world_note",
-      "description": "Patch a narrowed save-runtime workspace file.",
-      "inputSchema": {
-        "type": "object",
-        "required": ["path", "content"],
-        "properties": {
-          "path": { "type": "string" },
-          "content": { "type": "string" },
-          "mediaType": { "type": "string" }
-        }
-      },
-      "executor": {
-        "type": "workspace_operation",
-        "operation": "patch",
-        "scope": "save-runtime",
-        "path": "save/world/notes.md"
-      }
-    },
     {
       "name": "run_skill_script",
       "description": "Run a trusted Skill-local browser script through the Tsian SDK.",
@@ -699,12 +659,29 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
         "path": "scripts/run.js",
         "timeoutMs": 10000
       }
+    },
+    {
+      "name": "write_world_note",
+      "description": "Orchestrate a read-merge-write of world notes via a Skill-local browser script.",
+      "inputSchema": {
+        "type": "object",
+        "required": ["content"],
+        "properties": {
+          "content": { "type": "string" }
+        }
+      },
+      "executor": {
+        "type": "browser_script",
+        "path": "scripts/write_note.js",
+        "timeoutMs": 10000
+      }
     }
   ]
   ```
   ````
-- Runtime prompts should display Skill Index entries as `name/description/triggers/applicability` and should not default to exposing `path=...`.
-- Use `workspace.read/workspace.list/workspace.search` for third-layer files only: files explicitly referenced by the loaded `SKILL.md`, world data, memory, README files, or other current-task context.
+- `browser_script` is the only supported executor type. `builtin`, `platform_action`, and `workspace_operation` declarations are rejected at parse time. For single workspace read/write, the model uses the top-level `workspace.read`/`workspace.write` tools directly; a `browser_script` is for multi-step orchestration or script-only logic.
+- Runtime prompts should display Skill Index entries as `name/description/triggers/applicability` (plus parsed `actions` summaries) and should not default to exposing `path=...`.
+- Use `workspace.read/workspace.list/workspace.search` for third-layer files only: files explicitly referenced by the injected `SKILL.md`, world data, memory, README files, or other current-task context.
 - Use the same workspace path rules as storage-facing APIs:
   - normalize backslashes to slashes;
   - trim leading slashes;
@@ -724,16 +701,17 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Missing or blank `name` -> error observation with `TOOL_NAME_REQUIRED`.
 - Non-object `arguments` -> error observation with `TOOL_ARGUMENTS_INVALID`.
 - Unknown tool name -> error observation with `UNSUPPORTED_WORKSPACE_TOOL`.
-- Missing or blank `skill_load.arguments.name` -> error observation with `SKILL_NAME_REQUIRED`.
+- Missing or blank `use_skill.arguments.name` -> error observation with `SKILL_NAME_REQUIRED`.
 - Unknown or invisible Skill name -> error observation with `SKILL_NOT_FOUND`.
 - Ambiguous Skill name after local/shared priority -> error observation with `SKILL_NAME_AMBIGUOUS` and lightweight candidates.
 - Missing `SKILL.md` after registry resolution -> error observation with `SKILL_DETAIL_NOT_FOUND`.
-- Missing or blank `action_call.arguments.skill` -> error observation with `ACTION_SKILL_REQUIRED`.
-- Missing or blank `action_call.arguments.action` -> error observation with `ACTION_NAME_REQUIRED`.
-- `action_call.arguments.input` non-object -> error observation with `ACTION_INPUT_INVALID`.
-- `action_call` before the Skill is loaded -> error observation with `SKILL_ACTION_NOT_LOADED`.
-- `action_call` for an undeclared action on a loaded Skill -> error observation with `ACTION_NOT_FOUND`.
-- `action_call` with schema-invalid input -> error observation with `ACTION_INPUT_INVALID`.
+- Missing or blank `run_script.arguments.skill` -> error observation with `ACTION_SKILL_REQUIRED`.
+- Missing or blank `run_script.arguments.script` -> error observation with `ACTION_NAME_REQUIRED`.
+- `run_script.arguments.input` non-object -> error observation with `ACTION_INPUT_INVALID`.
+- `run_script` before the Skill is activated -> error observation with `SKILL_NOT_ACTIVATED`.
+- `run_script` for an undeclared action on an activated Skill -> error observation with `ACTION_NOT_FOUND`.
+- `run_script` for an action whose executor is not `browser_script` -> error observation with `ACTION_NOT_BROWSER_SCRIPT` (workspace operations should use the top-level workspace tools, or a `browser_script` that orchestrates them).
+- `run_script` with schema-invalid input -> error observation with `ACTION_INPUT_INVALID`.
 - Missing or blank `agent_call.arguments.agentId` -> error observation with `AGENT_CALL_TARGET_REQUIRED`.
 - Missing or blank `agent_call.arguments.request` -> error observation with `AGENT_CALL_REQUEST_REQUIRED`.
 - Invalid `agent_call.arguments.historyMode` -> error observation with `AGENT_CALL_HISTORY_MODE_INVALID`.
@@ -743,61 +721,53 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - `agent_call` target exists but is not in caller contacts -> error observation with `AGENT_CALL_TARGET_NOT_CONTACT`.
 - Per-turn `agent_call` budget exhausted -> error observation with `AGENT_CALL_LIMIT_EXCEEDED`.
 - Delegated Agent execution failure -> error observation with `AGENT_CALL_FAILED`.
-- Malformed action executor declarations -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
-- Platform action executor declarations without a non-empty `name` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
-- Browser script executor declarations without a non-empty `path`, or with invalid `timeoutMs` -> report `ACTION_EXECUTOR_INVALID` in `skill_load` metadata and do not register that action.
-- Malformed action `outputSchema` declarations -> report `ACTION_OUTPUT_SCHEMA_INVALID` in `skill_load` metadata and do not register that action.
+- Action executor declaration missing, or with a non-`browser_script` type (`builtin`/`platform_action`/`workspace_operation`) -> `ACTION_EXECUTOR_INVALID` at parse time; reported in `use_skill` observation `actionDeclarationErrors` and registry `actionDeclarationErrors`; that action is not registered.
+- Browser script executor declarations without a non-empty `path`, or with invalid `timeoutMs` -> `ACTION_EXECUTOR_INVALID`; reported in `use_skill` observation `actionDeclarationErrors`; that action is not registered.
+- Malformed action `outputSchema` declarations -> `ACTION_OUTPUT_SCHEMA_INVALID`; reported in `use_skill` observation `actionDeclarationErrors`; that action is not registered.
 - Executor denied by lightweight policy -> error observation with `ACTION_EXECUTOR_DISABLED` and compact policy metadata; no AIRP-turn UI prompt.
-- Unsupported executor types -> error observation with `ACTION_EXECUTOR_UNSUPPORTED`.
-- Unknown built-in executor names -> error observation with `ACTION_EXECUTOR_NOT_FOUND`.
+- Unsupported executor types reaching `executeSkillAction` (legacy-registered non-`browser_script`) -> error observation with `ACTION_EXECUTOR_UNSUPPORTED`.
 - Controlled executor timeout -> error observation with `ACTION_EXECUTOR_TIMEOUT`.
 - Controlled executor abort -> error observation with `ACTION_EXECUTOR_ABORTED`.
-- `platform_action` without an injected capability -> error observation with `PLATFORM_ACTION_UNAVAILABLE`.
-- `platform_action` whose injected handler returns `ok: false` -> error observation with `PLATFORM_ACTION_FAILED` and platform error details.
 - Unexposed workspace operation -> error observation with `WORKSPACE_OPERATION_NOT_EXPOSED`.
-- Workspace operation from generic tools, Skill `workspace_operation`, platform-action workspace handling, or browser script SDK whose read/write group is disabled -> error observation with `WORKSPACE_OPERATION_NOT_EXPOSED`.
+- Workspace operation from generic tools or browser script SDK whose read/write group is disabled -> error observation with `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Actor level below target read/edit level -> error observation with `WORKSPACE_READ_ACCESS_DENIED` or `WORKSPACE_EDIT_ACCESS_DENIED`.
 - `browser_script` without an injected capability -> error observation with `BROWSER_SCRIPT_UNAVAILABLE`.
 - Missing browser script file -> error observation with `BROWSER_SCRIPT_NOT_FOUND`.
 - Browser script path outside the declaring Skill directory -> error observation with `BROWSER_SCRIPT_PATH_INVALID`.
 - Browser script failure, SDK failure, Worker failure, or Worker message failure -> structured error observation with a `BROWSER_SCRIPT_*` code.
 - Successful executor output that fails declared `outputSchema` -> error observation with `ACTION_OUTPUT_INVALID` and output summary metadata, not raw large output payloads.
-- Agent Runtime attempts to call a non-allow-listed platform action -> platform handler returns `AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED`, surfaced through `PLATFORM_ACTION_FAILED`.
 - Agent/Skill attempts to write or delete `.tsian/*` without level `4` through generic workspace operations or browser script SDK workspace mutation -> structured workspace error observation.
 - Runtime turn fails or aborts after staged ordinary workspace writes -> persisted workspace state remains equivalent to the pre-turn accepted state, except for host-owned failed trace diagnostics.
-- Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `skill_load` metadata without failing the whole Skill load.
+- Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `use_skill` observation `actionDeclarationErrors` and registry `actionDeclarationErrors` without failing the whole Skill activation.
 - Invalid path -> error observation with workspace path error code.
 - Missing file on `workspace.read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
 - Model keeps requesting tools past the per-Agent round limit -> return stripped final text if present; otherwise throw a clear runtime error.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: the entry agent sees a Skill Index entry named `continuity`, calls `skill_load`, receives `SKILL.md` entry content as observation, then returns its final reply.
-- Good: narrative loads `prose-style` with `skill_load`; if an agent-local and shared Skill share that name, the narrative-local Skill wins.
-- Good: loaded `SKILL.md` declares `tsian-actions`; the same Agent can call one declared action with `action_call` and receives a structured executor observation.
-- Good: action without an executor declaration uses built-in `validation`.
-- Good: action with `{ "type": "builtin", "name": "echo" }` returns the validated input as `output`.
+- Good: the entry agent sees a Skill Index entry named `continuity`, calls `use_skill`, receives a lightweight activation confirmation (not the full SKILL.md), the framework injects the full SKILL.md next round, then the agent returns its final reply.
+- Good: narrative activates `prose-style` with `use_skill`; if an agent-local and shared Skill share that name, the narrative-local Skill wins.
+- Good: activated `SKILL.md` declares `tsian-actions`; the same Agent can call one declared `browser_script` action with `run_script` and receives a structured executor observation.
 - Good: action with `outputSchema` validates successful executor output before returning a success observation.
-- Good: action with `{ "type": "workspace_operation", "operation": "patch", "scope": "save-runtime", "path": "save/world/notes.md" }` calls the generic workspace operation layer after Skill gating and validation, then returns the operation result as `output`.
-- Good: action with `{ "type": "browser_script", "path": "scripts/run.js", "timeoutMs": 10000 }` runs a Skill-local script through the Tsian SDK after Skill gating and input validation.
-- Good: an injected policy disables `browser_script` and `action_call` returns `ACTION_EXECUTOR_DISABLED` as a normal failed observation without prompting the player.
-- Good: an action writes a workspace file, then a later same-turn workspace read or browser script SDK read observes the staged file before the turn commits.
+- Good: action with `{ "type": "browser_script", "path": "scripts/run.js", "timeoutMs": 10000 }` runs a Skill-local script through the Tsian SDK after `use_skill` activation and input validation.
+- Good: a `browser_script` chains `tsian.workspace.read` -> transform -> `tsian.workspace.write` to orchestrate a multi-step business operation; the model invokes it with one `run_script` call.
+- Good: an injected policy disables `browser_script` and `run_script` returns `ACTION_EXECUTOR_DISABLED` as a normal failed observation without prompting the player.
+- Good: a `browser_script` writes a workspace file, then a later same-turn workspace read or browser script SDK read observes the staged file before the turn commits.
 - Good: a failed turn after staged workspace writes leaves no ordinary persisted workspace file from those staged writes.
-- Good: loaded `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace.read` only when that reference is needed.
+- Good: injected `SKILL.md` references `references/rules.md` or a full workspace path, and the Agent uses `workspace.read` only when that reference is needed.
 - Good: the entry agent sees `memory` in contacts, calls `agent_call`, and receives memory's continuity findings as an observation before writing its final reply.
-- Good: a delegated memory Agent loads a Skill, calls a non-`agent_call` action, or calls one of its own contact Agents when its own `agent.json` permissions plus depth and budget policy allow it.
-- Good: an Agent with `workspace_read` enabled and `workspace_write` disabled can list/search/read context, but generic workspace writes and Skill workspace writes return `WORKSPACE_OPERATION_NOT_EXPOSED`.
+- Good: a delegated memory Agent activates a Skill, calls a non-`agent_call` `run_script`, or calls one of its own contact Agents when its own `agent.json` permissions plus depth and budget policy allow it.
+- Good: an Agent with `workspace_read` enabled and `workspace_write` disabled can list/search/read context, but generic workspace writes and `browser_script` SDK writes return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Good: Agent uses `workspace.list` for a directory and receives entries without file contents.
 - Good: Agent uses `workspace.search` and receives previews, then explicitly reads a chosen file if full content is needed.
 - Base: no tool-call block means the existing one-call-per-Agent behavior is preserved.
-- Bad: injecting all `SKILL.md` contents into `agent-context` or Skill Index; this breaks progressive disclosure.
-- Bad: returning a resource index from `skill_load` by default; Skill resources should be chain-loaded from `SKILL.md` instructions.
-- Bad: allowing `action_call` before `skill_load`; this bypasses Skill gating.
+- Bad: injecting all `SKILL.md` contents into `agent-context` or the eager Skill Index; this breaks progressive disclosure (only `SkillActionSummary` belongs in the index).
+- Bad: returning the full `SKILL.md` content or a resource index from `use_skill`; the observation is a lightweight confirmation, and the full text is injected by the framework next round.
+- Bad: allowing `run_script` before `use_skill`; this bypasses Skill activation gating.
+- Bad: a Skill action declaring `builtin`, `platform_action`, or `workspace_operation` executor; only `browser_script` is supported — use top-level workspace tools for single ops or a `browser_script` for orchestration.
 - Bad: exposing the full Agent registry instead of only the current Agent's contacts.
 - Bad: allowing delegated Agents to call arbitrary non-contact Agents, exceed the shared root-turn budget, or exceed the policy depth limit.
-- Bad: letting Skill actions, platform-action workspace handling, or browser script SDK workspace methods bypass an Agent-level disabled `workspace_read` or `workspace_write` group.
-- Bad: making built-in executors execute write/delete/script/remote behavior.
-- Bad: letting Agent Runtime call broad platform actions such as checkpoint restore through `platform_action`.
+- Bad: letting `browser_script` SDK workspace methods bypass an Agent-level disabled `workspace_read` or `workspace_write` group.
 - Bad: making raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals supported browser script APIs in the first strong-SDK slice.
 - Bad: adding player-facing trust prompts, Settings toggles, or per-Skill trust records to the first lightweight executor policy slice.
 - Bad: treating `outputSchema` as full JSON Schema support before the runtime explicitly implements it.
@@ -805,36 +775,31 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 
 ### 6. Tests Required
 
-- Assert a model response containing `skill_load` produces a second same-Agent model call with loaded `SKILL.md` content.
-- Assert shared Skills and Agent-local Skills can both be loaded by `name`.
+- Assert a model response containing `use_skill` activates the Skill, returns a lightweight confirmation (not the full SKILL.md), and the framework injects the full SKILL.md as a user message in the next round.
+- Assert shared Skills and Agent-local Skills can both be activated by `name`.
 - Assert local/shared duplicate Skill names prefer the current Agent's local Skill.
-- Assert `skill_load` returns `SKILL_NOT_FOUND` for a Skill disabled for the current Agent even when the `SKILL.md` file exists.
-- Assert `skill_load` does not return a resource index by default.
-- Assert `skill_load` registers actions declared in a `tsian-actions` fenced JSON block.
-- Assert `action_call` succeeds after loading the declaring Skill and routes through built-in executors.
-- Assert an action without executor uses `validation` and returns `status: "validated"`.
-- Assert an action with built-in `echo` returns `status: "executed"` and echoes validated input as `output`.
-- Assert malformed `outputSchema` declarations report `ACTION_OUTPUT_SCHEMA_INVALID` during `skill_load`.
+- Assert `use_skill` returns `SKILL_NOT_FOUND` for a Skill disabled for the current Agent even when the `SKILL.md` file exists.
+- Assert `use_skill` observation does not return the full `SKILL.md` content or a resource index.
+- Assert `use_skill` registers actions declared in a `tsian-actions` fenced JSON block and lists them in the observation.
+- Assert repeated `use_skill` on the same Skill does not re-inject the full SKILL.md (de-duplicated via `injectedSkillPaths`).
+- Assert `run_script` succeeds after activating the declaring Skill and routes through the `browser_script` executor.
+- Assert malformed `outputSchema` declarations report `ACTION_OUTPUT_SCHEMA_INVALID` during `use_skill`.
 - Assert actions without `outputSchema` keep existing output behavior.
 - Assert actions with `outputSchema` validate executor output and return `ACTION_OUTPUT_INVALID` on mismatch without storing raw large output in trace.
-- Assert injected executor policy can return `ACTION_EXECUTOR_DISABLED` for supported executors.
-- Assert default executor policy allows existing `builtin`, `platform_action`, `workspace_operation`, and `browser_script` behavior.
-- Assert `platform_action` sends `{ action: executor.name, params: input }` to the injected handler only after loaded Skill gating and input schema validation pass.
-- Assert `workspace_operation` and generic `workspace.write/patch/delete` stage ordinary save-runtime workspace mutations during `interaction.sendMessage` and commit only on successful turns.
-- Assert failed or aborted turns discard ordinary staged workspace mutations.
-- Assert ordinary Agent/Skill workspace mutations under `.tsian/*` fail structurally.
-- Assert frontend bridge `platform.runAction` generic workspace write/patch/delete remains immediate.
-- Assert missing platform action capability returns `PLATFORM_ACTION_UNAVAILABLE`.
-- Assert injected platform action failure returns `PLATFORM_ACTION_FAILED`.
-- Assert `platform-host` rejects non-allow-listed Agent Runtime platform actions such as `restore-checkpoint`.
-- Assert unsupported executor types return `ACTION_EXECUTOR_UNSUPPORTED`.
-- Assert unknown built-in executor names return `ACTION_EXECUTOR_NOT_FOUND`.
-- Assert invalid `browser_script` declarations report `ACTION_EXECUTOR_INVALID` during `skill_load`.
-- Assert `browser_script` runs a Skill-local script through the injected runner only after Skill loading and input validation.
+- Assert injected executor policy can return `ACTION_EXECUTOR_DISABLED` for `browser_script`.
+- Assert default executor policy allows `browser_script`.
+- Assert `browser_script` runs a Skill-local script through the injected runner only after `use_skill` activation and input validation.
 - Assert `browser_script` can use SDK workspace read/list/search/diff/patch/write/move/delete/validate against the staged workspace view and keeps workspace mutation trace/synchronization.
 - Assert `browser_script` timeout and abort return structured observations.
 - Assert `browser_script` paths outside the declaring Skill directory are rejected.
-- Assert `action_call` before loading the Skill returns `SKILL_ACTION_NOT_LOADED`.
+- Assert generic `workspace.write/patch/delete` stage ordinary save-runtime workspace mutations during `interaction.sendMessage` and commit only on successful turns.
+- Assert failed or aborted turns discard ordinary staged workspace mutations.
+- Assert ordinary Agent/Skill workspace mutations under `.tsian/*` fail structurally.
+- Assert frontend bridge `platform.runAction` generic workspace write/patch/delete remains immediate (independent of the removed Agent Runtime `runPlatformAction` executor).
+- Assert unsupported/legacy executor types (`builtin`/`platform_action`/`workspace_operation`) return `ACTION_EXECUTOR_INVALID` at parse time and are reported in `actionDeclarationErrors`.
+- Assert `run_script` for a non-`browser_script` action returns `ACTION_NOT_BROWSER_SCRIPT`.
+- Assert invalid `browser_script` declarations report `ACTION_EXECUTOR_INVALID` during `use_skill`.
+- Assert `run_script` before `use_skill` returns `SKILL_NOT_ACTIVATED`.
 - Assert unknown actions return `ACTION_NOT_FOUND`.
 - Assert schema-invalid action input returns `ACTION_INPUT_INVALID`.
 - Assert current Agents with contacts see `agent_call` instructions listing only visible contacts.
@@ -845,12 +810,12 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Assert a delegated Agent can perform one nested `agent_call` to its own contact when depth and budget allow it.
 - Assert nested `agent_call` attempts beyond `maxDepth` return `AGENT_CALL_UNAVAILABLE` with structured depth/budget metadata.
 - Assert invalid `historyMode` is rejected and omitted `historyMode` defaults to `recent`.
-- Assert delegated Agents can still use workspace tools, `skill_load`, and non-`agent_call` `action_call` according to their own Agent permissions.
+- Assert delegated Agents can still use workspace tools, `use_skill`/`run_script`, according to their own Agent permissions.
 - Assert per-turn `agent_call` budget is shared across the entry agent and nested delegated steps.
 - Assert disabled `workspace_read` omits read/list/search prompt examples and direct generic read/list/search calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Assert disabled `workspace_write` omits write examples and direct generic diff/patch/write/move/delete/validate calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
-- Assert Skill `workspace_operation`, Agent Runtime platform-action workspace requests, and browser script SDK workspace calls cannot bypass disabled Agent workspace tool groups.
-- Assert successful built-in action calls do not mutate workspace/state and do not execute scripts.
+- Assert browser script SDK workspace calls cannot bypass disabled Agent workspace tool groups.
+- Assert successful `browser_script` `run_script` calls that do not invoke SDK workspace mutations do not mutate workspace/state outside the script.
 - Assert successful workspace mutations flow through the generic workspace operation layer.
 - Assert missing Skill names become structured observations, not uncaught runtime crashes.
 - Assert a loaded `SKILL.md` can chain to `workspace.read` for referenced resources.
@@ -961,7 +926,7 @@ interface RawAirpHistoryTurnRecord {
 
 ### 1. Scope / Trigger
 
-- Trigger: successful Agent Runtime turns persist Agent-facing transcripts or a loaded Skill action applies notes/timeline/summary maintenance.
+- Trigger: successful Agent Runtime turns persist Agent-facing transcripts or an activated Skill action applies notes/timeline/summary maintenance.
 - Applies when changing `apps/platform-web/src/agent-runtime/index.ts`, `apps/platform-web/src/platform-host/index.ts`, `apps/platform-web/src/storage/workspace.ts`, default Skill files, or successful-turn persistence.
 
 ### 2. Signatures
@@ -1015,7 +980,7 @@ interface RawAirpHistoryTurnRecord {
 - Assert failed or aborted turns leave no ordinary transcript or maintenance writes.
 - Assert transcript staging creates `session.jsonl` for custom Agents that participate.
 - Assert maintenance action is unavailable until the declaring Skill is loaded.
-- Assert default maintenance Skill is discoverable through `skill-registry`, loadable through `skill_load`, and runs through `browser_script`.
+- Assert default maintenance Skill is discoverable through `skill-registry`, activatable through `use_skill`, and runs through `browser_script` via `run_script`.
 - Assert valid maintenance plans write only allowed paths and invalid plans write nothing.
 - Assert default workspace upgrade is non-overwriting and manifest-gated for official Skills, workspace-assistant files, and framework knowledge docs.
 
@@ -1101,7 +1066,7 @@ stageAgentSessionTranscriptFiles(
 - Good: trace records `workspace.read` path and content size without copying file content.
 - Good: trace records `agent_called` for both successful delegation and structured delegation errors without storing full delegated prompts.
 - Good: trace records `action_executor_policy_checked` with executor metadata and policy source/reason but no action input or script source.
-- Good: trace records `action_called` for `workspace_operation` plus a `workspace_mutation` event for `workspace.patch` or `workspace.write`.
+- Good: trace records `action_called` for a `browser_script` `run_script` that performs workspace writes, plus a `workspace_mutation` event for `workspace.patch` or `workspace.write` issued from the script's SDK calls.
 - Good: trace records `script_log` summaries for `browser_script` start/log/fetch events and `workspace_mutation` for SDK writes/deletes.
 - Good: restoring an earlier checkpoint removes later trace files for the discarded branch.
 - Base: a no-tool turn still records turn, agent step, and model call summary events.
