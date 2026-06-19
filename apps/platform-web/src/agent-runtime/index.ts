@@ -356,7 +356,17 @@ function formatSkillIndex(context: AgentContextEntry): string {
       const appliesTo = skill.appliesTo.length
         ? ` appliesTo=${skill.appliesTo.join(", ")}`
         : ""
-      return `- ${skill.name} [${scope}]: ${skill.description || skill.summary || "（无描述）"}${triggers}${appliesTo}`
+      const headline = `- ${skill.name} [${scope}]: ${skill.description || skill.summary || "（无描述）"}${triggers}${appliesTo}`
+      const actionLines = skill.actions?.length
+        ? skill.actions.map((action) =>
+            `    - ${action.name} (${action.executorType}, 用 run_script 执行)`,
+          )
+        : []
+      const errorLines = skill.actionDeclarationErrors?.length
+        ? skill.actionDeclarationErrors.map((error) => `    ⚠ ${error}`)
+        : []
+      return [headline, ...(actionLines.length ? ["    actions:", ...actionLines] : []), ...errorLines]
+        .join("\n")
     })
     .join("\n")
 }

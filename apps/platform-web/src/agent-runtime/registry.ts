@@ -2,6 +2,7 @@ import type {
   AgentConfig,
   AgentPlatformToolName,
   AgentRegistryEntry,
+  SkillActionSummary,
   SkillDetailEntry,
   SkillRegistryEntry,
   SkillRegistryScope,
@@ -46,6 +47,82 @@ const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
   "workspace_read",
   "workspace_write",
 ])
+
+// Mirrors the `tsian-actions` fence pattern in workspace-tools.ts. Kept here so
+// registry parsing (contracts-adjacent layer) does not reverse-depend on the
+// runtime layer. The two must stay in sync if the fence format changes.
+const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
+const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
+// After the tool/skill decouple task, browser_script is the only supported
+// executor type. builtin/platform_action/workspace_operation are rejected here
+// (reported in actionDeclarationErrors) and again strictly in use_skill.
+const SUPPORTED_SKILL_ACTION_EXECUTOR_TYPE = "browser_script"
+
+interface ParsedSkillActionSummaries {
+  actions: SkillActionSummary[]
+  errors: string[]
+}
+
+function parseSkillActionSummaries(body: string): ParsedSkillActionSummaries {
+  const actions: SkillActionSummary[] = []
+  const errors: string[] = []
+  const seenNames = new Set<string>()
+
+  for (const match of body.matchAll(SKILL_ACTIONS_FENCE_PATTERN)) {
+    const info = (match[1] ?? "").toLowerCase()
+    if (!info.split(/\s+/).includes(SKILL_ACTIONS_FENCE_LABEL)) {
+      continue
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(match[2] ?? "")
+    } catch (error) {
+      errors.push(`tsian-actions fence JSON is invalid: ${error instanceof Error ? error.message : "parse error"}`)
+      continue
+    }
+
+    const rawActions = Array.isArray(parsed) ? parsed : [parsed]
+    for (const [index, rawAction] of rawActions.entries()) {
+      if (!isRecord(rawAction)) {
+        errors.push(`Action declaration #${index} must be a JSON object.`)
+        continue
+      }
+
+      const name = typeof rawAction.name === "string" ? rawAction.name.trim() : ""
+      if (!name) {
+        errors.push(`Action declaration #${index} requires a non-empty string name.`)
+        continue
+      }
+
+      const nameKey = name.toLowerCase()
+      if (seenNames.has(nameKey)) {
+        errors.push(`Duplicate action declaration: ${name}`)
+        continue
+      }
+      seenNames.add(nameKey)
+
+      const executor = isRecord(rawAction.executor) ? rawAction.executor : null
+      const executorType = typeof executor?.type === "string" ? executor.type.trim() : ""
+      if (executorType !== SUPPORTED_SKILL_ACTION_EXECUTOR_TYPE) {
+        errors.push(
+          `Action "${name}" uses executor type "${executorType || "(missing)"}" which is no longer supported; only "${SUPPORTED_SKILL_ACTION_EXECUTOR_TYPE}" is supported.`,
+        )
+        continue
+      }
+
+      const description = typeof rawAction.description === "string" ? rawAction.description.trim() : ""
+      actions.push({
+        name,
+        description,
+        executorType,
+        executable: true,
+      })
+    }
+  }
+
+  return { actions, errors }
+}
 
 function normalizeLineEndings(value: string): string {
   return value.replace(/\r\n/g, "\n").replace(/\r/g, "\n")
@@ -383,6 +460,16 @@ function buildSkillRegistryEntry(
 
   if (pathInfo.agentId) {
     entry.agentId = pathInfo.agentId
+  }
+
+  // Parse `tsian-actions` fence summaries at registry build time so the model
+  // can see which browser_script actions a Skill offers before use_skill.
+  const { actions, errors } = parseSkillActionSummaries(parsed.body)
+  if (actions.length > 0) {
+    entry.actions = actions
+  }
+  if (errors.length > 0) {
+    entry.actionDeclarationErrors = errors
   }
 
   return entry

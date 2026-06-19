@@ -172,6 +172,23 @@ export interface AgentContextEntry {
 
 export type SkillRegistryScope = "shared" | "agent-local"
 
+/**
+ * Lightweight summary of a Skill action declared in a `tsian-actions` fence.
+ * This is a capability-existence listing (name + description + executor type +
+ * executability), not the full action declaration — it deliberately omits
+ * `inputSchema`, `outputSchema`, and executor `path` so progressive disclosure
+ * is preserved: the model still needs `use_skill` to get the full SKILL.md and
+ * `run_script` to execute a browser_script action.
+ */
+export interface SkillActionSummary {
+  name: string
+  description: string
+  /** Executor type; after the tool/skill decouple task this is always "browser_script". */
+  executorType: string
+  /** Whether `run_script` can execute this action (true for browser_script). */
+  executable: boolean
+}
+
 export interface SkillRegistryEntry {
   id: string
   name: string
@@ -184,6 +201,10 @@ export interface SkillRegistryEntry {
   triggers: string[]
   appliesTo: string[]
   updatedAt: number
+  /** Action summaries parsed from the `tsian-actions` fence at registry build time. */
+  actions?: SkillActionSummary[]
+  /** Human-readable errors from parsing the `tsian-actions` fence (unsupported executor types, malformed JSON). */
+  actionDeclarationErrors?: string[]
 }
 
 export interface SkillResourceEntry {
