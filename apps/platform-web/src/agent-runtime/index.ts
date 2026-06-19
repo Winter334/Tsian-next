@@ -53,6 +53,14 @@ export interface AgentRuntimeTurnInput {
   snapshot: RuntimeSnapshotShell
   workspaceFiles?: WorkspaceFile[]
   signal?: AbortSignal
+  /**
+   * Streaming text-delta sink for the entry agent. Invoked for every streamed
+   * text chunk across all tool-loop rounds (thought-round text included — the
+   * whole turn streams, no reset). `round` is the tool-loop round index so the
+   * caller can label thought vs final. Delegated `agent_call` targets do not
+   * receive `onDelta` (they stream silently via the non-SSE fallback).
+   */
+  onDelta?: (delta: string, round: number) => void
 }
 
 export interface AgentRuntimeTurnResult {
@@ -64,6 +72,15 @@ export interface AgentRuntimeModelCallOptions {
   debugLabel: RuntimeTraceDebugLabel
   signal?: AbortSignal
   agentId?: string
+  /**
+   * Streaming text-delta sink. Invoked with the current tool-loop `round` so
+   * the caller can label thought vs final rounds. `undefined` means "do not
+   * stream" (delegated agents, or text-protocol callers) — the host then takes
+   * the non-SSE fallback path.
+   */
+  onDelta?: (delta: string, round: number) => void
+  /** Current tool-loop round index (set by the native loop before each call). */
+  round?: number
 }
 
 export interface AgentRuntimeCapabilities {
@@ -1023,7 +1040,11 @@ async function callAgentModelWithWorkspaceToolsNative(
   for (let round = 0; round <= maxToolRounds; round += 1) {
     assertNotAborted(options.signal)
 
-    const result = await capabilities.callModelNative!(runtimeMessages, options, tools)
+    const callOptions: AgentRuntimeModelCallOptions = {
+      ...options,
+      round,
+    }
+    const result = await capabilities.callModelNative!(runtimeMessages, callOptions, tools)
     assertNotAborted(options.signal)
 
     const toolCalls = nativeToolCallsToParsed(result.toolCalls)
@@ -1317,6 +1338,7 @@ export async function runAgentRuntimeTurn(
         debugLabel: "entry-agent",
         signal: input.signal,
         agentId: entryContext.agent.id,
+        onDelta: input.onDelta,
       },
       entryContext,
       {

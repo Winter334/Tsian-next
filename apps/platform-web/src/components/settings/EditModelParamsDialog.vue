@@ -18,8 +18,10 @@
             :parameters="params"
             :kind="kind"
             :tool-call-mode="toolCallMode"
+            :streaming="streaming"
             @update:parameters="params = $event"
             @update:tool-call-mode="toolCallMode = $event"
+            @update:streaming="streaming = $event"
           />
         </div>
 
@@ -61,15 +63,19 @@ const props = defineProps<{
   kind: BrowserAiProviderKind
   initialParameters: BrowserAiModelParameters
   initialToolCallMode: BrowserAiToolCallMode
+  initialStreaming: boolean
 }>()
 
 const emit = defineEmits<{
   (e: "update:open", value: boolean): void
-  (e: "confirm", payload: { parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void
+  (e: "confirm", payload: { parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode; streaming: boolean }): void
 }>()
 
 const params = ref<BrowserAiModelParameters>({ ...props.initialParameters })
 const toolCallMode = ref<BrowserAiToolCallMode>(props.initialToolCallMode)
+// Clamped to false at confirm time when toolCallMode is text (text-protocol
+// models cannot stream); the switch is disabled in that mode anyway.
+const streaming = ref<boolean>(props.initialStreaming)
 const error = ref("")
 
 watch(
@@ -79,6 +85,7 @@ watch(
       // Fresh copy so cancel discards edits.
       params.value = { ...props.initialParameters }
       toolCallMode.value = props.initialToolCallMode
+      streaming.value = props.initialStreaming
       error.value = ""
     }
   },
@@ -89,7 +96,7 @@ function cancel(): void {
 }
 
 function confirm(): void {
-  emit("confirm", { parameters: params.value, toolCallMode: toolCallMode.value })
+  emit("confirm", { parameters: params.value, toolCallMode: toolCallMode.value, streaming: streaming.value })
   emit("update:open", false)
 }
 </script>

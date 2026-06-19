@@ -1,9 +1,9 @@
 {
-  "id": "ai-streaming-sse",
-  "name": "ai-streaming-sse",
-  "title": "流式输出（SSE 逐字渲染）",
+  "id": "ai-agent-process-visible",
+  "name": "ai-agent-process-visible",
+  "title": "工具过程可见 + 并行执行",
   "description": "",
-  "status": "in_progress",
+  "status": "planning",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

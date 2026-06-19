@@ -47,6 +47,15 @@ export interface BrowserAiModelConfig {
    * destructive update, no migration); new models default to `text`.
    */
   toolCallMode: BrowserAiToolCallMode
+  /**
+   * Whether SSE streaming is enabled for this model. Streaming is native-mode
+   * only (`toolCallMode === "native"`); text-protocol models force `false`.
+   * Lets the player opt out for endpoints that do not support `stream: true`
+   * (e.g. some proxies answer 200 + `text/event-stream` but emit an error body).
+   * Missing on stored data → defaulted from `toolCallMode` at read time
+   * (native → true, text → false); new models inherit the same default.
+   */
+  streaming: boolean
 }
 
 export type BrowserAiFallbackStrategy = "primary-only" | "ordered"
@@ -87,6 +96,8 @@ export interface BrowserAiConfig {
   parameters: BrowserAiModelParameters
   /** Tool-call mode, resolved from the primary model's `toolCallMode`. */
   toolCallMode: BrowserAiToolCallMode
+  /** Streaming enabled, resolved from the primary model's `streaming`. */
+  streaming: boolean
   /**
    * Ordered fallback models (id + parameters) following the primary, when the
    * preset uses the "ordered" strategy. Forward-compatible: the runtime only
@@ -127,7 +138,6 @@ const PROTECTED_CUSTOM_REQUEST_KEYS = new Set([
   "headers",
   "messages",
   "model",
-  "stream",
 ])
 
 function readEnvText(key: string): string {
@@ -227,6 +237,19 @@ function normalizeToolCallMode(input: unknown): BrowserAiToolCallMode | null {
   return input === "native" || input === "text" ? input : null
 }
 
+/**
+ * Normalize a stored `streaming` flag. `true`/`false` pass through; anything
+ * else returns `null` so the caller can apply the toolCallMode-derived default
+ * (native → true, text → false). Text-protocol models always force `false`
+ * regardless of the stored value, since streaming is native-mode only.
+ */
+function normalizeStreaming(input: unknown, toolCallMode: BrowserAiToolCallMode): boolean {
+  if (toolCallMode === "text") {
+    return false
+  }
+  return input === true || input === "true"
+}
+
 export function createDefaultBrowserAiModelParameters(): BrowserAiModelParameters {
   return {
     contextWindow: null,
@@ -280,12 +303,16 @@ function normalizeModelConfig(input: unknown): BrowserAiModelConfig | null {
   if (!toolCallMode) {
     return null
   }
+  // streaming defaults from toolCallMode when missing/invalid (native → true,
+  // text → false); text-protocol models always force false.
+  const streaming = normalizeStreaming(record.streaming, toolCallMode)
   return {
     id,
     label: readStoredText(record.label) || undefined,
     parameters: normalizeModelParameters(record.parameters),
     enabled: record.enabled !== false,
     toolCallMode,
+    streaming,
   }
 }
 
@@ -321,14 +348,18 @@ export function createBrowserAiModelConfig(
   input: Partial<BrowserAiModelConfig & { model: string }> = {},
 ): BrowserAiModelConfig {
   const id = readStoredText(input.id ?? input.model)
+  // New models default to the conservative text protocol; an explicit
+  // native/text input is honored.
+  const toolCallMode = normalizeToolCallMode(input.toolCallMode) ?? "text"
   return {
     id,
     label: readStoredText(input.label) || undefined,
     parameters: normalizeModelParameters(input.parameters),
     enabled: input.enabled !== false,
-    // New models default to the conservative text protocol; an explicit
-    // native/text input is honored.
-    toolCallMode: normalizeToolCallMode(input.toolCallMode) ?? "text",
+    toolCallMode,
+    // Streaming defaults from toolCallMode: native → true, text → false.
+    // An explicit boolean input is honored for native; text always forces false.
+    streaming: normalizeStreaming(input.streaming, toolCallMode),
   }
 }
 
@@ -359,6 +390,7 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
         parameters: normalizeModelParameters(record.parameters),
         enabled: true,
         toolCallMode: "text",
+        streaming: false,
       },
     ]
   }
@@ -464,7 +496,7 @@ function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): Brows
     baseUrl,
     apiKey,
     models: defaultModel
-      ? [{ id: defaultModel, parameters: createDefaultBrowserAiModelParameters(), enabled: true, toolCallMode: "text" }]
+      ? [{ id: defaultModel, parameters: createDefaultBrowserAiModelParameters(), enabled: true, toolCallMode: "text", streaming: false }]
       : [],
     fallbackStrategy: "primary-only",
     fetchedModels: [],
@@ -562,6 +594,7 @@ function getEnvAiConfig(): BrowserAiConfig | null {
     model,
     parameters: createDefaultBrowserAiModelParameters(),
     toolCallMode: "text",
+    streaming: false,
   }
 }
 
@@ -598,6 +631,7 @@ function resolveProviderConfig(
     model: primary.id,
     parameters: cloneModelParameters(primary.parameters),
     toolCallMode: primary.toolCallMode,
+    streaming: primary.streaming,
     ...(fallbacks && fallbacks.length > 0 ? { fallbacks } : {}),
   }
 }
@@ -636,6 +670,7 @@ export function createBrowserAiProviderPreset(
           parameters: normalizeModelParameters(input.parameters),
           enabled: true,
           toolCallMode: "text",
+          streaming: false,
         },
       ]
     }
@@ -813,6 +848,10 @@ export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigD
         }
         if (model.toolCallMode !== "native" && model.toolCallMode !== "text") {
           throw new Error("工具调用模式必须是「原生」或「文本」。")
+        }
+        // Streaming is native-mode only; text-protocol models cannot stream.
+        if (model.toolCallMode === "text" && model.streaming === true) {
+          throw new Error("文本工具调用模式不支持流式输出，请先切换为原生模式。")
         }
         validateBrowserAiModelParameters(model.parameters)
       }

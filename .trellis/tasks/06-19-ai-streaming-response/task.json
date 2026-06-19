@@ -20,7 +20,8 @@
   "subtasks": [],
   "children": [
     "06-19-native-tool-calling",
-    "06-19-ai-streaming-sse"
+    "06-19-ai-streaming-sse",
+    "06-19-ai-agent-process-visible"
   ],
   "parent": null,
   "relatedFiles": [],

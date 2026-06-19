@@ -88,7 +88,7 @@
       <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim/80">工具调用模式</span>
       <Select
         :model-value="toolCallMode"
-        @update:model-value="(value) => emit('update:toolCallMode', value as BrowserAiToolCallMode)"
+        @update:model-value="(value) => onToolCallModeChange(value as BrowserAiToolCallMode)"
       >
         <SelectTrigger class="h-8 w-full">
           <SelectValue placeholder="文本" />
@@ -100,6 +100,18 @@
       </Select>
       <p class="font-mono text-[10px] leading-4 text-text-dim/60">{{ toolCallModeHint }}</p>
     </label>
+
+    <div class="grid gap-1">
+      <div class="flex items-center justify-between gap-3">
+        <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim/80">流式输出</span>
+        <Switch
+          :model-value="streamingEffective"
+          :disabled="toolCallMode !== 'native'"
+          @update:model-value="(value) => emit('update:streaming', Boolean(value))"
+        />
+      </div>
+      <p class="font-mono text-[10px] leading-4 text-text-dim/60">{{ streamingHint }}</p>
+    </div>
 
     <label class="grid gap-1">
       <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim/80">自定义请求参数 (JSON)</span>
@@ -125,6 +137,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { RangeSlider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
 import {
   reasoningEffortHintForKind,
   type BrowserAiModelParameters,
@@ -136,11 +149,18 @@ const props = defineProps<{
   parameters: BrowserAiModelParameters
   kind: BrowserAiProviderKind
   toolCallMode: BrowserAiToolCallMode
+  /**
+   * Whether SSE streaming is enabled for this model. Text-protocol models
+   * always present `false` here (streaming is native-mode only); the switch
+   * is disabled and forced off when `toolCallMode !== "native"`.
+   */
+  streaming: boolean
 }>()
 
 const emit = defineEmits<{
   (e: "update:parameters", value: BrowserAiModelParameters): void
   (e: "update:toolCallMode", value: BrowserAiToolCallMode): void
+  (e: "update:streaming", value: boolean): void
 }>()
 
 const NO_REASONING = "__none"
@@ -152,6 +172,29 @@ const toolCallModeHint = computed(() =>
     ? "使用 API 原生 function calling，结构化工具调用边界，支持流式。请确认你的接口支持原生工具调用。"
     : "使用 <tsian-tool-call> 文本协议，兼容所有接口，不支持流式。",
 )
+
+// Text-protocol models can never stream; force the switch off in that case.
+const streamingEffective = computed(() =>
+  props.toolCallMode === "native" ? props.streaming : false,
+)
+
+const streamingHint = computed(() =>
+  props.toolCallMode === "native"
+    ? "开启后回复逐字流式显示（需接口支持 stream）。若接口不支持或出错，可关闭回到一次性返回。"
+    : "文本协议无法流式，仅原生 function calling 模式可开启。",
+)
+
+// Switching tool-call mode drives streaming for real (not just the display):
+// dropping to the text protocol turns streaming off at the data layer too, so
+// the saved value is `false` rather than a stale `true` revealed again when
+// switching back to native. Switching to native keeps the current value — the
+// user opts in explicitly.
+function onToolCallModeChange(mode: BrowserAiToolCallMode): void {
+  emit("update:toolCallMode", mode)
+  if (mode === "text") {
+    emit("update:streaming", false)
+  }
+}
 
 function numToText(value: number | null): string {
   return typeof value === "number" && Number.isFinite(value) ? String(value) : ""

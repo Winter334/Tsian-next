@@ -197,7 +197,7 @@
               </div>
             </div>
 
-            <div v-if="sending" class="flex flex-row gap-3">
+            <div v-if="sending && !firstDeltaReceived" class="flex flex-row gap-3">
               <span class="grid h-7 w-7 shrink-0 place-items-center border border-neon/45 bg-neon/10 text-neon">
                 <Bot class="h-3.5 w-3.5" aria-hidden="true" />
               </span>
@@ -244,6 +244,16 @@
             <Send class="h-4 w-4" aria-hidden="true" />
             发送
           </button>
+          <button
+            v-if="sending"
+            type="button"
+            class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center gap-2 px-4 font-mono text-xs"
+            title="停止生成"
+            @click="stopGenerating"
+          >
+            <Square class="h-4 w-4" aria-hidden="true" />
+            停止
+          </button>
         </form>
       </footer>
     </section>
@@ -286,9 +296,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick, computed, onMounted } from "vue"
+import { ref, reactive, nextTick, computed, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, ChevronDown, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Trash2, User } from "lucide-vue-next"
+import { Bot, ChevronDown, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Square, Trash2, User } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import {
   Select,
@@ -341,6 +351,12 @@ const cardName = ref("")
 const messageListRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const showJumpToBottom = ref(false)
+// Smart scroll: auto-scroll only while the user is pinned near the bottom.
+const userPinnedToBottom = ref(true)
+// Typing dots stay visible until the first streamed delta arrives.
+const firstDeltaReceived = ref(false)
+// Abort controller for the in-flight chat turn (stop-generating button).
+const abortController = ref<AbortController | null>(null)
 const sessionCreating = ref(false)
 const sessionRenaming = ref(false)
 const sessionDeleting = ref(false)
@@ -543,34 +559,106 @@ async function send() {
   inputText.value = ""
   resetInputHeight()
   sending.value = true
+  firstDeltaReceived.value = false
 
+  // Placeholder assistant message; streamed deltas append into it.
+  const assistantMsg = reactive({ role: "assistant" as const, content: "" })
+  messages.value.push(assistantMsg)
   await scrollToBottom()
 
   const history: ConversationMessageRecord[] = messages.value
-    .slice(0, -1)
+    .slice(0, -2)
     .map((msg) => ({ role: msg.role, content: msg.content }))
+
+  // ① Typewriter throttling: buffer deltas and release them on rAF so a burst
+  // of tokens doesn't thrash the renderer. Each frame drains a slice sized to
+  // catch up when the queue grows faster than the frame rate.
+  const deltaQueue: string[] = []
+  let rafId: number | null = null
+  const flushQueue = () => {
+    rafId = null
+    if (deltaQueue.length > 0) {
+      const slice = deltaQueue.splice(0, Math.max(1, Math.ceil(deltaQueue.length / 4)))
+      assistantMsg.content += slice.join("")
+      maybeScrollToBottom()
+    }
+    if (deltaQueue.length > 0) {
+      rafId = requestAnimationFrame(flushQueue)
+    }
+  }
+  const onDelta = (delta: string) => {
+    firstDeltaReceived.value = true
+    deltaQueue.push(delta)
+    if (rafId === null) {
+      rafId = requestAnimationFrame(flushQueue)
+    }
+  }
+  const flushRemaining = () => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    if (deltaQueue.length > 0) {
+      assistantMsg.content += deltaQueue.join("")
+      deltaQueue.length = 0
+      maybeScrollToBottom()
+    }
+  }
+
+  // ③ Stop-generating: an AbortController for this turn, abortable from the UI.
+  const controller = new AbortController()
+  abortController.value = controller
 
   try {
     const result = await runAssistantChat({
       message: content,
       history,
+      onDelta,
+      signal: controller.signal,
     })
-    messages.value.push({ role: "assistant", content: result.replyText })
+    flushRemaining()
+    assistantMsg.content = result.replyText // reconcile (trim/buffer diffs)
     await persistCurrentSession()
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    errorMessage.value = message
-    await persistCurrentSession()
+    flushRemaining()
+    const aborted = error instanceof Error && error.name === "AbortError"
+    if (aborted) {
+      // Keep the partial text; mark it so the user knows it was cut short.
+      if (assistantMsg.content) {
+        assistantMsg.content = `${assistantMsg.content}\n\n_（已停止）_`
+        await persistCurrentSession()
+      } else {
+        // Nothing was streamed: drop the empty placeholder.
+        messages.value.pop()
+      }
+    } else {
+      const message = error instanceof Error ? error.message : String(error)
+      errorMessage.value = message
+      if (!assistantMsg.content) {
+        messages.value.pop()
+      }
+      await persistCurrentSession()
+    }
   } finally {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId)
+      rafId = null
+    }
+    abortController.value = null
     sending.value = false
     await scrollToBottom()
     nextTick(() => inputRef.value?.focus())
   }
 }
 
+function stopGenerating() {
+  abortController.value?.abort()
+}
+
 function handleScroll(event: Event) {
   const el = event.target as HTMLElement
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  userPinnedToBottom.value = distanceFromBottom < 80
   showJumpToBottom.value = distanceFromBottom > 120
 }
 
@@ -595,8 +683,17 @@ async function scrollToBottom(force = false) {
   if (messageListRef.value) {
     if (force) {
       showJumpToBottom.value = false
+      userPinnedToBottom.value = true
     }
     messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+  }
+}
+
+// Auto-scroll during streaming only when the user is already near the bottom;
+// never yank the view away from someone scrolling up through history.
+function maybeScrollToBottom() {
+  if (userPinnedToBottom.value) {
+    void scrollToBottom()
   }
 }
 

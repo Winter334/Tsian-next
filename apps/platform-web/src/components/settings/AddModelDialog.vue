@@ -62,8 +62,10 @@
             :parameters="params"
             :kind="kind"
             :tool-call-mode="toolCallMode"
+            :streaming="streaming"
             @update:parameters="params = $event"
             @update:tool-call-mode="toolCallMode = $event"
+            @update:streaming="streaming = $event"
           />
         </div>
       </div>
@@ -113,7 +115,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:open", value: boolean): void
-  (e: "confirm", payload: { id: string; parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void
+  (e: "confirm", payload: { id: string; parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode; streaming: boolean }): void
 }>()
 
 const modelId = ref("")
@@ -124,6 +126,10 @@ const error = ref("")
 const inputRef = ref<HTMLInputElement | null>(null)
 const params = ref<BrowserAiModelParameters>(createDefaultBrowserAiModelParameters())
 const toolCallMode = ref<BrowserAiToolCallMode>("text")
+// Streaming defaults from toolCallMode: native → true, text → false. The
+// switch is disabled while toolCallMode is text; the final value is clamped
+// to false for text-protocol models at confirm time.
+const streaming = ref(false)
 
 const canFetch = computed(
   () => Boolean(props.preset?.baseUrl.trim() && props.preset?.apiKey.trim()),
@@ -139,6 +145,7 @@ watch(
       error.value = ""
       params.value = createDefaultBrowserAiModelParameters()
       toolCallMode.value = "text"
+      streaming.value = false
       nextTick(() => inputRef.value?.focus())
     }
   },
@@ -192,7 +199,7 @@ function confirm(): void {
     reasoningEffort: params.value.reasoningEffort,
     customRequestParamsText: params.value.customRequestParamsText,
   }
-  emit("confirm", { id, parameters: normalized, toolCallMode: toolCallMode.value })
+  emit("confirm", { id, parameters: normalized, toolCallMode: toolCallMode.value, streaming: streaming.value })
   emit("update:open", false)
 }
 </script>

@@ -336,6 +336,44 @@ interface ProviderAdapter {
    * provider's finish reason.
    */
   extractNativeResult(payload: unknown): ModelCallResult
+  /**
+   * Build the SSE endpoint URL. OpenAI/Claude reuse `buildUrl`; Gemini switches
+   * `generateContent` → `streamGenerateContent?alt=sse` (streaming is opt-in via
+   * the URL rather than a request-body flag).
+   */
+  buildStreamUrl(config: BrowserAiConfig): string
+  /**
+   * Build a streaming request body. OpenAI/Claude inject `stream: true` into
+   * the native body; Gemini reuses the native body unchanged (streaming is
+   * controlled by the URL). `stream: true` is assigned after the custom-params
+   * merge so a user `stream` value cannot override the adapter's setting.
+   */
+  buildStreamRequestBody(
+    config: BrowserAiConfig,
+    messages: RuntimeChatMessage[],
+    tools: ToolSchema[],
+  ): Record<string, unknown>
+  /**
+   * Extract the text delta from one parsed SSE `data:` payload. Returns
+   * `undefined` when this chunk carries no text delta.
+   */
+  extractStreamDelta(data: unknown): string | undefined
+  /**
+   * Extract tool-call deltas from one parsed SSE payload. OpenAI streams
+   * `tool_calls` arguments incrementally (keyed by `index`); Gemini emits a
+     complete `functionCall` part at once; Claude emits `content_block_start`
+     (tool_use id/name) then `input_json_delta` chunks. The stream loop merges
+     these into `NativeToolCall[]` keyed by index/id.
+   */
+  extractStreamToolCalls(
+    data: unknown,
+    context: { event?: string; accumulator: Map<number, { id: string; name: string; args: string }> },
+  ): void
+  /**
+   * Extract the finish reason from one parsed SSE payload. Returns `undefined`
+   * until the terminating chunk arrives.
+   */
+  extractStreamFinish(data: unknown): "stop" | "tool_calls" | undefined
 }
 
 const openaiAdapter: ProviderAdapter = {
@@ -454,6 +492,65 @@ const openaiAdapter: ProviderAdapter = {
       raw: text,
       finishReason: toolCalls.length > 0 || finishReason === "tool_calls" ? "tool_calls" : "stop",
     }
+  },
+  buildStreamUrl(config) {
+    return buildChatCompletionsUrl(config.baseUrl)
+  },
+  buildStreamRequestBody(config, messages, tools) {
+    const body = this.buildNativeRequestBody(config, messages, tools)
+    body.stream = true
+    return body
+  },
+  extractStreamDelta(data) {
+    if (typeof data !== "object" || data === null) return undefined
+    const choices = (data as { choices?: Array<Record<string, unknown>> }).choices
+    if (!Array.isArray(choices) || choices.length === 0) return undefined
+    const delta = (choices[0]?.delta ?? {}) as {
+      content?: string | Array<{ text?: string }>
+    }
+    if (typeof delta.content === "string") return delta.content
+    if (Array.isArray(delta.content)) {
+      const joined = delta.content
+        .map((item) => (typeof item?.text === "string" ? item.text : ""))
+        .join("")
+      return joined.length > 0 ? joined : undefined
+    }
+    return undefined
+  },
+  extractStreamToolCalls(data, context) {
+    if (typeof data !== "object" || data === null) return
+    const choices = (data as { choices?: Array<Record<string, unknown>> }).choices
+    if (!Array.isArray(choices) || choices.length === 0) return
+    const delta = (choices[0]?.delta ?? {}) as {
+      tool_calls?: Array<{
+        index?: number
+        id?: string
+        function?: { name?: string; arguments?: string }
+      }>
+    }
+    if (!Array.isArray(delta.tool_calls)) return
+    for (const call of delta.tool_calls) {
+      const index = typeof call.index === "number" ? call.index : context.accumulator.size
+      const existing = context.accumulator.get(index)
+      if (existing) {
+        if (typeof call.function?.arguments === "string") {
+          existing.args += call.function.arguments
+        }
+      } else {
+        const id = typeof call.id === "string" ? call.id : `openai-call-${index}`
+        const name = typeof call.function?.name === "string" ? call.function.name : ""
+        const args = typeof call.function?.arguments === "string" ? call.function.arguments : ""
+        context.accumulator.set(index, { id, name, args })
+      }
+    }
+  },
+  extractStreamFinish(data) {
+    if (typeof data !== "object" || data === null) return undefined
+    const choices = (data as { choices?: Array<Record<string, unknown>> }).choices
+    if (!Array.isArray(choices) || choices.length === 0) return undefined
+    const reason = choices[0]?.finish_reason
+    if (typeof reason !== "string" || !reason) return undefined
+    return reason === "tool_calls" ? "tool_calls" : "stop"
   },
 }
 
@@ -707,6 +804,57 @@ const geminiAdapter: ProviderAdapter = {
         toolCalls.length > 0 || /tool/i.test(finishReason) ? "tool_calls" : "stop",
     }
   },
+  buildStreamUrl(config) {
+    const base = config.baseUrl.replace(/\/+$/, "")
+    return `${base}/models/${encodeURIComponent(config.model)}:streamGenerateContent?alt=sse`
+  },
+  buildStreamRequestBody(config, messages, tools) {
+    // Gemini controls streaming via the URL; the body is the native shape.
+    return this.buildNativeRequestBody(config, messages, tools)
+  },
+  extractStreamDelta(data) {
+    if (typeof data !== "object" || data === null) return undefined
+    const candidates = (data as { candidates?: Array<Record<string, unknown>> }).candidates
+    if (!Array.isArray(candidates) || candidates.length === 0) return undefined
+    const parts = (candidates[0]?.content as { parts?: Array<Record<string, unknown>> } | undefined)?.parts
+    if (!Array.isArray(parts)) return undefined
+    const text = parts
+      .map((part) => (typeof part?.text === "string" ? part.text : ""))
+      .join("")
+    return text.length > 0 ? text : undefined
+  },
+  extractStreamToolCalls(data, context) {
+    if (typeof data !== "object" || data === null) return
+    const candidates = (data as { candidates?: Array<Record<string, unknown>> }).candidates
+    if (!Array.isArray(candidates) || candidates.length === 0) return
+    const parts = (candidates[0]?.content as { parts?: Array<Record<string, unknown>> } | undefined)?.parts
+    if (!Array.isArray(parts)) return
+    for (const part of parts) {
+      const functionCall = part.functionCall as
+        | { name?: string; id?: string; args?: Record<string, unknown> }
+        | undefined
+      if (functionCall && typeof functionCall.name === "string") {
+        const index = context.accumulator.size
+        const id = typeof functionCall.id === "string" && functionCall.id
+          ? functionCall.id
+          : `gemini-call-${index}`
+        // Gemini emits a complete functionCall at once (no incremental args).
+        context.accumulator.set(index, {
+          id,
+          name: functionCall.name,
+          args: JSON.stringify(functionCall.args ?? {}),
+        })
+      }
+    }
+  },
+  extractStreamFinish(data) {
+    if (typeof data !== "object" || data === null) return undefined
+    const candidates = (data as { candidates?: Array<Record<string, unknown>> }).candidates
+    if (!Array.isArray(candidates) || candidates.length === 0) return undefined
+    const reason = candidates[0]?.finishReason
+    if (typeof reason !== "string" || !reason) return undefined
+    return /tool/i.test(reason) ? "tool_calls" : "stop"
+  },
 }
 
 const claudeAdapter: ProviderAdapter = {
@@ -834,6 +982,51 @@ const claudeAdapter: ProviderAdapter = {
         toolCalls.length > 0 || stopReason === "tool_use" ? "tool_calls" : "stop",
     }
   },
+  buildStreamUrl(config) {
+    return `${config.baseUrl.replace(/\/+$/, "")}/messages`
+  },
+  buildStreamRequestBody(config, messages, tools) {
+    const body = this.buildNativeRequestBody(config, messages, tools)
+    body.stream = true
+    return body
+  },
+  extractStreamDelta(data) {
+    if (typeof data !== "object" || data === null) return undefined
+    const delta = (data as { delta?: { text?: string } }).delta
+    return typeof delta?.text === "string" ? delta.text : undefined
+  },
+  extractStreamToolCalls(data, context) {
+    if (typeof data !== "object" || data === null) return
+    const event = context.event
+    if (event === "content_block_start") {
+      const block = (data as { index?: number; content_block?: { type?: string; id?: string; name?: string } })
+        .content_block
+      if (block?.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") {
+        const index = typeof (data as { index?: number }).index === "number"
+          ? (data as { index: number }).index
+          : context.accumulator.size
+        context.accumulator.set(index, { id: block.id, name: block.name, args: "" })
+      }
+    } else if (event === "content_block_delta") {
+      const delta = (data as { index?: number; delta?: { type?: string; partial_json?: string } }).delta
+      if (delta?.type === "input_json_delta" && typeof delta.partial_json === "string") {
+        const index = typeof (data as { index?: number }).index === "number"
+          ? (data as { index: number }).index
+          : -1
+        const existing = index >= 0 ? context.accumulator.get(index) : undefined
+        if (existing) {
+          existing.args += delta.partial_json
+        }
+      }
+    }
+  },
+  extractStreamFinish(data) {
+    if (typeof data !== "object" || data === null) return undefined
+    // Claude emits `message_delta` carrying the final `stop_reason`.
+    const delta = (data as { delta?: { stop_reason?: string } }).delta
+    if (typeof delta?.stop_reason !== "string" || !delta.stop_reason) return undefined
+    return delta.stop_reason === "tool_use" ? "tool_calls" : "stop"
+  },
 }
 
 function selectAdapter(kind: BrowserAiProviderKind): ProviderAdapter {
@@ -931,6 +1124,20 @@ export async function generateAssistantReply(
 export interface GenerateAssistantReplyNativeOptions extends GenerateAssistantReplyOptions {
   /** Native tool schemas to advertise; empty means a native call without tools. */
   tools?: ToolSchema[]
+}
+
+export interface StreamAssistantReplyNativeOptions extends GenerateAssistantReplyNativeOptions {
+  /**
+   * Streaming text-delta callback. Invoked for every text chunk (including
+   * thought-round text — the whole turn streams, there is no onReset). `round`
+   * is the tool-loop round index so the caller can label thought vs final.
+   */
+  onDelta?: (delta: string, round: number) => void
+  /**
+   * Tool-loop round index for this single stream call. Threaded into `onDelta`
+   * so the caller can label thought vs final rounds. Defaults to 0.
+   */
+  round?: number
 }
 
 /**
@@ -1031,6 +1238,262 @@ export async function generateAssistantReplyNative(
     toolCalls: result.toolCalls,
     finishReason: result.finishReason,
     payload,
+  })
+
+  return result
+}
+
+/**
+ * Split a raw SSE chunk buffer into complete lines plus a trailing partial
+ * line. `data:` payloads are returned decoded; `event:` lines surface the
+ * current event type (Claude pairs `event:` with the following `data:`).
+ * Comment/keep-alive lines (`:`) are dropped. Returns the list of parsed
+ * lines and the leftover partial string to prepend to the next chunk.
+ */
+function parseSseChunk(
+  buffer: string,
+): { lines: Array<{ kind: "data"; value: string } | { kind: "event"; value: string }>; rest: string } {
+  const lines: Array<{ kind: "data"; value: string } | { kind: "event"; value: string }> = []
+  const segments = buffer.split("\n")
+  const rest = segments.pop() ?? ""
+  for (const rawLine of segments) {
+    const line = rawLine.replace(/\r$/, "")
+    if (line.startsWith(":")) continue
+    if (line.startsWith("data:")) {
+      lines.push({ kind: "data", value: line.slice(5).replace(/^ /, "") })
+    } else if (line.startsWith("event:")) {
+      lines.push({ kind: "event", value: line.slice(6).replace(/^ /, "") })
+    }
+  }
+  return { lines, rest }
+}
+
+function finalizeStreamedToolCalls(
+  accumulator: Map<number, { id: string; name: string; args: string }>,
+): NativeToolCall[] {
+  const calls: NativeToolCall[] = []
+  const indices = [...accumulator.keys()].sort((a, b) => a - b)
+  for (const index of indices) {
+    const entry = accumulator.get(index)!
+    let argumentsRecord: Record<string, unknown> = {}
+    if (entry.args) {
+      try {
+        const parsed = JSON.parse(entry.args)
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          argumentsRecord = parsed as Record<string, unknown>
+        }
+      } catch {
+        // Leave empty arguments; runtime surfaces a structured error.
+      }
+    }
+    calls.push({ id: entry.id, name: entry.name, arguments: argumentsRecord })
+  }
+  return calls
+}
+
+/**
+ * Streaming variant of `generateAssistantReplyNative`. Reads the SSE stream
+ * chunk-by-chunk, pushes every text delta to `onDelta` (thought-round text is
+ * streamed too — no onReset), accumulates tool-call deltas in the background,
+ * and resolves to a `ModelCallResult` once the stream closes. Falls back to a
+ * one-shot JSON parse when the endpoint does not answer with `text/event-stream`.
+ */
+export async function streamAssistantReplyNative(
+  messages: RuntimeChatMessage[],
+  options: StreamAssistantReplyNativeOptions = {},
+): Promise<ModelCallResult> {
+  const config = options.config ?? getBrowserAiConfig()
+
+  if (!config) {
+    throw new Error(
+      "AI config is missing. Please configure an OpenAI-compatible provider in Control Panel.",
+    )
+  }
+
+  const round = options.round ?? 0
+  const requestId = `${options.debugLabel ?? "chat-stream"}-${++aiDebugSequence}`
+  const adapter = selectAdapter(config.kind)
+  const url = adapter.buildStreamUrl(config)
+  const tools = options.tools ?? []
+  const requestBody = adapter.buildStreamRequestBody(config, messages, tools)
+
+  pushAiDebugRecord({
+    id: requestId,
+    kind: "chat",
+    label: options.debugLabel ?? "chat-stream",
+    model: config.model,
+    createdAt: new Date().toISOString(),
+    messages: messages.map((message): AiChatMessage => {
+      if (message.role === "tool") {
+        return { role: "user", content: `[tool:${message.toolCallId}] ${message.content}` }
+      }
+      return { role: message.role, content: message.content }
+    }),
+  })
+
+  logDebugGroup(`[Tsian AI ${requestId}] stream request`, {
+    url,
+    model: config.model,
+    apiKey: maskSecret(config.apiKey),
+    requestKeys: Object.keys(requestBody),
+    toolCount: tools.length,
+    messages: messages.map((message, index) => ({
+      index,
+      role: message.role,
+      content:
+        message.role === "tool"
+          ? previewText(`[tool:${message.toolCallId}] ${message.content}`)
+          : previewText(message.content),
+    })),
+  })
+
+  const timed = createTimedAbortSignal({
+    signal: options.signal,
+    timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,
+    timeoutMessage: `[Tsian AI ${requestId}] request timed out after ${DEFAULT_CHAT_TIMEOUT_MS} ms.`,
+  })
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: adapter.buildHeaders(config),
+      body: JSON.stringify(requestBody),
+      signal: timed.signal,
+    })
+  } catch (error) {
+    timed.cleanup()
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[Tsian AI ${requestId}] error`, { error })
+    updateAiDebugRecord(requestId, { error: message })
+    throw error
+  }
+
+  if (!response.ok) {
+    timed.cleanup()
+    const payload = await readJsonPayload(response)
+    console.warn(`[Tsian AI ${requestId}] error`, { status: response.status, payload })
+    const message = extractErrorMessage(payload) ?? `AI request failed with status ${response.status}.`
+    updateAiDebugRecord(requestId, { error: message })
+    throw new Error(message)
+  }
+
+  // Non-SSE fallback: endpoint answered with a regular JSON body.
+  const contentType = response.headers.get("content-type") ?? ""
+  if (!contentType.includes("text/event-stream")) {
+    try {
+      const payload = await readJsonPayload(response)
+      const result = adapter.extractNativeResult(payload)
+      const usage = extractUsageFromPayload(payload)
+      updateAiDebugRecord(requestId, { responseText: result.raw, usage })
+      logDebugGroup(`[Tsian AI ${requestId}] stream non-SSE fallback`, {
+        text: previewText(result.text, 2400),
+        toolCalls: result.toolCalls,
+        finishReason: result.finishReason,
+        payload,
+      })
+      return result
+    } finally {
+      timed.cleanup()
+    }
+  }
+
+  if (!response.body) {
+    timed.cleanup()
+    throw new Error("Streaming response has no body.")
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let lineBuffer = ""
+  let textBuffer = ""
+  let isToolRound = false
+  let finishReason: "stop" | "tool_calls" | undefined
+  const toolAccumulator = new Map<number, { id: string; name: string; args: string }>()
+  let currentEvent = ""
+  let streamEnded = false
+  const isClaude = config.kind === "claude"
+
+  try {
+    while (!streamEnded) {
+      const { done, value } = await reader.read()
+      if (done) {
+        streamEnded = true
+        break
+      }
+      lineBuffer += decoder.decode(value, { stream: true })
+      const parsed = parseSseChunk(lineBuffer)
+      lineBuffer = parsed.rest
+
+      for (const line of parsed.lines) {
+        if (line.kind === "event") {
+          currentEvent = line.value
+          // Claude `message_stop` ends the stream.
+          if (isClaude && line.value === "message_stop") {
+            streamEnded = true
+          }
+          continue
+        }
+
+        // line.kind === "data"
+        const dataRaw = line.value
+        // OpenAI terminator.
+        if (dataRaw === "[DONE]") {
+          streamEnded = true
+          continue
+        }
+
+        let data: unknown
+        try {
+          data = JSON.parse(dataRaw)
+        } catch {
+          // Skip malformed/keep-alive data lines.
+          continue
+        }
+
+        const delta = adapter.extractStreamDelta(data)
+        if (delta !== undefined && delta !== "") {
+          textBuffer += delta
+          options.onDelta?.(delta, round)
+        }
+
+        adapter.extractStreamToolCalls(data, { event: currentEvent, accumulator: toolAccumulator })
+        if (toolAccumulator.size > 0) {
+          isToolRound = true
+        }
+
+        const finish = adapter.extractStreamFinish(data)
+        if (finish) {
+          finishReason = finish
+        }
+      }
+    }
+  } finally {
+    timed.cleanup()
+    try {
+      reader.releaseLock()
+    } catch {
+      // Reader already released.
+    }
+  }
+
+  const toolCalls = finalizeStreamedToolCalls(toolAccumulator)
+  const resolvedFinish: "stop" | "tool_calls" =
+    finishReason ?? (isToolRound || toolCalls.length > 0 ? "tool_calls" : "stop")
+
+  const result: ModelCallResult = {
+    text: resolvedFinish === "tool_calls" ? "" : textBuffer,
+    toolCalls,
+    raw: textBuffer,
+    finishReason: resolvedFinish,
+  }
+
+  updateAiDebugRecord(requestId, { responseText: result.raw })
+  logDebugGroup(`[Tsian AI ${requestId}] stream response`, {
+    text: previewText(result.text, 2400),
+    toolCalls: result.toolCalls,
+    finishReason: result.finishReason,
+    isToolRound,
   })
 
   return result

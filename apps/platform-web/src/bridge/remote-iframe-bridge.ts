@@ -12,6 +12,8 @@ import type {
   RemotePlayBridgeResponseMessage,
 } from "@tsian/contracts"
 
+import { subscribeTurnDelta } from "../streaming-events"
+
 const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 const REMOTE_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms"
 const ALLOWED_REMOTE_FRONTEND_PROTOCOLS = new Set(["http:", "https:"])
@@ -423,6 +425,11 @@ export function mountRemoteIframeFrontend(
     postEvent("turn-debug-ready", { turn })
   })
 
+  // Forward streaming text deltas to the remote frontend as `turn-delta`.
+  const unsubscribeTurnDelta = subscribeTurnDelta((delta, turn, round) => {
+    postEvent("turn-delta", { delta, turn, round })
+  })
+
   window.addEventListener("message", onMessage)
   container.replaceChildren(iframe)
 
@@ -430,6 +437,7 @@ export function mountRemoteIframeFrontend(
     disposed = true
     window.removeEventListener("message", onMessage)
     unsubscribeTurnDebugReady?.()
+    unsubscribeTurnDelta?.()
     if (iframe.parentElement === container) {
       iframe.remove()
     }

@@ -81,6 +81,7 @@
       :kind="activeTypeKind"
       :initial-parameters="editingModelParameters"
       :initial-tool-call-mode="editingModelToolCallMode"
+      :initial-streaming="editingModelStreaming"
       @confirm="handleEditModelParamsConfirm"
     />
   </section>
@@ -133,6 +134,8 @@ const editingModelParameters = computed<BrowserAiModelParameters>(
 const editingModelToolCallMode = computed<BrowserAiToolCallMode>(
   () => editingModel.value?.toolCallMode ?? "text",
 )
+
+const editingModelStreaming = computed<boolean>(() => editingModel.value?.streaming ?? false)
 
 const activeTypeId = ref("")
 
@@ -317,7 +320,7 @@ function handlePatchPreset(payload: { typeId: string; presetId: string; patch: P
   Object.assign(preset, payload.patch)
 }
 
-function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void {
+function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode; streaming: boolean }): void {
   const preset = activePreset.value
   if (!preset) {
     return
@@ -330,7 +333,7 @@ function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModel
     toast.error("该模型已存在。")
     return
   }
-  preset.models.push(createBrowserAiModelConfig({ id, parameters: payload.parameters, toolCallMode: payload.toolCallMode }))
+  preset.models.push(createBrowserAiModelConfig({ id, parameters: payload.parameters, toolCallMode: payload.toolCallMode, streaming: payload.streaming }))
 }
 
 async function handleDeleteModel(modelId: string): Promise<void> {
@@ -394,13 +397,16 @@ function handleEditModelParams(modelId: string): void {
   editParamsOpen.value = true
 }
 
-function handleEditModelParamsConfirm(payload: { parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode }): void {
+function handleEditModelParamsConfirm(payload: { parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode; streaming: boolean }): void {
   const model = editingModel.value
   if (!model) {
     return
   }
   model.parameters = payload.parameters
   model.toolCallMode = payload.toolCallMode
+  // Text-protocol models can never stream; clamp to false regardless of the
+  // switch value (the switch is disabled in that mode, this is a safety net).
+  model.streaming = payload.toolCallMode === "native" ? payload.streaming : false
   toast.success("模型参数已更新。")
 }
 

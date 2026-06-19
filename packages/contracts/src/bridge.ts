@@ -112,6 +112,7 @@ export type RemotePlayBridgeResponseMessage =
 export type RemotePlayBridgeEventName =
   | "turn-completed"
   | "turn-debug-ready"
+  | "turn-delta"
 
 export type RemotePlayBridgeEventPayload =
   | {
@@ -119,6 +120,11 @@ export type RemotePlayBridgeEventPayload =
     }
   | {
       turn: number
+    }
+  | {
+      delta: string
+      turn: number
+      round: number
     }
 
 export interface RemotePlayBridgeEventMessage {

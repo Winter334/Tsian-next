@@ -64,10 +64,12 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, createPlayFrontendBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
+import { emitTurnDelta } from "../streaming-events"
 import { LocalRuntimeEngine } from "../runtime-host"
 import {
   generateAssistantReply,
   generateAssistantReplyNative,
+  streamAssistantReplyNative,
   getAiDebugRecords,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
@@ -1530,6 +1532,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             snapshot: snapshotBefore,
             workspaceFiles: workspaceTransaction.workspaceFiles,
             signal: currentController.signal,
+            onDelta: (delta, round) => emitTurnDelta(delta, nextTurn, round),
           },
           {
             callModel(messages, options) {
@@ -1542,10 +1545,26 @@ export const playFrontendBridge: PlayFrontendBridge = {
             },
             async callModelNative(messages, options, tools) {
               const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
-              return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+              // Stream only when the caller wants deltas AND the model opted into
+              // streaming (text-protocol models force false). Falls back to the
+              // global config's flag when this agent has no preset mapping.
+              const streamingEnabled = agentConfig
+                ? agentConfig.streaming
+                : getBrowserAiConfig()?.streaming ?? false
+              if (!options.onDelta || !streamingEnabled) {
+                return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+                  debugLabel: options.debugLabel,
+                  signal: options.signal,
+                  tools,
+                  ...(agentConfig ? { config: agentConfig } : {}),
+                })
+              }
+              return streamAssistantReplyNative(messages as RuntimeChatMessage[], {
                 debugLabel: options.debugLabel,
                 signal: options.signal,
                 tools,
+                onDelta: options.onDelta,
+                round: options.round,
                 ...(agentConfig ? { config: agentConfig } : {}),
               })
             },
@@ -1687,6 +1706,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
 export interface AssistantChatInput {
   message: string
   history?: ConversationMessageRecord[]
+  /**
+   * Streaming text-delta sink. Invoked for every streamed text chunk across
+   * all tool-loop rounds (thought-round text included). `undefined` disables
+   * streaming (non-SSE fallback).
+   */
+  onDelta?: (delta: string, round: number) => void
+  /**
+   * Optional external abort signal (e.g. a "stop generating" button). Aborting
+   * it aborts the turn's model calls and tool loop.
+   */
+  signal?: AbortSignal
 }
 
 export interface AssistantChatResult {
@@ -1744,6 +1774,17 @@ export async function runAssistantChat(
   ].sort((left, right) => left.path.localeCompare(right.path))
 
   const controller = new AbortController()
+  // Merge an external abort signal (e.g. "stop generating" button) into the
+  // turn's controller so aborting it cancels model calls and the tool loop.
+  if (input.signal) {
+    if (input.signal.aborted) {
+      controller.abort(input.signal.reason)
+    } else {
+      input.signal.addEventListener("abort", () => controller.abort(input.signal!.reason), {
+        once: true,
+      })
+    }
+  }
   const workspaceTransaction = createRuntimeWorkspaceTransaction(workspaceFiles)
   const activeWorkspaceTransaction = workspaceTransaction
   const providerPresetMap = buildAgentProviderPresetMap(
@@ -1763,6 +1804,7 @@ export async function runAssistantChat(
         snapshot: { version: "tsian.runtime.snapshot.v1", state: { turn: 0, messages: [] } },
         workspaceFiles: workspaceTransaction.workspaceFiles,
         signal: controller.signal,
+        onDelta: input.onDelta,
       },
       {
         callModel(messages, options) {
@@ -1775,10 +1817,26 @@ export async function runAssistantChat(
         },
         async callModelNative(messages, options, tools) {
           const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
-          return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+          // Stream only when the caller wants deltas AND the model opted into
+          // streaming (text-protocol models force false). Falls back to the
+          // global config's flag when this agent has no preset mapping.
+          const streamingEnabled = agentConfig
+            ? agentConfig.streaming
+            : getBrowserAiConfig()?.streaming ?? false
+          if (!options.onDelta || !streamingEnabled) {
+            return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+              debugLabel: options.debugLabel,
+              signal: options.signal,
+              tools,
+              ...(agentConfig ? { config: agentConfig } : {}),
+            })
+          }
+          return streamAssistantReplyNative(messages as RuntimeChatMessage[], {
             debugLabel: options.debugLabel,
             signal: options.signal,
             tools,
+            onDelta: options.onDelta,
+            round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
           })
         },
