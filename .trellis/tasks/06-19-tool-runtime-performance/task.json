@@ -1,0 +1,31 @@
+{
+  "id": "tool-runtime-performance",
+  "name": "tool-runtime-performance",
+  "title": "工具调用性能与限制优化",
+  "description": "借鉴主流 agent 框架（ZCode/Claude Code/Codex）的工具集与限制机制，优化 Tsian 的工具调用性能：去掉 maxToolRoundsPerAgent 硬轮次限制，改为单次请求上下文 token 上限（默认 256k，超限触发上下文压缩）；补全工具类别（文件系统模拟可借鉴成熟方案）；schema 借鉴优化（补返回值描述/示例/去重叠）。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-19",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "feat/ai-streaming-response",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-19-tool-skill-decouple",
+    "06-19-tool-token-budget",
+    "06-19-tool-rename-and-glob",
+    "06-19-tool-executor-policy"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
