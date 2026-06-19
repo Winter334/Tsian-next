@@ -136,10 +136,6 @@ export interface AgentRuntimeCapabilities {
    * runtime falls back to the legacy text-protocol tool loop.
    */
   toolCallMode?: BrowserAiToolCallMode
-  runPlatformAction?(
-    request: PlatformActionRequest,
-    context?: RuntimeControlledExecutorContext,
-  ): Promise<PlatformActionResult>
   runBrowserScript?(
     request: RuntimeBrowserScriptExecutorRequest,
     context?: RuntimeControlledExecutorContext,
@@ -1163,7 +1159,6 @@ async function callAgentModelWithWorkspaceToolsNative(
           transcriptCollector,
         )
         : undefined,
-      runPlatformAction: capabilities.runPlatformAction,
       runBrowserScript: capabilities.runBrowserScript,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
@@ -1332,7 +1327,6 @@ async function callAgentModelWithWorkspaceTools(
             transcriptCollector,
           )
         : undefined,
-      runPlatformAction: capabilities.runPlatformAction,
       runBrowserScript: capabilities.runBrowserScript,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,

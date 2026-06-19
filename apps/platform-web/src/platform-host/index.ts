@@ -331,21 +331,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function isWorkspaceFile(value: unknown): value is WorkspaceFile {
-  return isRecord(value)
-    && typeof value.path === "string"
-    && typeof value.content === "string"
-    && typeof value.mediaType === "string"
-    && typeof value.createdAt === "number"
-    && typeof value.updatedAt === "number"
-}
-
-function isWorkspaceDeleteResult(value: unknown): value is { deletedPaths: string[] } {
-  return isRecord(value)
-    && Array.isArray(value.deletedPaths)
-    && value.deletedPaths.every((path) => typeof path === "string")
-}
-
 function syncWorkspaceFileWrite(
   workspaceFiles: WorkspaceFile[],
   item: WorkspaceFile,
@@ -1124,115 +1109,6 @@ async function executePlatformAction(
   )
 }
 
-function emitWorkspaceMutationTrace(
-  emitTrace: RuntimeTraceEmitter | undefined,
-  request: PlatformActionRequest,
-  result: PlatformActionResult,
-): void {
-  if (!request.action.startsWith("workspace.")) {
-    return
-  }
-
-  if (!result.ok) {
-    emitTrace?.({
-      type: "workspace_mutation",
-      ok: false,
-      data: {
-        platformAction: request.action,
-        error: result.error ?? null,
-      },
-    })
-    return
-  }
-
-  const item = result.item
-  if (
-    (request.action === "workspace.write" || request.action === "workspace.patch")
-    && isRecord(item)
-    && isWorkspaceFile(item.file)
-  ) {
-    emitTrace?.({
-      type: "workspace_mutation",
-      ok: true,
-      data: {
-        platformAction: request.action,
-        mutation: request.action === "workspace.patch" ? "patch" : "write",
-        path: item.file.path,
-        mediaType: item.file.mediaType,
-        size: item.file.content.length,
-        updatedAt: item.file.updatedAt,
-      },
-    })
-    return
-  }
-
-  if (request.action === "workspace.delete" && isWorkspaceDeleteResult(item)) {
-    emitTrace?.({
-      type: "workspace_mutation",
-      ok: true,
-      data: {
-        platformAction: request.action,
-        mutation: "delete",
-        deletedPaths: item.deletedPaths,
-        deletedCount: item.deletedPaths.length,
-      },
-    })
-  }
-}
-
-async function runAgentRuntimeStagedPlatformAction(
-  workspaceTransaction: RuntimeWorkspaceTransaction,
-  activeSaveId: string,
-  request: PlatformActionRequest,
-  executorContext: RuntimeControlledExecutorContext | undefined,
-): Promise<PlatformActionResult> {
-  const workspaceRequest = normalizeWorkspaceActionRequest(request)
-  if (!workspaceRequest) {
-    return actionError(
-      "AGENT_RUNTIME_PLATFORM_ACTION_UNSUPPORTED",
-      `Agent Runtime 不允许调用平台动作：${request.action}`,
-      { action: request.action },
-    )
-  }
-
-  try {
-    return {
-      ok: true,
-      item: await executeWorkspaceOperationForActiveSave(activeSaveId, workspaceRequest, {
-        agentContext: executorContext?.agentContext,
-        exposedOperations: executorContext?.exposedWorkspaceOperations ?? [],
-        workspaceTransaction,
-      }),
-    }
-  } catch (error) {
-    return workspaceActionError(
-      error,
-      "WORKSPACE_OPERATION_FAILED",
-      "执行 workspace 操作失败。",
-    )
-  }
-}
-
-function createAgentRuntimePlatformActionRunner(
-  workspaceTransaction: RuntimeWorkspaceTransaction,
-  activeSaveId: string,
-  emitTrace?: RuntimeTraceEmitter,
-) {
-  return async (
-    request: PlatformActionRequest,
-    executorContext?: RuntimeControlledExecutorContext,
-  ): Promise<PlatformActionResult> => {
-    const result = await runAgentRuntimeStagedPlatformAction(
-      workspaceTransaction,
-      activeSaveId,
-      request,
-      executorContext,
-    )
-    emitWorkspaceMutationTrace(emitTrace, request, result)
-    return result
-  }
-}
-
 async function writeRuntimeTraceFileForSave(
   saveId: string,
   workspaceFiles: WorkspaceFile[],
@@ -1583,11 +1459,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
             toolCallMode: resolveAgentModelConfig("master", providerPresetMap)?.toolCallMode
               ?? getBrowserAiConfig()?.toolCallMode
               ?? "text",
-            runPlatformAction: createAgentRuntimePlatformActionRunner(
-              activeWorkspaceTransaction,
-              activeSaveId,
-              trace.emit,
-            ),
             runBrowserScript: createBrowserSkillScriptRunner({
               workspaceTransaction: activeWorkspaceTransaction,
               signal: currentController.signal,
@@ -1872,11 +1743,6 @@ export async function runAssistantChat(
           })
         },
         toolCallMode: localAssistantToolCallMode,
-        runPlatformAction: createAgentRuntimePlatformActionRunner(
-          activeWorkspaceTransaction,
-          activeSaveId ?? "",
-          () => {},
-        ),
         runBrowserScript: createBrowserSkillScriptRunner({
           workspaceTransaction: activeWorkspaceTransaction,
           signal: controller.signal,

@@ -1,12 +1,10 @@
 import type {
   AgentContextEntry,
-  PlatformActionRequest,
   PlatformActionResult,
   SkillRegistryEntry,
   WorkspaceFile,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
-  WorkspaceScope,
 } from "@tsian/contracts"
 import type {
   RuntimeTraceDebugLabel,
@@ -79,14 +77,12 @@ interface RuntimeSkillActionDeclaration {
 export interface RuntimeActionExecutorReference {
   type: string
   name: string
-  operation?: WorkspaceOperationName
-  scope?: WorkspaceScope
   path?: string
   timeoutMs?: number
 }
 
 interface RuntimeActionExecutorResult {
-  status: "validated" | "executed"
+  status: "executed"
   output: unknown
 }
 
@@ -109,11 +105,6 @@ export interface RuntimeControlledExecutorContext {
   agentContext?: AgentContextEntry
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
 }
-
-type RuntimePlatformActionRunner = (
-  request: PlatformActionRequest,
-  context?: RuntimeControlledExecutorContext,
-) => Promise<PlatformActionResult>
 
 export interface RuntimeBrowserScriptExecutorRequest {
   skillName: string
@@ -159,7 +150,6 @@ interface RuntimeActionExecutorContext {
   agentContext?: AgentContextEntry
   workspaceMutations?: WorkspaceOperationMutationAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
-  runPlatformAction?: RuntimePlatformActionRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
   signal?: AbortSignal
 }
@@ -188,7 +178,6 @@ export interface RuntimeWorkspaceToolExecutionContext {
   agentContext?: AgentContextEntry
   sessionState?: RuntimeWorkspaceToolSessionState
   runAgentCall?: RuntimeAgentCallRunner
-  runPlatformAction?: RuntimePlatformActionRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
@@ -220,13 +209,7 @@ const AGENT_CALL_HISTORY_MODES = new Set<RuntimeAgentCallHistoryMode>([
   "recent",
   "scene",
 ])
-const DEFAULT_ACTION_EXECUTOR: RuntimeActionExecutorReference = {
-  type: "builtin",
-  name: "validation",
-}
-const PLATFORM_ACTION_EXECUTOR_TYPE = "platform_action"
 const BROWSER_SCRIPT_EXECUTOR_TYPE = "browser_script"
-const WORKSPACE_OPERATION_EXECUTOR_TYPE = "workspace_operation"
 const DEFAULT_CONTROLLED_EXECUTOR_TIMEOUT_MS = 10_000
 const MAX_CONTROLLED_EXECUTOR_TIMEOUT_MS = 60_000
 const SUPPORTED_ACTION_SCHEMA_TYPES = new Set([
@@ -640,7 +623,11 @@ function normalizeActionExecutorReference(
   index: number,
 ): RuntimeActionExecutorReference {
   if (value === undefined) {
-    return { ...DEFAULT_ACTION_EXECUTOR }
+    throw toolError(
+      "ACTION_EXECUTOR_INVALID",
+      `Action executor is required and must declare type "${BROWSER_SCRIPT_EXECUTOR_TYPE}": ${actionName}`,
+      { index, name: actionName },
+    )
   }
 
   if (!isRecord(value)) {
@@ -660,96 +647,34 @@ function normalizeActionExecutorReference(
     )
   }
 
+  if (type !== BROWSER_SCRIPT_EXECUTOR_TYPE) {
+    throw toolError(
+      "ACTION_EXECUTOR_INVALID",
+      `Action executor type "${type}" is no longer supported; only "${BROWSER_SCRIPT_EXECUTOR_TYPE}" is supported: ${actionName}`,
+      { index, name: actionName, type },
+    )
+  }
+
   const explicitName = typeof value.name === "string" && value.name.trim()
     ? value.name.trim()
     : ""
-  if (type === PLATFORM_ACTION_EXECUTOR_TYPE && !explicitName) {
+  const timeoutMs = normalizeExecutorTimeoutMs(value.timeoutMs, actionName, index)
+
+  const path = typeof value.path === "string" && value.path.trim()
+    ? value.path.trim()
+    : explicitName
+  if (!path) {
     throw toolError(
       "ACTION_EXECUTOR_INVALID",
-      `Platform action executor requires a non-empty string name: ${actionName}`,
+      `Browser script executor requires a non-empty string path: ${actionName}`,
       { index, name: actionName },
     )
   }
 
-  const timeoutMs = normalizeExecutorTimeoutMs(value.timeoutMs, actionName, index)
-
-  if (type === WORKSPACE_OPERATION_EXECUTOR_TYPE) {
-    const operation = typeof value.operation === "string" && value.operation.trim()
-      ? value.operation.trim()
-      : explicitName
-    const supportedOperations = [
-      "list",
-      "search",
-      "read",
-      "diff",
-      "patch",
-      "write",
-      "move",
-      "delete",
-      "validate",
-    ]
-    if (!supportedOperations.includes(operation)) {
-      throw toolError(
-        "ACTION_EXECUTOR_INVALID",
-        `Workspace operation executor requires a supported operation: ${actionName}`,
-        { index, name: actionName, operation, supportedOperations },
-      )
-    }
-
-    const scope = typeof value.scope === "string" && value.scope.trim()
-      ? value.scope.trim()
-      : undefined
-    if (
-      scope !== undefined
-      && scope !== "effective"
-      && scope !== "card-content"
-      && scope !== "save-runtime"
-      && scope !== "platform-meta"
-    ) {
-      throw toolError(
-        "ACTION_EXECUTOR_INVALID",
-        `Workspace operation executor scope is invalid: ${actionName}`,
-        { index, name: actionName, scope },
-      )
-    }
-
-    return {
-      type,
-      name: operation,
-      operation: operation as WorkspaceOperationName,
-      ...(scope ? { scope: scope as WorkspaceScope } : {}),
-      ...(typeof value.path === "string" && value.path.trim()
-        ? { path: value.path.trim() }
-        : {}),
-      ...(timeoutMs ? { timeoutMs } : {}),
-    }
-  }
-
-  if (type === BROWSER_SCRIPT_EXECUTOR_TYPE) {
-    const path = typeof value.path === "string" && value.path.trim()
-      ? value.path.trim()
-      : explicitName
-    if (!path) {
-      throw toolError(
-        "ACTION_EXECUTOR_INVALID",
-        `Browser script executor requires a non-empty string path: ${actionName}`,
-        { index, name: actionName },
-      )
-    }
-
-    return {
-      type,
-      name: explicitName || path,
-      path,
-      ...(timeoutMs ? { timeoutMs } : {}),
-    }
-  }
-
-  const name = explicitName || (type === "builtin" ? DEFAULT_ACTION_EXECUTOR.name : "")
-
   return {
     type,
-    name,
+    name: explicitName || path,
+    path,
     ...(timeoutMs ? { timeoutMs } : {}),
   }
 }
@@ -807,10 +732,9 @@ function normalizePolicyDecision(
 }
 
 function shouldCheckActionExecutorPolicy(executor: RuntimeActionExecutorReference): boolean {
-  return executor.type === "builtin"
-    || executor.type === PLATFORM_ACTION_EXECUTOR_TYPE
-    || executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE
-    || executor.type === WORKSPACE_OPERATION_EXECUTOR_TYPE
+  // browser_script is the only supported executor after the decouple task; the
+  // policy gate only applies to it (subtask 4 wires the actual host policy).
+  return executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE
 }
 
 function checkActionExecutorPolicy(
@@ -1567,36 +1491,6 @@ function resolveBrowserScriptPath(
   return resolvedPath
 }
 
-const BUILTIN_ACTION_EXECUTORS: Record<
-  string,
-  (context: RuntimeActionExecutorContext) => RuntimeActionExecutorResult
-> = {
-  validation: () => ({
-    status: "validated",
-    output: null,
-  }),
-  echo: ({ input }) => ({
-    status: "executed",
-    output: input,
-  }),
-}
-
-function workspaceOperationRequestFromExecutor(
-  executor: RuntimeActionExecutorReference,
-  input: Record<string, unknown>,
-): WorkspaceOperationRequest {
-  const operation = executor.operation ?? executor.name as WorkspaceOperationName
-  const scope = executor.scope ?? input.scope
-  const path = executor.path ?? input.path
-
-  return {
-    ...input,
-    operation,
-    scope,
-    ...(typeof path === "string" ? { path } : {}),
-  } as WorkspaceOperationRequest
-}
-
 function workspaceOperationRequestFromToolCall(
   call: RuntimeWorkspaceToolCall,
 ): WorkspaceOperationRequest {
@@ -1613,158 +1507,79 @@ async function executeSkillAction(
   input: Record<string, unknown>,
   context: RuntimeActionExecutorContext,
 ): Promise<RuntimeActionExecutorResult> {
-  if (action.executor.type === "builtin") {
-    const executor = BUILTIN_ACTION_EXECUTORS[action.executor.name]
-    if (!executor) {
-      throw toolError(
-        "ACTION_EXECUTOR_NOT_FOUND",
-        `Built-in action executor was not found: ${action.executor.name}`,
-        {
-          executor: action.executor,
-          availableExecutors: Object.keys(BUILTIN_ACTION_EXECUTORS).sort(),
-        },
-      )
-    }
-
-    return executor(context)
-  }
-
-  if (action.executor.type === WORKSPACE_OPERATION_EXECUTOR_TYPE) {
-    const output = await runWithExecutorTimeout(
-      action.executor,
-      context.signal,
-      () => executeWorkspaceOperation(
-        workspaceOperationRequestFromExecutor(action.executor, input),
-        {
-          workspaceFiles: context.workspaceFiles,
-          agentContext: context.agentContext,
-          mutations: context.workspaceMutations,
-          exposedOperations: context.exposedWorkspaceOperations,
-        },
-      ),
+  // After the tool/skill decouple task, browser_script is the only supported
+  // action executor. run_script validates executor.type === browser_script at
+  // its entry, so reaching a non-browser_script type here means the action was
+  // registered through a legacy path; reject with an explicit unsupported code.
+  if (action.executor.type !== BROWSER_SCRIPT_EXECUTOR_TYPE) {
+    throw toolError(
+      "ACTION_EXECUTOR_UNSUPPORTED",
+      `Action executor type is not supported: ${action.executor.type}`,
+      { executor: action.executor },
     )
-
-    return {
-      status: "executed",
-      output,
-    }
   }
 
-  if (action.executor.type === PLATFORM_ACTION_EXECUTOR_TYPE) {
-    if (!context.runPlatformAction) {
-      throw toolError(
-        "PLATFORM_ACTION_UNAVAILABLE",
-        "Platform action executor is not available in this runtime.",
-        { executor: action.executor },
-      )
-    }
-
-    const result = await runWithExecutorTimeout(
-      action.executor,
-      context.signal,
-      () => context.runPlatformAction?.(
-        {
-          action: action.executor.name,
-          params: input,
-        },
-        {
-          agentContext: context.agentContext,
-          exposedWorkspaceOperations: context.exposedWorkspaceOperations,
-        },
-      ) ?? Promise.resolve({
-          ok: false,
-          error: {
-            code: "PLATFORM_ACTION_UNAVAILABLE",
-            message: "Platform action executor is not available in this runtime.",
-          },
-        }),
+  if (!context.runBrowserScript) {
+    throw toolError(
+      "BROWSER_SCRIPT_UNAVAILABLE",
+      "Browser script executor is not available in this runtime.",
+      { executor: action.executor },
     )
-    if (!result.ok) {
-      throw toolError(
-        "PLATFORM_ACTION_FAILED",
-        `Platform action failed: ${action.executor.name}`,
-        {
-          action: action.executor.name,
-          platformError: result.error ?? null,
-        },
-      )
-    }
-
-    return {
-      status: "executed",
-      output: result.item ?? null,
-    }
   }
 
-  if (action.executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE) {
-    if (!context.runBrowserScript) {
-      throw toolError(
-        "BROWSER_SCRIPT_UNAVAILABLE",
-        "Browser script executor is not available in this runtime.",
-        { executor: action.executor },
-      )
-    }
-
-    const scriptPath = resolveBrowserScriptPath(loadedSkill.skill, action.executor)
-    if (!context.workspaceFiles.some((file) => file.path === scriptPath)) {
-      throw toolError(
-        "BROWSER_SCRIPT_NOT_FOUND",
-        `Browser script file was not found: ${scriptPath}`,
-        {
-          executor: action.executor,
-          scriptPath,
-          skillPath: loadedSkill.skill.path,
-        },
-      )
-    }
-
-    const result = await runWithExecutorTimeout(
-      action.executor,
-      context.signal,
-      () => context.runBrowserScript?.(
-        {
-          skillName: loadedSkill.skill.name,
-          skillPath: loadedSkill.skill.path,
-          actionName: action.name,
-          scriptPath,
-          input,
-          timeoutMs: effectiveExecutorTimeoutMs(action.executor),
-        },
-        {
-          agentContext: context.agentContext,
-          exposedWorkspaceOperations: context.exposedWorkspaceOperations,
-        },
-      ) ?? Promise.resolve({
-          ok: false,
-          error: {
-            code: "BROWSER_SCRIPT_UNAVAILABLE",
-            message: "Browser script executor is not available in this runtime.",
-          },
-        }),
+  const scriptPath = resolveBrowserScriptPath(loadedSkill.skill, action.executor)
+  if (!context.workspaceFiles.some((file) => file.path === scriptPath)) {
+    throw toolError(
+      "BROWSER_SCRIPT_NOT_FOUND",
+      `Browser script file was not found: ${scriptPath}`,
+      {
+        executor: action.executor,
+        scriptPath,
+        skillPath: loadedSkill.skill.path,
+      },
     )
-    if (!result.ok) {
-      throw toolError(
-        result.error?.code ?? "BROWSER_SCRIPT_FAILED",
-        result.error?.message ?? `Browser script failed: ${scriptPath}`,
-        {
-          executor: action.executor,
-          scriptPath,
-          scriptError: result.error ?? null,
-        },
-      )
-    }
-
-    return {
-      status: "executed",
-      output: result.item ?? null,
-    }
   }
 
-  throw toolError(
-    "ACTION_EXECUTOR_UNSUPPORTED",
-    `Action executor type is not supported: ${action.executor.type}`,
-    { executor: action.executor },
+  const result = await runWithExecutorTimeout(
+    action.executor,
+    context.signal,
+    () => context.runBrowserScript?.(
+      {
+        skillName: loadedSkill.skill.name,
+        skillPath: loadedSkill.skill.path,
+        actionName: action.name,
+        scriptPath,
+        input,
+        timeoutMs: effectiveExecutorTimeoutMs(action.executor),
+      },
+      {
+        agentContext: context.agentContext,
+        exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+      },
+    ) ?? Promise.resolve({
+        ok: false,
+        error: {
+          code: "BROWSER_SCRIPT_UNAVAILABLE",
+          message: "Browser script executor is not available in this runtime.",
+        },
+      }),
   )
+  if (!result.ok) {
+    throw toolError(
+      result.error?.code ?? "BROWSER_SCRIPT_FAILED",
+      result.error?.message ?? `Browser script failed: ${scriptPath}`,
+      {
+        executor: action.executor,
+        scriptPath,
+        scriptError: result.error ?? null,
+      },
+    )
+  }
+
+  return {
+    status: "executed",
+    output: result.item ?? null,
+  }
 }
 
 function loadSkillByName(
@@ -1864,7 +1679,6 @@ async function validateSkillActionCall(
     agentContext: context.agentContext,
     workspaceMutations: context.workspaceMutations,
     exposedWorkspaceOperations: context.exposedWorkspaceOperations,
-    runPlatformAction: context.runPlatformAction,
     runBrowserScript: context.runBrowserScript,
     signal: context.signal,
   })
