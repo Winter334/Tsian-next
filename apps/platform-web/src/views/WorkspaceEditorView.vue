@@ -43,19 +43,23 @@
     <div class="grid gap-2 border-b border-neon-deep/35 bg-void/65 p-3 sm:grid-cols-[260px]">
       <label class="grid min-w-0 gap-1">
         <span class="font-mono text-[11px] uppercase tracking-wider text-text-dim">文件类型</span>
-        <select
-          v-model="mediaType"
-          class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-elevated px-2 font-mono text-xs text-text-main"
-          @change="mediaTypeTouched = true"
+        <Select
+          :model-value="mediaType"
+          @update:model-value="(value) => { mediaType = value as string; mediaTypeTouched = true }"
         >
-          <option
-            v-for="option in mediaTypeOptions"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }} · {{ option.extensions }}
-          </option>
-        </select>
+          <SelectTrigger class="retro-focus h-8 min-w-0">
+            <SelectValue placeholder="选择文件类型" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem
+              v-for="option in mediaTypeOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }} · {{ option.extensions }}
+            </SelectItem>
+          </SelectContent>
+        </Select>
       </label>
     </div>
 
@@ -103,6 +107,13 @@ import {
 } from "lucide-vue-next"
 import type { WorkspaceValidationResult } from "@tsian/contracts"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   WORKSPACE_MEDIA_TYPE_OPTIONS,
   inferWorkspaceMediaType,

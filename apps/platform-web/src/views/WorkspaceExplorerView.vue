@@ -362,6 +362,7 @@ import type {
   WorkspaceSearchResult,
 } from "@tsian/contracts"
 import { inferWorkspaceMediaType } from "@/lib/workspace-file-types"
+import { confirm, prompt } from "@/composables/useConfirm"
 import {
   WORKSPACE_CONTENT_CHANGED_EVENT,
   emitWorkspaceContentChanged,
@@ -846,7 +847,7 @@ function defaultNewFileName(): string {
   return "untitled.txt"
 }
 
-function openCreateEditor() {
+async function openCreateEditor() {
   if (!isBrowsing.value) {
     return
   }
@@ -855,21 +856,28 @@ function openCreateEditor() {
     return
   }
 
-  const fileName = window.prompt("新建文件名", defaultNewFileName())
+  const fileName = await prompt({
+    title: "新建文件",
+    message: "输入新建文件的名称：",
+    defaultValue: defaultNewFileName(),
+    placeholder: "文件名",
+    confirmText: "新建",
+    validate: (value) => {
+      const normalized = normalizeDisplayPath(value)
+      if (!normalized) {
+        return "文件名不能为空。"
+      }
+      if (normalized.includes("/")) {
+        return "新建文件时只输入名称，不要输入路径。"
+      }
+      return null
+    },
+  })
   if (fileName === null) {
     return
   }
 
   const normalizedName = normalizeDisplayPath(fileName)
-  if (!normalizedName) {
-    feedback.value = "文件名不能为空。"
-    return
-  }
-  if (normalizedName.includes("/")) {
-    feedback.value = "新建文件时只输入名称，不要输入路径。"
-    return
-  }
-
   openEditorRoute("create", currentPath.value ? `${currentPath.value}/${normalizedName}` : normalizedName)
 }
 
@@ -905,7 +913,11 @@ async function deleteEntry(entry: WorkspaceEntry) {
 
   contextMenu.value = null
   cancelRename()
-  const confirmed = window.confirm(`删除「${entry.path}」？`)
+  const confirmed = await confirm({
+    message: `删除「${entry.path}」？`,
+    severity: "danger",
+    confirmText: "删除",
+  })
   if (!confirmed) {
     return
   }

@@ -551,6 +551,13 @@ html, body, #app {
     inset -1px -1px 0 rgba(246, 236, 215, 0.08);
 }
 
+/* Brutalist sunken surface for select triggers (border + bg come from Tailwind classes). */
+.retro-select-surface {
+  box-shadow:
+    inset 1px 1px 0 rgba(0, 0, 0, 0.45),
+    inset -1px -1px 0 rgba(246, 236, 215, 0.08);
+}
+
 .retro-button {
   border: 1px solid rgba(159, 119, 64, 0.78);
   background: #3a352b;

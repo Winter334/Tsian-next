@@ -11,6 +11,9 @@
       class="col-start-1 row-start-1 z-50"
       @exit="startCrtTransition"
     />
+
+    <ToastHost />
+    <ConfirmHost />
   </div>
 </template>
 
@@ -18,6 +21,8 @@
 import { onMounted, ref } from "vue"
 import DesktopShell from "./components/desktop/DesktopShell.vue"
 import SplashScreen from "./components/SplashScreen.vue"
+import ToastHost from "./components/feedback/ToastHost.vue"
+import ConfirmHost from "./components/feedback/ConfirmHost.vue"
 import { initializePlatformHost } from "./platform-host"
 
 type SplashState = "typing" | "animating" | "done"

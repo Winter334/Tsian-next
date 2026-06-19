@@ -165,6 +165,8 @@
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { CheckCircle2, Download, FolderOpen, Gamepad2, Store, Trash2 } from "lucide-vue-next"
+import { confirm } from "@/composables/useConfirm"
+import { toast } from "@/composables/useToast"
 import type { LocalGameCardRecord } from "@/storage/db"
 import {
   getGameCardCoverUrl,
@@ -354,15 +356,17 @@ async function deleteSelectedCard() {
       .filter((save) => save.gameCardId === card.manifest.id)
       .length
     const title = getGameCardTitle(card)
-    const confirmed = window.confirm(
-      `删除应用「${title}」？\n\n这会同时删除 ${saveCount} 个关联存档，无法撤销。`,
-    )
+    const confirmed = await confirm({
+      message: `删除应用「${title}」？\n\n这会同时删除 ${saveCount} 个关联存档，无法撤销。`,
+      severity: "danger",
+      confirmText: "删除",
+    })
     if (!confirmed) {
       return
     }
 
     await deletePlatformGameCard(card.id)
-    feedback.value = `已删除应用：${title}`
+    toast.success(`已删除应用：${title}`)
     selectedCardId.value = ""
     await refreshCards()
   } catch (error) {

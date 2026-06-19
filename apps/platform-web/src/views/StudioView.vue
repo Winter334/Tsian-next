@@ -216,20 +216,24 @@
                     <div class="grid gap-3 p-3">
                       <label class="grid gap-2">
                         <span class="text-xs font-bold text-text-main">权限等级</span>
-                        <select
-                          class="retro-input retro-focus h-9 w-full px-2 text-sm"
+                        <Select
+                          :model-value="String(selectedAgent?.workspaceAccess.level ?? 1)"
                           :disabled="updatingWorkspaceAccess"
-                          :value="selectedAgent?.workspaceAccess.level ?? 1"
-                          @change="updateWorkspaceAccessLevel(Number(($event.target as HTMLSelectElement).value))"
+                          @update:model-value="(value) => updateWorkspaceAccessLevel(Number(value))"
                         >
-                          <option
-                            v-for="option in workspaceAccessOptions"
-                            :key="option.level"
-                            :value="option.level"
-                          >
-                            {{ option.label }}
-                          </option>
-                        </select>
+                          <SelectTrigger class="h-9 w-full">
+                            <SelectValue placeholder="选择权限等级" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem
+                              v-for="option in workspaceAccessOptions"
+                              :key="option.level"
+                              :value="String(option.level)"
+                            >
+                              {{ option.label }}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </label>
                       <p class="text-xs leading-5 text-text-dim">
                         {{ workspaceAccessDescription }}
@@ -244,21 +248,25 @@
                     <div class="grid gap-3 p-3">
                       <label class="grid gap-2">
                         <span class="text-xs font-bold text-text-main">服务商预设</span>
-                        <select
-                          class="retro-input retro-focus h-9 w-full px-2 text-sm"
+                        <Select
+                          :model-value="selectedAgent?.providerPresetId || '__platform_default__'"
                           :disabled="updatingProviderPreset"
-                          :value="selectedAgent?.providerPresetId ?? ''"
-                          @change="updateProviderPreset(($event.target as HTMLSelectElement).value)"
+                          @update:model-value="(value) => updateProviderPreset(value === '__platform_default__' ? '' : value as string)"
                         >
-                          <option value="">使用平台默认</option>
-                          <option
-                            v-for="preset in providerPresetOptions"
-                            :key="preset.id"
-                            :value="preset.id"
-                          >
-                            {{ preset.name }}
-                          </option>
-                        </select>
+                          <SelectTrigger class="h-9 w-full">
+                            <SelectValue placeholder="使用平台默认" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="__platform_default__">使用平台默认</SelectItem>
+                            <SelectItem
+                              v-for="preset in providerPresetOptions"
+                              :key="preset.id"
+                              :value="preset.id"
+                            >
+                              {{ preset.name }}
+                            </SelectItem>
+                          </SelectContent>
+                        </Select>
                       </label>
                       <p class="text-xs leading-5 text-text-dim">
                         {{ providerPresetDescription }}
@@ -305,6 +313,13 @@ import {
   Wrench,
 } from "lucide-vue-next"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import { isSkillEnabledForAgent } from "../agent-runtime/registry"
 import {

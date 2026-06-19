@@ -219,6 +219,8 @@ import type {
 import { AlertTriangle, CheckCircle2, FileClock, RefreshCw, RotateCcw } from "lucide-vue-next"
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 import { playFrontendBridge, waitForPlatformHostReady } from "../platform-host"
+import { confirm } from "@/composables/useConfirm"
+import { toast } from "@/composables/useToast"
 
 interface IssueSummary {
   key: string
@@ -552,7 +554,11 @@ async function refreshAll() {
 
 async function restoreCheckpoint(checkpointIdValue: string) {
   if (!checkpointIdValue) return
-  const confirmed = window.confirm("恢复检查点会回滚当前存档的运行时状态。确认继续吗？")
+  const confirmed = await confirm({
+    message: "恢复检查点会回滚当前存档的运行时状态。确认继续吗？",
+    severity: "danger",
+    confirmText: "恢复",
+  })
   if (!confirmed) return
 
   const result = await playFrontendBridge.platform.runAction({
@@ -560,7 +566,7 @@ async function restoreCheckpoint(checkpointIdValue: string) {
     params: { checkpointId: checkpointIdValue },
   })
   if (!result.ok) {
-    window.alert(result.error?.message ?? "恢复检查点失败。")
+    toast.error(result.error?.message ?? "恢复检查点失败。")
     return
   }
   await refreshAll()

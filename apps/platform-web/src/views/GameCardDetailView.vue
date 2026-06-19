@@ -442,6 +442,8 @@
 import type { GameCardFrontendBinding } from "@tsian/contracts"
 import { computed, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
+import { confirm } from "@/composables/useConfirm"
+import { toast } from "@/composables/useToast"
 import {
   CheckCircle2,
   Copy,
@@ -754,9 +756,11 @@ async function deleteCurrentCard() {
     return
   }
 
-  const confirmed = window.confirm(
-    `删除应用「${cardTitle.value}」？\n\n这会同时删除 ${cardSaves.value.length} 个关联存档，无法撤销。`,
-  )
+  const confirmed = await confirm({
+    message: `删除应用「${cardTitle.value}」？\n\n这会同时删除 ${cardSaves.value.length} 个关联存档，无法撤销。`,
+    severity: "danger",
+    confirmText: "删除",
+  })
   if (!confirmed) {
     return
   }
@@ -765,6 +769,7 @@ async function deleteCurrentCard() {
   feedback.value = ""
   try {
     await deletePlatformGameCard(card.value.id)
+    toast.success(`已删除应用：${cardTitle.value}`)
     router.push("/library")
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : "删除应用失败。"
@@ -857,7 +862,11 @@ async function clearFrontendBinding() {
   if (!card.value?.manifest.frontend) {
     return
   }
-  const confirmed = window.confirm("清除这张游戏卡的前端绑定？这会移除全部打包前端文件，游戏卡内容和存档保留。")
+  const confirmed = await confirm({
+    message: "清除这张游戏卡的前端绑定？这会移除全部打包前端文件，游戏卡内容和存档保留。",
+    severity: "danger",
+    confirmText: "清除",
+  })
   if (!confirmed) {
     return
   }
@@ -923,7 +932,11 @@ async function handleClearFrontendPackage() {
     feedback.value = "内置游戏卡不能直接替换前端，请先另存为本地副本。"
     return
   }
-  const confirmed = window.confirm("清除这张游戏卡的打包前端包？这会移除全部打包前端文件和入口绑定。")
+  const confirmed = await confirm({
+    message: "清除这张游戏卡的打包前端包？这会移除全部打包前端文件和入口绑定。",
+    severity: "danger",
+    confirmText: "清除",
+  })
   if (!confirmed) {
     return
   }
@@ -1012,9 +1025,11 @@ async function continueSave(saveId: string) {
 async function deleteSave(saveId: string) {
   const save = allSaves.value.find((item) => item.id === saveId)
   const saveName = save?.name ?? "这个存档槽"
-  const confirmed = window.confirm(
-    `删除存档槽「${saveName}」？\n\n可复用的游戏卡「${cardTitle.value}」不会被删除。`,
-  )
+  const confirmed = await confirm({
+    message: `删除存档槽「${saveName}」？\n\n可复用的游戏卡「${cardTitle.value}」不会被删除。`,
+    severity: "danger",
+    confirmText: "删除",
+  })
   if (!confirmed) {
     return
   }

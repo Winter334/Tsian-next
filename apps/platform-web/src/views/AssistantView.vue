@@ -17,55 +17,56 @@
       </div>
 
       <div class="min-h-0 flex-1 overflow-auto py-1">
-        <button
+        <div
           v-for="session in sessions"
           :key="session.id"
-          type="button"
-          class="retro-focus group relative block w-full px-3 py-2 text-left transition-colors"
-          :class="session.id === activeSessionId
-            ? 'bg-neon/10 text-neon'
-            : 'text-text-dim hover:bg-panel/40 hover:text-text-main'"
-          @click="handleSelectSession(session.id)"
+          class="group relative flex items-center transition-colors"
+          :class="session.id === activeSessionId ? 'bg-neon/10' : 'hover:bg-panel/40'"
         >
-          <span class="block truncate text-xs font-bold">{{ session.title }}</span>
-          <span class="mt-0.5 block font-mono text-[10px] text-text-dim/80">{{ formatSessionTime(session.updatedAt) }}</span>
+          <button
+            type="button"
+            class="retro-focus min-w-0 flex-1 px-3 py-2 text-left"
+            :class="session.id === activeSessionId ? 'text-neon' : 'text-text-dim group-hover:text-text-main'"
+            @click="handleSelectSession(session.id)"
+          >
+            <span class="block truncate text-xs font-bold">{{ session.title }}</span>
+            <span class="mt-0.5 block font-mono text-[10px] text-text-dim/80">{{ formatSessionTime(session.updatedAt) }}</span>
+          </button>
+          <div
+            class="flex shrink-0 items-center gap-1 pr-2 transition-opacity"
+            :class="session.id === activeSessionId ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+          >
+            <button
+              type="button"
+              class="retro-focus grid h-6 w-6 place-items-center border border-neon-deep/40 bg-panel/50 text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+              :disabled="sessionRenaming"
+              title="重命名会话"
+              @click.stop="handleStartRename(session.id)"
+            >
+              <Pencil class="h-3 w-3" aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              class="retro-focus grid h-6 w-6 place-items-center border border-danger/40 bg-danger/8 text-danger/85 transition-colors hover:bg-danger/20 hover:text-danger"
+              :disabled="sessionDeleting"
+              title="删除会话"
+              @click.stop="handleDeleteSessionById(session.id)"
+            >
+              <Trash2 class="h-3 w-3" aria-hidden="true" />
+            </button>
+          </div>
           <span
             v-if="session.id === activeSessionId"
             class="absolute inset-y-1 left-0 w-0.5 bg-neon"
             aria-hidden="true"
           />
-        </button>
+        </div>
         <p
           v-if="sessions.length === 0 && !sessionCreating"
           class="px-3 py-6 text-center text-xs text-text-dim/70"
         >
           暂无会话
         </p>
-      </div>
-
-      <div class="flex items-center gap-1 border-t border-neon-deep/25 px-2 py-1.5">
-        <button
-          v-if="activeSessionId"
-          type="button"
-          class="retro-focus inline-flex h-7 flex-1 items-center justify-center gap-1.5 border border-neon-deep/40 bg-panel/50 px-2 font-mono text-[10px] uppercase tracking-wider text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
-          :disabled="sessionRenaming"
-          title="重命名当前会话"
-          @click="handleStartRename"
-        >
-          <Pencil class="h-3 w-3" aria-hidden="true" />
-          重命名
-        </button>
-        <button
-          v-if="activeSessionId"
-          type="button"
-          class="retro-focus inline-flex h-7 flex-1 items-center justify-center gap-1.5 border border-danger/40 bg-danger/8 px-2 font-mono text-[10px] uppercase tracking-wider text-danger/85 transition-colors hover:bg-danger/20 hover:text-danger"
-          :disabled="sessionDeleting"
-          title="删除当前会话"
-          @click="handleDeleteSession"
-        >
-          <Trash2 class="h-3 w-3" aria-hidden="true" />
-          删除
-        </button>
       </div>
     </aside>
 
@@ -85,25 +86,25 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <label class="retro-focus relative inline-flex items-center" :title="`API 服务商：${assistantProviderPresetId ? (providerPresets.find(p => p.id === assistantProviderPresetId)?.name ?? '所选预设已失效，回退到平台默认') : '使用平台默认服务商'}`">
-            <span class="sr-only">API 服务商</span>
-            <select
-              class="retro-input retro-focus h-8 max-w-[160px] truncate appearance-none pr-7 pl-2 font-mono text-[11px] text-text-main"
-              :disabled="updatingProviderPreset || providerPresets.length === 0"
-              :value="assistantProviderPresetId"
-              @change="handleProviderPresetChange(($event.target as HTMLSelectElement).value)"
-            >
-              <option value="">默认服务商</option>
-              <option
+          <Select
+            :model-value="assistantProviderPresetId || '__platform_default__'"
+            :disabled="updatingProviderPreset || providerPresets.length === 0"
+            @update:model-value="(value) => handleProviderPresetChange(value === '__platform_default__' ? '' : value as string)"
+          >
+            <SelectTrigger class="h-8 max-w-[160px]" aria-label="API 服务商" :title="`API 服务商：${assistantProviderPresetId ? (providerPresets.find(p => p.id === assistantProviderPresetId)?.name ?? '所选预设已失效，回退到平台默认') : '使用平台默认服务商'}`">
+              <SelectValue placeholder="默认服务商" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__platform_default__">默认服务商</SelectItem>
+              <SelectItem
                 v-for="preset in providerPresets"
                 :key="preset.id"
                 :value="preset.id"
               >
                 {{ preset.name }}
-              </option>
-            </select>
-            <ChevronDown class="pointer-events-none absolute right-1.5 h-3.5 w-3.5 text-text-dim" aria-hidden="true" />
-          </label>
+              </SelectItem>
+            </SelectContent>
+          </Select>
           <button
             type="button"
             class="retro-button retro-focus inline-flex h-8 items-center justify-center gap-2 px-3 font-mono text-xs"
@@ -246,7 +247,7 @@
     <div
       v-if="renaming"
       class="fixed inset-0 z-50 grid place-items-center bg-black/55 p-4"
-      @click.self="renaming = ''"
+      @click.self="closeRename"
     >
       <div class="w-full max-w-sm border border-neon/40 bg-[#2d2a23] p-4 shadow-[0_18px_48px_rgba(0,0,0,0.5)]">
         <p class="font-mono text-xs uppercase tracking-wider text-neon">重命名会话</p>
@@ -255,13 +256,13 @@
           v-model="renaming"
           class="retro-focus mt-3 w-full border border-neon-deep/40 bg-panel/55 px-3 py-2 text-sm text-text-main"
           @keydown.enter.prevent="handleConfirmRename"
-          @keydown.esc.prevent="renaming = ''"
+          @keydown.esc.prevent="closeRename"
         />
         <div class="mt-4 flex justify-end gap-2">
           <button
             type="button"
             class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs"
-            @click="renaming = ''"
+            @click="closeRename"
           >
             取消
           </button>
@@ -284,6 +285,13 @@ import { ref, nextTick, computed, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
 import { Bot, ChevronDown, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Trash2, User } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import {
   runAssistantChat,
   getPlatformActiveGameCard,
@@ -331,6 +339,7 @@ const sessionCreating = ref(false)
 const sessionRenaming = ref(false)
 const sessionDeleting = ref(false)
 const renaming = ref("")
+const renamingSessionId = ref<string | null>(null)
 const renameInputRef = ref<HTMLInputElement | null>(null)
 const providerPresets = ref<Array<{ id: string; name: string }>>([])
 const assistantProviderPresetId = ref("")
@@ -439,19 +448,22 @@ async function handleCreateSession() {
   }
 }
 
-function handleStartRename() {
-  if (!activeSessionId.value) {
-    return
-  }
-  const current = sessions.value.find((entry) => entry.id === activeSessionId.value)
+function handleStartRename(id: string) {
+  const current = sessions.value.find((entry) => entry.id === id)
+  renamingSessionId.value = id
   renaming.value = current?.title ?? ""
   nextTick(() => renameInputRef.value?.focus())
 }
 
+function closeRename() {
+  renaming.value = ""
+  renamingSessionId.value = null
+}
+
 async function handleConfirmRename() {
-  const id = activeSessionId.value
+  const id = renamingSessionId.value
   if (!id || !renaming.value.trim()) {
-    renaming.value = ""
+    closeRename()
     return
   }
   sessionRenaming.value = true
@@ -460,35 +472,37 @@ async function handleConfirmRename() {
     await refreshSessions()
   } finally {
     sessionRenaming.value = false
-    renaming.value = ""
+    closeRename()
   }
 }
 
-async function handleDeleteSession() {
-  const id = activeSessionId.value
+async function handleDeleteSessionById(id: string) {
   if (!id) {
     return
   }
+  const wasActive = id === activeSessionId.value
   sessionDeleting.value = true
   try {
     await deleteAssistantSession("local", id)
     await refreshSessions()
-    // Pick the next active session or create one.
-    const nextId = await getActiveAssistantSessionId("local")
-    if (nextId) {
-      activeSessionId.value = nextId
-      const stored = await getAssistantSessionMessages(nextId)
-      messages.value = stored.map((msg) => ({
-        role: msg.role === "user" ? "user" : "assistant",
-        content: msg.content,
-      }))
-    } else {
-      const session = await createAssistantSession("local")
-      activeSessionId.value = session.id
-      messages.value = []
-      await refreshSessions()
+    if (wasActive) {
+      // The deleted session was active; pick the next one or create a fresh session.
+      const nextId = await getActiveAssistantSessionId("local")
+      if (nextId) {
+        activeSessionId.value = nextId
+        const stored = await getAssistantSessionMessages(nextId)
+        messages.value = stored.map((msg) => ({
+          role: msg.role === "user" ? "user" : "assistant",
+          content: msg.content,
+        }))
+      } else {
+        const session = await createAssistantSession("local")
+        activeSessionId.value = session.id
+        messages.value = []
+        await refreshSessions()
+      }
+      await scrollToBottom()
     }
-    await scrollToBottom()
   } finally {
     sessionDeleting.value = false
   }
