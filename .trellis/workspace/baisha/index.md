@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 73
+- **Total Sessions**: 74
 - **Last Active**: 2026-06-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~576 | Active |
+| `journal-2.md` | ~614 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 74 | 2026-06-19 | 收尾子任务1 tool-skill-decouple + 开启子任务2 tool-token-budget | `14e788a`, `e8d5bd8`, `34d7751`, `b7c5ca6`, `7ed0165` | `feat/ai-streaming-response` |
 | 73 | 2026-06-19 | 子2a 质量门 + 子2b 工具过程可见与并行执行全流程 | `bace0b2`, `ffb717f` | `feat/ai-streaming-response` |
 | 72 | 2026-06-18 | Finish agent-provider model selection: verify + spec | `eda8dca`, `ba0a3a6`, `a6f8578`, `5bc3dbe` | `chore/trellis-upgrade-0.6.2` |
 | 71 | 2026-06-18 | Assistant chat UI polish + multi-session + archive | `583e77a` | `master` |

@@ -574,3 +574,41 @@ Stages 0-4 were already committed (R0 SW DB-name fix + inferMediaType, stage 1 c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 74: 收尾子任务1 tool-skill-decouple + 开启子任务2 tool-token-budget
+
+**Date**: 2026-06-19
+**Task**: 收尾子任务1 tool-skill-decouple + 开启子任务2 tool-token-budget
+**Package**: platform-web
+**Branch**: `feat/ai-streaming-response`
+
+### Summary
+
+子任务1(工具与skill解耦重构)收尾:构建验证通过并归档。完成内容:R3 registry阶段解析action声明;R4移除builtin/platform_action/workspace_operation executor(executor体系只剩browser_script);R1 skill_load->use_skill(模型声明意图,框架下轮注入SKILL.md全文+注册action);R2 action_call->run_script(直接执行browser_script不需预load);配套更新prompt文案/工具schema/spec契约文档。子任务2(限制机制改造/token预算)开启:已有prd.md,待补design.md+implement.md。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `14e788a` | (see git log) |
+| `e8d5bd8` | (see git log) |
+| `34d7751` | (see git log) |
+| `b7c5ca6` | (see git log) |
+| `7ed0165` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
