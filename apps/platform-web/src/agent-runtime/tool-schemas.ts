@@ -41,10 +41,10 @@ function platformToolEnabled(
   return tools.includes(tool)
 }
 
-const skillLoadSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad,
+const useSkillSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
   description:
-    "Load a Skill's entry instructions (SKILL.md) from the current Agent's visible Skill Index by name. Use it to bring in domain skills, style guides, or action packages before acting. Returns the Skill entry content and registers its declared actions for the current tool loop.",
+    "Declare intent to use a Skill from the current Agent's visible Skill Index by name. The framework injects the Skill's full SKILL.md into the next round's context and registers its declared browser_script actions for run_script. Returns a lightweight confirmation plus the action list (not the full SKILL.md — that arrives as context next round).",
   parameters: {
     type: "object",
     required: ["name"],
@@ -58,21 +58,21 @@ const skillLoadSchema: ToolSchema = {
   },
 }
 
-const actionCallSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.actionCall,
+const runScriptSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.runScript,
   description:
-    "Invoke an action declared by a Skill that has already been loaded in this tool loop. The action routes through its declared executor (built-in, platform_action, workspace_operation, or browser_script) after input validation.",
+    "Execute a browser_script action declared by a Skill that has already been activated via use_skill in this tool loop. The action runs the Skill's browser script through the Tsian SDK after input validation. Single workspace operations should use the top-level workspace tools directly; multi-step orchestration belongs in a browser_script.",
   parameters: {
     type: "object",
-    required: ["skill", "action"],
+    required: ["skill", "script"],
     properties: {
       skill: {
         type: "string",
-        description: "The name of the previously loaded Skill that declares the action.",
+        description: "The name of the previously activated Skill that declares the action.",
       },
-      action: {
+      script: {
         type: "string",
-        description: "The declared action name to invoke.",
+        description: "The declared action name returned by use_skill to execute.",
       },
       input: {
         type: "object",
@@ -123,7 +123,7 @@ const agentCallSchema: ToolSchema = {
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead,
   description:
-    "Read one Runtime Workspace file by scope and path. Use it for third-layer files referenced by a loaded Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use skill_load for those).",
+    "Read one Runtime Workspace file by scope and path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those).",
   parameters: {
     type: "object",
     required: ["scope", "path"],
@@ -350,7 +350,7 @@ const workspaceValidateSchema: ToolSchema = {
  * Build the JSON Schema tool list for API-native function calling, gated by the
  * same Agent platform-tool enablement that the text-protocol prompt uses.
  *
- * `skill_load` and `action_call` are always available because Skill
+ * `use_skill` and `run_script` are always available because Skill
  * installation/enablement is player/card-author controlled. `agent_call` is
  * gated by contacts + the `agent_call` platform tool. Workspace read tools are
  * gated by `workspace_read`; workspace write/delete/move/validate tools by
@@ -372,7 +372,7 @@ export function buildEnabledToolSchemas(options: {
     AGENT_PLATFORM_TOOL_NAMES.workspaceWrite,
   )
 
-  const schemas: ToolSchema[] = [skillLoadSchema, actionCallSchema]
+  const schemas: ToolSchema[] = [useSkillSchema, runScriptSchema]
 
   if (canCallAgents) {
     schemas.push(agentCallSchema)

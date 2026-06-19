@@ -29,8 +29,8 @@ export interface RuntimeWorkspaceToolCall {
 }
 
 export const RUNTIME_WORKSPACE_TOOL_NAMES = {
-  skillLoad: "skill_load",
-  actionCall: "action_call",
+  useSkill: "use_skill",
+  runScript: "run_script",
   agentCall: "agent_call",
   workspaceRead: "workspace.read",
   workspaceList: "workspace.list",
@@ -161,6 +161,12 @@ interface RuntimeLoadedSkill {
 
 export interface RuntimeWorkspaceToolSessionState {
   loadedSkills: RuntimeLoadedSkill[]
+  /**
+   * Skill paths whose full SKILL.md has already been injected as a context
+   * message in the current tool loop. Prevents re-injecting the same skill
+   * when use_skill is called repeatedly (registerLoadedSkill upserts by path).
+   */
+  injectedSkillPaths: string[]
 }
 
 interface SkillActionParseResult {
@@ -237,6 +243,7 @@ function toolError(
 export function createRuntimeWorkspaceToolSessionState(): RuntimeWorkspaceToolSessionState {
   return {
     loadedSkills: [],
+    injectedSkillPaths: [],
   }
 }
 
@@ -367,13 +374,13 @@ function emitActionCallTrace(
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
 ): void {
-  if (call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.actionCall) {
+  if (call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.runScript) {
     return
   }
 
   const data: Record<string, unknown> = {
     skill: typeof call.arguments.skill === "string" ? call.arguments.skill : undefined,
-    action: typeof call.arguments.action === "string" ? call.arguments.action : undefined,
+    script: typeof call.arguments.script === "string" ? call.arguments.script : undefined,
     inputSummary: summarizeTraceValue(call.arguments.input ?? {}),
   }
 
@@ -1148,35 +1155,6 @@ function parseActionDeclarations(content: string): SkillActionParseResult {
   return { actions, errors }
 }
 
-function loadedSkillDetails(
-  skill: SkillRegistryEntry,
-  actions: RuntimeSkillActionDeclaration[],
-  actionDeclarationErrors: RuntimeWorkspaceToolError[],
-): Record<string, unknown> {
-  const details: Record<string, unknown> = {
-    name: skill.name,
-    title: skill.title,
-    description: skill.description,
-    triggers: skill.triggers,
-    appliesTo: skill.appliesTo,
-    scope: skill.scope,
-    actions: actions.map((action) => ({
-      name: action.name,
-      description: action.description,
-      hasInputSchema: action.inputSchema !== undefined,
-      hasOutputSchema: action.outputSchema !== undefined,
-      executor: action.executor,
-    })),
-  }
-  if (skill.agentId) {
-    details.agentId = skill.agentId
-  }
-  if (actionDeclarationErrors.length) {
-    details.actionDeclarationErrors = actionDeclarationErrors
-  }
-  return details
-}
-
 function registerLoadedSkill(
   state: RuntimeWorkspaceToolSessionState | undefined,
   skill: SkillRegistryEntry,
@@ -1582,14 +1560,14 @@ async function executeSkillAction(
   }
 }
 
-function loadSkillByName(
+function activateSkillByName(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
 ): Record<string, unknown> {
   if (!context.agentContext) {
     throw toolError(
       "SKILL_CONTEXT_REQUIRED",
-      "skill_load requires an active Agent context.",
+      "use_skill requires an active Agent context.",
     )
   }
 
@@ -1613,59 +1591,135 @@ function loadSkillByName(
     },
   })
 
+  // use_skill only declares intent + registers actions; the full SKILL.md is
+  // injected into the next round's context by injectActivatedSkillMessages
+  // (see index.ts tool loops). The observation returns a lightweight
+  // confirmation + action list so the model knows what it can run_script,
+  // without burning a round on the full SKILL.md as a tool result.
   return {
-    loadedSkill: loadedSkillDetails(skill, actions, actionDeclarationErrors),
-    file: {
-      mediaType: file.mediaType,
-      content: file.content,
-      updatedAt: file.updatedAt,
+    skill: {
+      name: skill.name,
+      title: skill.title,
+      scope: skill.scope,
+      ...(skill.agentId ? { agentId: skill.agentId } : {}),
     },
+    activated: true,
+    actions: actions.map((action) => ({
+      name: action.name,
+      description: action.description,
+      executorType: action.executor.type,
+      executable: action.executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE,
+    })),
+    ...(actionDeclarationErrors.length
+      ? { actionDeclarationErrors: actionDeclarationErrors.map((error) => error.message) }
+      : {}),
   }
 }
 
-async function validateSkillActionCall(
+export interface ActivatedSkillContent {
+  name: string
+  title: string
+  path: string
+  content: string
+}
+
+/**
+ * Collect the full SKILL.md contents of skills activated via use_skill whose
+ * content has not yet been injected into the model context this tool loop.
+ * Marks each collected skill path as injected in `sessionState` so repeat
+ * use_skill calls (registerLoadedSkill upserts by path) do not re-inject.
+ *
+ * The caller (index.ts tool loops) wraps each entry in a context user message
+ * after the round's tool observations, so the model sees the full SKILL.md in
+ * the next round without burning a tool-result round on the full text.
+ */
+export function collectActivatedSkillContents(
+  sessionState: RuntimeWorkspaceToolSessionState | undefined,
+  workspaceFiles: WorkspaceFile[],
+): ActivatedSkillContent[] {
+  if (!sessionState) {
+    return []
+  }
+
+  const contents: ActivatedSkillContent[] = []
+  for (const entry of sessionState.loadedSkills) {
+    if (sessionState.injectedSkillPaths.includes(entry.skill.path)) {
+      continue
+    }
+    const file = workspaceFiles.find((candidate) => candidate.path === entry.skill.path)
+    if (!file) {
+      continue
+    }
+    contents.push({
+      name: entry.skill.name,
+      title: entry.skill.title,
+      path: entry.skill.path,
+      content: file.content,
+    })
+    sessionState.injectedSkillPaths.push(entry.skill.path)
+  }
+  return contents
+}
+
+async function executeRunScript(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
 ): Promise<Record<string, unknown>> {
   const skillName = normalizeRequiredString(
     input.skill,
     "ACTION_SKILL_REQUIRED",
-    "action_call requires a non-empty string skill.",
+    "run_script requires a non-empty string skill.",
   )
-  const actionName = normalizeRequiredString(
-    input.action,
+  const scriptName = normalizeRequiredString(
+    input.script,
     "ACTION_NAME_REQUIRED",
-    "action_call requires a non-empty string action.",
+    "run_script requires a non-empty string script.",
   )
   const actionInput = input.input === undefined ? {} : input.input
   if (!isRecord(actionInput)) {
     throw toolError(
       "ACTION_INPUT_INVALID",
-      "action_call input must be a JSON object when provided.",
+      "run_script input must be a JSON object when provided.",
     )
   }
 
   const loadedSkill = findLoadedSkill(context.sessionState, skillName)
   if (!loadedSkill) {
     throw toolError(
-      "SKILL_ACTION_NOT_LOADED",
-      `Skill must be loaded before calling its actions: ${skillName}`,
+      "SKILL_NOT_ACTIVATED",
+      `Skill must be activated with use_skill before running its scripts: ${skillName}`,
       { skill: skillName },
     )
   }
 
-  const action = findDeclaredAction(loadedSkill, actionName)
+  const action = findDeclaredAction(loadedSkill, scriptName)
   if (!action) {
     throw toolError(
       "ACTION_NOT_FOUND",
-      `Action is not declared by loaded Skill "${loadedSkill.skill.name}": ${actionName}`,
+      `Action is not declared by activated Skill "${loadedSkill.skill.name}": ${scriptName}`,
       {
         skill: loadedSkill.skill.name,
-        action: actionName,
+        action: scriptName,
         availableActions: loadedSkill.actions.map((candidate) => ({
           name: candidate.name,
           description: candidate.description,
         })),
+      },
+    )
+  }
+
+  // run_script only executes browser_script actions. workspace operations are
+  // done via the top-level workspace.* tools; multi-step orchestration belongs
+  // in a browser_script. executor.type is always browser_script after R4, so
+  // this guard is defensive against any legacy-registered action.
+  if (action.executor.type !== BROWSER_SCRIPT_EXECUTOR_TYPE) {
+    throw toolError(
+      "ACTION_NOT_BROWSER_SCRIPT",
+      `run_script only executes browser_script actions; "${scriptName}" is not browser_script. Use the top-level workspace tools for single operations, or declare a browser_script to orchestrate multi-step workspace operations.`,
+      {
+        skill: loadedSkill.skill.name,
+        action: scriptName,
+        executorType: action.executor.type,
       },
     )
   }
@@ -1779,19 +1833,19 @@ async function executeRuntimeWorkspaceToolCall(
 
   let observation: RuntimeWorkspaceToolObservation
   try {
-    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad) {
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.useSkill) {
       observation = {
         index,
         name: call.name,
         ok: true,
-        result: loadSkillByName(context, call.arguments),
+        result: activateSkillByName(context, call.arguments),
       }
-    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.actionCall) {
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.runScript) {
       observation = {
         index,
         name: call.name,
         ok: true,
-        result: await validateSkillActionCall(context, call.arguments),
+        result: await executeRunScript(context, call.arguments),
       }
     } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.agentCall) {
       if (!context.agentContext) {
@@ -1878,7 +1932,7 @@ async function executeRuntimeWorkspaceToolCall(
  * See `06-19-ai-agent-process-visible` design §2 (scheme A).
  */
 const PARALLEL_TOOL_NAMES = new Set<string>([
-  RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad,
+  RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
   RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead,
   RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList,
   RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch,

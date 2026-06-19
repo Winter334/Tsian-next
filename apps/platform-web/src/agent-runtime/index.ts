@@ -37,6 +37,9 @@ import {
   type RuntimeAgentCallHistoryMode,
   type RuntimeBrowserScriptExecutorRequest,
   type RuntimeWorkspaceToolObservation,
+  type RuntimeWorkspaceToolSessionState,
+  collectActivatedSkillContents,
+  type ActivatedSkillContent,
 } from "./workspace-tools"
 import type {
   ModelCallResult,
@@ -367,6 +370,62 @@ function formatSkillIndex(context: AgentContextEntry): string {
     .join("\n")
 }
 
+/**
+ * Build the context message body for a skill whose full SKILL.md was activated
+ * via use_skill. The framework injects this as a user message after the round's
+ * tool observations so the model sees the full skill text in the next round
+ * without spending a tool-result round on it. Both tool loops (native and text)
+ * call this via collectActivatedSkillContents + this body builder.
+ */
+function formatActivatedSkillMessageBody(skill: ActivatedSkillContent): string {
+  return [
+    `已激活 Skill「${skill.name}」。以下是该 Skill 的完整说明；遵循其指导，并用 run_script 执行其声明的 browser_script action。`,
+    "",
+    skill.content,
+  ].join("\n")
+}
+
+/**
+ * Inject full SKILL.md content for skills newly activated via use_skill into
+ * the native tool-loop message array. Called after the round's tool
+ * observations are threaded back, before the next model call. Mutates
+ * `messages` in place (native loop uses a mutable array).
+ */
+function injectActivatedSkillMessagesNative(
+  messages: RuntimeChatMessage[],
+  sessionState: RuntimeWorkspaceToolSessionState | undefined,
+  workspaceFiles: WorkspaceFile[],
+): void {
+  const contents = collectActivatedSkillContents(sessionState, workspaceFiles)
+  for (const skill of contents) {
+    messages.push({
+      role: "user",
+      content: formatActivatedSkillMessageBody(skill),
+    })
+  }
+}
+
+/**
+ * Inject full SKILL.md content for skills newly activated via use_skill into
+ * the text tool-loop message array. Returns a new array (text loop keeps an
+ * immutable nextMessages style).
+ */
+function injectActivatedSkillMessagesText(
+  messages: AiChatMessage[],
+  sessionState: RuntimeWorkspaceToolSessionState | undefined,
+  workspaceFiles: WorkspaceFile[],
+): AiChatMessage[] {
+  const contents = collectActivatedSkillContents(sessionState, workspaceFiles)
+  if (contents.length === 0) {
+    return messages
+  }
+  const injected: AiChatMessage[] = contents.map((skill) => ({
+    role: "user",
+    content: formatActivatedSkillMessageBody(skill),
+  }))
+  return [...messages, ...injected]
+}
+
 function getVisibleAgentContacts(
   workspaceFiles: WorkspaceFile[],
   context: AgentContextEntry,
@@ -441,8 +500,8 @@ function buildWorkspaceToolInstructions(
   )
   const isNative = options.toolCallMode === "native"
   const availableTools = [
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad} arguments={"name":"prose-style"}`,
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} arguments={"skill":"prose-style","action":"example_action","input":{"text":"示例"}}`,
+    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} arguments={"name":"prose-style"}`,
+    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript} arguments={"skill":"prose-style","script":"example_action","input":{"text":"示例"}}`,
     ...(canCallAgents
       ? [
           `- ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} arguments={"agentId":"${options.visibleContacts[0].id}","request":"请检查当前场景的连续性。","historyMode":"recent"}`,
@@ -463,19 +522,14 @@ function buildWorkspaceToolInstructions(
   ]
   return [
     "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
-    `如果需要加载 Skill 详情，使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}，并传入可见 Skill Index 中的 name。`,
+    `如果需要使用某个 Skill，调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 并传入可见 Skill Index 中的 name。这是两步流程的第一步：use_skill 只声明意图并注册该 Skill 的 action，框架会在下一轮自动把完整 SKILL.md 注入上下文（你不需要手动读取它）。`,
     ...(canReadWorkspace
       ? [
-          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件；使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}。`,
-          `加载后的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
+          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件；用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后框架自动注入全文。`,
+          `注入的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
         ]
       : []),
-    `只有成功加载某个 Skill 后，才能使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.actionCall} 调用该 Skill 声明的 action。当前支持内置 executor、平台允许的 platform_action executor、workspace_operation executor，以及受信任第三方 Skill 可声明的 browser_script executor。`,
-    ...(canWriteWorkspace
-      ? [
-          "workspace_operation 和 browser_script 可能写入 Runtime Workspace，只在已加载 Skill 明确要求维护状态、地图、记忆、线索或前端约定数据时使用。",
-        ]
-      : []),
+    `use_skill 激活 Skill 后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript} 执行它声明的 browser_script action（传入 use_skill 返回的 action name 作为 script）。run_script 只执行 browser_script 类 action；单次 workspace 读写直接用顶层 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceWrite} 等工具，多步编排写进 browser_script 脚本。`,
     "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。脚本中的 workspace 读写仍受当前 Agent 权限限制。",
     ...(canCallAgents
       ? [
@@ -497,7 +551,7 @@ function buildWorkspaceToolInstructions(
           ...availableTools,
           "工具调用格式必须独占一个块：",
           "<tsian-tool-call>",
-          `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad}","arguments":{"name":"prose-style"}}`,
+          `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"prose-style"}}`,
           "</tsian-tool-call>",
           "收到 observation 后继续完成任务。最终输出不要包含工具调用块、observation、工具细节或实现说明。",
         ]),
@@ -1196,6 +1250,11 @@ async function callAgentModelWithWorkspaceToolsNative(
         content: formatRuntimeWorkspaceToolObservationMessage([observation]),
       })
     }
+
+    // Inject full SKILL.md for skills newly activated via use_skill this round,
+    // so the model sees them in the next round's context (B-scheme: declare
+    // intent -> framework injects content next round).
+    injectActivatedSkillMessagesNative(runtimeMessages, workspaceToolSession, input.workspaceFiles!)
   }
 
   throw new Error(`${options.debugLabel} failed to complete workspace tool handling.`)
@@ -1354,6 +1413,13 @@ async function callAgentModelWithWorkspaceTools(
         content: formatRuntimeWorkspaceToolObservationMessage(observations),
       },
     ]
+    // Inject full SKILL.md for skills newly activated via use_skill this round
+    // (B-scheme: declare intent -> framework injects content next round).
+    nextMessages = injectActivatedSkillMessagesText(
+      nextMessages,
+      workspaceToolSession,
+      input.workspaceFiles,
+    )
   }
 
   throw new Error(`${options.debugLabel} failed to complete workspace tool handling.`)
