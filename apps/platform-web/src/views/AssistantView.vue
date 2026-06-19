@@ -197,6 +197,16 @@
               </div>
             </div>
 
+            <div v-if="sending && toolLines.length" class="flex flex-col gap-1.5 px-10.5 text-xs leading-5 text-text-dim">
+              <div v-for="line in toolLines" :key="line.callId" class="flex items-center gap-1.5">
+                <span class="text-neon/70">🔧</span>
+                <span class="text-text-main/80">{{ line.name }}</span>
+                <span v-if="line.status === 'loading'" class="text-neon/60">执行中…</span>
+                <span v-else-if="line.status === 'success'" class="text-neon">✓</span>
+                <span v-else-if="line.status === 'failed'" class="text-red-400">✗ {{ line.output }}</span>
+              </div>
+            </div>
+
             <div v-if="sending && !firstDeltaReceived" class="flex flex-row gap-3">
               <span class="grid h-7 w-7 shrink-0 place-items-center border border-neon/45 bg-neon/10 text-neon">
                 <Bot class="h-3.5 w-3.5" aria-hidden="true" />
@@ -355,6 +365,16 @@ const showJumpToBottom = ref(false)
 const userPinnedToBottom = ref(true)
 // Typing dots stay visible until the first streamed delta arrives.
 const firstDeltaReceived = ref(false)
+// In-flight tool process lines (子2b R5). Transient — cleared when the turn
+// ends so only the final reply persists. Each entry tracks one tool call by
+// callId so loading -> success/failed updates the same line.
+interface AssistantToolLine {
+  callId: string
+  name: string
+  status: "loading" | "running" | "success" | "failed"
+  output?: string
+}
+const toolLines = ref<AssistantToolLine[]>([])
 // Abort controller for the in-flight chat turn (stop-generating button).
 const abortController = ref<AbortController | null>(null)
 const sessionCreating = ref(false)
@@ -560,6 +580,7 @@ async function send() {
   resetInputHeight()
   sending.value = true
   firstDeltaReceived.value = false
+  toolLines.value = []
 
   // Placeholder assistant message; streamed deltas append into it.
   const assistantMsg = reactive({ role: "assistant" as const, content: "" })
@@ -605,6 +626,27 @@ async function send() {
     }
   }
 
+  // Tool process lines (子2b R5): each tool call gets a line that transitions
+  // loading -> success/failed. Minimal presentation — no expandable output,
+  // just a status indicator so the user can see the agent is working.
+  const onTool = (
+    callId: string,
+    name: string,
+    status: "loading" | "running" | "success" | "failed",
+    output?: string,
+  ) => {
+    const existing = toolLines.value.find((line) => line.callId === callId)
+    if (existing) {
+      existing.status = status
+      if (output !== undefined) {
+        existing.output = output
+      }
+    } else {
+      toolLines.value.push({ callId, name, status, ...(output !== undefined ? { output } : {}) })
+    }
+    maybeScrollToBottom()
+  }
+
   // ③ Stop-generating: an AbortController for this turn, abortable from the UI.
   const controller = new AbortController()
   abortController.value = controller
@@ -614,6 +656,7 @@ async function send() {
       message: content,
       history,
       onDelta,
+      onTool,
       signal: controller.signal,
     })
     flushRemaining()
@@ -644,6 +687,9 @@ async function send() {
       cancelAnimationFrame(rafId)
       rafId = null
     }
+    // Tool process lines are transient: clear them once the turn ends so only
+    // the final reply remains (the user can re-inspect via debug/trace later).
+    toolLines.value = []
     abortController.value = null
     sending.value = false
     await scrollToBottom()

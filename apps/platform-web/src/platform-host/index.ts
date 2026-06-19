@@ -64,7 +64,7 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, createPlayFrontendBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
-import { emitTurnDelta } from "../streaming-events"
+import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool } from "../streaming-events"
 import { LocalRuntimeEngine } from "../runtime-host"
 import {
   generateAssistantReply,
@@ -243,6 +243,16 @@ interface RawAirpHistoryTurnRecord {
     entryAgentId: string
   }
   messages: ConversationMessageRecord[]
+}
+
+/**
+ * Map a model-call finish reason to the `turn-round-end` kind so the play
+ * frontend can classify streamed `turn-delta` text: a `tool_calls` round is a
+ * thought round (its text is the reasoning stream); a `stop` round is the
+ * final reply. See `06-19-ai-agent-process-visible` design §3.
+ */
+function finishReasonToKind(finishReason: "stop" | "tool_calls"): "thought" | "final" {
+  return finishReason === "tool_calls" ? "thought" : "final"
 }
 
 function markPlatformHostReady() {
@@ -1533,6 +1543,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
             workspaceFiles: workspaceTransaction.workspaceFiles,
             signal: currentController.signal,
             onDelta: (delta, round) => emitTurnDelta(delta, nextTurn, round),
+            onRoundEnd: (round, finishReason) => emitTurnRoundEnd(nextTurn, round, finishReasonToKind(finishReason)),
+            onTool: (round, callId, name, status, output) => emitTurnTool(nextTurn, round, callId, name, status, output),
           },
           {
             callModel(messages, options) {
@@ -1713,6 +1725,19 @@ export interface AssistantChatInput {
    */
   onDelta?: (delta: string, round: number) => void
   /**
+   * Tool process sink (子2b R2). Invoked before/after each workspace tool
+   * executes, for the desktop AssistantView to render a status line. Excludes
+   * `round` (the view does not classify thought vs final); the runtime binds
+   * round before calling. `undefined` disables tool lines. Native-mode only —
+   * text-protocol turns do not emit tool events.
+   */
+  onTool?: (
+    callId: string,
+    name: string,
+    status: "loading" | "running" | "success" | "failed",
+    output?: string,
+  ) => void
+  /**
    * Optional external abort signal (e.g. a "stop generating" button). Aborting
    * it aborts the turn's model calls and tool loop.
    */
@@ -1805,6 +1830,12 @@ export async function runAssistantChat(
         workspaceFiles: workspaceTransaction.workspaceFiles,
         signal: controller.signal,
         onDelta: input.onDelta,
+        // Desktop Assistant chat is in-process (not bridged), so tool process
+        // events go straight to the view without a turn binding. Strip the
+        // round the runtime threads in; the view does not classify thought/final.
+        onTool: input.onTool
+          ? (_round, callId, name, status, output) => input.onTool!(callId, name, status, output)
+          : undefined,
       },
       {
         callModel(messages, options) {

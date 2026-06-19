@@ -61,6 +61,26 @@ export interface AgentRuntimeTurnInput {
    * receive `onDelta` (they stream silently via the non-SSE fallback).
    */
   onDelta?: (delta: string, round: number) => void
+  /**
+   * Per-round end notification (子2b R1). Invoked after each `callModelNative`
+   * returns, with the round index and finish reason so the caller can classify
+   * the round as thought (`tool_calls`) or final (`stop`) and label the streamed
+   * text accordingly. Delegated agents do not receive this (silent). `undefined`
+   * disables round-end events.
+   */
+  onRoundEnd?: (round: number, finishReason: "stop" | "tool_calls") => void
+  /**
+   * Tool-call status/output notification (子2b R2). Invoked before/after each
+   * workspace tool executes, with the round index and tool identity so the
+   * caller can render the tool process. `undefined` disables tool events.
+   */
+  onTool?: (
+    round: number,
+    callId: string,
+    name: string,
+    status: "loading" | "running" | "success" | "failed",
+    output?: string,
+  ) => void
 }
 
 export interface AgentRuntimeTurnResult {
@@ -81,6 +101,16 @@ export interface AgentRuntimeModelCallOptions {
   onDelta?: (delta: string, round: number) => void
   /** Current tool-loop round index (set by the native loop before each call). */
   round?: number
+  /** Per-round end notification (子2b R1); threaded from `AgentRuntimeTurnInput.onRoundEnd`. */
+  onRoundEnd?: (round: number, finishReason: "stop" | "tool_calls") => void
+  /** Tool-call status/output notification (子2b R2); threaded from `AgentRuntimeTurnInput.onTool`. */
+  onTool?: (
+    round: number,
+    callId: string,
+    name: string,
+    status: "loading" | "running" | "success" | "failed",
+    output?: string,
+  ) => void
 }
 
 export interface AgentRuntimeCapabilities {
@@ -453,6 +483,7 @@ function buildWorkspaceToolInstructions(
           "可用工具通过 API 原生 function calling 调用：直接使用提供的工具函数，不要在回复正文中嵌入任何工具调用文本块。",
           "工具用途参考（实际参数 schema 由 API 提供）：",
           ...availableTools,
+          "如果需要同时调用多个独立的只读工具（如查询多个文件、列出多个目录），可以在一轮中同时发起多个工具调用，它们会并行执行以减少等待。",
           "收到 observation 后继续完成任务。最终输出只包含给玩家的正文，不要包含工具调用、observation、工具细节或实现说明。",
         ]
       : [
@@ -1047,7 +1078,22 @@ async function callAgentModelWithWorkspaceToolsNative(
     const result = await capabilities.callModelNative!(runtimeMessages, callOptions, tools)
     assertNotAborted(options.signal)
 
+    // Notify the caller that this round ended, with the finish reason so it can
+    // classify the streamed text as thought (tool_calls) or final (stop). Emitted
+    // for every round including the final stop round.
+    options.onRoundEnd?.(round, result.finishReason)
+
     const toolCalls = nativeToolCallsToParsed(result.toolCalls)
+    // Thread provider-assigned tool call ids into the parsed calls so the
+    // workspace tool executor can emit turn-tool events with a stable callId
+    // (text-protocol falls back to `tool-${index}` inside the executor).
+    for (let i = 0; i < toolCalls.length && i < result.toolCalls.length; i += 1) {
+      const tc = result.toolCalls[i]
+      const parsed = toolCalls[i]
+      if (parsed.call && tc.id) {
+        parsed.call.id = tc.id
+      }
+    }
     capabilities.emitTrace?.({
       type: "model_call_completed",
       agentId: agentContext.agent.id,
@@ -1115,6 +1161,11 @@ async function callAgentModelWithWorkspaceToolsNative(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
+      // Tool process events (子2b R2): bind the current round here so the
+      // executor's onTool stays callId/name/status only; the caller binds turn.
+      onTool: options.onTool
+        ? (callId, name, status, output) => options.onTool!(round, callId, name, status, output)
+        : undefined,
     }, toolCalls)
 
     recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
@@ -1339,6 +1390,8 @@ export async function runAgentRuntimeTurn(
         signal: input.signal,
         agentId: entryContext.agent.id,
         onDelta: input.onDelta,
+        onRoundEnd: input.onRoundEnd,
+        onTool: input.onTool,
       },
       entryContext,
       {

@@ -12,7 +12,7 @@ import type {
   RemotePlayBridgeResponseMessage,
 } from "@tsian/contracts"
 
-import { subscribeTurnDelta } from "../streaming-events"
+import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool } from "../streaming-events"
 
 const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 const REMOTE_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms"
@@ -430,6 +430,25 @@ export function mountRemoteIframeFrontend(
     postEvent("turn-delta", { delta, turn, round })
   })
 
+  // Forward per-round end markers to the remote frontend as `turn-round-end`,
+  // so it can classify streamed `turn-delta` text into thought vs final regions.
+  const unsubscribeTurnRoundEnd = subscribeTurnRoundEnd((turn, round, kind) => {
+    postEvent("turn-round-end", { turn, round, kind })
+  })
+
+  // Forward tool-call status/output to the remote frontend as `turn-tool`,
+  // so it can render tool cards (loading -> success/failed).
+  const unsubscribeTurnTool = subscribeTurnTool((turn, round, callId, name, status, output) => {
+    postEvent("turn-tool", {
+      turn,
+      round,
+      callId,
+      name,
+      status,
+      ...(output !== undefined ? { output } : {}),
+    })
+  })
+
   window.addEventListener("message", onMessage)
   container.replaceChildren(iframe)
 
@@ -437,6 +456,9 @@ export function mountRemoteIframeFrontend(
     disposed = true
     window.removeEventListener("message", onMessage)
     unsubscribeTurnDebugReady?.()
+    unsubscribeTurnDelta?.()
+    unsubscribeTurnRoundEnd?.()
+    unsubscribeTurnTool?.()
     unsubscribeTurnDelta?.()
     if (iframe.parentElement === container) {
       iframe.remove()

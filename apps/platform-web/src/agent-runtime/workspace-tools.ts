@@ -21,6 +21,13 @@ import {
 export interface RuntimeWorkspaceToolCall {
   name: string
   arguments: Record<string, unknown>
+  /**
+   * Provider-assigned tool call id (native function-calling mode). Used as the
+   * `callId` for turn-tool events so the frontend can correlate status updates
+   * for the same call. Text-protocol calls have no provider id and fall back to
+   * `tool-${index}` at emit time.
+   */
+  id?: string
 }
 
 export const RUNTIME_WORKSPACE_TOOL_NAMES = {
@@ -189,6 +196,19 @@ export interface RuntimeWorkspaceToolExecutionContext {
   signal?: AbortSignal
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
+  /**
+   * Tool process event callback (子2b R2). Invoked before/after each tool
+   * executes with the tool's callId, name, status, and (for success/failed) a
+   * truncated output summary. `undefined` disables events (delegated agents,
+   * text-protocol entry path). Signature excludes turn/round — the caller binds
+   * round before threading it in, and turn is bound at the platform-host layer.
+   */
+  onTool?: (
+    callId: string,
+    name: string,
+    status: "loading" | "running" | "success" | "failed",
+    output?: string,
+  ) => void
 }
 
 const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
@@ -1870,6 +1890,47 @@ async function validateSkillActionCall(
   }
 }
 
+/**
+ * Max length of a tool output summary carried in a `turn-tool` event. Longer
+ * outputs are truncated with a marker so the bridge payload stays small; the
+ * full output remains in the tool observation fed back to the model.
+ */
+const TURN_TOOL_OUTPUT_MAX_LENGTH = 500
+
+/**
+ * Build a truncated string summary of a tool observation's result for the
+ * `turn-tool` event. Returns `undefined` when there is no result to summarize
+ * (so the event omits `output` entirely).
+ */
+function summarizeToolObservationOutput(observation: RuntimeWorkspaceToolObservation): string | undefined {
+  if (observation.result === undefined) {
+    return undefined
+  }
+  let text: string
+  try {
+    text = typeof observation.result === "string"
+      ? observation.result
+      : JSON.stringify(observation.result)
+  } catch {
+    return undefined
+  }
+  if (text.length <= TURN_TOOL_OUTPUT_MAX_LENGTH) {
+    return text
+  }
+  return `${text.slice(0, TURN_TOOL_OUTPUT_MAX_LENGTH)}…(已截断)`
+}
+
+/**
+ * Extract a human-readable message from a caught tool error for the `turn-tool`
+ * failed event.
+ */
+function summarizeToolError(error: unknown): string {
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message
+  }
+  return error instanceof Error ? error.message : "Workspace tool failed."
+}
+
 async function executeRuntimeWorkspaceToolCall(
   context: RuntimeWorkspaceToolExecutionContext,
   parsed: ParsedRuntimeWorkspaceToolCall,
@@ -1896,6 +1957,11 @@ async function executeRuntimeWorkspaceToolCall(
       ),
     }
   }
+
+  // Turn-tool event (子2b R2): notify the caller the tool is about to run.
+  // callId uses the provider-assigned id (native) or falls back to `tool-${index}`.
+  const callId = call.id ?? `tool-${index}`
+  context.onTool?.(callId, call.name, "loading")
 
   let observation: RuntimeWorkspaceToolObservation
   try {
@@ -1977,19 +2043,84 @@ async function executeRuntimeWorkspaceToolCall(
   }
 
   emitToolObservationTrace(context, call, observation)
+  // Turn-tool event (子2b R2): report the final status. Success carries a
+  // truncated result summary; failure carries the error message.
+  if (observation.ok) {
+    context.onTool?.(callId, call.name, "success", summarizeToolObservationOutput(observation))
+  } else {
+    context.onTool?.(callId, call.name, "failed", observation.error?.message)
+  }
   return observation
+}
+
+/**
+ * Tool names that are safe to run in parallel within a single tool-loop round:
+ * all are read-only, stateless, and have no shared mutable budget (unlike
+ * `agent_call`'s callCount/depth budget). `action_call` is kept serial as a
+ * whole because resolving its executor type requires a skill load + action
+ * resolution up front, and its builtin/workspace_operation.read cases are
+ * either millisecond-fast or rarely the model's primary parallel pattern
+ * (the model prefers the top-level `workspace.read` for multi-file queries).
+ * See `06-19-ai-agent-process-visible` design §2 (scheme A).
+ */
+const PARALLEL_TOOL_NAMES = new Set<string>([
+  RUNTIME_WORKSPACE_TOOL_NAMES.skillLoad,
+  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead,
+  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList,
+  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch,
+  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceDiff,
+  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceValidate,
+])
+
+function isParallelizableToolCall(call: ParsedRuntimeWorkspaceToolCall): boolean {
+  return Boolean(call.call && PARALLEL_TOOL_NAMES.has(call.call.name))
 }
 
 export async function executeRuntimeWorkspaceToolCalls(
   context: RuntimeWorkspaceToolExecutionContext,
   calls: ParsedRuntimeWorkspaceToolCall[],
 ): Promise<RuntimeWorkspaceToolObservation[]> {
-  const observations: RuntimeWorkspaceToolObservation[] = []
+  // Split into a parallel group (read-only, stateless) and a serial group
+  // (writes, agent_call, action_call, and unparseable calls). Observations are
+  // collected in a Map keyed by the original call index so the returned array
+  // stays aligned with `calls` — the native loop relies on this to pair each
+  // observation with `result.toolCalls[index].id` when threading tool messages.
+  const parallelIndices: number[] = []
+  const serialIndices: number[] = []
   for (const [index, call] of calls.entries()) {
-    observations.push(await executeRuntimeWorkspaceToolCall(context, call, index))
+    if (isParallelizableToolCall(call)) {
+      parallelIndices.push(index)
+    } else {
+      serialIndices.push(index)
+    }
   }
 
-  return observations
+  const observations = new Map<number, RuntimeWorkspaceToolObservation>()
+
+  // Parallel group: run all read-only tools concurrently. Promise.all rejects
+  // fast if any tool throws (or the signal aborts), but the observations map is
+  // already populated for the calls that resolved before the rejection; the
+  // serial group is skipped on rejection and the caller's catch path handles it.
+  if (parallelIndices.length > 0) {
+    const parallelResults = await Promise.all(
+      parallelIndices.map((index) => executeRuntimeWorkspaceToolCall(context, calls[index]!, index)),
+    )
+    for (let i = 0; i < parallelIndices.length; i += 1) {
+      observations.set(parallelIndices[i]!, parallelResults[i]!)
+    }
+  }
+
+  // Serial group: run stateful/write tools in their original order, checking
+  // abort before each so a stop-generating click halts the remaining tools.
+  for (const index of serialIndices) {
+    if (context.signal?.aborted) {
+      throw new DOMException("Agent Runtime tool execution was aborted.", "AbortError")
+    }
+    observations.set(index, await executeRuntimeWorkspaceToolCall(context, calls[index]!, index))
+  }
+
+  // Restore the original call order (invariant: observations[i] corresponds to calls[i]).
+  return calls.map((_, index) => observations.get(index)!)
 }
 
 export function formatRuntimeWorkspaceToolObservationMessage(
