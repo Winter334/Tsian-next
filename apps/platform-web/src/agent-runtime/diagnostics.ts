@@ -161,7 +161,14 @@ function eventSource(type: string): RuntimeDiagnosticSource {
   if (type === "workspace_tool_called" || type === "workspace_mutation") return "workspace"
   if (type === "action_executor_policy_checked" || type === "action_called") return "action"
   if (type === "script_log") return "script"
-  if (type === "agent_session_transcripts_staged") return "session"
+  if (
+    type === "agent_session_transcripts_staged"
+    || type === "agent_context_staged"
+    || type === "context_compressed"
+    || type === "context_compression_failed"
+  ) {
+    return "session"
+  }
   return "trace"
 }
 

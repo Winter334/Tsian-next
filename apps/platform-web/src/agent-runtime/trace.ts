@@ -14,6 +14,9 @@ export type RuntimeTraceEventType =
   | "action_executor_policy_checked"
   | "action_called"
   | "agent_session_transcripts_staged"
+  | "agent_context_staged"
+  | "context_compressed"
+  | "context_compression_failed"
   | "script_log"
   | "workspace_mutation"
 

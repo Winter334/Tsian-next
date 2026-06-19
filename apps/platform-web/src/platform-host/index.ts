@@ -2,6 +2,7 @@ import type {
   AgentConfig,
   AgentPlatformToolName,
   AgentContextEntry,
+  AgentContextSnapshot,
   AgentRegistryEntry,
   ConversationMessageRecord,
   DeepQueryRequest,
@@ -35,6 +36,14 @@ import {
 } from "../agent-runtime"
 import type { RuntimeControlledExecutorContext } from "../agent-runtime/workspace-tools"
 import { assembleAgentContext } from "../agent-runtime/context"
+import {
+  AGENT_CONTEXT_PATH,
+  appendTurnToContext,
+  createEmptyAgentContext,
+  parseAgentContext,
+  resolveTokenBudget,
+  serializeAgentContext,
+} from "../agent-runtime/context-lifecycle"
 import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import {
@@ -370,6 +379,52 @@ function serializeRawAirpHistoryTurnRecord(
   }
 
   return `${JSON.stringify(record, null, 2)}\n`
+}
+
+/**
+ * 从工作区文件读 master agent 会话上下文快照(agents/master/context.json).
+ * 文件不存在/损坏 → 返回 null(由 runtime 层兜底初始化).
+ */
+function readAgentContextFromWorkspace(
+  workspaceFiles: WorkspaceFile[],
+  saveId: string,
+): AgentContextSnapshot | null {
+  const file = workspaceFiles.find((f) => f.path === AGENT_CONTEXT_PATH)
+  if (!file) return null
+  return parseAgentContext(file.content, saveId)
+}
+
+/**
+ * turn 收尾:把本轮正文追加进 context.json,若本轮开头压缩了则用压缩后快照.
+ * 原地更新(workspaceTransaction.write),与其它 stage 函数同事务提交.
+ */
+function stageAgentContextFile(
+  workspaceTransaction: RuntimeWorkspaceTransaction,
+  input: {
+    saveId: string
+    turn: number
+    user: string
+    assistant: string
+    compressedContext?: AgentContextSnapshot
+  },
+): WorkspaceFile {
+  // 基础快照:本轮压缩了→用压缩结果;否则读现有 context.json,无则空快照
+  const base =
+    input.compressedContext
+    ?? readAgentContextFromWorkspace(workspaceTransaction.workspaceFiles, input.saveId)
+    ?? createEmptyAgentContext(input.saveId)
+  // 追加本轮正文(保持最近 K 轮),saveId 用真实值修正(runtime 兜底时可能为空)
+  const updated = appendTurnToContext(
+    { ...base, saveId: input.saveId },
+    input.turn,
+    input.user,
+    input.assistant,
+  )
+  return workspaceTransaction.write({
+    path: AGENT_CONTEXT_PATH,
+    content: serializeAgentContext(updated),
+    mediaType: "application/json",
+  })
 }
 
 function stageRawAirpHistoryTurnFile(
@@ -1410,6 +1465,16 @@ export const playFrontendBridge: PlayFrontendBridge = {
         const providerPresetMap = buildAgentProviderPresetMap(
           activeWorkspaceTransaction.workspaceFiles,
         )
+        // 读 master agent 会话上下文快照注入(无则 null,runtime 层兜底初始化)
+        const agentContext = readAgentContextFromWorkspace(
+          activeWorkspaceTransaction.workspaceFiles,
+          activeSaveId,
+        )
+        // resolve master agent 上下文 token 预算(model.contextWindow 或 256k 默认)
+        const masterConfig = resolveAgentModelConfig("master", providerPresetMap)
+        const contextTokenBudget = resolveTokenBudget(
+          masterConfig?.parameters.contextWindow ?? null,
+        )
         const result = await runAgentRuntimeTurn(
           {
             agentId: "master",
@@ -1418,6 +1483,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
             snapshot: snapshotBefore,
             workspaceFiles: workspaceTransaction.workspaceFiles,
             signal: currentController.signal,
+            agentContext: agentContext ?? undefined,
+            contextTokenBudget,
             onDelta: (delta, round) => emitTurnDelta(delta, nextTurn, round),
             onRoundEnd: (round, finishReason) => emitTurnRoundEnd(nextTurn, round, finishReasonToKind(finishReason)),
             onTool: (round, callId, name, status, output) => emitTurnTool(nextTurn, round, callId, name, status, output),
@@ -1521,6 +1588,26 @@ export const playFrontendBridge: PlayFrontendBridge = {
           workspaceTransaction,
           result.agentSessionTranscripts,
         )
+        // R4:写回 master agent 会话上下文快照(本轮正文追加 + 压缩结果落盘)
+        const contextUpdate = result.contextUpdate
+        if (contextUpdate) {
+          const stagedContext = stageAgentContextFile(workspaceTransaction, {
+            saveId: activeSaveId,
+            turn: contextUpdate.turn,
+            user: contextUpdate.user,
+            assistant: contextUpdate.assistant,
+            compressedContext: contextUpdate.compressedContext,
+          })
+          trace.emit({
+            type: "agent_context_staged",
+            ok: true,
+            data: {
+              turn: contextUpdate.turn,
+              path: stagedContext.path,
+              summaryPresent: !!contextUpdate.compressedContext?.summary,
+            },
+          })
+        }
         trace.emit({
           type: "agent_session_transcripts_staged",
           ok: true,

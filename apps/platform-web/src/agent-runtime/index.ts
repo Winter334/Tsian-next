@@ -1,6 +1,7 @@
 import type {
   AgentRegistryEntry,
   AgentContextEntry,
+  AgentContextSnapshot,
   AiChatMessage,
   ConversationMessageRecord,
   AgentPlatformToolName,
@@ -11,6 +12,18 @@ import type {
   WorkspaceOperationName,
 } from "@tsian/contracts"
 import { assembleAgentContext } from "./context"
+import {
+  AGENT_CONTEXT_AGENT_ID,
+  appendTurnToContext,
+  compressContext,
+  CONTEXT_COMPRESS_TRIGGER_RATIO,
+  ContextCompressionFailedError,
+  createInitialAgentContext,
+  estimateContextTokens,
+  resolveTokenBudget,
+  serializeAgentContext,
+  type CompressCallOptions,
+} from "./context-lifecycle"
 import {
   AGENT_PLATFORM_TOOL_NAMES,
   deriveAgentRuntimePermissionProfile,
@@ -84,11 +97,34 @@ export interface AgentRuntimeTurnInput {
     status: "loading" | "running" | "success" | "failed",
     output?: string,
   ) => void
+  /**
+   * master agent 会话上下文快照(从工作区 `agents/master/context.json` 读取注入).
+   * 提供 → buildEntryAgentMessages 用其 summary+recentTurns 拼"最近对话"区
+   * (替代 saveHistory slice(-20)).未提供 → 兜底用 recentHistory 旧逻辑.
+   * 详见任务 06-19-agent-session-context-lifecycle.
+   */
+  agentContext?: AgentContextSnapshot
+  /**
+   * master agent 上下文 token 预算(已 resolve,model.contextWindow 或 256k 默认).
+   * 用于 R3 压缩阈值(85% budget).未提供 → runtime 用 256k 默认.
+   */
+  contextTokenBudget?: number
+}
+
+/** turn 结束时需写回 context.json 的本轮正文 + 压缩结果(若有). */
+export interface AgentRuntimeTurnContextUpdate {
+  turn: number
+  user: string
+  assistant: string
+  /** 本轮开头压缩后的快照(若触发了压缩).无压缩则 undefined. */
+  compressedContext?: AgentContextSnapshot
 }
 
 export interface AgentRuntimeTurnResult {
   replyText: string
   agentSessionTranscripts: AgentSessionTranscriptRecord[]
+  /** 本轮正文 + 压缩结果,供 platform-host turn 收尾写 context.json. */
+  contextUpdate?: AgentRuntimeTurnContextUpdate
 }
 
 export interface AgentRuntimeModelCallOptions {
@@ -298,6 +334,29 @@ function formatHistory(history: ConversationMessageRecord[]): string {
       return `${index + 1}. ${role}: ${message.content}`
     })
     .join("\n")
+}
+
+/**
+ * 格式化 master agent 会话上下文快照为"最近对话"区文本.
+ * summary 作前言(早期剧情梗概),recentTurns 按 turn 号列出原文.
+ * 与 formatHistory 风格一致(角色名用"叙事/玩家"),但带 turn 索引而非顺序号.
+ */
+function formatAgentContextHistory(context: AgentContextSnapshot): string {
+  const parts: string[] = []
+  if (context.summary) {
+    parts.push("早期剧情摘要：", context.summary, "")
+  }
+  if (context.recentTurns.length === 0) {
+    parts.push("（暂无历史对话）")
+  } else {
+    parts.push(
+      ...context.recentTurns.map((entry) => {
+        const role = entry.role === "assistant" ? "叙事" : "玩家"
+        return `${entry.turn}. ${role}: ${entry.content}`
+      }),
+    )
+  }
+  return parts.join("\n")
 }
 
 function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
@@ -634,6 +693,7 @@ function buildEntryAgentMessages(
   collaborationPolicy: AgentRuntimeCollaborationPolicy,
   agentCallState: AgentCallTurnState,
   toolCallMode?: BrowserAiToolCallMode,
+  agentContext?: AgentContextSnapshot | null,
 ): AiChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
   const visibleContacts = input.workspaceFiles
@@ -665,7 +725,9 @@ function buildEntryAgentMessages(
         formatAgentRuntimeContext(context),
         "",
         "最近对话：",
-        formatHistory(history),
+        agentContext
+          ? formatAgentContextHistory(agentContext)
+          : formatHistory(history),
         "",
         "玩家本轮输入：",
         input.userInput,
@@ -1443,6 +1505,56 @@ export async function runAgentRuntimeTurn(
     data: { agentTitle: entryContext.agent.title },
   })
 
+  // master agent 会话上下文:优先用注入的 context.json 快照;未注入则从
+  // recentHistory(saveHistory)兜底初始化(design §3.1 首 turn/旧存档迁移).
+  // saveId 占位空串:runtime 层不知真实 saveId,host 落盘(R4)时用真实 saveId 重建.
+  // R3 在此之后插入"超阈值压缩".
+  let agentContext: AgentContextSnapshot | null = input.agentContext ?? null
+  if (!agentContext) {
+    agentContext = createInitialAgentContext(
+      "",
+      input.recentHistory,
+      currentRuntimeTurnNumber(input),
+    )
+  }
+
+  // R3:下个 turn 开头压缩.估算 context token,超 85% 阈值则调 model 摘要化
+  // 早期正文(只压剧情正文,过滤工具过程),保持"1 摘要 + K 轮正文"稳态.
+  // 压缩失败 → throw ContextCompressionFailedError(温和兜底,经 AssistantView 显示).
+  let compressedContext: AgentContextSnapshot | undefined
+  const budget = resolveTokenBudget(input.contextTokenBudget)
+  const triggerThreshold = budget * CONTEXT_COMPRESS_TRIGGER_RATIO
+  if (estimateContextTokens(agentContext) > triggerThreshold) {
+    const compressOptions: CompressCallOptions = {
+      debugLabel: "entry-agent",
+      signal: input.signal,
+      agentId: entryContext.agent.id,
+    }
+    try {
+      agentContext = await compressContext(
+        agentContext,
+        triggerThreshold,
+        capabilities.callModel,
+        compressOptions,
+      )
+      compressedContext = agentContext
+      capabilities.emitTrace?.({
+        type: "context_compressed",
+        ...traceAgentBase(entryContext, "entry-agent"),
+        ok: true,
+        data: { budget, triggerThreshold },
+      })
+    } catch (error) {
+      capabilities.emitTrace?.({
+        type: "context_compression_failed",
+        ...traceAgentBase(entryContext, "entry-agent"),
+        ok: false,
+        data: errorToTraceData(error),
+      })
+      throw error
+    }
+  }
+
   let replyText: string
   try {
     replyText = (await callAgentModelWithWorkspaceTools(
@@ -1452,6 +1564,7 @@ export async function runAgentRuntimeTurn(
         collaborationPolicy,
         agentCallState,
         capabilities.toolCallMode,
+        agentContext,
       ),
       input,
       capabilities,
@@ -1493,6 +1606,12 @@ export async function runAgentRuntimeTurn(
   return {
     replyText,
     agentSessionTranscripts: transcriptCollector.records,
+    contextUpdate: {
+      turn: currentRuntimeTurnNumber(input),
+      user: input.userInput,
+      assistant: replyText,
+      compressedContext,
+    },
   }
 }
 

@@ -3,6 +3,38 @@ export interface ConversationMessageRecord {
   content: string
 }
 
+/**
+ * One剧情正文 entry inside an `AgentContextSnapshot.recentTurns` list.
+ * Stored as原文 (user input or assistant final reply); tool process / thought
+ * streams are intentionally excluded so压缩摘要 stays pure剧情.
+ */
+export interface AgentContextTurnEntry {
+  turn: number
+  role: "user" | "assistant"
+  content: string
+}
+
+/**
+ * master agent 会话上下文快照,持久化到工作区 `save/agents/master/context.json`.
+ * 与玩家剧情正文存档(`saveHistory`)分离:这里存的是 master agent 视角的
+ * "1 摘要 + 最近 K 轮正文"稳态,跨 turn/跨加载保持上下文不膨胀不失忆.
+ * system prompt / Workspace 上下文 / 当前回合号 / 玩家本轮输入不持久化
+ * (每 turn 现构建),这里只存跨 turn 需保持的剧情上下文段.
+ */
+export interface AgentContextSnapshot {
+  schema: "tsian.agent.context.v1"
+  saveId: string
+  agentId: "master"
+  /** 早期剧情摘要(叙事梗概,压缩后产生).null = 尚未触发压缩. */
+  summary: string | null
+  /** 最近 K=5 轮正文(user+assistant 对,带 turn 索引,原文).按 turn 升序. */
+  recentTurns: AgentContextTurnEntry[]
+  /** 上次压缩覆盖到第几轮(防重复压缩).null = 未压缩过. */
+  lastCompressedTurn: number | null
+  /** ISO timestamp,最后一次更新时间. */
+  updatedAt: string
+}
+
 export type JsonPrimitive = string | number | boolean | null
 
 export type JsonValue =
