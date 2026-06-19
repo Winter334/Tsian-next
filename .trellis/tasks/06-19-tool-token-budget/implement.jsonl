@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "agent-runtime/index.ts、token-budget.ts、views/AssistantView.vue 属 platform-web 层；改动前读 layer 索引与 Required Checks（build:web / build:contracts）"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "maxToolRoundsPerAgent 字段移除涉 AgentRuntimeCollaborationPolicy 类型收窄；token-budget.ts 新增类型（ContextBudgetExhaustedError）需遵循 runtime 边界规范化。注意 :625 记载 maxToolRoundsPerAgent=3 默认值需在 Phase 3.3 同步更新"}
+{"file": ".trellis/spec/runtime-core/backend/index.md", "reason": "agent-runtime 是 runtime-core 的 platform-web 实现；token-budget.ts 新模块与循环终止条件改造需对照 runtime-core Required Checks（build:web / build:runtime-core）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "contextTokenBudget 数据流从 platform-host（resolveAgentModelConfig 拿 contextWindow）→ AgentRuntimeTurnInput → WorkspaceToolLoopOptions → 两循环；跨层传递需核对多消费者一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "R1 新增 token-budget.ts 多个纯函数（估算/压缩/resolve）；按代码复用指南先搜现有 token/context/压缩实现避免重复，并确认 estimateTokenCount 等是否已有类似 util"}
