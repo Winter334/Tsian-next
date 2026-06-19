@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "提交前质量门：lint/类型检查/禁用模式；本任务改 workspace-tools.ts 与 index.ts 需对照 quality-guidelines 核对 pre-commit 检查"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "检查 Runtime 类型边界规范化与契约使用：executor 裁剪后 RuntimeActionExecutorReference 类型收窄、sessionState 扩展是否符合 runtime 边界规范"}
+{"file": ".trellis/spec/contracts/frontend/index.md", "reason": "检查 contracts 变更后 Required Checks 执行：build:contracts 后 build:web 双构建通过"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查跨层数据流一致性：registry.ts 解析的 SkillActionSummary 经 SkillRegistryEntry 传到 formatSkillIndex 展示、再传到 use_skill observation，字段名/类型需三处一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查新增 util 是否复用现有实现：injectActivatedSkillMessages 应复用 loadSkillEntryFile/parseActionDeclarations，parseSkillActionSummaries 与 parseActionDeclarations 的围栏正则应一致不重复定义"}

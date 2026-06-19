@@ -1,1 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "agent-runtime/workspace-tools.ts、index.ts、tool-schemas.ts 属 platform-web 层；改动前读 layer 索引与 Required Checks（build:web / build:contracts）"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Runtime 类型边界（RuntimeSkillActionDeclaration/RuntimeActionExecutorReference 在 workspace-tools 内部定义，SkillRegistryEntry 在 contracts）需遵循 runtime 边界规范化与契约使用规范"}
+{"file": ".trellis/spec/contracts/frontend/index.md", "reason": "R3 给 SkillRegistryEntry 加 actions 字段属 contracts 契约变更；读 Required Checks（build:contracts 后 build:web）与 Source References"}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "跨包契约扩展（SkillActionSummary 新接口 + SkillRegistryEntry 可选字段）需遵循 contracts 消费侧类型安全规范"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 contracts→platform-web 两层，且 R3 数据流从 registry.ts 到 workspace-tools.ts 到 index.ts；需按跨层思维指南核对数据格式与多消费者一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "R1.4 新增 injectActivatedSkillMessages、R3.2 新增 parseSkillActionSummaries 属新增 util；按代码复用指南先搜现有实现（loadSkillEntryFile/parseActionDeclarations/resumeBrowserScriptPath）避免重复"}
