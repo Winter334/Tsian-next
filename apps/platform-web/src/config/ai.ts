@@ -18,14 +18,30 @@ export interface BrowserAiModelParameters {
   customRequestParamsText: string
 }
 
+/**
+ * A single model configuration inside a provider preset. Each model carries
+ * its own parameters because different models often need different context
+ * windows or sampling settings. The order in `BrowserAiProviderPreset.models`
+ * is the fallback order; the first `enabled` model is the primary.
+ */
+export interface BrowserAiModelConfig {
+  id: string
+  label?: string
+  parameters: BrowserAiModelParameters
+  enabled: boolean
+}
+
+export type BrowserAiFallbackStrategy = "primary-only" | "ordered"
+
 export interface BrowserAiProviderPreset {
   id: string
   name: string
   kind: BrowserAiProviderKind
   baseUrl: string
   apiKey: string
-  defaultModel: string
-  parameters: BrowserAiModelParameters
+  /** Ordered model configs; the first `enabled` entry is the primary model. */
+  models: BrowserAiModelConfig[]
+  fallbackStrategy: BrowserAiFallbackStrategy
   fetchedModels: BrowserAiModelEntry[]
   modelsFetchedAt: string
 }
@@ -37,6 +53,13 @@ export interface BrowserAiConfig {
   apiKey: string
   model: string
   parameters: BrowserAiModelParameters
+  /**
+   * Ordered fallback models (id + parameters) following the primary, when the
+   * preset uses the "ordered" strategy. Forward-compatible: the runtime only
+   * uses the primary `model`/`parameters` this round; fallback execution is a
+   * future concern.
+   */
+  fallbacks?: Array<{ model: string; parameters: BrowserAiModelParameters }>
 }
 
 export interface BrowserPlatformConfigDraft {
@@ -194,6 +217,63 @@ function cloneModelParameters(input: BrowserAiModelParameters): BrowserAiModelPa
   }
 }
 
+function normalizeModelConfig(input: unknown): BrowserAiModelConfig | null {
+  if (typeof input !== "object" || input === null) {
+    return null
+  }
+  const record = input as Record<string, unknown>
+  const id = readStoredText(record.id)
+  if (!id) {
+    return null
+  }
+  return {
+    id,
+    label: readStoredText(record.label) || undefined,
+    parameters: normalizeModelParameters(record.parameters),
+    enabled: record.enabled !== false,
+  }
+}
+
+function normalizeModelConfigs(input: unknown): BrowserAiModelConfig[] {
+  if (!Array.isArray(input)) {
+    return []
+  }
+  const seen = new Set<string>()
+  const models: BrowserAiModelConfig[] = []
+  for (const item of input) {
+    const config = normalizeModelConfig(item)
+    if (!config || seen.has(config.id)) {
+      continue
+    }
+    seen.add(config.id)
+    models.push(config)
+  }
+  return models
+}
+
+function cloneModelConfig(input: BrowserAiModelConfig): BrowserAiModelConfig {
+  return {
+    ...input,
+    parameters: cloneModelParameters(input.parameters),
+  }
+}
+
+function normalizeFallbackStrategy(input: unknown): BrowserAiFallbackStrategy {
+  return input === "ordered" ? "ordered" : "primary-only"
+}
+
+export function createBrowserAiModelConfig(
+  input: Partial<BrowserAiModelConfig & { model: string }> = {},
+): BrowserAiModelConfig {
+  const id = readStoredText(input.id ?? input.model)
+  return {
+    id,
+    label: readStoredText(input.label) || undefined,
+    parameters: normalizeModelParameters(input.parameters),
+    enabled: input.enabled !== false,
+  }
+}
+
 function normalizeProviderPreset(input: unknown, index: number): BrowserAiProviderPreset | null {
   if (typeof input !== "object" || input === null) {
     return null
@@ -202,12 +282,26 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
   const record = input as Record<string, unknown>
   const baseUrl = readStoredText(record.baseUrl)
   const apiKey = readStoredText(record.apiKey)
-  const defaultModel = readStoredText(record.defaultModel ?? record.model)
+  const legacyDefaultModel = readStoredText(record.defaultModel ?? record.model)
   const id = readStoredText(record.id) || `provider-${index + 1}`
   const name = readStoredText(record.name) || DEFAULT_PROVIDER_NAME
 
-  if (!baseUrl && !apiKey && !defaultModel && !readStoredText(record.name)) {
+  if (!baseUrl && !apiKey && !legacyDefaultModel && !readStoredText(record.name)) {
     return null
+  }
+
+  // Prefer the new `models` array. Fall back to migrating the legacy flat
+  // `defaultModel` + top-level `parameters` into a single-model config so
+  // already-saved presets upgrade without data loss.
+  let models = normalizeModelConfigs(record.models)
+  if (models.length === 0 && legacyDefaultModel) {
+    models = [
+      {
+        id: legacyDefaultModel,
+        parameters: normalizeModelParameters(record.parameters),
+        enabled: true,
+      },
+    ]
   }
 
   return {
@@ -216,8 +310,8 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
     kind: "openai-compatible",
     baseUrl,
     apiKey,
-    defaultModel,
-    parameters: normalizeModelParameters(record.parameters),
+    models,
+    fallbackStrategy: normalizeFallbackStrategy(record.fallbackStrategy),
     fetchedModels: normalizeModelEntries(record.fetchedModels),
     modelsFetchedAt: readStoredText(record.modelsFetchedAt),
   }
@@ -238,8 +332,10 @@ function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): Brows
     kind: "openai-compatible",
     baseUrl,
     apiKey,
-    defaultModel,
-    parameters: createDefaultBrowserAiModelParameters(),
+    models: defaultModel
+      ? [{ id: defaultModel, parameters: createDefaultBrowserAiModelParameters(), enabled: true }]
+      : [],
+    fallbackStrategy: "primary-only",
     fetchedModels: [],
     modelsFetchedAt: "",
   }
@@ -319,31 +415,69 @@ function getEnvAiConfig(): BrowserAiConfig | null {
 }
 
 function resolveProviderConfig(provider: BrowserAiProviderPreset | undefined): BrowserAiConfig | null {
-  if (!provider?.baseUrl || !provider.apiKey || !provider.defaultModel) {
+  if (!provider?.baseUrl || !provider.apiKey) {
     return null
   }
+
+  // Primary = first enabled model, else the first model entry as a last resort.
+  const primary =
+    provider.models.find((model) => model.enabled) ?? provider.models[0]
+  if (!primary) {
+    return null
+  }
+
+  // Ordered-strategy fallbacks: enabled models after the primary. Forward-
+  // compatible only; the runtime uses `primary` this round.
+  const fallbacks =
+    provider.fallbackStrategy === "ordered"
+      ? provider.models
+          .filter((model) => model.enabled && model.id !== primary.id)
+          .map((model) => ({ model: model.id, parameters: cloneModelParameters(model.parameters) }))
+      : undefined
 
   return {
     providerId: provider.id,
     providerName: provider.name,
     baseUrl: provider.baseUrl,
     apiKey: provider.apiKey,
-    model: provider.defaultModel,
-    parameters: cloneModelParameters(provider.parameters),
+    model: primary.id,
+    parameters: cloneModelParameters(primary.parameters),
+    ...(fallbacks && fallbacks.length > 0 ? { fallbacks } : {}),
   }
 }
 
 export function createBrowserAiProviderPreset(
-  input: Partial<BrowserAiProviderPreset & { model: string }> = {},
+  input: Partial<Omit<BrowserAiProviderPreset, "parameters"> & {
+    model: string
+    defaultModel: string
+    /** Legacy flat parameters, migrated into a single-model config when no `models` are supplied. */
+    parameters: BrowserAiModelParameters
+  }> = {},
 ): BrowserAiProviderPreset {
+  // Seed models from the new `models` field; fall back to a single-model
+  // config derived from a legacy `defaultModel`/`model` seed.
+  let models = normalizeModelConfigs(input.models)
+  if (models.length === 0) {
+    const seedModel = readStoredText(input.defaultModel ?? input.model)
+    if (seedModel) {
+      models = [
+        {
+          id: seedModel,
+          parameters: normalizeModelParameters(input.parameters),
+          enabled: true,
+        },
+      ]
+    }
+  }
+
   return {
     id: readStoredText(input.id) || createProviderId(),
     name: readStoredText(input.name) || DEFAULT_PROVIDER_NAME,
     kind: "openai-compatible",
     baseUrl: readStoredText(input.baseUrl),
     apiKey: readStoredText(input.apiKey),
-    defaultModel: readStoredText(input.defaultModel ?? input.model),
-    parameters: normalizeModelParameters(input.parameters),
+    models,
+    fallbackStrategy: normalizeFallbackStrategy(input.fallbackStrategy),
     fetchedModels: normalizeModelEntries(input.fetchedModels),
     modelsFetchedAt: readStoredText(input.modelsFetchedAt),
   }
@@ -477,10 +611,15 @@ export function validateBrowserAiModelParameters(parameters: BrowserAiModelParam
 
 export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void {
   for (const provider of input.providers) {
-    if (!provider.parameters) {
-      throw new Error("模型参数缺失。")
+    if (!Array.isArray(provider.models) || provider.models.length === 0) {
+      throw new Error("服务商预设至少需要一个模型配置。")
     }
-    validateBrowserAiModelParameters(provider.parameters)
+    for (const model of provider.models) {
+      if (!model.parameters) {
+        throw new Error("模型参数缺失。")
+      }
+      validateBrowserAiModelParameters(model.parameters)
+    }
   }
 }
 
