@@ -3,7 +3,7 @@
   "name": "control-panel-rework",
   "title": "控制面板分层重构与下拉统一",
   "description": "",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

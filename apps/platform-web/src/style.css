@@ -577,6 +577,57 @@ html, body, #app {
   opacity: 0.46;
 }
 
+/* ── Range slider — retro track + neon thumb ──
+   A sunken track (matching retro-select-surface) with a solid neon thumb.
+   The leftmost notch is the "do not send" (null) position when nullable. */
+.retro-range {
+  background: #1e2420;
+  border: 1px solid rgba(246, 236, 215, 0.22);
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 rgba(0, 0, 0, 0.75),
+    inset -1px -1px 0 rgba(246, 236, 215, 0.08);
+}
+
+/* WebKit thumb */
+.retro-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 16px;
+  border: 1px solid rgba(159, 119, 64, 0.9);
+  background: var(--color-neon);
+  border-radius: 0;
+  box-shadow:
+    inset 1px 1px 0 rgba(255, 255, 255, 0.25),
+    inset -1px -1px 0 rgba(0, 0, 0, 0.5);
+  cursor: pointer;
+}
+
+.retro-range::-webkit-slider-thumb:hover {
+  filter: brightness(1.15);
+}
+
+/* Firefox thumb */
+.retro-range::-moz-range-thumb {
+  width: 12px;
+  height: 16px;
+  border: 1px solid rgba(159, 119, 64, 0.9);
+  background: var(--color-neon);
+  border-radius: 0;
+  cursor: pointer;
+}
+
+/* Remove the filled-portion default styling so the track stays uniform. */
+.retro-range::-webkit-slider-runnable-track {
+  background: transparent;
+  border: none;
+}
+.retro-range::-moz-range-track {
+  background: transparent;
+  border: none;
+}
+
 .retro-focus:focus-visible {
   outline: 2px solid var(--color-neon);
   outline-offset: 2px;

@@ -16,10 +16,13 @@
 
 ### R1 控制面板分层（内联多屏导航）
 - 枢纽页：配置类别卡片网格，当前仅「AI 提供商」一张卡，点击进入。
-- 提供商管理屏：左侧提供商预设列表（选中高亮、模型数徽章、新增/删除）+ 右详情（名称/接口地址/API 密钥 + 模型摘要 + [进入模型配置]）。
-- 模型配置屏：头部（返回/拉取模型/添加模型/回退策略/保存/重置）+ 左模型表 + 右参数侧栏。
+- 提供商管理屏：左侧提供商**类型**列表（内置类型常驻：openai-compatible 可用、gemini/claude 标「敬请期待」；不可新增/删除类型）+ 右侧该类型下的预设卡片网格（每卡：名称/接口地址/主模型/模型数/策略 + [模型配置] + 删除；右上「添加预设」单一入口，空状态只留引导文字不重复按钮）。
+- 模型配置屏：头部（返回/拉取模型/添加模型/回退策略）+ 左模型表 + 右参数侧栏（参数改为对话框编辑）。
 - 单窗口内 `screen` ref 导航，不新增桌面应用、不动路由；面包屑/返回逐级返回。
-- 同一屏只一个侧栏（屏2=提供商侧栏，屏3=模型侧栏）。
+- 头部工具栏单行、紧凑，不双行堆叠（与其他 view 的 `retro-toolbar` 视觉一致）。
+- 同一屏只一个侧栏（屏2=类型侧栏，屏3=模型侧栏）。
+
+> 修订（Stage 3）：原 R1 描述的「左侧提供商预设列表（新增/删除）+ 右详情字段表」已被 ProviderType 分层 + 预设卡片网格取代。类型常驻化后不再有「添加类型」操作。
 
 ### R2 多模型数据模型
 - `BrowserAiProviderPreset` 持 `models: BrowserAiModelConfig[]`（有序，`models[0]`=主模型）+ `fallbackStrategy: "primary-only"|"ordered"`。
@@ -36,6 +39,8 @@
 - 删除模型：用 `confirm({severity:"danger", confirmText:"删除"})` 确认后移除。
 - 回退策略切换：`primary-only` 时余模型灰显标记"回退(未启用)"；`ordered` 时为回退#n。运行时本轮忽略。
 - 右参数侧栏：选中模型的 6 数值字段（上下文窗口/最大输出/温度/top_p/频率惩罚/存在惩罚）+ 推理程度 Select + 自定义请求参数 textarea；复用 `ModelNumberField`。无选中时侧栏占位。
+
+> 修订（Stage 3-4）：参数侧栏改为对话框编辑（EditModelParamsDialog/AddModelDialog 共用 ModelParamsFields）；4 个有界参数改用 RangeSlider（nullable 最左=不发送）。推理程度统一为 OpenAI 风格快捷挡位（不发送/最低/低/中/高/最高），三家 provider 均透传 `reasoning_effort` 字符串（不再各自映射 thinkingConfig/budget）；提示统一为一句"确保 API 支持，否则选不发送并用自定义请求参数"。
 
 ### R4 下拉统一
 - retro 化 `SelectTrigger/SelectContent/SelectItem` 默认类：直角、`border-neon-deep/55`、`bg-elevated`/`bg-[#2d2a23]`、retro 内阴影、等宽字体、选中/聚焦 `bg-neon/12 text-neon`、Check 图标 `text-neon`。

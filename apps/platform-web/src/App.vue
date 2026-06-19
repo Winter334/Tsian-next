@@ -14,12 +14,14 @@
 
     <ToastHost />
     <ConfirmHost />
+    <DialogForm />
   </div>
 </template>
 
 <script setup lang="ts">
 import { onMounted, ref } from "vue"
 import DesktopShell from "./components/desktop/DesktopShell.vue"
+import DialogForm from "./components/feedback/DialogForm.vue"
 import SplashScreen from "./components/SplashScreen.vue"
 import ToastHost from "./components/feedback/ToastHost.vue"
 import ConfirmHost from "./components/feedback/ConfirmHost.vue"

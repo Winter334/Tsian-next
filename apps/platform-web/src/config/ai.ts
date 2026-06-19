@@ -1,11 +1,11 @@
-export type BrowserAiProviderKind = "openai-compatible"
+export type BrowserAiProviderKind = "openai-compatible" | "gemini" | "claude" | "deepseek"
 
 export interface BrowserAiModelEntry {
   id: string
   label?: string
 }
 
-export type BrowserAiReasoningEffort = "" | "low" | "medium" | "high"
+export type BrowserAiReasoningEffort = "" | "minimal" | "low" | "medium" | "high" | "xhigh"
 
 export interface BrowserAiModelParameters {
   contextWindow: number | null
@@ -36,7 +36,6 @@ export type BrowserAiFallbackStrategy = "primary-only" | "ordered"
 export interface BrowserAiProviderPreset {
   id: string
   name: string
-  kind: BrowserAiProviderKind
   baseUrl: string
   apiKey: string
   /** Ordered model configs; the first `enabled` entry is the primary model. */
@@ -46,9 +45,24 @@ export interface BrowserAiProviderPreset {
   modelsFetchedAt: string
 }
 
+/**
+ * A provider type groups presets by API format/protocol (e.g. OpenAI-compatible,
+ * Gemini, Claude). Each type carries its own preset list; preset ids are
+ * globally unique so agent `providerPresetId` selection stays unambiguous.
+ */
+export interface BrowserAiProviderType {
+  id: string
+  kind: BrowserAiProviderKind
+  name: string
+  icon?: string
+  presets: BrowserAiProviderPreset[]
+}
+
 export interface BrowserAiConfig {
   providerId?: string
   providerName?: string
+  /** Provider protocol kind, resolved from the owning BrowserAiProviderType. */
+  kind: BrowserAiProviderKind
   baseUrl: string
   apiKey: string
   model: string
@@ -64,7 +78,7 @@ export interface BrowserAiConfig {
 
 export interface BrowserPlatformConfigDraft {
   activeProviderId: string
-  providers: BrowserAiProviderPreset[]
+  providerTypes: BrowserAiProviderType[]
 }
 
 interface LegacyBrowserAiConfig {
@@ -75,6 +89,9 @@ interface LegacyBrowserAiConfig {
 
 interface StoredBrowserPlatformConfigDraft {
   activeProviderId?: unknown
+  providerTypes?: unknown
+  // Legacy flat shape (pre provider-type rework). Ignored on load — prototype
+  // period allows destructive changes, so old data is not migrated.
   providers?: unknown
   chat?: Partial<LegacyBrowserAiConfig>
 }
@@ -173,7 +190,13 @@ function normalizePositiveInteger(input: unknown): number | null {
 }
 
 function normalizeReasoningEffort(input: unknown): BrowserAiReasoningEffort {
-  if (input === "low" || input === "medium" || input === "high") {
+  if (
+    input === "minimal" ||
+    input === "low" ||
+    input === "medium" ||
+    input === "high" ||
+    input === "xhigh"
+  ) {
     return input
   }
 
@@ -307,7 +330,6 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
   return {
     id,
     name,
-    kind: "openai-compatible",
     baseUrl,
     apiKey,
     models,
@@ -315,6 +337,80 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
     fetchedModels: normalizeModelEntries(record.fetchedModels),
     modelsFetchedAt: readStoredText(record.modelsFetchedAt),
   }
+}
+
+/** Built-in provider kinds the UI can create a type for. */
+export const PROVIDER_TYPE_KINDS: Array<{
+  kind: BrowserAiProviderKind
+  name: string
+  /** Whether this kind's runtime call path is implemented. */
+  available: boolean
+}> = [
+  { kind: "openai-compatible", name: "OpenAI 兼容", available: true },
+  { kind: "gemini", name: "Gemini", available: true },
+  { kind: "claude", name: "Claude", available: true },
+  { kind: "deepseek", name: "DeepSeek", available: true },
+]
+
+/**
+ * User-facing hint shown under the reasoning-effort Select in the model config
+ * UI. The effort value is sent as the OpenAI-style `reasoning_effort` field for
+ * every provider kind (a convenience shortcut); providers that don't support
+ * it should be left on "do not send" and configured via custom request params.
+ */
+export function reasoningEffortHintForKind(_kind: BrowserAiProviderKind): string {
+  return "以 reasoning_effort 字段发送；请确保你的 API 支持该参数，不支持时选「不发送」并通过自定义请求参数手动指定。"
+}
+
+function normalizeProviderType(input: unknown, index: number): BrowserAiProviderType | null {
+  if (typeof input !== "object" || input === null) {
+    return null
+  }
+  const record = input as Record<string, unknown>
+  const kind = record.kind
+  if (kind !== "openai-compatible" && kind !== "gemini" && kind !== "claude" && kind !== "deepseek") {
+    return null
+  }
+  const id = readStoredText(record.id) || kind
+  const presets = Array.isArray(record.presets)
+    ? record.presets
+        .map((preset, presetIndex) => normalizeProviderPreset(preset, presetIndex))
+        .filter((preset): preset is BrowserAiProviderPreset => Boolean(preset))
+    : []
+  return {
+    id,
+    kind,
+    name: readStoredText(record.name) || (PROVIDER_TYPE_KINDS.find((entry) => entry.kind === kind)?.name ?? "未命名类型"),
+    icon: readStoredText(record.icon) || undefined,
+    presets,
+  }
+}
+
+function normalizeProviderTypes(input: unknown): BrowserAiProviderType[] {
+  const seenIds = new Set<string>()
+  const types: BrowserAiProviderType[] = []
+  if (Array.isArray(input)) {
+    for (const item of input) {
+      const type = normalizeProviderType(item, types.length)
+      if (!type || seenIds.has(type.id)) {
+        continue
+      }
+      seenIds.add(type.id)
+      types.push(type)
+    }
+  }
+  // Built-in provider types are resident: the sidebar always lists every kind
+  // in PROVIDER_TYPE_KINDS. Dedupe by kind so a stored custom-id type of the
+  // same kind is not duplicated.
+  const seenKinds = new Set(types.map((type) => type.kind))
+  for (const entry of PROVIDER_TYPE_KINDS) {
+    if (seenKinds.has(entry.kind)) {
+      continue
+    }
+    types.push({ id: entry.kind, kind: entry.kind, name: entry.name, presets: [] })
+    seenIds.add(entry.kind)
+  }
+  return types
 }
 
 function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): BrowserAiProviderPreset | null {
@@ -329,7 +425,6 @@ function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): Brows
   return {
     id: LEGACY_PROVIDER_ID,
     name: DEFAULT_PROVIDER_NAME,
-    kind: "openai-compatible",
     baseUrl,
     apiKey,
     models: defaultModel
@@ -372,28 +467,46 @@ function writeStoredPlatformConfigDraft(input: BrowserPlatformConfigDraft): void
 }
 
 function normalizePlatformConfigDraft(input: StoredBrowserPlatformConfigDraft): BrowserPlatformConfigDraft {
-  const providers = Array.isArray(input.providers)
-    ? input.providers
-        .map((provider, index) => normalizeProviderPreset(provider, index))
-        .filter((provider): provider is BrowserAiProviderPreset => Boolean(provider))
-    : []
+  // Prototype period: the old flat `providers` shape is not migrated. Only the
+  // new `providerTypes` structure is read; missing data yields an empty config.
+  const providerTypes = normalizeProviderTypes(input.providerTypes)
 
-  if (providers.length === 0) {
-    const legacy = normalizeLegacyChatDraft(input.chat)
-    if (legacy) {
-      providers.push(legacy)
+  // Collect every preset id across types for active-id validation.
+  const allPresetIds: string[] = []
+  for (const type of providerTypes) {
+    for (const preset of type.presets) {
+      allPresetIds.push(preset.id)
     }
   }
 
   const storedActiveProviderId = readStoredText(input.activeProviderId)
-  const activeProviderId = providers.some((provider) => provider.id === storedActiveProviderId)
+  const activeProviderId = allPresetIds.includes(storedActiveProviderId)
     ? storedActiveProviderId
-    : providers[0]?.id ?? ""
+    : allPresetIds[0] ?? ""
 
   return {
     activeProviderId,
-    providers,
+    providerTypes,
   }
+}
+
+/** Flatten every preset across all provider types (preset ids are globally unique). */
+function allPresets(types: BrowserAiProviderType[]): BrowserAiProviderPreset[] {
+  const result: BrowserAiProviderPreset[] = []
+  for (const type of types) {
+    result.push(...type.presets)
+  }
+  return result
+}
+
+function findPresetById(types: BrowserAiProviderType[], presetId: string): BrowserAiProviderPreset | undefined {
+  for (const type of types) {
+    const preset = type.presets.find((item) => item.id === presetId)
+    if (preset) {
+      return preset
+    }
+  }
+  return undefined
 }
 
 function getEnvAiConfig(): BrowserAiConfig | null {
@@ -407,6 +520,7 @@ function getEnvAiConfig(): BrowserAiConfig | null {
 
   return {
     providerName: "环境默认",
+    kind: "openai-compatible",
     baseUrl,
     apiKey,
     model,
@@ -414,7 +528,10 @@ function getEnvAiConfig(): BrowserAiConfig | null {
   }
 }
 
-function resolveProviderConfig(provider: BrowserAiProviderPreset | undefined): BrowserAiConfig | null {
+function resolveProviderConfig(
+  provider: BrowserAiProviderPreset | undefined,
+  kind: BrowserAiProviderKind = "openai-compatible",
+): BrowserAiConfig | null {
   if (!provider?.baseUrl || !provider.apiKey) {
     return null
   }
@@ -438,12 +555,27 @@ function resolveProviderConfig(provider: BrowserAiProviderPreset | undefined): B
   return {
     providerId: provider.id,
     providerName: provider.name,
+    kind,
     baseUrl: provider.baseUrl,
     apiKey: provider.apiKey,
     model: primary.id,
     parameters: cloneModelParameters(primary.parameters),
     ...(fallbacks && fallbacks.length > 0 ? { fallbacks } : {}),
   }
+}
+
+/** Locate a preset and the kind of its owning type, in one pass. */
+function findPresetAndKind(
+  types: BrowserAiProviderType[],
+  presetId: string,
+): { preset: BrowserAiProviderPreset | undefined; kind: BrowserAiProviderKind } {
+  for (const type of types) {
+    const preset = type.presets.find((item) => item.id === presetId)
+    if (preset) {
+      return { preset, kind: type.kind }
+    }
+  }
+  return { preset: undefined, kind: "openai-compatible" }
 }
 
 export function createBrowserAiProviderPreset(
@@ -473,7 +605,6 @@ export function createBrowserAiProviderPreset(
   return {
     id: readStoredText(input.id) || createProviderId(),
     name: readStoredText(input.name) || DEFAULT_PROVIDER_NAME,
-    kind: "openai-compatible",
     baseUrl: readStoredText(input.baseUrl),
     apiKey: readStoredText(input.apiKey),
     models,
@@ -483,10 +614,20 @@ export function createBrowserAiProviderPreset(
   }
 }
 
+export function createBrowserAiProviderType(kind: BrowserAiProviderKind): BrowserAiProviderType {
+  const known = PROVIDER_TYPE_KINDS.find((entry) => entry.kind === kind)
+  return {
+    id: kind,
+    kind,
+    name: known?.name ?? "未命名类型",
+    presets: [],
+  }
+}
+
 export function getBrowserAiConfig(): BrowserAiConfig | null {
   const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
-  const activeProvider = stored.providers.find((provider) => provider.id === stored.activeProviderId)
-  return resolveProviderConfig(activeProvider) ?? getEnvAiConfig()
+  const { preset, kind } = findPresetAndKind(stored.providerTypes, stored.activeProviderId)
+  return resolveProviderConfig(preset, kind) ?? getEnvAiConfig()
 }
 
 /**
@@ -501,17 +642,18 @@ export function resolveBrowserAiConfigForProviderId(providerId: string): Browser
   }
 
   const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
-  const provider = stored.providers.find((item) => item.id === normalized)
-  return resolveProviderConfig(provider)
+  const { preset, kind } = findPresetAndKind(stored.providerTypes, normalized)
+  return resolveProviderConfig(preset, kind)
 }
 
 /**
  * List saved provider presets with id and name only (no credentials).
- * Used by Studio UI to populate the per-Agent provider dropdown.
+ * Flattened across all provider types; used by Studio/Assistant UI to populate
+ * the per-Agent provider dropdown. Preset ids are globally unique.
  */
 export function listBrowserAiProviderPresetOptions(): Array<{ id: string; name: string }> {
   const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
-  return stored.providers.map((provider) => ({
+  return allPresets(stored.providerTypes).map((provider) => ({
     id: provider.id,
     name: provider.name || "未命名服务商",
   }))
@@ -525,6 +667,17 @@ export function saveBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft
   validateBrowserPlatformConfigDraft(input)
   const normalized = normalizePlatformConfigDraft(input)
   validateBrowserPlatformConfigDraft(normalized)
+  writeStoredPlatformConfigDraft(normalized)
+}
+
+/**
+ * Persist the draft without validation. Used by auto-save so in-progress
+ * (possibly incomplete) edits are not lost; validation is enforced at runtime
+ * resolve time instead (`resolveProviderConfig` returns null for incomplete
+ * presets, falling back to env defaults).
+ */
+export function saveBrowserPlatformConfigDraftLenient(input: BrowserPlatformConfigDraft): void {
+  const normalized = normalizePlatformConfigDraft(input)
   writeStoredPlatformConfigDraft(normalized)
 }
 
@@ -602,23 +755,25 @@ export function validateBrowserAiModelParameters(parameters: BrowserAiModelParam
   assertRangeParameter(parameters.frequencyPenalty, "频率惩罚", -2, 2)
   assertRangeParameter(parameters.presencePenalty, "存在惩罚", -2, 2)
 
-  if (!["", "low", "medium", "high"].includes(parameters.reasoningEffort)) {
-    throw new Error("推理程度只能是低、中、高或留空。")
+  if (!["", "minimal", "low", "medium", "high", "xhigh"].includes(parameters.reasoningEffort)) {
+    throw new Error("推理程度只能是最低/低/中/高/最高或留空。")
   }
 
   parseBrowserAiCustomRequestParams(parameters.customRequestParamsText)
 }
 
 export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void {
-  for (const provider of input.providers) {
-    if (!Array.isArray(provider.models) || provider.models.length === 0) {
-      throw new Error("服务商预设至少需要一个模型配置。")
-    }
-    for (const model of provider.models) {
-      if (!model.parameters) {
-        throw new Error("模型参数缺失。")
+  for (const type of input.providerTypes) {
+    for (const provider of type.presets) {
+      if (!Array.isArray(provider.models) || provider.models.length === 0) {
+        throw new Error("服务商预设至少需要一个模型配置。")
       }
-      validateBrowserAiModelParameters(model.parameters)
+      for (const model of provider.models) {
+        if (!model.parameters) {
+          throw new Error("模型参数缺失。")
+        }
+        validateBrowserAiModelParameters(model.parameters)
+      }
     }
   }
 }
@@ -630,6 +785,70 @@ function buildModelsUrl(baseUrl: string): string {
   }
 
   return `${normalized}/models`
+}
+
+/** Build the model-list endpoint URL for a given provider kind. */
+function buildModelsUrlForKind(baseUrl: string, kind: BrowserAiProviderKind): string {
+  const normalized = baseUrl.trim().replace(/\/+$/, "")
+  if (!normalized) {
+    throw new Error("请先填写接口地址。")
+  }
+  if (kind === "gemini") {
+    // Gemini v1beta listModels; the API key goes in the query string.
+    return `${normalized}/models`
+  }
+  if (kind === "claude") {
+    return `${normalized}/models`
+  }
+  return `${normalized}/models`
+}
+
+/** Auth + metadata headers for a model-list / chat request, per kind. */
+function buildProviderHeadersForKind(
+  kind: BrowserAiProviderKind,
+  apiKey: string,
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  if (kind === "gemini") {
+    return { "x-goog-api-key": apiKey, ...extra }
+  }
+  if (kind === "claude") {
+    return { "x-api-key": apiKey, "anthropic-version": "2023-06-01", ...extra }
+  }
+  return { Authorization: `Bearer ${apiKey}`, ...extra }
+}
+
+/**
+ * Extract model entries from a model-list response, accounting for per-kind
+ * response shapes. Gemini returns `{ models: [{ name: "models/gemini-..." }] }`;
+ * OpenAI/Claude return `{ data: [{ id }] }` or a bare array.
+ */
+function extractModelEntriesForKind(payload: unknown, kind: BrowserAiProviderKind): BrowserAiModelEntry[] {
+  if (kind === "gemini") {
+    const models = typeof payload === "object" && payload !== null
+      ? (payload as { models?: unknown }).models
+      : undefined
+    if (!Array.isArray(models)) {
+      return []
+    }
+    const seen = new Set<string>()
+    const result: BrowserAiModelEntry[] = []
+    for (const item of models) {
+      if (typeof item !== "object" || item === null) {
+        continue
+      }
+      const rawName = readStoredText((item as { name?: unknown }).name)
+      // Gemini names look like "models/gemini-1.5-flash"; strip the prefix.
+      const id = rawName.replace(/^models\//, "").trim()
+      if (!id || seen.has(id)) {
+        continue
+      }
+      seen.add(id)
+      result.push({ id })
+    }
+    return result
+  }
+  return extractModelEntriesFromPayload(payload)
 }
 
 function isAbortError(error: unknown): boolean {
@@ -670,13 +889,14 @@ function extractModelEntriesFromPayload(payload: unknown): BrowserAiModelEntry[]
 }
 
 export async function fetchBrowserAiProviderModels(
-  provider: Pick<BrowserAiProviderPreset, "baseUrl" | "apiKey">,
+  provider: Pick<BrowserAiProviderPreset, "baseUrl" | "apiKey"> & { kind?: BrowserAiProviderKind },
   options: { signal?: AbortSignal } = {},
 ): Promise<BrowserAiModelEntry[]> {
   const apiKey = provider.apiKey.trim()
   if (!apiKey) {
     throw new Error("请先填写 API 密钥。")
   }
+  const kind: BrowserAiProviderKind = provider.kind ?? "openai-compatible"
 
   const controller = new AbortController()
   const abortFromParent = () => {
@@ -694,11 +914,9 @@ export async function fetchBrowserAiProviderModels(
   }, MODEL_FETCH_TIMEOUT_MS)
 
   try {
-    const response = await fetch(buildModelsUrl(provider.baseUrl), {
+    const response = await fetch(buildModelsUrlForKind(provider.baseUrl, kind), {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
+      headers: buildProviderHeadersForKind(kind, apiKey),
       signal: controller.signal,
     })
     const payload = await readJsonPayload(response)
@@ -707,7 +925,7 @@ export async function fetchBrowserAiProviderModels(
       throw new Error(extractErrorMessage(payload) ?? `拉取模型失败，HTTP ${response.status}。`)
     }
 
-    const models = extractModelEntriesFromPayload(payload)
+    const models = extractModelEntriesForKind(payload, kind)
     if (models.length === 0) {
       throw new Error("没有从服务商返回内容中找到可用模型。")
     }

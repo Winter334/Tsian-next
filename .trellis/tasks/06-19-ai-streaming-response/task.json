@@ -1,0 +1,28 @@
+{
+  "id": "ai-streaming-response",
+  "name": "ai-streaming-response",
+  "title": "AI 回复流式输出（SSE 逐字渲染）",
+  "description": "将 generateAssistantReply 从一次性 Promise<string> 改为流式增量输出，对话界面逐字渲染。涉及 adapter 层三家 SSE 解析、fetch 改 ReadableStream、调用方与 UI 层增量消费。",
+  "status": "pending",
+  "dev_type": "feature",
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-19",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "来源：06-19-control-panel-rework 收尾时用户确认流式为后续任务。当前 generateAssistantReply 返回 Promise<string>，stream 被列入 PROTECTED_CUSTOM_REQUEST_KEYS 禁用。",
+  "meta": {
+    "source_task": "06-19-control-panel-rework"
+  }
+}

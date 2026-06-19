@@ -5,6 +5,7 @@ import {
   parseBrowserAiCustomRequestParams,
   type BrowserAiConfig,
   type BrowserAiModelParameters,
+  type BrowserAiProviderKind,
 } from "../config/ai"
 
 export type { AiChatMessage, AiDebugRecord }
@@ -267,6 +268,186 @@ function extractAssistantText(payload: unknown): string {
   throw new Error("AI response format is not supported.")
 }
 
+// ---------------------------------------------------------------------------
+// Provider adapters — one per protocol kind. Each adapter knows how to build
+// the chat-request URL/headers/body and parse the assistant text out of the
+// response. The OpenAI adapter preserves the original behavior byte-for-byte;
+// Gemini and Claude convert the internal OpenAI-style {role, content} messages
+// to their native shapes.
+// ---------------------------------------------------------------------------
+
+interface ProviderAdapter {
+  buildUrl(config: BrowserAiConfig): string
+  buildHeaders(config: BrowserAiConfig): Record<string, string>
+  buildRequestBody(config: BrowserAiConfig, messages: AiChatMessage[]): Record<string, unknown>
+  extractText(payload: unknown): string
+}
+
+const openaiAdapter: ProviderAdapter = {
+  buildUrl(config) {
+    return buildChatCompletionsUrl(config.baseUrl)
+  },
+  buildHeaders(config) {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    }
+  },
+  buildRequestBody(config, messages) {
+    return buildChatCompletionsRequestBody({
+      model: config.model,
+      messages,
+      parameters: config.parameters,
+    })
+  },
+  extractText: extractAssistantText,
+}
+
+/** Split OpenAI-style messages into a system prompt + non-system messages. */
+function splitSystemMessage(messages: AiChatMessage[]): { system: string | undefined; rest: AiChatMessage[] } {
+  const systemParts: string[] = []
+  const rest: AiChatMessage[] = []
+  for (const message of messages) {
+    if (message.role === "system") {
+      if (message.content) {
+        systemParts.push(message.content)
+      }
+    } else {
+      rest.push(message)
+    }
+  }
+  return { system: systemParts.length > 0 ? systemParts.join("\n\n") : undefined, rest }
+}
+
+const geminiAdapter: ProviderAdapter = {
+  buildUrl(config) {
+    const base = config.baseUrl.replace(/\/+$/, "")
+    // model goes in the path; key is sent via header.
+    return `${base}/models/${encodeURIComponent(config.model)}:generateContent`
+  },
+  buildHeaders(config) {
+    return {
+      "Content-Type": "application/json",
+      "x-goog-api-key": config.apiKey,
+    }
+  },
+  buildRequestBody(config, messages) {
+    const { system, rest } = splitSystemMessage(messages)
+    const generationConfig: Record<string, unknown> = {}
+    putOptionalNumber(generationConfig, "maxOutputTokens", config.parameters.maxOutputTokens)
+    putOptionalNumber(generationConfig, "temperature", config.parameters.temperature)
+    putOptionalNumber(generationConfig, "topP", config.parameters.topP)
+    putOptionalNumber(generationConfig, "frequencyPenalty", config.parameters.frequencyPenalty)
+    putOptionalNumber(generationConfig, "presencePenalty", config.parameters.presencePenalty)
+
+    const body: Record<string, unknown> = {
+      contents: rest.map((message) => ({
+        role: message.role === "assistant" ? "model" : "user",
+        parts: [{ text: message.content }],
+      })),
+      generationConfig,
+    }
+    if (system) {
+      body.systemInstruction = { parts: [{ text: system }] }
+    }
+    // reasoning_effort is forwarded as-is for all provider kinds; providers that
+    // don't support it should be left on "do not send" and tuned via custom params.
+    if (config.parameters.reasoningEffort) {
+      body.generationConfig = { ...generationConfig, reasoning_effort: config.parameters.reasoningEffort }
+    }
+    return {
+      ...body,
+      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
+      ...body,
+    }
+  },
+  extractText(payload) {
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "candidates" in payload &&
+      Array.isArray(payload.candidates) &&
+      payload.candidates.length > 0
+    ) {
+      const parts = payload.candidates[0]?.content?.parts
+      if (Array.isArray(parts)) {
+        return parts
+          .map((part) => (typeof part?.text === "string" ? part.text : ""))
+          .join("")
+          .trim()
+      }
+    }
+    throw new Error("Gemini response format is not supported.")
+  },
+}
+
+const claudeAdapter: ProviderAdapter = {
+  buildUrl(config) {
+    return `${config.baseUrl.replace(/\/+$/, "")}/messages`
+  },
+  buildHeaders(config) {
+    return {
+      "Content-Type": "application/json",
+      "x-api-key": config.apiKey,
+      "anthropic-version": "2023-06-01",
+    }
+  },
+  buildRequestBody(config, messages) {
+    const { system, rest } = splitSystemMessage(messages)
+    const body: Record<string, unknown> = {
+      model: config.model,
+      messages: rest.map((message) => ({
+        role: message.role === "assistant" ? "assistant" : "user",
+        content: message.content,
+      })),
+      // Claude requires max_tokens; fall back to a sane default when unset.
+      max_tokens: config.parameters.maxOutputTokens ?? 4096,
+    }
+    if (system) {
+      body.system = system
+    }
+    putOptionalNumber(body, "temperature", config.parameters.temperature)
+    putOptionalNumber(body, "top_p", config.parameters.topP)
+    // reasoning_effort is forwarded as-is for all provider kinds; providers that
+    // don't support it should be left on "do not send" and tuned via custom params.
+    if (config.parameters.reasoningEffort) {
+      body.reasoning_effort = config.parameters.reasoningEffort
+    }
+    return {
+      ...body,
+      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
+      model: config.model,
+      messages: body.messages,
+      max_tokens: body.max_tokens,
+    }
+  },
+  extractText(payload) {
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "content" in payload &&
+      Array.isArray(payload.content)
+    ) {
+      return payload.content
+        .map((block) => (typeof block?.text === "string" ? block.text : ""))
+        .join("")
+        .trim()
+    }
+    throw new Error("Claude response format is not supported.")
+  },
+}
+
+function selectAdapter(kind: BrowserAiProviderKind): ProviderAdapter {
+  if (kind === "gemini") {
+    return geminiAdapter
+  }
+  if (kind === "claude") {
+    return claudeAdapter
+  }
+  // deepseek is OpenAI-compatible and reuses the openai adapter.
+  return openaiAdapter
+}
+
 export async function generateAssistantReply(
   messages: AiChatMessage[],
   options: GenerateAssistantReplyOptions = {},
@@ -280,12 +461,9 @@ export async function generateAssistantReply(
   }
 
   const requestId = `${options.debugLabel ?? "chat"}-${++aiDebugSequence}`
-  const url = buildChatCompletionsUrl(config.baseUrl)
-  const requestBody = buildChatCompletionsRequestBody({
-    model: config.model,
-    messages,
-    parameters: config.parameters,
-  })
+  const adapter = selectAdapter(config.kind)
+  const url = adapter.buildUrl(config)
+  const requestBody = adapter.buildRequestBody(config, messages)
   pushAiDebugRecord({
     id: requestId,
     kind: "chat",
@@ -315,10 +493,7 @@ export async function generateAssistantReply(
       url,
       init: {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${config.apiKey}`,
-        },
+        headers: adapter.buildHeaders(config),
         body: JSON.stringify(requestBody),
       },
       signal: options.signal,
@@ -342,7 +517,7 @@ export async function generateAssistantReply(
     throw new Error(message)
   }
 
-  const content = extractAssistantText(payload)
+  const content = adapter.extractText(payload)
   const usage = extractUsageFromPayload(payload)
   updateAiDebugRecord(requestId, { responseText: content, usage })
 

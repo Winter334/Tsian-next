@@ -1,5 +1,5 @@
 <template>
-  <div class="grid h-full min-h-0 place-items-start overflow-auto p-4">
+  <div class="grid h-full min-h-0 place-items-start overflow-auto p-5">
     <div class="grid w-full gap-3 sm:grid-cols-2 xl:grid-cols-3">
       <button
         v-for="entry in entries"
@@ -45,13 +45,23 @@ interface HubEntry {
   icon: Component
 }
 
-const entries = computed<HubEntry[]>(() => [
-  {
-    id: "ai-providers",
-    kind: "AI",
-    title: "AI 提供商",
-    subtitle: `${props.draft.providers.length} 个预设 · 配置模型与回退策略`,
-    icon: Bot,
-  },
-])
+const entries = computed<HubEntry[]>(() => {
+  let presetCount = 0
+  let modelCount = 0
+  for (const type of props.draft.providerTypes) {
+    presetCount += type.presets.length
+    for (const preset of type.presets) {
+      modelCount += preset.models.length
+    }
+  }
+  return [
+    {
+      id: "ai-providers",
+      kind: "AI",
+      title: "AI 提供商",
+      subtitle: `${presetCount} 个预设 · ${modelCount} 个模型`,
+      icon: Bot,
+    },
+  ]
+})
 </script>
