@@ -91,6 +91,43 @@ body {
   color: #2c2418;
 }
 
+/* ── Themed scrollbars (dark warm CRT palette, sharp brutalist) ──
+   Replaces browser-native scrollbars across the whole app so they match
+   the neon-on-panel theme instead of clashing with it. Thin, no rounded
+   corners, neon thumb over a sunken panel track. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-neon-deep) rgba(0, 0, 0, 0.25);
+}
+
+/* WebKit/Blink (Chromium, WebKit) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 1px 1px 0 rgba(0, 0, 0, 0.45), inset -1px -1px 0 rgba(246, 236, 215, 0.06);
+}
+*::-webkit-scrollbar-thumb {
+  border: 1px solid rgba(159, 119, 64, 0.7);
+  background: var(--color-neon-deep);
+  border-radius: 0;
+  box-shadow: inset 1px 1px 0 rgba(246, 236, 215, 0.18), inset -1px -1px 0 rgba(0, 0, 0, 0.5);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-neon);
+  border-color: var(--color-neon);
+}
+*::-webkit-scrollbar-thumb:active {
+  background: var(--color-neon);
+  filter: brightness(1.1);
+}
+/* Corner where two scrollbars meet — blend into the track. */
+*::-webkit-scrollbar-corner {
+  background: rgba(0, 0, 0, 0.25);
+}
+
 html, body, #app {
   height: 100%;
   min-height: 100%;
