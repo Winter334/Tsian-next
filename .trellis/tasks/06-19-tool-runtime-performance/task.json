@@ -23,7 +23,9 @@
     "06-19-tool-token-budget",
     "06-19-tool-rename-and-glob",
     "06-19-tool-executor-policy",
-    "06-20-agent-call-concurrency"
+    "06-20-agent-call-concurrency",
+    "06-20-agent-task-compression",
+    "06-20-assistant-context-persistence"
   ],
   "parent": null,
   "relatedFiles": [],

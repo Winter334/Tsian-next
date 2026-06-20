@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "提交前质量门：本任务改 platform-host、storage/local-assistant-files、可能新建 assistant-context-lifecycle 模块，需核对 pre-commit 检查"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "检查助手 context.json schema 契约写入 spec；.tsian/local/assistant/ platform-local 边界；与 master context.json 独立路径不混淆"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "检查 .tsian/local/assistant/context.json 存储符合平台元数据规范；Dexie 表/IndexedDB 存储边界；无未经批准的迁移"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查跨加载恢复跨层：host → 存储 → context.json → runAssistantChat 注入；saveHistory vs context.json 分工一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查复用底层持久化骨架而非重复造轮子；任务压缩函数复用 06-20-agent-task-compression"}

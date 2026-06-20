@@ -92,3 +92,30 @@
 **通过标准**：C3-C6 全部符合子任务2 implement.md 描述。
 
 **失败影响**：若 PV-001 回退到方案 C（旧结构），子任务2 压剧情实现需从 slice+替换改为锚点拆分（design §2.4 / implement R1.3 对应调整）。
+
+---
+
+## PV-003 agent-call-concurrency 同轮多 agent_call 并行 + 事件 agentId 实测
+
+**状态**：待验证（2026-06-20 登记，依赖 PV-001 通过）
+
+**关联任务**：`06-20-agent-call-concurrency`（子任务，R1-R4 已落地，收尾 C3-C6）
+
+**背景**：agent-call-concurrency 代码层已完成（R1 移除 maxCallsPerTurn + R2 agent_call 并行组 + R3+R4 事件层 agentId + delegated 过程可见 + spec 同步）。真实 API 行为未实测——依赖可游玩游戏卡 + API key + dev server 环境。
+
+**为什么暂缓**：同 PV-001/PV-002——没有可游玩游戏卡（含 master agent + contacts + workspace），无法在 dev server 触发 master 并行调多子代理的链路。外部条件依赖，非代码问题。
+
+**前置条件**：
+- PV-001 通过（结构正确 + provider 兼容）。
+- 游戏卡含 master agent + 至少 2 个 contacts（如 memory + state/narrative），让 master 能一轮发多个 agent_call。
+- dev server + API key。
+
+**验证步骤**（对应 agent-call-concurrency implement.md 收尾）：
+- C3：同轮多 agent_call 并行——模型一轮发 agent_call(memory)+agent_call(state)，确认并行执行（trace 事件 agentId 交错/时间戳）、等待时间短于串行、observation 按原 index 回填、master 下一轮看到正确 observation 顺序。
+- C4：delegated 过程可见——游戏前端收到带 agentId="memory"/"state" 的 turn-delta/turn-tool 事件，能区分是哪个子代理。
+- C5：不回归——单 agent_call 串行行为同改造前（除事件带 agentId）；嵌套 agent_call depth=2 仍拒（AGENT_CALL_UNAVAILABLE）；maxCallsPerTurn 移除后发 5+ agent_call 不再被拒。
+- C6：master 兜底不回归——master turn 内压缩 + ContextBudgetExhaustedError 行为不变（tool-token-budget R2 逻辑未被破坏）。
+
+**通过标准**：C3-C6 全部符合 agent-call-concurrency implement.md 描述。
+
+**失败影响**：若并行 observation 回填错位，native 循环 toolCalls[index].id 配对失败 → 检查 Map-by-index 回填逻辑。若 delegated 事件未带 agentId → 检查 createAgentCallRunner 透传 + native 循环 emit 点。

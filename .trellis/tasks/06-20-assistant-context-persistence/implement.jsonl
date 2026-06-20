@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-host/index.ts、storage/local-assistant-files.ts、agent-runtime/context-lifecycle.ts 属 platform-web 层；改动前读 layer 索引与 Required Checks"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "master 的 context.json 契约（tsian.agent.context.v1）是参考；助手 context.json schema 需新建或复用；.tsian/local/assistant/ 的 platform-local 定位"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Dexie 表 + .tsian/ 元数据存储规范；助手 context.json 放 .tsian/local/assistant/ 属平台元数据，需对照 state-management 的存储边界"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "助手 context.json 从 host runAssistantChat → 存储 → 跨加载恢复的跨层；saveHistory（可见消息）与 context.json（agent 上下文）分工"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用底层 agent-session-context-lifecycle 的持久化骨架（serializeAgentContext/parseAgentContext/stageAgentContextFile），换压缩内容为任务摘要；复用任务压缩函数（06-20-agent-task-compression）"}
+{"file": ".trellis/tasks/06-20-agent-task-compression/prd.md", "reason": "本任务依赖其任务压缩机制；其 PRD 记载了任务压缩 + 时长兜底的设计方向，本任务在其上加持久化层"}
