@@ -13,7 +13,6 @@ export type RuntimeTraceEventType =
   | "workspace_tool_called"
   | "action_executor_policy_checked"
   | "action_called"
-  | "agent_session_transcripts_staged"
   | "agent_context_staged"
   | "context_compressed"
   | "context_compressed_in_turn"

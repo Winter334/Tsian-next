@@ -162,8 +162,7 @@ function eventSource(type: string): RuntimeDiagnosticSource {
   if (type === "action_executor_policy_checked" || type === "action_called") return "action"
   if (type === "script_log") return "script"
   if (
-    type === "agent_session_transcripts_staged"
-    || type === "agent_context_staged"
+    type === "agent_context_staged"
     || type === "context_compressed"
     || type === "context_compression_failed"
   ) {

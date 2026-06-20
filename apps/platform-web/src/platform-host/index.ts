@@ -32,7 +32,6 @@ import type {
 } from "@tsian/contracts"
 import {
   runAgentRuntimeTurn,
-  type AgentSessionTranscriptRecord,
 } from "../agent-runtime"
 import type { RuntimeControlledExecutorContext } from "../agent-runtime/workspace-tools"
 import { assembleAgentContext } from "../agent-runtime/context"
@@ -65,6 +64,7 @@ import {
   loadLocalAssistantFiles,
   saveLocalAssistantFiles,
   isLocalAssistantPath,
+  isAssistantDirectWritePath,
   LOCAL_ASSISTANT_AGENT_ID,
 } from "../storage"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
@@ -151,7 +151,6 @@ let previousTurnController: AbortController | null = null
 
 const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v1"
 const AIRP_HISTORY_TURN_PATH_PREFIX = "save/history/turns/"
-const AGENT_SESSION_TRANSCRIPT_MEDIA_TYPE = "application/x-ndjson"
 
 export interface PlatformWorkspaceRootEntry {
   kind: "local" | "card"
@@ -535,58 +534,6 @@ function stageRawAirpHistoryTurnFile(
     ),
     mediaType: "application/json",
   })
-}
-
-function agentSessionTranscriptPath(record: AgentSessionTranscriptRecord): string {
-  const suffix = "/AGENT.md"
-  if (!record.agentPath.endsWith(suffix)) {
-    throw new Error(
-      `Agent session transcript requires an AGENT.md path: ${record.agentPath}`,
-    )
-  }
-
-  return `save/${record.agentPath.slice(0, -suffix.length)}/session.jsonl`
-}
-
-function appendJsonlRecords(
-  currentContent: string,
-  records: AgentSessionTranscriptRecord[],
-): string {
-  const prefix = currentContent && !currentContent.endsWith("\n")
-    ? `${currentContent}\n`
-    : currentContent
-  return `${prefix}${records.map((record) => JSON.stringify(record)).join("\n")}\n`
-}
-
-function stageAgentSessionTranscriptFiles(
-  workspaceTransaction: RuntimeWorkspaceTransaction,
-  records: AgentSessionTranscriptRecord[],
-): Array<{ path: string; recordCount: number; size: number }> {
-  const recordsByPath = new Map<string, AgentSessionTranscriptRecord[]>()
-  for (const record of records) {
-    const path = agentSessionTranscriptPath(record)
-    const existing = recordsByPath.get(path) ?? []
-    existing.push(record)
-    recordsByPath.set(path, existing)
-  }
-
-  const staged: Array<{ path: string; recordCount: number; size: number }> = []
-  for (const [path, pathRecords] of recordsByPath.entries()) {
-    const existing = workspaceTransaction.workspaceFiles.find((file) => file.path === path)
-    const nextContent = appendJsonlRecords(existing?.content ?? "", pathRecords)
-    const file = workspaceTransaction.write({
-      path,
-      content: nextContent,
-      mediaType: AGENT_SESSION_TRANSCRIPT_MEDIA_TYPE,
-    })
-    staged.push({
-      path: file.path,
-      recordCount: pathRecords.length,
-      size: file.content.length,
-    })
-  }
-
-  return staged
 }
 
 async function activeSaveExists(saveId: string): Promise<boolean> {
@@ -1681,10 +1628,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
           userInput: content,
           assistantOutput: result.replyText,
         })
-        const transcriptWrites = stageAgentSessionTranscriptFiles(
-          workspaceTransaction,
-          result.agentSessionTranscripts,
-        )
         // R4:写回 master agent 会话上下文快照(本轮正文追加 + 压缩结果落盘)
         const contextUpdate = result.contextUpdate
         if (contextUpdate) {
@@ -1705,15 +1648,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
             },
           })
         }
-        trace.emit({
-          type: "agent_session_transcripts_staged",
-          ok: true,
-          data: {
-            recordCount: result.agentSessionTranscripts.length,
-            fileCount: transcriptWrites.length,
-            files: transcriptWrites,
-          },
-        })
 
         trace.emit({
           type: "turn_completed",
@@ -2104,7 +2038,13 @@ async function commitAssistantWorkspaceFiles(
 ): Promise<void> {
   // Persist local assistant files (.tsian/local/assistant/*) to the Dexie
   // meta store so they survive card switches independent of save state.
-  const localAssistantFiles = files.filter((file) => isLocalAssistantPath(file.path))
+  // 排除"直写管辖"的助手运行时文件(会话 context 快照):
+  // 它由 stageAssistantContextFile 绕过事务直写 Dexie,事务 baseline 里仍是 turn
+  // 开头的旧版本,若在此回写会覆盖直写的新版本(clobber:每轮 context.json 被还原成
+  // turn 开头值 → 跨轮失忆).
+  const localAssistantFiles = files.filter(
+    (file) => isLocalAssistantPath(file.path) && !isAssistantDirectWritePath(file.path),
+  )
   if (localAssistantFiles.length > 0) {
     await saveLocalAssistantFiles(localAssistantFiles)
   }

@@ -25,7 +25,7 @@ export interface NativeToolCall {
 
 /**
  * Internal structured message sequence used by the native tool loop. Unlike the
- * flat `AiChatMessage` (debug/transcript-facing), this carries structured tool
+ * flat `AiChatMessage` (debug-facing), this carries structured tool
  * calls and tool observations so adapters can build each provider's native
  * request shape without re-encoding ids from text.
  */
@@ -38,7 +38,7 @@ export type RuntimeChatMessage =
  * Structured result of one native model call. `text` is the user-visible
  * assistant content (without tool-call blocks); `toolCalls` holds parsed native
  * calls when the model wants to invoke tools; `raw` is the full original
- * response text for transcript records; `finishReason` tells the loop whether
+ * response text for debug records; `finishReason` tells the loop whether
  * to stop (`stop`) or execute tools (`tool_calls`).
  */
 export interface ModelCallResult {
@@ -1173,7 +1173,7 @@ export async function generateAssistantReplyNative(
     createdAt: new Date().toISOString(),
     messages: messages.map((message): AiChatMessage => {
       if (message.role === "tool") {
-        // Debug/transcript uses the flat AiChatMessage shape; thread tool
+        // Debug uses the flat AiChatMessage shape; thread tool
         // observations back as a user turn carrying the observation text.
         return { role: "user", content: `[tool:${message.toolCallId}] ${message.content}` }
       }

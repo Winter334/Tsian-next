@@ -213,6 +213,29 @@ export function assistantContextPath(sessionId: string): string {
 }
 
 /**
+ * 助手会话 context 快照所在目录前缀(所有 sessions/<id>/context.json 共享).
+ * 用于在事务 commit 回写时排除这类"由 stageAssistantContextFile 直写 Dexie 管辖"
+ * 的文件——它们不经过 RuntimeWorkspaceTransaction,若把事务 baseline 里的旧版本
+ * 一并回写会覆盖直写的新版本(clobber 缺陷:每轮 context.json 被还原成 turn 开头值).
+ */
+const ASSISTANT_CONTEXT_DIR = `${LOCAL_ASSISTANT_DIR}/sessions/`
+
+/** 判断路径是否属于助手会话 context 快照(stagedAssistantContextFile 专属管辖). */
+export function isAssistantContextPath(path: string): boolean {
+  return path.startsWith(ASSISTANT_CONTEXT_DIR)
+}
+
+/**
+ * 判断路径是否属于"直写 Dexie 管辖"的助手运行时文件——这类文件由 stage 函数
+ * (stageAssistantContextFile)绕过事务直写,事务 baseline 里是 turn 开头的旧版本.
+ * 若 commit 回写会覆盖直写的新版本(clobber).commit 时必须排除它们,只让 stage
+ * 函数的直写生效.
+ */
+export function isAssistantDirectWritePath(path: string): boolean {
+  return isAssistantContextPath(path)
+}
+
+/**
  * 从 local-assistant-files map 删除单个文件(供会话删除清理 context 快照).
  * saveLocalAssistantFiles 是合并模式(只合并不删项),故需此专用删除函数.
  * 只处理 .tsian/local/assistant/ 前缀路径(安全边界),非该前缀忽略.

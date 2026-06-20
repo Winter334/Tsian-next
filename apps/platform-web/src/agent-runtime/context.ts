@@ -86,7 +86,7 @@ export function assembleAgentContext(
   }
 
   const agentDirectory = agentDirectoryPath(agent.path)
-  // Local agents (under .tsian/local/) store notes/session in their own directory.
+  // Local agents (under .tsian/local/) store notes in their own directory.
   // Card agents (under agents/) store them under save/<agentDir>/.
   const isLocalAgent = agentDirectory?.startsWith(".tsian/local/")
   const notesFile = agentDirectory
@@ -94,13 +94,6 @@ export function assembleAgentContext(
         isLocalAgent
           ? `${agentDirectory}/notes.md`
           : `save/${agentDirectory}/notes.md`,
-      )
-    : undefined
-  const sessionFile = agentDirectory
-    ? filesByPath.get(
-        isLocalAgent
-          ? `${agentDirectory}/session.jsonl`
-          : `save/${agentDirectory}/session.jsonl`,
       )
     : undefined
   const soulFile = agentDirectory
@@ -148,9 +141,6 @@ export function assembleAgentContext(
   }
   if (notesFile) {
     entry.notesFile = notesFile
-  }
-  if (sessionFile) {
-    entry.sessionFile = sessionFile
   }
 
   return entry

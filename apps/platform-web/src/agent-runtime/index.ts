@@ -153,7 +153,6 @@ export interface AgentRuntimeTurnContextUpdate {
 
 export interface AgentRuntimeTurnResult {
   replyText: string
-  agentSessionTranscripts: AgentSessionTranscriptRecord[]
   /** 本轮正文 + 压缩结果,供 platform-host turn 收尾写 context.json. */
   contextUpdate?: AgentRuntimeTurnContextUpdate
 }
@@ -236,6 +235,13 @@ const ENTRY_AGENT_PLATFORM_GUARD = [
   "你的输出是对话的最终回复，直接面向玩家或用户。",
 ].join("\n")
 
+const ASSISTANT_AGENT_PLATFORM_GUARD = [
+  "你是用户的桌面助手 Agent。",
+  "你会收到自己的 AGENT.md、可选 SOUL.md、最近对话（含早期任务摘要）、工作区上下文和用户本轮提问。",
+  "根据 AGENT.md 的指引回答用户关于当前游戏卡、工作区约定、框架行为或维护决策的问题。",
+  "你的输出是对话的最终回复，直接面向用户。",
+].join("\n")
+
 const DELEGATED_AGENT_PLATFORM_GUARD = [
   "你是 Tsian AIRP 中被 agent_call 临时调用的专业 Agent。",
   "你会收到自己的 AGENT.md、可选 SOUL.md、工作区上下文、调用方请求、必要的最近对话和玩家本轮输入。",
@@ -243,6 +249,15 @@ const DELEGATED_AGENT_PLATFORM_GUARD = [
   "请专注回答调用方请求，返回建议、判断、草案、连续性检查或需要沉淀的事实提示。",
   "如果工具说明中列出了可联系 Agent，你可以在确有必要时通过 agent_call 咨询自己的联系人；否则请把需要协作的建议写在输出里。",
 ].join("\n")
+
+/**
+ * 判断 entry agent 是否为桌面助手(local agent,非 AIRP 剧情入口).
+ * 助手 path 形如 `.tsian/local/assistant/AGENT.md`,AIRP card agent 形如 `agents/<id>/AGENT.md`.
+ * 提示词文案按此分支:助手用问答/用户措辞,AIRP agent 用回合/玩家措辞.
+ */
+function isAssistantEntryAgent(agentPath: string): boolean {
+  return agentPath.startsWith(".tsian/local/")
+}
 
 const DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY: AgentRuntimeCollaborationPolicy = {
   maxDepth: 2,
@@ -297,34 +312,6 @@ interface AgentCallRuntimeMetadata {
   maxDepth: number
   callCount: number
   historyMode: RuntimeAgentCallHistoryMode
-}
-
-export const AGENT_SESSION_TRANSCRIPT_SCHEMA = "tsian.agent.session.transcript.v1"
-
-export type AgentSessionTranscriptRole = "entry" | "delegated"
-export type AgentSessionTranscriptStatus = "completed" | "tool-continued"
-
-export interface AgentSessionTranscriptRecord {
-  schema: typeof AGENT_SESSION_TRANSCRIPT_SCHEMA
-  turn: number
-  createdAt: string
-  agentId: string
-  agentTitle: string
-  agentPath: string
-  role: AgentSessionTranscriptRole
-  debugLabel: RuntimeTraceDebugLabel
-  modelCallIndex: number
-  round: number
-  status: AgentSessionTranscriptStatus
-  messages: AiChatMessage[]
-  modelOutput: string
-  toolCalls: ParsedRuntimeWorkspaceToolCall[]
-  toolObservations: RuntimeWorkspaceToolObservation[]
-}
-
-interface AgentSessionTranscriptCollector {
-  records: AgentSessionTranscriptRecord[]
-  nextModelCallIndex: number
 }
 
 function normalizePolicyInteger(value: unknown, fallback: number): number {
@@ -398,10 +385,15 @@ function formatHistory(history: ConversationMessageRecord[]): string {
  * recentTurns 结构化数据形态直接映射,无"结构化→文本→结构化"往返.
  * 详见任务 06-19-agent-session-context-lifecycle 收尾结构修正.
  */
-function buildAgentContextMessages(context: AgentContextSnapshot): AiChatMessage[] {
+function buildAgentContextMessages(
+  context: AgentContextSnapshot,
+  isAssistant = false,
+): AiChatMessage[] {
   const messages: AiChatMessage[] = []
   if (context.summary) {
-    messages.push({ role: "user", content: `早期剧情摘要：\n${context.summary}` })
+    // 助手 summary 是任务摘要(task 压缩风格),AIRP agent 是剧情梗概(narrative 压缩).
+    const summaryLabel = isAssistant ? "早期任务摘要" : "早期剧情摘要"
+    messages.push({ role: "user", content: `${summaryLabel}：\n${context.summary}` })
   }
   if (context.recentTurns.length === 0) {
     if (!context.summary) {
@@ -419,14 +411,15 @@ function buildAgentContextMessages(context: AgentContextSnapshot): AiChatMessage
 
 /**
  * 定位工具循环 messages 里的剧情正文段边界,供 turn 内压剧情后 slice+替换用
- * (design §2.4).剧情段 = system(index 0)之后、"当前回合："框架信息 user 之前的
- * 独立 message 序列(summary + recentTurns).
+ * (design §2.4).剧情段 = system(index 0)之后、框架信息 user 之前的独立 message
+ * 序列(summary + recentTurns).框架信息锚点:AIRP agent 是"当前回合：",桌面助手
+ * 是"当前问答轮次：".
  *
  * 返回 { start, end }(半开区间),start<0 表示无独立剧情段可压,调用方跳过压缩:
- * - entry 稳态路径(注入了 agentContext):start=1, end="当前回合："前.
+ * - entry 稳态路径(注入了 agentContext):start=1, end=框架信息前.
  * - entry 兜底路径(未注入,剧情段首条是"最近对话："拍扁文本):{-1,-1}.
- * - delegated agent 路径(index 1 直接是"当前回合：",无独立剧情段):{-1,-1}.
- * - 无"当前回合："锚点(结构不符):{-1,-1}.
+ * - delegated agent 路径(index 1 直接是框架信息,无独立剧情段):{-1,-1}.
+ * - 无框架信息锚点(结构不符):{-1,-1}.
  */
 function locateHistorySpan(
   messages: ReadonlyArray<{ role: string; content: string }>,
@@ -435,17 +428,20 @@ function locateHistorySpan(
     return { start: -1, end: -1 }
   }
   const first = messages[1]
-  // delegated:index 1 直接是"当前回合："框架信息,无独立剧情段;
+  // delegated:index 1 直接是框架信息(当前回合/当前问答轮次),无独立剧情段;
   // entry 兜底:剧情段首条是"最近对话："拍扁文本,无独立 message 序列可压.
   if (
     first.role === "user"
-    && (first.content.startsWith("当前回合：") || first.content.startsWith("最近对话："))
+    && (first.content.startsWith("当前回合：") || first.content.startsWith("当前问答轮次：") || first.content.startsWith("最近对话："))
   ) {
     return { start: -1, end: -1 }
   }
   let end = -1
   for (let i = 1; i < messages.length; i += 1) {
-    if (messages[i].role === "user" && messages[i].content.startsWith("当前回合：")) {
+    if (
+      messages[i].role === "user"
+      && (messages[i].content.startsWith("当前回合：") || messages[i].content.startsWith("当前问答轮次："))
+    ) {
       end = i
       break
     }
@@ -785,8 +781,6 @@ function formatAgentRuntimeContext(context: AgentContextEntry): string {
     "",
     formatOptionalWorkspaceFile("Agent notes", context.notesFile),
     "",
-    formatOptionalWorkspaceFile("Agent session", context.sessionFile),
-    "",
     "声明的 contextPaths 文件：",
     formatContextFiles(context),
     "",
@@ -860,16 +854,22 @@ function buildEntryAgentMessages(
     ? getVisibleAgentContacts(input.workspaceFiles, context)
     : []
   const permissions = deriveAgentRuntimePermissionProfile(context.agent)
+  // 桌面助手 vs AIRP 剧情入口:提示词文案按 agent 类型分支.助手用问答/用户措辞,
+  // AIRP agent 用回合/玩家措辞.结构(message 顺序/字段/注入方式)保持一致,只分支文案.
+  const isAssistant = isAssistantEntryAgent(context.agent.path)
+  const entryGuard = isAssistant ? ASSISTANT_AGENT_PLATFORM_GUARD : ENTRY_AGENT_PLATFORM_GUARD
+  const turnLabel = isAssistant ? "当前问答轮次" : "当前回合"
+  const inputLabel = isAssistant ? "用户本轮提问" : "玩家本轮输入"
   // 剧情正文层:优先用注入的 context 快照(独立 message 序列);未注入则从
   // recentHistory(saveHistory)兜底——旧逻辑 formatHistory 也是拍扁文本,这里
   // 保持兜底用文本形式(首 turn/旧存档迁移场景,非稳态路径).
   const historyMessages: AiChatMessage[] = agentContext
-    ? buildAgentContextMessages(agentContext)
+    ? buildAgentContextMessages(agentContext, isAssistant)
     : [{ role: "user", content: `最近对话：\n${formatHistory(history)}` }]
   return [
     {
       role: "system",
-      content: buildWorkspaceAgentSystemPrompt(ENTRY_AGENT_PLATFORM_GUARD, context, {
+      content: buildWorkspaceAgentSystemPrompt(entryGuard, context, {
         allowAgentCall:
           isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
           && canExposeAgentCallInPrompt(
@@ -889,20 +889,20 @@ function buildEntryAgentMessages(
     // provider 前缀缓存命中剧情正文大头(回合号每轮变,若放前面会立刻断缓存).
     // 压剧情时只动这段(historyMessages),system 和后面的框架信息/本轮输入不动.
     ...historyMessages,
-    // 框架信息(非剧情,每 turn 现构建):回合号 + Workspace 上下文.放剧情之后——
-    // 回合号每轮递增是缓存断点,放后面让缓存断点尽量后移(剧情正文大头被缓存).
+    // 框架信息(非剧情,每 turn 现构建):轮次号 + Workspace 上下文.放剧情之后——
+    // 轮次号每轮递增是缓存断点,放后面让缓存断点尽量后移(剧情正文大头被缓存).
     {
       role: "user",
       content: [
-        `当前回合：${currentRuntimeTurnNumber(input)}`,
+        `${turnLabel}：${currentRuntimeTurnNumber(input)}`,
         "Workspace Agent 上下文：",
         formatAgentRuntimeContext(context),
       ].join("\n"),
     },
-    // 玩家本轮输入:单独一条 user message,框架信息之后、工具循环之前.
+    // 本轮输入:单独一条 user message,框架信息之后、工具循环之前.
     {
       role: "user",
-      content: `玩家本轮输入：\n${input.userInput}`,
+      content: `${inputLabel}：\n${input.userInput}`,
     },
   ]
 }
@@ -929,62 +929,6 @@ function createAgentCallTurnState(): AgentCallTurnState {
   return {
     callCount: 0,
   }
-}
-
-function createAgentSessionTranscriptCollector(): AgentSessionTranscriptCollector {
-  return {
-    records: [],
-    nextModelCallIndex: 0,
-  }
-}
-
-function agentSessionTranscriptRole(
-  debugLabel: RuntimeTraceDebugLabel,
-): AgentSessionTranscriptRole {
-  if (debugLabel === "entry-agent") return "entry"
-  return "delegated"
-}
-
-function cloneAiChatMessages(messages: AiChatMessage[]): AiChatMessage[] {
-  return messages.map((message) => ({ ...message }))
-}
-
-function recordAgentSessionTranscript(
-  collector: AgentSessionTranscriptCollector | undefined,
-  input: AgentRuntimeTurnInput,
-  context: AgentContextEntry | null,
-  options: AgentRuntimeModelCallOptions,
-  record: {
-    messages: AiChatMessage[]
-    modelOutput: string
-    toolCalls: ParsedRuntimeWorkspaceToolCall[]
-    toolObservations: RuntimeWorkspaceToolObservation[]
-    round: number
-    status: AgentSessionTranscriptStatus
-  },
-): void {
-  if (!collector || !context) {
-    return
-  }
-
-  collector.records.push({
-    schema: AGENT_SESSION_TRANSCRIPT_SCHEMA,
-    turn: currentRuntimeTurnNumber(input),
-    createdAt: new Date().toISOString(),
-    agentId: context.agent.id,
-    agentTitle: context.agent.title,
-    agentPath: context.agent.path,
-    role: agentSessionTranscriptRole(options.debugLabel),
-    debugLabel: options.debugLabel,
-    modelCallIndex: collector.nextModelCallIndex,
-    round: record.round,
-    status: record.status,
-    messages: cloneAiChatMessages(record.messages),
-    modelOutput: record.modelOutput,
-    toolCalls: record.toolCalls,
-    toolObservations: record.toolObservations,
-  })
-  collector.nextModelCallIndex += 1
 }
 
 function delegatedAgentDebugLabel(agentId: string): RuntimeTraceDebugLabel {
@@ -1135,7 +1079,6 @@ function createAgentCallRunner(
   state: AgentCallTurnState,
   depth: number,
   collaborationPolicy: AgentRuntimeCollaborationPolicy,
-  transcriptCollector: AgentSessionTranscriptCollector | undefined,
 ): (agentCall: RuntimeAgentCallArguments) => Promise<unknown> {
   return async (agentCall) => {
     assertNotAborted(input.signal)
@@ -1266,7 +1209,6 @@ function createAgentCallRunner(
           taskStartedAt,
           taskTimeoutMs,
         },
-        transcriptCollector,
       )).trim()
       const completedMetadata = createAgentCallRuntimeMetadata(
         callerContext,
@@ -1372,7 +1314,6 @@ async function callAgentModelWithWorkspaceToolsNative(
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry,
   toolOptions: WorkspaceToolLoopOptions,
-  transcriptCollector: AgentSessionTranscriptCollector | undefined,
 ): Promise<string> {
   let runtimeMessages = aiChatMessagesToRuntime(messages)
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
@@ -1442,14 +1383,6 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 无工具交互段可压(异常,通常 round 0 不该触发)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-                messages,
-                modelOutput: lastRoundText,
-                toolCalls: [],
-                toolObservations: [],
-                round,
-                status: "completed",
-              })
               return finalText
             }
             throw new ContextBudgetExhaustedError()
@@ -1471,14 +1404,6 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 压不动(早期无可压内容,工具交互 ≤ N 轮)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-                messages,
-                modelOutput: lastRoundText,
-                toolCalls: [],
-                toolObservations: [],
-                round,
-                status: "completed",
-              })
               return finalText
             }
             throw new ContextBudgetExhaustedError()
@@ -1509,14 +1434,6 @@ async function callAgentModelWithWorkspaceToolsNative(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = lastRoundText.trim()
             if (finalText) {
-              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-                messages,
-                modelOutput: lastRoundText,
-                toolCalls: [],
-                toolObservations: [],
-                round,
-                status: "completed",
-              })
               return finalText
             }
             throw new ContextBudgetExhaustedError()
@@ -1535,7 +1452,7 @@ async function callAgentModelWithWorkspaceToolsNative(
           Object.assign(toolOptions.agentContextSnapshot!, compressed)
           compressedThisTurn = true
           const newHistory = aiChatMessagesToRuntime(
-            buildAgentContextMessages(toolOptions.agentContextSnapshot!),
+            buildAgentContextMessages(toolOptions.agentContextSnapshot!, isAssistantEntryAgent(agentContext.agent.path)),
           )
           replaceHistorySpan(runtimeMessages, historySpan, newHistory)
           historySpan.end = historySpan.start + newHistory.length
@@ -1596,14 +1513,6 @@ async function callAgentModelWithWorkspaceToolsNative(
     })
 
     if (result.finishReason === "stop" || result.toolCalls.length === 0) {
-      recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-        messages,
-        modelOutput: result.raw,
-        toolCalls,
-        toolObservations: [],
-        round,
-        status: "completed",
-      })
       return result.text.trim()
     }
 
@@ -1619,7 +1528,6 @@ async function callAgentModelWithWorkspaceToolsNative(
           toolOptions.agentCallState,
           toolOptions.agentCallDepth,
           toolOptions.collaborationPolicy,
-          transcriptCollector,
         )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
@@ -1636,15 +1544,6 @@ async function callAgentModelWithWorkspaceToolsNative(
         ? (callId, name, status, output) => options.onTool!(agentContext.agent.id, round, callId, name, status, output)
         : undefined,
     }, toolCalls)
-
-    recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-      messages,
-      modelOutput: result.raw,
-      toolCalls,
-      toolObservations: observations,
-      round,
-      status: "tool-continued",
-    })
 
     // Thread the assistant tool calls + tool observations back in native shape.
     runtimeMessages.push({
@@ -1677,18 +1576,9 @@ async function callAgentModelWithWorkspaceTools(
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry | null,
   toolOptions?: WorkspaceToolLoopOptions,
-  transcriptCollector?: AgentSessionTranscriptCollector,
 ): Promise<string> {
   if (!input.workspaceFiles || !agentContext) {
     const response = await capabilities.callModel(messages, options)
-    recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-      messages,
-      modelOutput: response,
-      toolCalls: [],
-      toolObservations: [],
-      round: 0,
-      status: "completed",
-    })
     capabilities.emitTrace?.({
       type: "model_call_completed",
       debugLabel: options.debugLabel,
@@ -1718,7 +1608,6 @@ async function callAgentModelWithWorkspaceTools(
       options,
       agentContext,
       toolOptions,
-      transcriptCollector,
     )
   }
 
@@ -1767,14 +1656,6 @@ async function callAgentModelWithWorkspaceTools(
           if (interactionSpan.start < 0) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-                messages: nextMessages,
-                modelOutput: lastRoundText,
-                toolCalls: [],
-                toolObservations: [],
-                round,
-                status: "completed",
-              })
               return finalText
             }
             throw new ContextBudgetExhaustedError()
@@ -1795,14 +1676,6 @@ async function callAgentModelWithWorkspaceTools(
           if (!result.compressed) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-                messages: nextMessages,
-                modelOutput: lastRoundText,
-                toolCalls: [],
-                toolObservations: [],
-                round,
-                status: "completed",
-              })
               return finalText
             }
             throw new ContextBudgetExhaustedError()
@@ -1832,14 +1705,6 @@ async function callAgentModelWithWorkspaceTools(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-                messages: nextMessages,
-                modelOutput: lastRoundText,
-                toolCalls: [],
-                toolObservations: [],
-                round,
-                status: "completed",
-              })
               return finalText
             }
             throw new ContextBudgetExhaustedError()
@@ -1857,7 +1722,10 @@ async function callAgentModelWithWorkspaceTools(
           )
           Object.assign(toolOptions!.agentContextSnapshot!, compressed)
           compressedThisTurn = true
-          const newHistory = buildAgentContextMessages(toolOptions!.agentContextSnapshot!)
+          const newHistory = buildAgentContextMessages(
+            toolOptions!.agentContextSnapshot!,
+            agentContext ? isAssistantEntryAgent(agentContext.agent.path) : false,
+          )
           replaceHistorySpan(nextMessages, historySpan, newHistory)
           historySpan.end = historySpan.start + newHistory.length
           capabilities.emitTrace?.({
@@ -1896,14 +1764,6 @@ async function callAgentModelWithWorkspaceTools(
       },
     })
     if (toolCalls.length === 0) {
-      recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-        messages: nextMessages,
-        modelOutput: response,
-        toolCalls,
-        toolObservations: [],
-        round,
-        status: "completed",
-      })
       return stripRuntimeWorkspaceToolCallBlocks(response).trim()
     }
 
@@ -1922,7 +1782,6 @@ async function callAgentModelWithWorkspaceTools(
             toolOptions.agentCallState,
             toolOptions.agentCallDepth,
             toolOptions.collaborationPolicy,
-            transcriptCollector,
           )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
@@ -1933,14 +1792,6 @@ async function callAgentModelWithWorkspaceTools(
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
     }, toolCalls)
-    recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-      messages: nextMessages,
-      modelOutput: response,
-      toolCalls,
-      toolObservations: observations,
-      round,
-      status: "tool-continued",
-    })
     nextMessages = [
       ...nextMessages,
       {
@@ -1973,7 +1824,6 @@ export async function runAgentRuntimeTurn(
     capabilities.collaborationPolicy,
   )
   const agentCallState = createAgentCallTurnState()
-  const transcriptCollector = createAgentSessionTranscriptCollector()
 
   const entryContext = getEntryAgentContext(input)
   capabilities.emitTrace?.({
@@ -2089,7 +1939,6 @@ export async function runAgentRuntimeTurn(
             }
           : {}),
       },
-      transcriptCollector,
     )).trim()
     // 工具循环内若压过剧情,agentContextSnapshotForLoop 已被 Object.assign 就地更新;
     // 通过对比 updatedAt 判断是否发生 turn 内压缩(底层压缩必更新 updatedAt).
@@ -2121,7 +1970,6 @@ export async function runAgentRuntimeTurn(
 
   return {
     replyText,
-    agentSessionTranscripts: transcriptCollector.records,
     contextUpdate: {
       turn: currentRuntimeTurnNumber(input),
       user: input.userInput,

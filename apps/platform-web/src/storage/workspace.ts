@@ -54,11 +54,8 @@ const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 const DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS = new Set([
   "save/README.md",
   "save/agents/master/notes.md",
-  "save/agents/master/session.jsonl",
   "save/agents/narrative/notes.md",
-  "save/agents/narrative/session.jsonl",
   "save/agents/memory/notes.md",
-  "save/agents/memory/session.jsonl",
   "save/state/README.md",
   "save/state/schemas/README.md",
   "save/state/data/README.md",
@@ -305,7 +302,7 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
   "",
   "## Agents",
   "",
-  "Agent configuration is Game Card content under `agents/<agent>/agent.json`. Required Agent SOP instructions live under `agents/<agent>/AGENT.md`. Durable identity and work-style prompts live under optional `agents/<agent>/SOUL.md` files. Runtime notes and session transcripts live under `save/agents/<agent>/`.",
+  "Agent configuration is Game Card content under `agents/<agent>/agent.json`. Required Agent SOP instructions live under `agents/<agent>/AGENT.md`. Durable identity and work-style prompts live under optional `agents/<agent>/SOUL.md` files. Runtime notes live under `save/agents/<agent>/`.",
   "",
   "The default AIRP runtime uses the entry Agent declared in the workspace; additional Agents act as delegated specialists.",
   "",
@@ -438,11 +435,6 @@ const DEFAULT_WORKSPACE_FILES: Array<{
     content: "# Master Notes\n\n",
   },
   {
-    path: "agents/master/session.jsonl",
-    content: "",
-    mediaType: "application/x-ndjson",
-  },
-  {
     path: "agents/narrative/agent.json",
     content: agentConfigContent({
       id: "narrative",
@@ -493,11 +485,6 @@ const DEFAULT_WORKSPACE_FILES: Array<{
   {
     path: "agents/narrative/notes.md",
     content: "# Narrative Notes\n\n",
-  },
-  {
-    path: "agents/narrative/session.jsonl",
-    content: "",
-    mediaType: "application/x-ndjson",
   },
   {
     path: "agents/memory/agent.json",
@@ -554,11 +541,6 @@ const DEFAULT_WORKSPACE_FILES: Array<{
   {
     path: "agents/memory/notes.md",
     content: "# Memory Notes\n\n",
-  },
-  {
-    path: "agents/memory/session.jsonl",
-    content: "",
-    mediaType: "application/x-ndjson",
   },
   {
     path: "skills/README.md",
@@ -757,11 +739,8 @@ const DEFAULT_WORKSPACE_FILES: Array<{
 
 const RUNTIME_DEFAULT_CARD_PATHS = new Set([
   "agents/master/notes.md",
-  "agents/master/session.jsonl",
   "agents/narrative/notes.md",
-  "agents/narrative/session.jsonl",
   "agents/memory/notes.md",
-  "agents/memory/session.jsonl",
   "history/README.md",
   "history/turns/README.md",
   "history/timeline.md",
@@ -797,27 +776,12 @@ const DEFAULT_SAVE_RUNTIME_FILES: Array<{
     content: "# Master Notes\n\n",
   },
   {
-    path: "save/agents/master/session.jsonl",
-    content: "",
-    mediaType: "application/x-ndjson",
-  },
-  {
     path: "save/agents/narrative/notes.md",
     content: "# Narrative Notes\n\n",
   },
   {
-    path: "save/agents/narrative/session.jsonl",
-    content: "",
-    mediaType: "application/x-ndjson",
-  },
-  {
     path: "save/agents/memory/notes.md",
     content: "# Memory Notes\n\n",
-  },
-  {
-    path: "save/agents/memory/session.jsonl",
-    content: "",
-    mediaType: "application/x-ndjson",
   },
   {
     path: "save/history/README.md",

@@ -214,7 +214,6 @@ export interface AgentContextEntry {
   agentFile: WorkspaceFile
   soulFile?: WorkspaceFile
   notesFile?: WorkspaceFile
-  sessionFile?: WorkspaceFile
   skillIndex: SkillRegistryEntry[]
   contextFiles: WorkspaceFile[]
   knowledgeFiles: WorkspaceFile[]
