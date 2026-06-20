@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 77
+- **Total Sessions**: 78
 - **Last Active**: 2026-06-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~774 | Active |
+| `journal-2.md` | ~808 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 78 | 2026-06-20 | 取消子4 tool-executor-policy + 父任务 tool-runtime-performance 收口 | `0ea93e6` | `master` |
 | 77 | 2026-06-20 | 子3 工具命名统一 + glob + 移除 patch/validate 工具 | `47b7b52` | `master` |
 | 76 | 2026-06-20 | assistant-context-persistence 实测修复（.tsian/local/ 写入通道缺口） | `f59868e`, `a5272f6` | `master` |
 | 75 | 2026-06-20 | assistant-context-persistence 实现（虚拟文件系统 + 任务摘要稳态） | `3b3bfb4`, `1c98d9d`, `dba74f1`, `254d693`, `90ca040`, `49c4b1e` | `master` |
