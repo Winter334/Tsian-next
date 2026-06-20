@@ -24,7 +24,7 @@
 - **子1：工具与 skill 解耦重构**（`tool-skill-decouple`，先做）— skill 回归"按需触发脚本"形态：`skill_load` → `use_skill`（B 方案：模型声明意图，框架下轮注入 skill 全文 + 注册 action）；`action_call` → `run_script`（直接执行 browser_script，不需预 load）；移除 builtin/platform_action executor；registry 阶段解析 action 声明。**基础，其它子任务依赖它。**
 - **子2：限制机制改造**（`tool-token-budget`，依赖子1）— 去 maxToolRoundsPerAgent，改单次请求上下文 token 预算（默认 256k，超限触发压缩）；温和兜底报错，不裸抛"助手不可用"。
 - **子3：工具补全 + 命名统一**（`tool-rename-and-glob`，可与子2并行）— 新增 `glob` 工具；工具命名简短化（`workspace.read`→`read` 等，去前缀）；移除 patch/validate；schema 补返回值描述 + 复杂工具示例；agent_call schema 澄清定位。
-- **子4：权限策略接通**（`tool-executor-policy`，依赖子1的 executor 精简）— 接通 actionExecutorPolicy，给 browser_script 执行权限粒度（哪些 skill 的脚本可执行）。
+- **子4：权限策略接通**（`tool-executor-policy`，依赖子1的 executor 精简）— **取消（2026-06-20）**。原计划接通 actionExecutorPolicy 给 browser_script 执行权限粒度。取消理由：信任决策的正确位置是 skill 引入点而非脚本执行点（skill 是玩家自行引入，引入环节本就是信任决策）；执行点加权限要么空转（默认允许）要么给已引入 skill 添堵（默认拒绝需逐个配置）；空转钩子无危害，保留作未来扩展点。详见子4 prd"取消评估"。
 
 子任务各自 prd/design/implement 独立，依赖顺序写在各子任务文档里（Trellis 父子结构不是依赖系统，靠子任务文档显式声明）。
 
@@ -49,3 +49,16 @@
 ## 开放问题
 
 - 无（skill 注入机制 B 方案、命名方案、validate/patch 移除、权限纳入子4 均已收敛）。
+
+## 收口状态（2026-06-20）
+
+7 个子任务：6 完成 + 1 取消（子4，带理由）。父任务据此收口归档：
+- 子1 `tool-skill-decouple` — 完成。
+- 子2 `tool-token-budget` — 完成。
+- 子3 `tool-rename-and-glob` — 完成。
+- 子4 `tool-executor-policy` — 取消（信任决策应在 skill 引入点而非执行点）。
+- `06-20-agent-call-concurrency` — 完成。
+- `06-20-agent-task-compression` — 完成。
+- `06-20-assistant-context-persistence` — 完成。
+
+跨子任务验收标准中子4 相关项（"browser_script 执行受 actionExecutorPolicy 约束"）随子4 取消移除；其余项已由各子任务落地。父任务归档，不因凑满 7/7 而做无价值功能。
