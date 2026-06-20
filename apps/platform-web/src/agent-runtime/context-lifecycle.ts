@@ -312,8 +312,17 @@ function uniqueSortedTurnNumbers(entries: AgentContextTurnEntry[]): number[] {
 // ─────────────────────────────────────────────────────────────────────────
 
 /**
- * 把本轮 user+assistant 正文追加进快照 recentTurns,保持最近 K 轮
- * (超 K 从头部丢).不在此压缩(压缩在 turn 开头).返回新快照(不可变).
+ * 把本轮 user+assistant 正文追加进快照 recentTurns.**只追加,不丢早期轮次**
+ * ——早期轮次的丢弃交给 compressContext(压缩时摘要进 summary,保留最近 K 轮).
+ *
+ * 不在此做滑动窗口截断:滑动窗口会在压缩触发前就丢弃早期正文,导致
+ * ① 早期剧情在未压缩前永久丢失(不进 summary) ② compressContext 时
+ * recentTurns 只剩最近 K 轮、无可压缩的早期轮次,压缩机制空转失效.
+ * 正确的稳态是"累积到阈值 → 压缩一次性摘要早期 + 保留最近K轮",appendTurn
+ * 只负责累积,compressContext 只负责压缩丢弃,职责分明.
+ *
+ * 前缀缓存收益(顺带):recentTurns 在两次压缩之间只增不减、前缀稳定,
+ * 消息序列里 recentTurns 段的前缀能命中 provider 前缀缓存.
  */
 export function appendTurnToContext(
   context: AgentContextSnapshot,
@@ -321,18 +330,13 @@ export function appendTurnToContext(
   user: string,
   assistant: string,
 ): AgentContextSnapshot {
-  const appended: AgentContextTurnEntry[] = [
-    ...context.recentTurns,
-    { turn, role: "user", content: user },
-    { turn, role: "assistant", content: assistant },
-  ]
-  // 保持最近 CONTEXT_KEEP_RECENT_TURNS 轮:按 turn 去重取最近 N 个 turn
-  const turnNumbers = uniqueSortedTurnNumbers(appended)
-  const keepTurns = new Set(turnNumbers.slice(-CONTEXT_KEEP_RECENT_TURNS))
-  const recentTurns = appended.filter((entry) => keepTurns.has(entry.turn))
   return {
     ...context,
-    recentTurns,
+    recentTurns: [
+      ...context.recentTurns,
+      { turn, role: "user", content: user },
+      { turn, role: "assistant", content: assistant },
+    ],
     updatedAt: new Date().toISOString(),
   }
 }

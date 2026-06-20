@@ -17,7 +17,12 @@
 
 **关联任务**：`06-19-agent-session-context-lifecycle`（底层，归档）、`06-19-tool-token-budget`（子任务2，T2 依赖本项）
 
-**背景**：2026-06-20 收尾底层任务时，把 `buildEntryAgentMessages` 从"剧情正文（summary + recentTurns）塞进一条 user message content"改成"独立 message 序列"（新增 `buildAgentContextMessages`）。`npm run build:web` 通过，但真实 API 行为未实测——当前没有可实际游玩的游戏卡，无法触发完整 master agent 对话链路。
+**背景**：2026-06-20 收尾底层任务 + 后续修正，对 master agent 上下文消息结构做了三处改动：
+1. `buildEntryAgentMessages` 从"剧情正文塞一条 user message content"改成"独立 message 序列"（新增 `buildAgentContextMessages`）。
+2. `appendTurnToContext` 从滑动窗口 K=5（超5丢早期）改为只追加不丢——修正压缩策略矛盾（原滑动窗口导致压缩失效 + 早期剧情未压缩就丢失）。
+3. 消息顺序缓存优化：summary + recentTurns 放 system 之后（前缀稳定可缓存），回合号+Workspace+本轮输入放后面（缓存断点后移）。
+
+`npm run build:web` 通过，但真实 API 行为未实测——当前没有可实际游玩的游戏卡，无法触发完整 master agent 对话链路。
 
 **为什么暂缓**：没有可游玩的游戏卡（含 master agent + workspace），无法在 dev server 跑真实对话。这是外部条件依赖，非代码问题。
 
@@ -28,28 +33,38 @@
 
 **验证步骤**：
 1. 进入存档，发一条消息触发 master agent 回复。
-2. 用 Playwright `browser_network_requests` 抓发给 provider 的请求 body，确认 `messages` 数组结构：
-   - `system`(systemPrompt) → `user`(当前回合 + Workspace 上下文) → `user`(早期剧情摘要，若有) → `user`/`assistant` 交替(recentTurns) → `user`(玩家本轮输入)。
-   - 即剧情正文是独立 message 序列，不是塞在一条 user content 里。
-3. 确认 provider 返回 HTTP 200 + 正常流式回复——**重点验证连续 user message（框架信息 user → summary user → recentTurns 首 user，最多 3 条连续）被 provider 接受**。
-4. 多轮对话后检查 context.json（工作区 `save/agents/master/context.json`）的 recentTurns 正确追加。
-5. 关闭重开存档，确认 master agent 上下文从 context.json 恢复（recentTurns 在，不失忆）。
+2. 用 Playwright `browser_network_requests` 抓发给 provider 的请求 body，确认 `messages` 数组结构（缓存优化后顺序）：
+   - `system`(systemPrompt) → `user`(早期剧情摘要，若有) → `user`/`assistant` 交替(recentTurns) → `user`(当前回合 + Workspace 上下文) → `user`(玩家本轮输入)。
+   - 即剧情正文（summary + recentTurns）是独立 message 序列，紧跟 system；回合号/Workspace/本轮输入在剧情之后。
+3. 确认 provider 返回 HTTP 200 + 正常流式回复——**重点验证连续 user message（summary user → recentTurns 首 user；recentTurns 末 assistant → 框架信息 user）被 provider 接受**。
+4. 多轮对话（6+ 轮）后检查 context.json（工作区 `save/agents/master/context.json`）：
+   - recentTurns **累积不丢**（验证 appendTurn 修正：第 6 轮时 recentTurns 应有 6 轮而非滑动窗口的最近 5 轮）。
+   - 未触发压缩时 summary 仍为 null（recentTurns 累积到 85% 阈值才压缩）。
+5. 构造超长对话触发压缩（recentTurns 累积到 85% budget），确认：
+   - compressContext 生效（summary 非空，早期轮次被摘要）。
+   - recentTurns 回落到最近 K=5 轮（压缩后保留）。
+6. 关闭重开存档，确认 master agent 上下文从 context.json 恢复（recentTurns + summary 在，不失忆）。
+7. （可选，若 provider 支持前缀缓存）多轮对话观察缓存命中——剧情正文段（summary + recentTurns 前缀）应被缓存，每轮只重算回合号 + 本轮输入。
 
 **通过标准**：
-- 步骤 2 messages 结构符合独立序列形态。
+- 步骤 2 messages 结构符合缓存优化后的独立序列形态（剧情在前、框架信息在后）。
 - 步骤 3 provider 返回 200 + 正常流式回复，不报连续 user 相关错误。
-- 步骤 4-5 context.json 持久化 + 跨加载恢复正常。
+- 步骤 4 recentTurns 累积不丢（6 轮时有 6 轮非 5 轮）+ 未压缩时 summary 为 null。
+- 步骤 5 压缩生效（summary 非空 + recentTurns 回落 K=5）。
+- 步骤 6 context.json 持久化 + 跨加载恢复正常。
 
 **失败回退方案**（若连续 user message 报错，按优先级）：
-- **方案 A**：把框架信息 + summary 合并成一条 user message（减少连续 user 到 2 条）。改 `buildEntryAgentMessages` 的框架信息条，把 summary 拼进它的 content。
+- **方案 A**：把 summary 并进 recentTurns 之前的框架信息区或合并相邻 user（减少连续 user）。注意保持剧情正文在 system 之后（缓存优化不回退）。
 - **方案 B**：summary 改作 `system` message。注意 Gemini/Claude 适配器的 `splitSystemMessage` 会把它合并进 system 字段，与 systemPrompt 语义混淆，次选。
-- **方案 C**：回退到"塞一条 user message"的旧结构（恢复 `formatAgentContextHistory`，放弃独立序列）。此时 `06-19-tool-token-budget` 子任务2 的 turn 内压剧情实现需从"slice + 替换 message"回退到"锚点拆分文本"方案。
+- **方案 C**：回退消息顺序（框架信息回到剧情之前），但保留独立 message 序列 + appendTurn 累积修正（这两个是正确性修复，不回退）。此时缓存优化放弃，但压缩机制仍正确。仅当连续 user 问题且 A/B 都不行时用。
+- **方案 D**：极端情况回退到"塞一条 user message"的旧结构（恢复 `formatAgentContextHistory`，放弃独立序列 + 缓存优化）。此时 `06-19-tool-token-budget` 子任务2 的 turn 内压剧情实现需从"slice + 替换 message"回退到"锚点拆分文本"方案。**appendTurn 累积修正不回退**（那是正确性修复）。
 
 **关联代码**：
-- `apps/platform-web/src/agent-runtime/index.ts`：`buildAgentContextMessages`（新增）、`buildEntryAgentMessages`（改造）。
+- `apps/platform-web/src/agent-runtime/index.ts`：`buildAgentContextMessages`（新增）、`buildEntryAgentMessages`（改造 + 缓存优化顺序）。
+- `apps/platform-web/src/agent-runtime/context-lifecycle.ts`：`appendTurnToContext`（滑动窗口→累积修正）。
 - `apps/platform-web/src/runtime-host/ai.ts`：provider 适配器（OpenAI :403 / Gemini :680 / Claude :871）对连续 user message 的处理。
 
-**关联设计**：`06-19-agent-session-context-lifecycle/design.md` §2.2a（剧情正文层 message 结构）。
+**关联设计**：`06-19-agent-session-context-lifecycle/design.md` §2.2a（独立 message 序列）/ §2.2b（appendTurn 修正）/ §2.2c（缓存优化顺序）。
 
 ---
 

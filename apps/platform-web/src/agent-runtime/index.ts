@@ -201,7 +201,7 @@ export type AgentRuntimeCollaborationPolicyInput =
 
 const ENTRY_AGENT_PLATFORM_GUARD = [
   "你是当前回合的入口 Agent。",
-  "你会收到自己的 AGENT.md、可选 SOUL.md、工作区上下文、最近对话和玩家本轮输入。",
+  "你会收到自己的 AGENT.md、可选 SOUL.md、最近对话（含早期剧情摘要）、工作区上下文和玩家本轮输入。",
   "根据 AGENT.md 的指引决定如何处理本轮输入。如果需要，可以通过 agent_call 联系你的联系人 Agent 获取专业判断。",
   "你的输出是对话的最终回复，直接面向玩家或用户。",
 ].join("\n")
@@ -733,8 +733,14 @@ function buildEntryAgentMessages(
         toolCallMode,
       }),
     },
-    // 框架信息(非剧情,每 turn 现构建):回合号 + Workspace 上下文.单独一条
-    // user message,与剧情正文层分离——压剧情时只动 historyMessages,不动它.
+    // 剧情正文层:summary(若有) + recentTurns 独立 message 序列(或兜底文本).
+    // 放在 system 之后、框架信息之前——剧情正文在两次压缩之间只增不减、前缀
+    // 稳定(appendTurnToContext 只追加不丢,压缩才一次性摘要早期),放前面能让
+    // provider 前缀缓存命中剧情正文大头(回合号每轮变,若放前面会立刻断缓存).
+    // 压剧情时只动这段(historyMessages),system 和后面的框架信息/本轮输入不动.
+    ...historyMessages,
+    // 框架信息(非剧情,每 turn 现构建):回合号 + Workspace 上下文.放剧情之后——
+    // 回合号每轮递增是缓存断点,放后面让缓存断点尽量后移(剧情正文大头被缓存).
     {
       role: "user",
       content: [
@@ -743,9 +749,7 @@ function buildEntryAgentMessages(
         formatAgentRuntimeContext(context),
       ].join("\n"),
     },
-    // 剧情正文层:summary(若有) + recentTurns 独立 message 序列(或兜底文本).
-    ...historyMessages,
-    // 玩家本轮输入:单独一条 user message,剧情正文层之后、工具循环之前.
+    // 玩家本轮输入:单独一条 user message,框架信息之后、工具循环之前.
     {
       role: "user",
       content: `玩家本轮输入：\n${input.userInput}`,

@@ -40,28 +40,28 @@
 
 ### 1.3 关键技术约束（勘察确认）
 
-**约束1：剧情正文是独立 message 序列（底层任务 2026-06-20 结构改造后）。**
+**约束1：剧情正文是独立 message 序列，且放在 system 之后（缓存优化后顺序）。**
 
-底层任务收尾把 `buildEntryAgentMessages`（index.ts:700）从"剧情正文塞一条 user message content"改为**独立 message 序列**（新增 `buildAgentContextMessages`）。结构：
+底层任务收尾把 `buildEntryAgentMessages`（index.ts:700）从"剧情正文塞一条 user message content"改为**独立 message 序列**（新增 `buildAgentContextMessages`）。进一步缓存优化把剧情正文段放在 system 之后、框架信息之前——剧情正文在两次压缩之间只增不减、前缀稳定（`appendTurnToContext` 只追加不丢，压缩才一次性摘要早期），放前面能让 provider 前缀缓存命中剧情正文大头；回合号每轮递增是缓存断点，放后面让断点后移。结构：
 
 ```
 runtimeMessages = [
   { role: "system",    content: systemPrompt },                              // index 0
-  { role: "user",      content: "当前回合:N\nWorkspace Agent 上下文:..." },   // index 1, 框架信息
-  { role: "user",      content: "早期剧情摘要：\n<summary>" },               // index 2, summary(若有)
-  { role: "user",      content: "<玩家12轮原文>" },                          // index 3+, recentTurns
+  { role: "user",      content: "早期剧情摘要：\n<summary>" },               // index 1, summary(若有)
+  { role: "user",      content: "<玩家12轮原文>" },                          // index 2+, recentTurns(前缀稳定,缓存命中)
   { role: "assistant", content: "<叙事12轮原文>" },
   { role: "user",      content: "<玩家13轮原文>" },
   { role: "assistant", content: "<叙事13轮原文>" },
   ...
-  { role: "user",      content: "玩家本轮输入：\n<userInput>" },             // 本轮输入
+  { role: "user",      content: "当前回合:N\nWorkspace Agent 上下文:..." },   // 框架信息(每轮变,缓存断点)
+  { role: "user",      content: "玩家本轮输入：\n<userInput>" },             // 本轮输入(每轮变)
   { role: "assistant", content, toolCalls },                                  // round 0+ 工具循环
   { role: "tool", toolCallId, content },                                      // round 0+
   ...
 ]
 ```
 
-→ turn 内压剧情后，用 `buildAgentContextMessages(newSnapshot)` 重新生成剧情正文段（summary + recentTurns），**替换** runtimeMessages 里原来的剧情段（index 2 到本轮输入之前），保留 system + 框架信息 + 本轮输入 + 后面所有 tool 交互。**按 message 边界 slice + 替换，无锚点拆分文本的脆弱性。**
+→ turn 内压剧情后，用 `buildAgentContextMessages(newSnapshot)` 重新生成剧情正文段（summary + recentTurns），**替换** runtimeMessages 里原来的剧情段（index 1 到框架信息之前），保留 system + 框架信息 + 本轮输入 + 后面所有 tool 交互。**按 message 边界 slice + 替换，无锚点拆分文本的脆弱性。**
 
 详见底层任务 `agent-session-context-lifecycle/design.md` §2.2a（已归档，archive/2026-06/）。
 
@@ -161,20 +161,19 @@ if (totalTokens > triggerThreshold) {
 
 ### 2.4 替换剧情正文 message 段
 
-剧情正文已是独立 message 序列（§1.3 约束1）。turn 内压剧情后，用 `buildAgentContextMessages(newSnapshot)` 重新生成剧情段（summary + recentTurns），**替换** runtimeMessages 里原来的剧情段，保留 system + 框架信息 + 本轮输入 + 后面所有 tool 交互。
+剧情正文已是独立 message 序列，且放在 system 之后（§1.3 约束1，缓存优化后顺序）。turn 内压剧情后，用 `buildAgentContextMessages(newSnapshot)` 重新生成剧情段（summary + recentTurns），**替换** runtimeMessages 里原来的剧情段，保留 system + 框架信息 + 本轮输入 + 后面所有 tool 交互。
 
-**定位剧情段边界**：工具循环入口（`aiChatMessagesToRuntime` 之后）记录剧情段的起止索引。剧情段 = summary message（若有）+ recentTurns messages，位于"框架信息 user"（index 1）之后、"本轮输入 user"之前。入口扫描一次记录 `historyStart` / `historyEnd`：
+**定位剧情段边界**：工具循环入口（`aiChatMessagesToRuntime` 之后）记录剧情段的起止索引。剧情段 = summary message（若有）+ recentTurns messages，位于 system（index 0）之后、"当前回合："框架信息 user 之前。入口扫描一次记录 `historyStart` / `historyEnd`：
 
 ```ts
 // 工具循环入口(伪代码)
-// runtimeMessages 结构: [system, user(框架), user(summary)?, user/assistant(recentTurns)..., user(本轮输入), assistant(tool)...]
-// 剧情段 = 从 index 2(summary 或 recentTurns 首条) 到 本轮输入前
-// 扫描定位: 跳过 system + 框架user, 剧情段开始; 遇到"玩家本轮输入："的 user 结束
-let historyStart = 2  // system(0) + 框架user(1) 之后
+// runtimeMessages 结构(缓存优化后): [system, user(summary)?, user/assistant(recentTurns)..., user(当前回合+Workspace), user(本轮输入), assistant(tool)...]
+// 剧情段 = 从 index 1(summary 或 recentTurns 首条) 到 "当前回合："框架信息前
+let historyStart = 1  // system(0) 之后
 let historyEnd = runtimeMessages.length
 for (let i = historyStart; i < runtimeMessages.length; i++) {
   const msg = runtimeMessages[i]
-  if (msg.role === "user" && typeof msg.content === "string" && msg.content.startsWith("玩家本轮输入：")) {
+  if (msg.role === "user" && typeof msg.content === "string" && msg.content.startsWith("当前回合：")) {
     historyEnd = i
     break
   }

@@ -140,6 +140,28 @@ messages = [
 
 **对下游 tool-token-budget 的意义**：turn 内压剧情从"在格式化文本里做字符串切片"变成"按 message 边界 slice + 替换"——保留最近 K 轮 = 保留最后 2K 条 user/assistant message，早期轮次替换成 summary message。健壮、自然，无锚点拆分脆弱性。
 
+### 2.2b appendTurnToContext 滑动窗口修正（2026-06-20 归档后发现的设计缺陷）
+
+**原设计缺陷**：§2.2 数据流 + `appendTurnToContext` 原实现用滑动窗口 K=5（"保持最近5轮，超5则从头部丢"）。这与压缩策略矛盾：
+1. 滑动窗口在压缩触发前就丢弃早期正文 → 早期剧情未压缩就永久丢失（不进 summary）。
+2. `compressContext` 时 recentTurns 只剩最近 5 轮、`compressEntries`（被压缩轮次）永远为空 → 压缩机制空转失效，summary 永远为空。
+3. recentTurns 前缀每 5 轮断（早期轮次被丢、序列前移）→ 前缀缓存不友好。
+
+**修正**：`appendTurnToContext` 改为**只追加、不丢早期轮次**。早期轮次的丢弃交给 `compressContext`（压缩时摘要进 summary，保留最近 K 轮）。这才是"累积到阈值 → 压缩一次性摘要早期 + 保留最近K轮"的正确稳态：
+- recentTurns 在两次压缩之间只增不减、前缀稳定 → 缓存友好。
+- 早期正文在压缩前一直保留 → 不失忆。
+- 压缩时才有早期轮次可摘要 → summary 机制生效。
+
+**`createInitialAgentContext` 保留 `slice(-K*2)`**：那是旧存档迁移兜底（旧存档可能几百轮历史，初始化全塞会立刻超阈值），截断到最近 K 轮合理。初始化只做一次，之后 appendTurn 累积、compressContext 压缩。
+
+### 2.2c 消息顺序缓存优化（2026-06-20）
+
+§2.2a 的原始顺序把"当前回合 + Workspace 上下文"放在剧情正文之前（index 1）。但回合号每轮递增是前缀缓存断点——放第二位会让缓存只命中 system（1 条），后面剧情正文大头全部重算。
+
+**优化**：调整 `buildEntryAgentMessages` 顺序为 `[system] [summary?/recentTurns] [当前回合+Workspace] [本轮输入]`——剧情正文紧跟 system，前缀稳定可缓存；回合号断点后移到剧情之后，缓存命中 summary + recentTurns 大头。
+
+前提是 §2.2b 的 appendTurn 修正（recentTurns 前缀稳定）成立。两者配合：recentTurns 累积不丢（前缀稳定）+ 放在 system 之后（缓存命中）= 每轮只重算回合号 + 本轮输入两条。
+
 ### 2.3 压缩算法（compressContext）
 
 ```ts

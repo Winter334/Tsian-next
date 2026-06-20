@@ -45,7 +45,8 @@
   - 与现有 `ContextCompressionFailedError` 同文件、同风格。
 - [ ] **R1.3** `index.ts` 新增剧情段定位+替换逻辑（复用底层 `buildAgentContextMessages`，不新写锚点拆分 helper）：
   - 底层任务已新增 `buildAgentContextMessages(context: AgentContextSnapshot): AiChatMessage[]`（index.ts，产出 summary + recentTurns 独立 message 序列）。本任务直接复用它，不重写。
-  - 新增 `locateHistorySpan(messages, frameworkUserIndex): { start: number; end: number }`——扫描定位剧情段边界：从 `frameworkUserIndex + 1`（框架信息 user 之后）开始，到"玩家本轮输入："user 之前结束。返回剧情段在 messages 里的 `[start, end)` 区间。若未注入 agentContext（兜底路径，剧情段是单条 `最近对话：` user），返回 `{ start: -1, end: -1 }` 表示无可压剧情段（跳过 turn 内压缩）。
+  - **消息顺序（缓存优化后）**：`[system(0)] [剧情段: summary?/recentTurns(1...)] [user(当前回合+Workspace)] [user(本轮输入)] [assistant/tool...]`。剧情段紧跟 system（index 1 起），为了前缀缓存命中（回合号每轮变，放后面让缓存断点后移）。
+  - 新增 `locateHistorySpan(messages): { start: number; end: number }`——剧情段从 index 1（system 之后）开始，扫描到"当前回合："user 之前结束（"当前回合："是框架信息锚点）。返回 `[start, end)`。若未注入 agentContext（兜底路径，剧情段是单条 `最近对话：` user，无 summary/recentTurns 独立序列），返回 `{ start: -1, end: -1 }` 跳过 turn 内压缩。
   - 新增 `replaceHistorySpan(messages, span, newSnapshot)`——`messages.splice(span.start, span.end - span.start, ...newHistoryMessages)`，native 循环 newHistoryMessages 经 `aiChatMessagesToRuntime(buildAgentContextMessages(newSnapshot))`，text 循环直接 `buildAgentContextMessages(newSnapshot)`。
   - 这两个 helper 放 index.ts（紧挨 `buildAgentContextMessages`），不跨文件。
 - [ ] **R1.4** 验证：`npm run build:web` 通过（纯函数 + 错误类 + helper + 类型，无循环接入）。
@@ -69,7 +70,7 @@
   - 删除 `const maxToolRounds = ...`（:1173-1174）读取。
   - 删除 `if (round >= maxToolRounds)` 分支（:1245-1261，含 round limit 抛错 + finalText 返回）。
   - 循环内维护 `let compressedThisTurn = false` + `let lastRoundText = ""`（每轮 `result.text` 赋值给它，供兜底用）。
-  - 入口定位剧情段边界：`const historySpan = locateHistorySpan(runtimeMessages, 1)`（frameworkUserIndex=1，即框架信息 user）。若 `historySpan.start === -1`（兜底路径无 agentContext），跳过 turn 内压缩检查（整个 if 块不执行）。
+  - 入口定位剧情段边界：`const historySpan = locateHistorySpan(runtimeMessages)`（剧情段从 index 1 起，扫到"当前回合："user 之前）。若 `historySpan.start === -1`（兜底路径无 agentContext），跳过 turn 内压缩检查（整个 if 块不执行）。
   - 循环内 `assertNotAborted`（:1194）之后、`callModelNative`（:1200）之前，插入 token 预算检查（design §2.3）：
     ```ts
     if (historySpan.start >= 0) {  // 仅稳态路径(有剧情段)做 turn 内压缩
@@ -110,7 +111,7 @@
   - 循环头 `for (let round = 0; round <= maxToolRounds; round += 1)`（:1382）→ `for (let round = 0; ; round += 1)`。
   - 删除 `const maxToolRounds = ...`（:1380-1381）读取。
   - 删除 `if (round >= maxToolRounds)` 分支（:1414-1431）。
-  - 对称插入 token 预算检查：用 `estimateAiChatMessagesTokens` 作用于 `nextMessages`，压剧情用 `compressContext` 同一个，替换剧情段用 `replaceHistorySpan`（text 版，newHistoryMessages 直接用 `buildAgentContextMessages` 产出 `AiChatMessage[]`，不经 `aiChatMessagesToRuntime`）。入口同样 `locateHistorySpan(nextMessages, 1)` 定位边界。`lastRoundText` 用 `stripRuntimeWorkspaceToolCallBlocks(response)`（text 循环的 finalText 提取方式，参考 :1415）。
+  - 对称插入 token 预算检查：用 `estimateAiChatMessagesTokens` 作用于 `nextMessages`，压剧情用 `compressContext` 同一个，替换剧情段用 `replaceHistorySpan`（text 版，newHistoryMessages 直接用 `buildAgentContextMessages` 产出 `AiChatMessage[]`，不经 `aiChatMessagesToRuntime`）。入口同样 `locateHistorySpan(nextMessages)` 定位边界。`lastRoundText` 用 `stripRuntimeWorkspaceToolCallBlocks(response)`（text 循环的 finalText 提取方式，参考 :1415）。
   - import `estimateAiChatMessagesTokens` from `./context-lifecycle`（已存在）。
 - [ ] **R2.6** `index.ts` `callAgentModelWithWorkspaceTools`（:1325 分发函数）：把新增的 `agentContextSnapshot` / `contextTokenBudget` / `compressCallModel` 透传给 native 和 text 两个分支（签名 + 两个分支调用点）。
 - [ ] **R2.7** 验证：`npm run build:web` 通过。此时 `maxToolRoundsPerAgent` 字段仍在 policy 但不再被读（R3 移除）。
