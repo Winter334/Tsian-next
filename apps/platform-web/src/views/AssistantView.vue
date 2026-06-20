@@ -105,21 +105,6 @@
               </SelectItem>
             </SelectContent>
           </Select>
-          <span
-            class="inline-flex h-8 items-center rounded border border-neon-deep/40 bg-panel/60 px-2 font-mono text-[10px] uppercase tracking-wider"
-            :class="assistantToolCallMode === 'native' ? 'text-neon' : 'text-text-dim'"
-            :title="`工具调用模式：${assistantToolCallMode === 'native' ? '原生 function calling' : '文本协议（兼容）'}。在控制面板模型参数中切换。`"
-          >{{ assistantToolCallMode === "native" ? "原生工具" : "文本工具" }}</span>
-          <button
-            type="button"
-            class="retro-button retro-focus inline-flex h-8 items-center justify-center gap-2 px-3 font-mono text-xs"
-            :disabled="sending"
-            @click="refresh"
-            title="刷新游戏卡上下文"
-          >
-            <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': refreshing }" aria-hidden="true" />
-            刷新
-          </button>
         </div>
       </header>
 
@@ -316,7 +301,7 @@
           <textarea
             ref="inputRef"
             v-model="inputText"
-            class="retro-focus max-h-[160px] min-h-[44px] flex-1 resize-none border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
+            class="retro-focus max-h-[160px] min-h-[44px] flex-1 resize-none overflow-y-auto border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
             placeholder="输入消息，Enter 发送，Shift+Enter 换行"
             rows="1"
             :disabled="sending"
@@ -386,7 +371,7 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
+import { Bot, Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, Send, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import {
   Select,
@@ -405,7 +390,6 @@ import {
   getPlatformActiveGameCard,
   waitForPlatformHostReady,
   getLocalAssistantProviderPreset,
-  getLocalAssistantToolCallMode,
   updateLocalAssistantProviderPreset,
 } from "../platform-host"
 import { renderMarkdown } from "../lib/markdown"
@@ -456,7 +440,6 @@ const activeSessionId = ref<string | null>(null)
 const messages = ref<ChatMessage[]>([])
 const inputText = ref("")
 const sending = ref(false)
-const refreshing = ref(false)
 const errorMessage = ref("")
 const cardName = ref("")
 const messageListRef = ref<HTMLElement | null>(null)
@@ -479,7 +462,6 @@ const renameInputRef = ref<HTMLInputElement | null>(null)
 const providerPresets = ref<Array<{ id: string; name: string }>>([])
 const assistantProviderPresetId = ref("")
 const updatingProviderPreset = ref(false)
-const assistantToolCallMode = ref<"native" | "text">("text")
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
 function formatSessionTime(timestamp: number): string {
@@ -497,7 +479,6 @@ function formatSessionTime(timestamp: number): string {
 }
 
 async function refresh() {
-  refreshing.value = true
   errorMessage.value = ""
   try {
     await waitForPlatformHostReady()
@@ -509,7 +490,7 @@ async function refresh() {
     }
     await loadProviderPreset()
   } finally {
-    refreshing.value = false
+    // nothing to reset; refresh is a silent context load
   }
 }
 
@@ -945,14 +926,28 @@ function autoGrow() {
   if (!el) {
     return
   }
+  // Reset to content-height first so scrollHeight reflects the actual content,
+  // not the previous (possibly capped) height. Then cap at maxH.
   el.style.height = "auto"
-  el.style.height = `${Math.min(el.scrollHeight, 160)}px`
+  const maxH = 160
+  const contentH = el.scrollHeight
+  if (contentH <= maxH) {
+    // Content fits: pin height to content and hide overflow so no scrollbar
+    // flickers from sub-pixel scrollHeight/line-height rounding.
+    el.style.height = `${contentH}px`
+    el.style.overflowY = "hidden"
+  } else {
+    // Content exceeds cap: fix at maxH and allow scrolling.
+    el.style.height = `${maxH}px`
+    el.style.overflowY = "auto"
+  }
 }
 
 function resetInputHeight() {
   const el = inputRef.value
   if (el) {
     el.style.height = "auto"
+    el.style.overflowY = "hidden"
   }
 }
 
@@ -983,11 +978,6 @@ async function loadProviderPreset() {
   } catch {
     // Non-fatal: provider selection just won't show.
   }
-  try {
-    assistantToolCallMode.value = await getLocalAssistantToolCallMode()
-  } catch {
-    assistantToolCallMode.value = "text"
-  }
 }
 
 async function handleProviderPresetChange(presetId: string) {
@@ -995,8 +985,6 @@ async function handleProviderPresetChange(presetId: string) {
   try {
     await updateLocalAssistantProviderPreset(presetId || null)
     assistantProviderPresetId.value = presetId
-    // The effective tool-call mode follows the newly selected preset's model.
-    assistantToolCallMode.value = await getLocalAssistantToolCallMode()
   } catch {
     await loadProviderPreset()
   } finally {
