@@ -1920,13 +1920,17 @@ async function executeRuntimeWorkspaceToolCall(
 
 /**
  * Tool names that are safe to run in parallel within a single tool-loop round:
- * all are read-only, stateless, and have no shared mutable budget (unlike
- * `agent_call`'s callCount/depth budget). `run_script` is kept serial as a
- * whole because it runs a browser_script (side effects + bounded timeout) and
+ * all are read-only and stateless. `agent_call` is NOT in this set — it runs a
+ * delegated tool loop (own workspace writes, nested agent_call, shared
+ * callCount) — but multiple agent_calls in the same round are independent of
+ * each other, so `executeRuntimeWorkspaceToolCalls` runs them concurrently in a
+ * dedicated agentCallGroup instead. `run_script` is kept serial as a whole
+ * because it runs a browser_script (side effects + bounded timeout) and
  * resolving its action requires a use_skill activation + action resolution up
  * front. `use_skill` is parallel-safe: it only registers actions into session
  * state and does not mutate the workspace.
- * See `06-19-ai-agent-process-visible` design §2 (scheme A).
+ * See `06-19-ai-agent-process-visible` design §2 (scheme A) and
+ * `06-20-agent-call-concurrency` design §2.2 (agent_call separate group).
  */
 const PARALLEL_TOOL_NAMES = new Set<string>([
   RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
@@ -1945,16 +1949,30 @@ export async function executeRuntimeWorkspaceToolCalls(
   context: RuntimeWorkspaceToolExecutionContext,
   calls: ParsedRuntimeWorkspaceToolCall[],
 ): Promise<RuntimeWorkspaceToolObservation[]> {
-  // Split into a parallel group (read-only, stateless) and a serial group
-  // (writes, agent_call, run_script, and unparseable calls). Observations are
-  // collected in a Map keyed by the original call index so the returned array
-  // stays aligned with `calls` — the native loop relies on this to pair each
-  // observation with `result.toolCalls[index].id` when threading tool messages.
+  // Split into three groups so independent agent_call targets run concurrently
+  // while stateful writes stay ordered. Observations are collected in a Map
+  // keyed by the original call index so the returned array stays aligned with
+  // `calls` — the native loop relies on this to pair each observation with
+  // `result.toolCalls[index].id` when threading tool messages.
+  //   - parallelGroup: read-only, stateless tools (workspace.read/list/...,
+  //     use_skill) — safe to run concurrently with each other and anything else.
+  //   - agentCallGroup: `agent_call` targets. Each runs a delegated tool loop
+  //     (own workspace writes, nested agent_call, shared callCount), so they are
+  //     not "stateless reads", but multiple agent_calls in the same round are
+  //     independent of each other and run concurrently to shorten wait time.
+  //     callCount += 1 is atomic under JS single-threaded async interleaving;
+  //     depth is passed by value so parallel agent_calls don't share depth.
+  //   - serialGroup: writes, run_script (side effects + bounded timeout), and
+  //     unparseable calls — run in original order after agent_call so delegated
+  //     workspace writes are visible to this round's serial writes.
   const parallelIndices: number[] = []
+  const agentCallIndices: number[] = []
   const serialIndices: number[] = []
   for (const [index, call] of calls.entries()) {
     if (isParallelizableToolCall(call)) {
       parallelIndices.push(index)
+    } else if (call.call?.name === RUNTIME_WORKSPACE_TOOL_NAMES.agentCall) {
+      agentCallIndices.push(index)
     } else {
       serialIndices.push(index)
     }
@@ -1963,15 +1981,29 @@ export async function executeRuntimeWorkspaceToolCalls(
   const observations = new Map<number, RuntimeWorkspaceToolObservation>()
 
   // Parallel group: run all read-only tools concurrently. Promise.all rejects
-  // fast if any tool throws (or the signal aborts), but the observations map is
-  // already populated for the calls that resolved before the rejection; the
-  // serial group is skipped on rejection and the caller's catch path handles it.
+  // fast if any tool throws (or the signal aborts); the observations map is
+  // already populated for the calls that resolved before the rejection, and the
+  // caller's catch path handles it.
   if (parallelIndices.length > 0) {
     const parallelResults = await Promise.all(
       parallelIndices.map((index) => executeRuntimeWorkspaceToolCall(context, calls[index]!, index)),
     )
     for (let i = 0; i < parallelIndices.length; i += 1) {
       observations.set(parallelIndices[i]!, parallelResults[i]!)
+    }
+  }
+
+  // agent_call group: run independent delegated agents concurrently. Same
+  // Promise.all semantics as the parallel group; observations land by index.
+  if (agentCallIndices.length > 0) {
+    if (context.signal?.aborted) {
+      throw new DOMException("Agent Runtime tool execution was aborted.", "AbortError")
+    }
+    const agentCallResults = await Promise.all(
+      agentCallIndices.map((index) => executeRuntimeWorkspaceToolCall(context, calls[index]!, index)),
+    )
+    for (let i = 0; i < agentCallIndices.length; i += 1) {
+      observations.set(agentCallIndices[i]!, agentCallResults[i]!)
     }
   }
 
