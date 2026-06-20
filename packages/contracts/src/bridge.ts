@@ -124,16 +124,19 @@ export type RemotePlayBridgeEventPayload =
       turn: number
     }
   | {
+      agentId: string
       delta: string
       turn: number
       round: number
     }
   | {
+      agentId: string
       turn: number
       round: number
       kind: "thought" | "final"
     }
   | {
+      agentId: string
       turn: number
       round: number
       callId: string

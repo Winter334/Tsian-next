@@ -426,20 +426,23 @@ export function mountRemoteIframeFrontend(
   })
 
   // Forward streaming text deltas to the remote frontend as `turn-delta`.
-  const unsubscribeTurnDelta = subscribeTurnDelta((delta, turn, round) => {
-    postEvent("turn-delta", { delta, turn, round })
+  // `agentId` identifies the emitting agent (entry "master" or delegated target)
+  // so the frontend can distinguish parallel delegated agents' streams.
+  const unsubscribeTurnDelta = subscribeTurnDelta((agentId, delta, turn, round) => {
+    postEvent("turn-delta", { agentId, delta, turn, round })
   })
 
   // Forward per-round end markers to the remote frontend as `turn-round-end`,
   // so it can classify streamed `turn-delta` text into thought vs final regions.
-  const unsubscribeTurnRoundEnd = subscribeTurnRoundEnd((turn, round, kind) => {
-    postEvent("turn-round-end", { turn, round, kind })
+  const unsubscribeTurnRoundEnd = subscribeTurnRoundEnd((agentId, turn, round, kind) => {
+    postEvent("turn-round-end", { agentId, turn, round, kind })
   })
 
   // Forward tool-call status/output to the remote frontend as `turn-tool`,
   // so it can render tool cards (loading -> success/failed).
-  const unsubscribeTurnTool = subscribeTurnTool((turn, round, callId, name, status, output) => {
+  const unsubscribeTurnTool = subscribeTurnTool((agentId, turn, round, callId, name, status, output) => {
     postEvent("turn-tool", {
+      agentId,
       turn,
       round,
       callId,

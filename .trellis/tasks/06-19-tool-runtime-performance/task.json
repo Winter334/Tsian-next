@@ -22,7 +22,8 @@
     "06-19-tool-skill-decouple",
     "06-19-tool-token-budget",
     "06-19-tool-rename-and-glob",
-    "06-19-tool-executor-policy"
+    "06-19-tool-executor-policy",
+    "06-20-agent-call-concurrency"
   ],
   "parent": null,
   "relatedFiles": [],

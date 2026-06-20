@@ -607,7 +607,10 @@ async function send() {
       rafId = requestAnimationFrame(flushQueue)
     }
   }
-  const onDelta = (delta: string) => {
+  // agentId + round are accepted for signature uniformity with the game
+  // streaming channel but unused here (desktop assistant is single-agent and
+  // does not classify thought vs final rounds).
+  const onDelta = (agentId: string, delta: string, _round: number) => {
     firstDeltaReceived.value = true
     deltaQueue.push(delta)
     if (rafId === null) {
@@ -630,6 +633,7 @@ async function send() {
   // loading -> success/failed. Minimal presentation — no expandable output,
   // just a status indicator so the user can see the agent is working.
   const onTool = (
+    agentId: string,
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",

@@ -74,27 +74,31 @@ export interface AgentRuntimeTurnInput {
   workspaceFiles?: WorkspaceFile[]
   signal?: AbortSignal
   /**
-   * Streaming text-delta sink for the entry agent. Invoked for every streamed
-   * text chunk across all tool-loop rounds (thought-round text included — the
-   * whole turn streams, no reset). `round` is the tool-loop round index so the
-   * caller can label thought vs final. Delegated `agent_call` targets do not
-   * receive `onDelta` (they stream silently via the non-SSE fallback).
+   * Streaming text-delta sink. Invoked for every streamed text chunk across all
+   * tool-loop rounds (thought-round text included — the whole turn streams, no
+   * reset). `agentId` identifies which agent is emitting (the entry agent, or a
+   * delegated `agent_call` target); `round` is that agent's tool-loop round index
+   * so the caller can label thought vs final. Delegated agents may stream via
+   * the non-SSE fallback depending on their model config.
    */
-  onDelta?: (delta: string, round: number) => void
+  onDelta?: (agentId: string, delta: string, round: number) => void
   /**
    * Per-round end notification (子2b R1). Invoked after each `callModelNative`
    * returns, with the round index and finish reason so the caller can classify
    * the round as thought (`tool_calls`) or final (`stop`) and label the streamed
-   * text accordingly. Delegated agents do not receive this (silent). `undefined`
+   * text accordingly. `agentId` identifies the emitting agent. `undefined`
    * disables round-end events.
    */
-  onRoundEnd?: (round: number, finishReason: "stop" | "tool_calls") => void
+  onRoundEnd?: (agentId: string, round: number, finishReason: "stop" | "tool_calls") => void
   /**
    * Tool-call status/output notification (子2b R2). Invoked before/after each
    * workspace tool executes, with the round index and tool identity so the
-   * caller can render the tool process. `undefined` disables tool events.
+   * caller can render the tool process. `agentId` identifies which agent's tool
+   * loop the call belongs to (distinguishes parallel delegated agents).
+   * `undefined` disables tool events.
    */
   onTool?: (
+    agentId: string,
     round: number,
     callId: string,
     name: string,
@@ -141,13 +145,14 @@ export interface AgentRuntimeModelCallOptions {
    * stream" (delegated agents, or text-protocol callers) — the host then takes
    * the non-SSE fallback path.
    */
-  onDelta?: (delta: string, round: number) => void
+  onDelta?: (agentId: string, delta: string, round: number) => void
   /** Current tool-loop round index (set by the native loop before each call). */
   round?: number
   /** Per-round end notification (子2b R1); threaded from `AgentRuntimeTurnInput.onRoundEnd`. */
-  onRoundEnd?: (round: number, finishReason: "stop" | "tool_calls") => void
+  onRoundEnd?: (agentId: string, round: number, finishReason: "stop" | "tool_calls") => void
   /** Tool-call status/output notification (子2b R2); threaded from `AgentRuntimeTurnInput.onTool`. */
   onTool?: (
+    agentId: string,
     round: number,
     callId: string,
     name: string,
@@ -1133,6 +1138,13 @@ function createAgentCallRunner(
           debugLabel,
           signal: input.signal,
           agentId: targetContext.agent.id,
+          // Thread the caller's streaming/tool-event sinks so the delegated
+          // agent's process is visible upstream (agentId bound by the native
+          // tool loop to targetContext.agent.id). Only the native loop emits
+          // these; text-protocol delegated agents stay silent as before.
+          onDelta: input.onDelta,
+          onRoundEnd: input.onRoundEnd,
+          onTool: input.onTool,
         },
         targetContext,
         {
@@ -1338,8 +1350,9 @@ async function callAgentModelWithWorkspaceToolsNative(
 
     // Notify the caller that this round ended, with the finish reason so it can
     // classify the streamed text as thought (tool_calls) or final (stop). Emitted
-    // for every round including the final stop round.
-    options.onRoundEnd?.(round, result.finishReason)
+    // for every round including the final stop round. agentId identifies which
+    // agent's tool loop this round belongs to (entry or delegated agent_call target).
+    options.onRoundEnd?.(agentContext.agent.id, round, result.finishReason)
 
     const toolCalls = nativeToolCallsToParsed(result.toolCalls)
     // Thread provider-assigned tool call ids into the parsed calls so the
@@ -1400,10 +1413,11 @@ async function callAgentModelWithWorkspaceToolsNative(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
-      // Tool process events (子2b R2): bind the current round here so the
-      // executor's onTool stays callId/name/status only; the caller binds turn.
+      // Tool process events (子2b R2): bind the current round and agentId here
+      // so the executor's onTool stays callId/name/status only; the caller binds
+      // turn. agentId is this loop's agent (entry or delegated target).
       onTool: options.onTool
-        ? (callId, name, status, output) => options.onTool!(round, callId, name, status, output)
+        ? (callId, name, status, output) => options.onTool!(agentContext.agent.id, round, callId, name, status, output)
         : undefined,
     }, toolCalls)
 

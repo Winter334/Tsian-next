@@ -1485,9 +1485,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
             signal: currentController.signal,
             agentContext: agentContext ?? undefined,
             contextTokenBudget,
-            onDelta: (delta, round) => emitTurnDelta(delta, nextTurn, round),
-            onRoundEnd: (round, finishReason) => emitTurnRoundEnd(nextTurn, round, finishReasonToKind(finishReason)),
-            onTool: (round, callId, name, status, output) => emitTurnTool(nextTurn, round, callId, name, status, output),
+            onDelta: (agentId, delta, round) => emitTurnDelta(agentId, delta, nextTurn, round),
+            onRoundEnd: (agentId, round, finishReason) => emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason)),
+            onTool: (agentId, round, callId, name, status, output) => emitTurnTool(agentId, nextTurn, round, callId, name, status, output),
           },
           {
             callModel(messages, options) {
@@ -1518,7 +1518,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 debugLabel: options.debugLabel,
                 signal: options.signal,
                 tools,
-                onDelta: options.onDelta,
+                // ai.ts onDelta is (delta, round); adapt the runtime's
+                // (agentId, delta, round) signature by binding options.agentId
+                // (the entry agent id "master" or a delegated target id).
+                onDelta: options.onDelta
+                  ? (delta, round) => options.onDelta!(options.agentId ?? "master", delta, round)
+                  : undefined,
                 round: options.round,
                 ...(agentConfig ? { config: agentConfig } : {}),
               })
@@ -1678,18 +1683,22 @@ export interface AssistantChatInput {
   history?: ConversationMessageRecord[]
   /**
    * Streaming text-delta sink. Invoked for every streamed text chunk across
-   * all tool-loop rounds (thought-round text included). `undefined` disables
-   * streaming (non-SSE fallback).
+   * all tool-loop rounds (thought-round text included). `agentId` identifies the
+   * emitting agent (the desktop assistant is single-agent, so this is always
+   * the local assistant id; the parameter is kept for signature uniformity with
+   * the game-frontend streaming channel). `undefined` disables streaming.
    */
-  onDelta?: (delta: string, round: number) => void
+  onDelta?: (agentId: string, delta: string, round: number) => void
   /**
    * Tool process sink (子2b R2). Invoked before/after each workspace tool
    * executes, for the desktop AssistantView to render a status line. Excludes
    * `round` (the view does not classify thought vs final); the runtime binds
-   * round before calling. `undefined` disables tool lines. Native-mode only —
+   * agentId + round before calling. `agentId` is kept for signature uniformity
+   * (single-agent here). `undefined` disables tool lines. Native-mode only —
    * text-protocol turns do not emit tool events.
    */
   onTool?: (
+    agentId: string,
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
@@ -1790,9 +1799,10 @@ export async function runAssistantChat(
         onDelta: input.onDelta,
         // Desktop Assistant chat is in-process (not bridged), so tool process
         // events go straight to the view without a turn binding. Strip the
-        // round the runtime threads in; the view does not classify thought/final.
+        // round the runtime threads in (the view does not classify thought/final);
+        // agentId is passed through for signature uniformity (single-agent here).
         onTool: input.onTool
-          ? (_round, callId, name, status, output) => input.onTool!(callId, name, status, output)
+          ? (agentId, _round, callId, name, status, output) => input.onTool!(agentId, callId, name, status, output)
           : undefined,
       },
       {
@@ -1824,7 +1834,11 @@ export async function runAssistantChat(
             debugLabel: options.debugLabel,
             signal: options.signal,
             tools,
-            onDelta: options.onDelta,
+            // ai.ts onDelta is (delta, round); adapt the runtime's
+            // (agentId, delta, round) signature by binding this assistant's id.
+            onDelta: options.onDelta
+              ? (delta, round) => options.onDelta!(agentId, delta, round)
+              : undefined,
             round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
           })
