@@ -622,7 +622,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - `agent_call` builds the target Agent's own `AgentContextEntry`, including its `AGENT.md`, optional `SOUL.md`, notes/session, declared context files, and filtered lightweight Skill Index.
 - `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, metadata, response }`; the target Agent response does not directly become player-visible history.
 - `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
-- Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxCallsPerTurn=4`, `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state. The tool loop has **no per-Agent round limit** — termination relies on `finishReason: stop`, abort, and the turn token-budget fallback (`ContextBudgetExhaustedError` after one in-turn context compression). See the "Turn Token Budget And In-Turn Compression" scenario.
+- Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state. The tool loop has **no per-Agent round limit** and `agent_call` has **no per-turn call-count limit** — termination relies on `finishReason: stop`, abort, and the turn token-budget fallback (`ContextBudgetExhaustedError` after one in-turn context compression). `callCount` is retained as a diagnostic counter (trace metadata) but no longer gates execution. `maxDepth=2` remains as the recursion safety net (prevents unbounded agent_call nesting; token budget cannot bound recursion depth). See the "Turn Token Budget And In-Turn Compression" and "Parallel agent_call Within A Round" scenarios.
 - Delegated Agents derive their own runtime permissions from the target Agent's `agent.json`; the caller Agent's permissions must not leak into the target Agent step.
 - Delegated Agents may use their own exposed generic workspace operations, `use_skill`/`run_script` for activated Skills, and limited nested `agent_call` inside their own tool loop.
 - Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, the root entry agent at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
@@ -719,7 +719,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - `agent_call` in a tool loop where Agent calls are unavailable, including disabled Agent platform tool config or attempts beyond the collaboration depth limit -> error observation with `AGENT_CALL_UNAVAILABLE` and compact caller/target/depth/budget metadata when available.
 - `agent_call` target not found in the Agent registry -> error observation with `AGENT_CALL_TARGET_NOT_FOUND`.
 - `agent_call` target exists but is not in caller contacts -> error observation with `AGENT_CALL_TARGET_NOT_CONTACT`.
-- Per-turn `agent_call` budget exhausted -> error observation with `AGENT_CALL_LIMIT_EXCEEDED`.
+- `agent_call` beyond the recursion depth limit (`maxDepth`) -> error observation with `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata. There is **no per-turn call-count limit** — `callCount` is a diagnostic counter only; agent_call frequency is bounded by the turn token budget, not a count cap.
 - Delegated Agent execution failure -> error observation with `AGENT_CALL_FAILED`.
 - Action executor declaration missing, or with a non-`browser_script` type (`builtin`/`platform_action`/`workspace_operation`) -> `ACTION_EXECUTOR_INVALID` at parse time; reported in `use_skill` observation `actionDeclarationErrors` and registry `actionDeclarationErrors`; that action is not registered.
 - Browser script executor declarations without a non-empty `path`, or with invalid `timeoutMs` -> `ACTION_EXECUTOR_INVALID`; reported in `use_skill` observation `actionDeclarationErrors`; that action is not registered.
@@ -1199,6 +1199,77 @@ stageAgentSessionTranscriptFiles(
 - Assert delegated/fallback paths never attempt in-turn compression but still run the budget fallback.
 - Assert AssistantView shows the soft prompt for `ContextBudgetExhaustedError` without setting `errorMessage` or popping the placeholder.
 - Assert in-turn compressed snapshot is carried through `contextUpdate.compressedContext` for host persistence.
+
+## Scenario: Parallel agent_call Within A Round
+
+### 1. Scope / Trigger
+
+- Trigger: a single tool-loop round issues multiple `agent_call` tool calls, or any `agent_call` tool call needs its process visible upstream.
+- Applies when changing `apps/platform-web/src/agent-runtime/workspace-tools.ts` (`executeRuntimeWorkspaceToolCalls` grouping), `apps/platform-web/src/agent-runtime/index.ts` (`WorkspaceToolLoopOptions`, `createAgentCallRunner` event threading, `AgentRuntimeTurnInput`/`AgentRuntimeModelCallOptions` event signatures), `apps/platform-web/src/streaming-events.ts`, `apps/platform-web/src/bridge/remote-iframe-bridge.ts`, or `packages/contracts/src/bridge.ts` (`RemotePlayBridgeEventPayload`).
+
+### 2. Signatures
+
+- `AgentRuntimeCollaborationPolicy` no longer defines `maxCallsPerTurn`. `callCount` is retained on `AgentCallTurnState` as a diagnostic counter (trace metadata) but does not gate execution. `maxDepth=2` remains the recursion safety net.
+- `AgentRuntimeTurnInput.onDelta?: (agentId: string, delta: string, round: number) => void`
+- `AgentRuntimeTurnInput.onRoundEnd?: (agentId: string, round: number, finishReason: "stop" | "tool_calls") => void`
+- `AgentRuntimeTurnInput.onTool?: (agentId: string, round: number, callId: string, name: string, status: "loading" | "running" | "success" | "failed", output?: string) => void`
+- `AgentRuntimeModelCallOptions` mirrors the same three signatures.
+- `emitTurnDelta(agentId, delta, turn, round)` / `emitTurnRoundEnd(agentId, turn, round, kind)` / `emitTurnTool(agentId, turn, round, callId, name, status, output?)` — `agentId` is the first parameter on the streaming-events bus.
+- `RemotePlayBridgeEventPayload` `turn-delta` / `turn-round-end` / `turn-tool` variants include `agentId: string`.
+
+### 3. Contracts
+
+- `executeRuntimeWorkspaceToolCalls` splits tool calls into three groups: a parallel group (read-only, stateless tools in `PARALLEL_TOOL_NAMES`), an `agentCallGroup` (all `agent_call` calls in the round), and a serial group (writes, `run_script`, unparseable calls). The parallel group runs first via `Promise.all`, then the agent-call group via `Promise.all`, then the serial group in original order. Observations are collected in a Map keyed by the original call index so the returned array stays aligned with `calls` (native loop pairs by `result.toolCalls[index].id`).
+- Multiple `agent_call` calls in the same round run concurrently. `agent_call` is NOT in `PARALLEL_TOOL_NAMES` (it runs a delegated tool loop with workspace writes, nested agent_call, and shared `callCount`); it has its own group because same-round agent_calls are independent of each other.
+- The serial group runs after the agent-call group so delegated workspace writes are visible to this round's serial writes.
+- `run_script` stays serial (side effects + bounded timeout); it is not in `PARALLEL_TOOL_NAMES` and not in the agent-call group.
+- `agent_call` observations travel the tool-observation channel (`formatRuntimeWorkspaceToolObservationMessage`); they are NOT wrapped as narrative user messages (would pollute the story span and break `compressContext`).
+- `callCount += 1` is atomic under JS single-threaded async interleaving; `agentCallDepth` is passed by value (caller-depth snapshot), so parallel agent_calls do not share depth state. No locking is required.
+- Workspace writes from parallel agent_calls land in the shared staged transaction array; last-write-wins by path (same semantics as serial). Parallel execution does not introduce a new conflict model; typical delegated agents write different paths (memory vs state).
+- There is no per-turn `agent_call` count limit. `maxCallsPerTurn` was removed (same rationale as removing `maxToolRoundsPerAgent`: the turn token budget bounds total volume). `maxDepth=2` remains to prevent unbounded recursion (token budget cannot bound recursion depth).
+- Event sinks `onDelta`/`onRoundEnd`/`onTool` carry `agentId` as the first parameter, identifying the emitting agent. The entry agent emits with its own id (e.g. `master`); a delegated `agent_call` target emits with the target agent id (e.g. `memory`). The native tool loop binds `agentId` from `agentContext.agent.id` at emit time. The text-protocol loop does not emit these events (delegated text-protocol agents stay silent, unchanged).
+- `createAgentCallRunner` threads `input.onDelta`/`input.onRoundEnd`/`input.onTool` into the delegated call options so the delegated agent's process is visible upstream. Only the native loop emits; delegated agents in text mode remain silent.
+- The host's `callModelNative` closure adapts the runtime's `(agentId, delta, round)` onDelta to the lower-level `streamAssistantReplyNative` `(delta, round)` by binding `options.agentId`. `ai.ts` does not know about `agentId`.
+- The streaming-events bus forwards `agentId` to subscribers; `remote-iframe-bridge` includes `agentId` in `turn-delta`/`turn-round-end`/`turn-tool` event payloads so game frontends can distinguish parallel delegated agents.
+- AssistantView (desktop assistant) accepts the `agentId` parameter on its `onDelta`/`onTool` callbacks for signature uniformity but does not use it (single-agent view); its rendering is unchanged.
+- `round` in a delegated event is that delegated agent's own tool-loop round, not the entry agent's round. Subscribers distinguish agents by `agentId`, not by comparing `round` across agents. `turn` remains the master turn.
+
+### 4. Validation & Error Matrix
+
+- Multiple `agent_call` in one round -> run concurrently; observations aligned to original call index.
+- Single `agent_call` in one round -> runs in the agent-call group (Promise.all of one element) equivalent to serial; behavior unchanged except events now carry `agentId`.
+- `agent_call` beyond `maxDepth` -> `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata (unchanged).
+- No `AGENT_CALL_LIMIT_EXCEEDED` — the per-turn call-count limit was removed.
+- `run_script` mixed with `agent_call` in one round -> `run_script` runs in the serial group after the agent-call group.
+- Workspace write conflict between parallel agent_calls -> last-write-wins in the staged transaction (no conflict detection).
+- Delegated native-mode agent -> emits `onDelta`/`onRoundEnd`/`onTool` with target agent id; delegated text-mode agent -> silent (unchanged).
+- Abort -> shared `input.signal` cancels all parallel agent_calls (each `callModelNative` checks the signal).
+
+### 5. Good/Base/Bad Cases
+
+- Good: master issues `agent_call(memory)` + `agent_call(state)` in one round; both run concurrently, the game frontend renders two tool-process streams distinguished by `agentId`, wait time is shorter than serial, observations return aligned to call order.
+- Good: master issues a single `agent_call(memory)`; it runs as a one-element Promise.all, behavior matches the pre-change serial path (events now carry `agentId="memory"`).
+- Good: a delegated memory agent tries a nested `agent_call` at depth 2 -> `AGENT_CALL_UNAVAILABLE`; it continues its own loop with the error observation.
+- Base: a round with only read tools and no `agent_call` -> parallel group only, agent-call group empty, serial group empty.
+- Base: desktop assistant chat -> single agent, `agentId` ignored by AssistantView, rendering unchanged.
+- Bad: reintroducing a per-turn `agent_call` count limit (the turn token budget bounds volume).
+- Bad: wrapping `agent_call` observations as narrative user messages (breaks story/tool layering and `compressContext`).
+- Bad: putting `agent_call` in `PARALLEL_TOOL_NAMES` (it is not a read-only stateless tool).
+- Bad: making `ai.ts` aware of `agentId` (the host closure adapts the signature; `ai.ts` stays low-level).
+- Bad: blocking the entry agent across turns on a delegated agent (cross-turn background agents are out of scope under the current blocking-turn model).
+
+### 6. Tests Required
+
+- Assert multiple `agent_call` in one round run concurrently (event timestamps interleave / wait time < serial).
+- Assert observations return aligned to the original call order (Map-by-index).
+- Assert single `agent_call` behaves as before (serial-equivalent) except events carry `agentId`.
+- Assert `run_script` stays serial and runs after the agent-call group.
+- Assert nested `agent_call` beyond `maxDepth` returns `AGENT_CALL_UNAVAILABLE`.
+- Assert no `AGENT_CALL_LIMIT_EXCEEDED` is ever thrown (count limit removed).
+- Assert delegated native-mode events carry the target agent id; text-mode delegated agents stay silent.
+- Assert bridge `turn-delta`/`turn-round-end`/`turn-tool` payloads include `agentId`.
+- Assert abort cancels all parallel agent_calls.
+- Assert master turn token-budget fallback (`ContextBudgetExhaustedError`) is not regressed.
 
 ## Avoid
 
