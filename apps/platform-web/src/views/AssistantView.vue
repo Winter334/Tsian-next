@@ -174,7 +174,7 @@
             <div
               v-for="(msg, index) in messages"
               :key="index"
-              class="flex gap-3"
+              class="group flex gap-3"
               :class="msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'"
             >
               <span
@@ -186,12 +186,13 @@
                 <User v-if="msg.role === 'user'" class="h-3.5 w-3.5" aria-hidden="true" />
                 <Bot v-else class="h-3.5 w-3.5" aria-hidden="true" />
               </span>
-              <div
-                class="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-2 break-words px-3.5 py-2.5 text-sm leading-6"
-                :class="msg.role === 'user'
-                  ? 'whitespace-pre-wrap border border-neon-deep/35 bg-panel/55 text-text-main'
-                  : 'border border-neon/20 bg-neon/5 text-text-main'"
-              >
+              <div class="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-1.5">
+                <div
+                  class="break-words px-3.5 py-2.5 text-sm leading-6"
+                  :class="msg.role === 'user'
+                    ? 'whitespace-pre-wrap border border-neon-deep/35 bg-panel/55 text-text-main'
+                    : 'border border-neon/20 bg-neon/5 text-text-main'"
+                >
                 <template v-if="msg.role === 'assistant'">
                   <!-- 过程节点:思考/工具按发生顺序纵向平铺,各独立折叠(不含最终回复) -->
                   <template v-for="node in msg.timeline ?? []" :key="node.id">
@@ -262,6 +263,36 @@
                   </div>
                 </template>
                 <template v-else>{{ msg.content }}</template>
+                </div>
+
+                <!-- 消息工具条:hover 显示,复制(全部)+编辑重发(仅 user,发送中禁用) -->
+                <div
+                  class="flex items-center gap-1 px-1 transition-opacity"
+                  :class="[
+                    msg.role === 'user' ? 'justify-end' : 'justify-start',
+                    copiedIndex === index || editingIndex === index ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100',
+                  ]"
+                >
+                  <button
+                    type="button"
+                    class="retro-focus grid h-6 w-6 place-items-center border border-neon-deep/30 bg-panel/40 text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                    :title="copiedIndex === index ? '已复制' : '复制消息'"
+                    @click="handleCopyMessage(index)"
+                  >
+                    <Check v-if="copiedIndex === index" class="h-3 w-3 text-neon" aria-hidden="true" />
+                    <Copy v-else class="h-3 w-3" aria-hidden="true" />
+                  </button>
+                  <button
+                    v-if="msg.role === 'user'"
+                    type="button"
+                    class="retro-focus grid h-6 w-6 place-items-center border border-neon-deep/30 bg-panel/40 text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                    :disabled="sending"
+                    :title="sending ? '请等待当前回复完成' : '编辑并重新发送'"
+                    @click="handleEditUserMessage(index)"
+                  >
+                    <Pencil class="h-3 w-3" aria-hidden="true" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -355,7 +386,7 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, ChevronDown, ChevronRight, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
+import { Bot, Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import {
   Select,
@@ -431,6 +462,10 @@ const cardName = ref("")
 const messageListRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
 const showJumpToBottom = ref(false)
+// 复制反馈:记下刚复制的消息索引,显示「已复制」勾,短暂后自动清除.
+const copiedIndex = ref<number | null>(null)
+// 编辑中:正在通过工具条编辑的消息索引(仅用于工具条透明度保持).
+const editingIndex = ref<number | null>(null)
 // Smart scroll: auto-scroll only while the user is pinned near the bottom.
 const userPinnedToBottom = ref(true)
 // Abort controller for the in-flight chat turn (stop-generating button).
@@ -840,6 +875,62 @@ async function send() {
 
 function stopGenerating() {
   abortController.value?.abort()
+}
+
+/**
+ * 复制消息正文到剪贴板,并在该消息工具条短暂显示「已复制」勾.
+ * assistant 消息复制 content(最终回复,不含过程节点);user 消息复制 content.
+ */
+async function handleCopyMessage(index: number) {
+  const msg = messages.value[index]
+  if (!msg || !msg.content) {
+    return
+  }
+  try {
+    await navigator.clipboard.writeText(msg.content)
+    copiedIndex.value = index
+    // 短暂显示后清除,让同一消息可再次复制并恢复复制图标.
+    setTimeout(() => {
+      if (copiedIndex.value === index) {
+        copiedIndex.value = null
+      }
+    }, 1500)
+  } catch {
+    // 剪贴板写入失败(权限/非安全上下文)静默忽略,不打断对话.
+  }
+}
+
+/**
+ * 编辑并重新发送某条用户消息:截断到该条之前、把它的文本回填输入框、聚焦.
+ * 回复中(sending)禁用,避免与正在进行的 turn 冲突.截断后未发送的消息及其
+ * 回复一并删除(平铺列表模型,重做这一轮而非分支).用户改完正常点发送即可.
+ */
+function handleEditUserMessage(index: number) {
+  if (sending.value) {
+    return
+  }
+  const msg = messages.value[index]
+  if (!msg || msg.role !== "user") {
+    return
+  }
+  editingIndex.value = index
+  inputText.value = msg.content
+  // 截断:保留 index 之前的消息,丢弃该条及其后所有消息(含其回复).
+  messages.value = messages.value.slice(0, index)
+  resetInputHeight()
+  nextTick(() => {
+    inputRef.value?.focus()
+    autoGrow()
+    editingIndex.value = null
+  })
+  // 乐观更新已持久化的会话(后台,不阻塞 UI).
+  if (activeSessionId.value) {
+    const toStore: ConversationMessageRecord[] = messages.value.map((m) => ({
+      role: m.role,
+      content: m.content,
+    }))
+    void saveAssistantSessionMessages("local", activeSessionId.value, toStore, { touch: false })
+  }
 }
 
 function handleScroll(event: Event) {
