@@ -86,7 +86,7 @@ runAgentRuntimeTurn (index.ts:1428)
   ↓   }
   ↓ 【R2 上下文源切换】
   ↓   buildEntryAgentMessages(..., agentContext: context)
-  ↓     "最近对话"区 = [context.summary ? `早期剧情摘要：\n${summary}` : "", formatRecentTurns(context.recentTurns)]
+  ↓     剧情正文层 = buildAgentContextMessages(context)  // 独立 message 序列(见 §2.2a)
   ↓     （替换原 formatHistory(normalizeHistory(input.recentHistory))）
   ↓ ↓ 工具循环（不变）→ replyText
   ↓
@@ -108,6 +108,37 @@ runAgentRuntimeTurn (index.ts:1428)
 ```
 
 **关键时序**：压缩在 turn 开头（R3），但压缩结果写回 context.json 在 turn 收尾（R4）——因为 turn 开头没有 workspaceTransaction（事务在 platform-host 调用 runAgentRuntimeTurn 前后管理）。压缩后的快照通过 `result.compressedContext` 带到收尾阶段写入。若 turn 中途 abort，压缩结果不写入（下轮开头重新压缩），可接受。
+
+### 2.2a 剧情正文层 message 结构（2026-06-20 收尾修正）
+
+**原实现偏差**：初版 `buildEntryAgentMessages` 把 summary + recentTurns 用 `formatAgentContextHistory` 拍扁成一段文本，和"当前回合/Workspace 上下文/玩家本轮输入"塞进**同一条 user message content**。这导致下游 `tool-token-budget` 子任务2 的"turn 内压剧情"要在格式化文本里做字符串切片（脆弱），且与 context.json 的 `recentTurns` 结构化数据形态不一致（结构化→文本→结构化往返）。
+
+**修正**：剧情正文层改为**独立 message 序列**，新增 `buildAgentContextMessages(context)`：
+
+```
+messages = [
+  { role: "system",    content: systemPrompt },                              // AGENT.md/SOUL.md/工具说明
+  { role: "user",      content: "当前回合:N\nWorkspace Agent 上下文:..." },   // 框架信息(非剧情,每 turn 现构建)
+  { role: "user",      content: "早期剧情摘要：\n<summary>" },               // summary(若有)作 user message
+  { role: "user",      content: "<玩家12轮原文>" },                          // recentTurns 每条独立 message
+  { role: "assistant", content: "<叙事12轮原文>" },
+  { role: "user",      content: "<玩家13轮原文>" },
+  { role: "assistant", content: "<叙事13轮原文>" },
+  ...
+  { role: "user",      content: "玩家本轮输入：\n<userInput>" },             // 本轮输入单独一条
+  // 之后是工具循环的 assistant/tool messages
+]
+```
+
+**设计要点**：
+- summary 作 `user` message（剧情历史的一部分，非系统指令；作 system 会被 Gemini/Claude 的 `splitSystemMessage` 合并进 system 字段，与 systemPrompt 语义混淆）。
+- recentTurns 每条 `{role, content}` 直接用 context.json 的 `entry.role`/`entry.content`，不加"12. 玩家:"前缀（role 已表达角色，turn 索引不进 content 以免污染正文）。
+- 框架信息（回合号/Workspace 上下文）单独一条 user message，与剧情正文层分离——压剧情时只动 summary + recentTurns 那段，框架信息和本轮输入不动。
+- 兜底路径（agentContext 未注入，首 turn/旧存档迁移）：保持 `formatHistory` 文本形式塞一条 user message（非稳态路径，不追求结构化）。
+
+**连续 user message 的 provider 兼容性**：此结构会产生连续 user message（框架信息 user → summary user → recentTurns 首 user）。OpenAI Chat Completions / Gemini / Claude API 均**允许**连续同 role message（按顺序处理），非标准行为。若个别国产 OpenAI 兼容端点有问题，属端点非标准行为，后续按需处理。
+
+**对下游 tool-token-budget 的意义**：turn 内压剧情从"在格式化文本里做字符串切片"变成"按 message 边界 slice + 替换"——保留最近 K 轮 = 保留最后 2K 条 user/assistant message，早期轮次替换成 summary message。健壮、自然，无锚点拆分脆弱性。
 
 ### 2.3 压缩算法（compressContext）
 

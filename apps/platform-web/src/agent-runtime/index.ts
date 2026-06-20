@@ -337,26 +337,36 @@ function formatHistory(history: ConversationMessageRecord[]): string {
 }
 
 /**
- * 格式化 master agent 会话上下文快照为"最近对话"区文本.
- * summary 作前言(早期剧情梗概),recentTurns 按 turn 号列出原文.
- * 与 formatHistory 风格一致(角色名用"叙事/玩家"),但带 turn 索引而非顺序号.
+ * 把 master agent 会话上下文快照展开为独立 message 序列(剧情正文层).
+ *
+ * summary(若有)作一条 user message 前言(早期剧情梗概);recentTurns 每条
+ * 展开为独立 user/assistant message(原文,不加"12. 玩家:"前缀——role 已表达
+ * 角色,turn 索引不进 content 以免污染正文).空 recentTurns 时给一条占位 user
+ * message("（暂无历史对话）")保持对话结构完整.
+ *
+ * 独立 message 序列(而非塞进一条 user message content)的原因:剧情压缩的
+ * 核心操作是"保留最近 K 轮、压早期轮次",一轮 = 一对 user/assistant message,
+ * 按 message 边界操作比在格式化文本里做字符串切片健壮;且与 context.json 的
+ * recentTurns 结构化数据形态直接映射,无"结构化→文本→结构化"往返.
+ * 详见任务 06-19-agent-session-context-lifecycle 收尾结构修正.
  */
-function formatAgentContextHistory(context: AgentContextSnapshot): string {
-  const parts: string[] = []
+function buildAgentContextMessages(context: AgentContextSnapshot): AiChatMessage[] {
+  const messages: AiChatMessage[] = []
   if (context.summary) {
-    parts.push("早期剧情摘要：", context.summary, "")
+    messages.push({ role: "user", content: `早期剧情摘要：\n${context.summary}` })
   }
   if (context.recentTurns.length === 0) {
-    parts.push("（暂无历史对话）")
+    if (!context.summary) {
+      // 无 summary 也无 recentTurns:给一条占位,保持"有历史对话区"的结构
+      messages.push({ role: "user", content: "（暂无历史对话）" })
+    }
+    // 有 summary 但无 recentTurns:summary 已是历史区,不再加占位
   } else {
-    parts.push(
-      ...context.recentTurns.map((entry) => {
-        const role = entry.role === "assistant" ? "叙事" : "玩家"
-        return `${entry.turn}. ${role}: ${entry.content}`
-      }),
-    )
+    for (const entry of context.recentTurns) {
+      messages.push({ role: entry.role, content: entry.content })
+    }
   }
-  return parts.join("\n")
+  return messages
 }
 
 function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
@@ -700,6 +710,12 @@ function buildEntryAgentMessages(
     ? getVisibleAgentContacts(input.workspaceFiles, context)
     : []
   const permissions = deriveAgentRuntimePermissionProfile(context.agent)
+  // 剧情正文层:优先用注入的 context 快照(独立 message 序列);未注入则从
+  // recentHistory(saveHistory)兜底——旧逻辑 formatHistory 也是拍扁文本,这里
+  // 保持兜底用文本形式(首 turn/旧存档迁移场景,非稳态路径).
+  const historyMessages: AiChatMessage[] = agentContext
+    ? buildAgentContextMessages(agentContext)
+    : [{ role: "user", content: `最近对话：\n${formatHistory(history)}` }]
   return [
     {
       role: "system",
@@ -717,21 +733,22 @@ function buildEntryAgentMessages(
         toolCallMode,
       }),
     },
+    // 框架信息(非剧情,每 turn 现构建):回合号 + Workspace 上下文.单独一条
+    // user message,与剧情正文层分离——压剧情时只动 historyMessages,不动它.
     {
       role: "user",
       content: [
         `当前回合：${currentRuntimeTurnNumber(input)}`,
         "Workspace Agent 上下文：",
         formatAgentRuntimeContext(context),
-        "",
-        "最近对话：",
-        agentContext
-          ? formatAgentContextHistory(agentContext)
-          : formatHistory(history),
-        "",
-        "玩家本轮输入：",
-        input.userInput,
       ].join("\n"),
+    },
+    // 剧情正文层:summary(若有) + recentTurns 独立 message 序列(或兜底文本).
+    ...historyMessages,
+    // 玩家本轮输入:单独一条 user message,剧情正文层之后、工具循环之前.
+    {
+      role: "user",
+      content: `玩家本轮输入：\n${input.userInput}`,
     },
   ]
 }

@@ -95,6 +95,9 @@
 - [ ] 玩家 UI 翻阅剧情正文不受压缩影响（`saveHistory` 完整原文保持）。
 - [ ] `npm run build`（含 contracts）通过。
 - [ ] 真实 API 实测：多轮对话后 master agent 上下文保持稳态；关闭重开存档后 master agent 上下文从持久化记录恢复（不失忆）；超长对话触发压缩不崩。
+- [ ] **2026-06-20 结构改造回归实测（待外部条件，见 `docs/active/pending-verification.md` PV-001）**：剧情正文独立 message 序列（含连续 user message）在真实 provider 的行为回归。本项依赖"有可游玩游戏卡"，暂缓登记到独立待验证清单（不随本任务归档消失）。
+
+> **跨任务待验证清单**：`docs/active/pending-verification.md`（PV-001 本任务结构改造回归实测 + PV-002 子任务2 压剧情实测）。独立于任务文档，防止随任务归档被掩盖。
 
 ## Out of Scope
 
