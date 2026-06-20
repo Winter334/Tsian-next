@@ -437,9 +437,6 @@ function emitAgentCallTrace(
     depth: typeof metadata.targetDepth === "number" ? metadata.targetDepth : undefined,
     maxDepth: typeof metadata.maxDepth === "number" ? metadata.maxDepth : undefined,
     callCount: typeof metadata.callCount === "number" ? metadata.callCount : undefined,
-    maxCallsPerTurn: typeof metadata.maxCallsPerTurn === "number"
-      ? metadata.maxCallsPerTurn
-      : undefined,
     historyMode: typeof metadata.historyMode === "string"
       ? metadata.historyMode
       : typeof result.historyMode === "string"

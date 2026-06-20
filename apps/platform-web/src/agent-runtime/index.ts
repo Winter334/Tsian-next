@@ -191,7 +191,6 @@ export interface AgentRuntimeCapabilities {
 }
 
 export interface AgentRuntimeCollaborationPolicy {
-  maxCallsPerTurn: number
   maxDepth: number
   historyWindows: Record<RuntimeAgentCallHistoryMode, number>
 }
@@ -218,7 +217,6 @@ const DELEGATED_AGENT_PLATFORM_GUARD = [
 ].join("\n")
 
 const DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY: AgentRuntimeCollaborationPolicy = {
-  maxCallsPerTurn: 4,
   maxDepth: 2,
   historyWindows: {
     minimal: 0,
@@ -254,7 +252,6 @@ interface AgentCallRuntimeMetadata {
   targetDepth: number
   maxDepth: number
   callCount: number
-  maxCallsPerTurn: number
   historyMode: RuntimeAgentCallHistoryMode
 }
 
@@ -299,7 +296,6 @@ function normalizeAgentRuntimeCollaborationPolicy(
 ): AgentRuntimeCollaborationPolicy {
   const defaults = DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY
   return {
-    maxCallsPerTurn: normalizePolicyInteger(input?.maxCallsPerTurn, defaults.maxCallsPerTurn),
     maxDepth: normalizePolicyInteger(input?.maxDepth, defaults.maxDepth),
     historyWindows: {
       minimal: normalizePolicyInteger(input?.historyWindows?.minimal, defaults.historyWindows.minimal),
@@ -589,7 +585,6 @@ function canExposeAgentCallInPrompt(
 ): boolean {
   return visibleContacts.length > 0
     && depth < policy.maxDepth
-    && state.callCount < policy.maxCallsPerTurn
 }
 
 function formatVisibleAgentContacts(contacts: AgentRegistryEntry[]): string {
@@ -930,7 +925,6 @@ function createAgentCallRuntimeMetadata(
     targetDepth: callerDepth + 1,
     maxDepth: collaborationPolicy.maxDepth,
     callCount: state.callCount,
-    maxCallsPerTurn: collaborationPolicy.maxCallsPerTurn,
     historyMode: agentCall.historyMode,
   }
 }
@@ -942,7 +936,6 @@ function agentCallTraceFacts(metadata: AgentCallRuntimeMetadata): Record<string,
     depth: metadata.targetDepth,
     maxDepth: metadata.maxDepth,
     callCount: metadata.callCount,
-    maxCallsPerTurn: metadata.maxCallsPerTurn,
   }
 }
 
@@ -1087,14 +1080,6 @@ function createAgentCallRunner(
       throw agentCallError(
         "AGENT_CALL_TARGET_NOT_CONTACT",
         `Agent "${agentCall.agentId}" is not listed in ${callerContext.agent.id}'s contacts.`,
-        initialMetadata,
-      )
-    }
-
-    if (state.callCount >= collaborationPolicy.maxCallsPerTurn) {
-      throw agentCallError(
-        "AGENT_CALL_LIMIT_EXCEEDED",
-        "agent_call limit exceeded for this turn.",
         initialMetadata,
       )
     }
