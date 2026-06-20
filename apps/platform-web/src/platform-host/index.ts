@@ -40,9 +40,11 @@ import {
   AGENT_CONTEXT_PATH,
   appendTurnToContext,
   createEmptyAgentContext,
+  DEFAULT_TASK_TIMEOUT_MS,
   parseAgentContext,
   resolveTokenBudget,
   serializeAgentContext,
+  TaskTimeoutError,
 } from "../agent-runtime/context-lifecycle"
 import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
@@ -1485,6 +1487,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
             signal: currentController.signal,
             agentContext: agentContext ?? undefined,
             contextTokenBudget,
+            // Master is a narrative-type agent: one-shot narrative compression +
+            // ContextBudgetExhaustedError fallback (tool-token-budget R2, unchanged).
+            // No timeoutMs — master relies on one-shot compression + user abort,
+            // a timeout would mis-kill narrative deep thought (design §0/§1.3 约束8).
+            compressionMode: "narrative",
             onDelta: (agentId, delta, round) => emitTurnDelta(agentId, delta, nextTurn, round),
             onRoundEnd: (agentId, round, finishReason) => emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason)),
             onTool: (agentId, round, callId, name, status, output) => emitTurnTool(agentId, nextTurn, round, callId, name, status, output),
@@ -1709,6 +1716,13 @@ export interface AssistantChatInput {
    * it aborts the turn's model calls and tool loop.
    */
   signal?: AbortSignal
+  /**
+   * Optional task-mode timeout quota in ms (design 06-20-agent-task-compression).
+   * The assistant runs in task compression mode (multi-compress + timeout fallback).
+   * When elapsed, a TaskTimeoutError is thrown (soft halt, surfaced as a gentle
+   * prompt in AssistantView). Defaults to DEFAULT_TASK_TIMEOUT_MS (300s).
+   */
+  timeoutMs?: number
 }
 
 export interface AssistantChatResult {
@@ -1777,6 +1791,14 @@ export async function runAssistantChat(
       })
     }
   }
+  // Task-mode timeout fallback (design 06-20-agent-task-compression §2.6):
+  // independent timeoutController + setTimeout, merged with the user-abort
+  // controller into a composite signal. On timeout, throws TaskTimeoutError
+  // (soft halt) so AssistantView can show a gentle prompt.
+  const taskTimeoutMs = input.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS
+  const timeoutController = new AbortController()
+  const timeoutTimer = setTimeout(() => timeoutController.abort("task-timeout"), taskTimeoutMs)
+  const compositeSignal = AbortSignal.any([controller.signal, timeoutController.signal])
   const workspaceTransaction = createRuntimeWorkspaceTransaction(workspaceFiles)
   const activeWorkspaceTransaction = workspaceTransaction
   const providerPresetMap = buildAgentProviderPresetMap(
@@ -1795,7 +1817,12 @@ export async function runAssistantChat(
         recentHistory: history,
         snapshot: { version: "tsian.runtime.snapshot.v1", state: { turn: 0, messages: [] } },
         workspaceFiles: workspaceTransaction.workspaceFiles,
-        signal: controller.signal,
+        signal: compositeSignal,
+        // Assistant is a task-type agent (design §0): task compression mode
+        // (multi-compress tool interactions + timeout fallback + stall early-exit),
+        // distinct from master's narrative compression.
+        compressionMode: "task",
+        timeoutMs: taskTimeoutMs,
         onDelta: input.onDelta,
         // Desktop Assistant chat is in-process (not bridged), so tool process
         // events go straight to the view without a turn binding. Strip the
@@ -1895,7 +1922,15 @@ export async function runAssistantChat(
     return { replyText: result.replyText }
   } catch (error) {
     activeWorkspaceTransaction.discard()
+    // Distinguish task-timeout abort from user abort / other errors: the runtime
+    // tool loop throws AbortError on composite-signal abort; re-surface timeout
+    // as TaskTimeoutError so AssistantView can show a gentle prompt (design §2.6).
+    if (timeoutController.signal.aborted && !(error instanceof TaskTimeoutError)) {
+      throw new TaskTimeoutError(taskTimeoutMs)
+    }
     throw error
+  } finally {
+    clearTimeout(timeoutTimer)
   }
 }
 

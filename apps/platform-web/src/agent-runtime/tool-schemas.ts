@@ -116,6 +116,11 @@ const agentCallSchema: ToolSchema = {
         enum: HISTORY_MODE_ENUM,
         description: "History window handed to the target Agent. Defaults to \"recent\".",
       },
+      timeoutMs: {
+        type: "integer",
+        description:
+          "Optional timeout quota in milliseconds for this delegated agent call. When elapsed, the call aborts softly and returns an AGENT_CALL_FAILED observation with timeout details. Defaults to 300000 (300s). Increase it only when the target Agent's task is expected to take longer (e.g. reading many files).",
+      },
     },
   },
 }

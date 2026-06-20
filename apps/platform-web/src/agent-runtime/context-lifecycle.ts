@@ -33,6 +33,18 @@ export const CONTEXT_KEEP_RECENT_TURNS = 5
 export const TARGET_COMPRESSION_TOKENS = 2000
 
 // ─────────────────────────────────────────────────────────────────────────
+// 任务压缩常量(子代理/助手 task 模式,design 06-20-agent-task-compression)
+// 与 master 剧情压缩并列:压缩对象是整个上下文含工具调用+返回,多次压缩 + 时长兜底.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** 任务型 agent(子代理/助手)默认时长配额 ms.超时抛 TaskTimeoutError.5 分钟给足多文件探索+总结+多次压缩空间. */
+export const DEFAULT_TASK_TIMEOUT_MS = 300_000
+/** 任务压缩保留最近 N 轮 tool 交互(assistant+tool 成对,原文不压).N=5 覆盖最近探索链+当前步骤+上下游关联. */
+export const TASK_KEEP_RECENT_TOOL_ROUNDS = 5
+/** 压缩无效早退阈值:压缩后 token 下降幅度 < 此比例 → 抛 TaskCompressionStalledError(不傻等超时烧钱). */
+export const TASK_COMPRESSION_STALL_RATIO = 0.1
+
+// ─────────────────────────────────────────────────────────────────────────
 // Token 估算(复用 tool-token-budget 讨论结论:字符数*0.4 + UTF-8 字节数*0.25,
 // 中文准确、英文保守高估,误差倒向早压缩安全侧.零依赖,模块级 hoisted encoder)
 // ─────────────────────────────────────────────────────────────────────────
@@ -242,6 +254,34 @@ export class ContextBudgetExhaustedError extends Error {
   }
 }
 
+/**
+ * 任务型 agent(子代理/助手)超时:时长兜底触发,温和中止.
+ * 经 AssistantView catch 走温和提示路径(与 ContextBudgetExhaustedError 同分支);
+ * delegated 路径被 createAgentCallRunner 转 AGENT_CALL_FAILED observation.
+ */
+export class TaskTimeoutError extends Error {
+  constructor(timeoutMs?: number) {
+    super(
+      timeoutMs
+        ? `任务执行超时（${Math.round(timeoutMs / 1000)}s），已中止。`
+        : "任务执行超时，已中止。",
+    )
+    this.name = "TaskTimeoutError"
+  }
+}
+
+/**
+ * 任务压缩无效早退:多次压缩后 token 下降幅度 < TASK_COMPRESSION_STALL_RATIO,
+ * 说明压不动了(recentToolInteractions 已剩极少 + 工具交互还在涨),不傻等超时烧钱.
+ * 经 AssistantView catch 走温和提示路径;delegated 路径转 AGENT_CALL_FAILED observation.
+ */
+export class TaskCompressionStalledError extends Error {
+  constructor() {
+    super("上下文持续膨胀且压缩无效，已中止。请精简任务或拆分子任务。")
+    this.name = "TaskCompressionStalledError"
+  }
+}
+
 /** 压缩摘要 system prompt:叙事梗概风格(非要点列表),保留情节推进/人物状态/场景/伏笔. */
 const COMPRESSION_SYSTEM_PROMPT = [
   "你正在为一段互动剧情的 AI 叙事者压缩对话历史。",
@@ -332,6 +372,157 @@ export async function compressContext(
 function uniqueSortedTurnNumbers(entries: AgentContextTurnEntry[]): number[] {
   const set = new Set(entries.map((entry) => entry.turn))
   return Array.from(set).sort((a, b) => a - b)
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 任务压缩(子代理/助手 task 模式,design 06-20-agent-task-compression)
+// 与 master 剧情压缩(compressContext)并列:压缩对象是工具交互段(assistant toolCalls +
+// tool observation 成对),把早期轮次摘要成"已完成工作"user message,保留最近 N 轮.
+// 不依赖 AgentContextSnapshot(任务型 agent 无跨 turn 快照),摘要文本随 messages 在
+// turn 内存在,turn 结束即弃(不落盘——助手跨 turn 持久化是后续独立任务).
+// ─────────────────────────────────────────────────────────────────────────
+
+/** 任务压缩摘要 system prompt:任务日志风格(已做工作+结论),非叙事梗概. */
+const TASK_COMPRESSION_SYSTEM_PROMPT = [
+  "你是任务执行摘要器。把子代理/助手的早期工具交互过程压缩成「已完成工作 + 结论」摘要。",
+  "保留:已读取/写入的关键信息、已做出的判断、已达成的中间结论、未解决的问题。",
+  "丢弃:工具调用的具体命令与参数、工具返回的原始大段内容、重复的探索步骤。",
+  "用简洁的任务日志风格输出,不要叙事化,不要复述工具协议。",
+  `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
+].join("\n")
+
+/** 任务压缩可处理的 message 形态(native RuntimeChatMessage 与 text AiChatMessage 的公共结构). */
+interface TaskCompressionMessage {
+  role: string
+  content: string
+  toolCalls?: unknown[]
+}
+
+/** 任务压缩结果:新 messages + 是否压动 + 摘要文本(供下次压缩作为 oldSummary). */
+export interface TaskCompressionResult<T extends TaskCompressionMessage> {
+  messages: T[]
+  compressed: boolean
+  summary: string | null
+}
+
+/**
+ * 构建任务压缩 user prompt:旧摘要(若有,前次压缩产出) + 被压缩早期工具交互.
+ * interactionEntries 已是早期段(保留段之外),按原顺序呈现 assistant 调用 + tool 返回.
+ */
+function buildTaskCompressionPrompt(
+  oldSummary: string | null,
+  interactionEntries: TaskCompressionMessage[],
+): string {
+  return [
+    oldSummary ? `此前的工作摘要：\n${oldSummary}\n` : "",
+    "需要压缩的早期工具交互（assistant 调用 + tool 返回）：",
+    ...interactionEntries.map((entry, index) => {
+      const toolName = extractToolNameFromMessage(entry)
+      const tag = toolName ? `[${entry.role}:${toolName}]` : `[${entry.role}]`
+      return `${index + 1}. ${tag} ${entry.content}`
+    }),
+  ]
+    .filter(Boolean)
+    .join("\n")
+}
+
+/** 从 message 提取工具名(若有):native assistant.toolCalls[0].name 或 text content 的 <tsian-tool-call> 块.无则 undefined. */
+function extractToolNameFromMessage(message: TaskCompressionMessage): string | undefined {
+  // native: assistant 带 toolCalls,取首个调用名(一轮通常一个工具调用)
+  if (message.role === "assistant" && Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
+    const first = message.toolCalls[0] as { name?: string } | undefined
+    if (first && typeof first.name === "string") {
+      return first.name
+    }
+  }
+  // text: assistant content 含 <tsian-tool-call>{"name":"..."}</tsian-tool-call>
+  if (message.role === "assistant") {
+    const match = message.content.match(/<tsian-tool-call>\s*(\{[\s\S]*?\})\s*<\/tsian-tool-call>/)
+    if (match) {
+      try {
+        const parsed = JSON.parse(match[1]) as { name?: string }
+        if (typeof parsed.name === "string") {
+          return parsed.name
+        }
+      } catch {
+        // 解析失败忽略,toolName 非关键
+      }
+    }
+  }
+  return undefined
+}
+
+/**
+ * 任务压缩:把工具交互段的早期轮次摘要成 1 条 user message,保留最近 N 轮原文.
+ *
+ * 入参 messages 的工具交互段由调用方用 locateTaskInteractionSpan 定位为 [start, end).
+ * 本函数:① 切出工具交互段 ② 保留最近 TASK_KEEP_RECENT_TOOL_ROUNDS 轮(成对计算:
+ *    N 轮 = 2N 条 message,即 N 个 assistant+tool/user-observation 对) ③ 早期段送
+ *    model 生成任务摘要 ④ 拼新 messages = [...框架段, {user:已完成工作摘要}, ...最近N轮].
+ *
+ * 无可压缩早期内容(早期段为空,即工具交互 ≤ N 轮)→ 返回 { compressed: false },
+ *   调用方据此走兜底(有 lastRoundText 返回 / 无抛 ContextBudgetExhaustedError).
+ * callModel 失败或空摘要 → throw ContextCompressionFailedError(复用,与剧情压缩同语义).
+ *
+ * 泛型 T 兼容 RuntimeChatMessage[] 与 AiChatMessage[](两者都满足 TaskCompressionMessage 结构),
+ * 返回类型与入参一致.压缩产出的摘要 user message 用 { role: "user", content } 形态——
+ * native 循环调用方需保证入参是 RuntimeChatMessage[](摘要 message 也满足该联合类型).
+ */
+export async function compressTaskContext<T extends TaskCompressionMessage>(
+  messages: T[],
+  interactionSpan: { start: number; end: number },
+  oldSummary: string | null,
+  callModel: CompressCallModel,
+  options: CompressCallOptions,
+): Promise<TaskCompressionResult<T>> {
+  const { start, end } = interactionSpan
+  if (start < 0 || end <= start) {
+    return { messages, compressed: false, summary: oldSummary }
+  }
+
+  // 1. 切工具交互段,保留最近 N 轮(2N 条),早期送摘要
+  const interaction = messages.slice(start, end)
+  const keepCount = TASK_KEEP_RECENT_TOOL_ROUNDS * 2 // N 轮 = 2N 条(assistant + tool/observation)
+  // 早期段 = interaction 前部,保留段 = interaction 后部
+  const earlyEntries = interaction.slice(0, Math.max(0, interaction.length - keepCount))
+  const recentEntries = interaction.slice(Math.max(0, interaction.length - keepCount))
+
+  // 无可压缩早期内容 → 未压动(调用方走兜底)
+  if (earlyEntries.length === 0) {
+    return { messages, compressed: false, summary: oldSummary }
+  }
+
+  // 2. 早期段 + 旧摘要送 model 生成任务摘要
+  const prompt = buildTaskCompressionPrompt(oldSummary, earlyEntries)
+  let newSummary: string
+  try {
+    newSummary = await callModel(
+      [
+        { role: "system", content: TASK_COMPRESSION_SYSTEM_PROMPT },
+        { role: "user", content: prompt },
+      ],
+      options,
+    )
+  } catch {
+    throw new ContextCompressionFailedError()
+  }
+  const trimmedSummary = newSummary.trim()
+  if (!trimmedSummary) {
+    throw new ContextCompressionFailedError()
+  }
+
+  // 3. 拼新 messages:框架段[0,start) + 摘要 user + 最近 N 轮
+  // 摘要 message 是 {role:"user",content} 形态——满足 RuntimeChatMessage(user 变体)
+  // 与 AiChatMessage 的公共结构.用 as unknown as T 打断泛型推断循环(T 是联合类型时
+  // as T 会触发 result 类型隐式 any).
+  const summaryMessage = { role: "user", content: `已完成工作摘要：\n${trimmedSummary}` } as unknown as T
+  const newMessages: T[] = [
+    ...messages.slice(0, start),
+    summaryMessage,
+    ...recentEntries,
+  ]
+
+  return { messages: newMessages, compressed: true, summary: trimmedSummary }
 }
 
 // ─────────────────────────────────────────────────────────────────────────

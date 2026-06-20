@@ -119,3 +119,59 @@
 **通过标准**：C3-C6 全部符合 agent-call-concurrency implement.md 描述。
 
 **失败影响**：若并行 observation 回填错位，native 循环 toolCalls[index].id 配对失败 → 检查 Map-by-index 回填逻辑。若 delegated 事件未带 agentId → 检查 createAgentCallRunner 透传 + native 循环 emit 点。
+
+---
+
+## PV-004 agent-task-compression 子代理/助手任务压缩 + 时长兜底实测
+
+**状态**：待验证（2026-06-20 登记，依赖 PV-001/PV-003 通过）
+
+**关联任务**：`06-20-agent-task-compression`（子任务，R1-R4 代码已落地，收尾 G1-G8 实测）
+
+**背景**：agent-task-compression 代码层已完成（阶段 A-F：`compressTaskContext` + `TaskTimeoutError`/`TaskCompressionStalledError` + `RuntimeCompressionMode` 分流 + delegated task 模式 + timeoutController/compositeSignal + assistant task 模式 + `agent_call.timeoutMs` + AssistantView catch + spec 同步）。`npm run build:contracts && npm run build:web` 通过。真实 API 行为未实测——依赖可游玩游戏卡 + API key + dev server 环境。
+
+**为什么暂缓**：同 PV-001/PV-003——没有可游玩游戏卡（含 master agent + contacts + workspace），无法在 dev server 触发 delegated agent 长任务链路。外部条件依赖，非代码问题。
+
+**前置条件**：
+- PV-001 通过（master 消息结构正确 + provider 兼容）。
+- PV-003 通过（agent_call 并行 + 事件 agentId 正常）。
+- 游戏卡含 master agent + 至少 1 个 contact（如 memory），让 master 能发 agent_call 触发 delegated 任务压缩。
+- 游戏卡 workspace 含足够多文件（10+），让 delegated memory agent 能读多文件撑爆 token 触发压缩。
+- dev server + API key。
+
+**验证步骤**（对应 agent-task-compression implement.md 阶段 G）：
+- G1：delegated 任务压缩——master 发 agent_call(memory, request="读10个文件总结记忆")，memory 工具循环读 6+ 文件后 token > 85%，确认触发任务压缩（trace `context_compressed_in_turn` mode:"task"）、压缩后继续不报错、不重复探索已读文件、最终返回记忆结论。
+- G2：delegated 多次压缩——构造超长任务（读 20+ 文件），确认 compressedCount ≥ 2（trace 多次 `context_compressed_in_turn`），每次压缩后继续，最终完成或走兜底。
+- G3：delegated 时长兜底——master 发 agent_call(memory, timeoutMs=10000) 跑长任务，确认 10s 后 TaskTimeoutError → master 收 AGENT_CALL_FAILED observation（details.timeout=true）→ master 继续自己循环（不中断）。
+- G4：delegated 压缩无效早退——master 发 agent_call(memory) 读超大单文件撑爆，确认压缩后 token 下降 <10% → TaskCompressionStalledError → AGENT_CALL_FAILED observation（details.stalled=true）。
+- G5：assistant 任务压缩 + 超时 + 早退——桌面助手长对话（多轮工具探索）触发任务压缩继续；超时温和提示"任务超时，已中止"；早退温和提示"上下文持续膨胀且压缩无效，已中止"；不落盘（重开会话从 recentHistory 兜底）。
+- G6：master 剧情压缩不回归——master turn 内一次压缩 + 第二次达预算 ContextBudgetExhaustedError 行为不变；context.json 落盘正常（summary + recentTurns 稳态）。
+- G7：并行多子代理各自压缩——master 同轮发 agent_call(memory)+agent_call(state)，各自独立压缩/超时/早退，observation 按原 index 回填，互不影响（一个超时不影响另一个完成）。
+- G8：用户 abort vs 超时区分——用户点停止 → AbortError（assistant 走"已停止"分支）；超时 → TaskTimeoutError（assistant 走"任务超时"分支）；两者提示文案不同。
+
+**通过标准**：
+- G1：delegated 任务压缩触发且继续不报错，返回结论。
+- G2：多次压缩（≥2）不限次，最终完成或兜底。
+- G3：超时 → AGENT_CALL_FAILED(details.timeout) → master 继续。
+- G4：早退 → AGENT_CALL_FAILED(details.stalled)。
+- G5：assistant 三类温和提示正确（压缩继续/超时/早退），不落盘。
+- G6：master 剧情压缩 + context.json 落盘不回归。
+- G7：并行子代理各自独立压缩/超时/早退，互不影响。
+- G8：用户 abort 与超时提示文案区分正确。
+
+**失败回退方案**（按问题类型）：
+- **任务压缩不触发**：检查 delegated toolOptions 是否传了 `compressionMode:"task"` + `contextTokenBudget` + `compressCallModel` + `taskStartedAt`/`taskTimeoutMs`（index.ts `createAgentCallRunner` 闭包）。delegated 预算用 `resolveTokenBudget(undefined)` = 256k，85% = 217k——若目标 agent contextWindow 小于此，压缩会晚触发或 Provider 先报窗口错误。回退：让 host 在 `callModelNative` 闭包把目标 agent 真实 contextWindow 透传给 runtime（需扩 `AgentRuntimeModelCallOptions` 或 `capabilities`）。
+- **`locateTaskInteractionSpan` 定位错误**：检查 text 模式框架 user 是否含 `<tsian-tool-observation>` 子串（formatHistory 是 recentHistory 对话，应不含；若含则扫描停在错误位置）。回退：给框架 user 加明确边界标记或改用框架段长度已知的方式定位。
+- **`AbortSignal.any` 兼容性**：旧浏览器/Electron 不支持 → 回退手写 composite（addEventListener 转发 input.signal + timeoutController.signal 到 composite controller）。
+- **任务压缩摘要质量差**（模型重复探索）：调整 `TASK_COMPRESSION_SYSTEM_PROMPT`（加更强约束）或 `TASK_KEEP_RECENT_TOOL_ROUNDS`（增大 N 保留更多上下文）。
+- **master 回归**：narrative 分支代码 = 现有 R2 + `compressionMode === "narrative"` 前置——若回归检查前置条件是否正确、master 路径是否传了 narrative。
+
+**关联代码**：
+- `apps/platform-web/src/agent-runtime/context-lifecycle.ts`：`compressTaskContext` + `TaskTimeoutError`/`TaskCompressionStalledError` + 任务压缩常量 + `TASK_COMPRESSION_SYSTEM_PROMPT`。
+- `apps/platform-web/src/agent-runtime/index.ts`：`RuntimeCompressionMode` + `WorkspaceToolLoopOptions.compressionMode` + `locateTaskInteractionSpan` + 两处循环按模式分流 + `createAgentCallRunner` timeoutController/compositeSignal + `buildDelegatedAgentMessages` section 排序。
+- `apps/platform-web/src/agent-runtime/workspace-tools.ts`：`RuntimeAgentCallArguments.timeoutMs` + `normalizeAgentCallArguments` 透传。
+- `apps/platform-web/src/agent-runtime/tool-schemas.ts`：agent_call schema `timeoutMs`。
+- `apps/platform-web/src/platform-host/index.ts`：`runAssistantChat` task 模式 + timeoutController；`interaction.sendMessage` narrative。
+- `apps/platform-web/src/views/AssistantView.vue`：catch 识别 `TaskTimeoutError`/`TaskCompressionStalledError`。
+
+**关联设计**：`06-20-agent-task-compression/design.md`（§0 两种压缩范式 / §1.3 约束 / §2 数据契约 / §3 数据流 / §4 权衡）。

@@ -16,17 +16,23 @@ import {
   AGENT_CONTEXT_AGENT_ID,
   appendTurnToContext,
   compressContext,
+  compressTaskContext,
   CONTEXT_COMPRESS_TRIGGER_RATIO,
   ContextBudgetExhaustedError,
   ContextCompressionFailedError,
   createInitialAgentContext,
+  DEFAULT_TASK_TIMEOUT_MS,
   estimateAiChatMessagesTokens,
   estimateContextTokens,
   estimateRuntimeMessagesTokens,
   resolveTokenBudget,
   serializeAgentContext,
+  TASK_COMPRESSION_STALL_RATIO,
+  TaskCompressionStalledError,
+  TaskTimeoutError,
   type CompressCallModel,
   type CompressCallOptions,
+  type TaskCompressionResult,
 } from "./context-lifecycle"
 import {
   AGENT_PLATFORM_TOOL_NAMES,
@@ -117,6 +123,22 @@ export interface AgentRuntimeTurnInput {
    * 用于 R3 压缩阈值(85% budget).未提供 → runtime 用 256k 默认.
    */
   contextTokenBudget?: number
+  /**
+   * 压缩模式(design 06-20-agent-task-compression):narrative=master 剧情压缩(默认);
+   * task=子代理/助手任务压缩(多次+时长兜底+早退).未提供 → narrative.
+   * host 给 master 传 narrative(或不传),给 assistant 传 task.
+   */
+  compressionMode?: RuntimeCompressionMode
+  /**
+   * task 模式(assistant)时长配额 ms.超时抛 TaskTimeoutError,温和中止.
+   * 仅 compressionMode==="task" 生效;narrative(master)忽略.未提供 → DEFAULT_TASK_TIMEOUT_MS.
+   */
+  timeoutMs?: number
+}
+
+/** 解析 entry 路径压缩模式:未传默认 narrative(master 路径). */
+function resolveEntryCompressionMode(input: AgentRuntimeTurnInput): RuntimeCompressionMode {
+  return input.compressionMode ?? "narrative"
 }
 
 /** turn 结束时需写回 context.json 的本轮正文 + 压缩结果(若有). */
@@ -234,20 +256,36 @@ interface AgentCallTurnState {
   callCount: number
 }
 
+/**
+ * 压缩模式(design 06-20-agent-task-compression):
+ * - `narrative`: master 叙事型,压剧情正文(summary+recentTurns),一次压缩 + 第二次达预算
+ *   抛 ContextBudgetExhaustedError(tool-token-budget R2 逻辑,保持不动).
+ * - `task`: 子代理/助手任务型,压工具交互段(assistant toolCalls + tool observation),多次压缩
+ *   不限次 + 时长兜底(TaskTimeoutError) + 压缩无效早退(TaskCompressionStalledError).
+ */
+export type RuntimeCompressionMode = "narrative" | "task"
+
 interface WorkspaceToolLoopOptions {
   agentCallState: AgentCallTurnState
   agentCallDepth: number
   collaborationPolicy: AgentRuntimeCollaborationPolicy
+  /** 压缩模式:narrative=master 剧情压缩;task=子代理/助手任务压缩.决定压缩块分流. */
+  compressionMode: RuntimeCompressionMode
   /**
-   * master agent 会话上下文快照(turn 开头压缩后已是更新值).turn 内压剧情就
+   * narrative 模式:master 会话上下文快照(turn 开头压缩后已是更新值).turn 内压剧情就
    * 地更新它(Object.assign),循环结束后透传回 runAgentRuntimeTurn 落盘.
-   * 未传(delegated agent 路径)→ 工具循环不做 turn 内压剧情,但仍做预算兜底.
+   * task 模式不用(任务型 agent 无跨 turn 快照).
+   * 未传(narrative 兜底路径)→ 工具循环不做 turn 内压剧情,但仍做预算兜底.
    */
   agentContextSnapshot?: AgentContextSnapshot
-  /** token 预算(turn 开头已 resolve).达 85% 触发压缩/兜底. */
+  /** token 预算(turn 开头已 resolve).达 85% 触发压缩/兜底.两模式共用. */
   contextTokenBudget?: number
-  /** 压缩用的 model 调用(复用 capabilities.callModel). */
+  /** 压缩用的 model 调用(复用 capabilities.callModel).两模式共用. */
   compressCallModel?: CompressCallModel
+  /** task 模式:时长兜底起点 wall-clock(Date.now()).超 taskTimeoutMs 抛 TaskTimeoutError.narrative 不用. */
+  taskStartedAt?: number
+  /** task 模式:时长配额 ms(默认 DEFAULT_TASK_TIMEOUT_MS).narrative 不用. */
+  taskTimeoutMs?: number
 }
 
 interface AgentCallRuntimeMetadata {
@@ -429,6 +467,55 @@ function replaceHistorySpan<T extends { role: string; content: string }>(
   newMessages: T[],
 ): void {
   messages.splice(span.start, span.end - span.start, ...newMessages)
+}
+
+/**
+ * 列举一个 message 是否属于"工具交互"(供 locateTaskInteractionSpan 从末尾向前扫描).
+ * - native 形态:`role === "tool"` 或 `role === "assistant" && toolCalls?.length > 0`.
+ * - text 形态:`role === "user" && content 含 <tsian-tool-observation>` 或
+ *   `role === "assistant" && content 含 <tsian-tool-call>`.
+ *
+ * 框架段 user(含历史窗口/目标上下文/请求等 section)不含这些标签,不会被误判为工具交互.
+ */
+function isTaskInteractionMessage(
+  message: { role: string; content: string; toolCalls?: unknown[] },
+  mode: "native" | "text",
+): boolean {
+  if (mode === "native") {
+    if (message.role === "tool") return true
+    if (message.role === "assistant" && Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
+      return true
+    }
+    return false
+  }
+  // text
+  if (message.role === "user" && message.content.includes("<tsian-tool-observation>")) return true
+  if (message.role === "assistant" && message.content.includes("<tsian-tool-call>")) return true
+  return false
+}
+
+/**
+ * 定位任务型 messages 的工具交互段边界,供任务压缩 slice+替换用(design §2.8).
+ * 工具交互段 = 框架段之后到 messages 末尾(assistant toolCalls + tool observation 交替).
+ * 从末尾向前扫描,跳过所有"工具交互 message",定位到第一条"非工具交互"message 的下一索引.
+ *
+ * 两种 messages 结构都适用(delegated 单条框架 user / assistant entry 多条框架),扫描逻辑
+ * 不依赖框架段锚点,只依赖工具交互的 message 形态.兜底(无工具交互)→ {-1,-1},跳过压缩.
+ */
+function locateTaskInteractionSpan(
+  messages: ReadonlyArray<{ role: string; content: string; toolCalls?: unknown[] }>,
+  mode: "native" | "text",
+): { start: number; end: number } {
+  if (messages.length === 0) return { start: -1, end: -1 }
+  let idx = messages.length - 1
+  while (idx >= 0 && isTaskInteractionMessage(messages[idx], mode)) {
+    idx -= 1
+  }
+  // idx 指向最后一条"非工具交互"message(或 -1 表示全是工具交互,异常结构).
+  // 工具交互段起点 = idx + 1.若 idx+1 >= messages.length → 无工具交互段.
+  const start = idx + 1
+  if (start >= messages.length) return { start: -1, end: -1 }
+  return { start, end: messages.length }
 }
 
 function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
@@ -994,6 +1081,10 @@ function buildDelegatedAgentMessages(
         `当前回合：${currentRuntimeTurnNumber(input)}`,
         `historyMode：${agentCall.historyMode}`,
         "",
+        // 稳定内容前置(design §2.3):历史窗口 + 目标上下文 + 调用方,利于 prefix 缓存重叠.
+        "最近对话窗口：",
+        formatHistory(history),
+        "",
         "目标 Agent 上下文：",
         formatAgentRuntimeContext(targetContext),
         "",
@@ -1001,6 +1092,17 @@ function buildDelegatedAgentMessages(
         `${callerContext.agent.id} — ${callerContext.agent.title}`,
         callerContext.agent.summary || "（无摘要）",
         "",
+        ...(agentCall.contextSummary
+          ? [
+              "调用方提供的上下文摘要：",
+              agentCall.contextSummary,
+              "",
+            ]
+          : []),
+        "玩家本轮输入：",
+        input.userInput,
+        "",
+        // request + 指令末尾(design §2.3):让模型聚焦当前任务.
         "调用请求：",
         agentCall.request,
         "",
@@ -1011,13 +1113,6 @@ function buildDelegatedAgentMessages(
               "",
             ]
           : []),
-        ...(agentCall.contextSummary
-          ? [
-              "调用方提供的上下文摘要：",
-              agentCall.contextSummary,
-              "",
-            ]
-          : []),
         ...(agentCall.expectedOutput
           ? [
               "期望输出：",
@@ -1025,12 +1120,6 @@ function buildDelegatedAgentMessages(
               "",
             ]
           : []),
-        "最近对话窗口：",
-        formatHistory(history),
-        "",
-        "玩家本轮输入：",
-        input.userInput,
-        "",
         "请只回答调用方请求，不要输出给玩家的最终正文，也不要提到工具协议。",
       ].join("\n"),
     },
@@ -1120,6 +1209,21 @@ function createAgentCallRunner(
       },
     })
 
+    // 任务型 agent 时长兜底(design §2.6):独立 timeoutController + setTimeout,
+    // 与用户 abort(input.signal)合并成 compositeSignal 传给工具循环.超时瞬间能
+    // abort 正在 await 的 model 调用,不只靠循环内 Date.now() 检查.主 agent 可经
+    // agent_call 的 timeoutMs 参数显式给子代理更长时间,不传用默认 300s.
+    const taskTimeoutMs = agentCall.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS
+    const timeoutController = new AbortController()
+    const timeoutTimer = setTimeout(
+      () => timeoutController.abort("task-timeout"),
+      taskTimeoutMs,
+    )
+    const compositeSignal = AbortSignal.any(
+      [input.signal, timeoutController.signal].filter(Boolean) as AbortSignal[],
+    )
+    const taskStartedAt = Date.now()
+
     try {
       const response = (await callAgentModelWithWorkspaceTools(
         buildDelegatedAgentMessages(
@@ -1136,7 +1240,7 @@ function createAgentCallRunner(
         capabilities,
         {
           debugLabel,
-          signal: input.signal,
+          signal: compositeSignal,
           agentId: targetContext.agent.id,
           // Thread the caller's streaming/tool-event sinks so the delegated
           // agent's process is visible upstream (agentId bound by the native
@@ -1151,6 +1255,14 @@ function createAgentCallRunner(
           agentCallState: state,
           agentCallDepth: metadata.targetDepth,
           collaborationPolicy,
+          compressionMode: "task",
+          // delegated 预算:runtime 层不知目标 agent 的 contextWindow,用 256k 默认
+          // (host 层 callModelNative 闭包按 options.agentId resolve 真实 config,
+          //  但预算是 runtime 估算用,256k 的 85% 足够大,不影响压缩触发判断).
+          contextTokenBudget: resolveTokenBudget(undefined),
+          compressCallModel: capabilities.callModel,
+          taskStartedAt,
+          taskTimeoutMs,
         },
         transcriptCollector,
       )).trim()
@@ -1193,6 +1305,10 @@ function createAgentCallRunner(
         depth,
         targetContext.agent.id,
       )
+      // 区分超时 abort vs 用户 abort/其他错误:超时走 TaskTimeoutError 标记,
+      // 让 master 收到 AGENT_CALL_FAILED observation 后能区分(details.timeout).
+      const isTimeout = timeoutController.signal.aborted
+      const isTaskStall = error instanceof Error && error.name === "TaskCompressionStalledError"
       capabilities.emitTrace?.({
         type: "agent_step_failed",
         ...traceAgentBase(targetContext, debugLabel),
@@ -1201,16 +1317,26 @@ function createAgentCallRunner(
           ...errorToTraceData(error),
           ...agentCallTraceFacts(failedMetadata),
           delegated: true,
+          ...(isTimeout ? { timeout: true, taskTimeoutMs } : {}),
+          ...(isTaskStall ? { stalled: true } : {}),
         },
       })
       throw agentCallError(
         "AGENT_CALL_FAILED",
-        `agent_call failed for Agent "${targetContext.agent.id}".`,
+        isTimeout
+          ? `agent_call 超时（${Math.round(taskTimeoutMs / 1000)}s）中止 for Agent "${targetContext.agent.id}".`
+          : isTaskStall
+            ? `agent_call 上下文压缩无效中止 for Agent "${targetContext.agent.id}".`
+            : `agent_call failed for Agent "${targetContext.agent.id}".`,
         {
           ...failedMetadata,
           cause: errorToTraceData(error),
+          ...(isTimeout ? { timeout: true, taskTimeoutMs } : {}),
+          ...(isTaskStall ? { stalled: true } : {}),
         },
       )
+    } finally {
+      clearTimeout(timeoutTimer)
     }
   }
 }
@@ -1246,7 +1372,7 @@ async function callAgentModelWithWorkspaceToolsNative(
   toolOptions: WorkspaceToolLoopOptions,
   transcriptCollector: AgentSessionTranscriptCollector | undefined,
 ): Promise<string> {
-  const runtimeMessages = aiChatMessagesToRuntime(messages)
+  let runtimeMessages = aiChatMessagesToRuntime(messages)
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
   const visibleContacts = input.workspaceFiles
@@ -1267,76 +1393,164 @@ async function callAgentModelWithWorkspaceToolsNative(
     visibleContacts,
   })
 
-  // turn 内 token 预算 + 压剧情(tool-token-budget R2).循环不再有轮次上限,
-  // 靠 stop / abort / 预算兜底三条件终止.仅 entry 稳态路径(注入了 context 快照)
-  // 做压剧情;delegated / 兜底路径无快照,只走预算兜底(达阈值直接走兜底C).
+  // turn 内 token 预算 + 压缩(tool-token-budget R2 + 06-20-agent-task-compression).
+  // 循环不再有轮次上限,靠 stop / abort / 预算兜底(narrative)或时长兜底(task)终止.
+  // 按 compressionMode 分流:
+  // - narrative(master):压剧情(summary+recentTurns),一次压缩 + 第二次达预算抛
+  //   ContextBudgetExhaustedError.仅 entry 稳态路径(注入了 context 快照)做压剧情;
+  //   兜底路径无快照,只走预算兜底.
+  // - task(子代理/助手):压工具交互段(assistant toolCalls + tool observation),多次压缩
+  //   不限次 + 时长兜底(TaskTimeoutError) + 压缩无效早退(TaskCompressionStalledError).
   const historySpan = locateHistorySpan(runtimeMessages)
-  const canCompressInTurn =
-    historySpan.start >= 0
+  const canCompressNarrative =
+    toolOptions.compressionMode === "narrative"
+    && historySpan.start >= 0
     && toolOptions.agentContextSnapshot !== undefined
     && toolOptions.contextTokenBudget !== undefined
     && toolOptions.compressCallModel !== undefined
+  const isTaskMode = toolOptions.compressionMode === "task"
   const triggerThreshold =
     toolOptions.contextTokenBudget !== undefined
       ? toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
       : 0
-  let compressedThisTurn = false
+  let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
+  let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
   let lastRoundText = ""
 
   for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
 
-    // 每轮调 model 前做 token 预算检查(含 round 0).达 85% budget:
-    // - 第一次 → 压剧情(复用底层 compressContext)腾空间,tool 交互全保留,继续循环.
-    // - 第二次 → 兜底C:有 lastRoundText 返回 / 无则抛 ContextBudgetExhaustedError.
+    // 每轮调 model 前做 token 预算检查(含 round 0).达 85% budget 按模式分流:
+    // - narrative:第一次 → 压剧情腾空间,tool 交互全保留,继续;第二次 → 兜底C.
+    // - task:时长检查 → 压工具交互段(多次) → 压缩无效早退 → 无段可压/压不动走兜底C.
     if (triggerThreshold > 0) {
       const totalTokens = estimateRuntimeMessagesTokens(runtimeMessages)
       if (totalTokens > triggerThreshold) {
-        if (compressedThisTurn || !canCompressInTurn) {
-          const finalText = lastRoundText.trim()
-          if (finalText) {
-            recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-              messages,
-              modelOutput: lastRoundText,
-              toolCalls: [],
-              toolObservations: [],
-              round,
-              status: "completed",
-            })
-            return finalText
+        if (isTaskMode) {
+          // task 模式:时长兜底检查(每轮查,不等 model 调用)
+          if (
+            toolOptions.taskStartedAt !== undefined
+            && toolOptions.taskTimeoutMs !== undefined
+            && Date.now() - toolOptions.taskStartedAt > toolOptions.taskTimeoutMs
+          ) {
+            throw new TaskTimeoutError(toolOptions.taskTimeoutMs)
           }
-          throw new ContextBudgetExhaustedError()
-        }
-        const compressOptions: CompressCallOptions = {
-          debugLabel: options.debugLabel,
-          signal: options.signal,
-          agentId: agentContext.agent.id,
-        }
-        const compressed = await compressContext(
-          toolOptions.agentContextSnapshot!,
-          triggerThreshold,
-          toolOptions.compressCallModel!,
-          compressOptions,
-        )
-        Object.assign(toolOptions.agentContextSnapshot!, compressed)
-        compressedThisTurn = true
-        const newHistory = aiChatMessagesToRuntime(
-          buildAgentContextMessages(toolOptions.agentContextSnapshot!),
-        )
-        replaceHistorySpan(runtimeMessages, historySpan, newHistory)
-        historySpan.end = historySpan.start + newHistory.length
-        capabilities.emitTrace?.({
-          type: "context_compressed_in_turn",
-          agentId: agentContext.agent.id,
-          debugLabel: options.debugLabel,
-          ok: true,
-          data: {
-            round,
-            beforeTokens: totalTokens,
-            budget: toolOptions.contextTokenBudget!,
+          const interactionSpan = locateTaskInteractionSpan(runtimeMessages, "native")
+          if (interactionSpan.start < 0) {
+            // 无工具交互段可压(异常,通常 round 0 不该触发)→ 走兜底
+            const finalText = lastRoundText.trim()
+            if (finalText) {
+              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+                messages,
+                modelOutput: lastRoundText,
+                toolCalls: [],
+                toolObservations: [],
+                round,
+                status: "completed",
+              })
+              return finalText
+            }
+            throw new ContextBudgetExhaustedError()
+          }
+          const compressOptions: CompressCallOptions = {
+            debugLabel: options.debugLabel,
+            signal: options.signal,
+            agentId: agentContext.agent.id,
+          }
+          const beforeTokens = totalTokens
+          const result: TaskCompressionResult<RuntimeChatMessage> = await compressTaskContext<RuntimeChatMessage>(
+            runtimeMessages,
+            interactionSpan,
+            taskSummary,
+            toolOptions.compressCallModel!,
+            compressOptions,
+          )
+          if (!result.compressed) {
+            // 压不动(早期无可压内容,工具交互 ≤ N 轮)→ 走兜底
+            const finalText = lastRoundText.trim()
+            if (finalText) {
+              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+                messages,
+                modelOutput: lastRoundText,
+                toolCalls: [],
+                toolObservations: [],
+                round,
+                status: "completed",
+              })
+              return finalText
+            }
+            throw new ContextBudgetExhaustedError()
+          }
+          runtimeMessages = result.messages
+          taskSummary = result.summary
+          const afterTokens = estimateRuntimeMessagesTokens(runtimeMessages)
+          if ((beforeTokens - afterTokens) / beforeTokens < TASK_COMPRESSION_STALL_RATIO) {
+            // 压缩无效早退:下降 <10% → 压不动了,不傻等超时烧钱
+            throw new TaskCompressionStalledError()
+          }
+          capabilities.emitTrace?.({
+            type: "context_compressed_in_turn",
+            agentId: agentContext.agent.id,
+            debugLabel: options.debugLabel,
+            ok: true,
+            data: {
+              round,
+              beforeTokens,
+              afterTokens,
+              budget: toolOptions.contextTokenBudget!,
+              triggerThreshold,
+              mode: "task",
+            },
+          })
+        } else {
+          // narrative 模式(tool-token-budget R2,保持原样)
+          if (compressedThisTurn || !canCompressNarrative) {
+            const finalText = lastRoundText.trim()
+            if (finalText) {
+              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+                messages,
+                modelOutput: lastRoundText,
+                toolCalls: [],
+                toolObservations: [],
+                round,
+                status: "completed",
+              })
+              return finalText
+            }
+            throw new ContextBudgetExhaustedError()
+          }
+          const compressOptions: CompressCallOptions = {
+            debugLabel: options.debugLabel,
+            signal: options.signal,
+            agentId: agentContext.agent.id,
+          }
+          const compressed = await compressContext(
+            toolOptions.agentContextSnapshot!,
             triggerThreshold,
-          },
-        })
+            toolOptions.compressCallModel!,
+            compressOptions,
+          )
+          Object.assign(toolOptions.agentContextSnapshot!, compressed)
+          compressedThisTurn = true
+          const newHistory = aiChatMessagesToRuntime(
+            buildAgentContextMessages(toolOptions.agentContextSnapshot!),
+          )
+          replaceHistorySpan(runtimeMessages, historySpan, newHistory)
+          historySpan.end = historySpan.start + newHistory.length
+          capabilities.emitTrace?.({
+            type: "context_compressed_in_turn",
+            agentId: agentContext.agent.id,
+            debugLabel: options.debugLabel,
+            ok: true,
+            data: {
+              round,
+              beforeTokens: totalTokens,
+              budget: toolOptions.contextTokenBudget!,
+              triggerThreshold,
+              mode: "narrative",
+            },
+          })
+        }
       }
     }
 
@@ -1509,72 +1723,155 @@ async function callAgentModelWithWorkspaceTools(
   let nextMessages = messages
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
-  // turn 内 token 预算 + 压剧情(text 循环对称版,R2).仅 entry 稳态路径(注入了
-  // context 快照)做压剧情;delegated / 兜底路径只走预算兜底.
+  // turn 内 token 预算 + 压缩(text 循环对称版).按 compressionMode 分流(narrative/task),
+  // 与 native 循环一致.仅 entry 稳态路径(注入了 context 快照)做 narrative 压剧情;
+  // task 模式压工具交互段 + 多次 + 时长兜底 + 早退.
   const historySpan = locateHistorySpan(nextMessages)
-  const canCompressInTurn =
-    historySpan.start >= 0
+  const compressionMode: RuntimeCompressionMode = toolOptions?.compressionMode ?? "narrative"
+  const canCompressNarrative =
+    compressionMode === "narrative"
+    && historySpan.start >= 0
     && toolOptions?.agentContextSnapshot !== undefined
     && toolOptions?.contextTokenBudget !== undefined
     && toolOptions?.compressCallModel !== undefined
+  const isTaskMode = compressionMode === "task"
   const triggerThreshold =
     toolOptions?.contextTokenBudget !== undefined
       ? toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
       : 0
-  let compressedThisTurn = false
+  let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
+  let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
   let lastRoundText = ""
 
   for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
 
-    // 每轮调 model 前 token 预算检查(含 round 0).第一次达 85% → 压剧情腾空间;
-    // 第二次 → 兜底C:有 lastRoundText 返回 / 无则抛 ContextBudgetExhaustedError.
+    // 每轮调 model 前 token 预算检查(含 round 0).达 85% budget 按模式分流:
+    // - narrative:第一次 → 压剧情腾空间;第二次 → 兜底C.
+    // - task:时长检查 → 压工具交互段(多次) → 压缩无效早退 → 无段可压/压不动走兜底C.
     if (triggerThreshold > 0) {
       const totalTokens = estimateAiChatMessagesTokens(nextMessages)
       if (totalTokens > triggerThreshold) {
-        if (compressedThisTurn || !canCompressInTurn) {
-          const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
-          if (finalText) {
-            recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-              messages: nextMessages,
-              modelOutput: lastRoundText,
-              toolCalls: [],
-              toolObservations: [],
-              round,
-              status: "completed",
-            })
-            return finalText
+        if (isTaskMode) {
+          // task 模式:时长兜底检查
+          if (
+            toolOptions?.taskStartedAt !== undefined
+            && toolOptions?.taskTimeoutMs !== undefined
+            && Date.now() - toolOptions.taskStartedAt > toolOptions.taskTimeoutMs
+          ) {
+            throw new TaskTimeoutError(toolOptions.taskTimeoutMs)
           }
-          throw new ContextBudgetExhaustedError()
-        }
-        const compressOptions: CompressCallOptions = {
-          debugLabel: options.debugLabel,
-          signal: options.signal,
-          agentId: agentContext.agent.id,
-        }
-        const compressed = await compressContext(
-          toolOptions!.agentContextSnapshot!,
-          triggerThreshold,
-          toolOptions!.compressCallModel!,
-          compressOptions,
-        )
-        Object.assign(toolOptions!.agentContextSnapshot!, compressed)
-        compressedThisTurn = true
-        const newHistory = buildAgentContextMessages(toolOptions!.agentContextSnapshot!)
-        replaceHistorySpan(nextMessages, historySpan, newHistory)
-        historySpan.end = historySpan.start + newHistory.length
-        capabilities.emitTrace?.({
-          type: "context_compressed_in_turn",
-          agentId: agentContext.agent.id,
-          debugLabel: options.debugLabel,
-          ok: true,
-          data: {
-            round,
-            beforeTokens: totalTokens,
-            budget: toolOptions!.contextTokenBudget!,
+          const interactionSpan = locateTaskInteractionSpan(nextMessages, "text")
+          if (interactionSpan.start < 0) {
+            const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
+            if (finalText) {
+              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+                messages: nextMessages,
+                modelOutput: lastRoundText,
+                toolCalls: [],
+                toolObservations: [],
+                round,
+                status: "completed",
+              })
+              return finalText
+            }
+            throw new ContextBudgetExhaustedError()
+          }
+          const compressOptions: CompressCallOptions = {
+            debugLabel: options.debugLabel,
+            signal: options.signal,
+            agentId: agentContext.agent.id,
+          }
+          const beforeTokens = totalTokens
+          const result: TaskCompressionResult<AiChatMessage> = await compressTaskContext<AiChatMessage>(
+            nextMessages,
+            interactionSpan,
+            taskSummary,
+            toolOptions!.compressCallModel!,
+            compressOptions,
+          )
+          if (!result.compressed) {
+            const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
+            if (finalText) {
+              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+                messages: nextMessages,
+                modelOutput: lastRoundText,
+                toolCalls: [],
+                toolObservations: [],
+                round,
+                status: "completed",
+              })
+              return finalText
+            }
+            throw new ContextBudgetExhaustedError()
+          }
+          nextMessages = result.messages
+          taskSummary = result.summary
+          const afterTokens = estimateAiChatMessagesTokens(nextMessages)
+          if ((beforeTokens - afterTokens) / beforeTokens < TASK_COMPRESSION_STALL_RATIO) {
+            throw new TaskCompressionStalledError()
+          }
+          capabilities.emitTrace?.({
+            type: "context_compressed_in_turn",
+            agentId: agentContext.agent.id,
+            debugLabel: options.debugLabel,
+            ok: true,
+            data: {
+              round,
+              beforeTokens,
+              afterTokens,
+              budget: toolOptions!.contextTokenBudget!,
+              triggerThreshold,
+              mode: "task",
+            },
+          })
+        } else {
+          // narrative 模式(tool-token-budget R2,保持原样)
+          if (compressedThisTurn || !canCompressNarrative) {
+            const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
+            if (finalText) {
+              recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+                messages: nextMessages,
+                modelOutput: lastRoundText,
+                toolCalls: [],
+                toolObservations: [],
+                round,
+                status: "completed",
+              })
+              return finalText
+            }
+            throw new ContextBudgetExhaustedError()
+          }
+          const compressOptions: CompressCallOptions = {
+            debugLabel: options.debugLabel,
+            signal: options.signal,
+            agentId: agentContext.agent.id,
+          }
+          const compressed = await compressContext(
+            toolOptions!.agentContextSnapshot!,
             triggerThreshold,
-          },
-        })
+            toolOptions!.compressCallModel!,
+            compressOptions,
+          )
+          Object.assign(toolOptions!.agentContextSnapshot!, compressed)
+          compressedThisTurn = true
+          const newHistory = buildAgentContextMessages(toolOptions!.agentContextSnapshot!)
+          replaceHistorySpan(nextMessages, historySpan, newHistory)
+          historySpan.end = historySpan.start + newHistory.length
+          capabilities.emitTrace?.({
+            type: "context_compressed_in_turn",
+            agentId: agentContext.agent.id,
+            debugLabel: options.debugLabel,
+            ok: true,
+            data: {
+              round,
+              beforeTokens: totalTokens,
+              budget: toolOptions!.contextTokenBudget!,
+              triggerThreshold,
+              mode: "narrative",
+            },
+          })
+        }
       }
     }
 
@@ -1696,13 +1993,19 @@ export async function runAgentRuntimeTurn(
     )
   }
 
-  // R3:下个 turn 开头压缩.估算 context token,超 85% 阈值则调 model 摘要化
-  // 早期正文(只压剧情正文,过滤工具过程),保持"1 摘要 + K 轮正文"稳态.
-  // 压缩失败 → throw ContextCompressionFailedError(温和兜底,经 AssistantView 显示).
+  // R3:turn 开头压缩(narrative 模式专用).估算 context token,超 85% 阈值则调 model
+  // 摘要化早期正文(只压剧情正文,过滤工具过程),保持"1 摘要 + K 轮正文"稳态.
+  // task 模式(assistant)跳过:agentContext 是兜底初始化(无注入),压剧情无价值——
+  // task 模式压工具交互段(在工具循环内),不压剧情.压缩失败 → throw
+  // ContextCompressionFailedError(温和兜底,经 AssistantView 显示).
+  const entryCompressionMode = resolveEntryCompressionMode(input)
   let compressedContext: AgentContextSnapshot | undefined
   const budget = resolveTokenBudget(input.contextTokenBudget)
   const triggerThreshold = budget * CONTEXT_COMPRESS_TRIGGER_RATIO
-  if (estimateContextTokens(agentContext) > triggerThreshold) {
+  if (
+    entryCompressionMode === "narrative"
+    && estimateContextTokens(agentContext) > triggerThreshold
+  ) {
     const compressOptions: CompressCallOptions = {
       debugLabel: "entry-agent",
       signal: input.signal,
@@ -1764,9 +2067,16 @@ export async function runAgentRuntimeTurn(
         agentCallState,
         agentCallDepth: 0,
         collaborationPolicy,
+        compressionMode: entryCompressionMode,
         agentContextSnapshot: agentContextSnapshotForLoop ?? undefined,
         contextTokenBudget: budget,
         compressCallModel: capabilities.callModel,
+        ...(entryCompressionMode === "task"
+          ? {
+              taskStartedAt: Date.now(),
+              taskTimeoutMs: input.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS,
+            }
+          : {}),
       },
       transcriptCollector,
     )).trim()

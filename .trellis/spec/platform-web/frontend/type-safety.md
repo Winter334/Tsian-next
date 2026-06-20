@@ -616,13 +616,13 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - `run_script` checks the lightweight executor-class policy before running. The default code-level policy allows `browser_script`; injected policy may deny it for tests or future host policy (subtask 4 wires the actual host policy). Do not add Settings UI, localStorage persistence, runtime prompts, or per-Skill trust state for this slice.
 - `run_script` may validate successful executor output when the action declares optional `outputSchema`. Actions without `outputSchema` keep existing output behavior.
 - `run_script` is kept serial (not in `PARALLEL_TOOL_NAMES`) because `browser_script` has side effects and a bounded timeout.
-- `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene" }`.
+- `agent_call` arguments: `{ agentId: string, request: string, reason?: string, contextSummary?: string, expectedOutput?: string, historyMode?: "minimal" | "recent" | "scene", timeoutMs?: number }`. `timeoutMs` is the optional per-call timeout quota in ms (defaults to 300000); on elapsed, the call aborts softly and returns `AGENT_CALL_FAILED` with `{ timeout: true, taskTimeoutMs }` details.
 - `agent_call` is exposed in runtime tool instructions only when the current Agent has visible contacts, the current tool loop allows Agent calls, and the current Agent's platform tool config enables `agent_call`.
 - `agent_call` validates the target against the caller Agent's `contacts`; contacts are a runtime stability boundary, not a full security model.
 - `agent_call` builds the target Agent's own `AgentContextEntry`, including its `AGENT.md`, optional `SOUL.md`, notes/session, declared context files, and filtered lightweight Skill Index.
 - `agent_call` returns a structured observation containing `{ status: "completed", targetAgent, historyMode, metadata, response }`; the target Agent response does not directly become player-visible history.
 - `historyMode` defaults to `recent`; concrete history window sizes remain platform policy.
-- Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state. The tool loop has **no per-Agent round limit** and `agent_call` has **no per-turn call-count limit** — termination relies on `finishReason: stop`, abort, and the turn token-budget fallback (`ContextBudgetExhaustedError` after one in-turn context compression). `callCount` is retained as a diagnostic counter (trace metadata) but no longer gates execution. `maxDepth=2` remains as the recursion safety net (prevents unbounded agent_call nesting; token budget cannot bound recursion depth). See the "Turn Token Budget And In-Turn Compression" and "Parallel agent_call Within A Round" scenarios.
+- Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state. The tool loop has **no per-Agent round limit** and `agent_call` has **no per-turn call-count limit** — termination relies on `finishReason: stop`, abort, and the mode-specific budget fallback. **Master (narrative mode)**: `ContextBudgetExhaustedError` after one in-turn narrative compression. **Delegated `agent_call` targets (task mode)**: multi-compress + `TaskTimeoutError` (timeout fallback) + `TaskCompressionStalledError` (stall early-exit), with `ContextBudgetExhaustedError` as the "nothing left to compress" fallback. `callCount` is retained as a diagnostic counter (trace metadata) but no longer gates execution. `maxDepth=2` remains as the recursion safety net (prevents unbounded agent_call nesting; token budget cannot bound recursion depth). See the "Turn Token Budget And In-Turn Compression (Narrative + Task modes)" and "Parallel agent_call Within A Round" scenarios.
 - Delegated Agents derive their own runtime permissions from the target Agent's `agent.json`; the caller Agent's permissions must not leak into the target Agent step.
 - Delegated Agents may use their own exposed generic workspace operations, `use_skill`/`run_script` for activated Skills, and limited nested `agent_call` inside their own tool loop.
 - Limited nested `agent_call` remains contacts-gated at every hop and depth-limited by policy. There is no per-turn call-count budget (`maxCallsPerTurn` was removed); agent_call frequency is bounded by the turn token budget, not a count cap. With the default `maxDepth=2`, the root entry agent at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth metadata on direct `agent_call` attempts.
@@ -741,7 +741,8 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Malformed `tsian-actions` blocks in `SKILL.md` -> report declaration errors in `use_skill` observation `actionDeclarationErrors` and registry `actionDeclarationErrors` without failing the whole Skill activation.
 - Invalid path -> error observation with workspace path error code.
 - Missing file on `workspace.read` -> error observation with `WORKSPACE_FILE_NOT_FOUND`.
-- Turn token budget reached a second time after one in-turn context compression (or budget reached when no `agentContextSnapshot` is available to compress) -> return the last round's stripped text if present; otherwise throw `ContextBudgetExhaustedError`, surfaced as a soft "上下文已满" prompt in AssistantView (keeps already-streamed thought, not a hard error). The first budget crossing triggers `compressContext` on the narrative span (tool interactions are preserved). No per-Agent round limit exists.
+- **Narrative mode**: turn token budget reached a second time after one in-turn narrative compression (or budget reached when no `agentContextSnapshot` is available to compress) -> return the last round's stripped text if present; otherwise throw `ContextBudgetExhaustedError`, surfaced as a soft "上下文已满" prompt in AssistantView (keeps already-streamed thought, not a hard error). The first budget crossing triggers `compressContext` on the narrative span (tool interactions are preserved). No per-Agent round limit exists.
+- **Task mode** (delegated + assistant): budget crossing -> timeout check (`TaskTimeoutError` if elapsed) -> `compressTaskContext` on the tool-interaction span (multi-compress, no count cap) -> stall early-exit (`TaskCompressionStalledError` if yield < 10%) -> `ContextBudgetExhaustedError` when nothing left to compress. All three surface as soft prompts in AssistantView (delegated: `AGENT_CALL_FAILED` observation with timeout/stalled details). See the "Turn Token Budget And In-Turn Compression (Narrative + Task modes)" scenario.
 
 ### 5. Good/Base/Bad Cases
 
@@ -1143,62 +1144,108 @@ stageAgentSessionTranscriptFiles(
 - Assert malformed trace lines are bounded facts/counts rather than thrown errors.
 - Assert no derived diagnostic workspace files are written.
 
-## Scenario: Turn Token Budget And In-Turn Compression
+## Scenario: Turn Token Budget And In-Turn Compression (Narrative + Task modes)
 
 ### 1. Scope / Trigger
 
-- Trigger: Agent Runtime tool loops estimate runtime message tokens before each model call and compress the narrative span when the budget is crossed.
-- Applies when changing `apps/platform-web/src/agent-runtime/index.ts` (tool loops, `WorkspaceToolLoopOptions`, `runAgentRuntimeTurn` context-update assembly), `apps/platform-web/src/agent-runtime/context-lifecycle.ts` (`estimateRuntimeMessagesTokens`, `ContextBudgetExhaustedError`), or `AssistantView.vue` budget-exhausted catch handling.
+- Trigger: Agent Runtime tool loops estimate runtime message tokens before each model call and compress when the budget is crossed. Two compression modes exist (`RuntimeCompressionMode`): `narrative` (master) and `task` (delegated `agent_call` targets + desktop assistant).
+- Applies when changing `apps/platform-web/src/agent-runtime/index.ts` (tool loops, `WorkspaceToolLoopOptions`, `RuntimeCompressionMode`, `locateTaskInteractionSpan`, `runAgentRuntimeTurn` context-update assembly, `createAgentCallRunner` timeout/compression threading), `apps/platform-web/src/agent-runtime/context-lifecycle.ts` (`estimateRuntimeMessagesTokens`, `compressTaskContext`, `ContextBudgetExhaustedError`, `TaskTimeoutError`, `TaskCompressionStalledError`, task compression constants), `apps/platform-web/src/agent-runtime/workspace-tools.ts` (`RuntimeAgentCallArguments.timeoutMs`), `apps/platform-web/src/agent-runtime/tool-schemas.ts` (agent_call schema `timeoutMs`), `apps/platform-web/src/platform-host/index.ts` (`runAssistantChat` task mode + timeout, `interaction.sendMessage` narrative mode), or `AssistantView.vue` budget-exhausted/timeout/stalled catch handling.
 
 ### 2. Signatures
 
-- `WorkspaceToolLoopOptions.agentContextSnapshot?: AgentContextSnapshot` — mutable object reference; in-turn compression updates it in place (`Object.assign`).
-- `WorkspaceToolLoopOptions.contextTokenBudget?: number` — already-resolved budget (model `contextWindow` or `256k` default).
-- `WorkspaceToolLoopOptions.compressCallModel?: CompressCallModel` — reuse `capabilities.callModel`.
+- `RuntimeCompressionMode = "narrative" | "task"` — selects compression behavior in the tool loop. `narrative` = master story compression (one-shot + `ContextBudgetExhaustedError`); `task` = delegated/assistant task compression (multi-compress + timeout fallback + stall early-exit).
+- `WorkspaceToolLoopOptions.compressionMode: RuntimeCompressionMode` — required; drives the compression branch in both native and text tool loops.
+- `WorkspaceToolLoopOptions.agentContextSnapshot?: AgentContextSnapshot` — narrative mode only; mutable object reference; in-turn compression updates it in place (`Object.assign`). Task mode does not use it (task agents have no cross-turn snapshot).
+- `WorkspaceToolLoopOptions.contextTokenBudget?: number` — already-resolved budget (model `contextWindow` or `256k` default). Shared by both modes.
+- `WorkspaceToolLoopOptions.compressCallModel?: CompressCallModel` — reuse `capabilities.callModel`. Shared by both modes.
+- `WorkspaceToolLoopOptions.taskStartedAt?: number` — task mode only; wall-clock start (`Date.now()`) for timeout check.
+- `WorkspaceToolLoopOptions.taskTimeoutMs?: number` — task mode only; timeout quota in ms (defaults to `DEFAULT_TASK_TIMEOUT_MS` = 300000).
+- `AgentRuntimeTurnInput.compressionMode?: RuntimeCompressionMode` — entry path mode; defaults to `"narrative"`. Host passes `"task"` for the desktop assistant, `"narrative"` (or omits) for master.
+- `AgentRuntimeTurnInput.timeoutMs?: number` — task mode timeout quota; only effective when `compressionMode === "task"`. Narrative mode ignores it.
+- `RuntimeAgentCallArguments.timeoutMs?: number` — optional per-call timeout for delegated `agent_call` targets; defaults to `DEFAULT_TASK_TIMEOUT_MS` when omitted.
 - `estimateRuntimeMessagesTokens(messages: RuntimeChatMessage[]): number` — native loop token estimate, including `toolCalls` name + JSON-stringified `arguments` and tool observation content.
 - `estimateAiChatMessagesTokens(messages: AiChatMessage[]): number` — text loop token estimate (tool observations are serialized into user content).
-- `ContextBudgetExhaustedError extends Error` — `name: "ContextBudgetExhaustedError"`, message "上下文已满，无法继续本轮探索。请开始新会话或精简对话。".
-- Trace event `context_compressed_in_turn` (ok, data: `{ round, beforeTokens, budget, triggerThreshold }`).
+- `compressTaskContext<T>(messages, interactionSpan, oldSummary, callModel, options): Promise<TaskCompressionResult<T>>` — task compression: slices the tool-interaction span, keeps the recent `TASK_KEEP_RECENT_TOOL_ROUNDS` (5) rounds, summarizes earlier rounds into one `{ role: "user", content: "已完成工作摘要：..." }` message. Does not depend on `AgentContextSnapshot`; the summary text lives only within the turn (no persistence).
+- `locateTaskInteractionSpan(messages, mode: "native" | "text"): { start, end }` — locates the tool-interaction span by scanning backward from the end, skipping tool-interaction message shapes (native: `role: "tool"` / `assistant` with `toolCalls`; text: `user` with `<tsian-tool-observation>` / `assistant` with `<tsian-tool-call>`). Returns `{-1, -1}` when no tool interaction exists.
+- `ContextBudgetExhaustedError extends Error` — `name: "ContextBudgetExhaustedError"`, message "上下文已满，无法继续本轮探索。请开始新会话或精简对话。". Shared by both modes as the "nothing left to compress" fallback.
+- `TaskTimeoutError extends Error` — `name: "TaskTimeoutError"`, message includes elapsed seconds. Task mode timeout fallback (soft halt).
+- `TaskCompressionStalledError extends Error` — `name: "TaskCompressionStalledError"`, message "上下文持续膨胀且压缩无效，已中止。请精简任务或拆分子任务。". Task mode stall early-exit (compression yield < `TASK_COMPRESSION_STALL_RATIO` = 0.1).
+- Trace event `context_compressed_in_turn` (ok, data: `{ round, beforeTokens, budget, triggerThreshold, mode, ...afterTokens? }`). `mode` is `"narrative"` or `"task"`; `afterTokens` is task-mode only.
+- Constants: `DEFAULT_TASK_TIMEOUT_MS = 300_000`, `TASK_KEEP_RECENT_TOOL_ROUNDS = 5`, `TASK_COMPRESSION_STALL_RATIO = 0.1`.
 
 ### 3. Contracts
 
-- The tool loop has **no per-Agent round limit**. `AgentRuntimeCollaborationPolicy` no longer defines `maxToolRoundsPerAgent`. Termination conditions are: `finishReason === "stop"` / `toolCalls.length === 0`; abort (`AbortError`); and the turn token-budget fallback.
-- Before every model call (including round 0), the active loop estimates runtime-message tokens. When tokens exceed `budget * CONTEXT_COMPRESS_TRIGGER_RATIO` (0.85), the loop takes the first crossing as: compress the narrative span via `compressContext` (reuse the lifecycle module; compress only the narrative summary + recent turns, preserve all tool interactions), `Object.assign` the result into `agentContextSnapshot`, mark `compressedThisTurn = true`, and `splice`-replace the narrative span in the runtime messages (`locateHistorySpan` + `replaceHistorySpan`). The loop then continues.
-- Only the **entry-agent steady-state path** (an `agentContextSnapshot` was injected) performs in-turn compression. Delegated `agent_call` targets and the `最近对话：` fallback path have no injectable snapshot and skip compression; they still run the budget fallback so the loop always terminates.
-- A second budget crossing (or any budget crossing when compression is unavailable) is the fallback C: return the last round's stripped text if present (`completed` transcript); otherwise throw `ContextBudgetExhaustedError`.
-- In-turn compression is allowed at most once per turn. A second crossing never recompresses.
-- `runAgentRuntimeTurn` threads `agentContextSnapshot` (the turn-start-compressed snapshot, a mutable reference), `contextTokenBudget` (already resolved), and `compressCallModel` (`capabilities.callModel`) into the tool options. After the loop, if the snapshot `updatedAt` changed (in-turn compression occurred), `contextUpdate.compressedContext` carries the in-turn compressed snapshot; otherwise it carries the turn-start compression result. The host `stageAgentContextFile` persists it unchanged.
-- AssistantView catch recognizes `ContextBudgetExhaustedError` by `error.name` (no runtime-internal import). On that error: keep already-streamed thought, append a soft `_（上下文已满，请开始新会话或精简对话）_` note when content exists (or set the content to the soft prompt when empty), `persistCurrentSession()`, and **do not** set `errorMessage` or pop the placeholder. This is a non-failure halt symmetric with the abort branch. `ContextCompressionFailedError` (turn-start compression failure) still routes to the `errorMessage` branch.
+- The tool loop has **no per-Agent round limit**. `AgentRuntimeCollaborationPolicy` no longer defines `maxToolRoundsPerAgent`. Termination conditions are: `finishReason === "stop"` / `toolCalls.length === 0`; abort (`AbortError`); and the mode-specific budget fallback.
+- Before every model call (including round 0), the active loop estimates runtime-message tokens. When tokens exceed `budget * CONTEXT_COMPRESS_TRIGGER_RATIO` (0.85), the loop branches on `compressionMode`:
+
+  **Narrative mode (master, tool-token-budget R2 unchanged):**
+  - First crossing: compress the narrative span via `compressContext` (reuse the lifecycle module; compress only the narrative summary + recent turns, preserve all tool interactions), `Object.assign` the result into `agentContextSnapshot`, mark `compressedThisTurn = true`, and `splice`-replace the narrative span in the runtime messages (`locateHistorySpan` + `replaceHistorySpan`). The loop then continues.
+  - Only the **entry-agent steady-state path** (an `agentContextSnapshot` was injected) performs in-turn narrative compression. The `最近对话：` fallback path has no injectable snapshot and skips compression; it still runs the budget fallback.
+  - A second budget crossing (or any crossing when narrative compression is unavailable) is the fallback C: return the last round's stripped text if present (`completed` transcript); otherwise throw `ContextBudgetExhaustedError`.
+  - In-turn narrative compression is allowed at most once per turn. A second crossing never recompresses.
+  - Turn-start narrative compression (R3, lifecycle module) is skipped when `compressionMode === "task"` (task agents have no valuable narrative span to compress).
+
+  **Task mode (delegated `agent_call` targets + desktop assistant):**
+  - Every crossing is a compression attempt (no `compressedThisTurn` cap; multi-compress unlimited). Before compressing, check elapsed time: `Date.now() - taskStartedAt > taskTimeoutMs` → throw `TaskTimeoutError`.
+  - Locate the tool-interaction span via `locateTaskInteractionSpan`. If no span (`start < 0`) → fallback C (return last stripped text / throw `ContextBudgetExhaustedError`).
+  - Call `compressTaskContext` with the span + prior `taskSummary` (null on first compression). If `result.compressed === false` (early span empty, tool interactions ≤ `TASK_KEEP_RECENT_TOOL_ROUNDS`) → fallback C.
+  - After compression, compare `beforeTokens` vs `afterTokens`. If `(before - after) / before < TASK_COMPRESSION_STALL_RATIO` (0.1) → throw `TaskCompressionStalledError` (stall early-exit, do not burn budget waiting for timeout).
+  - Update `runtimeMessages`/`nextMessages` to `result.messages`, update `taskSummary` to `result.summary`, emit `context_compressed_in_turn` with `mode: "task"` + `afterTokens`, continue the loop.
+  - Task compression never touches `agentContextSnapshot` (task agents have no cross-turn snapshot). The summary text lives only within the turn; nothing is persisted. Assistant `contextUpdate` is ignored by the host (no `context.json` for assistant — cross-turn persistence is a future task).
+
+- **Timeout fallback (task mode only):** `createAgentCallRunner` (delegated) and `runAssistantChat` (assistant) each create an independent `AbortController` + `setTimeout(() => abort("task-timeout"), taskTimeoutMs)`, merged with the user-abort signal via `AbortSignal.any` into a composite signal threaded into the tool loop. On timeout, the catch block re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true, taskTimeoutMs }` details so master can distinguish; assistant: thrown to AssistantView). Master (`interaction.sendMessage`) does **not** create a timeout controller — narrative mode relies on one-shot compression + user abort; a timeout would mis-kill narrative deep thought.
+- `runAgentRuntimeTurn` threads `compressionMode` (from `input.compressionMode ?? "narrative"`), `agentContextSnapshot` (narrative only, mutable reference), `contextTokenBudget`, `compressCallModel`, and task-mode `taskStartedAt`/`taskTimeoutMs` into the tool options. After the loop, narrative-mode `contextUpdate.compressedContext` carries the in-turn compressed snapshot if `updatedAt` changed; task mode leaves `compressedContext` undefined.
+- AssistantView catch recognizes `ContextBudgetExhaustedError`, `TaskTimeoutError`, and `TaskCompressionStalledError` by `error.name` (no runtime-internal import). All three route to the same soft-halt branch (symmetric with abort): keep already-streamed thought, append a soft `_（…）_` note when content exists (or set content to the soft prompt when empty), `persistCurrentSession()`, and **do not** set `errorMessage` or pop the placeholder. `ContextCompressionFailedError` (turn-start compression failure) still routes to the `errorMessage` branch.
 
 ### 4. Validation & Error Matrix
 
-- Budget crossing when `agentContextSnapshot` is available and not yet compressed this turn -> compress narrative span, continue loop, emit `context_compressed_in_turn`.
-- Budget crossing a second time in the same turn -> return last stripped text if present, otherwise throw `ContextBudgetExhaustedError`.
-- Budget crossing when no `agentContextSnapshot` is available (delegated / fallback path) -> same as second crossing (no compression attempted).
-- `compressContext` failure during in-turn compression -> propagates `ContextCompressionFailedError` (unchanged behavior).
-- `ContextBudgetExhaustedError` in AssistantView -> soft prompt, keep streamed thought, no `errorMessage`.
-- Tool interactions are never compressed out of the runtime messages; only the narrative summary + recent turns are compressed.
+- Narrative budget crossing when `agentContextSnapshot` is available and not yet compressed this turn -> compress narrative span, continue loop, emit `context_compressed_in_turn` with `mode: "narrative"`.
+- Narrative budget crossing a second time in the same turn -> return last stripped text if present, otherwise throw `ContextBudgetExhaustedError`.
+- Narrative budget crossing when no `agentContextSnapshot` is available (fallback path) -> same as second crossing (no compression attempted).
+- Task budget crossing -> check timeout; if elapsed throw `TaskTimeoutError`; else locate tool-interaction span, compress via `compressTaskContext`, check stall; if compressed continue loop (emit `context_compressed_in_turn` with `mode: "task"` + `afterTokens`); if not compressed or no span -> fallback C.
+- Task timeout elapsed (delegated) -> `AGENT_CALL_FAILED` observation with `{ timeout: true, taskTimeoutMs }`; master continues its own loop.
+- Task timeout elapsed (assistant) -> `TaskTimeoutError` -> AssistantView soft prompt "任务超时，已中止".
+- Task compression stall (yield < 10%) -> `TaskCompressionStalledError` -> delegated: `AGENT_CALL_FAILED` with `{ stalled: true }`; assistant: soft prompt "上下文持续膨胀且压缩无效，已中止".
+- `compressContext` failure during narrative in-turn compression -> propagates `ContextCompressionFailedError` (unchanged behavior).
+- `compressTaskContext` failure (model call fails or empty summary) -> throws `ContextCompressionFailedError` (reused, same semantics).
+- `ContextBudgetExhaustedError` / `TaskTimeoutError` / `TaskCompressionStalledError` in AssistantView -> soft prompt, keep streamed thought, no `errorMessage`.
+- Tool interactions are never compressed in narrative mode; task mode compresses only the tool-interaction span (framework messages + recent N rounds preserved).
+- Master (`interaction.sendMessage`) passes `compressionMode: "narrative"` and no `timeoutMs`; master behavior is unchanged from tool-token-budget R2.
 
 ### 5. Good/Base/Bad Cases
 
 - Good: a 6-round exploration (list -> read -> list -> read) completes without any round-limit error and returns a final reply.
-- Good: when accumulated tool interactions push tokens past 85% mid-turn, the narrative span is compressed once, tool interactions are preserved, the model continues without re-exploring, and `context_compressed_in_turn` is traced.
-- Good: a second budget crossing returns the last streamed thought with a soft note, or throws `ContextBudgetExhaustedError` shown as the soft prompt.
-- Base: ordinary short turns never estimate past the threshold and never compress.
-- Base: turn-start compression (lifecycle module) and in-turn compression are independent checks; either, both, or neither may run.
+- Good: narrative mode — when accumulated tool interactions push tokens past 85% mid-turn, the narrative span is compressed once, tool interactions are preserved, the model continues without re-exploring, and `context_compressed_in_turn` (mode: narrative) is traced.
+- Good: task mode — a delegated memory agent reading 10 files triggers task compression mid-turn, early tool interactions are summarized into one "已完成工作摘要" user message, recent 5 rounds preserved, the agent continues and returns its conclusion.
+- Good: task mode — multi-compress: a long task triggers compression 2+ times, each time summarizing earlier rounds, until completion or fallback.
+- Good: task timeout — `agent_call(memory, timeoutMs=10000)` on a long task aborts at 10s, master receives `AGENT_CALL_FAILED` with `{ timeout: true }`, master continues its own loop.
+- Good: task stall — reading a huge single file pushes tokens up, compression yields <10%, `TaskCompressionStalledError` aborts early without waiting for timeout.
+- Good: a second narrative budget crossing returns the last streamed thought with a soft note, or throws `ContextBudgetExhaustedError` shown as the soft prompt.
+- Base: ordinary short turns never estimate past the threshold and never compress (either mode).
+- Base: turn-start narrative compression (lifecycle module) and in-turn compression are independent checks; task mode skips turn-start narrative compression.
 - Bad: reintroducing a per-Agent round limit as a termination condition.
-- Bad: compressing tool interactions instead of the narrative span.
-- Bad: allowing more than one in-turn compression per turn.
-- Bad: setting `errorMessage` or popping the placeholder on `ContextBudgetExhaustedError`.
+- Bad: compressing tool interactions in narrative mode (only the narrative span is compressed there).
+- Bad: allowing more than one in-turn narrative compression per turn.
+- Bad: capping task-mode compression count (task mode is multi-compress, bounded by timeout + stall, not count).
+- Bad: adding a timeout to master (narrative mode) — would mis-kill narrative deep thought.
+- Bad: persisting task-mode compression summaries (no `context.json` for task agents; cross-turn persistence is a future task).
+- Bad: setting `errorMessage` or popping the placeholder on `ContextBudgetExhaustedError` / `TaskTimeoutError` / `TaskCompressionStalledError`.
 
 ### 6. Tests Required
 
 - Assert the tool loop runs beyond 4 rounds without a round-limit error when the model keeps requesting tools.
-- Assert a first budget crossing compresses the narrative span (tool interactions preserved) and the loop continues.
-- Assert a second budget crossing returns last stripped text or throws `ContextBudgetExhaustedError`.
-- Assert delegated/fallback paths never attempt in-turn compression but still run the budget fallback.
-- Assert AssistantView shows the soft prompt for `ContextBudgetExhaustedError` without setting `errorMessage` or popping the placeholder.
-- Assert in-turn compressed snapshot is carried through `contextUpdate.compressedContext` for host persistence.
+- Assert a first narrative budget crossing compresses the narrative span (tool interactions preserved) and the loop continues.
+- Assert a second narrative budget crossing returns last stripped text or throws `ContextBudgetExhaustedError`.
+- Assert narrative fallback paths never attempt in-turn compression but still run the budget fallback.
+- Assert task budget crossing compresses the tool-interaction span (framework + recent 5 rounds preserved, earlier rounds summarized into one user message) and the loop continues.
+- Assert task mode allows multiple compressions in one turn (no `compressedThisTurn` cap).
+- Assert task timeout throws `TaskTimeoutError` (assistant) / `AGENT_CALL_FAILED` with timeout details (delegated).
+- Assert task compression stall (yield < 10%) throws `TaskCompressionStalledError`.
+- Assert task mode with no tool-interaction span or non-compressible early span falls back to `ContextBudgetExhaustedError`.
+- Assert `agent_call` accepts optional `timeoutMs` and threads it to the delegated timeout controller (default 300s when omitted).
+- Assert AssistantView shows the soft prompt for `ContextBudgetExhaustedError` / `TaskTimeoutError` / `TaskCompressionStalledError` without setting `errorMessage` or popping the placeholder.
+- Assert narrative in-turn compressed snapshot is carried through `contextUpdate.compressedContext` for host persistence; task mode leaves it undefined.
+- Assert master (`interaction.sendMessage`) behavior is unchanged (narrative mode, no timeout).
 
 ## Scenario: Parallel agent_call Within A Round
 
@@ -1224,6 +1271,7 @@ stageAgentSessionTranscriptFiles(
 - The serial group runs after the agent-call group so delegated workspace writes are visible to this round's serial writes.
 - `run_script` stays serial (side effects + bounded timeout); it is not in `PARALLEL_TOOL_NAMES` and not in the agent-call group.
 - `agent_call` observations travel the tool-observation channel (`formatRuntimeWorkspaceToolObservationMessage`); they are NOT wrapped as narrative user messages (would pollute the story span and break `compressContext`).
+- Parallel `agent_call` targets each run in **task compression mode** with independent timeout + compression state: each `createAgentCallRunner` closure creates its own `timeoutController` + `setTimeout` (its own `taskTimeoutMs`, from `agentCall.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS`), its own `taskStartedAt`, its own `taskSummary` accumulator, and its own compression count. Parallel delegated agents compress their own messages independently and time out independently — one agent's compression/timeout does not affect another's. Observations (completed / `AGENT_CALL_FAILED` with timeout/stalled) return aligned to the original call index. See the "Turn Token Budget And In-Turn Compression (Narrative + Task modes)" scenario.
 - `callCount += 1` is atomic under JS single-threaded async interleaving; `agentCallDepth` is passed by value (caller-depth snapshot), so parallel agent_calls do not share depth state. No locking is required.
 - Workspace writes from parallel agent_calls land in the shared staged transaction array; last-write-wins by path (same semantics as serial). Parallel execution does not introduce a new conflict model; typical delegated agents write different paths (memory vs state).
 - There is no per-turn `agent_call` count limit. `maxCallsPerTurn` was removed (same rationale as removing `maxToolRoundsPerAgent`: the turn token budget bounds total volume). `maxDepth=2` remains to prevent unbounded recursion (token budget cannot bound recursion depth).

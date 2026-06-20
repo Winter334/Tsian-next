@@ -670,6 +670,8 @@ async function send() {
     flushRemaining()
     const aborted = error instanceof Error && error.name === "AbortError"
     const budgetExhausted = error instanceof Error && error.name === "ContextBudgetExhaustedError"
+    const taskTimeout = error instanceof Error && error.name === "TaskTimeoutError"
+    const taskStalled = error instanceof Error && error.name === "TaskCompressionStalledError"
     if (aborted) {
       // Keep the partial text; mark it so the user knows it was cut short.
       if (assistantMsg.content) {
@@ -679,13 +681,21 @@ async function send() {
         // Nothing was streamed: drop the empty placeholder.
         messages.value.pop()
       }
-    } else if (budgetExhausted) {
-      // turn 内第二次达预算(压缩已用过一次):非失败的中止,与 abort 对称.
+    } else if (budgetExhausted || taskTimeout || taskStalled) {
+      // 三类温和中止同路径(非失败的中止,与 abort 对称):
+      // - budgetExhausted:turn 内第二次达预算(narrative)/压无可压(task).
+      // - taskTimeout:任务型 agent 超时(task 模式时长兜底).
+      // - taskStalled:任务压缩无效早退(下降 <10%,不傻等超时烧钱).
       // 保留已流式 thought,用 content 承载温和提示,不设 errorMessage、不 pop 占位.
+      const hint = taskTimeout
+        ? "任务超时，已中止"
+        : taskStalled
+          ? "上下文持续膨胀且压缩无效，已中止"
+          : "上下文已满，请开始新会话或精简对话"
       if (assistantMsg.content) {
-        assistantMsg.content = `${assistantMsg.content}\n\n_（上下文已满，请开始新会话或精简对话）_`
+        assistantMsg.content = `${assistantMsg.content}\n\n_（${hint}）_`
       } else {
-        assistantMsg.content = "上下文已满，请开始新会话或精简对话。"
+        assistantMsg.content = `${hint}。`
       }
       await persistCurrentSession()
     } else {

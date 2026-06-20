@@ -95,6 +95,14 @@ export interface RuntimeAgentCallArguments {
   contextSummary?: string
   expectedOutput?: string
   historyMode: RuntimeAgentCallHistoryMode
+  /**
+   * Optional timeout quota in ms for this delegated agent call (design
+   * 06-20-agent-task-compression). When elapsed, the delegated tool loop aborts
+   * and the call resolves as AGENT_CALL_FAILED with `{ timeout: true }` details.
+   * Defaults to DEFAULT_TASK_TIMEOUT_MS (300s) when omitted. Only meaningful for
+   * task-mode delegated agents (all delegated agents are task-mode).
+   */
+  timeoutMs?: number
 }
 
 type RuntimeAgentCallRunner = (
@@ -947,6 +955,14 @@ function normalizeAgentCallArguments(
   const reason = normalizeOptionalString(input.reason)
   const contextSummary = normalizeOptionalString(input.contextSummary)
   const expectedOutput = normalizeOptionalString(input.expectedOutput)
+  // timeoutMs:可选,非负有限整数才透传,否则忽略(走默认 300s).
+  const rawTimeoutMs = input.timeoutMs
+  const timeoutMs =
+    typeof rawTimeoutMs === "number"
+    && Number.isFinite(rawTimeoutMs)
+    && rawTimeoutMs > 0
+      ? Math.floor(rawTimeoutMs)
+      : undefined
 
   return {
     agentId,
@@ -955,6 +971,7 @@ function normalizeAgentCallArguments(
     ...(contextSummary ? { contextSummary } : {}),
     ...(expectedOutput ? { expectedOutput } : {}),
     historyMode: normalizeAgentCallHistoryMode(input.historyMode),
+    ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   }
 }
 
