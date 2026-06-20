@@ -23,6 +23,17 @@ export const AGENT_CONTEXT_SCHEMA = "tsian.agent.context.v1"
 /** master agent 固定 id(context.json 只服务 master). */
 export const AGENT_CONTEXT_AGENT_ID = "master" as const
 
+// ─────────────────────────────────────────────────────────────────────────
+// 助手 context 快照常量(design 06-20-assistant-context-persistence)
+// 与 master 常量并列:助手 context 存虚拟文件 .tsian/local/assistant/sessions/<id>/context.json,
+// schema/agentId 与 master 区分(语义分明),复用 AgentContextSnapshot 类型.
+// ─────────────────────────────────────────────────────────────────────────
+
+/** 助手 context 快照 schema 标记(与 master 的 tsian.agent.context.v1 区分,语义分明). */
+export const ASSISTANT_CONTEXT_SCHEMA = "tsian.assistant.context.v1" as const
+/** 助手 agent 固定 id. */
+export const ASSISTANT_CONTEXT_AGENT_ID = "assistant" as const
+
 /** 默认 token 预算:model 未配 contextWindow 时兜底. */
 export const DEFAULT_CONTEXT_TOKEN_BUDGET = 256_000
 /** 压缩触发阈值比例:85% budget 触发压缩(留 15% 余量吸收估算偏差). */
@@ -116,19 +127,24 @@ export function serializeAgentContext(snapshot: AgentContextSnapshot): string {
 /**
  * 解析 context.json 内容为快照.运行时边界 normalize:校验 schema/字段,
  * 缺字段时兜底(不抛错,保证旧/损坏文件不崩).
+ *
+ * `options.schema`/`options.agentId` 标记本次解析的快照类型(默认 master);
+ * parse 时用 options 值而非硬编码,使助手快照(tsian.assistant.context.v1)能正确保留
+ * schema/agentId.原文的 schema 字段不参与校验(向前兼容旧 schema 演进),由 options 决定.
  */
 export function parseAgentContext(
   content: string,
   saveId: string,
+  options?: { schema?: string; agentId?: string },
 ): AgentContextSnapshot {
   let parsed: unknown
   try {
     parsed = JSON.parse(content)
   } catch {
-    return createEmptyAgentContext(saveId)
+    return createEmptyAgentContext(saveId, options)
   }
   if (!parsed || typeof parsed !== "object") {
-    return createEmptyAgentContext(saveId)
+    return createEmptyAgentContext(saveId, options)
   }
   const obj = parsed as Record<string, unknown>
   // schema 不匹配也兜底(向前兼容旧 schema 演进)
@@ -138,9 +154,9 @@ export function parseAgentContext(
         .filter((e): e is AgentContextTurnEntry => e !== null)
     : []
   return {
-    schema: AGENT_CONTEXT_SCHEMA,
+    schema: (options?.schema ?? AGENT_CONTEXT_SCHEMA) as AgentContextSnapshot["schema"],
     saveId,
-    agentId: AGENT_CONTEXT_AGENT_ID,
+    agentId: options?.agentId ?? AGENT_CONTEXT_AGENT_ID,
     summary: typeof obj.summary === "string" ? obj.summary : null,
     recentTurns,
     lastCompressedTurn:
@@ -167,11 +183,14 @@ function parseTurnEntry(raw: unknown): AgentContextTurnEntry | null {
 }
 
 /** 创建空快照(无历史,首次或损坏时). */
-export function createEmptyAgentContext(saveId: string): AgentContextSnapshot {
+export function createEmptyAgentContext(
+  saveId: string,
+  options?: { schema?: string; agentId?: string },
+): AgentContextSnapshot {
   return {
-    schema: AGENT_CONTEXT_SCHEMA,
+    schema: (options?.schema ?? AGENT_CONTEXT_SCHEMA) as AgentContextSnapshot["schema"],
     saveId,
-    agentId: AGENT_CONTEXT_AGENT_ID,
+    agentId: options?.agentId ?? AGENT_CONTEXT_AGENT_ID,
     summary: null,
     recentTurns: [],
     lastCompressedTurn: null,
@@ -183,11 +202,15 @@ export function createEmptyAgentContext(saveId: string): AgentContextSnapshot {
  * 从 saveHistory(玩家剧情正文存档)最近 K 轮初始化快照.
  * 用于旧存档首次跑新代码时 context.json 不存在的兜底(design §3.1).
  * ConversationMessageRecord.role 是 string,这里只接受 "user"/"assistant" 的剧情正文.
+ *
+ * `options.schema`/`options.agentId` 标记快照类型(默认 master);助手用
+ * ASSISTANT_CONTEXT_SCHEMA/ASSISTANT_CONTEXT_AGENT_ID 初始化.
  */
 export function createInitialAgentContext(
   saveId: string,
   recentHistory: ConversationMessageRecord[],
   currentTurn: number,
+  options?: { schema?: string; agentId?: string },
 ): AgentContextSnapshot {
   const recent = recentHistory.slice(-CONTEXT_KEEP_RECENT_TURNS * 2) // 每轮 user+assistant 两条
   const recentTurns: AgentContextTurnEntry[] = []
@@ -209,9 +232,9 @@ export function createInitialAgentContext(
     }
   }
   return {
-    schema: AGENT_CONTEXT_SCHEMA,
+    schema: (options?.schema ?? AGENT_CONTEXT_SCHEMA) as AgentContextSnapshot["schema"],
     saveId,
-    agentId: AGENT_CONTEXT_AGENT_ID,
+    agentId: options?.agentId ?? AGENT_CONTEXT_AGENT_ID,
     summary: null,
     recentTurns,
     lastCompressedTurn: null,
@@ -234,6 +257,16 @@ export interface CompressCallOptions {
   debugLabel: RuntimeTraceDebugLabel
   signal?: AbortSignal
   agentId?: string
+  /**
+   * 可选:覆盖默认压缩 system prompt(叙事梗概).助手快照压缩传
+   * ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT(任务摘要风格);master 不传用默认.
+   * design 06-20-assistant-context-persistence §2.2.
+   */
+  systemPrompt?: string
+  /** 可选:user 轮次的角色标签(默认"玩家",助手传"用户"). */
+  userLabel?: string
+  /** 可选:assistant 轮次的角色标签(默认"叙事",助手传"助手"). */
+  assistantLabel?: string
 }
 
 /** 压缩失败错误:温和文案,经 AssistantView catch else 分支显示. */
@@ -282,7 +315,7 @@ export class TaskCompressionStalledError extends Error {
   }
 }
 
-/** 压缩摘要 system prompt:叙事梗概风格(非要点列表),保留情节推进/人物状态/场景/伏笔. */
+/** 压缩摘要 system prompt:叙事梗概风格(非要点列表),保留情节推进/人物状态/场景/伏笔.master 快照用. */
 const COMPRESSION_SYSTEM_PROMPT = [
   "你正在为一段互动剧情的 AI 叙事者压缩对话历史。",
   "请将以下剧情历史浓缩成一段梗概，供叙事者在后续创作时参考最近的情节走向。",
@@ -294,17 +327,36 @@ const COMPRESSION_SYSTEM_PROMPT = [
   `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
 ].join("\n")
 
+/**
+ * 助手快照压缩摘要 system prompt:任务对话摘要风格(已做工作+结论),非叙事梗概.
+ * 与 master 的 COMPRESSION_SYSTEM_PROMPT(剧情梗概) + turn 内 TASK_COMPRESSION_SYSTEM_PROMPT
+ * (工具交互段压缩) 区分:本 prompt 压跨 turn 快照(summary + recentTurns)的任务对话.
+ * design 06-20-assistant-context-persistence §4.5.
+ */
+const ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT = [
+  "你是任务对话摘要器。把助手与用户的早期对话压缩成「已完成工作 + 结论」摘要。",
+  "保留:用户的关键请求、助手已做的工作与结论、未解决的问题、重要上下文与决策。",
+  "丢弃:寒暄、重复内容、工具调用的技术细节、冗余的中间过程。",
+  "用简洁的任务日志风格输出,不要叙事化,不要逐字复述。",
+  `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
+].join("\n")
+
+/** 助手快照压缩用 system prompt 的导出访问点(供 host/runtime 按 mode 传入). */
+export { ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT }
+
 /** 构建压缩调用的 user prompt:旧 summary(若有) + 被压缩轮次正文. */
 function buildCompressionPrompt(
   oldSummary: string | null,
   compressEntries: AgentContextTurnEntry[],
+  userLabel = "玩家",
+  assistantLabel = "叙事",
 ): string {
   return [
     oldSummary ? `此前的梗概：\n${oldSummary}\n` : "",
     "需要压缩的剧情正文：",
     ...compressEntries.map(
       (entry) =>
-        `${entry.turn}. ${entry.role === "user" ? "玩家" : "叙事"}: ${entry.content}`,
+        `${entry.turn}. ${entry.role === "user" ? userLabel : assistantLabel}: ${entry.content}`,
     ),
   ]
     .filter(Boolean)
@@ -312,9 +364,13 @@ function buildCompressionPrompt(
 }
 
 /**
- * 压缩上下文:保留最近 K 轮原文,被压缩轮次 + 旧 summary 调 model 生成叙事梗概.
- * 稳态循环:下次压缩时旧 summary 被二次浓缩,越早的剧情细节自然淡出.
+ * 压缩上下文:保留最近 K 轮原文,被压缩轮次 + 旧 summary 调 model 生成摘要.
+ * 稳态循环:下次压缩时旧 summary 被二次浓缩,越早的细节自然淡出.
  * callModel 失败 → throw ContextCompressionFailedError(温和兜底,不强行用爆满上下文).
+ *
+ * `options.systemPrompt` 覆盖默认叙事梗概 prompt(助手传任务摘要 prompt);
+ * `options.userLabel`/`options.assistantLabel` 覆盖默认"玩家"/"叙事"标签(助手传"用户"/"助手").
+ * master 不传这些字段 → 用默认值,行为不变(design 06-20-assistant-context-persistence §2.2).
  */
 export async function compressContext(
   context: AgentContextSnapshot,
@@ -335,13 +391,19 @@ export async function compressContext(
     return context
   }
 
-  // 2. 被压缩轮次 + 旧 summary 一起送 model 生成叙事梗概
-  const prompt = buildCompressionPrompt(context.summary, compressEntries)
+  // 2. 被压缩轮次 + 旧 summary 一起送 model 生成摘要
+  const systemPrompt = options.systemPrompt ?? COMPRESSION_SYSTEM_PROMPT
+  const prompt = buildCompressionPrompt(
+    context.summary,
+    compressEntries,
+    options.userLabel,
+    options.assistantLabel,
+  )
   let newSummary: string
   try {
     newSummary = await callModel(
       [
-        { role: "system", content: COMPRESSION_SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: prompt },
       ],
       options,

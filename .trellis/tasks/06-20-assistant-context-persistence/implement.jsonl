@@ -3,4 +3,4 @@
 {"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Dexie 表 + .tsian/ 元数据存储规范；助手 context.json 放 .tsian/local/assistant/ 属平台元数据，需对照 state-management 的存储边界"}
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "助手 context.json 从 host runAssistantChat → 存储 → 跨加载恢复的跨层；saveHistory（可见消息）与 context.json（agent 上下文）分工"}
 {"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用底层 agent-session-context-lifecycle 的持久化骨架（serializeAgentContext/parseAgentContext/stageAgentContextFile），换压缩内容为任务摘要；复用任务压缩函数（06-20-agent-task-compression）"}
-{"file": ".trellis/tasks/06-20-agent-task-compression/prd.md", "reason": "本任务依赖其任务压缩机制；其 PRD 记载了任务压缩 + 时长兜底的设计方向，本任务在其上加持久化层"}
+{"file": ".trellis/tasks/archive/2026-06/06-20-agent-task-compression/design.md", "reason": "上游任务压缩机制已交付归档；复用其 compressionMode:task + compressTaskContext + 时长兜底 + TaskTimeoutError；本任务在其上加跨 turn 持久化层，design.md 记载了 task 模式与 narrative 模式分流的接入点"}

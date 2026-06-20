@@ -15,17 +15,27 @@ export interface AgentContextTurnEntry {
 }
 
 /**
- * master agent 会话上下文快照,持久化到工作区 `save/agents/master/context.json`.
- * 与玩家剧情正文存档(`saveHistory`)分离:这里存的是 master agent 视角的
- * "1 摘要 + 最近 K 轮正文"稳态,跨 turn/跨加载保持上下文不膨胀不失忆.
+ * agent 会话上下文快照,持久化跨 turn 稳态("1 摘要 + 最近 K 轮正文").
+ * 与可见消息存档(`saveHistory`/助手会话消息)分离:这里存的是 agent 视角的
+ * 上下文稳态,跨 turn/跨加载保持不膨胀不失忆.
  * system prompt / Workspace 上下文 / 当前回合号 / 玩家本轮输入不持久化
- * (每 turn 现构建),这里只存跨 turn 需保持的剧情上下文段.
+ * (每 turn 现构建),这里只存跨 turn 需保持的上下文段.
+ *
+ * 两种实例:
+ * - master:schema `tsian.agent.context.v1`,agentId `"master"`,落 save runtime
+ *   `save/agents/master/context.json`,summary 是叙事梗概.
+ * - 助手:schema `tsian.assistant.context.v1`,agentId `"assistant"`,落虚拟文件
+ *   `.tsian/local/assistant/sessions/<sessionId>/context.json`,summary 是任务摘要.
+ * 类型复用(master/助手结构同构),agentId/schema 值层面区分语义.
  */
 export interface AgentContextSnapshot {
-  schema: "tsian.agent.context.v1"
+  /** schema 标记.master=tsian.agent.context.v1;助手=tsian.assistant.context.v1. */
+  schema: "tsian.agent.context.v1" | "tsian.assistant.context.v1"
+  /** master=saveId;助手=sessionId(语义复用,定位靠文件路径不靠此字段). */
   saveId: string
-  agentId: "master"
-  /** 早期剧情摘要(叙事梗概,压缩后产生).null = 尚未触发压缩. */
+  /** master="master";助手="assistant".放宽为 string 以复用类型. */
+  agentId: string
+  /** 早期摘要(压缩后产生).null = 尚未触发压缩.master 叙事梗概,助手任务摘要. */
   summary: string | null
   /** 最近 K=5 轮正文(user+assistant 对,带 turn 索引,原文).按 turn 升序. */
   recentTurns: AgentContextTurnEntry[]
