@@ -175,3 +175,64 @@
 - `apps/platform-web/src/views/AssistantView.vue`：catch 识别 `TaskTimeoutError`/`TaskCompressionStalledError`。
 
 **关联设计**：`06-20-agent-task-compression/design.md`（§0 两种压缩范式 / §1.3 约束 / §2 数据契约 / §3 数据流 / §4 权衡）。
+
+> **PV-004 G5 更正**：原 G5 写"assistant 不落盘（重开会话从 recentHistory 兜底）"——这是 agent-task-compression 交付时的状态（无跨 turn 持久化）。`06-20-assistant-context-persistence`（PV-005）已实现助手跨 turn 持久化，assistant 现在落盘到 `.tsian/local/assistant/sessions/<id>/context.json`，重开会话从快照恢复。PV-004 G5 的"assistant 任务压缩 + 超时 + 早退温和提示"行为仍需实测（不落盘→落盘的转变由 PV-005 覆盖）。
+
+---
+
+## PV-005 assistant-context-persistence 助手跨 turn 持久化 + 虚拟文件系统实测
+
+**状态**：待验证（2026-06-20 登记，依赖 PV-001/PV-004 通过）
+
+**关联任务**：`06-20-assistant-context-persistence`（子任务，阶段 A-F 代码已落地，收尾 G1-G9 实测）
+
+**背景**：assistant-context-persistence 代码层已完成（阶段 A-F：contracts `AgentContextSnapshot` 类型放宽 + `context-lifecycle.ts` 参数化 + `ASSISTANT_CONTEXT_SCHEMA`/`ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT` + `local-assistant-files.ts` `assistantContextPath`/`deleteLocalAssistantFile` + `assistant-conversations.ts` 会话删除清理 + runtime entry turn-start compression guard 放宽（task 模式用任务摘要 prompt）+ host `runAssistantChat` 读快照注入/写回虚拟文件 + `AssistantChatInput.sessionId` + AssistantView 传 sessionId + spec 同步）。`npm run build:contracts && npm run build:web` 通过。真实 API 行为未实测——依赖 API key + dev server 环境。
+
+**为什么暂缓**：没有 API key 环境 + dev server 实测条件（同 PV-001/PV-004 的外部条件依赖，非代码问题）。
+
+**前置条件**：
+- PV-001 通过（master 消息结构正确 + provider 兼容——助手复用同一 runtime 入口路径）。
+- PV-004 通过（task 压缩模式 + 时长兜底正常——助手 task 模式依赖其机制）。
+- dev server（`npm run dev`）+ 配置好 provider API key（控制面板）。
+- 助手 agent 配置好 model（`.tsian/local/assistant/agent.json` 或 provider preset）。
+
+**验证步骤**（对应 implement.md 阶段 G）：
+- G1：跨 turn 持久化——助手多轮对话（≥3 轮），每轮后检查 `.tsian/local/assistant/sessions/<sessionId>/context.json`（Dexie Inspector 或 workspace_read）recentTurns 累积；关闭重开浏览器后助手从快照恢复（知道之前聊过什么，不失忆）。
+- G2：文件系统可视化——助手对话后，让助手用 `workspace_read .tsian/local/assistant/sessions/<sessionId>/context.json` 读自己的 context 快照（验证 summary + recentTurns 可见）；`workspace.list .tsian/local/assistant/sessions/` 能列出会话 context 文件。
+- G3：长对话稳态——构造长对话（多轮 + 大量工具探索撑爆 85%），确认快照触发 turn-start 压缩（trace `context_compressed` mode:"task"），summary 滚动浓缩（越早越淡），recentTurns 保持最近 5 轮，不膨胀。
+- G4：多会话隔离——创建会话 A 和 B，各自对话几轮，切换 A↔B 验证 agent 上下文不串（A 的 agent 不知 B 的对话，各自读各自 `sessions/<id>/context.json`）。
+- G5：会话删除清理——删除会话后，`workspace.list .tsian/local/assistant/sessions/` 不列已删会话的 context（`deleteLocalAssistantFile` 孤儿清理生效）；Dexie Inspector 确认 map 里该 path 已移除。
+- G6：旧会话迁移——有可见消息但无 context 虚拟文件的旧会话（新代码前创建的，或手动删了 context 文件），首次发消息后 context 从 history 兜底初始化（`createInitialAgentContext`），后续正常持久化。
+- G7：turn 失败不写回——助手 turn 中途 abort（点停止）/ timeout（超 300s 或调小 timeoutMs 测试），`readAssistantContextFromFiles` 读出的 recentTurns 不含失败轮（磁盘快照停留在 turn 开头状态）。
+- G8：master 不回归——master turn 开头剧情压缩（trace `context_compressed` mode:"narrative"，用默认剧情梗概 prompt）+ `agents/master/context.json` 落盘 + 跨加载恢复行为不变（玩一局游戏多轮 + 重开验证）。
+- G9：turn 号递增——多轮对话后 `readAssistantContextFromFiles` 读出的 recentTurns 的 turn 号单调递增（1,2,3,...），`lastCompressedTurn` 正确去重（压缩后不再重复压已压轮次）——验证 `nextAssistantTurnNumber` 修复了 turn=1-always 缺陷。
+
+**通过标准**：
+- G1：跨 turn 持久化 + 跨加载恢复，不失忆。
+- G2：context 虚拟文件 agent 可 workspace_read/list（文件系统可视化哲学落地）。
+- G3：长对话压缩稳态，不膨胀。
+- G4：多会话隔离，不串上下文。
+- G5：会话删除清理 context 虚拟文件，无孤儿。
+- G6：旧会话迁移从 history 兜底初始化。
+- G7：turn 失败不写回 context。
+- G8：master 剧情压缩 + context.json 落盘 + 跨加载恢复不回归。
+- G9：turn 号单调递增 + lastCompressedTurn 去重正确。
+
+**失败回退方案**（按问题类型）：
+- **跨加载失忆**（重开后助手不知之前对话）：检查 `loadLocalAssistantFiles` 是否加载了 `sessions/<id>/context.json`（map 里是否有该 path）+ `readAssistantContextFromFiles` 是否 find 到。回退：检查 `saveLocalAssistantFiles` 合并落盘是否正确包含 context path（`isLocalAssistantPath` 前缀匹配）。
+- **多会话串上下文**：检查 `assistantContextPath(sessionId)` 是否按 sessionId 拼路径（每会话独立）+ `runAssistantChat` 是否传了正确 sessionId。回退：确认 AssistantView `send()` 传的 `activeSessionId.value` 在切换会话时更新。
+- **turn 号不递增**（仍恒为 1）：检查 `nextAssistantTurnNumber` 逻辑 + `snapshot.state.turn = nextTurn - 1` 是否生效 + `currentRuntimeTurnNumber` 是否读 `input.snapshot.state.turn + 1`。回退：确认 `runAssistantChat` 传的 snapshot 用了 `nextAssistantTurn - 1` 而非硬编码 0。
+- **压缩不触发或用错 prompt**：检查 entry turn-start compression guard 是否放宽（`estimateContextTokens(agentContext) > triggerThreshold` 无 mode 前置）+ task 模式是否传了 `ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT`。回退：检查 `compressOptions` 的 mode 分流。
+- **会话删除孤儿**：检查 `deleteAssistantSession` 是否调了 `deleteLocalAssistantFile(assistantContextPath(id))`。回退：确认 import 正确。
+- **master 回归**：检查 master 路径（`interaction.sendMessage`）是否仍传 `compressionMode: "narrative"` + 不传 systemPrompt/userLabel/assistantLabel（用默认剧情梗概 prompt）+ `agents/master/context.json` 路径不变。回退：revert 阶段 C（guard 放宽）回到 narrative-only。
+
+**关联代码**：
+- `packages/contracts/src/runtime.ts`：`AgentContextSnapshot` 类型放宽（agentId: string, schema 联合）。
+- `apps/platform-web/src/agent-runtime/context-lifecycle.ts`：`ASSISTANT_CONTEXT_SCHEMA`/`ASSISTANT_CONTEXT_AGENT_ID`/`ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT` + 参数化 `createEmptyAgentContext`/`createInitialAgentContext`/`parseAgentContext`/`compressContext`/`buildCompressionPrompt`。
+- `apps/platform-web/src/agent-runtime/index.ts`：entry turn-start compression guard 放宽 + 按 mode 选 prompt。
+- `apps/platform-web/src/platform-host/index.ts`：`AssistantChatInput.sessionId` + `readAssistantContextFromFiles`/`nextAssistantTurnNumber`/`stageAssistantContextFile` + `runAssistantChat` 读快照注入/写回。
+- `apps/platform-web/src/storage/local-assistant-files.ts`：`assistantContextPath`/`deleteLocalAssistantFile`。
+- `apps/platform-web/src/storage/assistant-conversations.ts`：`deleteAssistantSession` 清理 context。
+- `apps/platform-web/src/views/AssistantView.vue`：`send()` 传 sessionId。
+
+**关联设计**：`06-20-assistant-context-persistence/design.md`（§0 核心机制 / §1.3 约束 / §2 数据契约 / §3 数据流 / §4 权衡 / §4.1 虚拟文件系统方案）。
