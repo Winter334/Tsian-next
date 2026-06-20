@@ -44,6 +44,7 @@
         :active-type-id="activeTypeId"
         @select-type="handleSelectType"
         @add-preset="handleAddPreset"
+        @edit-preset="handleEditPreset"
         @delete-preset="handleDeletePreset"
         @enter-models="enterModels"
         @patch-preset="handlePatchPreset"
@@ -285,6 +286,62 @@ async function handleAddPreset(typeId: string): Promise<void> {
     platformConfigDraft.value.activeProviderId = preset.id
   }
   toast.success(`已添加预设：${preset.name}`)
+}
+
+async function handleEditPreset(typeId: string, presetId: string): Promise<void> {
+  const type = platformConfigDraft.value.providerTypes.find((item) => item.id === typeId)
+  const preset = type?.presets.find((item) => item.id === presetId)
+  if (!type || !preset) {
+    return
+  }
+  const kind: BrowserAiProviderKind = type.kind
+  const baseUrlPlaceholder = baseUrlPlaceholderForKind(kind)
+  const values = await openDialogForm({
+    title: `编辑预设：${preset.name || "未命名"}`,
+    widthClass: "max-w-md",
+    confirmText: "保存",
+    testLabel: "测试连通性",
+    test: async (vals) => {
+      const baseUrl = vals.baseUrl.trim()
+      const apiKey = vals.apiKey.trim()
+      if (!baseUrl) {
+        return { ok: false, message: "请先填写接口地址。" }
+      }
+      if (!apiKey) {
+        return { ok: false, message: "请先填写 API 密钥。" }
+      }
+      try {
+        const models = await fetchBrowserAiProviderModels({ baseUrl, apiKey, kind })
+        return { ok: true, message: `已连通，发现 ${models.length} 个模型。` }
+      } catch (e) {
+        return { ok: false, message: e instanceof Error ? e.message : "连通性测试失败。" }
+      }
+    },
+    fields: [
+      { name: "name", label: "预设名称", type: "text", placeholder: "例如 我的 OpenAI", defaultValue: preset.name },
+      { name: "baseUrl", label: "接口地址", type: "text", placeholder: baseUrlPlaceholder, mono: true, defaultValue: preset.baseUrl },
+      { name: "apiKey", label: "API 密钥", type: "password", placeholder: "sk-...", mono: true, defaultValue: preset.apiKey },
+    ],
+    validate: (vals) => {
+      if (!vals.name.trim()) {
+        return "请填写预设名称。"
+      }
+      return null
+    },
+  })
+  if (!values) {
+    return
+  }
+  handlePatchPreset({
+    typeId,
+    presetId,
+    patch: {
+      name: values.name.trim(),
+      baseUrl: values.baseUrl.trim(),
+      apiKey: values.apiKey.trim(),
+    },
+  })
+  toast.success(`已更新预设：${values.name.trim()}`)
 }
 
 async function handleDeletePreset(typeId: string, presetId: string): Promise<void> {

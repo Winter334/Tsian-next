@@ -97,6 +97,14 @@
               </button>
               <button
                 type="button"
+                class="retro-focus grid h-7 w-7 shrink-0 place-items-center border border-neon-deep/40 bg-elevated text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                title="编辑预设"
+                @click="emit('editPreset', activeType.id, preset.id)"
+              >
+                <Pencil class="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
                 class="retro-focus grid h-7 w-7 shrink-0 place-items-center border border-neon-deep/40 bg-elevated text-text-dim transition-colors hover:border-danger/55 hover:text-danger"
                 title="删除预设"
                 @click="emit('deletePreset', activeType.id, preset.id)"
@@ -133,7 +141,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue"
-import { Plus, Server, Settings2, Trash2 } from "lucide-vue-next"
+import { Pencil, Plus, Server, Settings2, Trash2 } from "lucide-vue-next"
 import {
   PROVIDER_TYPE_KINDS,
   type BrowserAiFallbackStrategy,
@@ -150,6 +158,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "selectType", typeId: string): void
   (e: "addPreset", typeId: string): void
+  (e: "editPreset", typeId: string, presetId: string): void
   (e: "deletePreset", typeId: string, presetId: string): void
   (e: "enterModels", typeId: string, presetId: string): void
   (e: "patchPreset", payload: { typeId: string; presetId: string; patch: Partial<BrowserAiProviderPreset> }): void
