@@ -194,7 +194,6 @@ export interface AgentRuntimeCollaborationPolicy {
   maxCallsPerTurn: number
   maxDepth: number
   historyWindows: Record<RuntimeAgentCallHistoryMode, number>
-  maxToolRoundsPerAgent: number
 }
 
 export type AgentRuntimeCollaborationPolicyInput =
@@ -226,7 +225,6 @@ const DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY: AgentRuntimeCollaborationPolic
     recent: 6,
     scene: 12,
   },
-  maxToolRoundsPerAgent: 3,
 }
 
 interface AgentCallTurnState {
@@ -308,10 +306,6 @@ function normalizeAgentRuntimeCollaborationPolicy(
       recent: normalizePolicyInteger(input?.historyWindows?.recent, defaults.historyWindows.recent),
       scene: normalizePolicyInteger(input?.historyWindows?.scene, defaults.historyWindows.scene),
     },
-    maxToolRoundsPerAgent: normalizePolicyInteger(
-      input?.maxToolRoundsPerAgent,
-      defaults.maxToolRoundsPerAgent,
-    ),
   }
 }
 
