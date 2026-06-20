@@ -703,3 +703,38 @@ Stages 0-4 were already committed (R0 SW DB-name fix + inferMediaType, stage 1 c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 76: assistant-context-persistence 实测修复（.tsian/local/ 写入通道缺口）
+
+**Date**: 2026-06-20
+**Task**: assistant-context-persistence 实测修复（.tsian/local/ 写入通道缺口）
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+dev server 实测 PV-005 发现 .tsian/local/ 写入通道缺口并修复。实测 G1（跨 turn 持久化+跨加载恢复）+ G2（文件系统可视化）通过：context.json 落盘 .tsian/local/assistant/sessions/<sessionId>/context.json，刷新后助手不失忆（列出 4 个历史问题），workspace_list 能看到 sessions 目录。但实测首条就撞 WORKSPACE_PLATFORM_METADATA_FORBIDDEN → 改 writePlatformFile 又撞 WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED。根因：.tsian/local/ 是 platform-local 数据，从不进 save 事务/checkpoint/distribute，RuntimeWorkspaceTransaction 两层校验都对它无入口（assertOrdinarySaveRuntimeMutationPath 禁 .tsian/，assertPlatformSaveRuntimeMutationPath 的 isSaveRuntimePersistencePath 排除 .tsian/local/）。与用户深入讨论后厘清：权限层(level 4)与存储层(事务)是两个维度——权限层说'助手能写 .tsian/'是对的，缺口在存储层没给这条路径接对落盘通道。修复(f59868e)：runAssistantChat workspaceMutations.write/delete 对 isLocalAssistantPath bypass 事务直接 saveLocalAssistantFiles/deleteLocalAssistantFile（与资源管理器 executeLocalWorkspaceOperation 一致的本地篮子模式）；stageAssistantContextFile 改 async 直接 saveLocalAssistantFiles 落盘。这让助手 level-4 的 .tsian/ 写权限真正落地，三层写入路由完整（card-content→卡 / save-runtime→存档 / platform-meta+local→本地篮子），运行时 agent(level 1) 仍碰不了 .tsian/。spec(type-safety) 补记 bypass-transaction 本地篮子路由 + 三层写入路由。发现旧会话迁移 turn 号负数瑕疵（createInitialAgentContext 倒推 baseTurn 负数，新会话不受影响，留作后续）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f59868e` | (see git log) |
+| `a5272f6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

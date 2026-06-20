@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 75
+- **Total Sessions**: 76
 - **Last Active**: 2026-06-20
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~705 | Active |
+| `journal-2.md` | ~740 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 76 | 2026-06-20 | assistant-context-persistence 实测修复（.tsian/local/ 写入通道缺口） | `f59868e`, `a5272f6` | `master` |
 | 75 | 2026-06-20 | assistant-context-persistence 实现（虚拟文件系统 + 任务摘要稳态） | `3b3bfb4`, `1c98d9d`, `dba74f1`, `254d693`, `90ca040`, `49c4b1e` | `master` |
 | 74 | 2026-06-19 | 收尾子任务1 tool-skill-decouple + 开启子任务2 tool-token-budget | `14e788a`, `e8d5bd8`, `34d7751`, `b7c5ca6`, `7ed0165` | `feat/ai-streaming-response` |
 | 73 | 2026-06-19 | 子2a 质量门 + 子2b 工具过程可见与并行执行全流程 | `bace0b2`, `ffb717f` | `feat/ai-streaming-response` |
