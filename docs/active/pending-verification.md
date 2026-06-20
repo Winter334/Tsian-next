@@ -182,7 +182,7 @@
 
 ## PV-005 assistant-context-persistence 助手跨 turn 持久化 + 虚拟文件系统实测
 
-**状态**：待验证（2026-06-20 登记，依赖 PV-001/PV-004 通过）
+**状态**：部分验证（2026-06-20 实测 G1+G2 通过，G3-G9 待续）
 
 **关联任务**：`06-20-assistant-context-persistence`（子任务，阶段 A-F 代码已落地，收尾 G1-G9 实测）
 
@@ -236,3 +236,23 @@
 - `apps/platform-web/src/views/AssistantView.vue`：`send()` 传 sessionId。
 
 **关联设计**：`06-20-assistant-context-persistence/design.md`（§0 核心机制 / §1.3 约束 / §2 数据契约 / §3 数据流 / §4 权衡 / §4.1 虚拟文件系统方案）。
+
+---
+
+## PV-005 实测记录（2026-06-20 dev server）
+
+**实测环境**：dev server `localhost:5173` + API（bufan.live / deepseek-v4-pro-auto）+ 旧会话（4f4313db，06-19 留下 4 轮可见消息）。
+
+**G1 跨 turn 持久化 + 跨加载恢复 — ✅ 通过**：
+- context.json 落盘到 `.tsian/local/assistant/sessions/4f4313db.../context.json`（Dexie `assistant-local-files` map 查实），schema `tsian.assistant.context.v1`，agentId `assistant`，saveId=sessionId，4 轮 recentTurns 正确。
+- 刷新页面后助手准确列出之前的 4 个问题（"根据我当前上下文里保留的对话记录，你在本轮之前一共问过 4 个问题…"）——agent 上下文从 context.json 恢复，不失忆。
+
+**G2 文件系统可视化 — ✅ 通过**：
+- 助手 `workspace_list .tsian/local/assistant/sessions/` 看到 `4f4313db.../` 子目录并推断 context.json 在内——agent 能用 workspace 工具管理平台数据（契合文件系统可视化哲学）。
+- 助手 `workspace_read` `.tsian/local/` 路径权限放行（level 4 ≥ readLevel 4），不再撞 `WORKSPACE_PLATFORM_METADATA_FORBIDDEN`。
+
+**修复（实测发现）**：`.tsian/local/` 写入通道缺口。原 `stageAssistantContextFile` + `workspaceMutations.write/delete` 走 `RuntimeWorkspaceTransaction`（`write`/`writePlatformFile`），撞两层事务校验（`assertOrdinarySaveRuntimeMutationPath` 禁 `.tsian/`；`assertPlatformSaveRuntimeMutationPath` 的 `isSaveRuntimePersistencePath` 排除 `.tsian/local/`）。根因：`.tsian/local/` 是 platform-local 数据，从不进 save 事务/checkpoint/distribute，写入应直接走本地篮子（`saveLocalAssistantFiles`/`deleteLocalAssistantFile`），与资源管理器 `executeLocalWorkspaceOperation` 一致。修复（commit f59868e）：`workspaceMutations.write/delete` 对 `isLocalAssistantPath` bypass 事务直接落 Dexie；`stageAssistantContextFile` 改 async 直接 `saveLocalAssistantFiles`。修复后助手 level-4 的 `.tsian/` 写权限真正落地，三层写入路由完整（card-content→卡 / save-runtime→存档 / platform-meta+local→本地篮子）。
+
+**已知瑕疵（不阻塞，留作后续）**：旧会话迁移时 `createInitialAgentContext` 的 turn 号倒推算出负数（-2,-1,0,1）。根因：旧会话首 turn `currentTurn=1` + 6 条历史时 `baseTurn = 1 - ceil(6/2) = -2`。功能不受影响（压缩去重仍工作，`lastCompressedTurn` 正常）。**新会话不受影响**——从空开始 turn 号从 1 正常起步。
+
+**待续（G3-G9）**：长对话压缩稳态、多会话隔离、会话删除清理、旧会话迁移完整链路、turn 失败不写回、master 不回归、turn 号递增。注意：实测中发现 AssistantView 新建会话后 active 切换 + 建议按钮触发的消息路由需进一步确认（非 context 机制问题，是 UI 会话管理）。
