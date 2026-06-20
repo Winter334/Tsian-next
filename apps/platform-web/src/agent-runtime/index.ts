@@ -15,6 +15,7 @@ import { assembleAgentContext } from "./context"
 import {
   AGENT_CONTEXT_AGENT_ID,
   appendTurnToContext,
+  ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT,
   compressContext,
   compressTaskContext,
   CONTEXT_COMPRESS_TRIGGER_RATIO,
@@ -1993,23 +1994,32 @@ export async function runAgentRuntimeTurn(
     )
   }
 
-  // R3:turn 开头压缩(narrative 模式专用).估算 context token,超 85% 阈值则调 model
-  // 摘要化早期正文(只压剧情正文,过滤工具过程),保持"1 摘要 + K 轮正文"稳态.
-  // task 模式(assistant)跳过:agentContext 是兜底初始化(无注入),压剧情无价值——
-  // task 模式压工具交互段(在工具循环内),不压剧情.压缩失败 → throw
+  // R3:turn 开头压缩(快照层).估算 context token,超 85% 阈值则调 model
+  // 摘要化早期正文,保持"1 摘要 + K 轮正文"稳态.两模式都执行:
+  // - narrative(master):压剧情正文(叙事梗概),用默认 COMPRESSION_SYSTEM_PROMPT.
+  // - task(助手):压任务对话(任务摘要),用 ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT.
+  // 这与 turn 内 compressTaskContext(压工具交互段,运行时层)独立互补——
+  // 此处压跨 turn 累积的 AgentContextSnapshot(summary + recentTurns),
+  // turn 内压本轮 messages 的工具调用段.压缩失败 → throw
   // ContextCompressionFailedError(温和兜底,经 AssistantView 显示).
   const entryCompressionMode = resolveEntryCompressionMode(input)
   let compressedContext: AgentContextSnapshot | undefined
   const budget = resolveTokenBudget(input.contextTokenBudget)
   const triggerThreshold = budget * CONTEXT_COMPRESS_TRIGGER_RATIO
-  if (
-    entryCompressionMode === "narrative"
-    && estimateContextTokens(agentContext) > triggerThreshold
-  ) {
+  if (estimateContextTokens(agentContext) > triggerThreshold) {
     const compressOptions: CompressCallOptions = {
       debugLabel: "entry-agent",
       signal: input.signal,
       agentId: entryContext.agent.id,
+      // task 模式(助手)用任务摘要 prompt + "用户/助手"标签;
+      // narrative 模式(master)不传 → compressContext 用默认剧情梗概 prompt + "玩家/叙事"标签.
+      ...(entryCompressionMode === "task"
+        ? {
+            systemPrompt: ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT,
+            userLabel: "用户",
+            assistantLabel: "助手",
+          }
+        : {}),
     }
     try {
       agentContext = await compressContext(
@@ -2023,7 +2033,7 @@ export async function runAgentRuntimeTurn(
         type: "context_compressed",
         ...traceAgentBase(entryContext, "entry-agent"),
         ok: true,
-        data: { budget, triggerThreshold },
+        data: { budget, triggerThreshold, mode: entryCompressionMode },
       })
     } catch (error) {
       capabilities.emitTrace?.({
