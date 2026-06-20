@@ -2,12 +2,17 @@
 
 > 父任务：`06-19-tool-runtime-performance`。**依赖子1（tool-skill-decouple）**——子1 改了工具循环形态（use_skill 注入、run_script 执行），token 预算机制需在新循环上实现。
 
-> **⚠️ 状态：planning，待重新讨论细化（2026-06-20 更新）—— 新会话从此接续**
+> **状态：planning，方向已定（2026-06-20 重新讨论细化）**
 > 规划讨论中发现本任务原设想的"工具循环内 token 压缩"建立在错误假设上（以为历史对话是上下文大头、压缩可只在 turn 内做）。经厘清，AIRP 的 master agent 上下文生命周期 + 压缩持久化是更底层的基础，需先落实。
 >
-> **底层任务 `agent-session-context-lifecycle` 已实现并提交**（commit 05d9da2，master agent 上下文记录与 saveHistory 分离、context.json 持久化、跨 turn 稳态、85% 压缩、叙事梗概摘要）。本任务现在可以在其上重新讨论细化。
+> **底层任务 `agent-session-context-lifecycle` 已实现并提交**（commit 05d9da2，master agent 上下文记录与 saveHistory 分离、context.json 持久化、跨 turn 稳态、85% 压缩、叙事梗概摘要）。本任务现在在其上重新讨论细化。
 >
-> **新会话接续点**：本任务仍需重新讨论细化需求（底层任务落地后,本任务的真实形态、与底层压缩的边界、是否还要独立的 tool 体积兜底等需重新审视），再重写 design.md + implement.md（当前的已过时，保留作历史参考）。真实范围初稿见下方"讨论结论沉淀"，但需结合底层实现重新讨论确认。重写时可复用 context-lifecycle.ts 的 token 估算函数（estimateTokenCount/resolveTokenBudget），考虑抽取共享 util 或直接引用。
+> **2026-06-20 重新讨论结论（方向已定）**：
+> - 机制定位 = **turn 内独立体积兜底**（与底层跨 turn 剧情正文压缩职责分明，互不干涉）。底层管"跨 turn 剧情正文压缩持久化"，本任务管"turn 内 tool 交互累积体积兜底 + 去硬轮次限制"。
+> - 对标确认：OpenClaw / Hermes / Claude Code / Codex / LangChain 均无硬轮次限制；Hermes `/compress` + zero-context-cost turns（Tsian 子任务1 的 run_script 已部分具备后者方向）；Codex 式截断丢弃早期内容。Tsian 的"剧情正文/tool 交互分层压缩"比主流框架更精细，turn 内 tool 交互管理无现成先例，基于自身分层设计。
+> - **不加软轮次保底**：AIRP 用户用次旗舰/旗舰模型（deepseek-v4-pro-auto 等），model 自身行为可靠性足够，防死循环靠 model 可靠 + 用户可 abort。软轮次保底是给弱模型的冗余，对 Tsian 目标用户群是过度设计。
+> - **不做"引导脚本化编排"**（借 Hermes zero-context-cost 思路引导模型用 run_script 编排多步工具）：超出本任务边界，子任务1 的 run_script 已提供该能力，是否主动引导是后续 prompt 工程话题。
+> - 复用底层 `context-lifecycle.ts` 的 `estimateTokenCount` / `estimateAiChatMessagesTokens` / `resolveTokenBudget` / `DEFAULT_CONTEXT_TOKEN_BUDGET`，不重复造轮子。
 
 ---
 
@@ -95,33 +100,45 @@
 - `reached the workspace tool round limit without a final response` 错误条件随 R1 移除。
 - AssistantView 的 catch 逻辑：当前对 AbortError 保留半截 + "（已停止）"，对其它错误设 errorMessage。新增对"上下文已满"错误的处理——保留已流式 thought + 显示温和提示（不 pop 占位消息）。
 
-## 验收标准
+## 验收标准（2026-06-20 重写，反映新方向）
 
-- [ ] `maxToolRoundsPerAgent` 不再作为工具循环终止条件（字段移除或停用）。
+- [ ] `maxToolRoundsPerAgent` 字段从 `AgentRuntimeCollaborationPolicy` 移除，不再作为工具循环终止条件。
 - [ ] 工具循环可超过 4 轮不报 round limit 错（实测：让模型探索 6+ 轮）。
-- [ ] 上下文超 token 上限时触发压缩而非抛错；压缩后继续循环。
-- [ ] 压缩后仍超限时温和报错"上下文已满"，不裸抛"助手不可用"，不丢已流式 thought。
+- [ ] turn 内工具循环每轮调 model 前估算 `runtimeMessages` token，超 85% budget 时压**剧情正文**（复用底层 `compressContext`）腾空间，tool 交互全保留，压缩后继续循环。
+- [ ] turn 内压缩只触发一次；第二次达预算走兜底（有 finalText 返回 / 无 finalText 温和报错"上下文已满"），不裸抛"助手不可用"，不丢已流式 thought。
 - [ ] 不再出现 `reached the workspace tool round limit without a final response`。
-- [ ] token 上限默认 256k，model.contextWindow 配置可覆盖（更小值生效）。
+- [ ] token 预算 = `resolveTokenBudget(model.contextWindow)`（无配置兜底 256k），复用底层常量与函数。
+- [ ] turn 内压缩结果透传到 `contextUpdate.compressedContext`，host 落盘自动持久化（context.json schema 不变）。
 - [ ] `npm run build`（含 contracts）通过。
-- [ ] 真实 API 实测：模型多步探索不被卡死；人为构造超长上下文触发压缩不崩。
+- [ ] 真实 API 实测：模型多步探索不被卡死；人为构造超长上下文触发 turn 内压剧情不崩、tool 交互保留、模型不重复探索；极端场景兜底"上下文已满"生效。
 
-## 明确不做
+## 明确不做（2026-06-20 重写）
 
-- 不做软提示（接近 token 临界值时提醒模型"尽快收尾"）——后续演进。
-- 不做精确 token 计数（引入 tokenizer）——MVP 用字符数估算。
-- 不做复杂压缩策略（摘要式压缩、重要轮次保留优先级、滑动窗口）——MVP 用"丢弃最早 tool 轮次"简单策略。
+- 不加软轮次保底——AIRP 用户用次旗舰/旗舰模型，防死循环靠 model 可靠 + 用户 abort。
+- 不压缩 tool 交互——tool 是过程性内容，摘要无价值且成本高；用"压剧情腾空间"替代"丢 tool 轮次"。
+- 不做"引导脚本化编排"（借 Hermes zero-context-cost 思路引导模型用 run_script 编排多步工具）——超出本任务边界，子1 的 run_script 已提供该能力，是否主动引导是后续 prompt 工程话题。
+- 不改底层压缩机制本身——复用 `compressContext`，不改它；只在工具循环内新增调用点。
+- 不改跨 turn 压缩时机（底层 turn 开头压缩）——turn 开头压缩 + turn 内压缩是两次独立检查。
+- 不做精确 token 计数（引入 tokenizer）——复用底层字符估算（`charCount*0.4 + utf8Bytes*0.25`）。
+- 不做软提示（接近临界值时提醒模型"尽快收尾"）——后续演进。
 - 不改 abort 机制（停止按钮，子2a 已实现）。
-- 不改 model.config 的 contextWindow 字段定义（字段已存在，本任务只落实 enforcement）。
+- 不改 model.config 的 contextWindow 字段定义（字段已存在，本任务只消费它）。
 
 ## 依赖
 
 - 上游：子1（tool-skill-decouple）——工具循环形态变了（use_skill 注入、run_script 执行），token 预算在新循环上实现。
+- 上游：`agent-session-context-lifecycle`（已交付）——复用其 `compressContext` / token 估算 / `resolveTokenBudget` / 常量；在其"跨 turn 剧情正文压缩"之上做"turn 内工具循环体积兜底"。
 - 下游：无。
 
-## 开放问题
+## 开放问题（2026-06-20 重写，全部已决）
 
-- 压缩时保留最近 N 轮的 N 值：倾向 2-3 轮（足够模型继续任务），design.md 定。
-- token 估算精度：统一 / 4 还是中英分开？MVP 倾向统一 / 4，design.md 评估误差可接受性。
-- `maxToolRoundsPerAgent` 字段移除 vs 保留停用：倾向移除（不留死字段），但需确认配置 shape 破坏性影响（原型期可接受）。design.md 定。
-- 压缩后是否给模型一个"上下文已压缩，早期工具结果可能丢失"的提示？倾向是（让模型知道早期信息可能不在了），design.md 定。
+- ~~压缩时保留最近 N 轮 tool 轮次的 N 值~~：已否决"丢 tool 轮次"方案，改为压剧情，无 N 值。
+- ~~token 估算精度~~：复用底层 `charCount*0.4 + utf8Bytes*0.25`（中英混合优化，误差倒向早压缩安全侧）。
+- ~~`maxToolRoundsPerAgent` 移除 vs 保留~~：移除（不在 contracts，无破坏）。
+- ~~压缩时 tool 交互怎么处理~~：全保留，只压剧情。
+- ~~第二次达预算兜底~~：有 text 返回 / 无 text 温和报错（兜底C）。
+- ~~turn 内压缩检查时机~~：每轮调 model 前检查（含 round 0）。
+- ~~turn 内压缩次数~~：只允许一次。
+- ~~软轮次保底~~：不加（信任 model 可靠 + 用户 abort）。
+
+**所有 open questions 已决，design.md + implement.md 已完成，可进入 1.3 配置上下文 / 1.4 激活任务。**
