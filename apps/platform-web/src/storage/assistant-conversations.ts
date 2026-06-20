@@ -1,5 +1,6 @@
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import { localDb } from "./db"
+import { assistantContextPath, deleteLocalAssistantFile } from "./local-assistant-files"
 
 export type AssistantMode = "local" | "card"
 
@@ -256,6 +257,9 @@ export async function deleteAssistantSession(
   const sessions = (await readSessionList(mode)).filter((entry) => entry.id !== id)
   await writeSessionList(mode, sessions)
   await localDb.meta.delete(messagesKey(id))
+  // 连带清理该会话的 agent 上下文快照(虚拟文件),防孤儿残留(design 06-20-assistant-context-persistence §3.6).
+  // deleteLocalAssistantFile 内部已 catch,不会阻塞会话删除.
+  await deleteLocalAssistantFile(assistantContextPath(id))
   const activeId = await getActiveAssistantSessionId(mode)
   if (activeId === id) {
     await setActiveAssistantSessionId(

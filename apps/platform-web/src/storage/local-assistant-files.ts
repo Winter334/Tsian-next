@@ -202,3 +202,40 @@ export async function saveLocalAssistantFiles(files: WorkspaceFile[]): Promise<v
 export function isLocalAssistantPath(path: string): boolean {
   return path === LOCAL_ASSISTANT_DIR || path.startsWith(`${LOCAL_ASSISTANT_DIR}/`)
 }
+
+/**
+ * 助手会话 context 快照的虚拟文件路径(design 06-20-assistant-context-persistence).
+ * 存本模块 Dexie map 的一项,对外暴露为虚拟文件——agent 可 workspace_read/write 管理,
+ * 契合"平台数据收录到文件系统"的产品哲学.每会话独立路径,切换会话不串上下文.
+ */
+export function assistantContextPath(sessionId: string): string {
+  return `${LOCAL_ASSISTANT_DIR}/sessions/${sessionId}/context.json`
+}
+
+/**
+ * 从 local-assistant-files map 删除单个文件(供会话删除清理 context 快照).
+ * saveLocalAssistantFiles 是合并模式(只合并不删项),故需此专用删除函数.
+ * 只处理 .tsian/local/assistant/ 前缀路径(安全边界),非该前缀忽略.
+ */
+export async function deleteLocalAssistantFile(path: string): Promise<void> {
+  if (!isLocalAssistantPath(path)) {
+    return
+  }
+  const record = await localDb.meta.get(LOCAL_ASSISTANT_FILES_KEY)
+  if (!record?.value) {
+    return
+  }
+  try {
+    const map = JSON.parse(record.value) as StoredAssistantFileMap
+    if (!map || typeof map !== "object" || !(path in map)) {
+      return
+    }
+    delete map[path]
+    await localDb.meta.put({
+      key: LOCAL_ASSISTANT_FILES_KEY,
+      value: JSON.stringify(map),
+    })
+  } catch {
+    // 损坏 map 忽略,不阻塞会话删除
+  }
+}
