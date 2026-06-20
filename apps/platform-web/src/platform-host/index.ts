@@ -61,6 +61,7 @@ import {
 } from "../agent-runtime/registry"
 import {
   assistantContextPath,
+  deleteLocalAssistantFile,
   loadLocalAssistantFiles,
   saveLocalAssistantFiles,
   isLocalAssistantPath,
@@ -469,12 +470,14 @@ function nextAssistantTurnNumber(snapshot: AgentContextSnapshot): number {
 }
 
 /**
- * turn 收尾:把本轮正文追加进助手会话 context,写进 workspaceTransaction.
- * 搭便车 commitAssistantWorkspaceFiles(isLocalAssistantPath 分流)→ saveLocalAssistantFiles 合并落盘.
- * 对称 master 的 stageAgentContextFile,但路径是虚拟文件 sessions/<id>/context.json.
+ * turn 收尾:把本轮正文追加进助手会话 context,直接落盘到本地篮子(saveLocalAssistantFiles).
+ * 对称 master 的 stageAgentContextFile,但路径是虚拟文件 sessions/<id>/context.json,
+ * 属 .tsian/local/(平台本地数据,不进 save 事务/checkpoint/distribute).
+ * 与 workspaceMutations.write 的 isLocalAssistantPath bypass 同通道:不碰
+ * RuntimeWorkspaceTransaction(它对 .tsian/local/ 无入口),直接 Dexie 合并落盘.
+ * turn 失败时 catch 不调本函数 → context 不写回(磁盘快照停留 turn 开头状态).
  */
-function stageAssistantContextFile(
-  workspaceTransaction: RuntimeWorkspaceTransaction,
+async function stageAssistantContextFile(
   input: {
     sessionId: string
     turn: number
@@ -483,7 +486,7 @@ function stageAssistantContextFile(
     compressedContext?: AgentContextSnapshot
     fallbackContext: AgentContextSnapshot
   },
-): WorkspaceFile {
+): Promise<void> {
   // 基础快照:本轮压缩了→用压缩结果;否则用 turn 开头读出的快照;无则空快照
   const base =
     input.compressedContext
@@ -499,11 +502,16 @@ function stageAssistantContextFile(
     input.user,
     input.assistant,
   )
-  return workspaceTransaction.write({
+  const file: WorkspaceFile = {
     path: assistantContextPath(input.sessionId),
     content: serializeAgentContext(updated),
     mediaType: "application/json",
-  })
+    createdAt: 0,
+    updatedAt: Date.now(),
+  }
+  // saveLocalAssistantFiles 合并落盘:只收 .tsian/local/assistant/ 前缀,与已存 map
+  // 合并(不丢其他身份文件).零额外事务 IO,直接写 Dexie.
+  await saveLocalAssistantFiles([file])
 }
 
 function stageRawAirpHistoryTurnFile(
@@ -1992,6 +2000,24 @@ export async function runAssistantChat(
         }),
         workspaceMutations: {
           write: (writeInput) => {
+            // .tsian/local/assistant/* 是平台本地数据(不进存档/checkpoint/distribute),
+            // 写入 bypass save 事务,直接落 Dexie(saveLocalAssistantFiles 合并模式).
+            // 与资源管理器 executeLocalWorkspaceOperation 的 local 写入路径一致.
+            // 不能用 writePlatformFile:assertPlatformSaveRuntimeMutationPath 经
+            // isSaveRuntimePersistencePath 把 .tsian/local/ 排除( local-only 不进
+            // save 持久化),会抛 WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED.
+            // 权限层(level 4 ≥ editLevel 4)已放行,这里只补正确的落盘通道.
+            if (writeInput.scope === "platform-meta" && isLocalAssistantPath(writeInput.path)) {
+              const written: WorkspaceFile = {
+                path: writeInput.path,
+                content: writeInput.content,
+                mediaType: writeInput.mediaType ?? "text/plain",
+                createdAt: 0,
+                updatedAt: Date.now(),
+              }
+              // saveLocalAssistantFiles 是 async 合并落盘,签名支持 Promise<WorkspaceFile>.
+              return saveLocalAssistantFiles([written]).then(() => written)
+            }
             if (writeInput.scope === "platform-meta") {
               return activeWorkspaceTransaction.writePlatformFile({
                 path: writeInput.path,
@@ -2016,6 +2042,13 @@ export async function runAssistantChat(
             throw new Error(`Assistant workspace write scope not supported: ${writeInput.scope}`)
           },
           delete: (deleteInput) => {
+            // 同 write:.tsian/local/assistant/* 的删除 bypass 事务,直接 deleteLocalAssistantFile.
+            if (deleteInput.scope === "platform-meta" && isLocalAssistantPath(deleteInput.path)) {
+              return deleteLocalAssistantFile(deleteInput.path).then(() => ({
+                scope: deleteInput.scope,
+                deletedPaths: [deleteInput.path],
+              }))
+            }
             if (deleteInput.scope === "card-content" || deleteInput.scope === "save-runtime") {
               return {
                 scope: deleteInput.scope,
@@ -2030,12 +2063,13 @@ export async function runAssistantChat(
     )
 
     // 写回会话 context 快照(虚拟文件):本轮正文追加 + 压缩结果落盘.
-    // 写进 workspaceTransaction,搭便车 commitAssistantWorkspaceFiles 的
-    // isLocalAssistantPath 分流 → saveLocalAssistantFiles 合并落盘(零额外 IO).
-    // 对称 master 的 stageAgentContextFile.turn 失败走 catch discard,不写回.
+    // 直接落本地篮子(saveLocalAssistantFiles),不进 save 事务——.tsian/local/
+    // 是平台本地数据,不随存档 checkpoint/distribute.对称 master 的 stageAgentContextFile
+    // (master 走 save 事务因 agents/master/context.json 属 save/).turn 失败走 catch
+    // discard(事务),且不调本函数 → context 不写回.
     const assistantContextUpdate = result.contextUpdate
     if (assistantContextUpdate) {
-      stageAssistantContextFile(activeWorkspaceTransaction, {
+      await stageAssistantContextFile({
         sessionId: input.sessionId,
         turn: assistantContextUpdate.turn,
         user: assistantContextUpdate.user,
