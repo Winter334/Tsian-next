@@ -3,7 +3,7 @@
   "name": "tool-token-budget",
   "title": "限制机制改造（token 预算）",
   "description": "在 agent-session-context-lifecycle 底层基础上做:去 maxToolRoundsPerAgent 硬轮次限制 + turn 内工具循环每轮调 model 前估算 runtimeMessages token,达 85% budget 时压剧情正文(复用底层 compressContext)腾空间、tool 交互全保留 + turn 内压缩只触发一次,第二次达预算走兜底(有 text 返回/无 text 温和报错)。对标 Codex 达预算就压缩;Tsian 比主流更精细,只压剧情不压 tool(tool 是过程性内容)。design.md+implement.md 已重写(2026-06-20)。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

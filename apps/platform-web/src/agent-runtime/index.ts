@@ -17,11 +17,15 @@ import {
   appendTurnToContext,
   compressContext,
   CONTEXT_COMPRESS_TRIGGER_RATIO,
+  ContextBudgetExhaustedError,
   ContextCompressionFailedError,
   createInitialAgentContext,
+  estimateAiChatMessagesTokens,
   estimateContextTokens,
+  estimateRuntimeMessagesTokens,
   resolveTokenBudget,
   serializeAgentContext,
+  type CompressCallModel,
   type CompressCallOptions,
 } from "./context-lifecycle"
 import {
@@ -233,6 +237,16 @@ interface WorkspaceToolLoopOptions {
   agentCallState: AgentCallTurnState
   agentCallDepth: number
   collaborationPolicy: AgentRuntimeCollaborationPolicy
+  /**
+   * master agent 会话上下文快照(turn 开头压缩后已是更新值).turn 内压剧情就
+   * 地更新它(Object.assign),循环结束后透传回 runAgentRuntimeTurn 落盘.
+   * 未传(delegated agent 路径)→ 工具循环不做 turn 内压剧情,但仍做预算兜底.
+   */
+  agentContextSnapshot?: AgentContextSnapshot
+  /** token 预算(turn 开头已 resolve).达 85% 触发压缩/兜底. */
+  contextTokenBudget?: number
+  /** 压缩用的 model 调用(复用 capabilities.callModel). */
+  compressCallModel?: CompressCallModel
 }
 
 interface AgentCallRuntimeMetadata {
@@ -1244,8 +1258,6 @@ async function callAgentModelWithWorkspaceToolsNative(
   const runtimeMessages = aiChatMessagesToRuntime(messages)
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
-  const maxToolRounds = toolOptions.collaborationPolicy.maxToolRoundsPerAgent
-    ?? DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY.maxToolRoundsPerAgent
   const visibleContacts = input.workspaceFiles
     ? getVisibleAgentContacts(input.workspaceFiles, agentContext)
     : []
@@ -1264,8 +1276,78 @@ async function callAgentModelWithWorkspaceToolsNative(
     visibleContacts,
   })
 
-  for (let round = 0; round <= maxToolRounds; round += 1) {
+  // turn 内 token 预算 + 压剧情(tool-token-budget R2).循环不再有轮次上限,
+  // 靠 stop / abort / 预算兜底三条件终止.仅 entry 稳态路径(注入了 context 快照)
+  // 做压剧情;delegated / 兜底路径无快照,只走预算兜底(达阈值直接走兜底C).
+  const historySpan = locateHistorySpan(runtimeMessages)
+  const canCompressInTurn =
+    historySpan.start >= 0
+    && toolOptions.agentContextSnapshot !== undefined
+    && toolOptions.contextTokenBudget !== undefined
+    && toolOptions.compressCallModel !== undefined
+  const triggerThreshold =
+    toolOptions.contextTokenBudget !== undefined
+      ? toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
+      : 0
+  let compressedThisTurn = false
+  let lastRoundText = ""
+
+  for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
+
+    // 每轮调 model 前做 token 预算检查(含 round 0).达 85% budget:
+    // - 第一次 → 压剧情(复用底层 compressContext)腾空间,tool 交互全保留,继续循环.
+    // - 第二次 → 兜底C:有 lastRoundText 返回 / 无则抛 ContextBudgetExhaustedError.
+    if (triggerThreshold > 0) {
+      const totalTokens = estimateRuntimeMessagesTokens(runtimeMessages)
+      if (totalTokens > triggerThreshold) {
+        if (compressedThisTurn || !canCompressInTurn) {
+          const finalText = lastRoundText.trim()
+          if (finalText) {
+            recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+              messages,
+              modelOutput: lastRoundText,
+              toolCalls: [],
+              toolObservations: [],
+              round,
+              status: "completed",
+            })
+            return finalText
+          }
+          throw new ContextBudgetExhaustedError()
+        }
+        const compressOptions: CompressCallOptions = {
+          debugLabel: options.debugLabel,
+          signal: options.signal,
+          agentId: agentContext.agent.id,
+        }
+        const compressed = await compressContext(
+          toolOptions.agentContextSnapshot!,
+          triggerThreshold,
+          toolOptions.compressCallModel!,
+          compressOptions,
+        )
+        Object.assign(toolOptions.agentContextSnapshot!, compressed)
+        compressedThisTurn = true
+        const newHistory = aiChatMessagesToRuntime(
+          buildAgentContextMessages(toolOptions.agentContextSnapshot!),
+        )
+        replaceHistorySpan(runtimeMessages, historySpan, newHistory)
+        historySpan.end = historySpan.start + newHistory.length
+        capabilities.emitTrace?.({
+          type: "context_compressed_in_turn",
+          agentId: agentContext.agent.id,
+          debugLabel: options.debugLabel,
+          ok: true,
+          data: {
+            round,
+            beforeTokens: totalTokens,
+            budget: toolOptions.contextTokenBudget!,
+            triggerThreshold,
+          },
+        })
+      }
+    }
 
     const callOptions: AgentRuntimeModelCallOptions = {
       ...options,
@@ -1273,6 +1355,7 @@ async function callAgentModelWithWorkspaceToolsNative(
     }
     const result = await capabilities.callModelNative!(runtimeMessages, callOptions, tools)
     assertNotAborted(options.signal)
+    lastRoundText = result.text
 
     // Notify the caller that this round ended, with the finish reason so it can
     // classify the streamed text as thought (tool_calls) or final (stop). Emitted
@@ -1314,24 +1397,6 @@ async function callAgentModelWithWorkspaceToolsNative(
         status: "completed",
       })
       return result.text.trim()
-    }
-
-    if (round >= maxToolRounds) {
-      const finalText = result.text.trim()
-      if (finalText) {
-        recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-          messages,
-          modelOutput: result.raw,
-          toolCalls,
-          toolObservations: [],
-          round,
-          status: "completed",
-        })
-        return finalText
-      }
-      throw new Error(
-        `${options.debugLabel} reached the workspace tool round limit without a final response.`,
-      )
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -1451,13 +1516,78 @@ async function callAgentModelWithWorkspaceTools(
   let nextMessages = messages
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
-  const maxToolRounds = toolOptions?.collaborationPolicy.maxToolRoundsPerAgent
-    ?? DEFAULT_AGENT_RUNTIME_COLLABORATION_POLICY.maxToolRoundsPerAgent
-  for (let round = 0; round <= maxToolRounds; round += 1) {
+  // turn 内 token 预算 + 压剧情(text 循环对称版,R2).仅 entry 稳态路径(注入了
+  // context 快照)做压剧情;delegated / 兜底路径只走预算兜底.
+  const historySpan = locateHistorySpan(nextMessages)
+  const canCompressInTurn =
+    historySpan.start >= 0
+    && toolOptions?.agentContextSnapshot !== undefined
+    && toolOptions?.contextTokenBudget !== undefined
+    && toolOptions?.compressCallModel !== undefined
+  const triggerThreshold =
+    toolOptions?.contextTokenBudget !== undefined
+      ? toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
+      : 0
+  let compressedThisTurn = false
+  let lastRoundText = ""
+
+  for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
+
+    // 每轮调 model 前 token 预算检查(含 round 0).第一次达 85% → 压剧情腾空间;
+    // 第二次 → 兜底C:有 lastRoundText 返回 / 无则抛 ContextBudgetExhaustedError.
+    if (triggerThreshold > 0) {
+      const totalTokens = estimateAiChatMessagesTokens(nextMessages)
+      if (totalTokens > triggerThreshold) {
+        if (compressedThisTurn || !canCompressInTurn) {
+          const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
+          if (finalText) {
+            recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+              messages: nextMessages,
+              modelOutput: lastRoundText,
+              toolCalls: [],
+              toolObservations: [],
+              round,
+              status: "completed",
+            })
+            return finalText
+          }
+          throw new ContextBudgetExhaustedError()
+        }
+        const compressOptions: CompressCallOptions = {
+          debugLabel: options.debugLabel,
+          signal: options.signal,
+          agentId: agentContext.agent.id,
+        }
+        const compressed = await compressContext(
+          toolOptions!.agentContextSnapshot!,
+          triggerThreshold,
+          toolOptions!.compressCallModel!,
+          compressOptions,
+        )
+        Object.assign(toolOptions!.agentContextSnapshot!, compressed)
+        compressedThisTurn = true
+        const newHistory = buildAgentContextMessages(toolOptions!.agentContextSnapshot!)
+        replaceHistorySpan(nextMessages, historySpan, newHistory)
+        historySpan.end = historySpan.start + newHistory.length
+        capabilities.emitTrace?.({
+          type: "context_compressed_in_turn",
+          agentId: agentContext.agent.id,
+          debugLabel: options.debugLabel,
+          ok: true,
+          data: {
+            round,
+            beforeTokens: totalTokens,
+            budget: toolOptions!.contextTokenBudget!,
+            triggerThreshold,
+          },
+        })
+      }
+    }
 
     const response = await capabilities.callModel(nextMessages, options)
     assertNotAborted(options.signal)
+    lastRoundText = response
 
     const toolCalls = parseRuntimeWorkspaceToolCalls(response)
     capabilities.emitTrace?.({
@@ -1483,25 +1613,6 @@ async function callAgentModelWithWorkspaceTools(
         status: "completed",
       })
       return stripRuntimeWorkspaceToolCallBlocks(response).trim()
-    }
-
-    if (round >= maxToolRounds) {
-      const finalText = stripRuntimeWorkspaceToolCallBlocks(response).trim()
-      if (finalText) {
-        recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-          messages: nextMessages,
-          modelOutput: response,
-          toolCalls,
-          toolObservations: [],
-          round,
-          status: "completed",
-        })
-        return finalText
-      }
-
-      throw new Error(
-        `${options.debugLabel} reached the workspace tool round limit without a final response.`,
-      )
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -1630,6 +1741,11 @@ export async function runAgentRuntimeTurn(
   }
 
   let replyText: string
+  // turn 内压剧情就地把压缩结果写进 agentContext(对象引用),循环结束后
+  // 用它覆盖 compressedContext 透传给 host 落盘(design §3.5).标记位区分
+  // "turn 开头压过" 与 "turn 内又压过",取最后一次压缩快照.
+  let compressedInTurn = false
+  const agentContextSnapshotForLoop = agentContext
   try {
     replyText = (await callAgentModelWithWorkspaceTools(
       buildEntryAgentMessages(
@@ -1655,9 +1771,21 @@ export async function runAgentRuntimeTurn(
         agentCallState,
         agentCallDepth: 0,
         collaborationPolicy,
+        agentContextSnapshot: agentContextSnapshotForLoop ?? undefined,
+        contextTokenBudget: budget,
+        compressCallModel: capabilities.callModel,
       },
       transcriptCollector,
     )).trim()
+    // 工具循环内若压过剧情,agentContextSnapshotForLoop 已被 Object.assign 就地更新;
+    // 通过对比 updatedAt 判断是否发生 turn 内压缩(底层压缩必更新 updatedAt).
+    if (
+      agentContextSnapshotForLoop
+      && compressedContext
+      && agentContextSnapshotForLoop.updatedAt !== compressedContext.updatedAt
+    ) {
+      compressedInTurn = true
+    }
     if (!replyText) {
       throw new Error(`Entry agent "${input.agentId}" returned an empty reply.`)
     }
@@ -1684,7 +1812,7 @@ export async function runAgentRuntimeTurn(
       turn: currentRuntimeTurnNumber(input),
       user: input.userInput,
       assistant: replyText,
-      compressedContext,
+      compressedContext: compressedInTurn ? agentContextSnapshotForLoop! : compressedContext,
     },
   }
 }

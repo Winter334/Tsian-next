@@ -16,6 +16,7 @@ export type RuntimeTraceEventType =
   | "agent_session_transcripts_staged"
   | "agent_context_staged"
   | "context_compressed"
+  | "context_compressed_in_turn"
   | "context_compression_failed"
   | "script_log"
   | "workspace_mutation"
