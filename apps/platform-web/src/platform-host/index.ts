@@ -39,7 +39,10 @@ import { assembleAgentContext } from "../agent-runtime/context"
 import {
   AGENT_CONTEXT_PATH,
   appendTurnToContext,
+  ASSISTANT_CONTEXT_AGENT_ID,
+  ASSISTANT_CONTEXT_SCHEMA,
   createEmptyAgentContext,
+  createInitialAgentContext,
   DEFAULT_TASK_TIMEOUT_MS,
   parseAgentContext,
   resolveTokenBudget,
@@ -57,6 +60,7 @@ import {
   skillMetadataReference,
 } from "../agent-runtime/registry"
 import {
+  assistantContextPath,
   loadLocalAssistantFiles,
   saveLocalAssistantFiles,
   isLocalAssistantPath,
@@ -424,6 +428,79 @@ function stageAgentContextFile(
   )
   return workspaceTransaction.write({
     path: AGENT_CONTEXT_PATH,
+    content: serializeAgentContext(updated),
+    mediaType: "application/json",
+  })
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 助手会话 context 虚拟文件读写(design 06-20-assistant-context-persistence)
+// 对称 master 的 readAgentContextFromWorkspace/stageAgentContextFile,但从
+// localAssistantFiles 读、写进 workspaceTransaction(搭便车 commitAssistantWorkspaceFiles
+// → saveLocalAssistantFiles 合并落盘).每会话独立路径 sessions/<sessionId>/context.json.
+// ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * 从已加载的 localAssistantFiles 读助手会话 context 快照.无则 null(host 兜底初始化).
+ * localAssistantFiles 在 runAssistantChat turn 开头已 load,零额外 IO.
+ */
+function readAssistantContextFromFiles(
+  files: WorkspaceFile[],
+  sessionId: string,
+): AgentContextSnapshot | null {
+  const path = assistantContextPath(sessionId)
+  const file = files.find((f) => f.path === path)
+  if (!file) return null
+  return parseAgentContext(file.content, sessionId, {
+    schema: ASSISTANT_CONTEXT_SCHEMA,
+    agentId: ASSISTANT_CONTEXT_AGENT_ID,
+  })
+}
+
+/**
+ * 从 context 快照推算下一 turn 号(修复助手 fake snapshot turn 恒为 1 的缺陷).
+ * 取 recentTurns 与 lastCompressedTurn 的最大值 +1,使 turn 号单调递增,
+ * compressContext 的 lastCompressedTurn 去重正确工作.
+ */
+function nextAssistantTurnNumber(snapshot: AgentContextSnapshot): number {
+  const maxRecent = snapshot.recentTurns.reduce((max, e) => Math.max(max, e.turn), 0)
+  const maxCompressed = snapshot.lastCompressedTurn ?? 0
+  return Math.max(maxRecent, maxCompressed) + 1
+}
+
+/**
+ * turn 收尾:把本轮正文追加进助手会话 context,写进 workspaceTransaction.
+ * 搭便车 commitAssistantWorkspaceFiles(isLocalAssistantPath 分流)→ saveLocalAssistantFiles 合并落盘.
+ * 对称 master 的 stageAgentContextFile,但路径是虚拟文件 sessions/<id>/context.json.
+ */
+function stageAssistantContextFile(
+  workspaceTransaction: RuntimeWorkspaceTransaction,
+  input: {
+    sessionId: string
+    turn: number
+    user: string
+    assistant: string
+    compressedContext?: AgentContextSnapshot
+    fallbackContext: AgentContextSnapshot
+  },
+): WorkspaceFile {
+  // 基础快照:本轮压缩了→用压缩结果;否则用 turn 开头读出的快照;无则空快照
+  const base =
+    input.compressedContext
+    ?? input.fallbackContext
+    ?? createEmptyAgentContext(input.sessionId, {
+        schema: ASSISTANT_CONTEXT_SCHEMA,
+        agentId: ASSISTANT_CONTEXT_AGENT_ID,
+      })
+  // 追加本轮正文(保持最近 K 轮),saveId 用 sessionId(语义复用)
+  const updated = appendTurnToContext(
+    { ...base, saveId: input.sessionId },
+    input.turn,
+    input.user,
+    input.assistant,
+  )
+  return workspaceTransaction.write({
+    path: assistantContextPath(input.sessionId),
     content: serializeAgentContext(updated),
     mediaType: "application/json",
   })
@@ -1689,6 +1766,12 @@ export interface AssistantChatInput {
   message: string
   history?: ConversationMessageRecord[]
   /**
+   * 当前助手会话 id.host 据此读写该会话的 agent 上下文快照
+   * (虚拟文件 .tsian/local/assistant/sessions/<sessionId>/context.json).
+   * 多会话隔离:每会话独立 context,切换不串.
+   */
+  sessionId: string
+  /**
    * Streaming text-delta sink. Invoked for every streamed text chunk across
    * all tool-loop rounds (thought-round text included). `agentId` identifies the
    * emitting agent (the desktop assistant is single-agent, so this is always
@@ -1804,10 +1887,32 @@ export async function runAssistantChat(
   const providerPresetMap = buildAgentProviderPresetMap(
     activeWorkspaceTransaction.workspaceFiles,
   )
+  const assistantModelConfig = resolveAgentModelConfig(agentId, providerPresetMap)
   const localAssistantToolCallMode =
-    resolveAgentModelConfig(agentId, providerPresetMap)?.toolCallMode
+    assistantModelConfig?.toolCallMode
     ?? getBrowserAiConfig()?.toolCallMode
     ?? "text"
+
+  // 读会话 agent 上下文快照(虚拟文件 sessions/<sessionId>/context.json,已在
+  // localAssistantFiles 里加载,零额外 IO).无则从 history 兜底初始化(旧会话迁移).
+  // 对称 master 的 readAgentContextFromWorkspace + createInitialAgentContext 兜底.
+  const persistedAssistantContext = readAssistantContextFromFiles(
+    localAssistantFiles,
+    input.sessionId,
+  )
+  const assistantContext =
+    persistedAssistantContext
+    ?? createInitialAgentContext(input.sessionId, history, 1, {
+        schema: ASSISTANT_CONTEXT_SCHEMA,
+        agentId: ASSISTANT_CONTEXT_AGENT_ID,
+      })
+  // 从快照推算下一 turn 号(修复 fake snapshot turn 恒为 1 的缺陷),使
+  // compressContext 的 lastCompressedTurn 去重正确工作.
+  const nextAssistantTurn = nextAssistantTurnNumber(assistantContext)
+  // resolve 助手 model contextWindow 预算(对称 master 的 contextTokenBudget 注入).
+  const assistantContextTokenBudget = resolveTokenBudget(
+    assistantModelConfig?.parameters.contextWindow ?? null,
+  )
 
   try {
     const result = await runAgentRuntimeTurn(
@@ -1815,9 +1920,18 @@ export async function runAssistantChat(
         agentId,
         userInput: content,
         recentHistory: history,
-        snapshot: { version: "tsian.runtime.snapshot.v1", state: { turn: 0, messages: [] } },
+        // 修正 turn 号:从快照推算,使 currentRuntimeTurnNumber 返回 nextAssistantTurn
+        // (之前恒传 turn:0 → 每轮 turn=1,破坏 lastCompressedTurn 去重).
+        snapshot: {
+          version: "tsian.runtime.snapshot.v1",
+          state: { turn: nextAssistantTurn - 1, messages: [] },
+        },
         workspaceFiles: workspaceTransaction.workspaceFiles,
         signal: compositeSignal,
+        // 注入持久化快照(任务摘要 + 最近 K 轮)+ token 预算(之前都不传,runtime
+        // 兜底初始化且 contextUpdate 被丢弃 → 无跨 turn 持久化).对称 master 路径.
+        agentContext: assistantContext,
+        contextTokenBudget: assistantContextTokenBudget,
         // Assistant is a task-type agent (design §0): task compression mode
         // (multi-compress tool interactions + timeout fallback + stall early-exit),
         // distinct from master's narrative compression.
@@ -1914,6 +2028,22 @@ export async function runAssistantChat(
         emitTrace: () => {},
       },
     )
+
+    // 写回会话 context 快照(虚拟文件):本轮正文追加 + 压缩结果落盘.
+    // 写进 workspaceTransaction,搭便车 commitAssistantWorkspaceFiles 的
+    // isLocalAssistantPath 分流 → saveLocalAssistantFiles 合并落盘(零额外 IO).
+    // 对称 master 的 stageAgentContextFile.turn 失败走 catch discard,不写回.
+    const assistantContextUpdate = result.contextUpdate
+    if (assistantContextUpdate) {
+      stageAssistantContextFile(activeWorkspaceTransaction, {
+        sessionId: input.sessionId,
+        turn: assistantContextUpdate.turn,
+        user: assistantContextUpdate.user,
+        assistant: assistantContextUpdate.assistant,
+        compressedContext: assistantContextUpdate.compressedContext,
+        fallbackContext: assistantContext,
+      })
+    }
 
     // Commit workspace changes (no checkpoint, no turn increment).
     const finalFiles = activeWorkspaceTransaction.finalWorkspaceFiles()

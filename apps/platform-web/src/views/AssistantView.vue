@@ -655,10 +655,19 @@ async function send() {
   const controller = new AbortController()
   abortController.value = controller
 
+  // activeSessionId 由 loadActiveSession/ensureAssistantSession 保证非空;
+  // guard 兜底边缘时序(组件未初始化完成就发消息),类型上收窄 string|null -> string.
+  const sessionId = activeSessionId.value
+  if (!sessionId) {
+    sending.value = false
+    return
+  }
+
   try {
     const result = await runAssistantChat({
       message: content,
       history,
+      sessionId,
       onDelta,
       onTool,
       signal: controller.signal,
