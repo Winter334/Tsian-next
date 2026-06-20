@@ -665,6 +665,7 @@ async function send() {
   } catch (error) {
     flushRemaining()
     const aborted = error instanceof Error && error.name === "AbortError"
+    const budgetExhausted = error instanceof Error && error.name === "ContextBudgetExhaustedError"
     if (aborted) {
       // Keep the partial text; mark it so the user knows it was cut short.
       if (assistantMsg.content) {
@@ -674,6 +675,15 @@ async function send() {
         // Nothing was streamed: drop the empty placeholder.
         messages.value.pop()
       }
+    } else if (budgetExhausted) {
+      // turn 内第二次达预算(压缩已用过一次):非失败的中止,与 abort 对称.
+      // 保留已流式 thought,用 content 承载温和提示,不设 errorMessage、不 pop 占位.
+      if (assistantMsg.content) {
+        assistantMsg.content = `${assistantMsg.content}\n\n_（上下文已满，请开始新会话或精简对话）_`
+      } else {
+        assistantMsg.content = "上下文已满，请开始新会话或精简对话。"
+      }
+      await persistCurrentSession()
     } else {
       const message = error instanceof Error ? error.message : String(error)
       errorMessage.value = message
