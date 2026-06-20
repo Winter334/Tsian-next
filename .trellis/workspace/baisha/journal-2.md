@@ -612,3 +612,55 @@ Stages 0-4 were already committed (R0 SW DB-name fix + inferMediaType, stage 1 c
 ### Next Steps
 
 - None - task complete
+
+
+## Session 75: 子代理/助手任务压缩 + 兜底改造（06-20-agent-task-compression）
+
+**Date**: 2026-06-20
+**Task**: 06-20-agent-task-compression（子任务 of 06-19-tool-runtime-performance）
+**Package**: platform-web
+**Branch**: master
+
+### Summary
+
+建立 Tsian 第二种压缩模式（task），与 master 的剧情压缩（narrative）并列。子代理（delegated agent_call 目标）与桌面助手归为任务型 agent：压缩对象是整个上下文含工具调用+返回（compressTaskContext），多次压缩不限次 + 时长兜底（TaskTimeoutError，默认 300s）+ 压缩无效早退（TaskCompressionStalledError，下降 <10%）。靠 RuntimeCompressionMode 枚举在两处工具循环分流，narrative 分支保持 tool-token-budget R2 原样不动（master 不回归）。
+
+勘察纠正 PRD 两处认知：①delegated 实际连预算兜底都没接上（toolOptions 未传，triggerThreshold=0，会无限增长到 provider 窗口报错）——本任务补的不只是 design 意图，还有实际缺口；②assistant 当前走的是 entry 剧情压缩路径（用兜底 agentContext），需切 task 模式。
+
+关键设计讨论：delegated 框架消息拆分 vs 合并——经客观论证（缓存中性 token 级、压缩边界中性 locateTaskInteractionSpan 按形态扫）后选合并（保留 buildDelegatedAgentMessages 单条 user，仅 section 排序微调），不新建 buildTaskAgentMessages。工具消息专属角色确认已是各家 API 标准（native role:tool + adapter 转换）。
+
+阶段 A-F 全部落地，npm run build:contracts && npm run build:web 通过。PV-004 登记真实 API 实测（G1-G8 待环境）。
+
+### Main Changes
+
+- context-lifecycle.ts：compressTaskContext + TaskTimeoutError/TaskCompressionStalledError + TASK_COMPRESSION_SYSTEM_PROMPT + 常量（DEFAULT_TASK_TIMEOUT_MS=300s / TASK_KEEP_RECENT_TOOL_ROUNDS=5 / TASK_COMPRESSION_STALL_RATIO=0.1）。
+- index.ts：RuntimeCompressionMode + WorkspaceToolLoopOptions.compressionMode + locateTaskInteractionSpan + 两处循环按模式分流 + createAgentCallRunner timeoutController/compositeSignal + buildDelegatedAgentMessages section 排序 + AgentRuntimeTurnInput.compressionMode/timeoutMs + entry R3 task 模式跳过剧情压缩。
+- workspace-tools.ts：RuntimeAgentCallArguments.timeoutMs + normalizeAgentCallArguments 透传。
+- tool-schemas.ts：agent_call schema timeoutMs。
+- platform-host/index.ts：runAssistantChat task 模式 + timeoutController；interaction.sendMessage 显式 narrative。
+- AssistantView.vue：catch 识别 TaskTimeoutError/TaskCompressionStalledError 温和提示。
+- type-safety.md：Turn Token Budget 场景改写为 Narrative+Task 双模式；Parallel agent_call 场景补并行独立压缩/超时；agent_call arguments 加 timeoutMs。
+- pending-verification.md：PV-004 登记。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `81f2752` | docs(task): plan agent-task-compression (design + implement + activate) |
+| `b5b4b0d` | feat(agent-runtime): task compression mode + timeout fallback for delegated/assistant |
+| `dfb0987` | chore(task): archive 06-20-agent-task-compression |
+
+### Testing
+
+- [OK] npm run build:contracts 通过
+- [OK] npm run build:web 通过（每阶段 + 全量）
+- [PENDING] 真实 API 实测 G1-G8（PV-004，待可游玩游戏卡 + API key 环境）
+
+### Status
+
+[OK] **Completed**（代码 + spec + PV 登记；实测待 PV-004）
+
+### Next Steps
+
+- PV-004 环境具备时做真实 API 实测（G1-G8）。
+- 后续任务 06-20-assistant-context-persistence（助手跨 turn 持久化）复用本任务的任务压缩机制。
