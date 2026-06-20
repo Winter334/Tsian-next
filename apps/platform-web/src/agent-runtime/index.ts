@@ -727,14 +727,15 @@ function buildWorkspaceToolInstructions(
       : []),
     ...(canReadWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} arguments={"scope":"effective","path":"world/canon.md"}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList} arguments={"scope":"effective","path":"skills"}，path 可省略表示根目录`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} arguments={"scope":"effective","query":"关键词","limit":10}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.read} arguments={"scope":"effective","path":"world/canon.md"}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.list} arguments={"scope":"effective","path":"skills"}，path 可省略表示根目录`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.search} arguments={"scope":"effective","query":"关键词","limit":10}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.glob} arguments={"scope":"effective","pattern":"**/agent.json","limit":50}`,
         ]
       : []),
     ...(canWriteWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.workspacePatch} arguments={"scope":"save-runtime","path":"save/world/notes.md","content":"..."}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.write} arguments={"scope":"save-runtime","path":"save/world/notes.md","content":"..."}`,
         ]
       : []),
   ]
@@ -743,11 +744,11 @@ function buildWorkspaceToolInstructions(
     `如果需要使用某个 Skill，调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 并传入可见 Skill Index 中的 name。这是两步流程的第一步：use_skill 只声明意图并注册该 Skill 的 action，框架会在下一轮自动把完整 SKILL.md 注入上下文（你不需要手动读取它）。`,
     ...(canReadWorkspace
       ? [
-          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead} 读取 Skill 入口文件；用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后框架自动注入全文。`,
-          `注入的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
+          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 Skill 入口文件；用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后框架自动注入全文。`,
+          `注入的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read}/${RUNTIME_WORKSPACE_TOOL_NAMES.list}/${RUNTIME_WORKSPACE_TOOL_NAMES.search} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
         ]
       : []),
-    `use_skill 激活 Skill 后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript} 执行它声明的 browser_script action（传入 use_skill 返回的 action name 作为 script）。run_script 只执行 browser_script 类 action；单次 workspace 读写直接用顶层 ${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead}/${RUNTIME_WORKSPACE_TOOL_NAMES.workspaceWrite} 等工具，多步编排写进 browser_script 脚本。`,
+    `use_skill 激活 Skill 后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript} 执行它声明的 browser_script action（传入 use_skill 返回的 action name 作为 script）。run_script 只执行 browser_script 类 action；单次 workspace 读写直接用顶层 ${RUNTIME_WORKSPACE_TOOL_NAMES.read}/${RUNTIME_WORKSPACE_TOOL_NAMES.write} 等工具，多步编排写进 browser_script 脚本。`,
     "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。脚本中的 workspace 读写仍受当前 Agent 权限限制。",
     ...(canCallAgents
       ? [

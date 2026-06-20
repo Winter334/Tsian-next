@@ -407,7 +407,7 @@ interface RuntimeWorkspaceToolCall {
 
 - Good: `agent_call` as a contacts-gated runtime primitive, because it needs Agent registry, target context assembly, model invocation, call-depth limits, and trace.
 - Good: a Skill action with a `browser_script` executor that chains workspace SDK reads/writes inside the script to orchestrate a multi-step business operation.
-- Good: `relationship-maintainer` as a Skill that reads workspace schemas and calls controlled workspace writes (either top-level `workspace.write` for single ops, or a `browser_script` for multi-step).
+- Good: `relationship-maintainer` as a Skill that reads workspace schemas and calls controlled workspace writes (either top-level `write` for single ops, or a `browser_script` for multi-step).
 - Base: a Skill action declaring `browser_script` for a single read+transform+write flow; the model uses `run_script` once instead of repeated top-level tool calls.
 - Bad: adding `update_relationship_score` as a platform runtime tool; relationship semantics belong to Skill + workspace schema.
 - Bad: a Skill action declaring a `workspace_operation` or `builtin` executor; these types are no longer supported — use `browser_script` or guide the model to top-level workspace tools.

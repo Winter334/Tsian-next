@@ -20,15 +20,14 @@ export const WORKSPACE_READ_OPERATIONS: WorkspaceOperationName[] = [
   "list",
   "search",
   "read",
+  "glob",
 ]
 
 export const WORKSPACE_WRITE_OPERATIONS: WorkspaceOperationName[] = [
   "diff",
-  "patch",
   "write",
   "move",
   "delete",
-  "validate",
 ]
 
 export interface AgentRuntimePermissionProfile {

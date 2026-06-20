@@ -88,6 +88,7 @@ export type WorkspaceOperationName =
   | "list"
   | "search"
   | "read"
+  | "glob"
   | "diff"
   | "patch"
   | "write"
@@ -101,6 +102,7 @@ export interface WorkspaceOperationRequest {
   path?: string
   targetPath?: string
   query?: string
+  pattern?: string
   limit?: number
   content?: string
   mediaType?: string
@@ -117,6 +119,13 @@ export interface WorkspaceDiffResult {
   changed: boolean
   currentSize: number
   nextSize: number
+}
+
+export interface WorkspaceGlobResult {
+  scope: WorkspaceScope
+  pattern: string
+  matches: string[]
+  truncated: boolean
 }
 
 export interface WorkspacePatchResult {

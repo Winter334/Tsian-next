@@ -32,19 +32,41 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   useSkill: "use_skill",
   runScript: "run_script",
   agentCall: "agent_call",
-  workspaceRead: "workspace.read",
-  workspaceList: "workspace.list",
-  workspaceSearch: "workspace.search",
-  workspaceDiff: "workspace.diff",
-  workspacePatch: "workspace.patch",
-  workspaceWrite: "workspace.write",
-  workspaceMove: "workspace.move",
-  workspaceDelete: "workspace.delete",
-  workspaceValidate: "workspace.validate",
+  read: "read",
+  list: "list",
+  search: "search",
+  glob: "glob",
+  diff: "diff",
+  write: "write",
+  move: "move",
+  delete: "delete",
 } as const
 
 export type RuntimeWorkspaceToolName =
   (typeof RUNTIME_WORKSPACE_TOOL_NAMES)[keyof typeof RUNTIME_WORKSPACE_TOOL_NAMES]
+
+/**
+ * Names of the workspace file-operation tools exposed to the model. These are
+ * the short primitive names (`read`/`list`/...). They map 1:1 to the underlying
+ * `WorkspaceOperationName`, so `call.name` is used directly as the operation
+ * (no prefix to slice). The `browser_script` SDK RPC wire protocol still uses
+ * `workspace.<op>` strings — see `browser-skill-script-executor.ts` — and is a
+ * separate path that is intentionally not renamed here.
+ */
+const WORKSPACE_OPERATION_TOOL_NAMES = new Set<string>([
+  RUNTIME_WORKSPACE_TOOL_NAMES.read,
+  RUNTIME_WORKSPACE_TOOL_NAMES.list,
+  RUNTIME_WORKSPACE_TOOL_NAMES.search,
+  RUNTIME_WORKSPACE_TOOL_NAMES.glob,
+  RUNTIME_WORKSPACE_TOOL_NAMES.diff,
+  RUNTIME_WORKSPACE_TOOL_NAMES.write,
+  RUNTIME_WORKSPACE_TOOL_NAMES.move,
+  RUNTIME_WORKSPACE_TOOL_NAMES.delete,
+])
+
+function isWorkspaceOperationToolName(name: string): boolean {
+  return WORKSPACE_OPERATION_TOOL_NAMES.has(name)
+}
 
 export interface ParsedRuntimeWorkspaceToolCall {
   raw: string
@@ -337,7 +359,7 @@ function emitWorkspaceToolTrace(
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
 ): void {
-  if (!call.name.startsWith("workspace.")) {
+  if (!isWorkspaceOperationToolName(call.name)) {
     return
   }
 
@@ -362,7 +384,7 @@ function emitWorkspaceToolTrace(
   }
   if (observation.ok) {
     data.resultCount = countResultItems(observation.result)
-    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead) {
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.read) {
       data.result = summarizeWorkspaceReadResult(observation.result)
     }
   } else if (observation.error) {
@@ -1486,7 +1508,11 @@ function resolveBrowserScriptPath(
 function workspaceOperationRequestFromToolCall(
   call: RuntimeWorkspaceToolCall,
 ): WorkspaceOperationRequest {
-  const operation = call.name.slice("workspace.".length)
+  // Tool name equals operation name after the R1 rename (e.g. `read` → "read").
+  // The `workspace.` prefix was removed; the SDK RPC path in
+  // `browser-skill-script-executor.ts` / `platform-host/index.ts` still slices
+  // `workspace.` but that is a separate wire protocol, not this tool path.
+  const operation = call.name as WorkspaceOperationName
   return {
     ...call.arguments,
     operation,
@@ -1880,7 +1906,7 @@ async function executeRuntimeWorkspaceToolCall(
         ok: true,
         result: await context.runAgentCall(normalizeAgentCallArguments(call.arguments)),
       }
-    } else if (call.name.startsWith("workspace.")) {
+    } else if (isWorkspaceOperationToolName(call.name)) {
       observation = {
         index,
         name: call.name,
@@ -1951,11 +1977,11 @@ async function executeRuntimeWorkspaceToolCall(
  */
 const PARALLEL_TOOL_NAMES = new Set<string>([
   RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
-  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead,
-  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList,
-  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch,
-  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceDiff,
-  RUNTIME_WORKSPACE_TOOL_NAMES.workspaceValidate,
+  RUNTIME_WORKSPACE_TOOL_NAMES.read,
+  RUNTIME_WORKSPACE_TOOL_NAMES.list,
+  RUNTIME_WORKSPACE_TOOL_NAMES.search,
+  RUNTIME_WORKSPACE_TOOL_NAMES.glob,
+  RUNTIME_WORKSPACE_TOOL_NAMES.diff,
 ])
 
 function isParallelizableToolCall(call: ParsedRuntimeWorkspaceToolCall): boolean {
@@ -1971,7 +1997,7 @@ export async function executeRuntimeWorkspaceToolCalls(
   // keyed by the original call index so the returned array stays aligned with
   // `calls` — the native loop relies on this to pair each observation with
   // `result.toolCalls[index].id` when threading tool messages.
-  //   - parallelGroup: read-only, stateless tools (workspace.read/list/...,
+  //   - parallelGroup: read-only, stateless tools (read/list/search/glob/diff,
   //     use_skill) — safe to run concurrently with each other and anything else.
   //   - agentCallGroup: `agent_call` targets. Each runs a delegated tool loop
   //     (own workspace writes, nested agent_call, shared callCount), so they are

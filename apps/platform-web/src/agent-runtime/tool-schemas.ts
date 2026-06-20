@@ -44,7 +44,7 @@ function platformToolEnabled(
 const useSkillSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
   description:
-    "Declare intent to use a Skill from the current Agent's visible Skill Index by name. The framework injects the Skill's full SKILL.md into the next round's context and registers its declared browser_script actions for run_script. Returns a lightweight confirmation plus the action list (not the full SKILL.md — that arrives as context next round).",
+    "Declare intent to use a Skill from the current Agent's visible Skill Index by name. The framework injects the Skill's full SKILL.md into the next round's context and registers its declared browser_script actions for run_script. Returns a lightweight confirmation plus the action list (not the full SKILL.md — that arrives as context next round). Example: use_skill with name=\"prose-style\".",
   parameters: {
     type: "object",
     required: ["name"],
@@ -61,7 +61,7 @@ const useSkillSchema: ToolSchema = {
 const runScriptSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.runScript,
   description:
-    "Execute a browser_script action declared by a Skill that has already been activated via use_skill in this tool loop. The action runs the Skill's browser script through the Tsian SDK after input validation. Single workspace operations should use the top-level workspace tools directly; multi-step orchestration belongs in a browser_script.",
+    "Execute a browser_script action declared by a Skill that has already been activated via use_skill in this tool loop. The action runs the Skill's browser script through the Tsian SDK after input validation. Single workspace operations should use the top-level workspace tools directly; multi-step orchestration belongs in a browser_script. Calling run_script before activating the skill with use_skill returns a SKILL_NOT_ACTIVATED error. Example: run_script with skill=\"prose-style\", script=\"example_action\", input={...}.",
   parameters: {
     type: "object",
     required: ["skill", "script"],
@@ -86,7 +86,7 @@ const runScriptSchema: ToolSchema = {
 const agentCallSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.agentCall,
   description:
-    "Request a one-off consultation from a contact Agent. The target Agent runs with its own context and permissions; its output returns as an observation to the caller, never directly to the player. Use it when a task needs another Agent's specialized judgment.",
+    "Request a one-off consultation from a contact Agent. The target Agent runs with its own context and permissions; its output returns as an observation to the caller, never directly to the player. Use it when a task needs another Agent's specialized judgment. Example: agent_call with agentId, request, and optional historyMode/timeoutMs.",
   parameters: {
     type: "object",
     required: ["agentId", "request"],
@@ -126,9 +126,9 @@ const agentCallSchema: ToolSchema = {
 }
 
 const workspaceReadSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceRead,
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
-    "Read one Runtime Workspace file by scope and path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those).",
+    "Read one Runtime Workspace file by scope and path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those). Returns the file content as a string. Returns an error if the path does not exist in the given scope.",
   parameters: {
     type: "object",
     required: ["scope", "path"],
@@ -147,7 +147,7 @@ const workspaceReadSchema: ToolSchema = {
 }
 
 const workspaceListSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceList,
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.list,
   description:
     "List direct child entries of a workspace directory by scope. Returns entries without file contents. Omit path (or pass empty) to list the root.",
   parameters: {
@@ -168,7 +168,7 @@ const workspaceListSchema: ToolSchema = {
 }
 
 const workspaceSearchSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceSearch,
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.search,
   description:
     "Search workspace files by query and return scored previews. Use it to locate relevant files before reading specific ones. Empty query returns no results.",
   parameters: {
@@ -192,39 +192,36 @@ const workspaceSearchSchema: ToolSchema = {
   },
 }
 
-const workspacePatchSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspacePatch,
+const workspaceGlobSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.glob,
   description:
-    "Write or replace a save-runtime workspace file's content at a path. Use it only when a loaded Skill explicitly requires maintaining state, notes, memory, or frontend view data.",
+    "Recursively match workspace file paths by glob pattern and return the matching path list (no file contents). Use it to locate files by name pattern without walking directories one level at a time. Returns an array of matching file paths; empty array if no matches.",
   parameters: {
     type: "object",
-    required: ["scope", "path", "content"],
+    required: ["pattern"],
     properties: {
       scope: {
         type: "string",
         enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to patch. Ordinary Agent writes use \"save-runtime\".",
+        description: "Workspace scope to match within. Usually \"effective\".",
       },
-      path: {
+      pattern: {
         type: "string",
-        description: "Target workspace file path. Ordinary writes must target \"save/...\".",
+        description:
+          "Glob pattern supporting ** (cross-directory), * (single-level, no /), ? (single char, no /). Examples: **/agent.json, skills/**/*.md, *.md",
       },
-      content: {
-        type: "string",
-        description: "The full new file content.",
-      },
-      mediaType: {
-        type: "string",
-        description: "Optional media type for the written file.",
+      limit: {
+        type: "integer",
+        description: "Max matches to return. Default 50, max 200.",
       },
     },
   },
 }
 
 const workspaceWriteSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceWrite,
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.write,
   description:
-    "Create or overwrite a workspace file at a path (equivalent to a full-content patch). Use it only when a loaded Skill explicitly requires writing state, notes, memory, or frontend view data.",
+    "Create or overwrite a workspace file at a path (equivalent to a full-content patch). Use it only when a loaded Skill explicitly requires writing state, notes, memory, or frontend view data. Returns the written file metadata. Returns an error if the path is not writable in the given scope.",
   parameters: {
     type: "object",
     required: ["scope", "path", "content"],
@@ -251,9 +248,9 @@ const workspaceWriteSchema: ToolSchema = {
 }
 
 const workspaceDiffSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceDiff,
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.diff,
   description:
-    "Compute a diff between a workspace file's current content and a proposed next content, without persisting. Use it to preview a change before patching.",
+    "Compute a diff between a workspace file's current content and a proposed next content, without persisting. Use it to preview a change before patching. Returns the diff between current and expected content, including whether content changed.",
   parameters: {
     type: "object",
     required: ["scope", "path", "expectedContent"],
@@ -276,9 +273,9 @@ const workspaceDiffSchema: ToolSchema = {
 }
 
 const workspaceMoveSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceMove,
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.move,
   description:
-    "Move or rename a workspace file from one path to another within a scope. Use it only when a loaded Skill explicitly requires reorganizing runtime files.",
+    "Move or rename a workspace file from one path to another within a scope. Use it only when a loaded Skill explicitly requires reorganizing runtime files. Returns the moved file paths. Returns an error if the source or target path is invalid.",
   parameters: {
     type: "object",
     required: ["scope", "path", "targetPath"],
@@ -301,9 +298,9 @@ const workspaceMoveSchema: ToolSchema = {
 }
 
 const workspaceDeleteSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceDelete,
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.delete,
   description:
-    "Delete one or more workspace files matching a path prefix within a scope. Use it only when a loaded Skill explicitly requires removing runtime files.",
+    "Delete one or more workspace files matching a path prefix within a scope. Use it only when a loaded Skill explicitly requires removing runtime files. Returns the deleted file paths. Returns an error if the path is not deletable in the given scope.",
   parameters: {
     type: "object",
     required: ["scope", "path"],
@@ -321,36 +318,6 @@ const workspaceDeleteSchema: ToolSchema = {
   },
 }
 
-const workspaceValidateSchema: ToolSchema = {
-  name: RUNTIME_WORKSPACE_TOOL_NAMES.workspaceValidate,
-  description:
-    "Validate a workspace file's structure (JSON or frontmatter) without persisting changes. Returns validation errors when invalid.",
-  parameters: {
-    type: "object",
-    required: ["scope", "path"],
-    properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to validate against.",
-      },
-      path: {
-        type: "string",
-        description: "Target workspace file path to validate.",
-      },
-      validator: {
-        type: "string",
-        enum: ["json", "frontmatter"],
-        description: "Optional validator kind. Defaults to inferred-from-path behavior.",
-      },
-      autoFix: {
-        type: "boolean",
-        description: "Whether to attempt an automatic fix when validation fails.",
-      },
-    },
-  },
-}
-
 /**
  * Build the JSON Schema tool list for API-native function calling, gated by the
  * same Agent platform-tool enablement that the text-protocol prompt uses.
@@ -358,7 +325,7 @@ const workspaceValidateSchema: ToolSchema = {
  * `use_skill` and `run_script` are always available because Skill
  * installation/enablement is player/card-author controlled. `agent_call` is
  * gated by contacts + the `agent_call` platform tool. Workspace read tools are
- * gated by `workspace_read`; workspace write/delete/move/validate tools by
+ * gated by `workspace_read`; workspace write/delete/move tools by
  * `workspace_write`.
  */
 export function buildEnabledToolSchemas(options: {
@@ -388,17 +355,16 @@ export function buildEnabledToolSchemas(options: {
       workspaceReadSchema,
       workspaceListSchema,
       workspaceSearchSchema,
+      workspaceGlobSchema,
     )
   }
 
   if (canWriteWorkspace) {
     schemas.push(
       workspaceDiffSchema,
-      workspacePatchSchema,
       workspaceWriteSchema,
       workspaceMoveSchema,
       workspaceDeleteSchema,
-      workspaceValidateSchema,
     )
   }
 

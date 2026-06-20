@@ -4,6 +4,7 @@ import type {
   WorkspaceDiffResult,
   WorkspaceEntry,
   WorkspaceFile,
+  WorkspaceGlobResult,
   WorkspaceMoveResult,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
@@ -44,6 +45,7 @@ export const WORKSPACE_OPERATION_NAMES = {
   list: "list",
   search: "search",
   read: "read",
+  glob: "glob",
   diff: "diff",
   patch: "patch",
   write: "write",
@@ -56,12 +58,14 @@ export const DEFAULT_RUNTIME_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
   "list",
   "search",
   "read",
+  "glob",
 ]
 
 export const AUTHORING_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
   "list",
   "search",
   "read",
+  "glob",
   "diff",
   "patch",
   "write",
@@ -568,6 +572,86 @@ function searchWorkspaceFiles(
     .slice(0, limit)
 }
 
+/**
+ * Convert a glob pattern into an anchored RegExp. Supports the basic wildcards
+ * most agent tools expose:
+ *   - A double-star followed by a slash matches zero or more directory
+ *     segments (so `star-star-slash agent.json` matches both `agent.json`
+ *     and `a/b/agent.json`).
+ *   - A bare double-star (not followed by a slash) matches any sequence
+ *     including slashes.
+ *   - A single star matches any sequence except a slash (one directory level).
+ *   - A question mark matches a single character except a slash.
+ * Every other character is escaped as a RegExp literal. The result is anchored
+ * with start and end anchors so the whole path must match.
+ */
+function globToRegExp(pattern: string): RegExp {
+  let source = ""
+  for (let i = 0; i < pattern.length; i += 1) {
+    const char = pattern[i]
+    if (char === "*") {
+      if (pattern[i + 1] === "*") {
+        // `**/` → zero or more directory segments (optional `dir/dir/.../`).
+        if (pattern[i + 2] === "/") {
+          source += "(?:.*/)?"
+          i += 2
+        } else {
+          // Bare `**` matches anything including `/`.
+          source += ".*"
+          i += 1
+        }
+      } else {
+        source += "[^/]*"
+      }
+    } else if (char === "?") {
+      source += "[^/]"
+    } else {
+      source += char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    }
+  }
+  return new RegExp(`^${source}$`)
+}
+
+function normalizeGlobPattern(value: unknown): string {
+  if (typeof value !== "string") {
+    throw workspaceOperationError(
+      "WORKSPACE_PATTERN_REQUIRED",
+      "Workspace glob pattern must be a string.",
+    )
+  }
+
+  const trimmed = value.trim()
+  if (!trimmed) {
+    throw workspaceOperationError(
+      "WORKSPACE_PATTERN_REQUIRED",
+      "Workspace glob pattern must not be empty.",
+    )
+  }
+
+  return trimmed.replace(/\\/g, "/").replace(/^\/+/, "")
+}
+
+function globWorkspaceFiles(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  input: WorkspaceOperationRequest,
+  actorLevel: number,
+): WorkspaceGlobResult {
+  const pattern = normalizeGlobPattern(input.pattern)
+  const limit = normalizeSearchLimit(input.limit)
+  const matcher = globToRegExp(pattern)
+  const matches = scopedReadableFiles(files, scope, actorLevel)
+    .filter((file) => matcher.test(file.path))
+    .map((file) => file.path)
+  const truncated = matches.length > limit
+  return {
+    scope,
+    pattern,
+    matches: matches.slice(0, limit),
+    truncated,
+  }
+}
+
 function normalizeContent(value: unknown): string {
   if (typeof value !== "string") {
     throw workspaceOperationError(
@@ -857,6 +941,9 @@ export async function executeWorkspaceOperation(
   }
   if (operation === "read") {
     return readWorkspaceFile(context.workspaceFiles, scope, requestInput.path, actorLevel)
+  }
+  if (operation === "glob") {
+    return globWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
   }
   if (operation === "diff") {
     return diffWorkspaceFile(context.workspaceFiles, scope, requestInput, actorLevel)

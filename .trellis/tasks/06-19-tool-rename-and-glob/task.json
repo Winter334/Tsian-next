@@ -3,7 +3,7 @@
   "name": "tool-rename-and-glob",
   "title": "工具补全与命名统一",
   "description": "新增glob工具；工具命名简短化（workspace.read→read等去前缀）；移除patch/validate；schema补返回值描述+复杂工具示例；agent_call schema澄清定位。可与子2并行。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
