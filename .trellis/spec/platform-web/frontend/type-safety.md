@@ -1165,7 +1165,7 @@ stageAgentSessionTranscriptFiles(
 - `RuntimeAgentCallArguments.timeoutMs?: number` — optional per-call timeout for delegated `agent_call` targets; defaults to `DEFAULT_TASK_TIMEOUT_MS` when omitted.
 - `estimateRuntimeMessagesTokens(messages: RuntimeChatMessage[]): number` — native loop token estimate, including `toolCalls` name + JSON-stringified `arguments` and tool observation content.
 - `estimateAiChatMessagesTokens(messages: AiChatMessage[]): number` — text loop token estimate (tool observations are serialized into user content).
-- `compressTaskContext<T>(messages, interactionSpan, oldSummary, callModel, options): Promise<TaskCompressionResult<T>>` — task compression: slices the tool-interaction span, keeps the recent `TASK_KEEP_RECENT_TOOL_ROUNDS` (5) rounds, summarizes earlier rounds into one `{ role: "user", content: "已完成工作摘要：..." }` message. Does not depend on `AgentContextSnapshot`; the summary text lives only within the turn (no persistence).
+- `compressTaskContext<T>(messages, interactionSpan, oldSummary, callModel, options): Promise<TaskCompressionResult<T>>` — task compression: slices the tool-interaction span, keeps the recent `TASK_KEEP_RECENT_TOOL_ROUNDS` (5) rounds, summarizes earlier rounds into one `{ role: "user", content: "已完成工作摘要：..." }` message. Does not depend on `AgentContextSnapshot`; the summary text lives only within the turn (no persistence). (Assistant cross-turn persistence is a separate snapshot-layer mechanism — see the "Assistant Cross-Turn Context Persistence" scenario.)
 - `locateTaskInteractionSpan(messages, mode: "native" | "text"): { start, end }` — locates the tool-interaction span by scanning backward from the end, skipping tool-interaction message shapes (native: `role: "tool"` / `assistant` with `toolCalls`; text: `user` with `<tsian-tool-observation>` / `assistant` with `<tsian-tool-call>`). Returns `{-1, -1}` when no tool interaction exists.
 - `ContextBudgetExhaustedError extends Error` — `name: "ContextBudgetExhaustedError"`, message "上下文已满，无法继续本轮探索。请开始新会话或精简对话。". Shared by both modes as the "nothing left to compress" fallback.
 - `TaskTimeoutError extends Error` — `name: "TaskTimeoutError"`, message includes elapsed seconds. Task mode timeout fallback (soft halt).
@@ -1183,7 +1183,7 @@ stageAgentSessionTranscriptFiles(
   - Only the **entry-agent steady-state path** (an `agentContextSnapshot` was injected) performs in-turn narrative compression. The `最近对话：` fallback path has no injectable snapshot and skips compression; it still runs the budget fallback.
   - A second budget crossing (or any crossing when narrative compression is unavailable) is the fallback C: return the last round's stripped text if present (`completed` transcript); otherwise throw `ContextBudgetExhaustedError`.
   - In-turn narrative compression is allowed at most once per turn. A second crossing never recompresses.
-  - Turn-start narrative compression (R3, lifecycle module) is skipped when `compressionMode === "task"` (task agents have no valuable narrative span to compress).
+  - Turn-start snapshot compression (R3, lifecycle module) runs in **both** modes: narrative mode compresses the story span (default `COMPRESSION_SYSTEM_PROMPT`); task mode compresses the assistant task-dialog snapshot (`ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT` + 用户/助手 labels). This is the snapshot layer (cross-turn `AgentContextSnapshot`), independent of the in-turn tool-interaction compression below. Task mode delegates/assistants with no injected snapshot (delegated `agent_call` targets) fall back to `createInitialAgentContext` and typically skip turn-start compression (empty snapshot).
 
   **Task mode (delegated `agent_call` targets + desktop assistant):**
   - Every crossing is a compression attempt (no `compressedThisTurn` cap; multi-compress unlimited). Before compressing, check elapsed time: `Date.now() - taskStartedAt > taskTimeoutMs` → throw `TaskTimeoutError`.
@@ -1191,10 +1191,10 @@ stageAgentSessionTranscriptFiles(
   - Call `compressTaskContext` with the span + prior `taskSummary` (null on first compression). If `result.compressed === false` (early span empty, tool interactions ≤ `TASK_KEEP_RECENT_TOOL_ROUNDS`) → fallback C.
   - After compression, compare `beforeTokens` vs `afterTokens`. If `(before - after) / before < TASK_COMPRESSION_STALL_RATIO` (0.1) → throw `TaskCompressionStalledError` (stall early-exit, do not burn budget waiting for timeout).
   - Update `runtimeMessages`/`nextMessages` to `result.messages`, update `taskSummary` to `result.summary`, emit `context_compressed_in_turn` with `mode: "task"` + `afterTokens`, continue the loop.
-  - Task compression never touches `agentContextSnapshot` (task agents have no cross-turn snapshot). The summary text lives only within the turn; nothing is persisted. Assistant `contextUpdate` is ignored by the host (no `context.json` for assistant — cross-turn persistence is a future task).
+  - Task compression never touches `agentContextSnapshot` (task agents' in-turn tool-interaction compression is separate from the cross-turn snapshot). The in-turn summary text lives only within the turn. The **assistant** now has cross-turn snapshot persistence (see "Assistant Cross-Turn Context Persistence" scenario): the host injects the persisted snapshot as `agentContext` and writes back `contextUpdate` (append turn + compression result) to the virtual file. **Delegated `agent_call` targets** have no cross-turn persistence (turn-internal only); their `contextUpdate` is not persisted by the host.
 
 - **Timeout fallback (task mode only):** `createAgentCallRunner` (delegated) and `runAssistantChat` (assistant) each create an independent `AbortController` + `setTimeout(() => abort("task-timeout"), taskTimeoutMs)`, merged with the user-abort signal via `AbortSignal.any` into a composite signal threaded into the tool loop. On timeout, the catch block re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true, taskTimeoutMs }` details so master can distinguish; assistant: thrown to AssistantView). Master (`interaction.sendMessage`) does **not** create a timeout controller — narrative mode relies on one-shot compression + user abort; a timeout would mis-kill narrative deep thought.
-- `runAgentRuntimeTurn` threads `compressionMode` (from `input.compressionMode ?? "narrative"`), `agentContextSnapshot` (narrative only, mutable reference), `contextTokenBudget`, `compressCallModel`, and task-mode `taskStartedAt`/`taskTimeoutMs` into the tool options. After the loop, narrative-mode `contextUpdate.compressedContext` carries the in-turn compressed snapshot if `updatedAt` changed; task mode leaves `compressedContext` undefined.
+- `runAgentRuntimeTurn` threads `compressionMode` (from `input.compressionMode ?? "narrative"`), `agentContextSnapshot` (narrative only, mutable reference), `contextTokenBudget`, `compressCallModel`, and task-mode `taskStartedAt`/`taskTimeoutMs` into the tool options. After the loop, narrative-mode `contextUpdate.compressedContext` carries the in-turn compressed snapshot if `updatedAt` changed; task mode leaves `compressedContext` undefined (the assistant snapshot's turn-start compression result is carried via `compressedContext` when the entry path compressed it — the host writes it back to the virtual file).
 - AssistantView catch recognizes `ContextBudgetExhaustedError`, `TaskTimeoutError`, and `TaskCompressionStalledError` by `error.name` (no runtime-internal import). All three route to the same soft-halt branch (symmetric with abort): keep already-streamed thought, append a soft `_（…）_` note when content exists (or set content to the soft prompt when empty), `persistCurrentSession()`, and **do not** set `errorMessage` or pop the placeholder. `ContextCompressionFailedError` (turn-start compression failure) still routes to the `errorMessage` branch.
 
 ### 4. Validation & Error Matrix
@@ -1228,7 +1228,7 @@ stageAgentSessionTranscriptFiles(
 - Bad: allowing more than one in-turn narrative compression per turn.
 - Bad: capping task-mode compression count (task mode is multi-compress, bounded by timeout + stall, not count).
 - Bad: adding a timeout to master (narrative mode) — would mis-kill narrative deep thought.
-- Bad: persisting task-mode compression summaries (no `context.json` for task agents; cross-turn persistence is a future task).
+- Bad: persisting **delegated** task-mode compression summaries (delegated `agent_call` targets have no cross-turn persistence; only the desktop assistant has snapshot persistence via the virtual file — see "Assistant Cross-Turn Context Persistence").
 - Bad: setting `errorMessage` or popping the placeholder on `ContextBudgetExhaustedError` / `TaskTimeoutError` / `TaskCompressionStalledError`.
 
 ### 6. Tests Required
@@ -1318,6 +1318,79 @@ stageAgentSessionTranscriptFiles(
 - Assert bridge `turn-delta`/`turn-round-end`/`turn-tool` payloads include `agentId`.
 - Assert abort cancels all parallel agent_calls.
 - Assert master turn token-budget fallback (`ContextBudgetExhaustedError`) is not regressed.
+
+## Scenario: Assistant Cross-Turn Context Persistence
+
+### 1. Scope / Trigger
+
+- Trigger: the desktop assistant persists its agent context snapshot across turns/loads, or changes `apps/platform-web/src/agent-runtime/context-lifecycle.ts` (assistant constants, `ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT`, parametrized `createEmptyAgentContext`/`createInitialAgentContext`/`parseAgentContext`/`compressContext`), `apps/platform-web/src/agent-runtime/index.ts` (entry turn-start compression guard/mode selection), `apps/platform-web/src/platform-host/index.ts` (`runAssistantChat` snapshot read/stage, `AssistantChatInput.sessionId`, `readAssistantContextFromFiles`/`nextAssistantTurnNumber`/`stageAssistantContextFile`), `apps/platform-web/src/storage/local-assistant-files.ts` (`assistantContextPath`/`deleteLocalAssistantFile`), `apps/platform-web/src/storage/assistant-conversations.ts` (`deleteAssistantSession` context cleanup), or `AssistantView.vue` (`sessionId` threading).
+- Applies when changing the assistant context snapshot lifecycle, schema, storage path, compression prompt, or session-delete cleanup.
+
+### 2. Signatures
+
+- `AgentContextSnapshot` (contracts) is shared by master and assistant. `schema: "tsian.agent.context.v1" | "tsian.assistant.context.v1"`; `agentId: string` (master=`"master"`, assistant=`"assistant"`); `saveId: string` (master=saveId, assistant=sessionId). Type relaxation is backward-compatible (`"master"` is a `string` subtype; master values stay legal).
+- `ASSISTANT_CONTEXT_SCHEMA = "tsian.assistant.context.v1"`, `ASSISTANT_CONTEXT_AGENT_ID = "assistant"` — assistant snapshot markers (context-lifecycle.ts).
+- `ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT` — task-dialog summary style (用户请求 + 助手工作/结论), distinct from master's `COMPRESSION_SYSTEM_PROMPT` (narrative梗概) and turn-internal `TASK_COMPRESSION_SYSTEM_PROMPT` (tool-interaction log).
+- `createEmptyAgentContext(saveId, options?: { schema?, agentId? })` / `createInitialAgentContext(saveId, recentHistory, currentTurn, options?)` / `parseAgentContext(content, saveId, options?)` — parametrized; defaults to master values (backward-compatible). Assistant passes `{ schema: ASSISTANT_CONTEXT_SCHEMA, agentId: ASSISTANT_CONTEXT_AGENT_ID }`.
+- `compressContext(context, threshold, callModel, options)` — `CompressCallOptions` extended with optional `systemPrompt?` / `userLabel?` / `assistantLabel?`; defaults to master narrative style. Assistant passes the task-summary prompt + 用户/助手 labels.
+- `assistantContextPath(sessionId): string` — returns `.tsian/local/assistant/sessions/<sessionId>/context.json` (virtual file path inside the local-assistant-files Dexie map).
+- `deleteLocalAssistantFile(path): Promise<void>` — removes a single file from the local-assistant-files Dexie map (saveLocalAssistantFiles is merge-only). Only handles `.tsian/local/assistant/` prefix paths.
+- `AssistantChatInput.sessionId: string` — required; host reads/writes the session's context snapshot at this path.
+- `readAssistantContextFromFiles(files, sessionId): AgentContextSnapshot | null` — finds the snapshot in already-loaded `localAssistantFiles` (zero extra IO); null when absent.
+- `nextAssistantTurnNumber(snapshot): number` — `max(maxRecentTurn, lastCompressedTurn ?? 0) + 1`; fixes the turn=1-always bug so `lastCompressedTurn` dedup works.
+- `stageAssistantContextFile(workspaceTransaction, input)` — appends the turn + compression result to the snapshot and writes it into `workspaceTransaction` (piggybacks `commitAssistantWorkspaceFiles` → `saveLocalAssistantFiles` merge).
+
+### 3. Contracts
+
+- The desktop assistant persists a per-session agent context snapshot as a **virtual file** at `.tsian/local/assistant/sessions/<sessionId>/context.json`. This lives in the `local-assistant-files` Dexie map (`assistant-local-files` key), the same map that stores agent identity files (agent.json/SOUL.md/AGENT.md). The `sessions/` subdirectory separates session state from cross-session identity. The snapshot is agent-visible: the assistant can `workspace_read`/`workspace_list`/`workspace_write` it —契合"平台数据收录到文件系统、用桌面 agent 管理"的产品哲学.
+- Multi-session isolation: each session has its own `sessions/<sessionId>/context.json`; switching sessions does not cross-contaminate context. This is why the path is per-session, not a single shared `.tsian/local/assistant/context.json`.
+- The snapshot is separate from visible messages (`assistant-session:<sessionId>` Dexie key, UI display, max 200). Visible messages are the UI display layer; the snapshot is the agent context steady-state layer. This mirrors master's `saveHistory` vs `agents/master/context.json` separation.
+- `runAssistantChat` turn-start: `loadLocalAssistantFiles()` (already called) returns the map including the session's context file; `readAssistantContextFromFiles` finds it (zero extra IO). When absent (legacy session created before this feature), `createInitialAgentContext(sessionId, history, 1, { schema, agentId })` reconstructs recentTurns from visible-message history (no summary). `nextAssistantTurnNumber` derives the next turn from the snapshot; the host sets `snapshot.state.turn = nextTurn - 1` so `currentRuntimeTurnNumber` returns `nextTurn` (fixing the prior turn=1-always bug that broke `lastCompressedTurn` dedup). The host injects `agentContext` + `contextTokenBudget` (resolved from the assistant model config's `contextWindow`) into `runAgentRuntimeTurn`.
+- Entry turn-start compression (lifecycle R3) runs in **both** modes (guard widened from narrative-only). Task mode (assistant) compresses the snapshot with `ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT` + 用户/助手 labels; narrative mode (master) uses defaults (unchanged). This snapshot compression is independent of in-turn `compressTaskContext` (tool-interaction span): the former compresses the cross-turn `AgentContextSnapshot` (summary + recentTurns); the latter compresses the current turn's messages.
+- `runAssistantChat` turn-end (success path only): `stageAssistantContextFile` appends the turn's user+assistant to the snapshot (or uses `contextUpdate.compressedContext` when turn-start compression ran) and writes it into `workspaceTransaction`. `commitAssistantWorkspaceFiles` then routes `isLocalAssistantPath` files (including the context file) to `saveLocalAssistantFiles` merge-persist — piggybacking the existing commit path (zero extra IO).
+- Turn failure (abort/timeout/stall/error): the catch path calls `activeWorkspaceTransaction.discard()` and does **not** stage the context file — the snapshot on disk stays at its turn-start state (symmetric to master's turn-failure discard).
+- Session delete (`deleteAssistantSession`) calls `deleteLocalAssistantFile(assistantContextPath(id))` to clean up the context virtual file alongside the visible-messages key (no orphan data).
+- `AgentContextSnapshot.saveId` is reused as sessionId for assistant snapshots (locating is by file path, not by this field; `compressContext`/`appendTurnToContext` only pass it through).
+- Cross-load recovery: `loadLocalAssistantFiles` restores the Dexie map (including `sessions/<id>/context.json`) on browser refresh/reopen; the next turn's `readAssistantContextFromFiles` recovers the snapshot — the assistant does not lose context across loads.
+- Master is unaffected: master's `agents/master/context.json` path, `readAgentContextFromWorkspace`/`stageAgentContextFile`, narrative compression prompt, and `interaction.sendMessage` path are unchanged. Type relaxation (`agentId: string`, `schema` union) is backward-compatible — master values remain legal.
+
+### 4. Validation & Error Matrix
+
+- No context virtual file for a session (new or legacy) -> `readAssistantContextFromFiles` returns null -> `createInitialAgentContext` reconstructs from visible-message history -> turn proceeds, snapshot written at turn-end.
+- Corrupted context virtual file (invalid JSON / wrong shape) -> `parseAgentContext` falls back to `createEmptyAgentContext` (assistant schema/agentId) -> turn proceeds with empty snapshot.
+- Turn failure -> snapshot on disk unchanged (no append of the failed turn).
+- Session delete -> both visible-messages key and context virtual file removed (no orphan).
+- Master turn -> unchanged (narrative mode, `agents/master/context.json`, default compression prompt).
+- `AssistantChatInput` without `sessionId` -> TypeScript compile error (required field).
+
+### 5. Good/Base/Bad Cases
+
+- Good: assistant multi-turn dialog -> each turn appends to `sessions/<id>/context.json`; closing/reopening the browser restores context (assistant remembers prior work).
+- Good: long dialog -> snapshot token exceeds 85% -> turn-start compression summarizes early turns into a task summary, recent 5 turns preserved, snapshot stays bounded.
+- Good: multiple sessions A/B -> each has its own `sessions/<A>/context.json` and `sessions/<B>/context.json`; switching A↔B injects the right snapshot, no cross-contamination.
+- Good: assistant uses `workspace_read .tsian/local/assistant/sessions/<id>/context.json` to inspect its own context (file-system visibility哲学).
+- Good: deleting a session removes both the visible-messages Dexie key and the context virtual file.
+- Base: a legacy session (created before this feature) with visible messages but no context file -> first turn reconstructs recentTurns from history, subsequent turns persist normally.
+- Base: a fresh session -> empty snapshot, first turn writes the initial context file.
+- Bad: storing the assistant snapshot at a single shared `.tsian/local/assistant/context.json` (would cross-contaminate sessions).
+- Bad: storing the assistant snapshot in a separate Dexie key invisible to workspace tools (breaks file-system visibility哲学).
+- Bad: master's `agents/master/context.json` path or narrative compression prompt changing (master must be unaffected).
+- Bad: writing the context file on turn failure (must discard, symmetric to master).
+- Bad: leaving the context virtual file behind when deleting a session (orphan data).
+
+### 6. Tests Required
+
+- Assert assistant multi-turn dialog persists `sessions/<id>/context.json` with increasing turn numbers and appended recentTurns.
+- Assert closing/reopening the browser restores the assistant context (snapshot recovered from the virtual file).
+- Assert long-dialog compression triggers turn-start snapshot compression (task-summary prompt), summary rolls forward, recentTurns stays bounded to 5.
+- Assert multi-session isolation: sessions A and B keep separate snapshots; switching does not cross-contaminate.
+- Assert `workspace_read .tsian/local/assistant/sessions/<id>/context.json` returns the snapshot (agent-visible virtual file).
+- Assert session delete removes both the visible-messages key and the context virtual file (no orphan).
+- Assert legacy session migration: visible messages without a context file reconstruct recentTurns on first turn.
+- Assert turn failure (abort/timeout) does not append the failed turn to the snapshot.
+- Assert master narrative compression + `agents/master/context.json` persistence is unchanged.
+- Assert turn numbers increase monotonically across turns (not stuck at 1) and `lastCompressedTurn` dedup works.
+- Assert `npm run build:contracts && npm run build:web` passes.
 
 ## Avoid
 
