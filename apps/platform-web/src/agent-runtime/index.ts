@@ -85,10 +85,12 @@ export interface AgentRuntimeTurnInput {
    * tool-loop rounds (thought-round text included — the whole turn streams, no
    * reset). `agentId` identifies which agent is emitting (the entry agent, or a
    * delegated `agent_call` target); `round` is that agent's tool-loop round index
-   * so the caller can label thought vs final. Delegated agents may stream via
-   * the non-SSE fallback depending on their model config.
+   * so the caller can label thought vs final. `kind` separates chain-of-thought
+   * (`"reasoning"`) from the visible reply (`"content"`) so callers can route
+   * reasoning to a distinct, typically collapsed UI region. Delegated agents may
+   * stream via the non-SSE fallback depending on their model config.
    */
-  onDelta?: (agentId: string, delta: string, round: number) => void
+  onDelta?: (agentId: string, delta: string, round: number, kind: "reasoning" | "content") => void
   /**
    * Per-round end notification (子2b R1). Invoked after each `callModelNative`
    * returns, with the round index and finish reason so the caller can classify
@@ -163,11 +165,12 @@ export interface AgentRuntimeModelCallOptions {
   agentId?: string
   /**
    * Streaming text-delta sink. Invoked with the current tool-loop `round` so
-   * the caller can label thought vs final rounds. `undefined` means "do not
-   * stream" (delegated agents, or text-protocol callers) — the host then takes
-   * the non-SSE fallback path.
+   * the caller can label thought vs final rounds, and a `kind` separating
+   * chain-of-thought (`"reasoning"`) from the visible reply (`"content"`).
+   * `undefined` means "do not stream" (delegated agents, or text-protocol
+   * callers) — the host then takes the non-SSE fallback path.
    */
-  onDelta?: (agentId: string, delta: string, round: number) => void
+  onDelta?: (agentId: string, delta: string, round: number, kind: "reasoning" | "content") => void
   /** Current tool-loop round index (set by the native loop before each call). */
   round?: number
   /** Per-round end notification (子2b R1); threaded from `AgentRuntimeTurnInput.onRoundEnd`. */

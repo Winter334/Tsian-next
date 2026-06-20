@@ -187,34 +187,81 @@
                 <Bot v-else class="h-3.5 w-3.5" aria-hidden="true" />
               </span>
               <div
-                class="min-w-0 max-w-[calc(100%-2.75rem)] break-words px-3.5 py-2.5 text-sm leading-6"
+                class="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-2 break-words px-3.5 py-2.5 text-sm leading-6"
                 :class="msg.role === 'user'
                   ? 'whitespace-pre-wrap border border-neon-deep/35 bg-panel/55 text-text-main'
                   : 'border border-neon/20 bg-neon/5 text-text-main'"
               >
-                <div v-if="msg.role === 'assistant'" class="prose-chat" v-html="renderMarkdown(msg.content)" />
+                <template v-if="msg.role === 'assistant'">
+                  <!-- 过程节点:思考/工具按发生顺序纵向平铺,各独立折叠(不含最终回复) -->
+                  <template v-for="node in msg.timeline ?? []" :key="node.id">
+                    <!-- 思考节点(tool_calls 轮的推理文本,回合结束折叠保留可回看) -->
+                    <Collapsible
+                      v-if="node.type === 'thought'"
+                      v-model:open="node.collapsed"
+                      class="border border-neon-deep/25 bg-panel/30"
+                    >
+                      <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                        <ChevronRight
+                          class="h-3 w-3 transition-transform"
+                          :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
+                          aria-hidden="true"
+                        />
+                        <Brain class="h-3 w-3" aria-hidden="true" />
+                        <span>思考</span>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent class="border-t border-neon-deep/20 px-2.5 py-2">
+                        <div class="prose-chat text-xs leading-5 text-text-dim" v-html="renderMarkdown(node.text)" />
+                      </CollapsibleContent>
+                    </Collapsible>
+
+                    <!-- 工具调用节点(按 callId 去重,loading→success/failed 更新同一节点) -->
+                    <Collapsible
+                      v-else-if="node.type === 'tool'"
+                      v-model:open="node.collapsed"
+                      class="border border-neon-deep/25 bg-panel/30"
+                    >
+                      <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                        <ChevronRight
+                          class="h-3 w-3 transition-transform"
+                          :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
+                          aria-hidden="true"
+                        />
+                        <Wrench class="h-3 w-3" aria-hidden="true" />
+                        <span>{{ node.name }}</span>
+                        <span
+                          :class="{
+                            'text-neon/60': node.status === 'loading' || node.status === 'running',
+                            'text-neon': node.status === 'success',
+                            'text-red-400': node.status === 'failed',
+                          }"
+                        >
+                          <Loader2 v-if="node.status === 'loading' || node.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
+                          <template v-else-if="node.status === 'success'">✓</template>
+                          <template v-else-if="node.status === 'failed'">✗</template>
+                        </span>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent class="border-t border-neon-deep/20 px-2.5 py-2">
+                        <div
+                          v-if="node.output"
+                          class="max-h-32 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 font-mono text-[10px] leading-4 text-text-dim"
+                        >{{ node.output }}</div>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  </template>
+
+                  <!-- 当前轮流式文本:尚未分类(tool_calls→归入 thought 折叠;stop→写入 content) -->
+                  <div v-if="msg.streamingText" class="prose-chat" v-html="renderMarkdown(msg.streamingText)" />
+                  <!-- 最终回复 / 历史 / text 模式:无流式时展示 content -->
+                  <div v-else-if="msg.content" class="prose-chat" v-html="renderMarkdown(msg.content)" />
+                  <!-- 等待首个 token:过程/流式/回复皆空时显示打字点(替代独立占位框) -->
+                  <div v-else class="flex items-center gap-1.5">
+                    <span class="typing-dot" />
+                    <span class="typing-dot" />
+                    <span class="typing-dot" />
+                  </div>
+                </template>
                 <template v-else>{{ msg.content }}</template>
-              </div>
-            </div>
-
-            <div v-if="sending && toolLines.length" class="flex flex-col gap-1.5 px-10.5 text-xs leading-5 text-text-dim">
-              <div v-for="line in toolLines" :key="line.callId" class="flex items-center gap-1.5">
-                <span class="text-neon/70">🔧</span>
-                <span class="text-text-main/80">{{ line.name }}</span>
-                <span v-if="line.status === 'loading'" class="text-neon/60">执行中…</span>
-                <span v-else-if="line.status === 'success'" class="text-neon">✓</span>
-                <span v-else-if="line.status === 'failed'" class="text-red-400">✗ {{ line.output }}</span>
-              </div>
-            </div>
-
-            <div v-if="sending && !firstDeltaReceived" class="flex flex-row gap-3">
-              <span class="grid h-7 w-7 shrink-0 place-items-center border border-neon/45 bg-neon/10 text-neon">
-                <Bot class="h-3.5 w-3.5" aria-hidden="true" />
-              </span>
-              <div class="flex items-center gap-1.5 border border-neon/20 bg-neon/5 px-3.5 py-2.5">
-                <span class="typing-dot" />
-                <span class="typing-dot" />
-                <span class="typing-dot" />
               </div>
             </div>
           </div>
@@ -308,7 +355,7 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, ChevronDown, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Square, Trash2, User } from "lucide-vue-next"
+import { Bot, ChevronDown, ChevronRight, Loader2, Pencil, Plus, RefreshCw, Send, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import {
   Select,
@@ -317,6 +364,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import {
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+} from "@/components/ui/collapsible"
 import {
   runAssistantChat,
   getPlatformActiveGameCard,
@@ -339,9 +391,27 @@ import {
   type AssistantSessionSummary,
 } from "../storage"
 
+/**
+ * 过程事件节点:assistant 回合内按发生顺序排列的思考/工具.
+ * 每个节点独立折叠/展开,纵向平铺呈现 agent 的行为顺序(非分类堆叠).
+ * 最终回复不入时间线——它是 content,渲染在过程节点之后.
+ * 不持久化——刷新/切换会话后消失,只留 content(最终回复).
+ */
+type AssistantTimelineNode =
+  | { type: "thought"; id: string; round: number; text: string; collapsed: boolean }
+  | { type: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; output?: string; collapsed: boolean }
+
 interface ChatMessage {
   role: "user" | "assistant"
   content: string
+  // 过程事件(native 模式按发生顺序;不持久化,刷新后消失).
+  timeline?: AssistantTimelineNode[]
+  // 当前轮 content 流式文本(可见回复 provisional;onRoundEnd stop→写入 content).
+  // 不持久化——回合结束即清空,只作为流式期 UI 占位.
+  streamingText?: string
+  // 当前轮 reasoning 流式文本(思维链;累积不显示,onRoundEnd tool_calls→折叠 thought).
+  // 不持久化——回合结束即清空.
+  streamingReasoning?: string
 }
 
 const suggestions = [
@@ -363,18 +433,6 @@ const inputRef = ref<HTMLTextAreaElement | null>(null)
 const showJumpToBottom = ref(false)
 // Smart scroll: auto-scroll only while the user is pinned near the bottom.
 const userPinnedToBottom = ref(true)
-// Typing dots stay visible until the first streamed delta arrives.
-const firstDeltaReceived = ref(false)
-// In-flight tool process lines (子2b R5). Transient — cleared when the turn
-// ends so only the final reply persists. Each entry tracks one tool call by
-// callId so loading -> success/failed updates the same line.
-interface AssistantToolLine {
-  callId: string
-  name: string
-  status: "loading" | "running" | "success" | "failed"
-  output?: string
-}
-const toolLines = ref<AssistantToolLine[]>([])
 // Abort controller for the in-flight chat turn (stop-generating button).
 const abortController = ref<AbortController | null>(null)
 const sessionCreating = ref(false)
@@ -579,11 +637,17 @@ async function send() {
   inputText.value = ""
   resetInputHeight()
   sending.value = true
-  firstDeltaReceived.value = false
-  toolLines.value = []
 
-  // Placeholder assistant message; streamed deltas append into it.
-  const assistantMsg = reactive({ role: "assistant" as const, content: "" })
+  // Placeholder assistant message:过程节点(thought/tool)按发生顺序纵向平铺,
+  // streamingText 承载当前轮 content 流式文本,onRoundEnd 写入 content;
+  // streamingReasoning 承载当前轮思维链,onRoundEnd 折叠为 thought 节点(不流式显示).
+  const assistantMsg = reactive<ChatMessage>({
+    role: "assistant",
+    content: "",
+    timeline: [],
+    streamingText: "",
+    streamingReasoning: "",
+  })
   messages.value.push(assistantMsg)
   await scrollToBottom()
 
@@ -591,62 +655,77 @@ async function send() {
     .slice(0, -2)
     .map((msg) => ({ role: msg.role, content: msg.content }))
 
-  // ① Typewriter throttling: buffer deltas and release them on rAF so a burst
-  // of tokens doesn't thrash the renderer. Each frame drains a slice sized to
-  // catch up when the queue grows faster than the frame rate.
-  const deltaQueue: string[] = []
-  let rafId: number | null = null
-  const flushQueue = () => {
-    rafId = null
-    if (deltaQueue.length > 0) {
-      const slice = deltaQueue.splice(0, Math.max(1, Math.ceil(deltaQueue.length / 4)))
-      assistantMsg.content += slice.join("")
-      maybeScrollToBottom()
-    }
-    if (deltaQueue.length > 0) {
-      rafId = requestAnimationFrame(flushQueue)
-    }
-  }
-  // agentId + round are accepted for signature uniformity with the game
-  // streaming channel but unused here (desktop assistant is single-agent and
-  // does not classify thought vs final rounds).
-  const onDelta = (agentId: string, delta: string, _round: number) => {
-    firstDeltaReceived.value = true
-    deltaQueue.push(delta)
-    if (rafId === null) {
-      rafId = requestAnimationFrame(flushQueue)
-    }
-  }
-  const flushRemaining = () => {
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId)
-      rafId = null
-    }
-    if (deltaQueue.length > 0) {
-      assistantMsg.content += deltaQueue.join("")
-      deltaQueue.length = 0
+  // ① 时间线式流式:native 模式按 round 顺序把过程事件(thought/tool)作为独立节点
+  // 纵向平铺.onDelta 带 kind 区分——reasoning(思维链,DeepSeek reasoning_content /
+  // Claude thinking_delta)累积进 streamingReasoning,不流式显示(保持安静),回合结束
+  // tool_calls 时折叠为 thought 节点(空则不建,避免空思考块);content(可见回复)累积
+  // 进 streamingText 流式显示,回合结束 stop 时写入 content.这样:
+  //   - 普通问答(单 round stop):看到正文流式,思考(若有 reasoning)折叠成「思考」可展开.
+  //   - 工具调用轮:思考折叠,正文一般为空(工具调用的 content delta 是噪声,丢弃).
+  // tool 节点按 callId 去重更新 status/output.
+  // text 模式无回调,content 在 reconcile 一次性赋值,timeline 为空——降级为现状.
+  const timeline = assistantMsg.timeline!
+
+  const onDelta = (agentId: string, delta: string, round: number, kind: "reasoning" | "content") => {
+    if (kind === "reasoning") {
+      // 思维链累积,不流式显示(默认折叠);onRoundEnd tool_calls 时落为 thought 节点.
+      assistantMsg.streamingReasoning = (assistantMsg.streamingReasoning ?? "") + delta
+    } else {
+      // 可见回复流式累积;onRoundEnd stop 时写入 content.
+      assistantMsg.streamingText = (assistantMsg.streamingText ?? "") + delta
       maybeScrollToBottom()
     }
   }
 
-  // Tool process lines (子2b R5): each tool call gets a line that transitions
-  // loading -> success/failed. Minimal presentation — no expandable output,
-  // just a status indicator so the user can see the agent is working.
+  const onRoundEnd = (agentId: string, round: number, finishReason: "stop" | "tool_calls") => {
+    const reasoning = assistantMsg.streamingReasoning ?? ""
+    if (finishReason === "tool_calls") {
+      // 思考轮:把累积的思维链折叠为 thought 节点(空白则跳过,不渲染空思考块).
+      // tool_calls 轮的 content delta 是工具调用前后的噪声(不是最终回复),丢弃.
+      if (reasoning.trim()) {
+        timeline.push({ type: "thought", id: `thought-r${round}`, round, text: reasoning, collapsed: true })
+      }
+    } else {
+      // 最终轮:streamingText 即最终回复,写入 content(渲染层在过程节点之后展示).
+      // 若该轮有 reasoning(部分模型在 stop 轮也吐思维链),也折叠为 thought 节点.
+      if (reasoning.trim()) {
+        timeline.push({ type: "thought", id: `thought-r${round}`, round, text: reasoning, collapsed: true })
+      }
+      assistantMsg.content = assistantMsg.streamingText ?? ""
+    }
+    // 清空两个缓冲:下一轮 onDelta 重新累积(或回合已结束).
+    assistantMsg.streamingReasoning = ""
+    assistantMsg.streamingText = ""
+    maybeScrollToBottom()
+  }
+
   const onTool = (
     agentId: string,
+    round: number,
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
     output?: string,
   ) => {
-    const existing = toolLines.value.find((line) => line.callId === callId)
+    // 按 callId 去重:同一工具调用的 loading→success/failed 更新同一节点.
+    const existing = timeline.find(
+      (n): n is AssistantTimelineNode & { type: "tool" } => n.type === "tool" && n.id === callId,
+    )
     if (existing) {
       existing.status = status
       if (output !== undefined) {
         existing.output = output
       }
     } else {
-      toolLines.value.push({ callId, name, status, ...(output !== undefined ? { output } : {}) })
+      timeline.push({
+        type: "tool",
+        id: callId,
+        round,
+        name,
+        status,
+        collapsed: false,
+        ...(output !== undefined ? { output } : {}),
+      })
     }
     maybeScrollToBottom()
   }
@@ -669,26 +748,52 @@ async function send() {
       history,
       sessionId,
       onDelta,
+      onRoundEnd,
       onTool,
       signal: controller.signal,
     })
-    flushRemaining()
-    assistantMsg.content = result.replyText // reconcile (trim/buffer diffs)
+    // reconcile:replyText 是最后一轮(final)的文本,以它为准(strip 工具块等).
+    // native 模式 onRoundEnd(stop)已写入 content;text 模式无回调,这里首次赋值.
+    assistantMsg.content = result.replyText
+    assistantMsg.streamingText = ""
+    assistantMsg.streamingReasoning = ""
     await persistCurrentSession()
   } catch (error) {
-    flushRemaining()
     const aborted = error instanceof Error && error.name === "AbortError"
     const budgetExhausted = error instanceof Error && error.name === "ContextBudgetExhaustedError"
     const taskTimeout = error instanceof Error && error.name === "TaskTimeoutError"
     const taskStalled = error instanceof Error && error.name === "TaskCompressionStalledError"
+    // 把仍在流式的 provisional 文本落盘,避免中止/出错时丢失用户已见进度:
+    //   - streamingReasoning → 折叠为 thought 节点(若非空,保留已产出的思维链)
+    //   - streamingText → content(已见的回复正文)
+    const flushStreaming = () => {
+      if (assistantMsg.streamingReasoning.trim()) {
+        timeline.push({
+          type: "thought",
+          id: `thought-flush-${timeline.length}`,
+          round: -1,
+          text: assistantMsg.streamingReasoning,
+          collapsed: true,
+        })
+      }
+      assistantMsg.streamingReasoning = ""
+      if (assistantMsg.streamingText) {
+        assistantMsg.content = assistantMsg.streamingText
+        assistantMsg.streamingText = ""
+      }
+    }
     if (aborted) {
       // Keep the partial text; mark it so the user knows it was cut short.
+      flushStreaming()
       if (assistantMsg.content) {
         assistantMsg.content = `${assistantMsg.content}\n\n_（已停止）_`
         await persistCurrentSession()
-      } else {
-        // Nothing was streamed: drop the empty placeholder.
+      } else if (timeline.length === 0) {
+        // Nothing was produced at all: drop the empty placeholder.
         messages.value.pop()
+      } else {
+        // Only process nodes (no reply text) — keep them, persist.
+        await persistCurrentSession()
       }
     } else if (budgetExhausted || taskTimeout || taskStalled) {
       // 三类温和中止同路径(非失败的中止,与 abort 对称):
@@ -701,6 +806,7 @@ async function send() {
         : taskStalled
           ? "上下文持续膨胀且压缩无效，已中止"
           : "上下文已满，请开始新会话或精简对话"
+      flushStreaming()
       if (assistantMsg.content) {
         assistantMsg.content = `${assistantMsg.content}\n\n_（${hint}）_`
       } else {
@@ -710,19 +816,21 @@ async function send() {
     } else {
       const message = error instanceof Error ? error.message : String(error)
       errorMessage.value = message
-      if (!assistantMsg.content) {
+      flushStreaming()
+      if (!assistantMsg.content && timeline.length === 0) {
         messages.value.pop()
       }
       await persistCurrentSession()
     }
   } finally {
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId)
-      rafId = null
+    // 回合结束:折叠所有仍展开的 thought/tool 节点(过程完成,保留可展开回看).
+    for (const node of timeline) {
+      if (node.type === "thought" || node.type === "tool") {
+        node.collapsed = true
+      }
     }
-    // Tool process lines are transient: clear them once the turn ends so only
-    // the final reply remains (the user can re-inspect via debug/trace later).
-    toolLines.value = []
+    assistantMsg.streamingText = ""
+    assistantMsg.streamingReasoning = ""
     abortController.value = null
     sending.value = false
     await scrollToBottom()

@@ -354,10 +354,23 @@ interface ProviderAdapter {
     tools: ToolSchema[],
   ): Record<string, unknown>
   /**
-   * Extract the text delta from one parsed SSE `data:` payload. Returns
-   * `undefined` when this chunk carries no text delta.
+   * Extract the visible text delta (the assistant's reply content, not its
+   * chain-of-thought) from one parsed SSE `data:` payload. Returns `undefined`
+   * when this chunk carries no content delta. Reasoning/thinking deltas are
+   * extracted separately via `extractStreamReasoningDelta` so callers can route
+   * them to a distinct (typically collapsed) UI region and keep `result.text`
+   * free of chain-of-thought text.
    */
   extractStreamDelta(data: unknown): string | undefined
+  /**
+   * Extract the reasoning/thinking delta from one parsed SSE `data:` payload.
+   * OpenAI-compatible reasoning models (DeepSeek-R1 等) stream this as
+   * `delta.reasoning_content`; Claude streams it as `content_block_delta` with
+   * `delta.type === "thinking_delta"`. Returns `undefined` when this chunk
+   * carries no reasoning delta or the provider has no separate reasoning
+   * stream (Gemini). Optional — adapters without a reasoning field omit it.
+   */
+  extractStreamReasoningDelta?(data: unknown): string | undefined
   /**
    * Extract tool-call deltas from one parsed SSE payload. OpenAI streams
    * `tool_calls` arguments incrementally (keyed by `index`); Gemini emits a
@@ -516,6 +529,16 @@ const openaiAdapter: ProviderAdapter = {
       return joined.length > 0 ? joined : undefined
     }
     return undefined
+  },
+  extractStreamReasoningDelta(data) {
+    // OpenAI-compatible reasoning models (DeepSeek-R1 等) stream chain-of-thought
+    // as `delta.reasoning_content`. Distinct from `delta.content` (the reply) so
+    // callers can route it to a collapsed "思考" region without polluting result.text.
+    if (typeof data !== "object" || data === null) return undefined
+    const choices = (data as { choices?: Array<Record<string, unknown>> }).choices
+    if (!Array.isArray(choices) || choices.length === 0) return undefined
+    const delta = (choices[0]?.delta ?? {}) as { reasoning_content?: string }
+    return typeof delta.reasoning_content === "string" ? delta.reasoning_content : undefined
   },
   extractStreamToolCalls(data, context) {
     if (typeof data !== "object" || data === null) return
@@ -995,6 +1018,18 @@ const claudeAdapter: ProviderAdapter = {
     const delta = (data as { delta?: { text?: string } }).delta
     return typeof delta?.text === "string" ? delta.text : undefined
   },
+  extractStreamReasoningDelta(data) {
+    // Claude extended thinking streams as `content_block_delta` with
+    // `delta.type === "thinking_delta"` and the text in `delta.thinking`.
+    // `delta.text` (the reply) is carried by `text_delta` blocks, already
+    // handled by extractStreamDelta above.
+    if (typeof data !== "object" || data === null) return undefined
+    const delta = (data as { delta?: { type?: string; thinking?: string } }).delta
+    if (delta?.type === "thinking_delta" && typeof delta.thinking === "string") {
+      return delta.thinking
+    }
+    return undefined
+  },
   extractStreamToolCalls(data, context) {
     if (typeof data !== "object" || data === null) return
     const event = context.event
@@ -1128,11 +1163,14 @@ export interface GenerateAssistantReplyNativeOptions extends GenerateAssistantRe
 
 export interface StreamAssistantReplyNativeOptions extends GenerateAssistantReplyNativeOptions {
   /**
-   * Streaming text-delta callback. Invoked for every text chunk (including
-   * thought-round text — the whole turn streams, there is no onReset). `round`
-   * is the tool-loop round index so the caller can label thought vs final.
+   * Streaming text-delta callback. Invoked for every text chunk with its
+   * `kind`: `"content"` (the visible reply) or `"reasoning"` (chain-of-thought
+   * from reasoning models — DeepSeek `reasoning_content` / Claude
+   * `thinking_delta`). Callers route reasoning to a collapsed "思考" region and
+   * content to the reply. `round` is the tool-loop round index so the caller
+   * can label thought vs final.
    */
-  onDelta?: (delta: string, round: number) => void
+  onDelta?: (delta: string, round: number, kind: "reasoning" | "content") => void
   /**
    * Tool-loop round index for this single stream call. Threaded into `onDelta`
    * so the caller can label thought vs final rounds. Defaults to 0.
@@ -1454,7 +1492,15 @@ export async function streamAssistantReplyNative(
         const delta = adapter.extractStreamDelta(data)
         if (delta !== undefined && delta !== "") {
           textBuffer += delta
-          options.onDelta?.(delta, round)
+          options.onDelta?.(delta, round, "content")
+        }
+
+        // Reasoning/chain-of-thought deltas are extracted separately and routed
+        // with kind "reasoning"; they never enter textBuffer (result.text stays
+        // the visible reply only).
+        const reasoningDelta = adapter.extractStreamReasoningDelta?.(data)
+        if (reasoningDelta !== undefined && reasoningDelta !== "") {
+          options.onDelta?.(reasoningDelta, round, "reasoning")
         }
 
         adapter.extractStreamToolCalls(data, { event: currentEvent, accumulator: toolAccumulator })

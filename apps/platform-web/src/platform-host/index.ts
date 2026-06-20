@@ -1524,7 +1524,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             // No timeoutMs — master relies on one-shot compression + user abort,
             // a timeout would mis-kill narrative deep thought (design §0/§1.3 约束8).
             compressionMode: "narrative",
-            onDelta: (agentId, delta, round) => emitTurnDelta(agentId, delta, nextTurn, round),
+            onDelta: (agentId, delta, round, kind) => emitTurnDelta(agentId, delta, nextTurn, round, kind),
             onRoundEnd: (agentId, round, finishReason) => emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason)),
             onTool: (agentId, round, callId, name, status, output) => emitTurnTool(agentId, nextTurn, round, callId, name, status, output),
           },
@@ -1557,11 +1557,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 debugLabel: options.debugLabel,
                 signal: options.signal,
                 tools,
-                // ai.ts onDelta is (delta, round); adapt the runtime's
-                // (agentId, delta, round) signature by binding options.agentId
+                // ai.ts onDelta is (delta, round, kind); adapt the runtime's
+                // (agentId, delta, round, kind) signature by binding options.agentId
                 // (the entry agent id "master" or a delegated target id).
                 onDelta: options.onDelta
-                  ? (delta, round) => options.onDelta!(options.agentId ?? "master", delta, round)
+                  ? (delta, round, kind) => options.onDelta!(options.agentId ?? "master", delta, round, kind)
                   : undefined,
                 round: options.round,
                 ...(agentConfig ? { config: agentConfig } : {}),
@@ -1718,19 +1718,30 @@ export interface AssistantChatInput {
    * all tool-loop rounds (thought-round text included). `agentId` identifies the
    * emitting agent (the desktop assistant is single-agent, so this is always
    * the local assistant id; the parameter is kept for signature uniformity with
-   * the game-frontend streaming channel). `undefined` disables streaming.
+   * the game-frontend streaming channel). `round` is the tool-loop round index
+   * (0-based), lets the view bucket deltas by round to separate thought vs
+   * final text. `undefined` disables streaming. Native-mode only — text-protocol
+   * turns do not emit deltas.
    */
-  onDelta?: (agentId: string, delta: string, round: number) => void
+  onDelta?: (agentId: string, delta: string, round: number, kind: "reasoning" | "content") => void
+  /**
+   * Per-round end notification. `finishReason` "tool_calls" = this round was a
+   * thought round (its streamed text is reasoning); "stop" = final reply round.
+   * Lets the view classify each round's buffered text as thought vs final.
+   * `undefined` disables round classification. Native-mode only.
+   */
+  onRoundEnd?: (agentId: string, round: number, finishReason: "stop" | "tool_calls") => void
   /**
    * Tool process sink (子2b R2). Invoked before/after each workspace tool
-   * executes, for the desktop AssistantView to render a status line. Excludes
-   * `round` (the view does not classify thought vs final); the runtime binds
-   * agentId + round before calling. `agentId` is kept for signature uniformity
-   * (single-agent here). `undefined` disables tool lines. Native-mode only —
-   * text-protocol turns do not emit tool events.
+   * executes, for the desktop AssistantView to render a status line. `round` is
+   * the tool-loop round the tool was called in (lets the view group tool calls
+   * under their originating thought round). `agentId` is kept for signature
+   * uniformity (single-agent here). `undefined` disables tool lines. Native-mode
+   * only — text-protocol turns do not emit tool events.
    */
   onTool?: (
     agentId: string,
+    round: number,
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
@@ -1880,12 +1891,14 @@ export async function runAssistantChat(
         compressionMode: "task",
         timeoutMs: taskTimeoutMs,
         onDelta: input.onDelta,
-        // Desktop Assistant chat is in-process (not bridged), so tool process
-        // events go straight to the view without a turn binding. Strip the
-        // round the runtime threads in (the view does not classify thought/final);
-        // agentId is passed through for signature uniformity (single-agent here).
+        // Desktop Assistant chat is in-process (not bridged), so round-end and
+        // tool process events go straight to the view. The view uses round +
+        // finishReason to classify thought vs final, and round to group tool
+        // calls under their originating thought round. agentId is passed through
+        // for signature uniformity (single-agent here).
+        onRoundEnd: input.onRoundEnd,
         onTool: input.onTool
-          ? (agentId, _round, callId, name, status, output) => input.onTool!(agentId, callId, name, status, output)
+          ? (agentId, round, callId, name, status, output) => input.onTool!(agentId, round, callId, name, status, output)
           : undefined,
       },
       {
@@ -1917,10 +1930,10 @@ export async function runAssistantChat(
             debugLabel: options.debugLabel,
             signal: options.signal,
             tools,
-            // ai.ts onDelta is (delta, round); adapt the runtime's
-            // (agentId, delta, round) signature by binding this assistant's id.
+            // ai.ts onDelta is (delta, round, kind); adapt the runtime's
+            // (agentId, delta, round, kind) signature by binding this assistant's id.
             onDelta: options.onDelta
-              ? (delta, round) => options.onDelta!(agentId, delta, round)
+              ? (delta, round, kind) => options.onDelta!(agentId, delta, round, kind)
               : undefined,
             round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),

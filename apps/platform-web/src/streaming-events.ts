@@ -4,8 +4,9 @@
  * 镜像 `debug-events.ts` 的设计，仅服务三类事件，每个事件首参 `agentId` 标明来源
  * agent（entry agent "master" 或 delegated agent_call 目标 id），让订阅方区分并行
  * 多子代理的事件来源：
- *   - `turn-delta`（子2a）：每收到一段流式 text delta，`emitTurnDelta(agentId, delta, turn, round)`
- *     把它推给订阅方（remote-iframe-bridge 转发为 `turn-delta` 事件给 play 前端）。
+ *   - `turn-delta`（子2a）：每收到一段流式 text delta，`emitTurnDelta(agentId, delta, turn, round, kind)`
+ *     把它推给订阅方（remote-iframe-bridge 转发为 `turn-delta` 事件给 play 前端）。`kind`
+ *     区分链式推理（`reasoning`）与可见回复（`content`），供前端分别渲染到「思考」与正文区。
  *   - `turn-round-end`（子2b R1）：每轮结束，`emitTurnRoundEnd(agentId, turn, round, kind)`
  *     告知前端本轮属思考流还是最终回复，供前端把 `turn-delta` 文本归类到对应区块。
  *   - `turn-tool`（子2b R2）：工具调用执行前后，`emitTurnTool(agentId, turn, round, callId, name, status, output?)`
@@ -18,7 +19,8 @@
  *   - 回调异常吞掉但 console.error，避免污染主链 fail loud 路径
  */
 
-export type TurnDeltaListener = (agentId: string, delta: string, turn: number, round: number) => void
+export type TurnDeltaKind = "reasoning" | "content"
+export type TurnDeltaListener = (agentId: string, delta: string, turn: number, round: number, kind: TurnDeltaKind) => void
 export type TurnRoundEndKind = "thought" | "final"
 export type TurnRoundEndListener = (agentId: string, turn: number, round: number, kind: TurnRoundEndKind) => void
 export type TurnToolStatus = "loading" | "running" | "success" | "failed"
@@ -43,12 +45,12 @@ export function subscribeTurnDelta(cb: TurnDeltaListener): () => void {
   }
 }
 
-export function emitTurnDelta(agentId: string, delta: string, turn: number, round: number): void {
+export function emitTurnDelta(agentId: string, delta: string, turn: number, round: number, kind: TurnDeltaKind): void {
   // 浅克隆：回调内 unsubscribe 不影响本轮派发
   const listeners = [...turnDeltaListeners]
   for (const listener of listeners) {
     try {
-      listener(agentId, delta, turn, round)
+      listener(agentId, delta, turn, round, kind)
     } catch (err) {
       // 流式通道异常不冒泡到主链
       console.error("[streaming-events] turn-delta listener threw", err)

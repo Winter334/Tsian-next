@@ -427,9 +427,11 @@ export function mountRemoteIframeFrontend(
 
   // Forward streaming text deltas to the remote frontend as `turn-delta`.
   // `agentId` identifies the emitting agent (entry "master" or delegated target)
-  // so the frontend can distinguish parallel delegated agents' streams.
-  const unsubscribeTurnDelta = subscribeTurnDelta((agentId, delta, turn, round) => {
-    postEvent("turn-delta", { agentId, delta, turn, round })
+  // so the frontend can distinguish parallel delegated agents' streams. `kind`
+  // separates chain-of-thought (`reasoning`) from the visible reply (`content`)
+  // so the frontend can route reasoning to a collapsed "思考" region.
+  const unsubscribeTurnDelta = subscribeTurnDelta((agentId, delta, turn, round, kind) => {
+    postEvent("turn-delta", { agentId, delta, turn, round, kind })
   })
 
   // Forward per-round end markers to the remote frontend as `turn-round-end`,
