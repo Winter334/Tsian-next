@@ -625,7 +625,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Agent Runtime collaboration policy is code-level/default-only for this slice: defaults are `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides for tests or future host-owned configuration, but there is no Settings UI, localStorage persistence, runtime prompt, or per-Agent trust state. The tool loop has **no per-Agent round limit** and `agent_call` has **no per-turn call-count limit** — termination relies on `finishReason: stop`, abort, and the turn token-budget fallback (`ContextBudgetExhaustedError` after one in-turn context compression). `callCount` is retained as a diagnostic counter (trace metadata) but no longer gates execution. `maxDepth=2` remains as the recursion safety net (prevents unbounded agent_call nesting; token budget cannot bound recursion depth). See the "Turn Token Budget And In-Turn Compression" and "Parallel agent_call Within A Round" scenarios.
 - Delegated Agents derive their own runtime permissions from the target Agent's `agent.json`; the caller Agent's permissions must not leak into the target Agent step.
 - Delegated Agents may use their own exposed generic workspace operations, `use_skill`/`run_script` for activated Skills, and limited nested `agent_call` inside their own tool loop.
-- Limited nested `agent_call` remains contacts-gated at every hop, depth-limited by policy, and budget-limited by the shared root-turn call count. With the default `maxDepth=2`, the root entry agent at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth/budget metadata on direct `agent_call` attempts.
+- Limited nested `agent_call` remains contacts-gated at every hop and depth-limited by policy. There is no per-turn call-count budget (`maxCallsPerTurn` was removed); agent_call frequency is bounded by the turn token budget, not a count cap. With the default `maxDepth=2`, the root entry agent at depth `0` may call a delegated Agent at depth `1`; that Agent may call one of its own contacts at depth `2`; Agents already at depth `2` receive `AGENT_CALL_UNAVAILABLE` with compact depth metadata on direct `agent_call` attempts.
 - The root turn shares one `agent_call` budget across the entry agent and nested delegated steps.
 - Action executor declarations MUST specify `{ type: "browser_script", path: string, timeoutMs?: number }`. Missing executor or non-`browser_script` types (`builtin`/`platform_action`/`workspace_operation`) are rejected with `ACTION_EXECUTOR_INVALID` at parse time and reported in registry `actionDeclarationErrors`.
 - `browser_script` executors route through an injected `runBrowserScript` capability; `agent-runtime` must not import platform-host, bridge objects, Dexie, storage helpers, or Worker code.
@@ -766,7 +766,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Bad: allowing `run_script` before `use_skill`; this bypasses Skill activation gating.
 - Bad: a Skill action declaring `builtin`, `platform_action`, or `workspace_operation` executor; only `browser_script` is supported — use top-level workspace tools for single ops or a `browser_script` for orchestration.
 - Bad: exposing the full Agent registry instead of only the current Agent's contacts.
-- Bad: allowing delegated Agents to call arbitrary non-contact Agents, exceed the shared root-turn budget, or exceed the policy depth limit.
+- Bad: allowing delegated Agents to call arbitrary non-contact Agents or exceed the policy depth limit. (There is no per-turn call-count budget to exceed; the turn token budget bounds volume.)
 - Bad: letting `browser_script` SDK workspace methods bypass an Agent-level disabled `workspace_read` or `workspace_write` group.
 - Bad: making raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals supported browser script APIs in the first strong-SDK slice.
 - Bad: adding player-facing trust prompts, Settings toggles, or per-Skill trust records to the first lightweight executor policy slice.
@@ -811,7 +811,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Assert nested `agent_call` attempts beyond `maxDepth` return `AGENT_CALL_UNAVAILABLE` with structured depth/budget metadata.
 - Assert invalid `historyMode` is rejected and omitted `historyMode` defaults to `recent`.
 - Assert delegated Agents can still use workspace tools, `use_skill`/`run_script`, according to their own Agent permissions.
-- Assert per-turn `agent_call` budget is shared across the entry agent and nested delegated steps.
+- Assert nested `agent_call` is bounded by `maxDepth` across the entry agent and nested delegated steps (no per-turn call-count budget exists; `callCount` is diagnostic only).
 - Assert disabled `workspace_read` omits read/list/search prompt examples and direct generic read/list/search calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Assert disabled `workspace_write` omits write examples and direct generic diff/patch/write/move/delete/validate calls return `WORKSPACE_OPERATION_NOT_EXPOSED`.
 - Assert browser script SDK workspace calls cannot bypass disabled Agent workspace tool groups.
