@@ -369,6 +369,59 @@ function buildAgentContextMessages(context: AgentContextSnapshot): AiChatMessage
   return messages
 }
 
+/**
+ * 定位工具循环 messages 里的剧情正文段边界,供 turn 内压剧情后 slice+替换用
+ * (design §2.4).剧情段 = system(index 0)之后、"当前回合："框架信息 user 之前的
+ * 独立 message 序列(summary + recentTurns).
+ *
+ * 返回 { start, end }(半开区间),start<0 表示无独立剧情段可压,调用方跳过压缩:
+ * - entry 稳态路径(注入了 agentContext):start=1, end="当前回合："前.
+ * - entry 兜底路径(未注入,剧情段首条是"最近对话："拍扁文本):{-1,-1}.
+ * - delegated agent 路径(index 1 直接是"当前回合：",无独立剧情段):{-1,-1}.
+ * - 无"当前回合："锚点(结构不符):{-1,-1}.
+ */
+function locateHistorySpan(
+  messages: ReadonlyArray<{ role: string; content: string }>,
+): { start: number; end: number } {
+  if (messages.length <= 1 || messages[0].role !== "system") {
+    return { start: -1, end: -1 }
+  }
+  const first = messages[1]
+  // delegated:index 1 直接是"当前回合："框架信息,无独立剧情段;
+  // entry 兜底:剧情段首条是"最近对话："拍扁文本,无独立 message 序列可压.
+  if (
+    first.role === "user"
+    && (first.content.startsWith("当前回合：") || first.content.startsWith("最近对话："))
+  ) {
+    return { start: -1, end: -1 }
+  }
+  let end = -1
+  for (let i = 1; i < messages.length; i += 1) {
+    if (messages[i].role === "user" && messages[i].content.startsWith("当前回合：")) {
+      end = i
+      break
+    }
+  }
+  if (end === -1) {
+    return { start: -1, end: -1 }
+  }
+  return { start: 1, end }
+}
+
+/**
+ * 用压缩后的快照重建剧情段并 splice 替换原段(design §2.4).native 循环的
+ * newMessages 需先经 aiChatMessagesToRuntime 转换,text 循环直接用
+ * buildAgentContextMessages 产出的 AiChatMessage[].system / 框架信息 /
+ * 本轮输入 / 后续 tool 交互保留不动.
+ */
+function replaceHistorySpan<T extends { role: string; content: string }>(
+  messages: T[],
+  span: { start: number; end: number },
+  newMessages: T[],
+): void {
+  messages.splice(span.start, span.end - span.start, ...newMessages)
+}
+
 function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
   return input.snapshot.state.turn + 1
 }

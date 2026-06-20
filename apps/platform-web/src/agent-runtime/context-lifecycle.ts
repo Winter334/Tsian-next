@@ -4,6 +4,7 @@ import type {
   ConversationMessageRecord,
   AiChatMessage,
 } from "@tsian/contracts"
+import type { RuntimeChatMessage } from "../runtime-host/ai"
 import type { RuntimeTraceDebugLabel } from "./trace"
 
 /**
@@ -45,9 +46,27 @@ export function estimateTokenCount(text: string): number {
   return Math.ceil(charCount * 0.4 + byteCount * 0.25)
 }
 
-/** 估算一组 RuntimeChatMessage(native 循环)的 token 总量. */
+/** 估算一组 AiChatMessage(text 循环)的 token 总量.tool observation 已被序列化进 user content,累加 content 即覆盖. */
 export function estimateAiChatMessagesTokens(messages: AiChatMessage[]): number {
   return messages.reduce((sum, msg) => sum + estimateTokenCount(msg.content), 0)
+}
+
+/**
+ * 估算一组 RuntimeChatMessage(native 工具循环)的 token 总量,含 toolCalls
+ * 的 name + arguments(JSON 序列化计入)与 tool observation content.toolCallId
+ * 短且重复,忽略保持简单.复用 estimateTokenCount,不引入 tokenizer 依赖.
+ */
+export function estimateRuntimeMessagesTokens(messages: RuntimeChatMessage[]): number {
+  return messages.reduce((sum, msg) => {
+    let tokens = estimateTokenCount(msg.content)
+    if (msg.role === "assistant" && msg.toolCalls) {
+      for (const call of msg.toolCalls) {
+        tokens += estimateTokenCount(call.name)
+        tokens += estimateTokenCount(JSON.stringify(call.arguments))
+      }
+    }
+    return sum
+  }, 0)
 }
 
 /** 估算 context 快照(summary + recentTurns)的 token 总量. */
@@ -212,6 +231,14 @@ export class ContextCompressionFailedError extends Error {
       "上下文压缩失败，无法继续本轮。请重试；若持续失败，请检查 Agent 模型配置或开始新会话。",
     )
     this.name = "ContextCompressionFailedError"
+  }
+}
+
+/** turn 内第二次达预算(压缩已用过一次)兜底:上下文已满.经 AssistantView catch 与 abort 对称处理(非失败的中止). */
+export class ContextBudgetExhaustedError extends Error {
+  constructor() {
+    super("上下文已满，无法继续本轮探索。请开始新会话或精简对话。")
+    this.name = "ContextBudgetExhaustedError"
   }
 }
 
