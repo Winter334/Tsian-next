@@ -664,3 +664,42 @@ Stages 0-4 were already committed (R0 SW DB-name fix + inferMediaType, stage 1 c
 
 - PV-004 环境具备时做真实 API 实测（G1-G8）。
 - 后续任务 06-20-assistant-context-persistence（助手跨 turn 持久化）复用本任务的任务压缩机制。
+
+
+## Session 75: assistant-context-persistence 实现（虚拟文件系统 + 任务摘要稳态）
+
+**Date**: 2026-06-20
+**Task**: assistant-context-persistence 实现（虚拟文件系统 + 任务摘要稳态）
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+实现桌面助手 agent 跨 turn 持久化。存储位置经与用户二次对齐：走 .tsian/local/assistant/ 虚拟文件系统（sessions/<sessionId>/context.json，存 local-assistant-files Dexie map），契合'平台数据收录到文件系统、用桌面 agent 管理'的产品哲学，每会话独立不串上下文，agent 可 workspace_read/write 管理。机制对称 master 的 agents/master/context.json：turn 开头 host 从已加载 localAssistantFiles 读快照注入 runtime（零额外 IO），runtime turn 开头检查 token 超 85% 压任务摘要（ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT，guard 从 narrative-only 放宽为两模式都执行），turn 结束 host stageAssistantContextFile 写进事务搭便车 commitAssistantWorkspaceFiles 落盘（零额外 IO），跨加载从虚拟文件恢复。复用 AgentContextSnapshot 类型（放宽 agentId:string + schema 联合，不新建类型）+ 参数化 context-lifecycle.ts（加可选 schema/agentId/systemPrompt/userLabel/assistantLabel 参数，默认 master 值向后兼容，不新建模块）。修复 turn=1-always 缺陷（nextAssistantTurnNumber 从快照推算 turn 号）。会话删除经 deleteLocalAssistantFile 清理 context 虚拟文件防孤儿。master 全链路不动（narrative 分支不传新字段用默认值）。阶段 A-F 全部 commit + build:contracts&&build:web 通过 + spec 同步（type-safety 新增 Assistant Cross-Turn Context Persistence 场景 + state-management 补充虚拟文件边界）+ 质量检查通过。真实 API 实测登记 PV-005 待环境（G1-G9：跨 turn 持久化/文件系统可视化/长对话稳态/多会话隔离/会话删除清理/旧会话迁移/turn 失败不写回/master 不回归/turn 号递增）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3b3bfb4` | (see git log) |
+| `1c98d9d` | (see git log) |
+| `dba74f1` | (see git log) |
+| `254d693` | (see git log) |
+| `90ca040` | (see git log) |
+| `49c4b1e` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
