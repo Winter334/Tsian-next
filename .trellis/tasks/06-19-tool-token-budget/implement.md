@@ -23,11 +23,12 @@
 
 ## 关键实现路径（勘察已确认）
 
+- **底层结构改造已完成（commit 837ddd2，底层任务已归档）**：`buildEntryAgentMessages` 已改为独立 message 序列，新增 `buildAgentContextMessages(context): AiChatMessage[]`（index.ts，产出 summary + recentTurns 独立 message）。本任务压剧情直接复用它做 slice+替换，**无需锚点拆分文本**。真实 API 行为待 PV-001 验证（`docs/active/pending-verification.md`）。
 - `contextTokenBudget` 已在 platform-host（:1487）注入 `AgentRuntimeTurnInput`，runtime 直接用 `input.contextTokenBudget`，**无需改 host 注入**。
 - `agentContext`（AgentContextSnapshot）已在 host（:1486）注入 `AgentRuntimeTurnInput`，但**没传进工具循环**——R2 在 `runAgentRuntimeTurn` 内把它传给 `callAgentModelWithWorkspaceTools(Native)`。
 - `compressedContext` 落盘已支持：`stageAgentContextFile`（host :401）`base = input.compressedContext ?? readExisting ?? empty`。turn 内压缩结果透传到 `contextUpdate.compressedContext` 即自动落盘，**无需改 host 落盘逻辑**。
 - `maxToolRoundsPerAgent` host 没注入（grep 无命中），只需改 index.ts。
-- `compressContext` / `estimateTokenCount` / `estimateAiChatMessagesTokens` / `resolveTokenBudget` / `CONTEXT_COMPRESS_TRIGGER_RATIO` / `CompressCallModel` 底层已导出，直接 import 复用。
+- `compressContext` / `estimateTokenCount` / `estimateAiChatMessagesTokens` / `resolveTokenBudget` / `CONTEXT_COMPRESS_TRIGGER_RATIO` / `CompressCallModel` / `buildAgentContextMessages` 底层已导出/已存在，直接 import 复用。
 
 ## 执行清单
 
@@ -42,10 +43,11 @@
 - [ ] **R1.2** `context-lifecycle.ts` 新增 `ContextBudgetExhaustedError extends Error`（design §2.5）：
   - `constructor()`，`super("上下文已满，无法继续本轮探索。请开始新会话或精简对话。")`，`this.name = "ContextBudgetExhaustedError"`。
   - 与现有 `ContextCompressionFailedError` 同文件、同风格。
-- [ ] **R1.3** `index.ts` 新增 rebuild helper（紧挨 `formatAgentContextHistory` :344，直接用它，不跨文件）：
-  - `splitHistoryAnchors(content: string): { prefix: string; suffix: string }`——按 `"最近对话："` 和 `"玩家本轮输入："` 两个锚点拆分 user message content，返回剧情段前后的非剧情部分。内部用 `splitOnce(str, sep)`（按 sep 首次出现切一刀，返回 `[before, after]`；sep 不存在时 `[str, ""]`）。
-  - `rebuildHistorySectionInRuntimeMessages(messages: RuntimeChatMessage[], userMessageIndex: number, newSnapshot: AgentContextSnapshot): void`——用 `splitHistoryAnchors` 拆 `messages[userMessageIndex].content`，用 `formatAgentContextHistory(newSnapshot)` 重新生成剧情段，重组 `content = prefix + "最近对话：" + newHistory + suffix`，就地更新该条 message。
-  - `rebuildHistorySectionInAiChatMessages(messages: AiChatMessage[], userMessageIndex: number, newSnapshot: AgentContextSnapshot): void`——text 版同构。
+- [ ] **R1.3** `index.ts` 新增剧情段定位+替换逻辑（复用底层 `buildAgentContextMessages`，不新写锚点拆分 helper）：
+  - 底层任务已新增 `buildAgentContextMessages(context: AgentContextSnapshot): AiChatMessage[]`（index.ts，产出 summary + recentTurns 独立 message 序列）。本任务直接复用它，不重写。
+  - 新增 `locateHistorySpan(messages, frameworkUserIndex): { start: number; end: number }`——扫描定位剧情段边界：从 `frameworkUserIndex + 1`（框架信息 user 之后）开始，到"玩家本轮输入："user 之前结束。返回剧情段在 messages 里的 `[start, end)` 区间。若未注入 agentContext（兜底路径，剧情段是单条 `最近对话：` user），返回 `{ start: -1, end: -1 }` 表示无可压剧情段（跳过 turn 内压缩）。
+  - 新增 `replaceHistorySpan(messages, span, newSnapshot)`——`messages.splice(span.start, span.end - span.start, ...newHistoryMessages)`，native 循环 newHistoryMessages 经 `aiChatMessagesToRuntime(buildAgentContextMessages(newSnapshot))`，text 循环直接 `buildAgentContextMessages(newSnapshot)`。
+  - 这两个 helper 放 index.ts（紧挨 `buildAgentContextMessages`），不跨文件。
 - [ ] **R1.4** 验证：`npm run build:web` 通过（纯函数 + 错误类 + helper + 类型，无循环接入）。
 
 ### R2 — 工具循环接入 token 预算 + 压剧情（核心改动）
@@ -67,35 +69,39 @@
   - 删除 `const maxToolRounds = ...`（:1173-1174）读取。
   - 删除 `if (round >= maxToolRounds)` 分支（:1245-1261，含 round limit 抛错 + finalText 返回）。
   - 循环内维护 `let compressedThisTurn = false` + `let lastRoundText = ""`（每轮 `result.text` 赋值给它，供兜底用）。
-  - 入口调 `splitHistoryAnchors` 缓存 user message（index 1）的非剧情 prefix/suffix（供 rebuild 用）。
+  - 入口定位剧情段边界：`const historySpan = locateHistorySpan(runtimeMessages, 1)`（frameworkUserIndex=1，即框架信息 user）。若 `historySpan.start === -1`（兜底路径无 agentContext），跳过 turn 内压缩检查（整个 if 块不执行）。
   - 循环内 `assertNotAborted`（:1194）之后、`callModelNative`（:1200）之前，插入 token 预算检查（design §2.3）：
     ```ts
-    const triggerThreshold = toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
-    const totalTokens = estimateRuntimeMessagesTokens(runtimeMessages)
-    if (totalTokens > triggerThreshold) {
-      if (compressedThisTurn) {
-        // 第二次达预算 → 兜底(design §2.5)
-        const finalText = lastRoundText.trim()
-        if (finalText) {
-          recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
-            messages, modelOutput: lastRoundText, toolCalls: [], toolObservations: [], round, status: "completed",
-          })
-          return finalText
+    if (historySpan.start >= 0) {  // 仅稳态路径(有剧情段)做 turn 内压缩
+      const triggerThreshold = toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
+      const totalTokens = estimateRuntimeMessagesTokens(runtimeMessages)
+      if (totalTokens > triggerThreshold) {
+        if (compressedThisTurn) {
+          // 第二次达预算 → 兜底(design §2.5)
+          const finalText = lastRoundText.trim()
+          if (finalText) {
+            recordAgentSessionTranscript(transcriptCollector, input, agentContext, options, {
+              messages, modelOutput: lastRoundText, toolCalls: [], toolObservations: [], round, status: "completed",
+            })
+            return finalText
+          }
+          throw new ContextBudgetExhaustedError()
         }
-        throw new ContextBudgetExhaustedError()
+        // 第一次达预算 → 压剧情(复用底层 compressContext)
+        const compressOptions = { debugLabel: options.debugLabel, signal: options.signal, agentId: agentContext.agent.id }
+        const compressed = await compressContext(
+          toolOptions.agentContextSnapshot, triggerThreshold, toolOptions.compressCallModel, compressOptions,
+        )
+        Object.assign(toolOptions.agentContextSnapshot, compressed)
+        compressedThisTurn = true
+        replaceHistorySpan(runtimeMessages, historySpan, toolOptions.agentContextSnapshot)  // slice+替换剧情段
+        // 替换后剧情段长度可能变,更新 historySpan.end(后续轮次若再压用——但一次压缩限制下不会二次压,仅防御)
+        historySpan.end = historySpan.start + aiChatMessagesToRuntime(buildAgentContextMessages(toolOptions.agentContextSnapshot)).length
+        capabilities.emitTrace?.({
+          type: "context_compressed_in_turn", agentId: agentContext.agent.id, debugLabel: options.debugLabel, ok: true,
+          data: { round, beforeTokens: totalTokens, budget: toolOptions.contextTokenBudget, triggerThreshold },
+        })
       }
-      // 第一次达预算 → 压剧情(复用底层 compressContext)
-      const compressOptions = { debugLabel: options.debugLabel, signal: options.signal, agentId: agentContext.agent.id }
-      const compressed = await compressContext(
-        toolOptions.agentContextSnapshot, triggerThreshold, toolOptions.compressCallModel, compressOptions,
-      )
-      Object.assign(toolOptions.agentContextSnapshot, compressed)
-      compressedThisTurn = true
-      rebuildHistorySectionInRuntimeMessages(runtimeMessages, 1, toolOptions.agentContextSnapshot)
-      capabilities.emitTrace?.({
-        type: "context_compressed_in_turn", agentId: agentContext.agent.id, debugLabel: options.debugLabel, ok: true,
-        data: { round, beforeTokens: totalTokens, budget: toolOptions.contextTokenBudget, triggerThreshold },
-      })
     }
     ```
   - 每轮 `result.text` 赋值 `lastRoundText = result.text`（在 finishReason 判断前，供兜底读）。
@@ -104,7 +110,7 @@
   - 循环头 `for (let round = 0; round <= maxToolRounds; round += 1)`（:1382）→ `for (let round = 0; ; round += 1)`。
   - 删除 `const maxToolRounds = ...`（:1380-1381）读取。
   - 删除 `if (round >= maxToolRounds)` 分支（:1414-1431）。
-  - 对称插入 token 预算检查：用 `estimateAiChatMessagesTokens` 作用于 `nextMessages`，压剧情用 `compressContext` 同一个，rebuild 用 `rebuildHistorySectionInAiChatMessages`。`lastRoundText` 用 `stripRuntimeWorkspaceToolCallBlocks(response)`（text 循环的 finalText 提取方式，参考 :1415）。
+  - 对称插入 token 预算检查：用 `estimateAiChatMessagesTokens` 作用于 `nextMessages`，压剧情用 `compressContext` 同一个，替换剧情段用 `replaceHistorySpan`（text 版，newHistoryMessages 直接用 `buildAgentContextMessages` 产出 `AiChatMessage[]`，不经 `aiChatMessagesToRuntime`）。入口同样 `locateHistorySpan(nextMessages, 1)` 定位边界。`lastRoundText` 用 `stripRuntimeWorkspaceToolCallBlocks(response)`（text 循环的 finalText 提取方式，参考 :1415）。
   - import `estimateAiChatMessagesTokens` from `./context-lifecycle`（已存在）。
 - [ ] **R2.6** `index.ts` `callAgentModelWithWorkspaceTools`（:1325 分发函数）：把新增的 `agentContextSnapshot` / `contextTokenBudget` / `compressCallModel` 透传给 native 和 text 两个分支（签名 + 两个分支调用点）。
 - [ ] **R2.7** 验证：`npm run build:web` 通过。此时 `maxToolRoundsPerAgent` 字段仍在 policy 但不再被读（R3 移除）。

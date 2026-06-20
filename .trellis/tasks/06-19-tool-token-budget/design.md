@@ -40,34 +40,43 @@
 
 ### 1.3 关键技术约束（勘察确认）
 
-**约束1：剧情正文不是独立 message，是第二条 user message content 里的一段文本。**
+**约束1：剧情正文是独立 message 序列（底层任务 2026-06-20 结构改造后）。**
 
-`buildEntryAgentMessages`（index.ts:690）把剧情正文（`formatAgentContextHistory(agentContext)` 的输出：summary + recentTurns）和"当前回合"、"Workspace Agent 上下文"、"玩家本轮输入"拼成**一条 user message 的 content**。结构：
+底层任务收尾把 `buildEntryAgentMessages`（index.ts:700）从"剧情正文塞一条 user message content"改为**独立 message 序列**（新增 `buildAgentContextMessages`）。结构：
 
 ```
 runtimeMessages = [
-  { role: "system", content: systemPrompt },                                    // index 0
-  { role: "user",   content: "当前回合:N\nWorkspace Agent 上下文:...\n最近对话:\n<剧情正文段>\n\n玩家本轮输入:..." },  // index 1
-  { role: "assistant", content, toolCalls },                                      // round 0+
-  { role: "tool", toolCallId, content },                                          // round 0+
+  { role: "system",    content: systemPrompt },                              // index 0
+  { role: "user",      content: "当前回合:N\nWorkspace Agent 上下文:..." },   // index 1, 框架信息
+  { role: "user",      content: "早期剧情摘要：\n<summary>" },               // index 2, summary(若有)
+  { role: "user",      content: "<玩家12轮原文>" },                          // index 3+, recentTurns
+  { role: "assistant", content: "<叙事12轮原文>" },
+  { role: "user",      content: "<玩家13轮原文>" },
+  { role: "assistant", content: "<叙事13轮原文>" },
+  ...
+  { role: "user",      content: "玩家本轮输入：\n<userInput>" },             // 本轮输入
+  { role: "assistant", content, toolCalls },                                  // round 0+ 工具循环
+  { role: "tool", toolCallId, content },                                      // round 0+
   ...
 ]
 ```
 
-→ turn 内压剧情后，要**重建 index 1 这条 user message 的"最近对话"段**，保留其它部分（当前回合/Workspace 上下文/玩家输入）。
+→ turn 内压剧情后，用 `buildAgentContextMessages(newSnapshot)` 重新生成剧情正文段（summary + recentTurns），**替换** runtimeMessages 里原来的剧情段（index 2 到本轮输入之前），保留 system + 框架信息 + 本轮输入 + 后面所有 tool 交互。**按 message 边界 slice + 替换，无锚点拆分文本的脆弱性。**
+
+详见底层任务 `agent-session-context-lifecycle/design.md` §2.2a（已归档，archive/2026-06/）。
 
 **约束2：context 快照当前没传进工具循环。**
 
-`callAgentModelWithWorkspaceToolsNative`（:1161）和 text 版（:1325）的参数只有 `agentContext: AgentContextEntry`（agent 配置），**没有** `AgentContextSnapshot`（剧情正文快照）。剧情正文在 `buildEntryAgentMessages` 阶段就格式化进 message 了。
+`callAgentModelWithWorkspaceToolsNative`（:1161）和 text 版（:1325）的参数只有 `agentContext: AgentContextEntry`（agent 配置），**没有** `AgentContextSnapshot`（剧情正文快照）。剧情正文在 `buildEntryAgentMessages` 阶段就展开成 message 了。
 
-→ 要在工具循环内压剧情，**必须把 `AgentContextSnapshot` 传进工具循环**，压缩后用它重建 message。
+→ 要在工具循环内压剧情，**必须把 `AgentContextSnapshot` 传进工具循环**，压缩后用它重建剧情段。
 
 **约束3：native 与 text 循环 message shape 不同。**
 
 - native：`runtimeMessages: RuntimeChatMessage[]`，tool 结果 = `{role:"tool", toolCallId, content}`。
 - text：`nextMessages: AiChatMessage[]`，tool 结果 = `{role:"user", content: formatRuntimeWorkspaceToolObservationMessage(...)}`。
 
-两处循环的剧情段重建逻辑要各自适配，但核心机制一致。
+两处循环的剧情段替换逻辑要各自适配，但核心机制一致。`buildAgentContextMessages` 产出 `AiChatMessage[]`，native 循环需经 `aiChatMessagesToRuntime` 转换（或直接复用转换逻辑），text 循环可直接用。
 
 ## 2. 数据与契约
 
@@ -140,7 +149,7 @@ if (totalTokens > triggerThreshold) {
   )
   agentContextSnapshot = compressed
   compressedThisTurn = true
-  rebuildHistorySectionInMessages(runtimeMessages, agentContextSnapshot)  // §2.4
+  replaceHistoryMessages(runtimeMessages, historyStart, historyEnd, agentContextSnapshot)  // §2.4
   emitTrace({ type: "context_compressed_in_turn", ... })
 }
 ```
@@ -150,29 +159,35 @@ if (totalTokens > triggerThreshold) {
 - `triggerThreshold = budget * CONTEXT_COMPRESS_TRIGGER_RATIO`（0.85，底层常量复用）。
 - `compressContext` 的 `threshold` 参数传 `triggerThreshold`（压到 85% 以下）。
 
-### 2.4 重建 user message 剧情段
+### 2.4 替换剧情正文 message 段
 
-新增纯函数 `rebuildHistorySectionInRuntimeMessages`（native）/ `rebuildHistorySectionInAiChatMessages`（text）。
+剧情正文已是独立 message 序列（§1.3 约束1）。turn 内压剧情后，用 `buildAgentContextMessages(newSnapshot)` 重新生成剧情段（summary + recentTurns），**替换** runtimeMessages 里原来的剧情段，保留 system + 框架信息 + 本轮输入 + 后面所有 tool 交互。
 
-native 循环 index 1 的 user message content 结构是 `\n` 分隔的多段，"最近对话："后到"玩家本轮输入："前是剧情段。**设计选择**：不靠脆弱的字符串定位，而是**工具循环入口按已有锚点拆分 user message，缓存非剧情部分，压缩后用新 `formatAgentContextHistory` 重新拼接**。
-
-`buildEntryAgentMessages`（:722-734）的 user content 拼接已有 `"最近对话："` 和 `"玩家本轮输入："` 两个锚点字符串。工具循环入口用这两个锚点 split，得到 `[prefix, historySection, suffix]`：
+**定位剧情段边界**：工具循环入口（`aiChatMessagesToRuntime` 之后）记录剧情段的起止索引。剧情段 = summary message（若有）+ recentTurns messages，位于"框架信息 user"（index 1）之后、"本轮输入 user"之前。入口扫描一次记录 `historyStart` / `historyEnd`：
 
 ```ts
 // 工具循环入口(伪代码)
-const userContent = runtimeMessages[1].content  // 第二条 user message
-const [prefix, rest1] = splitOnce(userContent, "最近对话：")
-const [historySection, suffix] = splitOnce(rest1, "玩家本轮输入：")
-// 缓存 prefix + suffix,压缩后重组:
-runtimeMessages[1] = {
-  role: "user",
-  content: prefix + "最近对话：" + formatAgentContextHistory(newSnapshot) + suffix,
+// runtimeMessages 结构: [system, user(框架), user(summary)?, user/assistant(recentTurns)..., user(本轮输入), assistant(tool)...]
+// 剧情段 = 从 index 2(summary 或 recentTurns 首条) 到 本轮输入前
+// 扫描定位: 跳过 system + 框架user, 剧情段开始; 遇到"玩家本轮输入："的 user 结束
+let historyStart = 2  // system(0) + 框架user(1) 之后
+let historyEnd = runtimeMessages.length
+for (let i = historyStart; i < runtimeMessages.length; i++) {
+  const msg = runtimeMessages[i]
+  if (msg.role === "user" && typeof msg.content === "string" && msg.content.startsWith("玩家本轮输入：")) {
+    historyEnd = i
+    break
+  }
 }
+// 压缩后替换:
+const newHistoryMessages = aiChatMessagesToRuntime(buildAgentContextMessages(agentContextSnapshot))
+runtimeMessages.splice(historyStart, historyEnd - historyStart, ...newHistoryMessages)
+historyEnd = historyStart + newHistoryMessages.length  // 更新边界(后续轮次若再压用)
 ```
 
-**不改 `buildEntryAgentMessages`，不改 `formatAgentContextHistory`**——靠已有锚点字符串拆分。`splitOnce` 是工具内小 helper（按首次出现位置切一刀）。
+**复用底层 `buildAgentContextMessages`**（index.ts，底层任务新增）——不新写 helper，不靠锚点拆分文本。native 循环经 `aiChatMessagesToRuntime` 转换；text 循环直接用 `AiChatMessage[]`（`buildAgentContextMessages` 本就产出 `AiChatMessage[]`）。
 
-text 循环同理（`nextMessages[1]` 是同样的 user message 结构）。
+**兜底路径（agentContext 未注入）**：剧情段是单条 user message（`最近对话：\n<formatHistory>`），无 summary/recentTurns 独立 message。此路径不触发 turn 内压剧情（无 context 快照可压）——工具循环拿到 `agentContextSnapshot` 为空时跳过压缩检查。即 turn 内压剧情只在有 context 快照的稳态路径生效，兜底路径靠底层 turn 开头压缩 + provider 窗口兜底。
 
 ### 2.5 ContextBudgetExhaustedError + 兜底
 
@@ -303,8 +318,8 @@ turn 结束时 `AgentRuntimeTurnContextUpdate`（index.ts:1609）已有 `compres
 ## 6. 验证策略
 
 - **构建**：`npm run build`（含 contracts）通过。
-- **单测**：`estimateRuntimeMessagesTokens` 纯函数单测（含 toolCalls arguments 计入）；`rebuildHistorySectionInRuntimeMessages` 纯函数单测（锚点拆分/重组正确，非剧情部分保留）。
-- **真实 API 实测**：
+- **单测**：`estimateRuntimeMessagesTokens` 纯函数单测（含 toolCalls arguments 计入）；剧情段替换逻辑验证（`buildAgentContextMessages(newSnapshot)` 生成的新段正确 splice 替换原段，system/框架信息/本轮输入/tool 交互保留不动）。
+- **真实 API 实测**（依赖 PV-001 通过，见 `docs/active/pending-verification.md`）：
   - 多步探索不被卡死（让模型探索 6+ 轮，无 round limit 报错）。
   - 人为构造超长上下文（大文件 read 累积）触发 turn 内压缩，观察压缩后继续循环不崩、tool 交互保留、模型不重复探索。
   - 第二次达预算兜底：构造极端场景观察"有 text 返回 / 无 text 温和报错"。
@@ -313,7 +328,7 @@ turn 结束时 `AgentRuntimeTurnContextUpdate`（index.ts:1609）已有 `compres
 ## 7. 与上下游子任务的接口
 
 - **上游子1（tool-skill-decouple）**：本任务在子1 定稿的循环形态上实现。子1 的 SKILL.md 全文注入会增加单轮 message 体积，token 估算已纳入（content 全计入）。turn 内压缩只压剧情不动 tool 交互，注入的 skill 全文随 tool 交互保留——不会因压缩丢失 skill 内容。
-- **上游底层（agent-session-context-lifecycle）**：复用 `compressContext` / `estimateTokenCount` / `resolveTokenBudget` / `CONTEXT_COMPRESS_TRIGGER_RATIO` / `CompressCallModel`。不改底层函数，只在工具循环内新增调用点。turn 内压缩结果通过 `contextUpdate.compressedContext` 透传给 host 落盘。
+- **上游底层（agent-session-context-lifecycle，已归档）**：复用 `compressContext` / `estimateTokenCount` / `estimateAiChatMessagesTokens` / `resolveTokenBudget` / `CONTEXT_COMPRESS_TRIGGER_RATIO` / `CompressCallModel` / **`buildAgentContextMessages`**（剧情段重建）。不改底层函数，只在工具循环内新增调用点。turn 内压缩结果通过 `contextUpdate.compressedContext` 透传给 host 落盘。底层结构改造（独立 message 序列）是本任务 slice+替换方案的前提——若 PV-001 回退到旧结构，本任务压剧情实现需回退到锚点拆分方案。
 - **下游子3（tool-rename-and-glob）**：无直接依赖。子3 改工具命名/schema，不改循环结构。
 - **下游子4（tool-executor-policy）**：无直接依赖。子4 接通 policy，不改循环结构。
 
