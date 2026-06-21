@@ -88,6 +88,19 @@ import {
   waitForPlatformHostReady,
 } from "./host-state"
 import {
+  buildAgentProviderPresetMap,
+  cardContentFilesToWorkspaceFiles,
+  deleteCardContentPathForActiveCard,
+  ensureActiveGameCardId,
+  getPlatformActiveGameCard,
+  gameCardForSave,
+  listEffectiveWorkspaceFilesForActiveSave,
+  normalizeMessageContent,
+  resolveAgentModelConfig,
+  writeCardContentFileForActiveCard,
+  writeCardContentFileForCard,
+} from "./internal"
+import {
   generateAssistantReply,
   generateAssistantReplyNative,
   streamAssistantReplyNative,
@@ -290,10 +303,6 @@ function finishReasonToKind(finishReason: "stop" | "tool_calls"): "thought" | "f
 
 function cloneSnapshot(snapshot: RuntimeSnapshotShell): RuntimeSnapshotShell {
   return JSON.parse(JSON.stringify(snapshot)) as RuntimeSnapshotShell
-}
-
-function normalizeMessageContent(value: unknown): string {
-  return typeof value === "string" ? value.trim() : ""
 }
 
 function snapshotWithTurnAndMessages(
@@ -542,19 +551,6 @@ async function activeSaveExists(saveId: string): Promise<boolean> {
   return (await listLocalSaves()).some((save) => save.id === saveId)
 }
 
-async function gameCardForSave(save: LocalSaveRecord): Promise<LocalGameCardRecord | null> {
-  if (!save.gameCardId) {
-    return getBuiltinBlankGameCard()
-  }
-
-  return getLocalGameCard(save.gameCardId)
-}
-
-async function gameCardForSaveId(saveId: string): Promise<LocalGameCardRecord | null> {
-  const save = (await listLocalSaves()).find((item) => item.id === saveId)
-  return save ? gameCardForSave(save) : null
-}
-
 async function syncActiveGameCardFromSave(saveId: string | null): Promise<void> {
   if (!saveId) {
     return
@@ -566,26 +562,6 @@ async function syncActiveGameCardFromSave(saveId: string | null): Promise<void> 
   }
 
   await setActiveGameCardId(save.gameCardId ?? (await getBuiltinBlankGameCard()).id)
-}
-
-async function ensureActiveGameCardId(saves?: LocalSaveRecord[]): Promise<string> {
-  const existingId = await getActiveGameCardId()
-  if (existingId && await getLocalGameCard(existingId)) {
-    return existingId
-  }
-
-  const activeSaveId = await getActiveSaveId()
-  const knownSaves = saves ?? await listLocalSaves()
-  const activeSave = activeSaveId
-    ? knownSaves.find((save) => save.id === activeSaveId)
-    : undefined
-  const sourceSave = activeSave ?? knownSaves[0]
-  const card = sourceSave
-    ? await gameCardForSave(sourceSave)
-    : await getBuiltinBlankGameCard()
-  const cardId = card?.id ?? (await getBuiltinBlankGameCard()).id
-  await setActiveGameCardId(cardId)
-  return cardId
 }
 
 async function ensureActiveSave(): Promise<string> {
@@ -608,16 +584,6 @@ async function restoreActiveSnapshotFromStorage(saveId: string): Promise<Runtime
   return snapshot
 }
 
-async function listEffectiveWorkspaceFilesForActiveSave(saveId: string): Promise<WorkspaceFile[]> {
-  const sourceCard = await gameCardForSaveId(saveId)
-  if (!sourceCard) {
-    return []
-  }
-
-  await initializeWorkspaceForSave(saveId)
-  return listEffectiveWorkspaceFilesForSave(saveId, sourceCard)
-}
-
 function workspaceStudioError(code: string, message: string): Error & { code: string } {
   const error = new Error(message) as Error & { code: string }
   error.code = code
@@ -631,19 +597,6 @@ function normalizeStudioDirectoryPath(value: unknown): string {
 
   const path = normalizeWorkspaceFilePath(value)
   return path
-}
-
-async function cardContentFilesToWorkspaceFiles(
-  card: NonNullable<Awaited<ReturnType<typeof getLocalGameCard>>>,
-): Promise<WorkspaceFile[]> {
-  const files = await listLocalGameCardContentFiles(card.id)
-  return files.map((file) => ({
-    path: file.path,
-    content: file.content,
-    mediaType: file.mediaType ?? "text/plain",
-    createdAt: file.createdAt,
-    updatedAt: file.updatedAt,
-  }))
 }
 
 function formatStudioSaveDirectoryName(index: number): string {
@@ -807,10 +760,6 @@ function normalizeWorkspaceActionRequest(
   } as WorkspaceOperationRequest
 }
 
-function normalizeContentMediaType(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined
-}
-
 function normalizePackagedFrontendEntry(value: string): string {
   const raw = value.trim().replace(/\\/g, "/")
   if (!raw) {
@@ -906,61 +855,6 @@ async function createUniqueLocalGameCardId(name: string): Promise<string> {
   return candidate
 }
 
-async function writeCardContentFileForCard(
-  cardId: string,
-  input: {
-    path: string
-    content: string
-    mediaType?: string
-  },
-): Promise<WorkspaceFile> {
-  const card = await getLocalGameCard(cardId)
-  if (!card) {
-    throw new Error(`游戏卡 "${cardId}" 不存在。`)
-  }
-
-  // Single-file per-row write; writeLocalGameCardContentFile bumps the card's
-  // updatedAt internally (no whole-card putLocalGameCard rewrite).
-  const file = await writeLocalGameCardContentFile(cardId, {
-    path: input.path,
-    content: input.content,
-    ...(normalizeContentMediaType(input.mediaType) ? { mediaType: input.mediaType } : {}),
-  })
-
-  return {
-    path: file.path,
-    content: file.content,
-    mediaType: file.mediaType ?? "text/plain",
-    createdAt: file.createdAt,
-    updatedAt: file.updatedAt,
-  }
-}
-
-async function writeCardContentFileForActiveCard(input: {
-  path: string
-  content: string
-  mediaType?: string
-}): Promise<WorkspaceFile> {
-  const activeCard = await getPlatformActiveGameCard()
-  if (!activeCard) {
-    throw new Error("当前没有激活中的游戏卡。")
-  }
-
-  const file = await writeLocalGameCardContentFile(activeCard.id, {
-    path: input.path,
-    content: input.content,
-    ...(normalizeContentMediaType(input.mediaType) ? { mediaType: input.mediaType } : {}),
-  })
-
-  return {
-    path: file.path,
-    content: file.content,
-    mediaType: file.mediaType ?? "text/plain",
-    createdAt: file.createdAt,
-    updatedAt: file.updatedAt,
-  }
-}
-
 async function deleteCardContentPathForCard(
   cardId: string,
   path: string,
@@ -972,21 +866,6 @@ async function deleteCardContentPathForCard(
 
   // Per-row delete (bumps card updatedAt internally); no whole-card rewrite.
   const deletedPaths = await deleteLocalGameCardContentPathForCard(cardId, path)
-  return {
-    scope: "card-content",
-    deletedPaths,
-  }
-}
-
-async function deleteCardContentPathForActiveCard(
-  path: string,
-): Promise<{ scope: WorkspaceScope; deletedPaths: string[] }> {
-  const activeCard = await getPlatformActiveGameCard()
-  if (!activeCard) {
-    throw new Error("当前没有激活中的游戏卡。")
-  }
-
-  const deletedPaths = await deleteLocalGameCardContentPathForCard(activeCard.id, path)
   return {
     scope: "card-content",
     deletedPaths,
@@ -2469,26 +2348,6 @@ export async function createPlatformSaveFromGameCard(
   return created
 }
 
-export async function getPlatformActiveGameCard() {
-  const activeCardId = await ensureActiveGameCardId()
-  const activeCard = await getLocalGameCard(activeCardId)
-  if (activeCard) {
-    return activeCard
-  }
-
-  const activeSaveId = await getActiveSaveId()
-  if (!activeSaveId) {
-    return getBuiltinBlankGameCard()
-  }
-
-  const activeSave = (await listLocalSaves()).find((save) => save.id === activeSaveId)
-  if (!activeSave) {
-    return getBuiltinBlankGameCard()
-  }
-
-  return gameCardForSave(activeSave)
-}
-
 export async function selectPlatformSave(saveId: string) {
   if (!await activeSaveExists(saveId)) {
     throw new Error(`会话 "${saveId}" 不存在。`)
@@ -2730,32 +2589,6 @@ function parseAgentConfigRecord(file: WorkspaceFile): Record<string, unknown> {
   }
 
   throw new Error(`Agent 配置文件 "${file.path}" 不是有效 JSON 对象。`)
-}
-
-function buildAgentProviderPresetMap(
-  files: WorkspaceFile[],
-): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const agent of buildAgentRegistry(files)) {
-    if (agent.providerPresetId) {
-      map.set(agent.id, agent.providerPresetId)
-    }
-  }
-  return map
-}
-
-function resolveAgentModelConfig(
-  agentId: string | undefined,
-  presetMap: Map<string, string>,
-): BrowserAiConfig | null {
-  if (!agentId) {
-    return null
-  }
-  const presetId = presetMap.get(agentId)
-  if (!presetId) {
-    return null
-  }
-  return resolveBrowserAiConfigForProviderId(presetId)
 }
 
 function writeAgentConfigRecord(
@@ -3721,4 +3554,4 @@ export async function validatePlatformWorkspaceFile(input: {
   }) as WorkspaceValidationResult
 }
 
-export { waitForPlatformHostReady }
+export { getPlatformActiveGameCard, waitForPlatformHostReady }
