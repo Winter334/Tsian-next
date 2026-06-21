@@ -1,4 +1,5 @@
 import type { LocalGameCardRecord } from "@/storage/db"
+import type { LocalGameCardView } from "@/storage/game-cards"
 
 export function getGameCardTitle(card: LocalGameCardRecord | null | undefined): string {
   return card?.manifest.name?.trim() || "未命名游戏卡"
@@ -41,7 +42,7 @@ export function hasPlayableFrontend(card: LocalGameCardRecord | null | undefined
   return kind === "remote" || kind === "packaged"
 }
 
-export function getGameCardCoverUrl(card: LocalGameCardRecord | null | undefined): string | null {
+export function getGameCardCoverUrl(card: LocalGameCardView | null | undefined): string | null {
   const cover = card?.manifest.cover
   if (!cover) {
     return null
@@ -55,8 +56,10 @@ export function getGameCardCoverUrl(card: LocalGameCardRecord | null | undefined
     return null
   }
 
-  const coverPath = cover.workspacePath.trim()
-  const file = card.contentFiles.find((item) => item.path === coverPath)
+  // The cover content file is preloaded by getLocalGameCard / listLocalGameCards
+  // into coverContentFile so this sync render path (called from Vue templates
+  // and computed) does not need an async table query.
+  const file = card?.coverContentFile
   if (!file) {
     return null
   }

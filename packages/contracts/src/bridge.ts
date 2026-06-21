@@ -128,6 +128,7 @@ export type RemotePlayBridgeEventPayload =
       delta: string
       turn: number
       round: number
+      kind: "reasoning" | "content"
     }
   | {
       agentId: string

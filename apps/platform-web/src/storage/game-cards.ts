@@ -4,6 +4,7 @@ import type {
 } from "@tsian/contracts"
 import {
   localDb,
+  type LocalGameCardContentFileRecord,
   type LocalGameCardFrontendFileRecord,
   type LocalGameCardRecord,
 } from "./db"
@@ -20,7 +21,8 @@ type GameCardSource = LocalGameCardRecord["source"]
 
 export interface PutLocalGameCardInput {
   manifest: GameCardManifest
-  contentFiles: GameCardContentFile[]
+  /** undefined = leave the content table untouched; array = full replace inside the write transaction. */
+  contentFiles?: GameCardContentFile[]
   frontendFiles?: PutLocalGameCardFrontendFileInput[]
   source?: GameCardSource
 }
@@ -38,6 +40,25 @@ export interface LocalGameCardFrontendFile {
   size: number
   createdAt: number
   updatedAt: number
+}
+
+export interface LocalGameCardContentFile {
+  path: string
+  content: string
+  mediaType?: string
+  createdAt: number
+  updatedAt: number
+}
+
+/**
+ * Read view returned to consumers. Extends the DB row with an optional
+ * preloaded cover content file, so sync render paths (getGameCardCoverUrl in
+ * Vue templates/computed) can resolve the cover without an async table query.
+ * The field is non-persistent: it is injected by getLocalGameCard /
+ * listLocalGameCards after cloning and is never written back to Dexie.
+ */
+export interface LocalGameCardView extends LocalGameCardRecord {
+  coverContentFile?: LocalGameCardContentFile
 }
 
 function requireNonEmptyString(value: string, fieldName: string): string {
@@ -155,6 +176,10 @@ function gameCardFrontendFileId(gameCardId: string, path: string): string {
   return `${gameCardId}::${path}`
 }
 
+export function gameCardContentFileId(gameCardId: string, path: string): string {
+  return `${gameCardId}::${path}`
+}
+
 function normalizeMediaType(mediaType: string | undefined, path: string): string {
   const normalized = mediaType?.trim()
   if (normalized) {
@@ -241,8 +266,22 @@ function cloneLocalGameCardRecord(record: LocalGameCardRecord): LocalGameCardRec
   return {
     ...record,
     manifest: normalizeManifest(record.manifest),
-    contentFiles: record.contentFiles.map((file) => ({ ...file })),
   }
+}
+
+/** Build the read-view: clone the card row, then preload the cover content file
+ *  (if manifest.cover.workspacePath is set) so sync render paths can resolve
+ *  the cover without an async table query. Returns LocalGameCardView. */
+async function toLocalGameCardView(record: LocalGameCardRecord): Promise<LocalGameCardView> {
+  const view: LocalGameCardView = cloneLocalGameCardRecord(record)
+  const coverPath = view.manifest.cover?.workspacePath?.trim()
+  if (coverPath) {
+    const coverFile = await readLocalGameCardContentFile(view.id, coverPath)
+    if (coverFile) {
+      view.coverContentFile = coverFile
+    }
+  }
+  return view
 }
 
 function hasTemplateFile(
@@ -256,7 +295,10 @@ function hasTemplateFile(
   )
 }
 
-function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): boolean {
+/** Staleness check now reads the per-file content table; preserves the existing
+ *  builtin reset-protection semantic (builtin content drifted → ensureBuiltinBlankGameCard
+ *  re-seeds). Async because it queries Dexie. */
+async function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): Promise<boolean> {
   if (record.source !== "builtin") {
     return true
   }
@@ -268,8 +310,9 @@ function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): boolean {
     return false
   }
 
+  const files = await listLocalGameCardContentFiles(record.id)
   return createDefaultWorkspaceTemplateFiles()
-    .every((file) => hasTemplateFile(record.contentFiles, file))
+    .every((file) => hasTemplateFile(files, file))
 }
 
 function createBuiltinBlankGameCardRecord(
@@ -293,26 +336,29 @@ function createBuiltinBlankGameCardRecord(
   return {
     id: manifest.id,
     manifest,
-    contentFiles: createDefaultWorkspaceTemplateFiles(),
     source: "builtin",
     createdAt,
     updatedAt,
   }
 }
 
-export async function listLocalGameCards(): Promise<LocalGameCardRecord[]> {
+export async function listLocalGameCards(): Promise<LocalGameCardView[]> {
   const records = await localDb.gameCards.orderBy("updatedAt").reverse().toArray()
-  return records.map(cloneLocalGameCardRecord)
+  const views: LocalGameCardView[] = []
+  for (const record of records) {
+    views.push(await toLocalGameCardView(record))
+  }
+  return views
 }
 
-export async function getLocalGameCard(cardId: string): Promise<LocalGameCardRecord | null> {
+export async function getLocalGameCard(cardId: string): Promise<LocalGameCardView | null> {
   const id = cardId.trim()
   if (!id) {
     return null
   }
 
   const record = await localDb.gameCards.get(id)
-  return record ? cloneLocalGameCardRecord(record) : null
+  return record ? await toLocalGameCardView(record) : null
 }
 
 export async function getActiveGameCardId(): Promise<string | null> {
@@ -335,17 +381,27 @@ export async function setActiveGameCardId(cardId: string | null): Promise<void> 
 
 export async function putLocalGameCard(
   input: PutLocalGameCardInput,
-): Promise<LocalGameCardRecord> {
+): Promise<LocalGameCardView> {
   const manifest = normalizeManifest(input.manifest)
   const now = Date.now()
   const existing = await localDb.gameCards.get(manifest.id)
   const frontendFileRecords = input.frontendFiles?.map((file) =>
     normalizeFrontendFile(manifest.id, file, now)
   )
+  const contentFileRecords = input.contentFiles === undefined
+    ? undefined
+    : normalizeTemplateFiles(input.contentFiles).map((file) => ({
+      id: gameCardContentFileId(manifest.id, file.path),
+      gameCardId: manifest.id,
+      path: file.path,
+      content: file.content,
+      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
+      createdAt: now,
+      updatedAt: now,
+    }))
   const record: LocalGameCardRecord = {
     id: manifest.id,
     manifest,
-    contentFiles: normalizeTemplateFiles(input.contentFiles),
     source: input.source ?? existing?.source ?? "local",
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
@@ -353,9 +409,20 @@ export async function putLocalGameCard(
 
   await localDb.transaction(
     "rw",
-    [localDb.gameCards, localDb.gameCardFrontendFiles],
+    [localDb.gameCards, localDb.gameCardContentFiles, localDb.gameCardFrontendFiles],
     async () => {
       await localDb.gameCards.put(record)
+      if (contentFileRecords) {
+        // Full replace: clear the card's content rows, then put each. undefined
+        // (the "only manifest changed" case) leaves the content table untouched.
+        await localDb.gameCardContentFiles
+          .where("gameCardId")
+          .equals(manifest.id)
+          .delete()
+        for (const file of contentFileRecords) {
+          await localDb.gameCardContentFiles.put(file)
+        }
+      }
       if (frontendFileRecords) {
         await localDb.gameCardFrontendFiles
           .where("gameCardId")
@@ -367,7 +434,7 @@ export async function putLocalGameCard(
       }
     },
   )
-  return cloneLocalGameCardRecord(record)
+  return await toLocalGameCardView(record)
 }
 
 export async function deleteLocalGameCard(cardId: string): Promise<void> {
@@ -386,15 +453,153 @@ export async function deleteLocalGameCard(cardId: string): Promise<void> {
 
   await localDb.transaction(
     "rw",
-    [localDb.gameCards, localDb.gameCardFrontendFiles],
+    [localDb.gameCards, localDb.gameCardContentFiles, localDb.gameCardFrontendFiles],
     async () => {
       await localDb.gameCards.delete(id)
+      await localDb.gameCardContentFiles
+        .where("gameCardId")
+        .equals(id)
+        .delete()
       await localDb.gameCardFrontendFiles
         .where("gameCardId")
         .equals(id)
         .delete()
     },
   )
+}
+
+export async function listLocalGameCardContentFiles(
+  gameCardId: string,
+): Promise<LocalGameCardContentFile[]> {
+  const id = gameCardId.trim()
+  if (!id) {
+    return []
+  }
+
+  const records = await localDb.gameCardContentFiles
+    .where("gameCardId")
+    .equals(id)
+    .sortBy("path")
+  return records.map(cloneGameCardContentFileRecord)
+}
+
+export async function readLocalGameCardContentFile(
+  gameCardId: string,
+  path: string,
+): Promise<LocalGameCardContentFile | null> {
+  const id = gameCardId.trim()
+  if (!id) {
+    return null
+  }
+
+  const normalizedPath = normalizeWorkspaceFilePath(path)
+  const record = await localDb.gameCardContentFiles.get(
+    gameCardContentFileId(id, normalizedPath),
+  )
+  return record ? cloneGameCardContentFileRecord(record) : null
+}
+
+export async function writeLocalGameCardContentFile(
+  gameCardId: string,
+  input: { path: string; content: string; mediaType?: string },
+): Promise<LocalGameCardContentFile> {
+  const id = gameCardId.trim()
+  if (!id) {
+    throw new Error("Game card id is required.")
+  }
+
+  const normalizedPath = normalizeWorkspaceFilePath(input.path)
+  const recordId = gameCardContentFileId(id, normalizedPath)
+  const now = Date.now()
+  const existing = await localDb.gameCardContentFiles.get(recordId)
+  const record: LocalGameCardContentFileRecord = {
+    id: recordId,
+    gameCardId: id,
+    path: normalizedPath,
+    content: typeof input.content === "string" ? input.content : "",
+    ...(input.mediaType && input.mediaType.trim() ? { mediaType: input.mediaType.trim() } : {}),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: now,
+  }
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardContentFiles, localDb.gameCards],
+    async () => {
+      await localDb.gameCardContentFiles.put(record)
+      // Bump the card row so its updatedAt reflects "most recent any change"
+      // (single-file writes no longer go through putLocalGameCard, which used to
+      // set updatedAt). Lightweight extra write; preserves the existing contract.
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+  return cloneGameCardContentFileRecord(record)
+}
+
+export async function deleteLocalGameCardContentFile(
+  gameCardId: string,
+  path: string,
+): Promise<void> {
+  const id = gameCardId.trim()
+  if (!id) {
+    return
+  }
+
+  const normalizedPath = normalizeWorkspaceFilePath(path)
+  const now = Date.now()
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardContentFiles, localDb.gameCards],
+    async () => {
+      await localDb.gameCardContentFiles.delete(gameCardContentFileId(id, normalizedPath))
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+}
+
+export async function deleteLocalGameCardContentPathForCard(
+  gameCardId: string,
+  pathPrefix: string,
+): Promise<string[]> {
+  const id = gameCardId.trim()
+  if (!id) {
+    return []
+  }
+
+  const normalizedPrefix = normalizeWorkspaceFilePath(pathPrefix)
+  const now = Date.now()
+  const records = await localDb.gameCardContentFiles
+    .where("gameCardId")
+    .equals(id)
+    .toArray()
+  const deleted: string[] = []
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardContentFiles, localDb.gameCards],
+    async () => {
+      for (const record of records) {
+        if (record.path === normalizedPrefix || record.path.startsWith(`${normalizedPrefix}/`)) {
+          await localDb.gameCardContentFiles.delete(record.id)
+          deleted.push(record.path)
+        }
+      }
+      if (deleted.length > 0) {
+        await localDb.gameCards.update(id, { updatedAt: now })
+      }
+    },
+  )
+  return deleted.sort((left, right) => left.localeCompare(right))
+}
+
+function cloneGameCardContentFileRecord(
+  record: LocalGameCardContentFileRecord,
+): LocalGameCardContentFile {
+  return {
+    path: record.path,
+    content: record.content,
+    ...(record.mediaType ? { mediaType: record.mediaType } : {}),
+    createdAt: record.createdAt,
+    updatedAt: record.updatedAt,
+  }
 }
 
 export async function listLocalGameCardFrontendFiles(
@@ -428,22 +633,27 @@ export async function readLocalGameCardFrontendFile(
   return record ? cloneGameCardFrontendFileRecord(record) : null
 }
 
-export async function ensureBuiltinBlankGameCard(): Promise<LocalGameCardRecord> {
+export async function ensureBuiltinBlankGameCard(): Promise<LocalGameCardView> {
   const existing = await localDb.gameCards.get(BUILTIN_BLANK_GAME_CARD_ID)
-  if (existing && isCurrentBuiltinBlankGameCard(existing)) {
-    return cloneLocalGameCardRecord(existing)
+  if (existing && await isCurrentBuiltinBlankGameCard(existing)) {
+    return toLocalGameCardView(existing)
   }
 
+  // Stale or missing: re-seed the card row and its template content rows.
   const now = Date.now()
   const record = createBuiltinBlankGameCardRecord(
     existing?.createdAt ?? now,
     now,
     existing?.manifest.frontend,
   )
-  await localDb.gameCards.put(record)
-  return cloneLocalGameCardRecord(record)
+  await putLocalGameCard({
+    manifest: record.manifest,
+    contentFiles: createDefaultWorkspaceTemplateFiles(),
+    source: "builtin",
+  })
+  return toLocalGameCardView(record)
 }
 
-export async function getBuiltinBlankGameCard(): Promise<LocalGameCardRecord> {
+export async function getBuiltinBlankGameCard(): Promise<LocalGameCardView> {
   return ensureBuiltinBlankGameCard()
 }

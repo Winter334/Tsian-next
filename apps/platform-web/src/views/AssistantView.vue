@@ -783,12 +783,13 @@ async function send() {
     //   - streamingReasoning → 折叠为 thought 节点(若非空,保留已产出的思维链)
     //   - streamingText → content(已见的回复正文)
     const flushStreaming = () => {
-      if (assistantMsg.streamingReasoning.trim()) {
+      const reasoning = assistantMsg.streamingReasoning ?? ""
+      if (reasoning.trim()) {
         timeline.push({
           type: "thought",
           id: `thought-flush-${timeline.length}`,
           round: -1,
-          text: assistantMsg.streamingReasoning,
+          text: reasoning,
           collapsed: true,
         })
       }

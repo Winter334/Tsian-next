@@ -6,6 +6,10 @@ import type {
   WorkspaceSearchResult,
 } from "@tsian/contracts"
 import {
+  listLocalGameCardContentFiles,
+  type LocalGameCardContentFile,
+} from "./game-cards"
+import {
   localDb,
   type LocalGameCardRecord,
   type LocalWorkspaceFileRecord,
@@ -1132,16 +1136,15 @@ function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
 }
 
 function toWorkspaceFileFromGameCardContent(
-  file: GameCardContentFile,
-  updatedAt: number,
+  file: LocalGameCardContentFile,
 ): WorkspaceFile {
   const path = normalizeWorkspaceFilePath(file.path)
   return {
     path,
     content: typeof file.content === "string" ? file.content : "",
     mediaType: normalizeMediaType(file.mediaType, path),
-    createdAt: updatedAt,
-    updatedAt,
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
   }
 }
 
@@ -1362,8 +1365,8 @@ export async function listEffectiveWorkspaceFilesForSave(
   card: LocalGameCardRecord,
 ): Promise<WorkspaceFile[]> {
   const filesByPath = new Map<string, WorkspaceFile>()
-  for (const file of card.contentFiles) {
-    const workspaceFile = toWorkspaceFileFromGameCardContent(file, card.updatedAt)
+  for (const file of await listLocalGameCardContentFiles(card.id)) {
+    const workspaceFile = toWorkspaceFileFromGameCardContent(file)
     filesByPath.set(workspaceFile.path, workspaceFile)
   }
 

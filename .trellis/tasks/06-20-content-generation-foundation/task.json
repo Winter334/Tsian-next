@@ -1,0 +1,32 @@
+{
+  "id": "content-generation-foundation",
+  "name": "content-generation-foundation",
+  "title": "Content Generation Foundation",
+  "description": "Build content generation base: lightweight default AIRP frontend + builtin card as template + assistant authoring skills",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P1",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-20",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-20-default-card-and-lightweight-frontend",
+    "06-20-assistant-authoring-skills",
+    "06-21-game-card-data-fileification",
+    "06-21-content-files-per-file-table",
+    "06-21-workspace-storage-volume-abstraction"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

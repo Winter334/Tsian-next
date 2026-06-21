@@ -120,16 +120,21 @@ import {
   initializeWorkspaceForSave,
   listCheckpointsForSave,
   listEffectiveWorkspaceFilesForSave,
+  listLocalGameCardContentFiles,
   listLocalGameCardFrontendFiles,
   listLocalGameCards,
   listLocalSaves,
   listWorkspaceFilesForSave,
   normalizeWorkspaceFilePath,
   putLocalGameCard,
+  readLocalGameCardContentFile,
+  deleteLocalGameCardContentFile,
+  deleteLocalGameCardContentPathForCard,
   replaceWorkspaceFilesForSave,
   restoreCheckpointForSave,
   setActiveGameCardId,
   setActiveSaveId,
+  writeLocalGameCardContentFile,
   writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
   type LocalGameCardRecord,
@@ -137,6 +142,13 @@ import {
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
+import {
+  BUILTIN_BLANK_GAME_CARD_ID,
+} from "../storage/game-cards"
+import {
+  DEFAULT_FRONTEND_BINDING,
+  defaultFrontendFiles,
+} from "../storage/default-frontend-files"
 
 export const runtimeEngine = new LocalRuntimeEngine()
 const baseBridge = createPlayFrontendBridge(runtimeEngine)
@@ -631,15 +643,16 @@ function normalizeStudioDirectoryPath(value: unknown): string {
   return path
 }
 
-function cardContentFilesToWorkspaceFiles(
+async function cardContentFilesToWorkspaceFiles(
   card: NonNullable<Awaited<ReturnType<typeof getLocalGameCard>>>,
-): WorkspaceFile[] {
-  return card.contentFiles.map((file) => ({
+): Promise<WorkspaceFile[]> {
+  const files = await listLocalGameCardContentFiles(card.id)
+  return files.map((file) => ({
     path: file.path,
     content: file.content,
     mediaType: file.mediaType ?? "text/plain",
-    createdAt: card.createdAt,
-    updatedAt: card.updatedAt,
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
   }))
 }
 
@@ -668,7 +681,7 @@ async function loadStudioWorkspaceContext(cardId: string): Promise<StudioWorkspa
 
 async function listStudioWorkspaceFilesForGameCard(cardId: string): Promise<WorkspaceFile[]> {
   const { card, saveSlots } = await loadStudioWorkspaceContext(cardId)
-  const files: WorkspaceFile[] = cardContentFilesToWorkspaceFiles(card)
+  const files: WorkspaceFile[] = await cardContentFilesToWorkspaceFiles(card)
 
   for (const saveSlot of saveSlots) {
     await initializeWorkspaceForSave(saveSlot.saveId)
@@ -916,31 +929,20 @@ async function writeCardContentFileForCard(
     throw new Error(`游戏卡 "${cardId}" 不存在。`)
   }
 
-  const now = Date.now()
-  const existing = card.contentFiles.find((file) => file.path === input.path)
-  const contentFiles = card.contentFiles
-    .filter((file) => file.path !== input.path)
-    .concat({
-      path: input.path,
-      content: input.content,
-      ...(normalizeContentMediaType(input.mediaType ?? existing?.mediaType)
-        ? { mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) }
-        : {}),
-    })
-    .sort((left, right) => left.path.localeCompare(right.path))
-
-  await putLocalGameCard({
-    manifest: card.manifest,
-    contentFiles,
-    source: card.source,
+  // Single-file per-row write; writeLocalGameCardContentFile bumps the card's
+  // updatedAt internally (no whole-card putLocalGameCard rewrite).
+  const file = await writeLocalGameCardContentFile(cardId, {
+    path: input.path,
+    content: input.content,
+    ...(normalizeContentMediaType(input.mediaType) ? { mediaType: input.mediaType } : {}),
   })
 
   return {
-    path: input.path,
-    content: input.content,
-    mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) ?? "text/plain",
-    createdAt: card.createdAt,
-    updatedAt: now,
+    path: file.path,
+    content: file.content,
+    mediaType: file.mediaType ?? "text/plain",
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
   }
 }
 
@@ -954,31 +956,18 @@ async function writeCardContentFileForActiveCard(input: {
     throw new Error("当前没有激活中的游戏卡。")
   }
 
-  const now = Date.now()
-  const existing = activeCard.contentFiles.find((file) => file.path === input.path)
-  const contentFiles = activeCard.contentFiles
-    .filter((file) => file.path !== input.path)
-    .concat({
-      path: input.path,
-      content: input.content,
-      ...(normalizeContentMediaType(input.mediaType ?? existing?.mediaType)
-        ? { mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) }
-        : {}),
-    })
-    .sort((left, right) => left.path.localeCompare(right.path))
-
-  await putLocalGameCard({
-    manifest: activeCard.manifest,
-    contentFiles,
-    source: activeCard.source,
+  const file = await writeLocalGameCardContentFile(activeCard.id, {
+    path: input.path,
+    content: input.content,
+    ...(normalizeContentMediaType(input.mediaType) ? { mediaType: input.mediaType } : {}),
   })
 
   return {
-    path: input.path,
-    content: input.content,
-    mediaType: normalizeContentMediaType(input.mediaType ?? existing?.mediaType) ?? "text/plain",
-    createdAt: activeCard.createdAt,
-    updatedAt: now,
+    path: file.path,
+    content: file.content,
+    mediaType: file.mediaType ?? "text/plain",
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
   }
 }
 
@@ -991,25 +980,8 @@ async function deleteCardContentPathForCard(
     throw new Error(`游戏卡 "${cardId}" 不存在。`)
   }
 
-  const prefix = `${path}/`
-  const deletedPaths = card.contentFiles
-    .filter((file) => file.path === path || file.path.startsWith(prefix))
-    .map((file) => file.path)
-    .sort()
-  if (deletedPaths.length === 0) {
-    return {
-      scope: "card-content",
-      deletedPaths: [],
-    }
-  }
-
-  const deleted = new Set(deletedPaths)
-  await putLocalGameCard({
-    manifest: card.manifest,
-    contentFiles: card.contentFiles.filter((file) => !deleted.has(file.path)),
-    source: card.source,
-  })
-
+  // Per-row delete (bumps card updatedAt internally); no whole-card rewrite.
+  const deletedPaths = await deleteLocalGameCardContentPathForCard(cardId, path)
   return {
     scope: "card-content",
     deletedPaths,
@@ -1024,25 +996,7 @@ async function deleteCardContentPathForActiveCard(
     throw new Error("当前没有激活中的游戏卡。")
   }
 
-  const prefix = `${path}/`
-  const deletedPaths = activeCard.contentFiles
-    .filter((file) => file.path === path || file.path.startsWith(prefix))
-    .map((file) => file.path)
-    .sort()
-  if (deletedPaths.length === 0) {
-    return {
-      scope: "card-content",
-      deletedPaths: [],
-    }
-  }
-
-  const deleted = new Set(deletedPaths)
-  await putLocalGameCard({
-    manifest: activeCard.manifest,
-    contentFiles: activeCard.contentFiles.filter((file) => !deleted.has(file.path)),
-    source: activeCard.source,
-  })
-
+  const deletedPaths = await deleteLocalGameCardContentPathForCard(activeCard.id, path)
   return {
     scope: "card-content",
     deletedPaths,
@@ -1179,7 +1133,14 @@ async function executePlatformAction(
       return {
         ok: true,
         item: await executeWorkspaceOperationForActiveSave(activeSaveId, workspaceRequest, {
-          actorLevel: 1,
+          // The desktop assistant is the platform management assistant, not a
+          // runtime game agent. Its actor level comes from its own agent.json
+          // (workspaceAccess.level, default 4 = highest), so it can manage all
+          // resource-manager-visible content including card-content. Passing
+          // undefined lets resolveWorkspaceActorLevel fall back to its default
+          // only when the config is missing — never a hardcoded override that
+          // would silently strip the configured level.
+          actorLevel: await resolveLocalAssistantActorLevel(),
         }),
       }
     } catch (error) {
@@ -1797,13 +1758,7 @@ export async function runAssistantChat(
     workspaceFiles = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
   } else {
     // No active save: use card content only.
-    workspaceFiles = activeCard.contentFiles.map((file) => ({
-      path: file.path,
-      content: typeof file.content === "string" ? file.content : "",
-      mediaType: file.mediaType ?? "text/plain",
-      createdAt: activeCard.updatedAt,
-      updatedAt: activeCard.updatedAt,
-    }))
+    workspaceFiles = await cardContentFilesToWorkspaceFiles(activeCard)
   }
 
   // Merge local assistant files (identity, SOUL, notes, skills) into the
@@ -1973,7 +1928,14 @@ export async function runAssistantChat(
               })
             }
             if (writeInput.scope === "card-content") {
-              return activeWorkspaceTransaction.write({
+              // Card content is not part of the save transaction (checkpoints
+              // snapshot save-runtime only). The desktop assistant (level 4,
+              // resolved via agentContext) has passed assertEditAccess already;
+              // route the write straight to the per-file content table, bypassing
+              // the save transaction which only accepts save/ paths. Runtime game
+              // agents (default level 1) are blocked by assertEditAccess before
+              // reaching here, so this branch is assistant-only in practice.
+              return writeCardContentFileForActiveCard({
                 path: writeInput.path,
                 content: writeInput.content,
                 mediaType: writeInput.mediaType,
@@ -1996,7 +1958,12 @@ export async function runAssistantChat(
                 deletedPaths: [deleteInput.path],
               }))
             }
-            if (deleteInput.scope === "card-content" || deleteInput.scope === "save-runtime") {
+            if (deleteInput.scope === "card-content") {
+              // Same rationale as write: card content deletes bypass the save
+              // transaction and go straight to the per-file content table.
+              return deleteCardContentPathForActiveCard(deleteInput.path)
+            }
+            if (deleteInput.scope === "save-runtime") {
               return {
                 scope: deleteInput.scope,
                 ...activeWorkspaceTransaction.delete(deleteInput.path),
@@ -2112,22 +2079,17 @@ async function updateCardContentFilesForCard(
   if (!card) {
     return
   }
-  const filesByPath = new Map(card.contentFiles.map((file) => [file.path, file]))
+  // Merge semantics: per-file upsert only the files this turn touched.
+  // Files not in `files` are left untouched (preserves the prior merge behavior
+  // where the caller passes only the changed non-save/non-.tsian files).
+  // Each write bumps the card's updatedAt internally.
   for (const file of files) {
-    filesByPath.set(file.path, {
+    await writeLocalGameCardContentFile(cardId, {
       path: file.path,
       content: file.content,
       ...(file.mediaType ? { mediaType: file.mediaType } : {}),
     })
   }
-  const contentFiles = Array.from(filesByPath.values()).sort((left, right) =>
-    left.path.localeCompare(right.path),
-  )
-  await putLocalGameCard({
-    manifest: card.manifest,
-    contentFiles,
-    source: card.source,
-  })
 }
 
 export async function initializePlatformHost(): Promise<void> {
@@ -2208,7 +2170,7 @@ export async function updatePlatformGameCardMetadata(
       ...card.manifest,
       ...patch,
     },
-    contentFiles: card.contentFiles,
+    // contentFiles undefined = leave the content table untouched (metadata-only write).
     source: card.source,
   })
 }
@@ -2223,6 +2185,7 @@ export async function copyPlatformGameCardAsLocal(
   }
 
   const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
+  const contentFiles = await listLocalGameCardContentFiles(card.id)
   const patch = metadataManifestPatch(input)
   const id = await createUniqueLocalGameCardId(patch.name)
   return putLocalGameCard({
@@ -2231,7 +2194,11 @@ export async function copyPlatformGameCardAsLocal(
       ...patch,
       id,
     },
-    contentFiles: card.contentFiles,
+    contentFiles: contentFiles.map((file) => ({
+      path: file.path,
+      content: file.content,
+      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
+    })),
     frontendFiles: frontendFiles.map((file) => ({
       path: file.path,
       data: file.data,
@@ -2239,6 +2206,53 @@ export async function copyPlatformGameCardAsLocal(
     })),
     source: "local",
   })
+}
+
+/**
+ * Create a fresh local game card from the builtin blank template, bound to the
+ * default lightweight packaged frontend, and set it as the active card.
+ *
+ * The builtin blank card is treated as a reusable template: this copies its
+ * workspace content into a new local card (new id), injects the 3 default
+ * frontend files, sets the packaged frontend binding, then loads it. The user
+ * can then customize the card via the desktop assistant or workspace editor.
+ */
+export async function createDefaultPlatformGameCard(input?: {
+  name?: string
+  summary?: string
+}): Promise<LocalGameCardRecord> {
+  const name = input?.name?.trim() || "我的游戏"
+  const summary = input?.summary?.trim()
+    || "从模板创建的游戏卡，可用桌面助手定制内容。"
+
+  // 1. Copy the builtin template card as a local card (new id, same content).
+  const copy = await copyPlatformGameCardAsLocal(BUILTIN_BLANK_GAME_CARD_ID, {
+    name,
+    summary,
+  })
+
+  // 2. Inject the default packaged frontend files + binding onto the new card.
+  //    Re-read the copy's content rows from the per-file table (copy returns a
+  //    LocalGameCardRecord without contentFiles now) and pass them as a full
+  //    replace so they survive the frontend-binding upsert.
+  const copyContentFiles = await listLocalGameCardContentFiles(copy.id)
+  const record = await putLocalGameCard({
+    manifest: {
+      ...copy.manifest,
+      frontend: DEFAULT_FRONTEND_BINDING,
+    },
+    contentFiles: copyContentFiles.map((file) => ({
+      path: file.path,
+      content: file.content,
+      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
+    })),
+    frontendFiles: defaultFrontendFiles(),
+    source: "local",
+  })
+
+  // 3. Load the new card as the active game card.
+  const active = await setPlatformActiveGameCard(record.id)
+  return active
 }
 
 export async function deletePlatformGameCard(
@@ -2315,7 +2329,7 @@ export async function updatePlatformGameCardFrontend(
       ...card.manifest,
       frontend: normalizedFrontend,
     },
-    contentFiles: card.contentFiles,
+    // contentFiles undefined = leave the content table untouched (frontend-binding-only write).
     // When clearing the binding, also delete all packaged frontend files.
     // putLocalGameCard treats frontendFiles: [] as "delete all existing
     // frontend files for this card" (enters the delete branch, writes none).
@@ -2362,6 +2376,8 @@ export async function setPlatformGameCardCover(
     throw new Error("内置游戏卡不能直接修改封面。请先另存为本地副本。")
   }
 
+  const previousCoverPath = card.manifest.cover?.workspacePath?.trim()
+
   if (input.kind === "url") {
     const url = input.url.trim()
     if (!url) {
@@ -2371,17 +2387,22 @@ export async function setPlatformGameCardCover(
     if (input.alt?.trim()) {
       nextCover.alt = input.alt.trim()
     }
+    // Drop the old workspacePath cover row (if any), then update manifest only.
+    if (previousCoverPath) {
+      await deleteLocalGameCardContentFile(cardId, previousCoverPath)
+    }
     return putLocalGameCard({
       manifest: { ...card.manifest, cover: nextCover },
-      contentFiles: stripExistingCoverFiles(card.contentFiles, card.manifest.cover),
       source: card.source,
     })
   }
 
   if (input.kind === "clear") {
+    if (previousCoverPath) {
+      await deleteLocalGameCardContentFile(cardId, previousCoverPath)
+    }
     return putLocalGameCard({
       manifest: { ...card.manifest, cover: undefined },
-      contentFiles: stripExistingCoverFiles(card.contentFiles, card.manifest.cover),
       source: card.source,
     })
   }
@@ -2397,30 +2418,19 @@ export async function setPlatformGameCardCover(
   const base64 = bytesToBase64(bytes)
   const dataUri = `data:${mediaType};base64,${base64}`
 
-  const remainingFiles = stripExistingCoverFiles(card.contentFiles, card.manifest.cover)
   const nextCover: GameCardCover = { workspacePath: coverPath }
   if (input.alt?.trim()) {
     nextCover.alt = input.alt.trim()
   }
+  // Delete the old cover row (if any), write the new cover row, then update manifest.
+  if (previousCoverPath && previousCoverPath !== coverPath) {
+    await deleteLocalGameCardContentFile(cardId, previousCoverPath)
+  }
+  await writeLocalGameCardContentFile(cardId, { path: coverPath, content: dataUri, mediaType })
   return putLocalGameCard({
     manifest: { ...card.manifest, cover: nextCover },
-    contentFiles: [
-      ...remainingFiles,
-      { path: coverPath, content: dataUri, mediaType },
-    ],
     source: card.source,
   })
-}
-
-function stripExistingCoverFiles(
-  contentFiles: GameCardContentFile[],
-  cover: GameCardCover | undefined,
-): GameCardContentFile[] {
-  const coverPath = cover?.workspacePath?.trim()
-  if (!coverPath) {
-    return contentFiles
-  }
-  return contentFiles.filter((file) => file.path !== coverPath)
 }
 
 export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | Uint8Array) {
@@ -2561,7 +2571,7 @@ async function activeStudioWorkspaceFiles(
   }
 
   return {
-    files: cardContentFilesToWorkspaceFiles(card),
+    files: await cardContentFilesToWorkspaceFiles(card),
     ...(activeSaveId ? { activeSaveId } : {}),
     usingSaveContext: false,
   }
@@ -2948,6 +2958,32 @@ export async function updatePlatformStudioAgentProviderPreset(
 const LOCAL_ASSISTANT_AGENT_CONFIG_PATH = ".tsian/local/assistant/agent.json"
 
 /**
+ * Resolve the desktop assistant's workspace actor level from its agent.json
+ * (`workspaceAccess.level`). The desktop assistant is the platform management
+ * assistant — a high-trust actor distinct from runtime game agents — and its
+ * configured level must drive workspace access decisions, not a hardcoded
+ * fallback. Returns undefined when the config is missing/unparseable, so the
+ * caller falls back to `resolveWorkspaceActorLevel`'s default (1).
+ */
+async function resolveLocalAssistantActorLevel(): Promise<number | undefined> {
+  const files = await loadLocalAssistantFiles()
+  const configFile = files.find((file) => file.path === LOCAL_ASSISTANT_AGENT_CONFIG_PATH)
+  if (!configFile) {
+    return undefined
+  }
+  try {
+    const parsed = JSON.parse(configFile.content) as unknown
+    const access = isRecord(parsed) && isRecord(parsed.workspaceAccess) ? parsed.workspaceAccess : undefined
+    const level = access?.level
+    return typeof level === "number" && Number.isFinite(level)
+      ? Math.max(0, Math.min(4, Math.floor(level)))
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
  * Read the local assistant's current provider preset id and available presets.
  * Used by the Assistant chat UI to render the provider selection control.
  */
@@ -3131,7 +3167,7 @@ export async function listPlatformWorkspaceRoots(): Promise<PlatformWorkspaceRoo
     title: activeCard.manifest.name?.trim() || "未命名游戏卡",
     summary: activeCard.manifest.summary?.trim() || "暂无简介。",
     source: activeCard.source,
-    contentFileCount: activeCard.contentFiles.length,
+    contentFileCount: (await listLocalGameCardContentFiles(activeCard.id)).length,
     saveCount: saves.filter((save) => save.gameCardId === activeCard.manifest.id).length,
     updatedAt: activeCard.updatedAt,
   }
@@ -3267,7 +3303,7 @@ async function executeStudioWorkspaceOperation(
   }
 
   const result = await executeWorkspaceOperation(operationRequest, {
-    workspaceFiles: cardContentFilesToWorkspaceFiles(context.card),
+    workspaceFiles: await cardContentFilesToWorkspaceFiles(context.card),
     actorLevel: 2,
     exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
     mutations: {

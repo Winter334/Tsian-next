@@ -23,6 +23,7 @@ These guides help you **ask the right questions before coding**.
 |-------|---------|-------------|
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
+| [Data Fileification Principle](./data-fileification-principle.md) | Decide where configurable data lives — file system vs private DB field | When adding new configurable data, new storage tables/keys, or new agent-managed data |
 
 ---
 
@@ -46,6 +47,15 @@ These guides help you **ask the right questions before coding**.
 - [ ] **You're creating a new utility/helper function** ← Search first!
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
+
+### When to Think About Data Fileification
+
+- [ ] You're adding a new field to a game card, agent, or save record
+- [ ] You're about to create a new Dexie table or key
+- [ ] You're adding a new tool to let the agent manage something
+- [ ] A feature implies the assistant should read/edit some platform data
+
+→ Read [Data Fileification Principle](./data-fileification-principle.md)
 
 ---
 

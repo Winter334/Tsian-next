@@ -13,12 +13,12 @@ The app uses Vue local state, Dexie persistence, and explicit bridge/platform-ho
 - Table shapes live in `storage/db.ts`.
 - Prototype schema changes use a new database name, not migrations.
 - Multi-table writes should use `localDb.transaction`.
-- Current active tables are `meta`, `gameCards`, `gameCardFrontendFiles`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, and `workspaceFiles`.
-- Game cards own reusable content files (`contentFiles`) such as Agents, Skills, rules, schemas, docs, assistant metadata, and optional frontend bindings.
+- Current active tables are `meta`, `gameCards`, `gameCardContentFiles`, `gameCardFrontendFiles`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, and `workspaceFiles`.
+- Game cards own reusable content files such as Agents, Skills, rules, schemas, docs, assistant metadata, and optional frontend bindings. Content files are stored **per-file** in `gameCardContentFiles` (keyed `${gameCardId}::${path}`), not as an embedded array on the `gameCards` row. A single file write touches one `gameCardContentFiles` row + bumps the card's `updatedAt`; it does not rewrite the whole card. `putLocalGameCard` takes an optional `contentFiles`: `undefined` leaves the content table untouched (metadata-only write), an array does a full replace inside the transaction (import/copy/seed). Read views (`getLocalGameCard` / `listLocalGameCards` / `putLocalGameCard` / `ensureBuiltinBlankGameCard`) return `LocalGameCardView`, which extends `LocalGameCardRecord` with an optional preloaded `coverContentFile` so the sync render path `getGameCardCoverUrl` can resolve the cover without an async table query.
 - Saves are playthrough slots linked to `gameCardId` / `gameCardVersion`; `workspaceFiles` stores only save runtime data mounted at `save/...` plus host-owned `.tsian/...` metadata.
 - The local assistant identity and session state live in the `local-assistant-files` Dexie map (`assistant-local-files` key) as a virtual file system under `.tsian/local/assistant/`: agent identity files (agent.json/SOUL.md/AGENT.md/notes.md/skills/) are cross-session shared, while per-session agent context snapshots live at `.tsian/local/assistant/sessions/<sessionId>/context.json` (task-summary steady state, separate from the visible-messages `assistant-session:<sessionId>` Dexie key). `loadLocalAssistantFiles`/`saveLocalAssistantFiles` (merge mode) handle the map; `deleteLocalAssistantFile` removes a single entry (used by `deleteAssistantSession` to clean up the context file). The snapshot is agent-visible via `workspace_read`/`workspace_write` — see the "Assistant Cross-Turn Context Persistence" scenario in type-safety.md.
 - Packaged frontend files are reusable Game Card assets stored beside game cards, not copied into save runtime data.
-- Packaged frontends are served by a Service Worker (`apps/platform-web/public/tsian-game-card-frontend-sw.js`) that reads `gameCardFrontendFiles` from IndexedDB. The SW DB name **must** stay in sync with `storage/db.ts`'s `TsianLocalDb` constructor database name (currently `tsian-agent-runtime-v6`). The SW is a standalone static asset that cannot import the TS constant, so the SW file carries the same literal plus a comment pointing back to `db.ts`. Update both together whenever the database name changes; a mismatch makes every packaged frontend serve 404.
+- Packaged frontends are served by a Service Worker (`apps/platform-web/public/tsian-game-card-frontend-sw.js`) that reads `gameCardFrontendFiles` from IndexedDB. The SW DB name **must** stay in sync with `storage/db.ts`'s `TsianLocalDb` constructor database name (currently `tsian-agent-runtime-v7`). The SW is a standalone static asset that cannot import the TS constant, so the SW file carries the same literal plus a comment pointing back to `db.ts`. Update both together whenever the database name changes; a mismatch makes every packaged frontend serve 404.
 - Built-in game cards may be refreshed by platform seed helpers when their source is `builtin` and their content/manifest is stale. This refresh updates reusable card content; existing saves see the updated card content through the effective workspace layer.
 - Checkpoints store snapshot, history, and save runtime files. They do not snapshot card-owned content.
 
@@ -368,7 +368,7 @@ const frontendFiles = entries.map((e) => ({
 await putLocalGameCard({
   id: cardId,
   manifest: { ...card.manifest, frontend: { kind: "packaged", entry: `frontend/${manifest.entry}`, bridgeVersion: manifest.bridgeVersion } },
-  contentFiles: card.contentFiles,
+  // contentFiles undefined = leave the per-file content table untouched (frontend-package-only write)
   frontendFiles,
 })
 ```
@@ -380,5 +380,38 @@ await localDb.gameCardFrontendFiles.bulkPut(newFiles) // leaves stale old files
 
 ```javascript
 // Wrong — SW hardcodes a DB name that drifts from db.ts
-const DB_NAME = "tsian-agent-runtime-v5" // db.ts already moved to v6 -> every serve 404s
+const DB_NAME = "tsian-agent-runtime-v6" // db.ts already moved to v7 -> every serve 404s
+```
+
+## Scenario: Default Template Card Creation Route
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web adds a "create game card from template" entry point, treats the builtin blank card as a reusable template, or binds a packaged frontend to a freshly created local card.
+
+### 2. Signatures
+
+- `createDefaultPlatformGameCard(input?: { name?: string; summary?: string }): Promise<LocalGameCardRecord>` — three-step compose: (1) `copyPlatformGameCardAsLocal(BUILTIN_BLANK_GAME_CARD_ID, {...})` to clone the builtin template content into a new local card (new id, no frontend files since builtin has none), (2) re-read the copy's content rows from `gameCardContentFiles` via `listLocalGameCardContentFiles(copy.id)` and `putLocalGameCard({ manifest: {...copy.manifest, frontend: DEFAULT_FRONTEND_BINDING}, contentFiles: copyContentFiles, frontendFiles: defaultFrontendFiles(), source: "local" })` to inject the 3 default packaged frontend files + binding while preserving the copied content (full-replace branch), (3) `setPlatformActiveGameCard(record.id)` to load it.
+- `DEFAULT_FRONTEND_BINDING` and `defaultFrontendFiles()` live in `storage/default-frontend-files.ts` — a packaged binding (`{ kind: "packaged", entry: "frontend/index.html", bridgeVersion: "tsian.play-bridge.v1" }`) plus 3 static frontend files (`index.html` / `style.css` / `app.js`) authored as string constants (no build pipeline; the SW serves them raw from `gameCardFrontendFiles`).
+
+### 3. Invariants
+
+- The builtin blank card (`source: "builtin"`) remains the **fallback anchor**: `getBuiltinBlankGameCard` as the last-resort active card in `platform-host`/`saves` is untouched. The template semantic is a UI/UX layering on top, not a storage-layer change — builtin cards still cannot be deleted or directly mutated.
+- Creation reuses existing storage primitives (`copyPlatformGameCardAsLocal` + `putLocalGameCard` + `setPlatformActiveGameCard`); no new storage layer, no `platform.runAction` extension. Platform-level create-card actions are explicitly out of scope for this route.
+- `copyPlatformGameCardAsLocal` copies content + existing frontend files + a unique id. Because the builtin template has no frontend files, step (2) is needed to attach them to the copy via a same-id `putLocalGameCard` upsert.
+- Frontend files use relative references (`href="style.css"`, `src="app.js"`) which resolve under the SW virtual prefix `/__tsian_game_card_frontends/<cardId>/frontend/...`; no HTML rewriting by the SW.
+
+### 4. Common Pitfalls
+
+```typescript
+// Wrong — trying to attach a frontend directly to the builtin card
+await putLocalGameCard({ manifest: {...builtin.manifest, frontend}, contentFiles, frontendFiles, source: "builtin" })
+// The builtin card is the shared fallback anchor; UI guards block frontend replacement on builtin.
+// Always create a local copy first, then attach the frontend to the copy.
+```
+
+```typescript
+// Wrong — skipping setPlatformActiveGameCard leaves the new card created but not loaded
+const record = await putLocalGameCard({...}) // created but not active
+// /play will still use the previously active card. Always load the new card after creation.
 ```

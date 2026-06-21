@@ -8,7 +8,7 @@ import type {
 } from "@tsian/contracts"
 import { FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
-import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardFrontendFiles, putLocalGameCard } from "./game-cards"
+import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile } from "./game-cards"
 import type { LocalGameCardRecord } from "./db"
 
 const GAME_CARD_PACKAGE_SCHEMA = "tsian.game-card.package.v1"
@@ -451,7 +451,7 @@ async function resolveCoverExportFile(
 
   if (cover.workspacePath?.trim()) {
     const contentPath = cover.workspacePath.trim()
-    const file = card.contentFiles.find((item) => item.path === contentPath)
+    const file = await readLocalGameCardContentFile(card.id, contentPath)
     if (!file) {
       return null
     }
@@ -625,9 +625,10 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
 
   const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
   const coverFile = await resolveCoverExportFile(card)
+  const allContentFiles = await listLocalGameCardContentFiles(card.id)
   const contentFiles = coverFile?.contentPath
-    ? card.contentFiles.filter((file) => file.path !== coverFile.contentPath)
-    : card.contentFiles
+    ? allContentFiles.filter((file) => file.path !== coverFile.contentPath)
+    : allContentFiles
   const packageManifest: GameCardPackageManifest = {
     schema: GAME_CARD_PACKAGE_SCHEMA,
     manifest: normalizeGameCardManifest(card.manifest),
@@ -891,7 +892,7 @@ export async function importGameCardFrontendPackage(
       ...card.manifest,
       frontend: frontendBinding,
     },
-    contentFiles: card.contentFiles,
+    // contentFiles undefined = leave the content table untouched (frontend-package-only write).
     frontendFiles,
     source: card.source,
   })

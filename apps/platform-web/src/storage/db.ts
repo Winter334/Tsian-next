@@ -1,6 +1,5 @@
 import type {
   ConversationMessageRecord,
-  GameCardContentFile,
   GameCardManifest,
   RuntimeSnapshotShell,
 } from "@tsian/contracts"
@@ -23,8 +22,19 @@ export interface LocalSaveRecord {
 export interface LocalGameCardRecord {
   id: string
   manifest: GameCardManifest
-  contentFiles: GameCardContentFile[]
   source: "builtin" | "local" | "imported"
+  createdAt: number
+  updatedAt: number
+}
+
+export interface LocalGameCardContentFileRecord {
+  /** Internal deterministic table key, same keying as gameCardFrontendFiles. */
+  id: string
+  gameCardId: string
+  /** Package-root path (no leading slash). */
+  path: string
+  content: string
+  mediaType?: string
   createdAt: number
   updatedAt: number
 }
@@ -79,6 +89,7 @@ export interface LocalCheckpointRecord {
 export class TsianLocalDb extends Dexie {
   meta!: Table<LocalMetaRecord, string>
   gameCards!: Table<LocalGameCardRecord, string>
+  gameCardContentFiles!: Table<LocalGameCardContentFileRecord, string>
   gameCardFrontendFiles!: Table<LocalGameCardFrontendFileRecord, string>
   saves!: Table<LocalSaveRecord, string>
   saveSnapshots!: Table<LocalSaveSnapshotRecord, string>
@@ -88,11 +99,12 @@ export class TsianLocalDb extends Dexie {
 
   constructor() {
     // Prototype reset: no migration from retired local IndexedDB schemas.
-    super("tsian-agent-runtime-v6")
+    super("tsian-agent-runtime-v7")
 
     this.version(1).stores({
       meta: "&key",
       gameCards: "&id, source, updatedAt",
+      gameCardContentFiles: "&id, gameCardId, path, updatedAt",
       gameCardFrontendFiles: "&id, gameCardId, path, updatedAt",
       saves: "&id, updatedAt",
       saveSnapshots: "&saveId",

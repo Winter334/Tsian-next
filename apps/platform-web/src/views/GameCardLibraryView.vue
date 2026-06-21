@@ -30,14 +30,28 @@
           <div class="grid justify-items-center gap-3 text-center">
             <FolderOpen class="h-10 w-10 text-neon-muted" aria-hidden="true" />
             <p class="font-mono text-sm text-text-main">我的应用还是空的。</p>
-            <button
-              type="button"
-              class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-              @click="router.push('/market')"
-            >
-              <Store class="h-3.5 w-3.5" aria-hidden="true" />
-              打开应用市场
-            </button>
+            <p class="max-w-xs font-mono text-[11px] leading-5 text-text-dim">
+              从模板创建一张可游玩的游戏卡，再用桌面助手定制内容。
+            </p>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                :disabled="creating"
+                @click="createDefaultCard"
+              >
+                <Plus class="h-3.5 w-3.5" aria-hidden="true" />
+                创建游戏
+              </button>
+              <button
+                type="button"
+                class="retro-focus inline-flex h-8 items-center gap-2 border border-neon-deep/40 bg-elevated px-3 font-mono text-xs text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                @click="router.push('/market')"
+              >
+                <Store class="h-3.5 w-3.5" aria-hidden="true" />
+                应用市场
+              </button>
+            </div>
           </div>
         </div>
 
@@ -152,6 +166,16 @@
           v-if="!contextMenu.card"
           type="button"
           class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+          :disabled="creating"
+          @click="createCardFromMenu"
+        >
+          <Plus class="h-3.5 w-3.5" aria-hidden="true" />
+          创建游戏
+        </button>
+        <button
+          v-if="!contextMenu.card"
+          type="button"
+          class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
           @click="importFromMenu"
         >
           <Download class="h-3.5 w-3.5" aria-hidden="true" />
@@ -164,7 +188,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { CheckCircle2, Download, FolderOpen, Gamepad2, Store, Trash2 } from "lucide-vue-next"
+import { CheckCircle2, Download, FolderOpen, Gamepad2, Plus, Store, Trash2 } from "lucide-vue-next"
 import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
 import type { LocalGameCardRecord } from "@/storage/db"
@@ -174,6 +198,7 @@ import {
   getGameCardTitle,
 } from "@/lib/game-card-display"
 import {
+  createDefaultPlatformGameCard,
   deletePlatformGameCard,
   getPlatformActiveGameCardId,
   importPlatformGameCardPackage,
@@ -190,6 +215,7 @@ const loading = ref(false)
 const importing = ref(false)
 const deleting = ref(false)
 const loadingCard = ref(false)
+const creating = ref(false)
 const errorMessage = ref("")
 const importError = ref("")
 const feedback = ref("")
@@ -233,6 +259,26 @@ function openCard(cardId: string) {
   router.push({ name: "game-card-detail", params: { cardId } })
 }
 
+async function createDefaultCard() {
+  if (creating.value) {
+    return
+  }
+  creating.value = true
+  importError.value = ""
+  feedback.value = ""
+  try {
+    const created = await createDefaultPlatformGameCard()
+    feedback.value = `已创建并加载：${getGameCardTitle(created)}`
+    toast.success(`已创建游戏卡：${getGameCardTitle(created)}`)
+    await refreshCards()
+    openCard(created.id)
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : "创建游戏卡失败。"
+  } finally {
+    creating.value = false
+  }
+}
+
 function openPackagePicker() {
   packageInput.value?.click()
 }
@@ -256,7 +302,7 @@ function openBlankContextMenu(event: MouseEvent) {
 
 function contextMenuStateFromMouse(event: MouseEvent, card: LocalGameCardRecord | null): ContextMenuState {
   const menuWidth = 176
-  const menuHeight = card ? (canDeleteCard(card) ? 148 : 104) : 48
+  const menuHeight = card ? (canDeleteCard(card) ? 148 : 104) : 96
   const rect = libraryRef.value?.getBoundingClientRect() ?? {
     left: 0,
     top: 0,
@@ -296,6 +342,11 @@ async function deleteCardFromMenu(card: LocalGameCardRecord) {
 function importFromMenu() {
   contextMenu.value = null
   openPackagePicker()
+}
+
+function createCardFromMenu() {
+  contextMenu.value = null
+  void createDefaultCard()
 }
 
 async function loadSelectedCard() {

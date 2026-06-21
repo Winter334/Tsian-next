@@ -24,7 +24,7 @@
 ### 2. Signatures
 
 - `GameCardManifest.frontend?: GameCardFrontendBinding`
-- `LocalGameCardRecord.contentFiles: GameCardContentFile[]`
+- Card content files live in the `gameCardContentFiles` Dexie table (per-file rows keyed `${gameCardId}::${path}`), not on `LocalGameCardRecord`. Read views (`getLocalGameCard` / `listLocalGameCards` / `putLocalGameCard`) return `LocalGameCardView`, which extends `LocalGameCardRecord` with an optional preloaded `coverContentFile` for sync cover rendering.
 - `GameCardFrontendBinding = { kind: "remote"; url; bridgeVersion } | { kind: "packaged"; entry; bridgeVersion }`
 - `GameCardPackageManifest.manifest: GameCardManifest`
 - `GameCardPackageManifest.frontendFiles?: GameCardPackageFileEntry[]`
@@ -295,7 +295,7 @@ return {
 
 ### 2. Signatures
 
-- `LocalGameCardRecord.contentFiles: GameCardContentFile[]`
+- Card content files are stored per-file in `gameCardContentFiles` (keyed `${gameCardId}::${path}`), not embedded in `LocalGameCardRecord`. Consumers receive `LocalGameCardView` (extends `LocalGameCardRecord` with optional preloaded `coverContentFile`) from `getLocalGameCard` / `listLocalGameCards` / `putLocalGameCard`; use `listLocalGameCardContentFiles(cardId)` for the full list and `readLocalGameCardContentFile(cardId, path)` for a single file.
 - `LocalWorkspaceFileRecord.path` stores save runtime files only: `save/...` and platform-owned `.tsian/...`.
 - Runtime reads use `listEffectiveWorkspaceFilesForSave(saveId, card)` and receive card content plus selected save runtime data.
 - Runtime commits use `saveRuntimeFilesFromEffectiveWorkspace(files)` before replacing `workspaceFiles`.
@@ -306,16 +306,22 @@ return {
 - Save runtime data owns dialogue/history, generated entities, maps, relationships, memory summaries, frontend view state, Agent notes/session transcripts, and `.tsian` diagnostics for one playthrough.
 - Effective workspace composition is deterministic: card content appears at its card path, active save runtime data appears under `save/`, and `.tsian/` is visible in the resource manager (C-drive model) but remains hidden from ordinary Agent/Skill/frontend read/list/search APIs (actor level 4 required).
 - Game Card content must not define `save/...` or `.tsian/...`.
-- Ordinary Agent/Skill/frontend workspace writes and deletes must target `save/...`; platform writes may target `save/...` or `.tsian/...`.
+- **Two distinct actor classes share the workspace operation path, distinguished by actor level (not by turn vs. non-turn):**
+  - **Runtime game agents** (the agents defined in a card's `agents/`, running during a play turn): default `workspaceAccess.level` is `1` (`DEFAULT_AGENT_ACCESS_LEVEL`, registry.ts). `card-content` scope `editLevel` is `2`, so `assertEditAccess` rejects their card-content writes with `WORKSPACE_EDIT_ACCESS_DENIED` before any mutation runs. They can only write `save-runtime` (editLevel 1). This is the intended permission gate — runtime game agents must not mutate card content during play.
+  - **Desktop assistant** (the platform management assistant at `.tsian/local/assistant/`): default `workspaceAccess.level` is `4` (highest, `local-assistant-files.ts`), resolved via `agentContext.agent.workspaceAccess.level` in the runtime turn path and via `resolveLocalAssistantActorLevel()` in the `executePlatformAction` path. At level 4 it passes `assertEditAccess` for all scopes (`card-content`: 2, `save-runtime`: 1, `platform-meta`: 4), so it can manage every resource-manager-visible path — the user's right hand, including its own definition.
+- **Card-content writes bypass the save transaction, not the permission gate.** When the desktop assistant writes `card-content` during a runtime turn, `runAssistantChat`'s `workspaceMutations.write` routes the write to `writeCardContentFileForActiveCard` (per-file content table) — **not** `activeWorkspaceTransaction.write`, because the save transaction only accepts `save/...` paths (`assertOrdinarySaveRuntimeMutationPath` throws `WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED` otherwise). Card content is not part of save checkpoints (checkpoints snapshot save-runtime only), so routing it around the save transaction is correct. `assertEditAccess` (run by `executeWorkspaceOperation` before the mutation) is the sole authority gate — it already blocks runtime game agents (level 1 < 2) and admits the assistant (level 4 ≥ 2). Never route card-content mutations through the save transaction; that is a semantic contradiction (accepting the scope but delegating to a transaction that rejects its paths).
+- **"Visible = editable = manageable" principle**: if a path is visible in the resource manager, the user can edit it (via the Studio editor) and the desktop assistant can manage it (via `workspace_write`/`workspace_delete` at its configured actor level). There is no "visible but assistant cannot touch" gray zone — the resource manager's visibility is the contract for both human and assistant editability. This includes the assistant managing its own definition (`.tsian/local/assistant/agent.json` and identity files). See also the [Data Fileification Principle](../../guides/data-fileification-principle.md).
 - Checkpoints snapshot and restore save runtime files only. Restored checkpoints continue to use current Game Card content.
 
 ### 4. Validation & Error Matrix
 
 - Card content path under `save/...` or `.tsian/...` -> reject card write/import.
-- Ordinary workspace write/delete outside `save/...` -> `WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED`.
-- Ordinary workspace write/delete under `.tsian/...` -> `WORKSPACE_PLATFORM_METADATA_FORBIDDEN`.
-- Platform runtime write outside `save/...` or `.tsian/...` -> `WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED`.
+- Runtime game agent (level 1) workspace write/delete on `card-content` -> `WORKSPACE_EDIT_ACCESS_DENIED` (editLevel 2 required; `assertEditAccess` in `executeWorkspaceOperation` rejects before mutation). They can only write `save-runtime` (editLevel 1).
+- Runtime game agent workspace write/delete under `.tsian/...` without actor level 4 -> `WORKSPACE_PLATFORM_METADATA_FORBIDDEN`.
+- Desktop assistant workspace write/delete denied when its configured `workspaceAccess.level` < the target scope's `editLevel` (`card-content`: 2, `save-runtime`: 1, `platform-meta`: 4) -> `WORKSPACE_EDIT_ACCESS_DENIED`. With the default level 4 it can write all three scopes; the level is resolved from `agentContext.agent.workspaceAccess.level` (runtime turn path) or `resolveLocalAssistantActorLevel()` (`executePlatformAction` path), never hardcoded.
 - Effective workspace read/list/search -> hides `.tsian/...` and can surface both card content and `save/...` files.
+- **Never hardcode `actorLevel` for the desktop assistant path** — a hardcoded value short-circuits `resolveWorkspaceActorLevel`'s fallback chain and silently overrides the user's configured `workspaceAccess.level`. Always pass `actorLevel: await resolveLocalAssistantActorLevel()` (undefined when config is missing, so the default applies). This was a real bug: `executePlatformAction` hardcoded `actorLevel: 1`, making the assistant's configured level 4 unreachable.
+- **Never route `card-content` mutations through `activeWorkspaceTransaction`** (the save transaction). The save transaction's `assertOrdinarySaveRuntimeMutationPath` only accepts `save/...`, so routing card-content there throws `WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED` — a semantic contradiction (accepting the scope but delegating to a transaction that rejects its paths). `runAssistantChat`'s `workspaceMutations` must route `card-content` write/delete to `writeCardContentFileForActiveCard` / `deleteCardContentPathForActiveCard` (per-file content table), not `activeWorkspaceTransaction.write/delete`. This was a real bug: the assistant's card-content writes were routed to the save transaction and all failed with `WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED`. `assertEditAccess` is the sole authority gate and already blocks runtime game agents.
 
 ### 5. Good/Base/Bad Cases
 
@@ -337,7 +343,8 @@ return {
 #### Wrong
 
 ```typescript
-const workspaceFiles = card.contentFiles.map((file) =>
+const cardFiles = await listLocalGameCardContentFiles(card.id)
+const workspaceFiles = cardFiles.map((file) =>
   createLocalWorkspaceFileRecord(saveId, file),
 )
 ```
@@ -633,7 +640,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Controlled async executors have bounded timeout/abort behavior. `timeoutMs` must be positive and must not exceed the platform maximum.
 - The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/diff/patch/write/move/delete/validate, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output. Multi-step workspace orchestration (read -> transform -> write) is written as a `browser_script` that chains SDK calls; the model invokes it with one `run_script` call.
 - The first browser script slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs. Worker hard limits still apply, and this is a third-party trust boundary rather than a guarantee that arbitrary third-party code is safe.
-- Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing or invalid Agent `workspaceAccess.level` in `agent.json` defaults to `1`.
+- Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing or invalid Agent `workspaceAccess.level` in `agent.json` defaults to `1`. **Exception — desktop assistant**: its actor level is resolved live from `.tsian/local/assistant/agent.json` by `resolveLocalAssistantActorLevel` (default `4`), not from the runtime agent context, because it is the platform management assistant rather than a runtime game agent. The `executePlatformAction` path must never hardcode `actorLevel` — see the Validation & Error Matrix above.
 - Browser script SDK workspace methods must receive the same current Agent context and exposed workspace operations as the top-level workspace tools. A `browser_script` must not perform an operation that the Agent's `workspace_read` / `workspace_write` groups disabled.
 - Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
 - Successful turns commit the staged workspace final state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
@@ -1399,3 +1406,27 @@ stageAgentSessionTranscriptFiles(
 - Do not reintroduce old prompt/world-book/workflow resource contracts for new Agent Runtime work.
 - Do not leak Dexie table records directly into contracts unless they are intentionally shared.
 - Do not silently swallow invalid platform action input.
+
+## Scenario: Play Bridge Event Payload Type Alignment
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web changes `RemotePlayBridgeEventPayload` (contracts `bridge.ts`), the `remote-iframe-bridge` event-forwarding code, or the streaming-events `turn-delta`/`turn-round-end` `kind` taxonomy.
+
+### 2. Contract
+
+- `turn-delta` event payload carries `kind: "reasoning" | "content"` (the streaming-text classification from `TurnDeltaKind` in `streaming-events.ts`). The payload member in `RemotePlayBridgeEventPayload` **must** include this `kind` field — the bridge forwards it verbatim from `subscribeTurnDelta`.
+- `turn-round-end` event payload carries `kind: "thought" | "final"` (`TurnRoundEndKind`). These are distinct `kind` enums on distinct event payloads — do not conflate them.
+- The two `kind` fields are separate from the message-envelope `kind` (`hello|ready|request|response|event`). When touching event payloads, verify the union member shape matches what `remote-iframe-bridge.ts` actually posts.
+
+### 3. Common Pitfall
+
+```typescript
+// Wrong — RemotePlayBridgeEventPayload turn-delta member omits kind
+| { agentId: string; delta: string; turn: number; round: number }
+// remote-iframe-bridge posts { agentId, delta, turn, round, kind: "reasoning"|"content" }
+// -> TS2322: Type 'TurnDeltaKind' not assignable to '"thought" | "final"'
+// (the only kind-bearing union member is turn-round-end's, causing a positional mismatch)
+```
+
+The fix: add `kind: "reasoning" | "content"` to the `turn-delta` union member so the contract reflects the actual emitted payload shape.
