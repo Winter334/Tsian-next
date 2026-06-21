@@ -78,10 +78,15 @@ import {
   AUTHORING_WORKSPACE_OPERATIONS,
   executeWorkspaceOperation,
 } from "../agent-runtime/workspace-operations"
-import { createDebugBridge, createPlayFrontendBridge, resolveRemoteFrontendUrl } from "../bridge"
+import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool } from "../streaming-events"
-import { LocalRuntimeEngine } from "../runtime-host"
+import {
+  getBaseBridge,
+  getRuntimeEngine,
+  markPlatformHostReady,
+  waitForPlatformHostReady,
+} from "./host-state"
 import {
   generateAssistantReply,
   generateAssistantReplyNative,
@@ -149,15 +154,6 @@ import {
   DEFAULT_FRONTEND_BINDING,
   defaultFrontendFiles,
 } from "../storage/default-frontend-files"
-
-export const runtimeEngine = new LocalRuntimeEngine()
-const baseBridge = createPlayFrontendBridge(runtimeEngine)
-
-let platformHostReady = false
-let resolvePlatformHostReady: (() => void) | null = null
-const platformHostReadyPromise = new Promise<void>((resolve) => {
-  resolvePlatformHostReady = resolve
-})
 
 let previousTurnController: AbortController | null = null
 
@@ -290,22 +286,6 @@ interface RawAirpHistoryTurnRecord {
  */
 function finishReasonToKind(finishReason: "stop" | "tool_calls"): "thought" | "final" {
   return finishReason === "tool_calls" ? "thought" : "final"
-}
-
-function markPlatformHostReady() {
-  if (platformHostReady) {
-    return
-  }
-  platformHostReady = true
-  resolvePlatformHostReady?.()
-  resolvePlatformHostReady = null
-}
-
-export async function waitForPlatformHostReady(): Promise<void> {
-  if (platformHostReady) {
-    return
-  }
-  await platformHostReadyPromise
 }
 
 function cloneSnapshot(snapshot: RuntimeSnapshotShell): RuntimeSnapshotShell {
@@ -618,13 +598,13 @@ async function ensureActiveSave(): Promise<string> {
   const created = await createLocalSave()
   await setActiveSaveId(created.id)
   await setActiveGameCardId(created.gameCardId ?? (await getBuiltinBlankGameCard()).id)
-  runtimeEngine.loadSnapshot(await getSnapshotForSave(created.id))
+  getRuntimeEngine().loadSnapshot(await getSnapshotForSave(created.id))
   return created.id
 }
 
 async function restoreActiveSnapshotFromStorage(saveId: string): Promise<RuntimeSnapshotShell> {
   const snapshot = await getSnapshotForSave(saveId)
-  runtimeEngine.loadSnapshot(snapshot)
+  getRuntimeEngine().loadSnapshot(snapshot)
   return snapshot
 }
 
@@ -1122,7 +1102,7 @@ async function executePlatformAction(
       )
     }
 
-    runtimeEngine.loadSnapshot(snapshot)
+    getRuntimeEngine().loadSnapshot(snapshot)
     return {
       ok: true,
       item: snapshot,
@@ -1227,7 +1207,7 @@ function formatActiveFrontendId(frontend: GameCardFrontendBinding | undefined): 
 }
 
 export const playFrontendBridge: PlayFrontendBridge = {
-  runtime: baseBridge.runtime,
+  runtime: getBaseBridge().runtime,
   platform: {
     async getPlatformContext() {
       const activeCard = await getPlatformActiveGameCard()
@@ -1431,7 +1411,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } as DeepQueryResult<T>
       }
 
-      return baseBridge.query.query(request)
+      return getBaseBridge().query.query(request)
     },
   },
   interaction: {
@@ -1634,7 +1614,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           trace.events,
         )
 
-        runtimeEngine.loadSnapshot(snapshotAfter)
+        getRuntimeEngine().loadSnapshot(snapshotAfter)
         await commitSuccessfulRuntimeTurnForSave(activeSaveId, {
           snapshot: snapshotAfter,
           history: nextHistory,
@@ -1645,7 +1625,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         emitTurnDebugReady(snapshotAfter.state.turn)
         return { snapshot: snapshotAfter }
       } catch (error) {
-        runtimeEngine.loadSnapshot(snapshotBefore)
+        getRuntimeEngine().loadSnapshot(snapshotBefore)
         workspaceTransaction?.discard()
         trace.emit({
           type: "turn_failed",
@@ -2133,7 +2113,7 @@ export async function initializePlatformHost(): Promise<void> {
     }
     await restoreActiveSnapshotFromStorage(next.id)
   } else {
-    runtimeEngine.loadSnapshot(createEmptyRuntimeSnapshot())
+    getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
   }
 
   markPlatformHostReady()
@@ -2297,7 +2277,7 @@ export async function deletePlatformGameCard(
       await restoreActiveSnapshotFromStorage(remainingSaves[0].id)
     } else {
       await setActiveSaveId(null)
-      runtimeEngine.loadSnapshot(createEmptyRuntimeSnapshot())
+      getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
     }
   }
 
@@ -2529,7 +2509,7 @@ export async function deletePlatformSave(saveId: string) {
     if (activeSaveId === saveId) {
       await setActiveSaveId(null)
     }
-    runtimeEngine.loadSnapshot(createEmptyRuntimeSnapshot())
+    getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
     return
   }
 
@@ -3740,3 +3720,5 @@ export async function validatePlatformWorkspaceFile(input: {
     validator: input.validator,
   }) as WorkspaceValidationResult
 }
+
+export { waitForPlatformHostReady }
