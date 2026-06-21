@@ -377,6 +377,50 @@ def _lookup_cursor_shell_ticket_context_key() -> str | None:
     return None
 
 
+def _detect_zcode() -> bool:
+    """Detect ZCode (an OpenCode-derived host) from the process environment.
+
+    ZCode forks OpenCode but does not export OpenCode's session env vars
+    (`OPENCODE_SESSION_ID` / `OPENCODE_RUN_ID`), and the Claude Code
+    `CLAUDE_ENV_FILE` bridge that upstream hooks rely on to hand the context
+    key back to later bash commands is also absent. Without a session identity
+    `task.py start` falls into degraded mode and never persists the per-session
+    active-task pointer. This detector enables a cwd-derived fallback below.
+    """
+    return bool(
+        _string_value(os.environ.get("ZCODE_APP_VERSION"))
+        or _string_value(os.environ.get("ZCODE_ENV"))
+        or _string_value(os.environ.get("ZCODE_RUNTIME_ENV"))
+    )
+
+
+def _zcode_cwd_context_key() -> str | None:
+    """Derive a stable context key from the repo root under ZCode.
+
+    ZCode does not expose session identity to shell subprocesses, so we derive
+    a per-repo key from the working directory: `zcode_<repo_hash>`, optionally
+    namespaced by `ZCODE_PROCESS_LABEL` when the host sets it (window
+    distinction). Both `task.py` (AI-run shell command) and hook-launched
+    subprocesses resolve to the same key for a given repo, closing the
+    hook→bash identity gap that otherwise forces degraded mode.
+
+    Multi-window same-repo sessions share a key and overwrite each other's
+    pointer — same single-session assumption as
+    `_resolve_single_session_fallback`, and a strict improvement over the
+    current never-persists state on ZCode.
+    """
+    repo_root = _find_repo_root_from_cwd()
+    if repo_root is None:
+        return None
+    repo_hash = _hash_value(str(repo_root))
+    label = _string_value(os.environ.get("ZCODE_PROCESS_LABEL"))
+    if label:
+        safe_label = _sanitize_key(label)
+        if safe_label:
+            return f"zcode_{safe_label}_{repo_hash}"
+    return f"zcode_{repo_hash}"
+
+
 def resolve_context_key(
     platform_input: dict[str, Any] | None = None,
     platform: str | None = None,
@@ -411,7 +455,17 @@ def resolve_context_key(
         return env_context_key
 
     if platform_name in (None, "session", "cursor"):
-        return _lookup_cursor_shell_ticket_context_key()
+        cursor_key = _lookup_cursor_shell_ticket_context_key()
+        if cursor_key:
+            return cursor_key
+
+    # ZCode fallback: ZCode is an OpenCode derivative that does not export
+    # OpenCode's session env vars and lacks the CLAUDE_ENV_FILE bridge, so
+    # every upstream identity source above fails. Derive a stable per-repo
+    # key from cwd so `task.py start` can persist the session pointer instead
+    # of degrading. See `_zcode_cwd_context_key` for the multi-window caveat.
+    if _detect_zcode():
+        return _zcode_cwd_context_key()
     return None
 
 
