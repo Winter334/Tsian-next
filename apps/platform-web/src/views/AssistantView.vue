@@ -86,25 +86,15 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <Select
-            :model-value="assistantProviderPresetId || '__platform_default__'"
-            :disabled="updatingProviderPreset || providerPresets.length === 0"
-            @update:model-value="(value) => handleProviderPresetChange(value === '__platform_default__' ? '' : value as string)"
+          <button
+            type="button"
+            class="retro-focus grid h-8 w-8 place-items-center border border-neon-deep/55 bg-elevated text-text-dim hover:text-neon"
+            :title="configButtonTitle"
+            aria-label="助手配置"
+            @click="showAssistantConfig = true"
           >
-            <SelectTrigger class="h-8 max-w-[160px]" aria-label="API 服务商" :title="`API 服务商：${assistantProviderPresetId ? (providerPresets.find(p => p.id === assistantProviderPresetId)?.name ?? '所选预设已失效，回退到平台默认') : '使用平台默认服务商'}`">
-              <SelectValue placeholder="默认服务商" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__platform_default__">默认服务商</SelectItem>
-              <SelectItem
-                v-for="preset in providerPresets"
-                :key="preset.id"
-                :value="preset.id"
-              >
-                {{ preset.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
+            <Settings class="h-4 w-4" aria-hidden="true" />
+          </button>
         </div>
       </header>
 
@@ -365,21 +355,26 @@
         </div>
       </div>
     </div>
+
+    <!-- Assistant config floating window (slot mode, bypasses the dialog composable) -->
+    <FloatingWindow
+      v-if="showAssistantConfig"
+      title="助手配置"
+      width-class="max-w-lg"
+      @close="showAssistantConfig = false"
+    >
+      <AssistantConfigPanel @change="handleAssistantConfigChange" @close="showAssistantConfig = false" />
+    </FloatingWindow>
   </section>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, Send, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
+import { Bot, Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
+import AssistantConfigPanel from "@/components/assistant/AssistantConfigPanel.vue"
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -390,7 +385,6 @@ import {
   getPlatformActiveGameCard,
   waitForPlatformHostReady,
   getLocalAssistantProviderPreset,
-  updateLocalAssistantProviderPreset,
 } from "../platform-host"
 import { renderMarkdown } from "../lib/markdown"
 import {
@@ -461,9 +455,16 @@ const renamingSessionId = ref<string | null>(null)
 const renameInputRef = ref<HTMLInputElement | null>(null)
 const providerPresets = ref<Array<{ id: string; name: string }>>([])
 const assistantProviderPresetId = ref("")
-const updatingProviderPreset = ref(false)
+const showAssistantConfig = ref(false)
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
+const configButtonTitle = computed(() => {
+  if (assistantProviderPresetId.value) {
+    const name = providerPresets.value.find((p) => p.id === assistantProviderPresetId.value)?.name ?? "所选预设已失效"
+    return `助手配置（服务商：${name}）`
+  }
+  return "助手配置（使用平台默认服务商）"
+})
 function formatSessionTime(timestamp: number): string {
   const date = new Date(timestamp)
   const now = new Date()
@@ -981,16 +982,12 @@ async function loadProviderPreset() {
   }
 }
 
-async function handleProviderPresetChange(presetId: string) {
-  updatingProviderPreset.value = true
-  try {
-    await updateLocalAssistantProviderPreset(presetId || null)
-    assistantProviderPresetId.value = presetId
-  } catch {
-    await loadProviderPreset()
-  } finally {
-    updatingProviderPreset.value = false
-  }
+/**
+ * Called when the AssistantConfigPanel persists a config change. Re-reads the
+ * provider preset state so the gear button's title reflects the active preset.
+ */
+async function handleAssistantConfigChange() {
+  await loadProviderPreset()
 }
 
 onMounted(async () => {
