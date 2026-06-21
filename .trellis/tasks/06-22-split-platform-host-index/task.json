@@ -3,7 +3,7 @@
   "name": "split-platform-host-index",
   "title": "Split platform-host index.ts god module",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

@@ -18,7 +18,7 @@
 - Put Agent Runtime turn composition in `agent-runtime`, not in Vue components or play frontends.
 - Inject platform capabilities into Agent Runtime from `platform-host`; Agent Runtime should not import bridge objects or Dexie tables directly.
 - Put browser persistence in `storage/`, not in route views.
-- Keep `platform-host/index.ts` as the orchestration boundary until behavior is reused by multiple actions.
+- `platform-host/index.ts` is the barrel + `playFrontendBridge` assembly + re-export boundary. Internal implementation lives in focused sub-modules (`assistant-chat.ts`, `covers.ts`, `workspace-ops.ts`, `host-state.ts`, `internal.ts`). New responsibilities do not pile into `index.ts` — put them in a new sub-module or the appropriate existing one. See [Module Structure Guide](../../guides/module-structure-guide.md).
 - Do not add a same-realm built-in game frontend; default playable UI should be a remote or packaged Game Card frontend.
 
 ## Import Rules
