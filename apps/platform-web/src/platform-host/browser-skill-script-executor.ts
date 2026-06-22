@@ -174,8 +174,14 @@ const tsian = Object.freeze({
     list(input) {
       return rpc("workspace.list", typeof input === "string" || input === undefined ? { scope: "effective", path: input } : input);
     },
-    search(query, limit) {
-      return rpc("workspace.search", isRecord(query) ? query : { scope: "effective", query, limit });
+    search(queryOrInput, limit) {
+      const input = isRecord(queryOrInput)
+        ? queryOrInput
+        : { scope: "effective", query: queryOrInput, limit };
+      return rpc("workspace.search", input);
+    },
+    glob(input) {
+      return rpc("workspace.glob", typeof input === "string" ? { scope: "effective", pattern: input } : input);
     },
     diff(input) {
       return rpc("workspace.diff", input);

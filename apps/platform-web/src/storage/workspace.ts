@@ -1787,6 +1787,8 @@ export function searchWorkspaceFilesFromFiles(
           name: fileName(file.path),
           updatedAt: file.updatedAt,
           score: 2,
+          matches: [],
+          matchesTruncated: false,
           preview: file.path,
         }]
       }
@@ -1803,6 +1805,8 @@ export function searchWorkspaceFilesFromFiles(
         name: fileName(file.path),
         updatedAt: file.updatedAt,
         score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
+        matches: [],
+        matchesTruncated: false,
         preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,
       }]
     })

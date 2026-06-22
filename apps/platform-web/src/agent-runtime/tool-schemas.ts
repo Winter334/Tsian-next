@@ -128,7 +128,7 @@ const agentCallSchema: ToolSchema = {
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
-    "Read one Runtime Workspace file by scope and path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those). Returns the file content as a string. Returns an error if the path does not exist in the given scope.",
+    "Read one Runtime Workspace file by scope and path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those). Returns the file content as a string. Returns an error if the path does not exist in the given scope. Pass `offset`/`limit` to read a line slice of a long file; the result then carries `totalLines`/`returnedLines`/`offset`/`truncated` so you can decide whether to page further.",
   parameters: {
     type: "object",
     required: ["scope", "path"],
@@ -141,6 +141,14 @@ const workspaceReadSchema: ToolSchema = {
       path: {
         type: "string",
         description: "Workspace file path (forward slashes, no leading slash).",
+      },
+      offset: {
+        type: "integer",
+        description: "1-based start line for line-level slicing (default 1). Use with `limit` to page through long files.",
+      },
+      limit: {
+        type: "integer",
+        description: "Maximum lines to return (default 2000, hard cap 5000). Omit to return the whole file.",
       },
     },
   },
@@ -170,10 +178,10 @@ const workspaceListSchema: ToolSchema = {
 const workspaceSearchSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.search,
   description:
-    "Search workspace files by query and return scored previews. Use it to locate relevant files before reading specific ones. Empty query returns no results.",
+    "Search workspace files and return per-file match lists (line number + matched line + context lines). Pass either `query` (substring, case-insensitive by default) or `pattern` (regex, case-sensitive by default) — not both. Empty/omitted query and pattern return no results. Use it to locate relevant files and lines before reading specific ones.",
   parameters: {
     type: "object",
-    required: ["scope", "query"],
+    required: ["scope"],
     properties: {
       scope: {
         type: "string",
@@ -182,11 +190,23 @@ const workspaceSearchSchema: ToolSchema = {
       },
       query: {
         type: "string",
-        description: "Search query text.",
+        description: "Substring search text. Case-insensitive by default. Mutually exclusive with `pattern`.",
+      },
+      pattern: {
+        type: "string",
+        description: "Regular expression to match line content. Case-sensitive by default. Use for structured retrieval such as JSON state tables or frontmatter. Mutually exclusive with `query`.",
+      },
+      contextLines: {
+        type: "integer",
+        description: "Context lines to return before and after each match (default 0).",
+      },
+      ignoreCase: {
+        type: "boolean",
+        description: "Override case sensitivity. `query` defaults to true, `pattern` defaults to false.",
       },
       limit: {
         type: "integer",
-        description: "Optional maximum number of results.",
+        description: "Optional maximum number of files to return.",
       },
     },
   },

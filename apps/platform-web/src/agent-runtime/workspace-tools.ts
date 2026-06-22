@@ -346,11 +346,27 @@ function summarizeWorkspaceReadResult(result: unknown): Record<string, unknown> 
     return {}
   }
 
-  return {
+  const summary: Record<string, unknown> = {
     path: typeof result.path === "string" ? result.path : undefined,
     size: typeof result.content === "string" ? result.content.length : undefined,
     updatedAt: typeof result.updatedAt === "number" ? result.updatedAt : undefined,
   }
+  if (typeof result.offset === "number") {
+    summary.offset = result.offset
+  }
+  if (typeof result.totalLines === "number") {
+    summary.totalLines = result.totalLines
+  }
+  if (typeof result.returnedLines === "number") {
+    summary.returnedLines = result.returnedLines
+  }
+  if (typeof result.truncated === "boolean") {
+    summary.truncated = result.truncated
+  }
+  if (typeof result.isBinaryPlaceholder === "boolean") {
+    summary.isBinaryPlaceholder = result.isBinaryPlaceholder
+  }
+  return summary
 }
 
 function emitWorkspaceToolTrace(
@@ -378,6 +394,18 @@ function emitWorkspaceToolTrace(
     data.query = call.arguments.query
     data.queryLength = call.arguments.query.length
   }
+  if (typeof call.arguments.pattern === "string") {
+    data.pattern = call.arguments.pattern
+  }
+  if (typeof call.arguments.offset === "number") {
+    data.offset = call.arguments.offset
+  }
+  if (typeof call.arguments.contextLines === "number") {
+    data.contextLines = call.arguments.contextLines
+  }
+  if (typeof call.arguments.ignoreCase === "boolean") {
+    data.ignoreCase = call.arguments.ignoreCase
+  }
   if (typeof call.arguments.limit === "number") {
     data.limit = call.arguments.limit
   }
@@ -385,6 +413,15 @@ function emitWorkspaceToolTrace(
     data.resultCount = countResultItems(observation.result)
     if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.read) {
       data.result = summarizeWorkspaceReadResult(observation.result)
+    }
+    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.search && Array.isArray(observation.result)) {
+      let totalMatches = 0
+      for (const file of observation.result) {
+        if (isRecord(file) && Array.isArray(file.matches)) {
+          totalMatches += file.matches.length
+        }
+      }
+      data.totalMatches = totalMatches
     }
   } else if (observation.error) {
     data.error = observation.error

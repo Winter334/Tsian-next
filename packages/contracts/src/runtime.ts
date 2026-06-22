@@ -84,6 +84,27 @@ export interface WorkspaceFile {
   updatedAt: number
 }
 
+/** Result of `workspace.read`. Superset of `WorkspaceFile` carrying
+ *  line-level slicing metadata. When `offset`/`limit` are omitted the
+ *  `content` is the full file and the slice fields describe the whole file
+ *  (`offset: 1`, `truncated: false`). Old consumers reading `path`/
+ *  `content`/`updatedAt` are unaffected. */
+export interface WorkspaceReadResult extends WorkspaceFile {
+  /** Total lines in the file (`content.split("\n").length`). Always present
+   *  for text files; for binary placeholders it is `1`. */
+  totalLines?: number
+  /** Number of lines actually returned in `content`. */
+  returnedLines?: number
+  /** The 1-based start line used for this slice. */
+  offset?: number
+  /** `true` when more lines remain beyond this slice. */
+  truncated?: boolean
+  /** `true` when `content` is a binary placeholder and `offset`/`limit`
+   *  were not applied. Agents should not try to re-slice binary
+   *  placeholders. */
+  isBinaryPlaceholder?: boolean
+}
+
 export type WorkspaceScope =
   | "effective"
   | "card-content"
@@ -111,6 +132,14 @@ export interface WorkspaceOperationRequest {
   query?: string
   pattern?: string
   limit?: number
+  /** Read: 1-based start line for line-level slicing. Default 1 (whole file
+   *  when `limit` is also omitted). */
+  offset?: number
+  /** Search: context lines returned before and after each match. Default 0. */
+  contextLines?: number
+  /** Search: case-insensitive matching. `query` defaults to `true`
+   *  (back-compat), `pattern` defaults to `false` (regex convention). */
+  ignoreCase?: boolean
   /** Text content for write/patch, or a Blob for binary writes. */
   content?: string | Blob
   expectedContent?: string
@@ -283,11 +312,37 @@ export interface WorkspaceListResult {
   entries: WorkspaceEntry[]
 }
 
+export interface WorkspaceSearchMatch {
+  /** 1-based line number of the matched line. */
+  lineNumber: number
+  /** Full text of the matched line (no trailing newline). */
+  line: string
+  /** Up to `contextLines` lines before the match (excluding the match line). */
+  contextBefore: string[]
+  /** Up to `contextLines` lines after the match (excluding the match line). */
+  contextAfter: string[]
+  /** Matched substring: the query substring (query mode) or the first regex
+   *  match group 0 (pattern mode). */
+  match: string
+}
+
 export interface WorkspaceSearchResult {
   path: string
   name: string
   updatedAt: number
+  /** Path-match score preserved from the legacy format: 2 = path hit,
+   *  0 = content-only. Content hits do not raise the score so path-matched
+   *  files still sort first. */
   score: number
+  /** Per-line matches inside this file. Empty when only the path matched
+   *  (e.g. binary files) — the file still appears so the agent knows the
+   *  name matched without content hits. */
+  matches: WorkspaceSearchMatch[]
+  /** `true` when matches were truncated to the per-file cap. */
+  matchesTruncated: boolean
+  /** Back-compat field: short preview of the first match (or `path` when
+   *  there are no content matches). New consumers should read `matches`;
+   *  this field may be removed in a later task. */
   preview: string
 }
 

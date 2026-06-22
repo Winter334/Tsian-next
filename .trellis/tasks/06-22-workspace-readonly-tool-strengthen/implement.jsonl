@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "Step 1 改 packages/contracts/src/runtime.ts 的 WorkspaceOperationRequest/WorkspaceSearchResult/新增 WorkspaceReadResult,需遵循 contracts 包目录结构/错误处理/质量规范"}
+{"file": ".trellis/spec/contracts/frontend/index.md", "reason": "契约被 platform-web 消费,Type Safety guide 约定跨包契约消费的边界规范化"}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Step 2-7 全在 apps/platform-web/src(agent-runtime/workspace-operations.ts, tool-schemas.ts, workspace-tools.ts, index.ts, platform-host/browser-skill-script-executor.ts),需遵循 platform-web 前端目录结构/质量/类型安全规范"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 contracts→agent-runtime→SDK→prompt 四层,数据流和字段透传需按跨层思维指南核查"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Step 2/3 新增 normalizeReadOffset/normalizeReadLimit/buildSearchMatches 应复用现有 normalizeSearchLimit/createPreview 模式,避免重复实现"}

@@ -9,7 +9,9 @@ import type {
   WorkspaceOperationName,
   WorkspaceOperationRequest,
   WorkspacePatchResult,
+  WorkspaceReadResult,
   WorkspaceScope,
+  WorkspaceSearchMatch,
   WorkspaceSearchResult,
   WorkspaceValidationResult,
 } from "@tsian/contracts"
@@ -76,6 +78,16 @@ export const AUTHORING_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
 
 const DEFAULT_SEARCH_LIMIT = 50
 const MAX_SEARCH_LIMIT = 200
+/** Default lines returned by `workspace.read` when `limit` is omitted but
+ *  `offset` is supplied. Matches common agent read tools and keeps a single
+ *  read under roughly 20–50k tokens. */
+const DEFAULT_READ_LIMIT = 2000
+/** Hard cap on lines per `workspace.read` slice. Agents needing more must
+ *  page with `offset`. */
+const MAX_READ_LIMIT = 5000
+/** Per-file match cap for `workspace.search`. Prevents a giant memory/lore
+ *  file from flooding the observation when every line matches. */
+const MAX_MATCHES_PER_FILE = 50
 const MAX_ACCESS_LEVEL = 4
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
 const EDIT_OPERATIONS = new Set<WorkspaceOperationName>([
@@ -248,6 +260,34 @@ function normalizeSearchLimit(value: unknown): number {
   return Math.min(Math.floor(value), MAX_SEARCH_LIMIT)
 }
 
+/** Normalize a 1-based read `offset`. Non-finite or non-positive values fall
+ *  back to 1 (the first line). There is no upper cap — an offset beyond the
+ *  file length simply yields an empty slice with `truncated: false`. */
+function normalizeReadOffset(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+    return 1
+  }
+  return Math.floor(value)
+}
+
+/** Normalize a read `limit`. Non-finite or non-positive values fall back to
+ *  `DEFAULT_READ_LIMIT`. Capped at `MAX_READ_LIMIT`. */
+function normalizeReadLimit(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_READ_LIMIT
+  }
+  return Math.min(Math.floor(value), MAX_READ_LIMIT)
+}
+
+/** Normalize a non-negative `contextLines` value for `workspace.search`.
+ *  Non-finite or negative values fall back to 0. */
+function normalizeContextLines(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return 0
+  }
+  return Math.floor(value)
+}
+
 function fileName(path: string): string {
   const parts = path.split("/")
   return parts[parts.length - 1] || path
@@ -263,6 +303,42 @@ function createPreview(content: string, index: number): string {
   const prefix = start > 0 ? "..." : ""
   const suffix = end < content.length ? "..." : ""
   return `${prefix}${content.slice(start, end)}${suffix}`.replace(/\s+/g, " ").trim()
+}
+
+/** Build per-line `WorkspaceSearchMatch` entries for one file. `matcher`
+ *  receives each line and returns the matched substring (or `null` when the
+ *  line does not match). Shared by `query` (substring) and `pattern` (regex)
+ *  modes so the line walk + context slicing + per-file cap logic is written
+ *  once. */
+function buildSearchMatches(
+  content: string,
+  matcher: (line: string) => string | null,
+  contextLines: number,
+): { matches: WorkspaceSearchMatch[]; truncated: boolean } {
+  const lines = content.split("\n")
+  const matches: WorkspaceSearchMatch[] = []
+  let truncated = false
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]
+    const match = matcher(line)
+    if (match === null) {
+      continue
+    }
+    if (matches.length >= MAX_MATCHES_PER_FILE) {
+      truncated = true
+      break
+    }
+    const start = Math.max(0, i - contextLines)
+    const end = Math.min(lines.length, i + 1 + contextLines)
+    matches.push({
+      lineNumber: i + 1,
+      line,
+      contextBefore: lines.slice(start, i),
+      contextAfter: lines.slice(i + 1, end),
+      match,
+    })
+  }
+  return { matches, truncated }
 }
 
 export function isPlatformMetadataPath(path: string): boolean {
@@ -529,7 +605,8 @@ function readWorkspaceFile(
   scope: WorkspaceScope,
   pathInput: unknown,
   actorLevel: number,
-): WorkspaceFile {
+  options: { offset?: number; limit?: number } = {},
+): WorkspaceReadResult {
   const path = normalizeWorkspaceOperationFilePath(pathInput)
   assertReadAccess(path, actorLevel)
   const file = findScopedFile(files, scope, path)
@@ -541,7 +618,64 @@ function readWorkspaceFile(
     )
   }
 
-  return cloneWorkspaceFile(file)
+  const cloned = cloneWorkspaceFile(file)
+
+  // Binary files surface a placeholder description string as `content`; line
+  // slicing does not apply. Surface the whole placeholder and mark it so the
+  // agent does not try to page through a binary blob.
+  if (file.binary) {
+    return {
+      ...cloned,
+      totalLines: 1,
+      returnedLines: 1,
+      offset: 1,
+      truncated: false,
+      isBinaryPlaceholder: true,
+    }
+  }
+
+  const lines = file.content.split("\n")
+  const totalLines = lines.length
+
+  // No offset/limit supplied → return the whole file but still report total
+  // lines so the agent can decide whether to page on a later call.
+  const hasOffset = typeof options.offset === "number"
+  const hasLimit = typeof options.limit === "number"
+  if (!hasOffset && !hasLimit) {
+    return {
+      ...cloned,
+      totalLines,
+      returnedLines: totalLines,
+      offset: 1,
+      truncated: false,
+    }
+  }
+
+  const offset = normalizeReadOffset(options.offset)
+  const limit = normalizeReadLimit(options.limit)
+
+  // Offset beyond the file → empty slice, not an error. The agent reads the
+  // metadata and stops paging.
+  if (offset > totalLines) {
+    return {
+      ...cloned,
+      content: "",
+      totalLines,
+      returnedLines: 0,
+      offset,
+      truncated: false,
+    }
+  }
+
+  const slice = lines.slice(offset - 1, offset - 1 + limit)
+  return {
+    ...cloned,
+    content: slice.join("\n"),
+    totalLines,
+    returnedLines: slice.length,
+    offset,
+    truncated: offset + limit - 1 < totalLines,
+  }
 }
 
 function searchWorkspaceFiles(
@@ -550,19 +684,79 @@ function searchWorkspaceFiles(
   input: WorkspaceOperationRequest,
   actorLevel: number,
 ): WorkspaceSearchResult[] {
-  const query = typeof input.query === "string" ? input.query.trim().toLowerCase() : ""
-  if (!query) {
+  const hasQuery = typeof input.query === "string" && input.query.trim().length > 0
+  const hasPattern = typeof input.pattern === "string" && input.pattern.trim().length > 0
+
+  // `query` and `pattern` are mutually exclusive — do not guess intent.
+  if (hasQuery && hasPattern) {
+    throw workspaceOperationError(
+      "WORKSPACE_QUERY_PATTERN_MUTEX",
+      "Pass either `query` (substring) or `pattern` (regex) to workspace.search, not both.",
+      { query: input.query, pattern: input.pattern },
+    )
+  }
+  // Neither supplied → empty result, matching the legacy empty-query behavior.
+  if (!hasQuery && !hasPattern) {
     return []
   }
 
+  // `query` defaults to case-insensitive (legacy behavior); `pattern`
+  // defaults to case-sensitive (regex convention). Explicit `ignoreCase`
+  // overrides either default.
+  const mode = hasPattern ? "pattern" : "query"
+  const ignoreCase = typeof input.ignoreCase === "boolean"
+    ? input.ignoreCase
+    : mode === "query"
+
+  let regex: RegExp | null = null
+  if (mode === "pattern") {
+    try {
+      regex = new RegExp(input.pattern as string, ignoreCase ? "i" : "")
+    } catch (error) {
+      throw workspaceOperationError(
+        "WORKSPACE_PATTERN_INVALID",
+        `Invalid workspace.search pattern: ${error instanceof Error ? error.message : "regex compile failed"}.`,
+        { pattern: input.pattern },
+      )
+    }
+  }
+
+  const queryRaw = mode === "query" ? (input.query as string).trim() : ""
+  const queryLower = mode === "query" ? queryRaw.toLowerCase() : ""
+  const contextLines = normalizeContextLines(input.contextLines)
   const limit = normalizeSearchLimit(input.limit)
+
+  // Per-line matcher shared by both modes via buildSearchMatches.
+  const matchLine = (line: string): string | null => {
+    if (mode === "pattern" && regex) {
+      const m = line.match(regex)
+      return m ? m[0] : null
+    }
+    // query mode: substring on the lowercased line (ignoreCase default true
+    // for query is implemented by comparing lowercased slices).
+    if (ignoreCase) {
+      return line.toLowerCase().includes(queryLower) ? queryRaw : null
+    }
+    return line.includes(queryRaw) ? queryRaw : null
+  }
+
+  // Path matcher mirrors the line matcher's case behavior.
+  const pathMatches = (lowerPath: string, rawPath: string): boolean => {
+    if (mode === "pattern" && regex) {
+      return regex.test(rawPath)
+    }
+    return ignoreCase ? lowerPath.includes(queryLower) : rawPath.includes(queryRaw)
+  }
+
   return scopedReadableFiles(files, scope, actorLevel)
     .flatMap((file): WorkspaceSearchResult[] => {
-      // Binary files surface a placeholder string as content; skip content
-      // matching for them (path matching still applies).
+      const lowerPath = file.path.toLowerCase()
+      const matchesPath = pathMatches(lowerPath, file.path)
+
+      // Binary files carry a placeholder content string; skip content
+      // matching but keep path-matched files visible.
       if (file.binary) {
-        const lowerPath = file.path.toLowerCase()
-        if (!lowerPath.includes(query)) {
+        if (!matchesPath) {
           return []
         }
         return [{
@@ -570,23 +764,33 @@ function searchWorkspaceFiles(
           name: fileName(file.path),
           updatedAt: file.updatedAt,
           score: 2,
+          matches: [],
+          matchesTruncated: false,
           preview: file.path,
         }]
       }
-      const lowerPath = file.path.toLowerCase()
-      const lowerContent = file.content.toLowerCase()
-      const contentIndex = lowerContent.indexOf(query)
-      const matchesPath = lowerPath.includes(query)
-      if (!matchesPath && contentIndex < 0) {
+
+      const { matches, truncated } = buildSearchMatches(file.content, matchLine, contextLines)
+
+      // Drop files that match neither path nor content.
+      if (!matchesPath && matches.length === 0) {
         return []
       }
+
+      // `preview` is a back-compat short fragment for trace/debug consumers.
+      // Prefer the first match's line; fall back to the path.
+      const preview = matches.length > 0
+        ? createPreview(matches[0].line, matches[0].line.indexOf(matches[0].match))
+        : file.path
 
       return [{
         path: file.path,
         name: fileName(file.path),
         updatedAt: file.updatedAt,
-        score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
-        preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,
+        score: (matchesPath ? 2 : 0) + (matches.length > 0 ? 1 : 0),
+        matches,
+        matchesTruncated: truncated,
+        preview,
       }]
     })
     .sort((left, right) => {
@@ -996,7 +1200,10 @@ export async function executeWorkspaceOperation(
     return searchWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
   }
   if (operation === "read") {
-    return readWorkspaceFile(context.workspaceFiles, scope, requestInput.path, actorLevel)
+    return readWorkspaceFile(context.workspaceFiles, scope, requestInput.path, actorLevel, {
+      offset: requestInput.offset,
+      limit: requestInput.limit,
+    })
   }
   if (operation === "glob") {
     return globWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)

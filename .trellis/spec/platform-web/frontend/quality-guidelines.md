@@ -27,3 +27,7 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 - Do not add broad catch blocks around Agent Runtime turns just to keep UI quiet.
 - Do not create duplicate storage helpers for the same table.
 - Do not restore retired workflow/prompt/event/archive surfaces as incidental dependencies.
+
+## Known Tech Debt
+
+- **`storage/workspace.ts` search helpers are dead code with duplicated logic.** `searchWorkspaceFilesForSave` / `searchWorkspaceFilesFromFiles` (plus `createPreview` / `normalizeLimit` / `fileName` copied from `agent-runtime/workspace-operations.ts`) have **zero callers** across the codebase — UI search routes through `searchPlatformWorkspace` → `executeWorkspaceOperation` (agent-runtime), not the storage copy. They were left behind when workspace search moved to the agent-runtime operation path. A follow-up task should delete them and extract the genuinely shared helpers (`createPreview`, `normalizeSearchLimit`, `fileName`) into a shared module both layers can import, rather than keeping two copies that drift. Do not add new callers to the storage-side `searchWorkspaceFilesForSave` / `searchWorkspaceFilesFromFiles`.
