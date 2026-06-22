@@ -30,7 +30,7 @@ import {
   listLocalSaves,
   listWorkspaceFilesForSave,
   loadLocalAssistantFiles,
-  deleteLocalAssistantFile,
+  deleteLocalAssistantPath,
   normalizeWorkspaceFilePath,
   saveLocalAssistantFiles,
   isLocalAssistantPath,
@@ -572,16 +572,9 @@ async function executeLocalWorkspaceOperation(
         },
         async delete(deleteInput) {
           if (isLocalAssistantPath(deleteInput.path)) {
-            // deleteLocalAssistantFile 是真正的删除(直接删 map 项),
-            // 而 saveLocalAssistantFiles 是合并语义(只合并不删项),
-            // 用后者过滤后保存会被合并回来 → 删不掉(遗留 bug 修复).
-            const deletedPaths: string[] = []
-            for (const file of localAssistantFiles) {
-              if (file.path === deleteInput.path || file.path.startsWith(`${deleteInput.path}/`)) {
-                await deleteLocalAssistantFile(file.path)
-                deletedPaths.push(file.path)
-              }
-            }
+            // deleteLocalAssistantPath 一次 IO 批量删(精确 + 前缀匹配),
+            // 原子性优于逐个 deleteLocalAssistantFile.
+            const deletedPaths = await deleteLocalAssistantPath(deleteInput.path)
             return { scope: "platform-meta", deletedPaths }
           }
           if (!saveId) {

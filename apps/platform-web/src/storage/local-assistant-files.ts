@@ -262,3 +262,39 @@ export async function deleteLocalAssistantFile(path: string): Promise<void> {
     // 损坏 map 忽略,不阻塞会话删除
   }
 }
+
+/**
+ * 批量删除:一次 IO 删掉精确匹配 + 前缀匹配的所有文件(原子性优于逐个删).
+ * 返回实际删除的 path 列表.供资源管理器目录删除使用.
+ */
+export async function deleteLocalAssistantPath(target: string): Promise<string[]> {
+  if (!isLocalAssistantPath(target)) {
+    return []
+  }
+  const record = await localDb.meta.get(LOCAL_ASSISTANT_FILES_KEY)
+  if (!record?.value) {
+    return []
+  }
+  try {
+    const map = JSON.parse(record.value) as StoredAssistantFileMap
+    if (!map || typeof map !== "object") {
+      return []
+    }
+    const deletedPaths: string[] = []
+    for (const path of Object.keys(map)) {
+      if (path === target || path.startsWith(`${target}/`)) {
+        delete map[path]
+        deletedPaths.push(path)
+      }
+    }
+    if (deletedPaths.length > 0) {
+      await localDb.meta.put({
+        key: LOCAL_ASSISTANT_FILES_KEY,
+        value: JSON.stringify(map),
+      })
+    }
+    return deletedPaths
+  } catch {
+    return []
+  }
+}
