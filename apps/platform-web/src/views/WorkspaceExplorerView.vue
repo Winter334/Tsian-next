@@ -195,7 +195,7 @@
                 :key="result.path"
                 type="button"
                 class="retro-focus grid w-full min-w-0 grid-cols-[1fr_auto] gap-3 border-b border-neon-deep/25 px-3 py-2 text-left hover:bg-elevated/45"
-                @click.stop="openEditorForFile(result.path)"
+                @click.stop="openFile(result.path)"
               >
                 <span class="min-w-0">
                   <span class="block truncate font-mono text-xs text-text-main">{{ result.path }}</span>
@@ -299,9 +299,9 @@
         v-if="contextMenu.entry?.kind === 'file'"
         type="button"
         class="block w-full px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
-        @click="openEditorForFile(contextMenu.entry.path)"
+        @click="openFile(contextMenu.entry.path)"
       >
-        编辑
+        打开
       </button>
       <button
         v-if="contextMenu.entry && canModifyEntry(contextMenu.entry)"
@@ -406,6 +406,12 @@ import type {
   WorkspaceSearchResult,
 } from "@tsian/contracts"
 import { inferWorkspaceMediaType } from "@/lib/workspace-file-types"
+import {
+  inferMediaTypeFromPath,
+  isImageMediaType,
+  isAudioMediaType,
+  isVideoMediaType,
+} from "@/lib/media-type"
 import { confirm } from "@/composables/useConfirm"
 import {
   WORKSPACE_CONTENT_CHANGED_EVENT,
@@ -583,7 +589,7 @@ function entryTypeLabel(entry: WorkspaceEntry): string {
   if (entry.kind === "directory") {
     return "文件夹"
   }
-  return entry.mediaType ?? inferWorkspaceMediaType(entry.path)
+  return inferWorkspaceMediaType(entry.path)
 }
 
 function entrySizeLabel(entry: WorkspaceEntry): string {
@@ -777,7 +783,7 @@ function activateEntry(entry: WorkspaceEntry) {
     return
   }
 
-  void openEditorForFile(entry.path)
+  void openFile(entry.path)
 }
 
 function openEntryContextMenu(entry: WorkspaceEntry, event: MouseEvent) {
@@ -867,7 +873,6 @@ async function createNewFile() {
       ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path,
       content: "",
-      mediaType: "text/plain",
     })
     emitWorkspaceContentChanged({ cardId: selectedCardId.value, path })
     await refreshDirectory()
@@ -900,7 +905,6 @@ async function createNewFolder() {
       ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path: keepPath,
       content: "",
-      mediaType: "text/plain",
     })
     emitWorkspaceContentChanged({ cardId: selectedCardId.value, path: keepPath })
     await refreshDirectory()
@@ -953,6 +957,21 @@ async function commitRename(entry: WorkspaceEntry) {
     feedback.value = "重命名时只输入名称，不要输入路径。"
     focusRenameInput()
     return
+  }
+
+  // 扩展名变更风险提示(类似 Windows: 改后缀可能导致文件无法正确解析)
+  const oldExt = splitNameExt(entry.name).ext
+  const newExt = splitNameExt(nextName).ext
+  if (oldExt !== newExt) {
+    const confirmed = await confirm({
+      message: `改变扩展名「${oldExt || "无"} → ${newExt || "无"}」可能导致文件无法正确解析,确定吗?`,
+      confirmText: "确定",
+      severity: "danger",
+    })
+    if (!confirmed) {
+      focusRenameInput()
+      return
+    }
   }
 
   const targetPath = siblingPath(entry.path, nextName)
@@ -1032,13 +1051,28 @@ function clearSearch() {
   searchRequestId += 1
 }
 
-function openEditorForFile(path: string) {
+function openFile(path: string) {
   if (!isBrowsing.value) {
     return
   }
 
   contextMenu.value = null
-  openEditorRoute(path)
+  const mediaType = inferMediaTypeFromPath(path)
+  if (isImageMediaType(mediaType) || isAudioMediaType(mediaType) || isVideoMediaType(mediaType)) {
+    openMediaRoute(path)
+  } else {
+    openEditorRoute(path)
+  }
+}
+
+function openMediaRoute(path: string) {
+  void router.push({
+    name: "workspace-media",
+    query: {
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+      path,
+    },
+  })
 }
 
 function openEditorRoute(path: string) {
@@ -1161,7 +1195,7 @@ async function pasteFromClipboard() {
           ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
           path: targetPath,
           content: file.content,
-          mediaType: file.mediaType,
+          ...(file.binary ? { data: file.binary } : {}),
         })
       }
       // 复制保留 clipboard, 允许重复粘贴
@@ -1212,7 +1246,7 @@ async function copyDirectory(srcPath: string, targetPath: string): Promise<void>
       ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path: targetFilePath,
       content: file.content,
-      mediaType: file.mediaType,
+      ...(file.binary ? { data: file.binary } : {}),
     })
   }
 }

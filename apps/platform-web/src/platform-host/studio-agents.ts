@@ -276,7 +276,6 @@ function writeAgentConfigRecord(
   return writeCardContentFileForCard(cardId, {
     path: agent.configPath,
     content: JSON.stringify(config, null, 2) + "\n",
-    mediaType: "application/json",
   })
 }
 
@@ -301,7 +300,6 @@ export async function writePlatformStudioAgentFile(
   return writeCardContentFileForCard(card.id, {
     path,
     content: input.content,
-    mediaType: "text/markdown",
   })
 }
 

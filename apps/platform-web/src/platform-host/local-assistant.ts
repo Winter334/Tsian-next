@@ -134,7 +134,6 @@ export async function updateLocalAssistantProviderPreset(
     files.push({
       path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
       content: JSON.stringify(nextConfig, null, 2) + "\n",
-      mediaType: "application/json",
       createdAt: 0,
       updatedAt: Date.now(),
     })
@@ -226,7 +225,6 @@ export async function updateLocalAssistantSkillEnabled(
     files.push({
       path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
       content: JSON.stringify({ skills: nextSkills }, null, 2) + "\n",
-      mediaType: "application/json",
       createdAt: 0,
       updatedAt: Date.now(),
     })
@@ -274,7 +272,6 @@ export async function updateLocalAssistantPlatformToolEnabled(
     files.push({
       path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
       content: JSON.stringify({ platformTools: nextTools }, null, 2) + "\n",
-      mediaType: "application/json",
       createdAt: 0,
       updatedAt: Date.now(),
     })
@@ -303,7 +300,6 @@ export async function updateLocalAssistantWorkspaceAccess(level: number): Promis
     files.push({
       path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
       content: JSON.stringify({ workspaceAccess: { level: nextLevel } }, null, 2) + "\n",
-      mediaType: "application/json",
       createdAt: 0,
       updatedAt: Date.now(),
     })

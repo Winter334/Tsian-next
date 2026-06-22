@@ -38,7 +38,6 @@
         v-else
         v-model="content"
         :path="draftPath"
-        :media-type="mediaType"
       />
     </main>
 
@@ -62,12 +61,7 @@ import { useRoute, useRouter } from "vue-router"
 import { Save } from "lucide-vue-next"
 import type { WorkspaceValidationResult } from "@tsian/contracts"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
-import {
-  WORKSPACE_MEDIA_TYPE_OPTIONS,
-  inferWorkspaceMediaType,
-  workspaceMediaTypeLabel,
-  type WorkspaceMediaTypeOption,
-} from "@/lib/workspace-file-types"
+import { inferMediaTypeFromPath } from "@/lib/media-type"
 import { emitWorkspaceContentChanged } from "@/lib/workspace-events"
 import { confirmChoice } from "@/composables/useConfirm"
 import { clearBeforeClose, setBeforeClose } from "@/composables/useDesktopWindows"
@@ -100,9 +94,6 @@ const draftPath = ref("")
 const originalPath = ref("")
 const content = ref("")
 const expectedContent = ref("")
-const mediaType = ref("text/plain")
-const originalMediaType = ref("text/plain")
-const mediaTypeTouched = ref(false)
 const loading = ref(false)
 const saving = ref(false)
 const loadError = ref("")
@@ -113,36 +104,17 @@ const mode = ref<EditorMode>("edit")
 
 const normalizedDraftPath = computed(() => normalizeDisplayPath(draftPath.value))
 const contentChanged = computed(() => content.value !== expectedContent.value)
-const mediaTypeChanged = computed(() => mediaType.value !== originalMediaType.value)
 const hasDraftChanges = computed(() =>
   mode.value === "create"
   || contentChanged.value
-  || mediaTypeChanged.value
 )
 
 const modeLabel = computed(() => mode.value === "create" ? "新建文件" : "编辑文件")
-const mediaTypeLabel = computed(() => workspaceMediaTypeLabel(mediaType.value))
-
-const mediaTypeOptions = computed<WorkspaceMediaTypeOption[]>(() => {
-  const normalized = mediaType.value.trim().toLowerCase()
-  if (!normalized || WORKSPACE_MEDIA_TYPE_OPTIONS.some((option) => option.value === normalized)) {
-    return WORKSPACE_MEDIA_TYPE_OPTIONS
-  }
-
-  return [
-    ...WORKSPACE_MEDIA_TYPE_OPTIONS,
-    {
-      value: normalized,
-      label: "当前类型",
-      extensions: normalized,
-    },
-  ]
-})
+const mediaTypeLabel = computed(() => inferMediaTypeFromPath(normalizedDraftPath.value))
 
 const editorValidator = computed<EditorValidator | null>(() => {
   const path = normalizedDraftPath.value.toLowerCase()
-  const type = mediaType.value.toLowerCase()
-  if (path.endsWith(".json") || type.includes("json")) {
+  if (path.endsWith(".json")) {
     return "json"
   }
   if (isFrontmatterDefinitionPath(path)) {
@@ -336,9 +308,8 @@ async function saveDraft() {
         cardId: props.cardId,
         path: targetPath,
         content: content.value,
-        mediaType: mediaType.value,
       })
-      applySavedFile(result.file.path, result.file.content, result.file.mediaType)
+      applySavedFile(result.file.path, result.file.content)
       mode.value = "edit"
       feedback.value = `已保存：${result.file.path}`
       emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: result.file.path })
@@ -347,15 +318,14 @@ async function saveDraft() {
       return
     }
 
-    if (contentChanged.value || mediaTypeChanged.value) {
+    if (contentChanged.value) {
       const result = await patchPlatformWorkspaceFile({
         cardId: props.cardId,
         path: originalPath.value,
         content: content.value,
         expectedContent: expectedContent.value,
-        mediaType: mediaType.value,
       })
-      applySavedFile(result.file.path, result.file.content, result.file.mediaType)
+      applySavedFile(result.file.path, result.file.content)
       feedback.value = `已保存：${result.file.path}`
       emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: result.file.path })
       await syncEditorRoute(result.file.path)
@@ -371,14 +341,11 @@ async function saveDraft() {
   }
 }
 
-function applySavedFile(path: string, nextContent: string, nextMediaType: string) {
+function applySavedFile(path: string, nextContent: string) {
   draftPath.value = path
   originalPath.value = path
   content.value = nextContent
   expectedContent.value = nextContent
-  mediaType.value = nextMediaType
-  originalMediaType.value = nextMediaType
-  mediaTypeTouched.value = false
 }
 
 async function syncEditorRoute(path: string) {
@@ -405,9 +372,6 @@ async function loadFile() {
   loading.value = false
   draftPath.value = initialPath
   originalPath.value = initialPath
-  mediaType.value = inferWorkspaceMediaType(initialPath)
-  originalMediaType.value = mediaType.value
-  mediaTypeTouched.value = false
   content.value = ""
   expectedContent.value = ""
   loadError.value = ""
@@ -425,7 +389,7 @@ async function loadFile() {
       cardId: props.cardId,
       path: initialPath,
     })
-    applySavedFile(file.path, file.content, file.mediaType)
+    applySavedFile(file.path, file.content)
   } catch (error) {
     loadError.value = errorMessage(error, "无法打开文件。")
   } finally {
@@ -433,13 +397,10 @@ async function loadFile() {
   }
 }
 
-watch(draftPath, (path) => {
+watch(draftPath, () => {
   validation.value = null
   feedback.value = ""
   saveError.value = ""
-  if (!mediaTypeTouched.value) {
-    mediaType.value = inferWorkspaceMediaType(path)
-  }
 })
 
 watch(content, () => {

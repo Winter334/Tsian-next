@@ -425,7 +425,7 @@ async function executeStudioWorkspaceOperation(
           return writeWorkspaceFileForSave(resolvedPath.saveId, {
             path: writeInput.path,
             content: writeInput.content,
-            mediaType: writeInput.mediaType,
+            ...(writeInput.data ? { data: writeInput.data } : {}),
           })
         },
         async delete(deleteInput) {
@@ -489,14 +489,14 @@ async function executeStudioWorkspaceOperation(
     workspaceFiles: await cardContentFilesToWorkspaceFiles(context.card),
     actorLevel: 2,
     exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
-    mutations: {
-      write(writeInput) {
-        return writeCardContentFileForCard(cardId, {
-          path: writeInput.path,
-          content: writeInput.content,
-          mediaType: writeInput.mediaType,
-        })
-      },
+      mutations: {
+        write(writeInput) {
+          return writeCardContentFileForCard(cardId, {
+            path: writeInput.path,
+            content: writeInput.content,
+            ...(writeInput.data ? { data: writeInput.data } : {}),
+          })
+        },
       delete(deleteInput) {
         return deleteCardContentPathForCard(cardId, deleteInput.path)
       },
@@ -552,8 +552,8 @@ async function executeLocalWorkspaceOperation(
           if (isLocalAssistantPath(writeInput.path)) {
             const written: WorkspaceFile = {
               path: writeInput.path,
-              content: writeInput.content,
-              mediaType: writeInput.mediaType ?? "text/plain",
+              content: typeof writeInput.content === "string" ? writeInput.content : "",
+              ...(writeInput.data ? { binary: writeInput.data } : {}),
               createdAt: 0,
               updatedAt: Date.now(),
             }
@@ -567,7 +567,7 @@ async function executeLocalWorkspaceOperation(
           return writePlatformWorkspaceFileForSave(saveId, {
             path: writeInput.path,
             content: writeInput.content,
-            mediaType: writeInput.mediaType,
+            ...(writeInput.data ? { data: writeInput.data } : {}),
           })
         },
         async delete(deleteInput) {
@@ -639,51 +639,51 @@ export async function readPlatformWorkspaceFile(input: {
 export async function writePlatformWorkspaceFile(input: {
   cardId?: string
   path: string
-  content: string
-  mediaType?: string
+  content?: string
+  data?: Blob
 }): Promise<WorkspacePatchResult> {
   if (!input.cardId && isTsianPath(input.path)) {
     return await executeLocalWorkspaceOperation({
       operation: "write",
       scope: "platform-meta",
       path: input.path,
-      content: input.content,
-      mediaType: input.mediaType,
+      ...(input.content !== undefined ? { content: input.content } : {}),
+      ...(input.data ? { content: input.data } : {}),
     }) as WorkspacePatchResult
   }
   return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "write",
     scope: "save-runtime",
     path: input.path,
-    content: input.content,
-    mediaType: input.mediaType,
+    ...(input.content !== undefined ? { content: input.content } : {}),
+    ...(input.data ? { content: input.data } : {}),
   }) as WorkspacePatchResult
 }
 
 export async function patchPlatformWorkspaceFile(input: {
   cardId?: string
   path: string
-  content: string
+  content?: string
   expectedContent?: string
-  mediaType?: string
+  data?: Blob
 }): Promise<WorkspacePatchResult> {
   if (!input.cardId && isTsianPath(input.path)) {
     return await executeLocalWorkspaceOperation({
       operation: "patch",
       scope: "platform-meta",
       path: input.path,
-      content: input.content,
+      ...(input.content !== undefined ? { content: input.content } : {}),
+      ...(input.data ? { content: input.data } : {}),
       expectedContent: input.expectedContent,
-      mediaType: input.mediaType,
     }) as WorkspacePatchResult
   }
   return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "patch",
     scope: "save-runtime",
     path: input.path,
-    content: input.content,
+    ...(input.content !== undefined ? { content: input.content } : {}),
+    ...(input.data ? { content: input.data } : {}),
     expectedContent: input.expectedContent,
-    mediaType: input.mediaType,
   }) as WorkspacePatchResult
 }
 

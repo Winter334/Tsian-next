@@ -16,18 +16,10 @@ export const WORKSPACE_MEDIA_TYPE_OPTIONS: WorkspaceMediaTypeOption[] = [
   { value: "text/yaml", label: "YAML", extensions: ".yaml, .yml" },
 ]
 
-export function inferWorkspaceMediaType(pathInput: string): string {
-  const path = pathInput.toLowerCase()
-  if (path.endsWith(".json")) return "application/json"
-  if (path.endsWith(".jsonl")) return "application/x-ndjson"
-  if (path.endsWith(".md") || path.endsWith(".markdown")) return "text/markdown"
-  if (path.endsWith(".ts") || path.endsWith(".tsx")) return "text/typescript"
-  if (path.endsWith(".js") || path.endsWith(".mjs") || path.endsWith(".jsx")) return "text/javascript"
-  if (path.endsWith(".css")) return "text/css"
-  if (path.endsWith(".html") || path.endsWith(".htm")) return "text/html"
-  if (path.endsWith(".yaml") || path.endsWith(".yml")) return "text/yaml"
-  return "text/plain"
-}
+// The inference logic now lives in lib/media-type.ts (shared with game-cards,
+// game-card-packages, and workspace storage). Re-exported here so existing
+// `inferWorkspaceMediaType` import sites keep working.
+export { inferWorkspaceMediaType } from "./media-type"
 
 export function workspaceMediaTypeLabel(mediaType: string): string {
   const normalized = mediaType.trim().toLowerCase()

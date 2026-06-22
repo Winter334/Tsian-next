@@ -383,8 +383,7 @@ function emitWorkspaceWriteTrace(
       platformAction: "browser-script-sdk",
       mutation: "write",
       path: file.path,
-      mediaType: file.mediaType,
-      size: file.content.length,
+      size: file.binary?.size ?? file.content.length,
       updatedAt: file.updatedAt,
     },
   })
@@ -467,7 +466,7 @@ async function handleSdkRequest(
           const file = options.workspaceTransaction.write({
             path: input.path,
             content: input.content,
-            mediaType: input.mediaType,
+            ...(input.data ? { data: input.data } : {}),
           })
           emitWorkspaceWriteTrace(options.emitTrace, file)
           return file

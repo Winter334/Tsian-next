@@ -97,7 +97,6 @@ export function stageAgentContextFile(
   return workspaceTransaction.write({
     path: AGENT_CONTEXT_PATH,
     content: serializeAgentContext(updated),
-    mediaType: "application/json",
   })
 }
 
@@ -120,6 +119,5 @@ export function stageRawAirpHistoryTurnFile(
       input.userInput,
       input.assistantOutput,
     ),
-    mediaType: "application/json",
   })
 }

@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Gamepad2,
   HardDrive,
+  Image,
   MessagesSquare,
   MonitorCog,
   PlaySquare,
@@ -20,6 +21,7 @@ export type DesktopAppId =
   | "my-apps"
   | "workspace-explorer"
   | "workspace-editor"
+  | "workspace-media"
   | "studio"
   | "assistant"
   | "game-launcher"
@@ -77,6 +79,7 @@ const AppMarketView = defineAsyncComponent(() => import("./views/AppMarketView.v
 const GameCardLibraryView = defineAsyncComponent(() => import("./views/GameCardLibraryView.vue"))
 const WorkspaceExplorerView = defineAsyncComponent(() => import("./views/WorkspaceExplorerView.vue"))
 const WorkspaceEditorView = defineAsyncComponent(() => import("./views/WorkspaceEditorView.vue"))
+const WorkspaceMediaView = defineAsyncComponent(() => import("./views/WorkspaceMediaView.vue"))
 const StudioView = defineAsyncComponent(() => import("./views/StudioView.vue"))
 const AssistantView = defineAsyncComponent(() => import("./views/AssistantView.vue"))
 const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDetailView.vue"))
@@ -249,6 +252,23 @@ const workspaceEditorDefinition: DesktopAppDefinition = {
   fullscreenable: true,
 }
 
+const workspaceMediaDefinition: DesktopAppDefinition = {
+  appId: "workspace-media",
+  label: "媒体查看器",
+  shortLabel: "媒体",
+  routeName: "workspace-media",
+  routePath: "/workspace/media",
+  title: "媒体查看器",
+  caption: "图片 / 音频 / 视频",
+  icon: Image,
+  component: WorkspaceMediaView,
+  defaultWidth: 980,
+  defaultHeight: 640,
+  minWidth: 520,
+  minHeight: 420,
+  fullscreenable: true,
+}
+
 export const desktopLaunchers: DesktopLauncher[] = desktopApps.map((app) => ({
   id: app.appId,
   label: app.label,
@@ -312,6 +332,27 @@ export function desktopWindowForRoute(
       props: { cardId, path, mode, editorId },
       title: mode === "create" ? "新建文件" : titlePath,
       caption: path || "工作区文件",
+    })
+  }
+
+  if (routeName === "workspace-media") {
+    const cardId = queryString(route.query.cardId)
+    const path = queryString(route.query.path)
+    // Allow opening media viewers for .tsian/ paths without a cardId.
+    if (!cardId && !(path === ".tsian" || path.startsWith(".tsian/"))) {
+      return null
+    }
+    if (!path) {
+      return null
+    }
+
+    const scopeKey = cardId || "tsian-local"
+    return windowInputFromDefinition(workspaceMediaDefinition, {
+      id: `${workspaceMediaDefinition.appId}:${scopeKey}:${path}`,
+      routePath: route.fullPath,
+      props: { cardId, path },
+      title: fileName(path),
+      caption: path,
     })
   }
 

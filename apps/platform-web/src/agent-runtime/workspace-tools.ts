@@ -348,7 +348,6 @@ function summarizeWorkspaceReadResult(result: unknown): Record<string, unknown> 
 
   return {
     path: typeof result.path === "string" ? result.path : undefined,
-    mediaType: typeof result.mediaType === "string" ? result.mediaType : undefined,
     size: typeof result.content === "string" ? result.content.length : undefined,
     updatedAt: typeof result.updatedAt === "number" ? result.updatedAt : undefined,
   }

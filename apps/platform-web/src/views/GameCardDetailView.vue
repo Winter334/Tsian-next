@@ -426,7 +426,7 @@
                 >
                   <span class="min-w-0">
                     <span class="block truncate font-mono text-xs text-text-main">{{ file.path }}</span>
-                    <span class="mt-1 block truncate font-mono text-[11px] text-text-dim">{{ file.mediaType }}</span>
+                    <span class="mt-1 block truncate font-mono text-[11px] text-text-dim">{{ inferMediaTypeFromPath(file.path) }}</span>
                   </span>
                   <span class="font-mono text-[11px] text-text-dim">{{ formatBytes(file.size) }}</span>
                 </div>
@@ -474,6 +474,7 @@ import {
   getGameCardTitle,
   hasPlayableFrontend,
 } from "@/lib/game-card-display"
+import { inferMediaTypeFromPath } from "@/lib/media-type"
 import {
   copyPlatformGameCardAsLocal,
   createPlatformSaveFromGameCard,

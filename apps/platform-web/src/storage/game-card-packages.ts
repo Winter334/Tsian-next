@@ -8,7 +8,8 @@ import type {
 } from "@tsian/contracts"
 import { FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
-import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile } from "./game-cards"
+import { inferMediaTypeFromPath } from "@/lib/media-type"
+import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile, writeLocalGameCardContentFile } from "./game-cards"
 import type { LocalGameCardRecord } from "./db"
 
 const GAME_CARD_PACKAGE_SCHEMA = "tsian.game-card.package.v1"
@@ -84,33 +85,6 @@ function assertAllowedPackagePath(path: string): void {
   )
 }
 
-function inferMediaType(path: string): string {
-  if (path.endsWith(".html")) return "text/html"
-  if (path.endsWith(".css")) return "text/css"
-  if (path.endsWith(".js") || path.endsWith(".mjs")) return "text/javascript"
-  if (path.endsWith(".json")) return "application/json"
-  if (path.endsWith(".jsonl")) return "application/x-ndjson"
-  if (path.endsWith(".md")) return "text/markdown"
-  if (path.endsWith(".svg")) return "image/svg+xml"
-  if (path.endsWith(".png")) return "image/png"
-  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg"
-  if (path.endsWith(".webp")) return "image/webp"
-  if (path.endsWith(".gif")) return "image/gif"
-  if (path.endsWith(".avif")) return "image/avif"
-  if (path.endsWith(".woff")) return "font/woff"
-  if (path.endsWith(".woff2")) return "font/woff2"
-  if (path.endsWith(".wasm")) return "application/wasm"
-  if (path.endsWith(".mp3")) return "audio/mpeg"
-  if (path.endsWith(".ogg")) return "audio/ogg"
-  if (path.endsWith(".wav")) return "audio/wav"
-  if (path.endsWith(".m4a")) return "audio/mp4"
-  if (path.endsWith(".flac")) return "audio/flac"
-  if (path.endsWith(".mp4")) return "video/mp4"
-  if (path.endsWith(".webm")) return "video/webm"
-  if (path.endsWith(".mov")) return "video/quicktime"
-  return "application/octet-stream"
-}
-
 function extensionForMediaType(mediaType: string): string {
   if (mediaType === "image/png") return "png"
   if (mediaType === "image/jpeg") return "jpg"
@@ -125,16 +99,6 @@ function basename(path: string): string {
   return parts[parts.length - 1] ?? "cover"
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ""
-  const chunkSize = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize)
-    binary += String.fromCharCode(...chunk)
-  }
-  return btoa(binary)
-}
-
 function base64ToBytes(value: string): Uint8Array {
   const binary = atob(value.trim())
   const bytes = new Uint8Array(binary.length)
@@ -144,6 +108,9 @@ function base64ToBytes(value: string): Uint8Array {
   return bytes
 }
 
+/** Parse a `data:<type>;base64,<...>` URL. Used by `fetchBundledCoverUrl` to
+ *  handle builtin covers that ship as data URLs. Internal-only; binary covers
+ *  in user-authored packages are read as raw zip bytes. */
 function parseDataUrl(value: string): { mediaType: string; data: Uint8Array } | null {
   const match = /^data:([^;,]+);base64,(.*)$/s.exec(value.trim())
   if (!match) {
@@ -389,7 +356,7 @@ function indexedMediaType(
   path: string,
   indexedFiles: GameCardPackageFileEntry[] | undefined,
 ): string {
-  return indexedFiles?.find((file) => file.path === path)?.mediaType ?? inferMediaType(path)
+  return indexedFiles?.find((file) => file.path === path)?.mediaType ?? inferMediaTypeFromPath(path)
 }
 
 function workspacePathFromPackagePath(path: string): string {
@@ -434,7 +401,7 @@ async function fetchBundledCoverUrl(rawUrl: string): Promise<{ mediaType: string
   }
 
   const mediaType = response.headers.get("content-type")?.split(";")[0]?.trim()
-    || inferMediaType(url.pathname)
+    || inferMediaTypeFromPath(url.pathname)
   return {
     mediaType,
     data: new Uint8Array(await response.arrayBuffer()),
@@ -452,38 +419,19 @@ async function resolveCoverExportFile(
   if (cover.workspacePath?.trim()) {
     const contentPath = cover.workspacePath.trim()
     const file = await readLocalGameCardContentFile(card.id, contentPath)
-    if (!file) {
+    if (!file?.data) {
       return null
     }
 
-    const dataUrl = parseDataUrl(file.content)
-    if (dataUrl) {
-      return {
-        path: `${COVER_PREFIX}${basename(contentPath)}`,
-        mediaType: dataUrl.mediaType,
-        data: dataUrl.data,
-        contentPath,
-      }
-    }
-
-    const mediaType = file.mediaType?.trim() || inferMediaType(contentPath)
+    const mediaType = inferMediaTypeFromPath(contentPath)
     if (!mediaType.startsWith("image/")) {
       return null
-    }
-
-    if (mediaType === "image/svg+xml" && file.content.trim().startsWith("<svg")) {
-      return {
-        path: `${COVER_PREFIX}${basename(contentPath)}`,
-        mediaType,
-        data: TEXT_ENCODER.encode(file.content),
-        contentPath,
-      }
     }
 
     return {
       path: `${COVER_PREFIX}${basename(contentPath)}`,
       mediaType,
-      data: base64ToBytes(file.content),
+      data: new Uint8Array(await file.data.arrayBuffer()),
       contentPath,
     }
   }
@@ -588,13 +536,9 @@ export async function importGameCardPackage(
   }
 
   const primaryCoverFile = coverFiles[0]
+  let coverContentPath: string | null = null
   if (primaryCoverFile) {
-    const coverContentPath = coverContentPathFromPackagePath(primaryCoverFile.path)
-    contentFiles.push({
-      path: coverContentPath,
-      content: bytesToBase64(primaryCoverFile.data),
-      mediaType: primaryCoverFile.mediaType,
-    })
+    coverContentPath = coverContentPathFromPackagePath(primaryCoverFile.path)
     manifest = {
       ...manifest,
       cover: {
@@ -606,12 +550,23 @@ export async function importGameCardPackage(
 
   validatePackagedFrontendEntry(packageManifest, frontendFiles)
 
-  return putLocalGameCard({
+  const savedCard = await putLocalGameCard({
     manifest,
     contentFiles,
     frontendFiles,
     source: "imported",
   })
+
+  // Write the cover as a binary content file (Blob) after the card row + text
+  // content files are in place. putLocalGameCard's contentFiles are text-only
+  // (GameCardContentFile carries content: string); binary covers use the
+  // data: Blob channel of writeLocalGameCardContentFile.
+  if (primaryCoverFile && coverContentPath) {
+    const coverBlob = new Blob([primaryCoverFile.data as BlobPart], { type: primaryCoverFile.mediaType })
+    await writeLocalGameCardContentFile(savedCard.id, { path: coverContentPath, data: coverBlob })
+  }
+
+  return savedCard
 }
 
 export async function exportGameCardPackage(cardId: string): Promise<Blob> {
@@ -634,12 +589,12 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
     manifest: normalizeGameCardManifest(card.manifest),
     workspaceFiles: contentFiles.map((file) => ({
       path: `${WORKSPACE_PREFIX}${file.path}`,
-      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
-      size: file.content.length,
+      mediaType: inferMediaTypeFromPath(file.path),
+      size: file.data?.size ?? file.content.length,
     })),
     frontendFiles: frontendFiles.map((file) => ({
       path: file.path,
-      mediaType: file.mediaType,
+      mediaType: inferMediaTypeFromPath(file.path),
       size: file.size,
     })),
     ...(coverFile
@@ -663,7 +618,11 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
   }
 
   for (const file of contentFiles) {
-    zipInput[`${WORKSPACE_PREFIX}${file.path}`] = strToU8(file.content)
+    if (file.data) {
+      zipInput[`${WORKSPACE_PREFIX}${file.path}`] = new Uint8Array(await file.data.arrayBuffer())
+    } else {
+      zipInput[`${WORKSPACE_PREFIX}${file.path}`] = strToU8(file.content)
+    }
   }
 
   for (const file of frontendFiles) {
@@ -709,7 +668,7 @@ function normalizeFrontendPackageFileEntry(
   const mediaType =
     typeof value.mediaType === "string" && value.mediaType.trim()
       ? value.mediaType.trim()
-      : inferMediaType(path)
+      : inferMediaTypeFromPath(path)
   const size =
     typeof value.size === "number" && Number.isFinite(value.size) && value.size >= 0
       ? Math.floor(value.size)
@@ -878,7 +837,6 @@ export async function importGameCardFrontendPackage(
   const frontendFiles = manifest.files.map((file) => ({
     path: `${FRONTEND_PREFIX}${file.path}`,
     data: fileBytes.get(file.path)!,
-    mediaType: file.mediaType,
   }))
 
   const frontendBinding: GameCardFrontendBinding = {
@@ -942,7 +900,7 @@ export async function exportGameCardFrontendPackage(cardId: string): Promise<Blo
     bridgeVersion: frontend.bridgeVersion,
     files: frontendFiles.map((file) => ({
       path: stripPrefix(file.path),
-      mediaType: file.mediaType,
+      mediaType: inferMediaTypeFromPath(file.path),
       size: file.size,
     })),
     exportedAt: new Date().toISOString(),

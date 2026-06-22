@@ -2,6 +2,7 @@ import type {
   GameCardContentFile,
   GameCardManifest,
 } from "@tsian/contracts"
+import { inferMediaTypeFromPath } from "@/lib/media-type"
 import {
   localDb,
   type LocalGameCardContentFileRecord,
@@ -30,13 +31,11 @@ export interface PutLocalGameCardInput {
 export interface PutLocalGameCardFrontendFileInput {
   path: string
   data: Blob | ArrayBuffer | Uint8Array | string
-  mediaType?: string
 }
 
 export interface LocalGameCardFrontendFile {
   path: string
   data: Blob
-  mediaType: string
   size: number
   createdAt: number
   updatedAt: number
@@ -45,7 +44,8 @@ export interface LocalGameCardFrontendFile {
 export interface LocalGameCardContentFile {
   path: string
   content: string
-  mediaType?: string
+  /** Binary payload for media files (covers). Mutually exclusive with content. */
+  data?: Blob
   createdAt: number
   updatedAt: number
 }
@@ -180,36 +180,6 @@ export function gameCardContentFileId(gameCardId: string, path: string): string 
   return `${gameCardId}::${path}`
 }
 
-function normalizeMediaType(mediaType: string | undefined, path: string): string {
-  const normalized = mediaType?.trim()
-  if (normalized) {
-    return normalized
-  }
-
-  if (path.endsWith(".html")) return "text/html"
-  if (path.endsWith(".css")) return "text/css"
-  if (path.endsWith(".js") || path.endsWith(".mjs")) return "text/javascript"
-  if (path.endsWith(".json")) return "application/json"
-  if (path.endsWith(".svg")) return "image/svg+xml"
-  if (path.endsWith(".png")) return "image/png"
-  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg"
-  if (path.endsWith(".webp")) return "image/webp"
-  if (path.endsWith(".gif")) return "image/gif"
-  if (path.endsWith(".avif")) return "image/avif"
-  if (path.endsWith(".woff")) return "font/woff"
-  if (path.endsWith(".woff2")) return "font/woff2"
-  if (path.endsWith(".wasm")) return "application/wasm"
-  if (path.endsWith(".mp3")) return "audio/mpeg"
-  if (path.endsWith(".ogg")) return "audio/ogg"
-  if (path.endsWith(".wav")) return "audio/wav"
-  if (path.endsWith(".m4a")) return "audio/mp4"
-  if (path.endsWith(".flac")) return "audio/flac"
-  if (path.endsWith(".mp4")) return "video/mp4"
-  if (path.endsWith(".webm")) return "video/webm"
-  if (path.endsWith(".mov")) return "video/quicktime"
-  return "application/octet-stream"
-}
-
 function toBlob(data: PutLocalGameCardFrontendFileInput["data"], mediaType: string): Blob {
   if (data instanceof Blob) {
     if (data.type === mediaType) {
@@ -235,14 +205,12 @@ function normalizeFrontendFile(
     throw new Error(`Game card frontend file must live under frontend/: ${path}`)
   }
 
-  const mediaType = normalizeMediaType(file.mediaType, path)
-  const data = toBlob(file.data, mediaType)
+  const data = toBlob(file.data, inferMediaTypeFromPath(path))
   return {
     id: gameCardFrontendFileId(gameCardId, path),
     gameCardId,
     path,
     data,
-    mediaType,
     size: data.size,
     createdAt: now,
     updatedAt: now,
@@ -255,7 +223,6 @@ function cloneGameCardFrontendFileRecord(
   return {
     path: record.path,
     data: record.data,
-    mediaType: record.mediaType,
     size: record.size,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
@@ -291,7 +258,6 @@ function hasTemplateFile(
   return files.some((file) =>
     file.path === expected.path
     && file.content === expected.content
-    && (file.mediaType ?? "") === (expected.mediaType ?? "")
   )
 }
 
@@ -395,7 +361,6 @@ export async function putLocalGameCard(
       gameCardId: manifest.id,
       path: file.path,
       content: file.content,
-      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
       createdAt: now,
       updatedAt: now,
     }))
@@ -501,7 +466,7 @@ export async function readLocalGameCardContentFile(
 
 export async function writeLocalGameCardContentFile(
   gameCardId: string,
-  input: { path: string; content: string; mediaType?: string },
+  input: { path: string; content?: string; data?: Blob },
 ): Promise<LocalGameCardContentFile> {
   const id = gameCardId.trim()
   if (!id) {
@@ -512,12 +477,13 @@ export async function writeLocalGameCardContentFile(
   const recordId = gameCardContentFileId(id, normalizedPath)
   const now = Date.now()
   const existing = await localDb.gameCardContentFiles.get(recordId)
+  const hasBinary = input.data instanceof Blob
   const record: LocalGameCardContentFileRecord = {
     id: recordId,
     gameCardId: id,
     path: normalizedPath,
-    content: typeof input.content === "string" ? input.content : "",
-    ...(input.mediaType && input.mediaType.trim() ? { mediaType: input.mediaType.trim() } : {}),
+    content: hasBinary ? "" : (typeof input.content === "string" ? input.content : ""),
+    ...(hasBinary ? { data: input.data as Blob } : {}),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }
@@ -596,7 +562,7 @@ function cloneGameCardContentFileRecord(
   return {
     path: record.path,
     content: record.content,
-    ...(record.mediaType ? { mediaType: record.mediaType } : {}),
+    ...(record.data ? { data: record.data } : {}),
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   }

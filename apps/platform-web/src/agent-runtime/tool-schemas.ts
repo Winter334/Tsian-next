@@ -239,10 +239,6 @@ const workspaceWriteSchema: ToolSchema = {
         type: "string",
         description: "The full file content to write.",
       },
-      mediaType: {
-        type: "string",
-        description: "Optional media type for the written file.",
-      },
     },
   }
 }

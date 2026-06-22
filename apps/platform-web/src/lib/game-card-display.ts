@@ -58,26 +58,16 @@ export function getGameCardCoverUrl(card: LocalGameCardView | null | undefined):
 
   // The cover content file is preloaded by getLocalGameCard / listLocalGameCards
   // into coverContentFile so this sync render path (called from Vue templates
-  // and computed) does not need an async table query.
+  // and computed) does not need an async table query. Covers are now stored as
+  // Blobs; we create a fresh object URL each call. The Blob lives as long as the
+  // card view, so this is cheap; revoke is handled by the browser GC once the
+  // URL is no longer referenced (image src swapped).
   const file = card?.coverContentFile
-  if (!file) {
+  if (!file?.data) {
     return null
   }
 
-  const content = file.content.trim()
-  if (content.startsWith("data:image/")) {
-    return content
-  }
-
-  if (file.mediaType === "image/svg+xml" || content.startsWith("<svg")) {
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(content)}`
-  }
-
-  if (file.mediaType?.startsWith("image/")) {
-    return `data:${file.mediaType};base64,${content}`
-  }
-
-  return null
+  return URL.createObjectURL(file.data)
 }
 
 export function formatDateTime(input: number | undefined): string {

@@ -17,16 +17,6 @@ function coverExtensionForMediaType(mediaType: string): string {
   return "bin"
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = ""
-  const chunkSize = 0x8000
-  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
-    const chunk = bytes.subarray(offset, offset + chunkSize)
-    binary += String.fromCharCode(...chunk)
-  }
-  return btoa(binary)
-}
-
 export type PlatformGameCardCoverInput =
   | { kind: "upload"; file: Blob; alt?: string }
   | { kind: "url"; url: string; alt?: string }
@@ -75,16 +65,15 @@ export async function setPlatformGameCardCover(
     })
   }
 
-  // kind === "upload"
+  // kind === "upload": store the File/Blob directly as a binary content file.
+  // `input.file` is a Blob (File extends Blob); its `.type` carries the media
+  // type. No base64 conversion — the cover is read back as a Blob URL.
   const mediaType = input.file.type || "image/png"
   if (!mediaType.startsWith("image/")) {
     throw new Error("封面文件必须是图片。")
   }
   const extension = coverExtensionForMediaType(mediaType)
   const coverPath = `${COVER_CONTENT_PREFIX}cover.${extension}`
-  const bytes = new Uint8Array(await input.file.arrayBuffer())
-  const base64 = bytesToBase64(bytes)
-  const dataUri = `data:${mediaType};base64,${base64}`
 
   const nextCover: GameCardCover = { workspacePath: coverPath }
   if (input.alt?.trim()) {
@@ -94,7 +83,7 @@ export async function setPlatformGameCardCover(
   if (previousCoverPath && previousCoverPath !== coverPath) {
     await deleteLocalGameCardContentFile(cardId, previousCoverPath)
   }
-  await writeLocalGameCardContentFile(cardId, { path: coverPath, content: dataUri, mediaType })
+  await writeLocalGameCardContentFile(cardId, { path: coverPath, data: input.file })
   return putLocalGameCard({
     manifest: { ...card.manifest, cover: nextCover },
     source: card.source,

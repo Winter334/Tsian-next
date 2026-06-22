@@ -39,6 +39,11 @@ const router = createRouter({
       component: () => import("../views/WorkspaceEditorView.vue"),
     },
     {
+      path: "/workspace/media",
+      name: "workspace-media",
+      component: () => import("../views/WorkspaceMediaView.vue"),
+    },
+    {
       path: "/studio",
       name: "studio",
       component: () => import("../views/StudioView.vue"),

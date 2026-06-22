@@ -24,8 +24,8 @@ export interface WorkspaceOperationMutationAdapter {
   write(input: {
     scope: WorkspaceScope
     path: string
-    content: string
-    mediaType?: string
+    content?: string
+    data?: Blob
   }): WorkspaceFile | Promise<WorkspaceFile>
   delete(input: {
     scope: WorkspaceScope
@@ -468,8 +468,7 @@ function listWorkspaceEntries(
         path: file.path,
         name: fileName(file.path),
         kind: "file",
-        mediaType: file.mediaType,
-        size: file.content.length,
+        size: file.binary?.size ?? file.content.length,
         updatedAt: file.updatedAt,
       })
       continue
@@ -546,6 +545,21 @@ function searchWorkspaceFiles(
   const limit = normalizeSearchLimit(input.limit)
   return scopedReadableFiles(files, scope, actorLevel)
     .flatMap((file): WorkspaceSearchResult[] => {
+      // Binary files surface a placeholder string as content; skip content
+      // matching for them (path matching still applies).
+      if (file.binary) {
+        const lowerPath = file.path.toLowerCase()
+        if (!lowerPath.includes(query)) {
+          return []
+        }
+        return [{
+          path: file.path,
+          name: fileName(file.path),
+          updatedAt: file.updatedAt,
+          score: 2,
+          preview: file.path,
+        }]
+      }
       const lowerPath = file.path.toLowerCase()
       const lowerContent = file.content.toLowerCase()
       const contentIndex = lowerContent.indexOf(query)
@@ -557,7 +571,6 @@ function searchWorkspaceFiles(
       return [{
         path: file.path,
         name: fileName(file.path),
-        mediaType: file.mediaType,
         updatedAt: file.updatedAt,
         score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
         preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,
@@ -704,6 +717,14 @@ function diffWorkspaceFile(
     )
   }
 
+  if (existing.binary) {
+    throw workspaceOperationError(
+      "WORKSPACE_BINARY_NOT_DIFFABLE",
+      `Binary files cannot be diffed as text: ${path}`,
+      { scope, path },
+    )
+  }
+
   const nextContent = normalizeContent(request.content)
   return {
     path,
@@ -734,7 +755,6 @@ async function writeWorkspaceFile(
     )
   }
 
-  const content = normalizeContent(request.content)
   const existing = findScopedFile(files, scope, path)
   if (
     options.checkExpectedContent
@@ -748,17 +768,30 @@ async function writeWorkspaceFile(
     )
   }
 
+  // Write supports either text content (string) or binary data (Blob). The
+  // request.content is `string | Blob` per the contract; a Blob is routed to
+  // the `data` field so the storage layer stores it as binary.
+  const binaryData = request.content instanceof Blob ? request.content : undefined
+  const textContent = typeof request.content === "string" ? request.content : undefined
+  if (!binaryData && textContent === undefined) {
+    throw workspaceOperationError(
+      "WORKSPACE_CONTENT_REQUIRED",
+      `Workspace write requires content (string) or a Blob: ${path}`,
+      { scope, path },
+    )
+  }
+
   const file = await assertMutationAdapter(context.mutations).write({
     scope,
     path,
-    content,
-    mediaType: request.mediaType,
+    ...(textContent !== undefined ? { content: textContent } : {}),
+    ...(binaryData ? { data: binaryData } : {}),
   })
   return {
     path,
     scope,
     file,
-    changed: existing?.content !== content,
+    changed: existing?.content !== file.content,
   }
 }
 
@@ -834,8 +867,7 @@ async function moveWorkspacePath(
     await mutations.write({
       scope,
       path: nextPath,
-      content: file.content,
-      mediaType: file.mediaType,
+      ...(file.binary ? { data: file.binary } : { content: file.content }),
     })
     movedPaths.push(nextPath)
   }
@@ -904,6 +936,17 @@ function validateWorkspaceFile(
 
   assertReadAccess(path, actorLevel)
   const file = readWorkspaceFile(files, scope, path, actorLevel)
+  if (file.binary) {
+    // Binary files carry a placeholder string as content; text-format
+    // validators (json/frontmatter) do not apply.
+    return {
+      scope,
+      path,
+      valid: true,
+      validator,
+      errors: [],
+    }
+  }
   const errors = validator === "json"
     ? validateJsonFile(file)
     : validateFrontmatterFile(file)

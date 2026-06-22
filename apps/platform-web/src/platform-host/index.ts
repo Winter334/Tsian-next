@@ -304,14 +304,14 @@ async function executeWorkspaceOperationForActiveSave(
             return input.workspaceTransaction.writePlatformFile({
               path: writeInput.path,
               content: writeInput.content,
-              mediaType: writeInput.mediaType,
+              ...(writeInput.data ? { data: writeInput.data } : {}),
             })
           }
           if (writeInput.scope === "save-runtime") {
             return input.workspaceTransaction.write({
               path: writeInput.path,
               content: writeInput.content,
-              mediaType: writeInput.mediaType,
+              ...(writeInput.data ? { data: writeInput.data } : {}),
             })
           }
           throw new Error("Runtime turn staging cannot mutate card-content.")
@@ -324,13 +324,13 @@ async function executeWorkspaceOperationForActiveSave(
           return writePlatformWorkspaceFileForSave(saveId, {
             path: writeInput.path,
             content: writeInput.content,
-            mediaType: writeInput.mediaType,
+            ...(writeInput.data ? { data: writeInput.data } : {}),
           })
         }
         return writeWorkspaceFileForSave(saveId, {
           path: writeInput.path,
           content: writeInput.content,
-          mediaType: writeInput.mediaType,
+          ...(writeInput.data ? { data: writeInput.data } : {}),
         })
       },
       async delete(deleteInput) {
@@ -444,7 +444,6 @@ async function writeRuntimeTraceFileForSave(
   const file = await writePlatformWorkspaceFileForSave(saveId, {
     path,
     content: serializeRuntimeTraceEvents(events),
-    mediaType: "application/x-ndjson",
   })
   syncWorkspaceFileWrite(workspaceFiles, file)
 }
@@ -457,7 +456,6 @@ function stageRuntimeTraceFile(
   return workspaceTransaction.writePlatformFile({
     path,
     content: serializeRuntimeTraceEvents(events),
-    mediaType: "application/x-ndjson",
   })
 }
 
@@ -806,7 +804,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
                   return activeWorkspaceTransaction.writePlatformFile({
                     path: writeInput.path,
                     content: writeInput.content,
-                    mediaType: writeInput.mediaType,
+                    ...(writeInput.data ? { data: writeInput.data } : {}),
                   })
                 }
                 if (writeInput.scope !== "save-runtime") {
@@ -815,7 +813,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 return activeWorkspaceTransaction.write({
                   path: writeInput.path,
                   content: writeInput.content,
-                  mediaType: writeInput.mediaType,
+                  ...(writeInput.data ? { data: writeInput.data } : {}),
                 })
               },
               delete: (deleteInput) => {

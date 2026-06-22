@@ -119,7 +119,6 @@ async function stageAssistantContextFile(
   const file: WorkspaceFile = {
     path: assistantContextPath(input.sessionId),
     content: serializeAgentContext(updated),
-    mediaType: "application/json",
     createdAt: 0,
     updatedAt: Date.now(),
   }
@@ -377,8 +376,8 @@ export async function runAssistantChat(
             if (writeInput.scope === "platform-meta" && isLocalAssistantPath(writeInput.path)) {
               const written: WorkspaceFile = {
                 path: writeInput.path,
-                content: writeInput.content,
-                mediaType: writeInput.mediaType ?? "text/plain",
+                content: typeof writeInput.content === "string" ? writeInput.content : "",
+                ...(writeInput.data ? { binary: writeInput.data } : {}),
                 createdAt: 0,
                 updatedAt: Date.now(),
               }
@@ -389,7 +388,7 @@ export async function runAssistantChat(
               return activeWorkspaceTransaction.writePlatformFile({
                 path: writeInput.path,
                 content: writeInput.content,
-                mediaType: writeInput.mediaType,
+                ...(writeInput.data ? { data: writeInput.data } : {}),
               })
             }
             if (writeInput.scope === "card-content") {
@@ -403,14 +402,14 @@ export async function runAssistantChat(
               return writeCardContentFileForActiveCard({
                 path: writeInput.path,
                 content: writeInput.content,
-                mediaType: writeInput.mediaType,
+                ...(writeInput.data ? { data: writeInput.data } : {}),
               })
             }
             if (writeInput.scope === "save-runtime") {
               return activeWorkspaceTransaction.write({
                 path: writeInput.path,
                 content: writeInput.content,
-                mediaType: writeInput.mediaType,
+                ...(writeInput.data ? { data: writeInput.data } : {}),
               })
             }
             throw new Error(`Assistant workspace write scope not supported: ${writeInput.scope}`)
@@ -516,7 +515,7 @@ async function commitAssistantWorkspaceFiles(
     .map((file) => ({
       path: file.path,
       content: file.content,
-      mediaType: file.mediaType,
+      ...(file.binary ? { data: file.binary } : {}),
       createdAt: file.createdAt,
       updatedAt: file.updatedAt,
     }))
@@ -552,7 +551,7 @@ async function updateCardContentFilesForCard(
     await writeLocalGameCardContentFile(cardId, {
       path: file.path,
       content: file.content,
-      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
+      ...(file.binary ? { data: file.binary } : {}),
     })
   }
 }

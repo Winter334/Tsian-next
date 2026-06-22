@@ -375,8 +375,8 @@ const FRONTEND_APP_JS = [
  */
 export function defaultFrontendFiles(): PutLocalGameCardFrontendFileInput[] {
   return [
-    { path: "frontend/index.html", data: FRONTEND_INDEX_HTML, mediaType: "text/html" },
-    { path: "frontend/style.css", data: FRONTEND_STYLE_CSS, mediaType: "text/css" },
-    { path: "frontend/app.js", data: FRONTEND_APP_JS, mediaType: "text/javascript" },
+    { path: "frontend/index.html", data: FRONTEND_INDEX_HTML },
+    { path: "frontend/style.css", data: FRONTEND_STYLE_CSS },
+    { path: "frontend/app.js", data: FRONTEND_APP_JS },
   ]
 }

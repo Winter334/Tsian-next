@@ -764,8 +764,7 @@ export function loadSkillDetail(
         path: candidate.path,
         name: fileName(candidate.path),
         relativePath,
-        mediaType: candidate.mediaType,
-        size: candidate.content.length,
+        size: candidate.binary?.size ?? candidate.content.length,
         updatedAt: candidate.updatedAt,
       }]
     })

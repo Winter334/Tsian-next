@@ -45,10 +45,6 @@ export function normalizeMessageContent(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
 }
 
-export function normalizeContentMediaType(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined
-}
-
 // ── Save / Card 编排 ──
 
 export async function gameCardForSave(save: LocalSaveRecord): Promise<LocalGameCardRecord | null> {
@@ -101,7 +97,7 @@ export async function cardContentFilesToWorkspaceFiles(
   return files.map((file) => ({
     path: file.path,
     content: file.content,
-    mediaType: file.mediaType ?? "text/plain",
+    ...(file.data ? { binary: file.data } : {}),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
   }))
@@ -113,8 +109,8 @@ export async function writeCardContentFileForCard(
   cardId: string,
   input: {
     path: string
-    content: string
-    mediaType?: string
+    content?: string
+    data?: Blob
   },
 ): Promise<WorkspaceFile> {
   const card = await getLocalGameCard(cardId)
@@ -126,14 +122,13 @@ export async function writeCardContentFileForCard(
   // updatedAt internally (no whole-card putLocalGameCard rewrite).
   const file = await writeLocalGameCardContentFile(cardId, {
     path: input.path,
-    content: input.content,
-    ...(normalizeContentMediaType(input.mediaType) ? { mediaType: input.mediaType } : {}),
+    ...(input.data ? { data: input.data } : { content: input.content ?? "" }),
   })
 
   return {
     path: file.path,
     content: file.content,
-    mediaType: file.mediaType ?? "text/plain",
+    ...(file.data ? { binary: file.data } : {}),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
   }
@@ -141,8 +136,8 @@ export async function writeCardContentFileForCard(
 
 export async function writeCardContentFileForActiveCard(input: {
   path: string
-  content: string
-  mediaType?: string
+  content?: string
+  data?: Blob
 }): Promise<WorkspaceFile> {
   const activeCard = await getPlatformActiveGameCard()
   if (!activeCard) {
@@ -151,14 +146,13 @@ export async function writeCardContentFileForActiveCard(input: {
 
   const file = await writeLocalGameCardContentFile(activeCard.id, {
     path: input.path,
-    content: input.content,
-    ...(normalizeContentMediaType(input.mediaType) ? { mediaType: input.mediaType } : {}),
+    ...(input.data ? { data: input.data } : { content: input.content ?? "" }),
   })
 
   return {
     path: file.path,
     content: file.content,
-    mediaType: file.mediaType ?? "text/plain",
+    ...(file.data ? { binary: file.data } : {}),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
   }

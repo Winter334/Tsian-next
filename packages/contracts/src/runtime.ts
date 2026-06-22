@@ -65,15 +65,21 @@ export interface WorkspaceEntry {
   name: string
   kind: WorkspaceEntryKind
   updatedAt?: number
-  mediaType?: string
   size?: number
   childCount?: number
 }
 
 export interface WorkspaceFile {
   path: string
+  /** Text content for text files; a placeholder string for binary files
+   *  (see `binary`). Agents read only this field; it is always a string. */
   content: string
-  mediaType: string
+  /** Binary payload for media files (image/audio/video/etc.). Mutually
+   *  exclusive with meaningful `content` — when present, `content` is a
+   *  placeholder description, not the file bytes. Agents do not read this
+   *  field; future multimodal support will surface it as an image content
+   *  block through an independent channel. */
+  binary?: Blob
   createdAt: number
   updatedAt: number
 }
@@ -104,8 +110,8 @@ export interface WorkspaceOperationRequest {
   query?: string
   pattern?: string
   limit?: number
-  content?: string
-  mediaType?: string
+  /** Text content for write/patch, or a Blob for binary writes. */
+  content?: string | Blob
   expectedContent?: string
   validator?: "json" | "frontmatter"
   autoFix?: boolean
@@ -261,7 +267,6 @@ export interface SkillResourceEntry {
   path: string
   name: string
   relativePath: string
-  mediaType: string
   size: number
   updatedAt: number
 }
@@ -280,7 +285,6 @@ export interface WorkspaceListResult {
 export interface WorkspaceSearchResult {
   path: string
   name: string
-  mediaType: string
   updatedAt: number
   score: number
   preview: string

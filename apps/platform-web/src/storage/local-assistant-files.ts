@@ -9,7 +9,6 @@ export const LOCAL_ASSISTANT_AGENT_ID = "assistant"
 
 interface StoredAssistantFile {
   content: string
-  mediaType: string
 }
 
 interface StoredAssistantFileMap {
@@ -108,23 +107,18 @@ function defaultLocalAssistantFileMap(): StoredAssistantFileMap {
   return {
     [`${LOCAL_ASSISTANT_DIR}/agent.json`]: {
       content: JSON.stringify(config, null, 2) + "\n",
-      mediaType: "application/json",
     },
     [`${LOCAL_ASSISTANT_DIR}/AGENT.md`]: {
       content: DEFAULT_AGENT_MD,
-      mediaType: "text/markdown",
     },
     [`${LOCAL_ASSISTANT_DIR}/SOUL.md`]: {
       content: DEFAULT_SOUL_MD,
-      mediaType: "text/markdown",
     },
     [`${LOCAL_ASSISTANT_DIR}/notes.md`]: {
       content: "# Assistant Notes\n\n",
-      mediaType: "text/markdown",
     },
     [`${LOCAL_ASSISTANT_DIR}/skills/framework-knowledge/SKILL.md`]: {
       content: DEFAULT_FRAMEWORK_KNOWLEDGE_SKILL_MD,
-      mediaType: "text/markdown",
     },
   }
 }
@@ -139,7 +133,6 @@ export async function loadLocalAssistantFiles(): Promise<WorkspaceFile[]> {
         return Object.entries(parsed).map(([path, file]) => ({
           path,
           content: file.content,
-          mediaType: file.mediaType,
           createdAt: 0,
           updatedAt: 0,
         }))
@@ -158,7 +151,6 @@ export async function loadLocalAssistantFiles(): Promise<WorkspaceFile[]> {
   return Object.entries(map).map(([path, file]) => ({
     path,
     content: file.content,
-    mediaType: file.mediaType,
     createdAt: 0,
     updatedAt: 0,
   }))
@@ -173,7 +165,6 @@ export async function saveLocalAssistantFiles(files: WorkspaceFile[]): Promise<v
     }
     map[file.path] = {
       content: file.content,
-      mediaType: file.mediaType,
     }
   }
   // Merge with existing stored files so we don't drop anything not in this batch.

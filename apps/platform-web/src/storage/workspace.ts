@@ -6,6 +6,10 @@ import type {
   WorkspaceSearchResult,
 } from "@tsian/contracts"
 import {
+  binaryPlaceholderText,
+  inferMediaTypeFromPath,
+} from "@/lib/media-type"
+import {
   listLocalGameCardContentFiles,
   type LocalGameCardContentFile,
 } from "./game-cards"
@@ -28,8 +32,9 @@ export interface WorkspaceSearchInput {
 
 export interface WorkspaceWriteInput {
   path?: unknown
+  /** Text content (string) or binary payload (Blob). One or the other. */
   content?: unknown
-  mediaType?: unknown
+  data?: unknown
 }
 
 export interface RuntimeWorkspaceTransaction {
@@ -351,7 +356,6 @@ const TSIAN_FRAMEWORK_KNOWLEDGE_MD = [
 const DEFAULT_WORKSPACE_FILES: Array<{
   path: string
   content: string
-  mediaType?: string
 }> = [
   {
     path: "README.md",
@@ -563,7 +567,6 @@ const DEFAULT_WORKSPACE_FILES: Array<{
   {
     path: "skills/memory-maintenance/scripts/apply-maintenance-plan.js",
     content: MEMORY_MAINTENANCE_SCRIPT_JS,
-    mediaType: "text/javascript",
   },
   {
     path: "docs/README.md",
@@ -684,7 +687,6 @@ const DEFAULT_WORKSPACE_FILES: Array<{
   {
     path: "frontend/view-state.json",
     content: "{}\n",
-    mediaType: "application/json",
   },
   {
     path: "archive/README.md",
@@ -704,7 +706,6 @@ const DEFAULT_WORKSPACE_FILES: Array<{
         ordinaryWorkspaceVisible: false,
       },
     }, null, 2) + "\n",
-    mediaType: "application/json",
   },
   {
     path: ".tsian/README.md",
@@ -763,7 +764,6 @@ const RUNTIME_DEFAULT_CARD_PATHS = new Set([
 const DEFAULT_SAVE_RUNTIME_FILES: Array<{
   path: string
   content: string
-  mediaType?: string
 }> = [
   {
     path: "save/README.md",
@@ -878,7 +878,6 @@ const DEFAULT_SAVE_RUNTIME_FILES: Array<{
   {
     path: "save/frontend/view-state.json",
     content: "{}\n",
-    mediaType: "application/json",
   },
   {
     path: WORKSPACE_MANIFEST_PATH,
@@ -896,7 +895,6 @@ const DEFAULT_SAVE_RUNTIME_FILES: Array<{
         ordinaryWorkspaceVisible: false,
       },
     }, null, 2) + "\n",
-    mediaType: "application/json",
   },
   {
     path: ".tsian/README.md",
@@ -1007,29 +1005,15 @@ function normalizeWorkspaceTargetPath(value: unknown): string {
   })
 }
 
-function normalizeMediaType(value: unknown, path: string): string {
-  if (typeof value === "string" && value.trim()) {
-    return value.trim()
-  }
-
-  if (path.endsWith(".md")) return "text/markdown"
-  if (path.endsWith(".json")) return "application/json"
-  if (path.endsWith(".jsonl")) return "application/x-ndjson"
-  if (path.endsWith(".ts")) return "text/typescript"
-  if (path.endsWith(".js")) return "text/javascript"
-  return "text/plain"
-}
-
 function toContentFile(file: {
   path: string
   content: string
-  mediaType?: string
 }): GameCardContentFile {
   const path = normalizeWorkspaceFilePath(file.path)
   return {
     path,
     content: file.content,
-    mediaType: normalizeMediaType(file.mediaType, path),
+    mediaType: inferMediaTypeFromPath(path, { fallback: "text/plain" }),
   }
 }
 
@@ -1046,7 +1030,6 @@ export function createDefaultSaveRuntimeFiles(): CheckpointWorkspaceFile[] {
     return {
       path,
       content: file.content,
-      mediaType: normalizeMediaType(file.mediaType, path),
       createdAt: now,
       updatedAt: now,
     }
@@ -1126,10 +1109,21 @@ function ordinaryWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
 }
 
 function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
+  if (record.data) {
+    return {
+      path: record.path,
+      // Binary files surface a placeholder string (not "") so agents do not
+      // misjudge the file as empty. Future multimodal support will replace
+      // this with an image content block through an independent channel.
+      content: binaryPlaceholderText(record.data, record.path),
+      binary: record.data,
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    }
+  }
   return {
     path: record.path,
     content: record.content,
-    mediaType: record.mediaType,
     createdAt: record.createdAt,
     updatedAt: record.updatedAt,
   }
@@ -1139,10 +1133,18 @@ function toWorkspaceFileFromGameCardContent(
   file: LocalGameCardContentFile,
 ): WorkspaceFile {
   const path = normalizeWorkspaceFilePath(file.path)
+  if (file.data) {
+    return {
+      path,
+      content: binaryPlaceholderText(file.data, path),
+      binary: file.data,
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    }
+  }
   return {
     path,
     content: typeof file.content === "string" ? file.content : "",
-    mediaType: normalizeMediaType(file.mediaType, path),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
   }
@@ -1152,7 +1154,7 @@ function cloneWorkspaceFile(file: WorkspaceFile): WorkspaceFile {
   return {
     path: file.path,
     content: file.content,
-    mediaType: file.mediaType,
+    ...(file.binary ? { binary: file.binary } : {}),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
   }
@@ -1175,7 +1177,7 @@ export function createLocalWorkspaceFileRecord(
     saveId,
     path,
     content: typeof file.content === "string" ? file.content : "",
-    mediaType: normalizeMediaType(file.mediaType, path),
+    ...(file.data ? { data: file.data } : {}),
     createdAt: typeof file.createdAt === "number" ? file.createdAt : Date.now(),
     updatedAt: typeof file.updatedAt === "number" ? file.updatedAt : Date.now(),
   }
@@ -1305,7 +1307,6 @@ async function upgradeDefaultWorkspaceFilesForSave(saveId: string): Promise<void
         saveId,
         path,
         content: defaultFile.content,
-        mediaType: normalizeMediaType(defaultFile.mediaType, path),
         createdAt: now,
         updatedAt: now,
       })
@@ -1316,7 +1317,6 @@ async function upgradeDefaultWorkspaceFilesForSave(saveId: string): Promise<void
       saveId,
       path: WORKSPACE_MANIFEST_PATH,
       content: serializeWorkspaceManifest(manifest?.content),
-      mediaType: "application/json",
       createdAt: manifest?.createdAt ?? now,
       updatedAt: now,
     })
@@ -1339,7 +1339,7 @@ export async function initializeWorkspaceForSave(saveId: string): Promise<void> 
         saveId,
         path,
         content: file.content,
-        mediaType: normalizeMediaType(file.mediaType, path),
+        ...(file.data ? { data: file.data } : {}),
         createdAt: now,
         updatedAt: now,
       })
@@ -1399,7 +1399,7 @@ export function saveRuntimeFilesFromEffectiveWorkspace(
     filesByPath.set(path, {
       path,
       content: typeof file.content === "string" ? file.content : "",
-      mediaType: normalizeMediaType(file.mediaType, path),
+      ...(file.binary ? { data: file.binary } : {}),
       createdAt: typeof file.createdAt === "number" ? file.createdAt : Date.now(),
       updatedAt: typeof file.updatedAt === "number" ? file.updatedAt : Date.now(),
     })
@@ -1436,8 +1436,7 @@ export function listWorkspaceEntriesFromFiles(
         path: file.path,
         name: fileName(file.path),
         kind: "file",
-        mediaType: file.mediaType,
-        size: file.content.length,
+        size: file.binary?.size ?? file.content.length,
         updatedAt: file.updatedAt,
       })
       continue
@@ -1529,23 +1528,32 @@ function writeWorkspaceFileToFiles(
     assertOrdinarySaveRuntimeMutationPath(path)
   }
 
-  if (typeof input.content !== "string") {
+  const isTextContent = typeof input.content === "string"
+  const binaryData = input.data instanceof Blob ? input.data : undefined
+  if (!isTextContent && !binaryData) {
     throw new WorkspaceStorageError(
       "WORKSPACE_CONTENT_REQUIRED",
-      "Workspace file content must be a string.",
+      "Workspace file write requires either content (string) or data (Blob).",
     )
   }
 
   const now = Date.now()
   const existingIndex = workspaceFiles.findIndex((file) => file.path === path)
   const existing = existingIndex >= 0 ? workspaceFiles[existingIndex] : undefined
-  const nextFile: WorkspaceFile = {
-    path,
-    content: input.content,
-    mediaType: normalizeMediaType(input.mediaType, path),
-    createdAt: existing?.createdAt ?? now,
-    updatedAt: now,
-  }
+  const nextFile: WorkspaceFile = binaryData
+    ? {
+        path,
+        content: binaryPlaceholderText(binaryData, path),
+        binary: binaryData,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }
+    : {
+        path,
+        content: input.content as string,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+      }
 
   if (existingIndex >= 0) {
     workspaceFiles[existingIndex] = nextFile
@@ -1636,10 +1644,12 @@ async function writeWorkspaceFileForSaveWithOptions(
     assertOrdinarySaveRuntimeMutationPath(path)
   }
 
-  if (typeof input.content !== "string") {
+  const isTextContent = typeof input.content === "string"
+  const binaryData = input.data instanceof Blob ? input.data : undefined
+  if (!isTextContent && !binaryData) {
     throw new WorkspaceStorageError(
       "WORKSPACE_CONTENT_REQUIRED",
-      "Workspace file content must be a string.",
+      "Workspace file write requires either content (string) or data (Blob).",
     )
   }
 
@@ -1653,8 +1663,8 @@ async function writeWorkspaceFileForSaveWithOptions(
       id,
       saveId,
       path,
-      content: input.content as string,
-      mediaType: normalizeMediaType(input.mediaType, path),
+      content: isTextContent ? (input.content as string) : "",
+      ...(binaryData ? { data: binaryData } : {}),
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     }
@@ -1737,6 +1747,22 @@ export function searchWorkspaceFilesFromFiles(
   const limit = normalizeLimit(input.limit)
   return ordinaryWorkspaceFiles(workspaceFiles)
     .flatMap((file): WorkspaceSearchResult[] => {
+      // Binary files surface a placeholder string as content; skip them so
+      // the placeholder text is never matched as search content. Path-based
+      // matching still applies (a user may search for "cover.png").
+      if (file.binary) {
+        const lowerPath = file.path.toLowerCase()
+        if (!lowerPath.includes(query)) {
+          return []
+        }
+        return [{
+          path: file.path,
+          name: fileName(file.path),
+          updatedAt: file.updatedAt,
+          score: 2,
+          preview: file.path,
+        }]
+      }
       const lowerPath = file.path.toLowerCase()
       const lowerContent = file.content.toLowerCase()
       const contentIndex = lowerContent.indexOf(query)
@@ -1748,7 +1774,6 @@ export function searchWorkspaceFilesFromFiles(
       return [{
         path: file.path,
         name: fileName(file.path),
-        mediaType: file.mediaType,
         updatedAt: file.updatedAt,
         score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
         preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,

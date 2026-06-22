@@ -1,0 +1,29 @@
+{
+  "id": "editor-simplify-and-media-viewer",
+  "name": "editor-simplify-and-media-viewer",
+  "title": "编辑器简化与媒体查看器：文件编辑体验对齐 Windows",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-22",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "refactor/split-platform-host-index",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-22-editor-layout-simplify-ui",
+    "06-22-storage-refactor-media-viewer"
+  ],
+  "parent": "06-22-editor-simplify-and-media-viewer",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

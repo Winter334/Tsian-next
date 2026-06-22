@@ -56,7 +56,6 @@ import {
 
 export interface PlatformGameCardFrontendFileSummary {
   path: string
-  mediaType: string
   size: number
   updatedAt: number
 }
@@ -322,12 +321,11 @@ export async function copyPlatformGameCardAsLocal(
     contentFiles: contentFiles.map((file) => ({
       path: file.path,
       content: file.content,
-      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
+      ...(file.data ? { data: file.data } : {}),
     })),
     frontendFiles: frontendFiles.map((file) => ({
       path: file.path,
       data: file.data,
-      mediaType: file.mediaType,
     })),
     source: "local",
   })
@@ -369,7 +367,7 @@ export async function createDefaultPlatformGameCard(input?: {
     contentFiles: copyContentFiles.map((file) => ({
       path: file.path,
       content: file.content,
-      ...(file.mediaType ? { mediaType: file.mediaType } : {}),
+      ...(file.data ? { data: file.data } : {}),
     })),
     frontendFiles: defaultFrontendFiles(),
     source: "local",
@@ -427,7 +425,6 @@ export async function listPlatformGameCardFrontendFiles(
 ): Promise<PlatformGameCardFrontendFileSummary[]> {
   return (await listLocalGameCardFrontendFiles(cardId)).map((file) => ({
     path: file.path,
-    mediaType: file.mediaType,
     size: file.size,
     updatedAt: file.updatedAt,
   }))

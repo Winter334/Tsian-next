@@ -525,7 +525,7 @@ function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
 function formatWorkspaceFile(file: WorkspaceFile): string {
   const content = file.content.trim() || "（空文件）"
   return [
-    `--- ${file.path} (${file.mediaType}) ---`,
+    `--- ${file.path} ---`,
     content,
   ].join("\n")
 }

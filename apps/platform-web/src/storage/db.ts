@@ -33,8 +33,12 @@ export interface LocalGameCardContentFileRecord {
   gameCardId: string
   /** Package-root path (no leading slash). */
   path: string
+  /** Text content for text files. Empty for binary files that use `data`. */
   content: string
-  mediaType?: string
+  /** Binary payload for media files (covers, etc.). Mutually exclusive with
+   *  meaningful `content`. mediaType is derived via `inferMediaTypeFromPath`
+   *  or `data.type` at consumption — not stored. */
+  data?: Blob
   createdAt: number
   updatedAt: number
 }
@@ -46,7 +50,6 @@ export interface LocalGameCardFrontendFileRecord {
   /** Package-root path, normally under frontend/. */
   path: string
   data: Blob
-  mediaType: string
   size: number
   createdAt: number
   updatedAt: number
@@ -68,8 +71,12 @@ export interface LocalWorkspaceFileRecord {
   saveId: string
   /** Root-relative normalized workspace path without a leading slash. */
   path: string
+  /** Text content for text files. Empty for binary files that use `data`. */
   content: string
-  mediaType: string
+  /** Binary payload for media files. Mutually exclusive with meaningful
+   *  `content`. mediaType is derived via `inferMediaTypeFromPath` or
+   *  `data.type` at consumption — not stored. */
+  data?: Blob
   createdAt: number
   updatedAt: number
 }
@@ -98,8 +105,11 @@ export class TsianLocalDb extends Dexie {
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
 
   constructor() {
-    // Prototype reset: no migration from retired local IndexedDB schemas.
-    super("tsian-agent-runtime-v7")
+    // DB name bumped v7 -> v8: the on-disk record shape changed (mediaType
+    // removed, data?: Blob added). Prototype project — no migration; the old
+    // v7 database is abandoned and a fresh v8 store is created. The service
+    // worker (`tsian-game-card-frontend-sw.js`) mirrors this name.
+    super("tsian-agent-runtime-v8")
 
     this.version(1).stores({
       meta: "&key",

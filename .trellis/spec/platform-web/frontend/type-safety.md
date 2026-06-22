@@ -287,6 +287,15 @@ return {
 - Structured state belongs in Runtime Workspace files documented by README, schema, Agent, or Skill conventions; do not add a platform-owned table or universal record model for gameplay state.
 - Do not loosen contract fields to `unknown` to hide caller bugs.
 
+## Workspace Binary Storage And mediaType Removal
+
+- `WorkspaceFile` / `WorkspaceEntry` / `WorkspaceSearchResult` / `WorkspaceOperationRequest` / `SkillResourceEntry` no longer carry `mediaType`. Derive it at consumption points via `inferMediaTypeFromPath(path, { fallback })` (`apps/platform-web/src/lib/media-type.ts`). The zip manifest entries (`GameCardPackageFileEntry.mediaType`, `FrontendPackageFileEntry.mediaType`, `GameCardContentFile.mediaType?`) remain external format contracts and are populated from path inference on export.
+- `WorkspaceFile` carries `content: string` (text files) plus optional `binary?: Blob` (media files, mutually exclusive with meaningful content). `WorkspaceOperationRequest.content` is `string | Blob`. Storage records (`LocalWorkspaceFileRecord`, `LocalGameCardContentFileRecord`) mirror this with `content: string` + `data?: Blob`.
+- Binary files surface `content` as a placeholder string (`binaryPlaceholderText(blob, path)` → `[binary file: <type>, <size> bytes — 不可读取为文本]`), NOT empty string — this prevents agents from misjudging binary files as empty. Future multimodal support will replace this with an image content block through an independent channel (models count image tokens by resolution, not base64 char count).
+- `mediaType` is never stored on internal records. The Service Worker reads `file.data.type` (Blob's built-in type) instead of a stored `mediaType` field. Covers are stored as Blob (File/Blob) via `writeLocalGameCardContentFile({ data })`, not base64 data URIs; `getGameCardCoverUrl` returns `URL.createObjectURL(coverContentFile.data)`.
+- DB name bumps (e.g. `tsian-agent-runtime-v7` → `v8`) are breaking changes with no migration (prototype project). The Service Worker `DB_NAME` must mirror `db.ts`. `inferWorkspaceMediaType` is a thin wrapper over `inferMediaTypeFromPath` with `text/plain` fallback; package/frontend code uses the raw function with `application/octet-stream` fallback.
+- Agent-facing workspace APIs are unchanged: agents read `file.content` (string) only, zero code changes. `searchWorkspaceFiles`/`diffWorkspaceFile`/`validateWorkspaceFile` skip binary files. `move` carries `binary` through to the target.
+
 ## Scenario: Card Content And Save Runtime Effective Workspace
 
 ### 1. Scope / Trigger

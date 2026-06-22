@@ -85,6 +85,19 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 <span>{{ action.executor.type }}</span>
 ```
 
+### Convention: Workspace Editor Simplification And Media Viewer Routing
+
+**What**: `WorkspaceEditorView.vue` is a text-only editor (toolbar has only Save; CodeMirror owns Ctrl+Z undo; no mediaType dropdown, no validate/restore buttons). Files route by media type on open: text → editor, image/audio/video → `WorkspaceMediaView.vue`. The desktop shell supports a per-window `beforeClose` guard so the editor can prompt save/discard/cancel on unsaved changes.
+
+**Why**: mediaType is derived from the file path (`inferMediaTypeFromPath`), so a dropdown is redundant. Windows-style unsaved-change prompts require a close-hook mechanism in the desktop shell because editor windows are route-driven (props are static route-query snapshots, not dynamic callbacks).
+
+**Rules**:
+- Editor toolbar: keep only Save. Remove mediaType dropdown, validate button, restore button, `resetDraft`. Ctrl+S is a window-level `keydown` that checks `route.name === "workspace-editor"` (no editable-target guard — Ctrl+S must fire inside CodeMirror). `*` in the title marks unsaved changes (`hasDraftChanges`).
+- `beforeClose` hook: `useDesktopWindows.ts` exports a module-level `beforeCloseHandlers: Map<string, () => Promise<boolean>>` with `setBeforeClose`/`clearBeforeClose`. `closeWindow` is async; it awaits the handler and aborts on `false`. `useDesktopWindows()` returns a fresh instance per call (no provide/inject), so a module-level Map keyed by window id is the sharing mechanism. `desktop-apps.ts` exports `editorWindowIdFor(...)` so the editor view can recover its own window id from route query and register/unregister on mount/unmount — capture the id once at mount (props.path may change after a save route-sync).
+- The three-option unsaved prompt (save/discard/cancel) uses `confirmChoice` from `useConfirm.ts` (an extension of the confirm dialog with `options: ConfirmChoiceOption[]`). `DesktopShell.closeWindow` is fire-and-forget async (`void desktop.closeWindow(id).then(...)`).
+- Resource manager `openFile(path)` routes by `inferMediaTypeFromPath`: image/audio/video → `workspace-media` route, else → `workspace-editor`. Context-menu "打开" replaces "编辑". Extension change on rename prompts a danger `confirm` ("改变扩展名 ... 可能导致文件无法正确解析").
+- `WorkspaceMediaView.vue` reads `WorkspaceFile.binary` (Blob) and renders `<img>`/`<audio>`/`<video>` via `URL.createObjectURL`; revoke on unmount.
+
 ## Bridge And Persistence
 
 - Components may call exported platform-host functions for platform shell actions.
