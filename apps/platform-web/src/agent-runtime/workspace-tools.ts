@@ -1,5 +1,6 @@
 import type {
   AgentContextEntry,
+  ContentPart,
   PlatformActionResult,
   SkillRegistryEntry,
   WorkspaceFile,
@@ -86,6 +87,9 @@ export interface RuntimeWorkspaceToolObservation {
   ok: boolean
   result?: unknown
   error?: RuntimeWorkspaceToolError
+  /** 图片 ContentPart 列表(workspace_read 读图片时提取). 不进 text observation
+   *  (避免 base64 爆文本上下文),由消息注入层追加到 user 消息的 ContentPart[]. */
+  imageParts?: ContentPart[]
 }
 
 interface RuntimeSkillActionDeclaration {
@@ -1943,19 +1947,37 @@ async function executeRuntimeWorkspaceToolCall(
         result: await context.runAgentCall(normalizeAgentCallArguments(call.arguments)),
       }
     } else if (isWorkspaceOperationToolName(call.name)) {
+      const opResult = await executeWorkspaceOperation(
+        workspaceOperationRequestFromToolCall(call),
+        {
+          workspaceFiles: context.workspaceFiles,
+          agentContext: context.agentContext,
+          mutations: context.workspaceMutations,
+          exposedOperations: context.exposedWorkspaceOperations,
+        },
+      )
+      // workspace_read 图片结果:提取 imageBase64 到 imageParts(多模态通道),
+      // 从 result 清除 imageBase64(避免 base64 进 JSON text observation 爆上下文).
       observation = {
         index,
         name: call.name,
         ok: true,
-        result: await executeWorkspaceOperation(
-          workspaceOperationRequestFromToolCall(call),
-          {
-            workspaceFiles: context.workspaceFiles,
-            agentContext: context.agentContext,
-            mutations: context.workspaceMutations,
-            exposedOperations: context.exposedWorkspaceOperations,
-          },
-        ),
+        result: opResult,
+      }
+      if (
+        call.name === RUNTIME_WORKSPACE_TOOL_NAMES.read
+        && isRecord(opResult)
+        && typeof opResult.imageBase64 === "string"
+        && typeof opResult.imageMimeType === "string"
+      ) {
+        observation.imageParts = [
+          { type: "image", mimeType: opResult.imageMimeType as string, data: opResult.imageBase64 as string },
+        ]
+        // 从 result 里删掉 imageBase64 + binary(不进 JSON observation)
+        const stripped = { ...opResult }
+        delete (stripped as Record<string, unknown>).imageBase64
+        delete (stripped as Record<string, unknown>).binary
+        observation.result = stripped
       }
     } else {
       observation = {

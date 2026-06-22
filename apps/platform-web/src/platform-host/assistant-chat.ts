@@ -18,6 +18,7 @@ import {
   deleteLocalAssistantFile,
   isAssistantDirectWritePath,
   isLocalAssistantPath,
+  listAttachmentsBySession,
   loadLocalAssistantFiles,
   saveLocalAssistantFiles,
   LOCAL_ASSISTANT_AGENT_ID,
@@ -35,6 +36,7 @@ import {
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
 import { getBrowserAiConfig } from "../config/ai"
+import { binaryPlaceholderText } from "@/lib/media-type"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
   getPlatformActiveGameCard,
@@ -232,6 +234,29 @@ export async function runAssistantChat(
   workspaceFiles = [
     ...workspaceFiles.filter((file) => !localPaths.has(file.path)),
     ...localAssistantFiles,
+  ]
+
+  // Merge temp attachments (current session's pasted/dropped files) into the
+  // workspace at temp/<sessionId>/<name> paths. Images carry binary + imageMimeType;
+  // text files carry empty content (agent uses workspace_read to fetch content).
+  const sessionAttachments = await listAttachmentsBySession(input.sessionId)
+  const tempPaths = new Set(sessionAttachments.map((r) => r.path))
+  workspaceFiles = [
+    ...workspaceFiles.filter((file) => !tempPaths.has(file.path)),
+    ...sessionAttachments.map((record) => {
+      const isImage = record.kind === "image"
+      const file: WorkspaceFile = {
+        path: record.path,
+        content: isImage ? binaryPlaceholderText(record.data, record.path) : "",
+        createdAt: record.createdAt,
+        updatedAt: record.createdAt,
+      }
+      if (isImage) {
+        file.binary = record.data
+        file.imageMimeType = record.mimeType
+      }
+      return file
+    }),
   ].sort((left, right) => left.path.localeCompare(right.path))
 
   const controller = new AbortController()

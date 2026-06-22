@@ -9,6 +9,7 @@ import {
   getLocalGameCard,
   isLocalAssistantPath,
   isPlatformMetadataPath,
+  listAttachmentsBySession,
   listLocalGameCardContentFiles,
   listLocalGameCardFrontendFiles,
   listLocalWorkspaceFilesForSave,
@@ -312,6 +313,37 @@ export const localAssistantVolume: WorkspaceVolume = {
 }
 
 /**
+ * TempVolume — 助手附件临时文件(scope "temp", 后端 assistantAttachments Dexie 表).
+ * ownerId = sessionId. enumerate 按 sessionId 列附件;write/delete 暂不支持
+ * (附件通过 AssistantView UI 的 saveAssistantAttachment 管理,不通过 workspace_write).
+ */
+export const tempVolume: WorkspaceVolume = {
+  scope: "temp",
+  async enumerate(sessionId) {
+    const records = await listAttachmentsBySession(sessionId)
+    return records.map((record) => {
+      const isImage = record.kind === "image"
+      return {
+        path: record.path,
+        content: isImage
+          ? binaryPlaceholderText(record.data, record.path)
+          : "" as string, // text 附件内容不在这里展开(agent 用 workspace_read 取)
+        ...(isImage ? { binary: record.data } : {}),
+        ...(isImage ? { imageMimeType: record.mimeType } : {}),
+        createdAt: record.createdAt,
+        updatedAt: record.createdAt,
+      }
+    })
+  },
+  async write(_sessionId, _input) {
+    throw new Error("temp volume write is not supported; use saveAssistantAttachment instead")
+  },
+  async delete(_sessionId, _pathPrefix) {
+    throw new Error("temp volume delete is not supported; use deleteAttachmentByPath instead")
+  },
+}
+
+/**
  * LocalWorkspaceFileRecord → WorkspaceFile 映射。与 storage/workspace.ts 的
  * toWorkspaceFile 同构（该函数未 export，这里在 volume 层重实现一份，避免改 storage
  * 的 export 面；映射逻辑简单且稳定）。
@@ -346,6 +378,8 @@ function toWorkspaceFileFromRecord(record: LocalWorkspaceFileRecord): WorkspaceF
 export interface WorkspaceVolumeOwnerContext {
   cardId?: string
   saveId?: string
+  /** 助手会话 id,用于 temp scope(附件 volume). */
+  sessionId?: string
 }
 
 /**
@@ -371,6 +405,7 @@ export function resolveVolumeForScope(
   }
   if (scope === "card-frontend") return cardFrontendVolume
   if (scope === "save-runtime") return saveRuntimeVolume
+  if (scope === "temp") return tempVolume
   throw new Error(`unsupported scope for workspace mutation: ${scope}`)
 }
 
@@ -395,6 +430,13 @@ function resolveOwnerId(
   // 不能用 scope 判断（与 savePlatformMetaVolume 同为 platform-meta scope）。
   if (volume === localAssistantVolume) {
     return ""
+  }
+  // temp volume 需要 sessionId(助手会话级附件).
+  if (volume === tempVolume) {
+    if (!ownerContext.sessionId) {
+      throw new Error("workspace mutation on scope \"temp\" requires a sessionId in ownerContext")
+    }
+    return ownerContext.sessionId
   }
   // save-runtime / save-platform-meta 需要 saveId。
   if (!ownerContext.saveId) {

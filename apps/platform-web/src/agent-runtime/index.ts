@@ -1583,6 +1583,17 @@ async function callAgentModelWithWorkspaceToolsNative(
       })
     }
 
+    // Inject image ContentParts from workspace_read image results as a user
+    // message(tool role content 是 string,不能放 image;image 走 user ContentPart[]).
+    const imageParts = observations
+      .flatMap((obs) => obs.imageParts ?? [])
+    if (imageParts.length > 0) {
+      runtimeMessages.push({
+        role: "user",
+        content: imageParts,
+      })
+    }
+
     // Inject full SKILL.md for skills newly activated via use_skill this round,
     // so the model sees them in the next round's context (B-scheme: declare
     // intent -> framework injects content next round).
@@ -1821,10 +1832,19 @@ async function callAgentModelWithWorkspaceTools(
         role: "assistant",
         content: response,
       },
-      {
-        role: "user",
-        content: formatRuntimeWorkspaceToolObservationMessage(observations),
-      },
+      // workspace_read 图片结果:image ContentPart 追加到 user 消息(text observation + image parts).
+      // 无 image 时保持纯 string content(text-protocol 兼容).
+      (() => {
+        const imageParts = observations.flatMap((obs) => obs.imageParts ?? [])
+        const textContent = formatRuntimeWorkspaceToolObservationMessage(observations)
+        if (imageParts.length === 0) {
+          return { role: "user" as const, content: textContent }
+        }
+        return {
+          role: "user" as const,
+          content: [{ type: "text" as const, text: textContent }, ...imageParts] as ContentPart[],
+        }
+      })(),
     ]
     // Inject full SKILL.md for skills newly activated via use_skill this round
     // (B-scheme: declare intent -> framework injects content next round).

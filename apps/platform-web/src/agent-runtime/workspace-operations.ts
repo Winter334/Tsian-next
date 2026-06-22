@@ -82,6 +82,25 @@ const MAX_SEARCH_LIMIT = 200
  *  `offset` is supplied. Matches common agent read tools and keeps a single
  *  read under roughly 20–50k tokens. */
 const DEFAULT_READ_LIMIT = 2000
+
+/** Blob → base64 字符串(不带 data URL prefix). 用于 workspace_read 图片
+ *  返回 imageBase64 字段,供 agent runtime 构造 image ContentPart. */
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result !== "string") {
+        reject(new Error("FileReader did not produce a string"))
+        return
+      }
+      const commaIndex = result.indexOf(",")
+      resolve(commaIndex >= 0 ? result.slice(commaIndex + 1) : result)
+    }
+    reader.onerror = () => reject(reader.error)
+    reader.readAsDataURL(blob)
+  })
+}
 /** Hard cap on lines per `workspace.read` slice. Agents needing more must
  *  page with `offset`. */
 const MAX_READ_LIMIT = 5000
@@ -239,6 +258,7 @@ function normalizeWorkspaceScope(value: unknown): WorkspaceScope {
     || value === "save-runtime"
     || value === "platform-meta"
     || value === "card-frontend"
+    || value === "temp"
   ) {
     return value
   }
@@ -253,6 +273,7 @@ function normalizeWorkspaceScope(value: unknown): WorkspaceScope {
         "save-runtime",
         "platform-meta",
         "card-frontend",
+        "temp",
       ],
     },
   )
@@ -359,6 +380,10 @@ export function isCardFrontendPath(path: string): boolean {
   return path === "frontend" || path.startsWith("frontend/")
 }
 
+export function isTempPath(path: string): boolean {
+  return path === "temp" || path.startsWith("temp/")
+}
+
 function scopeForPath(path: string): Exclude<WorkspaceScope, "effective"> {
   if (isPlatformMetadataPath(path)) {
     return "platform-meta"
@@ -368,6 +393,9 @@ function scopeForPath(path: string): Exclude<WorkspaceScope, "effective"> {
   }
   if (isCardFrontendPath(path)) {
     return "card-frontend"
+  }
+  if (isTempPath(path)) {
+    return "temp"
   }
   return "card-content"
 }
@@ -629,6 +657,8 @@ function readWorkspaceFile(
   // Binary files surface a placeholder description string as `content`; line
   // slicing does not apply. Surface the whole placeholder and mark it so the
   // agent does not try to page through a binary blob.
+  // 图片文件额外标记 imageMimeType,调用方(executeWorkspaceOperation read 分支)
+  // 据此做 async base64 编码并设置 imageBase64(此处不能 await,保持 sync).
   if (file.binary) {
     return {
       ...cloned,
@@ -1206,10 +1236,21 @@ export async function executeWorkspaceOperation(
     return searchWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
   }
   if (operation === "read") {
-    return readWorkspaceFile(context.workspaceFiles, scope, requestInput.path, actorLevel, {
+    const result = readWorkspaceFile(context.workspaceFiles, scope, requestInput.path, actorLevel, {
       offset: requestInput.offset,
       limit: requestInput.limit,
     })
+    // 图片 binary 文件:async base64 编码,设置 imageBase64 + imageMimeType,
+    // 清除 isBinaryPlaceholder(不再是不可读的 binary,而是可发 LLM 的 image block).
+    if (result.binary && result.imageMimeType && result.imageMimeType.startsWith("image/") && result.imageMimeType !== "image/svg+xml") {
+      const base64 = await blobToBase64(result.binary)
+      return {
+        ...result,
+        imageBase64: base64,
+        isBinaryPlaceholder: false,
+      }
+    }
+    return result
   }
   if (operation === "glob") {
     return globWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
