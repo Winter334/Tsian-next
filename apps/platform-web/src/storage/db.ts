@@ -143,7 +143,7 @@ export class TsianLocalDb extends Dexie {
       saveHistory: "&saveId",
       checkpoints: "&id, saveId, createdAt, turn",
       workspaceFiles: "&id, saveId, path, updatedAt",
-      assistantAttachments: "&id, sessionId, createdAt",
+      assistantAttachments: "&id, sessionId, path, createdAt",
     })
   }
 }

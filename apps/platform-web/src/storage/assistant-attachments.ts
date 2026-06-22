@@ -84,8 +84,8 @@ export async function getAssistantAttachmentBlob(
   path: string,
 ): Promise<Blob | undefined> {
   const records = await localDb.assistantAttachments
-    .where("path" as never)
-    .equals(path as never)
+    .where("path")
+    .equals(path)
     .toArray()
   return records[0]?.data
 }
@@ -95,8 +95,8 @@ export async function getAssistantAttachmentRecord(
   path: string,
 ): Promise<LocalAssistantAttachmentRecord | undefined> {
   const records = await localDb.assistantAttachments
-    .where("path" as never)
-    .equals(path as never)
+    .where("path")
+    .equals(path)
     .toArray()
   return records[0]
 }
