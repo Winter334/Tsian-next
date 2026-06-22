@@ -53,6 +53,20 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 - Position route-level context menus relative to the route view container, not with viewport `position: fixed` coordinates. `.desktop-window` uses `transform: translateZ(0)`, so a fixed child inside a window gets a transformed containing block and can appear offset from the pointer. Use a `relative` route root, an `absolute` menu, and translate `MouseEvent.clientX/clientY` through `getBoundingClientRect()`.
 - Keep file creation and rename path decisions in resource-manager views. Lightweight editor windows may display file identity and edit content/media type, but they should not expose a path field for renaming; use Explorer-style context menu/F2 rename affordances instead.
 
+### Convention: Resource Manager Windows-Style Interactions
+
+**What**: `WorkspaceExplorerView.vue` mirrors Windows Explorer for file/folder operations: inline new-file/new-folder creation (no modal, no editor redirect — create with a default name then auto-enter rename selecting the name stem), copy/cut/paste with a view-local clipboard, and keyboard shortcuts (Ctrl+C/X/V, Delete, F2; not F5 — preserve browser refresh). Conflict naming uses numeric increment (`新建文件(1).txt`, `foo - 副本.txt`).
+
+**Why**: The workspace is a file-based store (IndexedDB keyed by file path), so "empty folder" has no persistent representation. A `.keep` anchor file makes a folder appear and persist: it is written on folder creation, survives single-file delete/move inside the folder (the backend deletes/moves by exact path, never touching `.keep`), and only disappears on whole-folder delete/move (backend prefix-match sweeps it along). The resource manager filters `.keep` from the rendered list so the folder displays as empty. The agent-facing `workspace.list`/`read`/`write`/`move`/`delete` APIs do **not** hide `.keep` — UI rendering convention must not leak into the workspace operation layer; agents see real storage and the anchor is harmless (empty content, ignored by business logic).
+
+**Rules**:
+- New file/folder: create with default name (`新建文件.txt` / `新文件夹`), numeric-increment on conflict, then auto-enter inline rename selecting the name stem (not the extension).
+- Empty folder persistence: write `<dir>/.keep` (empty, `text/plain`). Filter `entry.name === ".keep"` in a `visibleEntries` computed; base selection, rename, context menu, and clipboard on `visibleEntries`. Never hide `.keep` from `workspace-operations.ts` / agent tools.
+- Clipboard is view-local (`ref<ClipboardEntry | null>`), not persisted. Cross-directory retention is required (cross-dir move is cut's core use case); clear only on cross-card / cross-local-root / return-to-root-picker via a `clipboardContextKey` computed watch. Cut items render `opacity-50` while in the source directory.
+- Copy = `read` source → `write` target (recursive `list`+`read`+`write` for folders, including `.keep`). Cut = `move` (backend already handles directory-level prefix move). Paste target is always the current directory.
+- Keyboard shortcuts: Ctrl+C/X/V, Delete, F2, Esc. Guard with `isEditableKeyboardTarget` so browser text operations inside inputs/textarea/contenteditable are not hijacked. Do not bind F5.
+- `save/` virtual slot guard: reuse `canDeleteEntry` (rejects `save` and `save/save-\d+`) for copy/cut/rename/delete; reject paste/new-file/new-folder only at `currentPath === "save"` (slot interiors `save/save-XX/` are editable runtime files).
+
 ### Convention: Studio Agent Skill Management
 
 **What**: Studio should be Agent-centered: select one Agent, then preview literal files such as `AGENT.md` and `SOUL.md`, manage one enable/disable Skill list for that Agent, and expose only runtime-enforced platform tool / Workspace permission controls backed by `agent.json`. Player-facing labels should say whether the selected Agent can use a Skill or capability, not whether the registry entry is `shared`, `agent-local`, or an executor implementation detail.

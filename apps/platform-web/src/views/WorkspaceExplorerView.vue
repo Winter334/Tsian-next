@@ -234,12 +234,15 @@
               <span>更新时间</span>
             </div>
             <div
-              v-for="entry in directoryEntries"
+              v-for="entry in visibleEntries"
               :key="entry.path"
               role="button"
               tabindex="0"
               class="retro-focus grid w-full grid-cols-[minmax(260px,1fr)_150px_130px_170px] items-center gap-0 border-b border-neon-deep/20 px-3 py-2 text-left hover:bg-elevated/45"
-              :class="selectedEntryPath === entry.path ? 'bg-neon/10 text-neon' : 'text-text-main'"
+              :class="[
+                selectedEntryPath === entry.path ? 'bg-neon/10 text-neon' : 'text-text-main',
+                clipboard?.kind === 'cut' && clipboard.sourcePath === entry.path ? 'opacity-50' : '',
+              ]"
               @click.stop="selectedEntryPath = entry.path"
               @dblclick.stop="activateEntry(entry)"
               @keydown.enter.prevent="activateEntry(entry)"
@@ -301,6 +304,24 @@
         编辑
       </button>
       <button
+        v-if="contextMenu.entry && canModifyEntry(contextMenu.entry)"
+        type="button"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+        @click="copyEntry(contextMenu.entry)"
+      >
+        <Copy class="h-3.5 w-3.5" aria-hidden="true" />
+        复制
+      </button>
+      <button
+        v-if="contextMenu.entry && canModifyEntry(contextMenu.entry)"
+        type="button"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+        @click="cutEntry(contextMenu.entry)"
+      >
+        <Scissors class="h-3.5 w-3.5" aria-hidden="true" />
+        剪切
+      </button>
+      <button
         v-if="contextMenu.entry && canRenameEntry(contextMenu.entry)"
         type="button"
         class="block w-full px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
@@ -317,6 +338,33 @@
         删除
       </button>
       <button
+        v-if="!contextMenu.entry && isBrowsing"
+        type="button"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+        @click="createNewFileFromContextMenu"
+      >
+        <FilePlus2 class="h-3.5 w-3.5" aria-hidden="true" />
+        新建文件
+      </button>
+      <button
+        v-if="!contextMenu.entry && isBrowsing"
+        type="button"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+        @click="createNewFolderFromContextMenu"
+      >
+        <FolderPlus class="h-3.5 w-3.5" aria-hidden="true" />
+        新建文件夹
+      </button>
+      <button
+        v-if="!contextMenu.entry && canPasteHere()"
+        type="button"
+        class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
+        @click="pasteFromContextMenu"
+      >
+        <ClipboardPaste class="h-3.5 w-3.5" aria-hidden="true" />
+        粘贴
+      </button>
+      <button
         v-if="!contextMenu.entry"
         type="button"
         class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
@@ -324,15 +372,6 @@
       >
         <RefreshCw class="h-3.5 w-3.5" aria-hidden="true" />
         刷新
-      </button>
-      <button
-        v-if="!contextMenu.entry && isBrowsing"
-        type="button"
-        class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
-        @click="openCreateEditorFromContextMenu"
-      >
-        <FilePlus2 class="h-3.5 w-3.5" aria-hidden="true" />
-        新建文件
       </button>
     </div>
 
@@ -344,25 +383,30 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import {
   ChevronRight,
+  ClipboardPaste,
   Code2,
+  Copy,
   File,
   FileJson2,
   FilePlus2,
   FileText,
   FolderOpen,
+  FolderPlus,
   Gamepad2,
   HardDrive,
   RefreshCw,
+  Scissors,
   Search,
   X,
 } from "lucide-vue-next"
 import type { Component } from "vue"
 import type {
   WorkspaceEntry,
+  WorkspaceFile,
   WorkspaceSearchResult,
 } from "@tsian/contracts"
 import { inferWorkspaceMediaType } from "@/lib/workspace-file-types"
-import { confirm, prompt } from "@/composables/useConfirm"
+import { confirm } from "@/composables/useConfirm"
 import {
   WORKSPACE_CONTENT_CHANGED_EVENT,
   emitWorkspaceContentChanged,
@@ -373,7 +417,9 @@ import {
   listPlatformWorkspaceDirectory,
   listPlatformWorkspaceRoots,
   movePlatformWorkspacePath,
+  readPlatformWorkspaceFile,
   searchPlatformWorkspace,
+  writePlatformWorkspaceFile,
   type PlatformWorkspaceRootEntry,
 } from "../platform-host"
 
@@ -381,6 +427,13 @@ interface ContextMenuState {
   x: number
   y: number
   entry: WorkspaceEntry | null
+}
+
+interface ClipboardEntry {
+  kind: "copy" | "cut"
+  sourcePath: string
+  sourceName: string
+  isDirectory: boolean
 }
 
 const route = useRoute()
@@ -404,6 +457,7 @@ const searchLoading = ref(false)
 const errorMessage = ref("")
 const feedback = ref("")
 const contextMenu = ref<ContextMenuState | null>(null)
+const clipboard = ref<ClipboardEntry | null>(null)
 const explorerRef = ref<HTMLElement | null>(null)
 let rootsRequestId = 0
 let directoryRequestId = 0
@@ -441,6 +495,16 @@ const workspaceBreadcrumbs = computed(() => {
 const selectedEntry = computed(() =>
   directoryEntries.value.find((entry) => entry.path === selectedEntryPath.value) ?? null
 )
+
+const visibleEntries = computed(() =>
+  directoryEntries.value.filter((entry) => entry.name !== ".keep"),
+)
+
+const clipboardContextKey = computed(() => {
+  if (selectedCardId.value) return `card:${selectedCardId.value}`
+  if (currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/")) return "local"
+  return ""
+})
 
 const statusLabel = computed(() => {
   if (!isBrowsing.value) {
@@ -541,6 +605,41 @@ function canDeleteEntry(entry: WorkspaceEntry): boolean {
 
 function canRenameEntry(entry: WorkspaceEntry): boolean {
   return canDeleteEntry(entry)
+}
+
+function canModifyEntry(entry: WorkspaceEntry): boolean {
+  return canDeleteEntry(entry)
+}
+
+function splitNameExt(name: string): { base: string; ext: string } {
+  const dotIndex = name.lastIndexOf(".")
+  if (dotIndex <= 0) {
+    // 无扩展名, 或以 . 开头的隐藏文件 (.keep / .gitignore) 视为无扩展名
+    return { base: name, ext: "" }
+  }
+  return { base: name.slice(0, dotIndex), ext: name.slice(dotIndex) }
+}
+
+function uniqueName(base: string, ext: string, existing: Set<string>): string {
+  const candidate = `${base}${ext}`
+  if (!existing.has(candidate)) {
+    return candidate
+  }
+  let index = 1
+  while (existing.has(`${base}(${index})${ext}`)) {
+    index += 1
+  }
+  return `${base}(${index})${ext}`
+}
+
+function currentEntryNames(): Set<string> {
+  return new Set(visibleEntries.value.map((entry) => entry.name))
+}
+
+function canPasteHere(): boolean {
+  return Boolean(clipboard.value)
+    && isBrowsing.value
+    && currentPath.value !== "save"
 }
 
 async function refreshRoots() {
@@ -694,7 +793,8 @@ function openBlankContextMenu(event: MouseEvent) {
 
 function contextMenuStateFromMouse(event: MouseEvent, entry: WorkspaceEntry | null): ContextMenuState {
   const menuWidth = 176
-  const menuHeight = entry ? 160 : selectedCardId.value ? 96 : 48
+  // 条目菜单: 打开/编辑/复制/剪切/重命名/删除 最多 6 项; 空白菜单: 新建文件/新建文件夹/粘贴/刷新 最多 4 项
+  const menuHeight = entry ? 176 : 128
   const rect = explorerRef.value?.getBoundingClientRect() ?? {
     left: 0,
     top: 0,
@@ -719,9 +819,98 @@ function refreshFromContextMenu() {
   refreshCurrentView()
 }
 
-function openCreateEditorFromContextMenu() {
+function createNewFileFromContextMenu() {
   contextMenu.value = null
-  openCreateEditor()
+  void createNewFile()
+}
+
+function createNewFolderFromContextMenu() {
+  contextMenu.value = null
+  void createNewFolder()
+}
+
+function pasteFromContextMenu() {
+  contextMenu.value = null
+  void pasteFromClipboard()
+}
+
+function enterRenameForNewEntry(entry: WorkspaceEntry) {
+  contextMenu.value = null
+  selectedEntryPath.value = entry.path
+  renamingEntryPath.value = entry.path
+  renameDraft.value = entry.name
+  void nextTick(() => {
+    const input = explorerRef.value?.querySelector<HTMLInputElement>('[data-rename-input="true"]')
+    if (!input) {
+      return
+    }
+    input.focus()
+    // 选中文件名主干(不含扩展名),对齐 Windows 新建后重命名体验
+    const { base } = splitNameExt(entry.name)
+    input.setSelectionRange(0, base.length)
+  })
+}
+
+async function createNewFile() {
+  if (!isBrowsing.value) {
+    return
+  }
+  if (currentPath.value === "save") {
+    feedback.value = "请先进入具体存档槽，再新建文件。"
+    return
+  }
+
+  const name = uniqueName("新建文件", ".txt", currentEntryNames())
+  const path = currentPath.value ? `${currentPath.value}/${name}` : name
+  try {
+    await writePlatformWorkspaceFile({
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+      path,
+      content: "",
+      mediaType: "text/plain",
+    })
+    emitWorkspaceContentChanged({ cardId: selectedCardId.value, path })
+    await refreshDirectory()
+    const created = directoryEntries.value.find((entry) => entry.path === path)
+    if (created) {
+      enterRenameForNewEntry(created)
+    }
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "无法新建文件。"
+  }
+}
+
+async function createNewFolder() {
+  if (!isBrowsing.value) {
+    return
+  }
+  if (currentPath.value === "save") {
+    feedback.value = "请先进入具体存档槽，再新建文件夹。"
+    return
+  }
+
+  const name = uniqueName("新文件夹", "", currentEntryNames())
+  const dirPath = currentPath.value ? `${currentPath.value}/${name}` : name
+  // 工作区是文件式存储,空文件夹无法持久化。写入 .keep 锚点文件让目录出现,
+  // 列表渲染时隐藏 .keep,使文件夹显示为空。.keep 是持久锚点:单文件删移不影响它,
+  // 只随删/移整个目录消失。
+  const keepPath = `${dirPath}/.keep`
+  try {
+    await writePlatformWorkspaceFile({
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+      path: keepPath,
+      content: "",
+      mediaType: "text/plain",
+    })
+    emitWorkspaceContentChanged({ cardId: selectedCardId.value, path: keepPath })
+    await refreshDirectory()
+    const created = directoryEntries.value.find((entry) => entry.path === dirPath)
+    if (created) {
+      enterRenameForNewEntry(created)
+    }
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "无法新建文件夹。"
+  }
 }
 
 function startRenameEntry(entry: WorkspaceEntry) {
@@ -843,60 +1032,22 @@ function clearSearch() {
   searchRequestId += 1
 }
 
-function defaultNewFileName(): string {
-  return "untitled.txt"
-}
-
-async function openCreateEditor() {
-  if (!isBrowsing.value) {
-    return
-  }
-  if (currentPath.value === "save") {
-    feedback.value = "请先进入具体存档槽，再新建文件。"
-    return
-  }
-
-  const fileName = await prompt({
-    title: "新建文件",
-    message: "输入新建文件的名称：",
-    defaultValue: defaultNewFileName(),
-    placeholder: "文件名",
-    confirmText: "新建",
-    validate: (value) => {
-      const normalized = normalizeDisplayPath(value)
-      if (!normalized) {
-        return "文件名不能为空。"
-      }
-      if (normalized.includes("/")) {
-        return "新建文件时只输入名称，不要输入路径。"
-      }
-      return null
-    },
-  })
-  if (fileName === null) {
-    return
-  }
-
-  const normalizedName = normalizeDisplayPath(fileName)
-  openEditorRoute("create", currentPath.value ? `${currentPath.value}/${normalizedName}` : normalizedName)
-}
-
 function openEditorForFile(path: string) {
   if (!isBrowsing.value) {
     return
   }
 
   contextMenu.value = null
-  openEditorRoute("edit", path)
+  openEditorRoute(path)
 }
 
-function openEditorRoute(mode: "create" | "edit", path: string) {
+function openEditorRoute(path: string) {
   void router.push({
     name: "workspace-editor",
     query: {
       ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
       path,
-      mode,
+      mode: "edit",
       editorId: createEditorSessionId(),
     },
   })
@@ -938,6 +1089,134 @@ async function deleteEntry(entry: WorkspaceEntry) {
   }
 }
 
+function copyEntry(entry: WorkspaceEntry) {
+  if (!isBrowsing.value || !canModifyEntry(entry)) {
+    return
+  }
+  contextMenu.value = null
+  clipboard.value = {
+    kind: "copy",
+    sourcePath: entry.path,
+    sourceName: entry.name,
+    isDirectory: entry.kind === "directory",
+  }
+  feedback.value = `已复制：${entry.name}`
+}
+
+function cutEntry(entry: WorkspaceEntry) {
+  if (!isBrowsing.value || !canModifyEntry(entry)) {
+    return
+  }
+  contextMenu.value = null
+  clipboard.value = {
+    kind: "cut",
+    sourcePath: entry.path,
+    sourceName: entry.name,
+    isDirectory: entry.kind === "directory",
+  }
+  feedback.value = `已剪切：${entry.name}`
+}
+
+async function pasteFromClipboard() {
+  const cb = clipboard.value
+  if (!cb || !isBrowsing.value || currentPath.value === "save") {
+    return
+  }
+  contextMenu.value = null
+
+  const { base, ext } = splitNameExt(cb.sourceName)
+  // 剪切到同目录同名 = no-op
+  const sameDirSibling = siblingPath(cb.sourcePath, cb.sourceName)
+  const currentDirTarget = currentPath.value
+    ? `${currentPath.value}/${cb.sourceName}`
+    : cb.sourceName
+  if (cb.kind === "cut" && sameDirSibling === currentDirTarget) {
+    clipboard.value = null
+    return
+  }
+
+  // 复制: 基础名加 " - 副本"; 剪切: 保持原名, 冲突时递增
+  const targetBase = cb.kind === "copy" ? `${base} - 副本` : base
+  const targetName = uniqueName(targetBase, ext, currentEntryNames())
+  const targetPath = currentPath.value ? `${currentPath.value}/${targetName}` : targetName
+
+  try {
+    if (cb.kind === "cut") {
+      await movePlatformWorkspacePath({
+        ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+        path: cb.sourcePath,
+        targetPath,
+      })
+      clipboard.value = null
+      feedback.value = `已移动：${cb.sourceName} → ${targetName}`
+    } else {
+      if (cb.isDirectory) {
+        await copyDirectory(cb.sourcePath, targetPath)
+      } else {
+        const file = await readPlatformWorkspaceFile({
+          ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+          path: cb.sourcePath,
+        })
+        await writePlatformWorkspaceFile({
+          ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+          path: targetPath,
+          content: file.content,
+          mediaType: file.mediaType,
+        })
+      }
+      // 复制保留 clipboard, 允许重复粘贴
+      feedback.value = `已粘贴：${targetName}`
+    }
+    emitWorkspaceContentChanged({ cardId: selectedCardId.value, path: targetPath })
+    await refreshDirectory()
+    if (activeSearchQuery.value) {
+      await runSearch()
+    }
+  } catch (error) {
+    feedback.value = error instanceof Error ? error.message : "无法粘贴。"
+  }
+}
+
+async function collectFilesUnder(dirPath: string): Promise<WorkspaceFile[]> {
+  // 先递归 list 收集所有文件 path, 再并发 read.
+  // read 是只读, 并发安全; list 阶段需顺序发现子目录, 仍串行.
+  const filePaths: string[] = []
+  async function walk(subPath: string): Promise<void> {
+    const result = await listPlatformWorkspaceDirectory({
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+      path: subPath,
+    })
+    for (const entry of result.entries) {
+      if (entry.kind === "file") {
+        filePaths.push(entry.path)
+      } else {
+        await walk(entry.path)
+      }
+    }
+  }
+  await walk(dirPath)
+
+  const cardIdInput = selectedCardId.value ? { cardId: selectedCardId.value } : {}
+  return Promise.all(
+    filePaths.map((path) => readPlatformWorkspaceFile({ ...cardIdInput, path })),
+  )
+}
+
+async function copyDirectory(srcPath: string, targetPath: string): Promise<void> {
+  const files = await collectFilesUnder(srcPath)
+  const prefix = `${srcPath}/`
+  for (const file of files) {
+    const relPath = file.path.startsWith(prefix) ? file.path.slice(prefix.length) : file.path
+    const targetFilePath = `${targetPath}/${relPath}`
+    await writePlatformWorkspaceFile({
+      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+      path: targetFilePath,
+      content: file.content,
+      mediaType: file.mediaType,
+    })
+  }
+}
+
 function onGlobalKeydown(event: KeyboardEvent) {
   if (event.key === "Escape") {
     contextMenu.value = null
@@ -945,9 +1224,49 @@ function onGlobalKeydown(event: KeyboardEvent) {
     return
   }
 
-  if (event.key === "F2" && selectedEntry.value && !isEditableKeyboardTarget(event.target)) {
+  // 在可编辑元素内不触发资源管理器快捷键(保留浏览器原生文本操作)
+  if (isEditableKeyboardTarget(event.target)) {
+    return
+  }
+
+  if (event.key === "F2" && selectedEntry.value) {
     event.preventDefault()
     startRenameEntry(selectedEntry.value)
+    return
+  }
+
+  if (event.key === "Delete" && selectedEntry.value) {
+    event.preventDefault()
+    void deleteEntry(selectedEntry.value)
+    return
+  }
+
+  const ctrl = event.ctrlKey || event.metaKey
+  if (!ctrl) {
+    return
+  }
+
+  if (event.key === "c" || event.key === "C") {
+    if (selectedEntry.value) {
+      event.preventDefault()
+      copyEntry(selectedEntry.value)
+    }
+    return
+  }
+
+  if (event.key === "x" || event.key === "X") {
+    if (selectedEntry.value) {
+      event.preventDefault()
+      cutEntry(selectedEntry.value)
+    }
+    return
+  }
+
+  if (event.key === "v" || event.key === "V") {
+    if (clipboard.value) {
+      event.preventDefault()
+      void pasteFromClipboard()
+    }
   }
 }
 
@@ -982,6 +1301,11 @@ watch(() => route.fullPath, () => {
     void refreshDirectory()
   }
 }, { immediate: true })
+
+// 跨游戏卡/跨本地根/回根选择界面时清空剪贴板; 同卡内跨目录导航保留(跨目录移动是剪切核心用途)
+watch(clipboardContextKey, () => {
+  clipboard.value = null
+})
 
 onMounted(() => {
   window.addEventListener("keydown", onGlobalKeydown)
