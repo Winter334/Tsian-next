@@ -3,7 +3,6 @@ import type {
   GameCardContentFile,
   WorkspaceEntry,
   WorkspaceFile,
-  WorkspaceSearchResult,
 } from "@tsian/contracts"
 import {
   binaryPlaceholderText,
@@ -25,11 +24,6 @@ export type CheckpointWorkspaceFile = Omit<LocalWorkspaceFileRecord, "id" | "sav
 
 export interface WorkspaceListInput {
   path?: unknown
-}
-
-export interface WorkspaceSearchInput {
-  query?: string
-  limit?: number
 }
 
 export interface WorkspaceWriteInput {
@@ -58,8 +52,6 @@ export class WorkspaceStorageError extends Error {
   }
 }
 
-const DEFAULT_SEARCH_LIMIT = 50
-const MAX_SEARCH_LIMIT = 200
 const DEFAULT_WORKSPACE_VERSION = 6
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 const DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS = new Set([
@@ -1185,25 +1177,6 @@ export function createLocalWorkspaceFileRecord(
   }
 }
 
-function normalizeLimit(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return DEFAULT_SEARCH_LIMIT
-  }
-  return Math.min(Math.floor(value), MAX_SEARCH_LIMIT)
-}
-
-function createPreview(content: string, index: number): string {
-  if (index < 0) {
-    return ""
-  }
-
-  const start = Math.max(0, index - 48)
-  const end = Math.min(content.length, index + 96)
-  const prefix = start > 0 ? "..." : ""
-  const suffix = end < content.length ? "..." : ""
-  return `${prefix}${content.slice(start, end)}${suffix}`.replace(/\s+/g, " ").trim()
-}
-
 async function touchSave(saveId: string, updatedAt: number): Promise<void> {
   const save = await localDb.saves.get(saveId)
   if (!save) {
@@ -1750,73 +1723,6 @@ export async function deleteWorkspacePathForSave(
   return {
     deletedPaths: rows.map((record) => record.path).sort(),
   }
-}
-
-export async function searchWorkspaceFilesForSave(
-  saveId: string,
-  input: WorkspaceSearchInput = {},
-): Promise<WorkspaceSearchResult[]> {
-  return searchWorkspaceFilesFromFiles(
-    (await listLocalWorkspaceFilesForSave(saveId)).map(toWorkspaceFile),
-    input,
-  )
-}
-
-export function searchWorkspaceFilesFromFiles(
-  workspaceFiles: WorkspaceFile[],
-  input: WorkspaceSearchInput = {},
-): WorkspaceSearchResult[] {
-  const query = typeof input.query === "string" ? input.query.trim().toLowerCase() : ""
-  if (!query) {
-    return []
-  }
-
-  const limit = normalizeLimit(input.limit)
-  return ordinaryWorkspaceFiles(workspaceFiles)
-    .flatMap((file): WorkspaceSearchResult[] => {
-      // Binary files surface a placeholder string as content; skip them so
-      // the placeholder text is never matched as search content. Path-based
-      // matching still applies (a user may search for "cover.png").
-      if (file.binary) {
-        const lowerPath = file.path.toLowerCase()
-        if (!lowerPath.includes(query)) {
-          return []
-        }
-        return [{
-          path: file.path,
-          name: fileName(file.path),
-          updatedAt: file.updatedAt,
-          score: 2,
-          matches: [],
-          matchesTruncated: false,
-          preview: file.path,
-        }]
-      }
-      const lowerPath = file.path.toLowerCase()
-      const lowerContent = file.content.toLowerCase()
-      const contentIndex = lowerContent.indexOf(query)
-      const matchesPath = lowerPath.includes(query)
-      if (!matchesPath && contentIndex < 0) {
-        return []
-      }
-
-      return [{
-        path: file.path,
-        name: fileName(file.path),
-        updatedAt: file.updatedAt,
-        score: (matchesPath ? 2 : 0) + (contentIndex >= 0 ? 1 : 0),
-        matches: [],
-        matchesTruncated: false,
-        preview: contentIndex >= 0 ? createPreview(file.content, contentIndex) : file.path,
-      }]
-    })
-    .sort((left, right) => {
-      if (right.score !== left.score) {
-        return right.score - left.score
-      }
-      return right.updatedAt - left.updatedAt
-    })
-    .slice(0, limit)
 }
 
 export async function replaceWorkspaceFilesForSave(
