@@ -13,12 +13,11 @@ import {
   AUTHORING_WORKSPACE_OPERATIONS,
   executeWorkspaceOperation,
 } from "../agent-runtime/workspace-operations"
+import { executeWorkspaceMutation, cardFrontendVolume } from "./workspace-volumes"
 import {
   cardContentFilesToWorkspaceFiles,
-  writeCardContentFileForCard,
 } from "./internal"
 import {
-  deleteLocalGameCardContentPathForCard,
   deleteWorkspacePathForSave,
   getActiveGameCardId,
   getActiveSaveId,
@@ -64,6 +63,11 @@ interface StudioWorkspaceContext {
 type StudioResolvedPath =
   | {
       scope: "card-content"
+      displayPath: string
+      storagePath: string
+    }
+  | {
+      scope: "card-frontend"
       displayPath: string
       storagePath: string
     }
@@ -116,6 +120,9 @@ async function loadStudioWorkspaceContext(cardId: string): Promise<StudioWorkspa
 async function listStudioWorkspaceFilesForGameCard(cardId: string): Promise<WorkspaceFile[]> {
   const { card, saveSlots } = await loadStudioWorkspaceContext(cardId)
   const files: WorkspaceFile[] = await cardContentFilesToWorkspaceFiles(card)
+
+  // 前端文件（card-frontend，纯二进制）只读接入 list。write/delete 占位 throw，待子3。
+  files.push(...await cardFrontendVolume.enumerate(cardId))
 
   for (const saveSlot of saveSlots) {
     await initializeWorkspaceForSave(saveSlot.saveId)
@@ -182,6 +189,16 @@ function resolveStudioWorkspacePath(
     }
   }
 
+  // frontend/ → card-frontend（前端文件纯二进制，storage path 带 frontend/ 前缀，
+  // 与 listLocalGameCardFrontendFiles 返回的 path 格式一致）。
+  if (displayPath === "frontend" || displayPath.startsWith("frontend/")) {
+    return {
+      scope: "card-frontend",
+      displayPath,
+      storagePath: displayPath,
+    }
+  }
+
   return {
     scope: "card-content",
     displayPath,
@@ -197,7 +214,7 @@ function storageFileToStudioFile(file: WorkspaceFile, resolvedPath: StudioResolv
 }
 
 function storagePathToStudioPath(path: string, resolvedPath: StudioResolvedPath): string {
-  if (resolvedPath.scope === "card-content") {
+  if (resolvedPath.scope === "card-content" || resolvedPath.scope === "card-frontend") {
     return path
   }
 
@@ -228,23 +245,6 @@ function assertCompatibleStudioMove(
       "WORKSPACE_MOVE_SAVE_SLOT_MISMATCH",
       "重命名不能跨越不同的存档槽。",
     )
-  }
-}
-
-async function deleteCardContentPathForCard(
-  cardId: string,
-  path: string,
-): Promise<{ scope: WorkspaceScope; deletedPaths: string[] }> {
-  const card = await getLocalGameCard(cardId)
-  if (!card) {
-    throw new Error(`游戏卡 "${cardId}" 不存在。`)
-  }
-
-  // Per-row delete (bumps card updatedAt internally); no whole-card rewrite.
-  const deletedPaths = await deleteLocalGameCardContentPathForCard(cardId, path)
-  return {
-    scope: "card-content",
-    deletedPaths,
   }
 }
 
@@ -422,17 +422,23 @@ async function executeStudioWorkspaceOperation(
       exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
       mutations: {
         write(writeInput) {
-          return writeWorkspaceFileForSave(resolvedPath.saveId, {
+          return executeWorkspaceMutation({
+            scope: writeInput.scope,
             path: writeInput.path,
             content: writeInput.content,
-            ...(writeInput.data ? { data: writeInput.data } : {}),
-          })
+            data: writeInput.data,
+            ownerContext: { saveId: resolvedPath.saveId, cardId },
+            operation: "write",
+          }) as Promise<WorkspaceFile>
         },
         async delete(deleteInput) {
-          return {
+          const deletedPaths = await executeWorkspaceMutation({
             scope: deleteInput.scope,
-            ...await deleteWorkspacePathForSave(resolvedPath.saveId, deleteInput.path),
-          }
+            path: deleteInput.path,
+            ownerContext: { saveId: resolvedPath.saveId, cardId },
+            operation: "delete",
+          }) as string[]
+          return { scope: deleteInput.scope, deletedPaths }
         },
       },
     })
@@ -485,20 +491,35 @@ async function executeStudioWorkspaceOperation(
     return result
   }
 
+  // card-content + card-frontend 共用此分支。workspaceFiles 快照必须含两者，
+  // 否则 card-frontend 的 read/validate 会从快照 find 不到前端文件。
+  const cardScopedFiles = [
+    ...await cardContentFilesToWorkspaceFiles(context.card),
+    ...await cardFrontendVolume.enumerate(cardId),
+  ]
   const result = await executeWorkspaceOperation(operationRequest, {
-    workspaceFiles: await cardContentFilesToWorkspaceFiles(context.card),
+    workspaceFiles: cardScopedFiles,
     actorLevel: 2,
     exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
       mutations: {
         write(writeInput) {
-          return writeCardContentFileForCard(cardId, {
+          return executeWorkspaceMutation({
+            scope: writeInput.scope,
             path: writeInput.path,
             content: writeInput.content,
-            ...(writeInput.data ? { data: writeInput.data } : {}),
-          })
+            data: writeInput.data,
+            ownerContext: { cardId },
+            operation: "write",
+          }) as Promise<WorkspaceFile>
         },
-      delete(deleteInput) {
-        return deleteCardContentPathForCard(cardId, deleteInput.path)
+      async delete(deleteInput) {
+        const deletedPaths = await executeWorkspaceMutation({
+          scope: deleteInput.scope,
+          path: deleteInput.path,
+          ownerContext: { cardId },
+          operation: "delete",
+        }) as string[]
+        return { scope: deleteInput.scope, deletedPaths }
       },
     },
   })
@@ -549,39 +570,23 @@ async function executeLocalWorkspaceOperation(
       exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
       mutations: {
         async write(writeInput) {
-          if (isLocalAssistantPath(writeInput.path)) {
-            const written: WorkspaceFile = {
-              path: writeInput.path,
-              content: typeof writeInput.content === "string" ? writeInput.content : "",
-              ...(writeInput.data ? { binary: writeInput.data } : {}),
-              createdAt: 0,
-              updatedAt: Date.now(),
-            }
-            const updated = [...localAssistantFiles.filter((f) => f.path !== written.path), written]
-            await saveLocalAssistantFiles(updated)
-            return written
-          }
-          if (!saveId) {
-            throw workspaceStudioError("WORKSPACE_LOCAL_WRITE_NO_SAVE", "没有激活存档，无法写入 .tsian/ 文件。")
-          }
-          return writePlatformWorkspaceFileForSave(saveId, {
+          return executeWorkspaceMutation({
+            scope: "platform-meta",
             path: writeInput.path,
             content: writeInput.content,
-            ...(writeInput.data ? { data: writeInput.data } : {}),
-          })
+            data: writeInput.data,
+            ownerContext: { saveId: saveId ?? undefined },
+            operation: "write",
+          }) as Promise<WorkspaceFile>
         },
         async delete(deleteInput) {
-          if (isLocalAssistantPath(deleteInput.path)) {
-            // deleteLocalAssistantPath 一次 IO 批量删(精确 + 前缀匹配),
-            // 原子性优于逐个 deleteLocalAssistantFile.
-            const deletedPaths = await deleteLocalAssistantPath(deleteInput.path)
-            return { scope: "platform-meta", deletedPaths }
-          }
-          if (!saveId) {
-            throw workspaceStudioError("WORKSPACE_LOCAL_DELETE_NO_SAVE", "没有激活存档，无法删除 .tsian/ 文件。")
-          }
-          // Delete from save workspaceFiles — best effort.
-          return { scope: "platform-meta", deletedPaths: [deleteInput.path] }
+          const deletedPaths = await executeWorkspaceMutation({
+            scope: "platform-meta",
+            path: deleteInput.path,
+            ownerContext: { saveId: saveId ?? undefined },
+            operation: "delete",
+          }) as string[]
+          return { scope: "platform-meta", deletedPaths }
         },
       },
     },

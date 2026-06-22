@@ -103,6 +103,10 @@ const DEFAULT_SCOPE_ACCESS: Record<Exclude<WorkspaceScope, "effective">, AccessL
     readLevel: 4,
     editLevel: 4,
   },
+  "card-frontend": {
+    readLevel: 0,
+    editLevel: 2,
+  },
 }
 
 function workspaceOperationError(
@@ -216,6 +220,7 @@ function normalizeWorkspaceScope(value: unknown): WorkspaceScope {
     || value === "card-content"
     || value === "save-runtime"
     || value === "platform-meta"
+    || value === "card-frontend"
   ) {
     return value
   }
@@ -229,6 +234,7 @@ function normalizeWorkspaceScope(value: unknown): WorkspaceScope {
         "card-content",
         "save-runtime",
         "platform-meta",
+        "card-frontend",
       ],
     },
   )
@@ -267,12 +273,19 @@ export function isSaveRuntimePath(path: string): boolean {
   return path === "save" || path.startsWith("save/")
 }
 
+export function isCardFrontendPath(path: string): boolean {
+  return path === "frontend" || path.startsWith("frontend/")
+}
+
 function scopeForPath(path: string): Exclude<WorkspaceScope, "effective"> {
   if (isPlatformMetadataPath(path)) {
     return "platform-meta"
   }
   if (isSaveRuntimePath(path)) {
     return "save-runtime"
+  }
+  if (isCardFrontendPath(path)) {
+    return "card-frontend"
   }
   return "card-content"
 }

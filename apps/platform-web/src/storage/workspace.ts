@@ -8,9 +8,11 @@ import type {
 import {
   binaryPlaceholderText,
   inferMediaTypeFromPath,
+  isTextMediaType,
 } from "@/lib/media-type"
 import {
   listLocalGameCardContentFiles,
+  listLocalGameCardFrontendFiles,
   type LocalGameCardContentFile,
 } from "./game-cards"
 import {
@@ -1129,7 +1131,7 @@ function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
   }
 }
 
-function toWorkspaceFileFromGameCardContent(
+export function toWorkspaceFileFromGameCardContent(
   file: LocalGameCardContentFile,
 ): WorkspaceFile {
   const path = normalizeWorkspaceFilePath(file.path)
@@ -1368,6 +1370,31 @@ export async function listEffectiveWorkspaceFilesForSave(
   for (const file of await listLocalGameCardContentFiles(card.id)) {
     const workspaceFile = toWorkspaceFileFromGameCardContent(file)
     filesByPath.set(workspaceFile.path, workspaceFile)
+  }
+
+  // 前端文件（card-frontend，纯二进制存储）只读接入 effective list。与
+  // cardFrontendVolume.enumerate 同构（storage 层不依赖 host 层 volume，直接用原生
+  // API）。文本类前端文件（html/css/js/json/svg）→ await data.text() 填 content；
+  // 媒体类（图片/音视频）→ binary + placeholder。write/delete 路径经 host 层 dispatch
+  // 走 volume，待子3 补单文件 API。
+  for (const frontendFile of await listLocalGameCardFrontendFiles(card.id)) {
+    const mediaType = inferMediaTypeFromPath(frontendFile.path)
+    if (isTextMediaType(mediaType) || mediaType === "image/svg+xml") {
+      filesByPath.set(frontendFile.path, {
+        path: frontendFile.path,
+        content: await frontendFile.data.text(),
+        createdAt: frontendFile.createdAt,
+        updatedAt: frontendFile.updatedAt,
+      })
+    } else {
+      filesByPath.set(frontendFile.path, {
+        path: frontendFile.path,
+        content: binaryPlaceholderText(frontendFile.data, frontendFile.path),
+        binary: frontendFile.data,
+        createdAt: frontendFile.createdAt,
+        updatedAt: frontendFile.updatedAt,
+      })
+    }
   }
 
   for (const record of await listLocalWorkspaceFilesForSave(saveId)) {

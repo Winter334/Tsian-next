@@ -3,7 +3,7 @@
   "name": "workspace-storage-volume-abstraction",
   "title": "Workspace Storage Volume Abstraction",
   "description": "Define WorkspaceVolume interface, wrap 4 backends as volumes, collapse 3 ad-hoc routing sites into single dispatch",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

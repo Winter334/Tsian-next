@@ -415,3 +415,119 @@ await putLocalGameCard({ manifest: {...builtin.manifest, frontend}, contentFiles
 const record = await putLocalGameCard({...}) // created but not active
 // /play will still use the previously active card. Always load the new card after creation.
 ```
+
+## Scenario: Workspace Volume Abstraction And Single Dispatch
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web changes host-layer workspace mutation routing, adds/removes a storage backend volume, touches `platform-host/workspace-volumes.ts`, or changes the 3 entry points (`executeWorkspaceOperationForActiveSave` / `executeStudioWorkspaceOperation` / `executeLocalWorkspaceOperation`).
+- Applies when adding a new `WorkspaceScope`, a new `WorkspaceVolume` implementation, or changing how a workspace mutation reaches its storage backend.
+
+### 2. Signatures
+
+- `WorkspaceVolume` interface (`platform-host/workspace-volumes.ts`): `{ scope, enumerate(ownerId), write(ownerId, {path, content?, data?}), delete(ownerId, pathPrefix) }` — 3 primitives; runtime computes the other 7 ops (list/glob/search/diff/validate/read/move/patch) from the enumerate snapshot.
+- `WorkspaceVolumeWriteInput`: `{ path: string; content?: string; data?: Blob }` — text + binary dual-track (06-22 model), mutually exclusive; mirrors `WorkspaceOperationMutationAdapter.write` input.
+- `executeWorkspaceMutation({ scope, path, content?, data?, ownerContext, operation })`: single dispatch routing `(scope, path-prefix)` → volume → `write`/`delete`.
+- `resolveVolumeForScope(scope, path, ownerContext)`: volume selector; `platform-meta` scope does two-level routing (`isLocalAssistantPath` → `localAssistantVolume`, else `savePlatformMetaVolume`).
+- `WorkspaceVolumeOwnerContext`: `{ cardId?, saveId? }` — card-scope volumes need `cardId`; save-scope / save-platform-meta volumes need `saveId`; `localAssistantVolume` ignores ownerId (global meta).
+
+### 3. Contracts
+
+- 4 physical backends are wrapped as 5 volumes (save-scoped split into two): `CardContentVolume` (card-content, `gameCardContentFiles` per-file table, ownerId=cardId), `CardFrontendVolume` (card-frontend, `gameCardFrontendFiles` `data: Blob` required, ownerId=cardId), `SaveRuntimeVolume` (save-runtime, `workspaceFiles` save/ paths, ownerId=saveId), `SavePlatformMetaVolume` (platform-meta save-owned, `workspaceFiles` `.tsian/` paths, ownerId=saveId), `LocalAssistantVolume` (platform-meta local-assistant, `meta` single-row JSON, ownerId ignored).
+- The 3 ad-hoc routing points' non-staged mutation branches converge into `executeWorkspaceMutation`; each scope×path combination routes through exactly one volume. No ad-hoc `if/else` by scope/path-prefix/resolved-object remains in the mutation branches.
+- **staged turn (transaction) paths stay in `executeWorkspaceOperationForActiveSave` upper layer, NOT in dispatch.** The transaction is "stage changes, commit at turn end" semantics, orthogonal to "which backend". Dispatch only converges non-staged direct-storage routing. Staged paths: `save-runtime` → `transaction.write`; `platform-meta` → `writePlatformFile`; `card-content`/`card-frontend` → throw "Runtime turn staging cannot mutate card-content." The `runAssistantChat` runtime agent turn `workspaceMutations` is also a staged path (uses `activeWorkspaceTransaction`), kept as-is.
+- `card-frontend` scope (task 06-21 子5): `readLevel: 0, editLevel: 2` (same as card-content; runtime agents level 1 cannot edit, assistant level 4 can). `scopeForPath` adds `frontend/` → `card-frontend`; `normalizeWorkspaceScope` accepts it; `resolveStudioWorkspacePath` resolves `frontend/` → card-frontend `StudioResolvedPath`.
+- `CardFrontendVolume.enumerate` is wired into `listStudioWorkspaceFilesForGameCard` and `listEffectiveWorkspaceFilesForSave` so frontend files appear read-only in Explorer/assistant workspace. `write`/`delete` are placeholder throws pending task 06-21 子3 (single-file frontend API). Frontend files map to `{ path, content: binaryPlaceholderText(...), binary: r.data, createdAt, updatedAt }`.
+- Binary payload (`data?: Blob`) transparently threads through dispatch: runtime splits `request.content: string | Blob` into `textContent`/`binaryData` → adapter → dispatch `input.data` → volume.write `{ data }` → storage API. Agents read only `content` (string); binary is opaque to agents.
+- `localAssistantVolume` is global meta (cross-save persistent); `resolveOwnerId` identifies it by reference (not scope, since it shares `platform-meta` scope with `savePlatformMetaVolume`) and returns empty string ownerId.
+- `savePlatformMetaVolume.delete` is best-effort (returns `[pathPrefix]`, does not truly delete DB rows) matching the pre-refactor `executeLocalWorkspaceOperation` semantics; storage layer has no platform-meta prefix-delete API yet.
+
+### 4. Validation & Error Matrix
+
+- `card-content`/`card-frontend` mutation without `cardId` in ownerContext → dispatch throws "requires a cardId".
+- `save-runtime`/`save-platform-meta` mutation without `saveId` in ownerContext → dispatch throws "requires a saveId".
+- `localAssistantVolume` mutation without `saveId` → allowed (ownerId ignored, global meta).
+- `effective` scope mutation → dispatch throws "unsupported scope" (runtime computes effective in snapshot, never calls mutations).
+- `card-frontend` write/delete → `CardFrontendVolume` throws "not yet implemented (see task 06-21 子3)".
+- Staged turn mutation on `card-content`/`card-frontend` → upper layer throws "Runtime turn staging cannot mutate card-content." (preserved from pre-refactor).
+- Studio `resolveStudioWorkspacePath` on `frontend/` → resolves to card-frontend scope; `storagePathToStudioPath` returns path unchanged for card-frontend (no alias rewrite).
+
+### 5. Good/Base/Bad Cases
+
+- Good: adding a new volume (e.g. `ManifestVolume` for `game-card.json` in 子3) = implement `WorkspaceVolume` + insert into `resolveVolumeForScope`; no changes to the 3 routing points.
+- Good: a `workspace.write` with `{ scope: "card-content", path, data: Blob }` flows dispatch → `CardContentVolume.write(cardId, { path, data })` → `writeLocalGameCardContentFile` (binary store).
+- Good: Explorer edits a `save/` file → `executeStudioWorkspaceOperation` → dispatch → `SaveRuntimeVolume.write(saveId, ...)` → `writeWorkspaceFileForSave`.
+- Good: Explorer sees `frontend/index.html` in the file list (read-only); editing it throws the 子3 placeholder error.
+- Base: a runtime agent turn stages `save-runtime` writes via `transaction.write` (upper layer, not dispatch); non-staged commit path uses dispatch.
+- Bad: re-introducing ad-hoc `if (scope === "...") { ... }` branches in the 3 routing points' mutation adapters instead of calling `executeWorkspaceMutation`.
+- Bad: routing a staged-turn `card-content` write through dispatch (bypasses the "staging cannot mutate card-content" guard).
+- Bad: adding a new storage backend without wrapping it as a `WorkspaceVolume` + registering in `resolveVolumeForScope` (mutation can't reach it).
+
+### 6. Tests Required
+
+- Assert all scope×path combinations from the 3 routing points route through dispatch to the correct volume (no regression vs pre-refactor).
+- Assert binary files (media) thread `data` through dispatch → storage API correctly (new dimension from 06-22).
+- Assert frontend files appear in `listStudioWorkspaceFilesForGameCard` / `listEffectiveWorkspaceFilesForSave` (read-only); write/delete throw the 子3 placeholder.
+- Assert staged-turn paths (runtime agent turn `workspaceMutations` + `executeWorkspaceOperationForActiveSave` staged branch) are unchanged: `save-runtime` stages to transaction, `card-content` throws.
+- Assert `localAssistantVolume` mutations work without a `saveId` in ownerContext.
+- Assert `npm run build:web` passes.
+
+### 7. Wrong vs Correct
+
+#### Wrong — re-introducing ad-hoc routing in a mutation adapter
+
+```typescript
+mutations: {
+  async write(writeInput) {
+    if (writeInput.scope === "card-content") {
+      return writeCardContentFileForActiveCard(writeInput) // bypasses dispatch
+    }
+    if (writeInput.scope === "save-runtime") {
+      return writeWorkspaceFileForSave(saveId, ...) // bypasses dispatch
+    }
+    // ... more if/else
+  }
+}
+```
+
+#### Correct — converge non-staged branches into dispatch
+
+```typescript
+mutations: {
+  async write(writeInput) {
+    if (workspaceTransaction) {
+      // staged turn: keep upper-layer transaction routing, NOT dispatch
+      if (writeInput.scope === "save-runtime") return workspaceTransaction.write(...)
+      if (writeInput.scope === "platform-meta") return workspaceTransaction.writePlatformFile(...)
+      throw new Error("Runtime turn staging cannot mutate card-content.")
+    }
+    // non-staged: single dispatch
+    return executeWorkspaceMutation({
+      scope: writeInput.scope, path: writeInput.path,
+      content: writeInput.content, data: writeInput.data,
+      ownerContext: { saveId, cardId },
+      operation: "write",
+    })
+  }
+}
+```
+
+#### Wrong — routing staged card-content through dispatch
+
+```typescript
+if (workspaceTransaction && writeInput.scope === "card-content") {
+  return executeWorkspaceMutation(...) // dispatch would reach cardContentVolume, bypassing the staging guard
+}
+```
+
+#### Correct — staged card-content throws in the upper layer
+
+```typescript
+if (workspaceTransaction) {
+  if (writeInput.scope === "card-content" || writeInput.scope === "card-frontend") {
+    throw new Error("Runtime turn staging cannot mutate card-content.")
+  }
+  // save-runtime / platform-meta stay on transaction paths
+}
+// non-staged reaches dispatch
+```

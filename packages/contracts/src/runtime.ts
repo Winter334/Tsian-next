@@ -89,6 +89,7 @@ export type WorkspaceScope =
   | "card-content"
   | "save-runtime"
   | "platform-meta"
+  | "card-frontend"
 
 export type WorkspaceOperationName =
   | "list"

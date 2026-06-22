@@ -90,7 +90,6 @@ import {
 import {
   buildAgentProviderPresetMap,
   cardContentFilesToWorkspaceFiles,
-  deleteCardContentPathForActiveCard,
   ensureActiveGameCardId,
   getPlatformActiveGameCard,
   gameCardForSave,
@@ -98,11 +97,10 @@ import {
   listEffectiveWorkspaceFilesForActiveSave,
   normalizeMessageContent,
   resolveAgentModelConfig,
-  writeCardContentFileForActiveCard,
-  writeCardContentFileForCard,
 } from "./internal"
 import { resolveLocalAssistantActorLevel } from "./local-assistant"
-import { ensureActiveSave, formatActiveFrontendId } from "./game-cards"
+import { ensureActiveSave, formatActiveFrontendId, getPlatformActiveGameCardId } from "./game-cards"
+import { executeWorkspaceMutation } from "./workspace-volumes"
 import {
   readAgentContextFromWorkspace,
   stageAgentContextFile,
@@ -130,7 +128,6 @@ import {
   createLocalSave,
   createLocalSaveFromGameCard,
   deleteLocalGameCard,
-  deleteWorkspacePathForSave,
   deleteLocalSave,
   ensureBuiltinBlankGameCard,
   exportGameCardFrontendPackage,
@@ -162,7 +159,6 @@ import {
   setActiveSaveId,
   writeLocalGameCardContentFile,
   writePlatformWorkspaceFileForSave,
-  writeWorkspaceFileForSave,
   type LocalGameCardRecord,
   type LocalSaveRecord,
   type RuntimeWorkspaceTransaction,
@@ -299,6 +295,7 @@ async function executeWorkspaceOperationForActiveSave(
     exposedOperations: input.exposedOperations ?? AUTHORING_WORKSPACE_OPERATIONS,
     mutations: {
       async write(writeInput) {
+        // staged turn：保留上层特殊路径（transaction 攒变更），不进 dispatch。
         if (input.workspaceTransaction) {
           if (writeInput.scope === "platform-meta") {
             return input.workspaceTransaction.writePlatformFile({
@@ -317,23 +314,22 @@ async function executeWorkspaceOperationForActiveSave(
           throw new Error("Runtime turn staging cannot mutate card-content.")
         }
 
-        if (writeInput.scope === "card-content") {
-          return writeCardContentFileForActiveCard(writeInput)
-        }
-        if (writeInput.scope === "platform-meta") {
-          return writePlatformWorkspaceFileForSave(saveId, {
-            path: writeInput.path,
-            content: writeInput.content,
-            ...(writeInput.data ? { data: writeInput.data } : {}),
-          })
-        }
-        return writeWorkspaceFileForSave(saveId, {
+        // 非 staged：统一 dispatch。card-scope 需要 activeCardId（与原
+        // writeCardContentFileForActiveCard 内部 getPlatformActiveGameCard 同源）。
+        const cardId = writeInput.scope === "card-content" || writeInput.scope === "card-frontend"
+          ? await getPlatformActiveGameCardId()
+          : undefined
+        return executeWorkspaceMutation({
+          scope: writeInput.scope,
           path: writeInput.path,
           content: writeInput.content,
-          ...(writeInput.data ? { data: writeInput.data } : {}),
-        })
+          data: writeInput.data,
+          ownerContext: { saveId, cardId },
+          operation: "write",
+        }) as Promise<WorkspaceFile>
       },
       async delete(deleteInput) {
+        // staged turn：保留上层特殊路径（transaction 攒变更），不进 dispatch。
         if (input.workspaceTransaction) {
           if (deleteInput.scope !== "save-runtime") {
             throw new Error("Runtime turn staging can only delete save-runtime paths.")
@@ -344,16 +340,17 @@ async function executeWorkspaceOperationForActiveSave(
           }
         }
 
-        if (deleteInput.scope === "card-content") {
-          return deleteCardContentPathForActiveCard(deleteInput.path)
-        }
-        if (deleteInput.scope === "platform-meta") {
-          throw new Error("Platform metadata delete is not supported yet.")
-        }
-        return {
+        // 非 staged：统一 dispatch。card-scope 需要 activeCardId。
+        const cardId = deleteInput.scope === "card-content" || deleteInput.scope === "card-frontend"
+          ? await getPlatformActiveGameCardId()
+          : undefined
+        const deletedPaths = await executeWorkspaceMutation({
           scope: deleteInput.scope,
-          ...await deleteWorkspacePathForSave(saveId, deleteInput.path),
-        }
+          path: deleteInput.path,
+          ownerContext: { saveId, cardId },
+          operation: "delete",
+        }) as string[]
+        return { scope: deleteInput.scope, deletedPaths }
       },
     },
   })
