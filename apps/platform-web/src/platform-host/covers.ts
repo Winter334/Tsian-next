@@ -1,10 +1,13 @@
 import type { GameCardCover } from "@tsian/contracts"
+import type { LocalGameCardView } from "../storage/game-cards"
 import {
   deleteLocalGameCardContentFile,
+  getActiveGameCardId,
   getLocalGameCard,
   putLocalGameCard,
   writeLocalGameCardContentFile,
 } from "../storage"
+import { emitActiveCardChanged, emitGameCardsChanged } from "../lib/platform-events"
 
 const COVER_CONTENT_PREFIX = ".cover/"
 
@@ -35,6 +38,7 @@ export async function setPlatformGameCardCover(
   }
 
   const previousCoverPath = card.manifest.cover?.workspacePath?.trim()
+  let result: LocalGameCardView
 
   if (input.kind === "url") {
     const url = input.url.trim()
@@ -49,43 +53,47 @@ export async function setPlatformGameCardCover(
     if (previousCoverPath) {
       await deleteLocalGameCardContentFile(cardId, previousCoverPath)
     }
-    return putLocalGameCard({
+    result = await putLocalGameCard({
+      manifest: { ...card.manifest, cover: nextCover },
+      source: card.source,
+    })
+  } else if (input.kind === "clear") {
+    if (previousCoverPath) {
+      await deleteLocalGameCardContentFile(cardId, previousCoverPath)
+    }
+    result = await putLocalGameCard({
+      manifest: { ...card.manifest, cover: undefined },
+      source: card.source,
+    })
+  } else {
+    // kind === "upload": store the File/Blob directly as a binary content file.
+    // `input.file` is a Blob (File extends Blob); its `.type` carries the media
+    // type. No base64 conversion — the cover is read back as a Blob URL.
+    const mediaType = input.file.type || "image/png"
+    if (!mediaType.startsWith("image/")) {
+      throw new Error("封面文件必须是图片。")
+    }
+    const extension = coverExtensionForMediaType(mediaType)
+    const coverPath = `${COVER_CONTENT_PREFIX}cover.${extension}`
+
+    const nextCover: GameCardCover = { workspacePath: coverPath }
+    if (input.alt?.trim()) {
+      nextCover.alt = input.alt.trim()
+    }
+    // Delete the old cover row (if any), write the new cover row, then update manifest.
+    if (previousCoverPath && previousCoverPath !== coverPath) {
+      await deleteLocalGameCardContentFile(cardId, previousCoverPath)
+    }
+    await writeLocalGameCardContentFile(cardId, { path: coverPath, data: input.file })
+    result = await putLocalGameCard({
       manifest: { ...card.manifest, cover: nextCover },
       source: card.source,
     })
   }
 
-  if (input.kind === "clear") {
-    if (previousCoverPath) {
-      await deleteLocalGameCardContentFile(cardId, previousCoverPath)
-    }
-    return putLocalGameCard({
-      manifest: { ...card.manifest, cover: undefined },
-      source: card.source,
-    })
+  emitGameCardsChanged()
+  if (await getActiveGameCardId() === cardId) {
+    emitActiveCardChanged()
   }
-
-  // kind === "upload": store the File/Blob directly as a binary content file.
-  // `input.file` is a Blob (File extends Blob); its `.type` carries the media
-  // type. No base64 conversion — the cover is read back as a Blob URL.
-  const mediaType = input.file.type || "image/png"
-  if (!mediaType.startsWith("image/")) {
-    throw new Error("封面文件必须是图片。")
-  }
-  const extension = coverExtensionForMediaType(mediaType)
-  const coverPath = `${COVER_CONTENT_PREFIX}cover.${extension}`
-
-  const nextCover: GameCardCover = { workspacePath: coverPath }
-  if (input.alt?.trim()) {
-    nextCover.alt = input.alt.trim()
-  }
-  // Delete the old cover row (if any), write the new cover row, then update manifest.
-  if (previousCoverPath && previousCoverPath !== coverPath) {
-    await deleteLocalGameCardContentFile(cardId, previousCoverPath)
-  }
-  await writeLocalGameCardContentFile(cardId, { path: coverPath, data: input.file })
-  return putLocalGameCard({
-    manifest: { ...card.manifest, cover: nextCover },
-    source: card.source,
-  })
+  return result
 }

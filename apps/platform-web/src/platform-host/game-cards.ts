@@ -55,6 +55,11 @@ import {
   DEFAULT_FRONTEND_BINDING,
   defaultFrontendFiles,
 } from "../storage/default-frontend-files"
+import {
+  emitActiveCardChanged,
+  emitGameCardsChanged,
+  emitSavesChanged,
+} from "../lib/platform-events"
 
 export interface PlatformGameCardFrontendFileSummary {
   path: string
@@ -274,6 +279,8 @@ export async function createPlatformSave(input?: {
   await setActiveSaveId(created.id)
   await setActiveGameCardId(created.gameCardId ?? (await getBuiltinBlankGameCard()).id)
   await restoreActiveSnapshotFromStorage(created.id)
+  emitSavesChanged()
+  emitActiveCardChanged()
   return created
 }
 
@@ -299,7 +306,7 @@ export async function updatePlatformGameCardMetadata(
   }
 
   const patch = metadataManifestPatch(input)
-  return putLocalGameCard({
+  const result = await putLocalGameCard({
     manifest: {
       ...card.manifest,
       ...patch,
@@ -307,6 +314,11 @@ export async function updatePlatformGameCardMetadata(
     // contentFiles undefined = leave the content table untouched (metadata-only write).
     source: card.source,
   })
+  emitGameCardsChanged()
+  if (await getActiveGameCardId() === cardId) {
+    emitActiveCardChanged()
+  }
+  return result
 }
 
 export async function copyPlatformGameCardAsLocal(
@@ -322,7 +334,7 @@ export async function copyPlatformGameCardAsLocal(
   const contentFiles = await listLocalGameCardContentFiles(card.id)
   const patch = metadataManifestPatch(input)
   const id = await createUniqueLocalGameCardId(patch.name)
-  return putLocalGameCard({
+  const result = await putLocalGameCard({
     manifest: {
       ...card.manifest,
       ...patch,
@@ -339,6 +351,8 @@ export async function copyPlatformGameCardAsLocal(
     })),
     source: "local",
   })
+  emitGameCardsChanged()
+  return result
 }
 
 /**
@@ -385,6 +399,10 @@ export async function createDefaultPlatformGameCard(input?: {
 
   // 3. Load the new card as the active game card.
   const active = await setPlatformActiveGameCard(record.id)
+  // setPlatformActiveGameCard emits active-card-changed; emit game-cards-changed
+  // again here so subscribers see the final state (with frontend binding applied),
+  // since copyPlatformGameCardAsLocal's earlier emit reflected a pre-frontend copy.
+  emitGameCardsChanged()
   return active
 }
 
@@ -400,6 +418,7 @@ export async function deletePlatformGameCard(
   }
 
   const activeSaveId = await getActiveSaveId()
+  const wasActiveCard = await getActiveGameCardId() === card.id
   const saves = (await listLocalSaves()).filter((save) => save.gameCardId === card.manifest.id)
   const deletedSaveIds = saves.map((save) => save.id)
   for (const saveId of deletedSaveIds) {
@@ -407,7 +426,7 @@ export async function deletePlatformGameCard(
   }
   await deleteLocalGameCard(card.id)
 
-  if (await getActiveGameCardId() === card.id) {
+  if (wasActiveCard) {
     // Fallback rework (task 06-21 子3 Phase A4): never fall back to the builtin
     // template. Prefer a remaining local card; if none, auto-create a fresh
     // editable default card.
@@ -431,6 +450,12 @@ export async function deletePlatformGameCard(
       await setActiveSaveId(null)
       getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
     }
+  }
+
+  emitGameCardsChanged()
+  emitSavesChanged()
+  if (wasActiveCard) {
+    emitActiveCardChanged()
   }
 
   return {
@@ -465,7 +490,7 @@ export async function updatePlatformGameCardFrontend(
     }
   }
 
-  return putLocalGameCard({
+  const result = await putLocalGameCard({
     manifest: {
       ...card.manifest,
       frontend: normalizedFrontend,
@@ -477,11 +502,18 @@ export async function updatePlatformGameCardFrontend(
     frontendFiles: normalizedFrontend ? undefined : [],
     source: card.source,
   })
+  emitGameCardsChanged()
+  if (await getActiveGameCardId() === cardId) {
+    emitActiveCardChanged()
+  }
+  return result
 }
 
 export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | Uint8Array) {
   await ensureBuiltinBlankGameCard()
-  return importGameCardPackage(input)
+  const result = await importGameCardPackage(input)
+  emitGameCardsChanged()
+  return result
 }
 
 export async function exportPlatformGameCardPackage(cardId: string) {
@@ -501,7 +533,12 @@ export async function importPlatformGameCardFrontendPackage(
   if (card.source === "builtin") {
     throw new Error("内置游戏卡不能直接替换前端，请先另存为本地副本。")
   }
-  return importGameCardFrontendPackage(cardId, input)
+  const result = await importGameCardFrontendPackage(cardId, input)
+  emitGameCardsChanged()
+  if (await getActiveGameCardId() === cardId) {
+    emitActiveCardChanged()
+  }
+  return result
 }
 
 export async function exportPlatformGameCardFrontendPackage(cardId: string): Promise<Blob> {
@@ -522,6 +559,8 @@ export async function createPlatformSaveFromGameCard(
   await setActiveSaveId(created.id)
   await setActiveGameCardId(card.id)
   await restoreActiveSnapshotFromStorage(created.id)
+  emitSavesChanged()
+  emitActiveCardChanged()
   return created
 }
 
@@ -533,27 +572,38 @@ export async function selectPlatformSave(saveId: string) {
   await setActiveSaveId(saveId)
   await syncActiveGameCardFromSave(saveId)
   await restoreActiveSnapshotFromStorage(saveId)
+  emitSavesChanged()
+  emitActiveCardChanged()
 }
 
 export async function deletePlatformSave(saveId: string) {
   const activeSaveId = await getActiveSaveId()
+  const wasActiveSave = activeSaveId === saveId
   await deleteLocalSave(saveId)
 
   const remaining = await listLocalSaves()
 
   if (remaining.length === 0) {
-    if (activeSaveId === saveId) {
+    if (wasActiveSave) {
       await setActiveSaveId(null)
     }
     getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
+    emitSavesChanged()
+    if (wasActiveSave) {
+      emitActiveCardChanged()
+    }
     return
   }
 
-  if (activeSaveId === saveId) {
+  if (wasActiveSave) {
     const next = remaining[0]
     await setActiveSaveId(next.id)
     await syncActiveGameCardFromSave(next.id)
     await restoreActiveSnapshotFromStorage(next.id)
+  }
+  emitSavesChanged()
+  if (wasActiveSave) {
+    emitActiveCardChanged()
   }
 }
 
@@ -572,5 +622,6 @@ export async function setPlatformActiveGameCard(cardId: string): Promise<LocalGa
   }
 
   await setActiveGameCardId(card.id)
+  emitActiveCardChanged()
   return card
 }

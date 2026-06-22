@@ -302,7 +302,7 @@ import type {
   AgentRegistryEntry,
   SkillRegistryEntry,
 } from "@tsian/contracts"
-import { computed, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import {
   Bot,
@@ -320,6 +320,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { ACTIVE_CARD_CHANGED_EVENT, isActiveCardChangedEvent } from "@/lib/platform-events"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import { isSkillEnabledForAgent } from "../agent-runtime/registry"
 import {
@@ -662,6 +663,18 @@ function openPathDirectory(path: string) {
 }
 
 onMounted(() => {
+  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   void refresh()
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+})
+
+function onActiveCardChanged(event: Event) {
+  if (!isActiveCardChangedEvent(event)) {
+    return
+  }
+  void refresh()
+}
 </script>

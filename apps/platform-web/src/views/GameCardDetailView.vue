@@ -440,10 +440,16 @@
 
 <script setup lang="ts">
 import type { GameCardFrontendBinding } from "@tsian/contracts"
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
+import {
+  ACTIVE_CARD_CHANGED_EVENT,
+  SAVES_CHANGED_EVENT,
+  isActiveCardChangedEvent,
+  isSavesChangedEvent,
+} from "@/lib/platform-events"
 import {
   CheckCircle2,
   Copy,
@@ -1049,8 +1055,29 @@ watch(() => props.cardId, () => {
 })
 
 onMounted(() => {
+  window.addEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
+  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   void refreshData()
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
+  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+})
+
+function onSavesChanged(event: Event) {
+  if (!isSavesChangedEvent(event)) {
+    return
+  }
+  void refreshData()
+}
+
+function onActiveCardChanged(event: Event) {
+  if (!isActiveCardChangedEvent(event)) {
+    return
+  }
+  void refreshData()
+}
 </script>
 
 <style scoped>

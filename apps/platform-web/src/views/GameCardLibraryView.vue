@@ -1,10 +1,12 @@
 <template>
   <section
     ref="libraryRef"
-    class="relative grid min-h-full grid-rows-[minmax(0,1fr)_auto] gap-0 overflow-hidden"
+    class="relative grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden"
     @click="contextMenu = null"
     @contextmenu.prevent.stop="openBlankContextMenu"
   >
+      <ViewActionBar :actions="toolbarActions" />
+
       <div
         class="retro-inset m-3 min-h-[420px] overflow-auto p-3"
         @contextmenu.prevent.stop="openBlankContextMenu"
@@ -186,7 +188,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { CheckCircle2, Download, FolderOpen, Gamepad2, Plus, Store, Trash2 } from "lucide-vue-next"
 import { confirm } from "@/composables/useConfirm"
@@ -197,6 +199,13 @@ import {
   getGameCardSummary,
   getGameCardTitle,
 } from "@/lib/game-card-display"
+import ViewActionBar, { type ViewActionBarAction } from "@/components/common/ViewActionBar.vue"
+import {
+  ACTIVE_CARD_CHANGED_EVENT,
+  GAME_CARDS_CHANGED_EVENT,
+  isActiveCardChangedEvent,
+  isGameCardsChangedEvent,
+} from "@/lib/platform-events"
 import {
   createDefaultPlatformGameCard,
   deletePlatformGameCard,
@@ -233,6 +242,23 @@ const contextMenu = ref<ContextMenuState | null>(null)
 const selectedCard = computed(() =>
   cards.value.find((card) => card.id === selectedCardId.value) ?? cards.value[0] ?? null
 )
+
+const toolbarActions = computed<ViewActionBarAction[]>(() => [
+  {
+    label: "创建游戏",
+    icon: Plus,
+    onClick: () => void createDefaultCard(),
+    disabled: creating.value,
+    loading: creating.value,
+  },
+  {
+    label: "导入卡包",
+    icon: Download,
+    onClick: openPackagePicker,
+    disabled: importing.value,
+    loading: importing.value,
+  },
+])
 
 async function refreshCards() {
   loading.value = true
@@ -428,8 +454,29 @@ async function deleteSelectedCard() {
 }
 
 onMounted(() => {
+  window.addEventListener(GAME_CARDS_CHANGED_EVENT, onGameCardsChanged)
+  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   void refreshCards()
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener(GAME_CARDS_CHANGED_EVENT, onGameCardsChanged)
+  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+})
+
+function onGameCardsChanged(event: Event) {
+  if (!isGameCardsChangedEvent(event)) {
+    return
+  }
+  void refreshCards()
+}
+
+function onActiveCardChanged(event: Event) {
+  if (!isActiveCardChangedEvent(event)) {
+    return
+  }
+  void refreshCards()
+}
 </script>
 
 <style scoped>

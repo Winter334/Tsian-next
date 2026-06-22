@@ -15,6 +15,10 @@
 - Keep workspace write/delete inputs normalized at platform-host or storage boundaries and fail loudly on invalid writes.
 - Convert query params at the platform-host boundary before passing to storage helpers.
 
+## Module Resolution
+
+- `tsconfig` uses `moduleResolution: "Bundler"`. Under this mode TypeScript does not auto-append `.vue` when resolving a path alias, so importing a `.vue` SFC requires the **explicit `.vue` suffix**: `import Foo from "@/components/Foo.vue"`. An extensionless `from "@/components/Foo"` compiles in Vite (Rollup resolves it) but fails `vue-tsc` with `TS2307: Cannot find module`. This is a split between the bundler and the type-checker — always include the `.vue` suffix in SFC imports. (Plain `.ts` module imports stay extensionless; `Bundler` resolution handles those.)
+
 ## Scenario: Game Card Package And Packaged Frontend
 
 ### 1. Scope / Trigger

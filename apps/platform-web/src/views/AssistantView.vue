@@ -369,12 +369,13 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick, computed, onMounted } from "vue"
+import { ref, reactive, nextTick, computed, onBeforeUnmount, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
 import { Bot, Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import AssistantConfigPanel from "@/components/assistant/AssistantConfigPanel.vue"
+import { ACTIVE_CARD_CHANGED_EVENT, isActiveCardChangedEvent } from "@/lib/platform-events"
 import {
   Collapsible,
   CollapsibleTrigger,
@@ -991,11 +992,23 @@ async function handleAssistantConfigChange() {
 }
 
 onMounted(async () => {
+  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   await refresh()
   await loadActiveSession()
   await loadProviderPreset()
   nextTick(() => inputRef.value?.focus())
 })
+
+onBeforeUnmount(() => {
+  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+})
+
+function onActiveCardChanged(event: Event) {
+  if (!isActiveCardChangedEvent(event)) {
+    return
+  }
+  void refresh()
+}
 </script>
 
 <style scoped>
