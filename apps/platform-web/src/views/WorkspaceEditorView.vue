@@ -1,5 +1,5 @@
 <template>
-  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+  <section class="grid h-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
     <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
       <div class="min-w-0">
         <p class="font-mono text-xs uppercase tracking-wider text-neon">

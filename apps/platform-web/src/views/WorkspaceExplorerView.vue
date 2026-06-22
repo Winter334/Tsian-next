@@ -1,7 +1,7 @@
 <template>
   <section
     ref="explorerRef"
-    class="relative grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden"
+    class="relative grid h-full grid-rows-[auto_minmax(0,1fr)_auto] gap-0 overflow-hidden"
     @click="contextMenu = null"
     @contextmenu.prevent.stop="openBlankContextMenu"
   >
