@@ -42,7 +42,9 @@ function normalizeMessages(
 
   return messages.flatMap((item) => {
     if (typeof item?.role === "string" && typeof item.content === "string") {
-      return [{ role: item.role, content: item.content }]
+      // 保留 attachments 字段(附件引用元数据);非数组或缺失时省略.
+      const attachments = Array.isArray(item.attachments) ? { attachments: item.attachments } : {}
+      return { role: item.role, content: item.content, ...attachments }
     }
     return []
   })

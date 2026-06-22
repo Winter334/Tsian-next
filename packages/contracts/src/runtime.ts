@@ -1,6 +1,30 @@
+/** 多模态消息内容的一个组成部分. 图片走多模态 content block,
+ *  文本仍用 plain string (向后兼容). */
+export type ContentPart =
+  | { type: "text"; text: string }
+  | { type: "image"; mimeType: string; data: string }
+
+/** 附件引用元数据. Blob 本体存在 Dexie assistantAttachments 表,
+ *  这里只存路径引用 + 展示用元数据. */
+export interface AttachmentRef {
+  /** VFS 路径,形如 "temp/<sessionId>/<filename>". */
+  path: string
+  /** 原始文件名. */
+  name: string
+  /** MIME 类型. */
+  mimeType: string
+  /** 文件大小(字节). */
+  size: number
+  /** 附件种类: image 走多模态, text 走文本注入. */
+  kind: "image" | "text"
+}
+
 export interface ConversationMessageRecord {
   role: string
   content: string
+  /** 附件元数据列表. 不持久化 Blob 本体(Blob 存 Dexie 表);
+   *  这里只存引用路径,加载时按路径从附件表取回 Blob. */
+  attachments?: AttachmentRef[]
 }
 
 /**
@@ -80,6 +104,9 @@ export interface WorkspaceFile {
    *  field; future multimodal support will surface it as an image content
    *  block through an independent channel. */
   binary?: Blob
+  /** 图片 MIME 类型,当 binary 是图片时设置. Agent runtime 据此
+   *  判断文件是否为图片并构建 image ContentPart. 非图片文件省略. */
+  imageMimeType?: string
   createdAt: number
   updatedAt: number
 }
@@ -103,6 +130,10 @@ export interface WorkspaceReadResult extends WorkspaceFile {
    *  were not applied. Agents should not try to re-slice binary
    *  placeholders. */
   isBinaryPlaceholder?: boolean
+  /** 图片 base64 数据,当文件是图片且 workspace_read 返回时设置.
+   *  Agent runtime 据此 + imageMimeType 构建 image ContentPart 注入 LLM 消息.
+   *  非图片文件省略. */
+  imageBase64?: string
 }
 
 export type WorkspaceScope =
@@ -111,6 +142,7 @@ export type WorkspaceScope =
   | "save-runtime"
   | "platform-meta"
   | "card-frontend"
+  | "temp"
 
 export type WorkspaceOperationName =
   | "list"

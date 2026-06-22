@@ -1,7 +1,8 @@
 // DB 名须与 src/storage/db.ts 的 TsianLocalDb 构造参数保持一致。
+// v8 -> v9: added assistantAttachments table for attachment Blob storage.
 // v7 -> v8: mediaType removed from records; Content-Type now read from
 // Blob.type (file.data.type) instead of a stored mediaType field.
-const DB_NAME = "tsian-agent-runtime-v8"
+const DB_NAME = "tsian-agent-runtime-v9"
 const STORE_NAME = "gameCardFrontendFiles"
 const FRONTEND_PREFIX = "/__tsian_game_card_frontends/"
 

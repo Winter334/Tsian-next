@@ -1,4 +1,5 @@
 import type {
+  AttachmentRef,
   ConversationMessageRecord,
   GameCardManifest,
   RuntimeSnapshotShell,
@@ -93,6 +94,26 @@ export interface LocalCheckpointRecord {
   workspaceFiles: Array<Omit<LocalWorkspaceFileRecord, "id" | "saveId">>
 }
 
+export interface LocalAssistantAttachmentRecord {
+  /** 主键,UUID 或确定性 id. */
+  id: string
+  /** 所属会话 id. 用于会话删除时批量清理. */
+  sessionId: string
+  /** VFS 路径,形如 "temp/<sessionId>/<filename>". */
+  path: string
+  /** 原始文件名. */
+  name: string
+  /** MIME 类型. */
+  mimeType: string
+  /** 文件种类: image 走多模态, text 走文本注入. */
+  kind: "image" | "text"
+  /** Blob 本体. */
+  data: Blob
+  /** 文件大小(字节). */
+  size: number
+  createdAt: number
+}
+
 export class TsianLocalDb extends Dexie {
   meta!: Table<LocalMetaRecord, string>
   gameCards!: Table<LocalGameCardRecord, string>
@@ -103,13 +124,14 @@ export class TsianLocalDb extends Dexie {
   saveHistory!: Table<LocalSaveHistoryRecord, string>
   checkpoints!: Table<LocalCheckpointRecord, string>
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
+  assistantAttachments!: Table<LocalAssistantAttachmentRecord, string>
 
   constructor() {
-    // DB name bumped v7 -> v8: the on-disk record shape changed (mediaType
-    // removed, data?: Blob added). Prototype project — no migration; the old
-    // v7 database is abandoned and a fresh v8 store is created. The service
+    // DB name bumped v8 -> v9: added assistantAttachments table for
+    // attachment Blob storage. Prototype project — no migration; the old
+    // v8 database is abandoned and a fresh v9 store is created. The service
     // worker (`tsian-game-card-frontend-sw.js`) mirrors this name.
-    super("tsian-agent-runtime-v8")
+    super("tsian-agent-runtime-v9")
 
     this.version(1).stores({
       meta: "&key",
@@ -121,6 +143,7 @@ export class TsianLocalDb extends Dexie {
       saveHistory: "&saveId",
       checkpoints: "&id, saveId, createdAt, turn",
       workspaceFiles: "&id, saveId, path, updatedAt",
+      assistantAttachments: "&id, sessionId, createdAt",
     })
   }
 }

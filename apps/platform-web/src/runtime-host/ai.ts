@@ -1,4 +1,4 @@
-import type { AiChatMessage, AiDebugRecord } from "@tsian/contracts"
+import type { AiChatMessage, AiDebugRecord, ContentPart } from "@tsian/contracts"
 
 import {
   getBrowserAiConfig,
@@ -10,6 +10,7 @@ import {
 import type { ToolSchema } from "../agent-runtime/tool-schemas"
 
 export type { AiChatMessage, AiDebugRecord }
+export type { ContentPart }
 
 /**
  * A structured Runtime tool call parsed from a native function-calling
@@ -30,9 +31,48 @@ export interface NativeToolCall {
  * request shape without re-encoding ids from text.
  */
 export type RuntimeChatMessage =
-  | { role: "user" | "system"; content: string }
+  | { role: "user" | "system"; content: string | ContentPart[] }
   | { role: "assistant"; content: string; toolCalls?: NativeToolCall[] }
   | { role: "tool"; toolCallId: string; content: string }
+
+/** 将 message content 安全转为文本 preview(debug/logging 用). ContentPart[] 时提取 text part,忽略 image. */
+function contentToTextPreview(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content
+  return content
+    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .map((part) => part.text)
+    .join("")
+}
+
+/** Build OpenAI-native content: string → string, ContentPart[] → content blocks
+ *  (text + image_url data URL). Used by openaiAdapter user/system branches. */
+function buildOpenAiContent(content: string | ContentPart[]): unknown {
+  if (typeof content === "string") return content
+  return content.map((part) => {
+    if (part.type === "text") return { type: "text", text: part.text }
+    return { type: "image_url", image_url: { url: `data:${part.mimeType};base64,${part.data}` } }
+  })
+}
+
+/** Build Claude-native content: string → string, ContentPart[] → content blocks
+ *  (text + image source base64). Used by claudeAdapter user branches. */
+function buildClaudeContent(content: string | ContentPart[]): unknown {
+  if (typeof content === "string") return content
+  return content.map((part) => {
+    if (part.type === "text") return { type: "text", text: part.text }
+    return { type: "image", source: { type: "base64", media_type: part.mimeType, data: part.data } }
+  })
+}
+
+/** Build Gemini-native parts: string → [{text}], ContentPart[] →
+ *  [{text} | {inlineData}]. Used by geminiAdapter user branches. */
+function buildGeminiParts(content: string | ContentPart[]): unknown[] {
+  if (typeof content === "string") return [{ text: content }]
+  return content.map((part) => {
+    if (part.type === "text") return { text: part.text }
+    return { inlineData: { mimeType: part.mimeType, data: part.data } }
+  })
+}
 
 /**
  * Structured result of one native model call. `text` is the user-visible
@@ -435,7 +475,7 @@ const openaiAdapter: ProviderAdapter = {
         }
         return entry
       }
-      return { role: message.role, content: message.content }
+      return { role: message.role, content: buildOpenAiContent(message.content) }
     })
     body.tools = tools.map((tool) => ({
       type: "function",
@@ -584,7 +624,7 @@ function splitSystemMessage(messages: AiChatMessage[]): { system: string | undef
   for (const message of messages) {
     if (message.role === "system") {
       if (message.content) {
-        systemParts.push(message.content)
+        systemParts.push(contentToTextPreview(message.content))
       }
     } else {
       rest.push(message)
@@ -607,7 +647,7 @@ function splitSystemMessages(
   for (const message of messages) {
     if (message.role === "system") {
       if (message.content) {
-        systemParts.push(message.content)
+        systemParts.push(contentToTextPreview(message.content))
       }
     } else {
       rest.push(message)
@@ -648,7 +688,7 @@ function buildGeminiNativeContent(message: RuntimeChatMessage): Record<string, u
     }
     return { role: "model", parts }
   }
-  return { role: "user", parts: [{ text: message.content }] }
+  return { role: "user", parts: buildGeminiParts(message.content) }
 }
 
 /** Serialize one `RuntimeChatMessage` into a Claude `messages` entry. */
@@ -684,7 +724,7 @@ function buildClaudeNativeMessage(message: RuntimeChatMessage): Record<string, u
     }
     return { role: "assistant", content }
   }
-  return { role: "user", content: message.content }
+  return { role: "user", content: buildClaudeContent(message.content) }
 }
 
 const geminiAdapter: ProviderAdapter = {
@@ -711,7 +751,7 @@ const geminiAdapter: ProviderAdapter = {
     const body: Record<string, unknown> = {
       contents: rest.map((message) => ({
         role: message.role === "assistant" ? "model" : "user",
-        parts: [{ text: message.content }],
+        parts: buildGeminiParts(message.content),
       })),
       generationConfig,
     }
@@ -897,7 +937,7 @@ const claudeAdapter: ProviderAdapter = {
       model: config.model,
       messages: rest.map((message) => ({
         role: message.role === "assistant" ? "assistant" : "user",
-        content: message.content,
+        content: message.role === "assistant" ? message.content : buildClaudeContent(message.content),
       })),
       // Claude requires max_tokens; fall back to a sane default when unset.
       max_tokens: config.parameters.maxOutputTokens ?? 4096,
@@ -1108,7 +1148,7 @@ export async function generateAssistantReply(
     messages: messages.map((message, index) => ({
       index,
       role: message.role,
-      content: previewText(message.content),
+      content: previewText(contentToTextPreview(message.content)),
     })),
   })
 
@@ -1231,7 +1271,7 @@ export async function generateAssistantReplyNative(
       content:
         message.role === "tool"
           ? previewText(`[tool:${message.toolCallId}] ${message.content}`)
-          : previewText(message.content),
+          : previewText(contentToTextPreview(message.content)),
     })),
   })
 
@@ -1381,7 +1421,7 @@ export async function streamAssistantReplyNative(
       content:
         message.role === "tool"
           ? previewText(`[tool:${message.toolCallId}] ${message.content}`)
-          : previewText(message.content),
+          : previewText(contentToTextPreview(message.content)),
     })),
   })
 

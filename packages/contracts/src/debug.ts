@@ -1,6 +1,8 @@
+import type { ContentPart } from "./runtime"
+
 export interface AiChatMessage {
   role: "user" | "assistant" | "system"
-  content: string
+  content: string | ContentPart[]
 }
 
 export interface AiDebugRecord {

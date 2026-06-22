@@ -3,6 +3,7 @@ import type {
   AgentContextEntry,
   AgentContextSnapshot,
   AiChatMessage,
+  ContentPart,
   ConversationMessageRecord,
   AgentPlatformToolName,
   PlatformActionRequest,
@@ -424,8 +425,20 @@ function buildAgentContextMessages(
  * - delegated agent 路径(index 1 直接是框架信息,无独立剧情段):{-1,-1}.
  * - 无框架信息锚点(结构不符):{-1,-1}.
  */
+/** 消息形状(content 放宽以兼容多模态). 历史段/工具交互段的 content 在实践中始终是 string
+ *  (多模态 ContentPart 只出现在当前轮 user 输入),但类型层面需要兼容. */
+type MessageLike = { role: string; content: string | ContentPart[]; toolCalls?: unknown[] }
+
+function messageContentToText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content
+  return content
+    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .map((part) => part.text)
+    .join("")
+}
+
 function locateHistorySpan(
-  messages: ReadonlyArray<{ role: string; content: string }>,
+  messages: ReadonlyArray<MessageLike>,
 ): { start: number; end: number } {
   if (messages.length <= 1 || messages[0].role !== "system") {
     return { start: -1, end: -1 }
@@ -433,20 +446,21 @@ function locateHistorySpan(
   const first = messages[1]
   // delegated:index 1 直接是框架信息(当前回合/当前问答轮次),无独立剧情段;
   // entry 兜底:剧情段首条是"最近对话："拍扁文本,无独立 message 序列可压.
+  const firstText = messageContentToText(first.content)
   if (
     first.role === "user"
-    && (first.content.startsWith("当前回合：") || first.content.startsWith("当前问答轮次：") || first.content.startsWith("最近对话："))
+    && (firstText.startsWith("当前回合：") || firstText.startsWith("当前问答轮次：") || firstText.startsWith("最近对话："))
   ) {
     return { start: -1, end: -1 }
   }
   let end = -1
   for (let i = 1; i < messages.length; i += 1) {
-    if (
-      messages[i].role === "user"
-      && (messages[i].content.startsWith("当前回合：") || messages[i].content.startsWith("当前问答轮次："))
-    ) {
-      end = i
-      break
+    if (messages[i].role === "user") {
+      const text = messageContentToText(messages[i].content)
+      if (text.startsWith("当前回合：") || text.startsWith("当前问答轮次：")) {
+        end = i
+        break
+      }
     }
   }
   if (end === -1) {
@@ -461,7 +475,7 @@ function locateHistorySpan(
  * buildAgentContextMessages 产出的 AiChatMessage[].system / 框架信息 /
  * 本轮输入 / 后续 tool 交互保留不动.
  */
-function replaceHistorySpan<T extends { role: string; content: string }>(
+function replaceHistorySpan<T extends MessageLike>(
   messages: T[],
   span: { start: number; end: number },
   newMessages: T[],
@@ -478,7 +492,7 @@ function replaceHistorySpan<T extends { role: string; content: string }>(
  * 框架段 user(含历史窗口/目标上下文/请求等 section)不含这些标签,不会被误判为工具交互.
  */
 function isTaskInteractionMessage(
-  message: { role: string; content: string; toolCalls?: unknown[] },
+  message: MessageLike,
   mode: "native" | "text",
 ): boolean {
   if (mode === "native") {
@@ -489,8 +503,9 @@ function isTaskInteractionMessage(
     return false
   }
   // text
-  if (message.role === "user" && message.content.includes("<tsian-tool-observation>")) return true
-  if (message.role === "assistant" && message.content.includes("<tsian-tool-call>")) return true
+  const text = messageContentToText(message.content)
+  if (message.role === "user" && text.includes("<tsian-tool-observation>")) return true
+  if (message.role === "assistant" && text.includes("<tsian-tool-call>")) return true
   return false
 }
 
@@ -503,7 +518,7 @@ function isTaskInteractionMessage(
  * 不依赖框架段锚点,只依赖工具交互的 message 形态.兜底(无工具交互)→ {-1,-1},跳过压缩.
  */
 function locateTaskInteractionSpan(
-  messages: ReadonlyArray<{ role: string; content: string; toolCalls?: unknown[] }>,
+  messages: ReadonlyArray<MessageLike>,
   mode: "native" | "text",
 ): { start: number; end: number } {
   if (messages.length === 0) return { start: -1, end: -1 }
@@ -1307,7 +1322,9 @@ function aiChatMessagesToRuntime(
 ): RuntimeChatMessage[] {
   return messages.map((message) => {
     if (message.role === "assistant") {
-      return { role: "assistant", content: message.content }
+      // assistant content 始终是 string(多模态 ContentPart 只出现在 user 消息);
+      // 类型层面放宽后这里安全降级.
+      return { role: "assistant", content: messageContentToText(message.content) }
     }
     return { role: message.role, content: message.content }
   })

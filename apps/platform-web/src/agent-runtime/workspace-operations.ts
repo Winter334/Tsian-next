@@ -119,6 +119,12 @@ const DEFAULT_SCOPE_ACCESS: Record<Exclude<WorkspaceScope, "effective">, AccessL
     readLevel: 0,
     editLevel: 2,
   },
+  // 临时附件目录:所有 agent 可读(助手 + 运行时 agent 都能读图片),
+  // 只有助手(level 4)能写入.
+  temp: {
+    readLevel: 0,
+    editLevel: 4,
+  },
 }
 
 function workspaceOperationError(

@@ -1,6 +1,7 @@
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import { localDb } from "./db"
 import { assistantContextPath, deleteLocalAssistantFile } from "./local-assistant-files"
+import { deleteAttachmentsBySession } from "./assistant-attachments"
 
 export type AssistantMode = "local" | "card"
 
@@ -51,7 +52,9 @@ function normalizeMessages(
   }
   return messages.flatMap((item) => {
     if (typeof item?.role === "string" && typeof item.content === "string") {
-      return [{ role: item.role, content: item.content }]
+      // 保留 attachments 字段(附件引用元数据);非数组或缺失时省略.
+      const attachments = Array.isArray(item.attachments) ? { attachments: item.attachments } : {}
+      return { role: item.role, content: item.content, ...attachments }
     }
     return []
   })
@@ -260,6 +263,8 @@ export async function deleteAssistantSession(
   // 连带清理该会话的 agent 上下文快照(虚拟文件),防孤儿残留(design 06-20-assistant-context-persistence §3.6).
   // deleteLocalAssistantFile 内部已 catch,不会阻塞会话删除.
   await deleteLocalAssistantFile(assistantContextPath(id))
+  // 连带清理该会话的附件 Blob(temp/ 虚拟文件),防孤儿残留.
+  await deleteAttachmentsBySession(id)
   const activeId = await getActiveAssistantSessionId(mode)
   if (activeId === id) {
     await setActiveAssistantSessionId(

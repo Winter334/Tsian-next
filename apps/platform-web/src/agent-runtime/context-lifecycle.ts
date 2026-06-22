@@ -3,6 +3,7 @@ import type {
   AgentContextTurnEntry,
   ConversationMessageRecord,
   AiChatMessage,
+  ContentPart,
 } from "@tsian/contracts"
 import type { RuntimeChatMessage } from "../runtime-host/ai"
 import type { RuntimeTraceDebugLabel } from "./trace"
@@ -62,6 +63,15 @@ export const TASK_COMPRESSION_STALL_RATIO = 0.1
 
 const utf8Encoder = new TextEncoder()
 
+/** 将 content 安全转为文本(ContentPart[] 时提取 text part). token 估算/压缩 prompt 拼接用. */
+function messageContentToText(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content
+  return content
+    .filter((part): part is { type: "text"; text: string } => part.type === "text")
+    .map((part) => part.text)
+    .join("")
+}
+
 /** 粗略 token 估算(中英混合优化).不引入 tokenizer 依赖. */
 export function estimateTokenCount(text: string): number {
   const charCount = text.length
@@ -71,7 +81,7 @@ export function estimateTokenCount(text: string): number {
 
 /** 估算一组 AiChatMessage(text 循环)的 token 总量.tool observation 已被序列化进 user content,累加 content 即覆盖. */
 export function estimateAiChatMessagesTokens(messages: AiChatMessage[]): number {
-  return messages.reduce((sum, msg) => sum + estimateTokenCount(msg.content), 0)
+  return messages.reduce((sum, msg) => sum + estimateTokenCount(messageContentToText(msg.content)), 0)
 }
 
 /**
@@ -81,7 +91,7 @@ export function estimateAiChatMessagesTokens(messages: AiChatMessage[]): number 
  */
 export function estimateRuntimeMessagesTokens(messages: RuntimeChatMessage[]): number {
   return messages.reduce((sum, msg) => {
-    let tokens = estimateTokenCount(msg.content)
+    let tokens = estimateTokenCount(messageContentToText(msg.content))
     if (msg.role === "assistant" && msg.toolCalls) {
       for (const call of msg.toolCalls) {
         tokens += estimateTokenCount(call.name)
@@ -453,10 +463,13 @@ const TASK_COMPRESSION_SYSTEM_PROMPT = [
   `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
 ].join("\n")
 
-/** 任务压缩可处理的 message 形态(native RuntimeChatMessage 与 text AiChatMessage 的公共结构). */
+/** 任务压缩可处理的 message 形态(native RuntimeChatMessage 与 text AiChatMessage 的公共结构).
+ *  content 放宽为 string | ContentPart[] 以兼容多模态消息;压缩场景只处理
+ *  工具交互(assistant + tool),其 content 始终是 string,ContentPart[] 不会
+ *  出现在被压缩段,但类型层面需要兼容以通过泛型约束. */
 interface TaskCompressionMessage {
   role: string
-  content: string
+  content: string | ContentPart[]
   toolCalls?: unknown[]
 }
 
@@ -481,7 +494,7 @@ function buildTaskCompressionPrompt(
     ...interactionEntries.map((entry, index) => {
       const toolName = extractToolNameFromMessage(entry)
       const tag = toolName ? `[${entry.role}:${toolName}]` : `[${entry.role}]`
-      return `${index + 1}. ${tag} ${entry.content}`
+      return `${index + 1}. ${tag} ${messageContentToText(entry.content)}`
     }),
   ]
     .filter(Boolean)
@@ -499,7 +512,8 @@ function extractToolNameFromMessage(message: TaskCompressionMessage): string | u
   }
   // text: assistant content 含 <tsian-tool-call>{"name":"..."}</tsian-tool-call>
   if (message.role === "assistant") {
-    const match = message.content.match(/<tsian-tool-call>\s*(\{[\s\S]*?\})\s*<\/tsian-tool-call>/)
+    const text = messageContentToText(message.content)
+    const match = text.match(/<tsian-tool-call>\s*(\{[\s\S]*?\})\s*<\/tsian-tool-call>/)
     if (match) {
       try {
         const parsed = JSON.parse(match[1]) as { name?: string }
