@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 79
+- **Total Sessions**: 80
 - **Last Active**: 2026-06-22
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~949 | Active |
+| `journal-2.md` | ~983 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 80 | 2026-06-22 | Library toolbar + platform event-bus auto-refresh | `28cef8b` | `master` |
 | 79 | 2026-06-22 | 编辑器简化 + 媒体查看器 + 存储层重构 (mediaType 移除 + 二进制 Blob) | `84f875f`, `27bc44e` | `refactor/split-platform-host-index` |
 | 78 | 2026-06-20 | 取消子4 tool-executor-policy + 父任务 tool-runtime-performance 收口 | `0ea93e6` | `master` |
 | 77 | 2026-06-20 | 子3 工具命名统一 + glob + 移除 patch/validate 工具 | `47b7b52` | `master` |
