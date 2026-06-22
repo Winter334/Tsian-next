@@ -30,6 +30,7 @@ import {
   listLocalSaves,
   listWorkspaceFilesForSave,
   loadLocalAssistantFiles,
+  deleteLocalAssistantFile,
   normalizeWorkspaceFilePath,
   saveLocalAssistantFiles,
   isLocalAssistantPath,
@@ -571,9 +572,17 @@ async function executeLocalWorkspaceOperation(
         },
         async delete(deleteInput) {
           if (isLocalAssistantPath(deleteInput.path)) {
-            const kept = localAssistantFiles.filter((f) => f.path !== deleteInput.path && !f.path.startsWith(`${deleteInput.path}/`))
-            await saveLocalAssistantFiles(kept)
-            return { scope: "platform-meta", deletedPaths: [deleteInput.path] }
+            // deleteLocalAssistantFile 是真正的删除(直接删 map 项),
+            // 而 saveLocalAssistantFiles 是合并语义(只合并不删项),
+            // 用后者过滤后保存会被合并回来 → 删不掉(遗留 bug 修复).
+            const deletedPaths: string[] = []
+            for (const file of localAssistantFiles) {
+              if (file.path === deleteInput.path || file.path.startsWith(`${deleteInput.path}/`)) {
+                await deleteLocalAssistantFile(file.path)
+                deletedPaths.push(file.path)
+              }
+            }
+            return { scope: "platform-meta", deletedPaths }
           }
           if (!saveId) {
             throw workspaceStudioError("WORKSPACE_LOCAL_DELETE_NO_SAVE", "没有激活存档，无法删除 .tsian/ 文件。")
