@@ -1,18 +1,24 @@
 import type { WorkspaceFile, WorkspaceScope } from "@tsian/contracts"
 
 import {
+  GAME_CARD_MANIFEST_SCHEMA,
   deleteLocalAssistantPath,
   deleteLocalGameCardContentPathForCard,
+  deleteLocalGameCardFrontendPathForCard,
   deleteWorkspacePathForSave,
+  getLocalGameCard,
   isLocalAssistantPath,
   isPlatformMetadataPath,
   listLocalGameCardContentFiles,
   listLocalGameCardFrontendFiles,
   listLocalWorkspaceFilesForSave,
   loadLocalAssistantFiles,
+  normalizeGameCardManifest,
+  putLocalGameCard,
   saveLocalAssistantFiles,
   toWorkspaceFileFromGameCardContent,
   writeLocalGameCardContentFile,
+  writeLocalGameCardFrontendFile,
   writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
   type LocalWorkspaceFileRecord,
@@ -115,15 +121,106 @@ export const cardFrontendVolume: WorkspaceVolume = {
       }
     }))
   },
-  async write(_cardId, { path }) {
-    throw new Error(
-      `card-frontend write not yet implemented for path "${path}" (see task 06-21-game-card-data-fileification 子3)`,
-    )
+  async write(cardId, { path, content, data }) {
+    // Frontend files are stored as `data: Blob`. Text content (html/css/js/...)
+    // is wrapped into a Blob here; a caller-supplied Blob passes through.
+    const payload: Blob | string = data instanceof Blob ? data : (content ?? "")
+    const rec = await writeLocalGameCardFrontendFile(cardId, { path, data: payload })
+    // Mirror enumerate's text/media split so the returned WorkspaceFile matches
+    // what a subsequent read sees.
+    const mediaType = inferMediaTypeFromPath(rec.path)
+    if (isTextMediaType(mediaType) || mediaType === "image/svg+xml") {
+      return {
+        path: rec.path,
+        content: await rec.data.text(),
+        createdAt: rec.createdAt,
+        updatedAt: rec.updatedAt,
+      }
+    }
+    return {
+      path: rec.path,
+      content: binaryPlaceholderText(rec.data, rec.path),
+      binary: rec.data,
+      createdAt: rec.createdAt,
+      updatedAt: rec.updatedAt,
+    }
   },
-  async delete(_cardId, pathPrefix) {
-    throw new Error(
-      `card-frontend delete not yet implemented for prefix "${pathPrefix}" (see task 06-21-game-card-data-fileification 子3)`,
-    )
+  async delete(cardId, pathPrefix) {
+    return deleteLocalGameCardFrontendPathForCard(cardId, pathPrefix)
+  },
+}
+
+/**
+ * writeGameCardManifestFileForCard — write the synthesized `game-card.json`
+ * back to `gameCards.manifest` (task 06-21 子3 Phase B). Parses + normalizes
+ * the JSON content, force-overwrites protected fields (id/schema/bridgeVersion),
+ * and persists the manifest without touching the content/frontend tables.
+ */
+async function writeGameCardManifestFileForCard(cardId: string, content: string): Promise<WorkspaceFile> {
+  const card = await getLocalGameCard(cardId)
+  if (!card) {
+    throw new Error(`游戏卡 "${cardId}" 不存在。`)
+  }
+  if (card.source === "builtin") {
+    throw new Error("内置游戏卡的 manifest 不可编辑（它是模板源，请先另存为本地卡）。")
+  }
+
+  let parsed: ReturnType<typeof normalizeGameCardManifest>
+  try {
+    parsed = normalizeGameCardManifest(JSON.parse(content))
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "manifest JSON 解析失败"
+    throw new Error(`game-card.json 内容无效：${message}`)
+  }
+
+  // Force-overwrite protected fields (same pattern as serializeWorkspaceManifest).
+  parsed.id = card.manifest.id
+  parsed.schema = GAME_CARD_MANIFEST_SCHEMA
+  if (parsed.frontend) {
+    parsed.frontend.bridgeVersion = "tsian.play-bridge.v1"
+  }
+
+  const now = Date.now()
+  await putLocalGameCard({
+    manifest: parsed,
+    contentFiles: undefined,  // undefined = leave the content table untouched
+    source: card.source,
+  })
+
+  return {
+    path: "game-card.json",
+    content: JSON.stringify(parsed, null, 2),
+    createdAt: card.createdAt,
+    updatedAt: now,
+  }
+}
+
+/**
+ * ManifestVolume — scope card-content, but routed by path `game-card.json`.
+ * The manifest is a synthesized file: enumerate produces it from
+ * `gameCards.manifest`, write round-trips through `writeGameCardManifestFileForCard`
+ * back to the manifest field. delete is rejected (the manifest cannot be
+ * removed while the card exists).
+ */
+export const manifestVolume: WorkspaceVolume = {
+  scope: "card-content",
+  async enumerate(cardId) {
+    const card = await getLocalGameCard(cardId)
+    if (!card) {
+      return []
+    }
+    return [{
+      path: "game-card.json",
+      content: JSON.stringify(normalizeGameCardManifest(card.manifest), null, 2),
+      createdAt: card.createdAt,
+      updatedAt: card.updatedAt,
+    }]
+  },
+  async write(cardId, { content }) {
+    return writeGameCardManifestFileForCard(cardId, content ?? "")
+  },
+  async delete() {
+    throw new Error("game-card.json（卡片 manifest）不能删除。")
   },
 }
 
@@ -266,7 +363,12 @@ export function resolveVolumeForScope(
   if (scope === "platform-meta") {
     return isLocalAssistantPath(path) ? localAssistantVolume : savePlatformMetaVolume
   }
-  if (scope === "card-content") return cardContentVolume
+  if (scope === "card-content") {
+    // `game-card.json` is a synthesized manifest file routed to ManifestVolume
+    // even though it lives under the card-content scope (editLevel 2).
+    if (path === "game-card.json") return manifestVolume
+    return cardContentVolume
+  }
   if (scope === "card-frontend") return cardFrontendVolume
   if (scope === "save-runtime") return saveRuntimeVolume
   throw new Error(`unsupported scope for workspace mutation: ${scope}`)

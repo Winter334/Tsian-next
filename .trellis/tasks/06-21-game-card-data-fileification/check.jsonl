@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "check 阶段验证 ManifestVolume + CardFrontendVolume.write/delete 实现符合 volume 抽象规范（L436-457）：3 原语、单一 dispatch、path 特殊路由 game-card.json→ManifestVolume"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "check 阶段验证 manifest 受保护字段强制覆盖（id/schema/bridgeVersion）+ 不写 mediaType（L292）+ fallback 不暴露 builtin（L316-322 assistant level 4 权限 + card-content editLevel 2）"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "check 阶段验证 build:web 通过 + 无 scope 溢出 + 无重复 storage helper（L33 workspace search 只在 agent-runtime，本任务前端写 API 不重复）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "check 阶段按跨层思维指南验证 manifest + 前端从 storage→volume→host→视图的全链路数据流：list 注入一致、写路由无 split-brain（前端写 gameCardFrontendFiles、manifest 写 gameCards.manifest）"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "check 阶段验证 createDefaultEditableCard 抽取合理、normalizeGameCardManifest/normalizeFrontendFile/toBlob 复用而非重写、无重复 storage helper"}

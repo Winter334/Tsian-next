@@ -14,6 +14,7 @@ import {
   listLocalGameCardFrontendFiles,
   type LocalGameCardContentFile,
 } from "./game-cards"
+import { normalizeGameCardManifest } from "./game-card-packages"
 import {
   localDb,
   type LocalGameCardRecord,
@@ -1369,6 +1370,15 @@ export async function listEffectiveWorkspaceFilesForSave(
       })
     }
   }
+
+  // 合成 manifest 文件（game-card.json，不存表，list 时 JSON.stringify 注入）。
+  // 与 manifestVolume.enumerate 同构（storage 层不依赖 host 层 volume，直接合成）。
+  filesByPath.set("game-card.json", {
+    path: "game-card.json",
+    content: JSON.stringify(normalizeGameCardManifest(card.manifest), null, 2),
+    createdAt: card.createdAt,
+    updatedAt: card.updatedAt,
+  })
 
   for (const record of await listLocalWorkspaceFilesForSave(saveId)) {
     const workspaceFile = toWorkspaceFile(record)

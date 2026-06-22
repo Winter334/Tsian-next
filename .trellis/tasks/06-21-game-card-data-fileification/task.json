@@ -3,7 +3,7 @@
   "name": "game-card-data-fileification",
   "title": "Game Card Data Fileification",
   "description": "Make all game card data (content + frontend + manifest) visible/editable in workspace; builtin card degrades to invisible internal template",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

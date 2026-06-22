@@ -88,6 +88,21 @@
 - 不改导出/导入包格式（复用现有 `game-card.json` round-trip 序列化）。
 - `card-frontend` scope 是 agent-runtime 的轻量扩展（加 scope 定义，不改核心逻辑）。
 
+## 漂移修正（2026-06-22 重规划）
+
+本任务 design/implement 写于子4/子5 刚完成时（2026-06-21）。此后项目经历三个任务（editor-simplify + media-viewer 的 mediaType 移除 + binary Blob + DB v7→v8；workspace-readonly-tool-strengthen 的 read/search 强化），代码与 spec 显著漂移，但 **PRD 需求全部仍然成立**，仅技术假设需修正。重写后的 design/implement 基于以下当前代码现实：
+
+1. **`mediaType` 已从内部记录移除**。`WorkspaceFile`/`WorkspaceSearchResult`/`WorkspaceOperationRequest`/`LocalGameCardContentFileRecord`/`LocalGameCardFrontendFileRecord` 均无 `mediaType` 字段；mediaType 由 `inferMediaTypeFromPath(path)` 在消费点派生。原 design 里所有 `mediaType: "application/json"` 写法失效——manifest 合成文件不写 mediaType。
+2. **前端文件存储是 `data: Blob` 必需**（`LocalGameCardFrontendFileRecord`，无 `content`/`mediaType` 字段）。`PutLocalGameCardFrontendFileInput` 类型已存在（`game-cards.ts:31`，data 接受 `Blob|ArrayBuffer|Uint8Array|string`，内部 `toBlob` 转 Blob）。`normalizeFrontendFile`（L198-218）已实现，校验 `frontend/` 前缀。但 **`writeLocalGameCardFrontendFile`/`deleteLocalGameCardFrontendFile` 单文件 API 仍不存在**——只有整批 `putLocalGameCard({frontendFiles})`。本任务补单文件 API。
+3. **DB 已到 v8**（`tsian-agent-runtime-v8`，mediaType 移除 + Blob 破坏性无迁移）。本任务不改 record shape，不 bump DB 版本。
+4. **`CardFrontendVolume.enumerate` 已由子5 实现并接入 list**（`workspace-volumes.ts:91` + `workspace-ops.ts:125` + `workspace.ts:1338-1371`），text/media 分流填 content 或 binary placeholder。本任务**只填 `write`/`delete`**，不重做 enumerate。
+5. **`card-frontend` scope 已定义**（`runtime.ts:113` `WorkspaceScope` 含 `"card-frontend"`；`workspace-operations.ts:118` `DEFAULT_SCOPE_ACCESS` read 0/edit 2）。原 design Step B2"加 scope"已完成。
+6. **`resolveStudioWorkspacePath` 已处理 `frontend/`**（`workspace-ops.ts:194-200`，scope=card-frontend）。原 design "加 frontend/ 解析"已完成。本任务只需加 `game-card.json` 特殊路由。
+7. **platform-host 已 split** 为 `index.ts`/`internal.ts`/`game-cards.ts`/`workspace-ops.ts` 等多文件。原 design 的 `platform-host:576` 等行号全过时。4 个 fallback 函数实际位置：`ensureActiveGameCardId`（`internal.ts:63`）、`ensureActiveSave`（`game-cards.ts:92`）、`deletePlatformGameCard`（`game-cards.ts:381`）、`getPlatformActiveGameCard`（`internal.ts:178`，stale-save 兜底 L187/L192 返回 `getBuiltinBlankGameCard()`）。
+8. **封面已改 Blob 存储**（`getGameCardCoverUrl` 返回 `URL.createObjectURL`），但"封面图字节文件编辑不支持"的结论仍成立（text-only 工作区不编辑 Blob）。限制表述从"data-URI 编辑不实际"改为"Blob 不在 text-only 工作区编辑"。
+9. **`normalizeGameCardManifest` 是 `game-card-packages.ts:233` 的内部函数**（非 export），本任务需导出复用。注意它抛 `GameCardPackageError`，与 `game-cards.ts:131` 的 `normalizeManifest`（内部用，抛普通 Error）是两个不同函数——manifest 文件化用前者（package 级校验更严）。
+10. **`normalizeTemplateFiles`（`game-cards.ts:158`）当前 reject `save/` 和 `.tsian/`**，未 reject `game-card.json`。本任务加 reject。注意 `normalizeTemplateFile`（L146-156）仍处理 `mediaType`——这是**外部 `GameCardContentFile` 格式契约**（zip 包导入用），不是内部记录，mediaType 移除不波及这里。
+
 ## Out Of Scope
 
 - 封面图片字节的文件编辑（text-only 工作区限制）。

@@ -13,7 +13,7 @@ import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentF
 import type { LocalGameCardRecord } from "./db"
 
 const GAME_CARD_PACKAGE_SCHEMA = "tsian.game-card.package.v1"
-const GAME_CARD_MANIFEST_SCHEMA = "tsian.game-card.v1"
+export const GAME_CARD_MANIFEST_SCHEMA = "tsian.game-card.v1"
 const PACKAGE_MANIFEST_PATH = "game-card.json"
 const WORKSPACE_PREFIX = "workspace/"
 const FRONTEND_PREFIX = "frontend/"
@@ -230,7 +230,7 @@ function normalizeFrontendBinding(value: unknown): GameCardFrontendBinding | und
   )
 }
 
-function normalizeGameCardManifest(value: unknown): GameCardManifest {
+export function normalizeGameCardManifest(value: unknown): GameCardManifest {
   if (!isRecord(value)) {
     throw new GameCardPackageError(
       "GAME_CARD_MANIFEST_INVALID",

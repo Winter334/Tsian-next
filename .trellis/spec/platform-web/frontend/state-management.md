@@ -396,7 +396,7 @@ const DB_NAME = "tsian-agent-runtime-v6" // db.ts already moved to v7 -> every s
 
 ### 3. Invariants
 
-- The builtin blank card (`source: "builtin"`) remains the **fallback anchor**: `getBuiltinBlankGameCard` as the last-resort active card in `platform-host`/`saves` is untouched. The template semantic is a UI/UX layering on top, not a storage-layer change — builtin cards still cannot be deleted or directly mutated.
+- The builtin blank card (`source: "builtin"`) is an **invisible internal template** (task 06-21 子3 Phase A): it stays in DB as the copy source for `createDefaultPlatformGameCard` / `createDefaultEditableCard`, but is never shown to users and never used as the active card fallback. `ensureActiveGameCardId` prefers a save-bound non-builtin card → then any existing local card → and only auto-creates a fresh editable default card (`createDefaultEditableCard`) when no local card exists at all (idempotent: checks for existing local cards before creating). `ensureActiveSave` binds new saves to the active local card via `createLocalSaveFromGameCard` (never builtin). `deletePlatformGameCard` fallback picks a remaining local card or auto-creates one. `getPlatformActiveGameCard` stale-save fallback returns `null` (not builtin). `GameCardLibraryView` filters `source === "builtin"` from the card list. Builtin cards still cannot be deleted or directly mutated (GUARD references preserved).
 - Creation reuses existing storage primitives (`copyPlatformGameCardAsLocal` + `putLocalGameCard` + `setPlatformActiveGameCard`); no new storage layer, no `platform.runAction` extension. Platform-level create-card actions are explicitly out of scope for this route.
 - `copyPlatformGameCardAsLocal` copies content + existing frontend files + a unique id. Because the builtin template has no frontend files, step (2) is needed to attach them to the copy via a same-id `putLocalGameCard` upsert.
 - Frontend files use relative references (`href="style.css"`, `src="app.js"`) which resolve under the SW virtual prefix `/__tsian_game_card_frontends/<cardId>/frontend/...`; no HTML rewriting by the SW.
@@ -406,8 +406,10 @@ const DB_NAME = "tsian-agent-runtime-v6" // db.ts already moved to v7 -> every s
 ```typescript
 // Wrong — trying to attach a frontend directly to the builtin card
 await putLocalGameCard({ manifest: {...builtin.manifest, frontend}, contentFiles, frontendFiles, source: "builtin" })
-// The builtin card is the shared fallback anchor; UI guards block frontend replacement on builtin.
-// Always create a local copy first, then attach the frontend to the copy.
+// The builtin card is an invisible template (task 06-21 子3 Phase A); it is never
+// the active card and never shown in the library. UI guards block frontend
+// replacement on builtin. Always create a local copy first, then attach the
+// frontend to the copy.
 ```
 
 ```typescript
@@ -433,11 +435,12 @@ const record = await putLocalGameCard({...}) // created but not active
 
 ### 3. Contracts
 
-- 4 physical backends are wrapped as 5 volumes (save-scoped split into two): `CardContentVolume` (card-content, `gameCardContentFiles` per-file table, ownerId=cardId), `CardFrontendVolume` (card-frontend, `gameCardFrontendFiles` `data: Blob` required, ownerId=cardId), `SaveRuntimeVolume` (save-runtime, `workspaceFiles` save/ paths, ownerId=saveId), `SavePlatformMetaVolume` (platform-meta save-owned, `workspaceFiles` `.tsian/` paths, ownerId=saveId), `LocalAssistantVolume` (platform-meta local-assistant, `meta` single-row JSON, ownerId ignored).
+- 4 physical backends are wrapped as 6 volumes (save-scoped split into two, plus a synthesized manifest volume): `CardContentVolume` (card-content, `gameCardContentFiles` per-file table, ownerId=cardId), `CardFrontendVolume` (card-frontend, `gameCardFrontendFiles` `data: Blob` required, ownerId=cardId), `ManifestVolume` (card-content scope but routed by path `game-card.json`, synthesized from `gameCards.manifest`, ownerId=cardId), `SaveRuntimeVolume` (save-runtime, `workspaceFiles` save/ paths, ownerId=saveId), `SavePlatformMetaVolume` (platform-meta save-owned, `workspaceFiles` `.tsian/` paths, ownerId=saveId), `LocalAssistantVolume` (platform-meta local-assistant, `meta` single-row JSON, ownerId ignored).
 - The 3 ad-hoc routing points' non-staged mutation branches converge into `executeWorkspaceMutation`; each scope×path combination routes through exactly one volume. No ad-hoc `if/else` by scope/path-prefix/resolved-object remains in the mutation branches.
 - **staged turn (transaction) paths stay in `executeWorkspaceOperationForActiveSave` upper layer, NOT in dispatch.** The transaction is "stage changes, commit at turn end" semantics, orthogonal to "which backend". Dispatch only converges non-staged direct-storage routing. Staged paths: `save-runtime` → `transaction.write`; `platform-meta` → `writePlatformFile`; `card-content`/`card-frontend` → throw "Runtime turn staging cannot mutate card-content." The `runAssistantChat` runtime agent turn `workspaceMutations` is also a staged path (uses `activeWorkspaceTransaction`), kept as-is.
 - `card-frontend` scope (task 06-21 子5): `readLevel: 0, editLevel: 2` (same as card-content; runtime agents level 1 cannot edit, assistant level 4 can). `scopeForPath` adds `frontend/` → `card-frontend`; `normalizeWorkspaceScope` accepts it; `resolveStudioWorkspacePath` resolves `frontend/` → card-frontend `StudioResolvedPath`.
-- `CardFrontendVolume.enumerate` is wired into `listStudioWorkspaceFilesForGameCard` and `listEffectiveWorkspaceFilesForSave` so frontend files appear read-only in Explorer/assistant workspace. `write`/`delete` are placeholder throws pending task 06-21 子3 (single-file frontend API). Frontend files map to `{ path, content: binaryPlaceholderText(...), binary: r.data, createdAt, updatedAt }`.
+- `CardFrontendVolume.enumerate` is wired into `listStudioWorkspaceFilesForGameCard` and `listEffectiveWorkspaceFilesForSave` so frontend files appear in Explorer/assistant workspace. `write`/`delete` are implemented (task 06-21 子3) via `writeLocalGameCardFrontendFile`/`deleteLocalGameCardFrontendPathForCard` single-file APIs (per-row put + bump card `updatedAt`, no full `putLocalGameCard` rewrite). Frontend files map to `{ path, content: binaryPlaceholderText(...), binary: r.data, createdAt, updatedAt }` for media, or `{ path, content: await data.text(), createdAt, updatedAt }` for text (html/css/js/json/svg).
+- `ManifestVolume` (task 06-21 子3) is a synthesized-file volume: `enumerate(cardId)` produces `game-card.json` from `JSON.stringify(normalizeGameCardManifest(card.manifest), null, 2)`; `write` round-trips through `writeGameCardManifestFileForCard` (parse + `normalizeGameCardManifest` + force-overwrite protected fields `id`/`schema`/`frontend.bridgeVersion` + `putLocalGameCard({manifest, contentFiles: undefined})`); `delete` throws (manifest cannot be removed while the card exists). It shares `card-content` scope (editLevel 2) but `resolveVolumeForScope` routes `path === "game-card.json"` to it before `CardContentVolume`. `normalizeTemplateFiles` rejects `game-card.json` so it cannot be stored as a content file.
 - Binary payload (`data?: Blob`) transparently threads through dispatch: runtime splits `request.content: string | Blob` into `textContent`/`binaryData` → adapter → dispatch `input.data` → volume.write `{ data }` → storage API. Agents read only `content` (string); binary is opaque to agents.
 - `localAssistantVolume` is global meta (cross-save persistent); `resolveOwnerId` identifies it by reference (not scope, since it shares `platform-meta` scope with `savePlatformMetaVolume`) and returns empty string ownerId.
 - `savePlatformMetaVolume.delete` is best-effort (returns `[pathPrefix]`, does not truly delete DB rows) matching the pre-refactor `executeLocalWorkspaceOperation` semantics; storage layer has no platform-meta prefix-delete API yet.
@@ -448,16 +451,20 @@ const record = await putLocalGameCard({...}) // created but not active
 - `save-runtime`/`save-platform-meta` mutation without `saveId` in ownerContext → dispatch throws "requires a saveId".
 - `localAssistantVolume` mutation without `saveId` → allowed (ownerId ignored, global meta).
 - `effective` scope mutation → dispatch throws "unsupported scope" (runtime computes effective in snapshot, never calls mutations).
-- `card-frontend` write/delete → `CardFrontendVolume` throws "not yet implemented (see task 06-21 子3)".
+- `card-frontend` write/delete → `CardFrontendVolume.write/delete` (implemented in task 06-21 子3) route to `writeLocalGameCardFrontendFile`/`deleteLocalGameCardFrontendPathForCard`.
+- `game-card.json` write → `ManifestVolume.write` → `writeGameCardManifestFileForCard`: invalid JSON or manifest schema → throws "game-card.json 内容无效：..."; builtin card manifest → throws "内置游戏卡的 manifest 不可编辑".
+- `game-card.json` delete → `ManifestVolume.delete` throws "game-card.json（卡片 manifest）不能删除".
 - Staged turn mutation on `card-content`/`card-frontend` → upper layer throws "Runtime turn staging cannot mutate card-content." (preserved from pre-refactor).
 - Studio `resolveStudioWorkspacePath` on `frontend/` → resolves to card-frontend scope; `storagePathToStudioPath` returns path unchanged for card-frontend (no alias rewrite).
 
 ### 5. Good/Base/Bad Cases
 
-- Good: adding a new volume (e.g. `ManifestVolume` for `game-card.json` in 子3) = implement `WorkspaceVolume` + insert into `resolveVolumeForScope`; no changes to the 3 routing points.
+- Good: `ManifestVolume` for `game-card.json` (task 06-21 子3) = implemented `WorkspaceVolume` + inserted into `resolveVolumeForScope` (path `game-card.json` special-cased under `card-content` scope); no changes to the 3 routing points.
 - Good: a `workspace.write` with `{ scope: "card-content", path, data: Blob }` flows dispatch → `CardContentVolume.write(cardId, { path, data })` → `writeLocalGameCardContentFile` (binary store).
+- Good: a `workspace.write` with `{ scope: "card-content", path: "game-card.json", content }` flows dispatch → `ManifestVolume.write` → `writeGameCardManifestFileForCard` → `putLocalGameCard({manifest})` (manifest field updated, content table untouched).
 - Good: Explorer edits a `save/` file → `executeStudioWorkspaceOperation` → dispatch → `SaveRuntimeVolume.write(saveId, ...)` → `writeWorkspaceFileForSave`.
-- Good: Explorer sees `frontend/index.html` in the file list (read-only); editing it throws the 子3 placeholder error.
+- Good: Explorer edits `frontend/index.html` → `executeStudioWorkspaceOperation` → dispatch → `CardFrontendVolume.write` → `writeLocalGameCardFrontendFile` → SW serves new content → `/play` reflects immediately (no split-brain).
+- Good: Explorer edits `game-card.json` name field → `ManifestVolume.write` → manifest updated → card detail view reflects; editing `id`/`schema`/`bridgeVersion` → force-overwritten back to original values.
 - Base: a runtime agent turn stages `save-runtime` writes via `transaction.write` (upper layer, not dispatch); non-staged commit path uses dispatch.
 - Bad: re-introducing ad-hoc `if (scope === "...") { ... }` branches in the 3 routing points' mutation adapters instead of calling `executeWorkspaceMutation`.
 - Bad: routing a staged-turn `card-content` write through dispatch (bypasses the "staging cannot mutate card-content" guard).

@@ -13,7 +13,7 @@ import {
   AUTHORING_WORKSPACE_OPERATIONS,
   executeWorkspaceOperation,
 } from "../agent-runtime/workspace-operations"
-import { executeWorkspaceMutation, cardFrontendVolume } from "./workspace-volumes"
+import { cardFrontendVolume, executeWorkspaceMutation, manifestVolume } from "./workspace-volumes"
 import {
   cardContentFilesToWorkspaceFiles,
 } from "./internal"
@@ -65,6 +65,7 @@ type StudioResolvedPath =
       scope: "card-content"
       displayPath: string
       storagePath: string
+      isManifest?: boolean
     }
   | {
       scope: "card-frontend"
@@ -123,6 +124,8 @@ async function listStudioWorkspaceFilesForGameCard(cardId: string): Promise<Work
 
   // 前端文件（card-frontend，纯二进制）只读接入 list。write/delete 占位 throw，待子3。
   files.push(...await cardFrontendVolume.enumerate(cardId))
+  // 合成 manifest 文件（game-card.json，不存表，list 时 JSON.stringify 注入）。
+  files.push(...await manifestVolume.enumerate(cardId))
 
   for (const saveSlot of saveSlots) {
     await initializeWorkspaceForSave(saveSlot.saveId)
@@ -186,6 +189,17 @@ function resolveStudioWorkspacePath(
       storagePath: `save/${relativePath}`,
       saveId: saveSlot.saveId,
       alias,
+    }
+  }
+
+  // game-card.json → card-content scope, but routed to ManifestVolume by
+  // resolveVolumeForScope (synthesized manifest file, not a real content row).
+  if (displayPath === "game-card.json") {
+    return {
+      scope: "card-content",
+      displayPath,
+      storagePath: "game-card.json",
+      isManifest: true,
     }
   }
 
@@ -491,11 +505,13 @@ async function executeStudioWorkspaceOperation(
     return result
   }
 
-  // card-content + card-frontend 共用此分支。workspaceFiles 快照必须含两者，
-  // 否则 card-frontend 的 read/validate 会从快照 find 不到前端文件。
+  // card-content + card-frontend + manifest 共用此分支。workspaceFiles 快照必须
+  // 含三者，否则 card-frontend 的 read/validate 会从快照 find 不到前端文件，
+  // game-card.json 的 read/validate 也会落空。
   const cardScopedFiles = [
     ...await cardContentFilesToWorkspaceFiles(context.card),
     ...await cardFrontendVolume.enumerate(cardId),
+    ...await manifestVolume.enumerate(cardId),
   ]
   const result = await executeWorkspaceOperation(operationRequest, {
     workspaceFiles: cardScopedFiles,

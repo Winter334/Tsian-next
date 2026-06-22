@@ -243,7 +243,7 @@ async function refreshCards() {
       listPlatformGameCards(),
       getPlatformActiveGameCardId(),
     ])
-    cards.value = loadedCards
+    cards.value = loadedCards.filter((card) => card.source !== "builtin")
     activeGameCardId.value = loadedActiveGameCardId
     if (!cards.value.some((card) => card.id === selectedCardId.value)) {
       selectedCardId.value = cards.value[0]?.id ?? ""

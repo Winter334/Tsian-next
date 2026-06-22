@@ -12,9 +12,11 @@ import {
 import {
   ensureActiveGameCardId,
   gameCardForSave,
+  getPlatformActiveGameCard,
   isRecord,
 } from "./internal"
 import {
+  createDefaultEditableCard,
   createEmptyRuntimeSnapshot,
   createLocalSave,
   createLocalSaveFromGameCard,
@@ -96,9 +98,17 @@ export async function ensureActiveSave(): Promise<string> {
     return activeSaveId
   }
 
-  const created = await createLocalSave()
+  // Fallback rework (task 06-21 子3 Phase A3): bind new saves to the active
+  // local card (never the builtin template). `getPlatformActiveGameCard` goes
+  // through `ensureActiveGameCardId`, which auto-creates an editable default
+  // card when no local card exists, so this never returns the builtin.
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("无法创建存档：当前没有可用的游戏卡。")
+  }
+  const created = await createLocalSaveFromGameCard(activeCard)
   await setActiveSaveId(created.id)
-  await setActiveGameCardId(created.gameCardId ?? (await getBuiltinBlankGameCard()).id)
+  await setActiveGameCardId(activeCard.id)
   getRuntimeEngine().loadSnapshot(await getSnapshotForSave(created.id))
   return created.id
 }
@@ -398,8 +408,17 @@ export async function deletePlatformGameCard(
   await deleteLocalGameCard(card.id)
 
   if (await getActiveGameCardId() === card.id) {
+    // Fallback rework (task 06-21 子3 Phase A4): never fall back to the builtin
+    // template. Prefer a remaining local card; if none, auto-create a fresh
+    // editable default card.
     const remainingCards = await listLocalGameCards()
-    await setActiveGameCardId(remainingCards[0]?.id ?? (await getBuiltinBlankGameCard()).id)
+    const remainingLocal = remainingCards.filter((item) => item.source !== "builtin")
+    if (remainingLocal.length > 0) {
+      await setActiveGameCardId(remainingLocal[0].id)
+    } else {
+      const created = await createDefaultEditableCard()
+      await setActiveGameCardId(created.id)
+    }
   }
 
   if (activeSaveId && deletedSaveIds.includes(activeSaveId)) {

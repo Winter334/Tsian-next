@@ -20,6 +20,7 @@ import {
   type BrowserAiConfig,
 } from "../config/ai"
 import {
+  createDefaultEditableCard,
   deleteLocalGameCardContentPathForCard,
   getActiveGameCardId,
   getActiveSaveId,
@@ -28,6 +29,7 @@ import {
   initializeWorkspaceForSave,
   listEffectiveWorkspaceFilesForSave,
   listLocalGameCardContentFiles,
+  listLocalGameCards,
   listLocalSaves,
   setActiveGameCardId,
   writeLocalGameCardContentFile,
@@ -66,18 +68,35 @@ export async function ensureActiveGameCardId(saves?: LocalSaveRecord[]): Promise
     return existingId
   }
 
+  // Fallback rework (task 06-21 子3 Phase A): never fall back to the builtin
+  // template as the active card. Prefer a save-bound non-builtin card, then any
+  // existing local card, and only create a fresh editable default card when no
+  // local card exists at all.
   const activeSaveId = await getActiveSaveId()
   const knownSaves = saves ?? await listLocalSaves()
   const activeSave = activeSaveId
     ? knownSaves.find((save) => save.id === activeSaveId)
     : undefined
   const sourceSave = activeSave ?? knownSaves[0]
-  const card = sourceSave
-    ? await gameCardForSave(sourceSave)
-    : await getBuiltinBlankGameCard()
-  const cardId = card?.id ?? (await getBuiltinBlankGameCard()).id
-  await setActiveGameCardId(cardId)
-  return cardId
+  const saveBoundCard = sourceSave ? await gameCardForSave(sourceSave) : null
+  if (saveBoundCard && saveBoundCard.source !== "builtin") {
+    await setActiveGameCardId(saveBoundCard.id)
+    return saveBoundCard.id
+  }
+
+  // No save-bound local card → pick any existing local card (idempotent: avoids
+  // creating a new card on every call when one already exists).
+  const localCards = (await listLocalGameCards()).filter((card) => card.source !== "builtin")
+  if (localCards.length > 0) {
+    await setActiveGameCardId(localCards[0].id)
+    return localCards[0].id
+  }
+
+  // No local card anywhere → create a fresh editable default card from the
+  // builtin template. The builtin record stays in DB as the template source.
+  const created = await createDefaultEditableCard()
+  await setActiveGameCardId(created.id)
+  return created.id
 }
 
 export async function listEffectiveWorkspaceFilesForActiveSave(saveId: string): Promise<WorkspaceFile[]> {
@@ -182,14 +201,17 @@ export async function getPlatformActiveGameCard() {
     return activeCard
   }
 
+  // Stale-save fallback (task 06-21 子3 Phase A4): do not surface the builtin
+  // template as the active card. Return null so callers handle "no active card"
+  // explicitly; auto-creation is the job of `ensureActiveGameCardId`.
   const activeSaveId = await getActiveSaveId()
   if (!activeSaveId) {
-    return getBuiltinBlankGameCard()
+    return null
   }
 
   const activeSave = (await listLocalSaves()).find((save) => save.id === activeSaveId)
   if (!activeSave) {
-    return getBuiltinBlankGameCard()
+    return null
   }
 
   return gameCardForSave(activeSave)

@@ -167,6 +167,9 @@ function normalizeTemplateFiles(
     if (normalized.path === ".tsian" || normalized.path.startsWith(".tsian/")) {
       throw new Error("Game card content cannot use reserved .tsian/ paths.")
     }
+    if (normalized.path === "game-card.json") {
+      throw new Error("Game card content cannot use reserved game-card.json path (manifest is synthesized, not stored as a content file).")
+    }
     filesByPath.set(normalized.path, normalized)
   }
   return Array.from(filesByPath.values()).sort((left, right) => left.path.localeCompare(right.path))
@@ -599,6 +602,96 @@ export async function readLocalGameCardFrontendFile(
   return record ? cloneGameCardFrontendFileRecord(record) : null
 }
 
+/**
+ * Single-file frontend write (task 06-21 子3 Phase B2). Mirrors
+ * `writeLocalGameCardContentFile`'s pattern: per-row put + bump the card's
+ * `updatedAt` in the same transaction so "most recent any change" is preserved
+ * without a full `putLocalGameCard` rewrite. Reuses `normalizeFrontendFile`
+ * for path validation + Blob conversion.
+ */
+export async function writeLocalGameCardFrontendFile(
+  gameCardId: string,
+  input: PutLocalGameCardFrontendFileInput,
+): Promise<LocalGameCardFrontendFileRecord> {
+  const id = gameCardId.trim()
+  if (!id) {
+    throw new Error("Game card id is required.")
+  }
+
+  const now = Date.now()
+  const record = normalizeFrontendFile(id, input, now)
+  // Preserve createdAt across re-writes of the same path.
+  const existing = await localDb.gameCardFrontendFiles.get(record.id)
+  if (existing) {
+    record.createdAt = existing.createdAt
+  }
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardFrontendFiles, localDb.gameCards],
+    async () => {
+      await localDb.gameCardFrontendFiles.put(record)
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+  return record
+}
+
+export async function deleteLocalGameCardFrontendFile(
+  gameCardId: string,
+  path: string,
+): Promise<void> {
+  const id = gameCardId.trim()
+  if (!id) {
+    return
+  }
+
+  const normalizedPath = normalizePackageFilePath(path, "frontend file path")
+  const now = Date.now()
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardFrontendFiles, localDb.gameCards],
+    async () => {
+      await localDb.gameCardFrontendFiles.delete(gameCardFrontendFileId(id, normalizedPath))
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+}
+
+export async function deleteLocalGameCardFrontendPathForCard(
+  gameCardId: string,
+  pathPrefix: string,
+): Promise<string[]> {
+  const id = gameCardId.trim()
+  if (!id) {
+    return []
+  }
+
+  const normalizedPrefix = normalizePackageFilePath(pathPrefix, "frontend file path prefix")
+  const now = Date.now()
+  const records = await localDb.gameCardFrontendFiles
+    .where("gameCardId")
+    .equals(id)
+    .toArray()
+  const toDelete = records.filter((record) =>
+    record.path === normalizedPrefix || record.path.startsWith(`${normalizedPrefix}/`)
+  )
+  if (toDelete.length === 0) {
+    return []
+  }
+  const deletedPaths = toDelete.map((record) => record.path)
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardFrontendFiles, localDb.gameCards],
+    async () => {
+      for (const record of toDelete) {
+        await localDb.gameCardFrontendFiles.delete(record.id)
+      }
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+  return deletedPaths
+}
+
 export async function ensureBuiltinBlankGameCard(): Promise<LocalGameCardView> {
   const existing = await localDb.gameCards.get(BUILTIN_BLANK_GAME_CARD_ID)
   if (existing && await isCurrentBuiltinBlankGameCard(existing)) {
@@ -622,4 +715,51 @@ export async function ensureBuiltinBlankGameCard(): Promise<LocalGameCardView> {
 
 export async function getBuiltinBlankGameCard(): Promise<LocalGameCardView> {
   return ensureBuiltinBlankGameCard()
+}
+
+/**
+ * Create a fresh editable local game card from the builtin blank template,
+ * WITHOUT setting it as the active card. Copies the template's content files
+ * and frontend files onto a new local card with a generated id.
+ *
+ * Used by the fallback rework (task 06-21 子3 Phase A) so that
+ * `ensureActiveGameCardId` / `deletePlatformGameCard` can auto-create an
+ * editable default card instead of falling back to the builtin template.
+ * The caller is responsible for `setActiveGameCardId` afterwards.
+ *
+ * Unlike `createDefaultPlatformGameCard` (host layer), this helper lives in
+ * storage so both `internal.ts` and `game-cards.ts` (host) can call it without
+ * a circular import, and it does NOT touch the active-card pointer.
+ */
+export async function createDefaultEditableCard(): Promise<LocalGameCardView> {
+  const builtin = await ensureBuiltinBlankGameCard()
+  const contentFiles = await listLocalGameCardContentFiles(builtin.id)
+  const frontendFiles = await listLocalGameCardFrontendFiles(builtin.id)
+  const newId = `local.${createIdSegment()}`
+  return putLocalGameCard({
+    manifest: {
+      ...builtin.manifest,
+      id: newId,
+      name: "我的游戏",
+      summary: "从模板创建的游戏卡，可用桌面助手定制内容。",
+    },
+    contentFiles: contentFiles.map((file) => ({
+      path: file.path,
+      content: file.content,
+    })),
+    frontendFiles: frontendFiles.map((file) => ({
+      path: file.path,
+      data: file.data,
+    })),
+    source: "local",
+  })
+}
+
+/** Generate a short id segment for a new local game card. Falls back to a
+ *  random UUID segment when `crypto.randomUUID` is unavailable. */
+function createIdSegment(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID().slice(0, 8)
+  }
+  return String(Date.now().toString(36))
 }
