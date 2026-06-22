@@ -94,6 +94,7 @@ import {
   ensureActiveGameCardId,
   getPlatformActiveGameCard,
   gameCardForSave,
+  isRecord,
   listEffectiveWorkspaceFilesForActiveSave,
   normalizeMessageContent,
   resolveAgentModelConfig,
@@ -317,10 +318,6 @@ function workspaceActionError(error: unknown, fallbackCode: string, fallbackMess
     fallbackMessage,
     error instanceof Error ? { reason: error.message } : undefined,
   )
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
 function syncWorkspaceFileWrite(
