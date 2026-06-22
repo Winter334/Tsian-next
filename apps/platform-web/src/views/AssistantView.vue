@@ -382,7 +382,7 @@
               ref="inputRef"
               v-model="inputText"
               class="retro-focus max-h-[160px] min-h-[44px] flex-1 resize-none overflow-y-auto border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
-              placeholder="输入消息，Enter 发送，Shift+Enter 换行（可粘贴图片或拖拽文件）"
+              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
               rows="1"
               :disabled="sending"
               @keydown.enter.exact.prevent="send"
