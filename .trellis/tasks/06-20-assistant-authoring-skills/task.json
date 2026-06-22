@@ -3,7 +3,7 @@
   "name": "assistant-authoring-skills",
   "title": "Assistant Authoring Skills",
   "description": "Agent/skill/card-content authoring skills + framework-knowledge enhancement for desktop assistant",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
