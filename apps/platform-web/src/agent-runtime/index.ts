@@ -77,6 +77,9 @@ import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
 export interface AgentRuntimeTurnInput {
   agentId: string
   userInput: string
+  /** 本轮附件图片的 ContentPart 列表(助手聊天附件用). 有值时本轮输入 user
+   *  消息的 content 变为 ContentPart[](text + image parts),无值时保持 string. */
+  userInputAttachments?: ContentPart[]
   recentHistory: ConversationMessageRecord[]
   snapshot: RuntimeSnapshotShell
   workspaceFiles?: WorkspaceFile[]
@@ -921,9 +924,12 @@ function buildEntryAgentMessages(
       ].join("\n"),
     },
     // 本轮输入:单独一条 user message,框架信息之后、工具循环之前.
+    // 有附件图片时 content 变为 ContentPart[](text + image parts),走多模态.
     {
       role: "user",
-      content: `${inputLabel}：\n${input.userInput}`,
+      ...(input.userInputAttachments && input.userInputAttachments.length > 0
+        ? { content: [{ type: "text" as const, text: `${inputLabel}：\n${input.userInput}` }, ...input.userInputAttachments] as ContentPart[] }
+        : { content: `${inputLabel}：\n${input.userInput}` }),
     },
   ]
 }

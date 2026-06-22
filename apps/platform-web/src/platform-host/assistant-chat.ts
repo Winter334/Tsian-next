@@ -1,5 +1,7 @@
 import type {
   AgentContextSnapshot,
+  AttachmentRef,
+  ContentPart,
   ConversationMessageRecord,
   WorkspaceFile,
 } from "@tsian/contracts"
@@ -16,10 +18,12 @@ import {
 import {
   assistantContextPath,
   deleteLocalAssistantFile,
+  getAssistantAttachmentBase64,
   isAssistantDirectWritePath,
   isLocalAssistantPath,
   listAttachmentsBySession,
   loadLocalAssistantFiles,
+  readTextAttachment,
   saveLocalAssistantFiles,
   LOCAL_ASSISTANT_AGENT_ID,
 } from "../storage"
@@ -133,6 +137,9 @@ async function stageAssistantContextFile(
 
 export interface AssistantChatInput {
   message: string
+  /** 附件引用列表. 图片附件编码为 image ContentPart 放入首轮 user 消息;
+   *  文本附件内容提取后拼入消息文本. */
+  attachments?: AttachmentRef[]
   history?: ConversationMessageRecord[]
   /**
    * 当前助手会话 id.host 据此读写该会话的 agent 上下文快照
@@ -207,6 +214,30 @@ export async function runAssistantChat(
   const content = normalizeMessageContent(input.message)
   if (!content) {
     throw new Error("Assistant chat requires non-empty message.")
+  }
+
+  // 处理附件:文本附件内容拼入消息文本;图片附件编码为 ContentPart[] 传给 runtime.
+  let messageText = content
+  let userInputAttachments: ContentPart[] | undefined
+  if (input.attachments && input.attachments.length > 0) {
+    const imageParts: ContentPart[] = []
+    for (const attachment of input.attachments) {
+      if (attachment.kind === "image") {
+        const base64 = await getAssistantAttachmentBase64(attachment.path)
+        if (base64) {
+          imageParts.push({ type: "image", mimeType: base64.mimeType, data: base64.data })
+        }
+      } else {
+        // 文本附件:读取内容拼入消息文本
+        const text = await readTextAttachment(attachment.path)
+        if (text) {
+          messageText += `\n\n[文件: ${attachment.name}]\n${text}`
+        }
+      }
+    }
+    if (imageParts.length > 0) {
+      userInputAttachments = imageParts
+    }
   }
 
   const activeCard = await getPlatformActiveGameCard()
@@ -315,7 +346,8 @@ export async function runAssistantChat(
     const result = await runAgentRuntimeTurn(
       {
         agentId,
-        userInput: content,
+        userInput: messageText,
+        userInputAttachments,
         recentHistory: history,
         // 修正 turn 号:从快照推算,使 currentRuntimeTurnNumber 返回 nextAssistantTurn
         // (之前恒传 turn:0 → 每轮 turn=1,破坏 lastCompressedTurn 去重).
