@@ -56,7 +56,20 @@
         >
           {{ state.options.cancelText }}
         </button>
+        <template v-if="state.kind === 'choice'">
+          <button
+            v-for="option in state.options.options"
+            :key="option.value"
+            type="button"
+            class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs"
+            :class="option.severity === 'danger' ? 'border-danger/70 text-danger hover:!border-danger hover:!text-danger' : ''"
+            @click="resolveConfirm(option.value)"
+          >
+            {{ option.label }}
+          </button>
+        </template>
         <button
+          v-else
           ref="confirmButtonRef"
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs"
@@ -94,7 +107,7 @@ watch(
     if (current?.kind === "prompt") {
       promptValue.value = current.options.defaultValue
       nextTick(() => promptInputRef.value?.focus())
-    } else if (current?.kind === "confirm") {
+    } else if (current?.kind === "confirm" || current?.kind === "choice") {
       // Focus the cancel button by default so accidental Enter does not confirm
       // a destructive action; the user must tab/click to confirm.
       nextTick(() => cancelButtonRef.value?.focus())
@@ -104,7 +117,7 @@ watch(
 
 function cancel(): void {
   promptError.value = ""
-  if (state.value?.kind === "prompt") {
+  if (state.value?.kind === "prompt" || state.value?.kind === "choice") {
     resolveConfirm(null)
   } else {
     resolveConfirm(false)

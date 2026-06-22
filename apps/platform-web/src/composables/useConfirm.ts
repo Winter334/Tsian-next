@@ -21,6 +21,19 @@ export interface PromptOptions {
   validate?: (value: string) => string | null
 }
 
+export interface ConfirmChoiceOption {
+  value: string
+  label: string
+  severity?: ConfirmSeverity
+}
+
+export interface ConfirmChoiceOptions {
+  title?: string
+  message: string
+  options: ConfirmChoiceOption[]
+  cancelText?: string
+}
+
 type PendingRequest =
   | {
       kind: "confirm"
@@ -35,6 +48,11 @@ type PendingRequest =
         placeholder: string
         validate: (value: string) => string | null
       }
+      resolve: (value: string | null) => void
+    }
+  | {
+      kind: "choice"
+      options: Required<Omit<ConfirmChoiceOptions, "title">> & { title: string }
       resolve: (value: string | null) => void
     }
 
@@ -90,6 +108,25 @@ export function prompt(options: PromptOptions): Promise<string | null> {
         confirmText: options.confirmText ?? "确认",
         cancelText: options.cancelText ?? "取消",
         validate: options.validate ?? (() => null),
+      },
+      resolve,
+    }
+  })
+}
+
+/** Show a multi-option choice dialog. Resolves the chosen option value, or null on cancel/backdrop. */
+export function confirmChoice(options: ConfirmChoiceOptions): Promise<string | null> {
+  if (pending.value) {
+    return Promise.resolve(null)
+  }
+  return new Promise<string | null>((resolve) => {
+    pending.value = {
+      kind: "choice",
+      options: {
+        title: options.title ?? "请选择",
+        message: options.message,
+        options: options.options,
+        cancelText: options.cancelText ?? "取消",
       },
       resolve,
     }

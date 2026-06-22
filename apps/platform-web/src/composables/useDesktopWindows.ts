@@ -39,6 +39,21 @@ const DEFAULT_BOUNDS: DesktopBounds = {
   height: 720,
 }
 
+// Module-level before-close handlers so route views (e.g. the workspace editor)
+// can register a close guard without holding the same `useDesktopWindows()`
+// instance as the desktop shell. Keyed by window id.
+const beforeCloseHandlers = new Map<string, () => Promise<boolean>>()
+
+/** Register a before-close guard for a window. Return false from the handler to cancel close. */
+export function setBeforeClose(id: string, handler: () => Promise<boolean>): void {
+  beforeCloseHandlers.set(id, handler)
+}
+
+/** Remove a before-close guard. Safe to call when no handler is registered. */
+export function clearBeforeClose(id: string): void {
+  beforeCloseHandlers.delete(id)
+}
+
 export function useDesktopWindows() {
   const windows = ref<DesktopWindowState[]>([])
   const activeWindowId = ref("")
@@ -127,9 +142,17 @@ export function useDesktopWindows() {
     activeWindowId.value = ""
   }
 
-  function closeWindow(id: string) {
+  async function closeWindow(id: string) {
+    const handler = beforeCloseHandlers.get(id)
+    if (handler) {
+      const ok = await handler()
+      if (!ok) {
+        return // a view vetoed the close (e.g. editor with unsaved changes chose "cancel")
+      }
+    }
     const wasActive = activeWindowId.value === id
     windows.value = windows.value.filter((window) => window.id !== id)
+    beforeCloseHandlers.delete(id)
     if (wasActive) {
       activeWindowId.value = topVisibleWindow()?.id ?? ""
     }

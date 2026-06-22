@@ -1,33 +1,15 @@
 <template>
-  <section class="grid min-h-full grid-rows-[auto_auto_minmax(0,1fr)_auto] overflow-hidden">
+  <section class="grid min-h-full grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
     <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
       <div class="min-w-0">
         <p class="font-mono text-xs uppercase tracking-wider text-neon">
           {{ modeLabel }}
         </p>
         <h1 class="mt-1 truncate text-sm font-bold text-text-main">
-          {{ draftPath || "untitled.txt" }}
+          {{ draftPath || "untitled.txt" }}<span v-if="hasDraftChanges" class="text-neon">*</span>
         </h1>
       </div>
       <div class="flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-          :disabled="loading || saving || !editorValidator"
-          @click="validateDraft"
-        >
-          <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
-          校验
-        </button>
-        <button
-          type="button"
-          class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-          :disabled="loading || saving || !hasDraftChanges"
-          @click="resetDraft"
-        >
-          <RotateCcw class="h-3.5 w-3.5" aria-hidden="true" />
-          还原
-        </button>
         <button
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
@@ -40,30 +22,7 @@
       </div>
     </div>
 
-    <div class="grid gap-2 border-b border-neon-deep/35 bg-void/65 p-3 sm:grid-cols-[260px]">
-      <label class="grid min-w-0 gap-1">
-        <span class="font-mono text-[11px] uppercase tracking-wider text-text-dim">文件类型</span>
-        <Select
-          :model-value="mediaType"
-          @update:model-value="(value) => { mediaType = value as string; mediaTypeTouched = true }"
-        >
-          <SelectTrigger class="retro-focus h-8 min-w-0">
-            <SelectValue placeholder="选择文件类型" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem
-              v-for="option in mediaTypeOptions"
-              :key="option.value"
-              :value="option.value"
-            >
-              {{ option.label }} · {{ option.extensions }}
-            </SelectItem>
-          </SelectContent>
-        </Select>
-      </label>
-    </div>
-
-    <main class="min-h-0 bg-[#101411]">
+    <main class="min-h-0 overflow-hidden bg-[#101411]">
       <div v-if="loading" class="grid h-full place-items-center">
         <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
           正在打开文件
@@ -98,22 +57,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import {
-  CheckCircle2,
-  RotateCcw,
-  Save,
-} from "lucide-vue-next"
+import { Save } from "lucide-vue-next"
 import type { WorkspaceValidationResult } from "@tsian/contracts"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
 import {
   WORKSPACE_MEDIA_TYPE_OPTIONS,
   inferWorkspaceMediaType,
@@ -121,6 +69,9 @@ import {
   type WorkspaceMediaTypeOption,
 } from "@/lib/workspace-file-types"
 import { emitWorkspaceContentChanged } from "@/lib/workspace-events"
+import { confirmChoice } from "@/composables/useConfirm"
+import { clearBeforeClose, setBeforeClose } from "@/composables/useDesktopWindows"
+import { editorWindowIdFor } from "@/desktop-apps"
 import {
   listPlatformWorkspaceDirectory,
   patchPlatformWorkspaceFile,
@@ -264,23 +215,6 @@ function errorMessage(error: unknown, fallback: string): string {
     return error.message
   }
   return fallback
-}
-
-function resetDraft() {
-  feedback.value = ""
-  saveError.value = ""
-  validation.value = null
-  if (mode.value === "create") {
-    content.value = ""
-    mediaType.value = inferWorkspaceMediaType(draftPath.value)
-    mediaTypeTouched.value = false
-    return
-  }
-
-  draftPath.value = originalPath.value
-  content.value = expectedContent.value
-  mediaType.value = originalMediaType.value
-  mediaTypeTouched.value = false
 }
 
 function validateDraft(): boolean {
@@ -527,7 +461,72 @@ watch(() => [props.cardId, props.path, props.mode] as const, () => {
   void loadFile()
 })
 
+// Ctrl+S / Cmd+S: save. Active only on the editor route so other views keep the
+// browser default. No editable-target guard: Ctrl+S must fire inside CodeMirror.
+function onGlobalKeydown(event: KeyboardEvent) {
+  const ctrl = event.ctrlKey || event.metaKey
+  if (!ctrl || (event.key !== "s" && event.key !== "S")) {
+    return
+  }
+  if (route.name !== "workspace-editor") {
+    return
+  }
+  event.preventDefault()
+  void saveDraft()
+}
+
+// before-close guard: if there are unsaved changes, ask save/discard/cancel.
+// Returns true to allow close, false to veto (user chose cancel).
+async function onBeforeClose(): Promise<boolean> {
+  if (!hasDraftChanges.value) {
+    return true
+  }
+  const choice = await confirmChoice({
+    title: "未保存的更改",
+    message: `「${draftPath.value || "untitled.txt"}」有未保存的更改，是否保存？`,
+    cancelText: "取消",
+    options: [
+      { value: "save", label: "保存" },
+      { value: "discard", label: "不保存", severity: "danger" },
+    ],
+  })
+  if (choice === "save") {
+    await saveDraft()
+    // If the save failed (e.g. validation error), keep the window open so the
+    // user can fix it; hasDraftChanges will still be true.
+    return !hasDraftChanges.value
+  }
+  if (choice === "discard") {
+    return true
+  }
+  return false
+}
+
+function editorWindowId(): string {
+  const cardId = props.cardId ?? ""
+  const scopeKey = cardId || "tsian-local"
+  return editorWindowIdFor({
+    scopeKey,
+    editorId: routeQueryString(route.query.editorId),
+    mode: props.mode,
+    path: props.path,
+  })
+}
+
+// Capture the window id once at mount so unregister uses the same id even if
+// props.path changes between mount and unmount (e.g. after a save route-sync).
+let registeredWindowId = ""
+
 onMounted(() => {
   void loadFile()
+  window.addEventListener("keydown", onGlobalKeydown)
+  registeredWindowId = editorWindowId()
+  setBeforeClose(registeredWindowId, onBeforeClose)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener("keydown", onGlobalKeydown)
+  clearBeforeClose(registeredWindowId)
+  registeredWindowId = ""
 })
 </script>

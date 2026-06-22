@@ -210,10 +210,11 @@ function minimizeWindow(id: string) {
 
 function closeWindow(id: string) {
   const wasActive = desktop.activeWindowId.value === id
-  desktop.closeWindow(id)
-  if (wasActive) {
-    syncRouteToActiveWindow()
-  }
+  void desktop.closeWindow(id).then(() => {
+    if (wasActive) {
+      syncRouteToActiveWindow()
+    }
+  })
 }
 
 function setFullscreen(id: string, fullscreen: boolean) {

@@ -305,12 +305,11 @@ export function desktopWindowForRoute(
 
     const titlePath = path ? fileName(path) : "新建文件"
     const scopeKey = cardId || "tsian-local"
+    const id = editorWindowIdFor({ scopeKey, editorId, mode, path })
     return windowInputFromDefinition(workspaceEditorDefinition, {
-      id: editorId
-        ? `${workspaceEditorDefinition.appId}:${scopeKey}:${editorId}`
-        : `${workspaceEditorDefinition.appId}:${scopeKey}:${mode}:${path || "untitled"}`,
+      id,
       routePath: route.fullPath,
-      props: { cardId, path, mode },
+      props: { cardId, path, mode, editorId },
       title: mode === "create" ? "新建文件" : titlePath,
       caption: path || "工作区文件",
     })
@@ -359,6 +358,22 @@ function windowInputFromDefinition(
 }
 
 export const fallbackDesktopIcon = MonitorCog
+
+/** Compute the desktop window id for a workspace-editor route. Editors use a
+ *  stable `editorId` query param so the same editor window survives route
+ *  syncs (save → path replace) and so the editor view can look up its own
+ *  window id to register a before-close guard. */
+export function editorWindowIdFor(input: {
+  scopeKey: string
+  editorId: string
+  mode: string
+  path: string
+}): string {
+  if (input.editorId) {
+    return `${workspaceEditorDefinition.appId}:${input.scopeKey}:${input.editorId}`
+  }
+  return `${workspaceEditorDefinition.appId}:${input.scopeKey}:${input.mode}:${input.path || "untitled"}`
+}
 
 function queryString(value: unknown): string {
   return typeof value === "string" ? value : ""
