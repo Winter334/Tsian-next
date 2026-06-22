@@ -98,7 +98,13 @@
         </div>
       </header>
 
-      <main class="relative min-h-0 overflow-hidden">
+      <main
+        class="relative min-h-0 overflow-hidden"
+        :class="{ 'ring-2 ring-neon/40': dragOver }"
+        @dragover.prevent="dragOver = true"
+        @dragleave.prevent="dragOver = false"
+        @drop="handleDrop"
+      >
         <!-- Error state -->
         <div v-if="errorMessage" class="grid h-full min-h-[200px] place-items-center p-6">
           <div class="max-w-md border border-danger/45 bg-danger/8 p-5 text-center">
@@ -237,7 +243,36 @@
                     <span class="typing-dot" />
                   </div>
                 </template>
-                <template v-else>{{ msg.content }}</template>
+                <template v-else>
+                  <!-- 用户消息附件:图片缩略图 -->
+                  <div
+                    v-if="msg.attachments && msg.attachments.some((a) => a.kind === 'image')"
+                    class="mb-2 flex flex-wrap gap-2"
+                  >
+                    <AttachmentImage
+                      v-for="att in msg.attachments.filter((a) => a.kind === 'image')"
+                      :key="att.path"
+                      :path="att.path"
+                      :name="att.name"
+                    />
+                  </div>
+                  <!-- 用户消息附件:文本文件标识 -->
+                  <div
+                    v-if="msg.attachments && msg.attachments.some((a) => a.kind === 'text')"
+                    class="mb-2 flex flex-wrap gap-2"
+                  >
+                    <div
+                      v-for="att in msg.attachments.filter((a) => a.kind === 'text')"
+                      :key="att.path"
+                      class="flex items-center gap-1.5 border border-neon-deep/40 bg-panel/40 px-2 py-1"
+                    >
+                      <FileText class="h-3.5 w-3.5 text-text-dim" aria-hidden="true" />
+                      <span class="text-xs text-text-main">{{ att.name }}</span>
+                      <span class="text-[10px] text-text-dim">{{ formatFileSize(att.size) }}</span>
+                    </div>
+                  </div>
+                  <span v-if="msg.content">{{ msg.content }}</span>
+                </template>
                 </div>
 
                 <!-- 消息工具条:hover 显示,复制(全部)+编辑重发(仅 user,发送中禁用) -->
@@ -287,36 +322,93 @@
       </main>
 
       <footer class="border-t border-neon-deep/30 bg-[#2d2a23] px-4 py-3">
-        <form class="mx-auto flex max-w-3xl items-end gap-2" @submit.prevent="send">
-          <textarea
-            ref="inputRef"
-            v-model="inputText"
-            class="retro-focus max-h-[160px] min-h-[44px] flex-1 resize-none overflow-y-auto border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
-            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-            rows="1"
-            :disabled="sending"
-            @keydown.enter.exact.prevent="send"
-            @input="autoGrow"
-          />
-          <button
-            type="submit"
-            class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center gap-2 px-4 font-mono text-xs"
-            :disabled="sending || !inputText.trim()"
-            title="发送"
+        <form class="mx-auto max-w-3xl" @submit.prevent="send">
+          <!-- 附件预览区 -->
+          <div
+            v-if="pendingAttachments.length > 0"
+            class="mb-2 flex flex-wrap gap-2"
           >
-            <Send class="h-4 w-4" aria-hidden="true" />
-            发送
-          </button>
-          <button
-            v-if="sending"
-            type="button"
-            class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center gap-2 px-4 font-mono text-xs"
-            title="停止生成"
-            @click="stopGenerating"
-          >
-            <Square class="h-4 w-4" aria-hidden="true" />
-            停止
-          </button>
+            <div
+              v-for="(att, index) in pendingAttachments"
+              :key="att.ref.path"
+              class="group relative flex items-center gap-2 border border-neon-deep/40 bg-panel/55 px-2 py-1.5"
+            >
+              <img
+                v-if="att.previewUrl"
+                :src="att.previewUrl"
+                :alt="att.ref.name"
+                class="h-10 w-10 object-cover"
+              />
+              <FileText
+                v-else
+                class="h-5 w-5 text-text-dim"
+                aria-hidden="true"
+              />
+              <div class="flex flex-col">
+                <span class="max-w-[140px] truncate text-xs text-text-main">{{ att.ref.name }}</span>
+                <span class="text-[10px] text-text-dim">{{ formatFileSize(att.ref.size) }}</span>
+              </div>
+              <button
+                type="button"
+                class="ml-1 text-text-dim hover:text-neon"
+                title="移除附件"
+                @click="removePendingAttachment(index)"
+              >
+                <X class="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+
+          <div class="flex items-end gap-2">
+            <!-- 附件按钮 -->
+            <button
+              type="button"
+              class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center px-3 font-mono text-xs"
+              :disabled="sending"
+              title="添加附件"
+              @click="fileInputRef?.click()"
+            >
+              <Paperclip class="h-4 w-4" aria-hidden="true" />
+            </button>
+            <input
+              ref="fileInputRef"
+              type="file"
+              class="hidden"
+              :accept="ACCEPTED_FILE_TYPES"
+              multiple
+              @change="handleFilePick"
+            />
+            <textarea
+              ref="inputRef"
+              v-model="inputText"
+              class="retro-focus max-h-[160px] min-h-[44px] flex-1 resize-none overflow-y-auto border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
+              placeholder="输入消息，Enter 发送，Shift+Enter 换行（可粘贴图片或拖拽文件）"
+              rows="1"
+              :disabled="sending"
+              @keydown.enter.exact.prevent="send"
+              @input="autoGrow"
+              @paste="handlePaste"
+            />
+            <button
+              type="submit"
+              class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center gap-2 px-4 font-mono text-xs"
+              :disabled="sending || (!inputText.trim() && pendingAttachments.length === 0)"
+              title="发送"
+            >
+              <Send class="h-4 w-4" aria-hidden="true" />
+              发送
+            </button>
+            <button
+              v-if="sending"
+              type="button"
+              class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center gap-2 px-4 font-mono text-xs"
+              title="停止生成"
+              @click="stopGenerating"
+            >
+              <Square class="h-4 w-4" aria-hidden="true" />
+              停止
+            </button>
+          </div>
         </form>
       </footer>
     </section>
@@ -371,7 +463,7 @@
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, onBeforeUnmount, onMounted } from "vue"
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, Check, ChevronDown, ChevronRight, Copy, Loader2, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain } from "lucide-vue-next"
+import { Bot, Check, ChevronDown, ChevronRight, Copy, FileText, Loader2, Paperclip, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain, X } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import AssistantConfigPanel from "@/components/assistant/AssistantConfigPanel.vue"
@@ -393,13 +485,17 @@ import {
   deleteAssistantSession,
   ensureAssistantSession,
   getActiveAssistantSessionId,
+  getAssistantAttachmentBlob,
   getAssistantSessionMessages,
   listAssistantSessions,
   renameAssistantSession,
+  saveAssistantAttachment,
   saveAssistantSessionMessages,
   setActiveAssistantSessionId,
   type AssistantSessionSummary,
 } from "../storage"
+import type { AttachmentRef } from "@tsian/contracts"
+import AttachmentImage from "@/components/assistant/AttachmentImage.vue"
 
 /**
  * 过程事件节点:assistant 回合内按发生顺序排列的思考/工具.
@@ -414,6 +510,8 @@ type AssistantTimelineNode =
 interface ChatMessage {
   role: "user" | "assistant"
   content: string
+  /** 附件引用元数据(用户消息). 图片附件显示缩略图,文本附件显示文件标识. */
+  attachments?: AttachmentRef[]
   // 过程事件(native 模式按发生顺序;不持久化,刷新后消失).
   timeline?: AssistantTimelineNode[]
   // 当前轮 content 流式文本(可见回复 provisional;onRoundEnd stop→写入 content).
@@ -422,6 +520,12 @@ interface ChatMessage {
   // 当前轮 reasoning 流式文本(思维链;累积不显示,onRoundEnd tool_calls→折叠 thought).
   // 不持久化——回合结束即清空.
   streamingReasoning?: string
+}
+
+/** 待发附件草稿(paste/drop/pick 添加后,send 前可移除). */
+interface PendingAttachment {
+  ref: AttachmentRef
+  previewUrl?: string  // 图片缩略图 URL (URL.createObjectURL)
 }
 
 const suggestions = [
@@ -439,7 +543,10 @@ const errorMessage = ref("")
 const cardName = ref("")
 const messageListRef = ref<HTMLElement | null>(null)
 const inputRef = ref<HTMLTextAreaElement | null>(null)
+const fileInputRef = ref<HTMLInputElement | null>(null)
 const showJumpToBottom = ref(false)
+const pendingAttachments = ref<PendingAttachment[]>([])
+const dragOver = ref(false)
 // 复制反馈:记下刚复制的消息索引,显示「已复制」勾,短暂后自动清除.
 const copiedIndex = ref<number | null>(null)
 // 编辑中:正在通过工具条编辑的消息索引(仅用于工具条透明度保持).
@@ -507,6 +614,7 @@ async function loadActiveSession() {
   messages.value = stored.map((msg) => ({
     role: msg.role === "user" ? "user" : "assistant",
     content: msg.content,
+    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
   }))
   await refreshSessions()
   await scrollToBottom()
@@ -523,6 +631,7 @@ async function handleSelectSession(id: string) {
   const previousMessages = messages.value.map((msg) => ({
     role: msg.role,
     content: msg.content,
+    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
   }))
 
   activeSessionId.value = id
@@ -530,6 +639,7 @@ async function handleSelectSession(id: string) {
   messages.value = stored.map((msg) => ({
     role: msg.role === "user" ? "user" : "assistant",
     content: msg.content,
+    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
   }))
   await scrollToBottom()
 
@@ -551,6 +661,7 @@ async function handleCreateSession() {
     const previousMessages = messages.value.map((msg) => ({
       role: msg.role,
       content: msg.content,
+      ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
     }))
     if (previousId) {
       void saveAssistantSessionMessages("local", previousId, previousMessages, {
@@ -613,6 +724,7 @@ async function handleDeleteSessionById(id: string) {
         messages.value = stored.map((msg) => ({
           role: msg.role === "user" ? "user" : "assistant",
           content: msg.content,
+          ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
         }))
       } else {
         const session = await createAssistantSession("local")
@@ -634,9 +746,74 @@ async function persistCurrentSession() {
   const toStore: ConversationMessageRecord[] = messages.value.map((msg) => ({
     role: msg.role,
     content: msg.content,
+    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
   }))
   await saveAssistantSessionMessages("local", activeSessionId.value, toStore)
   await refreshSessions()
+}
+
+// ── 附件处理 ──
+
+const ACCEPTED_FILE_TYPES = "image/*,.txt,.json,.md,.markdown,.csv,.xml,.yaml,.yml,.jsonl,.js,.ts,.css,.html,.htm,.svg"
+
+/** 添加文件为待发附件. 图片生成缩略图 previewUrl. */
+async function addFileAsAttachment(file: File) {
+  if (!activeSessionId.value) return
+  try {
+    const ref = await saveAssistantAttachment(activeSessionId.value, file)
+    const previewUrl = ref.kind === "image" ? URL.createObjectURL(file) : undefined
+    pendingAttachments.value.push({ ref, previewUrl })
+  } catch (error) {
+    errorMessage.value = `附件添加失败: ${error instanceof Error ? error.message : String(error)}`
+  }
+}
+
+/** textarea paste 处理:检测剪贴板图片. */
+function handlePaste(event: ClipboardEvent) {
+  const clipboardData = event.clipboardData
+  if (!clipboardData) return
+  for (const item of clipboardData.items) {
+    if (item.kind === "file" && item.type.startsWith("image/")) {
+      const file = item.getAsFile()
+      if (file) {
+        event.preventDefault()
+        void addFileAsAttachment(file)
+      }
+    }
+  }
+}
+
+/** 聊天面板 drop 处理. */
+function handleDrop(event: DragEvent) {
+  event.preventDefault()
+  dragOver.value = false
+  if (!event.dataTransfer?.files) return
+  for (const file of event.dataTransfer.files) {
+    void addFileAsAttachment(file)
+  }
+}
+
+/** 隐藏 file input 的 change 处理. */
+function handleFilePick(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (!target.files) return
+  for (const file of target.files) {
+    void addFileAsAttachment(file)
+  }
+  target.value = ""  // 重置,允许重复选同一文件
+}
+
+/** 移除待发附件. */
+function removePendingAttachment(index: number) {
+  const [removed] = pendingAttachments.value.splice(index, 1)
+  if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl)
+}
+
+/** 格式化文件大小. */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function sendSuggestion(message: string) {
@@ -646,12 +823,23 @@ function sendSuggestion(message: string) {
 
 async function send() {
   const content = inputText.value.trim()
-  if (!content || sending.value) {
+  const attachments = pendingAttachments.value.map((p) => p.ref)
+  if ((!content && attachments.length === 0) || sending.value) {
     return
   }
 
   errorMessage.value = ""
-  messages.value.push({ role: "user", content })
+  // 释放待发附件的 previewUrl(已发送,不再需要缩略图)
+  for (const p of pendingAttachments.value) {
+    if (p.previewUrl) URL.revokeObjectURL(p.previewUrl)
+  }
+  pendingAttachments.value = []
+
+  messages.value.push({
+    role: "user",
+    content,
+    ...(attachments.length > 0 ? { attachments } : {}),
+  })
   inputText.value = ""
   resetInputHeight()
   sending.value = true
@@ -763,6 +951,7 @@ async function send() {
   try {
     const result = await runAssistantChat({
       message: content,
+      ...(attachments.length > 0 ? { attachments } : {}),
       history,
       sessionId,
       onDelta,
@@ -912,6 +1101,7 @@ function handleEditUserMessage(index: number) {
     const toStore: ConversationMessageRecord[] = messages.value.map((m) => ({
       role: m.role,
       content: m.content,
+      ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments } : {}),
     }))
     void saveAssistantSessionMessages("local", activeSessionId.value, toStore, { touch: false })
   }

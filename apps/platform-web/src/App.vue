@@ -26,6 +26,7 @@ import SplashScreen from "./components/SplashScreen.vue"
 import ToastHost from "./components/feedback/ToastHost.vue"
 import ConfirmHost from "./components/feedback/ConfirmHost.vue"
 import { initializePlatformHost } from "./platform-host"
+import { cleanupOrphanAttachments } from "./storage"
 
 type SplashState = "typing" | "animating" | "done"
 
@@ -50,5 +51,9 @@ function onCrtAnimationEnd() {
 
 onMounted(async () => {
   await initializePlatformHost()
+  // 清理孤儿附件(超过 7 天且不属于任何现存会话的附件 Blob).
+  void cleanupOrphanAttachments().catch(() => {
+    // 清理失败不影响应用启动
+  })
 })
 </script>
