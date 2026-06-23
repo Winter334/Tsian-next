@@ -151,7 +151,7 @@ const workspaceListSchema: ToolSchema = {
     properties: {
       path: {
         type: "string",
-        description: "Optional directory path to list. Empty or omitted means the workspace root.",
+        description: "Optional directory path to list. Empty, omitted, or `.` means the workspace root.",
       },
     },
   },

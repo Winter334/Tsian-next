@@ -16,6 +16,7 @@ import {
   executeWorkspaceOperation,
   type WorkspaceOperationMutationAdapter,
 } from "./workspace-operations"
+import { normalizeWorkspacePath } from "@/lib/workspace-path"
 
 export interface RuntimeWorkspaceToolCall {
   name: string
@@ -208,11 +209,6 @@ interface SkillActionParseResult {
   errors: RuntimeWorkspaceToolError[]
 }
 
-interface NormalizePathOptions {
-  allowEmpty: boolean
-  rejectTrailingSlash: boolean
-}
-
 export interface RuntimeWorkspaceToolExecutionContext {
   workspaceFiles: WorkspaceFile[]
   agentContext?: AgentContextEntry
@@ -281,55 +277,15 @@ export function createRuntimeWorkspaceToolSessionState(): RuntimeWorkspaceToolSe
   }
 }
 
-function normalizePathBase(value: unknown, options: NormalizePathOptions): string {
-  if (typeof value !== "string") {
-    throw toolError(
-      "WORKSPACE_PATH_REQUIRED",
-      "Workspace path must be a string.",
-    )
-  }
-
-  const raw = value.trim()
-  const hadTrailingSlash = /[\\/]$/.test(raw)
-  const normalized = raw
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/+$/, "")
-
-  if (!normalized) {
-    if (options.allowEmpty) {
-      return ""
-    }
-    throw toolError(
-      "WORKSPACE_PATH_REQUIRED",
-      "Workspace path is required.",
-    )
-  }
-
-  if (options.rejectTrailingSlash && hadTrailingSlash) {
-    throw toolError(
-      "WORKSPACE_FILE_PATH_REQUIRED",
-      "Workspace file path must not end with a slash.",
-    )
-  }
-
-  const segments = normalized.split("/")
-  if (segments.some((segment) => segment === "." || segment === ".." || segment === "")) {
-    throw toolError(
-      "WORKSPACE_PATH_INVALID",
-      "Workspace path must not contain empty, current, or parent directory segments.",
-    )
-  }
-
-  return normalized
-}
-
 function normalizeWorkspaceFilePath(value: unknown): string {
-  return normalizePathBase(value, {
+  const result = normalizeWorkspacePath(value, {
     allowEmpty: false,
     rejectTrailingSlash: true,
   })
+  if (!result.ok) {
+    throw toolError(result.code, result.message)
+  }
+  return result.path
 }
 
 function traceBase(context: RuntimeWorkspaceToolExecutionContext) {

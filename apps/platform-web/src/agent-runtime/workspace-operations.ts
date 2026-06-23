@@ -15,6 +15,7 @@ import type {
   WorkspaceSearchResult,
   WorkspaceValidationResult,
 } from "@tsian/contracts"
+import { normalizeWorkspacePath } from "@/lib/workspace-path"
 
 export interface WorkspaceOperationError {
   code: string
@@ -153,79 +154,37 @@ function workspaceOperationError(
   return details === undefined ? { code, message } : { code, message, details }
 }
 
-function normalizePathBase(
-  value: unknown,
-  options: { allowEmpty: boolean; rejectTrailingSlash: boolean },
-): string {
-  if (typeof value !== "string") {
-    throw workspaceOperationError(
-      "WORKSPACE_PATH_REQUIRED",
-      "Workspace path must be a string.",
-    )
-  }
-
-  const raw = value.trim()
-  const hadTrailingSlash = /[\\/]$/.test(raw)
-  const normalized = raw
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/+$/, "")
-
-  if (!normalized) {
-    if (options.allowEmpty) {
-      return ""
-    }
-    throw workspaceOperationError(
-      "WORKSPACE_PATH_REQUIRED",
-      "Workspace path is required.",
-    )
-  }
-
-  if (options.rejectTrailingSlash && hadTrailingSlash) {
-    throw workspaceOperationError(
-      "WORKSPACE_FILE_PATH_REQUIRED",
-      "Workspace file path must not end with a slash.",
-    )
-  }
-
-  if (normalized.includes("\0")) {
-    throw workspaceOperationError(
-      "WORKSPACE_PATH_INVALID",
-      "Workspace path must not contain NUL bytes.",
-    )
-  }
-
-  const segments = normalized.split("/")
-  if (segments.some((segment) => segment === "." || segment === ".." || segment === "")) {
-    throw workspaceOperationError(
-      "WORKSPACE_PATH_INVALID",
-      "Workspace path must not contain empty, current, or parent directory segments.",
-    )
-  }
-
-  return normalized
-}
-
 export function normalizeWorkspaceOperationFilePath(value: unknown): string {
-  return normalizePathBase(value, {
+  const result = normalizeWorkspacePath(value, {
     allowEmpty: false,
     rejectTrailingSlash: true,
   })
+  if (!result.ok) {
+    throw workspaceOperationError(result.code, result.message)
+  }
+  return result.path
 }
 
 function normalizeWorkspaceOperationTargetPath(value: unknown): string {
-  return normalizePathBase(value, {
+  const result = normalizeWorkspacePath(value, {
     allowEmpty: false,
     rejectTrailingSlash: false,
   })
+  if (!result.ok) {
+    throw workspaceOperationError(result.code, result.message)
+  }
+  return result.path
 }
 
 function normalizeWorkspaceOperationDirectoryPath(value: unknown): string {
-  return normalizePathBase(value ?? "", {
+  const result = normalizeWorkspacePath(value ?? "", {
     allowEmpty: true,
     rejectTrailingSlash: false,
   })
+  if (!result.ok) {
+    throw workspaceOperationError(result.code, result.message)
+  }
+  return result.path
 }
 
 function normalizeWorkspaceOperationName(value: unknown): WorkspaceOperationName {

@@ -9,6 +9,7 @@ import {
   inferMediaTypeFromPath,
   isTextMediaType,
 } from "@/lib/media-type"
+import { normalizeWorkspacePath } from "@/lib/workspace-path"
 import {
   listLocalGameCardContentFiles,
   listLocalGameCardFrontendFiles,
@@ -932,72 +933,37 @@ function createTableId(saveId: string, path: string): string {
   ].join(":")
 }
 
-function normalizePathBase(value: unknown, options: {
-  allowEmpty: boolean
-  rejectTrailingSlash: boolean
-}): string {
-  if (typeof value !== "string") {
-    throw new WorkspaceStorageError(
-      "WORKSPACE_PATH_REQUIRED",
-      "Workspace path must be a string.",
-    )
-  }
-
-  const hadTrailingSlash = /[\\/]$/.test(value.trim())
-  const normalized = value
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/+$/, "")
-
-  if (!normalized) {
-    if (options.allowEmpty) {
-      return ""
-    }
-    throw new WorkspaceStorageError(
-      "WORKSPACE_PATH_REQUIRED",
-      "Workspace path is required.",
-    )
-  }
-
-  if (options.rejectTrailingSlash && hadTrailingSlash) {
-    throw new WorkspaceStorageError(
-      "WORKSPACE_FILE_PATH_REQUIRED",
-      "Workspace file path must not end with a slash.",
-    )
-  }
-
-  const segments = normalized.split("/")
-  if (segments.some((segment) => segment === "." || segment === ".." || segment === "")) {
-    throw new WorkspaceStorageError(
-      "WORKSPACE_PATH_INVALID",
-      "Workspace path must not contain empty, current, or parent directory segments.",
-    )
-  }
-
-  return normalized
-}
-
 function normalizeDirectoryPath(value: unknown): string {
-  return normalizePathBase(value ?? "", {
+  const result = normalizeWorkspacePath(value ?? "", {
     allowEmpty: true,
     rejectTrailingSlash: false,
   })
+  if (!result.ok) {
+    throw new WorkspaceStorageError(result.code, result.message)
+  }
+  return result.path
 }
 
 export function normalizeWorkspaceFilePath(value: unknown): string {
-  return normalizePathBase(value, {
+  const result = normalizeWorkspacePath(value, {
     allowEmpty: false,
     rejectTrailingSlash: true,
   })
+  if (!result.ok) {
+    throw new WorkspaceStorageError(result.code, result.message)
+  }
+  return result.path
 }
 
 function normalizeWorkspaceTargetPath(value: unknown): string {
-  return normalizePathBase(value, {
+  const result = normalizeWorkspacePath(value, {
     allowEmpty: false,
     rejectTrailingSlash: false,
   })
+  if (!result.ok) {
+    throw new WorkspaceStorageError(result.code, result.message)
+  }
+  return result.path
 }
 
 function toContentFile(file: {
