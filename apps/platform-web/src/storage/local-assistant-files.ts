@@ -144,7 +144,7 @@ const AGENT_AUTHORING_SKILL_MD = [
   "| `contextPaths` | string[] | yes | Workspace files loaded into the agent's prompt context. |",
   "| `skills.enabled` | string[] | yes | Whitelist of skill names; non-empty narrows visible skills. |",
   "| `skills.disabled` | string[] | yes | Blacklist of skill names. |",
-  "| `platformTools.enabled` | string[] | yes | Allowed: `agent_call`, `workspace_read`, `workspace_write`. |",
+  "| `platformTools.enabled` | string[] | yes | Allowed: `agent_call`, `workspace_read`, `workspace_write`, `inspect_frontend`. |",
   "| `platformTools.disabled` | string[] | yes | Blocked platform tools. |",
   "| `workspaceAccess.level` | number | yes | Permission level (see below). |",
   "| `knowledgeMount` | string | no | Path to knowledge base directory (default `docs/`). |",
@@ -768,7 +768,7 @@ function defaultAssistantConfig(): AgentConfig {
       disabled: [],
     },
     platformTools: {
-      enabled: ["agent_call", "workspace_read", "workspace_write"],
+      enabled: ["agent_call", "workspace_read", "workspace_write", "inspect_frontend"],
       disabled: [],
     },
     workspaceAccess: {

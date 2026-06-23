@@ -235,6 +235,7 @@ export type AgentPlatformToolName =
   | "agent_call"
   | "workspace_read"
   | "workspace_write"
+  | "inspect_frontend"
 
 export interface AgentSkillConfig {
   enabled: string[]

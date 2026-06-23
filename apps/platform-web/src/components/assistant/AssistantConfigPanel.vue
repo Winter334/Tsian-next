@@ -193,6 +193,11 @@ const platformToolControls: Array<{
     label: "维护 Workspace",
     description: "允许通过平台工具或 Skill 动作写入、移动、删除或校验文件。",
   },
+  {
+    id: "inspect_frontend",
+    label: "前端自检",
+    description: "允许助手在隐藏 iframe 里加载当前卡的 packaged 前端，观测渲染、报错和桥状态，驱动一回合或模拟玩家交互，形成写前端→自检→改→复查闭环。",
+  },
 ]
 
 const workspaceAccessOptions = [

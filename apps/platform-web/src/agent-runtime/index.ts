@@ -60,6 +60,8 @@ import {
   type ParsedRuntimeWorkspaceToolCall,
   type RuntimeAgentCallArguments,
   type RuntimeAgentCallHistoryMode,
+  type InspectFrontendInput,
+  type InspectFrontendResult,
   type RuntimeBrowserScriptExecutorRequest,
   type RuntimeWorkspaceToolObservation,
   type RuntimeWorkspaceToolSessionState,
@@ -219,6 +221,15 @@ export interface AgentRuntimeCapabilities {
    * runtime falls back to the legacy text-protocol tool loop.
    */
   toolCallMode?: BrowserAiToolCallMode
+  /**
+   * inspect_frontend capability. Loads the active card's packaged frontend
+   * in a hidden iframe (reusing the real /play load path), collects structural
+   * + diagnostic snapshots, and can drive an ephemeral master agent turn /
+   * DOM interactions. Implemented in platform-host/frontend-inspector.ts.
+   */
+  runInspectFrontend?(
+    input: InspectFrontendInput,
+  ): Promise<InspectFrontendResult>
   runBrowserScript?(
     request: RuntimeBrowserScriptExecutorRequest,
     context?: RuntimeControlledExecutorContext,
@@ -739,6 +750,10 @@ function buildWorkspaceToolInstructions(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.workspaceWrite,
   )
+  const canInspectFrontend = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
+  )
   const isNative = options.toolCallMode === "native"
   const availableTools = [
     `- ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} arguments={"name":"prose-style"}`,
@@ -763,6 +778,12 @@ function buildWorkspaceToolInstructions(
           `- ${RUNTIME_WORKSPACE_TOOL_NAMES.write} arguments={"path":"save/world/notes.md","content":"..."}`,
         ]
       : []),
+    ...(canInspectFrontend
+      ? [
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"send":{"message":"看一下当前前端渲染"}}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"actions":[{"type":"click","selector":"#send"}],"observeBetween":true}`,
+        ]
+      : []),
   ]
   return [
     "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
@@ -781,6 +802,11 @@ function buildWorkspaceToolInstructions(
           `如果当前任务需要联系人 Agent 的专业判断，可以使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 发起一次性会诊。被调用 Agent 的输出只会作为 observation 返回给你，不会直接成为玩家回复。`,
           "可联系 Agent：",
           formatVisibleAgentContacts(options.visibleContacts),
+        ]
+      : []),
+    ...(canInspectFrontend
+      ? [
+          `写完或改完前端后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} 在隐藏 iframe 里加载当前 active 卡的 packaged 前端（复用真实 /play 加载路径），查看渲染结果、JS 报错、桥状态。支持 send 驱动一回合（在临时存档上跑，不污染玩家存档）、actions 做 DOM 交互、refresh 拉最新 snapshot，三者可组合。连续两次 inspect 会返回 diff，帮你看"改没改好"。`,
         ]
       : []),
     ...(isNative
@@ -1569,6 +1595,7 @@ async function callAgentModelWithWorkspaceToolsNative(
         )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
+      runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
@@ -1837,6 +1864,7 @@ async function callAgentModelWithWorkspaceTools(
           )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
+      runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,

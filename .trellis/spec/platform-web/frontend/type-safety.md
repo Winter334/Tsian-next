@@ -1447,3 +1447,137 @@ stageAgentSessionTranscriptFiles(
 ```
 
 The fix: add `kind: "reasoning" | "content"` to the `turn-delta` union member so the contract reflects the actual emitted payload shape.
+
+## Scenario: Assistant Frontend Inspection Tool (inspect_frontend)
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web adds or changes the `inspect_frontend` platform tool, the `createFrontendInspector` capability, the `MountRemoteIframeFrontendOptions.onSessionId` callback, or the inspection bridge/session-lifecycle in `platform-host/frontend-inspector.ts`.
+- Applies when changing `apps/platform-web/src/agent-runtime/workspace-tools.ts` (inspect types/dispatch), `apps/platform-web/src/agent-runtime/tool-schemas.ts` (inspect schema gating), `apps/platform-web/src/platform-host/frontend-inspector.ts` (inspector factory), `apps/platform-web/src/bridge/remote-iframe-bridge.ts` (`onSessionId` callback), or `apps/platform-web/src/platform-host/assistant-chat.ts` (capability injection).
+
+### 2. Signatures
+
+- Tool name: `inspect_frontend` (registered in `AgentPlatformToolName` via `AGENT_PLATFORM_TOOL_NAMES.inspectFrontend`).
+- Capability: `AgentRuntimeCapabilities.runInspectFrontend?(input: InspectFrontendInput): Promise<InspectFrontendResult>` — types live in `agent-runtime/workspace-tools.ts` (NOT `platform-host`), so agent-runtime never reverse-depends on platform-host.
+- Inspector factory: `createFrontendInspector(): (input: InspectFrontendInput) => Promise<InspectFrontendResult>` in `platform-host/frontend-inspector.ts`.
+- Bridge callback: `MountRemoteIframeFrontendOptions.onSessionId?: (sessionId: string) => void` — pure additive optional callback; PlayView does not pass it, zero behavior change for `/play`.
+- Input: `InspectFrontendInput` — `{ send?, actions?, observeBetween?, refresh?, wait?, runtime?, screenshot? }`. No `cardId` (inspector reads `getPlatformActiveGameCard()` internally).
+- Result: `InspectFrontendResult` — `{ ok, cardId, entry, structure, diagnostics, timeline?, actionSnapshots?, fileLineMap?, diff?, truncated?, error? }`.
+
+### 3. Contracts
+
+- **Special-tool registration touches 9 files** (mirrors `agent_call`): `contracts/runtime.ts` (`AgentPlatformToolName`), `agent-runtime/permissions.ts` (`AGENT_PLATFORM_TOOL_NAMES`), `agent-runtime/registry.ts` (allow-set), `agent-runtime/workspace-tools.ts` (tool name + types + context field + normalize + dispatch), `agent-runtime/tool-schemas.ts` (schema + `buildEnabledToolSchemas` gating), `agent-runtime/index.ts` (`AgentRuntimeCapabilities` + two-loop threading + `buildWorkspaceToolInstructions` text example), `storage/local-assistant-files.ts` (`defaultAssistantConfig().platformTools.enabled`), `platform-host/frontend-inspector.ts` (new file), `platform-host/assistant-chat.ts` (capability injection). **UI switch arrays** in `AssistantConfigPanel.vue` and `StudioView.vue` (`platformToolControls`) must also list the new tool or it won't appear as a toggle.
+- **Inspect types live in agent-runtime** (`workspace-tools.ts`), not platform-host. This respects the spec rule "agent-runtime must not import platform-host." The implementation (orchestration logic) lives in platform-host and imports the types — never the reverse.
+- **Loading reuse**: inspector calls `resolvePackagedFrontendUrl({gameCardId, entry})` + `mountRemoteIframeFrontend(hiddenContainer, {bridge, sandbox, onBridgeReady, onSessionId})` — 1:1 mirror of PlayView packaged mount. Does NOT reimplement mounting.
+- **Dedicated bridge** (`createInspectionBridge`): implements `PlayFrontendBridge` with its own `interaction.sendMessage` → `runEphemeralTurn`. Must NOT use `playFrontendBridge` (it `ensureActiveSave()` + broadcasts streaming to player frontend + uses module-level `previousTurnController` that aborts player turns). `query` reuses `getBaseBridge().query` (read-only, no side effects). `platform.runAction` returns unavailable. No `debug` bridge.
+- **Ephemeral save isolation**: `runEphemeralTurn` uses `createLocalSaveFromGameCard(card)` (does NOT set active, does NOT emit savesChanged), its own `AbortController` (NOT the module-level `previousTurnController`), does NOT call `commitSuccessfulRuntimeTurnForSave`, and `deleteLocalSave(save.id)` in `finally`. Workspace files use `listEffectiveWorkspaceFilesForSave(save.id, card)` (storage export), NOT `listEffectiveWorkspaceFilesForActiveSave`. Capabilities (`callModel`/`callModelNative`/`toolCallMode`/`runBrowserScript`/`workspaceMutations`/`emitTrace`) must mirror `platform-host/index.ts` sendMessage path completely — missing any one causes master agent tool-call failures.
+- **send bypasses mount's request path**: inspector calls `bridge.interaction.sendMessage` directly (not via frontend RPC request). Mount's `turn-completed` `postEvent` is bound to the request-response path (`remote-iframe-bridge.ts` `handleRemoteRequest`), so mount will NOT forward `turn-completed` for inspector-driven turns. Inspector must self-postMessage a `turn-completed` event to `iframe.contentWindow` with the `sessionId` from `onSessionId` so the frontend's `onEvent("turn-completed")` → `renderMessages` fires and DOM renders message bubbles.
+- **Streaming delta forwarding** still works via mount's `subscribeTurnDelta`/`subscribeTurnRoundEnd`/`subscribeTurnTool` bus subscriptions (independent of request path), but only after handshake (`acceptedOrigin` set). Inspector must guard `bridgeReady` before `send` — if handshake hasn't completed, `postEvent`'s `if (!acceptedOrigin) return` swallows all delta events and the turn runs blind to the frontend.
+- **Collection is parent-window-side**: inspector reads `iframe.contentDocument` and hijacks `iframe.contentWindow`'s `onerror`/`unhandledrejection`/`console` (same-origin required — `allow-same-origin` sandbox). Does NOT require frontend cooperation — blank/broken frontends that never send `ready` can still be diagnosed via DOM empty-state + resource 404 inference.
+- **`renderedText` after send/refresh is snapshot-sourced**, not DOM-sourced: inspector reads `ephemeralSnapshot.state.messages` to populate `renderedText`, bypassing unreliable frontend render timing. `domSummary` still reads real DOM (with a `microTick` buffer). This dual approach ensures `renderedText` is always populated after a turn even if DOM rendering is slow.
+- **DOM serialization** (`serializeDom`): limits depth (8), skips empty text nodes, truncates long attributes. For `HTMLInputElement`/`HTMLTextAreaElement`/`HTMLSelectElement`, reads `.value` and injects as `__value="..."` virtual attribute (because `.value` is a JS property, not a DOM attribute, and won't appear in `attributes` iteration).
+- **Single-session serial**: module-level `currentSession` — new inspect call disposes previous hidden iframe first. `disposeCurrentSession` also resets `ephemeralSnapshot` and `ephemeralSaveId` (bridge closure references module-level `ephemeralSnapshot`; not resetting causes cross-call state leakage where a previous turn's messages appear in the next inspect's initial DOM). `lastInspectSnapshot` (diff baseline) is intentionally preserved across calls (design §9).
+- **diff baseline**: module-level `lastInspectSnapshot` retains the previous inspect's `structure` + `diagnostics.errors`. First inspect has no diff (no prior baseline). Cross-card inspect pollutes the baseline (not bucketed by cardId) — known boundary, acceptable for MVP since inspector only checks the active card.
+- **Deferred options**: `runtime:"mock"` and `screenshot:true` return not-supported errors (interface reserved, not implemented in v1).
+
+### 4. Validation & Error Matrix
+
+- No active game card → `INSPECT_FRONTEND_NO_ACTIVE_CARD`.
+- Active card frontend missing or `kind !== "packaged"` → `INSPECT_FRONTEND_NOT_PACKAGED` (with `cardId` + `frontendKind` details).
+- `send` with `wait !== "turn-completed"` → `INSPECT_FRONTEND_SEND_WAIT_MISMATCH` (send requires waiting for turn completion to collect timeline).
+- `send` when `bridgeReady` is false (handshake timeout) → `INSPECT_FRONTEND_BRIDGE_NOT_READY` (delta events would be swallowed by `acceptedOrigin=null` guard; turn would run blind to frontend).
+- `runtime:"mock"` → `INSPECT_FRONTEND_MOCK_UNSUPPORTED`.
+- `screenshot:true` → `INSPECT_FRONTEND_SCREENSHOT_UNSUPPORTED`.
+- DOM action selector not found → `INSPECT_SELECTOR_NOT_FOUND` (thrown as `PlatformActionError` shape from `applyAction`).
+- Large results (timeline > 200 entries, actionSnapshots > 50, domSummary at limit) → `truncated: true`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `inspect_frontend({send:{message:"你好"}, wait:"turn-completed"})` runs a master turn on an ephemeral save, returns timeline + renderedText (snapshot-sourced) + domSummary (with message bubbles after self-postMessage turn-completed), and the ephemeral save is deleted without touching player saves/active pointer/list UI.
+- Good: `inspect_frontend({actions:[{type:"type",selector:"#input",text:"测试"},{type:"click",selector:"#send"}],observeBetween:true})` simulates player input, returns stepwise DOM snapshots.
+- Good: `inspect_frontend({refresh:true})` pulls the latest snapshot via `bridge.runtime.getRuntimeSnapshot`.
+- Base: `inspect_frontend()` with no args loads the active card's packaged frontend and returns structure + diagnostics only.
+- Bad: defining `InspectFrontendInput`/`InspectFrontendResult` in `platform-host/frontend-inspector.ts` and importing them into `agent-runtime` — this reverse-depends agent-runtime on platform-host, violating the layer boundary.
+- Bad: using `playFrontendBridge` for the inspection iframe — it `ensureActiveSave()` (mutates player active pointer) and uses module-level `previousTurnController` (aborts player in-flight turns).
+- Bad: calling `bridge.interaction.sendMessage` before `bridgeReady` — delta events swallowed by `acceptedOrigin=null`, frontend never receives streaming, turn runs blind.
+
+### 6. Tests Required
+
+- Assert `inspect_frontend` appears in assistant enabled tool schemas when `platformTools.enabled` includes it.
+- Assert `inspect_frontend()` loads active card packaged frontend, returns `ok:true` + `cardId` + `entry` + structure + diagnostics.
+- Assert blank/broken frontend (no ready / JS crash / resource 404) yields specific diagnostic causes, not generic "load failed".
+- Assert `send` runs a master turn on an ephemeral save, returns timeline with turn-delta/turn-completed, and the ephemeral save is deleted after (player saves/active pointer/list UI unchanged).
+- Assert `send` when `bridgeReady` is false returns `INSPECT_FRONTEND_BRIDGE_NOT_READY`.
+- Assert `actions` with `observeBetween` returns stepwise snapshots.
+- Assert `refresh` pulls latest snapshot.
+- Assert `send` + `actions` compose.
+- Assert error stack line numbers map to source files via `fileLineMap`.
+- Assert second inspect result contains `diff` against the first.
+- Assert consecutive inspects dispose the previous hidden iframe (single session at a time).
+- Assert `disposeCurrentSession` resets `ephemeralSnapshot` (no cross-call state leakage).
+- Assert `runtime:"mock"` and `screenshot:true` return not-supported.
+- Assert vue-tsc passes; `build:web` + `build:contracts` pass.
+
+### 7. Wrong vs Correct
+
+#### Wrong — inspect types in platform-host, imported by agent-runtime
+
+```typescript
+// platform-host/frontend-inspector.ts
+export interface InspectFrontendInput { ... }
+// agent-runtime/workspace-tools.ts
+import type { InspectFrontendInput } from "../platform-host/frontend-inspector"
+// -> reverse-depends agent-runtime on platform-host; violates layer boundary
+```
+
+#### Correct — inspect types in agent-runtime, imported by platform-host
+
+```typescript
+// agent-runtime/workspace-tools.ts (alongside RuntimeAgentCallArguments)
+export interface InspectFrontendInput { ... }
+export type RuntimeInspectFrontendRunner = (input: InspectFrontendInput) => Promise<InspectFrontendResult>
+// platform-host/frontend-inspector.ts
+import type { InspectFrontendInput, InspectFrontendResult } from "../agent-runtime/workspace-tools"
+```
+
+#### Wrong — send without bridgeReady guard, delta events swallowed
+
+```typescript
+await waitForBridgeReadyOrTimeout(() => bridgeReady, 5000)
+// no guard — proceeds to send even if bridgeReady is false
+await bridge.interaction.sendMessage({ content: input.send.message })
+// mount's postEvent("turn-delta") hits `if (!acceptedOrigin) return` -> all deltas swallowed
+// frontend never receives streaming -> DOM stays blank -> domSummary empty
+```
+
+#### Correct — guard bridgeReady before send
+
+```typescript
+await waitForBridgeReadyOrTimeout(() => bridgeReady, 5000)
+if (input.send && input.wait === "turn-completed" && !bridgeReady) {
+  return failed("INSPECT_FRONTEND_BRIDGE_NOT_READY", "...")
+}
+await bridge.interaction.sendMessage({ content: input.send.message })
+// acceptedOrigin is set -> mount forwards deltas -> frontend renders streaming
+```
+
+#### Wrong — not resetting ephemeralSnapshot on dispose, cross-call leakage
+
+```typescript
+function disposeCurrentSession(): void {
+  if (currentSession) { currentSession.dispose(); currentSession = null }
+  // ephemeralSnapshot still holds previous turn's messages
+  // next inspect's frontend calls getRuntimeSnapshot() -> gets stale messages -> renders them
+}
+```
+
+#### Correct — reset ephemeral state on dispose
+
+```typescript
+function disposeCurrentSession(): void {
+  if (currentSession) { currentSession.dispose(); currentSession = null }
+  ephemeralSnapshot = createEmptyRuntimeSnapshot()
+  ephemeralSaveId = undefined
+  // lastInspectSnapshot (diff baseline) intentionally preserved
+}
+```

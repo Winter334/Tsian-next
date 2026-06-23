@@ -14,7 +14,7 @@ import type {
 
 import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool } from "../streaming-events"
 
-const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
+export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 const REMOTE_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms"
 const ALLOWED_REMOTE_FRONTEND_PROTOCOLS = new Set(["http:", "https:"])
 const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
@@ -49,6 +49,12 @@ export interface MountRemoteIframeFrontendOptions {
   onLoad?: () => void
   onError?: (message: string) => void
   onBridgeReady?: () => void
+  /**
+   * 握手完成时透出 mount 为本会话生成的 sessionId.自检等需要自行向 iframe
+   * postMessage 事件的调用方用它构造匹配 sessionId 的事件(如 turn-completed).
+   * PlayView 不传此回调,行为零影响.
+   */
+  onSessionId?: (sessionId: string) => void
 }
 
 class RemoteBridgeRpcError extends Error {
@@ -412,6 +418,7 @@ export function mountRemoteIframeFrontend(
         methods: REMOTE_PLAY_BRIDGE_METHODS,
       }
       postToRemote(ready, event.origin)
+      options.onSessionId?.(sessionId)
       options.onBridgeReady?.()
       return
     }

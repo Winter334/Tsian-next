@@ -34,6 +34,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   useSkill: "use_skill",
   runScript: "run_script",
   agentCall: "agent_call",
+  inspectFrontend: "inspect_frontend",
   read: "read",
   list: "list",
   search: "search",
@@ -136,6 +137,93 @@ type RuntimeAgentCallRunner = (
   input: RuntimeAgentCallArguments,
 ) => Promise<unknown>
 
+/**
+ * inspect_frontend — 助手前端自检工具的入参/出参类型。
+ *
+ * 类型定义在 agent-runtime 层（与 RuntimeAgentCallArguments /
+ * RuntimeBrowserScriptRunner 平级），实现编排逻辑在 platform-host/
+ * frontend-inspector.ts。这样 agent-runtime 不反向依赖 platform-host，
+ * 顺应 "agent-runtime must not import platform-host" 的 spec 约束。
+ * 工具不接受 cardId，inspector 内部从 getPlatformActiveGameCard() 取当前卡。
+ */
+export type InspectDomActionType = "click" | "type" | "press" | "scroll"
+
+export interface InspectDomAction {
+  type: InspectDomActionType
+  selector: string
+  /** type 动作用 */
+  text?: string
+  /** press 动作用 */
+  key?: string
+  /** scroll 动作用 */
+  to?: "top" | "bottom"
+}
+
+export interface InspectFrontendInput {
+  /** 驱动回合（烧 token，语义化原语，非任意 bridgeCall） */
+  send?: { message: string }
+  /** DOM 交互（same-origin contentDocument.querySelector + dispatchEvent） */
+  actions?: InspectDomAction[]
+  /** 每个 action 之间采一次结构层快照 */
+  observeBetween?: boolean
+  /** 操作后拉最新 snapshot（语义化原语） */
+  refresh?: boolean
+  /** 观测点，默认 bridge-ready */
+  wait?: "bridge-ready" | "turn-completed"
+  /** 预留，初版只 real，传 mock 报 not-supported */
+  runtime?: "real" | "mock"
+  /** 预留，初版不做，传 true 报 not-supported */
+  screenshot?: boolean
+}
+
+export interface InspectFrontendStructure {
+  domSummary: string
+  computedStyles: Record<string, string>[]
+  renderedText: string
+  bridgeState: "loading" | "ready" | "turn-active" | "error"
+}
+
+export interface InspectFrontendDiagnostics {
+  errors: { message: string; stack?: string; source?: string; line?: number; col?: number }[]
+  console: { level: "log" | "warn" | "error"; args: string[] }[]
+  resourceFailures: { url: string; status?: number; reason: string }[]
+  bridgeHandshake: "pending" | "ready" | "timeout"
+}
+
+export interface InspectFrontendTimelineEntry {
+  t: number
+  event: "turn-delta" | "turn-tool" | "turn-round-end" | "turn-completed"
+  payload: unknown
+}
+
+export interface InspectFrontendActionSnapshot {
+  step: number
+  action: InspectDomAction
+  after: { domSummary: string; bridgeState: string }
+}
+
+export interface InspectFrontendResult {
+  ok: boolean
+  cardId: string
+  entry: string
+  structure: InspectFrontendStructure
+  diagnostics: InspectFrontendDiagnostics
+  timeline?: InspectFrontendTimelineEntry[]
+  actionSnapshots?: InspectFrontendActionSnapshot[]
+  fileLineMap?: Record<string, { source: string; line: number }[]>
+  diff?: {
+    added: string[]
+    removed: string[]
+    changed: { path: string; from: string; to: string }[]
+  }
+  truncated?: boolean
+  error?: { code: string; message: string; details?: unknown }
+}
+
+type RuntimeInspectFrontendRunner = (
+  input: InspectFrontendInput,
+) => Promise<InspectFrontendResult>
+
 export interface RuntimeControlledExecutorContext {
   agentContext?: AgentContextEntry
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
@@ -214,6 +302,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   agentContext?: AgentContextEntry
   sessionState?: RuntimeWorkspaceToolSessionState
   runAgentCall?: RuntimeAgentCallRunner
+  runInspectFrontend?: RuntimeInspectFrontendRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
@@ -991,6 +1080,128 @@ function normalizeAgentCallArguments(
     historyMode: normalizeAgentCallHistoryMode(input.historyMode),
     ...(timeoutMs !== undefined ? { timeoutMs } : {}),
   }
+}
+
+const INSPECT_FRONTEND_WAIT_MODES = new Set(["bridge-ready", "turn-completed"])
+const INSPECT_FRONTEND_RUNTIME_MODES = new Set(["real", "mock"])
+const INSPECT_DOM_ACTION_TYPES = new Set<InspectDomActionType>([
+  "click",
+  "type",
+  "press",
+  "scroll",
+])
+const INSPECT_SCROLL_TARGETS = new Set(["top", "bottom"])
+
+/**
+ * 校验 inspect_frontend 工具入参。手写校验（镜像 normalizeAgentCallArguments），
+ * 无 cardId 参数——inspector 内部从 getPlatformActiveGameCard() 取当前卡。
+ * wait 默认 bridge-ready；只把实际提供的字段放进结果。
+ */
+function normalizeInspectFrontendArguments(
+  input: Record<string, unknown>,
+): InspectFrontendInput {
+  const result: InspectFrontendInput = {}
+
+  if (input.send !== undefined) {
+    if (!isRecord(input.send)) {
+      throw toolError(
+        "INSPECT_FRONTEND_SEND_INVALID",
+        "inspect_frontend send must be an object with a message string.",
+      )
+    }
+    const message = normalizeRequiredString(
+      input.send.message,
+      "INSPECT_FRONTEND_MESSAGE_REQUIRED",
+      "inspect_frontend send.message must be a non-empty string.",
+    )
+    result.send = { message }
+  }
+
+  if (input.actions !== undefined) {
+    if (!Array.isArray(input.actions)) {
+      throw toolError(
+        "INSPECT_FRONTEND_ACTIONS_INVALID",
+        "inspect_frontend actions must be an array.",
+      )
+    }
+    result.actions = input.actions.map((raw, i) => {
+      if (!isRecord(raw)) {
+        throw toolError(
+          "INSPECT_FRONTEND_ACTION_INVALID",
+          `inspect_frontend actions[${i}] must be an object.`,
+        )
+      }
+      const type = raw.type
+      if (
+        typeof type !== "string"
+        || !INSPECT_DOM_ACTION_TYPES.has(type as InspectDomActionType)
+      ) {
+        throw toolError(
+          "INSPECT_FRONTEND_ACTION_TYPE_INVALID",
+          `inspect_frontend actions[${i}].type must be one of: click, type, press, scroll.`,
+        )
+      }
+      const selector = normalizeRequiredString(
+        raw.selector,
+        "INSPECT_FRONTEND_SELECTOR_REQUIRED",
+        `inspect_frontend actions[${i}].selector must be a non-empty string.`,
+      )
+      const action: InspectDomAction = {
+        type: type as InspectDomActionType,
+        selector,
+      }
+      if (typeof raw.text === "string" && raw.text) action.text = raw.text
+      if (typeof raw.key === "string" && raw.key) action.key = raw.key
+      if (
+        typeof raw.to === "string"
+        && INSPECT_SCROLL_TARGETS.has(raw.to as "top" | "bottom")
+      ) {
+        action.to = raw.to as "top" | "bottom"
+      }
+      return action
+    })
+  }
+
+  if (typeof input.observeBetween === "boolean") {
+    result.observeBetween = input.observeBetween
+  }
+  if (typeof input.refresh === "boolean") {
+    result.refresh = input.refresh
+  }
+
+  if (input.wait !== undefined) {
+    if (
+      typeof input.wait !== "string"
+      || !INSPECT_FRONTEND_WAIT_MODES.has(input.wait as "bridge-ready" | "turn-completed")
+    ) {
+      throw toolError(
+        "INSPECT_FRONTEND_WAIT_INVALID",
+        "inspect_frontend wait must be one of: bridge-ready, turn-completed.",
+      )
+    }
+    result.wait = input.wait as "bridge-ready" | "turn-completed"
+  } else {
+    result.wait = "bridge-ready"
+  }
+
+  if (input.runtime !== undefined) {
+    if (
+      typeof input.runtime !== "string"
+      || !INSPECT_FRONTEND_RUNTIME_MODES.has(input.runtime as "real" | "mock")
+    ) {
+      throw toolError(
+        "INSPECT_FRONTEND_RUNTIME_INVALID",
+        "inspect_frontend runtime must be one of: real, mock.",
+      )
+    }
+    result.runtime = input.runtime as "real" | "mock"
+  }
+
+  if (typeof input.screenshot === "boolean") {
+    result.screenshot = input.screenshot
+  }
+
+  return result
 }
 
 function skillCandidateDetails(skill: SkillRegistryEntry): Record<string, unknown> {
@@ -1901,6 +2112,21 @@ async function executeRuntimeWorkspaceToolCall(
         name: call.name,
         ok: true,
         result: await context.runAgentCall(normalizeAgentCallArguments(call.arguments)),
+      }
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend) {
+      if (!context.runInspectFrontend) {
+        throw toolError(
+          "INSPECT_FRONTEND_UNAVAILABLE",
+          "inspect_frontend is not available in this Agent step.",
+        )
+      }
+      observation = {
+        index,
+        name: call.name,
+        ok: true,
+        result: await context.runInspectFrontend(
+          normalizeInspectFrontendArguments(call.arguments),
+        ),
       }
     } else if (isWorkspaceOperationToolName(call.name)) {
       const opResult = await executeWorkspaceOperation(

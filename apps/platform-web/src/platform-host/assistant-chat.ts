@@ -50,6 +50,7 @@ import { getBrowserAiConfig } from "../config/ai"
 import { resolveBrowserAiConfigForModel } from "../config/ai"
 import { binaryPlaceholderText } from "@/lib/media-type"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
+import { createFrontendInspector } from "./frontend-inspector"
 import {
   getPlatformActiveGameCard,
   listEffectiveWorkspaceFilesForActiveSave,
@@ -458,6 +459,7 @@ export async function runAssistantChat(
           })
         },
         toolCallMode: localAssistantToolCallMode,
+        runInspectFrontend: createFrontendInspector(),
         runBrowserScript: createBrowserSkillScriptRunner({
           workspaceTransaction: activeWorkspaceTransaction,
           signal: controller.signal,

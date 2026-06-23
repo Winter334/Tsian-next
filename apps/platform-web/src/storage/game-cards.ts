@@ -13,6 +13,10 @@ import {
   createDefaultWorkspaceTemplateFiles,
   normalizeWorkspaceFilePath,
 } from "./workspace"
+import {
+  DEFAULT_FRONTEND_BINDING,
+  defaultFrontendFiles,
+} from "./default-frontend-files"
 
 export const BUILTIN_BLANK_GAME_CARD_ID = "tsian.builtin.blank"
 const BUILTIN_BLANK_GAME_CARD_COVER_URL = "/default-card-cover.webp"
@@ -720,7 +724,11 @@ export async function getBuiltinBlankGameCard(): Promise<LocalGameCardView> {
 /**
  * Create a fresh editable local game card from the builtin blank template,
  * WITHOUT setting it as the active card. Copies the template's content files
- * and frontend files onto a new local card with a generated id.
+ * onto a new local card with a generated id, and injects the default packaged
+ * frontend binding + files (same as `createDefaultPlatformGameCard`) so the
+ * auto-created card is playable out of the box — the builtin template itself
+ * carries no frontend, so copying its (empty) frontend files would yield a
+ * card with no frontend.
  *
  * Used by the fallback rework (task 06-21 子3 Phase A) so that
  * `ensureActiveGameCardId` / `deletePlatformGameCard` can auto-create an
@@ -734,7 +742,6 @@ export async function getBuiltinBlankGameCard(): Promise<LocalGameCardView> {
 export async function createDefaultEditableCard(): Promise<LocalGameCardView> {
   const builtin = await ensureBuiltinBlankGameCard()
   const contentFiles = await listLocalGameCardContentFiles(builtin.id)
-  const frontendFiles = await listLocalGameCardFrontendFiles(builtin.id)
   const newId = `local.${createIdSegment()}`
   return putLocalGameCard({
     manifest: {
@@ -742,15 +749,13 @@ export async function createDefaultEditableCard(): Promise<LocalGameCardView> {
       id: newId,
       name: "我的游戏",
       summary: "从模板创建的游戏卡，可用桌面助手定制内容。",
+      frontend: DEFAULT_FRONTEND_BINDING,
     },
     contentFiles: contentFiles.map((file) => ({
       path: file.path,
       content: file.content,
     })),
-    frontendFiles: frontendFiles.map((file) => ({
-      path: file.path,
-      data: file.data,
-    })),
+    frontendFiles: defaultFrontendFiles(),
     source: "local",
   })
 }

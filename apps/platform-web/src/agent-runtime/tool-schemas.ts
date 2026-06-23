@@ -117,6 +117,57 @@ const agentCallSchema: ToolSchema = {
   },
 }
 
+const inspectFrontendSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend,
+  description:
+    "Inspect the active game card's packaged frontend in a hidden iframe using the real /play load path, returning a structural + diagnostic snapshot. Supports driving one master agent turn (send), DOM interactions (actions), and refreshing the latest snapshot (refresh); these compose to cover a full player flow. No cardId — the active card is inspected. Use it to close the write→inspect→fix loop on authored frontends. Example: inspect_frontend with send={message:\"...\"}, or actions=[{type:\"click\",selector:\"#send\"}], observeBetween=true.",
+  parameters: {
+    type: "object",
+    properties: {
+      send: {
+        type: "object",
+        description:
+          "Drive one master agent turn on an ephemeral save (consumes tokens). The ephemeral save is discarded after the turn, leaving player saves untouched.",
+        properties: {
+          message: { type: "string" },
+        },
+        required: ["message"],
+      },
+      actions: {
+        type: "array",
+        description:
+          "DOM interactions applied to the loaded frontend (same-origin). Each entry: { type, selector, text?, key?, to? }.",
+        items: {
+          type: "object",
+          properties: {
+            type: { type: "string", enum: ["click", "type", "press", "scroll"] },
+            selector: { type: "string" },
+            text: { type: "string" },
+            key: { type: "string" },
+            to: { type: "string", enum: ["top", "bottom"] },
+          },
+          required: ["type", "selector"],
+        },
+      },
+      observeBetween: {
+        type: "boolean",
+        description:
+          "Take a structural snapshot between each action to observe stepwise state changes.",
+      },
+      refresh: {
+        type: "boolean",
+        description:
+          "Pull the latest runtime snapshot after operations (semantic wrapper — no bridge protocol knowledge needed).",
+      },
+      wait: {
+        type: "string",
+        enum: ["bridge-ready", "turn-completed"],
+        description: "Observation point to wait for. Defaults to \"bridge-ready\".",
+      },
+    },
+  },
+}
+
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
@@ -335,6 +386,14 @@ export function buildEnabledToolSchemas(options: {
       workspaceMoveSchema,
       workspaceDeleteSchema,
     )
+  }
+
+  const canInspectFrontend = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
+  )
+  if (canInspectFrontend) {
+    schemas.push(inspectFrontendSchema)
   }
 
   return schemas

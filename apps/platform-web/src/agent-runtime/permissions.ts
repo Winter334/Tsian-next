@@ -8,6 +8,7 @@ export const AGENT_PLATFORM_TOOL_NAMES = {
   agentCall: "agent_call",
   workspaceRead: "workspace_read",
   workspaceWrite: "workspace_write",
+  inspectFrontend: "inspect_frontend",
 } as const satisfies Record<string, AgentPlatformToolName>
 
 export const DEFAULT_AGENT_PLATFORM_TOOLS: AgentPlatformToolName[] = [
