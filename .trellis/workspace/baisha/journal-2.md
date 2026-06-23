@@ -1020,3 +1020,37 @@ Implemented full multimodal attachment support for the desktop assistant chat (t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 82: 默认前端 UI 重做与协议层原地验证
+
+**Date**: 2026-06-23
+**Task**: 默认前端 UI 重做与协议层原地验证
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+将默认 packaged 游戏前端从半成品重做为成品（烛火书卷 Lamplight Codex 风格）。协议层/表现层在 app.js 内清晰隔离为未来抽 play-bridge SDK 留边界；过程节点状态机移植自 useAssistantTimeline（thought/tool/interim 可折叠纵向平铺，消费 agentId 做 agent 分流）；vendor marked UMD 作为额外 packaged 文件（?raw 内联+<script defer>）示范 packaged 前端可 vendor 第三方库范式；小说式正文阅读+用户消息左竖线+interim 过程元信息与正文分离+状态栏+UI操作区占位+smart scroll+响应式。协议层端到端验证通过 /play 真实加载路径：场景1 加载诊断（无JS错误/无资源404/握手ready）、场景2 事件时间线（turn-delta→tool→round-end→completed 完整跑通，17个过程节点全标 master agentId）、场景3 snapshot 覆盖渲染（§4 红线保持，turn-completed 后正文被 snapshot 覆盖）。G1 build:contracts+build:web 类型检查全绿，G4 仅改 default-frontend-files.ts 一个文件。场景4 坏前端诊断为可选项（inspect_frontend 工具在 06-23-inspection 已验证）。发现3项非阻塞瑕疵留作 UI 打磨：vendor 文件名 marked.umd.js 实为 marked.min.js 内容（名实不符）、sendMessage reject 后状态栏错误文案粘滞且非用户友好、根目录杂散 nul 文件（Windows 保留名难删）。后续 UI 打磨差不多后抽 SDK。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4828592` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
