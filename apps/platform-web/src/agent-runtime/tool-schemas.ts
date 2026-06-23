@@ -26,6 +26,7 @@ const WORKSPACE_SCOPE_ENUM: WorkspaceScope[] = [
   "card-content",
   "save-runtime",
   "platform-meta",
+  "temp",
 ]
 
 const HISTORY_MODE_ENUM: RuntimeAgentCallHistoryMode[] = [
@@ -249,11 +250,11 @@ const workspaceWriteSchema: ToolSchema = {
       scope: {
         type: "string",
         enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to write. Ordinary Agent writes use \"save-runtime\".",
+        description: "Workspace scope to write. Ordinary Agent writes use \"save-runtime\" (paths under \"save/...\"). Use \"temp\" for transient scratch files (paths under \"temp/...\").",
       },
       path: {
         type: "string",
-        description: "Target workspace file path. Ordinary writes must target \"save/...\".",
+        description: "Target workspace file path. For \"save-runtime\" use \"save/...\"; for \"temp\" use \"temp/...\".",
       },
       content: {
         type: "string",
