@@ -1,10 +1,12 @@
 import type { GameCardFrontendBinding } from "@tsian/contracts"
 import type { PutLocalGameCardFrontendFileInput } from "./game-cards"
 // Vendor 机制：第三方库源码通过 Vite ?raw 内联为字符串，作为额外 packaged 文件。
-// index.html 用 <script src="vendor/xxx.js" defer> 加载，app.js 用 window.xxx 访问。
-// 这是 packaged 前端引入第三方库的标准范式——玩家自定义前端可同样 vendor
-// Three.js/PixiJS/Chart.js 等实现任意前端效果。助手 fork 时一并带走。
-import markedUmdSource from "marked/marked.min.js?raw"
+// index.html 用 <script type="module" src="app.js"> 加载 app.js，app.js 顶部用
+// ESM import 引入 vendor 库（./vendor/xxx.esm.js）。这是 packaged 前端引入第三方
+// 库的标准范式——玩家自定义前端可同样 vendor Three.js/PixiJS/Chart.js 等实现任意
+// 前端效果。助手 fork 时一并带走。前端走浏览器原生 ESM（<script type=module> +
+// import），skill 脚本走 importScripts（UMD），两边各用最适合的模块格式。
+import markedEsmSource from "marked?raw"
 
 /**
  * Packaged frontend binding for the default lightweight AIRP frontend.
@@ -30,9 +32,9 @@ const FRONTEND_INDEX_HTML = [
   '  <meta name="viewport" content="width=device-width, initial-scale=1.0" />',
   "  <title>Tsian 游戏前端</title>",
   '  <link rel="stylesheet" href="style.css" />',
-  "  <!-- vendor 库：marked UMD，<script defer> 在 app.js 之前加载，app.js 用 window.marked -->",
-  '  <script src="vendor/marked.umd.js" defer></script>',
-  '  <script src="app.js" defer></script>',
+  "  <!-- app.js 是 ESM module，顶部 import { marked } from './vendor/marked.esm.js' -->",
+  "  <!-- module 脚本自动 deferred，无需 defer 属性 -->",
+  '  <script type="module" src="app.js"></script>',
   "</head>",
   "<body>",
   '  <div id="app" class="app">',
@@ -295,7 +297,9 @@ const FRONTEND_STYLE_CSS = [
 // ════════════════════════════════════════════════════════════════
 
 const FRONTEND_APP_JS = [
-  '"use strict";',
+  "// ESM module（<script type=module> 加载，自动 strict）",
+  '// vendor marked：ESM import，直接用 marked 而非 window.marked',
+  'import { marked } from "./vendor/marked.esm.js";',
   "",
   "// ════════════════════════════════════════════════════════════════",
   "// 协议层（Bridge Layer）",
@@ -412,14 +416,9 @@ const FRONTEND_APP_JS = [
   "  userPinnedToBottom = dist < 80;",
   "});",
   "",
-  "// ── markdown 渲染（vendor marked）──",
+  "// ── markdown 渲染（ESM import marked）──",
   "function renderMarkdown(text) {",
-  "  if (typeof window.marked !== \"undefined\") {",
-  "    return window.marked.parse(text, { async: false });",
-  "  }",
-  "  // 降级：vendor 没加载时，至少 escape + 换行",
-  "  return String(text).replace(/&/g, \"&amp;\").replace(/</g, \"&lt;\").replace(/>/g, \"&gt;\")",
-  "    .replace(/\\n/g, \"<br>\");",
+  "  return marked.parse(text, { async: false });",
   "}",
   "",
   "// ── 消息渲染 ──",
@@ -726,14 +725,14 @@ const FRONTEND_APP_JS = [
 /**
  * The default packaged frontend files, ready to inject into a game card's
  * `frontendFiles` via `putLocalGameCard`. Relative references in index.html
- * (`style.css`, `app.js`, `vendor/marked.umd.js`) resolve under the Service
- * Worker virtual prefix.
+ * (`style.css`, `app.js`) and in app.js (`./vendor/marked.esm.js`) resolve
+ * under the Service Worker virtual prefix.
  */
 export function defaultFrontendFiles(): PutLocalGameCardFrontendFileInput[] {
   return [
     { path: "frontend/index.html", data: FRONTEND_INDEX_HTML },
     { path: "frontend/style.css", data: FRONTEND_STYLE_CSS },
     { path: "frontend/app.js", data: FRONTEND_APP_JS },
-    { path: "frontend/vendor/marked.umd.js", data: markedUmdSource },
+    { path: "frontend/vendor/marked.esm.js", data: markedEsmSource },
   ]
 }
