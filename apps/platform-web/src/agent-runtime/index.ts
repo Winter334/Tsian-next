@@ -744,17 +744,17 @@ function buildWorkspaceToolInstructions(
       : []),
     ...(canReadWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.read} arguments={"scope":"effective","path":"world/canon.md"}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.read} arguments={"scope":"effective","path":"save/history/timeline.md","offset":1,"limit":200}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.list} arguments={"scope":"effective","path":"skills"}，path 可省略表示根目录`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.search} arguments={"scope":"effective","query":"关键词","limit":10}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.search} arguments={"scope":"effective","pattern":"\"state\":\\s*\\{","contextLines":2}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.glob} arguments={"scope":"effective","pattern":"**/agent.json","limit":50}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.read} arguments={"path":"world/canon.md"}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.read} arguments={"path":"save/history/timeline.md","offset":1,"limit":200}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.list} arguments={"path":"skills"}，path 可省略表示根目录`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.search} arguments={"query":"关键词","limit":10}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.search} arguments={"pattern":"\"state\":\\s*\\{","contextLines":2}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.glob} arguments={"pattern":"**/agent.json","limit":50}`,
         ]
       : []),
     ...(canWriteWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.write} arguments={"scope":"save-runtime","path":"save/world/notes.md","content":"..."}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.write} arguments={"path":"save/world/notes.md","content":"..."}`,
         ]
       : []),
   ]
@@ -764,7 +764,7 @@ function buildWorkspaceToolInstructions(
     ...(canReadWorkspace
       ? [
           `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 Skill 入口文件；用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后框架自动注入全文。`,
-          `注入的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read}/${RUNTIME_WORKSPACE_TOOL_NAMES.list}/${RUNTIME_WORKSPACE_TOOL_NAMES.search} 读取具体资源。读操作需要显式传入 scope，通常使用 "effective"。`,
+          `注入的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read}/${RUNTIME_WORKSPACE_TOOL_NAMES.list}/${RUNTIME_WORKSPACE_TOOL_NAMES.search} 读取具体资源。`,
           `长文件用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 的 offset/limit 分段读取（返回 totalLines/returnedLines/truncated，据此判断是否续读）。${RUNTIME_WORKSPACE_TOOL_NAMES.search} 支持 query 子串或 pattern 正则二选一：query 默认大小写不敏感，pattern 默认大小写敏感（用 ignoreCase 显式覆盖），返回每命中的行号、命中行和 contextLines 上下文。`,
         ]
       : []),

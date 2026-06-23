@@ -158,7 +158,11 @@ export type WorkspaceOperationName =
 
 export interface WorkspaceOperationRequest {
   operation: WorkspaceOperationName
-  scope: WorkspaceScope
+  /** Workspace scope. Optional for LLM-facing tool calls: when omitted, read
+   *  operations default to "effective" (union view) and edit operations infer
+   *  the scope from the path prefix (save/→save-runtime, temp/→temp, …).
+   *  Internal callers (SDK RPC, platform-host) always pass it explicitly. */
+  scope?: WorkspaceScope
   path?: string
   targetPath?: string
   query?: string

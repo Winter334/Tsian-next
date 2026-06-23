@@ -1,7 +1,6 @@
 import type {
   AgentPlatformToolName,
   AgentRegistryEntry,
-  WorkspaceScope,
 } from "@tsian/contracts"
 import { AGENT_PLATFORM_TOOL_NAMES } from "./permissions"
 import {
@@ -20,14 +19,6 @@ export interface ToolSchema {
   description: string
   parameters: Record<string, unknown>
 }
-
-const WORKSPACE_SCOPE_ENUM: WorkspaceScope[] = [
-  "effective",
-  "card-content",
-  "save-runtime",
-  "platform-meta",
-  "temp",
-]
 
 const HISTORY_MODE_ENUM: RuntimeAgentCallHistoryMode[] = [
   "minimal",
@@ -129,16 +120,11 @@ const agentCallSchema: ToolSchema = {
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
-    "Read one Runtime Workspace file by scope and path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those). Returns the file content as a string. Returns an error if the path does not exist in the given scope. Pass `offset`/`limit` to read a line slice of a long file; the result then carries `totalLines`/`returnedLines`/`offset`/`truncated` so you can decide whether to page further.",
+    "Read one Runtime Workspace file by path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those). Returns the file content as a string. Returns an error if the path does not exist. Pass `offset`/`limit` to read a line slice of a long file; the result then carries `totalLines`/`returnedLines`/`offset`/`truncated` so you can decide whether to page further.",
   parameters: {
     type: "object",
-    required: ["scope", "path"],
+    required: ["path"],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to read from. Usually \"effective\".",
-      },
       path: {
         type: "string",
         description: "Workspace file path (forward slashes, no leading slash).",
@@ -158,19 +144,14 @@ const workspaceReadSchema: ToolSchema = {
 const workspaceListSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.list,
   description:
-    "List direct child entries of a workspace directory by scope. Returns entries without file contents. Omit path (or pass empty) to list the root.",
+    "List direct child entries of a workspace directory by path. Returns entries without file contents. Omit path (or pass empty) to list the root.",
   parameters: {
     type: "object",
-    required: ["scope"],
+    required: [],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to list. Usually \"effective\".",
-      },
       path: {
         type: "string",
-        description: "Optional directory path relative to the scope root. Empty or omitted means root.",
+        description: "Optional directory path to list. Empty or omitted means the workspace root.",
       },
     },
   },
@@ -182,13 +163,8 @@ const workspaceSearchSchema: ToolSchema = {
     "Search workspace files and return per-file match lists (line number + matched line + context lines). Pass either `query` (substring, case-insensitive by default) or `pattern` (regex, case-sensitive by default) — not both. Empty/omitted query and pattern return no results. Use it to locate relevant files and lines before reading specific ones.",
   parameters: {
     type: "object",
-    required: ["scope"],
+    required: [],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to search. Usually \"effective\".",
-      },
       query: {
         type: "string",
         description: "Substring search text. Case-insensitive by default. Mutually exclusive with `pattern`.",
@@ -221,11 +197,6 @@ const workspaceGlobSchema: ToolSchema = {
     type: "object",
     required: ["pattern"],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to match within. Usually \"effective\".",
-      },
       pattern: {
         type: "string",
         description:
@@ -242,19 +213,15 @@ const workspaceGlobSchema: ToolSchema = {
 const workspaceWriteSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.write,
   description:
-    "Create or overwrite a workspace file at a path (equivalent to a full-content patch). Use it only when a loaded Skill explicitly requires writing state, notes, memory, or frontend view data. Returns the written file metadata. Returns an error if the path is not writable in the given scope.",
+    "Create or overwrite a workspace file at a path (equivalent to a full-content patch). Use it only when a loaded Skill explicitly requires writing state, notes, memory, or frontend view data. Returns the written file metadata. Returns an error if the path is not writable for the current Agent. Use path prefixes to target the right area: \"save/...\" for runtime saves, \"temp/...\" for transient scratch files, \"frontend/...\" for frontend view data, \".tsian/...\" for platform metadata, anything else for card content.",
   parameters: {
     type: "object",
-    required: ["scope", "path", "content"],
+    required: ["path", "content"],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to write. Ordinary Agent writes use \"save-runtime\" (paths under \"save/...\"). Use \"temp\" for transient scratch files (paths under \"temp/...\").",
-      },
       path: {
         type: "string",
-        description: "Target workspace file path. For \"save-runtime\" use \"save/...\"; for \"temp\" use \"temp/...\".",
+        description:
+          "Target workspace file path. Use \"save/...\" for runtime saves, \"temp/...\" for transient scratch files, \"frontend/...\" for frontend view data, \".tsian/...\" for platform metadata, anything else for card content.",
       },
       content: {
         type: "string",
@@ -270,13 +237,8 @@ const workspaceDiffSchema: ToolSchema = {
     "Compute a diff between a workspace file's current content and a proposed next content, without persisting. Use it to preview a change before patching. Returns the diff between current and expected content, including whether content changed.",
   parameters: {
     type: "object",
-    required: ["scope", "path", "expectedContent"],
+    required: ["path", "expectedContent"],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to diff against.",
-      },
       path: {
         type: "string",
         description: "Target workspace file path.",
@@ -292,16 +254,11 @@ const workspaceDiffSchema: ToolSchema = {
 const workspaceMoveSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.move,
   description:
-    "Move or rename a workspace file from one path to another within a scope. Use it only when a loaded Skill explicitly requires reorganizing runtime files. Returns the moved file paths. Returns an error if the source or target path is invalid.",
+    "Move or rename a workspace file from one path to another. Use it only when a loaded Skill explicitly requires reorganizing runtime files. Returns the moved file paths. Returns an error if the source or target path is invalid. Both paths must sit under the same path-prefix area (e.g. both under save/).",
   parameters: {
     type: "object",
-    required: ["scope", "path", "targetPath"],
+    required: ["path", "targetPath"],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to move within.",
-      },
       path: {
         type: "string",
         description: "Source workspace file path.",
@@ -317,22 +274,17 @@ const workspaceMoveSchema: ToolSchema = {
 const workspaceDeleteSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.delete,
   description:
-    "Delete one or more workspace files matching a path prefix within a scope. Use it only when a loaded Skill explicitly requires removing runtime files. Returns the deleted file paths. Returns an error if the path is not deletable in the given scope.",
+    "Delete one or more workspace files matching a path prefix. Use it only when a loaded Skill explicitly requires removing runtime files. Returns the deleted file paths. Returns an error if the path is not deletable for the current Agent.",
   parameters: {
     type: "object",
-    required: ["scope", "path"],
+    required: ["path"],
     properties: {
-      scope: {
-        type: "string",
-        enum: WORKSPACE_SCOPE_ENUM,
-        description: "Workspace scope to delete from.",
-      },
       path: {
         type: "string",
         description: "Target workspace file path (or prefix) to delete.",
       },
     },
-  },
+  }
 }
 
 /**

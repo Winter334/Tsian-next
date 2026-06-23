@@ -278,6 +278,29 @@ function normalizeWorkspaceScope(value: unknown): WorkspaceScope {
   )
 }
 
+/** Resolve the workspace scope for an operation when the caller (typically the
+ *  LLM tool args) omits `scope`. Explicit scope always wins. Read ops default
+ *  to "effective" (a union view across all scopes). Edit ops infer the scope
+ *  from the path prefix via `scopeForPath` so routing + permission checks hit
+ *  the right backend — "effective" is read-only. Permission enforcement itself
+ *  is path-based (`assertEditAccess` calls `accessForPath`→`scopeForPath`), so
+ *  the actor-level boundary is preserved regardless of whether scope is
+ *  explicit or inferred. */
+function resolveOperationScope(
+  operation: WorkspaceOperationName,
+  requestInput: WorkspaceOperationRequest,
+): WorkspaceScope {
+  if (typeof requestInput.scope === "string" && requestInput.scope) {
+    return normalizeWorkspaceScope(requestInput.scope)
+  }
+  if (EDIT_OPERATIONS.has(operation)) {
+    const rawPath = typeof requestInput.path === "string" ? requestInput.path : ""
+    const normalized = rawPath.trim().replace(/\\/g, "/").replace(/^\/+/, "")
+    return scopeForPath(normalized)
+  }
+  return "effective"
+}
+
 function normalizeSearchLimit(value: unknown): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
     return DEFAULT_SEARCH_LIMIT
@@ -1216,7 +1239,7 @@ export async function executeWorkspaceOperation(
   context: WorkspaceOperationExecutionContext,
 ): Promise<unknown> {
   const operation = normalizeWorkspaceOperationName(requestInput.operation)
-  const scope = normalizeWorkspaceScope(requestInput.scope)
+  const scope = resolveOperationScope(operation, requestInput)
   const actorLevel = resolveWorkspaceActorLevel(context)
 
   assertOperationExposed(operation, context.exposedOperations)

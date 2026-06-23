@@ -24,6 +24,7 @@ These guides help you **ask the right questions before coding**.
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
 | [Data Fileification Principle](./data-fileification-principle.md) | Decide where configurable data lives — file system vs private DB field | When adding new configurable data, new storage tables/keys, or new agent-managed data |
+| [AI-Facing Content Changes](./ai-facing-content-changes.md) | Avoid leaving residual concept traces when removing/auto-inferring a concept from tool schemas, prompts, or descriptions | When removing a parameter from a tool schema, auto-inferring a concept the agent used to pass, or rewriting tool/prompt descriptions |
 | [Module Structure Guide](./module-structure-guide.md) | Keep source files focused on one responsibility; split god files along seams | When a file accumulates unrelated concerns, before adding a function that doesn't fit the file's theme |
 
 ---
@@ -57,6 +58,15 @@ These guides help you **ask the right questions before coding**.
 - [ ] A feature implies the assistant should read/edit some platform data
 
 → Read [Data Fileification Principle](./data-fileification-principle.md)
+
+### When to Think About AI-Facing Content Changes
+
+- [ ] You're removing a parameter from a tool schema (or moving it from required to optional)
+- [ ] You're auto-inferring a concept the agent used to pass explicitly (scope, owner, mode, …)
+- [ ] You're rewriting a tool `description` or a prompt string that teaches the model a framework concept
+- [ ] The user says a concept is "not the agent's concern" / "徒增麻烦" / "noise" / "auto-infer"
+
+→ Read [AI-Facing Content Changes](./ai-facing-content-changes.md)
 
 ### When to Think About Module Structure
 
