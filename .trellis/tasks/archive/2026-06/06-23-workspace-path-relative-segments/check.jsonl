@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "确认 build:web 为质量门 + helper 抽取符合 Known Tech Debt 先例"}
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "check 阶段强制两层 grep:WORKSPACE_PATH_INVALID 旧文案零残留 + 未向模型暴露 clamp 机制"}

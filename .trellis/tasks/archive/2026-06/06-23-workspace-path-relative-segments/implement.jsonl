@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "Known Tech Debt 先例:重复 helper 出现第二消费者时抽到 lib/workspace-<x>.ts;确认 build:web 质量门"}
+{"file": ".trellis/spec/platform-web/frontend/directory-structure.md", "reason": "lib/ 落点规则 + @/ alias 跨目录 import 约定"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "三份同构 normalizePathBase 副本 → 抽共享 helper 的决策依据"}
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "错误信息文案与 list schema 描述是 AI-facing 文本,改后需两层 grep 零残留验证"}
