@@ -223,9 +223,17 @@
                 <template v-if="msg.role === 'assistant' && msg.timeline && msg.timeline.length > 0">
                   <div class="flex flex-col gap-1">
                     <template v-for="node in msg.timeline" :key="node.id">
+                      <!-- 过渡文本节点(tool_calls 轮模型在调用工具前输出的可见文本,
+                           如"我先看一下…").当正常回复处理:正文样式渲染,始终展开,
+                           平铺在该轮工具节点之前(timeline 按发生顺序). -->
+                      <div
+                        v-if="node.type === 'interim'"
+                        class="prose-chat break-words text-sm leading-6"
+                        v-html="renderMarkdown(node.text)"
+                      />
                       <!-- 思考节点(tool_calls 轮的推理文本,默认折叠,可展开回看) -->
                       <Collapsible
-                        v-if="node.type === 'thought'"
+                        v-else-if="node.type === 'thought'"
                         :open="!node.collapsed"
                         @update:open="(v) => (node.collapsed = !v)"
                         class="border-l border-neon-deep/30 bg-panel/15"
@@ -518,7 +526,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, nextTick, computed, onBeforeUnmount, onMounted } from "vue"
+import { ref, reactive, nextTick, computed, watch, onBeforeUnmount, onMounted } from "vue"
+import { useRoute } from "vue-router"
 import "highlight.js/styles/atom-one-dark.min.css"
 import { Bot, Check, ChevronDown, ChevronRight, Copy, FileText, Loader2, Paperclip, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain, X } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
@@ -557,9 +566,13 @@ import {
   getAssistantAttachmentBlob,
   getAssistantSessionMessages,
   listAssistantSessions,
+  loadContextUsed,
+  loadScrollTop,
   renameAssistantSession,
   saveAssistantAttachment,
   saveAssistantSessionMessages,
+  saveContextUsed,
+  saveScrollTop,
   setActiveAssistantSessionId,
   type AssistantSessionSummary,
 } from "../storage"
@@ -594,6 +607,16 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const showJumpToBottom = ref(false)
 const pendingAttachments = ref<PendingAttachment[]>([])
 const dragOver = ref(false)
+// 焦点切换滚动保持:浏览器对非活动/被遮挡滚动容器会异步把 scrollTop 重置为 0
+// (宽屏)或 display:none→grid 时重置(窄屏).把 scrollTop 持久化到会话
+// (assistant-scroll-top:{id}),scroll 时 rAF 节流写入;进入会话/获焦时从存储
+// 恢复,并用多帧防御性恢复对抗浏览器异步重置(恢复后若又被重置为 0 则再补一次).
+const route = useRoute()
+const ASSISTANT_ROUTE_PATH = "/assistant"
+// rAF 节流标记:scroll 期间每帧最多写一次 scrollTop 到存储.
+let scrollPersistScheduled = false
+// 防御性恢复的 rAF 链句柄,进入新会话/卸载时取消上一轮.
+let restoreRafId = 0
 // 复制反馈:记下刚复制的消息索引,显示「已复制」勾,短暂后自动清除.
 const copiedIndex = ref<number | null>(null)
 // 编辑中:正在通过工具条编辑的消息索引(仅用于工具条透明度保持).
@@ -674,6 +697,9 @@ async function loadActiveSession() {
   }))
   await refreshSessions()
 
+  // 恢复上下文环已用值(按会话持久化),避免刷新/重载归零.
+  contextUsed.value = await loadContextUsed(session.id)
+
   // 刷新/关页面恢复:检测上次未完成回复的恢复点(localStorage),提示用户是否保留.
   // 恢复点只在有流式正文时写,且读后即清(一次性).确认则追加一条标记"已中断"的
   // assistant 消息并持久化;取消则丢弃.轻量兜底,不保证 100% 救回.
@@ -730,6 +756,8 @@ async function handleSelectSession(id: string) {
     content: msg.content,
     ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
   }))
+  // 恢复目标会话的上下文环已用值.
+  contextUsed.value = await loadContextUsed(id)
   await scrollToBottom()
 
   // Background persistence of the session we just left. Silent (touch=false):
@@ -760,6 +788,7 @@ async function handleCreateSession() {
     const session = await createAssistantSession("local")
     activeSessionId.value = session.id
     messages.value = []
+    contextUsed.value = 0
     await refreshSessions()
     nextTick(() => inputRef.value?.focus())
   } finally {
@@ -815,10 +844,12 @@ async function handleDeleteSessionById(id: string) {
           content: msg.content,
           ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
         }))
+        contextUsed.value = await loadContextUsed(nextId)
       } else {
         const session = await createAssistantSession("local")
         activeSessionId.value = session.id
         messages.value = []
+        contextUsed.value = 0
         await refreshSessions()
       }
       await scrollToBottom()
@@ -993,6 +1024,8 @@ async function send() {
     // text 模式无 usage(undefined),环保持上次值或归零.
     if (result.usage?.input !== undefined) {
       contextUsed.value = result.usage.input
+      // 按会话持久化 used,刷新/切走再切回恢复,不再归零.
+      void saveContextUsed(sessionId, result.usage.input)
     }
     // 消息 + context 已由 host(runAssistantChat)同步写入,前端不再调 persistCurrentSession
     // (消除双 IO 竞态).catch 路径仍保留前端持久化作兜底(host catch 不写消息).
@@ -1119,6 +1152,18 @@ function handleScroll(event: Event) {
   const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
   userPinnedToBottom.value = distanceFromBottom < 80
   showJumpToBottom.value = distanceFromBottom > 120
+  // rAF 节流持久化 scrollTop 到会话存储(每帧最多一次,避免高频 scroll 写库).
+  if (!scrollPersistScheduled) {
+    scrollPersistScheduled = true
+    requestAnimationFrame(() => {
+      scrollPersistScheduled = false
+      const sid = activeSessionId.value
+      const node = messageListRef.value
+      if (sid && node) {
+        void saveScrollTop(sid, node.scrollTop)
+      }
+    })
+  }
 }
 
 function autoGrow() {
@@ -1178,6 +1223,68 @@ function maybeScrollToBottom() {
     void scrollToBottom()
   }
 }
+
+/**
+ * 从会话存储恢复滚动位置.浏览器对非活动/被遮挡滚动容器会异步重置 scrollTop
+ * 为 0(宽屏)或 display:none→grid 时重置(窄屏),且重置时机延迟不确定(可能晚于
+ * 恢复执行).故采用多帧防御性恢复:连续 N 帧检查,若 scrollTop 被重置为 0 且
+ * 目标值>0 且内容可滚动,则补回目标值,直到稳定或帧数耗尽.
+ *
+ * 用户主动滚到顶时 handleScroll 已把 0 写入存储,loadScrollTop 返回 0,
+ * target===0 时不进入恢复循环,不会误恢复.
+ */
+function restoreScrollTop(target: number) {
+  if (target <= 0) {
+    return
+  }
+  cancelAnimationFrame(restoreRafId)
+  let frames = 0
+  const MAX_FRAMES = 10
+  const tick = () => {
+    const el = messageListRef.value
+    if (!el || frames >= MAX_FRAMES) {
+      restoreRafId = 0
+      return
+    }
+    frames += 1
+    if (el.scrollTop === 0 && el.scrollHeight > el.clientHeight) {
+      // 被浏览器重置为 0,补回目标值;下一帧再验(可能再被重置).
+      el.scrollTop = target
+      restoreRafId = requestAnimationFrame(tick)
+    } else if (el.scrollTop !== target) {
+      // 还没到位(布局未稳定),继续等一帧.
+      restoreRafId = requestAnimationFrame(tick)
+    } else {
+      // 已稳定在目标值,停止.
+      restoreRafId = 0
+    }
+  }
+  restoreRafId = requestAnimationFrame(tick)
+}
+
+/** 进入一个会话后恢复其滚动位置(从存储读取目标值). */
+async function restoreSessionScrollTop() {
+  const sid = activeSessionId.value
+  if (!sid) {
+    return
+  }
+  const target = await loadScrollTop(sid)
+  nextTick(() => restoreScrollTop(target))
+}
+
+// 路由变化反映焦点切换(focusWindow → navigateTo(routePath)).进入助手路由时
+// 从会话存储恢复滚动位置(多帧防御性恢复对抗浏览器异步重置).
+watch(
+  () => route.path,
+  (to, from) => {
+    const isAssistant = (p: string) => p === ASSISTANT_ROUTE_PATH || p.startsWith(`${ASSISTANT_ROUTE_PATH}/`)
+    const wasAssistant = isAssistant(from)
+    const nowAssistant = isAssistant(to)
+    if (nowAssistant && !wasAssistant) {
+      void restoreSessionScrollTop()
+    }
+  },
+)
 
 async function loadProviderPreset() {
   try {
@@ -1306,6 +1413,7 @@ onBeforeUnmount(() => {
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   window.removeEventListener("beforeunload", onBeforeUnloadRecovery)
   document.removeEventListener("visibilitychange", onVisibilityChangeRecovery)
+  cancelAnimationFrame(restoreRafId)
 })
 
 function onActiveCardChanged(event: Event) {
