@@ -320,8 +320,9 @@ async function runInspectFrontend(
       )
     }
 
-    // 7. DOM 交互(actions)+ observeBetween. design §7.
+    // 7. DOM 交互(actions)+ observeBetween. design §3.
     // same-origin 下 contentDocument.querySelector + dispatchEvent 模拟玩家操作.
+    // auto-waiting(默认开):每个 action 前等元素出现且可操作,超时报 INSPECT_WAIT_TIMEOUT.
     let actionSnapshots: InspectFrontendActionSnapshot[] | undefined
     const iframe = mountedIframe ?? container.querySelector("iframe")
     if (input.actions && input.actions.length > 0 && iframe) {
@@ -330,6 +331,29 @@ async function runInspectFrontend(
         actionSnapshots = []
         for (let step = 0; step < input.actions.length; step += 1) {
           const action = input.actions[step]!
+          if (input.autoWait !== false) {
+            const actionable = await waitForActionable(doc, action.selector, ACTION_WAIT_TIMEOUT_MS)
+            if (!actionable) {
+              // 诊断:超时时带上元素是否存在 + 是否 HTMLElement,帮定位是 selector 没匹配
+              // 还是 isActionable 判否.
+              const probeEl = doc.querySelector(action.selector)
+              const diag = probeEl
+                ? {
+                    found: true,
+                    tag: probeEl.tagName.toLowerCase(),
+                    hasDisabledAttr: probeEl.hasAttribute("disabled"),
+                    hasHiddenAttr: probeEl.hasAttribute("hidden"),
+                    ariaHidden: probeEl.getAttribute("aria-hidden"),
+                    inlineDisplay: (probeEl as HTMLElement).style.display || undefined,
+                  }
+                : { found: false }
+              return failed(
+                "INSPECT_WAIT_TIMEOUT",
+                `等待选择器可操作超时:${action.selector}`,
+                { selector: action.selector, timeoutMs: ACTION_WAIT_TIMEOUT_MS, step, diag },
+              )
+            }
+          }
           applyAction(doc, action)
           if (input.observeBetween) {
             // 每个动作后 await 微 tick 让渲染更新,再采结构层快照. design §7 observeBetween.
@@ -498,7 +522,12 @@ function computeDiff(
 }
 
 // ── DOM 交互 ──
-// design §7:same-origin contentDocument.querySelector + dispatchEvent 模拟玩家操作.
+// design §3:same-origin contentDocument.querySelector + dispatchEvent 模拟玩家操作.
+// action 集见 InspectDomActionType;每个 case 校验目标元素类型,不匹配抛结构化错误.
+//
+// 跨 realm 注意:el 来自 iframe 的 document,其原型链是 iframe window 的 HTML*Element,
+// 而本文件跑在父窗口 — el instanceof HTMLInputElement(父窗口的)会因跨 realm 返 false!
+// 用 tagName + 属性 duck-typing 代替 instanceof.
 function applyAction(doc: Document, action: InspectDomAction): void {
   const el = doc.querySelector(action.selector)
   if (!el) {
@@ -507,13 +536,19 @@ function applyAction(doc: Document, action: InspectDomAction): void {
       message: `选择器无匹配:${action.selector}`,
     } satisfies PlatformActionError
   }
+  const tag = el.tagName.toLowerCase()
+  // duck-type helpers(跨 realm 安全):用 tagName + 属性存在性判断元素类型.
+  const isInput = tag === "input"
+  const isTextarea = tag === "textarea"
+  const isSelect = tag === "select"
+  const isFormField = isInput || isTextarea || isSelect
   switch (action.type) {
     case "click":
       el.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }))
       break
     case "type": {
-      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-        el.value = action.text ?? ""
+      if (isFormField) {
+        ;(el as HTMLInputElement).value = action.text ?? ""
       }
       el.dispatchEvent(new Event("input", { bubbles: true }))
       el.dispatchEvent(new Event("change", { bubbles: true }))
@@ -526,12 +561,135 @@ function applyAction(doc: Document, action: InspectDomAction): void {
       break
     }
     case "scroll": {
-      const target = el
+      const target = el as HTMLElement
       target.scrollTop = action.to === "bottom" ? target.scrollHeight : 0
       target.dispatchEvent(new Event("scroll", { bubbles: true }))
       break
     }
+    case "selectOption": {
+      if (!isSelect) {
+        throw {
+          code: "INSPECT_NOT_SELECT",
+          message: `selectOption 目标不是 <select>:${action.selector}`,
+        } satisfies PlatformActionError
+      }
+      const select = el as HTMLSelectElement
+      if (action.value !== undefined && action.value !== "") {
+        select.value = action.value
+      } else if (action.label !== undefined && action.label !== "") {
+        const opt = Array.from(select.options).find((o) => o.textContent?.trim() === action.label)
+        if (!opt) {
+          throw {
+            code: "INSPECT_OPTION_NOT_FOUND",
+            message: `option 文本无匹配:${action.label}`,
+          } satisfies PlatformActionError
+        }
+        select.value = opt.value
+      } else {
+        throw {
+          code: "INSPECT_SELECT_NO_VALUE",
+          message: "selectOption 需 value 或 label 参数",
+        } satisfies PlatformActionError
+      }
+      el.dispatchEvent(new Event("input", { bubbles: true }))
+      el.dispatchEvent(new Event("change", { bubbles: true }))
+      break
+    }
+    case "check": {
+      if (!isInput) {
+        throw {
+          code: "INSPECT_NOT_CHECKABLE",
+          message: `check 目标不是 checkbox/radio:${action.selector}`,
+        } satisfies PlatformActionError
+      }
+      const input = el as HTMLInputElement
+      if (input.type !== "checkbox" && input.type !== "radio") {
+        throw {
+          code: "INSPECT_NOT_CHECKABLE",
+          message: `check 目标不是 checkbox/radio:${action.selector}`,
+        } satisfies PlatformActionError
+      }
+      input.checked = action.checked !== false // 默认 true,false=取消勾选
+      el.dispatchEvent(new Event("input", { bubbles: true }))
+      el.dispatchEvent(new Event("change", { bubbles: true }))
+      break
+    }
+    case "fill": {
+      if (isInput || isTextarea) {
+        ;(el as HTMLInputElement).value = action.text ?? "" // 清空后填入(区别 type 的追加)
+      } else if (typeof (el as HTMLElement).isContentEditable === "boolean" && (el as HTMLElement).isContentEditable) {
+        ;(el as HTMLElement).textContent = action.text ?? ""
+      } else {
+        throw {
+          code: "INSPECT_NOT_FILLABLE",
+          message: `fill 目标不可填(input/textarea/contenteditable):${action.selector}`,
+        } satisfies PlatformActionError
+      }
+      el.dispatchEvent(new Event("input", { bubbles: true }))
+      el.dispatchEvent(new Event("change", { bubbles: true }))
+      break
+    }
+    case "hover": {
+      el.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, cancelable: true }))
+      el.dispatchEvent(new MouseEvent("mouseenter", { bubbles: false, cancelable: true }))
+      break
+    }
+    case "focus": {
+      // HTMLElement duck-type:focus() 存在即可(所有 HTMLElement 都有).
+      if (typeof (el as HTMLElement).focus !== "function") {
+        throw {
+          code: "INSPECT_NOT_FOCUSABLE",
+          message: `focus 目标不可聚焦:${action.selector}`,
+        } satisfies PlatformActionError
+      }
+      ;(el as HTMLElement).focus()
+      el.dispatchEvent(new Event("focus", { bubbles: true }))
+      el.dispatchEvent(new Event("focusin", { bubbles: true }))
+      break
+    }
   }
+}
+
+// ── auto-waiting ──
+// design §3.1:action 前等元素出现且可见(存在 + 非 display:none/visibility:hidden/aria-hidden).
+// 不等 enabled — 自检场景助手可能要操作/观测初始 disabled 的元素(如 #send 按钮在
+// bridge ready 前是 disabled,助手可能就是要测这个态).disabled 元素也允许 action 执行
+// (applyAction 内各 case 会按需处理).rAF 轮询,1000ms 超时返 false.
+const ACTION_WAIT_TIMEOUT_MS = 1000
+
+function isActionable(el: Element): boolean {
+  // 跨 realm 注意:el 来自 iframe 的 document,其原型链是 iframe window 的 HTMLElement,
+  // 而本文件跑在父窗口 — el instanceof HTMLElement(父窗口的)会因跨 realm 返 false!
+  // 用 duck-typing 检查(el.style 存在即 HTMLElement 子类)代替 instanceof.
+  if (!("style" in el)) return false
+  if (el.getAttribute("aria-hidden") === "true") return false
+  if (el.hasAttribute("hidden")) return false
+  if ((el as HTMLElement).style.display === "none") return false
+  // CSS class 设的 display:none/visibility:hidden:用 iframe 自己的 window
+  // (el.ownerDocument.defaultView)调 getComputedStyle,同 realm 不跨域,稳定.
+  // 不等 enabled(disabled 元素也允许操作,见 design §3.1).
+  const win = el.ownerDocument?.defaultView
+  if (win) {
+    try {
+      const style = win.getComputedStyle(el)
+      if (style.display === "none" || style.visibility === "hidden") return false
+    } catch {
+      // getComputedStyle 失败时忽略 CSS 可见性检查(不阻塞)
+    }
+  }
+  return true
+}
+
+async function waitForActionable(doc: Document, selector: string, timeoutMs: number): Promise<boolean> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const el = doc.querySelector(selector)
+    if (el && isActionable(el)) return true
+    // 用 setTimeout 轮询而非 rAF — 隐藏 iframe(off-screen left:-9999px opacity:0)
+    // 父窗口 rAF 可能被浏览器节流,setTimeout 更可靠.16ms ≈ 一帧.
+    await new Promise<void>((resolve) => setTimeout(resolve, 16))
+  }
+  return false
 }
 
 function microTick(): Promise<void> {
@@ -943,12 +1101,12 @@ function stringifyConsoleArg(value: unknown): string {
 }
 
 // ── 结构层采集 ──
-// design §6.3:DOM 序列化裁剪(限深、跳空、截属性)+ computed style(CSS vars + 关键容器)
-// + 渲染文本提取 + bridgeState.
+// design §2:aria snapshot(无障碍树 YAML,role+name+状态)替换原 raw HTML 序列化.
+// 对 LLM 语义密度更高、token 更省;行级 diff 天然成立(YAML 每行一节点).
+// computed style(CSS vars + 关键容器)+ 渲染文本提取 + bridgeState 不变.
 
 const MAX_DOM_DEPTH = 8
-const MAX_DOM_TEXT = 200
-const MAX_ATTR_VALUE = 120
+const MAX_ARIA_NAME = 80
 const MAX_DOM_SUMMARY = 8000
 const KEY_SELECTORS = ["#messages", "#message-list", ".messages", "#status", "#input", "#send", "#turn", ".msg", "[data-messages]"]
 
@@ -964,7 +1122,7 @@ function collectStructure(
       bridgeState: bridgeReady ? "ready" : "loading",
     }
   }
-  const domSummary = serializeDom(doc.body, 0).slice(0, MAX_DOM_SUMMARY)
+  const domSummary = serializeAria(doc.body, 0).slice(0, MAX_DOM_SUMMARY)
   const computedStyles = collectKeyComputedStyles(doc)
   const renderedText = extractRenderedText(doc)
   return {
@@ -975,56 +1133,255 @@ function collectStructure(
   }
 }
 
-function serializeDom(node: Node, depth: number): string {
-  if (depth > MAX_DOM_DEPTH) return ""
-  if (node.nodeType === Node.TEXT_NODE) {
-    const text = node.textContent?.trim() ?? ""
-    return text ? text.slice(0, MAX_DOM_TEXT) : ""
+// aria snapshot 序列化:遍历 DOM,输出无障碍树 YAML.
+// generic(无 ARIA role 映射的 div/span 等)输出为 `- generic "name"`,
+// 带 class/id 标识让助手能定位结构节点(如 .msg / .user-msg / .msg-body).
+// 不完全折叠 generic — 那会丢失 div 容器结构(测试发现消息气泡消失).
+function serializeAria(root: Element, depth: number): string {
+  const lines: string[] = []
+  walkAria(root, depth, lines)
+  return lines.join("\n")
+}
+
+function walkAria(el: Element, depth: number, out: string[]): void {
+  if (depth > MAX_DOM_DEPTH) return
+  if (!isRelevantForAria(el)) return
+  const role = computeAriaRole(el)
+  const name = computeAccessibleName(el)
+  const state = computeAriaState(el)
+  const indent = "  ".repeat(depth)
+  // 所有节点都输出行(generic 也输出),保结构层级.
+  // generic 附 class/id 标识(取首个非通用 class),让助手能定位 .msg 等容器.
+  const label = name ? ` "${name}"` : ""
+  const stateStr = state ? ` [${state}]` : ""
+  const identStr = role === "generic" ? computeGenericIdentifier(el) : ""
+  out.push(`${indent}- ${role}${identStr}${label}${stateStr}`)
+  // 递归子节点:统一用 depth+1(因所有节点都占行,不再有 generic 折叠 depth 修正).
+  for (const child of Array.from(el.children)) {
+    walkAria(child, depth + 1, out)
   }
-  if (node.nodeType !== Node.ELEMENT_NODE) return ""
-  const el = node as Element
-  const tag = el.tagName.toLowerCase()
-  // 跳过 script/style 内容(噪声)
-  if (tag === "script" || tag === "style" || tag === "link") {
-    return `<${tag} />`
-  }
-  const attrs: string[] = []
-  for (const attr of Array.from(el.attributes)) {
-    const val = attr.value.length > MAX_ATTR_VALUE
-      ? attr.value.slice(0, MAX_ATTR_VALUE) + "…"
-      : attr.value
-    attrs.push(`${attr.name}="${val}"`)
-  }
-  // input/textarea/select 的 value 是 JS 属性,不反映为 DOM attribute,
-  // 不会出现在上面的 attributes 遍历里.显式读 .value 注入为 __value,
-  // 让助手能看到 type 操作后的实际输入内容(测试发现2).
-  if (
-    el instanceof HTMLInputElement
-    || el instanceof HTMLTextAreaElement
-    || el instanceof HTMLSelectElement
-  ) {
-    const v = el.value
-    if (v) {
-      const val = v.length > MAX_ATTR_VALUE ? v.slice(0, MAX_ATTR_VALUE) + "…" : v
-      attrs.push(`__value="${val}"`)
+}
+
+// 给 generic 节点算标识字符串:取首个语义 class 或 id.
+// 形如 ` ".user-msg"` 或 ` "#messages"`,无标识则空.
+// 跳过通用 class(util class 如 flex/hidden 等不报结构语义).
+const GENERIC_SKIP_CLASSES = new Set([
+  "flex", "flex-col", "flex-row", "flex-row-reverse", "flex-1", "flex-shrink-0", "shrink-0", "grow",
+  "grid", "grid-cols", "block", "inline", "inline-block", "inline-flex",
+  "hidden", "relative", "absolute", "fixed", "sticky",
+  "w-full", "h-full", "w-auto", "h-auto", "min-h-dvh", "h-dvh", "w-screen",
+  "border-0", "border", "border-t", "border-b", "rounded", "rounded-lg",
+  "bg-void", "bg-panel", "bg-transparent",
+  "text-center", "text-left", "text-right", "text-sm", "text-xs", "text-lg",
+  "p-0", "p-1", "p-2", "p-3", "p-4", "px-2", "px-3", "px-4", "py-1", "py-2",
+  "m-0", "m-1", "m-2", "mx-auto", "mt-2", "mb-2", "gap-1", "gap-2", "gap-4",
+  "overflow-hidden", "overflow-auto", "overflow-y-auto", "overflow-scroll",
+  "cursor-pointer", "cursor-not-allowed", "select-none", "whitespace-pre-wrap",
+  "items-center", "items-start", "items-end", "justify-center", "justify-between",
+])
+function computeGenericIdentifier(el: Element): string {
+  const id = el.id
+  if (id) return ` #${id}`
+  const classList = el.classList
+  for (const cls of Array.from(classList)) {
+    if (!GENERIC_SKIP_CLASSES.has(cls) && !cls.startsWith("vue-")) {
+      return ` .${cls}`
     }
   }
-  const attrStr = attrs.length ? " " + attrs.join(" ") : ""
-  const children = Array.from(el.childNodes)
+  return ""
+}
+
+// 跳过隐藏/装饰节点(不进 aria 树).
+function isRelevantForAria(el: Element): boolean {
+  const tag = el.tagName.toLowerCase()
+  if (tag === "script" || tag === "style" || tag === "link" || tag === "meta" || tag === "head") {
+    return false
+  }
+  if (el.hasAttribute("hidden")) return false
+  if (el.getAttribute("aria-hidden") === "true") return false
+  const style = el.ownerDocument?.defaultView?.getComputedStyle(el)
+  if (style && (style.display === "none" || style.visibility === "hidden")) {
+    return false
+  }
+  return true
+}
+
+// role:显式 role 属性优先 → tag 隐式映射 → generic.
+function computeAriaRole(el: Element): string {
+  const explicit = el.getAttribute("role")
+  if (explicit && explicit.trim()) {
+    const trimmed = explicit.trim().toLowerCase()
+    // role="none"/"presentation" 视为 generic(递归子,不输出)
+    if (trimmed === "none" || trimmed === "presentation") return "generic"
+    return trimmed
+  }
+  const tag = el.tagName.toLowerCase()
+  if (tag === "button") return "button"
+  if (tag === "a") return "link"
+  // 跨 realm:用 tagName === "input" 代替 instanceof HTMLInputElement.
+  if (tag === "input") {
+    const type = (el as HTMLInputElement).type.toLowerCase()
+    if (type === "checkbox") return "checkbox"
+    if (type === "radio") return "radio"
+    if (type === "button" || type === "submit" || type === "reset") return "button"
+    if (type === "image") return "button"
+    return "textbox"
+  }
+  if (tag === "textarea") return "textbox"
+  if (tag === "select") return "combobox"
+  if (/^h[1-6]$/.test(tag)) return "heading"
+  if (tag === "ul") return "list"
+  if (tag === "ol") return "list"
+  if (tag === "li") return "listitem"
+  if (tag === "nav") return "navigation"
+  if (tag === "img") return "img"
+  if (tag === "p") return "paragraph"
+  if (tag === "table") return "table"
+  if (tag === "tr") return "row"
+  if (tag === "td") return "cell"
+  if (tag === "th") return "columnheader"
+  if (tag === "form") return "form"
+  if (tag === "dialog") return "dialog"
+  if (tag === "details") return "group"
+  if (tag === "summary") return "button"
+  if (tag === "figure") return "figure"
+  if (tag === "blockquote") return "blockquote"
+  if (tag === "section" || tag === "article" || tag === "main" || tag === "aside" || tag === "header" || tag === "footer") {
+    return tag
+  }
+  return "generic"
+}
+
+// accessible name:aria-label → aria-labelledby → 元素类型相关 fallback.
+// 关键:只有"name from contents"型元素(button/link/heading/listitem/cell 等)
+// 才用 textContent 作为 name 来源;容器型元素(main/section/article/div 等)
+// 不从子文本累积 name(否则会把所有后代文本碾进容器 name,塌缩子结构).
+// 简化版,未实现完整 WAI-ARIA name calculation.
+// 参考:WAI-ARIA "Name From" 规则 — author/contents 两种来源.
+function computeAccessibleName(el: Element): string {
+  const ariaLabel = el.getAttribute("aria-label")
+  if (ariaLabel && ariaLabel.trim()) return ariaLabel.trim().slice(0, MAX_ARIA_NAME)
+
+  const labelledby = el.getAttribute("aria-labelledby")
+  if (labelledby) {
+    const doc = el.ownerDocument
+    if (doc) {
+      const refText = labelledby
+        .split(/\s+/)
+        .map((id) => doc.getElementById(id)?.textContent?.trim() ?? "")
+        .filter(Boolean)
+        .join(" ")
+      if (refText) return refText.slice(0, MAX_ARIA_NAME)
+    }
+  }
+
+  const tag = el.tagName.toLowerCase()
+  // 跨 realm:用 tagName 判断表单元素,不用 instanceof HTMLInputElement 等.
+  if (tag === "input" || tag === "textarea" || tag === "select") {
+    const placeholder = (el as HTMLInputElement).placeholder
+    if (placeholder && placeholder.trim()) return placeholder.trim().slice(0, MAX_ARIA_NAME)
+    const title = el.getAttribute("title")
+    if (title && title.trim()) return title.trim().slice(0, MAX_ARIA_NAME)
+    // <label for> 关联
+    const id = el.id
+    if (id) {
+      const doc = el.ownerDocument
+      const label = doc?.querySelector(`label[for="${id}"]`)?.textContent?.trim()
+      if (label) return label.slice(0, MAX_ARIA_NAME)
+    }
+    return ""
+  }
+  if (tag === "img") {
+    const alt = el.getAttribute("alt")
+    if (alt && alt.trim()) return alt.trim().slice(0, MAX_ARIA_NAME)
+    const title = el.getAttribute("title")
+    if (title && title.trim()) return title.trim().slice(0, MAX_ARIA_NAME)
+    return ""
+  }
+  // "name from contents"型元素:用 textContent 作为 name(累积后代可见文本).
+  // 只对交互/标题/列表项/单元格等元素用 textContent,容器(main/section/article/
+  // div/span/p 等)不从这里取 name — 容器的 name 只来自 aria-label/labelledby,
+  // 否则会把所有后代文本碾进容器 name,塌缩子结构(测试发现的缺陷 A).
+  // 注:textContent 是累积后代文本(非仅直接子),对 button/link/heading 这类深度浅
+  // 的元素等价于"可见文本",不会把整页文本碾进来.
+  if (isNameFromContents(el, tag)) {
+    const text = el.textContent?.trim()
+    if (text) return text.slice(0, MAX_ARIA_NAME)
+  }
+  const title = el.getAttribute("title")
+  if (title && title.trim()) return title.trim().slice(0, MAX_ARIA_NAME)
+  return ""
+}
+
+// 判断元素是否属于 "name from contents"(WAI-ARIA):即 name 可从自身/子文本获取.
+// 容器型元素(main/section/article/nav/aside/header/footer/div/span/p/form/table/
+// list/row 等)不在内 — 它们的 name 只来自 aria-label/labelledby,不从子文本累积.
+function isNameFromContents(el: Element, tag: string): boolean {
+  // heading h1-h6:name from contents
+  if (/^h[1-6]$/.test(tag)) return true
+  // button / a / link:name from contents
+  if (tag === "button") return true
+  if (tag === "a") return true
+  // listitem / cell / columnheader:name from contents
+  if (tag === "li") return true
+  if (tag === "td") return true
+  if (tag === "th") return true
+  // 显式 role 为 button/link/heading/menuitem/tab/option 等交互型
+  const explicit = el.getAttribute("role")
+  if (explicit) {
+    const r = explicit.trim().toLowerCase()
+    if (["button", "link", "heading", "menuitem", "tab", "option", "treeitem", "listitem", "cell", "columnheader", "rowheader"].includes(r)) {
+      return true
+    }
+  }
+  return false
+}
+
+// state:组合 disabled/checked/expanded/level/required/selected/readonly,
+// 返回 "key=val key=val" 字符串或空.
+// 跨 realm 注意:用 tagName duck-typing 代替 instanceof HTMLInputElement 等.
+function computeAriaState(el: Element): string {
   const parts: string[] = []
-  for (const child of children) {
-    const s = serializeDom(child, depth + 1)
-    if (s) parts.push(s)
+  const tag = el.tagName.toLowerCase()
+  const isInput = tag === "input"
+  const isTextarea = tag === "textarea"
+  const isSelect = tag === "select"
+  const ariaDisabled = el.getAttribute("aria-disabled")
+  // disabled 反映为 DOM attribute,统一用 hasAttribute 检测.
+  if (ariaDisabled === "true" || el.hasAttribute("disabled")) {
+    parts.push("disabled")
   }
-  const indent = "  ".repeat(depth)
-  if (parts.length === 0) {
-    return `${indent}<${tag}${attrStr} />`
+  const ariaChecked = el.getAttribute("aria-checked")
+  // checked:checkbox/radio 的 .checked 属性(跨 realm 安全:input.checked 直接读).
+  if (ariaChecked === "true" || (isInput && (el as HTMLInputElement).checked)) {
+    parts.push("checked")
   }
-  if (parts.length === 1 && !parts[0]!.startsWith("<")) {
-    // 单文本子节点:内联
-    return `${indent}<${tag}${attrStr}>${parts[0]}</${tag}>`
+  const ariaExpanded = el.getAttribute("aria-expanded")
+  if (ariaExpanded !== null) parts.push(`expanded=${ariaExpanded}`)
+  const ariaSelected = el.getAttribute("aria-selected")
+  if (ariaSelected === "true") parts.push("selected")
+  const ariaReadonly = el.getAttribute("aria-readonly")
+  if (
+    ariaReadonly === "true"
+    || ((isInput || isTextarea) && (el as HTMLInputElement).readOnly)
+  ) {
+    parts.push("readonly")
   }
-  return `${indent}<${tag}${attrStr}>\n${parts.map((p) => p).join("\n")}\n${indent}</${tag}>`
+  const ariaRequired = el.getAttribute("aria-required")
+  if (
+    ariaRequired === "true"
+    || ((isInput || isTextarea || isSelect) && (el as HTMLInputElement).required)
+  ) {
+    parts.push("required")
+  }
+  // heading level:h1-h6 或 aria-level(tag 已在函数顶部声明)
+  if (/^h[1-6]$/.test(tag)) {
+    parts.push(`level=${tag[1]}`)
+  } else {
+    const ariaLevel = el.getAttribute("aria-level")
+    if (ariaLevel && /^\d+$/.test(ariaLevel)) parts.push(`level=${ariaLevel}`)
+  }
+  return parts.join(" ")
 }
 
 function collectKeyComputedStyles(doc: Document): Record<string, string>[] {

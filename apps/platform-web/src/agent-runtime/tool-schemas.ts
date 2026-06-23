@@ -120,7 +120,7 @@ const agentCallSchema: ToolSchema = {
 const inspectFrontendSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend,
   description:
-    "Inspect the active game card's packaged frontend in a hidden iframe using the real /play load path, returning a structural + diagnostic snapshot. Supports driving one master agent turn (send), DOM interactions (actions), and refreshing the latest snapshot (refresh); these compose to cover a full player flow. No cardId — the active card is inspected. Use it to close the write→inspect→fix loop on authored frontends. Example: inspect_frontend with send={message:\"...\"}, or actions=[{type:\"click\",selector:\"#send\"}], observeBetween=true.",
+    "Inspect the active game card's packaged frontend in a hidden iframe using the real /play load path, returning a structural + diagnostic snapshot. The structural `domSummary` is an aria snapshot (accessibility tree YAML: role + accessible name + state), not raw HTML. Supports driving one master agent turn (send), DOM interactions (actions), and refreshing the latest snapshot (refresh); these compose to cover a full player flow. No cardId — the active card is inspected. Use it to close the write→inspect→fix loop on authored frontends. Example: inspect_frontend with send={message:\"...\"}, or actions=[{type:\"click\",selector:\"#send\"}], observeBetween=true.",
   parameters: {
     type: "object",
     properties: {
@@ -136,15 +136,18 @@ const inspectFrontendSchema: ToolSchema = {
       actions: {
         type: "array",
         description:
-          "DOM interactions applied to the loaded frontend (same-origin). Each entry: { type, selector, text?, key?, to? }.",
+          "DOM interactions applied to the loaded frontend (same-origin). Each entry: { type, selector, text?, key?, to?, value?, label?, checked? }. Types: click, type (append key events), press, scroll, selectOption (select by value/label), check (checkbox/radio), fill (replace input value), hover, focus.",
         items: {
           type: "object",
           properties: {
-            type: { type: "string", enum: ["click", "type", "press", "scroll"] },
+            type: { type: "string", enum: ["click", "type", "press", "scroll", "selectOption", "check", "fill", "hover", "focus"] },
             selector: { type: "string" },
-            text: { type: "string" },
-            key: { type: "string" },
-            to: { type: "string", enum: ["top", "bottom"] },
+            text: { type: "string", description: "type/fill: text to input" },
+            key: { type: "string", description: "press: key name" },
+            to: { type: "string", enum: ["top", "bottom"], description: "scroll: target position" },
+            value: { type: "string", description: "selectOption: option value to select" },
+            label: { type: "string", description: "selectOption: option text to match" },
+            checked: { type: "boolean", description: "check: true (default) to check, false to uncheck" },
           },
           required: ["type", "selector"],
         },
@@ -163,6 +166,10 @@ const inspectFrontendSchema: ToolSchema = {
         type: "string",
         enum: ["bridge-ready", "turn-completed"],
         description: "Observation point to wait for. Defaults to \"bridge-ready\".",
+      },
+      autoWait: {
+        type: "boolean",
+        description: "Wait for each action target to be actionable (visible + enabled) before executing. Defaults to true; set false to fall back to immediate query (throws INSPECT_SELECTOR_NOT_FOUND if missing).",
       },
     },
   },

@@ -782,6 +782,8 @@ function buildWorkspaceToolInstructions(
       ? [
           `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"send":{"message":"看一下当前前端渲染"}}`,
           `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"actions":[{"type":"click","selector":"#send"}],"observeBetween":true}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"actions":[{"type":"fill","selector":"#name","text":"新值"},{"type":"selectOption","selector":"#lang","value":"zh"}]}`,
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"actions":[{"type":"hover","selector":"#menu"}],"refresh":true}`,
         ]
       : []),
   ]
@@ -806,7 +808,7 @@ function buildWorkspaceToolInstructions(
       : []),
     ...(canInspectFrontend
       ? [
-          `写完或改完前端后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} 在隐藏 iframe 里加载当前 active 卡的 packaged 前端（复用真实 /play 加载路径），查看渲染结果、JS 报错、桥状态。支持 send 驱动一回合（在临时存档上跑，不污染玩家存档）、actions 做 DOM 交互、refresh 拉最新 snapshot，三者可组合。连续两次 inspect 会返回 diff，帮你看"改没改好"。`,
+          `写完或改完前端后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} 在隐藏 iframe 里加载当前 active 卡的 packaged 前端（复用真实 /play 加载路径），查看渲染结果、JS 报错、桥状态。domSummary 返回 aria 快照（无障碍树 YAML，role+name+状态，不是 raw HTML）。支持 send 驱动一回合（在临时存档上跑，不污染玩家存档）、actions 做 DOM 交互（click/type/press/scroll/selectOption/check/fill/hover/focus）、refresh 拉最新 snapshot，三者可组合。默认 auto-waiting 等元素可操作（autoWait:false 关闭）。连续两次 inspect 会返回 diff，帮你看"改没改好"。`,
         ]
       : []),
     ...(isNative

@@ -146,17 +146,25 @@ type RuntimeAgentCallRunner = (
  * 顺应 "agent-runtime must not import platform-host" 的 spec 约束。
  * 工具不接受 cardId，inspector 内部从 getPlatformActiveGameCard() 取当前卡。
  */
-export type InspectDomActionType = "click" | "type" | "press" | "scroll"
+export type InspectDomActionType =
+  | "click" | "type" | "press" | "scroll"
+  | "selectOption" | "check" | "fill" | "hover" | "focus"
 
 export interface InspectDomAction {
   type: InspectDomActionType
   selector: string
-  /** type 动作用 */
+  /** type / fill 动作用 */
   text?: string
   /** press 动作用 */
   key?: string
   /** scroll 动作用 */
   to?: "top" | "bottom"
+  /** selectOption：按 option value 匹配 */
+  value?: string
+  /** selectOption：按 option 文本匹配 */
+  label?: string
+  /** check：默认 true，false=取消勾选 */
+  checked?: boolean
 }
 
 export interface InspectFrontendInput {
@@ -170,6 +178,8 @@ export interface InspectFrontendInput {
   refresh?: boolean
   /** 观测点，默认 bridge-ready */
   wait?: "bridge-ready" | "turn-completed"
+  /** auto-waiting：每个 action 前等元素可操作，默认 true */
+  autoWait?: boolean
   /** 预留，初版只 real，传 mock 报 not-supported */
   runtime?: "real" | "mock"
   /** 预留，初版不做，传 true 报 not-supported */
@@ -1089,6 +1099,11 @@ const INSPECT_DOM_ACTION_TYPES = new Set<InspectDomActionType>([
   "type",
   "press",
   "scroll",
+  "selectOption",
+  "check",
+  "fill",
+  "hover",
+  "focus",
 ])
 const INSPECT_SCROLL_TARGETS = new Set(["top", "bottom"])
 
@@ -1138,7 +1153,7 @@ function normalizeInspectFrontendArguments(
       ) {
         throw toolError(
           "INSPECT_FRONTEND_ACTION_TYPE_INVALID",
-          `inspect_frontend actions[${i}].type must be one of: click, type, press, scroll.`,
+          `inspect_frontend actions[${i}].type must be one of: click, type, press, scroll, selectOption, check, fill, hover, focus.`,
         )
       }
       const selector = normalizeRequiredString(
@@ -1158,6 +1173,11 @@ function normalizeInspectFrontendArguments(
       ) {
         action.to = raw.to as "top" | "bottom"
       }
+      // selectOption:按 option value 或 label 文本匹配
+      if (typeof raw.value === "string" && raw.value) action.value = raw.value
+      if (typeof raw.label === "string" && raw.label) action.label = raw.label
+      // check:checked 默认 true,false=取消勾选
+      if (typeof raw.checked === "boolean") action.checked = raw.checked
       return action
     })
   }
@@ -1167,6 +1187,9 @@ function normalizeInspectFrontendArguments(
   }
   if (typeof input.refresh === "boolean") {
     result.refresh = input.refresh
+  }
+  if (typeof input.autoWait === "boolean") {
+    result.autoWait = input.autoWait
   }
 
   if (input.wait !== undefined) {
