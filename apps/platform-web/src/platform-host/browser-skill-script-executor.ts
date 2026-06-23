@@ -17,6 +17,8 @@ import {
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
+import { inferMediaTypeFromPath } from "../lib/media-type"
+import { normalizeWorkspacePath } from "../lib/workspace-path"
 
 interface BrowserSkillScriptRunnerOptions {
   workspaceTransaction: Pick<RuntimeWorkspaceTransaction, "workspaceFiles" | "write" | "delete">
@@ -41,7 +43,6 @@ const BROWSER_SCRIPT_WORKER_SOURCE = String.raw`
 const pending = new Map();
 let nextRpcId = 1;
 let aborted = false;
-const globalFetch = typeof fetch === "function" ? fetch.bind(globalThis) : null;
 
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -139,33 +140,8 @@ function postLog(level, message, data) {
   });
 }
 
-async function sdkFetch(resource, init) {
-  if (!globalFetch) {
-    throw Object.assign(new Error("fetch is not available in this browser worker."), {
-      code: "BROWSER_SCRIPT_FETCH_UNAVAILABLE"
-    });
-  }
-  const response = await globalFetch(resource, init);
-  const body = await response.text();
-  const headers = {};
-  response.headers.forEach((value, key) => {
-    headers[key] = value;
-  });
-  postLog("trace", "fetch", {
-    url: typeof resource === "string" ? resource : String(resource),
-    ok: response.ok,
-    status: response.status,
-    bodyLength: body.length
-  });
-  return {
-    ok: response.ok,
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-    body
-  };
-}
-
+// tsian SDK：精简为 workspace.* + log + trace。
+// fetch 已放开为 Worker 原生裸 fetch（标准 Response），不再包装。
 const tsian = Object.freeze({
   workspace: Object.freeze({
     read(input) {
@@ -202,7 +178,6 @@ const tsian = Object.freeze({
       return rpc("workspace.validate", input);
     }
   }),
-  fetch: sdkFetch,
   log(message, data) {
     postLog("info", message, data);
   },
@@ -223,6 +198,14 @@ const signal = Object.freeze({
     }
   }
 });
+
+// importScripts stub：vendor 库已由主线程预拼接进脚本源码（见 resolveAndInlineImportScripts），
+// 运行时不需要真正加载。脚本如果动态调用 importScripts 会得到清晰提示而非 ReferenceError。
+const importScriptsStub = function importScripts() {
+  throw Object.assign(new Error("importScripts is not available at runtime. Vendor libraries are pre-inlined by the host before script execution; declare them with importScripts('lib/foo.min.js') at the top of your script."), {
+    code: "BROWSER_SCRIPT_IMPORTSCRIPTS_UNAVAILABLE"
+  });
+};
 
 self.onmessage = async (event) => {
   const message = event.data || {};
@@ -246,16 +229,16 @@ self.onmessage = async (event) => {
 
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+    // 形参放开策略：
+    //   - 删除 fetch / globalThis / self → 脚本直接拿 Worker 原生（裸 fetch + UMD 库挂载依赖 globalThis）
+    //   - console / setTimeout / setInterval / clearTimeout / clearInterval 本就不在形参里（自由变量），已可用
+    //   - importScripts 传 stub（vendor 已由主线程预拼接，运行时调用给清晰提示）
+    //   - window / document / navigator / location / 存储 / 网络 API 维持 undefined 屏蔽（Worker 本就无 DOM）
     const runner = new AsyncFunction(
       "input",
       "tsian",
       "signal",
-      "fetch",
       "importScripts",
-      "indexedDB",
-      "caches",
-      "globalThis",
-      "self",
       "window",
       "document",
       "localStorage",
@@ -267,12 +250,15 @@ self.onmessage = async (event) => {
       "SharedWorker",
       "navigator",
       "location",
+      "indexedDB",
+      "caches",
       "\"use strict\";\n" + String(message.source || "")
     );
     const output = await runner(
       toJsonValue(message.input),
       tsian,
       signal,
+      importScriptsStub,
       undefined,
       undefined,
       undefined,
@@ -286,10 +272,6 @@ self.onmessage = async (event) => {
       undefined,
       undefined,
       undefined,
-      undefined,
-      undefined,
-      undefined,
-      undefined
     );
     self.postMessage({
       type: "script-result",
@@ -441,6 +423,141 @@ function skillDirectoryPath(skillPath: string): string {
 function isScriptUnderSkillDirectory(request: RuntimeBrowserScriptExecutorRequest): boolean {
   const skillDirectory = skillDirectoryPath(request.skillPath)
   return Boolean(skillDirectory) && request.scriptPath.startsWith(`${skillDirectory}/`)
+}
+
+/**
+ * importScripts 调用匹配：支持单/多参数、单/双引号、跨行。
+ * 路径必须是字符串字面量（不支持动态拼接）。
+ */
+const IMPORT_SCRIPTS_RE = /importScripts\s*\(\s*([\s\S]*?)\s*\)/g
+
+/**
+ * 从 importScripts 参数字符串里提取字符串字面量路径。
+ * 只认 '...' / "..." 形式，非字符串参数跳过。
+ */
+function extractStringLiterals(argsText: string): string[] {
+  const paths: string[] = []
+  // 按逗号分割后逐个 trim + 去引号；不处理嵌套表达式（动态拼接不支持）
+  const literalRe = /(['"])(.*?)\1/g
+  let match: RegExpExecArray | null
+  while ((match = literalRe.exec(argsText)) !== null) {
+    paths.push(match[2])
+  }
+  return paths
+}
+
+/**
+ * 解析脚本源码里的 importScripts(...) 调用，把 vendor 库源码预拼接到脚本前。
+ * 路径相对 skill 目录解析，逃逸即报错。vendor 文件从 workspaceFiles 读取。
+ *
+ * 设计见 design.md §2。源码预拼接方案：主线程读 vendor 文件 → 拼到 source 前 →
+ * 移除 importScripts 调用。Worker 内 importScripts 形参传 stub（运行时调用给提示）。
+ */
+function resolveAndInlineImportScripts(
+  source: string,
+  request: RuntimeBrowserScriptExecutorRequest,
+  workspaceFiles: WorkspaceFile[],
+): PlatformActionResult {
+  const skillDirectory = skillDirectoryPath(request.skillPath)
+  if (!skillDirectory) {
+    return actionError(
+      "BROWSER_SCRIPT_PATH_INVALID",
+      "Browser script requires a skill directory to resolve vendor imports.",
+      { skillPath: request.skillPath },
+    )
+  }
+
+  const vendorSources: string[] = []
+  let match: RegExpExecArray | null
+  // 重置 lastIndex（全局正则复用安全）
+  IMPORT_SCRIPTS_RE.lastIndex = 0
+  const seenPaths = new Set<string>()
+
+  while ((match = IMPORT_SCRIPTS_RE.exec(source)) !== null) {
+    const argsText = match[1]
+    const paths = extractStringLiterals(argsText)
+    if (paths.length === 0) {
+      // 没有字符串字面量参数（可能是动态拼接或注释里的误匹配）→ 跳过
+      continue
+    }
+    for (const rawPath of paths) {
+      const trimmed = rawPath.trim()
+      if (!trimmed) continue
+
+      // 拒绝绝对 URL / 绝对路径（协议前缀或 / 开头）——vendor 必须是 skill 目录内相对路径
+      if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) || trimmed.startsWith("/")) {
+        return actionError(
+          "BROWSER_SCRIPT_VENDOR_PATH_INVALID",
+          `importScripts path must be a relative path under the skill directory (no absolute URLs): ${trimmed}`,
+          { skillPath: request.skillPath, vendorPath: trimmed },
+        )
+      }
+
+      // 路径相对 skill 目录拼接，再规范化（解析 .. 和 . 段）
+      // 规范化后校验逃逸：skills/my-skill/../escape.js → skills/escape.js → 不以 skillDir/ 开头 → 拦截
+      const combined = trimmed.startsWith(`${skillDirectory}/`)
+        ? trimmed
+        : `${skillDirectory}/${trimmed}`
+      const normalized = normalizeWorkspacePath(combined, {
+        allowEmpty: false,
+        rejectTrailingSlash: true,
+      })
+      if (!normalized.ok) {
+        return actionError(
+          "BROWSER_SCRIPT_VENDOR_PATH_INVALID",
+          `importScripts path is invalid: ${trimmed}`,
+          { skillPath: request.skillPath, vendorPath: trimmed, error: normalized.message },
+        )
+      }
+      const resolvedPath = normalized.path
+
+      // 逃逸校验：规范化后必须以 skillDirectory/ 开头（防 ../ 逃逸）
+      if (!resolvedPath.startsWith(`${skillDirectory}/`)) {
+        return actionError(
+          "BROWSER_SCRIPT_VENDOR_PATH_INVALID",
+          `importScripts path must stay under the skill directory: ${trimmed}`,
+          { skillPath: request.skillPath, vendorPath: trimmed, resolvedPath },
+        )
+      }
+
+      // 去重（同一库多次 importScripts 只拼接一次）
+      if (seenPaths.has(resolvedPath)) continue
+      seenPaths.add(resolvedPath)
+
+      // 读 vendor 文件
+      const vendorFile = readWorkspaceFileFromFiles(workspaceFiles, resolvedPath)
+      if (!vendorFile) {
+        return actionError(
+          "BROWSER_SCRIPT_VENDOR_NOT_FOUND",
+          `importScripts vendor file was not found: ${trimmed}`,
+          { skillPath: request.skillPath, vendorPath: trimmed, resolvedPath },
+        )
+      }
+
+      // MIME 校验：必须是 JavaScript
+      const mediaType = inferMediaTypeFromPath(resolvedPath)
+      if (mediaType !== "text/javascript") {
+        return actionError(
+          "BROWSER_SCRIPT_VENDOR_NOT_JS",
+          `importScripts vendor file must be JavaScript (.js/.mjs): ${trimmed}`,
+          { skillPath: request.skillPath, vendorPath: trimmed, mediaType },
+        )
+      }
+
+      vendorSources.push(vendorFile.content)
+    }
+  }
+
+  // 无 importScripts 调用 → 原样返回（ok=true，item 是 source 本身）
+  if (vendorSources.length === 0) {
+    return { ok: true, item: source }
+  }
+
+  // vendor 源码拼到 source 前，移除 importScripts 调用
+  // 每个 vendor 后加 \n;\n 分隔（防末尾注释吞噬后续代码）
+  const inlinedHeader = vendorSources.join("\n;\n") + "\n;\n"
+  const strippedSource = source.replace(IMPORT_SCRIPTS_RE, "")
+  return { ok: true, item: inlinedHeader + strippedSource }
 }
 
 async function handleSdkRequest(
@@ -707,6 +824,18 @@ export function createBrowserSkillScriptRunner(
       },
     })
 
-    return runWorkerScript(options, request, scriptFile.content, executorContext)
+    // vendor 预拼接：解析脚本里的 importScripts(...) 调用，把 skill 目录内的
+    // UMD 库源码拼到脚本前。路径逃逸/文件缺失/非 JS 都在此校验。
+    const inlined = resolveAndInlineImportScripts(
+      scriptFile.content,
+      request,
+      options.workspaceTransaction.workspaceFiles,
+    )
+    if (!inlined.ok) {
+      return inlined
+    }
+    const finalSource = inlined.item as string
+
+    return runWorkerScript(options, request, finalSource, executorContext)
   }
 }
