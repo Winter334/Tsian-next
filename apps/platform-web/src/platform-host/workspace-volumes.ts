@@ -2,6 +2,7 @@ import type { WorkspaceFile, WorkspaceScope } from "@tsian/contracts"
 
 import {
   GAME_CARD_MANIFEST_SCHEMA,
+  deleteAttachmentsByPathPrefix,
   deleteLocalAssistantPath,
   deleteLocalGameCardContentPathForCard,
   deleteLocalGameCardFrontendPathForCard,
@@ -20,6 +21,7 @@ import {
   toWorkspaceFileFromGameCardContent,
   writeLocalGameCardContentFile,
   writeLocalGameCardFrontendFile,
+  writeAttachmentRecord,
   writePlatformWorkspaceFileForSave,
   writeWorkspaceFileForSave,
   type LocalWorkspaceFileRecord,
@@ -314,8 +316,8 @@ export const localAssistantVolume: WorkspaceVolume = {
 
 /**
  * TempVolume — 助手附件临时文件(scope "temp", 后端 assistantAttachments Dexie 表).
- * ownerId = sessionId. enumerate 按 sessionId 列附件;write/delete 暂不支持
- * (附件通过 AssistantView UI 的 saveAssistantAttachment 管理,不通过 workspace_write).
+ * ownerId = sessionId. enumerate 按 sessionId 列附件;write/delete 支持 agent
+ * 通过 workspace_write/workspace_delete 管理 temp/ 文件(文本 + 二进制双轨).
  */
 export const tempVolume: WorkspaceVolume = {
   scope: "temp",
@@ -335,11 +337,22 @@ export const tempVolume: WorkspaceVolume = {
       }
     })
   },
-  async write(_sessionId, _input) {
-    throw new Error("temp volume write is not supported; use saveAssistantAttachment instead")
+  async write(sessionId, input) {
+    const record = await writeAttachmentRecord(sessionId, input)
+    const isImage = record.kind === "image"
+    return {
+      path: record.path,
+      content: isImage
+        ? binaryPlaceholderText(record.data, record.path)
+        : input.content ?? "",
+      ...(isImage ? { binary: record.data } : {}),
+      ...(isImage ? { imageMimeType: record.mimeType } : {}),
+      createdAt: record.createdAt,
+      updatedAt: record.createdAt,
+    }
   },
-  async delete(_sessionId, _pathPrefix) {
-    throw new Error("temp volume delete is not supported; use deleteAttachmentByPath instead")
+  async delete(sessionId, pathPrefix) {
+    return deleteAttachmentsByPathPrefix(sessionId, pathPrefix)
   },
 }
 

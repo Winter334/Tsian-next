@@ -1,6 +1,7 @@
 import type { AttachmentRef } from "@tsian/contracts"
 import { localDb, type LocalAssistantAttachmentRecord } from "./db"
 import { listAssistantSessions } from "./assistant-conversations"
+import { inferMediaTypeFromPath } from "@/lib/media-type"
 
 /** MIME 前缀判断:图片类附件走多模态,其他按文本处理. */
 function isImageMime(mimeType: string): boolean {
@@ -151,6 +152,58 @@ export async function deleteAttachmentByPath(path: string): Promise<void> {
   if (record) {
     await localDb.assistantAttachments.delete(record.id)
   }
+}
+
+/** 删除指定 path 前缀下的所有附件(agent workspace_delete temp/ 用). */
+export async function deleteAttachmentsByPathPrefix(
+  sessionId: string,
+  pathPrefix: string,
+): Promise<string[]> {
+  const records = await localDb.assistantAttachments
+    .where("sessionId")
+    .equals(sessionId)
+    .toArray()
+  const toDelete = records.filter((r) => r.path === pathPrefix || r.path.startsWith(pathPrefix + "/"))
+  if (toDelete.length > 0) {
+    await localDb.assistantAttachments.bulkDelete(toDelete.map((r) => r.id))
+  }
+  return toDelete.map((r) => r.path)
+}
+
+/**
+ * 写入一个附件记录(agent workspace_write temp/ 用). 文本走 content,
+ * 二进制走 data. 返回写入后的记录(含 id/createdAt 等).
+ */
+export async function writeAttachmentRecord(
+  sessionId: string,
+  input: { path: string; content?: string; data?: Blob },
+): Promise<LocalAssistantAttachmentRecord> {
+  const path = input.path
+  // 从 path 提取文件名
+  const name = path.split("/").pop() ?? path
+  const mimeType = inferMediaTypeFromPath(path)
+  const isImage = mimeType.startsWith("image/")
+  const kind: "image" | "text" = isImage ? "image" : "text"
+  // 构造 Blob: 二进制用 data, 文本用 content 转 Blob
+  const blob = input.data ?? new Blob([input.content ?? ""], { type: mimeType })
+  const size = blob.size
+  // 已有同 path 记录则覆盖(upsert by path)
+  const existing = await getAssistantAttachmentRecord(path)
+  const id = existing?.id ?? createAttachmentId()
+  const now = Date.now()
+  const record: LocalAssistantAttachmentRecord = {
+    id,
+    sessionId,
+    path,
+    name,
+    mimeType,
+    kind,
+    data: blob,
+    size,
+    createdAt: existing?.createdAt ?? now,
+  }
+  await localDb.assistantAttachments.put(record)
+  return record
 }
 
 /** 清理孤儿附件:超过 maxAgeDays 且不属于任何现存会话的附件. */

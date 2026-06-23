@@ -33,6 +33,7 @@ import {
   writeLocalGameCardContentFile,
   type RuntimeWorkspaceTransaction,
 } from "../storage"
+import { executeWorkspaceMutation } from "./workspace-volumes"
 import {
   generateAssistantReply,
   generateAssistantReplyNative,
@@ -469,6 +470,16 @@ export async function runAssistantChat(
                 ...(writeInput.data ? { data: writeInput.data } : {}),
               })
             }
+            if (writeInput.scope === "temp") {
+              return executeWorkspaceMutation({
+                scope: "temp",
+                path: writeInput.path,
+                ...(typeof writeInput.content === "string" ? { content: writeInput.content } : {}),
+                ...(writeInput.data ? { data: writeInput.data } : {}),
+                ownerContext: { saveId: activeSaveId ?? undefined, cardId: activeCard.id, sessionId: input.sessionId },
+                operation: "write",
+              }) as Promise<WorkspaceFile>
+            }
             throw new Error(`Assistant workspace write scope not supported: ${writeInput.scope}`)
           },
           delete: (deleteInput) => {
@@ -489,6 +500,17 @@ export async function runAssistantChat(
                 scope: deleteInput.scope,
                 ...activeWorkspaceTransaction.delete(deleteInput.path),
               }
+            }
+            if (deleteInput.scope === "temp") {
+              return executeWorkspaceMutation({
+                scope: "temp",
+                path: deleteInput.path,
+                ownerContext: { saveId: activeSaveId ?? undefined, cardId: activeCard.id, sessionId: input.sessionId },
+                operation: "delete",
+              }).then((paths) => ({
+                scope: deleteInput.scope,
+                deletedPaths: paths as string[],
+              }))
             }
             throw new Error(`Assistant workspace delete scope not supported: ${deleteInput.scope}`)
           },
