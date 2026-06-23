@@ -161,6 +161,12 @@ export interface AgentRuntimeTurnResult {
   replyText: string
   /** 本轮正文 + 压缩结果,供 platform-host turn 收尾写 context.json. */
   contextUpdate?: AgentRuntimeTurnContextUpdate
+  /**
+   * 最后一轮 provider 返回的 token usage(input = 当前上下文大小).
+   * 供桌面助手做上下文窗口可视化.多轮工具循环取最后一轮(它代表
+   * 完整上下文发送时的 input tokens).text-protocol 路径不带 usage.
+   */
+  usage?: { input?: number; output?: number; total?: number }
 }
 
 export interface AgentRuntimeModelCallOptions {
@@ -1200,8 +1206,7 @@ function createAgentCallRunner(
       const response = (await callAgentModelWithWorkspaceTools(
         buildDelegatedAgentMessages(
           input,
-          callerContext,
-          targetContext,
+          callerContext,          targetContext,
           agentCall,
           collaborationPolicy,
           state,
@@ -1236,7 +1241,7 @@ function createAgentCallRunner(
           taskStartedAt,
           taskTimeoutMs,
         },
-      )).trim()
+      )).text.trim()
       const completedMetadata = createAgentCallRuntimeMetadata(
         callerContext,
         agentCall,
@@ -1343,7 +1348,7 @@ async function callAgentModelWithWorkspaceToolsNative(
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry,
   toolOptions: WorkspaceToolLoopOptions,
-): Promise<string> {
+): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number } }> {
   let runtimeMessages = aiChatMessagesToRuntime(messages)
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
@@ -1388,6 +1393,7 @@ async function callAgentModelWithWorkspaceToolsNative(
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
   let lastRoundText = ""
+  let lastRoundUsage: { input?: number; output?: number; total?: number } | undefined
 
   for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
@@ -1412,7 +1418,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 无工具交互段可压(异常,通常 round 0 不该触发)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return finalText
+              return { text: finalText, usage: lastRoundUsage }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1433,7 +1439,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 压不动(早期无可压内容,工具交互 ≤ N 轮)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return finalText
+              return { text: finalText, usage: lastRoundUsage }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1463,7 +1469,7 @@ async function callAgentModelWithWorkspaceToolsNative(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return finalText
+              return { text: finalText, usage: lastRoundUsage }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1509,6 +1515,9 @@ async function callAgentModelWithWorkspaceToolsNative(
     const result = await capabilities.callModelNative!(runtimeMessages, callOptions, tools)
     assertNotAborted(options.signal)
     lastRoundText = result.text
+    // Track the latest round's usage; the final stop round's input tokens
+    // represent the full context size sent to the model (for the ring widget).
+    lastRoundUsage = result.usage
 
     // Notify the caller that this round ended, with the finish reason so it can
     // classify the streamed text as thought (tool_calls) or final (stop). Emitted
@@ -1542,7 +1551,7 @@ async function callAgentModelWithWorkspaceToolsNative(
     })
 
     if (result.finishReason === "stop" || result.toolCalls.length === 0) {
-      return result.text.trim()
+      return { text: result.text.trim(), usage: lastRoundUsage }
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -1616,7 +1625,7 @@ async function callAgentModelWithWorkspaceTools(
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry | null,
   toolOptions?: WorkspaceToolLoopOptions,
-): Promise<string> {
+): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number } }> {
   if (!input.workspaceFiles || !agentContext) {
     const response = await capabilities.callModel(messages, options)
     capabilities.emitTrace?.({
@@ -1631,7 +1640,7 @@ async function callAgentModelWithWorkspaceTools(
         round: 0,
       },
     })
-    return response.trim()
+    return { text: response.trim() }
   }
 
   // Native function-calling dispatch: when the active model opts into native
@@ -1673,6 +1682,9 @@ async function callAgentModelWithWorkspaceTools(
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
   let lastRoundText = ""
+  // text-protocol 路径 callModel 返回 string 不带 usage,此变量恒 undefined.
+  // 声明它只为与 native loop 的 return 结构对称(避免类型分叉).
+  let lastRoundUsage: { input?: number; output?: number; total?: number } | undefined
 
   for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
@@ -1696,7 +1708,7 @@ async function callAgentModelWithWorkspaceTools(
           if (interactionSpan.start < 0) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              return finalText
+              return { text: finalText, usage: lastRoundUsage }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1716,7 +1728,7 @@ async function callAgentModelWithWorkspaceTools(
           if (!result.compressed) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              return finalText
+              return { text: finalText, usage: lastRoundUsage }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1745,7 +1757,7 @@ async function callAgentModelWithWorkspaceTools(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              return finalText
+              return { text: finalText, usage: lastRoundUsage }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1804,7 +1816,7 @@ async function callAgentModelWithWorkspaceTools(
       },
     })
     if (toolCalls.length === 0) {
-      return stripRuntimeWorkspaceToolCallBlocks(response).trim()
+      return { text: stripRuntimeWorkspaceToolCallBlocks(response).trim() }
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -1947,13 +1959,14 @@ export async function runAgentRuntimeTurn(
   }
 
   let replyText: string
+  let turnUsage: { input?: number; output?: number; total?: number } | undefined
   // turn 内压剧情就地把压缩结果写进 agentContext(对象引用),循环结束后
   // 用它覆盖 compressedContext 透传给 host 落盘(design §3.5).标记位区分
   // "turn 开头压过" 与 "turn 内又压过",取最后一次压缩快照.
   let compressedInTurn = false
   const agentContextSnapshotForLoop = agentContext
   try {
-    replyText = (await callAgentModelWithWorkspaceTools(
+    const loopResult = await callAgentModelWithWorkspaceTools(
       buildEntryAgentMessages(
         input,
         entryContext,
@@ -1988,7 +2001,9 @@ export async function runAgentRuntimeTurn(
             }
           : {}),
       },
-    )).trim()
+    )
+    replyText = loopResult.text.trim()
+    turnUsage = loopResult.usage
     // 工具循环内若压过剧情,agentContextSnapshotForLoop 已被 Object.assign 就地更新;
     // 通过对比 updatedAt 判断是否发生 turn 内压缩(底层压缩必更新 updatedAt).
     if (
@@ -2025,6 +2040,7 @@ export async function runAgentRuntimeTurn(
       assistant: replyText,
       compressedContext: compressedInTurn ? agentContextSnapshotForLoop! : compressedContext,
     },
+    ...(turnUsage ? { usage: turnUsage } : {}),
   }
 }
 

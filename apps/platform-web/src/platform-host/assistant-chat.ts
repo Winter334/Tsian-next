@@ -47,6 +47,7 @@ import {
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
 import { getBrowserAiConfig } from "../config/ai"
+import { resolveBrowserAiConfigForModel } from "../config/ai"
 import { binaryPlaceholderText } from "@/lib/media-type"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
@@ -205,6 +206,12 @@ export interface AssistantChatInput {
 
 export interface AssistantChatResult {
   replyText: string
+  /**
+   * 最后一轮 provider 返回的 token usage(input = 当前上下文大小).
+   * 供桌面助手 ContextRing 显示上下文窗口占用.native 模式有值;
+   * text 模式不带(undefined).不持久化,仅当前会话展示.
+   */
+  usage?: { input?: number; output?: number; total?: number }
 }
 
 
@@ -323,7 +330,28 @@ export async function runAssistantChat(
   const providerPresetMap = buildAgentProviderPresetMap(
     activeWorkspaceTransaction.workspaceFiles,
   )
-  const assistantModelConfig = resolveAgentModelConfig(agentId, providerPresetMap)
+  // 桌面助手专属:读 agent.json 的 modelId(用户从 header 二级下拉选的具体模型).
+  // 有则用 resolveBrowserAiConfigForModel 覆盖 primary(不走预设策略);
+  // 无则 fallback 到 resolveAgentModelConfig(预设策略,第一个 enabled).
+  // runtime agent 不碰 modelId,继续走 resolveAgentModelConfig.
+  const assistantAgentConfigFile = localAssistantFiles.find(
+    (file) => file.path === ".tsian/local/assistant/agent.json",
+  )
+  let assistantModelId: string | undefined
+  if (assistantAgentConfigFile) {
+    try {
+      const parsed = JSON.parse(assistantAgentConfigFile.content) as unknown
+      if (parsed && typeof parsed === "object" && typeof (parsed as Record<string, unknown>).modelId === "string") {
+        assistantModelId = (parsed as Record<string, unknown>).modelId as string
+      }
+    } catch {
+      // 损坏的 agent.json 忽略 modelId,fallback 策略.
+    }
+  }
+  const presetId = providerPresetMap.get(agentId)
+  const assistantModelConfig = presetId && assistantModelId
+    ? resolveBrowserAiConfigForModel(presetId, assistantModelId)
+    : resolveAgentModelConfig(agentId, providerPresetMap)
   const localAssistantToolCallMode =
     assistantModelConfig?.toolCallMode
     ?? getBrowserAiConfig()?.toolCallMode
@@ -572,7 +600,10 @@ export async function runAssistantChat(
     const finalFiles = activeWorkspaceTransaction.finalWorkspaceFiles()
     await commitAssistantWorkspaceFiles(activeSaveId, finalFiles)
 
-    return { replyText: result.replyText }
+    return {
+      replyText: result.replyText,
+      ...(result.usage ? { usage: result.usage } : {}),
+    }
   } catch (error) {
     activeWorkspaceTransaction.discard()
     // 记录失败 trace 事件(若 runtime 未自己发 turn_failed),让 traces/ 里能看到失败原因.

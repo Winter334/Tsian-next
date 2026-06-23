@@ -86,6 +86,54 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
+          <!-- 预设(服务商)下拉:一级,立即持久化 -->
+          <Select
+            :model-value="assistantProviderPresetId || '__platform_default__'"
+            @update:model-value="(value) => handlePresetChange(value as string)"
+          >
+            <SelectTrigger class="h-8 w-auto min-w-[6rem] max-w-[10rem] px-2 text-[11px]">
+              <SelectValue placeholder="平台默认" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__platform_default__">平台默认</SelectItem>
+              <SelectItem
+                v-for="preset in providerPresets"
+                :key="preset.id"
+                :value="preset.id"
+              >
+                {{ preset.name }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          <!-- 模型下拉:二级,依赖预设选中.列出该预设的 models. -->
+          <Select
+            :model-value="assistantModelId || '__preset_default__'"
+            :disabled="!assistantProviderPresetId || assistantModels.length === 0"
+            @update:model-value="(value) => handleModelChange(value as string)"
+          >
+            <SelectTrigger class="h-8 w-auto min-w-[6rem] max-w-[10rem] px-2 text-[11px]">
+              <SelectValue placeholder="预设默认" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="__preset_default__">预设默认</SelectItem>
+              <SelectItem
+                v-for="model in assistantModels"
+                :key="model.id"
+                :value="model.id"
+              >
+                {{ model.label }}
+              </SelectItem>
+            </SelectContent>
+          </Select>
+
+          <!-- 上下文窗口环:已用 input tokens / contextWindow.每轮回复后更新. -->
+          <ContextRing
+            :used="contextUsed"
+            :total="contextTotal"
+            :size="28"
+          />
+
           <button
             type="button"
             class="retro-focus grid h-8 w-8 place-items-center border border-neon-deep/55 bg-elevated text-text-dim hover:text-neon"
@@ -476,6 +524,7 @@ import { Bot, Check, ChevronDown, ChevronRight, Copy, FileText, Loader2, Papercl
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import AssistantConfigPanel from "@/components/assistant/AssistantConfigPanel.vue"
+import ContextRing from "@/components/assistant/ContextRing.vue"
 import { ACTIVE_CARD_CHANGED_EVENT, isActiveCardChangedEvent } from "@/lib/platform-events"
 import {
   Collapsible,
@@ -485,10 +534,19 @@ import {
 import { useAssistantTimeline, type ChatMessage } from "@/composables/useAssistantTimeline"
 import { confirm } from "@/composables/useConfirm"
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
+import {
   runAssistantChat,
   getPlatformActiveGameCard,
   waitForPlatformHostReady,
   getLocalAssistantProviderPreset,
+  updateLocalAssistantProviderPreset,
+  updateLocalAssistantModel,
 } from "../platform-host"
 import { renderMarkdown } from "../lib/markdown"
 import {
@@ -555,6 +613,12 @@ const renamingSessionId = ref<string | null>(null)
 const renameInputRef = ref<HTMLInputElement | null>(null)
 const providerPresets = ref<Array<{ id: string; name: string }>>([])
 const assistantProviderPresetId = ref("")
+const assistantModelId = ref("")
+const assistantModels = ref<Array<{ id: string; label: string; contextWindow: number | null }>>([])
+// 上下文窗口可视化:used = 最后一轮 provider 返回的 input tokens;total = 当前模型 contextWindow.
+// used 每轮回复后更新(不持久化,刷新归零);total 切模型时更新.
+const contextUsed = ref(0)
+const contextTotal = ref(0)
 const showAssistantConfig = ref(false)
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
@@ -925,6 +989,11 @@ async function send() {
     assistantMsg.content = result.replyText
     assistantMsg.streamingText = ""
     assistantMsg.streamingReasoning = ""
+    // 更新上下文环:used = 最后一轮 provider 返回的 input tokens(当前上下文大小).
+    // text 模式无 usage(undefined),环保持上次值或归零.
+    if (result.usage?.input !== undefined) {
+      contextUsed.value = result.usage.input
+    }
     // 消息 + context 已由 host(runAssistantChat)同步写入,前端不再调 persistCurrentSession
     // (消除双 IO 竞态).catch 路径仍保留前端持久化作兜底(host catch 不写消息).
   } catch (error) {
@@ -1115,9 +1184,41 @@ async function loadProviderPreset() {
     const result = await getLocalAssistantProviderPreset()
     providerPresets.value = result.presets
     assistantProviderPresetId.value = result.providerPresetId
+    assistantModelId.value = result.modelId
+    assistantModels.value = result.models
+    // 更新环总量:有 modelId 取对应模型的 contextWindow,否则取第一个模型的(预设默认 primary).
+    const activeModel = result.modelId
+      ? result.models.find((m) => m.id === result.modelId)
+      : result.models[0]
+    contextTotal.value = activeModel?.contextWindow ?? 0
   } catch {
     // Non-fatal: provider selection just won't show.
   }
+}
+
+/** 切换预设:立即持久化 + 重新加载该预设的模型列表 + 清空 modelId(新预设的模型 id 不同). */
+async function handlePresetChange(presetId: string) {
+  const id = presetId === "__platform_default__" ? "" : presetId
+  assistantProviderPresetId.value = id
+  assistantModelId.value = ""
+  assistantModels.value = []
+  await updateLocalAssistantProviderPreset(id || null)
+  if (id) {
+    await updateLocalAssistantModel(null)
+  }
+  await loadProviderPreset()
+}
+
+/** 切换预设内模型:立即持久化 + 更新环总量. */
+async function handleModelChange(modelId: string) {
+  const id = modelId === "__preset_default__" ? "" : modelId
+  assistantModelId.value = id
+  await updateLocalAssistantModel(id || null)
+  // 更新环总量:选了具体模型取其 contextWindow,没选取第一个(预设默认).
+  const activeModel = id
+    ? assistantModels.value.find((m) => m.id === id)
+    : assistantModels.value[0]
+  contextTotal.value = activeModel?.contextWindow ?? 0
 }
 
 /**

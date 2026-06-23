@@ -966,6 +966,7 @@ export {
 export {
   getLocalAssistantProviderPreset,
   updateLocalAssistantProviderPreset,
+  updateLocalAssistantModel,
   getLocalAssistantConfig,
   updateLocalAssistantSkillEnabled,
   updateLocalAssistantPlatformToolEnabled,

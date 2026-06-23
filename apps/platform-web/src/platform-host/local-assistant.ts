@@ -19,6 +19,7 @@ import {
 import {
   getBrowserAiConfig,
   listBrowserAiProviderPresetOptions,
+  getBrowserAiProviderPresetModels,
 } from "../config/ai"
 import {
   loadLocalAssistantFiles,
@@ -75,29 +76,46 @@ export async function resolveLocalAssistantActorLevel(): Promise<number | undefi
 }
 
 /**
- * Read the local assistant's current provider preset id and available presets.
- * Used by the Assistant chat UI to render the provider selection control.
+ * Read the local assistant's current provider preset id, explicit model id,
+ * and available presets/models for the header two-level selector.
+ * `models` is the selected preset's model list (empty when no preset or
+ * platform default); each entry carries id/label/contextWindow for the
+ * sub-dropdown and the context ring's total.
  */
 export async function getLocalAssistantProviderPreset(): Promise<{
   providerPresetId: string
+  modelId: string
   presets: PlatformStudioProviderPresetOption[]
+  models: Array<{ id: string; label: string; contextWindow: number | null }>
 }> {
   const files = await loadLocalAssistantFiles()
   const configFile = files.find((file) => file.path === LOCAL_ASSISTANT_AGENT_CONFIG_PATH)
   let providerPresetId = ""
+  let modelId = ""
   if (configFile) {
     try {
       const parsed = JSON.parse(configFile.content) as unknown
-      if (isRecord(parsed) && typeof parsed.providerPresetId === "string") {
-        providerPresetId = parsed.providerPresetId
+      if (isRecord(parsed)) {
+        if (typeof parsed.providerPresetId === "string") {
+          providerPresetId = parsed.providerPresetId
+        }
+        if (typeof parsed.modelId === "string") {
+          modelId = parsed.modelId
+        }
       }
     } catch {
       // Ignore parse errors; treat as no selection.
     }
   }
+  // Resolve the selected preset's model list for the sub-dropdown.
+  const models = providerPresetId
+    ? getBrowserAiProviderPresetModels(providerPresetId)
+    : []
   return {
     providerPresetId,
+    modelId,
     presets: listBrowserAiProviderPresetOptions(),
+    models,
   }
 }
 
@@ -130,6 +148,50 @@ export async function updateLocalAssistantProviderPreset(
     const nextConfig: Record<string, unknown> = {}
     if (presetId) {
       nextConfig.providerPresetId = presetId
+    }
+    files.push({
+      path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
+      content: JSON.stringify(nextConfig, null, 2) + "\n",
+      createdAt: 0,
+      updatedAt: Date.now(),
+    })
+  }
+
+  await saveLocalAssistantFiles(files)
+}
+
+/**
+ * Update the local assistant's explicit model id by rewriting
+ * .tsian/local/assistant/agent.json via the Dexie meta store.
+ * Mirrors updateLocalAssistantProviderPreset; empty/null clears the
+ * explicit selection so the preset's primary (first enabled) model is used.
+ * Only the desktop assistant uses modelId — runtime agents keep the
+ * preset strategy (primary + ordered fallback), unaffected by this field.
+ */
+export async function updateLocalAssistantModel(
+  modelId: string | null,
+): Promise<void> {
+  const files = await loadLocalAssistantFiles()
+  const configIndex = files.findIndex((file) => file.path === LOCAL_ASSISTANT_AGENT_CONFIG_PATH)
+  const nextModelId = modelId?.trim() ?? ""
+
+  if (configIndex >= 0) {
+    const config = parseAgentConfigRecord(files[configIndex])
+    const nextConfig = { ...config }
+    if (nextModelId) {
+      nextConfig.modelId = nextModelId
+    } else {
+      delete nextConfig.modelId
+    }
+    files[configIndex] = {
+      ...files[configIndex],
+      content: JSON.stringify(nextConfig, null, 2) + "\n",
+      updatedAt: Date.now(),
+    }
+  } else {
+    const nextConfig: Record<string, unknown> = {}
+    if (nextModelId) {
+      nextConfig.modelId = nextModelId
     }
     files.push({
       path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,

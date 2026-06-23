@@ -601,14 +601,29 @@ function getEnvAiConfig(): BrowserAiConfig | null {
 function resolveProviderConfig(
   provider: BrowserAiProviderPreset | undefined,
   kind: BrowserAiProviderKind = "openai-compatible",
+  /**
+   * Optional explicit model id to use as primary instead of the preset
+   * strategy (first enabled). Only the desktop assistant passes this
+   * (user-selected model from the header sub-dropdown); runtime agents
+   * keep the default strategy. When the id doesn't match any model,
+   * falls back to the strategy (graceful, no error).
+   */
+  primaryModelId?: string,
 ): BrowserAiConfig | null {
   if (!provider?.baseUrl || !provider.apiKey) {
     return null
   }
 
-  // Primary = first enabled model, else the first model entry as a last resort.
+  // Primary = explicit modelId (if provided and found), else first enabled,
+  // else the first model entry as a last resort.
+  const explicit =
+    primaryModelId
+      ? provider.models.find((model) => model.id === primaryModelId)
+      : undefined
   const primary =
-    provider.models.find((model) => model.enabled) ?? provider.models[0]
+    explicit
+    ?? provider.models.find((model) => model.enabled)
+    ?? provider.models[0]
   if (!primary) {
     return null
   }
@@ -718,6 +733,50 @@ export function resolveBrowserAiConfigForProviderId(providerId: string): Browser
   const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
   const { preset, kind } = findPresetAndKind(stored.providerTypes, normalized)
   return resolveProviderConfig(preset, kind)
+}
+
+/**
+ * Resolve a BrowserAiConfig with an explicit model id as primary (desktop
+ * assistant header sub-dropdown). When modelId is empty or not found in the
+ * preset, falls back to the preset strategy (first enabled) — graceful, no
+ * error. Runtime agents don't use this; they keep resolveBrowserAiConfigForProviderId.
+ */
+export function resolveBrowserAiConfigForModel(
+  providerId: string,
+  modelId: string | null | undefined,
+): BrowserAiConfig | null {
+  const normalizedProvider = providerId.trim()
+  if (!normalizedProvider) {
+    return null
+  }
+  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const { preset, kind } = findPresetAndKind(stored.providerTypes, normalizedProvider)
+  return resolveProviderConfig(preset, kind, modelId?.trim() || undefined)
+}
+
+/**
+ * List a preset's model entries (id, label, contextWindow) for UI selectors.
+ * Used by the desktop assistant header sub-dropdown to let the user pick a
+ * specific model within a provider preset (runtime agents keep the preset
+ * strategy and don't call this). Returns empty for unknown/empty preset id.
+ */
+export function getBrowserAiProviderPresetModels(
+  providerId: string,
+): Array<{ id: string; label: string; contextWindow: number | null }> {
+  const normalized = providerId.trim()
+  if (!normalized) {
+    return []
+  }
+  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const { preset } = findPresetAndKind(stored.providerTypes, normalized)
+  if (!preset) {
+    return []
+  }
+  return preset.models.map((m) => ({
+    id: m.id,
+    label: m.label || m.id,
+    contextWindow: m.parameters.contextWindow ?? null,
+  }))
 }
 
 /**

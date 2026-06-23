@@ -86,6 +86,14 @@ export interface ModelCallResult {
   toolCalls: NativeToolCall[]
   raw: string
   finishReason: "stop" | "tool_calls"
+  /**
+   * Provider-reported token usage for this call (when available).
+   * `input` = prompt_tokens (current context size sent to the model),
+   * `output` = completion_tokens, `total` = sum or provider-reported total.
+   * Surface for context-window visualization; undefined when the provider
+   * omits usage or the streaming path couldn't extract it.
+   */
+  usage?: { input?: number; output?: number; total?: number }
 }
 
 export interface GenerateAssistantReplyOptions {
@@ -1318,7 +1326,7 @@ export async function generateAssistantReplyNative(
     payload,
   })
 
-  return result
+  return { ...result, usage }
 }
 
 /**
@@ -1470,7 +1478,7 @@ export async function streamAssistantReplyNative(
         finishReason: result.finishReason,
         payload,
       })
-      return result
+      return { ...result, usage }
     } finally {
       timed.cleanup()
     }
@@ -1490,6 +1498,7 @@ export async function streamAssistantReplyNative(
   const toolAccumulator = new Map<number, { id: string; name: string; args: string }>()
   let currentEvent = ""
   let streamEnded = false
+  let streamUsage: { input?: number; output?: number; total?: number } | undefined
   const isClaude = config.kind === "claude"
 
   try {
@@ -1527,6 +1536,15 @@ export async function streamAssistantReplyNative(
         } catch {
           // Skip malformed/keep-alive data lines.
           continue
+        }
+
+        // Provider usage arrives in the terminating chunk (OpenAI with
+        // include_usage, Claude message_delta, Gemini usageMetadata). Extract
+        // on every chunk; the last non-undefined one wins (usage only appears
+        // once, near the end).
+        const chunkUsage = extractUsageFromPayload(data)
+        if (chunkUsage) {
+          streamUsage = chunkUsage
         }
 
         const delta = adapter.extractStreamDelta(data)
@@ -1572,9 +1590,10 @@ export async function streamAssistantReplyNative(
     toolCalls,
     raw: textBuffer,
     finishReason: resolvedFinish,
+    ...(streamUsage ? { usage: streamUsage } : {}),
   }
 
-  updateAiDebugRecord(requestId, { responseText: result.raw })
+  updateAiDebugRecord(requestId, { responseText: result.raw, usage: streamUsage })
   logDebugGroup(`[Tsian AI ${requestId}] stream response`, {
     text: previewText(result.text, 2400),
     toolCalls: result.toolCalls,
