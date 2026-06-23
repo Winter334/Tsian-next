@@ -168,6 +168,72 @@
                 <Bot v-else class="h-3.5 w-3.5" aria-hidden="true" />
               </span>
               <div class="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-1.5">
+                <!-- 过程节点(assistant):思考/工具按发生顺序纵向平铺,各独立折叠.
+                     放在回复正文框之外,用轻量"过程元信息"样式(左竖线+淡背景),与聊天框视觉分离.
+                     reka-ui Collapsible 的 open=true 为展开,而节点字段 collapsed=true 为折叠,
+                     语义相反,故用 :open="!node.collapsed" 反转绑定,finally/初值保持原意. -->
+                <template v-if="msg.role === 'assistant' && msg.timeline && msg.timeline.length > 0">
+                  <div class="flex flex-col gap-1">
+                    <template v-for="node in msg.timeline" :key="node.id">
+                      <!-- 思考节点(tool_calls 轮的推理文本,默认折叠,可展开回看) -->
+                      <Collapsible
+                        v-if="node.type === 'thought'"
+                        :open="!node.collapsed"
+                        @update:open="(v) => (node.collapsed = !v)"
+                        class="border-l border-neon-deep/30 bg-panel/15"
+                      >
+                        <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                          <ChevronRight
+                            class="h-3 w-3 transition-transform"
+                            :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
+                            aria-hidden="true"
+                          />
+                          <Brain class="h-3 w-3" aria-hidden="true" />
+                          <span>思考</span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
+                          <div class="prose-chat text-xs leading-5 text-text-dim" v-html="renderMarkdown(node.text)" />
+                        </CollapsibleContent>
+                      </Collapsible>
+
+                      <!-- 工具调用节点(按 callId 去重,loading→success/failed 更新同一节点;调用中展开看输出,回合结束折叠) -->
+                      <Collapsible
+                        v-else-if="node.type === 'tool'"
+                        :open="!node.collapsed"
+                        @update:open="(v) => (node.collapsed = !v)"
+                        class="border-l border-neon-deep/30 bg-panel/15"
+                      >
+                        <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                          <ChevronRight
+                            class="h-3 w-3 transition-transform"
+                            :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
+                            aria-hidden="true"
+                          />
+                          <Wrench class="h-3 w-3" aria-hidden="true" />
+                          <span>{{ node.name }}</span>
+                          <span
+                            :class="{
+                              'text-neon/60': node.status === 'loading' || node.status === 'running',
+                              'text-neon': node.status === 'success',
+                              'text-red-400': node.status === 'failed',
+                            }"
+                          >
+                            <Loader2 v-if="node.status === 'loading' || node.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
+                            <template v-else-if="node.status === 'success'">✓</template>
+                            <template v-else-if="node.status === 'failed'">✗</template>
+                          </span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
+                          <div
+                            v-if="node.output"
+                            class="max-h-32 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 font-mono text-[10px] leading-4 text-text-dim"
+                          >{{ node.output }}</div>
+                        </CollapsibleContent>
+                      </Collapsible>
+                    </template>
+                  </div>
+                </template>
+
                 <div
                   class="break-words px-3.5 py-2.5 text-sm leading-6"
                   :class="msg.role === 'user'
@@ -175,63 +241,6 @@
                     : 'border border-neon/20 bg-neon/5 text-text-main'"
                 >
                 <template v-if="msg.role === 'assistant'">
-                  <!-- 过程节点:思考/工具按发生顺序纵向平铺,各独立折叠(不含最终回复) -->
-                  <template v-for="node in msg.timeline ?? []" :key="node.id">
-                    <!-- 思考节点(tool_calls 轮的推理文本,回合结束折叠保留可回看) -->
-                    <Collapsible
-                      v-if="node.type === 'thought'"
-                      v-model:open="node.collapsed"
-                      class="border border-neon-deep/25 bg-panel/30"
-                    >
-                      <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
-                        <ChevronRight
-                          class="h-3 w-3 transition-transform"
-                          :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
-                          aria-hidden="true"
-                        />
-                        <Brain class="h-3 w-3" aria-hidden="true" />
-                        <span>思考</span>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent class="border-t border-neon-deep/20 px-2.5 py-2">
-                        <div class="prose-chat text-xs leading-5 text-text-dim" v-html="renderMarkdown(node.text)" />
-                      </CollapsibleContent>
-                    </Collapsible>
-
-                    <!-- 工具调用节点(按 callId 去重,loading→success/failed 更新同一节点) -->
-                    <Collapsible
-                      v-else-if="node.type === 'tool'"
-                      v-model:open="node.collapsed"
-                      class="border border-neon-deep/25 bg-panel/30"
-                    >
-                      <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2.5 py-1.5 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
-                        <ChevronRight
-                          class="h-3 w-3 transition-transform"
-                          :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
-                          aria-hidden="true"
-                        />
-                        <Wrench class="h-3 w-3" aria-hidden="true" />
-                        <span>{{ node.name }}</span>
-                        <span
-                          :class="{
-                            'text-neon/60': node.status === 'loading' || node.status === 'running',
-                            'text-neon': node.status === 'success',
-                            'text-red-400': node.status === 'failed',
-                          }"
-                        >
-                          <Loader2 v-if="node.status === 'loading' || node.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
-                          <template v-else-if="node.status === 'success'">✓</template>
-                          <template v-else-if="node.status === 'failed'">✗</template>
-                        </span>
-                      </CollapsibleTrigger>
-                      <CollapsibleContent class="border-t border-neon-deep/20 px-2.5 py-2">
-                        <div
-                          v-if="node.output"
-                          class="max-h-32 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 font-mono text-[10px] leading-4 text-text-dim"
-                        >{{ node.output }}</div>
-                      </CollapsibleContent>
-                    </Collapsible>
-                  </template>
-
                   <!-- 当前轮流式文本:尚未分类(tool_calls→归入 thought 折叠;stop→写入 content) -->
                   <div v-if="msg.streamingText" class="prose-chat" v-html="renderMarkdown(msg.streamingText)" />
                   <!-- 最终回复 / 历史 / text 模式:无流式时展示 content -->
@@ -1146,13 +1155,22 @@ function resetInputHeight() {
 
 async function scrollToBottom(force = false) {
   await nextTick()
-  if (messageListRef.value) {
-    if (force) {
-      showJumpToBottom.value = false
-      userPinnedToBottom.value = true
-    }
-    messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+  const el = messageListRef.value
+  if (!el) {
+    return
   }
+  if (force) {
+    showJumpToBottom.value = false
+    userPinnedToBottom.value = true
+  }
+  el.scrollTop = el.scrollHeight
+  // 过程节点折叠/展开会改变列表高度;补一帧再对齐底部,避免 scrollToBottom
+  // 赶在布局变化前执行而停在过程节点区域,让落点回到回复正文.
+  requestAnimationFrame(() => {
+    if (messageListRef.value) {
+      messageListRef.value.scrollTop = messageListRef.value.scrollHeight
+    }
+  })
 }
 
 // Auto-scroll during streaming only when the user is already near the bottom;
