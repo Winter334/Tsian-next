@@ -96,37 +96,6 @@
         </div>
       </section>
 
-      <!-- Provider Preset section -->
-      <section class="border border-neon-deep/35 bg-panel/55">
-        <div class="border-b border-neon-deep/25 px-3 py-2">
-          <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">API 服务商</p>
-        </div>
-        <div class="grid gap-3 p-3">
-          <label class="grid gap-2">
-            <span class="text-xs font-bold text-text-main">服务商预设</span>
-            <Select
-              :model-value="currentProviderPresetId || '__platform_default__'"
-              :disabled="applying || providerPresets.length === 0"
-              @update:model-value="(value) => updateProviderPreset(value === '__platform_default__' ? '' : value as string)"
-            >
-              <SelectTrigger class="h-9 w-full">
-                <SelectValue placeholder="使用平台默认" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="__platform_default__">使用平台默认</SelectItem>
-                <SelectItem
-                  v-for="preset in providerPresets"
-                  :key="preset.id"
-                  :value="preset.id"
-                >
-                  {{ preset.name }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-          <p class="text-xs leading-5 text-text-dim">{{ providerPresetDescription }}</p>
-        </div>
-      </section>
     </div>
 
     <!-- Footer: Windows-style 取消/应用/确定 (X in title bar also cancels) -->
@@ -181,7 +150,6 @@ import { toast } from "@/composables/useToast"
 import {
   getLocalAssistantConfig,
   updateLocalAssistantPlatformToolEnabled,
-  updateLocalAssistantProviderPreset,
   updateLocalAssistantSkillEnabled,
   updateLocalAssistantWorkspaceAccess,
   type LocalAssistantConfig,
@@ -194,7 +162,6 @@ const emit = defineEmits<{
 
 const agent = ref<AgentRegistryEntry | null>(null)
 const skills = ref<SkillRegistryEntry[]>([])
-const providerPresets = ref<Array<{ id: string; name: string }>>([])
 
 /**
  * 草稿覆盖层:只记录与原始持久化状态不同的字段。toggle 只改草稿,
@@ -204,8 +171,6 @@ const providerPresets = ref<Array<{ id: string; name: string }>>([])
 const skillOverrides = ref(new Map<string, boolean>())
 const platformToolOverrides = ref(new Map<AgentPlatformToolName, boolean>())
 const workspaceLevelOverride = ref<number | null>(null)
-// providerPresetOverride: null = 未改;"" = 显式清空到平台默认;其它 = 预设 id
-const providerPresetOverride = ref<string | null>(null)
 const applying = ref(false)
 
 const platformToolControls: Array<{
@@ -270,35 +235,16 @@ function platformToolEnabled(tool: AgentPlatformToolName): boolean {
 
 const workspaceLevel = computed(() => workspaceLevelOverride.value ?? agent.value?.workspaceAccess.level ?? 1)
 
-const currentProviderPresetId = computed(() => {
-  if (providerPresetOverride.value !== null) {
-    return providerPresetOverride.value
-  }
-  return agent.value?.providerPresetId ?? ""
-})
-
 const enabledSkillCount = computed(() => skills.value.filter((s) => skillEnabled(s)).length)
 
 const workspaceAccessDescription = computed(() =>
   workspaceAccessOptions.find((option) => option.level === workspaceLevel.value)?.description ?? "",
 )
 
-const providerPresetDescription = computed(() => {
-  const id = currentProviderPresetId.value
-  if (!id) {
-    return "使用平台全局默认服务商。"
-  }
-  const preset = providerPresets.value.find((p) => p.id === id)
-  return preset
-    ? `当前使用预设：${preset.name}`
-    : "所选预设已失效，将回退到平台默认服务商。"
-})
-
 const hasChanges = computed(() =>
   skillOverrides.value.size > 0
   || platformToolOverrides.value.size > 0
-  || workspaceLevelOverride.value !== null
-  || providerPresetOverride.value !== null,
+  || workspaceLevelOverride.value !== null,
 )
 
 function entrySummary(value: string | undefined): string {
@@ -341,25 +287,16 @@ function updateWorkspaceAccessLevel(level: number): void {
   workspaceLevelOverride.value = level
 }
 
-function updateProviderPreset(presetId: string): void {
-  if (applying.value) {
-    return
-  }
-  providerPresetOverride.value = presetId
-}
-
 async function reload(): Promise<void> {
   const result: LocalAssistantConfig = await getLocalAssistantConfig()
   agent.value = result.agent
   skills.value = result.skills
-  providerPresets.value = result.providerPresets
 }
 
 function resetOverrides(): void {
   skillOverrides.value = new Map()
   platformToolOverrides.value = new Map()
   workspaceLevelOverride.value = null
-  providerPresetOverride.value = null
 }
 
 /**
@@ -380,9 +317,6 @@ async function applyChanges(): Promise<boolean> {
     }
     if (workspaceLevelOverride.value !== null) {
       await updateLocalAssistantWorkspaceAccess(workspaceLevelOverride.value)
-    }
-    if (providerPresetOverride.value !== null) {
-      await updateLocalAssistantProviderPreset(providerPresetOverride.value || null)
     }
     await reload()
     resetOverrides()
