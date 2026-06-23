@@ -38,6 +38,18 @@ When the task is to remove or auto-infer a concept from an AI-facing surface:
 
 ---
 
+## Conforming to Training Conventions vs. Forbidding Them
+
+The rule above is about *removing* a concept the model should not think about. A related but opposite case: **the model has a strong training-prior that an input form "just works," and your tool rejects it.** Here the fix is to make the implementation accept the form, not to teach the model to avoid it.
+
+Real example (2026-06-23, `list(".")`): models habitually call `list(".")` to enumerate a workspace root — `.` = root is the convention in Claude/OpenAI file tools and most agent frameworks. The workspace path normalizer rejected `.`/`..` with `WORKSPACE_PATH_INVALID`, so every fresh session wasted a round on an avoidable error: call `list(".")` → read the error → re-call without the dot. A prompt rule "do not use `.`" would fight a strong prior and cost tokens every turn. The fix was to accept `.`/`..` in the normalizer (the runtime workspace is root-bound, so `..` clamps at the root and cannot escape — there is no traversal risk to defend against) and add "or `.`" to the `list` schema description. One behavior change, zero recurring token cost.
+
+**The heuristic**: when the model repeatedly tries a well-known input form and your tool rejects it for a reason that does *not* hold in your context (here: path traversal risk, which a root-bound virtual FS does not have), prefer making the tool accept the form over teaching the model to avoid it. Forbidding a training prior is a per-turn tax; conforming to it is a one-time implementation cost. Only forbid when the rejection guards a risk that is real in your context.
+
+When you do conform, update the schema `description` to name the accepted form (e.g. "Empty, omitted, or `.` means the workspace root.") so the model's prior is confirmed rather than left to guess. Do **not** describe the resolution mechanism (`..` clamps, segments are resolved on a stack) — that is internal, same as rule 4 above.
+
+---
+
 ## Why This Matters
 
 The model's attention is finite. Every concept mentioned in a schema description or prompt is a concept the model will spend tokens considering. A concept that the framework already handles deterministically (scope routing, permission levels, owner resolution) is a concept the model should never see. Leaving a "this is optional / auto / usually X" trace is worse than a clean absence, because it prompts the model to make a decision it isn't responsible for — and occasionally to make it wrong.
