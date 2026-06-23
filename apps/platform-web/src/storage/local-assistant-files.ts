@@ -919,12 +919,31 @@ export function assistantContextPath(sessionId: string): string {
 }
 
 /**
+ * 助手 runtime trace 文件路径(每 turn 一个 jsonl).
+ * 对称 assistantContextPath——trace 落盘路径的单一构造点,
+ * assistant-chat.ts 调用此函数,避免路径前缀重复定义.
+ * 失败 turn 传 failedAt 加 -failed-<ts> 后缀(对称 master 的 formatRuntimeTracePath).
+ */
+export function assistantTracePath(turn: number, failedAt?: number): string {
+  const paddedTurn = String(Math.max(0, Math.floor(turn))).padStart(6, "0")
+  const suffix = failedAt === undefined ? "" : `-failed-${failedAt}`
+  return `${LOCAL_ASSISTANT_DIR}/traces/turn-${paddedTurn}${suffix}.jsonl`
+}
+
+/**
  * 助手会话 context 快照所在目录前缀(所有 sessions/<id>/context.json 共享).
  * 用于在事务 commit 回写时排除这类"由 stageAssistantContextFile 直写 Dexie 管辖"
  * 的文件——它们不经过 RuntimeWorkspaceTransaction,若把事务 baseline 里的旧版本
  * 一并回写会覆盖直写的新版本(clobber 缺陷:每轮 context.json 被还原成 turn 开头值).
  */
 const ASSISTANT_CONTEXT_DIR = `${LOCAL_ASSISTANT_DIR}/sessions/`
+
+/**
+ * 助手 trace 文件目录前缀(.tsian/local/assistant/traces/).
+ * runtime 过程事件序列化落盘于此(见 assistant-chat.ts 的 trace collector).
+ * 与 context 快照同属"直写 Dexie 管辖"——commit 回写时排除,防 clobber.
+ */
+const ASSISTANT_TRACES_DIR = `${LOCAL_ASSISTANT_DIR}/traces/`
 
 /** 判断路径是否属于助手会话 context 快照(stagedAssistantContextFile 专属管辖). */
 export function isAssistantContextPath(path: string): boolean {
@@ -938,7 +957,7 @@ export function isAssistantContextPath(path: string): boolean {
  * 函数的直写生效.
  */
 export function isAssistantDirectWritePath(path: string): boolean {
-  return isAssistantContextPath(path)
+  return isAssistantContextPath(path) || path.startsWith(ASSISTANT_TRACES_DIR)
 }
 
 /**

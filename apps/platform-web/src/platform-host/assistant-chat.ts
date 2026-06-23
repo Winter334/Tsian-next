@@ -17,6 +17,7 @@ import {
 } from "../agent-runtime/context-lifecycle"
 import {
   assistantContextPath,
+  assistantTracePath,
   deleteLocalAssistantFile,
   getAssistantAttachmentBase64,
   isAssistantDirectWritePath,
@@ -34,6 +35,11 @@ import {
   type RuntimeWorkspaceTransaction,
 } from "../storage"
 import { executeWorkspaceMutation } from "./workspace-volumes"
+import {
+  createRuntimeTraceCollector,
+  serializeRuntimeTraceEvents,
+  errorToTraceData,
+} from "../agent-runtime/trace"
 import {
   generateAssistantReply,
   generateAssistantReplyNative,
@@ -62,6 +68,7 @@ import {
 import {
   getActiveSaveId,
   getLocalGameCard,
+  saveAssistantSessionMessages,
 } from "../storage"
 
 // ── 助手会话 context 读写（B 类 helper，只被 runAssistantChat 调用，随接缝一起迁） ──
@@ -343,6 +350,12 @@ export async function runAssistantChat(
     assistantModelConfig?.parameters.contextWindow ?? null,
   )
 
+  // Trace collector:收集本轮 runtime 过程事件(turn/model/tool/context 等),
+  // turn 结束序列化落盘到 .tsian/local/assistant/traces/(与 context.json 同通道,
+  // 不进 save 事务).之前 emitTrace 是空函数,过程细节无处可查;现在有了持久出口,
+  // 刷新/切换会话后仍可在 traces/ 回看,且不污染聊天历史(过程与结论分离).
+  const traceCollector = createRuntimeTraceCollector(nextAssistantTurn)
+
   try {
     const result = await runAgentRuntimeTurn(
       {
@@ -420,7 +433,7 @@ export async function runAssistantChat(
         runBrowserScript: createBrowserSkillScriptRunner({
           workspaceTransaction: activeWorkspaceTransaction,
           signal: controller.signal,
-          emitTrace: () => {},
+          emitTrace: traceCollector.emit,
         }),
         workspaceMutations: {
           write: (writeInput) => {
@@ -515,9 +528,28 @@ export async function runAssistantChat(
             throw new Error(`Assistant workspace delete scope not supported: ${deleteInput.scope}`)
           },
         },
-        emitTrace: () => {},
+        emitTrace: traceCollector.emit,
       },
     )
+
+    // ── 消息 + context 同步写(原子性保证)──
+    // 顺序:先写会话消息,再写 agent context.消息写失败 → 抛错走 catch,
+    // context 不写(避免"消息没存但 context 存了"的不一致).两者同在 try 尾部,
+    // 替代之前前端 persistCurrentSession + host stageAssistantContextFile 两次
+    // 独立 IO 的竞态风险.前端正常 turn 结束不再调 persistCurrentSession.
+    //
+    // 组装完整消息列表:history(不含本轮)+ 本轮 user(带 attachments)+ 本轮 assistant.
+    const inputAttachments = input.attachments
+    const fullMessages: ConversationMessageRecord[] = [
+      ...history,
+      {
+        role: "user",
+        content,
+        ...(inputAttachments && inputAttachments.length > 0 ? { attachments: inputAttachments } : {}),
+      },
+      { role: "assistant", content: result.replyText },
+    ]
+    await saveAssistantSessionMessages("local", input.sessionId, fullMessages, { touch: true })
 
     // 写回会话 context 快照(虚拟文件):本轮正文追加 + 压缩结果落盘.
     // 直接落本地篮子(saveLocalAssistantFiles),不进 save 事务——.tsian/local/
@@ -543,6 +575,13 @@ export async function runAssistantChat(
     return { replyText: result.replyText }
   } catch (error) {
     activeWorkspaceTransaction.discard()
+    // 记录失败 trace 事件(若 runtime 未自己发 turn_failed),让 traces/ 里能看到失败原因.
+    traceCollector.emit({
+      type: "turn_failed",
+      ok: false,
+      debugLabel: "entry-agent",
+      data: errorToTraceData(error),
+    })
     // Distinguish task-timeout abort from user abort / other errors: the runtime
     // tool loop throws AbortError on composite-signal abort; re-surface timeout
     // as TaskTimeoutError so AssistantView can show a gentle prompt (design §2.6).
@@ -552,6 +591,20 @@ export async function runAssistantChat(
     throw error
   } finally {
     clearTimeout(timeoutTimer)
+    // 落盘 trace:成功/失败都写,失败路径含 turn_failed 事件.
+    // 走 saveLocalAssistantFiles 直写 Dexie(与 context.json 同通道,不进 save 事务).
+    // 失败时文件名带 -failed-<ts> 后缀(assistantTracePath 对称 master 的 formatRuntimeTracePath).
+    const tracePath = assistantTracePath(nextAssistantTurn)
+    try {
+      await saveLocalAssistantFiles([{
+        path: tracePath,
+        content: serializeRuntimeTraceEvents(traceCollector.events),
+        createdAt: 0,
+        updatedAt: Date.now(),
+      }])
+    } catch {
+      // trace 落盘失败不影响主流程(诊断数据,非关键路径).
+    }
   }
 }
 

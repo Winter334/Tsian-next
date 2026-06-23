@@ -482,6 +482,8 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible"
+import { useAssistantTimeline, type ChatMessage } from "@/composables/useAssistantTimeline"
+import { confirm } from "@/composables/useConfirm"
 import {
   runAssistantChat,
   getPlatformActiveGameCard,
@@ -506,30 +508,8 @@ import {
 import type { AttachmentRef } from "@tsian/contracts"
 import AttachmentImage from "@/components/assistant/AttachmentImage.vue"
 
-/**
- * 过程事件节点:assistant 回合内按发生顺序排列的思考/工具.
- * 每个节点独立折叠/展开,纵向平铺呈现 agent 的行为顺序(非分类堆叠).
- * 最终回复不入时间线——它是 content,渲染在过程节点之后.
- * 不持久化——刷新/切换会话后消失,只留 content(最终回复).
- */
-type AssistantTimelineNode =
-  | { type: "thought"; id: string; round: number; text: string; collapsed: boolean }
-  | { type: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; output?: string; collapsed: boolean }
-
-interface ChatMessage {
-  role: "user" | "assistant"
-  content: string
-  /** 附件引用元数据(用户消息). 图片附件显示缩略图,文本附件显示文件标识. */
-  attachments?: AttachmentRef[]
-  // 过程事件(native 模式按发生顺序;不持久化,刷新后消失).
-  timeline?: AssistantTimelineNode[]
-  // 当前轮 content 流式文本(可见回复 provisional;onRoundEnd stop→写入 content).
-  // 不持久化——回合结束即清空,只作为流式期 UI 占位.
-  streamingText?: string
-  // 当前轮 reasoning 流式文本(思维链;累积不显示,onRoundEnd tool_calls→折叠 thought).
-  // 不持久化——回合结束即清空.
-  streamingReasoning?: string
-}
+// AssistantTimelineNode / ChatMessage 类型由 useAssistantTimeline composable 导出,
+// 这里 import 复用(见上方 import 块),避免视图 ↔ composable 循环依赖.
 
 /** 待发附件草稿(paste/drop/pick 添加后,send 前可移除). */
 interface PendingAttachment {
@@ -564,6 +544,9 @@ const editingIndex = ref<number | null>(null)
 const userPinnedToBottom = ref(true)
 // Abort controller for the in-flight chat turn (stop-generating button).
 const abortController = ref<AbortController | null>(null)
+// 当前进行中 turn 的 flush 函数(由 send() 内 useAssistantTimeline 提供).
+// 切会话/关页面时调它把流式缓冲落 content,防半截回复丢失.send finally 段清空.
+const currentTurnFlush = ref<(() => void) | null>(null)
 const sessionCreating = ref(false)
 const sessionRenaming = ref(false)
 const sessionDeleting = ref(false)
@@ -626,12 +609,45 @@ async function loadActiveSession() {
     ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
   }))
   await refreshSessions()
+
+  // 刷新/关页面恢复:检测上次未完成回复的恢复点(localStorage),提示用户是否保留.
+  // 恢复点只在有流式正文时写,且读后即清(一次性).确认则追加一条标记"已中断"的
+  // assistant 消息并持久化;取消则丢弃.轻量兜底,不保证 100% 救回.
+  const recovery = readRecoveryPoint(session.id)
+  if (recovery) {
+    clearRecoveryPoint(session.id)
+    const keep = await confirm({
+      title: "发现未完成的回复",
+      message: `上次会话有未完成的回复（${new Date(recovery.ts).toLocaleString()}），是否保留到历史？`,
+      confirmText: "保留",
+      cancelText: "丢弃",
+    })
+    if (keep) {
+      messages.value.push({
+        role: "assistant",
+        content: `${recovery.text}\n\n_（回复中断，已自动保留）_`,
+      })
+      await persistCurrentSession()
+    }
+  }
+
   await scrollToBottom()
 }
 
 async function handleSelectSession(id: string) {
   if (id === activeSessionId.value) {
     return
+  }
+  // 切会话前:若当前有进行中的 turn 且有流式缓冲,先 flush 落 content + 持久化,
+  // 防半截回复丢失(用户主动切走,可靠执行).flush 后 abort 当前 turn.
+  if (sending.value && currentTurnFlush.value) {
+    currentTurnFlush.value()
+    const lastMsg = messages.value[messages.value.length - 1]
+    if (lastMsg && lastMsg.role === "assistant" && lastMsg.content) {
+      lastMsg.content = `${lastMsg.content}\n\n_（已切换会话）_`
+    }
+    await persistCurrentSession()
+    abortController.value?.abort()
   }
   // Optimistic UI update first: switch highlight immediately, then load the
   // target session's messages (one fast read). Persist the previous session in
@@ -870,80 +886,16 @@ async function send() {
     .slice(0, -2)
     .map((msg) => ({ role: msg.role, content: msg.content }))
 
-  // ① 时间线式流式:native 模式按 round 顺序把过程事件(thought/tool)作为独立节点
-  // 纵向平铺.onDelta 带 kind 区分——reasoning(思维链,DeepSeek reasoning_content /
-  // Claude thinking_delta)累积进 streamingReasoning,不流式显示(保持安静),回合结束
-  // tool_calls 时折叠为 thought 节点(空则不建,避免空思考块);content(可见回复)累积
-  // 进 streamingText 流式显示,回合结束 stop 时写入 content.这样:
-  //   - 普通问答(单 round stop):看到正文流式,思考(若有 reasoning)折叠成「思考」可展开.
-  //   - 工具调用轮:思考折叠,正文一般为空(工具调用的 content delta 是噪声,丢弃).
-  // tool 节点按 callId 去重更新 status/output.
+  // 时间线式流式:native 模式按 round 顺序把过程事件(thought/tool)作为独立节点纵向平铺.
+  // onDelta/onRoundEnd/onTool 的解析逻辑抽到 useAssistantTimeline composable(纯流式状态,
+  // 不碰 DOM/持久化);这里只把 maybeScrollToBottom 作为 onUpdate 传入,让视图层保留滚动控制.
   // text 模式无回调,content 在 reconcile 一次性赋值,timeline 为空——降级为现状.
-  const timeline = assistantMsg.timeline!
-
-  const onDelta = (agentId: string, delta: string, round: number, kind: "reasoning" | "content") => {
-    if (kind === "reasoning") {
-      // 思维链累积,不流式显示(默认折叠);onRoundEnd tool_calls 时落为 thought 节点.
-      assistantMsg.streamingReasoning = (assistantMsg.streamingReasoning ?? "") + delta
-    } else {
-      // 可见回复流式累积;onRoundEnd stop 时写入 content.
-      assistantMsg.streamingText = (assistantMsg.streamingText ?? "") + delta
-      maybeScrollToBottom()
-    }
-  }
-
-  const onRoundEnd = (agentId: string, round: number, finishReason: "stop" | "tool_calls") => {
-    const reasoning = assistantMsg.streamingReasoning ?? ""
-    if (finishReason === "tool_calls") {
-      // 思考轮:把累积的思维链折叠为 thought 节点(空白则跳过,不渲染空思考块).
-      // tool_calls 轮的 content delta 是工具调用前后的噪声(不是最终回复),丢弃.
-      if (reasoning.trim()) {
-        timeline.push({ type: "thought", id: `thought-r${round}`, round, text: reasoning, collapsed: true })
-      }
-    } else {
-      // 最终轮:streamingText 即最终回复,写入 content(渲染层在过程节点之后展示).
-      // 若该轮有 reasoning(部分模型在 stop 轮也吐思维链),也折叠为 thought 节点.
-      if (reasoning.trim()) {
-        timeline.push({ type: "thought", id: `thought-r${round}`, round, text: reasoning, collapsed: true })
-      }
-      assistantMsg.content = assistantMsg.streamingText ?? ""
-    }
-    // 清空两个缓冲:下一轮 onDelta 重新累积(或回合已结束).
-    assistantMsg.streamingReasoning = ""
-    assistantMsg.streamingText = ""
-    maybeScrollToBottom()
-  }
-
-  const onTool = (
-    agentId: string,
-    round: number,
-    callId: string,
-    name: string,
-    status: "loading" | "running" | "success" | "failed",
-    output?: string,
-  ) => {
-    // 按 callId 去重:同一工具调用的 loading→success/failed 更新同一节点.
-    const existing = timeline.find(
-      (n): n is AssistantTimelineNode & { type: "tool" } => n.type === "tool" && n.id === callId,
-    )
-    if (existing) {
-      existing.status = status
-      if (output !== undefined) {
-        existing.output = output
-      }
-    } else {
-      timeline.push({
-        type: "tool",
-        id: callId,
-        round,
-        name,
-        status,
-        collapsed: false,
-        ...(output !== undefined ? { output } : {}),
-      })
-    }
-    maybeScrollToBottom()
-  }
+  const { timeline, onDelta, onRoundEnd, onTool, flushStreaming, finalize } = useAssistantTimeline(
+    assistantMsg,
+    () => maybeScrollToBottom(),
+  )
+  // 暴露 flush 给组件作用域,供切会话/关页面时落盘流式缓冲.
+  currentTurnFlush.value = flushStreaming
 
   // ③ Stop-generating: an AbortController for this turn, abortable from the UI.
   const controller = new AbortController()
@@ -973,32 +925,14 @@ async function send() {
     assistantMsg.content = result.replyText
     assistantMsg.streamingText = ""
     assistantMsg.streamingReasoning = ""
-    await persistCurrentSession()
+    // 消息 + context 已由 host(runAssistantChat)同步写入,前端不再调 persistCurrentSession
+    // (消除双 IO 竞态).catch 路径仍保留前端持久化作兜底(host catch 不写消息).
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError"
     const budgetExhausted = error instanceof Error && error.name === "ContextBudgetExhaustedError"
     const taskTimeout = error instanceof Error && error.name === "TaskTimeoutError"
     const taskStalled = error instanceof Error && error.name === "TaskCompressionStalledError"
-    // 把仍在流式的 provisional 文本落盘,避免中止/出错时丢失用户已见进度:
-    //   - streamingReasoning → 折叠为 thought 节点(若非空,保留已产出的思维链)
-    //   - streamingText → content(已见的回复正文)
-    const flushStreaming = () => {
-      const reasoning = assistantMsg.streamingReasoning ?? ""
-      if (reasoning.trim()) {
-        timeline.push({
-          type: "thought",
-          id: `thought-flush-${timeline.length}`,
-          round: -1,
-          text: reasoning,
-          collapsed: true,
-        })
-      }
-      assistantMsg.streamingReasoning = ""
-      if (assistantMsg.streamingText) {
-        assistantMsg.content = assistantMsg.streamingText
-        assistantMsg.streamingText = ""
-      }
-    }
+    // flushStreaming 由 useAssistantTimeline 提供:把流式缓冲落盘(防中止/出错丢进度).
     if (aborted) {
       // Keep the partial text; mark it so the user knows it was cut short.
       flushStreaming()
@@ -1040,14 +974,9 @@ async function send() {
       await persistCurrentSession()
     }
   } finally {
-    // 回合结束:折叠所有仍展开的 thought/tool 节点(过程完成,保留可展开回看).
-    for (const node of timeline) {
-      if (node.type === "thought" || node.type === "tool") {
-        node.collapsed = true
-      }
-    }
-    assistantMsg.streamingText = ""
-    assistantMsg.streamingReasoning = ""
+    // 回合结束:折叠所有仍展开的 thought/tool 节点 + 清空流式缓冲(composable 负责).
+    finalize()
+    currentTurnFlush.value = null
     abortController.value = null
     sending.value = false
     await scrollToBottom()
@@ -1199,8 +1128,73 @@ async function handleAssistantConfigChange() {
   await loadProviderPreset()
 }
 
+// ── 刷新/关页面恢复点 ──
+// streaming 期间 beforeunload/visibilitychange(hidden) 同步写 localStorage,
+// 下次进会话检测到恢复点则提示用户是否保留.轻量兜底:不保证 100% 救回
+// (卸载时 JS 执行窗口极短),但大多数刷新场景能保住已见正文.
+const RECOVER_KEY_PREFIX = "assistant:recover:"
+
+function recoverKey(sessionId: string): string {
+  return `${RECOVER_KEY_PREFIX}${sessionId}`
+}
+
+/** 写恢复点(同步 localStorage,不阻塞卸载).只在有流式正文时写. */
+function writeRecoveryPoint(sessionId: string): void {
+  if (!sending.value || !currentTurnFlush.value) return
+  const lastMsg = messages.value[messages.value.length - 1]
+  if (!lastMsg || lastMsg.role !== "assistant") return
+  const text = lastMsg.streamingText ?? lastMsg.content
+  if (!text) return
+  try {
+    localStorage.setItem(
+      recoverKey(sessionId),
+      JSON.stringify({ text, ts: Date.now() }),
+    )
+  } catch {
+    // localStorage 写失败(配额满/隐私模式)静默忽略,不阻断.
+  }
+}
+
+/** 读恢复点.有则返回 {text, ts},无则 null.读后不清除(由调用方决定). */
+function readRecoveryPoint(sessionId: string): { text: string; ts: number } | null {
+  try {
+    const raw = localStorage.getItem(recoverKey(sessionId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw) as { text?: string; ts?: number }
+    if (typeof parsed.text === "string" && typeof parsed.ts === "number") {
+      return { text: parsed.text, ts: parsed.ts }
+    }
+  } catch {
+    // 损坏的恢复点静默忽略.
+  }
+  return null
+}
+
+/** 清除恢复点. */
+function clearRecoveryPoint(sessionId: string): void {
+  try {
+    localStorage.removeItem(recoverKey(sessionId))
+  } catch {
+    // 静默忽略.
+  }
+}
+
+function onBeforeUnloadRecovery() {
+  if (activeSessionId.value) {
+    writeRecoveryPoint(activeSessionId.value)
+  }
+}
+
+function onVisibilityChangeRecovery() {
+  if (document.visibilityState === "hidden" && activeSessionId.value) {
+    writeRecoveryPoint(activeSessionId.value)
+  }
+}
+
 onMounted(async () => {
   window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+  window.addEventListener("beforeunload", onBeforeUnloadRecovery)
+  document.addEventListener("visibilitychange", onVisibilityChangeRecovery)
   await refresh()
   await loadActiveSession()
   await loadProviderPreset()
@@ -1209,6 +1203,8 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+  window.removeEventListener("beforeunload", onBeforeUnloadRecovery)
+  document.removeEventListener("visibilitychange", onVisibilityChangeRecovery)
 })
 
 function onActiveCardChanged(event: Event) {
