@@ -1,16 +1,22 @@
 import type { AttachmentRef } from "@tsian/contracts"
 
 /**
- * 过程事件节点:assistant 回合内按发生顺序排列的思考/工具.
+ * 过程事件节点:assistant 回合内按发生顺序排列的思考/工具/过渡文本.
  * 每个节点独立折叠/展开,纵向平铺呈现 agent 的行为顺序(非分类堆叠).
  * 最终回复不入时间线——它是 content,渲染在过程节点之后.
  * 不持久化——刷新/切换会话后消失,只留 content(最终回复).
+ *
+ * - thought: tool_calls 轮的推理思维链,默认折叠.
+ * - tool: 工具调用节点,按 callId 去重.
+ * - interim: tool_calls 轮模型在调用工具前输出的过渡文本(如"我先看一下…"),
+ *   当正常可见回复处理,始终展开(collapsed 固定 false),平铺在该轮工具节点之前.
  *
  * 类型定义集中在 composable 导出,视图层 import 复用,避免循环依赖.
  */
 export type AssistantTimelineNode =
   | { type: "thought"; id: string; round: number; text: string; collapsed: boolean }
   | { type: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; output?: string; collapsed: boolean }
+  | { type: "interim"; id: string; round: number; text: string; collapsed: boolean }
 
 /**
  * 聊天消息(单条).user/assistant 共用结构;assistant 额外承载
@@ -62,8 +68,13 @@ export function useAssistantTimeline(
   const onRoundEnd = (_agentId: string, round: number, finishReason: "stop" | "tool_calls") => {
     const reasoning = assistantMsg.streamingReasoning ?? ""
     if (finishReason === "tool_calls") {
-      // 思考轮:把累积的思维链折叠为 thought 节点(空白则跳过,不渲染空思考块).
-      // tool_calls 轮的 content delta 是工具调用前后的噪声(不是最终回复),丢弃.
+      // 工具调用轮:模型常在调用工具前输出一段过渡文本(如"我先看一下游戏卡内容"),
+      // 流式期用户已见,这里保留为 interim 节点(始终展开,正文样式渲染),不再丢弃.
+      const interimText = assistantMsg.streamingText ?? ""
+      if (interimText.trim()) {
+        timeline.push({ type: "interim", id: `interim-r${round}`, round, text: interimText, collapsed: false })
+      }
+      // 思维链折叠为 thought 节点(空白则跳过,不渲染空思考块).
       if (reasoning.trim()) {
         timeline.push({ type: "thought", id: `thought-r${round}`, round, text: reasoning, collapsed: true })
       }
@@ -130,9 +141,23 @@ export function useAssistantTimeline(
       })
     }
     assistantMsg.streamingReasoning = ""
+    // 过渡文本(tool_calls 轮的 content):中止时也落为 interim 节点(与 onRoundEnd 一致),
+    // 避免中止/切会话时过渡文本丢失.若已是 stop 轮最终回复则落 content.
     if (assistantMsg.streamingText) {
-      assistantMsg.content = assistantMsg.streamingText
+      const text = assistantMsg.streamingText
       assistantMsg.streamingText = ""
+      if (assistantMsg.content) {
+        // 已有最终 content(极少见),追加而非覆盖.
+        assistantMsg.content = `${assistantMsg.content}\n\n${text}`
+      } else {
+        timeline.push({
+          type: "interim",
+          id: `interim-flush-${timeline.length}`,
+          round: -1,
+          text,
+          collapsed: false,
+        })
+      }
     }
   }
 
@@ -142,6 +167,7 @@ export function useAssistantTimeline(
    */
   function finalize(): void {
     for (const node of timeline) {
+      // 折叠 thought/tool(过程完成,保留可展开回看);interim 始终展开(当正常回复).
       if (node.type === "thought" || node.type === "tool") {
         node.collapsed = true
       }

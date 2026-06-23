@@ -16,6 +16,10 @@ export interface AssistantSessionSummary {
 const LIST_KEY_PREFIX = "assistant-session-list:"
 const ACTIVE_KEY_PREFIX = "assistant-active:"
 const MESSAGES_KEY_PREFIX = "assistant-session:"
+/** Per-session last input-token usage for the context-window ring (single number). */
+const CONTEXT_USED_KEY_PREFIX = "assistant-context-used:"
+/** Per-session last scroll position of the conversation list (single number). */
+const SCROLL_TOP_KEY_PREFIX = "assistant-scroll-top:"
 /** Legacy single-conversation key from the first persistence slice. */
 const LEGACY_CONVERSATION_KEY_PREFIX = "assistant-conversation:"
 
@@ -31,6 +35,14 @@ function activeKey(mode: AssistantMode): string {
 
 function messagesKey(id: string): string {
   return `${MESSAGES_KEY_PREFIX}${id}`
+}
+
+function contextUsedKey(id: string): string {
+  return `${CONTEXT_USED_KEY_PREFIX}${id}`
+}
+
+function scrollTopKey(id: string): string {
+  return `${SCROLL_TOP_KEY_PREFIX}${id}`
 }
 
 function legacyKey(mode: AssistantMode): string {
@@ -194,6 +206,51 @@ export async function getAssistantSessionMessages(
   }
 }
 
+/**
+ * Persist the last input-token usage for a session's context-window ring.
+ * Lightweight single number; written after each successful reply so a reloaded
+ * session restores the ring instead of resetting to 0.
+ */
+export async function saveContextUsed(id: string, value: number): Promise<void> {
+  await localDb.meta.put({ key: contextUsedKey(id), value: String(value) })
+}
+
+/**
+ * Read the last persisted input-token usage for a session. Returns 0 when no
+ * record exists (fresh session or pre-persistence legacy session).
+ */
+export async function loadContextUsed(id: string): Promise<number> {
+  const record = await localDb.meta.get(contextUsedKey(id))
+  if (!record?.value) {
+    return 0
+  }
+  const parsed = Number(record.value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+/**
+ * Persist the conversation list's last scroll position for a session. Lets the
+ * view restore it after a focus switch (browsers async-reset scrollTop on
+ * inactive/occluded scroll containers). Fire-and-forget from a rAF-throttled
+ * scroll handler; a missed final write is harmless (next scroll re-syncs).
+ */
+export async function saveScrollTop(id: string, value: number): Promise<void> {
+  await localDb.meta.put({ key: scrollTopKey(id), value: String(value) })
+}
+
+/**
+ * Read the last persisted scroll position for a session. Returns 0 when no
+ * record exists.
+ */
+export async function loadScrollTop(id: string): Promise<number> {
+  const record = await localDb.meta.get(scrollTopKey(id))
+  if (!record?.value) {
+    return 0
+  }
+  const parsed = Number(record.value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 export interface SaveAssistantSessionMessagesOptions {
   /**
    * Whether to bump the session's `updatedAt` timestamp and re-sort the list.
@@ -260,6 +317,8 @@ export async function deleteAssistantSession(
   const sessions = (await readSessionList(mode)).filter((entry) => entry.id !== id)
   await writeSessionList(mode, sessions)
   await localDb.meta.delete(messagesKey(id))
+  await localDb.meta.delete(contextUsedKey(id))
+  await localDb.meta.delete(scrollTopKey(id))
   // 连带清理该会话的 agent 上下文快照(虚拟文件),防孤儿残留(design 06-20-assistant-context-persistence §3.6).
   // deleteLocalAssistantFile 内部已 catch,不会阻塞会话删除.
   await deleteLocalAssistantFile(assistantContextPath(id))
