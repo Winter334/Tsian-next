@@ -1054,3 +1054,37 @@ Implemented full multimodal attachment support for the desktop assistant chat (t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 83: Skill 脚本执行能力升级与文档约定
+
+**Date**: 2026-06-24
+**Task**: Skill 脚本执行能力升级与文档约定
+**Package**: platform-web
+**Branch**: `feat/inspect-frontend-action-aria`
+
+### Summary
+
+升级 browser_script executor 执行能力：vendor 第三方库 + 原生浏览器 API + 精简 API 面。AsyncFunction 形参删除 fetch/globalThis/self（脚本拿 Worker 原生，UMD 库挂 globalThis），移除 tsian.fetch（tsian 精简为 workspace.*/log/trace），新增 resolveAndInlineImportScripts 源码预拼接（扫描 importScripts 调用->相对 skill 目录解析->normalizeWorkspacePath 规范化->逃逸/绝对URL校验->读 vendor 文件->MIME 校验->拼到脚本前），复刻前端 ?raw vendor 范式到 runtime 侧。skill-authoring 文档新增 API Surface + Vendor Libraries 章节。端到端真实 Worker 测试全通过（UMD 挂载/裸 fetch/console/setTimeout/tsian 精简/DOM 屏蔽/importScripts stub），路径校验全通过（修复初版 startsWith 对 ../ 逃逸失效 bug，改用规范化后校验+显式协议前缀拒绝）。build 全绿，改动 2 文件，use_skill/run_script 不变。ESM 不开放（UMD 够用，留作后续演进）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `47f0889` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

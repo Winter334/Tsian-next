@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 82
-- **Last Active**: 2026-06-23
+- **Total Sessions**: 83
+- **Last Active**: 2026-06-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1056 | Active |
+| `journal-2.md` | ~1090 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 83 | 2026-06-24 | Skill 脚本执行能力升级与文档约定 | `47f0889` | `feat/inspect-frontend-action-aria` |
 | 82 | 2026-06-23 | 默认前端 UI 重做与协议层原地验证 | `4828592` | `master` |
 | 81 | 2026-06-23 | Assistant Attachment Upload — multimodal image+text attachments for desktop assistant | `91730ae`, `df1ec81`, `96c612e`, `e6e71ac`, `553d86c`, `82584ef` | `master` |
 | 80 | 2026-06-22 | Library toolbar + platform event-bus auto-refresh | `28cef8b` | `master` |
