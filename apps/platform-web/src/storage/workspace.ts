@@ -54,12 +54,14 @@ export class WorkspaceStorageError extends Error {
   }
 }
 
-const DEFAULT_WORKSPACE_VERSION = 7
+const DEFAULT_WORKSPACE_VERSION = 8
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 const DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS = new Set([
   "save/README.md",
   "save/agents/master/notes.md",
   "save/agents/retrieval/notes.md",
+  "save/agents/retrieval/agent.json",
+  "save/agents/retrieval/AGENT.md",
   "save/agents/post-processing/notes.md",
   "save/state/README.md",
   "save/state/schemas/README.md",
@@ -814,7 +816,7 @@ const DEFAULT_WORKSPACE_FILES: Array<{
         disabled: [],
       },
       platformTools: {
-        enabled: ["workspace_read"],
+        enabled: ["workspace_read", "workspace_semantic_search"],
         disabled: [],
       },
       workspaceAccess: {
@@ -831,6 +833,9 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "Given a retrieval intent, run multi-step workspace.search to find the most relevant content, then read and refine it.",
       "Use `read_entity` (the entity-reader Skill) instead of bare `read` when reading entity files—it auto-expands one level of `_ref`/`_dir` references so you get index.json plus direct children in one call.",
       "If the returned object still contains `_ref`/`_dir` markers and you need deeper detail, call `read_entity` again on that path.",
+      "`semantic_search` recalls distant past events/lore by meaning when the player's words share no surface terms with the stored text (e.g. 玩家说\"灯塔的事\" but the text says \"她走向海边那座塔\"). It returns small-K candidates with path/type/preview—read the preview to judge, then `read` the chosen path for full text. `typeFilter` narrows the corpus: turn (raw narrative), agent-notes, or memory-summary.",
+      "`search` is still the tool for exact wording or structural markers (a specific symbol, a JSON field). Use both in one turn when useful: semantic recall for candidates + literal search to verify details.",
+      "When `semantic_search` returns empty (index not built or nothing relevant), fall back to `search`.",
       "Only return refined conclusions—what the master agent needs to know, not raw file dumps.",
       "Navigate by entity id (directory names) and tags anchors; rely on semantic search rather than a pre-built relationship graph.",
       "Keep durable identity and work style in `SOUL.md`.",

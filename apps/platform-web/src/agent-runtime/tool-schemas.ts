@@ -247,6 +247,31 @@ const workspaceSearchSchema: ToolSchema = {
   },
 }
 
+const workspaceSemanticSearchSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch,
+  description:
+    "Semantic search over save-runtime memory (past narrative turns, agent notes, memory summaries) by meaning, not literal wording. Use it to recall distant events/lore that fell out of the context window when the player's words and the stored text share no surface terms (e.g. 玩家说\"灯塔的事\" but the text says \"她走向海边那座塔\"). Returns top-K candidates with path/type/preview — read the chosen ones with `read` for full text. Returns empty when the index is not built or nothing is relevant; fall back to `search` for exact wording or structured markers. `typeFilter` narrows to one corpus kind: turn (raw narrative), agent-notes, or memory-summary.",
+  parameters: {
+    type: "object",
+    required: ["semanticQuery"],
+    properties: {
+      semanticQuery: {
+        type: "string",
+        description: "Natural-language query to embed and match by meaning.",
+      },
+      typeFilter: {
+        type: "string",
+        enum: ["turn", "agent-notes", "memory-summary"],
+        description: "Restrict to one corpus kind. Omit to search all kinds.",
+      },
+      limit: {
+        type: "integer",
+        description: "Maximum candidates to return (default 5, cap 8).",
+      },
+    },
+  },
+}
+
 const workspaceGlobSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.glob,
   description:
@@ -403,6 +428,10 @@ export function buildEnabledToolSchemas(options: {
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.workspaceWrite,
   )
+  const canSemanticSearch = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
+  )
 
   const schemas: ToolSchema[] = [useSkillSchema, runScriptSchema]
 
@@ -427,6 +456,10 @@ export function buildEnabledToolSchemas(options: {
       workspaceMoveSchema,
       workspaceDeleteSchema,
     )
+  }
+
+  if (canSemanticSearch) {
+    schemas.push(workspaceSemanticSearchSchema)
   }
 
   const canInspectFrontend = platformToolEnabled(

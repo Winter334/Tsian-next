@@ -61,6 +61,12 @@
         @set-strategy="handleSetStrategy"
       />
 
+      <SemanticSearchScreen
+        v-else-if="screen.kind === 'semantic-search'"
+        :draft="platformConfigDraft"
+        @save="handleSaveEmbeddingConfig"
+      />
+
       <div
         v-else
         class="grid h-full place-items-center p-6"
@@ -96,6 +102,7 @@ import ProviderManagementScreen from "@/components/settings/ProviderManagementSc
 import ModelConfigScreen from "@/components/settings/ModelConfigScreen.vue"
 import AddModelDialog from "@/components/settings/AddModelDialog.vue"
 import EditModelParamsDialog from "@/components/settings/EditModelParamsDialog.vue"
+import SemanticSearchScreen from "@/components/settings/SemanticSearchScreen.vue"
 import { confirm } from "@/composables/useConfirm"
 import { openDialogForm } from "@/composables/useDialogForm"
 import { toast } from "@/composables/useToast"
@@ -104,6 +111,7 @@ import {
   type BrowserAiProviderKind,
   type BrowserAiProviderPreset,
   type BrowserAiToolCallMode,
+  type BrowserEmbeddingConfig,
   type BrowserPlatformConfigDraft,
   createBrowserAiModelConfig,
   createBrowserAiProviderPreset,
@@ -111,12 +119,14 @@ import {
   fetchBrowserAiProviderModels,
   getBrowserPlatformConfigDraft,
   saveBrowserPlatformConfigDraftLenient,
+  saveEmbeddingConfig,
 } from "@/config/ai"
 
 type Screen =
   | { kind: "hub" }
   | { kind: "providers" }
   | { kind: "models"; typeId: string; presetId: string }
+  | { kind: "semantic-search" }
 
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(clonePlatformConfigDraft(getBrowserPlatformConfigDraft()))
 const addModelOpen = ref(false)
@@ -189,6 +199,8 @@ const headerTitle = computed(() => {
       return "提供商管理"
     case "models":
       return activePreset.value ? `${activePreset.value.name || "未命名"} · 模型` : "模型配置"
+    case "semantic-search":
+      return "语义检索"
     default:
       return ""
   }
@@ -209,6 +221,7 @@ function clonePlatformConfigDraft(input: BrowserPlatformConfigDraft): BrowserPla
       ...type,
       presets: type.presets.map(clonePreset),
     })),
+    embeddingConfig: { ...input.embeddingConfig },
   }
 }
 
@@ -217,15 +230,23 @@ function enterHubEntry(id: string): void {
     screen.value = { kind: "providers" }
     // Default-select the first type, if any.
     activeTypeId.value = platformConfigDraft.value.providerTypes[0]?.id ?? ""
+  } else if (id === "semantic-search") {
+    screen.value = { kind: "semantic-search" }
   }
 }
 
 function goBack(): void {
   if (screen.value.kind === "models") {
     screen.value = { kind: "providers" }
-  } else if (screen.value.kind === "providers") {
+  } else if (screen.value.kind === "providers" || screen.value.kind === "semantic-search") {
     screen.value = { kind: "hub" }
   }
+}
+
+function handleSaveEmbeddingConfig(config: BrowserEmbeddingConfig): void {
+  saveEmbeddingConfig(config)
+  // 同步本地 draft(embeddingConfig 是 draft 的一部分),让 hub 状态提示保持一致.
+  platformConfigDraft.value = clonePlatformConfigDraft(getBrowserPlatformConfigDraft())
 }
 
 function handleSelectType(typeId: string): void {

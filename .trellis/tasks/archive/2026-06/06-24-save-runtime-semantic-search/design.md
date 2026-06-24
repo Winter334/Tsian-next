@@ -7,12 +7,12 @@
 ```
 ┌─ contracts (packages/contracts/src/runtime.ts)
 │   WorkspaceOperationName +="semantic_search"
-│   WorkspaceOperationRequest += query/typeFilter/entityFilter(语义参数)
-│   WorkspaceSearchResult += 元数据回显字段(turn/type/entities?)
-│   AgentPlatformToolName += "workspace_semantic_search"(独立粒度,见 §5)
+│   WorkspaceOperationRequest += semanticQuery/typeFilter(语义参数)
+│   WorkspaceSearchResult += 元数据回显字段(turn/semanticType)
+│   AgentPlatformToolName += "workspace_semantic_search"(独立粒度,见 §2.1)
 │
 ├─ 索引层 (新模块 apps/platform-web/src/agent-runtime/semantic-index/)
-│   embedding-client.ts    — 远程 embedding API 调用(复用 buildAuthHeadersForKind)
+│   embedding-client.ts    — 远程 embedding API 调用(openai-compatible only,Bearer)
 │   embedding-config.ts    — embeddingConfig 读写(localStorage,独立段)
 │   index-store.ts         — Dexie embeddingIndex 表 CRUD + 按 owner 取/删
 │   chunker.ts             — 三分语料切块(turn 整体 / markdown 按段 / JSON 跳过)
@@ -24,9 +24,10 @@
 │   executeWorkspaceOperation 加 "semantic_search" 分支 → 调 semantic-index.search
 │   DEFAULT_RUNTIME_WORKSPACE_OPERATIONS += "semantic_search"(只读同级)
 │
-├─ 写钩子 (apps/platform-web/src/platform-host/workspace-volumes.ts)
-│   executeWorkspaceMutation write/delete 路径挂钩 → 入 embed-queue(异步)
-│   (staged transaction 不进 dispatch,由 staleness 兜底,不依赖钩子)
+├─ proactive enqueue (apps/platform-web/src/platform-host/index.ts)
+│   turn commit 后(commitSuccessfulRuntimeTurnForSave 返回)对当轮 save-runtime
+│   文件 staleness 检查 + 入 embed-queue(异步,不阻塞 turn)
+│   (不挂 executeWorkspaceMutation——staged 路径绕过它,对主语料是死代码)
 │
 ├─ 工具暴露 (apps/platform-web/src/agent-runtime/workspace-tools.ts + permissions)
 │   RUNTIME_WORKSPACE_TOOL_NAMES += semanticSearch
@@ -37,11 +38,12 @@
 │
 ├─ 控制面板 (apps/platform-web/src/config/ai.ts + views/SettingsView.vue)
 │   BrowserEmbeddingConfig 类型 + embeddingConfig 读写(独立段)
-│   buildAuthHeadersForKind 抽出共享 helper
 │   SettingsView 加"语义检索"分区
 │
 └─ Dexie (apps/platform-web/src/storage/db.ts)
-    TsianLocalDb v10 → v11,加 embeddingIndex 表
+    库名 tsian-agent-runtime-v10 → v11(this.version(1) 重置,无迁移)
+    public/tsian-game-card-frontend-sw.js 镜像库名同步
+    加 embeddingIndex 表
 ```
 
 ## 2. 数据契约
@@ -61,8 +63,6 @@ export interface WorkspaceOperationRequest {
   semanticQuery?: string
   /** semantic_search: 语料类型过滤(turn/agent-notes/memory-summary)。 */
   typeFilter?: WorkspaceSemanticType
-  /** semantic_search: 实体标签过滤(可选,agent maintenance 产出)。 */
-  entityFilter?: string[]
 }
 
 export type WorkspaceSemanticType = "turn" | "agent-notes" | "memory-summary"
@@ -73,10 +73,6 @@ export interface WorkspaceSearchResult {
   semanticType?: WorkspaceSemanticType
   /** semantic_search 模式回显:turn 编号(raw turn 专用)。 */
   turn?: number
-  /** semantic_search 模式回显:实体标签(若有)。 */
-  entities?: string[]
-  /** semantic_search 模式:语义相似度分数(0-1)。字面 search 用 score 字段。 */
-  semanticScore?: number
 }
 
 export type AgentPlatformToolName =
@@ -89,10 +85,14 @@ export type AgentPlatformToolName =
 
 **为什么 `workspace_semantic_search` 独立粒度,不复用 `workspace_read`**:`workspace_read` 映射 list/search/read/glob 四个只读 op。如果把 semantic_search 塞进 workspace_read,所有有 workspace_read 的 agent 自动获得 semantic_search——破坏 per-agent 粒度(retrieval 要、master 不要)。独立粒度让"谁能语义检索"可单独配置,且与 embedding 能力开关正交(见 §5 双开关)。
 
+**cosine 相似度复用 `score`,不另设 `semanticScore`**:MVP retrieval 分 `semantic_search` 与 `search` 两个工具调,不混排,无需为"可能混排"预留独立字段。结果回显只加 `semanticType`/`turn` 两个语义模式专属字段。
+
 ### 2.2 Dexie embeddingIndex 表
 
 ```ts
-// db.ts — TsianLocalDb v11
+// db.ts — 库名 tsian-agent-runtime-v11,this.version(1) 重置(原型期换名换代,
+// 同 v9→v10 先例,无迁移,旧库 abandoned)。public/tsian-game-card-frontend-sw.js
+// 镜像库名同步。
 export interface LocalEmbeddingIndexRecord {
   /** 主键,确定性 id: `${scope}:${ownerId}:${path}:${chunkIndex}` */
   id: string
@@ -108,7 +108,7 @@ export interface LocalEmbeddingIndexRecord {
   type: WorkspaceSemanticType
   /** raw turn 的 turn 编号(仅 type=turn)。 */
   turn?: number
-  /** 原始文件 createdAt(用于近因加权)。 */
+  /** 原始文件 createdAt。 */
   fileCreatedAt?: number
   /** 文件 updatedAt 快照(staleness 比对基准)。 */
   fileUpdatedAt: number
@@ -133,7 +133,7 @@ export interface BrowserEmbeddingConfig {
   apiKey: string
   model: string
   dimensions: number  // 必填,玩家从模型规格查得
-  // 无 kind 字段——协议从 model 名内部推断
+  // 无 kind 字段——MVP 只支持 openai-compatible,请求恒 Bearer
 }
 
 // 存进 tsian-platform-config 的 embeddingConfig 字段(与 providerTypes 平级)
@@ -142,23 +142,7 @@ export interface BrowserEmbeddingConfig {
 
 `resolveEmbeddingConfig()`:enabled && baseUrl && apiKey && model && dimensions 全满足 → 返回配置;否则 null。null = 索引不生长(链 1 关闭)。
 
-**协议推断(内部,玩家无感)**:
-
-```ts
-type EmbeddingProtocol = "openai-compatible" | "gemini-native"
-
-function inferEmbeddingProtocol(model: string): EmbeddingProtocol {
-  // Gemini 原生 model 名有稳定特征
-  if (/^(gemini-embedding|text-embedding-0\d\d)/i.test(model)) return "gemini-native"
-  // 默认 OpenAI 兼容:覆盖硅基流动/Qwen/bge/OpenAI/Cohere/Jina/各种中转站
-  return "openai-compatible"
-}
-```
-
-- OpenAI 兼容:`POST {baseUrl}/embeddings`,body `{model, input: string[]}`,响应 `data[].embedding`,auth `Authorization: Bearer {apiKey}`。
-- Gemini 原生:`POST {baseUrl}/models/{model}:embedContent`,body `{content: {parts: [{text}]}}`,响应 `embedding.values`,auth `x-goog-api-key: {apiKey}`。
-- 中转站透传 model 名不变,推断正确(硅基流动中转 OpenAI 的 `text-embedding-3-large` 仍命中默认分支)。
-- MVP 只需实现 openai-compatible(已定选型硅基流动 + Qwen 走这个);Gemini 原生分支留骨架,可后置。
+**协议**:MVP 只支持 openai-compatible——`POST {baseUrl}/embeddings`,body `{model, input: string[]}`,响应 `data[].embedding`,auth `Authorization: Bearer {apiKey}`。无协议推断、无 Gemini 原生分支;用到再加。dimensions 从 config 读(玩家必填),用于校验返回向量维度一致,不一致 throw(调用方 catch 返回空)。
 
 **dimensions 必填**:不自动探测。维度是向量存储 + cosine 的硬约束,填错致静默 bug。玩家从模型规格查得后明确填入。`resolveEmbeddingConfig` 校验 dimensions 为正整数。
 
@@ -181,7 +165,7 @@ function chunkWorkspaceFile(file: WorkspaceFile): Chunk[]
 
 - **一个文件一个 chunk**,不按 token 切。
 - 解析 `RawAirpHistoryTurnRecord`(schema `tsian.airp.history.turn.v1`):取 `turn`、`createdAt`、`messages`。
-- 嵌入文本 = `玩家：{user.content}\n叙事：{assistant.content}`。可选前情提要前缀(前 N 轮摘要)——MVP 先不做,直拼。
+- 嵌入文本 = `玩家：{user.content}\n叙事：{assistant.content}`(user/assistant 直拼,无前情提要前缀)。
 - type=`turn`,turn 字段填 record.turn,fileCreatedAt 填 createdAt 时间戳。
 - 解析失败(JSON 损坏)→ 跳过该文件,不阻塞索引。
 
@@ -219,15 +203,13 @@ async function semanticSearch(
 ```
 
 1. **embed 查询**:调 embedding-client,`input.semanticQuery` → queryVector。失败 → 返回空数组(不抛错)。
-2. **staleness 兜底**:枚举 scopedReadableFiles,比 `file.updatedAt` vs 索引 `fileUpdatedAt`。stale/missing 的文件 → 入 embed-queue 等补嵌(或同步补嵌当前查询相关 owner,design 决策:倾向异步补,本次查询用现有索引)。
+2. **staleness 兜底**:枚举 scopedReadableFiles,比 `file.updatedAt` vs 索引 `fileUpdatedAt`。stale/missing 的文件 → 入 embed-queue 等补嵌(异步补,本次查询用现有索引)。
 3. **取候选向量**:`embeddingIndex.where("[scope+ownerId]").equals([scope, ownerId])` 取该 owner 全部向量。
 4. **type pre-filter**:若 `input.typeFilter` 指定,过滤 `record.type === typeFilter`。未指定 → 全类型。
-5. **entity filter(可选)**:若 `input.entityFilter` 指定且 record 有 entities 字段,过滤交集非空。MVP record 无 entities → 此步跳过。
-6. **cosine 排序**:`sim = dot(qv, rv) / (|qv|*|rv|)`,降序。
-7. **top-K**:默认 5,上限 8(`normalizeSearchLimit` 复用,但语义模式独立上限)。
-8. **近因加权(可选,纯算术)**:`finalScore = sim + λ * decay(now - fileCreatedAt)`。λ 小(如 0.1),decay 衰减函数。MVP 可不做,纯 cosine。
-9. **结果构造**:每条 → `WorkspaceSearchResult` 外壳(path/name/updatedAt/score=finalScore/preview=chunk.text 前 96 字符)+ 元数据回显(semanticType/turn/entities?)。`matches` 省略(语义无行级命中)。
-10. **索引完全空时**(该 owner 无任何向量):返回空数组,不抛错。agent 收到空自然回退字面 search。
+5. **cosine 排序**:`sim = dot(qv, rv) / (|qv|*|rv|)`,降序。
+6. **top-K**:默认 5,上限 8(`normalizeSearchLimit` 复用,但语义模式独立上限)。
+7. **结果构造**:每条 → `WorkspaceSearchResult` 外壳(path/name/updatedAt/score=sim/preview=chunk.text 前 96 字符)+ 元数据回显(semanticType/turn)。`matches` 省略(语义无行级命中)。
+8. **索引完全空时**(该 owner 无任何向量):返回空数组,不抛错。agent 收到空自然回退字面 search。
 
 ## 5. 双开关解耦传导链
 
@@ -235,7 +217,7 @@ async function semanticSearch(
 链 1 — 向量生产能力(平台全局,控制面板):
   embeddingConfig.enabled && 配全
   → resolveEmbeddingConfig() 返回配置
-  → embed-queue 开始消费 + 写钩子触发 re-embed
+  → embed-queue 开始消费 + turn commit 触发 proactive enqueue
   → embeddingIndex 生长
   embeddingConfig 未配/关
   → resolveEmbeddingConfig() 返回 null
@@ -283,59 +265,37 @@ class EmbedQueue {
 - **串行消费**:一次一个 embedding API 调用,避免并发限制 + 成本突发。
 - **去重**:同 path 多次变更只保留最新一次嵌入(攒批)。
 - **不持久化**:进程重启丢队列,staleness 兜底补。不引入 IndexedDB job 表。
-- **失败重试**:API 失败 → 该 job 丢弃(不重试轰炸),下次搜索 staleness 会重新发现它 stale 再补。
+- **失败重试**:API 失败 → 该 job 丢弃(不重试轰炸),下次 staleness 会重新发现它 stale 再补。
 - **背压**:队列过长(>阈值)时丢弃旧 job(staleness 兜底兜得住)。
 
-## 7. 写钩子挂点(workspace-volumes.ts)
+## 7. proactive enqueue 挂点(platform-host/index.ts)
 
-`executeWorkspaceMutation` 的 write/delete 路径挂钩:
+`commitSuccessfulRuntimeTurnForSave` 是 play-time 的真实写瓶颈:raw turn + maintenance 写都经 staged transaction 攒变更,turn 成功时由它一次性 `localDb.workspaceFiles.put` 落库(`executeWorkspaceMutation` 被绕过)。proactive enqueue 挂在它的调用点之后:
 
 ```ts
-// write 分支末尾(volume.write 返回后)
+// index.ts,turn 成功收尾
+await commitSuccessfulRuntimeTurnForSave(activeSaveId, {
+  snapshot: snapshotAfter,
+  history: nextHistory,
+  workspaceFiles: workspaceTransaction.finalWorkspaceFiles(),
+  checkpointReason: "after-turn",
+})
+// ← proactive enqueue:对当轮 save-runtime 文件 staleness 检查 + 入队
 if (resolveEmbeddingConfig()) {
-  embedQueue.enqueue({ scope, ownerId, path, operation: "embed" })
-}
-
-// delete 分支末尾
-if (resolveEmbeddingConfig()) {
-  embedQueue.enqueue({ scope, ownerId, path, operation: "delete" })
-  // delete 同时要从 embeddingIndex 删该 path 的所有 chunk
+  const finalFiles = workspaceTransaction.finalWorkspaceFiles()
+  const saveRuntimeFiles = finalFiles.filter(/* save-runtime 路径 */)
+  enqueueStaleEmbeddings(activeSaveId, saveRuntimeFiles)  // staleness.ts
 }
 ```
 
-**staged transaction 不进 dispatch**(现有注释明确):staged 写攒在 transaction 里,只在 turn 成功时一次性落盘。这批写不触发钩子 → 索引暂时 stale → 下次搜索 staleness 兜底补嵌。**正确性不依赖钩子,钩子只是优化。** 这是设计能简单落地的关键。
+- `enqueueStaleEmbeddings` 复用 staleness.ts:比 `file.updatedAt` vs 索引 `fileUpdatedAt`,只对 stale/missing 入队 `embed`;已新鲜的不重复嵌(避免每轮全量重嵌)。
+- delete:当轮删了某 path → 入队 `delete`(index-store 删该 path 全部 chunk)。从 `finalWorkspaceFiles` 与 baseline 的差集得被删 path,或 staleness 发现索引里有但文件没了 → delete。
+- **不阻塞 turn**:enqueue 是同步入队(异步消费),turn 已落盘完成。
+- **staged transaction 不进 dispatch**(现有注释明确)是本设计能简单落地的关键——enqueue 挂在 commit 后而非每个 staged write 上,不必穿透 transaction。
 
-## 8. maintenance tag(R6,扩展位)
+**`executeWorkspaceMutation` 不挂钩子**:该 dispatch 不是 play-time 写瓶颈。studio / 非 turn 写(Explorer 编辑 save-runtime、卡导入等)由搜索时 staleness 兜底补嵌,不为它们单挂钩子(YAGNI)。
 
-### 8.1 memory-maintenance Skill 扩展
-
-`apply_maintenance_plan` action 的 outputSchema 加:
-
-```json
-{
-  "tags": [
-    {
-      "path": "save/memory/summaries/current.md",
-      "entities": ["灯塔", "玛利亚"],
-      "eventTypes": ["冲突"]
-    }
-  ]
-}
-```
-
-### 8.2 ingest 钩子
-
-maintenance 写文件时(经 world-state-maintenance Skill → workspace write),写钩子触发 embed。若 maintenance 同时返回 tags:
-
-- 索引层读 tags,把 entities 写进对应 path 的 `embeddingIndex` 记录(新增 `entities?: string[]` 字段)。
-- 实体词表来自 `save/world/` 已有实体目录名——agent 引用已建实体,不凭空造。
-
-### 8.3 MVP 边界
-
-- schema 扩展 + ingest 钩子:**做**(为后续过滤铺路)。
-- entityFilter 过滤逻辑:**可后置**。MVP 查询时 entityFilter 指定但 record 无 entities → 跳过过滤(退化纯向量)。
-
-## 9. retrieval AGENT.md 指引更新
+## 8. retrieval AGENT.md 指引更新
 
 ```
 - semantic_search 用于按含义找远期事件/设定(玩家说"灯塔的事"但正文用别的措辞)。
@@ -344,24 +304,29 @@ maintenance 写文件时(经 world-state-maintenance Skill → workspace write),
 - semantic_search 返回空时(索引未建/无相关),回退 search。
 ```
 
-## 10. 兼容性与回滚
+> 注:agent.json / AGENT.md 是 `storage/workspace.ts` 内嵌默认内容常量(非磁盘文件)。改默认值 + bump `DEFAULT_WORKSPACE_VERSION` + 加 `DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS` 让存量存档升级拿到新配置(见 implement Phase 6)。
+
+## 9. 兼容性与回滚
 
 - **contracts 加 op 是加法**,不破坏现有 op。旧 agent.json 无 `workspace_semantic_search` → 不暴露,行为同现状。
-- **Dexie v10 → v11** 原型期破坏性升级(无迁移,旧库 abandoned,同 v9→v10 先例)。
+- **Dexie 换名 v10 → v11**:原型期破坏性(无迁移,旧库 abandoned,`this.version(1)` 重置,同 v9→v10 先例)。`public/tsian-game-card-frontend-sw.js` 镜像库名同步。回滚:换回 v10 名 + 重开库。
 - **embeddingConfig 默认关** → 未配置时全系统行为同现状,零影响。
-- **写钩子是优化不是正确性依赖** → 钩子出问题不丢数据,只丢索引新鲜度(staleness 兜底)。
-- **回滚**:删 semantic-index 模块 + 撤 contracts op + Dexie 降级(原型期可直降)。embeddingConfig 留着无害(关着)。
+- **proactive enqueue 在 commit 后,不进事务** → enqueue 出问题不丢数据,只丢索引新鲜度(staleness 兜底)。
+- **回滚**:删 semantic-index 模块 + 撤 contracts op + Dexie 换回 v10 名。embeddingConfig 留着无害(关着)。
 
-## 11. 风险点
+## 10. 风险点
 
 - **embedding API 中文叙事质量**:选型已定(硅基流动 + Qwen embedding),Qwen 系对中文叙事是强项。实现时用真实 turn 正文验证召回质量(验证步骤,非选型风险)。
 - **远程 API 热路径**:异步嵌入解耦了 turn 落盘,但首次全量建索引(新存档/清空后)会有一段"索引追赶"期,此期间语义检索结果不全。staleness 兜底渐进补,可接受。
 - **Dexie Float32Array 存储**:Structured Clone 支持 TypedArray,但需验证 Dexie 版本兼容 + 查询时取回类型正确(非 ArrayBuffer)。
 - **chunker 对损坏 JSON 的健壮性**:raw turn 文件损坏不阻塞索引(跳过),但要有日志/trace 可观测。
 
-## 12. Open Questions 落点
+## 11. Open Questions 落点
 
 - **AgentPlatformToolName 粒度**:§2.1 已定,独立 `workspace_semantic_search`。
-- **embedding API 选型**:已定,硅基流动(SiliconFlow)+ Qwen embedding。OpenAI 兼容协议,MVP openai-compatible 标准直接覆盖。留 implement.md 验证步骤(用真实 turn 正文测召回)。
+- **embedding API 选型**:已定,硅基流动(SiliconFlow)+ Qwen embedding。openai-compatible 协议标准直接覆盖。留 implement 验证步骤(用真实 turn 正文测召回)。
 - **异步队列形态**:§6 已定,内存队列 + staleness 兜底。
-- **chunk 拼接格式**:§3.1 已定,user/assistant 直拼,前情提要前缀 MVP 不做。
+- **chunk 拼接格式**:§3.1 已定,user/assistant 直拼。
+- **proactive enqueue 落点**:§7 已定,turn commit 后(platform-host/index.ts),非 `executeWorkspaceMutation`。
+- **实体 tag / entityFilter**:砍除,不做(收益面窄、对主语料无增益、被 agent 自选兜住)。
+- **协议推断 / Gemini 骨架**:砍除,MVP 只做 openai-compatible。

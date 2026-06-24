@@ -155,6 +155,7 @@ export type WorkspaceOperationName =
   | "move"
   | "delete"
   | "validate"
+  | "semantic_search"
 
 export interface WorkspaceOperationRequest {
   operation: WorkspaceOperationName
@@ -192,7 +193,14 @@ export interface WorkspaceOperationRequest {
   replaceAll?: boolean
   validator?: "json" | "frontmatter"
   autoFix?: boolean
+  /** semantic_search: 自然语言查询. */
+  semanticQuery?: string
+  /** semantic_search: 语料类型过滤(turn/agent-notes/memory-summary). */
+  typeFilter?: WorkspaceSemanticType
 }
+
+/** save-runtime 语义检索的语料类型,由路径派生. */
+export type WorkspaceSemanticType = "turn" | "agent-notes" | "memory-summary"
 
 export interface WorkspaceDiffResult {
   path: string
@@ -247,6 +255,7 @@ export type AgentPlatformToolName =
   | "workspace_read"
   | "workspace_write"
   | "inspect_frontend"
+  | "workspace_semantic_search"
 
 export interface AgentSkillConfig {
   enabled: string[]
@@ -407,8 +416,13 @@ export interface WorkspaceSearchResult {
   matchesTruncated: boolean
   /** Back-compat field: short preview of the first match (or `path` when
    *  there are no content matches). New consumers should read `matches`;
-   *  this field may be removed in a later task. */
+   *  this field may be removed in a later task. 语义模式下 preview 为 chunk
+   *  原文前 96 字符. */
   preview: string
+  /** semantic_search 模式回显:语料类型. 字面 search 省略. */
+  semanticType?: WorkspaceSemanticType
+  /** semantic_search 模式回显:turn 编号(仅 raw turn). */
+  turn?: number
 }
 
 export type RuntimeDiagnosticSource =

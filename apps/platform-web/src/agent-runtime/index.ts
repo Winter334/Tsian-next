@@ -239,6 +239,10 @@ export interface AgentRuntimeCapabilities {
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   collaborationPolicy?: AgentRuntimeCollaborationPolicyInput
   emitTrace?: RuntimeTraceEmitter
+  /** semantic_search 专用:owner id(save-runtime 下为 saveId). host 注入,
+   *  runtime 层不持有真实 saveId(见 createInitialAgentContext 注释),通过此
+   *  capability 把 owner 上下文传给 workspace 工具执行. 其它 op 不用. */
+  semanticSearchOwnerId?: string
 }
 
 export interface AgentRuntimeCollaborationPolicy {
@@ -754,6 +758,10 @@ function buildWorkspaceToolInstructions(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
   )
+  const canSemanticSearch = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
+  )
   const isNative = options.toolCallMode === "native"
   const availableTools = [
     `- ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} arguments={"name":"prose-style"}`,
@@ -778,6 +786,11 @@ function buildWorkspaceToolInstructions(
           `- ${RUNTIME_WORKSPACE_TOOL_NAMES.write} arguments={"path":"save/world/notes.md","content":"..."}`,
         ]
       : []),
+    ...(canSemanticSearch
+      ? [
+          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch} arguments={"semanticQuery":"灯塔后来怎样了","typeFilter":"turn","limit":5}`,
+        ]
+      : []),
     ...(canInspectFrontend
       ? [
           `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"send":{"message":"看一下当前前端渲染"}}`,
@@ -799,6 +812,11 @@ function buildWorkspaceToolInstructions(
       : []),
     `use_skill 激活 Skill 后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript} 执行它声明的 browser_script action（传入 use_skill 返回的 action name 作为 script）。run_script 只执行 browser_script 类 action；单次 workspace 读写直接用顶层 ${RUNTIME_WORKSPACE_TOOL_NAMES.read}/${RUNTIME_WORKSPACE_TOOL_NAMES.write} 等工具，多步编排写进 browser_script 脚本。`,
     "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。脚本中的 workspace 读写仍受当前 Agent 权限限制。",
+    ...(canSemanticSearch
+      ? [
+          `${RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch} 按"含义"在 save-runtime 记忆（远期剧情 turn、agent notes、memory summary）里召回，用于玩家措辞与正文无字面重叠时（如玩家说"灯塔的事"而正文写"她走向海边那座塔"）。它返回带 path/type/preview 的小 K 候选清单——读 preview 判方向，再用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 按 path 取完整原文。typeFilter 收窄语料类型：turn（原始剧情）、agent-notes、memory-summary。${RUNTIME_WORKSPACE_TOOL_NAMES.search} 仍用于精确措辞或结构标记（找某符号、某 JSON 字段）；两者可在同一 turn 并用——语义召回候选 + 字面验证细节。索引未建或无相关时返回空，回退 ${RUNTIME_WORKSPACE_TOOL_NAMES.search}。`,
+        ]
+      : []),
     ...(canCallAgents
       ? [
           `如果当前任务需要联系人 Agent 的专业判断，可以使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 发起一次性会诊。被调用 Agent 的输出只会作为 observation 返回给你，不会直接成为玩家回复。`,
@@ -1601,6 +1619,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
+      semanticSearchOwnerId: capabilities.semanticSearchOwnerId,
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
@@ -1870,6 +1889,7 @@ async function callAgentModelWithWorkspaceTools(
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
+      semanticSearchOwnerId: capabilities.semanticSearchOwnerId,
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,

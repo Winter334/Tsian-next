@@ -363,6 +363,11 @@ const platformToolControls: Array<{
     description: "允许读取、列出和搜索可见 Workspace 文件。",
   },
   {
+    id: "workspace_semantic_search",
+    label: "语义检索",
+    description: "允许按含义在 save-runtime 记忆（远期剧情 turn、agent notes、memory summary）里召回，用于玩家措辞与正文无字面重叠时。需在控制面板配置 embedding API 才生效；未配置时工具返回空，agent 回退字面搜索。默认仅 retrieval agent 启用。",
+  },
+  {
     id: "workspace_write",
     label: "维护 Workspace",
     description: "允许通过平台工具或 Skill 动作写入、移动、删除或校验文件。",

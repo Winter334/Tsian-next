@@ -1,9 +1,10 @@
 // DB 名须与 src/storage/db.ts 的 TsianLocalDb 构造参数保持一致。
+// v10 -> v11: added embeddingIndex table for save-runtime semantic search.
 // v9 -> v10: added skillConfigs table for player-saved skill config overrides.
 // v8 -> v9: added assistantAttachments table for attachment Blob storage.
 // v7 -> v8: mediaType removed from records; Content-Type now read from
 // Blob.type (file.data.type) instead of a stored mediaType field.
-const DB_NAME = "tsian-agent-runtime-v10"
+const DB_NAME = "tsian-agent-runtime-v11"
 const STORE_NAME = "gameCardFrontendFiles"
 const FRONTEND_PREFIX = "/__tsian_game_card_frontends/"
 

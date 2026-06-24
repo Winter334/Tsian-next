@@ -45,6 +45,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   edit: "edit",
   move: "move",
   delete: "delete",
+  semanticSearch: "semantic_search",
 } as const
 
 export type RuntimeWorkspaceToolName =
@@ -68,6 +69,7 @@ const WORKSPACE_OPERATION_TOOL_NAMES = new Set<string>([
   RUNTIME_WORKSPACE_TOOL_NAMES.edit,
   RUNTIME_WORKSPACE_TOOL_NAMES.move,
   RUNTIME_WORKSPACE_TOOL_NAMES.delete,
+  RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch,
 ])
 
 function isWorkspaceOperationToolName(name: string): boolean {
@@ -327,6 +329,8 @@ export interface RuntimeWorkspaceToolExecutionContext {
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
+  /** semantic_search 专用:owner id(save-runtime 下为 saveId). */
+  semanticSearchOwnerId?: string
   signal?: AbortSignal
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
@@ -2175,6 +2179,7 @@ async function executeRuntimeWorkspaceToolCall(
           agentContext: context.agentContext,
           mutations: context.workspaceMutations,
           exposedOperations: context.exposedWorkspaceOperations,
+          semanticSearchOwnerId: context.semanticSearchOwnerId,
         },
       )
       // workspace_read 图片结果:提取 imageBase64 到 imageParts(多模态通道),

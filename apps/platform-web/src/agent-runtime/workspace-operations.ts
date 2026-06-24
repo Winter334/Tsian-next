@@ -16,6 +16,7 @@ import type {
   WorkspaceValidationResult,
 } from "@tsian/contracts"
 import { normalizeWorkspacePath } from "@/lib/workspace-path"
+import { semanticSearch } from "./semantic-index/search"
 
 export interface WorkspaceOperationError {
   code: string
@@ -42,6 +43,9 @@ export interface WorkspaceOperationExecutionContext {
   actorLevel?: number
   exposedOperations?: Iterable<WorkspaceOperationName>
   mutations?: WorkspaceOperationMutationAdapter
+  /** semantic_search 专用:owner id(save-runtime 下为 saveId),用于按 owner
+   *  从向量库取/枚举该 owner 的语料. 其它 op 不用. */
+  semanticSearchOwnerId?: string
 }
 
 export const WORKSPACE_OPERATION_NAMES = {
@@ -55,6 +59,7 @@ export const WORKSPACE_OPERATION_NAMES = {
   move: "move",
   delete: "delete",
   validate: "validate",
+  semantic_search: "semantic_search",
 } as const satisfies Record<WorkspaceOperationName, WorkspaceOperationName>
 
 export const DEFAULT_RUNTIME_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
@@ -62,6 +67,7 @@ export const DEFAULT_RUNTIME_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
   "search",
   "read",
   "glob",
+  "semantic_search",
 ]
 
 export const AUTHORING_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
@@ -1351,6 +1357,26 @@ export async function executeWorkspaceOperation(
   }
   if (operation === "validate") {
     return validateWorkspaceFile(context.workspaceFiles, scope, requestInput, actorLevel)
+  }
+  if (operation === "semantic_search") {
+    // 只读 op,与 search 同级. owner(saveId)从 context 取;effective view 的
+    // workspaceFiles 过滤出 save-runtime 路径作 staleness 兜底枚举集.
+    const ownerId = context.semanticSearchOwnerId
+    if (!ownerId) {
+      // 无 ownerId(如非 save 场景调用)→ 返回空,不抛错.
+      return []
+    }
+    const saveRuntimeFiles = scopedReadableFiles(context.workspaceFiles, "save-runtime", actorLevel)
+    return semanticSearch(
+      {
+        query: requestInput.semanticQuery ?? requestInput.query ?? "",
+        typeFilter: requestInput.typeFilter,
+        limit: requestInput.limit,
+        ownerId,
+        files: saveRuntimeFiles,
+      },
+      "save-runtime",
+    )
   }
 
   throw workspaceOperationError(

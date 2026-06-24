@@ -3,6 +3,7 @@ import type {
   ConversationMessageRecord,
   GameCardManifest,
   RuntimeSnapshotShell,
+  WorkspaceScope,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
 
@@ -129,6 +130,36 @@ export interface LocalSkillConfigRecord {
   updatedAt: number
 }
 
+/**
+ * save-runtime 语义检索的向量索引记录. 按 (scope, ownerId) 分库,随存档生灭
+ * (删存档时 drop 对应记录). 主键 id 确定性拼接,向量存 Float32Array
+ * (IndexedDB Structured Clone 支持 TypedArray).
+ */
+export interface LocalEmbeddingIndexRecord {
+  /** 主键,确定性 id: `${scope}:${ownerId}:${path}:${chunkIndex}` */
+  id: string
+  scope: WorkspaceScope
+  ownerId: string
+  path: string
+  chunkIndex: number
+  /** 嵌入文本(供 staleness 比对 + 调试). */
+  text: string
+  /** 向量. Float32Array → IndexedDB 存储(Structured Clone 支持). */
+  vector: Float32Array
+  /** 路径派生的语料类型. */
+  type: "turn" | "agent-notes" | "memory-summary"
+  /** raw turn 的 turn 编号(仅 type=turn). */
+  turn?: number
+  /** 原始文件 createdAt(用于近因加权,可选). */
+  fileCreatedAt?: number
+  /** 文件 updatedAt 快照(staleness 比对基准). */
+  fileUpdatedAt: number
+  /** 向量写入时间戳. */
+  updatedAt: number
+  /** 产出该向量的 embedding 模型标识(版本锁/staleness 判据). */
+  model: string
+}
+
 export class TsianLocalDb extends Dexie {
   meta!: Table<LocalMetaRecord, string>
   gameCards!: Table<LocalGameCardRecord, string>
@@ -141,14 +172,16 @@ export class TsianLocalDb extends Dexie {
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
   assistantAttachments!: Table<LocalAssistantAttachmentRecord, string>
   skillConfigs!: Table<LocalSkillConfigRecord, string>
+  embeddingIndex!: Table<LocalEmbeddingIndexRecord, string>
 
   constructor() {
-    // DB name bumped v9 -> v10: added skillConfigs table for player-saved
-    // skill config overrides (task 06-24-assistant-web-search). Prototype
-    // project — no migration; the old v9 database is abandoned and a fresh
-    // v10 store is created. The service worker
+    // DB name bumped v10 -> v11: added embeddingIndex table for save-runtime
+    // semantic search vector index (task 06-24-save-runtime-semantic-search).
+    // Prototype project — no migration; the old v10 database is abandoned and
+    // a fresh v11 store is created (same rename-and-reset convention as
+    // v9->v10). The service worker
     // (`tsian-game-card-frontend-sw.js`) mirrors this name.
-    super("tsian-agent-runtime-v10")
+    super("tsian-agent-runtime-v11")
 
     this.version(1).stores({
       meta: "&key",
@@ -162,6 +195,7 @@ export class TsianLocalDb extends Dexie {
       workspaceFiles: "&id, saveId, path, updatedAt",
       assistantAttachments: "&id, sessionId, path, createdAt",
       skillConfigs: "&skillPath, updatedAt",
+      embeddingIndex: "&id, [scope+ownerId], path, type, updatedAt",
     })
   }
 }

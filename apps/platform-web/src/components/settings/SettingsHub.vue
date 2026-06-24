@@ -25,7 +25,7 @@
 
 <script setup lang="ts">
 import type { Component } from "vue"
-import { Bot } from "lucide-vue-next"
+import { Bot, Search } from "lucide-vue-next"
 import { computed } from "vue"
 import type { BrowserPlatformConfigDraft } from "@/config/ai"
 
@@ -61,6 +61,13 @@ const entries = computed<HubEntry[]>(() => {
       title: "AI 提供商",
       subtitle: `${presetCount} 个预设 · ${modelCount} 个模型`,
       icon: Bot,
+    },
+    {
+      id: "semantic-search",
+      kind: "检索",
+      title: "语义检索",
+      subtitle: props.draft.embeddingConfig.enabled ? "已启用" : "未启用",
+      icon: Search,
     },
   ]
 })

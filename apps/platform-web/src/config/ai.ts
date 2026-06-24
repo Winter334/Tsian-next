@@ -110,6 +110,28 @@ export interface BrowserAiConfig {
 export interface BrowserPlatformConfigDraft {
   activeProviderId: string
   providerTypes: BrowserAiProviderType[]
+  /** 语义检索 embedding 配置(独立段,与 chat providerTypes 平级). */
+  embeddingConfig: BrowserEmbeddingConfig
+}
+
+/**
+ * 语义检索 embedding 配置. 独立于 chat provider:chat 的采样/toolCall/
+ * streaming 字段对 embedding 全无意义,给它贴合的小结构比硬塞进 chat
+ * 大结构更诚实,且 chat 代码零改动零回归.
+ *
+ * MVP 只支持 openai-compatible 协议(`POST {baseUrl}/embeddings`,Bearer),
+ * 无 kind 字段——玩家配置 OpenAI 兼容端点(硅基流动是其一),无需区分协议.
+ * 其它协议用到再加.
+ *
+ * `dimensions` 必填:维度是向量存储 + cosine 的硬约束,填错致静默 bug.
+ * 玩家从模型规格查得后明确填入,比"自动探测可能错"更可控.
+ */
+export interface BrowserEmbeddingConfig {
+  enabled: boolean
+  baseUrl: string
+  apiKey: string
+  model: string
+  dimensions: number
 }
 
 interface LegacyBrowserAiConfig {
@@ -125,6 +147,8 @@ interface StoredBrowserPlatformConfigDraft {
   // period allows destructive changes, so old data is not migrated.
   providers?: unknown
   chat?: Partial<LegacyBrowserAiConfig>
+  /** 语义检索 embedding 配置(独立段,与 providerTypes 平级). 未配置时默认关. */
+  embeddingConfig?: unknown
 }
 
 const PLATFORM_CONFIG_STORAGE_KEY = "tsian-platform-config"
@@ -481,6 +505,48 @@ function normalizeProviderTypes(input: unknown): BrowserAiProviderType[] {
   return types
 }
 
+function createDefaultEmbeddingConfig(): BrowserEmbeddingConfig {
+  return {
+    enabled: false,
+    baseUrl: "",
+    apiKey: "",
+    model: "",
+    dimensions: 0,
+  }
+}
+
+/** 规范化存储的 embeddingConfig;缺失/损坏字段回退默认值. */
+function normalizeEmbeddingConfig(input: unknown): BrowserEmbeddingConfig {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultEmbeddingConfig()
+  }
+  const record = input as Record<string, unknown>
+  const dimensions = normalizePositiveInteger(record.dimensions)
+  return {
+    enabled: record.enabled === true,
+    baseUrl: readStoredText(record.baseUrl),
+    apiKey: readStoredText(record.apiKey),
+    model: readStoredText(record.model),
+    dimensions: dimensions ?? 0,
+  }
+}
+
+/**
+ * 解析生效的 embedding 配置. 严格:enabled && baseUrl && apiKey && model &&
+ * dimensions(正整数)全满足才返回,否则 null. null = 索引不生长(能力链关闭).
+ * 调用方(embedding-client/search/commit enqueue)据此决定是否调 API.
+ */
+export function resolveEmbeddingConfig(): BrowserEmbeddingConfig | null {
+  const config = getEmbeddingConfig()
+  if (!config.enabled) {
+    return null
+  }
+  if (!config.baseUrl || !config.apiKey || !config.model || config.dimensions <= 0) {
+    return null
+  }
+  return config
+}
+
 function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): BrowserAiProviderPreset | null {
   const baseUrl = readStoredText(input?.baseUrl)
   const apiKey = readStoredText(input?.apiKey)
@@ -555,6 +621,7 @@ function normalizePlatformConfigDraft(input: StoredBrowserPlatformConfigDraft): 
   return {
     activeProviderId,
     providerTypes,
+    embeddingConfig: normalizeEmbeddingConfig(input.embeddingConfig),
   }
 }
 
@@ -825,6 +892,34 @@ export function resetBrowserPlatformConfigDraft(): void {
 
 export function getBrowserPlatformConfigStorageState(): "ready" | "unavailable" {
   return getBrowserLocalStorage() ? "ready" : "unavailable"
+}
+
+/**
+ * 读 embeddingConfig(独立段). 总是返回规范化值(未配置时返回默认 disabled),
+ * 不做"配全才生效"判断——生效判断用 `resolveEmbeddingConfig`.
+ * 与 chat providerTypes 同属一个 localStorage key,但读写独立:这里 read-modify-
+ * write 整个 draft,避免两段互相覆盖.
+ */
+export function getEmbeddingConfig(): BrowserEmbeddingConfig {
+  return normalizePlatformConfigDraft(readStoredPlatformConfigDraft()).embeddingConfig
+}
+
+/**
+ * 写 embeddingConfig(独立段). read-modify-write 整个 draft:保留 chat
+ * providerTypes 不动,只替换 embeddingConfig 段. lenient(不跑 chat 校验),
+ * 因为玩家可能只配了 embedding 没配 chat;embedding 生效靠 resolveEmbeddingConfig
+ * 的严格判断,不靠这里的校验.
+ */
+export function saveEmbeddingConfig(config: BrowserEmbeddingConfig): void {
+  const stored = readStoredPlatformConfigDraft()
+  stored.embeddingConfig = config
+  // 走 normalize 但绕过 chat 校验:直接写规范化后的 draft.
+  const draft: BrowserPlatformConfigDraft = {
+    activeProviderId: readStoredText(stored.activeProviderId),
+    providerTypes: normalizeProviderTypes(stored.providerTypes),
+    embeddingConfig: normalizeEmbeddingConfig(config),
+  }
+  writeStoredPlatformConfigDraft(draft)
 }
 
 function isPlainJsonObject(value: unknown): value is Record<string, unknown> {

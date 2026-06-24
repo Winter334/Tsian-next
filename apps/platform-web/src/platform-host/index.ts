@@ -50,6 +50,8 @@ import {
 } from "../agent-runtime/context-lifecycle"
 import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
+import { enqueueStaleEmbeddings } from "../agent-runtime/semantic-index/staleness"
+import { resolveEmbeddingConfig } from "../config/ai"
 import {
   buildAgentRegistry,
   buildSkillRegistry,
@@ -266,7 +268,7 @@ function normalizeWorkspaceActionRequest(
     ...params,
     operation,
     scope: params.scope ?? (
-      operation === "read" || operation === "list" || operation === "search"
+      operation === "read" || operation === "list" || operation === "search" || operation === "semantic_search"
         ? "effective"
         : "save-runtime"
     ),
@@ -293,6 +295,7 @@ async function executeWorkspaceOperationForActiveSave(
     actorLevel: input.actorLevel,
     agentContext: input.agentContext,
     exposedOperations: input.exposedOperations ?? AUTHORING_WORKSPACE_OPERATIONS,
+    semanticSearchOwnerId: saveId,
     mutations: {
       async write(writeInput) {
         // staged turn：保留上层特殊路径（transaction 攒变更），不进 dispatch。
@@ -795,6 +798,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
               signal: currentController.signal,
               emitTrace: trace.emit,
             }),
+            semanticSearchOwnerId: activeSaveId,
             workspaceMutations: {
               write: (writeInput) => {
                 if (writeInput.scope === "platform-meta") {
@@ -890,6 +894,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
           workspaceFiles: workspaceTransaction.finalWorkspaceFiles(),
           checkpointReason: "after-turn",
         })
+
+        // Proactive embed enqueue:turn commit 是 play-time 真实写瓶颈(raw turn +
+        // maintenance 都 staged → 经此 commit),落库后对当轮 save-runtime 文件做
+        // staleness 检查 + 异步入队,让索引每轮后自动追新,不等下次搜索才补.
+        // fire-and-forget:turn 已落盘完成,enqueue 失败不阻塞,staleness 兜底兜得住.
+        if (resolveEmbeddingConfig()) {
+          const saveRuntimeFiles = workspaceTransaction
+            .finalWorkspaceFiles()
+            .filter((file) => file.path.startsWith("save/"))
+          void enqueueStaleEmbeddings(activeSaveId, saveRuntimeFiles)
+        }
 
         emitTurnDebugReady(snapshotAfter.state.turn)
         return { snapshot: snapshotAfter }

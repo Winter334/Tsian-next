@@ -327,6 +327,11 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
 
   await deleteWorkspaceForSave(saveId)
   await deleteCheckpointsForSave(saveId)
+  // GC:删存档时 drop 该 save 的语义检索向量索引(save-runtime scope,随存档生灭).
+  await localDb.embeddingIndex
+    .where("[scope+ownerId]")
+    .equals(["save-runtime", saveId])
+    .delete()
 }
 
 export async function getHistoryForSave(

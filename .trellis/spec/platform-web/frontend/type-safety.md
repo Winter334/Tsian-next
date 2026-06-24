@@ -298,7 +298,7 @@ return {
 - Binary files surface `content` as a placeholder string (`binaryPlaceholderText(blob, path)` → `[binary file: <type>, <size> bytes — 不可读取为文本]`), NOT empty string — this prevents agents from misjudging binary files as empty. **Multimodal image support (task 06-22-assistant-attachments)**: `workspace_read` on an image binary now returns `imageBase64` (base64 string) + `imageMimeType` with `isBinaryPlaceholder: false`, instead of the placeholder. The agent runtime extracts these into `ContentPart { type: "image" }` and injects them as a separate user message (native) or appends to the user `ContentPart[]` (text) — **never** as text in the JSON observation (base64 as text would explode the context window). `WorkspaceFile.imageMimeType` marks image files; `WorkspaceReadResult.imageBase64` carries the encoded data.
 - **Multimodal ContentPart type (task 06-22-assistant-attachments)**: `ContentPart = { type: "text"; text: string } | { type: "image"; mimeType: string; data: string }` (base64, no data URL prefix). `AiChatMessage.content` and `RuntimeChatMessage` user/system `content` are widened to `string | ContentPart[]`. assistant/tool role `content` stays `string` (multimodal only occurs in user input). Each provider adapter has a content builder: `buildOpenAiContent` (→ `image_url` data URL), `buildClaudeContent` (→ `image` source base64), `buildGeminiParts` (→ `inlineData`). `contentToTextPreview` safely degrades `ContentPart[]` to text for debug/logging. `normalizeMessages` preserves `attachments` field on `ConversationMessageRecord`. Token estimation (`estimateAiChatMessagesTokens`/`estimateRuntimeMessagesTokens`) uses `messageContentToText` to extract text parts (images are not counted by char length — providers count image tokens by resolution).
 - `mediaType` is never stored on internal records. The Service Worker reads `file.data.type` (Blob's built-in type) instead of a stored `mediaType` field. Covers are stored as Blob (File/Blob) via `writeLocalGameCardContentFile({ data })`, not base64 data URIs; `getGameCardCoverUrl` returns `URL.createObjectURL(coverContentFile.data)`.
-- DB name bumps (e.g. `tsian-agent-runtime-v9` → `v10`) are breaking changes with no migration (prototype project). The Service Worker `DB_NAME` must mirror `db.ts`. `inferWorkspaceMediaType` is a thin wrapper over `inferMediaTypeFromPath` with `text/plain` fallback; package/frontend code uses the raw function with `application/octet-stream` fallback.
+- DB name bumps (e.g. `tsian-agent-runtime-v10` → `v11`) are breaking changes with no migration (prototype project). The Service Worker `DB_NAME` must mirror `db.ts`. `inferWorkspaceMediaType` is a thin wrapper over `inferMediaTypeFromPath` with `text/plain` fallback; package/frontend code uses the raw function with `application/octet-stream` fallback.
 - Agent-facing workspace read APIs were strengthened (not broken): `workspace.read` now returns `WorkspaceReadResult` (a superset of `WorkspaceFile` — old consumers reading `path`/`content`/`updatedAt` are unaffected, new consumers gain `totalLines`/`returnedLines`/`offset`/`truncated`/`isBinaryPlaceholder`), and `workspace.search` adds `matches`/`matchesTruncated` while keeping `preview`. Agents still read `file.content` (string) only for text files. `searchWorkspaceFiles`/`validateWorkspaceFile` skip binary files. `move` carries `binary` through to the target.
 - **Game card manifest fileification (task 06-21 子3)**: `game-card.json` is a synthesized workspace file (not stored as a content row) injected into `listStudioWorkspaceFilesForGameCard` + `listEffectiveWorkspaceFilesForSave` + `executeStudioWorkspaceOperation` card branch's `cardScopedFiles` as `{ path: "game-card.json", content: JSON.stringify(normalizeGameCardManifest(card.manifest), null, 2), createdAt, updatedAt }`. Writing it routes through `ManifestVolume` (`resolveVolumeForScope` special-cases `path === "game-card.json"` under `card-content` scope) → `writeGameCardManifestFileForCard`: JSON parse + `normalizeGameCardManifest` (exported from `game-card-packages.ts`, throws `GameCardPackageError` on invalid) + force-overwrite protected fields (`id` = card's DB id, `schema` = `GAME_CARD_MANIFEST_SCHEMA`, `frontend.bridgeVersion` = `tsian.play-bridge.v1`) → `putLocalGameCard({manifest, contentFiles: undefined})` (content table untouched). `normalizeTemplateFiles` rejects `game-card.json` so it cannot be stored as a content file. Builtin card manifest is read-only (throws on write attempt). This is distinct from the zip package `game-card.json` (which uses `GameCardPackageManifest` schema `tsian.game-card.package.v1` and embeds the authoritative `GameCardManifest`) — the workspace synthesized file is `GameCardManifest` directly (schema `tsian.game-card.v1`).
 - **Card frontend single-file write APIs (task 06-21 子3)**: `writeLocalGameCardFrontendFile(cardId, {path, data})` / `deleteLocalGameCardFrontendFile(cardId, path)` / `deleteLocalGameCardFrontendPathForCard(cardId, pathPrefix)` mirror the content-file API pattern (per-row put/delete + bump card `updatedAt` in the same transaction, no full `putLocalGameCard` rewrite). `CardFrontendVolume.write` wraps text `content` into a Blob via `writeLocalGameCardFrontendFile` and returns a `WorkspaceFile` matching enumerate's text/media split. These fill the placeholder throws left by task 06-21 子5.
@@ -572,6 +572,7 @@ interface RuntimeWorkspaceToolCall {
   - `workspace.read`
   - `workspace.list`
   - `workspace.search`
+  - `workspace.semantic_search`
   - `workspace.diff`
   - `workspace.write`
   - `workspace.edit`
@@ -582,6 +583,7 @@ interface RuntimeWorkspaceToolCall {
   - `agent_call`
   - `workspace_read`
   - `workspace_write`
+  - `workspace_semantic_search`
 
 - Native function-calling tool schema (`agent-runtime/tool-schemas.ts`):
 
@@ -1581,3 +1583,114 @@ function disposeCurrentSession(): void {
   // lastInspectSnapshot (diff baseline) intentionally preserved
 }
 ```
+
+## Scenario: Save-Runtime Semantic Search
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web adds or changes save-runtime semantic retrieval, embedding config, the `embeddingIndex` Dexie table, or the `semantic_search` workspace operation.
+- Applies when changing `apps/platform-web/src/agent-runtime/semantic-index/*`, `apps/platform-web/src/config/ai.ts` (embeddingConfig), `apps/platform-web/src/storage/db.ts` (embeddingIndex), `apps/platform-web/src/platform-host/index.ts` (turn commit enqueue), or `apps/platform-web/src/storage/saves.ts` (GC).
+
+### 2. Signatures
+
+- `WorkspaceOperationName += "semantic_search"` (read-only, same tier as `search`).
+- `WorkspaceOperationRequest += semanticQuery?: string, typeFilter?: WorkspaceSemanticType`.
+- `WorkspaceSemanticType = "turn" | "agent-notes" | "memory-summary"`.
+- `WorkspaceSearchResult += semanticType?: WorkspaceSemanticType, turn?: number` (cosine similarity reuses `score`; no separate `semanticScore`).
+- `AgentPlatformToolName += "workspace_semantic_search"` (independent granularity, not folded into `workspace_read`).
+- `BrowserEmbeddingConfig = { enabled, baseUrl, apiKey, model, dimensions }` — independent section in `tsian-platform-config`, parallel to chat `providerTypes`, no `kind` field (MVP openai-compatible only).
+- `LocalEmbeddingIndexRecord` in `embeddingIndex` table, keyed `[scope+ownerId]`.
+- `resolveEmbeddingConfig(): BrowserEmbeddingConfig | null` — strict: enabled && baseUrl && apiKey && model && dimensions all satisfied, else null (index growth off).
+- `semanticSearch(input, scope): Promise<WorkspaceSearchResult[]>` — never throws (empty index / API failure → `[]`).
+
+### 3. Contracts
+
+- **Why native, not Skill**: access face (semantic-index reads Dexie + workspace volumes in-process), permission propagation (`assertOperationExposed` + per-agent tool exposure is native), GC tied to save lifecycle. NOT "write-path bottleneck free increment" — that argument was invalidated: play-time writes (raw turn + maintenance) all go through staged transaction → `commitSuccessfulRuntimeTurnForSave` → direct `localDb.workspaceFiles.put`, bypassing `executeWorkspaceMutation`. A write hook on that dispatch is dead code for the main corpus.
+- **Correctness source = cheap staleness check, not write hooks.** Search-time and turn-commit-time staleness compares `file.updatedAt` vs indexed `fileUpdatedAt`; stale/missing files get re-embedded. This covers all write paths (staged commit, direct volume, card import, studio edit) — losing only freshness, never correctness.
+- **Proactive enqueue lives at turn commit** (`commitSuccessfulRuntimeTurnForSave` return, in `platform-host/index.ts`), not on `executeWorkspaceMutation`. The commit is the real play-time write bottleneck. Enqueue is fire-and-forget (does not block the turn; turn is already persisted).
+- **`executeWorkspaceMutation` has NO embedding hook.** Studio / non-turn writes are covered by search-time staleness; do not add a hook there (YAGNI — it is dead code for the main corpus).
+- **Two-switch decoupling**: embedding capability (control panel `embeddingConfig`, platform-global) vs tool exposure (agent.json `platformTools`, per-agent). Four quadrants (tool × data) are all legal, no error. The two chains meet only at tool execution, best-effort (empty result, not pre-gate throw).
+- **Corpus三分**: raw turn (`save/history/turns/*.json`) — one file one chunk, `玩家：{user}\n叙事：{assistant}` direct join; agent condensed (`save/agents/*/notes.md`, `save/memory/summaries/*`) — markdown split by `##`/`###`/paragraph; JSON state (`save/world/`, `save/state/`, `save/frontend/`) — skipped (literal search suffices). Preprocessing belongs to agent/Skill; indexing belongs to native; the two are never done in the same place.
+- **No reranker / no query-rewrite LLM pass**: the consumer is the per-turn agent already running; small-K candidates with preview let it self-rerank + `workspace.read` for full text — the already-paid agent inference does the reranker's job.
+- **No entity tags / no entityFilter**: cut (narrow benefit surface, no gain on the main corpus raw turn, covered by agent self-select). type pre-filter is the only filter (free, solves cross-type semantic pollution).
+- **embeddingConfig is an independent section, not folded into chat provider**: chat's `BrowserAiModelConfig` fields (toolCallMode/streaming/7 sampling params/contextWindow/reasoningEffort) are meaningless for embedding, and `toolCallMode` is a required validation — folding would force dummy values or validation branches. No `kind` field (MVP openai-compatible only; other protocols added when needed). `dimensions` is required (hard constraint for vector storage + cosine; wrong value = silent bug; player looks it up from model spec).
+- **MVP openai-compatible only**: `POST {baseUrl}/embeddings`, body `{model, input: string[]}`, response `data[].embedding`, auth `Authorization: Bearer {apiKey}`. No protocol inference, no Gemini-native skeleton (YAGNI — add when needed).
+- **GC**: `deleteLocalSave` drops `(save-runtime, saveId)` embeddings via `localDb.embeddingIndex.where("[scope+ownerId]").equals(["save-runtime", saveId]).delete()`. Storage-layer direct (no cross-layer call into agent-runtime).
+- **ownerId propagation**: `AgentRuntimeCapabilities.semanticSearchOwnerId` (host injects `activeSaveId`) → `RuntimeWorkspaceToolExecutionContext.semanticSearchOwnerId` → `WorkspaceOperationExecutionContext.semanticSearchOwnerId` → `executeWorkspaceOperation` semantic_search branch. Runtime layer intentionally does not hold the real saveId (see `createInitialAgentContext` comment); it is threaded as a capability.
+- **DB name bump v10 → v11** (rename-and-reset convention: `this.version(1)` reset, no migration, old store abandoned). `public/tsian-game-card-frontend-sw.js` `DB_NAME` must mirror. `embeddingIndex: "&id, [scope+ownerId], path, type, updatedAt"`.
+- **retrieval agent default config** (`storage/workspace.ts` embedded constants, not disk files): `platformTools.enabled` includes `workspace_semantic_search`; AGENT.md adds semantic-vs-literal guidance. `DEFAULT_WORKSPACE_VERSION` bump + `DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS` carries `agents/retrieval/agent.json` + `agents/retrieval/AGENT.md` so existing saves upgrade.
+
+### 4. Validation & Error Matrix
+
+- embeddingConfig not configured / incomplete (incl. missing dimensions) → `resolveEmbeddingConfig` returns null → index does not grow, `semantic_search` returns `[]` (no throw). Agent falls back to literal `search`.
+- Embedding API failure (network / dimension mismatch) → `embed` throws, `semanticSearch` catches → returns `[]`; embed-queue drops the job (staleness re-discovers it next search).
+- Index empty for an owner → `semantic_search` returns `[]`, no throw.
+- Tool enabled but data absent → `[]`; tool absent but data present → background indexing legal; both absent → all off. Four quadrants legal.
+- `semantic_search` without `semanticSearchOwnerId` in context (non-save scenario) → returns `[]`, no throw.
+- Save deletion → corresponding `embeddingIndex` records dropped (GC).
+- Malformed raw turn JSON → chunker skips that file (no index crash); add log/trace for observability.
+- `typeFilter` narrows corpus; omit to search all kinds.
+
+### 5. Good/Base/Bad Cases
+
+- Good: retrieval agent uses `semantic_search` for distant events (player says "灯塔的事", text says "她走向海边那座塔"), reads the chosen candidate via `read`, returns refined findings to master.
+- Good: `semantic_search` returns empty (index not built / nothing relevant) → retrieval falls back to `search` for exact wording.
+- Good: turn commit proactively enqueues stale embeddings; next search sees a fresh index without waiting.
+- Base: embeddingConfig disabled by default; the whole system behaves as before (zero impact) until the player configures it.
+- Bad: hanging an embedding write hook on `executeWorkspaceMutation` — play-time writes bypass it (staged → commit), so it is dead code for the main corpus.
+- Bad: adding `semanticScore` separate from `score` for "possible mixed result sorting" — MVP retrieval calls two tools separately, never mixes; the separate field is YAGNI.
+- Bad: adding entity tags / `entityFilter` plumbing — narrow benefit, no gain on raw turn (the main corpus), covered by agent self-select.
+- Bad: folding embeddingConfig into chat provider structure — meaningless field coupling + validation branch pollution.
+
+### 6. Tests Required
+
+- Assert `semantic_search` op is read-only, actor-level read protected.
+- Assert empty index / API failure → `[]`, no throw; agent falls back to literal search.
+- Assert `embeddingIndex` partitioned by `(scope, ownerId)`; save deletion drops records.
+- Assert corpus三分: raw turn one-chunk, markdown by section, JSON skipped.
+- Assert `type` pre-filter works (querying settings hits summary not turn).
+- Assert embeddingConfig default off; incomplete (incl. missing dimensions) → index does not grow, tool returns `[]`.
+- Assert two-switch independence: four quadrants (tool × data) all legal.
+- Assert turn commit enqueues asynchronously, does not block turn; API failure does not throw to agent.
+- Assert staleness: file `updatedAt` newer than vector `updatedAt` → next search re-embeds.
+- Assert retrieval agent has `semantic_search`; master does not (delegates to retrieval).
+- Assert result reuses `WorkspaceSearchResult` shell + metadata; retrieval refine behavior unchanged.
+- Assert existing saves upgrade to retrieval's new tool config + AGENT.md via `DEFAULT_WORKSPACE_VERSION` bump.
+
+### 7. Wrong vs Correct
+
+#### Wrong — write hook on the bypassed dispatch
+
+```typescript
+// executeWorkspaceMutation write branch
+if (resolveEmbeddingConfig()) {
+  embedQueue.enqueue({ scope, ownerId, path, operation: "embed" })
+}
+```
+
+#### Correct — proactive enqueue at turn commit
+
+```typescript
+await commitSuccessfulRuntimeTurnForSave(activeSaveId, { ... })
+if (resolveEmbeddingConfig()) {
+  const saveRuntimeFiles = workspaceTransaction
+    .finalWorkspaceFiles()
+    .filter((file) => file.path.startsWith("save/"))
+  void enqueueStaleEmbeddings(activeSaveId, saveRuntimeFiles)
+}
+```
+
+#### Wrong — folding embedding into chat provider
+
+```typescript
+// reusing BrowserAiModelConfig with dummy toolCallMode for embedding
+modelConfig: { id: "embed-model", toolCallMode: "text", streaming: false, parameters: {...} }
+```
+
+#### Correct — independent section
+
+```typescript
+embeddingConfig: { enabled: true, baseUrl, apiKey, model, dimensions }
+// resolveEmbeddingConfig() strict check; no chat validation branches touched
+```
+
