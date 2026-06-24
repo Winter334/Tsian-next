@@ -86,6 +86,7 @@
 import { ref } from "vue"
 import { useRouter } from "vue-router"
 import { Download, FolderOpen, Search, Store, Upload } from "lucide-vue-next"
+import { toast } from "@/composables/useToast"
 import { getGameCardTitle } from "@/lib/game-card-display"
 import { importPlatformGameCardPackage } from "../platform-host"
 
@@ -114,7 +115,7 @@ async function handlePackageSelected(event: Event) {
   try {
     const imported = await importPlatformGameCardPackage(file)
     feedback.value = `已安装：${getGameCardTitle(imported)}`
-    router.push({ name: "game-card-detail", params: { cardId: imported.id } })
+    toast.success(`已导入：${getGameCardTitle(imported)}`)
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "安装游戏卡包失败。"
   } finally {

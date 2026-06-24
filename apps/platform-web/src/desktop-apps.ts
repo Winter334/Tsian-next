@@ -307,7 +307,7 @@ export function desktopWindowForRoute(
     }
 
     return windowInputFromDefinition(gameLauncherDefinition, {
-      id: `${gameLauncherDefinition.appId}:${cardId}`,
+      id: detailWindowIdFor(cardId),
       routePath: route.fullPath,
       props: { cardId },
     })
@@ -414,6 +414,13 @@ export function editorWindowIdFor(input: {
     return `${workspaceEditorDefinition.appId}:${input.scopeKey}:${input.editorId}`
   }
   return `${workspaceEditorDefinition.appId}:${input.scopeKey}:${input.mode}:${input.path || "untitled"}`
+}
+
+/** Compute the desktop window id for a game-card detail route. Mirrors the id
+ *  built by `desktopWindowForRoute`'s game-card-detail branch so a detail view
+ *  can look up its own window id to register a before-close guard. */
+export function detailWindowIdFor(cardId: string): string {
+  return `${gameLauncherDefinition.appId}:${cardId}`
 }
 
 function queryString(value: unknown): string {

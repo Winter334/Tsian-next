@@ -67,17 +67,19 @@
           role="list"
           aria-label="已安装的游戏卡应用"
         >
-          <button
+          <div
             v-for="card in cards"
             :key="card.id"
-            type="button"
-            class="library-app-icon retro-focus selection-tile group grid min-w-0 gap-2 p-1.5 text-center"
+            class="library-app-icon retro-focus selection-tile group grid min-w-0 cursor-pointer gap-2 p-1.5 text-center"
             :class="{ 'selection-tile--active': selectedCardId === card.id }"
             :aria-label="`打开${getGameCardTitle(card)}`"
             role="listitem"
+            tabindex="0"
             @focus="selectedCardId = card.id"
             @mouseenter="selectedCardId = card.id"
             @click="openCard(card.id)"
+            @keyup.enter="openCard(card.id)"
+            @keydown.space.prevent="openCard(card.id)"
             @contextmenu.prevent.stop="openCardContextMenu(card, $event)"
           >
             <div
@@ -107,12 +109,42 @@
               >
                 loaded
               </span>
+
+              <!-- 快捷操作（hover/focus 可见） -->
+              <div
+                class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                :class="selectedCardId === card.id ? 'opacity-100' : ''"
+              >
+                <button
+                  type="button"
+                  class="retro-focus inline-flex h-6 w-6 items-center justify-center border border-neon-deep/60 bg-void/85 text-text-dim backdrop-blur-sm transition-colors hover:border-neon hover:text-neon disabled:opacity-40"
+                  :disabled="copyingId === card.id"
+                  :title="`复制${getGameCardTitle(card)}`"
+                  :aria-label="`复制${getGameCardTitle(card)}`"
+                  @click.stop="quickCopy(card)"
+                  @focus.stop="selectedCardId = card.id"
+                >
+                  <Copy class="h-3 w-3" aria-hidden="true" />
+                </button>
+                <button
+                  v-if="canLoadCard(card)"
+                  type="button"
+                  class="retro-focus inline-flex h-6 w-6 items-center justify-center border border-neon-deep/60 bg-void/85 text-text-dim backdrop-blur-sm transition-colors hover:border-neon hover:text-neon disabled:opacity-40"
+                  :disabled="loadingCard"
+                  :title="`加载${getGameCardTitle(card)}`"
+                  :aria-label="`加载${getGameCardTitle(card)}`"
+                  @click.stop="quickLoad(card)"
+                  @focus.stop="selectedCardId = card.id"
+                >
+                  <CheckCircle2 class="h-3 w-3" aria-hidden="true" />
+                </button>
+              </div>
             </div>
 
             <span class="library-app-label mx-auto line-clamp-2 max-w-full font-mono text-[11px] leading-4 text-text-main">
                 {{ getGameCardTitle(card) }}
             </span>
-          </button>
+          </div>
         </div>
       </div>
 
@@ -190,7 +222,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { CheckCircle2, Download, FolderOpen, Gamepad2, Plus, Store, Trash2 } from "lucide-vue-next"
+import { CheckCircle2, Copy, Download, FolderOpen, Gamepad2, Plus, Store, Trash2 } from "lucide-vue-next"
 import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
 import type { LocalGameCardRecord } from "@/storage/db"
@@ -207,6 +239,7 @@ import {
   isGameCardsChangedEvent,
 } from "@/lib/platform-events"
 import {
+  copyPlatformGameCardAsLocal,
   createDefaultPlatformGameCard,
   deletePlatformGameCard,
   getPlatformActiveGameCardId,
@@ -225,6 +258,7 @@ const importing = ref(false)
 const deleting = ref(false)
 const loadingCard = ref(false)
 const creating = ref(false)
+const copyingId = ref("")
 const errorMessage = ref("")
 const importError = ref("")
 const feedback = ref("")
@@ -395,6 +429,36 @@ async function loadSelectedCard() {
   }
 }
 
+async function quickCopy(card: LocalGameCardRecord) {
+  if (copyingId.value) {
+    return
+  }
+  copyingId.value = card.id
+  feedback.value = ""
+  try {
+    const name = `${getGameCardTitle(card)} 副本`
+    const summary = getGameCardSummary(card)
+    const copied = await copyPlatformGameCardAsLocal(card.id, { name, summary })
+    toast.success(`已复制：${getGameCardTitle(copied)}`)
+    feedback.value = `已复制：${getGameCardTitle(copied)}`
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "复制游戏卡失败。")
+  } finally {
+    copyingId.value = ""
+  }
+}
+
+async function quickLoad(card: LocalGameCardRecord) {
+  if (!canLoadCard(card)) {
+    return
+  }
+  selectedCardId.value = card.id
+  await loadSelectedCard()
+  if (activeGameCardId.value === card.id) {
+    toast.success(`已加载：${getGameCardTitle(card)}`)
+  }
+}
+
 async function handlePackageSelected(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -409,9 +473,9 @@ async function handlePackageSelected(event: Event) {
   try {
     const imported = await importPlatformGameCardPackage(file)
     feedback.value = `已导入：${getGameCardTitle(imported)}`
+    toast.success(`已导入：${getGameCardTitle(imported)}`)
     selectedCardId.value = imported.id
     await refreshCards()
-    openCard(imported.id)
   } catch (error) {
     importError.value = error instanceof Error ? error.message : "导入游戏卡包失败。"
   } finally {

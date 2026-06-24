@@ -145,7 +145,7 @@
                       <button
                         type="button"
                         class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                        :disabled="coverSaving || card.source === 'builtin'"
+                        :disabled="card.source === 'builtin'"
                         @click="openCoverPicker"
                       >
                         <ImageUp class="h-3.5 w-3.5" aria-hidden="true" />
@@ -155,8 +155,8 @@
                         v-if="coverUrl"
                         type="button"
                         class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
-                        :disabled="coverSaving || card.source === 'builtin'"
-                        @click="clearCover"
+                        :disabled="card.source === 'builtin'"
+                        @click="applyCoverClearDraft"
                       >
                         <XCircle class="h-3.5 w-3.5" aria-hidden="true" />
                         移除
@@ -174,8 +174,8 @@
                         <button
                           type="button"
                           class="retro-button retro-focus inline-flex h-8 shrink-0 items-center gap-2 px-3 font-mono text-xs"
-                          :disabled="coverSaving || !coverUrlDraft.trim() || card.source === 'builtin'"
-                          @click="saveCoverUrl"
+                          :disabled="!coverUrlDraft.trim() || card.source === 'builtin'"
+                          @click="applyCoverUrlDraft"
                         >
                           <Link2 class="h-3.5 w-3.5" aria-hidden="true" />
                           应用
@@ -216,25 +216,16 @@
                 <button
                   type="button"
                   class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                  :disabled="metadataSaving || card.source === 'builtin'"
-                  @click="saveMetadata"
+                  :disabled="!hasUnsavedChanges || propertiesSaving || card.source === 'builtin'"
+                  @click="saveProperties"
                 >
                   <Save class="h-3.5 w-3.5" aria-hidden="true" />
                   保存属性
                 </button>
                 <button
                   type="button"
-                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                  :disabled="metadataSaving"
-                  @click="copyAsLocalCard"
-                >
-                  <Copy class="h-3.5 w-3.5" aria-hidden="true" />
-                  另存为本地副本
-                </button>
-                <button
-                  type="button"
                   class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
-                  :disabled="metadataSaving || card.source === 'builtin'"
+                  :disabled="propertiesSaving || card.source === 'builtin'"
                   @click="deleteCurrentCard"
                 >
                   <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
@@ -392,13 +383,13 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
+import { clearBeforeClose, setBeforeClose } from "@/composables/useDesktopWindows"
 import {
   ACTIVE_CARD_CHANGED_EVENT,
   isActiveCardChangedEvent,
 } from "@/lib/platform-events"
 import {
   CheckCircle2,
-  Copy,
   Disc3,
   Download,
   Gamepad2,
@@ -423,7 +414,6 @@ import {
 } from "@/lib/game-card-display"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
 import {
-  copyPlatformGameCardAsLocal,
   deletePlatformGameCard,
   exportPlatformGameCardFrontendPackage,
   exportPlatformGameCardPackage,
@@ -438,6 +428,7 @@ import {
   updatePlatformGameCardFrontend,
   type PlatformGameCardFrontendFileSummary,
 } from "../platform-host"
+import { detailWindowIdFor } from "../desktop-apps"
 
 type TabId = "overview" | "frontend"
 type FrontendMode = "none" | "remote" | "packaged"
@@ -469,22 +460,39 @@ const metadataName = ref("")
 const metadataIntro = ref("")
 const coverUrlDraft = ref("")
 const coverInput = ref<HTMLInputElement | null>(null)
-const coverSaving = ref(false)
 const coverError = ref("")
 const loading = ref(false)
 const exporting = ref(false)
 const frontendSaving = ref(false)
 const frontendPackageInput = ref<HTMLInputElement | null>(null)
 const frontendPackageSaving = ref(false)
-const metadataSaving = ref(false)
+const propertiesSaving = ref(false)
 const errorMessage = ref("")
 const feedback = ref("")
+
+type CoverDraft =
+  | { kind: "none" }
+  | { kind: "upload"; file: File; previewUrl: string }
+  | { kind: "url"; url: string }
+  | { kind: "clear" }
+
+const coverDraft = ref<CoverDraft>({ kind: "none" })
 
 const cardTitle = computed(() => getGameCardTitle(card.value))
 const cardDescription = computed(() => getGameCardDescription(card.value))
 const cardAuthor = computed(() => getGameCardAuthor(card.value))
-const coverUrl = computed(() => getGameCardCoverUrl(card.value))
+const coverUrl = computed(() => {
+  const draft = coverDraft.value
+  if (draft.kind === "upload") return draft.previewUrl
+  if (draft.kind === "url") return draft.url
+  if (draft.kind === "clear") return ""
+  return getGameCardCoverUrl(card.value)
+})
 const coverSourceLabel = computed(() => {
+  const draft = coverDraft.value
+  if (draft.kind === "upload") return "预览"
+  if (draft.kind === "url") return "URL*"
+  if (draft.kind === "clear") return "已移除*"
   const cover = card.value?.manifest.cover
   if (!cover) return ""
   if (cover.url?.trim()) return "URL"
@@ -501,6 +509,14 @@ const packagedEntryDisplay = computed(() => {
   return ""
 })
 const isLoadedCard = computed(() => Boolean(card.value && activeGameCardId.value === card.value.id))
+
+const hasUnsavedChanges = computed(() => {
+  if (!card.value) return false
+  if (metadataName.value.trim() !== card.value.manifest.name) return true
+  if (metadataIntro.value.trim() !== card.value.manifest.summary) return true
+  if (coverDraft.value.kind !== "none") return true
+  return false
+})
 
 function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
   const frontend = loadedCard.manifest.frontend
@@ -527,6 +543,19 @@ function syncMetadataDraft(loadedCard: LocalGameCardRecord) {
   metadataName.value = loadedCard.manifest.name
   metadataIntro.value = loadedCard.manifest.summary
   coverUrlDraft.value = loadedCard.manifest.cover?.url ?? ""
+  resetCoverDraft()
+}
+
+/** Replace the current cover draft, revoking any pending upload preview URL. */
+function setCoverDraft(next: CoverDraft) {
+  if (coverDraft.value.kind === "upload") {
+    URL.revokeObjectURL(coverDraft.value.previewUrl)
+  }
+  coverDraft.value = next
+}
+
+function resetCoverDraft() {
+  setCoverDraft({ kind: "none" })
 }
 
 function openCoverPicker() {
@@ -545,20 +574,11 @@ async function handleCoverSelected(event: Event) {
     coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
     return
   }
-  coverSaving.value = true
   coverError.value = ""
-  try {
-    const updated = await setPlatformGameCardCover(card.value.id, { kind: "upload", file })
-    card.value = updated
-    coverUrlDraft.value = updated.manifest.cover?.url ?? ""
-  } catch (error) {
-    coverError.value = error instanceof Error ? error.message : "上传封面失败。"
-  } finally {
-    coverSaving.value = false
-  }
+  setCoverDraft({ kind: "upload", file, previewUrl: URL.createObjectURL(file) })
 }
 
-async function saveCoverUrl() {
+async function applyCoverUrlDraft() {
   const url = coverUrlDraft.value.trim()
   if (!url || !card.value) {
     return
@@ -567,19 +587,11 @@ async function saveCoverUrl() {
     coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
     return
   }
-  coverSaving.value = true
   coverError.value = ""
-  try {
-    const updated = await setPlatformGameCardCover(card.value.id, { kind: "url", url })
-    card.value = updated
-  } catch (error) {
-    coverError.value = error instanceof Error ? error.message : "设置封面 URL 失败。"
-  } finally {
-    coverSaving.value = false
-  }
+  setCoverDraft({ kind: "url", url })
 }
 
-async function clearCover() {
+async function applyCoverClearDraft() {
   if (!card.value) {
     return
   }
@@ -587,17 +599,8 @@ async function clearCover() {
     coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
     return
   }
-  coverSaving.value = true
   coverError.value = ""
-  try {
-    const updated = await setPlatformGameCardCover(card.value.id, { kind: "clear" })
-    card.value = updated
-    coverUrlDraft.value = ""
-  } catch (error) {
-    coverError.value = error instanceof Error ? error.message : "移除封面失败。"
-  } finally {
-    coverSaving.value = false
-  }
+  setCoverDraft({ kind: "clear" })
 }
 
 async function refreshData() {
@@ -627,46 +630,45 @@ async function refreshData() {
   }
 }
 
-function metadataInput() {
-  return {
-    name: metadataName.value,
-    summary: metadataIntro.value,
-  }
-}
-
-async function saveMetadata() {
+async function saveProperties() {
   if (!card.value) {
     return
   }
 
-  metadataSaving.value = true
+  propertiesSaving.value = true
   feedback.value = ""
   try {
-    await updatePlatformGameCardMetadata(card.value.id, metadataInput())
-    feedback.value = "已保存游戏卡属性。"
+    const trimmedName = metadataName.value.trim()
+    const trimmedIntro = metadataIntro.value.trim()
+    if (!trimmedName || !trimmedIntro) {
+      throw new Error("名称和简介不能为空。")
+    }
+
+    await updatePlatformGameCardMetadata(card.value.id, {
+      name: trimmedName,
+      summary: trimmedIntro,
+    })
+
+    const draft = coverDraft.value
+    if (draft.kind === "upload") {
+      const updated = await setPlatformGameCardCover(card.value.id, { kind: "upload", file: draft.file })
+      card.value = updated
+    } else if (draft.kind === "url") {
+      const updated = await setPlatformGameCardCover(card.value.id, { kind: "url", url: draft.url })
+      card.value = updated
+    } else if (draft.kind === "clear") {
+      const updated = await setPlatformGameCardCover(card.value.id, { kind: "clear" })
+      card.value = updated
+    }
+
+    resetCoverDraft()
+    toast.success("已保存属性")
+    feedback.value = "已保存属性。"
     await refreshData()
   } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "保存游戏卡属性失败。"
+    feedback.value = error instanceof Error ? error.message : "保存属性失败。"
   } finally {
-    metadataSaving.value = false
-  }
-}
-
-async function copyAsLocalCard() {
-  if (!card.value) {
-    return
-  }
-
-  metadataSaving.value = true
-  feedback.value = ""
-  try {
-    const copied = await copyPlatformGameCardAsLocal(card.value.id, metadataInput())
-    feedback.value = `已创建本地副本：${copied.manifest.name}`
-    router.push({ name: "game-card-detail", params: { cardId: copied.id } })
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "创建本地副本失败。"
-  } finally {
-    metadataSaving.value = false
+    propertiesSaving.value = false
   }
 }
 
@@ -684,7 +686,7 @@ async function deleteCurrentCard() {
     return
   }
 
-  metadataSaving.value = true
+  propertiesSaving.value = true
   feedback.value = ""
   try {
     await deletePlatformGameCard(card.value.id)
@@ -693,7 +695,7 @@ async function deleteCurrentCard() {
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : "删除应用失败。"
   } finally {
-    metadataSaving.value = false
+    propertiesSaving.value = false
   }
 }
 
@@ -899,16 +901,24 @@ function formatBytes(size: number): string {
 
 watch(() => props.cardId, () => {
   activeTab.value = "overview"
+  resetCoverDraft()
   void refreshData()
 })
 
+let registeredWindowId = ""
+
 onMounted(() => {
+  registeredWindowId = detailWindowIdFor(props.cardId)
+  setBeforeClose(registeredWindowId, onBeforeClose)
   window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   void refreshData()
 })
 
 onBeforeUnmount(() => {
+  clearBeforeClose(registeredWindowId)
+  registeredWindowId = ""
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+  resetCoverDraft()
 })
 
 function onActiveCardChanged(event: Event) {
@@ -916,6 +926,17 @@ function onActiveCardChanged(event: Event) {
     return
   }
   void refreshData()
+}
+
+async function onBeforeClose(): Promise<boolean> {
+  if (!hasUnsavedChanges.value) {
+    return true
+  }
+  return confirm({
+    message: "有未保存的改动，放弃并关闭？",
+    severity: "danger",
+    confirmText: "放弃",
+  })
 }
 </script>
 
