@@ -61,6 +61,8 @@
 
 远程模型向量基本关闭"随卡分发"路径——但 MVP 是 save-runtime 不分发,不影响。
 
+**已定选型:硅基流动(SiliconFlow)+ Qwen embedding 模型**。硅基流动是 OpenAI 兼容 API(`https://api.siliconflow.cn/v1`,`POST /embeddings`,响应 `data[].embedding`),MVP 的 openai-compatible 协议标准直接覆盖,零额外适配。Qwen 系 embedding 对中文叙事是强项,正面匹配本项目的中文散文语料。用户在控制面板"语义检索"分区配置 baseUrl/apiKey/model,选型是配置不是硬编码。
+
 ## 异步嵌入 + Staleness 兜底
 
 远程 API 的热路径风险:save-runtime 每轮落盘 raw turn 时若同步等 embedding,网络延迟/失败会阻塞 turn 收尾。
@@ -193,7 +195,7 @@ AIRP turn 流程:master LLM turn → 委托 retrieval → retrieval 跑 workspac
 
 ## Open Questions
 
-- [ ] `AgentPlatformToolName` 是新增独立 `workspace_semantic_search`,还是复用 `workspace_read` 粒度?design 定。
-- [ ] embedding API 选型(哪家 provider/model):需实测中文叙事召回质量,用真实 turn 正文 + 真实查询验证 top-K。
-- [ ] 异步嵌入队列的具体形态(内存队列 / IndexedDB 持久化 job 表):design 定,倾向轻量内存队列 + staleness 兜底(进程重启丢队列不丢正确性)。
-- [ ] chunk 文本拼接格式(turn 的 user/assistant 拼法 + 可选前情提要前缀):design 定。
+- [x] `AgentPlatformToolName` 粒度:design §2.1 已定,独立 `workspace_semantic_search`。
+- [x] embedding API 选型:**硅基流动 + Qwen embedding**(用户已定)。OpenAI 兼容协议,MVP 直接覆盖。实现时用真实 turn 正文验证 top-K 召回质量(验证步骤,非选型问题)。
+- [x] 异步嵌入队列形态:design §6 已定,轻量内存队列 + staleness 兜底。
+- [x] chunk 文本拼接格式:design §3.1 已定,user/assistant 直拼,前情提要前缀 MVP 不做。

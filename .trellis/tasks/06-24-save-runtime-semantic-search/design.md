@@ -334,7 +334,7 @@ maintenance 写文件时(经 world-state-maintenance Skill → workspace write),
 
 ## 11. 风险点
 
-- **embedding API 中文叙事质量**:需实测选型。不同 provider/model 对中文散文召回差异大。Open Question。
+- **embedding API 中文叙事质量**:选型已定(硅基流动 + Qwen embedding),Qwen 系对中文叙事是强项。实现时用真实 turn 正文验证召回质量(验证步骤,非选型风险)。
 - **远程 API 热路径**:异步嵌入解耦了 turn 落盘,但首次全量建索引(新存档/清空后)会有一段"索引追赶"期,此期间语义检索结果不全。staleness 兜底渐进补,可接受。
 - **Dexie Float32Array 存储**:Structured Clone 支持 TypedArray,但需验证 Dexie 版本兼容 + 查询时取回类型正确(非 ArrayBuffer)。
 - **chunker 对损坏 JSON 的健壮性**:raw turn 文件损坏不阻塞索引(跳过),但要有日志/trace 可观测。
@@ -342,6 +342,6 @@ maintenance 写文件时(经 world-state-maintenance Skill → workspace write),
 ## 12. Open Questions 落点
 
 - **AgentPlatformToolName 粒度**:§2.1 已定,独立 `workspace_semantic_search`。
-- **embedding API 选型**:需实测,留 implement.md 验证步骤。
+- **embedding API 选型**:已定,硅基流动(SiliconFlow)+ Qwen embedding。OpenAI 兼容协议,MVP openai-compatible 标准直接覆盖。留 implement.md 验证步骤(用真实 turn 正文测召回)。
 - **异步队列形态**:§6 已定,内存队列 + staleness 兜底。
 - **chunk 拼接格式**:§3.1 已定,user/assistant 直拼,前情提要前缀 MVP 不做。

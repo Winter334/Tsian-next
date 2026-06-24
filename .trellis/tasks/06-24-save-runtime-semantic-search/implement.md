@@ -130,9 +130,10 @@
 
 ### Phase 10: 验证 + spec 同步
 
-20. **embedding API 实测**
-    - 用真实 turn 正文 + 真实查询(如"灯塔的事")验证 top-K 召回质量
-    - 确认 provider/model 选型(Open Question 落地)
+20. **embedding API 召回验证**(选型已定:硅基流动 + Qwen embedding)
+    - 在控制面板配好 embeddingConfig(baseUrl=`https://api.siliconflow.cn/v1` + 硅基流动 apiKey + 具体 Qwen embedding 模型名)
+    - 用真实 turn 正文建索引 + 真实查询(如"灯塔的事")验证 top-K 召回质量
+    - 确认 Qwen embedding 对中文叙事散文的跨释义召回效果
 
 21. **`.trellis/spec/platform-web/frontend/type-safety.md`**
     - workspace op 列表加 `semantic_search`
