@@ -1122,3 +1122,62 @@ Implemented full multimodal attachment support for the desktop assistant chat (t
 ### Next Steps
 
 - None - task complete
+
+---
+
+## Session 2026-06-24: workspace 部分编辑能力 + 语义检索架构设计
+
+**Date**: 2026-06-24
+**Task**: 06-24-workspace-partial-edit
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+两件事:收尾 partial-edit 任务 + 与用户深度讨论 save-runtime 语义检索架构(未落代码,待开任务)。
+
+**partial-edit**:补齐 workspace 部分编辑能力,新增 `workspace.edit`(字符串精确替换 + 唯一性约束),退役误导性的 `patch` operation(乐观锁折进 `write.expectedContent`)。全 12 条验收通过,build:web 绿,patch 残留零。
+
+**语义检索架构设计**(讨论产出,待进 Trellis 规划):
+- 原生 workspace 加只读 `semantic_search` op,不并入 search(确定性字面 vs 概率性语义,返回结构冲突)。
+- MVP scope = save-runtime(saveId 归属,随存档生灭,不随卡分发)。
+- 三分语料:raw turns(按 turn 不切,轻预处理直嵌)/ agent 浓缩产物(按段落切,预处理归 memory-maintenance Skill)/ JSON 状态(跳过)。
+- 预处理责任归 agent,索引层只做 ingest + 过滤 + cosine,不做索引期模型 pass。
+- 元数据:第一类结构标签(turn/type/createdAt)写时免费,但只有 type 值得 pre-filter(跨类型污染),时间标签做近因 re-rank 公式不做 filter;第二类实体标签归 agent 在 maintenance 冷路径顺带产出,词表靠 save/world/ 受控防漂移,可选增强 filter。
+- 无 reranker 模型(消费端是 agent 本身,已付费推理顺手做 rerank);无查询改写 LLM pass(成本敏感)。
+- embedding = 三方 API,写路径异步嵌入不阻塞 turn,失败 staleness 兜底补嵌。
+- 双开关解耦:embedding 能力(控制面板 embeddingConfig,平台全局,默认关)与工具暴露(agent.json platformTools,per-agent)独立,四象限都合法不报错。embedding 配置另起独立段不并入 chat provider 结构(chat 专属字段 toolCallMode/streaming/采样参数对 embedding 无意义,适配成本 > 另起)。
+- AIRP 融入三挂点:retrieval 加 semantic_search 工具(唯一 agent 可见点)/ post-processing maintenance 顺带吐 tag / raw turn 写钩子异步嵌入(透明)。master 流程零改动。
+
+### Main Changes
+
+- `packages/contracts/src/runtime.ts`: WorkspaceOperationName 移除 patch 加 edit;WorkspacePatchResult→WorkspaceWriteResult;edit 字段 oldString/newString/replaceAll
+- `workspace-operations.ts`: editWorkspaceFile(countOccurrences 唯一性 + 二进制拒绝 + replaceAll split-join);write 合并 expectedContent 乐观锁;移除 patch 分支
+- `workspace-tools.ts` / `tool-schemas.ts`: LLM 工具面暴露 edit
+- `browser-skill-script-executor.ts`: browser_script 面暴露 edit,移除 patch
+- `workspace-ops.ts` / `WorkspaceEditorView.vue`: 人类编辑器改走 write+expectedContent,陈旧检测不变
+- `storage/workspace.ts`: post-processing AGENT.md 加 edit vs write 指引
+- `.trellis/spec/platform-web/frontend/type-safety.md`: patch→write/edit 全引用同步(含 grep 漏网的斜杠分隔列表三处)
+- `permissions.ts` / `index.ts` / `local-assistant-files.ts`: 引用同步
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2ae8f41` | feat(platform-web): workspace.edit 部分编辑能力与 patch 退役 |
+| (auto) | chore(task): archive 06-24-workspace-partial-edit |
+
+### Testing
+
+- [OK] npm run build:web 通过(9.51s)
+- [OK] grep `workspace.patch` / `\bpatch\b` / `operation:"patch"` / `WorkspacePatchResult` 零残留(除归档任务文档)
+- [OK] 12 条 Acceptance Criteria 逐条核对全绿
+- [OK] spec 残留三处斜杠分隔 patch 引用已修
+
+### Status
+
+[OK] **Completed** — partial-edit 任务完成归档;语义检索架构待用户确认后开 Trellis 任务进规划
+
+### Next Steps
+
+- 待用户确认开 save-runtime 语义检索 Trellis 任务(slug 候选 `06-24-save-runtime-semantic-search`),将讨论产出写进 prd.md + design.md
