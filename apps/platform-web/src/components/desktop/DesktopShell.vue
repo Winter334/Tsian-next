@@ -16,7 +16,7 @@
           type="button"
           class="desktop-icon retro-focus"
           :class="{
-            'desktop-icon--selected': selectedDesktopIcon === icon.id || isIconActive(icon.id),
+            'desktop-icon--selected': selectedDesktopIcon === icon.id,
           }"
           :aria-label="`打开${icon.label}`"
           @click.stop="selectDesktopIcon(icon.id)"
@@ -85,7 +85,7 @@
             'desktop-task-button--active': desktop.activeWindowId.value === window.id && !window.minimized,
             'desktop-task-button--minimized': window.minimized,
           }"
-          @click="focusWindow(window.id)"
+          @click="toggleTaskbarWindow(window.id)"
         >
           <component :is="window.icon" class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
           <span class="truncate">{{ window.shortLabel }}</span>
@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { MonitorDot } from "lucide-vue-next"
 import DesktopWindow from "./DesktopWindow.vue"
@@ -134,8 +134,6 @@ const stageBounds = ref<DesktopBounds>({ width: 1280, height: 720 })
 const isNarrow = ref(false)
 let clockTimer: number | null = null
 let resizeObserver: ResizeObserver | null = null
-
-const activeAppId = computed(() => desktop.activeWindow.value?.appId ?? "")
 
 watch(
   () => route.fullPath,
@@ -189,10 +187,6 @@ function openDesktopContextMenu(event: MouseEvent) {
   }
 }
 
-function isIconActive(id: DesktopAppId): boolean {
-  return selectedDesktopIcon.value === id || activeAppId.value === id || desktop.isAppOpen(id)
-}
-
 function focusWindow(id: string) {
   const focused = desktop.focusWindow(id)
   if (focused) {
@@ -205,6 +199,20 @@ function minimizeWindow(id: string) {
   desktop.minimizeWindow(id)
   if (wasActive) {
     syncRouteToActiveWindow()
+  }
+}
+
+function toggleTaskbarWindow(id: string) {
+  const target = desktop.windows.value.find((window) => window.id === id)
+  if (!target) {
+    return
+  }
+  if (target.minimized) {
+    focusWindow(id)
+  } else if (desktop.activeWindowId.value === id) {
+    minimizeWindow(id)
+  } else {
+    focusWindow(id)
   }
 }
 
