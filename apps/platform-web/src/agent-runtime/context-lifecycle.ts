@@ -17,8 +17,12 @@ import type { RuntimeTraceDebugLabel } from "./trace"
  * `06-19-agent-session-context-lifecycle` 的 design.md.
  */
 
-/** context.json 在工作区的路径(相对 save runtime 根). */
-export const AGENT_CONTEXT_PATH = "agents/master/context.json"
+/** context.json 在工作区的路径(save-runtime 根下,必须以 save/ 开头才能通过
+ *  assertOrdinarySaveRuntimeMutationPath 校验).历史值曾误为 "agents/master/context.json",
+ *  缺 save/ 前缀,导致 turn 收尾 stageAgentContextFile 写入被
+ *  WORKSPACE_SAVE_RUNTIME_PATH_REQUIRED 拦截、整个 turn 回滚、正文不落库
+ *  (加载存档后对话记录"消失"的根因). */
+export const AGENT_CONTEXT_PATH = "save/agents/master/context.json"
 /** context.json 的 schema 标记,用于 parse 时校验. */
 export const AGENT_CONTEXT_SCHEMA = "tsian.agent.context.v1"
 /** master agent 固定 id(context.json 只服务 master). */
