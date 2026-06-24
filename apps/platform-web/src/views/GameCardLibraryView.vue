@@ -70,16 +70,13 @@
           <div
             v-for="card in cards"
             :key="card.id"
-            class="library-app-icon retro-focus selection-tile group grid min-w-0 cursor-pointer gap-2 p-1.5 text-center"
+            class="library-app-icon selection-tile group grid min-w-0 cursor-pointer gap-2 p-1.5 text-center"
             :class="{ 'selection-tile--active': selectedCardId === card.id }"
             :aria-label="`打开${getGameCardTitle(card)}`"
             role="listitem"
-            tabindex="0"
-            @focus="selectedCardId = card.id"
             @mouseenter="selectedCardId = card.id"
+            @mouseleave="selectedCardId = ''"
             @click="openCard(card.id)"
-            @keyup.enter="openCard(card.id)"
-            @keydown.space.prevent="openCard(card.id)"
             @contextmenu.prevent.stop="openCardContextMenu(card, $event)"
           >
             <div
@@ -110,9 +107,9 @@
                 loaded
               </span>
 
-              <!-- 快捷操作（hover/focus 可见） -->
+              <!-- 快捷操作（hover 可见） -->
               <div
-                class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+                class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
                 :class="selectedCardId === card.id ? 'opacity-100' : ''"
               >
                 <button
@@ -122,7 +119,6 @@
                   :title="`复制${getGameCardTitle(card)}`"
                   :aria-label="`复制${getGameCardTitle(card)}`"
                   @click.stop="quickCopy(card)"
-                  @focus.stop="selectedCardId = card.id"
                 >
                   <Copy class="h-3 w-3" aria-hidden="true" />
                 </button>
@@ -134,7 +130,6 @@
                   :title="`加载${getGameCardTitle(card)}`"
                   :aria-label="`加载${getGameCardTitle(card)}`"
                   @click.stop="quickLoad(card)"
-                  @focus.stop="selectedCardId = card.id"
                 >
                   <CheckCircle2 class="h-3 w-3" aria-hidden="true" />
                 </button>
@@ -305,8 +300,9 @@ async function refreshCards() {
     ])
     cards.value = loadedCards.filter((card) => card.source !== "builtin")
     activeGameCardId.value = loadedActiveGameCardId
+    // 不默认选中第一张卡：选中只由 hover/focus/键盘导航驱动，列表加载时不应有"选中态"。
     if (!cards.value.some((card) => card.id === selectedCardId.value)) {
-      selectedCardId.value = cards.value[0]?.id ?? ""
+      selectedCardId.value = ""
     }
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡。"
