@@ -75,6 +75,36 @@ import {
 
 // ── 助手会话 context 读写（B 类 helper，只被 runAssistantChat 调用，随接缝一起迁） ──
 
+/** Upsert a temp-scope file into the runtime staged snapshot so same-turn
+ *  read/edit sees it. temp write lands in Dexie via executeWorkspaceMutation
+ *  but bypasses the save transaction, which otherwise leaves stagedFiles
+ *  stale. Mirrors index.ts:syncWorkspaceFileWrite but kept local — the two
+ *  helpers serve different call sites and a shared export would couple the
+ *  files for three lines of logic. */
+function syncTempFileIntoStaged(stagedFiles: WorkspaceFile[], file: WorkspaceFile): void {
+  const existingIndex = stagedFiles.findIndex((f) => f.path === file.path)
+  if (existingIndex >= 0) {
+    stagedFiles[existingIndex] = file
+  } else {
+    stagedFiles.push(file)
+    stagedFiles.sort((left, right) => left.path.localeCompare(right.path))
+  }
+}
+
+/** Remove deleted temp paths from the runtime staged snapshot. Same rationale
+ *  as syncTempFileIntoStaged: temp delete hits Dexie but bypasses the
+ *  transaction, so stagedFiles must be pruned explicitly. `deletedPaths` may
+ *  be a prefix match (temp delete can remove a subtree), so filter by prefix. */
+function removeTempPathsFromStaged(stagedFiles: WorkspaceFile[], deletedPaths: string[]): void {
+  if (deletedPaths.length === 0) return
+  for (let i = stagedFiles.length - 1; i >= 0; i -= 1) {
+    const path = stagedFiles[i].path
+    if (deletedPaths.some((prefix) => path === prefix || path.startsWith(prefix + "/"))) {
+      stagedFiles.splice(i, 1)
+    }
+  }
+}
+
 function readAssistantContextFromFiles(
   files: WorkspaceFile[],
   sessionId: string,
@@ -514,14 +544,21 @@ export async function runAssistantChat(
               })
             }
             if (writeInput.scope === "temp") {
-              return executeWorkspaceMutation({
+              // temp write 落 Dexie(附件表)但绕过 save 事务,不会自动更新
+              // transaction 的 stagedFiles 快照。回填返回的文件进 stagedFiles,
+              // 让同回合后续 read/edit 立刻可见(save-runtime write 走 transaction.write
+              // 会自动改 stagedFiles,temp 走 executeWorkspaceMutation 不会,这里补齐)。
+              return (executeWorkspaceMutation({
                 scope: "temp",
                 path: writeInput.path,
                 ...(typeof writeInput.content === "string" ? { content: writeInput.content } : {}),
                 ...(writeInput.data ? { data: writeInput.data } : {}),
                 ownerContext: { saveId: activeSaveId ?? undefined, cardId: activeCard.id, sessionId: input.sessionId },
                 operation: "write",
-              }) as Promise<WorkspaceFile>
+              }) as Promise<WorkspaceFile>).then((file) => {
+                syncTempFileIntoStaged(activeWorkspaceTransaction.workspaceFiles, file)
+                return file
+              })
             }
             throw new Error(`Assistant workspace write scope not supported: ${writeInput.scope}`)
           },
@@ -545,15 +582,20 @@ export async function runAssistantChat(
               }
             }
             if (deleteInput.scope === "temp") {
+              // 同 write:temp delete 落 Dexie 但绕过事务,补一步从 stagedFiles
+              // 移除已删条目,让同回合后续 read/edit 不再看到它们。
               return executeWorkspaceMutation({
                 scope: "temp",
                 path: deleteInput.path,
                 ownerContext: { saveId: activeSaveId ?? undefined, cardId: activeCard.id, sessionId: input.sessionId },
                 operation: "delete",
-              }).then((paths) => ({
-                scope: deleteInput.scope,
-                deletedPaths: paths as string[],
-              }))
+              }).then((paths) => {
+                removeTempPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, paths as string[])
+                return {
+                  scope: deleteInput.scope,
+                  deletedPaths: paths as string[],
+                }
+              })
             }
             throw new Error(`Assistant workspace delete scope not supported: ${deleteInput.scope}`)
           },
