@@ -6,10 +6,10 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 
 - `AppMarketView.vue` owns the desktop App Market placeholder until upload/download package flows are implemented.
 - `GameCardLibraryView.vue` owns the My Apps Explorer view for installed Game Cards.
-- `GameCardDetailView.vue` owns Game Card launcher, save-slot management, and folder-like Workspace entry points.
+- `GameCardDetailView.vue` owns Game Card overview (manifest metadata, cover, load/copy/delete) and frontend binding configuration. Save-slot management was removed from this view (task `06-24-game-launcher-saves`) and moved into the game launcher; this view no longer holds any "enter play" affordance.
 - `SettingsView.vue` owns browser chat model configuration.
 - `DebugView.vue` owns read-only observability for AI debug, history, checkpoints, and snapshot.
-- `PlayView.vue` mounts the active play frontend and should remain a thin loader.
+- `PlayView.vue` is a thin phase router for the `/play` singleton window: it resolves the active card, then either renders `<GameLauncherPanel>` (select/create/rename/delete saves, then continue), shows an unplayable-card guide, or mounts the active frontend iframe. The save-selection UI lives in `components/play/GameLauncherPanel.vue`; PlayView itself stays a thin loader (no save-list business UI inline) per the thin-loader convention. `playing`-phase return-to-launcher is an in-view button + ESC.
 
 ## UI Rules
 

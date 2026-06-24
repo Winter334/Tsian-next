@@ -44,6 +44,7 @@ import {
   listWorkspaceFilesForSave,
   normalizeWorkspaceFilePath,
   putLocalGameCard,
+  renameLocalSave,
   replaceWorkspaceFilesForSave,
   setActiveGameCardId,
   setActiveSaveId,
@@ -574,6 +575,12 @@ export async function selectPlatformSave(saveId: string) {
   await restoreActiveSnapshotFromStorage(saveId)
   emitSavesChanged()
   emitActiveCardChanged()
+}
+
+export async function renamePlatformSave(saveId: string, name: string) {
+  const updated = await renameLocalSave(saveId, name)
+  emitSavesChanged()
+  return updated
 }
 
 export async function deletePlatformSave(saveId: string) {

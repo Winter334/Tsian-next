@@ -296,6 +296,22 @@ export async function saveSnapshotForSave(
   await saveRuntimeForSave(saveId, snapshot, normalizeMessages(snapshot.state.messages))
 }
 
+export async function renameLocalSave(saveId: string, name: string): Promise<LocalSaveRecord> {
+  const trimmed = name.trim()
+  if (!trimmed) {
+    throw new Error("存档名不能为空。")
+  }
+
+  const existing = await localDb.saves.get(saveId)
+  if (!existing) {
+    throw new Error(`存档 "${saveId}" 不存在。`)
+  }
+
+  const updated: LocalSaveRecord = { ...existing, name: trimmed, updatedAt: Date.now() }
+  await localDb.saves.put(updated)
+  return updated
+}
+
 export async function deleteLocalSave(saveId: string): Promise<void> {
   await localDb.transaction(
     "rw",

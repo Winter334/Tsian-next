@@ -245,49 +245,6 @@
           </section>
         </div>
 
-        <div v-else-if="activeTab === 'saves'" class="retro-inset grid gap-4 p-4">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p class="font-mono text-xs uppercase tracking-wider text-neon">
-                存档槽管理器
-              </p>
-              <p class="mt-1 text-sm text-text-dim">
-                槽位只保存这张游戏卡的游玩数据。
-              </p>
-            </div>
-            <button
-              type="button"
-              class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
-              @click="createSave"
-            >
-              <Plus class="h-3.5 w-3.5" aria-hidden="true" />
-              新建存档
-            </button>
-          </div>
-          <div class="grid gap-2">
-            <article
-              v-for="save in cardSaves"
-              :key="save.id"
-              class="grid gap-3 border border-neon-deep/40 bg-elevated/45 p-3 md:grid-cols-[1fr_auto]"
-            >
-              <div class="min-w-0">
-                <h3 class="truncate text-base font-bold text-text-main">{{ save.name }}</h3>
-                <p class="mt-1 font-mono text-xs text-text-dim">
-                  来源：{{ cardTitle }} · 创建于 {{ formatDateTime(save.createdAt) }} · 更新于 {{ formatDateTime(save.updatedAt) }}
-                </p>
-              </div>
-              <div class="flex flex-wrap items-center gap-2">
-                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs" @click="selectSave(save.id)">选择</button>
-                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs" :disabled="!isPlayable" @click="continueSave(save.id)">继续</button>
-                <button type="button" class="retro-button retro-focus h-8 px-3 font-mono text-xs text-danger" @click="deleteSave(save.id)">删除</button>
-              </div>
-            </article>
-            <p v-if="cardSaves.length === 0" class="border border-neon-deep/35 bg-elevated/50 p-3 text-sm text-text-dim">
-              这张游戏卡还没有创建存档槽。
-            </p>
-          </div>
-        </div>
-
         <div v-else-if="activeTab === 'frontend'" class="retro-inset grid gap-4 p-4">
           <div class="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -302,15 +259,6 @@
               <span class="border border-neon-deep/50 bg-elevated px-2 py-1 font-mono text-[11px] text-text-dim">
                 {{ frontendStatusLabel }}
               </span>
-              <button
-                type="button"
-                class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                :disabled="!isPlayable"
-                @click="openPlayFromCard"
-              >
-                <ExternalLink class="h-3.5 w-3.5" aria-hidden="true" />
-                打开游玩窗口
-              </button>
             </div>
           </div>
 
@@ -446,56 +394,44 @@ import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
 import {
   ACTIVE_CARD_CHANGED_EVENT,
-  SAVES_CHANGED_EVENT,
   isActiveCardChangedEvent,
-  isSavesChangedEvent,
 } from "@/lib/platform-events"
 import {
   CheckCircle2,
   Copy,
   Disc3,
   Download,
-  ExternalLink,
   Gamepad2,
   ImageUp,
   Link2,
   MonitorCog,
   PackageOpen,
-  Play,
-  Plus,
   Save,
   Trash2,
   Upload,
   XCircle,
 } from "lucide-vue-next"
 import type { Component } from "vue"
-import type { LocalGameCardRecord, LocalSaveRecord } from "@/storage/db"
+import type { LocalGameCardRecord } from "@/storage/db"
 import {
-  formatDateTime,
   getFrontendStatusDescription,
   getFrontendStatusLabel,
   getGameCardAuthor,
   getGameCardCoverUrl,
   getGameCardDescription,
   getGameCardTitle,
-  hasPlayableFrontend,
 } from "@/lib/game-card-display"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
 import {
   copyPlatformGameCardAsLocal,
-  createPlatformSaveFromGameCard,
   deletePlatformGameCard,
-  deletePlatformSave,
   exportPlatformGameCardFrontendPackage,
   exportPlatformGameCardPackage,
   getPlatformActiveGameCardId,
-  getPlatformActiveSaveId,
   getPlatformGameCard,
   importPlatformGameCardFrontendPackage,
   importPlatformGameCardPackage,
   listPlatformGameCardFrontendFiles,
-  listPlatformSaves,
-  selectPlatformSave,
   setPlatformActiveGameCard,
   setPlatformGameCardCover,
   updatePlatformGameCardMetadata,
@@ -503,7 +439,7 @@ import {
   type PlatformGameCardFrontendFileSummary,
 } from "../platform-host"
 
-type TabId = "overview" | "saves" | "frontend"
+type TabId = "overview" | "frontend"
 type FrontendMode = "none" | "remote" | "packaged"
 
 interface TabItem {
@@ -519,17 +455,12 @@ const props = defineProps<{
 const router = useRouter()
 const tabs: TabItem[] = [
   { id: "overview", label: "概览", icon: Disc3 },
-  { id: "saves", label: "存档", icon: Save },
   { id: "frontend", label: "前端", icon: MonitorCog },
 ]
 
 const activeTab = ref<TabId>("overview")
 const card = ref<LocalGameCardRecord | null>(null)
-const allSaves = ref<LocalSaveRecord[]>([])
 const activeGameCardId = ref("")
-const activeSaveId = ref("")
-const selectedSaveId = ref("")
-const newSaveName = ref("")
 const frontendFiles = ref<PlatformGameCardFrontendFileSummary[]>([])
 const frontendMode = ref<FrontendMode>("none")
 const remoteUrl = ref("")
@@ -548,12 +479,6 @@ const frontendPackageSaving = ref(false)
 const metadataSaving = ref(false)
 const errorMessage = ref("")
 const feedback = ref("")
-
-const cardSaves = computed(() =>
-  allSaves.value
-    .filter((save) => save.gameCardId === card.value?.manifest.id)
-    .sort((left, right) => right.updatedAt - left.updatedAt)
-)
 
 const cardTitle = computed(() => getGameCardTitle(card.value))
 const cardDescription = computed(() => getGameCardDescription(card.value))
@@ -575,7 +500,6 @@ const packagedEntryDisplay = computed(() => {
   }
   return ""
 })
-const isPlayable = computed(() => hasPlayableFrontend(card.value))
 const isLoadedCard = computed(() => Boolean(card.value && activeGameCardId.value === card.value.id))
 
 function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
@@ -681,10 +605,8 @@ async function refreshData() {
   errorMessage.value = ""
 
   try {
-    const [loadedCard, saves, loadedActiveSaveId, loadedActiveGameCardId, loadedFrontendFiles] = await Promise.all([
+    const [loadedCard, loadedActiveGameCardId, loadedFrontendFiles] = await Promise.all([
       getPlatformGameCard(props.cardId),
-      listPlatformSaves(),
-      getPlatformActiveSaveId(),
       getPlatformActiveGameCardId(),
       listPlatformGameCardFrontendFiles(props.cardId),
     ])
@@ -694,20 +616,10 @@ async function refreshData() {
     }
 
     card.value = loadedCard
-    allSaves.value = saves
-    activeSaveId.value = loadedActiveSaveId ?? ""
     activeGameCardId.value = loadedActiveGameCardId
     frontendFiles.value = loadedFrontendFiles
     syncFrontendDraft(loadedCard)
     syncMetadataDraft(loadedCard)
-
-    const scopedSaves = saves.filter((save) => save.gameCardId === loadedCard.manifest.id)
-    if (!scopedSaves.some((save) => save.id === selectedSaveId.value)) {
-      selectedSaveId.value = scopedSaves.find((save) => save.id === activeSaveId.value)?.id
-        ?? scopedSaves[0]?.id
-        ?? ""
-    }
-
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡详情。"
   } finally {
@@ -764,7 +676,7 @@ async function deleteCurrentCard() {
   }
 
   const confirmed = await confirm({
-    message: `删除应用「${cardTitle.value}」？\n\n这会同时删除 ${cardSaves.value.length} 个关联存档，无法撤销。`,
+    message: `删除应用「${cardTitle.value}」？\n\n这会同时删除所有关联存档，无法撤销。`,
     severity: "danger",
     confirmText: "删除",
   })
@@ -962,19 +874,6 @@ async function handleClearFrontendPackage() {
   }
 }
 
-async function openPlayFromCard() {
-  if (!isPlayable.value) {
-    feedback.value = "这张游戏卡还没有可游玩的前端。"
-    return
-  }
-  if (!selectedSaveId.value) {
-    feedback.value = "请先创建或选择一个存档槽。"
-    return
-  }
-
-  await continueSave(selectedSaveId.value)
-}
-
 async function loadCurrentCard() {
   if (!card.value || isLoadedCard.value) {
     return
@@ -998,79 +897,19 @@ function formatBytes(size: number): string {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
 }
 
-async function createSave() {
-  if (!card.value) {
-    return
-  }
-
-  const created = await createPlatformSaveFromGameCard(card.value.id, {
-    name: newSaveName.value || `${cardTitle.value} 存档 ${cardSaves.value.length + 1}`,
-  })
-  newSaveName.value = ""
-  selectedSaveId.value = created.id
-  feedback.value = `已创建存档槽：${created.name}`
-  await refreshData()
-}
-
-async function selectSave(saveId: string) {
-  await selectPlatformSave(saveId)
-  selectedSaveId.value = saveId
-  feedback.value = "已选择存档槽。"
-  await refreshData()
-}
-
-async function continueSave(saveId: string) {
-  if (!isPlayable.value) {
-    feedback.value = "这张游戏卡还没有可游玩的前端。"
-    return
-  }
-
-  await selectPlatformSave(saveId)
-  router.push("/play")
-}
-
-async function deleteSave(saveId: string) {
-  const save = allSaves.value.find((item) => item.id === saveId)
-  const saveName = save?.name ?? "这个存档槽"
-  const confirmed = await confirm({
-    message: `删除存档槽「${saveName}」？\n\n可复用的游戏卡「${cardTitle.value}」不会被删除。`,
-    severity: "danger",
-    confirmText: "删除",
-  })
-  if (!confirmed) {
-    return
-  }
-
-  await deletePlatformSave(saveId)
-  feedback.value = `已删除存档槽：${saveName}`
-  if (selectedSaveId.value === saveId) {
-    selectedSaveId.value = ""
-  }
-  await refreshData()
-}
-
 watch(() => props.cardId, () => {
   activeTab.value = "overview"
   void refreshData()
 })
 
 onMounted(() => {
-  window.addEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
   window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   void refreshData()
 })
 
 onBeforeUnmount(() => {
-  window.removeEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
 })
-
-function onSavesChanged(event: Event) {
-  if (!isSavesChangedEvent(event)) {
-    return
-  }
-  void refreshData()
-}
 
 function onActiveCardChanged(event: Event) {
   if (!isActiveCardChangedEvent(event)) {

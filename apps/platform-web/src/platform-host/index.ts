@@ -995,6 +995,7 @@ export {
   exportPlatformGameCardFrontendPackage,
   createPlatformSaveFromGameCard,
   selectPlatformSave,
+  renamePlatformSave,
   deletePlatformSave,
   getPlatformActiveSaveId,
   getPlatformActiveGameCardId,

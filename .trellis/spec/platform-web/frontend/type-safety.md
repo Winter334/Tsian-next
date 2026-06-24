@@ -107,8 +107,8 @@
 
 ### 3. Contracts
 
-- `PlayView.vue` remains a thin active frontend loader: wait for `waitForPlatformHostReady()`, read `getPlatformActiveGameCard()`, then mount a sandboxed iframe for remote or packaged bindings.
-- `PlayView.vue` must not mount same-realm built-in game UI. If the active Game Card has no frontend, show a compact not-configured error state.
+- `PlayView.vue` remains a thin active frontend loader: wait for `waitForPlatformHostReady()`, read `getPlatformActiveGameCard()`, then mount a sandboxed iframe for remote or packaged bindings. As of task `06-24-game-launcher-saves`, PlayView first resolves the active card into a phase: `launcher` (render `<GameLauncherPanel>` for save select/create/rename/delete, then mount on continue), `unplayable-guide` (active card has no playable frontend — show guidance with links to My Apps / card detail), or `playing` (mount the frontend). The launcher UI lives in `components/play/GameLauncherPanel.vue`; PlayView itself only routes phases and reuses the existing frontend mount logic — it does not inline save-list business UI.
+- `PlayView.vue` must not mount same-realm built-in game UI. If the active Game Card has no playable frontend, show the unplayable-guide phase (not an error state) with links to load a different card or configure a frontend.
 - Remote frontend URLs are normalized at the iframe adapter boundary. Accept browser-loadable `http:` / `https:` URLs and relative URLs resolving to those schemes; reject dangerous or non-web schemes such as `javascript:`, `data:`, and `vbscript:` before iframe creation.
 - The first iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Do not add top navigation, popups, downloads, or broader permissions without a new product/security decision.
 - Remote bridge messages use shared `RemotePlayBridge*` contract types. Runtime validation belongs in platform-web, not in `@tsian/contracts`.
