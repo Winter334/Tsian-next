@@ -1088,3 +1088,37 @@ Implemented full multimodal attachment support for the desktop assistant chat (t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 84: 默认 AIRP schema 与 hub-and-spoke Agent 阵容
+
+**Date**: 2026-06-24
+**Task**: 默认 AIRP schema 与 hub-and-spoke Agent 阵容
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+设计并落地默认 AIRP schema（一实体一目录 + index.json 入口 + _ref/_dir 升级 + 渲染契约 vs 语义区分），Agent 阵容重构为 master 为核 + retrieval/post-processing 两个工具型 agent 的 hub-and-spoke 模型。新增 entity-reader 和 world-state-maintenance 两个 Skill。方向文档更新为 hub-and-spoke 心智模型。brainstorm 阶段检索了 2026 年最新 agent memory 研究（write-manage-read 循环、M2A 双层记忆、三阶段演化、CogniFold 认知折叠）作为理论基础。relationships.json/rules.md/记忆摘要空文件因与核心哲学冲突而后移除或改为按需创建。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3c44f61` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
