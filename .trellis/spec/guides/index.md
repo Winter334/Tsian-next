@@ -64,6 +64,7 @@ These guides help you **ask the right questions before coding**.
 - [ ] You're removing a parameter from a tool schema (or moving it from required to optional)
 - [ ] You're auto-inferring a concept the agent used to pass explicitly (scope, owner, mode, …)
 - [ ] You're rewriting a tool `description` or a prompt string that teaches the model a framework concept
+- [ ] You're **adding** a prohibition / restriction / guardrail to an AGENT.md, SOUL.md, Skill, or tool `description` (run the "would it happen anyway?" test first)
 - [ ] The user says a concept is "not the agent's concern" / "徒增麻烦" / "noise" / "auto-infer"
 
 → Read [AI-Facing Content Changes](./ai-facing-content-changes.md)

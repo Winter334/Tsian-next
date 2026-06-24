@@ -50,6 +50,23 @@ When you do conform, update the schema `description` to name the accepted form (
 
 ---
 
+## Adding a Restriction: The "Would It Happen Anyway?" Test
+
+The rules above are about *removing* a concept the model should not think about. The mirror case is *adding* a new instruction, prohibition, or guardrail to an AGENT.md / SOUL.md / Skill / tool `description`. Before adding one, run this test:
+
+> **If I give no instruction on this (neither "do" nor "don't"), how likely is the agent to do the undesired thing?**
+
+- **Likely** (the model has a training prior toward it, or another existing instruction induces it, or it's the obvious default) → the restriction earns its place. Write it, ideally as a positive redirect ("do X instead") rather than a bare "don't do Y", but write it.
+- **Unlikely** (the agent has no built-in motivation toward it; nothing else in the surface suggests it) → **do not add the restriction.** An instruction the agent would never violate on its own has zero upside and real downsides: it consumes tokens every turn, takes attention budget away from the instructions that matter, and — worst — plants a concept in the model's context that it otherwise would never have considered, sometimes *causing* the very behavior you feared (the "don't think of an elephant" effect).
+
+The failure mode is symmetric to the removal case: builds pass, types check, because a redundant instruction isn't a code error. The check is a judgment call, not a grep — ask the question explicitly before writing the line.
+
+Real example (2026-06-24, post-processing turn persistence): the platform runtime already persists every turn to `save/history/turns/` as a raw record, consumed by the semantic index. The post-processing agent's `AGENT.md` *also* instructed it to persist turn output there in a second "canonical" format — a format with no consumer that would corrupt the index. The fix was to **delete the inducing instruction** (the "persist turn output" line), not to add a "do not write turn files" prohibition. Once the inducer was gone, the agent had no motivation to write turn files, so a prohibition would have been a pure cost — tokens, attention, and a reverse-suggestion that puts "write turn files" into the model's head. The first attempt made exactly this mistake (adding `Do NOT write turn files to save/history/turns/`); the correct end state was zero instruction on turn files at all.
+
+**The heuristic**: restrictions are justified by the probability of the undesired action *in the absence of the instruction*, not by the severity of the action if it occurred. A severe-but-improbable outcome still does not justify a restriction the agent would never trigger. Remove the *cause* (the inducing instruction or the missing guard in code) when you can; only add an AI-facing restriction when the cause is the model's own default behavior.
+
+---
+
 ## Why This Matters
 
 The model's attention is finite. Every concept mentioned in a schema description or prompt is a concept the model will spend tokens considering. A concept that the framework already handles deterministically (scope routing, permission levels, owner resolution) is a concept the model should never see. Leaving a "this is optional / auto / usually X" trace is worse than a clean absence, because it prompts the model to make a decision it isn't responsible for — and occasionally to make it wrong.
@@ -68,3 +85,9 @@ When removing / auto-inferring a concept from an AI-facing surface:
 - [ ] Zero hits in AI-facing text (internal comments / types / routing are exempt)?
 - [ ] Replaced any necessary user-facing guidance with the *replacement* concept (e.g. path prefixes), not the mechanism?
 - [ ] Internal auto-inference implementation kept (routing, permissions, default resolution)?
+
+When **adding** a restriction / prohibition / guardrail to an AI-facing surface:
+
+- [ ] Asked "would the agent do the undesired thing if I gave no instruction on it at all?"
+- [ ] If **unlikely** → did NOT add the restriction; removed the inducing instruction / added the code guard instead?
+- [ ] If **likely** → wrote it, preferring a positive redirect ("do X instead") over a bare "don't do Y"?
