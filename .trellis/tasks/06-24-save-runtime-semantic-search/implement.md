@@ -23,22 +23,23 @@
 ### Phase 3: embedding 配置(控制面板后端)
 
 3. **`apps/platform-web/src/config/ai.ts`**
-   - `BrowserEmbeddingConfig` 接口
+   - `BrowserEmbeddingConfig` 接口:`{ enabled, baseUrl, apiKey, model, dimensions }`(无 kind,dimensions 必填)
    - `StoredBrowserPlatformConfigDraft` 加 `embeddingConfig?: unknown`
-   - `normalizeEmbeddingConfig()` + `resolveEmbeddingConfig()`(配全才返回,否则 null)
-   - 抽 `buildAuthHeadersForKind()` helper(从现有 `buildProviderHeadersForKind` 重构,chat + embedding 共用)
+   - `normalizeEmbeddingConfig()` + `resolveEmbeddingConfig()`(enabled && baseUrl && apiKey && model && dimensions 全满足才返回,否则 null)
+   - `inferEmbeddingProtocol(model)`:Gemini 原生 model 名特征匹配,其余默认 openai-compatible
    - `getEmbeddingConfig()` / `saveEmbeddingConfig()` 读写 localStorage
-   - 现有 chat 路径改用抽出的 helper,`npm run build:web` 验证 chat 不回归
+   - 协议推断内部使用 auth header 构造(OpenAI 兼容 Bearer / Gemini 原生 x-goog-api-key),不暴露给玩家
 
 ### Phase 4: 索引层核心模块(新目录 semantic-index/)
 
 4. **`apps/platform-web/src/agent-runtime/semantic-index/embedding-client.ts`**
    - `embed(texts: string[]): Promise<Float32Array[]>`
    - 读独立的 `embeddingConfig` 段(不碰 chat providerTypes);`resolveEmbeddingConfig()` 返回 null → throw(调用方 catch 返回空)
-   - MVP 实现 openai-compatible 协议标准:`POST {baseUrl}/embeddings`,body `{model, input: string[]}`,响应 `data[].embedding`。这一种 kind 覆盖 OpenAI/DeepSeek/各种兼容端点(Ollama/LM Studio 等)
-   - 复用 `buildAuthHeadersForKind` 构造 auth header(只借类型 + helper,不并入 chat provider 结构)
-   - kind 非 openai-compatible → 返回不支持错误(工具层 catch 返回空);Gemini/Claude kind 的 embedding 适配列为可选,MVP 不做
-   - 单元测试:mock openai-compatible 响应,验证向量解析
+   - `inferEmbeddingProtocol(model)` 决定请求/响应格式:
+     - openai-compatible(默认,覆盖硅基流动/Qwen/bge/OpenAI/中转站):`POST {baseUrl}/embeddings`,body `{model, input: string[]}`,响应 `data[].embedding`
+     - gemini-native(留骨架,可后置):`POST {baseUrl}/models/{model}:embedContent`,响应 `embedding.values`
+   - dimensions 从 config 读(玩家必填),用于校验返回向量维度一致
+   - 单元测试:mock openai-compatible 响应,验证向量解析 + 维度校验
 
 5. **`apps/platform-web/src/agent-runtime/semantic-index/index-store.ts`**
    - `getEmbeddingsByOwner(scope, ownerId): Promise<LocalEmbeddingIndexRecord[]>`
@@ -113,10 +114,10 @@
 
 17. **`apps/platform-web/src/views/SettingsView.vue`** + **`components/settings/`**
     - 新增"语义检索"分区(与"AI 服务商"并列)
-    - 表单:enabled 开关 + kind 选择 + baseUrl + apiKey + model + dimensions?
+    - 表单:enabled 开关 + baseUrl + apiKey + model + dimensions(必填)。无 kind 下拉(协议从 model 名内部推断,玩家无感)
     - "从 chat preset 复制凭据"按钮(UX 糖,填 baseUrl/apiKey)
     - 保存调 `saveEmbeddingConfig()`
-    - 状态提示:未配全时"配置不全,语义检索未生效"
+    - 状态提示:未配全(含 dimensions 缺失)时"配置不全,语义检索未生效"
 
 ### Phase 9: maintenance tag 扩展位(R6)
 

@@ -97,17 +97,20 @@
 ```
 embeddingConfig: {
   enabled: boolean        // 默认 false
-  kind: "openai-compatible" | "gemini" | "claude" | "deepseek"
   baseUrl: string
   apiKey: string
   model: string
-  dimensions?: number     // 可选,部分 provider 需指定
+  dimensions: number      // 必填,玩家从模型规格查得
 }
 ```
 
+**无 kind 字段**——协议从 model 名内部推断(Gemini 原生 model 名有稳定特征,其余默认 OpenAI 兼容,覆盖硅基流动/Qwen/bge/OpenAI/各种中转站)。玩家无感,不用理解协议差异。
+
+**dimensions 必填**(不自动探测):维度是向量存储和 cosine 计算的硬约束,填错会导致维度不匹配的静默 bug。玩家配置 embedding 模型时维度是该模型的已知规格,查得后明确填入,比"自动探测可能错"更可控。
+
 **另起独立段,不并入 chat provider 结构**。理由:chat 的 `BrowserAiModelConfig` 字段(toolCallMode/streaming/采样参数 7 个/contextWindow/reasoningEffort)对 embedding 全无意义,且 `toolCallMode` 是必填校验项——塞进 chat 结构要么填无意义值绕校验,要么改校验到处开 embedding 分支。embedding 配置本来就简单(无采样/无 toolCall/无 streaming),给它贴合的小结构比硬塞进 chat 大结构更诚实,且 chat 代码零改动零回归。
 
-共享一个抽出来的 `buildAuthHeadersForKind` helper(auth header 构造复用 chat)。同账号 chat+embedding 重填一次凭据的便利,做成 UI 层"从 chat preset 复制 baseUrl/apiKey"按钮,不靠结构耦合。
+协议推断复用 auth header 构造逻辑(OpenAI 兼容走 Bearer,Gemini 原生走 x-goog-api-key)。同账号 chat+embedding 重填一次凭据的便利,做成 UI 层"从 chat preset 复制 baseUrl/apiKey"按钮,不靠结构耦合。
 
 凭据边界:apiKey 存 localStorage(平台侧),不进 workspace、不随 card 分发。向量索引存 IndexedDB(workspace 侧),随 save 生灭。两者分离,复用现有约定。
 
@@ -148,8 +151,8 @@ AIRP turn 流程:master LLM turn → 委托 retrieval → retrieval 跑 workspac
 ### R4 embedding 配置(控制面板)
 
 - `tsian-platform-config` 加独立 `embeddingConfig` 段,默认 `enabled: false`。
-- 配全才生效(严格):`resolveEmbeddingConfig` 未配/配不全 → 返回 null → 索引不生长。
-- 抽 `buildAuthHeadersForKind` helper(auth header 构造复用 chat)。
+- 字段:enabled / baseUrl / apiKey / model / dimensions(必填)。无 kind 字段——协议从 model 名内部推断。
+- 配全才生效(严格):`resolveEmbeddingConfig` 未配/配不全(含 dimensions 缺失)→ 返回 null → 索引不生长。
 - 控制面板加"语义检索"分区,与"AI 服务商"并列;可选"从 chat preset 复制凭据"UX 糖。
 
 ### R5 工具暴露(per-agent,解耦)

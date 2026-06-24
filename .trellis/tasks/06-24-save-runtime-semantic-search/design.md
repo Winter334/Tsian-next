@@ -129,18 +129,38 @@ embeddingIndex: "&id, [scope+ownerId], path, type, updatedAt"
 // config/ai.ts
 export interface BrowserEmbeddingConfig {
   enabled: boolean
-  kind: BrowserAiProviderKind
   baseUrl: string
   apiKey: string
   model: string
-  dimensions?: number
+  dimensions: number  // 必填,玩家从模型规格查得
+  // 无 kind 字段——协议从 model 名内部推断
 }
 
 // 存进 tsian-platform-config 的 embeddingConfig 字段(与 providerTypes 平级)
 // StoredBrowserPlatformConfigDraft += embeddingConfig?: unknown
 ```
 
-`resolveEmbeddingConfig()`:enabled && baseUrl && apiKey && model 全满足 → 返回配置;否则 null。null = 索引不生长(链 1 关闭)。
+`resolveEmbeddingConfig()`:enabled && baseUrl && apiKey && model && dimensions 全满足 → 返回配置;否则 null。null = 索引不生长(链 1 关闭)。
+
+**协议推断(内部,玩家无感)**:
+
+```ts
+type EmbeddingProtocol = "openai-compatible" | "gemini-native"
+
+function inferEmbeddingProtocol(model: string): EmbeddingProtocol {
+  // Gemini 原生 model 名有稳定特征
+  if (/^(gemini-embedding|text-embedding-0\d\d)/i.test(model)) return "gemini-native"
+  // 默认 OpenAI 兼容:覆盖硅基流动/Qwen/bge/OpenAI/Cohere/Jina/各种中转站
+  return "openai-compatible"
+}
+```
+
+- OpenAI 兼容:`POST {baseUrl}/embeddings`,body `{model, input: string[]}`,响应 `data[].embedding`,auth `Authorization: Bearer {apiKey}`。
+- Gemini 原生:`POST {baseUrl}/models/{model}:embedContent`,body `{content: {parts: [{text}]}}`,响应 `embedding.values`,auth `x-goog-api-key: {apiKey}`。
+- 中转站透传 model 名不变,推断正确(硅基流动中转 OpenAI 的 `text-embedding-3-large` 仍命中默认分支)。
+- MVP 只需实现 openai-compatible(已定选型硅基流动 + Qwen 走这个);Gemini 原生分支留骨架,可后置。
+
+**dimensions 必填**:不自动探测。维度是向量存储 + cosine 的硬约束,填错致静默 bug。玩家从模型规格查得后明确填入。`resolveEmbeddingConfig` 校验 dimensions 为正整数。
 
 ## 3. 三分语料切块(chunker.ts)
 
