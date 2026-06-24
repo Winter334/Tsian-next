@@ -3,6 +3,7 @@ import type {
   AgentPlatformToolName,
   AgentRegistryEntry,
   SkillActionSummary,
+  SkillConfigItem,
   SkillDetailEntry,
   SkillRegistryEntry,
   SkillRegistryScope,
@@ -40,6 +41,10 @@ interface SkillPathInfo {
 const AGENT_CONFIG_FILE_PATH_PATTERN = /^(?:agents\/([^/]+)|\.tsian\/local\/([^/]+))\/agent\.json$/
 const SHARED_SKILL_FILE_PATH_PATTERN = /^skills\/([^/]+)\/SKILL\.md$/
 const AGENT_LOCAL_SKILL_FILE_PATH_PATTERN = /^(?:agents\/([^/]+)|\.tsian\/local\/([^/]+))\/skills\/([^/]+)\/SKILL\.md$/
+// Sibling of SKILL.md: `skills/<id>/skill.config` or
+// `agents/<agent>/skills/<id>/skill.config` (also `.tsian/local/<agent>/...`).
+// Matches the same directory prefixes as the SKILL.md patterns above.
+const SKILL_CONFIG_FILE_PATH_PATTERN = /^(?:skills\/([^/]+)|(?:agents\/([^/]+)|\.tsian\/local\/([^/]+))\/skills\/([^/]+))\/skill\.config$/
 const DEFAULT_AGENT_ACCESS_LEVEL = 1
 const MAX_AGENT_ACCESS_LEVEL = 4
 const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
@@ -123,6 +128,79 @@ function parseSkillActionSummaries(body: string): ParsedSkillActionSummaries {
   }
 
   return { actions, errors }
+}
+
+/**
+ * Parse a `.env`-style `skill.config` source into declared config items.
+ *
+ * Rules:
+ * - `#`-prefixed lines are comments and describe the *next* key line.
+ * - `KEY=VALUE` lines declare a config item; VALUE is always a string.
+ * - Blank lines clear the pending comment.
+ * - Other lines are ignored.
+ *
+ * Registry-adjacent pure function (no Dexie/bridge imports), mirroring
+ * `parseSkillActionSummaries`'s placement.
+ */
+export function parseSkillConfig(source: string): SkillConfigItem[] {
+  const items: SkillConfigItem[] = []
+  let pendingDescription = ""
+
+  for (const rawLine of normalizeLineEndings(source).split("\n")) {
+    const line = rawLine.trim()
+    if (!line) {
+      pendingDescription = ""
+      continue
+    }
+
+    if (line.startsWith("#")) {
+      const comment = line.slice(1).trim()
+      pendingDescription = pendingDescription ? `${pendingDescription} ${comment}` : comment
+      continue
+    }
+
+    // KEY=VALUE — key is uppercase snake-case by convention; VALUE stays a raw
+    // string (scripts convert via Number() etc.). A key with no `=` is ignored.
+    const match = /^([A-Za-z][A-Za-z0-9_]*)=(.*)$/.exec(line)
+    if (!match) {
+      pendingDescription = ""
+      continue
+    }
+
+    items.push({
+      key: match[1],
+      description: pendingDescription,
+      defaultValue: match[2].trim(),
+    })
+    pendingDescription = ""
+  }
+
+  return items
+}
+
+/**
+ * Resolve a `skill.config` file path to the skill directory it belongs to.
+ * Returns the directory path (e.g. `skills/my-skill`) or null when the path
+ * is not a skill config file. Mirrors `skillPathInfo`'s directory resolution.
+ */
+function skillConfigDirectoryPath(path: string): string | null {
+  const match = SKILL_CONFIG_FILE_PATH_PATTERN.exec(path)
+  if (!match) {
+    return null
+  }
+
+  // Group 1: skills/<id>/skill.config ; Groups 2/3/4: (agents|local)/<agent>/skills/<id>/skill.config
+  if (match[1]) {
+    return `skills/${match[1]}`
+  }
+  const agentId = match[2] ?? match[3]
+  const skillId = match[4]
+  if (!agentId || !skillId) {
+    return null
+  }
+  return match[3]
+    ? `.tsian/local/${agentId}/skills/${skillId}`
+    : `agents/${agentId}/skills/${skillId}`
 }
 
 function normalizeLineEndings(value: string): string {
@@ -431,6 +509,7 @@ function referencesContainAgent(
 function buildSkillRegistryEntry(
   file: WorkspaceFile,
   pathInfo: SkillPathInfo,
+  configItems: SkillConfigItem[] | undefined,
 ): SkillRegistryEntry {
   const parsed = parseMarkdown(file.content)
   const name = metadataString(parsed.metadata, ["name", "id"]) ?? pathInfo.skillId
@@ -471,6 +550,12 @@ function buildSkillRegistryEntry(
   }
   if (errors.length > 0) {
     entry.actionDeclarationErrors = errors
+  }
+
+  // Attach config items parsed from a sibling `skill.config` file. Absent
+  // config file → no `configItems` field (skill has no config needs).
+  if (configItems && configItems.length > 0) {
+    entry.configItems = configItems
   }
 
   return entry
@@ -664,6 +749,17 @@ export function buildSkillRegistry(
   const includeLocal = options.includeLocal ?? true
   const agentId = options.agentId?.trim()
 
+  // First pass: collect sibling `skill.config` files keyed by skill directory
+  // so each SKILL.md entry can attach its declared config items without a
+  // second scan. A skill without a config file simply has no entry here.
+  const configByDirectory = new Map<string, SkillConfigItem[]>()
+  for (const file of files) {
+    const directory = skillConfigDirectoryPath(file.path)
+    if (directory) {
+      configByDirectory.set(directory, parseSkillConfig(file.content))
+    }
+  }
+
   return files
     .flatMap((file): SkillRegistryEntry[] => {
       const pathInfo = skillPathInfo(file.path)
@@ -681,7 +777,8 @@ export function buildSkillRegistry(
         return []
       }
 
-      return [buildSkillRegistryEntry(file, pathInfo)]
+      const configItems = configByDirectory.get(pathInfo.directoryPath)
+      return [buildSkillRegistryEntry(file, pathInfo, configItems)]
     })
     .sort(compareSkillEntries)
 }
@@ -771,8 +868,15 @@ export function loadSkillDetail(
     })
     .sort(compareResourceEntries)
 
+  // Attach sibling `skill.config` items if present (same directory lookup as
+  // buildSkillRegistry, single-file scope here).
+  const configFile = files.find(
+    (candidate) => candidate.path === `${pathInfo.directoryPath}/skill.config`,
+  )
+  const configItems = configFile ? parseSkillConfig(configFile.content) : undefined
+
   return {
-    registry: buildSkillRegistryEntry(file, pathInfo),
+    registry: buildSkillRegistryEntry(file, pathInfo, configItems),
     file,
     resources,
   }

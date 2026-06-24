@@ -114,6 +114,21 @@ export interface LocalAssistantAttachmentRecord {
   createdAt: number
 }
 
+/**
+ * Player-saved overrides for a skill's `skill.config` items.
+ * Keyed by the skill directory path (e.g. "skills/web-search"). The `values`
+ * field is a JSON-serialized `Record<string, string>` of player-entered
+ * overrides; secrets stored here never enter the workspace and are never
+ * exported with a skill package.
+ */
+export interface LocalSkillConfigRecord {
+  /** Skill directory path, e.g. "skills/web-search". */
+  skillPath: string
+  /** JSON.stringify of the player override values (`Record<string, string>`). */
+  values: string
+  updatedAt: number
+}
+
 export class TsianLocalDb extends Dexie {
   meta!: Table<LocalMetaRecord, string>
   gameCards!: Table<LocalGameCardRecord, string>
@@ -125,13 +140,15 @@ export class TsianLocalDb extends Dexie {
   checkpoints!: Table<LocalCheckpointRecord, string>
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
   assistantAttachments!: Table<LocalAssistantAttachmentRecord, string>
+  skillConfigs!: Table<LocalSkillConfigRecord, string>
 
   constructor() {
-    // DB name bumped v8 -> v9: added assistantAttachments table for
-    // attachment Blob storage. Prototype project — no migration; the old
-    // v8 database is abandoned and a fresh v9 store is created. The service
-    // worker (`tsian-game-card-frontend-sw.js`) mirrors this name.
-    super("tsian-agent-runtime-v9")
+    // DB name bumped v9 -> v10: added skillConfigs table for player-saved
+    // skill config overrides (task 06-24-assistant-web-search). Prototype
+    // project — no migration; the old v9 database is abandoned and a fresh
+    // v10 store is created. The service worker
+    // (`tsian-game-card-frontend-sw.js`) mirrors this name.
+    super("tsian-agent-runtime-v10")
 
     this.version(1).stores({
       meta: "&key",
@@ -144,6 +161,7 @@ export class TsianLocalDb extends Dexie {
       checkpoints: "&id, saveId, createdAt, turn",
       workspaceFiles: "&id, saveId, path, updatedAt",
       assistantAttachments: "&id, sessionId, path, createdAt",
+      skillConfigs: "&skillPath, updatedAt",
     })
   }
 }

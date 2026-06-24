@@ -2,6 +2,7 @@ import type {
   AgentContextEntry,
   ContentPart,
   PlatformActionResult,
+  SkillConfigItem,
   SkillRegistryEntry,
   WorkspaceFile,
   WorkspaceOperationName,
@@ -246,6 +247,13 @@ export interface RuntimeBrowserScriptExecutorRequest {
   scriptPath: string
   input: Record<string, unknown>
   timeoutMs: number
+  /**
+   * Config items declared by the skill's `skill.config` (carried from the
+   * `SkillRegistryEntry`). The browser-script executor merges these defaults
+   * with player-saved overrides and injects the result as `tsian.config`.
+   * Absent when the skill declares no config.
+   */
+  configItems?: SkillConfigItem[]
 }
 
 type RuntimeBrowserScriptRunner = (
@@ -1799,18 +1807,24 @@ async function executeSkillAction(
         scriptPath,
         input,
         timeoutMs: effectiveExecutorTimeoutMs(action.executor),
+        // Carry declared config items (defaults included) so the executor can
+        // merge player overrides and inject `tsian.config`. Omitted when the
+        // skill declares no config (keeps `tsian.config` an empty object).
+        ...(loadedSkill.skill.configItems && loadedSkill.skill.configItems.length > 0
+          ? { configItems: loadedSkill.skill.configItems }
+          : {}),
       },
       {
         agentContext: context.agentContext,
         exposedWorkspaceOperations: context.exposedWorkspaceOperations,
       },
     ) ?? Promise.resolve({
-        ok: false,
-        error: {
-          code: "BROWSER_SCRIPT_UNAVAILABLE",
-          message: "Browser script executor is not available in this runtime.",
-        },
-      }),
+      ok: false,
+      error: {
+        code: "BROWSER_SCRIPT_UNAVAILABLE",
+        message: "Browser script executor is not available in this runtime.",
+      },
+    }),
   )
   if (!result.ok) {
     throw toolError(

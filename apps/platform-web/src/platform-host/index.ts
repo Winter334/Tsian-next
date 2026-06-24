@@ -969,6 +969,7 @@ export {
   updateLocalAssistantModel,
   getLocalAssistantConfig,
   updateLocalAssistantSkillEnabled,
+  updateLocalAssistantSkillConfig,
   updateLocalAssistantPlatformToolEnabled,
   updateLocalAssistantWorkspaceAccess,
   getLocalAssistantToolCallMode,

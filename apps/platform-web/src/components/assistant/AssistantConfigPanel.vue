@@ -8,27 +8,62 @@
           <p class="font-mono text-[11px] text-text-dim">{{ enabledSkillCount }} / {{ skills.length }} 已启用</p>
         </div>
         <div class="grid gap-2 p-3">
-          <label
+          <div
             v-for="skill in skills"
             :key="skill.path"
-            class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/30 bg-elevated/45 p-3 hover:bg-elevated sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+            class="border border-neon-deep/30 bg-elevated/45 hover:bg-elevated"
           >
-            <input
-              class="mt-1 h-4 w-4 accent-[#f3c56d]"
-              type="checkbox"
-              :checked="skillEnabled(skill)"
-              :disabled="applying || !agent"
-              @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)"
+            <label
+              class="retro-focus grid cursor-pointer gap-3 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
             >
-            <span class="min-w-0">
-              <span class="block truncate text-sm font-bold text-text-main">{{ skill.title }}</span>
-              <span class="mt-1 block line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.description || skill.summary) }}</span>
-              <span class="mt-2 block break-all font-mono text-[11px] text-neon-muted">{{ skill.path }}</span>
-            </span>
-            <span class="font-mono text-[11px]" :class="skillEnabled(skill) ? 'text-neon' : 'text-text-dim'">
-              {{ skillEnabled(skill) ? "启用" : "禁用" }}
-            </span>
-          </label>
+              <input
+                class="mt-1 h-4 w-4 accent-[#f3c56d]"
+                type="checkbox"
+                :checked="skillEnabled(skill)"
+                :disabled="applying || !agent"
+                @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)"
+              >
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-bold text-text-main">{{ skill.title }}</span>
+                <span class="mt-1 block line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.description || skill.summary) }}</span>
+                <span class="mt-2 block break-all font-mono text-[11px] text-neon-muted">{{ skill.path }}</span>
+              </span>
+              <span class="font-mono text-[11px]" :class="skillEnabled(skill) ? 'text-neon' : 'text-text-dim'">
+                {{ skillEnabled(skill) ? "启用" : "禁用" }}
+              </span>
+            </label>
+            <!-- Skill config (skill.config 声明的配置项):仅声明了 configItems 的 skill 渲染。
+                 点输入框不触发上方 checkbox;value 走草稿,应用时统一保存。 -->
+            <div
+              v-if="skill.configItems && skill.configItems.length > 0"
+              class="grid gap-3 border-t border-neon-deep/20 p-3"
+              @click.stop
+            >
+              <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">
+                配置{{ skillConfigChanged(skill.path) ? " · 未保存" : "" }}
+              </p>
+              <label
+                v-for="item in skill.configItems"
+                :key="item.key"
+                class="grid gap-1"
+              >
+                <span class="text-xs text-text-dim">
+                  <span class="font-mono text-text-main">{{ item.key }}</span>
+                  <span v-if="item.description" class="ml-1">{{ item.description }}</span>
+                </span>
+                <input
+                  class="retro-focus h-8 w-full border border-neon-deep/30 bg-panel/60 px-2 font-mono text-xs text-text-main"
+                  :type="isSecretKey(item.key) ? 'password' : 'text'"
+                  :value="configValue(skill.path, item)"
+                  :disabled="applying"
+                  :placeholder="item.defaultValue || ''"
+                  spellcheck="false"
+                  autocomplete="off"
+                  @input="setConfigValue(skill.path, item, ($event.target as HTMLInputElement).value)"
+                >
+              </label>
+            </div>
+          </div>
 
           <p v-if="skills.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
             助手还没有可管理的 Skill。
@@ -150,10 +185,12 @@ import { toast } from "@/composables/useToast"
 import {
   getLocalAssistantConfig,
   updateLocalAssistantPlatformToolEnabled,
+  updateLocalAssistantSkillConfig,
   updateLocalAssistantSkillEnabled,
   updateLocalAssistantWorkspaceAccess,
   type LocalAssistantConfig,
 } from "@/platform-host"
+import type { SkillConfigItem } from "@tsian/contracts"
 
 const emit = defineEmits<{
   (event: "change"): void
@@ -172,6 +209,17 @@ const skillOverrides = ref(new Map<string, boolean>())
 const platformToolOverrides = ref(new Map<AgentPlatformToolName, boolean>())
 const workspaceLevelOverride = ref<number | null>(null)
 const applying = ref(false)
+
+/**
+ * Skill config 初始值(玩家已存值 ?? 默认值),reload 时填充。
+ * key = skill.path,value = Record<configKey, initialValue>。
+ */
+const skillConfigInitial = ref(new Map<string, Record<string, string>>())
+/**
+ * Skill config 草稿覆盖:只记与初始值不同的 key。编辑只改草稿,
+ * 应用时逐 skill 调 updateLocalAssistantSkillConfig 保存全量。
+ */
+const skillConfigDraft = ref(new Map<string, Record<string, string>>())
 
 const platformToolControls: Array<{
   id: AgentPlatformToolName
@@ -246,10 +294,65 @@ const workspaceAccessDescription = computed(() =>
   workspaceAccessOptions.find((option) => option.level === workspaceLevel.value)?.description ?? "",
 )
 
+/** key 名含 KEY/SECRET/TOKEN/PASSWORD 时输入框用 password 遮蔽(无需声明类型)。 */
+function isSecretKey(key: string): boolean {
+  const upper = key.toUpperCase()
+  return ["KEY", "SECRET", "TOKEN", "PASSWORD"].some((s) => upper.includes(s))
+}
+
+/** 技能声明了 configItems 的列表(只这些渲染配置区)。 */
+const skillsWithConfig = computed(() =>
+  skills.value.filter((skill) => skill.configItems && skill.configItems.length > 0),
+)
+
+/**
+ * 取某 skill 某 key 的当前显示值:草稿优先,回退初始值,再回退默认值。
+ */
+function configValue(skillPath: string, item: SkillConfigItem): string {
+  const draft = skillConfigDraft.value.get(skillPath)
+  if (draft && item.key in draft) {
+    return draft[item.key]
+  }
+  const initial = skillConfigInitial.value.get(skillPath)
+  if (initial && item.key in initial) {
+    return initial[item.key]
+  }
+  return item.defaultValue
+}
+
+/**
+ * 编辑某 key:写入草稿。若新值等于初始值则从草稿移除(保持草稿只记差异)。
+ */
+function setConfigValue(skillPath: string, item: SkillConfigItem, value: string): void {
+  if (applying.value) {
+    return
+  }
+  const initial = skillConfigInitial.value.get(skillPath) ?? {}
+  const next = { ...(skillConfigDraft.value.get(skillPath) ?? {}) }
+  if (value === (initial[item.key] ?? item.defaultValue)) {
+    delete next[item.key]
+  } else {
+    next[item.key] = value
+  }
+  const nextDraft = new Map(skillConfigDraft.value)
+  if (Object.keys(next).length === 0) {
+    nextDraft.delete(skillPath)
+  } else {
+    nextDraft.set(skillPath, next)
+  }
+  skillConfigDraft.value = nextDraft
+}
+
+/** 某 skill 是否有未保存的 config 变更。 */
+function skillConfigChanged(skillPath: string): boolean {
+  return skillConfigDraft.value.has(skillPath)
+}
+
 const hasChanges = computed(() =>
   skillOverrides.value.size > 0
   || platformToolOverrides.value.size > 0
-  || workspaceLevelOverride.value !== null,
+  || workspaceLevelOverride.value !== null
+  || skillConfigDraft.value.size > 0,
 )
 
 function entrySummary(value: string | undefined): string {
@@ -296,12 +399,27 @@ async function reload(): Promise<void> {
   const result: LocalAssistantConfig = await getLocalAssistantConfig()
   agent.value = result.agent
   skills.value = result.skills
+  // Build initial config values per skill: player-saved value ?? default.
+  const initial = new Map<string, Record<string, string>>()
+  for (const skill of result.skills) {
+    if (!skill.configItems || skill.configItems.length === 0) {
+      continue
+    }
+    const saved = result.skillConfigValues[skill.path] ?? {}
+    const values: Record<string, string> = {}
+    for (const item of skill.configItems) {
+      values[item.key] = item.key in saved ? saved[item.key] : item.defaultValue
+    }
+    initial.set(skill.path, values)
+  }
+  skillConfigInitial.value = initial
 }
 
 function resetOverrides(): void {
   skillOverrides.value = new Map()
   platformToolOverrides.value = new Map()
   workspaceLevelOverride.value = null
+  skillConfigDraft.value = new Map()
 }
 
 /**
@@ -322,6 +440,13 @@ async function applyChanges(): Promise<boolean> {
     }
     if (workspaceLevelOverride.value !== null) {
       await updateLocalAssistantWorkspaceAccess(workspaceLevelOverride.value)
+    }
+    // Skill config: persist the full merged set (initial + draft overrides)
+    // per skill — the storage layer replaces the record for each skill dir.
+    for (const [skillPath, draftValues] of skillConfigDraft.value) {
+      const initial = skillConfigInitial.value.get(skillPath) ?? {}
+      const merged = { ...initial, ...draftValues }
+      await updateLocalAssistantSkillConfig(skillPath, merged)
     }
     await reload()
     resetOverrides()

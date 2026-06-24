@@ -2,6 +2,7 @@ import type {
   JsonValue,
   PlatformActionError,
   PlatformActionResult,
+  SkillConfigItem,
   WorkspaceOperationRequest,
   WorkspaceFile,
 } from "@tsian/contracts"
@@ -13,6 +14,7 @@ import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import { summarizeTraceValue } from "../agent-runtime/trace"
 import { executeWorkspaceOperation } from "../agent-runtime/workspace-operations"
 import {
+  readSkillConfig,
   readWorkspaceFileFromFiles,
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
@@ -140,8 +142,10 @@ function postLog(level, message, data) {
   });
 }
 
-// tsian SDK：精简为 workspace.* + log + trace。
+// tsian SDK：精简为 workspace.* + log + trace + config。
 // fetch 已放开为 Worker 原生裸 fetch（标准 Response），不再包装。
+// config 是 skill 声明 + 玩家覆盖合并后的平铺对象（见主线程 mergeConfig），
+// 无配置的 skill 拿到空对象 {}，脚本 config.API_KEY 返回 undefined 自行处理。
 const tsian = Object.freeze({
   workspace: Object.freeze({
     read(input) {
@@ -183,7 +187,8 @@ const tsian = Object.freeze({
   },
   trace(label, data) {
     postLog("trace", label, data);
-  }
+  },
+  config: Object.freeze(isRecord(message.config) ? message.config : {})
 });
 
 const signal = Object.freeze({
@@ -645,6 +650,7 @@ async function runWorkerScript(
   request: RuntimeBrowserScriptExecutorRequest,
   source: string,
   executorContext: RuntimeControlledExecutorContext | undefined,
+  config: Record<string, string>,
 ): Promise<PlatformActionResult> {
   if (typeof Worker === "undefined" || typeof Blob === "undefined") {
     return actionError(
@@ -776,8 +782,36 @@ async function runWorkerScript(
       type: "execute",
       source,
       input: toJsonValue(request.input),
+      config: toJsonValue(config),
     })
   })
+}
+
+/**
+ * Merge a skill's declared config defaults with the player's saved overrides.
+ * Player overrides win over `skill.config` defaults; keys the player left
+ * unset fall back to the declared default. Both sides are string-valued —
+ * scripts convert types themselves (`Number(config.MAX_RESULTS)`).
+ */
+function mergeSkillConfig(
+  configItems: SkillConfigItem[] | undefined,
+  playerValues: Record<string, string>,
+): Record<string, string> {
+  if (!configItems || configItems.length === 0) {
+    return {}
+  }
+  const merged: Record<string, string> = {}
+  for (const item of configItems) {
+    merged[item.key] = item.defaultValue
+  }
+  for (const [key, value] of Object.entries(playerValues)) {
+    // Only override keys the skill actually declares — a stale saved value
+    // for a removed config key is ignored (the skill no longer reads it).
+    if (key in merged) {
+      merged[key] = value
+    }
+  }
+  return merged
 }
 
 export function createBrowserSkillScriptRunner(
@@ -836,6 +870,14 @@ export function createBrowserSkillScriptRunner(
     }
     const finalSource = inlined.item as string
 
-    return runWorkerScript(options, request, finalSource, executorContext)
+    // Merge declared config defaults with player-saved overrides, then inject
+    // as `tsian.config`. A skill without configItems yields an empty object —
+    // `config.API_KEY` returns undefined and the script handles the missing key.
+    const playerValues = request.configItems && request.configItems.length > 0
+      ? await readSkillConfig(request.skillPath)
+      : {}
+    const mergedConfig = mergeSkillConfig(request.configItems, playerValues)
+
+    return runWorkerScript(options, request, finalSource, executorContext, mergedConfig)
   }
 }

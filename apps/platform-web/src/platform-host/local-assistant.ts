@@ -24,6 +24,8 @@ import {
 import {
   loadLocalAssistantFiles,
   saveLocalAssistantFiles,
+  readSkillConfig,
+  writeSkillConfig,
   LOCAL_ASSISTANT_AGENT_ID,
   normalizeWorkspaceFilePath,
 } from "../storage"
@@ -208,19 +210,24 @@ export async function updateLocalAssistantModel(
  * Local assistant config snapshot consumed by the Assistant config panel.
  * `agent` is the resolved registry entry (skills/tools/workspace state);
  * `skills` lists every skill visible to the assistant (shared + agent-local);
- * `providerPresets` lists saved presets for the provider dropdown.
+ * `providerPresets` lists saved presets for the provider dropdown;
+ * `skillConfigValues` preloads player-saved overrides for every skill that
+ * declares `configItems`, keyed by skill path, so the panel can render
+ * filled inputs without a second async round-trip per skill.
  */
 export interface LocalAssistantConfig {
   agent: AgentRegistryEntry | null
   skills: SkillRegistryEntry[]
   providerPresets: PlatformStudioProviderPresetOption[]
+  skillConfigValues: Record<string, Record<string, string>>
 }
 
 /**
  * Read the local assistant's full config for the Assistant config panel.
  * Resolves the agent registry entry via `buildAgentRegistry`, the skill list
  * via `buildSkillRegistry` (shared + agent-local, same scope as StudioView),
- * and the saved provider presets for the dropdown.
+ * the saved provider presets for the dropdown, and player-saved skill config
+ * overrides for every skill that declares `configItems`.
  */
 export async function getLocalAssistantConfig(): Promise<LocalAssistantConfig> {
   const files = await loadLocalAssistantFiles()
@@ -230,11 +237,35 @@ export async function getLocalAssistantConfig(): Promise<LocalAssistantConfig> {
     includeLocal: true,
     agentId: LOCAL_ASSISTANT_AGENT_ID,
   })
+
+  // Preload player-saved overrides only for skills that declare config items —
+  // skills without `skill.config` have nothing to render or save.
+  const skillConfigValues: Record<string, Record<string, string>> = {}
+  for (const skill of skills) {
+    if (skill.configItems && skill.configItems.length > 0) {
+      skillConfigValues[skill.path] = await readSkillConfig(skill.path)
+    }
+  }
+
   return {
     agent,
     skills,
     providerPresets: listBrowserAiProviderPresetOptions(),
+    skillConfigValues,
   }
+}
+
+/**
+ * Persist player-saved skill config overrides for a single skill. Values are
+ * the full set of overrides shown in the panel (not a diff): the storage layer
+ * replaces any existing record for the skill directory. Callers pass only keys
+ * the skill declares — the storage merge at run time drops stale keys.
+ */
+export async function updateLocalAssistantSkillConfig(
+  skillPath: string,
+  values: Record<string, string>,
+): Promise<void> {
+  await writeSkillConfig(skillPath, values)
 }
 
 /**

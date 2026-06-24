@@ -296,6 +296,21 @@ export interface AgentContextEntry {
 export type SkillRegistryScope = "shared" | "agent-local"
 
 /**
+ * A declared configuration item parsed from a skill's `skill.config` file
+ * (`.env`-style key-value + comments). The player overrides `defaultValue`
+ * through the skill config UI; overrides are stored locally and never enter
+ * the workspace (secrets stay out of exported skill packages).
+ */
+export interface SkillConfigItem {
+  /** Config key, e.g. "TAVILY_API_KEY". */
+  key: string
+  /** Description parsed from the `#` comment line immediately above the key. */
+  description: string
+  /** Default value declared in `skill.config` (always a string; scripts convert). */
+  defaultValue: string
+}
+
+/**
  * Lightweight summary of a Skill action declared in a `tsian-actions` fence.
  * This is a capability-existence listing (name + description + executor type +
  * executability), not the full action declaration — it deliberately omits
@@ -328,6 +343,8 @@ export interface SkillRegistryEntry {
   actions?: SkillActionSummary[]
   /** Human-readable errors from parsing the `tsian-actions` fence (unsupported executor types, malformed JSON). */
   actionDeclarationErrors?: string[]
+  /** Configuration items parsed from a sibling `skill.config` file. Absent when the skill declares no config. */
+  configItems?: SkillConfigItem[]
 }
 
 export interface SkillResourceEntry {

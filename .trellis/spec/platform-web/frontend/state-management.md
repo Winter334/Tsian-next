@@ -30,14 +30,15 @@ Conventions:
 - Table shapes live in `storage/db.ts`.
 - Prototype schema changes use a new database name, not migrations.
 - Multi-table writes should use `localDb.transaction`.
-- Current active tables are `meta`, `gameCards`, `gameCardContentFiles`, `gameCardFrontendFiles`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, `workspaceFiles`, and `assistantAttachments`.
+- Current active tables are `meta`, `gameCards`, `gameCardContentFiles`, `gameCardFrontendFiles`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, `workspaceFiles`, `assistantAttachments`, and `skillConfigs`.
 - **Assistant attachments (task 06-22-assistant-attachments)**: `assistantAttachments` table stores attachment Blobs keyed by `&id, sessionId, createdAt`. Attachments are per-session temp files at VFS path `temp/<sessionId>/<name>`. Image attachments (`kind: "image"`) carry `binary` + `imageMimeType` and are sent to LLMs as multimodal `ContentPart[]` (base64 image blocks). Text attachments (`kind: "text"`) have their content read and injected as message text. `saveAssistantAttachment(sessionId, file)` stores the Blob and returns an `AttachmentRef` (path + metadata, no Blob). `ConversationMessageRecord.attachments?: AttachmentRef[]` persists refs on user messages; `normalizeMessages` preserves the `attachments` field. `deleteAssistantSession` cascades `deleteAttachmentsBySession`. `cleanupOrphanAttachments` runs on App startup (7-day stale + no live session). `WorkspaceScope "temp"` (readLevel 0, editLevel 4) routes `temp/` paths; `TempVolume` (workspace-volumes.ts) wraps the table (enumerate only; write/delete throw — attachments managed via `saveAssistantAttachment` UI path). DB name bumped v8→v9; SW `DB_NAME` must mirror.
 - Game cards own reusable content files such as Agents, Skills, rules, schemas, docs, assistant metadata, and optional frontend bindings. Content files are stored **per-file** in `gameCardContentFiles` (keyed `${gameCardId}::${path}`), not as an embedded array on the `gameCards` row. A single file write touches one `gameCardContentFiles` row + bumps the card's `updatedAt`; it does not rewrite the whole card. `putLocalGameCard` takes an optional `contentFiles`: `undefined` leaves the content table untouched (metadata-only write), an array does a full replace inside the transaction (import/copy/seed). Read views (`getLocalGameCard` / `listLocalGameCards` / `putLocalGameCard` / `ensureBuiltinBlankGameCard`) return `LocalGameCardView`, which extends `LocalGameCardRecord` with an optional preloaded `coverContentFile` so the sync render path `getGameCardCoverUrl` can resolve the cover without an async table query.
 - Saves are playthrough slots linked to `gameCardId` / `gameCardVersion`; `workspaceFiles` stores only save runtime data mounted at `save/...` plus host-owned `.tsian/...` metadata.
 - The local assistant identity and session state live in the `local-assistant-files` Dexie map (`assistant-local-files` key) as a virtual file system under `.tsian/local/assistant/`: agent identity files (agent.json/SOUL.md/AGENT.md/notes.md/skills/) are cross-session shared, while per-session agent context snapshots live at `.tsian/local/assistant/sessions/<sessionId>/context.json` (task-summary steady state, separate from the visible-messages `assistant-session:<sessionId>` Dexie key). `loadLocalAssistantFiles`/`saveLocalAssistantFiles` (merge mode) handle the map; `deleteLocalAssistantFile` removes a single entry (used by `deleteAssistantSession` to clean up the context file). The snapshot is agent-visible via `workspace_read`/`workspace_write` — see the "Assistant Cross-Turn Context Persistence" scenario in type-safety.md.
 - **Assistant skill seed + merge strategy (task 06-20 子2)**: `defaultLocalAssistantFileMap()` seeds factory skills as string constants (SKILL.md + optional `scripts/*.js`) into the map. `defaultAssistantConfig()`'s `skills.enabled` is the whitelist — non-empty `enabled` short-circuits registry discovery (`registry.ts`), so every factory skill name MUST be listed there or it won't appear in the Skill Index. Factory skills: `framework-knowledge` (extended body: permission matrix + skill lifecycle + assistant vs runtime agent boundary), `agent-authoring` (pure guidance), `skill-authoring` (pure guidance), `card-content-drafting` (1 `browser_script` action `validate_workspace_layout` — read-only README existence check). `loadLocalAssistantFiles` merges: after parsing the stored map, it fills in any default keys missing from the stored copy (only fills, never overwrites user edits) and persists the merged map. This ensures new factory skills reach existing users without a manual reset. `saveLocalAssistantFiles` remains merge-only (never deletes); `deleteLocalAssistantFile`/`deleteLocalAssistantPath` handle explicit removal.
 - Packaged frontend files are reusable Game Card assets stored beside game cards, not copied into save runtime data.
-- Packaged frontends are served by a Service Worker (`apps/platform-web/public/tsian-game-card-frontend-sw.js`) that reads `gameCardFrontendFiles` from IndexedDB. The SW DB name **must** stay in sync with `storage/db.ts`'s `TsianLocalDb` constructor database name (currently `tsian-agent-runtime-v9`). The SW is a standalone static asset that cannot import the TS constant, so the SW file carries the same literal plus a comment pointing back to `db.ts`. Update both together whenever the database name changes; a mismatch makes every packaged frontend serve 404.
+- Packaged frontends are served by a Service Worker (`apps/platform-web/public/tsian-game-card-frontend-sw.js`) that reads `gameCardFrontendFiles` from IndexedDB. The SW DB name **must** stay in sync with `storage/db.ts`'s `TsianLocalDb` constructor database name (currently `tsian-agent-runtime-v10`). The SW is a standalone static asset that cannot import the TS constant, so the SW file carries the same literal plus a comment pointing back to `db.ts`. Update both together whenever the database name changes; a mismatch makes every packaged frontend serve 404.
+- **Skill config overrides (task 06-24-assistant-web-search)**: `skillConfigs` table stores player-saved skill config overrides keyed by `&skillPath, updatedAt` (the `skillPath` is the skill **directory**, e.g. `skills/web-search`, derived from the `SKILL.md` path by stripping `/SKILL.md`). `LocalSkillConfigRecord.values` is a JSON-serialized `Record<string, string>`; `readSkillConfig`/`writeSkillConfig`/`deleteSkillConfig` (`storage/skill-config-storage.ts`) wrap the table and handle JSON (de)serialization. Overrides never enter the workspace and never travel with an exported skill package — only the `skill.config` declaration + defaults do. This mirrors AI provider apiKey preset locality (see the "Browser AI Provider Config And Secrets" scenario) and is a registered Fileification exception (see `guides/data-fileification-principle.md`). DB name bumped v9→v10; SW `DB_NAME` must mirror.
 - Built-in game cards may be refreshed by platform seed helpers when their source is `builtin` and their content/manifest is stale. This refresh updates reusable card content; existing saves see the updated card content through the effective workspace layer.
 - Checkpoints store snapshot, history, and save runtime files. They do not snapshot card-owned content.
 
@@ -557,4 +558,125 @@ if (workspaceTransaction) {
   // save-runtime / platform-meta stay on transaction paths
 }
 // non-staged reaches dispatch
+```
+
+## Scenario: Skill Config Declaration And Player Overrides
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web parses a skill's `skill.config` file, stores player config overrides, injects `tsian.config` into a `browser_script` Worker, or renders the skill config UI in the Assistant config panel.
+- Applies when changing `apps/platform-web/src/agent-runtime/registry.ts` (skill.config parsing), `apps/platform-web/src/storage/skill-config-storage.ts`, `apps/platform-web/src/storage/db.ts` (`skillConfigs` table), `apps/platform-web/src/platform-host/browser-skill-script-executor.ts` (`tsian.config` injection), `apps/platform-web/src/platform-host/local-assistant.ts` (config preload + wrapper), or the skill config UI in `AssistantConfigPanel.vue`.
+
+### 2. Signatures
+
+- `parseSkillConfig(source: string): SkillConfigItem[]` (`agent-runtime/registry.ts`) — pure parser; `.env`-style lines → `[{ key, description, defaultValue }]`.
+- `SKILL_CONFIG_FILE_PATH_PATTERN` (`agent-runtime/registry.ts`) — matches `skills/<id>/skill.config`, `agents/<agent>/skills/<id>/skill.config`, `.tsian/local/<agent>/skills/<id>/skill.config`.
+- `SkillConfigItem` (`@tsian/contracts`): `{ key: string; description: string; defaultValue: string }`.
+- `SkillRegistryEntry.configItems?: SkillConfigItem[]` (`@tsian/contracts`) — populated by `buildSkillRegistry` from a sibling `skill.config` file; absent when the skill declares no config.
+- `LocalSkillConfigRecord` (`storage/db.ts`): `{ skillPath: string; values: string; updatedAt: number }` — `values` is `JSON.stringify(Record<string, string>)`.
+- `readSkillConfig(skillFilePath: string): Promise<Record<string, string>>` / `writeSkillConfig(skillFilePath, values)` / `deleteSkillConfig(skillFilePath)` (`storage/skill-config-storage.ts`) — keyed by skill **directory** (derived from the `SKILL.md` path by stripping `/SKILL.md`).
+- `RuntimeBrowserScriptExecutorRequest.configItems?: SkillConfigItem[]` (`agent-runtime/workspace-tools.ts`) — carries declared defaults from `SkillRegistryEntry` to the executor.
+- `updateLocalAssistantSkillConfig(skillPath, values)` (`platform-host/local-assistant.ts`) — thin wrapper over `writeSkillConfig` for the Assistant config panel.
+- `tsian.config` (Worker SDK, `browser-skill-script-executor.ts`) — `Object.freeze`'d flat object injected into the `browser_script` Worker; scripts read `config.API_KEY` etc.
+
+### 3. Contracts
+
+- A skill declares config by placing a `skill.config` file in its directory beside `SKILL.md`. The file is a workspace file (card-content scope): resource-manager-visible, player-editable, agent `workspace.read/write`-able, and exported with the skill package.
+- `skill.config` format is `.env`-style: `#`-prefixed lines describe the *next* key; `KEY=VALUE` declares an item (VALUE always a string); blank lines clear the pending comment; other lines are ignored.
+- The player overrides defaults through the Assistant config panel UI. Overrides are stored in the `skillConfigs` Dexie table keyed by skill directory, **never** in the workspace — so secrets (API keys) stay local and are never exported with a skill package. This is a registered Fileification exception (player secret overrides mirror AI provider apiKey preset locality).
+- Runtime merge: `tsian.config = Object.freeze({ ...defaults, ...playerOverrides })`. Player overrides win over `skill.config` defaults. A key the player left unset uses the default. A stale saved value for a removed config key is dropped at merge time (only keys the skill currently declares survive).
+- `tsian.config` is injected via the Worker `execute` message `{ type: "execute", source, input, config }`. The `config` field is optional; a skill without `configItems` yields `tsian.config = {}` (frozen empty object), so `config.API_KEY` returns `undefined` and the script handles the missing key.
+- Config declarations do **not** enter agent context: `skill.config` is not injected alongside `SKILL.md`. The agent learns a skill needs config only when a `run_script` fails with a clear missing-config error (the "first error then configure" flow is intended).
+- The `skill.config` file is parsed at registry build time (`buildSkillRegistry` first pass builds `directoryPath → configItems`, second pass attaches to each `SkillRegistryEntry`). `loadSkillDetail` resolves the sibling `skill.config` for a single skill path.
+- DB schema: `skillConfigs: "&skillPath, updatedAt"`. DB name bumped v9→v10 (prototype destructive upgrade; old v9 store abandoned, no migration). The SW `DB_NAME` must mirror.
+
+### 4. Validation & Error Matrix
+
+- `skill.config` absent → skill loads normally, `configItems` undefined, UI shows no config section, `tsian.config` is `{}`.
+- `skill.config` present but empty/whitespace-only → `configItems` is `[]`, no config section rendered, `tsian.config` is `{}`.
+- `skill.config` with a malformed line (no `=`) → line ignored, other items parsed; registry build does not throw.
+- `#` comment with no following key line → pending description discarded on the next blank/non-key line; no item produced.
+- Corrupt stored JSON in `skillConfigs.values` → `readSkillConfig` degrades to `{}` (defaults apply); no throw.
+- Player saved an override for a key the skill later removed → merge drops it (only declared keys survive); no stale value leaks into `tsian.config`.
+- Worker `message.config` missing or non-object → `tsian.config = {}` (defensive `isRecord` guard in Worker source).
+
+### 5. Good/Base/Bad Cases
+
+- Good: a `web-search` skill declares `TAVILY_API_KEY=` + `MAX_RESULTS=5` in `skill.config`; the player fills `TAVILY_API_KEY` in the config panel; the skill script reads `config.TAVILY_API_KEY` (player value) and `config.MAX_RESULTS` (`"5"` default) on the next `run_script`.
+- Good: a key named `TAVILY_API_KEY` renders a password-type input (auto-detected from the KEY substring), masking the secret in the UI.
+- Good: the player edits `skill.config` directly in the resource manager to change `MAX_RESULTS` default to `10`; the registry re-parses on next load and the UI shows the new default.
+- Base: a skill with no `skill.config` → no config section, `tsian.config = {}`, behavior unchanged.
+- Base: the player has not overridden `MAX_RESULTS` → the script reads the declared default `"5"`.
+- Bad: storing the player's `TAVILY_API_KEY` override in `skill.config` (workspace file) — it would be exported with the skill package and leak the secret.
+- Bad: injecting the full `skill.config` source into agent context alongside `SKILL.md` — config noise pollutes every turn.
+- Bad: merging a stale saved override for a key the skill no longer declares into `tsian.config`.
+
+### 6. Tests Required
+
+- Assert `parseSkillConfig` parses `#` comments as descriptions of the next key, `KEY=VALUE` as items, blank lines as description reset, and ignores non-key lines.
+- Assert `buildSkillRegistry` attaches `configItems` from a sibling `skill.config` and leaves it absent when no `skill.config` exists.
+- Assert `skill.config` is visible in the resource manager and agent `workspace.read/write`-able (it is a normal card-content workspace file).
+- Assert `readSkillConfig` returns `{}` for a skill with no saved overrides and degrades to `{}` on corrupt stored JSON.
+- Assert `writeSkillConfig` then `readSkillConfig` round-trips values; `deleteSkillConfig` clears them.
+- Assert `tsian.config` in the Worker equals `{ ...defaults, ...playerOverrides }`, player values winning over defaults.
+- Assert a skill without `configItems` produces `tsian.config = {}` and `config.ANY_KEY` is `undefined`.
+- Assert a stale saved override for a removed config key is dropped at merge time.
+- Assert a `skill.config` file is included in an exported skill package (declaration + defaults), but `skillConfigs` table records are NOT included.
+- Assert `npm run build:contracts && npm run build:web` passes.
+
+### 7. Wrong vs Correct
+
+#### Wrong — storing player overrides in the workspace file
+
+```typescript
+// skill.config (workspace file) — leaked on export
+TAVILY_API_KEY=sk-player-secret
+```
+
+#### Correct — defaults in `skill.config`, overrides in Dexie
+
+```typescript
+// skill.config (workspace, exported) — declaration + default only
+# Tavily API key, register at https://tavily.com
+TAVILY_API_KEY=
+
+// player override (Dexie skillConfigs table, local only)
+await writeSkillConfig("skills/web-search/SKILL.md", { TAVILY_API_KEY: "sk-player-secret" })
+```
+
+#### Wrong — injecting skill.config into agent context
+
+```typescript
+// registry injects skill.config content next to SKILL.md — config noise every turn
+contextFiles: [skillMdFile, skillConfigFile]
+```
+
+#### Correct — config stays out of agent context; script reads tsian.config
+
+```typescript
+// Worker source — config is a frozen flat object, not a context file
+const tsian = Object.freeze({
+  ...,
+  config: Object.freeze(isRecord(message.config) ? message.config : {})
+})
+// script: if (!config.TAVILY_API_KEY) throw new Error("请先配置 Tavily API key")
+```
+
+#### Wrong — merging stale overrides for removed keys
+
+```typescript
+const merged = { ...playerValues } // includes keys the skill no longer declares
+```
+
+#### Correct — only declared keys survive the merge
+
+```typescript
+function mergeSkillConfig(configItems, playerValues) {
+  const merged = {}
+  for (const item of configItems) merged[item.key] = item.defaultValue
+  for (const [key, value] of Object.entries(playerValues)) {
+    if (key in merged) merged[key] = value // stale keys dropped
+  }
+  return merged
+}
 ```
