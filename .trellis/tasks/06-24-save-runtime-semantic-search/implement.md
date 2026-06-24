@@ -34,10 +34,11 @@
 
 4. **`apps/platform-web/src/agent-runtime/semantic-index/embedding-client.ts`**
    - `embed(texts: string[]): Promise<Float32Array[]>`
-   - 调 `resolveEmbeddingConfig()`,null → throw(调用方 catch 返回空)
-   - 按 kind 构造 endpoint + headers(复用 helper)
-   - 解析各 kind 的 embedding 响应形状(OpenAI `data[].embedding`、Gemini `embeddings[].values`、Claude 无原生 embedding → 走 OpenAI 兼容或报该 kind 不支持)
-   - 单元测试:mock API 响应,验证向量解析
+   - 读独立的 `embeddingConfig` 段(不碰 chat providerTypes);`resolveEmbeddingConfig()` 返回 null → throw(调用方 catch 返回空)
+   - MVP 实现 openai-compatible 协议标准:`POST {baseUrl}/embeddings`,body `{model, input: string[]}`,响应 `data[].embedding`。这一种 kind 覆盖 OpenAI/DeepSeek/各种兼容端点(Ollama/LM Studio 等)
+   - 复用 `buildAuthHeadersForKind` 构造 auth header(只借类型 + helper,不并入 chat provider 结构)
+   - kind 非 openai-compatible → 返回不支持错误(工具层 catch 返回空);Gemini/Claude kind 的 embedding 适配列为可选,MVP 不做
+   - 单元测试:mock openai-compatible 响应,验证向量解析
 
 5. **`apps/platform-web/src/agent-runtime/semantic-index/index-store.ts`**
    - `getEmbeddingsByOwner(scope, ownerId): Promise<LocalEmbeddingIndexRecord[]>`
@@ -156,7 +157,7 @@
 ## 风险点 / 回滚点
 
 - **高风险**:Dexie v11 升级。原型期破坏性(无迁移),但 service worker `tsian-game-card-frontend-sw.js` 镜像 DB 名,确认同步。回滚:降版本 + 重开库。
-- **中风险**:embedding API kind 适配。Claude 无原生 embedding endpoint → 该 kind 配置报"不支持 embedding"或走 OpenAI 兼容端点。implement 时确认各 kind 可行性。
+- **低风险**:embedding API kind 适配。MVP 只实现 openai-compatible 协议标准(覆盖 OpenAI/DeepSeek/各种兼容端点)。用户在独立的 embeddingConfig 段(控制面板"语义检索"分区)配置 baseUrl/apiKey/model——选型是用户配置的事,不是代码硬编码。Gemini/Claude kind 的 embedding 适配列为可选,非 MVP;用户想用这些可走它们的 OpenAI 兼容端点。
 - **中风险**:Float32Array 在 Dexie 存储/取回类型。Phase 2 要验证 Structured Clone 往返正确。
 - **低风险**:semantic_search op 是加法,不破坏现有 op。embeddingConfig 默认关,零影响现状。
 
