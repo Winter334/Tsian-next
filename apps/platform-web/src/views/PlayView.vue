@@ -110,6 +110,10 @@ import { useRouter } from "vue-router"
 import { ArrowLeft, FolderOpen, MonitorOff, Settings } from "lucide-vue-next"
 import GameLauncherPanel from "@/components/play/GameLauncherPanel.vue"
 import { toast } from "@/composables/useToast"
+
+// 桌面窗口透传:窗口最小化时为 true。全局 keydown 监听据此守卫,
+// 避免隐藏的游戏窗口拦截 Escape 把不可见的 iframe 退回启动器。
+const props = defineProps<{ minimized?: boolean }>()
 import {
   ACTIVE_CARD_CHANGED_EVENT,
   SAVES_CHANGED_EVENT,
@@ -418,6 +422,9 @@ function onActiveCardChanged(event: Event) {
 }
 
 function onKeydown(event: KeyboardEvent) {
+  if (props.minimized) {
+    return
+  }
   if (event.key === "Escape" && (phase.value === "remote-ready" || phase.value === "packaged-ready")) {
     returnToLauncher()
   }

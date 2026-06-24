@@ -80,6 +80,7 @@ const props = withDefaults(defineProps<{
   cardId?: string
   path?: string
   mode?: EditorMode
+  minimized?: boolean
 }>(), {
   path: "",
   mode: "edit",
@@ -424,6 +425,9 @@ watch(() => [props.cardId, props.path, props.mode] as const, () => {
 // Ctrl+S / Cmd+S: save. Active only on the editor route so other views keep the
 // browser default. No editable-target guard: Ctrl+S must fire inside CodeMirror.
 function onGlobalKeydown(event: KeyboardEvent) {
+  if (props.minimized) {
+    return
+  }
   const ctrl = event.ctrlKey || event.metaKey
   if (!ctrl || (event.key !== "s" && event.key !== "S")) {
     return

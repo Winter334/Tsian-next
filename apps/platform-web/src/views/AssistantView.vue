@@ -607,16 +607,14 @@ const fileInputRef = ref<HTMLInputElement | null>(null)
 const showJumpToBottom = ref(false)
 const pendingAttachments = ref<PendingAttachment[]>([])
 const dragOver = ref(false)
-// 焦点切换滚动保持:浏览器对非活动/被遮挡滚动容器会异步把 scrollTop 重置为 0
-// (宽屏)或 display:none→grid 时重置(窄屏).把 scrollTop 持久化到会话
-// (assistant-scroll-top:{id}),scroll 时 rAF 节流写入;进入会话/获焦时从存储
-// 恢复,并用多帧防御性恢复对抗浏览器异步重置(恢复后若又被重置为 0 则再补一次).
+// 焦点切换滚动保持:窗口改用 CSS display:none(最小化)而非从 DOM 移除后,
+// 切焦(非最小化)窗口常驻可见、scrollTop 天然保留,不再被浏览器异步重置.
+// 仍把 scrollTop 持久化到会话(assistant-scroll-top:{id}),供硬刷新/重开
+// 场景恢复;进入会话/获焦时单次兜底恢复(若极端情况下被重置为 0 则补回).
 const route = useRoute()
 const ASSISTANT_ROUTE_PATH = "/assistant"
 // rAF 节流标记:scroll 期间每帧最多写一次 scrollTop 到存储.
 let scrollPersistScheduled = false
-// 防御性恢复的 rAF 链句柄,进入新会话/卸载时取消上一轮.
-let restoreRafId = 0
 // 复制反馈:记下刚复制的消息索引,显示「已复制」勾,短暂后自动清除.
 const copiedIndex = ref<number | null>(null)
 // 编辑中:正在通过工具条编辑的消息索引(仅用于工具条透明度保持).
@@ -1225,41 +1223,23 @@ function maybeScrollToBottom() {
 }
 
 /**
- * 从会话存储恢复滚动位置.浏览器对非活动/被遮挡滚动容器会异步重置 scrollTop
- * 为 0(宽屏)或 display:none→grid 时重置(窄屏),且重置时机延迟不确定(可能晚于
- * 恢复执行).故采用多帧防御性恢复:连续 N 帧检查,若 scrollTop 被重置为 0 且
- * 目标值>0 且内容可滚动,则补回目标值,直到稳定或帧数耗尽.
+ * 从会话存储恢复滚动位置.窗口改用 CSS 隐藏(非 DOM 移除)后,切焦窗口的
+ * scrollTop 天然保留,正常情况无需恢复;此函数仅作单次兜底——若极端情况下
+ * scrollTop 被重置为 0 且目标值>0,补回目标值.
  *
  * 用户主动滚到顶时 handleScroll 已把 0 写入存储,loadScrollTop 返回 0,
- * target===0 时不进入恢复循环,不会误恢复.
+ * target===0 时直接跳过,不会误恢复.
  */
 function restoreScrollTop(target: number) {
   if (target <= 0) {
     return
   }
-  cancelAnimationFrame(restoreRafId)
-  let frames = 0
-  const MAX_FRAMES = 10
-  const tick = () => {
+  nextTick(() => {
     const el = messageListRef.value
-    if (!el || frames >= MAX_FRAMES) {
-      restoreRafId = 0
-      return
-    }
-    frames += 1
-    if (el.scrollTop === 0 && el.scrollHeight > el.clientHeight) {
-      // 被浏览器重置为 0,补回目标值;下一帧再验(可能再被重置).
+    if (el && el.scrollTop === 0 && el.scrollHeight > el.clientHeight) {
       el.scrollTop = target
-      restoreRafId = requestAnimationFrame(tick)
-    } else if (el.scrollTop !== target) {
-      // 还没到位(布局未稳定),继续等一帧.
-      restoreRafId = requestAnimationFrame(tick)
-    } else {
-      // 已稳定在目标值,停止.
-      restoreRafId = 0
     }
-  }
-  restoreRafId = requestAnimationFrame(tick)
+  })
 }
 
 /** 进入一个会话后恢复其滚动位置(从存储读取目标值). */
@@ -1273,7 +1253,7 @@ async function restoreSessionScrollTop() {
 }
 
 // 路由变化反映焦点切换(focusWindow → navigateTo(routePath)).进入助手路由时
-// 从会话存储恢复滚动位置(多帧防御性恢复对抗浏览器异步重置).
+// 从会话存储恢复滚动位置(单次兜底,正常情况下 scrollTop 已被窗口常驻保留).
 watch(
   () => route.path,
   (to, from) => {
@@ -1413,7 +1393,6 @@ onBeforeUnmount(() => {
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   window.removeEventListener("beforeunload", onBeforeUnloadRecovery)
   document.removeEventListener("visibilitychange", onVisibilityChangeRecovery)
-  cancelAnimationFrame(restoreRafId)
 })
 
 function onActiveCardChanged(event: Event) {

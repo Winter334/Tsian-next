@@ -59,12 +59,6 @@ export function useDesktopWindows() {
   const activeWindowId = ref("")
   let zCounter = 100
 
-  const visibleWindows = computed(() =>
-    windows.value
-      .filter((window) => !window.minimized)
-      .sort((left, right) => left.zIndex - right.zIndex),
-  )
-
   const activeWindow = computed(() =>
     windows.value.find((window) => window.id === activeWindowId.value) ?? null,
   )
@@ -236,7 +230,6 @@ export function useDesktopWindows() {
 
   return {
     windows,
-    visibleWindows,
     activeWindow,
     activeWindowId,
     openWindow,

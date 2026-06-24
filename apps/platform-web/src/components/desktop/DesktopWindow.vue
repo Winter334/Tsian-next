@@ -5,6 +5,7 @@
       'desktop-window--active': active,
       'desktop-window--inactive': !active,
       'desktop-window--fullscreen': window.fullscreen,
+      'desktop-window--minimized': window.minimized,
     }"
     :style="windowStyle"
     :aria-label="window.title"
@@ -63,7 +64,7 @@
     </header>
 
     <div class="desktop-window-content">
-      <component :is="window.component" v-bind="window.props" />
+      <component :is="window.component" v-bind="window.props" :minimized="window.minimized" />
     </div>
 
     <template v-if="!isInteractionLocked">

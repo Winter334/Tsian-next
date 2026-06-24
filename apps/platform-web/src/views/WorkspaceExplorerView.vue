@@ -381,6 +381,10 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
+
+// 桌面窗口透传:窗口最小化时为 true。全局 keydown 监听据此守卫,
+// 避免隐藏的资源管理器拦截 Delete(误删文件)/F2(重命名)/Ctrl+C 等。
+const props = defineProps<{ minimized?: boolean }>()
 import {
   ChevronRight,
   ClipboardPaste,
@@ -1252,6 +1256,9 @@ async function copyDirectory(srcPath: string, targetPath: string): Promise<void>
 }
 
 function onGlobalKeydown(event: KeyboardEvent) {
+  if (props.minimized) {
+    return
+  }
   if (event.key === "Escape") {
     contextMenu.value = null
     cancelRename()

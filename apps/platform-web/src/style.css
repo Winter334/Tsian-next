@@ -336,6 +336,14 @@ html, body, #app {
   height: auto;
 }
 
+/* 最小化窗口:用 display:none 隐藏而非从 DOM 移除,让窗口内组件常驻、
+   滚动/草稿/表单等状态保留(display:none 仍会重置 scrollTop,但最小化
+   时用户不可见,重开时由视图恢复机制兜底;切焦(非最小化)窗口不走
+   此规则,保持常驻可见,scrollTop 天然保留)。 */
+.desktop-window--minimized {
+  display: none;
+}
+
 .desktop-window-titlebar {
   display: flex;
   min-width: 0;

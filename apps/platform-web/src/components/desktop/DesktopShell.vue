@@ -33,7 +33,7 @@
       </nav>
 
       <DesktopWindow
-        v-for="window in desktop.visibleWindows.value"
+        v-for="window in desktop.windows.value"
         :key="window.id"
         :window="window"
         :active="desktop.activeWindowId.value === window.id"
