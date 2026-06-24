@@ -8,7 +8,7 @@ import type {
   WorkspaceMoveResult,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
-  WorkspacePatchResult,
+  WorkspaceWriteResult,
   WorkspaceReadResult,
   WorkspaceScope,
   WorkspaceSearchMatch,
@@ -50,8 +50,8 @@ export const WORKSPACE_OPERATION_NAMES = {
   read: "read",
   glob: "glob",
   diff: "diff",
-  patch: "patch",
   write: "write",
+  edit: "edit",
   move: "move",
   delete: "delete",
   validate: "validate",
@@ -70,8 +70,8 @@ export const AUTHORING_WORKSPACE_OPERATIONS: WorkspaceOperationName[] = [
   "read",
   "glob",
   "diff",
-  "patch",
   "write",
+  "edit",
   "move",
   "delete",
   "validate",
@@ -111,8 +111,8 @@ const MAX_MATCHES_PER_FILE = 50
 const MAX_ACCESS_LEVEL = 4
 const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
 const EDIT_OPERATIONS = new Set<WorkspaceOperationName>([
-  "patch",
   "write",
+  "edit",
   "move",
   "delete",
 ])
@@ -976,8 +976,7 @@ async function writeWorkspaceFile(
   scope: WorkspaceScope,
   request: WorkspaceOperationRequest,
   context: WorkspaceOperationExecutionContext,
-  options: { checkExpectedContent: boolean },
-): Promise<WorkspacePatchResult> {
+): Promise<WorkspaceWriteResult> {
   assertMutableScope(scope)
   const path = normalizeWorkspaceOperationFilePath(request.path)
   assertEditAccess(path, resolveWorkspaceActorLevel(context))
@@ -990,14 +989,18 @@ async function writeWorkspaceFile(
   }
 
   const existing = findScopedFile(files, scope, path)
+  // Optimistic-concurrency guard: when `expectedContent` is provided, reject
+  // the write if the file's current content does not match. This detects
+  // stale overwrites (the file changed between read and write). Omitting it
+  // means an unconditional overwrite. Formerly the `patch` operation's duty;
+  // now folded into `write` so the misleading `patch` op could retire.
   if (
-    options.checkExpectedContent
-    && typeof request.expectedContent === "string"
+    typeof request.expectedContent === "string"
     && existing?.content !== request.expectedContent
   ) {
     throw workspaceOperationError(
       "WORKSPACE_EXPECTED_CONTENT_MISMATCH",
-      `Workspace file changed before patch: ${path}`,
+      `Workspace file changed before write: ${path}`,
       { scope, path },
     )
   }
@@ -1027,6 +1030,101 @@ async function writeWorkspaceFile(
     file,
     changed: existing?.content !== file.content,
   }
+}
+
+/** Count non-overlapping occurrences of `needle` in `haystack`. `needle` must
+ *  be non-empty (validated by the caller). Uses split-join to avoid regex
+ *  metacharacter interpretation — `oldString` is a literal string. */
+function countOccurrences(haystack: string, needle: string): number {
+  if (needle.length === 0) return 0
+  return haystack.split(needle).length - 1
+}
+
+/** Apply a partial edit to a workspace file via literal string replacement.
+ *  `oldString` must match exactly once unless `replaceAll` is set. Binary
+ *  files are rejected. The implicit conflict signal: if the file changed
+ *  since the caller last read it, `oldString` likely won't match — surfacing
+ *  the conflict without an explicit `expectedContent`. Falls back to the
+ *  shared `mutations.write` adapter so staged-transaction/rollback semantics
+ *  are identical to `write`. */
+async function editWorkspaceFile(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  request: WorkspaceOperationRequest,
+  context: WorkspaceOperationExecutionContext,
+): Promise<WorkspaceWriteResult> {
+  assertMutableScope(scope)
+  const path = normalizeWorkspaceOperationFilePath(request.path)
+  assertEditAccess(path, resolveWorkspaceActorLevel(context))
+  if (!pathMatchesScope(path, scope)) {
+    throw workspaceOperationError(
+      "WORKSPACE_SCOPE_PATH_MISMATCH",
+      `Workspace path does not belong to ${scope}: ${path}`,
+      { scope, path, pathScope: scopeForPath(path) },
+    )
+  }
+
+  const oldString = request.oldString
+  const newString = typeof request.newString === "string" ? request.newString : ""
+  const replaceAll = request.replaceAll === true
+
+  if (typeof oldString !== "string" || oldString.length === 0) {
+    throw workspaceOperationError(
+      "WORKSPACE_EDIT_OLD_STRING_REQUIRED",
+      `workspace.edit requires a non-empty oldString: ${path}`,
+      { scope, path },
+    )
+  }
+
+  const existing = findScopedFile(files, scope, path)
+  if (!existing) {
+    throw workspaceOperationError(
+      "WORKSPACE_FILE_NOT_FOUND",
+      `Cannot edit a non-existent file: ${path}`,
+      { scope, path },
+    )
+  }
+  if (existing.binary) {
+    throw workspaceOperationError(
+      "WORKSPACE_EDIT_BINARY_UNSUPPORTED",
+      `workspace.edit cannot edit binary files: ${path}`,
+      { scope, path },
+    )
+  }
+
+  const content = existing.content
+  const matchCount = countOccurrences(content, oldString)
+  if (matchCount === 0) {
+    throw workspaceOperationError(
+      "WORKSPACE_EDIT_NO_MATCH",
+      `oldString not found in ${path}. The file may have changed since you read it, or oldString does not exactly match the file (check indentation and surrounding whitespace).`,
+      { scope, path },
+    )
+  }
+  if (matchCount > 1 && !replaceAll) {
+    throw workspaceOperationError(
+      "WORKSPACE_EDIT_NOT_UNIQUE",
+      `oldString matches ${matchCount} occurrences in ${path}. Expand oldString (include surrounding lines) so it matches exactly once, or set replaceAll: true to replace every match.`,
+      { scope, path, matchCount },
+    )
+  }
+
+  // Single replacement: String.replace with a string pattern replaces only
+  // the first match. replaceAll path uses split-join to substitute every one.
+  const nextContent = replaceAll
+    ? content.split(oldString).join(newString)
+    : content.replace(oldString, newString)
+
+  if (nextContent === content) {
+    return { path, scope, file: existing, changed: false }
+  }
+
+  const file = await assertMutationAdapter(context.mutations).write({
+    scope,
+    path,
+    content: nextContent,
+  })
+  return { path, scope, file, changed: true }
 }
 
 async function deleteWorkspacePath(
@@ -1239,15 +1337,11 @@ export async function executeWorkspaceOperation(
   if (operation === "diff") {
     return diffWorkspaceFile(context.workspaceFiles, scope, requestInput, actorLevel)
   }
-  if (operation === "patch") {
-    return writeWorkspaceFile(context.workspaceFiles, scope, requestInput, context, {
-      checkExpectedContent: true,
-    })
-  }
   if (operation === "write") {
-    return writeWorkspaceFile(context.workspaceFiles, scope, requestInput, context, {
-      checkExpectedContent: false,
-    })
+    return writeWorkspaceFile(context.workspaceFiles, scope, requestInput, context)
+  }
+  if (operation === "edit") {
+    return editWorkspaceFile(context.workspaceFiles, scope, requestInput, context)
   }
   if (operation === "move") {
     return moveWorkspacePath(context.workspaceFiles, scope, requestInput, context)

@@ -42,6 +42,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   glob: "glob",
   diff: "diff",
   write: "write",
+  edit: "edit",
   move: "move",
   delete: "delete",
 } as const
@@ -64,6 +65,7 @@ const WORKSPACE_OPERATION_TOOL_NAMES = new Set<string>([
   RUNTIME_WORKSPACE_TOOL_NAMES.glob,
   RUNTIME_WORKSPACE_TOOL_NAMES.diff,
   RUNTIME_WORKSPACE_TOOL_NAMES.write,
+  RUNTIME_WORKSPACE_TOOL_NAMES.edit,
   RUNTIME_WORKSPACE_TOOL_NAMES.move,
   RUNTIME_WORKSPACE_TOOL_NAMES.delete,
 ])

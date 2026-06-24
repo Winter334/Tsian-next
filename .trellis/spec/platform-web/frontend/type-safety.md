@@ -573,8 +573,8 @@ interface RuntimeWorkspaceToolCall {
   - `workspace.list`
   - `workspace.search`
   - `workspace.diff`
-  - `workspace.patch`
   - `workspace.write`
+  - `workspace.edit`
   - `workspace.move`
   - `workspace.delete`
   - `workspace.validate`
@@ -623,7 +623,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - `use_skill` and `run_script` remain available by default because Skill installation/enablement is player/card-author controlled. Skill executor side effects still obey the current Agent's platform workspace permissions.
 - `agent_call` is advertised and executable only when the current Agent's `agent_call` platform tool is enabled and normal contact/depth/budget checks also allow it.
 - `workspace_read` maps to generic `workspace.list`, `workspace.search`, and `workspace.read`.
-- `workspace_write` maps to generic `workspace.diff`, `workspace.patch`, `workspace.write`, `workspace.move`, `workspace.delete`, and `workspace.validate`.
+- `workspace_write` maps to generic `workspace.diff`, `workspace.write`, `workspace.edit`, `workspace.move`, `workspace.delete`, and `workspace.validate`.
 - `use_skill` arguments: `{ name: string }`.
 - `use_skill` resolves only against the current Agent's visible `skillIndex`.
 - `use_skill` must not activate a Skill that exists on disk but was removed from the current Agent's `skillIndex` by `disabledSkills` or a non-matching non-empty `enabledSkills` list.
@@ -662,7 +662,7 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged Runtime Workspace transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds.
 - Successful turns commit the staged workspace final state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
 - Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets. `.tsian/*` is platform-owned metadata space for trace/checkpoint/index/cache behavior.
-- Frontend bridge `platform.runAction` generic workspace actions such as `workspace.write`, `workspace.patch`, and `workspace.delete` remain immediate platform actions and are not part of the Agent Runtime turn transaction. (The Agent Runtime's `runPlatformAction` action-executor capability was removed in the tool/skill decouple task; the frontend bridge channel is independent and unchanged.)
+- Frontend bridge `platform.runAction` generic workspace actions such as `workspace.write` and `workspace.delete` remain immediate platform actions and are not part of the Agent Runtime turn transaction. (The Agent Runtime's `runPlatformAction` action-executor capability was removed in the tool/skill decouple task; the frontend bridge channel is independent and unchanged.)
 - `run_script` success returns a structured observation with `status`, `executor`, `input`, and `output`.
 - `outputSchema` uses the same lightweight JSON-compatible type vocabulary as `inputSchema`: `array`, `boolean`, `integer`, `null`, `number`, `object`, and `string`. For object outputs, `required` and property `type` checks are supported; unsupported JSON Schema keywords are ignored.
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`:
@@ -814,13 +814,13 @@ interface ModelCallResult { text: string; toolCalls: NativeToolCall[]; raw: stri
 - Assert injected executor policy can return `ACTION_EXECUTOR_DISABLED` for `browser_script`.
 - Assert default executor policy allows `browser_script`.
 - Assert `browser_script` runs a Skill-local script through the injected runner only after `use_skill` activation and input validation.
-- Assert `browser_script` can use SDK workspace read/list/search/diff/patch/write/move/delete/validate against the staged workspace view and keeps workspace mutation trace/synchronization.
+- Assert `browser_script` can use SDK workspace read/list/search/diff/edit/write/move/delete/validate against the staged workspace view and keeps workspace mutation trace/synchronization.
 - Assert `browser_script` timeout and abort return structured observations.
 - Assert `browser_script` paths outside the declaring Skill directory are rejected.
-- Assert generic `workspace.write/patch/delete` stage ordinary save-runtime workspace mutations during `interaction.sendMessage` and commit only on successful turns.
+- Assert generic `workspace.write/edit/delete` stage ordinary save-runtime workspace mutations during `interaction.sendMessage` and commit only on successful turns.
 - Assert failed or aborted turns discard ordinary staged workspace mutations.
 - Assert ordinary Agent/Skill workspace mutations under `.tsian/*` fail structurally.
-- Assert frontend bridge `platform.runAction` generic workspace write/patch/delete remains immediate (independent of the removed Agent Runtime `runPlatformAction` executor).
+- Assert frontend bridge `platform.runAction` generic workspace write/edit/delete remains immediate (independent of the removed Agent Runtime `runPlatformAction` executor).
 - Assert unsupported/legacy executor types (`builtin`/`platform_action`/`workspace_operation`) return `ACTION_EXECUTOR_INVALID` at parse time and are reported in `actionDeclarationErrors`.
 - Assert `run_script` for a non-`browser_script` action returns `ACTION_NOT_BROWSER_SCRIPT`.
 - Assert invalid `browser_script` declarations report `ACTION_EXECUTOR_INVALID` during `use_skill`.
@@ -1091,7 +1091,7 @@ stageAgentSessionTranscriptFiles(
 - Good: trace records `workspace.read` path and content size without copying file content.
 - Good: trace records `agent_called` for both successful delegation and structured delegation errors without storing full delegated prompts.
 - Good: trace records `action_executor_policy_checked` with executor metadata and policy source/reason but no action input or script source.
-- Good: trace records `action_called` for a `browser_script` `run_script` that performs workspace writes, plus a `workspace_mutation` event for `workspace.patch` or `workspace.write` issued from the script's SDK calls.
+- Good: trace records `action_called` for a `browser_script` `run_script` that performs workspace writes, plus a `workspace_mutation` event for `workspace.write` or `workspace.edit` issued from the script's SDK calls.
 - Good: trace records `script_log` summaries for `browser_script` start/log/fetch events and `workspace_mutation` for SDK writes/deletes.
 - Good: restoring an earlier checkpoint removes later trace files for the discarded branch.
 - Base: a no-tool turn still records turn, agent step, and model call summary events.
@@ -1106,7 +1106,7 @@ stageAgentSessionTranscriptFiles(
 - Assert model call summary events omit full prompt/messages.
 - Assert `agent_called` events include caller/target summary data and omit full prompt/messages.
 - Assert workspace read trace omits file content.
-- Assert `workspace.write` / `workspace.patch` / `workspace.delete` platform actions produce `workspace_mutation`.
+- Assert `workspace.write` / `workspace.edit` / `workspace.delete` platform actions produce `workspace_mutation`.
 - Assert `browser_script` SDK logs/fetch summaries emit `script_log` without script source or large raw payloads.
 - Assert bridge and runtime workspace read/list/search exclude or reject `.tsian/*`.
 

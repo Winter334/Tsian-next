@@ -888,7 +888,7 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       "Semantic data (description/journal etc. agent-facing only) may be organized flexibly, including `_ref`/`_dir` upgrades.",
       "Relationships exist implicitly in entity descriptions; update them there. If the game-card author has set up an explicit `relationships.json`, update it too when relationships change.",
       "Periodically (not every turn): update `current.md`, `timeline.md`, `long-term.md` (cognitive folding—folding the turn stream into increasingly abstract memory layers).",
-      "Use the world-state-maintenance Skill for writes.",
+      "Use the world-state-maintenance Skill for writes. Entity state files are small (one entity per file), so full-file `write` is usually fine. For larger files (long markdown, big JSON), prefer `edit` (localized string replacement) to avoid regenerating the whole file.",
       "Keep durable identity and work style in `SOUL.md`.",
       "",
     ].join("\n"),

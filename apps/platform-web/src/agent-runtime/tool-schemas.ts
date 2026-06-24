@@ -271,7 +271,7 @@ const workspaceGlobSchema: ToolSchema = {
 const workspaceWriteSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.write,
   description:
-    "Create or overwrite a workspace file at a path (equivalent to a full-content patch). Use it only when a loaded Skill explicitly requires writing state, notes, memory, or frontend view data. Returns the written file metadata. Returns an error if the path is not writable for the current Agent. Use path prefixes to target the right area: \"save/...\" for runtime saves, \"temp/...\" for transient scratch files, \"frontend/...\" for frontend view data, \".tsian/...\" for platform metadata, anything else for card content.",
+    "Create or overwrite a workspace file at a path with the full content. Use it only when a loaded Skill explicitly requires writing state, notes, memory, or frontend view data. Returns the written file metadata. Returns an error if the path is not writable for the current Agent. Use path prefixes to target the right area: \"save/...\" for runtime saves, \"temp/...\" for transient scratch files, \"frontend/...\" for frontend view data, \".tsian/...\" for platform metadata, anything else for card content.",
   parameters: {
     type: "object",
     required: ["path", "content"],
@@ -284,6 +284,39 @@ const workspaceWriteSchema: ToolSchema = {
       content: {
         type: "string",
         description: "The full file content to write.",
+      },
+      expectedContent: {
+        type: "string",
+        description: "Optional optimistic-concurrency guard. When set, the write is rejected if the file's current content does not match this value — detects stale overwrites. Omit for an unconditional overwrite.",
+      },
+    },
+  }
+}
+
+const workspaceEditSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.edit,
+  description:
+    "Edit a workspace file by replacing a unique oldString with newString. Use for localized changes to large files (frontend HTML/CSS/JS, long MD, big JSON) to avoid rewriting the whole file — LLMs regenerate large files unreliably (dropped lines, broken indentation). oldString must match exactly once unless replaceAll is set. Fails on binary files. The file must already exist (use `write` to create).",
+  parameters: {
+    type: "object",
+    required: ["path", "oldString", "newString"],
+    properties: {
+      path: {
+        type: "string",
+        description:
+          "Target workspace file path. Use \"save/...\" for runtime saves, \"temp/...\" for transient scratch files, \"frontend/...\" for frontend view data, \".tsian/...\" for platform metadata, anything else for card content.",
+      },
+      oldString: {
+        type: "string",
+        description: "The exact string to find in the file. Must match exactly once unless replaceAll is true. Include surrounding lines for uniqueness. If it matches zero times the file may have changed since you read it — re-read and retry.",
+      },
+      newString: {
+        type: "string",
+        description: "The replacement string. Empty string deletes the matched fragment.",
+      },
+      replaceAll: {
+        type: "boolean",
+        description: "Replace every occurrence of oldString instead of requiring a unique match. Default false.",
       },
     },
   }
@@ -390,6 +423,7 @@ export function buildEnabledToolSchemas(options: {
     schemas.push(
       workspaceDiffSchema,
       workspaceWriteSchema,
+      workspaceEditSchema,
       workspaceMoveSchema,
       workspaceDeleteSchema,
     )

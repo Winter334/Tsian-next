@@ -68,7 +68,6 @@ import { clearBeforeClose, setBeforeClose } from "@/composables/useDesktopWindow
 import { editorWindowIdFor } from "@/desktop-apps"
 import {
   listPlatformWorkspaceDirectory,
-  patchPlatformWorkspaceFile,
   readPlatformWorkspaceFile,
   validatePlatformWorkspaceFile,
   writePlatformWorkspaceFile,
@@ -319,7 +318,7 @@ async function saveDraft() {
     }
 
     if (contentChanged.value) {
-      const result = await patchPlatformWorkspaceFile({
+      const result = await writePlatformWorkspaceFile({
         cardId: props.cardId,
         path: originalPath.value,
         content: content.value,

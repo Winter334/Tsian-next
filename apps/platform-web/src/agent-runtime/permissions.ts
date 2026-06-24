@@ -27,6 +27,7 @@ export const WORKSPACE_READ_OPERATIONS: WorkspaceOperationName[] = [
 export const WORKSPACE_WRITE_OPERATIONS: WorkspaceOperationName[] = [
   "diff",
   "write",
+  "edit",
   "move",
   "delete",
 ]

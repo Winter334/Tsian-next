@@ -4,7 +4,7 @@ import type {
   WorkspaceListResult,
   WorkspaceMoveResult,
   WorkspaceOperationRequest,
-  WorkspacePatchResult,
+  WorkspaceWriteResult,
   WorkspaceScope,
   WorkspaceSearchResult,
   WorkspaceValidationResult,
@@ -460,12 +460,12 @@ async function executeStudioWorkspaceOperation(
     if (request.operation === "read") {
       return storageFileToStudioFile(result as WorkspaceFile, resolvedPath)
     }
-    if (request.operation === "write" || request.operation === "patch") {
-      const patchResult = result as WorkspacePatchResult
+    if (request.operation === "write" || request.operation === "edit") {
+      const writeResult = result as WorkspaceWriteResult
       return {
-        ...patchResult,
+        ...writeResult,
         path: resolvedPath.displayPath,
-        file: storageFileToStudioFile(patchResult.file, resolvedPath),
+        file: storageFileToStudioFile(writeResult.file, resolvedPath),
       }
     }
     if (request.operation === "delete") {
@@ -661,8 +661,12 @@ export async function writePlatformWorkspaceFile(input: {
   cardId?: string
   path: string
   content?: string
+  /** When set, the write is rejected if the file's current content does not
+   *  match — optimistic-concurrency guard against stale overwrites (formerly
+   *  the `patch` operation's duty, now folded into `write`). */
+  expectedContent?: string
   data?: Blob
-}): Promise<WorkspacePatchResult> {
+}): Promise<WorkspaceWriteResult> {
   if (!input.cardId && isTsianPath(input.path)) {
     return await executeLocalWorkspaceOperation({
       operation: "write",
@@ -670,7 +674,8 @@ export async function writePlatformWorkspaceFile(input: {
       path: input.path,
       ...(input.content !== undefined ? { content: input.content } : {}),
       ...(input.data ? { content: input.data } : {}),
-    }) as WorkspacePatchResult
+      ...(input.expectedContent !== undefined ? { expectedContent: input.expectedContent } : {}),
+    }) as WorkspaceWriteResult
   }
   return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "write",
@@ -678,34 +683,8 @@ export async function writePlatformWorkspaceFile(input: {
     path: input.path,
     ...(input.content !== undefined ? { content: input.content } : {}),
     ...(input.data ? { content: input.data } : {}),
-  }) as WorkspacePatchResult
-}
-
-export async function patchPlatformWorkspaceFile(input: {
-  cardId?: string
-  path: string
-  content?: string
-  expectedContent?: string
-  data?: Blob
-}): Promise<WorkspacePatchResult> {
-  if (!input.cardId && isTsianPath(input.path)) {
-    return await executeLocalWorkspaceOperation({
-      operation: "patch",
-      scope: "platform-meta",
-      path: input.path,
-      ...(input.content !== undefined ? { content: input.content } : {}),
-      ...(input.data ? { content: input.data } : {}),
-      expectedContent: input.expectedContent,
-    }) as WorkspacePatchResult
-  }
-  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
-    operation: "patch",
-    scope: "save-runtime",
-    path: input.path,
-    ...(input.content !== undefined ? { content: input.content } : {}),
-    ...(input.data ? { content: input.data } : {}),
-    expectedContent: input.expectedContent,
-  }) as WorkspacePatchResult
+    ...(input.expectedContent !== undefined ? { expectedContent: input.expectedContent } : {}),
+  }) as WorkspaceWriteResult
 }
 
 export async function deletePlatformWorkspacePath(input: {

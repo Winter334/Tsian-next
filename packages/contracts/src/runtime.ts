@@ -150,8 +150,8 @@ export type WorkspaceOperationName =
   | "read"
   | "glob"
   | "diff"
-  | "patch"
   | "write"
+  | "edit"
   | "move"
   | "delete"
   | "validate"
@@ -176,9 +176,20 @@ export interface WorkspaceOperationRequest {
   /** Search: case-insensitive matching. `query` defaults to `true`
    *  (back-compat), `pattern` defaults to `false` (regex convention). */
   ignoreCase?: boolean
-  /** Text content for write/patch, or a Blob for binary writes. */
+  /** Text content for write, or a Blob for binary writes. */
   content?: string | Blob
+  /** write: optimistic-concurrency guard. When set (string), the write is
+   *  rejected if the file's current content does not match — detects stale
+   *  overwrites. Omit to skip the check (unconditional overwrite). */
   expectedContent?: string
+  /** edit: the exact string to find. Must match exactly once unless
+   *  `replaceAll` is set. Include surrounding lines for uniqueness. */
+  oldString?: string
+  /** edit: the replacement string. Empty string deletes the matched fragment. */
+  newString?: string
+  /** edit: replace every occurrence of `oldString` instead of requiring a
+   *  unique match. Default false. */
+  replaceAll?: boolean
   validator?: "json" | "frontmatter"
   autoFix?: boolean
 }
@@ -200,7 +211,7 @@ export interface WorkspaceGlobResult {
   truncated: boolean
 }
 
-export interface WorkspacePatchResult {
+export interface WorkspaceWriteResult {
   path: string
   scope: WorkspaceScope
   file: WorkspaceFile

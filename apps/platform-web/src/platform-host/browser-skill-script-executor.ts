@@ -166,11 +166,11 @@ const tsian = Object.freeze({
     diff(input) {
       return rpc("workspace.diff", input);
     },
-    patch(input) {
-      return rpc("workspace.patch", input);
-    },
     write(input) {
       return rpc("workspace.write", input).then((result) => isRecord(result) && isRecord(result.file) ? result.file : result);
+    },
+    edit(input) {
+      return rpc("workspace.edit", input).then((result) => isRecord(result) && isRecord(result.file) ? result.file : result);
     },
     move(input) {
       return rpc("workspace.move", input);
