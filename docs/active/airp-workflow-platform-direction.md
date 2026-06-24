@@ -77,6 +77,8 @@ Agent Runtime 是 AIRP 回合的核心。
 
 AIRP 特色优先放在 Agent 职责、skill、content 和 runtime 数据结构中，而不是注册大量只服务默认事件/档案系统的窄工具。
 
+检索不被某个 Agent 垄断——平台不把检索锁在 retrieval agent 后面，master 仍可直接 `workspace.search/read`。默认阵容中的 retrieval agent 是省 context 的封装：它在自己的上下文里做多步搜索，只把精炼结论回灌 master，避免 master 的上下文被原始文件内容塞满。这不改变「工具应尽量通用」的原则。
+
 ## 6. 平台边界
 
 平台负责运行条件和安全边界。

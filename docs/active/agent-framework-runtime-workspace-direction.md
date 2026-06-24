@@ -64,7 +64,17 @@ agents/
 
 团队由 Agent 联系关系自然形成。每个 Agent 只需要知道与自己业务有承接关系的其它 Agent。
 
-例如，master 可以知道 narrative、state、memory；narrative 可以只知道 style 或 critic；某个战斗 runtime 可以额外提供 rule-referee。只要相关 Agent 被声明为联系人，并能被 `agent_call` 调用，就不需要额外维护一份全局团队装配表。
+### 默认阵容：hub-and-spoke 工具型 Agent
+
+默认 AIRP 阵容采用 **master 为核 + 工具型 agent** 的 hub-and-spoke 模型，而非对等团队：
+
+- **master**：唯一对话 agent。玩家只跟它交互，会话上下文最连贯，因此**正文也由 master 直接执笔**——它既决策又创作。master 按需 `agent_call` 联系工具型 agent。
+- **retrieval**：master 的智能检索工具（类比 Explore 子代理）。一次 `agent_call` 给意图，它在自己的上下文里做多步 `workspace.search/read`，只把精炼结论回灌 master。调用频率**稀疏按需**（master 缺料时）。
+- **post-processing**：master 的后处理工具。按规范格式落盘回合产出 + 维护运行时状态数据 + 记忆治理（摘要/压缩/归档/cognitive folding）。调用频率**近乎每回合**。
+
+调用频率不对称是 hub-and-spoke 的特征：retrieval 稀疏、post-processing 密集。这决定两者 prompt 设计方向不同。
+
+这不改变「团队由 Agent 联系关系自然形成」的原则——默认阵容只是推荐组合，作者可以替换、增删或改造任何 Agent。例如某个战斗 runtime 可以额外提供 rule-referee。只要相关 Agent 被声明为联系人，并能被 `agent_call` 调用，就不需要额外维护一份全局团队装配表。
 
 Agent 之间的即时交接应走 `agent_call`。工作区文件只用于记录值得长期保留或后续复用的内容，不应强迫每次协作都绕一圈写入 handoff 文件。
 
@@ -210,12 +220,21 @@ Runtime Workspace 是一个存档级虚拟文件系统。
 
   agents/
     master/
+      agent.json
       AGENT.md
+      SOUL.md
       session.jsonl
       notes.md
-      skills/
-    narrative/
+    retrieval/
+      agent.json
       AGENT.md
+      SOUL.md
+      session.jsonl
+      notes.md
+    post-processing/
+      agent.json
+      AGENT.md
+      SOUL.md
       session.jsonl
       notes.md
     studio-assistant/
@@ -227,12 +246,18 @@ Runtime Workspace 是一个存档级虚拟文件系统。
           SKILL.md
 
   skills/
-    relationship-maintainer/
+    memory-maintenance/
       SKILL.md
-      actions/
-      schemas/
-      examples/
       scripts/
+        apply-maintenance-plan.js
+    entity-reader/
+      SKILL.md
+      scripts/
+        read-entity.js
+    world-state-maintenance/
+      SKILL.md
+      scripts/
+        apply-world-state-plan.js
 
   history/
     turns/
@@ -243,10 +268,14 @@ Runtime Workspace 是一个存档级虚拟文件系统。
   world/
     README.md
     canon.md
-    characters.json
-    locations.json
-    relationships.json
-    rules.md
+    characters/
+      README.md
+      李四/
+        index.json
+    locations/
+      README.md
+      凌烟阁/
+        index.json
 
   memory/
     README.md
@@ -354,9 +383,9 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 当前 MVP 中：
 
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
-- 默认流程仍是固定 `master-agent` -> `narrative-agent`。
+- 默认阵容采用 hub-and-spoke 模型：`master`（唯一对话 agent，直接写正文）+ `retrieval`（工具型，精炼回灌创作资料）+ `post-processing`（工具型，落盘 + 状态维护 + 记忆治理）+ `studio-assistant`。`narrative` 和 `memory` agent 已移除，其职责分别并入 master（写正文）和 post-processing（记忆治理）。master 的 contacts 为 `["retrieval","post-processing"]`。
 - 存储包含 snapshot、history、checkpoint、Game Card content files，以及 save runtime workspace files；结构化状态不再使用独立平台表。
-- 新 Game Card 默认写入 `agents/master/AGENT.md`、`agents/narrative/AGENT.md`、`agents/memory/AGENT.md`、`agents/studio-assistant/AGENT.md`、官方共享 `memory-maintenance` Skill、助手本地 `framework-knowledge` Skill、`docs/tsian-framework-knowledge.md`、state/world/frontend/archive 等卡内容；新存档默认写入 `save/agents/*` notes/session、`save/history/*`、`save/world/*`、`save/state/*`、`save/memory/*`、`save/frontend/*` 和 `.tsian` 入口文件。
+- 新 Game Card 默认写入 `agents/master/`、`agents/retrieval/`、`agents/post-processing/`（agent.json + AGENT.md + SOUL.md + notes.md）、官方共享 `memory-maintenance`、`entity-reader`、`world-state-maintenance` Skill、`docs/tsian-framework-knowledge.md`、world schema README（含一实体一目录 + index.json 入口 + _ref/_dir 升级约定 + 渲染契约 vs 语义区分 + 可选 relationships.json 扩展指南）等卡内容；新存档默认写入 `save/agents/*` notes/session、`save/history/*`、`save/world/*`、`save/state/*`、`save/memory/*`、`save/frontend/*` 和 `.tsian` 入口文件。默认 workspace version 为 7。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
