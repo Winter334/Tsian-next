@@ -380,6 +380,89 @@ function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlayBridge
   // turn-completed 由 onSnapshot 处理（覆盖渲染）
 }
 
+// ── ask_user 交互请求渲染 ──
+// AI 向玩家提问，给出选项（玩家也可自定义回答）。
+// 前端决定怎么渲染——平台只传结构化数据，表现层自由呈现。
+function handleInteractionRequest(
+  requestId: string,
+  question: string,
+  options?: string[],
+  allowCustom?: boolean,
+): void {
+  if (!$story) return
+  clearEmptyState()
+  let inner = $story.querySelector(".story-inner") as HTMLDivElement | null
+  if (!inner) {
+    inner = document.createElement("div"); inner.className = "story-inner"
+    $story.appendChild(inner)
+  }
+
+  const panel = document.createElement("div")
+  panel.className = "ask-panel"
+  panel.dataset.requestId = requestId
+
+  const q = document.createElement("div")
+  q.className = "ask-question prose"
+  q.innerHTML = renderMarkdown(question)
+  panel.appendChild(q)
+
+  // 选项按钮
+  if (options && options.length > 0) {
+    const optList = document.createElement("div")
+    optList.className = "ask-options"
+    for (const opt of options) {
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "ask-option"
+      btn.textContent = opt
+      btn.addEventListener("click", () => {
+        void bridge.respondInteraction(requestId, opt)
+        removeAskPanel(panel)
+      })
+      optList.appendChild(btn)
+    }
+    panel.appendChild(optList)
+  }
+
+  // 自定义输入（allowCustom 默认 true：无 options 或显式允许时显示）
+  const showCustom = allowCustom !== false
+  if (showCustom) {
+    const inputRow = document.createElement("div")
+    inputRow.className = "ask-custom-row"
+    const input = document.createElement("input")
+    input.type = "text"
+    input.className = "ask-custom-input"
+    input.placeholder = "输入你的回答…（Enter 确认）"
+    const submit = document.createElement("button")
+    submit.type = "button"
+    submit.className = "ask-custom-submit"
+    submit.textContent = "确认"
+    const doSubmit = () => {
+      const val = input.value.trim()
+      if (!val) return
+      void bridge.respondInteraction(requestId, val)
+      removeAskPanel(panel)
+    }
+    submit.addEventListener("click", doSubmit)
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); doSubmit() }
+    })
+    inputRow.appendChild(input)
+    inputRow.appendChild(submit)
+    panel.appendChild(inputRow)
+  }
+
+  inner.appendChild(panel)
+  scrollDown()
+  // 聚焦自定义输入或第一个选项
+  const firstFocusable = panel.querySelector<HTMLElement>("input, button.ask-option")
+  firstFocusable?.focus()
+}
+
+function removeAskPanel(panel: HTMLElement): void {
+  panel.remove()
+}
+
 // §4 红线：turn-completed.snapshot 到达时用 snapshot 覆盖渲染
 function handleSnapshot(snapshot: RuntimeSnapshotShell): void {
   // 先 finalizeTurn：把当前 turn 的过程节点推入 turnProcessLog，
@@ -478,4 +561,9 @@ if ($input) {
 // 注册协议层回调
 // ════════════════════════════════════════════════════════════════
 
-bridge.on({ onReady: handleReady, onEvent: handleEvent, onSnapshot: handleSnapshot })
+bridge.on({
+  onReady: handleReady,
+  onEvent: handleEvent,
+  onSnapshot: handleSnapshot,
+  onInteractionRequest: handleInteractionRequest,
+})

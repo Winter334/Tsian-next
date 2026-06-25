@@ -23,6 +23,7 @@ export type {
   RemotePlayBridgeEventPayload,
   RemotePlayBridgeEventMessage,
   RemotePlayBridgeMessage,
+  AskUserResponse,
 } from "@tsian/contracts"
 
 // 事件 payload 内嵌的快照与消息记录类型，表现层渲染要用。
@@ -31,4 +32,6 @@ export type {
   ConversationMessageRecord,
   MessageInteractionRequest,
   MessageInteractionResult,
+  AskUserRequest,
+  AskUserResult,
 } from "@tsian/contracts"

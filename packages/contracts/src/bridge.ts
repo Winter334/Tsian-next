@@ -46,12 +46,21 @@ export type RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 export type RemotePlayBridgeMethod =
   | "runtime.getRuntimeSnapshot"
   | "interaction.sendMessage"
+  | "interaction.respond"
   | "query.query"
   | "platform.getPlatformContext"
   | "platform.runAction"
 
+/** 玩家回答 ask_user 的 RPC payload。 */
+export interface AskUserResponse {
+  requestId: string
+  answer: string
+  cancelled?: boolean
+}
+
 export type RemotePlayBridgeRequestParams =
   | MessageInteractionRequest
+  | AskUserResponse
   | DeepQueryRequest
   | PlatformActionRequest
   | undefined
@@ -115,6 +124,7 @@ export type RemotePlayBridgeEventName =
   | "turn-delta"
   | "turn-round-end"
   | "turn-tool"
+  | "interaction-request"
 
 /**
  * `turn-tool` 事件 output 字段形态。
@@ -173,6 +183,12 @@ export type RemotePlayBridgeEventPayload =
       name: string
       status: "loading" | "running" | "success" | "failed"
       output?: TurnToolOutput
+    }
+  | {
+      requestId: string
+      question: string
+      options?: string[]
+      allowCustom?: boolean
     }
 
 export interface RemotePlayBridgeEventMessage {

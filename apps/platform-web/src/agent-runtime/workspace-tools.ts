@@ -1,5 +1,7 @@
 import type {
   AgentContextEntry,
+  AskUserRequest,
+  AskUserResult,
   ContentPart,
   PlatformActionResult,
   SkillConfigItem,
@@ -37,6 +39,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   runScript: "run_script",
   agentCall: "agent_call",
   inspectFrontend: "inspect_frontend",
+  askUser: "ask_user",
   read: "read",
   list: "list",
   search: "search",
@@ -348,6 +351,12 @@ export interface RuntimeWorkspaceToolExecutionContext {
     status: "loading" | "running" | "success" | "failed",
     output?: TurnToolOutput,
   ) => void
+  /**
+   * ask_user 工具回调（ask_user R3）。工具执行时 await 此回调，阻塞 turn 等待
+   * 玩家回答。host 侧绑定为 emitInteractionRequest，返回 Promise 在玩家回答后 resolve。
+   * `undefined` 时 ask_user 返回 ASK_USER_UNAVAILABLE 错误。
+   */
+  onAskUser?: (requestId: string, request: AskUserRequest) => Promise<AskUserResult>
 }
 
 const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
@@ -1127,6 +1136,47 @@ const INSPECT_SCROLL_TARGETS = new Set(["top", "bottom"])
  * 无 cardId 参数——inspector 内部从 getPlatformActiveGameCard() 取当前卡。
  * wait 默认 bridge-ready；只把实际提供的字段放进结果。
  */
+function normalizeAskUserArguments(input: Record<string, unknown>): AskUserRequest {
+  const question = normalizeRequiredString(
+    input.question,
+    "ASK_USER_QUESTION_REQUIRED",
+    "ask_user question must be a non-empty string.",
+  )
+  const request: AskUserRequest = { question }
+
+  if (input.options !== undefined) {
+    if (!Array.isArray(input.options)) {
+      throw toolError(
+        "ASK_USER_OPTIONS_INVALID",
+        "ask_user options must be an array of strings.",
+      )
+    }
+    const options: string[] = []
+    for (const opt of input.options) {
+      if (typeof opt !== "string" || !opt) {
+        throw toolError(
+          "ASK_USER_OPTION_INVALID",
+          "ask_user options entries must be non-empty strings.",
+        )
+      }
+      options.push(opt)
+    }
+    if (options.length > 0) request.options = options
+  }
+
+  if (input.allowCustom !== undefined) {
+    if (typeof input.allowCustom !== "boolean") {
+      throw toolError(
+        "ASK_USER_ALLOW_CUSTOM_INVALID",
+        "ask_user allowCustom must be a boolean.",
+      )
+    }
+    request.allowCustom = input.allowCustom
+  }
+
+  return request
+}
+
 function normalizeInspectFrontendArguments(
   input: Record<string, unknown>,
 ): InspectFrontendInput {
@@ -2189,6 +2239,22 @@ async function executeRuntimeWorkspaceToolCall(
         result: await context.runInspectFrontend(
           normalizeInspectFrontendArguments(call.arguments),
         ),
+      }
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.askUser) {
+      if (!context.onAskUser) {
+        throw toolError(
+          "ASK_USER_UNAVAILABLE",
+          "ask_user is not available in this Agent step.",
+        )
+      }
+      const requestId = (crypto.randomUUID?.() ?? `ask-${index}-${Date.now()}`)
+      const request = normalizeAskUserArguments(call.arguments)
+      const result = await context.onAskUser(requestId, request)
+      observation = {
+        index,
+        name: call.name,
+        ok: true,
+        result: result,
       }
     } else if (isWorkspaceOperationToolName(call.name)) {
       const opResult = await executeWorkspaceOperation(

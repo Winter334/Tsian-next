@@ -25,6 +25,13 @@ export interface BridgeHandlers {
   onEvent?: (event: RemotePlayBridgeEventName, payload: RemotePlayBridgeEventPayload) => void
   /** turn-completed.snapshot 的快捷通道，在 onEvent 之前触发。 */
   onSnapshot?: (snapshot: RuntimeSnapshotShell) => void
+  /** interaction-request 快捷通道：AI 向玩家提问，玩家选择后调 bridge.respondInteraction。 */
+  onInteractionRequest?: (
+    requestId: string,
+    question: string,
+    options?: string[],
+    allowCustom?: boolean,
+  ) => void
 }
 
 /** createBridge() 返回的桥实例。表现层唯一的能力出口。 */
@@ -36,6 +43,8 @@ export interface Bridge {
   ): Promise<T>
   /** 注册事件处理器。重复调用以最后一次为准（与原 setEventHandlers 一致）。 */
   on(handlers: BridgeHandlers): void
+  /** 回答 ask_user 提问。封装 interaction.respond RPC。 */
+  respondInteraction(requestId: string, answer: string, cancelled?: boolean): Promise<void>
   /** 桥握手是否完成。 */
   readonly ready: boolean
   /** 当前 sessionId（握手后可用，握手前为 null）。 */
@@ -58,7 +67,12 @@ export function createBridge(): Bridge {
   let bridgeReady = false
 
   // 协议层对外回调（表现层通过 on() 注册）
-  const handlers: BridgeHandlers = { onReady: undefined, onEvent: undefined, onSnapshot: undefined }
+  const handlers: BridgeHandlers = {
+    onReady: undefined,
+    onEvent: undefined,
+    onSnapshot: undefined,
+    onInteractionRequest: undefined,
+  }
 
   // RPC: call(method, params) → Promise。表现层只用这个调平台能力。
   function call<T = RemotePlayBridgeResponseResult>(
@@ -122,6 +136,18 @@ export function createBridge(): Bridge {
         const snapshot = (msg.payload as { snapshot?: RuntimeSnapshotShell }).snapshot
         if (snapshot) handlers.onSnapshot?.(snapshot)
       }
+      // interaction-request 快捷通道：AI 向玩家提问
+      if (msg.event === "interaction-request" && msg.payload) {
+        const p = msg.payload as {
+          requestId?: string
+          question?: string
+          options?: string[]
+          allowCustom?: boolean
+        }
+        if (p.requestId && p.question) {
+          handlers.onInteractionRequest?.(p.requestId, p.question, p.options, p.allowCustom)
+        }
+      }
       handlers.onEvent?.(msg.event as RemotePlayBridgeEventName, msg.payload as RemotePlayBridgeEventPayload)
       return
     }
@@ -130,12 +156,19 @@ export function createBridge(): Bridge {
   // 启动握手：发 hello 给父窗口
   window.parent.postMessage({ channel: CHANNEL, kind: "hello" }, "*")
 
+  /** 回答 ask_user 提问。封装 interaction.respond RPC。 */
+  function respondInteraction(requestId: string, answer: string, cancelled?: boolean): Promise<void> {
+    return call("interaction.respond", { requestId, answer, ...(cancelled !== undefined ? { cancelled } : {}) } as RemotePlayBridgeRequestParams).then(() => undefined)
+  }
+
   return {
     call,
+    respondInteraction,
     on(h: BridgeHandlers) {
       handlers.onReady = h.onReady
       handlers.onEvent = h.onEvent
       handlers.onSnapshot = h.onSnapshot
+      handlers.onInteractionRequest = h.onInteractionRequest
     },
     get ready() {
       return bridgeReady

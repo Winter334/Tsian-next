@@ -1,4 +1,5 @@
 import type {
+  AskUserResponse,
   DeepQueryRequest,
   JsonValue,
   MessageInteractionRequest,
@@ -13,6 +14,7 @@ import type {
 } from "@tsian/contracts"
 
 import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool } from "../streaming-events"
+import { subscribeInteractionRequest, resolveInteractionRequest } from "../interaction-events"
 
 export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 const REMOTE_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms"
@@ -20,6 +22,7 @@ const ALLOWED_REMOTE_FRONTEND_PROTOCOLS = new Set(["http:", "https:"])
 const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
   "runtime.getRuntimeSnapshot",
   "interaction.sendMessage",
+  "interaction.respond",
   "query.query",
   "platform.getPlatformContext",
   "platform.runAction",
@@ -129,6 +132,31 @@ function normalizeMessageInteractionRequest(value: unknown): MessageInteractionR
   return { content: record.content }
 }
 
+function normalizeAskUserResponse(value: unknown): AskUserResponse {
+  const record = requireRecordParams(
+    value,
+    "INVALID_INTERACTION_RESPONSE",
+    "interaction.respond requires an object payload.",
+  )
+  if (typeof record.requestId !== "string") {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INTERACTION_REQUEST_ID",
+      "interaction.respond requires string requestId.",
+    )
+  }
+  if (typeof record.answer !== "string") {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INTERACTION_ANSWER",
+      "interaction.respond requires string answer.",
+    )
+  }
+  return {
+    requestId: record.requestId,
+    answer: record.answer,
+    ...(typeof record.cancelled === "boolean" ? { cancelled: record.cancelled } : {}),
+  }
+}
+
 function normalizeDeepQueryRequest(value: unknown): DeepQueryRequest {
   const record = requireRecordParams(
     value,
@@ -210,6 +238,18 @@ function dispatchRemoteBridgeRequest(
 
   if (method === "interaction.sendMessage") {
     return bridge.interaction.sendMessage(normalizeMessageInteractionRequest(params))
+  }
+
+  if (method === "interaction.respond") {
+    const response = normalizeAskUserResponse(params)
+    const found = resolveInteractionRequest(response.requestId, response.answer, response.cancelled)
+    if (!found) {
+      throw {
+        code: "INTERACTION_REQUEST_NOT_FOUND",
+        message: `No pending interaction request for id: ${response.requestId}`,
+      } satisfies RemotePlayBridgeError
+    }
+    return undefined
   }
 
   if (method === "query.query") {
@@ -464,6 +504,18 @@ export function mountRemoteIframeFrontend(
     })
   })
 
+  // Forward ask_user interaction requests to the remote frontend as
+  // `interaction-request`, so it can render the question + options UI.
+  // The player's answer comes back via the `interaction.respond` RPC.
+  const unsubscribeInteractionRequest = subscribeInteractionRequest((requestId, question, options, allowCustom) => {
+    postEvent("interaction-request", {
+      requestId,
+      question,
+      ...(options && options.length > 0 ? { options } : {}),
+      ...(allowCustom !== undefined ? { allowCustom } : {}),
+    })
+  })
+
   window.addEventListener("message", onMessage)
   container.replaceChildren(iframe)
 
@@ -474,6 +526,7 @@ export function mountRemoteIframeFrontend(
     unsubscribeTurnDelta?.()
     unsubscribeTurnRoundEnd?.()
     unsubscribeTurnTool?.()
+    unsubscribeInteractionRequest?.()
     unsubscribeTurnDelta?.()
     if (iframe.parentElement === container) {
       iframe.remove()

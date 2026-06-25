@@ -205,6 +205,39 @@ body {
 .stop { background: var(--blood); border-color: var(--blood); color: var(--prose); }
 .stop:hover:not(:disabled) { filter: brightness(1.15); }
 
+/* ── ask_user 提问面板 ── */
+.ask-panel {
+  margin: 1.4em 0; padding: 16px 20px;
+  border: 1px solid var(--ember-deep);
+  background: var(--parchment-elev);
+  border-radius: 2px;
+}
+.ask-question { margin: 0 0 1em; font-size: 15px; line-height: 1.7; }
+.ask-options { display: flex; flex-direction: column; gap: 8px; }
+.ask-option {
+  text-align: left; padding: 10px 16px;
+  border: 1px solid var(--ember-deep); background: var(--parchment);
+  color: var(--prose); cursor: pointer;
+  font-family: var(--serif); font-size: 14px; line-height: 1.5;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ask-option:hover { border-color: var(--ember); background: var(--gold-glow); }
+.ask-custom-row { display: flex; gap: 8px; margin-top: 10px; }
+.ask-custom-input {
+  flex: 1 1 auto; height: 40px;
+  background: var(--parchment); color: var(--prose);
+  border: 1px solid var(--ember-deep); padding: 0 14px;
+  font-family: var(--serif); font-size: 14px; outline: none;
+}
+.ask-custom-input:focus { border-color: var(--ember); box-shadow: 0 0 0 1px var(--gold-glow); }
+.ask-custom-input::placeholder { color: var(--whisper); font-style: italic; }
+.ask-custom-submit {
+  flex: 0 0 auto; padding: 0 18px; background: var(--ember-deep); color: var(--ink);
+  border: 1px solid var(--ember); cursor: pointer;
+  font-family: var(--serif); font-size: 14px; font-weight: 700;
+}
+.ask-custom-submit:hover { background: var(--ember); }
+
 /* ── 响应式 ── */
 @media (max-width: 640px) {
   .app-header { padding: 8px 14px; }

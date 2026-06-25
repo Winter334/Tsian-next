@@ -256,6 +256,7 @@ export type AgentPlatformToolName =
   | "workspace_write"
   | "inspect_frontend"
   | "workspace_semantic_search"
+  | "ask_user"
 
 export interface AgentSkillConfig {
   enabled: string[]
@@ -516,6 +517,19 @@ export interface MessageInteractionRequest {
 
 export interface MessageInteractionResult {
   snapshot: RuntimeSnapshotShell
+}
+
+/** ask_user 工具请求：AI 向玩家提问。 */
+export interface AskUserRequest {
+  question: string
+  options?: string[]
+  allowCustom?: boolean
+}
+
+/** ask_user 工具结果：玩家回答。 */
+export interface AskUserResult {
+  answer: string
+  cancelled?: boolean
 }
 
 export interface DeepQueryRequest {

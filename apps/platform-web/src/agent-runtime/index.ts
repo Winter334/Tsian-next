@@ -3,6 +3,8 @@ import type {
   AgentContextEntry,
   AgentContextSnapshot,
   AiChatMessage,
+  AskUserRequest,
+  AskUserResult,
   ContentPart,
   ConversationMessageRecord,
   AgentPlatformToolName,
@@ -123,6 +125,12 @@ export interface AgentRuntimeTurnInput {
     output?: TurnToolOutput,
   ) => void
   /**
+   * ask_user 工具回调（ask_user R3）。工具执行时 await 此回调，阻塞 turn 等待
+   * 玩家回答。host 侧绑定为 emitInteractionRequest，返回 Promise 在玩家回答后 resolve。
+   * `undefined` 时 ask_user 返回 ASK_USER_UNAVAILABLE 错误。
+   */
+  onAskUser?: (requestId: string, request: AskUserRequest) => Promise<AskUserResult>
+  /**
    * master agent 会话上下文快照(从工作区 `agents/master/context.json` 读取注入).
    * 提供 → buildEntryAgentMessages 用其 summary+recentTurns 拼"最近对话"区
    * (替代 saveHistory slice(-20)).未提供 → 兜底用 recentHistory 旧逻辑.
@@ -198,6 +206,8 @@ export interface AgentRuntimeModelCallOptions {
     status: "loading" | "running" | "success" | "failed",
     output?: TurnToolOutput,
   ) => void
+  /** ask_user 工具回调；threaded from `AgentRuntimeTurnInput.onAskUser`. */
+  onAskUser?: (requestId: string, request: AskUserRequest) => Promise<AskUserResult>
 }
 
 export interface AgentRuntimeCapabilities {
@@ -1274,6 +1284,7 @@ function createAgentCallRunner(
           onDelta: input.onDelta,
           onRoundEnd: input.onRoundEnd,
           onTool: input.onTool,
+          onAskUser: input.onAskUser,
         },
         targetContext,
         {
@@ -1631,6 +1642,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       onTool: options.onTool
         ? (callId, name, status, output) => options.onTool!(agentContext.agent.id, round, callId, name, status, output)
         : undefined,
+      onAskUser: options.onAskUser,
     }, toolCalls)
 
     // Thread the assistant tool calls + tool observations back in native shape.
@@ -1895,6 +1907,7 @@ async function callAgentModelWithWorkspaceTools(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
+      onAskUser: options.onAskUser,
     }, toolCalls)
     nextMessages = [
       ...nextMessages,
@@ -2036,6 +2049,7 @@ export async function runAgentRuntimeTurn(
         onDelta: input.onDelta,
         onRoundEnd: input.onRoundEnd,
         onTool: input.onTool,
+        onAskUser: input.onAskUser,
       },
       entryContext,
       {

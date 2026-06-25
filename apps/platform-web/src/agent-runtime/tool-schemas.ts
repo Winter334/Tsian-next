@@ -75,6 +75,33 @@ const runScriptSchema: ToolSchema = {
   },
 }
 
+const askUserSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.askUser,
+  description:
+    "Ask the player a question with optional choices. The turn pauses until the player responds. Use this when you need the player's decision to continue (e.g. choosing an action, confirming a plan, picking a direction). The player may also type a custom answer when allowCustom is true (default). Returns the player's answer as a string (or cancelled:true if the player aborted).",
+  parameters: {
+    type: "object",
+    required: ["question"],
+    properties: {
+      question: {
+        type: "string",
+        description: "The question to present to the player.",
+      },
+      options: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Predefined choices for the player. Omit for open-ended questions. Each entry must be a short, player-readable label.",
+      },
+      allowCustom: {
+        type: "boolean",
+        description:
+          "Whether the player can type a custom answer instead of choosing from options. Defaults to true.",
+      },
+    },
+  },
+}
+
 const agentCallSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.agentCall,
   description:
@@ -433,7 +460,7 @@ export function buildEnabledToolSchemas(options: {
     AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
   )
 
-  const schemas: ToolSchema[] = [useSkillSchema, runScriptSchema]
+  const schemas: ToolSchema[] = [useSkillSchema, runScriptSchema, askUserSchema]
 
   if (canCallAgents) {
     schemas.push(agentCallSchema)

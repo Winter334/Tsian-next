@@ -83,6 +83,7 @@ import {
 import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
 import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool } from "../streaming-events"
+import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   getBaseBridge,
   getRuntimeEngine,
@@ -710,6 +711,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
       if (previousTurnController) {
         previousTurnController.abort("new-turn-started")
+        // Reject any pending ask_user requests from the previous turn.
+        rejectAllInteractionRequests(new DOMException("Agent Runtime turn aborted.", "AbortError"))
       }
       const currentController = new AbortController()
       previousTurnController = currentController
@@ -750,6 +753,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             onDelta: (agentId, delta, round, kind) => emitTurnDelta(agentId, delta, nextTurn, round, kind),
             onRoundEnd: (agentId, round, finishReason) => emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason)),
             onTool: (agentId, round, callId, name, status, output) => emitTurnTool(agentId, nextTurn, round, callId, name, status, output),
+            onAskUser: (requestId, request) => emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
           },
           {
             callModel(messages, options) {
@@ -911,6 +915,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
       } catch (error) {
         getRuntimeEngine().loadSnapshot(snapshotBefore)
         workspaceTransaction?.discard()
+        // Reject any pending ask_user requests when the turn fails.
+        rejectAllInteractionRequests(error)
         trace.emit({
           type: "turn_failed",
           ok: false,
