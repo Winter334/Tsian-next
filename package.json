@@ -4,7 +4,8 @@
   "workspaces": [
     "apps/platform-web",
     "packages/contracts",
-    "packages/runtime-core"
+    "packages/runtime-core",
+    "packages/play-bridge"
   ],
   "scripts": {
     "dev:server": "go -C ./apps/platform-server run ./cmd/platform-server",
