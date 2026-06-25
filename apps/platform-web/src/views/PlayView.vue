@@ -84,22 +84,6 @@
         </button>
       </section>
     </div>
-
-    <!-- 游玩态返回启动器控件 -->
-    <div
-      v-if="phase === 'remote-ready' || phase === 'packaged-ready'"
-      class="absolute left-3 top-3 z-20"
-    >
-      <button
-        type="button"
-        class="retro-button retro-focus inline-flex h-8 items-center gap-2 border border-neon-deep/50 bg-void/80 px-3 font-mono text-xs backdrop-blur-sm"
-        title="返回启动器（ESC）"
-        @click="returnToLauncher"
-      >
-        <ArrowLeft class="h-3.5 w-3.5" aria-hidden="true" />
-        启动器
-      </button>
-    </div>
   </div>
 </template>
 
