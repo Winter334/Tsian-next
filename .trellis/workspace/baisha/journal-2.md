@@ -1215,3 +1215,38 @@ Implemented full multimodal attachment support for the desktop assistant chat (t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 86: 创建开发前端项目 apps/play-frontend-dev
+
+**Date**: 2026-06-25
+**Task**: 创建开发前端项目 apps/play-frontend-dev
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+把默认前端表现层移植为独立 vite + TS 项目 apps/play-frontend-dev，用远程前端模式连接平台开发（iframe @5173 加载 dev server @5174）。协议层 import @tsian/play-bridge（vite alias 热加载），表现层从 default-frontend-files.ts app.js L371-760 机械移植为 TS。build.minify:false 产出可读 ESM JS（助手 agent 在线编辑场景）。marked 走 npm 依赖。root package.json 加 dev:frontend 便捷 script。附带修复 GameCardDetailView 前端 tab Remote URL 模式缺保存按钮的 bug。默认前端 default-frontend-files.ts 零改动。用户手动验证：平台填 remote URL http://localhost:5174/ → /play 握手 + 发消息 + 工具事件全部走通。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `678e9d3` | (see git log) |
+| `fcbf377` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
