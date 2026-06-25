@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 87
+- **Total Sessions**: 88
 - **Last Active**: 2026-06-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1286 | Active |
+| `journal-2.md` | ~1320 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 88 | 2026-06-25 | ask_user 工具:AI 向玩家提问+选项+自定义回答 | `e727987` | `master` |
 | 87 | 2026-06-25 | native 模式 tool message content 去冗余包装 | `85cdb6d` | `master` |
 | 86 | 2026-06-25 | 创建开发前端项目 apps/play-frontend-dev | `678e9d3`, `fcbf377` | `master` |
 | 85 | 2026-06-25 | 抽 play-bridge SDK 本地包 | `8c6dba7` | `master` |
