@@ -1181,3 +1181,37 @@ Implemented full multimodal attachment support for the desktop assistant chat (t
 ### Next Steps
 
 - 待用户确认开 save-runtime 语义检索 Trellis 任务(slug 候选 `06-24-save-runtime-semantic-search`),将讨论产出写进 prd.md + design.md
+
+
+## Session 85: 抽 play-bridge SDK 本地包
+
+**Date**: 2026-06-25
+**Task**: 抽 play-bridge SDK 本地包
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+把 default-frontend-files.ts app.js inline 协议层机械移植为 packages/play-bridge 独立 workspace 包，作为协议层唯一真相源。createBridge() 框架无关函数封装握手/RPC/事件路由，类型从 @tsian/contracts re-export。vite alias @tsian/play-bridge 指向源码（与 contracts/runtime-core 一致）。默认前端零改动，内联协议层保留至后续替换任务退役。dev/prod path split：开发态包名 import + vite alias 热加载，生产态 CDN URL（后续任务）。放弃 vite proxy 拦跨源 CDN URL 方案（浏览器对 cdn.tsian.dev 的真实请求不经过 vite server，拦不到）。三个 build 全绿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8c6dba7` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

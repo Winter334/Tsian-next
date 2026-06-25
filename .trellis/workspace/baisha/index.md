@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 84
-- **Last Active**: 2026-06-24
+- **Total Sessions**: 85
+- **Last Active**: 2026-06-25
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1124 | Active |
+| `journal-2.md` | ~1217 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 85 | 2026-06-25 | 抽 play-bridge SDK 本地包 | `8c6dba7` | `master` |
 | 84 | 2026-06-24 | 默认 AIRP schema 与 hub-and-spoke Agent 阵容 | `3c44f61` | `master` |
 | 83 | 2026-06-24 | Skill 脚本执行能力升级与文档约定 | `47f0889` | `feat/inspect-frontend-action-aria` |
 | 82 | 2026-06-23 | 默认前端 UI 重做与协议层原地验证 | `4828592` | `master` |
