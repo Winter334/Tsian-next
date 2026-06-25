@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 88
-- **Last Active**: 2026-06-25
+- **Total Sessions**: 89
+- **Last Active**: 2026-06-26
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1320 | Active |
+| `journal-2.md` | ~1356 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 89 | 2026-06-26 | 存储架构与渲染流程重构:过程节点持久化+单源重建+剧情选项 | `d6f1603`, `1882e0a`, `02a0976` | `master` |
 | 88 | 2026-06-25 | ask_user 工具:AI 向玩家提问+选项+自定义回答 | `e727987` | `master` |
 | 87 | 2026-06-25 | native 模式 tool message content 去冗余包装 | `85cdb6d` | `master` |
 | 86 | 2026-06-25 | 创建开发前端项目 apps/play-frontend-dev | `678e9d3`, `fcbf377` | `master` |
