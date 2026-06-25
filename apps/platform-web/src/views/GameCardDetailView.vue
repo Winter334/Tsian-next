@@ -303,6 +303,28 @@
                 />
               </label>
 
+              <div v-if="frontendMode === 'remote'" class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                  :disabled="frontendSaving || !remoteUrl.trim() || card?.source === 'builtin'"
+                  @click="saveFrontendBinding"
+                >
+                  <Save class="h-3.5 w-3.5" aria-hidden="true" />
+                  保存前端绑定
+                </button>
+                <button
+                  v-if="card?.manifest.frontend"
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
+                  :disabled="frontendSaving || card?.source === 'builtin'"
+                  @click="clearFrontendBinding"
+                >
+                  <XCircle class="h-3.5 w-3.5" aria-hidden="true" />
+                  清除前端绑定
+                </button>
+              </div>
+
               <div v-if="frontendMode === 'packaged'" class="grid gap-3 border border-neon-deep/30 bg-panel/40 p-3">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">前端包</span>
