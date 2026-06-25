@@ -52,6 +52,7 @@ import { errorToTraceData } from "./trace"
 import {
   createRuntimeWorkspaceToolSessionState,
   executeRuntimeWorkspaceToolCalls,
+  formatNativeToolObservationContent,
   formatRuntimeWorkspaceToolObservationMessage,
   parseRuntimeWorkspaceToolCalls,
   RUNTIME_WORKSPACE_TOOL_NAMES,
@@ -1643,7 +1644,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       runtimeMessages.push({
         role: "tool",
         toolCallId: callId,
-        content: formatRuntimeWorkspaceToolObservationMessage([observation]),
+        content: formatNativeToolObservationContent(observation),
       })
     }
 

@@ -2375,3 +2375,21 @@ export function formatRuntimeWorkspaceToolObservationMessage(
     "Use these observations to continue. If you have enough context, provide the required final output without tool-call blocks.",
   ].join("\n")
 }
+
+/**
+ * Native 模式 tool message content：裸结果，无容器外壳/引导语。
+ * toolCallId 已关联调用，index/name 冗余；provider native 训练分布直接放结果。
+ * 成功：result 是 string 直放，否则 JSON.stringify(result)。
+ * 失败：JSON.stringify(error)（保留 code + message + details）。
+ */
+export function formatNativeToolObservationContent(
+  observation: RuntimeWorkspaceToolObservation,
+): string {
+  if (!observation.ok) {
+    return JSON.stringify(
+      observation.error ?? { code: "UNKNOWN", message: "Unknown error" },
+    )
+  }
+  const result = observation.result
+  return typeof result === "string" ? result : JSON.stringify(result)
+}
