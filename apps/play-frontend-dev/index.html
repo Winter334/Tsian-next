@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tsian 游戏前端（开发）</title>
+  <link rel="stylesheet" href="/src/style.css" />
+  <!-- main.ts 是 ESM module，vite dev 热加载入口 -->
+  <!-- module 脚本自动 deferred，无需 defer 属性 -->
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="app-header">
+      <div class="header-left">
+        <span class="app-title">Tsian</span>
+        <span id="status" class="app-status" data-state="loading">连接中…</span>
+      </div>
+      <div class="header-right">
+        <span id="turn-badge" class="turn-badge" hidden>第 <b id="turn-num">0</b> 回</span>
+        <!-- UI 操作区占位：检查点回溯等功能后续接线，本任务只留位置 -->
+        <button id="btn-checkpoint" class="header-btn" type="button" disabled title="功能开发中">回溯</button>
+      </div>
+    </header>
+    <main id="story" class="story" aria-live="polite">
+      <div class="empty-state" id="empty-state">
+        <p class="empty-title">故事尚未开始</p>
+        <p class="empty-hint">在下方输入你的行动，开启冒险。</p>
+      </div>
+    </main>
+    <footer class="composer">
+      <textarea id="input" class="input" rows="1" placeholder="输入你的行动…（Enter 发送，Shift+Enter 换行）" disabled></textarea>
+      <button id="send" class="send" type="button" disabled>讲述</button>
+      <button id="stop" class="stop" type="button" hidden>停止</button>
+    </footer>
+  </div>
+</body>
+</html>
