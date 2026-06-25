@@ -32,6 +32,8 @@ export interface BridgeHandlers {
     options?: string[],
     allowCustom?: boolean,
   ) => void
+  /** turn-options 快捷通道：turn 收尾提取到剧情选项，前端渲染按钮(玩家点选 = 新 turn 输入)。 */
+  onTurnOptions?: (turn: number, options: string[]) => void
 }
 
 /** createBridge() 返回的桥实例。表现层唯一的能力出口。 */
@@ -72,6 +74,7 @@ export function createBridge(): Bridge {
     onEvent: undefined,
     onSnapshot: undefined,
     onInteractionRequest: undefined,
+    onTurnOptions: undefined,
   }
 
   // RPC: call(method, params) → Promise。表现层只用这个调平台能力。
@@ -148,6 +151,13 @@ export function createBridge(): Bridge {
           handlers.onInteractionRequest?.(p.requestId, p.question, p.options, p.allowCustom)
         }
       }
+      // turn-options 快捷通道：turn 收尾提取到剧情选项
+      if (msg.event === "turn-options" && msg.payload) {
+        const p = msg.payload as { turn?: number; options?: string[] }
+        if (typeof p.turn === "number" && Array.isArray(p.options)) {
+          handlers.onTurnOptions?.(p.turn, p.options)
+        }
+      }
       handlers.onEvent?.(msg.event as RemotePlayBridgeEventName, msg.payload as RemotePlayBridgeEventPayload)
       return
     }
@@ -169,6 +179,7 @@ export function createBridge(): Bridge {
       handlers.onEvent = h.onEvent
       handlers.onSnapshot = h.onSnapshot
       handlers.onInteractionRequest = h.onInteractionRequest
+      handlers.onTurnOptions = h.onTurnOptions
     },
     get ready() {
       return bridgeReady

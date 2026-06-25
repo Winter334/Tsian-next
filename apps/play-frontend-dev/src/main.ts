@@ -8,7 +8,7 @@
 // 烛火书卷（Lamplight Codex）风格 —— 见 style.css。
 
 import { marked } from "marked"
-import { createBridge, createSessionHistory } from "@tsian/play-bridge"
+import { createBridge, createSessionHistory, parseStoryOptions } from "@tsian/play-bridge"
 import type {
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
@@ -72,6 +72,9 @@ let turnActive = false
 let currentTurnEls: TurnEls | null = null
 let turnState: TurnState | null = null
 let userPinnedToBottom = true
+// 当前 turn 待渲染的剧情选项(turn-options 事件先到,finalizeTurn 时渲染).
+// null = 无选项;非空数组 = 有选项待渲染.每次 turn 开始时重置.
+let pendingOptions: string[] | null = null
 
 function newTurnState(): TurnState {
   return { timeline: [], streamingText: "", streamingReasoning: "", content: "" }
@@ -277,6 +280,7 @@ function beginTurn(): void {
   clearEmptyState()
   turnActive = true
   turnState = newTurnState()
+  pendingOptions = null  // 新 turn 开始,清掉上一轮待渲染选项
   // 确保有 story-inner 容器
   let inner = $story.querySelector(".story-inner") as HTMLDivElement | null
   if (!inner) {
@@ -343,6 +347,11 @@ function finalizeRound(payload: RemotePlayBridgeEventPayload): void {
 // 折叠 thought/tool 节点(过程完成,保留可展开回看);interim 始终展开.
 // 流式正文区变为正式正文区(去掉 streaming-msg class).不再推入内存数组——
 // 重载时从 workspace turn 文件读回(createSessionHistory).
+//
+// 剧情选项:turn-options 事件先到时已缓存到 pendingOptions.此处:
+//  1. 用 parseStoryOptions 剥离本地流式累积的选项块(事件流传的是原始 replyText),
+//     重写 streamBody 为干净正文(去掉 [[选项]]...[[/选项]] 标记);
+//  2. 若 pendingOptions 非空,在正文下方渲染选项按钮(玩家点选 = 填输入框发送 = 新 turn).
 function finalizeTurn(): void {
   if (turnState && turnState.timeline.length > 0) {
     for (const node of turnState.timeline) {
@@ -351,10 +360,37 @@ function finalizeTurn(): void {
     // 重渲染过程节点(折叠态)
     renderProcessNodes()
   }
-  // 流式正文区 → 正式正文区
+  // 流式正文区 → 正式正文区,剥离本地选项块显示干净正文
+  if (currentTurnEls?.streamBody && turnState) {
+    const { cleanText } = parseStoryOptions(turnState.content)
+    currentTurnEls.streamBody.innerHTML = renderMarkdown(cleanText)
+  }
   if (currentTurnEls?.streamEl) {
     currentTurnEls.streamEl.classList.remove("streaming-msg")
   }
+  // 渲染剧情选项按钮(若有)
+  if (pendingOptions && pendingOptions.length > 0 && currentTurnEls?.streamEl?.parentElement) {
+    const opts = pendingOptions
+    pendingOptions = null
+    const optZone = document.createElement("div")
+    optZone.className = "story-options"
+    for (const opt of opts) {
+      const btn = document.createElement("button")
+      btn.type = "button"
+      btn.className = "story-option"
+      btn.textContent = opt
+      btn.addEventListener("click", () => {
+        if (!$input || turnActive) return
+        $input.value = opt
+        $input.style.height = "auto"
+        void sendMessage()
+      })
+      optZone.appendChild(btn)
+    }
+    currentTurnEls.streamEl.parentElement.appendChild(optZone)
+    maybeScrollDown()
+  }
+  pendingOptions = null
   turnActive = false
 }
 
@@ -571,4 +607,8 @@ bridge.on({
   onEvent: handleEvent,
   onSnapshot: handleSnapshot,
   onInteractionRequest: handleInteractionRequest,
+  onTurnOptions: (_turn, options) => {
+    // turn-options 先于 turn-completed 到达:缓存选项,finalizeTurn 时渲染按钮.
+    pendingOptions = options.length > 0 ? options : null
+  },
 })

@@ -35,10 +35,12 @@ export type TurnToolListener = (
   status: TurnToolStatus,
   output?: TurnToolOutput,
 ) => void
+export type TurnOptionsListener = (turn: number, options: string[]) => void
 
 const turnDeltaListeners = new Set<TurnDeltaListener>()
 const turnRoundEndListeners = new Set<TurnRoundEndListener>()
 const turnToolListeners = new Set<TurnToolListener>()
+const turnOptionsListeners = new Set<TurnOptionsListener>()
 
 export function subscribeTurnDelta(cb: TurnDeltaListener): () => void {
   turnDeltaListeners.add(cb)
@@ -104,6 +106,31 @@ export function emitTurnTool(
     } catch (err) {
       // 流式通道异常不冒泡到主链
       console.error("[streaming-events] turn-tool listener threw", err)
+    }
+  }
+}
+
+export function subscribeTurnOptions(cb: TurnOptionsListener): () => void {
+  turnOptionsListeners.add(cb)
+  return () => {
+    turnOptionsListeners.delete(cb)
+  }
+}
+
+/**
+ * emit turn-options:turn 收尾时若从正文提取到剧情选项,通知前端渲染按钮.
+ * 与 turn-delta/turn-tool 同总线,remote-iframe-bridge 转发为 `turn-options` 事件.
+ * 前端缓存 options,finalizeTurn 时清理本地流式显示 + 渲染按钮(玩家点选 = 新 turn 输入).
+ */
+export function emitTurnOptions(turn: number, options: string[]): void {
+  // 浅克隆：回调内 unsubscribe 不影响本轮派发
+  const listeners = [...turnOptionsListeners]
+  for (const listener of listeners) {
+    try {
+      listener(turn, options)
+    } catch (err) {
+      // 流式通道异常不冒泡到主链
+      console.error("[streaming-events] turn-options listener threw", err)
     }
   }
 }

@@ -8,6 +8,8 @@ export { createBridge } from "./bridge"
 export type { Bridge, BridgeHandlers } from "./bridge"
 export { createSessionHistory } from "./session-history"
 export type { SessionHistory } from "./session-history"
+export { parseStoryOptions } from "./story-options"
+export type { ParsedStoryOptions } from "./story-options"
 
 // 桥相关类型从 @tsian/contracts re-export，消费方无需额外 import contracts。
 export type {

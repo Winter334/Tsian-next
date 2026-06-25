@@ -13,7 +13,7 @@ import type {
   RemotePlayBridgeResponseMessage,
 } from "@tsian/contracts"
 
-import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool } from "../streaming-events"
+import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions } from "../streaming-events"
 import { subscribeInteractionRequest, resolveInteractionRequest } from "../interaction-events"
 
 export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
@@ -504,6 +504,14 @@ export function mountRemoteIframeFrontend(
     })
   })
 
+  // Forward extracted story options to the remote frontend as `turn-options`,
+  // so it can render choice buttons after the turn's narrative. The host strips
+  // the option block before storing to snapshot/turn files, so the frontend uses
+  // this event to get the options list (player clicks = new turn input).
+  const unsubscribeTurnOptions = subscribeTurnOptions((turn, options) => {
+    postEvent("turn-options", { turn, options })
+  })
+
   // Forward ask_user interaction requests to the remote frontend as
   // `interaction-request`, so it can render the question + options UI.
   // The player's answer comes back via the `interaction.respond` RPC.
@@ -526,6 +534,7 @@ export function mountRemoteIframeFrontend(
     unsubscribeTurnDelta?.()
     unsubscribeTurnRoundEnd?.()
     unsubscribeTurnTool?.()
+    unsubscribeTurnOptions?.()
     unsubscribeInteractionRequest?.()
     unsubscribeTurnDelta?.()
     if (iframe.parentElement === container) {

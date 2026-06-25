@@ -125,6 +125,7 @@ export type RemotePlayBridgeEventName =
   | "turn-delta"
   | "turn-round-end"
   | "turn-tool"
+  | "turn-options"
   | "interaction-request"
 
 /**
@@ -228,6 +229,10 @@ export type RemotePlayBridgeEventPayload =
       name: string
       status: "loading" | "running" | "success" | "failed"
       output?: TurnToolOutput
+    }
+  | {
+      turn: number
+      options: string[]
     }
   | {
       requestId: string

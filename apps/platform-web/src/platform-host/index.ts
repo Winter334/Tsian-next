@@ -82,7 +82,7 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
-import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool } from "../streaming-events"
+import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions } from "../streaming-events"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   getBaseBridge,
@@ -111,6 +111,7 @@ import {
   stageRawAirpHistoryTurnFile,
 } from "./history-turns"
 import { createTurnTimelineCollector } from "./turn-timeline-collector"
+import { extractStoryOptions } from "./story-options"
 import {
   generateAssistantReply,
   generateAssistantReplyNative,
@@ -865,10 +866,15 @@ export const playFrontendBridge: PlayFrontendBridge = {
           throw new DOMException("Agent Runtime turn was aborted.", "AbortError")
         }
 
+        // 剧情选项剥离:从 replyText 提取 [[选项]]块 → options(给前端渲染按钮)
+        // + cleanReply(存入 snapshot/turn 文件/context.json,agent 上下文干净).
+        // 剥离单点:下游 snapshot/turn 文件/context.json 全部用 cleanReply,零冗余.
+        const { options: storyOptions, cleanText: cleanReply } = extractStoryOptions(result.replyText)
+
         const nextHistory: ConversationMessageRecord[] = [
           ...historyBefore,
           { role: "user", content },
-          { role: "assistant", content: result.replyText },
+          { role: "assistant", content: cleanReply },
         ]
         const snapshotAfter = snapshotWithTurnAndMessages(
           snapshotBefore,
@@ -880,17 +886,18 @@ export const playFrontendBridge: PlayFrontendBridge = {
           turn: nextTurn,
           entryAgentId: "master",
           userInput: content,
-          assistantOutput: result.replyText,
+          assistantOutput: cleanReply,
           processNodes: timelineCollector.getProcessNodes(),
         })
         // R4:写回 master agent 会话上下文快照(本轮正文追加 + 压缩结果落盘)
+        // contextUpdate.assistant 是原始 replyText(含选项块),改传 cleanReply 保持上下文干净.
         const contextUpdate = result.contextUpdate
         if (contextUpdate) {
           const stagedContext = stageAgentContextFile(workspaceTransaction, {
             saveId: activeSaveId,
             turn: contextUpdate.turn,
             user: contextUpdate.user,
-            assistant: contextUpdate.assistant,
+            assistant: cleanReply,
             compressedContext: contextUpdate.compressedContext,
           })
           trace.emit({
@@ -904,12 +911,18 @@ export const playFrontendBridge: PlayFrontendBridge = {
           })
         }
 
+        // 剧情选项:有则 emit turn-options 事件,前端缓存后 finalizeTurn 渲染按钮.
+        if (storyOptions.length > 0) {
+          emitTurnOptions(nextTurn, storyOptions)
+        }
+
         trace.emit({
           type: "turn_completed",
           ok: true,
           data: {
-            replyLength: result.replyText.length,
+            replyLength: cleanReply.length,
             historyCount: nextHistory.length,
+            storyOptions: storyOptions.length,
           },
         })
         stageRuntimeTraceFile(

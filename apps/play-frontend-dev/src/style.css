@@ -238,6 +238,25 @@ body {
 }
 .ask-custom-submit:hover { background: var(--ember); }
 
+/* ── 剧情选项按钮（master agent 正文末尾 [[选项]]块提取）── */
+/* 复用 ask-option 视觉语言,容器更轻(剧情选项非提问,视觉略弱于 ask-panel) */
+.story-options {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 1.2em 0; padding: 14px 18px;
+  border-left: 2px solid var(--ember-deep);
+  background: rgba(28, 24, 18, 0.5);
+  border-radius: 0 2px 2px 0;
+}
+.story-option {
+  text-align: left; padding: 10px 16px;
+  border: 1px solid var(--ember-deep); background: var(--parchment);
+  color: var(--prose); cursor: pointer;
+  font-family: var(--serif); font-size: 14px; line-height: 1.5;
+  white-space: pre-wrap;  /* 长选项续行自然换行展示 */
+  transition: border-color 0.15s, background 0.15s;
+}
+.story-option:hover { border-color: var(--ember); background: var(--gold-glow); }
+
 /* ── 响应式 ── */
 @media (max-width: 640px) {
   .app-header { padding: 8px 14px; }
