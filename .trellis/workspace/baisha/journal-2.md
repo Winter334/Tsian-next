@@ -1250,3 +1250,37 @@ Implemented full multimodal attachment support for the desktop assistant chat (t
 ### Next Steps
 
 - None - task complete
+
+
+## Session 87: native 模式 tool message content 去冗余包装
+
+**Date**: 2026-06-25
+**Task**: native 模式 tool message content 去冗余包装
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+native 模式 tool message content 去掉冗余的容器外壳/引导语，直接放裸结果。新增 formatNativeToolObservationContent 函数：成功放 result（string 直放/object JSON.stringify），失败放 JSON.stringify(error)（保留 code+message+details）。native 路径（index.ts:1647）改用新函数，text 路径不动（text 模式需 index/name 标识 observation 对应关系）。每个 tool 调用约省 80 token，贴合 provider native function calling 训练分布。docs/active/tool-result-structure-followup.md 记录的技术债清偿。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `85cdb6d` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

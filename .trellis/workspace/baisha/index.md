@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 86
+- **Total Sessions**: 87
 - **Last Active**: 2026-06-25
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1252 | Active |
+| `journal-2.md` | ~1286 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 87 | 2026-06-25 | native 模式 tool message content 去冗余包装 | `85cdb6d` | `master` |
 | 86 | 2026-06-25 | 创建开发前端项目 apps/play-frontend-dev | `678e9d3`, `fcbf377` | `master` |
 | 85 | 2026-06-25 | 抽 play-bridge SDK 本地包 | `8c6dba7` | `master` |
 | 84 | 2026-06-24 | 默认 AIRP schema 与 hub-and-spoke Agent 阵容 | `3c44f61` | `master` |
