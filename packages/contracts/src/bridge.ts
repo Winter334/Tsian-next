@@ -1,5 +1,6 @@
 import type { AiDebugRecord } from "./debug"
 import type {
+  ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
   JsonValue,
@@ -185,6 +186,19 @@ export type TurnProcessNode =
       collapsed: boolean
     }
   | { type: "interim"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+
+/**
+ * 单个 turn 的完整玩家视角数据,由 host 从 workspace turn 文件重建,
+ * 经 `query.query({ resource: "session-history" })` 一次返回全部 turn.
+ * 前端用此数据单源重建完整对话(正文 + 过程节点),不依赖 snapshot 渲染.
+ */
+export interface SessionHistoryEntry {
+  turn: number
+  createdAt: string
+  messages: ConversationMessageRecord[]
+  /** turn 内过程节点(native 模式有,text 模式可能为空). */
+  processNodes?: TurnProcessNode[]
+}
 
 export type RemotePlayBridgeEventPayload =
   | {

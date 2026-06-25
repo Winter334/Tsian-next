@@ -106,6 +106,7 @@ import { ensureActiveSave, formatActiveFrontendId, getPlatformActiveGameCardId }
 import { executeWorkspaceMutation } from "./workspace-volumes"
 import {
   readAgentContextFromWorkspace,
+  getSessionHistoryFromTurnFiles,
   stageAgentContextFile,
   stageRawAirpHistoryTurnFile,
 } from "./history-turns"
@@ -507,6 +508,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
         return {
           items: (await getHistoryForSave(activeSaveId)) as T[],
+        } as DeepQueryResult<T>
+      }
+
+      if (request.resource === "session-history") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        const files = await listWorkspaceFilesForSave(activeSaveId)
+        return {
+          items: getSessionHistoryFromTurnFiles(files) as T[],
         } as DeepQueryResult<T>
       }
 

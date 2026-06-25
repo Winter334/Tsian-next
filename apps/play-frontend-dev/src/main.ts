@@ -8,12 +8,13 @@
 // 烛火书卷（Lamplight Codex）风格 —— 见 style.css。
 
 import { marked } from "marked"
-import { createBridge } from "@tsian/play-bridge"
+import { createBridge, createSessionHistory } from "@tsian/play-bridge"
 import type {
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
   RuntimeSnapshotShell,
   ConversationMessageRecord,
+  SessionHistoryEntry,
   TurnToolOutput,
 } from "@tsian/play-bridge"
 
@@ -39,7 +40,7 @@ const $emptyState = document.getElementById("empty-state") as HTMLDivElement | n
 // ════════════════════════════════════════════════════════════════
 // 回合状态机（移植自 useAssistantTimeline，原生 JS 版）
 // timeline: 过程节点（thought/tool/interim），按发生顺序，带 agentId。
-// turnProcessLog: 会话级累积数组，存所有已完成 turn 的过程节点（不持久化，刷新即丢）。
+// 历史过程节点从 workspace turn 文件读回（createSessionHistory），不再内存累积。
 // ════════════════════════════════════════════════════════════════
 
 interface ProcessNode {
@@ -71,7 +72,6 @@ let turnActive = false
 let currentTurnEls: TurnEls | null = null
 let turnState: TurnState | null = null
 let userPinnedToBottom = true
-const turnProcessLog: { turn: number; nodes: ProcessNode[] }[] = []
 
 function newTurnState(): TurnState {
   return { timeline: [], streamingText: "", streamingReasoning: "", content: "" }
@@ -125,32 +125,32 @@ function clearEmptyState(): void {
   if ($emptyState && $emptyState.parentElement) $emptyState.remove()
 }
 
-// 渲染历史消息（from snapshot）
-// 过程历史区在前（turnProcessLog 累积的过程节点），正文区在后（snapshot messages）。
-// 不再 $story.innerHTML="" 全清——过程区跨 turn 保留（方案 A：仅内存，不持久化）。
-function renderMessages(messages: ConversationMessageRecord[]): void {
+// 从 SessionHistoryEntry[] 重建完整对话（重载/初始渲染用）.
+// 每个 turn 的 processNodes + messages 按序排列:过程节点 → 正文(user+assistant).
+// 这是单源重建——不再从 snapshot 读渲染数据,过程节点从 workspace turn 文件读回.
+function renderSessionHistory(entries: SessionHistoryEntry[]): void {
   if (!$story) return
   clearEmptyState()
   $story.innerHTML = ""
   const inner = document.createElement("div")
   inner.className = "story-inner"
-  // 过程历史区：渲染所有已完成 turn 的过程节点
-  if (turnProcessLog.length > 0) {
-    const historyZone = document.createElement("div")
-    historyZone.className = "process-history-zone"
-    for (const entry of turnProcessLog) {
-      for (const node of entry.nodes) historyZone.appendChild(createProcessNode(node))
-    }
-    inner.appendChild(historyZone)
-  }
-  // 正文区：snapshot messages（user/assistant 剧情正文）
-  if (!messages || messages.length === 0) {
+  if (entries.length === 0) {
     const empty = document.createElement("div")
     empty.className = "empty-state"
     empty.innerHTML = '<p class="empty-title">故事尚未开始</p><p class="empty-hint">在下方输入你的行动，开启冒险。</p>'
     inner.appendChild(empty)
   } else {
-    for (const m of messages) inner.appendChild(renderMessageEl(m))
+    for (const entry of entries) {
+      // 过程节点(如果有)
+      if (entry.processNodes && entry.processNodes.length > 0) {
+        const zone = document.createElement("div")
+        zone.className = "process-history-zone"
+        for (const node of entry.processNodes) zone.appendChild(createProcessNode(node))
+        inner.appendChild(zone)
+      }
+      // 正文(user + assistant)
+      for (const m of entry.messages) inner.appendChild(renderMessageEl(m))
+    }
   }
   $story.appendChild(inner)
   scrollDown()
@@ -339,14 +339,21 @@ function finalizeRound(payload: RemotePlayBridgeEventPayload): void {
   renderProcessNodes()
 }
 
-// finalizeTurn：回合结束，折叠过程节点并推入会话级 turnProcessLog（内存累积，跨 turn 保留）。
-// 不持久化——刷新/重载存档后 turnProcessLog 清空，只剩 snapshot 正文（方案 A）。
+// finalizeTurn：回合结束,过程节点原地晋升为历史(不重建 DOM,不全清覆盖).
+// 折叠 thought/tool 节点(过程完成,保留可展开回看);interim 始终展开.
+// 流式正文区变为正式正文区(去掉 streaming-msg class).不再推入内存数组——
+// 重载时从 workspace turn 文件读回(createSessionHistory).
 function finalizeTurn(): void {
   if (turnState && turnState.timeline.length > 0) {
     for (const node of turnState.timeline) {
       if (node.type === "thought" || node.type === "tool") node.collapsed = true
     }
-    turnProcessLog.push({ turn: Number($turnNum?.textContent) || 0, nodes: turnState.timeline })
+    // 重渲染过程节点(折叠态)
+    renderProcessNodes()
+  }
+  // 流式正文区 → 正式正文区
+  if (currentTurnEls?.streamEl) {
+    currentTurnEls.streamEl.classList.remove("streaming-msg")
   }
   turnActive = false
 }
@@ -463,14 +470,13 @@ function removeAskPanel(panel: HTMLElement): void {
   panel.remove()
 }
 
-// §4 红线：turn-completed.snapshot 到达时用 snapshot 覆盖渲染
+// turn-completed:回合结束,过程节点原地晋升为历史(不全清覆盖).
+// snapshot 不再用于渲染——正文已在流式区累积,过程节点已在过程区累积.
+// snapshot 只取 turn 号更新 header.重载时从 workspace turn 文件重建(createSessionHistory).
 function handleSnapshot(snapshot: RuntimeSnapshotShell): void {
-  // 先 finalizeTurn：把当前 turn 的过程节点推入 turnProcessLog，
-  // 再 renderMessages：渲染过程历史区（含刚推入的本 turn）+ 正文区。
   finalizeTurn()
   if (snapshot && snapshot.state) {
     setTurn(snapshot.state.turn)
-    renderMessages(snapshot.state.messages || [])
   }
   setSending(false)
   setStatus("就绪", "ready")
@@ -480,13 +486,12 @@ function handleReady(sid: string): void {
   setStatus("就绪", "ready")
   if ($send) $send.disabled = false
   if ($input) { $input.disabled = false; $input.focus() }
-  // 初始拉取 snapshot
-  bridge.call<RuntimeSnapshotShell>("runtime.getRuntimeSnapshot").then((snap) => {
-    if (snap && snap.state) {
-      setTurn(snap.state.turn)
-      renderMessages(snap.state.messages || [])
-    }
-  }).catch(() => { setStatus("快照加载失败", "error") })
+  // 从 workspace turn 文件单源重建完整对话(正文 + 过程节点).
+  // 不再用 getRuntimeSnapshot 渲染——snapshot 退化为 runtime engine 内部状态.
+  createSessionHistory(bridge).then((history) => {
+    setTurn(history.turn)
+    renderSessionHistory(history.entries)
+  }).catch(() => { setStatus("历史加载失败", "error") })
 }
 
 // ════════════════════════════════════════════════════════════════

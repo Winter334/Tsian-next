@@ -6,6 +6,8 @@
 
 export { createBridge } from "./bridge"
 export type { Bridge, BridgeHandlers } from "./bridge"
+export { createSessionHistory } from "./session-history"
+export type { SessionHistory } from "./session-history"
 
 // 桥相关类型从 @tsian/contracts re-export，消费方无需额外 import contracts。
 export type {
@@ -34,4 +36,6 @@ export type {
   MessageInteractionResult,
   AskUserRequest,
   AskUserResult,
+  TurnProcessNode,
+  SessionHistoryEntry,
 } from "@tsian/contracts"

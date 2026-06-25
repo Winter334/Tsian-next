@@ -2,6 +2,7 @@ import type {
   AgentContextSnapshot,
   ConversationMessageRecord,
   RuntimeSnapshotShell,
+  SessionHistoryEntry,
   TurnProcessNode,
   WorkspaceFile,
 } from "@tsian/contracts"
@@ -191,4 +192,33 @@ export function getHistoryFromTurnFiles(
   }
   records.sort((left, right) => left.turn - right.turn)
   return records.flatMap((record) => record.messages)
+}
+
+/**
+ * 从 workspace 文件列表重建完整会话历史(SessionHistoryEntry[]),含 processNodes.
+ * 与 `getHistoryFromTurnFiles` 的区别:后者只展平 messages(给 agent 干净正文),
+ * 本函数保留每个 turn 的完整结构(正文 + 过程节点),给前端单源重建完整玩家视角.
+ * 空目录/无 turn 文件 → 返回 [].
+ */
+export function getSessionHistoryFromTurnFiles(
+  workspaceFiles: WorkspaceFile[],
+): SessionHistoryEntry[] {
+  const turnFiles = workspaceFiles.filter(
+    (file) =>
+      file.path.startsWith(AIRP_HISTORY_TURN_PATH_PREFIX)
+      && file.path.endsWith(".json"),
+  )
+  const entries: SessionHistoryEntry[] = []
+  for (const file of turnFiles) {
+    const record = parseRawAirpHistoryTurnRecord(file.content)
+    if (!record) continue
+    entries.push({
+      turn: record.turn,
+      createdAt: record.createdAt,
+      messages: record.messages,
+      ...(record.processNodes ? { processNodes: record.processNodes } : {}),
+    })
+  }
+  entries.sort((left, right) => left.turn - right.turn)
+  return entries
 }
