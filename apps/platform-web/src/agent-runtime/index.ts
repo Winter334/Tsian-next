@@ -9,6 +9,7 @@ import type {
   PlatformActionRequest,
   PlatformActionResult,
   RuntimeSnapshotShell,
+  TurnToolOutput,
   WorkspaceFile,
   WorkspaceOperationName,
 } from "@tsian/contracts"
@@ -118,7 +119,7 @@ export interface AgentRuntimeTurnInput {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: string,
+    output?: TurnToolOutput,
   ) => void
   /**
    * master agent 会话上下文快照(从工作区 `agents/master/context.json` 读取注入).
@@ -194,7 +195,7 @@ export interface AgentRuntimeModelCallOptions {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: string,
+    output?: TurnToolOutput,
   ) => void
 }
 

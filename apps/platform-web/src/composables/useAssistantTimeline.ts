@@ -1,4 +1,4 @@
-import type { AttachmentRef } from "@tsian/contracts"
+import type { AttachmentRef, TurnToolOutput } from "@tsian/contracts"
 
 /**
  * 过程事件节点:assistant 回合内按发生顺序排列的思考/工具/过渡文本.
@@ -15,7 +15,7 @@ import type { AttachmentRef } from "@tsian/contracts"
  */
 export type AssistantTimelineNode =
   | { type: "thought"; id: string; round: number; text: string; collapsed: boolean }
-  | { type: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; output?: string; collapsed: boolean }
+  | { type: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput; collapsed: boolean }
   | { type: "interim"; id: string; round: number; text: string; collapsed: boolean }
 
 /**
@@ -98,7 +98,7 @@ export function useAssistantTimeline(
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: string,
+    output?: TurnToolOutput,
   ) => {
     // 按 callId 去重:同一工具调用的 loading→success/failed 更新同一节点.
     const existing = timeline.find(

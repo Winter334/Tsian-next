@@ -4,6 +4,7 @@ import type {
   PlatformActionResult,
   SkillConfigItem,
   SkillRegistryEntry,
+  TurnToolOutput,
   WorkspaceFile,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
@@ -345,7 +346,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: string,
+    output?: TurnToolOutput,
   ) => void
 }
 
@@ -2049,44 +2050,62 @@ async function executeRunScript(
 }
 
 /**
- * Max length of a tool output summary carried in a `turn-tool` event. Longer
- * outputs are truncated with a marker so the bridge payload stays small; the
- * full output remains in the tool observation fed back to the model.
+ * Build the `turn-tool` event output for a tool observation.
+ *
+ * - 普通工具：完整 `JSON.stringify(result)`（或 `String(result)`），**不截断**。
+ *   截断/显示策略交给 UI 侧（前端按需折叠或不显 output）。
+ *   返回 `undefined` 当 result 为空（事件省略 output）。
+ * - agent_call：结构化对象 `{type:"agent_call", targetAgent, response, status}`，
+ *   提取被调用 agent 的 title + 完整 response，让前端不用解析整坨 JSON。
+ *   response 不截断（UI 侧控制长度）。
+ *
+ * **不动**喂回模型的 `formatRuntimeWorkspaceToolObservationMessage`（model 路径
+ * 仍全量 JSON.stringify observation，本函数只服务 UI 旁路的 turn-tool 事件）。
  */
-const TURN_TOOL_OUTPUT_MAX_LENGTH = 500
+function buildToolOutput(
+  call: RuntimeWorkspaceToolCall | undefined,
+  observation: RuntimeWorkspaceToolObservation,
+): TurnToolOutput | undefined {
+  const isAgentCall = call?.name === RUNTIME_WORKSPACE_TOOL_NAMES.agentCall
 
-/**
- * Build a truncated string summary of a tool observation's result for the
- * `turn-tool` event. Returns `undefined` when there is no result to summarize
- * (so the event omits `output` entirely).
- */
-function summarizeToolObservationOutput(observation: RuntimeWorkspaceToolObservation): string | undefined {
+  // agent_call 结构化：成功提 targetAgent + response，失败提 error
+  if (isAgentCall) {
+    if (!observation.ok) {
+      const err = observation.error
+      return {
+        type: "agent_call",
+        targetAgent: { id: "", title: "" },
+        response: "",
+        status: "failed",
+        ...(err ? { error: { code: err.code, message: err.message } } : {}),
+      }
+    }
+    const result = isRecord(observation.result) ? observation.result : {}
+    const targetAgent = isRecord(result.targetAgent) ? result.targetAgent : {}
+    const response = typeof result.response === "string" ? result.response : ""
+    return {
+      type: "agent_call",
+      targetAgent: {
+        id: typeof targetAgent.id === "string" ? targetAgent.id : "",
+        title: typeof targetAgent.title === "string" ? targetAgent.title : "",
+        ...(typeof targetAgent.summary === "string" ? { summary: targetAgent.summary } : {}),
+      },
+      response,
+      status: "completed",
+    }
+  }
+
+  // 普通工具：完整 stringify，不截断
   if (observation.result === undefined) {
     return undefined
   }
-  let text: string
   try {
-    text = typeof observation.result === "string"
+    return typeof observation.result === "string"
       ? observation.result
       : JSON.stringify(observation.result)
   } catch {
     return undefined
   }
-  if (text.length <= TURN_TOOL_OUTPUT_MAX_LENGTH) {
-    return text
-  }
-  return `${text.slice(0, TURN_TOOL_OUTPUT_MAX_LENGTH)}…(已截断)`
-}
-
-/**
- * Extract a human-readable message from a caught tool error for the `turn-tool`
- * failed event.
- */
-function summarizeToolError(error: unknown): string {
-  if (isRecord(error) && typeof error.message === "string") {
-    return error.message
-  }
-  return error instanceof Error ? error.message : "Workspace tool failed."
 }
 
 async function executeRuntimeWorkspaceToolCall(
@@ -2235,13 +2254,11 @@ async function executeRuntimeWorkspaceToolCall(
   }
 
   emitToolObservationTrace(context, call, observation)
-  // Turn-tool event (子2b R2): report the final status. Success carries a
-  // truncated result summary; failure carries the error message.
-  if (observation.ok) {
-    context.onTool?.(callId, call.name, "success", summarizeToolObservationOutput(observation))
-  } else {
-    context.onTool?.(callId, call.name, "failed", observation.error?.message)
-  }
+  // Turn-tool event (子2b R2): report the final status + output.
+  // buildToolOutput 统一处理 success/failed：普通工具返回完整 string（不截断），
+  // agent_call 返回结构化 {type:"agent_call", targetAgent, response, status}。
+  const status: "success" | "failed" = observation.ok ? "success" : "failed"
+  context.onTool?.(callId, call.name, status, buildToolOutput(call, observation))
   return observation
 }
 

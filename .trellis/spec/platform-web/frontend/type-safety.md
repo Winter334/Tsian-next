@@ -1694,3 +1694,91 @@ embeddingConfig: { enabled: true, baseUrl, apiKey, model, dimensions }
 // resolveEmbeddingConfig() strict check; no chat validation branches touched
 ```
 
+## Scenario: Turn-Tool Event Output And Tool Process Display
+
+### 1. Scope / Trigger
+
+- Trigger: platform-web changes `turn-tool` event payload, `summarizeToolObservationOutput`/`buildToolOutput` in `workspace-tools.ts`, tool-card rendering in `default-frontend-files.ts` or `AssistantView.vue`, or `TurnToolOutput` in `@tsian/contracts`.
+- Applies when changing how tool-call process data flows from runtime to UI.
+
+### 2. Signatures
+
+- `TurnToolOutput` (contracts/bridge.ts): `string | { type: "agent_call"; targetAgent: { id; title; summary? }; response; status: "completed" | "failed"; error?: { code; message } }`.
+- `buildToolOutput(call, observation): TurnToolOutput | undefined` (workspace-tools.ts) — replaces the old `summarizeToolObservationOutput` (which truncated to 500 chars). No truncation; UI owns display/length policy.
+- `turn-tool` event payload `output?: TurnToolOutput` (was `output?: string`).
+- `onTool` signatures across `streaming-events.ts`, `workspace-tools.ts`, `agent-runtime/index.ts`, `assistant-chat.ts`, `useAssistantTimeline.ts` all use `output?: TurnToolOutput`.
+
+### 3. Contracts
+
+- **Two independent paths from the same observation**: (1) model path via `formatRuntimeWorkspaceToolObservationMessage` — full `JSON.stringify(observations)`, fed back to the model, **never truncated, never touched by UI display changes**; (2) UI path via `buildToolOutput` → `onTool` → `turn-tool` event — for display only, does not enter model context.
+- **Truncation lives in UI, not runtime.** `buildToolOutput` returns complete output. The default game frontend and desktop assistant decide whether to display, fold, or length-limit. The old `TURN_TOOL_OUTPUT_MAX_LENGTH` (500) constant and `summarizeToolObservationOutput` are removed.
+- **agent_call structured output**: `buildToolOutput` detects `call.name === "agent_call"` and extracts `{type:"agent_call", targetAgent:{title,...}, response, status}` instead of `JSON.stringify`-ing the whole result object. `response` is the delegated agent's final natural-language reply (player-readable), passed complete.
+- **agent_call failure**: `buildToolOutput` returns `{type:"agent_call", status:"failed", error:{code,message}, targetAgent:{id:"",title:""}, response:""}`.
+- **Ordinary tools**: `buildToolOutput` returns `JSON.stringify(result)` (or `String(result)`) complete, no truncation. The default game frontend and desktop assistant **do not render ordinary tool output** — only tool name + success/failed status icon. This is a product decision (structured output is not player-readable), not a technical limitation.
+- **Process zone cross-turn retention (default game frontend only)**: `turnProcessLog` (in-memory array in `default-frontend-files.ts` app.js) accumulates completed turns' process nodes (`thought`/`tool`/`interim`). `handleSnapshot` renders a `process-history-zone` before the snapshot messages. `finalizeTurn` pushes `turnState.timeline` into `turnProcessLog` before `renderMessages` runs. **Not persisted** — page reload / save reload clears it (only snapshot正文 remains). The desktop assistant already had this via `msg.timeline` reactive array + `finalize()` fold-only.
+- **`TurnToolOutput` is a discriminated union**: frontends branch on `typeof output === "string"` (ordinary) vs `typeof output === "object" && output.type === "agent_call"` (agent_call). Old remote frontends receiving an object output worst-case skip rendering it (no string match) — does not break RPC responses. Contract version stays `tsian.play-bridge.v1` (tolerant superset extension).
+- Runtime validation of `turn-tool` output belongs in platform-web (`buildToolOutput`), not in `@tsian/contracts` (contracts only defines the type).
+
+### 4. Validation & Error Matrix
+
+- `buildToolOutput` with `call === undefined` (parse error) → `isAgentCall` false → ordinary branch → `observation.result === undefined` → returns `undefined` (failed tool card shows status only).
+- agent_call success with missing `result.targetAgent` / `result.response` → degrades to empty strings (never throws).
+- agent_call failure (`observation.ok === false`) → structured `{type:"agent_call", status:"failed", error}`.
+- `JSON.stringify(result)` throws (cyclic) → ordinary branch catch → returns `undefined`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: agent_call tool card shows delegated agent's title + full response (player can judge what the sub-agent did).
+- Good: ordinary tool card shows only tool name + ✓/✗ (no structured output noise).
+- Good: after turn-completed, tool cards remain visible in process-history-zone; next turn's cards append below.
+- Base: page reload clears `turnProcessLog`; only snapshot正文 remains (方案 A, no cross-load persistence).
+- Bad: truncating `response` in `buildToolOutput` (UI must own length policy, not runtime).
+- Bad: touching `formatRuntimeWorkspaceToolObservationMessage` to change model-facing output (separate path; see `docs/active/tool-result-structure-followup.md` for that tech debt).
+
+### 6. Tests Required
+
+- Assert `buildToolOutput` for agent_call success returns `{type:"agent_call", targetAgent:{title,...}, response, status:"completed"}` with full `response` (no truncation).
+- Assert `buildToolOutput` for agent_call failure returns `{type:"agent_call", status:"failed", error}`.
+- Assert `buildToolOutput` for ordinary tool returns `string` (full, no `…(已截断)` marker).
+- Assert `formatRuntimeWorkspaceToolObservationMessage` is unchanged (model path intact).
+- Assert default frontend `turnProcessLog` is not persisted (no localStorage/IndexedDB write).
+
+### 7. Wrong vs Correct
+
+#### Wrong — truncating in runtime
+
+```typescript
+function buildToolOutput(call, observation): TurnToolOutput | undefined {
+  const text = JSON.stringify(observation.result)
+  return text.length > 500 ? text.slice(0, 500) + "…(已截断)" : text  // BAD: UI can't show full
+}
+```
+
+#### Correct — UI owns length policy
+
+```typescript
+function buildToolOutput(call, observation): TurnToolOutput | undefined {
+  // runtime: complete output, no truncation
+  if (isAgentCall) { return { type: "agent_call", targetAgent, response, status } }
+  return typeof observation.result === "string" ? observation.result : JSON.stringify(observation.result)
+}
+// frontend: agentCallDisplay(node.output)?.response with max-h-40 overflow-auto
+```
+
+#### Wrong — rendering ordinary tool output
+
+```typescript
+if (node.type === "tool" && node.output) { body.textContent = String(node.output).slice(0, 500) }
+// BAD: shows JSON noise for read/list/search; agent_call response buried in JSON
+```
+
+#### Correct — branch by output type
+
+```typescript
+if (node.type === "tool") {
+  const ac = agentCallDisplay(node.output)  // null for ordinary tools
+  if (ac) { body.textContent = ac.response }  // agent_call: player-readable
+  // ordinary: no body output, only status icon in head
+}
+```
+

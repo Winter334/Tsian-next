@@ -3,6 +3,7 @@ import type {
   AttachmentRef,
   ContentPart,
   ConversationMessageRecord,
+  TurnToolOutput,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
@@ -219,7 +220,7 @@ export interface AssistantChatInput {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: string,
+    output?: TurnToolOutput,
   ) => void
   /**
    * Optional external abort signal (e.g. a "stop generating" button). Aborting

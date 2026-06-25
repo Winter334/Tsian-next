@@ -116,6 +116,35 @@ export type RemotePlayBridgeEventName =
   | "turn-round-end"
   | "turn-tool"
 
+/**
+ * `turn-tool` 事件 output 字段形态。
+ *
+ - 普通工具：output 是原始结果字符串（平台侧不再截断，完整透传，UI 侧决定显示/截断）。
+ * - agent_call：output 是结构化对象，提取被调用 agent 的 title + response，
+ *   让前端不用解析整坨 JSON 即可渲染玩家可读的"调了谁 + 答了什么"。
+ *   截断交给 UI 侧；response 完整透传。
+ *
+ * discriminated union：前端按 `typeof output === "string"`（普通工具）vs
+ * `typeof output === "object" && output.type === "agent_call"`（agent_call）分流渲染。
+ * 旧前端收到 object output 时最坏情况是不显示（不匹配 string 渲染路径），不 break 功能。
+ */
+export type TurnToolOutput =
+  | string
+  | {
+      type: "agent_call"
+      targetAgent: {
+        id: string
+        title: string
+        summary?: string
+      }
+      response: string
+      status: "completed" | "failed"
+      error?: {
+        code: string
+        message: string
+      }
+    }
+
 export type RemotePlayBridgeEventPayload =
   | {
       snapshot: RuntimeSnapshotShell
@@ -143,7 +172,7 @@ export type RemotePlayBridgeEventPayload =
       callId: string
       name: string
       status: "loading" | "running" | "success" | "failed"
-      output?: string
+      output?: TurnToolOutput
     }
 
 export interface RemotePlayBridgeEventMessage {

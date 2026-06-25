@@ -266,7 +266,7 @@
                             aria-hidden="true"
                           />
                           <Wrench class="h-3 w-3" aria-hidden="true" />
-                          <span>{{ node.name }}</span>
+                          <span>{{ agentCallDisplay(node.output)?.title ?? node.name }}</span>
                           <span
                             :class="{
                               'text-neon/60': node.status === 'loading' || node.status === 'running',
@@ -280,10 +280,13 @@
                           </span>
                         </CollapsibleTrigger>
                         <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
+                          <!-- agent_call:显示被调用 agent 的 response（玩家可读，UI 侧控制高度）。
+                               失败时显示 error.message。普通工具统一不显 output（仅状态图标）。 -->
                           <div
-                            v-if="node.output"
-                            class="max-h-32 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 font-mono text-[10px] leading-4 text-text-dim"
-                          >{{ node.output }}</div>
+                            v-if="agentCallDisplay(node.output)"
+                            class="max-h-40 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 text-xs leading-5 text-text-dim"
+                            :class="agentCallDisplay(node.output)?.failed ? 'text-red-400' : ''"
+                          >{{ agentCallDisplay(node.output)?.response }}</div>
                         </CollapsibleContent>
                       </Collapsible>
                     </template>
@@ -576,11 +579,33 @@ import {
   setActiveAssistantSessionId,
   type AssistantSessionSummary,
 } from "../storage"
-import type { AttachmentRef } from "@tsian/contracts"
+import type { AttachmentRef, TurnToolOutput } from "@tsian/contracts"
 import AttachmentImage from "@/components/assistant/AttachmentImage.vue"
 
 // AssistantTimelineNode / ChatMessage 类型由 useAssistantTimeline composable 导出,
 // 这里 import 复用(见上方 import 块),避免视图 ↔ composable 循环依赖.
+
+/**
+ * 提取 agent_call 工具卡片的玩家可读内容（title + response）。
+ * 普通 tool（output 为 string）返回 null —— 按需求统一不显 output，只显状态。
+ * agent_call 成功返回 { title, response }；失败返回 { title, error }。
+ */
+function agentCallDisplay(output: TurnToolOutput | undefined): {
+  title: string
+  response: string
+  failed: boolean
+} | null {
+  if (typeof output !== "object" || output.type !== "agent_call") {
+    return null
+  }
+  return {
+    title: output.targetAgent.title || output.targetAgent.id || "agent_call",
+    response: output.status === "failed"
+      ? output.error?.message ?? "agent_call 失败"
+      : output.response,
+    failed: output.status === "failed",
+  }
+}
 
 /** 待发附件草稿(paste/drop/pick 添加后,send 前可移除). */
 interface PendingAttachment {

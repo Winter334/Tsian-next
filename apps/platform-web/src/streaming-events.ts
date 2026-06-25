@@ -19,6 +19,8 @@
  *   - 回调异常吞掉但 console.error，避免污染主链 fail loud 路径
  */
 
+import type { TurnToolOutput } from "@tsian/contracts"
+
 export type TurnDeltaKind = "reasoning" | "content"
 export type TurnDeltaListener = (agentId: string, delta: string, turn: number, round: number, kind: TurnDeltaKind) => void
 export type TurnRoundEndKind = "thought" | "final"
@@ -31,7 +33,7 @@ export type TurnToolListener = (
   callId: string,
   name: string,
   status: TurnToolStatus,
-  output?: string,
+  output?: TurnToolOutput,
 ) => void
 
 const turnDeltaListeners = new Set<TurnDeltaListener>()
@@ -92,7 +94,7 @@ export function emitTurnTool(
   callId: string,
   name: string,
   status: TurnToolStatus,
-  output?: string,
+  output?: TurnToolOutput,
 ): void {
   // 浅克隆：回调内 unsubscribe 不影响本轮派发
   const listeners = [...turnToolListeners]
