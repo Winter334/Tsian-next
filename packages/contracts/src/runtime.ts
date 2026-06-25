@@ -40,7 +40,7 @@ export interface AgentContextTurnEntry {
 
 /**
  * agent 会话上下文快照,持久化跨 turn 稳态("1 摘要 + 最近 K 轮正文").
- * 与可见消息存档(`saveHistory`/助手会话消息)分离:这里存的是 agent 视角的
+ * 与可见消息存档(turn 文件 `save/history/turns/`/助手会话消息)分离:这里存的是 agent 视角的
  * 上下文稳态,跨 turn/跨加载保持不膨胀不失忆.
  * system prompt / Workspace 上下文 / 当前回合号 / 玩家本轮输入不持久化
  * (每 turn 现构建),这里只存跨 turn 需保持的上下文段.

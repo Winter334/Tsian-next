@@ -155,6 +155,37 @@ export type TurnToolOutput =
       }
     }
 
+/**
+ * turn 内过程节点(thought/tool/interim),持久化到 workspace turn 文件
+ * `save/history/turns/turn-NNNNNN.json` 的 `processNodes` 字段.
+ *
+ * 与 composable 层的 `AssistantTimelineNode` 同构,多一个可选 `agentId` 字段
+ * (单 agent 场景如桌面助手可省,多 agent 场景如 delegated agent_call 必填,
+ * 让前端区分过程节点来自哪个 agent).
+ *
+ * - thought: tool_calls 轮的推理思维链,默认折叠.
+ * - tool: 工具调用节点,按 callId 去重,output 带 agent_call 结构化分支.
+ * - interim: tool_calls 轮模型在调用工具前输出的过渡文本(如"我先看一下…"),
+ *   当正常可见回复处理,始终展开.
+ *
+ * 从事件流(onDelta/onRoundEnd/onTool)累积而来——interim 语义只能从事件流
+ * 重建(靠 turn-round-end 的 kind=thought 区分过渡叙事 vs 最终回复),
+ * runtimeMessages 里 assistant.content 无法区分.
+ */
+export type TurnProcessNode =
+  | { type: "thought"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+  | {
+      type: "tool"
+      id: string
+      round: number
+      agentId?: string
+      name: string
+      status: "loading" | "running" | "success" | "failed"
+      output?: TurnToolOutput
+      collapsed: boolean
+    }
+  | { type: "interim"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+
 export type RemotePlayBridgeEventPayload =
   | {
       snapshot: RuntimeSnapshotShell

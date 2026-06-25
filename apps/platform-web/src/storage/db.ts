@@ -1,6 +1,5 @@
 import type {
   AttachmentRef,
-  ConversationMessageRecord,
   GameCardManifest,
   RuntimeSnapshotShell,
   WorkspaceScope,
@@ -62,11 +61,6 @@ export interface LocalSaveSnapshotRecord {
   snapshot: RuntimeSnapshotShell
 }
 
-export interface LocalSaveHistoryRecord {
-  saveId: string
-  messages: ConversationMessageRecord[]
-}
-
 export interface LocalWorkspaceFileRecord {
   /** Internal deterministic table key. */
   id: string
@@ -91,7 +85,6 @@ export interface LocalCheckpointRecord {
   reason: "initial" | "after-turn" | "manual"
   createdAt: number
   snapshot: RuntimeSnapshotShell
-  history: ConversationMessageRecord[]
   workspaceFiles: Array<Omit<LocalWorkspaceFileRecord, "id" | "saveId">>
 }
 
@@ -167,7 +160,6 @@ export class TsianLocalDb extends Dexie {
   gameCardFrontendFiles!: Table<LocalGameCardFrontendFileRecord, string>
   saves!: Table<LocalSaveRecord, string>
   saveSnapshots!: Table<LocalSaveSnapshotRecord, string>
-  saveHistory!: Table<LocalSaveHistoryRecord, string>
   checkpoints!: Table<LocalCheckpointRecord, string>
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
   assistantAttachments!: Table<LocalAssistantAttachmentRecord, string>
@@ -190,7 +182,6 @@ export class TsianLocalDb extends Dexie {
       gameCardFrontendFiles: "&id, gameCardId, path, updatedAt",
       saves: "&id, updatedAt",
       saveSnapshots: "&saveId",
-      saveHistory: "&saveId",
       checkpoints: "&id, saveId, createdAt, turn",
       workspaceFiles: "&id, saveId, path, updatedAt",
       assistantAttachments: "&id, sessionId, path, createdAt",

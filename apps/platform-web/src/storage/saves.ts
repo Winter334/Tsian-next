@@ -6,7 +6,6 @@ import type {
 import {
   localDb,
   type LocalGameCardRecord,
-  type LocalSaveHistoryRecord,
   type LocalSaveRecord,
   type LocalSaveSnapshotRecord,
 } from "./db"
@@ -20,8 +19,10 @@ import {
   createDefaultSaveRuntimeFiles,
   createLocalWorkspaceFileRecord,
   deleteWorkspaceForSave,
+  listWorkspaceFilesForSave,
   saveRuntimeFilesFromEffectiveWorkspace,
 } from "./workspace"
+import { getHistoryFromTurnFiles } from "../platform-host/history-turns"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
 
@@ -123,11 +124,6 @@ export async function createLocalSaveFromGameCard(
     },
   }
 
-  const historyRecord: LocalSaveHistoryRecord = {
-    saveId: save.id,
-    messages: history,
-  }
-
   const workspaceRecords = createDefaultSaveRuntimeFiles().map((file) =>
     createLocalWorkspaceFileRecord(save.id, file)
   )
@@ -136,7 +132,6 @@ export async function createLocalSaveFromGameCard(
     .sort((left, right) => left.path.localeCompare(right.path))
   const checkpoint = createCheckpointRecordForSave(save.id, {
     snapshot: snapshotRecord.snapshot,
-    history,
     reason: "initial",
     label: "初始状态",
     workspaceFiles: checkpointWorkspaceFiles,
@@ -147,14 +142,12 @@ export async function createLocalSaveFromGameCard(
     [
       localDb.saves,
       localDb.saveSnapshots,
-      localDb.saveHistory,
       localDb.workspaceFiles,
       localDb.checkpoints,
     ],
     async () => {
       await localDb.saves.put(save)
       await localDb.saveSnapshots.put(snapshotRecord)
-      await localDb.saveHistory.put(historyRecord)
 
       for (const record of workspaceRecords) {
         await localDb.workspaceFiles.put(record)
@@ -193,15 +186,10 @@ export async function saveRuntimeForSave(
     "rw",
     localDb.saves,
     localDb.saveSnapshots,
-    localDb.saveHistory,
     async () => {
       await localDb.saveSnapshots.put({
         saveId,
         snapshot: nextSnapshot,
-      })
-      await localDb.saveHistory.put({
-        saveId,
-        messages: normalizedMessages,
       })
 
       const save = await localDb.saves.get(saveId)
@@ -246,7 +234,6 @@ export async function commitSuccessfulRuntimeTurnForSave(
     .sort((left, right) => left.path.localeCompare(right.path))
   const checkpoint = createCheckpointRecordForSave(saveId, {
     snapshot: nextSnapshot,
-    history: normalizedMessages,
     reason: input.checkpointReason,
     workspaceFiles: checkpointWorkspaceFiles,
   }, now)
@@ -256,7 +243,6 @@ export async function commitSuccessfulRuntimeTurnForSave(
     [
       localDb.saves,
       localDb.saveSnapshots,
-      localDb.saveHistory,
       localDb.workspaceFiles,
       localDb.checkpoints,
     ],
@@ -264,10 +250,6 @@ export async function commitSuccessfulRuntimeTurnForSave(
       await localDb.saveSnapshots.put({
         saveId,
         snapshot: nextSnapshot,
-      })
-      await localDb.saveHistory.put({
-        saveId,
-        messages: normalizedMessages,
       })
 
       const existingWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
@@ -317,11 +299,9 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
     "rw",
     localDb.saves,
     localDb.saveSnapshots,
-    localDb.saveHistory,
     async () => {
       await localDb.saves.delete(saveId)
       await localDb.saveSnapshots.delete(saveId)
-      await localDb.saveHistory.delete(saveId)
     },
   )
 
@@ -337,22 +317,8 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
 export async function getHistoryForSave(
   saveId: string,
 ): Promise<ConversationMessageRecord[]> {
-  const record = await localDb.saveHistory.get(saveId)
-  return normalizeMessages(record?.messages)
-}
-
-export async function saveHistoryForSave(
-  saveId: string,
-  messages: ConversationMessageRecord[],
-): Promise<void> {
-  const snapshot = await getSnapshotForSave(saveId)
-  await saveRuntimeForSave(saveId, {
-    ...snapshot,
-    state: {
-      ...snapshot.state,
-      messages,
-    },
-  }, messages)
+  const files = await listWorkspaceFilesForSave(saveId)
+  return getHistoryFromTurnFiles(files)
 }
 
 export async function createCheckpointFromCurrentSave(
@@ -362,7 +328,6 @@ export async function createCheckpointFromCurrentSave(
 ) {
   return createCheckpointForSave(saveId, {
     snapshot: await getSnapshotForSave(saveId),
-    history: await getHistoryForSave(saveId),
     reason,
     label,
   })

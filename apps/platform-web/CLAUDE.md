@@ -62,7 +62,6 @@ Tables:
 - `gameCardFrontendFiles`
 - `saves`
 - `saveSnapshots`
-- `saveHistory`
 - `checkpoints`
 - `workspaceFiles`
 

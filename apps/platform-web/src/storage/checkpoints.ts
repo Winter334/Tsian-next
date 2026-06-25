@@ -1,8 +1,7 @@
-import type { CheckpointSummary, RuntimeSnapshotShell } from "@tsian/contracts"
+import type { CheckpointSummary, ConversationMessageRecord, RuntimeSnapshotShell } from "@tsian/contracts"
 import {
   localDb,
   type LocalCheckpointRecord,
-  type LocalSaveHistoryRecord,
 } from "./db"
 import {
   createLocalWorkspaceFileRecord,
@@ -30,7 +29,7 @@ export function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpo
     label: record.label,
     reason: record.reason,
     createdAt: record.createdAt,
-    messageCount: record.history.length,
+    messageCount: record.snapshot.state.messages.length,
     workspaceFileCount: record.workspaceFiles.length,
   }
 }
@@ -39,7 +38,6 @@ export function createCheckpointRecordForSave(
   saveId: string,
   input: {
     snapshot: RuntimeSnapshotShell
-    history: LocalSaveHistoryRecord["messages"]
     reason: LocalCheckpointRecord["reason"]
     label?: string
     workspaceFiles: CheckpointWorkspaceFile[]
@@ -55,7 +53,6 @@ export function createCheckpointRecordForSave(
     reason: input.reason,
     createdAt,
     snapshot: input.snapshot,
-    history: input.history,
     workspaceFiles: input.workspaceFiles,
   }
 }
@@ -64,7 +61,6 @@ export async function createCheckpointForSave(
   saveId: string,
   input: {
     snapshot: RuntimeSnapshotShell
-    history: LocalSaveHistoryRecord["messages"]
     reason: LocalCheckpointRecord["reason"]
     label?: string
   },
@@ -100,17 +96,12 @@ export async function restoreCheckpointForSave(
     [
       localDb.saves,
       localDb.saveSnapshots,
-      localDb.saveHistory,
       localDb.workspaceFiles,
     ],
     async () => {
       await localDb.saveSnapshots.put({
         saveId,
         snapshot: checkpoint.snapshot,
-      })
-      await localDb.saveHistory.put({
-        saveId,
-        messages: checkpoint.history,
       })
 
       const workspaceFiles = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()

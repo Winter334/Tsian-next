@@ -109,6 +109,7 @@ import {
   stageAgentContextFile,
   stageRawAirpHistoryTurnFile,
 } from "./history-turns"
+import { createTurnTimelineCollector } from "./turn-timeline-collector"
 import {
   generateAssistantReply,
   generateAssistantReplyNative,
@@ -735,6 +736,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
         const contextTokenBudget = resolveTokenBudget(
           masterConfig?.parameters.contextWindow ?? null,
         )
+        // 过程节点累积器:从事件流累积 thought/tool/interim,turn 收尾写入 turn 文件.
+        // 与前端 turnProcessLog 用同一份事件数据,节点带 agentId 区分 delegated agent.
+        const timelineCollector = createTurnTimelineCollector()
         const result = await runAgentRuntimeTurn(
           {
             agentId: "master",
@@ -750,9 +754,19 @@ export const playFrontendBridge: PlayFrontendBridge = {
             // No timeoutMs — master relies on one-shot compression + user abort,
             // a timeout would mis-kill narrative deep thought (design §0/§1.3 约束8).
             compressionMode: "narrative",
-            onDelta: (agentId, delta, round, kind) => emitTurnDelta(agentId, delta, nextTurn, round, kind),
-            onRoundEnd: (agentId, round, finishReason) => emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason)),
-            onTool: (agentId, round, callId, name, status, output) => emitTurnTool(agentId, nextTurn, round, callId, name, status, output),
+            // 三个回调同时 emit 事件(给前端实时渲染)+ 喂 collector(给 turn 文件持久化).
+            onDelta: (agentId, delta, round, kind) => {
+              emitTurnDelta(agentId, delta, nextTurn, round, kind)
+              timelineCollector.onDelta(agentId, delta, round, kind)
+            },
+            onRoundEnd: (agentId, round, finishReason) => {
+              emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason))
+              timelineCollector.onRoundEnd(agentId, round, finishReason)
+            },
+            onTool: (agentId, round, callId, name, status, output) => {
+              emitTurnTool(agentId, nextTurn, round, callId, name, status, output)
+              timelineCollector.onTool(agentId, round, callId, name, status, output)
+            },
             onAskUser: (requestId, request) => emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
           },
           {
@@ -855,6 +869,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           entryAgentId: "master",
           userInput: content,
           assistantOutput: result.replyText,
+          processNodes: timelineCollector.getProcessNodes(),
         })
         // R4:写回 master agent 会话上下文快照(本轮正文追加 + 压缩结果落盘)
         const contextUpdate = result.contextUpdate

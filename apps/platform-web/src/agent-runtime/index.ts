@@ -133,7 +133,7 @@ export interface AgentRuntimeTurnInput {
   /**
    * master agent 会话上下文快照(从工作区 `agents/master/context.json` 读取注入).
    * 提供 → buildEntryAgentMessages 用其 summary+recentTurns 拼"最近对话"区
-   * (替代 saveHistory slice(-20)).未提供 → 兜底用 recentHistory 旧逻辑.
+   * (替代 turn 文件重建历史 slice(-20)).未提供 → 兜底用 recentHistory 旧逻辑.
    * 详见任务 06-19-agent-session-context-lifecycle.
    */
   agentContext?: AgentContextSnapshot
@@ -949,7 +949,7 @@ function buildEntryAgentMessages(
   const turnLabel = isAssistant ? "当前问答轮次" : "当前回合"
   const inputLabel = isAssistant ? "用户本轮提问" : "玩家本轮输入"
   // 剧情正文层:优先用注入的 context 快照(独立 message 序列);未注入则从
-  // recentHistory(saveHistory)兜底——旧逻辑 formatHistory 也是拍扁文本,这里
+  // recentHistory(turn 文件重建)兜底——旧逻辑 formatHistory 也是拍扁文本,这里
   // 保持兜底用文本形式(首 turn/旧存档迁移场景,非稳态路径).
   const historyMessages: AiChatMessage[] = agentContext
     ? buildAgentContextMessages(agentContext, isAssistant)
@@ -1959,7 +1959,7 @@ export async function runAgentRuntimeTurn(
   })
 
   // master agent 会话上下文:优先用注入的 context.json 快照;未注入则从
-  // recentHistory(saveHistory)兜底初始化(design §3.1 首 turn/旧存档迁移).
+  // recentHistory(turn 文件重建)兜底初始化(design §3.1 首 turn/旧存档迁移).
   // saveId 占位空串:runtime 层不知真实 saveId,host 落盘(R4)时用真实 saveId 重建.
   // R3 在此之后插入"超阈值压缩".
   let agentContext: AgentContextSnapshot | null = input.agentContext ?? null

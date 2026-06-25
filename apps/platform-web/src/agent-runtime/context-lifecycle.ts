@@ -11,7 +11,7 @@ import type { RuntimeTraceDebugLabel } from "./trace"
 /**
  * master agent 会话上下文生命周期与压缩持久化.
  *
- * 与玩家剧情正文存档(`saveHistory`)分离:这里管的是 master agent 视角的
+ * 与玩家剧情正文存档(turn 文件 `save/history/turns/`)分离:这里管的是 master agent 视角的
  * "1 摘要 + 最近 K 轮正文"稳态,持久化到工作区 `save/agents/master/context.json`,
  * 跨 turn/跨加载保持上下文不膨胀不失忆.详见任务
  * `06-19-agent-session-context-lifecycle` 的 design.md.
@@ -213,7 +213,7 @@ export function createEmptyAgentContext(
 }
 
 /**
- * 从 saveHistory(玩家剧情正文存档)最近 K 轮初始化快照.
+ * 从 turn 文件(玩家剧情正文存档)最近 K 轮初始化快照.
  * 用于旧存档首次跑新代码时 context.json 不存在的兜底(design §3.1).
  * ConversationMessageRecord.role 是 string,这里只接受 "user"/"assistant" 的剧情正文.
  *
