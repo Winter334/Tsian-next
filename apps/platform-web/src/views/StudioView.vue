@@ -64,15 +64,10 @@
                 <span class="flex items-center gap-1.5">
                   <span class="truncate text-sm font-bold text-text-main">{{ agent.title }}</span>
                   <span
-                    v-if="agent.entryMode === 'persistent'"
-                    class="shrink-0 border border-neon-deep/40 bg-neon/5 px-1 font-mono text-[9px] uppercase tracking-wider text-neon-muted"
-                    title="入口 Agent：可作为独立入口被调用（invokeAgent）"
-                  >入口</span>
-                  <span
                     v-if="agent.system"
-                    class="shrink-0 border border-neon-deep/40 bg-elevated px-1 font-mono text-[9px] uppercase tracking-wider text-text-dim/70"
-                    title="系统级 Agent：不可删除或重命名"
-                  >系统</span>
+                    class="shrink-0 border border-neon-deep/40 bg-neon/5 px-1 font-mono text-[9px] uppercase tracking-wider text-neon-muted"
+                    title="主入口 Agent：系统级，作为每回合的固定入口，不可删除或重命名"
+                  >主入口</span>
                 </span>
                 <span class="line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(agent.summary) }}</span>
                 <span class="font-mono text-[11px] text-neon-muted">{{ enabledSkillCount(agent) }} 个已启用 Skill</span>
