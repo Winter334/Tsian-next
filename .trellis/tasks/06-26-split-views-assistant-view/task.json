@@ -3,7 +3,7 @@
   "name": "split-views-assistant-view",
   "title": "拆分 views/AssistantView.vue",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
