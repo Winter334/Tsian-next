@@ -11,6 +11,7 @@
 3. **原文件降为 barrel re-export**：消费方导入路径零改动，内部重构对公共 API 不可见。
 4. **防循环导入**：子模块需要原文件 helper 时，把 helper 抽到 shared internal module，**不要 import barrel**。`index ↔ sub-module` 循环在 ESM 能跑但脆弱、伤 tree-shaking、破坏 HMR。
 5. **shared state 用 accessor 模式**：多子模块共享的 module-level state 放专门 state module + accessor（`getRuntimeEngine()`），state module 不 import 子模块 → 无环。不跨多调用点传 state 参数。
+6. **脚本提取用标记锚点，不用行号（强制）**：用脚本/工具从原文件提取代码块搬到子模块时，先在块的首尾插入唯一标记（如 `// SPLIT-MOVE: <name> START` / `END`），再基于标记定位提取，**不要依赖行号**。此前 `06-22-split-platform-host-index` 拆分已证明：每提取一块原文件就缩短，行号随之漂移，依赖行号的后续提取会错位。提取完成后删除标记。
 
 ## 2. 兼容性策略（已定：统一 barrel re-export）
 

@@ -54,6 +54,7 @@ A seam is a boundary where one responsibility ends and another begins. Seams are
 - **One seam per commit**, each followed by a green build. A failed commit is `git revert`-ed; prior seams stay.
 - **Keep the original file as a barrel** (re-export) so consumer import paths don't change. Internal restructuring should be invisible to the public API.
 - **Watch for circular imports**: if sub-module A needs a helper that stays in the original file, extract that helper to a shared internal module rather than importing the barrel. Circular `index ↔ sub-module` imports work in ESM but are fragile, hurt tree-shaking, and break HMR.
+- **Anchor extractions on markers, not line numbers**: when moving a block out of the original file with a script or tool, insert unique comment markers (e.g. `// SPLIT-MOVE: <name> START` / `// SPLIT-MOVE: <name> END`) at the block boundaries and extract by marker. Line numbers drift as each earlier extraction shrinks the file — the `06-22-split-platform-host-index` split proved this causes mis-extraction. Remove the markers after the move.
 
 ### Handle shared state
 
