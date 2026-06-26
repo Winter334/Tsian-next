@@ -1,0 +1,33 @@
+{
+  "id": "large-file-split-refactor",
+  "name": "large-file-split-refactor",
+  "title": "大文件拆分重构：agent-runtime / storage / views",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-26",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-26-split-storage-workspace",
+    "06-26-split-agent-runtime-workspace-tools",
+    "06-26-split-agent-runtime-workspace-operations",
+    "06-26-split-runtime-host-ai",
+    "06-26-split-agent-runtime-index",
+    "06-26-split-views-assistant-view"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
