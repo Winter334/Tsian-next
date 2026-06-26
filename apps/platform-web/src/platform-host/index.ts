@@ -21,6 +21,7 @@ import type {
   RuntimeSnapshotShell,
   SkillDetailEntry,
   SkillRegistryEntry,
+  TurnStats,
   WorkspaceDeleteResult,
   WorkspaceListResult,
   WorkspaceFile,
@@ -84,7 +85,7 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
-import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions } from "../streaming-events"
+import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats } from "../streaming-events"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   getBaseBridge,
@@ -904,13 +905,27 @@ export const playFrontendBridge: PlayFrontendBridge = {
           nextHistory,
         )
 
+        // 本轮 token usage（来自 runtime 最后一轮 model call）。
+        // 耗时由前端自己计时（setInterval），不在此处记录。
+        const usage = result.usage
+        const turnStats: TurnStats | undefined = usage
+          ? {
+              ...(usage.input !== undefined ? { inputTokens: usage.input } : {}),
+              ...(usage.output !== undefined ? { outputTokens: usage.output } : {}),
+              ...(usage.total !== undefined ? { totalTokens: usage.total } : {}),
+            }
+          : undefined
+
         stageRawAirpHistoryTurnFile(workspaceTransaction, {
           turn: nextTurn,
           entryAgentId: "master",
           userInput: content,
           assistantOutput: cleanReply,
           processNodes: timelineCollector.getProcessNodes(),
+          ...(turnStats ? { stats: turnStats } : {}),
         })
+        // 通知前端 token 消耗（耗时由前端自己计时，不在此 emit）。
+        if (turnStats) emitTurnStats(nextTurn, turnStats)
         // R4:写回 master agent 会话上下文快照(本轮正文追加 + 压缩结果落盘)
         // contextUpdate.assistant 是原始 replyText(含选项块),改传 cleanReply 保持上下文干净.
         const contextUpdate = result.contextUpdate

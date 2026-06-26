@@ -19,7 +19,7 @@
  *   - 回调异常吞掉但 console.error，避免污染主链 fail loud 路径
  */
 
-import type { TurnToolOutput } from "@tsian/contracts"
+import type { TurnStats, TurnToolOutput } from "@tsian/contracts"
 
 export type TurnDeltaKind = "reasoning" | "content"
 export type TurnDeltaListener = (agentId: string, delta: string, turn: number, round: number, kind: TurnDeltaKind) => void
@@ -36,11 +36,13 @@ export type TurnToolListener = (
   output?: TurnToolOutput,
 ) => void
 export type TurnOptionsListener = (turn: number, options: string[]) => void
+export type TurnStatsListener = (turn: number, stats: TurnStats) => void
 
 const turnDeltaListeners = new Set<TurnDeltaListener>()
 const turnRoundEndListeners = new Set<TurnRoundEndListener>()
 const turnToolListeners = new Set<TurnToolListener>()
 const turnOptionsListeners = new Set<TurnOptionsListener>()
+const turnStatsListeners = new Set<TurnStatsListener>()
 
 export function subscribeTurnDelta(cb: TurnDeltaListener): () => void {
   turnDeltaListeners.add(cb)
@@ -131,6 +133,29 @@ export function emitTurnOptions(turn: number, options: string[]): void {
     } catch (err) {
       // 流式通道异常不冒泡到主链
       console.error("[streaming-events] turn-options listener threw", err)
+    }
+  }
+}
+
+export function subscribeTurnStats(cb: TurnStatsListener): () => void {
+  turnStatsListeners.add(cb)
+  return () => {
+    turnStatsListeners.delete(cb)
+  }
+}
+
+/** emit turn-stats:turn 收尾时把本轮耗时 + token usage 通知前端,
+ *  供正文末尾显示 meta 行。与 turn-options 同总线,remote-iframe-bridge
+ *  转发为 `turn-stats` 事件。 */
+export function emitTurnStats(turn: number, stats: TurnStats): void {
+  // 浅克隆：回调内 unsubscribe 不影响本轮派发
+  const listeners = [...turnStatsListeners]
+  for (const listener of listeners) {
+    try {
+      listener(turn, stats)
+    } catch (err) {
+      // 流式通道异常不冒泡到主链
+      console.error("[streaming-events] turn-stats listener threw", err)
     }
   }
 }

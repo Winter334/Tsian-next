@@ -39,5 +39,6 @@ export type {
   AskUserRequest,
   AskUserResult,
   TurnProcessNode,
+  TurnStats,
   SessionHistoryEntry,
 } from "@tsian/contracts"

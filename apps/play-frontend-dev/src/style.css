@@ -146,6 +146,13 @@ body {
 /* ── markdown 渲染（prose）── */
 .prose p { margin: 0 0 0.8em; }
 .prose p:last-child { margin-bottom: 0; }
+/* turn stats meta 行：耗时 + token，正文末尾轻量小字 */
+.turn-meta {
+  margin-top: 0.6em; margin-bottom: 0;
+  font-family: var(--mono); font-size: 10px; line-height: 1;
+  color: var(--whisper); letter-spacing: 0.04em;
+  user-select: none;
+}
 .prose h1, .prose h2, .prose h3, .prose h4 {
   margin: 1.2em 0 0.4em; color: var(--ember); font-weight: 700; line-height: 1.3;
 }

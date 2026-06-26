@@ -4,6 +4,7 @@ import type {
   RuntimeSnapshotShell,
   SessionHistoryEntry,
   TurnProcessNode,
+  TurnStats,
   WorkspaceFile,
 } from "@tsian/contracts"
 import type { RuntimeWorkspaceTransaction } from "../storage"
@@ -30,6 +31,8 @@ interface RawAirpHistoryTurnRecord {
   /** turn 内过程节点(thought/tool/interim).native 模式从事件流累积写入;
    *  text 模式不发过程事件,此字段为 undefined(不写入). */
   processNodes?: TurnProcessNode[]
+  /** 本轮资源消耗统计（耗时 + token），供前端显示 meta 行。 */
+  stats?: TurnStats
 }
 
 function formatRawAirpHistoryTurnPath(turn: number): string {
@@ -43,6 +46,7 @@ function serializeRawAirpHistoryTurnRecord(
   userInput: string,
   assistantOutput: string,
   processNodes?: TurnProcessNode[],
+  stats?: TurnStats,
 ): string {
   const record: RawAirpHistoryTurnRecord = {
     schema: AIRP_HISTORY_TURN_SCHEMA,
@@ -57,6 +61,7 @@ function serializeRawAirpHistoryTurnRecord(
       { role: "assistant", content: assistantOutput },
     ],
     ...(processNodes && processNodes.length > 0 ? { processNodes } : {}),
+    ...(stats ? { stats } : {}),
   }
 
   return `${JSON.stringify(record, null, 2)}\n`
@@ -120,6 +125,7 @@ export function stageRawAirpHistoryTurnFile(
     userInput: string
     assistantOutput: string
     processNodes?: TurnProcessNode[]
+    stats?: TurnStats
   },
 ): WorkspaceFile {
   const path = formatRawAirpHistoryTurnPath(input.turn)
@@ -132,6 +138,7 @@ export function stageRawAirpHistoryTurnFile(
       input.userInput,
       input.assistantOutput,
       input.processNodes,
+      input.stats,
     ),
   })
 }
@@ -172,6 +179,7 @@ export function parseRawAirpHistoryTurnRecord(
     },
     messages,
     ...(Array.isArray(obj.processNodes) ? { processNodes: obj.processNodes as TurnProcessNode[] } : {}),
+    ...(obj.stats && typeof obj.stats === "object" ? { stats: obj.stats as TurnStats } : {}),
   }
 }
 
@@ -222,6 +230,7 @@ export function getSessionHistoryFromTurnFiles(
       createdAt: record.createdAt,
       messages: record.messages,
       ...(record.processNodes ? { processNodes: record.processNodes } : {}),
+      ...(record.stats ? { stats: record.stats } : {}),
     })
   }
   entries.sort((left, right) => left.turn - right.turn)

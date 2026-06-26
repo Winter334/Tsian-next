@@ -15,6 +15,7 @@ import type {
   RuntimeSnapshotShell,
   ConversationMessageRecord,
   SessionHistoryEntry,
+  TurnStats,
   TurnToolOutput,
 } from "@tsian/play-bridge"
 
@@ -60,6 +61,8 @@ interface TurnState {
   streamingText: string
   streamingReasoning: string
   content: string
+  /** 本轮资源消耗统计（耗时 + token），turn-stats 事件到达时填充。 */
+  stats?: TurnStats
 }
 
 interface TurnEls {
@@ -157,8 +160,19 @@ function renderSessionHistory(entries: SessionHistoryEntry[]): void {
         for (const el of renderTimeline(entry.processNodes)) zone.appendChild(el)
         inner.appendChild(zone)
       }
-      // assistant 正文(最终回复)
-      for (const m of assistantMsgs) inner.appendChild(renderMessageEl(m))
+      // assistant 正文(最终回复) + token meta 行（重载无耗时数据，只显 token）
+      for (const m of assistantMsgs) {
+        const el = renderMessageEl(m)
+        const tokenText = formatTokenStats(entry.stats)
+        if (tokenText) {
+          const meta = document.createElement("p")
+          meta.className = "turn-meta"
+          meta.textContent = `· ${tokenText}`
+          const body = el.querySelector(".msg-body")
+          if (body) body.appendChild(meta)
+        }
+        inner.appendChild(el)
+      }
     }
   }
   $story.appendChild(inner)
@@ -183,6 +197,77 @@ function renderMessageEl(m: ConversationMessageRecord): HTMLDivElement {
   body.innerHTML = renderMarkdown(m.content || "")
   div.appendChild(role); div.appendChild(body)
   return div
+}
+
+// ════════════════════════════════════════════════════════════════
+// turn stats meta 行（实时耗时 + token，显示在 assistant 正文末尾）
+// ════════════════════════════════════════════════════════════════
+
+// 实时计时器：beginTurn 启动，finalizeTurn 停止。耗时纯前端计，
+// token 走 host 的 turn-stats 事件（前端算不了 token）。
+let turnTimerId: ReturnType<typeof setInterval> | null = null
+let turnStartedAt = 0
+/** 当前回合的 meta 元素引用，实时计时器和 finalizeTurn 共用更新。 */
+let turnMetaEl: HTMLParagraphElement | null = null
+
+/** 把毫秒格式化成人类可读的耗时（如 "4.2s"、"1.3min"）。 */
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`
+  return `${(ms / 60_000).toFixed(1)}min`
+}
+
+/** 把 token 数格式化成紧凑显示（如 "1.2k"、"12k"、"1.3M"）。 */
+function formatTokens(n: number): string {
+  if (n < 1000) return String(n)
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`
+  return `${(n / 1_000_000).toFixed(1)}M`
+}
+
+/** 把 TurnStats 的 token 部分格式化（如 "1.2k tokens"），无数据返回空。 */
+function formatTokenStats(stats: TurnStats | undefined): string {
+  if (!stats) return ""
+  const tokens = stats.totalTokens ?? stats.inputTokens ?? stats.outputTokens
+  if (tokens === undefined) return ""
+  return `${formatTokens(tokens)} tokens`
+}
+
+/** 创建 stats meta DOM 元素，初始只显示耗时（计时器实时更新）。
+ *  token 在 finalizeTurn 时追加（turn-stats 事件到达后）。 */
+function createStatsMeta(): HTMLParagraphElement {
+  const p = document.createElement("p")
+  p.className = "turn-meta"
+  p.textContent = "· 0.0s"
+  return p
+}
+
+/** 更新 meta 元素的文本：耗时 + token（token 有则追加）。 */
+function updateStatsMeta(el: HTMLParagraphElement, durationMs: number, tokenText: string): void {
+  const parts = [formatDuration(durationMs)]
+  if (tokenText) parts.push(tokenText)
+  el.textContent = `· ${parts.join(" · ")}`
+}
+
+/** 启动实时计时器：每 200ms 更新 meta 元素的耗时显示。 */
+function startTurnTimer(): void {
+  stopTurnTimer()
+  turnStartedAt = Date.now()
+  turnTimerId = setInterval(() => {
+    if (turnMetaEl) {
+      updateStatsMeta(turnMetaEl, Date.now() - turnStartedAt, formatTokenStats(turnState?.stats))
+    }
+  }, 200)
+}
+
+/** 停止计时器，把 meta 元素更新为最终耗时 + token。 */
+function stopTurnTimer(): void {
+  if (turnTimerId !== null) {
+    clearInterval(turnTimerId)
+    turnTimerId = null
+  }
+  if (turnMetaEl) {
+    updateStatsMeta(turnMetaEl, Date.now() - turnStartedAt, formatTokenStats(turnState?.stats))
+  }
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -397,6 +482,10 @@ function beginTurn(): void {
   streamEl.appendChild(sbody)
   inner.appendChild(streamEl)
   currentTurnEls = { processZone, streamEl, streamBody: sbody }
+  // stats meta 元素：放在正文区，回合进行中实时跳动计时。
+  turnMetaEl = createStatsMeta()
+  sbody.appendChild(turnMetaEl)
+  startTurnTimer()
   maybeScrollDown()
 }
 
@@ -507,10 +596,16 @@ function finalizeTurn(): void {
     // 重渲染过程节点(折叠态)
     renderProcessNodes()
   }
+  // 停止实时计时器
+  stopTurnTimer()
   // 流式正文区 → 正式正文区,剥离本地选项块显示干净正文
   if (currentTurnEls?.streamBody && turnState) {
     const { cleanText } = parseStoryOptions(turnState.content)
     currentTurnEls.streamBody.innerHTML = renderMarkdown(cleanText)
+    // innerHTML 重写后 turnMetaEl 已失效，重建并追加到正文末尾
+    turnMetaEl = createStatsMeta()
+    updateStatsMeta(turnMetaEl, Date.now() - turnStartedAt, formatTokenStats(turnState.stats))
+    currentTurnEls.streamBody.appendChild(turnMetaEl)
   }
   if (currentTurnEls?.streamEl) {
     currentTurnEls.streamEl.classList.remove("streaming-msg")
@@ -565,6 +660,14 @@ function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlayBridge
   }
   if (event === "turn-round-end") {
     finalizeRound(payload)
+    return
+  }
+  if (event === "turn-stats") {
+    // turn-stats 在 turn-completed 之前到达（host 收尾阶段先 emit stats 再 emit snapshot）。
+    // 缓存到 turnState，finalizeTurn 时渲染到正文末尾。
+    if (!turnState) return
+    if (!("stats" in payload)) return
+    turnState.stats = payload.stats
     return
   }
   // turn-completed 由 onSnapshot 处理（覆盖渲染）

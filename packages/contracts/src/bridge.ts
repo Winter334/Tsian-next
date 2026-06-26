@@ -131,6 +131,7 @@ export type RemotePlayBridgeEventName =
   | "turn-debug-ready"
   | "turn-delta"
   | "turn-round-end"
+  | "turn-stats"
   | "turn-tool"
   | "turn-options"
   | "interaction-request"
@@ -168,6 +169,18 @@ export type { TurnToolOutput } from "./runtime"
  */
 export type { TurnProcessNode } from "./runtime"
 
+/** 单个 turn 的 token 消耗统计，供前端在正文末尾显示 meta 行。
+ *  耗时由前端自己计时（setInterval），不在此结构中——本结构只承载
+ *  前端无法自行获取的 provider token usage。所有字段可选。 */
+export interface TurnStats {
+  /** provider 报告的 input tokens（最后一轮，代表完整上下文大小）。 */
+  inputTokens?: number
+  /** provider 报告的 output tokens。 */
+  outputTokens?: number
+  /** provider 报告的 total tokens（input + output 或 provider 直接给）。 */
+  totalTokens?: number
+}
+
 /**
  * 单个 turn 的完整玩家视角数据,由 host 从 workspace turn 文件重建,
  * 经 `query.query({ resource: "session-history" })` 一次返回全部 turn.
@@ -179,6 +192,8 @@ export interface SessionHistoryEntry {
   messages: ConversationMessageRecord[]
   /** turn 内过程节点(native 模式有,text 模式可能为空). */
   processNodes?: TurnProcessNode[]
+  /** 本轮资源消耗统计（耗时 + token），供前端显示 meta 行。 */
+  stats?: TurnStats
 }
 
 export type RemotePlayBridgeEventPayload =
@@ -209,6 +224,10 @@ export type RemotePlayBridgeEventPayload =
       name: string
       status: "loading" | "running" | "success" | "failed"
       output?: TurnToolOutput
+    }
+  | {
+      turn: number
+      stats: TurnStats
     }
   | {
       turn: number

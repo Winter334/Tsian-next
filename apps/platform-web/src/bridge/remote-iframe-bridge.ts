@@ -14,7 +14,7 @@ import type {
   RemotePlayBridgeResponseMessage,
 } from "@tsian/contracts"
 
-import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions } from "../streaming-events"
+import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats } from "../streaming-events"
 import { subscribeInteractionRequest, resolveInteractionRequest } from "../interaction-events"
 
 export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
@@ -540,6 +540,12 @@ export function mountRemoteIframeFrontend(
     postEvent("turn-options", { turn, options })
   })
 
+  // Forward turn stats (duration + token usage) to the remote frontend as
+  // `turn-stats`, so it can render a meta line below the assistant reply.
+  const unsubscribeTurnStats = subscribeTurnStats((turn, stats) => {
+    postEvent("turn-stats", { turn, stats })
+  })
+
   // Forward ask_user interaction requests to the remote frontend as
   // `interaction-request`, so it can render the question + options UI.
   // The player's answer comes back via the `interaction.respond` RPC.
@@ -563,6 +569,7 @@ export function mountRemoteIframeFrontend(
     unsubscribeTurnRoundEnd?.()
     unsubscribeTurnTool?.()
     unsubscribeTurnOptions?.()
+    unsubscribeTurnStats?.()
     unsubscribeInteractionRequest?.()
     unsubscribeTurnDelta?.()
     if (iframe.parentElement === container) {
