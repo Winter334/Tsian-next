@@ -25,9 +25,9 @@ export type AssistantTimelineNode =
       question: string
       options?: string[]
       allowCustom?: boolean
-      /** 玩家回答后填入（resolveInteractionRequest 的 answer）。未回答时 undefined。 */
+      /** 玩家回答后填入（resolveInteractionRequest 的 answer）。 */
       answer?: string
-      /** 玩家取消时 true。未交互时 undefined。 */
+      /** 玩家取消时 true。 */
       cancelled?: boolean
       collapsed: boolean
     }
@@ -138,15 +138,20 @@ export function useAssistantTimeline(
   }
 
   /**
-   * ask_user 工具触发时插入一个 ask 节点（由 AssistantView 订阅
-   * subscribeInteractionRequest 后调用）。节点渲染为提问卡片，玩家回答后
-   * 用 resolveAskNode 更新为已答态。
+   * ask_user 交互结束（玩家回答或取消）后，把这次 Q&A 作为只读记录写入
+   * timeline（由 AssistantView 在 resolveInteractionRequest 后调用）。
+   *
+   * 活跃提问期间不在 timeline 渲染交互卡片——提问 UI 由 footer 输入框变形
+   * 承载（问题常驻焦点位，不与普通输入框并存）。仅在回答/取消后才落 timeline，
+   * 保留对话历史可回看。已答/已取消节点在 finalize 时折叠。
    */
-  function pushAskNode(input: {
+  function recordAskNode(input: {
     requestId: string
     question: string
     options?: string[]
     allowCustom?: boolean
+    answer?: string
+    cancelled?: boolean
   }): void {
     timeline.push({
       type: "ask",
@@ -157,22 +162,9 @@ export function useAssistantTimeline(
       collapsed: false,
       ...(input.options ? { options: input.options } : {}),
       ...(input.allowCustom !== undefined ? { allowCustom: input.allowCustom } : {}),
+      ...(input.answer !== undefined ? { answer: input.answer } : {}),
+      ...(input.cancelled ? { cancelled: true } : {}),
     })
-    onUpdate?.()
-  }
-
-  /**
-   * 玩家回答/取消后更新对应 ask 节点为已答态（由 AssistantView 在
-   * resolveInteractionRequest 后调用）。已答节点在 finalize 时折叠。
-   */
-  function resolveAskNode(requestId: string, answer: string | undefined, cancelled: boolean): void {
-    const node = timeline.find(
-      (n): n is AssistantTimelineNode & { type: "ask" } => n.type === "ask" && n.requestId === requestId,
-    )
-    if (node) {
-      if (answer !== undefined) node.answer = answer
-      if (cancelled) node.cancelled = cancelled
-    }
     onUpdate?.()
   }
 
@@ -238,8 +230,7 @@ export function useAssistantTimeline(
     onDelta,
     onRoundEnd,
     onTool,
-    pushAskNode,
-    resolveAskNode,
+    recordAskNode,
     flushStreaming,
     finalize,
   }
