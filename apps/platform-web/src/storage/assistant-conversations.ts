@@ -66,7 +66,13 @@ function normalizeMessages(
     if (typeof item?.role === "string" && typeof item.content === "string") {
       // 保留 attachments 字段(附件引用元数据);非数组或缺失时省略.
       const attachments = Array.isArray(item.attachments) ? { attachments: item.attachments } : {}
-      return { role: item.role, content: item.content, ...attachments }
+      // 保留 toolCalls 字段(助手工具调用跨 turn 保留,agent 层用);
+      // 非数组或缺失时省略.
+      const toolCalls = Array.isArray(item.toolCalls) ? { toolCalls: item.toolCalls } : {}
+      // 保留 processNodes 字段(thought/tool/interim 按发生顺序,UI 层重建 timeline);
+      // 非数组或缺失时省略.
+      const processNodes = Array.isArray(item.processNodes) ? { processNodes: item.processNodes } : {}
+      return { role: item.role, content: item.content, ...attachments, ...toolCalls, ...processNodes }
     }
     return []
   })

@@ -25,17 +25,89 @@ export interface ConversationMessageRecord {
   /** 附件元数据列表. 不持久化 Blob 本体(Blob 存 Dexie 表);
    *  这里只存引用路径,加载时按路径从附件表取回 Blob. */
   attachments?: AttachmentRef[]
+  /** assistant 消息的工具调用记录(仅助手填). agent 层用:context.json rebuild
+   *  还原为 tool_call + tool_result message.UI 层挂消息上不占条数名额,
+   *  随消息截到 MAX_STORED_MESSAGES 保留/丢弃;不压缩,完整保留. */
+  toolCalls?: AgentContextToolCall[]
+  /** assistant 消息的过程节点(thought/tool/interim,按发生顺序). UI 层用:
+   *  刷新/重进会话后重建 timeline 历史节点(保留交错顺序).与 toolCalls 分离——
+   *  toolCalls 服务 agent 上下文(需要 observation/arguments),processNodes 服务
+   *  UI 显示(需要 TurnToolOutput 形态的 output).仅助手填,不压缩完整保留. */
+  processNodes?: TurnProcessNode[]
+}
+
+/** 工具调用输出(喂 UI 渲染).string = 普通工具 observation;object = agent_call 结构化.
+ *  定义在 runtime.ts(base 模块,无循环依赖),bridge.ts re-export 保持现有 import 路径. */
+export type TurnToolOutput =
+  | string
+  | {
+      type: "agent_call"
+      targetAgent: {
+        id: string
+        title: string
+        summary?: string
+      }
+      response: string
+      status: "completed" | "failed"
+      error?: {
+        code: string
+        message: string
+      }
+    }
+
+/** turn 内过程节点(thought/tool/interim),按发生顺序排列.
+ *  持久化到 workspace turn 文件 + 助手会话消息存储 processNodes 字段.
+ *  与 composable 层 AssistantTimelineNode 同构,多可选 agentId 字段. */
+export type TurnProcessNode =
+  | { type: "thought"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+  | {
+      type: "tool"
+      id: string
+      round: number
+      agentId?: string
+      name: string
+      status: "loading" | "running" | "success" | "failed"
+      output?: TurnToolOutput
+      collapsed: boolean
+    }
+  | { type: "interim"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+
+/**
+ * 单个工具调用记录(跨 turn/UI 保留的最小形态). observation 直接存工具返回层
+ * 结果(持久化层不二次截断)——workspace_read 等有分页的工具返回层已截断
+ * (DEFAULT_READ_LIMIT=2000 行)+ 带 truncated 元数据, agent 续读靠 offset;
+ * agent_call/inspect_frontend 等无分页工具当前不截断(无分页是工具缺陷,后续补齐).
+ * truncated 字段来自工具返回层(如 workspace_read),非持久化层造.
+ */
+export interface AgentContextToolCall {
+  /** 工具调用 id(native: toolCallId; text: `tool-${index}`). UI 去重用. */
+  id: string
+  /** 工具名(workspace_read / agent_call / inspect_frontend …). */
+  name: string
+  /** 调用参数(JSON 序列化字符串). UI 展示 + 压缩 prompt 用. */
+  arguments: string
+  /** 工具返回 observation(文本化). 直接存工具返回层结果,持久化层不截断. */
+  observation: string
+  /** observation 是否被截断. 来自工具返回层(如 workspace_read 的 truncated). */
+  truncated?: boolean
+  /** 失败时填(observation 放 error.message). */
+  failed?: boolean
 }
 
 /**
  * One剧情正文 entry inside an `AgentContextSnapshot.recentTurns` list.
  * Stored as原文 (user input or assistant final reply); tool process / thought
  * streams are intentionally excluded so压缩摘要 stays pure剧情.
+ * 助手路径额外在 assistant entry 上带 toolCalls(工具调用跨 turn 保留),
+ * master 不填(剧情型 agent 工具少、正文是真相).
  */
 export interface AgentContextTurnEntry {
   turn: number
   role: "user" | "assistant"
   content: string
+  /** 该 turn 工具调用记录(仅助手填, master 不填). agent 层跟正文同寿命:
+   *  最近 K 轮原文保留, 早期随正文压缩进 summary. */
+  toolCalls?: AgentContextToolCall[]
 }
 
 /**

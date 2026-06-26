@@ -1,6 +1,7 @@
 import type {
   AgentContextSnapshot,
   AgentContextTurnEntry,
+  AgentContextToolCall,
   ConversationMessageRecord,
   AiChatMessage,
   ContentPart,
@@ -106,13 +107,21 @@ export function estimateRuntimeMessagesTokens(messages: RuntimeChatMessage[]): n
   }, 0)
 }
 
-/** 估算 context 快照(summary + recentTurns)的 token 总量. */
+/** 估算 context 快照(summary + recentTurns, 含工具调用)的 token 总量. */
 export function estimateContextTokens(context: AgentContextSnapshot): number {
   const summaryTokens = context.summary ? estimateTokenCount(context.summary) : 0
-  const recentTokens = context.recentTurns.reduce(
-    (sum, entry) => sum + estimateTokenCount(entry.content),
-    0,
-  )
+  const recentTokens = context.recentTurns.reduce((sum, entry) => {
+    let tokens = estimateTokenCount(entry.content)
+    // 助手 entry 的 toolCalls: observation + arguments 计入(工具调用跨 turn 保留).
+    if (entry.toolCalls) {
+      for (const call of entry.toolCalls) {
+        tokens += estimateTokenCount(call.observation)
+        tokens += estimateTokenCount(call.arguments)
+        tokens += estimateTokenCount(call.name)
+      }
+    }
+    return sum + tokens
+  }, 0)
   return summaryTokens + recentTokens
 }
 
@@ -189,10 +198,39 @@ function parseTurnEntry(raw: unknown): AgentContextTurnEntry | null {
   ) {
     return null
   }
+  // 解析 toolCalls(助手 assistant entry 带,跨 turn 保留工具调用).数组时逐条校验.
+  const toolCalls = Array.isArray(obj.toolCalls)
+    ? (obj.toolCalls as unknown[])
+        .map(parseToolCallEntry)
+        .filter((c): c is AgentContextToolCall => c !== null)
+    : undefined
   return {
     turn: obj.turn,
     role: obj.role,
     content: obj.content,
+    ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
+  }
+}
+
+/** 解析单个 AgentContextToolCall(assistant entry 的工具调用记录). */
+function parseToolCallEntry(raw: unknown): AgentContextToolCall | null {
+  if (!raw || typeof raw !== "object") return null
+  const obj = raw as Record<string, unknown>
+  if (
+    typeof obj.id !== "string" ||
+    typeof obj.name !== "string" ||
+    typeof obj.arguments !== "string" ||
+    typeof obj.observation !== "string"
+  ) {
+    return null
+  }
+  return {
+    id: obj.id,
+    name: obj.name,
+    arguments: obj.arguments,
+    observation: obj.observation,
+    ...(typeof obj.truncated === "boolean" ? { truncated: obj.truncated } : {}),
+    ...(typeof obj.failed === "boolean" ? { failed: obj.failed } : {}),
   }
 }
 
@@ -348,17 +386,19 @@ const COMPRESSION_SYSTEM_PROMPT = [
  * design 06-20-assistant-context-persistence §4.5.
  */
 const ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT = [
-  "你是任务对话摘要器。把助手与用户的早期对话压缩成「已完成工作 + 结论」摘要。",
-  "保留:用户的关键请求、助手已做的工作与结论、未解决的问题、重要上下文与决策。",
-  "丢弃:寒暄、重复内容、工具调用的技术细节、冗余的中间过程。",
-  "用简洁的任务日志风格输出,不要叙事化,不要逐字复述。",
+  "你是任务对话摘要器。把助手与用户的早期对话(含工具调用)压缩成「已完成工作 + 结论」摘要。",
+  "保留:用户的关键请求、助手已做的工作与结论、已读取的关键信息(文件内容要点、查询结果)、未解决的问题、重要上下文与决策。",
+  "丢弃:寒暄、重复内容、工具协议格式细节、冗余的中间探索步骤、大段原始工具返回原文。",
+  "用简洁的任务日志风格输出,不要叙事化,不要逐字复述工具协议。",
   `- 控制在约 ${TARGET_COMPRESSION_TOKENS} token 以内。`,
 ].join("\n")
 
 /** 助手快照压缩用 system prompt 的导出访问点(供 host/runtime 按 mode 传入). */
 export { ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT }
 
-/** 构建压缩调用的 user prompt:旧 summary(若有) + 被压缩轮次正文. */
+/** 构建压缩调用的 user prompt:旧 summary(若有) + 被压缩轮次正文(含工具调用).
+ *  助手 entry 带 toolCalls 时,工具调用作为"已做工作"依据呈现给压缩 model(name/args/observation),
+ *  不能像早期 prompt 说的"丢弃工具调用技术细节"——工具结果是工作产物. */
 function buildCompressionPrompt(
   oldSummary: string | null,
   compressEntries: AgentContextTurnEntry[],
@@ -368,10 +408,18 @@ function buildCompressionPrompt(
   return [
     oldSummary ? `此前的梗概：\n${oldSummary}\n` : "",
     "需要压缩的剧情正文：",
-    ...compressEntries.map(
-      (entry) =>
-        `${entry.turn}. ${entry.role === "user" ? userLabel : assistantLabel}: ${entry.content}`,
-    ),
+    ...compressEntries.map((entry) => {
+      const label = entry.role === "user" ? userLabel : assistantLabel
+      const base = `${entry.turn}. ${label}: ${entry.content}`
+      // 助手 assistant entry 带工具调用:附上工具调用记录供压缩 model 参考.
+      if (entry.role === "assistant" && entry.toolCalls && entry.toolCalls.length > 0) {
+        const toolLines = entry.toolCalls.map((call) =>
+          `  工具调用 ${call.name}(${call.arguments}) → ${call.observation}`,
+        ).join("\n")
+        return `${base}\n${toolLines}`
+      }
+      return base
+    }),
   ]
     .filter(Boolean)
     .join("\n")
@@ -627,13 +675,16 @@ export function appendTurnToContext(
   turn: number,
   user: string,
   assistant: string,
+  /** 本轮工具调用记录(仅助手填, master 不传). 挂在 assistant entry 上,
+   *  agent 层跟正文同寿命: 最近 K 轮原文保留, 早期随正文压缩进 summary. */
+  toolCalls?: AgentContextToolCall[],
 ): AgentContextSnapshot {
   return {
     ...context,
     recentTurns: [
       ...context.recentTurns,
       { turn, role: "user", content: user },
-      { turn, role: "assistant", content: assistant },
+      { turn, role: "assistant", content: assistant, ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}) },
     ],
     updatedAt: new Date().toISOString(),
   }

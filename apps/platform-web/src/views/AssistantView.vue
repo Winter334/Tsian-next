@@ -281,12 +281,18 @@
                         </CollapsibleTrigger>
                         <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
                           <!-- agent_call:显示被调用 agent 的 response（玩家可读，UI 侧控制高度）。
-                               失败时显示 error.message。普通工具统一不显 output（仅状态图标）。 -->
+                               失败时显示 error.message。 -->
                           <div
                             v-if="agentCallDisplay(node.output)"
                             class="max-h-40 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 text-xs leading-5 text-text-dim"
                             :class="agentCallDisplay(node.output)?.failed ? 'text-red-400' : ''"
                           >{{ agentCallDisplay(node.output)?.response }}</div>
+                          <!-- 普通工具(非 agent_call):显示 observation(历史重建节点带 observation 字符串;
+                               流式节点不带 output 仅状态图标,此处不渲染). -->
+                          <div
+                            v-else-if="typeof node.output === 'string' && node.output"
+                            class="max-h-60 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 text-xs leading-5 text-text-dim"
+                          >{{ node.output }}</div>
                         </CollapsibleContent>
                       </Collapsible>
 
@@ -627,7 +633,7 @@ import {
   CollapsibleTrigger,
   CollapsibleContent,
 } from "@/components/ui/collapsible"
-import { useAssistantTimeline, type ChatMessage } from "@/composables/useAssistantTimeline"
+import { useAssistantTimeline, type ChatMessage, type AssistantTimelineNode } from "@/composables/useAssistantTimeline"
 import { confirm } from "@/composables/useConfirm"
 import {
   subscribeInteractionRequest,
@@ -667,7 +673,7 @@ import {
   setActiveAssistantSessionId,
   type AssistantSessionSummary,
 } from "../storage"
-import type { AttachmentRef, TurnToolOutput } from "@tsian/contracts"
+import type { AgentContextToolCall, AttachmentRef, TurnToolOutput, TurnProcessNode } from "@tsian/contracts"
 import AttachmentImage from "@/components/assistant/AttachmentImage.vue"
 
 // AssistantTimelineNode / ChatMessage 类型由 useAssistantTimeline composable 导出,
@@ -699,6 +705,123 @@ function agentCallDisplay(output: TurnToolOutput | undefined): {
 interface PendingAttachment {
   ref: AttachmentRef
   previewUrl?: string  // 图片缩略图 URL (URL.createObjectURL)
+}
+
+/**
+ * 把会话消息存储的 ConversationMessageRecord[] 映射为 ChatMessage[].
+ * assistant 消息带 toolCalls 时,重建历史 tool 节点到 timeline(折叠态可展开),
+ * 让玩家刷新/重进会话后能回看历史工具调用(与 ZCode 客户端跨会话保留一致).
+ * 数据源 = 会话消息存储(不压缩完整保留),非 context.json(压缩后丢早期).
+ * 历史节点 id 加 hist-tool- 前缀防与流式节点 callId 冲突.
+ */
+function mapStoredMessagesToChat(stored: ConversationMessageRecord[]): ChatMessage[] {
+  return stored.map((msg) => {
+    const role = msg.role === "user" ? "user" as const : "assistant" as const
+    const base: ChatMessage = {
+      role,
+      content: msg.content,
+      ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
+    }
+    if (role !== "assistant") return base
+    // 从 processNodes 重建 timeline(1:1 顺序保留,TurnProcessNode → AssistantTimelineNode 同构映射).
+    if (msg.processNodes && msg.processNodes.length > 0) {
+      base.timeline = msg.processNodes.map((node): AssistantTimelineNode => {
+        if (node.type === "thought") {
+          return { type: "thought", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
+        }
+        if (node.type === "interim") {
+          return { type: "interim", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
+        }
+        // tool
+        return {
+          type: "tool",
+          id: node.id,
+          round: node.round,
+          name: node.name,
+          status: node.status,
+          collapsed: node.collapsed,
+          ...(node.output !== undefined ? { output: node.output } : {}),
+        }
+      })
+    }
+    return base
+  })
+}
+
+/** 尝试把 agent_call 工具的 observation(JSON 字符串)解析为 TurnToolOutput 结构化形态.
+ *  解析失败则降级为字符串 output(普通 tool 渲染). */
+function tryParseAgentCallOutput(call: AgentContextToolCall): { output: TurnToolOutput } {
+  try {
+    const parsed = JSON.parse(call.observation) as TurnToolOutput
+    if (typeof parsed === "object" && parsed !== null && parsed.type === "agent_call") {
+      return { output: parsed }
+    }
+  } catch {
+    // 降级
+  }
+  return { output: call.observation as TurnToolOutput }
+}
+
+/**
+ * 把 ChatMessage[] 映射回 ConversationMessageRecord[](供 AssistantView 持久化).
+ * assistant 消息的 timeline 节点转回 processNodes(按发生顺序,TurnProcessNode 形态)
+ * + toolCalls(agent 层用,从 tool 节点提取 observation).
+ * turn 成功后 host 已写消息(含 toolCalls),AssistantView 再写一次补上 processNodes
+ * (host 不持有 thought/interim 采集,UI 层 timeline 是唯一源).后写覆盖,无竞态.
+ */
+function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRecord[] {
+  return msgs.map((msg) => {
+    const base: ConversationMessageRecord = {
+      role: msg.role,
+      content: msg.content,
+      ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
+    }
+    if (msg.role === "assistant" && msg.timeline && msg.timeline.length > 0) {
+      // processNodes: timeline 1:1 映射(AssistantTimelineNode → TurnProcessNode 同构).
+      base.processNodes = msg.timeline.map((node): TurnProcessNode => {
+        if (node.type === "thought") {
+          return { type: "thought", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
+        }
+        if (node.type === "interim") {
+          return { type: "interim", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
+        }
+        // tool (含 ask 节点?不,ask 不持久化到 processNodes——finalize 后 ask 节点仍在 timeline,
+        // 但 ask 是交互记录非过程,这里也存入 processNodes 让它可回看).
+        if (node.type === "ask") {
+          // ask 节点用 interim 形态存(只读 Q&A 记录,展开显示问题+答案).
+          return { type: "interim", id: node.id, round: node.round, text: `**提问**: ${node.question}\n**回答**: ${node.cancelled ? "已取消" : (node.answer ?? "")}`, collapsed: node.collapsed }
+        }
+        // tool
+        return {
+          type: "tool",
+          id: node.id,
+          round: node.round,
+          name: node.name,
+          status: node.status,
+          collapsed: node.collapsed,
+          ...(node.output !== undefined ? { output: node.output } : {}),
+        }
+      })
+      // toolCalls(agent 层用):从 tool 节点提取 observation 文本化.
+      const toolCalls: AgentContextToolCall[] = []
+      for (const node of msg.timeline) {
+        if (node.type === "tool") {
+          const observation = typeof node.output === "string"
+            ? node.output
+            : JSON.stringify(node.output)
+          toolCalls.push({
+            id: node.id.startsWith("hist-tool-") ? node.id.replace(/^hist-tool-\d+-/, "") : node.id,
+            name: node.name,
+            arguments: "",
+            observation,
+            ...(node.status === "failed" ? { failed: true } : {}),
+          })
+        }
+      }
+      if (toolCalls.length > 0) base.toolCalls = toolCalls
+    }
+    return base
+  })
 }
 
 const suggestions = [
@@ -827,11 +950,7 @@ async function loadActiveSession() {
   const session = await ensureAssistantSession("local")
   activeSessionId.value = session.id
   const stored = await getAssistantSessionMessages(session.id)
-  messages.value = stored.map((msg) => ({
-    role: msg.role === "user" ? "user" : "assistant",
-    content: msg.content,
-    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
-  }))
+  messages.value = mapStoredMessagesToChat(stored)
   await refreshSessions()
 
   // 恢复上下文环已用值(按会话持久化),避免刷新/重载归零.
@@ -883,19 +1002,11 @@ async function handleSelectSession(id: string) {
   // target session's messages (one fast read). Persist the previous session in
   // the background so the click feels instant.
   const previousId = activeSessionId.value
-  const previousMessages = messages.value.map((msg) => ({
-    role: msg.role,
-    content: msg.content,
-    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
-  }))
+  const previousMessages = chatToStoredMessages(messages.value)
 
   activeSessionId.value = id
   const stored = await getAssistantSessionMessages(id)
-  messages.value = stored.map((msg) => ({
-    role: msg.role === "user" ? "user" : "assistant",
-    content: msg.content,
-    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
-  }))
+  messages.value = mapStoredMessagesToChat(stored)
   // 恢复目标会话的上下文环已用值.
   contextUsed.value = await loadContextUsed(id)
   await scrollToBottom()
@@ -915,11 +1026,7 @@ async function handleCreateSession() {
   try {
     // Persist the current session in the background so creation feels instant.
     const previousId = activeSessionId.value
-    const previousMessages = messages.value.map((msg) => ({
-      role: msg.role,
-      content: msg.content,
-      ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
-    }))
+    const previousMessages = chatToStoredMessages(messages.value)
     if (previousId) {
       void saveAssistantSessionMessages("local", previousId, previousMessages, {
         touch: false,
@@ -979,11 +1086,7 @@ async function handleDeleteSessionById(id: string) {
       if (nextId) {
         activeSessionId.value = nextId
         const stored = await getAssistantSessionMessages(nextId)
-        messages.value = stored.map((msg) => ({
-          role: msg.role === "user" ? "user" : "assistant",
-          content: msg.content,
-          ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
-        }))
+        messages.value = mapStoredMessagesToChat(stored)
         contextUsed.value = await loadContextUsed(nextId)
       } else {
         const session = await createAssistantSession("local")
@@ -1003,11 +1106,7 @@ async function persistCurrentSession() {
   if (!activeSessionId.value) {
     return
   }
-  const toStore: ConversationMessageRecord[] = messages.value.map((msg) => ({
-    role: msg.role,
-    content: msg.content,
-    ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
-  }))
+  const toStore: ConversationMessageRecord[] = chatToStoredMessages(messages.value)
   await saveAssistantSessionMessages("local", activeSessionId.value, toStore)
   await refreshSessions()
 }
@@ -1169,8 +1268,9 @@ async function send() {
       // 按会话持久化 used,刷新/切走再切回恢复,不再归零.
       void saveContextUsed(sessionId, result.usage.input)
     }
-    // 消息 + context 已由 host(runAssistantChat)同步写入,前端不再调 persistCurrentSession
-    // (消除双 IO 竞态).catch 路径仍保留前端持久化作兜底(host catch 不写消息).
+    // 消息 + context + processNodes 已由 host(runAssistantChat)同步写入(含 toolCalls +
+    // processNodes).前端不再补写——runtime 层采集 thought/interim/tool 供 host 写入,
+    // 消除双写竞态.catch 路径仍保留前端持久化作兜底(host catch 不写消息).
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError"
     const budgetExhausted = error instanceof Error && error.name === "ContextBudgetExhaustedError"
@@ -1321,11 +1421,7 @@ function handleEditUserMessage(index: number) {
   })
   // 乐观更新已持久化的会话(后台,不阻塞 UI).
   if (activeSessionId.value) {
-    const toStore: ConversationMessageRecord[] = messages.value.map((m) => ({
-      role: m.role,
-      content: m.content,
-      ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments } : {}),
-    }))
+    const toStore: ConversationMessageRecord[] = chatToStoredMessages(messages.value)
     void saveAssistantSessionMessages("local", activeSessionId.value, toStore, { touch: false })
   }
 }

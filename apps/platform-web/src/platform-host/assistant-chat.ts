@@ -1,9 +1,11 @@
 import type {
   AgentContextSnapshot,
+  AgentContextToolCall,
   AttachmentRef,
   ContentPart,
   ConversationMessageRecord,
   TurnToolOutput,
+  TurnProcessNode,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
@@ -147,6 +149,8 @@ async function stageAssistantContextFile(
     assistant: string
     compressedContext?: AgentContextSnapshot
     fallbackContext: AgentContextSnapshot
+    /** 本轮工具调用(agent 层:跟正文同寿命压缩,最近 K 轮原文、早期进 summary). */
+    toolCalls?: AgentContextToolCall[]
   },
 ): Promise<void> {
   // 基础快照:本轮压缩了→用压缩结果;否则用 turn 开头读出的快照;无则空快照
@@ -157,12 +161,13 @@ async function stageAssistantContextFile(
         schema: ASSISTANT_CONTEXT_SCHEMA,
         agentId: ASSISTANT_CONTEXT_AGENT_ID,
       })
-  // 追加本轮正文(保持最近 K 轮),saveId 用 sessionId(语义复用)
+  // 追加本轮正文(保持最近 K 轮)+ 工具调用(挂在 assistant entry 上),saveId 用 sessionId(语义复用)
   const updated = appendTurnToContext(
     { ...base, saveId: input.sessionId },
     input.turn,
     input.user,
     input.assistant,
+    input.toolCalls,
   )
   const file: WorkspaceFile = {
     path: assistantContextPath(input.sessionId),
@@ -617,7 +622,10 @@ export async function runAssistantChat(
     // 独立 IO 的竞态风险.前端正常 turn 结束不再调 persistCurrentSession.
     //
     // 组装完整消息列表:history(不含本轮)+ 本轮 user(带 attachments)+ 本轮 assistant.
+    // assistant 条带 toolCalls(UI 层:不压缩完整保留,挂消息上不占条数名额,随消息截到 200 条).
     const inputAttachments = input.attachments
+    const turnToolCalls = result.contextUpdate?.toolCalls
+    const turnProcessNodes = result.contextUpdate?.processNodes
     const fullMessages: ConversationMessageRecord[] = [
       ...history,
       {
@@ -625,7 +633,12 @@ export async function runAssistantChat(
         content,
         ...(inputAttachments && inputAttachments.length > 0 ? { attachments: inputAttachments } : {}),
       },
-      { role: "assistant", content: result.replyText },
+      {
+        role: "assistant",
+        content: result.replyText,
+        ...(turnToolCalls && turnToolCalls.length > 0 ? { toolCalls: turnToolCalls } : {}),
+        ...(turnProcessNodes && turnProcessNodes.length > 0 ? { processNodes: turnProcessNodes } : {}),
+      },
     ]
     await saveAssistantSessionMessages("local", input.sessionId, fullMessages, { touch: true })
 
@@ -634,6 +647,7 @@ export async function runAssistantChat(
     // 是平台本地数据,不随存档 checkpoint/distribute.对称 master 的 stageAgentContextFile
     // (master 走 save 事务因 agents/master/context.json 属 save/).turn 失败走 catch
     // discard(事务),且不调本函数 → context 不写回.
+    // toolCalls 写入 agent 层 context.json(recentTurns assistant entry,跟正文同寿命压缩).
     const assistantContextUpdate = result.contextUpdate
     if (assistantContextUpdate) {
       await stageAssistantContextFile({
@@ -643,6 +657,7 @@ export async function runAssistantChat(
         assistant: assistantContextUpdate.assistant,
         compressedContext: assistantContextUpdate.compressedContext,
         fallbackContext: assistantContext,
+        ...(turnToolCalls && turnToolCalls.length > 0 ? { toolCalls: turnToolCalls } : {}),
       })
     }
 

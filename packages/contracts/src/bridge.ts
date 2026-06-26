@@ -10,6 +10,8 @@ import type {
   PlatformActionResult,
   PlatformContextShell,
   RuntimeSnapshotShell,
+  TurnToolOutput,
+  TurnProcessNode,
 } from "./runtime"
 
 export interface RuntimeBridge {
@@ -140,26 +142,11 @@ export type RemotePlayBridgeEventName =
  * `typeof output === "object" && output.type === "agent_call"`（agent_call）分流渲染。
  * 旧前端收到 object output 时最坏情况是不显示（不匹配 string 渲染路径），不 break 功能。
  */
-export type TurnToolOutput =
-  | string
-  | {
-      type: "agent_call"
-      targetAgent: {
-        id: string
-        title: string
-        summary?: string
-      }
-      response: string
-      status: "completed" | "failed"
-      error?: {
-        code: string
-        message: string
-      }
-    }
-
+export type { TurnToolOutput } from "./runtime"
 /**
  * turn 内过程节点(thought/tool/interim),持久化到 workspace turn 文件
- * `save/history/turns/turn-NNNNNN.json` 的 `processNodes` 字段.
+ * `save/history/turns/turn-NNNNNN.json` 的 `processNodes` 字段,以及助手会话
+ * 消息存储的 `ConversationMessageRecord.processNodes` 字段(UI 层重建 timeline).
  *
  * 与 composable 层的 `AssistantTimelineNode` 同构,多一个可选 `agentId` 字段
  * (单 agent 场景如桌面助手可省,多 agent 场景如 delegated agent_call 必填,
@@ -174,19 +161,7 @@ export type TurnToolOutput =
  * 重建(靠 turn-round-end 的 kind=thought 区分过渡叙事 vs 最终回复),
  * runtimeMessages 里 assistant.content 无法区分.
  */
-export type TurnProcessNode =
-  | { type: "thought"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
-  | {
-      type: "tool"
-      id: string
-      round: number
-      agentId?: string
-      name: string
-      status: "loading" | "running" | "success" | "failed"
-      output?: TurnToolOutput
-      collapsed: boolean
-    }
-  | { type: "interim"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+export type { TurnProcessNode } from "./runtime"
 
 /**
  * 单个 turn 的完整玩家视角数据,由 host 从 workspace turn 文件重建,

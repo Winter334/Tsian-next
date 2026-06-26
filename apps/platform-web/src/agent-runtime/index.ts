@@ -2,6 +2,8 @@ import type {
   AgentRegistryEntry,
   AgentContextEntry,
   AgentContextSnapshot,
+  AgentContextToolCall,
+  TurnProcessNode,
   AiChatMessage,
   AskUserRequest,
   AskUserResult,
@@ -167,6 +169,13 @@ export interface AgentRuntimeTurnContextUpdate {
   assistant: string
   /** 本轮开头压缩后的快照(若触发了压缩).无压缩则 undefined. */
   compressedContext?: AgentContextSnapshot
+  /** 本轮工具调用记录(仅助手有,master 无).供 host 双层写入:
+   *  agent context.json(recentTurns assistant entry,跟正文同寿命压缩)+
+   *  UI 会话消息存储(ConversationMessageRecord.toolCalls,不压缩完整保留). */
+  toolCalls?: AgentContextToolCall[]
+  /** 本轮过程节点(thought/tool/interim,按发生顺序).供 host 写入会话消息存储
+   *  processNodes 字段,UI 刷新后重建 timeline.仅助手有(runtime 采集,消除双写). */
+  processNodes?: TurnProcessNode[]
 }
 
 export interface AgentRuntimeTurnResult {
@@ -426,25 +435,59 @@ function formatHistory(history: ConversationMessageRecord[]): string {
  * recentTurns 结构化数据形态直接映射,无"结构化→文本→结构化"往返.
  * 详见任务 06-19-agent-session-context-lifecycle 收尾结构修正.
  */
+/**
+ * 把 agent 会话上下文快照展开为 message 序列(剧情正文层).
+ * native 模式(isNative=true):产 RuntimeChatMessage[],历史工具调用直接还原为结构化
+ *   assistant.toolCalls + role:tool result(消除 text→regex→structured 往返).
+ * text 模式(isNative=false):产 AiChatMessage[],历史工具调用还原为 text-protocol
+ *   <tsian-tool-call> blocks + <tsian-tool-observation> user message.
+ * master 不填 toolCalls,两种模式都走纯正文路径(行为不变).
+ */
 function buildAgentContextMessages(
   context: AgentContextSnapshot,
-  isAssistant = false,
-): AiChatMessage[] {
-  const messages: AiChatMessage[] = []
+  isAssistant: boolean,
+  isNative: boolean,
+): RuntimeChatMessage[] {
+  const messages: RuntimeChatMessage[] = []
   if (context.summary) {
-    // 助手 summary 是任务摘要(task 压缩风格),AIRP agent 是剧情梗概(narrative 压缩).
     const summaryLabel = isAssistant ? "早期任务摘要" : "早期剧情摘要"
     messages.push({ role: "user", content: `${summaryLabel}：\n${context.summary}` })
   }
   if (context.recentTurns.length === 0) {
     if (!context.summary) {
-      // 无 summary 也无 recentTurns:给一条占位,保持"有历史对话区"的结构
       messages.push({ role: "user", content: "（暂无历史对话）" })
     }
-    // 有 summary 但无 recentTurns:summary 已是历史区,不再加占位
   } else {
     for (const entry of context.recentTurns) {
-      messages.push({ role: entry.role, content: entry.content })
+      if (entry.role === "assistant" && isAssistant && entry.toolCalls && entry.toolCalls.length > 0) {
+        if (isNative) {
+          // native:直接产结构化 assistant.toolCalls + role:tool result(无正则往返).
+          const nativeToolCalls: NativeToolCall[] = entry.toolCalls.map((call) => {
+            let args: Record<string, unknown> = {}
+            try { args = JSON.parse(call.arguments) as Record<string, unknown> } catch { /* 损坏参数空对象兜底 */ }
+            return { id: call.id, name: call.name, arguments: args }
+          })
+          messages.push({ role: "assistant", content: entry.content, toolCalls: nativeToolCalls })
+          for (const call of entry.toolCalls) {
+            messages.push({ role: "tool", toolCallId: call.id, content: call.observation })
+          }
+        } else {
+          // text:产 text-protocol blocks + observation user message.
+          const embeddedBlocks = entry.toolCalls.map((call) =>
+            `<tsian-tool-call>\n${call.arguments}\n</tsian-tool-call>`,
+          ).join("\n")
+          messages.push({ role: "assistant", content: `${entry.content}\n${embeddedBlocks}` })
+          const observationBlock = entry.toolCalls.map((call) =>
+            `[${call.id}] ${call.name}: ${call.observation}`,
+          ).join("\n")
+          messages.push({
+            role: "user",
+            content: `Workspace tool observations:\n<tsian-tool-observation>\n${observationBlock}\n</tsian-tool-observation>\nUse these observations to continue. If you have enough context, provide the required output without tool-call blocks.`,
+          })
+        }
+      } else {
+        messages.push({ role: entry.role, content: entry.content })
+      }
     }
   }
   return messages
@@ -507,8 +550,8 @@ function locateHistorySpan(
 }
 
 /**
- * 用压缩后的快照重建剧情段并 splice 替换原段(design §2.4).native 循环的
- * newMessages 需先经 aiChatMessagesToRuntime 转换,text 循环直接用
+ * 用压缩后的快照重建剧情段并 splice 替换原段(design §2.4).两种循环都直接用
+ * buildAgentContextMessages 的结果(native 产 RuntimeChatMessage[],text 产同结构).
  * buildAgentContextMessages 产出的 AiChatMessage[].system / 框架信息 /
  * 本轮输入 / 后续 tool 交互保留不动.
  */
@@ -937,23 +980,22 @@ function buildEntryAgentMessages(
   agentCallState: AgentCallTurnState,
   toolCallMode?: BrowserAiToolCallMode,
   agentContext?: AgentContextSnapshot | null,
-): AiChatMessage[] {
+): RuntimeChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
   const visibleContacts = input.workspaceFiles
     ? getVisibleAgentContacts(input.workspaceFiles, context)
     : []
   const permissions = deriveAgentRuntimePermissionProfile(context.agent)
-  // 桌面助手 vs AIRP 剧情入口:提示词文案按 agent 类型分支.助手用问答/用户措辞,
-  // AIRP agent 用回合/玩家措辞.结构(message 顺序/字段/注入方式)保持一致,只分支文案.
   const isAssistant = isAssistantEntryAgent(context.agent.path)
+  const isNative = toolCallMode === "native"
   const entryGuard = isAssistant ? ASSISTANT_AGENT_PLATFORM_GUARD : ENTRY_AGENT_PLATFORM_GUARD
   const turnLabel = isAssistant ? "当前问答轮次" : "当前回合"
   const inputLabel = isAssistant ? "用户本轮提问" : "玩家本轮输入"
   // 剧情正文层:优先用注入的 context 快照(独立 message 序列);未注入则从
   // recentHistory(turn 文件重建)兜底——旧逻辑 formatHistory 也是拍扁文本,这里
   // 保持兜底用文本形式(首 turn/旧存档迁移场景,非稳态路径).
-  const historyMessages: AiChatMessage[] = agentContext
-    ? buildAgentContextMessages(agentContext, isAssistant)
+  const historyMessages: RuntimeChatMessage[] = agentContext
+    ? buildAgentContextMessages(agentContext, isAssistant, isNative)
     : [{ role: "user", content: `最近对话：\n${formatHistory(history)}` }]
   return [
     {
@@ -972,11 +1014,6 @@ function buildEntryAgentMessages(
         toolCallMode,
       }),
     },
-    // 剧情正文层:summary(若有) + recentTurns 独立 message 序列(或兜底文本).
-    // 放在 system 之后、框架信息之前——剧情正文在两次压缩之间只增不减、前缀
-    // 稳定(appendTurnToContext 只追加不丢,压缩才一次性摘要早期),放前面能让
-    // provider 前缀缓存命中剧情正文大头(回合号每轮变,若放前面会立刻断缓存).
-    // 压剧情时只动这段(historyMessages),system 和后面的框架信息/本轮输入不动.
     ...historyMessages,
     // 框架信息(非剧情,每 turn 现构建):轮次号 + Workspace 上下文.放剧情之后——
     // 轮次号每轮递增是缓存断点,放后面让缓存断点尽量后移(剧情正文大头被缓存).
@@ -1263,6 +1300,8 @@ function createAgentCallRunner(
 
     try {
       const response = (await callAgentModelWithWorkspaceTools(
+        // delegated agent 无跨 turn 工具调用历史(无 AgentContextSnapshot),
+        // buildDelegatedAgentMessages 产 AiChatMessage[](无 role:tool),安全升维为 RuntimeChatMessage[].
         buildDelegatedAgentMessages(
           input,
           callerContext,          targetContext,
@@ -1271,7 +1310,7 @@ function createAgentCallRunner(
           state,
           metadata.targetDepth,
           capabilities.toolCallMode,
-        ),
+        ) as RuntimeChatMessage[],
         input,
         capabilities,
         {
@@ -1387,29 +1426,56 @@ function nativeToolCallsToParsed(
   }))
 }
 
-/** Convert the flat entry-agent `AiChatMessage[]` to structured `RuntimeChatMessage[]` for the first native round. */
-function aiChatMessagesToRuntime(
-  messages: AiChatMessage[],
-): RuntimeChatMessage[] {
-  return messages.map((message) => {
-    if (message.role === "assistant") {
-      // assistant content 始终是 string(多模态 ContentPart 只出现在 user 消息);
-      // 类型层面放宽后这里安全降级.
-      return { role: "assistant", content: messageContentToText(message.content) }
-    }
-    return { role: message.role, content: message.content }
-  })
+/** Convert the flat entry-agent `AiChatMessage[]` to structured `RuntimeChatMessage[]` for the first native round.
+
+/**
+ * 把本轮工具调用的 observations + toolCalls 转成 AgentContextToolCall[](跨 turn 保留形态).
+ * observation 直接取工具返回层结果(native: formatNativeToolObservationContent; text: formatRuntimeWorkspaceToolObservationMessage),
+ * 持久化层不二次截断(truncated 来自工具返回层如 workspace_read).
+ * 供 contextUpdate 带回 → host 双层写入(agent context.json + UI 会话消息存储).
+ */
+function collectToolCallsForContext(
+  toolCalls: { id?: string; name: string; arguments: Record<string, unknown> }[],
+  observations: RuntimeWorkspaceToolObservation[],
+  observationTextFn: (obs: RuntimeWorkspaceToolObservation) => string,
+): AgentContextToolCall[] {
+  const collected: AgentContextToolCall[] = []
+  for (let i = 0; i < toolCalls.length; i++) {
+    const call = toolCalls[i]
+    const obs = observations[i]
+    if (!obs) continue
+    const observationText = observationTextFn(obs)
+    // workspace_read 的 truncated 在 result 里(nested),这里尽力提取;无则 undefined.
+    const truncated = typeof obs.result === "object" && obs.result !== null
+      ? ((obs.result as { truncated?: boolean }).truncated)
+      : undefined
+    collected.push({
+      id: call.id ?? `tool-${i}`,
+      name: call.name,
+      arguments: JSON.stringify(call.arguments),
+      observation: observationText,
+      ...(truncated ? { truncated } : {}),
+      ...(obs.ok ? {} : { failed: true }),
+    })
+  }
+  return collected
 }
 
 async function callAgentModelWithWorkspaceToolsNative(
-  messages: AiChatMessage[],
+  messages: RuntimeChatMessage[],
   input: AgentRuntimeTurnInput,
   capabilities: AgentRuntimeCapabilities,
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry,
   toolOptions: WorkspaceToolLoopOptions,
-): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number } }> {
-  let runtimeMessages = aiChatMessagesToRuntime(messages)
+): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number }; collectedToolCalls?: AgentContextToolCall[]; collectedProcessNodes?: TurnProcessNode[] }> {
+  // messages 已是 RuntimeChatMessage[](buildEntryAgentMessages 产结构化,native 无需转换).
+  let runtimeMessages = messages
+  const collectedToolCalls: AgentContextToolCall[] = []
+  const collectedProcessNodes: TurnProcessNode[] = []
+  // 每轮 reasoning/content 文本累积器(供采集 thought/interim processNode).
+  let roundReasoning = ""
+  let roundContent = ""
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
   const visibleContacts = input.workspaceFiles
@@ -1478,7 +1544,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 无工具交互段可压(异常,通常 round 0 不该触发)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1499,7 +1565,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 压不动(早期无可压内容,工具交互 ≤ N 轮)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1529,7 +1595,7 @@ async function callAgentModelWithWorkspaceToolsNative(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1546,9 +1612,8 @@ async function callAgentModelWithWorkspaceToolsNative(
           )
           Object.assign(toolOptions.agentContextSnapshot!, compressed)
           compressedThisTurn = true
-          const newHistory = aiChatMessagesToRuntime(
-            buildAgentContextMessages(toolOptions.agentContextSnapshot!, isAssistantEntryAgent(agentContext.agent.path)),
-          )
+          // native 路径:buildAgentContextMessages 已产 RuntimeChatMessage[],无需 aiChatMessagesToRuntime.
+          const newHistory = buildAgentContextMessages(toolOptions.agentContextSnapshot!, isAssistantEntryAgent(agentContext.agent.path), true)
           replaceHistorySpan(runtimeMessages, historySpan, newHistory)
           historySpan.end = historySpan.start + newHistory.length
           capabilities.emitTrace?.({
@@ -1571,6 +1636,21 @@ async function callAgentModelWithWorkspaceToolsNative(
     const callOptions: AgentRuntimeModelCallOptions = {
       ...options,
       round,
+      // 包装 onDelta:除了透传给 UI,还累积本轮 reasoning/content 文本供采集 processNode.
+      onDelta: options.onDelta
+        ? (agentId, delta, r, kind) => {
+            if (r === round) {
+              if (kind === "reasoning") roundReasoning += delta
+              else roundContent += delta
+            }
+            options.onDelta!(agentId, delta, r, kind)
+          }
+        : ((agentId: string, delta: string, r: number, kind: "reasoning" | "content") => {
+            if (r === round) {
+              if (kind === "reasoning") roundReasoning += delta
+              else roundContent += delta
+            }
+          }) as AgentRuntimeModelCallOptions["onDelta"],
     }
     const result = await capabilities.callModelNative!(runtimeMessages, callOptions, tools)
     assertNotAborted(options.signal)
@@ -1584,6 +1664,24 @@ async function callAgentModelWithWorkspaceToolsNative(
     // for every round including the final stop round. agentId identifies which
     // agent's tool loop this round belongs to (entry or delegated agent_call target).
     options.onRoundEnd?.(agentContext.agent.id, round, result.finishReason)
+
+    // 采集 processNode:tool_calls 轮 → interim(过渡文本)+ thought(思维链);
+    // stop 轮 → thought(若有思维链).与 UI composable 的 timeline 构建同构.
+    if (result.finishReason === "tool_calls") {
+      if (roundContent.trim()) {
+        collectedProcessNodes.push({ type: "interim", id: `interim-r${round}`, round, text: roundContent, collapsed: false })
+      }
+      if (roundReasoning.trim()) {
+        collectedProcessNodes.push({ type: "thought", id: `thought-r${round}`, round, text: roundReasoning, collapsed: true })
+      }
+    } else {
+      // stop 轮:思维链(若有)折叠为 thought;content 是最终回复不入 processNode(它是 content).
+      if (roundReasoning.trim()) {
+        collectedProcessNodes.push({ type: "thought", id: `thought-r${round}`, round, text: roundReasoning, collapsed: true })
+      }
+    }
+    roundReasoning = ""
+    roundContent = ""
 
     const toolCalls = nativeToolCallsToParsed(result.toolCalls)
     // Thread provider-assigned tool call ids into the parsed calls so the
@@ -1611,7 +1709,7 @@ async function callAgentModelWithWorkspaceToolsNative(
     })
 
     if (result.finishReason === "stop" || result.toolCalls.length === 0) {
-      return { text: result.text.trim(), usage: lastRoundUsage }
+      return { text: result.text.trim(), usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -1641,8 +1739,31 @@ async function callAgentModelWithWorkspaceToolsNative(
       // so the executor's onTool stays callId/name/status only; the caller binds
       // turn. agentId is this loop's agent (entry or delegated target).
       onTool: options.onTool
-        ? (callId, name, status, output) => options.onTool!(agentContext.agent.id, round, callId, name, status, output)
-        : undefined,
+        ? (callId, name, status, output) => {
+            options.onTool!(agentContext.agent.id, round, callId, name, status, output)
+            // 采集 tool processNode(与 UI onTool 回调同源,这里额外采集供持久化).
+            collectedProcessNodes.push({
+              type: "tool",
+              id: callId,
+              round,
+              name,
+              status,
+              collapsed: false,
+              ...(output !== undefined ? { output } : {}),
+            })
+          }
+        : (callId: string, name: string, status: "loading" | "running" | "success" | "failed", output?: TurnToolOutput) => {
+            // 无 UI onTool 时仍采集 processNode(供持久化).
+            collectedProcessNodes.push({
+              type: "tool",
+              id: callId,
+              round,
+              name,
+              status,
+              collapsed: false,
+              ...(output !== undefined ? { output } : {}),
+            })
+          },
       onAskUser: options.onAskUser,
     }, toolCalls)
 
@@ -1660,6 +1781,13 @@ async function callAgentModelWithWorkspaceToolsNative(
         content: formatNativeToolObservationContent(observation),
       })
     }
+
+    // 采集本轮工具调用(供 contextUpdate 跨 turn 保留).observation 取 native 文本化结果.
+    collectedToolCalls.push(...collectToolCallsForContext(
+      result.toolCalls,
+      observations,
+      formatNativeToolObservationContent,
+    ))
 
     // Inject image ContentParts from workspace_read image results as a user
     // message(tool role content 是 string,不能放 image;image 走 user ContentPart[]).
@@ -1682,15 +1810,18 @@ async function callAgentModelWithWorkspaceToolsNative(
 }
 
 async function callAgentModelWithWorkspaceTools(
-  messages: AiChatMessage[],
+  messages: RuntimeChatMessage[],
   input: AgentRuntimeTurnInput,
   capabilities: AgentRuntimeCapabilities,
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry | null,
   toolOptions?: WorkspaceToolLoopOptions,
-): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number } }> {
+): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number }; collectedToolCalls?: AgentContextToolCall[]; collectedProcessNodes?: TurnProcessNode[] }> {
+  const collectedToolCalls: AgentContextToolCall[] = []
+  const collectedProcessNodes: TurnProcessNode[] = []
   if (!input.workspaceFiles || !agentContext) {
-    const response = await capabilities.callModel(messages, options)
+    // text 路径:messages 是 RuntimeChatMessage[](超集),text 模式无 role:tool,安全降级为 AiChatMessage[].
+    const response = await capabilities.callModel(messages as AiChatMessage[], options)
     capabilities.emitTrace?.({
       type: "model_call_completed",
       debugLabel: options.debugLabel,
@@ -1723,7 +1854,9 @@ async function callAgentModelWithWorkspaceTools(
     )
   }
 
-  let nextMessages = messages
+  // text 路径用 AiChatMessage[](text 循环的 compress/inject/skill 全是 AiChatMessage 签名).
+  // messages 是 RuntimeChatMessage[](buildEntryAgentMessages 产),text 模式无 role:tool,安全降级.
+  let nextMessages: AiChatMessage[] = messages as AiChatMessage[]
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
   // turn 内 token 预算 + 压缩(text 循环对称版).按 compressionMode 分流(narrative/task),
@@ -1771,7 +1904,7 @@ async function callAgentModelWithWorkspaceTools(
           if (interactionSpan.start < 0) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1791,7 +1924,7 @@ async function callAgentModelWithWorkspaceTools(
           if (!result.compressed) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1820,7 +1953,7 @@ async function callAgentModelWithWorkspaceTools(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1840,8 +1973,10 @@ async function callAgentModelWithWorkspaceTools(
           const newHistory = buildAgentContextMessages(
             toolOptions!.agentContextSnapshot!,
             agentContext ? isAssistantEntryAgent(agentContext.agent.path) : false,
+            false,  // text 路径:产 text-protocol blocks
           )
-          replaceHistorySpan(nextMessages, historySpan, newHistory)
+          // text 模式 buildAgentContextMessages 无 role:tool,安全降级为 AiChatMessage[].
+          replaceHistorySpan(nextMessages, historySpan, newHistory as AiChatMessage[])
           historySpan.end = historySpan.start + newHistory.length
           capabilities.emitTrace?.({
             type: "context_compressed_in_turn",
@@ -1860,7 +1995,7 @@ async function callAgentModelWithWorkspaceTools(
       }
     }
 
-    const response = await capabilities.callModel(nextMessages, options)
+    const response = await capabilities.callModel(nextMessages as AiChatMessage[], options)
     assertNotAborted(options.signal)
     lastRoundText = response
 
@@ -1879,7 +2014,13 @@ async function callAgentModelWithWorkspaceTools(
       },
     })
     if (toolCalls.length === 0) {
-      return { text: stripRuntimeWorkspaceToolCallBlocks(response).trim() }
+      return { text: stripRuntimeWorkspaceToolCallBlocks(response).trim(), ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
+    }
+
+    // 采集 interim processNode:tool_calls 轮的过渡文本(剥离 tool-call blocks 后的正文).
+    const interimText = stripRuntimeWorkspaceToolCallBlocks(response).trim()
+    if (interimText) {
+      collectedProcessNodes.push({ type: "interim", id: `interim-r${round}`, round, text: interimText, collapsed: false })
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -1908,6 +2049,22 @@ async function callAgentModelWithWorkspaceTools(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
+      // 采集 tool processNode + 透传 UI onTool(text 模式之前没绑 onTool,UI 无工具节点;
+      // 现在绑定让 text 模式也有工具过程显示 + processNode 持久化).
+      onTool: (callId, name, status, output) => {
+        if (options.onTool) {
+          options.onTool(agentContext.agent.id, round, callId, name, status, output)
+        }
+        collectedProcessNodes.push({
+          type: "tool",
+          id: callId,
+          round,
+          name,
+          status,
+          collapsed: false,
+          ...(output !== undefined ? { output } : {}),
+        })
+      },
       onAskUser: options.onAskUser,
     }, toolCalls)
     nextMessages = [
@@ -1930,6 +2087,30 @@ async function callAgentModelWithWorkspaceTools(
         }
       })(),
     ]
+    // 采集本轮工具调用(供 contextUpdate 跨 turn 保留).observation 取 text 文本化结果.
+    // toolCalls 是 ParsedRuntimeToolCall[],observations 按 index 与完整 calls 数组对齐
+    // (executeRuntimeWorkspaceToolCalls 保证每条 call 都有对应 observation,含解析失败的).
+    // 取 .call 非空的(解析失败的 p.call 为 undefined,跳过但保持 index 对齐).
+    const callsWithIndex = toolCalls
+      .map((p, i) => ({ call: p.call, i }))
+      .filter((c): c is { call: NonNullable<typeof c.call>; i: number } => c.call !== undefined)
+    if (callsWithIndex.length > 0) {
+      // 用原始 index 从 observations 取对应 observation(防过滤后 index 偏移错位).
+      const alignedToolCalls: { id?: string; name: string; arguments: Record<string, unknown> }[] = []
+      const alignedObservations: RuntimeWorkspaceToolObservation[] = []
+      for (const { call, i } of callsWithIndex) {
+        const obs = observations[i]
+        if (obs) {
+          alignedToolCalls.push(call)
+          alignedObservations.push(obs)
+        }
+      }
+      collectedToolCalls.push(...collectToolCallsForContext(
+        alignedToolCalls,
+        alignedObservations,
+        (obs) => formatNativeToolObservationContent(obs),
+      ))
+    }
     // Inject full SKILL.md for skills newly activated via use_skill this round
     // (B-scheme: declare intent -> framework injects content next round).
     nextMessages = injectActivatedSkillMessagesText(
@@ -2026,6 +2207,9 @@ export async function runAgentRuntimeTurn(
 
   let replyText: string
   let turnUsage: { input?: number; output?: number; total?: number } | undefined
+  // 跨 turn 保留:工具调用 + 过程节点从 loopResult 带回(try 内赋值,外层 return 用).
+  let collectedToolCalls: AgentContextToolCall[] | undefined
+  let collectedProcessNodes: TurnProcessNode[] | undefined
   // turn 内压剧情就地把压缩结果写进 agentContext(对象引用),循环结束后
   // 用它覆盖 compressedContext 透传给 host 落盘(design §3.5).标记位区分
   // "turn 开头压过" 与 "turn 内又压过",取最后一次压缩快照.
@@ -2071,6 +2255,9 @@ export async function runAgentRuntimeTurn(
     )
     replyText = loopResult.text.trim()
     turnUsage = loopResult.usage
+    // 跨 turn 保留:工具调用 + 过程节点从 loopResult 带回,供 contextUpdate → host 写入.
+    collectedToolCalls = loopResult.collectedToolCalls
+    collectedProcessNodes = loopResult.collectedProcessNodes
     // 工具循环内若压过剧情,agentContextSnapshotForLoop 已被 Object.assign 就地更新;
     // 通过对比 updatedAt 判断是否发生 turn 内压缩(底层压缩必更新 updatedAt).
     if (
@@ -2106,6 +2293,11 @@ export async function runAgentRuntimeTurn(
       user: input.userInput,
       assistant: replyText,
       compressedContext: compressedInTurn ? agentContextSnapshotForLoop! : compressedContext,
+      // 助手工具调用跨 turn 保留:双层写入 agent context.json + UI 会话消息存储.
+      // master 无工具调用(loopResult.collectedToolCalls 为 undefined),不影响.
+      ...(collectedToolCalls && collectedToolCalls.length > 0 ? { toolCalls: collectedToolCalls } : {}),
+      // 过程节点(thought/tool/interim)供 host 写入会话消息存储 processNodes,UI 重建 timeline.
+      ...(collectedProcessNodes && collectedProcessNodes.length > 0 ? { processNodes: collectedProcessNodes } : {}),
     },
     ...(turnUsage ? { usage: turnUsage } : {}),
   }
