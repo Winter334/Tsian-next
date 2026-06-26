@@ -8,6 +8,7 @@ export { createBridge } from "./bridge"
 export type { Bridge, BridgeHandlers } from "./bridge"
 export { createSessionHistory } from "./session-history"
 export type { SessionHistory } from "./session-history"
+export { listCheckpoints, restoreCheckpoint } from "./checkpoints"
 export { parseStoryOptions } from "./story-options"
 export type { ParsedStoryOptions } from "./story-options"
 
@@ -41,4 +42,5 @@ export type {
   TurnProcessNode,
   TurnStats,
   SessionHistoryEntry,
+  CheckpointSummary,
 } from "@tsian/contracts"

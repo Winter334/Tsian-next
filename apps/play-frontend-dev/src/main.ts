@@ -8,7 +8,13 @@
 // 烛火书卷（Lamplight Codex）风格 —— 见 style.css。
 
 import { marked } from "marked"
-import { createBridge, createSessionHistory, parseStoryOptions } from "@tsian/play-bridge"
+import {
+  createBridge,
+  createSessionHistory,
+  parseStoryOptions,
+  listCheckpoints,
+  restoreCheckpoint,
+} from "@tsian/play-bridge"
 import type {
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
@@ -17,6 +23,7 @@ import type {
   SessionHistoryEntry,
   TurnStats,
   TurnToolOutput,
+  CheckpointSummary,
 } from "@tsian/play-bridge"
 
 // ════════════════════════════════════════════════════════════════
@@ -37,6 +44,10 @@ const $stop = document.getElementById("stop") as HTMLButtonElement | null
 const $turnBadge = document.getElementById("turn-badge") as HTMLSpanElement | null
 const $turnNum = document.getElementById("turn-num") as HTMLElement | null
 const $emptyState = document.getElementById("empty-state") as HTMLDivElement | null
+// 视图舞台 / 导航栏 / 检查点视图 / composer（视图切换用）
+const $checkpointView = document.getElementById("checkpoint-view") as HTMLElement | null
+const $composer = document.querySelector<HTMLDivElement>(".composer")
+const $navItems = Array.from(document.querySelectorAll<HTMLButtonElement>(".nav-item"))
 
 // ════════════════════════════════════════════════════════════════
 // 回合状态机（移植自 useAssistantTimeline，原生 JS 版）
@@ -113,6 +124,233 @@ if ($story) {
     const dist = $story.scrollHeight - $story.scrollTop - $story.clientHeight
     userPinnedToBottom = dist < 80
   })
+}
+
+// ════════════════════════════════════════════════════════════════
+// 视图切换（剧情 / 回溯 / 未来…）
+// 右侧导航栏切换中间视图舞台；同一时刻一个视图可见，切换不销毁 DOM
+// （剧情视图保留滚动位置）。非剧情视图隐藏 composer（输入只属剧情）。
+// ════════════════════════════════════════════════════════════════
+
+type ViewId = "story" | "checkpoints"
+
+let currentView: ViewId = "story"
+
+/** 切换视图舞台：显隐对应视图 + 同步导航激活态 + composer 仅剧情视图可见。 */
+function switchView(view: ViewId): void {
+  if (view === currentView) return
+  currentView = view
+  if ($story) $story.hidden = view !== "story"
+  if ($checkpointView) $checkpointView.hidden = view !== "checkpoints"
+  if ($composer) $composer.classList.toggle("hidden", view !== "story")
+  for (const btn of $navItems) {
+    btn.classList.toggle("active", btn.dataset.view === view)
+  }
+  if (view === "checkpoints") void loadCheckpointView()
+}
+
+/** 导航按钮点击：点当前激活项 = 切回剧情（回溯视图的快捷返回）。 */
+for (const btn of $navItems) {
+  btn.addEventListener("click", () => {
+    if (btn.disabled) return
+    const target = btn.dataset.view as ViewId | undefined
+    if (!target) return
+    if (target === currentView) switchView("story")
+    else switchView(target)
+  })
+}
+
+// Esc 在非剧情视图时切回剧情
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && currentView !== "story") switchView("story")
+})
+
+/** turn 进行中时禁用回溯导航（避免回合中途回滚存档）。 */
+function setNavCheckpointsEnabled(enabled: boolean): void {
+  const btn = $navItems.find((b) => b.dataset.view === "checkpoints")
+  if (btn) btn.disabled = !enabled
+}
+
+// ════════════════════════════════════════════════════════════════
+// 检查点回溯视图
+// 卡片列表（host 按新→旧排序）：第 N 回 + 类型徽标 + 相对时间 + 恢复按钮。
+// 恢复 = 破坏性操作 → 全局确认弹窗 → restoreCheckpoint → 切回剧情 + 重渲染。
+// ════════════════════════════════════════════════════════════════
+
+const REASON_LABEL: Record<CheckpointSummary["reason"], string> = {
+  initial: "初始",
+  "after-turn": "回合后",
+  manual: "手动",
+}
+
+/** 把毫秒时间戳格式化成相对时间（如"2 分钟前""3 小时前""昨天"）；同日显时间。 */
+function formatRelativeTime(ts: number): string {
+  const diff = Date.now() - ts
+  if (diff < 60_000) return "刚刚"
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)} 分钟前`
+  if (diff < 86_400_000) return `${Math.floor(diff / 3600_000)} 小时前`
+  if (diff < 7 * 86_400_000) return `${Math.floor(diff / 86_400_000)} 天前`
+  const d = new Date(ts)
+  return `${d.getMonth() + 1}-${d.getDate()}`
+}
+
+/** 渲染检查点视图：加载中 → 列表/空 → 错误三态。 */
+async function loadCheckpointView(): Promise<void> {
+  if (!$checkpointView) return
+  $checkpointView.innerHTML = ""
+  const inner = document.createElement("div")
+  inner.className = "checkpoint-inner"
+  inner.appendChild(renderCkptState("loading", "载入检查点…", ""))
+  $checkpointView.appendChild(inner)
+  let checkpoints: CheckpointSummary[]
+  try {
+    checkpoints = await listCheckpoints(bridge)
+  } catch (e) {
+    const msg = (e && (e as { message?: string }).message) ? (e as { message: string }).message : "加载检查点失败"
+    inner.innerHTML = ""
+    inner.appendChild(renderCkptState("error", "加载失败", msg))
+    return
+  }
+  inner.innerHTML = ""
+  const head = document.createElement("h2")
+  head.className = "ckpt-title"
+  head.textContent = "回溯"
+  inner.appendChild(head)
+  const sub = document.createElement("p")
+  sub.className = "ckpt-sub"
+  sub.textContent = "恢复到某个检查点将回滚此后所有进度。"
+  inner.appendChild(sub)
+  if (checkpoints.length === 0) {
+    inner.appendChild(renderCkptState("empty", "尚无可回溯的检查点", "开始游戏后将自动生成。"))
+    return
+  }
+  const list = document.createElement("div")
+  list.className = "ckpt-list"
+  for (const cp of checkpoints) list.appendChild(renderCheckpointCard(cp))
+  inner.appendChild(list)
+}
+
+/** 渲染检查点视图的状态占位（加载中/空/错误）。 */
+function renderCkptState(kind: "loading" | "empty" | "error", title: string, hint: string): HTMLDivElement {
+  const div = document.createElement("div")
+  div.className = "ckpt-state" + (kind === "error" ? " error" : "")
+  const t = document.createElement("p"); t.className = "ckpt-state-title"; t.textContent = title
+  const h = document.createElement("p"); h.className = "ckpt-state-hint"; h.textContent = hint
+  div.appendChild(t); div.appendChild(h)
+  return div
+}
+
+/** 渲染单张检查点卡片：第 N 回 + 类型徽标 + 相对时间 + 恢复按钮。 */
+function renderCheckpointCard(cp: CheckpointSummary): HTMLDivElement {
+  const card = document.createElement("div")
+  card.className = "ckpt-card"
+
+  const main = document.createElement("div")
+  main.className = "ckpt-main"
+  const turn = document.createElement("p")
+  turn.className = "ckpt-turn"
+  turn.textContent = `第 ${cp.turn} 回`
+  main.appendChild(turn)
+  const meta = document.createElement("div")
+  meta.className = "ckpt-meta"
+  const badge = document.createElement("span")
+  badge.className = "ckpt-badge " + cp.reason
+  badge.textContent = REASON_LABEL[cp.reason]
+  meta.appendChild(badge)
+  const time = document.createElement("span")
+  time.className = "ckpt-time"
+  time.textContent = formatRelativeTime(cp.createdAt)
+  time.title = new Date(cp.createdAt).toLocaleString()
+  meta.appendChild(time)
+  if (cp.label) {
+    const lab = document.createElement("span")
+    lab.className = "ckpt-time"
+    lab.textContent = "· " + cp.label
+    meta.appendChild(lab)
+  }
+  main.appendChild(meta)
+  card.appendChild(main)
+
+  const restoreBtn = document.createElement("button")
+  restoreBtn.type = "button"
+  restoreBtn.className = "ckpt-restore"
+  restoreBtn.textContent = "恢复"
+  restoreBtn.addEventListener("click", () => openRestoreConfirm(cp))
+  card.appendChild(restoreBtn)
+  return card
+}
+
+// ── 恢复确认弹窗（全局遮罩，破坏性操作二次确认）──
+let $modalOverlay: HTMLDivElement | null = null
+
+/** 打开恢复确认弹窗：选中检查点 → 确认 → restoreCheckpoint → 切回剧情 + 重渲染。 */
+function openRestoreConfirm(cp: CheckpointSummary): void {
+  closeRestoreConfirm()
+  const overlay = document.createElement("div")
+  overlay.className = "modal-overlay"
+  overlay.innerHTML = ""
+  const modal = document.createElement("div")
+  modal.className = "modal"
+  const title = document.createElement("p")
+  title.className = "modal-title"
+  title.textContent = "恢复检查点"
+  modal.appendChild(title)
+  const body = document.createElement("p")
+  body.className = "modal-body"
+  body.innerHTML = `将回滚到 <b>第 ${cp.turn} 回</b>（${REASON_LABEL[cp.reason]}）。<br><span class="warn">此后所有进度将丢失，此操作不可撤销。</span>`
+  modal.appendChild(body)
+  const errorEl = document.createElement("p")
+  errorEl.className = "modal-error"
+  modal.appendChild(errorEl)
+  const actions = document.createElement("div")
+  actions.className = "modal-actions"
+  const cancelBtn = document.createElement("button")
+  cancelBtn.type = "button"
+  cancelBtn.className = "modal-btn"
+  cancelBtn.textContent = "取消"
+  const confirmBtn = document.createElement("button")
+  confirmBtn.type = "button"
+  confirmBtn.className = "modal-btn danger"
+  confirmBtn.textContent = "恢复"
+  cancelBtn.addEventListener("click", closeRestoreConfirm)
+  const doRestore = async () => {
+    confirmBtn.disabled = true
+    cancelBtn.disabled = true
+    errorEl.textContent = ""
+    try {
+      await restoreCheckpoint(bridge, cp.id)
+      closeRestoreConfirm()
+      switchView("story")
+      await reloadHistory()
+      setStatus(`已回溯到第 ${cp.turn} 回`, "ready")
+    } catch (e) {
+      confirmBtn.disabled = false
+      cancelBtn.disabled = false
+      errorEl.textContent = (e && (e as { message?: string }).message) ? (e as { message: string }).message : "恢复失败"
+    }
+  }
+  confirmBtn.addEventListener("click", () => void doRestore())
+  actions.appendChild(cancelBtn)
+  actions.appendChild(confirmBtn)
+  modal.appendChild(actions)
+  overlay.appendChild(modal)
+  // 点遮罩空白处取消；Esc 取消
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) closeRestoreConfirm() })
+  overlay.addEventListener("keydown", (e) => { if (e.key === "Escape") closeRestoreConfirm() })
+  document.body.appendChild(overlay)
+  $modalOverlay = overlay
+  confirmBtn.focus()
+}
+
+function closeRestoreConfirm(): void {
+  if ($modalOverlay) { $modalOverlay.remove(); $modalOverlay = null }
+}
+
+/** 从 workspace turn 文件单源重建对话（重载/回溯后复用）。 */
+async function reloadHistory(): Promise<void> {
+  const history = await createSessionHistory(bridge)
+  setTurn(history.turn)
+  renderSessionHistory(history.entries)
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -772,12 +1010,11 @@ function handleReady(sid: string): void {
   setStatus("就绪", "ready")
   if ($send) $send.disabled = false
   if ($input) { $input.disabled = false; $input.focus() }
+  // 回溯导航在 bridge ready 后可用
+  setNavCheckpointsEnabled(true)
   // 从 workspace turn 文件单源重建完整对话(正文 + 过程节点).
   // 不再用 getRuntimeSnapshot 渲染——snapshot 退化为 runtime engine 内部状态.
-  createSessionHistory(bridge).then((history) => {
-    setTurn(history.turn)
-    renderSessionHistory(history.entries)
-  }).catch(() => { setStatus("历史加载失败", "error") })
+  reloadHistory().catch(() => { setStatus("历史加载失败", "error") })
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -785,9 +1022,12 @@ function handleReady(sid: string): void {
 // ════════════════════════════════════════════════════════════════
 
 function setSending(v: boolean): void {
-  if ($send) $send.disabled = v || !bridge.ready
-  if ($input) $input.disabled = v
+  // 发送/停止同一位置切换：发送中显示停止按钮，空闲显示发送按钮。
+  if ($send) { $send.hidden = v; $send.disabled = v || !bridge.ready }
   if ($stop) $stop.hidden = !v
+  if ($input) $input.disabled = v
+  // 回合进行中禁用回溯导航，避免回合中途回滚存档
+  setNavCheckpointsEnabled(!v)
   if (!v && $input) $input.focus()
 }
 

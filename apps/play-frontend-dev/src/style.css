@@ -28,6 +28,13 @@ body {
 
 /* ── 布局 ── */
 .app { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
+/* body = 行布局：[左栏预留] 中间视图舞台 + 右侧导航栏 */
+.body {
+  flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch;
+}
+/* 视图舞台：同一时刻一个视图可见，其余 hidden（不销毁，保留剧情滚动位置） */
+.view { flex: 1 1 auto; min-width: 0; }
+.view[hidden] { display: none; }
 
 /* ── Header ── */
 .app-header {
@@ -53,13 +60,6 @@ body {
   border: 1px solid var(--ember-deep); padding: 2px 8px;
 }
 .turn-badge b { color: var(--ember); font-weight: 700; }
-.header-btn {
-  font-family: var(--mono); font-size: 11px; color: var(--whisper);
-  border: 1px solid var(--ember-deep); background: transparent;
-  padding: 3px 10px; cursor: pointer; letter-spacing: 0.08em;
-}
-.header-btn:hover:not(:disabled) { color: var(--ember); border-color: var(--ember); }
-.header-btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
 /* ── Story 正文区 ── */
 .story {
@@ -71,7 +71,7 @@ body {
 .story::-webkit-scrollbar-thumb { background: var(--ember-deep); }
 
 /* 正文容器：居中限宽，小说阅读感 */
-.story-inner { max-width: 42em; margin: 0 auto; }
+.story-inner { max-width: 52em; margin: 0 auto; }
 
 /* ── 消息渲染 ── */
 /* 剧情正文（AI 回复）：无气泡无强边框，小说式排版 */
@@ -203,8 +203,11 @@ body {
 
 /* ── Composer 输入区 ── */
 .composer {
-  flex: 0 0 auto; display: flex; gap: 10px; padding: 14px 20px;
+  flex: 0 0 auto; padding: 14px 20px;
   border-top: 1px solid var(--ember-deep); background: var(--parchment);
+}
+.composer-inner {
+  max-width: 52em; margin: 0 auto; display: flex; gap: 10px;
 }
 .input {
   flex: 1 1 auto; resize: none; min-height: 44px; max-height: 160px;
@@ -284,7 +287,131 @@ body {
   .app-title { font-size: 16px; }
   .story { padding: 20px 14px; }
   .story-inner { max-width: 100%; }
-  .composer { padding: 10px 14px; gap: 8px; }
+  .composer { padding: 10px 14px; }
+  .composer-inner { max-width: 100%; gap: 8px; }
   .send, .stop { padding: 0 16px; }
   .turn-badge { display: none; }
+  .sidebar-right { width: 48px; }
+  .nav-item .nav-label { display: none; }
 }
+
+/* ── 右侧导航栏 ── */
+/* 纵向导航轨：剧情（默认）/ 回溯 / 未来功能项。激活项高亮，非剧情视图时 composer 隐藏。 */
+.sidebar-right {
+  flex: 0 0 auto; width: 76px;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 14px 10px; border-left: 1px solid var(--ember-deep);
+  background: var(--parchment);
+}
+.nav-item {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 10px 4px;
+  border: 1px solid transparent; background: transparent;
+  color: var(--whisper); cursor: pointer;
+  font-family: var(--serif); font-size: 12px; line-height: 1.2;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.nav-item:hover:not(:disabled) { color: var(--ember); border-color: var(--ember-deep); }
+.nav-item:disabled { opacity: 0.35; cursor: not-allowed; }
+.nav-item.active {
+  color: var(--ember); border-color: var(--ember);
+  background: var(--gold-glow);
+}
+.nav-glyph { font-size: 18px; line-height: 1; color: inherit; }
+.nav-label { letter-spacing: 0.08em; }
+
+/* ── 视图舞台公共态 ── */
+/* 非剧情视图时 composer 整体隐藏（main.ts 切换 .composer.hidden） */
+.composer.hidden { display: none; }
+
+/* ── 检查点回溯视图 ── */
+.view-checkpoint {
+  overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: var(--ember-deep) var(--parchment);
+}
+.view-checkpoint::-webkit-scrollbar { width: 8px; }
+.view-checkpoint::-webkit-scrollbar-track { background: var(--parchment); }
+.view-checkpoint::-webkit-scrollbar-thumb { background: var(--ember-deep); }
+.checkpoint-inner { max-width: 52em; margin: 0 auto; padding: 28px 20px 40px; }
+.ckpt-head { display: flex; align-items: baseline; gap: 14px; margin-bottom: 4px; }
+.ckpt-title {
+  font-family: var(--serif); font-size: 1.2em; font-weight: 700;
+  color: var(--ember); letter-spacing: 0.08em; margin: 0;
+}
+.ckpt-sub { font-size: 12px; color: var(--whisper); margin: 0 0 1.6em; }
+
+/* 检查点卡片：第 N 回（主标识）+ 类型徽标 + 相对时间 + 恢复按钮 */
+.ckpt-list { display: flex; flex-direction: column; gap: 12px; }
+.ckpt-card {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px 20px;
+  border: 1px solid var(--ember-deep); background: var(--parchment-elev);
+  border-radius: 2px;
+  transition: border-color 0.15s, background 0.15s;
+}
+.ckpt-card:hover { border-color: var(--ember); background: var(--gold-glow); }
+.ckpt-main { flex: 1 1 auto; min-width: 0; }
+.ckpt-turn {
+  font-family: var(--serif); font-size: 1.15em; font-weight: 700;
+  color: var(--ember); margin: 0 0 4px;
+}
+.ckpt-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.ckpt-badge {
+  font-family: var(--mono); font-size: 10px; letter-spacing: 0.06em;
+  padding: 1px 7px; border: 1px solid var(--ember-dim); color: var(--prose-dim);
+}
+.ckpt-badge.initial { border-color: var(--ember-deep); color: var(--ember-deep); }
+.ckpt-badge.after-turn { border-color: var(--ember); color: var(--ember); }
+.ckpt-badge.manual { border-color: var(--blood); color: var(--blood); }
+.ckpt-time { font-family: var(--mono); font-size: 11px; color: var(--whisper); }
+.ckpt-restore {
+  flex: 0 0 auto; padding: 7px 16px;
+  background: var(--ember-deep); color: var(--ink);
+  border: 1px solid var(--ember); cursor: pointer;
+  font-family: var(--serif); font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+  transition: background 0.15s;
+}
+.ckpt-restore:hover:not(:disabled) { background: var(--ember); }
+.ckpt-restore:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* 检查点视图状态：加载中 / 空 / 错误 */
+.ckpt-state { text-align: center; padding: 50px 20px; color: var(--whisper); }
+.ckpt-state-title { font-size: 1em; color: var(--ember-deep); margin: 0 0 0.4em; letter-spacing: 0.1em; }
+.ckpt-state-hint { font-size: 0.9em; margin: 0; }
+.ckpt-state.error .ckpt-state-title { color: var(--blood); }
+
+/* ── 确认弹窗（全局遮罩，破坏性操作二次确认）── */
+.modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10, 8, 6, 0.72);
+  padding: 20px;
+}
+.modal-overlay[hidden] { display: none; }
+.modal {
+  width: 100%; max-width: 28em;
+  padding: 24px 26px 20px;
+  border: 1px solid var(--ember-deep); background: var(--parchment-elev);
+  border-radius: 2px;
+}
+.modal-title {
+  font-family: var(--serif); font-size: 1.1em; font-weight: 700;
+  color: var(--ember); margin: 0 0 0.8em; letter-spacing: 0.08em;
+}
+.modal-body { font-size: 14px; line-height: 1.7; color: var(--prose); margin: 0 0 1.2em; }
+.modal-body .warn { color: var(--blood); }
+.modal-error {
+  font-family: var(--mono); font-size: 12px; color: var(--blood);
+  margin: 0 0 1em; min-height: 1em;
+}
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.modal-btn {
+  padding: 8px 20px; cursor: pointer;
+  font-family: var(--serif); font-size: 14px; font-weight: 700; letter-spacing: 0.08em;
+  border: 1px solid var(--ember-deep); background: transparent; color: var(--prose);
+  transition: background 0.15s, color 0.15s;
+}
+.modal-btn:hover:not(:disabled) { border-color: var(--ember); color: var(--ember); }
+.modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.modal-btn.danger { background: var(--blood); border-color: var(--blood); color: var(--prose); }
+.modal-btn.danger:hover:not(:disabled) { filter: brightness(1.15); color: var(--ink); }
