@@ -10,8 +10,17 @@ export const AGENT_PLATFORM_TOOL_NAMES = {
   workspaceWrite: "workspace_write",
   inspectFrontend: "inspect_frontend",
   workspaceSemanticSearch: "workspace_semantic_search",
+  askUser: "ask_user",
 } as const satisfies Record<string, AgentPlatformToolName>
 
+/**
+ * 默认平台工具集（agent.platformTools.enabled 为空时的回退）。
+ * 各 agent 的默认启用态由其 agent.json 显式声明（defaultAssistantConfig /
+ * 卡片默认 agent.json），不在此处按 agent 类型派生——开关 = 显式数组，
+ * 所见即所得，避免"派生说开了但显式数组没有"的脱节。
+ * ask_user 的默认归属：助手 agent.json 显式含（defaultAssistantConfig），
+ * 游戏 agent.json 不含，需时手动开。
+ */
 export const DEFAULT_AGENT_PLATFORM_TOOLS: AgentPlatformToolName[] = [
   AGENT_PLATFORM_TOOL_NAMES.agentCall,
   AGENT_PLATFORM_TOOL_NAMES.workspaceRead,

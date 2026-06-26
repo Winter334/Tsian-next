@@ -17,6 +17,20 @@ export type AssistantTimelineNode =
   | { type: "thought"; id: string; round: number; text: string; collapsed: boolean }
   | { type: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput; collapsed: boolean }
   | { type: "interim"; id: string; round: number; text: string; collapsed: boolean }
+  | {
+      type: "ask"
+      id: string
+      round: number
+      requestId: string
+      question: string
+      options?: string[]
+      allowCustom?: boolean
+      /** 玩家回答后填入（resolveInteractionRequest 的 answer）。未回答时 undefined。 */
+      answer?: string
+      /** 玩家取消时 true。未交互时 undefined。 */
+      cancelled?: boolean
+      collapsed: boolean
+    }
 
 /**
  * 聊天消息(单条).user/assistant 共用结构;assistant 额外承载
@@ -124,6 +138,45 @@ export function useAssistantTimeline(
   }
 
   /**
+   * ask_user 工具触发时插入一个 ask 节点（由 AssistantView 订阅
+   * subscribeInteractionRequest 后调用）。节点渲染为提问卡片，玩家回答后
+   * 用 resolveAskNode 更新为已答态。
+   */
+  function pushAskNode(input: {
+    requestId: string
+    question: string
+    options?: string[]
+    allowCustom?: boolean
+  }): void {
+    timeline.push({
+      type: "ask",
+      id: `ask-${input.requestId}`,
+      round: timeline.length,
+      requestId: input.requestId,
+      question: input.question,
+      collapsed: false,
+      ...(input.options ? { options: input.options } : {}),
+      ...(input.allowCustom !== undefined ? { allowCustom: input.allowCustom } : {}),
+    })
+    onUpdate?.()
+  }
+
+  /**
+   * 玩家回答/取消后更新对应 ask 节点为已答态（由 AssistantView 在
+   * resolveInteractionRequest 后调用）。已答节点在 finalize 时折叠。
+   */
+  function resolveAskNode(requestId: string, answer: string | undefined, cancelled: boolean): void {
+    const node = timeline.find(
+      (n): n is AssistantTimelineNode & { type: "ask" } => n.type === "ask" && n.requestId === requestId,
+    )
+    if (node) {
+      if (answer !== undefined) node.answer = answer
+      if (cancelled) node.cancelled = cancelled
+    }
+    onUpdate?.()
+  }
+
+  /**
    * 把仍在流式的 provisional 文本落盘,避免中止/出错时丢失用户已见进度:
    *   - streamingReasoning → 折叠为 thought 节点(若非空,保留已产出的思维链)
    *   - streamingText → content(已见的回复正文)
@@ -171,6 +224,10 @@ export function useAssistantTimeline(
       if (node.type === "thought" || node.type === "tool") {
         node.collapsed = true
       }
+      // ask 节点:已回答/已取消的折叠(过程完成),未交互的保持展开(等玩家).
+      if (node.type === "ask" && (node.answer !== undefined || node.cancelled)) {
+        node.collapsed = true
+      }
     }
     assistantMsg.streamingText = ""
     assistantMsg.streamingReasoning = ""
@@ -181,6 +238,8 @@ export function useAssistantTimeline(
     onDelta,
     onRoundEnd,
     onTool,
+    pushAskNode,
+    resolveAskNode,
     flushStreaming,
     finalize,
   }

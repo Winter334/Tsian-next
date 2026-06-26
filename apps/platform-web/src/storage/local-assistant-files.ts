@@ -834,7 +834,7 @@ function defaultAssistantConfig(): AgentConfig {
       disabled: [],
     },
     platformTools: {
-      enabled: ["agent_call", "workspace_read", "workspace_write", "inspect_frontend"],
+      enabled: ["agent_call", "workspace_read", "workspace_write", "inspect_frontend", "ask_user"],
       disabled: [],
     },
     workspaceAccess: {

@@ -10,7 +10,6 @@ import {
   buildSkillRegistry,
   isSkillEnabledForAgent,
 } from "../agent-runtime/registry"
-import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import {
   buildAgentProviderPresetMap,
   isRecord,
@@ -337,20 +336,13 @@ export async function updateLocalAssistantPlatformToolEnabled(
   const existingAgent = buildAgentRegistry(files).find((candidate) => candidate.id === LOCAL_ASSISTANT_AGENT_ID)
   let enabled = removePlatformToolReference(existingAgent?.platformTools.enabled ?? [], input.tool)
   let disabled = removePlatformToolReference(existingAgent?.platformTools.disabled ?? [], input.tool)
+  // 无条件 append 到目标侧：removePlatformToolReference 已清理对侧，显式落盘
+  // 表达用户明确意图。不依赖 isAgentPlatformToolEnabled 判断——默认态派生会让
+  // "启用一个默认就开的工具"误判为已开而跳过写入（ask_user 助手默认开即此 bug）。
   if (input.enabled) {
-    const nextAgent = existingAgent
-      ? { ...existingAgent, platformTools: { enabled, disabled } }
-      : null
-    if (!nextAgent || !isAgentPlatformToolEnabled(nextAgent, input.tool)) {
-      enabled = appendPlatformToolReference(enabled, input.tool)
-    }
+    enabled = appendPlatformToolReference(enabled, input.tool)
   } else {
-    const nextAgent = existingAgent
-      ? { ...existingAgent, platformTools: { enabled, disabled } }
-      : null
-    if (!nextAgent || isAgentPlatformToolEnabled(nextAgent, input.tool)) {
-      disabled = appendPlatformToolReference(disabled, input.tool)
-    }
+    disabled = appendPlatformToolReference(disabled, input.tool)
   }
   const nextTools = { enabled, disabled }
   if (configIndex >= 0) {

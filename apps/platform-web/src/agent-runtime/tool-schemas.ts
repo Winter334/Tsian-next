@@ -436,9 +436,10 @@ const workspaceDeleteSchema: ToolSchema = {
  *
  * `use_skill` and `run_script` are always available because Skill
  * installation/enablement is player/card-author controlled. `agent_call` is
- * gated by contacts + the `agent_call` platform tool. Workspace read tools are
- * gated by `workspace_read`; workspace write/delete/move tools by
- * `workspace_write`.
+ * gated by contacts + the `agent_call` platform tool. `ask_user` is gated by
+ * the `ask_user` platform tool (assistant default on, game agents default off).
+ * Workspace read tools are gated by `workspace_read`; workspace write/delete/move
+ * tools by `workspace_write`.
  */
 export function buildEnabledToolSchemas(options: {
   enabledPlatformTools: AgentPlatformToolName[]
@@ -459,8 +460,16 @@ export function buildEnabledToolSchemas(options: {
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
   )
+  const canAskUser = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.askUser,
+  )
 
-  const schemas: ToolSchema[] = [useSkillSchema, runScriptSchema, askUserSchema]
+  const schemas: ToolSchema[] = [useSkillSchema, runScriptSchema]
+
+  if (canAskUser) {
+    schemas.push(askUserSchema)
+  }
 
   if (canCallAgents) {
     schemas.push(agentCallSchema)

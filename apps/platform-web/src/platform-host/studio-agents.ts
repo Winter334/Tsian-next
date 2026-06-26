@@ -15,7 +15,6 @@ import {
   skillMatchesReference,
   skillMetadataReference,
 } from "../agent-runtime/registry"
-import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import { assembleAgentContext } from "../agent-runtime/context"
 import {
   cardContentFilesToWorkspaceFiles,
@@ -367,29 +366,13 @@ export async function updatePlatformStudioAgentPlatformToolEnabled(
   const agent = findStudioAgent(context.files, input.agentId)
   let enabled = removePlatformToolReference(agent.platformTools.enabled, input.tool)
   let disabled = removePlatformToolReference(agent.platformTools.disabled, input.tool)
-
+  // 无条件 append 到目标侧：removePlatformToolReference 已清理对侧，显式落盘
+  // 表达用户明确意图。不依赖 isAgentPlatformToolEnabled 判断——默认态派生会让
+  // "启用一个默认就开的工具"误判为已开而跳过写入（与 local-assistant.ts 同 bug）。
   if (input.enabled) {
-    const nextAgent = {
-      ...agent,
-      platformTools: {
-        enabled,
-        disabled,
-      },
-    }
-    if (!isAgentPlatformToolEnabled(nextAgent, input.tool)) {
-      enabled = appendPlatformToolReference(enabled, input.tool)
-    }
+    enabled = appendPlatformToolReference(enabled, input.tool)
   } else {
-    const nextAgent = {
-      ...agent,
-      platformTools: {
-        enabled,
-        disabled,
-      },
-    }
-    if (isAgentPlatformToolEnabled(nextAgent, input.tool)) {
-      disabled = appendPlatformToolReference(disabled, input.tool)
-    }
+    disabled = appendPlatformToolReference(disabled, input.tool)
   }
 
   const configFile = agentConfigFileForAgent(context.files, agent)

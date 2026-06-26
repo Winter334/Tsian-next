@@ -76,27 +76,38 @@
         <div class="border-b border-neon-deep/25 px-3 py-2">
           <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">平台工具</p>
         </div>
-        <div class="grid gap-2 p-3">
-          <label
-            v-for="tool in platformToolControls"
-            :key="tool.id"
-            class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/30 bg-elevated/45 p-3 hover:bg-elevated sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+        <div class="grid gap-3 p-3">
+          <div
+            v-for="group in platformToolGroups"
+            :key="group.title"
+            class="border border-neon-deep/20 bg-elevated/30"
           >
-            <input
-              class="mt-1 h-4 w-4 accent-[#f3c56d]"
-              type="checkbox"
-              :checked="platformToolEnabled(tool.id)"
-              :disabled="applying || !agent"
-              @change="togglePlatformTool(tool.id, ($event.target as HTMLInputElement).checked)"
-            >
-            <span class="min-w-0">
-              <span class="block text-sm font-bold text-text-main">{{ tool.label }}</span>
-              <span class="mt-1 block text-xs leading-5 text-text-dim">{{ tool.description }}</span>
-            </span>
-            <span class="font-mono text-[11px]" :class="platformToolEnabled(tool.id) ? 'text-neon' : 'text-text-dim'">
-              {{ platformToolEnabled(tool.id) ? "启用" : "禁用" }}
-            </span>
-          </label>
+            <div class="border-b border-neon-deep/20 px-3 py-1.5">
+              <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">{{ group.title }}</p>
+            </div>
+            <div class="grid gap-2 p-3">
+              <label
+                v-for="tool in group.tools"
+                :key="tool.id"
+                class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/30 bg-elevated/45 p-3 hover:bg-elevated sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+              >
+                <input
+                  class="mt-1 h-4 w-4 accent-[#f3c56d]"
+                  type="checkbox"
+                  :checked="platformToolEnabled(tool.id)"
+                  :disabled="applying || !agent"
+                  @change="togglePlatformTool(tool.id, ($event.target as HTMLInputElement).checked)"
+                >
+                <span class="min-w-0">
+                  <span class="block text-sm font-bold text-text-main">{{ tool.label }}</span>
+                  <span class="mt-1 block text-xs leading-5 text-text-dim">{{ tool.description }}</span>
+                </span>
+                <span class="font-mono text-[11px]" :class="platformToolEnabled(tool.id) ? 'text-neon' : 'text-text-dim'">
+                  {{ platformToolEnabled(tool.id) ? "启用" : "禁用" }}
+                </span>
+              </label>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -180,6 +191,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { isAgentPlatformToolEnabled } from "@/agent-runtime/permissions"
+import { PLATFORM_TOOL_CONTROL_GROUPS } from "@/agent-runtime/tool-controls"
 import { isSkillEnabledForAgent } from "@/agent-runtime/registry"
 import { toast } from "@/composables/useToast"
 import {
@@ -221,32 +233,7 @@ const skillConfigInitial = ref(new Map<string, Record<string, string>>())
  */
 const skillConfigDraft = ref(new Map<string, Record<string, string>>())
 
-const platformToolControls: Array<{
-  id: AgentPlatformToolName
-  label: string
-  description: string
-}> = [
-  {
-    id: "agent_call",
-    label: "Agent 协作",
-    description: "允许向联系人 Agent 发起一次性咨询。",
-  },
-  {
-    id: "workspace_read",
-    label: "读取 Workspace",
-    description: "允许读取、列出和搜索可见 Workspace 文件。",
-  },
-  {
-    id: "workspace_write",
-    label: "维护 Workspace",
-    description: "允许通过平台工具或 Skill 动作写入、移动、删除或校验文件。",
-  },
-  {
-    id: "inspect_frontend",
-    label: "前端自检",
-    description: "允许助手在隐藏 iframe 里加载当前卡的 packaged 前端，观测渲染、报错和桥状态，驱动一回合或模拟玩家交互，形成写前端→自检→改→复查闭环。",
-  },
-]
+const platformToolGroups = PLATFORM_TOOL_CONTROL_GROUPS
 
 const workspaceAccessOptions = [
   {

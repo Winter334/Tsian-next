@@ -289,6 +289,74 @@
                           >{{ agentCallDisplay(node.output)?.response }}</div>
                         </CollapsibleContent>
                       </Collapsible>
+
+                      <!-- ask_user 节点：助手向用户提问的阻塞式卡片。
+                           未回答时渲染问题 + 选项/自定义输入/取消；已回答转只读显示答案。 -->
+                      <Collapsible
+                        v-else-if="node.type === 'ask'"
+                        :open="!node.collapsed"
+                        @update:open="(v) => (node.collapsed = !v)"
+                        class="border border-neon-deep/40 bg-neon/5"
+                      >
+                        <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                          <ChevronRight
+                            class="h-3 w-3 transition-transform"
+                            :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
+                            aria-hidden="true"
+                          />
+                          <HelpCircle class="h-3 w-3" aria-hidden="true" />
+                          <span>{{ node.cancelled ? "已取消提问" : (node.answer !== undefined ? "已回答" : "等待你的回答") }}</span>
+                        </CollapsibleTrigger>
+                        <CollapsibleContent class="px-2.5 py-2">
+                          <!-- 问题文本 -->
+                          <p class="prose-chat text-sm leading-6 text-text-main" v-html="renderMarkdown(node.question)" />
+
+                          <!-- 未回答：交互区 -->
+                          <div v-if="node.answer === undefined && !node.cancelled" class="mt-2 grid gap-2">
+                            <!-- 选项按钮列表 -->
+                            <div v-if="node.options && node.options.length > 0" class="grid gap-1.5">
+                              <button
+                                v-for="opt in node.options"
+                                :key="opt"
+                                type="button"
+                                class="retro-focus border border-neon-deep/35 bg-panel/55 px-2.5 py-1.5 text-left text-sm text-text-main transition-colors hover:border-neon/55 hover:bg-neon/10"
+                                @click="answerAsk(node.requestId, opt)"
+                              >{{ opt }}</button>
+                            </div>
+                            <!-- 自定义输入（allowCustom 为 true 时） -->
+                            <div v-if="node.allowCustom" class="flex items-center gap-2">
+                              <input
+                                :ref="(el) => setAskInputRef(node.requestId, el as HTMLInputElement | null)"
+                                type="text"
+                                class="retro-focus h-8 flex-1 border border-neon-deep/30 bg-panel/60 px-2 text-sm text-text-main"
+                                placeholder="自定义回答…"
+                                spellcheck="false"
+                                @keydown.enter="(e) => submitCustomAsk(node.requestId, (e.target as HTMLInputElement).value)"
+                              >
+                              <button
+                                type="button"
+                                class="retro-focus border border-neon/50 bg-neon/10 px-2.5 py-1 text-xs text-neon transition-colors hover:bg-neon/20"
+                                @click="submitCustomAsk(node.requestId, askInputRefs[node.requestId]?.value ?? '')"
+                              >提交</button>
+                            </div>
+                            <!-- 取消 -->
+                            <button
+                              type="button"
+                              class="retro-focus justify-self-start border border-neon-deep/30 bg-panel/40 px-2.5 py-1 text-xs text-text-dim transition-colors hover:border-red-400/50 hover:text-red-400"
+                              @click="cancelAsk(node.requestId)"
+                            >取消</button>
+                          </div>
+
+                          <!-- 已回答/取消：只读显示答案 -->
+                          <div v-else class="mt-2 border-l border-neon-deep/30 bg-panel/30 px-2.5 py-1.5">
+                            <p v-if="node.cancelled" class="text-xs italic text-text-dim">已取消</p>
+                            <template v-else>
+                              <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">你的回答</p>
+                              <p class="mt-1 text-sm text-text-main">{{ node.answer }}</p>
+                            </template>
+                          </div>
+                        </CollapsibleContent>
+                      </Collapsible>
                     </template>
                   </div>
                 </template>
@@ -532,7 +600,7 @@
 import { ref, reactive, nextTick, computed, watch, onBeforeUnmount, onMounted } from "vue"
 import { useRoute } from "vue-router"
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, Check, ChevronDown, ChevronRight, Copy, FileText, Loader2, Paperclip, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain, X } from "lucide-vue-next"
+import { Bot, Check, ChevronDown, ChevronRight, Copy, FileText, HelpCircle, Loader2, Paperclip, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain, X } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import AssistantConfigPanel from "@/components/assistant/AssistantConfigPanel.vue"
@@ -545,6 +613,10 @@ import {
 } from "@/components/ui/collapsible"
 import { useAssistantTimeline, type ChatMessage } from "@/composables/useAssistantTimeline"
 import { confirm } from "@/composables/useConfirm"
+import {
+  subscribeInteractionRequest,
+  resolveInteractionRequest,
+} from "../interaction-events"
 import {
   Select,
   SelectContent,
@@ -651,6 +723,15 @@ const abortController = ref<AbortController | null>(null)
 // 当前进行中 turn 的 flush 函数(由 send() 内 useAssistantTimeline 提供).
 // 切会话/关页面时调它把流式缓冲落 content,防半截回复丢失.send finally 段清空.
 const currentTurnFlush = ref<(() => void) | null>(null)
+// ask_user 订阅的 unsubscribe 闭包（onMounted 注册、onBeforeUnmount 释放）。
+let unsubscribeInteractionRequest: (() => void) | null = null
+// 当前进行中 turn 的 ask 节点操作（由 send() 内 useAssistantTimeline 提供）。
+// subscribeInteractionRequest 回调进来时 push 节点；玩家回答时 resolve 节点 + 回填事件。
+// send finally 段清空。
+const currentTurnAsk = ref<{
+  push: (input: { requestId: string; question: string; options?: string[]; allowCustom?: boolean }) => void
+  resolve: (requestId: string, answer: string | undefined, cancelled: boolean) => void
+} | null>(null)
 const sessionCreating = ref(false)
 const sessionRenaming = ref(false)
 const sessionDeleting = ref(false)
@@ -1008,12 +1089,15 @@ async function send() {
   // onDelta/onRoundEnd/onTool 的解析逻辑抽到 useAssistantTimeline composable(纯流式状态,
   // 不碰 DOM/持久化);这里只把 maybeScrollToBottom 作为 onUpdate 传入,让视图层保留滚动控制.
   // text 模式无回调,content 在 reconcile 一次性赋值,timeline 为空——降级为现状.
-  const { timeline, onDelta, onRoundEnd, onTool, flushStreaming, finalize } = useAssistantTimeline(
+  const { timeline, onDelta, onRoundEnd, onTool, pushAskNode, resolveAskNode, flushStreaming, finalize } = useAssistantTimeline(
     assistantMsg,
     () => maybeScrollToBottom(),
   )
   // 暴露 flush 给组件作用域,供切会话/关页面时落盘流式缓冲.
   currentTurnFlush.value = flushStreaming
+  // 暴露 ask 节点操作给组件作用域,供 subscribeInteractionRequest 回调 push、
+  // 玩家回答时 resolve（回调绑定见 onMounted）。
+  currentTurnAsk.value = { push: pushAskNode, resolve: resolveAskNode }
 
   // ③ Stop-generating: an AbortController for this turn, abortable from the UI.
   const controller = new AbortController()
@@ -1102,6 +1186,7 @@ async function send() {
     // 回合结束:折叠所有仍展开的 thought/tool 节点 + 清空流式缓冲(composable 负责).
     finalize()
     currentTurnFlush.value = null
+    currentTurnAsk.value = null
     abortController.value = null
     sending.value = false
     await scrollToBottom()
@@ -1111,6 +1196,38 @@ async function send() {
 
 function stopGenerating() {
   abortController.value?.abort()
+}
+
+/**
+ * ask_user 玩家回答处理：resolve 事件等待表（让助手 turn 拿到答案继续）+ 更新节点为已答态。
+ */
+const askInputRefs: Record<string, HTMLInputElement | null> = {}
+function setAskInputRef(requestId: string, el: HTMLInputElement | null): void {
+  if (el) {
+    askInputRefs[requestId] = el
+  } else {
+    delete askInputRefs[requestId]
+  }
+}
+
+function answerAsk(requestId: string, answer: string): void {
+  resolveInteractionRequest(requestId, answer)
+  currentTurnAsk.value?.resolve(requestId, answer, false)
+}
+
+function submitCustomAsk(requestId: string, value: string): void {
+  const trimmed = value.trim()
+  if (!trimmed) return
+  delete askInputRefs[requestId]
+  resolveInteractionRequest(requestId, trimmed)
+  currentTurnAsk.value?.resolve(requestId, trimmed, false)
+}
+
+function cancelAsk(requestId: string): void {
+  delete askInputRefs[requestId]
+  // cancelled=true 时 answer 传空串（AskUserResult.answer 必填），助手侧据此识别取消。
+  resolveInteractionRequest(requestId, "", true)
+  currentTurnAsk.value?.resolve(requestId, undefined, true)
 }
 
 /**
@@ -1408,6 +1525,16 @@ onMounted(async () => {
   window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   window.addEventListener("beforeunload", onBeforeUnloadRecovery)
   document.addEventListener("visibilitychange", onVisibilityChangeRecovery)
+  // 订阅 ask_user 交互请求：助手 runtime 调 ask_user 时 emitInteractionRequest
+  // 推给本订阅，在此 push 一个 ask 节点到当前 turn timeline，渲染提问卡片。
+  unsubscribeInteractionRequest = subscribeInteractionRequest(
+    (requestId, question, options, allowCustom) => {
+      const ask = currentTurnAsk.value
+      if (!ask) return // 无进行中 turn，忽略（不应发生，保守兜底）
+      ask.push({ requestId, question, ...(options ? { options } : {}), ...(allowCustom !== undefined ? { allowCustom } : {}) })
+      void nextTick(() => scrollToBottom())
+    },
+  )
   await refresh()
   await loadActiveSession()
   await loadProviderPreset()
@@ -1418,6 +1545,7 @@ onBeforeUnmount(() => {
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   window.removeEventListener("beforeunload", onBeforeUnloadRecovery)
   document.removeEventListener("visibilitychange", onVisibilityChangeRecovery)
+  unsubscribeInteractionRequest?.()
 })
 
 function onActiveCardChanged(event: Event) {

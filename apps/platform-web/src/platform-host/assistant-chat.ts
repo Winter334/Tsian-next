@@ -52,6 +52,7 @@ import { resolveBrowserAiConfigForModel } from "../config/ai"
 import { binaryPlaceholderText } from "@/lib/media-type"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import { createFrontendInspector } from "./frontend-inspector"
+import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   getPlatformActiveGameCard,
   listEffectiveWorkspaceFilesForActiveSave,
@@ -450,6 +451,10 @@ export async function runAssistantChat(
         onTool: input.onTool
           ? (agentId, round, callId, name, status, output) => input.onTool!(agentId, round, callId, name, status, output)
           : undefined,
+        // ask_user 工具回调：复用进程内 interaction-events 总线（与游戏 host 同源），
+        // AssistantView 订阅 subscribeInteractionRequest 渲染 ask 卡片并回填答案。
+        onAskUser: (requestId, request) =>
+          emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
       },
       {
         callModel(messages, options) {
@@ -651,6 +656,9 @@ export async function runAssistantChat(
     }
   } catch (error) {
     activeWorkspaceTransaction.discard()
+    // 清理 ask_user 等待表：turn 失败/abort/timeout 时若有挂起的 interaction-request，
+    // 必须 reject 防止 Promise 悬空（镜像游戏 host index.ts 的 rejectAllInteractionRequests）。
+    rejectAllInteractionRequests(error)
     // 记录失败 trace 事件(若 runtime 未自己发 turn_failed),让 traces/ 里能看到失败原因.
     traceCollector.emit({
       type: "turn_failed",
