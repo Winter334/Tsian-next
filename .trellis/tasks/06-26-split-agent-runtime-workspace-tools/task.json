@@ -3,7 +3,7 @@
   "name": "split-agent-runtime-workspace-tools",
   "title": "拆分 agent-runtime/workspace-tools.ts",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
