@@ -1,7 +1,6 @@
 import type {
   AgentContextSnapshot,
   ConversationMessageRecord,
-  RuntimeSnapshotShell,
   SessionHistoryEntry,
   TurnProcessNode,
   TurnStats,
@@ -181,6 +180,27 @@ export function parseRawAirpHistoryTurnRecord(
     ...(Array.isArray(obj.processNodes) ? { processNodes: obj.processNodes as TurnProcessNode[] } : {}),
     ...(obj.stats && typeof obj.stats === "object" ? { stats: obj.stats as TurnStats } : {}),
   }
+}
+
+/**
+ * 从 workspace 文件列表取当前 turn 号(= 最大 turn 文件的 record.turn).
+ * 新档无 turn 文件 → 0.坏文件 parse 失败跳过,不影响 max.
+ * turn 号天然跟着 turn 文件走,不需要额外元数据文件.
+ */
+export function getMaxTurnFromTurnFiles(workspaceFiles: WorkspaceFile[]): number {
+  const turnFiles = workspaceFiles.filter(
+    (file) =>
+      file.path.startsWith(AIRP_HISTORY_TURN_PATH_PREFIX)
+      && file.path.endsWith(".json"),
+  )
+  let maxTurn = 0
+  for (const file of turnFiles) {
+    const record = parseRawAirpHistoryTurnRecord(file.content)
+    if (record && record.turn > maxTurn) {
+      maxTurn = record.turn
+    }
+  }
+  return maxTurn
 }
 
 /**

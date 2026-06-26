@@ -18,7 +18,6 @@ import type {
   PlayFrontendBridge,
   RuntimeDiagnosticSummary,
   RuntimeDiagnosticsQueryParams,
-  RuntimeSnapshotShell,
   SkillDetailEntry,
   SkillRegistryEntry,
   TurnStats,
@@ -88,8 +87,6 @@ import { emitTurnDebugReady } from "../debug-events"
 import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats } from "../streaming-events"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
-  getBaseBridge,
-  getRuntimeEngine,
   markPlatformHostReady,
   waitForPlatformHostReady,
 } from "./host-state"
@@ -109,6 +106,7 @@ import { ensureActiveSave, formatActiveFrontendId, getPlatformActiveGameCardId }
 import { executeWorkspaceMutation } from "./workspace-volumes"
 import {
   readAgentContextFromWorkspace,
+  getMaxTurnFromTurnFiles,
   getSessionHistoryFromTurnFiles,
   stageAgentContextFile,
   stageRawAirpHistoryTurnFile,
@@ -135,7 +133,6 @@ import {
   commitSuccessfulRuntimeTurnForSave,
   commitWorkspaceFilesForSave,
   createRuntimeWorkspaceTransaction,
-  createEmptyRuntimeSnapshot,
   createLocalSave,
   createLocalSaveFromGameCard,
   deleteLocalGameCard,
@@ -148,7 +145,6 @@ import {
   getBuiltinBlankGameCard,
   getHistoryForSave,
   getLocalGameCard,
-  getSnapshotForSave,
   importGameCardFrontendPackage,
   importGameCardPackage,
   initializeWorkspaceForSave,
@@ -195,26 +191,6 @@ let previousTurnController: AbortController | null = null
  */
 function finishReasonToKind(finishReason: "stop" | "tool_calls"): "thought" | "final" {
   return finishReason === "tool_calls" ? "thought" : "final"
-}
-
-function cloneSnapshot(snapshot: RuntimeSnapshotShell): RuntimeSnapshotShell {
-  return JSON.parse(JSON.stringify(snapshot)) as RuntimeSnapshotShell
-}
-
-function snapshotWithTurnAndMessages(
-  snapshot: RuntimeSnapshotShell,
-  turn: number,
-  messages: ConversationMessageRecord[],
-): RuntimeSnapshotShell {
-  return {
-    ...snapshot,
-    state: {
-      ...snapshot.state,
-      turn,
-      messages,
-      globals: snapshot.state.globals ?? {},
-    },
-  }
 }
 
 function actionError(
@@ -388,8 +364,8 @@ async function executePlatformAction(
       )
     }
 
-    const snapshot = await restoreCheckpointForSave(activeSaveId, checkpointId.trim())
-    if (!snapshot) {
+    const restored = await restoreCheckpointForSave(activeSaveId, checkpointId.trim())
+    if (!restored) {
       return actionError(
         "CHECKPOINT_NOT_FOUND",
         "指定的 checkpoint 不存在。",
@@ -397,10 +373,9 @@ async function executePlatformAction(
       )
     }
 
-    getRuntimeEngine().loadSnapshot(snapshot)
     return {
       ok: true,
-      item: snapshot,
+      item: restored,
     }
   }
 
@@ -488,7 +463,6 @@ function normalizeRuntimeDiagnosticsQueryParams(
 }
 
 export const playFrontendBridge: PlayFrontendBridge = {
-  runtime: getBaseBridge().runtime,
   platform: {
     async getPlatformContext() {
       const activeCard = await getPlatformActiveGameCard()
@@ -703,7 +677,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } as DeepQueryResult<T>
       }
 
-      return getBaseBridge().query.query(request)
+      return { items: [] } as DeepQueryResult<T>
     },
   },
   interaction: {
@@ -714,9 +688,10 @@ export const playFrontendBridge: PlayFrontendBridge = {
       }
 
       const activeSaveId = await ensureActiveSave()
-      const snapshotBefore = cloneSnapshot(await getSnapshotForSave(activeSaveId))
+      const workspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
+      const maxTurn = getMaxTurnFromTurnFiles(workspaceFilesBefore)
       const historyBefore = await getHistoryForSave(activeSaveId)
-      const nextTurn = snapshotBefore.state.turn + 1
+      const nextTurn = maxTurn + 1
       const trace = createRuntimeTraceCollector(nextTurn)
       trace.emit({
         type: "turn_started",
@@ -762,7 +737,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             agentId: "master",
             userInput: content,
             recentHistory: historyBefore,
-            snapshot: snapshotBefore,
+            turn: maxTurn,
             workspaceFiles: workspaceTransaction.workspaceFiles,
             signal: currentController.signal,
             agentContext: agentContext ?? undefined,
@@ -899,11 +874,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
           { role: "user", content },
           { role: "assistant", content: cleanReply },
         ]
-        const snapshotAfter = snapshotWithTurnAndMessages(
-          snapshotBefore,
-          nextTurn,
-          nextHistory,
-        )
 
         // 本轮 token usage（来自 runtime 最后一轮 model call）。
         // 耗时由前端自己计时（setInterval），不在此处记录。
@@ -968,9 +938,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           trace.events,
         )
 
-        getRuntimeEngine().loadSnapshot(snapshotAfter)
         await commitSuccessfulRuntimeTurnForSave(activeSaveId, {
-          snapshot: snapshotAfter,
           history: nextHistory,
           workspaceFiles: workspaceTransaction.finalWorkspaceFiles(),
           checkpointReason: "after-turn",
@@ -987,10 +955,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
           void enqueueStaleEmbeddings(activeSaveId, saveRuntimeFiles)
         }
 
-        emitTurnDebugReady(snapshotAfter.state.turn)
-        return { snapshot: snapshotAfter }
+        emitTurnDebugReady(nextTurn)
+        return {}
       } catch (error) {
-        getRuntimeEngine().loadSnapshot(snapshotBefore)
         workspaceTransaction?.discard()
         // Reject any pending ask_user requests when the turn fails.
         rejectAllInteractionRequests(error)
@@ -1028,10 +995,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
         throw new Error("interaction.invokeAgent requires non-empty input.")
       }
 
-      // invokeAgent 是旁路调用:不推进 turn、不写历史、不更新 runtimeSnapshot.
+      // invokeAgent 是旁路调用:不推进 turn、不写历史.
       // 结果直接返回调用方(游戏前端自行处理 NPC 视角/UI 修正等).
       const activeSaveId = await ensureActiveSave()
-      const snapshotBefore = cloneSnapshot(await getSnapshotForSave(activeSaveId))
+      const invokeWorkspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
+      const invokeMaxTurn = getMaxTurnFromTurnFiles(invokeWorkspaceFilesBefore)
       const historyBefore = await getHistoryForSave(activeSaveId)
 
       const invokeController = new AbortController()
@@ -1068,7 +1036,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             agentId,
             userInput,
             recentHistory: historyBefore,
-            snapshot: snapshotBefore,
+            turn: invokeMaxTurn,
             workspaceFiles,
             signal: invokeController.signal,
             agentContext: agentContext ?? undefined,

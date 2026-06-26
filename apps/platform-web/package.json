@@ -21,7 +21,6 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@lucide/vue": "^1.16.0",
     "@tsian/contracts": "0.0.0",
-    "@tsian/runtime-core": "0.0.0",
     "@vueuse/core": "^14.3.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

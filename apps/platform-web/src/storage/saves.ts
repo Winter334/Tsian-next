@@ -1,13 +1,11 @@
 import type {
   ConversationMessageRecord,
-  RuntimeSnapshotShell,
   WorkspaceFile,
 } from "@tsian/contracts"
 import {
   localDb,
   type LocalGameCardRecord,
   type LocalSaveRecord,
-  type LocalSaveSnapshotRecord,
 } from "./db"
 import {
   createCheckpointForSave,
@@ -22,7 +20,7 @@ import {
   listWorkspaceFilesForSave,
   saveRuntimeFilesFromEffectiveWorkspace,
 } from "./workspace"
-import { getHistoryFromTurnFiles } from "../platform-host/history-turns"
+import { getMaxTurnFromTurnFiles, getHistoryFromTurnFiles } from "../platform-host/history-turns"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
 
@@ -32,34 +30,6 @@ function createSaveId(): string {
   }
 
   return `save-${Date.now()}`
-}
-
-function normalizeMessages(
-  messages: ConversationMessageRecord[] | undefined,
-): ConversationMessageRecord[] {
-  if (!Array.isArray(messages)) {
-    return []
-  }
-
-  return messages.flatMap((item) => {
-    if (typeof item?.role === "string" && typeof item.content === "string") {
-      // 保留 attachments 字段(附件引用元数据);非数组或缺失时省略.
-      const attachments = Array.isArray(item.attachments) ? { attachments: item.attachments } : {}
-      return { role: item.role, content: item.content, ...attachments }
-    }
-    return []
-  })
-}
-
-export function createEmptyRuntimeSnapshot(): RuntimeSnapshotShell {
-  return {
-    version: "0.0.0",
-    state: {
-      turn: 0,
-      messages: [],
-      globals: {},
-    },
-  }
 }
 
 export async function listLocalSaves(): Promise<LocalSaveRecord[]> {
@@ -85,23 +55,19 @@ export async function setActiveSaveId(saveId: string | null): Promise<void> {
 
 export async function createLocalSave(
   name?: string,
-  snapshot: RuntimeSnapshotShell = createEmptyRuntimeSnapshot(),
 ): Promise<LocalSaveRecord> {
   const card = await getBuiltinBlankGameCard()
-  return createLocalSaveFromGameCard(card, { name, snapshot })
+  return createLocalSaveFromGameCard(card, { name })
 }
 
 export async function createLocalSaveFromGameCard(
   card: LocalGameCardRecord,
   input: {
     name?: string
-    snapshot?: RuntimeSnapshotShell
   } = {},
 ): Promise<LocalSaveRecord> {
   const existing = await localDb.saves.count()
   const now = Date.now()
-  const snapshot = input.snapshot ?? createEmptyRuntimeSnapshot()
-  const history = normalizeMessages(snapshot.state.messages)
 
   const save: LocalSaveRecord = {
     id: createSaveId(),
@@ -112,18 +78,6 @@ export async function createLocalSaveFromGameCard(
     updatedAt: now,
   }
 
-  const snapshotRecord: LocalSaveSnapshotRecord = {
-    saveId: save.id,
-    snapshot: {
-      ...snapshot,
-      state: {
-        ...snapshot.state,
-        messages: history,
-        globals: snapshot.state.globals ?? {},
-      },
-    },
-  }
-
   const workspaceRecords = createDefaultSaveRuntimeFiles().map((file) =>
     createLocalWorkspaceFileRecord(save.id, file)
   )
@@ -131,7 +85,7 @@ export async function createLocalSaveFromGameCard(
     .map(({ id: _id, saveId: _saveId, ...file }) => file)
     .sort((left, right) => left.path.localeCompare(right.path))
   const checkpoint = createCheckpointRecordForSave(save.id, {
-    snapshot: snapshotRecord.snapshot,
+    turn: 0,
     reason: "initial",
     label: "初始状态",
     workspaceFiles: checkpointWorkspaceFiles,
@@ -141,13 +95,11 @@ export async function createLocalSaveFromGameCard(
     "rw",
     [
       localDb.saves,
-      localDb.saveSnapshots,
       localDb.workspaceFiles,
       localDb.checkpoints,
     ],
     async () => {
       await localDb.saves.put(save)
-      await localDb.saveSnapshots.put(snapshotRecord)
 
       for (const record of workspaceRecords) {
         await localDb.workspaceFiles.put(record)
@@ -159,69 +111,15 @@ export async function createLocalSaveFromGameCard(
   return save
 }
 
-export async function getSnapshotForSave(
-  saveId: string,
-): Promise<RuntimeSnapshotShell> {
-  const record = await localDb.saveSnapshots.get(saveId)
-  return record?.snapshot ?? createEmptyRuntimeSnapshot()
-}
-
-export async function saveRuntimeForSave(
-  saveId: string,
-  snapshot: RuntimeSnapshotShell,
-  messages: ConversationMessageRecord[],
-): Promise<void> {
-  const now = Date.now()
-  const normalizedMessages = normalizeMessages(messages)
-  const nextSnapshot: RuntimeSnapshotShell = {
-    ...snapshot,
-    state: {
-      ...snapshot.state,
-      messages: normalizedMessages,
-      globals: snapshot.state.globals ?? {},
-    },
-  }
-
-  await localDb.transaction(
-    "rw",
-    localDb.saves,
-    localDb.saveSnapshots,
-    async () => {
-      await localDb.saveSnapshots.put({
-        saveId,
-        snapshot: nextSnapshot,
-      })
-
-      const save = await localDb.saves.get(saveId)
-      if (save) {
-        await localDb.saves.put({
-          ...save,
-          updatedAt: now,
-        })
-      }
-    },
-  )
-}
-
 export async function commitSuccessfulRuntimeTurnForSave(
   saveId: string,
   input: {
-    snapshot: RuntimeSnapshotShell
     history: ConversationMessageRecord[]
     workspaceFiles: WorkspaceFile[]
     checkpointReason: "after-turn"
   },
 ): Promise<void> {
   const now = Date.now()
-  const normalizedMessages = normalizeMessages(input.history)
-  const nextSnapshot: RuntimeSnapshotShell = {
-    ...input.snapshot,
-    state: {
-      ...input.snapshot.state,
-      messages: normalizedMessages,
-      globals: input.snapshot.state.globals ?? {},
-    },
-  }
 
   const workspaceRecords = new Map<string, ReturnType<typeof createLocalWorkspaceFileRecord>>()
   for (const file of saveRuntimeFilesFromEffectiveWorkspace(input.workspaceFiles)) {
@@ -232,8 +130,12 @@ export async function commitSuccessfulRuntimeTurnForSave(
   const checkpointWorkspaceFiles = Array.from(workspaceRecords.values())
     .map(({ id: _id, saveId: _saveId, ...file }) => file)
     .sort((left, right) => left.path.localeCompare(right.path))
+  // turn 号从 workspaceFiles 里的 turn 文件取 max(新档 0,第 N 回后 N).
+  const checkpointTurn = getMaxTurnFromTurnFiles(
+    checkpointWorkspaceFiles.map((f) => ({ path: f.path, content: f.content, updatedAt: f.updatedAt, createdAt: f.createdAt })),
+  )
   const checkpoint = createCheckpointRecordForSave(saveId, {
-    snapshot: nextSnapshot,
+    turn: checkpointTurn,
     reason: input.checkpointReason,
     workspaceFiles: checkpointWorkspaceFiles,
   }, now)
@@ -242,16 +144,10 @@ export async function commitSuccessfulRuntimeTurnForSave(
     "rw",
     [
       localDb.saves,
-      localDb.saveSnapshots,
       localDb.workspaceFiles,
       localDb.checkpoints,
     ],
     async () => {
-      await localDb.saveSnapshots.put({
-        saveId,
-        snapshot: nextSnapshot,
-      })
-
       const existingWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
       await Promise.all(existingWorkspace.map((record) => localDb.workspaceFiles.delete(record.id)))
       for (const record of workspaceRecords.values()) {
@@ -308,13 +204,6 @@ export async function commitWorkspaceFilesForSave(
   )
 }
 
-export async function saveSnapshotForSave(
-  saveId: string,
-  snapshot: RuntimeSnapshotShell,
-): Promise<void> {
-  await saveRuntimeForSave(saveId, snapshot, normalizeMessages(snapshot.state.messages))
-}
-
 export async function renameLocalSave(saveId: string, name: string): Promise<LocalSaveRecord> {
   const trimmed = name.trim()
   if (!trimmed) {
@@ -332,15 +221,7 @@ export async function renameLocalSave(saveId: string, name: string): Promise<Loc
 }
 
 export async function deleteLocalSave(saveId: string): Promise<void> {
-  await localDb.transaction(
-    "rw",
-    localDb.saves,
-    localDb.saveSnapshots,
-    async () => {
-      await localDb.saves.delete(saveId)
-      await localDb.saveSnapshots.delete(saveId)
-    },
-  )
+  await localDb.saves.delete(saveId)
 
   await deleteWorkspaceForSave(saveId)
   await deleteCheckpointsForSave(saveId)
@@ -356,16 +237,4 @@ export async function getHistoryForSave(
 ): Promise<ConversationMessageRecord[]> {
   const files = await listWorkspaceFilesForSave(saveId)
   return getHistoryFromTurnFiles(files)
-}
-
-export async function createCheckpointFromCurrentSave(
-  saveId: string,
-  reason: "initial" | "after-turn" | "manual",
-  label?: string,
-) {
-  return createCheckpointForSave(saveId, {
-    snapshot: await getSnapshotForSave(saveId),
-    reason,
-    label,
-  })
 }

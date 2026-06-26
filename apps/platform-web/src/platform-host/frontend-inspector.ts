@@ -1,5 +1,6 @@
 import type {
   ConversationMessageRecord,
+  DeepQueryResult,
   InvokeAgentRequest,
   InvokeAgentResult,
   MessageInteractionRequest,
@@ -9,7 +10,6 @@ import type {
   PlatformActionResult,
   PlatformContextShell,
   PlayFrontendBridge,
-  RuntimeSnapshotShell,
 } from "@tsian/contracts"
 import type { LocalGameCardRecord } from "../storage/db"
 import type {
@@ -45,15 +45,12 @@ import {
   getPlatformActiveGameCard,
   resolveAgentModelConfig,
 } from "./internal"
-import { getBaseBridge } from "./host-state"
-import { readAgentContextFromWorkspace } from "./history-turns"
+import { readAgentContextFromWorkspace, getMaxTurnFromTurnFiles, getHistoryFromTurnFiles, getSessionHistoryFromTurnFiles } from "./history-turns"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
-  createEmptyRuntimeSnapshot,
   createLocalSaveFromGameCard,
   deleteLocalSave,
   getHistoryForSave,
-  getSnapshotForSave,
 } from "../storage/saves"
 import { listLocalGameCardFrontendFiles } from "../storage/game-cards"
 import {
@@ -85,18 +82,10 @@ function disposeCurrentSession(): void {
     currentSession.dispose()
     currentSession = null
   }
-  // 重置 ephemeral 状态:bridge 闭包引用模块级 ephemeralSnapshot,上一次 send
-  // 回合会把结果存进去.若不重置,下一次 inspect 新加载的前端调
-  // getRuntimeSnapshot() 会拿到上次回合的消息,导致跨调用状态残留(测试发现:
-  // send 的消息出现在后续 actions 测试的初始 DOM 里).
-  // lastInspectSnapshot(diff 基准)不动——那是故意跨调用保留的(design §9).
-  ephemeralSnapshot = createEmptyRuntimeSnapshot()
   ephemeralSaveId = undefined
 }
 
-// ── ephemeral save / snapshot 状态 ──
-// 专用 bridge 在 drive 前返回空 snapshot,drive 后返回 ephemeral snapshotAfter.
-let ephemeralSnapshot: RuntimeSnapshotShell = createEmptyRuntimeSnapshot()
+// ── ephemeral save 状态 ──
 let ephemeralSaveId: string | undefined
 
 // ── session 状态(holder)──
@@ -110,6 +99,8 @@ interface InspectSessionState {
   controller: AbortController | null
   /** mount 握手时透出的会话 id,自检发 turn-completed 事件时用它匹配. */
   sessionId: string | null
+  /** ephemeral turn 结果(send 后填,供 inspect 主函数取 renderedText). */
+  ephemeralTurnResult?: { turn: number; replyText: string; history: ConversationMessageRecord[] }
 }
 
 // ── 专用 bridge ──
@@ -118,11 +109,6 @@ interface InspectSessionState {
 // sendMessage 编排 ephemeral 回合. design §4.
 function createInspectionBridge(state: InspectSessionState): PlayFrontendBridge {
   return {
-    runtime: {
-      async getRuntimeSnapshot() {
-        return ephemeralSnapshot
-      },
-    },
     interaction: {
       async sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult> {
         return runEphemeralTurn(input.content, state)
@@ -133,8 +119,12 @@ function createInspectionBridge(state: InspectSessionState): PlayFrontendBridge 
         throw new Error("interaction.invokeAgent is not available in frontend inspector mode.")
       },
     },
-    // 复用 base bridge 的 query(只读,无副作用).design §4.
-    query: getBaseBridge().query,
+    // inspector 的 query 只做只读兜底(未识别 resource 返空),无副作用.
+    query: {
+      query<T = unknown>(): Promise<DeepQueryResult<T>> {
+        return Promise.resolve({ items: [] } as DeepQueryResult<T>)
+      },
+    },
     platform: {
       async getPlatformContext(): Promise<PlatformContextShell> {
         return {
@@ -311,7 +301,7 @@ async function runInspectFrontend(
           kind: "event",
           sessionId: sessionState.sessionId,
           event: "turn-completed",
-          payload: { snapshot: ephemeralSnapshot },
+          payload: {},
         },
         "*",
       )
@@ -377,32 +367,26 @@ async function runInspectFrontend(
       }
     }
 
-    // 8. refresh:操作后拉最新 snapshot(语义化包装 runtime.getRuntimeSnapshot).
+    // 8. refresh:操作后用上次 ephemeral turn 结果刷新 renderedText.
     // design §7 refresh:助手不用知道桥方法名.
-    let refreshedSnapshot: RuntimeSnapshotShell | undefined
-    if (input.refresh) {
-      try {
-        refreshedSnapshot = await bridge.runtime.getRuntimeSnapshot()
-      } catch {
-        // 拉不到不致命,继续返回已有结构层
-      }
+    let refreshedResult: { history: ConversationMessageRecord[] } | undefined
+    if (input.refresh && sessionState.ephemeralTurnResult) {
+      refreshedResult = { history: sessionState.ephemeralTurnResult.history }
     }
 
     // 9. 采集结构层 + 汇总诊断层.
     const structure = iframe
       ? collectStructure(iframe.contentDocument, bridgeReady)
       : emptyStructure()
-    // send 或 refresh 后用 snapshot(回合权威结果)覆盖 renderedText.
+    // send 或 refresh 后用 ephemeral turn 结果覆盖 renderedText.
     // 不依赖 iframe DOM 渲染时序——前端收到 turn-completed 后异步渲染,
-    // 50ms microTick 不够稳定(测试发现:时好时坏).snapshot 是回合刚算出的
-    // 权威状态,renderedText 从它取保证 send 后一定能看到回合消息.
-    // send 后读 ephemeralSnapshot(runEphemeralTurn 已存 snapshotAfter);
-    // refresh 后读 refreshedSnapshot(刚拉的).
-    const snapshotForRender = sendCompleted ? ephemeralSnapshot : refreshedSnapshot
-    if (snapshotForRender && structure) {
-      const msgs = snapshotForRender.state.messages
+    // 50ms microTick 不够稳定.ephemeral turn 结果是回合刚算出的权威文本,
+    // renderedText 从它取保证 send 后一定能看到回合消息.
+    const renderResult = sendCompleted ? sessionState.ephemeralTurnResult : refreshedResult
+    if (renderResult && structure) {
+      const msgs = renderResult.history
       if (msgs && msgs.length > 0) {
-        const lastMsgs = msgs.slice(-3).map((m) => `${m.role}: ${typeof m.content === "string" ? m.content : ""}`).join("\n")
+        const lastMsgs = msgs.slice(-3).map((m: ConversationMessageRecord) => `${m.role}: ${typeof m.content === "string" ? m.content : ""}`).join("\n")
         structure.renderedText = lastMsgs
       }
     }
@@ -754,9 +738,10 @@ async function runEphemeralTurn(
   ephemeralSaveId = save.id
   try {
     // 2. 组装数据(镜像 index.ts:694-731).
-    const snapshotBefore = cloneSnapshot(await getSnapshotForSave(save.id))
-    const historyBefore = await getHistoryForSave(save.id)
-    const nextTurn = snapshotBefore.state.turn + 1
+    const workspaceFilesBefore = await listEffectiveWorkspaceFilesForSave(save.id, card)
+    const maxTurn = getMaxTurnFromTurnFiles(workspaceFilesBefore)
+    const historyBefore = getHistoryFromTurnFiles(workspaceFilesBefore)
+    const nextTurn = maxTurn + 1
     const trace = createRuntimeTraceCollector(nextTurn)
 
     // 3. 自己的 abort controller(不复用模块级 previousTurnController).
@@ -785,7 +770,7 @@ async function runEphemeralTurn(
         agentId: "master",
         userInput: content,
         recentHistory: historyBefore,
-        snapshot: snapshotBefore,
+        turn: maxTurn,
         workspaceFiles: workspaceTransaction.workspaceFiles,
         signal: controller.signal,
         agentContext: agentContext ?? undefined,
@@ -889,50 +874,25 @@ async function runEphemeralTurn(
       },
     )
 
-    // 5. 算 snapshotAfter(镜像 index.ts:834-840,但不 commit).
+    // 5. ephemeral turn 结果存 state(供 inspect 主函数填 renderedText).不 commit.
     const nextHistory: ConversationMessageRecord[] = [
       ...historyBefore,
       { role: "user", content },
       { role: "assistant", content: result.replyText },
     ]
-    const snapshotAfter = snapshotWithTurnAndMessages(
-      snapshotBefore,
-      nextTurn,
-      nextHistory,
-    )
+    state.ephemeralTurnResult = { turn: nextTurn, replyText: result.replyText, history: nextHistory }
     state.timeline.push({
       t: Date.now(),
       event: "turn-completed",
-      payload: { snapshot: snapshotAfter },
+      payload: {},
     })
-    ephemeralSnapshot = snapshotAfter // 让 bridge.getRuntimeSnapshot 返回最新
 
-    return { snapshot: snapshotAfter }
+    return {}
   } finally {
     // 6. 删 ephemeral save(不 commit、不碰 active 指针).design §5 步骤7.
     await deleteLocalSave(save.id)
     ephemeralSaveId = undefined
     state.controller = null
-  }
-}
-
-function cloneSnapshot(snapshot: RuntimeSnapshotShell): RuntimeSnapshotShell {
-  return JSON.parse(JSON.stringify(snapshot)) as RuntimeSnapshotShell
-}
-
-function snapshotWithTurnAndMessages(
-  snapshot: RuntimeSnapshotShell,
-  turn: number,
-  messages: ConversationMessageRecord[],
-): RuntimeSnapshotShell {
-  return {
-    ...snapshot,
-    state: {
-      ...snapshot.state,
-      turn,
-      messages,
-      globals: snapshot.state.globals ?? {},
-    },
   }
 }
 

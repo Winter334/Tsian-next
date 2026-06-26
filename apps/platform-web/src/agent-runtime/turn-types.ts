@@ -8,7 +8,6 @@ import type {
   ConversationMessageRecord,
   PlatformActionRequest,
   PlatformActionResult,
-  RuntimeSnapshotShell,
   TurnProcessNode,
   TurnToolOutput,
   WorkspaceFile,
@@ -32,7 +31,7 @@ export interface AgentRuntimeTurnInput {
    *  消息的 content 变为 ContentPart[](text + image parts),无值时保持 string. */
   userInputAttachments?: ContentPart[]
   recentHistory: ConversationMessageRecord[]
-  snapshot: RuntimeSnapshotShell
+  turn: number
   workspaceFiles?: WorkspaceFile[]
   signal?: AbortSignal
   /**

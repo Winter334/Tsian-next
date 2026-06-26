@@ -16,15 +16,12 @@ import type {
   RemotePlayBridgeError,
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
-  RuntimeSnapshotShell,
 } from "@tsian/contracts"
 
 /** 表现层注册的事件处理器集合。 */
 export interface BridgeHandlers {
   onReady?: (sessionId: string) => void
   onEvent?: (event: RemotePlayBridgeEventName, payload: RemotePlayBridgeEventPayload) => void
-  /** turn-completed.snapshot 的快捷通道，在 onEvent 之前触发。 */
-  onSnapshot?: (snapshot: RuntimeSnapshotShell) => void
   /** interaction-request 快捷通道：AI 向玩家提问，玩家选择后调 bridge.respondInteraction。 */
   onInteractionRequest?: (
     requestId: string,
@@ -72,7 +69,6 @@ export function createBridge(): Bridge {
   const handlers: BridgeHandlers = {
     onReady: undefined,
     onEvent: undefined,
-    onSnapshot: undefined,
     onInteractionRequest: undefined,
     onTurnOptions: undefined,
   }
@@ -134,11 +130,6 @@ export function createBridge(): Bridge {
       return
     }
     if (msg.kind === "event") {
-      // turn-completed 的 payload.snapshot 触发覆盖渲染（§4 红线）
-      if (msg.event === "turn-completed" && msg.payload) {
-        const snapshot = (msg.payload as { snapshot?: RuntimeSnapshotShell }).snapshot
-        if (snapshot) handlers.onSnapshot?.(snapshot)
-      }
       // interaction-request 快捷通道：AI 向玩家提问
       if (msg.event === "interaction-request" && msg.payload) {
         const p = msg.payload as {
@@ -177,7 +168,6 @@ export function createBridge(): Bridge {
     on(h: BridgeHandlers) {
       handlers.onReady = h.onReady
       handlers.onEvent = h.onEvent
-      handlers.onSnapshot = h.onSnapshot
       handlers.onInteractionRequest = h.onInteractionRequest
       handlers.onTurnOptions = h.onTurnOptions
     },

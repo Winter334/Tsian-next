@@ -11,14 +11,9 @@ import type {
   PlatformActionRequest,
   PlatformActionResult,
   PlatformContextShell,
-  RuntimeSnapshotShell,
   TurnToolOutput,
   TurnProcessNode,
 } from "./runtime"
-
-export interface RuntimeBridge {
-  getRuntimeSnapshot(): Promise<RuntimeSnapshotShell>
-}
 
 export interface InteractionBridge {
   sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult>
@@ -40,7 +35,6 @@ export interface DebugBridge {
 }
 
 export interface PlayFrontendBridge {
-  runtime: RuntimeBridge
   interaction: InteractionBridge
   query: QueryBridge
   platform: PlatformBridge
@@ -50,7 +44,6 @@ export interface PlayFrontendBridge {
 export type RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 
 export type RemotePlayBridgeMethod =
-  | "runtime.getRuntimeSnapshot"
   | "interaction.sendMessage"
   | "interaction.invokeAgent"
   | "interaction.respond"
@@ -73,7 +66,6 @@ export type RemotePlayBridgeRequestParams =
   | undefined
 
 export type RemotePlayBridgeResponseResult =
-  | RuntimeSnapshotShell
   | MessageInteractionResult
   | InvokeAgentResult
   | DeepQueryResult<unknown>
@@ -197,9 +189,7 @@ export interface SessionHistoryEntry {
 }
 
 export type RemotePlayBridgeEventPayload =
-  | {
-      snapshot: RuntimeSnapshotShell
-    }
+  | Record<string, never>
   | {
       turn: number
     }

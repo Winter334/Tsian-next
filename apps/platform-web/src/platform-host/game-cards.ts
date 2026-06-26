@@ -1,12 +1,10 @@
 import type {
   GameCardFrontendBinding,
-  RuntimeSnapshotShell,
   WorkspaceFile,
 } from "@tsian/contracts"
 import type { LocalGameCardRecord, LocalSaveRecord } from "../storage"
 import { resolveRemoteFrontendUrl } from "../bridge"
 import {
-  getRuntimeEngine,
   markPlatformHostReady,
 } from "./host-state"
 import {
@@ -17,7 +15,6 @@ import {
 } from "./internal"
 import {
   createDefaultEditableCard,
-  createEmptyRuntimeSnapshot,
   createLocalSave,
   createLocalSaveFromGameCard,
   deleteLocalGameCard,
@@ -32,7 +29,6 @@ import {
   getActiveSaveId,
   getBuiltinBlankGameCard,
   getLocalGameCard,
-  getSnapshotForSave,
   importGameCardFrontendPackage,
   importGameCardPackage,
   initializeWorkspaceForSave,
@@ -115,14 +111,7 @@ export async function ensureActiveSave(): Promise<string> {
   const created = await createLocalSaveFromGameCard(activeCard)
   await setActiveSaveId(created.id)
   await setActiveGameCardId(activeCard.id)
-  getRuntimeEngine().loadSnapshot(await getSnapshotForSave(created.id))
   return created.id
-}
-
-async function restoreActiveSnapshotFromStorage(saveId: string): Promise<RuntimeSnapshotShell> {
-  const snapshot = await getSnapshotForSave(saveId)
-  getRuntimeEngine().loadSnapshot(snapshot)
-  return snapshot
 }
 
 function normalizePackagedFrontendEntry(value: string): string {
@@ -247,7 +236,6 @@ export async function initializePlatformHost(): Promise<void> {
       if (!hasStoredActiveCard) {
         await syncActiveGameCardFromSave(activeSaveId)
       }
-      await restoreActiveSnapshotFromStorage(activeSaveId)
       markPlatformHostReady()
       return
     }
@@ -261,9 +249,6 @@ export async function initializePlatformHost(): Promise<void> {
     if (!hasStoredActiveCard) {
       await syncActiveGameCardFromSave(next.id)
     }
-    await restoreActiveSnapshotFromStorage(next.id)
-  } else {
-    getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
   }
 
   markPlatformHostReady()
@@ -279,7 +264,6 @@ export async function createPlatformSave(input?: {
   const created = await createLocalSave(input?.name)
   await setActiveSaveId(created.id)
   await setActiveGameCardId(created.gameCardId ?? (await getBuiltinBlankGameCard()).id)
-  await restoreActiveSnapshotFromStorage(created.id)
   emitSavesChanged()
   emitActiveCardChanged()
   return created
@@ -446,10 +430,8 @@ export async function deletePlatformGameCard(
     if (remainingSaves.length > 0) {
       await setActiveSaveId(remainingSaves[0].id)
       await syncActiveGameCardFromSave(remainingSaves[0].id)
-      await restoreActiveSnapshotFromStorage(remainingSaves[0].id)
     } else {
       await setActiveSaveId(null)
-      getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
     }
   }
 
@@ -559,7 +541,6 @@ export async function createPlatformSaveFromGameCard(
   const created = await createLocalSaveFromGameCard(card, input)
   await setActiveSaveId(created.id)
   await setActiveGameCardId(card.id)
-  await restoreActiveSnapshotFromStorage(created.id)
   emitSavesChanged()
   emitActiveCardChanged()
   return created
@@ -572,7 +553,6 @@ export async function selectPlatformSave(saveId: string) {
 
   await setActiveSaveId(saveId)
   await syncActiveGameCardFromSave(saveId)
-  await restoreActiveSnapshotFromStorage(saveId)
   emitSavesChanged()
   emitActiveCardChanged()
 }
@@ -594,7 +574,6 @@ export async function deletePlatformSave(saveId: string) {
     if (wasActiveSave) {
       await setActiveSaveId(null)
     }
-    getRuntimeEngine().loadSnapshot(createEmptyRuntimeSnapshot())
     emitSavesChanged()
     if (wasActiveSave) {
       emitActiveCardChanged()
@@ -606,7 +585,6 @@ export async function deletePlatformSave(saveId: string) {
     const next = remaining[0]
     await setActiveSaveId(next.id)
     await syncActiveGameCardFromSave(next.id)
-    await restoreActiveSnapshotFromStorage(next.id)
   }
   emitSavesChanged()
   if (wasActiveSave) {

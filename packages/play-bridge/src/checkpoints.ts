@@ -15,7 +15,6 @@ import type {
   CheckpointSummary,
   DeepQueryResult,
   PlatformActionResult,
-  RuntimeSnapshotShell,
 } from "@tsian/contracts"
 import type { Bridge } from "./bridge"
 
@@ -34,16 +33,17 @@ export async function listCheckpoints(bridge: Bridge): Promise<CheckpointSummary
 
 /**
  * 恢复到指定检查点：回滚当前存档的运行时状态 + workspace 文件到该检查点。
- * 成功返回恢复后的快照；失败（检查点不存在 / 无激活存档）抛出 error 对象，
+ * 成功返回恢复后的 turn 号；失败（检查点不存在 / 无激活存档）抛出 error 对象，
  * 调用方按 PlatformActionResult.error 处理。
  *
  * 这是破坏性操作——UI 侧应做二次确认（对齐 DebugView.vue 的恢复确认习惯）。
+ * 回溯后前端应 reloadHistory 重建对话 + 取最新 turn 号。
  */
 export async function restoreCheckpoint(
   bridge: Bridge,
   checkpointId: string,
-): Promise<RuntimeSnapshotShell> {
-  const result = await bridge.call<PlatformActionResult<RuntimeSnapshotShell>>(
+): Promise<{ turn: number }> {
+  const result = await bridge.call<PlatformActionResult<{ turn: number }>>(
     "platform.runAction",
     { action: "restore-checkpoint", params: { checkpointId } },
   )
@@ -53,5 +53,5 @@ export async function restoreCheckpoint(
     if (err) (e as Error & { code?: string }).code = err.code
     throw e
   }
-  return result.item as RuntimeSnapshotShell
+  return result.item as { turn: number }
 }

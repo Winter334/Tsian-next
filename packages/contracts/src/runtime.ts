@@ -150,10 +150,6 @@ export type JsonValue =
       [key: string]: JsonValue
     }
 
-export interface RuntimeGlobalsMap {
-  [key: string]: JsonValue
-}
-
 export type WorkspaceEntryKind = "file" | "directory"
 
 export interface WorkspaceEntry {
@@ -593,23 +589,11 @@ export interface RuntimeDiagnosticSummary {
   facts: RuntimeDiagnosticFact[]
 }
 
-export interface RuntimeStateShell {
-  turn: number
-  messages: ConversationMessageRecord[]
-  globals?: RuntimeGlobalsMap
-}
-
-export interface RuntimeSnapshotShell {
-  version: string
-  state: RuntimeStateShell
-}
-
 export interface MessageInteractionRequest {
   content: string
 }
 
 export interface MessageInteractionResult {
-  snapshot: RuntimeSnapshotShell
 }
 
 /** invokeAgent 请求：游戏前端按 agentId 直接调用某个 agent（NPC 视角、

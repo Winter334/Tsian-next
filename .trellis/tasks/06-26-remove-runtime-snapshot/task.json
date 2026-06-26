@@ -3,7 +3,7 @@
   "name": "remove-runtime-snapshot",
   "title": "移除 RuntimeSnapshot 概念，turn 落地 save/state/turn.json",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

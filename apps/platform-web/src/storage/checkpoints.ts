@@ -1,4 +1,4 @@
-import type { CheckpointSummary, ConversationMessageRecord, RuntimeSnapshotShell } from "@tsian/contracts"
+import type { CheckpointSummary } from "@tsian/contracts"
 import {
   localDb,
   type LocalCheckpointRecord,
@@ -8,6 +8,7 @@ import {
   type CheckpointWorkspaceFile,
   listCheckpointWorkspaceFilesForSave,
 } from "./workspace"
+import { getMaxTurnFromTurnFiles } from "../platform-host/history-turns"
 
 export interface LocalCheckpointSummary extends CheckpointSummary {
   saveId: string
@@ -17,8 +18,11 @@ function createCheckpointId(saveId: string, createdAt: number): string {
   return `${saveId}:checkpoint:${createdAt}:${Math.random().toString(36).slice(2, 8)}`
 }
 
-function snapshotTurn(snapshot: RuntimeSnapshotShell): number {
-  return typeof snapshot.state.turn === "number" ? snapshot.state.turn : 0
+/** 数 workspaceFiles 里的 turn 文件数(给 messageCount 显示). */
+function countTurnFiles(workspaceFiles: CheckpointWorkspaceFile[]): number {
+  return workspaceFiles.filter(
+    (f) => f.path.startsWith("save/history/turns/") && f.path.endsWith(".json"),
+  ).length
 }
 
 export function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpointSummary {
@@ -29,7 +33,7 @@ export function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpo
     label: record.label,
     reason: record.reason,
     createdAt: record.createdAt,
-    messageCount: record.snapshot.state.messages.length,
+    messageCount: countTurnFiles(record.workspaceFiles),
     workspaceFileCount: record.workspaceFiles.length,
   }
 }
@@ -37,14 +41,14 @@ export function toCheckpointSummary(record: LocalCheckpointRecord): LocalCheckpo
 export function createCheckpointRecordForSave(
   saveId: string,
   input: {
-    snapshot: RuntimeSnapshotShell
+    turn: number
     reason: LocalCheckpointRecord["reason"]
     label?: string
     workspaceFiles: CheckpointWorkspaceFile[]
   },
   createdAt: number = Date.now(),
 ): LocalCheckpointRecord {
-  const turn = snapshotTurn(input.snapshot)
+  const turn = input.turn
   return {
     id: createCheckpointId(saveId, createdAt),
     saveId,
@@ -52,7 +56,6 @@ export function createCheckpointRecordForSave(
     label: input.label?.trim() || `回合 ${turn}`,
     reason: input.reason,
     createdAt,
-    snapshot: input.snapshot,
     workspaceFiles: input.workspaceFiles,
   }
 }
@@ -60,7 +63,7 @@ export function createCheckpointRecordForSave(
 export async function createCheckpointForSave(
   saveId: string,
   input: {
-    snapshot: RuntimeSnapshotShell
+    turn: number
     reason: LocalCheckpointRecord["reason"]
     label?: string
   },
@@ -84,7 +87,7 @@ export async function listCheckpointsForSave(
 export async function restoreCheckpointForSave(
   saveId: string,
   checkpointId: string,
-): Promise<RuntimeSnapshotShell | null> {
+): Promise<{ turn: number } | null> {
   const checkpoint = await localDb.checkpoints.get(checkpointId)
   if (!checkpoint || checkpoint.saveId !== saveId) {
     return null
@@ -95,15 +98,9 @@ export async function restoreCheckpointForSave(
     "rw",
     [
       localDb.saves,
-      localDb.saveSnapshots,
       localDb.workspaceFiles,
     ],
     async () => {
-      await localDb.saveSnapshots.put({
-        saveId,
-        snapshot: checkpoint.snapshot,
-      })
-
       const workspaceFiles = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
       await Promise.all(workspaceFiles.map((item) => localDb.workspaceFiles.delete(item.id)))
       for (const workspaceFile of checkpoint.workspaceFiles) {
@@ -122,7 +119,11 @@ export async function restoreCheckpointForSave(
     },
   )
 
-  return checkpoint.snapshot
+  // turn 号从恢复后的 workspaceFiles 取 max(回溯到第 N 回 = turn 文件 1..N).
+  const turn = getMaxTurnFromTurnFiles(
+    checkpoint.workspaceFiles.map((f) => ({ path: f.path, content: f.content, updatedAt: f.updatedAt, createdAt: f.createdAt })),
+  )
+  return { turn }
 }
 
 export async function deleteCheckpointsForSave(saveId: string): Promise<void> {

@@ -5,7 +5,6 @@
     "apps/platform-web",
     "apps/play-frontend-dev",
     "packages/contracts",
-    "packages/runtime-core",
     "packages/play-bridge"
   ],
   "scripts": {
@@ -13,7 +12,6 @@
     "dev:web": "npm run dev --workspace platform-web",
     "dev:frontend": "npm run dev --workspace play-frontend-dev",
     "build:web": "npm run build --workspace platform-web",
-    "build:contracts": "npm run build --workspace @tsian/contracts",
-    "build:runtime-core": "npm run build --workspace @tsian/runtime-core"
+    "build:contracts": "npm run build --workspace @tsian/contracts"
   }
 }

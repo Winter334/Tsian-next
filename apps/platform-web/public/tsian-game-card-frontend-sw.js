@@ -4,7 +4,7 @@
 // v8 -> v9: added assistantAttachments table for attachment Blob storage.
 // v7 -> v8: mediaType removed from records; Content-Type now read from
 // Blob.type (file.data.type) instead of a stored mediaType field.
-const DB_NAME = "tsian-agent-runtime-v11"
+const DB_NAME = "tsian-agent-runtime-v12"
 const STORE_NAME = "gameCardFrontendFiles"
 const FRONTEND_PREFIX = "/__tsian_game_card_frontends/"
 

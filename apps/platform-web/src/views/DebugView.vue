@@ -214,7 +214,7 @@ import type {
   RuntimeDiagnosticFact,
   RuntimeDiagnosticSource,
   RuntimeDiagnosticSummary,
-  RuntimeSnapshotShell,
+  SessionHistoryEntry,
 } from "@tsian/contracts"
 import { AlertTriangle, CheckCircle2, FileClock, RefreshCw, RotateCcw } from "lucide-vue-next"
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
@@ -234,15 +234,20 @@ const errorMessage = ref("")
 const lastRefreshAt = ref("")
 const platformContext = shallowRef<PlatformContextShell | null>(null)
 const aiDebugRecords = shallowRef<AiDebugRecord[]>([])
-const runtimeSnapshot = shallowRef<RuntimeSnapshotShell | null>(null)
+const sessionHistory = shallowRef<SessionHistoryEntry[]>([])
 const checkpointItems = shallowRef<unknown[]>([])
 const diagnosticItems = shallowRef<RuntimeDiagnosticSummary[]>([])
 
 let unsubscribeTurnReady: (() => void) | null = null
 
-const runtimeTurn = computed(() => runtimeSnapshot.value?.state.turn ?? null)
-const runtimeTurnLabel = computed(() => runtimeTurn.value === null ? "--" : String(runtimeTurn.value))
-const snapshotMessageCount = computed(() => runtimeSnapshot.value?.state.messages.length ?? 0)
+const runtimeTurn = computed(() => {
+  const entries = sessionHistory.value
+  return entries.length > 0 ? Math.max(...entries.map((e) => e.turn)) : 0
+})
+const runtimeTurnLabel = computed(() => String(runtimeTurn.value))
+const snapshotMessageCount = computed(() =>
+  sessionHistory.value.reduce((sum, e) => sum + e.messages.length, 0),
+)
 
 const diagnosticStats = computed(() => {
   return diagnosticItems.value.reduce(
@@ -508,8 +513,11 @@ async function refreshAiDebug() {
   aiDebugRecords.value = await playFrontendBridge.debug.getAiDebugRecords()
 }
 
-async function refreshRuntimeSnapshot() {
-  runtimeSnapshot.value = await playFrontendBridge.runtime.getRuntimeSnapshot()
+async function refreshSessionHistory() {
+  const result = await playFrontendBridge.query.query<{ turn: number; messages: unknown[] }[]>(
+    { resource: "session-history" },
+  )
+  sessionHistory.value = (result?.items ?? []) as unknown as SessionHistoryEntry[]
 }
 
 async function refreshPlatformContext() {
@@ -536,7 +544,7 @@ async function refreshAll() {
     await Promise.all([
       refreshPlatformContext(),
       refreshAiDebug(),
-      refreshRuntimeSnapshot(),
+      refreshSessionHistory(),
       refreshQueryResource("checkpoints", (items) => (checkpointItems.value = items)),
       refreshQueryResource(
         "runtime-diagnostics",

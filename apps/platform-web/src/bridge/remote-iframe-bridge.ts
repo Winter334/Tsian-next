@@ -21,7 +21,6 @@ export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-b
 const REMOTE_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms"
 const ALLOWED_REMOTE_FRONTEND_PROTOCOLS = new Set(["http:", "https:"])
 const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
-  "runtime.getRuntimeSnapshot",
   "interaction.sendMessage",
   "interaction.invokeAgent",
   "interaction.respond",
@@ -256,10 +255,6 @@ function dispatchRemoteBridgeRequest(
   method: RemotePlayBridgeMethod,
   params: unknown,
 ) {
-  if (method === "runtime.getRuntimeSnapshot") {
-    return bridge.runtime.getRuntimeSnapshot()
-  }
-
   if (method === "interaction.sendMessage") {
     return bridge.interaction.sendMessage(normalizeMessageInteractionRequest(params))
   }
@@ -438,7 +433,7 @@ export function mountRemoteIframeFrontend(
           result,
         }
         postToRemote(response, targetOrigin)
-        postEvent("turn-completed", { snapshot: result.snapshot })
+        postEvent("turn-completed", {})
         return
       }
 

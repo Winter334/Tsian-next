@@ -430,12 +430,9 @@ export async function runAssistantChat(
         userInput: messageText,
         userInputAttachments,
         recentHistory: history,
-        // 修正 turn 号:从快照推算,使 currentRuntimeTurnNumber 返回 nextAssistantTurn
+        // 修正 turn 号:传 nextAssistantTurn - 1,使 currentRuntimeTurnNumber 返回 nextAssistantTurn
         // (之前恒传 turn:0 → 每轮 turn=1,破坏 lastCompressedTurn 去重).
-        snapshot: {
-          version: "tsian.runtime.snapshot.v1",
-          state: { turn: nextAssistantTurn - 1, messages: [] },
-        },
+        turn: nextAssistantTurn - 1,
         workspaceFiles: workspaceTransaction.workspaceFiles,
         signal: compositeSignal,
         // 注入持久化快照(任务摘要 + 最近 K 轮)+ token 预算(之前都不传,runtime

@@ -18,7 +18,6 @@ import {
 import type {
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
-  RuntimeSnapshotShell,
   ConversationMessageRecord,
   SessionHistoryEntry,
   TurnStats,
@@ -878,7 +877,7 @@ function finalizeTurn(): void {
 // 事件处理器（注册给协议层）
 // ════════════════════════════════════════════════════════════════
 
-function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlayBridgeEventPayload): void {
+async function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlayBridgeEventPayload): Promise<void> {
   if (!turnActive || !turnState) return  // 回合未开始忽略（兜底）
   if (event === "turn-delta") {
     if (!("kind" in payload) || !("delta" in payload)) return
@@ -901,14 +900,21 @@ function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlayBridge
     return
   }
   if (event === "turn-stats") {
-    // turn-stats 在 turn-completed 之前到达（host 收尾阶段先 emit stats 再 emit snapshot）。
+    // turn-stats 在 turn-completed 之前到达（host 收尾阶段先 emit stats 再 emit 信号）。
     // 缓存到 turnState，finalizeTurn 时渲染到正文末尾。
     if (!turnState) return
     if (!("stats" in payload)) return
     turnState.stats = payload.stats
     return
   }
-  // turn-completed 由 onSnapshot 处理（覆盖渲染）
+  if (event === "turn-completed") {
+    // turn-completed 是纯信号(无 payload)：finalizeTurn + reloadHistory 取最新 turn 号 + 历史.
+    finalizeTurn()
+    await reloadHistory()
+    setSending(false)
+    setStatus("就绪", "ready")
+    return
+  }
 }
 
 // ── ask_user 交互请求渲染 ──
@@ -994,17 +1000,6 @@ function removeAskPanel(panel: HTMLElement): void {
   panel.remove()
 }
 
-// turn-completed:回合结束,过程节点原地晋升为历史(不全清覆盖).
-// snapshot 不再用于渲染——正文已在流式区累积,过程节点已在过程区累积.
-// snapshot 只取 turn 号更新 header.重载时从 workspace turn 文件重建(createSessionHistory).
-function handleSnapshot(snapshot: RuntimeSnapshotShell): void {
-  finalizeTurn()
-  if (snapshot && snapshot.state) {
-    setTurn(snapshot.state.turn)
-  }
-  setSending(false)
-  setStatus("就绪", "ready")
-}
 
 function handleReady(sid: string): void {
   setStatus("就绪", "ready")
@@ -1013,7 +1008,6 @@ function handleReady(sid: string): void {
   // 回溯导航在 bridge ready 后可用
   setNavCheckpointsEnabled(true)
   // 从 workspace turn 文件单源重建完整对话(正文 + 过程节点).
-  // 不再用 getRuntimeSnapshot 渲染——snapshot 退化为 runtime engine 内部状态.
   reloadHistory().catch(() => { setStatus("历史加载失败", "error") })
 }
 
@@ -1052,7 +1046,7 @@ async function sendMessage(): Promise<void> {
   beginTurn()
   try {
     await bridge.call("interaction.sendMessage", { content })
-    // turn-completed 事件会触发 handleSnapshot 覆盖渲染
+    // turn-completed 事件会触发 finalizeTurn + reloadHistory
   } catch (e) {
     finalizeTurn()
     setSending(false)
@@ -1095,7 +1089,6 @@ if ($input) {
 bridge.on({
   onReady: handleReady,
   onEvent: handleEvent,
-  onSnapshot: handleSnapshot,
   onInteractionRequest: handleInteractionRequest,
   onTurnOptions: (_turn, options) => {
     // turn-options 先于 turn-completed 到达:缓存选项,finalizeTurn 时渲染按钮.

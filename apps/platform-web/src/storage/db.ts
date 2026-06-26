@@ -1,7 +1,6 @@
 import type {
   AttachmentRef,
   GameCardManifest,
-  RuntimeSnapshotShell,
   WorkspaceScope,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
@@ -56,11 +55,6 @@ export interface LocalGameCardFrontendFileRecord {
   updatedAt: number
 }
 
-export interface LocalSaveSnapshotRecord {
-  saveId: string
-  snapshot: RuntimeSnapshotShell
-}
-
 export interface LocalWorkspaceFileRecord {
   /** Internal deterministic table key. */
   id: string
@@ -84,7 +78,6 @@ export interface LocalCheckpointRecord {
   label: string
   reason: "initial" | "after-turn" | "manual"
   createdAt: number
-  snapshot: RuntimeSnapshotShell
   workspaceFiles: Array<Omit<LocalWorkspaceFileRecord, "id" | "saveId">>
 }
 
@@ -159,7 +152,6 @@ export class TsianLocalDb extends Dexie {
   gameCardContentFiles!: Table<LocalGameCardContentFileRecord, string>
   gameCardFrontendFiles!: Table<LocalGameCardFrontendFileRecord, string>
   saves!: Table<LocalSaveRecord, string>
-  saveSnapshots!: Table<LocalSaveSnapshotRecord, string>
   checkpoints!: Table<LocalCheckpointRecord, string>
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
   assistantAttachments!: Table<LocalAssistantAttachmentRecord, string>
@@ -169,11 +161,11 @@ export class TsianLocalDb extends Dexie {
   constructor() {
     // DB name bumped v10 -> v11: added embeddingIndex table for save-runtime
     // semantic search vector index (task 06-24-save-runtime-semantic-search).
-    // Prototype project — no migration; the old v10 database is abandoned and
-    // a fresh v11 store is created (same rename-and-reset convention as
-    // v9->v10). The service worker
+    // Prototype project — no migration; the old v11 database is abandoned and
+    // a fresh v12 store is created (same rename-and-reset convention).
+    // The service worker
     // (`tsian-game-card-frontend-sw.js`) mirrors this name.
-    super("tsian-agent-runtime-v11")
+    super("tsian-agent-runtime-v12")
 
     this.version(1).stores({
       meta: "&key",
@@ -181,7 +173,6 @@ export class TsianLocalDb extends Dexie {
       gameCardContentFiles: "&id, gameCardId, path, updatedAt",
       gameCardFrontendFiles: "&id, gameCardId, path, updatedAt",
       saves: "&id, updatedAt",
-      saveSnapshots: "&saveId",
       checkpoints: "&id, saveId, createdAt, turn",
       workspaceFiles: "&id, saveId, path, updatedAt",
       assistantAttachments: "&id, sessionId, path, createdAt",

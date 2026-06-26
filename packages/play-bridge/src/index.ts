@@ -31,9 +31,8 @@ export type {
   AskUserResponse,
 } from "@tsian/contracts"
 
-// 事件 payload 内嵌的快照与消息记录类型，表现层渲染要用。
+// 事件 payload 内嵌的消息记录类型，表现层渲染要用。
 export type {
-  RuntimeSnapshotShell,
   ConversationMessageRecord,
   MessageInteractionRequest,
   MessageInteractionResult,

@@ -12,7 +12,6 @@ import type {
   AgentPlatformToolName,
   PlatformActionRequest,
   PlatformActionResult,
-  RuntimeSnapshotShell,
   TurnToolOutput,
   WorkspaceFile,
   WorkspaceOperationName,
@@ -448,7 +447,7 @@ function locateTaskInteractionSpan(
 }
 
 function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
-  return input.snapshot.state.turn + 1
+  return input.turn + 1
 }
 
 function formatWorkspaceFile(file: WorkspaceFile): string {

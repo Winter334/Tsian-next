@@ -12,10 +12,6 @@ export default defineConfig({
         __dirname,
         "../../packages/contracts/src/index.ts",
       ),
-      "@tsian/runtime-core": resolve(
-        __dirname,
-        "../../packages/runtime-core/src/index.ts",
-      ),
       "@tsian/play-bridge": resolve(
         __dirname,
         "../../packages/play-bridge/src/index.ts",
