@@ -3,7 +3,7 @@
   "name": "split-runtime-host-ai",
   "title": "拆分 runtime-host/ai.ts",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
