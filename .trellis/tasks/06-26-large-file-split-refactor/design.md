@@ -54,12 +54,18 @@ turn 主循环，全场最高 churn，风险最高放后段。49 个内部函数
 - **contract shape 不变**：本重构不触碰 `@tsian/contracts` / `@tsian/runtime-core` 的导出形状，故无需 `build:contracts` / `build:runtime-core`（除非某子任务意外触及，届时补跑）。
 - **Dexie 表 / bridge API 不变**：quality-guidelines Review Checklist 中的 snapshot shape、query resource、sendMessage rollback、Dexie 表名均不在本重构触及范围。
 
-## 5. 验收手段（来自 quality-guidelines）
+## 5. 验收手段（来自 quality-guidelines + #1 实践沉淀）
 
-- **主验收**：`npm run build:web`（含 `vue-tsc -b` 类型检查）每个 seam 后 green。
-- **导出面等价**：子任务验收时对照拆分前后 barrel 的 public export 符号集一致。
-- **手动冒烟**：因仓库无自动化测试网，每子任务结束后对相关热路径做手动冒烟（assistant 对话、workspace 增删改查、AI 调用等对应文件的功能）。
-- **无 lint/test 脚本**：仓库无 eslint/vitest 配置，不为本重构补建测试网（不在范围）；风险控制靠 green build + 导出面等价 + 冒烟。
+**核心原则：纯抽取 + 代码内容逐字节不变 = 行为不变。** 抽取过程的机械错误已被 `build:web`（vue-tsc 类型检查）兜住，因此浏览器冒烟只在少数 build 漏检的风险点做轻量验证，不做全路径回归（工作量过大且无增量收益）。
+
+- **主验收（每 seam）**：`npm run build:web` green。这是仓库可用的最强自动验证。
+- **导出面等价（子任务级）**：脚本对照拆分前后 barrel 的 public export 符号集完全一致（#1 已用 `git show master:<file>` 对照，31 符号 EXACT MATCH）。
+- **build 漏检风险点重点查（子任务级，必做）**：纯抽取改变不了数据/逻辑，但能改变**运行时 identity**。重点验证：
+  - 被 `instanceof` 的 **class** 是否只声明一份（grep `class X` 全仓唯一），barrel 是 `export { X } from`（透传引用）而非重新声明。
+  - instanceof 消费方的 import 路径未改动（`git diff master..HEAD` 消费方无变更）。
+  - 纯数据 `const`（模板/配置）无运行时 identity，无需额外查。
+- **浏览器冒烟（可选，仅在用户要求时）**：覆盖被拆动代码的运行时入口，但非默认必做。#1 经验证：新建存档（模板写入）+ 浏览 workspace（路径判定）即可覆盖。
+- **无 lint/test 脚本**：仓库无 eslint/vitest 配置，不为本重构补建测试网（不在范围）；风险控制靠 green build + 导出面等价 + identity 重点查。
 
 ## 6. 权衡
 
