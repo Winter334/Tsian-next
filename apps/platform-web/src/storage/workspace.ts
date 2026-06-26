@@ -22,37 +22,22 @@ import {
   type LocalWorkspaceFileRecord,
 } from "./db"
 
-export type CheckpointWorkspaceFile = Omit<LocalWorkspaceFileRecord, "id" | "saveId">
-
-export interface WorkspaceListInput {
-  path?: unknown
-}
-
-export interface WorkspaceWriteInput {
-  path?: unknown
-  /** Text content (string) or binary payload (Blob). One or the other. */
-  content?: unknown
-  data?: unknown
-}
-
-export interface RuntimeWorkspaceTransaction {
-  readonly workspaceFiles: WorkspaceFile[]
-  write(input: WorkspaceWriteInput): WorkspaceFile
-  writePlatformFile(input: WorkspaceWriteInput): WorkspaceFile
-  delete(path: unknown): { deletedPaths: string[] }
-  finalWorkspaceFiles(): WorkspaceFile[]
-  discard(): void
-}
-
-export class WorkspaceStorageError extends Error {
-  constructor(
-    readonly code: string,
-    message: string,
-  ) {
-    super(message)
-    this.name = "WorkspaceStorageError"
-  }
-}
+// re-export shared types/errors for public API (no local binding)
+export type {
+  CheckpointWorkspaceFile,
+  WorkspaceListInput,
+  WorkspaceWriteInput,
+  RuntimeWorkspaceTransaction,
+} from "./workspace-types"
+export { WorkspaceStorageError } from "./workspace-types"
+// import for internal use (local binding)
+import { WorkspaceStorageError } from "./workspace-types"
+import type {
+  CheckpointWorkspaceFile,
+  WorkspaceListInput,
+  WorkspaceWriteInput,
+  RuntimeWorkspaceTransaction,
+} from "./workspace-types"
 
 const DEFAULT_WORKSPACE_VERSION = 8
 const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
