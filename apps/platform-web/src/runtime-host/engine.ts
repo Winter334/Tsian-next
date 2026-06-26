@@ -2,6 +2,8 @@ import type {
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
+  InvokeAgentRequest,
+  InvokeAgentResult,
   MessageInteractionRequest,
   MessageInteractionResult,
   PlatformContextShell,
@@ -29,6 +31,14 @@ export class LocalRuntimeEngine implements RuntimeEngine {
   ): Promise<MessageInteractionResult> {
     throw new Error(
       "LocalRuntimeEngine.sendMessage is not the active turn path; platform-host runs Agent Runtime turns.",
+    )
+  }
+
+  async invokeAgent(
+    _input: InvokeAgentRequest,
+  ): Promise<InvokeAgentResult> {
+    throw new Error(
+      "LocalRuntimeEngine.invokeAgent is not the active path; platform-host runs Agent Runtime turns.",
     )
   }
 

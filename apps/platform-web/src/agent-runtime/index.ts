@@ -61,6 +61,8 @@ import {
   parseRuntimeWorkspaceToolCalls,
   RUNTIME_WORKSPACE_TOOL_NAMES,
   stripRuntimeWorkspaceToolCallBlocks,
+  stripThinkBlocks,
+  extractThinkBlocks,
   type RuntimeActionExecutorPolicy,
   type RuntimeControlledExecutorContext,
   type ParsedRuntimeWorkspaceToolCall,
@@ -198,8 +200,10 @@ export interface AgentRuntimeModelCallOptions {
    * Streaming text-delta sink. Invoked with the current tool-loop `round` so
    * the caller can label thought vs final rounds, and a `kind` separating
    * chain-of-thought (`"reasoning"`) from the visible reply (`"content"`).
-   * `undefined` means "do not stream" (delegated agents, or text-protocol
-   * callers) — the host then takes the non-SSE fallback path.
+   * `undefined` means "do not stream" (delegated agents without streaming,
+   * or callers that don't want deltas) — the host then takes the non-SSE
+   * fallback path. Both native and text tool-call modes support streaming
+   * when the model config has `streaming: true`.
    */
   onDelta?: (agentId: string, delta: string, round: number, kind: "reasoning" | "content") => void
   /** Current tool-loop round index (set by the native loop before each call). */
@@ -1318,9 +1322,10 @@ function createAgentCallRunner(
           signal: compositeSignal,
           agentId: targetContext.agent.id,
           // Thread the caller's streaming/tool-event sinks so the delegated
-          // agent's process is visible upstream (agentId bound by the native
-          // tool loop to targetContext.agent.id). Only the native loop emits
-          // these; text-protocol delegated agents stay silent as before.
+          // agent's process is visible upstream (agentId bound by the tool
+          // loop to targetContext.agent.id). Both native and text loops now
+          // emit onRoundEnd/onTool; text loop also streams onDelta when the
+          // model has streaming enabled (C1/C2/B2-runtime).
           onDelta: input.onDelta,
           onRoundEnd: input.onRoundEnd,
           onTool: input.onTool,
@@ -1859,6 +1864,9 @@ async function callAgentModelWithWorkspaceTools(
   let nextMessages: AiChatMessage[] = messages as AiChatMessage[]
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
+  // 每轮 content 文本累积器(供采集 interim/thought processNode,对称 native 循环).
+  // text 模式无独立 reasoning stream(kind 恒 "content");思考内容在正文里被 stripThinkBlocks 剥离.
+  let roundContent = ""
   // turn 内 token 预算 + 压缩(text 循环对称版).按 compressionMode 分流(narrative/task),
   // 与 native 循环一致.仅 entry 稳态路径(注入了 context 快照)做 narrative 压剧情;
   // task 模式压工具交互段 + 多次 + 时长兜底 + 早退.
@@ -1995,11 +2003,32 @@ async function callAgentModelWithWorkspaceTools(
       }
     }
 
-    const response = await capabilities.callModel(nextMessages as AiChatMessage[], options)
+    // 构建 callOptions:绑定 round + 包装 onDelta 累积 roundContent(供 processNode 采集).
+    // 对称 native 循环的 callOptions 构建(index.ts:1636-1654).
+    const callOptions: AgentRuntimeModelCallOptions = {
+      ...options,
+      round,
+      // Text 模式 onDelta:累积本轮 content 文本供采集 interim/thought processNode.
+      // text 协议无独立 reasoning stream(kind 恒 "content");思考内容在正文里被
+      // stripThinkBlocks 剥离喂模型,但 UI 流式期仍可见(由 render 层 stripForDisplay).
+      onDelta: options.onDelta
+        ? (agentId, delta, r, kind) => {
+            if (r === round && kind === "content") {
+              roundContent += delta
+            }
+            options.onDelta!(agentId, delta, r, kind)
+          }
+        : undefined,
+    }
+
+    const response = await capabilities.callModel(nextMessages as AiChatMessage[], callOptions)
     assertNotAborted(options.signal)
     lastRoundText = response
+    // 清空本轮 content 累积器:下一轮 onDelta 重新累积(或回合已结束).
+    roundContent = ""
 
     const toolCalls = parseRuntimeWorkspaceToolCalls(response)
+    const finishReason: "stop" | "tool_calls" = toolCalls.length > 0 ? "tool_calls" : "stop"
     capabilities.emitTrace?.({
       type: "model_call_completed",
       agentId: agentContext.agent.id,
@@ -2013,14 +2042,36 @@ async function callAgentModelWithWorkspaceTools(
         round,
       },
     })
+
+    // C1: text 模式补发 onRoundEnd(对称 native 循环 index.ts:1666).
+    // round 结束通知 UI 这一轮的 finishReason,让它构建 timeline round 边界.
+    options.onRoundEnd?.(agentContext.agent.id, round, finishReason)
+
     if (toolCalls.length === 0) {
-      return { text: stripRuntimeWorkspaceToolCallBlocks(response).trim(), ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
+      // stop 轮:剥离 tool-call blocks + think blocks 得到干净正文.
+      // B3: stripThinkBlocks 剥离  三种常见原生思考标签,
+      // 防止思考内容喂回模型污染上下文(与渲染层无关,这是平台硬需求).
+      const cleanContent = stripThinkBlocks(stripRuntimeWorkspaceToolCallBlocks(response)).trim()
+      // B3: 从 response 提取 think 块内容 → thought processNode(与 native 同构).
+      // native 模式 thought 来自 reasoning stream;text 模式从正文标签提取.
+      const thinkBlocks = extractThinkBlocks(response)
+      if (thinkBlocks.length > 0) {
+        const combinedThink = thinkBlocks.join("\n\n")
+        collectedProcessNodes.push({ type: "thought", id: `thought-r${round}`, round, text: combinedThink, collapsed: true })
+      }
+      return { text: cleanContent, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedProcessNodes.length > 0 ? { collectedProcessNodes } : {}) }
     }
 
-    // 采集 interim processNode:tool_calls 轮的过渡文本(剥离 tool-call blocks 后的正文).
-    const interimText = stripRuntimeWorkspaceToolCallBlocks(response).trim()
+    // 采集 interim processNode:tool_calls 轮的过渡文本(剥离 tool-call + think blocks 后的正文).
+    const interimText = stripThinkBlocks(stripRuntimeWorkspaceToolCallBlocks(response)).trim()
     if (interimText) {
       collectedProcessNodes.push({ type: "interim", id: `interim-r${round}`, round, text: interimText, collapsed: false })
+    }
+    // B3: tool_calls 轮也提取 think 块 → thought processNode.
+    const thinkBlocksToolRound = extractThinkBlocks(response)
+    if (thinkBlocksToolRound.length > 0) {
+      const combinedThink = thinkBlocksToolRound.join("\n\n")
+      collectedProcessNodes.push({ type: "thought", id: `thought-r${round}`, round, text: combinedThink, collapsed: true })
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -2049,8 +2100,8 @@ async function callAgentModelWithWorkspaceTools(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
-      // 采集 tool processNode + 透传 UI onTool(text 模式之前没绑 onTool,UI 无工具节点;
-      // 现在绑定让 text 模式也有工具过程显示 + processNode 持久化).
+      // 采集 tool processNode + 透传 UI onTool(text 模式工具过程显示 + processNode 持久化).
+      // entry 和 delegated 路径共用此绑定(C2 验证:无条件绑定,不区分 entry/delegated).
       onTool: (callId, name, status, output) => {
         if (options.onTool) {
           options.onTool(agentContext.agent.id, round, callId, name, status, output)
@@ -2071,7 +2122,11 @@ async function callAgentModelWithWorkspaceTools(
       ...nextMessages,
       {
         role: "assistant",
-        content: response,
+        // B3: 喂回模型的是剥离后的干净正文(去掉 think blocks + tool-call blocks).
+        // 原始 response 含思考标签和工具调用块,会污染上下文窗口.工具调用块已
+        // 被 parseRuntimeWorkspaceToolCalls 解析执行,思考内容已采集为 thought
+        // processNode,正文是模型真正需要记住的部分.
+        content: stripThinkBlocks(stripRuntimeWorkspaceToolCallBlocks(response)).trim(),
       },
       // workspace_read 图片结果:image ContentPart 追加到 user 消息(text observation + image parts).
       // 无 image 时保持纯 string content(text-protocol 兼容).

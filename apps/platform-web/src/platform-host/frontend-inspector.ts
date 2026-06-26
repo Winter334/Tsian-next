@@ -1,5 +1,7 @@
 import type {
   ConversationMessageRecord,
+  InvokeAgentRequest,
+  InvokeAgentResult,
   MessageInteractionRequest,
   MessageInteractionResult,
   PlatformActionError,
@@ -26,6 +28,7 @@ import {
   generateAssistantReply,
   generateAssistantReplyNative,
   streamAssistantReplyNative,
+  streamAssistantReplyText,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
 import { getBrowserAiConfig } from "../config/ai"
@@ -123,6 +126,11 @@ function createInspectionBridge(state: InspectSessionState): PlayFrontendBridge 
     interaction: {
       async sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult> {
         return runEphemeralTurn(input.content, state)
+      },
+      async invokeAgent(_input: InvokeAgentRequest): Promise<InvokeAgentResult> {
+        // Frontend inspector doesn't support invokeAgent — it's a diagnostic
+        // tool that runs ephemeral master turns only. Reject with a clear error.
+        throw new Error("interaction.invokeAgent is not available in frontend inspector mode.")
       },
     },
     // 复用 base bridge 的 query(只读,无副作用).design §4.
@@ -796,10 +804,25 @@ async function runEphemeralTurn(
       {
         callModel(messages, options) {
           const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
-          return generateAssistantReply(messages, {
+          // Text-protocol streaming gate (mirrors callModelNative below).
+          const streamingEnabled = agentConfig
+            ? agentConfig.streaming
+            : getBrowserAiConfig()?.streaming ?? false
+          if (!options.onDelta || !streamingEnabled) {
+            return generateAssistantReply(messages, {
+              debugLabel: options.debugLabel,
+              signal: options.signal,
+              ...(agentConfig ? { config: agentConfig } : {}),
+            })
+          }
+          return streamAssistantReplyText(messages, {
             debugLabel: options.debugLabel,
             signal: options.signal,
+            round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
+            onDelta: options.onDelta
+              ? (delta, round, kind) => options.onDelta!(options.agentId ?? "master", delta, round, kind)
+              : undefined,
           })
         },
         async callModelNative(messages, options, tools) {

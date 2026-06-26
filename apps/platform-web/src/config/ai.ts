@@ -48,12 +48,15 @@ export interface BrowserAiModelConfig {
    */
   toolCallMode: BrowserAiToolCallMode
   /**
-   * Whether SSE streaming is enabled for this model. Streaming is native-mode
-   * only (`toolCallMode === "native"`); text-protocol models force `false`.
-   * Lets the player opt out for endpoints that do not support `stream: true`
-   * (e.g. some proxies answer 200 + `text/event-stream` but emit an error body).
-   * Missing on stored data → defaulted from `toolCallMode` at read time
-   * (native → true, text → false); new models inherit the same default.
+   * Whether SSE streaming is enabled for this model. Both native and text
+   * tool-call modes support streaming. Lets the player opt out for endpoints
+   * that do not support `stream: true` (e.g. some proxies answer 200 +
+   * `text/event-stream` but emit an error body). Missing on stored data →
+   * defaulted from `toolCallMode` at read time (native → true, text → false,
+   * conservative so old text configs don't suddenly start streaming); new
+   * models inherit the same default. Text-mode streaming uses post-hoc
+   * parsing (accumulate buffer, parse at round end) instead of incremental
+   * tag-boundary state machines.
    */
   streaming: boolean
 }
@@ -262,15 +265,13 @@ function normalizeToolCallMode(input: unknown): BrowserAiToolCallMode | null {
 }
 
 /**
- * Normalize a stored `streaming` flag. `true`/`false` pass through; anything
- * else returns `null` so the caller can apply the toolCallMode-derived default
- * (native → true, text → false). Text-protocol models always force `false`
- * regardless of the stored value, since streaming is native-mode only.
+ * Normalize a stored `streaming` flag. Returns `true` only for an explicit
+ * `true`/`"true"` value; anything else (missing, `false`, invalid) returns
+ * `false`. Both native and text tool-call modes honor an explicit `true` —
+ * the toolCallMode-derived default (native → true, text → false) is applied
+ * by callers when the stored value is missing, not inside this function.
  */
-function normalizeStreaming(input: unknown, toolCallMode: BrowserAiToolCallMode): boolean {
-  if (toolCallMode === "text") {
-    return false
-  }
+function normalizeStreaming(input: unknown): boolean {
   return input === true || input === "true"
 }
 
@@ -327,9 +328,9 @@ function normalizeModelConfig(input: unknown): BrowserAiModelConfig | null {
   if (!toolCallMode) {
     return null
   }
-  // streaming defaults from toolCallMode when missing/invalid (native → true,
-  // text → false); text-protocol models always force false.
-  const streaming = normalizeStreaming(record.streaming, toolCallMode)
+  // streaming: explicit true/false honored for both modes; missing → false
+  // (callers apply the toolCallMode-derived default at create time).
+  const streaming = normalizeStreaming(record.streaming)
   return {
     id,
     label: readStoredText(record.label) || undefined,
@@ -381,9 +382,9 @@ export function createBrowserAiModelConfig(
     parameters: normalizeModelParameters(input.parameters),
     enabled: input.enabled !== false,
     toolCallMode,
-    // Streaming defaults from toolCallMode: native → true, text → false.
-    // An explicit boolean input is honored for native; text always forces false.
-    streaming: normalizeStreaming(input.streaming, toolCallMode),
+    // Streaming: explicit true/false honored for both native and text modes.
+    // Missing → false (conservative default; text configs don't auto-stream).
+    streaming: normalizeStreaming(input.streaming),
   }
 }
 
@@ -1002,10 +1003,6 @@ export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigD
         }
         if (model.toolCallMode !== "native" && model.toolCallMode !== "text") {
           throw new Error("工具调用模式必须是「原生」或「文本」。")
-        }
-        // Streaming is native-mode only; text-protocol models cannot stream.
-        if (model.toolCallMode === "text" && model.streaming === true) {
-          throw new Error("文本工具调用模式不支持流式输出，请先切换为原生模式。")
         }
         validateBrowserAiModelParameters(model.parameters)
       }

@@ -8,7 +8,7 @@ import type {
 } from "@tsian/contracts"
 import type { RuntimeWorkspaceTransaction } from "../storage"
 import {
-  AGENT_CONTEXT_PATH,
+  agentContextPath,
   appendTurnToContext,
   createEmptyAgentContext,
   parseAgentContext,
@@ -63,14 +63,16 @@ function serializeRawAirpHistoryTurnRecord(
 }
 
 /**
- * 从工作区文件读 master agent 会话上下文快照(agents/master/context.json).
+ * 从工作区文件读 agent 会话上下文快照(save/agents/<agentId>/context.json).
  * 文件不存在/损坏 → 返回 null(由 runtime 层兜底初始化).
+ * agentId 参数化(task 06-26):master 路径值不变,支持任意 persistent 入口 agent.
  */
 export function readAgentContextFromWorkspace(
   workspaceFiles: WorkspaceFile[],
   saveId: string,
+  agentId: string = "master",
 ): AgentContextSnapshot | null {
-  const file = workspaceFiles.find((f) => f.path === AGENT_CONTEXT_PATH)
+  const file = workspaceFiles.find((f) => f.path === agentContextPath(agentId))
   if (!file) return null
   return parseAgentContext(file.content, saveId)
 }
@@ -78,6 +80,7 @@ export function readAgentContextFromWorkspace(
 /**
  * turn 收尾:把本轮正文追加进 context.json,若本轮开头压缩了则用压缩后快照.
  * 原地更新(workspaceTransaction.write),与其它 stage 函数同事务提交.
+ * agentId 参数化(task 06-26):默认 master,支持任意 persistent 入口 agent.
  */
 export function stageAgentContextFile(
   workspaceTransaction: RuntimeWorkspaceTransaction,
@@ -87,12 +90,14 @@ export function stageAgentContextFile(
     user: string
     assistant: string
     compressedContext?: AgentContextSnapshot
+    agentId?: string
   },
 ): WorkspaceFile {
+  const agentId = input.agentId ?? "master"
   // 基础快照:本轮压缩了→用压缩结果;否则读现有 context.json,无则空快照
   const base =
     input.compressedContext
-    ?? readAgentContextFromWorkspace(workspaceTransaction.workspaceFiles, input.saveId)
+    ?? readAgentContextFromWorkspace(workspaceTransaction.workspaceFiles, input.saveId, agentId)
     ?? createEmptyAgentContext(input.saveId)
   // 追加本轮正文(保持最近 K 轮),saveId 用真实值修正(runtime 兜底时可能为空)
   const updated = appendTurnToContext(
@@ -102,7 +107,7 @@ export function stageAgentContextFile(
     input.assistant,
   )
   return workspaceTransaction.write({
-    path: AGENT_CONTEXT_PATH,
+    path: agentContextPath(agentId),
     content: serializeAgentContext(updated),
   })
 }

@@ -3,6 +3,8 @@ import type {
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
+  InvokeAgentRequest,
+  InvokeAgentResult,
   JsonValue,
   MessageInteractionRequest,
   MessageInteractionResult,
@@ -20,6 +22,7 @@ export interface RuntimeBridge {
 
 export interface InteractionBridge {
   sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult>
+  invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgentResult>
 }
 
 export interface QueryBridge {
@@ -49,6 +52,7 @@ export type RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 export type RemotePlayBridgeMethod =
   | "runtime.getRuntimeSnapshot"
   | "interaction.sendMessage"
+  | "interaction.invokeAgent"
   | "interaction.respond"
   | "query.query"
   | "platform.getPlatformContext"
@@ -71,6 +75,7 @@ export type RemotePlayBridgeRequestParams =
 export type RemotePlayBridgeResponseResult =
   | RuntimeSnapshotShell
   | MessageInteractionResult
+  | InvokeAgentResult
   | DeepQueryResult<unknown>
   | PlatformContextShell
   | PlatformActionResult

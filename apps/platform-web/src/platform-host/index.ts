@@ -10,6 +10,8 @@ import type {
   GameCardContentFile,
   GameCardCover,
   GameCardFrontendBinding,
+  InvokeAgentRequest,
+  InvokeAgentResult,
   PlatformActionError,
   PlatformActionRequest,
   PlatformActionResult,
@@ -36,7 +38,7 @@ import {
 import type { RuntimeControlledExecutorContext } from "../agent-runtime/workspace-tools"
 import { assembleAgentContext } from "../agent-runtime/context"
 import {
-  AGENT_CONTEXT_PATH,
+  agentContextPath,
   appendTurnToContext,
   ASSISTANT_CONTEXT_AGENT_ID,
   ASSISTANT_CONTEXT_SCHEMA,
@@ -116,6 +118,7 @@ import {
   generateAssistantReply,
   generateAssistantReplyNative,
   streamAssistantReplyNative,
+  streamAssistantReplyText,
   getAiDebugRecords,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
@@ -129,6 +132,7 @@ import {
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
   commitSuccessfulRuntimeTurnForSave,
+  commitWorkspaceFilesForSave,
   createRuntimeWorkspaceTransaction,
   createEmptyRuntimeSnapshot,
   createLocalSave,
@@ -785,17 +789,35 @@ export const playFrontendBridge: PlayFrontendBridge = {
           {
             callModel(messages, options) {
               const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
-              return generateAssistantReply(messages, {
+              // Text-protocol streaming: stream when the caller wants deltas
+              // AND the model opted into streaming. Falls back to one-shot
+              // generateAssistantReply otherwise. Mirrors the native gate in
+              // callModelNative below.
+              const streamingEnabled = agentConfig
+                ? agentConfig.streaming
+                : getBrowserAiConfig()?.streaming ?? false
+              if (!options.onDelta || !streamingEnabled) {
+                return generateAssistantReply(messages, {
+                  debugLabel: options.debugLabel,
+                  signal: options.signal,
+                  ...(agentConfig ? { config: agentConfig } : {}),
+                })
+              }
+              return streamAssistantReplyText(messages, {
                 debugLabel: options.debugLabel,
                 signal: options.signal,
+                round: options.round,
                 ...(agentConfig ? { config: agentConfig } : {}),
+                onDelta: options.onDelta
+                  ? (delta, round, kind) => options.onDelta!(options.agentId ?? "master", delta, round, kind)
+                  : undefined,
               })
             },
             async callModelNative(messages, options, tools) {
               const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
               // Stream only when the caller wants deltas AND the model opted into
-              // streaming (text-protocol models force false). Falls back to the
-              // global config's flag when this agent has no preset mapping.
+              // streaming. Both native and text modes support streaming; falls
+              // back to the global config's flag when this agent has no preset.
               const streamingEnabled = agentConfig
                 ? agentConfig.streaming
                 : getBrowserAiConfig()?.streaming ?? false
@@ -979,6 +1001,152 @@ export const playFrontendBridge: PlayFrontendBridge = {
         if (previousTurnController === currentController) {
           previousTurnController = null
         }
+      }
+    },
+    async invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgentResult> {
+      const agentId = input.agentId.trim()
+      if (!agentId) {
+        throw new Error("interaction.invokeAgent requires a non-empty agentId.")
+      }
+      const userInput = input.input
+      if (!userInput) {
+        throw new Error("interaction.invokeAgent requires non-empty input.")
+      }
+
+      // invokeAgent 是旁路调用:不推进 turn、不写历史、不更新 runtimeSnapshot.
+      // 结果直接返回调用方(游戏前端自行处理 NPC 视角/UI 修正等).
+      const activeSaveId = await ensureActiveSave()
+      const snapshotBefore = cloneSnapshot(await getSnapshotForSave(activeSaveId))
+      const historyBefore = await getHistoryForSave(activeSaveId)
+
+      const invokeController = new AbortController()
+      let workspaceTransaction: RuntimeWorkspaceTransaction | null = null
+      try {
+        workspaceTransaction = createRuntimeWorkspaceTransaction(
+          await listEffectiveWorkspaceFilesForActiveSave(activeSaveId),
+        )
+        const workspaceFiles = workspaceTransaction!.workspaceFiles
+        const providerPresetMap = buildAgentProviderPresetMap(workspaceFiles)
+
+        // 装配目标 agent context,检查 agent 存在.
+        const targetContext = assembleAgentContext(workspaceFiles, { agentId })
+        if (!targetContext) {
+          throw new Error(
+            `Agent "${agentId}" was not found. Restore agents/${agentId}/AGENT.md or recreate the agent.`,
+          )
+        }
+
+        // 按 entryMode 分流:persistent → 读写 context.json;ephemeral → 无 context.
+        const isPersistent = targetContext.agent.entryMode === "persistent"
+        const agentContext = isPersistent
+          ? readAgentContextFromWorkspace(workspaceFiles, activeSaveId, agentId)
+          : null
+
+        // resolve target agent 上下文 token 预算.
+        const targetConfig = resolveAgentModelConfig(agentId, providerPresetMap)
+        const contextTokenBudget = resolveTokenBudget(
+          targetConfig?.parameters.contextWindow ?? null,
+        )
+
+        const result = await runAgentRuntimeTurn(
+          {
+            agentId,
+            userInput,
+            recentHistory: historyBefore,
+            snapshot: snapshotBefore,
+            workspaceFiles,
+            signal: invokeController.signal,
+            agentContext: agentContext ?? undefined,
+            contextTokenBudget,
+            // 旁路调用用 task 模式压缩(工具交互段压缩,不压剧情正文).
+            compressionMode: "task",
+            ...(isPersistent
+              ? {
+                  taskStartedAt: Date.now(),
+                  timeoutMs: DEFAULT_TASK_TIMEOUT_MS,
+                }
+              : {}),
+            // 旁路调用不 emit turn 事件(不进前端 turn timeline),但绑 onAskUser
+            // 以防目标 agent 需要 ask_user(复用进程内 interaction-events 总线).
+            onAskUser: (requestId, request) =>
+              emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
+          },
+          {
+            callModel(messages, options) {
+              const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+              const streamingEnabled = modelConfig
+                ? modelConfig.streaming
+                : getBrowserAiConfig()?.streaming ?? false
+              if (!options.onDelta || !streamingEnabled) {
+                return generateAssistantReply(messages, {
+                  debugLabel: options.debugLabel,
+                  signal: options.signal,
+                  ...(modelConfig ? { config: modelConfig } : {}),
+                })
+              }
+              return streamAssistantReplyText(messages, {
+                debugLabel: options.debugLabel,
+                signal: options.signal,
+                round: options.round,
+                ...(modelConfig ? { config: modelConfig } : {}),
+                onDelta: undefined,
+              })
+            },
+            async callModelNative(messages, options, tools) {
+              const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+              const streamingEnabled = modelConfig
+                ? modelConfig.streaming
+                : getBrowserAiConfig()?.streaming ?? false
+              if (!options.onDelta || !streamingEnabled) {
+                return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+                  debugLabel: options.debugLabel,
+                  signal: options.signal,
+                  tools,
+                  ...(modelConfig ? { config: modelConfig } : {}),
+                })
+              }
+              return streamAssistantReplyNative(messages as RuntimeChatMessage[], {
+                debugLabel: options.debugLabel,
+                signal: options.signal,
+                tools,
+                onDelta: undefined,
+              })
+            },
+            emitTrace: undefined,
+            toolCallMode: targetConfig?.toolCallMode
+              ?? getBrowserAiConfig()?.toolCallMode
+              ?? "text",
+            runBrowserScript: createBrowserSkillScriptRunner({
+              workspaceTransaction: workspaceTransaction!,
+              signal: invokeController.signal,
+            }),
+            actionExecutorPolicy: undefined,
+            workspaceMutations: undefined,
+            exposedWorkspaceOperations: undefined,
+            collaborationPolicy: undefined,
+            semanticSearchOwnerId: activeSaveId,
+          },
+        )
+
+        // persistent 入口:写回 context.json(不推进 turn、不写历史、不更新 snapshot).
+        // ephemeral 入口:不写 context,调完即弃.工作区写入(若有)用同一事务提交.
+        if (isPersistent && result.contextUpdate) {
+          stageAgentContextFile(workspaceTransaction!, {
+            saveId: activeSaveId,
+            turn: result.contextUpdate.turn,
+            user: result.contextUpdate.user,
+            assistant: result.replyText,
+            compressedContext: result.contextUpdate.compressedContext,
+            agentId,
+          })
+        }
+        await commitWorkspaceFilesForSave(activeSaveId, workspaceTransaction!.finalWorkspaceFiles())
+
+        return { response: result.replyText }
+      } catch (error) {
+        workspaceTransaction?.discard()
+        rejectAllInteractionRequests(error)
+        throw error
       }
     },
   },

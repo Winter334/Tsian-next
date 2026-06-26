@@ -47,6 +47,7 @@ import {
   generateAssistantReply,
   generateAssistantReplyNative,
   streamAssistantReplyNative,
+  streamAssistantReplyText,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
 import { getBrowserAiConfig } from "../config/ai"
@@ -464,17 +465,32 @@ export async function runAssistantChat(
       {
         callModel(messages, options) {
           const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
-          return generateAssistantReply(messages, {
+          // Text-protocol streaming gate (mirrors callModelNative below).
+          const streamingEnabled = agentConfig
+            ? agentConfig.streaming
+            : getBrowserAiConfig()?.streaming ?? false
+          if (!options.onDelta || !streamingEnabled) {
+            return generateAssistantReply(messages, {
+              debugLabel: options.debugLabel,
+              signal: options.signal,
+              ...(agentConfig ? { config: agentConfig } : {}),
+            })
+          }
+          return streamAssistantReplyText(messages, {
             debugLabel: options.debugLabel,
             signal: options.signal,
+            round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
+            onDelta: options.onDelta
+              ? (delta, round, kind) => options.onDelta!(options.agentId ?? "assistant", delta, round, kind)
+              : undefined,
           })
         },
         async callModelNative(messages, options, tools) {
           const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
           // Stream only when the caller wants deltas AND the model opted into
-          // streaming (text-protocol models force false). Falls back to the
-          // global config's flag when this agent has no preset mapping.
+          // streaming. Both native and text modes support streaming; falls
+          // back to the global config's flag when this agent has no preset.
           const streamingEnabled = agentConfig
             ? agentConfig.streaming
             : getBrowserAiConfig()?.streaming ?? false

@@ -766,6 +766,8 @@ const DEFAULT_WORKSPACE_FILES: Array<{
       workspaceAccess: {
         level: 1,
       },
+      entryMode: "persistent",
+      system: true,
     }),
   },
   {

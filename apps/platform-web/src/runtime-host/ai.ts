@@ -1603,3 +1603,257 @@ export async function streamAssistantReplyNative(
 
   return result
 }
+
+// ─────────────────────────────────────────────────────────────────────────
+// Text-protocol streaming (task 06-26-text-protocol-and-agent-entry)
+//
+// Mirrors streamAssistantReplyNative but for the <tsian-tool-call> text-
+// embedding protocol. Uses AiChatMessage[] (not RuntimeChatMessage[]), sends
+// stream:true via buildRequestBody (not buildStreamRequestBody which expects
+// native message shape), and does NOT extract tool calls or reasoning from
+// structured SSE fields — tool calls live in the content text as
+// <tsian-tool-call> blocks, parsed post-hoc by the runtime layer at round
+// end. The onDelta callback receives a display-stripped buffer (closed
+// tool-call/think blocks hidden, unclosed tail blocks still visible) so the
+// UI doesn't show raw XML tags during streaming.
+// ─────────────────────────────────────────────────────────────────────────
+
+// Display-only patterns mirror the authoritative THINK_BLOCK_PATTERNS in
+// agent-runtime/workspace-tools.ts. Duplicated intentionally: runtime-host
+// display strip is best-effort (render aid), while agent-runtime's
+// stripThinkBlocks is the authoritative parse (model-boundary contract).
+// Same precedent as registry.ts mirroring tsian-actions fence patterns.
+const DISPLAY_TOOL_CALL_PATTERN = /<tsian-tool-call>\s*[\s\S]*?\s*<\/tsian-tool-call>/g
+const DISPLAY_THINK_PATTERNS = [
+  /<thought>\s*[\s\S]*?\s*<\/thought>/g,
+  /<thinking>\s*[\s\S]*?\s*<\/thinking>/g,
+  /<think>\s*[\s\S]*?\s*<\/think>/g,
+]
+
+export function stripForDisplay(text: string): string {
+  let result = text.replace(DISPLAY_TOOL_CALL_PATTERN, "")
+  for (const pattern of DISPLAY_THINK_PATTERNS) {
+    result = result.replace(pattern, "")
+  }
+  return result
+}
+
+export interface StreamAssistantReplyTextOptions extends GenerateAssistantReplyOptions {
+  /**
+   * Streaming text-delta callback for text-protocol mode. Invoked with the
+   * display-stripped accumulated buffer (not incremental deltas) and
+   * `kind: "content"` only — text protocol has no separate reasoning stream;
+   * chain-of-thought lives in the content text as <think>/<thought>/
+   * <thinking> blocks, stripped by stripForDisplay for display and by
+   * stripThinkBlocks for the authoritative round-end parse.
+   */
+  onDelta?: (delta: string, round: number, kind: "reasoning" | "content") => void
+  /** Tool-loop round index for this single stream call. Defaults to 0. */
+  round?: number
+}
+
+/**
+ * Text-protocol streaming variant of `generateAssistantReply`. Sends
+ * `stream: true` to the provider's chat endpoint and accumulates the full
+ * response via SSE. Unlike `streamAssistantReplyNative`, this returns
+ * `Promise<string>` (the raw full text, NOT a `ModelCallResult`) because
+ * text-protocol tool calls are embedded in the content and parsed by the
+ * runtime layer post-hoc. The `onDelta` callback receives the
+ * display-stripped buffer on every content chunk. Falls back to one-shot
+ * `generateAssistantReply` when the endpoint does not answer with
+ * `text/event-stream`.
+ */
+export async function streamAssistantReplyText(
+  messages: AiChatMessage[],
+  options: StreamAssistantReplyTextOptions = {},
+): Promise<string> {
+  const config = options.config ?? getBrowserAiConfig()
+
+  if (!config) {
+    throw new Error(
+      "AI config is missing. Please configure an OpenAI-compatible provider in Control Panel.",
+    )
+  }
+
+  const round = options.round ?? 0
+  const requestId = `${options.debugLabel ?? "chat-stream-text"}-${++aiDebugSequence}`
+  const adapter = selectAdapter(config.kind)
+  // Use the non-stream URL builder + body builder (text protocol uses plain
+  // AiChatMessage[], not RuntimeChatMessage[]). We inject stream:true after.
+  const url = adapter.buildStreamUrl(config)
+  const requestBody = adapter.buildRequestBody(config, messages)
+  ;(requestBody as Record<string, unknown>).stream = true
+
+  pushAiDebugRecord({
+    id: requestId,
+    kind: "chat",
+    label: options.debugLabel ?? "chat-stream-text",
+    model: config.model,
+    createdAt: new Date().toISOString(),
+    messages: messages.map((message) => ({ ...message })),
+  })
+
+  logDebugGroup(`[Tsian AI ${requestId}] text stream request`, {
+    url,
+    model: config.model,
+    apiKey: maskSecret(config.apiKey),
+    requestKeys: Object.keys(requestBody),
+    messages: messages.map((message, index) => ({
+      index,
+      role: message.role,
+      content: previewText(contentToTextPreview(message.content)),
+    })),
+  })
+
+  const timed = createTimedAbortSignal({
+    signal: options.signal,
+    timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,
+    timeoutMessage: `[Tsian AI ${requestId}] request timed out after ${DEFAULT_CHAT_TIMEOUT_MS} ms.`,
+  })
+
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: adapter.buildHeaders(config),
+      body: JSON.stringify(requestBody),
+      signal: timed.signal,
+    })
+  } catch (error) {
+    timed.cleanup()
+    const message = error instanceof Error ? error.message : String(error)
+    console.warn(`[Tsian AI ${requestId}] error`, { error })
+    updateAiDebugRecord(requestId, { error: message })
+    throw error
+  }
+
+  if (!response.ok) {
+    timed.cleanup()
+    const payload = await readJsonPayload(response)
+    console.warn(`[Tsian AI ${requestId}] error`, { status: response.status, payload })
+    const message = extractErrorMessage(payload) ?? `AI request failed with status ${response.status}.`
+    updateAiDebugRecord(requestId, { error: message })
+    throw new Error(message)
+  }
+
+  // Non-SSE fallback: endpoint answered with a regular JSON body. Use the
+  // non-stream adapter's extractText (text protocol, not native extractResult).
+  const contentType = response.headers.get("content-type") ?? ""
+  if (!contentType.includes("text/event-stream")) {
+    try {
+      const payload = await readJsonPayload(response)
+      const content = adapter.extractText(payload)
+      const usage = extractUsageFromPayload(payload)
+      updateAiDebugRecord(requestId, { responseText: content, usage })
+      logDebugGroup(`[Tsian AI ${requestId}] text stream non-SSE fallback`, {
+        content: previewText(content, 2400),
+        payload,
+      })
+      // Emit one delta for the complete text so the UI shows it.
+      if (options.onDelta && content) {
+        options.onDelta(content, round, "content")
+      }
+      return content
+    } finally {
+      timed.cleanup()
+    }
+  }
+
+  if (!response.body) {
+    timed.cleanup()
+    throw new Error("Streaming response has no body.")
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let lineBuffer = ""
+  let textBuffer = ""
+  let streamEnded = false
+  let streamUsage: { input?: number; output?: number; total?: number } | undefined
+  const isClaude = config.kind === "claude"
+  let currentEvent = ""
+
+  try {
+    while (!streamEnded) {
+      const { done, value } = await reader.read()
+      if (done) {
+        streamEnded = true
+        break
+      }
+      lineBuffer += decoder.decode(value, { stream: true })
+      const parsed = parseSseChunk(lineBuffer)
+      lineBuffer = parsed.rest
+
+      for (const line of parsed.lines) {
+        if (line.kind === "event") {
+          currentEvent = line.value
+          // Claude `message_stop` ends the stream.
+          if (isClaude && line.value === "message_stop") {
+            streamEnded = true
+          }
+          continue
+        }
+
+        // line.kind === "data"
+        const dataRaw = line.value
+        // OpenAI terminator.
+        if (dataRaw === "[DONE]") {
+          streamEnded = true
+          continue
+        }
+
+        let data: unknown
+        try {
+          data = JSON.parse(dataRaw)
+        } catch {
+          // Skip malformed/keep-alive data lines.
+          continue
+        }
+
+        // Provider usage arrives in the terminating chunk.
+        const chunkUsage = extractUsageFromPayload(data)
+        if (chunkUsage) {
+          streamUsage = chunkUsage
+        }
+
+        // Text protocol: only extract content deltas. Tool calls and
+        // reasoning are embedded in the content text, not structured SSE
+        // fields — they are parsed/stripped post-hoc by the runtime layer.
+        const delta = adapter.extractStreamDelta(data)
+        if (delta !== undefined && delta !== "") {
+          textBuffer += delta
+          // Emit the raw incremental delta. The UI accumulates this into
+          // streamingText; the render layer applies stripForDisplay at display
+          // time (closed blocks hidden, unclosed tail blocks visible). This
+          // keeps the delta stream compatible with the native-mode onDelta
+          // contract (incremental, accumulative).
+          options.onDelta?.(delta, round, "content")
+        }
+
+        // We do NOT call extractStreamToolCalls or extractStreamReasoningDelta
+        // here — text protocol has no structured tool-call or reasoning
+        // fields. The finish reason is also not needed; the runtime layer
+        // determines tool_calls vs stop by parsing the full buffer at round
+        // end (parseRuntimeWorkspaceToolCalls returns empty → stop).
+      }
+    }
+  } finally {
+    timed.cleanup()
+    try {
+      reader.releaseLock()
+    } catch {
+      // Reader already released.
+    }
+  }
+
+  // Return the raw full text — the runtime layer will parse tool-call blocks
+  // and strip think blocks post-hoc. Do NOT strip here; the authoritative
+  // parse happens in the tool loop.
+  updateAiDebugRecord(requestId, { responseText: textBuffer, usage: streamUsage })
+  logDebugGroup(`[Tsian AI ${requestId}] text stream response`, {
+    text: previewText(textBuffer, 2400),
+    usage: streamUsage,
+  })
+
+  return textBuffer
+}

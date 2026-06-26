@@ -106,7 +106,6 @@
         <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim/80">流式输出</span>
         <Switch
           :model-value="streamingEffective"
-          :disabled="toolCallMode !== 'native'"
           @update:model-value="(value) => emit('update:streaming', Boolean(value))"
         />
       </div>
@@ -150,9 +149,8 @@ const props = defineProps<{
   kind: BrowserAiProviderKind
   toolCallMode: BrowserAiToolCallMode
   /**
-   * Whether SSE streaming is enabled for this model. Text-protocol models
-   * always present `false` here (streaming is native-mode only); the switch
-   * is disabled and forced off when `toolCallMode !== "native"`.
+   * Whether SSE streaming is enabled for this model. Both native and text
+   * tool-call modes support streaming; the switch is always enabled.
    */
   streaming: boolean
 }>()
@@ -170,30 +168,21 @@ const reasoningHint = computed(() => reasoningEffortHintForKind(props.kind))
 const toolCallModeHint = computed(() =>
   props.toolCallMode === "native"
     ? "使用 API 原生 function calling，结构化工具调用边界，支持流式。请确认你的接口支持原生工具调用。"
-    : "使用 <tsian-tool-call> 文本协议，兼容所有接口，不支持流式。",
+    : "使用 <tsian-tool-call> 文本协议，兼容所有接口，支持流式（回复完成后统一解析）。",
 )
 
-// Text-protocol models can never stream; force the switch off in that case.
-const streamingEffective = computed(() =>
-  props.toolCallMode === "native" ? props.streaming : false,
-)
+const streamingEffective = computed(() => props.streaming)
 
 const streamingHint = computed(() =>
   props.toolCallMode === "native"
     ? "开启后回复逐字流式显示（需接口支持 stream）。若接口不支持或出错，可关闭回到一次性返回。"
-    : "文本协议无法流式，仅原生 function calling 模式可开启。",
+    : "开启后流式接收回复，回复完成后统一解析工具调用块。需接口支持 stream，不支持可关闭。",
 )
 
-// Switching tool-call mode drives streaming for real (not just the display):
-// dropping to the text protocol turns streaming off at the data layer too, so
-// the saved value is `false` rather than a stale `true` revealed again when
-// switching back to native. Switching to native keeps the current value — the
-// user opts in explicitly.
+// Switching tool-call mode no longer forces streaming off — both native and
+// text modes support streaming. The user's streaming preference is preserved.
 function onToolCallModeChange(mode: BrowserAiToolCallMode): void {
   emit("update:toolCallMode", mode)
-  if (mode === "text") {
-    emit("update:streaming", false)
-  }
 }
 
 function numToText(value: number | null): string {

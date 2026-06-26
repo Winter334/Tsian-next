@@ -655,6 +655,12 @@ function normalizeAgentAccessLevel(value: unknown): number {
   return Math.max(0, Math.min(MAX_AGENT_ACCESS_LEVEL, Math.floor(value)))
 }
 
+/** Resolve agent.json `entryMode`; defaults to `"persistent"` for missing or
+ *  invalid values. */
+function normalizeAgentEntryMode(value: unknown): "persistent" | "ephemeral" {
+  return value === "ephemeral" ? "ephemeral" : "persistent"
+}
+
 function parseAgentConfigFile(file: WorkspaceFile): Partial<AgentConfig> | null {
   try {
     const parsed = JSON.parse(file.content) as unknown
@@ -708,6 +714,8 @@ function buildAgentRegistryEntry(
 
   const knowledgeMount = jsonString(config.knowledgeMount)
   const providerPresetId = jsonString(config.providerPresetId)
+  const entryMode = normalizeAgentEntryMode(config.entryMode)
+  const system = config.system === true
 
   return {
     id,
@@ -722,6 +730,8 @@ function buildAgentRegistryEntry(
     platformTools,
     workspaceAccess: normalizeAgentWorkspaceAccessConfig(config.workspaceAccess),
     contextPaths: jsonStringArray(config.contextPaths),
+    entryMode,
+    system,
     ...(knowledgeMount ? { knowledgeMount } : {}),
     ...(providerPresetId ? { providerPresetId } : {}),
     updatedAt: file.updatedAt,

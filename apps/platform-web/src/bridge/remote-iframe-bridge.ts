@@ -1,6 +1,7 @@
 import type {
   AskUserResponse,
   DeepQueryRequest,
+  InvokeAgentRequest,
   JsonValue,
   MessageInteractionRequest,
   PlatformActionRequest,
@@ -22,6 +23,7 @@ const ALLOWED_REMOTE_FRONTEND_PROTOCOLS = new Set(["http:", "https:"])
 const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
   "runtime.getRuntimeSnapshot",
   "interaction.sendMessage",
+  "interaction.invokeAgent",
   "interaction.respond",
   "query.query",
   "platform.getPlatformContext",
@@ -132,6 +134,28 @@ function normalizeMessageInteractionRequest(value: unknown): MessageInteractionR
   return { content: record.content }
 }
 
+function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
+  const record = requireRecordParams(
+    value,
+    "INVALID_INVOKE_AGENT_REQUEST",
+    "interaction.invokeAgent requires an object payload.",
+  )
+  if (typeof record.agentId !== "string" || !record.agentId.trim()) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_ID",
+      "interaction.invokeAgent requires a non-empty string agentId.",
+    )
+  }
+  if (typeof record.input !== "string") {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_INPUT",
+      "interaction.invokeAgent requires string input.",
+    )
+  }
+
+  return { agentId: record.agentId, input: record.input }
+}
+
 function normalizeAskUserResponse(value: unknown): AskUserResponse {
   const record = requireRecordParams(
     value,
@@ -238,6 +262,10 @@ function dispatchRemoteBridgeRequest(
 
   if (method === "interaction.sendMessage") {
     return bridge.interaction.sendMessage(normalizeMessageInteractionRequest(params))
+  }
+
+  if (method === "interaction.invokeAgent") {
+    return bridge.interaction.invokeAgent(normalizeInvokeAgentRequest(params))
   }
 
   if (method === "interaction.respond") {

@@ -14,6 +14,9 @@ export function createPlayFrontendBridge(
       sendMessage(input) {
         return engine.sendMessage(input)
       },
+      invokeAgent(input) {
+        return engine.invokeAgent(input)
+      },
     },
     query: {
       query(request) {

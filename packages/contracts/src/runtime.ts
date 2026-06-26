@@ -355,6 +355,23 @@ export interface AgentConfig {
   workspaceAccess: AgentWorkspaceAccessConfig
   knowledgeMount?: string
   providerPresetId?: string
+  /**
+   * Entry mode: `"persistent"` (default) agents have an independent context
+   * snapshot (`save/agents/<id>/context.json`) that accumulates across turns;
+   * `"ephemeral"` agents have no context snapshot — each call rebuilds from
+   * recentHistory and discards state after. Used by `invokeAgent` to decide
+   * whether to read/write context.json.
+   */
+  entryMode?: "persistent" | "ephemeral"
+  /**
+   * System-level agent marker. `true` for master and assistant — these are
+   * platform-essential agents. The field is informational: it tells the
+   * assistant agent (via workspace_read) that these agents should not be
+   * renamed or deleted. The Studio agent panel has no delete/rename UI, so
+   * no hard UI interception is needed; the field is ready for future agent
+   * management UIs.
+   */
+  system?: boolean
 }
 
 export interface AgentRegistryEntry {
@@ -372,6 +389,10 @@ export interface AgentRegistryEntry {
   contextPaths: string[]
   knowledgeMount?: string
   providerPresetId?: string
+  /** Entry mode resolved from agent.json; defaults to `"persistent"`. */
+  entryMode: "persistent" | "ephemeral"
+  /** System-level agent marker resolved from agent.json; defaults to `false`. */
+  system: boolean
   updatedAt: number
 }
 
@@ -589,6 +610,19 @@ export interface MessageInteractionRequest {
 
 export interface MessageInteractionResult {
   snapshot: RuntimeSnapshotShell
+}
+
+/** invokeAgent 请求：游戏前端按 agentId 直接调用某个 agent（NPC 视角、
+ *  UI 触发的单次修正等）。与 sendMessage 不同：不推进 turn、不写历史、
+ *  不更新 runtimeSnapshot——旁路调用，结果直接返回调用方。 */
+export interface InvokeAgentRequest {
+  agentId: string
+  input: string
+}
+
+/** invokeAgent 返回：agent 的回复文本。不含 snapshot（不进运行时状态）。 */
+export interface InvokeAgentResult {
+  response: string
 }
 
 /** ask_user 工具请求：AI 向玩家提问。 */

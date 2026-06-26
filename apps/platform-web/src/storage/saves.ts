@@ -271,6 +271,43 @@ export async function commitSuccessfulRuntimeTurnForSave(
   )
 }
 
+/**
+ * Commit only workspace files for a save (no snapshot/history/checkpoint update).
+ * Used by `invokeAgent` persistent path to write context.json without advancing
+ * turn or polluting the narrative snapshot. Mirrors the workspace-file portion of
+ * `commitSuccessfulRuntimeTurnForSave` but skips snapshot, history, and checkpoint.
+ */
+export async function commitWorkspaceFilesForSave(
+  saveId: string,
+  workspaceFiles: WorkspaceFile[],
+): Promise<void> {
+  const workspaceRecords = new Map<string, ReturnType<typeof createLocalWorkspaceFileRecord>>()
+  for (const file of saveRuntimeFilesFromEffectiveWorkspace(workspaceFiles)) {
+    const record = createLocalWorkspaceFileRecord(saveId, file)
+    workspaceRecords.set(record.path, record)
+  }
+
+  await localDb.transaction(
+    "rw",
+    [localDb.saves, localDb.workspaceFiles],
+    async () => {
+      const existingWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+      await Promise.all(existingWorkspace.map((record) => localDb.workspaceFiles.delete(record.id)))
+      for (const record of workspaceRecords.values()) {
+        await localDb.workspaceFiles.put(record)
+      }
+
+      const save = await localDb.saves.get(saveId)
+      if (save) {
+        await localDb.saves.put({
+          ...save,
+          updatedAt: Date.now(),
+        })
+      }
+    },
+  )
+}
+
 export async function saveSnapshotForSave(
   saveId: string,
   snapshot: RuntimeSnapshotShell,

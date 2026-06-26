@@ -692,6 +692,50 @@ export function stripRuntimeWorkspaceToolCallBlocks(text: string): string {
   return text.replace(TOOL_CALL_PATTERN, "").trim()
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// Think-block stripping (task 06-26-text-protocol-and-agent-entry)
+//
+// Text-protocol models that emit chain-of-thought as inline tags (e.g. QwQ
+//  让 1/2 步思考), we strip these from the content fed back to the model
+// (防上下文污染). This is a platform-side hard requirement independent of
+// rendering — the game frontend / assistant UI handle their own display.
+// Only common native tags are adapted: <thought>, <thinking>,  Non-mainstream formats are intentionally not handled; prompt-layer
+// responsibility.
+// ─────────────────────────────────────────────────────────────────────────
+
+const THINK_BLOCK_PATTERNS = [
+  /<thought>\s*([\s\S]*?)\s*<\/thought>/g,
+  /<thinking>\s*([\s\S]*?)\s*<\/thinking>/g,
+  /<think>\s*([\s\S]*?)\s*<\/think>/g,
+]
+
+/** Strip closed think blocks from text. Used at round end to clean content
+ *  fed back to the model (prevent chain-of-thought from polluting context). */
+export function stripThinkBlocks(text: string): string {
+  let result = text
+  for (const pattern of THINK_BLOCK_PATTERNS) {
+    result = result.replace(pattern, "")
+  }
+  return result.trim()
+}
+
+/** Extract the inner content of closed think blocks. Used to collect thought
+ *  processNodes (parallel to native mode's reasoning stream → thought node). */
+export function extractThinkBlocks(text: string): string[] {
+  const blocks: string[] = []
+  for (const pattern of THINK_BLOCK_PATTERNS) {
+    const reset = new RegExp(pattern.source, pattern.flags)
+    let match: RegExpExecArray | null
+    while ((match = reset.exec(text)) !== null) {
+      const inner = (match[1] ?? "").trim()
+      if (inner) {
+        blocks.push(inner)
+      }
+    }
+  }
+  return blocks
+}
+
 function normalizeSkillName(value: unknown): string {
   if (typeof value !== "string") {
     throw toolError(

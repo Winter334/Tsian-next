@@ -1398,6 +1398,8 @@ function defaultAssistantConfig(): AgentConfig {
       level: 4,
     },
     knowledgeMount: "docs/",
+    entryMode: "persistent",
+    system: true,
   }
 }
 
