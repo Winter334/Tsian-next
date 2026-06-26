@@ -144,15 +144,21 @@ function renderSessionHistory(entries: SessionHistoryEntry[]): void {
     inner.appendChild(empty)
   } else {
     for (const entry of entries) {
+      // 每个 turn 的正确时间线：user 消息 → 过程节点(thought/interim/tool) → assistant 最终正文
+      // 持久化结构里 messages=[user, assistant] + 独立 processNodes 字段，
+      // 不能把 processNodes 整个排在 messages 前面（否则工具调用堆在 user 上面）。
+      const userMsg = entry.messages.find((m) => m.role === "user")
+      const assistantMsgs = entry.messages.filter((m) => m.role !== "user")
+      if (userMsg) inner.appendChild(renderMessageEl(userMsg))
       // 过程节点(如果有)
       if (entry.processNodes && entry.processNodes.length > 0) {
         const zone = document.createElement("div")
         zone.className = "process-history-zone"
-        for (const node of entry.processNodes) zone.appendChild(createProcessNode(node))
+        for (const el of renderTimeline(entry.processNodes)) zone.appendChild(el)
         inner.appendChild(zone)
       }
-      // 正文(user + assistant)
-      for (const m of entry.messages) inner.appendChild(renderMessageEl(m))
+      // assistant 正文(最终回复)
+      for (const m of assistantMsgs) inner.appendChild(renderMessageEl(m))
     }
   }
   $story.appendChild(inner)
@@ -183,6 +189,96 @@ function renderMessageEl(m: ConversationMessageRecord): HTMLDivElement {
 // 过程节点渲染
 // ════════════════════════════════════════════════════════════════
 
+// 工具名 → 玩家可读的（动词, 名词, 量词）三元组，用于生成自然语言摘要。
+// 量词用于"读取了 N 个文件"这类句子；null 表示不附带计数。
+const TOOL_LABEL: Record<string, { verb: string; noun: string; unit: string | null }> = {
+  read: { verb: "读取", noun: "文件", unit: "个" },
+  list: { verb: "列出", noun: "条目", unit: "项" },
+  search: { verb: "搜索", noun: "匹配", unit: "处" },
+  glob: { verb: "匹配", noun: "文件", unit: "个" },
+  diff: { verb: "比对", noun: "差异", unit: null },
+  write: { verb: "写入", noun: "文件", unit: null },
+  edit: { verb: "编辑", noun: "文件", unit: null },
+  move: { verb: "移动", noun: "文件", unit: null },
+  delete: { verb: "删除", noun: "文件", unit: null },
+  semantic_search: { verb: "语义检索", noun: "记忆", unit: null },
+  use_skill: { verb: "激活", noun: "技能", unit: null },
+  run_script: { verb: "执行", noun: "脚本", unit: null },
+  inspect_frontend: { verb: "自检", noun: "前端", unit: null },
+  ask_user: { verb: "向玩家", noun: "提问", unit: null },
+}
+
+/** 从普通工具的 output（JSON.stringify 的结果字符串）里解析出计数。 */
+function toolCountFromOutput(name: string, output: TurnToolOutput | undefined): number | null {
+  if (typeof output !== "string" || !output) return null
+  let parsed: unknown
+  try { parsed = JSON.parse(output) } catch { return null }
+  if (Array.isArray(parsed)) return parsed.length
+  if (parsed && typeof parsed === "object") {
+    // search 返回 [{matches:[...]}, ...]，累加 matches 长度
+    if (name === "search" && Array.isArray((parsed as Record<string, unknown[]>).files)) {
+      let total = 0
+      for (const f of (parsed as Record<string, unknown[]>).files) {
+        if (f && typeof f === "object" && Array.isArray((f as Record<string, unknown[]>).matches)) {
+          total += (f as Record<string, unknown[]>).matches.length
+        }
+      }
+      return total
+    }
+  }
+  return null
+}
+
+/** 单个普通工具 → 自然语言摘要句（如"读取了 3 个文件"）。
+ *  同名工具合并时传入 count（>1），生成"读取了 3 个文件"而非"读取 1 个文件"。 */
+function toolSummarySentence(node: ProcessNode, count: number): string {
+  const label = TOOL_LABEL[node.name ?? ""]
+  const verb = label?.verb ?? (node.name || "调用")
+  const noun = label?.noun ?? "操作"
+  if (node.status === "failed") return `${verb}${noun}失败`
+  const unit = label?.unit ?? null
+  const total = count > 1 ? count : (toolCountFromOutput(node.name ?? "", node.output) ?? 0)
+  if (unit && total > 0) {
+    return `${verb}了 ${total} ${unit}${noun}`
+  }
+  // 无量词或无计数：只说动作（如"写入了文件"、"语义检索了记忆"）
+  return `${verb}了${noun}`
+}
+
+/** 把同 round 连续的普通工具节点合并成一行自然语言摘要。
+ *  agent_call 不合并（有玩家可读回应，保留独立折叠节点）。 */
+function createToolGroupLine(tools: ProcessNode[]): HTMLDivElement {
+  const div = document.createElement("div")
+  div.className = "process-node tool tool-group"
+  const hasFail = tools.some((t) => t.status === "failed")
+  if (hasFail) div.classList.add("failed")
+  // agentId 标签取第一个工具的
+  const agentId = tools[0]?.agentId
+  const head = document.createElement("div"); head.className = "process-head"
+  if (agentId) {
+    const tag = document.createElement("span"); tag.className = "agent-tag"; tag.textContent = agentId
+    head.appendChild(tag)
+    const dot = document.createElement("span"); dot.className = "glyph"; dot.textContent = "·"
+    head.appendChild(dot)
+  }
+  const label = document.createElement("span"); label.className = "tool-group-label"
+  // 同名工具合并计数，不同名各生成一句，用顿号串起
+  const byName = new Map<string, { count: number; node: ProcessNode }>()
+  for (const t of tools) {
+    const key = t.name ?? "tool"
+    const entry = byName.get(key)
+    if (entry) { entry.count += 1 } else { byName.set(key, { count: 1, node: t }) }
+  }
+  const sentences: string[] = []
+  for (const [, { count, node }] of byName) {
+    sentences.push(toolSummarySentence(node, count))
+  }
+  label.textContent = sentences.join("、")
+  head.appendChild(label)
+  div.appendChild(head)
+  return div
+}
+
 // 提取 agent_call 工具卡片的玩家可读内容（title + response）。
 // 普通 tool（output 为 string）返回 null —— 统一不显 output，只显状态。
 // agent_call 成功返回 {title, response, failed:false}；失败返回 error.message。
@@ -196,9 +292,13 @@ function agentCallDisplay(output: TurnToolOutput | undefined): { title: string; 
 }
 
 // 生成一个过程节点 DOM（thought/tool/interim），带 agentId 标签
+// 普通工具不再走此函数渲染（由 createToolGroupLine 合并成一行）；
+// agent_call 仍走此函数，保留折叠（收起/展开玩家可读的回应）。
 function createProcessNode(node: ProcessNode): HTMLDivElement {
   const div = document.createElement("div")
-  div.className = "process-node " + node.type + (node.collapsed ? " collapsed" : " expanded")
+  // 普通工具不再折叠；thought/agent_call 保留折叠态
+  const canCollapse = node.type === "thought" || (node.type === "tool" && agentCallDisplay(node.output))
+  div.className = "process-node " + node.type + (canCollapse ? (node.collapsed ? " collapsed" : " expanded") : "")
   if (node.type === "tool" && node.status === "failed") div.classList.add("failed")
   div.dataset.nodeId = node.id
 
@@ -210,8 +310,8 @@ function createProcessNode(node: ProcessNode): HTMLDivElement {
     const dot = document.createElement("span"); dot.className = "glyph"; dot.textContent = "·"
     head.appendChild(dot)
   }
-  // 折叠触发器（thought/tool 可折叠；interim 始终展开）
-  if (node.type === "thought" || node.type === "tool") {
+  // 折叠触发器（thought/agent_call 可折叠；普通工具/interim 无）
+  if (canCollapse) {
     const toggle = document.createElement("span"); toggle.className = "toggle"; toggle.textContent = "▶"
     head.appendChild(toggle)
   }
@@ -242,8 +342,8 @@ function createProcessNode(node: ProcessNode): HTMLDivElement {
   } else if (node.text) { body.innerHTML = renderMarkdown(node.text) }
   div.appendChild(body)
 
-  // 折叠交互
-  if (node.type === "thought" || node.type === "tool") {
+  // 折叠交互（仅 thought / agent_call）
+  if (canCollapse) {
     head.addEventListener("click", () => {
       const collapsed = div.classList.toggle("collapsed")
       div.classList.toggle("expanded", !collapsed)
@@ -301,11 +401,42 @@ function beginTurn(): void {
 }
 
 // 渲染当前 timeline 的过程节点到过程区
+// 同 round 连续的普通工具合并成一行摘要（createToolGroupLine）；
+// thought/interim/agent_call 各自独立节点。
 function renderProcessNodes(): void {
   if (!currentTurnEls || !turnState) return
   const zone = currentTurnEls.processZone
   zone.innerHTML = ""
-  for (const node of turnState.timeline) zone.appendChild(createProcessNode(node))
+  for (const el of renderTimeline(turnState.timeline)) zone.appendChild(el)
+}
+
+/** 把 timeline 渲染成 DOM 元素数组：同 round 连续普通工具合并，其余独立。
+ *  renderProcessNodes（实时）和 renderSessionHistory（重载）共用此函数。 */
+function renderTimeline(timeline: ProcessNode[]): HTMLDivElement[] {
+  const result: HTMLDivElement[] = []
+  let i = 0
+  while (i < timeline.length) {
+    const node = timeline[i]
+    // 普通工具（非 agent_call）：尝试与后续同 round 连续普通工具合并
+    if (node.type === "tool" && !agentCallDisplay(node.output)) {
+      const round = node.round
+      const group: ProcessNode[] = [node]
+      let j = i + 1
+      while (j < timeline.length
+        && timeline[j].type === "tool"
+        && !agentCallDisplay(timeline[j].output)
+        && timeline[j].round === round) {
+        group.push(timeline[j])
+        j += 1
+      }
+      result.push(createToolGroupLine(group))
+      i = j
+    } else {
+      result.push(createProcessNode(node))
+      i += 1
+    }
+  }
+  return result
 }
 
 // 流式正文更新
@@ -316,27 +447,41 @@ function renderStreaming(): void {
 }
 
 // finalizeRound：镜像 useAssistantTimeline.onRoundEnd
+// 思维链和过渡文本在时间线上先于工具调用产生，但 onRoundEnd 在工具执行完
+// 才触发——工具节点已 push 到 timeline。这里把 interim/thought 插到同
+// round 工具节点之前，保持与持久化顺序（turn-timeline-collector）一致。
 function finalizeRound(payload: RemotePlayBridgeEventPayload): void {
   if (!turnState) return
   if (!("kind" in payload) || !("round" in payload)) return
   const round = payload.round
   const kind = payload.kind as "thought" | "final"
   const reasoning = turnState.streamingReasoning
+  const nodesToInsert: ProcessNode[] = []
   if (kind === "thought") {
     // tool_calls 轮：过渡文本→interim，思维链→thought
     const interimText = turnState.streamingText
     if (interimText.trim()) {
-      turnState.timeline.push({ type: "interim", id: "interim-r" + round, round, text: interimText, collapsed: false, agentId: payload.agentId || null })
+      nodesToInsert.push({ type: "interim", id: "interim-r" + round, round, text: interimText, collapsed: false, agentId: payload.agentId || null })
     }
     if (reasoning.trim()) {
-      turnState.timeline.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: payload.agentId || null })
+      nodesToInsert.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: payload.agentId || null })
     }
   } else {
     // 最终轮（stop）：思维链→thought，streamingText→content
     if (reasoning.trim()) {
-      turnState.timeline.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: payload.agentId || null })
+      nodesToInsert.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: payload.agentId || null })
     }
     turnState.content = turnState.streamingText
+  }
+  if (nodesToInsert.length > 0) {
+    const firstToolIdx = turnState.timeline.findIndex(
+      (n) => n.type === "tool" && n.round === round,
+    )
+    if (firstToolIdx >= 0) {
+      turnState.timeline.splice(firstToolIdx, 0, ...nodesToInsert)
+    } else {
+      turnState.timeline.push(...nodesToInsert)
+    }
   }
   turnState.streamingReasoning = ""
   turnState.streamingText = ""
@@ -355,7 +500,9 @@ function finalizeRound(payload: RemotePlayBridgeEventPayload): void {
 function finalizeTurn(): void {
   if (turnState && turnState.timeline.length > 0) {
     for (const node of turnState.timeline) {
-      if (node.type === "thought" || node.type === "tool") node.collapsed = true
+      // 折叠 thought 和 agent_call（有玩家可读回应，收起保留可展开回看）；
+      // 普通工具不再折叠（已合并成一行摘要，无 body 可收）。
+      if (node.type === "thought" || (node.type === "tool" && agentCallDisplay(node.output))) node.collapsed = true
     }
     // 重渲染过程节点(折叠态)
     renderProcessNodes()

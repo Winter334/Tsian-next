@@ -126,6 +126,19 @@ body {
   white-space: pre-wrap; word-wrap: break-word;
 }
 .process-node.collapsed .process-body { display: none; }
+
+/* 同轮普通工具合并行：单行紧凑，无折叠箭头，视觉更轻 */
+.process-node.tool-group {
+  padding: 4px 14px;
+  border-left-color: var(--ember-deep);
+  background: rgba(212, 162, 76, 0.03);
+}
+.process-node.tool-group .process-head { cursor: default; }
+.process-node.tool-group .tool-group-label {
+  font-family: var(--mono); font-size: 11px;
+  color: var(--prose-dim); letter-spacing: 0.04em;
+}
+.process-node.tool-group.failed .tool-group-label { color: var(--blood); }
 /* 过程历史区：跨 turn 累积的过程节点，与正文区视觉分离 */
 .process-history-zone { margin-bottom: 1em; }
 .process-body.failed-text { color: var(--blood); }

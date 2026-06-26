@@ -40,11 +40,17 @@ export function createTurnTimelineCollector() {
     finishReason: "stop" | "tool_calls",
   ): void => {
     const reasoning = streamingReasoning
+    // 收集本轮要插入的节点（interim + thought 或仅 thought）。
+    // 时间线上思维链和过渡文本都先于工具调用产生，但 onRoundEnd 在工具
+    // 执行完才触发——此时工具节点已 push 到 timeline 末尾。所以这里要把
+    // interim/thought 插到同 round 工具节点之前，而不是追加到末尾，
+    // 否则重载后过程区顺序变成"工具堆最上面"，与实时体验不一致。
+    const nodesToInsert: TurnProcessNode[] = []
     if (finishReason === "tool_calls") {
       // 工具调用轮:content delta 累积的是过渡文本 → interim 节点(始终展开)
       const interimText = streamingText
       if (interimText.trim()) {
-        timeline.push({
+        nodesToInsert.push({
           type: "interim",
           id: `interim-r${round}`,
           round,
@@ -55,7 +61,7 @@ export function createTurnTimelineCollector() {
       }
       // 思维链 → thought 节点(默认折叠)
       if (reasoning.trim()) {
-        timeline.push({
+        nodesToInsert.push({
           type: "thought",
           id: `thought-r${round}`,
           round,
@@ -68,7 +74,7 @@ export function createTurnTimelineCollector() {
       // 最终轮:streamingText 是最终回复(不入 timeline,host 层用 result.replyText);
       // 若该轮有 reasoning 也折叠为 thought 节点.
       if (reasoning.trim()) {
-        timeline.push({
+        nodesToInsert.push({
           type: "thought",
           id: `thought-r${round}`,
           round,
@@ -76,6 +82,18 @@ export function createTurnTimelineCollector() {
           text: reasoning,
           collapsed: true,
         })
+      }
+    }
+    if (nodesToInsert.length > 0) {
+      // 找到该 round 第一个 tool 节点的位置，把 interim/thought 插到它前面。
+      const firstToolIdx = timeline.findIndex(
+        (n) => n.type === "tool" && n.round === round,
+      )
+      if (firstToolIdx >= 0) {
+        timeline.splice(firstToolIdx, 0, ...nodesToInsert)
+      } else {
+        // 该 round 无工具节点（如最终轮），追加到末尾
+        timeline.push(...nodesToInsert)
       }
     }
     streamingReasoning = ""
