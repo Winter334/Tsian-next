@@ -13,25 +13,21 @@
             :key="skill.path"
             class="border border-neon-deep/30 bg-elevated/45 hover:bg-elevated"
           >
-            <label
-              class="retro-focus grid cursor-pointer gap-3 p-3 sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+            <div
+              class="retro-focus grid gap-3 p-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
             >
-              <input
-                class="mt-1 h-4 w-4 accent-[#f3c56d]"
-                type="checkbox"
-                :checked="skillEnabled(skill)"
-                :disabled="applying || !agent"
-                @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)"
-              >
               <span class="min-w-0">
                 <span class="block truncate text-sm font-bold text-text-main">{{ skill.title }}</span>
                 <span class="mt-1 block line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.description || skill.summary) }}</span>
                 <span class="mt-2 block break-all font-mono text-[11px] text-neon-muted">{{ skill.path }}</span>
               </span>
-              <span class="font-mono text-[11px]" :class="skillEnabled(skill) ? 'text-neon' : 'text-text-dim'">
-                {{ skillEnabled(skill) ? "启用" : "禁用" }}
-              </span>
-            </label>
+              <Switch
+                :model-value="skillEnabled(skill)"
+                :disabled="applying || !agent"
+                :aria-label="skill.title"
+                @update:model-value="(value) => toggleSkill(skill, Boolean(value))"
+              />
+            </div>
             <!-- Skill config (skill.config 声明的配置项):仅声明了 configItems 的 skill 渲染。
                  点输入框不触发上方 checkbox;value 走草稿,应用时统一保存。 -->
             <div
@@ -86,26 +82,14 @@
               <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">{{ group.title }}</p>
             </div>
             <div class="grid gap-2 p-3">
-              <label
+              <PlatformToolCard
                 v-for="tool in group.tools"
                 :key="tool.id"
-                class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/30 bg-elevated/45 p-3 hover:bg-elevated sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
-              >
-                <input
-                  class="mt-1 h-4 w-4 accent-[#f3c56d]"
-                  type="checkbox"
-                  :checked="platformToolEnabled(tool.id)"
-                  :disabled="applying || !agent"
-                  @change="togglePlatformTool(tool.id, ($event.target as HTMLInputElement).checked)"
-                >
-                <span class="min-w-0">
-                  <span class="block text-sm font-bold text-text-main">{{ tool.label }}</span>
-                  <span class="mt-1 block text-xs leading-5 text-text-dim">{{ tool.description }}</span>
-                </span>
-                <span class="font-mono text-[11px]" :class="platformToolEnabled(tool.id) ? 'text-neon' : 'text-text-dim'">
-                  {{ platformToolEnabled(tool.id) ? "启用" : "禁用" }}
-                </span>
-              </label>
+                :tool="tool"
+                :enabled="platformToolEnabled(tool.id)"
+                :disabled="applying || !agent"
+                @toggle="(enabled) => togglePlatformTool(tool.id, enabled)"
+              />
             </div>
           </div>
         </div>
@@ -190,10 +174,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { isAgentPlatformToolEnabled } from "@/agent-runtime/permissions"
 import { PLATFORM_TOOL_CONTROL_GROUPS } from "@/agent-runtime/tool-controls"
 import { isSkillEnabledForAgent } from "@/agent-runtime/registry"
 import { toast } from "@/composables/useToast"
+import PlatformToolCard from "@/components/common/PlatformToolCard.vue"
 import {
   getLocalAssistantConfig,
   updateLocalAssistantPlatformToolEnabled,

@@ -151,27 +151,23 @@
 
               <div class="min-h-0 overflow-auto p-3">
                 <div class="grid gap-2">
-                  <label
+                  <div
                     v-for="skill in skillsForSelectedAgent"
                     :key="skill.path"
-                    class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/35 bg-panel/55 p-3 hover:bg-panel sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
+                    class="retro-focus grid gap-3 border border-neon-deep/35 bg-panel/55 p-3 hover:bg-panel sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start"
                   >
-                    <input
-                      class="mt-1 h-4 w-4 accent-[#f3c56d]"
-                      type="checkbox"
-                      :checked="skillEnabled(skill)"
-                      :disabled="togglingSkillPath === skill.path"
-                      @change="toggleSkill(skill, ($event.target as HTMLInputElement).checked)"
-                    >
                     <span class="min-w-0">
                       <span class="block truncate text-sm font-bold text-text-main">{{ skill.title }}</span>
                       <span class="mt-1 block line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.description || skill.summary) }}</span>
                       <span class="mt-2 block break-all font-mono text-[11px] text-neon-muted">{{ skill.path }}</span>
                     </span>
-                    <span class="font-mono text-[11px]" :class="skillEnabled(skill) ? 'text-neon' : 'text-text-dim'">
-                      {{ skillEnabled(skill) ? "启用" : "禁用" }}
-                    </span>
-                  </label>
+                    <Switch
+                      :model-value="skillEnabled(skill)"
+                      :disabled="togglingSkillPath === skill.path"
+                      :aria-label="skill.title"
+                      @update:model-value="(value) => toggleSkill(skill, Boolean(value))"
+                    />
+                  </div>
 
                   <p v-if="skillsForSelectedAgent.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
                     这个 Agent 还没有可管理的 Skill。
@@ -182,17 +178,86 @@
 
             <div v-else class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
               <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
-                <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Tools</p>
-                <p class="font-mono text-[11px] text-text-dim">平台工具与 Workspace 权限</p>
+                <p class="font-mono text-[11px] uppercase tracking-wider text-neon">运行配置</p>
+                <p class="font-mono text-[11px] text-text-dim">服务商 · Workspace 权限 · 平台工具</p>
               </div>
 
               <div class="min-h-0 overflow-auto p-3">
-                <div class="grid gap-3 xl:grid-cols-[minmax(0,1fr)_280px]">
+                <div class="grid gap-3">
+                  <!-- 服务商 + Workspace 权限：并排在上方，常用配置无需滚动可见 -->
+                  <div class="grid gap-3 xl:grid-cols-2">
+                    <section class="border border-neon-deep/35 bg-panel/55">
+                      <div class="border-b border-neon-deep/25 px-3 py-2">
+                        <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">API 服务商</p>
+                      </div>
+                      <div class="grid gap-3 p-3">
+                        <label class="grid gap-2">
+                          <span class="text-xs font-bold text-text-main">服务商预设</span>
+                          <Select
+                            :model-value="selectedAgent?.providerPresetId || '__platform_default__'"
+                            :disabled="updatingProviderPreset"
+                            @update:model-value="(value) => updateProviderPreset(value === '__platform_default__' ? '' : value as string)"
+                          >
+                            <SelectTrigger class="h-9 w-full">
+                              <SelectValue placeholder="使用平台默认" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="__platform_default__">使用平台默认</SelectItem>
+                              <SelectItem
+                                v-for="preset in providerPresetOptions"
+                                :key="preset.id"
+                                :value="preset.id"
+                              >
+                                {{ preset.name }}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </label>
+                        <p class="text-xs leading-5 text-text-dim">
+                          {{ providerPresetDescription }}
+                        </p>
+                      </div>
+                    </section>
+
+                    <section class="border border-neon-deep/35 bg-panel/55">
+                      <div class="border-b border-neon-deep/25 px-3 py-2">
+                        <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">Workspace 权限</p>
+                      </div>
+                      <div class="grid gap-3 p-3">
+                        <label class="grid gap-2">
+                          <span class="text-xs font-bold text-text-main">权限等级</span>
+                          <Select
+                            :model-value="String(selectedAgent?.workspaceAccess.level ?? 1)"
+                            :disabled="updatingWorkspaceAccess"
+                            @update:model-value="(value) => updateWorkspaceAccessLevel(Number(value))"
+                          >
+                            <SelectTrigger class="h-9 w-full">
+                              <SelectValue placeholder="选择权限等级" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem
+                                v-for="option in workspaceAccessOptions"
+                                :key="option.level"
+                                :value="String(option.level)"
+                              >
+                                {{ option.label }}
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </label>
+                        <p class="text-xs leading-5 text-text-dim">
+                          {{ workspaceAccessDescription }}
+                        </p>
+                      </div>
+                    </section>
+                  </div>
+
+                  <!-- 平台工具：全宽在下，大屏 3 列网格铺开，避免右侧大片空白 -->
                   <section class="border border-neon-deep/35 bg-panel/55">
                     <div class="border-b border-neon-deep/25 px-3 py-2">
                       <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">平台工具</p>
                     </div>
-                    <div class="grid gap-3 p-3">
+                    <div class="grid gap-3 p-3 xl:grid-cols-3">
                       <div
                         v-for="group in platformToolGroups"
                         :key="group.title"
@@ -202,93 +267,16 @@
                           <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">{{ group.title }}</p>
                         </div>
                         <div class="grid gap-2 p-3">
-                          <label
+                          <PlatformToolCard
                             v-for="tool in group.tools"
                             :key="tool.id"
-                            class="retro-focus grid cursor-pointer gap-3 border border-neon-deep/30 bg-elevated/45 p-3 hover:bg-elevated sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:items-start"
-                          >
-                            <input
-                              class="mt-1 h-4 w-4 accent-[#f3c56d]"
-                              type="checkbox"
-                              :checked="platformToolEnabled(tool.id)"
-                              :disabled="togglingPlatformTool === tool.id"
-                              @change="togglePlatformTool(tool.id, ($event.target as HTMLInputElement).checked)"
-                            >
-                            <span class="min-w-0">
-                              <span class="block text-sm font-bold text-text-main">{{ tool.label }}</span>
-                              <span class="mt-1 block text-xs leading-5 text-text-dim">{{ tool.description }}</span>
-                            </span>
-                            <span class="font-mono text-[11px]" :class="platformToolEnabled(tool.id) ? 'text-neon' : 'text-text-dim'">
-                              {{ platformToolEnabled(tool.id) ? "启用" : "禁用" }}
-                            </span>
-                          </label>
+                            :tool="tool"
+                            :enabled="platformToolEnabled(tool.id)"
+                            :disabled="togglingPlatformTool === tool.id"
+                            @toggle="(enabled) => togglePlatformTool(tool.id, enabled)"
+                          />
                         </div>
                       </div>
-                    </div>
-                  </section>
-
-                  <section class="border border-neon-deep/35 bg-panel/55">
-                    <div class="border-b border-neon-deep/25 px-3 py-2">
-                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">Workspace 权限</p>
-                    </div>
-                    <div class="grid gap-3 p-3">
-                      <label class="grid gap-2">
-                        <span class="text-xs font-bold text-text-main">权限等级</span>
-                        <Select
-                          :model-value="String(selectedAgent?.workspaceAccess.level ?? 1)"
-                          :disabled="updatingWorkspaceAccess"
-                          @update:model-value="(value) => updateWorkspaceAccessLevel(Number(value))"
-                        >
-                          <SelectTrigger class="h-9 w-full">
-                            <SelectValue placeholder="选择权限等级" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem
-                              v-for="option in workspaceAccessOptions"
-                              :key="option.level"
-                              :value="String(option.level)"
-                            >
-                              {{ option.label }}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </label>
-                      <p class="text-xs leading-5 text-text-dim">
-                        {{ workspaceAccessDescription }}
-                      </p>
-                    </div>
-                  </section>
-
-                  <section class="border border-neon-deep/35 bg-panel/55 xl:col-span-2">
-                    <div class="border-b border-neon-deep/25 px-3 py-2">
-                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">API 服务商</p>
-                    </div>
-                    <div class="grid gap-3 p-3">
-                      <label class="grid gap-2">
-                        <span class="text-xs font-bold text-text-main">服务商预设</span>
-                        <Select
-                          :model-value="selectedAgent?.providerPresetId || '__platform_default__'"
-                          :disabled="updatingProviderPreset"
-                          @update:model-value="(value) => updateProviderPreset(value === '__platform_default__' ? '' : value as string)"
-                        >
-                          <SelectTrigger class="h-9 w-full">
-                            <SelectValue placeholder="使用平台默认" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="__platform_default__">使用平台默认</SelectItem>
-                            <SelectItem
-                              v-for="preset in providerPresetOptions"
-                              :key="preset.id"
-                              :value="preset.id"
-                            >
-                              {{ preset.name }}
-                            </SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </label>
-                      <p class="text-xs leading-5 text-text-dim">
-                        {{ providerPresetDescription }}
-                      </p>
                     </div>
                   </section>
                 </div>
@@ -327,10 +315,11 @@ import {
   FileText,
   FolderOpen,
   RefreshCw,
-  ShieldCheck,
+  SlidersHorizontal,
   Wrench,
 } from "lucide-vue-next"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
+import PlatformToolCard from "@/components/common/PlatformToolCard.vue"
 import {
   Select,
   SelectContent,
@@ -338,6 +327,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { ACTIVE_CARD_CHANGED_EVENT, isActiveCardChangedEvent } from "@/lib/platform-events"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import { PLATFORM_TOOL_CONTROL_GROUPS, PLATFORM_TOOL_CONTROLS } from "../agent-runtime/tool-controls"
@@ -363,7 +353,7 @@ const sections: Array<{
   { id: "agent", label: "AGENT.md", icon: FileText },
   { id: "soul", label: "SOUL.md", icon: FileText },
   { id: "skills", label: "Skills", icon: Wrench },
-  { id: "tools", label: "工具/权限", icon: ShieldCheck },
+  { id: "tools", label: "运行配置", icon: SlidersHorizontal },
 ]
 
 const platformToolGroups = PLATFORM_TOOL_CONTROL_GROUPS

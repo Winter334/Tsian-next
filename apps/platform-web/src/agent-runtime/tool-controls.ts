@@ -35,8 +35,7 @@ export const PLATFORM_TOOL_CONTROL_GROUPS: PlatformToolControlGroup[] = [
       {
         id: "ask_user",
         label: "向用户提问",
-        description:
-          "允许向用户发起提问并等待回答（阻塞式）。助手默认启用，游戏内 agent 默认关闭——游戏内与玩家交互走 [[选项]] 格式块。",
+        description: "允许向用户发起提问并阻塞等待回答。",
       },
     ],
   },
@@ -57,7 +56,7 @@ export const PLATFORM_TOOL_CONTROL_GROUPS: PlatformToolControlGroup[] = [
         id: "workspace_semantic_search",
         label: "语义检索",
         description:
-          "允许按含义在 save-runtime 记忆（远期剧情 turn、agent notes、memory summary）里召回，用于玩家措辞与正文无字面重叠时。需在控制面板配置 embedding API 才生效；未配置时工具返回空，agent 回退字面搜索。默认仅 retrieval agent 启用。",
+          "允许按含义在 save-runtime 记忆（远期剧情 turn、agent notes、memory summary）里召回，用于玩家措辞与正文无字面重叠时。需在控制面板配置 embedding API 才生效；未配置时工具返回空，agent 回退字面搜索。",
       },
     ],
   },
@@ -68,7 +67,7 @@ export const PLATFORM_TOOL_CONTROL_GROUPS: PlatformToolControlGroup[] = [
         id: "inspect_frontend",
         label: "前端自检",
         description:
-          "允许助手在隐藏 iframe 里加载当前卡的 packaged 前端，观测渲染、报错和桥状态，驱动一回合或模拟玩家交互，形成写前端→自检→改→复查闭环。",
+          "允许在隐藏 iframe 里加载当前卡的 packaged 前端，观测渲染、报错和桥状态，驱动一回合或模拟玩家交互，形成写前端→自检→改→复查闭环。",
       },
     ],
   },
