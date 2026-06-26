@@ -6,7 +6,6 @@ Contract changes are high impact because they compile through multiple workspace
 
 - Always run `npm run build:contracts`.
 - Run `npm run build:web` when platform-web imports the changed type.
-- Run `npm run build:runtime-core` when runtime-core imports the changed type.
 
 ## Review Checklist
 

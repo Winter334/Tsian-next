@@ -5,7 +5,6 @@
 ## Shared Contracts
 
 - Import bridge, runtime, debug, frontend package, workspace, Agent, Skill, and diagnostic shapes from `@tsian/contracts`.
-- Import `RuntimeEngine` from `@tsian/runtime-core`.
 - Do not redefine cross-package payloads in platform-web.
 
 ## Runtime Boundaries
@@ -65,7 +64,7 @@
 - The iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Do not add top navigation, popups, downloads, or broader permissions without a new product/security decision.
 - Remote bridge messages use shared contract types; runtime validation belongs in platform-web, not in shared contracts.
 - The adapter must filter by mounted iframe content window, generated session id, and accepted handshake origin before dispatching requests.
-- The allowed remote methods are `runtime.getRuntimeSnapshot`, `interaction.sendMessage`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`. The default remote bridge must not expose the `debug` namespace and must reject `ai-debug` queries; a `turn-debug-ready` notification may be sent without debug records.
+- The allowed remote methods are `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`. The default remote bridge must not expose the `debug` namespace and must reject `ai-debug` queries; a `turn-debug-ready` notification may be sent without debug records.
 - Workspace read/list/search reuse existing platform-host query behavior. Workspace write/delete and checkpoint restore reuse existing `platform.runAction` behavior.
 
 ### Validation & Error Matrix
@@ -108,7 +107,7 @@
 
 ## Workspace State
 
-- `RuntimeGlobalsMap` and workspace JSON file content should remain JSON-compatible when a local convention declares JSON data.
+- Workspace JSON file content should remain JSON-compatible when a local convention declares JSON data.
 - Structured state belongs in Runtime Workspace files documented by README, schema, Agent, or Skill conventions; do not add a platform-owned table or universal record model for gameplay state.
 - Do not loosen contract fields to `unknown` to hide caller bugs.
 
@@ -500,9 +499,9 @@
 - **send bypasses mount's request path**: the inspector calls `bridge.interaction.sendMessage` directly (not via frontend RPC). Mount's `turn-completed` event is bound to the request-response path, so mount will NOT forward it for inspector-driven turns. The inspector must self-postMessage a `turn-completed` event to the iframe with the session id so the frontend renders message bubbles.
 - **Streaming delta forwarding** still works via the mount's bus subscriptions (independent of request path), but only after handshake (origin accepted). The inspector must guard `bridgeReady` before `send` — if handshake hasn't completed, all delta events are swallowed and the turn runs blind to the frontend.
 - **Collection is parent-window-side**: the inspector reads `iframe.contentDocument` and hijacks the iframe content window's `onerror`/`unhandledrejection`/`console` (same-origin required — `allow-same-origin` sandbox). Does not require frontend cooperation — blank/broken frontends that never send `ready` can still be diagnosed via DOM empty-state + resource 404 inference.
-- **`renderedText` after send/refresh is snapshot-sourced**, not DOM-sourced: the inspector reads the ephemeral snapshot's messages to populate `renderedText`, bypassing unreliable frontend render timing. `domSummary` still reads real DOM (with a micro-tick buffer). This dual approach ensures `renderedText` is always populated after a turn even if DOM rendering is slow.
+- **`renderedText` after send/refresh is ephemeral-turn-sourced**, not DOM-sourced: the inspector reads the ephemeral turn result (replyText + history) to populate `renderedText`, bypassing unreliable frontend render timing. `domSummary` still reads real DOM (with a micro-tick buffer). This dual approach ensures `renderedText` is always populated after a turn even if DOM rendering is slow.
 - **DOM serialization**: limits depth, skips empty text nodes, truncates long attributes. For input/textarea/select elements, reads `.value` and injects it as a virtual attribute (because `.value` is a JS property, not a DOM attribute).
-- **Single-session serial**: a new inspect call disposes the previous hidden iframe first. Dispose also resets the ephemeral snapshot and save id (not resetting causes cross-call state leakage where a previous turn's messages appear in the next inspect's initial DOM). The diff baseline is intentionally preserved across calls.
+- **Single-session serial**: a new inspect call disposes the previous hidden iframe first. Dispose also resets the ephemeral turn result and save id (not resetting causes cross-call state leakage where a previous turn's messages appear in the next inspect's initial DOM). The diff baseline is intentionally preserved across calls.
 - **diff baseline**: the previous inspect's `structure` + `diagnostics.errors` is retained. First inspect has no diff. Cross-card inspect pollutes the baseline (not bucketed by card) — known boundary, acceptable since the inspector only checks the active card.
 - **Deferred options**: `runtime:"mock"` and `screenshot:true` return not-supported errors (interface reserved, not implemented in v1).
 

@@ -58,9 +58,9 @@ A seam is a boundary where one responsibility ends and another begins. Seams are
 
 ### Handle shared state
 
-When multiple sub-modules share module-level state (singletons, ready flags, engines):
+When multiple sub-modules share module-level state (singletons, ready flags):
 
-- **Prefer a dedicated state module** with accessor functions (`getRuntimeEngine()`, `markReady()`). Sub-modules import accessors; the state module imports nothing from sub-modules → no cycle.
+- **Prefer a dedicated state module** with accessor functions (`markReady()`, `waitForPlatformHostReady()`). Sub-modules import accessors; the state module imports nothing from sub-modules → no cycle.
 - Avoid passing shared state as function parameters across many call sites — that's dependency injection noise. Accessors are cleaner when the state is a true singleton.
 
 ---

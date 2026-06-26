@@ -4,7 +4,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 
 ## Current Shared Shapes
 
-- `RuntimeSnapshotShell` and `ConversationMessageRecord` describe frontend-readable session state.
+- `ConversationMessageRecord` and `SessionHistoryEntry` describe frontend-readable session state (turn history rebuilt from workspace turn files).
 - `WorkspaceFile`, `WorkspaceEntry`, `WorkspaceSearchResult`, `WorkspaceScope`, `WorkspaceOperationName`, `WorkspaceOperationRequest`, `WorkspaceDiffResult`, `WorkspacePatchResult`, `WorkspaceMoveResult`, `WorkspaceDeleteResult`, and `WorkspaceValidationResult` describe generic Runtime Workspace files, scoped operation requests, and operation results.
 - `MessageInteractionRequest` is currently `{ content: string }`.
 - `DeepQueryRequest` / `DeepQueryResult<T>` wrap bridge query resources.
@@ -23,11 +23,11 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 ## Bridge Consumption
 
 - Play frontends call `bridge.interaction.sendMessage({ content })` to submit player input.
-- Play frontends read data through `bridge.runtime.getRuntimeSnapshot()` and `bridge.query.query(...)`.
+- Play frontends read data through `bridge.query.query(...)`, in particular `session-history` for turn-by-turn dialogue history and turn number.
 - Play frontends use `bridge.platform.runAction(...)` for allowed platform actions such as `restore-checkpoint`.
 - `bridge.debug?.onTurnDebugReady(cb)` is a signal to refresh data, not the source of truth.
 - Remote iframe frontends use `RemotePlayBridgeMessage` envelopes over `postMessage`; they must expect explicit `{ ok: true, result }` / `{ ok: false, error }` responses instead of thrown exceptions crossing the frame boundary.
-- The default remote iframe bridge exposes `runtime.getRuntimeSnapshot`, `interaction.sendMessage`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`; it does not expose the `debug` namespace and must not expose `query.query({ resource: "ai-debug" })`.
+- The default remote iframe bridge exposes `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`; it does not expose the `debug` namespace and must not expose `query.query({ resource: "ai-debug" })`.
 - Use `AgentRegistryEntry` for `bridge.query.query({ resource: "agent-registry" })` results.
 - Use `AgentContextEntry` for `bridge.query.query({ resource: "agent-context", params: { agentId } })` results.
 - Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results. Prefer `name` and `description` when presenting skills to an Agent; use `path` only for platform/debug queries such as `skill-detail`.

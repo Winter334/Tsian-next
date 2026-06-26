@@ -13,7 +13,7 @@ Use this layer when adding or changing shared shapes in `packages/contracts/src/
 ## Required Checks
 
 - Run `npm run build:contracts` for every contracts change.
-- Run the consuming package build when a changed type is used there, usually `npm run build:web` and sometimes `npm run build:runtime-core`.
+- Run the consuming package build when a changed type is used there, usually `npm run build:web`.
 
 ## Source References
 

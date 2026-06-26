@@ -6,7 +6,6 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 
 - Run `npm run build:web` after any change under `apps/platform-web`.
 - Run `npm run build:contracts` if a change imports or modifies contract shapes.
-- Run `npm run build:runtime-core` if `RuntimeEngine` changes.
 
 ## Project Rules
 
@@ -17,7 +16,7 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 
 ## Review Checklist
 
-- If runtime snapshot shape changes, verify storage, bridge, DebugView, and remote/packaged frontend contracts still agree.
+- If runtime turn flow or turn-number derivation changes, verify storage, bridge, DebugView, and remote/packaged frontend contracts still agree.
 - If query resources change, verify platform-host and remote/packaged bridge consumers use the same resource names.
 - If `interaction.sendMessage` changes, verify failure rollback does not persist partial messages.
 - If Dexie tables change, use a new database name unless a task explicitly chooses migration.

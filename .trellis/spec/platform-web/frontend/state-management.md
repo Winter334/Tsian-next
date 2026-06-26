@@ -30,7 +30,7 @@ Conventions:
 - Table shapes live in `storage/db.ts`.
 - Prototype schema changes use a new database name, not migrations.
 - Multi-table writes should use `localDb.transaction`.
-- Current active tables are `meta`, `gameCards`, `gameCardContentFiles`, `gameCardFrontendFiles`, `saves`, `saveSnapshots`, `saveHistory`, `checkpoints`, `workspaceFiles`, `assistantAttachments`, and `skillConfigs`.
+- Current active tables are `meta`, `gameCards`, `gameCardContentFiles`, `gameCardFrontendFiles`, `saves`, `checkpoints`, `workspaceFiles`, `assistantAttachments`, `skillConfigs`, and `embeddingIndex`.
 - **Assistant attachments**: `assistantAttachments` table stores attachment Blobs keyed by id/sessionId/createdAt. Attachments are per-session temp files at VFS path `temp/<sessionId>/<name>`. Image attachments carry `binary` + mime type and are sent to LLMs as multimodal content parts (base64 image blocks). Text attachments have their content read and injected as message text. Storing returns an `AttachmentRef` (path + metadata, no Blob); refs persist on user messages. Session delete cascades attachment cleanup; orphan cleanup runs on App startup (7-day stale + no live session). `WorkspaceScope "temp"` (readLevel 0, editLevel 4) routes `temp/` paths; the temp volume wraps the table with full enumerate/write/delete support — agents manage temp files via `workspace_write`/`workspace_delete`, and the assistant-chat mutations adapter syncs write/delete results back into the runtime staged snapshot so same-turn read/edit sees the changes (temp bypasses the save transaction, which would otherwise leave stagedFiles stale).
 - Game cards own reusable content files (Agents, Skills, rules, schemas, docs, assistant metadata, optional frontend bindings). Content files are stored **per-file** (keyed `${gameCardId}::${path}`), not as an embedded array on the card row. A single file write touches one row + bumps the card's `updatedAt`; it does not rewrite the whole card. A metadata-only write leaves the content table untouched; an array write does a full replace inside the transaction (import/copy/seed). Read views return a view that extends the record with an optional preloaded `coverContentFile` so the sync render path can resolve the cover without an async table query.
 - Saves are playthrough slots linked to `gameCardId` / `gameCardVersion`; `workspaceFiles` stores only save runtime data mounted at `save/...` plus host-owned `.tsian/...` metadata.
@@ -39,12 +39,11 @@ Conventions:
 - Packaged frontend files are reusable Game Card assets stored beside game cards, not copied into save runtime data. They are served by a Service Worker that reads from IndexedDB. The SW DB name **must** stay in sync with `db.ts`'s database name — the SW is a standalone static asset that cannot import the TS constant, so it carries the same literal plus a comment pointing back to `db.ts`. Update both together; a mismatch makes every packaged frontend serve 404.
 - **Skill config overrides**: `skillConfigs` table stores player-saved skill config overrides keyed by skill directory + updatedAt. Overrides never enter the workspace and never travel with an exported skill package — only the `skill.config` declaration + defaults do. This mirrors AI provider apiKey preset locality and is a registered Fileification exception (see `guides/data-fileification-principle.md`).
 - Built-in game cards may be refreshed by platform seed helpers when their source is `builtin` and their content/manifest is stale. This refresh updates reusable card content; existing saves see the updated content through the effective workspace layer.
-- Checkpoints store snapshot, history, and save runtime files. They do not snapshot card-owned content.
+- Checkpoints store turn number and save runtime files. They do not snapshot card-owned content.
 
 ## Runtime State
 
-- `LocalRuntimeEngine` owns the in-memory snapshot.
-- `platform-host/index.ts` owns loading snapshots from storage, assembling the effective workspace from card content plus save runtime data, running Agent Runtime turns, persisting successful turns, checkpoint creation, and rollback on failure.
+- `platform-host/index.ts` owns assembling the effective workspace from card content plus save runtime data, running Agent Runtime turns, persisting successful turns, checkpoint creation, and rollback on failure. Turn number is derived from turn files (`getMaxTurnFromTurnFiles`); there is no in-memory snapshot state.
 - `interaction.sendMessage` should not persist partial user/assistant messages when the Agent Runtime turn fails.
 
 ## Scenario: Browser AI Provider Config And Secrets

@@ -6,7 +6,7 @@
 
 - `src/agent-runtime/` owns browser-hosted Agent Runtime orchestration.
 - `src/platform-host/` owns local platform orchestration, save lifecycle, bridge implementation, model-call injection, checkpoint creation, and the active `interaction.sendMessage` path.
-- `src/runtime-host/` owns `LocalRuntimeEngine` and browser AI client/debug records.
+- `src/runtime-host/` owns the browser AI client and debug records.
 - `src/storage/` owns Dexie schema and persistence helpers. Table interfaces and schema stay in `storage/db.ts`.
 - `src/bridge/` owns framework-neutral bridge adapters.
 - `src/views/` owns route-level Vue screens.
@@ -24,7 +24,6 @@
 ## Import Rules
 
 - Import shared shapes from `@tsian/contracts`.
-- Import `RuntimeEngine` from `@tsian/runtime-core`.
 - Use `@/` for local platform-web imports when the file already uses alias style.
 
 ## Avoid
