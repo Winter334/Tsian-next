@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 90
+- **Total Sessions**: 91
 - **Last Active**: 2026-06-26
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1390 | Active |
+| `journal-2.md` | ~1427 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 91 | 2026-06-26 | 助手工具调用跨 turn 保留 + 过程节点持久化 + ask_user UI 修复 | `46f2acc`, `8e8926d`, `4f996e7`, `a39cb8c` | `master` |
 | 90 | 2026-06-26 | ask_user 助手开关与工具开关体系重设计 | `4d5dcb4` | `master` |
 | 89 | 2026-06-26 | 存储架构与渲染流程重构:过程节点持久化+单源重建+剧情选项 | `d6f1603`, `1882e0a`, `02a0976` | `master` |
 | 88 | 2026-06-25 | ask_user 工具:AI 向玩家提问+选项+自定义回答 | `e727987` | `master` |
