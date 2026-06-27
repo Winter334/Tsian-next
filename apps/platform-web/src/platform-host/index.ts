@@ -374,6 +374,11 @@ async function executePlatformAction(
       )
     }
 
+    // 回溯改变了存档状态（workspace + turn 文件裁剪 + 未来 checkpoint 删除），
+    // 通知 DebugView 等订阅方刷新——否则开着的系统监视器还显示旧 checkpoint 列表
+    // （含已删除的"未来分支"幽灵点，点击会 CHECKPOINT_NOT_FOUND）+ 旧诊断/会话历史。
+    emitTurnDebugReady(restored.turn)
+
     return {
       ok: true,
       item: restored,
