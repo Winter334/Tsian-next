@@ -28,12 +28,17 @@ body {
 
 /* ── 布局 ── */
 .app { display: flex; flex-direction: column; height: 100vh; min-height: 0; }
-/* body = 行布局：[左栏预留] 中间视图舞台 + 右侧导航栏 */
+/* body = 行布局：中间列（视图舞台 + composer）+ 右侧导航栏贯穿到底 */
 .body {
   flex: 1 1 auto; min-height: 0; display: flex; align-items: stretch;
 }
+/* 中间列：视图舞台在上、composer 在下，纵向排列；与右侧导航栏为兄弟 */
+.stage {
+  flex: 1 1 auto; min-width: 0; min-height: 0;
+  display: flex; flex-direction: column;
+}
 /* 视图舞台：同一时刻一个视图可见，其余 hidden（不销毁，保留剧情滚动位置） */
-.view { flex: 1 1 auto; min-width: 0; }
+.view { flex: 1 1 auto; min-width: 0; min-height: 0; }
 .view[hidden] { display: none; }
 
 /* ── Header ── */

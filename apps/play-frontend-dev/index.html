@@ -21,16 +21,26 @@
       </div>
     </header>
     <div class="body">
-      <!-- 左栏预留：未来状态栏（本次不建，留位置） -->
-      <!-- 中间视图舞台：同一时刻只显示一个视图，切换时不销毁 DOM（保留剧情滚动位置） -->
-      <main id="story" class="story view view-active" aria-live="polite">
-        <div class="empty-state" id="empty-state">
-          <p class="empty-title">故事尚未开始</p>
-          <p class="empty-hint">在下方输入你的行动，开启冒险。</p>
-        </div>
-      </main>
-      <!-- 检查点回溯视图：卡片列表，切换到此视图时由 main.ts 动态填充 -->
-      <section id="checkpoint-view" class="view view-checkpoint" hidden aria-live="polite"></section>
+      <!-- 中间列：视图舞台 + composer；与右侧导航栏为兄弟，导航栏贯穿到底 -->
+      <div class="stage">
+        <!-- 中间视图舞台：同一时刻只显示一个视图，切换时不销毁 DOM（保留剧情滚动位置） -->
+        <main id="story" class="story view view-active" aria-live="polite">
+          <div class="empty-state" id="empty-state">
+            <p class="empty-title">故事尚未开始</p>
+            <p class="empty-hint">在下方输入你的行动，开启冒险。</p>
+          </div>
+        </main>
+        <!-- 检查点回溯视图：卡片列表，切换到此视图时由 main.ts 动态填充 -->
+        <section id="checkpoint-view" class="view view-checkpoint" hidden aria-live="polite"></section>
+        <!-- composer 与正文同列，居中基准一致 → 输入框与正文对齐 -->
+        <footer class="composer">
+          <div class="composer-inner">
+            <textarea id="input" class="input" rows="1" placeholder="输入你的行动…（Enter 发送，Shift+Enter 换行）" disabled></textarea>
+            <button id="send" class="send" type="button" disabled>发送</button>
+            <button id="stop" class="stop" type="button" hidden>停止</button>
+          </div>
+        </footer>
+      </div>
       <!-- 右侧导航栏：剧情（默认）/ 回溯 / 未来功能项 -->
       <nav class="sidebar-right" aria-label="视图导航">
         <button class="nav-item active" type="button" data-view="story" title="剧情">
@@ -41,13 +51,6 @@
         </button>
       </nav>
     </div>
-    <footer class="composer">
-      <div class="composer-inner">
-        <textarea id="input" class="input" rows="1" placeholder="输入你的行动…（Enter 发送，Shift+Enter 换行）" disabled></textarea>
-        <button id="send" class="send" type="button" disabled>发送</button>
-        <button id="stop" class="stop" type="button" hidden>停止</button>
-      </div>
-    </footer>
   </div>
 </body>
 </html>
