@@ -9,15 +9,19 @@ import {
   deleteWorkspacePathForSave,
   getLocalGameCard,
   isLocalAssistantPath,
+  isLocalPlatformConfigPath,
   isPlatformMetadataPath,
   listAttachmentsBySession,
   listLocalGameCardContentFiles,
   listLocalGameCardFrontendFiles,
   listLocalWorkspaceFilesForSave,
   loadLocalAssistantFiles,
+  loadLocalPlatformConfigFile,
   normalizeGameCardManifest,
   putLocalGameCard,
   saveLocalAssistantFiles,
+  saveLocalPlatformConfigFile,
+  deleteLocalPlatformConfigFile,
   toWorkspaceFileFromGameCardContent,
   writeLocalGameCardContentFile,
   writeLocalGameCardFrontendFile,
@@ -315,6 +319,40 @@ export const localAssistantVolume: WorkspaceVolume = {
 }
 
 /**
+ * LocalPlatformConfigVolume — scope platform-meta local-config，ownerId = saveId 但全局忽略。
+ * 后端 meta 表单行 JSON（`.tsian/local/platform-config.json`，跨 save 持久，不进 checkpoint）。
+ * 单文件 volume：write 覆盖整个配置文件，delete 清空。config 读写层负责 schema 合并，
+ * 此 volume 只管文件 IO。
+ */
+export const localPlatformConfigVolume: WorkspaceVolume = {
+  scope: "platform-meta",
+  async enumerate(_saveId) {
+    return loadLocalPlatformConfigFile()
+  },
+  async write(_saveId, { path, content, data }) {
+    if (!isLocalPlatformConfigPath(path)) {
+      throw new Error(`平台配置 volume 只接受 ${".tsian/local/platform-config.json"}，收到: ${path}`)
+    }
+    const text = typeof content === "string" ? content : ""
+    void data // 配置文件是文本，binary 不适用
+    await saveLocalPlatformConfigFile(text)
+    return {
+      path,
+      content: text,
+      createdAt: 0,
+      updatedAt: 0,
+    }
+  },
+  async delete(_saveId, pathPrefix) {
+    if (!isLocalPlatformConfigPath(pathPrefix)) {
+      return []
+    }
+    const deleted = await deleteLocalPlatformConfigFile()
+    return deleted ? [pathPrefix] : []
+  },
+}
+
+/**
  * TempVolume — 助手附件临时文件(scope "temp", 后端 assistantAttachments Dexie 表).
  * ownerId = sessionId. enumerate 按 sessionId 列附件;write/delete 支持 agent
  * 通过 workspace_write/workspace_delete 管理 temp/ 文件(文本 + 二进制双轨).
@@ -397,7 +435,8 @@ export interface WorkspaceVolumeOwnerContext {
 
 /**
  * 按 (scope, path-prefix) 选 volume。platform-meta scope 二级路由：
- * `.tsian/local/assistant/` → localAssistantVolume（meta 表）；
+ * `.tsian/local/platform-config.json` → localPlatformConfigVolume（meta 表单 KV）；
+ * `.tsian/local/assistant/` → localAssistantVolume（meta 表单 KV）；
  * 其它 `.tsian/` save-owned → savePlatformMetaVolume（workspaceFiles 表）。
  *
  * effective scope 不进 dispatch（runtime 在快照层算，不调 mutations）。
@@ -408,6 +447,7 @@ export function resolveVolumeForScope(
   _ownerContext: WorkspaceVolumeOwnerContext,
 ): WorkspaceVolume {
   if (scope === "platform-meta") {
+    if (isLocalPlatformConfigPath(path)) return localPlatformConfigVolume
     return isLocalAssistantPath(path) ? localAssistantVolume : savePlatformMetaVolume
   }
   if (scope === "card-content") {

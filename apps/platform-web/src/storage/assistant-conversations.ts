@@ -2,6 +2,7 @@ import type { ConversationMessageRecord } from "@tsian/contracts"
 import { localDb } from "./db"
 import { assistantContextPath, deleteLocalAssistantFile } from "./local-assistant-files"
 import { deleteAttachmentsBySession } from "./assistant-attachments"
+import { getPlatformConfig } from "../config/platform-config"
 
 export type AssistantMode = "local" | "card"
 
@@ -23,7 +24,10 @@ const SCROLL_TOP_KEY_PREFIX = "assistant-scroll-top:"
 /** Legacy single-conversation key from the first persistence slice. */
 const LEGACY_CONVERSATION_KEY_PREFIX = "assistant-conversation:"
 
-const MAX_STORED_MESSAGES = 200
+/** 读平台配置 assistant.maxStoredMessages(默认 200).同步读 cache. */
+function getMaxStoredMessages(): number {
+  return getPlatformConfig().assistant.maxStoredMessages
+}
 
 function listKey(mode: AssistantMode): string {
   return `${LIST_KEY_PREFIX}${mode}`
@@ -142,7 +146,7 @@ async function migrateLegacyConversation(mode: AssistantMode): Promise<void> {
   }
   await localDb.meta.put({
     key: messagesKey(session.id),
-    value: JSON.stringify(messages.slice(-MAX_STORED_MESSAGES)),
+    value: JSON.stringify(messages.slice(-getMaxStoredMessages())),
   })
   await writeSessionList(mode, [session])
   await setActiveAssistantSessionId(mode, session.id)
@@ -206,7 +210,7 @@ export async function getAssistantSessionMessages(
     return []
   }
   try {
-    return normalizeMessages(JSON.parse(record.value)).slice(-MAX_STORED_MESSAGES)
+    return normalizeMessages(JSON.parse(record.value)).slice(-getMaxStoredMessages())
   } catch {
     return []
   }
@@ -274,7 +278,7 @@ export async function saveAssistantSessionMessages(
   options: SaveAssistantSessionMessagesOptions = {},
 ): Promise<void> {
   const touch = options.touch ?? true
-  const trimmed = normalizeMessages(messages).slice(-MAX_STORED_MESSAGES)
+  const trimmed = normalizeMessages(messages).slice(-getMaxStoredMessages())
   await localDb.meta.put({
     key: messagesKey(id),
     value: JSON.stringify(trimmed),

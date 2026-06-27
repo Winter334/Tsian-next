@@ -1,6 +1,6 @@
 # Design — 平台配置体系
 
-> 前置任务 `06-26-checkpoint-storage-dedup` 已留 `getCheckpointPruneConfig()` 接缝。本任务建配置体系并把 provider + 8 tunables 接入。
+> 前置任务 `06-26-checkpoint-storage-dedup` 已留 `getCheckpointPruneConfig()` 接缝；`06-27-tsian-layout-refactor` 已把 `.tsian/` 规整为 `.tsian/save/`（per-save，进 checkpoint）+ `.tsian/local/`（platform 级，不进 checkpoint）两层，并在 `workspace-paths.ts:54` 注释点名"未来平台配置"为本任务预留。本任务建配置体系并把 provider + 8 tunables 接入。
 
 ## 架构与边界
 
@@ -32,7 +32,7 @@ async preheatPlatformConfig(): Promise<void>
 
 async savePlatformConfig(input): Promise<void>
   → 写 .tsian/local/platform-config.json → cache = input（写后立即更新 cache）
-  → 控制面板保存时调
+  → 控制面板各屏保存时调；input 是全量，调用方负责"读全量 → merge 本屏 section"（见 UI 段方案 A）
 ```
 
 - 热路径（embed-queue/assistant-chat 每次读 config）走 `getPlatformConfig()` 同步取 cache，不读 Dexie。
@@ -70,8 +70,8 @@ interface PlatformConfig {
 ## tunables 接入
 
 每个消费点从"读硬编码常量"改"读 `getPlatformConfig().xxx`"：
-- `checkpoints.ts:195` `getCheckpointPruneConfig()` → 读 `getPlatformConfig().checkpointPrune`（接缝已就位，只换实现）。
-- `context-lifecycle.ts` `CONTEXT_COMPRESS_TRIGGER_RATIO`/`CONTEXT_KEEP_RECENT_TURNS` → 读 `getPlatformConfig().contextCompression`。这两个是 `export const`，消费点（`index.ts:1351,1713,2051` 等）直接引常量——改成引一个 `getContextCompressionConfig()` 函数（同步读 cache）。
+- `checkpoints.ts:194` `getCheckpointPruneConfig()` → 读 `getPlatformConfig().checkpointPrune`（接缝已就位，只换实现）。
+- `context-lifecycle.ts` `CONTEXT_COMPRESS_TRIGGER_RATIO`/`CONTEXT_KEEP_RECENT_TURNS` → 读 `getPlatformConfig().contextCompression`。这两个是 `export const`，消费点（`index.ts:1371,1755,2111` 等）直接引常量——改成引一个 `getContextCompressionConfig()` 函数（同步读 cache）。
 - `search.ts:29-30` `DEFAULT_SEMANTIC_LIMIT`/`MAX_SEMANTIC_LIMIT` → 读 `getPlatformConfig().rag`。
 - `ai.ts:108` `DEFAULT_CHAT_TIMEOUT_MS` → 读 `getPlatformConfig().ai.chatTimeoutMs`。
 - `assistant-conversations.ts:26` `MAX_STORED_MESSAGES` → 读 `getPlatformConfig().assistant.maxStoredMessages`。
@@ -80,9 +80,31 @@ interface PlatformConfig {
 
 ## 控制面板 UI
 
-SettingsView 现有 `ProviderManagementScreen`/`ModelConfigScreen`/`SemanticSearchScreen` 读写路径改走 `config/ai.ts`（内部已改 platform-config 后端，UI 代码基本不变）。
+### 结构：hub 加第三个入口"运行参数"
 
-新增"平台配置"区（或 SettingsHub 新条目）：编辑 8 项 tunables（检查点裁剪/上下文压缩/RAG/AI 超时/助手历史），数值输入 + 默认值提示 + 范围校验。保存调 `savePlatformConfig`。
+SettingsView 现是 hub-and-spoke 状态机（hub 卡片网格 → 子屏）。hub 现有 2 个入口（AI 提供商、语义检索），新增第 3 个"运行参数"。8 项 tunables 按"配置归属"分进三屏，不为 tunables 单开一屏全塞：
+
+| 屏 | 字段 | 保存模式 |
+|---|---|---|
+| AI 提供商（现有 `ProviderManagementScreen`/`ModelConfigScreen`） | provider + embedding（经 `config/ai.ts`，后端换 platform-config 后 UI 不变） | 自动保存（现有 deep watch + debounce，保持） |
+| 语义检索（现有 `SemanticSearchScreen` 扩） | embedding baseUrl/apiKey/model/dimensions + `rag.defaultLimit`/`rag.maxLimit` | 显式保存（submit） |
+| 运行参数（新 `PlatformTunablesScreen`） | `checkpointPrune`/`contextCompression`/`ai.chatTimeoutMs`/`assistant.maxStoredMessages` | 显式保存（submit） |
+
+> 取舍：`rag.defaultLimit/maxLimit` 是"检索召回条数"，与 embedding 同属"检索行为"，归语义检索屏心智连续，不与平台调参混放。`chatTimeoutMs` 是全局参数（非 per-preset），放运行参数屏而非 provider 屏，避免误以为能 per-preset 配。运行参数屏仅 6 字段（3 组 + chatTimeout），轻量。
+
+### 保存语义：整体写 + merge（方案 A）
+
+所有屏保存统一走"读全量 → merge 本屏 section → `savePlatformConfig(merged)`"：
+- `savePlatformConfig(input: PlatformConfig)` 仍是全量写（写文件成功 → cache = input），语义不变。
+- 各屏保存 handler / `config/ai.ts` 的 `saveEmbeddingConfig`、`saveBrowserPlatformConfigDraftLenient` 内部做 spread merge：`await savePlatformConfig({ ...getPlatformConfig(), rag: newRag })`。
+- 不暴露 `savePlatformConfigSection` 写函数——一个全量写 + 调用方 merge，cache 天然一致，无部分更新竞态。（`getPlatformConfigSection(key)` 仅作读辅助保留。）
+
+### 三个屏的具体改动
+
+- **ProviderManagementScreen / ModelConfigScreen**：模板与交互不动；底层 `config/ai.ts` 换 platform-config 后端后，`getBrowserPlatformConfigDraft`（同步读 cache）+ `saveBrowserPlatformConfigDraftLenient`（改 async，内部 merge + `savePlatformConfig`）签名行为不变。`SettingsView` 的 watch 回调改 `await`。
+- **SemanticSearchScreen**：表单加 2 个数值字段（`defaultLimit` 默认 5、`maxLimit` 默认 8，`maxLimit ≥ defaultLimit` 校验）；保存 submit 改 async，emit 的 payload 扩含 rag，handler 做 merge。
+- **PlatformTunablesScreen（新）**：照抄 SemanticSearchScreen 形态（`max-w-2xl` + `retro-inset` 分组卡 + 默认值提示 + 底部保存按钮）；6 字段分 4 组（检查点裁剪 / 上下文压缩 / AI 超时 / 助手历史），数值输入 + 范围校验（keepRecent≥1、sparseEvery≥1、0<triggerRatio≤1、keepRecentTurns≥1、chatTimeoutMs≥1000、maxStoredMessages≥1）；保存调 `savePlatformConfig({ ...getPlatformConfig(), checkpointPrune, contextCompression, ai: {...cfg.ai, chatTimeoutMs}, assistant: {...cfg.assistant, maxStoredMessages} })`。本地 `form` ref 从 `getPlatformConfig()` 初始化，不并入 `platformConfigDraft`（避免 provider 的 deep watch 误触发 tunables 自动保存）。
+- **SettingsHub**：`entries` 加第 3 项（id `platform-tunables`，icon `SlidersHorizontal`，subtitle 如"6 项参数"）；`enterHubEntry` 加分支路由到新 `screen.kind === "tunables"`。
 
 ## agent 可见性
 

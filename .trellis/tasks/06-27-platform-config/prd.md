@@ -9,10 +9,10 @@
 ## Confirmed Facts（代码调研确认）
 
 ### 配置文件位置
-- `.tsian/` 是 platform-owned metadata，对普通运行时 agent 隐藏（`isPlatformMetadataPath`，`workspace-paths.ts:42-43`）。
-- **`.tsian/local/` 被 `isSaveRuntimePersistencePath` 排除**（`:54-55`）——不进 save checkpoint/restore，不随 checkpoint 回滚。配置文件必须放此处。
-- `exportGameCardPackage` 只打 `gameCardContentFiles` + frontend + cover（`game-card-packages.ts:581-626`），**不含 `.tsian/`**——配置（含 key）不进 game-card 导出包，天然隔离。
-- `.tsian/` 下已有 `traces/`、`checkpoints/`、`indexes/`、`cache/` 子目录，无"配置"子目录。
+- `.tsian/` 是 platform-owned metadata，对普通运行时 agent 隐藏（`isPlatformMetadataPath`，`workspace-paths.ts:42-44`）。
+- **`.tsian/local/` 被 `isSaveRuntimePersistencePath` 排除**（`workspace-paths.ts:57-59`，函数体 `:50-61`）——不进 save checkpoint/restore，不随 checkpoint 回滚；该处注释已点名"未来平台配置"为本任务预留。配置文件必须放此处。
+- `exportGameCardPackage` 只打 `gameCardContentFiles` + frontend + cover（`game-card-packages.ts:572-631`），**不含 `.tsian/`**——配置（含 key）不进 game-card 导出包，天然隔离。
+- `.tsian/` 现按生命周期分两层（前置任务 `06-27-tsian-layout-refactor` 已落）：`.tsian/save/` = per-save 文件（traces 挪至此，进 checkpoint）；`.tsian/local/` = platform 级（助手文件，不进 checkpoint）。`.tsian/checkpoints/`、`indexes/`、`cache/` 空壳已删（数据在 Dexie 表）。无"配置"子目录——本任务在 `.tsian/local/` 下建 `platform-config.json`。
 
 ### 现有 provider/embedding 配置（localStorage，要迁入）
 - 存储键 `tsian-platform-config`（`config/ai.ts:157`），结构 `BrowserPlatformConfigDraft`（`:113-118`）：`activeProviderId` + `providerTypes[]` + `embeddingConfig`。
@@ -22,7 +22,7 @@
 - per-agent provider/model 选择已在 workspace：`.tsian/local/assistant/agent.json` + 卡 `agents/<id>/agent.json`。
 
 ### 硬编码 tunables（按"对玩家有用"标准筛过的纳入清单）
-- 检查点裁剪 `keepRecent:50/sparseEvery:20`（`checkpoints.ts:195`，已有 `getCheckpointPruneConfig()` 接缝 + TODO(platform-config)）。
+- 检查点裁剪 `keepRecent:50/sparseEvery:20`（`checkpoints.ts:194`，已有 `getCheckpointPruneConfig()` 接缝 + TODO(platform-config) 注释 `:189-192`）。
 - 上下文压缩：`CONTEXT_COMPRESS_TRIGGER_RATIO:0.85`（`context-lifecycle.ts:51`）、`CONTEXT_KEEP_RECENT_TURNS:5`（`:53`）。其余（256k budget fallback、2000 target、300s task-timeout、5 tool-rounds、0.1 stall）不纳入——task/sub-agent 内部或 fallback，玩家无感。
 - RAG：`DEFAULT_SEMANTIC_LIMIT:5`、`MAX_SEMANTIC_LIMIT:8`（`search.ts:29-30`）。preview/queue/batch 不纳入（工程内部）。
 - AI 超时：`DEFAULT_CHAT_TIMEOUT_MS:600_000`（`ai.ts:108`）。fetch timeout 不纳入。
@@ -46,19 +46,19 @@
 - 配置 schema：`{ provider: BrowserPlatformConfigDraft, embedding: BrowserEmbeddingConfig, checkpointPrune: {keepRecent, sparseEvery}, contextCompression: {triggerRatio, keepRecentTurns}, rag: {defaultLimit, maxLimit}, ai: {chatTimeoutMs}, assistant: {maxStoredMessages} }`。
 - provider 迁移：`config/ai.ts` 的存储后端从 localStorage 改为 platform-config（签名尽量保持，内部换后端）；删 localStorage `tsian-platform-config` 路径。
 - tunables 接入：`getCheckpointPruneConfig()` 接 platform-config；`context-lifecycle.ts` 的 triggerRatio/keepRecentTurns 接配置；`search.ts` 的 defaultLimit/maxLimit 接配置；`ai.ts` chatTimeoutMs 接配置；`assistant-conversations.ts` maxStoredMessages 接配置。
-- 控制面板 UI：SettingsView 新增/改造"平台配置"区，编辑 provider（含 key）+ embedding + 8 项 tunables。现有 ProviderManagementScreen/ModelConfigScreen/SemanticSearchScreen 读写路径改走 platform-config。
+- 控制面板 UI：SettingsView hub 加第 3 入口"运行参数"。8 项 tunables 按归属分进三屏——`rag.defaultLimit/maxLimit` 进现有语义检索屏（与 embedding 同屏），`checkpointPrune`/`contextCompression`/`ai.chatTimeoutMs`/`assistant.maxStoredMessages` 进新 `PlatformTunablesScreen`，provider/embedding 留现有 AI 提供商屏。保存统一走"读全量 → merge 本屏 section → `savePlatformConfig`"（方案 A）。现有屏底层换 platform-config 后端后模板不变。
 - env 兜底：`VITE_AI_*` 仍优先于配置文件的 provider/embedding（部署场景），其余 tunables 无 env 兜底。
 
 ## Acceptance Criteria
 
-- [ ] `.tsian/local/platform-config.json` 存在且含完整配置（provider/embedding + 8 tunables）；改配置后文件内容更新。
-- [ ] 配置不进 checkpoint（回溯不回滚配置）；不进 game-card 导出包。
-- [ ] 现有 46 个同步读调用点不改 async（靠内存 cache）；启动后 cache 预热完成前用默认值。
-- [ ] provider/embedding 从 localStorage 迁到配置文件后，SettingsView 能正常读/改/存 provider + model + embedding + key；旧 localStorage 数据直接弃（破坏性）。
-- [ ] 8 项 tunables 从配置读取生效（改 keepRecent 后裁剪行为变；改 triggerRatio 后压缩触发点变；改 chatTimeoutMs 后超时变；改 maxStoredMessages 后助手历史上限变）。
-- [ ] 助手 agent（actorLevel 4）能 workspace_read `.tsian/local/platform-config.json`；运行时游戏 agent（默认低权限）读不到 `.tsian/`。
-- [ ] env `VITE_AI_*` 仍能覆盖 provider/embedding（部署兜底）。
-- [ ] vue-tsc + vite build 通过。
+- [ ] `.tsian/local/platform-config.json` 存在且含完整配置（provider/embedding + tunables）；改配置后文件内容更新。（手动验证）
+- [x] 配置不进 checkpoint（`.tsian/local/` 被 `isSaveRuntimePersistencePath` 排除）；不进 game-card 导出包（`exportGameCardPackage` 只打 content+frontend+cover）。
+- [x] 现有同步读调用点不改 async（靠内存 cache）；启动后 cache 预热完成前用默认值。
+- [ ] provider/embedding 从 localStorage 迁到配置文件后，SettingsView 能正常读/改/存 provider + model + embedding + key；旧 localStorage 数据直接弃（破坏性）。（手动验证）
+- [ ] tunables 从配置读取生效（改 keepRecent 后裁剪行为变；改 triggerRatio 后压缩触发点变；改 chatTimeoutMs 后超时变；改 maxStoredMessages 后助手历史上限变）。（手动验证）
+- [ ] 助手 agent（actorLevel 4）能 workspace_read `.tsian/local/platform-config.json`；运行时游戏 agent（默认低权限）读不到 `.tsian/`。（手动验证，代码依据已就位：platform-meta readLevel=4）
+- [ ] env `VITE_AI_*` 仍能覆盖 provider/embedding（部署兜底）。（手动验证，`getEnvAiConfig` 保留）
+- [x] vue-tsc + vite build 通过。
 
 ## Out of Scope
 

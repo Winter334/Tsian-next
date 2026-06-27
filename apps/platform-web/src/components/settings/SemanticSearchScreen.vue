@@ -87,6 +87,42 @@
           </span>
         </label>
 
+        <!-- 召回条数（RAG tunables，与 embedding 同属语义检索行为） -->
+        <section class="retro-inset grid gap-2 p-3">
+          <p class="text-xs font-bold text-text-main">召回条数</p>
+          <p class="text-[11px] leading-4 text-text-dim">
+            semantic_search 工具每次返回的候选条数。defaultLimit 为未显式传 limit 时的默认值；
+            maxLimit 为上限封顶。
+          </p>
+          <div class="grid gap-2 sm:grid-cols-2">
+            <label class="grid gap-1">
+              <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
+                defaultLimit <span class="text-neon/60">（默认 5）</span>
+              </span>
+              <input
+                v-model.number="rag.defaultLimit"
+                type="number"
+                min="1"
+                class="retro-focus retro-select-surface w-full border border-neon-deep/55 bg-elevated px-3 py-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+              />
+            </label>
+            <label class="grid gap-1">
+              <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
+                maxLimit <span class="text-neon/60">（默认 8）</span>
+              </span>
+              <input
+                v-model.number="rag.maxLimit"
+                type="number"
+                min="1"
+                class="retro-focus retro-select-surface w-full border border-neon-deep/55 bg-elevated px-3 py-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+              />
+            </label>
+          </div>
+          <span v-if="rag.maxLimit < rag.defaultLimit" class="text-[11px] text-red-400">
+            maxLimit 不应小于 defaultLimit。
+          </span>
+        </section>
+
         <!-- 从 chat preset 复制凭据 -->
         <div class="flex flex-wrap items-center gap-2">
           <button
@@ -105,10 +141,12 @@
           <button
             type="submit"
             class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-4 font-mono text-xs"
+            :disabled="!ragValid"
           >
             <Save class="h-3.5 w-3.5" aria-hidden="true" />
             保存
           </button>
+          <span v-if="!ragValid" class="text-[11px] text-red-400">召回条数参数不合法。</span>
           <span v-if="savedFlash" class="text-[11px] text-neon">已保存</span>
         </div>
       </form>
@@ -124,19 +162,23 @@ import {
   type BrowserPlatformConfigDraft,
   getEmbeddingConfig,
 } from "@/config/ai"
+import { getPlatformConfig } from "@/config/platform-config"
 
 const props = defineProps<{
   draft: BrowserPlatformConfigDraft
 }>()
 
 const emit = defineEmits<{
-  (e: "save", config: BrowserEmbeddingConfig): void
+  (e: "save", config: BrowserEmbeddingConfig, rag: { defaultLimit: number; maxLimit: number }): void
 }>()
 
 // 本地表单状态,从已持久化的 embeddingConfig 初始化(props.draft.embeddingConfig
 // 是规范化的,但直接读 getEmbeddingConfig() 确保拿到最新持久化值).
+// rag 段从平台配置 cache 读（与 embedding 同屏，属"检索行为"参数）。
 const stored = getEmbeddingConfig()
+const ragStored = getPlatformConfig().rag
 const form = ref<BrowserEmbeddingConfig>({ ...stored })
+const rag = ref({ defaultLimit: ragStored.defaultLimit, maxLimit: ragStored.maxLimit })
 const savedFlash = ref(false)
 
 const statusReady = computed(() => {
@@ -157,6 +199,13 @@ const statusMessage = computed(() => {
     return "配置已生效：索引将随每回合落盘自动生长，retrieval agent 可用 semantic_search。"
   }
   return "配置不全（含 dimensions 缺失），语义检索未生效。请补全所有字段。"
+})
+
+const ragValid = computed(() => {
+  return (
+    rag.value.defaultLimit >= 1 && Number.isInteger(rag.value.defaultLimit)
+    && rag.value.maxLimit >= rag.value.defaultLimit && Number.isInteger(rag.value.maxLimit)
+  )
 })
 
 const hasChatPreset = computed(() => {
@@ -184,7 +233,10 @@ function copyFromChatPreset(): void {
 }
 
 function handleSave(): void {
-  emit("save", { ...form.value })
+  if (!ragValid.value) {
+    return
+  }
+  emit("save", { ...form.value }, { ...rag.value })
   savedFlash.value = true
   window.setTimeout(() => {
     savedFlash.value = false

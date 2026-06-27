@@ -1,3 +1,5 @@
+import { getPlatformConfig, savePlatformConfig } from "./platform-config"
+
 export type BrowserAiProviderKind = "openai-compatible" | "gemini" | "claude" | "deepseek"
 
 export interface BrowserAiModelEntry {
@@ -154,7 +156,6 @@ interface StoredBrowserPlatformConfigDraft {
   embeddingConfig?: unknown
 }
 
-const PLATFORM_CONFIG_STORAGE_KEY = "tsian-platform-config"
 const LEGACY_PROVIDER_ID = "local-chat-provider"
 const DEFAULT_PROVIDER_NAME = "OpenAI 兼容服务"
 const MODEL_FETCH_TIMEOUT_MS = 60_000
@@ -174,18 +175,6 @@ function readEnvText(key: string): string {
 
 function readStoredText(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
-}
-
-function getBrowserLocalStorage(): Storage | null {
-  if (typeof window !== "undefined" && window.localStorage) {
-    return window.localStorage
-  }
-
-  if (typeof globalThis !== "undefined" && "localStorage" in globalThis) {
-    return (globalThis as { localStorage?: Storage }).localStorage ?? null
-  }
-
-  return null
 }
 
 function createProviderId(): string {
@@ -571,34 +560,14 @@ function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): Brows
   }
 }
 
-function readStoredPlatformConfigDraft(): StoredBrowserPlatformConfigDraft {
-  const storage = getBrowserLocalStorage()
-  if (!storage) {
-    return {}
-  }
-
-  try {
-    const raw = storage.getItem(PLATFORM_CONFIG_STORAGE_KEY)
-    if (!raw) {
-      return {}
-    }
-
-    const parsed = JSON.parse(raw)
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as StoredBrowserPlatformConfigDraft)
-      : {}
-  } catch {
-    return {}
-  }
-}
-
-function writeStoredPlatformConfigDraft(input: BrowserPlatformConfigDraft): void {
-  const storage = getBrowserLocalStorage()
-  if (!storage) {
-    return
-  }
-
-  storage.setItem(PLATFORM_CONFIG_STORAGE_KEY, JSON.stringify(input))
+/**
+ * 从平台配置 cache 读 draft（同步）。platform-config 的 preheat 已把文件内容
+ * merge 进 cache；这里再过一次 normalizePlatformConfigDraft 做深度规范化
+ * （providerTypes 内部结构等），防御手动编辑配置文件导致的不规范——幂等，
+ * 已规范化的值不变。
+ */
+function readCachedPlatformConfigDraft(): BrowserPlatformConfigDraft {
+  return normalizePlatformConfigDraft(getPlatformConfig().provider as StoredBrowserPlatformConfigDraft)
 }
 
 function normalizePlatformConfigDraft(input: StoredBrowserPlatformConfigDraft): BrowserPlatformConfigDraft {
@@ -782,7 +751,7 @@ export function createBrowserAiProviderType(kind: BrowserAiProviderKind): Browse
 }
 
 export function getBrowserAiConfig(): BrowserAiConfig | null {
-  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const stored = readCachedPlatformConfigDraft()
   const { preset, kind } = findPresetAndKind(stored.providerTypes, stored.activeProviderId)
   return resolveProviderConfig(preset, kind) ?? getEnvAiConfig()
 }
@@ -798,7 +767,7 @@ export function resolveBrowserAiConfigForProviderId(providerId: string): Browser
     return null
   }
 
-  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const stored = readCachedPlatformConfigDraft()
   const { preset, kind } = findPresetAndKind(stored.providerTypes, normalized)
   return resolveProviderConfig(preset, kind)
 }
@@ -817,7 +786,7 @@ export function resolveBrowserAiConfigForModel(
   if (!normalizedProvider) {
     return null
   }
-  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const stored = readCachedPlatformConfigDraft()
   const { preset, kind } = findPresetAndKind(stored.providerTypes, normalizedProvider)
   return resolveProviderConfig(preset, kind, modelId?.trim() || undefined)
 }
@@ -835,7 +804,7 @@ export function getBrowserAiProviderPresetModels(
   if (!normalized) {
     return []
   }
-  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const stored = readCachedPlatformConfigDraft()
   const { preset } = findPresetAndKind(stored.providerTypes, normalized)
   if (!preset) {
     return []
@@ -853,7 +822,7 @@ export function getBrowserAiProviderPresetModels(
  * the per-Agent provider dropdown. Preset ids are globally unique.
  */
 export function listBrowserAiProviderPresetOptions(): Array<{ id: string; name: string }> {
-  const stored = normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  const stored = readCachedPlatformConfigDraft()
   return allPresets(stored.providerTypes).map((provider) => ({
     id: provider.id,
     name: provider.name || "未命名服务商",
@@ -861,14 +830,14 @@ export function listBrowserAiProviderPresetOptions(): Array<{ id: string; name: 
 }
 
 export function getBrowserPlatformConfigDraft(): BrowserPlatformConfigDraft {
-  return normalizePlatformConfigDraft(readStoredPlatformConfigDraft())
+  return readCachedPlatformConfigDraft()
 }
 
-export function saveBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void {
+export async function saveBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): Promise<void> {
   validateBrowserPlatformConfigDraft(input)
   const normalized = normalizePlatformConfigDraft(input)
   validateBrowserPlatformConfigDraft(normalized)
-  writeStoredPlatformConfigDraft(normalized)
+  await savePlatformConfig({ ...getPlatformConfig(), provider: normalized })
 }
 
 /**
@@ -877,50 +846,51 @@ export function saveBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft
  * resolve time instead (`resolveProviderConfig` returns null for incomplete
  * presets, falling back to env defaults).
  */
-export function saveBrowserPlatformConfigDraftLenient(input: BrowserPlatformConfigDraft): void {
+export async function saveBrowserPlatformConfigDraftLenient(input: BrowserPlatformConfigDraft): Promise<void> {
   const normalized = normalizePlatformConfigDraft(input)
-  writeStoredPlatformConfigDraft(normalized)
+  await savePlatformConfig({ ...getPlatformConfig(), provider: normalized })
 }
 
-export function resetBrowserPlatformConfigDraft(): void {
-  const storage = getBrowserLocalStorage()
-  if (!storage) {
-    return
-  }
-
-  storage.removeItem(PLATFORM_CONFIG_STORAGE_KEY)
+export async function resetBrowserPlatformConfigDraft(): Promise<void> {
+  await savePlatformConfig({
+    ...getPlatformConfig(),
+    provider: {
+      activeProviderId: "",
+      providerTypes: [],
+      embeddingConfig: { enabled: false, baseUrl: "", apiKey: "", model: "", dimensions: 0 },
+    },
+  })
 }
 
 export function getBrowserPlatformConfigStorageState(): "ready" | "unavailable" {
-  return getBrowserLocalStorage() ? "ready" : "unavailable"
+  // 配置文件后端无"不可用"状态（Dexie 总可用），始终 ready。
+  return "ready"
 }
 
 /**
  * 读 embeddingConfig(独立段). 总是返回规范化值(未配置时返回默认 disabled),
  * 不做"配全才生效"判断——生效判断用 `resolveEmbeddingConfig`.
- * 与 chat providerTypes 同属一个 localStorage key,但读写独立:这里 read-modify-
- * write 整个 draft,避免两段互相覆盖.
+ * 与 chat providerTypes 同属配置文件的 provider 段,但读写独立:这里 read-modify-
+ * write 整个 provider,避免两段互相覆盖.
  */
 export function getEmbeddingConfig(): BrowserEmbeddingConfig {
-  return normalizePlatformConfigDraft(readStoredPlatformConfigDraft()).embeddingConfig
+  return readCachedPlatformConfigDraft().embeddingConfig
 }
 
 /**
- * 写 embeddingConfig(独立段). read-modify-write 整个 draft:保留 chat
+ * 写 embeddingConfig(独立段). read-modify-write 整个 provider:保留 chat
  * providerTypes 不动,只替换 embeddingConfig 段. lenient(不跑 chat 校验),
  * 因为玩家可能只配了 embedding 没配 chat;embedding 生效靠 resolveEmbeddingConfig
  * 的严格判断,不靠这里的校验.
  */
-export function saveEmbeddingConfig(config: BrowserEmbeddingConfig): void {
-  const stored = readStoredPlatformConfigDraft()
-  stored.embeddingConfig = config
-  // 走 normalize 但绕过 chat 校验:直接写规范化后的 draft.
+export async function saveEmbeddingConfig(config: BrowserEmbeddingConfig): Promise<void> {
+  const current = readCachedPlatformConfigDraft()
   const draft: BrowserPlatformConfigDraft = {
-    activeProviderId: readStoredText(stored.activeProviderId),
-    providerTypes: normalizeProviderTypes(stored.providerTypes),
+    activeProviderId: current.activeProviderId,
+    providerTypes: current.providerTypes,
     embeddingConfig: normalizeEmbeddingConfig(config),
   }
-  writeStoredPlatformConfigDraft(draft)
+  await savePlatformConfig({ ...getPlatformConfig(), provider: draft })
 }
 
 function isPlainJsonObject(value: unknown): value is Record<string, unknown> {

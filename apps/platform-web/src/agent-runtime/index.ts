@@ -23,7 +23,7 @@ import {
   ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT,
   compressContext,
   compressTaskContext,
-  CONTEXT_COMPRESS_TRIGGER_RATIO,
+  getContextCompressTriggerRatio,
   ContextBudgetExhaustedError,
   ContextCompressionFailedError,
   createInitialAgentContext,
@@ -1368,7 +1368,7 @@ async function callAgentModelWithWorkspaceToolsNative(
   const isTaskMode = toolOptions.compressionMode === "task"
   const triggerThreshold =
     toolOptions.contextTokenBudget !== undefined
-      ? toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
+      ? toolOptions.contextTokenBudget * getContextCompressTriggerRatio()
       : 0
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
@@ -1752,7 +1752,7 @@ async function callAgentModelWithWorkspaceTools(
   const isTaskMode = compressionMode === "task"
   const triggerThreshold =
     toolOptions?.contextTokenBudget !== undefined
-      ? toolOptions.contextTokenBudget * CONTEXT_COMPRESS_TRIGGER_RATIO
+      ? toolOptions.contextTokenBudget * getContextCompressTriggerRatio()
       : 0
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
@@ -2108,7 +2108,7 @@ export async function runAgentRuntimeTurn(
   const entryCompressionMode = resolveEntryCompressionMode(input)
   let compressedContext: AgentContextSnapshot | undefined
   const budget = resolveTokenBudget(input.contextTokenBudget)
-  const triggerThreshold = budget * CONTEXT_COMPRESS_TRIGGER_RATIO
+  const triggerThreshold = budget * getContextCompressTriggerRatio()
   const contextBeforeTokens = estimateContextTokens(agentContext)
   if (contextBeforeTokens > triggerThreshold) {
     const compressOptions: CompressCallOptions = {

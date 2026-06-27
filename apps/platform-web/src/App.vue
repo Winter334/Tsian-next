@@ -27,6 +27,7 @@ import ToastHost from "./components/feedback/ToastHost.vue"
 import ConfirmHost from "./components/feedback/ConfirmHost.vue"
 import { initializePlatformHost } from "./platform-host"
 import { cleanupOrphanAttachments } from "./storage"
+import { preheatPlatformConfig } from "./config/platform-config"
 
 type SplashState = "typing" | "animating" | "done"
 
@@ -51,6 +52,11 @@ function onCrtAnimationEnd() {
 
 onMounted(async () => {
   await initializePlatformHost()
+  // 预热平台配置 cache：读 .tsian/local/platform-config.json → merge 默认 → 内存。
+  // 完成前 46 个同步读调用点用默认值（provider 未配时本就走 env/默认，窗口无感）。
+  void preheatPlatformConfig().catch(() => {
+    // 预热失败不影响启动，getPlatformConfig() 会返默认值。
+  })
   // 清理孤儿附件(超过 7 天且不属于任何现存会话的附件 Blob).
   void cleanupOrphanAttachments().catch(() => {
     // 清理失败不影响应用启动

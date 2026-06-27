@@ -10,6 +10,7 @@ import {
 } from "./workspace"
 import { isAppendOnlyLogPath, extractTurnFromLogPath } from "../platform-host/history-turns"
 import { hashFile, putBlobIfAbsent, getBlob, deleteOrphanBlobs } from "./blobs"
+import { getPlatformConfig } from "../config/platform-config"
 
 export interface LocalCheckpointSummary extends CheckpointSummary {
   saveId: string
@@ -187,12 +188,13 @@ export async function deleteCheckpointsForSave(saveId: string): Promise<void> {
 // ── 裁剪 + GC（Block D）──
 
 /**
- * 检查点裁剪参数。接缝函数——本任务返硬编码默认值，
- * 平台配置体系任务（platform-config）将把此函数接到 `.tsian/` 平台配置源。
- * TODO(platform-config): 接入 .tsian/ 配置文件后，从此处移除硬编码。
+ * 检查点裁剪参数。从平台配置读 `.tsian/local/platform-config.json` 的
+ * `checkpointPrune` 段（keepRecent/sparseEvery，默认 50/20）。同步读内存 cache，
+ * 不引入 async——platform-config 在 app 启动时预热。
  */
 export function getCheckpointPruneConfig(): { keepRecent: number; sparseEvery: number } {
-  return { keepRecent: 50, sparseEvery: 20 }
+  const { checkpointPrune } = getPlatformConfig()
+  return checkpointPrune
 }
 
 /**

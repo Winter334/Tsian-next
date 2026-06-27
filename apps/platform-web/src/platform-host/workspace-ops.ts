@@ -29,6 +29,7 @@ import {
   listLocalSaves,
   listWorkspaceFilesForSave,
   loadLocalAssistantFiles,
+  loadLocalPlatformConfigFile,
   deleteLocalAssistantPath,
   normalizeWorkspaceFilePath,
   saveLocalAssistantFiles,
@@ -286,9 +287,10 @@ export async function listPlatformWorkspaceDirectory(input: {
     const files = saveId
       ? await listWorkspaceFilesForSave(saveId)
       : []
-    // Also include local assistant files from the Dexie meta store.
+    // Also include local assistant files + platform config from the Dexie meta store.
     const localAssistantFiles = await loadLocalAssistantFiles()
-    const allFiles = [...files, ...localAssistantFiles]
+    const localConfigFiles = await loadLocalPlatformConfigFile()
+    const allFiles = [...files, ...localAssistantFiles, ...localConfigFiles]
     return await executeWorkspaceOperation({
       operation: "list",
       scope: "platform-meta",
@@ -554,7 +556,8 @@ async function executeLocalWorkspaceOperation(
   const saveId = await getActiveSaveId()
   const saveFiles = saveId ? await listWorkspaceFilesForSave(saveId) : []
   const localAssistantFiles = await loadLocalAssistantFiles()
-  const allFiles = [...saveFiles, ...localAssistantFiles]
+  const localConfigFiles = await loadLocalPlatformConfigFile()
+  const allFiles = [...saveFiles, ...localAssistantFiles, ...localConfigFiles]
 
   if (request.operation === "list") {
     return executeWorkspaceOperation(

@@ -8,6 +8,7 @@ import type {
 } from "@tsian/contracts"
 import type { RuntimeChatMessage } from "../runtime-host/ai"
 import type { RuntimeTraceDebugLabel } from "./trace"
+import { getPlatformConfig } from "../config/platform-config"
 
 /**
  * master agent 会话上下文生命周期与压缩持久化.
@@ -47,10 +48,21 @@ export const ASSISTANT_CONTEXT_AGENT_ID = "assistant" as const
 
 /** 默认 token 预算:model 未配 contextWindow 时兜底. */
 export const DEFAULT_CONTEXT_TOKEN_BUDGET = 256_000
-/** 压缩触发阈值比例:85% budget 触发压缩(留 15% 余量吸收估算偏差). */
-export const CONTEXT_COMPRESS_TRIGGER_RATIO = 0.85
-/** 压缩时保留最近几轮正文(原文不压缩). */
-export const CONTEXT_KEEP_RECENT_TURNS = 5
+/** 压缩触发阈值比例:读平台配置 contextCompression.triggerRatio(默认 0.85,
+ *  即 85% budget 触发压缩,留 15% 余量吸收估算偏差). */
+export function getContextCompressTriggerRatio(): number {
+  return getPlatformConfig().contextCompression.triggerRatio
+}
+/** 压缩时保留最近几轮正文(原文不压缩).读平台配置 contextCompression.keepRecentTurns(默认 5). */
+export function getContextKeepRecentTurns(): number {
+  return getPlatformConfig().contextCompression.keepRecentTurns
+}
+/** task 模式(助手/子代理)压缩时保留最近几轮工具交互(原文不压缩).
+ *  读平台配置 contextCompression.taskKeepRecentRounds(默认 5).
+ *  与 keepRecentTurns 分离——narrative 保留正文轮次,task 保留工具交互轮次,计数单位不同. */
+export function getTaskKeepRecentRounds(): number {
+  return getPlatformConfig().contextCompression.taskKeepRecentRounds
+}
 /** 摘要目标体积(token),送 model 时告知压缩到约此体积. */
 export const TARGET_COMPRESSION_TOKENS = 2000
 
@@ -61,8 +73,6 @@ export const TARGET_COMPRESSION_TOKENS = 2000
 
 /** 任务型 agent(子代理/助手)默认时长配额 ms.超时抛 TaskTimeoutError.5 分钟给足多文件探索+总结+多次压缩空间. */
 export const DEFAULT_TASK_TIMEOUT_MS = 300_000
-/** 任务压缩保留最近 N 轮 tool 交互(assistant+tool 成对,原文不压).N=5 覆盖最近探索链+当前步骤+上下游关联. */
-export const TASK_KEEP_RECENT_TOOL_ROUNDS = 5
 /** 压缩无效早退阈值:压缩后 token 下降幅度 < 此比例 → 抛 TaskCompressionStalledError(不傻等超时烧钱). */
 export const TASK_COMPRESSION_STALL_RATIO = 0.1
 
@@ -269,7 +279,7 @@ export function createInitialAgentContext(
   currentTurn: number,
   options?: { schema?: string; agentId?: string },
 ): AgentContextSnapshot {
-  const recent = recentHistory.slice(-CONTEXT_KEEP_RECENT_TURNS * 2) // 每轮 user+assistant 两条
+  const recent = recentHistory.slice(-getContextKeepRecentTurns() * 2) // 每轮 user+assistant 两条
   const recentTurns: AgentContextTurnEntry[] = []
   // 历史记录无 turn 索引,用 currentTurn 倒推:最后一条 = currentTurn-1 轮的 assistant
   // (currentTurn 是即将开始的轮,历史最后一条是上一轮结束时的 assistant).
@@ -445,9 +455,10 @@ export async function compressContext(
   callModel: CompressCallModel,
   options: CompressCallOptions,
 ): Promise<AgentContextSnapshot> {
-  // 1. 保留最近 CONTEXT_KEEP_RECENT_TURNS 轮(按 turn 去重取最近 N 个 turn 的全部 entry)
+  // 1. 保留最近 keepRecentTurns 轮(按 turn 去重取最近 N 个 turn 的全部 entry)
+  const keepRecentTurns = getContextKeepRecentTurns()
   const turnNumbers = uniqueSortedTurnNumbers(context.recentTurns)
-  const keepTurns = new Set(turnNumbers.slice(-CONTEXT_KEEP_RECENT_TURNS))
+  const keepTurns = new Set(turnNumbers.slice(-keepRecentTurns))
   const keepEntries = context.recentTurns.filter((entry) => keepTurns.has(entry.turn))
   const compressEntries = context.recentTurns.filter(
     (entry) => !keepTurns.has(entry.turn),
@@ -589,7 +600,7 @@ function extractToolNameFromMessage(message: TaskCompressionMessage): string | u
  * 任务压缩:把工具交互段的早期轮次摘要成 1 条 user message,保留最近 N 轮原文.
  *
  * 入参 messages 的工具交互段由调用方用 locateTaskInteractionSpan 定位为 [start, end).
- * 本函数:① 切出工具交互段 ② 保留最近 TASK_KEEP_RECENT_TOOL_ROUNDS 轮(成对计算:
+ * 本函数:① 切出工具交互段 ② 保留最近 taskKeepRecentRounds 轮(成对计算:
  *    N 轮 = 2N 条 message,即 N 个 assistant+tool/user-observation 对) ③ 早期段送
  *    model 生成任务摘要 ④ 拼新 messages = [...框架段, {user:已完成工作摘要}, ...最近N轮].
  *
@@ -615,7 +626,7 @@ export async function compressTaskContext<T extends TaskCompressionMessage>(
 
   // 1. 切工具交互段,保留最近 N 轮(2N 条),早期送摘要
   const interaction = messages.slice(start, end)
-  const keepCount = TASK_KEEP_RECENT_TOOL_ROUNDS * 2 // N 轮 = 2N 条(assistant + tool/observation)
+  const keepCount = getTaskKeepRecentRounds() * 2 // N 轮 = 2N 条(assistant + tool/observation)
   // 早期段 = interaction 前部,保留段 = interaction 后部
   const earlyEntries = interaction.slice(0, Math.max(0, interaction.length - keepCount))
   const recentEntries = interaction.slice(Math.max(0, interaction.length - keepCount))

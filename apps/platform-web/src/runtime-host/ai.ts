@@ -7,6 +7,7 @@ import {
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
 } from "../config/ai"
+import { getPlatformConfig } from "../config/platform-config"
 import type { ToolSchema } from "../agent-runtime/tool-schemas"
 
 export type { AiChatMessage, AiDebugRecord }
@@ -105,7 +106,10 @@ export interface GenerateAssistantReplyOptions {
 let aiDebugSequence = 0
 const aiDebugRecords: AiDebugRecord[] = []
 const MAX_AI_DEBUG_RECORDS = 20
-const DEFAULT_CHAT_TIMEOUT_MS = 600_000
+/** 读平台配置 ai.chatTimeoutMs(默认 600000).同步读 cache. */
+function getChatTimeoutMs(): number {
+  return getPlatformConfig().ai.chatTimeoutMs
+}
 
 function pushAiDebugRecord(record: AiDebugRecord): void {
   aiDebugRecords.unshift(record)
@@ -1160,7 +1164,7 @@ export async function generateAssistantReply(
     })),
   })
 
-  const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${DEFAULT_CHAT_TIMEOUT_MS} ms.`
+  const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${getChatTimeoutMs()} ms.`
   let response: Response
   let payload: unknown
   try {
@@ -1172,7 +1176,7 @@ export async function generateAssistantReply(
         body: JSON.stringify(requestBody),
       },
       signal: options.signal,
-      timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,
+      timeoutMs: getChatTimeoutMs(),
       timeoutMessage,
     }))
   } catch (error) {
@@ -1283,7 +1287,7 @@ export async function generateAssistantReplyNative(
     })),
   })
 
-  const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${DEFAULT_CHAT_TIMEOUT_MS} ms.`
+  const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${getChatTimeoutMs()} ms.`
   let response: Response
   let payload: unknown
   try {
@@ -1295,7 +1299,7 @@ export async function generateAssistantReplyNative(
         body: JSON.stringify(requestBody),
       },
       signal: options.signal,
-      timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,
+      timeoutMs: getChatTimeoutMs(),
       timeoutMessage,
     }))
   } catch (error) {
@@ -1435,8 +1439,8 @@ export async function streamAssistantReplyNative(
 
   const timed = createTimedAbortSignal({
     signal: options.signal,
-    timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,
-    timeoutMessage: `[Tsian AI ${requestId}] request timed out after ${DEFAULT_CHAT_TIMEOUT_MS} ms.`,
+    timeoutMs: getChatTimeoutMs(),
+    timeoutMessage: `[Tsian AI ${requestId}] request timed out after ${getChatTimeoutMs()} ms.`,
   })
 
   let response: Response
@@ -1707,8 +1711,8 @@ export async function streamAssistantReplyText(
 
   const timed = createTimedAbortSignal({
     signal: options.signal,
-    timeoutMs: DEFAULT_CHAT_TIMEOUT_MS,
-    timeoutMessage: `[Tsian AI ${requestId}] request timed out after ${DEFAULT_CHAT_TIMEOUT_MS} ms.`,
+    timeoutMs: getChatTimeoutMs(),
+    timeoutMessage: `[Tsian AI ${requestId}] request timed out after ${getChatTimeoutMs()} ms.`,
   })
 
   let response: Response

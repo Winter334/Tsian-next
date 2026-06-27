@@ -67,6 +67,11 @@
         @save="handleSaveEmbeddingConfig"
       />
 
+      <PlatformTunablesScreen
+        v-else-if="screen.kind === 'tunables'"
+        @save="handleSaveTunables"
+      />
+
       <div
         v-else
         class="grid h-full place-items-center p-6"
@@ -103,6 +108,7 @@ import ModelConfigScreen from "@/components/settings/ModelConfigScreen.vue"
 import AddModelDialog from "@/components/settings/AddModelDialog.vue"
 import EditModelParamsDialog from "@/components/settings/EditModelParamsDialog.vue"
 import SemanticSearchScreen from "@/components/settings/SemanticSearchScreen.vue"
+import PlatformTunablesScreen from "@/components/settings/PlatformTunablesScreen.vue"
 import { confirm } from "@/composables/useConfirm"
 import { openDialogForm } from "@/composables/useDialogForm"
 import { toast } from "@/composables/useToast"
@@ -121,12 +127,21 @@ import {
   saveBrowserPlatformConfigDraftLenient,
   saveEmbeddingConfig,
 } from "@/config/ai"
+import {
+  type PlatformConfigAssistant,
+  type PlatformConfigCheckpointPrune,
+  type PlatformConfigContextCompression,
+  type PlatformConfigAi,
+  getPlatformConfig,
+  savePlatformConfig,
+} from "@/config/platform-config"
 
 type Screen =
   | { kind: "hub" }
   | { kind: "providers" }
   | { kind: "models"; typeId: string; presetId: string }
   | { kind: "semantic-search" }
+  | { kind: "tunables" }
 
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(clonePlatformConfigDraft(getBrowserPlatformConfigDraft()))
 const addModelOpen = ref(false)
@@ -201,6 +216,8 @@ const headerTitle = computed(() => {
       return activePreset.value ? `${activePreset.value.name || "未命名"} · 模型` : "模型配置"
     case "semantic-search":
       return "语义检索"
+    case "tunables":
+      return "运行参数"
     default:
       return ""
   }
@@ -232,21 +249,56 @@ function enterHubEntry(id: string): void {
     activeTypeId.value = platformConfigDraft.value.providerTypes[0]?.id ?? ""
   } else if (id === "semantic-search") {
     screen.value = { kind: "semantic-search" }
+  } else if (id === "platform-tunables") {
+    screen.value = { kind: "tunables" }
   }
 }
 
 function goBack(): void {
   if (screen.value.kind === "models") {
     screen.value = { kind: "providers" }
-  } else if (screen.value.kind === "providers" || screen.value.kind === "semantic-search") {
+  } else if (
+    screen.value.kind === "providers"
+    || screen.value.kind === "semantic-search"
+    || screen.value.kind === "tunables"
+  ) {
     screen.value = { kind: "hub" }
   }
 }
 
-function handleSaveEmbeddingConfig(config: BrowserEmbeddingConfig): void {
-  saveEmbeddingConfig(config)
+async function handleSaveEmbeddingConfig(
+  config: BrowserEmbeddingConfig,
+  rag: { defaultLimit: number; maxLimit: number },
+): Promise<void> {
+  const current = getPlatformConfig()
+  // embedding 与 rag 同属语义检索屏保存：merge 到 provider（embedding）+ rag 段。
+  await savePlatformConfig({
+    ...current,
+    provider: {
+      ...current.provider,
+      embeddingConfig: config,
+    },
+    rag,
+  })
   // 同步本地 draft(embeddingConfig 是 draft 的一部分),让 hub 状态提示保持一致.
   platformConfigDraft.value = clonePlatformConfigDraft(getBrowserPlatformConfigDraft())
+}
+
+async function handleSaveTunables(input: {
+  checkpointPrune: PlatformConfigCheckpointPrune
+  contextCompression: PlatformConfigContextCompression
+  ai: PlatformConfigAi
+  assistant: PlatformConfigAssistant
+}): Promise<void> {
+  const current = getPlatformConfig()
+  await savePlatformConfig({
+    ...current,
+    checkpointPrune: input.checkpointPrune,
+    contextCompression: input.contextCompression,
+    ai: input.ai,
+    assistant: input.assistant,
+  })
+  toast.success("运行参数已保存。")
 }
 
 function handleSelectType(typeId: string): void {
@@ -510,11 +562,9 @@ watch(
       clearTimeout(saveTimer)
     }
     saveTimer = setTimeout(() => {
-      try {
-        saveBrowserPlatformConfigDraftLenient(platformConfigDraft.value)
-      } catch (error) {
+      void saveBrowserPlatformConfigDraftLenient(platformConfigDraft.value).catch((error) => {
         toast.error(error instanceof Error ? error.message : "自动保存失败。")
-      }
+      })
     }, 800)
   },
   { deep: true },

@@ -8,6 +8,7 @@ import type {
 import { embed } from "./embedding-client"
 import { getEmbeddingsByOwner } from "./index-store"
 import { enqueueStaleEmbeddings } from "./staleness"
+import { getPlatformConfig } from "../../config/platform-config"
 
 /**
  * semantic-index search — save-runtime 语义检索主流程.
@@ -26,8 +27,13 @@ import { enqueueStaleEmbeddings } from "./staleness"
  * reranker 的活.
  */
 
-const DEFAULT_SEMANTIC_LIMIT = 5
-const MAX_SEMANTIC_LIMIT = 8
+/** 读平台配置 rag 段(默认 5/8).同步读 cache. */
+function getRagDefaultLimit(): number {
+  return getPlatformConfig().rag.defaultLimit
+}
+function getRagMaxLimit(): number {
+  return getPlatformConfig().rag.maxLimit
+}
 const PREVIEW_LENGTH = 96
 
 export interface SemanticSearchInput {
@@ -120,9 +126,9 @@ export async function semanticSearch(
 
 function normalizeLimit(limit: number | undefined): number {
   if (typeof limit !== "number" || !Number.isFinite(limit) || limit <= 0) {
-    return DEFAULT_SEMANTIC_LIMIT
+    return getRagDefaultLimit()
   }
-  return Math.min(Math.floor(limit), MAX_SEMANTIC_LIMIT)
+  return Math.min(Math.floor(limit), getRagMaxLimit())
 }
 
 /** cosine 相似度. 向量维度不一致或零向量 → 返回 -Infinity(被 filter 掉). */
