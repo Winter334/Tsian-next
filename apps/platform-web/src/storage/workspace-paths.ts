@@ -51,7 +51,9 @@ export function isSaveRuntimePersistencePath(path: string): boolean {
   if (isActiveSaveRuntimePath(path)) {
     return true
   }
-  // .tsian/local/ is local-only data excluded from save checkpoint/restore.
+  // .tsian/local/ = platform 级本地数据（助手文件、未来平台配置），不进 save checkpoint/restore。
+  // 其余 .tsian/（含 .tsian/save/traces/、manifest.json）= per-save 文件，进 checkpoint，随回溯回滚。
+  // checkpoint 元数据 / embedding 索引在 Dexie 表（按 saveId），不在 .tsian/ 文件系统。
   if (path === ".tsian/local" || path.startsWith(".tsian/local/")) {
     return false
   }

@@ -1230,7 +1230,7 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
     ].join("\n"),
   },
   {
-    path: ".tsian/traces/README.md",
+    path: ".tsian/save/traces/README.md",
     content: [
       "# Traces",
       "",
@@ -1238,18 +1238,6 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
       "Agent-facing summaries are exposed through `runtime-diagnostics`, not ordinary workspace browsing.",
       "",
     ].join("\n"),
-  },
-  {
-    path: ".tsian/checkpoints/README.md",
-    content: "# Checkpoints\n\nCheckpoint metadata is platform-owned and preserved with full save snapshots.\n",
-  },
-  {
-    path: ".tsian/indexes/README.md",
-    content: "# Indexes\n\nGenerated workspace indexes are platform-owned derived data and may be rebuilt.\n",
-  },
-  {
-    path: ".tsian/cache/README.md",
-    content: "# Cache\n\nTemporary platform cache data is platform-owned and may be dropped or rebuilt.\n",
   },
 ]
 
@@ -1263,10 +1251,7 @@ export const RUNTIME_DEFAULT_CARD_PATHS = new Set([
   "frontend/view-state.json",
   WORKSPACE_MANIFEST_PATH,
   ".tsian/README.md",
-  ".tsian/traces/README.md",
-  ".tsian/checkpoints/README.md",
-  ".tsian/indexes/README.md",
-  ".tsian/cache/README.md",
+  ".tsian/save/traces/README.md",
 ])
 
 export const DEFAULT_SAVE_RUNTIME_FILES: Array<{
@@ -1409,25 +1394,13 @@ export const DEFAULT_SAVE_RUNTIME_FILES: Array<{
     ].join("\n"),
   },
   {
-    path: ".tsian/traces/README.md",
+    path: ".tsian/save/traces/README.md",
     content: [
       "# Traces",
       "",
       "Runtime trace files are platform-owned diagnostics input for this save.",
       "",
     ].join("\n"),
-  },
-  {
-    path: ".tsian/checkpoints/README.md",
-    content: "# Checkpoints\n\nCheckpoint metadata is platform-owned and preserved with save snapshots.\n",
-  },
-  {
-    path: ".tsian/indexes/README.md",
-    content: "# Indexes\n\nGenerated save indexes are platform-owned derived data and may be rebuilt.\n",
-  },
-  {
-    path: ".tsian/cache/README.md",
-    content: "# Cache\n\nTemporary platform cache data is platform-owned and may be dropped or rebuilt.\n",
   },
 ]
 

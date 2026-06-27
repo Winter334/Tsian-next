@@ -13,6 +13,7 @@ import {
   createDefaultWorkspaceTemplateFiles,
   normalizeWorkspaceFilePath,
 } from "./workspace"
+import { listLocalSaves, deleteLocalSave } from "./saves"
 import {
   DEFAULT_FRONTEND_BINDING,
   defaultFrontendFiles,
@@ -421,6 +422,15 @@ export async function deleteLocalGameCard(cardId: string): Promise<void> {
   }
   if (existing.source === "builtin") {
     throw new Error("Built-in game cards cannot be deleted.")
+  }
+
+  // 级联清理该卡的所有存档：deleteLocalSave 自带完整清理链
+  // （saves/workspaceFiles/checkpoints/blobs/embeddingIndex），且自带事务——
+  // 不能嵌套进下面的卡删除事务，故在事务外先逐个删存档。
+  const saves = await listLocalSaves()
+  const cardSaves = saves.filter((save) => save.gameCardId === id)
+  for (const save of cardSaves) {
+    await deleteLocalSave(save.id)
   }
 
   await localDb.transaction(

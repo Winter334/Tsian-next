@@ -152,5 +152,5 @@ export function serializeRuntimeTraceEvents(events: RuntimeTraceEvent[]): string
 export function formatRuntimeTracePath(turn: number, failedAt?: number): string {
   const paddedTurn = String(Math.max(0, Math.floor(turn))).padStart(6, "0")
   const suffix = failedAt === undefined ? "" : `-failed-${failedAt}`
-  return `.tsian/traces/turns/turn-${paddedTurn}${suffix}.jsonl`
+  return `.tsian/save/traces/turns/turn-${paddedTurn}${suffix}.jsonl`
 }
