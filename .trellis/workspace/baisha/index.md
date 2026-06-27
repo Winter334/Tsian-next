@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 92
-- **Last Active**: 2026-06-26
+- **Total Sessions**: 93
+- **Last Active**: 2026-06-27
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1461 | Active |
+| `journal-2.md` | ~1497 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 93 | 2026-06-27 | 检查点存储优化 + .tsian 分层重构 + 平台配置规划 | `4ee1cf7`, `95a5cb1`, `c713401` | `master` |
 | 92 | 2026-06-26 | 文本协议完善与任意agent入口 | `8826ffc` | `master` |
 | 91 | 2026-06-26 | 助手工具调用跨 turn 保留 + 过程节点持久化 + ask_user UI 修复 | `46f2acc`, `8e8926d`, `4f996e7`, `a39cb8c` | `master` |
 | 90 | 2026-06-26 | ask_user 助手开关与工具开关体系重设计 | `4d5dcb4` | `master` |
