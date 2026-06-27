@@ -4,7 +4,8 @@
 // 前端不依赖 platform-web 包,所以这里独立一份(协议层提供,表现层 import).
 //
 // master agent 在正文末尾用 [[选项]]...[[/选项]] 标记剧情选项,块内用 markdown
-// 无序列表(- )分隔每个选项,长选项可续行(非 - 开头的非空行拼入上一选项).
+// 列表(- / * / + 无序 或 1. 数字有序)分隔每个选项,长选项可续行(非列表开头的
+// 非空行拼入上一选项).无列表前缀的非空行兜底当作独立选项(AI 不按格式输出时不丢).
 // 前端在 turn 结束时调用 parseStoryOptions:
 //   - 用 cleanText 替换流式累积的原始正文(剥离块,显示干净剧情)
 //   - 用 options[] 渲染选项按钮(玩家点选 = 填入输入框发送 = 正常新 turn)
@@ -19,25 +20,34 @@ export interface ParsedStoryOptions {
 
 // 匹配所有 [[选项]]...[[/选项]] 块(非贪婪,跨行).
 const STORY_OPTIONS_BLOCK_RE = /\[\[选项\]\]([\s\S]*?)\[\[\/选项\]\]/g
-// 块内选项起点:- 开头(markdown 无序列表).
-const OPTION_LINE_RE = /^\s*[-]\s+/
+// 块内选项起点:markdown 无序(- * +，含 -. -) 变体)或有序(数字 + . )列表前缀.
+const OPTION_LINE_RE = /^\s*[-*+][\s.)]+\s*|^\s*\d+\.\s+/
 
 /**
  * 解析单个选项块内容为选项数组.
- * - 开头行 = 新选项(去掉 - 前缀);非 - 非空行 = 上一选项续行(拼入,保留换行);空行忽略.
+ * - 有列表前缀行(- * + 或 1.) → 每个前缀行一个选项,非前缀非空行续行拼入上一选项.
+ * - 块内完全无列表前缀行 → 兜底:每个非空行当独立选项(避免 AI 不按格式输出时丢失).
+ * - 空行忽略.
  */
 function parseBlockContent(blockContent: string): string[] {
-  const lines = blockContent.split("\n")
+  const lines = blockContent.split("\n").map((line) => line.trim()).filter((line) => line !== "")
+  // 先扫描块内是否有任何列表前缀行,决定走"列表模式"还是"纯文本兜底模式".
+  const hasListPrefix = lines.some((line) => OPTION_LINE_RE.test(line))
   const options: string[] = []
-  for (const line of lines) {
-    if (line.trim() === "") continue
-    if (OPTION_LINE_RE.test(line)) {
-      options.push(line.replace(OPTION_LINE_RE, "").trim())
-    } else if (options.length > 0) {
-      // 续行:拼入上一选项,保留换行
-      options[options.length - 1] += "\n" + line.trim()
+  for (const trimmed of lines) {
+    const prefixMatch = trimmed.match(OPTION_LINE_RE)
+    if (hasListPrefix) {
+      if (prefixMatch) {
+        options.push(trimmed.slice(prefixMatch[0].length).trim())
+      } else if (options.length > 0) {
+        // 续行:拼入上一选项,保留换行
+        options[options.length - 1] += "\n" + trimmed
+      }
+      // 列表模式下,列表前的孤立行(无上一选项)忽略(如"你可以选择："标题)
+    } else {
+      // 纯文本兜底模式:每行一个独立选项
+      options.push(trimmed)
     }
-    // 块内 - 之前的孤立行(无上一选项)忽略
   }
   return options
 }
