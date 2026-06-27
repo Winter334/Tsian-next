@@ -9,6 +9,7 @@ import type {
   AskUserResult,
   ContentPart,
   ConversationMessageRecord,
+  InjectionMessage,
   AgentPlatformToolName,
   PlatformActionRequest,
   PlatformActionResult,
@@ -806,6 +807,30 @@ function getEntryAgentContext(
   return context
 }
 
+/** 把前端注入的 InjectionMessage[] 按 position 过滤成 RuntimeChatMessage[]。
+ *  before-input 插在玩家输入前，after-input 插在玩家输入后。保持数组顺序。 */
+function injectionMessagesForPosition(
+  injection: InjectionMessage[] | undefined,
+  position: "before-input" | "after-input",
+): RuntimeChatMessage[] {
+  if (!injection || injection.length === 0) {
+    return []
+  }
+  const messages: RuntimeChatMessage[] = []
+  for (const item of injection) {
+    const itemPosition = item.position ?? "before-input"
+    if (itemPosition !== position) {
+      continue
+    }
+    if (item.role === "assistant") {
+      messages.push({ role: "assistant", content: item.content })
+    } else {
+      messages.push({ role: item.role, content: item.content })
+    }
+  }
+  return messages
+}
+
 function buildEntryAgentMessages(
   input: AgentRuntimeTurnInput,
   context: AgentContextEntry,
@@ -830,6 +855,10 @@ function buildEntryAgentMessages(
   const historyMessages: RuntimeChatMessage[] = agentContext
     ? buildAgentContextMessages(agentContext, isAssistant, isNative)
     : [{ role: "user", content: `最近对话：\n${formatHistory(history)}` }]
+  // 前端 injection：按 position 分两组，before-input 在框架信息后/玩家输入前，
+  // after-input 在玩家输入后。不落盘、不进 context.json，平台不解释语义。
+  const beforeInputInjection = injectionMessagesForPosition(input.injection, "before-input")
+  const afterInputInjection = injectionMessagesForPosition(input.injection, "after-input")
   return [
     {
       role: "system",
@@ -858,6 +887,8 @@ function buildEntryAgentMessages(
         formatAgentRuntimeContext(context),
       ].join("\n"),
     },
+    // 前端注入（before-input）：框架信息之后、玩家输入之前。
+    ...beforeInputInjection,
     // 本轮输入:单独一条 user message,框架信息之后、工具循环之前.
     // 有附件图片时 content 变为 ContentPart[](text + image parts),走多模态.
     {
@@ -866,6 +897,8 @@ function buildEntryAgentMessages(
         ? { content: [{ type: "text" as const, text: `${inputLabel}：\n${input.userInput}` }, ...input.userInputAttachments] as ContentPart[] }
         : { content: `${inputLabel}：\n${input.userInput}` }),
     },
+    // 前端注入（after-input）：玩家输入之后、工具循环之前。
+    ...afterInputInjection,
   ]
 }
 

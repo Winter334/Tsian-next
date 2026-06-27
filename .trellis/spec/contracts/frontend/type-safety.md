@@ -6,7 +6,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 
 - `ConversationMessageRecord` and `SessionHistoryEntry` describe frontend-readable session state (turn history rebuilt from workspace turn files).
 - `WorkspaceFile`, `WorkspaceEntry`, `WorkspaceSearchResult`, `WorkspaceScope`, `WorkspaceOperationName`, `WorkspaceOperationRequest`, `WorkspaceDiffResult`, `WorkspacePatchResult`, `WorkspaceMoveResult`, `WorkspaceDeleteResult`, and `WorkspaceValidationResult` describe generic Runtime Workspace files, scoped operation requests, and operation results.
-- `MessageInteractionRequest` is currently `{ content: string }`.
+- `MessageInteractionRequest` is `{ content: string; injection?: InjectionMessage[] }` and `InvokeAgentRequest` is `{ agentId: string; input: string; injection?: InjectionMessage[] }`. `InjectionMessage` carries `role` (system/user/assistant), `content`, and optional `position` (before-input/after-input, per-message). Injection is per-turn only — not persisted to turn history or context.json snapshots; the platform inserts it by role+position without interpreting semantics.
 - `DeepQueryRequest` / `DeepQueryResult<T>` wrap bridge query resources.
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.
 - `RemotePlayBridge*` types describe the serializable `tsian.play-bridge.v1` postMessage protocol used by remote iframe frontends.

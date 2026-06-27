@@ -64,8 +64,8 @@
 - The iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Do not add top navigation, popups, downloads, or broader permissions without a new product/security decision.
 - Remote bridge messages use shared contract types; runtime validation belongs in platform-web, not in shared contracts.
 - The adapter must filter by mounted iframe content window, generated session id, and accepted handshake origin before dispatching requests.
-- The allowed remote methods are `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`. The default remote bridge must not expose the `debug` namespace and must reject `ai-debug` queries; a `turn-debug-ready` notification may be sent without debug records.
-- Workspace read/list/search reuse existing platform-host query behavior. Workspace write/delete and checkpoint restore reuse existing `platform.runAction` behavior.
+- The allowed remote methods are `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, `platform.runAction`, and the `workspace.*` methods (`workspace.read`, `workspace.list`, `workspace.search`, `workspace.write`). The default remote bridge must not expose the `debug` namespace and must reject `ai-debug` queries; a `turn-debug-ready` notification may be sent without debug records.
+- Workspace read/list/search/write are independent `workspace.*` RPC methods (split out of `query.query`), each with its own request/response shape and normalize validation. `workspace.read` returns `WorkspaceReadResult | null` (null = file not found; errors are not swallowed). Checkpoint restore reuses existing `platform.runAction` behavior. Agent `workspace_read`/`workspace_write` tools go through `agent-runtime/workspace-tools.ts`, not the bridge `workspace.*` methods — two independent paths.
 
 ### Validation & Error Matrix
 

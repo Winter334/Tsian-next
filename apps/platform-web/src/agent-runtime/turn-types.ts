@@ -6,6 +6,7 @@ import type {
   AskUserResult,
   ContentPart,
   ConversationMessageRecord,
+  InjectionMessage,
   PlatformActionRequest,
   PlatformActionResult,
   TurnTimelineItem,
@@ -27,6 +28,9 @@ export type RuntimeCompressionMode = "narrative" | "task"
 export interface AgentRuntimeTurnInput {
   agentId: string
   userInput: string
+  /** 前端注入的上下文消息（本轮有效，不落盘）。按 position 分组插入上下文序列：
+   *  before-input 在玩家输入前、after-input 在玩家输入后。平台不解释语义。 */
+  injection?: InjectionMessage[]
   /** 本轮附件图片的 ContentPart 列表(助手聊天附件用). 有值时本轮输入 user
    *  消息的 content 变为 ContentPart[](text + image parts),无值时保持 string. */
   userInputAttachments?: ContentPart[]

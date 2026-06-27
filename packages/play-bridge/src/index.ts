@@ -1,45 +1,43 @@
-// @tsian/play-bridge — 桥协议层（postMessage 握手 / RPC / 事件路由）
-// 协议层唯一真相源。表现层通过 createBridge() 拿到 Bridge 实例，
-// 只用 bridge.call() / bridge.on() 与平台交互，不碰 postMessage / RPC id。
+// @tsian/play-bridge — 游戏前端领域 API
 //
-// 详见 docs/active/play-frontend-sdk-direction.md。
+// 对外导出 createTsian() + 领域类型。表现层通过 createTsian() 拿到 TsianApi
+// 实例，只用 tsian.send / tsian.onMessage / ... 与平台交互。
+//
+// 协议层（createBridge / Bridge）是包内部实现，不公开导出——前端开发者不需要
+// 接触 RPC method 字符串或 params 结构。
+//
+// 详见 docs/sdk/play-frontend-api.md（API 文档）。
 
-export { createBridge } from "./bridge"
-export type { Bridge, BridgeHandlers } from "./bridge"
-export { createSessionHistory } from "./session-history"
-export type { SessionHistory } from "./session-history"
-export { listCheckpoints, restoreCheckpoint } from "./checkpoints"
+export { createTsian } from "./tsian-api"
+export type {
+  TsianApi,
+  SendOptions,
+  InvokeAgentOptions,
+  MessageDelta,
+  RoundEnd,
+  TurnEndResult,
+  ToolEvent,
+  AskRequest,
+  SessionHistory,
+} from "./tsian-api"
+
+// parseStoryOptions 是纯解析工具（前端流式渲染时用，不涉及 RPC），保留独立导出。
 export { parseStoryOptions } from "./story-options"
 export type { ParsedStoryOptions } from "./story-options"
 
-// 桥相关类型从 @tsian/contracts re-export，消费方无需额外 import contracts。
+// 领域类型从 @tsian/contracts re-export，消费方无需额外 import contracts。
 export type {
-  RemotePlayBridgeChannel,
-  RemotePlayBridgeMethod,
-  RemotePlayBridgeRequestParams,
-  RemotePlayBridgeResponseResult,
-  RemotePlayBridgeError,
-  RemotePlayBridgeHelloMessage,
-  RemotePlayBridgeReadyMessage,
-  RemotePlayBridgeRequestMessage,
-  RemotePlayBridgeResponseMessage,
-  RemotePlayBridgeEventName,
-  TurnToolOutput,
-  RemotePlayBridgeEventPayload,
-  RemotePlayBridgeEventMessage,
-  RemotePlayBridgeMessage,
-  AskUserResponse,
-} from "@tsian/contracts"
-
-// 事件 payload 内嵌的消息记录类型，表现层渲染要用。
-export type {
-  ConversationMessageRecord,
-  MessageInteractionRequest,
-  MessageInteractionResult,
-  AskUserRequest,
-  AskUserResult,
-  TurnTimelineItem,
+  InjectionMessage,
+  InvokeAgentResult,
   TurnStats,
+  TurnToolOutput,
   SessionHistoryEntry,
   CheckpointSummary,
+  ConversationMessageRecord,
+  TurnTimelineItem,
+  WorkspaceReadResult,
+  WorkspaceEntry,
+  WorkspaceSearchResult,
+  WorkspaceWriteResult,
+  WorkspaceScope,
 } from "@tsian/contracts"

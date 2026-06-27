@@ -23,12 +23,18 @@ import type {
   TurnStats,
   TurnTimelineItem,
   WorkspaceDeleteResult,
+  WorkspaceEntry,
+  WorkspaceListRequest,
   WorkspaceListResult,
   WorkspaceFile,
   WorkspaceMoveResult,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
+  WorkspaceReadRequest,
+  WorkspaceReadResult,
+  WorkspaceWriteRequest,
   WorkspaceWriteResult,
+  WorkspaceSearchRequest,
   WorkspaceSearchResult,
   WorkspaceScope,
   WorkspaceValidationResult,
@@ -519,74 +525,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } as DeepQueryResult<T>
       }
 
-      if (request.resource === "workspace.list") {
-        if (!activeSaveId) {
-          return { items: [] } as DeepQueryResult<T>
-        }
-
-        try {
-          return {
-            items: [await executeWorkspaceOperationForActiveSave(activeSaveId, {
-              operation: "list",
-              scope: "effective",
-              ...(typeof request.params?.path === "string"
-                ? { path: request.params.path }
-                : {}),
-            }, {
-              actorLevel: 1,
-            })] as T[],
-          } as DeepQueryResult<T>
-        } catch {
-          return { items: [] } as DeepQueryResult<T>
-        }
-      }
-
-      if (request.resource === "workspace.read") {
-        if (!activeSaveId) {
-          return { items: [] } as DeepQueryResult<T>
-        }
-
-        try {
-          return {
-            items: [await executeWorkspaceOperationForActiveSave(activeSaveId, {
-              operation: "read",
-              scope: typeof request.params?.scope === "string"
-                ? request.params.scope
-                : "effective",
-              path: request.params?.path,
-            } as WorkspaceOperationRequest, {
-              actorLevel: 1,
-            })] as T[],
-          } as DeepQueryResult<T>
-        } catch {
-          return { items: [] } as DeepQueryResult<T>
-        }
-      }
-
-      if (request.resource === "workspace.search") {
-        if (!activeSaveId) {
-          return { items: [] } as DeepQueryResult<T>
-        }
-
-        return {
-          items: await executeWorkspaceOperationForActiveSave(activeSaveId, {
-            operation: "search",
-            scope: typeof request.params?.scope === "string"
-              ? request.params.scope
-              : "effective",
-            query:
-              typeof request.params?.query === "string"
-                ? request.params.query
-                : undefined,
-            limit:
-              typeof request.params?.limit === "number"
-                ? request.params.limit
-                : undefined,
-          } as WorkspaceOperationRequest, {
-            actorLevel: 1,
-          }) as T[],
-        } as DeepQueryResult<T>
-      }
+      // workspace.read/list/search 已拆出为独立 workspace.* RPC method（见下方
+      // playFrontendBridge.workspace），不再走 query.query 通道。
 
       if (request.resource === "agent-registry") {
         if (!activeSaveId) {
@@ -702,6 +642,76 @@ export const playFrontendBridge: PlayFrontendBridge = {
       return { items: [] } as DeepQueryResult<T>
     },
   },
+  workspace: {
+    async read(req: WorkspaceReadRequest): Promise<WorkspaceReadResult | null> {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        return null
+      }
+      try {
+        return await executeWorkspaceOperationForActiveSave(activeSaveId, {
+          operation: "read",
+          scope: req.scope ?? "effective",
+          path: req.path,
+          ...(typeof req.offset === "number" ? { offset: req.offset } : {}),
+          ...(typeof req.limit === "number" ? { limit: req.limit } : {}),
+        } as WorkspaceOperationRequest, {
+          actorLevel: 1,
+        }) as Promise<WorkspaceReadResult>
+      } catch (error) {
+        // 文件不存在 → null（区别于旧 query 通道的 catch 吞所有错误）。
+        // 其它错误（权限/路径非法）继续抛。
+        if (isRecord(error) && (error as { code?: string }).code === "WORKSPACE_FILE_NOT_FOUND") {
+          return null
+        }
+        throw error
+      }
+    },
+
+    async list(req: WorkspaceListRequest): Promise<WorkspaceEntry[]> {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        return []
+      }
+      return executeWorkspaceOperationForActiveSave(activeSaveId, {
+        operation: "list",
+        scope: "effective",
+        ...(typeof req.path === "string" ? { path: req.path } : {}),
+      }, {
+        actorLevel: 1,
+      }) as Promise<WorkspaceEntry[]>
+    },
+
+    async search(req: WorkspaceSearchRequest): Promise<WorkspaceSearchResult[]> {
+      const activeSaveId = await getActiveSaveId()
+      if (!activeSaveId) {
+        return []
+      }
+      return executeWorkspaceOperationForActiveSave(activeSaveId, {
+        operation: "search",
+        scope: req.scope ?? "effective",
+        ...(typeof req.query === "string" ? { query: req.query } : {}),
+        ...(typeof req.pattern === "string" ? { pattern: req.pattern } : {}),
+        ...(typeof req.limit === "number" ? { limit: req.limit } : {}),
+        ...(typeof req.contextLines === "number" ? { contextLines: req.contextLines } : {}),
+        ...(typeof req.ignoreCase === "boolean" ? { ignoreCase: req.ignoreCase } : {}),
+      } as WorkspaceOperationRequest, {
+        actorLevel: 1,
+      }) as Promise<WorkspaceSearchResult[]>
+    },
+
+    async write(req: WorkspaceWriteRequest): Promise<WorkspaceWriteResult> {
+      const activeSaveId = await ensureActiveSave()
+      return executeWorkspaceOperationForActiveSave(activeSaveId, {
+        operation: "write",
+        scope: req.scope ?? "save-runtime",
+        path: req.path,
+        content: req.content,
+      } as WorkspaceOperationRequest, {
+        actorLevel: 1,
+      }) as Promise<WorkspaceWriteResult>
+    },
+  },
   interaction: {
     async sendMessage(input) {
       const content = normalizeMessageContent(input.content)
@@ -758,6 +768,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           {
             agentId: "master",
             userInput: content,
+            injection: input.injection,
             recentHistory: historyBefore,
             turn: maxTurn,
             workspaceFiles: workspaceTransaction.workspaceFiles,
@@ -1063,6 +1074,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           {
             agentId,
             userInput,
+            injection: input.injection,
             recentHistory: historyBefore,
             turn: invokeMaxTurn,
             workspaceFiles,

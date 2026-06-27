@@ -143,6 +143,16 @@ function createInspectionBridge(state: InspectSessionState): PlayFrontendBridge 
         }
       },
     },
+    // 自检会话的 workspace 只做只读兜底（read 返 null、list/search 返空），
+    // write 拒绝——自检不修改存档。
+    workspace: {
+      async read(): Promise<null> { return null },
+      async list(): Promise<[]> { return [] },
+      async search(): Promise<[]> { return [] },
+      async write(): Promise<never> {
+        throw new Error("workspace.write is not available in frontend inspector mode.")
+      },
+    },
     // 不接 debug bridge(自检不需要 ai-debug)
   }
 }

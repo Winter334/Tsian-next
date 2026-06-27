@@ -2,22 +2,23 @@
 // Tsian AIRP 游戏前端 — 表现层（开发版）
 //
 // 从 default-frontend-files.ts app.js 表现层（L371-760）移植为 TS。
-// 协议层由 @tsian/play-bridge 提供，本文件只做消息渲染 / 流式 / 过程节点 / 输入。
-// 只通过 bridge.call() 和 bridge.on() 与平台交互。
+// 领域 API 由 @tsian/play-bridge 提供（createTsian），本文件只做消息渲染 / 流式 / 过程节点 / 输入。
+// 只通过 tsian.* 方法与平台交互。
 //
 // 烛火书卷（Lamplight Codex）风格 —— 见 style.css。
 
 import { marked } from "marked"
 import {
-  createBridge,
-  createSessionHistory,
+  createTsian,
   parseStoryOptions,
-  listCheckpoints,
-  restoreCheckpoint,
 } from "@tsian/play-bridge"
 import type {
-  RemotePlayBridgeEventName,
-  RemotePlayBridgeEventPayload,
+  TsianApi,
+  MessageDelta,
+  RoundEnd,
+  TurnEndResult,
+  ToolEvent,
+  AskRequest,
   ConversationMessageRecord,
   SessionHistoryEntry,
   TurnStats,
@@ -27,10 +28,10 @@ import type {
 } from "@tsian/play-bridge"
 
 // ════════════════════════════════════════════════════════════════
-// 桥实例（协议层全部由 @tsian/play-bridge 封装）
+// 领域 API 实例（由 @tsian/play-bridge 封装）
 // ════════════════════════════════════════════════════════════════
 
-const bridge = createBridge()
+const tsian: TsianApi = createTsian()
 
 // ════════════════════════════════════════════════════════════════
 // DOM 引用
@@ -86,9 +87,6 @@ let turnActive = false
 let currentTurnEls: TurnEls | null = null
 let turnState: TurnState | null = null
 let userPinnedToBottom = true
-// 当前 turn 待渲染的剧情选项(turn-options 事件先到,finalizeTurn 时渲染).
-// null = 无选项;非空数组 = 有选项待渲染.每次 turn 开始时重置.
-let pendingOptions: string[] | null = null
 
 function newTurnState(): TurnState {
   return { timeline: [], streamingText: "", streamingReasoning: "", content: "" }
@@ -204,7 +202,7 @@ async function loadCheckpointView(): Promise<void> {
   $checkpointView.appendChild(inner)
   let checkpoints: CheckpointSummary[]
   try {
-    checkpoints = await listCheckpoints(bridge)
+    checkpoints = await tsian.checkpoints.list()
   } catch (e) {
     const msg = (e && (e as { message?: string }).message) ? (e as { message: string }).message : "加载检查点失败"
     inner.innerHTML = ""
@@ -318,7 +316,7 @@ function openRestoreConfirm(cp: CheckpointSummary): void {
     cancelBtn.disabled = true
     errorEl.textContent = ""
     try {
-      await restoreCheckpoint(bridge, cp.id)
+      await tsian.checkpoints.restore(cp.id)
       closeRestoreConfirm()
       switchView("story")
       await reloadHistory()
@@ -348,7 +346,7 @@ function closeRestoreConfirm(): void {
 
 /** 从 workspace turn 文件单源重建对话（重载/回溯后复用）。 */
 async function reloadHistory(): Promise<void> {
-  const history = await createSessionHistory(bridge)
+  const history = await tsian.history.get()
   setTurn(history.turn)
   renderSessionHistory(history.entries)
 }
@@ -415,8 +413,9 @@ function renderSessionHistory(entries: SessionHistoryEntry[]): void {
   scrollDown()
 }
 
-/** TurnTimelineItem(process item) → 本地 ProcessNode(流式状态机用). */
-function timelineItemToProcessNode(item: TurnTimelineItem): ProcessNode {
+/** TurnTimelineItem(process item) → 本地 ProcessNode(流式状态机用).
+ *  只处理 thought/interim/tool 三个过程变体（user/assistant/options 由上层直接渲染）。 */
+function timelineItemToProcessNode(item: Extract<TurnTimelineItem, { kind: "thought" | "interim" | "tool" }>): ProcessNode {
   if (item.kind === "thought") {
     return { type: "thought", id: item.id, round: item.round, text: item.text, collapsed: item.collapsed, agentId: item.agentId ?? null }
   }
@@ -437,7 +436,7 @@ function timelineItemToProcessNode(item: TurnTimelineItem): ProcessNode {
 }
 
 /** 渲染剧情选项按钮区（reload 时从 timeline 的 options item 渲染,
- *  turn-completed 时从 pendingOptions 就地渲染——两条来源共用此函数). */
+ *  onTurnEnd 时从聚合的 options 就地渲染——两条来源共用此函数). */
 function renderOptionsZone(items: string[]): HTMLDivElement {
   const optZone = document.createElement("div")
   optZone.className = "story-options"
@@ -716,20 +715,19 @@ function createProcessNode(node: ProcessNode): HTMLDivElement {
 }
 
 // 按 callId 去重更新 tool 节点
-function upsertToolNode(timeline: ProcessNode[], payload: RemotePlayBridgeEventPayload): void {
-  if (!("callId" in payload)) return
-  const existing = timeline.find((n) => n.type === "tool" && n.id === payload.callId)
+function upsertToolNode(timeline: ProcessNode[], tool: ToolEvent): void {
+  const existing = timeline.find((n) => n.type === "tool" && n.id === tool.callId)
   if (existing) {
-    existing.status = payload.status
-    if (payload.output !== undefined) existing.output = payload.output
+    existing.status = tool.status
+    if (tool.output !== undefined) existing.output = tool.output
     return
   }
   const node: ProcessNode = {
-    type: "tool", id: payload.callId, round: payload.round,
-    name: payload.name, status: payload.status, collapsed: false,
-    agentId: payload.agentId || null,
+    type: "tool", id: tool.callId, round: tool.round,
+    name: tool.name, status: tool.status, collapsed: false,
+    agentId: tool.agentId || null,
   }
-  if (payload.output !== undefined) node.output = payload.output
+  if (tool.output !== undefined) node.output = tool.output
   timeline.push(node)
 }
 
@@ -743,7 +741,6 @@ function beginTurn(): void {
   clearEmptyState()
   turnActive = true
   turnState = newTurnState()
-  pendingOptions = null  // 新 turn 开始,清掉上一轮待渲染选项
   // 确保有 story-inner 容器
   let inner = $story.querySelector(".story-inner") as HTMLDivElement | null
   if (!inner) {
@@ -817,26 +814,25 @@ function renderStreaming(): void {
 // 思维链和过渡文本在时间线上先于工具调用产生，但 onRoundEnd 在工具执行完
 // 才触发——工具节点已 push 到 timeline。这里把 interim/thought 插到同
 // round 工具节点之前，保持与持久化顺序（turn-timeline-collector）一致。
-function finalizeRound(payload: RemotePlayBridgeEventPayload): void {
+function finalizeRound(end: RoundEnd): void {
   if (!turnState) return
-  if (!("kind" in payload) || !("round" in payload)) return
-  const round = payload.round
-  const kind = payload.kind as "thought" | "final"
+  const round = end.round
+  const kind = end.kind
   const reasoning = turnState.streamingReasoning
   const nodesToInsert: ProcessNode[] = []
   if (kind === "thought") {
     // tool_calls 轮：过渡文本→interim，思维链→thought
     const interimText = turnState.streamingText
     if (interimText.trim()) {
-      nodesToInsert.push({ type: "interim", id: "interim-r" + round, round, text: interimText, collapsed: false, agentId: payload.agentId || null })
+      nodesToInsert.push({ type: "interim", id: "interim-r" + round, round, text: interimText, collapsed: false, agentId: end.agentId || null })
     }
     if (reasoning.trim()) {
-      nodesToInsert.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: payload.agentId || null })
+      nodesToInsert.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: end.agentId || null })
     }
   } else {
     // 最终轮（stop）：思维链→thought，streamingText→content
     if (reasoning.trim()) {
-      nodesToInsert.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: payload.agentId || null })
+      nodesToInsert.push({ type: "thought", id: "thought-r" + round, round, text: reasoning, collapsed: true, agentId: end.agentId || null })
     }
     turnState.content = turnState.streamingText
   }
@@ -860,11 +856,14 @@ function finalizeRound(payload: RemotePlayBridgeEventPayload): void {
 // 流式正文区变为正式正文区(去掉 streaming-msg class).不再推入内存数组——
 // 重载时从 workspace turn 文件读回(createSessionHistory).
 //
-// 剧情选项:turn-options 事件先到时已缓存到 pendingOptions.此处:
+// result 由 SDK 的 onTurnEnd 聚合传入：options（剧情选项）+ stats（token 消耗），
+// 替代旧版 turn-options / turn-stats 事件分别缓存到 pendingOptions / turnState.stats。
 //  1. 用 parseStoryOptions 剥离本地流式累积的选项块(事件流传的是原始 replyText),
 //     重写 streamBody 为干净正文(去掉 [[选项]]...[[/选项]] 标记);
-//  2. 若 pendingOptions 非空,在正文下方渲染选项按钮(玩家点选 = 填输入框发送 = 新 turn).
-function finalizeTurn(): void {
+//  2. 若 result.options 非空,在正文下方渲染选项按钮(玩家点选 = 填输入框发送 = 新 turn).
+function finalizeTurn(result?: TurnEndResult): void {
+  // SDK 聚合的 stats（替代旧版 turn-stats 事件缓存到 turnState.stats）
+  if (result?.stats && turnState) turnState.stats = result.stats
   if (turnState && turnState.timeline.length > 0) {
     for (const node of turnState.timeline) {
       // 折叠 thought 和 agent_call（有玩家可读回应，收起保留可展开回看）；
@@ -888,76 +887,69 @@ function finalizeTurn(): void {
   if (currentTurnEls?.streamEl) {
     currentTurnEls.streamEl.classList.remove("streaming-msg")
   }
-  // 渲染剧情选项按钮(若有)。turn-completed 时不再 reloadHistory 重建（重建会
+  // 渲染剧情选项按钮(若有)。onTurnEnd 时不再 reloadHistory 重建（重建会
   // 破坏过程节点穿插顺序 + 冲掉选项按钮），所以 finalizeTurn 就地渲染的按钮会保留。
-  // pendingOptions 由 turn-options 事件缓存（先于 turn-completed 到达）。
+  // options 由 SDK 聚合传入（turn-options + turn-completed 合并为 onTurnEnd）。
   // reload 时从 timeline 的 options item 渲染(renderSessionHistory → renderOptionsZone)。
-  if (pendingOptions && pendingOptions.length > 0 && currentTurnEls?.streamEl?.parentElement) {
-    const optZone = renderOptionsZone(pendingOptions)
-    pendingOptions = null
+  const options = result?.options
+  if (options && options.length > 0 && currentTurnEls?.streamEl?.parentElement) {
+    const optZone = renderOptionsZone(options)
     currentTurnEls.streamEl.parentElement.appendChild(optZone)
     maybeScrollDown()
   }
-  pendingOptions = null
   turnActive = false
 }
 
 // ════════════════════════════════════════════════════════════════
-// 事件处理器（注册给协议层）
+// 事件处理器（注册给领域 API）
+// 5 个语义回调替代旧版 bridge.on({ onEvent + onTurnOptions + ... })。
+// onTurnEnd 由 SDK 聚合 turn-options / turn-stats / turn-completed 三事件。
 // ════════════════════════════════════════════════════════════════
 
-function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlayBridgeEventPayload): void {
-  if (!turnActive || !turnState) return  // 回合未开始忽略（兜底）
-  if (event === "turn-delta") {
-    if (!("kind" in payload) || !("delta" in payload)) return
-    if (payload.kind === "reasoning") {
-      turnState.streamingReasoning += payload.delta || ""
-    } else {
-      turnState.streamingText += payload.delta || ""
-      renderStreaming()
-    }
-    return
+// 流式增量：reasoning → 思维链累积；content → 正文累积并实时渲染。
+function onMessage(msg: MessageDelta): void {
+  if (!turnActive || !turnState) return
+  if (msg.kind === "reasoning") {
+    turnState.streamingReasoning += msg.delta || ""
+  } else {
+    turnState.streamingText += msg.delta || ""
+    renderStreaming()
   }
-  if (event === "turn-tool") {
-    upsertToolNode(turnState.timeline, payload)
-    renderProcessNodes()
-    maybeScrollDown()
-    return
-  }
-  if (event === "turn-round-end") {
-    finalizeRound(payload)
-    return
-  }
-  if (event === "turn-stats") {
-    // turn-stats 在 turn-completed 之前到达（host 收尾阶段先 emit stats 再 emit 信号）。
-    // 缓存到 turnState，finalizeTurn 时渲染到正文末尾。
-    if (!turnState) return
-    if (!("stats" in payload)) return
-    turnState.stats = payload.stats
-    return
-  }
-  if (event === "turn-completed") {
-    // turn-completed 是纯信号(无 payload)：finalizeTurn 就地修正流式 DOM 为正式态.
-    // 不在此 reloadHistory 重建——重建会 $story.innerHTML="" 全清,破坏流式时已正确的
-    // 过程节点穿插顺序（重建把所有 processNodes 整块排在正文前,与真实发生顺序不符），
-    // 且会冲掉 finalizeTurn 渲染的选项按钮（选项是运行时事件数据,不在 turn 文件里,
-    // 重建恢复不了）。重建仅在重载/回溯后用（那时无流式 DOM,必须从文件重建）。
-    finalizeTurn()
-    setSending(false)
-    setStatus("就绪", "ready")
-    return
-  }
+}
+
+// 工具事件：按 callId 去重 upsert，重渲染过程节点区。
+function onTool(tool: ToolEvent): void {
+  if (!turnActive || !turnState) return
+  upsertToolNode(turnState.timeline, tool)
+  renderProcessNodes()
+  maybeScrollDown()
+}
+
+// 轮边界：把 interim/thought 插到同 round 工具节点之前（保持持久化顺序）。
+function onRoundEnd(end: RoundEnd): void {
+  if (!turnActive || !turnState) return
+  finalizeRound(end)
+}
+
+// 回合结束（SDK 聚合 options + stats）：就地修正流式 DOM 为正式态。
+// 不 reloadHistory 重建——重建会 $story.innerHTML="" 全清,破坏流式时已正确的
+// 过程节点穿插顺序,且会冲掉就地渲染的选项按钮（选项是运行时事件数据,不在 turn 文件里）。
+// 重建仅在重载/回溯后用（那时无流式 DOM,必须从文件重建）。
+function onTurnEnd(result: TurnEndResult): void {
+  finalizeTurn(result)
+  setSending(false)
+  setStatus("就绪", "ready")
 }
 
 // ── ask_user 交互请求渲染 ──
 // AI 向玩家提问，给出选项（玩家也可自定义回答）。
 // 前端决定怎么渲染——平台只传结构化数据，表现层自由呈现。
-function handleInteractionRequest(
-  requestId: string,
-  question: string,
-  options?: string[],
-  allowCustom?: boolean,
-): void {
+function onAsk(ask: AskRequest): void {
+  renderAskPanel(ask)
+}
+
+function renderAskPanel(ask: AskRequest): void {
+  const { requestId, question, options, allowCustom } = ask
   if (!$story) return
   clearEmptyState()
   let inner = $story.querySelector(".story-inner") as HTMLDivElement | null
@@ -985,7 +977,7 @@ function handleInteractionRequest(
       btn.className = "ask-option"
       btn.textContent = opt
       btn.addEventListener("click", () => {
-        void bridge.respondInteraction(requestId, opt)
+        void tsian.answer(requestId, opt)
         removeAskPanel(panel)
       })
       optList.appendChild(btn)
@@ -1009,7 +1001,7 @@ function handleInteractionRequest(
     const doSubmit = () => {
       const val = input.value.trim()
       if (!val) return
-      void bridge.respondInteraction(requestId, val)
+      void tsian.answer(requestId, val)
       removeAskPanel(panel)
     }
     submit.addEventListener("click", doSubmit)
@@ -1033,11 +1025,12 @@ function removeAskPanel(panel: HTMLElement): void {
 }
 
 
-function handleReady(sid: string): void {
+// 握手就绪：启用输入 + 回溯导航 + 从 workspace turn 文件重建历史。
+function handleReady(): void {
   setStatus("就绪", "ready")
   if ($send) $send.disabled = false
   if ($input) { $input.disabled = false; $input.focus() }
-  // 回溯导航在 bridge ready 后可用
+  // 回溯导航在 tsian ready 后可用
   setNavCheckpointsEnabled(true)
   // 从 workspace turn 文件单源重建完整对话(正文 + 过程节点).
   reloadHistory().catch(() => { setStatus("历史加载失败", "error") })
@@ -1049,7 +1042,7 @@ function handleReady(sid: string): void {
 
 function setSending(v: boolean): void {
   // 发送/停止同一位置切换：发送中显示停止按钮，空闲显示发送按钮。
-  if ($send) { $send.hidden = v; $send.disabled = v || !bridge.ready }
+  if ($send) { $send.hidden = v; $send.disabled = v || !tsian.ready }
   if ($stop) $stop.hidden = !v
   if ($input) $input.disabled = v
   // 回合进行中禁用回溯导航，避免回合中途回滚存档
@@ -1060,7 +1053,7 @@ function setSending(v: boolean): void {
 async function sendMessage(): Promise<void> {
   if (!$input || !$story) return
   const content = $input.value.trim()
-  if (!content || !bridge.sessionId || turnActive) return
+  if (!content || !tsian.sessionId || turnActive) return
   $input.value = ""
   $input.style.height = "auto"
   setSending(true)
@@ -1077,8 +1070,8 @@ async function sendMessage(): Promise<void> {
   // 开始回合 DOM 编排
   beginTurn()
   try {
-    await bridge.call("interaction.sendMessage", { content })
-    // turn-completed 事件会触发 finalizeTurn（就地修正流式 DOM 为正式态）
+    await tsian.send(content)
+    // onTurnEnd 回调会触发 finalizeTurn（就地修正流式 DOM 为正式态）
   } catch (e) {
     finalizeTurn()
     setSending(false)
@@ -1115,15 +1108,17 @@ if ($input) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// 注册协议层回调
+// 注册领域 API 回调 + 等握手就绪
+// 5 个语义回调（onMessage/onRoundEnd/onTurnEnd/onTool/onAsk）替代旧版
+// bridge.on({ onEvent + onInteractionRequest + onTurnOptions + onReady })。
+// onTurnEnd 由 SDK 聚合 turn-options + turn-stats + turn-completed。
+// ready 不再是事件回调，改用 waitForReady() Promise。
 // ════════════════════════════════════════════════════════════════
 
-bridge.on({
-  onReady: handleReady,
-  onEvent: handleEvent,
-  onInteractionRequest: handleInteractionRequest,
-  onTurnOptions: (_turn, options) => {
-    // turn-options 先于 turn-completed 到达:缓存选项,finalizeTurn 时就地渲染按钮.
-    pendingOptions = options.length > 0 ? options : null
-  },
-})
+tsian.onMessage(onMessage)
+tsian.onRoundEnd(onRoundEnd)
+tsian.onTurnEnd(onTurnEnd)
+tsian.onTool(onTool)
+tsian.onAsk(onAsk)
+
+void tsian.waitForReady().then(handleReady)

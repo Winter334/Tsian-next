@@ -1,6 +1,7 @@
 import type {
   AskUserResponse,
   DeepQueryRequest,
+  InjectionMessage,
   InvokeAgentRequest,
   JsonValue,
   MessageInteractionRequest,
@@ -12,6 +13,10 @@ import type {
   RemotePlayBridgeMethod,
   RemotePlayBridgeReadyMessage,
   RemotePlayBridgeResponseMessage,
+  WorkspaceListRequest,
+  WorkspaceReadRequest,
+  WorkspaceSearchRequest,
+  WorkspaceWriteRequest,
 } from "@tsian/contracts"
 
 import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats } from "../streaming-events"
@@ -27,6 +32,10 @@ const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
   "query.query",
   "platform.getPlatformContext",
   "platform.runAction",
+  "workspace.read",
+  "workspace.list",
+  "workspace.search",
+  "workspace.write",
 ]
 const REMOTE_PLAY_BRIDGE_METHOD_SET = new Set<RemotePlayBridgeMethod>(
   REMOTE_PLAY_BRIDGE_METHODS,
@@ -117,6 +126,63 @@ function optionalRecordParams(
   throw new RemoteBridgeRpcError(code, message)
 }
 
+const INJECTION_ROLES = new Set(["system", "user", "assistant"])
+const INJECTION_POSITIONS = new Set(["before-input", "after-input"])
+
+/** 校验并透传前端 injection 数组。校验结构（数组 + 每条 role/content/position 合法），
+ *  不校验语义/长度。undefined 或空数组返回 undefined（不注入）。 */
+function normalizeInjection(value: unknown): InjectionMessage[] | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (!Array.isArray(value)) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INJECTION",
+      "injection must be an array when provided.",
+    )
+  }
+  if (value.length === 0) {
+    return undefined
+  }
+  const result: InjectionMessage[] = []
+  for (const [index, item] of value.entries()) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      throw new RemoteBridgeRpcError(
+        "INVALID_INJECTION",
+        `injection[${index}] must be an object.`,
+      )
+    }
+    const record = item as Record<string, unknown>
+    const role = typeof record.role === "string" ? record.role : ""
+    if (!INJECTION_ROLES.has(role)) {
+      throw new RemoteBridgeRpcError(
+        "INVALID_INJECTION",
+        `injection[${index}].role must be "system", "user", or "assistant".`,
+      )
+    }
+    if (typeof record.content !== "string") {
+      throw new RemoteBridgeRpcError(
+        "INVALID_INJECTION",
+        `injection[${index}].content must be a string.`,
+      )
+    }
+    const position =
+      record.position === undefined ? undefined : typeof record.position === "string" ? record.position : ""
+    if (position !== undefined && !INJECTION_POSITIONS.has(position)) {
+      throw new RemoteBridgeRpcError(
+        "INVALID_INJECTION",
+        `injection[${index}].position must be "before-input" or "after-input" when provided.`,
+      )
+    }
+    result.push({
+      role: role as InjectionMessage["role"],
+      content: record.content,
+      ...(position ? { position: position as InjectionMessage["position"] } : {}),
+    })
+  }
+  return result
+}
+
 function normalizeMessageInteractionRequest(value: unknown): MessageInteractionRequest {
   const record = requireRecordParams(
     value,
@@ -130,7 +196,8 @@ function normalizeMessageInteractionRequest(value: unknown): MessageInteractionR
     )
   }
 
-  return { content: record.content }
+  const injection = normalizeInjection(record.injection)
+  return { content: record.content, ...(injection ? { injection } : {}) }
 }
 
 function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
@@ -152,7 +219,8 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
     )
   }
 
-  return { agentId: record.agentId, input: record.input }
+  const injection = normalizeInjection(record.injection)
+  return { agentId: record.agentId, input: record.input, ...(injection ? { injection } : {}) }
 }
 
 function normalizeAskUserResponse(value: unknown): AskUserResponse {
@@ -235,6 +303,79 @@ function normalizePlatformActionRequest(value: unknown): PlatformActionRequest {
   }
 }
 
+function normalizeWorkspaceReadRequest(value: unknown): WorkspaceReadRequest {
+  const record = requireRecordParams(
+    value,
+    "INVALID_WORKSPACE_READ_REQUEST",
+    "workspace.read requires an object payload.",
+  )
+  if (typeof record.path !== "string" || !record.path.trim()) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_WORKSPACE_PATH",
+      "workspace.read requires a non-empty string path.",
+    )
+  }
+  return {
+    path: record.path,
+    ...(typeof record.scope === "string" ? { scope: record.scope as WorkspaceReadRequest["scope"] } : {}),
+    ...(typeof record.offset === "number" ? { offset: record.offset } : {}),
+    ...(typeof record.limit === "number" ? { limit: record.limit } : {}),
+  }
+}
+
+function normalizeWorkspaceListRequest(value: unknown): WorkspaceListRequest {
+  const record = requireRecordParams(
+    value,
+    "INVALID_WORKSPACE_LIST_REQUEST",
+    "workspace.list requires an object payload.",
+  )
+  return {
+    ...(typeof record.path === "string" ? { path: record.path } : {}),
+    ...(typeof record.scope === "string" ? { scope: record.scope as WorkspaceListRequest["scope"] } : {}),
+  }
+}
+
+function normalizeWorkspaceSearchRequest(value: unknown): WorkspaceSearchRequest {
+  const record = requireRecordParams(
+    value,
+    "INVALID_WORKSPACE_SEARCH_REQUEST",
+    "workspace.search requires an object payload.",
+  )
+  return {
+    ...(typeof record.query === "string" ? { query: record.query } : {}),
+    ...(typeof record.pattern === "string" ? { pattern: record.pattern } : {}),
+    ...(typeof record.scope === "string" ? { scope: record.scope as WorkspaceSearchRequest["scope"] } : {}),
+    ...(typeof record.limit === "number" ? { limit: record.limit } : {}),
+    ...(typeof record.contextLines === "number" ? { contextLines: record.contextLines } : {}),
+    ...(typeof record.ignoreCase === "boolean" ? { ignoreCase: record.ignoreCase } : {}),
+  }
+}
+
+function normalizeWorkspaceWriteRequest(value: unknown): WorkspaceWriteRequest {
+  const record = requireRecordParams(
+    value,
+    "INVALID_WORKSPACE_WRITE_REQUEST",
+    "workspace.write requires an object payload.",
+  )
+  if (typeof record.path !== "string" || !record.path.trim()) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_WORKSPACE_PATH",
+      "workspace.write requires a non-empty string path.",
+    )
+  }
+  if (typeof record.content !== "string") {
+    throw new RemoteBridgeRpcError(
+      "INVALID_WORKSPACE_CONTENT",
+      "workspace.write requires string content.",
+    )
+  }
+  return {
+    path: record.path,
+    content: record.content,
+    ...(typeof record.scope === "string" ? { scope: record.scope as WorkspaceWriteRequest["scope"] } : {}),
+  }
+}
+
 function toBridgeError(error: unknown): RemotePlayBridgeError {
   if (error instanceof RemoteBridgeRpcError) {
     return {
@@ -281,6 +422,19 @@ function dispatchRemoteBridgeRequest(
 
   if (method === "platform.getPlatformContext") {
     return bridge.platform.getPlatformContext()
+  }
+
+  if (method === "workspace.read") {
+    return bridge.workspace.read(normalizeWorkspaceReadRequest(params))
+  }
+  if (method === "workspace.list") {
+    return bridge.workspace.list(normalizeWorkspaceListRequest(params))
+  }
+  if (method === "workspace.search") {
+    return bridge.workspace.search(normalizeWorkspaceSearchRequest(params))
+  }
+  if (method === "workspace.write") {
+    return bridge.workspace.write(normalizeWorkspaceWriteRequest(params))
   }
 
   return bridge.platform.runAction(normalizePlatformActionRequest(params))

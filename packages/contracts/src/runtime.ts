@@ -627,8 +627,20 @@ export interface RuntimeDiagnosticSummary {
   facts: RuntimeDiagnosticFact[]
 }
 
+/** 前端注入的上下文消息：独立于玩家输入，由前端决定 role/content/position。
+ *  平台只负责按 role + position 放进 agent 上下文消息序列，不解释语义、不落盘。
+ *  - position "before-input"（默认）：插在玩家本轮输入之前
+ *  - position "after-input"：插在玩家本轮输入之后 */
+export interface InjectionMessage {
+  role: "system" | "user" | "assistant"
+  content: string
+  position?: "before-input" | "after-input"
+}
+
 export interface MessageInteractionRequest {
   content: string
+  /** 前端注入的上下文消息（本轮有效，不落盘）。 */
+  injection?: InjectionMessage[]
 }
 
 export interface MessageInteractionResult {
@@ -640,6 +652,8 @@ export interface MessageInteractionResult {
 export interface InvokeAgentRequest {
   agentId: string
   input: string
+  /** 前端注入的上下文消息（本轮有效，不落盘）。 */
+  injection?: InjectionMessage[]
 }
 
 /** invokeAgent 返回：agent 的回复文本。不含 snapshot（不进运行时状态）。 */

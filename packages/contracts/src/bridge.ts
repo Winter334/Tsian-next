@@ -14,6 +14,11 @@ import type {
   TurnToolOutput,
   TurnTimelineItem,
   TurnStats,
+  WorkspaceEntry,
+  WorkspaceReadResult,
+  WorkspaceScope,
+  WorkspaceSearchResult,
+  WorkspaceWriteResult,
 } from "./runtime"
 
 export interface InteractionBridge {
@@ -30,6 +35,42 @@ export interface PlatformBridge {
   runAction(request: PlatformActionRequest): Promise<PlatformActionResult>
 }
 
+/** 前端 workspace 操作的 RPC 请求/响应类型。从 query.query 拆出为独立 method，
+ *  各自有明确形状，不再套 DeepQueryResult。 */
+export interface WorkspaceReadRequest {
+  path: string
+  scope?: WorkspaceScope
+  offset?: number
+  limit?: number
+}
+
+export interface WorkspaceListRequest {
+  path?: string
+  scope?: WorkspaceScope
+}
+
+export interface WorkspaceSearchRequest {
+  query?: string
+  pattern?: string
+  scope?: WorkspaceScope
+  limit?: number
+  contextLines?: number
+  ignoreCase?: boolean
+}
+
+export interface WorkspaceWriteRequest {
+  path: string
+  content: string
+  scope?: WorkspaceScope
+}
+
+export interface WorkspaceBridge {
+  read(req: WorkspaceReadRequest): Promise<WorkspaceReadResult | null>
+  list(req: WorkspaceListRequest): Promise<WorkspaceEntry[]>
+  search(req: WorkspaceSearchRequest): Promise<WorkspaceSearchResult[]>
+  write(req: WorkspaceWriteRequest): Promise<WorkspaceWriteResult>
+}
+
 export interface DebugBridge {
   getAiDebugRecords(): Promise<AiDebugRecord[]>
   onTurnDebugReady(cb: (turn: number) => void): () => void
@@ -39,6 +80,7 @@ export interface PlayFrontendBridge {
   interaction: InteractionBridge
   query: QueryBridge
   platform: PlatformBridge
+  workspace: WorkspaceBridge
   debug?: DebugBridge
 }
 
@@ -51,6 +93,10 @@ export type RemotePlayBridgeMethod =
   | "query.query"
   | "platform.getPlatformContext"
   | "platform.runAction"
+  | "workspace.read"
+  | "workspace.list"
+  | "workspace.search"
+  | "workspace.write"
 
 /** 玩家回答 ask_user 的 RPC payload。 */
 export interface AskUserResponse {
@@ -64,6 +110,10 @@ export type RemotePlayBridgeRequestParams =
   | AskUserResponse
   | DeepQueryRequest
   | PlatformActionRequest
+  | WorkspaceReadRequest
+  | WorkspaceListRequest
+  | WorkspaceSearchRequest
+  | WorkspaceWriteRequest
   | undefined
 
 export type RemotePlayBridgeResponseResult =
@@ -72,6 +122,11 @@ export type RemotePlayBridgeResponseResult =
   | DeepQueryResult<unknown>
   | PlatformContextShell
   | PlatformActionResult
+  | WorkspaceReadResult
+  | WorkspaceEntry[]
+  | WorkspaceSearchResult[]
+  | WorkspaceWriteResult
+  | null
   | undefined
 
 export interface RemotePlayBridgeError {
