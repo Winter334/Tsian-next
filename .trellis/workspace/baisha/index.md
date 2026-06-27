@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 93
+- **Total Sessions**: 94
 - **Last Active**: 2026-06-27
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1497 | Active |
+| `journal-2.md` | ~1531 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 94 | 2026-06-27 | Play SDK 领域 API 重设计 + injection + workspace RPC 拆出 | `6f38f55` | `feat/play-sdk-domain-api` |
 | 93 | 2026-06-27 | 检查点存储优化 + .tsian 分层重构 + 平台配置规划 | `4ee1cf7`, `95a5cb1`, `c713401` | `master` |
 | 92 | 2026-06-26 | 文本协议完善与任意agent入口 | `8826ffc` | `master` |
 | 91 | 2026-06-26 | 助手工具调用跨 turn 保留 + 过程节点持久化 + ask_user UI 修复 | `46f2acc`, `8e8926d`, `4f996e7`, `a39cb8c` | `master` |
