@@ -222,106 +222,114 @@
                      语义相反,故用 :open="!node.collapsed" 反转绑定,finally/初值保持原意. -->
                 <template v-if="msg.role === 'assistant' && msg.timeline && msg.timeline.length > 0">
                   <div class="flex flex-col gap-1">
-                    <template v-for="node in msg.timeline" :key="node.id">
-                      <!-- 过渡文本节点(tool_calls 轮模型在调用工具前输出的可见文本,
-                           如"我先看一下…").当正常回复处理:正文样式渲染,始终展开,
-                           平铺在该轮工具节点之前(timeline 按发生顺序). -->
-                      <div
-                        v-if="node.type === 'interim'"
-                        class="prose-chat break-words text-sm leading-6"
-                        v-html="renderMarkdown(node.text)"
-                      />
-                      <!-- 思考节点(tool_calls 轮的推理文本,默认折叠,可展开回看) -->
-                      <Collapsible
-                        v-else-if="node.type === 'thought'"
-                        :open="!node.collapsed"
-                        @update:open="(v) => (node.collapsed = !v)"
-                        class="border-l border-neon-deep/30 bg-panel/15"
-                      >
-                        <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
-                          <ChevronRight
-                            class="h-3 w-3 transition-transform"
-                            :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
-                            aria-hidden="true"
-                          />
-                          <Brain class="h-3 w-3" aria-hidden="true" />
-                          <span>思考</span>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
-                          <div class="prose-chat text-xs leading-5 text-text-dim" v-html="renderMarkdown(node.text)" />
-                        </CollapsibleContent>
-                      </Collapsible>
+                    <template v-for="(seg, segIdx) in groupTimelineForRender(msg.timeline)" :key="segIdx">
+                      <!-- 单个节点:interim / thought / ask -->
+                      <template v-if="seg.kind === 'node'">
+                        <!-- 过渡文本节点(tool_calls 轮模型在调用工具前输出的可见文本,
+                             如"我先看一下…").当正常回复处理:正文样式渲染,始终展开,
+                             平铺在该轮工具节点之前(timeline 按发生顺序). -->
+                        <div
+                          v-if="seg.node.type === 'interim'"
+                          class="prose-chat break-words text-sm leading-6"
+                          v-html="renderMarkdown(seg.node.text)"
+                        />
+                        <!-- 思考节点(tool_calls 轮的推理文本,默认折叠,可展开回看) -->
+                        <Collapsible
+                          v-else-if="seg.node.type === 'thought'"
+                          :open="!seg.node.collapsed"
+                          @update:open="(v) => (seg.node.collapsed = !v)"
+                          class="border-l border-neon-deep/30 bg-panel/15"
+                        >
+                          <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                            <ChevronRight
+                              class="h-3 w-3 transition-transform"
+                              :class="seg.node.collapsed ? 'rotate-0' : 'rotate-90'"
+                              aria-hidden="true"
+                            />
+                            <Brain class="h-3 w-3" aria-hidden="true" />
+                            <span>思考</span>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
+                            <div class="prose-chat text-xs leading-5 text-text-dim" v-html="renderMarkdown(seg.node.text)" />
+                          </CollapsibleContent>
+                        </Collapsible>
 
-                      <!-- 工具调用节点(按 callId 去重,loading→success/failed 更新同一节点;调用中展开看输出,回合结束折叠) -->
+                        <!-- ask_user 节点：只读 Q&A 记录。活跃提问不在 timeline 渲染
+                             （由 footer 输入框变形承载，问题常驻焦点位、不与普通输入框并存）；
+                             仅回答/取消后作为历史记录写入此处，可折叠回看。 -->
+                        <Collapsible
+                          v-else-if="seg.node.type === 'ask'"
+                          :open="!seg.node.collapsed"
+                          @update:open="(v) => (seg.node.collapsed = !v)"
+                          class="border border-neon-deep/40 bg-neon/5"
+                        >
+                          <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                            <ChevronRight
+                              class="h-3 w-3 transition-transform"
+                              :class="seg.node.collapsed ? 'rotate-0' : 'rotate-90'"
+                              aria-hidden="true"
+                            />
+                            <HelpCircle class="h-3 w-3" aria-hidden="true" />
+                            <span>{{ seg.node.cancelled ? "已取消提问" : "已回答" }}</span>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent class="px-2.5 py-2">
+                            <p class="prose-chat text-sm leading-6 text-text-main" v-html="renderMarkdown(seg.node.question)" />
+                            <div class="mt-2 border-l border-neon-deep/30 bg-panel/30 px-2.5 py-1.5">
+                              <p v-if="seg.node.cancelled" class="text-xs italic text-text-dim">已取消</p>
+                              <template v-else>
+                                <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">你的回答</p>
+                                <p class="mt-0.5 prose-chat text-sm leading-6 text-text-main">{{ seg.node.answer }}</p>
+                              </template>
+                            </div>
+                          </CollapsibleContent>
+                        </Collapsible>
+                      </template>
+
+                      <!-- 工具调用组:相邻 tool 节点合并成一行自然语言摘要.
+                           不展示工具返回（结构化文本玩家看不懂），只显摘要+状态.
+                           有 loading/running 时显示 spinner，全部完成显示 ✓/✗.
+                           可展开看每个工具的标题行（工具名+状态），不显 output. -->
                       <Collapsible
-                        v-else-if="node.type === 'tool'"
-                        :open="!node.collapsed"
-                        @update:open="(v) => (node.collapsed = !v)"
+                        v-else
+                        :open="!toolGroupCollapsed(`${index}-${segIdx}`)"
+                        @update:open="(v) => (toolGroupCollapsedMap[`${index}-${segIdx}`] = !v)"
                         class="border-l border-neon-deep/30 bg-panel/15"
                       >
                         <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
                           <ChevronRight
                             class="h-3 w-3 transition-transform"
-                            :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
+                            :class="toolGroupCollapsed(`${index}-${segIdx}`) ? 'rotate-0' : 'rotate-90'"
                             aria-hidden="true"
                           />
                           <Wrench class="h-3 w-3" aria-hidden="true" />
-                          <span>{{ agentCallDisplay(node.output)?.title ?? node.name }}</span>
+                          <span>{{ seg.summary }}</span>
                           <span
                             :class="{
-                              'text-neon/60': node.status === 'loading' || node.status === 'running',
-                              'text-neon': node.status === 'success',
-                              'text-red-400': node.status === 'failed',
+                              'text-neon/60': seg.tools.some((t) => t.status === 'loading' || t.status === 'running'),
+                              'text-neon': seg.tools.every((t) => t.status === 'success'),
+                              'text-red-400': seg.tools.some((t) => t.status === 'failed'),
                             }"
                           >
-                            <Loader2 v-if="node.status === 'loading' || node.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
-                            <template v-else-if="node.status === 'success'">✓</template>
-                            <template v-else-if="node.status === 'failed'">✗</template>
+                            <Loader2 v-if="seg.tools.some((t) => t.status === 'loading' || t.status === 'running')" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
+                            <template v-else-if="seg.tools.every((t) => t.status === 'success')">✓</template>
+                            <template v-else-if="seg.tools.some((t) => t.status === 'failed')">✗</template>
                           </span>
                         </CollapsibleTrigger>
                         <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
-                          <!-- agent_call:显示被调用 agent 的 response（玩家可读，UI 侧控制高度）。
-                               失败时显示 error.message。 -->
-                          <div
-                            v-if="agentCallDisplay(node.output)"
-                            class="max-h-40 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 text-xs leading-5 text-text-dim"
-                            :class="agentCallDisplay(node.output)?.failed ? 'text-red-400' : ''"
-                          >{{ agentCallDisplay(node.output)?.response }}</div>
-                          <!-- 普通工具(非 agent_call):显示 observation(历史重建节点带 observation 字符串;
-                               流式节点不带 output 仅状态图标,此处不渲染). -->
-                          <div
-                            v-else-if="typeof node.output === 'string' && node.output"
-                            class="max-h-60 overflow-auto whitespace-pre-wrap border border-neon-deep/15 bg-panel/40 px-2 py-1 text-xs leading-5 text-text-dim"
-                          >{{ node.output }}</div>
-                        </CollapsibleContent>
-                      </Collapsible>
-
-                      <!-- ask_user 节点：只读 Q&A 记录。活跃提问不在 timeline 渲染
-                           （由 footer 输入框变形承载，问题常驻焦点位、不与普通输入框并存）；
-                           仅回答/取消后作为历史记录写入此处，可折叠回看。 -->
-                      <Collapsible
-                        v-else-if="node.type === 'ask'"
-                        :open="!node.collapsed"
-                        @update:open="(v) => (node.collapsed = !v)"
-                        class="border border-neon-deep/40 bg-neon/5"
-                      >
-                        <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
-                          <ChevronRight
-                            class="h-3 w-3 transition-transform"
-                            :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
-                            aria-hidden="true"
-                          />
-                          <HelpCircle class="h-3 w-3" aria-hidden="true" />
-                          <span>{{ node.cancelled ? "已取消提问" : "已回答" }}</span>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent class="px-2.5 py-2">
-                          <p class="prose-chat text-sm leading-6 text-text-main" v-html="renderMarkdown(node.question)" />
-                          <div class="mt-2 border-l border-neon-deep/30 bg-panel/30 px-2.5 py-1.5">
-                            <p v-if="node.cancelled" class="text-xs italic text-text-dim">已取消</p>
-                            <template v-else>
-                              <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">你的回答</p>
-                              <p class="mt-1 text-sm text-text-main">{{ node.answer }}</p>
-                            </template>
+                          <div v-for="t in seg.tools" :key="t.id" class="flex items-center gap-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
+                            <Wrench class="h-2.5 w-2.5" aria-hidden="true" />
+                            <span>{{ agentCallDisplay(t.output)?.title ?? t.name }}</span>
+                            <span
+                              :class="{
+                                'text-neon/60': t.status === 'loading' || t.status === 'running',
+                                'text-neon': t.status === 'success',
+                                'text-red-400': t.status === 'failed',
+                              }"
+                            >
+                              <Loader2 v-if="t.status === 'loading' || t.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
+                              <template v-else-if="t.status === 'success'">✓</template>
+                              <template v-else-if="t.status === 'failed'">✗</template>
+                            </span>
                           </div>
                         </CollapsibleContent>
                       </Collapsible>
@@ -334,10 +342,10 @@
                      (问题已由 footer 输入框变形承载,常驻焦点位)。 -->
                 <div
                   v-if="msg.role === 'user' || msg.streamingText || msg.content || !activeAsk"
-                  class="break-words px-3.5 py-2.5 text-sm leading-6"
+                  class="break-words text-sm leading-6"
                   :class="msg.role === 'user'
-                    ? 'whitespace-pre-wrap border border-neon-deep/35 bg-panel/55 text-text-main'
-                    : 'border border-neon/20 bg-neon/5 text-text-main'"
+                    ? 'whitespace-pre-wrap border border-neon-deep/35 bg-panel/55 px-3.5 py-2.5 text-text-main'
+                    : 'text-text-main'"
                 >
                 <template v-if="msg.role === 'assistant'">
                   <!-- 当前轮流式文本:尚未分类(tool_calls→归入 thought 折叠;stop→写入 content) -->
@@ -741,6 +749,13 @@ const activeAsk = ref<{
   options?: string[]
   allowCustom?: boolean
 } | null>(null)
+// 工具调用组的折叠状态（key = "msgIdx-segIdx", 每条消息的每个段独立）.
+// tool 节点不再用自身 collapsed 字段（因为合并成组了），用这个 map 管理.
+const toolGroupCollapsedMap = reactive<Record<string, boolean>>({})
+function toolGroupCollapsed(key: string): boolean {
+  // 默认折叠（true），只有显式设为 false 时展开
+  return toolGroupCollapsedMap[key] !== false
+}
 // 当前进行中 turn 的 ask 落库回调（由 send() 内 useAssistantTimeline 提供）。
 // 玩家回答/取消后用 recordAsk 把这次 Q&A 作为只读记录写入 timeline（保留对话历史）。
 // send finally 段清空。
@@ -1041,6 +1056,91 @@ function formatFileSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
+// ── 工具调用分组渲染 ──
+// 相邻的 tool 节点合并成一行自然语言摘要（如"读取了 3 个文件、搜索了 1 次"），
+// 不再逐个展开 output。interim/thought/ask 保持独立节点。
+// 模仿 ZCode：工具调用只显成功与否，不显返回内容。
+
+const TOOL_LABEL: Record<string, { verb: string; noun: string; unit: string | null }> = {
+  read: { verb: "读取", noun: "文件", unit: "个" },
+  list: { verb: "列出", noun: "条目", unit: "项" },
+  search: { verb: "搜索", noun: "匹配", unit: "处" },
+  glob: { verb: "匹配", noun: "文件", unit: "个" },
+  diff: { verb: "比对", noun: "差异", unit: null },
+  write: { verb: "写入", noun: "文件", unit: null },
+  edit: { verb: "编辑", noun: "文件", unit: null },
+  move: { verb: "移动", noun: "文件", unit: null },
+  delete: { verb: "删除", noun: "文件", unit: null },
+  semantic_search: { verb: "语义检索", noun: "记忆", unit: null },
+  use_skill: { verb: "激活", noun: "技能", unit: null },
+  run_script: { verb: "执行", noun: "脚本", unit: null },
+  inspect_frontend: { verb: "自检", noun: "前端", unit: null },
+  ask_user: { verb: "向玩家", noun: "提问", unit: null },
+}
+
+/** 一组相邻 tool 节点 → 自然语言摘要句（按工具名分组，合并同名工具计数）. */
+function toolGroupSummary(tools: ToolNode[]): string {
+  const byName = new Map<string, { count: number; status: string }>()
+  for (const t of tools) {
+    const key = t.name
+    const entry = byName.get(key)
+    if (entry) {
+      entry.count += 1
+      // 任一失败则整组标失败
+      if (t.status === "failed") entry.status = "failed"
+    } else {
+      byName.set(key, { count: 1, status: t.status })
+    }
+  }
+  const sentences: string[] = []
+  for (const [name, { count, status }] of byName) {
+    const label = TOOL_LABEL[name]
+    const verb = label?.verb ?? name
+    const noun = label?.noun ?? "操作"
+    if (status === "failed") {
+      sentences.push(`${verb}${noun}失败`)
+      continue
+    }
+    const unit = label?.unit ?? null
+    if (unit && count > 1) {
+      sentences.push(`${verb}了 ${count} ${unit}${noun}`)
+    } else {
+      sentences.push(`${verb}了${noun}`)
+    }
+  }
+  return sentences.join("、")
+}
+
+/** 渲染段：单个节点 或 一组 tool 节点. */
+type ToolNode = Extract<AssistantTimelineNode, { type: "tool" }>
+type TimelineSegment =
+  | { kind: "node"; node: AssistantTimelineNode }
+  | { kind: "tool-group"; tools: ToolNode[]; summary: string }
+
+/** 把 timeline 分成渲染段：相邻 tool 合并，其余独立. */
+function groupTimelineForRender(timeline: AssistantTimelineNode[]): TimelineSegment[] {
+  const segments: TimelineSegment[] = []
+  let i = 0
+  while (i < timeline.length) {
+    const node = timeline[i]
+    if (node.type === "tool") {
+      // 收集连续的 tool 节点
+      const group: ToolNode[] = [node]
+      let j = i + 1
+      while (j < timeline.length && timeline[j].type === "tool") {
+        group.push(timeline[j] as ToolNode)
+        j += 1
+      }
+      segments.push({ kind: "tool-group", tools: group, summary: toolGroupSummary(group) })
+      i = j
+    } else {
+      segments.push({ kind: "node", node })
+      i += 1
+    }
+  }
+  return segments
 }
 
 function sendSuggestion(message: string) {
