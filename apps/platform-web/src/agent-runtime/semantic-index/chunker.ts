@@ -1,4 +1,5 @@
 import type { WorkspaceFile, WorkspaceSemanticType } from "@tsian/contracts"
+import { isTurnFilePath } from "../../platform-host/history-turns"
 
 /**
  * semantic-index chunker — save-runtime 三分语料切块.
@@ -59,7 +60,7 @@ export function chunkWorkspaceFile(file: WorkspaceFile): Chunk[] {
  */
 export function deriveSemanticType(path: string): WorkspaceSemanticType | null {
   // save/history/turns/ 下的 .json 是 raw turn.
-  if (path.startsWith("save/history/turns/") && path.endsWith(".json")) {
+  if (isTurnFilePath(path)) {
     return "turn"
   }
   // 非 .json 文件按位置派生可检索类型.

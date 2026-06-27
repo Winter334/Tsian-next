@@ -3,7 +3,7 @@
   "name": "checkpoint-storage-dedup",
   "title": "检查点存储优化：内容寻址+turn去冗余+GC",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

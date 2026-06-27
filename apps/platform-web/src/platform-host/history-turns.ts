@@ -17,6 +17,33 @@ import {
 
 const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v1"
 const AIRP_HISTORY_TURN_PATH_PREFIX = "save/history/turns/"
+const AIRP_RUNTIME_TRACE_PATH_PREFIX = ".tsian/save/traces/turns/"
+
+/** 判断 workspace 路径是否为 turn 历史文件（`save/history/turns/turn-*.json`）。
+ *  chunker 用此识别 turn 语义（semantic-type: "turn"）；不要用它过滤 traces——
+ *  traces 是诊断日志不是对话历史，用 isAppendOnlyLogPath 统一识别追加型日志。 */
+export function isTurnFilePath(path: string): boolean {
+  return path.startsWith(AIRP_HISTORY_TURN_PATH_PREFIX) && path.endsWith(".json")
+}
+
+/** 判断 workspace 路径是否为 runtime trace 文件（`.tsian/save/traces/turns/turn-*.jsonl`）。 */
+export function isTraceFilePath(path: string): boolean {
+  return path.startsWith(AIRP_RUNTIME_TRACE_PATH_PREFIX) && path.endsWith(".jsonl")
+}
+
+/** 判断是否为"追加型日志"文件——每回合新增一个、旧文件不变，存档级共享。
+ *  turn 文件（对话历史）+ trace 文件（诊断日志）都属于此类：
+ *  checkpoint 不存此类文件（恢复时按 turn 号裁剪到 1..N），避免内容寻址冗余。 */
+export function isAppendOnlyLogPath(path: string): boolean {
+  return isTurnFilePath(path) || isTraceFilePath(path)
+}
+
+/** 从追加型日志文件名提取 turn 号（`turn-NNNNNN.json`/`turn-NNNNNN.jsonl`/`turn-NNNNNN-failed-<ts>.jsonl`）。
+ *  无法提取返回 null。checkpoint 恢复裁剪时用：turn > targetTurn 的日志文件删除。 */
+export function extractTurnFromLogPath(path: string): number | null {
+  const m = path.match(/turn-(\d+)\.(?:json|jsonl)/)
+  return m ? Number(m[1]) : null
+}
 
 interface RawAirpHistoryTurnRecord {
   schema: typeof AIRP_HISTORY_TURN_SCHEMA
@@ -189,9 +216,7 @@ export function parseRawAirpHistoryTurnRecord(
  */
 export function getMaxTurnFromTurnFiles(workspaceFiles: WorkspaceFile[]): number {
   const turnFiles = workspaceFiles.filter(
-    (file) =>
-      file.path.startsWith(AIRP_HISTORY_TURN_PATH_PREFIX)
-      && file.path.endsWith(".json"),
+    (file) => isTurnFilePath(file.path),
   )
   let maxTurn = 0
   for (const file of turnFiles) {

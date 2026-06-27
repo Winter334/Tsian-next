@@ -78,7 +78,26 @@ export interface LocalCheckpointRecord {
   label: string
   reason: "initial" | "after-turn" | "manual"
   createdAt: number
-  workspaceFiles: Array<Omit<LocalWorkspaceFileRecord, "id" | "saveId">>
+  /** Thin manifest：状态文件按内容哈希引用 blob 表（turn 文件不进 manifest，存档级共享）。
+   *  内容寻址去重——跨检查点未变更文件共享一份 blob，零重复拷贝。 */
+  manifest: Array<{ path: string; hash: string; createdAt: number; updatedAt: number }>
+}
+
+/** 内容寻址 blob：按 SHA-256 哈希存一份文件内容，跨检查点去重。
+ *  复合主键 (hash, ownerSaveId)——本地 per-save，GC/删存档按 ownerSaveId 精准清理。
+ *  云阶段升 per-user 共享时加 ownerUserId 维度。 */
+export interface LocalBlobRecord {
+  /** 内容哈希（SHA-256 hex） */
+  hash: string
+  /** 归属存档（GC 按 ownerSaveId 过滤，不跨 save 算引用） */
+  ownerSaveId: string
+  /** 文本内容（文本文件）；二进制文件为空字符串 */
+  content: string
+  /** 二进制内容（二进制文件）；文本文件无此字段 */
+  data?: Blob
+  /** 字节数 */
+  size: number
+  createdAt: number
 }
 
 export interface LocalAssistantAttachmentRecord {
@@ -154,18 +173,20 @@ export class TsianLocalDb extends Dexie {
   saves!: Table<LocalSaveRecord, string>
   checkpoints!: Table<LocalCheckpointRecord, string>
   workspaceFiles!: Table<LocalWorkspaceFileRecord, string>
+  blobs!: Table<LocalBlobRecord, [string, string]>
   assistantAttachments!: Table<LocalAssistantAttachmentRecord, string>
   skillConfigs!: Table<LocalSkillConfigRecord, string>
   embeddingIndex!: Table<LocalEmbeddingIndexRecord, string>
 
   constructor() {
-    // DB name bumped v10 -> v11: added embeddingIndex table for save-runtime
-    // semantic search vector index (task 06-24-save-runtime-semantic-search).
-    // Prototype project — no migration; the old v11 database is abandoned and
-    // a fresh v12 store is created (same rename-and-reset convention).
+    // DB name bumped v12 -> v13: added blobs table for checkpoint content-addressing
+    // (task 06-26-checkpoint-storage-dedup). Checkpoint workspaceFiles → thin manifest
+    // referencing blobs by SHA-256 hash; cross-checkpoint dedup of unchanged state files.
+    // Prototype project — no migration; the old v12 database is abandoned and
+    // a fresh v13 store is created (same rename-and-reset convention).
     // The service worker
     // (`tsian-game-card-frontend-sw.js`) mirrors this name.
-    super("tsian-agent-runtime-v12")
+    super("tsian-agent-runtime-v13")
 
     this.version(1).stores({
       meta: "&key",
@@ -175,6 +196,7 @@ export class TsianLocalDb extends Dexie {
       saves: "&id, updatedAt",
       checkpoints: "&id, saveId, createdAt, turn",
       workspaceFiles: "&id, saveId, path, updatedAt",
+      blobs: "&[hash+ownerSaveId], ownerSaveId",
       assistantAttachments: "&id, sessionId, path, createdAt",
       skillConfigs: "&skillPath, updatedAt",
       embeddingIndex: "&id, [scope+ownerId], path, type, updatedAt",

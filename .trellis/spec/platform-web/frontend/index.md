@@ -20,9 +20,11 @@ Use these specs when changing `apps/platform-web/src/**`.
 
 ## Source References
 
-- `apps/platform-web/CLAUDE.md`
 - `apps/platform-web/src/agent-runtime/index.ts`
 - `apps/platform-web/src/platform-host/index.ts`
-- `apps/platform-web/src/storage/db.ts`
 - `apps/platform-web/src/views/LobbyView.vue`
 - `apps/platform-web/src/views/DebugView.vue`
+
+## Related Specs
+
+- [Storage specs](../storage/index.md) — Dexie schema, checkpoint storage model, content-addressing. Read when changing `src/storage/**` or any Dexie table.

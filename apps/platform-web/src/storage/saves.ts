@@ -9,9 +9,11 @@ import {
 } from "./db"
 import {
   createCheckpointForSave,
-  createCheckpointRecordForSave,
+  buildCheckpointRecordForSave,
   deleteCheckpointsForSave,
+  pruneCheckpointsForSave,
 } from "./checkpoints"
+import { deleteBlobsForSave } from "./blobs"
 import { getBuiltinBlankGameCard } from "./game-cards"
 import {
   createDefaultSaveRuntimeFiles,
@@ -20,7 +22,7 @@ import {
   listWorkspaceFilesForSave,
   saveRuntimeFilesFromEffectiveWorkspace,
 } from "./workspace"
-import { getMaxTurnFromTurnFiles, getHistoryFromTurnFiles } from "../platform-host/history-turns"
+import { getMaxTurnFromTurnFiles, getHistoryFromTurnFiles, isAppendOnlyLogPath } from "../platform-host/history-turns"
 
 const ACTIVE_SAVE_KEY = "active-save-id"
 
@@ -83,12 +85,15 @@ export async function createLocalSaveFromGameCard(
   )
   const checkpointWorkspaceFiles = workspaceRecords
     .map(({ id: _id, saveId: _saveId, ...file }) => file)
+    // 追加型日志（turn 文件 + traces）不进 checkpoint（与 commitSuccessfulRuntimeTurnForSave 一致）。
+    .filter((file) => !isAppendOnlyLogPath(file.path))
     .sort((left, right) => left.path.localeCompare(right.path))
-  const checkpoint = createCheckpointRecordForSave(save.id, {
+  // 事务外：算哈希 + 写 blobs → 产出 thin-manifest checkpoint 记录。
+  const checkpoint = await buildCheckpointRecordForSave(save.id, {
     turn: 0,
     reason: "initial",
     label: "初始状态",
-    workspaceFiles: checkpointWorkspaceFiles,
+    files: checkpointWorkspaceFiles,
   }, now)
 
   await localDb.transaction(
@@ -129,15 +134,20 @@ export async function commitSuccessfulRuntimeTurnForSave(
 
   const checkpointWorkspaceFiles = Array.from(workspaceRecords.values())
     .map(({ id: _id, saveId: _saveId, ...file }) => file)
+    // 追加型日志（turn 文件 + traces）不进 checkpoint（存档级共享；回溯到 N = 裁剪到 1..N）。
+    .filter((file) => !isAppendOnlyLogPath(file.path))
     .sort((left, right) => left.path.localeCompare(right.path))
-  // turn 号从 workspaceFiles 里的 turn 文件取 max(新档 0,第 N 回后 N).
+  // turn 号从存档 workspaceFiles 里的 turn 文件取 max(新档 0,第 N 回后 N).
+  // 注意：从 workspaceRecords（含 turn 文件）取，不是从 checkpointWorkspaceFiles（已剔除 turn）取。
   const checkpointTurn = getMaxTurnFromTurnFiles(
-    checkpointWorkspaceFiles.map((f) => ({ path: f.path, content: f.content, updatedAt: f.updatedAt, createdAt: f.createdAt })),
+    Array.from(workspaceRecords.values()).map((f) => ({ path: f.path, content: f.content, updatedAt: f.updatedAt, createdAt: f.createdAt })),
   )
-  const checkpoint = createCheckpointRecordForSave(saveId, {
+  // 事务外：算哈希 + 写 blobs → 产出 thin-manifest checkpoint 记录。
+  // crypto.subtle.digest 是异步的，不能在 Dexie 事务内 await。
+  const checkpoint = await buildCheckpointRecordForSave(saveId, {
     turn: checkpointTurn,
     reason: input.checkpointReason,
-    workspaceFiles: checkpointWorkspaceFiles,
+    files: checkpointWorkspaceFiles,
   }, now)
 
   await localDb.transaction(
@@ -165,6 +175,9 @@ export async function commitSuccessfulRuntimeTurnForSave(
       }
     },
   )
+
+  // 回合提交后裁剪检查点 + GC 孤儿 blob（每回合一次，开销被 LLM 调用淹没）。
+  await pruneCheckpointsForSave(saveId)
 }
 
 /**
@@ -225,6 +238,8 @@ export async function deleteLocalSave(saveId: string): Promise<void> {
 
   await deleteWorkspaceForSave(saveId)
   await deleteCheckpointsForSave(saveId)
+  // 清该 save 的内容寻址 blob（按 ownerSaveId 精准清，checkpoint 已删 blob 全成孤儿）。
+  await deleteBlobsForSave(saveId)
   // GC:删存档时 drop 该 save 的语义检索向量索引(save-runtime scope,随存档生灭).
   await localDb.embeddingIndex
     .where("[scope+ownerId]")
