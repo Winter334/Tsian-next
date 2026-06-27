@@ -51,7 +51,7 @@ import {
   type ToolSchema,
 } from "./tool-schemas"
 import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
-import { errorToTraceData } from "./trace"
+import { errorToTraceData, errorToTraceDataWithStack } from "./trace"
 import {
   createRuntimeWorkspaceToolSessionState,
   executeRuntimeWorkspaceToolCalls,
@@ -879,6 +879,22 @@ function traceAgentBase(
   }
 }
 
+// ─── trace 采集增强 helpers（开发者诊断用）─────────────────────────────────
+// trace 只记元数据：工具调用记 name + 参数键名（不记参数值），错误记 message + 截断 stack。
+
+/** 把工具调用列表拍成 trace toolCalls 摘要：{name, argsKeys}。只记键名不记值。 */
+function traceToolCallsSummary(
+  calls: { name?: string; arguments?: Record<string, unknown> }[],
+): { name: string; argsKeys: string[] }[] {
+  return calls
+    .map((call) => ({
+      name: typeof call.name === "string" ? call.name : "?",
+      argsKeys: call.arguments && typeof call.arguments === "object"
+        ? Object.keys(call.arguments)
+        : [],
+    }))
+}
+
 function agentCallError(
   code: string,
   message: string,
@@ -1106,6 +1122,7 @@ function createAgentCallRunner(
       targetContext.agent.id,
     )
     const debugLabel = delegatedAgentDebugLabel(targetContext.agent.id)
+    const stepStartedAt = Date.now()
     capabilities.emitTrace?.({
       type: "agent_step_started",
       ...traceAgentBase(targetContext, debugLabel),
@@ -1113,6 +1130,7 @@ function createAgentCallRunner(
         agentTitle: targetContext.agent.title,
         ...agentCallTraceFacts(metadata),
         delegated: true,
+        startedAt: stepStartedAt,
       },
     })
 
@@ -1191,6 +1209,7 @@ function createAgentCallRunner(
           outputLength: response.length,
           ...agentCallTraceFacts(completedMetadata),
           delegated: true,
+          durationMs: Date.now() - stepStartedAt,
         },
       })
 
@@ -1223,9 +1242,10 @@ function createAgentCallRunner(
         ...traceAgentBase(targetContext, debugLabel),
         ok: false,
         data: {
-          ...errorToTraceData(error),
+          ...errorToTraceDataWithStack(error),
           ...agentCallTraceFacts(failedMetadata),
           delegated: true,
+          durationMs: Date.now() - stepStartedAt,
           ...(isTimeout ? { timeout: true, taskTimeoutMs } : {}),
           ...(isTaskStall ? { stalled: true } : {}),
         },
@@ -1539,6 +1559,11 @@ async function callAgentModelWithWorkspaceToolsNative(
         hasToolCalls: result.toolCalls.length > 0,
         toolCallCount: result.toolCalls.length,
         round,
+        finishReason: result.finishReason,
+        ...(lastRoundUsage ? { usage: lastRoundUsage } : {}),
+        ...(result.toolCalls.length > 0
+          ? { toolCalls: traceToolCallsSummary(result.toolCalls as { name?: string; arguments?: Record<string, unknown> }[]) }
+          : {}),
       },
     })
 
@@ -1666,6 +1691,7 @@ async function callAgentModelWithWorkspaceTools(
         hasToolCalls: false,
         toolCallCount: 0,
         round: 0,
+        finishReason: "stop",
       },
     })
     return { text: response.trim() }
@@ -1858,6 +1884,9 @@ async function callAgentModelWithWorkspaceTools(
 
     const toolCalls = parseRuntimeWorkspaceToolCalls(response)
     const finishReason: "stop" | "tool_calls" = toolCalls.length > 0 ? "tool_calls" : "stop"
+    const traceToolCalls = toolCalls
+      .map((tc) => tc.call)
+      .filter((c): c is { name: string; arguments: Record<string, unknown> } => Boolean(c))
     capabilities.emitTrace?.({
       type: "model_call_completed",
       agentId: agentContext.agent.id,
@@ -1869,6 +1898,10 @@ async function callAgentModelWithWorkspaceTools(
         hasToolCalls: toolCalls.length > 0,
         toolCallCount: toolCalls.length,
         round,
+        finishReason,
+        ...(traceToolCalls.length > 0
+          ? { toolCalls: traceToolCallsSummary(traceToolCalls) }
+          : {}),
       },
     })
 
@@ -2018,10 +2051,11 @@ export async function runAgentRuntimeTurn(
   const agentCallState = createAgentCallTurnState()
 
   const entryContext = getEntryAgentContext(input)
+  const entryStepStartedAt = Date.now()
   capabilities.emitTrace?.({
     type: "agent_step_started",
     ...traceAgentBase(entryContext, "entry-agent"),
-    data: { agentTitle: entryContext.agent.title },
+    data: { agentTitle: entryContext.agent.title, startedAt: entryStepStartedAt },
   })
 
   // master agent 会话上下文:优先用注入的 context.json 快照;未注入则从
@@ -2049,7 +2083,8 @@ export async function runAgentRuntimeTurn(
   let compressedContext: AgentContextSnapshot | undefined
   const budget = resolveTokenBudget(input.contextTokenBudget)
   const triggerThreshold = budget * CONTEXT_COMPRESS_TRIGGER_RATIO
-  if (estimateContextTokens(agentContext) > triggerThreshold) {
+  const contextBeforeTokens = estimateContextTokens(agentContext)
+  if (contextBeforeTokens > triggerThreshold) {
     const compressOptions: CompressCallOptions = {
       debugLabel: "entry-agent",
       signal: input.signal,
@@ -2072,18 +2107,29 @@ export async function runAgentRuntimeTurn(
         compressOptions,
       )
       compressedContext = agentContext
+      const afterTokens = estimateContextTokens(agentContext)
       capabilities.emitTrace?.({
         type: "context_compressed",
         ...traceAgentBase(entryContext, "entry-agent"),
         ok: true,
-        data: { budget, triggerThreshold, mode: entryCompressionMode },
+        data: {
+          budget,
+          triggerThreshold,
+          mode: entryCompressionMode,
+          beforeTokens: contextBeforeTokens,
+          afterTokens,
+          ratio: contextBeforeTokens > 0 ? afterTokens / contextBeforeTokens : 0,
+        },
       })
     } catch (error) {
       capabilities.emitTrace?.({
         type: "context_compression_failed",
         ...traceAgentBase(entryContext, "entry-agent"),
         ok: false,
-        data: errorToTraceData(error),
+        data: {
+          ...errorToTraceDataWithStack(error),
+          beforeTokens: contextBeforeTokens,
+        },
       })
       throw error
     }
@@ -2158,14 +2204,14 @@ export async function runAgentRuntimeTurn(
       type: "agent_step_completed",
       ...traceAgentBase(entryContext, "entry-agent"),
       ok: true,
-      data: { outputLength: replyText.length },
+      data: { outputLength: replyText.length, durationMs: Date.now() - entryStepStartedAt },
     })
   } catch (error) {
     capabilities.emitTrace?.({
       type: "agent_step_failed",
       ...traceAgentBase(entryContext, "entry-agent"),
       ok: false,
-      data: errorToTraceData(error),
+      data: errorToTraceDataWithStack(error),
     })
     throw error
   }

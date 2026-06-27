@@ -41,7 +41,7 @@ import { executeWorkspaceMutation } from "./workspace-volumes"
 import {
   createRuntimeTraceCollector,
   serializeRuntimeTraceEvents,
-  errorToTraceData,
+  errorToTraceDataWithStack,
 } from "../agent-runtime/trace"
 import {
   generateAssistantReply,
@@ -692,7 +692,7 @@ export async function runAssistantChat(
       type: "turn_failed",
       ok: false,
       debugLabel: "entry-agent",
-      data: errorToTraceData(error),
+      data: errorToTraceDataWithStack(error),
     })
     // Distinguish task-timeout abort from user abort / other errors: the runtime
     // tool loop throws AbortError on composite-signal abort; re-surface timeout

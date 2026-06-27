@@ -377,7 +377,6 @@ function emitWorkspaceWriteTrace(
       mutation: "write",
       path: file.path,
       size: file.binary?.size ?? file.content.length,
-      updatedAt: file.updatedAt,
     },
   })
 }

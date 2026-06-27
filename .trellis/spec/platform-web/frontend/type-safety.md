@@ -313,23 +313,27 @@
 ### Contracts
 
 - Trace is platform-owned workspace content: platform writes it, Agent context does not inject it by default, and ordinary workspace read/list/search hides it as part of `.tsian/*` metadata.
-- Trace lives under `.tsian/traces/turns/` as JSONL (one file per turn), follows checkpoint/restore, and successful turns include trace in the accepted workspace state before the after-turn checkpoint is created.
+- Trace lives under `.tsian/save/traces/turns/` as JSONL (one file per turn), follows checkpoint/restore, and successful turns include trace in the accepted workspace state before the after-turn checkpoint is created.
 - Failed turns attempt to write a `turn_failed` trace if workspace files are available, but failed-turn trace persistence must not mask the original runtime error.
+- Trace records **metadata only, no business content fragments** (no reply text / tool result previews — those live in turn files / workspace files). See the "Trace Diagnostics" section in the frontend spec index.
 - Trace must record summaries, not large raw payloads:
-  - model calls: message count, output length, tool-call count;
-  - Skill loads: skill name/path/scope, action count, declaration error count;
-  - Agent calls: caller/target ids, target title, history mode, input/output summaries, status or error;
-  - workspace tools: path/query/limit, result count, file metadata for reads, no file content;
+  - model calls: message count, output length, tool-call count, finishReason, usage (input/output/total tokens when available), toolCalls summary (tool name + argument key names, not values);
+  - Skill loads: skill name/path, action count, declaration error count;
+  - Agent calls: caller/target ids, target title, input/output summaries, status or error, durationMs;
+  - workspace tools: path/query/limit, result count, file metadata for reads, no file content, durationMs;
   - action executor policy checks: skill/action/executor metadata and compact allow/deny reason/source, no action input or script content;
   - action calls: skill/action/executor, input/output summaries, status or error;
   - browser scripts: script path/source size/start events and script log/trace summaries, no script source or large raw data;
-  - workspace mutations: write path/mediaType/size or delete `deletedPaths`.
+  - workspace mutations: write path/size or delete `deletedPaths` (no `updatedAt` file-metadata — not a diagnostic field);
+  - context compression: before/after token counts + ratio (the compression *effect*, not just the parameters);
+  - failed events (turn/agent_step/model): error message/code + truncated `errorStack` (`TRACE_ERROR_STACK_LIMIT`).
+  - Do not record mechanism-internal state (caller depth, max depth, call count, history mode) or skill固有属性 (scope, agentId) — they are not runtime diagnostics.
 - `agent-runtime` must not import Dexie/storage/bridge/host; it emits trace through an injected callback. `platform-host` owns trace persistence through explicit platform-owned workspace storage helpers.
 - Ordinary generic workspace reads must not expose `.tsian/*` unless the actor has platform-meta read level. Use dedicated resources (`runtime-diagnostics`) for Agent-facing facts.
 
 ### Validation & Error Matrix
 
-- Successful turn -> one valid JSONL trace file under `.tsian/traces/turns/`.
+- Successful turn -> one valid JSONL trace file under `.tsian/save/traces/turns/`.
 - Runtime failure after workspace is available -> failed trace is attempted and original error is rethrown.
 - Trace write failure on successful turn -> fail loudly before checkpoint creation.
 - Trace `data` contains non-JSON values -> collector normalizes to JSON-compatible values.
@@ -343,7 +347,7 @@
 
 ### Contracts
 
-- Diagnostics are an on-demand query view over `.tsian/traces/turns/*.jsonl`; do not persist derived diagnostic workspace files.
+- Diagnostics are an on-demand query view over `.tsian/save/traces/turns/*.jsonl`; do not persist derived diagnostic workspace files. The trace path pattern in `diagnostics.ts` must match `formatRuntimeTracePath` (`.tsian/save/traces/turns/turn-*.jsonl`).
 - `runtime-diagnostics` returns one summary per trace file / turn attempt, not one top-level item per raw trace event.
 - Default behavior prioritizes failed/anomalous traces. Successful-turn health summaries are returned only when `includeHealth` is true or an exact `turn` query requests them.
 - Summaries are facts-only. Do not add platform-authored repair suggestions, probable-cause narratives, or hardcoded `nextChecks`.

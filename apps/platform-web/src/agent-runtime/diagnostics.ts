@@ -13,7 +13,7 @@ import type { RuntimeTraceDebugLabel, RuntimeTraceEventType } from "./trace"
 import { summarizeTraceValue } from "./trace"
 
 const DIAGNOSTIC_SCHEMA = "tsian.runtime.diagnostic.v1"
-const TRACE_TURN_PATH_PATTERN = /^\.tsian\/traces\/turns\/turn-(\d+)(?:-failed-(\d+))?\.jsonl$/
+const TRACE_TURN_PATH_PATTERN = /^\.tsian\/save\/traces\/turns\/turn-(\d+)(?:-failed-(\d+))?\.jsonl$/
 const DEFAULT_LOOKBACK_TURNS = 20
 const MAX_LOOKBACK_TURNS = 200
 const DEFAULT_RESULT_LIMIT = 10
@@ -585,4 +585,40 @@ export function buildRuntimeDiagnostics(
       || turn !== undefined
     ))
     .slice(0, limit)
+}
+
+// ─── trace events 加载（DebugView 运行日志浏览器用）─────────────────────────
+// diagnostics 的 summary 是聚合视图；这里导出原始 events 供 formatTraceForHuman 渲染。
+// 复用 parseTraceFileContent（同一解析逻辑），不重复实现。
+
+export interface RuntimeTraceEventLoadout {
+  turn: number
+  traceKind: RuntimeDiagnosticTraceKind
+  failedAt?: number
+  events: TraceEventShape[]
+  malformedLineCount: number
+}
+
+/** 从 effective workspace 文件里加载 trace events。
+ *  turn 省略 → 返回全部 trace 回合（按 turn 倒序）；指定 turn → 只返回该回合。
+ *  events 与 RuntimeTraceEvent 结构兼容（type/timestamp/turn/agentId/debugLabel/ok/data）。 */
+export function loadRuntimeTraceEvents(
+  workspaceFiles: WorkspaceFile[],
+  turn?: number,
+): RuntimeTraceEventLoadout[] {
+  const targetTurn = normalizeTurn(turn)
+  const candidates = traceCandidates(workspaceFiles)
+  const filtered = targetTurn !== undefined
+    ? candidates.filter((candidate) => candidate.turn === targetTurn)
+    : candidates
+  return filtered.map((candidate) => {
+    const parsed = parseTraceFileContent(candidate.file.content, candidate.turn)
+    return {
+      turn: candidate.turn,
+      traceKind: candidate.traceKind,
+      ...(candidate.failedAt !== undefined ? { failedAt: candidate.failedAt } : {}),
+      events: parsed.events,
+      malformedLineCount: parsed.malformedLineCount,
+    }
+  })
 }

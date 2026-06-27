@@ -185,6 +185,7 @@ function emitWorkspaceToolTrace(
   context: RuntimeWorkspaceToolExecutionContext,
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
+  durationMs?: number,
 ): void {
   if (!isWorkspaceOperationToolName(call.name)) {
     return
@@ -192,6 +193,7 @@ function emitWorkspaceToolTrace(
 
   const data: Record<string, unknown> = {
     tool: call.name,
+    ...(durationMs !== undefined ? { durationMs } : {}),
   }
   if (typeof call.arguments.scope === "string") {
     data.scope = call.arguments.scope
@@ -251,6 +253,7 @@ function emitActionCallTrace(
   context: RuntimeWorkspaceToolExecutionContext,
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
+  durationMs?: number,
 ): void {
   if (call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.runScript) {
     return
@@ -260,6 +263,7 @@ function emitActionCallTrace(
     skill: typeof call.arguments.skill === "string" ? call.arguments.skill : undefined,
     script: typeof call.arguments.script === "string" ? call.arguments.script : undefined,
     inputSummary: summarizeTraceValue(call.arguments.input ?? {}),
+    ...(durationMs !== undefined ? { durationMs } : {}),
   }
 
   if (observation.ok && isRecord(observation.result)) {
@@ -289,6 +293,7 @@ function emitAgentCallTrace(
   context: RuntimeWorkspaceToolExecutionContext,
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
+  durationMs?: number,
 ): void {
   if (call.name !== RUNTIME_WORKSPACE_TOOL_NAMES.agentCall) {
     return
@@ -311,18 +316,8 @@ function emitAgentCallTrace(
         ? call.arguments.agentId
         : undefined,
     targetAgentTitle: typeof targetAgent.title === "string" ? targetAgent.title : undefined,
-    callerDepth: typeof metadata.callerDepth === "number" ? metadata.callerDepth : undefined,
-    depth: typeof metadata.targetDepth === "number" ? metadata.targetDepth : undefined,
-    maxDepth: typeof metadata.maxDepth === "number" ? metadata.maxDepth : undefined,
-    callCount: typeof metadata.callCount === "number" ? metadata.callCount : undefined,
-    historyMode: typeof metadata.historyMode === "string"
-      ? metadata.historyMode
-      : typeof result.historyMode === "string"
-        ? result.historyMode
-        : typeof call.arguments.historyMode === "string"
-          ? call.arguments.historyMode
-          : DEFAULT_AGENT_CALL_HISTORY_MODE,
     inputSummary: summarizeTraceValue(call.arguments),
+    ...(durationMs !== undefined ? { durationMs } : {}),
   }
 
   if (observation.ok) {
@@ -345,10 +340,11 @@ function emitToolObservationTrace(
   context: RuntimeWorkspaceToolExecutionContext,
   call: RuntimeWorkspaceToolCall,
   observation: RuntimeWorkspaceToolObservation,
+  durationMs?: number,
 ): void {
-  emitAgentCallTrace(context, call, observation)
-  emitWorkspaceToolTrace(context, call, observation)
-  emitActionCallTrace(context, call, observation)
+  emitAgentCallTrace(context, call, observation, durationMs)
+  emitWorkspaceToolTrace(context, call, observation, durationMs)
+  emitActionCallTrace(context, call, observation, durationMs)
 }
 
 function parseToolCall(raw: string): ParsedRuntimeWorkspaceToolCall {
@@ -1697,8 +1693,6 @@ function activateSkillByName(
       skill: {
         name: skill.name,
         path: skill.path,
-        scope: skill.scope,
-        ...(skill.agentId ? { agentId: skill.agentId } : {}),
       },
       actionCount: actions.length,
       declarationErrorCount: actionDeclarationErrors.length,
@@ -1963,6 +1957,7 @@ async function executeRuntimeWorkspaceToolCall(
   const callId = call.id ?? `tool-${index}`
   context.onTool?.(callId, call.name, "loading")
 
+  const toolStartedAt = Date.now()
   let observation: RuntimeWorkspaceToolObservation
   try {
     if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.useSkill) {
@@ -2092,7 +2087,7 @@ async function executeRuntimeWorkspaceToolCall(
     }
   }
 
-  emitToolObservationTrace(context, call, observation)
+  emitToolObservationTrace(context, call, observation, Date.now() - toolStartedAt)
   // Turn-tool event (子2b R2): report the final status + output.
   // buildToolOutput 统一处理 success/failed：普通工具返回完整 string（不截断），
   // agent_call 返回结构化 {type:"agent_call", targetAgent, response, status}。

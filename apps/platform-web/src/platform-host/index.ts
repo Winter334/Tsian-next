@@ -50,7 +50,7 @@ import {
   serializeAgentContext,
   TaskTimeoutError,
 } from "../agent-runtime/context-lifecycle"
-import { buildRuntimeDiagnostics } from "../agent-runtime/diagnostics"
+import { buildRuntimeDiagnostics, loadRuntimeTraceEvents } from "../agent-runtime/diagnostics"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import { enqueueStaleEmbeddings } from "../agent-runtime/semantic-index/staleness"
 import { resolveEmbeddingConfig } from "../config/ai"
@@ -75,6 +75,7 @@ import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import {
   createRuntimeTraceCollector,
   errorToTraceData,
+  errorToTraceDataWithStack,
   formatRuntimeTracePath,
   serializeRuntimeTraceEvents,
 } from "../agent-runtime/trace"
@@ -671,6 +672,21 @@ export const playFrontendBridge: PlayFrontendBridge = {
         } as DeepQueryResult<T>
       }
 
+      // 运行日志浏览器：返回指定回合（或全部）的原始 trace events，供 DebugView 渲染。
+      if (request.resource === "runtime-trace") {
+        if (!activeSaveId) {
+          return { items: [] } as DeepQueryResult<T>
+        }
+
+        const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
+        const turn = typeof request.params?.turn === "number" && Number.isFinite(request.params.turn)
+          ? request.params.turn
+          : undefined
+        return {
+          items: loadRuntimeTraceEvents(files, turn) as T[],
+        } as DeepQueryResult<T>
+      }
+
       if (request.resource === "ai-debug") {
         return {
           items: getAiDebugRecords() as T[],
@@ -964,7 +980,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         trace.emit({
           type: "turn_failed",
           ok: false,
-          data: errorToTraceData(error),
+          data: errorToTraceDataWithStack(error),
         })
         if (workspaceTransaction) {
           try {

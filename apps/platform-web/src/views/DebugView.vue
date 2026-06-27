@@ -198,6 +198,57 @@
           </div>
           <p v-else class="border border-neon-deep/35 bg-panel/60 p-4 text-sm text-text-dim">暂无检查点。</p>
         </section>
+
+        <!-- 运行日志（trace 人类可读事件流） -->
+        <section class="grid gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <Terminal class="h-4 w-4 text-neon" aria-hidden="true" />
+              <p class="font-mono text-xs uppercase tracking-wider text-neon">运行日志</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center gap-1 px-2 font-mono text-[11px] disabled:opacity-40"
+                :disabled="traceViewTurn <= 1 || traceLoading"
+                @click="stepTraceTurn(-1)"
+              >
+                <ChevronLeft class="h-3 w-3" aria-hidden="true" /> 上一回合
+              </button>
+              <span class="font-mono text-[11px] text-text-dim">Turn {{ traceViewTurn || "--" }}</span>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center gap-1 px-2 font-mono text-[11px] disabled:opacity-40"
+                :disabled="traceViewTurn >= runtimeTurn || traceLoading"
+                @click="stepTraceTurn(1)"
+              >
+                下一回合 <ChevronRight class="h-3 w-3" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center gap-1 px-2 font-mono text-[11px] disabled:opacity-40"
+                :disabled="traceViewTurn >= runtimeTurn || traceLoading"
+                title="跳到最新回合"
+                @click="jumpTraceToLatest"
+              >
+                最新
+              </button>
+            </div>
+          </div>
+
+          <div class="retro-inset min-h-[280px] overflow-auto">
+            <pre v-if="traceText" class="whitespace-pre-wrap break-all p-3 font-mono text-[11px] leading-5 text-text-main">{{ traceText }}</pre>
+            <p v-else-if="traceLoading" class="grid h-full min-h-[260px] place-items-center font-mono text-xs uppercase tracking-[0.22em] text-neon">
+              正在加载运行日志
+            </p>
+            <p v-else-if="!platformContext?.activeSaveId" class="grid h-full min-h-[260px] place-items-center font-mono text-[11px] text-text-dim">
+              当前无活动存档
+            </p>
+            <p v-else class="grid h-full min-h-[260px] place-items-center font-mono text-[11px] text-text-dim">
+              该回合暂无 trace 事件
+            </p>
+          </div>
+        </section>
       </div>
     </main>
 
@@ -216,9 +267,10 @@ import type {
   RuntimeDiagnosticSummary,
   SessionHistoryEntry,
 } from "@tsian/contracts"
-import { AlertTriangle, CheckCircle2, FileClock, RefreshCw, RotateCcw } from "lucide-vue-next"
+import { AlertTriangle, CheckCircle2, ChevronLeft, ChevronRight, FileClock, RefreshCw, RotateCcw, Terminal } from "lucide-vue-next"
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
 import { playFrontendBridge, waitForPlatformHostReady } from "../platform-host"
+import { formatTraceForHuman, type RuntimeTraceEvent } from "../agent-runtime/trace"
 import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
 
@@ -229,6 +281,24 @@ interface IssueSummary {
   detail: string
 }
 
+interface TraceEventShape {
+  type: string
+  timestamp: number
+  turn: number
+  agentId?: string
+  debugLabel?: string
+  ok?: boolean
+  data?: Record<string, unknown>
+}
+
+interface RuntimeTraceLoadout {
+  turn: number
+  traceKind: string
+  failedAt?: number
+  events: TraceEventShape[]
+  malformedLineCount: number
+}
+
 const loading = ref(false)
 const errorMessage = ref("")
 const lastRefreshAt = ref("")
@@ -237,6 +307,11 @@ const aiDebugRecords = shallowRef<AiDebugRecord[]>([])
 const sessionHistory = shallowRef<SessionHistoryEntry[]>([])
 const checkpointItems = shallowRef<unknown[]>([])
 const diagnosticItems = shallowRef<RuntimeDiagnosticSummary[]>([])
+
+// 运行日志浏览器：默认显示最新回合，可切换历史回合。
+const traceViewTurn = ref(0)
+const traceLoading = ref(false)
+const traceLoadout = shallowRef<RuntimeTraceLoadout | null>(null)
 
 let unsubscribeTurnReady: (() => void) | null = null
 
@@ -312,6 +387,13 @@ const latestCallShares = computed(() => {
     output: Math.round((output / max) * 100),
     total: Math.round((total / max) * 100),
   }
+})
+
+// 运行日志：把 trace events 渲染为人类可读事件流（非 JSONL 原文）。
+const traceText = computed(() => {
+  const loadout = traceLoadout.value
+  if (!loadout || loadout.events.length === 0) return ""
+  return formatTraceForHuman(loadout.events as RuntimeTraceEvent[])
 })
 
 const overallStatus = computed(() => {
@@ -552,12 +634,64 @@ async function refreshAll() {
         { limit: 8, lookbackTurns: 12, includeHealth: true },
       ),
     ])
+    // 运行日志：默认显示最新回合。首次加载或回合前进时跳到最新。
+    if (traceViewTurn.value === 0 || traceViewTurn.value >= runtimeTurn.value) {
+      traceViewTurn.value = runtimeTurn.value
+    }
+    await refreshTrace()
     markRefreshTime()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "刷新系统监视器时发生未知错误。"
   } finally {
     loading.value = false
   }
+}
+
+/** 加载当前 traceViewTurn 的 trace events（人类可读渲染用）。 */
+async function refreshTrace() {
+  const turn = traceViewTurn.value
+  if (!platformContext.value?.activeSaveId || turn <= 0) {
+    traceLoadout.value = null
+    return
+  }
+  traceLoading.value = true
+  try {
+    const result = await playFrontendBridge.query.query<RuntimeTraceLoadout[]>(
+      { resource: "runtime-trace", params: { turn } },
+    )
+    const items = Array.isArray(result?.items) ? result.items : []
+    traceLoadout.value = items.length > 0 ? normalizeTraceLoadout(items[0]) : null
+  } catch {
+    traceLoadout.value = null
+  } finally {
+    traceLoading.value = false
+  }
+}
+
+function normalizeTraceLoadout(value: unknown): RuntimeTraceLoadout | null {
+  if (!isRecord(value) || typeof value.turn !== "number") return null
+  const events = Array.isArray(value.events) ? value.events.filter(isRecord) : []
+  return {
+    turn: value.turn,
+    traceKind: typeof value.traceKind === "string" ? value.traceKind : "success",
+    ...(typeof value.failedAt === "number" ? { failedAt: value.failedAt } : {}),
+    events: events as unknown as TraceEventShape[],
+    malformedLineCount: typeof value.malformedLineCount === "number" ? value.malformedLineCount : 0,
+  }
+}
+
+/** 切换历史回合：direction = -1 上一回合 / +1 下一回合。 */
+async function stepTraceTurn(direction: number): Promise<void> {
+  const next = traceViewTurn.value + direction
+  if (next < 1 || next > runtimeTurn.value) return
+  traceViewTurn.value = next
+  await refreshTrace()
+}
+
+/** 跳到最新回合。 */
+async function jumpTraceToLatest(): Promise<void> {
+  traceViewTurn.value = runtimeTurn.value
+  await refreshTrace()
 }
 
 async function restoreCheckpoint(checkpointIdValue: string) {
