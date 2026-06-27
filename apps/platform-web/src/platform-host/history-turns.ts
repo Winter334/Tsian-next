@@ -2,8 +2,7 @@ import type {
   AgentContextSnapshot,
   ConversationMessageRecord,
   SessionHistoryEntry,
-  TurnProcessNode,
-  TurnStats,
+  TurnTimelineItem,
   WorkspaceFile,
 } from "@tsian/contracts"
 import type { RuntimeWorkspaceTransaction } from "../storage"
@@ -15,7 +14,7 @@ import {
   serializeAgentContext,
 } from "../agent-runtime/context-lifecycle"
 
-const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v1"
+const AIRP_HISTORY_TURN_SCHEMA = "tsian.airp.history.turn.v2"
 const AIRP_HISTORY_TURN_PATH_PREFIX = "save/history/turns/"
 const AIRP_RUNTIME_TRACE_PATH_PREFIX = ".tsian/save/traces/turns/"
 
@@ -53,12 +52,9 @@ interface RawAirpHistoryTurnRecord {
     kind: "agent-runtime"
     entryAgentId: string
   }
-  messages: ConversationMessageRecord[]
-  /** turn 内过程节点(thought/tool/interim).native 模式从事件流累积写入;
-   *  text 模式不发过程事件,此字段为 undefined(不写入). */
-  processNodes?: TurnProcessNode[]
-  /** 本轮资源消耗统计（耗时 + token），供前端显示 meta 行。 */
-  stats?: TurnStats
+  /** turn 内完整 timeline(user + process items + assistant + options),按发生顺序.
+   *  替代旧的 messages + processNodes + stats 分裂结构(schema v2). */
+  timeline: TurnTimelineItem[]
 }
 
 function formatRawAirpHistoryTurnPath(turn: number): string {
@@ -69,10 +65,7 @@ function serializeRawAirpHistoryTurnRecord(
   turn: number,
   createdAt: Date,
   entryAgentId: string,
-  userInput: string,
-  assistantOutput: string,
-  processNodes?: TurnProcessNode[],
-  stats?: TurnStats,
+  timeline: TurnTimelineItem[],
 ): string {
   const record: RawAirpHistoryTurnRecord = {
     schema: AIRP_HISTORY_TURN_SCHEMA,
@@ -82,12 +75,7 @@ function serializeRawAirpHistoryTurnRecord(
       kind: "agent-runtime",
       entryAgentId,
     },
-    messages: [
-      { role: "user", content: userInput },
-      { role: "assistant", content: assistantOutput },
-    ],
-    ...(processNodes && processNodes.length > 0 ? { processNodes } : {}),
-    ...(stats ? { stats } : {}),
+    timeline,
   }
 
   return `${JSON.stringify(record, null, 2)}\n`
@@ -148,10 +136,7 @@ export function stageRawAirpHistoryTurnFile(
   input: {
     turn: number
     entryAgentId: string
-    userInput: string
-    assistantOutput: string
-    processNodes?: TurnProcessNode[]
-    stats?: TurnStats
+    timeline: TurnTimelineItem[]
   },
 ): WorkspaceFile {
   const path = formatRawAirpHistoryTurnPath(input.turn)
@@ -161,10 +146,7 @@ export function stageRawAirpHistoryTurnFile(
       input.turn,
       new Date(),
       input.entryAgentId,
-      input.userInput,
-      input.assistantOutput,
-      input.processNodes,
-      input.stats,
+      input.timeline,
     ),
   })
 }
@@ -187,11 +169,11 @@ export function parseRawAirpHistoryTurnRecord(
   if (
     obj.schema !== AIRP_HISTORY_TURN_SCHEMA
     || typeof obj.turn !== "number"
-    || !Array.isArray(obj.messages)
+    || !Array.isArray(obj.timeline)
   ) {
     return null
   }
-  const messages = obj.messages as ConversationMessageRecord[]
+  const timeline = obj.timeline as TurnTimelineItem[]
   return {
     schema: AIRP_HISTORY_TURN_SCHEMA,
     turn: obj.turn,
@@ -203,9 +185,7 @@ export function parseRawAirpHistoryTurnRecord(
           ? String((obj.source as Record<string, unknown>).entryAgentId ?? "")
           : "",
     },
-    messages,
-    ...(Array.isArray(obj.processNodes) ? { processNodes: obj.processNodes as TurnProcessNode[] } : {}),
-    ...(obj.stats && typeof obj.stats === "object" ? { stats: obj.stats as TurnStats } : {}),
+    timeline,
   }
 }
 
@@ -230,10 +210,11 @@ export function getMaxTurnFromTurnFiles(workspaceFiles: WorkspaceFile[]): number
 
 /**
  * 从 workspace 文件列表重建完整对话历史(ConversationMessageRecord[]).
- * 读 `save/history/turns/turn-*.json` → parse → 按 turn 升序展平 messages.
+ * 读 `save/history/turns/turn-*.json` → parse → 按 turn 升序,从 timeline 过滤
+ * user/assistant 项映射为 ConversationMessageRecord(干净正文).
  * 空目录/无 turn 文件 → 返回 [](新建存档/ephemeral save 兜底).
- * 只提取 messages,不提取 processNodes —— agent 注入路径(recentHistory)只给干净正文,
- * processNodes 留给前端渲染 / agent 主动 workspace_read 查.
+ * 只提取 user/assistant 项 —— agent 注入路径(recentHistory)只给干净正文,
+ * process items 留给前端渲染 / agent 主动 workspace_read 查.
  */
 export function getHistoryFromTurnFiles(
   workspaceFiles: WorkspaceFile[],
@@ -249,14 +230,24 @@ export function getHistoryFromTurnFiles(
     if (record) records.push(record)
   }
   records.sort((left, right) => left.turn - right.turn)
-  return records.flatMap((record) => record.messages)
+  return records.flatMap((record) =>
+    record.timeline
+      .filter((item) => item.kind === "user" || item.kind === "assistant")
+      .map((item) => ({
+        role: item.kind,
+        content: item.content,
+        ...(item.kind === "user" && item.attachments && item.attachments.length > 0
+          ? { attachments: item.attachments }
+          : {}),
+      })),
+  )
 }
 
 /**
- * 从 workspace 文件列表重建完整会话历史(SessionHistoryEntry[]),含 processNodes.
- * 与 `getHistoryFromTurnFiles` 的区别:后者只展平 messages(给 agent 干净正文),
- * 本函数保留每个 turn 的完整结构(正文 + 过程节点),给前端单源重建完整玩家视角.
- * 空目录/无 turn 文件 → 返回 [].
+ * 从 workspace 文件列表重建完整会话历史(SessionHistoryEntry[]),含完整 timeline.
+ * 与 `getHistoryFromTurnFiles` 的区别:后者只提取 user/assistant 项(给 agent 干净正文),
+ * 本函数保留每个 turn 的完整 timeline(user + process items + assistant + options),
+ * 给前端单源重建完整玩家视角.空目录/无 turn 文件 → 返回 [].
  */
 export function getSessionHistoryFromTurnFiles(
   workspaceFiles: WorkspaceFile[],
@@ -273,9 +264,7 @@ export function getSessionHistoryFromTurnFiles(
     entries.push({
       turn: record.turn,
       createdAt: record.createdAt,
-      messages: record.messages,
-      ...(record.processNodes ? { processNodes: record.processNodes } : {}),
-      ...(record.stats ? { stats: record.stats } : {}),
+      timeline: record.timeline,
     })
   }
   entries.sort((left, right) => left.turn - right.turn)

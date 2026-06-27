@@ -5,7 +5,7 @@ import type {
   ContentPart,
   ConversationMessageRecord,
   TurnToolOutput,
-  TurnProcessNode,
+  TurnTimelineItem,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
@@ -638,7 +638,7 @@ export async function runAssistantChat(
     // assistant 条带 toolCalls(UI 层:不压缩完整保留,挂消息上不占条数名额,随消息截到 200 条).
     const inputAttachments = input.attachments
     const turnToolCalls = result.contextUpdate?.toolCalls
-    const turnProcessNodes = result.contextUpdate?.processNodes
+    const turnTimelineItems = result.contextUpdate?.timelineItems
     const fullMessages: ConversationMessageRecord[] = [
       ...history,
       {
@@ -650,7 +650,7 @@ export async function runAssistantChat(
         role: "assistant",
         content: result.replyText,
         ...(turnToolCalls && turnToolCalls.length > 0 ? { toolCalls: turnToolCalls } : {}),
-        ...(turnProcessNodes && turnProcessNodes.length > 0 ? { processNodes: turnProcessNodes } : {}),
+        ...(turnTimelineItems && turnTimelineItems.length > 0 ? { timeline: turnTimelineItems } : {}),
       },
     ]
     await saveAssistantSessionMessages("local", input.sessionId, fullMessages, { touch: true })

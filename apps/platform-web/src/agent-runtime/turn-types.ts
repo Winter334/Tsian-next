@@ -8,7 +8,7 @@ import type {
   ConversationMessageRecord,
   PlatformActionRequest,
   PlatformActionResult,
-  TurnProcessNode,
+  TurnTimelineItem,
   TurnToolOutput,
   WorkspaceFile,
   WorkspaceOperationName,
@@ -109,9 +109,9 @@ export interface AgentRuntimeTurnContextUpdate {
    *  agent context.json(recentTurns assistant entry,跟正文同寿命压缩)+
    *  UI 会话消息存储(ConversationMessageRecord.toolCalls,不压缩完整保留). */
   toolCalls?: AgentContextToolCall[]
-  /** 本轮过程节点(thought/tool/interim,按发生顺序).供 host 写入会话消息存储
-   *  processNodes 字段,UI 刷新后重建 timeline.仅助手有(runtime 采集,消除双写). */
-  processNodes?: TurnProcessNode[]
+  /** 本轮过程节点 timeline items(thought/tool/interim,按发生顺序).供 host 写入
+   *  会话消息存储 timeline 字段,UI 刷新后重建 timeline.仅助手有(runtime 采集,消除双写). */
+  timelineItems?: TurnTimelineItem[]
 }
 
 export interface AgentRuntimeTurnResult {

@@ -69,10 +69,10 @@ function normalizeMessages(
       // 保留 toolCalls 字段(助手工具调用跨 turn 保留,agent 层用);
       // 非数组或缺失时省略.
       const toolCalls = Array.isArray(item.toolCalls) ? { toolCalls: item.toolCalls } : {}
-      // 保留 processNodes 字段(thought/tool/interim 按发生顺序,UI 层重建 timeline);
+      // 保留 timeline 字段(thought/tool/interim 按发生顺序,UI 层重建 timeline);
       // 非数组或缺失时省略.
-      const processNodes = Array.isArray(item.processNodes) ? { processNodes: item.processNodes } : {}
-      return { role: item.role, content: item.content, ...attachments, ...toolCalls, ...processNodes }
+      const timeline = Array.isArray(item.timeline) ? { timeline: item.timeline } : {}
+      return { role: item.role, content: item.content, ...attachments, ...toolCalls, ...timeline }
     }
     return []
   })

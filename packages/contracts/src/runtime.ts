@@ -29,11 +29,11 @@ export interface ConversationMessageRecord {
    *  还原为 tool_call + tool_result message.UI 层挂消息上不占条数名额,
    *  随消息截到 MAX_STORED_MESSAGES 保留/丢弃;不压缩,完整保留. */
   toolCalls?: AgentContextToolCall[]
-  /** assistant 消息的过程节点(thought/tool/interim,按发生顺序). UI 层用:
-   *  刷新/重进会话后重建 timeline 历史节点(保留交错顺序).与 toolCalls 分离——
-   *  toolCalls 服务 agent 上下文(需要 observation/arguments),processNodes 服务
+  /** assistant 消息的过程节点 timeline(thought/tool/interim,按发生顺序). UI 层用:
+   *  刷新/重进会话后重建 timeline 历史节点(保留穿插顺序).与 toolCalls 分离——
+   *  toolCalls 服务 agent 上下文(需要 observation/arguments),timeline 服务
    *  UI 显示(需要 TurnToolOutput 形态的 output).仅助手填,不压缩完整保留. */
-  processNodes?: TurnProcessNode[]
+  timeline?: TurnTimelineItem[]
 }
 
 /** 工具调用输出(喂 UI 渲染).string = 普通工具 observation;object = agent_call 结构化.
@@ -55,13 +55,51 @@ export type TurnToolOutput =
       }
     }
 
-/** turn 内过程节点(thought/tool/interim),按发生顺序排列.
- *  持久化到 workspace turn 文件 + 助手会话消息存储 processNodes 字段.
- *  与 composable 层 AssistantTimelineNode 同构,多可选 agentId 字段. */
-export type TurnProcessNode =
-  | { type: "thought"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+/** 单个 turn 的 token 消耗统计，供前端在正文末尾显示 meta 行。
+ *  耗时由前端自己计时（setInterval），不在此结构中——本结构只承载
+ *  前端无法自行获取的 provider token usage。所有字段可选。
+ *  定义在 runtime.ts(base 模块,无循环依赖),bridge.ts re-export 保持现有 import 路径。 */
+export interface TurnStats {
+  /** provider 报告的 input tokens（最后一轮，代表完整上下文大小）。 */
+  inputTokens?: number
+  /** provider 报告的 output tokens。 */
+  outputTokens?: number
+  /** provider 报告的 total tokens（input + output 或 provider 直接给）。 */
+  totalTokens?: number
+}
+
+/** turn 内 timeline 项,按真实发生顺序排列.单一有序数组替代旧的
+ *  messages + processNodes 分裂结构——processNodes 永远是一整块,无法表达
+ *  interim→thought→tool→…→assistant 的穿插顺序.timeline 数组顺序即发生顺序,
+ *  渲染器逐项渲染即可,不需要理解 round 语义.
+ *
+ *  持久化到 workspace turn 文件 `save/history/turns/turn-NNNNNN.json` 的
+ *  `timeline` 字段(schema v2),以及助手会话消息存储的 `ConversationMessageRecord.timeline`
+ *  字段(assistant 会话存储的 timeline 只含 process items,不含 user/assistant/options,
+ *  因为消息本身即 user/assistant).
+ *
+ *  - user:      玩家输入正文.
+ *  - assistant: AI 最终回复正文,带可选 stats(token 消耗).
+ *  - thought:   tool_calls 轮的推理思维链,默认折叠.
+ *  - tool:      工具调用节点,按 callId 去重,output 带 agent_call 结构化分支.
+ *  - interim:   tool_calls 轮模型在调用工具前输出的过渡文本(如"我先看一下…"),
+ *               当正常可见回复处理,始终展开.
+ *  - options:   剧情选项(AI 输出的 [[选项]] 块被 host 剥离后存入 timeline),
+ *               reload 时天然恢复,不依赖运行时事件.
+ *
+ *  ask 节点(ask_user 交互)不入 TurnTimelineItem——仅存在于内存
+ *  AssistantTimelineNode,持久化边界拍平成 interim 文本.
+ *
+ *  与 composable 层的 AssistantTimelineNode 关系:AssistantTimelineNode 有 ask 变体
+ *  (内存专用),TurnTimelineItem 有 user/assistant/options 变体(持久化专用).
+ *  mapper 边界双向转换(ask → interim 拍平). */
+export type TurnTimelineItem =
+  | { kind: "user"; content: string; attachments?: AttachmentRef[] }
+  | { kind: "assistant"; content: string; stats?: TurnStats }
+  | { kind: "interim"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+  | { kind: "thought"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
   | {
-      type: "tool"
+      kind: "tool"
       id: string
       round: number
       agentId?: string
@@ -70,7 +108,7 @@ export type TurnProcessNode =
       output?: TurnToolOutput
       collapsed: boolean
     }
-  | { type: "interim"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
+  | { kind: "options"; items: string[] }
 
 /**
  * 单个工具调用记录(跨 turn/UI 保留的最小形态). observation 直接存工具返回层

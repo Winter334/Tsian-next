@@ -321,7 +321,10 @@ const runtimeTurn = computed(() => {
 })
 const runtimeTurnLabel = computed(() => String(runtimeTurn.value))
 const snapshotMessageCount = computed(() =>
-  sessionHistory.value.reduce((sum, e) => sum + e.messages.length, 0),
+  sessionHistory.value.reduce(
+    (sum, e) => sum + e.timeline.filter((i) => i.kind === "user" || i.kind === "assistant").length,
+    0,
+  ),
 )
 
 const diagnosticStats = computed(() => {

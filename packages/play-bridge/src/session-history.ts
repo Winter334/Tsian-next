@@ -7,7 +7,7 @@
 // 游戏前端 `import { createBridge, createSessionHistory }` 即用:
 //   const bridge = createBridge()
 //   const history = await createSessionHistory(bridge)
-//   // history.entries: SessionHistoryEntry[] — 按 turn 升序,含 messages + processNodes
+//   // history.entries: SessionHistoryEntry[] — 按 turn 升序,含 timeline(TurnTimelineItem[])
 //   // history.turn: number — 当前 turn 号(最大 turn + 1,即即将开始的轮)
 
 import type { DeepQueryResult, SessionHistoryEntry } from "@tsian/contracts"
@@ -25,8 +25,8 @@ export interface SessionHistory {
  * 一次 RPC 调用 host 的 "session-history" resource,host 内部读 turn 文件并拼合,
  * 前端无需逐文件 workspace.read(超长存档上千轮也不怕).
  *
- * 返回 { entries, turn }:entries 按 turn 升序,每个 entry 含 messages(正文)
- * 和 processNodes(过程节点,native 模式有);turn 是当前轮号(最大 turn + 1).
+ * 返回 { entries, turn }:entries 按 turn 升序,每个 entry 含 timeline(单一有序数组,
+ * 含 user/assistant/interim/thought/tool/options 项);turn 是当前轮号(最大 turn + 1).
  *
  * 空存档/无 turn 文件 → { entries: [], turn: 0 }.
  */

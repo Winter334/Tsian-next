@@ -1,7 +1,7 @@
 import type {
   AgentContextToolCall,
   ConversationMessageRecord,
-  TurnProcessNode,
+  TurnTimelineItem,
   TurnToolOutput,
 } from "@tsian/contracts"
 import type { ChatMessage, AssistantTimelineNode } from "@/composables/useAssistantTimeline"
@@ -44,26 +44,28 @@ export function mapStoredMessagesToChat(stored: ConversationMessageRecord[]): Ch
       ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
     }
     if (role !== "assistant") return base
-    // 从 processNodes 重建 timeline(1:1 顺序保留,TurnProcessNode → AssistantTimelineNode 同构映射).
-    if (msg.processNodes && msg.processNodes.length > 0) {
-      base.timeline = msg.processNodes.map((node): AssistantTimelineNode => {
-        if (node.type === "thought") {
-          return { type: "thought", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
-        }
-        if (node.type === "interim") {
-          return { type: "interim", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
-        }
-        // tool
-        return {
-          type: "tool",
-          id: node.id,
-          round: node.round,
-          name: node.name,
-          status: node.status,
-          collapsed: node.collapsed,
-          ...(node.output !== undefined ? { output: node.output } : {}),
-        }
-      })
+    // 从 timeline 重建 AssistantTimelineNode[](1:1 顺序保留,TurnTimelineItem → AssistantTimelineNode 映射).
+    if (msg.timeline && msg.timeline.length > 0) {
+      base.timeline = msg.timeline
+        .filter((item) => item.kind === "thought" || item.kind === "interim" || item.kind === "tool")
+        .map((item): AssistantTimelineNode => {
+          if (item.kind === "thought") {
+            return { type: "thought", id: item.id, round: item.round, text: item.text, collapsed: item.collapsed }
+          }
+          if (item.kind === "interim") {
+            return { type: "interim", id: item.id, round: item.round, text: item.text, collapsed: item.collapsed }
+          }
+          // tool
+          return {
+            type: "tool",
+            id: item.id,
+            round: item.round,
+            name: item.name,
+            status: item.status,
+            collapsed: item.collapsed,
+            ...(item.output !== undefined ? { output: item.output } : {}),
+          }
+        })
     }
     return base
   })
@@ -85,9 +87,9 @@ export function tryParseAgentCallOutput(call: AgentContextToolCall): { output: T
 
 /**
  * 把 ChatMessage[] 映射回 ConversationMessageRecord[](供 AssistantView 持久化).
- * assistant 消息的 timeline 节点转回 processNodes(按发生顺序,TurnProcessNode 形态)
+ * assistant 消息的 timeline 节点转回 timeline(TurnTimelineItem 形态,process items)
  * + toolCalls(agent 层用,从 tool 节点提取 observation).
- * turn 成功后 host 已写消息(含 toolCalls),AssistantView 再写一次补上 processNodes
+ * turn 成功后 host 已写消息(含 toolCalls + timeline),AssistantView 再写一次补上 timeline
  * (host 不持有 thought/interim 采集,UI 层 timeline 是唯一源).后写覆盖,无竞态.
  */
 export function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRecord[] {
@@ -98,31 +100,30 @@ export function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRe
       ...(msg.attachments && msg.attachments.length > 0 ? { attachments: msg.attachments } : {}),
     }
     if (msg.role === "assistant" && msg.timeline && msg.timeline.length > 0) {
-      // processNodes: timeline 1:1 映射(AssistantTimelineNode → TurnProcessNode 同构).
-      base.processNodes = msg.timeline.map((node): TurnProcessNode => {
-        if (node.type === "thought") {
-          return { type: "thought", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
-        }
-        if (node.type === "interim") {
-          return { type: "interim", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
-        }
-        // tool (含 ask 节点?不,ask 不持久化到 processNodes——finalize 后 ask 节点仍在 timeline,
-        // 但 ask 是交互记录非过程,这里也存入 processNodes 让它可回看).
-        if (node.type === "ask") {
+      // timeline: AssistantTimelineNode → TurnTimelineItem 1:1 映射(process items).
+      base.timeline = msg.timeline
+        .map((node): TurnTimelineItem => {
+          if (node.type === "thought") {
+            return { kind: "thought", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
+          }
+          if (node.type === "interim") {
+            return { kind: "interim", id: node.id, round: node.round, text: node.text, collapsed: node.collapsed }
+          }
           // ask 节点用 interim 形态存(只读 Q&A 记录,展开显示问题+答案).
-          return { type: "interim", id: node.id, round: node.round, text: `**提问**: ${node.question}\n**回答**: ${node.cancelled ? "已取消" : (node.answer ?? "")}`, collapsed: node.collapsed }
-        }
-        // tool
-        return {
-          type: "tool",
-          id: node.id,
-          round: node.round,
-          name: node.name,
-          status: node.status,
-          collapsed: node.collapsed,
-          ...(node.output !== undefined ? { output: node.output } : {}),
-        }
-      })
+          if (node.type === "ask") {
+            return { kind: "interim", id: node.id, round: node.round, text: `**提问**: ${node.question}\n**回答**: ${node.cancelled ? "已取消" : (node.answer ?? "")}`, collapsed: node.collapsed }
+          }
+          // tool
+          return {
+            kind: "tool",
+            id: node.id,
+            round: node.round,
+            name: node.name,
+            status: node.status,
+            collapsed: node.collapsed,
+            ...(node.output !== undefined ? { output: node.output } : {}),
+          }
+        })
       // toolCalls(agent 层用):从 tool 节点提取 observation 文本化.
       const toolCalls: AgentContextToolCall[] = []
       for (const node of msg.timeline) {

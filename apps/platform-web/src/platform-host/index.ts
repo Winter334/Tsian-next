@@ -21,6 +21,7 @@ import type {
   SkillDetailEntry,
   SkillRegistryEntry,
   TurnStats,
+  TurnTimelineItem,
   WorkspaceDeleteResult,
   WorkspaceListResult,
   WorkspaceFile,
@@ -907,13 +908,19 @@ export const playFrontendBridge: PlayFrontendBridge = {
             }
           : undefined
 
+        // 拼 turn 完整 timeline: user → process items(interim/thought/tool) → assistant(带 stats) → options
+        // 单一有序数组,顺序即发生顺序,替代旧的 messages + processNodes + stats 分裂结构.
+        const turnTimeline: TurnTimelineItem[] = [
+          { kind: "user", content },
+          ...timelineCollector.getTimelineItems(),
+          { kind: "assistant", content: cleanReply, ...(turnStats ? { stats: turnStats } : {}) },
+          ...(storyOptions.length > 0 ? [{ kind: "options" as const, items: storyOptions }] : []),
+        ]
+
         stageRawAirpHistoryTurnFile(workspaceTransaction, {
           turn: nextTurn,
           entryAgentId: "master",
-          userInput: content,
-          assistantOutput: cleanReply,
-          processNodes: timelineCollector.getProcessNodes(),
-          ...(turnStats ? { stats: turnStats } : {}),
+          timeline: turnTimeline,
         })
         // 通知前端 token 消耗（耗时由前端自己计时，不在此 emit）。
         if (turnStats) emitTurnStats(nextTurn, turnStats)

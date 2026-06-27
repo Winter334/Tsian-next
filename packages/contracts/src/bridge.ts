@@ -12,7 +12,8 @@ import type {
   PlatformActionResult,
   PlatformContextShell,
   TurnToolOutput,
-  TurnProcessNode,
+  TurnTimelineItem,
+  TurnStats,
 } from "./runtime"
 
 export interface InteractionBridge {
@@ -142,50 +143,38 @@ export type RemotePlayBridgeEventName =
  */
 export type { TurnToolOutput } from "./runtime"
 /**
- * turn 内过程节点(thought/tool/interim),持久化到 workspace turn 文件
- * `save/history/turns/turn-NNNNNN.json` 的 `processNodes` 字段,以及助手会话
- * 消息存储的 `ConversationMessageRecord.processNodes` 字段(UI 层重建 timeline).
+ * turn 内 timeline 项(thought/tool/interim/user/assistant/options),持久化到
+ * workspace turn 文件 `save/history/turns/turn-NNNNNN.json` 的 `timeline` 字段
+ * (schema v2),以及助手会话消息存储的 `ConversationMessageRecord.timeline` 字段.
  *
- * 与 composable 层的 `AssistantTimelineNode` 同构,多一个可选 `agentId` 字段
- * (单 agent 场景如桌面助手可省,多 agent 场景如 delegated agent_call 必填,
- * 让前端区分过程节点来自哪个 agent).
+ * 单一有序数组替代旧的 messages + processNodes 分裂结构——数组顺序即真实发生顺序,
+ * 渲染器逐项渲染即可,不需要理解 round 语义或拼装 user→processNodes→assistant.
  *
- * - thought: tool_calls 轮的推理思维链,默认折叠.
- * - tool: 工具调用节点,按 callId 去重,output 带 agent_call 结构化分支.
- * - interim: tool_calls 轮模型在调用工具前输出的过渡文本(如"我先看一下…"),
- *   当正常可见回复处理,始终展开.
- *
- * 从事件流(onDelta/onRoundEnd/onTool)累积而来——interim 语义只能从事件流
- * 重建(靠 turn-round-end 的 kind=thought 区分过渡叙事 vs 最终回复),
- * runtimeMessages 里 assistant.content 无法区分.
+ * ask 节点(ask_user 交互)不入 TurnTimelineItem——仅存在于内存
+ * AssistantTimelineNode,持久化边界拍平成 interim 文本.
  */
-export type { TurnProcessNode } from "./runtime"
+export type { TurnTimelineItem } from "./runtime"
 
 /** 单个 turn 的 token 消耗统计，供前端在正文末尾显示 meta 行。
  *  耗时由前端自己计时（setInterval），不在此结构中——本结构只承载
- *  前端无法自行获取的 provider token usage。所有字段可选。 */
-export interface TurnStats {
-  /** provider 报告的 input tokens（最后一轮，代表完整上下文大小）。 */
-  inputTokens?: number
-  /** provider 报告的 output tokens。 */
-  outputTokens?: number
-  /** provider 报告的 total tokens（input + output 或 provider 直接给）。 */
-  totalTokens?: number
-}
+ *  前端无法自行获取的 provider token usage。所有字段可选。
+ *  定义在 runtime.ts(避免循环依赖),此处 re-export 保持现有 import 路径。 */
+export type { TurnStats } from "./runtime"
 
 /**
  * 单个 turn 的完整玩家视角数据,由 host 从 workspace turn 文件重建,
  * 经 `query.query({ resource: "session-history" })` 一次返回全部 turn.
- * 前端用此数据单源重建完整对话(正文 + 过程节点),不依赖 snapshot 渲染.
+ * 前端用此数据单源重建完整对话(timeline 逐项渲染),不依赖 snapshot 渲染.
+ *
+ * timeline 是单一有序数组,含 user/assistant/interim/thought/tool/options 项,
+ * 按真实发生顺序排列.stats 归入 assistant item(不再在 entry 层).
  */
 export interface SessionHistoryEntry {
   turn: number
   createdAt: string
-  messages: ConversationMessageRecord[]
-  /** turn 内过程节点(native 模式有,text 模式可能为空). */
-  processNodes?: TurnProcessNode[]
-  /** 本轮资源消耗统计（耗时 + token），供前端显示 meta 行。 */
-  stats?: TurnStats
+  /** turn 内完整 timeline(user + process items + assistant + options),按发生顺序.
+   *  替代旧的 messages + processNodes + stats 分裂结构. */
+  timeline: TurnTimelineItem[]
 }
 
 export type RemotePlayBridgeEventPayload =

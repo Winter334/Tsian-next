@@ -673,7 +673,7 @@ import {
   setActiveAssistantSessionId,
   type AssistantSessionSummary,
 } from "../storage"
-import type { AgentContextToolCall, AttachmentRef, TurnToolOutput, TurnProcessNode } from "@tsian/contracts"
+import type { AgentContextToolCall, AttachmentRef, TurnToolOutput } from "@tsian/contracts"
 import AttachmentImage from "@/components/assistant/AttachmentImage.vue"
 import {
   agentCallDisplay,
@@ -1136,8 +1136,8 @@ async function send() {
       // 按会话持久化 used,刷新/切走再切回恢复,不再归零.
       void saveContextUsed(sessionId, result.usage.input)
     }
-    // 消息 + context + processNodes 已由 host(runAssistantChat)同步写入(含 toolCalls +
-    // processNodes).前端不再补写——runtime 层采集 thought/interim/tool 供 host 写入,
+    // 消息 + context + timeline 已由 host(runAssistantChat)同步写入(含 toolCalls +
+    // timeline).前端不再补写——runtime 层采集 thought/interim/tool 供 host 写入,
     // 消除双写竞态.catch 路径仍保留前端持久化作兜底(host catch 不写消息).
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError"

@@ -38,7 +38,7 @@ export type {
   MessageInteractionResult,
   AskUserRequest,
   AskUserResult,
-  TurnProcessNode,
+  TurnTimelineItem,
   TurnStats,
   SessionHistoryEntry,
   CheckpointSummary,

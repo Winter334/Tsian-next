@@ -21,6 +21,7 @@ import type {
   ConversationMessageRecord,
   SessionHistoryEntry,
   TurnStats,
+  TurnTimelineItem,
   TurnToolOutput,
   CheckpointSummary,
 } from "@tsian/play-bridge"
@@ -369,8 +370,8 @@ function clearEmptyState(): void {
 }
 
 // 从 SessionHistoryEntry[] 重建完整对话（重载/初始渲染用）.
-// 每个 turn 的 processNodes + messages 按序排列:过程节点 → 正文(user+assistant).
-// 这是单源重建——不再从 snapshot 读渲染数据,过程节点从 workspace turn 文件读回.
+// 每个 turn 的 timeline 逐项渲染——单一有序数组,顺序即发生顺序,
+// 不再拼装 user→processNodes→assistant(那是旧分裂结构的问题).
 function renderSessionHistory(entries: SessionHistoryEntry[]): void {
   if (!$story) return
   clearEmptyState()
@@ -384,36 +385,76 @@ function renderSessionHistory(entries: SessionHistoryEntry[]): void {
     inner.appendChild(empty)
   } else {
     for (const entry of entries) {
-      // 每个 turn 的正确时间线：user 消息 → 过程节点(thought/interim/tool) → assistant 最终正文
-      // 持久化结构里 messages=[user, assistant] + 独立 processNodes 字段，
-      // 不能把 processNodes 整个排在 messages 前面（否则工具调用堆在 user 上面）。
-      const userMsg = entry.messages.find((m) => m.role === "user")
-      const assistantMsgs = entry.messages.filter((m) => m.role !== "user")
-      if (userMsg) inner.appendChild(renderMessageEl(userMsg))
-      // 过程节点(如果有)
-      if (entry.processNodes && entry.processNodes.length > 0) {
-        const zone = document.createElement("div")
-        zone.className = "process-history-zone"
-        for (const el of renderTimeline(entry.processNodes)) zone.appendChild(el)
-        inner.appendChild(zone)
-      }
-      // assistant 正文(最终回复) + token meta 行（重载无耗时数据，只显 token）
-      for (const m of assistantMsgs) {
-        const el = renderMessageEl(m)
-        const tokenText = formatTokenStats(entry.stats)
-        if (tokenText) {
-          const meta = document.createElement("p")
-          meta.className = "turn-meta"
-          meta.textContent = `· ${tokenText}`
-          const body = el.querySelector(".msg-body")
-          if (body) body.appendChild(meta)
+      // 逐项渲染 timeline: user → process items(interim/thought/tool) → assistant(带 stats) → options
+      // 顺序由数组保证,渲染器不需要理解 round 语义.
+      for (const item of entry.timeline) {
+        if (item.kind === "user") {
+          inner.appendChild(renderMessageEl({ role: "user", content: item.content }))
+        } else if (item.kind === "assistant") {
+          const el = renderMessageEl({ role: "assistant", content: item.content })
+          const tokenText = formatTokenStats(item.stats)
+          if (tokenText) {
+            const meta = document.createElement("p")
+            meta.className = "turn-meta"
+            meta.textContent = `· ${tokenText}`
+            const body = el.querySelector(".msg-body")
+            if (body) body.appendChild(meta)
+          }
+          inner.appendChild(el)
+        } else if (item.kind === "options") {
+          inner.appendChild(renderOptionsZone(item.items))
+        } else {
+          // interim / thought / tool → process node 渲染
+          const node: ProcessNode = timelineItemToProcessNode(item)
+          for (const el of renderTimeline([node])) inner.appendChild(el)
         }
-        inner.appendChild(el)
       }
     }
   }
   $story.appendChild(inner)
   scrollDown()
+}
+
+/** TurnTimelineItem(process item) → 本地 ProcessNode(流式状态机用). */
+function timelineItemToProcessNode(item: TurnTimelineItem): ProcessNode {
+  if (item.kind === "thought") {
+    return { type: "thought", id: item.id, round: item.round, text: item.text, collapsed: item.collapsed, agentId: item.agentId ?? null }
+  }
+  if (item.kind === "interim") {
+    return { type: "interim", id: item.id, round: item.round, text: item.text, collapsed: item.collapsed, agentId: item.agentId ?? null }
+  }
+  // tool
+  return {
+    type: "tool",
+    id: item.id,
+    round: item.round,
+    name: item.name,
+    status: item.status,
+    collapsed: item.collapsed,
+    agentId: item.agentId ?? null,
+    ...(item.output !== undefined ? { output: item.output } : {}),
+  }
+}
+
+/** 渲染剧情选项按钮区（reload 时从 timeline 的 options item 渲染,
+ *  turn-completed 时从 pendingOptions 就地渲染——两条来源共用此函数). */
+function renderOptionsZone(items: string[]): HTMLDivElement {
+  const optZone = document.createElement("div")
+  optZone.className = "story-options"
+  for (const opt of items) {
+    const btn = document.createElement("button")
+    btn.type = "button"
+    btn.className = "story-option"
+    btn.textContent = opt
+    btn.addEventListener("click", () => {
+      if (!$input || turnActive) return
+      $input.value = opt
+      $input.style.height = "auto"
+      void sendMessage()
+    })
+    optZone.appendChild(btn)
+  }
+  return optZone
 }
 
 // 单条消息 → DOM（剧情正文无气泡，用户消息左竖线）
@@ -850,24 +891,10 @@ function finalizeTurn(): void {
   // 渲染剧情选项按钮(若有)。turn-completed 时不再 reloadHistory 重建（重建会
   // 破坏过程节点穿插顺序 + 冲掉选项按钮），所以 finalizeTurn 就地渲染的按钮会保留。
   // pendingOptions 由 turn-options 事件缓存（先于 turn-completed 到达）。
+  // reload 时从 timeline 的 options item 渲染(renderSessionHistory → renderOptionsZone)。
   if (pendingOptions && pendingOptions.length > 0 && currentTurnEls?.streamEl?.parentElement) {
-    const opts = pendingOptions
+    const optZone = renderOptionsZone(pendingOptions)
     pendingOptions = null
-    const optZone = document.createElement("div")
-    optZone.className = "story-options"
-    for (const opt of opts) {
-      const btn = document.createElement("button")
-      btn.type = "button"
-      btn.className = "story-option"
-      btn.textContent = opt
-      btn.addEventListener("click", () => {
-        if (!$input || turnActive) return
-        $input.value = opt
-        $input.style.height = "auto"
-        void sendMessage()
-      })
-      optZone.appendChild(btn)
-    }
     currentTurnEls.streamEl.parentElement.appendChild(optZone)
     maybeScrollDown()
   }
