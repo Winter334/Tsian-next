@@ -847,30 +847,47 @@ function finalizeTurn(): void {
   if (currentTurnEls?.streamEl) {
     currentTurnEls.streamEl.classList.remove("streaming-msg")
   }
-  // 渲染剧情选项按钮(若有)
-  if (pendingOptions && pendingOptions.length > 0 && currentTurnEls?.streamEl?.parentElement) {
-    const opts = pendingOptions
-    pendingOptions = null
-    const optZone = document.createElement("div")
-    optZone.className = "story-options"
-    for (const opt of opts) {
-      const btn = document.createElement("button")
-      btn.type = "button"
-      btn.className = "story-option"
-      btn.textContent = opt
-      btn.addEventListener("click", () => {
-        if (!$input || turnActive) return
-        $input.value = opt
-        $input.style.height = "auto"
-        void sendMessage()
-      })
-      optZone.appendChild(btn)
-    }
-    currentTurnEls.streamEl.parentElement.appendChild(optZone)
-    maybeScrollDown()
-  }
-  pendingOptions = null
+  // 注意：不在此清 pendingOptions——选项按钮现在由 renderStoryOptions 在
+  // reloadHistory 之后渲染（reloadHistory 会全清 DOM），pendingOptions 由
+  // renderStoryOptions 消费时清空。这里清会让 renderStoryOptions 拿不到。
   turnActive = false
+}
+
+/** 渲染剧情选项按钮到 story 区末尾（最后一个 narrative 之后）。
+ *  在 reloadHistory 重建 DOM 之后调用——因为 reloadHistory 会 $story.innerHTML=""
+ *  全清重建，finalizeTurn 里临时渲染的按钮会被冲掉，所以选项渲染必须放在重建之后。
+ *  pendingOptions 由 turn-options 事件缓存（先于 turn-completed 到达）。 */
+function renderStoryOptions(): void {
+  if (!pendingOptions || pendingOptions.length === 0 || !$story) return
+  const opts = pendingOptions
+  pendingOptions = null
+  // 找 story-inner 里最后一个 narrative（assistant 正文）,选项按钮接在它后面。
+  const inner = $story.querySelector(".story-inner")
+  if (!inner) return
+  const narratives = inner.querySelectorAll(".narrative")
+  const lastNarrative = narratives[narratives.length - 1]
+  const optZone = document.createElement("div")
+  optZone.className = "story-options"
+  for (const opt of opts) {
+    const btn = document.createElement("button")
+    btn.type = "button"
+    btn.className = "story-option"
+    btn.textContent = opt
+    btn.addEventListener("click", () => {
+      if (!$input || turnActive) return
+      $input.value = opt
+      $input.style.height = "auto"
+      void sendMessage()
+    })
+    optZone.appendChild(btn)
+  }
+  // 插到最后一个 narrative 之后;若无 narrative 兜底 append 到 inner 末尾。
+  if (lastNarrative && lastNarrative.parentElement === inner) {
+    lastNarrative.insertAdjacentElement("afterend", optZone)
+  } else {
+    inner.appendChild(optZone)
+  }
+  maybeScrollDown()
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -909,8 +926,11 @@ async function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlay
   }
   if (event === "turn-completed") {
     // turn-completed 是纯信号(无 payload)：finalizeTurn + reloadHistory 取最新 turn 号 + 历史.
+    // 选项按钮在 reloadHistory 之后渲染——reloadHistory 会 $story.innerHTML="" 全清重建,
+    // 若在 finalizeTurn 里渲染按钮会被 reloadHistory 冲掉（曾导致选项"一闪而过"后消失）。
     finalizeTurn()
     await reloadHistory()
+    renderStoryOptions()
     setSending(false)
     setStatus("就绪", "ready")
     return
@@ -1091,7 +1111,7 @@ bridge.on({
   onEvent: handleEvent,
   onInteractionRequest: handleInteractionRequest,
   onTurnOptions: (_turn, options) => {
-    // turn-options 先于 turn-completed 到达:缓存选项,finalizeTurn 时渲染按钮.
+    // turn-options 先于 turn-completed 到达:缓存选项,renderStoryOptions 时渲染按钮.
     pendingOptions = options.length > 0 ? options : null
   },
 })
