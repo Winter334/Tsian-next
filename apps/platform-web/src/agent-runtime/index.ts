@@ -1600,28 +1600,44 @@ async function callAgentModelWithWorkspaceToolsNative(
       onTool: options.onTool
         ? (callId, name, status, output) => {
             options.onTool!(agentContext.agent.id, round, callId, name, status, output)
-            // 采集 tool processNode(与 UI onTool 回调同源,这里额外采集供持久化).
-            collectedTimelineItems.push({
-              kind: "tool",
-              id: callId,
-              round,
-              name,
-              status,
-              collapsed: false,
-              ...(output !== undefined ? { output } : {}),
-            })
+            // 采集 tool processNode(按 callId 去重,与 UI onTool 回调同源,供持久化).
+            const existing = collectedTimelineItems.find(
+              (n): n is TurnTimelineItem & { kind: "tool" } => n.kind === "tool" && n.id === callId,
+            )
+            if (existing) {
+              existing.status = status
+              if (output !== undefined) existing.output = output
+            } else {
+              collectedTimelineItems.push({
+                kind: "tool",
+                id: callId,
+                round,
+                name,
+                status,
+                collapsed: true,
+                ...(output !== undefined ? { output } : {}),
+              })
+            }
           }
         : (callId: string, name: string, status: "loading" | "running" | "success" | "failed", output?: TurnToolOutput) => {
-            // 无 UI onTool 时仍采集 processNode(供持久化).
-            collectedTimelineItems.push({
-              kind: "tool",
-              id: callId,
-              round,
-              name,
-              status,
-              collapsed: false,
-              ...(output !== undefined ? { output } : {}),
-            })
+            // 无 UI onTool 时仍采集 processNode(按 callId 去重,供持久化).
+            const existing = collectedTimelineItems.find(
+              (n): n is TurnTimelineItem & { kind: "tool" } => n.kind === "tool" && n.id === callId,
+            )
+            if (existing) {
+              existing.status = status
+              if (output !== undefined) existing.output = output
+            } else {
+              collectedTimelineItems.push({
+                kind: "tool",
+                id: callId,
+                round,
+                name,
+                status,
+                collapsed: true,
+                ...(output !== undefined ? { output } : {}),
+              })
+            }
           },
       onAskUser: options.onAskUser,
     }, toolCalls)
@@ -1968,15 +1984,25 @@ async function callAgentModelWithWorkspaceTools(
         if (options.onTool) {
           options.onTool(agentContext.agent.id, round, callId, name, status, output)
         }
-        collectedTimelineItems.push({
-          kind: "tool",
-          id: callId,
-          round,
-          name,
-          status,
-          collapsed: false,
-          ...(output !== undefined ? { output } : {}),
-        })
+        // 采集 tool processNode(按 callId 去重) + 透传 UI onTool(text 模式工具过程显示 + 持久化).
+        // entry 和 delegated 路径共用此绑定(C2 验证:无条件绑定,不区分 entry/delegated).
+        const existing = collectedTimelineItems.find(
+          (n): n is TurnTimelineItem & { kind: "tool" } => n.kind === "tool" && n.id === callId,
+        )
+        if (existing) {
+          existing.status = status
+          if (output !== undefined) existing.output = output
+        } else {
+          collectedTimelineItems.push({
+            kind: "tool",
+            id: callId,
+            round,
+            name,
+            status,
+            collapsed: true,
+            ...(output !== undefined ? { output } : {}),
+          })
+        }
       },
       onAskUser: options.onAskUser,
     }, toolCalls)

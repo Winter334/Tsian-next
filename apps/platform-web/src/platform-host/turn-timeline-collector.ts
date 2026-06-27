@@ -129,7 +129,7 @@ export function createTurnTimelineCollector() {
         agentId,
         name,
         status,
-        collapsed: false,
+        collapsed: true,
         ...(output !== undefined ? { output } : {}),
       })
     }

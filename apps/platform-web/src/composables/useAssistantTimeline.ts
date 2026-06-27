@@ -130,7 +130,7 @@ export function useAssistantTimeline(
         round,
         name,
         status,
-        collapsed: false,
+        collapsed: true,
         ...(output !== undefined ? { output } : {}),
       })
     }
