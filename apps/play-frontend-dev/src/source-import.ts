@@ -36,6 +36,7 @@ interface ChapterIndexFile {
   chapters: Array<{
     title: string
     path: string
+    characters?: number
   }>
 }
 
@@ -43,6 +44,7 @@ interface SourceChapter {
   title: string
   path: string
   content: string
+  characters: number
 }
 
 interface BuildInput {
@@ -79,6 +81,34 @@ interface RenderSourceImportOptions {
   setStatus: (text: string, state?: string) => void
 }
 
+type ImportStepView = "choose" | "paste" | "file" | "review"
+
+interface ImportGuideState {
+  view: ImportStepView
+  manifest: SourceManifest | null
+  chapterIndex: ChapterIndexFile | null
+  selectedChapter: number
+  statusText: string
+  errorText: string
+  busy: boolean
+}
+
+interface SetupActionConfig {
+  secondaryLabel?: string
+  secondaryDisabled?: boolean
+  onSecondary?: () => void
+  primaryLabel: string
+  primaryDisabled?: boolean
+  onPrimary?: () => void
+  statusText?: string
+}
+
+interface ImportInputElements {
+  titleInput: HTMLInputElement
+  fileInput?: HTMLInputElement
+  textarea?: HTMLTextAreaElement
+}
+
 function createEl<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -106,6 +136,27 @@ function isSourceManifest(value: unknown): value is SourceManifest {
 
 function formatNumber(num: number): string {
   return new Intl.NumberFormat("zh-CN").format(num || 0)
+}
+
+function formatCharacters(num: number): string {
+  if (num >= 10_000) {
+    const wan = num / 10_000
+    return `${wan >= 100 ? Math.round(wan) : wan.toFixed(1)} 万字`
+  }
+  return `${formatNumber(num)} 字`
+}
+
+function formatOptionalCharacters(num: number | undefined): string {
+  return typeof num === "number" ? formatCharacters(num) : "—"
+}
+
+function excerptText(text: string, limit = 1_100): string {
+  const cleaned = text
+    .replace(/^#\s+.*\n+/, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim()
+  if (cleaned.length <= limit) return cleaned
+  return `${cleaned.slice(0, limit).trimEnd()}……`
 }
 
 function inferTitle(text: string, fileName?: string): string {
@@ -280,7 +331,7 @@ function buildSourceCorpus(rawText: string, input: Omit<BuildInput, "text">): Bu
     const content = chapter.content.trimStart().startsWith("#")
       ? chapter.content
       : `# ${chapter.title}\n\n${chapter.content}`
-    return { title: chapter.title, path, content }
+    return { title: chapter.title, path, content, characters: excerptText(content, Number.MAX_SAFE_INTEGER).length }
   })
 
   const manifest: SourceManifest = {
@@ -304,7 +355,7 @@ function buildSourceCorpus(rawText: string, input: Omit<BuildInput, "text">): Bu
   }
   const chapterIndex: ChapterIndexFile = {
     version: 1,
-    chapters: chapters.map(({ title, path }) => ({ title, path })),
+    chapters: chapters.map(({ title, path, characters }) => ({ title, path, characters })),
   }
   return { manifest, chapterIndex, chapters }
 }
@@ -316,19 +367,50 @@ async function loadSourceManifest(tsian: TsianApi): Promise<SourceManifest | nul
   return isSourceManifest(data) ? data : null
 }
 
-function renderSetupSummary(manifest: SourceManifest): HTMLDivElement {
-  const summary = createEl("div", "setup-summary")
-  summary.innerHTML = `<b>已导入：</b>${manifest.title}<br>字数：${formatNumber(manifest.totalCharacters)} · 章节：${formatNumber(manifest.chapterCount)} · 策略：${manifest.recommendedExtractionMode === "full" ? "全量抽取" : "渐进抽取"}<br>下一步：开局向导将基于小说内容初始化角色与开局。`
-  return summary
+async function loadChapterIndex(tsian: TsianApi): Promise<ChapterIndexFile | null> {
+  const file = await tsian.workspace.read(CHAPTER_INDEX_PATH)
+  if (!file?.content) return null
+  const data = safeJsonParse(file.content)
+  if (typeof data !== "object" || data === null || !Array.isArray((data as { chapters?: unknown }).chapters)) {
+    return null
+  }
+  const chapters = (data as { chapters: unknown[] }).chapters.flatMap((chapter) => {
+    if (typeof chapter !== "object" || chapter === null) return []
+    const item = chapter as { title?: unknown; path?: unknown; characters?: unknown }
+    if (typeof item.title !== "string" || typeof item.path !== "string") return []
+    return [{
+      title: item.title,
+      path: item.path,
+      ...(typeof item.characters === "number" ? { characters: item.characters } : {}),
+    }]
+  })
+  return { version: 1, chapters }
+}
+
+async function ensureChapterCharacters(tsian: TsianApi, index: ChapterIndexFile | null): Promise<ChapterIndexFile | null> {
+  if (!index || index.chapters.every((chapter) => typeof chapter.characters === "number")) return index
+
+  const chapters = await Promise.all(index.chapters.map(async (chapter) => {
+    if (typeof chapter.characters === "number") return chapter
+    const file = await tsian.workspace.read(chapter.path)
+    return {
+      ...chapter,
+      characters: excerptText(file?.content ?? "", Number.MAX_SAFE_INTEGER).length,
+    }
+  }))
+  const updated = { version: 1 as const, chapters }
+  await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(updated, null, 2)}\n`)
+  return updated
 }
 
 function setComposerHidden(composer: HTMLElement | null, hidden: boolean): void {
   if (composer) composer.classList.toggle("hidden", hidden)
 }
 
-async function readImportInput(fileInput: HTMLInputElement, textarea: HTMLTextAreaElement): Promise<BuildInput> {
-  const file = fileInput.files?.[0]
-  if (file) {
+async function readImportInput(mode: ImportMode, elements: ImportInputElements): Promise<BuildInput> {
+  if (mode === "file") {
+    const file = elements.fileInput?.files?.[0]
+    if (!file) throw new Error("请选择要导入的小说文件。")
     return {
       text: await file.text(),
       fileName: file.name,
@@ -336,132 +418,340 @@ async function readImportInput(fileInput: HTMLInputElement, textarea: HTMLTextAr
       importMode: "file",
     }
   }
+  const text = elements.textarea?.value ?? ""
+  if (!text.trim()) throw new Error("请先粘贴小说文本。")
   return {
-    text: textarea.value,
+    text,
     sourceFormat: "txt",
     importMode: "paste",
   }
 }
 
-function renderImportGuide(options: RenderSourceImportOptions, existingManifest: SourceManifest | null): void {
-  const { tsian, story, composer, setStatus } = options
-  setComposerHidden(composer, true)
-  story.innerHTML = ""
+function renderStepRail(): HTMLElement {
+  const steps = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
+  const rail = createEl("aside", "setup-step-rail")
+  rail.appendChild(createEl("div", "setup-rail-title", "流程"))
+  const list = createEl("ol", "setup-step-list")
+  steps.forEach((step, index) => {
+    const item = createEl("li", `setup-step ${index === 0 ? "current" : "locked"}`)
+    item.appendChild(createEl("span", "setup-step-num", String(index + 1).padStart(2, "0")))
+    const body = createEl("span", "setup-step-body")
+    body.appendChild(createEl("span", "setup-step-name", step))
+    body.appendChild(createEl("span", "setup-step-state", index === 0 ? "当前步骤" : "待开放"))
+    item.appendChild(body)
+    list.appendChild(item)
+  })
+  rail.appendChild(list)
+  return rail
+}
 
-  const card = createEl("div", "setup-card")
-  card.appendChild(createEl("div", "setup-kicker", "Opening Guide · Step 1"))
-  card.appendChild(createEl("h1", "setup-title", existingManifest ? "小说已导入" : "导入一部小说"))
-  card.appendChild(createEl("p", "setup-copy", existingManifest
-    ? "当前存档已拥有 source corpus。若想更换小说，请通过平台新建存档重新开始。"
-    : "粘贴短篇或片段，或选择 .txt / .md 长篇文件。导入后会生成章节级 source 文件和章节目录。"))
+function renderActionBar(config: SetupActionConfig): HTMLElement {
+  const bar = createEl("div", "setup-action-bar")
+  const left = createEl("div", "setup-action-left")
+  const right = createEl("div", "setup-action-right")
+  const secondary = createEl("button", "setup-btn secondary", config.secondaryLabel ?? "上一步")
+  secondary.type = "button"
+  secondary.disabled = config.secondaryDisabled ?? true
+  secondary.addEventListener("click", () => config.onSecondary?.())
+  left.appendChild(secondary)
+  if (config.statusText) left.appendChild(createEl("span", "setup-status", config.statusText))
 
-  if (existingManifest) {
-    card.appendChild(renderSetupSummary(existingManifest))
-    story.appendChild(card)
-    return
-  }
+  const primary = createEl("button", "setup-btn primary", config.primaryLabel)
+  primary.type = "button"
+  primary.disabled = config.primaryDisabled ?? false
+  primary.addEventListener("click", () => config.onPrimary?.())
+  right.appendChild(primary)
+  bar.appendChild(left)
+  bar.appendChild(right)
+  return bar
+}
 
-  const grid = createEl("div", "setup-grid")
-  const titleField = createEl("label", "setup-field")
-  titleField.appendChild(createEl("span", "setup-label", "书名（可选）"))
+function renderSetupShell(title: string, copy: string, content: HTMLElement, actionBar: HTMLElement): HTMLElement {
+  const shell = createEl("div", "setup-shell")
+  const header = createEl("header", "setup-header")
+  header.appendChild(createEl("div", "setup-eyebrow", "Opening Guide"))
+  header.appendChild(createEl("div", "setup-header-copy", "正式游玩前的开局准备"))
+
+  const body = createEl("div", "setup-body")
+  const workspace = createEl("div", "setup-workspace")
+  const stage = createEl("main", "setup-stage")
+  const stageHead = createEl("div", "setup-stage-head")
+  stageHead.appendChild(createEl("div", "setup-kicker", "Step 01 · 导入小说"))
+  stageHead.appendChild(createEl("h2", "setup-stage-title", title))
+  stageHead.appendChild(createEl("p", "setup-copy", copy))
+  stage.appendChild(stageHead)
+  stage.appendChild(content)
+  workspace.appendChild(renderStepRail())
+  workspace.appendChild(stage)
+  body.appendChild(workspace)
+
+  shell.appendChild(header)
+  shell.appendChild(body)
+  const actionWrap = createEl("div", "setup-action-wrap")
+  actionWrap.appendChild(actionBar)
+  shell.appendChild(actionWrap)
+  return shell
+}
+
+function renderMethodChoice(setView: (view: ImportStepView) => void): HTMLElement {
+  const wrap = createEl("div", "setup-method-grid")
+  const paste = createEl("button", "setup-method-card")
+  paste.type = "button"
+  paste.innerHTML = `<span class="setup-method-mark">贴</span><span class="setup-method-title">粘贴文本</span><span class="setup-method-copy">适合短篇、片段，或先拿一小段故事试试手感。</span>`
+  paste.addEventListener("click", () => setView("paste"))
+
+  const file = createEl("button", "setup-method-card")
+  file.type = "button"
+  file.innerHTML = `<span class="setup-method-mark">卷</span><span class="setup-method-title">导入文件</span><span class="setup-method-copy">适合完整长篇，把整本书放进当前存档。</span>`
+  file.addEventListener("click", () => setView("file"))
+  wrap.appendChild(paste)
+  wrap.appendChild(file)
+  return wrap
+}
+
+function renderTitleField(): HTMLInputElement {
   const titleInput = createEl("input", "setup-input")
   titleInput.type = "text"
-  titleInput.placeholder = "未填写时从文件名或首行推断"
-  titleField.appendChild(titleInput)
+  titleInput.placeholder = "书名（可选，留空则自动推断）"
+  return titleInput
+}
 
-  const fileField = createEl("label", "setup-field")
-  fileField.appendChild(createEl("span", "setup-label", "文件导入（长篇）"))
+function renderPasteInput(): { content: HTMLElement; elements: ImportInputElements } {
+  const wrap = createEl("div", "setup-input-panel")
+  const titleInput = renderTitleField()
+  const textarea = createEl("textarea", "setup-textarea")
+  textarea.placeholder = "在这里粘贴小说文本……"
+  wrap.appendChild(titleInput)
+  wrap.appendChild(textarea)
+  return { content: wrap, elements: { titleInput, textarea } }
+}
+
+function renderFileInput(): { content: HTMLElement; elements: ImportInputElements } {
+  const wrap = createEl("div", "setup-input-panel")
+  const titleInput = renderTitleField()
+  const fileBox = createEl("label", "setup-file-drop")
+  fileBox.appendChild(createEl("span", "setup-file-title", "选择 .txt / .md 小说文件"))
+  fileBox.appendChild(createEl("span", "setup-file-copy", "选择后点击底部按钮开始导入。"))
   const fileInput = createEl("input", "setup-file")
   fileInput.type = "file"
   fileInput.accept = ".txt,.md,text/plain,text/markdown"
-  fileField.appendChild(fileInput)
+  fileBox.appendChild(fileInput)
+  wrap.appendChild(titleInput)
+  wrap.appendChild(fileBox)
+  return { content: wrap, elements: { titleInput, fileInput } }
+}
 
-  const textField = createEl("label", "setup-field span-2")
-  textField.appendChild(createEl("span", "setup-label", "粘贴文本（短篇/片段）"))
-  const textarea = createEl("textarea", "setup-textarea")
-  textarea.placeholder = "在这里粘贴小说文本……"
-  textField.appendChild(textarea)
-
-  grid.appendChild(titleField)
-  grid.appendChild(fileField)
-  grid.appendChild(textField)
-  card.appendChild(grid)
-
-  const actions = createEl("div", "setup-actions")
-  const button = createEl("button", "setup-btn", "导入小说")
-  button.type = "button"
-  const state = createEl("span", "setup-status", "等待导入")
-  actions.appendChild(button)
-  actions.appendChild(state)
-  card.appendChild(actions)
-  const error = createEl("div", "setup-error")
-  card.appendChild(error)
-
-  const refreshReadyHint = (): void => {
-    if (busy) return
-    const file = fileInput.files?.[0]
-    const pastedLength = textarea.value.trim().length
-    if (file) {
-      state.textContent = `已选择 ${file.name}，点击“导入小说”开始`
-      button.textContent = "导入所选文件"
-      return
-    }
-    if (pastedLength > 0) {
-      state.textContent = `已输入 ${formatNumber(pastedLength)} 字，点击“导入小说”开始`
-      button.textContent = "导入粘贴文本"
-      return
-    }
-    state.textContent = "等待导入"
-    button.textContent = "导入小说"
+async function writeCorpus(tsian: TsianApi, corpus: BuiltSourceCorpus): Promise<void> {
+  for (const chapter of corpus.chapters) {
+    await tsian.workspace.write(chapter.path, chapter.content)
   }
+  await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(corpus.chapterIndex, null, 2)}\n`)
+  await tsian.workspace.write(SOURCE_MANIFEST_PATH, `${JSON.stringify(corpus.manifest, null, 2)}\n`)
+}
 
-  fileInput.addEventListener("change", refreshReadyHint)
-  textarea.addEventListener("input", refreshReadyHint)
+async function loadChapterPreview(tsian: TsianApi, path: string): Promise<string> {
+  const file = await tsian.workspace.read(path)
+  return excerptText(file?.content ?? "") || "暂无可预览内容。"
+}
 
-  let busy = false
-  button.addEventListener("click", () => {
-    if (busy) return
-    busy = true
-    button.disabled = true
-    error.textContent = ""
-    void (async () => {
-      try {
-        state.textContent = "读取文本…"
-        const input = await readImportInput(fileInput, textarea)
-        input.title = titleInput.value.trim()
-        state.textContent = "规范化与章节识别…"
-        const corpus = buildSourceCorpus(input.text, input)
-        state.textContent = "写入章节…"
-        for (const chapter of corpus.chapters) {
-          await tsian.workspace.write(chapter.path, chapter.content)
-        }
-        state.textContent = "写入目录…"
-        await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(corpus.chapterIndex, null, 2)}\n`)
-        state.textContent = "写入 manifest…"
-        await tsian.workspace.write(SOURCE_MANIFEST_PATH, `${JSON.stringify(corpus.manifest, null, 2)}\n`)
-        setStatus("小说已导入", "ready")
-        renderImportGuide(options, corpus.manifest)
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "导入失败"
-        error.textContent = message
-        state.textContent = "导入失败"
-        setStatus(message, "error")
-      } finally {
-        busy = false
-        button.disabled = false
-      }
-    })()
+function renderSplitReview(options: RenderSourceImportOptions, state: ImportGuideState, render: () => void): HTMLElement {
+  const { tsian } = options
+  const manifest = state.manifest
+  const index = state.chapterIndex
+  const wrap = createEl("div", "setup-review")
+  if (!manifest) return wrap
+
+  const overview = createEl("div", "setup-overview")
+  overview.appendChild(createEl("div", "setup-book-title", manifest.title))
+  const stats = createEl("div", "setup-overview-stats")
+  stats.appendChild(createEl("span", "setup-stat", `${formatNumber(manifest.chapterCount)} 章`))
+  stats.appendChild(createEl("span", "setup-stat", formatCharacters(manifest.totalCharacters)))
+  overview.appendChild(stats)
+  wrap.appendChild(overview)
+
+  const chapters = index?.chapters ?? []
+  const panes = createEl("div", "setup-review-panes")
+  const list = createEl("div", "setup-chapter-list")
+  const preview = createEl("div", "setup-preview")
+  const selected = Math.max(0, Math.min(state.selectedChapter, chapters.length - 1))
+  state.selectedChapter = selected
+
+  chapters.forEach((chapter, index) => {
+    const item = createEl("button", `setup-chapter-card ${index === selected ? "selected" : ""}`)
+    item.type = "button"
+    item.appendChild(createEl("span", "setup-chapter-num", String(index + 1).padStart(3, "0")))
+    const body = createEl("span", "setup-chapter-main")
+    body.appendChild(createEl("span", "setup-chapter-title", chapter.title || `第 ${index + 1} 章`))
+    body.appendChild(createEl("span", "setup-chapter-size", formatOptionalCharacters(chapter.characters)))
+    item.appendChild(body)
+    item.addEventListener("click", () => {
+      state.selectedChapter = index
+      render()
+    })
+    list.appendChild(item)
   })
 
-  story.appendChild(card)
+  const activeChapter = chapters[selected]
+  preview.appendChild(createEl("div", "setup-preview-kicker", activeChapter ? `预览 · ${String(selected + 1).padStart(3, "0")}` : "预览"))
+  preview.appendChild(createEl("h3", "setup-preview-title", activeChapter?.title ?? "暂无章节"))
+  const previewBody = createEl("div", "setup-preview-body", activeChapter ? "读取预览中……" : "章节列表为空。")
+  preview.appendChild(previewBody)
+  if (activeChapter) {
+    void loadChapterPreview(tsian, activeChapter.path).then((text) => {
+      previewBody.textContent = text
+    }).catch(() => {
+      previewBody.textContent = "预览读取失败。"
+    })
+  }
+
+  panes.appendChild(list)
+  panes.appendChild(preview)
+  wrap.appendChild(panes)
+  return wrap
+}
+
+function renderImportGuide(options: RenderSourceImportOptions, initialManifest: SourceManifest | null, initialIndex: ChapterIndexFile | null): void {
+  const { tsian, story, composer, setStatus } = options
+  setComposerHidden(composer, true)
+
+  const state: ImportGuideState = {
+    view: initialManifest ? "review" : "choose",
+    manifest: initialManifest,
+    chapterIndex: initialIndex,
+    selectedChapter: 0,
+    statusText: initialManifest ? "已导入小说" : "等待选择导入方式",
+    errorText: "",
+    busy: false,
+  }
+
+  let activeElements: ImportInputElements | null = null
+
+  const setView = (view: ImportStepView): void => {
+    state.view = view
+    state.errorText = ""
+    state.statusText = view === "choose" ? "等待选择导入方式" : state.statusText
+    render()
+  }
+
+  const startImport = (mode: ImportMode): void => {
+    if (!activeElements || state.busy) return
+    const elements = activeElements
+    state.busy = true
+    state.errorText = ""
+    state.statusText = "读取文本…"
+    void (async () => {
+      try {
+        const input = await readImportInput(mode, elements)
+        input.title = elements.titleInput.value.trim()
+        state.statusText = "整理章节…"
+        render()
+        const corpus = buildSourceCorpus(input.text, input)
+        state.statusText = "写入章节…"
+        render()
+        await writeCorpus(tsian, corpus)
+        state.manifest = corpus.manifest
+        state.chapterIndex = corpus.chapterIndex
+        state.selectedChapter = 0
+        state.view = "review"
+        state.statusText = "小说已导入"
+        setStatus("小说已导入", "ready")
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "导入失败"
+        state.errorText = message
+        state.statusText = "导入失败"
+        setStatus(message, "error")
+      } finally {
+        state.busy = false
+        render()
+      }
+    })()
+  }
+
+  const confirmReimport = (): void => {
+    if (window.confirm("重新导入会覆盖当前小说文本与章节目录。确定要换源吗？")) {
+      state.manifest = null
+      state.chapterIndex = null
+      state.selectedChapter = 0
+      state.statusText = "等待选择导入方式"
+      setView("choose")
+    }
+  }
+
+  function render(): void {
+    story.innerHTML = ""
+    activeElements = null
+    let title = "导入一部小说"
+    let copy = "先选择一种导入方式。导入完成后，你可以检查目录和章节开头。"
+    let content: HTMLElement
+    let actions: SetupActionConfig = {
+      primaryLabel: "下一步（后续）",
+      primaryDisabled: true,
+      statusText: state.statusText,
+    }
+
+    if (state.view === "choose") {
+      content = renderMethodChoice(setView)
+      actions = {
+        secondaryLabel: "上一步",
+        secondaryDisabled: true,
+        primaryLabel: "选择导入方式",
+        primaryDisabled: true,
+        statusText: state.statusText,
+      }
+    } else if (state.view === "paste") {
+      title = "粘贴小说文本"
+      copy = "适合短篇、片段，或先用一小段文本确认开局流程。"
+      const rendered = renderPasteInput()
+      activeElements = rendered.elements
+      content = rendered.content
+      actions = {
+        secondaryLabel: "更换导入方式",
+        secondaryDisabled: state.busy,
+        onSecondary: () => setView("choose"),
+        primaryLabel: state.busy ? "导入中…" : "导入文本",
+        primaryDisabled: state.busy,
+        onPrimary: () => startImport("paste"),
+        statusText: state.statusText,
+      }
+    } else if (state.view === "file") {
+      title = "导入小说文件"
+      copy = "适合完整长篇小说，支持 .txt 和 .md 文件。"
+      const rendered = renderFileInput()
+      activeElements = rendered.elements
+      content = rendered.content
+      actions = {
+        secondaryLabel: "更换导入方式",
+        secondaryDisabled: state.busy,
+        onSecondary: () => setView("choose"),
+        primaryLabel: state.busy ? "导入中…" : "导入文件",
+        primaryDisabled: state.busy,
+        onPrimary: () => startImport("file"),
+        statusText: state.statusText,
+      }
+    } else {
+      title = "检查切分结果"
+      copy = "确认目录和章节开头是否符合预期。开局前可以重新导入。"
+      content = renderSplitReview(options, state, render)
+      actions = {
+        secondaryLabel: "重新导入",
+        secondaryDisabled: state.busy,
+        onSecondary: confirmReimport,
+        primaryLabel: "继续初始化（后续）",
+        primaryDisabled: true,
+        statusText: state.statusText,
+      }
+    }
+
+    if (state.errorText) content.appendChild(createEl("div", "setup-error", state.errorText))
+    story.appendChild(renderSetupShell(title, copy, content, renderActionBar(actions)))
+  }
+
+  render()
 }
 
 export async function initializeSourceImportGuide(options: RenderSourceImportOptions): Promise<boolean> {
   const manifest = await loadSourceManifest(options.tsian)
-  if (manifest) {
-    renderImportGuide(options, manifest)
-    return true
-  }
-  renderImportGuide(options, null)
+  const chapterIndex = manifest ? await ensureChapterCharacters(options.tsian, await loadChapterIndex(options.tsian)) : null
+  renderImportGuide(options, manifest, chapterIndex)
   return true
 }
