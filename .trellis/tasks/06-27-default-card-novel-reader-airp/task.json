@@ -1,0 +1,28 @@
+{
+  "id": "default-card-novel-reader-airp",
+  "name": "default-card-novel-reader-airp",
+  "title": "默认游戏卡小说阅读器 AIRP 重构",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-06-27",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "06-27-novel-airp-workspace-schema-guide"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}
