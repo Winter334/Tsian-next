@@ -1597,3 +1597,37 @@ Planned and implemented the dev play frontend novel source import guide: paste/f
 ### Next Steps
 
 - None - task complete
+
+
+## Session 97: Novel opening guide UI refinement
+
+**Date**: 2026-06-28
+**Task**: Novel opening guide UI refinement
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Implemented the dev frontend opening setup shell, method-based source import flow, split review with chapter preview, and compact visual refinements for the novel AIRP guide.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe2c447` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

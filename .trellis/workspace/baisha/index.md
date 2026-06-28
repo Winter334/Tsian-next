@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 96
+- **Total Sessions**: 97
 - **Last Active**: 2026-06-28
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1599 | Active |
+| `journal-2.md` | ~1633 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 97 | 2026-06-28 | Novel opening guide UI refinement | `fe2c447` | `master` |
 | 96 | 2026-06-28 | Novel AIRP source import guide | `8ebac8b` | `master` |
 | 95 | 2026-06-28 | Novel AIRP workspace schema guide | `c882b2d` | `master` |
 | 94 | 2026-06-27 | Play SDK 领域 API 重设计 + injection + workspace RPC 拆出 | `6f38f55` | `feat/play-sdk-domain-api` |
