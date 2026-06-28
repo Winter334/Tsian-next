@@ -12,10 +12,16 @@
 
 ---
 
-## Patch 1 — ZCode session-identity fallback in `active_task.py`
+## Archived Patch 1 — ZCode session-identity fallback in `active_task.py`
 
 **File**: `.trellis/scripts/common/active_task.py`
 **Applied**: 2026-06-21
+**Removed**: 2026-06-28 after switching current work to Codex.
+**Backup**: `.trellis/.backup-2026-06-28-zcode-fallback-removal/active_task.py.with-zcode-fallback`
+**Current status**: Not applied. Keep this entry only as a re-apply recipe if
+ZCode is used again and upstream still lacks an equivalent cwd-derived
+session fallback.
+
 **Symptom**: `task.py start` prints "degraded mode" and never persists the
 per-session active-task pointer under ZCode. `.trellis/.runtime/sessions/`
 stays empty; `task.py current` always reports no active task.

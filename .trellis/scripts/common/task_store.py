@@ -115,7 +115,7 @@ def _repo_relative_path(path: Path, repo_root: Path) -> str:
 # Keep in sync with src/types/ai-tools.ts AI_TOOLS entries — these are the
 # platforms listed in workflow.md's "agent-capable" Skill Routing block
 # (Class-1 hook-inject + Class-2 pull-based preludes). Kilo / Antigravity /
-# Windsurf are NOT in this list: they do not consume JSONL.
+# Devin are NOT in this list: they do not consume JSONL.
 _SUBAGENT_CONFIG_DIRS: tuple[str, ...] = (
     ".claude",
     ".cursor",
@@ -128,12 +128,13 @@ _SUBAGENT_CONFIG_DIRS: tuple[str, ...] = (
     ".factory",   # Factory Droid
     ".github/copilot",
     ".pi",        # Pi Agent
+    ".trae",      # Trae IDE
 )
 
 _SEED_EXAMPLE = (
     "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. "
     "Put spec/research files only — no code paths. "
-    "Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. "
+    "Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. "
     "Delete this line once real entries are added."
 )
 
@@ -299,7 +300,7 @@ def cmd_create(args: argparse.Namespace) -> int:
 
     # Seed implement.jsonl / check.jsonl for sub-agent-capable platforms.
     # Agent curates real entries during planning when the task needs them.
-    # Agent-less platforms (Kilo / Antigravity / Windsurf) skip this — they
+    # Agent-less platforms (Kilo / Antigravity / Devin) skip this — they
     # load specs via the trellis-before-dev skill instead of JSONL.
     seeded_jsonl = False
     if _has_subagent_platform(repo_root):
@@ -661,7 +662,7 @@ def cmd_set_branch(args: argparse.Namespace) -> int:
 
     if not branch:
         print(colored("Error: Missing arguments", Colors.RED))
-        print("Usage: python task.py set-branch <task-dir> <branch-name>")
+        print("Usage: python3 task.py set-branch <task-dir> <branch-name>")
         return 1
 
     task_json = target_dir / FILE_TASK_JSON
@@ -692,8 +693,8 @@ def cmd_set_base_branch(args: argparse.Namespace) -> int:
 
     if not base_branch:
         print(colored("Error: Missing arguments", Colors.RED))
-        print("Usage: python task.py set-base-branch <task-dir> <base-branch>")
-        print("Example: python task.py set-base-branch <dir> develop")
+        print("Usage: python3 task.py set-base-branch <task-dir> <base-branch>")
+        print("Example: python3 task.py set-base-branch <dir> develop")
         print()
         print("This sets the target branch for PR (the branch your feature will merge into).")
         return 1
@@ -727,7 +728,7 @@ def cmd_set_scope(args: argparse.Namespace) -> int:
 
     if not scope:
         print(colored("Error: Missing arguments", Colors.RED))
-        print("Usage: python task.py set-scope <task-dir> <scope>")
+        print("Usage: python3 task.py set-scope <task-dir> <scope>")
         return 1
 
     task_json = target_dir / FILE_TASK_JSON

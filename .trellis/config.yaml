@@ -93,10 +93,12 @@ max_journal_lines: 2000
 packages:
   platform-web:
     path: apps/platform-web
+  play-frontend-dev:
+    path: apps/play-frontend-dev
   contracts:
     path: packages/contracts
-  runtime-core:
-    path: packages/runtime-core
+  play-bridge:
+    path: packages/play-bridge
 default_package: platform-web
 
 #-------------------------------------------------------------------------------
