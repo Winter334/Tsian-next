@@ -26,6 +26,7 @@ import type {
   TurnToolOutput,
   CheckpointSummary,
 } from "@tsian/play-bridge"
+import { initializeSourceImportGuide } from "./source-import"
 
 // ════════════════════════════════════════════════════════════════
 // 领域 API 实例（由 @tsian/play-bridge 封装）
@@ -1028,12 +1029,24 @@ function removeAskPanel(panel: HTMLElement): void {
 // 握手就绪：启用输入 + 回溯导航 + 从 workspace turn 文件重建历史。
 function handleReady(): void {
   setStatus("就绪", "ready")
-  if ($send) $send.disabled = false
-  if ($input) { $input.disabled = false; $input.focus() }
+  if (!$story) {
+    setStatus("前端初始化失败：缺少 story 容器", "error")
+    return
+  }
   // 回溯导航在 tsian ready 后可用
   setNavCheckpointsEnabled(true)
-  // 从 workspace turn 文件单源重建完整对话(正文 + 过程节点).
-  reloadHistory().catch(() => { setStatus("历史加载失败", "error") })
+  initializeSourceImportGuide({
+    tsian,
+    story: $story,
+    composer: $composer,
+    setStatus,
+  }).then((setupActive) => {
+    if (setupActive) return
+    if ($send) $send.disabled = false
+    if ($input) { $input.disabled = false; $input.focus() }
+    // 从 workspace turn 文件单源重建完整对话(正文 + 过程节点).
+    return reloadHistory()
+  }).catch(() => { setStatus("开局向导加载失败", "error") })
 }
 
 // ════════════════════════════════════════════════════════════════
