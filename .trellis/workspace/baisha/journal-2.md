@@ -1563,3 +1563,37 @@ Added the novel AIRP workspace schema direction document and updated the default
 ### Next Steps
 
 - None - task complete
+
+
+## Session 96: Novel AIRP source import guide
+
+**Date**: 2026-06-28
+**Task**: Novel AIRP source import guide
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+Planned and implemented the dev play frontend novel source import guide: paste/file import, conservative chapter detection, pseudo chapter fallback, minimal manifest and chapter index, and setup placeholder. Archived the novel-airp-source-import task.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8ebac8b` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
