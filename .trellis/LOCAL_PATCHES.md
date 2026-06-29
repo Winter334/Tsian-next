@@ -14,19 +14,20 @@
 
 ## Patch 1 — ZCode session-identity fallback in `active_task.py`
 
+> **DEPRECATED 2026-06-29**: Trellis 0.6.5 原生支持 ZCode（`trellis init --zcode`），
+> 上游已内置 ZCode 的 session-identity 处理，本补丁不再需要。以下内容保留作
+> 历史记录，**换设备/升级后无需再打此补丁**。如重新跑 `trellis init --zcode`
+> 或 `trellis update` 覆盖了该文件，让上游版本生效即可。
+
 **File**: `.trellis/scripts/common/active_task.py`
 **Applied**: 2026-06-21
 **Removed**: 2026-06-28 after switching current work to Codex.
 **Re-applied**: 2026-06-29 after switching back to ZCode (Trellis 0.6.5).
+**Deprecated**: 2026-06-29 — trellis 0.6.5 `--zcode` 原生支持取代本补丁。
 **Backup**: `.trellis/.backup-2026-06-29-zcode-fallback-reapply/active_task.py.pre-reapply`
   (the original 2026-06-28 backup was lost during the 0.6.5 upgrade).
-**Current status**: Applied and verified end-to-end on ZCode 3.1.2 + Trellis 0.6.5.
-  `resolve_context_key()` returns `zcode_local-1_<hash>`; `task.py start/current/finish`
-  all work without degraded mode and the session pointer persists under
-  `.trellis/.runtime/sessions/`. Re-apply after every `trellis update` while
-  upstream still lacks an equivalent cwd-derived session fallback for ZCode.
-  The patch still depends on `_find_repo_root_from_cwd` / `_hash_value` /
-  `_sanitize_key` / `_string_value`, all present in 0.6.5.
+**Current status**: 废弃。上游 0.6.5 已原生支持 ZCode session identity，
+  本补丁不再需要。
 
 **Symptom**: `task.py start` prints "degraded mode" and never persists the
 per-session active-task pointer under ZCode. `.trellis/.runtime/sessions/`
