@@ -1876,8 +1876,11 @@ async function executeRunScript(
  *   提取被调用 agent 的 title + 完整 response，让前端不用解析整坨 JSON。
  *   response 不截断（UI 侧控制长度）。
  *
- * **不动**喂回模型的 `formatRuntimeWorkspaceToolObservationMessage`（model 路径
- * 仍全量 JSON.stringify observation，本函数只服务 UI 旁路的 turn-tool 事件）。
+ * **本函数只服务 UI/trace 旁路的 turn-tool 事件，给完整结果**（不截断，
+ *  显示策略交给前端按需折叠）。喂回模型的路径在
+ *  `formatRuntimeWorkspaceToolObservationMessage` / `formatNativeToolObservationContent`，
+ *  那里经 `compactToolObservationForModel` 对大结果做 preview+续读线索，
+ *  与本旁路分离——debug/trace 保留完整事实，模型上下文只拿 compact 版。
  */
 function buildToolOutput(
   call: RuntimeWorkspaceToolCall | undefined,

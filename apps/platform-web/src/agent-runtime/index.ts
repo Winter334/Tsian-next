@@ -530,15 +530,32 @@ function formatSkillIndex(context: AgentContextEntry): string {
 /**
  * Build the context message body for a skill whose full SKILL.md was activated
  * via use_skill. The framework injects this as a user message after the round's
- * tool observations so the model sees the full skill text in the next round
- * without spending a tool-result round on it. Both tool loops (native and text)
- * call this via collectActivatedSkillContents + this body builder.
+ * tool observations so the model sees the skill text in the next round without
+ * spending a tool-result round on it. Both tool loops (native and text) call
+ * this via collectActivatedSkillContents + this body builder.
+ *
+ * Skill 入口必须完整遵循——开头通常是指令主体，后半才是 references/scripts。
+ * 因此超长 Skill 只 preview 前 N 字符（保留开头关键指令），提示用
+ * `workspace.read` + path + offset/limit 续读后半，而不是全量常驻该 turn 所有
+ * 后续轮次。阈值与 observation compact（workspace-tools.ts）保持一致。
  */
+const SKILL_INLINE_CHAR_LIMIT = 6_000
+const SKILL_PREVIEW_CHAR_LIMIT = 2_000
+
 function formatActivatedSkillMessageBody(skill: ActivatedSkillContent): string {
+  const header = `已激活 Skill「${skill.name}」。以下是该 Skill 的说明；遵循其指导，并用 run_script 执行其声明的 browser_script action。`
+  if (skill.content.length <= SKILL_INLINE_CHAR_LIMIT) {
+    return [header, "", skill.content].join("\n")
+  }
+  // 超长 Skill：preview 前部（关键指令常在开头），提示续读后半。
+  const preview = skill.content.slice(0, SKILL_PREVIEW_CHAR_LIMIT)
+  const remaining = skill.content.length - SKILL_PREVIEW_CHAR_LIMIT
   return [
-    `已激活 Skill「${skill.name}」。以下是该 Skill 的完整说明；遵循其指导，并用 run_script 执行其声明的 browser_script action。`,
+    header,
     "",
-    skill.content,
+    preview,
+    "",
+    `...[Skill 正文已截断，剩余约 ${remaining} 字符。如需完整的 references 或 scripts，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 ${skill.path}（从 offset ${SKILL_PREVIEW_CHAR_LIMIT} 起按 limit 续读）]`,
   ].join("\n")
 }
 
