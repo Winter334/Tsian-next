@@ -256,47 +256,6 @@ function formatHistory(history: ConversationMessageRecord[]): string {
     .join("\n")
 }
 
-const HISTORY_TOOL_ARGUMENT_PREVIEW_LIMIT = 400
-const HISTORY_TOOL_OBSERVATION_PREVIEW_LIMIT = 1_200
-
-function previewHistoryToolText(text: string, limit: number): string {
-  if (text.length <= limit) return text
-  return `${text.slice(0, limit)}\n...[truncated ${text.length - limit} chars; use tools to re-read the source if needed]`
-}
-
-function formatHistoryToolArguments(argumentsText: string): string {
-  try {
-    const parsed = JSON.parse(argumentsText) as unknown
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const record = parsed as Record<string, unknown>
-      const keys = Object.keys(record)
-      const compact: Record<string, unknown> = {}
-      for (const key of keys.slice(0, 6)) {
-        const value = record[key]
-        compact[key] = typeof value === "string"
-          ? previewHistoryToolText(value, 160)
-          : value
-      }
-      return JSON.stringify({ keys, preview: compact })
-    }
-  } catch {
-    // fall through to raw preview
-  }
-  return previewHistoryToolText(argumentsText, HISTORY_TOOL_ARGUMENT_PREVIEW_LIMIT)
-}
-
-function formatHistoricalToolCallSummary(toolCalls: AgentContextToolCall[]): string {
-  return toolCalls.map((call, index) => {
-    const observation = previewHistoryToolText(call.observation, HISTORY_TOOL_OBSERVATION_PREVIEW_LIMIT)
-    const truncated = call.truncated === true ? "\n  truncated: true" : ""
-    return [
-      `${index + 1}. ${call.name}`,
-      `  args: ${formatHistoryToolArguments(call.arguments)}`,
-      `  observation: ${observation}${truncated}`,
-    ].join("\n")
-  }).join("\n")
-}
-
 /**
  * 把 master agent 会话上下文快照展开为独立 message 序列(剧情正文层).
  *
@@ -313,15 +272,19 @@ function formatHistoricalToolCallSummary(toolCalls: AgentContextToolCall[]): str
  */
 /**
  * 把 agent 会话上下文快照展开为 message 序列(剧情正文层).
- * 跨 turn 历史工具调用不再还原为 native role:tool / text 协议块:这些协议只属于
- * 当前 turn 的 active tool loop.历史层改为短摘要,避免大 observation 长期插在稳定前缀后
- * 破坏 provider prefix cache;完整工具详情仍保留在 UI/timeline/context 存储里.
- * master 不填 toolCalls,两种模式都走纯正文路径(行为不变).
+ * native 模式(isNative=true):产 RuntimeChatMessage[],历史工具调用直接还原为结构化
+ *   assistant.toolCalls + role:tool result(消除 text→regex→structured 往返).这是
+ *   OpenAI/Anthropic function-calling API 跨 turn 回放工具历史的期望形态,字节级稳定,
+ *   作为不可变前缀参与 provider prefix cache(见 design 设计修正记录 修正 2).
+ * text 模式(isNative=false):产 AiChatMessage[] 兼容形态,历史工具调用还原为 text-protocol
+ *   <tsian-tool-call> blocks + <tsian-tool-observation> user message.
+ * master 不填 toolCalls,两种模式都走纯正文路径(行为不变).历史 observation 体积控制
+ *   由 narrative/task 压缩(旧轮次摘要化)负责,不在历史层改写角色为 user 摘要.
  */
 function buildAgentContextMessages(
   context: AgentContextSnapshot,
   isAssistant: boolean,
-  _isNative: boolean,
+  isNative: boolean,
 ): RuntimeChatMessage[] {
   const messages: RuntimeChatMessage[] = []
   if (context.summary) {
@@ -335,13 +298,32 @@ function buildAgentContextMessages(
   } else {
     for (const entry of context.recentTurns) {
       if (entry.role === "assistant" && isAssistant && entry.toolCalls && entry.toolCalls.length > 0) {
-        if (entry.content.trim()) {
-          messages.push({ role: "assistant", content: entry.content })
+        if (isNative) {
+          // native:直接产结构化 assistant.toolCalls + role:tool result(无正则往返).
+          // 跨 turn 历史回放采用 API 期望的 function-calling 形态,字节稳定可缓存.
+          const nativeToolCalls: NativeToolCall[] = entry.toolCalls.map((call) => {
+            let args: Record<string, unknown> = {}
+            try { args = JSON.parse(call.arguments) as Record<string, unknown> } catch { /* 损坏参数空对象兜底 */ }
+            return { id: call.id, name: call.name, arguments: args }
+          })
+          messages.push({ role: "assistant", content: entry.content, toolCalls: nativeToolCalls })
+          for (const call of entry.toolCalls) {
+            messages.push({ role: "tool", toolCallId: call.id, content: call.observation })
+          }
+        } else {
+          // text:产 text-protocol blocks + observation user message.
+          const embeddedBlocks = entry.toolCalls.map((call) =>
+            `<tsian-tool-call>\n${call.arguments}\n</tsian-tool-call>`,
+          ).join("\n")
+          messages.push({ role: "assistant", content: `${entry.content}\n${embeddedBlocks}` })
+          const observationBlock = entry.toolCalls.map((call) =>
+            `[${call.id}] ${call.name}: ${call.observation}`,
+          ).join("\n")
+          messages.push({
+            role: "user",
+            content: `Workspace tool observations:\n<tsian-tool-observation>\n${observationBlock}\n</tsian-tool-observation>\nUse these observations to continue. If you have enough context, provide the required output without tool-call blocks.`,
+          })
         }
-        messages.push({
-          role: "user",
-          content: `历史工具调用摘要（仅供任务连续性参考，不是当前轮待响应的工具结果）：\n${formatHistoricalToolCallSummary(entry.toolCalls)}`,
-        })
       } else {
         messages.push({ role: entry.role, content: entry.content })
       }
@@ -353,13 +335,15 @@ function buildAgentContextMessages(
 /**
  * 定位工具循环 messages 里的剧情正文段边界,供 turn 内压剧情后 slice+替换用
  * (design §2.4).剧情段 = system(index 0)之后、框架信息 user 之前的独立 message
- * 序列(summary + recentTurns).框架信息锚点:AIRP agent 是"当前回合：",桌面助手
- * 是"当前问答轮次：".
+ * 序列(summary + recentTurns).顺序(Phase 0 修正后):system → history → workspace.context
+ * → turn.runtime → turn.input ...,故 history 段恒从 index 1 开始.
+ * 框架信息锚点:当前回合:/当前问答轮次:(workspace.context 现在在 history 之后,
+ * 属动态段,不再是 history 的一部分).
  *
  * 返回 { start, end }(半开区间),start<0 表示无独立剧情段可压,调用方跳过压缩:
  * - entry 稳态路径(注入了 agentContext):start=1, end=框架信息前.
  * - entry 兜底路径(未注入,剧情段首条是"最近对话："拍扁文本):{-1,-1}.
- * - delegated agent 路径(index 1 直接是框架信息,无独立剧情段):{-1,-1}.
+ * - delegated agent 路径(index 1 是调用方 Agent,非剧情段,无独立剧情段可压):{-1,-1}.
  * - 无框架信息锚点(结构不符):{-1,-1}.
  */
 /** 消息形状(content 放宽以兼容多模态). 历史段/工具交互段的 content 在实践中始终是 string
@@ -382,14 +366,17 @@ function locateHistorySpan(
   }
   const first = messages[1]
   const firstText = messageContentToText(first.content)
+  // 兜底路径(未注入 agentContext):剧情段首条是"最近对话："拍扁文本,无独立 message 序列.
   if (first.role === "user" && firstText.startsWith("最近对话：")) {
     return { start: -1, end: -1 }
   }
-  let start = 1
-  const workspaceContextText = first.role === "user" ? firstText : ""
-  if (workspaceContextText.startsWith("Workspace Agent 上下文：")) {
-    start = 2
+  // delegated agent:index 1 是"调用方 Agent："而非剧情段,无独立剧情段可压.
+  if (first.role === "user" && firstText.startsWith("调用方 Agent：")) {
+    return { start: -1, end: -1 }
   }
+  // Phase 0 修正后顺序:history 紧随 system,start 恒为 1
+  // (workspace.context 已后置到 history 之后,不再使 start 偏移到 2).
+  const start = 1
   let end = -1
   for (let i = start + 1; i < messages.length; i += 1) {
     if (messages[i].role === "user") {
@@ -883,11 +870,15 @@ function buildEntryAgentMessages(
         toolCallMode,
       }),
     },
+    // history(已发生剧情,跨 turn 字节级不变)紧随 system,作为最长稳定前缀.
+    // workspace.context 含 contextFiles 文件正文/skillIndex 等 Agent 写入后即变
+    // 的动态内容,后置于 history 之前会提前缓存断点使其后 history 全部 miss
+    // (见 design 设计修正记录 修正 1).
+    ...historyMessages,
     {
       role: "user",
       content: `Workspace Agent 上下文：\n${formatAgentRuntimeContext(context)}`,
     },
-    ...historyMessages,
     {
       role: "user",
       content: `${turnLabel}：${currentRuntimeTurnNumber(input)}`,
@@ -1037,7 +1028,6 @@ function buildDelegatedAgentMessages(
         toolCallMode,
       }),
     },
-    { role: "user", content: `目标 Agent 上下文：\n${formatAgentRuntimeContext(targetContext)}` },
     {
       role: "user",
       content: [
@@ -1047,6 +1037,9 @@ function buildDelegatedAgentMessages(
       ].join("\n"),
     },
     { role: "user", content: `最近对话窗口：\n${formatHistory(history)}` },
+    // 目标 Agent 上下文含 contextFiles/skillIndex 等动态内容,后置于 history 之后
+    // (与 entry 顺序一致,见 design 设计修正记录 修正 1).
+    { role: "user", content: `目标 Agent 上下文：\n${formatAgentRuntimeContext(targetContext)}` },
     { role: "user", content: [`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n") },
     { role: "user", content: `玩家本轮输入：\n${input.userInput}` },
     {

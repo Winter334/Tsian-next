@@ -1,5 +1,18 @@
 # 消息序列缓存命中优化 Implementation Plan
 
+> 本任务首次落地（`04585d6` + `1b8e625`）使缓存变差，已回退错误顺序（见 design.md 设计修正记录）。Phase 0 修正落地错误，Phase 1+ 沿修正后顺序推进。
+
+## Phase 0: Revert Wrong Landing（回退错误落地）
+
+> 目标：把首次落地中"使缓存变差"的两处错误改回正确形态，恢复 `history` 紧随 `system.agent` 的长稳定前缀，并恢复跨 turn 历史工具调用的 native 结构化形态。
+
+- `apps/platform-web/src/agent-runtime/index.ts` `buildEntryAgentMessages`：把 `workspace.context` 从 `historyMessages` 之前移到之后、`turn.runtime` 之前，恢复顺序为 `system → history → workspace.context → turn.runtime → before-input → turn.input → after-input`。
+- `apps/platform-web/src/agent-runtime/index.ts` `buildDelegatedAgentMessages`：把 `目标 Agent 上下文` 从 `最近对话窗口`/`调用方 Agent` 之前移到 `history` 之后、`turn.runtime` 之前，对齐 design 修正后的 delegated 顺序。
+- `apps/platform-web/src/agent-runtime/index.ts` `buildAgentContextMessages`：跨 turn 历史工具调用恢复 native 结构化形态（`assistant.toolCalls` + `role:tool` 完整 observation），回退 `1b8e625` 引入的 `role:user` 短摘要（`formatHistoricalToolCallSummary`/`formatHistoryToolArguments`/`previewHistoryToolText`）。observation 体积控制交给 R6a compact 策略，不在历史层改写角色。
+- `apps/platform-web/src/agent-runtime/index.ts` `locateHistorySpan`：更新锚点——`workspace.context` 现在位于 history 之后，剧情段仍是 `system` 之后到 `当前回合/当前问答轮次` 之前的独立 message 序列，起始 `start` 不再因 `workspace.context` 前置而偏移到 index 2。
+- `apps/platform-web/src/runtime-host/ai.ts` `segmentStability`：`workspace.context` 从 `stable` 改为 `dynamic`（与修正前提一致）；`history.tools.summary` 标注随 Phase 0 回退同步移除或调整。
+- 保留 `04585d6` 中的正确改动：system 工具说明瘦身（native 只列工具名、去掉具体联系人 id）、`buildDebugMessageSegments` 可观测性骨架。
+
 ## Phase 1: Segment Metadata And Debug Types
 
 - 扩展 `packages/contracts/src/debug.ts`：为 `AiDebugRecord` 增加可选 message segment 摘要类型。
@@ -8,10 +21,12 @@
 
 ## Phase 2: Entry/Delegated Message Reordering
 
+> Phase 0 已回退错误顺序。本 Phase 在正确顺序上做精细化，确保 segment label 与 `locateHistorySpan` 锚点稳定。
+
 - 在 `apps/platform-web/src/agent-runtime/index.ts` 引入内部带 segment label 的 message builder，最终仍输出 `RuntimeChatMessage[]`。
-- 重排 `buildEntryAgentMessages`：拆出 `workspace.context` 与 `turn.runtime`，确保轮次号不污染 workspace context。
-- 重排 `buildDelegatedAgentMessages`：目标 Agent 稳定信息前置，调用请求和玩家输入后置。
-- 更新 `locateHistorySpan` / `replaceHistorySpan` 相关逻辑，避免依赖旧消息位置或旧字符串前缀。
+- 确认 `buildEntryAgentMessages` 顺序为 `system → history → workspace.context → turn.runtime → before-input → turn.input → after-input`（Phase 0 已落地的基准）。
+- 确认 `buildDelegatedAgentMessages` 顺序为 `system → caller.context → history → workspace.context → turn.runtime → turn.input → agent-call.request`（Phase 0 已落地的基准）。
+- 更新 `locateHistorySpan` / `replaceHistorySpan` 相关逻辑，避免依赖旧消息位置或旧字符串前缀；剧情段边界以 `当前回合/当前问答轮次` 锚点为准。
 
 ## Phase 3: Prompt And Schema Slimming
 

@@ -136,22 +136,49 @@
                   <span class="w-12 text-right font-mono text-[11px] text-neon">{{ latestAiCall.usage?.total ?? "-" }}</span>
                 </div>
               </div>
-              <div v-if="latestAiCall.messageSegments?.length" class="grid gap-1 border-t border-neon-deep/20 pt-2">
-                <p class="min-w-0 truncate font-mono text-[10px] uppercase tracking-wider text-text-dim">
-                  消息段 · {{ messageSegmentSummary }}
-                </p>
-                <div class="max-h-28 overflow-y-auto overflow-x-hidden border border-neon-deep/25 bg-elevated/25">
-                  <div
-                    v-for="segment in latestAiCall.messageSegments"
-                    :key="`${latestAiCall.id}-${segment.index}`"
-                    class="grid min-w-0 grid-cols-[1.75rem_3rem_minmax(0,1fr)_3.5rem] gap-1.5 border-b border-neon-deep/15 px-2 py-1 font-mono text-[10px] last:border-b-0"
-                  >
-                    <span class="text-text-dim">#{{ segment.index }}</span>
-                    <span class="truncate" :class="segment.stability === 'dynamic' ? 'text-warning' : segment.stability === 'stable' ? 'text-neon' : 'text-text-main'">{{ segment.stability }}</span>
-                    <span class="truncate text-text-main" :title="segment.preview">{{ segment.role }} · {{ segment.label }}</span>
-                    <span class="text-right text-text-dim">{{ formatTokens(segment.charLength) }}</span>
+              <div v-if="latestAiCall.messageSegments?.length" class="grid gap-1.5 border-t border-neon-deep/20 pt-2">
+                <!-- 默认视图:稳定前缀 + 缓存断点(人一眼看到缓存友好度) -->
+                <div class="grid gap-1">
+                  <div class="flex items-baseline justify-between gap-2">
+                    <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">稳定前缀</span>
+                    <span class="font-mono text-[11px] text-neon">{{ formatTokens(stablePrefixChars) }} chars · {{ stablePrefixRatio }}%</span>
                   </div>
+                  <!-- 断点可视化条:按段顺序涂色,stable 绿/semi 灰/dynamic 黄 -->
+                  <div class="flex h-1.5 overflow-hidden border border-neon-deep/30">
+                    <div
+                      v-for="segment in latestAiCall.messageSegments"
+                      :key="`bar-${latestAiCall.id}-${segment.index}`"
+                      :style="{ flexGrow: segment.charLength }"
+                      :class="segment.stability === 'stable' ? 'bg-neon' : segment.stability === 'semi-stable' ? 'bg-neon-deep/50' : 'bg-warning/70'"
+                      :title="`#${segment.index} ${segment.label} (${segment.stability}, ${formatTokens(segment.charLength)})`"
+                    />
+                  </div>
+                  <p v-if="cacheBreakpointLabel" class="truncate font-mono text-[10px] text-warning" :title="cacheBreakpointLabel">
+                    缓存断点 → {{ cacheBreakpointLabel }}
+                  </p>
+                  <p v-else class="font-mono text-[10px] text-neon">无动态段 · 全前缀可缓存</p>
                 </div>
+                <!-- 明细折叠:按需展开看逐段 role/label/chars/preview -->
+                <details class="group">
+                  <summary class="cursor-pointer select-none font-mono text-[10px] uppercase tracking-wider text-text-dim hover:text-text-main">
+                    消息段明细 · {{ messageSegmentSummary }}
+                  </summary>
+                  <div class="mt-1 max-h-48 overflow-y-auto overflow-x-hidden border border-neon-deep/25 bg-elevated/25">
+                    <div
+                      v-for="segment in latestAiCall.messageSegments"
+                      :key="`${latestAiCall.id}-${segment.index}`"
+                      class="grid min-w-0 grid-cols-[1.75rem_3rem_minmax(0,1fr)_3.5rem] gap-1.5 border-b border-neon-deep/15 px-2 py-1 font-mono text-[10px] last:border-b-0"
+                    >
+                      <span class="text-text-dim">#{{ segment.index }}</span>
+                      <span class="truncate" :class="segment.stability === 'dynamic' ? 'text-warning' : segment.stability === 'stable' ? 'text-neon' : 'text-text-main'">{{ segment.stability }}</span>
+                      <div class="min-w-0">
+                        <p class="truncate text-text-main">{{ segment.role }} · {{ segment.label }}</p>
+                        <p class="truncate text-text-dim" :title="segment.preview">{{ segment.preview }}</p>
+                      </div>
+                      <span class="text-right text-text-dim">{{ formatTokens(segment.charLength) }}</span>
+                    </div>
+                  </div>
+                </details>
               </div>
             </div>
             <p v-else class="font-mono text-[11px] text-text-dim">尚无带用量数据的模型调用。</p>
@@ -422,6 +449,37 @@ const messageSegmentSummary = computed(() => {
     else dynamic += 1
   }
   return `${segments.length} 段 · stable ${stable} · semi ${semiStable} · dynamic ${dynamic} · ${formatTokens(chars)} chars`
+})
+
+/**
+ * 稳定前缀:从开头连续 stable/semi-stable 段的累计字符数,到第一个 dynamic 段断。
+ * 这是 provider prefix cache 能命中长度的本地近似(不等于 token,但成正比)。
+ * 人类最该一眼看到的就是这个值——它直接反映"缓存友好度"。
+ */
+const stablePrefixChars = computed(() => {
+  const segments = latestAiCall.value?.messageSegments ?? []
+  let prefix = 0
+  for (const segment of segments) {
+    if (segment.stability === "dynamic") break
+    prefix += segment.charLength
+  }
+  return prefix
+})
+
+/** 稳定前缀占总字符的比例(%),用于可视化条和"缓存友好度"直观判断。 */
+const stablePrefixRatio = computed(() => {
+  const segments = latestAiCall.value?.messageSegments ?? []
+  const total = segments.reduce((sum, s) => sum + s.charLength, 0)
+  if (total === 0) return 0
+  return Math.round((stablePrefixChars.value / total) * 100)
+})
+
+/** 断点段:第一个 dynamic 段的 index+label(缓存从这里开始 miss);无 dynamic 段则空。 */
+const cacheBreakpointLabel = computed(() => {
+  const segments = latestAiCall.value?.messageSegments ?? []
+  const bp = segments.find((s) => s.stability === "dynamic")
+  if (!bp) return ""
+  return `#${bp.index} ${bp.role} · ${bp.label}`
 })
 
 // 运行日志：把 trace events 渲染为人类可读事件流（非 JSONL 原文）。

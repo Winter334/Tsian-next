@@ -1,1 +1,4 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web frontend 总入口：本任务改 apps/platform-web/src/agent-runtime + runtime-host + DebugView，必读目录结构与源引用约定"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "构建检查要求：npm run build:web / build:contracts，Phase 0 改动后必跑；含本任务 04585d6 已写入的 message 序列缓存相关质量约束"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Agent Runtime 消息序列属运行时状态组装层，需遵守 state 管理约定，避免在 builder 里引入隐式可变状态"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "RuntimeChatMessage / AiChatMessage 跨层类型边界，Phase 0 回退历史工具调用结构化形态时需保证类型归一化"}

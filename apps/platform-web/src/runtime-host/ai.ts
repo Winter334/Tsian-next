@@ -54,7 +54,6 @@ function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"]
   if (role === "system") return "system.agent"
   if (role === "tool") return "tool.observation"
   if (text.startsWith("Workspace Agent 上下文：") || text.startsWith("目标 Agent 上下文：")) return "workspace.context"
-  if (text.startsWith("历史工具调用摘要")) return "history.tools.summary"
   if (text.startsWith("早期任务摘要：") || text.startsWith("早期剧情摘要：") || text.startsWith("最近对话：") || text.startsWith("最近对话窗口：") || text === "（暂无历史对话）") return "history"
   if (text.startsWith("当前问答轮次：") || text.startsWith("当前回合：")) return "turn.runtime"
   if (text.startsWith("用户本轮提问：") || text.startsWith("玩家本轮输入：")) return "turn.input"
@@ -66,8 +65,10 @@ function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"]
 }
 
 function segmentStability(label: string): AiDebugMessageSegment["stability"] {
-  if (label === "system.agent" || label === "workspace.context") return "stable"
-  if (label === "history" || label === "history.tools.summary" || label === "assistant.response") return "semi-stable"
+  if (label === "system.agent") return "stable"
+  if (label === "history" || label === "assistant.response") return "semi-stable"
+  // workspace.context 含 contextFiles 文件正文/skillIndex 等 Agent 写入后即变的
+  // 动态内容(见 design 设计修正记录 修正 1),不是稳定前缀。
   return "dynamic"
 }
 

@@ -36,6 +36,7 @@
 
 - `R1` 稳定前缀最大化：将跨轮稳定的 Agent 定义、固定平台规则、固定工具协议尽量保持在消息序列最前部，并确保字节级顺序稳定。
 - `R2` 动态断点后移：将轮次号、本轮输入、调用请求、临时 injection、tool observation、动态 skill 内容等放在尽量靠后的 message 中。
+  - `R2a` **稳定段不得被动态段覆盖**：`formatAgentRuntimeContext` 产生的 `workspace.context` 段含动态内容（contextFiles 文件正文、missingContextPaths、skillIndex），Agent 一旦 `workspace_write`/`edit` 后下一轮即变；因此它**不是稳定前缀**，不得置于 `history`（已发生剧情，跨 turn 不变）之前。否则动态变化会把断点提前到 workspace.context 开头，使后续整个 history 段全部 cache miss。稳定段判定以"跨 turn 字节级是否变化"为准，不以语义上的"上下文"为准。
 - `R3` 助手主入口优化：优化 `buildEntryAgentMessages` 的消息分层，尤其避免轮次号污染 `formatAgentRuntimeContext` 等稳定上下文。
 - `R4` delegated Agent 优化：优化 `buildDelegatedAgentMessages`，让目标 Agent 的稳定定义和上下文优先，调用方请求/玩家输入等动态信息靠后。
 - `R5` 工具说明去动态化：减少 prompt 内可变工具示例，native 模式优先依赖 API `tools` schema；如仍需示例，使用占位符而非具体联系人 id。
