@@ -358,17 +358,17 @@ function locateHistorySpan(
     return { start: -1, end: -1 }
   }
   const first = messages[1]
-  // delegated:index 1 直接是框架信息(当前回合/当前问答轮次),无独立剧情段;
-  // entry 兜底:剧情段首条是"最近对话："拍扁文本,无独立 message 序列可压.
   const firstText = messageContentToText(first.content)
-  if (
-    first.role === "user"
-    && (firstText.startsWith("当前回合：") || firstText.startsWith("当前问答轮次：") || firstText.startsWith("最近对话："))
-  ) {
+  if (first.role === "user" && firstText.startsWith("最近对话：")) {
     return { start: -1, end: -1 }
   }
+  let start = 1
+  const workspaceContextText = first.role === "user" ? firstText : ""
+  if (workspaceContextText.startsWith("Workspace Agent 上下文：")) {
+    start = 2
+  }
   let end = -1
-  for (let i = 1; i < messages.length; i += 1) {
+  for (let i = start + 1; i < messages.length; i += 1) {
     if (messages[i].role === "user") {
       const text = messageContentToText(messages[i].content)
       if (text.startsWith("当前回合：") || text.startsWith("当前问答轮次：")) {
@@ -380,7 +380,7 @@ function locateHistorySpan(
   if (end === -1) {
     return { start: -1, end: -1 }
   }
-  return { start: 1, end }
+  return { start, end }
 }
 
 /**
@@ -653,89 +653,73 @@ function buildWorkspaceToolInstructions(
     AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
   )
   const isNative = options.toolCallMode === "native"
-  const availableTools = [
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} arguments={"name":"prose-style"}`,
-    `- ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript} arguments={"skill":"prose-style","script":"example_action","input":{"text":"示例"}}`,
-    ...(canCallAgents
-      ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} arguments={"agentId":"${options.visibleContacts[0].id}","request":"请检查当前场景的连续性。","historyMode":"recent"}`,
-        ]
-      : []),
+  const toolNames = [
+    RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
+    RUNTIME_WORKSPACE_TOOL_NAMES.runScript,
+    ...(canCallAgents ? [RUNTIME_WORKSPACE_TOOL_NAMES.agentCall] : []),
     ...(canReadWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.read} arguments={"path":"world/canon.md"}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.read} arguments={"path":"save/history/timeline.md","offset":1,"limit":200}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.list} arguments={"path":"skills"}，path 可省略表示根目录`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.search} arguments={"query":"关键词","limit":10}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.search} arguments={"pattern":"\"state\":\\s*\\{","contextLines":2}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.glob} arguments={"pattern":"**/agent.json","limit":50}`,
+          RUNTIME_WORKSPACE_TOOL_NAMES.read,
+          RUNTIME_WORKSPACE_TOOL_NAMES.list,
+          RUNTIME_WORKSPACE_TOOL_NAMES.search,
+          RUNTIME_WORKSPACE_TOOL_NAMES.glob,
         ]
       : []),
     ...(canWriteWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.write} arguments={"path":"save/world/notes.md","content":"..."}`,
+          RUNTIME_WORKSPACE_TOOL_NAMES.diff,
+          RUNTIME_WORKSPACE_TOOL_NAMES.write,
+          RUNTIME_WORKSPACE_TOOL_NAMES.edit,
+          RUNTIME_WORKSPACE_TOOL_NAMES.copy,
+          RUNTIME_WORKSPACE_TOOL_NAMES.move,
+          RUNTIME_WORKSPACE_TOOL_NAMES.delete,
         ]
       : []),
-    ...(canSemanticSearch
+    ...(canSemanticSearch ? [RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch] : []),
+    ...(canInspectFrontend ? [RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend] : []),
+  ]
+
+  const sharedRules = [
+    "Runtime 工具是可选能力；只在当前上下文不足、需要读取/修改 workspace、需要联系 Agent 或需要检查前端时使用。",
+    `Skill 使用两步：先调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 选择可见 Skill Index 中的 name；下一轮框架会注入完整 SKILL.md，再按其中说明读取 references 或执行脚本。`,
+    ...(canReadWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch} arguments={"semanticQuery":"灯塔后来怎样了","typeFilter":"turn","limit":5}`,
+          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 Skill 入口文件；Skill 入口由 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后自动注入。`,
+          `长文件用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 的 offset/limit 分段读取；看到 truncated/totalLines/returnedLines 时按需续读。`,
         ]
       : []),
-    ...(canInspectFrontend
+    `只有 browser_script action 才用 ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript}；单次 workspace 读写优先使用顶层工具。`,
+  ]
+
+  if (isNative) {
+    return [
+      ...sharedRules,
+      `当前可用工具名称：${toolNames.join(", ")}。具体参数以 API tools schema 为准，不要在正文中手写工具调用块。`,
+      ...(canCallAgents ? [`${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 的 agentId 从可见 Agent 联系人中选择。`] : []),
+      "多个相互独立的只读工具可以在同一轮并行调用。",
+      "收到 observation 后继续完成任务；最终输出只包含给玩家/调用方的正文，不包含工具细节。",
+    ].join("\n")
+  }
+
+  const textExamples = [
+    `<tsian-tool-call>`,
+    `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"prose-style"}}`,
+    `</tsian-tool-call>`,
+    ...(canReadWorkspace
       ? [
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"send":{"message":"看一下当前前端渲染"}}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"actions":[{"type":"click","selector":"#send"}],"observeBetween":true}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"actions":[{"type":"fill","selector":"#name","text":"新值"},{"type":"selectOption","selector":"#lang","value":"zh"}]}`,
-          `- ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} arguments={"actions":[{"type":"hover","selector":"#menu"}],"refresh":true}`,
+          `<tsian-tool-call>`,
+          `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.read}","arguments":{"path":"world/canon.md","offset":1,"limit":200}}`,
+          `</tsian-tool-call>`,
         ]
       : []),
   ]
+
   return [
-    "你可以按需使用 Runtime 工具读取更多上下文。工具是可选的，只在当前上下文不足时使用。",
-    `如果需要使用某个 Skill，调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 并传入可见 Skill Index 中的 name。这是两步流程的第一步：use_skill 只声明意图并注册该 Skill 的 action，框架会在下一轮自动把完整 SKILL.md 注入上下文（你不需要手动读取它）。`,
-    ...(canReadWorkspace
-      ? [
-          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 Skill 入口文件；用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后框架自动注入全文。`,
-          `注入的 SKILL.md 会说明什么时候读取哪些 references、examples、schemas、scripts 或其它工作区文件。只有执行到这些引用步骤时，才使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read}/${RUNTIME_WORKSPACE_TOOL_NAMES.list}/${RUNTIME_WORKSPACE_TOOL_NAMES.search} 读取具体资源。`,
-          `长文件用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 的 offset/limit 分段读取（返回 totalLines/returnedLines/truncated，据此判断是否续读）。${RUNTIME_WORKSPACE_TOOL_NAMES.search} 支持 query 子串或 pattern 正则二选一：query 默认大小写不敏感，pattern 默认大小写敏感（用 ignoreCase 显式覆盖），返回每命中的行号、命中行和 contextLines 上下文。`,
-        ]
-      : []),
-    `use_skill 激活 Skill 后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript} 执行它声明的 browser_script action（传入 use_skill 返回的 action name 作为 script）。run_script 只执行 browser_script 类 action；单次 workspace 读写直接用顶层 ${RUNTIME_WORKSPACE_TOOL_NAMES.read}/${RUNTIME_WORKSPACE_TOOL_NAMES.write} 等工具，多步编排写进 browser_script 脚本。`,
-    "browser_script 会运行 Skill 目录下的脚本，并通过 Tsian SDK 访问 workspace、fetch、log/trace；只在你信任该 Skill 并且确实需要脚本能力时使用。脚本中的 workspace 读写仍受当前 Agent 权限限制。",
-    ...(canSemanticSearch
-      ? [
-          `${RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch} 按"含义"在 save-runtime 记忆（远期剧情 turn、agent notes、memory summary）里召回，用于玩家措辞与正文无字面重叠时（如玩家说"灯塔的事"而正文写"她走向海边那座塔"）。它返回带 path/type/preview 的小 K 候选清单——读 preview 判方向，再用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 按 path 取完整原文。typeFilter 收窄语料类型：turn（原始剧情）、agent-notes、memory-summary。${RUNTIME_WORKSPACE_TOOL_NAMES.search} 仍用于精确措辞或结构标记（找某符号、某 JSON 字段）；两者可在同一 turn 并用——语义召回候选 + 字面验证细节。索引未建或无相关时返回空，回退 ${RUNTIME_WORKSPACE_TOOL_NAMES.search}。`,
-        ]
-      : []),
-    ...(canCallAgents
-      ? [
-          `如果当前任务需要联系人 Agent 的专业判断，可以使用 ${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 发起一次性会诊。被调用 Agent 的输出只会作为 observation 返回给你，不会直接成为玩家回复。`,
-          "可联系 Agent：",
-          formatVisibleAgentContacts(options.visibleContacts),
-        ]
-      : []),
-    ...(canInspectFrontend
-      ? [
-          `写完或改完前端后，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend} 在隐藏 iframe 里加载当前 active 卡的 packaged 前端（复用真实 /play 加载路径），查看渲染结果、JS 报错、桥状态。domSummary 返回 aria 快照（无障碍树 YAML，role+name+状态，不是 raw HTML）。支持 send 驱动一回合（在临时存档上跑，不污染玩家存档）、actions 做 DOM 交互（click/type/press/scroll/selectOption/check/fill/hover/focus）、refresh 拉最新 snapshot，三者可组合。默认 auto-waiting 等元素可操作（autoWait:false 关闭）。连续两次 inspect 会返回 diff，帮你看"改没改好"。`,
-        ]
-      : []),
-    ...(isNative
-      ? [
-          "可用工具通过 API 原生 function calling 调用：直接使用提供的工具函数，不要在回复正文中嵌入任何工具调用文本块。",
-          "工具用途参考（实际参数 schema 由 API 提供）：",
-          ...availableTools,
-          "如果需要同时调用多个独立的只读工具（如查询多个文件、列出多个目录），可以在一轮中同时发起多个工具调用，它们会并行执行以减少等待。",
-          "收到 observation 后继续完成任务。最终输出只包含给玩家的正文，不要包含工具调用、observation、工具细节或实现说明。",
-        ]
-      : [
-          "可用工具：",
-          ...availableTools,
-          "工具调用格式必须独占一个块：",
-          "<tsian-tool-call>",
-          `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"prose-style"}}`,
-          "</tsian-tool-call>",
-          "收到 observation 后继续完成任务。最终输出不要包含工具调用块、observation、工具细节或实现说明。",
-        ]),
+    ...sharedRules,
+    `当前可用工具名称：${toolNames.join(", ")}。`,
+    "工具调用格式必须独占一个 XML 块；块内只能放一段纯 JSON，不要加 Markdown fence、注释或解释。",
+    ...textExamples,
+    "收到 observation 后继续完成任务；最终输出不要包含工具调用块、observation、工具细节或实现说明。",
   ].join("\n")
 }
 
@@ -876,16 +860,14 @@ function buildEntryAgentMessages(
         toolCallMode,
       }),
     },
-    ...historyMessages,
-    // 框架信息(非剧情,每 turn 现构建):轮次号 + Workspace 上下文.放剧情之后——
-    // 轮次号每轮递增是缓存断点,放后面让缓存断点尽量后移(剧情正文大头被缓存).
     {
       role: "user",
-      content: [
-        `${turnLabel}：${currentRuntimeTurnNumber(input)}`,
-        "Workspace Agent 上下文：",
-        formatAgentRuntimeContext(context),
-      ].join("\n"),
+      content: `Workspace Agent 上下文：\n${formatAgentRuntimeContext(context)}`,
+    },
+    ...historyMessages,
+    {
+      role: "user",
+      content: `${turnLabel}：${currentRuntimeTurnNumber(input)}`,
     },
     // 前端注入（before-input）：框架信息之后、玩家输入之前。
     ...beforeInputInjection,
@@ -1032,51 +1014,27 @@ function buildDelegatedAgentMessages(
         toolCallMode,
       }),
     },
+    { role: "user", content: `目标 Agent 上下文：\n${formatAgentRuntimeContext(targetContext)}` },
     {
       role: "user",
       content: [
-        `当前回合：${currentRuntimeTurnNumber(input)}`,
-        `historyMode：${agentCall.historyMode}`,
-        "",
-        // 稳定内容前置(design §2.3):历史窗口 + 目标上下文 + 调用方,利于 prefix 缓存重叠.
-        "最近对话窗口：",
-        formatHistory(history),
-        "",
-        "目标 Agent 上下文：",
-        formatAgentRuntimeContext(targetContext),
-        "",
         "调用方 Agent：",
         `${callerContext.agent.id} — ${callerContext.agent.title}`,
         callerContext.agent.summary || "（无摘要）",
-        "",
-        ...(agentCall.contextSummary
-          ? [
-              "调用方提供的上下文摘要：",
-              agentCall.contextSummary,
-              "",
-            ]
-          : []),
-        "玩家本轮输入：",
-        input.userInput,
-        "",
-        // request + 指令末尾(design §2.3):让模型聚焦当前任务.
+      ].join("\n"),
+    },
+    { role: "user", content: `最近对话窗口：\n${formatHistory(history)}` },
+    { role: "user", content: [`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n") },
+    { role: "user", content: `玩家本轮输入：\n${input.userInput}` },
+    {
+      role: "user",
+      content: [
+        ...(agentCall.contextSummary ? ["调用方提供的上下文摘要：", agentCall.contextSummary, ""] : []),
         "调用请求：",
         agentCall.request,
         "",
-        ...(agentCall.reason
-          ? [
-              "调用原因：",
-              agentCall.reason,
-              "",
-            ]
-          : []),
-        ...(agentCall.expectedOutput
-          ? [
-              "期望输出：",
-              agentCall.expectedOutput,
-              "",
-            ]
-          : []),
+        ...(agentCall.reason ? ["调用原因：", agentCall.reason, ""] : []),
+        ...(agentCall.expectedOutput ? ["期望输出：", agentCall.expectedOutput, ""] : []),
         "请只回答调用方请求，不要输出给玩家的最终正文，也不要提到工具协议。",
       ].join("\n"),
     },
@@ -2291,4 +2249,3 @@ export async function runAgentRuntimeTurn(
     ...(turnUsage ? { usage: turnUsage } : {}),
   }
 }
-

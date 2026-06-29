@@ -5,6 +5,18 @@ export interface AiChatMessage {
   content: string | ContentPart[]
 }
 
+export type AiDebugMessageStability = "stable" | "semi-stable" | "dynamic"
+
+export interface AiDebugMessageSegment {
+  index: number
+  role: "user" | "assistant" | "system" | "tool"
+  label: string
+  stability: AiDebugMessageStability
+  charLength: number
+  preview: string
+  imagePartCount?: number
+}
+
 export interface AiDebugRecord {
   id: string
   kind: "chat"
@@ -12,6 +24,7 @@ export interface AiDebugRecord {
   model: string
   createdAt: string
   messages?: AiChatMessage[]
+  messageSegments?: AiDebugMessageSegment[]
   input?: string[]
   responseText?: string
   vectorCount?: number

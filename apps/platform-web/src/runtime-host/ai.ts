@@ -1,4 +1,4 @@
-import type { AiChatMessage, AiDebugRecord, ContentPart } from "@tsian/contracts"
+import type { AiChatMessage, AiDebugMessageSegment, AiDebugRecord, ContentPart } from "@tsian/contracts"
 
 import {
   getBrowserAiConfig,
@@ -43,6 +43,50 @@ function contentToTextPreview(content: string | ContentPart[]): string {
     .filter((part): part is { type: "text"; text: string } => part.type === "text")
     .map((part) => part.text)
     .join("")
+}
+
+function contentImagePartCount(content: string | ContentPart[]): number {
+  if (typeof content === "string") return 0
+  return content.filter((part) => part.type === "image").length
+}
+
+function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"] | AiChatMessage["role"]): string {
+  if (role === "system") return "system.agent"
+  if (role === "tool") return "tool.observation"
+  if (text.startsWith("Workspace Agent 上下文：") || text.startsWith("目标 Agent 上下文：")) return "workspace.context"
+  if (text.startsWith("早期任务摘要：") || text.startsWith("早期剧情摘要：") || text.startsWith("最近对话：") || text.startsWith("最近对话窗口：") || text === "（暂无历史对话）") return "history"
+  if (text.startsWith("当前问答轮次：") || text.startsWith("当前回合：")) return "turn.runtime"
+  if (text.startsWith("用户本轮提问：") || text.startsWith("玩家本轮输入：")) return "turn.input"
+  if (text.startsWith("调用请求：")) return "agent-call.request"
+  if (text.startsWith("下面是已激活 Skill")) return "skill.injected"
+  if (text.startsWith("Workspace tool observations:")) return "tool.observation"
+  if (role === "assistant") return "assistant.response"
+  return "message"
+}
+
+function segmentStability(label: string): AiDebugMessageSegment["stability"] {
+  if (label === "system.agent" || label === "workspace.context") return "stable"
+  if (label === "history" || label === "assistant.response") return "semi-stable"
+  return "dynamic"
+}
+
+function buildDebugMessageSegments(messages: RuntimeChatMessage[] | AiChatMessage[]): AiDebugMessageSegment[] {
+  return messages.map((message, index) => {
+    const text = message.role === "tool"
+      ? `[tool:${message.toolCallId}] ${message.content}`
+      : contentToTextPreview(message.content)
+    const label = inferMessageSegmentLabel(text, message.role)
+    const imagePartCount = message.role === "tool" ? 0 : contentImagePartCount(message.content)
+    return {
+      index,
+      role: message.role,
+      label,
+      stability: segmentStability(label),
+      charLength: text.length,
+      preview: previewText(text, 180),
+      ...(imagePartCount > 0 ? { imagePartCount } : {}),
+    }
+  })
 }
 
 /** Build OpenAI-native content: string → string, ContentPart[] → content blocks
@@ -1143,6 +1187,7 @@ export async function generateAssistantReply(
   const adapter = selectAdapter(config.kind)
   const url = adapter.buildUrl(config)
   const requestBody = adapter.buildRequestBody(config, messages)
+  const messageSegments = buildDebugMessageSegments(messages)
   pushAiDebugRecord({
     id: requestId,
     kind: "chat",
@@ -1150,6 +1195,7 @@ export async function generateAssistantReply(
     model: config.model,
     createdAt: new Date().toISOString(),
     messages: messages.map((message) => ({ ...message })),
+    messageSegments,
   })
 
   logDebugGroup(`[Tsian AI ${requestId}] request`, {
@@ -1157,6 +1203,7 @@ export async function generateAssistantReply(
     model: config.model,
     apiKey: maskSecret(config.apiKey),
     requestKeys: Object.keys(requestBody),
+    messageSegments,
     messages: messages.map((message, index) => ({
       index,
       role: message.role,
@@ -1254,6 +1301,7 @@ export async function generateAssistantReplyNative(
   const url = adapter.buildUrl(config)
   const tools = options.tools ?? []
   const requestBody = adapter.buildNativeRequestBody(config, messages, tools)
+  const messageSegments = buildDebugMessageSegments(messages)
 
   pushAiDebugRecord({
     id: requestId,
@@ -1269,6 +1317,7 @@ export async function generateAssistantReplyNative(
       }
       return { role: message.role, content: message.content }
     }),
+    messageSegments,
   })
 
   logDebugGroup(`[Tsian AI ${requestId}] native request`, {
@@ -1277,6 +1326,7 @@ export async function generateAssistantReplyNative(
     apiKey: maskSecret(config.apiKey),
     requestKeys: Object.keys(requestBody),
     toolCount: tools.length,
+    messageSegments,
     messages: messages.map((message, index) => ({
       index,
       role: message.role,
@@ -1406,6 +1456,7 @@ export async function streamAssistantReplyNative(
   const url = adapter.buildStreamUrl(config)
   const tools = options.tools ?? []
   const requestBody = adapter.buildStreamRequestBody(config, messages, tools)
+  const messageSegments = buildDebugMessageSegments(messages)
 
   pushAiDebugRecord({
     id: requestId,
@@ -1419,6 +1470,7 @@ export async function streamAssistantReplyNative(
       }
       return { role: message.role, content: message.content }
     }),
+    messageSegments,
   })
 
   logDebugGroup(`[Tsian AI ${requestId}] stream request`, {
@@ -1427,6 +1479,7 @@ export async function streamAssistantReplyNative(
     apiKey: maskSecret(config.apiKey),
     requestKeys: Object.keys(requestBody),
     toolCount: tools.length,
+    messageSegments,
     messages: messages.map((message, index) => ({
       index,
       role: message.role,
@@ -1687,6 +1740,7 @@ export async function streamAssistantReplyText(
   const url = adapter.buildStreamUrl(config)
   const requestBody = adapter.buildRequestBody(config, messages)
   ;(requestBody as Record<string, unknown>).stream = true
+  const messageSegments = buildDebugMessageSegments(messages)
 
   pushAiDebugRecord({
     id: requestId,
@@ -1695,6 +1749,7 @@ export async function streamAssistantReplyText(
     model: config.model,
     createdAt: new Date().toISOString(),
     messages: messages.map((message) => ({ ...message })),
+    messageSegments,
   })
 
   logDebugGroup(`[Tsian AI ${requestId}] text stream request`, {
@@ -1702,6 +1757,7 @@ export async function streamAssistantReplyText(
     model: config.model,
     apiKey: maskSecret(config.apiKey),
     requestKeys: Object.keys(requestBody),
+    messageSegments,
     messages: messages.map((message, index) => ({
       index,
       role: message.role,

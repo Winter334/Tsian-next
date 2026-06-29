@@ -36,7 +36,7 @@ function platformToolEnabled(
 const useSkillSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
   description:
-    "Declare intent to use a Skill from the current Agent's visible Skill Index by name. The framework injects the Skill's full SKILL.md into the next round's context and registers its declared browser_script actions for run_script. Returns a lightweight confirmation plus the action list (not the full SKILL.md — that arrives as context next round). Example: use_skill with name=\"prose-style\".",
+    "Activate a Skill from the current Agent's visible Skill Index. The next round receives the Skill's SKILL.md context and run_script can execute its declared browser_script actions.",
   parameters: {
     type: "object",
     required: ["name"],
@@ -53,7 +53,7 @@ const useSkillSchema: ToolSchema = {
 const runScriptSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.runScript,
   description:
-    "Execute a browser_script action declared by a Skill that has already been activated via use_skill in this tool loop. The action runs the Skill's browser script through the Tsian SDK after input validation. Single workspace operations should use the top-level workspace tools directly; multi-step orchestration belongs in a browser_script. Calling run_script before activating the skill with use_skill returns a SKILL_NOT_ACTIVATED error. Example: run_script with skill=\"prose-style\", script=\"example_action\", input={...}.",
+    "Execute a browser_script action declared by a Skill activated with use_skill in this tool loop. Use top-level workspace tools for single read/write operations.",
   parameters: {
     type: "object",
     required: ["skill", "script"],
@@ -78,7 +78,7 @@ const runScriptSchema: ToolSchema = {
 const askUserSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.askUser,
   description:
-    "Ask the player a question with optional choices. The turn pauses until the player responds. Use this when you need the player's decision to continue (e.g. choosing an action, confirming a plan, picking a direction). The player may also type a custom answer when allowCustom is true (default). Returns the player's answer as a string (or cancelled:true if the player aborted).",
+    "Ask the player a question with optional choices and pause until they respond. Returns the answer or cancelled:true.",
   parameters: {
     type: "object",
     required: ["question"],
@@ -105,7 +105,7 @@ const askUserSchema: ToolSchema = {
 const agentCallSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.agentCall,
   description:
-    "Request a one-off consultation from a contact Agent. The target Agent runs with its own context and permissions; its output returns as an observation to the caller, never directly to the player. Use it when a task needs another Agent's specialized judgment. Example: agent_call with agentId, request, and optional historyMode/timeoutMs.",
+    "Request a one-off consultation from a visible contact Agent. The target uses its own context and returns an observation to the caller.",
   parameters: {
     type: "object",
     required: ["agentId", "request"],
@@ -205,7 +205,7 @@ const inspectFrontendSchema: ToolSchema = {
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
-    "Read one Runtime Workspace file by path. Use it for third-layer files referenced by an activated Skill, world data, memory, or other current-task context; do not use it to read Skill entry files (use use_skill for those). Returns the file content as a string. Returns an error if the path does not exist. Pass `offset`/`limit` to read a line slice of a long file; the result then carries `totalLines`/`returnedLines`/`offset`/`truncated` so you can decide whether to page further.",
+    "Read one Runtime Workspace file by path. Use offset/limit for long files; results include totalLines, returnedLines, offset and truncated for paging.",
   parameters: {
     type: "object",
     required: ["path"],

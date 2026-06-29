@@ -2201,13 +2201,62 @@ export async function executeRuntimeWorkspaceToolCalls(
 export function formatRuntimeWorkspaceToolObservationMessage(
   observations: RuntimeWorkspaceToolObservation[],
 ): string {
+  const compactObservations = observations.map(compactToolObservationForModel)
   return [
     "Workspace tool observations:",
     "<tsian-tool-observation>",
-    JSON.stringify(observations, null, 2),
+    JSON.stringify(compactObservations, null, 2),
     "</tsian-tool-observation>",
     "Use these observations to continue. If you have enough context, provide the required final output without tool-call blocks.",
   ].join("\n")
+}
+
+const INLINE_OBSERVATION_CHAR_LIMIT = 6_000
+const OBSERVATION_PREVIEW_CHAR_LIMIT = 2_000
+
+function previewObservationText(text: string, limit = OBSERVATION_PREVIEW_CHAR_LIMIT): string {
+  if (text.length <= limit) return text
+  return `${text.slice(0, limit)}\n...[truncated ${text.length - limit} chars; read a narrower slice or use offset/limit to continue]`
+}
+
+function compactUnknownResultForModel(result: unknown): unknown {
+  if (typeof result === "string") {
+    if (result.length <= INLINE_OBSERVATION_CHAR_LIMIT) return result
+    return {
+      preview: previewObservationText(result),
+      charCount: result.length,
+      truncatedForModel: true,
+    }
+  }
+  if (!isRecord(result)) {
+    return result
+  }
+
+  const content = typeof result.content === "string" ? result.content : undefined
+  if (content === undefined || content.length <= INLINE_OBSERVATION_CHAR_LIMIT) {
+    return result
+  }
+
+  const compact: Record<string, unknown> = { ...result }
+  compact.content = previewObservationText(content)
+  compact.charCount = content.length
+  compact.truncatedForModel = true
+  if (typeof result.offset === "number" && typeof result.returnedLines === "number") {
+    compact.nextOffset = result.offset + result.returnedLines
+  }
+  return compact
+}
+
+function compactToolObservationForModel(
+  observation: RuntimeWorkspaceToolObservation,
+): RuntimeWorkspaceToolObservation {
+  if (!observation.ok) {
+    return observation
+  }
+  return {
+    ...observation,
+    result: compactUnknownResultForModel(observation.result),
+  }
 }
 
 /**
@@ -2224,6 +2273,6 @@ export function formatNativeToolObservationContent(
       observation.error ?? { code: "UNKNOWN", message: "Unknown error" },
     )
   }
-  const result = observation.result
+  const result = compactUnknownResultForModel(observation.result)
   return typeof result === "string" ? result : JSON.stringify(result)
 }

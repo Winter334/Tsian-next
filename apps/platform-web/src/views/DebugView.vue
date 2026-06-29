@@ -37,9 +37,9 @@
         </div>
       </div>
 
-      <div v-else class="grid gap-3">
+      <div v-else class="grid min-w-0 gap-3">
         <!-- 仪表盘 -->
-        <section class="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <section class="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
           <!-- 运行状态 -->
           <article class="retro-inset grid content-start gap-3 p-4">
             <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">运行状态</p>
@@ -86,7 +86,7 @@
           </article>
 
           <!-- Token 统计 -->
-          <article class="retro-inset grid content-start gap-3 p-4 md:col-span-2 xl:col-span-1">
+          <article class="retro-inset grid min-w-0 content-start gap-3 p-4 md:col-span-2 xl:col-span-1">
             <div class="flex items-center justify-between gap-2">
               <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">Token 统计</p>
               <span class="font-mono text-[11px] text-text-dim">{{ tokenStats.callsWithUsage }} 次调用</span>
@@ -108,7 +108,7 @@
               </div>
             </div>
 
-            <div v-if="latestAiCall" class="grid gap-2 border-t border-neon-deep/25 pt-2">
+            <div v-if="latestAiCall" class="grid min-w-0 gap-2 border-t border-neon-deep/25 pt-2">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="truncate font-mono text-[11px] text-text-main">{{ latestAiCall.model || "未知模型" }}</span>
                 <span class="font-mono text-[11px] text-text-dim">{{ latestAiCall.createdAt }}</span>
@@ -134,6 +134,23 @@
                     <div class="h-full bg-neon glow-box" :style="{ width: latestCallShares.total + '%' }" />
                   </div>
                   <span class="w-12 text-right font-mono text-[11px] text-neon">{{ latestAiCall.usage?.total ?? "-" }}</span>
+                </div>
+              </div>
+              <div v-if="latestAiCall.messageSegments?.length" class="grid gap-1 border-t border-neon-deep/20 pt-2">
+                <p class="min-w-0 truncate font-mono text-[10px] uppercase tracking-wider text-text-dim">
+                  消息段 · {{ messageSegmentSummary }}
+                </p>
+                <div class="max-h-28 overflow-y-auto overflow-x-hidden border border-neon-deep/25 bg-elevated/25">
+                  <div
+                    v-for="segment in latestAiCall.messageSegments"
+                    :key="`${latestAiCall.id}-${segment.index}`"
+                    class="grid min-w-0 grid-cols-[1.75rem_3rem_minmax(0,1fr)_3.5rem] gap-1.5 border-b border-neon-deep/15 px-2 py-1 font-mono text-[10px] last:border-b-0"
+                  >
+                    <span class="text-text-dim">#{{ segment.index }}</span>
+                    <span class="truncate" :class="segment.stability === 'dynamic' ? 'text-warning' : segment.stability === 'stable' ? 'text-neon' : 'text-text-main'">{{ segment.stability }}</span>
+                    <span class="truncate text-text-main" :title="segment.preview">{{ segment.role }} · {{ segment.label }}</span>
+                    <span class="text-right text-text-dim">{{ formatTokens(segment.charLength) }}</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -361,7 +378,6 @@ const tokenStats = computed(() => {
 const latestAiCall = computed(() => {
   let latest: AiDebugRecord | null = null
   for (const record of aiDebugRecords.value) {
-    if (!record.usage) continue
     if (!latest || record.createdAt > latest.createdAt) {
       latest = record
     }
@@ -390,6 +406,22 @@ const latestCallShares = computed(() => {
     output: Math.round((output / max) * 100),
     total: Math.round((total / max) * 100),
   }
+})
+
+const messageSegmentSummary = computed(() => {
+  const segments = latestAiCall.value?.messageSegments ?? []
+  if (segments.length === 0) return "0"
+  let stable = 0
+  let semiStable = 0
+  let dynamic = 0
+  let chars = 0
+  for (const segment of segments) {
+    chars += segment.charLength
+    if (segment.stability === "stable") stable += 1
+    else if (segment.stability === "semi-stable") semiStable += 1
+    else dynamic += 1
+  }
+  return `${segments.length} 段 · stable ${stable} · semi ${semiStable} · dynamic ${dynamic} · ${formatTokens(chars)} chars`
 })
 
 // 运行日志：把 trace events 渲染为人类可读事件流（非 JSONL 原文）。
