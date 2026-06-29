@@ -1667,3 +1667,37 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 99: novel AIRP schema 收口与开局链路修复
+
+**Date**: 2026-06-29
+**Task**: novel AIRP schema 收口与开局链路修复
+**Package**: platform-web
+**Branch**: `refactor/novel-airp-schema-consolidation`
+
+### Summary
+
+诊断开局抽取'不可用'根因在知识/契约层非运行时。新增 scenes/relationships 聚合层（派生导航，无双权威）；重写 opening commit 使 brief 进 director + 写 scene/relationships/runtime 指针，删除 save/understanding/ 孤儿路径，开局成果接通游玩回路；重写 opening-initialization Skill 为完整流程指导；schema guide 扩为速查层 + 新增详尽 reference（按需读）；同步 docs/active 方向文档至现行扁平契约（清 06-24 废弃模型）；沉淀 8 条泛用 agent/skill 设计方法论进 spec guide。拆兄弟任务 06-29-novel-airp-maintenance-skill-refinement 承接 resolve_entities + mode 自适应 + skill 边界收敛。build:web + build play-frontend 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `260eafe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
