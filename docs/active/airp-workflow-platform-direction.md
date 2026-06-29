@@ -169,7 +169,7 @@ Game Card 是可复用、可分发的 workspace 模板；Save Instance 是玩家
 
 - `apps/platform-web/src/platform-host/index.ts` 仍是浏览器平台主控。
 - `apps/platform-web/src/agent-runtime/index.ts` 承载 MVP Agent Runtime。
-- 每轮默认走 `master-agent` → `narrative-agent` 两步模型调用。
+- 每轮默认走 master 单步模型调用（master 直接执笔写正文，narrative agent 已移除），master 按需 `agent_call` 联系 retrieval/post-processing/world-architect。
 - 本地存储已有 Game Card 记录、Save Instance、snapshot、history、checkpoint 和 Runtime Workspace files；新建默认 save 会从内置空白 Game Card 复制 workspace 模板。
 - 内置空白 Game Card 会声明 workspace assistant entrypoint，当前为普通工作区内容 `agents/studio-assistant/AGENT.md`；它带有临时官方知识库 `docs/tsian-framework-knowledge.md` 和查询型本地 Skill，用于后续助手 UI / 管理 Agent 读取事实而不是硬猜平台行为。
 - 当前不再提供同进程官方默认游戏前端；内置空白 Game Card 只提供 workspace 模板，默认可玩前端属于后续 remote/packaged Game Card frontend 工作。

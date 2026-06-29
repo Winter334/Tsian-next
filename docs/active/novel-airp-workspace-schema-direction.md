@@ -39,12 +39,21 @@ save/schema/
 save/entities/
   <type>/<localId>.json
 
+save/scenes/
+  README.md
+  <localId>.json
+
+save/relationships/
+  README.md
+  <scope>.json
+
 save/playthrough/
   README.md
   runtime.json
   player.json
   mode.json
   frontier.json
+  understanding-summary.json
   branch.json
 
 save/director/
@@ -160,16 +169,32 @@ Pending patch files live under `save/schema/patches/pending/*.md`. When accepted
 
 ## Agent Responsibilities
 
-- `world-architect`: creates the initial schema draft, opening setup, and later schema patches.
-- `post-processing`: detects stale schema/brief after turns, applies safe schema changes, writes pending patches when confirmation is needed, and calls world-architect when schema design is needed.
+- `world-architect`: creates the initial schema draft, opening setup (entities + scene + relationships + director brief), and later schema patches.
+- `post-processing`: detects stale schema/brief after turns, applies safe schema changes, writes pending patches when confirmation is needed, maintains scene/relationship aggregation slices, and calls world-architect when schema design is needed.
 - `master`: consumes current brief, runtime vars, and visible entity data; it should not invent schema ad hoc.
-- `retrieval`: helps read source and entity details and returns concise findings.
+- `retrieval`: helps read source, entity, scene, and relationship details and returns concise findings.
+
+## Aggregation Layer (scenes / relationships)
+
+The flat entity store (`save/entities/`) is the entity authority but carries no navigation. Two aggregation layers provide O(1) retrieval of "who is in the current scene" and "all relations of a subject":
+
+- `save/scenes/<localId>.json` — one scene per file. Records `{ id, name, location, present, status, updatedTurn }`. `present` is a derived navigation snapshot (ref + name + brief + status summary), not an entity copy. `status`: `active`/`background`/`resolved` (resolved scenes are not deleted — plot is traceable). Supports multi-scene natively (original-character dual-line, canon multi-line).
+- `save/relationships/<scope>.json` — one subject per file. `<scope>` = subject localId (e.g. `character-萧玄`). Records `{ subject, edges, updatedTurn }`. Absorbs long-novel relationship explosion: a subject's file is small, retrieval is O(1). Bidirectional relations write an edge on both sides; unidirectional (e.g. membership) write only the dependent side.
+- `save/playthrough/runtime.json` adds `activeSceneIds: [...]` — pointers to current active scenes (navigation entry, not scene content authority).
+
+## Authority
+
+- entity json is the entity authority.
+- scene / relationship json are derived snapshots (present summaries derive from entities; edges reference entity ids); lost ones are rebuildable, not a second source of truth.
+- `runtime.activeSceneIds` are pointers, not scene content authority.
+
+When two copies of the same data exist, the authority / derived relationship and refresh timing must be written down to avoid dual authority.
 
 ## Runtime Variables
 
 Save-level runtime variables belong in `save/playthrough/runtime.json` when they are frequently accessed, player-facing, or frontend-managed. Examples:
 
-- active scene;
+- active scene ids (pointers to current scenes);
 - player character/location;
 - primary inventory summary;
 - equipped refs;

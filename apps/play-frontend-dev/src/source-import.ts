@@ -3,7 +3,7 @@ import type { TsianApi } from "@tsian/play-bridge"
 const SOURCE_MANIFEST_PATH = "save/source/manifest.json"
 const CHAPTER_INDEX_PATH = "save/source/chapters.index.json"
 const CHAPTERS_ROOT = "save/source/chapters/"
-const INITIAL_SUMMARY_PATH = "save/understanding/initial-summary.json"
+const INITIAL_SUMMARY_PATH = "save/playthrough/understanding-summary.json"
 const NORMALIZATION_VERSION = "novel-source-v1"
 const PSEUDO_CHAPTER_TARGET = 15_000
 

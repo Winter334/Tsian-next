@@ -1667,3 +1667,105 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 99: novel AIRP schema 收口与开局链路修复
+
+**Date**: 2026-06-29
+**Task**: novel AIRP schema 收口与开局链路修复
+**Package**: platform-web
+**Branch**: `refactor/novel-airp-schema-consolidation`
+
+### Summary
+
+诊断开局抽取'不可用'根因在知识/契约层非运行时。新增 scenes/relationships 聚合层（派生导航，无双权威）；重写 opening commit 使 brief 进 director + 写 scene/relationships/runtime 指针，删除 save/understanding/ 孤儿路径，开局成果接通游玩回路；重写 opening-initialization Skill 为完整流程指导；schema guide 扩为速查层 + 新增详尽 reference（按需读）；同步 docs/active 方向文档至现行扁平契约（清 06-24 废弃模型）；沉淀 8 条泛用 agent/skill 设计方法论进 spec guide。拆兄弟任务 06-29-novel-airp-maintenance-skill-refinement 承接 resolve_entities + mode 自适应 + skill 边界收敛。build:web + build play-frontend 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `260eafe` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 100: novel AIRP 维护/检索 skill 优化
+
+**Date**: 2026-06-29
+**Task**: novel AIRP 维护/检索 skill 优化
+**Package**: platform-web
+**Branch**: `refactor/novel-airp-schema-consolidation`
+
+### Summary
+
+承接任务 A deferred 的三项推进期优化。R1: apply-world-state-plan/maintenance 放开 edit mode（oldString/newString），mode 由提供字段推断、调用方决定、不按文件类型预设，转发 workspace.edit 保留白名单+reason 审计。R2: 两个 SKILL.md 澄清边界——自由文本可直接平台 write/edit，skill 服务有 schema 约束的结构化写入（轻量执行不删白名单）。R3: 新增 entity-resolver skill resolve_entities，批量按 ref 取+容器嵌套 depth 展开（visited 防循环、缺文件标记 missing 不抛）+可选关系/场景，一次返回省往返。R4: retrieval AGENT.md 工作流约定（找=search/单读=read/批量+嵌套=resolve_entities/关系=直读 subject 文件/在场=runtime 指针）。附带 bugfix: isAllowedTarget 补 scenes/relationships（兄弟任务契约落地后必然补丁）。build:web 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `262f971` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 101: novel AIRP skill/agent 文档中文化
+
+**Date**: 2026-06-29
+**Task**: novel AIRP skill/agent 文档中文化
+**Package**: platform-web
+**Branch**: `refactor/novel-airp-schema-consolidation`
+
+### Summary
+
+把任务 A/B 改动/新增的 skill 与 agent 相关文档从英文/中英混杂中文化，方便中文玩家阅读魔改：memory-maintenance / world-state-maintenance / entity-resolver SKILL.md、schema 速查 guide + 详尽 reference、save/playthrough README、retrieval/post-processing AGENT.md + agent.json summary、相邻 SOUL.md（一致性）。技术标识符（path、JSON 字段名、front-matter key、代码块）保留英文。未改文档留待后续一次性优化。build:web 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f61d097` | docs(novel-airp): translate touched skill/agent docs to Chinese |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
