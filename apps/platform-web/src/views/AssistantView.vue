@@ -29,8 +29,19 @@
             :class="session.id === activeSessionId ? 'text-neon' : 'text-text-dim group-hover:text-text-main'"
             @click="handleSelectSession(session.id)"
           >
-            <span class="block truncate text-xs font-bold">{{ session.title }}</span>
-            <span class="mt-0.5 block font-mono text-[10px] text-text-dim/80">{{ formatSessionTime(session.updatedAt) }}</span>
+            <span class="flex items-center gap-1.5">
+              <Loader2
+                v-if="runningSessionIds.has(session.id)"
+                class="h-3 w-3 shrink-0 animate-spin text-neon"
+                title="生成中"
+                aria-label="生成中"
+              />
+              <span class="block truncate text-xs font-bold">{{ session.title }}</span>
+            </span>
+            <span class="mt-0.5 block font-mono text-[10px] text-text-dim/80">
+              {{ formatSessionTime(session.updatedAt) }}
+              <span v-if="runningSessionIds.has(session.id) && session.id !== activeSessionId" class="text-neon">· 后台生成中</span>
+            </span>
           </button>
           <div
             class="flex shrink-0 items-center gap-1 pr-2 transition-opacity"
@@ -86,12 +97,19 @@
         </div>
 
         <div class="flex shrink-0 items-center gap-2">
-          <!-- 预设(服务商)下拉:一级,立即持久化 -->
+          <!-- 预设(服务商)下拉:一级,立即持久化.
+               有任意会话(含后台)生成中时禁用——防止切走会话的后台 turn 与
+               新选预设/模型打架(正在跑的 turn 已锁定 config,但全局 agent.json
+               被改会影响下一次发送)。治标方案:运行中不让动模型配置。 -->
           <Select
             :model-value="assistantProviderPresetId || '__platform_default__'"
+            :disabled="runningSessionIds.size > 0"
             @update:model-value="(value) => handlePresetChange(value as string)"
           >
-            <SelectTrigger class="h-8 w-auto min-w-[6rem] max-w-[10rem] px-2 text-[11px]">
+            <SelectTrigger
+              class="h-8 w-auto min-w-[6rem] max-w-[10rem] px-2 text-[11px]"
+              :title="runningSessionIds.size > 0 ? '有会话正在生成，暂不可切换服务商' : '服务商预设'"
+            >
               <SelectValue placeholder="平台默认" />
             </SelectTrigger>
             <SelectContent>
@@ -106,13 +124,17 @@
             </SelectContent>
           </Select>
 
-          <!-- 模型下拉:二级,依赖预设选中.列出该预设的 models. -->
+          <!-- 模型下拉:二级,依赖预设选中.列出该预设的 models.
+               额外禁用条件:有任意会话生成中(同预设下拉理由)。 -->
           <Select
             :model-value="assistantModelId || '__preset_default__'"
-            :disabled="!assistantProviderPresetId || assistantModels.length === 0"
+            :disabled="!assistantProviderPresetId || assistantModels.length === 0 || runningSessionIds.size > 0"
             @update:model-value="(value) => handleModelChange(value as string)"
           >
-            <SelectTrigger class="h-8 w-auto min-w-[6rem] max-w-[10rem] px-2 text-[11px]">
+            <SelectTrigger
+              class="h-8 w-auto min-w-[6rem] max-w-[10rem] px-2 text-[11px]"
+              :title="runningSessionIds.size > 0 ? '有会话正在生成，暂不可切换模型' : (!assistantProviderPresetId ? '请先选择服务商' : '模型')"
+            >
               <SelectValue placeholder="预设默认" />
             </SelectTrigger>
             <SelectContent>
@@ -714,11 +736,69 @@ const suggestions = [
   { label: "介绍游戏卡结构", message: "介绍一下当前游戏卡的内容结构。" },
 ]
 
+/** ask_user 活跃提问状态(按 turn 隔离,存于 turn state)。 */
+interface ActiveAskState {
+  requestId: string
+  question: string
+  options?: string[]
+  allowCustom?: boolean
+}
+
+/** recordAskNode 回调入参类型(镜像 useAssistantTimeline.recordAskNode)。 */
+interface RecordAskInput {
+  requestId: string
+  question: string
+  options?: string[]
+  allowCustom?: boolean
+  answer?: string
+  cancelled?: boolean
+}
+
+/**
+ * 按会话隔离的进行中 turn 状态。桌面助手支持切走会话时让 turn 在后台继续
+ * 跑完(不中断),切回时把流式消息重新挂回 messages。每个 turn 持有自己专属的
+ * assistantMsg/userMsg(reactive,被 send() push 进当时的 messages.value;切走后
+ * 不在 messages.value 但仍被本 state 闭包持有,回调继续 mutate 不影响新会话)。
+ * 不含 activeAsk——活跃提问统一存响应式 activeAskBySession(见下),供 computed
+ * 与会话列表指示器可靠追踪;本 state 只存非响应式的控制句柄/消息引用。
+ */
+interface AssistantTurnState {
+  sessionId: string
+  controller: AbortController
+  userMsg: ChatMessage
+  assistantMsg: ChatMessage
+  flush: () => void
+  recordAsk: (input: RecordAskInput) => void
+  finalize: () => void
+  timeline: AssistantTimelineNode[]
+}
+
+// 按会话隔离的进行中 turn 注册表(普通 Map:含 AbortController,不可深 reactive)。
+// 内容对象(userMsg/assistantMsg)是 reactive,但 Map 本身不响应式——运行态追踪
+// 走下面的 runningSessionIds / activeAskBySession 两个响应式集合。
+const assistantTurns = new Map<string, AssistantTurnState>()
+// ask 请求路由:requestId → sessionId。host 的 onAskUserRequest 回调填充,
+// 用于把全局 interaction-request 事件路由到正确的(可能是后台的)turn。
+const askRequestSession = new Map<string, string>()
+// 响应式:正在运行的会话 id 集合(含前台与后台 turn)。供 sending computed 与
+// 会话列表"生成中"指示器可靠追踪——assistantTurns 是普通 Map 不响应式,UI 靠
+// 本集合在 turn 起/止(add/delete)时触发更新。
+const runningSessionIds = reactive(new Set<string>())
+// 响应式:各会话的活跃 ask_user 提问(key=sessionId)。供 activeAsk computed
+// 追踪——把提问状态从 turn state 抽出统一管理,避免普通 Map value 字段赋值
+// 不触发更新的缺陷。answer/cancel 时 delete 本 Map,computed 自动反映。
+const activeAskBySession = reactive(new Map<string, ActiveAskState>())
+
 const sessions = ref<AssistantSessionSummary[]>([])
 const activeSessionId = ref<string | null>(null)
 const messages = ref<ChatMessage[]>([])
 const inputText = ref("")
-const sending = ref(false)
+// sending 语义改为"当前显示会话是否有进行中 turn"(支持后台 turn:切走时当前会话
+// 无 turn→sending false,footer 恢复可输入;切回有后台 turn 的会话→sending true)。
+// 读响应式 runningSessionIds,turn 起/止时 add/delete 触发可靠更新。
+const sending = computed(() =>
+  activeSessionId.value ? runningSessionIds.has(activeSessionId.value) : false,
+)
 const errorMessage = ref("")
 const cardName = ref("")
 const messageListRef = ref<HTMLElement | null>(null)
@@ -741,22 +821,16 @@ const copiedIndex = ref<number | null>(null)
 const editingIndex = ref<number | null>(null)
 // Smart scroll: auto-scroll only while the user is pinned near the bottom.
 const userPinnedToBottom = ref(true)
-// Abort controller for the in-flight chat turn (stop-generating button).
-const abortController = ref<AbortController | null>(null)
-// 当前进行中 turn 的 flush 函数(由 send() 内 useAssistantTimeline 提供).
-// 切会话/关页面时调它把流式缓冲落 content,防半截回复丢失.send finally 段清空.
-const currentTurnFlush = ref<(() => void) | null>(null)
 // ask_user 订阅的 unsubscribe 闭包（onMounted 注册、onBeforeUnmount 释放）。
 let unsubscribeInteractionRequest: (() => void) | null = null
-// 当前活跃提问（ask_user 触发后、玩家回答/取消前）。存在期间 footer 输入框变形为
-// 提问区，问题常驻焦点位；普通输入框/发送/停止隐藏，避免两个输入框并存。
-// 回答/取消后清空（回到普通输入态）。turn finally 段兜底清空防悬空。
-const activeAsk = ref<{
-  requestId: string
-  question: string
-  options?: string[]
-  allowCustom?: boolean
-} | null>(null)
+// 当前活跃提问:派生自当前显示会话(支持后台 turn 的 ask 路由)。
+// read 响应式 activeAskBySession,answer/cancel 时 delete 本 Map 触发更新,
+// footer 随之在提问态/普通输入态间切换。
+const activeAsk = computed<ActiveAskState | null>(() =>
+  activeSessionId.value
+    ? activeAskBySession.get(activeSessionId.value) ?? null
+    : null,
+)
 // 工具调用组的折叠状态（key = "msgIdx-segIdx", 每条消息的每个段独立）.
 // tool 节点不再用自身 collapsed 字段（因为合并成组了），用这个 map 管理.
 const toolGroupCollapsedMap = reactive<Record<string, boolean>>({})
@@ -764,19 +838,6 @@ function toolGroupCollapsed(key: string): boolean {
   // 默认折叠（true），只有显式设为 false 时展开
   return toolGroupCollapsedMap[key] !== false
 }
-// 当前进行中 turn 的 ask 落库回调（由 send() 内 useAssistantTimeline 提供）。
-// 玩家回答/取消后用 recordAsk 把这次 Q&A 作为只读记录写入 timeline（保留对话历史）。
-// send finally 段清空。
-const currentTurnRecordAsk = ref<
-  ((input: {
-    requestId: string
-    question: string
-    options?: string[]
-    allowCustom?: boolean
-    answer?: string
-    cancelled?: boolean
-  }) => void) | null
->(null)
 // 提问区自定义输入框（allowCustom 时唯一输入框），ask 触发后聚焦。
 const askCustomInputRef = ref<HTMLInputElement | null>(null)
 const sessionCreating = ref(false)
@@ -875,20 +936,12 @@ async function handleSelectSession(id: string) {
   if (id === activeSessionId.value) {
     return
   }
-  // 切会话前:若当前有进行中的 turn 且有流式缓冲,先 flush 落 content + 持久化,
-  // 防半截回复丢失(用户主动切走,可靠执行).flush 后 abort 当前 turn.
-  if (sending.value && currentTurnFlush.value) {
-    currentTurnFlush.value()
-    const lastMsg = messages.value[messages.value.length - 1]
-    if (lastMsg && lastMsg.role === "assistant" && lastMsg.content) {
-      lastMsg.content = `${lastMsg.content}\n\n_（已切换会话）_`
-    }
-    await persistCurrentSession()
-    // 立即清提问态：abort 会触发 host rejectAllInteractionRequests + send finally，
-    // 但 finally 异步滞后于下方会话切换，这里显式清掉避免新会话 footer 卡在提问态。
-    activeAsk.value = null
-    abortController.value?.abort()
-  }
+  // 后台继续策略:切走会话时**不 abort** 当前 turn。它带着锁定的 sessionId
+  // 继续在后台跑完,host 用该 sessionId 持久化;切回时重新挂回流式消息即可看到
+  // 完整回复。这消除了旧设计"切走即 abort→回复被截断"的中断,也消除了
+  // send() catch/finally 操作被切走的 messages.value 引发的竞态(误删新会话
+  // 消息、持久化写错会话)。
+  //
   // Optimistic UI update first: switch highlight immediately, then load the
   // target session's messages (one fast read). Persist the previous session in
   // the background so the click feels instant.
@@ -897,15 +950,26 @@ async function handleSelectSession(id: string) {
 
   activeSessionId.value = id
   const stored = await getAssistantSessionMessages(id)
-  messages.value = mapStoredMessagesToChat(stored)
+  let targetMessages = mapStoredMessagesToChat(stored)
+  // 若目标会话有后台进行中 turn:存储里还没有本轮(turn 未结束,host 未写),
+  // 把 turn 持有的 userMsg + assistantMsg 追加到 messages,让流式继续可见。
+  // turn 的回调继续 mutate 同一对象引用,UI 自动更新(前台可见)。
+  const targetTurn = assistantTurns.get(id)
+  if (targetTurn) {
+    targetMessages = [...targetMessages, targetTurn.userMsg, targetTurn.assistantMsg]
+  }
+  messages.value = targetMessages
   // 恢复目标会话的上下文环已用值.
   contextUsed.value = await loadContextUsed(id)
   await scrollToBottom()
 
   // Background persistence of the session we just left. Silent (touch=false):
   // merely selecting another session must not bump this one's sort order.
+  // 若离开的会话有进行中 turn:跳过此处持久化——后台 turn 结束时 host 会用
+  // 该 sessionId 写完整消息;这里写的是切走时刻的半截快照,会与 host 写入竞态
+  // 且可能留下空 content 的 assistant 占位。无 turn 的会话才保存(用户可能编辑过)。
   void setActiveAssistantSessionId("local", id)
-  if (previousId) {
+  if (previousId && previousId !== id && !assistantTurns.has(previousId)) {
     void saveAssistantSessionMessages("local", previousId, previousMessages, {
       touch: false,
     })
@@ -916,9 +980,11 @@ async function handleCreateSession() {
   sessionCreating.value = true
   try {
     // Persist the current session in the background so creation feels instant.
+    // 与 handleSelectSession 同理:前一会话若有后台 turn,跳过此处持久化——
+    // 后台 turn 结束时 host 会写完整消息,这里写半截快照会与之竞态。
     const previousId = activeSessionId.value
     const previousMessages = chatToStoredMessages(messages.value)
-    if (previousId) {
+    if (previousId && !assistantTurns.has(previousId)) {
       void saveAssistantSessionMessages("local", previousId, previousMessages, {
         touch: false,
       })
@@ -969,6 +1035,21 @@ async function handleDeleteSessionById(id: string) {
   const wasActive = id === activeSessionId.value
   sessionDeleting.value = true
   try {
+    // 删除有后台 turn 的会话:先 abort 该 turn 并清注册表(防止后台 turn 结束时
+    // 回写已删除的 sessionId)。host catch 路径 persistTurnFallback 会尝试写该
+    // sessionId,但会话已删,saveAssistantSessionMessages 对不存在的 id 是 no-op
+    // (或静默失败),不致脏数据。
+    const turn = assistantTurns.get(id)
+    if (turn) {
+      const pendingAsk = activeAskBySession.get(id)
+      if (pendingAsk) {
+        askRequestSession.delete(pendingAsk.requestId)
+        activeAskBySession.delete(id)
+      }
+      turn.controller.abort()
+      assistantTurns.delete(id)
+      runningSessionIds.delete(id)
+    }
     await deleteAssistantSession("local", id)
     await refreshSessions()
     if (wasActive) {
@@ -977,7 +1058,13 @@ async function handleDeleteSessionById(id: string) {
       if (nextId) {
         activeSessionId.value = nextId
         const stored = await getAssistantSessionMessages(nextId)
-        messages.value = mapStoredMessagesToChat(stored)
+        let nextMessages = mapStoredMessagesToChat(stored)
+        // 切到的会话若有后台 turn:挂回流式消息(与 handleSelectSession 同逻辑)。
+        const nextTurn = assistantTurns.get(nextId)
+        if (nextTurn) {
+          nextMessages = [...nextMessages, nextTurn.userMsg, nextTurn.assistantMsg]
+        }
+        messages.value = nextMessages
         contextUsed.value = await loadContextUsed(nextId)
       } else {
         const session = await createAssistantSession("local")
@@ -1196,14 +1283,25 @@ async function send() {
   }
   pendingAttachments.value = []
 
-  messages.value.push({
+  // activeSessionId 由 loadActiveSession/ensureAssistantSession 保证非空;
+  // guard 兜底边缘时序(组件未初始化完成就发消息),类型上收窄 string|null -> string.
+  const sessionId = activeSessionId.value
+  if (!sessionId) {
+    return
+  }
+
+  // 本轮 user/assistant 消息存为独立 reactive 对象(非内联字面量),turn state
+  // 持有它们的引用。切走会话后 messages.value 被换成新会话,但 turn 回调继续
+  // mutate 这两个对象——它们已不在 messages.value,故不影响新会话;切回时
+  // handleSelectSession 把同一对象引用重新挂回 messages.value,流式继续可见。
+  const userMsg = reactive<ChatMessage>({
     role: "user",
     content,
     ...(attachments.length > 0 ? { attachments } : {}),
   })
+  messages.value.push(userMsg)
   inputText.value = ""
   resetInputHeight()
-  sending.value = true
 
   // Placeholder assistant message:过程节点(thought/tool)按发生顺序纵向平铺,
   // streamingText 承载当前轮 content 流式文本,onRoundEnd 写入 content;
@@ -1224,29 +1322,35 @@ async function send() {
 
   // 时间线式流式:native 模式按 round 顺序把过程事件(thought/tool)作为独立节点纵向平铺.
   // onDelta/onRoundEnd/onTool 的解析逻辑抽到 useAssistantTimeline composable(纯流式状态,
-  // 不碰 DOM/持久化);这里只把 maybeScrollToBottom 作为 onUpdate 传入,让视图层保留滚动控制.
+  // 不碰 DOM/持久化);onUpdate 只在 turn 属于当前显示会话时滚动(后台 turn 不扰动新会话视图).
   // text 模式无回调,content 在 reconcile 一次性赋值,timeline 为空——降级为现状.
   const { timeline, onDelta, onRoundEnd, onTool, recordAskNode, flushStreaming, finalize } = useAssistantTimeline(
     assistantMsg,
-    () => maybeScrollToBottom(),
+    () => {
+      if (sessionId === activeSessionId.value) {
+        maybeScrollToBottom()
+      }
+    },
   )
-  let shouldPersistAfterFinalize = false
-  // 暴露 flush 给组件作用域,供切会话/关页面时落盘流式缓冲.
-  currentTurnFlush.value = flushStreaming
-  // 暴露 ask 落库回调给组件作用域,供玩家回答/取消时把 Q&A 写入 timeline（回调绑定见 onMounted）。
-  currentTurnRecordAsk.value = recordAskNode
 
   // ③ Stop-generating: an AbortController for this turn, abortable from the UI.
   const controller = new AbortController()
-  abortController.value = controller
 
-  // activeSessionId 由 loadActiveSession/ensureAssistantSession 保证非空;
-  // guard 兜底边缘时序(组件未初始化完成就发消息),类型上收窄 string|null -> string.
-  const sessionId = activeSessionId.value
-  if (!sessionId) {
-    sending.value = false
-    return
+  // 注册按会话隔离的 turn state:sending 由 computed 从 runningSessionIds 派生。
+  const state: AssistantTurnState = {
+    sessionId,
+    controller,
+    userMsg,
+    assistantMsg,
+    flush: flushStreaming,
+    recordAsk: recordAskNode,
+    finalize,
+    timeline,
   }
+  assistantTurns.set(sessionId, state)
+  runningSessionIds.add(sessionId)
+
+  let shouldPersistAfterFinalize = false
 
   try {
     const result = await runAssistantChat({
@@ -1258,18 +1362,27 @@ async function send() {
       onRoundEnd,
       onTool,
       signal: controller.signal,
+      // ask_user 路由:host emit 前回调,把 requestId 关联到本会话,
+      // 供全局 interaction-request 订阅路由到正确的(可能后台的)turn。
+      onAskUserRequest: (requestId) => {
+        askRequestSession.set(requestId, sessionId)
+      },
     })
     // reconcile:replyText 是最后一轮(final)的文本,以它为准(strip 工具块等).
     // native 模式 onRoundEnd(stop)已写入 content;text 模式无回调,这里首次赋值.
+    // 对 state.assistantMsg 赋值:前台时它就是 messages.value 里的对象(UI 更新);
+    // 后台时不在 messages.value,赋值无副作用,切回时从存储读 host 写入的完整结果。
     assistantMsg.content = result.replyText
     assistantMsg.streamingText = ""
     assistantMsg.streamingReasoning = ""
     // 更新上下文环:used = 最后一轮 provider 返回的 input tokens(当前上下文大小).
-    // text 模式无 usage(undefined),环保持上次值或归零.
+    // 仅在前台(本会话是当前显示会话)时更新环显示,避免后台 turn 窜改新会话的环。
+    // 按会话持久化 used 始终执行,刷新/切走再切回恢复。
     if (result.usage?.input !== undefined) {
-      contextUsed.value = result.usage.input
-      // 按会话持久化 used,刷新/切走再切回恢复,不再归零.
       void saveContextUsed(sessionId, result.usage.input)
+      if (sessionId === activeSessionId.value) {
+        contextUsed.value = result.usage.input
+      }
     }
     // 消息 + context + timeline 已由 host(runAssistantChat)同步写入(含 toolCalls +
     // timeline).前端不再补写——runtime 层采集 thought/interim/tool 供 host 写入,
@@ -1279,23 +1392,18 @@ async function send() {
     const budgetExhausted = error instanceof Error && error.name === "ContextBudgetExhaustedError"
     const taskTimeout = error instanceof Error && error.name === "TaskTimeoutError"
     const taskStalled = error instanceof Error && error.name === "TaskCompressionStalledError"
+    const isFront = sessionId === activeSessionId.value
     // flushStreaming 由 useAssistantTimeline 提供:把流式缓冲落盘(防中止/出错丢进度).
     if (aborted) {
       // Keep the partial text; mark it so the user knows it was cut short.
       flushStreaming()
       if (assistantMsg.content) {
         assistantMsg.content = `${assistantMsg.content}\n\n_（已停止）_`
-        await persistCurrentSession()
-        shouldPersistAfterFinalize = true
-      } else if (timeline.length === 0) {
-        // Nothing was produced at all: drop the empty placeholder.
+      } else if (timeline.length === 0 && isFront) {
+        // 前台且啥都没产出:弹出空占位(后台时 assistantMsg 不在 messages.value,无需 pop)。
         messages.value.pop()
-        await persistCurrentSession()
-      } else {
-        // Only process nodes (no reply text) — keep them, persist.
-        await persistCurrentSession()
-        shouldPersistAfterFinalize = true
       }
+      shouldPersistAfterFinalize = true
     } else if (budgetExhausted || taskTimeout || taskStalled) {
       // 三类温和中止同路径(非失败的中止,与 abort 对称):
       // - budgetExhausted:turn 内第二次达预算(narrative)/压无可压(task).
@@ -1313,75 +1421,135 @@ async function send() {
       } else {
         assistantMsg.content = `${hint}。`
       }
-      await persistCurrentSession()
       shouldPersistAfterFinalize = true
     } else {
       const message = error instanceof Error ? error.message : String(error)
-      errorMessage.value = message
+      // 错误提示只在前台显示(用户在当前会话);后台 turn 失败不窜改新会话的错误栏,
+      // 半截结果由持久化兜底,用户切回原会话可见。
+      if (isFront) {
+        errorMessage.value = message
+      } else {
+        console.error("[assistant] 后台 turn 失败", message)
+      }
       flushStreaming()
-      if (!assistantMsg.content && timeline.length === 0) {
+      if (!assistantMsg.content && timeline.length === 0 && isFront) {
         messages.value.pop()
       }
-      await persistCurrentSession()
       shouldPersistAfterFinalize = true
     }
   } finally {
     // 回合结束:折叠所有仍展开的 thought/tool 节点 + 清空流式缓冲(composable 负责).
     finalize()
-    currentTurnFlush.value = null
-    currentTurnRecordAsk.value = null
-    // 兜底:turn 异常结束(abort/timeout/error)时若有挂起的 ask,host 已
-    // rejectAllInteractionRequests,这里清 activeAsk 防 footer 卡在提问态。
-    // 正常回答/取消路径已在 answer/cancel 处理里清空,此处为 no-op。
-    activeAsk.value = null
-    abortController.value = null
-    sending.value = false
-    if (shouldPersistAfterFinalize) {
-      await persistCurrentSession()
+    // 清理 ask 路由 + turn 注册表 + 响应式集合:sending/activeAsk computed 随之更新。
+    const pendingAsk = activeAskBySession.get(sessionId)
+    if (pendingAsk) {
+      askRequestSession.delete(pendingAsk.requestId)
+      activeAskBySession.delete(sessionId)
     }
-    await scrollToBottom()
-    nextTick(() => inputRef.value?.focus())
+    assistantTurns.delete(sessionId)
+    runningSessionIds.delete(sessionId)
+    // 持久化兜底(host catch 不写消息):前台用 persistCurrentSession(保留完整
+    // attachments/toolCalls/timeline),后台用 history 快照兜底(保住本轮半截正文)。
+    if (shouldPersistAfterFinalize) {
+      if (sessionId === activeSessionId.value) {
+        await persistCurrentSession()
+      } else {
+        await persistTurnFallback(state, history)
+      }
+    }
+    // 滚动/聚焦只在前台(后台 turn 结束不扰动当前显示会话的视图)。
+    if (sessionId === activeSessionId.value) {
+      await scrollToBottom()
+      nextTick(() => inputRef.value?.focus())
+    }
   }
 }
 
+/**
+ * 后台 turn 结束(abort/超时/错误)时的持久化兜底:用 send() 时刻的 history 快照 +
+ * 本轮 user/assistant 构造完整消息写回 turn 的 sessionId。前台 turn 用
+ * persistCurrentSession(更完整),本函数仅服务后台场景——host catch 不写消息,
+ * 否则切回原会话会丢失本轮半截回复。history 快照不含历史 toolCalls/timeline,
+ * 但保住本轮正文已足够(中止/错误的半截回复本就是临时保留)。
+ */
+async function persistTurnFallback(
+  state: AssistantTurnState,
+  history: ConversationMessageRecord[],
+): Promise<void> {
+  const fullMessages: ConversationMessageRecord[] = [
+    ...history,
+    {
+      role: "user",
+      content: state.userMsg.content,
+      ...(state.userMsg.attachments && state.userMsg.attachments.length > 0
+        ? { attachments: state.userMsg.attachments }
+        : {}),
+    },
+  ]
+  if (state.assistantMsg.content || state.timeline.length > 0) {
+    fullMessages.push({ role: "assistant", content: state.assistantMsg.content })
+  }
+  await saveAssistantSessionMessages("local", state.sessionId, fullMessages, { touch: true })
+  await refreshSessions()
+}
+
 function stopGenerating() {
-  abortController.value?.abort()
+  const sid = activeSessionId.value
+  if (sid) {
+    assistantTurns.get(sid)?.controller.abort()
+  }
 }
 
 /**
  * ask_user 玩家回答处理：resolve 事件等待表（让助手 turn 拿到答案继续）+
- * 把 Q&A 作为只读记录写入 timeline（保留对话历史）+ 清 activeAsk 回到普通输入态。
+ * 把 Q&A 作为只读记录写入 timeline（保留对话历史）+ 清该会话的活跃提问。
  * 活跃提问期间不在 timeline 渲染交互卡片（由 footer 承载），仅回答后落库。
+ * UI 只渲染前台会话的 activeAsk（computed），故本组函数总针对前台 turn；
+ * 但 requestId 可能来自后台 turn（路由表会指回后台 sessionId）——此时 resolve
+ * 让后台 turn 继续，recordAsk 作用于后台 turn 的 timeline（切回时可见），前台
+ * activeAsk 为 null 不受影响。断言兜底:requestId 路由不到 turn 说明已被清理,跳过。
  */
 function answerAsk(requestId: string, answer: string): void {
-  const ask = activeAsk.value
   resolveInteractionRequest(requestId, answer)
-  // 仅当仍是同一个提问时落库（turn 异常已 reject，此时 ask 可能为 null/已切换）。
-  if (ask && ask.requestId === requestId) {
-    currentTurnRecordAsk.value?.({ ...ask, answer })
+  const ask = activeAsk.value
+  const state = resolveAskTurn(requestId)
+  if (ask && ask.requestId === requestId && state) {
+    state.recordAsk({ ...ask, answer })
+    activeAskBySession.delete(state.sessionId)
+    askRequestSession.delete(requestId)
   }
-  activeAsk.value = null
 }
 
 function submitCustomAsk(requestId: string, value: string): void {
   const trimmed = value.trim()
   if (!trimmed) return
-  const ask = activeAsk.value
   resolveInteractionRequest(requestId, trimmed)
-  if (ask && ask.requestId === requestId) {
-    currentTurnRecordAsk.value?.({ ...ask, answer: trimmed })
+  const ask = activeAsk.value
+  const state = resolveAskTurn(requestId)
+  if (ask && ask.requestId === requestId && state) {
+    state.recordAsk({ ...ask, answer: trimmed })
+    activeAskBySession.delete(state.sessionId)
+    askRequestSession.delete(requestId)
   }
-  activeAsk.value = null
 }
 
 function cancelAsk(requestId: string): void {
-  const ask = activeAsk.value
   // cancelled=true 时 answer 传空串（AskUserResult.answer 必填），助手侧据此识别取消。
   resolveInteractionRequest(requestId, "", true)
-  if (ask && ask.requestId === requestId) {
-    currentTurnRecordAsk.value?.({ ...ask, cancelled: true })
+  const ask = activeAsk.value
+  const state = resolveAskTurn(requestId)
+  if (ask && ask.requestId === requestId && state) {
+    state.recordAsk({ ...ask, cancelled: true })
+    activeAskBySession.delete(state.sessionId)
+    askRequestSession.delete(requestId)
   }
-  activeAsk.value = null
+}
+
+/** 按 requestId 路由到对应 turn state（前台优先,后台兜底）。 */
+function resolveAskTurn(requestId: string): AssistantTurnState | null {
+  const sid = askRequestSession.get(requestId)
+  if (!sid) return null
+  return assistantTurns.get(sid) ?? null
 }
 
 /**
@@ -1575,8 +1743,11 @@ async function loadProviderPreset() {
   }
 }
 
-/** 切换预设:立即持久化 + 重新加载该预设的模型列表 + 清空 modelId(新预设的模型 id 不同). */
+/** 切换预设:立即持久化 + 重新加载该预设的模型列表 + 清空 modelId(新预设的模型 id 不同).
+ *  防御 guard:有任意会话(含后台)生成中时拒绝——正在跑的 turn 已锁定 config,
+ *  但改全局 agent.json 会影响下次发送,禁用期让用户等当前回合结束。 */
 async function handlePresetChange(presetId: string) {
+  if (runningSessionIds.size > 0) return
   const id = presetId === "__platform_default__" ? "" : presetId
   assistantProviderPresetId.value = id
   assistantModelId.value = ""
@@ -1588,8 +1759,9 @@ async function handlePresetChange(presetId: string) {
   await loadProviderPreset()
 }
 
-/** 切换预设内模型:立即持久化 + 更新环总量. */
+/** 切换预设内模型:立即持久化 + 更新环总量. 同 handlePresetChange 的运行中 guard。 */
 async function handleModelChange(modelId: string) {
+  if (runningSessionIds.size > 0) return
   const id = modelId === "__preset_default__" ? "" : modelId
   assistantModelId.value = id
   await updateLocalAssistantModel(id || null)
@@ -1618,12 +1790,13 @@ function recoverKey(sessionId: string): string {
   return `${RECOVER_KEY_PREFIX}${sessionId}`
 }
 
-/** 写恢复点(同步 localStorage,不阻塞卸载).只在有流式正文时写. */
+/** 写恢复点(同步 localStorage,不阻塞卸载).只在有流式正文时写.
+ *  修复:改为从 turn 注册表取本会话的 turn state,而非读单例 messages.value——
+ *  切走后流式消息不在 messages.value,旧逻辑会漏写后台 turn 的恢复点。 */
 function writeRecoveryPoint(sessionId: string): void {
-  if (!sending.value || !currentTurnFlush.value) return
-  const lastMsg = messages.value[messages.value.length - 1]
-  if (!lastMsg || lastMsg.role !== "assistant") return
-  const text = lastMsg.streamingText ?? lastMsg.content
+  const state = assistantTurns.get(sessionId)
+  if (!state) return
+  const text = state.assistantMsg.streamingText ?? state.assistantMsg.content
   if (!text) return
   try {
     localStorage.setItem(
@@ -1676,19 +1849,24 @@ onMounted(async () => {
   window.addEventListener("beforeunload", onBeforeUnloadRecovery)
   document.addEventListener("visibilitychange", onVisibilityChangeRecovery)
   // 订阅 ask_user 交互请求：助手 runtime 调 ask_user 时 emitInteractionRequest
-  // 推给本订阅，在此置 activeAsk 让 footer 变形为提问区（问题常驻焦点位）。
-  // 活跃期间不在 timeline 渲染交互卡片；玩家回答/取消后由 answer/cancel 落只读记录。
+  // 推给本订阅。host 的 onAskUserRequest 已把 requestId 关联到会话,这里路由到
+  // 对应 turn state 并写入响应式 activeAskBySession——前台 turn 的 ask 通过
+  // computed 反映到 footer 提问区;后台 turn 的 ask 存于本 Map(切回时若仍未答
+  // 则恢复显示)。活跃期间不在 timeline 渲染交互卡片；玩家回答/取消后落只读记录。
   unsubscribeInteractionRequest = subscribeInteractionRequest(
     (requestId, question, options, allowCustom) => {
-      if (!currentTurnRecordAsk.value) return // 无进行中 turn，忽略（不应发生，保守兜底）
-      activeAsk.value = {
+      const state = resolveAskTurn(requestId)
+      if (!state) return // 无对应 turn（已结束/被清理），忽略（保守兜底）
+      activeAskBySession.set(state.sessionId, {
         requestId,
         question,
         ...(options ? { options } : {}),
         ...(allowCustom !== undefined ? { allowCustom } : {}),
+      })
+      // 仅前台 turn 才需要聚焦输入(后台 turn 无 footer 提问区可见)。
+      if (state.sessionId === activeSessionId.value) {
+        nextTick(() => askCustomInputRef.value?.focus())
       }
-      // 聚焦自定义输入框（allowCustom 时唯一输入）；无自定义则选项按钮可 Tab 到。
-      nextTick(() => askCustomInputRef.value?.focus())
     },
   )
   await refresh()
@@ -1702,6 +1880,15 @@ onBeforeUnmount(() => {
   window.removeEventListener("beforeunload", onBeforeUnloadRecovery)
   document.removeEventListener("visibilitychange", onVisibilityChangeRecovery)
   unsubscribeInteractionRequest?.()
+  // 组件卸载:abort 所有进行中 turn(含后台),清注册表。host catch 路径会
+  // rejectAllInteractionRequests + 走 persistTurnFallback 兜底落盘半截回复。
+  for (const [, state] of assistantTurns) {
+    state.controller.abort()
+  }
+  assistantTurns.clear()
+  askRequestSession.clear()
+  runningSessionIds.clear()
+  activeAskBySession.clear()
 })
 
 function onActiveCardChanged(event: Event) {

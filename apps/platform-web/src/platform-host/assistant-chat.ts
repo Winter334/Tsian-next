@@ -241,6 +241,12 @@ export interface AssistantChatInput {
    * prompt in AssistantView). Defaults to DEFAULT_TASK_TIMEOUT_MS (300s).
    */
   timeoutMs?: number
+  /**
+   * ask_user 请求发起通知（emitInteractionRequest 之前同步调用）。
+   * 让调用方把 requestId 关联到本 turn 的 sessionId,以便多会话并发时
+   * 把后续 interaction-request 事件路由到正确的会话 turn。仅通知,不阻断。
+   */
+  onAskUserRequest?: (requestId: string) => void
 }
 
 export interface AssistantChatResult {
@@ -456,12 +462,23 @@ export async function runAssistantChat(
           : undefined,
         // ask_user 工具回调：复用进程内 interaction-events 总线（与游戏 host 同源），
         // AssistantView 订阅 subscribeInteractionRequest 渲染 ask 卡片并回填答案。
-        onAskUser: (requestId, request) =>
-          emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
+        // emit 前先通知调用方（onAskUserRequest）把 requestId 关联到本会话，
+        // 支持多会话并发时把 interaction-request 路由到正确的后台 turn。
+        onAskUser: (requestId, request) => {
+          input.onAskUserRequest?.(requestId)
+          return emitInteractionRequest(requestId, request.question, request.options, request.allowCustom)
+        },
       },
       {
         callModel(messages, options) {
-          const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+          // 主 assistant agent 优先用用户在 header 手动选的 modelId(不走预设策略);
+          // delegated/runtime agent 仍走 resolveAgentModelConfig(预设策略).
+          // 修复:此前两处回调都重新 resolveAgentModelConfig,丢弃了 turn 开头按
+          // modelId 解析的 assistantModelConfig,导致手动选模型不生效.
+          const agentConfig =
+            options.agentId === agentId && assistantModelConfig
+              ? assistantModelConfig
+              : resolveAgentModelConfig(options.agentId, providerPresetMap)
           // Text-protocol streaming gate (mirrors callModelNative below).
           const streamingEnabled = agentConfig
             ? agentConfig.streaming
@@ -484,7 +501,14 @@ export async function runAssistantChat(
           })
         },
         async callModelNative(messages, options, tools) {
-          const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+          // 主 assistant agent 优先用用户在 header 手动选的 modelId(不走预设策略);
+          // delegated/runtime agent 仍走 resolveAgentModelConfig(预设策略).
+          // 修复:此前两处回调都重新 resolveAgentModelConfig,丢弃了 turn 开头按
+          // modelId 解析的 assistantModelConfig,导致手动选模型不生效.
+          const agentConfig =
+            options.agentId === agentId && assistantModelConfig
+              ? assistantModelConfig
+              : resolveAgentModelConfig(options.agentId, providerPresetMap)
           // Stream only when the caller wants deltas AND the model opted into
           // streaming. Both native and text modes support streaming; falls
           // back to the global config's flag when this agent has no preset.
