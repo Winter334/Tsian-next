@@ -142,8 +142,8 @@ const AGENT_AUTHORING_SKILL_MD = [
   "| `summary` | string | yes | One-line description. |",
   "| `contacts` | string[] | yes | Agent ids this agent may call via `agent_call`. |",
   "| `contextPaths` | string[] | yes | Workspace files loaded into the agent's prompt context. |",
-  "| `skills.enabled` | string[] | yes | Whitelist of skill names; non-empty narrows visible skills. |",
-  "| `skills.disabled` | string[] | yes | Blacklist of skill names. |",
+  "| `skills.enabled` | string[] | yes | Whitelist of exact Skill paths (`.../SKILL.md`); non-empty narrows visible skills. |",
+  "| `skills.disabled` | string[] | yes | Blacklist of exact Skill paths (`.../SKILL.md`). |",
   "| `platformTools.enabled` | string[] | yes | Allowed: `agent_call`, `workspace_read`, `workspace_write`, `inspect_frontend`. |",
   "| `platformTools.disabled` | string[] | yes | Blocked platform tools. |",
   "| `workspaceAccess.level` | number | yes | Permission level (see below). |",
@@ -1387,7 +1387,12 @@ function defaultAssistantConfig(): AgentConfig {
     contacts: [],
     contextPaths: [],
     skills: {
-      enabled: ["framework-knowledge", "agent-authoring", "skill-authoring", "card-content-drafting"],
+      enabled: [
+        ".tsian/local/assistant/skills/framework-knowledge/SKILL.md",
+        ".tsian/local/assistant/skills/agent-authoring/SKILL.md",
+        ".tsian/local/assistant/skills/skill-authoring/SKILL.md",
+        ".tsian/local/assistant/skills/card-content-drafting/SKILL.md",
+      ],
       disabled: [],
     },
     platformTools: {

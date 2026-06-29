@@ -74,6 +74,10 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 
 **Why**: `shared` / `agent-local` and executor names are runtime workspace storage details. Showing them as primary categories makes players manage file layout concepts instead of the actual question: can this Agent use this Skill, ask another Agent, read Workspace context, or maintain Workspace files?
 
+**Rules**:
+- `agent.json` `skills.enabled` / `skills.disabled` entries are exact Skill paths (`skills/<id>/SKILL.md`, `agents/<agent>/skills/<id>/SKILL.md`, or `.tsian/local/assistant/skills/<id>/SKILL.md`), not names/slugs/titles. Name-based references make shared and agent-local copies with the same slug toggle together.
+- When an Agent has an agent-local Skill with the same path-derived id as a shared Skill, the agent-local entry shadows the shared entry in that Agent's runtime Skill Index. This lets authors copy a shared Skill into an Agent-local directory for editing without exposing two versions to the model.
+
 **Example**:
 
 ```vue

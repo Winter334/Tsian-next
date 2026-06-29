@@ -470,6 +470,10 @@ function pathDerivedSkillId(path: string): string | undefined {
   return skillPathInfo(path)?.skillId
 }
 
+function pathDerivedSkillDirectory(path: string): string | undefined {
+  return skillPathInfo(path)?.directoryPath
+}
+
 function addLookupKey(keys: Set<string>, value: string | undefined): void {
   const key = normalizedLookupKey(value)
   if (key) {
@@ -479,10 +483,8 @@ function addLookupKey(keys: Set<string>, value: string | undefined): void {
 
 function skillReferenceKeys(skill: SkillRegistryEntry): Set<string> {
   const keys = new Set<string>()
-  addLookupKey(keys, skill.id)
-  addLookupKey(keys, skill.name)
-  addLookupKey(keys, skill.title)
-  addLookupKey(keys, pathDerivedSkillId(skill.path))
+  addLookupKey(keys, skill.path)
+  addLookupKey(keys, pathDerivedSkillDirectory(skill.path))
   return keys
 }
 
@@ -796,7 +798,7 @@ export function buildSkillRegistry(
 }
 
 export function skillMetadataReference(skill: SkillRegistryEntry): string {
-  return pathDerivedSkillId(skill.path) ?? (skill.name || skill.id || skill.title)
+  return skill.path
 }
 
 export function skillMatchesReference(
@@ -841,7 +843,19 @@ export function filterSkillsForAgent(
   skills: SkillRegistryEntry[],
   agent: AgentRegistryEntry,
 ): SkillRegistryEntry[] {
-  return skills.filter((skill) => isSkillEnabledForAgent(skill, agent))
+  const enabled = skills.filter((skill) => isSkillEnabledForAgent(skill, agent))
+  const localSkillIds = new Set(
+    enabled
+      .filter((skill) => skill.scope === "agent-local" && skill.agentId === agent.id)
+      .map((skill) => normalizedLookupKey(pathDerivedSkillId(skill.path))),
+  )
+  return enabled.filter((skill) => {
+    if (skill.scope !== "shared") {
+      return true
+    }
+    const skillId = normalizedLookupKey(pathDerivedSkillId(skill.path))
+    return !skillId || !localSkillIds.has(skillId)
+  })
 }
 
 export function loadSkillDetail(
