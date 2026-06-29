@@ -1756,7 +1756,7 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 
 | Hash | Message |
 |------|---------|
-| `2653a16` | (see git log) |
+| `f61d097` | docs(novel-airp): translate touched skill/agent docs to Chinese |
 
 ### Testing
 
