@@ -212,10 +212,10 @@ Runtime Workspace 是一个存档级虚拟文件系统。
 
 ## 9. 推荐目录结构
 
-默认 Runtime Workspace 可以采用：
+默认 Runtime Workspace 采用 novel AIRP 契约（卡内容 + save 运行时分层）:
 
 ```text
-/
+/  (Game Card content)
   README.md
 
   agents/
@@ -223,23 +223,24 @@ Runtime Workspace 是一个存档级虚拟文件系统。
       agent.json
       AGENT.md
       SOUL.md
-      session.jsonl
       notes.md
     retrieval/
       agent.json
       AGENT.md
       SOUL.md
-      session.jsonl
       notes.md
     post-processing/
       agent.json
       AGENT.md
       SOUL.md
-      session.jsonl
+      notes.md
+    world-architect/
+      agent.json
+      AGENT.md
+      SOUL.md
       notes.md
     studio-assistant/
       AGENT.md
-      session.jsonl
       notes.md
       skills/
         framework-knowledge/
@@ -258,64 +259,86 @@ Runtime Workspace 是一个存档级虚拟文件系统。
       SKILL.md
       scripts/
         apply-world-state-plan.js
+    opening-initialization/
+      SKILL.md
+      scripts/
+        inspect-source-opening.js
+        read-opening-slice.js
+        commit-opening-understanding.js
 
+  docs/
+    README.md
+    tsian-framework-knowledge.md
+    novel-airp-schema-guide.md
+    novel-airp-schema-reference.md
+
+save/  (save runtime data, one entity per flat file)
+  README.md
+  agents/<agent>/notes.md
   history/
     turns/
       README.md
       turn-000001.json
-    timeline.md
-
-  world/
-    README.md
-    canon.md
-    characters/
-      README.md
-      李四/
-        index.json
-    locations/
-      README.md
-      凌烟阁/
-        index.json
-
   memory/
     README.md
     summaries/
       current.md
       long-term.md
-    facts.jsonl
-
-  frontend/
+  source/
     README.md
-    view-state.json
-
-  docs/
+    manifest.json
+    chapters/
+  schema/
     README.md
-    tsian-framework-knowledge.md
-
-  archive/
+    current.md
+    changelog.md
+    deprecated.md
+    patches/pending/
+    patches/applied/
+  entities/
+    README.md
+    <type>/<localId>.json
+  scenes/
+    README.md
+    <localId>.json
+  relationships/
+    README.md
+    <scope>.json
+  playthrough/
+    README.md
+    runtime.json
+    player.json
+    mode.json
+    frontier.json
+    understanding-summary.json
+    branch.json
+  director/
+    README.md
+    current-brief.md
+    current-brief.meta.json
 
   .tsian/
     manifest.json
-    traces/
-    checkpoints/
-    indexes/
-    cache/
+    save/traces/turns/*.jsonl
 ```
 
 目录约定：
 
 - 根 `README.md` 说明工作区用途和重要入口。
-- `agents/` 存 Game Card 拥有的 Agent 定义。
+- `agents/` 存 Game Card 拥有的 Agent 定义。默认阵容：`master`（唯一对话 agent，直接写正文）、`retrieval`（工具型，精炼回灌创作资料）、`post-processing`（工具型，落盘 + 状态维护 + 记忆治理 + 聚合层维护）、`world-architect`（设计/维护 schema 与开局理解）、`studio-assistant`（工作区助手入口，可替换/删除）。`narrative` 和 `memory` agent 已移除，职责分别并入 master（写正文）和 post-processing（记忆治理）。
 - `agents/studio-assistant/` 可作为游戏卡声明的工作区助手入口。它仍是普通 workspace 内容，游戏卡作者可以替换、删除或改造。
-- `skills/` 存共享 Skill。
-- `agents/<agent>/skills/` 存 Agent-local Skill。
-- `docs/` 存官方或游戏卡作者维护的说明文档。默认 `docs/tsian-framework-knowledge.md` 是临时官方知识库，供助手 Agent 通过查询型 Skill 参考。
-- `save/history/` 存玩家面对的原始 AIRP 回合记录和压缩后的剧情时间线，不存所有中间过程。原始记录推荐按 `save/history/turns/turn-*.json` 一回合一文件保存，便于 workspace 搜索直接定位具体回合。
-- `world/` 存 Game Card 拥有的世界 canon、规则和默认约定；`save/world/` 存本次游玩的生成世界状态。
+- `skills/` 存共享 Skill。`agents/<agent>/skills/` 存 Agent-local Skill。
+- `docs/` 存官方或游戏卡作者维护的说明文档。默认 `docs/novel-airp-schema-guide.md` 是 novel AIRP 速查层（常驻相关 agent contextPaths），`docs/novel-airp-schema-reference.md` 是详尽字段手册（按需 read，不常驻）。
+- `save/source/` 存导入的小说原文、manifest 和章节切分。
+- `save/schema/` 存 living schema（`current.md` 权威 + changelog + deprecated + Markdown patches）。
+- `save/entities/` 存语义实体，一实体一扁平文件 `<type>/<localId>.json`。**不使用** 06-24 的 `save/world/<type>/<id>/index.json` 一实体一目录模型，也不用 `_ref`/`_dir` 标记。
+- `save/scenes/` 存场景分片，一场景一文件 `<localId>.json`，是派生导航视图（present 摘要从 entity 派生），支持多场景。
+- `save/relationships/` 存关系分片，一 subject 一文件 `<scope>.json`，吸收长篇关系爆炸。
+- `save/history/` 存玩家面对的原始 AIRP 回合记录和压缩后的剧情时间线，不存所有中间过程。原始记录按 `save/history/turns/turn-*.json` 一回合一文件保存，便于 workspace 搜索直接定位具体回合。
 - `save/memory/` 存本次游玩的长期记忆、摘要和可检索事实。
-- `frontend/` 存前端包约定的卡内容定义；`save/frontend/` 存本次游玩的前端 view state。
-- `archive/` 存退役、压缩或不再活跃的材料。
-- `.tsian/` 是平台 metadata、trace、checkpoint、索引和缓存空间。普通 Agent/Skill/frontend workspace read/list/search 不暴露 `.tsian/*`，普通 workspace 写入和删除也不能修改 `.tsian/*`；平台内部需要通过 host-owned 路径写入 trace、index 或 cache。
+- `save/playthrough/` 存运行时变量（`runtime.json` 含 `activeSceneIds` 指针）、player/mode/frontier/branch 与 `understanding-summary.json`（开局完成摘要）。**不使用** `save/frontend/view-state.json` — 纯前端 view state（active tabs、scroll positions、collapsed panels、transient filters、hover state）不应存 workspace。
+- `save/director/` 存当前 master-safe 导演 brief 和元数据。
+- `.tsian/` 是平台 metadata、trace、checkpoint 空间。普通 Agent/Skill/frontend workspace read/list/search 不暴露 `.tsian/*`，普通 workspace 写入和删除也不能修改 `.tsian/*`。Trace 落 `.tsian/save/traces/turns/*.jsonl`（跟随 checkpoint）。**注意**：checkpoint 元数据、embedding 索引是 Dexie 表，不在 `.tsian/` 文件里——不要因目录占位 README 误判数据位置。
 
 ## 10. Workspace Assistant
 
@@ -383,13 +406,13 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 当前 MVP 中：
 
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
-- 默认阵容采用 hub-and-spoke 模型：`master`（唯一对话 agent，直接写正文）+ `retrieval`（工具型，精炼回灌创作资料）+ `post-processing`（工具型，落盘 + 状态维护 + 记忆治理）+ `studio-assistant`。`narrative` 和 `memory` agent 已移除，其职责分别并入 master（写正文）和 post-processing（记忆治理）。master 的 contacts 为 `["retrieval","post-processing"]`。
+- 默认阵容采用 hub-and-spoke 模型：`master`（唯一对话 agent，直接写正文）+ `retrieval`（工具型，精炼回灌创作资料）+ `post-processing`（工具型，落盘 + 状态维护 + 记忆治理 + 聚合层维护）+ `world-architect`（设计/维护 schema 与开局理解）+ `studio-assistant`。`narrative` 和 `memory` agent 已移除，其职责分别并入 master（写正文）和 post-processing（记忆治理）。master 的 contacts 为 `["retrieval","post-processing","world-architect"]`。
 - 存储包含 snapshot、history、checkpoint、Game Card content files，以及 save runtime workspace files；结构化状态不再使用独立平台表。
-- 新 Game Card 默认写入 `agents/master/`、`agents/retrieval/`、`agents/post-processing/`（agent.json + AGENT.md + SOUL.md + notes.md）、官方共享 `memory-maintenance`、`entity-reader`、`world-state-maintenance` Skill、`docs/tsian-framework-knowledge.md`、world schema README（含一实体一目录 + index.json 入口 + _ref/_dir 升级约定 + 渲染契约 vs 语义区分 + 可选 relationships.json 扩展指南）等卡内容；新存档默认写入 `save/agents/*` notes/session、`save/history/*`、`save/world/*`、`save/state/*`、`save/memory/*`、`save/frontend/*` 和 `.tsian` 入口文件。默认 workspace version 为 7。
+- 新 Game Card 默认写入 `agents/master/`、`agents/retrieval/`、`agents/post-processing/`、`agents/world-architect/`（agent.json + AGENT.md + SOUL.md + notes.md）、官方共享 `memory-maintenance`、`entity-reader`、`world-state-maintenance`、`opening-initialization` Skill、`docs/tsian-framework-knowledge.md`、`docs/novel-airp-schema-guide.md`（速查层）、`docs/novel-airp-schema-reference.md`（详尽字段手册）等卡内容；新存档默认写入 `save/agents/*` notes、`save/history/*`、`save/source/*`、`save/schema/*`、`save/entities/*`、`save/scenes/*`、`save/relationships/*`、`save/playthrough/*`（含 `understanding-summary.json`、`runtime.json` 带 `activeSceneIds`）、`save/director/*`、`save/memory/*` 和 `.tsian` 入口文件。novel AIRP 实体采用扁平 `save/entities/<type>/<localId>.json` 一实体一文件模型，**不使用** 06-24 的 `save/world/<type>/<id>/index.json` 一实体一目录 + `_ref`/`_dir` 升级模型；场景/关系聚合层 `save/scenes/`、`save/relationships/` 是派生导航视图。默认 workspace version 为 11。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
-- 默认 master -> narrative 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
+- 默认 master 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
 - 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；action 调用会经过 loaded Skill gating、输入校验、轻量 executor-class policy 检查，并可按可选 `outputSchema` 校验成功输出。当前支持 `builtin/validation`、`builtin/echo`、`workspace_operation` 和 strong-SDK `browser_script`。`workspace_operation` 通过 capability 注入通用 workspace 操作，受 operation exposure 与 read/edit level 约束；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 save-runtime workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
 - 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；协作策略为代码级默认值，当前 `maxCallsPerTurn=4`、`maxDepth=2`、语义 history window 为 `minimal/recent/scene`，并按 root turn 共享调用预算。有限嵌套已启用：root depth `0` 可调用 depth `1` Agent，depth `1` Agent 可调用自己的 contacts 到 depth `2`，depth `2` 再调用会返回带深度/预算事实的结构化 observation。
 - Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action executor policy 检查、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 workspace operation 不暴露 `.tsian/*`，除非调用方拥有 platform-meta read level。`runtime-diagnostics` query 已提供面向 Agent/未来管理 UI 的 facts-only 诊断摘要视图；它按需从 raw trace 生成，不写派生文件、不做 pruning、不默认暴露给普通 live-turn Agent。

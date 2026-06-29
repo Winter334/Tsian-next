@@ -26,6 +26,7 @@ These guides help you **ask the right questions before coding**.
 | [Data Fileification Principle](./data-fileification-principle.md) | Decide where configurable data lives — file system vs private DB field | When adding new configurable data, new storage tables/keys, or new agent-managed data |
 | [AI-Facing Content Changes](./ai-facing-content-changes.md) | Avoid leaving residual concept traces when removing/auto-inferring a concept from tool schemas, prompts, or descriptions | When removing a parameter from a tool schema, auto-inferring a concept the agent used to pass, or rewriting tool/prompt descriptions |
 | [Module Structure Guide](./module-structure-guide.md) | Keep source files focused on one responsibility; split god files along seams | When a file accumulates unrelated concerns, before adding a function that doesn't fit the file's theme |
+| [Agent/Skill Design Principles](./agent-skill-design-principles.md) | 泛用方法论：能力供给分级、归属决策、skill 封装判据、数据权威、分片、产物落点、写入策略、文档分层 | 涉及 agent/skill/工具能力设计、写入策略、数据权威与派生、聚合层、文档分层时 |
 
 ---
 
@@ -77,6 +78,17 @@ These guides help you **ask the right questions before coding**.
 - [ ] A file's contents can be described as "X and Y and Z" rather than "X, involving Y and Z"
 
 → Read [Module Structure Guide](./module-structure-guide.md)
+
+### When to Think About Agent/Skill/Tool Design
+
+- [ ] You're designing a new agent, skill, or tool capability
+- [ ] You're deciding whether a capability belongs in platform code or skill/workspace
+- [ ] You're adding a data file and wondering whether it's a second copy of existing data
+- [ ] You're deciding replace vs edit, or whether to batch operations into a skill
+- [ ] You're placing a one-time/generated product and unsure where it should land
+- [ ] You're organizing docs and unsure what should be常驻 context vs 按需
+
+→ Read [Agent/Skill Design Principles](./agent-skill-design-principles.md)
 
 ---
 
