@@ -1701,3 +1701,37 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 100: novel AIRP 维护/检索 skill 优化
+
+**Date**: 2026-06-29
+**Task**: novel AIRP 维护/检索 skill 优化
+**Package**: platform-web
+**Branch**: `refactor/novel-airp-schema-consolidation`
+
+### Summary
+
+承接任务 A deferred 的三项推进期优化。R1: apply-world-state-plan/maintenance 放开 edit mode（oldString/newString），mode 由提供字段推断、调用方决定、不按文件类型预设，转发 workspace.edit 保留白名单+reason 审计。R2: 两个 SKILL.md 澄清边界——自由文本可直接平台 write/edit，skill 服务有 schema 约束的结构化写入（轻量执行不删白名单）。R3: 新增 entity-resolver skill resolve_entities，批量按 ref 取+容器嵌套 depth 展开（visited 防循环、缺文件标记 missing 不抛）+可选关系/场景，一次返回省往返。R4: retrieval AGENT.md 工作流约定（找=search/单读=read/批量+嵌套=resolve_entities/关系=直读 subject 文件/在场=runtime 指针）。附带 bugfix: isAllowedTarget 补 scenes/relationships（兄弟任务契约落地后必然补丁）。build:web 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `262f971` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
