@@ -48,15 +48,15 @@
         <section class="retro-inset grid gap-2 p-3">
           <p class="text-xs font-bold text-text-main">上下文压缩</p>
           <p class="text-[11px] leading-4 text-text-dim">
-            上下文 token 达预算的触发比例时压缩。narrative 模式（master/剧情 agent）保留最近 N 轮正文不压缩；task 模式（助手/子代理）保留最近 N 轮工具交互不压缩。
+            narrative 模式（master/剧情 agent）和 task 模式（助手/子代理）使用不同触发比例；task 默认更早压缩，避免工具探索历史拖垮缓存命中。
           </p>
-          <div class="grid gap-2 sm:grid-cols-3">
+          <div class="grid gap-2 sm:grid-cols-2">
             <label class="grid gap-1">
               <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
-                triggerRatio <span class="text-neon/60">（默认 0.85）</span>
+                narrativeTriggerRatio <span class="text-neon/60">（默认 0.85）</span>
               </span>
               <input
-                v-model.number="form.contextCompression.triggerRatio"
+                v-model.number="form.contextCompression.narrativeTriggerRatio"
                 type="number"
                 min="0"
                 max="1"
@@ -64,6 +64,21 @@
                 class="retro-focus retro-select-surface w-full border border-neon-deep/55 bg-elevated px-3 py-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
               />
             </label>
+            <label class="grid gap-1">
+              <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
+                taskTriggerRatio <span class="text-neon/60">（默认 0.45）</span>
+              </span>
+              <input
+                v-model.number="form.contextCompression.taskTriggerRatio"
+                type="number"
+                min="0"
+                max="1"
+                step="0.05"
+                class="retro-focus retro-select-surface w-full border border-neon-deep/55 bg-elevated px-3 py-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+              />
+            </label>
+          </div>
+          <div class="grid gap-2 sm:grid-cols-2">
             <label class="grid gap-1">
               <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">
                 keepRecentTurns <span class="text-neon/60">（默认 5）</span>
@@ -184,8 +199,11 @@ const validationError = computed(() => {
   if (checkpointPrune.sparseEvery < 1 || !Number.isInteger(checkpointPrune.sparseEvery)) {
     return "sparseEvery 需为 ≥1 的整数。"
   }
-  if (contextCompression.triggerRatio <= 0 || contextCompression.triggerRatio > 1) {
-    return "triggerRatio 需在 (0, 1] 范围。"
+  if (contextCompression.narrativeTriggerRatio <= 0 || contextCompression.narrativeTriggerRatio > 1) {
+    return "narrativeTriggerRatio 需在 (0, 1] 范围。"
+  }
+  if (contextCompression.taskTriggerRatio <= 0 || contextCompression.taskTriggerRatio > 1) {
+    return "taskTriggerRatio 需在 (0, 1] 范围。"
   }
   if (contextCompression.keepRecentTurns < 1 || !Number.isInteger(contextCompression.keepRecentTurns)) {
     return "keepRecentTurns 需为 ≥1 的整数。"

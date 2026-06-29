@@ -30,7 +30,10 @@ export interface PlatformConfigCheckpointPrune {
 }
 
 export interface PlatformConfigContextCompression {
-  triggerRatio: number
+  /** narrative/master context snapshot compression threshold. */
+  narrativeTriggerRatio: number
+  /** task/assistant context and tool-loop compression threshold. */
+  taskTriggerRatio: number
   keepRecentTurns: number
   /** task 模式(助手/子代理)压缩时保留最近 N 轮工具交互不压缩.
    *  与 keepRecentTurns 分离——narrative 保留正文轮次,task 保留工具交互轮次,
@@ -92,7 +95,7 @@ function createEmptyPlatformConfigDraft(): BrowserPlatformConfigDraft {
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   provider: createEmptyPlatformConfigDraft(),
   checkpointPrune: { keepRecent: 50, sparseEvery: 20 },
-  contextCompression: { triggerRatio: 0.85, keepRecentTurns: 5, taskKeepRecentRounds: 5 },
+  contextCompression: { narrativeTriggerRatio: 0.85, taskTriggerRatio: 0.45, keepRecentTurns: 5, taskKeepRecentRounds: 5 },
   rag: { defaultLimit: 5, maxLimit: 8 },
   ai: { chatTimeoutMs: 600_000 },
   assistant: { maxStoredMessages: 200 },
@@ -231,11 +234,22 @@ function mergePlatformConfig(raw: unknown): PlatformConfig | null {
 
   const rawCompression = raw.contextCompression
   const contextCompression: PlatformConfigContextCompression = isPlainObject(rawCompression)
-    ? {
-        triggerRatio: normalizeRatio((rawCompression as Record<string, unknown>).triggerRatio, DEFAULT_PLATFORM_CONFIG.contextCompression.triggerRatio),
-        keepRecentTurns: normalizePositiveInt((rawCompression as Record<string, unknown>).keepRecentTurns, DEFAULT_PLATFORM_CONFIG.contextCompression.keepRecentTurns),
-        taskKeepRecentRounds: normalizePositiveInt((rawCompression as Record<string, unknown>).taskKeepRecentRounds, DEFAULT_PLATFORM_CONFIG.contextCompression.taskKeepRecentRounds),
-      }
+    ? (() => {
+        const compression = rawCompression as Record<string, unknown>
+        const legacyTriggerRatio = compression.triggerRatio
+        return {
+          narrativeTriggerRatio: normalizeRatio(
+            compression.narrativeTriggerRatio ?? legacyTriggerRatio,
+            DEFAULT_PLATFORM_CONFIG.contextCompression.narrativeTriggerRatio,
+          ),
+          taskTriggerRatio: normalizeRatio(
+            compression.taskTriggerRatio,
+            DEFAULT_PLATFORM_CONFIG.contextCompression.taskTriggerRatio,
+          ),
+          keepRecentTurns: normalizePositiveInt(compression.keepRecentTurns, DEFAULT_PLATFORM_CONFIG.contextCompression.keepRecentTurns),
+          taskKeepRecentRounds: normalizePositiveInt(compression.taskKeepRecentRounds, DEFAULT_PLATFORM_CONFIG.contextCompression.taskKeepRecentRounds),
+        }
+      })()
     : { ...DEFAULT_PLATFORM_CONFIG.contextCompression }
 
   const rawRag = raw.rag

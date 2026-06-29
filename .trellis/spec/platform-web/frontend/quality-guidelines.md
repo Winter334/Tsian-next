@@ -41,5 +41,6 @@ When changing Agent Runtime turn composition or AI debug records, preserve cache
 - Native function-calling prompts should keep only short tool-use principles. Put concrete parameters in the `tools` schema, and avoid dynamic examples such as a concrete contact Agent id in the system prompt.
 - Text tool-call mode remains a required fallback for providers without native tools. It may use a minimal `<tsian-tool-call>` example, but do not remove the protocol or make it depend on native schemas.
 - Model-facing tool observations should be compact and resumable: small results may inline; large results should include preview plus path/ref/range/offset/limit/truncated/total metadata so the Agent can read a narrower slice. Debug/trace/UI output may keep fuller details.
+- Native/text tool-call protocol is turn-local. Do not replay cross-turn saved `AgentContextToolCall[]` as native `assistant.toolCalls` + `role: "tool"`, or as text `<tsian-tool-call>` / `<tsian-tool-observation>` blocks. Historical tool calls should enter model context only as compact history summaries; full data may remain in UI/timeline/context storage.
+- Keep narrative/master and task/assistant compression thresholds separate. Narrative can trigger near the context budget, but task/assistant should trigger earlier because tool exploration is dynamic and cache-hostile.
 - `AiDebugRecord.messageSegments` is debug metadata only. It must not be sent to providers, and it should remain sufficient to inspect role, segment label, stability, and approximate size for cache analysis.
-

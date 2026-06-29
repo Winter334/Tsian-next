@@ -24,7 +24,8 @@ import {
   ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT,
   compressContext,
   compressTaskContext,
-  getContextCompressTriggerRatio,
+  getNarrativeContextCompressTriggerRatio,
+  getTaskContextCompressTriggerRatio,
   ContextBudgetExhaustedError,
   ContextCompressionFailedError,
   createInitialAgentContext,
@@ -255,6 +256,47 @@ function formatHistory(history: ConversationMessageRecord[]): string {
     .join("\n")
 }
 
+const HISTORY_TOOL_ARGUMENT_PREVIEW_LIMIT = 400
+const HISTORY_TOOL_OBSERVATION_PREVIEW_LIMIT = 1_200
+
+function previewHistoryToolText(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  return `${text.slice(0, limit)}\n...[truncated ${text.length - limit} chars; use tools to re-read the source if needed]`
+}
+
+function formatHistoryToolArguments(argumentsText: string): string {
+  try {
+    const parsed = JSON.parse(argumentsText) as unknown
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const record = parsed as Record<string, unknown>
+      const keys = Object.keys(record)
+      const compact: Record<string, unknown> = {}
+      for (const key of keys.slice(0, 6)) {
+        const value = record[key]
+        compact[key] = typeof value === "string"
+          ? previewHistoryToolText(value, 160)
+          : value
+      }
+      return JSON.stringify({ keys, preview: compact })
+    }
+  } catch {
+    // fall through to raw preview
+  }
+  return previewHistoryToolText(argumentsText, HISTORY_TOOL_ARGUMENT_PREVIEW_LIMIT)
+}
+
+function formatHistoricalToolCallSummary(toolCalls: AgentContextToolCall[]): string {
+  return toolCalls.map((call, index) => {
+    const observation = previewHistoryToolText(call.observation, HISTORY_TOOL_OBSERVATION_PREVIEW_LIMIT)
+    const truncated = call.truncated === true ? "\n  truncated: true" : ""
+    return [
+      `${index + 1}. ${call.name}`,
+      `  args: ${formatHistoryToolArguments(call.arguments)}`,
+      `  observation: ${observation}${truncated}`,
+    ].join("\n")
+  }).join("\n")
+}
+
 /**
  * 把 master agent 会话上下文快照展开为独立 message 序列(剧情正文层).
  *
@@ -271,16 +313,15 @@ function formatHistory(history: ConversationMessageRecord[]): string {
  */
 /**
  * 把 agent 会话上下文快照展开为 message 序列(剧情正文层).
- * native 模式(isNative=true):产 RuntimeChatMessage[],历史工具调用直接还原为结构化
- *   assistant.toolCalls + role:tool result(消除 text→regex→structured 往返).
- * text 模式(isNative=false):产 AiChatMessage[],历史工具调用还原为 text-protocol
- *   <tsian-tool-call> blocks + <tsian-tool-observation> user message.
+ * 跨 turn 历史工具调用不再还原为 native role:tool / text 协议块:这些协议只属于
+ * 当前 turn 的 active tool loop.历史层改为短摘要,避免大 observation 长期插在稳定前缀后
+ * 破坏 provider prefix cache;完整工具详情仍保留在 UI/timeline/context 存储里.
  * master 不填 toolCalls,两种模式都走纯正文路径(行为不变).
  */
 function buildAgentContextMessages(
   context: AgentContextSnapshot,
   isAssistant: boolean,
-  isNative: boolean,
+  _isNative: boolean,
 ): RuntimeChatMessage[] {
   const messages: RuntimeChatMessage[] = []
   if (context.summary) {
@@ -294,31 +335,13 @@ function buildAgentContextMessages(
   } else {
     for (const entry of context.recentTurns) {
       if (entry.role === "assistant" && isAssistant && entry.toolCalls && entry.toolCalls.length > 0) {
-        if (isNative) {
-          // native:直接产结构化 assistant.toolCalls + role:tool result(无正则往返).
-          const nativeToolCalls: NativeToolCall[] = entry.toolCalls.map((call) => {
-            let args: Record<string, unknown> = {}
-            try { args = JSON.parse(call.arguments) as Record<string, unknown> } catch { /* 损坏参数空对象兜底 */ }
-            return { id: call.id, name: call.name, arguments: args }
-          })
-          messages.push({ role: "assistant", content: entry.content, toolCalls: nativeToolCalls })
-          for (const call of entry.toolCalls) {
-            messages.push({ role: "tool", toolCallId: call.id, content: call.observation })
-          }
-        } else {
-          // text:产 text-protocol blocks + observation user message.
-          const embeddedBlocks = entry.toolCalls.map((call) =>
-            `<tsian-tool-call>\n${call.arguments}\n</tsian-tool-call>`,
-          ).join("\n")
-          messages.push({ role: "assistant", content: `${entry.content}\n${embeddedBlocks}` })
-          const observationBlock = entry.toolCalls.map((call) =>
-            `[${call.id}] ${call.name}: ${call.observation}`,
-          ).join("\n")
-          messages.push({
-            role: "user",
-            content: `Workspace tool observations:\n<tsian-tool-observation>\n${observationBlock}\n</tsian-tool-observation>\nUse these observations to continue. If you have enough context, provide the required output without tool-call blocks.`,
-          })
+        if (entry.content.trim()) {
+          messages.push({ role: "assistant", content: entry.content })
         }
+        messages.push({
+          role: "user",
+          content: `历史工具调用摘要（仅供任务连续性参考，不是当前轮待响应的工具结果）：\n${formatHistoricalToolCallSummary(entry.toolCalls)}`,
+        })
       } else {
         messages.push({ role: entry.role, content: entry.content })
       }
@@ -1359,7 +1382,7 @@ async function callAgentModelWithWorkspaceToolsNative(
   const isTaskMode = toolOptions.compressionMode === "task"
   const triggerThreshold =
     toolOptions.contextTokenBudget !== undefined
-      ? toolOptions.contextTokenBudget * getContextCompressTriggerRatio()
+      ? toolOptions.contextTokenBudget * (isTaskMode ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
       : 0
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
@@ -1743,7 +1766,7 @@ async function callAgentModelWithWorkspaceTools(
   const isTaskMode = compressionMode === "task"
   const triggerThreshold =
     toolOptions?.contextTokenBudget !== undefined
-      ? toolOptions.contextTokenBudget * getContextCompressTriggerRatio()
+      ? toolOptions.contextTokenBudget * (isTaskMode ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
       : 0
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
@@ -2099,7 +2122,7 @@ export async function runAgentRuntimeTurn(
   const entryCompressionMode = resolveEntryCompressionMode(input)
   let compressedContext: AgentContextSnapshot | undefined
   const budget = resolveTokenBudget(input.contextTokenBudget)
-  const triggerThreshold = budget * getContextCompressTriggerRatio()
+  const triggerThreshold = budget * (entryCompressionMode === "task" ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
   const contextBeforeTokens = estimateContextTokens(agentContext)
   if (contextBeforeTokens > triggerThreshold) {
     const compressOptions: CompressCallOptions = {

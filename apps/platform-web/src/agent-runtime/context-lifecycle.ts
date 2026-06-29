@@ -48,10 +48,13 @@ export const ASSISTANT_CONTEXT_AGENT_ID = "assistant" as const
 
 /** 默认 token 预算:model 未配 contextWindow 时兜底. */
 export const DEFAULT_CONTEXT_TOKEN_BUDGET = 256_000
-/** 压缩触发阈值比例:读平台配置 contextCompression.triggerRatio(默认 0.85,
- *  即 85% budget 触发压缩,留 15% 余量吸收估算偏差). */
-export function getContextCompressTriggerRatio(): number {
-  return getPlatformConfig().contextCompression.triggerRatio
+/** narrative/master 压缩触发阈值比例:默认 0.85,留 15% 余量吸收估算偏差. */
+export function getNarrativeContextCompressTriggerRatio(): number {
+  return getPlatformConfig().contextCompression.narrativeTriggerRatio
+}
+/** task/assistant 压缩触发阈值比例:默认更早触发,避免工具历史拖垮缓存命中. */
+export function getTaskContextCompressTriggerRatio(): number {
+  return getPlatformConfig().contextCompression.taskTriggerRatio
 }
 /** 压缩时保留最近几轮正文(原文不压缩).读平台配置 contextCompression.keepRecentTurns(默认 5). */
 export function getContextKeepRecentTurns(): number {
@@ -411,9 +414,23 @@ const ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT = [
 /** 助手快照压缩用 system prompt 的导出访问点(供 host/runtime 按 mode 传入). */
 export { ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT }
 
+const COMPRESSION_TOOL_ARGUMENT_PREVIEW_LIMIT = 400
+const COMPRESSION_TOOL_OBSERVATION_PREVIEW_LIMIT = 1_200
+
+function previewCompressionToolText(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  return `${text.slice(0, limit)}\n...[truncated ${text.length - limit} chars]`
+}
+
+function formatCompressionToolCall(call: AgentContextToolCall): string {
+  const args = previewCompressionToolText(call.arguments, COMPRESSION_TOOL_ARGUMENT_PREVIEW_LIMIT)
+  const observation = previewCompressionToolText(call.observation, COMPRESSION_TOOL_OBSERVATION_PREVIEW_LIMIT)
+  return `  工具调用 ${call.name}(${args}) → ${observation}`
+}
+
 /** 构建压缩调用的 user prompt:旧 summary(若有) + 被压缩轮次正文(含工具调用).
  *  助手 entry 带 toolCalls 时,工具调用作为"已做工作"依据呈现给压缩 model(name/args/observation),
- *  不能像早期 prompt 说的"丢弃工具调用技术细节"——工具结果是工作产物. */
+ *  但只给短预览:压缩模型需要事实线索,不需要完整工具原文. */
 function buildCompressionPrompt(
   oldSummary: string | null,
   compressEntries: AgentContextTurnEntry[],
@@ -428,9 +445,7 @@ function buildCompressionPrompt(
       const base = `${entry.turn}. ${label}: ${entry.content}`
       // 助手 assistant entry 带工具调用:附上工具调用记录供压缩 model 参考.
       if (entry.role === "assistant" && entry.toolCalls && entry.toolCalls.length > 0) {
-        const toolLines = entry.toolCalls.map((call) =>
-          `  工具调用 ${call.name}(${call.arguments}) → ${call.observation}`,
-        ).join("\n")
+        const toolLines = entry.toolCalls.map(formatCompressionToolCall).join("\n")
         return `${base}\n${toolLines}`
       }
       return base
