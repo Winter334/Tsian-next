@@ -280,7 +280,7 @@ const SKILL_AUTHORING_SKILL_MD = [
   "Scripts run in a Web Worker with these APIs available:",
   "",
   "**Tsian SDK** (`tsian` — injected object):",
-  "- `tsian.workspace.read / list / search / glob / diff / patch / write / move / delete / validate` — workspace operations via RPC to the host.",
+  "- `tsian.workspace.read / list / search / glob / diff / patch / write / copy / move / delete / validate` — workspace operations via RPC to the host.",
   "- `tsian.log(message, data?)` — emit a log entry (visible in trace).",
   "- `tsian.trace(label, data?)` — emit a trace entry (visible in trace).",
   "",

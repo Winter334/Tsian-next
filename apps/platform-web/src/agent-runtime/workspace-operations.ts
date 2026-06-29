@@ -1,5 +1,6 @@
 import type {
   AgentContextEntry,
+  WorkspaceCopyResult,
   WorkspaceDeleteResult,
   WorkspaceDiffResult,
   WorkspaceEntry,
@@ -76,6 +77,7 @@ const FRONTMATTER_PATTERN = /^---\r?\n([\s\S]*?)\r?\n---/
 const EDIT_OPERATIONS = new Set<WorkspaceOperationName>([
   "write",
   "edit",
+  "copy",
   "move",
   "delete",
 ])
@@ -1120,19 +1122,21 @@ async function moveWorkspacePath(
   assertMutableScope(scope)
   const fromPath = normalizeWorkspaceOperationTargetPath(request.path)
   const toPath = normalizeWorkspaceOperationTargetPath(request.targetPath)
+  const fromScope = scopeForPath(fromPath)
+  const toScope = scopeForPath(toPath)
   const actorLevel = resolveWorkspaceActorLevel(context)
   assertEditAccess(fromPath, actorLevel)
   assertEditAccess(toPath, actorLevel)
-  if (!pathMatchesScope(fromPath, scope) || !pathMatchesScope(toPath, scope)) {
+  if (!pathMatchesScope(fromPath, scope)) {
     throw workspaceOperationError(
       "WORKSPACE_SCOPE_PATH_MISMATCH",
-      `Workspace move paths must both belong to ${scope}.`,
+      `Workspace source path does not belong to ${scope}: ${fromPath}`,
       {
         scope,
         fromPath,
         toPath,
-        fromScope: scopeForPath(fromPath),
-        toScope: scopeForPath(toPath),
+        fromScope,
+        toScope,
       },
     )
   }
@@ -1140,7 +1144,7 @@ async function moveWorkspacePath(
   const prefix = `${fromPath}/`
   const matches = files
     .filter((file) =>
-      pathMatchesScope(file.path, scope)
+      pathMatchesScope(file.path, fromScope)
       && (file.path === fromPath || file.path.startsWith(prefix))
     )
     .sort((left, right) => left.path.localeCompare(right.path))
@@ -1160,19 +1164,92 @@ async function moveWorkspacePath(
       : `${toPath}/${file.path.slice(prefix.length)}`
     assertEditAccess(nextPath, actorLevel)
     await mutations.write({
-      scope,
+      scope: toScope,
       path: nextPath,
       ...(file.binary ? { data: file.binary } : { content: file.content }),
     })
     movedPaths.push(nextPath)
   }
-  await mutations.delete({ scope, path: fromPath })
+  await mutations.delete({ scope: fromScope, path: fromPath })
 
   return {
-    scope,
+    scope: fromScope,
     fromPath,
     toPath,
     movedPaths,
+  }
+}
+
+async function copyWorkspacePath(
+  files: WorkspaceFile[],
+  scope: WorkspaceScope,
+  request: WorkspaceOperationRequest,
+  context: WorkspaceOperationExecutionContext,
+): Promise<WorkspaceCopyResult> {
+  assertMutableScope(scope)
+  const fromPath = normalizeWorkspaceOperationTargetPath(request.path)
+  const toPath = normalizeWorkspaceOperationTargetPath(request.targetPath)
+  const fromScope = scopeForPath(fromPath)
+  const toScope = scopeForPath(toPath)
+  const actorLevel = resolveWorkspaceActorLevel(context)
+  assertReadAccess(fromPath, actorLevel)
+  assertEditAccess(toPath, actorLevel)
+  if (!pathMatchesScope(fromPath, scope)) {
+    throw workspaceOperationError(
+      "WORKSPACE_SCOPE_PATH_MISMATCH",
+      `Workspace source path does not belong to ${scope}: ${fromPath}`,
+      { scope, fromPath, toPath, fromScope, toScope },
+    )
+  }
+
+  const prefix = `${fromPath}/`
+  const matches = files
+    .filter((file) =>
+      pathMatchesScope(file.path, fromScope)
+      && (file.path === fromPath || file.path.startsWith(prefix))
+    )
+    .sort((left, right) => left.path.localeCompare(right.path))
+  if (matches.length === 0) {
+    throw workspaceOperationError(
+      "WORKSPACE_FILE_NOT_FOUND",
+      `Workspace path was not found in ${scope}: ${fromPath}`,
+      { scope, path: fromPath },
+    )
+  }
+
+  const copiedPaths: string[] = []
+  for (const file of matches) {
+    const nextPath = file.path === fromPath
+      ? toPath
+      : `${toPath}/${file.path.slice(prefix.length)}`
+    assertEditAccess(nextPath, actorLevel)
+    if (findScopedFile(files, toScope, nextPath)) {
+      throw workspaceOperationError(
+        "WORKSPACE_TARGET_EXISTS",
+        `Workspace copy target already exists: ${nextPath}`,
+        { scope: toScope, path: nextPath },
+      )
+    }
+  }
+
+  const mutations = assertMutationAdapter(context.mutations)
+  for (const file of matches) {
+    const nextPath = file.path === fromPath
+      ? toPath
+      : `${toPath}/${file.path.slice(prefix.length)}`
+    await mutations.write({
+      scope: toScope,
+      path: nextPath,
+      ...(file.binary ? { data: file.binary } : { content: file.content }),
+    })
+    copiedPaths.push(nextPath)
+  }
+
+  return {
+    scope: fromScope,
+    fromPath,
+    toPath,
+    copiedPaths,
   }
 }
 
@@ -1305,6 +1382,9 @@ export async function executeWorkspaceOperation(
   }
   if (operation === "edit") {
     return editWorkspaceFile(context.workspaceFiles, scope, requestInput, context)
+  }
+  if (operation === "copy") {
+    return copyWorkspacePath(context.workspaceFiles, scope, requestInput, context)
   }
   if (operation === "move") {
     return moveWorkspacePath(context.workspaceFiles, scope, requestInput, context)

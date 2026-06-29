@@ -258,6 +258,7 @@ export type WorkspaceOperationName =
   | "diff"
   | "write"
   | "edit"
+  | "copy"
   | "move"
   | "delete"
   | "validate"
@@ -337,6 +338,13 @@ export interface WorkspaceMoveResult {
   fromPath: string
   toPath: string
   movedPaths: string[]
+}
+
+export interface WorkspaceCopyResult {
+  scope: WorkspaceScope
+  fromPath: string
+  toPath: string
+  copiedPaths: string[]
 }
 
 export interface WorkspaceDeleteResult {

@@ -1193,6 +1193,7 @@ export {
   readPlatformWorkspaceFile,
   writePlatformWorkspaceFile,
   deletePlatformWorkspacePath,
+  copyPlatformWorkspacePath,
   movePlatformWorkspacePath,
   validatePlatformWorkspaceFile,
   type PlatformWorkspaceRootEntry,

@@ -42,6 +42,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   diff: "diff",
   write: "write",
   edit: "edit",
+  copy: "copy",
   move: "move",
   delete: "delete",
   semanticSearch: "semantic_search",
@@ -353,4 +354,3 @@ export interface RuntimeWorkspaceToolExecutionContext {
    */
   onAskUser?: (requestId: string, request: AskUserRequest) => Promise<AskUserResult>
 }
-

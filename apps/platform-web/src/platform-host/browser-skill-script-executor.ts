@@ -172,6 +172,9 @@ const tsian = Object.freeze({
     edit(input) {
       return rpc("workspace.edit", input).then((result) => isRecord(result) && isRecord(result.file) ? result.file : result);
     },
+    copy(input) {
+      return rpc("workspace.copy", input);
+    },
     move(input) {
       return rpc("workspace.move", input);
     },

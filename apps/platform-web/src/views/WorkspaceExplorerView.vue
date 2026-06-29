@@ -406,7 +406,6 @@ import {
 import type { Component } from "vue"
 import type {
   WorkspaceEntry,
-  WorkspaceFile,
   WorkspaceSearchResult,
 } from "@tsian/contracts"
 import { inferWorkspaceMediaType } from "@/lib/workspace-file-types"
@@ -423,11 +422,11 @@ import {
   isWorkspaceContentChangedEvent,
 } from "@/lib/workspace-events"
 import {
+  copyPlatformWorkspacePath,
   deletePlatformWorkspacePath,
   listPlatformWorkspaceDirectory,
   listPlatformWorkspaceRoots,
   movePlatformWorkspacePath,
-  readPlatformWorkspaceFile,
   searchPlatformWorkspace,
   writePlatformWorkspaceFile,
   type PlatformWorkspaceRootEntry,
@@ -443,6 +442,7 @@ interface ClipboardEntry {
   kind: "copy" | "cut"
   sourcePath: string
   sourceName: string
+  sourceCardId?: string
   isDirectory: boolean
 }
 
@@ -509,12 +509,6 @@ const selectedEntry = computed(() =>
 const visibleEntries = computed(() =>
   directoryEntries.value.filter((entry) => entry.name !== ".keep"),
 )
-
-const clipboardContextKey = computed(() => {
-  if (selectedCardId.value) return `card:${selectedCardId.value}`
-  if (currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/")) return "local"
-  return ""
-})
 
 const statusLabel = computed(() => {
   if (!isBrowsing.value) {
@@ -1136,6 +1130,7 @@ function copyEntry(entry: WorkspaceEntry) {
     kind: "copy",
     sourcePath: entry.path,
     sourceName: entry.name,
+    ...(selectedCardId.value ? { sourceCardId: selectedCardId.value } : {}),
     isDirectory: entry.kind === "directory",
   }
   feedback.value = `已复制：${entry.name}`
@@ -1150,6 +1145,7 @@ function cutEntry(entry: WorkspaceEntry) {
     kind: "cut",
     sourcePath: entry.path,
     sourceName: entry.name,
+    ...(selectedCardId.value ? { sourceCardId: selectedCardId.value } : {}),
     isDirectory: entry.kind === "directory",
   }
   feedback.value = `已剪切：${entry.name}`
@@ -1181,27 +1177,20 @@ async function pasteFromClipboard() {
   try {
     if (cb.kind === "cut") {
       await movePlatformWorkspacePath({
-        ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
+        ...(cb.sourceCardId ? { cardId: cb.sourceCardId } : {}),
+        ...(selectedCardId.value ? { targetCardId: selectedCardId.value } : {}),
         path: cb.sourcePath,
         targetPath,
       })
       clipboard.value = null
       feedback.value = `已移动：${cb.sourceName} → ${targetName}`
     } else {
-      if (cb.isDirectory) {
-        await copyDirectory(cb.sourcePath, targetPath)
-      } else {
-        const file = await readPlatformWorkspaceFile({
-          ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-          path: cb.sourcePath,
-        })
-        await writePlatformWorkspaceFile({
-          ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-          path: targetPath,
-          content: file.content,
-          ...(file.binary ? { data: file.binary } : {}),
-        })
-      }
+      await copyPlatformWorkspacePath({
+        ...(cb.sourceCardId ? { cardId: cb.sourceCardId } : {}),
+        ...(selectedCardId.value ? { targetCardId: selectedCardId.value } : {}),
+        path: cb.sourcePath,
+        targetPath,
+      })
       // 复制保留 clipboard, 允许重复粘贴
       feedback.value = `已粘贴：${targetName}`
     }
@@ -1212,46 +1201,6 @@ async function pasteFromClipboard() {
     }
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : "无法粘贴。"
-  }
-}
-
-async function collectFilesUnder(dirPath: string): Promise<WorkspaceFile[]> {
-  // 先递归 list 收集所有文件 path, 再并发 read.
-  // read 是只读, 并发安全; list 阶段需顺序发现子目录, 仍串行.
-  const filePaths: string[] = []
-  async function walk(subPath: string): Promise<void> {
-    const result = await listPlatformWorkspaceDirectory({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path: subPath,
-    })
-    for (const entry of result.entries) {
-      if (entry.kind === "file") {
-        filePaths.push(entry.path)
-      } else {
-        await walk(entry.path)
-      }
-    }
-  }
-  await walk(dirPath)
-
-  const cardIdInput = selectedCardId.value ? { cardId: selectedCardId.value } : {}
-  return Promise.all(
-    filePaths.map((path) => readPlatformWorkspaceFile({ ...cardIdInput, path })),
-  )
-}
-
-async function copyDirectory(srcPath: string, targetPath: string): Promise<void> {
-  const files = await collectFilesUnder(srcPath)
-  const prefix = `${srcPath}/`
-  for (const file of files) {
-    const relPath = file.path.startsWith(prefix) ? file.path.slice(prefix.length) : file.path
-    const targetFilePath = `${targetPath}/${relPath}`
-    await writePlatformWorkspaceFile({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path: targetFilePath,
-      content: file.content,
-      ...(file.binary ? { data: file.binary } : {}),
-    })
   }
 }
 
@@ -1342,11 +1291,6 @@ watch(() => route.fullPath, () => {
     void refreshDirectory()
   }
 }, { immediate: true })
-
-// 跨游戏卡/跨本地根/回根选择界面时清空剪贴板; 同卡内跨目录导航保留(跨目录移动是剪切核心用途)
-watch(clipboardContextKey, () => {
-  clipboard.value = null
-})
 
 onMounted(() => {
   window.addEventListener("keydown", onGlobalKeydown)

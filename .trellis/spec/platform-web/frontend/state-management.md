@@ -187,6 +187,9 @@ Conventions:
 - `localAssistantVolume` is global meta (cross-save persistent); it is identified by reference (not scope, since it shares `platform-meta` scope with the save-platform-meta volume) and returns empty string ownerId.
 - `savePlatformMetaVolume.delete` is best-effort (returns the path prefix, does not truly delete DB rows) — storage layer has no platform-meta prefix-delete API yet.
 - **Workspace tool `scope` is invisible to the agent.** `executeWorkspaceOperation` resolves scope: explicit scope wins; read ops default to `effective` (union view); edit ops infer scope from the path prefix via `scopeForPath` (save/→save-runtime, temp/→temp, frontend/→card-frontend, .tsian/→platform-meta, else→card-content). The agent-facing tool schemas do **not** expose `scope` as a parameter at all; tool descriptions and the text-protocol prompt never mention scope. The agent only knows paths; path prefixes are the user-facing concept. Adding a new scope only touches `scopeForPath` + `DEFAULT_SCOPE_ACCESS` + the `WorkspaceVolume` + `resolveVolumeForScope` — never the tool schemas or prompt. Internal callers still pass scope explicitly because they construct requests directly. The permission boundary is preserved because `assertEditAccess` is path-based, independent of whether scope came from an explicit arg or auto-inference.
+- `move` is the only mutation that may write to a different scope than the source path. It resolves `fromScope = scopeForPath(path)` and `toScope = scopeForPath(targetPath)`, finds source files in `fromScope`, writes moved files through `toScope`, then deletes the source prefix through `fromScope`. The request's explicit `scope` only selects/validates the source; it must never force the target write/delete back into the source volume. Host adapters must pass through `writeInput.scope`/`deleteInput.scope` and provide both owner IDs when a Studio card-content move targets a save slot.
+- `copy` shares `move`'s source/target scope resolution and directory-prefix traversal, but only writes targets and never deletes the source. It rejects if any target file already exists; callers that want overwrite semantics must add that contract explicitly instead of overloading `copy` silently.
+- Assistant-chat mutations that bypass `RuntimeWorkspaceTransaction` (card-content, `.tsian/local/assistant/**`, temp) must also update `activeWorkspaceTransaction.workspaceFiles` in memory. Otherwise a `move` can persist correctly but same-turn `list`/`glob`/`read` observes the stale turn-start snapshot and falsely reports the target missing or source still present.
 
 ### Validation & Error Matrix
 
@@ -198,6 +201,11 @@ Conventions:
 - `game-card.json` delete -> throws "game-card.json（卡片 manifest）不能删除".
 - Staged turn mutation on `card-content`/`card-frontend` -> upper layer throws "Runtime turn staging cannot mutate card-content."
 - Studio path resolution on `frontend/` -> resolves to card-frontend scope; no alias rewrite.
+- `move({ path: "world/foo.md", targetPath: ".tsian/save/foo.md" })` at actorLevel 4 -> writes platform-meta then deletes card-content.
+- `copy({ path: "skills/foo", targetPath: ".tsian/local/assistant/skills/foo" })` at actorLevel 4 -> writes all matching target files and keeps the source files.
+- `move({ path: "world/foo.md", targetPath: "save/save-01/foo.md" })` in Studio -> writes the resolved save-runtime path using that save slot's `saveId`, then deletes card-content.
+- Assistant-chat `move({ path: "skills/foo/SKILL.md", targetPath: ".tsian/local/assistant/skills/foo/SKILL.md" })` -> writes local-assistant, syncs the target into `workspaceFiles`, deletes card-content, and prunes the source from `workspaceFiles` before any same-turn verification tools run.
+- `move` between two different Studio save aliases -> throws `WORKSPACE_MOVE_SAVE_SLOT_MISMATCH`.
 
 ## Scenario: Skill Config Declaration And Player Overrides
 

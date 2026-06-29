@@ -337,11 +337,11 @@
                   </div>
                 </template>
 
-                <!-- 回复正文泡:user 恒渲染;assistant 仅在有正文/流式、或无活跃 ask 时渲染。
-                     活跃 ask 期间助手在等用户回答而非思考,空泡 + 打字点会误导,故整泡隐藏
-                     (问题已由 footer 输入框变形承载,常驻焦点位)。 -->
+                <!-- 回复正文泡:user 恒渲染;assistant 仅在有正文/流式、等待首 token、或无过程节点时渲染。
+                     活跃 ask 期间助手在等用户回答而非思考,空泡 + 打字点会误导,故整泡隐藏。
+                     若只有过程节点且已结束,也不渲染打字点,避免中断后永久三点动画。 -->
                 <div
-                  v-if="msg.role === 'user' || msg.streamingText || msg.content || !activeAsk"
+                  v-if="msg.role === 'user' || msg.streamingText || msg.content || (sending && index === messages.length - 1 && !activeAsk) || !(msg.timeline && msg.timeline.length > 0)"
                   class="break-words text-sm leading-6"
                   :class="msg.role === 'user'
                     ? 'whitespace-pre-wrap border border-neon-deep/35 bg-panel/55 px-3.5 py-2.5 text-text-main'
@@ -351,9 +351,17 @@
                   <!-- 当前轮流式文本:尚未分类(tool_calls→归入 thought 折叠;stop→写入 content) -->
                   <div v-if="msg.streamingText" class="prose-chat" v-html="renderMarkdown(msg.streamingText)" />
                   <!-- 最终回复 / 历史 / text 模式:无流式时展示 content -->
-                  <div v-else-if="msg.content" class="prose-chat" v-html="renderMarkdown(msg.content)" />
+                  <div v-else-if="msg.content" class="flex flex-col gap-2">
+                    <template v-for="(part, partIdx) in renderAssistantContentSegments(msg.content)" :key="partIdx">
+                      <details v-if="part.kind === 'thought'" class="assistant-think rounded-sm border border-neon-deep/30 bg-panel/20 px-2 py-1">
+                        <summary class="cursor-pointer select-none font-mono text-[11px] uppercase tracking-wider text-text-dim hover:text-neon">思考</summary>
+                        <div class="prose-chat mt-1 text-xs leading-5 text-text-dim" v-html="renderMarkdown(part.text)" />
+                      </details>
+                      <div v-else class="prose-chat" v-html="renderMarkdown(part.text)" />
+                    </template>
+                  </div>
                   <!-- 等待首个 token:过程/流式/回复皆空时显示打字点(替代独立占位框) -->
-                  <div v-else class="flex items-center gap-1.5">
+                  <div v-else-if="sending && index === messages.length - 1" class="flex items-center gap-1.5">
                     <span class="typing-dot" />
                     <span class="typing-dot" />
                     <span class="typing-dot" />
@@ -1071,6 +1079,7 @@ const TOOL_LABEL: Record<string, { verb: string; noun: string; unit: string | nu
   diff: { verb: "比对", noun: "差异", unit: null },
   write: { verb: "写入", noun: "文件", unit: null },
   edit: { verb: "编辑", noun: "文件", unit: null },
+  copy: { verb: "复制", noun: "文件", unit: null },
   move: { verb: "移动", noun: "文件", unit: null },
   delete: { verb: "删除", noun: "文件", unit: null },
   semantic_search: { verb: "语义检索", noun: "记忆", unit: null },
@@ -1143,6 +1152,31 @@ function groupTimelineForRender(timeline: AssistantTimelineNode[]): TimelineSegm
   return segments
 }
 
+type AssistantContentSegment =
+  | { kind: "text"; text: string }
+  | { kind: "thought"; text: string }
+
+function renderAssistantContentSegments(content: string): AssistantContentSegment[] {
+  const segments: AssistantContentSegment[] = []
+  const pattern = /<think>([\s\S]*?)(?:<\/think>|$)/gi
+  let cursor = 0
+  for (const match of content.matchAll(pattern)) {
+    const index = match.index ?? 0
+    if (index > cursor) {
+      const text = content.slice(cursor, index).trim()
+      if (text) segments.push({ kind: "text", text })
+    }
+    const thought = (match[1] ?? "").trim()
+    if (thought) segments.push({ kind: "thought", text: thought })
+    cursor = index + match[0].length
+  }
+  if (cursor < content.length) {
+    const text = content.slice(cursor).trim()
+    if (text) segments.push({ kind: "text", text })
+  }
+  return segments.length > 0 ? segments : [{ kind: "text", text: content }]
+}
+
 function sendSuggestion(message: string) {
   inputText.value = message
   send()
@@ -1196,6 +1230,7 @@ async function send() {
     assistantMsg,
     () => maybeScrollToBottom(),
   )
+  let shouldPersistAfterFinalize = false
   // 暴露 flush 给组件作用域,供切会话/关页面时落盘流式缓冲.
   currentTurnFlush.value = flushStreaming
   // 暴露 ask 落库回调给组件作用域,供玩家回答/取消时把 Q&A 写入 timeline（回调绑定见 onMounted）。
@@ -1251,12 +1286,15 @@ async function send() {
       if (assistantMsg.content) {
         assistantMsg.content = `${assistantMsg.content}\n\n_（已停止）_`
         await persistCurrentSession()
+        shouldPersistAfterFinalize = true
       } else if (timeline.length === 0) {
         // Nothing was produced at all: drop the empty placeholder.
         messages.value.pop()
+        await persistCurrentSession()
       } else {
         // Only process nodes (no reply text) — keep them, persist.
         await persistCurrentSession()
+        shouldPersistAfterFinalize = true
       }
     } else if (budgetExhausted || taskTimeout || taskStalled) {
       // 三类温和中止同路径(非失败的中止,与 abort 对称):
@@ -1276,6 +1314,7 @@ async function send() {
         assistantMsg.content = `${hint}。`
       }
       await persistCurrentSession()
+      shouldPersistAfterFinalize = true
     } else {
       const message = error instanceof Error ? error.message : String(error)
       errorMessage.value = message
@@ -1284,6 +1323,7 @@ async function send() {
         messages.value.pop()
       }
       await persistCurrentSession()
+      shouldPersistAfterFinalize = true
     }
   } finally {
     // 回合结束:折叠所有仍展开的 thought/tool 节点 + 清空流式缓冲(composable 负责).
@@ -1296,6 +1336,9 @@ async function send() {
     activeAsk.value = null
     abortController.value = null
     sending.value = false
+    if (shouldPersistAfterFinalize) {
+      await persistCurrentSession()
+    }
     await scrollToBottom()
     nextTick(() => inputRef.value?.focus())
   }

@@ -397,7 +397,7 @@ const workspaceDiffSchema: ToolSchema = {
 const workspaceMoveSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.move,
   description:
-    "Move or rename a workspace file from one path to another. Use it only when a loaded Skill explicitly requires reorganizing runtime files. Returns the moved file paths. Returns an error if the source or target path is invalid. Both paths must sit under the same path-prefix area (e.g. both under save/).",
+    "Move or rename a workspace file from one path to another. Use it only when a loaded Skill explicitly requires reorganizing runtime files. Returns the moved file paths. Returns an error if the source or target path is invalid or the actor cannot edit either path. The destination may be in a different workspace scope when the actor has access to both scopes.",
   parameters: {
     type: "object",
     required: ["path", "targetPath"],
@@ -409,6 +409,26 @@ const workspaceMoveSchema: ToolSchema = {
       targetPath: {
         type: "string",
         description: "Destination workspace file path.",
+      },
+    },
+  },
+}
+
+const workspaceCopySchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.copy,
+  description:
+    "Copy a workspace file or directory prefix from one path to another while keeping the source. Use it for backups, template duplication, or installing content into another workspace scope. Returns the copied file paths. Returns an error if the source or target path is invalid, the actor cannot read the source or edit the target, or any target file already exists.",
+  parameters: {
+    type: "object",
+    required: ["path", "targetPath"],
+    properties: {
+      path: {
+        type: "string",
+        description: "Source workspace file path or directory prefix.",
+      },
+      targetPath: {
+        type: "string",
+        description: "Destination workspace file path or directory prefix.",
       },
     },
   },
@@ -438,7 +458,7 @@ const workspaceDeleteSchema: ToolSchema = {
  * installation/enablement is player/card-author controlled. `agent_call` is
  * gated by contacts + the `agent_call` platform tool. `ask_user` is gated by
  * the `ask_user` platform tool (assistant default on, game agents default off).
- * Workspace read tools are gated by `workspace_read`; workspace write/delete/move
+ * Workspace read tools are gated by `workspace_read`; workspace write/copy/delete/move
  * tools by `workspace_write`.
  */
 export function buildEnabledToolSchemas(options: {
@@ -489,6 +509,7 @@ export function buildEnabledToolSchemas(options: {
       workspaceDiffSchema,
       workspaceWriteSchema,
       workspaceEditSchema,
+      workspaceCopySchema,
       workspaceMoveSchema,
       workspaceDeleteSchema,
     )

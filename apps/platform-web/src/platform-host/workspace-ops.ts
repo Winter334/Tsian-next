@@ -2,6 +2,7 @@ import type {
   WorkspaceDeleteResult,
   WorkspaceFile,
   WorkspaceListResult,
+  WorkspaceCopyResult,
   WorkspaceMoveResult,
   WorkspaceOperationRequest,
   WorkspaceWriteResult,
@@ -244,13 +245,6 @@ function assertCompatibleStudioMove(
   source: StudioResolvedPath,
   target: StudioResolvedPath,
 ): void {
-  if (source.scope !== target.scope) {
-    throw workspaceStudioError(
-      "WORKSPACE_MOVE_SCOPE_MISMATCH",
-      "重命名不能跨越游戏卡内容与存档运行时边界。",
-    )
-  }
-
   if (
     source.scope === "save-runtime"
     && target.scope === "save-runtime"
@@ -416,7 +410,7 @@ async function executeStudioWorkspaceOperation(
   }
 
   const resolvedPath = resolveStudioWorkspacePath(context, request.path)
-  const targetResolvedPath = request.operation === "move"
+  const targetResolvedPath = request.operation === "move" || request.operation === "copy"
     ? resolveStudioWorkspacePath(context, request.targetPath)
     : null
   if (targetResolvedPath) {
@@ -479,15 +473,23 @@ async function executeStudioWorkspaceOperation(
         ),
       }
     }
-    if (request.operation === "move" && targetResolvedPath) {
-      const moveResult = result as WorkspaceMoveResult
+    if ((request.operation === "move" || request.operation === "copy") && targetResolvedPath) {
+      const moveResult = result as WorkspaceMoveResult | WorkspaceCopyResult
       return {
         ...moveResult,
         fromPath: resolvedPath.displayPath,
         toPath: targetResolvedPath.displayPath,
-        movedPaths: moveResult.movedPaths.map((path) =>
-          storagePathToStudioPath(path, targetResolvedPath)
-        ),
+        ...(request.operation === "move"
+          ? {
+              movedPaths: (moveResult as WorkspaceMoveResult).movedPaths.map((path) =>
+                storagePathToStudioPath(path, targetResolvedPath)
+              ),
+            }
+          : {
+              copiedPaths: (moveResult as WorkspaceCopyResult).copiedPaths.map((path) =>
+                storagePathToStudioPath(path, targetResolvedPath)
+              ),
+            }),
       }
     }
     if (request.operation === "validate") {
@@ -526,7 +528,12 @@ async function executeStudioWorkspaceOperation(
             path: writeInput.path,
             content: writeInput.content,
             data: writeInput.data,
-            ownerContext: { cardId },
+            ownerContext: {
+              cardId,
+              saveId: targetResolvedPath?.scope === "save-runtime"
+                ? targetResolvedPath.saveId
+                : undefined,
+            },
             operation: "write",
           }) as Promise<WorkspaceFile>
         },
@@ -534,7 +541,12 @@ async function executeStudioWorkspaceOperation(
         const deletedPaths = await executeWorkspaceMutation({
           scope: deleteInput.scope,
           path: deleteInput.path,
-          ownerContext: { cardId },
+          ownerContext: {
+            cardId,
+            saveId: targetResolvedPath?.scope === "save-runtime"
+              ? targetResolvedPath.saveId
+              : undefined,
+          },
           operation: "delete",
         }) as string[]
         return { scope: deleteInput.scope, deletedPaths }
@@ -580,9 +592,13 @@ async function executeLocalWorkspaceOperation(
     )
   }
 
+  const operationScope = (request.operation === "move" || request.operation === "copy") && request.scope
+    ? request.scope
+    : "platform-meta"
+
   // Write/patch/delete/move/validate: persist back to the appropriate store.
   const result = await executeWorkspaceOperation(
-    { ...request, scope: "platform-meta" },
+    { ...request, scope: operationScope },
     {
       workspaceFiles: allFiles,
       actorLevel: 4,
@@ -590,7 +606,7 @@ async function executeLocalWorkspaceOperation(
       mutations: {
         async write(writeInput) {
           return executeWorkspaceMutation({
-            scope: "platform-meta",
+            scope: writeInput.scope,
             path: writeInput.path,
             content: writeInput.content,
             data: writeInput.data,
@@ -600,12 +616,12 @@ async function executeLocalWorkspaceOperation(
         },
         async delete(deleteInput) {
           const deletedPaths = await executeWorkspaceMutation({
-            scope: "platform-meta",
+            scope: deleteInput.scope,
             path: deleteInput.path,
             ownerContext: { saveId: saveId ?? undefined },
             operation: "delete",
           }) as string[]
-          return { scope: "platform-meta", deletedPaths }
+          return { scope: deleteInput.scope, deletedPaths }
         },
       },
     },
@@ -640,6 +656,71 @@ export async function searchPlatformWorkspace(input: {
 
 function isTsianPath(path: string): boolean {
   return path === ".tsian" || path.startsWith(".tsian/")
+}
+
+function scopeForPlatformWorkspacePath(path: string): Exclude<WorkspaceScope, "effective"> {
+  if (isTsianPath(path)) return "platform-meta"
+  if (path === "save" || path.startsWith("save/")) return "save-runtime"
+  if (path === "frontend" || path.startsWith("frontend/")) return "card-frontend"
+  return "card-content"
+}
+
+async function executeCrossRootWorkspaceOperation(input: {
+  cardId: string
+  operation: "copy" | "move"
+  path: string
+  targetPath: string
+}): Promise<WorkspaceCopyResult | WorkspaceMoveResult> {
+  if (
+    input.path === "save" || input.path.startsWith("save/")
+    || input.targetPath === "save" || input.targetPath.startsWith("save/")
+  ) {
+    throw workspaceStudioError(
+      "WORKSPACE_CROSS_ROOT_SAVE_UNSUPPORTED",
+      "跨本地 .tsian 与存档槽的复制/移动暂不支持；请先进入同一游戏卡工作区内操作 save 文件。",
+    )
+  }
+  const saveId = await getActiveSaveId()
+  const localAssistantFiles = await loadLocalAssistantFiles()
+  const localConfigFiles = await loadLocalPlatformConfigFile()
+  const workspaceFiles = [
+    ...await listStudioWorkspaceFilesForGameCard(input.cardId),
+    ...(saveId ? await listWorkspaceFilesForSave(saveId) : []),
+    ...localAssistantFiles,
+    ...localConfigFiles,
+  ]
+  const result = await executeWorkspaceOperation({
+    operation: input.operation,
+    scope: scopeForPlatformWorkspacePath(input.path),
+    path: input.path,
+    targetPath: input.targetPath,
+  }, {
+    workspaceFiles,
+    actorLevel: 4,
+    exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+    mutations: {
+      write(writeInput) {
+        return executeWorkspaceMutation({
+          scope: writeInput.scope,
+          path: writeInput.path,
+          content: writeInput.content,
+          data: writeInput.data,
+          ownerContext: { cardId: input.cardId, saveId: saveId ?? undefined },
+          operation: "write",
+        }) as Promise<WorkspaceFile>
+      },
+      async delete(deleteInput) {
+        const deletedPaths = await executeWorkspaceMutation({
+          scope: deleteInput.scope,
+          path: deleteInput.path,
+          ownerContext: { cardId: input.cardId, saveId: saveId ?? undefined },
+          operation: "delete",
+        }) as string[]
+        return { scope: deleteInput.scope, deletedPaths }
+      },
+    },
+  })
+  return result as WorkspaceCopyResult | WorkspaceMoveResult
 }
 
 export async function readPlatformWorkspaceFile(input: {
@@ -710,23 +791,62 @@ export async function deletePlatformWorkspacePath(input: {
 
 export async function movePlatformWorkspacePath(input: {
   cardId?: string
+  targetCardId?: string
   path: string
   targetPath: string
 }): Promise<WorkspaceMoveResult> {
-  if (!input.cardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
-    return await executeLocalWorkspaceOperation({
+  const targetCardId = input.targetCardId ?? input.cardId
+  if (targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
+    return await executeCrossRootWorkspaceOperation({
+      cardId: targetCardId,
       operation: "move",
-      scope: "platform-meta",
       path: input.path,
       targetPath: input.targetPath,
     }) as WorkspaceMoveResult
   }
-  return await executeStudioWorkspaceOperation(input.cardId ?? "", {
+  if (!input.cardId && !targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
+    return await executeLocalWorkspaceOperation({
+      operation: "move",
+      scope: isTsianPath(input.path) ? "platform-meta" : "save-runtime",
+      path: input.path,
+      targetPath: input.targetPath,
+    }) as WorkspaceMoveResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? targetCardId ?? "", {
     operation: "move",
-    scope: "save-runtime",
     path: input.path,
     targetPath: input.targetPath,
   }) as WorkspaceMoveResult
+}
+
+export async function copyPlatformWorkspacePath(input: {
+  cardId?: string
+  targetCardId?: string
+  path: string
+  targetPath: string
+}): Promise<WorkspaceCopyResult> {
+  const targetCardId = input.targetCardId ?? input.cardId
+  if (targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
+    return await executeCrossRootWorkspaceOperation({
+      cardId: targetCardId,
+      operation: "copy",
+      path: input.path,
+      targetPath: input.targetPath,
+    }) as WorkspaceCopyResult
+  }
+  if (!input.cardId && !targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
+    return await executeLocalWorkspaceOperation({
+      operation: "copy",
+      scope: isTsianPath(input.path) ? "platform-meta" : "save-runtime",
+      path: input.path,
+      targetPath: input.targetPath,
+    }) as WorkspaceCopyResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? targetCardId ?? "", {
+    operation: "copy",
+    path: input.path,
+    targetPath: input.targetPath,
+  }) as WorkspaceCopyResult
 }
 
 export async function validatePlatformWorkspaceFile(input: {

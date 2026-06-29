@@ -80,13 +80,13 @@ import {
 
 // ── 助手会话 context 读写（B 类 helper，只被 runAssistantChat 调用，随接缝一起迁） ──
 
-/** Upsert a temp-scope file into the runtime staged snapshot so same-turn
- *  read/edit sees it. temp write lands in Dexie via executeWorkspaceMutation
- *  but bypasses the save transaction, which otherwise leaves stagedFiles
- *  stale. Mirrors index.ts:syncWorkspaceFileWrite but kept local — the two
- *  helpers serve different call sites and a shared export would couple the
- *  files for three lines of logic. */
-function syncTempFileIntoStaged(stagedFiles: WorkspaceFile[], file: WorkspaceFile): void {
+/** Upsert a directly persisted file into the runtime staged snapshot so
+ *  same-turn read/list/glob sees it. Some assistant-authoring scopes land in
+ *  Dexie outside RuntimeWorkspaceTransaction, which otherwise leaves the
+ *  in-memory workspaceFiles snapshot stale. Mirrors index.ts:syncWorkspaceFileWrite
+ *  but kept local — the helpers serve different call sites and a shared export
+ *  would couple the files for three lines of logic. */
+function syncDirectFileIntoStaged(stagedFiles: WorkspaceFile[], file: WorkspaceFile): void {
   const existingIndex = stagedFiles.findIndex((f) => f.path === file.path)
   if (existingIndex >= 0) {
     stagedFiles[existingIndex] = file
@@ -96,11 +96,11 @@ function syncTempFileIntoStaged(stagedFiles: WorkspaceFile[], file: WorkspaceFil
   }
 }
 
-/** Remove deleted temp paths from the runtime staged snapshot. Same rationale
- *  as syncTempFileIntoStaged: temp delete hits Dexie but bypasses the
- *  transaction, so stagedFiles must be pruned explicitly. `deletedPaths` may
- *  be a prefix match (temp delete can remove a subtree), so filter by prefix. */
-function removeTempPathsFromStaged(stagedFiles: WorkspaceFile[], deletedPaths: string[]): void {
+/** Remove directly deleted paths from the runtime staged snapshot. Same
+ *  rationale as syncDirectFileIntoStaged: direct Dexie/card mutations bypass
+ *  RuntimeWorkspaceTransaction, so workspaceFiles must be pruned explicitly.
+ *  `deletedPaths` may be a prefix match, so filter by prefix. */
+function removeDirectPathsFromStaged(stagedFiles: WorkspaceFile[], deletedPaths: string[]): void {
   if (deletedPaths.length === 0) return
   for (let i = stagedFiles.length - 1; i >= 0; i -= 1) {
     const path = stagedFiles[i].path
@@ -537,7 +537,10 @@ export async function runAssistantChat(
                 updatedAt: Date.now(),
               }
               // saveLocalAssistantFiles 是 async 合并落盘,签名支持 Promise<WorkspaceFile>.
-              return saveLocalAssistantFiles([written]).then(() => written)
+              return saveLocalAssistantFiles([written]).then(() => {
+                syncDirectFileIntoStaged(activeWorkspaceTransaction.workspaceFiles, written)
+                return written
+              })
             }
             if (writeInput.scope === "platform-meta") {
               return activeWorkspaceTransaction.writePlatformFile({
@@ -558,6 +561,9 @@ export async function runAssistantChat(
                 path: writeInput.path,
                 content: writeInput.content,
                 ...(writeInput.data ? { data: writeInput.data } : {}),
+              }).then((file) => {
+                syncDirectFileIntoStaged(activeWorkspaceTransaction.workspaceFiles, file)
+                return file
               })
             }
             if (writeInput.scope === "save-runtime") {
@@ -580,7 +586,7 @@ export async function runAssistantChat(
                 ownerContext: { saveId: activeSaveId ?? undefined, cardId: activeCard.id, sessionId: input.sessionId },
                 operation: "write",
               }) as Promise<WorkspaceFile>).then((file) => {
-                syncTempFileIntoStaged(activeWorkspaceTransaction.workspaceFiles, file)
+                syncDirectFileIntoStaged(activeWorkspaceTransaction.workspaceFiles, file)
                 return file
               })
             }
@@ -589,15 +595,22 @@ export async function runAssistantChat(
           delete: (deleteInput) => {
             // 同 write:.tsian/local/assistant/* 的删除 bypass 事务,直接 deleteLocalAssistantFile.
             if (deleteInput.scope === "platform-meta" && isLocalAssistantPath(deleteInput.path)) {
-              return deleteLocalAssistantFile(deleteInput.path).then(() => ({
-                scope: deleteInput.scope,
-                deletedPaths: [deleteInput.path],
-              }))
+              return deleteLocalAssistantFile(deleteInput.path).then(() => {
+                const deletedPaths = [deleteInput.path]
+                removeDirectPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, deletedPaths)
+                return {
+                  scope: deleteInput.scope,
+                  deletedPaths,
+                }
+              })
             }
             if (deleteInput.scope === "card-content") {
               // Same rationale as write: card content deletes bypass the save
               // transaction and go straight to the per-file content table.
-              return deleteCardContentPathForActiveCard(deleteInput.path)
+              return deleteCardContentPathForActiveCard(deleteInput.path).then((result) => {
+                removeDirectPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, result.deletedPaths)
+                return result
+              })
             }
             if (deleteInput.scope === "save-runtime") {
               return {
@@ -614,7 +627,7 @@ export async function runAssistantChat(
                 ownerContext: { saveId: activeSaveId ?? undefined, cardId: activeCard.id, sessionId: input.sessionId },
                 operation: "delete",
               }).then((paths) => {
-                removeTempPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, paths as string[])
+                removeDirectPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, paths as string[])
                 return {
                   scope: deleteInput.scope,
                   deletedPaths: paths as string[],
