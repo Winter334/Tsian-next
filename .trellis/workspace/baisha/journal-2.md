@@ -1769,3 +1769,46 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 102: workspace-path-level-scope 收尾 + 质量评审
+
+**Date**: 2026-06-29
+**Task**: 工作区路径级 scope 重构 (06-29-workspace-path-level-scope)
+**Package**: platform-web
+**Branch**: `refactor/agent-identity-professional-role`
+
+### Summary
+
+此任务的实现（commit `45edc4a`）实为更早的 ZCode 会话完成，当时 Trellis 工作流尚未升级到有完整记录阶段，故 task.json 停在 in_progress 且未设当前指针、无 journal。本次会话补走 Phase 3 收尾：核查实现完整性、做质量评审、更新 spec、归档。
+
+### 质量评审结论
+
+逐行审了 contracts/runtime/host/volume 四层 diff。实现质量高，精确满足全部验收标准：
+- 隐患1-4 全部正确修复；scopeForPath 为唯一真相源，operation scope 降为可选约束；ownerContext 按 input.scope 推导（resolveOwnerContextForScope / resolveStudioOwnerContextForScope）；WorkspaceVolumeOwnerContext 提升到 contracts；move/copy 公共路由按 crossesStore 分支（修隐患3 targetCardId??cardId 误判）。
+- index.ts staged 路径本就按 scope 推导 cardId，未改合理。
+- 发现 1 个 known gap（PRD 规划阶段自身不一致）：copyWorkspacePath target-exists 检查用 caller 快照，studio card-content 分支快照不含 save-runtime → card-content→save-runtime 的 copy 可能静默覆盖。重构前后一致，非本次引入，记入 spec known gap 待后续修。
+- build:contracts + build:web 均通过。
+
+### Spec 更新
+
+`state-management.md` "Workspace Volume Abstraction And Single Dispatch" 场景：
+- 更新 scope 语义（scopeForPath 唯一真相源 + operation scope 为可选约束）
+- 新增 ownerContext 契约（host adapter 闭包按 input.scope 填充，WorkspaceVolumeOwnerContext 提升到 contracts）
+- 更新 move/copy 描述（crossesStore 分支 + 跨 scope editLevel 是特性）
+- 补 Validation Matrix（WORKSPACE_SCOPE_PATH_MISMATCH + 跨 scope editAccess 拦截）
+- 记 known gap（card-content→save-runtime copy target-exists 漏判）
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `45edc4a` | refactor(workspace): path-level scope for copy/move + all operations（原实现，本次仅收尾） |
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- known gap：studio card-content→save-runtime copy 的 target-exists 漏判，建议后续小任务修（让 card-content 分支快照含 save-runtime，或为 target-exists 检查单独加载 toScope 切片）
