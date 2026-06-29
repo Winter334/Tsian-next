@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 97
-- **Last Active**: 2026-06-28
+- **Total Sessions**: 98
+- **Last Active**: 2026-06-29
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1633 | Active |
+| `journal-2.md` | ~1669 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 98 | 2026-06-29 | 换回 ZCode 环境恢复 + 缓存任务错误落地修正 + 工作区路径级 scope 重构 | `521708f`, `19a8416`, `45edc4a` | `master` |
 | 97 | 2026-06-28 | Novel opening guide UI refinement | `fe2c447` | `master` |
 | 96 | 2026-06-28 | Novel AIRP source import guide | `8ebac8b` | `master` |
 | 95 | 2026-06-28 | Novel AIRP workspace schema guide | `c882b2d` | `master` |

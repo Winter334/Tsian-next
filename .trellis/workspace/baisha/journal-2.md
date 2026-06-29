@@ -1631,3 +1631,39 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 98: 换回 ZCode 环境恢复 + 缓存任务错误落地修正 + 工作区路径级 scope 重构
+
+**Date**: 2026-06-29
+**Task**: 换回 ZCode 环境恢复 + 缓存任务错误落地修正 + 工作区路径级 scope 重构
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+三件事:(1)换回 ZCode 后重打 session-identity 补丁(active_task.py,Trellis 0.6.5 验证通过);(2)排查并修正 message-sequence-cache-optimization 任务的错误落地——04585d6 把动态 workspace.context 前置到稳定 history 前导致缓存变差,Phase 0 回退顺序+恢复 native 结构化历史工具调用,DebugView 消息段改为默认汇总+断点可视化条+折叠明细;(3)审查并重构 6284a8a 的跨 scope copy/move——scope 从操作级降为路径级(scopeForPath 唯一真相源),修 5 个隐患(local 读/写视野分裂/分支倒置/ownerContext 错配等),结果类型不向后兼容改 fromScope+toScope,WorkspaceVolumeOwnerContext 提升到 contracts
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `521708f` | (see git log) |
+| `19a8416` | (see git log) |
+| `45edc4a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
