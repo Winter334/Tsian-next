@@ -135,6 +135,8 @@ Text fallback 必须保留。可以同步瘦身，但要保留足够格式约束
 
 `collectActivatedSkillContents` 已通过 `injectedSkillPaths` 避免同一 tool loop 重复注入同一 `SKILL.md`。本任务保留该机制，并为超长 `SKILL.md` 引入同样的 compact/续读策略，避免完整 Skill 长期常驻后续轮次。若 Skill 入口本身必须完整遵循，则优先限制为“只注入一次 + 后续不重复”，不要摘要掉关键指令。
 
+> **落地（2026-06-29 收尾）**：`formatActivatedSkillMessageBody` 已加 compact 分支——Skill 正文 ≤ 6000 字符全量注入；超过则 preview 前 2000 字符（关键指令常在开头）+ 续读线索（`workspace.read` + skill path + offset）。阈值与 observation compact（`workspace-tools.ts`）一致。去重注入（`injectedSkillPaths`）不变。
+
 ## Debug Observability
 
 扩展 `AiDebugRecord`，加入可选 `messageSegments` 或等价结构。DebugView 可在现有 AI debug 区域展示轻量列表，不做完整仪表盘。
@@ -154,4 +156,13 @@ console log 同步输出 segment summary，便于和 provider 后台的输入 to
 - 手动验证 native：助手一次普通问答、一次 workspace read、一次 Skill 激活。
 - 手动验证 text：切换 `toolCallMode: "text"` 后执行最小 workspace read，确认 `<tsian-tool-call>` 仍可解析。
 - DebugView 或 console 能看到 message segment 顺序与长度。
+
+## 落地核查与收尾（2026-06-29）
+
+首次落地（`04585d6` + `1b8e625`）后修正记录里的两处错误已正确回退，Phase 0-6 主体均落地。收尾审计发现两处遗漏并修复（commit `1ad911a`）：
+
+1. **`buildToolOutput` 过时注释**：仍描述"model 路径全量 JSON.stringify"，但实际已走 `compactToolObservationForModel`。注释已改写为正确的 trace/model 分离描述。
+2. **超长 SKILL.md compact**：上方 Skill Injection 部分已补"落地"记录。
+
+综上，Phase 0-6 全部落地。任务可归档。
 
