@@ -21,7 +21,7 @@ import {
 import {
   assistantContextPath,
   assistantTracePath,
-  deleteLocalAssistantFile,
+  deleteLocalAssistantPath,
   getAssistantAttachmentBase64,
   isAssistantDirectWritePath,
   isLocalAssistantPath,
@@ -593,10 +593,12 @@ export async function runAssistantChat(
             throw new Error(`Assistant workspace write scope not supported: ${writeInput.scope}`)
           },
           delete: (deleteInput) => {
-            // 同 write:.tsian/local/assistant/* 的删除 bypass 事务,直接 deleteLocalAssistantFile.
+            // 同 write:.tsian/local/assistant/* 的删除 bypass 事务,直接落 Dexie。
+            // 用 deleteLocalAssistantPath(前缀匹配)而非 deleteLocalAssistantFile(精确匹配),
+            // 以支持删除 skill 目录(目录下 SKILL.md + scripts/* 一次删净)。返回实际删除的
+            // path 列表,不再硬编码谎报——删不到时 deletedPaths 为空。
             if (deleteInput.scope === "platform-meta" && isLocalAssistantPath(deleteInput.path)) {
-              return deleteLocalAssistantFile(deleteInput.path).then(() => {
-                const deletedPaths = [deleteInput.path]
+              return deleteLocalAssistantPath(deleteInput.path).then((deletedPaths) => {
                 removeDirectPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, deletedPaths)
                 return {
                   scope: deleteInput.scope,
