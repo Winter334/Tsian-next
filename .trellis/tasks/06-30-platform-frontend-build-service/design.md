@@ -41,7 +41,7 @@
 - 初始化：`esbuild.initialize({ wasmURL, worker: true })`。`wasmURL` 指向 esbuild.wasm（从 `node_modules/esbuild-wasm/esbuild.wasm` 构建期拷到 platform-web 公共资源，或从 CDN 取）。
 - 默认在 Web Worker 跑（不阻塞主线程）。`worker: false` 仅用于已在 worker 内的场景。
 - 懒加载：首次需要构建时才 `initialize`；`initialize` 幂等（esbuild 内部守卫，重复调安全）。
-- IndexedDB 缓存 wasm：首次从网络/资源加载 wasm 后缓存到 IndexedDB，后续 `initialize` 优先从缓存取（性能目的，非离线生存——见 `docs/active/platform-deployment-assumptions.md`）。
+- 缓存 wasm/compiler 二进制：首次加载后缓存，后续优先从缓存取（性能目的，非离线生存——见 `docs/active/platform-deployment-assumptions.md`）。**缓存存放位置**：用**独立的 IndexedDB**（如 `tsian-builder-cache`）或 **Cache API**，**绝不动主库 `tsian-agent-runtime-v13`**——按 storage spec，动主库 Dexie 表须 bump DB 名 `v13→v14` 并同步 SW（rename-and-reset，丢数据），代价过重且缓存数据本就不该进业务库。
 
 ### 3.2 构建调用
 
@@ -102,9 +102,9 @@ esbuild 原生处理：`import { x } from "./Foo.ts"` 在 `resolveDir: "frontend
 </script>
 ```
 
-import map 的内容来源：**framework 声明决定核心包**（vue → vue@3、preact → preact@10）+ **源码扫描发现的额外 bare import**（构建时 esbuild 报告 external 列表，平台为每个生成 esm.sh URL，版本取最新或源码 package.json 声明）。
+import map 的内容来源：**framework 声明决定核心包**（vue → vue@3、preact → preact@10）+ **`cdnExternalPlugin` 的 `onResolve` 收集到的 bare import 集合**（见 §5.3——`onResolve` 把每个 bare import 标记 `external: true` 时顺手记入集合，构建后 write-back 据此为每个生成 esm.sh URL）。
 
-版本策略：核心框架版本由平台固定（保证一致性）；额外 npm 包版本取 esm.sh 最新（源码若带 `package.json` 声明则用声明版本）。
+版本策略：**核心框架版本由平台固定**（保证一致性）；**源码带 `package.json` 时用其声明的版本**；**否则额外包取 esm.sh 固定 major**（如 `lodash@4`，避免 `@latest` 不可复现、随时漂移）。
 
 ### 4.3 浏览器沙箱固有限制（R11）
 
@@ -124,9 +124,11 @@ esbuild plugin `sfcPlugin`：
   1. `parse(source)` → descriptor（template/script/style 块）
   2. `compileScript(descriptor, { id })` → script 编译（含 `<script setup>`）
   3. `compileTemplate({ source: descriptor.template.content, id })` → render function 代码
-  4. `compileStyle({ source, id, scoped })` → 处理 scoped CSS
-  5. 拼成 JS 模块：`import { render } from ...; script.render = render; export default script;` + 注入 scoped CSS
+  4. `compileStyle({ source, id, scoped })` → 编译 scoped CSS（含 `data-v-xxxx` 属性重写）
+  5. 拼成 JS 模块：`import { render } from ...; script.render = render; export default script;` + **scoped CSS 以 JS 运行时注入**（编译时把 CSS 字符串拼进模块，模块执行时 `document.head.appendChild(document.createElement('style')).textContent = css`）
 - 返回 `{ contents: compiledJs, loader: "js" }`
+
+**scoped CSS 输出策略**：JS 运行时注入，**不抽独立 CSS 文件**。理由：与 vite dev 模式一致、无需 index.html 维护 CSS 清单、scoped CSS 随组件模块生命周期。源码里 `import './x.css'`（非 SFC 内 `<style>`）仍由 esbuild `loader: { ".css": "css" }` 处理，产出独立 CSS 文件由 index.html `<link>` 引用（见 §6）。
 
 JSX/TSX（react/preact）无需 SFC 插件，esbuild 原生 `loader: "tsx"` + `jsx` 配置。
 
@@ -142,21 +144,31 @@ JSX/TSX（react/preact）无需 SFC 插件，esbuild 原生 `loader: "tsx"` + `j
 | svelte | sveltePlugin（svelte/compiler） | — | svelte@4 |
 | vanilla | — | — | — |
 
-首版必做：vue + vanilla。react/preact/svelte 插件预留接口，可首版部分实现。
+首版范围：**vanilla + vue + react + preact**；**svelte 留接口**（sveltePlugin 模式待 vue 的 SFC 插件接口稳定后再加第二个 SFC 编译器）。理由：react/preact 是 esbuild 原生 TSX/JSX，**零插件、纯 framework 路由配置分支 + import map 条目**（`jsx: "automatic"` 自动注入的 `react/jsx-runtime` 也是 bare import，被 `cdnExternalPlugin` 自动覆盖）；svelte 需写第二个 SFC 编译器插件（与 vue 同量级），且无默认卡驱动其必须现在冒烟通过 esm.sh 浏览器兼容。
 
 ### 5.3 workspace-source-plugin（从内存读源码）
 
-源码不在文件系统，在 `gameCardContentFiles`（`frontend/src/**` 走 card-frontend scope）。esbuild 的 `onLoad({ filter: /.*/, namespace: "file" })` 拦截所有文件加载，从 workspace 内存读：
+**源码存储位置**（已核实代码）：源码与产物**同表 `gameCardFrontendFiles`**，靠路径前缀 `frontend/src/` vs `frontend/dist/` 区分——**不是 `gameCardContentFiles`**。`card-frontend` scope 的 `cardFrontendVolume` → `writeLocalGameCardFrontendFile` / `listLocalGameCardFrontendFiles`（`game-cards.ts`，`normalizeFrontendFile` 强制 path 以 `frontend/` 开头）。源码文件存 `data: Blob`，读时 `await r.data.text()` 取文本。
+
+esbuild-wasm 在浏览器内**无文件系统**，必须用插件拦截解析与加载两步，且**用自定义 namespace（如 `"workspace"`）而非 `"file"`**——`"file"` namespace 会触发 esbuild 对不存在的 FS 回退解析直接报错。
 
 ```ts
-onLoad({ filter: /.*/ }, async (args) => {
-  const file = await readWorkspaceFile(`frontend/src/${args.path}`)  // 从 gameCardContentFiles
+// 1. onResolve：相对 import（./ ../）映射到 workspace 虚拟路径，标记 namespace
+onResolve({ filter: /^\.\.?\// }, (args) => {
+  const resolved = resolveRelative(args.path, args.importer)  // 相对 importer 解析
+  return { path: resolved, namespace: "workspace" }
+})
+
+// 2. onLoad：从 gameCardFrontendFiles 读源码
+onLoad({ filter: /.*/, namespace: "workspace" }, async (args) => {
+  const file = await readLocalGameCardFrontendFile(cardId, `frontend/src/${args.path}`)
   if (!file) return { errors: [{ text: "源码文件未找到: " + args.path }] }
-  return { contents: file.content, loader: loaderFor(args.path) }
+  const content = await file.data.text()
+  return { contents: content, loader: loaderFor(args.path) }
 })
 ```
 
-`loaderFor` 按扩展名：`.ts`→ts、`.tsx`→tsx、`.vue`→（交给 sfcPlugin）、`.css`→css、`.json`→json。
+`loaderFor` 按扩展名：`.ts`→ts、`.tsx`→tsx、`.vue`→（交给 sfcPlugin，其 `onLoad` 在 `workspace` namespace 上拦截 `.vue`）、`.css`→css、`.json`→json。bare import 不走本插件，由 `cdnExternalPlugin` 标记 external（§4.2）。
 
 ## 6. 构建产物写回
 
@@ -165,7 +177,7 @@ onLoad({ filter: /.*/ }, async (args) => {
 写回流程：
 1. 对每个 outputFile，路径拼成 `frontend/dist/${path}`（`path` 已是相对，如 `assets/index-abc.js`）。
 2. 调 `writeLocalGameCardFrontendFile(cardId, { path: "frontend/dist/" + path, data: contents })`。
-3. 生成 `frontend/dist/index.html`：引用产物 assets（相对路径 `./assets/...`）+ 注入 import map（§4.2）。
+3. 生成 `frontend/dist/index.html`：按产物扩展名分流引用——`.js` → `<script type="module" src="./assets/...">`，`.css` → `<link rel="stylesheet" href="./assets/...">`（SFC 内 scoped CSS 已由 JS 运行时注入，不在此列）+ 注入 import map（§4.2）。
 4. 清理旧的 `frontend/dist/**`（删除不在新产物列表里的文件，避免残留）。
 5. 更新 `manifest.frontend.entry = "frontend/dist/index.html"`（若未已是）。
 
@@ -228,7 +240,7 @@ interface FrontendBuildStatus {
 导出带 `frontend/src/`（源码，必带）。`frontend/dist/` 可选带：
 - 带产物：接收方首次加载无需等待构建（直接 SW 加载产物）。
 - 不带产物：接收方平台首次自动构建（官方部署下所有平台都有构建能力）。
-- 倾向带产物兜底（首次体验好），源码更新时平台自动重建覆盖。
+- **决定带产物兜底**（首次体验好，接收方无需等待构建），源码更新时平台自动重建覆盖产物。
 
 ## 12. 安全与隔离（R10）
 
@@ -258,9 +270,11 @@ interface FrontendBuildStatus {
   - vanilla TS 源码卡能构建运行。
   - 旧卡（entry 指 frontend/index.html、无 src）仍能加载（兼容）。
 
-## 15. Open Decisions（留实现细化）
+## 15. Resolved Decisions（已落定）
 
-- import map 版本：核心框架版本由平台固定 vs 源码 package.json 声明。倾向核心固定 + 额外包取 esm.sh 最新。
-- 构建产物写回的原子性粒度：per-file put vs 批量 transaction。倾向 per-file（复用现有 API）+ 失败保留旧产物。
-- 首次加载内置卡是否同步等待构建（影响首次加载延迟）vs 异步构建期间显示加载态。倾向异步 + 加载态。
-- svelte/react/preact 首版是否实现。倾向首版只 vue + vanilla，其余留接口。
+- **import map 版本**：核心框架平台固定；源码带 `package.json` 用其声明版本；否则额外包取 esm.sh 固定 major（避免 `@latest` 漂移）。见 §4.2。
+- **写回原子性**：per-file put（复用 `writeLocalGameCardFrontendFile`）+ 构建失败保留旧产物。见 §6。
+- **首次加载内置卡**：异步构建 + 加载态 UI；默认前端预构建产物兜底，避免首屏白等。见 §9。
+- **首版框架范围**：vanilla + vue + react + preact 实现，svelte 留接口。见 §5.2。
+- **wasm/compiler 缓存位置**：独立 IndexedDB 或 Cache API，不动主库。见 §3.1。
+- **导出产物兜底**：带 `frontend/dist/`。见 §11。

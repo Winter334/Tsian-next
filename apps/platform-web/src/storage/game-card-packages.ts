@@ -1,4 +1,5 @@
 import type {
+  FrontendFramework,
   FrontendPackageManifest,
   GameCardContentFile,
   GameCardFrontendBinding,
@@ -6,7 +7,7 @@ import type {
   GameCardPackageFileEntry,
   GameCardPackageManifest,
 } from "@tsian/contracts"
-import { FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
+import { FRONTEND_FRAMEWORKS, FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
 import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile, writeLocalGameCardContentFile } from "./game-cards"
@@ -210,6 +211,22 @@ function normalizeFrontendBinding(value: unknown): GameCardFrontendBinding | und
   }
 
   if (kind === "packaged") {
+    const framework = value.framework
+    let normalizedFramework: FrontendFramework | undefined
+    if (framework !== undefined) {
+      const frameworkStr = requireString(
+        framework,
+        "GAME_CARD_FRONTEND_FRAMEWORK_INVALID",
+        "Frontend framework must be a non-empty string when provided.",
+      )
+      if (!FRONTEND_FRAMEWORKS.includes(frameworkStr as FrontendFramework)) {
+        throw new GameCardPackageError(
+          "GAME_CARD_FRONTEND_FRAMEWORK_INVALID",
+          `Unsupported game card frontend framework: ${frameworkStr}`,
+        )
+      }
+      normalizedFramework = frameworkStr as FrontendFramework
+    }
     return {
       kind,
       entry: normalizePackagePath(
@@ -220,6 +237,7 @@ function normalizeFrontendBinding(value: unknown): GameCardFrontendBinding | und
         ),
         "GAME_CARD_FRONTEND_PACKAGED_ENTRY_INVALID",
       ),
+      ...(normalizedFramework ? { framework: normalizedFramework } : {}),
       bridgeVersion: "tsian.play-bridge.v1",
     }
   }

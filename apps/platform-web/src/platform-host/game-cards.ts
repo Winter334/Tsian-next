@@ -2,6 +2,7 @@ import type {
   GameCardFrontendBinding,
   WorkspaceFile,
 } from "@tsian/contracts"
+import { FRONTEND_FRAMEWORKS } from "@tsian/contracts"
 import type { LocalGameCardRecord, LocalSaveRecord } from "../storage"
 import { resolveRemoteFrontendUrl } from "../bridge"
 import {
@@ -161,9 +162,16 @@ function normalizeGameCardFrontendBinding(
   }
 
   if (frontend.kind === "packaged") {
+    const framework = frontend.framework
+    if (framework !== undefined && !FRONTEND_FRAMEWORKS.includes(framework)) {
+      throw new Error(
+        `不支持的游戏卡前端框架：${String(framework)}`,
+      )
+    }
     return {
       kind: "packaged",
       entry: normalizePackagedFrontendEntry(frontend.entry),
+      ...(framework ? { framework } : {}),
       bridgeVersion: "tsian.play-bridge.v1",
     }
   }

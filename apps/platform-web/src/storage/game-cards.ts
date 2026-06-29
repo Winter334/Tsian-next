@@ -2,6 +2,7 @@ import type {
   GameCardContentFile,
   GameCardManifest,
 } from "@tsian/contracts"
+import { FRONTEND_FRAMEWORKS } from "@tsian/contracts"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
 import {
   localDb,
@@ -116,9 +117,16 @@ function normalizeFrontendBinding(manifest: GameCardManifest): GameCardManifest[
   }
 
   if (frontend.kind === "packaged") {
+    const framework = frontend.framework
+    if (framework !== undefined && !FRONTEND_FRAMEWORKS.includes(framework)) {
+      throw new Error(
+        `Unsupported game card frontend framework: ${String(framework)}`,
+      )
+    }
     return {
       kind: "packaged",
       entry: normalizePackageFilePath(frontend.entry, "frontend.entry"),
+      ...(framework ? { framework } : {}),
       bridgeVersion: frontend.bridgeVersion,
     }
   }

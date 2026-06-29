@@ -4,7 +4,7 @@
 
 把游戏卡前端的运行模型从"卡带构建产物文件"升级为"卡带源码 + 平台统一构建"。平台官方部署，所有玩家同域名游玩，构建能力作为平台基础设施（非游戏卡携带）提供。使得：
 
-- **助手能在线改前端**：助手通过 `workspace.write` 写 `frontend-src/` 源码，平台自动构建到 `frontend/`，重新加载即见效果——闭环天然，无需助手接触构建工具链。
+- **助手能在线改前端**：助手通过 `workspace.write` 写 `frontend/src/` 源码，平台自动构建到 `frontend/dist/`，重新加载即见效果——闭环天然，无需助手接触构建工具链。
 - **普通玩家在默认前端上魔改**：默认前端用 Vue 3，生态成熟、中文资料丰富、SFC 单文件组件对新手友好。
 - **高级玩家可上传其它框架源码包**：构建服务多框架插件式，不强制全家桶统一。
 
@@ -59,9 +59,7 @@
 
 ## Open Decisions
 
-- 导出游戏卡是否带 `frontend/` 产物兜底。倾向带（降低接收方首次构建延迟）——但若所有平台都有构建能力，纯源码导出也可。待 design 阶段定。
-- `frontend-src/` 与 `frontend/` 是否同卡共存，还是构建后 `frontend/` 由平台管理不进导出。倾向 `frontend-src/` 进导出，`frontend/` 可选。
-- 构建产物格式：单 bundle 还是多 ESM chunk。倾向 esbuild 的默认 chunking（多文件 ESM，相对路径）。
+（已全部落定，见 Decisions D8/D10/D11/D12）
 
 ## Decisions
 
@@ -70,7 +68,10 @@
 - `D3` 默认前端框架选 Vue 3：与 platform-web 技术栈一致、中文社区资源最丰、SFC 对新手最友好。
 - `D4` 框架声明位置：`game-card.json` 的 `packaged` frontend binding 新增 `framework` 字段（与 `entry` / `bridgeVersion` 同层）。
 - `D5` 构建引擎选 esbuild-wasm：浏览器内构建最成熟方案，原生支持 TS/JSX，已被 Sandpack 等验证。
-- `D6` 构建触发：自动 + 防抖。助手 `workspace.write("frontend-src/**")` 后平台自动重新构建（防抖避免连续写多次构建），重载即见效果。无需显式 action。
+- `D6` 构建触发：自动 + 防抖。助手 `workspace.write("frontend/src/**")` 后平台自动重新构建（防抖避免连续写多次构建），重载即见效果。无需显式 action。
 - `D7` bare import 走 CDN：`vue` / `preact` 等框架模块及任意 npm 包从 esm.sh CDN 解析（递归依赖解析 + CJS→ESM）。平台不内嵌框架 build——平台运行本就需网络，离线是伪需求（见 `docs/active/platform-deployment-assumptions.md`）。IndexedDB 缓存仅为性能，非离线生存。
 - `D8` 路径命名：`frontend/src/`（源码）+ `frontend/dist/`（产物），均在 `frontend/` 根下。`frontend/` 仍是 SW 加载根 + card-frontend scope 前缀，现有运行时硬约束不动；`manifest.frontend.entry` 改指 `frontend/dist/index.html`。改动集中在新路径 + entry 默认值，不破坏现有 SW/scope/卡包逻辑。
 - `D9` npm 包支持范围：支持任意 npm 包作为 bare import（esm.sh 解析）。非所有包可跑——Node 原生 API/WASM/原生 binary 受浏览器沙箱固有限制，给清晰报错而非 polyfill。这是客观边界，非产品决策。
+- `D10` 首版框架范围：vanilla + vue + react + preact 实现，svelte 留接口。react/preact 是 esbuild 原生 TSX/JSX 纯配置分支（零插件），随 framework 路由落地；svelte 需第二个 SFC 编译器插件，待 vue 插件接口稳定后再加。
+- `D11` 构建产物格式：多 ESM chunk（esbuild `splitting: true`，相对路径 `./assets/...`），非单 bundle。
+- `D12` 导出产物兜底：导出游戏卡**带 `frontend/dist/` 产物**（降低接收方首次构建延迟），源码更新时平台自动重建覆盖。`frontend/src/`（源码）必带。

@@ -20,6 +20,16 @@ export interface GameCardCover {
   alt?: string
 }
 
+export const FRONTEND_FRAMEWORKS = [
+  "vue",
+  "react",
+  "preact",
+  "svelte",
+  "vanilla",
+] as const
+
+export type FrontendFramework = (typeof FRONTEND_FRAMEWORKS)[number]
+
 export type GameCardFrontendBinding =
   | {
       kind: "remote"
@@ -29,6 +39,8 @@ export type GameCardFrontendBinding =
   | {
       kind: "packaged"
       entry: string
+      /** Frontend source framework; drives platform build plugin + import map. Optional for backward compat — legacy cards without `frontend/src/` omit it. */
+      framework?: FrontendFramework
       bridgeVersion: "tsian.play-bridge.v1"
     }
 
