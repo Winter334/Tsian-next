@@ -11,6 +11,7 @@
   "dependencies": {
     "@tsian/contracts": "0.0.0",
     "@tsian/play-bridge": "0.0.0",
+    "gsap": "^3.15.0",
     "marked": "^15.0.12"
   },
   "devDependencies": {

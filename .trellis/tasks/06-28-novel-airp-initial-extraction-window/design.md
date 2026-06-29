@@ -162,23 +162,37 @@ The Skill should explain the plot sufficiency judgment in `reason`, e.g. which i
 
 ## 5. Frontend UX
 
-The existing setup shell step rail should make step 2 active after import review.
+### 5.1 Shell（重做，2026-06-30 讨论定稿）
 
-Initial understanding stage states:
+The opening guide shell is redesigned away from its earlier "admin panel" feel toward a novel-opening ritual. Decisions:
 
-- `not_started`: source imported but no initial outputs found;
-- `running`: Agent call in progress;
-- `ready`: summary files found and readable;
-- `failed`: Agent call or expected output read failed, with retry action.
+- **Drop the setup header.** The `Opening Guide · 正式游玩前的开局准备` strip is removed — it is decorative and redundant with the stepper.
+- **Full-screen guide.** While the guide is active, the global app header (`Tsian 就绪` bar) is hidden so the guide owns the full viewport. The right nav sidebar is already hidden (existing `.body:has(.setup-shell) .sidebar-right { display: none }`).
+- **Top horizontal stepper** replaces the left 148px vertical step rail. The vertical rail read as a navigation bar, not a progress indicator. Horizontal stepper carries the timeline feeling: completed steps get a check, the current step glows, unimplemented steps are dimmed; a fill animation runs along the connecting line. The main content area goes full-width.
+- **Step-transition animation.** Step changes currently do `story.innerHTML = ""` and re-render instantly. Add a fade/slide transition between steps so the guide feels continuous, not jumpy.
+- **De-report-ize copy.** Current copy is report-toned ("确认切分结果", "检查目录和章节开头是否符合预期", "正式游玩前的开局准备"). Shorten button labels (e.g. "开始初始理解" → "开始理解") and soften instructional text. Avoid exposing internal Agent ids (`world-architect`) to the player.
 
-Ready state should show a small summary only:
+### 5.2 Step 1 — 导入小说
 
-- brief;
-- counts of characters / locations / factions;
-- selected source window size;
-- a few candidate original character names if available.
+Three sub-screens: choose → input → review.
 
-Do not overwhelm the player with extraction logs.
+- **choose**: Strip down to just two method cards (粘贴 / 文件). Remove the page title and subtitle copy — the stepper already labels this step. Center of gravity is the card effect: on hover/active, layer multiple animations (lift + ember stroke + inner glow), same visual language as the step-2 branch cards.
+- **input (paste/file)**: Trim copy. The file drop zone currently shows a dashed-border drop area but only supports the hidden `<input type=file>` — either implement real drag-and-drop or drop the fake drop-zone visual and keep a plain file button. Decide at implementation time.
+- **review**: Keep the structure (overview + split chapter/preview panes). De-report-ize the copy.
+
+### 5.3 Step 2 — 初始理解
+
+States: `not_started` / `running` / `ready` / `failed` (same as before, presentation redesigned).
+
+- **running**: A themed animation (ember / turning-page motif) plus preset stage copy. Stages roughly map to the Skill's three tools (observe source structure → read opening plot → write opening materials). Do **not** reflect real-time tool progress — the Agent's work under the Skill is staged, so preset copy + animation is enough. Do not expose the `world-architect` id in the copy; write player-facing lines like "正在阅读开头…" → "正在整理开局资料…" → "正在写入…". Stage advance signal (if cheap): elapsed time, or polling `understanding-summary.json` `status` change from `pending`. Not required to be real.
+- **ready**: Minimal. No brief, no entity counts, no chapter range — the player does not need to audit the extraction here; later Agent dialogue consumes those materials. The ready state's only job is one decision: choose an entry identity. Layout:
+  - one guiding question: "你想以谁的身份走进这个故事？"
+  - two cards: **原著角色** / "扮演故事里已有的人"  ·  **原创角色** / "创造一个全新的角色"
+  - a single "返回切分" secondary action (no primary "下一步" — the branch card is the next step).
+  - Selecting a card advances the stepper from ② to ③ 角色设定. The detail views behind each branch (canon character card grid, original-character dialogue collection) belong to step 3 and are designed when step 3 is discussed.
+- **failed**: Short retry copy, no long explanation.
+
+Do not overwhelm the player with extraction logs at any state.
 
 ## 6. Re-run Boundary
 
@@ -202,6 +216,6 @@ If `world-architect` is not configured in the current card, implementation shoul
 Completion check:
 
 1. Call `tsian.invokeAgent("world-architect", input)`.
-2. Read `save/understanding/initial-summary.json`.
+2. Read `save/playthrough/understanding-summary.json` (the actual implementation path; the earlier `save/understanding/initial-summary.json` in the original plan was superseded — skill writes, UI reads, and the template seed all agree on `save/playthrough/understanding-summary.json`).
 3. If summary exists and has `status: "ready"`, render ready state.
 4. Otherwise render failed/retry state with a concise explanation.

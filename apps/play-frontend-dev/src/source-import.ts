@@ -1,4 +1,10 @@
 import type { TsianApi } from "@tsian/play-bridge"
+import {
+  animateStepEnter,
+  attachCardHover,
+  animateEmbers,
+  animateStageText,
+} from "./anim"
 
 const SOURCE_MANIFEST_PATH = "save/source/manifest.json"
 const CHAPTER_INDEX_PATH = "save/source/chapters.index.json"
@@ -116,6 +122,7 @@ interface ImportGuideState {
   busy: boolean
   understandingStatus: OpeningUnderstandingStatus
   understandingSummary: OpeningUnderstandingSummary | null
+  understandingStartedAt: number
 }
 
 interface SetupActionConfig {
@@ -473,23 +480,33 @@ function setupStepIndex(view: ImportStepView): number {
   return view === "understanding" ? 1 : 0
 }
 
-function renderStepRail(currentIndex: number, completedUntil: number): HTMLElement {
+function renderStepper(currentIndex: number, completedUntil: number): HTMLElement {
   const steps = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
-  const rail = createEl("aside", "setup-step-rail")
-  rail.appendChild(createEl("div", "setup-rail-title", "流程"))
-  const list = createEl("ol", "setup-step-list")
+  const rail = createEl("nav", "setup-stepper")
+  // 贯通到屏幕尽头的轨道线（装饰延长，不承载 fill）
+  rail.appendChild(createEl("div", "setup-stepper-line"))
+
+  // 节点群居中聚拢，内含精确对应节点位置的 fill 进度线
+  const nodes = createEl("ol", "setup-stepper-nodes")
+  const fillRatio = steps.length > 1 ? currentIndex / (steps.length - 1) : 0
+  const fill = createEl("div", "setup-stepper-fill")
+  fill.style.transform = `scaleX(${fillRatio})`
+  nodes.appendChild(fill)
   steps.forEach((step, index) => {
-    const statusClass = index === currentIndex ? "current" : index <= completedUntil ? "done" : "locked"
-    const statusText = index === currentIndex ? "当前步骤" : index <= completedUntil ? "已完成" : "待开放"
-    const item = createEl("li", `setup-step ${statusClass}`)
-    item.appendChild(createEl("span", "setup-step-num", String(index + 1).padStart(2, "0")))
-    const body = createEl("span", "setup-step-body")
-    body.appendChild(createEl("span", "setup-step-name", step))
-    body.appendChild(createEl("span", "setup-step-state", statusText))
-    item.appendChild(body)
-    list.appendChild(item)
+    const done = index <= completedUntil
+    const current = index === currentIndex
+    const statusClass = current ? "current" : done ? "done" : "locked"
+    const item = createEl("li", `setup-stepper-node ${statusClass}`)
+    const dot = createEl("span", "setup-stepper-dot")
+    if (done && !current) {
+      const check = createEl("span", "setup-stepper-check", "✓")
+      dot.appendChild(check)
+    }
+    item.appendChild(dot)
+    item.appendChild(createEl("span", "setup-stepper-label", step))
+    nodes.appendChild(item)
   })
-  rail.appendChild(list)
+  rail.appendChild(nodes)
   return rail
 }
 
@@ -523,26 +540,25 @@ function renderActionBar(config: SetupActionConfig): HTMLElement {
 
 function renderSetupShell(title: string, copy: string, content: HTMLElement, actionBar: HTMLElement, currentStepIndex: number, completedUntil: number): HTMLElement {
   const shell = createEl("div", "setup-shell")
-  const header = createEl("header", "setup-header")
-  header.appendChild(createEl("div", "setup-eyebrow", "Opening Guide"))
-  header.appendChild(createEl("div", "setup-header-copy", "正式游玩前的开局准备"))
 
   const body = createEl("div", "setup-body")
-  const workspace = createEl("div", "setup-workspace")
+  // stepper 破出限宽容器，延长到屏幕尽头
+  body.appendChild(renderStepper(currentStepIndex, completedUntil))
+  const inner = createEl("div", "setup-inner")
+
   const stage = createEl("main", "setup-stage")
   const stageHead = createEl("div", "setup-stage-head")
   const stepNames = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
   stageHead.appendChild(createEl("div", "setup-kicker", `Step ${String(currentStepIndex + 1).padStart(2, "0")} · ${stepNames[currentStepIndex] ?? "开局准备"}`))
-  stageHead.appendChild(createEl("h2", "setup-stage-title", title))
-  stageHead.appendChild(createEl("p", "setup-copy", copy))
+  // choose 屏不渲染标题/副标题（title 为空即跳过），其余屏保留
+  if (title) stageHead.appendChild(createEl("h2", "setup-stage-title", title))
+  if (copy) stageHead.appendChild(createEl("p", "setup-copy", copy))
   stage.appendChild(stageHead)
   stage.appendChild(content)
-  workspace.appendChild(renderStepRail(currentStepIndex, completedUntil))
-  workspace.appendChild(stage)
-  body.appendChild(workspace)
-
-  shell.appendChild(header)
+  inner.appendChild(stage)
+  body.appendChild(inner)
   shell.appendChild(body)
+
   const actionWrap = createEl("div", "setup-action-wrap")
   actionWrap.appendChild(actionBar)
   shell.appendChild(actionWrap)
@@ -560,6 +576,8 @@ function renderMethodChoice(setView: (view: ImportStepView) => void): HTMLElemen
   file.type = "button"
   file.innerHTML = `<span class="setup-method-mark">卷</span><span class="setup-method-title">导入文件</span><span class="setup-method-copy">适合完整长篇，把整本书放进当前存档。</span>`
   file.addEventListener("click", () => setView("file"))
+  attachCardHover(paste)
+  attachCardHover(file)
   wrap.appendChild(paste)
   wrap.appendChild(file)
   return wrap
@@ -586,8 +604,8 @@ function renderFileInput(): { content: HTMLElement; elements: ImportInputElement
   const wrap = createEl("div", "setup-input-panel")
   const titleInput = renderTitleField()
   const fileBox = createEl("label", "setup-file-drop")
-  fileBox.appendChild(createEl("span", "setup-file-title", "选择 .txt / .md 小说文件"))
-  fileBox.appendChild(createEl("span", "setup-file-copy", "选择后点击底部按钮开始导入。"))
+  fileBox.appendChild(createEl("span", "setup-file-title", "拖入或选择 .txt / .md 文件"))
+  fileBox.appendChild(createEl("span", "setup-file-copy", "支持拖放，或点击选择。"))
   const fileInput = createEl("input", "setup-file")
   fileInput.type = "file"
   fileInput.accept = ".txt,.md,text/plain,text/markdown"
@@ -685,49 +703,89 @@ function buildOpeningInitializationPrompt(manifest: SourceManifest, index: Chapt
   ].join("\n")
 }
 
+// 初始理解 running 阶段文案，按经过时间推进（粗略对应 skill 三步）
+const UNDERSTANDING_STAGES = [
+  "正在观察导入结构…",
+  "正在阅读开头剧情…",
+  "正在整理开局资料…",
+  "正在写入…",
+]
+
+function currentUnderstandingStage(startedAt: number): number {
+  if (!startedAt) return 0
+  const elapsed = Date.now() - startedAt
+  // 每 12s 推进一阶段，最后阶段停留
+  return Math.min(UNDERSTANDING_STAGES.length - 1, Math.floor(elapsed / 12_000))
+}
+
+// running 态的持久引用：render 重建 DOM 后重新绑定，定时器借此直接更新文案
+// 不触发整体重绘（避免反复入场动画 + GSAP timeline 泄露）。
+let runningStageEl: HTMLElement | null = null
+let runningEmberTimeline: ReturnType<typeof animateEmbers> | null = null
+
 function renderOpeningUnderstanding(state: ImportGuideState): HTMLElement {
   const wrap = createEl("div", "setup-understanding")
+
   if (state.understandingStatus === "running") {
-    wrap.appendChild(createEl("div", "setup-understanding-card running", "正在请 world-architect 阅读开头剧情并建立开局资料…"))
-    wrap.appendChild(createEl("p", "setup-understanding-copy", "这一步会调用真实 Agent。长篇小说可能需要等待一会儿。"))
+    const stageIdx = currentUnderstandingStage(state.understandingStartedAt)
+    const card = createEl("div", "setup-understanding-running")
+    const embers = createEl("div", "setup-embers")
+    embers.appendChild(createEl("span", "setup-ember"))
+    embers.appendChild(createEl("span", "setup-ember"))
+    embers.appendChild(createEl("span", "setup-ember"))
+    card.appendChild(embers)
+    const stageEl = createEl("div", "setup-understanding-stage", UNDERSTANDING_STAGES[stageIdx] ?? UNDERSTANDING_STAGES[0]!)
+    card.appendChild(stageEl)
+    wrap.appendChild(card)
+    // 挂载后启动烛火动画 + 记引用供定时器直接更新文案
+    requestAnimationFrame(() => {
+      runningEmberTimeline?.kill()
+      runningEmberTimeline = animateEmbers(embers)
+      runningStageEl = stageEl
+    })
     return wrap
   }
 
   if (state.understandingStatus === "failed") {
-    wrap.appendChild(createEl("div", "setup-understanding-card failed", "初始理解没有完成。"))
-    wrap.appendChild(createEl("p", "setup-understanding-copy", "可以重试，或返回重新导入后再初始化。"))
+    wrap.appendChild(createEl("div", "setup-understanding-card failed", "理解未完成。"))
+    wrap.appendChild(createEl("p", "setup-understanding-copy", "可重试，或返回重新导入后再来。"))
     return wrap
   }
 
   const summary = state.understandingSummary
   if (!summary) {
-    wrap.appendChild(createEl("div", "setup-understanding-card", "准备开始初始理解。"))
-    wrap.appendChild(createEl("p", "setup-understanding-copy", "确认切分结果后，让 Agent 阅读足够的开头剧情，生成后续角色设定和开局组装要用的资料。"))
+    wrap.appendChild(createEl("div", "setup-understanding-card", "准备开始。"))
+    wrap.appendChild(createEl("p", "setup-understanding-copy", "让系统阅读足够的开头剧情，整理出后续要用的资料。"))
     return wrap
   }
 
-  const card = createEl("div", "setup-understanding-card ready")
-  card.appendChild(createEl("div", "setup-understanding-title", "初始理解已完成"))
-  card.appendChild(createEl("p", "setup-understanding-summary", summary.summary))
-  const stats = createEl("div", "setup-overview-stats")
-  stats.appendChild(createEl("span", "setup-stat", `${formatNumber(summary.entityCount ?? 0)} 个实体`))
-  const start = summary.sourceWindow?.start ?? "?"
-  const end = summary.sourceWindow?.end ?? "?"
-  stats.appendChild(createEl("span", "setup-stat", `章节 ${start}–${end}`))
-  card.appendChild(stats)
-  wrap.appendChild(card)
-
-  const candidates = summary.candidateCharacters ?? []
-  if (candidates.length) {
-    const list = createEl("div", "setup-candidate-list")
-    candidates.slice(0, 8).forEach((candidate) => {
-      const item = createEl("div", "setup-candidate-card")
-      item.appendChild(createEl("div", "setup-candidate-name", candidate.name))
-      item.appendChild(createEl("div", "setup-candidate-brief", candidate.brief))
-      list.appendChild(item)
-    })
-    wrap.appendChild(list)
-  }
+  // ready：极简分支入口，不显示 brief / meta
+  const branch = createEl("div", "setup-understanding-branch")
+  branch.appendChild(createEl("div", "setup-branch-question", "你想以谁的身份走进这个故事？"))
+  const cards = createEl("div", "setup-branch-cards")
+  const canon = createEl("button", "setup-branch-card")
+  canon.type = "button"
+  canon.appendChild(createEl("span", "setup-branch-title", "原著角色"))
+  canon.appendChild(createEl("span", "setup-branch-copy", "扮演故事里已有的人"))
+  canon.addEventListener("click", () => {
+    // 第三步角色设定未实现；暂记意图，stepper 不前进
+    state.statusText = "角色设定即将开放"
+    render()
+  })
+  const original = createEl("button", "setup-branch-card")
+  original.type = "button"
+  original.appendChild(createEl("span", "setup-branch-title", "原创角色"))
+  original.appendChild(createEl("span", "setup-branch-copy", "创造一个全新的角色"))
+  original.addEventListener("click", () => {
+    state.statusText = "角色设定即将开放"
+    render()
+  })
+  cards.appendChild(canon)
+  cards.appendChild(original)
+  attachCardHover(canon)
+  attachCardHover(original)
+  branch.appendChild(cards)
+  wrap.appendChild(branch)
   return wrap
 }
 
@@ -745,6 +803,7 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
     busy: false,
     understandingStatus: initialSummary ? "ready" : "idle",
     understandingSummary: initialSummary,
+    understandingStartedAt: 0,
   }
 
   let activeElements: ImportInputElements | null = null
@@ -809,15 +868,20 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
     state.busy = true
     state.errorText = ""
     state.understandingStatus = "running"
-    state.statusText = "初始理解中…"
+    state.understandingStartedAt = Date.now()
+    state.statusText = "理解中…"
     state.view = "understanding"
     render()
     void (async () => {
+      // running 期间定时重绘，推进阶段文案（纯视觉，不反映真实进度）
+      const stageTimer = window.setInterval(() => {
+        if (state.understandingStatus === "running") render()
+      }, 3000)
       try {
         const prompt = buildOpeningInitializationPrompt(state.manifest as SourceManifest, state.chapterIndex)
         await tsian.invokeAgent("world-architect", prompt)
         const summary = await loadOpeningUnderstandingSummary(tsian)
-        if (!summary) throw new Error("Agent 已返回，但没有找到初始理解摘要。请重试。")
+        if (!summary) throw new Error("理解未完成，没找到结果。请重试。")
         state.understandingSummary = summary
         state.understandingStatus = "ready"
         state.statusText = "初始理解已完成"
@@ -829,6 +893,7 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
         state.statusText = "初始理解失败"
         setStatus(message, "error")
       } finally {
+        window.clearInterval(stageTimer)
         state.busy = false
         render()
       }
@@ -838,11 +903,11 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
   function render(): void {
     story.innerHTML = ""
     activeElements = null
-    let title = "导入一部小说"
-    let copy = "先选择一种导入方式。导入完成后，你可以检查目录和章节开头。"
+    let title = ""
+    let copy = ""
     let content: HTMLElement
     let actions: SetupActionConfig = {
-      primaryLabel: "下一步（后续）",
+      primaryLabel: "下一步",
       primaryDisabled: true,
       statusText: state.statusText,
     }
@@ -857,60 +922,81 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
         statusText: state.statusText,
       }
     } else if (state.view === "paste") {
-      title = "粘贴小说文本"
-      copy = "适合短篇、片段，或先用一小段文本确认开局流程。"
+      title = "粘贴小说"
+      copy = "适合短篇或片段，也可先拿一小段试试。"
       const rendered = renderPasteInput()
       activeElements = rendered.elements
       content = rendered.content
       actions = {
-        secondaryLabel: "更换导入方式",
+        secondaryLabel: "返回",
         secondaryDisabled: state.busy,
         onSecondary: () => setView("choose"),
-        primaryLabel: state.busy ? "导入中…" : "导入文本",
+        primaryLabel: state.busy ? "导入中…" : "导入",
         primaryDisabled: state.busy,
         onPrimary: () => startImport("paste"),
         statusText: state.statusText,
       }
     } else if (state.view === "file") {
-      title = "导入小说文件"
-      copy = "适合完整长篇小说，支持 .txt 和 .md 文件。"
+      title = "导入文件"
+      copy = "支持 .txt / .md，适合完整长篇。"
       const rendered = renderFileInput()
       activeElements = rendered.elements
       content = rendered.content
+      // 真拖放支持：拖入文件时写入 fileInput.files 再走统一导入链
+      const dropZone = content.querySelector(".setup-file-drop") as HTMLElement | null
+      const fileInput = rendered.elements.fileInput
+      if (dropZone && fileInput) {
+        dropZone.addEventListener("dragover", (event) => {
+          event.preventDefault()
+          dropZone.classList.add("dragging")
+        })
+        dropZone.addEventListener("dragleave", () => dropZone.classList.remove("dragging"))
+        dropZone.addEventListener("drop", (event) => {
+          event.preventDefault()
+          dropZone.classList.remove("dragging")
+          const dropped = event.dataTransfer?.files?.[0]
+          if (dropped) {
+            const transfer = new DataTransfer()
+            transfer.items.add(dropped)
+            fileInput.files = transfer.files
+            startImport("file")
+          }
+        })
+      }
       actions = {
-        secondaryLabel: "更换导入方式",
+        secondaryLabel: "返回",
         secondaryDisabled: state.busy,
         onSecondary: () => setView("choose"),
-        primaryLabel: state.busy ? "导入中…" : "导入文件",
+        primaryLabel: state.busy ? "导入中…" : "导入",
         primaryDisabled: state.busy,
         onPrimary: () => startImport("file"),
         statusText: state.statusText,
       }
     } else if (state.view === "review") {
-      title = "检查切分结果"
-      copy = "确认目录和章节开头是否符合预期。开局前可以重新导入。"
+      title = "确认目录"
+      copy = "检查章节是否符合预期，开局前可重新导入。"
       content = renderSplitReview(options, state, render)
       actions = {
-        secondaryLabel: "上一步",
+        secondaryLabel: "返回",
         secondaryDisabled: state.busy,
         onSecondary: () => setView("choose"),
         tertiaryLabel: "重新导入",
         tertiaryDisabled: state.busy,
         onTertiary: confirmReimport,
-        primaryLabel: state.understandingStatus === "ready" ? "查看初始理解" : "开始初始理解",
+        primaryLabel: state.understandingStatus === "ready" ? "查看理解" : "开始理解",
         primaryDisabled: state.busy || !state.manifest,
         onPrimary: state.understandingStatus === "ready" ? () => setView("understanding") : startOpeningUnderstanding,
         statusText: state.statusText,
       }
     } else {
-      title = state.understandingSummary ? "初始理解结果" : "建立初始理解"
-      copy = "让 Agent 阅读足够的开头剧情，写入后续角色设定和开局组装要用的资料。"
+      title = state.understandingSummary ? "初始理解" : "初始理解"
+      copy = "让系统阅读足够的开头剧情，整理出后续要用的资料。"
       content = renderOpeningUnderstanding(state)
       actions = {
-        secondaryLabel: "返回切分结果",
+        secondaryLabel: "返回目录",
         secondaryDisabled: state.busy,
         onSecondary: () => setView("review"),
-        primaryLabel: state.understandingStatus === "ready" ? "下一步（后续）" : state.busy ? "初始化中…" : "开始初始理解",
+        primaryLabel: state.understandingStatus === "ready" ? "下一步" : state.busy ? "理解中…" : "开始理解",
         primaryDisabled: state.busy || state.understandingStatus === "ready" || !state.manifest,
         onPrimary: startOpeningUnderstanding,
         statusText: state.statusText,
@@ -920,7 +1006,9 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
     if (state.errorText) content.appendChild(createEl("div", "setup-error", state.errorText))
     const currentStep = setupStepIndex(state.view)
     const completedUntil = state.understandingStatus === "ready" ? 1 : state.manifest ? 0 : -1
-    story.appendChild(renderSetupShell(title, copy, content, renderActionBar(actions), currentStep, completedUntil))
+    const shell = renderSetupShell(title, copy, content, renderActionBar(actions), currentStep, completedUntil)
+    story.appendChild(shell)
+    animateStepEnter(shell)
   }
 
   render()
