@@ -431,7 +431,8 @@ body {
 
 .setup-shell {
   position: relative;
-  min-height: 100%;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;
   background:
@@ -782,6 +783,62 @@ body {
   color: var(--prose-dim);
   line-height: 1.9;
 }
+.setup-understanding {
+  display: grid;
+  gap: 16px;
+  max-width: 760px;
+}
+.setup-understanding-card {
+  display: grid;
+  gap: 12px;
+  padding: 22px;
+  border: 1px solid rgba(138, 102, 40, 0.52);
+  background: rgba(20, 17, 13, 0.42);
+  color: var(--prose-dim);
+  line-height: 1.8;
+}
+.setup-understanding-card.running {
+  border-color: var(--ember-deep);
+  color: var(--ember);
+}
+.setup-understanding-card.ready {
+  border-color: var(--ember);
+  background: rgba(212, 162, 76, 0.08);
+}
+.setup-understanding-card.failed {
+  border-color: var(--blood);
+  color: var(--blood);
+}
+.setup-understanding-title {
+  color: var(--ember);
+  font-size: 22px;
+  font-weight: 700;
+}
+.setup-understanding-summary,
+.setup-understanding-copy {
+  margin: 0;
+  color: var(--prose-dim);
+  line-height: 1.85;
+}
+.setup-candidate-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.setup-candidate-card {
+  padding: 14px 16px;
+  border: 1px solid rgba(138, 102, 40, 0.42);
+  background: rgba(37, 32, 23, 0.56);
+}
+.setup-candidate-name {
+  margin-bottom: 6px;
+  color: var(--ember);
+  font-weight: 700;
+}
+.setup-candidate-brief {
+  color: var(--prose-dim);
+  line-height: 1.7;
+}
 .setup-action-bar {
   display: flex;
   align-items: center;
@@ -793,6 +850,7 @@ body {
 }
 .setup-action-wrap {
   padding: 0 28px;
+  min-height: 0;
 }
 .setup-action-left,
 .setup-action-right {
@@ -814,6 +872,10 @@ body {
 .setup-btn.primary {
   border-color: var(--ember);
   color: var(--ember);
+}
+.setup-btn.ghost {
+  border-color: rgba(138, 102, 40, 0.42);
+  color: var(--whisper);
 }
 .setup-btn:hover:not(:disabled) {
   border-color: var(--ember);
@@ -847,7 +909,8 @@ body {
   .setup-workspace { grid-template-columns: 1fr; }
   .setup-step-rail { display: none; }
   .setup-method-grid,
-  .setup-review-panes { grid-template-columns: 1fr; }
+  .setup-review-panes,
+  .setup-candidate-list { grid-template-columns: 1fr; }
   .setup-chapter-list,
   .setup-preview { max-height: none; }
 }

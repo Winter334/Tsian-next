@@ -21,7 +21,8 @@
   "children": [
     "06-27-novel-airp-workspace-schema-guide",
     "06-28-novel-airp-source-import",
-    "06-28-novel-airp-opening-guide-ui"
+    "06-28-novel-airp-opening-guide-ui",
+    "06-28-novel-airp-initial-extraction-window"
   ],
   "parent": null,
   "relatedFiles": [],

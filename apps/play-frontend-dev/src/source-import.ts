@@ -3,6 +3,7 @@ import type { TsianApi } from "@tsian/play-bridge"
 const SOURCE_MANIFEST_PATH = "save/source/manifest.json"
 const CHAPTER_INDEX_PATH = "save/source/chapters.index.json"
 const CHAPTERS_ROOT = "save/source/chapters/"
+const INITIAL_SUMMARY_PATH = "save/understanding/initial-summary.json"
 const NORMALIZATION_VERSION = "novel-source-v1"
 const PSEUDO_CHAPTER_TARGET = 15_000
 
@@ -81,7 +82,29 @@ interface RenderSourceImportOptions {
   setStatus: (text: string, state?: string) => void
 }
 
-type ImportStepView = "choose" | "paste" | "file" | "review"
+type ImportStepView = "choose" | "paste" | "file" | "review" | "understanding"
+type OpeningUnderstandingStatus = "idle" | "running" | "ready" | "failed"
+
+interface OpeningCandidateCharacter {
+  id?: string
+  name: string
+  brief: string
+}
+
+interface OpeningUnderstandingSummary {
+  schema?: string
+  status: "ready"
+  title?: string
+  summary: string
+  entityCount?: number
+  candidateCharacters?: OpeningCandidateCharacter[]
+  sourceWindow?: {
+    start?: number | null
+    end?: number | null
+  }
+  extractedThrough?: string | null
+  committedAt?: string
+}
 
 interface ImportGuideState {
   view: ImportStepView
@@ -91,12 +114,17 @@ interface ImportGuideState {
   statusText: string
   errorText: string
   busy: boolean
+  understandingStatus: OpeningUnderstandingStatus
+  understandingSummary: OpeningUnderstandingSummary | null
 }
 
 interface SetupActionConfig {
   secondaryLabel?: string
   secondaryDisabled?: boolean
   onSecondary?: () => void
+  tertiaryLabel?: string
+  tertiaryDisabled?: boolean
+  onTertiary?: () => void
   primaryLabel: string
   primaryDisabled?: boolean
   onPrimary?: () => void
@@ -132,6 +160,13 @@ function isSourceManifest(value: unknown): value is SourceManifest {
   return typeof value === "object"
     && value !== null
     && (value as { status?: unknown }).status === "ready"
+}
+
+function isOpeningUnderstandingSummary(value: unknown): value is OpeningUnderstandingSummary {
+  return typeof value === "object"
+    && value !== null
+    && (value as { status?: unknown }).status === "ready"
+    && typeof (value as { summary?: unknown }).summary === "string"
 }
 
 function formatNumber(num: number): string {
@@ -387,6 +422,13 @@ async function loadChapterIndex(tsian: TsianApi): Promise<ChapterIndexFile | nul
   return { version: 1, chapters }
 }
 
+async function loadOpeningUnderstandingSummary(tsian: TsianApi): Promise<OpeningUnderstandingSummary | null> {
+  const file = await tsian.workspace.read(INITIAL_SUMMARY_PATH)
+  if (!file?.content) return null
+  const data = safeJsonParse(file.content)
+  return isOpeningUnderstandingSummary(data) ? data : null
+}
+
 async function ensureChapterCharacters(tsian: TsianApi, index: ChapterIndexFile | null): Promise<ChapterIndexFile | null> {
   if (!index || index.chapters.every((chapter) => typeof chapter.characters === "number")) return index
 
@@ -427,17 +469,23 @@ async function readImportInput(mode: ImportMode, elements: ImportInputElements):
   }
 }
 
-function renderStepRail(): HTMLElement {
+function setupStepIndex(view: ImportStepView): number {
+  return view === "understanding" ? 1 : 0
+}
+
+function renderStepRail(currentIndex: number, completedUntil: number): HTMLElement {
   const steps = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
   const rail = createEl("aside", "setup-step-rail")
   rail.appendChild(createEl("div", "setup-rail-title", "流程"))
   const list = createEl("ol", "setup-step-list")
   steps.forEach((step, index) => {
-    const item = createEl("li", `setup-step ${index === 0 ? "current" : "locked"}`)
+    const statusClass = index === currentIndex ? "current" : index <= completedUntil ? "done" : "locked"
+    const statusText = index === currentIndex ? "当前步骤" : index <= completedUntil ? "已完成" : "待开放"
+    const item = createEl("li", `setup-step ${statusClass}`)
     item.appendChild(createEl("span", "setup-step-num", String(index + 1).padStart(2, "0")))
     const body = createEl("span", "setup-step-body")
     body.appendChild(createEl("span", "setup-step-name", step))
-    body.appendChild(createEl("span", "setup-step-state", index === 0 ? "当前步骤" : "待开放"))
+    body.appendChild(createEl("span", "setup-step-state", statusText))
     item.appendChild(body)
     list.appendChild(item)
   })
@@ -454,6 +502,13 @@ function renderActionBar(config: SetupActionConfig): HTMLElement {
   secondary.disabled = config.secondaryDisabled ?? true
   secondary.addEventListener("click", () => config.onSecondary?.())
   left.appendChild(secondary)
+  if (config.tertiaryLabel) {
+    const tertiary = createEl("button", "setup-btn ghost", config.tertiaryLabel)
+    tertiary.type = "button"
+    tertiary.disabled = config.tertiaryDisabled ?? false
+    tertiary.addEventListener("click", () => config.onTertiary?.())
+    left.appendChild(tertiary)
+  }
   if (config.statusText) left.appendChild(createEl("span", "setup-status", config.statusText))
 
   const primary = createEl("button", "setup-btn primary", config.primaryLabel)
@@ -466,7 +521,7 @@ function renderActionBar(config: SetupActionConfig): HTMLElement {
   return bar
 }
 
-function renderSetupShell(title: string, copy: string, content: HTMLElement, actionBar: HTMLElement): HTMLElement {
+function renderSetupShell(title: string, copy: string, content: HTMLElement, actionBar: HTMLElement, currentStepIndex: number, completedUntil: number): HTMLElement {
   const shell = createEl("div", "setup-shell")
   const header = createEl("header", "setup-header")
   header.appendChild(createEl("div", "setup-eyebrow", "Opening Guide"))
@@ -476,12 +531,13 @@ function renderSetupShell(title: string, copy: string, content: HTMLElement, act
   const workspace = createEl("div", "setup-workspace")
   const stage = createEl("main", "setup-stage")
   const stageHead = createEl("div", "setup-stage-head")
-  stageHead.appendChild(createEl("div", "setup-kicker", "Step 01 · 导入小说"))
+  const stepNames = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
+  stageHead.appendChild(createEl("div", "setup-kicker", `Step ${String(currentStepIndex + 1).padStart(2, "0")} · ${stepNames[currentStepIndex] ?? "开局准备"}`))
   stageHead.appendChild(createEl("h2", "setup-stage-title", title))
   stageHead.appendChild(createEl("p", "setup-copy", copy))
   stage.appendChild(stageHead)
   stage.appendChild(content)
-  workspace.appendChild(renderStepRail())
+  workspace.appendChild(renderStepRail(currentStepIndex, completedUntil))
   workspace.appendChild(stage)
   body.appendChild(workspace)
 
@@ -610,18 +666,85 @@ function renderSplitReview(options: RenderSourceImportOptions, state: ImportGuid
   return wrap
 }
 
-function renderImportGuide(options: RenderSourceImportOptions, initialManifest: SourceManifest | null, initialIndex: ChapterIndexFile | null): void {
+function buildOpeningInitializationPrompt(manifest: SourceManifest, index: ChapterIndexFile | null): string {
+  const chapterCount = index?.chapters.length ?? manifest.chapterCount
+  return [
+    "玩家已经完成小说导入并确认切分结果。请作为 world-architect 使用 Skill《小说开局初始化》完成真实开局资料抽取。",
+    "",
+    "要求：",
+    "1. 先 inspect_source_opening 观察导入 source。",
+    "2. 再 read_opening_slice 连续阅读开头剧情；是否继续阅读以剧情是否足够支撑开局为准，不要按固定章节数机械停止。",
+    "3. 最后 commit_opening_understanding 写入初始理解包、brief、实体、候选原著角色和 frontier。",
+    "4. 保持未来剧情 spoiler-safe；只使用开头窗口中读到的内容。",
+    "5. 如果提交工具返回校验错误，请按错误修正后重试，直到写入成功或明确失败。",
+    "",
+    `书名：${manifest.title}`,
+    `章节数：${chapterCount}`,
+    `文本量：${manifest.totalCharacters} 字`,
+    "完成后用中文简短告诉前端已经写入哪些开局资料。",
+  ].join("\n")
+}
+
+function renderOpeningUnderstanding(state: ImportGuideState): HTMLElement {
+  const wrap = createEl("div", "setup-understanding")
+  if (state.understandingStatus === "running") {
+    wrap.appendChild(createEl("div", "setup-understanding-card running", "正在请 world-architect 阅读开头剧情并建立开局资料…"))
+    wrap.appendChild(createEl("p", "setup-understanding-copy", "这一步会调用真实 Agent。长篇小说可能需要等待一会儿。"))
+    return wrap
+  }
+
+  if (state.understandingStatus === "failed") {
+    wrap.appendChild(createEl("div", "setup-understanding-card failed", "初始理解没有完成。"))
+    wrap.appendChild(createEl("p", "setup-understanding-copy", "可以重试，或返回重新导入后再初始化。"))
+    return wrap
+  }
+
+  const summary = state.understandingSummary
+  if (!summary) {
+    wrap.appendChild(createEl("div", "setup-understanding-card", "准备开始初始理解。"))
+    wrap.appendChild(createEl("p", "setup-understanding-copy", "确认切分结果后，让 Agent 阅读足够的开头剧情，生成后续角色设定和开局组装要用的资料。"))
+    return wrap
+  }
+
+  const card = createEl("div", "setup-understanding-card ready")
+  card.appendChild(createEl("div", "setup-understanding-title", "初始理解已完成"))
+  card.appendChild(createEl("p", "setup-understanding-summary", summary.summary))
+  const stats = createEl("div", "setup-overview-stats")
+  stats.appendChild(createEl("span", "setup-stat", `${formatNumber(summary.entityCount ?? 0)} 个实体`))
+  const start = summary.sourceWindow?.start ?? "?"
+  const end = summary.sourceWindow?.end ?? "?"
+  stats.appendChild(createEl("span", "setup-stat", `章节 ${start}–${end}`))
+  card.appendChild(stats)
+  wrap.appendChild(card)
+
+  const candidates = summary.candidateCharacters ?? []
+  if (candidates.length) {
+    const list = createEl("div", "setup-candidate-list")
+    candidates.slice(0, 8).forEach((candidate) => {
+      const item = createEl("div", "setup-candidate-card")
+      item.appendChild(createEl("div", "setup-candidate-name", candidate.name))
+      item.appendChild(createEl("div", "setup-candidate-brief", candidate.brief))
+      list.appendChild(item)
+    })
+    wrap.appendChild(list)
+  }
+  return wrap
+}
+
+function renderImportGuide(options: RenderSourceImportOptions, initialManifest: SourceManifest | null, initialIndex: ChapterIndexFile | null, initialSummary: OpeningUnderstandingSummary | null): void {
   const { tsian, story, composer, setStatus } = options
   setComposerHidden(composer, true)
 
   const state: ImportGuideState = {
-    view: initialManifest ? "review" : "choose",
+    view: initialSummary ? "understanding" : initialManifest ? "review" : "choose",
     manifest: initialManifest,
     chapterIndex: initialIndex,
     selectedChapter: 0,
-    statusText: initialManifest ? "已导入小说" : "等待选择导入方式",
+    statusText: initialSummary ? "初始理解已完成" : initialManifest ? "已导入小说" : "等待选择导入方式",
     errorText: "",
     busy: false,
+    understandingStatus: initialSummary ? "ready" : "idle",
+    understandingSummary: initialSummary,
   }
 
   let activeElements: ImportInputElements | null = null
@@ -652,6 +775,8 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
         state.manifest = corpus.manifest
         state.chapterIndex = corpus.chapterIndex
         state.selectedChapter = 0
+        state.understandingStatus = "idle"
+        state.understandingSummary = null
         state.view = "review"
         state.statusText = "小说已导入"
         setStatus("小说已导入", "ready")
@@ -672,9 +797,42 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
       state.manifest = null
       state.chapterIndex = null
       state.selectedChapter = 0
+      state.understandingStatus = "idle"
+      state.understandingSummary = null
       state.statusText = "等待选择导入方式"
       setView("choose")
     }
+  }
+
+  const startOpeningUnderstanding = (): void => {
+    if (!state.manifest || state.busy) return
+    state.busy = true
+    state.errorText = ""
+    state.understandingStatus = "running"
+    state.statusText = "初始理解中…"
+    state.view = "understanding"
+    render()
+    void (async () => {
+      try {
+        const prompt = buildOpeningInitializationPrompt(state.manifest as SourceManifest, state.chapterIndex)
+        await tsian.invokeAgent("world-architect", prompt)
+        const summary = await loadOpeningUnderstandingSummary(tsian)
+        if (!summary) throw new Error("Agent 已返回，但没有找到初始理解摘要。请重试。")
+        state.understandingSummary = summary
+        state.understandingStatus = "ready"
+        state.statusText = "初始理解已完成"
+        setStatus("初始理解已完成", "ready")
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "初始理解失败"
+        state.errorText = message
+        state.understandingStatus = "failed"
+        state.statusText = "初始理解失败"
+        setStatus(message, "error")
+      } finally {
+        state.busy = false
+        render()
+      }
+    })()
   }
 
   function render(): void {
@@ -728,22 +886,41 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
         onPrimary: () => startImport("file"),
         statusText: state.statusText,
       }
-    } else {
+    } else if (state.view === "review") {
       title = "检查切分结果"
       copy = "确认目录和章节开头是否符合预期。开局前可以重新导入。"
       content = renderSplitReview(options, state, render)
       actions = {
-        secondaryLabel: "重新导入",
+        secondaryLabel: "上一步",
         secondaryDisabled: state.busy,
-        onSecondary: confirmReimport,
-        primaryLabel: "继续初始化（后续）",
-        primaryDisabled: true,
+        onSecondary: () => setView("choose"),
+        tertiaryLabel: "重新导入",
+        tertiaryDisabled: state.busy,
+        onTertiary: confirmReimport,
+        primaryLabel: state.understandingStatus === "ready" ? "查看初始理解" : "开始初始理解",
+        primaryDisabled: state.busy || !state.manifest,
+        onPrimary: state.understandingStatus === "ready" ? () => setView("understanding") : startOpeningUnderstanding,
+        statusText: state.statusText,
+      }
+    } else {
+      title = state.understandingSummary ? "初始理解结果" : "建立初始理解"
+      copy = "让 Agent 阅读足够的开头剧情，写入后续角色设定和开局组装要用的资料。"
+      content = renderOpeningUnderstanding(state)
+      actions = {
+        secondaryLabel: "返回切分结果",
+        secondaryDisabled: state.busy,
+        onSecondary: () => setView("review"),
+        primaryLabel: state.understandingStatus === "ready" ? "下一步（后续）" : state.busy ? "初始化中…" : "开始初始理解",
+        primaryDisabled: state.busy || state.understandingStatus === "ready" || !state.manifest,
+        onPrimary: startOpeningUnderstanding,
         statusText: state.statusText,
       }
     }
 
     if (state.errorText) content.appendChild(createEl("div", "setup-error", state.errorText))
-    story.appendChild(renderSetupShell(title, copy, content, renderActionBar(actions)))
+    const currentStep = setupStepIndex(state.view)
+    const completedUntil = state.understandingStatus === "ready" ? 1 : state.manifest ? 0 : -1
+    story.appendChild(renderSetupShell(title, copy, content, renderActionBar(actions), currentStep, completedUntil))
   }
 
   render()
@@ -752,6 +929,7 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
 export async function initializeSourceImportGuide(options: RenderSourceImportOptions): Promise<boolean> {
   const manifest = await loadSourceManifest(options.tsian)
   const chapterIndex = manifest ? await ensureChapterCharacters(options.tsian, await loadChapterIndex(options.tsian)) : null
-  renderImportGuide(options, manifest, chapterIndex)
+  const summary = manifest ? await loadOpeningUnderstandingSummary(options.tsian) : null
+  renderImportGuide(options, manifest, chapterIndex, summary)
   return true
 }
