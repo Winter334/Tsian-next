@@ -1735,3 +1735,37 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 101: novel AIRP skill/agent 文档中文化
+
+**Date**: 2026-06-29
+**Task**: novel AIRP skill/agent 文档中文化
+**Package**: platform-web
+**Branch**: `refactor/novel-airp-schema-consolidation`
+
+### Summary
+
+把任务 A/B 改动/新增的 skill 与 agent 相关文档从英文/中英混杂中文化，方便中文玩家阅读魔改：memory-maintenance / world-state-maintenance / entity-resolver SKILL.md、schema 速查 guide + 详尽 reference、save/playthrough README、retrieval/post-processing AGENT.md + agent.json summary、相邻 SOUL.md（一致性）。技术标识符（path、JSON 字段名、front-matter key、代码块）保留英文。未改文档留待后续一次性优化。build:web 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2653a16` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

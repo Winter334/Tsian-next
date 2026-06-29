@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 100
+- **Total Sessions**: 101
 - **Last Active**: 2026-06-29
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1737 | Active |
+| `journal-2.md` | ~1771 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 101 | 2026-06-29 | novel AIRP skill/agent 文档中文化 | `2653a16` | `refactor/novel-airp-schema-consolidation` |
 | 100 | 2026-06-29 | novel AIRP 维护/检索 skill 优化 | `262f971` | `refactor/novel-airp-schema-consolidation` |
 | 99 | 2026-06-29 | novel AIRP schema 收口与开局链路修复 | `260eafe` | `refactor/novel-airp-schema-consolidation` |
 | 98 | 2026-06-29 | 换回 ZCode 环境恢复 + 缓存任务错误落地修正 + 工作区路径级 scope 重构 | `521708f`, `19a8416`, `45edc4a` | `master` |
