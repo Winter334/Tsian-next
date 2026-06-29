@@ -1,4 +1,4 @@
-import type { WorkspaceFile, WorkspaceScope } from "@tsian/contracts"
+import type { WorkspaceFile, WorkspaceScope, WorkspaceVolumeOwnerContext } from "@tsian/contracts"
 
 import {
   GAME_CARD_MANIFEST_SCHEMA,
@@ -421,17 +421,9 @@ function toWorkspaceFileFromRecord(record: LocalWorkspaceFileRecord): WorkspaceF
 // Single dispatch（子5 Step 3）
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * 路由点改造时传给 dispatch 的 owner 解析上下文。card-scope volume 需要 cardId；
- * save-scope / platform-meta volume 需要 saveId；local-assistant volume 忽略 ownerId
- * （全局 meta，但 dispatch 仍传 saveId，volume 内部不用）。
- */
-export interface WorkspaceVolumeOwnerContext {
-  cardId?: string
-  saveId?: string
-  /** 助手会话 id,用于 temp scope(附件 volume). */
-  sessionId?: string
-}
+// WorkspaceVolumeOwnerContext 已提升为跨层契约（@tsian/contracts），此处 re-export
+// 保持下游 `import { WorkspaceVolumeOwnerContext } from "./workspace-volumes"` 不破。
+export type { WorkspaceVolumeOwnerContext } from "@tsian/contracts"
 
 /**
  * 按 (scope, path-prefix) 选 volume。platform-meta scope 二级路由：

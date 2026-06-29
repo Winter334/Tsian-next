@@ -9,10 +9,12 @@ import type {
   WorkspaceScope,
   WorkspaceSearchResult,
   WorkspaceValidationResult,
+  WorkspaceVolumeOwnerContext,
 } from "@tsian/contracts"
 import {
   AUTHORING_WORKSPACE_OPERATIONS,
   executeWorkspaceOperation,
+  scopeForPath,
 } from "../agent-runtime/workspace-operations"
 import { cardFrontendVolume, executeWorkspaceMutation, manifestVolume } from "./workspace-volumes"
 import {
@@ -432,12 +434,14 @@ async function executeStudioWorkspaceOperation(
       exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
       mutations: {
         write(writeInput) {
+          // ownerContext 按 input.scope 推导(隐患4 修复):save-scope 用 resolvedPath.saveId
+          // (studio 解析的特定 save slot,非 active save);card-scope 走 cardId。
           return executeWorkspaceMutation({
             scope: writeInput.scope,
             path: writeInput.path,
             content: writeInput.content,
             data: writeInput.data,
-            ownerContext: { saveId: resolvedPath.saveId, cardId },
+            ownerContext: resolveStudioOwnerContextForScope(writeInput.scope, cardId, resolvedPath.saveId),
             operation: "write",
           }) as Promise<WorkspaceFile>
         },
@@ -445,7 +449,7 @@ async function executeStudioWorkspaceOperation(
           const deletedPaths = await executeWorkspaceMutation({
             scope: deleteInput.scope,
             path: deleteInput.path,
-            ownerContext: { saveId: resolvedPath.saveId, cardId },
+            ownerContext: resolveStudioOwnerContextForScope(deleteInput.scope, cardId, resolvedPath.saveId),
             operation: "delete",
           }) as string[]
           return { scope: deleteInput.scope, deletedPaths }
@@ -523,17 +527,15 @@ async function executeStudioWorkspaceOperation(
     exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
       mutations: {
         write(writeInput) {
+          // ownerContext 按 input.scope 推导(隐患4 修复):不再用 targetResolvedPath 的 saveId
+          // ——delete 源文件时 input.scope=fromScope(card-content),用 target 的 saveId 是错配
+          // (此前被 resolveOwnerId 对 card-scope 忽略 saveId 掩盖)。card-scope 只需 cardId。
           return executeWorkspaceMutation({
             scope: writeInput.scope,
             path: writeInput.path,
             content: writeInput.content,
             data: writeInput.data,
-            ownerContext: {
-              cardId,
-              saveId: targetResolvedPath?.scope === "save-runtime"
-                ? targetResolvedPath.saveId
-                : undefined,
-            },
+            ownerContext: resolveStudioOwnerContextForScope(writeInput.scope, cardId, targetResolvedPath?.scope === "save-runtime" ? targetResolvedPath.saveId : undefined),
             operation: "write",
           }) as Promise<WorkspaceFile>
         },
@@ -541,12 +543,7 @@ async function executeStudioWorkspaceOperation(
         const deletedPaths = await executeWorkspaceMutation({
           scope: deleteInput.scope,
           path: deleteInput.path,
-          ownerContext: {
-            cardId,
-            saveId: targetResolvedPath?.scope === "save-runtime"
-              ? targetResolvedPath.saveId
-              : undefined,
-          },
+          ownerContext: resolveStudioOwnerContextForScope(deleteInput.scope, cardId, targetResolvedPath?.scope === "save-runtime" ? targetResolvedPath.saveId : undefined),
           operation: "delete",
         }) as string[]
         return { scope: deleteInput.scope, deletedPaths }
@@ -571,54 +568,58 @@ async function executeLocalWorkspaceOperation(
   const localConfigFiles = await loadLocalPlatformConfigFile()
   const allFiles = [...saveFiles, ...localAssistantFiles, ...localConfigFiles]
 
+  // 读操作用 effective(跨 scope 视野),与 write 路径一致——避免同一路径"读不到但移得动"
+  // (隐患1)。allFiles 已合并 save/local-assistant/local-config,effective 能看到全部。
   if (request.operation === "list") {
     return executeWorkspaceOperation(
-      { ...request, scope: "platform-meta" },
+      { ...request, scope: "effective" },
       { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["list"] },
     )
   }
 
   if (request.operation === "search") {
     return executeWorkspaceOperation(
-      { ...request, scope: "platform-meta" },
+      { ...request, scope: "effective" },
       { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["search"] },
     )
   }
 
   if (request.operation === "read") {
     return executeWorkspaceOperation(
-      { ...request, scope: "platform-meta" },
+      { ...request, scope: "effective" },
       { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["read"] },
     )
   }
 
-  const operationScope = (request.operation === "move" || request.operation === "copy") && request.scope
-    ? request.scope
-    : "platform-meta"
-
-  // Write/patch/delete/move/validate: persist back to the appropriate store.
+  // Write/delete/move/copy/validate:scope 由 runtime 按 path 派生(resolveOperationScope
+  // 对 edit op 用 scopeForPath),不再在此硬编码 platform-meta。adapter 闭包按 input.scope
+  // 填 ownerContext(card-scope→activeCardId,save/platform-meta→saveId)。
   const result = await executeWorkspaceOperation(
-    { ...request, scope: operationScope },
+    request,
     {
       workspaceFiles: allFiles,
       actorLevel: 4,
       exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
       mutations: {
         async write(writeInput) {
+          // 按 input.scope 推导 ownerContext(隐患4 修复):card-scope 需 cardId,
+          // save/platform-meta 需 saveId。runtime 已保证 input.scope=scopeForPath(path)。
+          const ownerContext = await resolveOwnerContextForScope(writeInput.scope, saveId)
           return executeWorkspaceMutation({
             scope: writeInput.scope,
             path: writeInput.path,
             content: writeInput.content,
             data: writeInput.data,
-            ownerContext: { saveId: saveId ?? undefined },
+            ownerContext,
             operation: "write",
           }) as Promise<WorkspaceFile>
         },
         async delete(deleteInput) {
+          const ownerContext = await resolveOwnerContextForScope(deleteInput.scope, saveId)
           const deletedPaths = await executeWorkspaceMutation({
             scope: deleteInput.scope,
             path: deleteInput.path,
-            ownerContext: { saveId: saveId ?? undefined },
+            ownerContext,
             operation: "delete",
           }) as string[]
           return { scope: deleteInput.scope, deletedPaths }
@@ -627,6 +628,42 @@ async function executeLocalWorkspaceOperation(
     },
   )
   return result
+}
+
+/**
+ * 按 mutation input.scope 推导 ownerContext(隐患4 修复)。
+ * card-content/card-frontend → 需要 cardId(取 active game card);
+ * save-runtime/platform-meta → 需要 saveId(save-owned meta);
+ * temp → 需要 sessionId(本路径不涉及)。
+ * runtime 层传的 ownerContext:{} 是空占位,host 闭包按 input.scope 重建真正的 ownerContext。
+ */
+async function resolveOwnerContextForScope(
+  scope: WorkspaceScope,
+  saveId: string | null,
+): Promise<WorkspaceVolumeOwnerContext> {
+  if (scope === "card-content" || scope === "card-frontend") {
+    const cardId = await getActiveGameCardId()
+    return { cardId: cardId ?? undefined }
+  }
+  // save-runtime / save-platform-meta 需 saveId;local-assistant 子路由忽略 ownerId。
+  return { saveId: saveId ?? undefined }
+}
+
+/**
+ * studio 路径专用 ownerContext 推导(同步,cardId 已在 studio 作用域)。
+ * card-scope → cardId;save-scope/platform-meta → saveId(studio 解析的特定 save slot,
+ * 非 active save);二者不混用——避免 delete 源(card-scope)时误带 target 的 saveId。
+ */
+function resolveStudioOwnerContextForScope(
+  scope: WorkspaceScope,
+  cardId: string,
+  saveId: string | undefined,
+): WorkspaceVolumeOwnerContext {
+  if (scope === "card-content" || scope === "card-frontend") {
+    return { cardId }
+  }
+  // save-runtime / save-platform-meta 需 saveId;card-scope 不带 saveId。
+  return { saveId }
 }
 
 export async function searchPlatformWorkspace(input: {
@@ -658,12 +695,8 @@ function isTsianPath(path: string): boolean {
   return path === ".tsian" || path.startsWith(".tsian/")
 }
 
-function scopeForPlatformWorkspacePath(path: string): Exclude<WorkspaceScope, "effective"> {
-  if (isTsianPath(path)) return "platform-meta"
-  if (path === "save" || path.startsWith("save/")) return "save-runtime"
-  if (path === "frontend" || path.startsWith("frontend/")) return "card-frontend"
-  return "card-content"
-}
+// scopeForPlatformWorkspacePath 已合并到 runtime 层导出的 scopeForPath(补全 temp 分支),
+// 此处不再重复定义。host 层改用 scopeForPath。
 
 async function executeCrossRootWorkspaceOperation(input: {
   cardId: string
@@ -689,9 +722,11 @@ async function executeCrossRootWorkspaceOperation(input: {
     ...localAssistantFiles,
     ...localConfigFiles,
   ]
+  // scope 作可选显式约束:传 fromPath 的 scope(runtime 内部 move/copy 会用 scopeForPath
+  // 派生 fromScope/toScope 路由 mutation,此处的 scope 仅作 source 约束)。
   const result = await executeWorkspaceOperation({
     operation: input.operation,
-    scope: scopeForPlatformWorkspacePath(input.path),
+    scope: scopeForPath(input.path),
     path: input.path,
     targetPath: input.targetPath,
   }, {
@@ -700,12 +735,15 @@ async function executeCrossRootWorkspaceOperation(input: {
     exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
     mutations: {
       write(writeInput) {
+        // ownerContext 按 input.scope 推导(隐患4 修复):card-scope 用 input.cardId,
+        // save/platform-meta 用 saveId。不再统一塞 {cardId, saveId}——delete 源(card-scope)
+        // 时不应带 saveId。
         return executeWorkspaceMutation({
           scope: writeInput.scope,
           path: writeInput.path,
           content: writeInput.content,
           data: writeInput.data,
-          ownerContext: { cardId: input.cardId, saveId: saveId ?? undefined },
+          ownerContext: resolveStudioOwnerContextForScope(writeInput.scope, input.cardId, saveId ?? undefined),
           operation: "write",
         }) as Promise<WorkspaceFile>
       },
@@ -713,7 +751,7 @@ async function executeCrossRootWorkspaceOperation(input: {
         const deletedPaths = await executeWorkspaceMutation({
           scope: deleteInput.scope,
           path: deleteInput.path,
-          ownerContext: { cardId: input.cardId, saveId: saveId ?? undefined },
+          ownerContext: resolveStudioOwnerContextForScope(deleteInput.scope, input.cardId, saveId ?? undefined),
           operation: "delete",
         }) as string[]
         return { scope: deleteInput.scope, deletedPaths }
@@ -795,24 +833,30 @@ export async function movePlatformWorkspacePath(input: {
   path: string
   targetPath: string
 }): Promise<WorkspaceMoveResult> {
-  const targetCardId = input.targetCardId ?? input.cardId
-  if (targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
-    return await executeCrossRootWorkspaceOperation({
-      cardId: targetCardId,
-      operation: "move",
-      path: input.path,
-      targetPath: input.targetPath,
-    }) as WorkspaceMoveResult
-  }
-  if (!input.cardId && !targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
+  // 分支按"涉及 scope 是否跨 store"判定(隐患3 修复),不再用 targetCardId ?? cardId 误判。
+  const fromIsTsian = isTsianPath(input.path)
+  const toIsTsian = isTsianPath(input.targetPath)
+  const crossesStore = fromIsTsian !== toIsTsian
+  const hasCardId = Boolean(input.cardId ?? input.targetCardId)
+  // 1. 纯 local:无 cardId 且至少一边是 .tsian(本地助手/配置区操作)。
+  if (!hasCardId && (fromIsTsian || toIsTsian)) {
     return await executeLocalWorkspaceOperation({
       operation: "move",
-      scope: isTsianPath(input.path) ? "platform-meta" : "save-runtime",
       path: input.path,
       targetPath: input.targetPath,
     }) as WorkspaceMoveResult
   }
-  return await executeStudioWorkspaceOperation(input.cardId ?? targetCardId ?? "", {
+  // 2. crossRoot:有 cardId 且跨 store(一边 .tsian 一边卡内)。
+  if (hasCardId && crossesStore) {
+    return await executeCrossRootWorkspaceOperation({
+      cardId: input.targetCardId ?? input.cardId!,
+      operation: "move",
+      path: input.path,
+      targetPath: input.targetPath,
+    }) as WorkspaceMoveResult
+  }
+  // 3. studio:都在卡内(有 cardId 且不跨 store)。
+  return await executeStudioWorkspaceOperation(input.cardId ?? input.targetCardId ?? "", {
     operation: "move",
     path: input.path,
     targetPath: input.targetPath,
@@ -825,24 +869,26 @@ export async function copyPlatformWorkspacePath(input: {
   path: string
   targetPath: string
 }): Promise<WorkspaceCopyResult> {
-  const targetCardId = input.targetCardId ?? input.cardId
-  if (targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
-    return await executeCrossRootWorkspaceOperation({
-      cardId: targetCardId,
-      operation: "copy",
-      path: input.path,
-      targetPath: input.targetPath,
-    }) as WorkspaceCopyResult
-  }
-  if (!input.cardId && !targetCardId && (isTsianPath(input.path) || isTsianPath(input.targetPath))) {
+  const fromIsTsian = isTsianPath(input.path)
+  const toIsTsian = isTsianPath(input.targetPath)
+  const crossesStore = fromIsTsian !== toIsTsian
+  const hasCardId = Boolean(input.cardId ?? input.targetCardId)
+  if (!hasCardId && (fromIsTsian || toIsTsian)) {
     return await executeLocalWorkspaceOperation({
       operation: "copy",
-      scope: isTsianPath(input.path) ? "platform-meta" : "save-runtime",
       path: input.path,
       targetPath: input.targetPath,
     }) as WorkspaceCopyResult
   }
-  return await executeStudioWorkspaceOperation(input.cardId ?? targetCardId ?? "", {
+  if (hasCardId && crossesStore) {
+    return await executeCrossRootWorkspaceOperation({
+      cardId: input.targetCardId ?? input.cardId!,
+      operation: "copy",
+      path: input.path,
+      targetPath: input.targetPath,
+    }) as WorkspaceCopyResult
+  }
+  return await executeStudioWorkspaceOperation(input.cardId ?? input.targetCardId ?? "", {
     operation: "copy",
     path: input.path,
     targetPath: input.targetPath,

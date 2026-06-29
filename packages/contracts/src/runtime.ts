@@ -334,14 +334,16 @@ export interface WorkspaceWriteResult {
 }
 
 export interface WorkspaceMoveResult {
-  scope: WorkspaceScope
+  fromScope: WorkspaceScope
+  toScope: WorkspaceScope
   fromPath: string
   toPath: string
   movedPaths: string[]
 }
 
 export interface WorkspaceCopyResult {
-  scope: WorkspaceScope
+  fromScope: WorkspaceScope
+  toScope: WorkspaceScope
   fromPath: string
   toPath: string
   copiedPaths: string[]
@@ -350,6 +352,21 @@ export interface WorkspaceCopyResult {
 export interface WorkspaceDeleteResult {
   scope: WorkspaceScope
   deletedPaths: string[]
+}
+
+/**
+ * 路由点传给 volume dispatch 的 owner 解析上下文。card-scope volume 需要 cardId；
+ * save-scope / save-platform-meta volume 需要 saveId；local-assistant volume 忽略
+ * ownerId（全局 meta，跨 save 持久）；temp volume 需要 sessionId。
+ *
+ * 跨层契约：agent-runtime 的 mutation adapter input 带此类型（runtime 层不填，
+ * 由 host adapter 闭包按 input.scope 填充），volume 层 `executeWorkspaceMutation` 消费。
+ */
+export interface WorkspaceVolumeOwnerContext {
+  cardId?: string
+  saveId?: string
+  /** 助手会话 id,用于 temp scope(附件 volume). */
+  sessionId?: string
 }
 
 export interface WorkspaceValidationResult {

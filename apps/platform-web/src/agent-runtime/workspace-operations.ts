@@ -330,7 +330,7 @@ export function isTempPath(path: string): boolean {
   return path === "temp" || path.startsWith("temp/")
 }
 
-function scopeForPath(path: string): Exclude<WorkspaceScope, "effective"> {
+export function scopeForPath(path: string): Exclude<WorkspaceScope, "effective"> {
   if (isPlatformMetadataPath(path)) {
     return "platform-meta"
   }
@@ -945,15 +945,18 @@ async function writeWorkspaceFile(
   assertMutableScope(scope)
   const path = normalizeWorkspaceOperationFilePath(request.path)
   assertEditAccess(path, resolveWorkspaceActorLevel(context))
+  // scope 作可选显式约束:传了具体 scope 且非 effective 时校验 path 属于它;
+  // effective 或省略则跨 scope,scope 由 path 派生(见 design 核心抽象转变)。
+  const pathScope = scopeForPath(path)
   if (!pathMatchesScope(path, scope)) {
     throw workspaceOperationError(
       "WORKSPACE_SCOPE_PATH_MISMATCH",
       `Workspace path does not belong to ${scope}: ${path}`,
-      { scope, path, pathScope: scopeForPath(path) },
+      { scope, path, pathScope },
     )
   }
 
-  const existing = findScopedFile(files, scope, path)
+  const existing = findScopedFile(files, pathScope, path)
   // Optimistic-concurrency guard: when `expectedContent` is provided, reject
   // the write if the file's current content does not match. This detects
   // stale overwrites (the file changed between read and write). Omitting it
@@ -966,7 +969,7 @@ async function writeWorkspaceFile(
     throw workspaceOperationError(
       "WORKSPACE_EXPECTED_CONTENT_MISMATCH",
       `Workspace file changed before write: ${path}`,
-      { scope, path },
+      { scope: pathScope, path },
     )
   }
 
@@ -979,19 +982,22 @@ async function writeWorkspaceFile(
     throw workspaceOperationError(
       "WORKSPACE_CONTENT_REQUIRED",
       `Workspace write requires content (string) or a Blob: ${path}`,
-      { scope, path },
+      { scope: pathScope, path },
     )
   }
 
+  // ownerContext 由 host adapter 闭包按 input.scope 填充(runtime 层不知 cardId/saveId),
+  // 此处传空占位。mutation 路由用 pathScope(路径派生),非入参 scope。
   const file = await assertMutationAdapter(context.mutations).write({
-    scope,
+    scope: pathScope,
     path,
     ...(textContent !== undefined ? { content: textContent } : {}),
     ...(binaryData ? { data: binaryData } : {}),
+    ownerContext: {},
   })
   return {
     path,
-    scope,
+    scope: pathScope,
     file,
     changed: existing?.content !== file.content,
   }
@@ -1021,11 +1027,12 @@ async function editWorkspaceFile(
   assertMutableScope(scope)
   const path = normalizeWorkspaceOperationFilePath(request.path)
   assertEditAccess(path, resolveWorkspaceActorLevel(context))
+  const pathScope = scopeForPath(path)
   if (!pathMatchesScope(path, scope)) {
     throw workspaceOperationError(
       "WORKSPACE_SCOPE_PATH_MISMATCH",
       `Workspace path does not belong to ${scope}: ${path}`,
-      { scope, path, pathScope: scopeForPath(path) },
+      { scope, path, pathScope },
     )
   }
 
@@ -1037,23 +1044,23 @@ async function editWorkspaceFile(
     throw workspaceOperationError(
       "WORKSPACE_EDIT_OLD_STRING_REQUIRED",
       `workspace.edit requires a non-empty oldString: ${path}`,
-      { scope, path },
+      { scope: pathScope, path },
     )
   }
 
-  const existing = findScopedFile(files, scope, path)
+  const existing = findScopedFile(files, pathScope, path)
   if (!existing) {
     throw workspaceOperationError(
       "WORKSPACE_FILE_NOT_FOUND",
       `Cannot edit a non-existent file: ${path}`,
-      { scope, path },
+      { scope: pathScope, path },
     )
   }
   if (existing.binary) {
     throw workspaceOperationError(
       "WORKSPACE_EDIT_BINARY_UNSUPPORTED",
       `workspace.edit cannot edit binary files: ${path}`,
-      { scope, path },
+      { scope: pathScope, path },
     )
   }
 
@@ -1063,14 +1070,14 @@ async function editWorkspaceFile(
     throw workspaceOperationError(
       "WORKSPACE_EDIT_NO_MATCH",
       `oldString not found in ${path}. The file may have changed since you read it, or oldString does not exactly match the file (check indentation and surrounding whitespace).`,
-      { scope, path },
+      { scope: pathScope, path },
     )
   }
   if (matchCount > 1 && !replaceAll) {
     throw workspaceOperationError(
       "WORKSPACE_EDIT_NOT_UNIQUE",
       `oldString matches ${matchCount} occurrences in ${path}. Expand oldString (include surrounding lines) so it matches exactly once, or set replaceAll: true to replace every match.`,
-      { scope, path, matchCount },
+      { scope: pathScope, path, matchCount },
     )
   }
 
@@ -1081,15 +1088,16 @@ async function editWorkspaceFile(
     : content.replace(oldString, newString)
 
   if (nextContent === content) {
-    return { path, scope, file: existing, changed: false }
+    return { path, scope: pathScope, file: existing, changed: false }
   }
 
   const file = await assertMutationAdapter(context.mutations).write({
-    scope,
+    scope: pathScope,
     path,
     content: nextContent,
+    ownerContext: {},
   })
-  return { path, scope, file, changed: true }
+  return { path, scope: pathScope, file, changed: true }
 }
 
 async function deleteWorkspacePath(
@@ -1102,15 +1110,16 @@ async function deleteWorkspacePath(
   const path = normalizeWorkspaceOperationTargetPath(request.path)
   const actorLevel = resolveWorkspaceActorLevel(context)
   assertEditAccess(path, actorLevel)
+  const pathScope = scopeForPath(path)
   if (!pathMatchesScope(path, scope)) {
     throw workspaceOperationError(
       "WORKSPACE_SCOPE_PATH_MISMATCH",
       `Workspace path does not belong to ${scope}: ${path}`,
-      { scope, path, pathScope: scopeForPath(path) },
+      { scope, path, pathScope },
     )
   }
 
-  return assertMutationAdapter(context.mutations).delete({ scope, path })
+  return assertMutationAdapter(context.mutations).delete({ scope: pathScope, path, ownerContext: {} })
 }
 
 async function moveWorkspacePath(
@@ -1127,17 +1136,14 @@ async function moveWorkspacePath(
   const actorLevel = resolveWorkspaceActorLevel(context)
   assertEditAccess(fromPath, actorLevel)
   assertEditAccess(toPath, actorLevel)
+  // scope 作可选显式约束:传了具体 scope 且非 effective 时校验 fromPath 属于它。
+  // 跨 scope move 的合法性由 assertEditAccess(fromPath)+assertEditAccess(toPath) 按各
+  // 自 scope 的 editLevel 守护(见 design 权限边界),不再强制 from/to 同 scope。
   if (!pathMatchesScope(fromPath, scope)) {
     throw workspaceOperationError(
       "WORKSPACE_SCOPE_PATH_MISMATCH",
       `Workspace source path does not belong to ${scope}: ${fromPath}`,
-      {
-        scope,
-        fromPath,
-        toPath,
-        fromScope,
-        toScope,
-      },
+      { scope, fromPath, toPath, fromScope, toScope },
     )
   }
 
@@ -1151,8 +1157,8 @@ async function moveWorkspacePath(
   if (matches.length === 0) {
     throw workspaceOperationError(
       "WORKSPACE_FILE_NOT_FOUND",
-      `Workspace path was not found in ${scope}: ${fromPath}`,
-      { scope, path: fromPath },
+      `Workspace path was not found in ${fromScope}: ${fromPath}`,
+      { scope: fromScope, path: fromPath },
     )
   }
 
@@ -1167,13 +1173,15 @@ async function moveWorkspacePath(
       scope: toScope,
       path: nextPath,
       ...(file.binary ? { data: file.binary } : { content: file.content }),
+      ownerContext: {},
     })
     movedPaths.push(nextPath)
   }
-  await mutations.delete({ scope: fromScope, path: fromPath })
+  await mutations.delete({ scope: fromScope, path: fromPath, ownerContext: {} })
 
   return {
-    scope: fromScope,
+    fromScope,
+    toScope,
     fromPath,
     toPath,
     movedPaths,
@@ -1212,8 +1220,8 @@ async function copyWorkspacePath(
   if (matches.length === 0) {
     throw workspaceOperationError(
       "WORKSPACE_FILE_NOT_FOUND",
-      `Workspace path was not found in ${scope}: ${fromPath}`,
-      { scope, path: fromPath },
+      `Workspace path was not found in ${fromScope}: ${fromPath}`,
+      { scope: fromScope, path: fromPath },
     )
   }
 
@@ -1241,12 +1249,14 @@ async function copyWorkspacePath(
       scope: toScope,
       path: nextPath,
       ...(file.binary ? { data: file.binary } : { content: file.content }),
+      ownerContext: {},
     })
     copiedPaths.push(nextPath)
   }
 
   return {
-    scope: fromScope,
+    fromScope,
+    toScope,
     fromPath,
     toPath,
     copiedPaths,

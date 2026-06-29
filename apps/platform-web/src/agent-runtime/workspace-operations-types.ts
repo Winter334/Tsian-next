@@ -4,6 +4,7 @@ import type {
   WorkspaceFile,
   WorkspaceOperationName,
   WorkspaceScope,
+  WorkspaceVolumeOwnerContext,
 } from "@tsian/contracts"
 
 export interface WorkspaceOperationError {
@@ -18,10 +19,16 @@ export interface WorkspaceOperationMutationAdapter {
     path: string
     content?: string
     data?: Blob
+    /**
+     * Volume dispatch 的 owner 解析上下文。runtime 层不填（不知 cardId/saveId），
+     * 由 host adapter 闭包按 input.scope 填充（card-scope→cardId，save-scope→saveId）。
+     */
+    ownerContext: WorkspaceVolumeOwnerContext
   }): WorkspaceFile | Promise<WorkspaceFile>
   delete(input: {
     scope: WorkspaceScope
     path: string
+    ownerContext: WorkspaceVolumeOwnerContext
   }): WorkspaceDeleteResult | Promise<WorkspaceDeleteResult>
 }
 
