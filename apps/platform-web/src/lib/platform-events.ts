@@ -11,10 +11,14 @@
 // - game-cards-changed: game card list mutated (create/delete/import/copy)
 // - active-card-changed: active game card switched (load/new card activated)
 // - saves-changed: save list mutated (create/delete/select)
+// - frontend-reload: a game card's frontend/src changed + rebuilt; PlayView
+//   in playing/ready state should remount the iframe to pick up new dist.
+//     (No payload — PlayView re-resolves the active card's frontend URL.)
 
 export const GAME_CARDS_CHANGED_EVENT = "tsian:game-cards-changed"
 export const ACTIVE_CARD_CHANGED_EVENT = "tsian:active-card-changed"
 export const SAVES_CHANGED_EVENT = "tsian:saves-changed"
+export const FRONTEND_RELOAD_EVENT = "tsian:frontend-reload"
 
 export function emitGameCardsChanged(): void {
   window.dispatchEvent(new CustomEvent(GAME_CARDS_CHANGED_EVENT))
@@ -28,6 +32,10 @@ export function emitSavesChanged(): void {
   window.dispatchEvent(new CustomEvent(SAVES_CHANGED_EVENT))
 }
 
+export function emitFrontendReload(): void {
+  window.dispatchEvent(new CustomEvent(FRONTEND_RELOAD_EVENT))
+}
+
 export function isGameCardsChangedEvent(event: Event): event is CustomEvent<void> {
   return event.type === GAME_CARDS_CHANGED_EVENT && event instanceof CustomEvent
 }
@@ -38,4 +46,8 @@ export function isActiveCardChangedEvent(event: Event): event is CustomEvent<voi
 
 export function isSavesChangedEvent(event: Event): event is CustomEvent<void> {
   return event.type === SAVES_CHANGED_EVENT && event instanceof CustomEvent
+}
+
+export function isFrontendReloadEvent(event: Event): event is CustomEvent<void> {
+  return event.type === FRONTEND_RELOAD_EVENT && event instanceof CustomEvent
 }

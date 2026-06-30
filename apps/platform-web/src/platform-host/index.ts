@@ -182,6 +182,7 @@ import {
 import {
   BUILTIN_BLANK_GAME_CARD_ID,
 } from "../storage/game-cards"
+import { triggerFrontendRebuild, readFrontendBuildStatus } from "../frontend-build/trigger"
 import {
   DEFAULT_FRONTEND_BINDING,
   defaultFrontendFiles,
@@ -315,14 +316,20 @@ async function executeWorkspaceOperationForActiveSave(
         const cardId = writeInput.scope === "card-content" || writeInput.scope === "card-frontend"
           ? await getPlatformActiveGameCardId()
           : undefined
-        return executeWorkspaceMutation({
+        const result = await executeWorkspaceMutation({
           scope: writeInput.scope,
           path: writeInput.path,
           content: writeInput.content,
           data: writeInput.data,
           ownerContext: { saveId, cardId },
           operation: "write",
-        }) as Promise<WorkspaceFile>
+        }) as WorkspaceFile
+        // frontend/src/** 写入 → 防抖触发平台重建（R6）。fire-and-forget，
+        // 不阻塞 tool 返回；staged turn 不落盘故不在此分支。
+        if (writeInput.scope === "card-frontend" && cardId) {
+          triggerFrontendRebuild(cardId, writeInput.path)
+        }
+        return result
       },
       async delete(deleteInput) {
         // staged turn：保留上层特殊路径（transaction 攒变更），不进 dispatch。
@@ -346,6 +353,10 @@ async function executeWorkspaceOperationForActiveSave(
           ownerContext: { saveId, cardId },
           operation: "delete",
         }) as string[]
+        // frontend/src/** 删除 → 同样触发重建（源码文件被删影响构建）。
+        if (deleteInput.scope === "card-frontend" && cardId) {
+          triggerFrontendRebuild(cardId, deleteInput.path)
+        }
         return { scope: deleteInput.scope, deletedPaths }
       },
     },
@@ -636,6 +647,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
       if (request.resource === "ai-debug") {
         return {
           items: getAiDebugRecords() as T[],
+        } as DeepQueryResult<T>
+      }
+
+      // 前端构建状态：助手写 frontend/src/** 后读此 resource 看构建结果
+      // （ok/failed + error）。per-card（非 per-save），故不走 activeSaveId 守卫。
+      if (request.resource === "frontend-build-status") {
+        const cardId = typeof request.params?.cardId === "string" && request.params.cardId.trim()
+          ? request.params.cardId.trim()
+          : (await getPlatformActiveGameCardId()) ?? ""
+        return {
+          items: [readFrontendBuildStatus(cardId)] as T[],
         } as DeepQueryResult<T>
       }
 

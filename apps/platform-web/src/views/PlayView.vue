@@ -101,8 +101,10 @@ const props = defineProps<{ minimized?: boolean }>()
 import {
   ACTIVE_CARD_CHANGED_EVENT,
   SAVES_CHANGED_EVENT,
+  FRONTEND_RELOAD_EVENT,
   isActiveCardChangedEvent,
   isSavesChangedEvent,
+  isFrontendReloadEvent,
 } from "@/lib/platform-events"
 import {
   mountRemoteIframeFrontend,
@@ -405,6 +407,17 @@ function onActiveCardChanged(event: Event) {
   }
 }
 
+function onFrontendReload(event: Event) {
+  if (!isFrontendReloadEvent(event)) {
+    return
+  }
+  // 仅在已挂载前端态响应：助手改 frontend/src → 平台重建 → 此事件触发重挂，
+  // 拉取新构建的 dist。launcher/resolving 态不打断（会被后续 enterLauncher 覆盖）。
+  if (phase.value === "remote-ready" || phase.value === "packaged-ready") {
+    void mountActiveFrontend()
+  }
+}
+
 function onKeydown(event: KeyboardEvent) {
   if (props.minimized) {
     return
@@ -417,6 +430,7 @@ function onKeydown(event: KeyboardEvent) {
 onMounted(() => {
   window.addEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
   window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+  window.addEventListener(FRONTEND_RELOAD_EVENT, onFrontendReload)
   window.addEventListener("keydown", onKeydown)
   void enterLauncher()
 })
@@ -427,6 +441,7 @@ onBeforeUnmount(() => {
   unmountFrontend()
   window.removeEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
+  window.removeEventListener(FRONTEND_RELOAD_EVENT, onFrontendReload)
   window.removeEventListener("keydown", onKeydown)
 })
 </script>
