@@ -1812,3 +1812,37 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - known gap：studio card-content→save-runtime copy 的 target-exists 漏判，建议后续小任务修（让 card-content 分支快照含 save-runtime，或为 target-exists 检查单独加载 toScope 切片）
+
+
+## Session 102: platform-frontend-build-service Phase 6 + 验收期运行时修复
+
+**Date**: 2026-06-30
+**Task**: platform-frontend-build-service Phase 6 + 验收期运行时修复
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+完成平台侧前端构建服务 Phase 6（svelte 存根 + 助手文档修正 + 旧卡兼容废弃）并通过浏览器验收，修复 5 个 build:web 抓不到的运行时 bug：cdn-external plugin result 挂载位置、esbuild-wasm initialize 二次调用（HMR 竞态）、write-back 路径双斜杠致产物误删。补上 Phase 4 漏接的助手 card-frontend write 通道（含同轮 read 空内容修复）+ turn-end 自动回写 filter（isCardContentWritebackPath 排除保留路径）。spec 落 esbuild-wasm 三大运行时陷阱 + scope 路由/保留路径/回写 filter 契约。核心闭环源码→构建→SW 加载→助手在线改首次线上验证通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `33b5799` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
