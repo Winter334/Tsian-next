@@ -1880,3 +1880,37 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 104: DebugView 缓存命中率真实数据显示 + 仪表盘重设计
+
+**Date**: 2026-06-30
+**Task**: DebugView 缓存命中率真实数据显示 + 仪表盘重设计
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+把 DebugView 从内存20条+本地字符估算+刷新即丢升级为 provider 真实 cached_tokens + Dexie 持久化(全局,7天过期,换卡清空) + 实时更新 + provider/model 分组。extractUsageFromPayload 扩展四 provider 缓存字段(OpenAI/DeepSeek/Claude/Gemini)并修复 Gemini usageMetadata 路径既有缺陷。助手 turn 完成补 emitTurnDebugReady(原来只有 master emit,导致助手回复后仪表盘不刷新)。DebugView 重设计为仪表盘布局:KPI卡片行(缓存命中/Token累计/AI调用)+独立趋势SVG折线图(单点也显示)+Provider统计面板。删本地估算/运行状态卡/会话卡/消息段明细。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b302e51` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
