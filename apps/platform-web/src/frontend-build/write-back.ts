@@ -47,17 +47,24 @@ export async function writeBackDist(input: WriteBackInput): Promise<WriteBackRes
   const entryJsRel = findEntryOutputPath(metafile)
 
   // 1. Write all non-html output files to frontend/dist/.
+  // esbuild outputs paths like `assets/stdin.js` (relative to outdir) but may
+  // carry a leading slash (`/assets/stdin.js`); strip it so DIST_PREFIX concat
+  // doesn't produce a double slash (`frontend/dist//assets/...`). The storage
+  // layer normalizes paths on write, but our `newPaths` set must hold the
+  // SAME normalized form the storage layer stores, or the stale-file cleanup
+  // below won't recognize freshly-written files and will delete them.
   const newPaths = new Set<string>()
   for (const file of outputFiles) {
-    const distPath = DIST_PREFIX + file.path
+    const rel = file.path.replace(/^\/+/, "")
+    const distPath = DIST_PREFIX + rel
     await writeLocalGameCardFrontendFile(cardId, { path: distPath, data: file.contents })
     newPaths.add(distPath)
   }
 
-  // 2. Collect CSS outputs for <link> tags.
+  // 2. Collect CSS outputs for <link> tags (strip leading slash, same as step 1).
   const cssRelPaths = outputFiles
     .filter((f) => f.path.endsWith(".css"))
-    .map((f) => f.path)
+    .map((f) => f.path.replace(/^\/+/, ""))
 
   // 3. Generate index.html with import map + entry script + css links.
   const importMapJson = JSON.stringify({

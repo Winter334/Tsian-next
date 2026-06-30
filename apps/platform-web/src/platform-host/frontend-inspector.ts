@@ -470,7 +470,7 @@ async function buildFileLineMap(
   const map: Record<string, { source: string; line: number }[]> = {}
   for (const err of errors) {
     if (!err.source) continue
-    // SW 虚拟路径形如 /__tsian_game_card_frontends/<cardId>/frontend/app.js
+    // SW 虚拟路径形如 /__tsian_game_card_frontends/<cardId>/frontend/dist/index.html
     const fileName = err.source.split("/").pop()
     if (!fileName) continue
     const source = nameToSource.get(fileName)

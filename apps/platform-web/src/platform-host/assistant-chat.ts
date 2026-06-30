@@ -64,9 +64,12 @@ import {
   resolveAgentModelConfig,
   writeCardContentFileForActiveCard,
   deleteCardContentPathForActiveCard,
+  writeFrontendFileForActiveCard,
+  deleteFrontendPathForActiveCard,
   cardContentFilesToWorkspaceFiles,
 } from "./internal"
 import { waitForPlatformHostReady } from "./host-state"
+import { triggerFrontendRebuild } from "../frontend-build/trigger"
 import {
   parseAgentContext,
   appendTurnToContext,
@@ -590,6 +593,24 @@ export async function runAssistantChat(
                 return file
               })
             }
+            if (writeInput.scope === "card-frontend") {
+              // Same bypass rationale as card-content: frontend files live in
+              // their own per-file table, not the save transaction. The assistant
+              // (level 4) has passed assertEditAccess; route to the frontend file
+              // table. Writing `frontend/src/**` triggers the platform rebuild
+              // (R6) — debounced per card, reloads /play on success.
+              return writeFrontendFileForActiveCard({
+                path: writeInput.path,
+                content: writeInput.content,
+                ...(writeInput.data ? { data: writeInput.data } : {}),
+              }).then((file) => {
+                syncDirectFileIntoStaged(activeWorkspaceTransaction.workspaceFiles, file)
+                // Fire-and-forget rebuild trigger. Only `frontend/src/**` writes
+                // trigger a build (triggerFrontendRebuild no-ops on other paths).
+                triggerFrontendRebuild(activeCard.id, file.path)
+                return file
+              })
+            }
             if (writeInput.scope === "save-runtime") {
               return activeWorkspaceTransaction.write({
                 path: writeInput.path,
@@ -635,6 +656,18 @@ export async function runAssistantChat(
               // transaction and go straight to the per-file content table.
               return deleteCardContentPathForActiveCard(deleteInput.path).then((result) => {
                 removeDirectPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, result.deletedPaths)
+                return result
+              })
+            }
+            if (deleteInput.scope === "card-frontend") {
+              // Same bypass rationale as the card-frontend write branch. Deleting
+              // a `frontend/src/**` file also triggers a rebuild so dist stays in
+              // sync with the remaining source.
+              return deleteFrontendPathForActiveCard(deleteInput.path).then((result) => {
+                removeDirectPathsFromStaged(activeWorkspaceTransaction.workspaceFiles, result.deletedPaths)
+                for (const deleted of result.deletedPaths) {
+                  triggerFrontendRebuild(activeCard.id, deleted)
+                }
                 return result
               })
             }
@@ -785,9 +818,7 @@ async function commitAssistantWorkspaceFiles(
     if (!activeCard) {
       return
     }
-    const cardFiles = nonLocalFiles.filter(
-      (file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"),
-    )
+    const cardFiles = nonLocalFiles.filter(isCardContentWritebackPath)
     await updateCardContentFilesForCard(activeCard.id, cardFiles)
     return
   }
@@ -807,15 +838,35 @@ async function commitAssistantWorkspaceFiles(
   }
 
   // Also persist card-content changes (from knowledge mount writes).
-  const cardFiles = nonLocalFiles.filter(
-    (file) => !file.path.startsWith("save/") && !file.path.startsWith(".tsian/"),
-  )
+  // See isCardContentWritebackPath — reserved paths (save/, .tsian/, frontend/,
+  // game-card.json, temp/) are excluded so they don't get misrouted into the
+  // card-content table at turn-end writeback.
+  const cardFiles = nonLocalFiles.filter(isCardContentWritebackPath)
   if (cardFiles.length > 0) {
     const activeCard = await getPlatformActiveGameCard()
     if (activeCard) {
       await updateCardContentFilesForCard(activeCard.id, cardFiles)
     }
   }
+}
+
+/**
+ * Does this staged file belong to the card-content scope for turn-end writeback?
+ * Returns false for every path that belongs to another scope or is synthesized:
+ * save/ (save-runtime), .tsian/ (platform-meta), frontend/ (card-frontend),
+ * temp/ (temp), and game-card.json (manifest is synthesized, not a content row).
+ * Excluding these here prevents the auto-writeback from misrouting reserved
+ * paths into the content table (which would trip the reserved-path guard in
+ * writeLocalGameCardContentFile, or worse, silently duplicate data).
+ */
+function isCardContentWritebackPath(file: WorkspaceFile): boolean {
+  const p = file.path
+  if (p.startsWith("save/")) return false
+  if (p.startsWith(".tsian/")) return false
+  if (p.startsWith("frontend/")) return false
+  if (p.startsWith("temp/")) return false
+  if (p === "game-card.json") return false
+  return true
 }
 
 async function updateCardContentFilesForCard(
@@ -831,6 +882,10 @@ async function updateCardContentFilesForCard(
   // where the caller passes only the changed non-save/non-.tsian files).
   // Each write bumps the card's updatedAt internally.
   for (const file of files) {
+    // Defensive: callers filter via isCardContentWritebackPath, but skip
+    // reserved paths here too so a stray entry can't trip the guard or
+    // duplicate into the wrong table.
+    if (!isCardContentWritebackPath(file)) continue
     await writeLocalGameCardContentFile(cardId, {
       path: file.path,
       content: file.content,

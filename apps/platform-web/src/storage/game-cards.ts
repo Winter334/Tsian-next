@@ -168,21 +168,39 @@ function normalizeTemplateFile(
   }
 }
 
+/**
+ * Reject content-file paths that belong to other scopes or are synthesized.
+ * Shared by `normalizeTemplateFiles` (bulk import path) and
+ * `writeLocalGameCardContentFile` (single-file write path) so a stray write
+ * can't smuggle reserved paths into the content table — which would later
+ * surface as bogus `workspace/game-card.json` or `workspace/frontend/...`
+ * entries in exported packages and break re-import.
+ */
+function assertNonReservedContentPath(path: string): void {
+  if (path === "save" || path.startsWith("save/")) {
+    throw new Error("Game card content cannot use reserved save/ paths.")
+  }
+  if (path === ".tsian" || path.startsWith(".tsian/")) {
+    throw new Error("Game card content cannot use reserved .tsian/ paths.")
+  }
+  if (path === "game-card.json") {
+    throw new Error("Game card content cannot use reserved game-card.json path (manifest is synthesized, not stored as a content file).")
+  }
+  // `frontend/` is the card-frontend scope prefix; frontend files live in
+  // their own table. Allowing them into card-content would duplicate files
+  // and confuse the export (which lists content + frontend separately).
+  if (path === "frontend" || path.startsWith("frontend/")) {
+    throw new Error("Game card content cannot use reserved frontend/ paths (use the card-frontend scope).")
+  }
+}
+
 function normalizeTemplateFiles(
   files: GameCardContentFile[],
 ): GameCardContentFile[] {
   const filesByPath = new Map<string, GameCardContentFile>()
   for (const file of files) {
     const normalized = normalizeTemplateFile(file)
-    if (normalized.path === "save" || normalized.path.startsWith("save/")) {
-      throw new Error("Game card content cannot use reserved save/ paths.")
-    }
-    if (normalized.path === ".tsian" || normalized.path.startsWith(".tsian/")) {
-      throw new Error("Game card content cannot use reserved .tsian/ paths.")
-    }
-    if (normalized.path === "game-card.json") {
-      throw new Error("Game card content cannot use reserved game-card.json path (manifest is synthesized, not stored as a content file).")
-    }
+    assertNonReservedContentPath(normalized.path)
     filesByPath.set(normalized.path, normalized)
   }
   return Array.from(filesByPath.values()).sort((left, right) => left.path.localeCompare(right.path))
@@ -499,6 +517,7 @@ export async function writeLocalGameCardContentFile(
   }
 
   const normalizedPath = normalizeWorkspaceFilePath(input.path)
+  assertNonReservedContentPath(normalizedPath)
   const recordId = gameCardContentFileId(id, normalizedPath)
   const now = Date.now()
   const existing = await localDb.gameCardContentFiles.get(recordId)

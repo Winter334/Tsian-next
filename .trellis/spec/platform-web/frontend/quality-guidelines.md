@@ -6,6 +6,11 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
 
 - Run `npm run build:web` after any change under `apps/platform-web`.
 - Run `npm run build:contracts` if a change imports or modifies contract shapes.
+- **`build:web` passing does NOT mean the frontend-build runtime loop works.** The esbuild-wasm build engine (`src/frontend-build/`) has three runtime-only traps that `vue-tsc` + `vite build` cannot catch — they only surface when a real build runs in the browser:
+  - **esbuild plugin objects may only carry `name` + `setup`.** Attaching extra fields (e.g. a `result` handle for post-build reads) throws `Invalid option on plugin "<name>": "<field>"` at runtime. A TS intersection type (`Plugin & { result }`) lies to tsc but esbuild rejects it. Return extra data as a sibling on a wrapper object (`{ plugin, result }`), not on the Plugin itself. See `cdn-external-plugin.ts`.
+  - **`esbuild.initialize` is "call exactly once" per page lifetime.** esbuild-wasm guards it internally (`Cannot call "initialize" more than once`) and reuses one long-lived service for all `esbuild.build` calls. Cache the init promise on `globalThis` (NOT a module-level variable — vite HMR reloads the module and resets module state, diverging from esbuild-wasm's surviving module state). Wrap `initialize` to swallow the "more than once" error (it means a service is already alive = success), and clear the cache only on genuine failure. See `engine.ts` `ensureEsbuildInitialized`.
+  - **esbuild `outputFiles[i].path` may carry a leading slash** (`/assets/stdin.js`). Concatenating a prefix (`frontend/dist/` + `/assets/...`) yields a double slash (`frontend/dist//assets/...`). The storage layer normalizes it on write, but any in-memory `Set` of "newly written paths" holds the un-normalized form — a later stale-file cleanup that compares against normalized stored paths won't match and will delete the freshly-written files. Strip the leading slash before concatenating. See `write-back.ts`.
+- After touching `src/frontend-build/`, manually verify the full loop in the browser (create default card → /play renders the placeholder shell → edit `frontend/src/main.ts` → ~800ms later dist rebuilds and /play reloads). The build command alone is insufficient evidence.
 
 ## Project Rules
 

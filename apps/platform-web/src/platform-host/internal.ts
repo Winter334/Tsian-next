@@ -23,6 +23,7 @@ import {
 import {
   createDefaultEditableCard,
   deleteLocalGameCardContentPathForCard,
+  deleteLocalGameCardFrontendPathForCard,
   getActiveGameCardId,
   getActiveSaveId,
   getBuiltinBlankGameCard,
@@ -34,6 +35,7 @@ import {
   listLocalSaves,
   setActiveGameCardId,
   writeLocalGameCardContentFile,
+  writeLocalGameCardFrontendFile,
   type LocalGameCardRecord,
   type LocalSaveRecord,
 } from "../storage"
@@ -196,6 +198,64 @@ export async function deleteCardContentPathForActiveCard(
   const deletedPaths = await deleteLocalGameCardContentPathForCard(activeCard.id, path)
   return {
     scope: "card-content",
+    deletedPaths,
+  }
+}
+
+// ── 卡片前端文件写入/删除 ──
+// Mirrors the card-content helpers above but for the `card-frontend` scope
+// (`frontend/**`). Used by the assistant workspace write/delete path so the
+// assistant can edit `frontend/src/**` source and trigger the platform rebuild
+// (R6). Phase 4 wired the rebuild trigger on `frontend/src/**` writes but the
+// assistant write channel for `card-frontend` was missing — these helpers +
+// the assistant-chat `card-frontend` branches close that gap.
+
+export async function writeFrontendFileForActiveCard(input: {
+  path: string
+  content?: string
+  data?: Blob
+}): Promise<WorkspaceFile> {
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("当前没有激活中的游戏卡。")
+  }
+
+  const file = await writeLocalGameCardFrontendFile(activeCard.id, {
+    path: input.path,
+    // writeLocalGameCardFrontendFile's input takes `data` (Blob | ArrayBuffer |
+    // Uint8Array | string), not a separate `content` field — wrap text content
+    // as a string payload (the storage layer's toBlob infers media type from
+    // the path extension).
+    data: input.data ?? input.content ?? "",
+  })
+
+  // LocalGameCardFrontendFile carries only `data: Blob` (no `content` field),
+  // so we can't read text back from the stored record. For the staged snapshot
+  // used by same-turn reads, reconstruct the WorkspaceFile from the input:
+  // text writes → `content` (no binary, so read sees real text not a binary
+  // placeholder); binary writes (Blob) → `binary` (read shows placeholder, same
+  // as card-content media files). Mirrors writeCardContentFileForActiveCard.
+  return {
+    path: file.path,
+    ...(input.data
+      ? { content: "", binary: input.data }
+      : { content: input.content ?? "" }),
+    createdAt: file.createdAt,
+    updatedAt: file.updatedAt,
+  }
+}
+
+export async function deleteFrontendPathForActiveCard(
+  path: string,
+): Promise<{ scope: WorkspaceScope; deletedPaths: string[] }> {
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("当前没有激活中的游戏卡。")
+  }
+
+  const deletedPaths = await deleteLocalGameCardFrontendPathForCard(activeCard.id, path)
+  return {
+    scope: "card-frontend",
     deletedPaths,
   }
 }

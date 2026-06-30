@@ -27,9 +27,6 @@ const WASM_CACHE_KEY = "esbuild-wasm"
 
 const ENTRY_CANDIDATES = ["main.ts", "main.tsx", "main.jsx", "main.js", "index.ts", "index.tsx"]
 
-let esbuildInitialized = false
-let initPromise: Promise<void> | null = null
-
 /** Fetch the esbuild wasm binary, caching in Cache API after first download. */
 async function fetchWasmWithCache(url: string): Promise<ArrayBuffer> {
   const cache = await caches.open(CACHE_NAME)
@@ -49,21 +46,81 @@ async function fetchWasmWithCache(url: string): Promise<ArrayBuffer> {
   return buffer
 }
 
-/** Lazily initialize esbuild-wasm (idempotent — safe to call repeatedly). */
-export async function ensureEsbuildInitialized(): Promise<void> {
-  if (esbuildInitialized) return
-  if (initPromise) return initPromise
+/**
+ * Lazily initialize esbuild-wasm. Idempotent across the module lifetime AND
+ * across vite HMR reloads.
+ *
+ * esbuild-wasm's `initialize` is documented as "call exactly once" — it guards
+ * internally (`Cannot call "initialize" more than once`) and reuses one
+ * long-lived service for every subsequent `esbuild.build`.
+ *
+ * Two defenses against re-initialization:
+ *
+ * 1. **The init promise lives on `globalThis`, not a module-level variable.**
+ *    vite HMR reloads this module on edit, which resets module-level state —
+ *    but esbuild-wasm (a node_modules dep) is NOT reloaded, so its internal
+ *    `initializePromise` survives. A module-level cache would diverge from
+ *    esbuild-wasm's state after HMR (ours says "not init", theirs says "already
+ *    init") and the next `initialize` call would throw. A `globalThis` cache
+ *    survives the module reload, staying in sync with esbuild-wasm.
+ *
+ * 2. **`initialize` is wrapped to swallow "more than once".** If that error
+ *    surfaces (e.g. the global cache was somehow cleared but esbuild-wasm's
+ *    service is still alive), it means esbuild-wasm is ALREADY initialized —
+ *    treat it as success rather than failing the build. A genuine init failure
+ *    (wasm download error etc.) is a different error and still propagates.
+ */
+const ESBUILD_INIT_KEY = "__tsianEsbuildInitPromise__"
 
-  initPromise = (async () => {
+function getEsbuildInitPromise(): Promise<void> | null {
+  return (globalThis as Record<string, unknown>)[ESBUILD_INIT_KEY] as
+    | Promise<void>
+    | null
+    | undefined
+  ?? null
+}
+
+function setEsbuildInitPromise(p: Promise<void> | null): void {
+  if (p === null) {
+    delete (globalThis as Record<string, unknown>)[ESBUILD_INIT_KEY]
+  } else {
+    (globalThis as Record<string, unknown>)[ESBUILD_INIT_KEY] = p
+  }
+}
+
+export async function ensureEsbuildInitialized(): Promise<void> {
+  const existing = getEsbuildInitPromise()
+  if (existing) return existing
+
+  const promise = (async () => {
     const wasmBuffer = await fetchWasmWithCache(ESBUILD_WASM_URL)
     // Blob URL keeps the binary in memory for esbuild's worker to fetch.
     const wasmBlob = new Blob([wasmBuffer], { type: "application/wasm" })
     const wasmURL = URL.createObjectURL(wasmBlob)
-    await esbuild.initialize({ wasmURL, worker: true })
-    esbuildInitialized = true
+    try {
+      await esbuild.initialize({ wasmURL, worker: true })
+    } catch (e) {
+      // "Cannot call initialize more than once" means esbuild-wasm already has
+      // a live service (e.g. after an HMR reload where our global cache was
+      // cleared but esbuild-wasm's module state survived). That's not a failure
+      // — the service is usable, so swallow this specific error. Any other
+      // error (wasm fetch, worker creation, ...) still propagates.
+      const msg = e instanceof Error ? e.message : String(e)
+      if (/more than once/i.test(msg)) {
+        return
+      }
+      throw e
+    }
   })()
 
-  return initPromise
+  setEsbuildInitPromise(promise)
+  // On failure, release the global cache so a later call can retry; esbuild-wasm
+  // resets its internal initializePromise on rejection too, so re-initialize is
+  // allowed. On success the promise stays cached for the page lifetime.
+  promise.catch(() => {
+    setEsbuildInitPromise(null)
+  })
+  return promise
 }
 
 // ─── Framework config ───────────────────────────────────────────────────
@@ -99,8 +156,12 @@ function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
       return { coreImportMap: m, jsx: "automatic", jsxImportSource: "preact" }
     }
     case "vanilla":
-    case "svelte":
     default:
+      return { coreImportMap: new Map() }
+    case "svelte":
+      // SFC compiler stub reserved (plugins/svelte-plugin.ts); NOT mounted
+      // yet — svelte cards fall through to the pure-TS path until the second
+      // SFC compiler is integrated. See prd.md D10 + svelte-plugin.ts TODO.
       return { coreImportMap: new Map() }
   }
 }
@@ -171,12 +232,12 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
   const config = frameworkConfig(framework)
   const { sources, entryPath, entryContent } = await loadSources(cardId)
 
-  const cdnPlugin = cdnExternalPlugin({ coreImports: config.coreImportMap })
+  const cdn = cdnExternalPlugin({ coreImports: config.coreImportMap })
 
   // Plugin order matters: sfcPlugin (specific .vue filter) must register its
   // onLoad BEFORE workspaceSourcePlugin's catch-all, so .vue is compiled by
   // the SFC compiler rather than returned as raw text.
-  const plugins: esbuild.Plugin[] = [cdnPlugin]
+  const plugins: esbuild.Plugin[] = [cdn.plugin]
   if (framework === "vue") {
     plugins.push(createSfcPlugin({ sources }))
   }
@@ -214,7 +275,7 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
   // Collected extras without a known version get the bare name (esm.sh
   // resolves latest). Source package.json version pinning is a future refinement.
   const importMap = new Map<string, string>(config.coreImportMap)
-  for (const bare of cdnPlugin.result.collected) {
+  for (const bare of cdn.result.collected) {
     if (!importMap.has(bare)) {
       importMap.set(bare, `https://esm.sh/${bare}`)
     }

@@ -102,14 +102,16 @@
 
 ## Phase 6: 兼容 + 导出 + 收尾
 
+> **决策（2026-06-30，用户）**：**旧卡兼容项废弃**。当前处于开发阶段，无真实用户数据，全部为开发测试数据，旧卡（entry 指 `frontend/index.html` 且无 `frontend/src/`）可直接抛弃，不维护兼容路径以避免后续维护困难。下方"兼容旧卡"改动项与"旧卡 /play 加载"手动验证项**取消**。代码层无专门旧卡分支需删除——系统对 packaged frontend 卡的处理本就统一（SW 加载 manifest.entry；仅带 `frontend/src/` 的卡触发构建），所谓"兼容"只是"不强制卡必须有 src"的副产物。
+
 **改动：**
-- 兼容旧卡：entry 指 `frontend/index.html` 且无 `frontend/src/` → 不触发构建，SW 直接加载旧产物。
+- ~~兼容旧卡：entry 指 `frontend/index.html` 且无 `frontend/src/` → 不触发构建，SW 直接加载旧产物。~~ **（已废弃，见上决策）**
 - 导出（`game-card-packages.ts`）：导出带 `frontend/src/`（源码）+ `frontend/dist/`（**产物兜底，已决定带**，降低接收方首次构建延迟）。
 - 清理 `default-frontend-files.ts` 旧常量（确认无引用后删）。
 - **svelte 插件留接口**：react/preact 已在 Phase 3 实现；svelte 留 `sveltePlugin` 接口签名 + TODO（待 vue SFC 插件接口稳定后再加第二个 SFC 编译器）。
 
 **手动验证：**
-- 旧卡（无 frontend/src）仍能 /play 加载。
+- ~~旧卡（无 frontend/src）仍能 /play 加载。~~ **（已废弃）**
 - 导出卡 → 重新导入 → 正常加载。
 - `frontend-build-status` 在构建成功/失败/进行中三态都正确。
 
@@ -124,3 +126,46 @@
 - **@vue/compiler-sfc 体积/浏览器兼容**：若 esm.sh 版不可用，构建期内联一份。验证compiler-sfc 浏览器 build 是否可直接用。
 - **构建延迟**：首次构建可能数秒。缓解：异步构建 + 加载态 UI；预构建默认前端产物。
 - 每阶段独立可 git revert，Phase 1（contracts）最小且独立。
+
+---
+
+## 进度交接（2026-06-30，频繁中断后停会）
+
+本会话因平台频繁中断停工，未进入 Phase 6 实施。以下记录供新会话 `/trellis:continue` 接续。
+
+### 已完成并提交的 5 个阶段
+
+| 阶段 | 提交 | 内容 |
+|---|---|---|
+| Phase 1 | `dda325e` | contracts 加 `FRONTEND_FRAMEWORKS` 元组 + `FrontendFramework` 类型 + `packaged.framework?`；3 处 normalize（game-cards.ts / game-card-packages.ts / platform-host/game-cards.ts）透传+校验 framework |
+| Phase 2 | `8ba9ff1` | esbuild-wasm 构建引擎：`engine.ts`（懒加载 + Cache API 独立库 `tsian-builder-cache`）+ `workspace-source-plugin.ts`（onResolve→workspace 命名空间 + onLoad 无扩展名自动尝试）+ `cdn-external-plugin.ts`（bare import→external + 收集 collected）+ `write-back.ts`（产物写 frontend/dist + 生成 index.html import map 按扩展名分流 + 清旧产物）+ `build-status.ts` + `index.ts` barrel；package.json 加 esbuild-wasm@0.28.1 + prebuild 钩子拷 wasm 到 public/ |
+| Phase 3 | `60c2313` | `sfc-plugin.ts`（@vue/compiler-sfc 动态 import 懒加载分块，工厂闭包并发安全，scoped CSS JS 运行时注入）+ engine frameworkConfig 路由（vue 挂 sfcPlugin，react/preact 纯配置 jsx:"automatic"） |
+| Phase 4 | `0f479c1` | `trigger.ts`（per-card 800ms 防抖 + in-flight 守护 + 成功 emitFrontendReload/失败保留旧 dist）+ `platform-events.ts` FRONTEND_RELOAD_EVENT + `platform-host/index.ts` write/delete 成功路径调 trigger + `frontend-build-status` query 分支 + `PlayView.vue` 重载 handler |
+| Phase 5 | `f7b229c` | `default-frontend-files.ts` 完全重写为 vanilla 占位卡种子（main.ts 极简桥握手 + 占位 shell）+ `internal.ts` ensureActiveGameCardId 创建分支后首次构建 + `platform-host/game-cards.ts` createDefaultPlatformGameCard/delete fallback 两处首次构建 + `play-frontend-dev/vite.config.ts` base:"./" |
+
+工作树当前干净（git status 无改动）。任务状态 `in_progress`。
+
+### Phase 6 待做（本会话未实施）
+
+1. ~~**兼容旧卡**~~ **（已废弃，见 Phase 6 决策）**：开发期无真实用户数据，旧卡兼容不维护。代码层无专门分支需删——核查确认 3 个首次构建调用点（`internal.ts` / `game-cards.ts buildDefaultFrontendQuiet`）都 try/catch 吞错且只跑在带 `frontend/src/` 的新建默认卡上；trigger 被 `isFrontendSourcePath` 守卫；`buildFrontend` 在 write-back 前抛错→旧 dist 保留。系统对 packaged frontend 卡处理统一，无 `if (isOldCard)` 分支。
+2. **导出带 dist 兜底（D12）**：`game-card-packages.ts` 的 `exportGameCardPackage` 已用 `listLocalGameCardFrontendFiles`（列出所有 `frontend/**`，含 src + dist），**天然已带 dist**。Phase 6 只需验证导出包含 `frontend/src/**` + `frontend/dist/**` 两段，写测试或手动确认即可，无需改代码。
+3. **svelte 插件留接口**：`engine.ts` 的 `frameworkConfig` 已有 `case "svelte":` 返回空 map（与 vanilla 同构）。需新增 `plugins/svelte-plugin.ts` 留 `createSveltePlugin({ sources })` 接口签名 + TODO 注释（待 vue SFC 插件接口稳定后再加第二个 SFC 编译器），并在 engine 的 framework 路由里预留挂载点（实际不挂，framework==="svelte" 时仍走纯 TS 路径）。
+4. **清理 `default-frontend-files.ts`**：Phase 5 已完全重写，全文仅剩新常量（`DEFAULT_FRONTEND_BINDING` + `FRONTEND_SRC_MAIN_TS` + `defaultFrontendFiles()`），**无旧 770 行三件套残留**。Phase 6 复核无外部引用旧常量后即可确认此项完成（grep `DEFAULT_FRONTEND_FILES` / 旧常量名确认）。
+
+### R7 拆分决策（已落入 prd.md，关键约束）
+
+- **R7a = 本任务**：vanilla 占位默认卡（Phase 5 已做），验证"源码→平台构建→SW 加载"全链路，不依赖 `@tsian/play-bridge`。
+- **R7b = 后续任务**：发布 `@tsian/play-bridge` 到 npm + play-frontend-dev 彻底重构完成，迁移真实 AIRP 前端为种子。
+- **用户关键约束**：**R7b 才发布 play-bridge，本任务不发布**。npm publish 是 outward-facing 不可逆动作，需用户明确授权。开发期频繁改动，发布不便。esm.sh 无法解析内部私有包，故 R7a 用 vanilla 占位绕过。
+- R7b 依赖最终决策：发布 play-bridge 到 npm，走 esm.sh CDN，与所有 bare import 一视同仁，**构建引擎零特殊处理**（更统一，覆盖之前的"平台内部包解析"方向）。
+
+### Phase 6 之后的收尾
+
+- Trellis 工作流 Phase 3.3/3.4：spec update（把本任务学到的可执行契约落入 `.trellis/spec/`）+ 最终提交。
+- 任务归档：`/trellis:finish-work`（质量门 + archive）。
+
+### 注意
+
+- 提交前在 git bash 下记得 `rm -f nul`（cmd 的 `2>nul` 重定向在 git bash 下会创建多余 nul 文件，每次提交前清理）。
+- Bash 工作目录不跨调用保持，用绝对路径 `F:/workspace/Tsian`。
+- 本会话多次中断，新会话优先用 `/trellis:continue` 读取本文件接续。
