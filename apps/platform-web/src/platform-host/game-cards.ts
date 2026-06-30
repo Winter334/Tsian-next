@@ -5,6 +5,7 @@ import type {
 import { FRONTEND_FRAMEWORKS } from "@tsian/contracts"
 import type { LocalGameCardRecord, LocalSaveRecord } from "../storage"
 import { resolveRemoteFrontendUrl } from "../bridge"
+import { buildFrontend } from "../frontend-build/engine"
 import {
   markPlatformHostReady,
 } from "./host-state"
@@ -357,6 +358,23 @@ export async function copyPlatformGameCardAsLocal(
  * frontend files, sets the packaged frontend binding, then loads it. The user
  * can then customize the card via the desktop assistant or workspace editor.
  */
+/**
+ * Build a newly-created default card's frontend/src into frontend/dist so
+ * the entry (frontend/dist/index.html) resolves on first /play load. Called
+ * after default-card creation in three sites. Fire-and-forget semantics but
+ * awaited here so the card is playable before the caller returns; failures
+ * are swallowed (the card still exists, /play will show a load error the
+ * assistant can read via frontend-build-status).
+ */
+async function buildDefaultFrontendQuiet(cardId: string): Promise<void> {
+  try {
+    await buildFrontend(cardId)
+  } catch (e) {
+    // 不阻塞卡创建——前端加载失败时助手可读 frontend-build-status 排错。
+    console.warn(`[frontend-build] 默认卡首次构建失败 (${cardId}):`, e instanceof Error ? e.message : e)
+  }
+}
+
 export async function createDefaultPlatformGameCard(input?: {
   name?: string
   summary?: string
@@ -396,6 +414,8 @@ export async function createDefaultPlatformGameCard(input?: {
   // again here so subscribers see the final state (with frontend binding applied),
   // since copyPlatformGameCardAsLocal's earlier emit reflected a pre-frontend copy.
   emitGameCardsChanged()
+  // 4. Build frontend/src → frontend/dist so the entry resolves on first load.
+  await buildDefaultFrontendQuiet(record.id)
   return active
 }
 
@@ -430,6 +450,7 @@ export async function deletePlatformGameCard(
     } else {
       const created = await createDefaultEditableCard()
       await setActiveGameCardId(created.id)
+      await buildDefaultFrontendQuiet(created.id)
     }
   }
 

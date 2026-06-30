@@ -15,6 +15,7 @@ import type {
   WorkspaceScope,
 } from "@tsian/contracts"
 import { buildAgentRegistry } from "../agent-runtime/registry"
+import { buildFrontend } from "../frontend-build/engine"
 import {
   resolveBrowserAiConfigForProviderId,
   type BrowserAiConfig,
@@ -96,6 +97,13 @@ export async function ensureActiveGameCardId(saves?: LocalSaveRecord[]): Promise
   // builtin template. The builtin record stays in DB as the template source.
   const created = await createDefaultEditableCard()
   await setActiveGameCardId(created.id)
+  // Build frontend/src → frontend/dist so entry resolves on first /play load.
+  // Quiet: failure doesn't block card creation (assistant reads build-status).
+  try {
+    await buildFrontend(created.id)
+  } catch (e) {
+    console.warn(`[frontend-build] 默认卡首次构建失败 (${created.id}):`, e instanceof Error ? e.message : e)
+  }
   return created.id
 }
 

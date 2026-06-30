@@ -28,7 +28,7 @@
 - `R4` 框架声明：`game-card.json` 的 `packaged` frontend binding 新增 `framework` 字段（`"vue" | "react" | "preact" | "svelte" | "vanilla"`），构建服务读它选编译器。
 - `R5` import 解析：源码间的 ESM 互引（`import { x } from "./Foo.ts"`）由构建服务解析为可加载的 blob URL 或重写路径；bare import（`vue`、`preact`、任意 npm 包如 `lodash`）走 esm.sh CDN（递归依赖解析 + CJS→ESM 转换）。产物路径用相对路径（Service Worker 虚拟 URL 下绝对路径会失效）。
 - `R6` 助手在线改闭环：助手 `workspace.write("frontend/src/**")` 后，平台检测到源码变化，自动重新构建到 `frontend/dist/`（防抖避免连续写多次构建），前端重载即见效果。构建失败时保留旧产物并把错误反馈给助手（不破坏可运行的前端）。
-- `R7` 默认前端源码种子：`default-frontend-files.ts` 的内联常量早已不维护，不迁移它。默认前端改为以 `apps/play-frontend-dev/src` 的源码为种子，同步进内置游戏卡的 `frontend/src/`，经平台构建产出 `frontend/dist/`。本任务需建立"play-frontend-dev 源码 → 内置卡 frontend/src 种子"的同步路径（构建期内联或脚本生成 `defaultFrontendFiles()` 的源码版）。
+- `R7` 默认前端源码种子（**已拆分调整**）：原 R7 设想"默认前端改为以 `apps/play-frontend-dev/src` 源码为种子"，勘察发现 `play-frontend-dev/src` 依赖内部包 `@tsian/play-bridge`（private、未发 npm，esm.sh 不可解析），且 PRD Non-Goals 明确"不在本任务重构 play-frontend-dev UI 架构"。故拆为：**R7a（本任务）**——`default-frontend-files.ts` 丢弃旧原生 JS 三件套，改为 vanilla 占位卡种子（`frontend/src/main.ts` + `framework:"vanilla"` + `entry:"frontend/dist/index.html"`），内置卡创建时触发首次平台构建产出 `frontend/dist/`，验证"源码→构建→SW加载"全链路在内置卡真实可用；**R7b（后续独立任务）**——默认前端真正迁移到 `play-frontend-dev/src` 的 TS+bridge 版（Vue 框架），依赖：① 发布 `@tsian/play-bridge` 到 npm（走 esm.sh CDN，与所有 bare import 一视同仁，构建引擎零特殊处理——更统一）② play-frontend-dev 彻底重构完成。R7b 不在本任务。
 - `R8` `play-frontend-dev` 定位调整：保留为本地开发预览（vite dev server），与平台构建并行。开发者本地用 vite 迭代，确认后源码进游戏卡 `frontend/src/`，平台构建负责运行时。两者产物格式需对齐（相对路径、ESM）。
 - `R9` 游戏卡导出：导出游戏卡带 `frontend/src/`（源码）。`frontend/dist/` 产物可由源码重建，导出时可选带（兜底，降低接收方首次构建延迟）。
 - `R10` 隔离与安全：构建在浏览器沙箱内进行（esbuild-wasm），不触宿主文件系统。源码来自 workspace，构建产物写回 `frontend/dist/`（card-frontend scope）。构建服务不执行源码（编译只转译，不跑），执行仍由 iframe 沙箱负责。
