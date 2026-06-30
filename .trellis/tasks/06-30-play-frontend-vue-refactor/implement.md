@@ -32,12 +32,12 @@
 > - duration 8s（边缘推进 fbm 节奏，非中心向外）
 
 ### Step 3 — bridge composable + App shell + remote 回路
-- [ ] `useTsian.ts`：单例 `createTsian()`，5 订阅回调映射到响应式状态，暴露 ready/sessionId/turn/history/checkpoints/workspace
-- [ ] `AppHeader.vue`：静态简化 Logo + 连接状态点 + 轮次徽章 + nav 折叠按钮；底边 `--line` + 激光扫描线
-- [ ] `AppNav.vue`：展开态（图标+文字）/折叠态（仅图标无 Tooltip）；GSAP width 动画 + localStorage 偏好
-- [ ] `App.vue`：向导期 `:has(.setup-shell)` 隐藏 header+nav；主游玩态显示
-- [ ] **风险验证**：remote 回路 CORS/混合内容（design §7 风险 3）。平台卡设 `frontend.kind:"remote"` + `url:"http://localhost:5173"`，iframe 加载，验证 bridge ready
-- [ ] 验证：连上平台，ready 后进主游玩态（空 story）
+- [x] `useTsian.ts`：单例 `createTsian()`，5 订阅回调映射到响应式状态，暴露 ready/sessionId/turn/history/checkpoints/workspace
+- [x] `AppHeader.vue`：静态简化 Logo + 连接状态点 + 轮次徽章 + nav 折叠按钮；底边 `--line` + 激光扫描线
+- [x] `AppNav.vue`：展开态（图标+文字）/折叠态（仅图标无 Tooltip）；GSAP width 动画 + localStorage 偏好
+- [x] `App.vue`：向导期 `:has(.setup-shell)` 隐藏 header+nav；主游玩态显示（Step 3 revealed 后直接进主游玩态，向导 Step 6 接入）
+- [x] **风险验证**：remote 回路 CORS/混合内容（design §7 风险 3）+ WebGL iframe 沙箱（Step 2 遗留）。平台卡设 `frontend.kind:"remote"` + `url:"http://localhost:5174"`，iframe 加载，验证 bridge ready + WebGL 燃烧（用户确认连接成功，WebGL 在 iframe 沙箱下正常）
+- [x] 验证：连上平台，ready 后进主游玩态（空 story）（用户 remote 回路验证通过；header/nav 出现时机待 Step 6 接向导后自然修正）
 - [ ] commit
 
 ### Step 4 — story 视图（核心）
