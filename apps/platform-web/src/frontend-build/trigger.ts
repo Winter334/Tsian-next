@@ -5,7 +5,7 @@ import {
   setFrontendBuildFailed,
   setFrontendBuildOk,
 } from "./build-status"
-import { emitFrontendReload } from "../lib/platform-events"
+import { emitFrontendReload, emitFrontendRebuildSettled, emitFrontendRebuilding } from "../lib/platform-events"
 
 /**
  * Frontend rebuild trigger — the "assistant online-edit loop" (R6).
@@ -70,6 +70,11 @@ async function runRebuild(cardId: string): Promise<void> {
 
   const promise = (async () => {
     setFrontendBuildBuilding(cardId)
+    // Notify PlayView a rebuild is in flight so it can show a "rebuilding"
+    // overlay — the player sees the old dist still mounted, with a hint that a
+    // reload is coming. Cleared by emitFrontendReload (success) below or
+    // emitFrontendRebuildSettled (failure).
+    emitFrontendRebuilding()
     try {
       await buildFrontend(cardId)
       setFrontendBuildOk(cardId)
@@ -78,6 +83,8 @@ async function runRebuild(cardId: string): Promise<void> {
       const message = e instanceof Error ? e.message : String(e)
       setFrontendBuildFailed(cardId, { message })
       // Do NOT emit frontend-reload on failure — keep the old dist mounted.
+      // But DO settle the rebuilding overlay so PlayView hides it.
+      emitFrontendRebuildSettled()
     }
   })()
 

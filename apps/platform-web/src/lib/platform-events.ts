@@ -14,11 +14,17 @@
 // - frontend-reload: a game card's frontend/src changed + rebuilt; PlayView
 //   in playing/ready state should remount the iframe to pick up new dist.
 //     (No payload — PlayView re-resolves the active card's frontend URL.)
+// - frontend-rebuilding: a card's frontend rebuild just started (status →
+//   "building"). PlayView shows a "rebuilding" overlay so the player knows a
+//   reload is coming. Cleared by frontend-reload (success → remount) or
+//   frontend-rebuild-settled (failed → keep old dist, hide overlay).
 
 export const GAME_CARDS_CHANGED_EVENT = "tsian:game-cards-changed"
 export const ACTIVE_CARD_CHANGED_EVENT = "tsian:active-card-changed"
 export const SAVES_CHANGED_EVENT = "tsian:saves-changed"
 export const FRONTEND_RELOAD_EVENT = "tsian:frontend-reload"
+export const FRONTEND_REBUILDING_EVENT = "tsian:frontend-rebuilding"
+export const FRONTEND_REBUILD_SETTLED_EVENT = "tsian:frontend-rebuild-settled"
 
 export function emitGameCardsChanged(): void {
   window.dispatchEvent(new CustomEvent(GAME_CARDS_CHANGED_EVENT))
@@ -36,6 +42,14 @@ export function emitFrontendReload(): void {
   window.dispatchEvent(new CustomEvent(FRONTEND_RELOAD_EVENT))
 }
 
+export function emitFrontendRebuilding(): void {
+  window.dispatchEvent(new CustomEvent(FRONTEND_REBUILDING_EVENT))
+}
+
+export function emitFrontendRebuildSettled(): void {
+  window.dispatchEvent(new CustomEvent(FRONTEND_REBUILD_SETTLED_EVENT))
+}
+
 export function isGameCardsChangedEvent(event: Event): event is CustomEvent<void> {
   return event.type === GAME_CARDS_CHANGED_EVENT && event instanceof CustomEvent
 }
@@ -50,4 +64,12 @@ export function isSavesChangedEvent(event: Event): event is CustomEvent<void> {
 
 export function isFrontendReloadEvent(event: Event): event is CustomEvent<void> {
   return event.type === FRONTEND_RELOAD_EVENT && event instanceof CustomEvent
+}
+
+export function isFrontendRebuildingEvent(event: Event): event is CustomEvent<void> {
+  return event.type === FRONTEND_REBUILDING_EVENT && event instanceof CustomEvent
+}
+
+export function isFrontendRebuildSettledEvent(event: Event): event is CustomEvent<void> {
+  return event.type === FRONTEND_REBUILD_SETTLED_EVENT && event instanceof CustomEvent
 }

@@ -84,6 +84,18 @@
         </button>
       </section>
     </div>
+
+    <!-- 前端重建中提示（助手改了 frontend/src，平台正在重建） -->
+    <div
+      v-if="isRebuilding && (phase === 'remote-ready' || phase === 'packaged-ready')"
+      class="pointer-events-none absolute bottom-3 right-3 z-20 border border-neon-muted/30 bg-panel/90 px-3 py-1.5"
+      role="status"
+      aria-live="polite"
+    >
+      <p class="font-mono text-[10px] uppercase tracking-[0.2em] text-neon-muted">
+        前端重建中…
+      </p>
+    </div>
   </div>
 </template>
 
@@ -102,9 +114,13 @@ import {
   ACTIVE_CARD_CHANGED_EVENT,
   SAVES_CHANGED_EVENT,
   FRONTEND_RELOAD_EVENT,
+  FRONTEND_REBUILDING_EVENT,
+  FRONTEND_REBUILD_SETTLED_EVENT,
   isActiveCardChangedEvent,
   isSavesChangedEvent,
   isFrontendReloadEvent,
+  isFrontendRebuildingEvent,
+  isFrontendRebuildSettledEvent,
 } from "@/lib/platform-events"
 import {
   mountRemoteIframeFrontend,
@@ -143,6 +159,9 @@ const activeGameCardId = ref("")
 const activeSaveId = ref("")
 const saves = ref<LocalSaveRecord[]>([])
 const packagedFrontendSandbox = "allow-scripts allow-same-origin allow-forms"
+// True while a frontend rebuild is in flight (assistant edited frontend/src).
+// Shows a non-blocking overlay so the player knows a reload is coming.
+const isRebuilding = ref(false)
 
 let disposeFrontend: (() => void) | null = null
 let isDisposed = false
@@ -411,10 +430,27 @@ function onFrontendReload(event: Event) {
   if (!isFrontendReloadEvent(event)) {
     return
   }
+  // Rebuild succeeded → remount picks up new dist; the rebuilding overlay is no
+  // longer needed (remount itself replaces the view).
+  isRebuilding.value = false
   // 仅在已挂载前端态响应：助手改 frontend/src → 平台重建 → 此事件触发重挂，
   // 拉取新构建的 dist。launcher/resolving 态不打断（会被后续 enterLauncher 覆盖）。
   if (phase.value === "remote-ready" || phase.value === "packaged-ready") {
     void mountActiveFrontend()
+  }
+}
+
+function onFrontendRebuilding(event: Event) {
+  if (isFrontendRebuildingEvent(event)) {
+    isRebuilding.value = true
+  }
+}
+
+function onFrontendRebuildSettled(event: Event) {
+  // Rebuild ended without a reload (i.e. failed — old dist kept). Just hide the
+  // overlay; the player keeps using the current frontend.
+  if (isFrontendRebuildSettledEvent(event)) {
+    isRebuilding.value = false
   }
 }
 
@@ -431,6 +467,8 @@ onMounted(() => {
   window.addEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
   window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   window.addEventListener(FRONTEND_RELOAD_EVENT, onFrontendReload)
+  window.addEventListener(FRONTEND_REBUILDING_EVENT, onFrontendRebuilding)
+  window.addEventListener(FRONTEND_REBUILD_SETTLED_EVENT, onFrontendRebuildSettled)
   window.addEventListener("keydown", onKeydown)
   void enterLauncher()
 })
@@ -442,6 +480,8 @@ onBeforeUnmount(() => {
   window.removeEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
   window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
   window.removeEventListener(FRONTEND_RELOAD_EVENT, onFrontendReload)
+  window.removeEventListener(FRONTEND_REBUILDING_EVENT, onFrontendRebuilding)
+  window.removeEventListener(FRONTEND_REBUILD_SETTLED_EVENT, onFrontendRebuildSettled)
   window.removeEventListener("keydown", onKeydown)
 })
 </script>
