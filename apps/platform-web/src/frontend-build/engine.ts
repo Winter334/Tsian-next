@@ -2,6 +2,7 @@ import * as esbuild from "esbuild-wasm"
 import type { FrontendFramework } from "@tsian/contracts"
 import { getLocalGameCard, listLocalGameCardFrontendFiles } from "../storage"
 import { cdnExternalPlugin } from "./plugins/cdn-external-plugin"
+import { createSfcPlugin } from "./plugins/sfc-plugin"
 import { workspaceSourcePlugin } from "./plugins/workspace-source-plugin"
 import { writeBackDist } from "./write-back"
 
@@ -70,6 +71,10 @@ export async function ensureEsbuildInitialized(): Promise<void> {
 interface FrameworkConfig {
   /** Core framework bare imports → esm.sh URL (platform-fixed versions). */
   coreImportMap: Map<string, string>
+  /** esbuild jsx config (react/preact use "automatic"; vue uses its own render fn). */
+  jsx?: "automatic"
+  /** jsxImportSource for automatic runtime (e.g. "react", "preact"). */
+  jsxImportSource?: string
 }
 
 function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
@@ -85,13 +90,13 @@ function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
       m.set("react-dom", "https://esm.sh/react-dom@18")
       m.set("react-dom/client", "https://esm.sh/react-dom@18/client")
       m.set("react/jsx-runtime", "https://esm.sh/react@18/jsx-runtime")
-      return { coreImportMap: m }
+      return { coreImportMap: m, jsx: "automatic", jsxImportSource: "react" }
     }
     case "preact": {
       const m = new Map<string, string>()
       m.set("preact", "https://esm.sh/preact@10")
       m.set("preact/jsx-runtime", "https://esm.sh/preact@10/jsx-runtime")
-      return { coreImportMap: m }
+      return { coreImportMap: m, jsx: "automatic", jsxImportSource: "preact" }
     }
     case "vanilla":
     case "svelte":
@@ -168,6 +173,15 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
 
   const cdnPlugin = cdnExternalPlugin({ coreImports: config.coreImportMap })
 
+  // Plugin order matters: sfcPlugin (specific .vue filter) must register its
+  // onLoad BEFORE workspaceSourcePlugin's catch-all, so .vue is compiled by
+  // the SFC compiler rather than returned as raw text.
+  const plugins: esbuild.Plugin[] = [cdnPlugin]
+  if (framework === "vue") {
+    plugins.push(createSfcPlugin({ sources }))
+  }
+  plugins.push(workspaceSourcePlugin({ sources }))
+
   const result = await esbuild.build({
     stdin: {
       contents: entryContent,
@@ -188,9 +202,12 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
     outdir: "assets",
     metafile: true,
     sourcemap: true,
-    plugins: [cdnPlugin, workspaceSourcePlugin({ sources })],
+    plugins,
     loader: { ".css": "css", ".json": "json" },
-    // vue/react/preact specific plugin + jsx config added in Phase 3.
+    // react/preact: automatic JSX runtime injects `import {jsx} from "<source>/jsx-runtime"`,
+    // which is a bare import already in the core map → cdnExternalPlugin keeps it external.
+    ...(config.jsx ? { jsx: config.jsx } : {}),
+    ...(config.jsxImportSource ? { jsxImportSource: config.jsxImportSource } : {}),
   })
 
   // Build the import map: core entries + collected bare imports → esm.sh URL.
@@ -205,7 +222,7 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
 
   const writeBack = await writeBackDist({
     cardId,
-    outputFiles: result.outputFiles,
+    outputFiles: result.outputFiles ?? [],
     metafile: result.metafile!,
     importMap,
   })
