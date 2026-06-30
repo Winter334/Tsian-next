@@ -53,7 +53,8 @@ function contentImagePartCount(content: string | ContentPart[]): number {
 function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"] | AiChatMessage["role"]): string {
   if (role === "system") return "system.agent"
   if (role === "tool") return "tool.observation"
-  if (text.startsWith("Workspace Agent 上下文：") || text.startsWith("目标 Agent 上下文：")) return "workspace.context"
+  if (text.startsWith("Workspace Agent 上下文（元信息）") || text.startsWith("目标 Agent 上下文（元信息）")) return "workspace.meta"
+  if (text.startsWith("Workspace 文件 ")) return "workspace.file"
   if (text.startsWith("早期任务摘要：") || text.startsWith("早期剧情摘要：") || text.startsWith("最近对话：") || text.startsWith("最近对话窗口：") || text === "（暂无历史对话）") return "history"
   if (text.startsWith("当前问答轮次：") || text.startsWith("当前回合：")) return "turn.runtime"
   if (text.startsWith("用户本轮提问：") || text.startsWith("玩家本轮输入：")) return "turn.input"
@@ -67,8 +68,11 @@ function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"]
 function segmentStability(label: string): AiDebugMessageSegment["stability"] {
   if (label === "system.agent") return "stable"
   if (label === "history" || label === "assistant.response") return "semi-stable"
-  // workspace.context 含 contextFiles 文件正文/skillIndex 等 Agent 写入后即变的
-  // 动态内容(见 design 设计修正记录 修正 1),不是稳定前缀。
+  // workspace.context 拆分后（任务 06-30-workspace-context-cache-split）：
+  // workspace.meta（header/skillIndex 等）和 workspace.file（各 contextFile 独立一条）
+  // 标 semi-stable——理论可变（agent 写 runtime.json），但希望多数轮次命中前缀缓存。
+  // 与 history 同语义。稳定的文件自然命中、动态的单独 miss 互不拖累。
+  if (label === "workspace.meta" || label === "workspace.file") return "semi-stable"
   return "dynamic"
 }
 
