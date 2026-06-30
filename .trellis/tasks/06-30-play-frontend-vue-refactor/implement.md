@@ -38,7 +38,7 @@
 - [x] `App.vue`：向导期 `:has(.setup-shell)` 隐藏 header+nav；主游玩态显示（Step 3 revealed 后直接进主游玩态，向导 Step 6 接入）
 - [x] **风险验证**：remote 回路 CORS/混合内容（design §7 风险 3）+ WebGL iframe 沙箱（Step 2 遗留）。平台卡设 `frontend.kind:"remote"` + `url:"http://localhost:5174"`，iframe 加载，验证 bridge ready + WebGL 燃烧（用户确认连接成功，WebGL 在 iframe 沙箱下正常）
 - [x] 验证：连上平台，ready 后进主游玩态（空 story）（用户 remote 回路验证通过；header/nav 出现时机待 Step 6 接向导后自然修正）
-- [ ] commit
+- [x] commit
 
 ### Step 4 — story 视图（核心）
 - [ ] `StoryView.vue`：52em 列 + 滚动 + 视差（巨字 0.3x / 余烬 0.1x，ScrollTrigger）
