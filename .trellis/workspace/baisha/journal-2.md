@@ -1846,3 +1846,37 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 103: workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断
+
+**Date**: 2026-06-30
+**Task**: workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+将单条 workspace.context message 拆成元信息段 + 逐文件段，稳定文件各自独立命中前缀缓存、动态文件单独 miss 互不拖累。无跨轮状态（拆分即全部杠杆）。entry/delegated 两路径对齐，debug segment 标 workspace.meta/workspace.file 为 semi-stable。删除死代码 formatAgentRuntimeContext/formatContextFiles。spec 更新 Message Cache Contract。诊断发现 DebugView 缓存显示用本地字符估算而非 provider 真实 cached_tokens，且 aiDebugRecords 内存 20 条不持久化不区分 provider——新开任务 06-30-debugview-cache-hit-display 完善（合并缓存命中+持久化+实时+provider区分）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `368f136` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 102
+- **Total Sessions**: 103
 - **Last Active**: 2026-06-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1848 | Active |
+| `journal-2.md` | ~1882 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 103 | 2026-06-30 | workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断 | `368f136` | `feat/workspace-context-cache-split` |
 | 102 | 2026-06-30 | platform-frontend-build-service Phase 6 + 验收期运行时修复 | `33b5799` | `master` |
 | 101 | 2026-06-29 | novel AIRP skill/agent 文档中文化 | `2653a16` | `refactor/novel-airp-schema-consolidation` |
 | 100 | 2026-06-29 | novel AIRP 维护/检索 skill 优化 | `262f971` | `refactor/novel-airp-schema-consolidation` |
