@@ -21,7 +21,7 @@
 - [x] `App.vue` 开屏状态机：`booting`（活 Logo 等待）→点击→Logo 汇聚收缩+奇点爆发（GSAP）→`burning`→`revealed`→向导/主游玩态
 - [ ] **风险验证**：remote 回路下 iframe 沙箱 WebGL `getContext` 可用性（design §7 风险 1）。若失败，暂停讨论 fallback  ← 留到 Step 3 remote 回路（需平台卡 remote 配置）
 - [x] 验证：开屏 Logo 动效 + 点击燃烧过渡烧穿（build 通过 + 用户浏览器视觉确认；定稿方案见下方注）
-- [ ] commit
+- [x] commit
 
 > 定稿方案（用户反馈多轮迭代）：
 > - Logo 不做进幕布纹理（SVG→纹理渲染不一致剧变），idle 层 SVG logo 点击后脉动+淡出消失
