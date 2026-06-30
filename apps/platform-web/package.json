@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "prebuild": "node -e \"require('fs').copyFileSync(require.resolve('esbuild-wasm/esbuild.wasm'), 'public/esbuild.wasm')\"",
     "build": "vue-tsc -b && vite build",
     "preview": "vite preview"
   },
@@ -42,6 +43,7 @@
     "@tailwindcss/vite": "^4.3.0",
     "@vitejs/plugin-vue": "^5.2.1",
     "autoprefixer": "^10.5.0",
+    "esbuild-wasm": "^0.28.1",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
     "typescript": "^5.7.3",
