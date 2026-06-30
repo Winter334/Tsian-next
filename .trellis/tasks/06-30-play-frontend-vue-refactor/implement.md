@@ -12,16 +12,24 @@
 - [x] `CornerBrackets.vue`：四角 L 形括号
 - [x] `useAtmosphere.ts`：余烬粒子 rAF + 鼠标 lerp 视差（参考 lachisa 花瓣算法改暖色微粒）
 - [x] 验证：`npm run dev`，空白页有氛围层 + 余烬 + 四角括号（build 通过 + 用户浏览器视觉确认）
-- [ ] commit
+- [x] commit
 
 ### Step 2 — Logo + 开屏动画
-- [ ] `lib/shader.ts`：搬 `burning-reveal` 的 vertex/fragment shader 字符串，火焰色调向琥珀 `vec3(6,1.8,0.2)`，烧蚀改中心向外推进
-- [ ] `TsianLogo.vue`：4 层 SVG 拆分（外框/内框/对角线/核心裂隙星+撕裂线+奇点），配色用 `--ember`/`--ember-bright`/`--blood`/`--prose`；`animated` prop true 时 GSAP 4 层动效（外框 40s 缓转/内框 30s 反向/对角线呼吸/核心 scale+glow 脉动/奇点 glow 脉冲）；false 时静态简化
-- [ ] `BurningReveal.vue`：WebGL 初始化 + 文字纹理 + `trigger` prop 驱动 `u_progress` 0→1（easeInOut ~3s）+ 完成 emit `revealed`
-- [ ] `App.vue` 开屏状态机：`booting`（活 Logo 等待）→点击→Logo 汇聚收缩+奇点爆发（GSAP）→`burning`→`revealed`→向导/主游玩态
-- [ ] **风险验证**：remote 回路下 iframe 沙箱 WebGL `getContext` 可用性（design §7 风险 1）。若失败，暂停讨论 fallback
-- [ ] 验证：开屏 Logo 动效 + 点击燃烧过渡烧穿
+- [x] `lib/shader.ts`：搬 `burning-reveal` 的 vertex/fragment shader 字符串，火焰色调向琥珀 `vec3(6,1.8,0.2)`，烧蚀改中心向外推进
+- [x] `TsianLogo.vue`：4 层 SVG 拆分（外框/内框/对角线/核心裂隙星+撕裂线+奇点），配色用 `--ember`/`--ember-bright`/`--blood`/`--prose`；`animated` prop true 时 GSAP 4 层动效（外框 40s 缓转/内框 30s 反向/对角线呼吸/核心 scale+glow 脉动/奇点 glow 脉冲）；false 时静态简化
+- [x] `BurningReveal.vue`：WebGL 初始化 + 文字纹理 + `trigger` prop 驱动 `u_progress` 0→1（easeInOut ~3s）+ 完成 emit `revealed`
+- [x] `App.vue` 开屏状态机：`booting`（活 Logo 等待）→点击→Logo 汇聚收缩+奇点爆发（GSAP）→`burning`→`revealed`→向导/主游玩态
+- [ ] **风险验证**：remote 回路下 iframe 沙箱 WebGL `getContext` 可用性（design §7 风险 1）。若失败，暂停讨论 fallback  ← 留到 Step 3 remote 回路（需平台卡 remote 配置）
+- [x] 验证：开屏 Logo 动效 + 点击燃烧过渡烧穿（build 通过 + 用户浏览器视觉确认；定稿方案见下方注）
 - [ ] commit
+
+> 定稿方案（用户反馈多轮迭代）：
+> - Logo 不做进幕布纹理（SVG→纹理渲染不一致剧变），idle 层 SVG logo 点击后脉动+淡出消失
+> - 幕布为纸张质感（fbm 噪声生成，非字样），照搬示例边缘推进 fbm 烧蚀算法
+> - 烧穿区 alpha=0 真透明，露出下层向导占位（层级：占位 z:0 / 幕布 z:1 / canvas z:50）
+> - 并行初始化消除前摇：点击即挂载 BurningReveal 并开始 rAF 燃烧（canvas hidden），logo 动画 0.4s 填充初始化，canvas delay 400ms 显示 emit shown 后才移除 paper-curtain（防闪现）
+> - shader 烧蚀阈值前置：main_noise = (1.-fbm(...))*0.8-0.2，消除"开始燃烧到有可见效果"的静默期
+> - duration 8s（边缘推进 fbm 节奏，非中心向外）
 
 ### Step 3 — bridge composable + App shell + remote 回路
 - [ ] `useTsian.ts`：单例 `createTsian()`，5 订阅回调映射到响应式状态，暴露 ready/sessionId/turn/history/checkpoints/workspace
