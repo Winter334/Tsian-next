@@ -646,7 +646,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
       if (request.resource === "ai-debug") {
         return {
-          items: getAiDebugRecords() as T[],
+          items: await getAiDebugRecords() as T[],
         } as DeepQueryResult<T>
       }
 

@@ -9,6 +9,12 @@ import {
 } from "../config/ai"
 import { getPlatformConfig } from "../config/platform-config"
 import type { ToolSchema } from "../agent-runtime/tool-schemas"
+import {
+  appendAiDebugRecord,
+  readAiDebugRecords,
+  AI_DEBUG_RECORDS_KEY,
+} from "../storage/ai-debug-records"
+import { localDb } from "../storage/db"
 
 export type { AiChatMessage, AiDebugRecord }
 export type { ContentPart }
@@ -144,7 +150,7 @@ export interface ModelCallResult {
    * Surface for context-window visualization; undefined when the provider
    * omits usage or the streaming path couldn't extract it.
    */
-  usage?: { input?: number; output?: number; total?: number }
+  usage?: { input?: number; output?: number; total?: number; cached?: number; cacheCreation?: number }
 }
 
 export interface GenerateAssistantReplyOptions {
@@ -154,32 +160,67 @@ export interface GenerateAssistantReplyOptions {
 }
 
 let aiDebugSequence = 0
-const aiDebugRecords: AiDebugRecord[] = []
-const MAX_AI_DEBUG_RECORDS = 20
+/**
+ * In-memory write buffer for AI debug records. Pushed records land here
+ * synchronously (so same-session reads see them immediately) and are
+ * fire-and-forget persisted to Dexie (`storage/ai-debug-records.ts`). Reads
+ * always hydrate from Dexie and merge this buffer, so a card-switch clear
+ * (which deletes the Dexie key) is naturally reflected on the next read
+ * without any cross-layer cache-reset call.
+ */
+const aiDebugRecordBuffer: AiDebugRecord[] = []
+
 /** 读平台配置 ai.chatTimeoutMs(默认 600000).同步读 cache. */
 function getChatTimeoutMs(): number {
   return getPlatformConfig().ai.chatTimeoutMs
 }
 
 function pushAiDebugRecord(record: AiDebugRecord): void {
-  aiDebugRecords.unshift(record)
-  aiDebugRecords.splice(MAX_AI_DEBUG_RECORDS)
+  // Sync buffer so same-session reads see the new record immediately, plus
+  // fire-and-forget async persist to Dexie (survives refresh, 7-day TTL,
+  // cleared on card switch). Diagnostics are non-critical — a failed write
+  // is silently dropped; the record still lives in the buffer for this session.
+  aiDebugRecordBuffer.unshift(record)
+  void appendAiDebugRecord(record).catch(() => { /* ignore: diagnostics persist */ })
 }
 
 function updateAiDebugRecord(id: string, patch: Partial<AiDebugRecord>): void {
-  const index = aiDebugRecords.findIndex((record) => record.id === id)
+  // Update the in-memory buffer entry (source of truth for current session).
+  const index = aiDebugRecordBuffer.findIndex((record) => record.id === id)
   if (index < 0) {
     return
   }
-
-  aiDebugRecords[index] = {
-    ...aiDebugRecords[index],
+  aiDebugRecordBuffer[index] = {
+    ...aiDebugRecordBuffer[index],
     ...patch,
   }
+  // Persist the patched record (fire-and-forget). Re-read + re-write so the
+  // Dexie copy reflects the patch; the buffer is the session source of truth.
+  void persistPatchedRecord(id, patch).catch(() => { /* ignore: diagnostics persist */ })
 }
 
-export function getAiDebugRecords(): AiDebugRecord[] {
-  return aiDebugRecords.map((record) => ({
+/** Best-effort: re-read Dexie, apply patch to the matching record, write back. */
+async function persistPatchedRecord(id: string, patch: Partial<AiDebugRecord>): Promise<void> {
+  const persisted = await readAiDebugRecords()
+  const idx = persisted.findIndex((r) => r.id === id)
+  if (idx < 0) return
+  persisted[idx] = { ...persisted[idx], ...patch }
+  await localDb.meta.put({
+    key: AI_DEBUG_RECORDS_KEY,
+    value: JSON.stringify(persisted),
+  })
+}
+
+export async function getAiDebugRecords(): Promise<AiDebugRecord[]> {
+  // Always hydrate from Dexie (handles card-switch clear naturally) and merge
+  // any buffer records not yet persisted or added this session.
+  const persisted = await readAiDebugRecords()
+  const persistedIds = new Set(persisted.map((r) => r.id))
+  const merged = [
+    ...aiDebugRecordBuffer.filter((r) => !persistedIds.has(r.id)),
+    ...persisted,
+  ]
+  return merged.map((record) => ({
     ...record,
     messages: record.messages?.map((message) => ({ ...message })),
     input: record.input ? [...record.input] : undefined,
@@ -338,29 +379,84 @@ function buildChatCompletionsRequestBody(input: {
   }
 }
 
+/**
+ * Extract token usage (input/output/total + cache hit/creation) from a provider
+ * response payload. Paths differ per provider:
+ *
+ * - OpenAI / DeepSeek / Claude: usage lives at `payload.usage`.
+ * - Gemini: usage lives at `payload.usageMetadata` (different key, different
+ *   field names). Without this branch Gemini's native API usage is never
+ *   extracted — a pre-existing defect this function now fixes.
+ *
+ * Cache fields (all optional, omitted when the provider doesn't report them):
+ * - OpenAI: `usage.prompt_tokens_details.cached_tokens`
+ * - DeepSeek: `usage.prompt_cache_hit_tokens`
+ * - Claude: `usage.cache_read_input_tokens` (+ `cache_creation_input_tokens`)
+ * - Gemini: `usageMetadata.cachedContentTokenCount`
+ *
+ * `kind` is optional for back-compat with any caller that doesn't have it; when
+ * omitted, cache fields are not extracted (only input/output/total).
+ */
 function extractUsageFromPayload(
   payload: unknown,
-): { input?: number; output?: number; total?: number } | undefined {
+  kind?: BrowserAiProviderKind,
+): { input?: number; output?: number; total?: number; cached?: number; cacheCreation?: number } | undefined {
   if (typeof payload !== "object" || payload === null) return undefined
-  const usage = (payload as { usage?: unknown }).usage
-  if (typeof usage !== "object" || usage === null) return undefined
 
-  const u = usage as Record<string, unknown>
-  const pickNum = (key: string): number | undefined => {
-    const v = u[key]
+  const pickNum = (obj: Record<string, unknown>, key: string): number | undefined => {
+    const v = obj[key]
     return typeof v === "number" && Number.isFinite(v) ? v : undefined
   }
 
-  const input = pickNum("prompt_tokens") ?? pickNum("input_tokens")
-  const output = pickNum("completion_tokens") ?? pickNum("output_tokens")
+  // Gemini: usage lives at payload.usageMetadata with different field names.
+  if (kind === "gemini") {
+    const um = (payload as { usageMetadata?: unknown }).usageMetadata
+    if (typeof um !== "object" || um === null) return undefined
+    const u = um as Record<string, unknown>
+    const input = pickNum(u, "promptTokenCount")
+    const output = pickNum(u, "candidatesTokenCount")
+    const total = pickNum(u, "totalTokenCount")
+    const cached = pickNum(u, "cachedContentTokenCount")
+    if (input === undefined && output === undefined && total === undefined && cached === undefined) {
+      return undefined
+    }
+    return { input, output, total, ...(cached !== undefined ? { cached } : {}) }
+  }
+
+  // OpenAI / DeepSeek / Claude: usage at payload.usage.
+  const usage = (payload as { usage?: unknown }).usage
+  if (typeof usage !== "object" || usage === null) return undefined
+  const u = usage as Record<string, unknown>
+
+  const input = pickNum(u, "prompt_tokens") ?? pickNum(u, "input_tokens")
+  const output = pickNum(u, "completion_tokens") ?? pickNum(u, "output_tokens")
   const total =
-    pickNum("total_tokens") ??
+    pickNum(u, "total_tokens") ??
     (typeof input === "number" && typeof output === "number" ? input + output : undefined)
 
-  if (input === undefined && output === undefined && total === undefined) {
+  // Cache fields differ per provider kind.
+  let cached: number | undefined
+  let cacheCreation: number | undefined
+  if (kind === "openai-compatible") {
+    // OpenAI: nested in prompt_tokens_details.cached_tokens
+    const details = u["prompt_tokens_details"]
+    if (typeof details === "object" && details !== null) {
+      cached = pickNum(details as Record<string, unknown>, "cached_tokens")
+    }
+  } else if (kind === "deepseek") {
+    cached = pickNum(u, "prompt_cache_hit_tokens")
+  } else if (kind === "claude") {
+    cached = pickNum(u, "cache_read_input_tokens")
+    cacheCreation = pickNum(u, "cache_creation_input_tokens")
+  }
+
+  if (input === undefined && output === undefined && total === undefined && cached === undefined && cacheCreation === undefined) {
     return undefined
   }
-  return { input, output, total }
+  const result: { input?: number; output?: number; total?: number; cached?: number; cacheCreation?: number } = { input, output, total }
+  if (cached !== undefined) result.cached = cached
+  if (cacheCreation !== undefined) result.cacheCreation = cacheCreation
+  return result
 }
 
 function extractErrorMessage(payload: unknown): string | undefined {
@@ -1199,6 +1295,7 @@ export async function generateAssistantReply(
     kind: "chat",
     label: options.debugLabel ?? "chat",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message) => ({ ...message })),
     messageSegments,
@@ -1250,7 +1347,7 @@ export async function generateAssistantReply(
   }
 
   const content = adapter.extractText(payload)
-  const usage = extractUsageFromPayload(payload)
+  const usage = extractUsageFromPayload(payload, config.kind)
   updateAiDebugRecord(requestId, { responseText: content, usage })
 
   logDebugGroup(`[Tsian AI ${requestId}] response`, {
@@ -1314,6 +1411,7 @@ export async function generateAssistantReplyNative(
     kind: "chat",
     label: options.debugLabel ?? "chat-native",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message): AiChatMessage => {
       if (message.role === "tool") {
@@ -1376,7 +1474,7 @@ export async function generateAssistantReplyNative(
   }
 
   const result = adapter.extractNativeResult(payload)
-  const usage = extractUsageFromPayload(payload)
+  const usage = extractUsageFromPayload(payload, config.kind)
   updateAiDebugRecord(requestId, { responseText: result.raw, usage })
 
   logDebugGroup(`[Tsian AI ${requestId}] native response`, {
@@ -1469,6 +1567,7 @@ export async function streamAssistantReplyNative(
     kind: "chat",
     label: options.debugLabel ?? "chat-stream",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message): AiChatMessage => {
       if (message.role === "tool") {
@@ -1533,7 +1632,7 @@ export async function streamAssistantReplyNative(
     try {
       const payload = await readJsonPayload(response)
       const result = adapter.extractNativeResult(payload)
-      const usage = extractUsageFromPayload(payload)
+      const usage = extractUsageFromPayload(payload, config.kind)
       updateAiDebugRecord(requestId, { responseText: result.raw, usage })
       logDebugGroup(`[Tsian AI ${requestId}] stream non-SSE fallback`, {
         text: previewText(result.text, 2400),
@@ -1605,7 +1704,7 @@ export async function streamAssistantReplyNative(
         // include_usage, Claude message_delta, Gemini usageMetadata). Extract
         // on every chunk; the last non-undefined one wins (usage only appears
         // once, near the end).
-        const chunkUsage = extractUsageFromPayload(data)
+        const chunkUsage = extractUsageFromPayload(data, config.kind)
         if (chunkUsage) {
           streamUsage = chunkUsage
         }
@@ -1753,6 +1852,7 @@ export async function streamAssistantReplyText(
     kind: "chat",
     label: options.debugLabel ?? "chat-stream-text",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message) => ({ ...message })),
     messageSegments,
@@ -1809,7 +1909,7 @@ export async function streamAssistantReplyText(
     try {
       const payload = await readJsonPayload(response)
       const content = adapter.extractText(payload)
-      const usage = extractUsageFromPayload(payload)
+      const usage = extractUsageFromPayload(payload, config.kind)
       updateAiDebugRecord(requestId, { responseText: content, usage })
       logDebugGroup(`[Tsian AI ${requestId}] text stream non-SSE fallback`, {
         content: previewText(content, 2400),
@@ -1877,7 +1977,7 @@ export async function streamAssistantReplyText(
         }
 
         // Provider usage arrives in the terminating chunk.
-        const chunkUsage = extractUsageFromPayload(data)
+        const chunkUsage = extractUsageFromPayload(data, config.kind)
         if (chunkUsage) {
           streamUsage = chunkUsage
         }

@@ -15,6 +15,7 @@ import {
   normalizeWorkspaceFilePath,
 } from "./workspace"
 import { listLocalSaves, deleteLocalSave } from "./saves"
+import { clearAiDebugRecords } from "./ai-debug-records"
 import {
   DEFAULT_FRONTEND_BINDING,
   defaultFrontendFiles,
@@ -377,6 +378,11 @@ export async function setActiveGameCardId(cardId: string | null): Promise<void> 
     key: ACTIVE_GAME_CARD_KEY,
     value: normalized,
   })
+  // Clear AI debug records on card switch: different cards have different
+  // agents/workspace/contextPaths, so cache-hit rates aren't comparable across
+  // cards. Mirrors the per-save trace lifecycle convention.
+  // Fire-and-forget — diagnostic data, non-critical path.
+  void clearAiDebugRecords().catch(() => { /* ignore: diagnostics cleanup */ })
 }
 
 export async function putLocalGameCard(

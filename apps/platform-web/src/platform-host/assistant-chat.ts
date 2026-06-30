@@ -56,6 +56,7 @@ import { binaryPlaceholderText } from "@/lib/media-type"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import { createFrontendInspector } from "./frontend-inspector"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
+import { emitTurnDebugReady } from "../debug-events"
 import {
   getPlatformActiveGameCard,
   listEffectiveWorkspaceFilesForActiveSave,
@@ -749,6 +750,12 @@ export async function runAssistantChat(
     // Commit workspace changes (no checkpoint, no turn increment).
     const finalFiles = activeWorkspaceTransaction.finalWorkspaceFiles()
     await commitAssistantWorkspaceFiles(activeSaveId, finalFiles)
+
+    // Notify debug subscribers (DebugView) that new AI debug records are ready.
+    // Mirrors master turn completion in platform-host/index.ts — without this,
+    // DebugView's onTurnDebugReady subscription never fires for assistant turns,
+    // so the dashboard stays stale until manual refresh/reopen.
+    emitTurnDebugReady(nextAssistantTurn)
 
     return {
       replyText: result.replyText,
