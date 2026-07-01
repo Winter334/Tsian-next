@@ -164,3 +164,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 110: Add OpenAI Responses provider
+
+**Date**: 2026-07-02
+**Task**: Add OpenAI Responses provider
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+Implemented and archived OpenAI Responses provider support: added openai-responses provider kind, /responses adapter for text/native streaming and non-streaming paths, Responses tool-call mapping, usage/error parsing, debug contract update, and documented local stateless replay. Builds passed and user verified primary streaming native plus non-streaming text modes.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `58f8e5f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

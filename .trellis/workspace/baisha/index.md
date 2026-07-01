@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 109
-- **Last Active**: 2026-07-01
+- **Total Sessions**: 110
+- **Last Active**: 2026-07-02
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~166 | Active |
+| `journal-3.md` | ~200 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 110 | 2026-07-02 | Add OpenAI Responses provider | `58f8e5f` | `feat/workspace-context-cache-split` |
 | 109 | 2026-07-01 | Step 3 角色设定向导 + 脚本/系统监视器修复 | `250e264` | `feat/workspace-context-cache-split` |
 | 108 | 2026-07-01 | 统一三处脚本 runner 注入（createBrowserScriptRunners 工厂） | `8e7449f` | `feat/workspace-context-cache-split` |
 | 107 | 2026-07-01 | Task 超时从总时长改为无响应超时 | `de84e2e` | `feat/workspace-context-cache-split` |
