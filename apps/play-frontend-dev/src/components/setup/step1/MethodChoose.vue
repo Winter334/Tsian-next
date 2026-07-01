@@ -79,15 +79,15 @@ onUnmounted(() => {
   gap: 16px;
   padding: 28px 24px;
   min-width: 220px;
-  background: var(--void-deep);
-  border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(20, 14, 8, 0.85), rgba(10, 5, 6, 0.9));
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
   color: var(--prose);
   font-family: var(--font-serif);
   box-shadow:
-    inset 0 0 20px rgba(0, 0, 0, 0.4),
+    inset 0 0 20px rgba(181, 137, 61, 0.04),
     0 4px 16px rgba(0, 0, 0, 0.3);
   transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s;
 }
@@ -147,11 +147,11 @@ onUnmounted(() => {
   width: 8px;
   height: 8px;
   border: 1px solid var(--ember);
-  opacity: 0.3;
+  opacity: 0.45;
   transition: opacity 0.25s;
 }
 .method-card:hover .bracket {
-  opacity: 0.6;
+  opacity: 0.7;
 }
 .bracket.tl { top: 5px; left: 5px; border-right: none; border-bottom: none; }
 .bracket.tr { top: 5px; right: 5px; border-left: none; border-bottom: none; }

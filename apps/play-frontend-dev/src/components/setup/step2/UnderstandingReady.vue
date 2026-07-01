@@ -180,14 +180,14 @@ onMounted(async () => {
   gap: 14px;
   padding: 22px 20px;
   min-width: 180px;
-  background: var(--void-deep);
-  border: 1px solid var(--line);
+  background: linear-gradient(135deg, rgba(20, 14, 8, 0.85), rgba(10, 5, 6, 0.9));
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   cursor: pointer;
   text-align: left;
   color: var(--prose);
   font-family: var(--font-serif);
-  box-shadow: inset 0 0 16px rgba(0, 0, 0, 0.3);
+  box-shadow: inset 0 0 16px rgba(181, 137, 61, 0.04), 0 4px 16px rgba(0, 0, 0, 0.3);
   transition: transform 0.25s, border-color 0.25s, box-shadow 0.25s, opacity 0.25s;
 }
 .branch-card:hover:not(:disabled) {
@@ -249,12 +249,12 @@ onMounted(async () => {
   width: 7px;
   height: 7px;
   border: 1px solid var(--ember);
-  opacity: 0.3;
+  opacity: 0.45;
   transition: opacity 0.25s;
 }
 .branch-card:hover .bracket,
 .branch-card.selected .bracket {
-  opacity: 0.6;
+  opacity: 0.7;
 }
 .bracket.tl { top: 4px; left: 4px; border-right: none; border-bottom: none; }
 .bracket.tr { top: 4px; right: 4px; border-left: none; border-bottom: none; }
