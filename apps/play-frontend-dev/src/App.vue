@@ -24,7 +24,7 @@ const curtainReplaced = ref(false)
 // nav 折叠状态（localStorage 持久化）
 const NAV_COLLAPSED_KEY = "tsian.navCollapsed"
 const navCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === "true")
-const navCurrent = ref<"story" | "checkpoints" | "settings">("story")
+const navCurrent = ref<"story" | "settings">("story")
 
 watch(navCollapsed, (v) => {
   localStorage.setItem(NAV_COLLAPSED_KEY, String(v))
@@ -49,7 +49,7 @@ function onToggleNav() {
   navCollapsed.value = !navCollapsed.value
 }
 
-function onNavigate(item: "story" | "checkpoints" | "settings") {
+function onNavigate(item: "story" | "settings") {
   navCurrent.value = item
 }
 </script>
@@ -75,7 +75,7 @@ function onNavigate(item: "story" | "checkpoints" | "settings") {
       <AppHeader
         v-if="phase === 'revealed'"
         :ready="ready"
-        :turn-count="turnCount"
+        :turn-count="Math.max(0, turnCount - 1)"
         :nav-collapsed="navCollapsed"
         @toggle-nav="onToggleNav"
       />
@@ -99,6 +99,7 @@ function onNavigate(item: "story" | "checkpoints" | "settings") {
     <!-- burning：WebGL 燃烧幕布。挂载即开始燃烧（canvas hidden），delay 后显示+emit shown -->
     <BurningReveal
       v-if="phase === 'burning'"
+      variant="paper"
       :duration="5000"
       :delay="400"
       @shown="onCurtainShown"

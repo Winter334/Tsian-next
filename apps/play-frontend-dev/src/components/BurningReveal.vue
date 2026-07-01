@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue"
-import { easeInOut, initBurningGl, type BurnContext } from "../lib/shader"
+import { easeInOut, initBurningGl, type BurnContext, type BurnVariant } from "../lib/shader"
 
 /**
  * BurningReveal — WebGL 燃烧幕布（纸张纹理）。
@@ -24,8 +24,10 @@ const props = withDefaults(
     duration?: number
     /** canvas 延迟显示毫秒数（等 logo 动画结束），期间 rAF 已在跑 */
     delay?: number
+    /** 纹理变体：paper=亮色纸张（开屏），scroll=暗色卷轴（恢复检查点） */
+    variant?: BurnVariant
   }>(),
-  { duration: 8000, delay: 250 },
+  { duration: 8000, delay: 250, variant: "paper" },
 )
 
 const emit = defineEmits<{
@@ -128,7 +130,7 @@ function startBurn() {
 onMounted(() => {
   const canvas = canvasRef.value
   if (!canvas) return
-  ctx = initBurningGl(canvas)
+  ctx = initBurningGl(canvas, props.variant)
   if (!ctx) {
     console.error("BurningReveal: WebGL 不可用，跳过燃烧过渡")
     emit("revealed")

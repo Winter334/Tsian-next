@@ -270,50 +270,63 @@ export function useTsian() {
       // 只首次加载，避免视图切换重复调用覆盖实时 stream（镜像 legacy：reloadHistory 仅重载/回溯后用）
       if (historyLoaded) return
       historyLoaded = true
-      const h = await tsian.history.get()
-      // 从 SessionHistoryEntry.timeline 重建 stream——按原始顺序遍历所有 kind，
-      // 一个都不丢（镜像 legacy renderSessionHistory）。
-      // 顺序由 timeline 数组保证：user → interim/thought/tool → assistant → options 交织。
-      const items: StreamItem[] = []
-      for (const entry of h.entries) {
-        for (const item of entry.timeline) {
-          if (item.kind === "user") {
-            items.push({ kind: "user", id: `h-user-${entry.turn}-${items.length}`, content: item.content })
-          } else if (item.kind === "assistant") {
-            const parsed = parseStoryOptions(item.content)
-            items.push({
-              kind: "assistant",
-              id: `h-assistant-${entry.turn}-${items.length}`,
-              content: parsed.cleanText,
-              tokens: item.stats?.totalTokens,
-            })
-          } else if (item.kind === "interim") {
-            items.push({ kind: "interim", id: `h-interim-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null })
-          } else if (item.kind === "thought") {
-            items.push({ kind: "thought", id: `h-thought-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null, collapsed: true })
-          } else if (item.kind === "tool") {
-            items.push({ kind: "tool", id: `h-tool-${entry.turn}-${items.length}`, round: item.round, name: item.name, status: item.status, agentId: item.agentId ?? "" })
-          }
-          // options 不进 stream（实时和历史选项统一由 turnOptions 单轮语义管，
-          // 见下方 loadHistory 末尾兜底恢复最后一轮未选选项）
-        }
-      }
-      stream.value = items
-      turnCount.value = h.turn
-      // 兜底恢复最后一轮未选的选项：会话中途关闭再重开时，玩家尚未选择
-      // 的剧情选项应继续显示。host 已把 options 持久化进 timeline，这里从
-      // 最后一轮倒序找 options 项填进 turnOptions（实时轮选项走 onTurnEnd 填充，
-      // 此处只补 loadHistory 时的一次性恢复）。
-      if (h.entries.length > 0) {
-        const lastEntry = h.entries[h.entries.length - 1]!
-        const lastOptions = [...lastEntry.timeline].reverse().find((it) => it.kind === "options")
-        if (lastOptions && lastOptions.kind === "options" && lastOptions.items.length > 0) {
-          turnOptions.value = lastOptions.items
-        }
-      }
+      await reloadHistory()
     },
     async loadCheckpoints(): Promise<void> {
       checkpoints.value = await tsian.checkpoints.list()
     },
+    /** 恢复到指定检查点。host 执行 restore（裁剪 turn 文件 + 删除未来 checkpoint）后，
+     *  前端重建 stream + checkpoints + 兜底恢复最后一轮选项。 */
+    async restore(checkpointId: string): Promise<void> {
+      await tsian.checkpoints.restore(checkpointId)
+      await reloadHistory()
+      await tsian.checkpoints.list().then((cps) => { checkpoints.value = cps })
+    },
+  }
+
+  /** 从 workspace turn 文件单源重建对话（首次加载 + restore 回溯后复用）。
+   *  绕过 historyLoaded 保护——由调用方决定是否允许重载。 */
+  async function reloadHistory(): Promise<void> {
+    const h = await tsian.history.get()
+    // 从 SessionHistoryEntry.timeline 重建 stream——按原始顺序遍历所有 kind，
+    // 一个都不丢（镜像 legacy renderSessionHistory）。
+    // 顺序由 timeline 数组保证：user → interim/thought/tool → assistant → options 交织。
+    const items: StreamItem[] = []
+    for (const entry of h.entries) {
+      for (const item of entry.timeline) {
+        if (item.kind === "user") {
+          items.push({ kind: "user", id: `h-user-${entry.turn}-${items.length}`, content: item.content })
+        } else if (item.kind === "assistant") {
+          const parsed = parseStoryOptions(item.content)
+          items.push({
+            kind: "assistant",
+            id: `h-assistant-${entry.turn}-${items.length}`,
+            content: parsed.cleanText,
+            tokens: item.stats?.totalTokens,
+          })
+        } else if (item.kind === "interim") {
+          items.push({ kind: "interim", id: `h-interim-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null })
+        } else if (item.kind === "thought") {
+          items.push({ kind: "thought", id: `h-thought-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null, collapsed: true })
+        } else if (item.kind === "tool") {
+          items.push({ kind: "tool", id: `h-tool-${entry.turn}-${items.length}`, round: item.round, name: item.name, status: item.status, agentId: item.agentId ?? "" })
+        }
+        // options 不进 stream（实时和历史选项统一由 turnOptions 单轮语义管，
+        // 见下方兜底恢复最后一轮未选选项）
+      }
+    }
+    stream.value = items
+    turnCount.value = h.turn
+    // 兜底恢复最后一轮未选的选项：会话中途关闭再重开时，玩家尚未选择
+    // 的剧情选项应继续显示。host 已把 options 持久化进 timeline，这里从
+    // 最后一轮倒序找 options 项填进 turnOptions（实时轮选项走 onTurnEnd 填充，
+    // 此处只补 loadHistory/reloadHistory 时的一次性恢复）。
+    if (h.entries.length > 0) {
+      const lastEntry = h.entries[h.entries.length - 1]!
+      const lastOptions = [...lastEntry.timeline].reverse().find((it) => it.kind === "options")
+      if (lastOptions && lastOptions.kind === "options" && lastOptions.items.length > 0) {
+        turnOptions.value = lastOptions.items
+      }
+    }
   }
 }

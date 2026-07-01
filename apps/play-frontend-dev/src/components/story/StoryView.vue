@@ -7,6 +7,9 @@ import RoundProcess from "./RoundProcess.vue"
 import TurnMeta from "./TurnMeta.vue"
 import StoryOptions from "./StoryOptions.vue"
 import Composer from "./Composer.vue"
+import CheckpointMark from "../checkpoints/CheckpointMark.vue"
+import RestoreDialog from "../checkpoints/RestoreDialog.vue"
+import BurningReveal from "../BurningReveal.vue"
 import { useTsian, type StreamItem } from "../../composables/useTsian"
 import { useTurnState } from "../../composables/useTurnState"
 
@@ -27,9 +30,12 @@ const {
   stream,
   streamingText,
   turnOptions,
+  checkpoints,
   send,
   stop,
+  restore,
   loadHistory,
+  loadCheckpoints,
 } = useTsian()
 
 const storyRef = ref<HTMLElement | null>(null)
@@ -49,34 +55,109 @@ watch(() => stream.value.length, () => maybeScrollDown(), { flush: "post" })
 // 否则选项被推到视口下方、被 fixed Composer 遮住
 watch(turnOptions, () => maybeScrollDown(), { flush: "post" })
 
-// 轮次状态变化：streaming 开始计时，standby 停止
+// 轮次状态变化：streaming 开始计时，standby 停止 + 刷新检查点
+// （新 turn 结束后 host 会自动创建 after-turn 检查点，需重新加载才能实时显示印记）
 watch(turnPhase, (phase) => {
   if (phase === "streaming") beginTurnTimer()
-  else if (phase === "standby") stopTurnTimer()
+  else if (phase === "standby") {
+    stopTurnTimer()
+    void loadCheckpoints()
+  }
 })
 
-// ready 后加载历史（immediate：StoryView 挂载时 ready 可能已 true）。
+// ready 后加载历史 + 检查点（immediate：StoryView 挂载时 ready 可能已 true）。
 // useTsian 内部有 historyLoaded 模块级标志，loadHistory 只首次执行，避免覆盖实时 stream。
 watch(ready, (r) => {
-  if (r) void loadHistory()
+  if (r) {
+    void loadHistory()
+    void loadCheckpoints()
+  }
 }, { immediate: true })
+
+// ── 检查点恢复对话框 + 燃烧过渡 ──
+const restoreTarget = ref<{ id: string; turn: number; turnsAfter: number } | null>(null)
+const restoreOpen = ref(false)
+const restoring = ref(false)  // 燃烧过渡进行中（挂载 BurningReveal scroll 变体）
+const curtainReplaced = ref(false)  // canvas 已可见，暗色遮罩已移除
+
+function onCheckpointClick(cp: { id: string; turn: number }) {
+  // turnCount 是"下一个 turn 编号"（maxTurn + 1），已落盘的最后一轮是 turnCount - 1。
+  // 此检查点之后会被抹除的轮次数 = 已落盘最后一轮 - 此检查点 turn
+  const turnsAfter = Math.max(0, turnCount.value - 1 - cp.turn)
+  restoreTarget.value = { id: cp.id, turn: cp.turn, turnsAfter }
+  restoreOpen.value = true
+}
+
+async function onRestoreConfirm() {
+  if (!restoreTarget.value) return
+  const id = restoreTarget.value.id
+  // 挂幕布 + 遮罩盖住屏幕，再关 Dialog
+  curtainReplaced.value = false
+  restoring.value = true
+  restoreOpen.value = false
+  restoreTarget.value = null
+  // 后台执行 restore（host 裁剪 + reloadHistory + loadCheckpoints 重建）
+  await restore(id)
+  // restore 完成，对话流已重建在幕布下方——等燃烧烧穿后移除幕布
+}
+
+/** BurningReveal canvas 可见后移除暗色遮罩（类比开屏 onCurtainShown 移除 paper-curtain）。
+ *  遮罩只在 canvas 初始化期间盖住旧内容，canvas 可见后必须移除——
+ *  否则烧穿区露出的是遮罩而非重建的对话流。 */
+function onCurtainShown() {
+  curtainReplaced.value = true
+}
+
+function onRestoreRevealed() {
+  restoring.value = false
+  curtainReplaced.value = false
+}
 
 // 工具节点合并：同 round 连续 tool 合并成 tool-group（避免堆叠）
 // 过程聚合：连续的过程节点（interim/thought/tool/tool-group）整体收进一个 round-process
 // 大折叠，降低过程噪音。user/assistant 原样透出，保持"玩家之举 → 推演 → 正文"的叙事流。
+// 检查点标记：在对应 turn 的 assistant 消息后插入 CheckpointMark。
 type MergedItem =
   | Extract<StreamItem, { kind: "user" }>
   | Extract<StreamItem, { kind: "assistant" }>
   | { kind: "round-process"; id: string; round: number; nodes: ProcessNodeData[] }
+  | { kind: "checkpoint"; id: string; checkpointId: string; turn: number; createdAt: number }
+
+// checkpoint turn → 数据映射，供 mergedStream 快速查找
+const checkpointByTurn = computed(() => {
+  const map = new Map<number, { id: string; turn: number; createdAt: number }>()
+  for (const cp of checkpoints.value) {
+    map.set(cp.turn, cp)
+  }
+  return map
+})
 
 const mergedStream = computed(() => {
   const result: MergedItem[] = []
   const src = stream.value
+  const cpMap = checkpointByTurn.value
+  // initial 检查点（turn=0）在对话流最前面插入——它在任何 user 消息之前就存在
+  const cp0 = cpMap.get(0)
+  if (cp0) {
+    result.push({ kind: "checkpoint", id: `cp-${cp0.turn}`, checkpointId: cp0.id, turn: cp0.turn, createdAt: cp0.createdAt })
+  }
+  let currentTurn = 0  // 追踪当前 turn 编号（user 出现时 +1）
   let i = 0
   while (i < src.length) {
     const item = src[i]!
-    if (item.kind === "user" || item.kind === "assistant") {
+    if (item.kind === "user") {
+      currentTurn += 1
       result.push(item)
+      i += 1
+      continue
+    }
+    if (item.kind === "assistant") {
+      result.push(item)
+      // 在该 turn 的 assistant 后插入检查点标记（如果有）
+      const cp = cpMap.get(currentTurn)
+      if (cp) {
+        result.push({ kind: "checkpoint", id: `cp-${cp.turn}`, checkpointId: cp.id, turn: cp.turn, createdAt: cp.createdAt })
+      }
       i += 1
       continue
     }
@@ -158,6 +239,11 @@ function onEdit(content: string) {
             @edit="onEdit"
           />
           <NarrativeMessage v-else-if="item.kind === 'assistant'" :content="item.content" />
+          <CheckpointMark
+            v-else-if="item.kind === 'checkpoint'"
+            :turn="item.turn"
+            @restore="onCheckpointClick({ id: item.checkpointId, turn: item.turn })"
+          />
           <RoundProcess v-else :nodes="item.nodes" :round="item.round" />
         </template>
 
@@ -173,7 +259,7 @@ function onEdit(content: string) {
           v-if="turnPhase === 'standby'"
           :elapsed-ms="elapsedMs"
           :tokens="currentTokens"
-          :turn="turnCount"
+          :turn="Math.max(0, turnCount - 1)"
         />
 
         <!-- 剧情选项 -->
@@ -200,6 +286,27 @@ function onEdit(content: string) {
       @send="onSend"
       @stop="onStop"
     />
+
+    <!-- 检查点恢复确认弹窗 -->
+    <RestoreDialog
+      :open="restoreOpen"
+      :turn="restoreTarget?.turn ?? 0"
+      :turns-after="restoreTarget?.turnsAfter ?? 0"
+      @update:open="(v) => (restoreOpen = v)"
+      @confirm="onRestoreConfirm"
+    />
+
+    <!-- 恢复过渡：暗色遮罩在 canvas 可见前盖住旧内容（类比开屏 paper-curtain），
+         BurningReveal @shown 后移除遮罩，烧穿区直接露出重建的对话流 -->
+    <div v-if="restoring && !curtainReplaced" class="restore-curtain" aria-hidden="true" />
+    <BurningReveal
+      v-if="restoring"
+      variant="scroll"
+      :duration="4000"
+      :delay="100"
+      @shown="onCurtainShown"
+      @revealed="onRestoreRevealed"
+    />
   </section>
 </template>
 
@@ -216,6 +323,16 @@ function onEdit(content: string) {
   padding-right: 180px; /* 让出 nav 空间 */
   padding-left: 0;
   overflow: hidden;     /* flex 容器本身不滚动，滚动交给 .story-scroll */
+}
+
+/* 恢复过渡 CSS 遮罩：立即盖住屏幕（不依赖 WebGL 初始化），
+   BurningReveal canvas（z-index 50）可见后覆盖它，烧穿后随 v-if 移除 */
+.restore-curtain {
+  position: fixed;
+  inset: 0;
+  z-index: 49;
+  background: var(--void);
+  pointer-events: none;
 }
 
 /* 滚动区：flex:1 占满 Composer 以上的全部空间 */

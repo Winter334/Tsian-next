@@ -45,8 +45,7 @@ apps/play-frontend-dev/src/
 │   │   │   └── UnderstandingFailed.vue
 │   │   └── StepStub.vue        # step3-5 占位
 │   ├── checkpoints/
-│   │   ├── CheckpointView.vue  # 卡片列表
-│   │   ├── CheckpointCard.vue
+│   │   ├── CheckpointMark.vue  # 对话流内 ember 分隔印记（旋转 glyph + 常驻微动效）
 │   │   └── RestoreDialog.vue   # Reka Dialog 恢复确认
 │   └── Composer.vue            # 输入区（send/stop + 聚焦动效）
 ├── composables/
@@ -115,7 +114,7 @@ apps/play-frontend-dev/src/
 2. **Logo + 开屏**：`TsianLogo`+`BurningReveal`+开屏状态机。验证：开屏 Logo 动效+点击燃烧过渡。
 3. **bridge composable + App shell**：`useTsian`+`AppHeader`+`AppNav`。验证：remote 回路连上平台，ready 后进主游玩态（空 story）。
 4. **story 视图**：`StoryView`+各消息组件+`StoryOptions`+`Composer`。验证：完整对话流+选项+发送。删除 ask_user。
-5. **checkpoints**：`CheckpointView`+`RestoreDialog`。验证：列表+恢复。
+5. **checkpoints**：对话流内 `CheckpointMark`+`RestoreDialog`。验证：流内印记 + 恢复。
 6. **向导 step1**：`SetupWizard`壳+`SetupStepper`+step1 各子屏。验证：导入流程+auto-layout 切换。
 7. **向导 step2**：understanding 各状态。验证：invoke world-architect+running 动画+ready 分支+failed。
 8. **step3-5 stub + 收尾**：`StepStub`+清理旧 vanilla 文件+`npm run build` 通过。

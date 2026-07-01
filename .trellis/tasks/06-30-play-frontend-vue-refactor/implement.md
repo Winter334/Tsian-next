@@ -58,13 +58,17 @@
 - [x] **顶栏 Logo 修复**：animated=false 时跳过 idle 动效 + 不响应点击
 - [x] **删除 ask_user**：不实现 ask_user 面板（R4）— useTsian onAsk 占位空回调
 - [x] 验证：完整对话流 + 选项 + 发送 + composer 状态切换 + 停止 + 重新编辑（用户浏览器视觉确认）
-- [ ] commit
+- [x] commit
 
-### Step 5 — checkpoints
-- [ ] `CheckpointView.vue`：52em 列卡片纵列
-- [ ] `CheckpointCard.vue`：`--void-deep`+`--line`+inset shadow+括号；`第 N 回` Cinzel + reason pill + 时间 + 缩略图位；hover 浮起+描边；进场 auto-layout stagger + ScrollTrigger 视口
-- [ ] `RestoreDialog.vue`：Reka UI Dialog + `--void-deep`+`--ember` 2px 边+括号+背景模糊；GSAP scale+opacity + Vue Transition
-- [ ] 验证：列表 + 恢复确认弹窗
+### Step 5 — checkpoints（对话流内印记）
+- [x] `CheckpointMark.vue`：ember 分隔线 + 中心旋转菱形 glyph（常驻慢转 8s + ember 呼吸微光）+ `第 N 回` mono whisper 极小字；点击 emit restore
+- [x] `RestoreDialog.vue`：Reka UI Dialog + `--void-deep`+`--ember` 边+括号+背景模糊；GSAP scale+opacity + Vue Transition；确认文案 `恢复到第 N 回？此后 M 轮对话将被抹去。`
+- [x] `useTsian.ts`：暴露 `restore(id)` + reloadHistory 抽出 + restore 后重建 stream/checkpoints
+- [x] `StoryView.vue`：mergedStream 在对应 turn 的 assistant 后插入 CheckpointMark（含 turn=0 initial）；ready 后 loadCheckpoints；standby 时刷新 checkpoints（实时显示新印记）；恢复过渡燃烧幕布（暗色卷轴 + 琥珀金火焰 + CSS 遮罩类比开屏 paper-curtain）
+- [x] `shader.ts`：createScrollTexture 暗色卷轴皮革纤维质感 + 金丝纹理；fragment shader u_variant 区分开屏/恢复火焰色（红橙/琥珀金）
+- [x] `App.vue`：nav 移除 checkpoints 项（检查点融入对话流，不需要独立视图）
+- [x] 轮次显示修复：turnCount-1（AppHeader + TurnMeta + turnsAfter 都减去 +1 偏移）
+- [x] 验证：对话流内印记标记 + 点击弹窗恢复 + 燃烧过渡 + 恢复后 stream/checkpoints 重建（用户浏览器视觉确认）
 - [ ] commit
 
 ### Step 6 — 向导壳 + step1

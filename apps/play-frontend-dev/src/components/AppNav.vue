@@ -9,7 +9,7 @@ import gsap from "gsap"
  * 当前态 --ember 左边框 + --ember-bright；折叠态 ~56px 仅图标无 Tooltip（hover 不弹标签）。
  * GSAP width 动画 + 偏好持久化（localStorage）。
  */
-type NavItem = "story" | "checkpoints" | "settings"
+type NavItem = "story" | "settings"
 
 const props = defineProps<{
   current: NavItem
@@ -24,7 +24,6 @@ const navRef = ref<HTMLElement | null>(null)
 
 const items: Array<{ key: NavItem; label: string; icon: string }> = [
   { key: "story", label: "故事", icon: "M4 6h16M4 12h16M4 18h10" },
-  { key: "checkpoints", label: "检查点", icon: "M12 2v20M2 12h20" },
   { key: "settings", label: "设置", icon: "M12 8a4 4 0 100 8 4 4 0 000-8z" },
 ]
 
