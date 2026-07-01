@@ -13,6 +13,8 @@ export const CHAPTER_INDEX_PATH = "save/source/chapters.index.json"
 export const CHAPTERS_ROOT = "save/source/chapters/"
 export const INITIAL_SUMMARY_PATH = "save/playthrough/understanding-summary.json"
 export const RUNTIME_PATH = "save/playthrough/runtime.json"
+export const SETUP_SUMMARY_PATH = "save/playthrough/setup-summary.json"
+export const OPENING_NARRATIVE_PATH = "save/playthrough/opening-narrative.json"
 export const CHARACTER_ENTITIES_ROOT = "save/entities/character/"
 const NORMALIZATION_VERSION = "novel-source-v1"
 const PSEUDO_CHAPTER_TARGET = 15_000
@@ -139,6 +141,40 @@ export interface OpeningUnderstandingSummary {
   }
   extractedThrough?: string | null
   committedAt?: string
+}
+
+// ── 游玩设定对话（Step 4）──
+
+export type PlaySetupStatus = "idle" | "running" | "complete" | "failed"
+
+export interface DialogMessage {
+  id: string
+  role: "agent" | "user"
+  content: string
+  options?: string[]
+}
+
+export interface SetupSummary {
+  status: "pending" | "complete"
+  summary?: string | null
+  committedAt?: string
+}
+
+export interface OpeningNarrative {
+  narrative: string | null
+  createdAt: string | null
+}
+
+export function isSetupSummary(value: unknown): value is SetupSummary {
+  return typeof value === "object"
+    && value !== null
+    && ((value as { status?: unknown }).status === "pending" || (value as { status?: unknown }).status === "complete")
+}
+
+export function isOpeningNarrative(value: unknown): value is OpeningNarrative {
+  return typeof value === "object"
+    && value !== null
+    && "narrative" in value
 }
 
 // ── JSON 安全解析 + 类型守卫 ──
@@ -419,6 +455,33 @@ export function buildSourceCorpus(
     chapters: chapters.map(({ title, path, characters }) => ({ title, path, characters })),
   }
   return { manifest, chapterIndex, chapters }
+}
+
+export function buildPlaySetupPrompt(
+  title: string,
+  character: { ref: string; name: string } | null,
+): string {
+  const isOriginal = character?.ref.startsWith("original-") ?? false
+  const characterDesc = character
+    ? `${character.name}（${isOriginal ? "原创角色" : "原著角色"}，ref: ${character.ref}）`
+    : "未设定"
+  return [
+    "玩家已完成小说导入、初始理解和角色设定，现在进入游玩设定对话阶段。",
+    "请作为 world-architect 使用 Skill《游玩设定对话》引导玩家确定本次游玩的方向和特殊设定。",
+    "",
+    "要求：",
+    "1. 按照 skill 的基础 checklist 引导对话：怎么进入故事、金手指/特殊设定、特殊玩法机制。",
+    "2. 没提到的主动追问，直到补齐。用 [[选项]] 提供常见模板但允许自由输入。",
+    "3. 玩家只表达「想要什么」，你负责「怎么实现」——不让玩家写剧情。",
+    "4. 对话中可用 workspace_write / apply_world_state_plan 即时写入设定落点。",
+    "5. 所有基础项补齐后展示设定汇总，用 [[选项]] 请求玩家确认。",
+    "6. 玩家确认后组装开局叙事文本，调用 commit_play_setup 提交。",
+    "7. 保持 spoiler-safe，只使用开局窗口内已知事实。",
+    "",
+    `书名：${title}`,
+    `玩家角色：${characterDesc}`,
+    "现在请开始第一轮对话，向玩家介绍本阶段并引导其说出需求。",
+  ].join("\n")
 }
 
 // ── prompt 构建（Step 7 用，先放此供 useSetupState 引用）──

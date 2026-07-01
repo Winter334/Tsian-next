@@ -54,6 +54,10 @@ const streamingReasoning = ref("")
 // 当前轮剧情选项（onTurnEnd 填充，send 时清空）
 const turnOptions = ref<string[]>([])
 
+// 开局叙事（Step 4 对话收尾写入 opening-narrative.json，进入 play 后 StoryView 特殊渲染）
+// 独立于 stream——reloadHistory/restore 替换 stream 时不会被冲掉
+const openingNarrative = ref<string | null>(null)
+
 // 订阅是否已注册（只注册一次，避免多组件重复订阅）
 let subscribed = false
 const unsubscribers: Array<() => void> = []
@@ -206,6 +210,7 @@ export function useTsian() {
     streamingText: readonly(streamingText),
     turnOptions: readonly(turnOptions),
     checkpoints: readonly(checkpoints),
+    openingNarrative: readonly(openingNarrative),
 
     // 操作方法
     tsian,
@@ -274,6 +279,23 @@ export function useTsian() {
     },
     async loadCheckpoints(): Promise<void> {
       checkpoints.value = await tsian.checkpoints.list()
+    },
+    /** 读取开局叙事（Step 4 对话收尾写入 opening-narrative.json）。
+     *  供 Step 5 确认 / enterPlay 时调用，StoryView 特殊渲染为第一条消息。 */
+    async loadOpeningNarrative(): Promise<void> {
+      try {
+        const file = await tsian.workspace.read("save/playthrough/opening-narrative.json")
+        if (file?.content) {
+          const data = JSON.parse(file.content) as { narrative?: string | null }
+          openingNarrative.value = typeof data.narrative === "string" && data.narrative.trim()
+            ? data.narrative
+            : null
+        } else {
+          openingNarrative.value = null
+        }
+      } catch {
+        openingNarrative.value = null
+      }
     },
     /** 恢复到指定检查点。host 执行 restore（裁剪 turn 文件 + 删除未来 checkpoint）后，
      *  前端重建 stream + checkpoints + 兜底恢复最后一轮选项。 */

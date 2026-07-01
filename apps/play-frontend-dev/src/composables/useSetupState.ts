@@ -1,16 +1,20 @@
 import { ref, readonly } from "vue"
 import { useTsian } from "./useTsian"
+import { parseStoryOptions } from "@tsian/play-bridge"
 import {
   SOURCE_MANIFEST_PATH,
   CHAPTER_INDEX_PATH,
   INITIAL_SUMMARY_PATH,
   RUNTIME_PATH,
+  SETUP_SUMMARY_PATH,
   CHARACTER_ENTITIES_ROOT,
   buildSourceCorpus,
   buildOpeningInitializationPrompt,
+  buildPlaySetupPrompt,
   safeJsonParse,
   isSourceManifest,
   isOpeningUnderstandingSummary,
+  isSetupSummary,
   excerptText,
   type SourceManifest,
   type ChapterIndexFile,
@@ -20,6 +24,9 @@ import {
   type SelectedCharacter,
   type OriginalCharacterFormData,
   type CharacterEntity,
+  type PlaySetupStatus,
+  type DialogMessage,
+  type SetupSummary,
 } from "../lib/source"
 
 /**
@@ -33,7 +40,7 @@ import {
 
 // ── 向导视图类型 ──
 export type SetupStep = 1 | 2 | 3 | 4 | 5
-export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "character-setup" | "stub"
+export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "character-setup" | "play-setup" | "stub"
 export type UnderstandingStatus = "idle" | "running" | "ready" | "failed"
 export type CharacterSetupStatus = "selecting" | "confirmed"
 
@@ -55,6 +62,13 @@ const errorText = ref("")
 const characterBranch = ref<CharacterBranch | null>(null)
 const selectedCharacter = ref<SelectedCharacter | null>(null)
 const characterSetupStatus = ref<CharacterSetupStatus>("selecting")
+
+// ── 游玩设定对话状态（Step 4）──
+const playSetupStatus = ref<PlaySetupStatus>("idle")
+const playSetupMessages = ref<DialogMessage[]>([])
+const playSetupError = ref("")
+const playSetupHeartbeat = ref(0)
+let playSetupHeartbeatUnsub: Array<() => void> = []
 
 // 初始化状态
 const initializing = ref(true)
@@ -190,7 +204,17 @@ function goToStep(target: SetupStep): void {
     errorText.value = ""
     return
   }
-  // step4-5：stub 占位
+  if (target === 4) {
+    // Step 4 游玩设定对话：idle 时自动启动对话
+    subView.value = "play-setup"
+    step.value = 4
+    errorText.value = ""
+    if (playSetupStatus.value === "idle") {
+      void startPlaySetupDialog()
+    }
+    return
+  }
+  // step5：stub 占位（Step 5 实现是后续任务，路由先打通）
   subView.value = "stub"
   step.value = target
   errorText.value = ""
@@ -443,6 +467,152 @@ async function loadPlayerCharacter(
   return { ref, name, brief: "" }
 }
 
+// ── 游玩设定对话操作（Step 4）──
+
+let dialogMessageSeq = 0
+function nextDialogId(): string {
+  dialogMessageSeq += 1
+  return `dialog-${dialogMessageSeq}`
+}
+
+/** 启动 play-setup 心跳监听（独立于 understanding 的心跳）。 */
+function startPlaySetupHeartbeat(): void {
+  stopPlaySetupHeartbeat()
+  const { tsian } = useTsian()
+  playSetupHeartbeatUnsub = [
+    tsian.onAgentActivity(() => {
+      if (playSetupStatus.value === "running") {
+        playSetupHeartbeat.value++
+      }
+    }),
+  ]
+}
+
+function stopPlaySetupHeartbeat(): void {
+  for (const unsub of playSetupHeartbeatUnsub) unsub()
+  playSetupHeartbeatUnsub = []
+  playSetupHeartbeat.value = 0
+}
+
+/** 读取 setup-summary.json 判断完成态。 */
+async function loadSetupSummary(
+  tsian: ReturnType<typeof useTsian>["tsian"],
+): Promise<SetupSummary | null> {
+  const file = await tsian.workspace.read(SETUP_SUMMARY_PATH)
+  if (!file?.content) return null
+  const data = safeJsonParse(file.content)
+  return isSetupSummary(data) ? data : null
+}
+
+/** 构造初始 prompt 并发起第一次 invokeAgent，激活 agent + skill。 */
+async function startPlaySetupDialog(): Promise<void> {
+  if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
+  const { tsian } = useTsian()
+
+  // 检查是否已完成（重载恢复）
+  const summary = await loadSetupSummary(tsian)
+  if (summary?.status === "complete") {
+    playSetupStatus.value = "complete"
+    return
+  }
+
+  // 构造初始 prompt：需要小说标题 + 玩家角色信息
+  const title = understandingSummary.value?.title ?? manifest.value?.title ?? "导入小说"
+  const character = selectedCharacter.value
+    ? { ref: selectedCharacter.value.ref, name: selectedCharacter.value.name }
+    : null
+  const prompt = buildPlaySetupPrompt(title, character)
+
+  playSetupStatus.value = "running"
+  playSetupError.value = ""
+  startPlaySetupHeartbeat()
+
+  try {
+    const result = await tsian.invokeAgent("world-architect", prompt, {
+      contextSlot: "play-setup",
+      persist: true,
+    })
+    handleAgentResponse(result.response)
+  } catch (err) {
+    playSetupStatus.value = "failed"
+    playSetupError.value = err instanceof Error ? err.message : "对话启动失败"
+  } finally {
+    stopPlaySetupHeartbeat()
+  }
+}
+
+/** 玩家发送消息（选项点击或自由输入）→ 下一轮 invokeAgent。 */
+async function sendPlaySetupMessage(input: string): Promise<void> {
+  if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
+  const { tsian } = useTsian()
+
+  // push user message
+  playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: input })
+
+  playSetupStatus.value = "running"
+  playSetupError.value = ""
+  startPlaySetupHeartbeat()
+
+  try {
+    const result = await tsian.invokeAgent("world-architect", input, {
+      contextSlot: "play-setup",
+      persist: true,
+    })
+    handleAgentResponse(result.response)
+  } catch (err) {
+    playSetupStatus.value = "failed"
+    playSetupError.value = err instanceof Error ? err.message : "对话失败，请重试"
+  } finally {
+    stopPlaySetupHeartbeat()
+  }
+}
+
+/** 处理 agent 返回的 response：parseStoryOptions 提取 cleanText + options，push agent message，检查完成态。 */
+async function handleAgentResponse(response: string): Promise<void> {
+  const { tsian } = useTsian()
+  const parsed = parseStoryOptions(response)
+  playSetupMessages.value.push({
+    id: nextDialogId(),
+    role: "agent",
+    content: parsed.cleanText,
+    ...(parsed.options.length > 0 ? { options: parsed.options } : {}),
+  })
+
+  // 检查 setup-summary 是否 complete
+  const summary = await loadSetupSummary(tsian)
+  if (summary?.status === "complete") {
+    playSetupStatus.value = "complete"
+  } else {
+    playSetupStatus.value = "idle"
+  }
+}
+
+/** 重置对话状态。 */
+function resetPlaySetupDialog(): void {
+  playSetupStatus.value = "idle"
+  playSetupMessages.value = []
+  playSetupError.value = ""
+  stopPlaySetupHeartbeat()
+}
+
+/** 重试（从 failed 恢复）。 */
+async function retryPlaySetupDialog(): Promise<void> {
+  playSetupError.value = ""
+  // 如果有消息则重发最后一条 user 消息，否则重新启动
+  const lastUserMsg = [...playSetupMessages.value].reverse().find((m) => m.role === "user")
+  if (lastUserMsg) {
+    // 移除最后一条 agent 消息（如果有的话）
+    const lastIdx = playSetupMessages.value.length - 1
+    if (lastIdx >= 0 && playSetupMessages.value[lastIdx]?.role === "agent") {
+      playSetupMessages.value.splice(lastIdx, 1)
+    }
+    await sendPlaySetupMessage(lastUserMsg.content)
+  } else {
+    playSetupMessages.value = []
+    await startPlaySetupDialog()
+  }
+}
+
 // ── 初始化：从 workspace 加载已有数据 ──
 
 async function initialize(): Promise<void> {
@@ -464,9 +634,18 @@ async function initialize(): Promise<void> {
           selectedCharacter.value = existingCharacter
           characterSetupStatus.value = "confirmed"
           characterBranch.value = existingCharacter.ref.startsWith("character:original-") ? "original" : "canon"
-          subView.value = "character-setup"
-          step.value = 3
-          statusText.value = `已选定角色：${existingCharacter.name}`
+          // 检查 setup-summary 是否完成（Step 4 重载恢复）
+          const setupSummary = await loadSetupSummary(tsian)
+          if (setupSummary?.status === "complete") {
+            playSetupStatus.value = "complete"
+            subView.value = "stub"
+            step.value = 5
+            statusText.value = "游玩设定已完成"
+          } else {
+            subView.value = "character-setup"
+            step.value = 3
+            statusText.value = `已选定角色：${existingCharacter.name}`
+          }
         } else {
           subView.value = "understanding"
           step.value = 2
@@ -512,6 +691,10 @@ export function useSetupState() {
     characterBranch: readonly(characterBranch),
     selectedCharacter: readonly(selectedCharacter),
     characterSetupStatus: readonly(characterSetupStatus),
+    playSetupStatus: readonly(playSetupStatus),
+    playSetupMessages: readonly(playSetupMessages),
+    playSetupError: readonly(playSetupError),
+    playSetupHeartbeat: readonly(playSetupHeartbeat),
 
     // 非响应式值（组件按需读取）
     get understandingStartedAt() { return understandingStartedAt },
@@ -532,5 +715,9 @@ export function useSetupState() {
     confirmCanonCharacter,
     confirmOriginalCharacter,
     resetCharacterSetup,
+    startPlaySetupDialog,
+    sendPlaySetupMessage,
+    resetPlaySetupDialog,
+    retryPlaySetupDialog,
   }
 }

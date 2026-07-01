@@ -13,6 +13,7 @@ import UnderstandingFailed from "./step2/UnderstandingFailed.vue"
 import CanonCharacterSelect from "./step3/CanonCharacterSelect.vue"
 import OriginalCharacterForm from "./step3/OriginalCharacterForm.vue"
 import CharacterConfirmed from "./step3/CharacterConfirmed.vue"
+import PlaySetupDialog from "./step4/PlaySetupDialog.vue"
 import StepStub from "./StepStub.vue"
 
 /**
@@ -38,6 +39,7 @@ const {
   characterBranch,
   selectedCharacter,
   characterSetupStatus,
+  playSetupStatus,
   initialize,
   setView,
   goToStep,
@@ -69,6 +71,7 @@ function onResetCharacterSetup() {
 // stepper 索引（0-based）：直接用 useSetupState 的 step ref（1-5 → 0-4）
 const currentStepIndex = computed(() => step.value - 1)
 const completedUntil = computed(() => {
+  if (playSetupStatus.value === "complete") return 3
   if (characterSetupStatus.value === "confirmed") return 2
   if (understandingStatus.value === "ready") return 1
   if (manifest.value) return 0
@@ -196,7 +199,19 @@ const actions = computed<ActionConfig>(() => {
     }
   }
 
-  // stub 占位（step4-5 未实现）
+  // ── Step 4 游玩设定对话 ──
+  if (subView.value === "play-setup") {
+    return {
+      secondaryLabel: "返回角色",
+      secondaryDisabled: playSetupStatus.value === "running",
+      onSecondary: () => goToStep(3),
+      primaryLabel: "下一步",
+      primaryDisabled: playSetupStatus.value !== "complete",
+      onPrimary: () => goToStep(5),
+    }
+  }
+
+  // stub 占位（step5 未实现）
   if (subView.value === "stub") {
     return {
       secondaryLabel: "返回",
@@ -335,9 +350,14 @@ onMounted(() => {
               />
             </div>
 
-            <!-- stub：step4-5 未实现占位 -->
+            <!-- Step 4 游玩设定对话 -->
+            <div v-else-if="subView === 'play-setup'" key="play-setup" class="stage-content stage-content--dialog">
+              <PlaySetupDialog />
+            </div>
+
+            <!-- stub：step5 未实现占位 -->
             <div v-else key="stub" class="stage-content">
-              <StepStub :step="step" title="即将开放" @back="goToStep(2)" />
+              <StepStub :step="step" title="即将开放" @back="goToStep(4)" />
             </div>
           </Transition>
 
@@ -420,6 +440,12 @@ onMounted(() => {
 
 .stage-content {
   flex: 1;
+}
+/* 对话步骤需要满高 flex 布局，让消息列表滚动区 + Composer 正确撑开 */
+.stage-content--dialog {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* 子屏切换过渡 */
