@@ -186,6 +186,7 @@ export type RemotePlayBridgeEventName =
   | "turn-tool"
   | "turn-options"
   | "interaction-request"
+  | "agent-activity"
 
 /**
  * `turn-tool` 事件 output 字段形态。
@@ -275,6 +276,10 @@ export type RemotePlayBridgeEventPayload =
       question: string
       options?: string[]
       allowCustom?: boolean
+    }
+  | {
+      agentId: string
+      kind: "delta" | "tool" | "round-end"
     }
 
 export interface RemotePlayBridgeEventMessage {

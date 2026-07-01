@@ -92,7 +92,7 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
-import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats } from "../streaming-events"
+import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats, emitAgentActivity } from "../streaming-events"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   markPlatformHostReady,
@@ -1111,8 +1111,20 @@ export const playFrontendBridge: PlayFrontendBridge = {
                   timeoutMs: DEFAULT_TASK_TIMEOUT_MS,
                 }
               : {}),
-            // 旁路调用不 emit turn 事件(不进前端 turn timeline),但绑 onAskUser
-            // 以防目标 agent 需要 ask_user(复用进程内 interaction-events 总线).
+            // 旁路调用绑 onAskUser 以防目标 agent 需要 ask_user
+            // (复用进程内 interaction-events 总线).
+            // 旁路 agent 活动信号通过独立的 agent-activity 事件通道 emit
+            // (见下方 onDelta/onTool/onRoundEnd 回调), 不经过 turn-delta/turn-tool
+            // 通道, 不污染主 turn timeline.
+            onDelta: (agentId) => {
+              emitAgentActivity(agentId, "delta")
+            },
+            onRoundEnd: (agentId) => {
+              emitAgentActivity(agentId, "round-end")
+            },
+            onTool: (agentId) => {
+              emitAgentActivity(agentId, "tool")
+            },
             onAskUser: (requestId, request) =>
               emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
           },

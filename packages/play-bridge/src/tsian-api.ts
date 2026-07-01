@@ -80,6 +80,9 @@ export interface AskRequest {
   allowCustom?: boolean
 }
 
+/** 旁路调用(invokeAgent)活动信号类型。不携带文本内容，只通知"agent 正在活动"。 */
+export type AgentActivityKind = "delta" | "tool" | "round-end"
+
 export interface SessionHistory {
   entries: SessionHistoryEntry[]
   turn: number
@@ -104,6 +107,9 @@ export interface TsianApi {
   onTurnEnd(cb: (result: TurnEndResult) => void): () => void
   onTool(cb: (tool: ToolEvent) => void): () => void
   onAsk(cb: (ask: AskRequest) => void): () => void
+  /** 旁路调用(invokeAgent)活动信号订阅。不携带文本内容，不污染主 turn stream。
+   *  前端 useSetupState 用此做 understanding running 心跳脉冲。 */
+  onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void
 
   // ── 回答 ask_user ──
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
@@ -180,6 +186,7 @@ export function createTsian(): TsianApi {
   const roundEndCallbacks = new Set<(round: RoundEnd) => void>()
   const toolCallbacks = new Set<(tool: ToolEvent) => void>()
   const askCallbacks = new Set<(ask: AskRequest) => void>()
+  const agentActivityCallbacks = new Set<(agentId: string, kind: AgentActivityKind) => void>()
 
   bridge.on({
     onEvent(event, payload) {
@@ -239,6 +246,15 @@ export function createTsian(): TsianApi {
         }
         for (const cb of askCallbacks) {
           try { cb(ask) } catch (err) { console.error("[tsian] onAsk callback threw", err) }
+        }
+        return
+      }
+
+      if (event === "agent-activity" && payload && "agentId" in payload && "kind" in payload) {
+        const agentId = (payload as { agentId?: string }).agentId ?? ""
+        const kind = (payload as { kind?: string }).kind as AgentActivityKind
+        for (const cb of agentActivityCallbacks) {
+          try { cb(agentId, kind) } catch (err) { console.error("[tsian] onAgentActivity callback threw", err) }
         }
         return
       }
@@ -309,6 +325,11 @@ export function createTsian(): TsianApi {
     onAsk(cb: (ask: AskRequest) => void): () => void {
       askCallbacks.add(cb)
       return () => { askCallbacks.delete(cb) }
+    },
+
+    onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void {
+      agentActivityCallbacks.add(cb)
+      return () => { agentActivityCallbacks.delete(cb) }
     },
 
     async answer(requestId: string, text: string, cancelled?: boolean): Promise<void> {

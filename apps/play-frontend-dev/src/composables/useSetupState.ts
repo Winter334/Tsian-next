@@ -52,8 +52,9 @@ const initialized = ref(false)
 let understandingStartedAt = 0
 let stageTimer = 0
 
-// agent 心跳：understanding running 时监听 bridge 事件，递增计数器
-// 不累加文本到主游玩 stream，只给 running 组件"它还活着"的视觉脉冲信号
+// agent 心跳：understanding running 时监听 onAgentActivity（独立通道，
+// 不经过 turn-delta/turn-tool，不污染主游玩 stream），递增计数器给
+// running 组件"它还活着"的视觉脉冲信号
 const agentHeartbeat = ref(0)
 let heartbeatUnsub: Array<() => void> = []
 
@@ -61,17 +62,7 @@ function startHeartbeat(): void {
   stopHeartbeat()
   const { tsian } = useTsian()
   heartbeatUnsub = [
-    tsian.onMessage(() => {
-      if (understandingStatus.value === "running") {
-        agentHeartbeat.value++
-      }
-    }),
-    tsian.onTool(() => {
-      if (understandingStatus.value === "running") {
-        agentHeartbeat.value++
-      }
-    }),
-    tsian.onRoundEnd(() => {
+    tsian.onAgentActivity(() => {
       if (understandingStatus.value === "running") {
         agentHeartbeat.value++
       }
