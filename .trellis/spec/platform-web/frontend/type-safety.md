@@ -641,3 +641,26 @@ A new platform tool must be wired through **all** of the following, or it will n
 - Tool in `toolNames` but no dispatch branch (step 6 missing) → model calls the tool → "unknown tool" error observation.
 - Tool dispatch present but `context.run<Name>` is `undefined` (step 11 missing) → `<NAME>_UNAVAILABLE` error observation.
 - Tool not in `PLATFORM_TOOL_CONTROL_GROUPS` (step 9 missing) → user cannot toggle it on/off; if it's not in the assistant's default `enabled` array, it's permanently off.
+
+## Scenario: Browser Script Worker Source Is Pure JavaScript
+
+### Scope / Trigger
+
+- When editing `BROWSER_SCRIPT_WORKER_SOURCE` in `browser-skill-script-executor.ts`, or any other `String.raw` template literal whose content is executed as a Web Worker via `new Blob([source], { type: "text/javascript" })`.
+
+### Contracts
+
+- `BROWSER_SCRIPT_WORKER_SOURCE` is a `String.raw` template literal whose content is **pure JavaScript**, executed directly as a Worker via `new Blob()`. The TypeScript compiler does **not** strip TS syntax from template-literal contents — every character inside the backticks lands in the Worker verbatim.
+- **No TypeScript syntax is allowed inside the Worker source**: no type annotations (`: Record<string, unknown>`), no type assertions (`x as string`), no generic type parameters, no `interface`/`type` declarations, no `!` non-null assertions. The Worker parses as plain JS; any TS syntax causes `SyntaxError: Unexpected token` at the exact column of the TS syntax.
+- The Worker source is delimited by the opening backtick (currently line 54: `` const BROWSER_SCRIPT_WORKER_SOURCE = String.raw` ``) and the closing backtick (currently line 330). Code outside this range is normal TypeScript and may use TS syntax freely.
+- **When editing the Worker source, always grep for TS syntax after editing**:
+  ```bash
+  # Extract Worker source range and scan for TS syntax
+  sed -n '<start>,<end>p' browser-skill-script-executor.ts | grep -n ' as \|: Record\|: string\|: number\|: boolean\|: unknown\|: object\|: any\|: void'
+  ```
+- This bug has occurred twice in the same `config` Proxy block: first a type annotation on `let currentConfig` (line 112), then `as` assertions on the Proxy target and key indexing (line 160/162/168). Both caused all scripts to fail with a fixed `SyntaxError` line number regardless of the user's script content — the error is in the Worker harness, not the user script.
+
+### Validation & Error Matrix
+
+- Any TS syntax inside `BROWSER_SCRIPT_WORKER_SOURCE` → `SyntaxError` at parse time → **every** script fails with the same error line/column (the line points into the Worker source, not the user's script). The fixed line number across all scripts is the diagnostic signature of a Worker-source TS syntax leak.
+- User script syntax error → `BROWSER_SCRIPT_SYNTAX_ERROR` with the error line pointing into the user's script (varies per script). This is distinct from a Worker-source leak (fixed line across all scripts).

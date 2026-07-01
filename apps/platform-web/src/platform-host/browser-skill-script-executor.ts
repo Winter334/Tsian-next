@@ -210,15 +210,15 @@ const tsian = Object.freeze({
   },
   // config 通过 Proxy 动态读取 currentConfig（execute 消息到达后赋值），
   // 避免顶层引用未定义的 message 变量。
-  config: new Proxy({} as Record<string, unknown>, {
+  config: new Proxy({}, {
     get(_t, key) {
-      return currentConfig[key as string];
+      return currentConfig[key];
     },
     ownKeys() {
       return Object.keys(currentConfig);
     },
     getOwnPropertyDescriptor(_t, key) {
-      const v = currentConfig[key as string];
+      const v = currentConfig[key];
       return v !== undefined ? { enumerable: true, configurable: true, value: v, writable: false } : undefined;
     },
   })
