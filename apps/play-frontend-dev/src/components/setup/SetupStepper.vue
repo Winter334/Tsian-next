@@ -1,17 +1,17 @@
 <script setup lang="ts">
-import { ref, watch, nextTick, onUnmounted } from "vue"
-import gsap from "gsap"
-
 /**
- * SetupStepper — 5 节点横向 stepper（火脉涌动方案）。
+ * SetupStepper — 5 节点横向 stepper（燃烧烛芯方案）。
  *
- * 视觉语言：圆点 + 火焰呼吸光晕 + ember 光脉连线（流动光效）。
- * - 完成态：ember 实心圆 + 微光粒子上升
- * - 当前态：ember-bright 圆 + 火焰呼吸 + 光晕扩散
- * - 锁定态：whisper 空心圆
- * - 连线：完成段 ember 光脉 + 流动光带扫过（呼应 Composer ink-sweep）
+ * 视觉概念：一根连续的烛芯，火苗在当前步骤燃烧，左侧已燃尽成灰烬，右侧未点燃。
+ * 不是"圆点+直线"的分离结构，而是一根有机的烛芯——步骤是烛芯上的不同状态。
  *
- * 呼应 Composer 的烛火辉光 + ink-sweep 流动光效语言。
+ * 三段状态：
+ * - 灰烬段（已完成）：暗 ember 线 + 余温微光 + 缓慢飘升的微光粒子
+ * - 燃烧点（当前）：CSS 双层火焰（外焰+内焰）+ 光晕呼吸 + 火星飞溅
+ * - 未点燃段（未完成）：whisper 虚线纹理
+ *
+ * 对齐保证：track 和 labels 用完全相同的 flex 结构（固定宽度 + flex:1 交替），
+ * 从布局层面保证 mark 和 label 水平对齐，不依赖任何硬编码像素偏移。
  */
 const props = defineProps<{
   /** 当前步骤索引 0-4 */
@@ -22,293 +22,312 @@ const props = defineProps<{
 
 const STEPS = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
 
-const fillRef = ref<HTMLElement | null>(null)
-const sweepRef = ref<HTMLElement | null>(null)
-const currentNodeRef = ref<HTMLElement | null>(null)
+/** 节点状态：done 已燃尽 / current 正在燃烧 / locked 未点燃 */
+function markStatus(i: number): "done" | "current" | "locked" {
+  if (i === props.current) return "current"
+  if (i <= props.completedUntil) return "done"
+  return "locked"
+}
 
-// GSAP 连线填充：current 变化时 scaleX 动画
-watch(
-  () => props.current,
-  async (idx) => {
-    await nextTick()
-    if (!fillRef.value) return
-    const ratio = STEPS.length > 1 ? idx / (STEPS.length - 1) : 0
-    gsap.to(fillRef.value, {
-      scaleX: ratio,
-      duration: 0.6,
-      ease: "power2.out",
-    })
-  },
-  { immediate: true },
-)
-
-// 流动光带：完成段有光带扫过（持续循环）
-watch(
-  () => [props.current, props.completedUntil] as const,
-  async () => {
-    await nextTick()
-    if (sweepRef.value) {
-      gsap.killTweensOf(sweepRef.value)
-      // 光带从左到右循环扫过 fill 区域
-      gsap.fromTo(
-        sweepRef.value,
-        { xPercent: -100 },
-        { xPercent: 300, duration: 3, ease: "none", repeat: -1, repeatDelay: 1.5 },
-      )
-    }
-  },
-  { immediate: true },
-)
-
-onUnmounted(() => {
-  if (fillRef.value) gsap.killTweensOf(fillRef.value)
-  if (sweepRef.value) gsap.killTweensOf(sweepRef.value)
-})
+/** 烛芯线段状态：done 已燃尽 / unlit 未点燃 */
+function wickStatus(i: number): "done" | "unlit" {
+  // 线段 i 连接节点 i → i+1
+  // 如果 i+1 是 current 或 done，说明火已经烧过了这段
+  if (i + 1 <= props.current) return "done"
+  return "unlit"
+}
 </script>
 
 <template>
-  <nav class="setup-stepper" aria-label="向导步骤">
-    <!-- 轨道：贯通到屏幕尽头，极淡基线 -->
-    <span class="stepper-track" aria-hidden="true" />
+  <div class="fuse-stepper">
+    <!-- 轨道层：mark + wick 交替，flex center 对齐 -->
+    <div class="fuse-track">
+      <template v-for="(step, i) in STEPS" :key="i">
+        <!-- 节点 -->
+        <div class="fuse-mark" :class="markStatus(i)">
+          <!-- 灰烬光斑（完成态） -->
+          <div v-if="markStatus(i) === 'done'" class="ember-dot">
+            <span class="ember-particle" />
+          </div>
 
-    <!-- 节点群：居中聚拢，承载 fill 进度线 + 流动光带 -->
-    <ol class="stepper-nodes">
-      <!-- fill 进度线：ember 光脉，scaleX 从左原点增长 -->
-      <span ref="fillRef" class="stepper-fill" aria-hidden="true">
-        <!-- 流动光带：完成段循环扫过的亮带 -->
-        <span ref="sweepRef" class="fill-sweep" aria-hidden="true" />
-      </span>
+          <!-- 火苗（当前态） -->
+          <div v-else-if="markStatus(i) === 'current'" class="flame">
+            <div class="flame-glow" />
+            <div class="flame-outer" />
+            <div class="flame-inner" />
+            <span class="spark spark-1" />
+            <span class="spark spark-2" />
+            <span class="spark spark-3" />
+          </div>
 
-      <li
-        v-for="(label, i) in STEPS"
-        :key="i"
-        class="stepper-node"
-        :class="{
-          done: i <= completedUntil && i !== current,
-          current: i === current,
-          locked: i > completedUntil,
-        }"
-      >
-        <!-- 节点圆点 + 光晕层 -->
-        <span class="node-orb">
-          <!-- 光晕扩散层（当前态火焰呼吸） -->
-          <span v-if="i === current" class="orb-halo" aria-hidden="true" />
-          <!-- 微光粒子上升层（完成态） -->
-          <span v-if="i <= completedUntil && i !== current" class="orb-ember" aria-hidden="true" />
-          <!-- 核心圆点 -->
-          <span class="orb-core" />
-          <!-- 完成勾 -->
-          <svg
-            v-if="i <= completedUntil && i !== current"
-            class="orb-check"
-            viewBox="0 0 12 12"
-            aria-hidden="true"
-          >
-            <path d="M2.5 6.5L5 9L9.5 3.5" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
-        </span>
-        <span class="node-label">{{ label }}</span>
-      </li>
-    </ol>
-  </nav>
+          <!-- 未点燃烛芯头（锁定态） -->
+          <div v-else class="wick-tip" />
+        </div>
+
+        <!-- 烛芯线段（最后一个节点后没有线段） -->
+        <div
+          v-if="i < STEPS.length - 1"
+          class="fuse-wick"
+          :class="wickStatus(i)"
+        />
+      </template>
+    </div>
+
+    <!-- 标签层：与 track 完全相同的 flex 结构，自然对齐 -->
+    <div class="fuse-labels">
+      <template v-for="(step, i) in STEPS" :key="i">
+        <span class="fuse-label" :class="markStatus(i)">{{ step }}</span>
+        <span v-if="i < STEPS.length - 1" class="fuse-spacer" />
+      </template>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.setup-stepper {
-  position: relative;
+.fuse-stepper {
   width: 100%;
-  padding: 28px 0 20px;
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 36px 24px 20px;
+}
+
+/* ══ 轨道层：mark + wick 交替 ══ */
+.fuse-track {
   display: flex;
+  align-items: center;
+}
+
+.fuse-mark {
+  position: relative;
+  width: 80px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
   justify-content: center;
+  overflow: visible;
 }
 
-/* 贯通轨道基线：从屏幕左到右，极淡 */
-.stepper-track {
-  position: absolute;
-  top: 41px; /* 对齐 orb 圆心 */
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: var(--line);
-}
-
-/* 节点群：居中聚拢 */
-.stepper-nodes {
-  position: relative;
-  display: flex;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  max-width: 640px;
-  justify-content: space-between;
-}
-
-/* fill 进度线：ember 光脉 */
-.stepper-fill {
-  position: absolute;
-  top: 13px; /* orb 圆心相对 ol 顶部 */
-  left: 0;
-  right: 0;
+.fuse-wick {
+  flex: 1;
   height: 2px;
-  background: linear-gradient(
-    90deg,
-    var(--ember) 0%,
-    var(--ember-bright) 50%,
-    var(--ember) 100%
-  );
-  transform-origin: left center;
-  transform: scaleX(0);
+  position: relative;
   border-radius: 1px;
-  box-shadow: 0 0 8px rgba(232, 169, 72, 0.4);
-  overflow: hidden;
+  overflow: visible;
 }
 
-/* 流动光带：在 fill 区域内循环扫过 */
-.fill-sweep {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 30%;
-  height: 100%;
+/* ══ 烛芯线段：灰烬段（已燃尽）══ */
+.fuse-wick.done {
   background: linear-gradient(
     90deg,
-    transparent 0%,
-    rgba(232, 169, 72, 0.6) 50%,
+    rgba(181, 137, 61, 0.35),
+    rgba(181, 137, 61, 0.55),
+    rgba(181, 137, 61, 0.35)
+  );
+  box-shadow: 0 0 3px rgba(181, 137, 61, 0.15);
+}
+/* 灰烬段上缓慢飘升的微光粒子 */
+.fuse-wick.done::before,
+.fuse-wick.done::after {
+  content: "";
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: 1px;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 2px var(--ember);
+}
+.fuse-wick.done::before {
+  left: 35%;
+  animation: wick-ember 4s ease-out infinite;
+}
+.fuse-wick.done::after {
+  left: 70%;
+  animation: wick-ember 4s ease-out infinite 2s;
+}
+@keyframes wick-ember {
+  0% { opacity: 0; transform: translateY(0); }
+  30% { opacity: 0.5; }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+/* ══ 烛芯线段：未点燃段 ══ */
+.fuse-wick.unlit {
+  background: repeating-linear-gradient(
+    90deg,
+    var(--whisper) 0,
+    var(--whisper) 2px,
+    transparent 2px,
+    transparent 6px
+  );
+  opacity: 0.35;
+}
+
+/* ══ 灰烬光斑（完成态节点）══ */
+.ember-dot {
+  position: relative;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    var(--ember) 0%,
+    rgba(181, 137, 61, 0.4) 60%,
     transparent 100%
   );
-}
-
-/* ── 单个节点 ── */
-.stepper-node {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  position: relative;
-  z-index: 1;
-}
-
-/* 圆点容器 */
-.node-orb {
-  position: relative;
-  width: 16px;
-  height: 16px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-/* 核心圆点 */
-.orb-core {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1.5px solid var(--whisper);
-  background: var(--void);
-  transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
-  z-index: 2;
-}
-
-/* ── 完成态：ember 实心 + 勾 ── */
-.stepper-node.done .orb-core {
-  border-color: var(--ember);
-  background: var(--ember);
   box-shadow: 0 0 6px rgba(181, 137, 61, 0.3);
 }
-.orb-check {
+/* 灰烬光斑上微光粒子 */
+.ember-particle {
   position: absolute;
-  width: 10px;
-  height: 10px;
-  color: var(--void-deep);
-  z-index: 3;
+  top: -3px;
+  left: 50%;
+  width: 1px;
+  height: 1px;
+  border-radius: 50%;
+  background: var(--ember);
+  box-shadow: 0 0 2px var(--ember);
+  animation: ember-dot-rise 3s ease-out infinite;
+}
+@keyframes ember-dot-rise {
+  0% { opacity: 0; transform: translate(-50%, 0); }
+  25% { opacity: 0.7; }
+  100% { opacity: 0; transform: translate(-50%, -12px); }
 }
 
-/* 微光粒子上升（完成态，纯 CSS） */
-.orb-ember {
-  position: absolute;
-  top: -2px;
-  left: 50%;
-  width: 2px;
-  height: 2px;
+/* ══ 未点燃烛芯头（锁定态节点）══ */
+.wick-tip {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
-  background: var(--ember-bright);
-  transform: translateX(-50%);
-  opacity: 0;
-  animation: ember-rise 2.5s ease-out infinite;
-  z-index: 1;
+  border: 1px solid var(--whisper);
+  background: var(--void);
+  opacity: 0.4;
 }
-.orb-ember::before,
-.orb-ember::after {
-  content: "";
+
+/* ══ 火苗（当前态节点）══ */
+.flame {
+  position: absolute;
+  bottom: 50%; /* 底部对齐到 mark 中心（烛芯线上） */
+  left: 50%;
+  transform: translateX(-50%);
+  width: 14px;
+  height: 22px;
+}
+
+/* 光晕：火焰底部的光池 */
+.flame-glow {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 16px;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(232, 169, 72, 0.25) 0%,
+    transparent 70%
+  );
+  animation: glow-breathe 2s ease-in-out infinite;
+}
+@keyframes glow-breathe {
+  0%, 100% { opacity: 0.5; transform: translateX(-50%) scale(1); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.25); }
+}
+
+/* 外焰：ember → 透明，较大 */
+.flame-outer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(
+    ellipse 55% 75% at center 85%,
+    var(--ember-bright) 0%,
+    var(--ember) 30%,
+    rgba(155, 58, 46, 0.5) 60%,
+    transparent 100%
+  );
+  border-radius: 25% 25% 50% 50% / 35% 35% 65% 65%;
+  /* 上尖下圆：左上右上小值(尖)，左下右下大值(圆) */
+  filter: blur(0.4px);
+  animation: flame-sway 0.18s ease-in-out infinite alternate;
+}
+
+/* 内焰：白 → ember-bright，较小，亮度核心 */
+.flame-inner {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 7px;
+  height: 13px;
+  background: radial-gradient(
+    ellipse 55% 70% at center 80%,
+    #fff 0%,
+    var(--ember-bright) 35%,
+    transparent 100%
+  );
+  border-radius: 30% 30% 50% 50% / 40% 40% 60% 60%;
+  filter: blur(0.3px);
+  animation: flame-sway 0.15s ease-in-out infinite alternate-reverse;
+}
+
+@keyframes flame-sway {
+  0% { transform: scale(1, 1) rotate(-1.5deg); }
+  100% { transform: scale(0.93, 1.08) rotate(1.5deg); }
+}
+/* 内焰保留 translateX(-50%)，单独的 keyframe */
+.flame-inner {
+  animation-name: flame-sway-inner;
+}
+@keyframes flame-sway-inner {
+  0% { transform: translateX(-50%) scale(1, 1) rotate(1deg); }
+  100% { transform: translateX(-50%) scale(0.93, 1.08) rotate(-1.5deg); }
+}
+
+/* 火星飞溅 */
+.spark {
   position: absolute;
   width: 1.5px;
   height: 1.5px;
   border-radius: 50%;
-  background: var(--ember);
-  opacity: 0.6;
-}
-.orb-ember::before {
-  top: -3px;
-  left: 3px;
-  animation: ember-rise 2.5s ease-out infinite 0.4s;
-}
-.orb-ember::after {
-  top: -2px;
-  left: -3px;
-  animation: ember-rise 2.5s ease-out infinite 0.8s;
-}
-@keyframes ember-rise {
-  0% { opacity: 0; transform: translate(-50%, 0); }
-  20% { opacity: 0.8; }
-  100% { opacity: 0; transform: translate(-50%, -14px); }
-}
-
-/* ── 当前态：ember-bright + 火焰呼吸光晕 ── */
-.stepper-node.current .orb-core {
-  border-color: var(--ember-bright);
   background: var(--ember-bright);
-  box-shadow:
-    0 0 10px rgba(232, 169, 72, 0.5),
-    inset 0 0 4px rgba(255, 220, 150, 0.4);
-  animation: orb-breathe 2s ease-in-out infinite;
-}
-@keyframes orb-breathe {
-  0%, 100% {
-    box-shadow: 0 0 8px rgba(232, 169, 72, 0.4), inset 0 0 3px rgba(255, 220, 150, 0.3);
-  }
-  50% {
-    box-shadow: 0 0 18px rgba(232, 169, 72, 0.7), 0 0 4px rgba(232, 169, 72, 0.4), inset 0 0 6px rgba(255, 220, 150, 0.5);
-  }
-}
-
-/* 光晕扩散层（当前态） */
-.orb-halo {
-  position: absolute;
-  top: 50%;
+  box-shadow: 0 0 3px var(--ember-bright);
+  bottom: 8px;
   left: 50%;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid var(--ember-bright);
-  transform: translate(-50%, -50%);
-  opacity: 0;
-  animation: halo-pulse 2s ease-out infinite;
-  z-index: 0;
 }
-@keyframes halo-pulse {
-  0% { width: 12px; height: 12px; opacity: 0.6; }
-  100% { width: 32px; height: 32px; opacity: 0; }
+.spark-1 {
+  animation: spark-fly 2s ease-out infinite;
+  --dx: 4px;
+}
+.spark-2 {
+  animation: spark-fly 2s ease-out infinite 0.7s;
+  --dx: -3px;
+}
+.spark-3 {
+  animation: spark-fly 2s ease-out infinite 1.3s;
+  --dx: 2px;
+}
+@keyframes spark-fly {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.5); }
+  15% { opacity: 1; }
+  100% { opacity: 0; transform: translate(calc(-50% + var(--dx, 4px)), -18px) scale(0.2); }
 }
 
-/* ── 锁定态：whisper 空心 ── */
-.stepper-node.locked .orb-core {
-  border-color: var(--whisper);
-  background: var(--void);
+/* ══ 标签层：与 track 结构完全一致 ══ */
+.fuse-labels {
+  display: flex;
+  margin-top: 12px;
 }
 
-/* ── 标签文字 ── */
-.node-label {
+.fuse-label {
+  width: 80px;  /* 与 fuse-mark 同宽，自然对齐 */
+  flex-shrink: 0;
+  text-align: center;
   font-family: var(--font-serif);
   font-size: 0.75rem;
   letter-spacing: 0.06em;
@@ -316,14 +335,19 @@ onUnmounted(() => {
   white-space: nowrap;
   transition: color 0.3s, text-shadow 0.3s;
 }
-.stepper-node.current .node-label {
-  color: var(--ember-bright);
-  text-shadow: 0 0 8px rgba(232, 169, 72, 0.3);
+
+.fuse-spacer {
+  flex: 1;  /* 与 fuse-wick 同 flex，自然对齐 */
 }
-.stepper-node.done .node-label {
+
+.fuse-label.current {
+  color: var(--ember-bright);
+  text-shadow: 0 0 8px rgba(232, 169, 72, 0.4);
+}
+.fuse-label.done {
   color: var(--ember);
 }
-.stepper-node.locked .node-label {
+.fuse-label.locked {
   color: var(--whisper);
 }
 </style>
