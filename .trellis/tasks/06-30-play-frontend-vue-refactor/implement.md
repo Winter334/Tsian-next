@@ -80,7 +80,7 @@
 - [x] `step1/SplitReview.vue`：概览 + 双栏章节/预览 + "开始理解"按钮
 - [x] `useSetupState.ts`：向导状态（替代 source-import 闭包 state）+ `lib/source.ts` 纯文本处理工具
 - [x] 验证：`npm run build` 通过（step1 导入流程 + 子屏 Transition 切换；remote 回路手动验证待用户确认）
-- [ ] commit
+- [x] commit
 
 ### Step 7 — 向导 step2
 - [ ] `step2/UnderstandingIdle.vue`："开始理解"按钮 + 引导 + 返回切分
