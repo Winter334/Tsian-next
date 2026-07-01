@@ -76,7 +76,35 @@
 - Remote `ai-debug` query -> structured forbidden error response.
 - Iframe load error -> show a compact error state and do not mutate save data.
 
-## Scenario: Runtime Workspace Registry And Detail Queries
+## Scenario: Bypass Invoke-Agent Context Slot And Persist
+
+### Scope / Trigger
+
+- When platform-web changes `interaction.invokeAgent` (the bypass/side-channel call distinct from the `agent_call` tool), `agentContextPath` slot routing, the same-slot serial queue, or the `entryMode` → `persist` semantics.
+
+### Contracts
+
+- `interaction.invokeAgent` is a **bypass call**: it runs a target agent once, returns the reply directly to the caller, does **not** advance the turn, write raw history, update the runtime snapshot, or create a checkpoint. This is what makes it distinct from `interaction.sendMessage` (the main turn) and from the `agent_call` tool (master-initiated delegation inside a turn).
+- `InvokeAgentRequest` carries two context-management options (both optional, added in task 07-01):
+  - `contextSlot?: string` — isolates the agent's context file. `agentContextPath(agentId, slot)` returns `save/agents/<id>/context-<slot>.json` when a slot is present, and `save/agents/<id>/context.json` when omitted (backward-compatible). The slot is **untrusted frontend input** and is sanitized inside `agentContextPath`: `slot.replace(/[^a-zA-Z0-9_-]/g, "-")` — only `[a-zA-Z0-9_-]` survives, preventing `../` traversal and special-character injection. Never inline a raw slot into a path.
+  - `persist?: boolean` — controls context-file read/write. `true` = read `context[-slot].json` before the call and write back the updated snapshot after a successful call (cross-call persistence). `false`/omitted = one-shot call, no context read or write. **Default is `false`.**
+- **`entryMode` is no longer read by `invokeAgent`.** The old `targetContext.agent.entryMode === "persistent"` check was replaced by `shouldPersist = input.persist === true`. The `entryMode` field is retained in the agent schema for compatibility but is dead to `invokeAgent`; do not reintroduce an `entryMode`-derived persistence decision. Main-turn `sendMessage` is unaffected (it always reads/stages `context.json` and does not pass `slot`).
+- **Same-slot serial queue.** `invokeAgent` queues calls by `queueKey = ${agentId}:${slot ?? "default"}` in a module/closure-level `invokeAgentQueue: Map<string, Promise<unknown>>`. A new call chains after the previous promise for the same key (`.catch(() => {}).then(() => body())`), so calls to the same agent+slot run serially while different agents or different slots run concurrently. The `.catch` swallows the predecessor's failure so it never blocks the successor. Entries self-clean in a `finally` that deletes the key **only if the map still points at the current promise** (avoids deleting a successor that already queued behind it). This prevents `context-<slot>.json` read/write races between concurrent bypass calls to the same agent+slot.
+- **Main turn and frontend-inspector do not pass `slot`**, so their `agentContextPath` is unchanged (`context.json`). `stageAgentContextFile` / `readAgentContextFromWorkspace` accept an optional `slot?` that threads through to `agentContextPath`; omitted slot = legacy path.
+- The context-file read/write logic (`parseAgentContext`, `createEmptyAgentContext`, `appendTurnToContext`, `compressContext`) is slot-agnostic — it operates on `AgentContextSnapshot` objects and never sees the path. Only `agentContextPath` knows about slots.
+- `agent_call` (the tool) never reads or writes `context.json` and is unaffected by slot/persist.
+- Bypass trace path (`formatAgentTracePath(agentId, timestamp)`) is keyed by agentId + timestamp only; slot does not appear in trace.
+
+### Validation & Error Matrix
+
+- Empty `agentId` / empty `input` -> throw a clear `interaction.invokeAgent requires ...` error before queueing.
+- `persist: false` (or omitted) -> no `context[-slot].json` read or write, even if the agent has a context file on disk. One-shot.
+- `persist: true` + no existing context file -> `readAgentContextFromWorkspace` returns null -> `createEmptyAgentContext` seeds an empty snapshot -> writeback creates the file.
+- `persist: true` + call fails -> no context writeback (writeback is success-path only).
+- Concurrent calls same agent+slot -> run serially in queue order; predecessor failure does not block successor.
+- Concurrent calls same agent different slots -> run concurrently (different queue keys, different files, no race).
+- Slot containing `../` or special chars -> sanitized to `-` sequence; writes land at `context-<sanitized>.json`, never escapes the agent dir.
+- Main turn / frontend-inspector -> unchanged (no slot, `context.json`).
 
 ### Scope / Trigger
 
