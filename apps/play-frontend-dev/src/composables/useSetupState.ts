@@ -227,9 +227,13 @@ async function startOpeningUnderstanding(): Promise<void> {
 
   try {
     const prompt = buildOpeningInitializationPrompt(manifest.value, chapterIndex.value)
-    await tsian.invokeAgent("world-architect", prompt)
+    const result = await tsian.invokeAgent("world-architect", prompt)
     const summary = await loadUnderstandingSummary(tsian)
-    if (!summary) throw new Error("理解未完成，没找到结果。请重试。")
+    if (!summary) {
+      // agent 已返回但 summary 文件未找到——可能是平台侧写入失败。
+      // 用 agent 的回复文本作为错误信息，比"理解未完成"更准确。
+      throw new Error(result.response || "理解完成但写入存档失败，请重试。")
+    }
     understandingSummary.value = summary
     understandingStatus.value = "ready"
   } catch (err) {

@@ -18,7 +18,9 @@ const emit = defineEmits<{
     <div class="failed-card">
       <div class="failed-mark" aria-hidden="true">✕</div>
       <h3 class="failed-title">理解未完成</h3>
-      <p class="failed-detail">{{ error }}</p>
+      <div class="failed-detail-scroll">
+        <p class="failed-detail">{{ error }}</p>
+      </div>
       <button class="retry-btn" type="button" @click="emit('retry')">
         重试
       </button>
@@ -45,7 +47,8 @@ const emit = defineEmits<{
   border: 1px solid var(--blood);
   border-radius: 6px;
   box-shadow: inset 0 0 16px rgba(155, 58, 46, 0.1);
-  max-width: 380px;
+  max-width: 480px;
+  width: 100%;
 }
 
 .failed-mark {
@@ -69,14 +72,30 @@ const emit = defineEmits<{
   text-align: center;
 }
 
+/* agent 回复可能很长，加滚动区 */
+.failed-detail-scroll {
+  max-height: 200px;
+  overflow-y: auto;
+  width: 100%;
+  padding: 0 4px;
+}
+.failed-detail-scroll::-webkit-scrollbar {
+  width: 3px;
+}
+.failed-detail-scroll::-webkit-scrollbar-thumb {
+  background: var(--whisper);
+  border-radius: 2px;
+}
+
 .failed-detail {
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--prose-dim);
-  text-align: center;
-  line-height: 1.6;
+  text-align: left;
+  line-height: 1.7;
   word-break: break-word;
+  white-space: pre-wrap;
 }
 
 .retry-btn {
