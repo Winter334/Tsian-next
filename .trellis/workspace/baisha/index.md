@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 105
+- **Total Sessions**: 106
 - **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1952 | Active |
+| `journal-2.md` | ~1986 | Active |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 106 | 2026-07-01 | test_skill_script 工具 + 错误透传 + Worker TS 注解修复 | `1e7e7dc` | `feat/workspace-context-cache-split` |
 | 105 | 2026-07-01 | 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor | `a2ae121`, `46ab4dc`, `4577d4a` | `feat/workspace-context-cache-split` |
 | 104 | 2026-06-30 | DebugView 缓存命中率真实数据显示 + 仪表盘重设计 | `b302e51` | `feat/workspace-context-cache-split` |
 | 103 | 2026-06-30 | workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断 | `368f136` | `feat/workspace-context-cache-split` |

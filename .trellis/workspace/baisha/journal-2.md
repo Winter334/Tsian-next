@@ -1950,3 +1950,37 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 106: test_skill_script 工具 + 错误透传 + Worker TS 注解修复
+
+**Date**: 2026-07-01
+**Task**: test_skill_script 工具 + 错误透传 + Worker TS 注解修复
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+新增 test_skill_script 平台工具让助手直接测试 Skill browser_script action。完整走 13 步注册流程（contracts→permissions→types→schema→dispatch→toolNames→capability threading×3→UI controls→labels→assistant config→registry Set）。修复三个问题：(1) assistant-chat.ts 漏注入 runTestSkillScript 导致助手报 TEST_SKILL_SCRIPT_UNAVAILABLE；(2) registry.ts 的 AGENT_PLATFORM_TOOL_NAMES Set 漏 test_skill_script 导致开关显示关闭；(3) Worker 源码混入 TS 类型注解 let currentConfig: Record<string, unknown> 导致所有脚本 SyntaxError at line 112。errorPayload 错误分层透传（SyntaxError/RuntimeError/自定义 code + stack）。spec 新增 Registering A New Platform Agent Tool 13 步 checklist。创建两个后续任务：task-inactivity-timeout（超时改为无响应语义）、unify-runtime-capabilities（三处注入统一）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e7e7dc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
