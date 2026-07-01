@@ -21,13 +21,11 @@ onMounted(async () => {
   const cards = cardsRef.value.querySelectorAll(".method-card")
   // 不用 y 位移 + stagger：stagger 让两张卡片先后进场，y 偏移会导致"一高一低"。
   // 改用 opacity + scale 依次淡入，无垂直位移，不会错位。
-  gsap.from(cards, {
-    opacity: 0,
-    scale: 0.94,
-    duration: 0.45,
-    stagger: 0.1,
-    ease: "power2.out",
-  })
+  // fromTo 明确起止值，避免 from 的隐式推断陷阱（见 UnderstandingReady 注释）。
+  gsap.fromTo(cards,
+    { opacity: 0, scale: 0.94 },
+    { opacity: 1, scale: 1, duration: 0.45, stagger: 0.1, ease: "power2.out" },
+  )
 })
 
 onUnmounted(() => {

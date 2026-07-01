@@ -33,14 +33,13 @@ onMounted(async () => {
   await nextTick()
   if (!rootRef.value) return
   const cards = rootRef.value.querySelectorAll(".branch-card")
-  gsap.from(cards, {
-    opacity: 0,
-    scale: 0.92,
-    duration: 0.5,
-    stagger: 0.12,
-    ease: "power2.out",
-    delay: 0.15,
-  })
+  // fromTo 明确起止值，避免 from 的隐式推断陷阱：
+  // from 读取"当前值"作为终点，若元素在动画期间被响应式重渲染打断，
+  // tween 丢失目标引用，元素永远停在 opacity:0。fromTo 锁定终值 1。
+  gsap.fromTo(cards,
+    { opacity: 0, scale: 0.92 },
+    { opacity: 1, scale: 1, duration: 0.5, stagger: 0.12, ease: "power2.out", delay: 0.15 },
+  )
 })
 </script>
 

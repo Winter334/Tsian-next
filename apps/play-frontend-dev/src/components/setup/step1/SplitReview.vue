@@ -64,13 +64,10 @@ onMounted(async () => {
   await nextTick()
   if (listRef.value) {
     const cards = listRef.value.querySelectorAll(".chapter-card")
-    gsap.from(cards, {
-      opacity: 0,
-      x: -16,
-      duration: 0.35,
-      stagger: 0.04,
-      ease: "power2.out",
-    })
+    gsap.fromTo(cards,
+      { opacity: 0, x: -16 },
+      { opacity: 1, x: 0, duration: 0.35, stagger: 0.04, ease: "power2.out" },
+    )
   }
 })
 </script>
