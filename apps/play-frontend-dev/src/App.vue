@@ -7,19 +7,21 @@ import BurningReveal from "./components/BurningReveal.vue"
 import AppHeader from "./components/AppHeader.vue"
 import AppNav from "./components/AppNav.vue"
 import StoryView from "./components/story/StoryView.vue"
+import SetupWizard from "./components/setup/SetupWizard.vue"
 import { useTsian } from "./composables/useTsian"
 
 // App.vue 根组件。
 // 开屏状态机（design §5 / prd D5-D6）：
 // - idle：纸张幕布 + 中央活 Logo（转动），等待点击
-// - burning：点击→并行（logo 动效 + BurningReveal 挂载即燃烧）→canvas shown 移除 idle 层→幕布烧穿透明露出主游玩态
-// - revealed：主游玩态壳（AppHeader + AppNav + 视图路由）。向导 Step 6 接入后改为先向导再主游玩。
+// - burning：点击→并行（logo 动效 + BurningReveal 挂载即燃烧）→canvas shown 移除 idle 层→幕布烧穿透明露出向导
+// - revealed：向导（wizard 模式）或主游玩态（play 模式）
 //
-// Step 3：revealed 后直接进主游玩态（向导留 Step 6）。
+// Step 6：revealed 后默认进向导（prd D5 "烧穿露出向导"）；向导 @enterPlay 切到主游玩态。
 // useTsian 提供 bridge 响应式状态（ready/sessionId/turnCount/...）。
 // nav 折叠偏好持久化（localStorage）。
 const phase = ref<"idle" | "burning" | "revealed">("idle")
 const curtainReplaced = ref(false)
+const mode = ref<"wizard" | "play">("wizard")
 
 // nav 折叠状态（localStorage 持久化）
 const NAV_COLLAPSED_KEY = "tsian.navCollapsed"
@@ -52,6 +54,10 @@ function onToggleNav() {
 function onNavigate(item: "story" | "settings") {
   navCurrent.value = item
 }
+
+function onEnterPlay() {
+  mode.value = "play"
+}
 </script>
 
 <template>
@@ -66,12 +72,11 @@ function onNavigate(item: "story" | "settings") {
       <TsianLogo :animated="true" :size="320" @click="onLogoClick" />
     </div>
 
-    <!-- burning + revealed 主游玩态层：z:0 最底，burning 时被幕布遮，烧穿透明露出 -->
+    <!-- burning + revealed play 模式：主游玩态壳。z:0 最底，burning 时被幕布遮，烧穿透明露出 -->
     <main
-      v-if="phase === 'burning' || phase === 'revealed'"
+      v-if="(phase === 'burning' && mode === 'play') || (phase === 'revealed' && mode === 'play')"
       class="stage-play"
     >
-      <!-- 主游玩态壳：header + nav（向导期 Step 6 接入后会用 :has(.setup-shell) 隐藏） -->
       <AppHeader
         v-if="phase === 'revealed'"
         :ready="ready"
@@ -95,6 +100,12 @@ function onNavigate(item: "story" | "settings") {
         <p class="placeholder-sub">{{ navCurrent }} 视图待接入</p>
       </div>
     </main>
+
+    <!-- revealed wizard 模式：全屏向导（z:0，burning 时在幕布下） -->
+    <SetupWizard
+      v-if="(phase === 'burning' || phase === 'revealed') && mode === 'wizard'"
+      @enter-play="onEnterPlay"
+    />
 
     <!-- burning：WebGL 燃烧幕布。挂载即开始燃烧（canvas hidden），delay 后显示+emit shown -->
     <BurningReveal

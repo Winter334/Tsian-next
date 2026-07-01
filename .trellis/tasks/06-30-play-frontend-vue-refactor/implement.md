@@ -72,14 +72,14 @@
 - [x] commit
 
 ### Step 6 — 向导壳 + step1
-- [ ] `SetupWizard.vue`：状态机（step/subView/understandingStatus）；全屏接管（隐藏 header+nav）；stage 容器
-- [ ] `SetupStepper.vue`：5 节点横向 stepper；完成/当前/未实现三态；GSAP 连线填充；步骤切换 anime.js auto-layout
-- [ ] `step1/MethodChoose.vue`：两卡（粘贴/文件）+ hover 火光 + auto-layout 进场
-- [ ] `step1/PasteInput.vue`：标题输入 + textarea + 返回/下一步
-- [ ] `step1/FileInput.vue`：标题输入 + 真实拖放区（dragover/drop）或选择文件按钮
-- [ ] `step1/SplitReview.vue`：概览 + 双栏章节/预览 + "开始理解"按钮
-- [ ] `useSetupState.ts`：向导状态（替代 source-import 闭包 state）
-- [ ] 验证：step1 导入流程 + 子屏 auto-layout 切换
+- [x] `SetupWizard.vue`：状态机（step/subView/understandingStatus）；全屏接管（隐藏 header+nav）；stage 容器
+- [x] `SetupStepper.vue`：5 节点横向 stepper；完成/当前/未实现三态；GSAP 连线填充；步骤切换 Vue Transition（anime.js auto-layout 留优化期，同 Step 4 决策）
+- [x] `step1/MethodChoose.vue`：两卡（粘贴/文件）+ hover 火光 + GSAP stagger 进场
+- [x] `step1/PasteInput.vue`：标题输入 + textarea + 返回/下一步
+- [x] `step1/FileInput.vue`：标题输入 + 真实拖放区（dragover/drop）或选择文件按钮
+- [x] `step1/SplitReview.vue`：概览 + 双栏章节/预览 + "开始理解"按钮
+- [x] `useSetupState.ts`：向导状态（替代 source-import 闭包 state）+ `lib/source.ts` 纯文本处理工具
+- [x] 验证：`npm run build` 通过（step1 导入流程 + 子屏 Transition 切换；remote 回路手动验证待用户确认）
 - [ ] commit
 
 ### Step 7 — 向导 step2
