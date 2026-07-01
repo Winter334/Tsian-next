@@ -93,7 +93,7 @@ export function readAgentContextFromWorkspace(
 ): AgentContextSnapshot | null {
   const file = workspaceFiles.find((f) => f.path === agentContextPath(agentId))
   if (!file) return null
-  return parseAgentContext(file.content, saveId)
+  return parseAgentContext(file.content, saveId, { agentId })
 }
 
 /**
@@ -117,7 +117,7 @@ export function stageAgentContextFile(
   const base =
     input.compressedContext
     ?? readAgentContextFromWorkspace(workspaceTransaction.workspaceFiles, input.saveId, agentId)
-    ?? createEmptyAgentContext(input.saveId)
+    ?? createEmptyAgentContext(input.saveId, { agentId })
   // 追加本轮正文(保持最近 K 轮),saveId 用真实值修正(runtime 兜底时可能为空)
   const updated = appendTurnToContext(
     { ...base, saveId: input.saveId },

@@ -146,6 +146,9 @@ function postLog(level, message, data) {
 // fetch 已放开为 Worker 原生裸 fetch（标准 Response），不再包装。
 // config 是 skill 声明 + 玩家覆盖合并后的平铺对象（见主线程 mergeConfig），
 // 无配置的 skill 拿到空对象 {}，脚本 config.API_KEY 返回 undefined 自行处理。
+// config 通过 getter 从 execute 消息动态读取（message 只在 onmessage 里有定义，
+// 顶层不能直接引用）。
+let currentConfig: Record<string, unknown> = {};
 const tsian = Object.freeze({
   workspace: Object.freeze({
     read(input) {
@@ -191,7 +194,20 @@ const tsian = Object.freeze({
   trace(label, data) {
     postLog("trace", label, data);
   },
-  config: Object.freeze(isRecord(message.config) ? message.config : {})
+  // config 通过 Proxy 动态读取 currentConfig（execute 消息到达后赋值），
+  // 避免顶层引用未定义的 message 变量。
+  config: new Proxy({} as Record<string, unknown>, {
+    get(_t, key) {
+      return currentConfig[key as string];
+    },
+    ownKeys() {
+      return Object.keys(currentConfig);
+    },
+    getOwnPropertyDescriptor(_t, key) {
+      const v = currentConfig[key as string];
+      return v !== undefined ? { enumerable: true, configurable: true, value: v, writable: false } : undefined;
+    },
+  })
 });
 
 const signal = Object.freeze({
@@ -234,6 +250,9 @@ self.onmessage = async (event) => {
   if (message.type !== "execute") {
     return;
   }
+
+  // 把 execute 消息里的 config 存到模块级变量，供 tsian.config Proxy 动态读取
+  currentConfig = isRecord(message.config) ? message.config : {};
 
   try {
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
