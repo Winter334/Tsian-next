@@ -19,12 +19,13 @@ onMounted(async () => {
   await nextTick()
   if (!cardsRef.value) return
   const cards = cardsRef.value.querySelectorAll(".method-card")
+  // 不用 y 位移 + stagger：stagger 让两张卡片先后进场，y 偏移会导致"一高一低"。
+  // 改用 opacity + scale 依次淡入，无垂直位移，不会错位。
   gsap.from(cards, {
     opacity: 0,
-    y: 30,
-    scale: 0.96,
-    duration: 0.5,
-    stagger: 0.12,
+    scale: 0.94,
+    duration: 0.45,
+    stagger: 0.1,
     ease: "power2.out",
   })
 })
