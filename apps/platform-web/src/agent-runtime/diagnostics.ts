@@ -14,6 +14,7 @@ import { summarizeTraceValue } from "./trace"
 
 const DIAGNOSTIC_SCHEMA = "tsian.runtime.diagnostic.v1"
 const TRACE_TURN_PATH_PATTERN = /^\.tsian\/save\/traces\/turns\/turn-(\d+)(?:-failed-(\d+))?\.jsonl$/
+const TRACE_AGENT_PATH_PATTERN = /^\.tsian\/save\/traces\/agents\/([a-zA-Z0-9_-]+)-(\d+)\.jsonl$/
 const DEFAULT_LOOKBACK_TURNS = 20
 const MAX_LOOKBACK_TURNS = 200
 const DEFAULT_RESULT_LIMIT = 10
@@ -27,6 +28,8 @@ interface TraceFileCandidate {
   turn: number
   traceKind: RuntimeDiagnosticTraceKind
   failedAt?: number
+  /** 旁路调用 trace 的 agentId（仅 traceKind === "agent" 时有值） */
+  agentId?: string
 }
 
 interface TraceEventShape {
@@ -77,23 +80,34 @@ function normalizeTurn(value: unknown): number | undefined {
 }
 
 function parseTraceFileCandidate(file: WorkspaceFile): TraceFileCandidate | null {
-  const match = TRACE_TURN_PATH_PATTERN.exec(file.path)
-  if (!match) {
-    return null
+  const turnMatch = TRACE_TURN_PATH_PATTERN.exec(file.path)
+  if (turnMatch) {
+    const turn = Number(turnMatch[1])
+    if (!Number.isInteger(turn) || turn <= 0) {
+      return null
+    }
+
+    const failedAt = turnMatch[2] === undefined ? undefined : Number(turnMatch[2])
+    return {
+      file,
+      turn,
+      traceKind: failedAt === undefined ? "success" : "failed",
+      ...(Number.isFinite(failedAt) ? { failedAt } : {}),
+    }
   }
 
-  const turn = Number(match[1])
-  if (!Number.isInteger(turn) || turn <= 0) {
-    return null
+  // 旁路调用 trace：save/traces/agents/<agentId>-<timestamp>.jsonl
+  const agentMatch = TRACE_AGENT_PATH_PATTERN.exec(file.path)
+  if (agentMatch) {
+    return {
+      file,
+      turn: 0, // 旁路 trace 不关联具体 turn，用 0 占位
+      traceKind: "agent",
+      agentId: agentMatch[1],
+    }
   }
 
-  const failedAt = match[2] === undefined ? undefined : Number(match[2])
-  return {
-    file,
-    turn,
-    traceKind: failedAt === undefined ? "success" : "failed",
-    ...(Number.isFinite(failedAt) ? { failedAt } : {}),
-  }
+  return null
 }
 
 function parseTraceLine(line: string, fallbackTurn: number): TraceEventShape | null {
@@ -595,12 +609,15 @@ export interface RuntimeTraceEventLoadout {
   turn: number
   traceKind: RuntimeDiagnosticTraceKind
   failedAt?: number
+  /** 旁路调用 trace 的 agentId（仅 traceKind === "agent" 时有值） */
+  agentId?: string
   events: TraceEventShape[]
   malformedLineCount: number
 }
 
 /** 从 effective workspace 文件里加载 trace events。
  *  turn 省略 → 返回全部 trace 回合（按 turn 倒序）；指定 turn → 只返回该回合。
+ *  旁路调用 trace（traceKind === "agent"）turn 为 0，查 turn 0 或全部时可见。
  *  events 与 RuntimeTraceEvent 结构兼容（type/timestamp/turn/agentId/debugLabel/ok/data）。 */
 export function loadRuntimeTraceEvents(
   workspaceFiles: WorkspaceFile[],
@@ -617,6 +634,7 @@ export function loadRuntimeTraceEvents(
       turn: candidate.turn,
       traceKind: candidate.traceKind,
       ...(candidate.failedAt !== undefined ? { failedAt: candidate.failedAt } : {}),
+      ...(candidate.agentId !== undefined ? { agentId: candidate.agentId } : {}),
       events: parsed.events,
       malformedLineCount: parsed.malformedLineCount,
     }

@@ -84,6 +84,7 @@ import {
   errorToTraceData,
   errorToTraceDataWithStack,
   formatRuntimeTracePath,
+  formatAgentTracePath,
   serializeRuntimeTraceEvents,
 } from "../agent-runtime/trace"
 import {
@@ -1064,6 +1065,15 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const historyBefore = await getHistoryForSave(activeSaveId)
 
       const invokeController = new AbortController()
+      const invokeTimestamp = Date.now()
+      // 旁路调用 trace collector：独立路径落盘，不与主 turn trace 混淆。
+      // 让系统监视器(DebugView)也能看到旁路调用的 runtime 事件。
+      const trace = createRuntimeTraceCollector(invokeMaxTurn)
+      trace.emit({
+        type: "turn_started",
+        ok: true,
+        data: { agentId, inputLength: input.input.length, historyCount: historyBefore.length },
+      })
       let workspaceTransaction: RuntimeWorkspaceTransaction | null = null
       try {
         workspaceTransaction = createRuntimeWorkspaceTransaction(
@@ -1169,7 +1179,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 onDelta: undefined,
               })
             },
-            emitTrace: undefined,
+            emitTrace: trace.emit,
             toolCallMode: targetConfig?.toolCallMode
               ?? getBrowserAiConfig()?.toolCallMode
               ?? "text",
@@ -1227,12 +1237,39 @@ export const playFrontendBridge: PlayFrontendBridge = {
             agentId,
           })
         }
+        // 旁路 trace 落盘（独立路径，不与主 turn trace 混淆）
+        trace.emit({
+          type: "turn_completed",
+          ok: true,
+          data: { agentId, replyLength: result.replyText.length },
+        })
+        // trace 走事务提交（与主 turn 一致），用旁路专用路径
+        workspaceTransaction!.writePlatformFile({
+          path: formatAgentTracePath(agentId, invokeTimestamp),
+          content: serializeRuntimeTraceEvents(trace.events),
+        })
         await commitWorkspaceFilesForSave(activeSaveId, workspaceTransaction!.finalWorkspaceFiles())
 
         return { response: result.replyText }
       } catch (error) {
         workspaceTransaction?.discard()
         rejectAllInteractionRequests(error)
+        // 旁路 trace 失败落盘（事务已 discard，直接写文件系统）
+        trace.emit({
+          type: "turn_failed",
+          ok: false,
+          data: errorToTraceDataWithStack(error),
+        })
+        try {
+          await writeRuntimeTraceFileForSave(
+            activeSaveId,
+            invokeWorkspaceFilesBefore,
+            formatAgentTracePath(agentId, invokeTimestamp),
+            trace.events,
+          )
+        } catch {
+          // trace 落盘失败不掩盖原始错误
+        }
         throw error
       }
     },

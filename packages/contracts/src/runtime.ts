@@ -594,7 +594,7 @@ export type RuntimeDiagnosticStatus = "completed" | "failed" | "anomalous"
 
 export type RuntimeDiagnosticSeverity = "info" | "warning" | "error"
 
-export type RuntimeDiagnosticTraceKind = "success" | "failed"
+export type RuntimeDiagnosticTraceKind = "success" | "failed" | "agent"
 
 export interface RuntimeDiagnosticsQueryParams {
   turn?: number
