@@ -268,9 +268,11 @@ onUnmounted(() => {
   font-size: 0.78rem;
   color: var(--prose-dim);
   line-height: 1.4;
+  /* 允许换行，限制最多 2 行，超出用省略号 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ── 四角括号 ── */

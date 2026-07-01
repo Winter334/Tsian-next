@@ -93,8 +93,8 @@ onUnmounted(() => {
           展开更多（可选）
         </button>
 
-        <Transition name="optional-expand">
-          <div v-show="showOptional" class="optional-fields">
+        <div class="optional-collapse" :class="{ expanded: showOptional }">
+          <div class="optional-fields">
             <label class="form-field optional">
               <span class="field-label">外貌描述</span>
               <textarea
@@ -125,7 +125,7 @@ onUnmounted(() => {
               />
             </label>
           </div>
-        </Transition>
+        </div>
       </div>
     </div>
   </div>
@@ -254,16 +254,20 @@ onUnmounted(() => {
   padding-top: 18px;
 }
 
-/* 折叠过渡 */
-.optional-expand-enter-active,
-.optional-expand-leave-active {
-  transition: opacity 0.3s cubic-bezier(0.22, 1, 0.36, 1), max-height 0.3s cubic-bezier(0.22, 1, 0.36, 1);
-  overflow: hidden;
-  max-height: 500px;
-}
-.optional-expand-enter-from,
-.optional-expand-leave-to {
+/* ── grid 折叠：0fr→1fr 自然展开，不需要猜 max-height ── */
+.optional-collapse {
+  display: grid;
+  grid-template-rows: 0fr;
   opacity: 0;
-  max-height: 0;
+  transition: grid-template-rows 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.optional-collapse.expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.optional-collapse > .optional-fields {
+  overflow: hidden;
+  min-height: 0;
 }
 </style>
