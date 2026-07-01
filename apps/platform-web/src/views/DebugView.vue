@@ -119,20 +119,6 @@
           </div>
         </section>
 
-        <!-- 最近问题（仅在有错误/警告时出现） -->
-        <section v-if="recentIssues.length > 0" class="grid gap-2">
-          <p class="font-mono text-xs uppercase tracking-wider text-neon">最近问题</p>
-          <div
-            v-for="issue in recentIssues"
-            :key="issue.key"
-            class="border px-3 py-2"
-            :class="issue.tone === 'error' ? 'border-danger/45 bg-danger/10' : 'border-warning/45 bg-warning/10'"
-          >
-            <p class="font-mono text-xs" :class="issue.tone === 'error' ? 'text-danger' : 'text-warning'">{{ issue.title }}</p>
-            <p class="mt-1 line-clamp-2 text-xs leading-5 text-text-dim">{{ issue.detail }}</p>
-          </div>
-        </section>
-
         <!-- 检查点（兜底恢复） -->
         <section class="grid gap-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -240,8 +226,6 @@
 import type {
   AiDebugRecord,
   PlatformContextShell,
-  RuntimeDiagnosticFact,
-  RuntimeDiagnosticSource,
   RuntimeDiagnosticSummary,
   SessionHistoryEntry,
 } from "@tsian/contracts"
@@ -251,13 +235,6 @@ import { playFrontendBridge, waitForPlatformHostReady } from "../platform-host"
 import { formatTraceForHuman, type RuntimeTraceEvent } from "../agent-runtime/trace"
 import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
-
-interface IssueSummary {
-  key: string
-  tone: "warning" | "error"
-  title: string
-  detail: string
-}
 
 interface TraceEventShape {
   type: string
@@ -453,14 +430,16 @@ const traceText = computed(() => {
 })
 
 const overallStatus = computed(() => {
-  const hasAiError = aiDebugRecords.value.some((record) => Boolean(record.error))
-  const hasDiagnosticError = diagnosticItems.value.some((item) => item.severity === "error" || item.status === "failed")
-  const hasWarning = diagnosticItems.value.some((item) => item.severity === "warning" || item.status === "anomalous")
+  // 只看最新回合的诊断——历史错误已在 trace 日志中可查，
+  // 状态徽章反映"当前是否健康"，不积累全量历史。
+  const latest = diagnosticItems.value[0]
+  const hasDiagnosticError = latest && (latest.severity === "error" || latest.status === "failed")
+  const hasWarning = latest && (latest.severity === "warning" || latest.status === "anomalous")
 
-  if (hasAiError || hasDiagnosticError) {
+  if (hasDiagnosticError) {
     return {
       label: "需要关注",
-      detail: "最近的运行记录包含错误。查看下方最近问题。",
+      detail: "最近的运行记录包含错误。查看下方运行日志。",
       badgeClass: "border-danger/50 bg-danger/10 text-danger",
       dotClass: "bg-danger",
       iconClass: "text-danger",
@@ -506,36 +485,6 @@ const overallStatus = computed(() => {
 
 const statusIcon = computed(() => overallStatus.value.icon)
 
-const recentIssues = computed<IssueSummary[]>(() => {
-  const issues: IssueSummary[] = []
-
-  for (const diagnostic of diagnosticItems.value) {
-    for (const fact of diagnostic.facts) {
-      if (fact.severity === "info") continue
-      issues.push({
-        key: `diagnostic-${diagnostic.turn}-${issues.length}`,
-        tone: fact.severity === "error" ? "error" : "warning",
-        title: `Turn ${diagnostic.turn} · ${sourceLabel(fact.source)}`,
-        detail: factLine(fact),
-      })
-      if (issues.length >= 5) return issues
-    }
-  }
-
-  for (const record of aiDebugRecords.value) {
-    if (!record.error) continue
-    issues.push({
-      key: `ai-${record.id}`,
-      tone: "error",
-      title: `AI · ${record.label}`,
-      detail: record.error,
-    })
-    if (issues.length >= 5) return issues
-  }
-
-  return issues
-})
-
 function formatTokens(value: number): string {
   return value.toLocaleString()
 }
@@ -559,45 +508,6 @@ function normalizeDiagnostics(items: unknown[]): RuntimeDiagnosticSummary[] {
   return items
     .filter(isRuntimeDiagnosticSummary)
     .sort((a, b) => b.turn - a.turn)
-}
-
-function sourceLabel(source: RuntimeDiagnosticSource): string {
-  const labels: Record<RuntimeDiagnosticSource, string> = {
-    turn: "回合",
-    agent: "Agent",
-    model: "模型",
-    skill: "Skill",
-    action: "Action",
-    agent_call: "Agent 调用",
-    workspace: "工作区",
-    script: "脚本",
-    session: "会话",
-    trace: "Trace",
-  }
-  return labels[source] ?? source
-}
-
-function factLine(fact: RuntimeDiagnosticFact): string {
-  const parts = [
-    fact.code,
-    fact.message,
-    fact.agentId ? `agent=${fact.agentId}` : "",
-    fact.debugLabel ? `label=${fact.debugLabel}` : "",
-    fact.skill ? `skill=${fact.skill}` : "",
-    fact.action ? `action=${fact.action}` : "",
-    fact.tool ? `tool=${fact.tool}` : "",
-    fact.executor ? `executor=${fact.executor}` : "",
-  ].filter(Boolean)
-
-  if (parts.length > 0) {
-    return parts.join(" · ")
-  }
-
-  if (fact.detailsSummary) {
-    return JSON.stringify(fact.detailsSummary, null, 2)
-  }
-
-  return fact.ok === false ? "事件标记为失败。" : "记录到一条运行时事实。"
 }
 
 function checkpointId(value: unknown): string {
