@@ -310,14 +310,14 @@ function backToBranchChoice(): void {
 }
 
 /** 确认原著角色选择。写入 runtime.json 的 player.character。 */
-async function confirmCanonCharacter(candidate: { id?: string; name: string; brief: string }): Promise<void> {
+async function confirmCanonCharacter(candidate: { id?: string; name: string; brief: string; gender?: string }): Promise<void> {
   if (busy.value) return
   const { tsian } = useTsian()
   busy.value = true
   errorText.value = ""
   try {
     const ref = candidate.id || `character:${candidate.name}`
-    const charInfo: SelectedCharacter = { ref, name: candidate.name, brief: candidate.brief }
+    const charInfo: SelectedCharacter = { ref, name: candidate.name, brief: candidate.brief, ...(candidate.gender ? { gender: candidate.gender } : {}) }
     await writePlayerCharacter(tsian, ref, candidate.name)
     selectedCharacter.value = charInfo
     characterSetupStatus.value = "confirmed"
@@ -347,6 +347,7 @@ async function confirmOriginalCharacter(form: OriginalCharacterFormData): Promis
       updatedBy: "player-setup",
       updatedAt: now,
     }
+    if (form.gender?.trim()) entity.gender = form.gender.trim()
     if (form.appearance?.trim()) entity.appearance = form.appearance.trim()
     if (form.personality?.trim()) entity.personality = form.personality.trim()
     if (form.background?.trim()) entity.background = form.background.trim()
@@ -356,7 +357,7 @@ async function confirmOriginalCharacter(form: OriginalCharacterFormData): Promis
       `${JSON.stringify(entity, null, 2)}\n`,
     )
     await writePlayerCharacter(tsian, ref, form.name)
-    selectedCharacter.value = { ref, name: form.name, brief: form.brief }
+    selectedCharacter.value = { ref, name: form.name, brief: form.brief, ...(form.gender?.trim() ? { gender: form.gender.trim() } : {}) }
     characterSetupStatus.value = "confirmed"
     statusText.value = `已创建角色：${form.name}`
   } catch (err) {
@@ -426,14 +427,17 @@ async function loadPlayerCharacter(
   const ref = (character as Record<string, unknown>).ref
   const name = (character as Record<string, unknown>).name
   if (typeof ref !== "string" || typeof name !== "string") return null
-  // brief 从实体文件读取
+  // brief + gender 从实体文件读取
   const localId = ref.startsWith("character:") ? ref.slice("character:".length) : ref
   const entityFile = await tsian.workspace.read(`${CHARACTER_ENTITIES_ROOT}${localId}.json`)
   if (entityFile?.content) {
     const entity = safeJsonParse(entityFile.content)
     if (entity && typeof entity === "object") {
       const brief = (entity as Record<string, unknown>).brief
-      if (typeof brief === "string") return { ref, name, brief }
+      const gender = (entity as Record<string, unknown>).gender
+      if (typeof brief === "string") {
+        return { ref, name, brief, ...(typeof gender === "string" ? { gender } : {}) }
+      }
     }
   }
   return { ref, name, brief: "" }

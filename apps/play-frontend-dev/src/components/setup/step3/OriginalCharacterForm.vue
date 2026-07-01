@@ -19,6 +19,7 @@ const formRef = ref<HTMLElement | null>(null)
 
 const name = ref("")
 const brief = ref("")
+const gender = ref("")
 const appearance = ref("")
 const personality = ref("")
 const background = ref("")
@@ -36,6 +37,7 @@ function onSubmit() {
     name: name.value.trim(),
     brief: brief.value.trim(),
   }
+  if (gender.value.trim()) form.gender = gender.value.trim()
   if (appearance.value.trim()) form.appearance = appearance.value.trim()
   if (personality.value.trim()) form.personality = personality.value.trim()
   if (background.value.trim()) form.background = background.value.trim()
@@ -83,6 +85,18 @@ onUnmounted(() => {
           placeholder="用一句话描述这个角色是谁"
           class="field-input"
           maxlength="500"
+        >
+      </label>
+
+      <!-- 性别（可选但推荐） -->
+      <label class="form-field">
+        <span class="field-label">性别</span>
+        <input
+          v-model="gender"
+          type="text"
+          placeholder="男 / 女 / 未知（留空则不设）"
+          class="field-input"
+          maxlength="20"
         >
       </label>
 

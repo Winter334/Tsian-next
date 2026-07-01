@@ -108,7 +108,10 @@ onUnmounted(() => {
 
         <!-- 角色信息 -->
         <span class="row-body">
-          <span class="row-name">{{ candidate.name }}</span>
+          <span class="row-name">
+            {{ candidate.name }}
+            <span v-if="candidate.gender" class="row-gender">{{ candidate.gender }}</span>
+          </span>
           <span v-if="expandedBrief !== i" class="row-brief">
             <span class="brief-text" :data-index="i">{{ candidate.brief }}</span>
             <span
@@ -325,10 +328,27 @@ onUnmounted(() => {
   font-weight: 600;
   color: var(--prose);
   transition: color 0.25s, text-shadow 0.25s;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.row-gender {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--prose-dim);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  padding: 0 4px;
+  letter-spacing: 0.05em;
 }
 .char-row.selected .row-name {
   color: var(--ember-bright);
   text-shadow: 0 0 6px rgba(232, 169, 72, 0.25);
+}
+.char-row.selected .row-gender {
+  color: var(--ember);
+  border-color: var(--ember);
 }
 .row-brief {
   display: flex;

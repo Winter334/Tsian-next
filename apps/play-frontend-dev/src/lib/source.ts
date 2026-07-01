@@ -90,6 +90,7 @@ export interface OpeningCandidateCharacter {
   id?: string
   name: string
   brief: string
+  gender?: string
 }
 
 // ── 角色设定（Step 3）──
@@ -100,11 +101,13 @@ export interface SelectedCharacter {
   ref: string
   name: string
   brief: string
+  gender?: string
 }
 
 export interface OriginalCharacterFormData {
   name: string
   brief: string
+  gender?: string
   appearance?: string
   personality?: string
   background?: string
@@ -114,6 +117,7 @@ export interface CharacterEntity {
   id: string
   name: string
   brief: string
+  gender?: string
   sourceRefs: string[]
   updatedBy: string
   updatedAt: string

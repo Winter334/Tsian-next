@@ -58,7 +58,10 @@ onUnmounted(() => {
 
         <!-- 角色信息 -->
         <span class="card-body">
-          <span class="card-name">{{ character.name }}</span>
+          <span class="card-name">
+            {{ character.name }}
+            <span v-if="character.gender" class="card-gender">{{ character.gender }}</span>
+          </span>
           <span class="card-brief">{{ character.brief }}</span>
         </span>
 
@@ -197,6 +200,19 @@ onUnmounted(() => {
   font-size: 1.05rem;
   font-weight: 600;
   color: var(--ember-bright);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.card-gender {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: var(--ember);
+  border: 1px solid var(--ember);
+  border-radius: 3px;
+  padding: 0 4px;
+  letter-spacing: 0.05em;
 }
 .card-brief {
   font-size: 0.82rem;
