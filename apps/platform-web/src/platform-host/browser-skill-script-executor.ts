@@ -1010,3 +1010,26 @@ export function createTestSkillScriptRunner(
     )
   }
 }
+
+/**
+ * 创建 runBrowserScript + runTestSkillScript 一对 runner。
+ *
+ * 三处 runAgentRuntimeTurn 调用点（sendMessage / invokeAgent / assistant-chat）
+ * 的脚本能力注入完全相同，只是变量名不同。此工厂消除重复——新增脚本相关能力
+ * 只需在此处加一行，三处自动生效。
+ */
+export function createBrowserScriptRunners(options: {
+  workspaceTransaction: Pick<RuntimeWorkspaceTransaction, "workspaceFiles" | "write" | "delete">
+  signal?: AbortSignal
+  emitTrace?: RuntimeTraceEmitter
+}): {
+  runBrowserScript: RuntimeBrowserScriptRunner
+  runTestSkillScript: RuntimeTestSkillScriptRunner
+} {
+  const runBrowserScript = createBrowserSkillScriptRunner(options)
+  const runTestSkillScript = createTestSkillScriptRunner(
+    options.workspaceTransaction.workspaceFiles,
+    runBrowserScript,
+  )
+  return { runBrowserScript, runTestSkillScript }
+}

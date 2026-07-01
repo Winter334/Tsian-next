@@ -137,7 +137,7 @@ import {
   type BrowserAiConfig,
   type BrowserAiToolCallMode,
 } from "../config/ai"
-import { createBrowserSkillScriptRunner, createTestSkillScriptRunner } from "./browser-skill-script-executor"
+import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import {
   commitSuccessfulRuntimeTurnForSave,
   commitWorkspaceFilesForSave,
@@ -883,19 +883,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
             toolCallMode: resolveAgentModelConfig("master", providerPresetMap)?.toolCallMode
               ?? getBrowserAiConfig()?.toolCallMode
               ?? "text",
-            runBrowserScript: createBrowserSkillScriptRunner({
+            ...createBrowserScriptRunners({
               workspaceTransaction: activeWorkspaceTransaction,
               signal: currentController.signal,
               emitTrace: trace.emit,
             }),
-            runTestSkillScript: createTestSkillScriptRunner(
-              activeWorkspaceTransaction.workspaceFiles,
-              createBrowserSkillScriptRunner({
-                workspaceTransaction: activeWorkspaceTransaction,
-                signal: currentController.signal,
-                emitTrace: trace.emit,
-              }),
-            ),
             semanticSearchOwnerId: activeSaveId,
             workspaceMutations: {
               write: (writeInput) => {
@@ -1215,17 +1207,10 @@ export const playFrontendBridge: PlayFrontendBridge = {
               toolCallMode: targetConfig?.toolCallMode
                 ?? getBrowserAiConfig()?.toolCallMode
                 ?? "text",
-              runBrowserScript: createBrowserSkillScriptRunner({
+              ...createBrowserScriptRunners({
                 workspaceTransaction: workspaceTransaction!,
                 signal: invokeController.signal,
               }),
-              runTestSkillScript: createTestSkillScriptRunner(
-                workspaceTransaction!.workspaceFiles,
-                createBrowserSkillScriptRunner({
-                  workspaceTransaction: workspaceTransaction!,
-                  signal: invokeController.signal,
-                }),
-              ),
               actionExecutorPolicy: undefined,
               // 旁路调用也接入 workspace mutation 适配器——agent 的 skill 脚本
               // (如 commit_opening_understanding)和 workspace_write 工具都需要写入能力。

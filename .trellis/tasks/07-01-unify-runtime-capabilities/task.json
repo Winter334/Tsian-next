@@ -3,7 +3,7 @@
   "name": "unify-runtime-capabilities",
   "title": "Capabilities 三处注入统一",
   "description": "",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
