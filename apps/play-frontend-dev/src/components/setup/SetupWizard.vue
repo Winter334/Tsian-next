@@ -14,12 +14,8 @@ import SplitReview from "./step1/SplitReview.vue"
  * 横向 stepper 在顶，stage 在下；步骤切换 Vue Transition。
  *
  * prd 向导共用骨架：全屏接管，顶部 stepper，stage 全宽，无页头标题条。
- * action bar：左=返回/重新导入 + 状态文案，右=主操作（导入/开始理解）。
+ * action bar：左=返回/重新导入，右=主操作（导入/开始理解）。
  */
-const emit = defineEmits<{
-  /** 用户想进入主游玩态（跳过未完成的向导步骤） */
-  enterPlay: []
-}>()
 
 const {
   step,
@@ -28,7 +24,6 @@ const {
   manifest,
   chapterIndex,
   busy,
-  statusText,
   errorText,
   initializing,
   initialize,
@@ -61,8 +56,6 @@ interface ActionConfig {
   primaryLabel: string
   primaryDisabled: boolean
   onPrimary: (() => void) | null
-  extraLabel?: string
-  onExtra?: (() => void) | null
 }
 
 const actions = computed<ActionConfig>(() => {
@@ -107,8 +100,6 @@ const actions = computed<ActionConfig>(() => {
       primaryLabel: understandingStatus.value === "ready" ? "查看理解" : "开始理解",
       primaryDisabled: busy.value || !manifest.value,
       onPrimary: understandingStatus.value === "ready" ? () => setView("understanding") : startOpeningUnderstanding,
-      extraLabel: "先去游玩",
-      onExtra: () => emit("enterPlay"),
     }
   }
   // understanding（Step 7 完整实现，此处先给基础操作）
@@ -119,8 +110,6 @@ const actions = computed<ActionConfig>(() => {
     primaryLabel: understandingStatus.value === "ready" ? "下一步" : busy.value ? "理解中…" : "开始理解",
     primaryDisabled: busy.value || understandingStatus.value === "ready" || !manifest.value,
     onPrimary: startOpeningUnderstanding,
-    extraLabel: "先去游玩",
-    onExtra: () => emit("enterPlay"),
   }
 })
 
@@ -229,15 +218,6 @@ onMounted(() => {
           >
             {{ actions.tertiaryLabel }}
           </button>
-          <button
-            v-if="actions.extraLabel"
-            class="setup-btn ghost"
-            type="button"
-            @click="actions.onExtra?.()"
-          >
-            {{ actions.extraLabel }}
-          </button>
-          <span v-if="statusText" class="setup-status">{{ statusText }}</span>
         </div>
         <div class="action-right">
           <button
@@ -416,11 +396,5 @@ onMounted(() => {
   transform: scale(0.96);
 }
 
-/* 状态文案 */
-.setup-status {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--whisper);
-  letter-spacing: 0.05em;
-}
+/* 状态文案已移除（用户反馈：在按钮行里像被禁用的按钮，造成混淆） */
 </style>

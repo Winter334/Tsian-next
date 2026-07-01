@@ -54,10 +54,6 @@ function onToggleNav() {
 function onNavigate(item: "story" | "settings") {
   navCurrent.value = item
 }
-
-function onEnterPlay() {
-  mode.value = "play"
-}
 </script>
 
 <template>
@@ -104,7 +100,6 @@ function onEnterPlay() {
     <!-- revealed wizard 模式：全屏向导（z:0，burning 时在幕布下） -->
     <SetupWizard
       v-if="(phase === 'burning' || phase === 'revealed') && mode === 'wizard'"
-      @enter-play="onEnterPlay"
     />
 
     <!-- burning：WebGL 燃烧幕布。挂载即开始燃烧（canvas hidden），delay 后显示+emit shown -->
