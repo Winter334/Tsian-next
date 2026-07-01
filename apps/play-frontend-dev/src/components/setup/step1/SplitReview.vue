@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, nextTick } from "vue"
+import { ref, watch, onMounted, nextTick, computed } from "vue"
 import gsap from "gsap"
 import { useSetupState } from "../../../composables/useSetupState"
 import { formatNumber, formatCharacters, formatOptionalCharacters, type SourceManifest, type ChapterIndexFile } from "../../../lib/source"
@@ -27,17 +27,19 @@ const previewKey = ref(0) // 用于触发预览区 Transition
 const listRef = ref<HTMLElement | null>(null)
 const previewRef = ref<HTMLElement | null>(null)
 
-const chapters = () => props.chapterIndex?.chapters ?? []
-const selected = () => Math.max(0, Math.min(selectedChapterWritable.value, chapters().length - 1))
+const chapters = computed(() => props.chapterIndex?.chapters ?? [])
+const selectedIndex = computed(() =>
+  Math.max(0, Math.min(selectedChapterWritable.value, chapters.value.length - 1)),
+)
 
 async function loadPreview() {
-  const ch = chapters()[selected()]
+  const ch = chapters.value[selectedIndex.value]
   if (!ch) {
     previewText.value = "章节列表为空。"
     previewTitle.value = "暂无章节"
     return
   }
-  previewTitle.value = ch.title || `第 ${selected() + 1} 章`
+  previewTitle.value = ch.title || `第 ${selectedIndex.value + 1} 章`
   previewText.value = "读取预览中…"
   try {
     previewText.value = await loadChapterPreview(ch.path)
@@ -94,10 +96,10 @@ onMounted(async () => {
       <!-- 章节列表 -->
       <div ref="listRef" class="chapter-list">
         <button
-          v-for="(ch, i) in chapters()"
+          v-for="(ch, i) in chapters"
           :key="i"
           class="chapter-card"
-          :class="{ selected: i === selected() }"
+          :class="{ selected: i === selectedIndex }"
           type="button"
           @click="selectChapter(i)"
         >
@@ -117,7 +119,7 @@ onMounted(async () => {
         <Transition name="preview-switch" mode="out-in">
           <div :key="previewKey" class="preview-inner">
             <div class="preview-kicker">
-              预览 · {{ String(selected() + 1).padStart(3, '0') }}
+              预览 · {{ String(selectedIndex + 1).padStart(3, '0') }}
             </div>
             <h3 class="preview-title">{{ previewTitle }}</h3>
             <div class="preview-body">{{ previewText }}</div>
