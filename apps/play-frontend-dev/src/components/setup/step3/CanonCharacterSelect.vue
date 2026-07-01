@@ -104,7 +104,7 @@ onUnmounted(() => {
         <!-- 角色信息 -->
         <span class="row-body">
           <span class="row-name">{{ candidate.name }}</span>
-          <span class="row-brief">
+          <span v-if="expandedBrief !== i" class="row-brief">
             <span class="brief-text" :data-index="i">{{ candidate.brief }}</span>
             <span
               v-if="truncationMap[i]"
@@ -113,10 +113,19 @@ onUnmounted(() => {
               tabindex="0"
               @click.stop="toggleBrief(i)"
               @keydown.enter.stop.prevent="toggleBrief(i)"
-            >{{ expandedBrief === i ? '收起' : '展开' }}</span>
+            >展开</span>
           </span>
           <Transition name="brief-detail-fade">
-            <span v-if="expandedBrief === i" class="row-brief-full">{{ candidate.brief }}</span>
+            <span v-if="expandedBrief === i" class="row-brief-full">
+              {{ candidate.brief }}
+              <span
+                class="brief-expand"
+                role="button"
+                tabindex="0"
+                @click.stop="toggleBrief(i)"
+                @keydown.enter.stop.prevent="toggleBrief(i)"
+              >收起</span>
+            </span>
           </Transition>
         </span>
 
@@ -223,8 +232,14 @@ onUnmounted(() => {
   box-shadow: 0 0 12px rgba(181, 137, 61, 0.08);
 }
 .char-row.selected {
-  border-color: var(--ember);
-  box-shadow: inset 0 0 16px rgba(181, 137, 61, 0.06), 0 0 12px rgba(232, 169, 72, 0.1);
+  border-color: var(--ember-bright);
+  box-shadow:
+    inset 0 0 20px rgba(232, 169, 72, 0.1),
+    0 0 16px rgba(232, 169, 72, 0.12);
+  /* 选中行从标记字向右渐隐的琥珀底色 */
+  background:
+    linear-gradient(90deg, rgba(232, 169, 72, 0.06) 0%, transparent 50%),
+    linear-gradient(135deg, rgba(20, 14, 8, 0.5), rgba(10, 5, 6, 0.6));
 }
 
 /* ── 标记字方块 ── */
@@ -253,8 +268,18 @@ onUnmounted(() => {
 .char-row.selected .row-mark {
   color: var(--ember-bright);
   border-color: var(--ember-bright);
-  box-shadow: 0 0 12px rgba(232, 169, 72, 0.3);
-  text-shadow: 0 0 8px rgba(232, 169, 72, 0.4);
+  background: rgba(232, 169, 72, 0.1);
+  box-shadow:
+    0 0 16px rgba(232, 169, 72, 0.35),
+    inset 0 0 8px rgba(232, 169, 72, 0.15);
+  text-shadow: 0 0 10px rgba(232, 169, 72, 0.5);
+  animation: mark-ignite 0.4s cubic-bezier(0.22, 1, 0.36, 1);
+}
+/* 点燃弹跳：选中瞬间 scale 放大再回弹 */
+@keyframes mark-ignite {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.15); }
+  100% { transform: scale(1); }
 }
 
 /* ── 粒子上升（复用 stepper particle-rise）── */
@@ -294,10 +319,11 @@ onUnmounted(() => {
   font-size: 0.95rem;
   font-weight: 600;
   color: var(--prose);
-  transition: color 0.25s;
+  transition: color 0.25s, text-shadow 0.25s;
 }
 .char-row.selected .row-name {
   color: var(--ember-bright);
+  text-shadow: 0 0 6px rgba(232, 169, 72, 0.25);
 }
 .row-brief {
   display: flex;
@@ -333,6 +359,11 @@ onUnmounted(() => {
   line-height: 1.5;
   white-space: normal;
   word-break: break-all;
+}
+.row-brief-full .brief-expand {
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: baseline;
 }
 .brief-detail-fade-enter-active,
 .brief-detail-fade-leave-active {
