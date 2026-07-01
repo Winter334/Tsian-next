@@ -26,9 +26,16 @@ import { getPlatformConfig } from "../config/platform-config"
  *  (加载存档后对话记录"消失"的根因).
  *
  *  泛化为按 agentId 生成路径(task 06-26):master 路径值不变(向后兼容),
- *  任意 persistent 入口 agent 的 context 存 save/agents/<agentId>/context.json. */
-export function agentContextPath(agentId: string): string {
-  return `save/agents/${agentId}/context.json`
+ *  任意 persistent 入口 agent 的 context 存 save/agents/<agentId>/context.json.
+ *
+ *  contextSlot 参数(task 07-01):不同调用方传不同 slot,读写不同 context-<slot>.json,
+ *  实现上下文隔离。slot 省略时路径不变(向后兼容)。slot 经消毒只保留 [a-zA-Z0-9_-],
+ *  防路径穿越/特殊字符注入。 */
+export function agentContextPath(agentId: string, slot?: string): string {
+  const base = `save/agents/${agentId}`
+  if (!slot) return `${base}/context.json`
+  const safeSlot = slot.replace(/[^a-zA-Z0-9_-]/g, "-")
+  return `${base}/context-${safeSlot}.json`
 }
 /** context.json 的 schema 标记,用于 parse 时校验. */
 export const AGENT_CONTEXT_SCHEMA = "tsian.agent.context.v1"

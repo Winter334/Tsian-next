@@ -221,7 +221,18 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
   }
 
   const injection = normalizeInjection(record.injection)
-  return { agentId: record.agentId, input: record.input, ...(injection ? { injection } : {}) }
+  const contextSlot =
+    typeof record.contextSlot === "string" && record.contextSlot.trim()
+      ? record.contextSlot.trim()
+      : undefined
+  const persist = typeof record.persist === "boolean" ? record.persist : undefined
+  return {
+    agentId: record.agentId,
+    input: record.input,
+    ...(injection ? { injection } : {}),
+    ...(contextSlot ? { contextSlot } : {}),
+    ...(persist !== undefined ? { persist } : {}),
+  }
 }
 
 function normalizeAskUserResponse(value: unknown): AskUserResponse {

@@ -879,7 +879,10 @@ function renderImportGuide(options: RenderSourceImportOptions, initialManifest: 
       }, 3000)
       try {
         const prompt = buildOpeningInitializationPrompt(state.manifest as SourceManifest, state.chapterIndex)
-        await tsian.invokeAgent("world-architect", prompt)
+        await tsian.invokeAgent("world-architect", prompt, {
+          contextSlot: "understanding",
+          persist: false,
+        })
         const summary = await loadOpeningUnderstandingSummary(tsian)
         if (!summary) throw new Error("理解未完成，没找到结果。请重试。")
         state.understandingSummary = summary

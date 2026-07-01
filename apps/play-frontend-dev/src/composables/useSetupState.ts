@@ -218,7 +218,10 @@ async function startOpeningUnderstanding(): Promise<void> {
 
   try {
     const prompt = buildOpeningInitializationPrompt(manifest.value, chapterIndex.value)
-    const result = await tsian.invokeAgent("world-architect", prompt)
+    const result = await tsian.invokeAgent("world-architect", prompt, {
+      contextSlot: "understanding",
+      persist: false,
+    })
     const summary = await loadUnderstandingSummary(tsian)
     if (!summary) {
       // agent 已返回但 summary 文件未找到——可能是平台侧写入失败。

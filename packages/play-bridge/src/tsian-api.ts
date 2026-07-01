@@ -40,6 +40,11 @@ export interface SendOptions {
 
 export interface InvokeAgentOptions {
   injection?: InjectionMessage[]
+  /** 上下文隔离 slot。不同 slot 读写不同 context-<slot>.json，防止上下文串。 */
+  contextSlot?: string
+  /** 是否持久化上下文。true = 读写 context-slot.json（跨调用持久化）；
+   *  false/省略 = 不读不写（一次性调用）。默认 false。 */
+  persist?: boolean
 }
 
 export interface MessageDelta {
@@ -298,6 +303,12 @@ export function createTsian(): TsianApi {
       const params: Record<string, unknown> = { agentId, input }
       if (options?.injection && options.injection.length > 0) {
         params.injection = options.injection
+      }
+      if (options?.contextSlot !== undefined) {
+        params.contextSlot = options.contextSlot
+      }
+      if (options?.persist !== undefined) {
+        params.persist = options.persist
       }
       return bridge.call<InvokeAgentResult>("interaction.invokeAgent", params as never)
     },

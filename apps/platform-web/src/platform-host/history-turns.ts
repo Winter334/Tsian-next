@@ -82,16 +82,18 @@ function serializeRawAirpHistoryTurnRecord(
 }
 
 /**
- * 从工作区文件读 agent 会话上下文快照(save/agents/<agentId>/context.json).
+ * 从工作区文件读 agent 会话上下文快照(save/agents/<agentId>/context[-slot].json).
  * 文件不存在/损坏 → 返回 null(由 runtime 层兜底初始化).
  * agentId 参数化(task 06-26):master 路径值不变,支持任意 persistent 入口 agent.
+ * slot 参数(task 07-01):传 slot 时读 context-<slot>.json,实现上下文隔离.
  */
 export function readAgentContextFromWorkspace(
   workspaceFiles: WorkspaceFile[],
   saveId: string,
   agentId: string = "master",
+  slot?: string,
 ): AgentContextSnapshot | null {
-  const file = workspaceFiles.find((f) => f.path === agentContextPath(agentId))
+  const file = workspaceFiles.find((f) => f.path === agentContextPath(agentId, slot))
   if (!file) return null
   return parseAgentContext(file.content, saveId, { agentId })
 }
@@ -100,6 +102,7 @@ export function readAgentContextFromWorkspace(
  * turn 收尾:把本轮正文追加进 context.json,若本轮开头压缩了则用压缩后快照.
  * 原地更新(workspaceTransaction.write),与其它 stage 函数同事务提交.
  * agentId 参数化(task 06-26):默认 master,支持任意 persistent 入口 agent.
+ * slot 参数(task 07-01):传 slot 时写 context-<slot>.json,实现上下文隔离.
  */
 export function stageAgentContextFile(
   workspaceTransaction: RuntimeWorkspaceTransaction,
@@ -110,13 +113,15 @@ export function stageAgentContextFile(
     assistant: string
     compressedContext?: AgentContextSnapshot
     agentId?: string
+    slot?: string
   },
 ): WorkspaceFile {
   const agentId = input.agentId ?? "master"
+  const slot = input.slot
   // 基础快照:本轮压缩了→用压缩结果;否则读现有 context.json,无则空快照
   const base =
     input.compressedContext
-    ?? readAgentContextFromWorkspace(workspaceTransaction.workspaceFiles, input.saveId, agentId)
+    ?? readAgentContextFromWorkspace(workspaceTransaction.workspaceFiles, input.saveId, agentId, slot)
     ?? createEmptyAgentContext(input.saveId, { agentId })
   // 追加本轮正文(保持最近 K 轮),saveId 用真实值修正(runtime 兜底时可能为空)
   const updated = appendTurnToContext(
@@ -126,7 +131,7 @@ export function stageAgentContextFile(
     input.assistant,
   )
   return workspaceTransaction.write({
-    path: agentContextPath(agentId),
+    path: agentContextPath(agentId, slot),
     content: serializeAgentContext(updated),
   })
 }

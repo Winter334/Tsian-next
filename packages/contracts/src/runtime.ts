@@ -679,6 +679,12 @@ export interface InvokeAgentRequest {
   input: string
   /** 前端注入的上下文消息（本轮有效，不落盘）。 */
   injection?: InjectionMessage[]
+  /** 上下文隔离 slot。不同 slot 读写不同 context-<slot>.json，防止不同调用方上下文串。
+   *  省略时用默认路径 save/agents/<agentId>/context.json（向后兼容）。 */
+  contextSlot?: string
+  /** 是否持久化上下文。true = 读写 context-slot.json（跨调用持久化）；
+   *  false/省略 = 不读不写（一次性调用）。默认 false。 */
+  persist?: boolean
 }
 
 /** invokeAgent 返回：agent 的回复文本。不含 snapshot（不进运行时状态）。 */
