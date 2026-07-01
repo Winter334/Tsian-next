@@ -388,6 +388,7 @@ export type AgentPlatformToolName =
   | "inspect_frontend"
   | "workspace_semantic_search"
   | "ask_user"
+  | "test_skill_script"
 
 export interface AgentSkillConfig {
   enabled: string[]

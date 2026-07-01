@@ -35,6 +35,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   agentCall: "agent_call",
   inspectFrontend: "inspect_frontend",
   askUser: "ask_user",
+  testSkillScript: "test_skill_script",
   read: "read",
   list: "list",
   search: "search",
@@ -266,6 +267,16 @@ export type RuntimeBrowserScriptRunner = (
   context?: RuntimeControlledExecutorContext,
 ) => Promise<PlatformActionResult>
 
+export interface RuntimeTestSkillScriptInput {
+  skillName: string
+  actionName: string
+  input: Record<string, unknown>
+}
+
+export type RuntimeTestSkillScriptRunner = (
+  input: RuntimeTestSkillScriptInput,
+) => Promise<PlatformActionResult>
+
 export interface RuntimeActionExecutorPolicyRequest {
   skill: {
     name: string
@@ -327,6 +338,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   runAgentCall?: RuntimeAgentCallRunner
   runInspectFrontend?: RuntimeInspectFrontendRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
+  runTestSkillScript?: RuntimeTestSkillScriptRunner
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>

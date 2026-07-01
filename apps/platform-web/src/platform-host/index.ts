@@ -137,7 +137,7 @@ import {
   type BrowserAiConfig,
   type BrowserAiToolCallMode,
 } from "../config/ai"
-import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
+import { createBrowserSkillScriptRunner, createTestSkillScriptRunner } from "./browser-skill-script-executor"
 import {
   commitSuccessfulRuntimeTurnForSave,
   commitWorkspaceFilesForSave,
@@ -211,7 +211,7 @@ function finishReasonToKind(finishReason: "stop" | "tool_calls"): "thought" | "f
 function actionError(
   code: string,
   message: string,
-  details?: Record<string, string | number | boolean | null>,
+  details?: Record<string, string | number | boolean | null | string[]>,
 ) {
   const error: PlatformActionError = { code, message }
   if (details && Object.keys(details).length > 0) {
@@ -888,6 +888,14 @@ export const playFrontendBridge: PlayFrontendBridge = {
               signal: currentController.signal,
               emitTrace: trace.emit,
             }),
+            runTestSkillScript: createTestSkillScriptRunner(
+              activeWorkspaceTransaction.workspaceFiles,
+              createBrowserSkillScriptRunner({
+                workspaceTransaction: activeWorkspaceTransaction,
+                signal: currentController.signal,
+                emitTrace: trace.emit,
+              }),
+            ),
             semanticSearchOwnerId: activeSaveId,
             workspaceMutations: {
               write: (writeInput) => {
@@ -1212,6 +1220,13 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 workspaceTransaction: workspaceTransaction!,
                 signal: invokeController.signal,
               }),
+              runTestSkillScript: createTestSkillScriptRunner(
+                workspaceTransaction!.workspaceFiles,
+                createBrowserSkillScriptRunner({
+                  workspaceTransaction: workspaceTransaction!,
+                  signal: invokeController.signal,
+                }),
+              ),
               actionExecutorPolicy: undefined,
               // 旁路调用也接入 workspace mutation 适配器——agent 的 skill 脚本
               // (如 commit_opening_understanding)和 workspace_write 工具都需要写入能力。

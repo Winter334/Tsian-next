@@ -10,9 +10,19 @@ import type {
   RuntimeBrowserScriptExecutorRequest,
   RuntimeControlledExecutorContext,
 } from "../agent-runtime/workspace-tools"
+import type {
+  RuntimeBrowserScriptRunner,
+  RuntimeTestSkillScriptInput,
+  RuntimeTestSkillScriptRunner,
+} from "../agent-runtime/workspace-tools-types"
 import type { RuntimeTraceEmitter } from "../agent-runtime/trace"
 import { summarizeTraceValue } from "../agent-runtime/trace"
 import { executeWorkspaceOperation } from "../agent-runtime/workspace-operations"
+import { buildSkillRegistry } from "../agent-runtime/registry"
+import {
+  parseActionDeclarations,
+  resolveBrowserScriptPath,
+} from "../agent-runtime/workspace-tools"
 import {
   readSkillConfig,
   readWorkspaceFileFromFiles,
@@ -80,18 +90,22 @@ function toJsonValue(value, seen) {
 
 function errorPayload(error) {
   if (isRecord(error)) {
-    return {
-      code: typeof error.code === "string" ? error.code : "BROWSER_SCRIPT_ERROR",
-      name: typeof error.name === "string" ? error.name : "Error",
-      message: typeof error.message === "string" ? error.message : "Browser script failed.",
-      details: error.details === undefined ? null : toJsonValue(error.details)
-    };
+    var name = typeof error.name === "string" ? error.name : "Error";
+    var message = typeof error.message === "string" ? error.message : "Browser script failed.";
+    var stack = typeof error.stack === "string" ? error.stack.slice(0, 1000) : null;
+    var details = error.details === undefined ? null : toJsonValue(error.details);
+    // 脚本自定义错误（fail() 带 .code）→ 原始 code 透传，不覆盖
+    if (typeof error.code === "string" && error.code) {
+      return { code: error.code, name: name, message: message, stack: stack, details: details };
+    }
+    // SyntaxError（new AsyncFunction parse 失败）→ 专属 code
+    if (name === "SyntaxError") {
+      return { code: "BROWSER_SCRIPT_SYNTAX_ERROR", name: name, message: message, stack: stack, details: details };
+    }
+    // 普通 Error → 运行时错误
+    return { code: "BROWSER_SCRIPT_RUNTIME_ERROR", name: name, message: message, stack: stack, details: details };
   }
-  return {
-    code: "BROWSER_SCRIPT_ERROR",
-    name: "Error",
-    message: String(error)
-  };
+  return { code: "BROWSER_SCRIPT_RUNTIME_ERROR", name: "Error", message: String(error), stack: null, details: null };
 }
 
 function rpc(op, args) {
@@ -148,7 +162,7 @@ function postLog(level, message, data) {
 // 无配置的 skill 拿到空对象 {}，脚本 config.API_KEY 返回 undefined 自行处理。
 // config 通过 getter 从 execute 消息动态读取（message 只在 onmessage 里有定义，
 // 顶层不能直接引用）。
-let currentConfig: Record<string, unknown> = {};
+let currentConfig = {};
 const tsian = Object.freeze({
   workspace: Object.freeze({
     read(input) {
@@ -730,6 +744,7 @@ async function runWorkerScript(
     options.signal?.addEventListener("abort", onAbort, { once: true })
 
     worker.onerror = (event) => {
+      const errorEvent = event.error
       settle(actionError(
         "BROWSER_SCRIPT_WORKER_ERROR",
         event.message || "Browser script worker failed.",
@@ -737,6 +752,9 @@ async function runWorkerScript(
           scriptPath: request.scriptPath,
           line: event.lineno,
           column: event.colno,
+          ...(errorEvent && typeof errorEvent.stack === "string"
+            ? { stack: errorEvent.stack.slice(0, 1000) }
+            : {}),
         },
       ))
     }
@@ -788,6 +806,7 @@ async function runWorkerScript(
           {
             scriptPath: request.scriptPath,
             ...(error.name === undefined ? {} : { name: toJsonValue(error.name) }),
+            ...(error.stack === undefined ? {} : { stack: toJsonValue(error.stack) }),
             ...(error.details === undefined ? {} : { details: toJsonValue(error.details) }),
           },
         ))
@@ -900,5 +919,94 @@ export function createBrowserSkillScriptRunner(
     const mergedConfig = mergeSkillConfig(request.configItems, playerValues)
 
     return runWorkerScript(options, request, finalSource, executorContext, mergedConfig)
+  }
+}
+
+/**
+ * 创建 test_skill_script runner：从 workspace 文件中按 name 定位 Skill，
+ * 解析 tsian-actions 找到 action 声明，校验 browser_script executor，
+ * 然后直接调 runBrowserScript 执行——不需要先 use_skill 激活。
+ *
+ * 复用当前 turn 的 workspace 事务（脚本写入走 staged transaction）。
+ */
+export function createTestSkillScriptRunner(
+  workspaceFiles: WorkspaceFile[],
+  runBrowserScript: RuntimeBrowserScriptRunner,
+): RuntimeTestSkillScriptRunner {
+  return async (input: RuntimeTestSkillScriptInput): Promise<PlatformActionResult> => {
+    // ① 在 workspaceFiles 中找 skills/<dir>/SKILL.md，frontmatter name 匹配 skillName
+    const registry = buildSkillRegistry(workspaceFiles)
+    const skill = registry.find(
+      (entry) => entry.name === input.skillName || entry.id === input.skillName,
+    )
+    if (!skill) {
+      return actionError(
+        "SKILL_NOT_FOUND",
+        `Skill "${input.skillName}" was not found.`,
+        {
+          skillName: input.skillName,
+          availableSkills: registry.map((entry) => entry.name).filter(Boolean),
+        },
+      )
+    }
+
+    // ② 读 SKILL.md 内容，解析 tsian-actions block，找 actionName
+    const skillFile = workspaceFiles.find((file) => file.path === skill.path)
+    if (!skillFile) {
+      return actionError(
+        "SKILL_FILE_MISSING",
+        `Skill file was not found: ${skill.path}`,
+        { skillPath: skill.path },
+      )
+    }
+
+    const parseResult = parseActionDeclarations(skillFile.content)
+    const action = parseResult.actions.find((decl) => decl.name === input.actionName)
+    if (!action) {
+      return actionError(
+        "ACTION_NOT_FOUND",
+        `Action "${input.actionName}" was not found in skill "${input.skillName}".`,
+        {
+          skillName: input.skillName,
+          actionName: input.actionName,
+          availableActions: parseResult.actions.map((decl) => decl.name),
+        },
+      )
+    }
+
+    // ③ 校验 executor.type === "browser_script"
+    if (action.executor.type !== "browser_script") {
+      return actionError(
+        "ACTION_NOT_BROWSER_SCRIPT",
+        `Action "${input.actionName}" is not a browser_script action (type: "${action.executor.type}").`,
+        { skillName: input.skillName, actionName: input.actionName, executorType: action.executor.type },
+      )
+    }
+
+    // ④ 解析 scriptPath（相对 skill 目录），校验文件存在
+    const scriptPath = resolveBrowserScriptPath(skill, action.executor)
+    if (!workspaceFiles.some((file) => file.path === scriptPath)) {
+      return actionError(
+        "BROWSER_SCRIPT_NOT_FOUND",
+        `Browser script file was not found: ${scriptPath}`,
+        { scriptPath, skillPath: skill.path },
+      )
+    }
+
+    // ⑤ 调 runBrowserScript 执行（复用现有执行器，错误透传来自 Step 1 改造）
+    const timeoutMs = action.executor.timeoutMs ?? 10000
+    return runBrowserScript(
+      {
+        skillName: skill.name,
+        skillPath: skill.path,
+        actionName: action.name,
+        scriptPath,
+        input: input.input,
+        timeoutMs,
+        ...(skill.configItems && skill.configItems.length > 0
+          ? { configItems: skill.configItems }
+          : {}),
+      },
+    )
   }
 }

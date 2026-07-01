@@ -144,7 +144,7 @@ const AGENT_AUTHORING_SKILL_MD = [
   "| `contextPaths` | string[] | yes | Workspace files loaded into the agent's prompt context. |",
   "| `skills.enabled` | string[] | yes | Whitelist of exact Skill paths (`.../SKILL.md`); non-empty narrows visible skills. |",
   "| `skills.disabled` | string[] | yes | Blacklist of exact Skill paths (`.../SKILL.md`). |",
-  "| `platformTools.enabled` | string[] | yes | Allowed: `agent_call`, `workspace_read`, `workspace_write`, `inspect_frontend`. |",
+  "| `platformTools.enabled` | string[] | yes | Allowed: `agent_call`, `workspace_read`, `workspace_write`, `inspect_frontend`, `test_skill_script`. |",
   "| `platformTools.disabled` | string[] | yes | Blocked platform tools. |",
   "| `workspaceAccess.level` | number | yes | Permission level (see below). |",
   "| `knowledgeMount` | string | no | Path to knowledge base directory (default `docs/`). |",
@@ -561,6 +561,7 @@ const GENERATE_AGENT_SKELETON_JS = [
   "  'inspect_frontend',",
   "  'workspace_semantic_search',",
   "  'ask_user',",
+  "  'test_skill_script',",
   "];",
   "",
   "function isRecord(value) {",
@@ -709,6 +710,7 @@ const VALIDATE_AGENT_DEFINITION_JS = [
   "  'inspect_frontend',",
   "  'workspace_semantic_search',",
   "  'ask_user',",
+  "  'test_skill_script',",
   "];",
   "",
   "function isRecord(value) {",
@@ -1402,7 +1404,7 @@ function defaultAssistantConfig(): AgentConfig {
       disabled: [],
     },
     platformTools: {
-      enabled: ["agent_call", "workspace_read", "workspace_write", "inspect_frontend", "ask_user"],
+      enabled: ["agent_call", "workspace_read", "workspace_write", "inspect_frontend", "ask_user", "test_skill_script"],
       disabled: [],
     },
     workspaceAccess: {

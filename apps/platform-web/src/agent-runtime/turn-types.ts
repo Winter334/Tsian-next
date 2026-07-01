@@ -17,7 +17,7 @@ import type {
 import type { CompressCallModel, TaskCompressionResult } from "./context-lifecycle"
 import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
 import type { ToolSchema } from "./tool-schemas"
-import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
+import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, RuntimeTestSkillScriptInput, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
 import type { ModelCallResult, NativeToolCall, RuntimeChatMessage } from "../runtime-host/ai"
 import type { BrowserAiToolCallMode } from "../config/ai"
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
@@ -196,6 +196,15 @@ export interface AgentRuntimeCapabilities {
   runBrowserScript?(
     request: RuntimeBrowserScriptExecutorRequest,
     context?: RuntimeControlledExecutorContext,
+  ): Promise<PlatformActionResult>
+  /**
+   * test_skill_script capability. Locates a Skill by name, resolves the
+   * declared browser_script action, and runs it directly — without requiring
+   * use_skill activation first. Lets the assistant agent test/debug scripts
+   * it authored. Implemented in platform-host/index.ts.
+   */
+  runTestSkillScript?(
+    input: RuntimeTestSkillScriptInput,
   ): Promise<PlatformActionResult>
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter

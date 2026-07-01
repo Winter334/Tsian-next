@@ -667,6 +667,10 @@ function buildWorkspaceToolInstructions(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
   )
+  const canTestSkillScript = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.testSkillScript,
+  )
   const canSemanticSearch = platformToolEnabled(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
@@ -696,6 +700,7 @@ function buildWorkspaceToolInstructions(
       : []),
     ...(canSemanticSearch ? [RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch] : []),
     ...(canInspectFrontend ? [RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend] : []),
+    ...(canTestSkillScript ? [RUNTIME_WORKSPACE_TOOL_NAMES.testSkillScript] : []),
   ]
 
   const sharedRules = [
@@ -1641,6 +1646,7 @@ async function callAgentModelWithWorkspaceToolsNative(
         )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
+      runTestSkillScript: capabilities.runTestSkillScript,
       runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
@@ -2025,6 +2031,7 @@ async function callAgentModelWithWorkspaceTools(
           )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
+      runTestSkillScript: capabilities.runTestSkillScript,
       runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,

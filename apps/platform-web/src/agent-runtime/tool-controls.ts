@@ -61,13 +61,19 @@ export const PLATFORM_TOOL_CONTROL_GROUPS: PlatformToolControlGroup[] = [
     ],
   },
   {
-    title: "前端自检",
+    title: "开发与自检",
     tools: [
       {
         id: "inspect_frontend",
         label: "前端自检",
         description:
           "允许在隐藏 iframe 里加载当前卡的 packaged 前端，观测渲染、报错和桥状态，驱动一回合或模拟玩家交互，形成写前端→自检→改→复查闭环。",
+      },
+      {
+        id: "test_skill_script",
+        label: "脚本测试",
+        description:
+          "允许直接测试 Skill 的 browser_script action（不需要先 use_skill），返回结构化错误用于调试。形成写脚本→测试→看错误→改脚本闭环。",
       },
     ],
   },

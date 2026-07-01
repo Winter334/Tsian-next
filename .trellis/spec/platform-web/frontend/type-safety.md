@@ -606,3 +606,38 @@
 - agent_call success with missing `targetAgent`/`response` -> degrades to empty strings (never throws).
 - agent_call failure (`ok === false`) -> structured `{type:"agent_call", status:"failed", error}`.
 - `JSON.stringify(result)` throws (cyclic) -> ordinary branch catch -> returns `undefined`.
+
+## Scenario: Registering A New Platform Agent Tool
+
+### Scope / Trigger
+
+- When adding a new platform tool that Agent Runtime exposes to the model (e.g. `inspect_frontend`, `test_skill_script`, or a future tool).
+
+### Contracts — Full Registration Checklist
+
+A new platform tool must be wired through **all** of the following, or it will not reach the model / will not be toggleable / will not render in the UI. Missing any one causes a silent gap — no build error, just a tool that "doesn't exist" at runtime.
+
+| # | File | What to add | What breaks if missing |
+|---|------|-------------|------------------------|
+| 1 | `packages/contracts/src/runtime.ts` | Add the tool name string to `AgentPlatformToolName` union | `satisfies Record<string, AgentPlatformToolName>` in permissions.ts fails build |
+| 2 | `agent-runtime/permissions.ts` | Add to `AGENT_PLATFORM_TOOL_NAMES` | Tool name not recognized by the permission system |
+| 3 | `agent-runtime/workspace-tools-types.ts` | Add to `RUNTIME_WORKSPACE_TOOL_NAMES`; add `Runtime<Name>Runner` type + `run<Name>?` to `RuntimeWorkspaceToolExecutionContext` | No tool name constant; no capability injection point |
+| 4 | `agent-runtime/turn-types.ts` | Add `run<Name>?` to `AgentRuntimeCapabilities` | `platform-host/index.ts` cannot inject the capability (TS2353) |
+| 5 | `agent-runtime/tool-schemas.ts` | Define `<name>Schema: ToolSchema`; add `can<Name>` check + `schemas.push(<name>Schema)` in `buildToolSchemas` | Model never sees the tool's parameter schema — tool is invisible even if everything else is wired |
+| 6 | `agent-runtime/workspace-tools.ts` | Add `normalize<Name>Arguments` function; add dispatch branch in `executeRuntimeWorkspaceToolCalls` (`else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.<name>)`) | Tool calls from the model have no handler — falls through to the "unknown tool" path |
+| 7 | `agent-runtime/index.ts` | Add `can<Name>` check via `platformToolEnabled`; add to `toolNames` array (conditional spread) | **Tool name not in the "当前可用工具名称" list — model doesn't know the tool exists, even if schema is registered.** This was the `test_skill_script` bug: steps 1-6 were done but step 7 was missed. |
+| 8 | `agent-runtime/index.ts` | Thread `run<Name>: capabilities.run<Name>` in **both** capability-threading sites (there are two: one for the entry agent path, one for delegated `agent_call` targets) | Tool works for master but not for delegated agents (or vice versa) |
+| 8b | `platform-host/index.ts` + `platform-host/assistant-chat.ts` | Inject `run<Name>` in **all three** `runAgentRuntimeTurn` capability objects: `sendMessage` (index.ts), `invokeAgent` (index.ts), and **assistant-chat** (assistant-chat.ts — the desktop assistant's own turn path, separate from `sendMessage`). The assistant runs through `assistant-chat.ts`, not `sendMessage` — missing this injection means the assistant agent gets `<NAME>_UNAVAILABLE` even though the tool is registered and enabled. | Tool works for game agents but not for the desktop assistant |
+| 9 | `agent-runtime/tool-controls.ts` | Add to `PLATFORM_TOOL_CONTROL_GROUPS` (UI toggle card) | No on/off switch in the assistant config panel or Studio agent config — tool is invisible to the user |
+| 10 | `views/AssistantView.vue` | Add to the `TOOL_LABELS` map (`<name>: { verb, noun, unit }`) | Tool calls show as raw tool name in the timeline instead of a readable label |
+| 11 | `platform-host/index.ts` | Implement the runner function; inject `run<Name>` in **both** `runAgentRuntimeTurn` capability objects (sendMessage + invokeAgent) | No actual execution logic — tool call reaches dispatch but `context.run<Name>` is `undefined` → `TOOL_UNAVAILABLE` error |
+| 12 | `storage/local-assistant-files.ts` | Add to `VALID_PLATFORM_TOOLS` arrays (two copies: one in generate-skill script, one in validate script); add to `defaultAssistantConfig.platformTools.enabled` if the assistant should have it by default; update the doc table string | Assistant's saved `agent.json` won't accept the tool name (validation rejects it); tool not on by default for the assistant |
+| 13 | `agent-runtime/registry.ts` | Add to the module-level `AGENT_PLATFORM_TOOL_NAMES` Set (a **separate** copy from `permissions.ts` — registry keeps its own for parsing `agent.json`) | `jsonPlatformToolArray` silently filters out the tool name when parsing `agent.json` → `AgentRegistryEntry.platformTools.enabled` never contains it → `isAgentPlatformToolEnabled` returns `false` → toggle shows off even though the persisted `agent.json` has it in `enabled`. **No build error, no runtime error — the tool is silently dropped.** |
+
+### Validation & Error Matrix
+
+- Tool name in `AGENT_PLATFORM_TOOL_NAMES` but not in `AgentPlatformToolName` union → build error (TS satisfies check).
+- Tool schema registered but tool name not in `toolNames` (step 7 missing) → **no build error, no runtime error**; the model simply never sees the tool in its available tools list. This is the most insidious gap — everything compiles and runs, but the tool is invisible.
+- Tool in `toolNames` but no dispatch branch (step 6 missing) → model calls the tool → "unknown tool" error observation.
+- Tool dispatch present but `context.run<Name>` is `undefined` (step 11 missing) → `<NAME>_UNAVAILABLE` error observation.
+- Tool not in `PLATFORM_TOOL_CONTROL_GROUPS` (step 9 missing) → user cannot toggle it on/off; if it's not in the assistant's default `enabled` array, it's permanently off.

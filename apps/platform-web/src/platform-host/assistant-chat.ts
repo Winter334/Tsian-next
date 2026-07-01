@@ -53,7 +53,7 @@ import {
 import { getBrowserAiConfig } from "../config/ai"
 import { resolveBrowserAiConfigForModel } from "../config/ai"
 import { binaryPlaceholderText } from "@/lib/media-type"
-import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
+import { createBrowserSkillScriptRunner, createTestSkillScriptRunner } from "./browser-skill-script-executor"
 import { createFrontendInspector } from "./frontend-inspector"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import { emitTurnDebugReady } from "../debug-events"
@@ -547,6 +547,14 @@ export async function runAssistantChat(
           signal: controller.signal,
           emitTrace: traceCollector.emit,
         }),
+        runTestSkillScript: createTestSkillScriptRunner(
+          activeWorkspaceTransaction.workspaceFiles,
+          createBrowserSkillScriptRunner({
+            workspaceTransaction: activeWorkspaceTransaction,
+            signal: controller.signal,
+            emitTrace: traceCollector.emit,
+          }),
+        ),
         workspaceMutations: {
           write: (writeInput) => {
             // .tsian/local/assistant/* 是平台本地数据(不进存档/checkpoint/distribute),

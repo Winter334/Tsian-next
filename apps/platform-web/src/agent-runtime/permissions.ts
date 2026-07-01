@@ -11,6 +11,7 @@ export const AGENT_PLATFORM_TOOL_NAMES = {
   inspectFrontend: "inspect_frontend",
   workspaceSemanticSearch: "workspace_semantic_search",
   askUser: "ask_user",
+  testSkillScript: "test_skill_script",
 } as const satisfies Record<string, AgentPlatformToolName>
 
 /**
