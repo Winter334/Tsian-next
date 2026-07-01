@@ -3,7 +3,7 @@
   "name": "invoke-agent-context-management",
   "title": "旁路调用上下文管理完善",
   "description": "",
-  "status": "done",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
