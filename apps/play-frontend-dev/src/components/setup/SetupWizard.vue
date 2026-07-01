@@ -6,6 +6,9 @@ import MethodChoose from "./step1/MethodChoose.vue"
 import PasteInput from "./step1/PasteInput.vue"
 import FileInput from "./step1/FileInput.vue"
 import SplitReview from "./step1/SplitReview.vue"
+import UnderstandingRunning from "./step2/UnderstandingRunning.vue"
+import UnderstandingReady from "./step2/UnderstandingReady.vue"
+import UnderstandingFailed from "./step2/UnderstandingFailed.vue"
 
 /**
  * SetupWizard — 开局导入向导壳。
@@ -21,6 +24,7 @@ const {
   step,
   subView,
   understandingStatus,
+  understandingSummary,
   manifest,
   chapterIndex,
   busy,
@@ -95,14 +99,35 @@ const actions = computed<ActionConfig>(() => {
       onPrimary: understandingStatus.value === "ready" ? () => setView("understanding") : startOpeningUnderstanding,
     }
   }
-  // understanding（Step 7 完整实现，此处先给基础操作）
+  // understanding 视图
+  if (understandingStatus.value === "running") {
+    return {
+      secondaryLabel: "返回目录",
+      secondaryDisabled: true, // running 时不允许返回
+      onSecondary: null,
+      primaryLabel: "理解中…",
+      primaryDisabled: true,
+      onPrimary: null,
+    }
+  }
+  if (understandingStatus.value === "failed") {
+    return {
+      secondaryLabel: "返回目录",
+      secondaryDisabled: busy.value,
+      onSecondary: () => setView("review"),
+      primaryLabel: "重试",
+      primaryDisabled: busy.value,
+      onPrimary: startOpeningUnderstanding,
+    }
+  }
+  // ready：分支卡在组件内交互，不需要主按钮
   return {
     secondaryLabel: "返回目录",
     secondaryDisabled: busy.value,
     onSecondary: () => setView("review"),
-    primaryLabel: understandingStatus.value === "ready" ? "下一步" : busy.value ? "理解中…" : "开始理解",
-    primaryDisabled: busy.value || understandingStatus.value === "ready" || !manifest.value,
-    onPrimary: startOpeningUnderstanding,
+    primaryLabel: "下一步",
+    primaryDisabled: true, // Step 3 角色设定未实现
+    onPrimary: null,
   }
 })
 
@@ -169,16 +194,19 @@ onMounted(() => {
               <SplitReview :manifest="manifest" :chapter-index="chapterIndex" />
             </div>
 
-            <!-- understanding（Step 7 完整实现） -->
+            <!-- understanding：根据状态渲染 running/ready/failed -->
             <div v-else key="understanding" class="stage-content">
-              <div class="understanding-placeholder">
-                <p class="placeholder-copy">
-                  {{ understandingStatus === 'ready' ? '初始理解已完成' : '初始理解功能即将开放' }}
-                </p>
-                <p v-if="understandingStatus === 'ready'" class="placeholder-hint">
-                  可以继续向导，或先去游玩体验。
-                </p>
-              </div>
+              <UnderstandingRunning v-if="understandingStatus === 'running'" />
+              <UnderstandingReady
+                v-else-if="understandingStatus === 'ready'"
+                :summary="understandingSummary"
+              />
+              <UnderstandingFailed
+                v-else-if="understandingStatus === 'failed'"
+                :error="errorText"
+                @retry="startOpeningUnderstanding"
+              />
+              <!-- idle 不会出现在 understanding 视图（review 点开始理解直接进 running） -->
             </div>
           </Transition>
 
@@ -295,29 +323,6 @@ onMounted(() => {
 .error-fade-enter-from,
 .error-fade-leave-to {
   opacity: 0;
-}
-
-/* understanding 占位（Step 7 替换） */
-.understanding-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 60px 20px;
-  text-align: center;
-}
-.placeholder-copy {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 1rem;
-  color: var(--prose-dim);
-}
-.placeholder-hint {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  color: var(--whisper);
 }
 
 /* ── action bar ── */

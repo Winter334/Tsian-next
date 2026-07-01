@@ -52,6 +52,39 @@ const initialized = ref(false)
 let understandingStartedAt = 0
 let stageTimer = 0
 
+// agent 心跳：understanding running 时监听 bridge 事件，递增计数器
+// 不累加文本到主游玩 stream，只给 running 组件"它还活着"的视觉脉冲信号
+const agentHeartbeat = ref(0)
+let heartbeatUnsub: Array<() => void> = []
+
+function startHeartbeat(): void {
+  stopHeartbeat()
+  const { tsian } = useTsian()
+  heartbeatUnsub = [
+    tsian.onMessage(() => {
+      if (understandingStatus.value === "running") {
+        agentHeartbeat.value++
+      }
+    }),
+    tsian.onTool(() => {
+      if (understandingStatus.value === "running") {
+        agentHeartbeat.value++
+      }
+    }),
+    tsian.onRoundEnd(() => {
+      if (understandingStatus.value === "running") {
+        agentHeartbeat.value++
+      }
+    }),
+  ]
+}
+
+function stopHeartbeat(): void {
+  for (const unsub of heartbeatUnsub) unsub()
+  heartbeatUnsub = []
+  agentHeartbeat.value = 0
+}
+
 // ── workspace 读写（通过 bridge）──
 
 async function loadSourceManifest(tsian: ReturnType<typeof useTsian>["tsian"]): Promise<SourceManifest | null> {
@@ -186,13 +219,11 @@ async function startOpeningUnderstanding(): Promise<void> {
   errorText.value = ""
   understandingStatus.value = "running"
   understandingStartedAt = Date.now()
-  statusText.value = "理解中…"
+  agentHeartbeat.value = 0
   setView("understanding")
 
-  // running 期间定时推进阶段文案（纯视觉，Step 7 实现分阶段显示）
-  stageTimer = window.setInterval(() => {
-    // Step 7 会用此推进 understanding running 阶段文案
-  }, 3000)
+  // 启动 agent 心跳监听（不污染主游玩 stream）
+  startHeartbeat()
 
   try {
     const prompt = buildOpeningInitializationPrompt(manifest.value, chapterIndex.value)
@@ -201,14 +232,12 @@ async function startOpeningUnderstanding(): Promise<void> {
     if (!summary) throw new Error("理解未完成，没找到结果。请重试。")
     understandingSummary.value = summary
     understandingStatus.value = "ready"
-    statusText.value = "初始理解已完成"
   } catch (err) {
     const message = err instanceof Error ? err.message : "初始理解失败"
     errorText.value = message
     understandingStatus.value = "failed"
-    statusText.value = "初始理解失败"
   } finally {
-    window.clearInterval(stageTimer)
+    stopHeartbeat()
     busy.value = false
   }
 }
@@ -273,6 +302,10 @@ export function useSetupState() {
     errorText: readonly(errorText),
     initializing: readonly(initializing),
     initialized: readonly(initialized),
+    agentHeartbeat: readonly(agentHeartbeat),
+
+    // 非响应式值（组件按需读取）
+    get understandingStartedAt() { return understandingStartedAt },
 
     // 可写状态（组件需直接改的）
     selectedChapterWritable: selectedChapter,
