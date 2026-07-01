@@ -276,6 +276,7 @@ export interface RuntimeTestSkillScriptInput {
 
 export type RuntimeTestSkillScriptRunner = (
   input: RuntimeTestSkillScriptInput,
+  context?: RuntimeControlledExecutorContext,
 ) => Promise<PlatformActionResult>
 
 export interface RuntimeActionExecutorPolicyRequest {

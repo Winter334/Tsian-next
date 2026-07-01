@@ -933,7 +933,7 @@ export function createTestSkillScriptRunner(
   workspaceFiles: WorkspaceFile[],
   runBrowserScript: RuntimeBrowserScriptRunner,
 ): RuntimeTestSkillScriptRunner {
-  return async (input: RuntimeTestSkillScriptInput): Promise<PlatformActionResult> => {
+  return async (input: RuntimeTestSkillScriptInput, executorContext?: RuntimeControlledExecutorContext): Promise<PlatformActionResult> => {
     // ① 在 workspaceFiles 中找 skills/<dir>/SKILL.md，frontmatter name 匹配 skillName
     const registry = buildSkillRegistry(workspaceFiles)
     const skill = registry.find(
@@ -994,6 +994,8 @@ export function createTestSkillScriptRunner(
     }
 
     // ⑤ 调 runBrowserScript 执行（复用现有执行器，错误透传来自 Step 1 改造）
+    // 透传 executorContext（exposedWorkspaceOperations + agentContext），
+    // 否则 Worker 内 tsian.workspace.* 全部因 WORKSPACE_OPERATION_NOT_EXPOSED 失败。
     const timeoutMs = action.executor.timeoutMs ?? 10000
     return runBrowserScript(
       {
@@ -1007,6 +1009,7 @@ export function createTestSkillScriptRunner(
           ? { configItems: skill.configItems }
           : {}),
       },
+      executorContext,
     )
   }
 }

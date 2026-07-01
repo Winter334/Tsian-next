@@ -2067,6 +2067,10 @@ async function executeRuntimeWorkspaceToolCall(
         ok: true,
         result: await context.runTestSkillScript(
           normalizeTestSkillScriptArguments(call.arguments),
+          {
+            agentContext: context.agentContext,
+            exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+          },
         ),
       }
     } else if (isWorkspaceOperationToolName(call.name)) {
