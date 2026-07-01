@@ -29,7 +29,6 @@ const {
   initialize,
   setView,
   startImport,
-  confirmReimport,
   startOpeningUnderstanding,
 } = useSetupState()
 
@@ -50,9 +49,6 @@ interface ActionConfig {
   secondaryLabel: string
   secondaryDisabled: boolean
   onSecondary: (() => void) | null
-  tertiaryLabel?: string
-  tertiaryDisabled?: boolean
-  onTertiary?: (() => void) | null
   primaryLabel: string
   primaryDisabled: boolean
   onPrimary: (() => void) | null
@@ -94,9 +90,6 @@ const actions = computed<ActionConfig>(() => {
       secondaryLabel: "返回",
       secondaryDisabled: busy.value,
       onSecondary: () => setView("choose"),
-      tertiaryLabel: "重新导入",
-      tertiaryDisabled: busy.value,
-      onTertiary: confirmReimport,
       primaryLabel: understandingStatus.value === "ready" ? "查看理解" : "开始理解",
       primaryDisabled: busy.value || !manifest.value,
       onPrimary: understandingStatus.value === "ready" ? () => setView("understanding") : startOpeningUnderstanding,
@@ -208,15 +201,6 @@ onMounted(() => {
             @click="actions.onSecondary?.()"
           >
             {{ actions.secondaryLabel }}
-          </button>
-          <button
-            v-if="actions.tertiaryLabel"
-            class="setup-btn ghost"
-            type="button"
-            :disabled="actions.tertiaryDisabled"
-            @click="actions.onTertiary?.()"
-          >
-            {{ actions.tertiaryLabel }}
           </button>
         </div>
         <div class="action-right">
