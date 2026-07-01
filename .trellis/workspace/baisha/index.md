@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-2.md`
-- **Total Sessions**: 106
+- **Active File**: `journal-3.md`
+- **Total Sessions**: 107
 - **Last Active**: 2026-07-01
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1986 | Active |
+| `journal-3.md` | ~41 | Active |
+| `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 107 | 2026-07-01 | Task 超时从总时长改为无响应超时 | `de84e2e` | `feat/workspace-context-cache-split` |
 | 106 | 2026-07-01 | test_skill_script 工具 + 错误透传 + Worker TS 注解修复 | `1e7e7dc` | `feat/workspace-context-cache-split` |
 | 105 | 2026-07-01 | 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor | `a2ae121`, `46ab4dc`, `4577d4a` | `feat/workspace-context-cache-split` |
 | 104 | 2026-06-30 | DebugView 缓存命中率真实数据显示 + 仪表盘重设计 | `b302e51` | `feat/workspace-context-cache-split` |
