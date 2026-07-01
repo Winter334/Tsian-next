@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from "vue"
 import { useSetupState } from "../../composables/useSetupState"
+import type { OriginalCharacterFormData } from "../../lib/source"
 import SetupStepper from "./SetupStepper.vue"
 import MethodChoose from "./step1/MethodChoose.vue"
 import PasteInput from "./step1/PasteInput.vue"
@@ -9,6 +10,9 @@ import SplitReview from "./step1/SplitReview.vue"
 import UnderstandingRunning from "./step2/UnderstandingRunning.vue"
 import UnderstandingReady from "./step2/UnderstandingReady.vue"
 import UnderstandingFailed from "./step2/UnderstandingFailed.vue"
+import CanonCharacterSelect from "./step3/CanonCharacterSelect.vue"
+import OriginalCharacterForm from "./step3/OriginalCharacterForm.vue"
+import CharacterConfirmed from "./step3/CharacterConfirmed.vue"
 import StepStub from "./StepStub.vue"
 
 /**
@@ -31,20 +35,35 @@ const {
   busy,
   errorText,
   initializing,
+  characterBranch,
+  selectedCharacter,
+  characterSetupStatus,
   initialize,
   setView,
   goToStep,
   startImport,
   startOpeningUnderstanding,
+  setCharacterBranch,
+  backToBranchChoice,
+  confirmCanonCharacter,
+  confirmOriginalCharacter,
+  resetCharacterSetup,
 } = useSetupState()
 
 // step1 子组件 refs（读取输入数据）
 const pasteRef = ref<InstanceType<typeof PasteInput> | null>(null)
 const fileRef = ref<InstanceType<typeof FileInput> | null>(null)
 
+// step3 原创表单 ref
+const originalFormRef = ref<InstanceType<typeof OriginalCharacterForm> | null>(null)
+
+// step3 原著选择追踪（CanonCharacterSelect emit select → 存到这里 → 启用 primary 按钮）
+const canonSelectedCandidate = ref<{ id?: string; name: string; brief: string } | null>(null)
+
 // stepper 索引（0-based）：直接用 useSetupState 的 step ref（1-5 → 0-4）
 const currentStepIndex = computed(() => step.value - 1)
 const completedUntil = computed(() => {
+  if (characterSetupStatus.value === "confirmed") return 2
   if (understandingStatus.value === "ready") return 1
   if (manifest.value) return 0
   return -1
@@ -123,7 +142,7 @@ const actions = computed<ActionConfig>(() => {
     }
   }
   // ready：分支卡在组件内交互，不需要主按钮
-  if (understandingStatus.value === "ready") {
+  if (understandingStatus.value === "ready" && subView.value === "understanding") {
     return {
       secondaryLabel: "返回目录",
       secondaryDisabled: busy.value,
@@ -133,12 +152,50 @@ const actions = computed<ActionConfig>(() => {
       onPrimary: () => goToStep(3),
     }
   }
-  // stub 占位（step3-5 未实现）
+
+  // ── Step 3 角色设定 ──
+  if (subView.value === "character-setup") {
+    // 确认屏
+    if (characterSetupStatus.value === "confirmed") {
+      return {
+        secondaryLabel: "返回修改",
+        secondaryDisabled: busy.value,
+        onSecondary: resetCharacterSetup,
+        primaryLabel: "下一步",
+        primaryDisabled: busy.value,
+        onPrimary: () => goToStep(4),
+      }
+    }
+    // 原著角色选择
+    if (characterBranch.value === "canon") {
+      return {
+        secondaryLabel: "返回分支",
+        secondaryDisabled: busy.value,
+        onSecondary: backToBranchChoice,
+        primaryLabel: busy.value ? "确认中…" : "确认选择",
+        primaryDisabled: busy.value || !canonSelectedCandidate.value,
+        onPrimary: onConfirmCanon,
+      }
+    }
+    // 原创角色表单
+    if (characterBranch.value === "original") {
+      return {
+        secondaryLabel: "返回分支",
+        secondaryDisabled: busy.value,
+        onSecondary: backToBranchChoice,
+        primaryLabel: busy.value ? "创建中…" : "创建角色",
+        primaryDisabled: busy.value,
+        onPrimary: onConfirmOriginal,
+      }
+    }
+  }
+
+  // stub 占位（step4-5 未实现）
   if (subView.value === "stub") {
     return {
       secondaryLabel: "返回",
       secondaryDisabled: false,
-      onSecondary: () => goToStep(2),
+      onSecondary: () => goToStep(3),
       primaryLabel: "下一步",
       primaryDisabled: true,
       onPrimary: null,
@@ -179,6 +236,21 @@ async function onAutoImport() {
   const input = await fileRef.value.readFile()
   if (!input) return
   await startImport("file", input)
+}
+
+// ── Step 3 角色设定操作 ──
+
+function onCanonSelect(candidate: { id?: string; name: string; brief: string }) {
+  canonSelectedCandidate.value = candidate
+}
+
+async function onConfirmCanon() {
+  if (!canonSelectedCandidate.value) return
+  await confirmCanonCharacter(canonSelectedCandidate.value)
+}
+
+async function onConfirmOriginal(formData: OriginalCharacterFormData) {
+  await confirmOriginalCharacter(formData)
 }
 
 // ── 初始化 ──
@@ -223,7 +295,7 @@ onMounted(() => {
               <UnderstandingReady
                 v-else-if="understandingStatus === 'ready'"
                 :summary="understandingSummary"
-                @select="goToStep(3)"
+                @select="setCharacterBranch"
               />
               <UnderstandingFailed
                 v-else-if="understandingStatus === 'failed'"
@@ -233,7 +305,31 @@ onMounted(() => {
               <!-- idle 不会出现在 understanding 视图（review 点开始理解直接进 running） -->
             </div>
 
-            <!-- stub：step3-5 未实现占位 -->
+            <!-- Step 3 角色设定 -->
+            <div v-else-if="subView === 'character-setup'" :key="`char-${characterBranch}-${characterSetupStatus}`" class="stage-content">
+              <!-- 确认屏 -->
+              <CharacterConfirmed
+                v-if="characterSetupStatus === 'confirmed' && selectedCharacter"
+                :character="selectedCharacter"
+                @back="resetCharacterSetup"
+                @next="goToStep(4)"
+              />
+              <!-- 原著角色选择 -->
+              <CanonCharacterSelect
+                v-else-if="characterBranch === 'canon'"
+                :candidates="understandingSummary?.candidateCharacters ?? []"
+                @select="onCanonSelect"
+                @back="backToBranchChoice"
+              />
+              <!-- 原创角色表单 -->
+              <OriginalCharacterForm
+                v-else-if="characterBranch === 'original'"
+                @submit="onConfirmOriginal"
+                @back="backToBranchChoice"
+              />
+            </div>
+
+            <!-- stub：step4-5 未实现占位 -->
             <div v-else key="stub" class="stage-content">
               <StepStub :step="step" title="即将开放" @back="goToStep(2)" />
             </div>

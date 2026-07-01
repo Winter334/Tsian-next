@@ -12,6 +12,8 @@ export const SOURCE_MANIFEST_PATH = "save/source/manifest.json"
 export const CHAPTER_INDEX_PATH = "save/source/chapters.index.json"
 export const CHAPTERS_ROOT = "save/source/chapters/"
 export const INITIAL_SUMMARY_PATH = "save/playthrough/understanding-summary.json"
+export const RUNTIME_PATH = "save/playthrough/runtime.json"
+export const CHARACTER_ENTITIES_ROOT = "save/entities/character/"
 const NORMALIZATION_VERSION = "novel-source-v1"
 const PSEUDO_CHAPTER_TARGET = 15_000
 
@@ -88,6 +90,36 @@ export interface OpeningCandidateCharacter {
   id?: string
   name: string
   brief: string
+}
+
+// ── 角色设定（Step 3）──
+
+export type CharacterBranch = "canon" | "original"
+
+export interface SelectedCharacter {
+  ref: string
+  name: string
+  brief: string
+}
+
+export interface OriginalCharacterFormData {
+  name: string
+  brief: string
+  appearance?: string
+  personality?: string
+  background?: string
+}
+
+export interface CharacterEntity {
+  id: string
+  name: string
+  brief: string
+  sourceRefs: string[]
+  updatedBy: string
+  updatedAt: string
+  appearance?: string
+  personality?: string
+  background?: string
 }
 
 export interface OpeningUnderstandingSummary {

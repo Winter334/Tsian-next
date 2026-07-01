@@ -4,6 +4,8 @@ import {
   SOURCE_MANIFEST_PATH,
   CHAPTER_INDEX_PATH,
   INITIAL_SUMMARY_PATH,
+  RUNTIME_PATH,
+  CHARACTER_ENTITIES_ROOT,
   buildSourceCorpus,
   buildOpeningInitializationPrompt,
   safeJsonParse,
@@ -14,6 +16,10 @@ import {
   type ChapterIndexFile,
   type OpeningUnderstandingSummary,
   type ImportMode,
+  type CharacterBranch,
+  type SelectedCharacter,
+  type OriginalCharacterFormData,
+  type CharacterEntity,
 } from "../lib/source"
 
 /**
@@ -27,8 +33,9 @@ import {
 
 // ── 向导视图类型 ──
 export type SetupStep = 1 | 2 | 3 | 4 | 5
-export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "stub"
+export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "character-setup" | "stub"
 export type UnderstandingStatus = "idle" | "running" | "ready" | "failed"
+export type CharacterSetupStatus = "selecting" | "confirmed"
 
 // ── 模块级共享响应式状态 ──
 const step = ref<SetupStep>(1)
@@ -43,6 +50,11 @@ const understandingSummary = ref<OpeningUnderstandingSummary | null>(null)
 const busy = ref(false)
 const statusText = ref("等待选择导入方式")
 const errorText = ref("")
+
+// ── 角色设定状态（Step 3）──
+const characterBranch = ref<CharacterBranch | null>(null)
+const selectedCharacter = ref<SelectedCharacter | null>(null)
+const characterSetupStatus = ref<CharacterSetupStatus>("selecting")
 
 // 初始化状态
 const initializing = ref(true)
@@ -154,8 +166,8 @@ function setView(view: SetupSubView): void {
   step.value = view === "understanding" ? 2 : 1
 }
 
-/** 推进到指定步骤（step3-5 渲染 StepStub）。step1-2 有真实视图，
- *  调用 setView 回到对应子屏；step3-5 进 stub 占位屏。 */
+/** 推进到指定步骤。step1-2 有真实视图，step3 角色设定有独立子屏，
+ *  step4-5 进 stub 占位屏。 */
 function goToStep(target: SetupStep): void {
   if (target <= 1) {
     setView("choose")
@@ -171,7 +183,14 @@ function goToStep(target: SetupStep): void {
     }
     return
   }
-  // step3-5：stub 占位
+  if (target === 3) {
+    // Step 3 角色设定：已有确认角色则进确认屏，否则进选择/表单
+    subView.value = "character-setup"
+    step.value = 3
+    errorText.value = ""
+    return
+  }
+  // step4-5：stub 占位
   subView.value = "stub"
   step.value = target
   errorText.value = ""
@@ -269,6 +288,157 @@ async function loadChapterPreview(path: string): Promise<string> {
   return excerptText(file?.content ?? "") || "暂无可预览内容。"
 }
 
+// ── 角色设定操作（Step 3）──
+
+/** Step 2 末尾选择分支后调用，存储分支并推进到 Step 3。 */
+function setCharacterBranch(branch: CharacterBranch): void {
+  characterBranch.value = branch
+  characterSetupStatus.value = "selecting"
+  selectedCharacter.value = null
+  goToStep(3)
+}
+
+/** 返回分支选择（回到 Step 2 understanding ready 视图）。 */
+function backToBranchChoice(): void {
+  characterBranch.value = null
+  selectedCharacter.value = null
+  characterSetupStatus.value = "selecting"
+  if (understandingStatus.value === "ready") {
+    subView.value = "understanding"
+    step.value = 2
+  }
+}
+
+/** 确认原著角色选择。写入 runtime.json 的 player.character。 */
+async function confirmCanonCharacter(candidate: { id?: string; name: string; brief: string }): Promise<void> {
+  if (busy.value) return
+  const { tsian } = useTsian()
+  busy.value = true
+  errorText.value = ""
+  try {
+    const ref = candidate.id || `character:${candidate.name}`
+    const charInfo: SelectedCharacter = { ref, name: candidate.name, brief: candidate.brief }
+    await writePlayerCharacter(tsian, ref, candidate.name)
+    selectedCharacter.value = charInfo
+    characterSetupStatus.value = "confirmed"
+    statusText.value = `已选定角色：${candidate.name}`
+  } catch (err) {
+    errorText.value = err instanceof Error ? err.message : "确认角色失败"
+  } finally {
+    busy.value = false
+  }
+}
+
+/** 确认原创角色。创建实体文件 + 写入 runtime.json。 */
+async function confirmOriginalCharacter(form: OriginalCharacterFormData): Promise<void> {
+  if (busy.value) return
+  const { tsian } = useTsian()
+  busy.value = true
+  errorText.value = ""
+  try {
+    const localId = await ensureUniqueLocalId(tsian, form.name)
+    const ref = `character:${localId}`
+    const now = new Date().toISOString()
+    const entity: CharacterEntity = {
+      id: ref,
+      name: form.name,
+      brief: form.brief,
+      sourceRefs: [],
+      updatedBy: "player-setup",
+      updatedAt: now,
+    }
+    if (form.appearance?.trim()) entity.appearance = form.appearance.trim()
+    if (form.personality?.trim()) entity.personality = form.personality.trim()
+    if (form.background?.trim()) entity.background = form.background.trim()
+
+    await tsian.workspace.write(
+      `${CHARACTER_ENTITIES_ROOT}${localId}.json`,
+      `${JSON.stringify(entity, null, 2)}\n`,
+    )
+    await writePlayerCharacter(tsian, ref, form.name)
+    selectedCharacter.value = { ref, name: form.name, brief: form.brief }
+    characterSetupStatus.value = "confirmed"
+    statusText.value = `已创建角色：${form.name}`
+  } catch (err) {
+    errorText.value = err instanceof Error ? err.message : "创建角色失败"
+  } finally {
+    busy.value = false
+  }
+}
+
+/** 返回修改角色（从确认屏回到选择/表单）。 */
+function resetCharacterSetup(): void {
+  selectedCharacter.value = null
+  characterSetupStatus.value = "selecting"
+}
+
+/** read-modify-write runtime.json 的 player.character 字段。 */
+async function writePlayerCharacter(
+  tsian: ReturnType<typeof useTsian>["tsian"],
+  ref: string,
+  name: string,
+): Promise<void> {
+  const file = await tsian.workspace.read(RUNTIME_PATH)
+  const runtime = file?.content ? safeJsonParse(file.content) : null
+  if (!runtime || typeof runtime !== "object") {
+    throw new Error("runtime.json 不存在或格式无效")
+  }
+  const updated = {
+    ...runtime,
+    player: {
+      ...(runtime as Record<string, unknown>).player as Record<string, unknown> | undefined,
+      character: { ref, name },
+    },
+  }
+  await tsian.workspace.write(RUNTIME_PATH, `${JSON.stringify(updated, null, 2)}\n`)
+}
+
+/** 生成唯一 localId：original-<name>，冲突加序号后缀。 */
+async function ensureUniqueLocalId(
+  tsian: ReturnType<typeof useTsian>["tsian"],
+  name: string,
+): Promise<string> {
+  const base = `original-${name}`
+  const listResult = await tsian.workspace.list(CHARACTER_ENTITIES_ROOT)
+  const existing = new Set(
+    (listResult?.files ?? []).map((f) => f.path.split("/").pop()?.replace(/\.json$/, "") ?? ""),
+  )
+  if (!existing.has(base)) return base
+  for (let i = 2; i < 100; i++) {
+    const candidate = `${base}-${i}`
+    if (!existing.has(candidate)) return candidate
+  }
+  return `${base}-${Date.now()}`
+}
+
+/** 读取 runtime.json 的 player.character，用于重载恢复。 */
+async function loadPlayerCharacter(
+  tsian: ReturnType<typeof useTsian>["tsian"],
+): Promise<SelectedCharacter | null> {
+  const file = await tsian.workspace.read(RUNTIME_PATH)
+  if (!file?.content) return null
+  const runtime = safeJsonParse(file.content)
+  if (!runtime || typeof runtime !== "object") return null
+  const player = (runtime as Record<string, unknown>).player
+  if (!player || typeof player !== "object") return null
+  const character = (player as Record<string, unknown>).character
+  if (!character || typeof character !== "object") return null
+  const ref = (character as Record<string, unknown>).ref
+  const name = (character as Record<string, unknown>).name
+  if (typeof ref !== "string" || typeof name !== "string") return null
+  // brief 从实体文件读取
+  const localId = ref.startsWith("character:") ? ref.slice("character:".length) : ref
+  const entityFile = await tsian.workspace.read(`${CHARACTER_ENTITIES_ROOT}${localId}.json`)
+  if (entityFile?.content) {
+    const entity = safeJsonParse(entityFile.content)
+    if (entity && typeof entity === "object") {
+      const brief = (entity as Record<string, unknown>).brief
+      if (typeof brief === "string") return { ref, name, brief }
+    }
+  }
+  return { ref, name, brief: "" }
+}
+
 // ── 初始化：从 workspace 加载已有数据 ──
 
 async function initialize(): Promise<void> {
@@ -284,9 +454,20 @@ async function initialize(): Promise<void> {
       if (summary) {
         understandingSummary.value = summary
         understandingStatus.value = "ready"
-        subView.value = "understanding"
-        step.value = 2
-        statusText.value = "初始理解已完成"
+        // 检查是否已有 player.character（重载恢复）
+        const existingCharacter = await loadPlayerCharacter(tsian)
+        if (existingCharacter) {
+          selectedCharacter.value = existingCharacter
+          characterSetupStatus.value = "confirmed"
+          characterBranch.value = existingCharacter.ref.startsWith("character:original-") ? "original" : "canon"
+          subView.value = "character-setup"
+          step.value = 3
+          statusText.value = `已选定角色：${existingCharacter.name}`
+        } else {
+          subView.value = "understanding"
+          step.value = 2
+          statusText.value = "初始理解已完成"
+        }
       } else {
         subView.value = "review"
         step.value = 1
@@ -324,6 +505,9 @@ export function useSetupState() {
     initializing: readonly(initializing),
     initialized: readonly(initialized),
     agentHeartbeat: readonly(agentHeartbeat),
+    characterBranch: readonly(characterBranch),
+    selectedCharacter: readonly(selectedCharacter),
+    characterSetupStatus: readonly(characterSetupStatus),
 
     // 非响应式值（组件按需读取）
     get understandingStartedAt() { return understandingStartedAt },
@@ -339,5 +523,10 @@ export function useSetupState() {
     confirmReimport,
     startOpeningUnderstanding,
     loadChapterPreview,
+    setCharacterBranch,
+    backToBranchChoice,
+    confirmCanonCharacter,
+    confirmOriginalCharacter,
+    resetCharacterSetup,
   }
 }
