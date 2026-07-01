@@ -20,7 +20,9 @@ const props = defineProps<{
 }>()
 
 const STEPS = ["导入小说", "初始理解", "角色设定", "游玩倾向", "开局确认"]
-const NODE_GAP = 120 // 节点间距 px（聚拢居中）
+const NODE_GAP = 120 // 节点间距 px（flex gap，节点之间的空白）
+const NODE_WIDTH = 80 // 标签 min-width = 节点宽度
+const CENTER_STEP = NODE_GAP + NODE_WIDTH // 节点中心间距 = 200px
 
 /** 节点状态：done 已点燃 / current 燃烧前沿 / locked 未点燃 */
 function markStatus(i: number): "done" | "current" | "locked" {
@@ -39,8 +41,8 @@ function markStatus(i: number): "done" | "current" | "locked" {
     <div
       class="wick-lit"
       :style="{
-        left: `calc(50% - ${NODE_GAP * 2}px)`,
-        width: `${NODE_GAP * current}px`,
+        left: `calc(50% - ${CENTER_STEP * Math.floor(STEPS.length / 2)}px)`,
+        width: `${CENTER_STEP * current}px`,
       }"
     >
       <div class="wick-pulse" />

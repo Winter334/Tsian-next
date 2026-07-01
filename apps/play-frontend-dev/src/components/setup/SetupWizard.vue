@@ -210,9 +210,9 @@ onMounted(() => {
             </div>
           </Transition>
 
-          <!-- 错误提示 -->
+          <!-- 错误提示（understanding 视图有自己的错误展示，不重复显示） -->
           <Transition name="error-fade">
-            <p v-if="errorText" class="setup-error">{{ errorText }}</p>
+            <p v-if="errorText && subView !== 'understanding'" class="setup-error">{{ errorText }}</p>
           </Transition>
         </main>
       </div>
