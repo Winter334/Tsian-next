@@ -69,7 +69,7 @@
 - [x] `App.vue`：nav 移除 checkpoints 项（检查点融入对话流，不需要独立视图）
 - [x] 轮次显示修复：turnCount-1（AppHeader + TurnMeta + turnsAfter 都减去 +1 偏移）
 - [x] 验证：对话流内印记标记 + 点击弹窗恢复 + 燃烧过渡 + 恢复后 stream/checkpoints 重建（用户浏览器视觉确认）
-- [ ] commit
+- [x] commit
 
 ### Step 6 — 向导壳 + step1
 - [ ] `SetupWizard.vue`：状态机（step/subView/understandingStatus）；全屏接管（隐藏 header+nav）；stage 容器

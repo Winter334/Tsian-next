@@ -317,6 +317,10 @@ export function useTsian() {
     }
     stream.value = items
     turnCount.value = h.turn
+    // 先清空 turnOptions——restore 回溯后旧轮的未选选项可能残留在 turnOptions 里，
+    // 属于被抹除的 turn，必须丢弃。只有当重建后的最后一轮 timeline 里确实持久化
+    // 了 options 时，才恢复它们（会话重开场景）。
+    turnOptions.value = []
     // 兜底恢复最后一轮未选的选项：会话中途关闭再重开时，玩家尚未选择
     // 的剧情选项应继续显示。host 已把 options 持久化进 timeline，这里从
     // 最后一轮倒序找 options 项填进 turnOptions（实时轮选项走 onTurnEnd 填充，

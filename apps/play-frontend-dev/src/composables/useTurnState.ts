@@ -49,6 +49,14 @@ export function useTurnState(
     }
   }
 
+  /** 重置计时器（restore 回溯后调）——丢弃上一轮残留的 elapsedMs，
+   *  避免重建后的 TurnMeta 显示被抹除轮的耗时。 */
+  function resetTurnTimer() {
+    stopTurnTimer()
+    elapsedMs.value = 0
+    turnStartedAt = 0
+  }
+
   /** 滚动到底（仅当用户 pinned 时）。 */
   function maybeScrollDown() {
     if (!userPinnedToBottom.value) return
@@ -69,6 +77,7 @@ export function useTurnState(
     userPinnedToBottom,
     beginTurnTimer,
     stopTurnTimer,
+    resetTurnTimer,
     maybeScrollDown,
   }
 }

@@ -42,7 +42,7 @@ const storyRef = ref<HTMLElement | null>(null)
 const composerRef = ref<InstanceType<typeof Composer> | null>(null)
 const streaming = computed(() => turnPhase.value === "streaming")
 
-const { elapsedMs, beginTurnTimer, stopTurnTimer, maybeScrollDown } = useTurnState(
+const { elapsedMs, beginTurnTimer, stopTurnTimer, resetTurnTimer, maybeScrollDown } = useTurnState(
   storyRef,
   streaming,
 )
@@ -98,6 +98,8 @@ async function onRestoreConfirm() {
   restoreTarget.value = null
   // 后台执行 restore（host 裁剪 + reloadHistory + loadCheckpoints 重建）
   await restore(id)
+  // 重置计时器：丢弃上一轮残留的 elapsedMs，避免重建后的 TurnMeta 显示被抹除轮的耗时
+  resetTurnTimer()
   // restore 完成，对话流已重建在幕布下方——等燃烧烧穿后移除幕布
 }
 
@@ -254,9 +256,9 @@ function onEdit(content: string) {
           streaming
         />
 
-        <!-- 轮次计时 meta（standby 时显示） -->
+        <!-- 轮次计时 meta（streaming + standby 均显示；idle 时隐藏） -->
         <TurnMeta
-          v-if="turnPhase === 'standby'"
+          v-if="turnPhase === 'streaming' || turnPhase === 'standby'"
           :elapsed-ms="elapsedMs"
           :tokens="currentTokens"
           :turn="Math.max(0, turnCount - 1)"
@@ -335,11 +337,16 @@ function onEdit(content: string) {
   pointer-events: none;
 }
 
-/* 滚动区：flex:1 占满 Composer 以上的全部空间 */
+/* 滚动区：flex:1 占满 Composer 以上的全部空间；隐藏滚动条（仍可滚动） */
 .story-scroll {
   flex: 1;
   overflow-y: auto;
   min-height: 0;  /* flex 子元素 overflow 生效的关键 */
+  scrollbar-width: none;  /* Firefox */
+  -ms-overflow-style: none;  /* IE/Edge */
+}
+.story-scroll::-webkit-scrollbar {
+  display: none;  /* Chrome/Safari */
 }
 
 .story-inner {
