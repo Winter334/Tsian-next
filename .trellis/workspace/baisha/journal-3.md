@@ -39,3 +39,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 108: 统一三处脚本 runner 注入（createBrowserScriptRunners 工厂）
+
+**Date**: 2026-07-01
+**Task**: 统一三处脚本 runner 注入（createBrowserScriptRunners 工厂）
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+评估三处 capabilities 的重复程度：真正重复的只有 runBrowserScript + runTestSkillScript 创建逻辑（约 30 行），callModel/workspaceMutations/callbacks 都有真实业务差异。抽 createBrowserScriptRunners 工厂函数统一脚本 runner 注入，三处用 ...spread。不统一有差异的部分。spec 13 步清单更新 step 8b 反映工厂模式。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8e7449f` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
