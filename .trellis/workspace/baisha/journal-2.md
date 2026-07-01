@@ -1914,3 +1914,39 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 105: 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor
+
+**Date**: 2026-07-01
+**Task**: 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+补走 Phase 3 规范收尾流程。Phase 3.3：沉淀 invokeAgent contextSlot+persist 契约到 contracts/frontend + platform-web/frontend type-safety spec（新增 Bypass Invoke-Agent Context Slot And Persist 场景，覆盖 slot 路由+消毒、persist 默认 false、entryMode 弃用、同 slot 串行排队、主 turn/inspector 向后兼容）。Phase 3.4：提交 spec 更新 a2ae121。Phase 3.5：归档 07-01-invoke-agent-context-management 与 06-30-play-frontend-vue-refactor 两个 done 任务。父任务 06-27-default-card-novel-reader-airp 经用户决定保留为伞任务（默认前端全流程尚未打通，后续拆新子任务），不归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a2ae121` | (see git log) |
+| `46ab4dc` | (see git log) |
+| `4577d4a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
