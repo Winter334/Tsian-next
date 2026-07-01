@@ -21,9 +21,14 @@ const emit = defineEmits<{
 
 const listRef = ref<HTMLElement | null>(null)
 const selectedIndex = ref<number | null>(null)
+const expandedBrief = ref<number | null>(null)
 
 function selectCandidate(index: number) {
   selectedIndex.value = index
+}
+
+function toggleBrief(index: number) {
+  expandedBrief.value = expandedBrief.value === index ? null : index
 }
 
 function confirmSelection() {
@@ -82,7 +87,20 @@ onUnmounted(() => {
         <!-- 角色信息 -->
         <span class="row-body">
           <span class="row-name">{{ candidate.name }}</span>
-          <span class="row-brief">{{ candidate.brief }}</span>
+          <span class="row-brief">
+            <span class="brief-text">{{ candidate.brief }}</span>
+            <span
+              v-if="candidate.brief.length > 60"
+              class="brief-expand"
+              role="button"
+              tabindex="0"
+              @click.stop="toggleBrief(i)"
+              @keydown.enter.stop.prevent="toggleBrief(i)"
+            >{{ expandedBrief === i ? '收起' : '展开' }}</span>
+          </span>
+          <Transition name="brief-detail-fade">
+            <span v-if="expandedBrief === i" class="row-brief-full">{{ candidate.brief }}</span>
+          </Transition>
         </span>
 
         <!-- 四角括号 -->
@@ -265,14 +283,50 @@ onUnmounted(() => {
   color: var(--ember-bright);
 }
 .row-brief {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   font-size: 0.78rem;
   color: var(--prose-dim);
   line-height: 1.4;
-  /* 允许换行，限制最多 2 行，超出用省略号 */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+}
+.brief-text {
+  flex: 1;
   overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brief-expand {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--ember);
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  transition: color 0.2s;
+}
+.brief-expand:hover {
+  color: var(--ember-bright);
+}
+.row-brief-full {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: var(--prose-dim);
+  line-height: 1.5;
+  white-space: normal;
+  word-break: break-all;
+}
+.brief-detail-fade-enter-active,
+.brief-detail-fade-leave-active {
+  transition: opacity 0.2s ease, max-height 0.25s ease;
+  overflow: hidden;
+  max-height: 120px;
+}
+.brief-detail-fade-enter-from,
+.brief-detail-fade-leave-to {
+  opacity: 0;
+  max-height: 0;
 }
 
 /* ── 四角括号 ── */

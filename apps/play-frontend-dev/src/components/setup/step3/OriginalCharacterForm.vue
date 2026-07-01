@@ -254,17 +254,25 @@ onUnmounted(() => {
   padding-top: 18px;
 }
 
-/* ── grid 折叠：0fr→1fr 自然展开，不需要猜 max-height ── */
+/* ── grid 折叠：0fr→1fr 自然展开 ──
+ * visibility 延迟切换：展开时立即可见（delay:0），收起时等高度过渡完再隐藏
+ * （delay 与 duration 对齐），避免 textarea 在过渡中闪烁。 */
 .optional-collapse {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
+  visibility: hidden;
   transition: grid-template-rows 0.35s cubic-bezier(0.22, 1, 0.36, 1),
-              opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+              opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              visibility 0s linear 0.35s;
 }
 .optional-collapse.expanded {
   grid-template-rows: 1fr;
   opacity: 1;
+  visibility: visible;
+  transition: grid-template-rows 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              opacity 0.35s cubic-bezier(0.22, 1, 0.36, 1),
+              visibility 0s linear 0s;
 }
 .optional-collapse > .optional-fields {
   overflow: hidden;
