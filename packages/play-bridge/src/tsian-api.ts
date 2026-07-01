@@ -108,6 +108,9 @@ export interface TsianApi {
   // ── 回答 ask_user ──
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
 
+  // ── 中断当前 turn（流式输出/工具执行）──
+  stop(): Promise<void>
+
   // ── 数据 ──
   readonly history: {
     get(): Promise<SessionHistory>
@@ -310,6 +313,10 @@ export function createTsian(): TsianApi {
 
     async answer(requestId: string, text: string, cancelled?: boolean): Promise<void> {
       await bridge.respondInteraction(requestId, text, cancelled)
+    },
+
+    async stop(): Promise<void> {
+      await bridge.stopInteraction()
     },
 
     history: {

@@ -29,6 +29,7 @@ const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
   "interaction.sendMessage",
   "interaction.invokeAgent",
   "interaction.respond",
+  "interaction.stop",
   "query.query",
   "platform.getPlatformContext",
   "platform.runAction",
@@ -414,6 +415,10 @@ function dispatchRemoteBridgeRequest(
       } satisfies RemotePlayBridgeError
     }
     return undefined
+  }
+
+  if (method === "interaction.stop") {
+    return bridge.interaction.stop().then(() => undefined)
   }
 
   if (method === "query.query") {

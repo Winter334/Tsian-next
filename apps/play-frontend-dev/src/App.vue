@@ -6,6 +6,7 @@ import TsianLogo from "./components/TsianLogo.vue"
 import BurningReveal from "./components/BurningReveal.vue"
 import AppHeader from "./components/AppHeader.vue"
 import AppNav from "./components/AppNav.vue"
+import StoryView from "./components/story/StoryView.vue"
 import { useTsian } from "./composables/useTsian"
 
 // App.vue 根组件。
@@ -55,7 +56,7 @@ function onNavigate(item: "story" | "checkpoints" | "settings") {
 
 <template>
   <div class="app-root">
-    <AtmosphereLayer :density="40" parallax="10" ghost-text="STORY" />
+    <AtmosphereLayer :density="40" :parallax="10" ghost-text="STORY" />
 
     <!-- idle：纸张幕布 + 活 Logo。保留到 canvas shown（curtainReplaced），避免闪现占位 -->
     <div
@@ -85,18 +86,20 @@ function onNavigate(item: "story" | "checkpoints" | "settings") {
         @navigate="onNavigate"
       />
 
-      <!-- 视图路由占位（Step 4 接入 StoryView / Step 5 CheckpointView） -->
-      <div class="view-stage">
+      <!-- 视图路由：story / checkpoints / settings（Step 5 接入 CheckpointView）。
+           用 v-show 而非 v-if：切换视图不销毁 StoryView，保留滚动位置 + stream 状态 -->
+      <StoryView v-show="navCurrent === 'story'" />
+      <div v-if="navCurrent !== 'story'" class="view-stage">
         <CornerBrackets :size="15" :inset="25" />
         <p class="placeholder-text">烛火书卷 · 重铸</p>
-        <p class="placeholder-sub">{{ ready ? `已连接 · 第 ${turnCount} 轮 · ${navCurrent}` : '连接平台中…' }}</p>
+        <p class="placeholder-sub">{{ navCurrent }} 视图待接入</p>
       </div>
     </main>
 
     <!-- burning：WebGL 燃烧幕布。挂载即开始燃烧（canvas hidden），delay 后显示+emit shown -->
     <BurningReveal
       v-if="phase === 'burning'"
-      :duration="8000"
+      :duration="5000"
       :delay="400"
       @shown="onCurtainShown"
       @revealed="onRevealed"

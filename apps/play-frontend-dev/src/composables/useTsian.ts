@@ -1,5 +1,5 @@
 import { reactive, ref, readonly, onUnmounted } from "vue"
-import { createTsian } from "@tsian/play-bridge"
+import { createTsian, parseStoryOptions } from "@tsian/play-bridge"
 import type {
   TsianApi,
   MessageDelta,
@@ -7,21 +7,19 @@ import type {
   TurnEndResult,
   ToolEvent,
 } from "@tsian/play-bridge"
-import type { TurnPhase, TurnState, ProcessNode } from "../types"
+import type { TurnPhase } from "../types"
 
 /**
  * useTsian — 单例 TsianApi + 5 订阅映射到响应式状态。
  *
- * design §3：所有组件通过此 composable 访问 bridge，不直接 import play-bridge 实例。
- * 封装 createTsian() 单例，5 订阅回调（onMessage/onRoundEnd/onTurnEnd/onTool/onAsk）
- * 映射到响应式状态（ready/sessionId/turnPhase/history/checkpoints/workspace）。
+ * design §3：所有组件通过此 composable 访问 bridge。
  *
- * 轮次状态机（TurnPhase）：
- * - idle：等待用户输入
- * - streaming：助手回复中（onMessage 流入 streamingText/reasoning）
- * - standby：轮次结束（onTurnEnd），待下一轮
- *
- * 多组件共享同一单例 tsian + 同一响应式状态（模块级单例，非每次调用新建）。
+ * 状态模型（镜像 legacy main.ts 的 $story DOM 容器，单一有序流不清空）：
+ * - stream：扁平有序流，所有元素（user/interim/thought/tool/assistant/options）
+ *   按发生顺序 push，send 不清空，reloadHistory 时重建。render 按 kind 分发组件。
+ * - currentTurn.streamingText/streamingReasoning：流式累积文本，onRoundEnd/onTurnEnd
+ *   时落定为 interim/thought/assistant 推入 stream，然后清空累积器。
+ * - 这样过程节点和消息天然有序交织，与真实发生顺序一致（legacy 同理）。
  */
 
 // ── 模块级单例 ──
@@ -36,20 +34,32 @@ const ready = ref(false)
 const sessionId = ref<string | null>(null)
 const turnPhase = ref<TurnPhase>("idle")
 const turnCount = ref(0)
-const history = ref<import("@tsian/play-bridge").SessionHistoryEntry[]>([])
 const checkpoints = ref<import("@tsian/contracts").CheckpointSummary[]>([])
 
-// 当前轮次状态（流式累积）
-const currentTurn = reactive<TurnState>({
-  timeline: [],
-  streamingText: "",
-  streamingReasoning: "",
-  content: "",
-})
+/** 流元素：单一有序流，所有 kind 按发生顺序 push，不清空。 */
+export type StreamItem =
+  | { kind: "user"; id: string; content: string }
+  | { kind: "assistant"; id: string; content: string; tokens?: number }
+  | { kind: "interim"; id: string; round: number; text: string; agentId: string | null }
+  | { kind: "thought"; id: string; round: number; text: string; agentId: string | null; collapsed: boolean }
+  | { kind: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; agentId: string }
+
+// 有序流：历史（loadHistory 重建）+ 实时（send/订阅 push），按真实顺序交织
+const stream = ref<StreamItem[]>([])
+
+// 流式累积器（onMessage 累加，onRoundEnd/onTurnEnd 落定推入 stream 后清空）
+const streamingText = ref("")
+const streamingReasoning = ref("")
+
+// 当前轮剧情选项（onTurnEnd 填充，send 时清空）
+const turnOptions = ref<string[]>([])
 
 // 订阅是否已注册（只注册一次，避免多组件重复订阅）
 let subscribed = false
 const unsubscribers: Array<() => void> = []
+
+// 历史是否已加载（避免视图切换重复 loadHistory 覆盖实时 stream）
+let historyLoaded = false
 
 function subscribe(): void {
   if (subscribed) return
@@ -60,65 +70,91 @@ function subscribe(): void {
     tsian.onMessage((msg: MessageDelta) => {
       turnPhase.value = "streaming"
       if (msg.kind === "content") {
-        currentTurn.streamingText += msg.delta
+        streamingText.value += msg.delta
       } else {
-        currentTurn.streamingReasoning += msg.delta
+        streamingReasoning.value += msg.delta
       }
     }),
   )
 
   unsubscribers.push(
     tsian.onRoundEnd((end: RoundEnd) => {
-      // 中间轮（thought）的 content 是 interim，归入时间线
+      const round = end.round
+      // 思维链/过渡文本在时间线上先于工具调用产生，但 onRoundEnd 在工具执行完
+      // 才触发——工具节点已 push 到 stream 末尾。这里把 interim/thought 插到
+      // 同 round 第一个 tool 节点之前，保持与持久化顺序一致（镜像 legacy finalizeRound）。
+      const nodesToInsert: StreamItem[] = []
       if (end.kind === "thought") {
-        currentTurn.timeline.push({
-          type: "interim",
-          id: `interim-${end.round}-${Date.now()}`,
-          round: end.round,
-          collapsed: true,
-          agentId: end.agentId,
-          text: currentTurn.streamingText,
-        })
-        currentTurn.streamingText = ""
-        currentTurn.streamingReasoning = ""
+        const interimText = streamingText.value
+        const reasoning = streamingReasoning.value
+        if (interimText.trim()) {
+          nodesToInsert.push({ kind: "interim", id: `interim-r${round}-${Date.now()}`, round, text: interimText, agentId: end.agentId || null })
+        }
+        if (reasoning.trim()) {
+          nodesToInsert.push({ kind: "thought", id: `thought-r${round}-${Date.now()}`, round, text: reasoning, agentId: end.agentId || null, collapsed: true })
+        }
+      } else {
+        // final 轮：思维链→thought，streamingText 保留给 onTurnEnd 落定
+        const reasoning = streamingReasoning.value
+        if (reasoning.trim()) {
+          nodesToInsert.push({ kind: "thought", id: `thought-r${round}-${Date.now()}`, round, text: reasoning, agentId: end.agentId || null, collapsed: true })
+        }
       }
-      // final：保留 streamingText，onTurnEnd 时落定
+      if (nodesToInsert.length > 0) {
+        const firstToolIdx = stream.value.findIndex(
+          (n) => n.kind === "tool" && n.round === round,
+        )
+        if (firstToolIdx >= 0) {
+          stream.value.splice(firstToolIdx, 0, ...nodesToInsert)
+        } else {
+          stream.value.push(...nodesToInsert)
+        }
+      }
+      // thought 轮清空累积器；final 轮只清 reasoning（streamingText 留给 onTurnEnd）
+      if (end.kind === "thought") {
+        streamingText.value = ""
+      }
+      streamingReasoning.value = ""
     }),
   )
 
   unsubscribers.push(
     tsian.onTool((tool: ToolEvent) => {
-      const existing = currentTurn.timeline.find(
-        (n) => n.type === "tool" && n.id === tool.callId,
+      // 同 callId 的 tool 更新状态，否则 push 新节点到 stream
+      const existing = stream.value.find(
+        (n): n is Extract<StreamItem, { kind: "tool" }> => n.kind === "tool" && n.id === tool.callId,
       )
       if (existing) {
         existing.status = tool.status
       } else {
-        const node: ProcessNode = {
-          type: "tool",
+        stream.value.push({
+          kind: "tool",
           id: tool.callId,
           round: tool.round,
           name: tool.name,
           status: tool.status,
-          collapsed: true,
           agentId: tool.agentId,
-        }
-        currentTurn.timeline.push(node)
+        })
       }
     }),
   )
 
   unsubscribers.push(
-    tsian.onTurnEnd((_result: TurnEndResult) => {
-      currentTurn.content = currentTurn.streamingText
-      currentTurn.streamingText = ""
-      currentTurn.streamingReasoning = ""
-      if (_result.stats) {
-        currentTurn.stats = {
-          elapsedMs: _result.stats.elapsedMs,
-          tokens: _result.stats.totalTokens,
-        }
+    tsian.onTurnEnd((result: TurnEndResult) => {
+      // 落定：streamingText 清洗选项块后推入 stream 为 assistant
+      const raw = streamingText.value
+      const parsed = parseStoryOptions(raw)
+      if (parsed.cleanText.trim()) {
+        stream.value.push({
+          kind: "assistant",
+          id: `assistant-${Date.now()}`,
+          content: parsed.cleanText,
+          tokens: result.stats?.totalTokens,
+        })
       }
+      streamingText.value = ""
+      streamingReasoning.value = ""
+      turnOptions.value = parsed.options.length > 0 ? parsed.options : (result.options ?? [])
       turnPhase.value = "standby"
       turnCount.value += 1
     }),
@@ -166,27 +202,115 @@ export function useTsian() {
     sessionId: readonly(sessionId),
     turnPhase: readonly(turnPhase),
     turnCount: readonly(turnCount),
-    currentTurn,
-    history: readonly(history),
+    stream: readonly(stream),
+    streamingText: readonly(streamingText),
+    turnOptions: readonly(turnOptions),
     checkpoints: readonly(checkpoints),
 
     // 操作方法
     tsian,
     async send(text: string): Promise<void> {
       if (!tsian.ready || turnPhase.value === "streaming") return
-      // 新轮次重置
-      currentTurn.timeline = []
-      currentTurn.streamingText = ""
-      currentTurn.streamingReasoning = ""
-      currentTurn.content = ""
-      currentTurn.stats = undefined
+      // 不清空 stream（镜像 legacy：所有内容按顺序累积，跨轮保留）
+      // 只重置流式累积器 + 选项
+      streamingText.value = ""
+      streamingReasoning.value = ""
+      turnOptions.value = []
+      // 立即把用户消息推入 stream（按发生顺序，在过程节点/assistant 之前）
+      stream.value.push({
+        kind: "user",
+        id: `user-${Date.now()}`,
+        content: text,
+      })
       turnPhase.value = "streaming"
-      await tsian.send(text)
+      try {
+        await tsian.send(text)
+      } catch (err) {
+        const msg = err && typeof err === "object" && "message" in err
+          ? (err as { message: string }).message
+          : "发送失败"
+        console.error("[useTsian] send failed:", msg)
+        streamingText.value = ""
+        streamingReasoning.value = ""
+        turnPhase.value = "standby"
+      }
+    },
+    async stop(): Promise<void> {
+      // 只在 streaming 时有意义（幂等：非 streaming 空操作）
+      if (turnPhase.value !== "streaming") return
+      // 前端先收尾：把已收到的流式文本落定为 assistant 消息，
+      // 因为 host abort 后 onTurnEnd 不会再触发，前端必须自己收束状态。
+      const partial = streamingText.value
+      const parsed = parseStoryOptions(partial)
+      if (parsed.cleanText.trim()) {
+        stream.value.push({
+          kind: "assistant",
+          id: `assistant-stopped-${Date.now()}`,
+          content: parsed.cleanText,
+        })
+      }
+      if (parsed.options.length > 0) {
+        turnOptions.value = parsed.options
+      }
+      streamingText.value = ""
+      streamingReasoning.value = ""
+      turnPhase.value = "standby"
+      turnCount.value += 1
+      // 通知 host 中断（abort currentController，停止后续 token/工具执行）
+      try {
+        await tsian.stop()
+      } catch (err) {
+        const msg = err && typeof err === "object" && "message" in err
+          ? (err as { message: string }).message
+          : "停止失败"
+        console.error("[useTsian] stop failed:", msg)
+      }
     },
     async loadHistory(): Promise<void> {
+      // 只首次加载，避免视图切换重复调用覆盖实时 stream（镜像 legacy：reloadHistory 仅重载/回溯后用）
+      if (historyLoaded) return
+      historyLoaded = true
       const h = await tsian.history.get()
-      history.value = h.entries
+      // 从 SessionHistoryEntry.timeline 重建 stream——按原始顺序遍历所有 kind，
+      // 一个都不丢（镜像 legacy renderSessionHistory）。
+      // 顺序由 timeline 数组保证：user → interim/thought/tool → assistant → options 交织。
+      const items: StreamItem[] = []
+      for (const entry of h.entries) {
+        for (const item of entry.timeline) {
+          if (item.kind === "user") {
+            items.push({ kind: "user", id: `h-user-${entry.turn}-${items.length}`, content: item.content })
+          } else if (item.kind === "assistant") {
+            const parsed = parseStoryOptions(item.content)
+            items.push({
+              kind: "assistant",
+              id: `h-assistant-${entry.turn}-${items.length}`,
+              content: parsed.cleanText,
+              tokens: item.stats?.totalTokens,
+            })
+          } else if (item.kind === "interim") {
+            items.push({ kind: "interim", id: `h-interim-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null })
+          } else if (item.kind === "thought") {
+            items.push({ kind: "thought", id: `h-thought-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null, collapsed: true })
+          } else if (item.kind === "tool") {
+            items.push({ kind: "tool", id: `h-tool-${entry.turn}-${items.length}`, round: item.round, name: item.name, status: item.status, agentId: item.agentId ?? "" })
+          }
+          // options 不进 stream（实时和历史选项统一由 turnOptions 单轮语义管，
+          // 见下方 loadHistory 末尾兜底恢复最后一轮未选选项）
+        }
+      }
+      stream.value = items
       turnCount.value = h.turn
+      // 兜底恢复最后一轮未选的选项：会话中途关闭再重开时，玩家尚未选择
+      // 的剧情选项应继续显示。host 已把 options 持久化进 timeline，这里从
+      // 最后一轮倒序找 options 项填进 turnOptions（实时轮选项走 onTurnEnd 填充，
+      // 此处只补 loadHistory 时的一次性恢复）。
+      if (h.entries.length > 0) {
+        const lastEntry = h.entries[h.entries.length - 1]!
+        const lastOptions = [...lastEntry.timeline].reverse().find((it) => it.kind === "options")
+        if (lastOptions && lastOptions.kind === "options" && lastOptions.items.length > 0) {
+          turnOptions.value = lastOptions.items
+        }
+      }
     },
     async loadCheckpoints(): Promise<void> {
       checkpoints.value = await tsian.checkpoints.list()

@@ -40,6 +40,7 @@ let rafId = 0
 let startTime = 0
 let showTimer = 0
 let burning = false
+let lastSampleTime = 0
 
 function resize() {
   const canvas = canvasRef.value
@@ -69,14 +70,51 @@ function render() {
   const elapsed = (now - startTime) / props.duration
 
   if (elapsed >= 1) {
-    canvas.style.display = "none"
-    burning = false
-    emit("revealed")
+    finishReveal()
     return
   }
 
   drawFrame(easeInOut(elapsed), now)
+
+  // 自适应结束检测：每 150ms 采样画面 alpha 覆盖率，大部分透明就提前结束。
+  // 避免固定 duration 末尾空等（阈值前置后视觉烧完远早于 progress=1）。
+  if (now - lastSampleTime > 150) {
+    lastSampleTime = now
+    if (sampleAlphaCoverage() < 0.08) {
+      finishReveal()
+      return
+    }
+  }
+
   rafId = requestAnimationFrame(render)
+}
+
+/** 采样画面 alpha 覆盖率：读取 canvas 中心区域若干点的 alpha，算透明占比。 */
+function sampleAlphaCoverage(): number {
+  if (!ctx || !canvasRef.value) return 1
+  const gl = ctx.gl
+  const w = canvasRef.value.width
+  const h = canvasRef.value.height
+  // 9 点网格采样（中心 3x3），读单个像素 alpha
+  let opaque = 0
+  const samples = 9
+  for (let gy = 0; gy < 3; gy++) {
+    for (let gx = 0; gx < 3; gx++) {
+      const px = Math.floor((w * (gx + 0.5)) / 3)
+      const py = Math.floor((h * (gy + 0.5)) / 3)
+      const pixel = new Uint8Array(4)
+      gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, pixel)
+      if (pixel[3]! > 20) opaque++  // alpha > ~8% 算不透明
+    }
+  }
+  return opaque / samples
+}
+
+function finishReveal() {
+  const canvas = canvasRef.value
+  if (canvas) canvas.style.display = "none"
+  burning = false
+  emit("revealed")
 }
 
 function startBurn() {

@@ -97,11 +97,10 @@ function onItemClick(key: NavItem) {
   margin: 2px 8px;
   background: transparent;
   border: none;
-  border-left: 2px solid transparent;
   border-radius: 4px;
   cursor: pointer;
   color: var(--prose-dim);
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  transition: color 0.2s, background 0.2s;
   white-space: nowrap;
 }
 .app-nav.collapsed .nav-item {
@@ -114,10 +113,9 @@ function onItemClick(key: NavItem) {
   background: rgba(181, 137, 61, 0.05);
 }
 
-/* 当前态：ember 左边框 + ember-bright 文字 */
+/* 当前态：ember-bright 文字 + 微暖底（不用竖线指示） */
 .nav-item.active {
   color: var(--ember-bright);
-  border-left-color: var(--ember);
   background: rgba(181, 137, 61, 0.08);
 }
 

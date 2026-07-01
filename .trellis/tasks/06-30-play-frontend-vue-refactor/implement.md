@@ -41,17 +41,23 @@
 - [x] commit
 
 ### Step 4 — story 视图（核心）
-- [ ] `StoryView.vue`：52em 列 + 滚动 + 视差（巨字 0.3x / 余烬 0.1x，ScrollTrigger）
-- [ ] `UserMessage.vue`：左 `--ember` 竖条 + `--prose` Serif；进场 anime.js auto-layout 逐 token 从右散入
-- [ ] `NarrativeMessage.vue`：逐字浮现（GSAP stagger + blur→sharp + opacity）；marked 渲染（标题 Cinzel `--ember-bright`/引用 `--ember` 左条/代码 `--void-deep`+`--ember` 边 mono）；ScrollTrigger 滚动逐段点亮
-- [ ] `ProcessNode.vue`：Reka UI Disclosure + 折叠卡 `--void-deep`+`--line`+inset shadow；标签 mono；内容 mono `--prose-dim`
-- [ ] `TurnMeta.vue`：`· 12.4s · 1.2k tokens · 第 N 轮` mono `--whisper`
-- [ ] `StoryOptions.vue`：选项卡 `--void-deep`+`--line`+括号+编号；hover `translateY(-2px)`+`--ember` 描边+内发光；进场 auto-layout stagger from random；选中淡出其余
-- [ ] `SceneImage.vue`：场景插画位（占位 lachisa render，暗色滤镜+`--line`+括号）；进场 GSAP scale+clipPath
-- [ ] `Composer.vue`：textarea `--void-deep`+`--line` 顶边 + send(`--ember` pill)/stop(`--blood` 边框，轮次中显示) + 聚焦动效
-- [ ] `useTurnState.ts`：轮次状态机（替代 main.ts 散乱 let）
-- [ ] **删除 ask_user**：不实现 ask_user 面板（R4）
-- [ ] 验证：完整对话流 + 选项 + 发送 + composer 状态切换
+- [x] `StoryView.vue`：52em 列 + 滚动 + 视差（视差留优化期）
+- [x] `UserMessage.vue`：右对齐独白体（无框 + ember 短横线标签 + Serif）；进场淡入右移；editable 编辑按钮（停止后重新编辑）
+- [x] `NarrativeMessage.vue`：流式光标 + 暖光晕淡入；marked 渲染（标题 Cinzel/引用/代码）；逐字浮现留优化期
+- [x] `ProcessNode.vue`：Reka UI Collapsible + chevron 旋转动画 + 折叠卡；tool-group 合并摘要
+- [x] `RoundProcess.vue`：本轮推演大折叠（无框，包裹 interim/thought/tool，默认折叠，概要统计）
+- [x] `TurnMeta.vue`：`· 12.4s · 1.2k tokens · 第 N 轮` mono `--whisper`
+- [x] `StoryOptions.vue`：选项卡 `--void-deep`+`--line`+括号+编号；hover 浮起+描边+内发光；选中淡出其余
+- [x] `SceneImage.vue`：场景插画位（占位，暗色滤镜+`--line`+括号）
+- [x] `Composer.vue`：烛火辉光 + ember 底线 + 圆形按钮（hover 涟漪+旋转）；停止按钮 + setText 回填
+- [x] `useTurnState.ts`：轮次状态机（实时计时器 + 滚动跟随）
+- [x] `lib/markdown.ts`：marked 配置（标题/引用/代码 渲染）
+- [x] **停止功能全链路**：contracts→bridge→host AbortController→useTsian.stop→Composer/StoryView；停止后保留半截内容 + 重新编辑入口
+- [x] **布局修复**：flex 列布局（滚动区 + Composer 正常流），从根源消除 fixed Composer 遮挡
+- [x] **历史选项恢复**：loadHistory 末尾兜底恢复最后一轮未选选项
+- [x] **顶栏 Logo 修复**：animated=false 时跳过 idle 动效 + 不响应点击
+- [x] **删除 ask_user**：不实现 ask_user 面板（R4）— useTsian onAsk 占位空回调
+- [x] 验证：完整对话流 + 选项 + 发送 + composer 状态切换 + 停止 + 重新编辑（用户浏览器视觉确认）
 - [ ] commit
 
 ### Step 5 — checkpoints

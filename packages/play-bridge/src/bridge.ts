@@ -44,6 +44,8 @@ export interface Bridge {
   on(handlers: BridgeHandlers): void
   /** 回答 ask_user 提问。封装 interaction.respond RPC。 */
   respondInteraction(requestId: string, answer: string, cancelled?: boolean): Promise<void>
+  /** 中断当前正在进行的 turn（流式输出/工具执行）。封装 interaction.stop RPC。 */
+  stopInteraction(): Promise<void>
   /** 桥握手是否完成。 */
   readonly ready: boolean
   /** 当前 sessionId（握手后可用，握手前为 null）。 */
@@ -162,9 +164,15 @@ export function createBridge(): Bridge {
     return call("interaction.respond", { requestId, answer, ...(cancelled !== undefined ? { cancelled } : {}) } as RemotePlayBridgeRequestParams).then(() => undefined)
   }
 
+  /** 中断当前正在进行的 turn（流式输出/工具执行）。封装 interaction.stop RPC。 */
+  function stopInteraction(): Promise<void> {
+    return call("interaction.stop", undefined as RemotePlayBridgeRequestParams).then(() => undefined)
+  }
+
   return {
     call,
     respondInteraction,
+    stopInteraction,
     on(h: BridgeHandlers) {
       handlers.onReady = h.onReady
       handlers.onEvent = h.onEvent

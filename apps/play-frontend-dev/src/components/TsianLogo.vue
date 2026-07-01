@@ -14,7 +14,7 @@ import gsap from "gsap"
  *   动画结束 emit done → 父组件触发幕布燃烧。动画填充初始化时间，无空白等待。
  *   logo 不做进纹理（避免 SVG→纹理渲染不一致造成剧变），idle 层 logo 淡出后由幕布独立燃烧。
  */
-withDefaults(
+const props = withDefaults(
   defineProps<{
     animated?: boolean
     size?: number
@@ -35,6 +35,8 @@ const core = ref<SVGGElement | null>(null)
 const singularity = ref<SVGRectElement | null>(null)
 
 onMounted(() => {
+  // animated=false（如顶栏静态 logo）：不跑 idle 动效，纯装饰
+  if (!props.animated) return
   // 外框 40s 缓转
   gsap.to(outerFrame.value, {
     rotation: "+=360",
@@ -85,6 +87,8 @@ onUnmounted(() => {
 })
 
 function onClick() {
+  // animated=false（静态装饰版，如顶栏 logo）：不响应点击，无开屏动效
+  if (!props.animated) return
   // emit click 立即触发（父组件并行挂载 BurningReveal，幕布在背后开始燃烧）
   emit("click")
   // 停掉 idle 转动
@@ -104,6 +108,7 @@ function onClick() {
   <svg
     ref="rootRef"
     class="tsian-logo"
+    :class="{ static: !animated }"
     viewBox="0 0 200 200"
     :width="size"
     :height="size"
@@ -138,6 +143,10 @@ function onClick() {
 .tsian-logo {
   cursor: pointer;
   overflow: visible;
+}
+/* 静态装饰版（顶栏）：不可点，默认指针 */
+.tsian-logo.static {
+  cursor: default;
 }
 .logo-outer { stroke: var(--ember); }
 .logo-inner { stroke: var(--ember-bright); }

@@ -1194,6 +1194,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
         throw error
       }
     },
+
+    /** 中断当前正在进行的 turn（流式输出/工具执行）。
+     *  abort 触发后，sendMessage 的 promise 会以 AbortError reject，
+     *  前端 onTurnEnd 不会触发——由 useTsian.stop 负责把前端状态切回 standby。
+     *  无 turn 进行中时空操作（幂等）。 */
+    async stop(): Promise<void> {
+      if (previousTurnController) {
+        previousTurnController.abort("user-stopped")
+        rejectAllInteractionRequests(new DOMException("Agent Runtime turn aborted by user.", "AbortError"))
+      }
+    },
   },
   debug: createDebugBridge(),
 }

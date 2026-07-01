@@ -24,6 +24,8 @@ import type {
 export interface InteractionBridge {
   sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult>
   invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgentResult>
+  /** 中断当前正在进行的 turn（流式输出/工具执行）。无 turn 进行中则空操作。 */
+  stop(): Promise<void>
 }
 
 export interface QueryBridge {
@@ -90,6 +92,7 @@ export type RemotePlayBridgeMethod =
   | "interaction.sendMessage"
   | "interaction.invokeAgent"
   | "interaction.respond"
+  | "interaction.stop"
   | "query.query"
   | "platform.getPlatformContext"
   | "platform.runAction"
