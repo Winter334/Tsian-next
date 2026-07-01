@@ -51,7 +51,7 @@ import {
   ASSISTANT_CONTEXT_SCHEMA,
   createEmptyAgentContext,
   createInitialAgentContext,
-  DEFAULT_TASK_TIMEOUT_MS,
+  DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
   parseAgentContext,
   resolveTokenBudget,
   serializeAgentContext,
@@ -1150,8 +1150,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
               compressionMode: "task",
               ...(shouldPersist
                 ? {
-                    taskStartedAt: Date.now(),
-                    timeoutMs: DEFAULT_TASK_TIMEOUT_MS,
+                    timeoutMs: DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
                   }
                 : {}),
               // 旁路调用绑 onAskUser 以防目标 agent 需要 ask_user

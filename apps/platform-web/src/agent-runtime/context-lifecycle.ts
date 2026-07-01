@@ -81,8 +81,9 @@ export const TARGET_COMPRESSION_TOKENS = 2000
 // 与 master 剧情压缩并列:压缩对象是整个上下文含工具调用+返回,多次压缩 + 时长兜底.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** 任务型 agent(子代理/助手)默认时长配额 ms.超时抛 TaskTimeoutError.5 分钟给足多文件探索+总结+多次压缩空间. */
-export const DEFAULT_TASK_TIMEOUT_MS = 300_000
+/** 任务型 agent(子代理/助手)默认无响应超时 ms.距离上一次活动(delta/tool/round-end)
+ *  超过此阈值才超时,不是总时长.10 分钟给足多文件探索+总结+多次压缩空间. */
+export const DEFAULT_TASK_INACTIVITY_TIMEOUT_MS = 600_000
 /** 压缩无效早退阈值:压缩后 token 下降幅度 < 此比例 → 抛 TaskCompressionStalledError(不傻等超时烧钱). */
 export const TASK_COMPRESSION_STALL_RATIO = 0.1
 
@@ -373,8 +374,8 @@ export class TaskTimeoutError extends Error {
   constructor(timeoutMs?: number) {
     super(
       timeoutMs
-        ? `任务执行超时（${Math.round(timeoutMs / 1000)}s），已中止。`
-        : "任务执行超时，已中止。",
+        ? `任务无响应超时（${Math.round(timeoutMs / 1000)}s 无活动），已中止。`
+        : "任务无响应超时，已中止。",
     )
     this.name = "TaskTimeoutError"
   }

@@ -29,7 +29,7 @@ import {
   ContextBudgetExhaustedError,
   ContextCompressionFailedError,
   createInitialAgentContext,
-  DEFAULT_TASK_TIMEOUT_MS,
+  DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
   estimateAiChatMessagesTokens,
   estimateContextTokens,
   estimateRuntimeMessagesTokens,
@@ -183,10 +183,10 @@ interface WorkspaceToolLoopOptions {
   contextTokenBudget?: number
   /** 压缩用的 model 调用(复用 capabilities.callModel).两模式共用. */
   compressCallModel?: CompressCallModel
-  /** task 模式:时长兜底起点 wall-clock(Date.now()).超 taskTimeoutMs 抛 TaskTimeoutError.narrative 不用. */
-  taskStartedAt?: number
-  /** task 模式:时长配额 ms(默认 DEFAULT_TASK_TIMEOUT_MS).narrative 不用. */
-  taskTimeoutMs?: number
+  /** task 模式:无响应超时起点 wall-clock(Date.now()).每次有活动(tool/round-end)更新.超 inactivityTimeoutMs 抛 TaskTimeoutError.narrative 不用. */
+  lastActivityAt?: number
+  /** task 模式:无响应超时配额 ms(默认 DEFAULT_TASK_INACTIVITY_TIMEOUT_MS).narrative 不用. */
+  inactivityTimeoutMs?: number
 }
 
 interface AgentCallRuntimeMetadata {
@@ -1197,17 +1197,17 @@ function createAgentCallRunner(
     // 任务型 agent 时长兜底(design §2.6):独立 timeoutController + setTimeout,
     // 与用户 abort(input.signal)合并成 compositeSignal 传给工具循环.超时瞬间能
     // abort 正在 await 的 model 调用,不只靠循环内 Date.now() 检查.主 agent 可经
-    // agent_call 的 timeoutMs 参数显式给子代理更长时间,不传用默认 300s.
-    const taskTimeoutMs = agentCall.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS
+    // agent_call 的 timeoutMs 参数显式给子代理更长时间,不传用默认 600s.
+    const inactivityTimeoutMs = agentCall.timeoutMs ?? DEFAULT_TASK_INACTIVITY_TIMEOUT_MS
     const timeoutController = new AbortController()
     const timeoutTimer = setTimeout(
       () => timeoutController.abort("task-timeout"),
-      taskTimeoutMs,
+      inactivityTimeoutMs,
     )
     const compositeSignal = AbortSignal.any(
       [input.signal, timeoutController.signal].filter(Boolean) as AbortSignal[],
     )
-    const taskStartedAt = Date.now()
+    const lastActivityAt = Date.now()
 
     try {
       const response = (await callAgentModelWithWorkspaceTools(
@@ -1249,8 +1249,8 @@ function createAgentCallRunner(
           //  但预算是 runtime 估算用,256k 的 85% 足够大,不影响压缩触发判断).
           contextTokenBudget: resolveTokenBudget(undefined),
           compressCallModel: capabilities.callModel,
-          taskStartedAt,
-          taskTimeoutMs,
+          lastActivityAt,
+          inactivityTimeoutMs,
         },
       )).text.trim()
       const completedMetadata = createAgentCallRuntimeMetadata(
@@ -1306,21 +1306,21 @@ function createAgentCallRunner(
           ...agentCallTraceFacts(failedMetadata),
           delegated: true,
           durationMs: Date.now() - stepStartedAt,
-          ...(isTimeout ? { timeout: true, taskTimeoutMs } : {}),
+          ...(isTimeout ? { timeout: true, inactivityTimeoutMs } : {}),
           ...(isTaskStall ? { stalled: true } : {}),
         },
       })
       throw agentCallError(
         "AGENT_CALL_FAILED",
         isTimeout
-          ? `agent_call 超时（${Math.round(taskTimeoutMs / 1000)}s）中止 for Agent "${targetContext.agent.id}".`
+          ? `agent_call 无响应超时（${Math.round(inactivityTimeoutMs / 1000)}s）中止 for Agent "${targetContext.agent.id}".`
           : isTaskStall
             ? `agent_call 上下文压缩无效中止 for Agent "${targetContext.agent.id}".`
             : `agent_call failed for Agent "${targetContext.agent.id}".`,
         {
           ...failedMetadata,
           cause: errorToTraceData(error),
-          ...(isTimeout ? { timeout: true, taskTimeoutMs } : {}),
+          ...(isTimeout ? { timeout: true, inactivityTimeoutMs } : {}),
           ...(isTaskStall ? { stalled: true } : {}),
         },
       )
@@ -1445,13 +1445,13 @@ async function callAgentModelWithWorkspaceToolsNative(
       const totalTokens = estimateRuntimeMessagesTokens(runtimeMessages)
       if (totalTokens > triggerThreshold) {
         if (isTaskMode) {
-          // task 模式:时长兜底检查(每轮查,不等 model 调用)
+          // task 模式:无响应超时检查(每轮查,不等 model 调用)
           if (
-            toolOptions.taskStartedAt !== undefined
-            && toolOptions.taskTimeoutMs !== undefined
-            && Date.now() - toolOptions.taskStartedAt > toolOptions.taskTimeoutMs
+            toolOptions.lastActivityAt !== undefined
+            && toolOptions.inactivityTimeoutMs !== undefined
+            && Date.now() - toolOptions.lastActivityAt > toolOptions.inactivityTimeoutMs
           ) {
-            throw new TaskTimeoutError(toolOptions.taskTimeoutMs)
+            throw new TaskTimeoutError(toolOptions.inactivityTimeoutMs)
           }
           const interactionSpan = locateTaskInteractionSpan(runtimeMessages, "native")
           if (interactionSpan.start < 0) {
@@ -1572,6 +1572,11 @@ async function callAgentModelWithWorkspaceToolsNative(
     // Track the latest round's usage; the final stop round's input tokens
     // represent the full context size sent to the model (for the ring widget).
     lastRoundUsage = result.usage
+
+    // 活动信号:每轮结束更新 lastActivityAt(无响应超时重置)
+    if (toolOptions.lastActivityAt !== undefined) {
+      toolOptions.lastActivityAt = Date.now()
+    }
 
     // Notify the caller that this round ended, with the finish reason so it can
     // classify the streamed text as thought (tool_calls) or final (stop). Emitted
@@ -1832,13 +1837,13 @@ async function callAgentModelWithWorkspaceTools(
       const totalTokens = estimateAiChatMessagesTokens(nextMessages)
       if (totalTokens > triggerThreshold) {
         if (isTaskMode) {
-          // task 模式:时长兜底检查
+          // task 模式:无响应超时检查
           if (
-            toolOptions?.taskStartedAt !== undefined
-            && toolOptions?.taskTimeoutMs !== undefined
-            && Date.now() - toolOptions.taskStartedAt > toolOptions.taskTimeoutMs
+            toolOptions?.lastActivityAt !== undefined
+            && toolOptions?.inactivityTimeoutMs !== undefined
+            && Date.now() - toolOptions.lastActivityAt > toolOptions.inactivityTimeoutMs
           ) {
-            throw new TaskTimeoutError(toolOptions.taskTimeoutMs)
+            throw new TaskTimeoutError(toolOptions.inactivityTimeoutMs)
           }
           const interactionSpan = locateTaskInteractionSpan(nextMessages, "text")
           if (interactionSpan.start < 0) {
@@ -1981,6 +1986,11 @@ async function callAgentModelWithWorkspaceTools(
           : {}),
       },
     })
+
+    // 活动信号:每轮结束更新 lastActivityAt(无响应超时重置)
+    if (toolOptions?.lastActivityAt !== undefined) {
+      toolOptions.lastActivityAt = Date.now()
+    }
 
     // C1: text 模式补发 onRoundEnd(对称 native 循环 index.ts:1666).
     // round 结束通知 UI 这一轮的 finishReason,让它构建 timeline round 边界.
@@ -2265,8 +2275,8 @@ export async function runAgentRuntimeTurn(
         compressCallModel: capabilities.callModel,
         ...(entryCompressionMode === "task"
           ? {
-              taskStartedAt: Date.now(),
-              taskTimeoutMs: input.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS,
+              lastActivityAt: Date.now(),
+              inactivityTimeoutMs: input.timeoutMs ?? DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
             }
           : {}),
       },

@@ -97,8 +97,9 @@ export interface AgentRuntimeTurnInput {
    */
   compressionMode?: RuntimeCompressionMode
   /**
-   * task 模式(assistant)时长配额 ms.超时抛 TaskTimeoutError,温和中止.
-   * 仅 compressionMode==="task" 生效;narrative(master)忽略.未提供 → DEFAULT_TASK_TIMEOUT_MS.
+   * task 模式(assistant/agent_call)无响应超时配额 ms.距离上一次活动(delta/tool/round-end)
+   * 超过此阈值才超时,不是总时长.超时抛 TaskTimeoutError,温和中止.
+   * 仅 compressionMode==="task" 生效;narrative(master)忽略.未提供 → DEFAULT_TASK_INACTIVITY_TIMEOUT_MS.
    */
   timeoutMs?: number
 }

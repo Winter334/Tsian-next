@@ -131,11 +131,12 @@ export interface RuntimeAgentCallArguments {
   expectedOutput?: string
   historyMode: RuntimeAgentCallHistoryMode
   /**
-   * Optional timeout quota in ms for this delegated agent call (design
-   * 06-20-agent-task-compression). When elapsed, the delegated tool loop aborts
-   * and the call resolves as AGENT_CALL_FAILED with `{ timeout: true }` details.
-   * Defaults to DEFAULT_TASK_TIMEOUT_MS (300s) when omitted. Only meaningful for
-   * task-mode delegated agents (all delegated agents are task-mode).
+   * Optional inactivity timeout quota in ms for this delegated agent call.
+   * When no activity (delta/tool/round-end) occurs for this duration, the
+   * delegated tool loop aborts and the call resolves as AGENT_CALL_FAILED with
+   * `{ timeout: true }` details. Defaults to DEFAULT_TASK_INACTIVITY_TIMEOUT_MS
+   * (600s) when omitted. Only meaningful for task-mode delegated agents (all
+   * delegated agents are task-mode).
    */
   timeoutMs?: number
 }

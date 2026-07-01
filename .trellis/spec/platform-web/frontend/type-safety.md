@@ -415,21 +415,21 @@
   - Master does **not** create a timeout controller — narrative mode relies on one-shot compression + user abort; a timeout would mis-kill narrative deep thought.
 
   **Task mode (delegated `agent_call` targets + desktop assistant):**
-  - Every crossing is a compression attempt (no cap; multi-compress unlimited). Before compressing, check elapsed time: if the task timeout has elapsed, throw `TaskTimeoutError`.
+  - Every crossing is a compression attempt (no cap; multi-compress unlimited). Before compressing, check inactivity: if no activity (tool/round-end) has occurred for `inactivityTimeoutMs`, throw `TaskTimeoutError`.
   - Locate the tool-interaction span. If no span exists, fall back (return last stripped text / throw `ContextBudgetExhaustedError`).
   - Compress: slice the tool-interaction span, keep the recent 5 tool rounds, summarize earlier rounds into one `已完成工作摘要` user message. If the early span is empty or tool interactions ≤ 5, fall back.
   - After compression, if yield < 10% (compression barely reduced tokens), throw `TaskCompressionStalledError` (stall early-exit, do not burn budget waiting for timeout).
   - Task compression never touches the agent-context snapshot (in-turn tool-interaction compression is separate from cross-turn snapshot). The in-turn summary text lives only within the turn. The **assistant** has cross-turn snapshot persistence (see "Assistant Cross-Turn Context Persistence"); **delegated `agent_call` targets** have no cross-turn persistence.
 
-- **Timeout fallback (task mode only):** delegated `agent_call` and the desktop assistant each create an independent `AbortController` + timeout, merged with the user-abort signal into a composite signal. On timeout, the catch re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true }` so master can distinguish; assistant: thrown to the view).
+- **Inactivity timeout fallback (task mode only):** delegated `agent_call` and the desktop assistant each create an independent `AbortController` + **resettable** inactivity timer, merged with the user-abort signal into a composite signal. The timer resets on every activity signal (model delta, tool call, round-end); it only fires after `inactivityTimeoutMs` (default 600s) of continuous inactivity. On timeout, the catch re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true }` so master can distinguish; assistant: thrown to the view). The runtime tool loop also checks `lastActivityAt` internally at each compression trigger as a second guard.
 - The view recognizes `ContextBudgetExhaustedError`, `TaskTimeoutError`, and `TaskCompressionStalledError` by error name (no runtime-internal import). All three route to the same soft-halt branch (symmetric with abort): keep already-streamed thought, append a soft note when content exists (or set content to the soft prompt when empty), persist the session, and do **not** set an error message or pop the placeholder.
 
 ### Validation & Error Matrix
 
 - Narrative first crossing with a snapshot available -> compress narrative span, continue loop (trace `mode: narrative`).
 - Narrative second crossing (or no snapshot) -> return last stripped text if present, otherwise `ContextBudgetExhaustedError`.
-- Task crossing -> check timeout; if elapsed `TaskTimeoutError`; else locate span, compress, check stall; if compressed continue (trace `mode: task`); if not compressible or no span -> fallback.
-- Task timeout (delegated) -> `AGENT_CALL_FAILED` with `{ timeout: true }`; master continues its own loop. (assistant) -> soft prompt "任务超时，已中止".
+- Task crossing -> check inactivity timeout; if no activity for `inactivityTimeoutMs` → `TaskTimeoutError`; else locate span, compress, check stall; if compressed continue (trace `mode: task`); if not compressible or no span -> fallback.
+- Task inactivity timeout (delegated) -> `AGENT_CALL_FAILED` with `{ timeout: true }`; master continues its own loop. (assistant) -> soft prompt "任务无响应超时，已中止".
 - Task compression stall (yield < 10%) -> `TaskCompressionStalledError` -> delegated: `AGENT_CALL_FAILED` with `{ stalled: true }`; assistant: soft prompt "上下文持续膨胀且压缩无效，已中止".
 - Compression failure (model call fails/empty summary) -> `ContextCompressionFailedError` (routes to the error-message branch, not the soft-halt branch).
 - Tool interactions are never compressed in narrative mode; task mode compresses only the tool-interaction span.

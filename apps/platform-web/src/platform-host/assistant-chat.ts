@@ -14,7 +14,7 @@ import {
   ASSISTANT_CONTEXT_SCHEMA,
   createEmptyAgentContext,
   createInitialAgentContext,
-  DEFAULT_TASK_TIMEOUT_MS,
+  DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
   resolveTokenBudget,
   TaskTimeoutError,
 } from "../agent-runtime/context-lifecycle"
@@ -240,9 +240,10 @@ export interface AssistantChatInput {
   signal?: AbortSignal
   /**
    * Optional task-mode timeout quota in ms (design 06-20-agent-task-compression).
-   * The assistant runs in task compression mode (multi-compress + timeout fallback).
-   * When elapsed, a TaskTimeoutError is thrown (soft halt, surfaced as a gentle
-   * prompt in AssistantView). Defaults to DEFAULT_TASK_TIMEOUT_MS (300s).
+   * The assistant runs in task compression mode (multi-compress + inactivity timeout).
+   * When no activity (delta/tool/round-end) occurs for this duration, a
+   * TaskTimeoutError is thrown (soft halt, surfaced as a gentle prompt in
+   * AssistantView). Defaults to DEFAULT_TASK_INACTIVITY_TIMEOUT_MS (600s).
    */
   timeoutMs?: number
   /**
@@ -366,13 +367,20 @@ export async function runAssistantChat(
       })
     }
   }
-  // Task-mode timeout fallback (design 06-20-agent-task-compression §2.6):
-  // independent timeoutController + setTimeout, merged with the user-abort
-  // controller into a composite signal. On timeout, throws TaskTimeoutError
-  // (soft halt) so AssistantView can show a gentle prompt.
-  const taskTimeoutMs = input.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS
+  // Task-mode inactivity timeout (无响应超时):
+  // 可重置计时器——每次有活动(delta/tool/round-end)就重置,只有持续无活动
+  // 超过阈值才 abort.与 runtime 内部的 lastActivityAt 检查对称(双重保障).
+  // 合并 user-abort controller 成 composite signal.超时抛 TaskTimeoutError(soft halt).
+  const inactivityTimeoutMs = input.timeoutMs ?? DEFAULT_TASK_INACTIVITY_TIMEOUT_MS
   const timeoutController = new AbortController()
-  const timeoutTimer = setTimeout(() => timeoutController.abort("task-timeout"), taskTimeoutMs)
+  let inactivityTimer: ReturnType<typeof setTimeout> | undefined
+  function resetInactivityTimer(): void {
+    if (inactivityTimer !== undefined) {
+      clearTimeout(inactivityTimer)
+    }
+    inactivityTimer = setTimeout(() => timeoutController.abort("task-timeout"), inactivityTimeoutMs)
+  }
+  resetInactivityTimer()
   const compositeSignal = AbortSignal.any([controller.signal, timeoutController.signal])
   const workspaceTransaction = createRuntimeWorkspaceTransaction(workspaceFiles)
   const activeWorkspaceTransaction = workspaceTransaction
@@ -453,16 +461,25 @@ export async function runAssistantChat(
         // (multi-compress tool interactions + timeout fallback + stall early-exit),
         // distinct from master's narrative compression.
         compressionMode: "task",
-        timeoutMs: taskTimeoutMs,
-        onDelta: input.onDelta,
+        timeoutMs: inactivityTimeoutMs,
+        onDelta: (agentId, ...args) => {
+          resetInactivityTimer()
+          input.onDelta?.(agentId, ...args)
+        },
         // Desktop Assistant chat is in-process (not bridged), so round-end and
         // tool process events go straight to the view. The view uses round +
         // finishReason to classify thought vs final, and round to group tool
         // calls under their originating thought round. agentId is passed through
         // for signature uniformity (single-agent here).
-        onRoundEnd: input.onRoundEnd,
+        onRoundEnd: (agentId, round, finishReason) => {
+          resetInactivityTimer()
+          input.onRoundEnd?.(agentId, round, finishReason)
+        },
         onTool: input.onTool
-          ? (agentId, round, callId, name, status, output) => input.onTool!(agentId, round, callId, name, status, output)
+          ? (agentId, round, callId, name, status, output) => {
+              resetInactivityTimer()
+              input.onTool!(agentId, round, callId, name, status, output)
+            }
           : undefined,
         // ask_user 工具回调：复用进程内 interaction-events 总线（与游戏 host 同源），
         // AssistantView 订阅 subscribeInteractionRequest 渲染 ask 卡片并回填答案。
@@ -785,11 +802,13 @@ export async function runAssistantChat(
     // tool loop throws AbortError on composite-signal abort; re-surface timeout
     // as TaskTimeoutError so AssistantView can show a gentle prompt (design §2.6).
     if (timeoutController.signal.aborted && !(error instanceof TaskTimeoutError)) {
-      throw new TaskTimeoutError(taskTimeoutMs)
+      throw new TaskTimeoutError(inactivityTimeoutMs)
     }
     throw error
   } finally {
-    clearTimeout(timeoutTimer)
+    if (inactivityTimer !== undefined) {
+      clearTimeout(inactivityTimer)
+    }
     // 落盘 trace:成功/失败都写,失败路径含 turn_failed 事件.
     // 走 saveLocalAssistantFiles 直写 Dexie(与 context.json 同通道,不进 save 事务).
     // 失败时文件名带 -failed-<ts> 后缀(assistantTracePath 对称 master 的 formatRuntimeTracePath).
