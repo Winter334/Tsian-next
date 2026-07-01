@@ -1166,7 +1166,37 @@ export const playFrontendBridge: PlayFrontendBridge = {
               signal: invokeController.signal,
             }),
             actionExecutorPolicy: undefined,
-            workspaceMutations: undefined,
+            // 旁路调用也接入 workspace mutation 适配器——agent 的 skill 脚本
+            // (如 commit_opening_understanding)和 workspace_write 工具都需要写入能力。
+            // 事务已在上方创建(同一 workspaceTransaction)，写入会随事务一起 commit。
+            workspaceMutations: {
+              write: (writeInput) => {
+                if (writeInput.scope === "platform-meta") {
+                  return workspaceTransaction!.writePlatformFile({
+                    path: writeInput.path,
+                    content: writeInput.content,
+                    ...(writeInput.data ? { data: writeInput.data } : {}),
+                  })
+                }
+                if (writeInput.scope !== "save-runtime") {
+                  throw new Error("Runtime Agent turns can only stage save-runtime workspace writes.")
+                }
+                return workspaceTransaction!.write({
+                  path: writeInput.path,
+                  content: writeInput.content,
+                  ...(writeInput.data ? { data: writeInput.data } : {}),
+                })
+              },
+              delete: (deleteInput) => {
+                if (deleteInput.scope !== "save-runtime") {
+                  throw new Error("Runtime Agent turns can only stage save-runtime workspace deletes.")
+                }
+                return {
+                  scope: deleteInput.scope,
+                  ...workspaceTransaction!.delete(deleteInput.path),
+                }
+              },
+            },
             exposedWorkspaceOperations: undefined,
             collaborationPolicy: undefined,
             semanticSearchOwnerId: activeSaveId,
