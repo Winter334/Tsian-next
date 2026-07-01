@@ -1,6 +1,6 @@
 import { getPlatformConfig, savePlatformConfig } from "./platform-config"
 
-export type BrowserAiProviderKind = "openai-compatible" | "gemini" | "claude" | "deepseek"
+export type BrowserAiProviderKind = "openai-compatible" | "openai-responses" | "gemini" | "claude" | "deepseek"
 
 export interface BrowserAiModelEntry {
   id: string
@@ -11,11 +11,13 @@ export type BrowserAiReasoningEffort = "" | "minimal" | "low" | "medium" | "high
 
 /**
  * How the Agent Runtime asks the model to invoke tools.
- * - `native`: API-native function calling (OpenAI `tools`/`tool_calls`,
- *   Gemini `functionDeclarations`/`functionCall`, Claude `tools`/`tool_use`).
+ * - `native`: API-native function calling (OpenAI Chat Completions
+ *   `tools`/`tool_calls`, OpenAI Responses `tools`/`function_call`, Gemini
+ *   `functionDeclarations`/`functionCall`, Claude `tools`/`tool_use`).
  *   Provides structured text/tool-call event boundaries, enabling streaming.
  * - `text`: the legacy `<tsian-tool-call>` text-embedding protocol. Kept as a
- *   manual fallback for endpoints without native tool support (no streaming).
+ *   manual fallback for endpoints without native tool support. Streaming is
+ *   supported by accumulating the full text and parsing tool calls post-hoc.
  * No `auto` mode: the user configures this explicitly per model.
  */
 export type BrowserAiToolCallMode = "native" | "text"
@@ -429,6 +431,7 @@ export const PROVIDER_TYPE_KINDS: Array<{
   available: boolean
 }> = [
   { kind: "openai-compatible", name: "OpenAI 兼容", available: true },
+  { kind: "openai-responses", name: "OpenAI Responses", available: true },
   { kind: "gemini", name: "Gemini", available: true },
   { kind: "claude", name: "Claude", available: true },
   { kind: "deepseek", name: "DeepSeek", available: true },
@@ -440,7 +443,10 @@ export const PROVIDER_TYPE_KINDS: Array<{
  * every provider kind (a convenience shortcut); providers that don't support
  * it should be left on "do not send" and configured via custom request params.
  */
-export function reasoningEffortHintForKind(_kind: BrowserAiProviderKind): string {
+export function reasoningEffortHintForKind(kind: BrowserAiProviderKind): string {
+  if (kind === "openai-responses") {
+    return "以 reasoning.effort 字段发送；请确保你的 API 支持该参数，不支持时选「不发送」并通过自定义请求参数手动指定。"
+  }
   return "以 reasoning_effort 字段发送；请确保你的 API 支持该参数，不支持时选「不发送」并通过自定义请求参数手动指定。"
 }
 
@@ -450,7 +456,13 @@ function normalizeProviderType(input: unknown, index: number): BrowserAiProvider
   }
   const record = input as Record<string, unknown>
   const kind = record.kind
-  if (kind !== "openai-compatible" && kind !== "gemini" && kind !== "claude" && kind !== "deepseek") {
+  if (
+    kind !== "openai-compatible" &&
+    kind !== "openai-responses" &&
+    kind !== "gemini" &&
+    kind !== "claude" &&
+    kind !== "deepseek"
+  ) {
     return null
   }
   const id = readStoredText(record.id) || kind

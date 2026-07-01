@@ -66,8 +66,8 @@ const emit = defineEmits<{
 
 const params = ref<BrowserAiModelParameters>({ ...props.initialParameters })
 const toolCallMode = ref<BrowserAiToolCallMode>(props.initialToolCallMode)
-// Clamped to false at confirm time when toolCallMode is text (text-protocol
-// models cannot stream); the switch is disabled in that mode anyway.
+// Both native and text protocol models can stream when the endpoint supports
+// SSE; confirm preserves the user's explicit switch value.
 const streaming = ref<boolean>(props.initialStreaming)
 const error = ref("")
 

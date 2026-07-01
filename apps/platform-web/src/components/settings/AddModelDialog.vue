@@ -126,9 +126,8 @@ const error = ref("")
 const inputRef = ref<HTMLInputElement | null>(null)
 const params = ref<BrowserAiModelParameters>(createDefaultBrowserAiModelParameters())
 const toolCallMode = ref<BrowserAiToolCallMode>("text")
-// Streaming defaults from toolCallMode: native → true, text → false. The
-// switch is disabled while toolCallMode is text; the final value is clamped
-// to false for text-protocol models at confirm time.
+// Streaming defaults to false for every new model; both native and text modes
+// can stream when the endpoint supports it, and the user can opt in explicitly.
 const streaming = ref(false)
 
 const canFetch = computed(

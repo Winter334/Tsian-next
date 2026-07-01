@@ -534,9 +534,7 @@ function handleEditModelParamsConfirm(payload: { parameters: BrowserAiModelParam
   }
   model.parameters = payload.parameters
   model.toolCallMode = payload.toolCallMode
-  // Text-protocol models can never stream; clamp to false regardless of the
-  // switch value (the switch is disabled in that mode, this is a safety net).
-  model.streaming = payload.toolCallMode === "native" ? payload.streaming : false
+  model.streaming = payload.streaming
   toast.success("模型参数已更新。")
 }
 

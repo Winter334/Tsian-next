@@ -12,7 +12,7 @@ export type AiDebugMessageStability = "stable" | "semi-stable" | "dynamic"
  * Inlined here to avoid a contracts → platform-web import cycle. Keep in sync if
  * the platform-web type changes.
  */
-export type AiDebugProviderKind = "openai-compatible" | "gemini" | "claude" | "deepseek"
+export type AiDebugProviderKind = "openai-compatible" | "openai-responses" | "gemini" | "claude" | "deepseek"
 
 export interface AiDebugMessageSegment {
   index: number

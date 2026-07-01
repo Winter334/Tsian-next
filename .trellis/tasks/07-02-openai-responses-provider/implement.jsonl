@@ -1,1 +1,8 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web frontend/runtime-host provider changes require layer index and required checks"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"required build checks and Agent Runtime debug/cache contracts for provider/runtime changes"}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"external provider payloads are runtime boundaries; normalize unknown data defensively"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"debug provider-kind contract change requires contracts layer checks"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"AiDebugRecord is a shared frontend/browser contract; update mirror union safely"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"provider kind spans config, runtime adapter, settings UI, debug contracts, and validation"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"reuse provider adapter patterns and avoid duplicating request/stream helpers unnecessarily"}
+{"file":".trellis/tasks/07-02-openai-responses-provider/research/openai-responses-api-notes.md","reason":"protocol facts for OpenAI Responses request, tool calls, streaming events, and usage"}
