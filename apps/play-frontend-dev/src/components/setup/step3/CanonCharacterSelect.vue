@@ -22,6 +22,7 @@ const emit = defineEmits<{
 const listRef = ref<HTMLElement | null>(null)
 const selectedIndex = ref<number | null>(null)
 const expandedBrief = ref<number | null>(null)
+const truncationMap = ref<Record<number, boolean>>({})
 
 function selectCandidate(index: number) {
   selectedIndex.value = index
@@ -29,6 +30,19 @@ function selectCandidate(index: number) {
 
 function toggleBrief(index: number) {
   expandedBrief.value = expandedBrief.value === index ? null : index
+}
+
+/** 检测每行简介文本是否被 ellipsis 截断，只给被截断的行显示展开链接。 */
+function checkTruncation() {
+  if (!listRef.value) return
+  const briefEls = listRef.value.querySelectorAll(".brief-text")
+  const map: Record<number, boolean> = {}
+  briefEls.forEach((el) => {
+    const htmlEl = el as HTMLElement
+    const index = Number(htmlEl.dataset.index)
+    map[index] = htmlEl.scrollWidth > htmlEl.clientWidth + 1
+  })
+  truncationMap.value = map
 }
 
 function confirmSelection() {
@@ -42,7 +56,10 @@ onMounted(async () => {
   const rows = listRef.value.querySelectorAll(".char-row")
   gsap.fromTo(rows,
     { opacity: 0, x: -16 },
-    { opacity: 1, x: 0, duration: 0.35, stagger: 0.04, ease: "power2.out" },
+    {
+      opacity: 1, x: 0, duration: 0.35, stagger: 0.04, ease: "power2.out",
+      onComplete: () => checkTruncation(),
+    },
   )
 })
 
@@ -88,9 +105,9 @@ onUnmounted(() => {
         <span class="row-body">
           <span class="row-name">{{ candidate.name }}</span>
           <span class="row-brief">
-            <span class="brief-text">{{ candidate.brief }}</span>
+            <span class="brief-text" :data-index="i">{{ candidate.brief }}</span>
             <span
-              v-if="candidate.brief.length > 60"
+              v-if="truncationMap[i]"
               class="brief-expand"
               role="button"
               tabindex="0"
