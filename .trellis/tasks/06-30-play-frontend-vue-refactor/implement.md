@@ -82,14 +82,14 @@
 - [x] 验证：`npm run build` 通过（step1 导入流程 + 子屏 Transition 切换；remote 回路手动验证待用户确认）
 - [x] commit
 
-### Step 7 — 向导 step2
-- [ ] `step2/UnderstandingIdle.vue`："开始理解"按钮 + 引导 + 返回切分
-- [ ] `step2/UnderstandingRunning.vue`：余烬升级 + 烛火呼吸 + 分阶段文案 auto-layout 逐字散聚；轮询 `save/playthrough/understanding-summary.json` status
-- [ ] `step2/UnderstandingReady.vue`：引导问 + 两分支卡（原著/原创）+ 选中推进 stepper
-- [ ] `step2/UnderstandingFailed.vue`：短重试 + `--blood` 按钮
-- [ ] 接 `tsian.invokeAgent("world-architect", prompt)`（从 source-import 迁移逻辑）
-- [ ] 验证：invokeAgent 调用 + running 动画 + ready 分支 + failed 重试
-- [ ] commit
+### Step 7 — 向导 step2（整体重新设计）
+- [x] ~~`step2/UnderstandingIdle.vue`~~ → 去掉多余 idle 屏，review 点「开始理解」直接进 running
+- [x] `step2/UnderstandingRunning.vue`：ember 光带加载 + 分阶段时间文案 + agent 心跳脉冲（监听 onMessage/onTool/onRoundEnd，不显示内容只给「它还活着」视觉信号）
+- [x] `step2/UnderstandingReady.vue`：理解摘要（标题/实体数/角色数）+ 引导问 + 角色分支卡 + GSAP stagger 进场
+- [x] `step2/UnderstandingFailed.vue`：错误详情 + --blood 边框重试按钮
+- [x] 接 `tsian.invokeAgent("world-architect", prompt)`（useSetupState.startOpeningUnderstanding + agent 心跳机制）
+- [x] 验证：`npm run build` 通过（remote 回路手动验证待用户确认）
+- [x] commit
 
 ### Step 8 — stub + 收尾
 - [ ] `StepStub.vue`：`即将开放` + 返回
