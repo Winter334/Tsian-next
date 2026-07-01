@@ -27,7 +27,7 @@ import {
 
 // ── 向导视图类型 ──
 export type SetupStep = 1 | 2 | 3 | 4 | 5
-export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding"
+export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "stub"
 export type UnderstandingStatus = "idle" | "running" | "ready" | "failed"
 
 // ── 模块级共享响应式状态 ──
@@ -152,6 +152,29 @@ function setView(view: SetupSubView): void {
   if (view === "choose") statusText.value = "等待选择导入方式"
   // step 推进：understanding → step 2，其余 step1 子屏 → step 1
   step.value = view === "understanding" ? 2 : 1
+}
+
+/** 推进到指定步骤（step3-5 渲染 StepStub）。step1-2 有真实视图，
+ *  调用 setView 回到对应子屏；step3-5 进 stub 占位屏。 */
+function goToStep(target: SetupStep): void {
+  if (target <= 1) {
+    setView("choose")
+    return
+  }
+  if (target === 2) {
+    // 回到 understanding：已有 ready 状态则直接进，否则回 review
+    if (understandingStatus.value === "ready") {
+      subView.value = "understanding"
+      step.value = 2
+    } else {
+      setView("review")
+    }
+    return
+  }
+  // step3-5：stub 占位
+  subView.value = "stub"
+  step.value = target
+  errorText.value = ""
 }
 
 async function startImport(
@@ -311,6 +334,7 @@ export function useSetupState() {
     // 操作方法
     initialize,
     setView,
+    goToStep,
     startImport,
     confirmReimport,
     startOpeningUnderstanding,

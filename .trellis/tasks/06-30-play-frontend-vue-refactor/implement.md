@@ -92,12 +92,12 @@
 - [x] commit
 
 ### Step 8 — stub + 收尾
-- [ ] `StepStub.vue`：`即将开放` + 返回
-- [ ] SetupWizard 接 step3-5 渲染 StepStub
-- [ ] 删除旧 `main.ts`/`source-import.ts`/`style.css`/`anim.ts`（全部逻辑已迁移）
-- [ ] `npm run build --workspace play-frontend-dev` 通过
-- [ ] 全流程 remote 回路手动验收（design §8）
-- [ ] commit
+- [x] `StepStub.vue`：`即将开放` + 返回
+- [x] SetupWizard 接 step3-5 渲染 StepStub
+- [x] 删除旧 `main.ts`/`source-import.ts`/`style.css`/`anim.ts`（全部逻辑已迁移）
+- [x] `npm run build --workspace play-frontend-dev` 通过
+- [ ] 全流程 remote 回路手动验收（design §8）— 待用户测试
+- [x] commit
 
 ## Validation Commands
 

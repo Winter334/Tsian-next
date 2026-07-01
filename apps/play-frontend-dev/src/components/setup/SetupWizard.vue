@@ -9,6 +9,7 @@ import SplitReview from "./step1/SplitReview.vue"
 import UnderstandingRunning from "./step2/UnderstandingRunning.vue"
 import UnderstandingReady from "./step2/UnderstandingReady.vue"
 import UnderstandingFailed from "./step2/UnderstandingFailed.vue"
+import StepStub from "./StepStub.vue"
 
 /**
  * SetupWizard — 开局导入向导壳。
@@ -32,6 +33,7 @@ const {
   initializing,
   initialize,
   setView,
+  goToStep,
   startImport,
   startOpeningUnderstanding,
 } = useSetupState()
@@ -40,8 +42,8 @@ const {
 const pasteRef = ref<InstanceType<typeof PasteInput> | null>(null)
 const fileRef = ref<InstanceType<typeof FileInput> | null>(null)
 
-// stepper 索引（0-based）
-const currentStepIndex = computed(() => (subView.value === "understanding" ? 1 : 0))
+// stepper 索引（0-based）：直接用 useSetupState 的 step ref（1-5 → 0-4）
+const currentStepIndex = computed(() => step.value - 1)
 const completedUntil = computed(() => {
   if (understandingStatus.value === "ready") return 1
   if (manifest.value) return 0
@@ -121,12 +123,33 @@ const actions = computed<ActionConfig>(() => {
     }
   }
   // ready：分支卡在组件内交互，不需要主按钮
+  if (understandingStatus.value === "ready") {
+    return {
+      secondaryLabel: "返回目录",
+      secondaryDisabled: busy.value,
+      onSecondary: () => setView("review"),
+      primaryLabel: "下一步",
+      primaryDisabled: false,
+      onPrimary: () => goToStep(3),
+    }
+  }
+  // stub 占位（step3-5 未实现）
+  if (subView.value === "stub") {
+    return {
+      secondaryLabel: "返回",
+      secondaryDisabled: false,
+      onSecondary: () => goToStep(2),
+      primaryLabel: "下一步",
+      primaryDisabled: true,
+      onPrimary: null,
+    }
+  }
   return {
     secondaryLabel: "返回目录",
     secondaryDisabled: busy.value,
     onSecondary: () => setView("review"),
     primaryLabel: "下一步",
-    primaryDisabled: true, // Step 3 角色设定未实现
+    primaryDisabled: true,
     onPrimary: null,
   }
 })
@@ -195,11 +218,12 @@ onMounted(() => {
             </div>
 
             <!-- understanding：根据状态渲染 running/ready/failed -->
-            <div v-else key="understanding" class="stage-content">
+            <div v-else-if="subView === 'understanding'" key="understanding" class="stage-content">
               <UnderstandingRunning v-if="understandingStatus === 'running'" />
               <UnderstandingReady
                 v-else-if="understandingStatus === 'ready'"
                 :summary="understandingSummary"
+                @select="goToStep(3)"
               />
               <UnderstandingFailed
                 v-else-if="understandingStatus === 'failed'"
@@ -207,6 +231,11 @@ onMounted(() => {
                 @retry="startOpeningUnderstanding"
               />
               <!-- idle 不会出现在 understanding 视图（review 点开始理解直接进 running） -->
+            </div>
+
+            <!-- stub：step3-5 未实现占位 -->
+            <div v-else key="stub" class="stage-content">
+              <StepStub :step="step" title="即将开放" @back="goToStep(2)" />
             </div>
           </Transition>
 
