@@ -26,6 +26,10 @@ const truncationMap = ref<Record<number, boolean>>({})
 
 function selectCandidate(index: number) {
   selectedIndex.value = index
+  // 选中即通知父组件更新，而非等确认时才 emit。
+  // 否则父组件的 canonSelectedCandidate 保留旧值，
+  // 用户改选后点"确认选择"仍确认的是旧角色。
+  emit("select", props.candidates[index])
 }
 
 function toggleBrief(index: number) {
@@ -46,8 +50,9 @@ function checkTruncation() {
 }
 
 function confirmSelection() {
+  // selectCandidate 已经 emit select，这里仅做防御性检查。
+  // dblclick 时 selectCandidate 先触发，此处不需要再 emit。
   if (selectedIndex.value === null) return
-  emit("select", props.candidates[selectedIndex.value])
 }
 
 onMounted(async () => {

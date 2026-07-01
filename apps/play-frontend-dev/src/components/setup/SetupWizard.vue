@@ -60,6 +60,12 @@ const originalFormRef = ref<InstanceType<typeof OriginalCharacterForm> | null>(n
 // step3 原著选择追踪（CanonCharacterSelect emit select → 存到这里 → 启用 primary 按钮）
 const canonSelectedCandidate = ref<{ id?: string; name: string; brief: string } | null>(null)
 
+// 返回修改时清旧选择，避免确认时用到旧候选
+function onResetCharacterSetup() {
+  canonSelectedCandidate.value = null
+  resetCharacterSetup()
+}
+
 // stepper 索引（0-based）：直接用 useSetupState 的 step ref（1-5 → 0-4）
 const currentStepIndex = computed(() => step.value - 1)
 const completedUntil = computed(() => {
@@ -160,7 +166,7 @@ const actions = computed<ActionConfig>(() => {
       return {
         secondaryLabel: "返回修改",
         secondaryDisabled: busy.value,
-        onSecondary: resetCharacterSetup,
+        onSecondary: onResetCharacterSetup,
         primaryLabel: "下一步",
         primaryDisabled: busy.value,
         onPrimary: () => goToStep(4),
@@ -311,7 +317,7 @@ onMounted(() => {
               <CharacterConfirmed
                 v-if="characterSetupStatus === 'confirmed' && selectedCharacter"
                 :character="selectedCharacter"
-                @back="resetCharacterSetup"
+                @back="onResetCharacterSetup"
                 @next="goToStep(4)"
               />
               <!-- 原著角色选择 -->
