@@ -73,3 +73,94 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 109: Step 3 角色设定向导 + 脚本/系统监视器修复
+
+**Date**: 2026-07-01
+**Task**: Step 3 角色设定向导 + 脚本/系统监视器修复
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+(Add summary)
+
+### Main Changes
+
+## 会话内容
+
+本次会话涵盖三个方向的修复和一个新功能开发：
+
+### 1. 脚本系统修复（3 个 bug）
+
+- **Worker TS 断言残留**：`BROWSER_SCRIPT_WORKER_SOURCE` 的 config Proxy 块里有 3 处 `as` 类型断言（line 160/162/168），浏览器 Worker 不认 TS 语法 → 所有脚本 SyntaxError。修复：移除 `as` 断言。补充 spec "Browser Script Worker Source Is Pure JavaScript" 场景。
+- **test_skill_script exposedOperations 空**：`createTestSkillScriptRunner` 调 `runBrowserScript` 时没传 `executorContext`，Worker 内 `tsian.workspace.*` 全部 `WORKSPACE_OPERATION_NOT_EXPOSED`。修复：类型加第二参数 `RuntimeControlledExecutorContext`，dispatch 传 `{ agentContext, exposedWorkspaceOperations }`。
+- **read_opening_slice 标题重复**：章节文件首行是纯文本标题（无 `#`），`cleanText` 不移除，脚本手动加 `#` 标题 → 重复。修复：拼接前检测 `used` 首行是否等于 `chapter.title`，是则剥离。
+
+### 2. 系统监视器清理
+
+- 移除"最近问题"区段（从全量诊断+AI debug 积累错误，永久不清理）。
+- `overallStatus` 只看最新回合诊断，不积累历史。
+- 清理死代码 -97 行。
+
+### 3. 默认前端 UI 修复
+
+- **gsap.from 陷阱**：选项卡不可见，根因是 `gsap.from()` 读"当前值"作终点，组件重渲染打断 tween → 元素停在 opacity:0。修复：全部改 `gsap.fromTo`（3 个组件）。
+- **角色卡透明度**：背景对比度调整（不是根因，但改善了可读性）。
+
+### 4. Step 3 角色设定向导（新功能）
+
+走完整 Trellis 流程：brainstorm → PRD → design → implement → 实现。
+
+**3 个新组件**：
+- `CanonCharacterSelect`：原著角色竖向列表，选中态标记字点燃+粒子上升+点燃弹跳
+- `OriginalCharacterForm`：原创角色表单，必填名字+简介，可选字段 grid 折叠
+- `CharacterConfirmed`：确认屏，单卡 scale 进场+一次性脉冲环
+
+**useSetupState 扩展**：
+- 3 个新状态：characterBranch / selectedCharacter / characterSetupStatus
+- 5 个新操作：setCharacterBranch / backToBranchChoice / confirmCanonCharacter / confirmOriginalCharacter / resetCharacterSetup
+- 重载恢复：initialize() 读 runtime.json player.character
+- localId 生成：original- 前缀 + 角色名，冲突加序号
+
+**UI 细节修复（3 轮迭代）**：
+- 角色卡简介：scrollWidth>clientWidth 检测截断 → 展开链接（不破坏行高一致性）
+- 折叠动画：max-height → grid-template-rows 0fr→1fr + visibility transition-delay 防闪烁
+- 选中动效加强：标记字点燃弹跳 + 内/外光晕加深 + 琥珀渐变底色 + 角色名 text-shadow
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| 843f8fc | fix(browser-script): Worker 源码残留 TS 断言导致全脚本 SyntaxError |
+| ac6fdc0 | fix(test-skill-script): 透传 executorContext 修复 WORKSPACE_OPERATION_NOT_EXPOSED |
+| 6141d91 | fix(opening-script): read_opening_slice 章节标题重复 |
+| c971ff3 | refactor(debug-view): 移除最近问题区段,状态徽章只看最新回合 |
+| 930b8ca | fix(play-frontend-dev): 设定阶段选项卡可见度过低 |
+| ae0e154 | fix(play-frontend-dev): gsap.from 陷阱导致选项卡不可见 |
+| 87a9f59 | feat(play-frontend-dev): Step 3 角色设定向导 |
+| 004a9ec | fix(play-frontend-dev): Step3 角色卡简介截断 + 折叠动画生硬 |
+| 731c3c2 | fix(play-frontend-dev): 角色卡简介展开 + 折叠闪烁 |
+| 7b62cf2 | fix(canon-select): 用 CSS 截断检测替代固定字符数判定展开 |
+| 250e264 | fix(canon-select): 展开简介重复 + 加强选中动效 |
+| 083a379 | chore(task): record planning artifacts |
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `250e264` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
