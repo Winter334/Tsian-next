@@ -3,7 +3,7 @@
   "name": "play-frontend-vue-refactor",
   "title": "开发前端 Vue 重构 + UI 库引入",
   "description": "将 apps/play-frontend-dev 从 vanilla TS 重构为 Vue 3 SFC 结构并引入 UI 库，作为流经平台构建引擎的真正默认前端种子",
-  "status": "done",
+  "status": "completed",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",
