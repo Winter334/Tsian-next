@@ -3,13 +3,13 @@ import { ref, watch, computed, onUnmounted } from "vue"
 import { useSetupState } from "../../../composables/useSetupState"
 
 /**
- * UnderstandingRunning — 初始理解进行中（加载动画）。
+ * UnderstandingRunning — 初始理解进行中。
  *
- * 设计：本质是加载阶段。视觉 = ember 光带循环扫过 + 分阶段时间文案 +
- * agent 心跳脉冲（光团闪一下，体现"它还活着"，不显示具体内容）。
+ * 视觉意象「翻卷烛照」：暗室中一盏烛火，正在逐行阅读一卷古书。
+ * 烛火摇曳投光 → 书卷行依次被照亮（亮起→褪去循环）→ 底部提示。
+ * agent activity 时烛火闪一下 + 光环扩散，像翻了一页。
  *
- * 不暴露 world-architect。分阶段文案按经过时间推进（时间 fallback，
- * agent 实际进度不可知）。
+ * 不暴露 world-architect。分阶段文案按经过时间推进（agent 实际进度不可知）。
  */
 const { agentHeartbeat, understandingStartedAt } = useSetupState()
 
@@ -44,7 +44,7 @@ onUnmounted(() => {
   if (tickTimer) clearInterval(tickTimer)
 })
 
-// agent 心跳脉冲：心跳计数变化时触发光团脉冲
+// agent 心跳：触发烛火闪烁
 const pulseKey = ref(0)
 watch(agentHeartbeat, () => {
   pulseKey.value++
@@ -53,19 +53,17 @@ watch(agentHeartbeat, () => {
 
 <template>
   <div class="understanding-running">
-    <!-- 中央加载区 -->
-    <div class="loading-core">
-      <!-- 烛火核心：节律性明灭，像一盏被规律拨动的烛火 -->
-      <div class="ember-core" :key="pulseKey">
-        <div class="ember-flame" />
-        <div class="ember-halo" />
-        <div class="ember-ring" />
+    <div class="reading-scene">
+      <!-- 烛火 -->
+      <div class="candle" :key="pulseKey">
+        <div class="flame" />
+        <div class="flame-glow" />
+        <div class="page-flip-ring" />
       </div>
 
-      <!-- ember 光带：循环扫过（不确定进度型） -->
-      <div class="loading-bar">
-        <div class="bar-track" />
-        <div class="bar-sweep" />
+      <!-- 书卷行：依次被烛光照亮 -->
+      <div class="scroll-lines">
+        <div class="scroll-line" v-for="i in 5" :key="i" :style="{ '--line-i': i - 1 }" />
       </div>
 
       <!-- 分阶段文案 -->
@@ -73,7 +71,7 @@ watch(agentHeartbeat, () => {
         <p :key="currentStage" class="stage-text">{{ STAGES[currentStage] }}</p>
       </Transition>
 
-      <!-- 固定提示：处理需要时间 -->
+      <!-- 固定提示 -->
       <p class="duration-hint">
         <span class="hint-text">这可能需要一些时间，请稍候</span>
         <span class="hint-dots" aria-hidden="true">
@@ -91,153 +89,129 @@ watch(agentHeartbeat, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 60px 20px;
+  padding: 50px 20px;
   min-height: 280px;
 }
 
-.loading-core {
+.reading-scene {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 22px;
 }
 
-/* ── 烛火核心：节律性明灭 ── */
-/* 设计思路：不是小光点微微呼吸，而是一盏有体量的烛火——
-   火焰本身随心跳节律明暗伸缩（1.2s 周期，像平稳心跳），
-   外层光晕同步扩散收缩，脉冲环在 agent activity 时额外扩散。
-   整体 60px 区域，在 280px 容器里存在感强。 */
-.ember-core {
+/* ═══ 烛火 ═══ */
+/* 一颗有体量的火焰：椭圆 + 摇曳 + 投光到下方书卷 */
+.candle {
   position: relative;
-  width: 60px;
+  width: 50px;
   height: 60px;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
 }
 
-/* 火焰核心：ember-bright 发光体，心跳节律明灭 */
-.ember-flame {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+/* 火焰本体：水滴形 ember-bright，摇曳 */
+.flame {
+  width: 18px;
+  height: 28px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   background: radial-gradient(
-    circle,
+    ellipse at 50% 70%,
     var(--ember-bright) 0%,
     var(--ember) 50%,
-    rgba(181, 137, 61, 0.3) 80%,
+    rgba(181, 137, 61, 0.4) 80%,
     transparent 100%
   );
   box-shadow:
-    0 0 20px rgba(232, 169, 72, 0.5),
-    0 0 40px rgba(232, 169, 72, 0.2);
-  animation: flame-heartbeat 1.2s ease-in-out infinite;
-  z-index: 2;
+    0 0 18px rgba(232, 169, 72, 0.5),
+    0 0 36px rgba(232, 169, 72, 0.2);
+  transform-origin: center bottom;
+  animation: flame-sway 2.5s ease-in-out infinite;
+  margin-top: 6px;
 }
-@keyframes flame-heartbeat {
-  0%, 100% {
-    transform: scale(0.85);
-    box-shadow: 0 0 14px rgba(232, 169, 72, 0.35), 0 0 28px rgba(232, 169, 72, 0.12);
-    opacity: 0.8;
-  }
-  15% {
-    transform: scale(1.15);
-    box-shadow: 0 0 28px rgba(232, 169, 72, 0.7), 0 0 56px rgba(232, 169, 72, 0.3);
-    opacity: 1;
-  }
-  30% {
-    transform: scale(1.0);
-    box-shadow: 0 0 22px rgba(232, 169, 72, 0.55), 0 0 44px rgba(232, 169, 72, 0.2);
-    opacity: 0.95;
-  }
-  45% {
-    transform: scale(1.08);
-    box-shadow: 0 0 24px rgba(232, 169, 72, 0.6), 0 0 48px rgba(232, 169, 72, 0.22);
-    opacity: 1;
-  }
+@keyframes flame-sway {
+  0%, 100% { transform: rotate(-2deg) scaleY(1) scaleX(1); }
+  25% { transform: rotate(2deg) scaleY(1.08) scaleX(0.95); }
+  50% { transform: rotate(-1deg) scaleY(0.95) scaleX(1.05); }
+  75% { transform: rotate(1.5deg) scaleY(1.05) scaleX(0.97); }
 }
 
-/* 光晕：同步呼吸，比火焰大一圈 */
-.ember-halo {
+/* 烛火光晕：投射到下方区域，呼吸 */
+.flame-glow {
   position: absolute;
-  width: 40px;
-  height: 40px;
+  top: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 120px;
+  height: 120px;
   border-radius: 50%;
   background: radial-gradient(
     circle,
-    rgba(232, 169, 72, 0.12) 0%,
-    rgba(232, 169, 72, 0.05) 50%,
+    rgba(232, 169, 72, 0.08) 0%,
+    rgba(232, 169, 72, 0.04) 40%,
     transparent 70%
   );
-  animation: halo-breathe 1.2s ease-in-out infinite;
-  z-index: 1;
+  animation: glow-breathe 2.5s ease-in-out infinite;
+  pointer-events: none;
 }
-@keyframes halo-breathe {
-  0%, 100% { transform: scale(0.9); opacity: 0.5; }
-  15% { transform: scale(1.3); opacity: 0.9; }
-  30% { transform: scale(1.1); opacity: 0.7; }
-  45% { transform: scale(1.2); opacity: 0.8; }
+@keyframes glow-breathe {
+  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(0.95); }
+  50% { opacity: 1; transform: translateX(-50%) scale(1.1); }
 }
 
-/* 脉冲环：agent activity 时额外扩散（key 变化重新挂载） */
-.ember-ring {
+/* 翻页光环：agent activity 时从烛火扩散（key 变化重新挂载） */
+.page-flip-ring {
   position: absolute;
-  top: 50%;
+  top: 18px;
   left: 50%;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
+  width: 18px;
+  height: 28px;
+  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
   border: 1.5px solid var(--ember-bright);
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   animation: ring-burst 1.5s ease-out;
-  z-index: 3;
+  pointer-events: none;
 }
 @keyframes ring-burst {
-  0% { width: 22px; height: 22px; opacity: 0.8; border-width: 2px; }
-  100% { width: 90px; height: 90px; opacity: 0; border-width: 0.5px; }
+  0% { width: 18px; height: 28px; opacity: 0.7; }
+  100% { width: 100px; height: 120px; opacity: 0; }
 }
 
-/* ── ember 光带加载条 ── */
-.loading-bar {
-  position: relative;
-  width: 200px;
+/* ═══ 书卷行 ═══ */
+/* 5 条横线模拟书卷文字，依次被烛火照亮（亮起→褪去循环） */
+.scroll-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  align-items: center;
+  width: 220px;
+}
+
+.scroll-line {
+  width: 100%;
   height: 2px;
-  overflow: hidden;
   border-radius: 1px;
+  background: rgba(181, 137, 61, 0.1);
+  /* 依次被照亮：每行错开 0.6s，整体 5s 循环 */
+  animation: line-illuminate 5s ease-in-out infinite;
+  animation-delay: calc(var(--line-i) * 0.6s);
+}
+@keyframes line-illuminate {
+  0%, 100% {
+    background: rgba(181, 137, 61, 0.1);
+    box-shadow: none;
+    height: 2px;
+  }
+  /* 被烛火扫过：变亮变粗 + 暖光晕 */
+  10%, 30% {
+    background: linear-gradient(90deg, transparent 0%, var(--ember) 20%, var(--ember-bright) 50%, var(--ember) 80%, transparent 100%);
+    box-shadow: 0 0 8px rgba(232, 169, 72, 0.4);
+    height: 3px;
+  }
 }
 
-/* 轨道：暗 ember 底色 */
-.bar-track {
-  position: absolute;
-  inset: 0;
-  background: rgba(181, 137, 61, 0.12);
-  border-radius: 1px;
-}
-
-/* 光带扫过：ember-bright 渐变循环 */
-.bar-sweep {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--ember) 30%,
-    var(--ember-bright) 50%,
-    var(--ember) 70%,
-    transparent 100%
-  );
-  border-radius: 1px;
-  animation: bar-sweep 1.8s ease-in-out infinite;
-}
-@keyframes bar-sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
-}
-
-/* ── 分阶段文案 ── */
+/* ═══ 分阶段文案 ═══ */
 .stage-text {
   margin: 0;
   font-family: var(--font-serif);
@@ -262,7 +236,7 @@ watch(agentHeartbeat, () => {
   transform: translateY(-6px);
 }
 
-/* ── 固定提示：处理需要时间 ── */
+/* ═══ 固定提示 ═══ */
 .duration-hint {
   margin: 0;
   font-family: var(--font-mono);
