@@ -57,6 +57,7 @@ const turnOptions = ref<string[]>([])
 // 开局叙事（Step 4 对话收尾写入 opening-narrative.json，进入 play 后 StoryView 特殊渲染）
 // 独立于 stream——reloadHistory/restore 替换 stream 时不会被冲掉
 const openingNarrative = ref<string | null>(null)
+const PLAY_SETUP_CONTEXT_PATH = "save/agents/world-architect/context-play-setup.json"
 
 // 订阅是否已注册（只注册一次，避免多组件重复订阅）
 let subscribed = false
@@ -281,7 +282,8 @@ export function useTsian() {
       checkpoints.value = await tsian.checkpoints.list()
     },
     /** 读取开局叙事（Step 4 对话收尾写入 opening-narrative.json）。
-     *  供 Step 5 确认 / enterPlay 时调用，StoryView 特殊渲染为第一条消息。 */
+     *  供 Step 5 确认 / enterPlay 时调用，StoryView 特殊渲染为第一条消息。
+     *  同时从 play-setup context slot 恢复最后一条 agent 选项，避免开局初始选项丢失。 */
     async loadOpeningNarrative(): Promise<void> {
       try {
         const file = await tsian.workspace.read("save/playthrough/opening-narrative.json")
@@ -296,6 +298,7 @@ export function useTsian() {
       } catch {
         openingNarrative.value = null
       }
+      await loadPlaySetupOptions()
     },
     /** 恢复到指定检查点。host 执行 restore（裁剪 turn 文件 + 删除未来 checkpoint）后，
      *  前端重建 stream + checkpoints + 兜底恢复最后一轮选项。 */
@@ -304,6 +307,31 @@ export function useTsian() {
       await reloadHistory()
       await tsian.checkpoints.list().then((cps) => { checkpoints.value = cps })
     },
+  }
+
+  /** 从 Step 4 play-setup context slot 恢复最后一条 agent 回复中的 [[选项]]。
+   *  openingNarrative 不是正式 turn 文件，Step 4 收尾回复里的初始选项也不会进入 turnOptions；
+   *  enterPlay 前调用本函数，把初始选项带到 StoryView。 */
+  async function loadPlaySetupOptions(): Promise<void> {
+    // 已有正式回合选项时不覆盖（例如用户已经开始游玩后重新加载 openingNarrative）
+    if (turnOptions.value.length > 0) return
+    try {
+      const file = await tsian.workspace.read(PLAY_SETUP_CONTEXT_PATH)
+      if (!file?.content) return
+      const data = JSON.parse(file.content) as { recentTurns?: Array<{ role?: string; content?: string }> }
+      const recentTurns = Array.isArray(data.recentTurns) ? data.recentTurns : []
+      for (let i = recentTurns.length - 1; i >= 0; i -= 1) {
+        const entry = recentTurns[i]
+        if (entry?.role !== "assistant" || typeof entry.content !== "string") continue
+        const parsed = parseStoryOptions(entry.content)
+        if (parsed.options.length > 0) {
+          turnOptions.value = parsed.options
+        }
+        return
+      }
+    } catch {
+      // 初始选项是增强展示；失败时不阻塞进入 StoryView。
+    }
   }
 
   /** 从 workspace turn 文件单源重建对话（首次加载 + restore 回溯后复用）。
@@ -353,6 +381,10 @@ export function useTsian() {
       if (lastOptions && lastOptions.kind === "options" && lastOptions.items.length > 0) {
         turnOptions.value = lastOptions.items
       }
+    }
+    // 开局叙事不是正式 turn 文件；如果尚无正式历史选项，则从 Step 4 对话 context 兜底恢复初始选项。
+    if (turnOptions.value.length === 0 && openingNarrative.value) {
+      await loadPlaySetupOptions()
     }
   }
 }
