@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 114
+- **Total Sessions**: 115
 - **Last Active**: 2026-07-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~344 | Active |
+| `journal-3.md` | ~378 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 115 | 2026-07-02 | Account system Discord auth | `80c0645` | `feat/workspace-context-cache-split` |
 | 114 | 2026-07-02 | novel-airp opening confirm Step 5 | `a144b90`, `e94c8af` | `feat/workspace-context-cache-split` |
 | 113 | 2026-07-02 | novel-airp play setup dialog Step 4 — archive (code landed prior sessions) | `3317ce9`, `6b02113`, `89152ac`, `318b6ee`, `7a1d5ce`, `d3c3365`, `bd7e210` | `feat/workspace-context-cache-split` |
 | 112 | 2026-07-02 | novel-airp understanding loader: random SVG magic circle | `7b8d84d`, `7a2ebf8` | `feat/workspace-context-cache-split` |

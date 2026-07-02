@@ -342,3 +342,37 @@ Redesigned browser AI model configuration around provider-aware parameter branch
 ### Next Steps
 
 - None - task complete
+
+
+## Session 115: Account system Discord auth
+
+**Date**: 2026-07-02
+**Task**: Account system Discord auth
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+Implemented the account-system task: planned and built the Go platform-server auth backend with SQLite users/auth_identities/sessions, Discord OAuth and mock-login, platform-web auth API client/composable/taskbar UI, shared User contract, docs, tests, and validation. Preserved unrelated play-frontend-dev useTsian.ts changes for the other session.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `80c0645` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
