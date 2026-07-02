@@ -74,20 +74,8 @@ onUnmounted(() => {
           />
         </template>
 
-        <!-- 等待态：墨笔沉思（对话专属，区别于理解阶段的 orb+sweep） -->
-        <div v-if="status === 'running'" class="thinking-bubble">
-          <div class="ink-dots">
-            <span class="ink-dot" />
-            <span class="ink-dot" />
-            <span class="ink-dot" />
-          </div>
-          <p class="thinking-text">
-            <span class="thinking-label">正在思考你的设定</span>
-            <span class="thinking-ellipsis" aria-hidden="true">
-              <span class="dot">·</span><span class="dot">·</span><span class="dot">·</span>
-            </span>
-          </p>
-        </div>
+        <!-- 等待态：空叙述 + ember 闪烁光标，像 agent 正在书写但还没出字 -->
+        <NarrativeMessage v-if="status === 'running'" content="" streaming />
 
         <!-- 错误态 -->
         <div v-if="status === 'failed'" class="error-card">
@@ -134,83 +122,6 @@ onUnmounted(() => {
   max-width: 720px;
   margin: 0 auto;
   padding: 20px 24px 24px;
-}
-
-/* ── 等待态：墨笔沉思（对话专属，区别于理解阶段的 orb+sweep）── */
-/* 设计思路：三颗墨滴交替沉浮 + 「正在思考你的设定 ···」渐显文字，
-   像一支蘸墨的笔在纸面上方迟疑——烛火书卷风格的"agent 在想"。
-   左对齐于 agent 消息位置，融入对话流而非浮于中央。 */
-.thinking-bubble {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
-  margin: 20px 0 32px;
-  padding: 18px 22px;
-  background:
-    radial-gradient(ellipse 60% 80% at 20% 50%, rgba(43, 4, 4, 0.3) 0%, transparent 70%),
-    rgba(10, 5, 6, 0.25);
-  border-radius: 4px 8px 8px 8px;
-  animation: bubble-in 0.35s ease both;
-}
-@keyframes bubble-in {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-/* 三颗墨滴：交替沉浮，像笔尖在墨碟中点触 */
-.ink-dots {
-  display: flex;
-  gap: 7px;
-  align-items: center;
-  height: 16px;
-}
-.ink-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--ember);
-  box-shadow: 0 0 6px rgba(232, 169, 72, 0.25);
-  animation: ink-bob 1.4s ease-in-out infinite;
-}
-.ink-dot:nth-child(2) { animation-delay: 0.2s; }
-.ink-dot:nth-child(3) { animation-delay: 0.4s; }
-@keyframes ink-bob {
-  0%, 100% { transform: translateY(0); opacity: 0.4; background: var(--ember); }
-  40% { transform: translateY(-5px); opacity: 1; background: var(--ember-bright); box-shadow: 0 0 10px rgba(232, 169, 72, 0.5); }
-  60% { transform: translateY(-5px); opacity: 1; }
-}
-
-/* 提示文字：渐显 + 省略号呼吸 */
-.thinking-text {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 0.88rem;
-  color: var(--prose-dim);
-  letter-spacing: 0.03em;
-  display: flex;
-  align-items: baseline;
-  gap: 2px;
-}
-.thinking-label {
-  animation: label-fade 0.5s ease 0.15s both;
-}
-@keyframes label-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* 省略号三点：依次淡入循环，像字斟句酌 */
-.thinking-ellipsis .dot {
-  animation: dot-pulse 1.8s ease-in-out infinite;
-  color: var(--ember);
-}
-.thinking-ellipsis .dot:nth-child(1) { animation-delay: 0s; }
-.thinking-ellipsis .dot:nth-child(2) { animation-delay: 0.3s; }
-.thinking-ellipsis .dot:nth-child(3) { animation-delay: 0.6s; }
-@keyframes dot-pulse {
-  0%, 100% { opacity: 0.2; }
-  50% { opacity: 1; text-shadow: 0 0 6px rgba(232, 169, 72, 0.4); }
 }
 
 /* ── 错误态：blood-bordered 卡片 ── */
