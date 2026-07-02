@@ -14,7 +14,11 @@ import CanonCharacterSelect from "./step3/CanonCharacterSelect.vue"
 import OriginalCharacterForm from "./step3/OriginalCharacterForm.vue"
 import CharacterConfirmed from "./step3/CharacterConfirmed.vue"
 import PlaySetupDialog from "./step4/PlaySetupDialog.vue"
+import OpeningConfirm from "./step5/OpeningConfirm.vue"
 import StepStub from "./StepStub.vue"
+
+/** enterPlay：玩家在 Step 5 点"进入故事"，App.vue 接线翻转 mode 到 play。 */
+const emit = defineEmits<{ enterPlay: [] }>()
 
 /**
  * SetupWizard — 开局导入向导壳。
@@ -71,6 +75,7 @@ function onResetCharacterSetup() {
 // stepper 索引（0-based）：直接用 useSetupState 的 step ref（1-5 → 0-4）
 const currentStepIndex = computed(() => step.value - 1)
 const completedUntil = computed(() => {
+  if (subView.value === "opening-confirm") return 4
   if (playSetupStatus.value === "complete") return 3
   if (characterSetupStatus.value === "confirmed") return 2
   if (understandingStatus.value === "ready") return 1
@@ -211,7 +216,19 @@ const actions = computed<ActionConfig>(() => {
     }
   }
 
-  // stub 占位（step5 未实现）
+  // ── Step 5 开局确认 ──
+  if (subView.value === "opening-confirm") {
+    return {
+      secondaryLabel: "返回设定",
+      secondaryDisabled: false,
+      onSecondary: () => goToStep(4),
+      primaryLabel: "进入故事",
+      primaryDisabled: false,
+      onPrimary: onEnterPlay,
+    }
+  }
+
+  // stub 占位（兜底，正常流程不触发）
   if (subView.value === "stub") {
     return {
       secondaryLabel: "返回",
@@ -249,6 +266,11 @@ async function onImportFile() {
     return
   }
   await startImport("file", input)
+}
+
+/** Step 5 "进入故事"：通知 App.vue 翻转 mode 到 play（含烧蚀过渡）。 */
+function onEnterPlay() {
+  emit("enterPlay")
 }
 
 // 拖放文件自动导入
@@ -355,7 +377,12 @@ onMounted(() => {
               <PlaySetupDialog />
             </div>
 
-            <!-- stub：step5 未实现占位 -->
+            <!-- Step 5 开局确认：设定卡片过渡入口 -->
+            <div v-else-if="subView === 'opening-confirm'" key="opening-confirm" class="stage-content">
+              <OpeningConfirm />
+            </div>
+
+            <!-- stub：兜底，正常流程不触发 -->
             <div v-else key="stub" class="stage-content">
               <StepStub :step="step" title="即将开放" @back="goToStep(4)" />
             </div>

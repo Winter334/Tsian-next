@@ -40,7 +40,7 @@ import {
 
 // ── 向导视图类型 ──
 export type SetupStep = 1 | 2 | 3 | 4 | 5
-export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "character-setup" | "play-setup" | "stub"
+export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "character-setup" | "play-setup" | "opening-confirm" | "stub"
 export type UnderstandingStatus = "idle" | "running" | "ready" | "failed"
 export type CharacterSetupStatus = "selecting" | "confirmed"
 
@@ -69,6 +69,9 @@ const playSetupMessages = ref<DialogMessage[]>([])
 const playSetupError = ref("")
 const playSetupHeartbeat = ref(0)
 let playSetupHeartbeatUnsub: Array<() => void> = []
+
+// ── 开局确认状态（Step 5）──
+const playSetupSummary = ref<string | null>(null)
 
 // 初始化状态
 const initializing = ref(true)
@@ -181,7 +184,7 @@ function setView(view: SetupSubView): void {
 }
 
 /** 推进到指定步骤。step1-2 有真实视图，step3 角色设定有独立子屏，
- *  step4-5 进 stub 占位屏。 */
+ *  step4 游玩设定对话，step5 开局确认过渡入口。 */
 function goToStep(target: SetupStep): void {
   if (target <= 1) {
     setView("choose")
@@ -217,9 +220,9 @@ function goToStep(target: SetupStep): void {
     }
     return
   }
-  // step5：stub 占位（Step 5 实现是后续任务，路由先打通）
-  subView.value = "stub"
-  step.value = target
+  // Step 5 开局确认：设定卡片过渡入口，enterPlay 触发翻转
+  subView.value = "opening-confirm"
+  step.value = 5
   errorText.value = ""
 }
 
@@ -562,6 +565,7 @@ async function startPlaySetupDialog(): Promise<void> {
   const summary = await loadSetupSummary(tsian)
   if (summary?.status === "complete") {
     playSetupStatus.value = "complete"
+    playSetupSummary.value = summary.summary ?? null
     return
   }
 
@@ -650,6 +654,7 @@ async function handleAgentResponse(response: string): Promise<void> {
   const summary = await loadSetupSummary(tsian)
   if (summary?.status === "complete") {
     playSetupStatus.value = "complete"
+    playSetupSummary.value = summary.summary ?? null
   } else {
     playSetupStatus.value = "idle"
   }
@@ -706,7 +711,8 @@ async function initialize(): Promise<void> {
           const setupSummary = await loadSetupSummary(tsian)
           if (setupSummary?.status === "complete") {
             playSetupStatus.value = "complete"
-            subView.value = "stub"
+            playSetupSummary.value = setupSummary.summary ?? null
+            subView.value = "opening-confirm"
             step.value = 5
             statusText.value = "游玩设定已完成"
           } else {
@@ -763,6 +769,7 @@ export function useSetupState() {
     playSetupMessages: readonly(playSetupMessages),
     playSetupError: readonly(playSetupError),
     playSetupHeartbeat: readonly(playSetupHeartbeat),
+    playSetupSummary: readonly(playSetupSummary),
 
     // 非响应式值（组件按需读取）
     get understandingStartedAt() { return understandingStartedAt },

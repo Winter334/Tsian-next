@@ -31,6 +31,7 @@ const {
   streamingText,
   turnOptions,
   checkpoints,
+  openingNarrative,
   send,
   stop,
   restore,
@@ -232,6 +233,13 @@ function onEdit(content: string) {
     <!-- 滚动区：flex:1 占满剩余空间，内部 52em 居中正文流 -->
     <div class="story-scroll" ref="storyRef">
       <div class="story-inner">
+        <!-- 开局叙事：独立于 stream，作为第一条消息特殊渲染（Step 4 写入 opening-narrative.json） -->
+        <NarrativeMessage
+          v-if="openingNarrative"
+          :content="openingNarrative"
+          class="opening-narrative"
+        />
+
         <!-- 有序流：按真实发生顺序渲染，跨轮保留不清空 -->
         <template v-for="(item, i) in mergedStream" :key="item.id">
           <UserMessage
@@ -272,8 +280,8 @@ function onEdit(content: string) {
           @select="onSelectOption"
         />
 
-        <!-- 空状态 -->
-        <div v-if="stream.length === 0 && !streaming" class="empty-state">
+        <!-- 空状态（有开局叙事时不显示） -->
+        <div v-if="stream.length === 0 && !openingNarrative && !streaming" class="empty-state">
           <p class="empty-title">故事尚未开始</p>
           <p class="empty-hint">在下方写下你的行动…</p>
         </div>
@@ -353,6 +361,13 @@ function onEdit(content: string) {
   max-width: 52em;
   margin: 0 auto;
   padding: 40px 24px 24px;
+}
+
+/* 开局叙事：与后续消息之间留呼吸空间，底部分隔线暗示"叙事 → 游玩"分界 */
+.opening-narrative {
+  margin-bottom: 28px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--line);
 }
 
 .empty-state {

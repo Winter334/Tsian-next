@@ -21,6 +21,7 @@ import { useTsian } from "./composables/useTsian"
 // nav 折叠偏好持久化（localStorage）。
 const phase = ref<"idle" | "burning" | "revealed">("idle")
 const curtainReplaced = ref(false)
+const enterPlayPending = ref(false)
 const mode = ref<"wizard" | "play">("wizard")
 
 // nav 折叠状态（localStorage 持久化）
@@ -41,10 +42,24 @@ function onLogoClick() {
 
 function onCurtainShown() {
   curtainReplaced.value = true
+  // enterPlay 过渡：等 BurningReveal canvas 已经可见、盖住当前 Step 5 后，再切到底层 play，避免露帧/黑闪。
+  if (enterPlayPending.value) {
+    mode.value = "play"
+  }
 }
 
 function onRevealed() {
   phase.value = "revealed"
+  enterPlayPending.value = false
+}
+
+/** Step 5 "进入故事"：先加载开局叙事，再在 Step 5 画面上启动 scroll 烧蚀。
+ *  等 BurningReveal @shown 后才切 mode=play，避免 canvas delay 期间露出下方 StoryView。 */
+async function onEnterPlay() {
+  const { loadOpeningNarrative } = useTsian()
+  await loadOpeningNarrative()
+  enterPlayPending.value = true
+  phase.value = "burning"
 }
 
 function onToggleNav() {
@@ -100,12 +115,13 @@ function onNavigate(item: "story" | "settings") {
     <!-- revealed wizard 模式：全屏向导（z:0，burning 时在幕布下） -->
     <SetupWizard
       v-if="(phase === 'burning' || phase === 'revealed') && mode === 'wizard'"
+      @enter-play="onEnterPlay"
     />
 
-    <!-- burning：WebGL 燃烧幕布。挂载即开始燃烧（canvas hidden），delay 后显示+emit shown -->
+    <!-- burning：WebGL 燃烧幕布。开屏用 paper（红橙火焰），enterPlay 翻转用 scroll（琥珀金火焰） -->
     <BurningReveal
       v-if="phase === 'burning'"
-      variant="paper"
+      :variant="enterPlayPending || mode === 'play' ? 'scroll' : 'paper'"
       :duration="5000"
       :delay="400"
       @shown="onCurtainShown"
