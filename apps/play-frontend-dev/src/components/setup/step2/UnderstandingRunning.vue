@@ -5,9 +5,10 @@ import { useSetupState } from "../../../composables/useSetupState"
 /**
  * UnderstandingRunning — 初始理解进行中。
  *
- * 视觉意象「翻卷烛照」：暗室中一盏烛火，正在逐行阅读一卷古书。
- * 烛火摇曳投光 → 书卷行依次被照亮（亮起→褪去循环）→ 底部提示。
- * agent activity 时烛火闪一下 + 光环扩散，像翻了一页。
+ * 视觉意象「源文鳞阵」：借鉴 sssscales 的网格鳞片波动思路。
+ * 小说原文被切成许多 source scales，逐列起伏、逐片点亮，表示系统正在
+ * 观察结构、阅读开头、提取开局资料。不是 spinner/loading bar，
+ * 而是一组有生命的文本切片在烛火中被理解。
  *
  * 不暴露 world-architect。分阶段文案按经过时间推进（agent 实际进度不可知）。
  */
@@ -28,6 +29,9 @@ const currentStage = computed(() => {
   return Math.min(STAGES.length - 1, Math.floor(elapsedMs.value / STAGE_INTERVAL))
 })
 
+const COLUMNS = 10
+const ROWS = 10
+
 // 时间更新循环
 let tickTimer = 0
 watch(
@@ -44,7 +48,7 @@ onUnmounted(() => {
   if (tickTimer) clearInterval(tickTimer)
 })
 
-// agent 心跳：触发烛火闪烁
+// agent activity 时增强一次整体亮度
 const pulseKey = ref(0)
 watch(agentHeartbeat, () => {
   pulseKey.value++
@@ -53,17 +57,22 @@ watch(agentHeartbeat, () => {
 
 <template>
   <div class="understanding-running">
-    <div class="reading-scene">
-      <!-- 烛火 -->
-      <div class="candle" :key="pulseKey">
-        <div class="flame" />
-        <div class="flame-glow" />
-        <div class="page-flip-ring" />
-      </div>
-
-      <!-- 书卷行：依次被烛光照亮 -->
-      <div class="scroll-lines">
-        <div class="scroll-line" v-for="i in 5" :key="i" :style="{ '--line-i': i - 1 }" />
+    <div class="loading-core">
+      <!-- 源文鳞阵：规则网格 + stagger 波纹 -->
+      <div class="scale-field" :key="pulseKey" aria-hidden="true">
+        <div
+          v-for="col in COLUMNS"
+          :key="col"
+          class="scale-col"
+          :style="{ '--col': col - 1 }"
+        >
+          <span
+            v-for="row in ROWS"
+            :key="row"
+            class="scale-cell"
+            :style="{ '--row': row - 1 }"
+          />
+        </div>
       </div>
 
       <!-- 分阶段文案 -->
@@ -73,7 +82,7 @@ watch(agentHeartbeat, () => {
 
       <!-- 固定提示 -->
       <p class="duration-hint">
-        <span class="hint-text">这可能需要一些时间，请稍候</span>
+        <span class="hint-text">正在处理开局资料，这可能需要一些时间</span>
         <span class="hint-dots" aria-hidden="true">
           <span class="hint-dot" />
           <span class="hint-dot" />
@@ -93,122 +102,105 @@ watch(agentHeartbeat, () => {
   min-height: 280px;
 }
 
-.reading-scene {
+.loading-core {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 22px;
+  gap: 24px;
 }
 
-/* ═══ 烛火 ═══ */
-/* 一颗有体量的火焰：椭圆 + 摇曳 + 投光到下方书卷 */
-.candle {
+/* ═══ 源文鳞阵 ═══ */
+/* 参考 sssscales 的思路：列级上下浮动 + 单元格级 scale/位移波纹。
+   改造成 Tsian 的 source scales：每个单元是被烛火点亮的文本切片。
+   不用 GSAP，全部 CSS stagger。 */
+.scale-field {
   position: relative;
-  width: 50px;
-  height: 60px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-columns: repeat(10, 12px);
+  gap: 3px;
+  padding: 18px;
+  border-radius: 12px;
+  background:
+    radial-gradient(ellipse 70% 70% at 50% 45%, rgba(232, 169, 72, 0.08) 0%, transparent 70%),
+    rgba(10, 5, 6, 0.12);
+  filter: drop-shadow(0 0 18px rgba(232, 169, 72, 0.08));
+  animation: field-pulse 2.8s ease-in-out both;
 }
-
-/* 火焰本体：水滴形 ember-bright，摇曳 */
-.flame {
-  width: 18px;
-  height: 28px;
-  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  background: radial-gradient(
-    ellipse at 50% 70%,
-    var(--ember-bright) 0%,
-    var(--ember) 50%,
-    rgba(181, 137, 61, 0.4) 80%,
-    transparent 100%
-  );
-  box-shadow:
-    0 0 18px rgba(232, 169, 72, 0.5),
-    0 0 36px rgba(232, 169, 72, 0.2);
-  transform-origin: center bottom;
-  animation: flame-sway 2.5s ease-in-out infinite;
-  margin-top: 6px;
-}
-@keyframes flame-sway {
-  0%, 100% { transform: rotate(-2deg) scaleY(1) scaleX(1); }
-  25% { transform: rotate(2deg) scaleY(1.08) scaleX(0.95); }
-  50% { transform: rotate(-1deg) scaleY(0.95) scaleX(1.05); }
-  75% { transform: rotate(1.5deg) scaleY(1.05) scaleX(0.97); }
-}
-
-/* 烛火光晕：投射到下方区域，呼吸 */
-.flame-glow {
+.scale-field::before,
+.scale-field::after {
+  content: "";
   position: absolute;
-  top: 20px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 120px;
-  height: 120px;
+  inset: 8px;
+  border: 1px solid rgba(181, 137, 61, 0.12);
+  border-radius: 10px;
+  pointer-events: none;
+}
+.scale-field::after {
+  inset: 14px;
+  border-color: rgba(232, 169, 72, 0.08);
+  animation: frame-breathe 3.2s ease-in-out infinite;
+}
+@keyframes field-pulse {
+  0% { filter: drop-shadow(0 0 8px rgba(232, 169, 72, 0.05)); }
+  25% { filter: drop-shadow(0 0 30px rgba(232, 169, 72, 0.22)); }
+  100% { filter: drop-shadow(0 0 18px rgba(232, 169, 72, 0.08)); }
+}
+@keyframes frame-breathe {
+  0%, 100% { opacity: 0.35; transform: scale(0.98); }
+  50% { opacity: 0.8; transform: scale(1.02); }
+}
+
+.scale-col {
+  display: grid;
+  grid-template-rows: repeat(10, 12px);
+  gap: 3px;
+  animation: col-wave 3.6s ease-in-out infinite;
+  animation-delay: calc(var(--col) * -0.16s);
+}
+@keyframes col-wave {
+  0%, 100% { transform: translateY(-5px); }
+  50% { transform: translateY(5px); }
+}
+
+.scale-cell {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px 9px 3px 9px;
+  background: rgba(181, 137, 61, 0.16);
+  box-shadow: inset 0 0 6px rgba(232, 169, 72, 0.04);
+  transform-origin: center;
+  animation: scale-flicker 2.4s ease-in-out infinite;
+  animation-delay: calc((var(--col) * 0.09s) + (var(--row) * 0.12s));
+}
+.scale-cell::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
   border-radius: 50%;
-  background: radial-gradient(
-    circle,
-    rgba(232, 169, 72, 0.08) 0%,
-    rgba(232, 169, 72, 0.04) 40%,
-    transparent 70%
-  );
-  animation: glow-breathe 2.5s ease-in-out infinite;
-  pointer-events: none;
+  background: rgba(232, 169, 72, 0.18);
+  opacity: 0;
+  animation: cell-spark 2.4s ease-in-out infinite;
+  animation-delay: calc((var(--col) * 0.09s) + (var(--row) * 0.12s));
 }
-@keyframes glow-breathe {
-  0%, 100% { opacity: 0.6; transform: translateX(-50%) scale(0.95); }
-  50% { opacity: 1; transform: translateX(-50%) scale(1.1); }
-}
-
-/* 翻页光环：agent activity 时从烛火扩散（key 变化重新挂载） */
-.page-flip-ring {
-  position: absolute;
-  top: 18px;
-  left: 50%;
-  width: 18px;
-  height: 28px;
-  border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
-  border: 1.5px solid var(--ember-bright);
-  transform: translateX(-50%);
-  animation: ring-burst 1.5s ease-out;
-  pointer-events: none;
-}
-@keyframes ring-burst {
-  0% { width: 18px; height: 28px; opacity: 0.7; }
-  100% { width: 100px; height: 120px; opacity: 0; }
-}
-
-/* ═══ 书卷行 ═══ */
-/* 5 条横线模拟书卷文字，依次被烛火照亮（亮起→褪去循环） */
-.scroll-lines {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  align-items: center;
-  width: 220px;
-}
-
-.scroll-line {
-  width: 100%;
-  height: 2px;
-  border-radius: 1px;
-  background: rgba(181, 137, 61, 0.1);
-  /* 依次被照亮：每行错开 0.6s，整体 5s 循环 */
-  animation: line-illuminate 5s ease-in-out infinite;
-  animation-delay: calc(var(--line-i) * 0.6s);
-}
-@keyframes line-illuminate {
+@keyframes scale-flicker {
   0%, 100% {
-    background: rgba(181, 137, 61, 0.1);
-    box-shadow: none;
-    height: 2px;
+    transform: translateY(5px) scale(0.48);
+    background: rgba(181, 137, 61, 0.10);
+    opacity: 0.38;
   }
-  /* 被烛火扫过：变亮变粗 + 暖光晕 */
-  10%, 30% {
-    background: linear-gradient(90deg, transparent 0%, var(--ember) 20%, var(--ember-bright) 50%, var(--ember) 80%, transparent 100%);
-    box-shadow: 0 0 8px rgba(232, 169, 72, 0.4);
-    height: 3px;
+  35%, 65% {
+    transform: translateY(0) scale(0.95);
+    background: linear-gradient(135deg, rgba(232, 169, 72, 0.65), rgba(181, 137, 61, 0.24));
+    box-shadow:
+      inset 0 0 8px rgba(232, 169, 72, 0.18),
+      0 0 8px rgba(232, 169, 72, 0.18);
+    opacity: 1;
   }
+}
+@keyframes cell-spark {
+  0%, 100% { opacity: 0; transform: scale(0.4); }
+  50% { opacity: 0.9; transform: scale(1); }
 }
 
 /* ═══ 分阶段文案 ═══ */
@@ -238,14 +230,14 @@ watch(agentHeartbeat, () => {
 
 /* ═══ 固定提示 ═══ */
 .duration-hint {
-  margin: 0;
+  margin: -6px 0 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--whisper);
   letter-spacing: 0.06em;
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 .hint-text {
   animation: hint-fade 0.6s ease 0.3s both;
@@ -259,13 +251,17 @@ watch(agentHeartbeat, () => {
   gap: 2px;
 }
 .hint-dot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ember);
   animation: hint-dot-pulse 1.8s ease-in-out infinite;
 }
 .hint-dot:nth-child(1) { animation-delay: 0s; }
 .hint-dot:nth-child(2) { animation-delay: 0.3s; }
 .hint-dot:nth-child(3) { animation-delay: 0.6s; }
 @keyframes hint-dot-pulse {
-  0%, 100% { opacity: 0.15; }
-  50% { opacity: 0.8; }
+  0%, 100% { opacity: 0.15; transform: translateY(0); }
+  50% { opacity: 0.8; transform: translateY(-2px); }
 }
 </style>
