@@ -6,23 +6,21 @@ import { useSetupState } from "../../../composables/useSetupState"
 /**
  * UnderstandingRunning — 初始理解进行中。
  *
- * 视觉意象「源文鳞阵」：借鉴 sssscales 的网格鳞片波动思路。
- * 小说原文被切成许多 source scales，逐列起伏、逐片点亮，表示系统正在
- * 观察结构、阅读开头、提取开局资料。不是 spinner/loading bar，
- * 而是一组有生命的文本切片在烛火中被理解。
+ * 视觉意象「源文鳞阵」：复刻 sssscales 的网格圆点波动。
+ * 10×10 圆点阵列，列级 y 波动 + 单元格级 y/scale 错位，
+ * 形成有机的波纹流动。圆点用 ember 配色，点亮时发光像火星。
  *
  * 不暴露 world-architect。分阶段文案按经过时间推进（agent 实际进度不可知）。
  */
 const { agentHeartbeat, understandingStartedAt } = useSetupState()
 
-// 分阶段文案（对应 skill 三步 + 写入，不暴露 agent 名称）
 const STAGES = [
   "正在观察导入结构…",
   "正在阅读开头剧情…",
   "正在整理开局资料…",
   "正在写入…",
 ]
-const STAGE_INTERVAL = 12_000 // 每 12s 推进一阶段
+const STAGE_INTERVAL = 12_000
 
 const elapsedMs = ref(0)
 const currentStage = computed(() => {
@@ -44,17 +42,9 @@ async function startScalesAnimation() {
   scalesTl?.kill()
   scalesTl = gsap.timeline()
 
-  gsap.set(columns, { y: (i) => (i % 2 === 0 ? -5 : 5) })
-  gsap.set(field.querySelectorAll(".scale-cell"), {
-    y: 8,
-    scale: 0.38,
-    opacity: 0.35,
-    transformOrigin: "50% 50%",
-  })
-
-  // 列级波动：来自 sssscales 的 column stagger 思路
+  // 复刻 sssscales：列级 y 波动，stagger amount 3, yoyo, repeat -1
   scalesTl.to(columns, {
-    y: 8,
+    y: 11,
     duration: 1.5,
     ease: "sine.inOut",
     stagger: {
@@ -64,40 +54,38 @@ async function startScalesAnimation() {
     },
   }, 0)
 
-  // 单元格级波动：每列内部从收缩到点亮，行间形成错位流动
+  // 复刻 sssscales：每列单元格 fromTo y+scale，interpolate 大范围→小范围
   columns.forEach((column, colIndex) => {
     const cells = column.querySelectorAll(".scale-cell")
     scalesTl?.add(
       gsap.fromTo(cells,
         {
-          y: (row) => gsap.utils.interpolate(18, -18, row / (ROWS - 1)),
-          scale: 0.28,
-          opacity: 0.22,
+          y: (row) => gsap.utils.interpolate(77, -77, row / 10),
+          scale: 0.133,
+          opacity: 0.2,
         },
         {
-          y: (row) => gsap.utils.interpolate((colIndex - 4.5) * 0.8, -(colIndex - 4.5) * 0.8, row / (ROWS - 1)),
-          scale: 0.92,
+          y: (row) => gsap.utils.interpolate(colIndex, -colIndex, row / 10),
+          scale: 0.8,
           opacity: 1,
-          duration: 1.05,
-          ease: "sine.inOut",
+          duration: 1,
+          ease: "sine",
           repeat: -1,
           yoyo: true,
           yoyoEase: "sine.in",
-          stagger: { amount: 0.12, from: "center" },
         },
       ),
       colIndex / 10,
     )
   })
 
-  scalesTl.play(8)
+  scalesTl.play(50)
 }
 
 onMounted(() => {
   void startScalesAnimation()
 })
 
-// 时间更新循环
 let tickTimer = 0
 watch(
   () => understandingStartedAt,
@@ -115,16 +103,15 @@ onUnmounted(() => {
   scalesTl = null
 })
 
-// agent activity 时增强一次整体亮度
+// agent activity 时整体闪亮
 watch(agentHeartbeat, () => {
   const field = scaleFieldRef.value
   if (!field) return
   gsap.fromTo(field,
-    { filter: "drop-shadow(0 0 10px rgba(232, 169, 72, 0.08))", scale: 1 },
+    { filter: "drop-shadow(0 0 6px rgba(232, 169, 72, 0.1))" },
     {
-      filter: "drop-shadow(0 0 34px rgba(232, 169, 72, 0.28))",
-      scale: 1.035,
-      duration: 0.18,
+      filter: "drop-shadow(0 0 30px rgba(232, 169, 72, 0.35))",
+      duration: 0.2,
       yoyo: true,
       repeat: 1,
       ease: "sine.inOut",
@@ -136,19 +123,17 @@ watch(agentHeartbeat, () => {
 <template>
   <div class="understanding-running">
     <div class="loading-core">
-      <!-- 源文鳞阵：规则网格 + stagger 波纹 -->
+      <!-- 源文鳞阵：10×10 圆点网格，无框，GSAP 波纹 -->
       <div ref="scaleFieldRef" class="scale-field" aria-hidden="true">
         <div
           v-for="col in COLUMNS"
           :key="col"
           class="scale-col"
-          :style="{ '--col': col - 1 }"
         >
           <span
             v-for="row in ROWS"
             :key="row"
             class="scale-cell"
-            :style="{ '--row': row - 1 }"
           />
         </div>
       </div>
@@ -188,71 +173,29 @@ watch(agentHeartbeat, () => {
 }
 
 /* ═══ 源文鳞阵 ═══ */
-/* 参考 sssscales 的思路：列级上下浮动 + 单元格级 scale/位移波纹。
-   改造成 Tsian 的 source scales：每个单元是被烛火点亮的文本切片。
-   不用 GSAP，全部 CSS stagger。 */
+/* 无框、无背景，纯圆点阵列。复刻 sssscales 的简洁感。 */
 .scale-field {
-  position: relative;
   display: grid;
-  grid-template-columns: repeat(10, 12px);
-  gap: 3px;
-  padding: 18px;
-  border-radius: 12px;
-  background:
-    radial-gradient(ellipse 70% 70% at 50% 45%, rgba(232, 169, 72, 0.08) 0%, transparent 70%),
-    rgba(10, 5, 6, 0.12);
-  filter: drop-shadow(0 0 18px rgba(232, 169, 72, 0.08));
-  animation: field-pulse 2.8s ease-in-out both;
-}
-.scale-field::before,
-.scale-field::after {
-  content: "";
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(181, 137, 61, 0.12);
-  border-radius: 10px;
-  pointer-events: none;
-}
-.scale-field::after {
-  inset: 14px;
-  border-color: rgba(232, 169, 72, 0.08);
-  animation: frame-breathe 3.2s ease-in-out infinite;
-}
-@keyframes field-pulse {
-  0% { filter: drop-shadow(0 0 8px rgba(232, 169, 72, 0.05)); }
-  25% { filter: drop-shadow(0 0 30px rgba(232, 169, 72, 0.22)); }
-  100% { filter: drop-shadow(0 0 18px rgba(232, 169, 72, 0.08)); }
-}
-@keyframes frame-breathe {
-  0%, 100% { opacity: 0.35; transform: scale(0.98); }
-  50% { opacity: 0.8; transform: scale(1.02); }
+  grid-template-columns: repeat(10, 14px);
+  gap: 4px;
 }
 
 .scale-col {
   display: grid;
-  grid-template-rows: repeat(10, 12px);
-  gap: 3px;
+  grid-template-rows: repeat(10, 14px);
+  gap: 4px;
 }
 
+/* 圆点：ember 配色，发光火星 */
 .scale-cell {
-  position: relative;
-  width: 12px;
-  height: 12px;
-  border-radius: 3px 9px 3px 9px;
-  background: linear-gradient(135deg, rgba(232, 169, 72, 0.42), rgba(181, 137, 61, 0.16));
-  box-shadow:
-    inset 0 0 8px rgba(232, 169, 72, 0.10),
-    0 0 8px rgba(232, 169, 72, 0.08);
-  transform-origin: center;
-  will-change: transform, opacity;
-}
-.scale-cell::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
-  background: rgba(232, 169, 72, 0.35);
-  opacity: 0.55;
+  background: var(--ember-bright);
+  box-shadow:
+    0 0 4px rgba(232, 169, 72, 0.6),
+    0 0 8px rgba(232, 169, 72, 0.3);
+  will-change: transform, opacity;
 }
 
 /* ═══ 分阶段文案 ═══ */
