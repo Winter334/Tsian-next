@@ -4,6 +4,7 @@ import { useSetupState } from "../../../composables/useSetupState"
 import NarrativeMessage from "../../story/NarrativeMessage.vue"
 import UserMessage from "../../story/UserMessage.vue"
 import StoryOptions from "../../story/StoryOptions.vue"
+import EmberForge from "../../EmberForge.vue"
 import SetupComposer from "./SetupComposer.vue"
 
 /**
@@ -74,8 +75,8 @@ onUnmounted(() => {
           />
         </template>
 
-        <!-- 等待态：空叙述 + ember 闪烁光标，像 agent 正在书写但还没出字 -->
-        <NarrativeMessage v-if="status === 'running'" content="" streaming />
+        <!-- 等待态：余烬凝笔——粒子聚拢暗示 agent 正在凝聚回复 -->
+        <EmberForge v-if="status === 'running'" variant="standalone" />
 
         <!-- 错误态 -->
         <div v-if="status === 'failed'" class="error-card">

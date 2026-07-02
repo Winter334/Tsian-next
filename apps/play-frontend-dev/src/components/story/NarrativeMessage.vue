@@ -1,16 +1,14 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import { renderMarkdown } from "../../lib/markdown"
+import EmberForge from "../EmberForge.vue"
 
 /**
  * NarrativeMessage — 叙述消息（主角/剧情正文）。
  *
- * prd 屏3：全宽 --prose Serif 行高 1.8；逐字浮现（GSAP blur→sharp+opacity stagger）；
- * markdown 渲染（标题 Cinzel ember-bright / 引用 ember 左条 / 代码 void-deep+ember 边 mono）；
- * ScrollTrigger 滚动逐段点亮（prose-dim→prose）。
- *
- * 流式优化：streaming 期间末端 ember 闪烁光标 + 正文微暖光晕，落定后渐隐光标。
- * 逐字 blur→sharp 与 ScrollTrigger 留优化期接入。
+ * 全宽 --prose Serif 行高 1.8；markdown 渲染。
+ * 流式态：正文微暖光晕 + 余烬凝笔粒子（EmberForge）跟在末尾，
+ * 暗示 agent 正在凝聚文字。
  */
 const props = defineProps<{
   content: string
@@ -22,11 +20,8 @@ const html = computed(() => renderMarkdown(props.content || ""))
 
 <template>
   <div class="narrative" :class="{ streaming }">
-    <!-- prd 屏3：叙述消息无 role 标签（剧情正文无气泡） -->
-    <!-- eslint-disable-next-line vue/no-v-html -->
     <div class="msg-body prose" v-html="html" />
-    <!-- 流式光标：ember 竖条闪烁，跟随正文末端 -->
-    <span v-if="streaming" class="stream-cursor" aria-hidden="true" />
+    <EmberForge v-if="streaming" variant="inline" />
   </div>
 </template>
 
@@ -49,22 +44,6 @@ const html = computed(() => renderMarkdown(props.content || ""))
 @keyframes narrative-fade-in {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-
-/* 流式光标：ember 竖条，与末行行高对齐，呼吸闪烁 */
-.stream-cursor {
-  display: inline-block;
-  width: 2px;
-  height: 1.1em;
-  margin-left: 3px;
-  vertical-align: text-bottom;
-  background: var(--ember-bright);
-  box-shadow: 0 0 8px var(--ember-glow);
-  animation: cursor-blink 1s steps(2, start) infinite;
-}
-@keyframes cursor-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.15; }
 }
 
 /* markdown 元素样式 */
