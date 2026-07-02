@@ -507,6 +507,52 @@ async function loadSetupSummary(
   return isSetupSummary(data) ? data : null
 }
 
+/** 从 context-play-setup.json 重建对话消息列表（刷新/返回后恢复）。
+ *  context slot 文件存的是 AgentContextSnapshot，recentTurns 是 agent 侧
+ *  user/assistant 交替记录。正常访谈场景不会触发压缩（token 远低于阈值），
+ *  recentTurns 是完整的。 */
+const PLAY_SETUP_CONTEXT_PATH = "save/agents/world-architect/context-play-setup.json"
+
+async function restorePlaySetupMessages(
+  tsian: ReturnType<typeof useTsian>["tsian"],
+): Promise<boolean> {
+  const file = await tsian.workspace.read(PLAY_SETUP_CONTEXT_PATH)
+  if (!file?.content) return false
+  const data = safeJsonParse(file.content)
+  if (!data || typeof data !== "object") return false
+  const recentTurns = (data as Record<string, unknown>).recentTurns
+  if (!Array.isArray(recentTurns) || recentTurns.length === 0) return false
+
+  const restored: DialogMessage[] = []
+  for (const entry of recentTurns) {
+    if (typeof entry !== "object" || entry === null) continue
+    const role = (entry as Record<string, unknown>).role
+    const content = (entry as Record<string, unknown>).content
+    if (typeof role !== "string" || typeof content !== "string") continue
+
+    if (role === "user") {
+      restored.push({ id: nextDialogId(), role: "user", content })
+    } else if (role === "assistant") {
+      const parsed = parseStoryOptions(content)
+      // 最后一条 agent 消息保留 options（玩家可能还没选），
+      // 更早的 agent 消息选项已过期，不恢复
+      const isLast = restored.filter((m) => m.role === "agent").length
+        === recentTurns.filter((e) => typeof e === "object" && e !== null
+          && (e as Record<string, unknown>).role === "assistant").length - 1
+      restored.push({
+        id: nextDialogId(),
+        role: "agent",
+        content: parsed.cleanText,
+        ...(isLast && parsed.options.length > 0 ? { options: parsed.options } : {}),
+      })
+    }
+  }
+
+  if (restored.length === 0) return false
+  playSetupMessages.value = restored
+  return true
+}
+
 /** 构造初始 prompt 并发起第一次 invokeAgent，激活 agent + skill。 */
 async function startPlaySetupDialog(): Promise<void> {
   if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
@@ -517,6 +563,16 @@ async function startPlaySetupDialog(): Promise<void> {
   if (summary?.status === "complete") {
     playSetupStatus.value = "complete"
     return
+  }
+
+  // 尝试从 context slot 恢复已有对话（刷新/返回后回来）
+  if (playSetupMessages.value.length === 0) {
+    const restored = await restorePlaySetupMessages(tsian)
+    if (restored) {
+      // 已有对话历史，恢复为 idle 等待玩家继续，不重新发起
+      playSetupStatus.value = "idle"
+      return
+    }
   }
 
   // 构造初始 prompt：需要小说标题 + 玩家角色信息
