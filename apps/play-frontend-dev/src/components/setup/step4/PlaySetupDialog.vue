@@ -17,7 +17,6 @@ const {
   playSetupStatus: status,
   playSetupMessages: messages,
   playSetupError: error,
-  playSetupHeartbeat: heartbeat,
   sendPlaySetupMessage,
   retryPlaySetupDialog,
 } = useSetupState()
@@ -75,16 +74,19 @@ onUnmounted(() => {
           />
         </template>
 
-        <!-- 等待态：invokeAgent await 期间 -->
-        <div v-if="status === 'running'" class="thinking-indicator">
-          <div class="heartbeat-orb">
-            <div class="orb-center" />
-            <div :key="heartbeat" class="orb-ring" />
+        <!-- 等待态：墨笔沉思（对话专属，区别于理解阶段的 orb+sweep） -->
+        <div v-if="status === 'running'" class="thinking-bubble">
+          <div class="ink-dots">
+            <span class="ink-dot" />
+            <span class="ink-dot" />
+            <span class="ink-dot" />
           </div>
-          <div class="loading-bar">
-            <div class="bar-track" />
-            <div class="bar-sweep" />
-          </div>
+          <p class="thinking-text">
+            <span class="thinking-label">正在思考你的设定</span>
+            <span class="thinking-ellipsis" aria-hidden="true">
+              <span class="dot">·</span><span class="dot">·</span><span class="dot">·</span>
+            </span>
+          </p>
         </div>
 
         <!-- 错误态 -->
@@ -134,80 +136,81 @@ onUnmounted(() => {
   padding: 20px 24px 24px;
 }
 
-/* ── 等待态：心跳 orb + sweep bar ── */
-.thinking-indicator {
+/* ── 等待态：墨笔沉思（对话专属，区别于理解阶段的 orb+sweep）── */
+/* 设计思路：三颗墨滴交替沉浮 + 「正在思考你的设定 ···」渐显文字，
+   像一支蘸墨的笔在纸面上方迟疑——烛火书卷风格的"agent 在想"。
+   左对齐于 agent 消息位置，融入对话流而非浮于中央。 */
+.thinking-bubble {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 20px;
-  padding: 32px 20px;
-  margin: 16px 0;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 20px 0 32px;
+  padding: 18px 22px;
+  background:
+    radial-gradient(ellipse 60% 80% at 20% 50%, rgba(43, 4, 4, 0.3) 0%, transparent 70%),
+    rgba(10, 5, 6, 0.25);
+  border-radius: 4px 8px 8px 8px;
+  animation: bubble-in 0.35s ease both;
+}
+@keyframes bubble-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.heartbeat-orb {
-  position: relative;
-  width: 40px;
-  height: 40px;
+/* 三颗墨滴：交替沉浮，像笔尖在墨碟中点触 */
+.ink-dots {
   display: flex;
+  gap: 7px;
   align-items: center;
-  justify-content: center;
+  height: 16px;
 }
-
-.orb-center {
-  width: 14px;
-  height: 14px;
+.ink-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: radial-gradient(circle, var(--ember-bright) 0%, var(--ember) 60%, transparent 100%);
-  box-shadow: 0 0 16px rgba(232, 169, 72, 0.4);
-  animation: orb-idle 3s ease-in-out infinite;
+  background: var(--ember);
+  box-shadow: 0 0 6px rgba(232, 169, 72, 0.25);
+  animation: ink-bob 1.4s ease-in-out infinite;
 }
-@keyframes orb-idle {
-  0%, 100% { box-shadow: 0 0 10px rgba(232, 169, 72, 0.3); transform: scale(1); }
-  50% { box-shadow: 0 0 20px rgba(232, 169, 72, 0.5); transform: scale(1.1); }
-}
-
-.orb-ring {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  border: 1px solid var(--ember-bright);
-  transform: translate(-50%, -50%);
-  animation: ring-pulse 1.2s ease-out;
-}
-@keyframes ring-pulse {
-  0% { width: 14px; height: 14px; opacity: 0.7; }
-  100% { width: 56px; height: 56px; opacity: 0; }
+.ink-dot:nth-child(2) { animation-delay: 0.2s; }
+.ink-dot:nth-child(3) { animation-delay: 0.4s; }
+@keyframes ink-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.4; background: var(--ember); }
+  40% { transform: translateY(-5px); opacity: 1; background: var(--ember-bright); box-shadow: 0 0 10px rgba(232, 169, 72, 0.5); }
+  60% { transform: translateY(-5px); opacity: 1; }
 }
 
-.loading-bar {
-  position: relative;
-  width: 200px;
-  height: 2px;
-  overflow: hidden;
-  border-radius: 1px;
+/* 提示文字：渐显 + 省略号呼吸 */
+.thinking-text {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 0.88rem;
+  color: var(--prose-dim);
+  letter-spacing: 0.03em;
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
 }
-.bar-track {
-  position: absolute;
-  inset: 0;
-  background: rgba(181, 137, 61, 0.12);
-  border-radius: 1px;
+.thinking-label {
+  animation: label-fade 0.5s ease 0.15s both;
 }
-.bar-sweep {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent 0%, var(--ember) 30%, var(--ember-bright) 50%, var(--ember) 70%, transparent 100%);
-  border-radius: 1px;
-  animation: bar-sweep 1.8s ease-in-out infinite;
+@keyframes label-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-@keyframes bar-sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(350%); }
+
+/* 省略号三点：依次淡入循环，像字斟句酌 */
+.thinking-ellipsis .dot {
+  animation: dot-pulse 1.8s ease-in-out infinite;
+  color: var(--ember);
+}
+.thinking-ellipsis .dot:nth-child(1) { animation-delay: 0s; }
+.thinking-ellipsis .dot:nth-child(2) { animation-delay: 0.3s; }
+.thinking-ellipsis .dot:nth-child(3) { animation-delay: 0.6s; }
+@keyframes dot-pulse {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; text-shadow: 0 0 6px rgba(232, 169, 72, 0.4); }
 }
 
 /* ── 错误态：blood-bordered 卡片 ── */
