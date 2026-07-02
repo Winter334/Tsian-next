@@ -8,20 +8,7 @@
   <div class="flex h-full flex-col gap-2 border border-neon-deep/30 bg-elevated/45 p-3 hover:bg-elevated">
     <div class="flex items-start justify-between gap-2">
       <span class="text-sm font-bold text-text-main">{{ tool.label }}</span>
-      <Popover>
-        <PopoverTrigger as-child>
-          <button
-            type="button"
-            class="retro-focus inline-flex h-5 w-5 shrink-0 items-center justify-center border border-neon-deep/40 text-text-dim hover:text-neon"
-            :aria-label="`${tool.label} 说明`"
-          >
-            <Info class="h-3 w-3" aria-hidden="true" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent class="w-72">
-          <p class="text-xs leading-5 text-text-main">{{ tool.description }}</p>
-        </PopoverContent>
-      </Popover>
+      <ParamTip :tip="tool.description" :label="tool.label" />
     </div>
     <span class="line-clamp-2 min-h-[2.5rem] text-xs leading-5 text-text-dim">{{ tool.description }}</span>
     <div class="mt-auto flex items-center justify-end">
@@ -36,9 +23,8 @@
 </template>
 
 <script setup lang="ts">
-import { Info } from "lucide-vue-next"
 import { Switch } from "@/components/ui/switch"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { ParamTip } from "@/components/ui/tip"
 import type { PlatformToolControl } from "@/agent-runtime/tool-controls"
 
 defineProps<{

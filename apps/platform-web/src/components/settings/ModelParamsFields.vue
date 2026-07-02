@@ -7,7 +7,10 @@
 
       <div class="grid grid-cols-2 gap-2">
         <label class="grid gap-1">
-          <span class="field-label">上下文窗口</span>
+          <span class="field-label flex items-center gap-1.5">
+            上下文窗口
+            <ParamTip :tip="tips.contextWindow" label="上下文窗口" />
+          </span>
           <input
             :value="numToText(parameters.common.contextWindow)"
             type="number"
@@ -17,7 +20,10 @@
           >
         </label>
         <label class="grid gap-1">
-          <span class="field-label">最大输出 token</span>
+          <span class="field-label flex items-center gap-1.5">
+            最大输出 token
+            <ParamTip :tip="tips.maxOutputTokens" label="最大输出 token" />
+          </span>
           <input
             :value="numToText(parameters.common.maxOutputTokens)"
             type="number"
@@ -35,15 +41,17 @@
           :min="0"
           :max="2"
           :step="0.05"
+          :tip="tips.temperature"
           nullable
           @update:model-value="(v) => updateCommon({ temperature: v })"
         />
         <RangeSlider
           :model-value="parameters.common.topP"
-          label="top_p"
+          label="核采样"
           :min="0"
           :max="2"
           :step="0.05"
+          :tip="tips.topP"
           nullable
           @update:model-value="(v) => updateCommon({ topP: v })"
         />
@@ -56,7 +64,10 @@
       </div>
 
       <label class="grid gap-1">
-        <span class="field-label">工具调用模式</span>
+        <span class="field-label flex items-center gap-1.5">
+          工具调用模式
+          <ParamTip :tip="tips.toolCallMode" label="工具调用模式" />
+        </span>
         <Select
           :model-value="toolCallMode"
           @update:model-value="(value) => onToolCallModeChange(value as BrowserAiToolCallMode)"
@@ -73,7 +84,10 @@
 
       <div class="grid gap-1">
         <div class="flex items-center justify-between gap-3">
-          <span class="field-label">流式输出</span>
+          <span class="field-label flex items-center gap-1.5">
+            流式输出
+            <ParamTip :tip="tips.streaming" label="流式输出" />
+          </span>
           <Switch
             :model-value="streamingEffective"
             @update:model-value="(value) => onStreamingChange(Boolean(value))"
@@ -94,6 +108,7 @@
           :min="-2"
           :max="2"
           :step="0.1"
+          :tip="tips.frequencyPenalty"
           nullable
           @update:model-value="(v) => updateOpenAiCompatible({ frequencyPenalty: v })"
         />
@@ -103,11 +118,15 @@
           :min="-2"
           :max="2"
           :step="0.1"
+          :tip="tips.presencePenalty"
           nullable
           @update:model-value="(v) => updateOpenAiCompatible({ presencePenalty: v })"
         />
         <label class="grid gap-1">
-          <span class="field-label">推理程度</span>
+          <span class="field-label flex items-center gap-1.5">
+            推理程度
+            <ParamTip :tip="tips.reasoningEffort" label="推理程度" />
+          </span>
           <Select
             :model-value="openaiCompatible.reasoningEffort || NO_REASONING"
             @update:model-value="(value) => updateOpenAiCompatible({ reasoningEffort: normalizeReasoningValue(value) })"
@@ -129,7 +148,10 @@
 
       <div v-else-if="kind === 'openai-responses'" class="grid gap-2.5">
         <label class="grid gap-1">
-          <span class="field-label">推理程度</span>
+          <span class="field-label flex items-center gap-1.5">
+            推理程度
+            <ParamTip :tip="tips.reasoningEffort" label="推理程度" />
+          </span>
           <Select
             :model-value="openaiResponses.reasoningEffort || NO_REASONING"
             @update:model-value="(value) => updateOpenAiResponses({ reasoningEffort: normalizeReasoningValue(value) })"
@@ -156,6 +178,7 @@
           :min="-2"
           :max="2"
           :step="0.1"
+          :tip="tips.frequencyPenalty"
           nullable
           @update:model-value="(v) => updateDeepSeek({ frequencyPenalty: v })"
         />
@@ -165,11 +188,15 @@
           :min="-2"
           :max="2"
           :step="0.1"
+          :tip="tips.presencePenalty"
           nullable
           @update:model-value="(v) => updateDeepSeek({ presencePenalty: v })"
         />
         <label class="grid gap-1">
-          <span class="field-label">推理程度</span>
+          <span class="field-label flex items-center gap-1.5">
+            推理程度
+            <ParamTip :tip="tips.reasoningEffort" label="推理程度" />
+          </span>
           <Select
             :model-value="deepseek.reasoningEffort || NO_REASONING"
             @update:model-value="(value) => updateDeepSeek({ reasoningEffort: normalizeReasoningValue(value) })"
@@ -192,7 +219,10 @@
       <div v-else-if="kind === 'gemini'" class="grid gap-3">
         <div class="grid grid-cols-2 gap-2">
           <label class="grid gap-1">
-            <span class="field-label">topK</span>
+            <span class="field-label flex items-center gap-1.5">
+              候选数量
+              <ParamTip :tip="tips.topK" label="候选数量" />
+            </span>
             <input
               :value="numToText(gemini.topK)"
               type="number"
@@ -202,7 +232,10 @@
             >
           </label>
           <label class="grid gap-1">
-            <span class="field-label">responseMimeType</span>
+            <span class="field-label flex items-center gap-1.5">
+              响应类型
+              <ParamTip :tip="tips.responseMimeType" label="响应类型" />
+            </span>
             <input
               :value="gemini.responseMimeType"
               type="text"
@@ -218,6 +251,7 @@
           :min="-2"
           :max="2"
           :step="0.1"
+          :tip="tips.frequencyPenalty"
           nullable
           @update:model-value="(v) => updateGemini({ frequencyPenalty: v })"
         />
@@ -227,11 +261,15 @@
           :min="-2"
           :max="2"
           :step="0.1"
+          :tip="tips.presencePenalty"
           nullable
           @update:model-value="(v) => updateGemini({ presencePenalty: v })"
         />
         <label class="grid gap-1">
-          <span class="field-label">停止序列（一行一个）</span>
+          <span class="field-label flex items-center gap-1.5">
+            停止序列（一行一个）
+            <ParamTip :tip="tips.stopSequences" label="停止序列" />
+          </span>
           <textarea
             :value="linesToText(gemini.stopSequences)"
             :rows="2"
@@ -242,7 +280,10 @@
           />
         </label>
         <label class="grid gap-1">
-          <span class="field-label">responseSchema (JSON)</span>
+          <span class="field-label flex items-center gap-1.5">
+            响应结构 (JSON)
+            <ParamTip :tip="tips.responseSchema" label="响应结构" />
+          </span>
           <textarea
             :value="gemini.responseSchemaText"
             :rows="3"
@@ -254,7 +295,10 @@
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="grid gap-1">
-            <span class="field-label">thinkingBudget</span>
+            <span class="field-label flex items-center gap-1.5">
+              思考预算
+              <ParamTip :tip="tips.thinkingBudget" label="思考预算" />
+            </span>
             <input
               :value="numToText(gemini.thinkingBudget)"
               type="number"
@@ -265,7 +309,10 @@
           </label>
           <div class="grid content-center gap-1">
             <div class="flex items-center justify-between gap-3">
-              <span class="field-label">includeThoughts</span>
+              <span class="field-label flex items-center gap-1.5">
+                包含思考
+                <ParamTip :tip="tips.includeThoughts" label="包含思考" />
+              </span>
               <Switch
                 :model-value="gemini.includeThoughts"
                 @update:model-value="(value) => updateGemini({ includeThoughts: Boolean(value) })"
@@ -278,7 +325,10 @@
       <div v-else-if="kind === 'claude'" class="grid gap-3">
         <div class="grid grid-cols-2 gap-2">
           <label class="grid gap-1">
-            <span class="field-label">top_k</span>
+            <span class="field-label flex items-center gap-1.5">
+              候选数量
+              <ParamTip :tip="tips.topK" label="候选数量" />
+            </span>
             <input
               :value="numToText(claude.topK)"
               type="number"
@@ -288,7 +338,10 @@
             >
           </label>
           <label class="grid gap-1">
-            <span class="field-label">service_tier</span>
+            <span class="field-label flex items-center gap-1.5">
+              服务等级
+              <ParamTip :tip="tips.serviceTier" label="服务等级" />
+            </span>
             <Select
               :model-value="claude.serviceTier || NO_SERVICE_TIER"
               @update:model-value="(value) => updateClaude({ serviceTier: value === NO_SERVICE_TIER ? '' : (value as BrowserClaudeServiceTier) })"
@@ -298,14 +351,17 @@
               </SelectTrigger>
               <SelectContent>
                 <SelectItem :value="NO_SERVICE_TIER">不发送</SelectItem>
-                <SelectItem value="auto">auto</SelectItem>
-                <SelectItem value="standard_only">standard_only</SelectItem>
+                <SelectItem value="auto">自动</SelectItem>
+                <SelectItem value="standard_only">仅标准</SelectItem>
               </SelectContent>
             </Select>
           </label>
         </div>
         <label class="grid gap-1">
-          <span class="field-label">stop_sequences（一行一个）</span>
+          <span class="field-label flex items-center gap-1.5">
+            停止序列（一行一个）
+            <ParamTip :tip="tips.stopSequences" label="停止序列" />
+          </span>
           <textarea
             :value="linesToText(claude.stopSequences)"
             :rows="2"
@@ -317,40 +373,49 @@
         </label>
         <div class="grid grid-cols-2 gap-2">
           <label class="grid gap-1">
-            <span class="field-label">thinking.type</span>
+            <span class="field-label flex items-center gap-1.5">
+              思考模式
+              <ParamTip :tip="tips.thinkingMode" label="思考模式" />
+            </span>
             <Select
               :model-value="claude.thinkingMode"
               @update:model-value="(value) => updateClaude({ thinkingMode: value as BrowserClaudeThinkingMode })"
             >
               <SelectTrigger class="h-8 w-full">
-                <SelectValue placeholder="disabled" />
+                <SelectValue placeholder="关闭" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="disabled">disabled</SelectItem>
-                <SelectItem value="adaptive">adaptive</SelectItem>
-                <SelectItem value="enabled">enabled</SelectItem>
+                <SelectItem value="disabled">关闭</SelectItem>
+                <SelectItem value="adaptive">自适应</SelectItem>
+                <SelectItem value="enabled">启用</SelectItem>
               </SelectContent>
             </Select>
           </label>
           <label class="grid gap-1">
-            <span class="field-label">thinking.display</span>
+            <span class="field-label flex items-center gap-1.5">
+              思考展示
+              <ParamTip :tip="tips.thinkingDisplay" label="思考展示" />
+            </span>
             <Select
               :model-value="claude.thinkingDisplay"
               :disabled="claude.thinkingMode === 'disabled'"
               @update:model-value="(value) => updateClaude({ thinkingDisplay: value as BrowserClaudeThinkingDisplay })"
             >
               <SelectTrigger class="h-8 w-full">
-                <SelectValue placeholder="summarized" />
+                <SelectValue placeholder="摘要" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="summarized">summarized</SelectItem>
-                <SelectItem value="omitted">omitted</SelectItem>
+                <SelectItem value="summarized">摘要</SelectItem>
+                <SelectItem value="omitted">不返回</SelectItem>
               </SelectContent>
             </Select>
           </label>
         </div>
         <label class="grid gap-1">
-          <span class="field-label">thinking.budget_tokens</span>
+          <span class="field-label flex items-center gap-1.5">
+            思考预算
+            <ParamTip :tip="tips.thinkingBudget" label="思考预算" />
+          </span>
           <input
             :value="numToText(claude.thinkingBudgetTokens)"
             type="number"
@@ -366,14 +431,20 @@
       <div class="model-param-section__header">
         <span>ADVANCED JSON</span>
       </div>
-      <textarea
-        :value="activeCustomRequestParamsText"
-        :rows="3"
-        spellcheck="false"
-        placeholder='{ "seed": 42 }'
-        class="field-input"
-        @input="updateActiveCustomRequestParamsText(($event.target as HTMLTextAreaElement).value)"
-      />
+      <label class="grid gap-1">
+        <span class="field-label flex items-center gap-1.5">
+          自定义请求参数
+          <ParamTip :tip="tips.customRequestParams" label="自定义请求参数" />
+        </span>
+        <textarea
+          :value="activeCustomRequestParamsText"
+          :rows="3"
+          spellcheck="false"
+          placeholder='{ "seed": 42 }'
+          class="field-input"
+          @input="updateActiveCustomRequestParamsText(($event.target as HTMLTextAreaElement).value)"
+        />
+      </label>
     </section>
 
     <section v-if="testModel" class="model-param-section">
@@ -415,6 +486,7 @@ import {
 } from "@/components/ui/select"
 import { RangeSlider } from "@/components/ui/slider"
 import { Switch } from "@/components/ui/switch"
+import { ParamTip } from "@/components/ui/tip"
 import {
   cloneBrowserAiModelParameters,
   createDefaultBrowserClaudeModelParameters,
@@ -461,6 +533,31 @@ const emit = defineEmits<{
 
 const NO_REASONING = "__none"
 const NO_SERVICE_TIER = "__none"
+
+// Parameter descriptions shown via the ⓘ tip buttons. Kept here so the
+// template stays compact; the original API field name is included for users
+// who need to map a label back to the request payload.
+const tips = {
+  contextWindow: "模型能处理的最大上下文长度（token 数）。用于在发送前截断过长的历史消息。",
+  maxOutputTokens: "模型单次回复的最大 token 数。值越大回复越长，但消耗更多额度。对应 max_tokens / max_output_tokens。",
+  temperature: "采样温度，控制输出随机性。0 更确定/聚焦，2 更发散/有创意，常见值 0.7。对应 temperature。",
+  topP: "核采样阈值：只从累计概率达到 top_p 的候选词中采样。与温度二选一调节即可。对应 top_p。",
+  toolCallMode: "模型调用工具的方式。文本（兼容）= 把工具调用嵌在回复文本里，兼容性最好；原生 = 使用 function calling，需模型/接口支持。",
+  streaming: "开启后逐 token 流式返回回复，首字更快；关闭则一次性返回完整结果。",
+  frequencyPenalty: "对已出现的高频词施加惩罚以降低重复。正值减少重复，负值增加重复，范围 -2~2。对应 frequency_penalty。",
+  presencePenalty: "鼓励引入新话题。正值提升模型谈论新内容的概率，负值相反，范围 -2~2。对应 presence_penalty。",
+  reasoningEffort: "推理模型的思考强度，越高推理越深但更慢更贵。不发送 = 不向接口传该参数。对应 reasoning_effort。",
+  topK: "采样候选数量：每个位置只从概率最高的 K 个候选词中采样。越大越多样，越小越确定。对应 topK / top_k。",
+  responseMimeType: "强制指定响应的 MIME 类型，如 application/json 让模型直接返回 JSON。对应 responseMimeType。",
+  responseSchema: "用 JSON Schema 约束结构化输出的字段与类型，需配合响应类型 application/json。对应 responseSchema。",
+  stopSequences: "遇到这些字符串时立即停止生成，每行一个。对应 stop_sequences / stopSequences。",
+  thinkingBudget: "思考模式的最大思考 token 预算。留空 = 不限制/不发送。对应 thinkingBudget / budget_tokens。",
+  includeThoughts: "是否在响应中返回模型的思考过程内容。对应 includeThoughts。",
+  serviceTier: "服务等级，影响延迟与可用性。auto = 自动选择，standard_only = 仅标准。对应 service_tier。",
+  thinkingMode: "Claude 扩展思考开关。disabled = 关闭，adaptive = 自适应，enabled = 启用。对应 thinking.type。",
+  thinkingDisplay: "思考内容的展示方式。summarized = 摘要展示，omitted = 不返回思考内容。对应 thinking.display。",
+  customRequestParams: "以 JSON 形式追加任意请求参数，会合并到发送给接口的请求体中。适合配置未被面板覆盖的字段，如 { \"seed\": 42 }。",
+} as const
 
 const testing = ref(false)
 const testResult = ref<{ ok: boolean; message: string } | null>(null)
@@ -708,6 +805,12 @@ function textToLines(value: string): string[] {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: 0.75rem;
   color: #f6ecd7;
+  transition: border-color 0.12s ease;
+}
+
+.field-input:focus {
+  outline: none;
+  border-color: var(--color-neon);
 }
 
 .field-input::placeholder {

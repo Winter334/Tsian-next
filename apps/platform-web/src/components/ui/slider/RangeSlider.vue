@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue"
 import { cn } from "@/lib/utils"
+import { ParamTip } from "@/components/ui/tip"
 
 /**
  * Retro-styled range slider. When `nullable` is set, the leftmost position
@@ -21,9 +22,11 @@ const props = withDefaults(
     label?: string
     /** Optional unit suffix in the readout (e.g. ""). */
     unit?: string
+    /** Optional explanation shown via an ⓘ button next to the label. */
+    tip?: string
     class?: string
   }>(),
-  { step: 0.1, nullable: false, unit: "" },
+  { step: 0.1, nullable: false, unit: "", tip: "" },
 )
 
 const emit = defineEmits<{
@@ -67,7 +70,10 @@ function onInput(event: Event): void {
 <template>
   <div :class="cn('grid gap-1', props.class)">
     <div v-if="label" class="flex items-center justify-between font-mono text-[10px] uppercase tracking-wider text-text-dim/80">
-      <span>{{ label }}</span>
+      <span class="flex items-center gap-1.5">
+        {{ label }}
+        <ParamTip v-if="tip" :tip="tip" :label="label" />
+      </span>
       <span :class="nullable && modelValue === null ? 'text-text-dim/60' : 'text-neon'">{{ readout }}</span>
     </div>
     <input

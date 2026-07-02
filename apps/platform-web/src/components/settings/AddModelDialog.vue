@@ -32,19 +32,39 @@
               拉取模型列表
             </button>
             <span v-if="fetchError" class="font-mono text-[10px] text-danger">{{ fetchError }}</span>
-            <span v-else-if="fetched.length > 0" class="font-mono text-[10px] text-text-dim/80">{{ fetched.length }} 个可选</span>
+            <span v-else-if="fetched.length > 0" class="font-mono text-[10px] text-text-dim/80">
+              {{ searchQuery ? `${filteredFetched.length} / ${fetched.length}` : `${fetched.length}` }} 个可选
+            </span>
           </div>
 
-          <div v-if="fetched.length > 0" class="max-h-44 overflow-auto border border-neon-deep/30 bg-panel/40">
-            <button
-              v-for="entry in fetched"
-              :key="entry.id"
-              type="button"
-              class="retro-focus block w-full px-3 py-1.5 text-left font-mono text-[11px] text-text-dim transition-colors hover:bg-neon/10 hover:text-neon"
-              @click="modelId = entry.id"
-            >
-              {{ entry.id }}
-            </button>
+          <div v-if="fetched.length > 0" class="grid gap-2">
+            <label class="relative grid">
+              <Search
+                class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-dim/60"
+                aria-hidden="true"
+              />
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="搜索模型 id…"
+                class="retro-focus retro-select-surface w-full border border-neon-deep/45 bg-elevated py-1.5 pl-8 pr-3 font-mono text-[11px] text-text-main placeholder:text-text-dim/60"
+              />
+            </label>
+
+            <div class="max-h-44 overflow-auto border border-neon-deep/30 bg-panel/40">
+              <button
+                v-for="entry in filteredFetched"
+                :key="entry.id"
+                type="button"
+                class="retro-focus block w-full px-3 py-1.5 text-left font-mono text-[11px] text-text-dim transition-colors hover:bg-neon/10 hover:text-neon"
+                @click="modelId = entry.id"
+              >
+                {{ entry.id }}
+              </button>
+              <p v-if="filteredFetched.length === 0" class="px-3 py-2 font-mono text-[11px] text-text-dim/60">
+                没有匹配的模型。
+              </p>
+            </div>
           </div>
         </div>
 
@@ -85,7 +105,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue"
-import { RefreshCw } from "lucide-vue-next"
+import { RefreshCw, Search } from "lucide-vue-next"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import ModelParamsFields from "./ModelParamsFields.vue"
 import {
@@ -118,6 +138,7 @@ const emit = defineEmits<{
 
 const modelId = ref("")
 const fetched = ref<BrowserAiModelEntry[]>([])
+const searchQuery = ref("")
 const fetching = ref(false)
 const fetchError = ref("")
 const error = ref("")
@@ -130,12 +151,21 @@ const canFetch = computed(
   () => Boolean(props.preset?.baseUrl.trim() && props.preset?.apiKey.trim()),
 )
 
+const filteredFetched = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) {
+    return fetched.value
+  }
+  return fetched.value.filter((entry) => entry.id.toLowerCase().includes(q))
+})
+
 watch(
   () => props.open,
   (isOpen) => {
     if (isOpen) {
       modelId.value = ""
       fetched.value = []
+      searchQuery.value = ""
       fetchError.value = ""
       error.value = ""
       params.value = createDefaultBrowserAiModelParameters()
@@ -153,6 +183,7 @@ async function fetchModels(): Promise<void> {
   }
   fetching.value = true
   fetchError.value = ""
+  searchQuery.value = ""
   try {
     const models = await fetchBrowserAiProviderModels({ ...preset, kind: props.kind })
     fetched.value = models

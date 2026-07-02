@@ -48,6 +48,7 @@
         @delete-preset="handleDeletePreset"
         @enter-models="enterModels"
         @patch-preset="handlePatchPreset"
+        @set-active-preset="handleSetActivePreset"
       />
 
       <ModelConfigScreen
@@ -448,6 +449,25 @@ async function handleDeletePreset(typeId: string, presetId: string): Promise<voi
 
 function enterModels(typeId: string, presetId: string): void {
   screen.value = { kind: "models", typeId, presetId }
+}
+
+function handleSetActivePreset(presetId: string): void {
+  if (platformConfigDraft.value.activeProviderId === presetId) {
+    return
+  }
+  platformConfigDraft.value.activeProviderId = presetId
+  const preset = findPresetById(presetId)
+  toast.success(`已设为默认服务商：${preset?.name || "未命名"}`)
+}
+
+function findPresetById(presetId: string): BrowserAiProviderPreset | undefined {
+  for (const type of platformConfigDraft.value.providerTypes) {
+    const preset = type.presets.find((item) => item.id === presetId)
+    if (preset) {
+      return preset
+    }
+  }
+  return undefined
 }
 
 function handlePatchPreset(payload: { typeId: string; presetId: string; patch: Partial<BrowserAiProviderPreset> }): void {

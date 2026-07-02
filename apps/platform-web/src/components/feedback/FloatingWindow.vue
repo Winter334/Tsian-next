@@ -2,11 +2,14 @@
   <Teleport to="body">
     <!-- 透明拦截遮罩:视觉无遮罩(无背景色),功能上隔绝浮窗外的所有
          鼠标操作(含双击)。z-55 低于浮窗(z-60)与 Select 下拉(z-70),
-         所以浮窗内交互和下拉选择正常工作,其它区域点击被物理拦截。 -->
+         所以浮窗内交互和下拉选择正常工作,其它区域点击被物理拦截。
+         overlay="dim" 时叠加半透明黑背景,用于确认弹窗等需模态阻断的场景。 -->
     <div
       v-if="hasSlot || state"
       class="fixed inset-0 z-[55]"
+      :class="overlay === 'dim' ? 'bg-black/55' : ''"
       @pointerdown="onOverlayPointerDown"
+      @click="closeOnOverlayClick ? handleClose() : undefined"
     />
     <div
       v-if="hasSlot || state"
@@ -167,11 +170,26 @@ interface Props {
   title?: string
   /** Slot mode width class, e.g. "max-w-lg". Ignored in form mode. */
   widthClass?: string
+  /**
+   * Overlay style for the click-interception layer. "none" (default) is the
+   * transparent RetroOS shield — desktop stays visible, outside clicks are
+   * blocked. "dim" adds a semi-opaque black wash for modal confirm prompts
+   * that should visually detach from the desktop.
+   */
+  overlay?: "none" | "dim"
+  /**
+   * When true, clicking the overlay closes the window (emit "close" in slot
+   * mode / cancel in form mode). Default false — the overlay is a transparent
+   * click shield only. Confirm prompts set this to true.
+   */
+  closeOnOverlayClick?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   title: "",
   widthClass: "max-w-md",
+  overlay: "none",
+  closeOnOverlayClick: false,
 })
 const emit = defineEmits<{
   (event: "close"): void
