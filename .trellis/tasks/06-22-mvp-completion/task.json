@@ -21,7 +21,8 @@
   "children": [
     "06-22-account-system",
     "06-22-app-market",
-    "06-22-assistant-attachments"
+    "06-22-assistant-attachments",
+    "07-02-account-center-window"
   ],
   "parent": null,
   "relatedFiles": [],

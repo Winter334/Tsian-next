@@ -4,6 +4,7 @@ import type { RouteLocationNormalizedLoaded } from "vue-router"
 import {
   Activity,
   Bot,
+  CircleUser,
   FilePenLine,
   FolderOpen,
   Gamepad2,
@@ -27,6 +28,7 @@ export type DesktopAppId =
   | "game-launcher"
   | "play"
   | "settings"
+  | "account"
   | "debug"
 
 export interface DesktopWindowInput {
@@ -85,6 +87,7 @@ const AssistantView = defineAsyncComponent(() => import("./views/AssistantView.v
 const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDetailView.vue"))
 const PlayView = defineAsyncComponent(() => import("./views/PlayView.vue"))
 const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"))
+const AccountView = defineAsyncComponent(() => import("./views/AccountView.vue"))
 const DebugView = defineAsyncComponent(() => import("./views/DebugView.vue"))
 
 const desktopApps: DesktopAppDefinition[] = [
@@ -199,6 +202,21 @@ const desktopApps: DesktopAppDefinition[] = [
     minWidth: 520,
     minHeight: 400,
     fullscreenable: true,
+  },
+  {
+    appId: "account",
+    label: "账号中心",
+    shortLabel: "账号",
+    routeName: "account",
+    routePath: "/account",
+    title: "账号中心",
+    caption: "操作员身份",
+    icon: CircleUser,
+    component: AccountView,
+    defaultWidth: 720,
+    defaultHeight: 540,
+    minWidth: 480,
+    minHeight: 420,
   },
   {
     appId: "debug",
