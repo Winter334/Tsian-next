@@ -6,11 +6,9 @@ import { useSetupState } from "../../../composables/useSetupState"
 /**
  * UnderstandingRunning — 初始理解进行中。
  *
- * 视觉意象「源文鳞阵」：复刻 sssscales 的网格圆点波动。
- * 10×10 圆点阵列，列级 y 波动 + 单元格级 y/scale 错位，
- * 形成有机的波纹流动。圆点用 ember 配色，点亮时发光像火星。
- *
- * 不暴露 world-architect。分阶段文案按经过时间推进（agent 实际进度不可知）。
+ * 复刻 sssscales：10×10 圆点网格，列级 y 波动 + 圆点级 y/scale 错位。
+ * 关键参数比例和示例一致：大位移、scale 从 0.133 到 0.8、纯 scale 表达明暗。
+ * 圆点用 ember-bright + box-shadow 发光火星。
  */
 const { agentHeartbeat, understandingStartedAt } = useSetupState()
 
@@ -30,6 +28,9 @@ const currentStage = computed(() => {
 
 const COLUMNS = 10
 const ROWS = 10
+// 单元尺寸：示例里 box 是 10×10 SVG 单位，circle r=5。
+// 我们用 10px 单元，gap 由单元格内定位决定（不用 CSS gap，用绝对定位）。
+const CELL = 10 // px per cell unit
 const scaleFieldRef = ref<HTMLElement | null>(null)
 let scalesTl: gsap.core.Timeline | null = null
 
@@ -42,7 +43,7 @@ async function startScalesAnimation() {
   scalesTl?.kill()
   scalesTl = gsap.timeline()
 
-  // 复刻 sssscales：列级 y 波动，stagger amount 3, yoyo, repeat -1
+  // 列级 y 波动：y=11（1.1 倍单元高度），stagger amount 3
   scalesTl.to(columns, {
     y: 11,
     duration: 1.5,
@@ -54,20 +55,19 @@ async function startScalesAnimation() {
     },
   }, 0)
 
-  // 复刻 sssscales：每列单元格 fromTo y+scale，interpolate 大范围→小范围
+  // 圆点级：fromTo y + scale，和示例参数完全一致
+  // 示例用 SVG 单位，我们用 px（CELL=10px，和 SVG 单位 1:1）
   columns.forEach((column, colIndex) => {
-    const cells = column.querySelectorAll(".scale-cell")
+    const dots = column.querySelectorAll(".scale-dot")
     scalesTl?.add(
-      gsap.fromTo(cells,
+      gsap.fromTo(dots,
         {
           y: (row) => gsap.utils.interpolate(77, -77, row / 10),
           scale: 0.133,
-          opacity: 0.2,
         },
         {
           y: (row) => gsap.utils.interpolate(colIndex, -colIndex, row / 10),
           scale: 0.8,
-          opacity: 1,
           duration: 1,
           ease: "sine",
           repeat: -1,
@@ -103,7 +103,6 @@ onUnmounted(() => {
   scalesTl = null
 })
 
-// agent activity 时整体闪亮
 watch(agentHeartbeat, () => {
   const field = scaleFieldRef.value
   if (!field) return
@@ -123,17 +122,19 @@ watch(agentHeartbeat, () => {
 <template>
   <div class="understanding-running">
     <div class="loading-core">
-      <!-- 源文鳞阵：10×10 圆点网格，无框，GSAP 波纹 -->
+      <!-- 源文鳞阵：10×10，每个 col 是一列固定容器，dot 在内部做 y+scale -->
       <div ref="scaleFieldRef" class="scale-field" aria-hidden="true">
         <div
           v-for="col in COLUMNS"
           :key="col"
           class="scale-col"
+          :style="{ left: (col - 1) * CELL + 'px' }"
         >
           <span
             v-for="row in ROWS"
             :key="row"
-            class="scale-cell"
+            class="scale-dot"
+            :style="{ top: (row - 1) * CELL + 'px' }"
           />
         </div>
       </div>
@@ -173,29 +174,34 @@ watch(agentHeartbeat, () => {
 }
 
 /* ═══ 源文鳞阵 ═══ */
-/* 无框、无背景，纯圆点阵列。复刻 sssscales 的简洁感。 */
+/* 复刻 sssscales：绝对定位网格，无框无背景。
+   field 是 10×10 网格容器（100×100px），col 是列容器（绝对定位），
+   dot 是圆点（在 col 内绝对定位，GSAP 控制其 y+scale）。 */
 .scale-field {
-  display: grid;
-  grid-template-columns: repeat(10, 14px);
-  gap: 4px;
+  position: relative;
+  width: 100px;
+  height: 100px;
 }
 
 .scale-col {
-  display: grid;
-  grid-template-rows: repeat(10, 14px);
-  gap: 4px;
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 100px;
 }
 
-/* 圆点：ember 配色，发光火星 */
-.scale-cell {
-  width: 14px;
-  height: 14px;
+/* 圆点：r=5 的圆（直径 10px=CELL），ember-bright + 发光 */
+.scale-dot {
+  position: absolute;
+  left: 0;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--ember-bright);
   box-shadow:
-    0 0 4px rgba(232, 169, 72, 0.6),
-    0 0 8px rgba(232, 169, 72, 0.3);
-  will-change: transform, opacity;
+    0 0 3px rgba(232, 169, 72, 0.7),
+    0 0 6px rgba(232, 169, 72, 0.4);
+  will-change: transform;
 }
 
 /* ═══ 分阶段文案 ═══ */
