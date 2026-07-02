@@ -267,3 +267,43 @@ Redesigned browser AI model configuration around provider-aware parameter branch
 ### Next Steps
 
 - None - task complete
+
+
+## Session 113: novel-airp play setup dialog Step 4 — archive (code landed prior sessions)
+
+**Date**: 2026-07-02
+**Task**: novel-airp play setup dialog Step 4 — archive (code landed prior sessions)
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+归档已完成但未收尾的 Step 4 游玩设定对话任务。代码在先前 7 个 commit 中已全部落地并经用户端到端验证：后端 play-setup-dialog skill + commit_play_setup 脚本 + setup-summary/opening-narrative 种子 + mode.json 移除（workspace-templates.ts）；前端 PlaySetupDialog.vue + SetupComposer.vue + useSetupState play-setup 状态机/心跳/重载恢复/路由 + SetupWizard 接入 + useTsian openingNarrative ref/loader。两包 build 通过。spec 不更新（知识沉淀于任务 PRD/design，无项目级通用约定）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3317ce9` | (see git log) |
+| `6b02113` | (see git log) |
+| `89152ac` | (see git log) |
+| `318b6ee` | (see git log) |
+| `7a1d5ce` | (see git log) |
+| `d3c3365` | (see git log) |
+| `bd7e210` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
