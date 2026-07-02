@@ -91,6 +91,42 @@
           <span class="truncate">{{ window.shortLabel }}</span>
         </button>
       </div>
+      <div class="desktop-auth flex items-center gap-1 border-l border-neon-deep/35 pl-2" @click.stop>
+        <button
+          v-if="!loggedIn"
+          type="button"
+          class="desktop-task-button retro-focus px-2"
+          :disabled="initializing"
+          title="用 Discord 登录"
+          @click="login"
+        >
+          <UserRound class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span class="hidden sm:inline">Discord 登录</span>
+          <span class="sm:hidden">登录</span>
+        </button>
+        <div
+          v-else
+          class="flex h-8 max-w-[180px] items-center gap-1 border border-neon-deep/45 bg-elevated px-2 font-mono text-[11px] text-text-main"
+        >
+          <img
+            v-if="currentUser?.avatarUrl"
+            :src="currentUser.avatarUrl"
+            alt=""
+            class="h-4 w-4 rounded-full border border-neon-deep/50"
+          />
+          <UserRound v-else class="h-3.5 w-3.5 text-neon-muted" aria-hidden="true" />
+          <span class="truncate">{{ currentUser?.displayName }}</span>
+          <button
+            type="button"
+            class="retro-focus grid h-5 w-5 shrink-0 place-items-center text-text-dim hover:text-neon"
+            title="退出登录"
+            aria-label="退出登录"
+            @click="handleLogout"
+          >
+            <LogOut class="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      </div>
       <div class="desktop-clock">{{ desktopClock }}</div>
     </footer>
 
@@ -102,7 +138,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { MonitorDot } from "lucide-vue-next"
+import { LogOut, MonitorDot, UserRound } from "lucide-vue-next"
 import DesktopWindow from "./DesktopWindow.vue"
 import {
   desktopLaunchers,
@@ -116,6 +152,8 @@ import {
   type DesktopBounds,
   type DesktopWindowGeometry,
 } from "@/composables/useDesktopWindows"
+import { useAuth } from "@/composables/useAuth"
+import { toast } from "@/composables/useToast"
 
 interface ContextMenuState {
   x: number
@@ -126,6 +164,7 @@ interface ContextMenuState {
 const route = useRoute()
 const router = useRouter()
 const desktop = useDesktopWindows()
+const { currentUser, loggedIn, initializing, login, logout } = useAuth()
 const selectedDesktopIcon = ref("")
 const contextMenu = ref<ContextMenuState | null>(null)
 const desktopClock = ref("")
@@ -245,6 +284,15 @@ function showDesktop() {
   desktop.minimizeAll()
   contextMenu.value = null
   navigateTo("/")
+}
+
+async function handleLogout() {
+  try {
+    await logout()
+    toast.success("已退出登录")
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "退出登录失败。")
+  }
 }
 
 function syncRouteToActiveWindow() {

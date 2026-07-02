@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Account system spans backend OAuth/session, shared contracts, frontend API client, and UI state; use this to keep data contracts and error handling explicit across layers."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Frontend changes add api-client/useAuth and UI entry points; use placement and import rules for platform-web."}
+{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"useAuth composable must expose explicit commands and avoid hidden persistence side effects."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"API responses and shared User contract cross runtime boundaries; keep shared shapes in @tsian/contracts and normalize errors at boundaries."}
+{"file":".trellis/spec/contracts/backend/directory-structure.md","reason":"Adding User contract requires correct package ownership and export boundary."}

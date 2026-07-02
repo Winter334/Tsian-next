@@ -28,8 +28,11 @@ import ConfirmHost from "./components/feedback/ConfirmHost.vue"
 import { initializePlatformHost } from "./platform-host"
 import { cleanupOrphanAttachments } from "./storage"
 import { preheatPlatformConfig } from "./config/platform-config"
+import { useAuth } from "./composables/useAuth"
 
 type SplashState = "typing" | "animating" | "done"
+
+const { initAuth } = useAuth()
 
 const splashState = ref<SplashState>("typing")
 
@@ -52,6 +55,7 @@ function onCrtAnimationEnd() {
 
 onMounted(async () => {
   await initializePlatformHost()
+  void initAuth()
   // 预热平台配置 cache：读 .tsian/local/platform-config.json → merge 默认 → 内存。
   // 完成前 46 个同步读调用点用默认值（provider 未配时本就走 env/默认，窗口无感）。
   void preheatPlatformConfig().catch(() => {
