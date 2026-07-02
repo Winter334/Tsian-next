@@ -546,6 +546,15 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
   if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
   const { tsian } = useTsian()
 
+  // 清除最后一条 agent 消息的选项（已选中，不再显示）
+  const msgs = playSetupMessages.value
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    if (msgs[i]!.role === "agent" && msgs[i]!.options && msgs[i]!.options.length > 0) {
+      msgs[i] = { ...msgs[i]!, options: undefined }
+      break
+    }
+  }
+
   // push user message
   playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: input })
 

@@ -470,7 +470,7 @@ export function buildPlaySetupPrompt(
     "请作为 world-architect 使用 Skill《游玩设定对话》引导玩家确定本次游玩的方向和特殊设定。",
     "",
     "要求：",
-    "1. 按照 skill 的基础 checklist 引导对话：怎么进入故事、金手指/特殊设定、特殊玩法机制。",
+    "1. 按照 skill 的基础 checklist 引导对话：怎么进入故事、金手指/特殊设定、世界因子。",
     "2. 没提到的主动追问，直到补齐。用 [[选项]] 提供常见模板但允许自由输入。",
     "3. 玩家只表达「想要什么」，你负责「怎么实现」——不让玩家写剧情。",
     "4. 对话中可用 workspace_write / apply_world_state_plan 即时写入设定落点。",
