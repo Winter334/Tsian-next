@@ -432,7 +432,7 @@ export async function runAssistantChat(
   const nextAssistantTurn = nextAssistantTurnNumber(assistantContext)
   // resolve 助手 model contextWindow 预算(对称 master 的 contextTokenBudget 注入).
   const assistantContextTokenBudget = resolveTokenBudget(
-    assistantModelConfig?.parameters.contextWindow ?? null,
+    assistantModelConfig?.parameters.common.contextWindow ?? null,
   )
 
   // Trace collector:收集本轮 runtime 过程事件(turn/model/tool/context 等),

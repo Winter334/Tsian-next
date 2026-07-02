@@ -3,9 +3,15 @@ import type { AiChatMessage, AiDebugMessageSegment, AiDebugRecord, ContentPart }
 import {
   getBrowserAiConfig,
   parseBrowserAiCustomRequestParams,
+  providerParamsForKind,
   type BrowserAiConfig,
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
+  type BrowserClaudeModelParameters,
+  type BrowserDeepSeekModelParameters,
+  type BrowserGeminiModelParameters,
+  type BrowserOpenAiCompatibleModelParameters,
+  type BrowserOpenAiResponsesModelParameters,
 } from "../config/ai"
 import { getPlatformConfig } from "../config/platform-config"
 import type { ToolSchema } from "../agent-runtime/tool-schemas"
@@ -356,25 +362,30 @@ function buildChatCompletionsRequestBody(input: {
   model: string
   messages: AiChatMessage[]
   parameters: BrowserAiModelParameters
+  kind: BrowserAiProviderKind
 }): Record<string, unknown> {
+  const common = input.parameters.common
+  const provider = input.kind === "deepseek"
+    ? providerParamsForKind(input.parameters, "deepseek") as BrowserDeepSeekModelParameters
+    : providerParamsForKind(input.parameters, "openai-compatible") as BrowserOpenAiCompatibleModelParameters
   const body: Record<string, unknown> = {
     model: input.model,
     messages: input.messages,
   }
 
-  putOptionalNumber(body, "max_tokens", input.parameters.maxOutputTokens)
-  putOptionalNumber(body, "temperature", input.parameters.temperature)
-  putOptionalNumber(body, "top_p", input.parameters.topP)
-  putOptionalNumber(body, "frequency_penalty", input.parameters.frequencyPenalty)
-  putOptionalNumber(body, "presence_penalty", input.parameters.presencePenalty)
+  putOptionalNumber(body, "max_tokens", common.maxOutputTokens)
+  putOptionalNumber(body, "temperature", common.temperature)
+  putOptionalNumber(body, "top_p", common.topP)
+  putOptionalNumber(body, "frequency_penalty", provider.frequencyPenalty)
+  putOptionalNumber(body, "presence_penalty", provider.presencePenalty)
 
-  if (input.parameters.reasoningEffort) {
-    body.reasoning_effort = input.parameters.reasoningEffort
+  if (provider.reasoningEffort) {
+    body.reasoning_effort = provider.reasoningEffort
   }
 
   return {
     ...body,
-    ...parseBrowserAiCustomRequestParams(input.parameters.customRequestParamsText),
+    ...parseBrowserAiCustomRequestParams(provider.customRequestParamsText),
     model: input.model,
     messages: input.messages,
   }
@@ -382,6 +393,34 @@ function buildChatCompletionsRequestBody(input: {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function parseOptionalJsonObjectText(input: string, label: string): Record<string, unknown> | undefined {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return undefined
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error(`${label} must be valid JSON.`)
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`${label} must be a JSON object.`)
+  }
+  return parsed
+}
+
+function putOptionalStringArray(
+  target: Record<string, unknown>,
+  key: string,
+  value: string[],
+): void {
+  const normalized = value.map((item) => item.trim()).filter(Boolean)
+  if (normalized.length > 0) {
+    target[key] = normalized
+  }
 }
 
 function buildResponsesUrl(baseUrl: string): string {
@@ -465,23 +504,25 @@ function buildResponsesRequestBody(input: {
   tools?: unknown[]
   stream?: boolean
 }): Record<string, unknown> {
+  const common = input.parameters.common
+  const provider = providerParamsForKind(input.parameters, "openai-responses") as BrowserOpenAiResponsesModelParameters
   const body: Record<string, unknown> = {
     model: input.model,
     input: input.input,
     store: false,
   }
 
-  putOptionalNumber(body, "max_output_tokens", input.parameters.maxOutputTokens)
-  putOptionalNumber(body, "temperature", input.parameters.temperature)
-  putOptionalNumber(body, "top_p", input.parameters.topP)
+  putOptionalNumber(body, "max_output_tokens", common.maxOutputTokens)
+  putOptionalNumber(body, "temperature", common.temperature)
+  putOptionalNumber(body, "top_p", common.topP)
 
-  if (input.parameters.reasoningEffort) {
-    body.reasoning = { effort: input.parameters.reasoningEffort }
+  if (provider.reasoningEffort) {
+    body.reasoning = { effort: provider.reasoningEffort }
   }
 
   const result: Record<string, unknown> = {
     ...body,
-    ...parseBrowserAiCustomRequestParams(input.parameters.customRequestParamsText),
+    ...parseBrowserAiCustomRequestParams(provider.customRequestParamsText),
     model: input.model,
     input: input.input,
     store: false,
@@ -966,6 +1007,7 @@ const openaiAdapter: ProviderAdapter = {
       model: config.model,
       messages,
       parameters: config.parameters,
+      kind: config.kind,
     })
   },
   extractText: extractAssistantText,
@@ -974,6 +1016,7 @@ const openaiAdapter: ProviderAdapter = {
       model: config.model,
       messages: [],
       parameters: config.parameters,
+      kind: config.kind,
     })
     body.messages = messages.map((message) => {
       if (message.role === "tool") {
@@ -1310,6 +1353,138 @@ function buildClaudeNativeMessage(message: RuntimeChatMessage): Record<string, u
   return { role: "user", content: buildClaudeContent(message.content) }
 }
 
+function buildGeminiGenerationConfig(parameters: BrowserAiModelParameters): Record<string, unknown> {
+  const common = parameters.common
+  const provider = providerParamsForKind(parameters, "gemini") as BrowserGeminiModelParameters
+  const generationConfig: Record<string, unknown> = {}
+  putOptionalNumber(generationConfig, "maxOutputTokens", common.maxOutputTokens)
+  putOptionalNumber(generationConfig, "temperature", common.temperature)
+  putOptionalNumber(generationConfig, "topP", common.topP)
+  putOptionalNumber(generationConfig, "topK", provider.topK)
+  putOptionalNumber(generationConfig, "frequencyPenalty", provider.frequencyPenalty)
+  putOptionalNumber(generationConfig, "presencePenalty", provider.presencePenalty)
+  putOptionalStringArray(generationConfig, "stopSequences", provider.stopSequences)
+  if (provider.responseMimeType.trim()) {
+    generationConfig.responseMimeType = provider.responseMimeType.trim()
+  }
+  const responseSchema = parseOptionalJsonObjectText(provider.responseSchemaText, "Gemini responseSchema")
+  if (responseSchema) {
+    generationConfig.responseSchema = responseSchema
+  }
+  const thinkingConfig: Record<string, unknown> = {}
+  putOptionalNumber(thinkingConfig, "thinkingBudget", provider.thinkingBudget)
+  if (provider.includeThoughts) {
+    thinkingConfig.includeThoughts = true
+  }
+  if (Object.keys(thinkingConfig).length > 0) {
+    generationConfig.thinkingConfig = thinkingConfig
+  }
+  return generationConfig
+}
+
+function mergeProviderCustomParams(
+  body: Record<string, unknown>,
+  customRequestParamsText: string,
+): Record<string, unknown> {
+  return {
+    ...parseBrowserAiCustomRequestParams(customRequestParamsText),
+    ...body,
+  }
+}
+
+function buildGeminiRequestBody(input: {
+  config: BrowserAiConfig
+  contents: Record<string, unknown>[]
+  system?: string
+  tools?: ToolSchema[]
+}): Record<string, unknown> {
+  const provider = providerParamsForKind(input.config.parameters, "gemini") as BrowserGeminiModelParameters
+  const body: Record<string, unknown> = {
+    contents: input.contents,
+    generationConfig: buildGeminiGenerationConfig(input.config.parameters),
+  }
+  if (input.system) {
+    body.systemInstruction = { parts: [{ text: input.system }] }
+  }
+  if (input.tools && input.tools.length > 0) {
+    body.tools = [
+      {
+        functionDeclarations: input.tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
+      },
+    ]
+  }
+  return mergeProviderCustomParams(body, provider.customRequestParamsText)
+}
+
+function buildClaudeThinking(
+  common: BrowserAiModelParameters["common"],
+  provider: BrowserClaudeModelParameters,
+): Record<string, unknown> | undefined {
+  if (provider.thinkingMode === "disabled") {
+    return undefined
+  }
+  if (provider.thinkingMode === "adaptive") {
+    return { type: "adaptive", display: provider.thinkingDisplay }
+  }
+  if (provider.thinkingBudgetTokens === null || provider.thinkingBudgetTokens < 1024) {
+    throw new Error("Claude thinking.budget_tokens must be at least 1024 when thinking is enabled.")
+  }
+  if (common.maxOutputTokens !== null && provider.thinkingBudgetTokens >= common.maxOutputTokens) {
+    throw new Error("Claude thinking.budget_tokens must be smaller than max output tokens.")
+  }
+  return {
+    type: "enabled",
+    budget_tokens: provider.thinkingBudgetTokens,
+    display: provider.thinkingDisplay,
+  }
+}
+
+function applyClaudeModelParameters(body: Record<string, unknown>, config: BrowserAiConfig): void {
+  const common = config.parameters.common
+  const provider = providerParamsForKind(config.parameters, "claude") as BrowserClaudeModelParameters
+  body.max_tokens = common.maxOutputTokens ?? 4096
+  putOptionalNumber(body, "temperature", common.temperature)
+  putOptionalNumber(body, "top_p", common.topP)
+  putOptionalNumber(body, "top_k", provider.topK)
+  putOptionalStringArray(body, "stop_sequences", provider.stopSequences)
+  if (provider.serviceTier) {
+    body.service_tier = provider.serviceTier
+  }
+  const thinking = buildClaudeThinking(common, provider)
+  if (thinking) {
+    body.thinking = thinking
+  }
+}
+
+function buildClaudeRequestBody(input: {
+  config: BrowserAiConfig
+  messages: Record<string, unknown>[]
+  system?: string
+  tools?: ToolSchema[]
+}): Record<string, unknown> {
+  const provider = providerParamsForKind(input.config.parameters, "claude") as BrowserClaudeModelParameters
+  const body: Record<string, unknown> = {
+    model: input.config.model,
+    messages: input.messages,
+  }
+  applyClaudeModelParameters(body, input.config)
+  if (input.system) {
+    body.system = input.system
+  }
+  if (input.tools && input.tools.length > 0) {
+    body.tools = input.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters,
+    }))
+  }
+  return mergeProviderCustomParams(body, provider.customRequestParamsText)
+}
+
 const geminiAdapter: ProviderAdapter = {
   buildUrl(config) {
     const base = config.baseUrl.replace(/\/+$/, "")
@@ -1324,33 +1499,14 @@ const geminiAdapter: ProviderAdapter = {
   },
   buildRequestBody(config, messages) {
     const { system, rest } = splitSystemMessage(messages)
-    const generationConfig: Record<string, unknown> = {}
-    putOptionalNumber(generationConfig, "maxOutputTokens", config.parameters.maxOutputTokens)
-    putOptionalNumber(generationConfig, "temperature", config.parameters.temperature)
-    putOptionalNumber(generationConfig, "topP", config.parameters.topP)
-    putOptionalNumber(generationConfig, "frequencyPenalty", config.parameters.frequencyPenalty)
-    putOptionalNumber(generationConfig, "presencePenalty", config.parameters.presencePenalty)
-
-    const body: Record<string, unknown> = {
+    return buildGeminiRequestBody({
+      config,
+      system,
       contents: rest.map((message) => ({
         role: message.role === "assistant" ? "model" : "user",
         parts: buildGeminiParts(message.content),
       })),
-      generationConfig,
-    }
-    if (system) {
-      body.systemInstruction = { parts: [{ text: system }] }
-    }
-    // reasoning_effort is forwarded as-is for all provider kinds; providers that
-    // don't support it should be left on "do not send" and tuned via custom params.
-    if (config.parameters.reasoningEffort) {
-      body.generationConfig = { ...generationConfig, reasoning_effort: config.parameters.reasoningEffort }
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      ...body,
-    }
+    })
   },
   extractText(payload) {
     if (
@@ -1372,37 +1528,12 @@ const geminiAdapter: ProviderAdapter = {
   },
   buildNativeRequestBody(config, messages, tools) {
     const { system, rest } = splitSystemMessages(messages)
-    const generationConfig: Record<string, unknown> = {}
-    putOptionalNumber(generationConfig, "maxOutputTokens", config.parameters.maxOutputTokens)
-    putOptionalNumber(generationConfig, "temperature", config.parameters.temperature)
-    putOptionalNumber(generationConfig, "topP", config.parameters.topP)
-    putOptionalNumber(generationConfig, "frequencyPenalty", config.parameters.frequencyPenalty)
-    putOptionalNumber(generationConfig, "presencePenalty", config.parameters.presencePenalty)
-
-    const body: Record<string, unknown> = {
+    return buildGeminiRequestBody({
+      config,
+      system,
       contents: rest.map((message) => buildGeminiNativeContent(message)),
-      generationConfig,
-      tools: [
-        {
-          functionDeclarations: tools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          })),
-        },
-      ],
-    }
-    if (system) {
-      body.systemInstruction = { parts: [{ text: system }] }
-    }
-    if (config.parameters.reasoningEffort) {
-      body.generationConfig = { ...generationConfig, reasoning_effort: config.parameters.reasoningEffort }
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      ...body,
-    }
+      tools,
+    })
   },
   extractNativeResult(payload) {
     if (
@@ -1516,32 +1647,14 @@ const claudeAdapter: ProviderAdapter = {
   },
   buildRequestBody(config, messages) {
     const { system, rest } = splitSystemMessage(messages)
-    const body: Record<string, unknown> = {
-      model: config.model,
+    return buildClaudeRequestBody({
+      config,
+      system,
       messages: rest.map((message) => ({
         role: message.role === "assistant" ? "assistant" : "user",
         content: message.role === "assistant" ? message.content : buildClaudeContent(message.content),
       })),
-      // Claude requires max_tokens; fall back to a sane default when unset.
-      max_tokens: config.parameters.maxOutputTokens ?? 4096,
-    }
-    if (system) {
-      body.system = system
-    }
-    putOptionalNumber(body, "temperature", config.parameters.temperature)
-    putOptionalNumber(body, "top_p", config.parameters.topP)
-    // reasoning_effort is forwarded as-is for all provider kinds; providers that
-    // don't support it should be left on "do not send" and tuned via custom params.
-    if (config.parameters.reasoningEffort) {
-      body.reasoning_effort = config.parameters.reasoningEffort
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      model: config.model,
-      messages: body.messages,
-      max_tokens: body.max_tokens,
-    }
+    })
   },
   extractText(payload) {
     if (
@@ -1559,33 +1672,12 @@ const claudeAdapter: ProviderAdapter = {
   },
   buildNativeRequestBody(config, messages, tools) {
     const { system, rest } = splitSystemMessages(messages)
-    const body: Record<string, unknown> = {
-      model: config.model,
+    return buildClaudeRequestBody({
+      config,
+      system,
       messages: rest.map((message) => buildClaudeNativeMessage(message)),
-      // Claude requires max_tokens; fall back to a sane default when unset.
-      max_tokens: config.parameters.maxOutputTokens ?? 4096,
-      tools: tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        input_schema: tool.parameters,
-      })),
-    }
-    if (system) {
-      body.system = system
-    }
-    putOptionalNumber(body, "temperature", config.parameters.temperature)
-    putOptionalNumber(body, "top_p", config.parameters.topP)
-    if (config.parameters.reasoningEffort) {
-      body.reasoning_effort = config.parameters.reasoningEffort
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      model: config.model,
-      messages: body.messages,
-      max_tokens: body.max_tokens,
-      tools: body.tools,
-    }
+      tools,
+    })
   },
   extractNativeResult(payload) {
     if (

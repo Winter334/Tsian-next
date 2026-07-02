@@ -22,15 +22,69 @@ export type BrowserAiReasoningEffort = "" | "minimal" | "low" | "medium" | "high
  */
 export type BrowserAiToolCallMode = "native" | "text"
 
-export interface BrowserAiModelParameters {
+export interface BrowserAiCommonModelParameters {
   contextWindow: number | null
   maxOutputTokens: number | null
   temperature: number | null
   topP: number | null
+}
+
+export interface BrowserOpenAiCompatibleModelParameters {
   frequencyPenalty: number | null
   presencePenalty: number | null
   reasoningEffort: BrowserAiReasoningEffort
   customRequestParamsText: string
+}
+
+export interface BrowserOpenAiResponsesModelParameters {
+  reasoningEffort: BrowserAiReasoningEffort
+  customRequestParamsText: string
+}
+
+export interface BrowserDeepSeekModelParameters {
+  frequencyPenalty: number | null
+  presencePenalty: number | null
+  reasoningEffort: BrowserAiReasoningEffort
+  customRequestParamsText: string
+}
+
+export interface BrowserGeminiModelParameters {
+  topK: number | null
+  frequencyPenalty: number | null
+  presencePenalty: number | null
+  stopSequences: string[]
+  responseMimeType: string
+  responseSchemaText: string
+  thinkingBudget: number | null
+  includeThoughts: boolean
+  customRequestParamsText: string
+}
+
+export type BrowserClaudeThinkingMode = "disabled" | "adaptive" | "enabled"
+export type BrowserClaudeThinkingDisplay = "summarized" | "omitted"
+export type BrowserClaudeServiceTier = "" | "auto" | "standard_only"
+
+export interface BrowserClaudeModelParameters {
+  topK: number | null
+  stopSequences: string[]
+  serviceTier: BrowserClaudeServiceTier
+  thinkingMode: BrowserClaudeThinkingMode
+  thinkingBudgetTokens: number | null
+  thinkingDisplay: BrowserClaudeThinkingDisplay
+  customRequestParamsText: string
+}
+
+export interface BrowserAiProviderModelParameters {
+  openaiCompatible?: BrowserOpenAiCompatibleModelParameters
+  openaiResponses?: BrowserOpenAiResponsesModelParameters
+  deepseek?: BrowserDeepSeekModelParameters
+  gemini?: BrowserGeminiModelParameters
+  claude?: BrowserClaudeModelParameters
+}
+
+export interface BrowserAiModelParameters {
+  common: BrowserAiCommonModelParameters
+  provider: BrowserAiProviderModelParameters
 }
 
 /**
@@ -165,9 +219,31 @@ const PROTECTED_CUSTOM_REQUEST_KEYS = new Set([
   "apikey",
   "authorization",
   "baseurl",
+  "contents",
+  "conversation",
+  "frequency_penalty",
+  "generationconfig",
   "headers",
+  "input",
+  "max_output_tokens",
+  "max_tokens",
   "messages",
   "model",
+  "presence_penalty",
+  "previous_response_id",
+  "reasoning",
+  "reasoning_effort",
+  "service_tier",
+  "stop_sequences",
+  "store",
+  "stream",
+  "system",
+  "systeminstruction",
+  "temperature",
+  "thinking",
+  "tools",
+  "top_k",
+  "top_p",
 ])
 
 function readEnvText(key: string): string {
@@ -266,16 +342,183 @@ function normalizeStreaming(input: unknown): boolean {
   return input === true || input === "true"
 }
 
-export function createDefaultBrowserAiModelParameters(): BrowserAiModelParameters {
+export function createDefaultBrowserAiCommonModelParameters(): BrowserAiCommonModelParameters {
   return {
     contextWindow: null,
     maxOutputTokens: null,
     temperature: null,
     topP: null,
+  }
+}
+
+export function createDefaultBrowserOpenAiCompatibleModelParameters(): BrowserOpenAiCompatibleModelParameters {
+  return {
     frequencyPenalty: null,
     presencePenalty: null,
     reasoningEffort: "",
     customRequestParamsText: "",
+  }
+}
+
+export function createDefaultBrowserOpenAiResponsesModelParameters(): BrowserOpenAiResponsesModelParameters {
+  return {
+    reasoningEffort: "",
+    customRequestParamsText: "",
+  }
+}
+
+export function createDefaultBrowserDeepSeekModelParameters(): BrowserDeepSeekModelParameters {
+  return {
+    frequencyPenalty: null,
+    presencePenalty: null,
+    reasoningEffort: "",
+    customRequestParamsText: "",
+  }
+}
+
+export function createDefaultBrowserGeminiModelParameters(): BrowserGeminiModelParameters {
+  return {
+    topK: null,
+    frequencyPenalty: null,
+    presencePenalty: null,
+    stopSequences: [],
+    responseMimeType: "",
+    responseSchemaText: "",
+    thinkingBudget: null,
+    includeThoughts: false,
+    customRequestParamsText: "",
+  }
+}
+
+export function createDefaultBrowserClaudeModelParameters(): BrowserClaudeModelParameters {
+  return {
+    topK: null,
+    stopSequences: [],
+    serviceTier: "",
+    thinkingMode: "disabled",
+    thinkingBudgetTokens: null,
+    thinkingDisplay: "summarized",
+    customRequestParamsText: "",
+  }
+}
+
+export function createDefaultBrowserAiModelParameters(): BrowserAiModelParameters {
+  return {
+    common: createDefaultBrowserAiCommonModelParameters(),
+    provider: {
+      openaiCompatible: createDefaultBrowserOpenAiCompatibleModelParameters(),
+      openaiResponses: createDefaultBrowserOpenAiResponsesModelParameters(),
+      deepseek: createDefaultBrowserDeepSeekModelParameters(),
+      gemini: createDefaultBrowserGeminiModelParameters(),
+      claude: createDefaultBrowserClaudeModelParameters(),
+    },
+  }
+}
+
+function normalizeStringList(input: unknown): string[] {
+  if (!Array.isArray(input)) {
+    return []
+  }
+  return input
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+}
+
+function normalizeClaudeServiceTier(input: unknown): BrowserClaudeServiceTier {
+  return input === "auto" || input === "standard_only" ? input : ""
+}
+
+function normalizeClaudeThinkingMode(input: unknown): BrowserClaudeThinkingMode {
+  return input === "adaptive" || input === "enabled" ? input : "disabled"
+}
+
+function normalizeClaudeThinkingDisplay(input: unknown): BrowserClaudeThinkingDisplay {
+  return input === "omitted" ? "omitted" : "summarized"
+}
+
+function normalizeCommonModelParameters(input: unknown): BrowserAiCommonModelParameters {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultBrowserAiCommonModelParameters()
+  }
+
+  const record = input as Record<string, unknown>
+  return {
+    contextWindow: normalizePositiveInteger(record.contextWindow),
+    maxOutputTokens: normalizePositiveInteger(record.maxOutputTokens),
+    temperature: normalizeNullableNumber(record.temperature),
+    topP: normalizeNullableNumber(record.topP),
+  }
+}
+
+function normalizeOpenAiCompatibleModelParameters(input: unknown): BrowserOpenAiCompatibleModelParameters {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultBrowserOpenAiCompatibleModelParameters()
+  }
+  const record = input as Record<string, unknown>
+  return {
+    frequencyPenalty: normalizeNullableNumber(record.frequencyPenalty),
+    presencePenalty: normalizeNullableNumber(record.presencePenalty),
+    reasoningEffort: normalizeReasoningEffort(record.reasoningEffort),
+    customRequestParamsText: readStoredText(record.customRequestParamsText),
+  }
+}
+
+function normalizeOpenAiResponsesModelParameters(input: unknown): BrowserOpenAiResponsesModelParameters {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultBrowserOpenAiResponsesModelParameters()
+  }
+  const record = input as Record<string, unknown>
+  return {
+    reasoningEffort: normalizeReasoningEffort(record.reasoningEffort),
+    customRequestParamsText: readStoredText(record.customRequestParamsText),
+  }
+}
+
+function normalizeDeepSeekModelParameters(input: unknown): BrowserDeepSeekModelParameters {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultBrowserDeepSeekModelParameters()
+  }
+  const record = input as Record<string, unknown>
+  return {
+    frequencyPenalty: normalizeNullableNumber(record.frequencyPenalty),
+    presencePenalty: normalizeNullableNumber(record.presencePenalty),
+    reasoningEffort: normalizeReasoningEffort(record.reasoningEffort),
+    customRequestParamsText: readStoredText(record.customRequestParamsText),
+  }
+}
+
+function normalizeGeminiModelParameters(input: unknown): BrowserGeminiModelParameters {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultBrowserGeminiModelParameters()
+  }
+  const record = input as Record<string, unknown>
+  return {
+    topK: normalizePositiveInteger(record.topK),
+    frequencyPenalty: normalizeNullableNumber(record.frequencyPenalty),
+    presencePenalty: normalizeNullableNumber(record.presencePenalty),
+    stopSequences: normalizeStringList(record.stopSequences),
+    responseMimeType: readStoredText(record.responseMimeType),
+    responseSchemaText: readStoredText(record.responseSchemaText),
+    thinkingBudget: normalizePositiveInteger(record.thinkingBudget),
+    includeThoughts: record.includeThoughts === true,
+    customRequestParamsText: readStoredText(record.customRequestParamsText),
+  }
+}
+
+function normalizeClaudeModelParameters(input: unknown): BrowserClaudeModelParameters {
+  if (typeof input !== "object" || input === null) {
+    return createDefaultBrowserClaudeModelParameters()
+  }
+  const record = input as Record<string, unknown>
+  return {
+    topK: normalizePositiveInteger(record.topK),
+    stopSequences: normalizeStringList(record.stopSequences),
+    serviceTier: normalizeClaudeServiceTier(record.serviceTier),
+    thinkingMode: normalizeClaudeThinkingMode(record.thinkingMode),
+    thinkingBudgetTokens: normalizePositiveInteger(record.thinkingBudgetTokens),
+    thinkingDisplay: normalizeClaudeThinkingDisplay(record.thinkingDisplay),
+    customRequestParamsText: readStoredText(record.customRequestParamsText),
   }
 }
 
@@ -285,21 +528,93 @@ function normalizeModelParameters(input: unknown): BrowserAiModelParameters {
   }
 
   const record = input as Record<string, unknown>
+  const providerRecord = typeof record.provider === "object" && record.provider !== null
+    ? record.provider as Record<string, unknown>
+    : {}
+
   return {
-    contextWindow: normalizePositiveInteger(record.contextWindow),
-    maxOutputTokens: normalizePositiveInteger(record.maxOutputTokens ?? record.maxTokens),
-    temperature: normalizeNullableNumber(record.temperature),
-    topP: normalizeNullableNumber(record.topP ?? record.top_p),
-    frequencyPenalty: normalizeNullableNumber(record.frequencyPenalty ?? record.frequency_penalty),
-    presencePenalty: normalizeNullableNumber(record.presencePenalty ?? record.presence_penalty),
-    reasoningEffort: normalizeReasoningEffort(record.reasoningEffort ?? record.reasoning_effort),
-    customRequestParamsText: readStoredText(record.customRequestParamsText),
+    common: normalizeCommonModelParameters(record.common),
+    provider: {
+      openaiCompatible: normalizeOpenAiCompatibleModelParameters(providerRecord.openaiCompatible),
+      openaiResponses: normalizeOpenAiResponsesModelParameters(providerRecord.openaiResponses),
+      deepseek: normalizeDeepSeekModelParameters(providerRecord.deepseek),
+      gemini: normalizeGeminiModelParameters(providerRecord.gemini),
+      claude: normalizeClaudeModelParameters(providerRecord.claude),
+    },
   }
 }
 
 function cloneModelParameters(input: BrowserAiModelParameters): BrowserAiModelParameters {
+  const normalized = normalizeModelParameters(input)
   return {
-    ...input,
+    common: { ...normalized.common },
+    provider: {
+      openaiCompatible: { ...normalized.provider.openaiCompatible! },
+      openaiResponses: { ...normalized.provider.openaiResponses! },
+      deepseek: { ...normalized.provider.deepseek! },
+      gemini: {
+        ...normalized.provider.gemini!,
+        stopSequences: [...normalized.provider.gemini!.stopSequences],
+      },
+      claude: {
+        ...normalized.provider.claude!,
+        stopSequences: [...normalized.provider.claude!.stopSequences],
+      },
+    },
+  }
+}
+
+export function cloneBrowserAiModelParameters(input: BrowserAiModelParameters): BrowserAiModelParameters {
+  return cloneModelParameters(input)
+}
+
+export type BrowserAiActiveProviderParameters =
+  | BrowserOpenAiCompatibleModelParameters
+  | BrowserOpenAiResponsesModelParameters
+  | BrowserDeepSeekModelParameters
+  | BrowserGeminiModelParameters
+  | BrowserClaudeModelParameters
+
+export function providerParamsForKind(
+  parameters: BrowserAiModelParameters,
+  kind: BrowserAiProviderKind,
+): BrowserAiActiveProviderParameters {
+  const normalized = normalizeModelParameters(parameters)
+  switch (kind) {
+    case "openai-responses":
+      return normalized.provider.openaiResponses!
+    case "deepseek":
+      return normalized.provider.deepseek!
+    case "gemini":
+      return normalized.provider.gemini!
+    case "claude":
+      return normalized.provider.claude!
+    case "openai-compatible":
+    default:
+      return normalized.provider.openaiCompatible!
+  }
+}
+
+export function customParamsTextForKind(
+  parameters: BrowserAiModelParameters,
+  kind: BrowserAiProviderKind,
+): string {
+  return providerParamsForKind(parameters, kind).customRequestParamsText
+}
+
+export function providerBranchKeyForKind(kind: BrowserAiProviderKind): keyof BrowserAiProviderModelParameters {
+  switch (kind) {
+    case "openai-responses":
+      return "openaiResponses"
+    case "deepseek":
+      return "deepseek"
+    case "gemini":
+      return "gemini"
+    case "claude":
+      return "claude"
+    case "openai-compatible":
+    default:
+      return "openaiCompatible"
   }
 }
 
@@ -395,21 +710,7 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
     return null
   }
 
-  // Prefer the new `models` array. Fall back to migrating the legacy flat
-  // `defaultModel` + top-level `parameters` into a single-model config so
-  // already-saved presets upgrade without data loss.
-  let models = normalizeModelConfigs(record.models)
-  if (models.length === 0 && legacyDefaultModel) {
-    models = [
-      {
-        id: legacyDefaultModel,
-        parameters: normalizeModelParameters(record.parameters),
-        enabled: true,
-        toolCallMode: "text",
-        streaming: false,
-      },
-    ]
-  }
+  const models = normalizeModelConfigs(record.models)
 
   return {
     id,
@@ -718,12 +1019,9 @@ export function createBrowserAiProviderPreset(
   input: Partial<Omit<BrowserAiProviderPreset, "parameters"> & {
     model: string
     defaultModel: string
-    /** Legacy flat parameters, migrated into a single-model config when no `models` are supplied. */
     parameters: BrowserAiModelParameters
   }> = {},
 ): BrowserAiProviderPreset {
-  // Seed models from the new `models` field; fall back to a single-model
-  // config derived from a legacy `defaultModel`/`model` seed.
   let models = normalizeModelConfigs(input.models)
   if (models.length === 0) {
     const seedModel = readStoredText(input.defaultModel ?? input.model)
@@ -731,7 +1029,7 @@ export function createBrowserAiProviderPreset(
       models = [
         {
           id: seedModel,
-          parameters: normalizeModelParameters(input.parameters),
+          parameters: createDefaultBrowserAiModelParameters(),
           enabled: true,
           toolCallMode: "text",
           streaming: false,
@@ -766,6 +1064,14 @@ export function getBrowserAiConfig(): BrowserAiConfig | null {
   const stored = readCachedPlatformConfigDraft()
   const { preset, kind } = findPresetAndKind(stored.providerTypes, stored.activeProviderId)
   return resolveProviderConfig(preset, kind) ?? getEnvAiConfig()
+}
+
+export function resolveBrowserAiConfigFromProviderPreset(
+  provider: BrowserAiProviderPreset | null | undefined,
+  kind: BrowserAiProviderKind,
+  primaryModelId?: string | null,
+): BrowserAiConfig | null {
+  return resolveProviderConfig(provider ?? undefined, kind, primaryModelId?.trim() || undefined)
 }
 
 /**
@@ -824,7 +1130,7 @@ export function getBrowserAiProviderPresetModels(
   return preset.models.map((m) => ({
     id: m.id,
     label: m.label || m.id,
-    contextWindow: m.parameters.contextWindow ?? null,
+    contextWindow: m.parameters.common.contextWindow ?? null,
   }))
 }
 
@@ -958,19 +1264,108 @@ function assertRangeParameter(
   }
 }
 
-export function validateBrowserAiModelParameters(parameters: BrowserAiModelParameters): void {
-  assertIntegerParameter(parameters.contextWindow, "上下文窗口")
-  assertIntegerParameter(parameters.maxOutputTokens, "最大输出 token")
-  assertRangeParameter(parameters.temperature, "温度", 0, 2)
-  assertRangeParameter(parameters.topP, "top_p", 0, 2)
-  assertRangeParameter(parameters.frequencyPenalty, "频率惩罚", -2, 2)
-  assertRangeParameter(parameters.presencePenalty, "存在惩罚", -2, 2)
-
-  if (!["", "minimal", "low", "medium", "high", "xhigh"].includes(parameters.reasoningEffort)) {
-    throw new Error("推理程度只能是最低/低/中/高/最高或留空。")
+function parseJsonObjectText(input: string, label: string): Record<string, unknown> | null {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return null
   }
 
-  parseBrowserAiCustomRequestParams(parameters.customRequestParamsText)
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error(`${label} 必须是有效的 JSON 对象。`)
+  }
+
+  if (!isPlainJsonObject(parsed)) {
+    throw new Error(`${label} 必须是 JSON 对象，不能是数组或其它类型。`)
+  }
+
+  return parsed
+}
+
+function assertReasoningEffort(value: BrowserAiReasoningEffort): void {
+  if (!["", "minimal", "low", "medium", "high", "xhigh"].includes(value)) {
+    throw new Error("推理程度只能是最低/低/中/高/最高或留空。")
+  }
+}
+
+function assertStringList(value: string[], label: string): void {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new Error(`${label} 必须是字符串列表。`)
+  }
+}
+
+export function validateBrowserAiModelParameters(
+  parameters: BrowserAiModelParameters,
+  kind: BrowserAiProviderKind,
+): void {
+  const normalized = normalizeModelParameters(parameters)
+  const common = normalized.common
+  assertIntegerParameter(common.contextWindow, "上下文窗口")
+  assertIntegerParameter(common.maxOutputTokens, "最大输出 token")
+  assertRangeParameter(common.temperature, "温度", 0, 2)
+  assertRangeParameter(common.topP, "top_p", 0, 2)
+
+  switch (kind) {
+    case "openai-compatible": {
+      const provider = normalized.provider.openaiCompatible!
+      assertRangeParameter(provider.frequencyPenalty, "频率惩罚", -2, 2)
+      assertRangeParameter(provider.presencePenalty, "存在惩罚", -2, 2)
+      assertReasoningEffort(provider.reasoningEffort)
+      parseBrowserAiCustomRequestParams(provider.customRequestParamsText)
+      return
+    }
+    case "openai-responses": {
+      const provider = normalized.provider.openaiResponses!
+      assertReasoningEffort(provider.reasoningEffort)
+      parseBrowserAiCustomRequestParams(provider.customRequestParamsText)
+      return
+    }
+    case "deepseek": {
+      const provider = normalized.provider.deepseek!
+      assertRangeParameter(provider.frequencyPenalty, "频率惩罚", -2, 2)
+      assertRangeParameter(provider.presencePenalty, "存在惩罚", -2, 2)
+      assertReasoningEffort(provider.reasoningEffort)
+      parseBrowserAiCustomRequestParams(provider.customRequestParamsText)
+      return
+    }
+    case "gemini": {
+      const provider = normalized.provider.gemini!
+      assertIntegerParameter(provider.topK, "Gemini topK")
+      assertRangeParameter(provider.frequencyPenalty, "Gemini 频率惩罚", -2, 2)
+      assertRangeParameter(provider.presencePenalty, "Gemini 存在惩罚", -2, 2)
+      assertStringList(provider.stopSequences, "Gemini 停止序列")
+      assertIntegerParameter(provider.thinkingBudget, "Gemini thinkingBudget")
+      parseJsonObjectText(provider.responseSchemaText, "Gemini responseSchema")
+      parseBrowserAiCustomRequestParams(provider.customRequestParamsText)
+      return
+    }
+    case "claude": {
+      const provider = normalized.provider.claude!
+      assertIntegerParameter(provider.topK, "Claude topK")
+      assertStringList(provider.stopSequences, "Claude 停止序列")
+      if (provider.serviceTier !== "" && provider.serviceTier !== "auto" && provider.serviceTier !== "standard_only") {
+        throw new Error("Claude service_tier 只能是 auto、standard_only 或留空。")
+      }
+      if (provider.thinkingMode !== "disabled" && provider.thinkingMode !== "adaptive" && provider.thinkingMode !== "enabled") {
+        throw new Error("Claude thinking.type 只能是 disabled、adaptive 或 enabled。")
+      }
+      if (provider.thinkingDisplay !== "summarized" && provider.thinkingDisplay !== "omitted") {
+        throw new Error("Claude thinking.display 只能是 summarized 或 omitted。")
+      }
+      if (provider.thinkingMode === "enabled") {
+        if (provider.thinkingBudgetTokens === null || provider.thinkingBudgetTokens < 1024) {
+          throw new Error("Claude thinking.budget_tokens 启用时必须至少为 1024。")
+        }
+        if (common.maxOutputTokens !== null && provider.thinkingBudgetTokens >= common.maxOutputTokens) {
+          throw new Error("Claude thinking.budget_tokens 必须小于最大输出 token。")
+        }
+      }
+      parseBrowserAiCustomRequestParams(provider.customRequestParamsText)
+      return
+    }
+  }
 }
 
 export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigDraft): void {
@@ -986,7 +1381,7 @@ export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigD
         if (model.toolCallMode !== "native" && model.toolCallMode !== "text") {
           throw new Error("工具调用模式必须是「原生」或「文本」。")
         }
-        validateBrowserAiModelParameters(model.parameters)
+        validateBrowserAiModelParameters(model.parameters, type.kind)
       }
     }
   }

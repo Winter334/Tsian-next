@@ -787,7 +787,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         // resolve master agent 上下文 token 预算(model.contextWindow 或 256k 默认)
         const masterConfig = resolveAgentModelConfig("master", providerPresetMap)
         const contextTokenBudget = resolveTokenBudget(
-          masterConfig?.parameters.contextWindow ?? null,
+          masterConfig?.parameters.common.contextWindow ?? null,
         )
         // 过程节点累积器:从事件流累积 thought/tool/interim,turn 收尾写入 turn 文件.
         // 与前端 turnProcessLog 用同一份事件数据,节点带 agentId 区分 delegated agent.
@@ -1124,7 +1124,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           // resolve target agent 上下文 token 预算.
           const targetConfig = resolveAgentModelConfig(agentId, providerPresetMap)
           const contextTokenBudget = resolveTokenBudget(
-            targetConfig?.parameters.contextWindow ?? null,
+            targetConfig?.parameters.common.contextWindow ?? null,
           )
 
           const result = await runAgentRuntimeTurn(

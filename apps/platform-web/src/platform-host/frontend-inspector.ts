@@ -774,7 +774,7 @@ async function runEphemeralTurn(
     )
     const masterConfig = resolveAgentModelConfig("master", providerPresetMap)
     const contextTokenBudget = resolveTokenBudget(
-      masterConfig?.parameters.contextWindow ?? null,
+      masterConfig?.parameters.common.contextWindow ?? null,
     )
 
     // 4. 跑回合(capabilities 照 index.ts:751-827 接全).
