@@ -198,3 +198,37 @@ Implemented and archived OpenAI Responses provider support: added openai-respons
 ### Next Steps
 
 - None - task complete
+
+
+## Session 111: Model config UI redesign
+
+**Date**: 2026-07-02
+**Task**: Model config UI redesign
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+Redesigned browser AI model configuration around provider-aware parameter branches, updated runtime adapter mappings and Settings add/edit/test UI, and validated with npm run build:web.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b6f78ee` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
