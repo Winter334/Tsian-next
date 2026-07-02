@@ -376,3 +376,37 @@ Implemented the account-system task: planned and built the Go platform-server au
 ### Next Steps
 
 - None - task complete
+
+
+## Session 116: Account Center Window — 操作员身份终端桌面窗口
+
+**Date**: 2026-07-02
+**Task**: Account Center Window — 操作员身份终端桌面窗口
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+把 taskbar 直接 Discord OAuth 按钮升级为 RetroOS 风格的'账号中心'桌面窗口（AccountView.vue）。新增 /account 路由 + account 桌面应用注册（appId/icon/async component）；AccountView 以'操作员身份终端'概念落地：状态条（NO OPERATOR SIGNED IN 磷光呼吸 / OPERATOR ONLINE）+ 身份区（头像凹斜面框 + displayName + OP-ID handle）+ 凭证槽位纵列（Discord 可点/已绑定 ✓，账密/邮箱/Magic Link disabled 即将开放）+ 退出登录。taskbar 账号按钮改为打开账号中心窗口，保留为状态指示器。复用 useAuth/authApi，不动后端，build:web 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5674b44` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
