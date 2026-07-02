@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { ref, watch, computed, onMounted, onUnmounted, nextTick } from "vue"
-import gsap from "gsap"
+import { ref, watch, computed, onUnmounted } from "vue"
 import { useSetupState } from "../../../composables/useSetupState"
+import { generateMagicCircle } from "./magicCircleGenerator"
 
 /**
  * UnderstandingRunning — 初始理解进行中。
  *
- * 复刻 sssscales：10×10 圆点网格，列级 y 波动 + 圆点级 y/scale 错位。
- * 关键参数比例和示例一致：大位移、scale 从 0.133 到 0.8、纯 scale 表达明暗。
- * 圆点用 ember-bright + box-shadow 发光火星。
+ * 随机 SVG 魔法阵：每次进入理解阶段生成一张新的术式图案。
+ * 图案结构随机，配色固定使用 Tsian token；多层低频反向旋转，表达"术式解析中"。
  */
-const { agentHeartbeat, understandingStartedAt } = useSetupState()
+const { understandingStartedAt } = useSetupState()
+const magicCircle = generateMagicCircle()
 
 const STAGES = [
   "正在观察导入结构…",
@@ -26,66 +26,6 @@ const currentStage = computed(() => {
   return Math.min(STAGES.length - 1, Math.floor(elapsedMs.value / STAGE_INTERVAL))
 })
 
-const COLUMNS = 10
-const ROWS = 10
-// 单元尺寸：示例里 box 是 10×10 SVG 单位，circle r=5。
-// 我们用 10px 单元，gap 由单元格内定位决定（不用 CSS gap，用绝对定位）。
-const CELL = 10 // px per cell unit
-const scaleFieldRef = ref<HTMLElement | null>(null)
-let scalesTl: gsap.core.Timeline | null = null
-
-async function startScalesAnimation() {
-  await nextTick()
-  const field = scaleFieldRef.value
-  if (!field) return
-  const columns = gsap.utils.toArray<HTMLElement>(field.querySelectorAll(".scale-col"))
-
-  scalesTl?.kill()
-  scalesTl = gsap.timeline()
-
-  // 列级 y 波动：y=11（1.1 倍单元高度），stagger amount 3
-  scalesTl.to(columns, {
-    y: 11,
-    duration: 1.5,
-    ease: "sine.inOut",
-    stagger: {
-      amount: 3,
-      repeat: -1,
-      yoyo: true,
-    },
-  }, 0)
-
-  // 圆点级：fromTo y + scale，和示例参数完全一致
-  // 示例用 SVG 单位，我们用 px（CELL=10px，和 SVG 单位 1:1）
-  columns.forEach((column, colIndex) => {
-    const dots = column.querySelectorAll(".scale-dot")
-    scalesTl?.add(
-      gsap.fromTo(dots,
-        {
-          y: (row) => gsap.utils.interpolate(77, -77, row / 10),
-          scale: 0.133,
-        },
-        {
-          y: (row) => gsap.utils.interpolate(colIndex, -colIndex, row / 10),
-          scale: 0.8,
-          duration: 1,
-          ease: "sine",
-          repeat: -1,
-          yoyo: true,
-          yoyoEase: "sine.in",
-        },
-      ),
-      colIndex / 10,
-    )
-  })
-
-  scalesTl.play(50)
-}
-
-onMounted(() => {
-  void startScalesAnimation()
-})
-
 let tickTimer = 0
 watch(
   () => understandingStartedAt,
@@ -97,46 +37,21 @@ watch(
   },
   { immediate: true },
 )
+
+// 只需清理阶段文案计时器；SVG 动画由 CSS 驱动，组件卸载时自动停止。
 onUnmounted(() => {
   if (tickTimer) clearInterval(tickTimer)
-  scalesTl?.kill()
-  scalesTl = null
-})
-
-watch(agentHeartbeat, () => {
-  const field = scaleFieldRef.value
-  if (!field) return
-  gsap.fromTo(field,
-    { filter: "drop-shadow(0 0 6px rgba(232, 169, 72, 0.1))" },
-    {
-      filter: "drop-shadow(0 0 30px rgba(232, 169, 72, 0.35))",
-      duration: 0.2,
-      yoyo: true,
-      repeat: 1,
-      ease: "sine.inOut",
-    },
-  )
 })
 </script>
 
 <template>
   <div class="understanding-running">
     <div class="loading-core">
-      <!-- 源文鳞阵：10×10，每个 col 是一列固定容器，dot 在内部做 y+scale -->
-      <div ref="scaleFieldRef" class="scale-field" aria-hidden="true">
-        <div
-          v-for="col in COLUMNS"
-          :key="col"
-          class="scale-col"
-          :style="{ left: (col - 1) * CELL + 'px' }"
-        >
-          <span
-            v-for="row in ROWS"
-            :key="row"
-            class="scale-dot"
-            :style="{ top: (row - 1) * CELL + 'px' }"
-          />
-        </div>
+      <div class="magic-circle" aria-hidden="true">
+        <svg class="magic-circle-svg" :viewBox="magicCircle.viewBox">
+          <!-- Safe v-html: generated locally from fixed functions and fixed symbol sets; no user input. -->
+          <g v-html="magicCircle.layers" />
+        </svg>
       </div>
 
       <!-- 分阶段文案 -->
@@ -162,46 +77,74 @@ watch(agentHeartbeat, () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 50px 20px;
-  min-height: 280px;
+  padding: 34px 20px 42px;
+  min-height: 360px;
 }
 
 .loading-core {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 24px;
+  gap: 22px;
 }
 
-/* ═══ 源文鳞阵 ═══ */
-/* 复刻 sssscales：绝对定位网格，无框无背景。
-   field 是 10×10 网格容器（100×100px），col 是列容器（绝对定位），
-   dot 是圆点（在 col 内绝对定位，GSAP 控制其 y+scale）。 */
-.scale-field {
-  position: relative;
-  width: 100px;
-  height: 100px;
+/* ═══ 随机魔法阵 ═══ */
+.magic-circle {
+  width: 260px;
+  height: 260px;
+  animation: circle-appear 0.9s cubic-bezier(.16, 1, .3, 1) both;
 }
 
-.scale-col {
-  position: absolute;
-  top: 0;
-  width: 10px;
-  height: 100px;
+.magic-circle-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter:
+    drop-shadow(0 0 3px rgba(232, 169, 72, 0.55))
+    drop-shadow(0 0 13px rgba(181, 137, 61, 0.24))
+    drop-shadow(0 0 28px rgba(155, 58, 46, 0.10));
 }
 
-/* 圆点：r=5 的圆（直径 10px=CELL），ember-bright + 发光 */
-.scale-dot {
-  position: absolute;
-  left: 0;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--ember-bright);
-  box-shadow:
-    0 0 3px rgba(232, 169, 72, 0.7),
-    0 0 6px rgba(232, 169, 72, 0.4);
-  will-change: transform;
+.magic-circle-svg :deep(*) {
+  vector-effect: non-scaling-stroke;
+}
+
+.magic-circle-svg :deep(.magic-layer) {
+  transform-box: view-box;
+  transform-origin: 256px 256px;
+}
+
+.magic-circle-svg :deep(.magic-layer--outer) {
+  animation: rotate-cw 46s linear infinite;
+}
+
+.magic-circle-svg :deep(.magic-layer--text) {
+  animation: rotate-ccw 62s linear infinite;
+}
+
+.magic-circle-svg :deep(.magic-layer--inner) {
+  animation: rotate-cw 34s linear infinite;
+}
+
+.magic-circle-svg :deep(.magic-layer--core) {
+  animation: core-breathe 3.8s ease-in-out infinite;
+}
+
+.magic-circle-svg :deep(.magic-rune) {
+  letter-spacing: 0.08em;
+}
+
+@keyframes circle-appear {
+  from { opacity: 0; transform: scale(.92) rotate(-8deg); filter: blur(2px); }
+  55% { opacity: 1; transform: scale(1.025) rotate(1deg); filter: blur(0); }
+  to { opacity: 1; transform: scale(1) rotate(0); filter: blur(0); }
+}
+
+@keyframes rotate-cw { to { transform: rotate(360deg); } }
+@keyframes rotate-ccw { to { transform: rotate(-360deg); } }
+@keyframes core-breathe {
+  0%, 100% { opacity: .76; transform: scale(.985); }
+  50% { opacity: 1; transform: scale(1.035); }
 }
 
 /* ═══ 分阶段文案 ═══ */
