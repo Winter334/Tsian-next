@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { ref, watch, computed, onUnmounted } from "vue"
+import { ref, watch, computed, onMounted, onUnmounted, nextTick } from "vue"
+import gsap from "gsap"
 import { useSetupState } from "../../../composables/useSetupState"
 
 /**
@@ -31,6 +32,70 @@ const currentStage = computed(() => {
 
 const COLUMNS = 10
 const ROWS = 10
+const scaleFieldRef = ref<HTMLElement | null>(null)
+let scalesTl: gsap.core.Timeline | null = null
+
+async function startScalesAnimation() {
+  await nextTick()
+  const field = scaleFieldRef.value
+  if (!field) return
+  const columns = gsap.utils.toArray<HTMLElement>(field.querySelectorAll(".scale-col"))
+
+  scalesTl?.kill()
+  scalesTl = gsap.timeline()
+
+  gsap.set(columns, { y: (i) => (i % 2 === 0 ? -5 : 5) })
+  gsap.set(field.querySelectorAll(".scale-cell"), {
+    y: 8,
+    scale: 0.38,
+    opacity: 0.35,
+    transformOrigin: "50% 50%",
+  })
+
+  // 列级波动：来自 sssscales 的 column stagger 思路
+  scalesTl.to(columns, {
+    y: 8,
+    duration: 1.5,
+    ease: "sine.inOut",
+    stagger: {
+      amount: 3,
+      repeat: -1,
+      yoyo: true,
+    },
+  }, 0)
+
+  // 单元格级波动：每列内部从收缩到点亮，行间形成错位流动
+  columns.forEach((column, colIndex) => {
+    const cells = column.querySelectorAll(".scale-cell")
+    scalesTl?.add(
+      gsap.fromTo(cells,
+        {
+          y: (row) => gsap.utils.interpolate(18, -18, row / (ROWS - 1)),
+          scale: 0.28,
+          opacity: 0.22,
+        },
+        {
+          y: (row) => gsap.utils.interpolate((colIndex - 4.5) * 0.8, -(colIndex - 4.5) * 0.8, row / (ROWS - 1)),
+          scale: 0.92,
+          opacity: 1,
+          duration: 1.05,
+          ease: "sine.inOut",
+          repeat: -1,
+          yoyo: true,
+          yoyoEase: "sine.in",
+          stagger: { amount: 0.12, from: "center" },
+        },
+      ),
+      colIndex / 10,
+    )
+  })
+
+  scalesTl.play(8)
+}
+
+onMounted(() => {
+  void startScalesAnimation()
+})
 
 // 时间更新循环
 let tickTimer = 0
@@ -46,12 +111,25 @@ watch(
 )
 onUnmounted(() => {
   if (tickTimer) clearInterval(tickTimer)
+  scalesTl?.kill()
+  scalesTl = null
 })
 
 // agent activity 时增强一次整体亮度
-const pulseKey = ref(0)
 watch(agentHeartbeat, () => {
-  pulseKey.value++
+  const field = scaleFieldRef.value
+  if (!field) return
+  gsap.fromTo(field,
+    { filter: "drop-shadow(0 0 10px rgba(232, 169, 72, 0.08))", scale: 1 },
+    {
+      filter: "drop-shadow(0 0 34px rgba(232, 169, 72, 0.28))",
+      scale: 1.035,
+      duration: 0.18,
+      yoyo: true,
+      repeat: 1,
+      ease: "sine.inOut",
+    },
+  )
 })
 </script>
 
@@ -59,7 +137,7 @@ watch(agentHeartbeat, () => {
   <div class="understanding-running">
     <div class="loading-core">
       <!-- 源文鳞阵：规则网格 + stagger 波纹 -->
-      <div class="scale-field" :key="pulseKey" aria-hidden="true">
+      <div ref="scaleFieldRef" class="scale-field" aria-hidden="true">
         <div
           v-for="col in COLUMNS"
           :key="col"
@@ -154,12 +232,6 @@ watch(agentHeartbeat, () => {
   display: grid;
   grid-template-rows: repeat(10, 12px);
   gap: 3px;
-  animation: col-wave 3.6s ease-in-out infinite;
-  animation-delay: calc(var(--col) * -0.16s);
-}
-@keyframes col-wave {
-  0%, 100% { transform: translateY(-5px); }
-  50% { transform: translateY(5px); }
 }
 
 .scale-cell {
@@ -167,40 +239,20 @@ watch(agentHeartbeat, () => {
   width: 12px;
   height: 12px;
   border-radius: 3px 9px 3px 9px;
-  background: rgba(181, 137, 61, 0.16);
-  box-shadow: inset 0 0 6px rgba(232, 169, 72, 0.04);
+  background: linear-gradient(135deg, rgba(232, 169, 72, 0.42), rgba(181, 137, 61, 0.16));
+  box-shadow:
+    inset 0 0 8px rgba(232, 169, 72, 0.10),
+    0 0 8px rgba(232, 169, 72, 0.08);
   transform-origin: center;
-  animation: scale-flicker 2.4s ease-in-out infinite;
-  animation-delay: calc((var(--col) * 0.09s) + (var(--row) * 0.12s));
+  will-change: transform, opacity;
 }
 .scale-cell::after {
   content: "";
   position: absolute;
   inset: 3px;
   border-radius: 50%;
-  background: rgba(232, 169, 72, 0.18);
-  opacity: 0;
-  animation: cell-spark 2.4s ease-in-out infinite;
-  animation-delay: calc((var(--col) * 0.09s) + (var(--row) * 0.12s));
-}
-@keyframes scale-flicker {
-  0%, 100% {
-    transform: translateY(5px) scale(0.48);
-    background: rgba(181, 137, 61, 0.10);
-    opacity: 0.38;
-  }
-  35%, 65% {
-    transform: translateY(0) scale(0.95);
-    background: linear-gradient(135deg, rgba(232, 169, 72, 0.65), rgba(181, 137, 61, 0.24));
-    box-shadow:
-      inset 0 0 8px rgba(232, 169, 72, 0.18),
-      0 0 8px rgba(232, 169, 72, 0.18);
-    opacity: 1;
-  }
-}
-@keyframes cell-spark {
-  0%, 100% { opacity: 0; transform: scale(0.4); }
-  50% { opacity: 0.9; transform: scale(1); }
+  background: rgba(232, 169, 72, 0.35);
+  opacity: 0.55;
 }
 
 /* ═══ 分阶段文案 ═══ */
