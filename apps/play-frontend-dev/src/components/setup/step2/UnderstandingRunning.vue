@@ -55,10 +55,11 @@ watch(agentHeartbeat, () => {
   <div class="understanding-running">
     <!-- 中央加载区 -->
     <div class="loading-core">
-      <!-- 心跳光团：agent 有动作时脉冲一下 -->
-      <div class="heartbeat-orb" :key="pulseKey">
-        <div class="orb-center" />
-        <div class="orb-ring" />
+      <!-- 烛火核心：节律性明灭，像一盏被规律拨动的烛火 -->
+      <div class="ember-core" :key="pulseKey">
+        <div class="ember-flame" />
+        <div class="ember-halo" />
+        <div class="ember-ring" />
       </div>
 
       <!-- ember 光带：循环扫过（不确定进度型） -->
@@ -71,6 +72,16 @@ watch(agentHeartbeat, () => {
       <Transition name="stage-fade" mode="out-in">
         <p :key="currentStage" class="stage-text">{{ STAGES[currentStage] }}</p>
       </Transition>
+
+      <!-- 固定提示：处理需要时间 -->
+      <p class="duration-hint">
+        <span class="hint-text">这可能需要一些时间，请稍候</span>
+        <span class="hint-dots" aria-hidden="true">
+          <span class="hint-dot" />
+          <span class="hint-dot" />
+          <span class="hint-dot" />
+        </span>
+      </p>
     </div>
   </div>
 </template>
@@ -91,50 +102,99 @@ watch(agentHeartbeat, () => {
   gap: 24px;
 }
 
-/* ── 心跳光团 ── */
-.heartbeat-orb {
+/* ── 烛火核心：节律性明灭 ── */
+/* 设计思路：不是小光点微微呼吸，而是一盏有体量的烛火——
+   火焰本身随心跳节律明暗伸缩（1.2s 周期，像平稳心跳），
+   外层光晕同步扩散收缩，脉冲环在 agent activity 时额外扩散。
+   整体 60px 区域，在 280px 容器里存在感强。 */
+.ember-core {
   position: relative;
-  width: 40px;
-  height: 40px;
+  width: 60px;
+  height: 60px;
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
-/* 核心：ember-bright 发光球 */
-.orb-center {
-  width: 14px;
-  height: 14px;
+/* 火焰核心：ember-bright 发光体，心跳节律明灭 */
+.ember-flame {
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
   background: radial-gradient(
     circle,
     var(--ember-bright) 0%,
-    var(--ember) 60%,
+    var(--ember) 50%,
+    rgba(181, 137, 61, 0.3) 80%,
     transparent 100%
   );
-  box-shadow: 0 0 16px rgba(232, 169, 72, 0.4);
-  animation: orb-idle 3s ease-in-out infinite;
+  box-shadow:
+    0 0 20px rgba(232, 169, 72, 0.5),
+    0 0 40px rgba(232, 169, 72, 0.2);
+  animation: flame-heartbeat 1.2s ease-in-out infinite;
+  z-index: 2;
 }
-@keyframes orb-idle {
-  0%, 100% { box-shadow: 0 0 10px rgba(232, 169, 72, 0.3); transform: scale(1); }
-  50% { box-shadow: 0 0 20px rgba(232, 169, 72, 0.5); transform: scale(1.1); }
+@keyframes flame-heartbeat {
+  0%, 100% {
+    transform: scale(0.85);
+    box-shadow: 0 0 14px rgba(232, 169, 72, 0.35), 0 0 28px rgba(232, 169, 72, 0.12);
+    opacity: 0.8;
+  }
+  15% {
+    transform: scale(1.15);
+    box-shadow: 0 0 28px rgba(232, 169, 72, 0.7), 0 0 56px rgba(232, 169, 72, 0.3);
+    opacity: 1;
+  }
+  30% {
+    transform: scale(1.0);
+    box-shadow: 0 0 22px rgba(232, 169, 72, 0.55), 0 0 44px rgba(232, 169, 72, 0.2);
+    opacity: 0.95;
+  }
+  45% {
+    transform: scale(1.08);
+    box-shadow: 0 0 24px rgba(232, 169, 72, 0.6), 0 0 48px rgba(232, 169, 72, 0.22);
+    opacity: 1;
+  }
 }
 
-/* 心跳脉冲环：key 变化时重新挂载，播放一次扩散动画 */
-.orb-ring {
+/* 光晕：同步呼吸，比火焰大一圈 */
+.ember-halo {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(232, 169, 72, 0.12) 0%,
+    rgba(232, 169, 72, 0.05) 50%,
+    transparent 70%
+  );
+  animation: halo-breathe 1.2s ease-in-out infinite;
+  z-index: 1;
+}
+@keyframes halo-breathe {
+  0%, 100% { transform: scale(0.9); opacity: 0.5; }
+  15% { transform: scale(1.3); opacity: 0.9; }
+  30% { transform: scale(1.1); opacity: 0.7; }
+  45% { transform: scale(1.2); opacity: 0.8; }
+}
+
+/* 脉冲环：agent activity 时额外扩散（key 变化重新挂载） */
+.ember-ring {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 14px;
-  height: 14px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  border: 1px solid var(--ember-bright);
+  border: 1.5px solid var(--ember-bright);
   transform: translate(-50%, -50%);
-  animation: ring-pulse 1.2s ease-out;
+  animation: ring-burst 1.5s ease-out;
+  z-index: 3;
 }
-@keyframes ring-pulse {
-  0% { width: 14px; height: 14px; opacity: 0.7; }
-  100% { width: 56px; height: 56px; opacity: 0; }
+@keyframes ring-burst {
+  0% { width: 22px; height: 22px; opacity: 0.8; border-width: 2px; }
+  100% { width: 90px; height: 90px; opacity: 0; border-width: 0.5px; }
 }
 
 /* ── ember 光带加载条 ── */
@@ -200,5 +260,38 @@ watch(agentHeartbeat, () => {
 .stage-fade-leave-to {
   opacity: 0;
   transform: translateY(-6px);
+}
+
+/* ── 固定提示：处理需要时间 ── */
+.duration-hint {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  color: var(--whisper);
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.hint-text {
+  animation: hint-fade 0.6s ease 0.3s both;
+}
+@keyframes hint-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.hint-dots {
+  display: inline-flex;
+  gap: 2px;
+}
+.hint-dot {
+  animation: hint-dot-pulse 1.8s ease-in-out infinite;
+}
+.hint-dot:nth-child(1) { animation-delay: 0s; }
+.hint-dot:nth-child(2) { animation-delay: 0.3s; }
+.hint-dot:nth-child(3) { animation-delay: 0.6s; }
+@keyframes hint-dot-pulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.8; }
 }
 </style>
