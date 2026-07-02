@@ -205,12 +205,15 @@ function goToStep(target: SetupStep): void {
     return
   }
   if (target === 4) {
-    // Step 4 游玩设定对话：idle 时自动启动对话
+    // Step 4 游玩设定对话：仅在从未开始时自动启动，已有消息则恢复
     subView.value = "play-setup"
     step.value = 4
     errorText.value = ""
-    if (playSetupStatus.value === "idle") {
+    if (playSetupStatus.value === "idle" && playSetupMessages.value.length === 0) {
       void startPlaySetupDialog()
+    } else if (playSetupStatus.value === "failed") {
+      // 失败状态回来时恢复为 idle，让玩家可以重试
+      playSetupStatus.value = "idle"
     }
     return
   }
