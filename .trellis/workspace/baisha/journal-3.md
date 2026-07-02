@@ -307,3 +307,38 @@ Redesigned browser AI model configuration around provider-aware parameter branch
 ### Next Steps
 
 - None - task complete
+
+
+## Session 114: novel-airp opening confirm Step 5
+
+**Date**: 2026-07-02
+**Task**: novel-airp opening confirm Step 5
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+实现开局向导 Step 5 开局确认：新增 OpeningConfirm 设定卡片（lachisa 质感背景、外部图片占位、随机 SVG 魔法阵装饰层，fixed 全屏区域池 + best-candidate 分散、淡入淡出生命周期、Step2 式内部多层旋转），useSetupState 接通 opening-confirm 路由/summary/重载恢复，SetupWizard emit enterPlay，App.vue enterPlay 使用 BurningReveal scroll 过渡并延后到 @shown 后切 mode 避免露帧/黑闪，StoryView 特殊渲染 openingNarrative 为第一条消息并修正空状态。用户端到端测试通过；build 通过，改动文件 tsc 无错误；spec 不更新（play-frontend-dev 无 code-spec 层，gotcha 已沉淀到任务 design）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a144b90` | (see git log) |
+| `e94c8af` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
