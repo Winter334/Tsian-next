@@ -232,3 +232,38 @@ Redesigned browser AI model configuration around provider-aware parameter branch
 ### Next Steps
 
 - None - task complete
+
+
+## Session 112: novel-airp understanding loader: random SVG magic circle
+
+**Date**: 2026-07-02
+**Task**: novel-airp understanding loader: random SVG magic circle
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+用随机生成的 SVG 魔法阵替换 UnderstandingRunning 的源文鳞阵 GSAP 圆点网格。新增 magicCircleGenerator.ts（seeded mulberry32 PRNG + 极坐标几何 + n-gram/starburst/弧线星阵/符文 textPath 环/符号节点/核心 glyph），UnderstandingRunning.vue 重写为 CSS 驱动多层低频反向旋转 + 显现动画，保留四段阶段文案与底部提示。移除 three 依赖、GSAP scales 代码、agentHeartbeat 消费。build 通过，tsc 基线错误与本任务无关。spec 不更新（play-frontend-dev 无 spec 层，模式单点未复用）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b8d84d` | (see git log) |
+| `7a2ebf8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
