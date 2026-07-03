@@ -410,3 +410,38 @@ Implemented the account-system task: planned and built the Go platform-server au
 ### Next Steps
 
 - None - task complete
+
+
+## Session 117: App Market MVP — 卡包上传/下载/搜索/安装 + 创意工坊任务创建
+
+**Date**: 2026-07-03
+**Task**: App Market MVP — 卡包上传/下载/搜索/安装 + 创意工坊任务创建
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+完成应用市场 MVP：Go 后端新增 internal/market 包（domain + SQLite repo + HTTP handler），FileSystemBlobStore 实现 BlobStore 接口隔离文件存储，market_packages 表（resource_type 预留、card_author/card_version 列），4 个 API 端点（列表/详情/上传/下载 + 封面端点），50MB+manifest 校验，封面从 zip 提取存 BlobStore。前端 marketApi + AppMarketView 状态机（list/detail/upload），搜索/排序/封面展示/下载安装+card_id 冲突提示。GameCardDetailView 新增作者/版本编辑。contracts 新增 MarketPackage 类型。集成测试覆盖上传/列表/详情/下载/搜索+鉴权。修复：manifest 两层结构校验（package manifest 包裹 card manifest）、内置卡过滤、封面提取、作者/版本展示。创建创意工坊任务（07-03-workshop-multi-resource）记录多资源类型+tag+差异化安装愿景。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8024077` | (see git log) |
+| `60d3a85` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
