@@ -14,22 +14,6 @@
         <button
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-          :disabled="importing"
-          @click="openPackagePicker"
-        >
-          <Download class="h-3.5 w-3.5" aria-hidden="true" />
-          本地安装卡包
-        </button>
-        <input
-          ref="packageInput"
-          type="file"
-          class="hidden"
-          accept=".tsian-card.zip,application/zip"
-          @change="handlePackageSelected"
-        />
-        <button
-          type="button"
-          class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
           @click="openUploadScreen"
         >
           <Upload class="h-3.5 w-3.5" aria-hidden="true" />
@@ -114,12 +98,12 @@
             v-else
             :resource-types="resourceTypeOptions"
             :initial-type="currentType"
-            :cards="localCards"
+            :cards="uploadCards"
             :agent-options="agentUploadOptions"
             :skill-options="skillUploadOptions"
             :loading="localResourcesLoading"
             :uploading="uploading"
-            @submit="handleUpload"
+            @prepare-upload="handlePrepareUpload"
           />
         </div>
 
@@ -144,12 +128,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { ArrowLeft, Download, Search, Store, Upload, UserRound } from "lucide-vue-next"
-import type { AgentRegistryEntry, MarketPackage, MarketResourceType, SkillRegistryEntry, WorkspaceFile } from "@tsian/contracts"
+import { ArrowLeft, Search, Store, Upload, UserRound } from "lucide-vue-next"
+import type { MarketPackage, MarketResourceType, SkillRegistryEntry, WorkspaceFile } from "@tsian/contracts"
 import type { LocalGameCardView } from "@/storage/game-cards"
 import { buildAgentRegistry, buildSkillRegistry } from "@/agent-runtime/registry"
 import { toast } from "@/composables/useToast"
 import { confirm } from "@/composables/useConfirm"
+import { openDialogForm } from "@/composables/useDialogForm"
 import { getGameCardTitle } from "@/lib/game-card-display"
 import { marketApi } from "@/platform-host/api-client"
 import {
@@ -177,11 +162,15 @@ import MarketPackageGrid from "@/components/market/MarketPackageGrid.vue"
 import MarketResourceTypeSidebar from "@/components/market/MarketResourceTypeSidebar.vue"
 import MarketTagFilter from "@/components/market/MarketTagFilter.vue"
 import MarketUploadPanel from "@/components/market/MarketUploadPanel.vue"
+import { resourceTypeOption } from "@/components/market/types"
+import { resourceTypeVisuals } from "@/components/market/resource-type-visual"
 import type {
   AgentUploadOption,
   MarketInstallDialogState,
   MarketInstallTargetOption,
   MarketResourceTypeOption,
+  MarketUploadMetadata,
+  MarketUploadSelectionPayload,
   MarketUploadSubmitPayload,
   SkillUploadOption,
 } from "@/components/market/types"
@@ -196,11 +185,10 @@ const { loggedIn } = useAuth()
 const desktop = useDesktopWindows()
 
 const resourceTypeOptions: MarketResourceTypeOption[] = [
-  { type: "game_card", label: "游戏卡", description: "完整卡包" },
-  { type: "agent", label: "Agent", description: "角色与流程代理" },
-  { type: "skill", label: "Skill", description: "可复用能力" },
+  resourceTypeOption("game_card", resourceTypeVisuals.game_card, "完整卡包"),
+  resourceTypeOption("agent", resourceTypeVisuals.agent, "角色与流程代理"),
+  resourceTypeOption("skill", resourceTypeVisuals.skill, "可复用能力"),
 ]
-const packageInput = ref<HTMLInputElement | null>(null)
 
 const screen = ref<Screen>({ kind: "list" })
 const currentType = ref<MarketResourceType>("game_card")
@@ -216,12 +204,12 @@ let tagTimer: ReturnType<typeof setTimeout> | null = null
 const detailPackage = ref<MarketPackage | null>(null)
 const detailLoading = ref(false)
 
+const uploadCards = ref<LocalGameCardView[]>([])
 const localCards = ref<LocalGameCardView[]>([])
 const cardFilesById = ref<Record<string, WorkspaceFile[]>>({})
 const assistantFiles = ref<WorkspaceFile[]>([])
 const localResourcesLoading = ref(false)
 
-const importing = ref(false)
 const installing = ref(false)
 const uploading = ref(false)
 const feedback = ref("")
@@ -372,16 +360,35 @@ function openUploadScreen(): void {
   errorMessage.value = ""
   screen.value = { kind: "upload" }
   if (loggedIn.value) {
-    loadLocalResources()
+    loadUploadResources()
   }
 }
 
-async function loadLocalResources(options: { installMode?: boolean } = {}): Promise<void> {
+async function loadUploadResources(): Promise<void> {
   localResourcesLoading.value = true
   try {
-    const cards = options.installMode
-      ? activeInstallTargetCards(await getPlatformActiveGameCard())
-      : (await listPlatformGameCards()).filter((card) => card.source !== "builtin")
+    const allCards = (await listPlatformGameCards()).filter((card) => card.source !== "builtin")
+    const activeCard = activeInstallTargetCards(await getPlatformActiveGameCard())
+    const cardsToLoad = cardsById([...allCards, ...activeCard])
+    const filesEntries = await Promise.all(cardsToLoad.map(async (card) => [
+      card.id,
+      (await listLocalGameCardContentFiles(card.id)).map(contentFileToWorkspaceFile),
+    ] as const))
+    uploadCards.value = allCards
+    localCards.value = activeCard
+    cardFilesById.value = Object.fromEntries(filesEntries)
+    assistantFiles.value = await loadLocalAssistantFiles()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "读取本地资源失败。"
+  } finally {
+    localResourcesLoading.value = false
+  }
+}
+
+async function loadInstallResources(): Promise<void> {
+  localResourcesLoading.value = true
+  try {
+    const cards = activeInstallTargetCards(await getPlatformActiveGameCard())
     const filesEntries = await Promise.all(cards.map(async (card) => [
       card.id,
       (await listLocalGameCardContentFiles(card.id)).map(contentFileToWorkspaceFile),
@@ -394,6 +401,98 @@ async function loadLocalResources(options: { installMode?: boolean } = {}): Prom
   } finally {
     localResourcesLoading.value = false
   }
+}
+
+async function handlePrepareUpload(selection: MarketUploadSelectionPayload): Promise<void> {
+  if (uploading.value) {
+    return
+  }
+  const defaults = uploadMetadataDefaults(selection)
+  const values = await openDialogForm({
+    title: `上传资源：${defaults.title || uploadTypeLabel(selection.resourceType)}`,
+    widthClass: "max-w-md",
+    confirmText: "确认上传",
+    fields: [
+      { name: "title", label: "标题（可选）", type: "text", defaultValue: defaults.title ?? "", placeholder: "资源标题" },
+      { name: "version", label: "版本（可选）", type: "text", defaultValue: defaults.version ?? "", placeholder: "0.1.0", mono: true },
+      { name: "author", label: "作者（可选）", type: "text", defaultValue: defaults.author ?? "", placeholder: "作者名" },
+      { name: "summary", label: "简介（可选）", type: "textarea", rows: 3, defaultValue: defaults.summary ?? "", placeholder: "资源简介" },
+      { name: "tags", label: "Tags（可选，逗号分隔）", type: "text", defaultValue: defaults.tags ?? "", placeholder: "tool, narrative", mono: true },
+    ],
+  })
+  if (!values) {
+    return
+  }
+  await handleUpload({
+    ...selection,
+    title: optionalFormValue(values.title),
+    summary: optionalFormValue(values.summary),
+    author: optionalFormValue(values.author),
+    version: optionalFormValue(values.version),
+    tags: optionalFormValue(values.tags),
+  })
+}
+
+function uploadMetadataDefaults(selection: MarketUploadSelectionPayload): MarketUploadMetadata {
+  if (selection.resourceType === "game_card") {
+    const card = uploadCards.value.find((candidate) => candidate.id === selection.cardId)
+    return {
+      title: card?.manifest.name ?? "",
+      summary: card?.manifest.summary ?? "",
+      author: card?.manifest.author?.name ?? "",
+      version: card?.manifest.version ?? "",
+    }
+  }
+  if (selection.resourceType === "agent") {
+    const option = agentUploadOptions.value.find((candidate) => sameAgentSource(candidate.source, selection.source))
+    return {
+      title: option?.label ?? "",
+      summary: option?.summary ?? "",
+      version: "0.1.0",
+    }
+  }
+  const option = skillUploadOptions.value.find((candidate) => sameSkillSource(candidate.source, selection.source))
+  return {
+    title: option?.label ?? "",
+    summary: option?.summary ?? "",
+    version: "0.1.0",
+  }
+}
+
+function sameAgentSource(left: AgentUploadOption["source"], right: AgentUploadOption["source"]): boolean {
+  switch (left.kind) {
+    case "assistant":
+      return right.kind === "assistant"
+    case "card-agent":
+      return right.kind === "card-agent" && left.cardId === right.cardId && left.agentId === right.agentId
+  }
+}
+
+function sameSkillSource(left: SkillUploadOption["source"], right: SkillUploadOption["source"]): boolean {
+  switch (left.kind) {
+    case "assistant-local":
+      return right.kind === "assistant-local" && left.skillId === right.skillId && left.skillPath === right.skillPath
+    case "agent-local":
+      return right.kind === "agent-local"
+        && left.cardId === right.cardId
+        && left.agentId === right.agentId
+        && left.skillId === right.skillId
+        && left.skillPath === right.skillPath
+    case "card-shared":
+      return right.kind === "card-shared"
+        && left.cardId === right.cardId
+        && left.skillId === right.skillId
+        && left.skillPath === right.skillPath
+  }
+}
+
+function optionalFormValue(value: string | undefined): string | undefined {
+  const trimmed = value?.trim() ?? ""
+  return trimmed || undefined
+}
+
+function uploadTypeLabel(type: MarketResourceType): string {
+  return resourceTypeOptions.find((option) => option.type === type)?.label ?? "资源"
 }
 
 async function handleUpload(payload: MarketUploadSubmitPayload): Promise<void> {
@@ -437,7 +536,7 @@ async function handleDownloadInstall(pkg: MarketPackage): Promise<void> {
 
     const blob = await marketApi.download(pkg.id)
     const inspection = await inspectResourcePackage(blob)
-    await loadLocalResources({ installMode: true })
+    await loadInstallResources()
     pendingInstallBlob.value = blob
     installDialog.value = {
       pkg,
@@ -574,36 +673,11 @@ async function handleInstallTargetSelected(option: MarketInstallTargetOption): P
     feedback.value = "资源已安装。"
     installDialog.value = null
     pendingInstallBlob.value = null
-    await loadLocalResources({ installMode: true })
+    await loadInstallResources()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "安装资源失败。"
   } finally {
     installing.value = false
-  }
-}
-
-function openPackagePicker(): void {
-  packageInput.value?.click()
-}
-
-async function handlePackageSelected(event: Event): Promise<void> {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  input.value = ""
-  if (!file) {
-    return
-  }
-  importing.value = true
-  feedback.value = ""
-  errorMessage.value = ""
-  try {
-    const imported = await importPlatformGameCardPackage(file)
-    feedback.value = `已安装：${getGameCardTitle(imported)}`
-    toast.success(`已导入：${getGameCardTitle(imported)}`)
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "安装游戏卡包失败。"
-  } finally {
-    importing.value = false
   }
 }
 
@@ -625,6 +699,19 @@ function activeInstallTargetCards(card: LocalGameCardView | null): LocalGameCard
     return []
   }
   return [card]
+}
+
+function cardsById(cards: LocalGameCardView[]): LocalGameCardView[] {
+  const seen = new Set<string>()
+  const unique: LocalGameCardView[] = []
+  for (const card of cards) {
+    if (seen.has(card.id)) {
+      continue
+    }
+    seen.add(card.id)
+    unique.push(card)
+  }
+  return unique
 }
 
 function contentFileToWorkspaceFile(file: { path: string; content: string; data?: Blob; createdAt: number; updatedAt: number }): WorkspaceFile {

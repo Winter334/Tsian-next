@@ -1,42 +1,42 @@
 <template>
-  <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+  <div class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
     <button
       v-for="pkg in packages"
       :key="pkg.id"
       type="button"
-      class="retro-focus selection-tile grid gap-2 border p-3 text-left"
+      class="retro-focus selection-tile group relative aspect-[4/5] w-full overflow-hidden border border-neon-deep/40 transition-shadow group-hover:shadow-neon-glow"
       @click="$emit('open', pkg.id)"
     >
-      <div class="flex gap-3">
-        <div class="grid h-16 w-16 shrink-0 place-items-center overflow-hidden border border-neon-deep/30 bg-panel">
-          <img
-            v-if="pkg.coverUrl"
-            :src="pkg.coverUrl"
-            :alt="pkg.name"
-            class="h-full w-full object-cover"
-          />
-          <span v-else class="text-lg font-bold text-neon">{{ pkg.name.charAt(0).toUpperCase() }}</span>
-        </div>
-        <div class="min-w-0 flex-1">
-          <h3 class="truncate text-sm font-bold text-text-main">{{ pkg.name }}</h3>
-          <p class="mt-0.5 line-clamp-2 text-xs text-text-dim">{{ pkg.summary }}</p>
-        </div>
+      <img
+        v-if="pkg.coverUrl"
+        :src="pkg.coverUrl"
+        :alt="pkg.name"
+        class="absolute inset-0 h-full w-full object-cover"
+      />
+      <div v-else :class="visual(pkg.resourceType).coverClass" class="absolute inset-0 grid place-items-center">
+        <component :is="visual(pkg.resourceType).icon" class="h-12 w-12 text-text-main/70" aria-hidden="true" />
       </div>
-      <div class="flex items-center justify-between border-t border-neon-deep/20 pt-2 font-mono text-[10px] text-text-dim">
-        <span class="truncate">{{ pkg.resourceAuthor || "未知作者" }}</span>
-        <span class="flex items-center gap-1">
-          <Download class="h-3 w-3" aria-hidden="true" />
-          {{ pkg.downloadCount }}
-        </span>
-      </div>
-      <div v-if="pkg.tags.length > 0" class="flex flex-wrap gap-1">
-        <span
-          v-for="tag in pkg.tags"
-          :key="tag"
-          class="border border-neon-deep/30 px-1.5 py-0.5 font-mono text-[10px] text-text-dim"
-        >
-          #{{ tag }}
-        </span>
+      <div class="pointer-events-none absolute inset-0 bg-noise opacity-30 mix-blend-overlay" aria-hidden="true" />
+
+      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/85 to-transparent p-3">
+        <h3 class="truncate text-sm font-bold text-text-main">{{ pkg.name }}</h3>
+        <p class="mt-0.5 truncate text-[11px] leading-4 text-text-dim/90">{{ pkg.summary }}</p>
+        <div class="mt-1.5 flex items-center justify-between font-mono text-[10px] text-text-dim">
+          <span class="truncate">{{ pkg.resourceAuthor || "未知作者" }}</span>
+          <span class="flex shrink-0 items-center gap-1">
+            <Download class="h-3 w-3" aria-hidden="true" />
+            {{ pkg.downloadCount }}
+          </span>
+        </div>
+        <div v-if="pkg.tags.length > 0" class="mt-1.5 flex flex-wrap gap-1">
+          <span
+            v-for="tag in pkg.tags"
+            :key="tag"
+            class="border border-neon-deep/30 bg-neon/10 px-1.5 py-0.5 font-mono text-[10px] text-neon-muted transition-colors hover:text-neon"
+          >
+            #{{ tag }}
+          </span>
+        </div>
       </div>
     </button>
   </div>
@@ -45,6 +45,7 @@
 <script setup lang="ts">
 import type { MarketPackage } from "@tsian/contracts"
 import { Download } from "lucide-vue-next"
+import { getResourceTypeVisual } from "./resource-type-visual"
 
 defineProps<{
   packages: MarketPackage[]
@@ -53,4 +54,8 @@ defineProps<{
 defineEmits<{
   open: [id: string]
 }>()
+
+function visual(type: MarketPackage["resourceType"]) {
+  return getResourceTypeVisual(type)
+}
 </script>

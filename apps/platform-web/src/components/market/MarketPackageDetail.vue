@@ -1,51 +1,58 @@
 <template>
   <div class="grid gap-4">
-    <div class="flex gap-4">
-      <div class="grid h-24 w-24 shrink-0 place-items-center overflow-hidden border border-neon-deep/30 bg-panel">
-        <img
-          v-if="pkg.coverUrl"
-          :src="pkg.coverUrl"
-          :alt="pkg.name"
-          class="h-full w-full object-cover"
-        />
-        <span v-else class="text-2xl font-bold text-neon">{{ pkg.name.charAt(0).toUpperCase() }}</span>
+    <div class="retro-inset relative aspect-[16/9] overflow-hidden">
+      <img
+        v-if="pkg.coverUrl"
+        :src="pkg.coverUrl"
+        :alt="pkg.name"
+        class="absolute inset-0 h-full w-full object-cover"
+      />
+      <div v-else :class="visual.coverClass" class="absolute inset-0 grid place-items-center">
+        <component :is="visual.icon" class="h-20 w-20 text-text-main/60" aria-hidden="true" />
       </div>
-      <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h2 class="text-lg font-bold text-text-main">{{ pkg.name }}</h2>
-            <p class="mt-1 text-sm text-text-dim">{{ pkg.summary }}</p>
-          </div>
-          <span class="border border-neon-deep/40 px-2 py-1 font-mono text-[10px] text-text-dim">
-            {{ resourceLabel }}
-          </span>
-        </div>
-        <div class="mt-3 flex flex-wrap items-center gap-3 font-mono text-[11px] text-text-dim">
-          <span class="flex items-center gap-1">
-            <PenLine class="h-3.5 w-3.5" aria-hidden="true" />
-            {{ pkg.resourceAuthor || "未知作者" }}
-          </span>
-          <span v-if="pkg.resourceVersion" class="flex items-center gap-1">
-            <Tag class="h-3.5 w-3.5" aria-hidden="true" />
-            v{{ pkg.resourceVersion }}
-          </span>
-          <span class="flex items-center gap-1">
-            <Download class="h-3.5 w-3.5" aria-hidden="true" />
-            {{ pkg.downloadCount }} 次下载
-          </span>
-          <span>{{ formatDate(pkg.createdAt) }}</span>
-        </div>
-        <div v-if="pkg.tags.length > 0" class="mt-3 flex flex-wrap gap-1">
+      <div class="pointer-events-none absolute inset-0 bg-noise opacity-30 mix-blend-overlay" aria-hidden="true" />
+
+      <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/86 to-transparent p-5">
+        <div class="max-w-3xl">
           <span
-            v-for="tag in pkg.tags"
-            :key="tag"
-            class="border border-neon-deep/30 px-1.5 py-0.5 font-mono text-[10px] text-text-dim"
+            :class="visual.accentClass"
+            class="inline-flex items-center gap-1 border bg-void/60 px-2 py-1 font-mono text-[10px] uppercase tracking-wider"
           >
-            #{{ tag }}
+            <component :is="visual.icon" class="h-3 w-3" aria-hidden="true" />
+            {{ visual.label }}
           </span>
+          <h1 class="mt-2 text-2xl font-black leading-tight text-text-main md:text-3xl">{{ pkg.name }}</h1>
+          <p class="mt-2 max-w-2xl text-sm leading-6 text-text-main/90">{{ pkg.summary }}</p>
         </div>
       </div>
     </div>
+
+    <div class="flex flex-wrap items-center gap-3 font-mono text-[11px] text-text-dim">
+      <span class="flex items-center gap-1">
+        <PenLine class="h-3.5 w-3.5" aria-hidden="true" />
+        {{ pkg.resourceAuthor || "未知作者" }}
+      </span>
+      <span v-if="pkg.resourceVersion" class="flex items-center gap-1">
+        <Tag class="h-3.5 w-3.5" aria-hidden="true" />
+        v{{ pkg.resourceVersion }}
+      </span>
+      <span class="flex items-center gap-1">
+        <Download class="h-3.5 w-3.5" aria-hidden="true" />
+        {{ pkg.downloadCount }} 次下载
+      </span>
+      <span>{{ formatDate(pkg.createdAt) }}</span>
+    </div>
+
+    <div v-if="pkg.tags.length > 0" class="flex flex-wrap gap-1">
+      <span
+        v-for="tag in pkg.tags"
+        :key="tag"
+        class="border border-neon-deep/30 bg-neon/10 px-1.5 py-0.5 font-mono text-[10px] text-neon-muted transition-colors hover:text-neon"
+      >
+        #{{ tag }}
+      </span>
+    </div>
+
     <button
       type="button"
       class="retro-button retro-focus inline-flex h-9 items-center justify-center gap-2 px-4 font-mono text-xs"
@@ -62,6 +69,7 @@
 import type { MarketPackage } from "@tsian/contracts"
 import { computed } from "vue"
 import { Download, PenLine, Tag } from "lucide-vue-next"
+import { getResourceTypeVisual } from "./resource-type-visual"
 
 const props = defineProps<{
   pkg: MarketPackage
@@ -72,17 +80,7 @@ defineEmits<{
   install: [pkg: MarketPackage]
 }>()
 
-const resourceLabel = computed(() => {
-  switch (props.pkg.resourceType) {
-    case "agent":
-      return "Agent"
-    case "skill":
-      return "Skill"
-    case "game_card":
-    default:
-      return "游戏卡"
-  }
-})
+const visual = computed(() => getResourceTypeVisual(props.pkg.resourceType))
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("zh-CN", {

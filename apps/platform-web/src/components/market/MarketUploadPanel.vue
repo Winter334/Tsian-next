@@ -9,11 +9,14 @@
           type="button"
           class="retro-focus grid gap-1 border p-3 text-left font-mono text-xs"
           :class="uploadType === option.type
-            ? 'border-neon bg-neon/10 text-neon'
+            ? [option.accentClass, 'bg-neon/10']
             : 'border-neon-deep/35 bg-elevated/60 text-text-dim hover:text-text-main'"
           @click="selectUploadType(option.type)"
         >
-          <span class="font-bold">{{ option.label }}</span>
+          <span class="flex items-center gap-1.5 font-bold">
+            <component :is="option.icon" class="h-3.5 w-3.5" aria-hidden="true" />
+            {{ option.label }}
+          </span>
           <span class="text-[10px] opacity-75">{{ option.description }}</span>
         </button>
       </div>
@@ -23,125 +26,92 @@
       <p class="font-mono text-xs text-text-dim">读取本地资源…</p>
     </div>
     <div v-else class="grid gap-3">
+      <p class="font-mono text-[11px] text-text-dim">选择一个本地资源后填写上传信息。</p>
+
       <template v-if="uploadType === 'game_card'">
         <p v-if="cards.length === 0" class="text-sm text-text-dim">本地没有可上传的游戏卡。</p>
-        <button
-          v-for="card in cards"
-          :key="card.id"
-          type="button"
-          class="retro-focus selection-tile grid gap-2 border p-3 text-left"
-          :class="{ 'selection-tile--active': selectedCardId === card.id }"
-          @click="selectCard(card.id)"
-        >
-          <div class="flex gap-3">
-            <div class="grid h-12 w-12 shrink-0 place-items-center overflow-hidden border border-neon-deep/30 bg-panel">
-              <img
-                v-if="getGameCardCoverUrl(card)"
-                :src="getGameCardCoverUrl(card) ?? ''"
-                :alt="card.manifest.name || ''"
-                class="h-full w-full object-cover"
-              />
-              <span v-else class="text-sm font-bold text-neon">{{ (card.manifest.name || '?').charAt(0).toUpperCase() }}</span>
+        <div v-else class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          <button
+            v-for="card in cards"
+            :key="card.id"
+            type="button"
+            class="retro-focus selection-tile group relative aspect-[4/5] w-full overflow-hidden border border-neon-deep/40 transition-shadow group-hover:shadow-neon-glow disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="uploading"
+            @click="selectCard(card.id)"
+          >
+            <img
+              v-if="getGameCardCoverUrl(card)"
+              :src="getGameCardCoverUrl(card) ?? ''"
+              :alt="card.manifest.name || ''"
+              class="absolute inset-0 h-full w-full object-cover"
+            />
+            <div v-else :class="gameCardVisual.coverClass" class="absolute inset-0 grid place-items-center">
+              <component :is="gameCardVisual.icon" class="h-10 w-10 text-text-main/70" aria-hidden="true" />
             </div>
-            <div class="min-w-0 flex-1">
-              <h3 class="truncate text-sm font-bold text-text-main">{{ card.manifest.name || "未命名" }}</h3>
-              <p class="mt-0.5 line-clamp-1 text-xs text-text-dim">{{ card.manifest.summary || "暂无简介" }}</p>
-              <p class="mt-0.5 font-mono text-[10px] text-text-dim">v{{ card.manifest.version }}</p>
+            <div class="pointer-events-none absolute inset-0 bg-noise opacity-30 mix-blend-overlay" aria-hidden="true" />
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/85 to-transparent p-2.5">
+              <h3 class="truncate text-xs font-bold text-text-main">{{ card.manifest.name || "未命名" }}</h3>
+              <p class="mt-0.5 truncate text-[10px] leading-3.5 text-text-dim/90">{{ card.manifest.summary || "暂无简介" }}</p>
+              <div class="mt-1 flex items-center justify-between font-mono text-[10px] text-text-dim">
+                <span class="truncate">v{{ card.manifest.version }}</span>
+                <span class="truncate">{{ card.manifest.author?.name || "未知作者" }}</span>
+              </div>
             </div>
-          </div>
-        </button>
+          </button>
+        </div>
       </template>
 
       <template v-else-if="uploadType === 'agent'">
-        <p v-if="agentOptions.length === 0" class="text-sm text-text-dim">没有可上传的 Agent。</p>
-        <button
-          v-for="option in agentOptions"
-          :key="option.key"
-          type="button"
-          class="retro-focus selection-tile grid gap-1 border p-3 text-left"
-          :class="{ 'selection-tile--active': selectedAgentKey === option.key }"
-          @click="selectAgent(option.key)"
-        >
-          <span class="text-sm font-bold text-text-main">{{ option.label }}</span>
-          <span class="text-xs text-text-dim">{{ option.summary || '暂无简介' }}</span>
-          <span class="font-mono text-[10px] text-text-dim">{{ option.resourceId }}</span>
-        </button>
+        <p v-if="agentOptions.length === 0" class="text-sm text-text-dim">当前加载卡没有可上传的 Agent。</p>
+        <div v-else class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          <button
+            v-for="option in agentOptions"
+            :key="option.key"
+            type="button"
+            class="retro-focus selection-tile group relative aspect-[4/5] w-full overflow-hidden border border-neon-deep/40 transition-shadow group-hover:shadow-neon-glow disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="uploading"
+            @click="selectAgent(option.key)"
+          >
+            <div :class="agentVisual.coverClass" class="absolute inset-0 grid place-items-center">
+              <component :is="agentVisual.icon" class="h-10 w-10 text-text-main/70" aria-hidden="true" />
+            </div>
+            <div class="pointer-events-none absolute inset-0 bg-noise opacity-30 mix-blend-overlay" aria-hidden="true" />
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/85 to-transparent p-2.5">
+              <h3 class="truncate text-xs font-bold text-text-main">{{ option.label }}</h3>
+              <p class="mt-0.5 truncate text-[10px] leading-3.5 text-text-dim/90">{{ option.summary || '暂无简介' }}</p>
+              <div class="mt-1 font-mono text-[10px] text-text-dim">
+                <span class="truncate">{{ option.resourceId }}</span>
+              </div>
+            </div>
+          </button>
+        </div>
       </template>
 
       <template v-else>
-        <p v-if="skillOptions.length === 0" class="text-sm text-text-dim">没有可上传的 Skill。</p>
-        <button
-          v-for="option in skillOptions"
-          :key="option.key"
-          type="button"
-          class="retro-focus selection-tile grid gap-1 border p-3 text-left"
-          :class="{ 'selection-tile--active': selectedSkillKey === option.key }"
-          @click="selectSkill(option.key)"
-        >
-          <span class="text-sm font-bold text-text-main">{{ option.label }}</span>
-          <span class="text-xs text-text-dim">{{ option.summary || '暂无简介' }}</span>
-          <span class="font-mono text-[10px] text-text-dim">{{ option.resourceId }}</span>
-        </button>
-      </template>
-
-      <div v-if="hasSelection" class="grid gap-3 border-t border-neon-deep/20 pt-3">
-        <div class="grid gap-3 sm:grid-cols-2">
-          <label class="grid gap-1">
-            <span class="font-mono text-[10px] text-text-dim">标题（可选）</span>
-            <input
-              v-model="title"
-              type="text"
-              class="retro-focus retro-select-surface border border-neon-deep/45 bg-elevated px-2 py-1 font-mono text-xs text-text-main"
-              placeholder="资源标题"
-            />
-          </label>
-          <label class="grid gap-1">
-            <span class="font-mono text-[10px] text-text-dim">版本（可选）</span>
-            <input
-              v-model="version"
-              type="text"
-              class="retro-focus retro-select-surface border border-neon-deep/45 bg-elevated px-2 py-1 font-mono text-xs text-text-main"
-              placeholder="0.1.0"
-            />
-          </label>
+        <p v-if="skillOptions.length === 0" class="text-sm text-text-dim">当前加载卡没有可上传的 Skill。</p>
+        <div v-else class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          <button
+            v-for="option in skillOptions"
+            :key="option.key"
+            type="button"
+            class="retro-focus selection-tile group relative aspect-[4/5] w-full overflow-hidden border border-neon-deep/40 transition-shadow group-hover:shadow-neon-glow disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="uploading"
+            @click="selectSkill(option.key)"
+          >
+            <div :class="skillVisual.coverClass" class="absolute inset-0 grid place-items-center">
+              <component :is="skillVisual.icon" class="h-10 w-10 text-text-main/70" aria-hidden="true" />
+            </div>
+            <div class="pointer-events-none absolute inset-0 bg-noise opacity-30 mix-blend-overlay" aria-hidden="true" />
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/85 to-transparent p-2.5">
+              <h3 class="truncate text-xs font-bold text-text-main">{{ option.label }}</h3>
+              <p class="mt-0.5 truncate text-[10px] leading-3.5 text-text-dim/90">{{ option.summary || '暂无简介' }}</p>
+              <div class="mt-1 font-mono text-[10px] text-text-dim">
+                <span class="truncate">{{ option.resourceId }}</span>
+              </div>
+            </div>
+          </button>
         </div>
-        <label class="grid gap-1">
-          <span class="font-mono text-[10px] text-text-dim">作者（可选）</span>
-          <input
-            v-model="author"
-            type="text"
-            class="retro-focus retro-select-surface border border-neon-deep/45 bg-elevated px-2 py-1 font-mono text-xs text-text-main"
-            placeholder="作者名"
-          />
-        </label>
-        <label class="grid gap-1">
-          <span class="font-mono text-[10px] text-text-dim">简介（可选）</span>
-          <textarea
-            v-model="summary"
-            rows="2"
-            class="retro-focus retro-select-surface border border-neon-deep/45 bg-elevated px-2 py-1 font-mono text-xs text-text-main"
-            placeholder="资源简介"
-          />
-        </label>
-        <label class="grid gap-1">
-          <span class="font-mono text-[10px] text-text-dim">Tags（可选，逗号分隔）</span>
-          <input
-            v-model="tags"
-            type="text"
-            class="retro-focus retro-select-surface border border-neon-deep/45 bg-elevated px-2 py-1 font-mono text-xs text-text-main"
-            placeholder="tool, narrative"
-          />
-        </label>
-        <button
-          type="button"
-          class="retro-button retro-focus inline-flex h-9 items-center justify-center gap-2 px-4 font-mono text-xs"
-          :disabled="uploading"
-          @click="submit"
-        >
-          <Upload class="h-3.5 w-3.5" aria-hidden="true" />
-          {{ uploading ? "上传中…" : "确认上传" }}
-        </button>
-      </div>
+      </template>
     </div>
   </div>
 </template>
@@ -149,13 +119,13 @@
 <script setup lang="ts">
 import type { MarketResourceType } from "@tsian/contracts"
 import type { LocalGameCardView } from "@/storage/game-cards"
-import { computed, ref, watch } from "vue"
-import { Upload } from "lucide-vue-next"
+import { ref, watch } from "vue"
 import { getGameCardCoverUrl } from "@/lib/game-card-display"
+import { getResourceTypeVisual } from "./resource-type-visual"
 import type {
   AgentUploadOption,
   MarketResourceTypeOption,
-  MarketUploadSubmitPayload,
+  MarketUploadSelectionPayload,
   SkillUploadOption,
 } from "./types"
 
@@ -170,91 +140,38 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  submit: [payload: MarketUploadSubmitPayload]
+  "prepare-upload": [payload: MarketUploadSelectionPayload]
 }>()
 
 const uploadType = ref<MarketResourceType>(props.initialType)
-const selectedCardId = ref("")
-const selectedAgentKey = ref("")
-const selectedSkillKey = ref("")
-const title = ref("")
-const summary = ref("")
-const author = ref("")
-const version = ref("")
-const tags = ref("")
 
-const selectedAgent = computed(() => props.agentOptions.find((option) => option.key === selectedAgentKey.value) ?? null)
-const selectedSkill = computed(() => props.skillOptions.find((option) => option.key === selectedSkillKey.value) ?? null)
-const hasSelection = computed(() => {
-  if (uploadType.value === "game_card") return Boolean(selectedCardId.value)
-  if (uploadType.value === "agent") return Boolean(selectedAgent.value)
-  return Boolean(selectedSkill.value)
-})
+const gameCardVisual = getResourceTypeVisual("game_card")
+const agentVisual = getResourceTypeVisual("agent")
+const skillVisual = getResourceTypeVisual("skill")
 
 watch(() => props.initialType, (value) => {
   uploadType.value = value
-  clearSelection()
 })
 
 function selectUploadType(type: MarketResourceType): void {
   uploadType.value = type
-  clearSelection()
-}
-
-function clearSelection(): void {
-  selectedCardId.value = ""
-  selectedAgentKey.value = ""
-  selectedSkillKey.value = ""
-  title.value = ""
-  summary.value = ""
-  author.value = ""
-  version.value = ""
-  tags.value = ""
 }
 
 function selectCard(cardId: string): void {
-  selectedCardId.value = cardId
-  const card = props.cards.find((candidate) => candidate.id === cardId)
-  title.value = card?.manifest.name ?? ""
-  summary.value = card?.manifest.summary ?? ""
-  author.value = card?.manifest.author?.name ?? ""
-  version.value = card?.manifest.version ?? ""
+  emit("prepare-upload", { resourceType: "game_card", cardId })
 }
 
 function selectAgent(key: string): void {
-  selectedAgentKey.value = key
-  const option = selectedAgent.value
-  title.value = option?.label ?? ""
-  summary.value = option?.summary ?? ""
-  version.value = "0.1.0"
+  const option = props.agentOptions.find((candidate) => candidate.key === key)
+  if (option) {
+    emit("prepare-upload", { resourceType: "agent", source: option.source })
+  }
 }
 
 function selectSkill(key: string): void {
-  selectedSkillKey.value = key
-  const option = selectedSkill.value
-  title.value = option?.label ?? ""
-  summary.value = option?.summary ?? ""
-  version.value = "0.1.0"
-}
-
-function submit(): void {
-  const common = {
-    title: title.value || undefined,
-    summary: summary.value || undefined,
-    author: author.value || undefined,
-    version: version.value || undefined,
-    tags: tags.value || undefined,
-  }
-  if (uploadType.value === "game_card" && selectedCardId.value) {
-    emit("submit", { resourceType: "game_card", cardId: selectedCardId.value, ...common })
-    return
-  }
-  if (uploadType.value === "agent" && selectedAgent.value) {
-    emit("submit", { resourceType: "agent", source: selectedAgent.value.source, ...common })
-    return
-  }
-  if (uploadType.value === "skill" && selectedSkill.value) {
-    emit("submit", { resourceType: "skill", source: selectedSkill.value.source, ...common })
+  const option = props.skillOptions.find((candidate) => candidate.key === key)
+  if (option) {
+    emit("prepare-upload", { resourceType: "skill", source: option.source })
   }
 }
 </script>
