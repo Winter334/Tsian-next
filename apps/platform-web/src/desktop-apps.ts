@@ -93,12 +93,12 @@ const DebugView = defineAsyncComponent(() => import("./views/DebugView.vue"))
 const desktopApps: DesktopAppDefinition[] = [
   {
     appId: "market",
-    label: "应用市场",
-    shortLabel: "市场",
+    label: "创意工坊",
+    shortLabel: "工坊",
     routeName: "app-market",
     routePath: "/market",
-    title: "应用市场",
-    caption: "浏览与安装游戏卡",
+    title: "创意工坊",
+    caption: "分享与安装创意资源",
     icon: Store,
     component: AppMarketView,
     defaultWidth: 980,

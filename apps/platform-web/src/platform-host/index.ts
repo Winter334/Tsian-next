@@ -1342,6 +1342,7 @@ export {
   getPlatformStudioSkillDetail,
   writePlatformStudioAgentFile,
   updatePlatformStudioAgentSkillEnabled,
+  deletePlatformStudioSkill,
   updatePlatformStudioAgentPlatformToolEnabled,
   updatePlatformStudioAgentWorkspaceAccess,
   updatePlatformStudioAgentProviderPreset,
@@ -1349,6 +1350,7 @@ export {
   type PlatformStudioProviderPresetOption,
   type PlatformStudioAgentFileWriteInput,
   type PlatformStudioAgentSkillToggleInput,
+  type PlatformStudioAgentSkillDeleteInput,
   type PlatformStudioAgentPlatformToolToggleInput,
   type PlatformStudioAgentWorkspaceAccessInput,
   type PlatformStudioAgentProviderPresetInput,
@@ -1395,4 +1397,19 @@ export {
   type PlatformGameCardCopyInput,
   type PlatformGameCardDeleteResult,
 } from "./game-cards"
+export {
+  exportAgentPackage,
+  exportSkillPackage,
+  inspectResourcePackage,
+  installAgentPackage,
+  installSkillPackage,
+  replaceCardContentDirectory,
+  replaceAssistantDefinition,
+  replaceAssistantSkillDirectory,
+  type AgentPackageSource,
+  type SkillPackageSource,
+  type AgentInstallTarget,
+  type SkillInstallTarget,
+  type ResourcePackageInspection,
+} from "./resource-packages"
 export { getPlatformActiveGameCard, waitForPlatformHostReady }

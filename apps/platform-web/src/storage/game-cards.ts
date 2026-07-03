@@ -57,6 +57,11 @@ export interface LocalGameCardContentFile {
   updatedAt: number
 }
 
+export interface ReplaceLocalGameCardContentDirectoryFile {
+  relativePath: string
+  content: string
+}
+
 /**
  * Read view returned to consumers. Extends the DB row with an optional
  * preloaded cover content file, so sync render paths (getGameCardCoverUrl in
@@ -604,6 +609,60 @@ export async function deleteLocalGameCardContentPathForCard(
     },
   )
   return deleted.sort((left, right) => left.localeCompare(right))
+}
+
+export async function replaceLocalGameCardContentDirectory(
+  gameCardId: string,
+  directoryPath: string,
+  files: ReplaceLocalGameCardContentDirectoryFile[],
+): Promise<LocalGameCardContentFile[]> {
+  const id = gameCardId.trim()
+  if (!id) {
+    throw new Error("Game card id is required.")
+  }
+
+  const normalizedDirectory = normalizeWorkspaceFilePath(directoryPath)
+  assertNonReservedContentPath(normalizedDirectory)
+  const now = Date.now()
+  const existingRecords = await localDb.gameCardContentFiles
+    .where("gameCardId")
+    .equals(id)
+    .toArray()
+  const recordsByPath = new Map<string, LocalGameCardContentFileRecord>()
+  for (const file of files) {
+    const relativePath = normalizePackageFilePath(file.relativePath, "content file path")
+    const path = `${normalizedDirectory}/${relativePath}`
+    assertNonReservedContentPath(path)
+    recordsByPath.set(path, {
+      id: gameCardContentFileId(id, path),
+      gameCardId: id,
+      path,
+      content: file.content,
+      createdAt: existingRecords.find((record) => record.path === path)?.createdAt ?? now,
+      updatedAt: now,
+    })
+  }
+  const writtenRecords = Array.from(recordsByPath.values())
+
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardContentFiles, localDb.gameCards],
+    async () => {
+      for (const record of existingRecords) {
+        if (record.path === normalizedDirectory || record.path.startsWith(`${normalizedDirectory}/`)) {
+          await localDb.gameCardContentFiles.delete(record.id)
+        }
+      }
+      for (const record of writtenRecords) {
+        await localDb.gameCardContentFiles.put(record)
+      }
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+
+  return writtenRecords
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map(cloneGameCardContentFileRecord)
 }
 
 function cloneGameCardContentFileRecord(

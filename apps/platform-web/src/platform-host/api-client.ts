@@ -1,4 +1,4 @@
-import type { MarketPackage, User } from "@tsian/contracts"
+import type { MarketPackage, MarketResourceType, User } from "@tsian/contracts"
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "")
 
@@ -66,10 +66,21 @@ export const authApi = {
 }
 
 export const marketApi = {
-  async list(params?: { q?: string; sort?: "newest" | "downloads" }): Promise<MarketPackage[]> {
+  async list(params?: {
+    resourceType?: MarketResourceType
+    q?: string
+    tag?: string
+    sort?: "newest" | "downloads"
+  }): Promise<MarketPackage[]> {
     const query = new URLSearchParams()
+    if (params?.resourceType) {
+      query.set("resourceType", params.resourceType)
+    }
     if (params?.q) {
       query.set("q", params.q)
+    }
+    if (params?.tag) {
+      query.set("tag", params.tag)
     }
     if (params?.sort) {
       query.set("sort", params.sort)
@@ -85,14 +96,31 @@ export const marketApi = {
     return apiFetch<MarketPackage>(`/api/v1/market/packages/${encodeURIComponent(id)}`)
   },
 
-  async upload(file: Blob, title?: string, summary?: string): Promise<MarketPackage> {
+  async upload(file: Blob, params: {
+    resourceType: MarketResourceType
+    title?: string
+    summary?: string
+    author?: string
+    version?: string
+    tags?: string
+  }): Promise<MarketPackage> {
     const form = new FormData()
-    form.append("file", file, "package.tsian-card.zip")
-    if (title) {
-      form.append("title", title)
+    form.append("file", file, marketUploadFileName(params.resourceType))
+    form.append("resourceType", params.resourceType)
+    if (params.title) {
+      form.append("title", params.title)
     }
-    if (summary) {
-      form.append("summary", summary)
+    if (params.summary) {
+      form.append("summary", params.summary)
+    }
+    if (params.author) {
+      form.append("author", params.author)
+    }
+    if (params.version) {
+      form.append("version", params.version)
+    }
+    if (params.tags) {
+      form.append("tags", params.tags)
     }
     const response = await fetch(`${API_BASE}/api/v1/market/packages`, {
       method: "POST",
@@ -117,4 +145,16 @@ export const marketApi = {
     }
     return response.blob()
   },
+}
+
+function marketUploadFileName(resourceType: MarketResourceType): string {
+  switch (resourceType) {
+    case "agent":
+      return "package.tsian-agent.zip"
+    case "skill":
+      return "package.tsian-skill.zip"
+    case "game_card":
+    default:
+      return "package.tsian-card.zip"
+  }
 }

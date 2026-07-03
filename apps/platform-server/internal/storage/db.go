@@ -69,8 +69,12 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			card_id TEXT NOT NULL,
 			card_author TEXT NOT NULL DEFAULT '',
 			card_version TEXT NOT NULL DEFAULT '',
+			resource_id TEXT NOT NULL DEFAULT '',
+			resource_author TEXT NOT NULL DEFAULT '',
+			resource_version TEXT NOT NULL DEFAULT '',
 			name TEXT NOT NULL,
 			summary TEXT NOT NULL,
+			tags TEXT NOT NULL DEFAULT '[]',
 			cover_blob_key TEXT,
 			uploader_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 			download_count INTEGER NOT NULL DEFAULT 0,
@@ -85,5 +89,75 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("migrate sqlite: %w", err)
 		}
 	}
+	if err := ensureMarketPackageColumns(ctx, db); err != nil {
+		return fmt.Errorf("migrate market packages: %w", err)
+	}
 	return nil
+}
+
+func ensureMarketPackageColumns(ctx context.Context, db *sql.DB) error {
+	columns, err := tableColumns(ctx, db, "market_packages")
+	if err != nil {
+		return err
+	}
+
+	addColumn := func(name, definition string) error {
+		if columns[name] {
+			return nil
+		}
+		if _, err := db.ExecContext(ctx, `ALTER TABLE market_packages ADD COLUMN `+definition); err != nil {
+			return fmt.Errorf("add market_packages.%s: %w", name, err)
+		}
+		columns[name] = true
+		return nil
+	}
+
+	if err := addColumn("resource_id", "resource_id TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumn("resource_author", "resource_author TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumn("resource_version", "resource_version TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := addColumn("tags", "tags TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+
+	_, err = db.ExecContext(ctx, `UPDATE market_packages
+		SET resource_id = CASE WHEN resource_id = '' THEN card_id ELSE resource_id END,
+			resource_author = CASE WHEN resource_author = '' THEN card_author ELSE resource_author END,
+			resource_version = CASE WHEN resource_version = '' THEN card_version ELSE resource_version END,
+			tags = CASE WHEN tags = '' THEN '[]' ELSE tags END`)
+	if err != nil {
+		return fmt.Errorf("backfill market package resource columns: %w", err)
+	}
+	return nil
+}
+
+func tableColumns(ctx context.Context, db *sql.DB, tableName string) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, `PRAGMA table_info(`+tableName+`)`)
+	if err != nil {
+		return nil, fmt.Errorf("inspect table %s: %w", tableName, err)
+	}
+	defer rows.Close()
+
+	columns := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name string
+		var dataType string
+		var notNull int
+		var defaultValue sql.NullString
+		var pk int
+		if err := rows.Scan(&cid, &name, &dataType, &notNull, &defaultValue, &pk); err != nil {
+			return nil, fmt.Errorf("scan table %s columns: %w", tableName, err)
+		}
+		columns[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate table %s columns: %w", tableName, err)
+	}
+	return columns, nil
 }

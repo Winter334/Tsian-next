@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"tsian/platform-server/internal/storage"
 	"tsian/platform-server/internal/user"
@@ -18,12 +20,14 @@ import (
 
 const maxUploadSize = 50 << 20 // 50 MB
 
+const resourcePackageSchema = "tsian.resource.package.v1"
+
 // packageManifestPayload mirrors GameCardPackageManifest — the top-level
 // object stored at game-card.json inside a .tsian-card.zip. The actual
 // GameCardManifest lives under its `manifest` field.
 type packageManifestPayload struct {
-	Schema    string                 `json:"schema"`
-	Manifest  manifestPayload        `json:"manifest"`
+	Schema   string          `json:"schema"`
+	Manifest manifestPayload `json:"manifest"`
 }
 
 // manifestPayload is the minimal subset of GameCardManifest needed for
@@ -31,13 +35,38 @@ type packageManifestPayload struct {
 // (Go) — the frontend's importGameCardPackage does full validation on
 // download-install; the server only guards against garbage uploads.
 type manifestPayload struct {
-	Schema   string `json:"schema"`
-	ID       string `json:"id"`
-	Name     string `json:"name"`
-	Version  string `json:"version"`
-	Summary  string `json:"summary"`
-	Author   *authorPayload `json:"author,omitempty"`
-	Cover    *coverPayload `json:"cover,omitempty"`
+	Schema  string         `json:"schema"`
+	ID      string         `json:"id"`
+	Name    string         `json:"name"`
+	Version string         `json:"version"`
+	Summary string         `json:"summary"`
+	Author  *authorPayload `json:"author,omitempty"`
+	Cover   *coverPayload  `json:"cover,omitempty"`
+}
+
+type resourcePackageManifest struct {
+	Schema       string                     `json:"schema"`
+	ResourceType string                     `json:"resourceType"`
+	ResourceID   string                     `json:"resourceId"`
+	Name         string                     `json:"name"`
+	Summary      string                     `json:"summary"`
+	Author       string                     `json:"author"`
+	Version      string                     `json:"version"`
+	Files        []resourcePackageFileEntry `json:"files"`
+}
+
+type resourcePackageFileEntry struct {
+	Path      string `json:"path"`
+	MediaType string `json:"mediaType,omitempty"`
+}
+
+type uploadManifest struct {
+	ResourceType    ResourceType
+	ResourceID      string
+	ResourceAuthor  string
+	ResourceVersion string
+	Name            string
+	Summary         string
 }
 
 type authorPayload struct {
@@ -46,22 +75,23 @@ type authorPayload struct {
 }
 
 type coverPayload struct {
-	URL          string `json:"url,omitempty"`
+	URL           string `json:"url,omitempty"`
 	WorkspacePath string `json:"workspacePath,omitempty"`
 }
 
 type packageResponse struct {
-	ID            string                 `json:"id"`
-	ResourceType  string                 `json:"resourceType"`
-	CardID        string                 `json:"cardId"`
-	CardAuthor    string                 `json:"cardAuthor"`
-	CardVersion   string                 `json:"cardVersion"`
-	Name          string                 `json:"name"`
-	Summary       string                 `json:"summary"`
-	CoverURL      *string                `json:"coverUrl"`
-	Uploader      uploaderResponse       `json:"uploader"`
-	DownloadCount int                    `json:"downloadCount"`
-	CreatedAt     string                 `json:"createdAt"`
+	ID              string           `json:"id"`
+	ResourceType    string           `json:"resourceType"`
+	ResourceID      string           `json:"resourceId"`
+	ResourceAuthor  string           `json:"resourceAuthor"`
+	ResourceVersion string           `json:"resourceVersion"`
+	Name            string           `json:"name"`
+	Summary         string           `json:"summary"`
+	Tags            []string         `json:"tags"`
+	CoverURL        *string          `json:"coverUrl"`
+	Uploader        uploaderResponse `json:"uploader"`
+	DownloadCount   int              `json:"downloadCount"`
+	CreatedAt       string           `json:"createdAt"`
 }
 
 type uploaderResponse struct {
@@ -84,9 +114,21 @@ func NewHandler(repo Repository, blobStore storage.BlobStore) *Handler {
 }
 
 func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
+	resourceType, err := parseOptionalResourceType(r.URL.Query().Get("resourceType"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
+	tag, err := normalizeTagQuery(r.URL.Query().Get("tag"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
 	filter := ListFilter{
-		Query: strings.TrimSpace(r.URL.Query().Get("q")),
-		Sort:  r.URL.Query().Get("sort"),
+		Query:        strings.TrimSpace(r.URL.Query().Get("q")),
+		Sort:         r.URL.Query().Get("sort"),
+		ResourceType: resourceType,
+		Tag:          tag,
 	}
 	items, err := h.repo.List(r.Context(), filter)
 	if err != nil {
@@ -138,6 +180,17 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer file.Close()
 
+	resourceType, err := parseUploadResourceType(r.FormValue("resourceType"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
+	tags, err := normalizeTags(r.FormValue("tags"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
+
 	// Read the upload into memory for dual use (manifest validation + blob storage).
 	// 50MB cap makes this safe.
 	content, err := io.ReadAll(file)
@@ -146,7 +199,7 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	manifest, err := validatePackageZip(content)
+	manifest, err := validateUploadZip(content, resourceType)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
 		return
@@ -164,9 +217,12 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract cover image from the zip's cover/ directory and store it.
-	// The frontend export places covers at cover/cover.<ext>.
-	coverBlobKey := extractAndStoreCover(r.Context(), h.blobStore, content, packageID)
+	coverBlobKey := ""
+	if resourceType == ResourceGameCard {
+		// Extract cover image from the zip's cover/ directory and store it.
+		// The frontend export places covers at cover/cover.<ext>.
+		coverBlobKey = extractAndStoreCover(r.Context(), h.blobStore, content, packageID)
+	}
 
 	// Title/summary form fields override manifest values if provided.
 	name := strings.TrimSpace(r.FormValue("title"))
@@ -177,17 +233,26 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	if summary == "" {
 		summary = manifest.Summary
 	}
+	resourceAuthor := strings.TrimSpace(r.FormValue("author"))
+	if resourceAuthor == "" {
+		resourceAuthor = manifest.ResourceAuthor
+	}
+	resourceVersion := strings.TrimSpace(r.FormValue("version"))
+	if resourceVersion == "" {
+		resourceVersion = manifest.ResourceVersion
+	}
 
 	pkg := Package{
-		ID:           packageID,
-		ResourceType: ResourceGameCard,
-		CardID:       manifest.ID,
-		CardAuthor:   authorName(manifest),
-		CardVersion:  manifest.Version,
-		Name:         name,
-		Summary:      summary,
-		CoverBlobKey: coverBlobKey,
-		UploaderID:   account.ID,
+		ID:              packageID,
+		ResourceType:    resourceType,
+		ResourceID:      manifest.ResourceID,
+		ResourceAuthor:  resourceAuthor,
+		ResourceVersion: resourceVersion,
+		Name:            name,
+		Summary:         summary,
+		Tags:            tags,
+		CoverBlobKey:    coverBlobKey,
+		UploaderID:      account.ID,
 	}
 	if err := h.repo.Create(r.Context(), pkg); err != nil {
 		// Best-effort cleanup the blobs we just wrote.
@@ -235,7 +300,7 @@ func (h *Handler) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	_ = h.repo.IncrementDownloadCount(r.Context(), id)
 
 	w.Header().Set("Content-Type", "application/zip")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.zip"`, pkg.CardID))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, downloadFileName(*pkg)))
 	if _, err := io.Copy(w, reader); err != nil {
 		// Client may have disconnected; nothing useful to do.
 		return
@@ -312,6 +377,39 @@ func extractAndStoreCover(ctx context.Context, store storage.BlobStore, zipConte
 	return ""
 }
 
+func validateUploadZip(content []byte, resourceType ResourceType) (*uploadManifest, error) {
+	switch resourceType {
+	case ResourceGameCard:
+		manifest, err := validatePackageZip(content)
+		if err != nil {
+			return nil, err
+		}
+		return &uploadManifest{
+			ResourceType:    ResourceGameCard,
+			ResourceID:      manifest.ID,
+			ResourceAuthor:  authorName(manifest),
+			ResourceVersion: manifest.Version,
+			Name:            manifest.Name,
+			Summary:         manifest.Summary,
+		}, nil
+	case ResourceAgent, ResourceSkill:
+		manifest, err := validateResourcePackageZip(content, resourceType)
+		if err != nil {
+			return nil, err
+		}
+		return &uploadManifest{
+			ResourceType:    resourceType,
+			ResourceID:      manifest.ResourceID,
+			ResourceAuthor:  manifest.Author,
+			ResourceVersion: manifest.Version,
+			Name:            manifest.Name,
+			Summary:         manifest.Summary,
+		}, nil
+	default:
+		return nil, fmt.Errorf("unsupported resource type: %s", resourceType)
+	}
+}
+
 // validatePackageZip reads the zip in memory and extracts + validates the
 // game-card.json manifest. It does NOT fully decompress all files — the
 // frontend's importGameCardPackage does complete validation on install.
@@ -372,21 +470,268 @@ func validatePackageZip(content []byte) (*manifestPayload, error) {
 	return &card, nil
 }
 
+func validateResourcePackageZip(content []byte, expectedType ResourceType) (*resourcePackageManifest, error) {
+	zipReader, err := zip.NewReader(bytes.NewReader(content), int64(len(content)))
+	if err != nil {
+		return nil, fmt.Errorf("invalid zip file: %w", err)
+	}
+
+	filesByPath := make(map[string]*zip.File)
+	var manifestFile *zip.File
+	for _, f := range zipReader.File {
+		normalizedPath, err := normalizeResourcePackagePath(f.Name)
+		if err != nil {
+			return nil, err
+		}
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		if normalizedPath == "resource-package.json" {
+			manifestFile = f
+			continue
+		}
+		filesByPath[normalizedPath] = f
+	}
+	if manifestFile == nil {
+		return nil, errors.New("missing resource-package.json manifest in package")
+	}
+
+	manifestBytes, err := readZipFile(manifestFile)
+	if err != nil {
+		return nil, fmt.Errorf("read resource manifest: %w", err)
+	}
+	var manifest resourcePackageManifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		return nil, fmt.Errorf("invalid resource manifest JSON: %w", err)
+	}
+	if manifest.Schema != resourcePackageSchema {
+		return nil, fmt.Errorf("unsupported resource package schema: %s", manifest.Schema)
+	}
+	if ResourceType(manifest.ResourceType) != expectedType {
+		return nil, fmt.Errorf("resource package type %q does not match upload type %q", manifest.ResourceType, expectedType)
+	}
+	resourceID, err := normalizeResourcePackageID(manifest.ResourceID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(manifest.Name) == "" {
+		return nil, errors.New("resource manifest missing name")
+	}
+	if strings.TrimSpace(manifest.Version) == "" {
+		return nil, errors.New("resource manifest missing version")
+	}
+	if strings.TrimSpace(manifest.Summary) == "" {
+		return nil, errors.New("resource manifest missing summary")
+	}
+	if len(manifest.Files) == 0 {
+		return nil, errors.New("resource manifest must list files")
+	}
+
+	listedPaths := make(map[string]bool, len(manifest.Files))
+	for _, entry := range manifest.Files {
+		path, err := normalizeResourcePackagePath(entry.Path)
+		if err != nil {
+			return nil, err
+		}
+		if path == "resource-package.json" {
+			return nil, errors.New("resource-package.json must not be listed as a resource file")
+		}
+		listedPaths[path] = true
+		file := filesByPath[path]
+		if file == nil {
+			return nil, fmt.Errorf("resource manifest lists missing file: %s", path)
+		}
+		data, err := readZipFile(file)
+		if err != nil {
+			return nil, fmt.Errorf("read resource file %s: %w", path, err)
+		}
+		if !utf8.Valid(data) {
+			return nil, fmt.Errorf("resource file %s is not valid UTF-8 text", path)
+		}
+	}
+	for path := range filesByPath {
+		if !listedPaths[path] {
+			return nil, fmt.Errorf("resource package contains file not listed in manifest: %s", path)
+		}
+	}
+
+	switch expectedType {
+	case ResourceAgent:
+		if !listedPaths["agent.json"] {
+			return nil, errors.New("agent package missing agent.json")
+		}
+		if !listedPaths["AGENT.md"] {
+			return nil, errors.New("agent package missing AGENT.md")
+		}
+	case ResourceSkill:
+		if !listedPaths["SKILL.md"] {
+			return nil, errors.New("skill package missing SKILL.md")
+		}
+	}
+
+	manifest.ResourceID = resourceID
+	manifest.Name = strings.TrimSpace(manifest.Name)
+	manifest.Summary = strings.TrimSpace(manifest.Summary)
+	manifest.Author = strings.TrimSpace(manifest.Author)
+	manifest.Version = strings.TrimSpace(manifest.Version)
+	return &manifest, nil
+}
+
+func readZipFile(file *zip.File) ([]byte, error) {
+	rc, err := file.Open()
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+	return io.ReadAll(rc)
+}
+
+func normalizeResourcePackagePath(value string) (string, error) {
+	raw := strings.TrimSpace(strings.ReplaceAll(value, "\\", "/"))
+	if raw == "" {
+		return "", errors.New("resource package path is required")
+	}
+	if strings.HasPrefix(raw, "/") || strings.Contains(raw, "\x00") {
+		return "", fmt.Errorf("unsafe resource package path: %s", raw)
+	}
+	parts := make([]string, 0)
+	for _, part := range strings.Split(raw, "/") {
+		if part == "" || part == "." {
+			continue
+		}
+		if part == ".." {
+			return "", fmt.Errorf("resource package path cannot contain '..': %s", raw)
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return "", errors.New("resource package path is required")
+	}
+	return strings.Join(parts, "/"), nil
+}
+
+func normalizeResourcePackageID(value string) (string, error) {
+	id, err := normalizeResourcePackagePath(value)
+	if err != nil {
+		return "", fmt.Errorf("invalid resourceId: %w", err)
+	}
+	if strings.Contains(id, "/") {
+		return "", fmt.Errorf("invalid resourceId %q: '/' is not allowed", value)
+	}
+	return id, nil
+}
+
+func parseUploadResourceType(value string) (ResourceType, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return ResourceGameCard, nil
+	}
+	return parseResourceType(trimmed)
+}
+
+func parseOptionalResourceType(value string) (ResourceType, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	return parseResourceType(trimmed)
+}
+
+func parseResourceType(value string) (ResourceType, error) {
+	switch ResourceType(value) {
+	case ResourceGameCard, ResourceAgent, ResourceSkill:
+		return ResourceType(value), nil
+	default:
+		return "", fmt.Errorf("unsupported resourceType: %s", value)
+	}
+}
+
+func normalizeTags(value string) ([]string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return []string{}, nil
+	}
+	var values []string
+	if strings.HasPrefix(trimmed, "[") {
+		if err := json.Unmarshal([]byte(trimmed), &values); err != nil {
+			return nil, fmt.Errorf("invalid tags JSON: %w", err)
+		}
+	} else {
+		values = strings.Split(trimmed, ",")
+	}
+	return normalizeTagValues(values)
+}
+
+func normalizeTagQuery(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", nil
+	}
+	tags, err := normalizeTagValues([]string{trimmed})
+	if err != nil {
+		return "", err
+	}
+	return tags[0], nil
+}
+
+func normalizeTagValues(values []string) ([]string, error) {
+	seen := map[string]bool{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		tag := strings.ToLower(strings.TrimSpace(value))
+		if tag == "" {
+			continue
+		}
+		if err := validateTag(tag); err != nil {
+			return nil, err
+		}
+		if seen[tag] {
+			continue
+		}
+		seen[tag] = true
+		result = append(result, tag)
+		if len(result) > 10 {
+			return nil, errors.New("tags can contain at most 10 items")
+		}
+	}
+	return result, nil
+}
+
+func validateTag(tag string) error {
+	length := 0
+	for _, r := range tag {
+		length++
+		if r == '-' || r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r) {
+			continue
+		}
+		return fmt.Errorf("invalid tag %q: only letters, numbers, '-' and '_' are allowed", tag)
+	}
+	if length == 0 || length > 32 {
+		return fmt.Errorf("invalid tag %q: length must be 1-32 characters", tag)
+	}
+	return nil
+}
+
 func toPackageResponse(item PackageWithUploader) packageResponse {
 	var coverURL *string
 	if item.CoverBlobKey != "" {
 		url := "/api/v1/market/packages/" + item.ID + "/cover"
 		coverURL = &url
 	}
+	tags := item.Tags
+	if tags == nil {
+		tags = []string{}
+	}
 	return packageResponse{
-		ID:           item.ID,
-		ResourceType: string(item.ResourceType),
-		CardID:       item.CardID,
-		CardAuthor:   item.CardAuthor,
-		CardVersion:  item.CardVersion,
-		Name:         item.Name,
-		Summary:      item.Summary,
-		CoverURL:     coverURL,
+		ID:              item.ID,
+		ResourceType:    string(item.ResourceType),
+		ResourceID:      item.ResourceID,
+		ResourceAuthor:  item.ResourceAuthor,
+		ResourceVersion: item.ResourceVersion,
+		Name:            item.Name,
+		Summary:         item.Summary,
+		Tags:            tags,
+		CoverURL:        coverURL,
 		Uploader: uploaderResponse{
 			ID:          item.UploaderID,
 			DisplayName: item.UploaderDisplayName,
@@ -402,6 +747,29 @@ func authorName(manifest *manifestPayload) string {
 		return manifest.Author.Name
 	}
 	return ""
+}
+
+func downloadFileName(pkg PackageWithUploader) string {
+	id := sanitizeDownloadName(pkg.ResourceID)
+	if id == "" {
+		id = pkg.ID
+	}
+	switch pkg.ResourceType {
+	case ResourceAgent:
+		return id + ".tsian-agent.zip"
+	case ResourceSkill:
+		return id + ".tsian-skill.zip"
+	default:
+		return id + ".tsian-card.zip"
+	}
+}
+
+func sanitizeDownloadName(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.ReplaceAll(value, "\\", "-")
+	value = strings.ReplaceAll(value, "/", "-")
+	value = strings.ReplaceAll(value, `"`, "")
+	return value
 }
 
 func coverContentType(ext string) string {

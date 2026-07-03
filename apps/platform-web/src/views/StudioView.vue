@@ -161,12 +161,24 @@
                       <span class="mt-1 block line-clamp-2 text-xs leading-5 text-text-dim">{{ entrySummary(skill.description || skill.summary) }}</span>
                       <span class="mt-2 block break-all font-mono text-[11px] text-neon-muted">{{ skill.path }}</span>
                     </span>
-                    <Switch
-                      :model-value="skillEnabled(skill)"
-                      :disabled="togglingSkillPath === skill.path"
-                      :aria-label="skill.title"
-                      @update:model-value="(value) => toggleSkill(skill, Boolean(value))"
-                    />
+                    <div class="flex shrink-0 items-center gap-2">
+                      <Switch
+                        :model-value="skillEnabled(skill)"
+                        :disabled="togglingSkillPath === skill.path || deletingSkillPath === skill.path"
+                        :aria-label="skill.title"
+                        @update:model-value="(value) => toggleSkill(skill, Boolean(value))"
+                      />
+                      <button
+                        type="button"
+                        class="retro-focus grid h-8 w-8 place-items-center border border-neon-deep/40 bg-elevated text-text-dim transition-colors hover:border-danger/55 hover:text-danger disabled:opacity-45"
+                        :disabled="deletingSkillPath === skill.path"
+                        :aria-label="`删除 ${skill.title}`"
+                        title="删除 Skill"
+                        @click="deleteSkill(skill)"
+                      >
+                        <Trash2 class="h-3.5 w-3.5" aria-hidden="true" />
+                      </button>
+                    </div>
                   </div>
 
                   <p v-if="skillsForSelectedAgent.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm text-text-dim">
@@ -316,6 +328,7 @@ import {
   FolderOpen,
   RefreshCw,
   SlidersHorizontal,
+  Trash2,
   Wrench,
 } from "lucide-vue-next"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
@@ -328,6 +341,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
+import { confirm } from "@/composables/useConfirm"
 import { ACTIVE_CARD_CHANGED_EVENT, isActiveCardChangedEvent } from "@/lib/platform-events"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
 import { PLATFORM_TOOL_CONTROL_GROUPS, PLATFORM_TOOL_CONTROLS } from "../agent-runtime/tool-controls"
@@ -337,6 +351,7 @@ import {
   getPlatformStudioSnapshot,
   updatePlatformStudioAgentPlatformToolEnabled,
   updatePlatformStudioAgentSkillEnabled,
+  deletePlatformStudioSkill,
   updatePlatformStudioAgentWorkspaceAccess,
   updatePlatformStudioAgentProviderPreset,
   waitForPlatformHostReady,
@@ -394,6 +409,7 @@ const selectedAgentId = ref("")
 const agentDraft = ref("")
 const soulDraft = ref("")
 const togglingSkillPath = ref("")
+const deletingSkillPath = ref("")
 const togglingPlatformTool = ref<AgentPlatformToolName | "">("")
 const updatingWorkspaceAccess = ref(false)
 const updatingProviderPreset = ref(false)
@@ -560,6 +576,34 @@ async function toggleSkill(skill: SkillRegistryEntry, enabled: boolean) {
     await reloadSnapshotAndSelectedAgent()
   } finally {
     togglingSkillPath.value = ""
+  }
+}
+
+async function deleteSkill(skill: SkillRegistryEntry): Promise<void> {
+  if (deletingSkillPath.value) {
+    return
+  }
+
+  const confirmed = await confirm({
+    title: "删除 Skill",
+    message: `删除 Skill「${skill.title}」？\n\n这会删除 ${skill.path} 所在目录，并从当前游戏卡的 Agent 配置中移除引用，无法撤销。`,
+    severity: "danger",
+    confirmText: "删除",
+  })
+  if (!confirmed) {
+    return
+  }
+
+  deletingSkillPath.value = skill.path
+  try {
+    await deletePlatformStudioSkill({ skillPath: skill.path })
+    await reloadSnapshotAndSelectedAgent()
+    setFeedback(`已删除 Skill：${skill.title}`, "ok")
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "无法删除 Skill。", "error")
+    await reloadSnapshotAndSelectedAgent()
+  } finally {
+    deletingSkillPath.value = ""
   }
 }
 
