@@ -1,0 +1,15 @@
+{"file":".trellis/spec/guides/index.md","reason":"Shared thinking guide index for full-scope quality review."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Check cross-layer consistency from contracts through backend API/storage to frontend install flows."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check implementation reused existing helpers and avoided duplicate package/storage logic."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Check storage decisions for market metadata and Agent/Skill package/install data."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Check market UI/helper split prevents oversized mixed-responsibility files."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Frontend quality review index for platform-web changes."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check new Vue market components follow component guidelines."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check frontend state, Dexie state, and event refresh behavior."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Check runtime boundary normalization and contract usage."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check required platform-web quality rules and build expectations."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check storage helper and Dexie behavior, especially directory replacement and assistant local files."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Contracts review index for changed market shared shapes."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Check contracts build and consuming build requirements."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Check frontend consumption of changed contract shapes."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check type-safe frontend use of @tsian/contracts market types."}
