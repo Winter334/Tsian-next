@@ -513,3 +513,36 @@ Implemented WebP cover derivation and zip normalization for workshop game cards,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 120: Tsian Boot BSOD Nyan splash
+
+**Date**: 2026-07-03
+**Task**: Tsian Boot BSOD Nyan splash
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+Replaced the platform-web splash with a first-run Tsian logo gate, boot loader, parody BSOD, and Nyan Cat intro; added versioned same-device skip, public media assets, and validated with npm run build:web.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e48c5c8` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

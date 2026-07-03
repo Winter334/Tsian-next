@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 119
+- **Total Sessions**: 120
 - **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~515 | Active |
+| `journal-3.md` | ~548 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 120 | 2026-07-03 | Tsian Boot BSOD Nyan splash | `e48c5c8` | `feat/workspace-context-cache-split` |
 | 119 | 2026-07-03 | Optimize workshop cover traffic | `30cb4b1`, `a12e9b5` | `feat/workspace-context-cache-split` |
 | 118 | 2026-07-03 | 创意工坊多资源类型实现 | `6249b78` | `feat/workspace-context-cache-split` |
 | 117 | 2026-07-03 | App Market MVP — 卡包上传/下载/搜索/安装 + 创意工坊任务创建 | `8024077`, `60d3a85` | `feat/workspace-context-cache-split` |
