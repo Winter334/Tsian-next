@@ -579,3 +579,69 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 122: 游戏前端长历史消息窗口化
+
+**Date**: 2026-07-03
+**Task**: 游戏前端长历史消息窗口化
+**Branch**: `feat/play-frontend-message-windowing`
+
+### Summary
+
+为游戏前端 StoryView 增加按 turn 的渐进窗口渲染，默认只渲染最近历史，向上滚动自动展开更早回合，并加入低调回到最近内容浮标；归档对应 Trellis 任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aae2572` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 123: 修复 play frontend 类型检查
+
+**Date**: 2026-07-03
+**Task**: 修复 play frontend 类型检查
+**Branch**: `feat/play-frontend-message-windowing`
+
+### Summary
+
+修复 play-frontend-dev setup 流程中的 vue-tsc 错误：让展示型数据接受 readonly 数组、按 WorkspaceEntry[] 使用 workspace.list、收窄消息索引访问，并把原创角色提交交给表单自身处理；vue-tsc 与 play frontend build 均通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `86cead3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

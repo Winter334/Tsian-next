@@ -1,0 +1,8 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required platform-web/frontend checks and relevant frontend spec index for play frontend-adjacent UI work."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue component structure, UI style constraints, and play frontend bridge boundary guidance."}
+{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Composable rules for extending or reusing useTurnState without hidden side effects."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Vue ref/computed/watch conventions and play frontend turn-rendering contract notes."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Bridge consumer rules: use shared SessionHistoryEntry/TurnTimelineItem contracts and do not bypass play bridge APIs."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Keep StoryView/useTurnState changes focused; extract only along natural seams if needed."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Reuse existing scroll/pinned-bottom and visual patterns instead of duplicating behavior."}
+{"file":".trellis/tasks/07-03-play-frontend-message-windowing/research/current-rendering.md","reason":"Task-specific evidence, product decisions, and render-model implications for implementation."}

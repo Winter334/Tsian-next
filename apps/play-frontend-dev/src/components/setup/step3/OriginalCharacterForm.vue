@@ -63,7 +63,7 @@ onUnmounted(() => {
   <div class="original-form">
     <h3 class="guide-question">创造你的角色</h3>
 
-    <div ref="formRef" class="form-fields">
+    <form ref="formRef" class="form-fields" @submit.prevent="onSubmit">
       <!-- 必填：角色名 -->
       <label class="form-field">
         <span class="field-label">角色名 <span class="required">*</span></span>
@@ -141,7 +141,11 @@ onUnmounted(() => {
           </div>
         </div>
       </div>
-    </div>
+      <!-- 提交按钮：原创表单拥有自己的必填校验数据，避免外层 action bar 调用需要 formData 的 handler。 -->
+      <button class="submit-btn" type="submit" :disabled="!canSubmit">
+        创建角色
+      </button>
+    </form>
   </div>
 </template>
 
@@ -233,6 +237,32 @@ onUnmounted(() => {
   outline: none;
   border-color: var(--ember);
   box-shadow: 0 0 8px rgba(181, 137, 61, 0.1);
+}
+
+.submit-btn {
+  align-self: flex-end;
+  padding: 9px 18px;
+  background: linear-gradient(135deg, var(--ember-bright), var(--ember));
+  border: 1px solid var(--ember);
+  border-radius: 4px;
+  color: var(--void-deep);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  transition: box-shadow 0.2s, filter 0.2s, transform 0.1s, opacity 0.2s;
+}
+.submit-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.35;
+}
+.submit-btn:not(:disabled):hover {
+  box-shadow: 0 0 16px var(--ember-glow);
+  filter: brightness(1.1);
+}
+.submit-btn:not(:disabled):active {
+  transform: scale(0.96);
 }
 
 /* ── 可选折叠 ── */

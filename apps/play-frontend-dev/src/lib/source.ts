@@ -47,7 +47,7 @@ export interface SourceManifest {
 
 export interface ChapterIndexFile {
   version: 1
-  chapters: Array<{
+  chapters: ReadonlyArray<{
     title: string
     path: string
     characters?: number
@@ -134,7 +134,7 @@ export interface OpeningUnderstandingSummary {
   title?: string
   summary: string
   entityCount?: number
-  candidateCharacters?: OpeningCandidateCharacter[]
+  candidateCharacters?: ReadonlyArray<OpeningCandidateCharacter>
   sourceWindow?: {
     start?: number | null
     end?: number | null

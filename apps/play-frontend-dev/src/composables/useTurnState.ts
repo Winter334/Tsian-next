@@ -1,4 +1,4 @@
-import { onMounted, onUnmounted, ref } from "vue"
+import { onBeforeUnmount, ref } from "vue"
 import type { Ref } from "vue"
 
 /**
@@ -21,7 +21,7 @@ export function useTurnState(
   let turnStartedAt = 0
   let timerId: ReturnType<typeof setInterval> | null = null
 
-  function onScroll() {
+  function handleScroll() {
     const el = scrollEl.value
     if (!el) return
     const dist = el.scrollHeight - el.scrollTop - el.clientHeight
@@ -64,17 +64,14 @@ export function useTurnState(
     if (el) el.scrollTop = el.scrollHeight
   }
 
-  onMounted(() => {
-    scrollEl.value?.addEventListener("scroll", onScroll)
-  })
-  onUnmounted(() => {
-    scrollEl.value?.removeEventListener("scroll", onScroll)
+  onBeforeUnmount(() => {
     if (timerId) clearInterval(timerId)
   })
 
   return {
     elapsedMs,
     userPinnedToBottom,
+    handleScroll,
     beginTurnTimer,
     stopTurnTimer,
     resetTurnTimer,

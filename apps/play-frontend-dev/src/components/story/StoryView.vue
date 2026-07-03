@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
 import UserMessage from "./UserMessage.vue"
 import NarrativeMessage from "./NarrativeMessage.vue"
 import type { ProcessNodeData } from "./ProcessNode.vue"
@@ -19,9 +19,11 @@ import { useTurnState } from "../../composables/useTurnState"
  * prd 屏3：52em 列 + 垂直滚动。
  * 数据模型（镜像 legacy main.ts $story DOM 容器）：
  * - stream：单一有序流，所有元素（user/interim/thought/tool/assistant）按真实发生顺序交织，
- *   跨轮保留不清空。loadHistory 重建历史，send/订阅 push 实时。
+ *   跨轮保留不清空。loadHistory 重建完整内存历史，send/订阅 push 实时。
+ * - StoryView 只把最近 turn 窗口聚合成 DOM；向上翻阅时渐进展开更早 turn，
+ *   不裁剪 useTsian 保存的完整 stream。
  * - streamingText：流式期间的实时累积文本，单独渲染（onRoundEnd/onTurnEnd 落定后推入 stream）。
- * 渲染：遍历 stream 按 kind 分发组件，streaming 期间末尾追加流式 NarrativeMessage。
+ * 渲染：遍历 visibleStream 按 kind 分发组件，streaming 期间末尾追加流式 NarrativeMessage。
  */
 const {
   ready,
@@ -39,22 +41,120 @@ const {
   loadCheckpoints,
 } = useTsian()
 
+const INITIAL_VISIBLE_TURNS = 40
+const LOAD_OLDER_TURNS = 20
+const TOP_LOAD_THRESHOLD = 120
+
 const storyRef = ref<HTMLElement | null>(null)
 const composerRef = ref<InstanceType<typeof Composer> | null>(null)
 const streaming = computed(() => turnPhase.value === "streaming")
 
-const { elapsedMs, beginTurnTimer, stopTurnTimer, resetTurnTimer, maybeScrollDown } = useTurnState(
+const {
+  elapsedMs,
+  userPinnedToBottom,
+  handleScroll: handleTurnScroll,
+  beginTurnTimer,
+  stopTurnTimer,
+  resetTurnTimer,
+  maybeScrollDown,
+} = useTurnState(
   storyRef,
   streaming,
 )
 
+// 轮次窗口：完整 stream 留在 useTsian 内存中，StoryView 只聚合当前可见 turn。
+// turn 编号按 user 消息递增；过程节点/assistant 归属最近一次 user 所在 turn。
+const visibleStartTurn = ref(1)
+const loadingOlderTurns = ref(false)
+// 点击“最近”会先收窄窗口再平滑滚到底；滚动动画起步阶段会经过顶部阈值，
+// 需临时压住顶部自动加载，避免刚收窄又把旧历史展开回来。
+const suppressTopAutoLoad = ref(false)
+
+const renderedTurnCount = computed(() => Math.max(0, turnCount.value - (streaming.value ? 0 : 1)))
+const latestVisibleStartTurn = computed(() => deriveLatestVisibleStartTurn(renderedTurnCount.value))
+const earliestTurnVisible = computed(() => visibleStartTurn.value <= 1)
+const hasOlderTurns = computed(() => visibleStartTurn.value > 1)
+const showOpeningNarrative = computed(() => Boolean(openingNarrative.value) && earliestTurnVisible.value)
+const turnOptionsForDisplay = computed<string[]>(() => [...turnOptions.value])
+
+function deriveLatestVisibleStartTurn(totalTurns: number): number {
+  return Math.max(1, Math.max(0, totalTurns) - INITIAL_VISIBLE_TURNS + 1)
+}
+
+const visibleStream = computed(() => {
+  const src = stream.value
+  const startTurn = visibleStartTurn.value
+  if (startTurn <= 1) return src
+
+  let currentTurn = 0
+  let startIndex = src.length
+  for (let i = 0; i < src.length; i += 1) {
+    const item = src[i]!
+    if (item.kind === "user") currentTurn += 1
+    if (currentTurn >= startTurn && item.kind !== "assistant") {
+      startIndex = i
+      break
+    }
+  }
+  return src.slice(startIndex)
+})
+
+function resetWindowToLatest() {
+  visibleStartTurn.value = latestVisibleStartTurn.value
+}
+
+async function loadOlderTurns() {
+  if (loadingOlderTurns.value || !hasOlderTurns.value) return
+  const el = storyRef.value
+  if (!el) return
+
+  loadingOlderTurns.value = true
+  const previousScrollHeight = el.scrollHeight
+  visibleStartTurn.value = Math.max(1, visibleStartTurn.value - LOAD_OLDER_TURNS)
+  await nextTick()
+  const heightDelta = el.scrollHeight - previousScrollHeight
+  el.scrollTop += heightDelta
+  loadingOlderTurns.value = false
+}
+
+function onStoryScroll() {
+  handleTurnScroll()
+  const el = storyRef.value
+  if (!el || suppressTopAutoLoad.value || el.scrollTop > TOP_LOAD_THRESHOLD) return
+  void loadOlderTurns()
+}
+
+async function scrollToLatest() {
+  suppressTopAutoLoad.value = true
+  resetWindowToLatest()
+  await nextTick()
+  const el = storyRef.value
+  if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+  window.setTimeout(() => {
+    suppressTopAutoLoad.value = false
+    handleTurnScroll()
+  }, 450)
+}
+
 // 流式文本/流长度变化时自动滚动。flush:'post' 确保 DOM 已更新后再读 scrollHeight，
 // 否则滚动比内容滞后一帧、末行被 fixed Composer 遮住
 watch(streamingText, () => maybeScrollDown(), { flush: "post" })
-watch(() => stream.value.length, () => maybeScrollDown(), { flush: "post" })
+watch(() => stream.value.length, async () => {
+  if (userPinnedToBottom.value) {
+    resetWindowToLatest()
+    await nextTick()
+  }
+  maybeScrollDown()
+}, { flush: "post" })
 // 选项在 onTurnEnd 中晚于 assistant 消息设置，需等其渲染后再滚到底，
 // 否则选项被推到视口下方、被 fixed Composer 遮住
 watch(turnOptions, () => maybeScrollDown(), { flush: "post" })
+// 初次加载/正常底部游玩时，把可见窗口保持在最近 turn；用户上翻时不主动裁剪。
+watch(latestVisibleStartTurn, (latest) => {
+  if (userPinnedToBottom.value || visibleStartTurn.value > latest) {
+    visibleStartTurn.value = latest
+  }
+}, { immediate: true })
 
 // 轮次状态变化：streaming 开始计时，standby 停止 + 刷新检查点
 // （新 turn 结束后 host 会自动创建 after-turn 检查点，需重新加载才能实时显示印记）
@@ -99,6 +199,10 @@ async function onRestoreConfirm() {
   restoreTarget.value = null
   // 后台执行 restore（host 裁剪 + reloadHistory + loadCheckpoints 重建）
   await restore(id)
+  resetWindowToLatest()
+  await nextTick()
+  if (storyRef.value) storyRef.value.scrollTop = storyRef.value.scrollHeight
+  handleTurnScroll()
   // 重置计时器：丢弃上一轮残留的 elapsedMs，避免重建后的 TurnMeta 显示被抹除轮的耗时
   resetTurnTimer()
   // restore 完成，对话流已重建在幕布下方——等燃烧烧穿后移除幕布
@@ -137,14 +241,14 @@ const checkpointByTurn = computed(() => {
 
 const mergedStream = computed(() => {
   const result: MergedItem[] = []
-  const src = stream.value
+  const src = visibleStream.value
   const cpMap = checkpointByTurn.value
-  // initial 检查点（turn=0）在对话流最前面插入——它在任何 user 消息之前就存在
+  // initial 检查点（turn=0）只在最早 turn 可见时插入，避免最近窗口顶部误接开局。
   const cp0 = cpMap.get(0)
-  if (cp0) {
+  if (cp0 && earliestTurnVisible.value) {
     result.push({ kind: "checkpoint", id: `cp-${cp0.turn}`, checkpointId: cp0.id, turn: cp0.turn, createdAt: cp0.createdAt })
   }
-  let currentTurn = 0  // 追踪当前 turn 编号（user 出现时 +1）
+  let currentTurn = visibleStartTurn.value - 1  // 追踪当前 turn 编号（user 出现时 +1）
   let i = 0
   while (i < src.length) {
     const item = src[i]!
@@ -173,12 +277,14 @@ const mergedStream = computed(() => {
       if (cur.kind === "tool") {
         const group: Extract<StreamItem, { kind: "tool" }>[] = [cur]
         let j = i + 1
-        while (j < src.length && src[j]!.kind === "tool" && src[j]!.round === cur.round) {
-          group.push(src[j] as Extract<StreamItem, { kind: "tool" }>)
+        while (j < src.length) {
+          const next = src[j]
+          if (!next || next.kind !== "tool" || next.round !== cur.round) break
+          group.push(next)
           j += 1
         }
         if (group.length > 1) {
-          nodes.push({ kind: "tool-group", id: `tg-${cur.round}-${i}`, round: cur.round, agentId: cur.agentId, tools: group })
+          nodes.push({ kind: "tool-group", id: `tg-${cur.round}-${cur.id}`, round: cur.round, agentId: cur.agentId, tools: group })
         } else {
           nodes.push(cur)
         }
@@ -231,16 +337,28 @@ function onEdit(content: string) {
 <template>
   <section class="story-view">
     <!-- 滚动区：flex:1 占满剩余空间，内部 52em 居中正文流 -->
-    <div class="story-scroll" ref="storyRef">
+    <div class="story-scroll" ref="storyRef" @scroll="onStoryScroll">
       <div class="story-inner">
-        <!-- 开局叙事：独立于 stream，作为第一条消息特殊渲染（Step 4 写入 opening-narrative.json） -->
+        <!-- 开局叙事：独立于 stream，最早 turn 可见时才接在正式历史前方 -->
         <NarrativeMessage
-          v-if="openingNarrative"
-          :content="openingNarrative"
+          v-if="showOpeningNarrative"
+          :content="openingNarrative ?? ''"
           class="opening-narrative"
         />
 
-        <!-- 有序流：按真实发生顺序渲染，跨轮保留不清空 -->
+        <div
+          v-if="hasOlderTurns"
+          class="history-loader"
+          :class="{ loading: loadingOlderTurns }"
+          aria-live="polite"
+        >
+          <span class="history-line" aria-hidden="true" />
+          <span class="history-glyph" aria-hidden="true" />
+          <span class="history-text">翻阅更早记忆…</span>
+          <span class="history-line" aria-hidden="true" />
+        </div>
+
+        <!-- 有序流：按真实发生顺序渲染当前 turn 窗口，完整历史仍保留在内存中 -->
         <template v-for="(item, i) in mergedStream" :key="item.id">
           <UserMessage
             v-if="item.kind === 'user'"
@@ -274,8 +392,8 @@ function onEdit(content: string) {
 
         <!-- 剧情选项 -->
         <StoryOptions
-          v-if="turnOptions.length > 0"
-          :options="turnOptions"
+          v-if="turnOptionsForDisplay.length > 0"
+          :options="turnOptionsForDisplay"
           :disabled="streaming"
           @select="onSelectOption"
         />
@@ -287,6 +405,17 @@ function onEdit(content: string) {
         </div>
       </div>
     </div>
+
+    <button
+      v-if="!userPinnedToBottom"
+      class="jump-latest"
+      type="button"
+      aria-label="回到最近内容"
+      @click="scrollToLatest"
+    >
+      <span class="jump-glyph" aria-hidden="true">⌄</span>
+      <span class="jump-label">最近</span>
+    </button>
 
     <!-- Composer：正常流布局，固定在滚动区下方（flex 列底部），与正文同宽 52em 居中 -->
     <Composer
@@ -326,6 +455,7 @@ function onEdit(content: string) {
    margin-top 留出顶栏高度，height 填满剩余空间——避免 padding-top 导致
    flex 容器总高度溢出父容器、Composer 底部被截断。 */
 .story-view {
+  position: relative;
   display: flex;
   flex-direction: column;
   margin-top: 52px;     /* 顶栏高度 */
@@ -361,6 +491,99 @@ function onEdit(content: string) {
   max-width: 52em;
   margin: 0 auto;
   padding: 40px 24px 24px;
+}
+
+.history-loader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0 24px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--whisper);
+  letter-spacing: 0.14em;
+  opacity: 0.72;
+}
+.history-loader.loading {
+  color: var(--ember);
+}
+.history-line {
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, transparent, var(--ember), transparent);
+  opacity: 0.12;
+}
+.history-glyph {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border: 1px solid var(--ember);
+  transform: rotate(45deg);
+  box-shadow: 0 0 5px rgba(181, 137, 61, 0.12);
+  opacity: 0.55;
+}
+.history-loader.loading .history-glyph {
+  background: var(--ember);
+  animation: history-glyph-breathe 1.6s ease-in-out infinite;
+}
+.history-text {
+  white-space: nowrap;
+}
+@keyframes history-glyph-breathe {
+  0%, 100% { opacity: 0.45; box-shadow: 0 0 4px rgba(181, 137, 61, 0.14); }
+  50% { opacity: 0.9; box-shadow: 0 0 10px var(--ember-glow), 0 0 3px var(--ember); }
+}
+
+.jump-latest {
+  position: absolute;
+  left: calc(50% + 21.5em);
+  bottom: 92px;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 35% 20%, rgba(43, 4, 4, 0.72), transparent 70%),
+    rgba(10, 5, 6, 0.82);
+  color: var(--whisper);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  box-shadow: 0 0 18px rgba(43, 4, 4, 0.36), inset 0 0 10px rgba(181, 137, 61, 0.04);
+  transition: color 0.25s, border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+}
+.jump-latest:hover {
+  color: var(--ember-bright);
+  border-color: var(--ember);
+  box-shadow: 0 0 18px var(--ember-glow), inset 0 0 12px rgba(181, 137, 61, 0.08);
+  transform: translateY(-1px);
+}
+.jump-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--ember);
+  font-size: 0.9rem;
+  line-height: 1;
+  box-shadow: 0 0 5px rgba(181, 137, 61, 0.12);
+}
+.jump-label {
+  line-height: 1;
+}
+
+@media (max-width: 920px) {
+  .jump-latest {
+    left: auto;
+    right: 24px;
+  }
 }
 
 /* 开局叙事：与后续消息之间留呼吸空间，底部分隔线暗示"叙事 → 游玩"分界 */
