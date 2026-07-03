@@ -165,6 +165,16 @@ export function formatRuntimeTracePath(turn: number, failedAt?: number): string 
   return `.tsian/save/traces/turns/turn-${paddedTurn}${suffix}.jsonl`
 }
 
+/**
+ * 旁路调用(invokeAgent)的 trace 路径格式。
+ * 与主 turn trace 隔离——独立存放在 save/traces/agents/ 下，
+ * 文件名含 agentId + 时间戳，避免与 turn-NNNNNN.jsonl 冲突。
+ */
+export function formatAgentTracePath(agentId: string, timestamp: number): string {
+  const safeId = agentId.replace(/[^a-zA-Z0-9_-]/g, "_")
+  return `.tsian/save/traces/agents/${safeId}-${timestamp}.jsonl`
+}
+
 // ─── 人类可读渲染（开发者诊断用）────────────────────────────────────────────
 // trace 只记元数据；本渲染层把 JSONL 事件拍平为 logfmt/rust-tracing 风格的文本，
 // 供 DebugView"运行日志"浏览器显示。纯函数、无副作用、可单测。

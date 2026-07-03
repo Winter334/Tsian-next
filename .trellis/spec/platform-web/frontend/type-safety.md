@@ -76,7 +76,35 @@
 - Remote `ai-debug` query -> structured forbidden error response.
 - Iframe load error -> show a compact error state and do not mutate save data.
 
-## Scenario: Runtime Workspace Registry And Detail Queries
+## Scenario: Bypass Invoke-Agent Context Slot And Persist
+
+### Scope / Trigger
+
+- When platform-web changes `interaction.invokeAgent` (the bypass/side-channel call distinct from the `agent_call` tool), `agentContextPath` slot routing, the same-slot serial queue, or the `entryMode` → `persist` semantics.
+
+### Contracts
+
+- `interaction.invokeAgent` is a **bypass call**: it runs a target agent once, returns the reply directly to the caller, does **not** advance the turn, write raw history, update the runtime snapshot, or create a checkpoint. This is what makes it distinct from `interaction.sendMessage` (the main turn) and from the `agent_call` tool (master-initiated delegation inside a turn).
+- `InvokeAgentRequest` carries two context-management options (both optional, added in task 07-01):
+  - `contextSlot?: string` — isolates the agent's context file. `agentContextPath(agentId, slot)` returns `save/agents/<id>/context-<slot>.json` when a slot is present, and `save/agents/<id>/context.json` when omitted (backward-compatible). The slot is **untrusted frontend input** and is sanitized inside `agentContextPath`: `slot.replace(/[^a-zA-Z0-9_-]/g, "-")` — only `[a-zA-Z0-9_-]` survives, preventing `../` traversal and special-character injection. Never inline a raw slot into a path.
+  - `persist?: boolean` — controls context-file read/write. `true` = read `context[-slot].json` before the call and write back the updated snapshot after a successful call (cross-call persistence). `false`/omitted = one-shot call, no context read or write. **Default is `false`.**
+- **`entryMode` is no longer read by `invokeAgent`.** The old `targetContext.agent.entryMode === "persistent"` check was replaced by `shouldPersist = input.persist === true`. The `entryMode` field is retained in the agent schema for compatibility but is dead to `invokeAgent`; do not reintroduce an `entryMode`-derived persistence decision. Main-turn `sendMessage` is unaffected (it always reads/stages `context.json` and does not pass `slot`).
+- **Same-slot serial queue.** `invokeAgent` queues calls by `queueKey = ${agentId}:${slot ?? "default"}` in a module/closure-level `invokeAgentQueue: Map<string, Promise<unknown>>`. A new call chains after the previous promise for the same key (`.catch(() => {}).then(() => body())`), so calls to the same agent+slot run serially while different agents or different slots run concurrently. The `.catch` swallows the predecessor's failure so it never blocks the successor. Entries self-clean in a `finally` that deletes the key **only if the map still points at the current promise** (avoids deleting a successor that already queued behind it). This prevents `context-<slot>.json` read/write races between concurrent bypass calls to the same agent+slot.
+- **Main turn and frontend-inspector do not pass `slot`**, so their `agentContextPath` is unchanged (`context.json`). `stageAgentContextFile` / `readAgentContextFromWorkspace` accept an optional `slot?` that threads through to `agentContextPath`; omitted slot = legacy path.
+- The context-file read/write logic (`parseAgentContext`, `createEmptyAgentContext`, `appendTurnToContext`, `compressContext`) is slot-agnostic — it operates on `AgentContextSnapshot` objects and never sees the path. Only `agentContextPath` knows about slots.
+- `agent_call` (the tool) never reads or writes `context.json` and is unaffected by slot/persist.
+- Bypass trace path (`formatAgentTracePath(agentId, timestamp)`) is keyed by agentId + timestamp only; slot does not appear in trace.
+
+### Validation & Error Matrix
+
+- Empty `agentId` / empty `input` -> throw a clear `interaction.invokeAgent requires ...` error before queueing.
+- `persist: false` (or omitted) -> no `context[-slot].json` read or write, even if the agent has a context file on disk. One-shot.
+- `persist: true` + no existing context file -> `readAgentContextFromWorkspace` returns null -> `createEmptyAgentContext` seeds an empty snapshot -> writeback creates the file.
+- `persist: true` + call fails -> no context writeback (writeback is success-path only).
+- Concurrent calls same agent+slot -> run serially in queue order; predecessor failure does not block successor.
+- Concurrent calls same agent different slots -> run concurrently (different queue keys, different files, no race).
+- Slot containing `../` or special chars -> sanitized to `-` sequence; writes land at `context-<sanitized>.json`, never escapes the agent dir.
+- Main turn / frontend-inspector -> unchanged (no slot, `context.json`).
 
 ### Scope / Trigger
 
@@ -387,21 +415,21 @@
   - Master does **not** create a timeout controller — narrative mode relies on one-shot compression + user abort; a timeout would mis-kill narrative deep thought.
 
   **Task mode (delegated `agent_call` targets + desktop assistant):**
-  - Every crossing is a compression attempt (no cap; multi-compress unlimited). Before compressing, check elapsed time: if the task timeout has elapsed, throw `TaskTimeoutError`.
+  - Every crossing is a compression attempt (no cap; multi-compress unlimited). Before compressing, check inactivity: if no activity (tool/round-end) has occurred for `inactivityTimeoutMs`, throw `TaskTimeoutError`.
   - Locate the tool-interaction span. If no span exists, fall back (return last stripped text / throw `ContextBudgetExhaustedError`).
   - Compress: slice the tool-interaction span, keep the recent 5 tool rounds, summarize earlier rounds into one `已完成工作摘要` user message. If the early span is empty or tool interactions ≤ 5, fall back.
   - After compression, if yield < 10% (compression barely reduced tokens), throw `TaskCompressionStalledError` (stall early-exit, do not burn budget waiting for timeout).
   - Task compression never touches the agent-context snapshot (in-turn tool-interaction compression is separate from cross-turn snapshot). The in-turn summary text lives only within the turn. The **assistant** has cross-turn snapshot persistence (see "Assistant Cross-Turn Context Persistence"); **delegated `agent_call` targets** have no cross-turn persistence.
 
-- **Timeout fallback (task mode only):** delegated `agent_call` and the desktop assistant each create an independent `AbortController` + timeout, merged with the user-abort signal into a composite signal. On timeout, the catch re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true }` so master can distinguish; assistant: thrown to the view).
+- **Inactivity timeout fallback (task mode only):** delegated `agent_call` and the desktop assistant each create an independent `AbortController` + **resettable** inactivity timer, merged with the user-abort signal into a composite signal. The timer resets on every activity signal (model delta, tool call, round-end); it only fires after `inactivityTimeoutMs` (default 600s) of continuous inactivity. On timeout, the catch re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true }` so master can distinguish; assistant: thrown to the view). The runtime tool loop also checks `lastActivityAt` internally at each compression trigger as a second guard.
 - The view recognizes `ContextBudgetExhaustedError`, `TaskTimeoutError`, and `TaskCompressionStalledError` by error name (no runtime-internal import). All three route to the same soft-halt branch (symmetric with abort): keep already-streamed thought, append a soft note when content exists (or set content to the soft prompt when empty), persist the session, and do **not** set an error message or pop the placeholder.
 
 ### Validation & Error Matrix
 
 - Narrative first crossing with a snapshot available -> compress narrative span, continue loop (trace `mode: narrative`).
 - Narrative second crossing (or no snapshot) -> return last stripped text if present, otherwise `ContextBudgetExhaustedError`.
-- Task crossing -> check timeout; if elapsed `TaskTimeoutError`; else locate span, compress, check stall; if compressed continue (trace `mode: task`); if not compressible or no span -> fallback.
-- Task timeout (delegated) -> `AGENT_CALL_FAILED` with `{ timeout: true }`; master continues its own loop. (assistant) -> soft prompt "任务超时，已中止".
+- Task crossing -> check inactivity timeout; if no activity for `inactivityTimeoutMs` → `TaskTimeoutError`; else locate span, compress, check stall; if compressed continue (trace `mode: task`); if not compressible or no span -> fallback.
+- Task inactivity timeout (delegated) -> `AGENT_CALL_FAILED` with `{ timeout: true }`; master continues its own loop. (assistant) -> soft prompt "任务无响应超时，已中止".
 - Task compression stall (yield < 10%) -> `TaskCompressionStalledError` -> delegated: `AGENT_CALL_FAILED` with `{ stalled: true }`; assistant: soft prompt "上下文持续膨胀且压缩无效，已中止".
 - Compression failure (model call fails/empty summary) -> `ContextCompressionFailedError` (routes to the error-message branch, not the soft-halt branch).
 - Tool interactions are never compressed in narrative mode; task mode compresses only the tool-interaction span.
@@ -578,3 +606,61 @@
 - agent_call success with missing `targetAgent`/`response` -> degrades to empty strings (never throws).
 - agent_call failure (`ok === false`) -> structured `{type:"agent_call", status:"failed", error}`.
 - `JSON.stringify(result)` throws (cyclic) -> ordinary branch catch -> returns `undefined`.
+
+## Scenario: Registering A New Platform Agent Tool
+
+### Scope / Trigger
+
+- When adding a new platform tool that Agent Runtime exposes to the model (e.g. `inspect_frontend`, `test_skill_script`, or a future tool).
+
+### Contracts — Full Registration Checklist
+
+A new platform tool must be wired through **all** of the following, or it will not reach the model / will not be toggleable / will not render in the UI. Missing any one causes a silent gap — no build error, just a tool that "doesn't exist" at runtime.
+
+| # | File | What to add | What breaks if missing |
+|---|------|-------------|------------------------|
+| 1 | `packages/contracts/src/runtime.ts` | Add the tool name string to `AgentPlatformToolName` union | `satisfies Record<string, AgentPlatformToolName>` in permissions.ts fails build |
+| 2 | `agent-runtime/permissions.ts` | Add to `AGENT_PLATFORM_TOOL_NAMES` | Tool name not recognized by the permission system |
+| 3 | `agent-runtime/workspace-tools-types.ts` | Add to `RUNTIME_WORKSPACE_TOOL_NAMES`; add `Runtime<Name>Runner` type + `run<Name>?` to `RuntimeWorkspaceToolExecutionContext` | No tool name constant; no capability injection point |
+| 4 | `agent-runtime/turn-types.ts` | Add `run<Name>?` to `AgentRuntimeCapabilities` | `platform-host/index.ts` cannot inject the capability (TS2353) |
+| 5 | `agent-runtime/tool-schemas.ts` | Define `<name>Schema: ToolSchema`; add `can<Name>` check + `schemas.push(<name>Schema)` in `buildToolSchemas` | Model never sees the tool's parameter schema — tool is invisible even if everything else is wired |
+| 6 | `agent-runtime/workspace-tools.ts` | Add `normalize<Name>Arguments` function; add dispatch branch in `executeRuntimeWorkspaceToolCalls` (`else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.<name>)`) | Tool calls from the model have no handler — falls through to the "unknown tool" path |
+| 7 | `agent-runtime/index.ts` | Add `can<Name>` check via `platformToolEnabled`; add to `toolNames` array (conditional spread) | **Tool name not in the "当前可用工具名称" list — model doesn't know the tool exists, even if schema is registered.** This was the `test_skill_script` bug: steps 1-6 were done but step 7 was missed. |
+| 8 | `agent-runtime/index.ts` | Thread `run<Name>: capabilities.run<Name>` in **both** capability-threading sites (there are two: one for the entry agent path, one for delegated `agent_call` targets) | Tool works for master but not for delegated agents (or vice versa) |
+| 8b | `platform-host/index.ts` + `platform-host/assistant-chat.ts` | Inject script runners via `...createBrowserScriptRunners({ workspaceTransaction, signal, emitTrace })` in **all three** `runAgentRuntimeTurn` capability objects: `sendMessage` (index.ts), `invokeAgent` (index.ts), and **assistant-chat** (assistant-chat.ts — the desktop assistant's own turn path, separate from `sendMessage`). The assistant runs through `assistant-chat.ts`, not `sendMessage` — missing this injection means the assistant agent gets `<NAME>_UNAVAILABLE` even though the tool is registered and enabled. The factory (`createBrowserScriptRunners` in `browser-skill-script-executor.ts`) creates both `runBrowserScript` + `runTestSkillScript` in one call, so adding a new script-related capability only needs one change in the factory. | Tool works for game agents but not for the desktop assistant |
+| 9 | `agent-runtime/tool-controls.ts` | Add to `PLATFORM_TOOL_CONTROL_GROUPS` (UI toggle card) | No on/off switch in the assistant config panel or Studio agent config — tool is invisible to the user |
+| 10 | `views/AssistantView.vue` | Add to the `TOOL_LABELS` map (`<name>: { verb, noun, unit }`) | Tool calls show as raw tool name in the timeline instead of a readable label |
+| 11 | `platform-host/index.ts` | Implement the runner function; inject `run<Name>` in **both** `runAgentRuntimeTurn` capability objects (sendMessage + invokeAgent) | No actual execution logic — tool call reaches dispatch but `context.run<Name>` is `undefined` → `TOOL_UNAVAILABLE` error |
+| 12 | `storage/local-assistant-files.ts` | Add to `VALID_PLATFORM_TOOLS` arrays (two copies: one in generate-skill script, one in validate script); add to `defaultAssistantConfig.platformTools.enabled` if the assistant should have it by default; update the doc table string | Assistant's saved `agent.json` won't accept the tool name (validation rejects it); tool not on by default for the assistant |
+| 13 | `agent-runtime/registry.ts` | Add to the module-level `AGENT_PLATFORM_TOOL_NAMES` Set (a **separate** copy from `permissions.ts` — registry keeps its own for parsing `agent.json`) | `jsonPlatformToolArray` silently filters out the tool name when parsing `agent.json` → `AgentRegistryEntry.platformTools.enabled` never contains it → `isAgentPlatformToolEnabled` returns `false` → toggle shows off even though the persisted `agent.json` has it in `enabled`. **No build error, no runtime error — the tool is silently dropped.** |
+
+### Validation & Error Matrix
+
+- Tool name in `AGENT_PLATFORM_TOOL_NAMES` but not in `AgentPlatformToolName` union → build error (TS satisfies check).
+- Tool schema registered but tool name not in `toolNames` (step 7 missing) → **no build error, no runtime error**; the model simply never sees the tool in its available tools list. This is the most insidious gap — everything compiles and runs, but the tool is invisible.
+- Tool in `toolNames` but no dispatch branch (step 6 missing) → model calls the tool → "unknown tool" error observation.
+- Tool dispatch present but `context.run<Name>` is `undefined` (step 11 missing) → `<NAME>_UNAVAILABLE` error observation.
+- Tool not in `PLATFORM_TOOL_CONTROL_GROUPS` (step 9 missing) → user cannot toggle it on/off; if it's not in the assistant's default `enabled` array, it's permanently off.
+
+## Scenario: Browser Script Worker Source Is Pure JavaScript
+
+### Scope / Trigger
+
+- When editing `BROWSER_SCRIPT_WORKER_SOURCE` in `browser-skill-script-executor.ts`, or any other `String.raw` template literal whose content is executed as a Web Worker via `new Blob([source], { type: "text/javascript" })`.
+
+### Contracts
+
+- `BROWSER_SCRIPT_WORKER_SOURCE` is a `String.raw` template literal whose content is **pure JavaScript**, executed directly as a Worker via `new Blob()`. The TypeScript compiler does **not** strip TS syntax from template-literal contents — every character inside the backticks lands in the Worker verbatim.
+- **No TypeScript syntax is allowed inside the Worker source**: no type annotations (`: Record<string, unknown>`), no type assertions (`x as string`), no generic type parameters, no `interface`/`type` declarations, no `!` non-null assertions. The Worker parses as plain JS; any TS syntax causes `SyntaxError: Unexpected token` at the exact column of the TS syntax.
+- The Worker source is delimited by the opening backtick (currently line 54: `` const BROWSER_SCRIPT_WORKER_SOURCE = String.raw` ``) and the closing backtick (currently line 330). Code outside this range is normal TypeScript and may use TS syntax freely.
+- **When editing the Worker source, always grep for TS syntax after editing**:
+  ```bash
+  # Extract Worker source range and scan for TS syntax
+  sed -n '<start>,<end>p' browser-skill-script-executor.ts | grep -n ' as \|: Record\|: string\|: number\|: boolean\|: unknown\|: object\|: any\|: void'
+  ```
+- This bug has occurred twice in the same `config` Proxy block: first a type annotation on `let currentConfig` (line 112), then `as` assertions on the Proxy target and key indexing (line 160/162/168). Both caused all scripts to fail with a fixed `SyntaxError` line number regardless of the user's script content — the error is in the Worker harness, not the user script.
+
+### Validation & Error Matrix
+
+- Any TS syntax inside `BROWSER_SCRIPT_WORKER_SOURCE` → `SyntaxError` at parse time → **every** script fails with the same error line/column (the line points into the Worker source, not the user's script). The fixed line number across all scripts is the diagnostic signature of a Worker-source TS syntax leak.
+- User script syntax error → `BROWSER_SCRIPT_SYNTAX_ERROR` with the error line pointing into the user's script (varies per script). This is distinct from a Worker-source leak (fixed line across all scripts).

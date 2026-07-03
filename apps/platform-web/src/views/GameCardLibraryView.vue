@@ -51,7 +51,7 @@
                 @click="router.push('/market')"
               >
                 <Store class="h-3.5 w-3.5" aria-hidden="true" />
-                应用市场
+                创意工坊
               </button>
             </div>
           </div>

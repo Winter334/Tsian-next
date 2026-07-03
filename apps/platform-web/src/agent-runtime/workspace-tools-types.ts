@@ -35,6 +35,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   agentCall: "agent_call",
   inspectFrontend: "inspect_frontend",
   askUser: "ask_user",
+  testSkillScript: "test_skill_script",
   read: "read",
   list: "list",
   search: "search",
@@ -130,11 +131,12 @@ export interface RuntimeAgentCallArguments {
   expectedOutput?: string
   historyMode: RuntimeAgentCallHistoryMode
   /**
-   * Optional timeout quota in ms for this delegated agent call (design
-   * 06-20-agent-task-compression). When elapsed, the delegated tool loop aborts
-   * and the call resolves as AGENT_CALL_FAILED with `{ timeout: true }` details.
-   * Defaults to DEFAULT_TASK_TIMEOUT_MS (300s) when omitted. Only meaningful for
-   * task-mode delegated agents (all delegated agents are task-mode).
+   * Optional inactivity timeout quota in ms for this delegated agent call.
+   * When no activity (delta/tool/round-end) occurs for this duration, the
+   * delegated tool loop aborts and the call resolves as AGENT_CALL_FAILED with
+   * `{ timeout: true }` details. Defaults to DEFAULT_TASK_INACTIVITY_TIMEOUT_MS
+   * (600s) when omitted. Only meaningful for task-mode delegated agents (all
+   * delegated agents are task-mode).
    */
   timeoutMs?: number
 }
@@ -266,6 +268,17 @@ export type RuntimeBrowserScriptRunner = (
   context?: RuntimeControlledExecutorContext,
 ) => Promise<PlatformActionResult>
 
+export interface RuntimeTestSkillScriptInput {
+  skillName: string
+  actionName: string
+  input: Record<string, unknown>
+}
+
+export type RuntimeTestSkillScriptRunner = (
+  input: RuntimeTestSkillScriptInput,
+  context?: RuntimeControlledExecutorContext,
+) => Promise<PlatformActionResult>
+
 export interface RuntimeActionExecutorPolicyRequest {
   skill: {
     name: string
@@ -327,6 +340,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   runAgentCall?: RuntimeAgentCallRunner
   runInspectFrontend?: RuntimeInspectFrontendRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
+  runTestSkillScript?: RuntimeTestSkillScriptRunner
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>

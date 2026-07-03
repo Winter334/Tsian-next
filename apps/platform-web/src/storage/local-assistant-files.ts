@@ -2,8 +2,9 @@ import type { AgentConfig, WorkspaceFile } from "@tsian/contracts"
 import { localDb } from "./db"
 
 const LOCAL_ASSISTANT_FILES_KEY = "assistant-local-files"
+const LOCAL_ASSISTANT_SKIP_DEFAULT_MERGE_KEY = "assistant-local-files-skip-default-merge"
 
-const LOCAL_ASSISTANT_DIR = ".tsian/local/assistant"
+export const LOCAL_ASSISTANT_DIR = ".tsian/local/assistant"
 
 export const LOCAL_ASSISTANT_AGENT_ID = "assistant"
 
@@ -144,7 +145,7 @@ const AGENT_AUTHORING_SKILL_MD = [
   "| `contextPaths` | string[] | yes | Workspace files loaded into the agent's prompt context. |",
   "| `skills.enabled` | string[] | yes | Whitelist of exact Skill paths (`.../SKILL.md`); non-empty narrows visible skills. |",
   "| `skills.disabled` | string[] | yes | Blacklist of exact Skill paths (`.../SKILL.md`). |",
-  "| `platformTools.enabled` | string[] | yes | Allowed: `agent_call`, `workspace_read`, `workspace_write`, `inspect_frontend`. |",
+  "| `platformTools.enabled` | string[] | yes | Allowed: `agent_call`, `workspace_read`, `workspace_write`, `inspect_frontend`, `test_skill_script`. |",
   "| `platformTools.disabled` | string[] | yes | Blocked platform tools. |",
   "| `workspaceAccess.level` | number | yes | Permission level (see below). |",
   "| `knowledgeMount` | string | no | Path to knowledge base directory (default `docs/`). |",
@@ -561,6 +562,7 @@ const GENERATE_AGENT_SKELETON_JS = [
   "  'inspect_frontend',",
   "  'workspace_semantic_search',",
   "  'ask_user',",
+  "  'test_skill_script',",
   "];",
   "",
   "function isRecord(value) {",
@@ -709,6 +711,7 @@ const VALIDATE_AGENT_DEFINITION_JS = [
   "  'inspect_frontend',",
   "  'workspace_semantic_search',",
   "  'ask_user',",
+  "  'test_skill_script',",
   "];",
   "",
   "function isRecord(value) {",
@@ -1402,7 +1405,7 @@ function defaultAssistantConfig(): AgentConfig {
       disabled: [],
     },
     platformTools: {
-      enabled: ["agent_call", "workspace_read", "workspace_write", "inspect_frontend", "ask_user"],
+      enabled: ["agent_call", "workspace_read", "workspace_write", "inspect_frontend", "ask_user", "test_skill_script"],
       disabled: [],
     },
     workspaceAccess: {
@@ -1414,11 +1417,11 @@ function defaultAssistantConfig(): AgentConfig {
   }
 }
 
-function defaultLocalAssistantFileMap(): StoredAssistantFileMap {
+function defaultLocalAssistantFileMap(skipDefaultMerge?: string): StoredAssistantFileMap {
   const now = Date.now()
   void now
   const config = defaultAssistantConfig()
-  return {
+  const map: StoredAssistantFileMap = {
     [`${LOCAL_ASSISTANT_DIR}/agent.json`]: {
       content: JSON.stringify(config, null, 2) + "\n",
     },
@@ -1465,6 +1468,16 @@ function defaultLocalAssistantFileMap(): StoredAssistantFileMap {
       content: VALIDATE_SKILL_DEFINITION_JS,
     },
   }
+  if (!skipDefaultMerge) {
+    return map
+  }
+  const withoutFactorySkills: StoredAssistantFileMap = {}
+  for (const [path, file] of Object.entries(map)) {
+    if (!path.startsWith(`${LOCAL_ASSISTANT_DIR}/skills/`)) {
+      withoutFactorySkills[path] = file
+    }
+  }
+  return withoutFactorySkills
 }
 
 /** Load local assistant files from the Dexie meta store, seeding defaults if absent. */
@@ -1476,7 +1489,8 @@ export async function loadLocalAssistantFiles(): Promise<WorkspaceFile[]> {
       if (parsed && typeof parsed === "object") {
         // Merge: fill in default keys missing from the stored map so new
         // factory skills reach existing users without overwriting their edits.
-        const defaults = defaultLocalAssistantFileMap()
+        const skipDefaultMerge = await localDb.meta.get(LOCAL_ASSISTANT_SKIP_DEFAULT_MERGE_KEY)
+        const defaults = defaultLocalAssistantFileMap(skipDefaultMerge?.value)
         let merged = false
         for (const [path, file] of Object.entries(defaults)) {
           if (!(path in parsed)) {
@@ -1547,6 +1561,54 @@ export async function saveLocalAssistantFiles(files: WorkspaceFile[]): Promise<v
     key: LOCAL_ASSISTANT_FILES_KEY,
     value: JSON.stringify(map),
   })
+}
+
+export async function replaceLocalAssistantFiles(
+  deletePaths: string[],
+  files: WorkspaceFile[],
+  options: { skipDefaultMerge?: boolean } = {},
+): Promise<void> {
+  const record = await localDb.meta.get(LOCAL_ASSISTANT_FILES_KEY)
+  let map: StoredAssistantFileMap = {}
+  if (record?.value) {
+    try {
+      const existing = JSON.parse(record.value) as StoredAssistantFileMap
+      if (existing && typeof existing === "object") {
+        map = { ...existing }
+      }
+    } catch {
+      map = {}
+    }
+  }
+
+  for (const target of deletePaths) {
+    if (!isLocalAssistantPath(target)) {
+      continue
+    }
+    for (const path of Object.keys(map)) {
+      if (path === target || path.startsWith(`${target}/`)) {
+        delete map[path]
+      }
+    }
+  }
+
+  for (const file of files) {
+    if (!file.path.startsWith(`${LOCAL_ASSISTANT_DIR}/`)) {
+      continue
+    }
+    map[file.path] = { content: file.content }
+  }
+
+  await localDb.meta.put({
+    key: LOCAL_ASSISTANT_FILES_KEY,
+    value: JSON.stringify(map),
+  })
+  if (options.skipDefaultMerge) {
+    await localDb.meta.put({
+      key: LOCAL_ASSISTANT_SKIP_DEFAULT_MERGE_KEY,
+      value: new Date().toISOString(),
+    })
+  }
 }
 
 /** Check whether a path belongs to the local assistant directory. */

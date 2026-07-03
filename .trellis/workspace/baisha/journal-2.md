@@ -1846,3 +1846,141 @@ Implemented the dev frontend opening setup shell, method-based source import flo
 ### Next Steps
 
 - None - task complete
+
+
+## Session 103: workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断
+
+**Date**: 2026-06-30
+**Task**: workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+将单条 workspace.context message 拆成元信息段 + 逐文件段，稳定文件各自独立命中前缀缓存、动态文件单独 miss 互不拖累。无跨轮状态（拆分即全部杠杆）。entry/delegated 两路径对齐，debug segment 标 workspace.meta/workspace.file 为 semi-stable。删除死代码 formatAgentRuntimeContext/formatContextFiles。spec 更新 Message Cache Contract。诊断发现 DebugView 缓存显示用本地字符估算而非 provider 真实 cached_tokens，且 aiDebugRecords 内存 20 条不持久化不区分 provider——新开任务 06-30-debugview-cache-hit-display 完善（合并缓存命中+持久化+实时+provider区分）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `368f136` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 104: DebugView 缓存命中率真实数据显示 + 仪表盘重设计
+
+**Date**: 2026-06-30
+**Task**: DebugView 缓存命中率真实数据显示 + 仪表盘重设计
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+把 DebugView 从内存20条+本地字符估算+刷新即丢升级为 provider 真实 cached_tokens + Dexie 持久化(全局,7天过期,换卡清空) + 实时更新 + provider/model 分组。extractUsageFromPayload 扩展四 provider 缓存字段(OpenAI/DeepSeek/Claude/Gemini)并修复 Gemini usageMetadata 路径既有缺陷。助手 turn 完成补 emitTurnDebugReady(原来只有 master emit,导致助手回复后仪表盘不刷新)。DebugView 重设计为仪表盘布局:KPI卡片行(缓存命中/Token累计/AI调用)+独立趋势SVG折线图(单点也显示)+Provider统计面板。删本地估算/运行状态卡/会话卡/消息段明细。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b302e51` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 105: 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor
+
+**Date**: 2026-07-01
+**Task**: 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+补走 Phase 3 规范收尾流程。Phase 3.3：沉淀 invokeAgent contextSlot+persist 契约到 contracts/frontend + platform-web/frontend type-safety spec（新增 Bypass Invoke-Agent Context Slot And Persist 场景，覆盖 slot 路由+消毒、persist 默认 false、entryMode 弃用、同 slot 串行排队、主 turn/inspector 向后兼容）。Phase 3.4：提交 spec 更新 a2ae121。Phase 3.5：归档 07-01-invoke-agent-context-management 与 06-30-play-frontend-vue-refactor 两个 done 任务。父任务 06-27-default-card-novel-reader-airp 经用户决定保留为伞任务（默认前端全流程尚未打通，后续拆新子任务），不归档。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a2ae121` | (see git log) |
+| `46ab4dc` | (see git log) |
+| `4577d4a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 106: test_skill_script 工具 + 错误透传 + Worker TS 注解修复
+
+**Date**: 2026-07-01
+**Task**: test_skill_script 工具 + 错误透传 + Worker TS 注解修复
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+新增 test_skill_script 平台工具让助手直接测试 Skill browser_script action。完整走 13 步注册流程（contracts→permissions→types→schema→dispatch→toolNames→capability threading×3→UI controls→labels→assistant config→registry Set）。修复三个问题：(1) assistant-chat.ts 漏注入 runTestSkillScript 导致助手报 TEST_SKILL_SCRIPT_UNAVAILABLE；(2) registry.ts 的 AGENT_PLATFORM_TOOL_NAMES Set 漏 test_skill_script 导致开关显示关闭；(3) Worker 源码混入 TS 类型注解 let currentConfig: Record<string, unknown> 导致所有脚本 SyntaxError at line 112。errorPayload 错误分层透传（SyntaxError/RuntimeError/自定义 code + stack）。spec 新增 Registering A New Platform Agent Tool 13 步 checklist。创建两个后续任务：task-inactivity-timeout（超时改为无响应语义）、unify-runtime-capabilities（三处注入统一）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e7e7dc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

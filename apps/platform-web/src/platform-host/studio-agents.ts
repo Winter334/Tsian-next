@@ -6,7 +6,7 @@ import type {
   SkillRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
-import type { LocalGameCardRecord, LocalSaveRecord } from "../storage"
+import type { LocalGameCardRecord } from "../storage"
 import {
   buildAgentRegistry,
   buildSkillRegistry,
@@ -24,11 +24,13 @@ import {
   writeCardContentFileForCard,
 } from "./internal"
 import {
+  deleteLocalGameCardContentPathForCard,
   getActiveSaveId,
   initializeWorkspaceForSave,
   listEffectiveWorkspaceFilesForSave,
   listLocalSaves,
   normalizeWorkspaceFilePath,
+  deleteSkillConfig,
 } from "../storage"
 import { listBrowserAiProviderPresetOptions } from "../config/ai"
 
@@ -56,6 +58,10 @@ export interface PlatformStudioAgentSkillToggleInput {
   agentId: string
   skillPath: string
   enabled: boolean
+}
+
+export interface PlatformStudioAgentSkillDeleteInput {
+  skillPath: string
 }
 
 export interface PlatformStudioAgentPlatformToolToggleInput {
@@ -278,6 +284,42 @@ function writeAgentConfigRecord(
   })
 }
 
+function skillDirectoryFromPath(skillPath: string): string {
+  const path = normalizeWorkspaceFilePath(skillPath)
+  return path.endsWith("/SKILL.md")
+    ? path.slice(0, -"/SKILL.md".length)
+    : path
+}
+
+async function removeSkillReferencesFromAgentConfig(
+  cardId: string,
+  files: WorkspaceFile[],
+  agent: AgentRegistryEntry,
+  skill: SkillRegistryEntry,
+): Promise<boolean> {
+  const enabledSkills = removeSkillReferences(agent.enabledSkills, skill)
+  const disabledSkills = removeSkillReferences(agent.disabledSkills, skill)
+  if (
+    enabledSkills.length === agent.enabledSkills.length
+    && disabledSkills.length === agent.disabledSkills.length
+  ) {
+    return false
+  }
+
+  const configFile = agentConfigFileForAgent(files, agent)
+  const config = parseAgentConfigRecord(configFile)
+  const existingSkills = isRecord(config.skills) ? config.skills : {}
+  await writeAgentConfigRecord(cardId, agent, {
+    ...config,
+    skills: {
+      ...existingSkills,
+      enabled: enabledSkills,
+      disabled: disabledSkills,
+    },
+  })
+  return true
+}
+
 export async function writePlatformStudioAgentFile(
   input: PlatformStudioAgentFileWriteInput,
 ): Promise<WorkspaceFile> {
@@ -352,6 +394,29 @@ export async function updatePlatformStudioAgentSkillEnabled(
       disabled: disabledSkills,
     },
   })
+}
+
+export async function deletePlatformStudioSkill(
+  input: PlatformStudioAgentSkillDeleteInput,
+): Promise<{ deletedPaths: string[]; updatedAgentCount: number }> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const skill = findStudioSkill(context.files, input.skillPath)
+  const agents = buildAgentRegistry(context.files)
+  let updatedAgentCount = 0
+  for (const agent of agents) {
+    if (await removeSkillReferencesFromAgentConfig(card.id, context.files, agent, skill)) {
+      updatedAgentCount += 1
+    }
+  }
+
+  const deletedPaths = await deleteLocalGameCardContentPathForCard(card.id, skillDirectoryFromPath(skill.path))
+  await deleteSkillConfig(skill.path)
+  return { deletedPaths, updatedAgentCount }
 }
 
 export async function updatePlatformStudioAgentPlatformToolEnabled(

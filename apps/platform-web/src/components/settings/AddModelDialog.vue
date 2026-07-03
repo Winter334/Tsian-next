@@ -1,21 +1,13 @@
 <template>
-  <Teleport to="body">
-    <div
-      v-if="open"
-      class="fixed inset-0 z-[60] grid place-items-center bg-black/55 p-4"
-      @click.self="cancel"
-    >
-      <div
-        class="flex max-h-[85vh] w-full max-w-lg flex-col border border-neon/40 bg-[#2d2a23] p-4 shadow-[0_18px_48px_rgba(0,0,0,0.5)]"
-      role="dialog"
-      aria-modal="true"
-      aria-label="添加模型"
-    >
-      <p class="font-mono text-xs uppercase tracking-wider text-neon">添加模型</p>
-
-      <div class="mt-3 grid min-h-0 flex-1 gap-3 overflow-auto p-1.5">
-        <!-- Model id + fetch -->
-        <div class="grid gap-2">
+  <FloatingWindow
+    v-if="open"
+    title="添加模型"
+    width-class="max-w-2xl"
+    @close="cancel"
+  >
+    <div class="flex max-h-[78vh] min-h-0 flex-col">
+      <div class="grid min-h-0 flex-1 gap-3 overflow-auto p-1.5">
+        <div class="grid gap-2 border border-neon-deep/30 bg-panel/35 p-3">
           <label class="grid gap-1.5">
             <span class="font-mono text-[11px] uppercase tracking-wider text-text-dim">模型 id</span>
             <input
@@ -29,7 +21,7 @@
             />
           </label>
 
-          <div class="flex items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
               class="retro-button retro-focus inline-flex h-7 items-center gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider disabled:opacity-45"
@@ -40,39 +32,58 @@
               拉取模型列表
             </button>
             <span v-if="fetchError" class="font-mono text-[10px] text-danger">{{ fetchError }}</span>
-            <span v-else-if="fetched.length > 0" class="font-mono text-[10px] text-text-dim/80">{{ fetched.length }} 个可选</span>
+            <span v-else-if="fetched.length > 0" class="font-mono text-[10px] text-text-dim/80">
+              {{ searchQuery ? `${filteredFetched.length} / ${fetched.length}` : `${fetched.length}` }} 个可选
+            </span>
           </div>
 
-          <div v-if="fetched.length > 0" class="max-h-44 overflow-auto border border-neon-deep/30 bg-panel/40">
-            <button
-              v-for="entry in fetched"
-              :key="entry.id"
-              type="button"
-              class="retro-focus block w-full px-3 py-1.5 text-left font-mono text-[11px] text-text-dim transition-colors hover:bg-neon/10 hover:text-neon"
-              @click="modelId = entry.id"
-            >
-              {{ entry.id }}
-            </button>
+          <div v-if="fetched.length > 0" class="grid gap-2">
+            <label class="relative grid">
+              <Search
+                class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-dim/60"
+                aria-hidden="true"
+              />
+              <input
+                v-model="searchQuery"
+                type="text"
+                placeholder="搜索模型 id…"
+                class="retro-focus retro-select-surface w-full border border-neon-deep/45 bg-elevated py-1.5 pl-8 pr-3 font-mono text-[11px] text-text-main placeholder:text-text-dim/60"
+              />
+            </label>
+
+            <div class="max-h-44 overflow-auto border border-neon-deep/30 bg-panel/40">
+              <button
+                v-for="entry in filteredFetched"
+                :key="entry.id"
+                type="button"
+                class="retro-focus block w-full px-3 py-1.5 text-left font-mono text-[11px] text-text-dim transition-colors hover:bg-neon/10 hover:text-neon"
+                @click="modelId = entry.id"
+              >
+                {{ entry.id }}
+              </button>
+              <p v-if="filteredFetched.length === 0" class="px-3 py-2 font-mono text-[11px] text-text-dim/60">
+                没有匹配的模型。
+              </p>
+            </div>
           </div>
         </div>
 
-        <!-- Inline parameter form (config-on-add, saves a step) -->
-        <div class="grid min-h-0 flex-1 overflow-auto p-1.5">
-          <ModelParamsFields
-            :parameters="params"
-            :kind="kind"
-            :tool-call-mode="toolCallMode"
-            :streaming="streaming"
-            @update:parameters="params = $event"
-            @update:tool-call-mode="toolCallMode = $event"
-            @update:streaming="streaming = $event"
-          />
-        </div>
+        <ModelParamsFields
+          :parameters="params"
+          :kind="kind"
+          :tool-call-mode="toolCallMode"
+          :streaming="streaming"
+          :model-id="modelId"
+          :test-model="testModel"
+          @update:parameters="params = $event"
+          @update:tool-call-mode="toolCallMode = $event"
+          @update:streaming="streaming = $event"
+        />
       </div>
 
       <p v-if="error" class="mt-2 font-mono text-[11px] text-danger">{{ error }}</p>
 
-      <div class="mt-4 flex justify-end gap-2">
+      <div class="mt-4 flex justify-end gap-2 border-t border-neon-deep/30 pt-3">
         <button
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs"
@@ -89,15 +100,16 @@
         </button>
       </div>
     </div>
-    </div>
-  </Teleport>
+  </FloatingWindow>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from "vue"
-import { RefreshCw } from "lucide-vue-next"
+import { RefreshCw, Search } from "lucide-vue-next"
+import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import ModelParamsFields from "./ModelParamsFields.vue"
 import {
+  cloneBrowserAiModelParameters,
   createDefaultBrowserAiModelParameters,
   fetchBrowserAiProviderModels,
   type BrowserAiModelEntry,
@@ -111,6 +123,12 @@ const props = defineProps<{
   open: boolean
   preset: BrowserAiProviderPreset | null
   kind: BrowserAiProviderKind
+  testModel?: (payload: {
+    modelId: string
+    parameters: BrowserAiModelParameters
+    toolCallMode: BrowserAiToolCallMode
+    streaming: boolean
+  }) => Promise<{ ok: boolean; message: string }>
 }>()
 
 const emit = defineEmits<{
@@ -120,20 +138,26 @@ const emit = defineEmits<{
 
 const modelId = ref("")
 const fetched = ref<BrowserAiModelEntry[]>([])
+const searchQuery = ref("")
 const fetching = ref(false)
 const fetchError = ref("")
 const error = ref("")
 const inputRef = ref<HTMLInputElement | null>(null)
 const params = ref<BrowserAiModelParameters>(createDefaultBrowserAiModelParameters())
 const toolCallMode = ref<BrowserAiToolCallMode>("text")
-// Streaming defaults from toolCallMode: native → true, text → false. The
-// switch is disabled while toolCallMode is text; the final value is clamped
-// to false for text-protocol models at confirm time.
 const streaming = ref(false)
 
 const canFetch = computed(
   () => Boolean(props.preset?.baseUrl.trim() && props.preset?.apiKey.trim()),
 )
+
+const filteredFetched = computed(() => {
+  const q = searchQuery.value.trim().toLowerCase()
+  if (!q) {
+    return fetched.value
+  }
+  return fetched.value.filter((entry) => entry.id.toLowerCase().includes(q))
+})
 
 watch(
   () => props.open,
@@ -141,6 +165,7 @@ watch(
     if (isOpen) {
       modelId.value = ""
       fetched.value = []
+      searchQuery.value = ""
       fetchError.value = ""
       error.value = ""
       params.value = createDefaultBrowserAiModelParameters()
@@ -158,6 +183,7 @@ async function fetchModels(): Promise<void> {
   }
   fetching.value = true
   fetchError.value = ""
+  searchQuery.value = ""
   try {
     const models = await fetchBrowserAiProviderModels({ ...preset, kind: props.kind })
     fetched.value = models
@@ -173,33 +199,18 @@ function cancel(): void {
   emit("update:open", false)
 }
 
-function toNumberOrNull(value: string): number | null {
-  const trimmed = value.trim()
-  if (trimmed === "") {
-    return null
-  }
-  const num = Number(trimmed)
-  return Number.isFinite(num) ? num : null
-}
-
 function confirm(): void {
   const id = modelId.value.trim()
   if (!id) {
     error.value = "请填写或选择模型 id。"
     return
   }
-  // Normalize numeric strings from the number inputs back to numbers/null.
-  const normalized: BrowserAiModelParameters = {
-    contextWindow: toNumberOrNull(String(params.value.contextWindow ?? "")),
-    maxOutputTokens: toNumberOrNull(String(params.value.maxOutputTokens ?? "")),
-    temperature: toNumberOrNull(String(params.value.temperature ?? "")),
-    topP: toNumberOrNull(String(params.value.topP ?? "")),
-    frequencyPenalty: toNumberOrNull(String(params.value.frequencyPenalty ?? "")),
-    presencePenalty: toNumberOrNull(String(params.value.presencePenalty ?? "")),
-    reasoningEffort: params.value.reasoningEffort,
-    customRequestParamsText: params.value.customRequestParamsText,
-  }
-  emit("confirm", { id, parameters: normalized, toolCallMode: toolCallMode.value, streaming: streaming.value })
+  emit("confirm", {
+    id,
+    parameters: cloneBrowserAiModelParameters(params.value),
+    toolCallMode: toolCallMode.value,
+    streaming: streaming.value,
+  })
   emit("update:open", false)
 }
 </script>

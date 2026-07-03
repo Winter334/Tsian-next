@@ -118,6 +118,9 @@ function createInspectionBridge(state: InspectSessionState): PlayFrontendBridge 
         // tool that runs ephemeral master turns only. Reject with a clear error.
         throw new Error("interaction.invokeAgent is not available in frontend inspector mode.")
       },
+      async stop(): Promise<void> {
+        // 自检会话的 ephemeral turn 无 AbortController 暴露，stop 空操作（幂等）。
+      },
     },
     // inspector 的 query 只做只读兜底(未识别 resource 返空),无副作用.
     query: {
@@ -771,7 +774,7 @@ async function runEphemeralTurn(
     )
     const masterConfig = resolveAgentModelConfig("master", providerPresetMap)
     const contextTokenBudget = resolveTokenBudget(
-      masterConfig?.parameters.contextWindow ?? null,
+      masterConfig?.parameters.common.contextWindow ?? null,
     )
 
     // 4. 跑回合(capabilities 照 index.ts:751-827 接全).

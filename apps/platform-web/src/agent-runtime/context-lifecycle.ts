@@ -26,9 +26,16 @@ import { getPlatformConfig } from "../config/platform-config"
  *  (加载存档后对话记录"消失"的根因).
  *
  *  泛化为按 agentId 生成路径(task 06-26):master 路径值不变(向后兼容),
- *  任意 persistent 入口 agent 的 context 存 save/agents/<agentId>/context.json. */
-export function agentContextPath(agentId: string): string {
-  return `save/agents/${agentId}/context.json`
+ *  任意 persistent 入口 agent 的 context 存 save/agents/<agentId>/context.json.
+ *
+ *  contextSlot 参数(task 07-01):不同调用方传不同 slot,读写不同 context-<slot>.json,
+ *  实现上下文隔离。slot 省略时路径不变(向后兼容)。slot 经消毒只保留 [a-zA-Z0-9_-],
+ *  防路径穿越/特殊字符注入。 */
+export function agentContextPath(agentId: string, slot?: string): string {
+  const base = `save/agents/${agentId}`
+  if (!slot) return `${base}/context.json`
+  const safeSlot = slot.replace(/[^a-zA-Z0-9_-]/g, "-")
+  return `${base}/context-${safeSlot}.json`
 }
 /** context.json 的 schema 标记,用于 parse 时校验. */
 export const AGENT_CONTEXT_SCHEMA = "tsian.agent.context.v1"
@@ -74,8 +81,9 @@ export const TARGET_COMPRESSION_TOKENS = 2000
 // 与 master 剧情压缩并列:压缩对象是整个上下文含工具调用+返回,多次压缩 + 时长兜底.
 // ─────────────────────────────────────────────────────────────────────────
 
-/** 任务型 agent(子代理/助手)默认时长配额 ms.超时抛 TaskTimeoutError.5 分钟给足多文件探索+总结+多次压缩空间. */
-export const DEFAULT_TASK_TIMEOUT_MS = 300_000
+/** 任务型 agent(子代理/助手)默认无响应超时 ms.距离上一次活动(delta/tool/round-end)
+ *  超过此阈值才超时,不是总时长.10 分钟给足多文件探索+总结+多次压缩空间. */
+export const DEFAULT_TASK_INACTIVITY_TIMEOUT_MS = 600_000
 /** 压缩无效早退阈值:压缩后 token 下降幅度 < 此比例 → 抛 TaskCompressionStalledError(不傻等超时烧钱). */
 export const TASK_COMPRESSION_STALL_RATIO = 0.1
 
@@ -366,8 +374,8 @@ export class TaskTimeoutError extends Error {
   constructor(timeoutMs?: number) {
     super(
       timeoutMs
-        ? `任务执行超时（${Math.round(timeoutMs / 1000)}s），已中止。`
-        : "任务执行超时，已中止。",
+        ? `任务无响应超时（${Math.round(timeoutMs / 1000)}s 无活动），已中止。`
+        : "任务无响应超时，已中止。",
     )
     this.name = "TaskTimeoutError"
   }

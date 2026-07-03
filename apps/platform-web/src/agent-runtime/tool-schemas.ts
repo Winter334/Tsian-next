@@ -202,6 +202,35 @@ const inspectFrontendSchema: ToolSchema = {
   },
 }
 
+const testSkillScriptSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.testSkillScript,
+  description:
+    "Test a browser_script action from any Skill without activating it first (no use_skill needed). Use this to verify scripts you authored or debug failures. " +
+    "Returns { ok: true, output } on success, or { ok: false, error: { code, message, name?, stack?, details? } } on failure. " +
+    "Error codes: BROWSER_SCRIPT_SYNTAX_ERROR (fix script syntax), BROWSER_SCRIPT_RUNTIME_ERROR (fix script logic), " +
+    "BROWSER_SCRIPT_SDK_ERROR (check tsian.workspace.* call arguments), BROWSER_SCRIPT_TIMEOUT (optimize or increase timeout), " +
+    "or the script's own error code (e.g. OPENING_ENTITY_ID_INVALID — fix the input). " +
+    "Workspace writes from the script go through the current turn's staged transaction (same as run_script).",
+  parameters: {
+    type: "object",
+    required: ["skillName", "actionName", "input"],
+    properties: {
+      skillName: {
+        type: "string",
+        description: "Skill name (matches the `name` field in SKILL.md frontmatter).",
+      },
+      actionName: {
+        type: "string",
+        description: "Action name from the Skill's tsian-actions JSON block.",
+      },
+      input: {
+        type: "object",
+        description: "Input object passed to the script as the first argument.",
+      },
+    },
+  },
+}
+
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
@@ -525,6 +554,14 @@ export function buildEnabledToolSchemas(options: {
   )
   if (canInspectFrontend) {
     schemas.push(inspectFrontendSchema)
+  }
+
+  const canTestSkillScript = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.testSkillScript,
+  )
+  if (canTestSkillScript) {
+    schemas.push(testSkillScriptSchema)
   }
 
   return schemas

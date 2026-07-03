@@ -74,22 +74,40 @@
           <article
             v-for="preset in activeType.presets"
             :key="preset.id"
-            class="retro-inset grid content-start gap-2.5 p-3"
+            class="retro-inset grid min-w-0 grid-cols-1 content-start gap-2.5 p-3"
           >
-            <div class="min-w-0">
-              <p class="truncate text-sm font-bold text-text-main">{{ preset.name || "未命名" }}</p>
-              <p class="mt-0.5 truncate font-mono text-[10px] text-text-dim/80">{{ preset.baseUrl || "未设置接口地址" }}</p>
+            <div class="flex min-w-0 items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-bold text-text-main">{{ preset.name || "未命名" }}</p>
+                <p class="mt-0.5 truncate font-mono text-[10px] text-text-dim/80">{{ preset.baseUrl || "未设置接口地址" }}</p>
+              </div>
+              <span
+                v-if="preset.id === draft.activeProviderId"
+                class="inline-flex shrink-0 items-center gap-1 border border-neon/50 bg-neon/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-neon"
+              >
+                <Star class="h-3 w-3 fill-current" aria-hidden="true" />
+                默认
+              </span>
+              <button
+                v-else
+                type="button"
+                class="retro-focus grid h-6 w-6 shrink-0 place-items-center border border-neon-deep/40 bg-elevated text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                title="设为默认服务商"
+                @click="emit('setActivePreset', preset.id)"
+              >
+                <Star class="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
             </div>
 
-            <div class="grid gap-1 font-mono text-[10px] text-text-dim/80">
+            <div class="grid min-w-0 gap-1 font-mono text-[10px] text-text-dim/80">
               <p>主模型：<span class="text-neon">{{ primaryModelId(preset) || "未配置" }}</span></p>
               <p>{{ preset.models.length }} 个模型 · {{ strategyLabel(preset.fallbackStrategy) }}</p>
             </div>
 
-            <div class="mt-auto flex items-center gap-1.5 pt-1">
+            <div class="mt-auto flex min-w-0 flex-wrap items-center gap-1.5 pt-1">
               <button
                 type="button"
-                class="retro-button retro-focus inline-flex h-7 flex-1 items-center justify-center gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider"
+                class="retro-button retro-focus inline-flex h-7 min-w-0 flex-1 items-center justify-center gap-1.5 whitespace-nowrap px-2 font-mono text-[10px] uppercase tracking-wider"
                 @click="emit('enterModels', activeType.id, preset.id)"
               >
                 <Settings2 class="h-3 w-3" aria-hidden="true" />
@@ -141,7 +159,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue"
-import { Pencil, Plus, Server, Settings2, Trash2 } from "lucide-vue-next"
+import { Pencil, Plus, Server, Settings2, Star, Trash2 } from "lucide-vue-next"
 import {
   PROVIDER_TYPE_KINDS,
   type BrowserAiFallbackStrategy,
@@ -162,6 +180,7 @@ const emit = defineEmits<{
   (e: "deletePreset", typeId: string, presetId: string): void
   (e: "enterModels", typeId: string, presetId: string): void
   (e: "patchPreset", payload: { typeId: string; presetId: string; patch: Partial<BrowserAiProviderPreset> }): void
+  (e: "setActivePreset", presetId: string): void
 }>()
 
 const activeType = computed(

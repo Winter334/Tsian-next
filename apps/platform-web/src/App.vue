@@ -1,16 +1,14 @@
 <template>
-  <div
-    class="grid min-h-dvh w-full overflow-hidden bg-void"
-    :class="{ 'animate-crt-switch': splashState === 'animating' }"
-    @animationend="onCrtAnimationEnd"
-  >
+  <div class="grid min-h-dvh w-full overflow-hidden bg-void">
     <DesktopShell class="col-start-1 row-start-1 z-10 min-h-0" />
 
-    <SplashScreen
-      v-if="splashState !== 'done'"
-      class="col-start-1 row-start-1 z-50"
-      @exit="startCrtTransition"
-    />
+    <Transition name="splash-fade">
+      <SplashScreen
+        v-if="showSplash"
+        class="col-start-1 row-start-1 z-50"
+        @exit="finishSplash"
+      />
+    </Transition>
 
     <ToastHost />
     <ConfirmHost />
@@ -28,30 +26,38 @@ import ConfirmHost from "./components/feedback/ConfirmHost.vue"
 import { initializePlatformHost } from "./platform-host"
 import { cleanupOrphanAttachments } from "./storage"
 import { preheatPlatformConfig } from "./config/platform-config"
+import { useAuth } from "./composables/useAuth"
 
-type SplashState = "typing" | "animating" | "done"
+const SPLASH_SEEN_KEY = "tsian:splash:nyan-bsod:v1"
 
-const splashState = ref<SplashState>("typing")
+const { initAuth } = useAuth()
 
-function startCrtTransition() {
-  if (splashState.value !== "typing") {
-    return
+const showSplash = ref(!hasSeenSplash())
+
+function hasSeenSplash(): boolean {
+  try {
+    return localStorage.getItem(SPLASH_SEEN_KEY) === "seen"
+  } catch {
+    return false
   }
-
-  splashState.value = "animating"
-  setTimeout(() => {
-    if (splashState.value === "animating") {
-      splashState.value = "done"
-    }
-  }, 440)
 }
 
-function onCrtAnimationEnd() {
-  splashState.value = "done"
+function markSplashSeen(): void {
+  try {
+    localStorage.setItem(SPLASH_SEEN_KEY, "seen")
+  } catch {
+    // localStorage can be unavailable in private/sandboxed contexts.
+  }
+}
+
+function finishSplash() {
+  markSplashSeen()
+  showSplash.value = false
 }
 
 onMounted(async () => {
   await initializePlatformHost()
+  void initAuth()
   // 预热平台配置 cache：读 .tsian/local/platform-config.json → merge 默认 → 内存。
   // 完成前 46 个同步读调用点用默认值（provider 未配时本就走 env/默认，窗口无感）。
   void preheatPlatformConfig().catch(() => {
@@ -63,3 +69,13 @@ onMounted(async () => {
   })
 })
 </script>
+
+<style scoped>
+.splash-fade-leave-active {
+  transition: opacity 0.7s ease;
+}
+
+.splash-fade-leave-to {
+  opacity: 0;
+}
+</style>

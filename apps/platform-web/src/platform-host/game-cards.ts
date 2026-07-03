@@ -1,5 +1,6 @@
 import type {
   GameCardFrontendBinding,
+  GameCardManifest,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { FRONTEND_FRAMEWORKS } from "@tsian/contracts"
@@ -69,6 +70,8 @@ export interface PlatformGameCardFrontendFileSummary {
 export interface PlatformGameCardMetadataInput {
   name: string
   summary: string
+  authorName?: string
+  version?: string
 }
 
 export type PlatformGameCardCopyInput = PlatformGameCardMetadataInput
@@ -190,11 +193,22 @@ function requireMetadataText(value: string, fieldName: string): string {
   return normalized
 }
 
-function metadataManifestPatch(input: PlatformGameCardMetadataInput) {
-  return {
+function metadataManifestPatch(input: PlatformGameCardMetadataInput): Partial<GameCardManifest> {
+  const patch: Partial<GameCardManifest> = {
     name: requireMetadataText(input.name, "名称"),
     summary: requireMetadataText(input.summary, "简介"),
   }
+  if (input.authorName !== undefined) {
+    const trimmed = input.authorName.trim()
+    patch.author = trimmed ? { name: trimmed } : undefined
+  }
+  if (input.version !== undefined) {
+    const trimmed = input.version.trim()
+    if (trimmed) {
+      patch.version = trimmed
+    }
+  }
+  return patch
 }
 
 function slugifyGameCardIdSegment(value: string): string {
@@ -327,7 +341,7 @@ export async function copyPlatformGameCardAsLocal(
   const frontendFiles = await listLocalGameCardFrontendFiles(card.id)
   const contentFiles = await listLocalGameCardContentFiles(card.id)
   const patch = metadataManifestPatch(input)
-  const id = await createUniqueLocalGameCardId(patch.name)
+  const id = await createUniqueLocalGameCardId(patch.name ?? card.manifest.name)
   const result = await putLocalGameCard({
     manifest: {
       ...card.manifest,

@@ -91,6 +91,24 @@
           <span class="truncate">{{ window.shortLabel }}</span>
         </button>
       </div>
+      <div class="desktop-auth flex items-center gap-1 border-l border-neon-deep/35 pl-2" @click.stop>
+        <button
+          type="button"
+          class="desktop-task-button retro-focus px-2"
+          title="账号中心"
+          @click="openAccountCenter"
+        >
+          <img
+            v-if="loggedIn && currentUser?.avatarUrl"
+            :src="currentUser.avatarUrl"
+            alt=""
+            class="h-4 w-4 rounded-full border border-neon-deep/50"
+          />
+          <UserRound v-else class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span v-if="!loggedIn" class="hidden sm:inline">登录</span>
+          <span v-else class="truncate max-w-[120px]">{{ currentUser?.displayName }}</span>
+        </button>
+      </div>
       <div class="desktop-clock">{{ desktopClock }}</div>
     </footer>
 
@@ -102,7 +120,7 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { MonitorDot } from "lucide-vue-next"
+import { MonitorDot, UserRound } from "lucide-vue-next"
 import DesktopWindow from "./DesktopWindow.vue"
 import {
   desktopLaunchers,
@@ -116,6 +134,7 @@ import {
   type DesktopBounds,
   type DesktopWindowGeometry,
 } from "@/composables/useDesktopWindows"
+import { useAuth } from "@/composables/useAuth"
 
 interface ContextMenuState {
   x: number
@@ -126,6 +145,7 @@ interface ContextMenuState {
 const route = useRoute()
 const router = useRouter()
 const desktop = useDesktopWindows()
+const { currentUser, loggedIn } = useAuth()
 const selectedDesktopIcon = ref("")
 const contextMenu = ref<ContextMenuState | null>(null)
 const desktopClock = ref("")
@@ -245,6 +265,15 @@ function showDesktop() {
   desktop.minimizeAll()
   contextMenu.value = null
   navigateTo("/")
+}
+
+function openAccountCenter() {
+  const input = desktopWindowForLauncher("account")
+  if (!input) {
+    return
+  }
+  desktop.openWindow(input, stageBounds.value)
+  navigateTo(input.routePath)
 }
 
 function syncRouteToActiveWindow() {

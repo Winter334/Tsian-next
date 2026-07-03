@@ -17,7 +17,7 @@ import type {
 import type { CompressCallModel, TaskCompressionResult } from "./context-lifecycle"
 import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
 import type { ToolSchema } from "./tool-schemas"
-import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
+import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, RuntimeTestSkillScriptInput, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
 import type { ModelCallResult, NativeToolCall, RuntimeChatMessage } from "../runtime-host/ai"
 import type { BrowserAiToolCallMode } from "../config/ai"
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
@@ -97,8 +97,9 @@ export interface AgentRuntimeTurnInput {
    */
   compressionMode?: RuntimeCompressionMode
   /**
-   * task 模式(assistant)时长配额 ms.超时抛 TaskTimeoutError,温和中止.
-   * 仅 compressionMode==="task" 生效;narrative(master)忽略.未提供 → DEFAULT_TASK_TIMEOUT_MS.
+   * task 模式(assistant/agent_call)无响应超时配额 ms.距离上一次活动(delta/tool/round-end)
+   * 超过此阈值才超时,不是总时长.超时抛 TaskTimeoutError,温和中止.
+   * 仅 compressionMode==="task" 生效;narrative(master)忽略.未提供 → DEFAULT_TASK_INACTIVITY_TIMEOUT_MS.
    */
   timeoutMs?: number
 }
@@ -196,6 +197,15 @@ export interface AgentRuntimeCapabilities {
   runBrowserScript?(
     request: RuntimeBrowserScriptExecutorRequest,
     context?: RuntimeControlledExecutorContext,
+  ): Promise<PlatformActionResult>
+  /**
+   * test_skill_script capability. Locates a Skill by name, resolves the
+   * declared browser_script action, and runs it directly — without requiring
+   * use_skill activation first. Lets the assistant agent test/debug scripts
+   * it authored. Implemented in platform-host/index.ts.
+   */
+  runTestSkillScript?(
+    input: RuntimeTestSkillScriptInput,
   ): Promise<PlatformActionResult>
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter

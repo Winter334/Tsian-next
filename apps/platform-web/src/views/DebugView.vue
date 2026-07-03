@@ -38,164 +38,84 @@
       </div>
 
       <div v-else class="grid min-w-0 gap-3">
-        <!-- 仪表盘 -->
-        <section class="grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-3">
-          <!-- 运行状态 -->
-          <article class="retro-inset grid content-start gap-3 p-4">
-            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">运行状态</p>
-            <p class="text-sm leading-6" :class="overallStatus.textClass">{{ overallStatus.detail }}</p>
-            <div class="grid grid-cols-2 gap-2">
-              <div class="border border-neon-deep/30 bg-elevated/35 px-2 py-1.5">
-                <p class="font-mono text-[10px] uppercase text-text-dim">错误</p>
-                <p class="mt-0.5 font-mono text-lg font-bold" :class="diagnosticStats.error > 0 ? 'text-danger' : 'text-text-main'">
-                  {{ diagnosticStats.error }}
-                </p>
-              </div>
-              <div class="border border-neon-deep/30 bg-elevated/35 px-2 py-1.5">
-                <p class="font-mono text-[10px] uppercase text-text-dim">警告</p>
-                <p class="mt-0.5 font-mono text-lg font-bold" :class="diagnosticStats.warning > 0 ? 'text-warning' : 'text-text-main'">
-                  {{ diagnosticStats.warning }}
-                </p>
-              </div>
+        <!-- KPI 卡片行 -->
+        <section class="grid min-w-0 gap-3 sm:grid-cols-3">
+          <!-- 缓存命中 -->
+          <article class="retro-inset grid content-start gap-2 p-4">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">缓存命中</p>
+            <div class="flex items-baseline gap-2">
+              <span v-if="latestCacheHitRate !== null" class="font-mono text-3xl font-bold text-neon glow-text">{{ latestCacheHitRate }}%</span>
+              <span v-else class="font-mono text-xl text-text-dim">—</span>
+            </div>
+            <p v-if="latestAiCall" class="truncate font-mono text-[10px] text-text-dim">
+              {{ latestAiCall.providerKind ?? "unknown" }} · {{ latestAiCall.model || "?" }}
+            </p>
+            <div v-if="latestCacheShares" class="flex h-1.5 overflow-hidden border border-neon-deep/30">
+              <div class="bg-neon" :style="{ width: latestCacheShares.cached + '%' }" :title="`cached ${latestCacheShares.cachedTokens}`" />
+              <div class="bg-neon-deep" :style="{ width: latestCacheShares.cacheCreation + '%' }" :title="`cache write ${latestCacheShares.cacheCreationTokens}`" />
+              <div class="bg-warning/70" :style="{ width: latestCacheShares.miss + '%' }" :title="`miss ${latestCacheShares.missTokens}`" />
+            </div>
+            <div v-if="latestCacheShares" class="flex flex-wrap gap-x-3 font-mono text-[10px]">
+              <span class="text-neon">● {{ formatTokens(latestCacheShares.cachedTokens) }}</span>
+              <span v-if="latestCacheShares.cacheCreationTokens > 0" class="text-neon-deep">● {{ formatTokens(latestCacheShares.cacheCreationTokens) }}</span>
+              <span class="text-warning/80">● {{ formatTokens(latestCacheShares.missTokens) }}</span>
             </div>
           </article>
 
-          <!-- 会话 -->
-          <article class="retro-inset grid content-start gap-3 p-4">
-            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">会话</p>
-            <div class="grid grid-cols-3 gap-2">
-              <div>
-                <p class="font-mono text-[10px] uppercase text-text-dim">回合</p>
-                <p class="mt-0.5 font-mono text-2xl font-bold text-neon">{{ runtimeTurnLabel }}</p>
-              </div>
-              <div>
-                <p class="font-mono text-[10px] uppercase text-text-dim">消息</p>
-                <p class="mt-0.5 font-mono text-2xl font-bold text-text-main">{{ snapshotMessageCount }}</p>
-              </div>
-              <div>
-                <p class="font-mono text-[10px] uppercase text-text-dim">检查点</p>
-                <p class="mt-0.5 font-mono text-2xl font-bold text-text-main">{{ checkpointItems.length }}</p>
-              </div>
+          <!-- Token 累计 -->
+          <article class="retro-inset grid content-start gap-2 p-4">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">Token 累计</p>
+            <p class="font-mono text-3xl font-bold text-neon glow-text">{{ formatTokens(tokenStats.totalTotal) }}</p>
+            <div v-if="tokenStats.totalTotal > 0" class="flex h-1.5 overflow-hidden border border-neon-deep/30">
+              <div class="bg-neon" :style="{ width: tokenShare.input + '%' }" />
+              <div class="bg-neon-deep/50" :style="{ width: tokenShare.output + '%' }" />
             </div>
-            <p class="truncate font-mono text-[11px] text-text-dim">
-              存档：{{ platformContext?.activeSaveId ?? "未选择" }}
-            </p>
-            <p class="truncate font-mono text-[11px] text-text-dim">
-              前端：{{ platformContext?.activeFrontendId ?? "未配置" }}
-            </p>
+            <div v-if="tokenStats.totalTotal > 0" class="flex justify-between font-mono text-[10px]">
+              <span class="text-text-main">in {{ formatTokens(tokenStats.inputTotal) }}</span>
+              <span class="text-text-dim">out {{ formatTokens(tokenStats.outputTotal) }}</span>
+            </div>
           </article>
 
-          <!-- Token 统计 -->
-          <article class="retro-inset grid min-w-0 content-start gap-3 p-4 md:col-span-2 xl:col-span-1">
-            <div class="flex items-center justify-between gap-2">
-              <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">Token 统计</p>
-              <span class="font-mono text-[11px] text-text-dim">{{ tokenStats.callsWithUsage }} 次调用</span>
+          <!-- AI 调用 -->
+          <article class="retro-inset grid content-start gap-2 p-4">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">AI 调用</p>
+            <div class="flex items-baseline gap-1.5">
+              <span class="font-mono text-3xl font-bold text-text-main">{{ tokenStats.callsWithUsage }}</span>
+              <span class="font-mono text-[11px] text-text-dim">次</span>
             </div>
-
-            <div class="text-center">
-              <p class="font-mono text-[10px] uppercase text-text-dim">累计 total</p>
-              <p class="mt-1 font-mono text-3xl font-bold text-neon glow-text">{{ formatTokens(tokenStats.totalTotal) }}</p>
-            </div>
-
-            <div v-if="tokenStats.totalTotal > 0" class="grid gap-1.5">
-              <div class="flex h-2 overflow-hidden border border-neon-deep/30">
-                <div class="bg-neon" :style="{ width: tokenShare.input + '%' }" />
-                <div class="bg-neon-deep/50" :style="{ width: tokenShare.output + '%' }" />
-              </div>
-              <div class="flex items-center justify-between font-mono text-[11px]">
-                <span class="text-text-main">输入 {{ formatTokens(tokenStats.inputTotal) }}</span>
-                <span class="text-text-dim">输出 {{ formatTokens(tokenStats.outputTotal) }}</span>
-              </div>
-            </div>
-
-            <div v-if="latestAiCall" class="grid min-w-0 gap-2 border-t border-neon-deep/25 pt-2">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="truncate font-mono text-[11px] text-text-main">{{ latestAiCall.model || "未知模型" }}</span>
-                <span class="font-mono text-[11px] text-text-dim">{{ latestAiCall.createdAt }}</span>
-              </div>
-              <div class="grid gap-1.5">
-                <div class="flex items-center gap-2">
-                  <span class="w-8 font-mono text-[10px] text-text-dim">IN</span>
-                  <div class="h-1.5 flex-1 bg-neon-deep/20">
-                    <div class="h-full bg-neon" :style="{ width: latestCallShares.input + '%' }" />
-                  </div>
-                  <span class="w-12 text-right font-mono text-[11px] text-text-main">{{ latestAiCall.usage?.input ?? "-" }}</span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="w-8 font-mono text-[10px] text-text-dim">OUT</span>
-                  <div class="h-1.5 flex-1 bg-neon-deep/20">
-                    <div class="h-full bg-neon/70" :style="{ width: latestCallShares.output + '%' }" />
-                  </div>
-                  <span class="w-12 text-right font-mono text-[11px] text-text-main">{{ latestAiCall.usage?.output ?? "-" }}</span>
-                </div>
-                <div class="flex items-center gap-2">
-                  <span class="w-8 font-mono text-[10px] text-text-dim">ALL</span>
-                  <div class="h-1.5 flex-1 bg-neon-deep/20">
-                    <div class="h-full bg-neon glow-box" :style="{ width: latestCallShares.total + '%' }" />
-                  </div>
-                  <span class="w-12 text-right font-mono text-[11px] text-neon">{{ latestAiCall.usage?.total ?? "-" }}</span>
-                </div>
-              </div>
-              <div v-if="latestAiCall.messageSegments?.length" class="grid gap-1.5 border-t border-neon-deep/20 pt-2">
-                <!-- 默认视图:稳定前缀 + 缓存断点(人一眼看到缓存友好度) -->
-                <div class="grid gap-1">
-                  <div class="flex items-baseline justify-between gap-2">
-                    <span class="font-mono text-[10px] uppercase tracking-wider text-text-dim">稳定前缀</span>
-                    <span class="font-mono text-[11px] text-neon">{{ formatTokens(stablePrefixChars) }} chars · {{ stablePrefixRatio }}%</span>
-                  </div>
-                  <!-- 断点可视化条:按段顺序涂色,stable 绿/semi 灰/dynamic 黄 -->
-                  <div class="flex h-1.5 overflow-hidden border border-neon-deep/30">
-                    <div
-                      v-for="segment in latestAiCall.messageSegments"
-                      :key="`bar-${latestAiCall.id}-${segment.index}`"
-                      :style="{ flexGrow: segment.charLength }"
-                      :class="segment.stability === 'stable' ? 'bg-neon' : segment.stability === 'semi-stable' ? 'bg-neon-deep/50' : 'bg-warning/70'"
-                      :title="`#${segment.index} ${segment.label} (${segment.stability}, ${formatTokens(segment.charLength)})`"
-                    />
-                  </div>
-                  <p v-if="cacheBreakpointLabel" class="truncate font-mono text-[10px] text-warning" :title="cacheBreakpointLabel">
-                    缓存断点 → {{ cacheBreakpointLabel }}
-                  </p>
-                  <p v-else class="font-mono text-[10px] text-neon">无动态段 · 全前缀可缓存</p>
-                </div>
-                <!-- 明细折叠:按需展开看逐段 role/label/chars/preview -->
-                <details class="group">
-                  <summary class="cursor-pointer select-none font-mono text-[10px] uppercase tracking-wider text-text-dim hover:text-text-main">
-                    消息段明细 · {{ messageSegmentSummary }}
-                  </summary>
-                  <div class="mt-1 max-h-48 overflow-y-auto overflow-x-hidden border border-neon-deep/25 bg-elevated/25">
-                    <div
-                      v-for="segment in latestAiCall.messageSegments"
-                      :key="`${latestAiCall.id}-${segment.index}`"
-                      class="grid min-w-0 grid-cols-[1.75rem_3rem_minmax(0,1fr)_3.5rem] gap-1.5 border-b border-neon-deep/15 px-2 py-1 font-mono text-[10px] last:border-b-0"
-                    >
-                      <span class="text-text-dim">#{{ segment.index }}</span>
-                      <span class="truncate" :class="segment.stability === 'dynamic' ? 'text-warning' : segment.stability === 'stable' ? 'text-neon' : 'text-text-main'">{{ segment.stability }}</span>
-                      <div class="min-w-0">
-                        <p class="truncate text-text-main">{{ segment.role }} · {{ segment.label }}</p>
-                        <p class="truncate text-text-dim" :title="segment.preview">{{ segment.preview }}</p>
-                      </div>
-                      <span class="text-right text-text-dim">{{ formatTokens(segment.charLength) }}</span>
-                    </div>
-                  </div>
-                </details>
-              </div>
-            </div>
-            <p v-else class="font-mono text-[11px] text-text-dim">尚无带用量数据的模型调用。</p>
+            <p class="font-mono text-[10px] text-text-dim">{{ providerStats.length }} 个 provider/model</p>
           </article>
         </section>
 
-        <!-- 最近问题（仅在有错误/警告时出现） -->
-        <section v-if="recentIssues.length > 0" class="grid gap-2">
-          <p class="font-mono text-xs uppercase tracking-wider text-neon">最近问题</p>
-          <div
-            v-for="issue in recentIssues"
-            :key="issue.key"
-            class="border px-3 py-2"
-            :class="issue.tone === 'error' ? 'border-danger/45 bg-danger/10' : 'border-warning/45 bg-warning/10'"
-          >
-            <p class="font-mono text-xs" :class="issue.tone === 'error' ? 'text-danger' : 'text-warning'">{{ issue.title }}</p>
-            <p class="mt-1 line-clamp-2 text-xs leading-5 text-text-dim">{{ issue.detail }}</p>
+        <!-- 命中率趋势（独立全宽面板）-->
+        <section v-if="latestCachePoint" class="retro-inset grid gap-2 p-4">
+          <div class="flex items-center justify-between">
+            <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">命中率趋势</p>
+            <span class="font-mono text-[10px] text-text-dim">最近 {{ cacheTrendPoints.length }} 次</span>
+          </div>
+          <svg viewBox="0 0 100 30" preserveAspectRatio="none" class="h-24 w-full">
+            <line x1="0" y1="30" x2="100" y2="30" stroke="currentColor" stroke-width="0.3" class="text-neon-deep/40" />
+            <line x1="0" y1="15" x2="100" y2="15" stroke="currentColor" stroke-width="0.2" stroke-dasharray="1,1" class="text-neon-deep/30" />
+            <line x1="0" y1="0" x2="100" y2="0" stroke="currentColor" stroke-width="0.3" class="text-neon-deep/40" />
+            <polyline v-if="cacheTrendPolyline" :points="cacheTrendPolyline" fill="none" stroke="var(--neon, currentColor)" stroke-width="0.8" />
+            <circle :cx="latestCachePoint.x" :cy="latestCachePoint.y" r="1.2" fill="var(--neon, currentColor)" />
+          </svg>
+        </section>
+
+        <!-- Provider 统计（独立面板）-->
+        <section v-if="providerStats.length > 0" class="retro-inset grid gap-2 p-4">
+          <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">Provider 统计</p>
+          <div class="grid gap-0.5">
+            <div
+              v-for="stat in providerStats"
+              :key="`${stat.provider}-${stat.model}`"
+              class="grid grid-cols-[minmax(0,1fr)_3rem_3rem] items-center gap-3 border-b border-neon-deep/15 py-1 font-mono text-[11px] last:border-b-0"
+            >
+              <span class="truncate text-text-main">{{ stat.provider }} · {{ stat.model }}</span>
+              <span class="text-right text-text-dim">{{ stat.calls }}次</span>
+              <span v-if="stat.avgHitRate !== null" class="text-right text-neon">{{ stat.avgHitRate }}%</span>
+              <span v-else class="text-right text-text-dim">—</span>
+            </div>
           </div>
         </section>
 
@@ -306,8 +226,6 @@
 import type {
   AiDebugRecord,
   PlatformContextShell,
-  RuntimeDiagnosticFact,
-  RuntimeDiagnosticSource,
   RuntimeDiagnosticSummary,
   SessionHistoryEntry,
 } from "@tsian/contracts"
@@ -317,13 +235,6 @@ import { playFrontendBridge, waitForPlatformHostReady } from "../platform-host"
 import { formatTraceForHuman, type RuntimeTraceEvent } from "../agent-runtime/trace"
 import { confirm } from "@/composables/useConfirm"
 import { toast } from "@/composables/useToast"
-
-interface IssueSummary {
-  key: string
-  tone: "warning" | "error"
-  title: string
-  detail: string
-}
 
 interface TraceEventShape {
   type: string
@@ -362,23 +273,6 @@ let unsubscribeTurnReady: (() => void) | null = null
 const runtimeTurn = computed(() => {
   const entries = sessionHistory.value
   return entries.length > 0 ? Math.max(...entries.map((e) => e.turn)) : 0
-})
-const runtimeTurnLabel = computed(() => String(runtimeTurn.value))
-const snapshotMessageCount = computed(() =>
-  sessionHistory.value.reduce(
-    (sum, e) => sum + e.timeline.filter((i) => i.kind === "user" || i.kind === "assistant").length,
-    0,
-  ),
-)
-
-const diagnosticStats = computed(() => {
-  return diagnosticItems.value.reduce(
-    (stats, item) => {
-      stats[item.severity] += 1
-      return stats
-    },
-    { info: 0, warning: 0, error: 0 },
-  )
 })
 
 const tokenStats = computed(() => {
@@ -421,65 +315,111 @@ const tokenShare = computed(() => {
   }
 })
 
-const latestCallShares = computed(() => {
+// ── 缓存命中（provider 真实数据，非本地估算）──────────────────────────────
+// 任务 06-30-debugview-cache-hit-display：删掉 stablePrefixChars/Ratio/cacheBreakpointLabel
+// 本地字符估算，改用 provider 返回的 cached_tokens 真实命中率。
+
+/** 最近一次调用的真实缓存命中率（cached/prompt_tokens，%）。无 cached 数据时 null。 */
+const latestCacheHitRate = computed(() => {
   const call = latestAiCall.value
-  if (!call?.usage) return { input: 0, output: 0, total: 0 }
+  if (!call?.usage) return null
+  const cached = call.usage.cached
+  const input = call.usage.input
+  if (typeof cached !== "number" || typeof input !== "number" || input <= 0) return null
+  return Math.round((cached / input) * 100)
+})
+
+/** 最近 N 次调用的命中率点序列（供 SVG 折线图）。null 点 = 该调用无缓存数据。 */
+const cacheTrendPoints = computed(() => {
+  const records = aiDebugRecords.value
+  // 按时间升序（旧→新），取最近 20 条
+  const sorted = [...records].sort((a, b) => a.createdAt.localeCompare(b.createdAt)).slice(-20)
+  return sorted.map((r) => {
+    const cached = r.usage?.cached
+    const input = r.usage?.input
+    if (typeof cached !== "number" || typeof input !== "number" || input <= 0) return null
+    return Math.round((cached / input) * 100)
+  })
+})
+
+/** 最近一次调用的 token 构成：cached/cacheCreation/miss（按 input 比例涂色）。 */
+const latestCacheShares = computed(() => {
+  const call = latestAiCall.value
+  if (!call?.usage) return null
   const input = call.usage.input ?? 0
-  const output = call.usage.output ?? 0
-  const total = call.usage.total ?? (input + output)
-  const max = Math.max(input, output, total, 1)
+  const cached = call.usage.cached ?? 0
+  const cacheCreation = call.usage.cacheCreation ?? 0
+  if (input <= 0) return null
+  const miss = Math.max(0, input - cached - cacheCreation)
   return {
-    input: Math.round((input / max) * 100),
-    output: Math.round((output / max) * 100),
-    total: Math.round((total / max) * 100),
+    cached: Math.round((cached / input) * 100),
+    cacheCreation: Math.round((cacheCreation / input) * 100),
+    miss: Math.round((miss / input) * 100),
+    cachedTokens: cached,
+    cacheCreationTokens: cacheCreation,
+    missTokens: miss,
+    inputTokens: input,
   }
 })
 
-const messageSegmentSummary = computed(() => {
-  const segments = latestAiCall.value?.messageSegments ?? []
-  if (segments.length === 0) return "0"
-  let stable = 0
-  let semiStable = 0
-  let dynamic = 0
-  let chars = 0
-  for (const segment of segments) {
-    chars += segment.charLength
-    if (segment.stability === "stable") stable += 1
-    else if (segment.stability === "semi-stable") semiStable += 1
-    else dynamic += 1
+/** SVG 折线图的 points 字符串（viewBox 0 0 100 30，纵轴 0-100% → 30-0 反转）。
+ *  1 个点时返回空（polyline 画不出线），但面板仍渲染——模板用 latestCachePoint 画圆点标记。 */
+const cacheTrendPolyline = computed(() => {
+  const points = cacheTrendPoints.value
+  if (points.length < 2) return ""
+  const step = 100 / (points.length - 1)
+  return points
+    .map((rate, i) => {
+      if (rate === null) return "" // 无数据点跳过（留空隙）
+      const x = i * step
+      const y = 30 - (rate / 100) * 30 // 反转：100% 在顶部
+      return `${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .filter(Boolean)
+    .join(" ")
+})
+
+/** 最后一个有效点的坐标（供单点标记或折线末端圆点）。null = 无有效点。 */
+const latestCachePoint = computed(() => {
+  const points = cacheTrendPoints.value
+  if (points.length === 0) return null
+  const step = points.length > 1 ? 100 / (points.length - 1) : 50
+  for (let i = points.length - 1; i >= 0; i -= 1) {
+    const rate = points[i]
+    if (rate === null) continue
+    const x = i * step
+    const y = 30 - (rate / 100) * 30
+    return { x: Number(x.toFixed(1)), y: Number(y.toFixed(1)), rate }
   }
-  return `${segments.length} 段 · stable ${stable} · semi ${semiStable} · dynamic ${dynamic} · ${formatTokens(chars)} chars`
+  return null
 })
 
-/**
- * 稳定前缀:从开头连续 stable/semi-stable 段的累计字符数,到第一个 dynamic 段断。
- * 这是 provider prefix cache 能命中长度的本地近似(不等于 token,但成正比)。
- * 人类最该一眼看到的就是这个值——它直接反映"缓存友好度"。
- */
-const stablePrefixChars = computed(() => {
-  const segments = latestAiCall.value?.messageSegments ?? []
-  let prefix = 0
-  for (const segment of segments) {
-    if (segment.stability === "dynamic") break
-    prefix += segment.charLength
+/** 按 provider+model 分组的统计。 */
+const providerStats = computed(() => {
+  const groups = new Map<string, { provider: string; model: string; calls: number; cachedSum: number; inputSum: number; outputSum: number; cacheHitCalls: number }>()
+  for (const record of aiDebugRecords.value) {
+    const provider = record.providerKind ?? "unknown"
+    const model = record.model ?? "unknown"
+    const key = `${provider}::${model}`
+    let g = groups.get(key)
+    if (!g) {
+      g = { provider, model, calls: 0, cachedSum: 0, inputSum: 0, outputSum: 0, cacheHitCalls: 0 }
+      groups.set(key, g)
+    }
+    g.calls += 1
+    if (record.usage) {
+      g.inputSum += record.usage.input ?? 0
+      g.outputSum += record.usage.output ?? 0
+      if (typeof record.usage.cached === "number") {
+        g.cachedSum += record.usage.cached
+        g.cacheHitCalls += 1
+      }
+    }
   }
-  return prefix
-})
-
-/** 稳定前缀占总字符的比例(%),用于可视化条和"缓存友好度"直观判断。 */
-const stablePrefixRatio = computed(() => {
-  const segments = latestAiCall.value?.messageSegments ?? []
-  const total = segments.reduce((sum, s) => sum + s.charLength, 0)
-  if (total === 0) return 0
-  return Math.round((stablePrefixChars.value / total) * 100)
-})
-
-/** 断点段:第一个 dynamic 段的 index+label(缓存从这里开始 miss);无 dynamic 段则空。 */
-const cacheBreakpointLabel = computed(() => {
-  const segments = latestAiCall.value?.messageSegments ?? []
-  const bp = segments.find((s) => s.stability === "dynamic")
-  if (!bp) return ""
-  return `#${bp.index} ${bp.role} · ${bp.label}`
+  return [...groups.values()].map((g) => ({
+    ...g,
+    avgHitRate: g.inputSum > 0 ? Math.round((g.cachedSum / g.inputSum) * 100) : null,
+  })).sort((a, b) => b.calls - a.calls)
 })
 
 // 运行日志：把 trace events 渲染为人类可读事件流（非 JSONL 原文）。
@@ -490,14 +430,16 @@ const traceText = computed(() => {
 })
 
 const overallStatus = computed(() => {
-  const hasAiError = aiDebugRecords.value.some((record) => Boolean(record.error))
-  const hasDiagnosticError = diagnosticItems.value.some((item) => item.severity === "error" || item.status === "failed")
-  const hasWarning = diagnosticItems.value.some((item) => item.severity === "warning" || item.status === "anomalous")
+  // 只看最新回合的诊断——历史错误已在 trace 日志中可查，
+  // 状态徽章反映"当前是否健康"，不积累全量历史。
+  const latest = diagnosticItems.value[0]
+  const hasDiagnosticError = latest && (latest.severity === "error" || latest.status === "failed")
+  const hasWarning = latest && (latest.severity === "warning" || latest.status === "anomalous")
 
-  if (hasAiError || hasDiagnosticError) {
+  if (hasDiagnosticError) {
     return {
       label: "需要关注",
-      detail: "最近的运行记录包含错误。查看下方最近问题。",
+      detail: "最近的运行记录包含错误。查看下方运行日志。",
       badgeClass: "border-danger/50 bg-danger/10 text-danger",
       dotClass: "bg-danger",
       iconClass: "text-danger",
@@ -543,36 +485,6 @@ const overallStatus = computed(() => {
 
 const statusIcon = computed(() => overallStatus.value.icon)
 
-const recentIssues = computed<IssueSummary[]>(() => {
-  const issues: IssueSummary[] = []
-
-  for (const diagnostic of diagnosticItems.value) {
-    for (const fact of diagnostic.facts) {
-      if (fact.severity === "info") continue
-      issues.push({
-        key: `diagnostic-${diagnostic.turn}-${issues.length}`,
-        tone: fact.severity === "error" ? "error" : "warning",
-        title: `Turn ${diagnostic.turn} · ${sourceLabel(fact.source)}`,
-        detail: factLine(fact),
-      })
-      if (issues.length >= 5) return issues
-    }
-  }
-
-  for (const record of aiDebugRecords.value) {
-    if (!record.error) continue
-    issues.push({
-      key: `ai-${record.id}`,
-      tone: "error",
-      title: `AI · ${record.label}`,
-      detail: record.error,
-    })
-    if (issues.length >= 5) return issues
-  }
-
-  return issues
-})
-
 function formatTokens(value: number): string {
   return value.toLocaleString()
 }
@@ -596,45 +508,6 @@ function normalizeDiagnostics(items: unknown[]): RuntimeDiagnosticSummary[] {
   return items
     .filter(isRuntimeDiagnosticSummary)
     .sort((a, b) => b.turn - a.turn)
-}
-
-function sourceLabel(source: RuntimeDiagnosticSource): string {
-  const labels: Record<RuntimeDiagnosticSource, string> = {
-    turn: "回合",
-    agent: "Agent",
-    model: "模型",
-    skill: "Skill",
-    action: "Action",
-    agent_call: "Agent 调用",
-    workspace: "工作区",
-    script: "脚本",
-    session: "会话",
-    trace: "Trace",
-  }
-  return labels[source] ?? source
-}
-
-function factLine(fact: RuntimeDiagnosticFact): string {
-  const parts = [
-    fact.code,
-    fact.message,
-    fact.agentId ? `agent=${fact.agentId}` : "",
-    fact.debugLabel ? `label=${fact.debugLabel}` : "",
-    fact.skill ? `skill=${fact.skill}` : "",
-    fact.action ? `action=${fact.action}` : "",
-    fact.tool ? `tool=${fact.tool}` : "",
-    fact.executor ? `executor=${fact.executor}` : "",
-  ].filter(Boolean)
-
-  if (parts.length > 0) {
-    return parts.join(" · ")
-  }
-
-  if (fact.detailsSummary) {
-    return JSON.stringify(fact.detailsSummary, null, 2)
-  }
-
-  return fact.ok === false ? "事件标记为失败。" : "记录到一条运行时事实。"
 }
 
 function checkpointId(value: unknown): string {

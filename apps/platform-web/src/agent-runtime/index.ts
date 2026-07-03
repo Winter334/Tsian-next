@@ -29,7 +29,7 @@ import {
   ContextBudgetExhaustedError,
   ContextCompressionFailedError,
   createInitialAgentContext,
-  DEFAULT_TASK_TIMEOUT_MS,
+  DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
   estimateAiChatMessagesTokens,
   estimateContextTokens,
   estimateRuntimeMessagesTokens,
@@ -183,10 +183,10 @@ interface WorkspaceToolLoopOptions {
   contextTokenBudget?: number
   /** 压缩用的 model 调用(复用 capabilities.callModel).两模式共用. */
   compressCallModel?: CompressCallModel
-  /** task 模式:时长兜底起点 wall-clock(Date.now()).超 taskTimeoutMs 抛 TaskTimeoutError.narrative 不用. */
-  taskStartedAt?: number
-  /** task 模式:时长配额 ms(默认 DEFAULT_TASK_TIMEOUT_MS).narrative 不用. */
-  taskTimeoutMs?: number
+  /** task 模式:无响应超时起点 wall-clock(Date.now()).每次有活动(tool/round-end)更新.超 inactivityTimeoutMs 抛 TaskTimeoutError.narrative 不用. */
+  lastActivityAt?: number
+  /** task 模式:无响应超时配额 ms(默认 DEFAULT_TASK_INACTIVITY_TIMEOUT_MS).narrative 不用. */
+  inactivityTimeoutMs?: number
 }
 
 interface AgentCallRuntimeMetadata {
@@ -480,14 +480,6 @@ function formatOptionalWorkspaceFile(
   return `${label}：\n${formatWorkspaceFile(file)}`
 }
 
-function formatContextFiles(context: AgentContextEntry): string {
-  if (context.contextFiles.length === 0) {
-    return "（暂无已加载 contextPaths 文件）"
-  }
-
-  return context.contextFiles.map(formatWorkspaceFile).join("\n\n")
-}
-
 function formatMissingContextPaths(context: AgentContextEntry): string {
   if (context.missingContextPaths.length === 0) {
     return "（无缺失 contextPaths）"
@@ -675,6 +667,10 @@ function buildWorkspaceToolInstructions(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
   )
+  const canTestSkillScript = platformToolEnabled(
+    options.enabledPlatformTools,
+    AGENT_PLATFORM_TOOL_NAMES.testSkillScript,
+  )
   const canSemanticSearch = platformToolEnabled(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
@@ -704,6 +700,7 @@ function buildWorkspaceToolInstructions(
       : []),
     ...(canSemanticSearch ? [RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch] : []),
     ...(canInspectFrontend ? [RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend] : []),
+    ...(canTestSkillScript ? [RUNTIME_WORKSPACE_TOOL_NAMES.testSkillScript] : []),
   ]
 
   const sharedRules = [
@@ -750,7 +747,45 @@ function buildWorkspaceToolInstructions(
   ].join("\n")
 }
 
-function formatAgentRuntimeContext(context: AgentContextEntry): string {
+/**
+ * 构建 workspace.context 的 message 序列（元信息段 + 逐文件段）。
+ *
+ * 拆分目标：让稳定 contextFile（文档/README 等会话中不变的大文件）各自独立进入
+ * 前缀缓存命中区，动态 contextFile（runtime.json/brief 等每轮或偶变文件）单独
+ * miss、互不拖累。详见任务 06-30-workspace-context-cache-split 的 design.md。
+ *
+ * 顺序保持 contextPaths 声明顺序——稳定的自然落在前缀区、动态的在尾部。不重排，
+ * 避免破坏 agent 作者的语境组织意图，且 provider 前缀缓存按 token 匹配不按 message
+ * 边界，重排无额外收益。`label` 区分 entry（"Workspace Agent 上下文"）与 delegated
+ * （"目标 Agent 上下文"）路径。
+ *
+ * 边界安全性：所有边界锚定（locateHistorySpan 扫"当前回合："、locateTaskInteractionSpan
+ * 从末尾按工具形态扫描）都不依赖固定 message index，拆成 N 条不影响压缩/边界判定。
+ */
+function buildAgentContextMessages_split(
+  context: AgentContextEntry,
+  label: "Workspace Agent 上下文" | "目标 Agent 上下文",
+): { role: "user"; content: string }[] {
+  const messages: { role: "user"; content: string }[] = [
+    { role: "user", content: `${label}（元信息）：\n${formatAgentRuntimeContextMeta(context)}` },
+  ]
+  for (const file of context.contextFiles) {
+    messages.push({
+      role: "user",
+      content: `Workspace 文件 ${file.path}：\n${formatWorkspaceFile(file)}`,
+    })
+  }
+  return messages
+}
+
+/**
+ * workspace.context 的元信息部分（不含 contextFiles 全文）。
+ *
+ * 含 header（Agent id/title/summary/path）+ notesFile + contextFiles 存在性提示 +
+ * missingContextPaths + skillIndex。这些字段字节量小、变化频率低，归同条 message；
+ * 偶发 miss（agent 编辑定义/写 notes/装 skill 时）可接受，不值得为这点字节再拆。
+ */
+function formatAgentRuntimeContextMeta(context: AgentContextEntry): string {
   return [
     `Agent：${context.agent.id} — ${context.agent.title}`,
     `Agent 摘要：${context.agent.summary || "（无摘要）"}`,
@@ -759,7 +794,9 @@ function formatAgentRuntimeContext(context: AgentContextEntry): string {
     formatOptionalWorkspaceFile("Agent notes", context.notesFile),
     "",
     "声明的 contextPaths 文件：",
-    formatContextFiles(context),
+    context.contextFiles.length === 0
+      ? "（暂无已加载 contextPaths 文件）"
+      : context.contextFiles.map((file) => `- ${file.path}`).join("\n"),
     "",
     "缺失的 contextPaths：",
     formatMissingContextPaths(context),
@@ -892,10 +929,10 @@ function buildEntryAgentMessages(
     // 的动态内容,后置于 history 之前会提前缓存断点使其后 history 全部 miss
     // (见 design 设计修正记录 修正 1).
     ...historyMessages,
-    {
-      role: "user",
-      content: `Workspace Agent 上下文：\n${formatAgentRuntimeContext(context)}`,
-    },
+    // workspace.context 拆成元信息段 + 逐文件段（任务 06-30-workspace-context-cache-split）：
+    // 稳定文件各自独立命中前缀缓存，动态文件单独 miss 互不拖累。仍在 history 之后，
+    // 不破坏 design 修正记录 1 的缓存边界。
+    ...buildAgentContextMessages_split(context, "Workspace Agent 上下文"),
     {
       role: "user",
       content: `${turnLabel}：${currentRuntimeTurnNumber(input)}`,
@@ -1054,9 +1091,8 @@ function buildDelegatedAgentMessages(
       ].join("\n"),
     },
     { role: "user", content: `最近对话窗口：\n${formatHistory(history)}` },
-    // 目标 Agent 上下文含 contextFiles/skillIndex 等动态内容,后置于 history 之后
-    // (与 entry 顺序一致,见 design 设计修正记录 修正 1).
-    { role: "user", content: `目标 Agent 上下文：\n${formatAgentRuntimeContext(targetContext)}` },
+    // 目标 Agent 上下文同样拆成元信息段 + 逐文件段（与 entry 路径一致）。
+    ...buildAgentContextMessages_split(targetContext, "目标 Agent 上下文"),
     { role: "user", content: [`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n") },
     { role: "user", content: `玩家本轮输入：\n${input.userInput}` },
     {
@@ -1161,17 +1197,17 @@ function createAgentCallRunner(
     // 任务型 agent 时长兜底(design §2.6):独立 timeoutController + setTimeout,
     // 与用户 abort(input.signal)合并成 compositeSignal 传给工具循环.超时瞬间能
     // abort 正在 await 的 model 调用,不只靠循环内 Date.now() 检查.主 agent 可经
-    // agent_call 的 timeoutMs 参数显式给子代理更长时间,不传用默认 300s.
-    const taskTimeoutMs = agentCall.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS
+    // agent_call 的 timeoutMs 参数显式给子代理更长时间,不传用默认 600s.
+    const inactivityTimeoutMs = agentCall.timeoutMs ?? DEFAULT_TASK_INACTIVITY_TIMEOUT_MS
     const timeoutController = new AbortController()
     const timeoutTimer = setTimeout(
       () => timeoutController.abort("task-timeout"),
-      taskTimeoutMs,
+      inactivityTimeoutMs,
     )
     const compositeSignal = AbortSignal.any(
       [input.signal, timeoutController.signal].filter(Boolean) as AbortSignal[],
     )
-    const taskStartedAt = Date.now()
+    const lastActivityAt = Date.now()
 
     try {
       const response = (await callAgentModelWithWorkspaceTools(
@@ -1213,8 +1249,8 @@ function createAgentCallRunner(
           //  但预算是 runtime 估算用,256k 的 85% 足够大,不影响压缩触发判断).
           contextTokenBudget: resolveTokenBudget(undefined),
           compressCallModel: capabilities.callModel,
-          taskStartedAt,
-          taskTimeoutMs,
+          lastActivityAt,
+          inactivityTimeoutMs,
         },
       )).text.trim()
       const completedMetadata = createAgentCallRuntimeMetadata(
@@ -1270,21 +1306,21 @@ function createAgentCallRunner(
           ...agentCallTraceFacts(failedMetadata),
           delegated: true,
           durationMs: Date.now() - stepStartedAt,
-          ...(isTimeout ? { timeout: true, taskTimeoutMs } : {}),
+          ...(isTimeout ? { timeout: true, inactivityTimeoutMs } : {}),
           ...(isTaskStall ? { stalled: true } : {}),
         },
       })
       throw agentCallError(
         "AGENT_CALL_FAILED",
         isTimeout
-          ? `agent_call 超时（${Math.round(taskTimeoutMs / 1000)}s）中止 for Agent "${targetContext.agent.id}".`
+          ? `agent_call 无响应超时（${Math.round(inactivityTimeoutMs / 1000)}s）中止 for Agent "${targetContext.agent.id}".`
           : isTaskStall
             ? `agent_call 上下文压缩无效中止 for Agent "${targetContext.agent.id}".`
             : `agent_call failed for Agent "${targetContext.agent.id}".`,
         {
           ...failedMetadata,
           cause: errorToTraceData(error),
-          ...(isTimeout ? { timeout: true, taskTimeoutMs } : {}),
+          ...(isTimeout ? { timeout: true, inactivityTimeoutMs } : {}),
           ...(isTaskStall ? { stalled: true } : {}),
         },
       )
@@ -1409,13 +1445,13 @@ async function callAgentModelWithWorkspaceToolsNative(
       const totalTokens = estimateRuntimeMessagesTokens(runtimeMessages)
       if (totalTokens > triggerThreshold) {
         if (isTaskMode) {
-          // task 模式:时长兜底检查(每轮查,不等 model 调用)
+          // task 模式:无响应超时检查(每轮查,不等 model 调用)
           if (
-            toolOptions.taskStartedAt !== undefined
-            && toolOptions.taskTimeoutMs !== undefined
-            && Date.now() - toolOptions.taskStartedAt > toolOptions.taskTimeoutMs
+            toolOptions.lastActivityAt !== undefined
+            && toolOptions.inactivityTimeoutMs !== undefined
+            && Date.now() - toolOptions.lastActivityAt > toolOptions.inactivityTimeoutMs
           ) {
-            throw new TaskTimeoutError(toolOptions.taskTimeoutMs)
+            throw new TaskTimeoutError(toolOptions.inactivityTimeoutMs)
           }
           const interactionSpan = locateTaskInteractionSpan(runtimeMessages, "native")
           if (interactionSpan.start < 0) {
@@ -1537,6 +1573,11 @@ async function callAgentModelWithWorkspaceToolsNative(
     // represent the full context size sent to the model (for the ring widget).
     lastRoundUsage = result.usage
 
+    // 活动信号:每轮结束更新 lastActivityAt(无响应超时重置)
+    if (toolOptions.lastActivityAt !== undefined) {
+      toolOptions.lastActivityAt = Date.now()
+    }
+
     // Notify the caller that this round ended, with the finish reason so it can
     // classify the streamed text as thought (tool_calls) or final (stop). Emitted
     // for every round including the final stop round. agentId identifies which
@@ -1610,6 +1651,7 @@ async function callAgentModelWithWorkspaceToolsNative(
         )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
+      runTestSkillScript: capabilities.runTestSkillScript,
       runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
@@ -1795,13 +1837,13 @@ async function callAgentModelWithWorkspaceTools(
       const totalTokens = estimateAiChatMessagesTokens(nextMessages)
       if (totalTokens > triggerThreshold) {
         if (isTaskMode) {
-          // task 模式:时长兜底检查
+          // task 模式:无响应超时检查
           if (
-            toolOptions?.taskStartedAt !== undefined
-            && toolOptions?.taskTimeoutMs !== undefined
-            && Date.now() - toolOptions.taskStartedAt > toolOptions.taskTimeoutMs
+            toolOptions?.lastActivityAt !== undefined
+            && toolOptions?.inactivityTimeoutMs !== undefined
+            && Date.now() - toolOptions.lastActivityAt > toolOptions.inactivityTimeoutMs
           ) {
-            throw new TaskTimeoutError(toolOptions.taskTimeoutMs)
+            throw new TaskTimeoutError(toolOptions.inactivityTimeoutMs)
           }
           const interactionSpan = locateTaskInteractionSpan(nextMessages, "text")
           if (interactionSpan.start < 0) {
@@ -1945,6 +1987,11 @@ async function callAgentModelWithWorkspaceTools(
       },
     })
 
+    // 活动信号:每轮结束更新 lastActivityAt(无响应超时重置)
+    if (toolOptions?.lastActivityAt !== undefined) {
+      toolOptions.lastActivityAt = Date.now()
+    }
+
     // C1: text 模式补发 onRoundEnd(对称 native 循环 index.ts:1666).
     // round 结束通知 UI 这一轮的 finishReason,让它构建 timeline round 边界.
     options.onRoundEnd?.(agentContext.agent.id, round, finishReason)
@@ -1994,6 +2041,7 @@ async function callAgentModelWithWorkspaceTools(
           )
         : undefined,
       runBrowserScript: capabilities.runBrowserScript,
+      runTestSkillScript: capabilities.runTestSkillScript,
       runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
@@ -2227,8 +2275,8 @@ export async function runAgentRuntimeTurn(
         compressCallModel: capabilities.callModel,
         ...(entryCompressionMode === "task"
           ? {
-              taskStartedAt: Date.now(),
-              taskTimeoutMs: input.timeoutMs ?? DEFAULT_TASK_TIMEOUT_MS,
+              lastActivityAt: Date.now(),
+              inactivityTimeoutMs: input.timeoutMs ?? DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
             }
           : {}),
       },

@@ -159,3 +159,34 @@ export function emitTurnStats(turn: number, stats: TurnStats): void {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// agent-activity: 旁路调用(invokeAgent)活动信号通道
+// ═══════════════════════════════════════════════════════════════
+// 独立于 turn-delta/turn-tool/turn-round-end,不携带文本内容,
+// 只通知"旁路 agent 正在活动"。前端 useSetupState 用此做
+// understanding running 心跳脉冲(光团闪一下),不污染主 turn stream.
+//
+// 事件类型: "delta"(流式输出) / "tool"(工具调用) / "round-end"(轮次结束)
+export type AgentActivityKind = "delta" | "tool" | "round-end"
+export type AgentActivityListener = (agentId: string, kind: AgentActivityKind) => void
+
+const agentActivityListeners = new Set<AgentActivityListener>()
+
+export function subscribeAgentActivity(cb: AgentActivityListener): () => void {
+  agentActivityListeners.add(cb)
+  return () => {
+    agentActivityListeners.delete(cb)
+  }
+}
+
+export function emitAgentActivity(agentId: string, kind: AgentActivityKind): void {
+  const listeners = [...agentActivityListeners]
+  for (const listener of listeners) {
+    try {
+      listener(agentId, kind)
+    } catch (err) {
+      console.error("[streaming-events] agent-activity listener threw", err)
+    }
+  }
+}

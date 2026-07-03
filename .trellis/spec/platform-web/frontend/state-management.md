@@ -35,7 +35,7 @@ Conventions:
 - Game cards own reusable content files (Agents, Skills, rules, schemas, docs, assistant metadata, optional frontend bindings). Content files are stored **per-file** (keyed `${gameCardId}::${path}`), not as an embedded array on the card row. A single file write touches one row + bumps the card's `updatedAt`; it does not rewrite the whole card. A metadata-only write leaves the content table untouched; an array write does a full replace inside the transaction (import/copy/seed). Read views return a view that extends the record with an optional preloaded `coverContentFile` so the sync render path can resolve the cover without an async table query.
 - Saves are playthrough slots linked to `gameCardId` / `gameCardVersion`; `workspaceFiles` stores only save runtime data mounted at `save/...` plus host-owned `.tsian/...` metadata.
 - The local assistant identity and session state live in the `local-assistant-files` Dexie map as a virtual file system under `.tsian/local/assistant/`: agent identity files are cross-session shared, while per-session agent context snapshots live at `.tsian/local/assistant/sessions/<sessionId>/context.json` (task-summary steady state, separate from the visible-messages Dexie key). The map is merge-only on save (never deletes); single-entry removal handles explicit cleanup. The snapshot is agent-visible via `workspace_read`/`workspace_write` — see the "Assistant Cross-Turn Context Persistence" scenario in type-safety.md.
-- **Assistant skill seed + merge strategy**: factory skills are seeded as string constants (SKILL.md + optional scripts) into the map. The assistant config's `skills.enabled` is the whitelist — non-empty `enabled` short-circuits registry discovery, so every factory Skill path (`.tsian/local/assistant/skills/<id>/SKILL.md`) MUST be listed there or it won't appear in the Skill Index. On load, missing default keys are filled in (only fills, never overwrites user edits) and the merged map is persisted. This ensures new factory skills reach existing users without a manual reset.
+- **Assistant skill seed + merge strategy**: factory skills are seeded as string constants (SKILL.md + optional scripts) into the map. The assistant config's `skills.enabled` is the whitelist — non-empty `enabled` short-circuits registry discovery, so every factory Skill path (`.tsian/local/assistant/skills/<id>/SKILL.md`) MUST be listed there or it won't appear in the Skill Index. On load, missing default keys are filled in (only fills, never overwrites user edits) and the merged map is persisted. This ensures new factory skills reach existing users without a manual reset. **Exception: user-installed assistant replacement packages may intentionally replace the assistant definition and `skills/` directory.** That flow must call a replace helper that sets a persisted skip-factory-skill-merge marker; after that, `loadLocalAssistantFiles()` may still fill non-skill base defaults such as `notes.md`, but must not silently re-add factory `skills/**` after the replacement, or it would violate the user's selected package contents. Regular `saveLocalAssistantFiles()` remains merge-only and must not delete paths.
 - Packaged frontend files are reusable Game Card assets stored beside game cards, not copied into save runtime data. They are served by a Service Worker that reads from IndexedDB. The SW DB name **must** stay in sync with `db.ts`'s database name — the SW is a standalone static asset that cannot import the TS constant, so it carries the same literal plus a comment pointing back to `db.ts`. Update both together; a mismatch makes every packaged frontend serve 404.
 - **Skill config overrides**: `skillConfigs` table stores player-saved skill config overrides keyed by skill directory + updatedAt. Overrides never enter the workspace and never travel with an exported skill package — only the `skill.config` declaration + defaults do. This mirrors AI provider apiKey preset locality and is a registered Fileification exception (see `guides/data-fileification-principle.md`).
 - Built-in game cards may be refreshed by platform seed helpers when their source is `builtin` and their content/manifest is stale. This refresh updates reusable card content; existing saves see the updated content through the effective workspace layer.
@@ -48,40 +48,77 @@ Conventions:
 
 ## Scenario: Browser AI Provider Config And Secrets
 
-### Scope / Trigger
+### 1. Scope / Trigger
 
-- When platform-web changes browser AI provider configuration, env fallback behavior, model fetching, Agent Runtime model-call config resolution, Game Card package import/export, or bridge/query payloads that might expose platform secrets.
+- Trigger: platform-web changes browser AI provider configuration, provider/model parameter schema, env fallback behavior, model fetching, Agent Runtime model-call config resolution, Settings model-test UI, Game Card package import/export, or bridge/query payloads that might expose platform secrets.
 
-### Contracts
+### 2. Signatures
 
-- Browser AI provider presets are platform-local player secrets stored under localStorage key `tsian-platform-config`. Presets currently support only OpenAI-compatible APIs: `baseUrl`, `apiKey`, provider default model, fetched model IDs, and model parameters.
-- Model parameters are provider-local settings. Supported request fields include `max_tokens`, `temperature`, `top_p`, `frequency_penalty`, `presence_penalty`, `reasoning_effort`, and custom JSON-object request params. `contextWindow` is saved as model capability/budget metadata only until a token-counting prompt-truncation task implements enforcement.
-- `toolCallMode: "native" | "text"` is a **required** field on the model config and the resolved config. No `auto` mode. It selects how the Agent Runtime asks the model to invoke tools: `native` uses API-native function calling (structured text/tool-call boundaries); `text` uses the legacy text-embedding protocol and is the conservative default. Prototype-period destructive update: a model missing/invalid `toolCallMode` is dropped (no migration fallback); save validation throws on an invalid value; new models default to `text`; the env fallback config defaults to `text`.
-- `streaming: boolean` is a field on the model config and the resolved config. Streaming is **native-mode only**: `toolCallMode === "text"` always forces `streaming: false` (validation enforces this; the UI switch is disabled under text). Missing/invalid `streaming` on stored data is defaulted from `toolCallMode` at read time (native → true, text → false) rather than dropping the model — unlike `toolCallMode`, `streaming` has a safe default. The native call closure streams only when an `onDelta` callback is set (entry agent, not delegated) **and** the resolved config's `streaming` is true; this lets a player opt out of streaming for endpoints that answer `200 + text/event-stream` with an error body instead of a real SSE stream.
-- Custom request params must be a JSON object and must not override runtime-owned/protected fields such as `model`, `messages`, `stream`, `apiKey`, `baseUrl`, or `headers`.
-- `getBrowserAiConfig()` returns only the resolved active runtime config needed for a model call (provider identity/name, `baseUrl`, `apiKey`, `model`, normalized parameters). When no complete local provider is active, it may fall back to complete `VITE_AI_*` environment values.
-- Existing old localStorage shape `{ chat: { baseUrl, apiKey, model } }` is compatibility input and should normalize into a local OpenAI-compatible provider.
-- API keys must not be written into Game Card manifests, packages, Runtime Workspace files, frontend bridge payloads, debug summaries, or visible non-password UI summaries.
-- Per-Agent provider selection stores **only a provider preset id reference** (`providerPresetId?: string`) on Agent config. The preset (with `apiKey`/`baseUrl`) stays in platform-local localStorage and is never distributed with game-card content.
-- Resolution order for every model call: Agent-selected preset -> platform-global active provider -> `VITE_AI_*` environment defaults. Both the AIRP play turn and the desktop Assistant chat turn must resolve the active Agent's provider config in their `callModel` closure and pass it as `config` only when non-null (omit the key otherwise so the global fallback applies).
-- The local Assistant agent participates in the same registry and the same provider selection/resolution path as card Agents.
-- The Studio snapshot exposes only `{ id, name }` preset options (no credentials) so the dropdown can list saved presets without leaking keys.
-- Distributing a game card with a `providerPresetId` set must resolve gracefully: the preset id is unlikely to exist in the recipient's localStorage, so resolution falls back to their global active provider without crashing.
-- Future account-system work may manage identity or sync UX, but must not move API credentials into distributable Game Card or Agent content.
+- `BrowserAiProviderType.kind` is the source of truth for protocol mapping: `"openai-compatible" | "openai-responses" | "gemini" | "claude" | "deepseek"`.
+- `BrowserAiModelParameters` is nested: `common: { contextWindow, maxOutputTokens, temperature, topP }` plus `provider: { openaiCompatible?, openaiResponses?, deepseek?, gemini?, claude? }`.
+- Provider branches carry protocol knobs and branch-local `customRequestParamsText`: OpenAI/DeepSeek penalties + reasoning, Responses reasoning, Gemini generation/thinking/schema fields, Claude service tier + extended-thinking fields.
+- `resolveBrowserAiConfigFromProviderPreset(provider, kind, modelId?)` builds a runtime config from an in-memory Settings draft for model ping.
+- `getBrowserAiProviderPresetModels(providerId)` reads `contextWindow` from `parameters.common.contextWindow`.
 
-### Validation & Error Matrix
+### 3. Contracts
+
+- Provider presets are platform-local player secrets. API keys must not be written into Game Card manifests, packages, Runtime Workspace files, bridge payloads, debug summaries, or visible non-password UI summaries.
+- Presets are grouped by provider type; models do not store their own provider kind. Runtime adapters select the active provider branch by the owning `BrowserAiProviderType.kind` and ignore inactive branches.
+- `contextWindow` is local capability/budget metadata and must not be sent to providers.
+- Common request fields map per adapter, then active provider-branch fields map to provider-native names (`reasoning_effort`, `reasoning.effort`, `generationConfig.*`, Claude `thinking`, etc.).
+- Custom request params are provider-branch-local. There is no shared model-level custom JSON field. Runtime-owned fields must be protected and/or overwritten after merge (`model`, messages/input/contents, stream/tools, auth/header/baseUrl, provider-owned request keys, Responses `store`/conversation fields, Claude `thinking`, etc.).
+- `toolCallMode: "native" | "text"` is required on model config and resolved config. New models default to `text`; stored models missing/invalid `toolCallMode` are dropped during normalization.
+- `streaming: boolean` lives on model config and resolved config. Both native and text protocol paths can stream when the endpoint supports SSE; the switch is explicit and preserved. Text-mode streaming accumulates raw text and parses tool-call blocks at round end.
+- Resolution order for every model call: Agent-selected preset -> platform-global active provider -> complete `VITE_AI_*` environment defaults. AIRP play turns and desktop Assistant chat turns pass the resolved config only when non-null.
+- Per-Agent provider selection stores only `providerPresetId?: string` on Agent config. The preset including `apiKey`/`baseUrl` stays platform-local and is never distributed with game-card content.
+- Settings model ping uses an in-memory draft config, forces non-streaming chat, and surfaces pass/fail text in the UI.
+
+### 4. Validation & Error Matrix
 
 - Missing/blank local provider fields plus incomplete env fallback -> config resolves `null`.
-- Malformed localStorage JSON -> ignore stored config and fall back to environment defaults.
-- Old `chat` shape -> normalize as one local provider (no manual migration).
+- Malformed local provider config -> normalize defensively; prototype-period incompatible flat model parameters are not migrated into branches.
+- Stored model config missing/invalid `toolCallMode` -> model dropped; a preset left with zero models is caught by validation.
+- `toolCallMode` other than `native`/`text` at save time -> validation throws.
 - Model fetch with blank base URL / blank API key -> throw a clear local error before network fetch.
 - Model fetch HTTP error -> surface provider error message when present, otherwise status-based error.
-- Model fetch returns no usable IDs -> surface an error and preserve the provider's existing default model.
-- Numeric model parameter outside range / invalid custom params JSON / protected custom key -> saving fails with a clear field-specific error.
-- Stored model config missing/invalid `toolCallMode` -> model dropped (destructive); a preset left with zero models is caught by the "at least one model" validation.
-- `toolCallMode` other than `native`/`text` at save time -> validation throws.
-- `streaming === true` while `toolCallMode === "text"` at save time -> validation throws.
+- Common numeric model parameter outside range -> validation throws with a field-specific error.
+- Active provider custom JSON is invalid, not an object, or tries to override protected runtime fields -> validation/runtime request build throws with a clear error.
+- Gemini `responseSchemaText` non-empty but invalid JSON object -> fail before sending the request.
+- Claude `thinkingMode === "enabled"` with missing budget, budget `< 1024`, or budget `>= maxOutputTokens` -> validation/request build throws before provider call.
 - Per-Agent `providerPresetId` blank/whitespace or no longer exists -> resolves `null` -> falls back to the global active provider without crashing.
+- Distributing a game card with a `providerPresetId` set -> recipient without that preset falls back gracefully; credentials are not exported.
+
+### 5. Good/Base/Bad Cases
+
+- Good: OpenAI Responses maps `parameters.common.maxOutputTokens` -> `max_output_tokens`, `parameters.provider.openaiResponses.reasoningEffort` -> `reasoning.effort`, and keeps `store: false` after custom JSON merge.
+- Good: Claude defaults to `thinkingMode: "disabled"`, so unsupported models do not receive a `thinking` object unless the user enables advanced thinking.
+- Base: Inactive provider branches may be populated because the UI creates defaults; runtime reads only the branch selected by `BrowserAiProviderType.kind`.
+- Bad: A request builder reads old top-level `parameters.reasoningEffort` or reads the OpenAI-compatible branch for a Responses preset.
+- Bad: Custom JSON is shared at `parameters.customRequestParamsText` or can override `messages`, `tools`, `stream`, `store`, `thinking`, `model`, or auth fields.
+
+### 6. Tests Required
+
+- `npm run build:web` after any platform-web provider config/runtime/UI change.
+- For request-builder changes, assert or manually inspect that each provider maps common + active-branch fields correctly and that runtime-owned keys survive custom JSON.
+- For Settings UI changes, verify add/edit windows round-trip nested `common` and active provider branch values, hide irrelevant provider controls, and show model ping pass/fail.
+- For provider config normalization changes, verify missing old flat parameter fields normalize to defaults rather than being migrated.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+if (model.providerKind === "openai-responses") {
+  body.reasoning = { effort: model.parameters.reasoningEffort }
+}
+```
+
+#### Correct
+
+```ts
+const provider = providerParamsForKind(config.parameters, config.kind)
+// Adapter narrows the branch it owns, then maps to provider-native names.
+```
 
 ## Scenario: Current Game Card And Active Save State
 

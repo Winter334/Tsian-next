@@ -54,6 +54,7 @@ const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
   "inspect_frontend",
   "workspace_semantic_search",
   "ask_user",
+  "test_skill_script",
 ])
 
 // Mirrors the `tsian-actions` fence pattern in workspace-tools.ts. Kept here so

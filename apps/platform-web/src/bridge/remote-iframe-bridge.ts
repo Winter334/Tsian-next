@@ -19,7 +19,7 @@ import type {
   WorkspaceWriteRequest,
 } from "@tsian/contracts"
 
-import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats } from "../streaming-events"
+import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats, subscribeAgentActivity } from "../streaming-events"
 import { subscribeInteractionRequest, resolveInteractionRequest } from "../interaction-events"
 
 export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
@@ -29,6 +29,7 @@ const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
   "interaction.sendMessage",
   "interaction.invokeAgent",
   "interaction.respond",
+  "interaction.stop",
   "query.query",
   "platform.getPlatformContext",
   "platform.runAction",
@@ -220,7 +221,18 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
   }
 
   const injection = normalizeInjection(record.injection)
-  return { agentId: record.agentId, input: record.input, ...(injection ? { injection } : {}) }
+  const contextSlot =
+    typeof record.contextSlot === "string" && record.contextSlot.trim()
+      ? record.contextSlot.trim()
+      : undefined
+  const persist = typeof record.persist === "boolean" ? record.persist : undefined
+  return {
+    agentId: record.agentId,
+    input: record.input,
+    ...(injection ? { injection } : {}),
+    ...(contextSlot ? { contextSlot } : {}),
+    ...(persist !== undefined ? { persist } : {}),
+  }
 }
 
 function normalizeAskUserResponse(value: unknown): AskUserResponse {
@@ -414,6 +426,10 @@ function dispatchRemoteBridgeRequest(
       } satisfies RemotePlayBridgeError
     }
     return undefined
+  }
+
+  if (method === "interaction.stop") {
+    return bridge.interaction.stop().then(() => undefined)
   }
 
   if (method === "query.query") {
@@ -707,6 +723,14 @@ export function mountRemoteIframeFrontend(
     })
   })
 
+  // Forward agent-activity signals (from invokeAgent 旁路调用) to the remote
+  // frontend as `agent-activity`, so useSetupState can pulse the understanding
+  // running heartbeat. Independent from turn-delta/turn-tool — does not carry
+  // text content, does not pollute the main turn stream.
+  const unsubscribeAgentActivity = subscribeAgentActivity((agentId, kind) => {
+    postEvent("agent-activity", { agentId, kind })
+  })
+
   window.addEventListener("message", onMessage)
   container.replaceChildren(iframe)
 
@@ -720,6 +744,7 @@ export function mountRemoteIframeFrontend(
     unsubscribeTurnOptions?.()
     unsubscribeTurnStats?.()
     unsubscribeInteractionRequest?.()
+    unsubscribeAgentActivity?.()
     unsubscribeTurnDelta?.()
     if (iframe.parentElement === container) {
       iframe.remove()

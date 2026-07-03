@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Check frontend implementation quality, build expectations, and forbidden patterns after changing AppMarketView and market components."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Verify runtime/API boundary normalization and contract usage after changing marketApi list/count responses."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Review Vue component state/event patterns for the load-more UI and image fallback behavior."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Verify contract package quality and required consuming builds after adding market response types."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Check frontend consumer expectations when using updated @tsian/contracts market types."}

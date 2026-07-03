@@ -15,6 +15,7 @@ import {
   normalizeWorkspaceFilePath,
 } from "./workspace"
 import { listLocalSaves, deleteLocalSave } from "./saves"
+import { clearAiDebugRecords } from "./ai-debug-records"
 import {
   DEFAULT_FRONTEND_BINDING,
   defaultFrontendFiles,
@@ -54,6 +55,11 @@ export interface LocalGameCardContentFile {
   data?: Blob
   createdAt: number
   updatedAt: number
+}
+
+export interface ReplaceLocalGameCardContentDirectoryFile {
+  relativePath: string
+  content: string
 }
 
 /**
@@ -377,6 +383,11 @@ export async function setActiveGameCardId(cardId: string | null): Promise<void> 
     key: ACTIVE_GAME_CARD_KEY,
     value: normalized,
   })
+  // Clear AI debug records on card switch: different cards have different
+  // agents/workspace/contextPaths, so cache-hit rates aren't comparable across
+  // cards. Mirrors the per-save trace lifecycle convention.
+  // Fire-and-forget — diagnostic data, non-critical path.
+  void clearAiDebugRecords().catch(() => { /* ignore: diagnostics cleanup */ })
 }
 
 export async function putLocalGameCard(
@@ -598,6 +609,60 @@ export async function deleteLocalGameCardContentPathForCard(
     },
   )
   return deleted.sort((left, right) => left.localeCompare(right))
+}
+
+export async function replaceLocalGameCardContentDirectory(
+  gameCardId: string,
+  directoryPath: string,
+  files: ReplaceLocalGameCardContentDirectoryFile[],
+): Promise<LocalGameCardContentFile[]> {
+  const id = gameCardId.trim()
+  if (!id) {
+    throw new Error("Game card id is required.")
+  }
+
+  const normalizedDirectory = normalizeWorkspaceFilePath(directoryPath)
+  assertNonReservedContentPath(normalizedDirectory)
+  const now = Date.now()
+  const existingRecords = await localDb.gameCardContentFiles
+    .where("gameCardId")
+    .equals(id)
+    .toArray()
+  const recordsByPath = new Map<string, LocalGameCardContentFileRecord>()
+  for (const file of files) {
+    const relativePath = normalizePackageFilePath(file.relativePath, "content file path")
+    const path = `${normalizedDirectory}/${relativePath}`
+    assertNonReservedContentPath(path)
+    recordsByPath.set(path, {
+      id: gameCardContentFileId(id, path),
+      gameCardId: id,
+      path,
+      content: file.content,
+      createdAt: existingRecords.find((record) => record.path === path)?.createdAt ?? now,
+      updatedAt: now,
+    })
+  }
+  const writtenRecords = Array.from(recordsByPath.values())
+
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardContentFiles, localDb.gameCards],
+    async () => {
+      for (const record of existingRecords) {
+        if (record.path === normalizedDirectory || record.path.startsWith(`${normalizedDirectory}/`)) {
+          await localDb.gameCardContentFiles.delete(record.id)
+        }
+      }
+      for (const record of writtenRecords) {
+        await localDb.gameCardContentFiles.put(record)
+      }
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+
+  return writtenRecords
+    .sort((left, right) => left.path.localeCompare(right.path))
+    .map(cloneGameCardContentFileRecord)
 }
 
 function cloneGameCardContentFileRecord(

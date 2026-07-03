@@ -47,6 +47,7 @@ export type {
   RuntimeActionExecutorPolicy,
   RuntimeWorkspaceToolSessionState,
   RuntimeWorkspaceToolExecutionContext,
+  RuntimeTestSkillScriptInput,
 } from "./workspace-tools-types"
 export { RUNTIME_WORKSPACE_TOOL_NAMES } from "./workspace-tools-types"
 // import for internal use (local binding)
@@ -79,6 +80,7 @@ import type {
   RuntimeActionExecutorPolicy,
   RuntimeWorkspaceToolSessionState,
   RuntimeWorkspaceToolExecutionContext,
+  RuntimeTestSkillScriptInput,
   RuntimeSkillActionDeclaration,
   RuntimeActionExecutorResult,
   RuntimeAgentCallRunner,
@@ -905,6 +907,31 @@ const INSPECT_SCROLL_TARGETS = new Set(["top", "bottom"])
  * 无 cardId 参数——inspector 内部从 getPlatformActiveGameCard() 取当前卡。
  * wait 默认 bridge-ready；只把实际提供的字段放进结果。
  */
+/**
+ * 校验 test_skill_script 工具入参。手写校验（镜像 normalizeInspectFrontendArguments）。
+ */
+function normalizeTestSkillScriptArguments(
+  input: Record<string, unknown>,
+): RuntimeTestSkillScriptInput {
+  const skillName = normalizeRequiredString(
+    input.skillName,
+    "TEST_SKILL_SCRIPT_SKILL_NAME_REQUIRED",
+    "test_skill_script skillName must be a non-empty string.",
+  )
+  const actionName = normalizeRequiredString(
+    input.actionName,
+    "TEST_SKILL_SCRIPT_ACTION_NAME_REQUIRED",
+    "test_skill_script actionName must be a non-empty string.",
+  )
+  if (!isRecord(input.input)) {
+    throw toolError(
+      "TEST_SKILL_SCRIPT_INPUT_INVALID",
+      "test_skill_script input must be an object.",
+    )
+  }
+  return { skillName, actionName, input: input.input }
+}
+
 function normalizeAskUserArguments(input: Record<string, unknown>): AskUserRequest {
   const question = normalizeRequiredString(
     input.question,
@@ -1134,7 +1161,7 @@ function loadSkillEntryFile(
   return file
 }
 
-function parseActionDeclarations(content: string): SkillActionParseResult {
+export function parseActionDeclarations(content: string): SkillActionParseResult {
   const actions: RuntimeSkillActionDeclaration[] = []
   const errors: RuntimeWorkspaceToolError[] = []
   const seenNames = new Set<string>()
@@ -1535,7 +1562,7 @@ function skillDirectoryPath(skillPath: string): string {
   return slashIndex >= 0 ? skillPath.slice(0, slashIndex) : ""
 }
 
-function resolveBrowserScriptPath(
+export function resolveBrowserScriptPath(
   skill: SkillRegistryEntry,
   executor: RuntimeActionExecutorReference,
 ): string {
@@ -2026,6 +2053,25 @@ async function executeRuntimeWorkspaceToolCall(
         name: call.name,
         ok: true,
         result: result,
+      }
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.testSkillScript) {
+      if (!context.runTestSkillScript) {
+        throw toolError(
+          "TEST_SKILL_SCRIPT_UNAVAILABLE",
+          "test_skill_script is not available in this Agent step.",
+        )
+      }
+      observation = {
+        index,
+        name: call.name,
+        ok: true,
+        result: await context.runTestSkillScript(
+          normalizeTestSkillScriptArguments(call.arguments),
+          {
+            agentContext: context.agentContext,
+            exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+          },
+        ),
       }
     } else if (isWorkspaceOperationToolName(call.name)) {
       const opResult = await executeWorkspaceOperation(

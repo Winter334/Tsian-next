@@ -3,12 +3,24 @@ import type { AiChatMessage, AiDebugMessageSegment, AiDebugRecord, ContentPart }
 import {
   getBrowserAiConfig,
   parseBrowserAiCustomRequestParams,
+  providerParamsForKind,
   type BrowserAiConfig,
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
+  type BrowserClaudeModelParameters,
+  type BrowserDeepSeekModelParameters,
+  type BrowserGeminiModelParameters,
+  type BrowserOpenAiCompatibleModelParameters,
+  type BrowserOpenAiResponsesModelParameters,
 } from "../config/ai"
 import { getPlatformConfig } from "../config/platform-config"
 import type { ToolSchema } from "../agent-runtime/tool-schemas"
+import {
+  appendAiDebugRecord,
+  readAiDebugRecords,
+  AI_DEBUG_RECORDS_KEY,
+} from "../storage/ai-debug-records"
+import { localDb } from "../storage/db"
 
 export type { AiChatMessage, AiDebugRecord }
 export type { ContentPart }
@@ -16,7 +28,8 @@ export type { ContentPart }
 /**
  * A structured Runtime tool call parsed from a native function-calling
  * response. Carries the provider-assigned id so tool observations can be
- * threaded back via `tool_call_id` (OpenAI/Claude) or matched function parts
+ * threaded back via `tool_call_id` (OpenAI Chat Completions), `call_id`
+ * (OpenAI Responses), `tool_use_id` (Claude), or matched function parts
  * (Gemini).
  */
 export interface NativeToolCall {
@@ -53,7 +66,8 @@ function contentImagePartCount(content: string | ContentPart[]): number {
 function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"] | AiChatMessage["role"]): string {
   if (role === "system") return "system.agent"
   if (role === "tool") return "tool.observation"
-  if (text.startsWith("Workspace Agent 上下文：") || text.startsWith("目标 Agent 上下文：")) return "workspace.context"
+  if (text.startsWith("Workspace Agent 上下文（元信息）") || text.startsWith("目标 Agent 上下文（元信息）")) return "workspace.meta"
+  if (text.startsWith("Workspace 文件 ")) return "workspace.file"
   if (text.startsWith("早期任务摘要：") || text.startsWith("早期剧情摘要：") || text.startsWith("最近对话：") || text.startsWith("最近对话窗口：") || text === "（暂无历史对话）") return "history"
   if (text.startsWith("当前问答轮次：") || text.startsWith("当前回合：")) return "turn.runtime"
   if (text.startsWith("用户本轮提问：") || text.startsWith("玩家本轮输入：")) return "turn.input"
@@ -67,8 +81,11 @@ function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"]
 function segmentStability(label: string): AiDebugMessageSegment["stability"] {
   if (label === "system.agent") return "stable"
   if (label === "history" || label === "assistant.response") return "semi-stable"
-  // workspace.context 含 contextFiles 文件正文/skillIndex 等 Agent 写入后即变的
-  // 动态内容(见 design 设计修正记录 修正 1),不是稳定前缀。
+  // workspace.context 拆分后（任务 06-30-workspace-context-cache-split）：
+  // workspace.meta（header/skillIndex 等）和 workspace.file（各 contextFile 独立一条）
+  // 标 semi-stable——理论可变（agent 写 runtime.json），但希望多数轮次命中前缀缓存。
+  // 与 history 同语义。稳定的文件自然命中、动态的单独 miss 互不拖累。
+  if (label === "workspace.meta" || label === "workspace.file") return "semi-stable"
   return "dynamic"
 }
 
@@ -140,7 +157,7 @@ export interface ModelCallResult {
    * Surface for context-window visualization; undefined when the provider
    * omits usage or the streaming path couldn't extract it.
    */
-  usage?: { input?: number; output?: number; total?: number }
+  usage?: { input?: number; output?: number; total?: number; cached?: number; cacheCreation?: number }
 }
 
 export interface GenerateAssistantReplyOptions {
@@ -150,32 +167,67 @@ export interface GenerateAssistantReplyOptions {
 }
 
 let aiDebugSequence = 0
-const aiDebugRecords: AiDebugRecord[] = []
-const MAX_AI_DEBUG_RECORDS = 20
+/**
+ * In-memory write buffer for AI debug records. Pushed records land here
+ * synchronously (so same-session reads see them immediately) and are
+ * fire-and-forget persisted to Dexie (`storage/ai-debug-records.ts`). Reads
+ * always hydrate from Dexie and merge this buffer, so a card-switch clear
+ * (which deletes the Dexie key) is naturally reflected on the next read
+ * without any cross-layer cache-reset call.
+ */
+const aiDebugRecordBuffer: AiDebugRecord[] = []
+
 /** 读平台配置 ai.chatTimeoutMs(默认 600000).同步读 cache. */
 function getChatTimeoutMs(): number {
   return getPlatformConfig().ai.chatTimeoutMs
 }
 
 function pushAiDebugRecord(record: AiDebugRecord): void {
-  aiDebugRecords.unshift(record)
-  aiDebugRecords.splice(MAX_AI_DEBUG_RECORDS)
+  // Sync buffer so same-session reads see the new record immediately, plus
+  // fire-and-forget async persist to Dexie (survives refresh, 7-day TTL,
+  // cleared on card switch). Diagnostics are non-critical — a failed write
+  // is silently dropped; the record still lives in the buffer for this session.
+  aiDebugRecordBuffer.unshift(record)
+  void appendAiDebugRecord(record).catch(() => { /* ignore: diagnostics persist */ })
 }
 
 function updateAiDebugRecord(id: string, patch: Partial<AiDebugRecord>): void {
-  const index = aiDebugRecords.findIndex((record) => record.id === id)
+  // Update the in-memory buffer entry (source of truth for current session).
+  const index = aiDebugRecordBuffer.findIndex((record) => record.id === id)
   if (index < 0) {
     return
   }
-
-  aiDebugRecords[index] = {
-    ...aiDebugRecords[index],
+  aiDebugRecordBuffer[index] = {
+    ...aiDebugRecordBuffer[index],
     ...patch,
   }
+  // Persist the patched record (fire-and-forget). Re-read + re-write so the
+  // Dexie copy reflects the patch; the buffer is the session source of truth.
+  void persistPatchedRecord(id, patch).catch(() => { /* ignore: diagnostics persist */ })
 }
 
-export function getAiDebugRecords(): AiDebugRecord[] {
-  return aiDebugRecords.map((record) => ({
+/** Best-effort: re-read Dexie, apply patch to the matching record, write back. */
+async function persistPatchedRecord(id: string, patch: Partial<AiDebugRecord>): Promise<void> {
+  const persisted = await readAiDebugRecords()
+  const idx = persisted.findIndex((r) => r.id === id)
+  if (idx < 0) return
+  persisted[idx] = { ...persisted[idx], ...patch }
+  await localDb.meta.put({
+    key: AI_DEBUG_RECORDS_KEY,
+    value: JSON.stringify(persisted),
+  })
+}
+
+export async function getAiDebugRecords(): Promise<AiDebugRecord[]> {
+  // Always hydrate from Dexie (handles card-switch clear naturally) and merge
+  // any buffer records not yet persisted or added this session.
+  const persisted = await readAiDebugRecords()
+  const persistedIds = new Set(persisted.map((r) => r.id))
+  const merged = [
+    ...aiDebugRecordBuffer.filter((r) => !persistedIds.has(r.id)),
+    ...persisted,
+  ]
+  return merged.map((record) => ({
     ...record,
     messages: record.messages?.map((message) => ({ ...message })),
     input: record.input ? [...record.input] : undefined,
@@ -310,53 +362,499 @@ function buildChatCompletionsRequestBody(input: {
   model: string
   messages: AiChatMessage[]
   parameters: BrowserAiModelParameters
+  kind: BrowserAiProviderKind
 }): Record<string, unknown> {
+  const common = input.parameters.common
+  const provider = input.kind === "deepseek"
+    ? providerParamsForKind(input.parameters, "deepseek") as BrowserDeepSeekModelParameters
+    : providerParamsForKind(input.parameters, "openai-compatible") as BrowserOpenAiCompatibleModelParameters
   const body: Record<string, unknown> = {
     model: input.model,
     messages: input.messages,
   }
 
-  putOptionalNumber(body, "max_tokens", input.parameters.maxOutputTokens)
-  putOptionalNumber(body, "temperature", input.parameters.temperature)
-  putOptionalNumber(body, "top_p", input.parameters.topP)
-  putOptionalNumber(body, "frequency_penalty", input.parameters.frequencyPenalty)
-  putOptionalNumber(body, "presence_penalty", input.parameters.presencePenalty)
+  putOptionalNumber(body, "max_tokens", common.maxOutputTokens)
+  putOptionalNumber(body, "temperature", common.temperature)
+  putOptionalNumber(body, "top_p", common.topP)
+  putOptionalNumber(body, "frequency_penalty", provider.frequencyPenalty)
+  putOptionalNumber(body, "presence_penalty", provider.presencePenalty)
 
-  if (input.parameters.reasoningEffort) {
-    body.reasoning_effort = input.parameters.reasoningEffort
+  if (provider.reasoningEffort) {
+    body.reasoning_effort = provider.reasoningEffort
   }
 
   return {
     ...body,
-    ...parseBrowserAiCustomRequestParams(input.parameters.customRequestParamsText),
+    ...parseBrowserAiCustomRequestParams(provider.customRequestParamsText),
     model: input.model,
     messages: input.messages,
   }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function parseOptionalJsonObjectText(input: string, label: string): Record<string, unknown> | undefined {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return undefined
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(trimmed)
+  } catch {
+    throw new Error(`${label} must be valid JSON.`)
+  }
+  if (!isRecord(parsed)) {
+    throw new Error(`${label} must be a JSON object.`)
+  }
+  return parsed
+}
+
+function putOptionalStringArray(
+  target: Record<string, unknown>,
+  key: string,
+  value: string[],
+): void {
+  const normalized = value.map((item) => item.trim()).filter(Boolean)
+  if (normalized.length > 0) {
+    target[key] = normalized
+  }
+}
+
+function buildResponsesUrl(baseUrl: string): string {
+  return `${baseUrl.replace(/\/+$/, "")}/responses`
+}
+
+/** Build OpenAI Responses-native content blocks from Tsian text/image parts. */
+function buildResponsesContent(content: string | ContentPart[]): unknown {
+  if (typeof content === "string") return content
+  return content.map((part) => {
+    if (part.type === "text") return { type: "input_text", text: part.text }
+    return {
+      type: "input_image",
+      image_url: `data:${part.mimeType};base64,${part.data}`,
+      detail: "auto",
+    }
+  })
+}
+
+function buildResponsesMessage(message: AiChatMessage): Record<string, unknown> {
+  return {
+    type: "message",
+    role: message.role,
+    content: buildResponsesContent(message.content),
+  }
+}
+
+function buildResponsesNativeInput(messages: RuntimeChatMessage[]): unknown[] {
+  const input: unknown[] = []
+  for (const message of messages) {
+    if (message.role === "tool") {
+      input.push({
+        type: "function_call_output",
+        call_id: message.toolCallId,
+        output: message.content,
+        status: "completed",
+      })
+      continue
+    }
+
+    if (message.role === "assistant") {
+      if (message.content) {
+        input.push({ type: "message", role: "assistant", content: message.content })
+      }
+      if (message.toolCalls) {
+        for (const call of message.toolCalls) {
+          input.push({
+            type: "function_call",
+            call_id: call.id,
+            name: call.name,
+            arguments: JSON.stringify(call.arguments),
+            status: "completed",
+          })
+        }
+      }
+      continue
+    }
+
+    input.push({
+      type: "message",
+      role: message.role,
+      content: buildResponsesContent(message.content),
+    })
+  }
+  return input
+}
+
+function buildResponsesTools(tools: ToolSchema[]): unknown[] {
+  return tools.map((tool) => ({
+    type: "function",
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+  }))
+}
+
+function buildResponsesRequestBody(input: {
+  model: string
+  input: unknown[]
+  parameters: BrowserAiModelParameters
+  tools?: unknown[]
+  stream?: boolean
+}): Record<string, unknown> {
+  const common = input.parameters.common
+  const provider = providerParamsForKind(input.parameters, "openai-responses") as BrowserOpenAiResponsesModelParameters
+  const body: Record<string, unknown> = {
+    model: input.model,
+    input: input.input,
+    store: false,
+  }
+
+  putOptionalNumber(body, "max_output_tokens", common.maxOutputTokens)
+  putOptionalNumber(body, "temperature", common.temperature)
+  putOptionalNumber(body, "top_p", common.topP)
+
+  if (provider.reasoningEffort) {
+    body.reasoning = { effort: provider.reasoningEffort }
+  }
+
+  const result: Record<string, unknown> = {
+    ...body,
+    ...parseBrowserAiCustomRequestParams(provider.customRequestParamsText),
+    model: input.model,
+    input: input.input,
+    store: false,
+  }
+
+  delete result.previous_response_id
+  delete result.conversation
+
+  if (input.tools) {
+    result.tools = input.tools
+  } else {
+    delete result.tools
+  }
+
+  if (input.stream) {
+    result.stream = true
+  } else {
+    delete result.stream
+  }
+
+  return result
+}
+
+function responsePayloadRecord(payload: unknown): Record<string, unknown> | null {
+  if (!isRecord(payload)) return null
+  const response = payload.response
+  if (isRecord(response)) return response
+  return payload
+}
+
+function extractResponsesError(payload: unknown): string | undefined {
+  if (!isRecord(payload)) return undefined
+  if (payload.type === "error") {
+    return typeof payload.message === "string" ? payload.message : "AI response stream failed."
+  }
+
+  const response = responsePayloadRecord(payload)
+  if (!response) return undefined
+
+  const error = response.error
+  if (isRecord(error) && typeof error.message === "string") {
+    return error.message
+  }
+
+  const status = typeof response.status === "string" ? response.status : ""
+  if (status === "failed") {
+    return "AI response failed."
+  }
+  if (status === "incomplete") {
+    const details = response.incomplete_details
+    const reason = isRecord(details) && typeof details.reason === "string" ? details.reason : "unknown reason"
+    return `AI response incomplete: ${reason}.`
+  }
+
+  return undefined
+}
+
+function collectResponsesText(response: Record<string, unknown>): string {
+  if (typeof response.output_text === "string") {
+    return response.output_text
+  }
+
+  const textParts: string[] = []
+  const output = response.output
+  if (Array.isArray(output)) {
+    for (const item of output) {
+      if (!isRecord(item) || item.type !== "message") continue
+      const content = item.content
+      if (!Array.isArray(content)) continue
+      for (const block of content) {
+        if (!isRecord(block)) continue
+        if (block.type === "output_text" && typeof block.text === "string") {
+          textParts.push(block.text)
+        } else if (block.type === "refusal" && typeof block.refusal === "string") {
+          textParts.push(block.refusal)
+        }
+      }
+    }
+  }
+  return textParts.join("").trim()
+}
+
+function collectResponsesToolCalls(response: Record<string, unknown>): NativeToolCall[] {
+  const output = response.output
+  if (!Array.isArray(output)) return []
+
+  const toolCalls: NativeToolCall[] = []
+  for (const item of output) {
+    if (!isRecord(item) || item.type !== "function_call") continue
+    const id = typeof item.call_id === "string" ? item.call_id : ""
+    const name = typeof item.name === "string" ? item.name : ""
+    if (!id || !name) continue
+
+    let args: Record<string, unknown> = {}
+    const rawArgs = item.arguments
+    if (typeof rawArgs === "string") {
+      try {
+        const parsed = JSON.parse(rawArgs)
+        if (isRecord(parsed)) {
+          args = parsed
+        }
+      } catch {
+        // Leave empty arguments; runtime surfaces a structured error.
+      }
+    } else if (isRecord(rawArgs)) {
+      args = rawArgs
+    }
+
+    toolCalls.push({ id, name, arguments: args })
+  }
+  return toolCalls
+}
+
+function extractResponsesText(payload: unknown): string {
+  const error = extractResponsesError(payload)
+  if (error) {
+    throw new Error(error)
+  }
+
+  const response = responsePayloadRecord(payload)
+  if (!response) {
+    throw new Error("OpenAI Responses response format is not supported.")
+  }
+
+  if (typeof response.output_text === "string" || Array.isArray(response.output)) {
+    return collectResponsesText(response)
+  }
+
+  throw new Error("OpenAI Responses response format is not supported.")
+}
+
+function extractResponsesResult(payload: unknown): ModelCallResult {
+  const error = extractResponsesError(payload)
+  if (error) {
+    throw new Error(error)
+  }
+
+  const response = responsePayloadRecord(payload)
+  if (!response) {
+    throw new Error("OpenAI Responses response format is not supported.")
+  }
+
+  const text = collectResponsesText(response)
+  const toolCalls = collectResponsesToolCalls(response)
+  if (typeof response.output_text !== "string" && !Array.isArray(response.output)) {
+    throw new Error("OpenAI Responses response format is not supported.")
+  }
+
+  return {
+    text,
+    toolCalls,
+    raw: text,
+    finishReason: toolCalls.length > 0 ? "tool_calls" : "stop",
+  }
+}
+
+function responsesOutputIndex(data: Record<string, unknown>): number {
+  return typeof data.output_index === "number" ? data.output_index : -1
+}
+
+function upsertResponsesStreamToolCall(
+  accumulator: Map<number, { id: string; name: string; args: string }>,
+  index: number,
+  patch: Partial<{ id: string; name: string; args: string; appendArgs: string }>,
+): void {
+  const resolvedIndex = index >= 0 ? index : accumulator.size
+  const existing = accumulator.get(resolvedIndex)
+  if (existing) {
+    if (patch.id) existing.id = patch.id
+    if (patch.name) existing.name = patch.name
+    if (patch.args !== undefined) existing.args = patch.args
+    if (patch.appendArgs) existing.args += patch.appendArgs
+    return
+  }
+
+  accumulator.set(resolvedIndex, {
+    id: patch.id ?? `responses-call-${resolvedIndex}`,
+    name: patch.name ?? "",
+    args: patch.args ?? patch.appendArgs ?? "",
+  })
+}
+
+function collectResponsesStreamToolCalls(
+  data: unknown,
+  accumulator: Map<number, { id: string; name: string; args: string }>,
+): void {
+  if (!isRecord(data)) return
+
+  if (data.type === "response.output_item.added" || data.type === "response.output_item.done") {
+    const item = data.item
+    if (!isRecord(item) || item.type !== "function_call") return
+    const callId = typeof item.call_id === "string" ? item.call_id : ""
+    const name = typeof item.name === "string" ? item.name : ""
+    const args = typeof item.arguments === "string" ? item.arguments : undefined
+    const shouldSetArgs = data.type === "response.output_item.done" || Boolean(args)
+    upsertResponsesStreamToolCall(accumulator, responsesOutputIndex(data), {
+      ...(callId ? { id: callId } : {}),
+      ...(name ? { name } : {}),
+      ...(shouldSetArgs && args !== undefined ? { args } : {}),
+    })
+    return
+  }
+
+  if (data.type === "response.function_call_arguments.delta") {
+    const delta = typeof data.delta === "string" ? data.delta : ""
+    if (delta) {
+      upsertResponsesStreamToolCall(accumulator, responsesOutputIndex(data), {
+        appendArgs: delta,
+      })
+    }
+    return
+  }
+
+  if (data.type === "response.function_call_arguments.done") {
+    const name = typeof data.name === "string" ? data.name : ""
+    const args = typeof data.arguments === "string" ? data.arguments : ""
+    upsertResponsesStreamToolCall(accumulator, responsesOutputIndex(data), {
+      ...(name ? { name } : {}),
+      args,
+    })
+    return
+  }
+
+  if (data.type === "response.completed") {
+    const response = responsePayloadRecord(data)
+    const output = response?.output
+    if (!Array.isArray(output)) return
+    output.forEach((item, index) => {
+      if (!isRecord(item) || item.type !== "function_call") return
+      const callId = typeof item.call_id === "string" ? item.call_id : ""
+      const name = typeof item.name === "string" ? item.name : ""
+      const args = typeof item.arguments === "string" ? item.arguments : ""
+      upsertResponsesStreamToolCall(accumulator, index, {
+        ...(callId ? { id: callId } : {}),
+        ...(name ? { name } : {}),
+        args,
+      })
+    })
+  }
+}
+
+/**
+ * Extract token usage (input/output/total + cache hit/creation) from a provider
+ * response payload. Paths differ per provider:
+ *
+ * - OpenAI / DeepSeek / Claude: usage lives at `payload.usage`.
+ * - OpenAI Responses: usage lives at `payload.usage` or
+ *   `payload.response.usage` for streaming completed events.
+ * - Gemini: usage lives at `payload.usageMetadata` (different key, different
+ *   field names). Without this branch Gemini's native API usage is never
+ *   extracted — a pre-existing defect this function now fixes.
+ *
+ * Cache fields (all optional, omitted when the provider doesn't report them):
+ * - OpenAI: `usage.prompt_tokens_details.cached_tokens`
+ * - OpenAI Responses: `usage.input_tokens_details.cached_tokens`
+ * - DeepSeek: `usage.prompt_cache_hit_tokens`
+ * - Claude: `usage.cache_read_input_tokens` (+ `cache_creation_input_tokens`)
+ * - Gemini: `usageMetadata.cachedContentTokenCount`
+ *
+ * `kind` is optional for back-compat with any caller that doesn't have it; when
+ * omitted, cache fields are not extracted (only input/output/total).
+ */
 function extractUsageFromPayload(
   payload: unknown,
-): { input?: number; output?: number; total?: number } | undefined {
+  kind?: BrowserAiProviderKind,
+): { input?: number; output?: number; total?: number; cached?: number; cacheCreation?: number } | undefined {
   if (typeof payload !== "object" || payload === null) return undefined
-  const usage = (payload as { usage?: unknown }).usage
-  if (typeof usage !== "object" || usage === null) return undefined
 
-  const u = usage as Record<string, unknown>
-  const pickNum = (key: string): number | undefined => {
-    const v = u[key]
+  const pickNum = (obj: Record<string, unknown>, key: string): number | undefined => {
+    const v = obj[key]
     return typeof v === "number" && Number.isFinite(v) ? v : undefined
   }
 
-  const input = pickNum("prompt_tokens") ?? pickNum("input_tokens")
-  const output = pickNum("completion_tokens") ?? pickNum("output_tokens")
+  // OpenAI Responses streaming terminal events wrap the final response under
+  // `response`; non-streaming responses expose the same usage at top level.
+  const response = isRecord(payload) && isRecord(payload.response) ? payload.response : payload
+  if (!isRecord(response)) return undefined
+
+  // Gemini: usage lives at payload.usageMetadata with different field names.
+  if (kind === "gemini") {
+    const um = (payload as { usageMetadata?: unknown }).usageMetadata
+    if (typeof um !== "object" || um === null) return undefined
+    const u = um as Record<string, unknown>
+    const input = pickNum(u, "promptTokenCount")
+    const output = pickNum(u, "candidatesTokenCount")
+    const total = pickNum(u, "totalTokenCount")
+    const cached = pickNum(u, "cachedContentTokenCount")
+    if (input === undefined && output === undefined && total === undefined && cached === undefined) {
+      return undefined
+    }
+    return { input, output, total, ...(cached !== undefined ? { cached } : {}) }
+  }
+
+  // OpenAI / DeepSeek / Claude: usage at payload.usage.
+  const usage = (response as { usage?: unknown }).usage
+  if (typeof usage !== "object" || usage === null) return undefined
+  const u = usage as Record<string, unknown>
+
+  const input = pickNum(u, "prompt_tokens") ?? pickNum(u, "input_tokens")
+  const output = pickNum(u, "completion_tokens") ?? pickNum(u, "output_tokens")
   const total =
-    pickNum("total_tokens") ??
+    pickNum(u, "total_tokens") ??
     (typeof input === "number" && typeof output === "number" ? input + output : undefined)
 
-  if (input === undefined && output === undefined && total === undefined) {
+  // Cache fields differ per provider kind.
+  let cached: number | undefined
+  let cacheCreation: number | undefined
+  if (kind === "openai-responses") {
+    const details = u["input_tokens_details"]
+    if (isRecord(details)) {
+      cached = pickNum(details, "cached_tokens")
+    }
+  } else if (kind === "openai-compatible") {
+    // OpenAI Chat Completions: nested in prompt_tokens_details.cached_tokens.
+    const details = u["prompt_tokens_details"]
+    if (isRecord(details)) {
+      cached = pickNum(details, "cached_tokens")
+    }
+  } else if (kind === "deepseek") {
+    cached = pickNum(u, "prompt_cache_hit_tokens")
+  } else if (kind === "claude") {
+    cached = pickNum(u, "cache_read_input_tokens")
+    cacheCreation = pickNum(u, "cache_creation_input_tokens")
+  }
+
+  if (input === undefined && output === undefined && total === undefined && cached === undefined && cacheCreation === undefined) {
     return undefined
   }
-  return { input, output, total }
+  const result: { input?: number; output?: number; total?: number; cached?: number; cacheCreation?: number } = { input, output, total }
+  if (cached !== undefined) result.cached = cached
+  if (cacheCreation !== undefined) result.cacheCreation = cacheCreation
+  return result
 }
 
 function extractErrorMessage(payload: unknown): string | undefined {
@@ -470,6 +968,13 @@ interface ProviderAdapter {
    */
   extractStreamReasoningDelta?(data: unknown): string | undefined
   /**
+   * Extract a provider-specific stream error from one parsed SSE payload.
+   * Adapters return `undefined` for normal chunks; the shared stream loops throw
+   * when a message is returned so failed/incomplete streams never look like an
+   * empty successful response.
+   */
+  extractStreamError?(data: unknown): string | undefined
+  /**
    * Extract tool-call deltas from one parsed SSE payload. OpenAI streams
    * `tool_calls` arguments incrementally (keyed by `index`); Gemini emits a
      complete `functionCall` part at once; Claude emits `content_block_start`
@@ -502,6 +1007,7 @@ const openaiAdapter: ProviderAdapter = {
       model: config.model,
       messages,
       parameters: config.parameters,
+      kind: config.kind,
     })
   },
   extractText: extractAssistantText,
@@ -510,6 +1016,7 @@ const openaiAdapter: ProviderAdapter = {
       model: config.model,
       messages: [],
       parameters: config.parameters,
+      kind: config.kind,
     })
     body.messages = messages.map((message) => {
       if (message.role === "tool") {
@@ -675,6 +1182,67 @@ const openaiAdapter: ProviderAdapter = {
   },
 }
 
+const responsesAdapter: ProviderAdapter = {
+  buildUrl(config) {
+    return buildResponsesUrl(config.baseUrl)
+  },
+  buildHeaders(config) {
+    return {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${config.apiKey}`,
+    }
+  },
+  buildRequestBody(config, messages) {
+    return buildResponsesRequestBody({
+      model: config.model,
+      input: messages.map((message) => buildResponsesMessage(message)),
+      parameters: config.parameters,
+    })
+  },
+  extractText: extractResponsesText,
+  buildNativeRequestBody(config, messages, tools) {
+    const responseTools = buildResponsesTools(tools)
+    return buildResponsesRequestBody({
+      model: config.model,
+      input: buildResponsesNativeInput(messages),
+      parameters: config.parameters,
+      ...(responseTools.length > 0 ? { tools: responseTools } : {}),
+    })
+  },
+  extractNativeResult: extractResponsesResult,
+  buildStreamUrl(config) {
+    return buildResponsesUrl(config.baseUrl)
+  },
+  buildStreamRequestBody(config, messages, tools) {
+    const responseTools = buildResponsesTools(tools)
+    return buildResponsesRequestBody({
+      model: config.model,
+      input: buildResponsesNativeInput(messages),
+      parameters: config.parameters,
+      ...(responseTools.length > 0 ? { tools: responseTools } : {}),
+      stream: true,
+    })
+  },
+  extractStreamDelta(data) {
+    if (!isRecord(data)) return undefined
+    return data.type === "response.output_text.delta" && typeof data.delta === "string"
+      ? data.delta
+      : undefined
+  },
+  extractStreamError(data) {
+    return extractResponsesError(data)
+  },
+  extractStreamToolCalls(data, context) {
+    collectResponsesStreamToolCalls(data, context.accumulator)
+  },
+  extractStreamFinish(data) {
+    if (!isRecord(data) || data.type !== "response.completed") return undefined
+    const response = responsePayloadRecord(data)
+    if (!response) return "stop"
+    return collectResponsesToolCalls(response).length > 0 ? "tool_calls" : "stop"
+  },
+}
+
 /** Split OpenAI-style messages into a system prompt + non-system messages. */
 function splitSystemMessage(messages: AiChatMessage[]): { system: string | undefined; rest: AiChatMessage[] } {
   const systemParts: string[] = []
@@ -785,6 +1353,138 @@ function buildClaudeNativeMessage(message: RuntimeChatMessage): Record<string, u
   return { role: "user", content: buildClaudeContent(message.content) }
 }
 
+function buildGeminiGenerationConfig(parameters: BrowserAiModelParameters): Record<string, unknown> {
+  const common = parameters.common
+  const provider = providerParamsForKind(parameters, "gemini") as BrowserGeminiModelParameters
+  const generationConfig: Record<string, unknown> = {}
+  putOptionalNumber(generationConfig, "maxOutputTokens", common.maxOutputTokens)
+  putOptionalNumber(generationConfig, "temperature", common.temperature)
+  putOptionalNumber(generationConfig, "topP", common.topP)
+  putOptionalNumber(generationConfig, "topK", provider.topK)
+  putOptionalNumber(generationConfig, "frequencyPenalty", provider.frequencyPenalty)
+  putOptionalNumber(generationConfig, "presencePenalty", provider.presencePenalty)
+  putOptionalStringArray(generationConfig, "stopSequences", provider.stopSequences)
+  if (provider.responseMimeType.trim()) {
+    generationConfig.responseMimeType = provider.responseMimeType.trim()
+  }
+  const responseSchema = parseOptionalJsonObjectText(provider.responseSchemaText, "Gemini responseSchema")
+  if (responseSchema) {
+    generationConfig.responseSchema = responseSchema
+  }
+  const thinkingConfig: Record<string, unknown> = {}
+  putOptionalNumber(thinkingConfig, "thinkingBudget", provider.thinkingBudget)
+  if (provider.includeThoughts) {
+    thinkingConfig.includeThoughts = true
+  }
+  if (Object.keys(thinkingConfig).length > 0) {
+    generationConfig.thinkingConfig = thinkingConfig
+  }
+  return generationConfig
+}
+
+function mergeProviderCustomParams(
+  body: Record<string, unknown>,
+  customRequestParamsText: string,
+): Record<string, unknown> {
+  return {
+    ...parseBrowserAiCustomRequestParams(customRequestParamsText),
+    ...body,
+  }
+}
+
+function buildGeminiRequestBody(input: {
+  config: BrowserAiConfig
+  contents: Record<string, unknown>[]
+  system?: string
+  tools?: ToolSchema[]
+}): Record<string, unknown> {
+  const provider = providerParamsForKind(input.config.parameters, "gemini") as BrowserGeminiModelParameters
+  const body: Record<string, unknown> = {
+    contents: input.contents,
+    generationConfig: buildGeminiGenerationConfig(input.config.parameters),
+  }
+  if (input.system) {
+    body.systemInstruction = { parts: [{ text: input.system }] }
+  }
+  if (input.tools && input.tools.length > 0) {
+    body.tools = [
+      {
+        functionDeclarations: input.tools.map((tool) => ({
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.parameters,
+        })),
+      },
+    ]
+  }
+  return mergeProviderCustomParams(body, provider.customRequestParamsText)
+}
+
+function buildClaudeThinking(
+  common: BrowserAiModelParameters["common"],
+  provider: BrowserClaudeModelParameters,
+): Record<string, unknown> | undefined {
+  if (provider.thinkingMode === "disabled") {
+    return undefined
+  }
+  if (provider.thinkingMode === "adaptive") {
+    return { type: "adaptive", display: provider.thinkingDisplay }
+  }
+  if (provider.thinkingBudgetTokens === null || provider.thinkingBudgetTokens < 1024) {
+    throw new Error("Claude thinking.budget_tokens must be at least 1024 when thinking is enabled.")
+  }
+  if (common.maxOutputTokens !== null && provider.thinkingBudgetTokens >= common.maxOutputTokens) {
+    throw new Error("Claude thinking.budget_tokens must be smaller than max output tokens.")
+  }
+  return {
+    type: "enabled",
+    budget_tokens: provider.thinkingBudgetTokens,
+    display: provider.thinkingDisplay,
+  }
+}
+
+function applyClaudeModelParameters(body: Record<string, unknown>, config: BrowserAiConfig): void {
+  const common = config.parameters.common
+  const provider = providerParamsForKind(config.parameters, "claude") as BrowserClaudeModelParameters
+  body.max_tokens = common.maxOutputTokens ?? 4096
+  putOptionalNumber(body, "temperature", common.temperature)
+  putOptionalNumber(body, "top_p", common.topP)
+  putOptionalNumber(body, "top_k", provider.topK)
+  putOptionalStringArray(body, "stop_sequences", provider.stopSequences)
+  if (provider.serviceTier) {
+    body.service_tier = provider.serviceTier
+  }
+  const thinking = buildClaudeThinking(common, provider)
+  if (thinking) {
+    body.thinking = thinking
+  }
+}
+
+function buildClaudeRequestBody(input: {
+  config: BrowserAiConfig
+  messages: Record<string, unknown>[]
+  system?: string
+  tools?: ToolSchema[]
+}): Record<string, unknown> {
+  const provider = providerParamsForKind(input.config.parameters, "claude") as BrowserClaudeModelParameters
+  const body: Record<string, unknown> = {
+    model: input.config.model,
+    messages: input.messages,
+  }
+  applyClaudeModelParameters(body, input.config)
+  if (input.system) {
+    body.system = input.system
+  }
+  if (input.tools && input.tools.length > 0) {
+    body.tools = input.tools.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      input_schema: tool.parameters,
+    }))
+  }
+  return mergeProviderCustomParams(body, provider.customRequestParamsText)
+}
+
 const geminiAdapter: ProviderAdapter = {
   buildUrl(config) {
     const base = config.baseUrl.replace(/\/+$/, "")
@@ -799,33 +1499,14 @@ const geminiAdapter: ProviderAdapter = {
   },
   buildRequestBody(config, messages) {
     const { system, rest } = splitSystemMessage(messages)
-    const generationConfig: Record<string, unknown> = {}
-    putOptionalNumber(generationConfig, "maxOutputTokens", config.parameters.maxOutputTokens)
-    putOptionalNumber(generationConfig, "temperature", config.parameters.temperature)
-    putOptionalNumber(generationConfig, "topP", config.parameters.topP)
-    putOptionalNumber(generationConfig, "frequencyPenalty", config.parameters.frequencyPenalty)
-    putOptionalNumber(generationConfig, "presencePenalty", config.parameters.presencePenalty)
-
-    const body: Record<string, unknown> = {
+    return buildGeminiRequestBody({
+      config,
+      system,
       contents: rest.map((message) => ({
         role: message.role === "assistant" ? "model" : "user",
         parts: buildGeminiParts(message.content),
       })),
-      generationConfig,
-    }
-    if (system) {
-      body.systemInstruction = { parts: [{ text: system }] }
-    }
-    // reasoning_effort is forwarded as-is for all provider kinds; providers that
-    // don't support it should be left on "do not send" and tuned via custom params.
-    if (config.parameters.reasoningEffort) {
-      body.generationConfig = { ...generationConfig, reasoning_effort: config.parameters.reasoningEffort }
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      ...body,
-    }
+    })
   },
   extractText(payload) {
     if (
@@ -847,37 +1528,12 @@ const geminiAdapter: ProviderAdapter = {
   },
   buildNativeRequestBody(config, messages, tools) {
     const { system, rest } = splitSystemMessages(messages)
-    const generationConfig: Record<string, unknown> = {}
-    putOptionalNumber(generationConfig, "maxOutputTokens", config.parameters.maxOutputTokens)
-    putOptionalNumber(generationConfig, "temperature", config.parameters.temperature)
-    putOptionalNumber(generationConfig, "topP", config.parameters.topP)
-    putOptionalNumber(generationConfig, "frequencyPenalty", config.parameters.frequencyPenalty)
-    putOptionalNumber(generationConfig, "presencePenalty", config.parameters.presencePenalty)
-
-    const body: Record<string, unknown> = {
+    return buildGeminiRequestBody({
+      config,
+      system,
       contents: rest.map((message) => buildGeminiNativeContent(message)),
-      generationConfig,
-      tools: [
-        {
-          functionDeclarations: tools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            parameters: tool.parameters,
-          })),
-        },
-      ],
-    }
-    if (system) {
-      body.systemInstruction = { parts: [{ text: system }] }
-    }
-    if (config.parameters.reasoningEffort) {
-      body.generationConfig = { ...generationConfig, reasoning_effort: config.parameters.reasoningEffort }
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      ...body,
-    }
+      tools,
+    })
   },
   extractNativeResult(payload) {
     if (
@@ -991,32 +1647,14 @@ const claudeAdapter: ProviderAdapter = {
   },
   buildRequestBody(config, messages) {
     const { system, rest } = splitSystemMessage(messages)
-    const body: Record<string, unknown> = {
-      model: config.model,
+    return buildClaudeRequestBody({
+      config,
+      system,
       messages: rest.map((message) => ({
         role: message.role === "assistant" ? "assistant" : "user",
         content: message.role === "assistant" ? message.content : buildClaudeContent(message.content),
       })),
-      // Claude requires max_tokens; fall back to a sane default when unset.
-      max_tokens: config.parameters.maxOutputTokens ?? 4096,
-    }
-    if (system) {
-      body.system = system
-    }
-    putOptionalNumber(body, "temperature", config.parameters.temperature)
-    putOptionalNumber(body, "top_p", config.parameters.topP)
-    // reasoning_effort is forwarded as-is for all provider kinds; providers that
-    // don't support it should be left on "do not send" and tuned via custom params.
-    if (config.parameters.reasoningEffort) {
-      body.reasoning_effort = config.parameters.reasoningEffort
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      model: config.model,
-      messages: body.messages,
-      max_tokens: body.max_tokens,
-    }
+    })
   },
   extractText(payload) {
     if (
@@ -1034,33 +1672,12 @@ const claudeAdapter: ProviderAdapter = {
   },
   buildNativeRequestBody(config, messages, tools) {
     const { system, rest } = splitSystemMessages(messages)
-    const body: Record<string, unknown> = {
-      model: config.model,
+    return buildClaudeRequestBody({
+      config,
+      system,
       messages: rest.map((message) => buildClaudeNativeMessage(message)),
-      // Claude requires max_tokens; fall back to a sane default when unset.
-      max_tokens: config.parameters.maxOutputTokens ?? 4096,
-      tools: tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        input_schema: tool.parameters,
-      })),
-    }
-    if (system) {
-      body.system = system
-    }
-    putOptionalNumber(body, "temperature", config.parameters.temperature)
-    putOptionalNumber(body, "top_p", config.parameters.topP)
-    if (config.parameters.reasoningEffort) {
-      body.reasoning_effort = config.parameters.reasoningEffort
-    }
-    return {
-      ...body,
-      ...parseBrowserAiCustomRequestParams(config.parameters.customRequestParamsText),
-      model: config.model,
-      messages: body.messages,
-      max_tokens: body.max_tokens,
-      tools: body.tools,
-    }
+      tools,
+    })
   },
   extractNativeResult(payload) {
     if (
@@ -1163,6 +1780,9 @@ const claudeAdapter: ProviderAdapter = {
 }
 
 function selectAdapter(kind: BrowserAiProviderKind): ProviderAdapter {
+  if (kind === "openai-responses") {
+    return responsesAdapter
+  }
   if (kind === "gemini") {
     return geminiAdapter
   }
@@ -1195,6 +1815,7 @@ export async function generateAssistantReply(
     kind: "chat",
     label: options.debugLabel ?? "chat",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message) => ({ ...message })),
     messageSegments,
@@ -1246,7 +1867,7 @@ export async function generateAssistantReply(
   }
 
   const content = adapter.extractText(payload)
-  const usage = extractUsageFromPayload(payload)
+  const usage = extractUsageFromPayload(payload, config.kind)
   updateAiDebugRecord(requestId, { responseText: content, usage })
 
   logDebugGroup(`[Tsian AI ${requestId}] response`, {
@@ -1310,6 +1931,7 @@ export async function generateAssistantReplyNative(
     kind: "chat",
     label: options.debugLabel ?? "chat-native",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message): AiChatMessage => {
       if (message.role === "tool") {
@@ -1372,7 +1994,7 @@ export async function generateAssistantReplyNative(
   }
 
   const result = adapter.extractNativeResult(payload)
-  const usage = extractUsageFromPayload(payload)
+  const usage = extractUsageFromPayload(payload, config.kind)
   updateAiDebugRecord(requestId, { responseText: result.raw, usage })
 
   logDebugGroup(`[Tsian AI ${requestId}] native response`, {
@@ -1465,6 +2087,7 @@ export async function streamAssistantReplyNative(
     kind: "chat",
     label: options.debugLabel ?? "chat-stream",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message): AiChatMessage => {
       if (message.role === "tool") {
@@ -1529,7 +2152,7 @@ export async function streamAssistantReplyNative(
     try {
       const payload = await readJsonPayload(response)
       const result = adapter.extractNativeResult(payload)
-      const usage = extractUsageFromPayload(payload)
+      const usage = extractUsageFromPayload(payload, config.kind)
       updateAiDebugRecord(requestId, { responseText: result.raw, usage })
       logDebugGroup(`[Tsian AI ${requestId}] stream non-SSE fallback`, {
         text: previewText(result.text, 2400),
@@ -1597,11 +2220,17 @@ export async function streamAssistantReplyNative(
           continue
         }
 
+        const streamError = adapter.extractStreamError?.(data)
+        if (streamError) {
+          updateAiDebugRecord(requestId, { error: streamError })
+          throw new Error(streamError)
+        }
+
         // Provider usage arrives in the terminating chunk (OpenAI with
         // include_usage, Claude message_delta, Gemini usageMetadata). Extract
         // on every chunk; the last non-undefined one wins (usage only appears
         // once, near the end).
-        const chunkUsage = extractUsageFromPayload(data)
+        const chunkUsage = extractUsageFromPayload(data, config.kind)
         if (chunkUsage) {
           streamUsage = chunkUsage
         }
@@ -1749,6 +2378,7 @@ export async function streamAssistantReplyText(
     kind: "chat",
     label: options.debugLabel ?? "chat-stream-text",
     model: config.model,
+    providerKind: config.kind,
     createdAt: new Date().toISOString(),
     messages: messages.map((message) => ({ ...message })),
     messageSegments,
@@ -1805,7 +2435,7 @@ export async function streamAssistantReplyText(
     try {
       const payload = await readJsonPayload(response)
       const content = adapter.extractText(payload)
-      const usage = extractUsageFromPayload(payload)
+      const usage = extractUsageFromPayload(payload, config.kind)
       updateAiDebugRecord(requestId, { responseText: content, usage })
       logDebugGroup(`[Tsian AI ${requestId}] text stream non-SSE fallback`, {
         content: previewText(content, 2400),
@@ -1872,8 +2502,14 @@ export async function streamAssistantReplyText(
           continue
         }
 
+        const streamError = adapter.extractStreamError?.(data)
+        if (streamError) {
+          updateAiDebugRecord(requestId, { error: streamError })
+          throw new Error(streamError)
+        }
+
         // Provider usage arrives in the terminating chunk.
-        const chunkUsage = extractUsageFromPayload(data)
+        const chunkUsage = extractUsageFromPayload(data, config.kind)
         if (chunkUsage) {
           streamUsage = chunkUsage
         }

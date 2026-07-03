@@ -1173,6 +1173,7 @@ const TOOL_LABEL: Record<string, { verb: string; noun: string; unit: string | nu
   use_skill: { verb: "激活", noun: "技能", unit: null },
   run_script: { verb: "执行", noun: "脚本", unit: null },
   inspect_frontend: { verb: "自检", noun: "前端", unit: null },
+  test_skill_script: { verb: "测试", noun: "脚本", unit: null },
   ask_user: { verb: "向玩家", noun: "提问", unit: null },
 }
 

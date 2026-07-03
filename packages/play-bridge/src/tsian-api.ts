@@ -40,6 +40,11 @@ export interface SendOptions {
 
 export interface InvokeAgentOptions {
   injection?: InjectionMessage[]
+  /** 上下文隔离 slot。不同 slot 读写不同 context-<slot>.json，防止上下文串。 */
+  contextSlot?: string
+  /** 是否持久化上下文。true = 读写 context-slot.json（跨调用持久化）；
+   *  false/省略 = 不读不写（一次性调用）。默认 false。 */
+  persist?: boolean
 }
 
 export interface MessageDelta {
@@ -80,6 +85,9 @@ export interface AskRequest {
   allowCustom?: boolean
 }
 
+/** 旁路调用(invokeAgent)活动信号类型。不携带文本内容，只通知"agent 正在活动"。 */
+export type AgentActivityKind = "delta" | "tool" | "round-end"
+
 export interface SessionHistory {
   entries: SessionHistoryEntry[]
   turn: number
@@ -104,9 +112,15 @@ export interface TsianApi {
   onTurnEnd(cb: (result: TurnEndResult) => void): () => void
   onTool(cb: (tool: ToolEvent) => void): () => void
   onAsk(cb: (ask: AskRequest) => void): () => void
+  /** 旁路调用(invokeAgent)活动信号订阅。不携带文本内容，不污染主 turn stream。
+   *  前端 useSetupState 用此做 understanding running 心跳脉冲。 */
+  onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void
 
   // ── 回答 ask_user ──
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
+
+  // ── 中断当前 turn（流式输出/工具执行）──
+  stop(): Promise<void>
 
   // ── 数据 ──
   readonly history: {
@@ -177,6 +191,7 @@ export function createTsian(): TsianApi {
   const roundEndCallbacks = new Set<(round: RoundEnd) => void>()
   const toolCallbacks = new Set<(tool: ToolEvent) => void>()
   const askCallbacks = new Set<(ask: AskRequest) => void>()
+  const agentActivityCallbacks = new Set<(agentId: string, kind: AgentActivityKind) => void>()
 
   bridge.on({
     onEvent(event, payload) {
@@ -239,6 +254,15 @@ export function createTsian(): TsianApi {
         }
         return
       }
+
+      if (event === "agent-activity" && payload && "agentId" in payload && "kind" in payload) {
+        const agentId = (payload as { agentId?: string }).agentId ?? ""
+        const kind = (payload as { kind?: string }).kind as AgentActivityKind
+        for (const cb of agentActivityCallbacks) {
+          try { cb(agentId, kind) } catch (err) { console.error("[tsian] onAgentActivity callback threw", err) }
+        }
+        return
+      }
     },
   })
 
@@ -280,6 +304,12 @@ export function createTsian(): TsianApi {
       if (options?.injection && options.injection.length > 0) {
         params.injection = options.injection
       }
+      if (options?.contextSlot !== undefined) {
+        params.contextSlot = options.contextSlot
+      }
+      if (options?.persist !== undefined) {
+        params.persist = options.persist
+      }
       return bridge.call<InvokeAgentResult>("interaction.invokeAgent", params as never)
     },
 
@@ -308,8 +338,17 @@ export function createTsian(): TsianApi {
       return () => { askCallbacks.delete(cb) }
     },
 
+    onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void {
+      agentActivityCallbacks.add(cb)
+      return () => { agentActivityCallbacks.delete(cb) }
+    },
+
     async answer(requestId: string, text: string, cancelled?: boolean): Promise<void> {
       await bridge.respondInteraction(requestId, text, cancelled)
+    },
+
+    async stop(): Promise<void> {
+      await bridge.stopInteraction()
     },
 
     history: {

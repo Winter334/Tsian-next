@@ -7,9 +7,9 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-2.md`
-- **Total Sessions**: 102
-- **Last Active**: 2026-06-30
+- **Active File**: `journal-3.md`
+- **Total Sessions**: 121
+- **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1848 | Active |
+| `journal-3.md` | ~581 | Active |
+| `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +31,25 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 121 | 2026-07-03 | Workshop content management | `13486c3` | `feat/workspace-context-cache-split` |
+| 120 | 2026-07-03 | Tsian Boot BSOD Nyan splash | `e48c5c8` | `feat/workspace-context-cache-split` |
+| 119 | 2026-07-03 | Optimize workshop cover traffic | `30cb4b1`, `a12e9b5` | `feat/workspace-context-cache-split` |
+| 118 | 2026-07-03 | 创意工坊多资源类型实现 | `6249b78` | `feat/workspace-context-cache-split` |
+| 117 | 2026-07-03 | App Market MVP — 卡包上传/下载/搜索/安装 + 创意工坊任务创建 | `8024077`, `60d3a85` | `feat/workspace-context-cache-split` |
+| 116 | 2026-07-02 | Account Center Window — 操作员身份终端桌面窗口 | `5674b44` | `feat/workspace-context-cache-split` |
+| 115 | 2026-07-02 | Account system Discord auth | `80c0645` | `feat/workspace-context-cache-split` |
+| 114 | 2026-07-02 | novel-airp opening confirm Step 5 | `a144b90`, `e94c8af` | `feat/workspace-context-cache-split` |
+| 113 | 2026-07-02 | novel-airp play setup dialog Step 4 — archive (code landed prior sessions) | `3317ce9`, `6b02113`, `89152ac`, `318b6ee`, `7a1d5ce`, `d3c3365`, `bd7e210` | `feat/workspace-context-cache-split` |
+| 112 | 2026-07-02 | novel-airp understanding loader: random SVG magic circle | `7b8d84d`, `7a2ebf8` | `feat/workspace-context-cache-split` |
+| 111 | 2026-07-02 | Model config UI redesign | `b6f78ee` | `feat/workspace-context-cache-split` |
+| 110 | 2026-07-02 | Add OpenAI Responses provider | `58f8e5f` | `feat/workspace-context-cache-split` |
+| 109 | 2026-07-01 | Step 3 角色设定向导 + 脚本/系统监视器修复 | `250e264` | `feat/workspace-context-cache-split` |
+| 108 | 2026-07-01 | 统一三处脚本 runner 注入（createBrowserScriptRunners 工厂） | `8e7449f` | `feat/workspace-context-cache-split` |
+| 107 | 2026-07-01 | Task 超时从总时长改为无响应超时 | `de84e2e` | `feat/workspace-context-cache-split` |
+| 106 | 2026-07-01 | test_skill_script 工具 + 错误透传 + Worker TS 注解修复 | `1e7e7dc` | `feat/workspace-context-cache-split` |
+| 105 | 2026-07-01 | 规范收尾：invoke-agent-context-management + play-frontend-vue-refactor | `a2ae121`, `46ab4dc`, `4577d4a` | `feat/workspace-context-cache-split` |
+| 104 | 2026-06-30 | DebugView 缓存命中率真实数据显示 + 仪表盘重设计 | `b302e51` | `feat/workspace-context-cache-split` |
+| 103 | 2026-06-30 | workspace.context 拆分优化前缀缓存 + 缓存显示问题诊断 | `368f136` | `feat/workspace-context-cache-split` |
 | 102 | 2026-06-30 | platform-frontend-build-service Phase 6 + 验收期运行时修复 | `33b5799` | `master` |
 | 101 | 2026-06-29 | novel AIRP skill/agent 文档中文化 | `2653a16` | `refactor/novel-airp-schema-consolidation` |
 | 100 | 2026-06-29 | novel AIRP 维护/检索 skill 优化 | `262f971` | `refactor/novel-airp-schema-consolidation` |

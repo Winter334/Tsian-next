@@ -48,6 +48,7 @@
         @delete-preset="handleDeletePreset"
         @enter-models="enterModels"
         @patch-preset="handlePatchPreset"
+        @set-active-preset="handleSetActivePreset"
       />
 
       <ModelConfigScreen
@@ -84,6 +85,7 @@
       v-model:open="addModelOpen"
       :preset="activePreset"
       :kind="activeTypeKind"
+      :test-model="testActiveModel"
       @confirm="handleAddModelConfirm"
     />
 
@@ -94,6 +96,7 @@
       :initial-parameters="editingModelParameters"
       :initial-tool-call-mode="editingModelToolCallMode"
       :initial-streaming="editingModelStreaming"
+      :test-model="testActiveModel"
       @confirm="handleEditModelParamsConfirm"
     />
   </section>
@@ -119,11 +122,13 @@ import {
   type BrowserAiToolCallMode,
   type BrowserEmbeddingConfig,
   type BrowserPlatformConfigDraft,
+  cloneBrowserAiModelParameters,
   createBrowserAiModelConfig,
   createBrowserAiProviderPreset,
   createDefaultBrowserAiModelParameters,
   fetchBrowserAiProviderModels,
   getBrowserPlatformConfigDraft,
+  resolveBrowserAiConfigFromProviderPreset,
   saveBrowserPlatformConfigDraftLenient,
   saveEmbeddingConfig,
 } from "@/config/ai"
@@ -135,6 +140,7 @@ import {
   getPlatformConfig,
   savePlatformConfig,
 } from "@/config/platform-config"
+import { generateAssistantReply } from "@/runtime-host/ai"
 
 type Screen =
   | { kind: "hub" }
@@ -226,7 +232,10 @@ const headerTitle = computed(() => {
 function clonePreset(input: BrowserAiProviderPreset): BrowserAiProviderPreset {
   return {
     ...input,
-    models: input.models.map((model) => ({ ...model, parameters: { ...model.parameters } })),
+    models: input.models.map((model) => ({
+      ...model,
+      parameters: cloneBrowserAiModelParameters(model.parameters),
+    })),
     fetchedModels: input.fetchedModels.map((model) => ({ ...model })),
   }
 }
@@ -442,6 +451,25 @@ function enterModels(typeId: string, presetId: string): void {
   screen.value = { kind: "models", typeId, presetId }
 }
 
+function handleSetActivePreset(presetId: string): void {
+  if (platformConfigDraft.value.activeProviderId === presetId) {
+    return
+  }
+  platformConfigDraft.value.activeProviderId = presetId
+  const preset = findPresetById(presetId)
+  toast.success(`已设为默认服务商：${preset?.name || "未命名"}`)
+}
+
+function findPresetById(presetId: string): BrowserAiProviderPreset | undefined {
+  for (const type of platformConfigDraft.value.providerTypes) {
+    const preset = type.presets.find((item) => item.id === presetId)
+    if (preset) {
+      return preset
+    }
+  }
+  return undefined
+}
+
 function handlePatchPreset(payload: { typeId: string; presetId: string; patch: Partial<BrowserAiProviderPreset> }): void {
   const preset = findPreset(payload.typeId, payload.presetId)
   if (!preset) {
@@ -463,7 +491,12 @@ function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModel
     toast.error("该模型已存在。")
     return
   }
-  preset.models.push(createBrowserAiModelConfig({ id, parameters: payload.parameters, toolCallMode: payload.toolCallMode, streaming: payload.streaming }))
+  preset.models.push(createBrowserAiModelConfig({
+    id,
+    parameters: cloneBrowserAiModelParameters(payload.parameters),
+    toolCallMode: payload.toolCallMode,
+    streaming: payload.streaming,
+  }))
 }
 
 async function handleDeleteModel(modelId: string): Promise<void> {
@@ -532,12 +565,56 @@ function handleEditModelParamsConfirm(payload: { parameters: BrowserAiModelParam
   if (!model) {
     return
   }
-  model.parameters = payload.parameters
+  model.parameters = cloneBrowserAiModelParameters(payload.parameters)
   model.toolCallMode = payload.toolCallMode
-  // Text-protocol models can never stream; clamp to false regardless of the
-  // switch value (the switch is disabled in that mode, this is a safety net).
-  model.streaming = payload.toolCallMode === "native" ? payload.streaming : false
+  model.streaming = payload.streaming
   toast.success("模型参数已更新。")
+}
+
+async function testActiveModel(payload: {
+  modelId: string
+  parameters: BrowserAiModelParameters
+  toolCallMode: BrowserAiToolCallMode
+  streaming: boolean
+}): Promise<{ ok: boolean; message: string }> {
+  const preset = activePreset.value
+  if (!preset) {
+    return { ok: false, message: "未选择服务商预设。" }
+  }
+  const modelId = payload.modelId.trim()
+  if (!modelId) {
+    return { ok: false, message: "请先填写模型 id。" }
+  }
+  const testPreset: BrowserAiProviderPreset = {
+    ...preset,
+    models: [
+      createBrowserAiModelConfig({
+        id: modelId,
+        parameters: cloneBrowserAiModelParameters(payload.parameters),
+        toolCallMode: payload.toolCallMode,
+        streaming: payload.streaming,
+        enabled: true,
+      }),
+    ],
+    fallbackStrategy: "primary-only",
+  }
+  const config = resolveBrowserAiConfigFromProviderPreset(testPreset, activeTypeKind.value, modelId)
+  if (!config) {
+    return { ok: false, message: "预设缺少接口地址、API 密钥或模型配置。" }
+  }
+  try {
+    const response = await generateAssistantReply(
+      [{ role: "user", content: "Reply with exactly OK." }],
+      { config: { ...config, streaming: false }, debugLabel: "settings-model-ping" },
+    )
+    const preview = response.trim().replace(/\s+/g, " ").slice(0, 80) || "(空响应)"
+    return { ok: true, message: `Chat ping 成功：${preview}` }
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Chat ping 失败。",
+    }
+  }
 }
 
 function handleSetStrategy(strategy: "primary-only" | "ordered"): void {
