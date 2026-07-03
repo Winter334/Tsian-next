@@ -445,3 +445,37 @@ Implemented the account-system task: planned and built the Go platform-server au
 ### Next Steps
 
 - None - task complete
+
+
+## Session 118: 创意工坊多资源类型实现
+
+**Date**: 2026-07-03
+**Task**: 创意工坊多资源类型实现
+**Package**: platform-web
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+实现创意工坊多资源类型分享与安装：扩展 market contract/backend schema/API/tests，新增 Agent/Skill resource-package 导出安装、tag 筛选、市场 UI 拆分、当前卡安装目标限制、Studio Skill 删除入口与助手替换语义修正。验证通过 build:contracts、build:web、platform-server go test。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6249b78` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

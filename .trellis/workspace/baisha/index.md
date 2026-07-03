@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 117
+- **Total Sessions**: 118
 - **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~447 | Active |
+| `journal-3.md` | ~481 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 118 | 2026-07-03 | 创意工坊多资源类型实现 | `6249b78` | `feat/workspace-context-cache-split` |
 | 117 | 2026-07-03 | App Market MVP — 卡包上传/下载/搜索/安装 + 创意工坊任务创建 | `8024077`, `60d3a85` | `feat/workspace-context-cache-split` |
 | 116 | 2026-07-02 | Account Center Window — 操作员身份终端桌面窗口 | `5674b44` | `feat/workspace-context-cache-split` |
 | 115 | 2026-07-02 | Account system Discord auth | `80c0645` | `feat/workspace-context-cache-split` |
