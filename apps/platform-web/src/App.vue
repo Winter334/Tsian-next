@@ -1,16 +1,14 @@
 <template>
-  <div
-    class="grid min-h-dvh w-full overflow-hidden bg-void"
-    :class="{ 'animate-crt-switch': splashState === 'animating' }"
-    @animationend="onCrtAnimationEnd"
-  >
+  <div class="grid min-h-dvh w-full overflow-hidden bg-void">
     <DesktopShell class="col-start-1 row-start-1 z-10 min-h-0" />
 
-    <SplashScreen
-      v-if="splashState !== 'done'"
-      class="col-start-1 row-start-1 z-50"
-      @exit="startCrtTransition"
-    />
+    <Transition name="splash-fade">
+      <SplashScreen
+        v-if="showSplash"
+        class="col-start-1 row-start-1 z-50"
+        @exit="finishSplash"
+      />
+    </Transition>
 
     <ToastHost />
     <ConfirmHost />
@@ -30,27 +28,31 @@ import { cleanupOrphanAttachments } from "./storage"
 import { preheatPlatformConfig } from "./config/platform-config"
 import { useAuth } from "./composables/useAuth"
 
-type SplashState = "typing" | "animating" | "done"
+const SPLASH_SEEN_KEY = "tsian:splash:nyan-bsod:v1"
 
 const { initAuth } = useAuth()
 
-const splashState = ref<SplashState>("typing")
+const showSplash = ref(!hasSeenSplash())
 
-function startCrtTransition() {
-  if (splashState.value !== "typing") {
-    return
+function hasSeenSplash(): boolean {
+  try {
+    return localStorage.getItem(SPLASH_SEEN_KEY) === "seen"
+  } catch {
+    return false
   }
-
-  splashState.value = "animating"
-  setTimeout(() => {
-    if (splashState.value === "animating") {
-      splashState.value = "done"
-    }
-  }, 440)
 }
 
-function onCrtAnimationEnd() {
-  splashState.value = "done"
+function markSplashSeen(): void {
+  try {
+    localStorage.setItem(SPLASH_SEEN_KEY, "seen")
+  } catch {
+    // localStorage can be unavailable in private/sandboxed contexts.
+  }
+}
+
+function finishSplash() {
+  markSplashSeen()
+  showSplash.value = false
 }
 
 onMounted(async () => {
@@ -67,3 +69,13 @@ onMounted(async () => {
   })
 })
 </script>
+
+<style scoped>
+.splash-fade-leave-active {
+  transition: opacity 0.7s ease;
+}
+
+.splash-fade-leave-to {
+  opacity: 0;
+}
+</style>
