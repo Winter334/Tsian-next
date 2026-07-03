@@ -77,31 +77,6 @@ max_journal_lines: 2000
 # default_package: frontend
 
 #-------------------------------------------------------------------------------
-# Codex (dispatch behavior)
-#-------------------------------------------------------------------------------
-# Codex-only knob; other platforms ignore it. Default ("inline") makes the
-# main Codex agent edit code directly because Codex sub-agents run with
-# `fork_turns="none"` isolation and can't inherit the parent session's
-# task context. Set to "sub-agent" to opt into the legacy dispatch model
-# (main agent spawns trellis-implement / trellis-check / trellis-research
-# sub-agents).
-#
-# codex:
-#   dispatch_mode: inline  # or "sub-agent" to dispatch trellis-* sub-agents
-
-# Auto-detected monorepo packages
-packages:
-  platform-web:
-    path: apps/platform-web
-  play-frontend-dev:
-    path: apps/play-frontend-dev
-  contracts:
-    path: packages/contracts
-  play-bridge:
-    path: packages/play-bridge
-default_package: platform-web
-
-#-------------------------------------------------------------------------------
 # Channel worker OOM guard
 #-------------------------------------------------------------------------------
 # Default safeguards for `trellis channel spawn` workers. The guard runs
@@ -120,3 +95,16 @@ channel:
   worker_guard:
     idle_timeout: 5m
     max_live_workers: 6
+
+#-------------------------------------------------------------------------------
+# Codex (dispatch behavior)
+#-------------------------------------------------------------------------------
+# Codex-only knob; other platforms ignore it. Default ("inline") makes the
+# main Codex agent edit code directly because Codex sub-agents run with
+# `fork_turns="none"` isolation and can't inherit the parent session's
+# task context. Set to "sub-agent" to opt into the legacy dispatch model
+# (main agent spawns trellis-implement / trellis-check / trellis-research
+# sub-agents).
+#
+# codex:
+#   dispatch_mode: inline  # or "sub-agent" to dispatch trellis-* sub-agents
