@@ -1,0 +1,5 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Market cover optimization spans contracts, server API/schema, and platform-web UI; use this to keep data flow and API boundaries aligned."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"The work adds shared image helpers, cursor pagination helpers, and API response types; use this to avoid duplicating parsing/query logic."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Market handler.go is already broad; use this when deciding whether to split image processing/pagination helpers out of the handler."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Frontend market API and Vue components are changed; this index identifies required platform-web frontend specs and build checks."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Shared market contract shapes change; this index identifies contract authoring requirements and required checks."}
