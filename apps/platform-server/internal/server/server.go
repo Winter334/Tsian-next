@@ -10,7 +10,9 @@ import (
 
 	"tsian/platform-server/internal/auth"
 	"tsian/platform-server/internal/config"
+	"tsian/platform-server/internal/market"
 	"tsian/platform-server/internal/middleware"
+	"tsian/platform-server/internal/storage"
 	"tsian/platform-server/internal/user"
 )
 
@@ -40,6 +42,17 @@ func (s *Server) Handler() http.Handler {
 	if s.cfg.MockAuth {
 		mux.HandleFunc("GET /api/v1/auth/mock-login", authHandler.HandleMockLogin)
 	}
+
+	// Market / Workshop
+	blobStore := &storage.FileSystemBlobStore{Root: s.cfg.DataDir}
+	marketRepo := market.NewSQLiteRepository(s.db)
+	marketHandler := market.NewHandler(marketRepo, blobStore)
+	mux.HandleFunc("GET /api/v1/market/packages", marketHandler.HandleList)
+	mux.HandleFunc("GET /api/v1/market/packages/{id}", marketHandler.HandleGet)
+	mux.Handle("POST /api/v1/market/packages", middleware.RequireAuth(s.db, users, http.HandlerFunc(marketHandler.HandleUpload)))
+	mux.HandleFunc("GET /api/v1/market/packages/{id}/download", marketHandler.HandleDownload)
+	mux.HandleFunc("GET /api/v1/market/packages/{id}/cover", marketHandler.HandleCover)
+
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})

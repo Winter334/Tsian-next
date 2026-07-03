@@ -1,4 +1,4 @@
-import type { User } from "@tsian/contracts"
+import type { MarketPackage, User } from "@tsian/contracts"
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "")
 
@@ -62,5 +62,59 @@ export const authApi = {
       }
       throw error
     }
+  },
+}
+
+export const marketApi = {
+  async list(params?: { q?: string; sort?: "newest" | "downloads" }): Promise<MarketPackage[]> {
+    const query = new URLSearchParams()
+    if (params?.q) {
+      query.set("q", params.q)
+    }
+    if (params?.sort) {
+      query.set("sort", params.sort)
+    }
+    const qs = query.toString()
+    const res = await apiFetch<{ packages: MarketPackage[] }>(
+      `/api/v1/market/packages${qs ? `?${qs}` : ""}`,
+    )
+    return res.packages
+  },
+
+  async get(id: string): Promise<MarketPackage> {
+    return apiFetch<MarketPackage>(`/api/v1/market/packages/${encodeURIComponent(id)}`)
+  },
+
+  async upload(file: Blob, title?: string, summary?: string): Promise<MarketPackage> {
+    const form = new FormData()
+    form.append("file", file, "package.tsian-card.zip")
+    if (title) {
+      form.append("title", title)
+    }
+    if (summary) {
+      form.append("summary", summary)
+    }
+    const response = await fetch(`${API_BASE}/api/v1/market/packages`, {
+      method: "POST",
+      credentials: "include",
+      body: form,
+    })
+    if (!response.ok) {
+      const text = await response.text().catch(() => "")
+      throw new ApiError(text.trim() || `上传失败 (${response.status})`, response.status)
+    }
+    return (await response.json()) as MarketPackage
+  },
+
+  async download(id: string): Promise<Blob> {
+    const response = await fetch(
+      `${API_BASE}/api/v1/market/packages/${encodeURIComponent(id)}/download`,
+      { credentials: "include" },
+    )
+    if (!response.ok) {
+      const text = await response.text().catch(() => "")
+      throw new ApiError(text.trim() || `下载失败 (${response.status})`, response.status)
+    }
+    return response.blob()
   },
 }

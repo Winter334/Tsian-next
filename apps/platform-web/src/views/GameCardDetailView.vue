@@ -212,6 +212,27 @@
                 />
               </label>
 
+              <div class="flex flex-wrap gap-3">
+                <label class="grid min-w-[160px] flex-1 gap-1">
+                  <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">作者</span>
+                  <input
+                    v-model="metadataAuthor"
+                    type="text"
+                    class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+                    placeholder="留空则不显示"
+                  />
+                </label>
+                <label class="grid w-32 shrink-0 gap-1">
+                  <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">版本</span>
+                  <input
+                    v-model="metadataVersion"
+                    type="text"
+                    class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
+                    placeholder="0.1.0"
+                  />
+                </label>
+              </div>
+
               <div class="flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -480,6 +501,8 @@ const remoteUrl = ref("")
 const packagedEntry = ref("")
 const metadataName = ref("")
 const metadataIntro = ref("")
+const metadataAuthor = ref("")
+const metadataVersion = ref("")
 const coverUrlDraft = ref("")
 const coverInput = ref<HTMLInputElement | null>(null)
 const coverError = ref("")
@@ -536,6 +559,8 @@ const hasUnsavedChanges = computed(() => {
   if (!card.value) return false
   if (metadataName.value.trim() !== card.value.manifest.name) return true
   if (metadataIntro.value.trim() !== card.value.manifest.summary) return true
+  if (metadataAuthor.value.trim() !== (card.value.manifest.author?.name ?? "")) return true
+  if (metadataVersion.value.trim() !== card.value.manifest.version) return true
   if (coverDraft.value.kind !== "none") return true
   return false
 })
@@ -564,6 +589,8 @@ function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
 function syncMetadataDraft(loadedCard: LocalGameCardRecord) {
   metadataName.value = loadedCard.manifest.name
   metadataIntro.value = loadedCard.manifest.summary
+  metadataAuthor.value = loadedCard.manifest.author?.name ?? ""
+  metadataVersion.value = loadedCard.manifest.version
   coverUrlDraft.value = loadedCard.manifest.cover?.url ?? ""
   resetCoverDraft()
 }
@@ -669,6 +696,8 @@ async function saveProperties() {
     await updatePlatformGameCardMetadata(card.value.id, {
       name: trimmedName,
       summary: trimmedIntro,
+      authorName: metadataAuthor.value,
+      version: metadataVersion.value,
     })
 
     const draft = coverDraft.value
