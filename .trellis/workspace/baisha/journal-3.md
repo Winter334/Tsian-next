@@ -546,3 +546,36 @@ Replaced the platform-web splash with a first-run Tsian logo gate, boot loader, 
 ### Next Steps
 
 - None - task complete
+
+
+## Session 121: Workshop content management
+
+**Date**: 2026-07-03
+**Task**: Workshop content management
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+Completed creative workshop owner content management: mine scope, metadata edit, package replacement, hard delete, owner checks, updatedAt contracts, API/client routes, and integration tests; validated contracts, web build, and platform-server tests.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `13486c3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
