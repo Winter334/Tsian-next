@@ -71,37 +71,43 @@ export const authApi = {
   },
 }
 
+export interface MarketListParams {
+  resourceType?: MarketResourceType
+  q?: string
+  tag?: string
+  sort?: "newest" | "downloads"
+  limit?: number
+  cursor?: string
+}
+
+export interface MarketPublishParams {
+  title?: string
+  summary?: string
+  author?: string
+  version?: string
+  tags?: string
+}
+
+export interface MarketUploadParams extends MarketPublishParams {
+  resourceType: MarketResourceType
+}
+
+export interface MarketUpdateParams extends MarketPublishParams {
+  resourceType: MarketResourceType
+}
+
 export const marketApi = {
-  async list(params?: {
-    resourceType?: MarketResourceType
-    q?: string
-    tag?: string
-    sort?: "newest" | "downloads"
-    limit?: number
-    cursor?: string
-  }): Promise<MarketPackageListResponse> {
-    const query = new URLSearchParams()
-    if (params?.resourceType) {
-      query.set("resourceType", params.resourceType)
-    }
-    if (params?.q) {
-      query.set("q", params.q)
-    }
-    if (params?.tag) {
-      query.set("tag", params.tag)
-    }
-    if (params?.sort) {
-      query.set("sort", params.sort)
-    }
-    if (params?.limit) {
-      query.set("limit", String(params.limit))
-    }
-    if (params?.cursor) {
-      query.set("cursor", params.cursor)
-    }
-    const qs = query.toString()
+  async list(params?: MarketListParams): Promise<MarketPackageListResponse> {
+    const qs = marketListQuery(params)
     return apiFetch<MarketPackageListResponse>(
       `/api/v1/market/packages${qs ? `?${qs}` : ""}`,
+    )
+  },
+
+  async listMine(params?: MarketListParams): Promise<MarketPackageListResponse> {
+    const qs = marketListQuery(params)
+    return apiFetch<MarketPackageListResponse>(
+      `/api/v1/market/my/packages${qs ? `?${qs}` : ""}`,
     )
   },
 
@@ -109,36 +115,16 @@ export const marketApi = {
     return apiFetch<MarketPackageCountsResponse>("/api/v1/market/packages/counts")
   },
 
+  async countsMine(): Promise<MarketPackageCountsResponse> {
+    return apiFetch<MarketPackageCountsResponse>("/api/v1/market/my/packages/counts")
+  },
+
   async get(id: string): Promise<MarketPackage> {
     return apiFetch<MarketPackage>(`/api/v1/market/packages/${encodeURIComponent(id)}`)
   },
 
-  async upload(file: Blob, params: {
-    resourceType: MarketResourceType
-    title?: string
-    summary?: string
-    author?: string
-    version?: string
-    tags?: string
-  }): Promise<MarketPackage> {
-    const form = new FormData()
-    form.append("file", file, marketUploadFileName(params.resourceType))
-    form.append("resourceType", params.resourceType)
-    if (params.title) {
-      form.append("title", params.title)
-    }
-    if (params.summary) {
-      form.append("summary", params.summary)
-    }
-    if (params.author) {
-      form.append("author", params.author)
-    }
-    if (params.version) {
-      form.append("version", params.version)
-    }
-    if (params.tags) {
-      form.append("tags", params.tags)
-    }
+  async upload(file: Blob, params: MarketUploadParams): Promise<MarketPackage> {
+    const form = marketPackageForm(file, params)
     const response = await fetch(`${API_BASE}/api/v1/market/packages`, {
       method: "POST",
       credentials: "include",
@@ -149,6 +135,24 @@ export const marketApi = {
       throw new ApiError(text.trim() || `上传失败 (${response.status})`, response.status)
     }
     return (await response.json()) as MarketPackage
+  },
+
+  async update(id: string, file: Blob | null, params: MarketUpdateParams): Promise<MarketPackage> {
+    const form = marketPackageForm(file, params)
+    const response = await fetch(`${API_BASE}/api/v1/market/packages/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      credentials: "include",
+      body: form,
+    })
+    if (!response.ok) {
+      const text = await response.text().catch(() => "")
+      throw new ApiError(text.trim() || `更新失败 (${response.status})`, response.status)
+    }
+    return (await response.json()) as MarketPackage
+  },
+
+  async delete(id: string): Promise<void> {
+    await apiFetch<void>(`/api/v1/market/packages/${encodeURIComponent(id)}`, { method: "DELETE" })
   },
 
   async download(id: string): Promise<Blob> {
@@ -162,6 +166,53 @@ export const marketApi = {
     }
     return response.blob()
   },
+}
+
+function marketListQuery(params?: MarketListParams): string {
+  const query = new URLSearchParams()
+  if (params?.resourceType) {
+    query.set("resourceType", params.resourceType)
+  }
+  if (params?.q) {
+    query.set("q", params.q)
+  }
+  if (params?.tag) {
+    query.set("tag", params.tag)
+  }
+  if (params?.sort) {
+    query.set("sort", params.sort)
+  }
+  if (params?.limit) {
+    query.set("limit", String(params.limit))
+  }
+  if (params?.cursor) {
+    query.set("cursor", params.cursor)
+  }
+  return query.toString()
+}
+
+function marketPackageForm(file: Blob | null, params: MarketUpdateParams): FormData {
+  const form = new FormData()
+  if (file) {
+    form.append("file", file, marketUploadFileName(params.resourceType))
+  }
+  form.append("resourceType", params.resourceType)
+  if (params.title !== undefined) {
+    form.append("title", params.title)
+  }
+  if (params.summary !== undefined) {
+    form.append("summary", params.summary)
+  }
+  if (params.author !== undefined) {
+    form.append("author", params.author)
+  }
+  if (params.version !== undefined) {
+    form.append("version", params.version)
+  }
+  if (params.tags !== undefined) {
+    form.append("tags", params.tags)
+  }
+  return form
 }
 
 function marketUploadFileName(resourceType: MarketResourceType): string {

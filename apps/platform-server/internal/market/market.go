@@ -44,6 +44,11 @@ type ListFilter struct {
 	Cursor       string
 	ResourceType ResourceType // empty = no resource-type filter
 	Tag          string       // empty = no tag filter
+	UploaderID   string       // empty = all uploaders
+}
+
+type CountFilter struct {
+	UploaderID string // empty = all uploaders
 }
 
 type ListResult struct {
@@ -53,10 +58,23 @@ type ListResult struct {
 
 type CountsByResourceType map[ResourceType]int
 
+type PackageUpdate struct {
+	ResourceID        string
+	ResourceAuthor    string
+	ResourceVersion   string
+	Name              string
+	Summary           string
+	Tags              []string
+	CoverBlobKey      string
+	CoverThumbBlobKey string
+}
+
 type Repository interface {
 	List(ctx context.Context, filter ListFilter) (ListResult, error)
-	Counts(ctx context.Context) (CountsByResourceType, error)
+	Counts(ctx context.Context, filter CountFilter) (CountsByResourceType, error)
 	GetByID(ctx context.Context, id string) (*PackageWithUploader, error)
 	Create(ctx context.Context, pkg Package) error
+	Update(ctx context.Context, id string, update PackageUpdate) error
+	Delete(ctx context.Context, id string) error
 	IncrementDownloadCount(ctx context.Context, id string) error
 }

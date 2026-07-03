@@ -88,8 +88,16 @@ func (r *SQLiteRepository) List(ctx context.Context, filter ListFilter) (ListRes
 	return result, nil
 }
 
-func (r *SQLiteRepository) Counts(ctx context.Context) (CountsByResourceType, error) {
-	rows, err := r.db.QueryContext(ctx, `SELECT resource_type, COUNT(*) FROM market_packages GROUP BY resource_type`)
+func (r *SQLiteRepository) Counts(ctx context.Context, filter CountFilter) (CountsByResourceType, error) {
+	query := `SELECT resource_type, COUNT(*) FROM market_packages WHERE 1=1`
+	var args []any
+	if filter.UploaderID != "" {
+		query += ` AND uploader_id = ?`
+		args = append(args, filter.UploaderID)
+	}
+	query += ` GROUP BY resource_type`
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("count market packages: %w", err)
 	}
@@ -149,9 +157,42 @@ func (r *SQLiteRepository) Create(ctx context.Context, pkg Package) error {
 	return nil
 }
 
-func (r *SQLiteRepository) IncrementDownloadCount(ctx context.Context, id string) error {
-	_, err := r.db.ExecContext(ctx, `UPDATE market_packages SET download_count = download_count + 1, updated_at = ? WHERE id = ?`,
+func (r *SQLiteRepository) Update(ctx context.Context, id string, update PackageUpdate) error {
+	tagsJSON, err := json.Marshal(update.Tags)
+	if err != nil {
+		return fmt.Errorf("marshal package tags: %w", err)
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE market_packages
+		SET card_id = ?, card_author = ?, card_version = ?,
+			resource_id = ?, resource_author = ?, resource_version = ?,
+			name = ?, summary = ?, tags = ?, cover_blob_key = ?, cover_thumb_blob_key = ?, updated_at = ?
+		WHERE id = ?`,
+		update.ResourceID, update.ResourceAuthor, update.ResourceVersion,
+		update.ResourceID, update.ResourceAuthor, update.ResourceVersion,
+		update.Name, update.Summary, string(tagsJSON), nullString(update.CoverBlobKey), nullString(update.CoverThumbBlobKey),
 		time.Now().UTC().Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("update market package: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
+	result, err := r.db.ExecContext(ctx, `DELETE FROM market_packages WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete market package: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) IncrementDownloadCount(ctx context.Context, id string) error {
+	_, err := r.db.ExecContext(ctx, `UPDATE market_packages SET download_count = download_count + 1 WHERE id = ?`, id)
 	if err != nil {
 		return fmt.Errorf("increment download count: %w", err)
 	}
@@ -164,6 +205,10 @@ func appendListFilters(query string, args []any, filter ListFilter) (string, []a
 	if filter.ResourceType != "" {
 		query += ` AND p.resource_type = ?`
 		args = append(args, string(filter.ResourceType))
+	}
+	if filter.UploaderID != "" {
+		query += ` AND p.uploader_id = ?`
+		args = append(args, filter.UploaderID)
 	}
 	if filter.Query != "" {
 		query += ` AND (p.name LIKE ? OR p.summary LIKE ?)`

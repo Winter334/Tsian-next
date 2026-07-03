@@ -15,10 +15,12 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"tsian/platform-server/internal/auth"
 	"tsian/platform-server/internal/config"
 	"tsian/platform-server/internal/storage"
 
@@ -33,6 +35,15 @@ func buildTestPackageZip(t *testing.T) []byte {
 	return buildZip(t, map[string][]byte{
 		"game-card.json":      []byte(`{"schema":"tsian.game-card.package.v1","manifest":{"schema":"tsian.game-card.v1","id":"test-card-001","name":"Test Card","version":"0.1.0","summary":"A test game card for integration tests."}}`),
 		"workspace/README.md": []byte("# Test Card\n"),
+	})
+}
+
+func buildGameCardPackageZip(t *testing.T, id string, name string, version string, summary string) []byte {
+	t.Helper()
+	manifest := fmt.Sprintf(`{"schema":"tsian.game-card.package.v1","manifest":{"schema":"tsian.game-card.v1","id":%q,"name":%q,"version":%q,"summary":%q}}`, id, name, version, summary)
+	return buildZip(t, map[string][]byte{
+		"game-card.json":      []byte(manifest),
+		"workspace/README.md": []byte("# " + name + "\n"),
 	})
 }
 
@@ -90,6 +101,12 @@ func buildZip(t *testing.T, files map[string][]byte) []byte {
 
 func newMarketTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	t.Helper()
+	server, client, _ := newMarketTestServerWithDB(t)
+	return server, client
+}
+
+func newMarketTestServerWithDB(t *testing.T) (*httptest.Server, *http.Client, *sql.DB) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	t.Cleanup(cancel)
 	db, err := storage.OpenSQLite(ctx, filepath.Join(t.TempDir(), "tsian.db"))
@@ -110,16 +127,50 @@ func newMarketTestServer(t *testing.T) (*httptest.Server, *http.Client) {
 	server := httptest.NewServer(New(cfg, db).Handler())
 	t.Cleanup(server.Close)
 
+	client := newMarketHTTPClient(t, server)
+	return server, client, db
+}
+
+func newMarketHTTPClient(t *testing.T, server *httptest.Server) *http.Client {
+	t.Helper()
 	jar, err := cookiejar.New(nil)
 	if err != nil {
 		t.Fatalf("create cookie jar: %v", err)
 	}
-	client := server.Client()
+	client := &http.Client{Transport: server.Client().Transport}
 	client.Jar = jar
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
-	return server, client
+	return client
+}
+
+func loginMockUser(t *testing.T, client *http.Client, serverURL string) {
+	t.Helper()
+	assertStatus(t, client, http.MethodGet, serverURL+"/api/v1/auth/mock-login", http.StatusFound)
+}
+
+func loginTestUser(t *testing.T, db *sql.DB, client *http.Client, serverURL string, subject string, displayName string) string {
+	t.Helper()
+	now := time.Now().UTC().Format(time.RFC3339)
+	userID := "test-user-" + subject
+	identityID := "identity-" + subject
+	if _, err := db.Exec(`INSERT INTO users (id, handle, display_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`, userID, "test-"+subject, displayName, now, now); err != nil {
+		t.Fatalf("insert test user: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO auth_identities (id, user_id, provider, subject, created_at, updated_at) VALUES (?, ?, 'discord', ?, ?, ?)`, identityID, userID, subject, now, now); err != nil {
+		t.Fatalf("insert test identity: %v", err)
+	}
+	token, err := auth.CreateSession(db, userID)
+	if err != nil {
+		t.Fatalf("create test session: %v", err)
+	}
+	parsedURL, err := url.Parse(serverURL)
+	if err != nil {
+		t.Fatalf("parse server url: %v", err)
+	}
+	client.Jar.SetCookies(parsedURL, []*http.Cookie{{Name: auth.SessionCookieName, Value: token, Path: "/"}})
+	return userID
 }
 
 func TestMarketUploadListDownload(t *testing.T) {
@@ -128,7 +179,7 @@ func TestMarketUploadListDownload(t *testing.T) {
 	server, client := newMarketTestServer(t)
 
 	// Login via mock-login so the session cookie is set.
-	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+	loginMockUser(t, client, server.URL)
 
 	// Empty market list before upload.
 	listResp, err := client.Get(server.URL + "/api/v1/market/packages")
@@ -263,17 +314,35 @@ type uploadOptions struct {
 	Tags         string
 }
 
-// uploadPackage POSTs a multipart upload to the market packages endpoint.
-func uploadPackage(t *testing.T, client *http.Client, url string, zipBytes []byte, options uploadOptions) *http.Response {
+type packageBody struct {
+	ID              string   `json:"id"`
+	ResourceType    string   `json:"resourceType"`
+	ResourceID      string   `json:"resourceId"`
+	ResourceAuthor  string   `json:"resourceAuthor"`
+	ResourceVersion string   `json:"resourceVersion"`
+	Name            string   `json:"name"`
+	Summary         string   `json:"summary"`
+	Tags            []string `json:"tags"`
+	CoverURL        *string  `json:"coverUrl"`
+	CoverThumbURL   *string  `json:"coverThumbUrl"`
+	DownloadCount   int      `json:"downloadCount"`
+	CreatedAt       string   `json:"createdAt"`
+	UpdatedAt       string   `json:"updatedAt"`
+	Uploader        struct {
+		DisplayName string `json:"displayName"`
+	} `json:"uploader"`
+}
+
+func writePackageForm(t *testing.T, mw *multipart.Writer, zipBytes []byte, options uploadOptions) {
 	t.Helper()
-	var buf bytes.Buffer
-	mw := multipart.NewWriter(&buf)
-	field, err := mw.CreateFormFile("file", "test.zip")
-	if err != nil {
-		t.Fatalf("create form file: %v", err)
-	}
-	if _, err := field.Write(zipBytes); err != nil {
-		t.Fatalf("write zip to form: %v", err)
+	if zipBytes != nil {
+		field, err := mw.CreateFormFile("file", "test.zip")
+		if err != nil {
+			t.Fatalf("create form file: %v", err)
+		}
+		if _, err := field.Write(zipBytes); err != nil {
+			t.Fatalf("write zip to form: %v", err)
+		}
 	}
 	writeField := func(name, value string) {
 		if value != "" {
@@ -286,6 +355,14 @@ func uploadPackage(t *testing.T, client *http.Client, url string, zipBytes []byt
 	writeField("author", options.Author)
 	writeField("version", options.Version)
 	writeField("tags", options.Tags)
+}
+
+// uploadPackage POSTs a multipart upload to the market packages endpoint.
+func uploadPackage(t *testing.T, client *http.Client, url string, zipBytes []byte, options uploadOptions) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	writePackageForm(t, mw, zipBytes, options)
 	if err := mw.Close(); err != nil {
 		t.Fatalf("close multipart writer: %v", err)
 	}
@@ -301,11 +378,46 @@ func uploadPackage(t *testing.T, client *http.Client, url string, zipBytes []byt
 	return res
 }
 
+func updatePackage(t *testing.T, client *http.Client, url string, zipBytes []byte, options uploadOptions) *http.Response {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	writePackageForm(t, mw, zipBytes, options)
+	if err := mw.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+	req, err := http.NewRequest(http.MethodPatch, url, &buf)
+	if err != nil {
+		t.Fatalf("create update request: %v", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	res, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("update request: %v", err)
+	}
+	return res
+}
+
+func mustUploadPackage(t *testing.T, client *http.Client, baseURL string, zipBytes []byte, options uploadOptions) packageBody {
+	t.Helper()
+	resp := uploadPackage(t, client, baseURL+"/api/v1/market/packages", zipBytes, options)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("upload status = %d, body: %s", resp.StatusCode, body)
+	}
+	var pkg packageBody
+	if err := json.NewDecoder(resp.Body).Decode(&pkg); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+	return pkg
+}
+
 func TestMarketUploadNormalizesCoverToWebP(t *testing.T) {
 	t.Parallel()
 
 	server, client := newMarketTestServer(t)
-	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+	loginMockUser(t, client, server.URL)
 
 	uploadResp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", buildTestPackageZipWithCover(t), uploadOptions{})
 	defer uploadResp.Body.Close()
@@ -393,7 +505,7 @@ func TestMarketCountsAndCursorPagination(t *testing.T) {
 	t.Parallel()
 
 	server, client := newMarketTestServer(t)
-	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+	loginMockUser(t, client, server.URL)
 
 	for i := 0; i < 3; i++ {
 		resp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", buildTestPackageZip(t), uploadOptions{Title: fmt.Sprintf("Card %d", i)})
@@ -504,7 +616,7 @@ func TestMarketSearch(t *testing.T) {
 	t.Parallel()
 
 	server, client := newMarketTestServer(t)
-	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+	loginMockUser(t, client, server.URL)
 
 	// Upload a package with a distinctive name.
 	zipBytes := buildTestPackageZip(t)
@@ -551,7 +663,7 @@ func TestMarketResourcePackages(t *testing.T) {
 	t.Parallel()
 
 	server, client := newMarketTestServer(t)
-	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+	loginMockUser(t, client, server.URL)
 
 	agentZip := buildResourcePackageZip(t,
 		`{"schema":"tsian.resource.package.v1","resourceType":"agent","resourceId":"story-master","name":"Story Master","summary":"Runs the story.","author":"Author A","version":"1.2.0","files":[{"path":"agent.json","mediaType":"application/json"},{"path":"AGENT.md","mediaType":"text/markdown"},{"path":"skills/local-skill/SKILL.md","mediaType":"text/markdown"}]}`,
@@ -648,11 +760,200 @@ func TestMarketResourcePackages(t *testing.T) {
 	}
 }
 
+func TestMarketContentManagementUpdateAndOwnership(t *testing.T) {
+	t.Parallel()
+
+	server, ownerClient, db := newMarketTestServerWithDB(t)
+	loginTestUser(t, db, ownerClient, server.URL, "owner", "Owner Player")
+
+	ownerPkg := mustUploadPackage(t, ownerClient, server.URL,
+		buildGameCardPackageZip(t, "owned-card", "Owned Card", "1.0.0", "Original summary."),
+		uploadOptions{Tags: "mine"},
+	)
+
+	otherClient := newMarketHTTPClient(t, server)
+	loginTestUser(t, db, otherClient, server.URL, "other", "Other Player")
+	otherPkg := mustUploadPackage(t, otherClient, server.URL,
+		buildGameCardPackageZip(t, "other-card", "Other Card", "1.0.0", "Other summary."),
+		uploadOptions{},
+	)
+
+	myListResp, err := ownerClient.Get(server.URL + "/api/v1/market/my/packages")
+	if err != nil {
+		t.Fatalf("my list request: %v", err)
+	}
+	defer myListResp.Body.Close()
+	var myList struct {
+		Packages []packageBody `json:"packages"`
+	}
+	if err := json.NewDecoder(myListResp.Body).Decode(&myList); err != nil {
+		t.Fatalf("decode my list: %v", err)
+	}
+	if len(myList.Packages) != 1 || myList.Packages[0].ID != ownerPkg.ID {
+		t.Fatalf("my list = %+v, want only %s", myList.Packages, ownerPkg.ID)
+	}
+
+	countsResp, err := ownerClient.Get(server.URL + "/api/v1/market/my/packages/counts")
+	if err != nil {
+		t.Fatalf("my counts request: %v", err)
+	}
+	defer countsResp.Body.Close()
+	var countsBody struct {
+		Counts map[string]int `json:"counts"`
+	}
+	if err := json.NewDecoder(countsResp.Body).Decode(&countsBody); err != nil {
+		t.Fatalf("decode my counts: %v", err)
+	}
+	if countsBody.Counts["game_card"] != 1 || countsBody.Counts["agent"] != 0 || countsBody.Counts["skill"] != 0 {
+		t.Fatalf("my counts = %+v", countsBody.Counts)
+	}
+
+	patchURL := server.URL + "/api/v1/market/packages/" + ownerPkg.ID
+	unauthResp := updatePackage(t, &http.Client{}, patchURL, nil, uploadOptions{Title: "Nope", Summary: "Nope"})
+	defer unauthResp.Body.Close()
+	if unauthResp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("unauth update status = %d, want %d", unauthResp.StatusCode, http.StatusUnauthorized)
+	}
+
+	nonOwnerResp := updatePackage(t, otherClient, patchURL, nil, uploadOptions{Title: "Stolen", Summary: "Nope"})
+	defer nonOwnerResp.Body.Close()
+	if nonOwnerResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-owner update status = %d, want %d", nonOwnerResp.StatusCode, http.StatusForbidden)
+	}
+
+	metadataResp := updatePackage(t, ownerClient, patchURL, nil, uploadOptions{
+		Title:   "Retitled Card",
+		Summary: "Updated summary.",
+		Author:  "Owner Author",
+		Version: "1.0.1",
+		Tags:    "updated, mine",
+	})
+	defer metadataResp.Body.Close()
+	if metadataResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(metadataResp.Body)
+		t.Fatalf("metadata update status = %d, body: %s", metadataResp.StatusCode, body)
+	}
+	var metadataPkg packageBody
+	if err := json.NewDecoder(metadataResp.Body).Decode(&metadataPkg); err != nil {
+		t.Fatalf("decode metadata update: %v", err)
+	}
+	if metadataPkg.ResourceID != "owned-card" || metadataPkg.Name != "Retitled Card" || metadataPkg.Summary != "Updated summary." || metadataPkg.ResourceAuthor != "Owner Author" || metadataPkg.ResourceVersion != "1.0.1" {
+		t.Fatalf("metadata update package = %+v", metadataPkg)
+	}
+	if !stringSlicesEqual(metadataPkg.Tags, []string{"updated", "mine"}) {
+		t.Fatalf("metadata tags = %+v", metadataPkg.Tags)
+	}
+	if metadataPkg.UpdatedAt == "" {
+		t.Fatalf("updatedAt is empty after metadata update")
+	}
+
+	wrongTypeZip := buildResourcePackageZip(t,
+		`{"schema":"tsian.resource.package.v1","resourceType":"agent","resourceId":"wrong-kind","name":"Wrong Kind","summary":"Wrong kind.","author":"Author","version":"1.0.0","files":[{"path":"agent.json"},{"path":"AGENT.md"}]}`,
+		map[string][]byte{"agent.json": []byte(`{"id":"wrong-kind"}`), "AGENT.md": []byte("# Wrong Kind\n")},
+	)
+	wrongTypeResp := updatePackage(t, ownerClient, patchURL, wrongTypeZip, uploadOptions{})
+	defer wrongTypeResp.Body.Close()
+	if wrongTypeResp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("wrong-type replacement status = %d, want %d", wrongTypeResp.StatusCode, http.StatusBadRequest)
+	}
+
+	replacementZip := buildGameCardPackageZip(t, "replacement-card", "Replacement Card", "2.0.0", "Replacement summary.")
+	replaceResp := updatePackage(t, ownerClient, patchURL, replacementZip, uploadOptions{Tags: "replacement"})
+	defer replaceResp.Body.Close()
+	if replaceResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(replaceResp.Body)
+		t.Fatalf("replacement update status = %d, body: %s", replaceResp.StatusCode, body)
+	}
+	var replacedPkg packageBody
+	if err := json.NewDecoder(replaceResp.Body).Decode(&replacedPkg); err != nil {
+		t.Fatalf("decode replacement update: %v", err)
+	}
+	if replacedPkg.ID != ownerPkg.ID || replacedPkg.ResourceID != "replacement-card" || replacedPkg.Name != "Replacement Card" || replacedPkg.ResourceVersion != "2.0.0" {
+		t.Fatalf("replacement package = %+v", replacedPkg)
+	}
+	if !stringSlicesEqual(replacedPkg.Tags, []string{"replacement"}) {
+		t.Fatalf("replacement tags = %+v", replacedPkg.Tags)
+	}
+	downloadResp, err := ownerClient.Get(server.URL + "/api/v1/market/packages/" + ownerPkg.ID + "/download")
+	if err != nil {
+		t.Fatalf("download replacement: %v", err)
+	}
+	defer downloadResp.Body.Close()
+	downloadedBytes, err := io.ReadAll(downloadResp.Body)
+	if err != nil {
+		t.Fatalf("read replacement download: %v", err)
+	}
+	if !bytes.Equal(downloadedBytes, replacementZip) {
+		t.Fatalf("downloaded replacement does not match uploaded replacement")
+	}
+
+	nonOwnerDeleteReq, err := http.NewRequest(http.MethodDelete, patchURL, nil)
+	if err != nil {
+		t.Fatalf("create non-owner delete request: %v", err)
+	}
+	nonOwnerDeleteResp, err := otherClient.Do(nonOwnerDeleteReq)
+	if err != nil {
+		t.Fatalf("non-owner delete request: %v", err)
+	}
+	defer nonOwnerDeleteResp.Body.Close()
+	if nonOwnerDeleteResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("non-owner delete status = %d, want %d", nonOwnerDeleteResp.StatusCode, http.StatusForbidden)
+	}
+
+	deleteReq, err := http.NewRequest(http.MethodDelete, patchURL, nil)
+	if err != nil {
+		t.Fatalf("create delete request: %v", err)
+	}
+	deleteResp, err := ownerClient.Do(deleteReq)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	deleteResp.Body.Close()
+	if deleteResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d", deleteResp.StatusCode, http.StatusNoContent)
+	}
+
+	assertStatus(t, ownerClient, http.MethodGet, patchURL, http.StatusNotFound)
+	assertStatus(t, ownerClient, http.MethodGet, patchURL+"/download", http.StatusNotFound)
+	assertStatus(t, ownerClient, http.MethodGet, server.URL+"/api/v1/market/packages/"+otherPkg.ID, http.StatusOK)
+}
+
+func TestMarketDeleteRemovesCoverEndpoints(t *testing.T) {
+	t.Parallel()
+
+	server, client := newMarketTestServer(t)
+	loginMockUser(t, client, server.URL)
+	pkg := mustUploadPackage(t, client, server.URL, buildTestPackageZipWithCover(t), uploadOptions{})
+	if pkg.CoverURL == nil || pkg.CoverThumbURL == nil {
+		t.Fatalf("expected cover urls, got %v / %v", pkg.CoverURL, pkg.CoverThumbURL)
+	}
+	assertStatus(t, client, http.MethodGet, server.URL+*pkg.CoverURL, http.StatusOK)
+	assertStatus(t, client, http.MethodGet, server.URL+*pkg.CoverThumbURL, http.StatusOK)
+
+	deleteReq, err := http.NewRequest(http.MethodDelete, server.URL+"/api/v1/market/packages/"+pkg.ID, nil)
+	if err != nil {
+		t.Fatalf("create delete request: %v", err)
+	}
+	deleteResp, err := client.Do(deleteReq)
+	if err != nil {
+		t.Fatalf("delete request: %v", err)
+	}
+	deleteResp.Body.Close()
+	if deleteResp.StatusCode != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d", deleteResp.StatusCode, http.StatusNoContent)
+	}
+
+	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/market/packages/"+pkg.ID, http.StatusNotFound)
+	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/market/packages/"+pkg.ID+"/download", http.StatusNotFound)
+	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/market/packages/"+pkg.ID+"/cover", http.StatusNotFound)
+	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/market/packages/"+pkg.ID+"/cover-thumb", http.StatusNotFound)
+}
+
 func TestMarketResourcePackageValidation(t *testing.T) {
 	t.Parallel()
 
 	server, client := newMarketTestServer(t)
-	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+	loginMockUser(t, client, server.URL)
 
 	validAgent := func() []byte {
 		return buildResourcePackageZip(t,

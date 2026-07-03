@@ -49,12 +49,26 @@
         v-model="currentType"
         :options="resourceTypeOptions"
         :counts="resourceCounts"
+        :scope="marketScope"
         @update:model-value="switchType"
+        @toggle-scope="toggleMarketScope"
       />
 
       <section class="retro-inset min-h-0 overflow-auto p-3">
         <div v-if="screen.kind === 'list'" class="grid gap-3">
-          <div v-if="loading" class="grid place-items-center py-12">
+          <div v-if="marketScope === 'mine' && !loggedIn" class="grid place-items-center py-12">
+            <UserRound class="h-10 w-10 text-neon-muted" aria-hidden="true" />
+            <p class="mt-3 text-sm text-text-dim">登录后管理你发布到创意工坊的资源。</p>
+            <button
+              type="button"
+              class="retro-button retro-focus mt-4 inline-flex h-9 items-center gap-2 px-4 font-mono text-xs"
+              @click="openAccountCenter"
+            >
+              <UserRound class="h-3.5 w-3.5" aria-hidden="true" />
+              打开账号中心
+            </button>
+          </div>
+          <div v-else-if="loading" class="grid place-items-center py-12">
             <p class="font-mono text-xs text-text-dim">加载中…</p>
           </div>
           <div v-else-if="packages.length === 0" class="grid place-items-center py-12">
@@ -89,7 +103,19 @@
             v-else
             :pkg="detailPackage"
             :installing="installing"
+            :can-manage="canManageDetail"
+            :updating="updatingPackage"
+            :deleting="deletingPackage"
+            :replacement-label="replacementLabel"
+            :replacement-defaults="replacementDefaults"
+            :save-token="editSaveToken"
             @install="handleDownloadInstall"
+            @start-edit="startEditPackage"
+            @cancel-edit="clearReplacement"
+            @select-replacement="openReplacementDialog"
+            @clear-replacement="clearReplacement"
+            @save-edit="handleSavePackageEdit"
+            @delete="handleDeletePackage"
           />
         </div>
 
@@ -134,6 +160,17 @@
       @close="installDialog = null"
       @select="handleInstallTargetSelected"
     />
+
+    <MarketReplacementDialog
+      v-if="replacementDialogOpen && detailPackage"
+      :pkg="detailPackage"
+      :cards="uploadCards"
+      :agent-options="agentUploadOptions"
+      :skill-options="skillUploadOptions"
+      :loading="localResourcesLoading"
+      @close="replacementDialogOpen = false"
+      @select="handleReplacementSelected"
+    />
   </section>
 </template>
 
@@ -148,7 +185,7 @@ import { toast } from "@/composables/useToast"
 import { confirm } from "@/composables/useConfirm"
 import { openDialogForm } from "@/composables/useDialogForm"
 import { getGameCardTitle } from "@/lib/game-card-display"
-import { marketApi } from "@/platform-host/api-client"
+import { marketApi, type MarketListParams } from "@/platform-host/api-client"
 import {
   exportAgentPackage,
   exportPlatformGameCardPackage,
@@ -171,6 +208,7 @@ import { useDesktopWindows } from "@/composables/useDesktopWindows"
 import MarketInstallDialog from "@/components/market/MarketInstallDialog.vue"
 import MarketPackageDetail from "@/components/market/MarketPackageDetail.vue"
 import MarketPackageGrid from "@/components/market/MarketPackageGrid.vue"
+import MarketReplacementDialog from "@/components/market/MarketReplacementDialog.vue"
 import MarketResourceTypeSidebar from "@/components/market/MarketResourceTypeSidebar.vue"
 import MarketTagFilter from "@/components/market/MarketTagFilter.vue"
 import MarketUploadPanel from "@/components/market/MarketUploadPanel.vue"
@@ -187,13 +225,17 @@ import type {
   SkillUploadOption,
 } from "@/components/market/types"
 
+type MarketScope = "all" | "mine"
+
+type ReplacementSelection = MarketUploadSelectionPayload
+
 type Screen =
   | { kind: "list" }
   | { kind: "detail"; id: string }
   | { kind: "upload" }
 
 const router = useRouter()
-const { loggedIn } = useAuth()
+const { currentUser, loggedIn } = useAuth()
 const desktop = useDesktopWindows()
 
 const resourceTypeOptions: MarketResourceTypeOption[] = [
@@ -203,6 +245,7 @@ const resourceTypeOptions: MarketResourceTypeOption[] = [
 ]
 
 const screen = ref<Screen>({ kind: "list" })
+const marketScope = ref<MarketScope>("all")
 const currentType = ref<MarketResourceType>("game_card")
 const packages = ref<MarketPackage[]>([])
 const resourceCounts = ref<Partial<Record<MarketResourceType, number>>>({})
@@ -232,6 +275,18 @@ const feedback = ref("")
 const errorMessage = ref("")
 const pendingInstallBlob = ref<Blob | null>(null)
 const installDialog = ref<MarketInstallDialogState | null>(null)
+
+const updatingPackage = ref(false)
+const deletingPackage = ref(false)
+const replacementDialogOpen = ref(false)
+const replacementSelection = ref<ReplacementSelection | null>(null)
+const replacementDefaults = ref<MarketUploadMetadata | null>(null)
+const replacementLabel = ref("")
+const editSaveToken = ref(0)
+
+const canManageDetail = computed(() => {
+  return detailPackage.value?.uploader.id === currentUser.value?.id
+})
 
 const agentUploadOptions = computed<AgentUploadOption[]>(() => {
   const options: AgentUploadOption[] = []
@@ -285,6 +340,12 @@ const skillUploadOptions = computed<SkillUploadOption[]>(() => {
 })
 
 const emptyMessage = computed(() => {
+  if (marketScope.value === "mine") {
+    if (searchQuery.value || tagQuery.value) {
+      return "你的上传中没有匹配的资源。"
+    }
+    return "你还没有上传过这个类型的资源。"
+  }
   if (searchQuery.value || tagQuery.value) {
     return "没有匹配的资源。"
   }
@@ -306,12 +367,21 @@ onMounted(() => {
 
 async function refresh(): Promise<void> {
   const requestId = ++listRequestSeq
-  loading.value = true
   loadingMore.value = false
   nextCursor.value = null
   errorMessage.value = ""
+  if (marketScope.value === "mine" && !loggedIn.value) {
+    packages.value = []
+    resourceCounts.value = {}
+    loading.value = false
+    return
+  }
+
+  loading.value = true
   try {
-    const result = await marketApi.list(listParams())
+    const result = marketScope.value === "mine"
+      ? await marketApi.listMine(listParams())
+      : await marketApi.list(listParams())
     if (requestId !== listRequestSeq) {
       return
     }
@@ -329,14 +399,16 @@ async function refresh(): Promise<void> {
 }
 
 async function loadMore(): Promise<void> {
-  if (!nextCursor.value || loadingMore.value) {
+  if (!nextCursor.value || loadingMore.value || (marketScope.value === "mine" && !loggedIn.value)) {
     return
   }
   const requestId = listRequestSeq
   loadingMore.value = true
   errorMessage.value = ""
   try {
-    const result = await marketApi.list(listParams(nextCursor.value))
+    const result = marketScope.value === "mine"
+      ? await marketApi.listMine(listParams(nextCursor.value))
+      : await marketApi.list(listParams(nextCursor.value))
     if (requestId !== listRequestSeq) {
       return
     }
@@ -353,7 +425,7 @@ async function loadMore(): Promise<void> {
   }
 }
 
-function listParams(cursor?: string) {
+function listParams(cursor?: string): MarketListParams {
   return {
     resourceType: currentType.value,
     q: searchQuery.value || undefined,
@@ -365,8 +437,14 @@ function listParams(cursor?: string) {
 }
 
 async function refreshCounts(): Promise<void> {
+  if (marketScope.value === "mine" && !loggedIn.value) {
+    resourceCounts.value = {}
+    return
+  }
   try {
-    const result = await marketApi.counts()
+    const result = marketScope.value === "mine"
+      ? await marketApi.countsMine()
+      : await marketApi.counts()
     resourceCounts.value = result.counts
   } catch {
     resourceCounts.value = {}
@@ -392,6 +470,14 @@ function switchType(type: MarketResourceType): void {
   detailPackage.value = null
   screen.value = { kind: "list" }
   refresh()
+}
+
+function toggleMarketScope(): void {
+  marketScope.value = marketScope.value === "mine" ? "all" : "mine"
+  detailPackage.value = null
+  screen.value = { kind: "list" }
+  refresh()
+  refreshCounts()
 }
 
 function openDetail(id: string): void {
@@ -556,11 +642,7 @@ async function handleUpload(payload: MarketUploadSubmitPayload): Promise<void> {
   feedback.value = ""
   errorMessage.value = ""
   try {
-    const blob = payload.resourceType === "game_card"
-      ? await exportPlatformGameCardPackage(payload.cardId)
-      : payload.resourceType === "agent"
-        ? await exportAgentPackage(payload.source)
-        : await exportSkillPackage(payload.source)
+    const blob = await exportMarketSelection(payload)
     const pkg = await marketApi.upload(blob, {
       resourceType: payload.resourceType,
       title: payload.title,
@@ -734,6 +816,117 @@ async function handleInstallTargetSelected(option: MarketInstallTargetOption): P
     errorMessage.value = error instanceof Error ? error.message : "安装资源失败。"
   } finally {
     installing.value = false
+  }
+}
+
+async function exportMarketSelection(selection: MarketUploadSelectionPayload): Promise<Blob> {
+  return selection.resourceType === "game_card"
+    ? exportPlatformGameCardPackage(selection.cardId)
+    : selection.resourceType === "agent"
+      ? exportAgentPackage(selection.source)
+      : exportSkillPackage(selection.source)
+}
+
+function startEditPackage(): void {
+  clearReplacement()
+}
+
+function clearReplacement(): void {
+  replacementSelection.value = null
+  replacementDefaults.value = null
+  replacementLabel.value = ""
+}
+
+async function openReplacementDialog(): Promise<void> {
+  replacementDialogOpen.value = true
+  if (loggedIn.value) {
+    await loadUploadResources()
+  }
+}
+
+function handleReplacementSelected(selection: MarketUploadSelectionPayload): void {
+  if (!detailPackage.value || selection.resourceType !== detailPackage.value.resourceType) {
+    return
+  }
+  replacementSelection.value = selection
+  replacementDefaults.value = uploadMetadataDefaults(selection)
+  replacementLabel.value = replacementSelectionLabel(selection)
+  replacementDialogOpen.value = false
+}
+
+function replacementSelectionLabel(selection: MarketUploadSelectionPayload): string {
+  if (selection.resourceType === "game_card") {
+    const card = uploadCards.value.find((candidate) => candidate.id === selection.cardId)
+    return card?.manifest.name || card?.manifest.id || "游戏卡"
+  }
+  if (selection.resourceType === "agent") {
+    const option = agentUploadOptions.value.find((candidate) => sameAgentSource(candidate.source, selection.source))
+    return option?.label ?? "Agent"
+  }
+  const option = skillUploadOptions.value.find((candidate) => sameSkillSource(candidate.source, selection.source))
+  return option?.label ?? "Skill"
+}
+
+async function handleSavePackageEdit(metadata: Required<MarketUploadMetadata>): Promise<void> {
+  const pkg = detailPackage.value
+  if (!pkg || updatingPackage.value) {
+    return
+  }
+  updatingPackage.value = true
+  feedback.value = ""
+  errorMessage.value = ""
+  try {
+    const replacement = replacementSelection.value
+    const blob = replacement ? await exportMarketSelection(replacement) : null
+    const updated = await marketApi.update(pkg.id, blob, {
+      resourceType: pkg.resourceType,
+      title: metadata.title,
+      summary: metadata.summary,
+      author: metadata.author,
+      version: metadata.version,
+      tags: metadata.tags,
+    })
+    detailPackage.value = updated
+    editSaveToken.value++
+    clearReplacement()
+    toast.success(`已更新：${updated.name}`)
+    feedback.value = `已更新：${updated.name}`
+    await refresh()
+    await refreshCounts()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "更新发布失败。"
+  } finally {
+    updatingPackage.value = false
+  }
+}
+
+async function handleDeletePackage(pkg: MarketPackage): Promise<void> {
+  if (deletingPackage.value) {
+    return
+  }
+  const confirmed = await confirm({
+    title: `删除发布物「${pkg.name}」？`,
+    message: "删除后将从创意工坊移除，无法撤销。",
+    severity: "danger",
+    confirmText: "删除",
+  })
+  if (!confirmed) {
+    return
+  }
+  deletingPackage.value = true
+  feedback.value = ""
+  errorMessage.value = ""
+  try {
+    await marketApi.delete(pkg.id)
+    toast.success(`已删除：${pkg.name}`)
+    detailPackage.value = null
+    screen.value = { kind: "list" }
+    await refresh()
+    await refreshCounts()
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : "删除发布失败。"
+  } finally {
+    deletingPackage.value = false
   }
 }
 

@@ -3,6 +3,7 @@ package market
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -68,6 +70,31 @@ type uploadManifest struct {
 	Summary         string
 }
 
+type storedPackageBlobs struct {
+	ZipKey            string
+	CoverBlobKey      string
+	CoverThumbBlobKey string
+}
+
+type publishMetadata struct {
+	Name            string
+	Summary         string
+	ResourceAuthor  string
+	ResourceVersion string
+}
+
+type packageUpdatePayload struct {
+	Update       PackageUpdate
+	BlobsWritten bool
+	Backups      []storedBlobBackup
+}
+
+type storedBlobBackup struct {
+	Key  string
+	Data []byte
+	Had  bool
+}
+
 type authorPayload struct {
 	Name string `json:"name"`
 	URL  string `json:"url,omitempty"`
@@ -92,6 +119,7 @@ type packageResponse struct {
 	Uploader        uploaderResponse `json:"uploader"`
 	DownloadCount   int              `json:"downloadCount"`
 	CreatedAt       string           `json:"createdAt"`
+	UpdatedAt       string           `json:"updatedAt"`
 }
 
 type uploaderResponse struct {
@@ -119,6 +147,19 @@ func NewHandler(repo Repository, blobStore storage.BlobStore) *Handler {
 }
 
 func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
+	h.handleList(w, r, "")
+}
+
+func (h *Handler) HandleListMine(w http.ResponseWriter, r *http.Request) {
+	account, ok := user.FromContext(r.Context())
+	if !ok || account == nil {
+		writeJSON(w, http.StatusUnauthorized, errorBody{Error: "authentication required"})
+		return
+	}
+	h.handleList(w, r, account.ID)
+}
+
+func (h *Handler) handleList(w http.ResponseWriter, r *http.Request, uploaderID string) {
 	resourceType, err := parseOptionalResourceType(r.URL.Query().Get("resourceType"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
@@ -141,6 +182,7 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		Cursor:       strings.TrimSpace(r.URL.Query().Get("cursor")),
 		ResourceType: resourceType,
 		Tag:          tag,
+		UploaderID:   uploaderID,
 	}
 	result, err := h.repo.List(r.Context(), filter)
 	if err != nil {
@@ -162,7 +204,20 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) HandleCounts(w http.ResponseWriter, r *http.Request) {
-	counts, err := h.repo.Counts(r.Context())
+	h.handleCounts(w, r, "")
+}
+
+func (h *Handler) HandleCountsMine(w http.ResponseWriter, r *http.Request) {
+	account, ok := user.FromContext(r.Context())
+	if !ok || account == nil {
+		writeJSON(w, http.StatusUnauthorized, errorBody{Error: "authentication required"})
+		return
+	}
+	h.handleCounts(w, r, account.ID)
+}
+
+func (h *Handler) handleCounts(w http.ResponseWriter, r *http.Request, uploaderID string) {
+	counts, err := h.repo.Counts(r.Context(), CountFilter{UploaderID: uploaderID})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to count packages"})
 		return
@@ -243,83 +298,35 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	processed := processedCoverPackage{Content: content}
-	if resourceType == ResourceGameCard {
-		processed, err = processGameCardPackageCover(content)
-		if err != nil {
-			writeJSON(w, http.StatusBadRequest, errorBody{Error: "failed to process package cover"})
-			return
-		}
-	}
-
-	blobKey := "market/" + packageID + ".zip"
-	if err := h.blobStore.Put(r.Context(), blobKey, bytes.NewReader(processed.Content)); err != nil {
-		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to store package"})
+	blobs, err := h.storePackageBlobs(r.Context(), packageID, resourceType, content, true)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: err.Error()})
 		return
 	}
 
-	coverBlobKey := ""
-	coverThumbBlobKey := ""
-	if len(processed.Display) > 0 {
-		coverBlobKey = "market/" + packageID + "/cover.webp"
-		if err := h.blobStore.Put(r.Context(), coverBlobKey, bytes.NewReader(processed.Display)); err != nil {
-			_ = h.blobStore.Delete(r.Context(), blobKey)
-			writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to store cover"})
-			return
-		}
-	}
-	if len(processed.Thumb) > 0 {
-		coverThumbBlobKey = "market/" + packageID + "/cover-thumb.webp"
-		if err := h.blobStore.Put(r.Context(), coverThumbBlobKey, bytes.NewReader(processed.Thumb)); err != nil {
-			_ = h.blobStore.Delete(r.Context(), blobKey)
-			if coverBlobKey != "" {
-				_ = h.blobStore.Delete(r.Context(), coverBlobKey)
-			}
-			writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to store cover thumbnail"})
-			return
-		}
-	}
-
-	// Title/summary form fields override manifest values if provided.
-	name := strings.TrimSpace(r.FormValue("title"))
-	if name == "" {
-		name = manifest.Name
-	}
-	summary := strings.TrimSpace(r.FormValue("summary"))
-	if summary == "" {
-		summary = manifest.Summary
-	}
-	resourceAuthor := strings.TrimSpace(r.FormValue("author"))
-	if resourceAuthor == "" {
-		resourceAuthor = manifest.ResourceAuthor
-	}
-	resourceVersion := strings.TrimSpace(r.FormValue("version"))
-	if resourceVersion == "" {
-		resourceVersion = manifest.ResourceVersion
+	metadata, err := formPublishMetadata(r, manifest)
+	if err != nil {
+		h.cleanupPackageBlobs(r.Context(), blobs)
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
 	}
 
 	pkg := Package{
 		ID:                packageID,
 		ResourceType:      resourceType,
 		ResourceID:        manifest.ResourceID,
-		ResourceAuthor:    resourceAuthor,
-		ResourceVersion:   resourceVersion,
-		Name:              name,
-		Summary:           summary,
+		ResourceAuthor:    metadata.ResourceAuthor,
+		ResourceVersion:   metadata.ResourceVersion,
+		Name:              metadata.Name,
+		Summary:           metadata.Summary,
 		Tags:              tags,
-		CoverBlobKey:      coverBlobKey,
-		CoverThumbBlobKey: coverThumbBlobKey,
+		CoverBlobKey:      blobs.CoverBlobKey,
+		CoverThumbBlobKey: blobs.CoverThumbBlobKey,
 		UploaderID:        account.ID,
 	}
 	if err := h.repo.Create(r.Context(), pkg); err != nil {
 		// Best-effort cleanup the blobs we just wrote.
-		_ = h.blobStore.Delete(r.Context(), blobKey)
-		if coverBlobKey != "" {
-			_ = h.blobStore.Delete(r.Context(), coverBlobKey)
-		}
-		if coverThumbBlobKey != "" {
-			_ = h.blobStore.Delete(r.Context(), coverThumbBlobKey)
-		}
+		h.cleanupPackageBlobs(r.Context(), blobs)
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to create package record"})
 		return
 	}
@@ -330,6 +337,103 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, toPackageResponse(*created))
+}
+
+func (h *Handler) HandleUpdate(w http.ResponseWriter, r *http.Request) {
+	account, ok := user.FromContext(r.Context())
+	if !ok || account == nil {
+		writeJSON(w, http.StatusUnauthorized, errorBody{Error: "authentication required"})
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "missing package id"})
+		return
+	}
+	existing, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody{Error: "package not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to get package"})
+		return
+	}
+	if existing.UploaderID != account.ID {
+		writeJSON(w, http.StatusForbidden, errorBody{Error: "forbidden"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxUploadSize)
+	if err := r.ParseMultipartForm(maxUploadSize); err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "failed to parse update (max 50MB): " + err.Error()})
+		return
+	}
+	payload, err := h.buildPackageUpdate(r.Context(), *existing, r)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
+	if err := h.repo.Update(r.Context(), id, payload.Update); err != nil {
+		if payload.BlobsWritten {
+			h.restorePackageBackups(r.Context(), payload.Backups)
+		}
+		if errors.Is(err, ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody{Error: "package not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to update package"})
+		return
+	}
+	if payload.BlobsWritten {
+		h.cleanupReplacedCoverBlobs(r.Context(), *existing, payload.Update)
+	}
+	updated, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to read updated package"})
+		return
+	}
+	writeJSON(w, http.StatusOK, toPackageResponse(*updated))
+}
+
+func (h *Handler) HandleDelete(w http.ResponseWriter, r *http.Request) {
+	account, ok := user.FromContext(r.Context())
+	if !ok || account == nil {
+		writeJSON(w, http.StatusUnauthorized, errorBody{Error: "authentication required"})
+		return
+	}
+	id := r.PathValue("id")
+	if id == "" {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: "missing package id"})
+		return
+	}
+	existing, err := h.repo.GetByID(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody{Error: "package not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to get package"})
+		return
+	}
+	if existing.UploaderID != account.ID {
+		writeJSON(w, http.StatusForbidden, errorBody{Error: "forbidden"})
+		return
+	}
+	if err := h.repo.Delete(r.Context(), id); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, errorBody{Error: "package not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to delete package"})
+		return
+	}
+	h.cleanupPackageBlobs(r.Context(), storedPackageBlobs{
+		ZipKey:            packageBlobKey(existing.ID),
+		CoverBlobKey:      existing.CoverBlobKey,
+		CoverThumbBlobKey: existing.CoverThumbBlobKey,
+	})
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) HandleDownload(w http.ResponseWriter, r *http.Request) {
@@ -412,6 +516,227 @@ func (h *Handler) serveCoverVariant(w http.ResponseWriter, r *http.Request, keyF
 	if _, err := io.Copy(w, reader); err != nil {
 		return
 	}
+}
+
+func (h *Handler) storePackageBlobs(ctx context.Context, packageID string, resourceType ResourceType, content []byte, cleanupOnFailure bool) (storedPackageBlobs, error) {
+	processed := processedCoverPackage{Content: content}
+	if resourceType == ResourceGameCard {
+		var err error
+		processed, err = processGameCardPackageCover(content)
+		if err != nil {
+			return storedPackageBlobs{}, errors.New("failed to process package cover")
+		}
+	}
+
+	blobs := storedPackageBlobs{ZipKey: packageBlobKey(packageID)}
+	if err := h.blobStore.Put(ctx, blobs.ZipKey, bytes.NewReader(processed.Content)); err != nil {
+		return storedPackageBlobs{}, errors.New("failed to store package")
+	}
+	if len(processed.Display) > 0 {
+		blobs.CoverBlobKey = packageCoverBlobKey(packageID)
+		if err := h.blobStore.Put(ctx, blobs.CoverBlobKey, bytes.NewReader(processed.Display)); err != nil {
+			if cleanupOnFailure {
+				h.cleanupPackageBlobs(ctx, blobs)
+			}
+			return storedPackageBlobs{}, errors.New("failed to store cover")
+		}
+	}
+	if len(processed.Thumb) > 0 {
+		blobs.CoverThumbBlobKey = packageCoverThumbBlobKey(packageID)
+		if err := h.blobStore.Put(ctx, blobs.CoverThumbBlobKey, bytes.NewReader(processed.Thumb)); err != nil {
+			if cleanupOnFailure {
+				h.cleanupPackageBlobs(ctx, blobs)
+			}
+			return storedPackageBlobs{}, errors.New("failed to store cover thumbnail")
+		}
+	}
+	return blobs, nil
+}
+
+func packageBlobKey(packageID string) string {
+	return "market/" + packageID + ".zip"
+}
+
+func packageCoverBlobKey(packageID string) string {
+	return "market/" + packageID + "/cover.webp"
+}
+
+func packageCoverThumbBlobKey(packageID string) string {
+	return "market/" + packageID + "/cover-thumb.webp"
+}
+
+func (h *Handler) backupPackageBlobs(ctx context.Context, blobs storedPackageBlobs) []storedBlobBackup {
+	keys := []string{blobs.ZipKey, blobs.CoverBlobKey, blobs.CoverThumbBlobKey}
+	backups := make([]storedBlobBackup, 0, len(keys))
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		backup := storedBlobBackup{Key: key}
+		reader, err := h.blobStore.Open(ctx, key)
+		if err == nil {
+			data, readErr := io.ReadAll(reader)
+			_ = reader.Close()
+			if readErr == nil {
+				backup.Data = data
+				backup.Had = true
+			}
+		}
+		backups = append(backups, backup)
+	}
+	return backups
+}
+
+func (h *Handler) restorePackageBackups(ctx context.Context, backups []storedBlobBackup) {
+	for _, backup := range backups {
+		if backup.Key == "" {
+			continue
+		}
+		if backup.Had {
+			_ = h.blobStore.Put(ctx, backup.Key, bytes.NewReader(backup.Data))
+		} else {
+			_ = h.blobStore.Delete(ctx, backup.Key)
+		}
+	}
+}
+
+func (h *Handler) cleanupPackageBlobs(ctx context.Context, blobs storedPackageBlobs) {
+	for _, key := range []string{blobs.ZipKey, blobs.CoverBlobKey, blobs.CoverThumbBlobKey} {
+		if key != "" {
+			_ = h.blobStore.Delete(ctx, key)
+		}
+	}
+}
+
+func (h *Handler) cleanupReplacedCoverBlobs(ctx context.Context, existing PackageWithUploader, update PackageUpdate) {
+	if existing.CoverBlobKey != "" && existing.CoverBlobKey != update.CoverBlobKey {
+		_ = h.blobStore.Delete(ctx, existing.CoverBlobKey)
+	}
+	if existing.CoverThumbBlobKey != "" && existing.CoverThumbBlobKey != update.CoverThumbBlobKey {
+		_ = h.blobStore.Delete(ctx, existing.CoverThumbBlobKey)
+	}
+}
+
+func (h *Handler) buildPackageUpdate(ctx context.Context, existing PackageWithUploader, r *http.Request) (packageUpdatePayload, error) {
+	tags, err := normalizeTags(r.FormValue("tags"))
+	if err != nil {
+		return packageUpdatePayload{}, err
+	}
+	manifest := &uploadManifest{
+		ResourceType:    existing.ResourceType,
+		ResourceID:      existing.ResourceID,
+		ResourceAuthor:  existing.ResourceAuthor,
+		ResourceVersion: existing.ResourceVersion,
+		Name:            existing.Name,
+		Summary:         existing.Summary,
+	}
+	blobs := storedPackageBlobs{
+		ZipKey:            packageBlobKey(existing.ID),
+		CoverBlobKey:      packageCoverBlobKey(existing.ID),
+		CoverThumbBlobKey: packageCoverThumbBlobKey(existing.ID),
+	}
+	if existing.CoverBlobKey == "" {
+		blobs.CoverBlobKey = ""
+	}
+	if existing.CoverThumbBlobKey == "" {
+		blobs.CoverThumbBlobKey = ""
+	}
+	var backups []storedBlobBackup
+	blobsWritten := false
+
+	file, _, err := r.FormFile("file")
+	if err != nil && !errors.Is(err, http.ErrMissingFile) {
+		return packageUpdatePayload{}, errors.New("failed to read replacement file")
+	}
+	if file != nil {
+		defer file.Close()
+		content, err := io.ReadAll(file)
+		if err != nil {
+			return packageUpdatePayload{}, errors.New("failed to read replacement file")
+		}
+		manifest, err = validateUploadZip(content, existing.ResourceType)
+		if err != nil {
+			return packageUpdatePayload{}, err
+		}
+		backups = h.backupPackageBlobs(ctx, storedPackageBlobs{
+			ZipKey:            packageBlobKey(existing.ID),
+			CoverBlobKey:      packageCoverBlobKey(existing.ID),
+			CoverThumbBlobKey: packageCoverThumbBlobKey(existing.ID),
+		})
+		blobs, err = h.storePackageBlobs(ctx, existing.ID, existing.ResourceType, content, false)
+		if err != nil {
+			h.restorePackageBackups(ctx, backups)
+			return packageUpdatePayload{}, err
+		}
+		blobsWritten = true
+	}
+
+	metadata, err := formPublishMetadata(r, manifest)
+	if err != nil {
+		if blobsWritten {
+			h.restorePackageBackups(ctx, backups)
+		}
+		return packageUpdatePayload{}, err
+	}
+	return packageUpdatePayload{
+		Update: PackageUpdate{
+			ResourceID:        manifest.ResourceID,
+			ResourceAuthor:    metadata.ResourceAuthor,
+			ResourceVersion:   metadata.ResourceVersion,
+			Name:              metadata.Name,
+			Summary:           metadata.Summary,
+			Tags:              tags,
+			CoverBlobKey:      blobs.CoverBlobKey,
+			CoverThumbBlobKey: blobs.CoverThumbBlobKey,
+		},
+		BlobsWritten: blobsWritten,
+		Backups:      backups,
+	}, nil
+}
+
+func formPublishMetadata(r *http.Request, manifest *uploadManifest) (publishMetadata, error) {
+	name, hasName := optionalMultipartValue(r, "title")
+	if !hasName {
+		name = manifest.Name
+	}
+	summary, hasSummary := optionalMultipartValue(r, "summary")
+	if !hasSummary {
+		summary = manifest.Summary
+	}
+	resourceAuthor, hasAuthor := optionalMultipartValue(r, "author")
+	if !hasAuthor {
+		resourceAuthor = manifest.ResourceAuthor
+	}
+	resourceVersion, hasVersion := optionalMultipartValue(r, "version")
+	if !hasVersion {
+		resourceVersion = manifest.ResourceVersion
+	}
+	if name == "" {
+		return publishMetadata{}, errors.New("title is required")
+	}
+	if summary == "" {
+		return publishMetadata{}, errors.New("summary is required")
+	}
+	return publishMetadata{
+		Name:            name,
+		Summary:         summary,
+		ResourceAuthor:  resourceAuthor,
+		ResourceVersion: resourceVersion,
+	}, nil
+}
+
+func optionalMultipartValue(r *http.Request, name string) (string, bool) {
+	if r.MultipartForm == nil || r.MultipartForm.Value == nil {
+		return "", false
+	}
+	values, ok := r.MultipartForm.Value[name]
+	if !ok {
+		return "", false
+	}
+	if len(values) == 0 {
+		return "", true
+	}
+	return strings.TrimSpace(values[0]), true
 }
 
 func validateUploadZip(content []byte, resourceType ResourceType) (*uploadManifest, error) {
@@ -770,12 +1095,12 @@ func validateTag(tag string) error {
 func toPackageResponse(item PackageWithUploader) packageResponse {
 	var coverURL *string
 	if item.CoverBlobKey != "" {
-		url := "/api/v1/market/packages/" + item.ID + "/cover"
+		url := versionedPackageURL("/api/v1/market/packages/"+item.ID+"/cover", item.UpdatedAt)
 		coverURL = &url
 	}
 	var coverThumbURL *string
 	if item.CoverThumbBlobKey != "" {
-		url := "/api/v1/market/packages/" + item.ID + "/cover-thumb"
+		url := versionedPackageURL("/api/v1/market/packages/"+item.ID+"/cover-thumb", item.UpdatedAt)
 		coverThumbURL = &url
 	}
 	tags := item.Tags
@@ -800,7 +1125,15 @@ func toPackageResponse(item PackageWithUploader) packageResponse {
 		},
 		DownloadCount: item.DownloadCount,
 		CreatedAt:     item.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		UpdatedAt:     item.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
+}
+
+func versionedPackageURL(path string, updatedAt time.Time) string {
+	if updatedAt.IsZero() {
+		return path
+	}
+	return path + "?v=" + strconv.FormatInt(updatedAt.Unix(), 10)
 }
 
 func authorName(manifest *manifestPayload) string {

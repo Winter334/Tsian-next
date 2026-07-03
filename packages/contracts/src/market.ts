@@ -20,6 +20,7 @@ export interface MarketPackage {
   uploader: MarketPackageUploader
   downloadCount: number
   createdAt: string
+  updatedAt: string
 }
 
 export interface MarketPackageListResponse {
