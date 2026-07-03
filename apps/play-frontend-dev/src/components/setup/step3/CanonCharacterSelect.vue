@@ -11,7 +11,7 @@ import type { OpeningCandidateCharacter } from "../../../lib/source"
  * 进场：照搬 SplitReview 章节列表模式，x:-16 stagger 滑入。
  */
 const props = defineProps<{
-  candidates: OpeningCandidateCharacter[]
+  candidates: ReadonlyArray<OpeningCandidateCharacter>
 }>()
 
 const emit = defineEmits<{

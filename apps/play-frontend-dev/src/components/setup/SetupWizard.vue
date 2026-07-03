@@ -60,9 +60,6 @@ const {
 const pasteRef = ref<InstanceType<typeof PasteInput> | null>(null)
 const fileRef = ref<InstanceType<typeof FileInput> | null>(null)
 
-// step3 原创表单 ref
-const originalFormRef = ref<InstanceType<typeof OriginalCharacterForm> | null>(null)
-
 // step3 原著选择追踪（CanonCharacterSelect emit select → 存到这里 → 启用 primary 按钮）
 const canonSelectedCandidate = ref<{ id?: string; name: string; brief: string } | null>(null)
 
@@ -87,10 +84,10 @@ const completedUntil = computed(() => {
 interface ActionConfig {
   secondaryLabel: string
   secondaryDisabled: boolean
-  onSecondary: (() => void) | null
+  onSecondary: (() => void | Promise<void>) | null
   primaryLabel: string
   primaryDisabled: boolean
-  onPrimary: (() => void) | null
+  onPrimary: (() => void | Promise<void>) | null
 }
 
 const actions = computed<ActionConfig>(() => {
@@ -197,9 +194,9 @@ const actions = computed<ActionConfig>(() => {
         secondaryLabel: "返回分支",
         secondaryDisabled: busy.value,
         onSecondary: backToBranchChoice,
-        primaryLabel: busy.value ? "创建中…" : "创建角色",
-        primaryDisabled: busy.value,
-        onPrimary: onConfirmOriginal,
+        primaryLabel: "填写角色信息",
+        primaryDisabled: true,
+        onPrimary: null,
       }
     }
   }
