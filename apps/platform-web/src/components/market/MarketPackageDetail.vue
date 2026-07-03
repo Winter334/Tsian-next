@@ -2,10 +2,12 @@
   <div class="grid gap-4">
     <div class="retro-inset relative aspect-[16/9] overflow-hidden">
       <img
-        v-if="pkg.coverUrl"
+        v-if="pkg.coverUrl && !coverFailed"
         :src="pkg.coverUrl"
         :alt="pkg.name"
         class="absolute inset-0 h-full w-full object-cover"
+        decoding="async"
+        @error="coverFailed = true"
       />
       <div v-else :class="visual.coverClass" class="absolute inset-0 grid place-items-center">
         <component :is="visual.icon" class="h-20 w-20 text-text-main/60" aria-hidden="true" />
@@ -67,7 +69,7 @@
 
 <script setup lang="ts">
 import type { MarketPackage } from "@tsian/contracts"
-import { computed } from "vue"
+import { computed, ref, watch } from "vue"
 import { Download, PenLine, Tag } from "lucide-vue-next"
 import { getResourceTypeVisual } from "./resource-type-visual"
 
@@ -81,6 +83,11 @@ defineEmits<{
 }>()
 
 const visual = computed(() => getResourceTypeVisual(props.pkg.resourceType))
+const coverFailed = ref(false)
+
+watch(() => props.pkg.id, () => {
+  coverFailed.value = false
+})
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat("zh-CN", {

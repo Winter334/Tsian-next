@@ -8,10 +8,13 @@
       @click="$emit('open', pkg.id)"
     >
       <img
-        v-if="pkg.coverUrl"
-        :src="pkg.coverUrl"
+        v-if="coverUrl(pkg) && !failedCoverIds.has(pkg.id)"
+        :src="coverUrl(pkg)!"
         :alt="pkg.name"
         class="absolute inset-0 h-full w-full object-cover"
+        loading="lazy"
+        decoding="async"
+        @error="failedCoverIds.add(pkg.id)"
       />
       <div v-else :class="visual(pkg.resourceType).coverClass" class="absolute inset-0 grid place-items-center">
         <component :is="visual(pkg.resourceType).icon" class="h-12 w-12 text-text-main/70" aria-hidden="true" />
@@ -44,8 +47,11 @@
 
 <script setup lang="ts">
 import type { MarketPackage } from "@tsian/contracts"
+import { reactive } from "vue"
 import { Download } from "lucide-vue-next"
 import { getResourceTypeVisual } from "./resource-type-visual"
+
+const failedCoverIds = reactive(new Set<string>())
 
 defineProps<{
   packages: MarketPackage[]
@@ -57,5 +63,9 @@ defineEmits<{
 
 function visual(type: MarketPackage["resourceType"]) {
   return getResourceTypeVisual(type)
+}
+
+function coverUrl(pkg: MarketPackage): string | null {
+  return pkg.coverThumbUrl ?? pkg.coverUrl
 }
 </script>

@@ -3,13 +3,12 @@ package market
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -89,6 +88,7 @@ type packageResponse struct {
 	Summary         string           `json:"summary"`
 	Tags            []string         `json:"tags"`
 	CoverURL        *string          `json:"coverUrl"`
+	CoverThumbURL   *string          `json:"coverThumbUrl"`
 	Uploader        uploaderResponse `json:"uploader"`
 	DownloadCount   int              `json:"downloadCount"`
 	CreatedAt       string           `json:"createdAt"`
@@ -101,7 +101,12 @@ type uploaderResponse struct {
 }
 
 type listResponse struct {
-	Packages []packageResponse `json:"packages"`
+	Packages   []packageResponse `json:"packages"`
+	NextCursor *string           `json:"nextCursor"`
+}
+
+type countsResponse struct {
+	Counts map[string]int `json:"counts"`
 }
 
 type Handler struct {
@@ -124,22 +129,49 @@ func (h *Handler) HandleList(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
 		return
 	}
+	limit, err := parseListLimit(r.URL.Query().Get("limit"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, errorBody{Error: err.Error()})
+		return
+	}
 	filter := ListFilter{
 		Query:        strings.TrimSpace(r.URL.Query().Get("q")),
 		Sort:         r.URL.Query().Get("sort"),
+		Limit:        limit,
+		Cursor:       strings.TrimSpace(r.URL.Query().Get("cursor")),
 		ResourceType: resourceType,
 		Tag:          tag,
 	}
-	items, err := h.repo.List(r.Context(), filter)
+	result, err := h.repo.List(r.Context(), filter)
 	if err != nil {
+		if errors.Is(err, ErrInvalidCursor) {
+			writeJSON(w, http.StatusBadRequest, errorBody{Error: "invalid cursor"})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to list packages"})
 		return
 	}
-	resp := listResponse{Packages: make([]packageResponse, 0, len(items))}
-	for _, item := range items {
+	resp := listResponse{Packages: make([]packageResponse, 0, len(result.Items))}
+	if result.NextCursor != "" {
+		resp.NextCursor = &result.NextCursor
+	}
+	for _, item := range result.Items {
 		resp.Packages = append(resp.Packages, toPackageResponse(item))
 	}
 	writeJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) HandleCounts(w http.ResponseWriter, r *http.Request) {
+	counts, err := h.repo.Counts(r.Context())
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to count packages"})
+		return
+	}
+	writeJSON(w, http.StatusOK, countsResponse{Counts: map[string]int{
+		string(ResourceGameCard): counts[ResourceGameCard],
+		string(ResourceAgent):    counts[ResourceAgent],
+		string(ResourceSkill):    counts[ResourceSkill],
+	}})
 }
 
 func (h *Handler) HandleGet(w http.ResponseWriter, r *http.Request) {
@@ -211,17 +243,41 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	processed := processedCoverPackage{Content: content}
+	if resourceType == ResourceGameCard {
+		processed, err = processGameCardPackageCover(content)
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, errorBody{Error: "failed to process package cover"})
+			return
+		}
+	}
+
 	blobKey := "market/" + packageID + ".zip"
-	if err := h.blobStore.Put(r.Context(), blobKey, bytes.NewReader(content)); err != nil {
+	if err := h.blobStore.Put(r.Context(), blobKey, bytes.NewReader(processed.Content)); err != nil {
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to store package"})
 		return
 	}
 
 	coverBlobKey := ""
-	if resourceType == ResourceGameCard {
-		// Extract cover image from the zip's cover/ directory and store it.
-		// The frontend export places covers at cover/cover.<ext>.
-		coverBlobKey = extractAndStoreCover(r.Context(), h.blobStore, content, packageID)
+	coverThumbBlobKey := ""
+	if len(processed.Display) > 0 {
+		coverBlobKey = "market/" + packageID + "/cover.webp"
+		if err := h.blobStore.Put(r.Context(), coverBlobKey, bytes.NewReader(processed.Display)); err != nil {
+			_ = h.blobStore.Delete(r.Context(), blobKey)
+			writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to store cover"})
+			return
+		}
+	}
+	if len(processed.Thumb) > 0 {
+		coverThumbBlobKey = "market/" + packageID + "/cover-thumb.webp"
+		if err := h.blobStore.Put(r.Context(), coverThumbBlobKey, bytes.NewReader(processed.Thumb)); err != nil {
+			_ = h.blobStore.Delete(r.Context(), blobKey)
+			if coverBlobKey != "" {
+				_ = h.blobStore.Delete(r.Context(), coverBlobKey)
+			}
+			writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to store cover thumbnail"})
+			return
+		}
 	}
 
 	// Title/summary form fields override manifest values if provided.
@@ -243,22 +299,26 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pkg := Package{
-		ID:              packageID,
-		ResourceType:    resourceType,
-		ResourceID:      manifest.ResourceID,
-		ResourceAuthor:  resourceAuthor,
-		ResourceVersion: resourceVersion,
-		Name:            name,
-		Summary:         summary,
-		Tags:            tags,
-		CoverBlobKey:    coverBlobKey,
-		UploaderID:      account.ID,
+		ID:                packageID,
+		ResourceType:      resourceType,
+		ResourceID:        manifest.ResourceID,
+		ResourceAuthor:    resourceAuthor,
+		ResourceVersion:   resourceVersion,
+		Name:              name,
+		Summary:           summary,
+		Tags:              tags,
+		CoverBlobKey:      coverBlobKey,
+		CoverThumbBlobKey: coverThumbBlobKey,
+		UploaderID:        account.ID,
 	}
 	if err := h.repo.Create(r.Context(), pkg); err != nil {
 		// Best-effort cleanup the blobs we just wrote.
 		_ = h.blobStore.Delete(r.Context(), blobKey)
 		if coverBlobKey != "" {
 			_ = h.blobStore.Delete(r.Context(), coverBlobKey)
+		}
+		if coverThumbBlobKey != "" {
+			_ = h.blobStore.Delete(r.Context(), coverThumbBlobKey)
 		}
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to create package record"})
 		return
@@ -307,9 +367,21 @@ func (h *Handler) HandleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// HandleCover serves the cover image blob for a package. Returns 404 when
-// the package has no cover or the blob is missing.
+// HandleCover serves the display cover image blob for a package. Returns 404
+// when the package has no cover or the blob is missing.
 func (h *Handler) HandleCover(w http.ResponseWriter, r *http.Request) {
+	h.serveCoverVariant(w, r, func(pkg PackageWithUploader) string {
+		return pkg.CoverBlobKey
+	})
+}
+
+func (h *Handler) HandleCoverThumb(w http.ResponseWriter, r *http.Request) {
+	h.serveCoverVariant(w, r, func(pkg PackageWithUploader) string {
+		return pkg.CoverThumbBlobKey
+	})
+}
+
+func (h *Handler) serveCoverVariant(w http.ResponseWriter, r *http.Request, keyFor func(PackageWithUploader) string) {
 	id := r.PathValue("id")
 	if id == "" {
 		writeJSON(w, http.StatusBadRequest, errorBody{Error: "missing package id"})
@@ -324,57 +396,22 @@ func (h *Handler) HandleCover(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, errorBody{Error: "failed to get package"})
 		return
 	}
-	if pkg.CoverBlobKey == "" {
+	blobKey := keyFor(*pkg)
+	if blobKey == "" {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "no cover"})
 		return
 	}
-	reader, err := h.blobStore.Open(r.Context(), pkg.CoverBlobKey)
+	reader, err := h.blobStore.Open(r.Context(), blobKey)
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, errorBody{Error: "cover not found"})
 		return
 	}
 	defer reader.Close()
-	ext := filepath.Ext(pkg.CoverBlobKey)
-	contentType := coverContentType(ext)
-	if contentType != "" {
-		w.Header().Set("Content-Type", contentType)
-	}
+	w.Header().Set("Content-Type", coverContentType(blobKey))
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	if _, err := io.Copy(w, reader); err != nil {
 		return
 	}
-}
-
-// extractAndStoreCover reads the first file under cover/ in the zip and
-// stores it via blobStore. Returns the blob key, or "" if no cover was found.
-// The frontend export places covers at cover/cover.<ext>.
-func extractAndStoreCover(ctx context.Context, store storage.BlobStore, zipContent []byte, packageID string) string {
-	zipReader, err := zip.NewReader(bytes.NewReader(zipContent), int64(len(zipContent)))
-	if err != nil {
-		return ""
-	}
-	for _, f := range zipReader.File {
-		if !strings.HasPrefix(f.Name, "cover/") || f.FileInfo().IsDir() {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return ""
-		}
-		coverBytes, err := io.ReadAll(rc)
-		rc.Close()
-		if err != nil || len(coverBytes) == 0 {
-			return ""
-		}
-		// Preserve the original extension for Content-Type inference on download.
-		ext := filepath.Ext(f.Name)
-		coverKey := "market/" + packageID + "/cover" + ext
-		if err := store.Put(ctx, coverKey, bytes.NewReader(coverBytes)); err != nil {
-			return ""
-		}
-		return coverKey
-	}
-	return ""
 }
 
 func validateUploadZip(content []byte, resourceType ResourceType) (*uploadManifest, error) {
@@ -637,6 +674,24 @@ func parseOptionalResourceType(value string) (ResourceType, error) {
 	return parseResourceType(trimmed)
 }
 
+func parseListLimit(value string) (int, error) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return 24, nil
+	}
+	limit, err := strconv.Atoi(trimmed)
+	if err != nil {
+		return 0, fmt.Errorf("invalid limit: %s", value)
+	}
+	if limit <= 0 {
+		return 24, nil
+	}
+	if limit > 100 {
+		return 100, nil
+	}
+	return limit, nil
+}
+
 func parseResourceType(value string) (ResourceType, error) {
 	switch ResourceType(value) {
 	case ResourceGameCard, ResourceAgent, ResourceSkill:
@@ -718,6 +773,11 @@ func toPackageResponse(item PackageWithUploader) packageResponse {
 		url := "/api/v1/market/packages/" + item.ID + "/cover"
 		coverURL = &url
 	}
+	var coverThumbURL *string
+	if item.CoverThumbBlobKey != "" {
+		url := "/api/v1/market/packages/" + item.ID + "/cover-thumb"
+		coverThumbURL = &url
+	}
 	tags := item.Tags
 	if tags == nil {
 		tags = []string{}
@@ -732,6 +792,7 @@ func toPackageResponse(item PackageWithUploader) packageResponse {
 		Summary:         item.Summary,
 		Tags:            tags,
 		CoverURL:        coverURL,
+		CoverThumbURL:   coverThumbURL,
 		Uploader: uploaderResponse{
 			ID:          item.UploaderID,
 			DisplayName: item.UploaderDisplayName,
@@ -772,21 +833,11 @@ func sanitizeDownloadName(value string) string {
 	return value
 }
 
-func coverContentType(ext string) string {
-	switch strings.ToLower(ext) {
-	case ".png":
-		return "image/png"
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".gif":
-		return "image/gif"
-	case ".webp":
+func coverContentType(key string) string {
+	if strings.HasSuffix(strings.ToLower(key), ".webp") {
 		return "image/webp"
-	case ".svg":
-		return "image/svg+xml"
-	default:
-		return ""
 	}
+	return "application/octet-stream"
 }
 
 type errorBody struct {

@@ -6,6 +6,10 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -30,6 +34,30 @@ func buildTestPackageZip(t *testing.T) []byte {
 		"game-card.json":      []byte(`{"schema":"tsian.game-card.package.v1","manifest":{"schema":"tsian.game-card.v1","id":"test-card-001","name":"Test Card","version":"0.1.0","summary":"A test game card for integration tests."}}`),
 		"workspace/README.md": []byte("# Test Card\n"),
 	})
+}
+
+func buildTestPackageZipWithCover(t *testing.T) []byte {
+	t.Helper()
+	return buildZip(t, map[string][]byte{
+		"game-card.json":      []byte(`{"schema":"tsian.game-card.package.v1","manifest":{"schema":"tsian.game-card.v1","id":"test-card-001","name":"Test Card","version":"0.1.0","summary":"A test game card for integration tests.","cover":{"workspacePath":".cover/cover.png","alt":"Test Cover"}},"coverFiles":[{"path":"cover/cover.png","mediaType":"image/png","size":1}]}`),
+		"workspace/README.md": []byte("# Test Card\n"),
+		"cover/cover.png":     buildTestPNG(t),
+	})
+}
+
+func buildTestPNG(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 32, 40))
+	for y := 0; y < 40; y++ {
+		for x := 0; x < 32; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x * 8), G: uint8(y * 6), B: 180, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode test png: %v", err)
+	}
+	return buf.Bytes()
 }
 
 func buildResourcePackageZip(t *testing.T, manifest string, files map[string][]byte) []byte {
@@ -271,6 +299,205 @@ func uploadPackage(t *testing.T, client *http.Client, url string, zipBytes []byt
 		t.Fatalf("upload request: %v", err)
 	}
 	return res
+}
+
+func TestMarketUploadNormalizesCoverToWebP(t *testing.T) {
+	t.Parallel()
+
+	server, client := newMarketTestServer(t)
+	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+
+	uploadResp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", buildTestPackageZipWithCover(t), uploadOptions{})
+	defer uploadResp.Body.Close()
+	if uploadResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(uploadResp.Body)
+		t.Fatalf("upload status = %d, body: %s", uploadResp.StatusCode, body)
+	}
+	var pkg struct {
+		ID            string  `json:"id"`
+		CoverURL      *string `json:"coverUrl"`
+		CoverThumbURL *string `json:"coverThumbUrl"`
+	}
+	if err := json.NewDecoder(uploadResp.Body).Decode(&pkg); err != nil {
+		t.Fatalf("decode upload response: %v", err)
+	}
+	if pkg.CoverURL == nil || pkg.CoverThumbURL == nil {
+		t.Fatalf("cover urls = %v / %v, want both present", pkg.CoverURL, pkg.CoverThumbURL)
+	}
+
+	coverResp, err := client.Get(server.URL + *pkg.CoverURL)
+	if err != nil {
+		t.Fatalf("GET cover: %v", err)
+	}
+	defer coverResp.Body.Close()
+	if coverResp.Header.Get("Content-Type") != "image/webp" {
+		t.Fatalf("cover content-type = %q", coverResp.Header.Get("Content-Type"))
+	}
+	coverBytes, err := io.ReadAll(coverResp.Body)
+	if err != nil {
+		t.Fatalf("read cover: %v", err)
+	}
+	if len(coverBytes) == 0 {
+		t.Fatalf("cover body is empty")
+	}
+
+	thumbResp, err := client.Get(server.URL + *pkg.CoverThumbURL)
+	if err != nil {
+		t.Fatalf("GET cover thumb: %v", err)
+	}
+	defer thumbResp.Body.Close()
+	if thumbResp.Header.Get("Content-Type") != "image/webp" {
+		t.Fatalf("thumb content-type = %q", thumbResp.Header.Get("Content-Type"))
+	}
+
+	downloadResp, err := client.Get(server.URL + "/api/v1/market/packages/" + pkg.ID + "/download")
+	if err != nil {
+		t.Fatalf("download package: %v", err)
+	}
+	defer downloadResp.Body.Close()
+	downloadedBytes, err := io.ReadAll(downloadResp.Body)
+	if err != nil {
+		t.Fatalf("read downloaded package: %v", err)
+	}
+	entries := unzipEntries(t, downloadedBytes)
+	if _, ok := entries["cover/cover.webp"]; !ok {
+		t.Fatalf("downloaded package missing cover/cover.webp; entries: %v", mapKeys(entries))
+	}
+	if _, ok := entries["cover/cover.png"]; ok {
+		t.Fatalf("downloaded package kept original cover/cover.png")
+	}
+	var manifest struct {
+		Manifest struct {
+			Cover struct {
+				WorkspacePath string `json:"workspacePath"`
+				Alt           string `json:"alt"`
+			} `json:"cover"`
+		} `json:"manifest"`
+		CoverFiles []struct {
+			Path      string `json:"path"`
+			MediaType string `json:"mediaType"`
+		} `json:"coverFiles"`
+	}
+	if err := json.Unmarshal(entries["game-card.json"], &manifest); err != nil {
+		t.Fatalf("parse downloaded manifest: %v", err)
+	}
+	if manifest.Manifest.Cover.WorkspacePath != ".cover/cover.webp" || manifest.Manifest.Cover.Alt != "Test Cover" {
+		t.Fatalf("manifest cover = %+v", manifest.Manifest.Cover)
+	}
+	if len(manifest.CoverFiles) != 1 || manifest.CoverFiles[0].Path != "cover/cover.webp" || manifest.CoverFiles[0].MediaType != "image/webp" {
+		t.Fatalf("manifest coverFiles = %+v", manifest.CoverFiles)
+	}
+}
+
+func TestMarketCountsAndCursorPagination(t *testing.T) {
+	t.Parallel()
+
+	server, client := newMarketTestServer(t)
+	assertStatus(t, client, http.MethodGet, server.URL+"/api/v1/auth/mock-login", http.StatusFound)
+
+	for i := 0; i < 3; i++ {
+		resp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", buildTestPackageZip(t), uploadOptions{Title: fmt.Sprintf("Card %d", i)})
+		resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated {
+			t.Fatalf("card upload %d status = %d", i, resp.StatusCode)
+		}
+	}
+	agentZip := buildResourcePackageZip(t,
+		`{"schema":"tsian.resource.package.v1","resourceType":"agent","resourceId":"agent-paged","name":"Paged Agent","summary":"Runs things.","author":"Author","version":"1.0.0","files":[{"path":"agent.json"},{"path":"AGENT.md"}]}`,
+		map[string][]byte{"agent.json": []byte(`{"id":"agent-paged"}`), "AGENT.md": []byte("# Paged Agent\n")},
+	)
+	resp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", agentZip, uploadOptions{ResourceType: "agent"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("agent upload status = %d", resp.StatusCode)
+	}
+
+	countsResp, err := client.Get(server.URL + "/api/v1/market/packages/counts")
+	if err != nil {
+		t.Fatalf("counts request: %v", err)
+	}
+	defer countsResp.Body.Close()
+	var countsBody struct {
+		Counts map[string]int `json:"counts"`
+	}
+	if err := json.NewDecoder(countsResp.Body).Decode(&countsBody); err != nil {
+		t.Fatalf("decode counts: %v", err)
+	}
+	if countsBody.Counts["game_card"] != 3 || countsBody.Counts["agent"] != 1 || countsBody.Counts["skill"] != 0 {
+		t.Fatalf("counts = %+v", countsBody.Counts)
+	}
+
+	firstResp, err := client.Get(server.URL + "/api/v1/market/packages?resourceType=game_card&limit=2")
+	if err != nil {
+		t.Fatalf("first page request: %v", err)
+	}
+	defer firstResp.Body.Close()
+	var firstPage struct {
+		Packages []struct {
+			ID string `json:"id"`
+		} `json:"packages"`
+		NextCursor *string `json:"nextCursor"`
+	}
+	if err := json.NewDecoder(firstResp.Body).Decode(&firstPage); err != nil {
+		t.Fatalf("decode first page: %v", err)
+	}
+	if len(firstPage.Packages) != 2 || firstPage.NextCursor == nil {
+		t.Fatalf("first page = %+v", firstPage)
+	}
+
+	secondResp, err := client.Get(server.URL + "/api/v1/market/packages?resourceType=game_card&limit=2&cursor=" + *firstPage.NextCursor)
+	if err != nil {
+		t.Fatalf("second page request: %v", err)
+	}
+	defer secondResp.Body.Close()
+	var secondPage struct {
+		Packages []struct {
+			ID string `json:"id"`
+		} `json:"packages"`
+		NextCursor *string `json:"nextCursor"`
+	}
+	if err := json.NewDecoder(secondResp.Body).Decode(&secondPage); err != nil {
+		t.Fatalf("decode second page: %v", err)
+	}
+	if len(secondPage.Packages) != 1 || secondPage.NextCursor != nil {
+		t.Fatalf("second page = %+v", secondPage)
+	}
+	if secondPage.Packages[0].ID == firstPage.Packages[0].ID || secondPage.Packages[0].ID == firstPage.Packages[1].ID {
+		t.Fatalf("pagination duplicated package id %s", secondPage.Packages[0].ID)
+	}
+}
+
+func unzipEntries(t *testing.T, data []byte) map[string][]byte {
+	t.Helper()
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatalf("open zip: %v", err)
+	}
+	entries := map[string][]byte{}
+	for _, f := range zr.File {
+		if f.FileInfo().IsDir() {
+			continue
+		}
+		rc, err := f.Open()
+		if err != nil {
+			t.Fatalf("open zip entry %s: %v", f.Name, err)
+		}
+		content, err := io.ReadAll(rc)
+		rc.Close()
+		if err != nil {
+			t.Fatalf("read zip entry %s: %v", f.Name, err)
+		}
+		entries[f.Name] = content
+	}
+	return entries
+}
+
+func mapKeys(values map[string][]byte) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	return keys
 }
 
 func TestMarketSearch(t *testing.T) {

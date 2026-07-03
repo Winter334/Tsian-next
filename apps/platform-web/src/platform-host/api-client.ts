@@ -1,4 +1,10 @@
-import type { MarketPackage, MarketResourceType, User } from "@tsian/contracts"
+import type {
+  MarketPackage,
+  MarketPackageCountsResponse,
+  MarketPackageListResponse,
+  MarketResourceType,
+  User,
+} from "@tsian/contracts"
 
 const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/+$/, "")
 
@@ -71,7 +77,9 @@ export const marketApi = {
     q?: string
     tag?: string
     sort?: "newest" | "downloads"
-  }): Promise<MarketPackage[]> {
+    limit?: number
+    cursor?: string
+  }): Promise<MarketPackageListResponse> {
     const query = new URLSearchParams()
     if (params?.resourceType) {
       query.set("resourceType", params.resourceType)
@@ -85,11 +93,20 @@ export const marketApi = {
     if (params?.sort) {
       query.set("sort", params.sort)
     }
+    if (params?.limit) {
+      query.set("limit", String(params.limit))
+    }
+    if (params?.cursor) {
+      query.set("cursor", params.cursor)
+    }
     const qs = query.toString()
-    const res = await apiFetch<{ packages: MarketPackage[] }>(
+    return apiFetch<MarketPackageListResponse>(
       `/api/v1/market/packages${qs ? `?${qs}` : ""}`,
     )
-    return res.packages
+  },
+
+  async counts(): Promise<MarketPackageCountsResponse> {
+    return apiFetch<MarketPackageCountsResponse>("/api/v1/market/packages/counts")
   },
 
   async get(id: string): Promise<MarketPackage> {

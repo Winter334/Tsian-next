@@ -64,6 +64,18 @@
             </p>
           </div>
           <MarketPackageGrid v-else :packages="packages" @open="openDetail" />
+          <div v-if="screen.kind === 'list' && packages.length > 0" class="flex justify-center py-2">
+            <button
+              v-if="nextCursor"
+              type="button"
+              class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-4 font-mono text-xs"
+              :disabled="loadingMore"
+              @click="loadMore"
+            >
+              {{ loadingMore ? "加载中…" : "加载更多" }}
+            </button>
+            <span v-else class="font-mono text-[11px] text-text-dim">已全部加载</span>
+          </div>
         </div>
 
         <div v-else-if="screen.kind === 'detail'" class="grid gap-4">
@@ -195,9 +207,13 @@ const currentType = ref<MarketResourceType>("game_card")
 const packages = ref<MarketPackage[]>([])
 const resourceCounts = ref<Partial<Record<MarketResourceType, number>>>({})
 const loading = ref(false)
+const loadingMore = ref(false)
+const nextCursor = ref<string | null>(null)
 const searchQuery = ref("")
 const tagQuery = ref("")
 const sortMode = ref<"newest" | "downloads">("newest")
+const pageSize = 24
+let listRequestSeq = 0
 let searchTimer: ReturnType<typeof setTimeout> | null = null
 let tagTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -289,32 +305,72 @@ onMounted(() => {
 })
 
 async function refresh(): Promise<void> {
+  const requestId = ++listRequestSeq
   loading.value = true
+  loadingMore.value = false
+  nextCursor.value = null
   errorMessage.value = ""
   try {
-    packages.value = await marketApi.list({
-      resourceType: currentType.value,
-      q: searchQuery.value || undefined,
-      tag: tagQuery.value || undefined,
-      sort: sortMode.value,
-    })
+    const result = await marketApi.list(listParams())
+    if (requestId !== listRequestSeq) {
+      return
+    }
+    packages.value = result.packages
+    nextCursor.value = result.nextCursor
   } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "加载创意工坊列表失败。"
+    if (requestId === listRequestSeq) {
+      errorMessage.value = error instanceof Error ? error.message : "加载创意工坊列表失败。"
+    }
   } finally {
-    loading.value = false
+    if (requestId === listRequestSeq) {
+      loading.value = false
+    }
+  }
+}
+
+async function loadMore(): Promise<void> {
+  if (!nextCursor.value || loadingMore.value) {
+    return
+  }
+  const requestId = listRequestSeq
+  loadingMore.value = true
+  errorMessage.value = ""
+  try {
+    const result = await marketApi.list(listParams(nextCursor.value))
+    if (requestId !== listRequestSeq) {
+      return
+    }
+    packages.value = [...packages.value, ...result.packages]
+    nextCursor.value = result.nextCursor
+  } catch (error) {
+    if (requestId === listRequestSeq) {
+      errorMessage.value = error instanceof Error ? error.message : "加载更多资源失败。"
+    }
+  } finally {
+    if (requestId === listRequestSeq) {
+      loadingMore.value = false
+    }
+  }
+}
+
+function listParams(cursor?: string) {
+  return {
+    resourceType: currentType.value,
+    q: searchQuery.value || undefined,
+    tag: tagQuery.value || undefined,
+    sort: sortMode.value,
+    limit: pageSize,
+    cursor,
   }
 }
 
 async function refreshCounts(): Promise<void> {
-  const entries = await Promise.all(resourceTypeOptions.map(async (option) => {
-    try {
-      const items = await marketApi.list({ resourceType: option.type })
-      return [option.type, items.length] as const
-    } catch {
-      return [option.type, 0] as const
-    }
-  }))
-  resourceCounts.value = Object.fromEntries(entries) as Partial<Record<MarketResourceType, number>>
+  try {
+    const result = await marketApi.counts()
+    resourceCounts.value = result.counts
+  } catch {
+    resourceCounts.value = {}
+  }
 }
 
 function onSearchInput(): void {

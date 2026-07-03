@@ -48,10 +48,12 @@ func (s *Server) Handler() http.Handler {
 	marketRepo := market.NewSQLiteRepository(s.db)
 	marketHandler := market.NewHandler(marketRepo, blobStore)
 	mux.HandleFunc("GET /api/v1/market/packages", marketHandler.HandleList)
+	mux.HandleFunc("GET /api/v1/market/packages/counts", marketHandler.HandleCounts)
 	mux.HandleFunc("GET /api/v1/market/packages/{id}", marketHandler.HandleGet)
 	mux.Handle("POST /api/v1/market/packages", middleware.RequireAuth(s.db, users, http.HandlerFunc(marketHandler.HandleUpload)))
 	mux.HandleFunc("GET /api/v1/market/packages/{id}/download", marketHandler.HandleDownload)
 	mux.HandleFunc("GET /api/v1/market/packages/{id}/cover", marketHandler.HandleCover)
+	mux.HandleFunc("GET /api/v1/market/packages/{id}/cover-thumb", marketHandler.HandleCoverThumb)
 
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)

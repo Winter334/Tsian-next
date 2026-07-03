@@ -64,23 +64,24 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
 		`CREATE TABLE IF NOT EXISTS market_packages (
-			id TEXT PRIMARY KEY,
-			resource_type TEXT NOT NULL DEFAULT 'game_card',
-			card_id TEXT NOT NULL,
-			card_author TEXT NOT NULL DEFAULT '',
-			card_version TEXT NOT NULL DEFAULT '',
-			resource_id TEXT NOT NULL DEFAULT '',
-			resource_author TEXT NOT NULL DEFAULT '',
-			resource_version TEXT NOT NULL DEFAULT '',
-			name TEXT NOT NULL,
-			summary TEXT NOT NULL,
-			tags TEXT NOT NULL DEFAULT '[]',
-			cover_blob_key TEXT,
-			uploader_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-			download_count INTEGER NOT NULL DEFAULT 0,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL
-		)`,
+				id TEXT PRIMARY KEY,
+				resource_type TEXT NOT NULL DEFAULT 'game_card',
+				card_id TEXT NOT NULL,
+				card_author TEXT NOT NULL DEFAULT '',
+				card_version TEXT NOT NULL DEFAULT '',
+				resource_id TEXT NOT NULL DEFAULT '',
+				resource_author TEXT NOT NULL DEFAULT '',
+				resource_version TEXT NOT NULL DEFAULT '',
+				name TEXT NOT NULL,
+				summary TEXT NOT NULL,
+				tags TEXT NOT NULL DEFAULT '[]',
+				cover_blob_key TEXT,
+				cover_thumb_blob_key TEXT,
+				uploader_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				download_count INTEGER NOT NULL DEFAULT 0,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
 		`CREATE INDEX IF NOT EXISTS idx_market_packages_created ON market_packages(created_at DESC)`,
 		`CREATE INDEX IF NOT EXISTS idx_market_packages_downloads ON market_packages(download_count DESC)`,
 	}
@@ -122,6 +123,9 @@ func ensureMarketPackageColumns(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if err := addColumn("tags", "tags TEXT NOT NULL DEFAULT '[]'"); err != nil {
+		return err
+	}
+	if err := addColumn("cover_thumb_blob_key", "cover_thumb_blob_key TEXT"); err != nil {
 		return err
 	}
 

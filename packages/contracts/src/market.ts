@@ -16,7 +16,19 @@ export interface MarketPackage {
   summary: string
   tags: string[]
   coverUrl: string | null
+  coverThumbUrl: string | null
   uploader: MarketPackageUploader
   downloadCount: number
   createdAt: string
+}
+
+export interface MarketPackageListResponse {
+  packages: MarketPackage[]
+  nextCursor: string | null
+}
+
+export type MarketPackageCounts = Record<MarketResourceType, number>
+
+export interface MarketPackageCountsResponse {
+  counts: MarketPackageCounts
 }
