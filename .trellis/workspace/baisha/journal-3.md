@@ -612,3 +612,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 123: 修复 play frontend 类型检查
+
+**Date**: 2026-07-03
+**Task**: 修复 play frontend 类型检查
+**Branch**: `feat/play-frontend-message-windowing`
+
+### Summary
+
+修复 play-frontend-dev setup 流程中的 vue-tsc 错误：让展示型数据接受 readonly 数组、按 WorkspaceEntry[] 使用 workspace.list、收窄消息索引访问，并把原创角色提交交给表单自身处理；vue-tsc 与 play frontend build 均通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `86cead3` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

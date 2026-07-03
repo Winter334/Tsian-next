@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 122
+- **Total Sessions**: 123
 - **Last Active**: 2026-07-03
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~614 | Active |
+| `journal-3.md` | ~647 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 123 | 2026-07-03 | 修复 play frontend 类型检查 | `86cead3` | `feat/play-frontend-message-windowing` |
 | 122 | 2026-07-03 | 游戏前端长历史消息窗口化 | `aae2572` | `feat/play-frontend-message-windowing` |
 | 121 | 2026-07-03 | Workshop content management | `13486c3` | `feat/workspace-context-cache-split` |
 | 120 | 2026-07-03 | Tsian Boot BSOD Nyan splash | `e48c5c8` | `feat/workspace-context-cache-split` |
