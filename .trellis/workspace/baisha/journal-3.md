@@ -479,3 +479,37 @@ Implemented the account-system task: planned and built the Go platform-server au
 ### Next Steps
 
 - None - task complete
+
+
+## Session 119: Optimize workshop cover traffic
+
+**Date**: 2026-07-03
+**Task**: Optimize workshop cover traffic
+**Branch**: `feat/workspace-context-cache-split`
+
+### Summary
+
+Implemented WebP cover derivation and zip normalization for workshop game cards, added cover thumbnails, counts endpoint, cursor pagination, frontend load-more UI, lazy image loading, tests, and Trellis task planning artifacts.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `30cb4b1` | (see git log) |
+| `a12e9b5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
