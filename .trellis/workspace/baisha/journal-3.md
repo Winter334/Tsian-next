@@ -579,3 +579,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 122: 游戏前端长历史消息窗口化
+
+**Date**: 2026-07-03
+**Task**: 游戏前端长历史消息窗口化
+**Branch**: `feat/play-frontend-message-windowing`
+
+### Summary
+
+为游戏前端 StoryView 增加按 turn 的渐进窗口渲染，默认只渲染最近历史，向上滚动自动展开更早回合，并加入低调回到最近内容浮标；归档对应 Trellis 任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `aae2572` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
