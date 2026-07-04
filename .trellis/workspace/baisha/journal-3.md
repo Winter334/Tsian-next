@@ -678,3 +678,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 125: 回合后场记编排 + card.entrypoints bridge API
+
+**Date**: 2026-07-04
+**Task**: 回合后场记编排 + card.entrypoints bridge API
+**Branch**: `master`
+
+### Summary
+
+实现默认 novel 前端回合后场记编排：正文落定后 invokeAgent 发起维护，SyncToast 卡片扫光三态。契约层增 GameCardRuntimeEntrypoints.postTurnMaintenance + CardBridge；bridge 暴露 tsian.card.entrypoints()；前端从配置读 agent id，Toast 文案不硬编码 agent 名。审查父任务 3 个归档子任务，发现 workspace-with-checkpoint 平台层缺口悬空，建子任务 07-04-invoke-agent-workspace-with-checkpoint 认领。trellis-check 修复 useSyncAfterTurn 重复代码（抽取 runSyncInvocation），spec 追加前端不硬编码 agent 名约定。端到端验证暂缓（向导阶段改动未落地）。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `17b5731` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
