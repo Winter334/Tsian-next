@@ -130,7 +130,7 @@ const provider = providerParamsForKind(config.parameters, config.kind)
 
 - The desktop has one currently loaded Game Card and a separate active Save Instance, both stored in `meta`.
 - Desktop apps (Play, Studio, Assistant, Game entrypoints) use the current Game Card by default and must not add their own ordinary card picker.
-- Save-scoped runtime work must use the active save's own `gameCardId` when composing an effective workspace (not the current Game Card).
+- Save-scoped runtime work must use the active save's own `gameCardId` when composing an effective workspace or resolving `runtime.entrypoints.playerTurn` (not the current Game Card).
 - Selecting or creating a save updates the current Game Card to that save's card. Opening/loading a Game Card may update the current Game Card without requiring a save.
 - If no current Game Card is stored, platform initialization may derive one from the active save, first save, or built-in blank card.
 
@@ -147,8 +147,8 @@ const provider = providerParamsForKind(config.parameters, config.kind)
 - `debug.onTurnDebugReady` is a notification to re-read debug/query resources, not a data transport.
 - Remote iframe frontend state is per-mount: the adapter owns the generated bridge session id, accepted iframe origin, and message listener cleanup. Do not persist bridge session ids in Dexie or workspace files.
 - Remote iframe workspace writes/deletes call `platform.runAction` immediately against `save/...`. They are not part of the Agent Runtime staged transaction used inside `interaction.sendMessage`.
-- Streaming text deltas flow through an internal `Set`-based pub/sub module. Do not reuse it as a general event bus. The AIRP turn wires the runtime `onDelta` to emit deltas; the remote iframe bridge subscribes and forwards each as a `turn-delta` bridge event. The desktop Assistant chat path does not emit `turn-delta` (it is in-process, not bridged) — it threads `onDelta` directly into the view. Platform only provides the channel; how the play frontend renders (typewriter, folding, thought/final split) is the game frontend's responsibility.
-- Tool process events (`turn-round-end` + `turn-tool`) extend the same pub/sub. `turn-round-end` `{ turn, round, kind: "thought" | "final" }` fires after every native model-call round so the play frontend can classify the round's delta text (thought = `tool_calls` finish, final = `stop` finish). `turn-tool` `{ turn, round, callId, name, status, output? }` fires before/after each workspace tool executes (`loading` → `success`/`failed`; `running` is not emitted). Both events are **native-mode only**: text-protocol turns and delegated `agent_call` targets do not emit them. The desktop Assistant chat path threads `onTool` straight into the view (not bridged).
+- Streaming text deltas flow through internal `Set`-based pub/sub modules. Do not reuse them as a general event bus. Formal player turns resolve their entry Agent from the save-bound Game Card manifest (`runtime.entrypoints.playerTurn`) and wire runtime `onDelta` to `turn-delta`; direct frontend Agent invocations wire runtime `onDelta` to `agent-invocation` events keyed by `invocationId`. The desktop Assistant chat path does not emit bridge turn/invocation events (it is in-process, not bridged) — it threads `onDelta` directly into the view. Platform only provides the channels; how a play frontend renders (typewriter, folding, thought/final split, per-invocation panels) is the game frontend's responsibility.
+- Tool process events extend the same explicit-channel pattern. Formal turns use `turn-round-end` + `turn-tool`. Direct `invokeAgent` calls use `agent-invocation` payload variants `round-end` + `tool`. `turn-round-end` `{ turn, round, kind: "thought" | "final" }` fires after every model-call round so the play frontend can classify the round's delta text (thought = `tool_calls` finish, final = `stop` finish). Tool events fire before/after each workspace tool executes (`loading` → `success`/`failed`; `running` is not emitted). Direct invocation events carry `invocationId` instead of `turn`; delegated `agent_call` targets keep the same `invocationId` and set `agentId` to the actual emitting Agent. The legacy `agent-activity` event is a compatibility heartbeat only and carries no text.
 - `executeRuntimeWorkspaceToolCalls` splits a tool-loop round into three groups to cut multi-file query latency while keeping stateful writes ordered. Tool names are short primitives (`read`/`list`/`search`/`glob`/`diff`/`write`/`move`/`delete` + `use_skill`/`run_script`/`agent_call`); the legacy `workspace.<op>` prefix was removed (the `browser_script` SDK RPC wire protocol still uses `workspace.<op>` strings and is a separate path). Parallel group (read-only, stateless): `use_skill`, `read`/`list`/`search`/`glob`/`diff`. `agent_call` group: multiple `agent_call`s in the same round run concurrently (each is a delegated tool loop, but they are independent). Serial group: `write`/`move`/`delete`, `run_script` (side effects + bounded timeout), and unparseable calls. `patch`/`validate` tools were removed (the underlying operations are retained for the editor save flow and the SDK). Observations are collected keyed by original call index and returned in original call order so the native loop can pair each with its tool-call id. Parallelism is a tool-execution-layer optimization orthogonal to streaming: text-protocol turns also benefit.
 - Desktop Assistant streaming UI: push an empty reactive assistant placeholder before the await, append deltas into it, and reconcile with the final reply text after. Deltas are buffered in a queue and released on `requestAnimationFrame` (typewriter throttling) so a token burst does not thrash the renderer. Auto-scroll during streaming only scrolls when the user is pinned to the bottom; a user scrolling up freezes auto-scroll and surfaces the jump-to-bottom affordance — never yank the view. A "stop generating" button aborts the turn's `AbortController`; on abort, keep the partial text and append a `（已停止）` marker, or drop the placeholder if nothing streamed. Persistence runs only after the await resolves — never persist half-streamed text mid-flight. Tool process lines (native-mode only) render transient status rows during the turn and are cleared in `finally` — they are not persisted; only the final reply survives.
 - **Play frontend turn rendering (timeline model)**: turn files use schema `tsian.airp.history.turn.v2` with a single ordered `timeline: TurnTimelineItem[]` array (user → interim/thought/tool process items → assistant with stats → options), replacing the old split `messages + processNodes + stats` structure. `TurnTimelineItem` is a discriminated union with `kind` field (`user | assistant | interim | thought | tool | options`). The array order is the real occurrence order — renderers iterate items and don't need to understand `round` semantics or assemble `user → [processNodes block] → assistant`. `renderSessionHistory` and the streaming path (`beginTurn` + `renderProcessNodes` + `finalizeTurn`) both render from the same timeline model. `turn-completed` does in-place DOM correction via `finalizeTurn` (no `reloadHistory` rebuild needed since the timeline model makes rebuild order-correct too, but in-place is more efficient). `reloadHistory` is for reload/checkpoint-restore only. Story options are persisted as `{kind:"options",items}` in the timeline — reload restores them naturally from the turn file, not just from the runtime `turn-options` event. `ask` nodes (ask_user interaction) are NOT in `TurnTimelineItem` — they exist only in the in-memory `AssistantTimelineNode` and are flattened to `interim` text at the persistence boundary. `TurnProcessNode` was deleted; the collector produces `TurnTimelineItem` directly. No backward compatibility for v1 turn files (parse returns null).
@@ -158,6 +158,72 @@ const provider = providerParamsForKind(config.parameters, config.kind)
 - Do not add compatibility migrations unless explicitly requested.
 - Do not store AI/runtime state only in component refs when it must survive navigation.
 - Do not reintroduce events/archives as platform-owned required memory tables.
+
+## Scenario: invokeAgent AgentInvocation Streaming
+
+### 1. Scope / Trigger
+
+- Trigger: changing platform-host `interaction.invokeAgent`, `streaming-events.ts`, remote iframe bridge forwarding, or play-bridge SDK subscriptions for direct Agent invocations.
+
+### 2. Signatures
+
+- Host callback wiring: runtime `onDelta(agentId, delta, round, kind)`, `onRoundEnd(agentId, round, finishReason)`, and `onTool(agentId, round, callId, name, status, output?)` map to `AgentInvocationEvent` payloads.
+- Bridge event: `agent-invocation` with `AgentInvocationEvent` payload.
+- SDK subscription: `tsian.onAgentInvocation((event) => ...)`.
+
+### 3. Contracts
+
+- `send` remains the formal turn entry and emits `turn-*` events plus `turn-completed`.
+- `invokeAgent` emits `agent-invocation` events and resolves a final response; it does not emit `turn-completed` or append formal player history.
+- Each direct invocation has one `invocationId`; all started/delta/round/tool/completed/failed events for that call carry it.
+- Delegated `agent_call` activity inside the invocation uses the same `invocationId`; event `agentId` identifies the actual emitting Agent.
+- Keep the event bus dedicated and local to streaming/invocation events. Do not introduce a generic EventBus abstraction.
+
+### 4. Validation & Error Matrix
+
+- Runtime throws before target Agent call -> emit `failed` with the generated/supplied `invocationId`, then reject the Promise.
+- Model/tool streaming enabled -> emit `delta` events with text content; legacy `agent-activity` may also pulse but is not the content channel.
+- Tool execution -> emit `tool` loading/success/failed with `output` when available.
+- Invocation success -> emit `completed` after workspace commit and resolve `{ invocationId, response }`.
+- Invocation failure after partial stream -> emit `failed`, discard the staged transaction, and reject.
+
+### 5. Good/Base/Bad Cases
+
+- Good: UI creates an invocation-local draft buffer keyed by `invocationId`, appends `delta` events, shows tool progress, then reconciles with `response`.
+- Base: UI ignores streaming and just awaits `invokeAgent`; final `response` still works.
+- Bad: UI stores partial streamed invocation content as durable history before the Promise resolves.
+
+### 6. Tests Required
+
+- Run `npm run build:contracts` when contracts are changed.
+- Run `npm run build:web` for platform-web/bridge/SDK changes.
+- Verify `send` still streams via `turn-delta` and completes via `turn-completed`.
+- Verify `invokeAgent` streams via `agent-invocation` and does not pollute the formal turn timeline.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Reusing formal turn callbacks for a direct Agent task makes UI state ambiguous.
+tsian.onMessage((delta) => appendStageManagerDraft(delta.delta))
+await tsian.invokeAgent("stage-manager", prompt)
+```
+
+#### Correct
+
+```ts
+const invocationId = crypto.randomUUID()
+const off = tsian.onAgentInvocation((event) => {
+  if (event.invocationId !== invocationId) return
+  if (event.type === "delta") appendStageManagerDraft(event.delta)
+})
+try {
+  await tsian.invokeAgent("stage-manager", prompt, { invocationId })
+} finally {
+  off()
+}
+```
 
 ## Scenario: Frontend Package Import/Export
 

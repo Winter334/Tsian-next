@@ -6,6 +6,8 @@ import type {
   GameCardManifest,
   GameCardPackageFileEntry,
   GameCardPackageManifest,
+  GameCardRuntimeConfig,
+  GameCardRuntimeEntrypoints,
 } from "@tsian/contracts"
 import { FRONTEND_FRAMEWORKS, FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
@@ -248,6 +250,45 @@ function normalizeFrontendBinding(value: unknown): GameCardFrontendBinding | und
   )
 }
 
+function normalizeRuntimeEntrypoints(value: unknown): GameCardRuntimeEntrypoints | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (!isRecord(value)) {
+    throw new GameCardPackageError(
+      "GAME_CARD_RUNTIME_ENTRYPOINTS_INVALID",
+      "Game card runtime entrypoints must be an object when provided.",
+    )
+  }
+
+  if (value.playerTurn === undefined) {
+    return undefined
+  }
+
+  return {
+    playerTurn: requireString(
+      value.playerTurn,
+      "GAME_CARD_RUNTIME_PLAYER_TURN_REQUIRED",
+      "Game card runtime.entrypoints.playerTurn is required when provided.",
+    ),
+  }
+}
+
+function normalizeRuntimeConfig(value: unknown): GameCardRuntimeConfig | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (!isRecord(value)) {
+    throw new GameCardPackageError(
+      "GAME_CARD_RUNTIME_INVALID",
+      "Game card runtime must be an object when provided.",
+    )
+  }
+
+  const entrypoints = normalizeRuntimeEntrypoints(value.entrypoints)
+  return entrypoints ? { entrypoints } : {}
+}
+
 export function normalizeGameCardManifest(value: unknown): GameCardManifest {
   if (!isRecord(value)) {
     throw new GameCardPackageError(
@@ -266,6 +307,7 @@ export function normalizeGameCardManifest(value: unknown): GameCardManifest {
     ? value.summary
     : value.description
   const manifest = value as unknown as GameCardManifest
+  const runtime = normalizeRuntimeConfig(value.runtime)
 
   return {
     schema: GAME_CARD_MANIFEST_SCHEMA,
@@ -284,6 +326,7 @@ export function normalizeGameCardManifest(value: unknown): GameCardManifest {
     ...(manifest.author ? { author: manifest.author } : {}),
     ...(manifest.cover ? { cover: manifest.cover } : {}),
     frontend: normalizeFrontendBinding(value.frontend),
+    ...(runtime ? { runtime } : {}),
   }
 }
 

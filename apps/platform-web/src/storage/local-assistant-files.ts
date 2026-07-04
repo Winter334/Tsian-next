@@ -1326,7 +1326,7 @@ const FRAMEWORK_KNOWLEDGE_REF_MEMORY_SYSTEM = [
   "- **long-term.md**: Appended to when durable facts emerge. Rarely rewritten. May be reorganized periodically to stay readable.",
   "- **timeline.md**: Appended to when a major event occurs. One line per event with a turn reference.",
   "",
-  "A maintenance skill (like `memory-maintenance`) applies a structured plan: the memory agent decides what to extract, and the skill's `browser_script` action writes the files.",
+  "A maintenance skill can apply a structured plan: the owning Agent decides what to extract, and a proven `browser_script` action may write the files when that card declares one.",
   "",
   "## Relationship Graph Convention",
   "",
@@ -1350,7 +1350,7 @@ const FRAMEWORK_KNOWLEDGE_REF_MEMORY_SYSTEM = [
   "",
   "## Recall Strategies",
   "",
-  "When a retrieval agent (or the entry agent itself) needs past context, it can combine multiple recall paths:",
+  "When a researcher agent (or the entry agent itself) needs past context, it can combine multiple recall paths:",
   "",
   "| Path | Source | Method | Best for |",
   "|------|--------|--------|----------|",
@@ -1629,7 +1629,7 @@ export function assistantContextPath(sessionId: string): string {
  * 助手 runtime trace 文件路径(每 turn 一个 jsonl).
  * 对称 assistantContextPath——trace 落盘路径的单一构造点,
  * assistant-chat.ts 调用此函数,避免路径前缀重复定义.
- * 失败 turn 传 failedAt 加 -failed-<ts> 后缀(对称 master 的 formatRuntimeTracePath).
+ * 失败 turn 传 failedAt 加 -failed-<ts> 后缀(对称 formal player-turn 的 formatRuntimeTracePath).
  */
 export function assistantTracePath(turn: number, failedAt?: number): string {
   const paddedTurn = String(Math.max(0, Math.floor(turn))).padStart(6, "0")

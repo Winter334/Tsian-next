@@ -51,7 +51,7 @@ Ask which bucket the new data falls into:
 | Bucket | Should it be a file? | Examples |
 |--------|----------------------|----------|
 | **User/agent-configurable content** | ✅ Yes — file in the workspace | card content, agent identity, skills, manifest fields |
-| **Agent-reasonable runtime state** | ✅ Yes — virtual file, agent-visible | assistant context snapshot, master context |
+| **Agent-reasonable runtime state** | ✅ Yes — virtual file, agent-visible | assistant context snapshot, formal player-turn context |
 | **Internal bookkeeping** | ❌ No — DB field is fine | primary keys, `createdAt`/`updatedAt` timestamps, `source` flags, table indexes |
 | **Binary blobs unsuitable for text editing** | ⚠️ Known exception — see below | cover image bytes |
 

@@ -147,14 +147,14 @@ const agentCallSchema: ToolSchema = {
 const inspectFrontendSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend,
   description:
-    "Inspect the active game card's packaged frontend in a hidden iframe using the real /play load path, returning a structural + diagnostic snapshot. The structural `domSummary` is an aria snapshot (accessibility tree YAML: role + accessible name + state), not raw HTML. Supports driving one master agent turn (send), DOM interactions (actions), and refreshing the latest snapshot (refresh); these compose to cover a full player flow. No cardId — the active card is inspected. Use it to close the write→inspect→fix loop on authored frontends. Example: inspect_frontend with send={message:\"...\"}, or actions=[{type:\"click\",selector:\"#send\"}], observeBetween=true.",
+    "Inspect the active game card's packaged frontend in a hidden iframe using the real /play load path, returning a structural + diagnostic snapshot. The structural `domSummary` is an aria snapshot (accessibility tree YAML: role + accessible name + state), not raw HTML. Supports driving one configured player-turn entry Agent turn (send), DOM interactions (actions), and refreshing the latest snapshot (refresh); these compose to cover a full player flow. No cardId — the active card is inspected. Use it to close the write→inspect→fix loop on authored frontends. Example: inspect_frontend with send={message:\"...\"}, or actions=[{type:\"click\",selector:\"#send\"}], observeBetween=true.",
   parameters: {
     type: "object",
     properties: {
       send: {
         type: "object",
         description:
-          "Drive one master agent turn on an ephemeral save (consumes tokens). The ephemeral save is discarded after the turn, leaving player saves untouched.",
+          "Drive one configured player-turn entry Agent turn on an ephemeral save (consumes tokens). The ephemeral save is discarded after the turn, leaving player saves untouched.",
         properties: {
           message: { type: "string" },
         },

@@ -37,7 +37,7 @@
    - `system`(systemPrompt) → `user`(早期剧情摘要，若有) → `user`/`assistant` 交替(recentTurns) → `user`(当前回合 + Workspace 上下文) → `user`(玩家本轮输入)。
    - 即剧情正文（summary + recentTurns）是独立 message 序列，紧跟 system；回合号/Workspace/本轮输入在剧情之后。
 3. 确认 provider 返回 HTTP 200 + 正常流式回复——**重点验证连续 user message（summary user → recentTurns 首 user；recentTurns 末 assistant → 框架信息 user）被 provider 接受**。
-4. 多轮对话（6+ 轮）后检查 context.json（工作区 `save/agents/master/context.json`）：
+4. 多轮对话（6+ 轮）后检查 context.json（工作区 `save/agents/<player-turn-entry>/context.json`，当前默认模板为 `save/agents/storyteller/context.json`）：
    - recentTurns **累积不丢**（验证 appendTurn 修正：第 6 轮时 recentTurns 应有 6 轮而非滑动窗口的最近 5 轮）。
    - 未触发压缩时 summary 仍为 null（recentTurns 累积到 85% 阈值才压缩）。
 5. 构造超长对话触发压缩（recentTurns 累积到 85% budget），确认：
@@ -204,7 +204,7 @@
 - G5：会话删除清理——删除会话后，`workspace.list .tsian/local/assistant/sessions/` 不列已删会话的 context（`deleteLocalAssistantFile` 孤儿清理生效）；Dexie Inspector 确认 map 里该 path 已移除。
 - G6：旧会话迁移——有可见消息但无 context 虚拟文件的旧会话（新代码前创建的，或手动删了 context 文件），首次发消息后 context 从 history 兜底初始化（`createInitialAgentContext`），后续正常持久化。
 - G7：turn 失败不写回——助手 turn 中途 abort（点停止）/ timeout（超 300s 或调小 timeoutMs 测试），`readAssistantContextFromFiles` 读出的 recentTurns 不含失败轮（磁盘快照停留在 turn 开头状态）。
-- G8：master 不回归——master turn 开头剧情压缩（trace `context_compressed` mode:"narrative"，用默认剧情梗概 prompt）+ `agents/master/context.json` 落盘 + 跨加载恢复行为不变（玩一局游戏多轮 + 重开验证）。
+- G8：正式玩家回合不回归——player-turn entry Agent 的 turn 开头剧情压缩（trace `context_compressed` mode:"narrative"，用默认剧情梗概 prompt）+ `save/agents/<entry>/context.json` 落盘 + 跨加载恢复行为不变（玩一局游戏多轮 + 重开验证）。
 - G9：turn 号递增——多轮对话后 `readAssistantContextFromFiles` 读出的 recentTurns 的 turn 号单调递增（1,2,3,...），`lastCompressedTurn` 正确去重（压缩后不再重复压已压轮次）——验证 `nextAssistantTurnNumber` 修复了 turn=1-always 缺陷。
 
 **通过标准**：
@@ -224,7 +224,7 @@
 - **turn 号不递增**（仍恒为 1）：检查 `nextAssistantTurnNumber` 逻辑 + `snapshot.state.turn = nextTurn - 1` 是否生效 + `currentRuntimeTurnNumber` 是否读 `input.snapshot.state.turn + 1`。回退：确认 `runAssistantChat` 传的 snapshot 用了 `nextAssistantTurn - 1` 而非硬编码 0。
 - **压缩不触发或用错 prompt**：检查 entry turn-start compression guard 是否放宽（`estimateContextTokens(agentContext) > triggerThreshold` 无 mode 前置）+ task 模式是否传了 `ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT`。回退：检查 `compressOptions` 的 mode 分流。
 - **会话删除孤儿**：检查 `deleteAssistantSession` 是否调了 `deleteLocalAssistantFile(assistantContextPath(id))`。回退：确认 import 正确。
-- **master 回归**：检查 master 路径（`interaction.sendMessage`）是否仍传 `compressionMode: "narrative"` + 不传 systemPrompt/userLabel/assistantLabel（用默认剧情梗概 prompt）+ `agents/master/context.json` 路径不变。回退：revert 阶段 C（guard 放宽）回到 narrative-only。
+- **正式玩家回合回归**：检查 `interaction.sendMessage` 是否仍传 `compressionMode: "narrative"` + 不传 systemPrompt/userLabel/assistantLabel（用默认剧情梗概 prompt）+ `save/agents/<entry>/context.json` 路径不变。回退：revert 阶段 C（guard 放宽）回到 narrative-only。
 
 **关联代码**：
 - `packages/contracts/src/runtime.ts`：`AgentContextSnapshot` 类型放宽（agentId: string, schema 联合）。

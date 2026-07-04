@@ -1,6 +1,8 @@
 import type {
   GameCardContentFile,
   GameCardManifest,
+  GameCardRuntimeConfig,
+  GameCardRuntimeEntrypoints,
 } from "@tsian/contracts"
 import { FRONTEND_FRAMEWORKS } from "@tsian/contracts"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
@@ -142,6 +144,45 @@ function normalizeFrontendBinding(manifest: GameCardManifest): GameCardManifest[
   )
 }
 
+function normalizeRuntimeEntrypoints(value: unknown): GameCardRuntimeEntrypoints | undefined {
+  if (value === undefined) {
+    return undefined
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Game card runtime.entrypoints must be an object when provided.")
+  }
+
+  const playerTurn = (value as { playerTurn?: unknown }).playerTurn
+  if (playerTurn === undefined) {
+    return undefined
+  }
+  if (typeof playerTurn !== "string") {
+    throw new Error("Game card runtime.entrypoints.playerTurn must be a string.")
+  }
+
+  return {
+    playerTurn: requireNonEmptyString(
+      playerTurn,
+      "runtime.entrypoints.playerTurn",
+    ),
+  }
+}
+
+function normalizeRuntimeConfig(manifest: GameCardManifest): GameCardRuntimeConfig | undefined {
+  const runtime = manifest.runtime
+  if (runtime === undefined) {
+    return undefined
+  }
+  if (!runtime || typeof runtime !== "object" || Array.isArray(runtime)) {
+    throw new Error("Game card runtime must be an object when provided.")
+  }
+
+  const entrypoints = normalizeRuntimeEntrypoints(
+    (runtime as { entrypoints?: unknown }).entrypoints,
+  )
+  return entrypoints ? { entrypoints } : {}
+}
+
 function legacyManifestDescription(manifest: GameCardManifest): string | undefined {
   const value = (manifest as { description?: unknown }).description
   return typeof value === "string" && value.trim() ? value.trim() : undefined
@@ -150,6 +191,7 @@ function legacyManifestDescription(manifest: GameCardManifest): string | undefin
 function normalizeManifest(manifest: GameCardManifest): GameCardManifest {
   const summary = manifest.summary?.trim() || legacyManifestDescription(manifest)
   const frontend = normalizeFrontendBinding(manifest)
+  const runtime = normalizeRuntimeConfig(manifest)
   return {
     schema: manifest.schema,
     id: requireNonEmptyString(manifest.id, "id"),
@@ -159,6 +201,7 @@ function normalizeManifest(manifest: GameCardManifest): GameCardManifest {
     ...(manifest.author ? { author: manifest.author } : {}),
     ...(manifest.cover ? { cover: manifest.cover } : {}),
     ...(frontend ? { frontend } : {}),
+    ...(runtime ? { runtime } : {}),
   }
 }
 
@@ -312,6 +355,7 @@ async function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): Promi
   if (
     record.manifest.cover?.url !== BUILTIN_BLANK_GAME_CARD_COVER_URL
     || record.manifest.cover?.alt !== "Blank Agent Runtime cover"
+    || record.manifest.runtime?.entrypoints?.playerTurn !== "storyteller"
   ) {
     return false
   }
@@ -335,6 +379,11 @@ function createBuiltinBlankGameCardRecord(
     cover: {
       url: BUILTIN_BLANK_GAME_CARD_COVER_URL,
       alt: "Blank Agent Runtime cover",
+    },
+    runtime: {
+      entrypoints: {
+        playerTurn: "storyteller",
+      },
     },
     ...(frontend ? { frontend } : {}),
   }

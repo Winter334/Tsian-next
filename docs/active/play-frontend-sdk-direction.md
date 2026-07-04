@@ -131,7 +131,7 @@ fork 是快照不是引用：助手改的是复制到自己卡里的那份，官
 - `MessageInteractionRequest` / `InvokeAgentRequest` 加可选 `injection?: InjectionMessage[]` 字段（params 扩展，不改 method 名）。
 - 新增 4 个独立 RPC method：`workspace.read` / `workspace.list` / `workspace.search` / `workspace.write`——从 `query.query` 的 resource 分支拆出。`workspace.read` 返回 `WorkspaceReadResult | null`（null = 文件不存在，错误走 error 不吞）。
 
-桥协议本身（`tsian.play-bridge.v1`）的已有 method 名不变。agent 的 `workspace_read`/`workspace_write` 工具走 agent runtime，不经过桥的 `workspace.*`——两条路径独立，拆分只影响前端通道。
+桥协议本身（`tsian.play-bridge.v1`）的已有 method 名不变。agent runtime 里的 `read` / `write` 等短工具名受 `workspace_read` / `workspace_write` platformTools gate 控制，不经过桥的 `workspace.*`——两条路径独立，拆分只影响前端通道。
 
 ## 10. 落地路径
 

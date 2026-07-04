@@ -29,15 +29,16 @@ Agent 是 Runtime Workspace 中的参与者。
 
 ```text
 agents/
-  master/
+  storyteller/
+    agent.json
     AGENT.md
-    session.jsonl
-    notes.md
+    SOUL.md
     skills/
-  narrative/
+  researcher/
+    agent.json
     AGENT.md
-    session.jsonl
-    notes.md
+    SOUL.md
+    skills/
 ```
 
 `AGENT.md` 应描述：
@@ -49,7 +50,7 @@ agents/
 - 可以联系哪些 Agent，以及什么情况下联系。
 - 默认加载或维护哪些工作区文件。
 
-平台不应把 `master-agent/v1`、`narrative-agent/v1` 这类输入输出契约设计成强制 schema。AIRP Agent 的普通输出可能是计划、判断、叙事 brief、审校意见或自然语言任务说明，变化空间很大。更适合的做法是把输出要求写在 `AGENT.md` 或输出规范 Skill 中。
+平台不应把 `entry-agent/v1`、`specialist-agent/v1` 这类输入输出契约设计成强制 schema。AIRP Agent 的普通输出可能是计划、判断、叙事 brief、审校意见或自然语言任务说明，变化空间很大。更适合的做法是把输出要求写在 `AGENT.md` 或输出规范 Skill 中。
 
 ## 4. Agent 协作
 
@@ -57,24 +58,24 @@ agents/
 
 运行时只需要：
 
-- 一个入口 Agent，通常是 `agents/master/AGENT.md`。
+- 一个由游戏卡 `game-card.json` 的 `runtime.entrypoints.playerTurn` 指定的玩家正式回合入口 Agent（当前默认模板显式配置为 `storyteller`）。
 - 从工作区文件扫描出的 Agent registry。
 - `AGENT.md` 中声明的联系人。
 - 一个通用 `agent_call` runtime tool。
 
 团队由 Agent 联系关系自然形成。每个 Agent 只需要知道与自己业务有承接关系的其它 Agent。
 
-### 默认阵容：hub-and-spoke 工具型 Agent
+### 默认阵容：小说 AIRP 后台剧组
 
-默认 AIRP 阵容采用 **master 为核 + 工具型 agent** 的 hub-and-spoke 模型，而非对等团队：
+默认 AIRP 阵容采用 **玩家入口 + 后台 specialists** 的可替换模型，而非平台硬编码流水线：
 
-- **master**：唯一对话 agent。玩家只跟它交互，会话上下文最连贯，因此**正文也由 master 直接执笔**——它既决策又创作。master 按需 `agent_call` 联系工具型 agent。
-- **retrieval**：master 的智能检索工具（类比 Explore 子代理）。一次 `agent_call` 给意图，它在自己的上下文里做多步 `workspace.search/read`，只把精炼结论回灌 master。调用频率**稀疏按需**（master 缺料时）。
-- **post-processing**：master 的后处理工具。按规范格式落盘回合产出 + 维护运行时状态数据 + 记忆治理（摘要/压缩/归档/cognitive folding）。调用频率**近乎每回合**。
+- **`storyteller` / 说书人**：当前默认卡通过 `runtime.entrypoints.playerTurn` 显式把玩家正式回合入口配置为 `storyteller`。它读取 brief、runtime、schema 和可见实体资料，直接写玩家可读正文，并在信息不足时按需 `agent_call` 联系 `researcher`。
+- **`researcher` / 资料员**：只读检索 source、entity、scene、relationship、schema 与 brief，返回精炼事实和来源路径。
+- **`stage-manager` / 场记**：回合后维护 runtime、entities、scenes、relationships、memory 和可渲染状态；具体何时调用由前端/内容层决定，平台核心不硬编码 `storyteller -> stage-manager` 管线。
+- **`world-architect` / 世界架构师**：开局建模、schema/world model 设计、玩法启用方案和 pending patch。
+- **`director` / 导演**：维护剧情方向 brief、节奏、伏笔、原著/分支平衡和元数据。
 
-调用频率不对称是 hub-and-spoke 的特征：retrieval 稀疏、post-processing 密集。这决定两者 prompt 设计方向不同。
-
-这不改变「团队由 Agent 联系关系自然形成」的原则——默认阵容只是推荐组合，作者可以替换、增删或改造任何 Agent。例如某个战斗 runtime 可以额外提供 rule-referee。只要相关 Agent 被声明为联系人，并能被 `agent_call` 调用，就不需要额外维护一份全局团队装配表。
+默认阵容只是推荐组合，作者可以替换、增删或改造任何 Agent。例如某个战斗 runtime 可以额外提供 rule-referee。只要相关 Agent 被声明为联系人，并能被 `agent_call` 调用，就不需要额外维护一份全局团队装配表。
 
 Agent 之间的即时交接应走 `agent_call`。工作区文件只用于记录值得长期保留或后续复用的内容，不应强迫每次协作都绕一圈写入 handoff 文件。
 
@@ -123,14 +124,14 @@ Skill 必须支持渐进披露。
 回合开始
   -> Orchestrator 注入相关 Agent 可见的 Skill Index
   -> Agent 判断需要加载哪些 Skill
-  -> Agent 通过 skill_load(name) 加载 Skill 的 SKILL.md 入口正文
-  -> Runtime 在当前 Agent 可见 Skill 中解析 name，并将入口正文作为 observation 回灌给同一 Agent
-  -> Agent 根据 SKILL.md 的链式引用，按需使用 workspace.read/workspace.list/workspace.search 读取 references、examples、schemas 或 scripts
+  -> Agent 通过 use_skill(name) 加载 Skill 的 SKILL.md 入口正文
+  -> Runtime 在当前 Agent 可见且启用的 Skill 中解析 name，并将入口正文作为 observation 回灌给同一 Agent
+  -> Agent 根据 SKILL.md 的链式引用，按需使用 read/list/search/semantic_search 读取 references、examples、schemas 或 scripts
   -> Agent 获得该 Skill 的详细指导与 action 说明，且只读取当前步骤真正需要的资源
-  -> Agent 通过 action_call 调用已加载 Skill 声明的 action
+  -> Agent 通过 run_script 调用已加载 Skill 声明的 browser_script action（若该 Skill 声明了脚本 action）
 ```
 
-在 live Agent Runtime 中，Skill 详情加载应使用专用 `skill_load` 工具。Agent 使用 Skill 的 `name`，不需要理解 path、id、scope 或 ref。`skill_load` 只加载 `SKILL.md` 入口正文和最小加载元信息，不默认返回 resource index。第三层资源读取才使用 Runtime Workspace 文件工具。
+在 live Agent Runtime 中，Skill 详情加载应使用专用 `use_skill` 工具。Agent 使用 Skill 的 `name`，不需要理解 path、id、scope 或 ref。`use_skill` 只加载 `SKILL.md` 入口正文和最小加载元信息，不默认返回 resource index。第三层资源读取才使用 Runtime Workspace 文件工具。
 
 `skill-detail` 这类 path-based 查询可以作为 UI、调试或外部 bridge 能力保留，但不应成为 live Agent Runtime 的主路径。
 
@@ -138,33 +139,29 @@ Skill 必须支持渐进披露。
 
 ## 7. Action 与执行器
 
-Agent 看到的是统一的可调用 action，而不是执行细节。
+Agent 看到的是少量稳定 runtime primitive 和已加载 Skill 暴露的脚本 action，而不是执行细节。
 
-一个 action 可以由不同执行器承载：
+当前实现中，Skill action 只由 Skill-local `browser_script` 承载。单步 workspace 操作不再包装成 Skill action；Agent 直接使用顶层 `read` / `list` / `search` / `semantic_search` / `write` / `edit` 等 workspace 工具。多步、可复用、需要代码校验或归一化的能力才写成 Skill 的 `browser_script` action，再由 `run_script` 调用。
 
-- 平台内置函数。
-- 浏览器 JavaScript。
-- 平台受控动作。
-- 通用 workspace operation 包装器。
+远程 API 交互当前不作为独立 executor 暴露。需要调用外部服务时，推荐由 Skill-local `browser_script` 使用 `fetch` 与远程 API 交互。`remote_http`、远程脚本加载、WASM 和托管执行环境不属于当前 foundation phase 的实现目标，只有当具体 Skill 不能合理通过 `browser_script` 或脚本调用远程 API 表达时才重新设计。
 
-远程 API 交互当前不作为独立 executor 暴露。需要调用外部服务时，推荐由 Skill-local `browser_script` 使用 `fetch` 与远程 API 交互。`remote_http`、远程脚本加载、WASM 和托管执行环境不属于当前 foundation phase 的实现目标，只有当具体 Skill 不能合理通过 `browser_script`、`platform_action` 或脚本调用远程 API 表达时才重新设计。
-
-这些差异只属于平台执行层。Agent 只需要知道 action 名称、说明、输入结构、输出说明和何时使用。
+这些差异只属于平台执行层。Agent 只需要知道 runtime 工具名、Skill action 名称、说明、输入结构、输出说明和何时使用。
 
 统一调用路径：
 
 ```text
-Agent 发起 action_call
-  -> 平台校验输入
-  -> 选择 executor 执行
+Agent 发起 run_script
+  -> 平台校验该 action 属于已 use_skill 加载的 Skill
+  -> 校验 action 存在、输入 schema 和 actor capability
+  -> 执行 browser_script Worker
   -> 按声明校验或归一化结果
   -> 将结果作为 observation / context 返回
   -> 记录 trace
 ```
 
-当前实现中，`action_call` 会先做 loaded Skill gating、输入校验和轻量 executor-class policy 检查，再通过 action executor registry 路由到具体 executor。默认 policy 代码级允许现有 `builtin`、`platform_action`、`workspace_operation` 和 `browser_script`，可由 runtime capability 注入覆盖；它只用于执行控制和诊断，不提供 Settings/localStorage 开关、运行时弹窗或 per-Skill trust 状态。action 可选声明 `outputSchema`，声明后成功 executor 输出会按轻量 type/required/properties 子集校验，不声明则保持旧行为。已支持无副作用的 `builtin/validation`、`builtin/echo`，通用 `workspace_operation` 包装器，以及受信任第三方 Skill 使用的 `browser_script`。`workspace_operation` 以 operation/scope/path 包装通用 workspace 操作，并继续通过 operation exposure 与 read/edit level 检查；`browser_script` 运行 Skill 目录下的浏览器 Worker 脚本，并通过强 Tsian SDK 暴露 workspace read/list/search/diff/patch/write/move/delete/validate、fetch、log/trace 和 timeout/abort。`interaction.sendMessage` 内的 Agent Runtime save-runtime workspace 写入/删除使用 staged transaction：同轮工具可读 staged view，成功回合与 snapshot/history/checkpoint 原子提交，失败或 abort 丢弃普通 workspace mutation；前端 bridge 的手动 `platform.runAction` 仍可即时调用 `workspace.*` 平台动作。第一版不把 raw DOM、`window`、内部 bridge、Vue 状态或 platform-host 内部对象作为受支持脚本 API，也不把独立 `remote_http`、WASM、远程脚本加载、托管执行、原生宿主文件或终端能力作为当前 foundation 目标。
+当前实现中，`run_script` 会先做 loaded Skill gating、action 存在性校验、输入 schema 校验和 actor capability 检查，再执行 Skill-local `browser_script` Worker。`browser_script` 是唯一支持的 Skill action executor；`builtin`、`platform_action`、`workspace_operation` 会在解析/registry 阶段失败。脚本通过强 Tsian SDK 暴露 workspace read/list/search/glob/diff/write/edit/copy/move/delete、fetch、log/trace 和 timeout/abort。`interaction.sendMessage` 内的 Agent Runtime save-runtime workspace 写入/删除使用 staged transaction：同轮工具可读 staged view，成功回合与 snapshot/history/checkpoint 原子提交，失败或 abort 丢弃普通 workspace mutation；前端 bridge 的 `tsian.workspace.*` 仍是即时 bridge RPC。第一版不把 raw DOM、`window`、内部 bridge、Vue 状态或 platform-host 内部对象作为受支持脚本 API，也不把独立 `remote_http`、WASM、远程脚本加载、托管执行、原生宿主文件或终端能力作为当前 foundation 目标。
 
-默认共享 `memory-maintenance` Skill 复用这套 action/executor 机制。它不会被平台每回合自动运行；Agent 必须先 `skill_load`，再调用 `apply_maintenance_plan`。维护计划只允许显式替换 Agent notes、timeline、current summary 和 long-term summary，空 writes 代表显式 no-op。
+默认共享 `memory-maintenance` Skill 曾复用这套脚本执行机制。它不会被平台每回合自动运行；Agent 必须先 `use_skill`，再通过 `run_script` 调用对应 browser_script action。维护计划只允许显式替换 Agent notes、timeline、current summary 和 long-term summary，空 writes 代表显式 no-op。
 
 这允许 Tsian 复用网络上的 Skill 思路，也允许把 CLI Skill 中可迁移的脚本通过浏览器脚本适配进来；远程服务则作为普通 API 由 `browser_script` 调用。
 
@@ -174,8 +171,8 @@ Tsian 不应因为 Web 端没有 Bash，就把所有可能能力都做成平台�
 
 工具体系分四层：
 
-1. Platform runtime primitives：平台基础能力，数量少、稳定、跨玩法通用。只有需要 runtime 内部状态、模型调用、上下文组装、trace、checkpoint、workspace 索引或 Agent registry 才能正确执行，或者 Skill 无法自行实现的能力，才进入这一层。例子：`skill_load`、`agent_call`、`workspace.read`、`workspace.list`、`workspace.search`、基础 `action_call`。
-2. Platform controlled actions / executors：平台受控执行层，不一定常驻暴露给 Agent。涉及副作用、浏览器限制、脚本执行、workspace 写入、前端约定数据变更、abort / timeout / 结果归一化的能力放在这里。例子：`workspace_operation`、`browser_script`、即时 bridge `workspace.*` platform actions。远程 API 调用优先由 `browser_script` 使用 `fetch` 完成；独立 `remote_http`、WASM、托管执行只有在未来具体 Skill 证明现有路径不足时才重开设计。
+1. Platform runtime primitives：平台基础能力，数量少、稳定、跨玩法通用。只有需要 runtime 内部状态、模型调用、上下文组装、trace、checkpoint、workspace 索引或 Agent registry 才能正确执行，或者 Skill 无法自行实现的能力，才进入这一层。例子：`use_skill`、`agent_call`、`read`、`list`、`search`、`semantic_search`、`write`、`edit`、`run_script`。
+2. Platform controlled execution：平台受控执行层，不一定常驻暴露给 Agent。涉及副作用、浏览器限制、脚本执行、workspace 写入、前端约定数据变更、abort / timeout / 结果归一化的能力放在这里。例子：`browser_script` Worker、即时 bridge `tsian.workspace.*` RPC。远程 API 调用优先由 `browser_script` 使用 `fetch` 完成；独立 `remote_http`、WASM、托管执行只有在未来具体 Skill 证明现有路径不足时才重开设计。
 3. Skill actions：可替换、可扩展、可分发的业务能力。凡是依赖具体玩法、世界设定、数据结构、规则系统、记忆策略、叙事风格或作者偏好的能力，应该用 Skill 包装平台 primitives / controlled actions。例子：世界状态维护、关系更新、记忆压缩、规则裁判、战斗结算、剧情审校、风格改写。
 4. Workspace data / README / schemas：玩法数据结构和前端约定放在 workspace 文件里，让 Agent、Skill 和前端解耦。
 
@@ -219,52 +216,54 @@ Runtime Workspace 是一个存档级虚拟文件系统。
   README.md
 
   agents/
-    master/
+    storyteller/
       agent.json
       AGENT.md
       SOUL.md
-      notes.md
-    retrieval/
+      skills/
+        行动裁定/
+          SKILL.md
+    researcher/
       agent.json
       AGENT.md
       SOUL.md
-      notes.md
-    post-processing/
+      skills/
+        实体读取/
+          SKILL.md
+        资料检索/
+          SKILL.md
+    stage-manager/
       agent.json
       AGENT.md
       SOUL.md
-      notes.md
+      skills/
+        状态栏维护/
+          SKILL.md
+        schema演进检查/
+          SKILL.md
+        行动裁定/
+          SKILL.md
     world-architect/
       agent.json
       AGENT.md
       SOUL.md
-      notes.md
-    studio-assistant/
-      AGENT.md
-      notes.md
       skills/
-        framework-knowledge/
+        开局建模/
+          SKILL.md
+        玩法启用/
+          SKILL.md
+        行动裁定/
+          SKILL.md
+    director/
+      agent.json
+      AGENT.md
+      SOUL.md
+      skills/
+        剧情指导维护/
           SKILL.md
 
   skills/
-    memory-maintenance/
-      SKILL.md
-      scripts/
-        apply-maintenance-plan.js
-    entity-reader/
-      SKILL.md
-      scripts/
-        read-entity.js
-    world-state-maintenance/
-      SKILL.md
-      scripts/
-        apply-world-state-plan.js
-    opening-initialization/
-      SKILL.md
-      scripts/
-        inspect-source-opening.js
-        read-opening-slice.js
-        commit-opening-understanding.js
+    README.md
 
   docs/
     README.md
@@ -311,6 +310,8 @@ save/  (save runtime data, one entity per flat file)
     mode.json
     frontier.json
     understanding-summary.json
+    setup-summary.json
+    opening-narrative.json
     branch.json
   director/
     README.md
@@ -325,7 +326,7 @@ save/  (save runtime data, one entity per flat file)
 目录约定：
 
 - 根 `README.md` 说明工作区用途和重要入口。
-- `agents/` 存 Game Card 拥有的 Agent 定义。默认阵容：`master`（唯一对话 agent，直接写正文）、`retrieval`（工具型，精炼回灌创作资料）、`post-processing`（工具型，落盘 + 状态维护 + 记忆治理 + 聚合层维护）、`world-architect`（设计/维护 schema 与开局理解）、`studio-assistant`（工作区助手入口，可替换/删除）。`narrative` 和 `memory` agent 已移除，职责分别并入 master（写正文）和 post-processing（记忆治理）。
+- `agents/` 存 Game Card 拥有的 Agent 定义。当前默认阵容：`storyteller`（由默认卡 manifest 配为玩家正式回合入口，直接写正文）、`researcher`（只读检索，精炼回灌资料）、`stage-manager`（回合后维护 runtime/entity/scene/relationship/memory/status）、`world-architect`（开局建模、schema 与玩法启用设计）、`director`（剧情指导 brief）。核心默认 Skill 采用 Agent-local 路径 `agents/<agent>/skills/<skill>/SKILL.md`。
 - `agents/studio-assistant/` 可作为游戏卡声明的工作区助手入口。它仍是普通 workspace 内容，游戏卡作者可以替换、删除或改造。
 - `skills/` 存共享 Skill。`agents/<agent>/skills/` 存 Agent-local Skill。
 - `docs/` 存官方或游戏卡作者维护的说明文档。默认 `docs/novel-airp-schema-guide.md` 是 novel AIRP 速查层（常驻相关 agent contextPaths），`docs/novel-airp-schema-reference.md` 是详尽字段手册（按需 read，不常驻）。
@@ -336,8 +337,8 @@ save/  (save runtime data, one entity per flat file)
 - `save/relationships/` 存关系分片，一 subject 一文件 `<scope>.json`，吸收长篇关系爆炸。
 - `save/history/` 存玩家面对的原始 AIRP 回合记录和压缩后的剧情时间线，不存所有中间过程。原始记录按 `save/history/turns/turn-*.json` 一回合一文件保存，便于 workspace 搜索直接定位具体回合。
 - `save/memory/` 存本次游玩的长期记忆、摘要和可检索事实。
-- `save/playthrough/` 存运行时变量（`runtime.json` 含 `activeSceneIds` 指针）、player/mode/frontier/branch 与 `understanding-summary.json`（开局完成摘要）。**不使用** `save/frontend/view-state.json` — 纯前端 view state（active tabs、scroll positions、collapsed panels、transient filters、hover state）不应存 workspace。
-- `save/director/` 存当前 master-safe 导演 brief 和元数据。
+- `save/playthrough/` 存运行时变量（`runtime.json` 含 `activeSceneIds` 指针）、player、mode、frontier、setup 摘要、opening narrative 与 branch。`mode.json` 只记录真正玩法系统的 `enabled` / `disabled` / `deferred` 状态，不记录 UI 渲染模块。**不使用** `save/frontend/view-state.json` — 纯前端 view state（active tabs、scroll positions、collapsed panels、transient filters、hover state）不应存 workspace。
+- `save/director/` 存当前 storyteller-safe 导演 brief 和元数据。
 - `.tsian/` 是平台 metadata、trace、checkpoint 空间。普通 Agent/Skill/frontend workspace read/list/search 不暴露 `.tsian/*`，普通 workspace 写入和删除也不能修改 `.tsian/*`。Trace 落 `.tsian/save/traces/turns/*.jsonl`（跟随 checkpoint）。**注意**：checkpoint 元数据、embedding 索引是 Dexie 表，不在 `.tsian/` 文件里——不要因目录占位 README 误判数据位置。
 
 ## 10. Workspace Assistant
@@ -358,7 +359,7 @@ Game Card 可以在 manifest 中声明一个助手 Agent，例如内置空白卡
 
 Trace 跟随 workspace checkpoint / restore。成功回合会在创建回合后 checkpoint 前写入 `.tsian/traces/turns/turn-000001.jsonl` 这类文件；如果玩家回滚到旧 checkpoint，后续分支的 trace 也会一起消失。这符合 AIRP 分支调试材料的定位，而不是 OpenClaw 式 append-only 安全审计日志。
 
-Agent-facing diagnostics 是 trace 的按需查询视图，不是新的持久化日志。`runtime-diagnostics` bridge query 会从 `.tsian/traces/turns/*.jsonl` 现算 bounded summary，默认聚焦失败/异常回合，只有显式请求时返回成功回合的极简 health summary。诊断 summary 只包含事实：`source`、`eventType`、raw `code/message`、相关 Agent/Skill/action/tool/executor 和直接相关 workspace path；不包含平台写死的修复建议、可能原因、`nextChecks`、完整 prompt、完整模型输出、文件内容、script source、provider/bridge/storage 内部细节或 `.tsian/*` 路径。未来管理 Agent、诊断 Skill 或 UI 可以消费这些事实并自行解释，不应让普通 master/narrative 回合默认看到诊断工具。
+Agent-facing diagnostics 是 trace 的按需查询视图，不是新的持久化日志。`runtime-diagnostics` bridge query 会从 `.tsian/traces/turns/*.jsonl` 现算 bounded summary，默认聚焦失败/异常回合，只有显式请求时返回成功回合的极简 health summary。诊断 summary 只包含事实：`source`、`eventType`、raw `code/message`、相关 Agent/Skill/action/tool/executor 和直接相关 workspace path；不包含平台写死的修复建议、可能原因、`nextChecks`、完整 prompt、完整模型输出、文件内容、script source、provider/bridge/storage 内部细节或 `.tsian/*` 路径。未来管理 Agent、诊断 Skill 或 UI 可以消费这些事实并自行解释，不应让普通玩家正式回合 Agent 默认看到诊断工具。
 
 普通工作区只保存长期有用的内容，例如：
 
@@ -406,18 +407,18 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 当前 MVP 中：
 
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
-- 默认阵容采用 hub-and-spoke 模型：`master`（唯一对话 agent，直接写正文）+ `retrieval`（工具型，精炼回灌创作资料）+ `post-processing`（工具型，落盘 + 状态维护 + 记忆治理 + 聚合层维护）+ `world-architect`（设计/维护 schema 与开局理解）+ `studio-assistant`。`narrative` 和 `memory` agent 已移除，其职责分别并入 master（写正文）和 post-processing（记忆治理）。master 的 contacts 为 `["retrieval","post-processing","world-architect"]`。
+- 默认阵容采用小说 AIRP 后台剧组模型：当前默认卡在 `runtime.entrypoints.playerTurn` 中显式配置 `storyteller` 作为玩家正式回合入口；该默认入口直接写玩家可读正文并按需联系 `researcher`（只读检索，精炼回灌资料）。`stage-manager` 负责回合后维护 runtime/entity/scene/relationship/memory/status，`world-architect` 负责开局建模、schema/world model 与玩法启用设计，`director` 负责剧情指导 brief。平台核心不硬编码 `storyteller -> stage-manager` 流水线；后台维护由前端/内容层在需要时显式调用。
 - 存储包含 snapshot、history、checkpoint、Game Card content files，以及 save runtime workspace files；结构化状态不再使用独立平台表。
-- 新 Game Card 默认写入 `agents/master/`、`agents/retrieval/`、`agents/post-processing/`、`agents/world-architect/`（agent.json + AGENT.md + SOUL.md + notes.md）、官方共享 `memory-maintenance`、`entity-reader`、`world-state-maintenance`、`opening-initialization` Skill、`docs/tsian-framework-knowledge.md`、`docs/novel-airp-schema-guide.md`（速查层）、`docs/novel-airp-schema-reference.md`（详尽字段手册）等卡内容；新存档默认写入 `save/agents/*` notes、`save/history/*`、`save/source/*`、`save/schema/*`、`save/entities/*`、`save/scenes/*`、`save/relationships/*`、`save/playthrough/*`（含 `understanding-summary.json`、`runtime.json` 带 `activeSceneIds`）、`save/director/*`、`save/memory/*` 和 `.tsian` 入口文件。novel AIRP 实体采用扁平 `save/entities/<type>/<localId>.json` 一实体一文件模型，**不使用** 06-24 的 `save/world/<type>/<id>/index.json` 一实体一目录 + `_ref`/`_dir` 升级模型；场景/关系聚合层 `save/scenes/`、`save/relationships/` 是派生导航视图。默认 workspace version 为 11。
+- 新 Game Card 默认写入 `agents/storyteller/`、`agents/researcher/`、`agents/stage-manager/`、`agents/world-architect/`、`agents/director/`（agent.json + AGENT.md + SOUL.md）以及各自 Agent-local `SKILL.md`，并写入 `docs/tsian-framework-knowledge.md`、`docs/novel-airp-schema-guide.md`（速查层）、`docs/novel-airp-schema-reference.md`（详尽字段手册）等卡内容；新存档默认写入 `save/agents/*` notes、`save/history/*`、`save/source/*`、`save/schema/*`、`save/entities/*`、`save/scenes/*`、`save/relationships/*`、`save/playthrough/*`（含 `runtime.json` 带 `activeSceneIds`、`mode.json` 默认 `{ "行动裁定": "deferred" }`、`understanding-summary.json`、`setup-summary.json`、`opening-narrative.json`）、`save/director/*`、`save/memory/*` 和 `.tsian` 入口文件。novel AIRP 实体采用扁平 `save/entities/<type>/<localId>.json` 一实体一文件模型，**不使用** 06-24 的 `save/world/<type>/<id>/index.json` 一实体一目录 + `_ref`/`_dir` 升级模型；场景/关系聚合层 `save/scenes/`、`save/relationships/` 是派生导航视图。默认 workspace version 为 12。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。
-- 默认 master 回合已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺关键 Agent 会明确失败。
-- 默认 AIRP 回合已支持 `skill_load` 后解锁 `SKILL.md` 中 `tsian-actions` 声明的 action，并通过 `action_call` 路由到 action executor registry；action 调用会经过 loaded Skill gating、输入校验、轻量 executor-class policy 检查，并可按可选 `outputSchema` 校验成功输出。当前支持 `builtin/validation`、`builtin/echo`、`workspace_operation` 和 strong-SDK `browser_script`。`workspace_operation` 通过 capability 注入通用 workspace 操作，受 operation exposure 与 read/edit level 约束；`browser_script` 执行 Skill-local Worker 脚本，可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 save-runtime workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
+- 默认玩家正式回合入口已消费 Runtime Workspace Agent 定义和 Agent context；空 workspace 会在回合前初始化默认文件，非空 workspace 缺少 `runtime.entrypoints.playerTurn` 指向的关键 Agent 会明确失败。
+- 默认 AIRP 回合已支持 `use_skill` 加载当前 Agent 可见且启用的 `SKILL.md`，并支持通过 `run_script` 调用已加载 Skill 声明的 `browser_script` action；调用会经过 loaded Skill gating、action 存在性校验、输入 schema 校验和 actor capability 检查，并可按可选 `outputSchema` 校验成功输出。`browser_script` 是唯一支持的 Skill action executor；单步 workspace 读写直接使用顶层 runtime workspace 工具。Skill-local Worker 脚本可通过 Tsian SDK 访问 workspace、fetch、log/trace，并受 timeout/abort 约束。Agent Runtime turn 内的 save-runtime workspace 写删走 staged transaction，成功回合原子提交，失败/abort 丢弃普通 workspace mutation。
 - 默认 AIRP 回合已支持 contacts-gated `agent_call` runtime tool。当前 Agent 只看到自己的可见 contacts；目标 Agent 使用自己的 `AGENT.md`、context、Skill Index 和工具循环；协作策略为代码级默认值，当前 `maxCallsPerTurn=4`、`maxDepth=2`、语义 history window 为 `minimal/recent/scene`，并按 root turn 共享调用预算。有限嵌套已启用：root depth `0` 可调用 depth `1` Agent，depth `1` Agent 可调用自己的 contacts 到 depth `2`，depth `2` 再调用会返回带深度/预算事实的结构化 observation。
 - Runtime Trace Persistence MVP 已落地：回合、Agent step、模型调用摘要、Skill 加载、Agent 调用、workspace 工具、action executor policy 检查、action 调用和 workspace mutation 会写入 `.tsian/traces/turns/*.jsonl`，普通 workspace operation 不暴露 `.tsian/*`，除非调用方拥有 platform-meta read level。`runtime-diagnostics` query 已提供面向 Agent/未来管理 UI 的 facts-only 诊断摘要视图；它按需从 raw trace 生成，不写派生文件、不做 pruning、不默认暴露给普通 live-turn Agent。
 - Agent Session Transcript MVP 已落地：成功回合会把参与 Agent 的 Agent-facing 模型消息、输出、工具调用和 observation 追加到对应 `save/agents/<agent>/session.jsonl`；失败或 abort 不留下普通 session transcript 写入。
-- Skill-triggered Memory Maintenance MVP 已落地：默认 `memory-maintenance` Skill 的 `apply_maintenance_plan` 使用 `browser_script` 和 Tsian SDK staged 写入 `save/agents/<agent>/notes.md`、`save/history/timeline.md`、`save/memory/summaries/current.md` 或 `save/memory/summaries/long-term.md`。没有显式 Skill action 就不会维护增强记忆，空 writes 仅表示显式 no-op。
+- Skill-triggered Memory Maintenance MVP 曾以默认 `memory-maintenance` Skill 的 `apply_maintenance_plan` browser_script 验证过 staged 写入 `save/agents/<agent>/notes.md`、`save/history/timeline.md`、`save/memory/summaries/current.md` 或 `save/memory/summaries/long-term.md`。当前默认模板改为 Agent-local Skill placeholder；没有显式 Skill action 就不会维护增强记忆，空 writes 仅表示显式 no-op。
 
 后续实现应逐步：
 

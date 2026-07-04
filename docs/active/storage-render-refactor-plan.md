@@ -8,7 +8,7 @@
 
 **玩家视角与 agent 视角分离**：
 - 玩家看到：完整历史（思考过程 + 工具调用 + 过渡叙事 + 正文 + 选项），即使重载也可见
-- master agent 看到：干净正文 + 压缩 summary，工具调用被过滤
+- 玩家正式回合入口 Agent 看到：干净正文 + 压缩 summary，工具调用被过滤
 - 助手/delegated agent 看到：较宽松，能查工具调用事实
 
 参考 ZCode UI：往上翻能看完整历史（含工具调用），即使上下文已压缩。UI 视角和 agent 视角独立。
@@ -35,8 +35,8 @@
 
 ### 存储：过程节点进 workspace turn 文件
 - 扩展 `save/history/turns/turn-NNNNNN.json` schema，加 `processNodes` 字段（thought/tool/interim）
-- master agent 上下文不读 processNodes（`recentHistory` 只取 messages）——不污染
-- 助手 agent 能通过 `workspace_read` 读到过程节点——有能力查
+- 玩家正式回合入口 Agent 上下文不读 processNodes（`recentHistory` 只取 messages）——不污染
+- 助手 agent 能通过 `read` 读到过程节点——有能力查
 - 玩家通过前端 UI 看到——可见
 
 ### 存储：去掉 saveHistory 表
@@ -92,7 +92,7 @@
 
 ## 关键调研结论（本会话已确认）
 
-- `save/history/turns/` 是 ordinary workspace path，agent 通过 `workspace_read` 可读
+- `save/history/turns/` 是 ordinary workspace path，agent 通过 `read` 可读
 - `.tsian/` 才是平台元数据，对 agent 隐藏
 - saveHistory 写入点和读取点完整清单见本会话调研
 - turn 文件结构：`{ schema, turn, createdAt, source: {kind, entryAgentId}, messages: [{role, content}] }`
@@ -117,7 +117,7 @@
 - `apps/platform-web/src/platform-host/history-turns.ts` — turn 文件 schema + 写入
 - `apps/platform-web/src/platform-host/index.ts` — sendMessage（recentHistory + commitSuccessfulRuntimeTurn）
 - `apps/platform-web/src/agent-runtime/index.ts` — runAgentRuntimeTurn（recentHistory 用途）
-- `apps/platform-web/src/agent-runtime/context-lifecycle.ts` — master 上下文（appendTurnToContext 只存正文）
+- `apps/platform-web/src/agent-runtime/context-lifecycle.ts` — 玩家正式回合入口上下文（appendTurnToContext 只存正文）
 - `apps/platform-web/src/storage/default-frontend-files.ts` — 默认前端（snapshot 全清覆盖逻辑）
 - `apps/play-frontend-dev/src/main.ts` — 开发前端（同上，TS 版）
 - `packages/play-bridge/src/bridge.ts` — 协议层

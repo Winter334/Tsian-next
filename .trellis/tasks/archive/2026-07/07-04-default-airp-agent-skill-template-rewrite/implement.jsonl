@@ -1,0 +1,10 @@
+{"file":".trellis/tasks/07-04-airp-agent-roster-skills/design.md","reason":"Parent AIRP design is the source of truth for the new roster, mode.json semantics, Agent-local Skill layout, and frontend orchestration boundary."}
+{"file":".trellis/tasks/07-04-airp-agent-roster-skills/implement.md","reason":"Parent implementation split defines why this child owns default template rewrite and what remains out of scope."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Template rewrite touches platform-web storage and must keep responsibilities in existing modules rather than adding unrelated surfaces."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Agent registry, Agent-local Skill registry, synthesized manifest, and runtime entrypoint contracts are documented here."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Default template changes affect active card/save runtime semantics and future frontend AgentInvocation orchestration."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Platform-web template changes require build:web and preservation of runtime turn contracts."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Default workspace template, save runtime upgrade paths, and workspace version behavior live under storage specs."}
+{"file":".trellis/spec/guides/agent-skill-design-principles.md","reason":"Agent/Skill ownership, ability placement, data authority, and document layering guide the new Agent-local Skill structure."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Renaming/removing old master/retrieval/post-processing AI-facing concepts requires cleaning residual prompt/template traces."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"mode.json and default workspace template data must stay file-visible and agent-manageable rather than hidden DB config."}

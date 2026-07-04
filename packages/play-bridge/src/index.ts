@@ -18,6 +18,7 @@ export type {
   TurnEndResult,
   ToolEvent,
   AskRequest,
+  AgentActivityKind,
   SessionHistory,
 } from "./tsian-api"
 
@@ -28,6 +29,8 @@ export type { ParsedStoryOptions } from "./story-options"
 // 领域类型从 @tsian/contracts re-export，消费方无需额外 import contracts。
 export type {
   InjectionMessage,
+  AgentInvocationCommitMode,
+  AgentInvocationEvent,
   InvokeAgentResult,
   TurnStats,
   TurnToolOutput,

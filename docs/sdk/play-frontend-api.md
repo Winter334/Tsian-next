@@ -46,6 +46,7 @@ import type {
   TsianApi, MessageDelta, RoundEnd, TurnEndResult,
   ToolEvent, AskRequest, SessionHistory,
   InjectionMessage, SendOptions, InvokeAgentOptions,
+  AgentInvocationEvent,
 } from "@tsian/play-bridge"
 ```
 
@@ -82,7 +83,7 @@ tsian.waitForReady().then(() => {
 
 ### 3.1 `tsian.send(text, options?)`
 
-玩家行动，推进剧情。走 master agent，生成一整轮 agent 回合（可能含工具调用、多轮思考、最终正文、剧情选项）。
+玩家正式回合输入，推进剧情 turn/history/checkpoint/options 等正式回合语义。前端不传 `agentId`；入口 Agent 由游戏卡 `game-card.json` 的 `runtime.entrypoints.playerTurn` 决定。
 
 ```ts
 await tsian.send("我向酒馆老板打听消息")
@@ -95,24 +96,60 @@ await tsian.send("我向酒馆老板打听消息")
 | `options.injection` | `InjectionMessage[]` | 注入的上下文消息（见 §3.3），可选 |
 | `options.attachments` | `unknown[]` | 附件（预留，当前由表现层自行处理） |
 
-`send` 永远走 master，不接受 `agentId`——指定 agent 是 `invokeAgent` 的事。`send` 的 Promise 在回合定稿（`onTurnEnd` 触发后）resolve；中途抛错表示发送/执行失败。
+`send` 是“玩家正式回合”入口：会写回剧情历史、turn timeline、workspace 事务，并在成功后创建回合 checkpoint。`send` 的 Promise 在回合定稿（`onTurnEnd` 触发后）resolve；中途抛错表示发送/执行失败。
+
+游戏卡作者通过 `game-card.json` 配置正式回合入口：
+
+```json
+{
+  "runtime": {
+    "entrypoints": {
+      "playerTurn": "storyteller"
+    }
+  }
+}
+```
+
+`playerTurn` 是 Agent id。平台不会在缺失时静默猜测入口；缺少或为空会作为游戏卡配置错误失败。
 
 ### 3.2 `tsian.invokeAgent(agentId, input, options?)`
 
-旁路调用任意 agent。**不推进 turn、不写历史、不更新运行时快照**——结果直接返回调用方。用于 NPC 视角对话、UI 触发的单次修正、查询类 agent 等不走主线剧情的场景。
+前端/卡流程指定某个 Agent 执行一次任务。它不推进正式 turn、不写剧情历史、不更新运行时快照；返回最终 `response`，过程流通过 `onAgentInvocation` 订阅。适合开局建模、UI 触发说明、后置维护、NPC/导演/场记等非玩家正式回合任务。
 
 ```ts
-const { response } = await tsian.invokeAgent("npc-merchant", "你这把剑卖多少钱？")
-renderNpcDialog(response)
+const invocationId = crypto.randomUUID()
+const off = tsian.onAgentInvocation((event) => {
+  if (event.invocationId !== invocationId) return
+  if (event.type === "delta" && event.kind === "content") appendDraft(event.delta)
+  if (event.type === "tool") updateToolCard(event)
+})
+
+try {
+  const { response } = await tsian.invokeAgent("npc-merchant", "你这把剑卖多少钱？", {
+    invocationId,
+    purpose: "npc-dialog",
+  })
+  renderNpcDialog(response)
+} finally {
+  off()
+}
 ```
 
 | 参数 | 类型 | 说明 |
 |---|---|---|
 | `agentId` | `string` | 目标 agent id |
 | `input` | `string` | 给 agent 的输入 |
+| `options.invocationId` | `string` | invocation 级 id；建议调用前生成并传入，用于过滤并发事件。省略时 SDK 自动生成 |
+| `options.purpose` | `string` | 调用目的标签，会出现在 `started` 事件里，便于 UI/日志过滤 |
+| `options.commitMode` | `"workspace" \| "workspace-with-checkpoint"` | Workspace 提交策略。省略等同 `"workspace"`；`"workspace-with-checkpoint"` 是后续维护类流程预留，当前平台未实现完整 checkpoint 语义时会 fail loud |
+| `options.checkpointReason` | `string` | 预留给 `workspace-with-checkpoint` 的 checkpoint 原因/标签；默认 `workspace` 模式不使用 |
 | `options.injection` | `InjectionMessage[]` | 注入上下文（同 send），可选 |
+| `options.contextSlot` | `string` | 可选上下文隔离 slot；配合 `persist` 防止不同调用方上下文串 |
+| `options.persist` | `boolean` | `true` 时读写目标 Agent 的 `context[-slot].json`；默认 `false`，一次性调用 |
 
-返回 `InvokeAgentResult`：`{ response: string }`。`invokeAgent` 同样消耗 token，但它是单次调用、不进剧情历史。
+返回 `InvokeAgentResult`：`{ invocationId: string; response: string }`。`invokeAgent` 同样消耗 token；Promise resolve 表示最终文本可用，流式 delta / round / tool / completed / failed 事件通过 `onAgentInvocation` 到达。
+
+`agent_call` 不是 SDK 入口。它是 Agent 内部工具：一次 `send` 或 `invokeAgent` 过程中，当前 Agent 可以自主调用联系人 Agent 协作。delegated Agent 产生的 delta/tool 会沿同一个 `invocationId`（或同一个 turn 事件流）向外可见，事件里的 `agentId` 表示实际产出者。
 
 ### 3.3 injection：注入上下文消息
 
@@ -142,7 +179,7 @@ interface InjectionMessage {
 - `before-input`（默认）：插在框架信息 user 消息之后、玩家本轮输入之前。
 - `after-input`：插在玩家本轮输入之后。
 
-上下文序列结构（`send` 走 master 时）：
+上下文序列结构（`send` 走卡配置的玩家回合入口 Agent 时）：
 ```
 [system: AGENT.md + 工具说明]
 [history: 剧情历史]
@@ -180,7 +217,7 @@ await tsian.send("我走向角落的陌生人", {
 
 ## 4. 订阅
 
-五个语义回调，每个返回一个 **unsubscribe 函数**。覆盖平台 8 个底层事件（SDK 内部已路由 + 聚合，前端不接触底层事件名）。
+六个语义回调，每个返回一个 **unsubscribe 函数**。正式回合使用 `onMessage` / `onRoundEnd` / `onTool` / `onTurnEnd`；前端指定 Agent 的任务调用使用 `onAgentInvocation`。SDK 内部路由和聚合底层事件，前端通常不需要接触 postMessage 事件名。
 
 ```ts
 const off = tsian.onMessage((msg) => { ... })
@@ -192,11 +229,12 @@ off()
 
 | 回调 | 对应底层事件 | 触发时机 | 用途 |
 |---|---|---|---|
-| `onMessage` | `turn-delta` | 每个 token 增量 | 流式渲染（累加 delta） |
-| `onRoundEnd` | `turn-round-end` | 每轮边界 | 区分中间轮(interim) vs 最终轮(final) |
-| `onTurnEnd` | `turn-options` + `turn-stats` + `turn-completed` 聚合 | 回合定稿 | 渲染选项 + 统计 + 收尾 |
-| `onTool` | `turn-tool` | 每次工具状态变更 | 渲染工具过程节点 |
+| `onMessage` | `turn-delta` | 正式回合每个 token 增量 | 流式渲染（累加 delta） |
+| `onRoundEnd` | `turn-round-end` | 正式回合每轮边界 | 区分中间轮(interim) vs 最终轮(final) |
+| `onTurnEnd` | `turn-options` + `turn-stats` + `turn-completed` 聚合 | 正式回合定稿 | 渲染选项 + 统计 + 收尾 |
+| `onTool` | `turn-tool` | 正式回合每次工具状态变更 | 渲染工具过程节点 |
 | `onAsk` | `interaction-request` | AI 提问时 | 渲染 ask_user 交互面板 |
+| `onAgentInvocation` | `agent-invocation` | `invokeAgent` 的 started/delta/round/tool/completed/failed | 渲染指定 Agent 调用的流式文本、工具进度与完成/失败状态 |
 
 **为什么需要三粒度**：单靠 `onMessage` 分不清一段 content delta 是中间轮的 interim 文本还是最终轮的剧情正文——`onRoundEnd` 的 `kind` 标记补上这个信息。`onTurnEnd` 把回合收尾的三个独立信号（选项、统计、完成）聚合成一次回调，前端不用自己缓存 `turn-options` 等待 `turn-completed`。
 
@@ -228,7 +266,7 @@ interface MessageDelta {
 
 ### 4.2 `tsian.onRoundEnd(cb)`
 
-每轮边界触发。一个回合可能有多轮（master 先思考/调工具，再产出最终正文）。
+每轮边界触发。一个回合可能有多轮（入口 Agent 先思考/调工具，再产出最终正文）。
 
 ```ts
 tsian.onRoundEnd((end: RoundEnd) => {
@@ -330,6 +368,42 @@ interface AskRequest {
 
 `answer(requestId, text, cancelled?)`：`cancelled` 为 `true` 表示玩家取消（`text` 可为空）。平台只传结构化数据，**前端自由决定怎么渲染**——按钮、输入框、对话框、或完全自定义。
 
+### 4.6 `tsian.onAgentInvocation(cb)`
+
+`invokeAgent` 的 invocation 级过程事件。多个并发调用共享同一个订阅通道，用 `invocationId` 过滤。
+
+```ts
+const invocationId = crypto.randomUUID()
+const off = tsian.onAgentInvocation((event) => {
+  if (event.invocationId !== invocationId) return
+  switch (event.type) {
+    case "started": startSpinner(event.purpose); break
+    case "delta": appendInvocationText(event.agentId, event.kind, event.delta); break
+    case "round-end": closeInvocationRound(event.agentId, event.round, event.kind); break
+    case "tool": upsertInvocationTool(event); break
+    case "completed": stopSpinner(); break
+    case "failed": showError(event.error.message); break
+  }
+})
+
+await tsian.invokeAgent("stage-manager", prompt, { invocationId, purpose: "post-turn-maintenance" })
+off()
+```
+
+```ts
+type AgentInvocationEvent =
+  | { type: "started"; invocationId: string; agentId: string; purpose?: string }
+  | { type: "delta"; invocationId: string; agentId: string; round: number; kind: "reasoning" | "content"; delta: string }
+  | { type: "round-end"; invocationId: string; agentId: string; round: number; kind: "thought" | "final" }
+  | { type: "tool"; invocationId: string; agentId: string; round: number; callId: string; name: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput }
+  | { type: "completed"; invocationId: string; agentId: string }
+  | { type: "failed"; invocationId: string; agentId: string; error: PlatformActionError }
+```
+
+`agentId` 是实际产出事件的 Agent。若被调用 Agent 在内部用 `agent_call` 调用了联系人，delegated Agent 的事件也会使用同一个 `invocationId`，但 `agentId` 会变成 delegated Agent 的 id。
+
+`onAgentActivity(cb)` 仍保留作为旧版心跳兼容通道（只给 `delta | tool | round-end`，不含文本内容）。新 UI 应优先使用 `onAgentInvocation`。
+
 ---
 
 ## 5. 数据
@@ -409,7 +483,7 @@ interface CheckpointSummary {
 
 ## 6. workspace 读写
 
-前端可在 workspace 里读写文件，**自己维护状态**（角色卡、设置、存档元数据等）。这是独立于 agent 工具调用的前端通道——agent 的 `workspace_read`/`workspace_write` 走 agent runtime，前端的 `tsian.workspace.*` 走桥 RPC，两条路径独立。
+前端可在 workspace 里读写文件，**自己维护状态**（角色卡、设置、存档元数据等）。这是独立于 agent 工具调用的前端通道——agent runtime 里的 `read` / `write` 等短工具名受 `workspace_read` / `workspace_write` platformTools gate 控制，前端的 `tsian.workspace.*` 走桥 RPC，两条路径独立。
 
 ```ts
 tsian.workspace.read(path, scope?)
@@ -550,6 +624,8 @@ interface TsianApi {
   onTurnEnd(cb: (result: TurnEndResult) => void): () => void
   onTool(cb: (tool: ToolEvent) => void): () => void
   onAsk(cb: (ask: AskRequest) => void): () => void
+  onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void
+  onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void
 
   // 回答 ask_user
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
@@ -585,7 +661,11 @@ interface SendOptions {
   attachments?: unknown[]
 }
 interface InvokeAgentOptions {
+  invocationId?: string
+  purpose?: string
   injection?: InjectionMessage[]
+  contextSlot?: string
+  persist?: boolean
 }
 ```
 
@@ -631,6 +711,14 @@ interface AskRequest {
   options?: string[]
   allowCustom?: boolean
 }
+type AgentInvocationEvent =
+  | { type: "started"; invocationId: string; agentId: string; purpose?: string }
+  | { type: "delta"; invocationId: string; agentId: string; round: number; kind: "reasoning" | "content"; delta: string }
+  | { type: "round-end"; invocationId: string; agentId: string; round: number; kind: "thought" | "final" }
+  | { type: "tool"; invocationId: string; agentId: string; round: number; callId: string; name: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput }
+  | { type: "completed"; invocationId: string; agentId: string }
+  | { type: "failed"; invocationId: string; agentId: string; error: PlatformActionError }
+type AgentActivityKind = "delta" | "tool" | "round-end"
 ```
 
 ### 数据类型
@@ -655,6 +743,7 @@ interface CheckpointSummary {
   workspaceFileCount: number
 }
 interface InvokeAgentResult {
+  invocationId: string
   response: string
 }
 interface TurnStats {
@@ -709,6 +798,8 @@ interface WorkspaceWriteResult {
 | `bridge.on({ onEvent })` 里 `turn-delta` | `tsian.onMessage(cb)` |
 | `bridge.on({ onEvent })` 里 `turn-round-end` | `tsian.onRoundEnd(cb)` |
 | `bridge.on({ onEvent })` 里 `turn-tool` | `tsian.onTool(cb)` |
+| `bridge.on({ onEvent })` 里 `agent-invocation` | `tsian.onAgentInvocation(cb)` |
+| `bridge.on({ onEvent })` 里 `agent-activity` | `tsian.onAgentActivity(cb)`（兼容旧心跳；新 UI 优先用 `onAgentInvocation`） |
 | `bridge.on({ onEvent })` 里 `turn-completed` + `onTurnOptions` | `tsian.onTurnEnd(cb)`（聚合） |
 | `bridge.on({ onInteractionRequest })` | `tsian.onAsk(cb)` |
 | `createSessionHistory(bridge)` | `tsian.history.get()` |
