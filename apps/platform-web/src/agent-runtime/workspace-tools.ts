@@ -1712,6 +1712,15 @@ function activateSkillByName(
   const file = loadSkillEntryFile(context.workspaceFiles, skill)
   const { actions, errors: actionDeclarationErrors } = parseActionDeclarations(file.content)
   registerLoadedSkill(context.sessionState, skill, actions)
+  // The full SKILL.md content + inputSchema are returned in the observation this
+  // round, so the model can call run_script immediately without waiting for the
+  // next-round injectActivatedSkillMessages. Mark the skill path as already
+  // injected so collectActivatedSkillContents skips it next round.
+  if (context.sessionState) {
+    if (!context.sessionState.injectedSkillPaths.includes(skill.path)) {
+      context.sessionState.injectedSkillPaths.push(skill.path)
+    }
+  }
   context.emitTrace?.({
     type: "skill_loaded",
     ...traceBase(context),
@@ -1726,11 +1735,6 @@ function activateSkillByName(
     },
   })
 
-  // use_skill only declares intent + registers actions; the full SKILL.md is
-  // injected into the next round's context by injectActivatedSkillMessages
-  // (see index.ts tool loops). The observation returns a lightweight
-  // confirmation + action list so the model knows what it can run_script,
-  // without burning a round on the full SKILL.md as a tool result.
   return {
     skill: {
       name: skill.name,
@@ -1739,9 +1743,11 @@ function activateSkillByName(
       ...(skill.agentId ? { agentId: skill.agentId } : {}),
     },
     activated: true,
+    content: file.content,
     actions: actions.map((action) => ({
       name: action.name,
       description: action.description,
+      ...(action.inputSchema ? { inputSchema: action.inputSchema } : {}),
       executorType: action.executor.type,
       executable: action.executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE,
     })),
