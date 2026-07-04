@@ -129,18 +129,9 @@ export interface CharacterEntity {
 }
 
 export interface OpeningUnderstandingSummary {
-  schema?: string
   status: "ready"
-  title?: string
-  summary: string
-  entityCount?: number
-  candidateCharacters?: ReadonlyArray<OpeningCandidateCharacter>
-  sourceWindow?: {
-    start?: number | null
-    end?: number | null
-  }
-  extractedThrough?: string | null
-  committedAt?: string
+  title: string
+  candidateCharacters: ReadonlyArray<OpeningCandidateCharacter>
 }
 
 // ── 游玩设定对话（Step 4）──
@@ -197,7 +188,8 @@ export function isOpeningUnderstandingSummary(value: unknown): value is OpeningU
   return typeof value === "object"
     && value !== null
     && (value as { status?: unknown }).status === "ready"
-    && typeof (value as { summary?: unknown }).summary === "string"
+    && typeof (value as { title?: unknown }).title === "string"
+    && Array.isArray((value as { candidateCharacters?: unknown }).candidateCharacters)
 }
 
 // ── 格式化 ──
@@ -476,7 +468,7 @@ export function buildPlaySetupPrompt(
     "4. 对话中可用 write / edit 直接写入设定落点；不要调用未声明的脚本或 action。",
     "5. 所有基础项补齐后展示设定汇总，用 [[选项]] 请求玩家确认。",
     "6. 玩家确认后写入 save/playthrough/setup-summary.json。",
-    "7. agent_call 说书人拿开局正文文本，你把结果写入 save/playthrough/opening-narrative.json（格式 { \"narrative\": \"<文本>\" }）。",
+    "7. agent_call 说书人拿开局正文文本，调 `commit_opening_narrative` 写入开局正文。",
     "8. 如需调整玩法状态，只写 save/playthrough/mode.json 中真正玩法系统的 enabled/disabled/deferred；不要把状态栏、人物卡或背包等 UI 模块写成 mode。",
     "9. 保持 spoiler-safe，只使用开局窗口内已知事实。",
     "",
@@ -497,13 +489,11 @@ export function buildOpeningInitializationPrompt(
     "玩家已经完成小说导入并确认切分结果。请作为 world-architect 使用 Skill《开局建模》完成真实开局资料抽取与初始世界建模。",
     "",
     "要求：",
-    "1. 使用 read / list / search 观察导入 source manifest、章节索引和开头章节。",
+    "1. 用 `inspect_source_opening` 和 `read_opening_slice` 读源文本；用 `commit_*` 脚本写入开局产物，按 Skill《开局建模》的步骤执行。",
     "2. 连续阅读开头剧情；是否继续阅读以剧情是否足够支撑开局为准，不要按固定章节数机械停止。",
-    "3. 写入初始理解包、实体、候选原著角色、frontier，并按需初始化 scene/relationship/runtime/mode 骨架。",
-    "4. 建模完成后，agent_call 导演写初始 director brief（save/director/current-brief.md）；你不代写 brief。",
-    "5. 目标路径包括 save/playthrough/understanding-summary.json、save/director/current-brief.md、save/entities/、save/scenes/、save/relationships/、save/playthrough/frontier.json 和 save/playthrough/runtime.json。",
-    "6. 保持未来剧情 spoiler-safe；只使用开头窗口中读到的内容。",
-    "7. 如果写入遇到格式或校验错误，请按错误修正后重试，直到写入成功或明确失败。",
+    "3. 建模完成后，agent_call 导演写初始 director brief（save/director/current-brief.md）；你不代写 brief。",
+    "4. 保持未来剧情 spoiler-safe；只使用开头窗口中读到的内容。",
+    "5. 如果写入遇到格式或校验错误，请按错误修正后重试，直到写入成功或明确失败。",
     "",
     `书名：${manifest.title}`,
     `章节数：${chapterCount}`,

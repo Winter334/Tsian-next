@@ -7,7 +7,7 @@ import type { OpeningUnderstandingSummary } from "../../../lib/source"
 /**
  * UnderstandingReady — 初始理解完成。
  *
- * 显示理解摘要（标题/实体数/角色数）+ 引导问 + 角色分支卡（原著/原创）。
+ * 显示理解摘要（标题/角色数）+ 引导问 + 角色分支卡（原著/原创）。
  * 选中分支 → Step 3 角色设定（本任务 stub，暂不推进 stepper）。
  */
 const props = defineProps<{
@@ -49,9 +49,6 @@ onMounted(async () => {
     <div class="summary" v-if="summary">
       <div class="summary-title">{{ summary.title || manifest?.title || '导入小说' }}</div>
       <div class="summary-meta">
-        <span v-if="typeof summary.entityCount === 'number'" class="meta-item">
-          <span class="meta-num">{{ summary.entityCount }}</span> 实体
-        </span>
         <span v-if="summary.candidateCharacters?.length" class="meta-item">
           <span class="meta-num">{{ summary.candidateCharacters.length }}</span> 候选角色
         </span>

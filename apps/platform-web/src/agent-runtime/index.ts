@@ -495,26 +495,10 @@ function formatSkillIndex(context: AgentContextEntry): string {
 
   return context.skillIndex
     .map((skill) => {
-      const scope = skill.scope === "agent-local"
-        ? "local"
-        : "shared"
       const triggers = skill.triggers.length
         ? ` triggers=${skill.triggers.join(", ")}`
         : ""
-      const appliesTo = skill.appliesTo.length
-        ? ` appliesTo=${skill.appliesTo.join(", ")}`
-        : ""
-      const headline = `- ${skill.name} [${scope}]: ${skill.description || skill.summary || "（无描述）"}${triggers}${appliesTo}`
-      const actionLines = skill.actions?.length
-        ? skill.actions.map((action) =>
-            `    - ${action.name} (${action.executorType}, 用 run_script 执行)`,
-          )
-        : []
-      const errorLines = skill.actionDeclarationErrors?.length
-        ? skill.actionDeclarationErrors.map((error) => `    ⚠ ${error}`)
-        : []
-      return [headline, ...(actionLines.length ? ["    actions:", ...actionLines] : []), ...errorLines]
-        .join("\n")
+      return `- ${skill.name}: ${skill.description || skill.summary || "（无描述）"}${triggers}`
     })
     .join("\n")
 }
@@ -526,29 +510,12 @@ function formatSkillIndex(context: AgentContextEntry): string {
  * spending a tool-result round on it. Both tool loops (native and text) call
  * this via collectActivatedSkillContents + this body builder.
  *
- * Skill 入口必须完整遵循——开头通常是指令主体，后半才是 references/scripts。
- * 因此超长 Skill 只 preview 前 N 字符（保留开头关键指令），提示用
- * `workspace.read` + path + offset/limit 续读后半，而不是全量常驻该 turn 所有
- * 后续轮次。阈值与 observation compact（workspace-tools.ts）保持一致。
+ * Skill 是卡模板精心设计的可控内容，全文注入。截断会让 tsian-actions JSON
+ * 块的 inputSchema 可能丢失——agent 不知道脚本参数，是难以察觉的问题。
  */
-const SKILL_INLINE_CHAR_LIMIT = 6_000
-const SKILL_PREVIEW_CHAR_LIMIT = 2_000
-
 function formatActivatedSkillMessageBody(skill: ActivatedSkillContent): string {
   const header = `已激活 Skill「${skill.name}」。以下是该 Skill 的说明；遵循其指导，并用 run_script 执行其声明的 browser_script action。`
-  if (skill.content.length <= SKILL_INLINE_CHAR_LIMIT) {
-    return [header, "", skill.content].join("\n")
-  }
-  // 超长 Skill：preview 前部（关键指令常在开头），提示续读后半。
-  const preview = skill.content.slice(0, SKILL_PREVIEW_CHAR_LIMIT)
-  const remaining = skill.content.length - SKILL_PREVIEW_CHAR_LIMIT
-  return [
-    header,
-    "",
-    preview,
-    "",
-    `...[Skill 正文已截断，剩余约 ${remaining} 字符。如需完整的 references 或 scripts，用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 ${skill.path}（从 offset ${SKILL_PREVIEW_CHAR_LIMIT} 起按 limit 续读）]`,
-  ].join("\n")
+  return [header, "", skill.content].join("\n")
 }
 
 /**
