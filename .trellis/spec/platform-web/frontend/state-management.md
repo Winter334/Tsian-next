@@ -350,3 +350,29 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 - Corrupt stored JSON in overrides -> read degrades to `{}` (defaults apply); no throw.
 - Player saved an override for a key the skill later removed -> merge drops it (only declared keys survive); no stale value leaks into `tsian.config`.
 - Worker `message.config` missing or non-object -> `tsian.config = {}` (defensive guard in Worker source).
+
+## Scenario: Skill Index Presentation And SKILL.md Injection
+
+### Scope / Trigger
+
+- When changing `formatSkillIndex` (Skill Index shown in system prompt before `use_skill`) or `formatActivatedSkillMessageBody` (SKILL.md content injected after `use_skill`).
+
+### Skill Index (pre-use_skill)
+
+`formatSkillIndex` emits one line per visible Skill in the system prompt: `- name: description` (+ `triggers=...` if present). It does **not** list:
+- `scope` (`local`/`shared`) — internal path-resolution info, irrelevant to agent decisions.
+- `actions` list — action names + `inputSchema` are only useful after `use_skill` when the full SKILL.md is injected. Listing them pre-activation wastes system-prompt tokens every round.
+- `appliesTo` — the agent learns applicability from the SKILL.md content post-activation.
+
+### SKILL.md Injection (post-use_skill)
+
+`formatActivatedSkillMessageBody` injects the **full** SKILL.md content as a user message after the round's tool observations. No truncation. Rationale: Skills are card-template-authored, carefully designed, and length-controlled. Truncation risks losing the `tsian-actions` JSON block's `inputSchema` — the agent would not know script parameters, a hard-to-detect failure. The old 6000/2000-char truncation was removed.
+
+### Convention: Skill Description Authoring
+
+Skill `description` fields should state what the agent can accomplish by activating the Skill — one sentence. Avoid:
+- Implementation status notes ("当前模板不声明执行脚本") — useless to the agent.
+- Subject-name prefixes ("资料员按..."→"按...") — the Skill is already bound to an agent.
+- Frontend rendering details ("可被前端投影到状态栏") — the agent doesn't need to know how its output is consumed.
+- Trigger conditions ("当 X 时") — these belong in the `triggers` frontmatter field, not `description`.
+
