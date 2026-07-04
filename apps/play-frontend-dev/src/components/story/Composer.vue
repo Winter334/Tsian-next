@@ -14,6 +14,8 @@ import { ref, nextTick } from "vue"
 const props = defineProps<{
   ready: boolean
   streaming: boolean
+  /** 回合后同步进行中/失败时禁用输入（不显示停止按钮，与 streaming 区分）。 */
+  syncing?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -36,7 +38,7 @@ function autoGrow() {
 
 async function onSend() {
   const content = text.value.trim()
-  if (!content || !props.ready || props.streaming) return
+  if (!content || !props.ready || props.streaming || props.syncing) return
   emit("send", content)
   text.value = ""
   hasContent.value = false
@@ -67,14 +69,14 @@ defineExpose({ setText })
   <div class="composer-wrap">
     <div
       class="composer"
-      :class="{ streaming, focused, 'has-content': hasContent }"
+      :class="{ streaming, 'sync-disabled': syncing, focused, 'has-content': hasContent }"
     >
       <textarea
         ref="inputEl"
         v-model="text"
         class="composer-input"
-        :disabled="!ready || streaming"
-        :placeholder="streaming ? '故事正在书写…' : '在下方写下你的行动…'"
+        :disabled="!ready || streaming || syncing"
+        :placeholder="streaming ? '故事正在书写…' : syncing ? '整理本回合中…' : '在下方写下你的行动…'"
         rows="1"
         @keydown="onKeydown"
         @input="autoGrow"
@@ -329,5 +331,21 @@ defineExpose({ setText })
 }
 .stop-btn:active {
   transform: scale(0.9);
+}
+
+/* ── sync-disabled：回合后同步期间，烛火低伏静态（不跳动）──
+   与 streaming 的 ember-breathe 区分：streaming 是烛火明亮跳动（正文讲述中），
+   sync-disabled 是烛火静燃低伏（幕后整理中）。 */
+.composer.sync-disabled {
+  background:
+    radial-gradient(ellipse 80% 100% at 50% 100%, rgba(43, 4, 4, 0.55) 0%, transparent 70%),
+    rgba(10, 5, 6, 0.35);
+  box-shadow:
+    inset 0 1px 0 rgba(181, 137, 61, 0.06),
+    0 0 20px rgba(232, 169, 72, 0.04);
+}
+.composer.sync-disabled .ink-line {
+  opacity: 0.25;
+  height: 1px;
 }
 </style>

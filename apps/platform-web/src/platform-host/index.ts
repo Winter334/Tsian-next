@@ -10,6 +10,7 @@ import type {
   GameCardContentFile,
   GameCardCover,
   GameCardFrontendBinding,
+  GameCardRuntimeEntrypoints,
   InvokeAgentRequest,
   InvokeAgentResult,
   JsonValue,
@@ -776,6 +777,20 @@ export const playFrontendBridge: PlayFrontendBridge = {
       } as WorkspaceOperationRequest, {
         actorLevel: 1,
       }) as Promise<WorkspaceWriteResult>
+    },
+  },
+  card: {
+    /** 返回当前卡 runtime.entrypoints；卡未配置时返回空对象 {}。
+     *  前端用它决定调用哪个 agent（如回合后维护入口），不硬编码 agent 名。 */
+    async getEntrypoints(): Promise<GameCardRuntimeEntrypoints> {
+      const activeCard = await getPlatformActiveGameCard()
+      const entrypoints = activeCard?.manifest.runtime?.entrypoints
+      if (!entrypoints) return {}
+      // 只透出已声明的字段，避免 manifest 解析外的字段泄漏到前端。
+      const result: GameCardRuntimeEntrypoints = {}
+      if (entrypoints.playerTurn) result.playerTurn = entrypoints.playerTurn
+      if (entrypoints.postTurnMaintenance) result.postTurnMaintenance = entrypoints.postTurnMaintenance
+      return result
     },
   },
   interaction: {

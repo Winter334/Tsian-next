@@ -37,6 +37,7 @@ const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
   "workspace.list",
   "workspace.search",
   "workspace.write",
+  "card.getEntrypoints",
 ]
 const REMOTE_PLAY_BRIDGE_METHOD_SET = new Set<RemotePlayBridgeMethod>(
   REMOTE_PLAY_BRIDGE_METHODS,
@@ -475,6 +476,10 @@ function dispatchRemoteBridgeRequest(
   }
   if (method === "workspace.write") {
     return bridge.workspace.write(normalizeWorkspaceWriteRequest(params))
+  }
+
+  if (method === "card.getEntrypoints") {
+    return bridge.card.getEntrypoints({})
   }
 
   return bridge.platform.runAction(normalizePlatformActionRequest(params))

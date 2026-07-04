@@ -8,6 +8,7 @@ import type {
   ToolEvent,
 } from "@tsian/play-bridge"
 import type { TurnPhase } from "../types"
+import { triggerSyncAfterTurn, useSyncAfterTurn } from "./useSyncAfterTurn"
 
 /**
  * useTsian — 单例 TsianApi + 5 订阅映射到响应式状态。
@@ -162,6 +163,9 @@ function subscribe(): void {
       turnOptions.value = parsed.options.length > 0 ? parsed.options : (result.options ?? [])
       turnPhase.value = "standby"
       turnCount.value += 1
+      // 回合后同步：正文落定后发起回合后维护 Agent 调用（若卡配置了 postTurnMaintenance）。
+      // triggerSyncAfterTurn 内部读 entrypoints 决定是否启动；不阻塞主回合流程。
+      void triggerSyncAfterTurn(turnCount.value)
     }),
   )
 
@@ -201,6 +205,8 @@ export function useTsian() {
     if (readyPoll) clearInterval(readyPoll)
   })
 
+  const { syncPhase, retrySyncAfterTurn, resetSyncPhase } = useSyncAfterTurn()
+
   return {
     // 响应式状态（只读视图）
     ready: readonly(ready),
@@ -212,11 +218,16 @@ export function useTsian() {
     turnOptions: readonly(turnOptions),
     checkpoints: readonly(checkpoints),
     openingNarrative: readonly(openingNarrative),
+    syncPhase,
 
     // 操作方法
     tsian,
+    retrySyncAfterTurn,
+    resetSyncPhase,
     async send(text: string): Promise<void> {
       if (!tsian.ready || turnPhase.value === "streaming") return
+      // 同步进行中或失败时不允许发送（避免在旧状态上继续）
+      if (syncPhase.value === "syncing" || syncPhase.value === "sync-failed") return
       // 不清空 stream（镜像 legacy：所有内容按顺序累积，跨轮保留）
       // 只重置流式累积器 + 选项
       streamingText.value = ""

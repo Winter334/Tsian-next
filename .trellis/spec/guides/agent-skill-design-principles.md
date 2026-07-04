@@ -37,6 +37,8 @@
 
 **执行手段**：把易变逻辑硬编码进平台、或把稳定逻辑散到 skill，都是错配。校验逻辑随 schema 演进 → 放 skill。
 
+**实例：前端编排不硬编码 agent 名**（2026-07-04，`novel-frontend-stage-manager-after-turn`）。Agent 显示名和运行时入口会因卡模板调整而变（改名、换阵容），属于"会变"层。前端调用 agent 必须从卡配置 `runtime.entrypoints` 读 agent id（`tsian.card.entrypoints()`），不写死 `"stage-manager"` 之类的字面量。更进一步的约定：**UI 文案不引用 agent 名**——Toast 只描述阶段行为（"本回合整理中"），不出现 agent displayName。你不展示的东西就无法硬编码：agent 改名只动卡模板，前端零改动。
+
 ---
 
 ## 原则 3：是否封装 skill 看往返次数

@@ -43,4 +43,5 @@ export type {
   WorkspaceSearchResult,
   WorkspaceWriteResult,
   WorkspaceScope,
+  GameCardRuntimeEntrypoints,
 } from "@tsian/contracts"

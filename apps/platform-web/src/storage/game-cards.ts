@@ -160,12 +160,25 @@ function normalizeRuntimeEntrypoints(value: unknown): GameCardRuntimeEntrypoints
     throw new Error("Game card runtime.entrypoints.playerTurn must be a string.")
   }
 
-  return {
+  const result: GameCardRuntimeEntrypoints = {
     playerTurn: requireNonEmptyString(
       playerTurn,
       "runtime.entrypoints.playerTurn",
     ),
   }
+
+  const postTurnMaintenance = (value as { postTurnMaintenance?: unknown }).postTurnMaintenance
+  if (postTurnMaintenance !== undefined) {
+    if (typeof postTurnMaintenance !== "string") {
+      throw new Error("Game card runtime.entrypoints.postTurnMaintenance must be a string.")
+    }
+    result.postTurnMaintenance = requireNonEmptyString(
+      postTurnMaintenance,
+      "runtime.entrypoints.postTurnMaintenance",
+    )
+  }
+
+  return result
 }
 
 function normalizeRuntimeConfig(manifest: GameCardManifest): GameCardRuntimeConfig | undefined {
@@ -383,6 +396,7 @@ function createBuiltinBlankGameCardRecord(
     runtime: {
       entrypoints: {
         playerTurn: "storyteller",
+        postTurnMaintenance: "stage-manager",
       },
     },
     ...(frontend ? { frontend } : {}),

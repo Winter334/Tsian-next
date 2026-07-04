@@ -265,13 +265,23 @@ function normalizeRuntimeEntrypoints(value: unknown): GameCardRuntimeEntrypoints
     return undefined
   }
 
-  return {
+  const result: GameCardRuntimeEntrypoints = {
     playerTurn: requireString(
       value.playerTurn,
       "GAME_CARD_RUNTIME_PLAYER_TURN_REQUIRED",
       "Game card runtime.entrypoints.playerTurn is required when provided.",
     ),
   }
+
+  if (value.postTurnMaintenance !== undefined) {
+    result.postTurnMaintenance = requireString(
+      value.postTurnMaintenance,
+      "GAME_CARD_RUNTIME_POST_TURN_MAINTENANCE_INVALID",
+      "Game card runtime.entrypoints.postTurnMaintenance must be a non-empty string when provided.",
+    )
+  }
+
+  return result
 }
 
 function normalizeRuntimeConfig(value: unknown): GameCardRuntimeConfig | undefined {

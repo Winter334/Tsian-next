@@ -21,6 +21,7 @@ import type {
   WorkspaceSearchResult,
   WorkspaceWriteResult,
 } from "./runtime"
+import type { GameCardRuntimeEntrypoints } from "./game-card"
 
 export interface InteractionBridge {
   sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult>
@@ -74,6 +75,15 @@ export interface WorkspaceBridge {
   write(req: WorkspaceWriteRequest): Promise<WorkspaceWriteResult>
 }
 
+/** 卡配置读取的 RPC 请求/响应类型。当前只暴露 runtime entrypoints，
+ *  让前端决定调用哪个 agent（如回合后维护入口），不硬编码 agent 名。 */
+export interface CardGetEntrypointsRequest {}
+
+export interface CardBridge {
+  /** 返回当前卡 runtime.entrypoints；卡未配置时返回空对象 {}。 */
+  getEntrypoints(req: CardGetEntrypointsRequest): Promise<GameCardRuntimeEntrypoints>
+}
+
 export interface DebugBridge {
   getAiDebugRecords(): Promise<AiDebugRecord[]>
   onTurnDebugReady(cb: (turn: number) => void): () => void
@@ -84,6 +94,7 @@ export interface PlayFrontendBridge {
   query: QueryBridge
   platform: PlatformBridge
   workspace: WorkspaceBridge
+  card: CardBridge
   debug?: DebugBridge
 }
 
@@ -101,6 +112,7 @@ export type RemotePlayBridgeMethod =
   | "workspace.list"
   | "workspace.search"
   | "workspace.write"
+  | "card.getEntrypoints"
 
 /** 玩家回答 ask_user 的 RPC payload。 */
 export interface AskUserResponse {
@@ -119,6 +131,7 @@ export type RemotePlayBridgeRequestParams =
   | WorkspaceListRequest
   | WorkspaceSearchRequest
   | WorkspaceWriteRequest
+  | CardGetEntrypointsRequest
   | undefined
 
 export type RemotePlayBridgeResponseResult =
@@ -131,6 +144,7 @@ export type RemotePlayBridgeResponseResult =
   | WorkspaceEntry[]
   | WorkspaceSearchResult[]
   | WorkspaceWriteResult
+  | GameCardRuntimeEntrypoints
   | null
   | undefined
 

@@ -6,6 +6,7 @@ import type { ProcessNodeData } from "./ProcessNode.vue"
 import RoundProcess from "./RoundProcess.vue"
 import TurnMeta from "./TurnMeta.vue"
 import StoryOptions from "./StoryOptions.vue"
+import SyncToast from "./SyncToast.vue"
 import Composer from "./Composer.vue"
 import CheckpointMark from "../checkpoints/CheckpointMark.vue"
 import RestoreDialog from "../checkpoints/RestoreDialog.vue"
@@ -34,11 +35,14 @@ const {
   turnOptions,
   checkpoints,
   openingNarrative,
+  syncPhase,
   send,
   stop,
   restore,
   loadHistory,
   loadCheckpoints,
+  retrySyncAfterTurn,
+  resetSyncPhase,
 } = useTsian()
 
 const INITIAL_VISIBLE_TURNS = 40
@@ -205,6 +209,8 @@ async function onRestoreConfirm() {
   handleTurnScroll()
   // 重置计时器：丢弃上一轮残留的 elapsedMs，避免重建后的 TurnMeta 显示被抹除轮的耗时
   resetTurnTimer()
+  // 重置同步状态：丢弃 syncing/synced/sync-failed 残留，避免重建后 Toast 错挂
+  resetSyncPhase()
   // restore 完成，对话流已重建在幕布下方——等燃烧烧穿后移除幕布
 }
 
@@ -417,11 +423,20 @@ function onEdit(content: string) {
       <span class="jump-label">最近</span>
     </button>
 
+    <!-- 回合后同步 Toast：正文落定后浮起，朴素克制 + 卡片扫光签名。
+         syncPhase 由 useSyncAfterTurn 驱动；idle 时不渲染。 -->
+    <SyncToast
+      v-if="syncPhase !== 'idle'"
+      :phase="syncPhase"
+      @retry="retrySyncAfterTurn"
+    />
+
     <!-- Composer：正常流布局，固定在滚动区下方（flex 列底部），与正文同宽 52em 居中 -->
     <Composer
       ref="composerRef"
       :ready="ready"
       :streaming="streaming"
+      :syncing="syncPhase === 'syncing' || syncPhase === 'sync-failed'"
       @send="onSend"
       @stop="onStop"
     />

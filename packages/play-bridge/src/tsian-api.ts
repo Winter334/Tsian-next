@@ -12,6 +12,7 @@ import type {
   AgentInvocationEvent,
   CheckpointSummary,
   DeepQueryResult,
+  GameCardRuntimeEntrypoints,
   InjectionMessage,
   InvokeAgentResult,
   MessageInteractionResult,
@@ -158,6 +159,12 @@ export interface TsianApi {
     list(path?: string, scope?: WorkspaceScope): Promise<WorkspaceEntry[]>
     search(query: string, options?: { scope?: WorkspaceScope; limit?: number; contextLines?: number; ignoreCase?: boolean }): Promise<WorkspaceSearchResult[]>
     write(path: string, content: string, scope?: WorkspaceScope): Promise<WorkspaceWriteResult>
+  }
+
+  // ── 卡配置 ──
+  readonly card: {
+    /** 当前卡 runtime 入口配置。前端用它决定调用哪个 agent（如回合后维护入口），不硬编码 agent 名。 */
+    entrypoints(): Promise<GameCardRuntimeEntrypoints>
   }
 
   // ── 通用入口（覆盖冷门/未来新增能力，不暴露 RPC）──
@@ -469,6 +476,12 @@ export function createTsian(): TsianApi {
           content,
           ...(scope ? { scope } : {}),
         })
+      },
+    },
+
+    card: {
+      async entrypoints(): Promise<GameCardRuntimeEntrypoints> {
+        return bridge.call<GameCardRuntimeEntrypoints>("card.getEntrypoints", {})
       },
     },
 

@@ -1,6 +1,7 @@
 import type {
   ConversationMessageRecord,
   DeepQueryResult,
+  GameCardRuntimeEntrypoints,
   InvokeAgentRequest,
   InvokeAgentResult,
   MessageInteractionRequest,
@@ -155,6 +156,12 @@ function createInspectionBridge(state: InspectSessionState): PlayFrontendBridge 
       async search(): Promise<[]> { return [] },
       async write(): Promise<never> {
         throw new Error("workspace.write is not available in frontend inspector mode.")
+      },
+    },
+    // 自检会话不暴露卡 entrypoints（无活跃卡 runtime 绑定）。
+    card: {
+      async getEntrypoints(): Promise<GameCardRuntimeEntrypoints> {
+        return {}
       },
     },
     // 不接 debug bridge(自检不需要 ai-debug)

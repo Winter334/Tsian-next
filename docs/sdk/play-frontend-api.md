@@ -576,11 +576,51 @@ async function sendAction(text: string) {
 
 ---
 
-## 7. 通用入口
+## 7. 卡配置
+
+前端通过 `tsian.card.entrypoints()` 读取当前卡 runtime 入口配置，决定调用哪个 agent，**不硬编码 agent 名**。改名只动卡模板，前端零改动。
+
+### 7.1 `tsian.card.entrypoints()`
+
+```ts
+const ep = await tsian.card.entrypoints()
+// → { playerTurn?: string, postTurnMaintenance?: string }
+```
+
+返回 `GameCardRuntimeEntrypoints`：
+
+| 字段 | 说明 |
+|---|---|
+| `playerTurn` | `send` / `interaction.sendMessage` 正式玩家回合入口 agent id。 |
+| `postTurnMaintenance` | 回合后维护入口 agent id。默认 novel 前端在正文落定后用它调 `invokeAgent` 发起回合后维护（场记）。省略则无同步流程。 |
+
+卡未配置 `runtime.entrypoints` 时返回空对象 `{}`。
+
+#### 示例：回合后同步
+
+```ts
+const ep = await tsian.card.entrypoints()
+const maintenanceAgentId = ep.postTurnMaintenance?.trim()
+if (!maintenanceAgentId) return // 卡未配置，无同步流程
+
+const invocationId = `sync-turn-${turn}-${Date.now().toString(36)}`
+await tsian.invokeAgent(maintenanceAgentId, input, {
+  invocationId,
+  purpose: "post-turn-maintenance",
+  commitMode: "workspace",
+  persist: true,
+})
+```
+
+**Toast 文案不应引用 agent 名**：UI 只描述阶段行为（如"本回合整理中"），不出现 `postTurnMaintenance` 的值或 agent title——这样 agent 改名只动模板，前端和 Toast 零改动。
+
+---
+
+## 8. 通用入口
 
 高频能力走语义化方法（`send`/`onMessage`/`history`...）。冷门或未来新增的平台能力走两个通用入口——领域语言里的"查资源 / 执行动作"，**不暴露 RPC method 字符串**。
 
-### 7.1 `tsian.query(resource, params?)`
+### 8.1 `tsian.query(resource, params?)`
 
 查询类资源（只读）。
 
@@ -589,7 +629,7 @@ const result = await tsian.query("agent-registry")
 // → 平台返回的资源数据（结构取决于 resource）
 ```
 
-### 7.2 `tsian.runAction(action, params?)`
+### 8.2 `tsian.runAction(action, params?)`
 
 执行类动作（可能有副作用）。
 
@@ -601,7 +641,7 @@ const result = await tsian.runAction("some-future-action", { foo: "bar" })
 
 ---
 
-## 8. 类型参考
+## 9. 类型参考
 
 全部类型从 `@tsian/play-bridge` 导出，无需额外 import contracts。
 
@@ -645,6 +685,11 @@ interface TsianApi {
       scope?: WorkspaceScope; limit?: number; contextLines?: number; ignoreCase?: boolean
     }): Promise<WorkspaceSearchResult[]>
     write(path: string, content: string, scope?: WorkspaceScope): Promise<WorkspaceWriteResult>
+  }
+
+  // 卡配置
+  readonly card: {
+    entrypoints(): Promise<GameCardRuntimeEntrypoints>
   }
 
   // 通用入口

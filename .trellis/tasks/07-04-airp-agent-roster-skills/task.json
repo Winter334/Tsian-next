@@ -25,7 +25,8 @@
     "07-04-opening-multi-agent-orchestration",
     "07-04-default-airp-agent-skill-template-rewrite",
     "07-04-action-resolution-system",
-    "07-04-setup-invoke-agent-streaming"
+    "07-04-setup-invoke-agent-streaming",
+    "07-04-07-04-invoke-agent-workspace-with-checkpoint"
   ],
   "parent": "07-03-play-frontend-status-bar",
   "relatedFiles": [],

@@ -17,6 +17,17 @@ export interface GameCardRuntimeConfig {
 export interface GameCardRuntimeEntrypoints {
   /** Agent id used by tsian.send() / interaction.sendMessage formal player turns. */
   playerTurn?: string
+  /**
+   * Agent id invoked by the default novel frontend after each player turn's
+   * prose is finalized, to perform runtime/entity/scene/memory/status bar
+   * maintenance. Omit to disable post-turn sync (no Toast, no invokeAgent).
+   *
+   * The frontend reads this via the bridge (tsian.card.entrypoints()) and
+   * calls invokeAgent with this id; it never hardcodes an agent name. Toast
+   * labels describe the phase behavior and never reference this id or any
+   * agent title, so renaming the agent only touches the card template.
+   */
+  postTurnMaintenance?: string
 }
 
 export interface GameCardAuthor {
