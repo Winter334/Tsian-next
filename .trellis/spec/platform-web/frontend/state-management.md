@@ -225,7 +225,17 @@ try {
 }
 ```
 
-## Scenario: Frontend Package Import/Export
+### Setup Wizard Streaming Patterns
+
+The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct ways, both gated by `invocationId`:
+
+**Step 4 dialog — streaming text render**: accumulate `delta` (`kind: "content"`) into a `playSetupStreamingText` ref and render via a **lightweight streaming text block** (serif + fade-in), NOT `NarrativeMessage`. `NarrativeMessage` is designed for settled messages (option-block cleanup, full layout); rendering half-formed `[[options]]` mid-stream breaks layout. On `completed`, `handleAgentResponse` clears the streaming buffer and pushes the full text as a `NarrativeMessage` — streaming and settled are two separate renders. Filter delegated `agent_call` deltas (`agentId !== orchestrator`) — the orchestrator's output is the player-facing text; delegated agents are感知 via `tool` events (`name: "agent_call"`).
+
+**Step 2 understanding — event-driven stage text**: map `tool` events to player-facing stage labels via `mapToolToStage`, using **monotonic progression** (`Math.max(current, mapped)`) so read/write alternation doesn't make stage text flicker backward. Do NOT show tool names (too IDE-like) or `delta` text (spoilers — understanding is modeling, not player-facing narrative). The magic-circle animation stays CSS-driven; the old `onAgentActivity` heartbeat and `STAGE_INTERVAL` time-guess are removed.
+
+**Heartbeat transition**: `onAgentActivity` (legacy heartbeat) is replaced by `onAgentInvocation` in both setup paths. The global `onAgentActivity` API cleanup (contracts/bridge/play-bridge/platform-host) is deferred until confirmed no other consumers remain.
+
+## Scenario: Frontend Packages Import/Export
 
 ### Scope / Trigger
 
