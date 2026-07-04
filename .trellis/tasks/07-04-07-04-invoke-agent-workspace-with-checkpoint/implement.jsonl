@@ -1,1 +1,2 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "Dexie schema 与 checkpoint 表模型；本任务扩展 LocalCheckpointRecord.reason 枚举并新增 checkpoint 提交函数，必须遵守 storage 层布局与表接口约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 contracts(runtime.ts) → bridge → platform-host → storage(saves.ts/db.ts) 四层，checkpoint 提交语义需保证层间数据流一致"}

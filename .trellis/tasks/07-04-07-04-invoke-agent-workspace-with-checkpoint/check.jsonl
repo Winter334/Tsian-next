@@ -1,1 +1,2 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "检查 checkpoint 表结构与 thin manifest 约定是否被新提交函数正确遵守；turn 文件排除、blob 去重、prune 规则一致性"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验证 contracts checkpointReason → platform-host 校验 → storage reason 枚举映射的跨层一致性，确认 workspace 模式无回归"}
