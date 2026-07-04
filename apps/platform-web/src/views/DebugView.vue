@@ -530,6 +530,7 @@ function checkpointReasonLabel(value: unknown): string {
   if (value.reason === "initial") return "初始"
   if (value.reason === "after-turn") return "回合后"
   if (value.reason === "manual") return "手动"
+  if (value.reason === "post-turn-maintenance") return "维护"
   return "unknown"
 }
 

@@ -76,7 +76,7 @@ export interface LocalCheckpointRecord {
   saveId: string
   turn: number
   label: string
-  reason: "initial" | "after-turn" | "manual"
+  reason: "initial" | "after-turn" | "manual" | "post-turn-maintenance"
   createdAt: number
   /** Thin manifest：状态文件按内容哈希引用 blob 表（turn 文件不进 manifest，存档级共享）。
    *  内容寻址去重——跨检查点未变更文件共享一份 blob，零重复拷贝。 */

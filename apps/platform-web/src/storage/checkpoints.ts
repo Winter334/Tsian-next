@@ -12,8 +12,12 @@ import { isAppendOnlyLogPath, extractTurnFromLogPath } from "../platform-host/hi
 import { hashFile, putBlobIfAbsent, getBlob, deleteOrphanBlobs } from "./blobs"
 import { getPlatformConfig } from "../config/platform-config"
 
-export interface LocalCheckpointSummary extends CheckpointSummary {
+export interface LocalCheckpointSummary extends Omit<CheckpointSummary, "reason"> {
   saveId: string
+  /** 存储层 reason 枚举比契约层 CheckpointSummary 更宽（含 "post-turn-maintenance"）。
+   *  契约层保持窄枚举不变（本任务不改 contracts）；RPC 边界由 platform-host 的
+   *  `as T[]` 断言衔接，运行时值透传给前端/DebugView。 */
+  reason: LocalCheckpointRecord["reason"]
 }
 
 function createCheckpointId(saveId: string, createdAt: number): string {

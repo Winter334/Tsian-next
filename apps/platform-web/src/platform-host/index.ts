@@ -144,6 +144,7 @@ import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import {
   commitSuccessfulRuntimeTurnForSave,
   commitWorkspaceFilesForSave,
+  commitWorkspaceFilesWithCheckpointForSave,
   createRuntimeWorkspaceTransaction,
   createLocalSave,
   createLocalSaveFromGameCard,
@@ -1120,15 +1121,23 @@ export const playFrontendBridge: PlayFrontendBridge = {
       const invocationId = input.invocationId?.trim() || createInvocationId()
       const purpose = input.purpose?.trim() || undefined
       const commitMode = input.commitMode ?? "workspace"
-      if (commitMode === "workspace-with-checkpoint") {
-        throw new Error(
-          "interaction.invokeAgent commitMode workspace-with-checkpoint is reserved but not implemented yet.",
-        )
-      }
       if (input.checkpointReason !== undefined && commitMode === "workspace") {
         throw new Error(
           "interaction.invokeAgent checkpointReason requires commitMode workspace-with-checkpoint.",
         )
+      }
+      // workspace-with-checkpoint 的 checkpointReason 校验（MVP）：
+      // - 省略 → 默认 "post-turn-maintenance"。
+      // - 提供 → 必须是非空字符串且等于 "post-turn-maintenance"（未知值 fail loud，不静默落库）。
+      if (commitMode === "workspace-with-checkpoint") {
+        if (
+          input.checkpointReason !== undefined &&
+          input.checkpointReason !== "post-turn-maintenance"
+        ) {
+          throw new Error(
+            "interaction.invokeAgent checkpointReason must be \"post-turn-maintenance\" (MVP); unknown values are rejected.",
+          )
+        }
       }
 
       const slot = input.contextSlot
@@ -1381,7 +1390,16 @@ export const playFrontendBridge: PlayFrontendBridge = {
             path: formatAgentTracePath(agentId, invokeTimestamp),
             content: serializeRuntimeTraceEvents(trace.events),
           })
-          await commitWorkspaceFilesForSave(currentActiveSaveId, workspaceTransaction!.finalWorkspaceFiles())
+          await (commitMode === "workspace-with-checkpoint"
+            ? commitWorkspaceFilesWithCheckpointForSave(
+                currentActiveSaveId,
+                workspaceTransaction!.finalWorkspaceFiles(),
+                { turn: invokeMaxTurn, checkpointReason: "post-turn-maintenance" },
+              )
+            : commitWorkspaceFilesForSave(
+                currentActiveSaveId,
+                workspaceTransaction!.finalWorkspaceFiles(),
+              ))
           emitAgentInvocation({ type: "completed", invocationId, agentId })
 
           return { invocationId, response: result.replyText }
