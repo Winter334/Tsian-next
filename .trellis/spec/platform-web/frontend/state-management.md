@@ -366,7 +366,9 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 
 ### SKILL.md Injection (post-use_skill)
 
-`formatActivatedSkillMessageBody` injects the **full** SKILL.md content as a user message after the round's tool observations. No truncation. Rationale: Skills are card-template-authored, carefully designed, and length-controlled. Truncation risks losing the `tsian-actions` JSON block's `inputSchema` — the agent would not know script parameters, a hard-to-detect failure. The old 6000/2000-char truncation was removed.
+`use_skill` returns the **full SKILL.md content** (`content` field) and each action's `inputSchema` directly in the tool observation. The agent sees the Skill text + script parameters in the same round it calls `use_skill`, and can call `run_script` / `test_skill_script` immediately in the next round — no extra round spent waiting for framework injection. The skill path is marked in `injectedSkillPaths` so `collectActivatedSkillContents` skips it (no duplicate injection next round).
+
+`formatActivatedSkillMessageBody` is retained as a compatibility fallback for any path that doesn't go through the new observation-based injection. When it does run, it injects the full SKILL.md as a user message with no truncation. Rationale: Skills are card-template-authored, carefully designed, and length-controlled. Truncation risks losing the `tsian-actions` JSON block's `inputSchema` — the agent would not know script parameters, a hard-to-detect failure. The old 6000/2000-char truncation was removed.
 
 ### Convention: Skill Description Authoring
 
