@@ -645,3 +645,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 124: 默认 AIRP Agent 模板重写
+
+**Date**: 2026-07-04
+**Task**: 默认 AIRP Agent 模板重写
+**Branch**: `feat/airp-agent-invocation-entrypoints`
+
+### Summary
+
+重写默认 AIRP 后台剧组模板：默认 playerTurn 入口改为 storyteller，默认 Agent 阵容切换为说书人/资料员/场记/世界架构师/导演，新增 Agent-local Skill 占位与 mode.json，并更新相关 specs/docs；验证 npm run build:web、task validate、git diff --check 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `95e392c` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
