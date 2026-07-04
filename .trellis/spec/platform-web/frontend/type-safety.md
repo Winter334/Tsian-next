@@ -31,6 +31,7 @@
 - `GameCardManifest.summary` is the single player-facing intro field. Do not add or persist a parallel Game Card `description`; legacy imports may fold an old `description` into `summary` only when `summary` is missing/blank.
 - `GameCardManifest.id` and `version` remain package/runtime metadata; ordinary player-facing UI should not expose them as editable fields.
 - `GameCardManifest.frontend` is optional. A frontend-less Game Card is reusable card content, not a playable card. When provided it must be `remote` or `packaged`; same-realm `builtin` frontends are not supported.
+- `GameCardManifest.runtime.entrypoints.playerTurn` is card-authored runtime configuration for the formal player-turn entry Agent id. Current default templates may explicitly set it to `master`, but runtime code must read the manifest field and fail loud when it is missing/blank; it must not silently fall back to `master` or any other hardcoded Agent id.
 - Card content files are stored per-file (one row per file), not embedded on the card row, so a single file write touches one row and bumps the card's `updatedAt` rather than rewriting the whole card.
 - Packaged frontends are built static files; the platform must not run source builds, npm install, or framework-specific bundling on them. Their files are stored beside the reusable Game Card; saves created from a card do not copy those files or the card content files.
 - A `packaged` frontend must run in an iframe reusing the play-bridge protocol; it must not run in the platform JS realm.
@@ -147,7 +148,7 @@
 - `mediaType` is never stored on internal records; the Service Worker reads the Blob's built-in type. Covers are stored as Blob, not base64 data URIs.
 - DB name bumps are breaking changes with no migration (prototype project). The Service Worker `DB_NAME` must mirror `db.ts` — a mismatch makes packaged frontends 404.
 - `workspace.read` returns a superset of `WorkspaceFile` (old consumers reading `path`/`content`/`updatedAt` are unaffected; new consumers gain line/offset/truncation/binary-placeholder metadata). `workspace.search` adds match metadata while keeping `preview`. Binary files are skipped by search/validate.
-- `game-card.json` is a synthesized workspace file (not stored as a content row) injected into studio/effective workspace listings. Writing it parses + normalizes the manifest and force-overwrites protected fields (`id`, `schema`, `frontend.bridgeVersion`) before persisting; the content table is untouched. Builtin card manifests are read-only. This synthesized file is `GameCardManifest` directly, distinct from the zip package's `game-card.json` (which wraps it in a package manifest).
+- `game-card.json` is a synthesized workspace file (not stored as a content row) injected into studio/effective workspace listings. Writing it parses + normalizes the manifest and force-overwrites protected fields (`id`, `schema`, `frontend.bridgeVersion`) before persisting; the content table is untouched. Builtin card manifests are read-only. This synthesized file is `GameCardManifest` directly, distinct from the zip package's `game-card.json` (which wraps it in a package manifest). The synthesized manifest preserves `runtime.entrypoints.playerTurn`; blank/non-string values are rejected at normalization boundaries.
 - Card frontend single-file writes follow the same per-row pattern as content files: one row put/delete + bump card `updatedAt` in the same transaction, no full card rewrite. The assistant `card-frontend` write channel (`writeFrontendFileForActiveCard`) wraps this and fires `triggerFrontendRebuild` on `frontend/src/**` writes (R6). The staged-snapshot `WorkspaceFile` returned must carry `content` for text writes (not `binary`), or same-turn reads see an empty `isBinaryPlaceholder` — `LocalGameCardFrontendFile` has only `data: Blob` (no `content` field), so reconstruct `content` from the input.
 - Workspace tool `scope` is invisible to the agent. It is auto-inferred from the path prefix on edit ops (and defaults to `effective` on read ops); explicit scope from internal callers still wins. The agent-facing tool schemas do **not** expose `scope` as a parameter, and tool descriptions/prompts never mention it — the agent only knows paths. Permission enforcement is path-based, so auto-inference does not change the actor-level boundary. **Runtime `writeWorkspaceFile`/`editWorkspaceFile`/`deleteWorkspacePath` route mutations by `scopeForPath(path)` (path-derived), NOT the inbound `scope` arg** — so even a hallucinated scope from the agent cannot misroute a write to the wrong table. The host adapter (`workspaceMutations.write`) must branch on the scope it receives (which is already path-derived from the runtime layer), with explicit `card-frontend` and `card-content` branches plus `platform-meta`/`save-runtime`/`temp`.
 - **Reserved content paths are enforced on every write path, not just bulk import.** `assertNonReservedContentPath` is shared by `normalizeTemplateFiles` (bulk `putLocalGameCard`) and `writeLocalGameCardContentFile` (single-file write). Reserved: `save/`, `.tsian/`, `game-card.json` (manifest is synthesized), `frontend/` (belongs to `card-frontend` scope). Without the single-file guard, a stray `card-content` write of `frontend/...` or `game-card.json` silently lands in the content table, then surfaces as bogus `workspace/game-card.json` / `workspace/frontend/...` entries in exported packages and breaks re-import.
@@ -215,7 +216,7 @@
 
 ### Contracts
 
-- `platform-host` owns storage access. It must initialize the save runtime defaults, assemble the effective workspace, then pass it into Agent Runtime.
+- `platform-host` owns storage access. It must initialize the save runtime defaults, assemble the effective workspace from the active save's bound Game Card, resolve the formal player-turn entry Agent id from that card's `runtime.entrypoints.playerTurn`, then pass it into Agent Runtime.
 - `agent-runtime` owns prompt composition. It assembles context for the single entry agent call; the entry agent orchestrates other agents through `agent_call` as directed by its `AGENT.md`, `SOUL.md`, and contacts configuration.
 - Model messages may include `AGENT.md`, optional `SOUL.md`, notes/session files, declared context files, missing context paths, filtered lightweight skill index, recent history, turn number, and player input.
 - Skill indexes inside runtime prompts must remain lightweight; do not load `SKILL.md` bodies from the default turn path.
@@ -225,6 +226,7 @@
 
 - Empty save runtime data on an active save -> fill `save/...` defaults before runtime reads files.
 - Effective workspace missing the entry agent definition -> fail with a clear runtime error; do not fall back to legacy hardcoded prompts.
+- Missing/blank `runtime.entrypoints.playerTurn` on the save-bound Game Card -> fail before the turn with a clear `game-card.json` configuration error; do not fall back to `master`.
 - Effective workspace missing `agents/<agent>/SOUL.md` -> continue without `soulFile`; this is compatibility input, not a runtime error.
 - Missing declared `contextPaths` -> include missing path diagnostics in prompt context; do not fail the turn for that reason alone.
 - Model returns empty reply -> keep existing empty-reply error behavior.
@@ -483,7 +485,7 @@
 - **Three-layer write routing for the assistant** (level 4): `card-content` → save transaction → commit → card content files (edits the mounted card — swap card swaps data); `save-runtime` → save transaction → commit → save files; `platform-meta` + local-assistant path → direct local-basket (not in save transaction/checkpoint/distribute). Runtime card agents (level 1) cannot reach `.tsian/` at all — the permission layer blocks them.
 - Session delete cleans up the context virtual file alongside the visible-messages key (no orphan data).
 - Cross-load recovery: the Dexie map (including `sessions/<id>/context.json`) restores on browser refresh/reopen; the next turn recovers the snapshot — the assistant does not lose context across loads.
-- Master is unaffected: master's path, compression prompt, and `interaction.sendMessage` path are unchanged.
+- Formal player-turn snapshots are now keyed by the card-configured entry Agent id. Older notes that name `master` refer only to default-template content, not a platform fallback.
 - **Tool-call + process-node cross-turn persistence (dual-layer, mirroring the model where UI render context ≠ agent context):**
   - **Agent layer** (snapshot `recentTurns` → `context.json`): tool calls live with the prose, same compression lifespan (recent K rounds raw, earlier compressed into summary). Reconstruction is mode-split: native → structured messages (assistant.toolCalls + tool result role); text → tool-call blocks + observation user messages. Compression presents tool calls to the model (not "discard tool details"). Master does not fill tool calls.
   - **UI layer** (session messages store): tool calls (agent-layer fallback) + process nodes (UI display: thought/tool/interim in occurrence order). Both not compressed, retained up to the message cap. The view reconstructs process nodes 1:1 into the timeline (preserves interleaved order, no type-grouping).
@@ -496,7 +498,7 @@
 - Corrupted context virtual file -> fall back to an empty snapshot -> turn proceeds.
 - Turn failure -> snapshot on disk unchanged (no append of the failed turn).
 - Session delete -> both visible-messages key and context virtual file removed (no orphan).
-- Master turn -> unchanged (narrative mode, master path, default compression prompt).
+- Formal player-turn entry configured as `master` -> narrative mode, `save/agents/master/context.json`, and default compression prompt; another configured entry id uses the matching `save/agents/<entry>/context.json` path.
 - `AssistantChatInput` without `sessionId` -> compile error (required field).
 
 ## Avoid

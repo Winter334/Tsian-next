@@ -10,7 +10,7 @@ Novel AIRP v0 keeps the data model simple:
 
 - no independent `save/render/` layer;
 - no render projection/cache contract;
-- no generic card/meter/stat frontend engine for v0;
+- no universal card/meter/stat frontend renderer that replaces bespoke UI; fixed schemas may expose dynamic extension slots for new player-visible fields;
 - no `save/world/<type>/<entity>/index.json` as the main entity path;
 - no generic `_ref` / `_dir` marker convention;
 - no workspace-persisted pure frontend view state by default;
@@ -84,9 +84,12 @@ Required fields:
 - `name`
 - `brief`
 
+`name` is the primary display name for frontend/UI and agent prose. The id localId is a stable path/ref segment; it may equal `name` but does not replace display semantics. Use `aliases` only when nicknames, titles, old names, disguises, or alternate forms of address matter.
+
 Recommended fields when useful:
 
 - `aliases`
+- `gender`
 - `visibility`
 - `lifecycle`
 - `origin`
@@ -95,6 +98,7 @@ Recommended fields when useful:
 - `status`
 - `fields`
 - `sections`
+- `extensions`
 - `updatedAtTurn`
 - `updatedBy`
 
@@ -105,7 +109,7 @@ Do not force every entity to contain every recommended field.
 Omit `visibility` for ordinary player-known data. Defaults:
 
 - entity-level `visibility` defaults to `player-known`;
-- nested `status`, `fields`, and `sections` inherit the parent entity/runtime visibility;
+- nested `status`, `fields`, `sections`, and `extensions` inherit the parent entity/runtime visibility;
 - `runtime.json` is player-facing by default.
 
 Use explicit values only for exceptions:
@@ -140,9 +144,23 @@ The default frontend may read stable ordinary fields directly from entity/runtim
 - `status`
 - `fields`
 - `sections`
+- `extensions`
 - runtime summaries in `save/playthrough/runtime.json`
 
-`fields` are simple label/value rows. `sections` are simple title/body blocks. They are ordinary entity data, not a separate render layer.
+`fields` are simple label/value rows. `sections` are simple title/body blocks. `extensions` are dynamic player-visible fields that declare a finite preset `render` type so they can be inserted into dedicated UI slots. These are ordinary entity/runtime data, not a separate render layer.
+
+Recommended extension shape:
+
+```json
+"extensions": {
+  "腐化值": { "render": "progress", "value": 37, "max": 100, "tone": "danger" },
+  "契约对象": { "render": "ref", "ref": "character:玄衣少女", "name": "玄衣少女" }
+}
+```
+
+First-pass preset render types: `text`, `number`, `progress`, `tag`, `tags`, `list`, `section`, `ref`, `cards`. Add new render types only after updating the frontend preset and this schema guidance; do not invent arbitrary UI component names in runtime/entity data.
+
+Fixed baseline schemas such as character, scene, container, item, and runtime can be rendered by bespoke frontend components. `extensions` are only the dynamic slot mechanism for new or temporary fields (for example corruption, alert level, contract target, or special resource), not a universal renderer replacing those components.
 
 ## Schema Evolution
 
@@ -171,7 +189,7 @@ Pending patch files live under `save/schema/patches/pending/*.md`. When accepted
 
 - `world-architect`: creates the initial schema draft, opening setup (entities + scene + relationships + director brief), and later schema patches.
 - `post-processing`: detects stale schema/brief after turns, applies safe schema changes, writes pending patches when confirmation is needed, maintains scene/relationship aggregation slices, and calls world-architect when schema design is needed.
-- `master`: consumes current brief, runtime vars, and visible entity data; it should not invent schema ad hoc.
+- player-turn entry Agent: consumes current brief, runtime vars, and visible entity data; it should not invent schema ad hoc.
 - `retrieval`: helps read source, entity, scene, and relationship details and returns concise findings.
 
 ## Aggregation Layer (scenes / relationships)
@@ -192,13 +210,17 @@ When two copies of the same data exist, the authority / derived relationship and
 
 ## Runtime Variables
 
-Save-level runtime variables belong in `save/playthrough/runtime.json` when they are frequently accessed, player-facing, or frontend-managed. Examples:
+Save-level runtime variables belong in `save/playthrough/runtime.json` when they are frequently accessed, player-facing, frontend-managed, or unsuitable as their own entity file. Runtime is the current status surface that frontends may selectively render. Examples:
 
 - active scene ids (pointers to current scenes);
 - player character/location;
+- story time, coordinates, and world variables;
 - primary inventory summary;
 - equipped refs;
 - party members;
-- high-priority status summaries.
+- high-priority status summaries;
+- `extensions` for temporary or newly evolved player-visible runtime fields.
+
+New default runtime files include `extensions: {}`. Older saves without this field are treated as if it were an empty object.
 
 Pure frontend view state such as active tabs, scroll positions, collapsed panels, transient filters, and hover state should not be stored in workspace by default.

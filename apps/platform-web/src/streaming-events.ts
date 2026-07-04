@@ -19,7 +19,7 @@
  *   - 回调异常吞掉但 console.error，避免污染主链 fail loud 路径
  */
 
-import type { TurnStats, TurnToolOutput } from "@tsian/contracts"
+import type { AgentInvocationEvent, TurnStats, TurnToolOutput } from "@tsian/contracts"
 
 export type TurnDeltaKind = "reasoning" | "content"
 export type TurnDeltaListener = (agentId: string, delta: string, turn: number, round: number, kind: TurnDeltaKind) => void
@@ -187,6 +187,33 @@ export function emitAgentActivity(agentId: string, kind: AgentActivityKind): voi
       listener(agentId, kind)
     } catch (err) {
       console.error("[streaming-events] agent-activity listener threw", err)
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// agent-invocation: invokeAgent 过程事件通道
+// ═══════════════════════════════════════════════════════════════
+// 专用于前端发起的 invokeAgent 调用。invocationId 区分并发调用；
+// agentId 表示实际产出事件的 agent（包含 delegated agent_call 目标）。
+export type AgentInvocationListener = (event: AgentInvocationEvent) => void
+
+const agentInvocationListeners = new Set<AgentInvocationListener>()
+
+export function subscribeAgentInvocation(cb: AgentInvocationListener): () => void {
+  agentInvocationListeners.add(cb)
+  return () => {
+    agentInvocationListeners.delete(cb)
+  }
+}
+
+export function emitAgentInvocation(event: AgentInvocationEvent): void {
+  const listeners = [...agentInvocationListeners]
+  for (const listener of listeners) {
+    try {
+      listener(event)
+    } catch (err) {
+      console.error("[streaming-events] agent-invocation listener threw", err)
     }
   }
 }

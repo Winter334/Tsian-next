@@ -672,12 +672,29 @@ export interface MessageInteractionRequest {
 export interface MessageInteractionResult {
 }
 
+/** invokeAgent workspace commit strategy.
+ *  - "workspace" (default): commit save-runtime workspace changes without creating a checkpoint.
+ *  - "workspace-with-checkpoint": reserved for post-turn maintenance flows that need a
+ *    recoverable checkpoint after committing workspace changes; current platform builds may
+ *    reject it until checkpoint reason/storage semantics are implemented end-to-end. */
+export type AgentInvocationCommitMode = "workspace" | "workspace-with-checkpoint"
+
 /** invokeAgent 请求：游戏前端按 agentId 直接调用某个 agent（NPC 视角、
  *  UI 触发的单次修正等）。与 sendMessage 不同：不推进 turn、不写历史、
- *  不更新 runtimeSnapshot——旁路调用，结果直接返回调用方。 */
+ *  不更新 runtimeSnapshot——结果直接返回调用方；过程事件通过 invocationId 关联。 */
 export interface InvokeAgentRequest {
   agentId: string
   input: string
+  /** invocation 级唯一 id。调用方可传入以便在 Promise resolve 前过滤流式事件；
+   *  省略时 SDK/平台会生成。 */
+  invocationId?: string
+  /** 调用目的标签（如 post-turn-maintenance / setup），仅用于前端过滤、日志和调试。 */
+  purpose?: string
+  /** Workspace 提交策略。省略等同 "workspace"；"workspace-with-checkpoint" 为后续
+   *  场记/维护类调用预留，平台未实现完整 checkpoint 语义时应 fail loud。 */
+  commitMode?: AgentInvocationCommitMode
+  /** 预留给 workspace-with-checkpoint 的 checkpoint 原因/标签；默认 workspace 模式不使用。 */
+  checkpointReason?: string
   /** 前端注入的上下文消息（本轮有效，不落盘）。 */
   injection?: InjectionMessage[]
   /** 上下文隔离 slot。不同 slot 读写不同 context-<slot>.json，防止不同调用方上下文串。
@@ -690,8 +707,55 @@ export interface InvokeAgentRequest {
 
 /** invokeAgent 返回：agent 的回复文本。不含 snapshot（不进运行时状态）。 */
 export interface InvokeAgentResult {
+  invocationId: string
   response: string
 }
+
+/** invokeAgent 的 invocation 级过程事件。agentId 表示实际产出事件的 agent；
+ *  delegated agent_call 的事件使用同一 invocationId、各自的 agentId。 */
+export type AgentInvocationEvent =
+  | {
+      type: "started"
+      invocationId: string
+      agentId: string
+      purpose?: string
+    }
+  | {
+      type: "delta"
+      invocationId: string
+      agentId: string
+      round: number
+      kind: "reasoning" | "content"
+      delta: string
+    }
+  | {
+      type: "round-end"
+      invocationId: string
+      agentId: string
+      round: number
+      kind: "thought" | "final"
+    }
+  | {
+      type: "tool"
+      invocationId: string
+      agentId: string
+      round: number
+      callId: string
+      name: string
+      status: "loading" | "running" | "success" | "failed"
+      output?: TurnToolOutput
+    }
+  | {
+      type: "completed"
+      invocationId: string
+      agentId: string
+    }
+  | {
+      type: "failed"
+      invocationId: string
+      agentId: string
+      error: PlatformActionError
+    }
 
 /** ask_user 工具请求：AI 向玩家提问。 */
 export interface AskUserRequest {

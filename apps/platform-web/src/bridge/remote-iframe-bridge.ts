@@ -19,7 +19,7 @@ import type {
   WorkspaceWriteRequest,
 } from "@tsian/contracts"
 
-import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats, subscribeAgentActivity } from "../streaming-events"
+import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats, subscribeAgentActivity, subscribeAgentInvocation } from "../streaming-events"
 import { subscribeInteractionRequest, resolveInteractionRequest } from "../interaction-events"
 
 export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
@@ -129,6 +129,7 @@ function optionalRecordParams(
 
 const INJECTION_ROLES = new Set(["system", "user", "assistant"])
 const INJECTION_POSITIONS = new Set(["before-input", "after-input"])
+const AGENT_INVOCATION_COMMIT_MODES = new Set(["workspace", "workspace-with-checkpoint"])
 
 /** 校验并透传前端 injection 数组。校验结构（数组 + 每条 role/content/position 合法），
  *  不校验语义/长度。undefined 或空数组返回 undefined（不注入）。 */
@@ -221,6 +222,25 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
   }
 
   const injection = normalizeInjection(record.injection)
+  const invocationId =
+    typeof record.invocationId === "string" && record.invocationId.trim()
+      ? record.invocationId.trim()
+      : undefined
+  const purpose =
+    typeof record.purpose === "string" && record.purpose.trim()
+      ? record.purpose.trim()
+      : undefined
+  const commitMode = record.commitMode === undefined ? undefined : typeof record.commitMode === "string" ? record.commitMode.trim() : ""
+  if (commitMode !== undefined && !AGENT_INVOCATION_COMMIT_MODES.has(commitMode)) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_COMMIT_MODE",
+      'interaction.invokeAgent commitMode must be "workspace" or "workspace-with-checkpoint" when provided.',
+    )
+  }
+  const checkpointReason =
+    typeof record.checkpointReason === "string" && record.checkpointReason.trim()
+      ? record.checkpointReason.trim()
+      : undefined
   const contextSlot =
     typeof record.contextSlot === "string" && record.contextSlot.trim()
       ? record.contextSlot.trim()
@@ -229,6 +249,10 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
   return {
     agentId: record.agentId,
     input: record.input,
+    ...(invocationId ? { invocationId } : {}),
+    ...(purpose ? { purpose } : {}),
+    ...(commitMode ? { commitMode: commitMode as InvokeAgentRequest["commitMode"] } : {}),
+    ...(checkpointReason ? { checkpointReason } : {}),
     ...(injection ? { injection } : {}),
     ...(contextSlot ? { contextSlot } : {}),
     ...(persist !== undefined ? { persist } : {}),
@@ -723,6 +747,12 @@ export function mountRemoteIframeFrontend(
     })
   })
 
+  // Forward full invokeAgent invocation events. This is the content-carrying
+  // replacement for legacy agent-activity; keep both during the transition.
+  const unsubscribeAgentInvocation = subscribeAgentInvocation((event) => {
+    postEvent("agent-invocation", event)
+  })
+
   // Forward agent-activity signals (from invokeAgent 旁路调用) to the remote
   // frontend as `agent-activity`, so useSetupState can pulse the understanding
   // running heartbeat. Independent from turn-delta/turn-tool — does not carry
@@ -744,8 +774,8 @@ export function mountRemoteIframeFrontend(
     unsubscribeTurnOptions?.()
     unsubscribeTurnStats?.()
     unsubscribeInteractionRequest?.()
+    unsubscribeAgentInvocation?.()
     unsubscribeAgentActivity?.()
-    unsubscribeTurnDelta?.()
     if (iframe.parentElement === container) {
       iframe.remove()
     }

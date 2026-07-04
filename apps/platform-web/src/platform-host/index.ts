@@ -12,6 +12,7 @@ import type {
   GameCardFrontendBinding,
   InvokeAgentRequest,
   InvokeAgentResult,
+  JsonValue,
   PlatformActionError,
   PlatformActionRequest,
   PlatformActionResult,
@@ -93,7 +94,7 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
-import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats, emitAgentActivity } from "../streaming-events"
+import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats, emitAgentActivity, emitAgentInvocation } from "../streaming-events"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   markPlatformHostReady,
@@ -111,6 +112,7 @@ import {
   resolveAgentModelConfig,
 } from "./internal"
 import { resolveLocalAssistantActorLevel } from "./local-assistant"
+import { resolvePlayerTurnAgentIdForSave } from "./runtime-entrypoints"
 import { ensureActiveSave, formatActiveFrontendId, getPlatformActiveGameCardId } from "./game-cards"
 import { executeWorkspaceMutation } from "./workspace-volumes"
 import {
@@ -180,9 +182,6 @@ import {
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
-import {
-  BUILTIN_BLANK_GAME_CARD_ID,
-} from "../storage/game-cards"
 import { triggerFrontendRebuild, readFrontendBuildStatus } from "../frontend-build/trigger"
 import {
   DEFAULT_FRONTEND_BINDING,
@@ -206,6 +205,45 @@ const invokeAgentQueue = new Map<string, Promise<unknown>>()
  */
 function finishReasonToKind(finishReason: "stop" | "tool_calls"): "thought" | "final" {
   return finishReason === "tool_calls" ? "thought" : "final"
+}
+
+function createInvocationId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID()
+  }
+
+  return `invoke-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function platformErrorFromUnknown(error: unknown, fallbackCode = "AGENT_INVOCATION_FAILED"): PlatformActionError {
+  if (isRecord(error) && typeof error.code === "string" && typeof error.message === "string") {
+    const details = isRecord(error.details)
+      ? Object.fromEntries(
+          Object.entries(error.details).filter((entry): entry is [string, JsonValue] =>
+            isJsonValue(entry[1]),
+          ),
+        )
+      : undefined
+    return {
+      code: error.code,
+      message: error.message,
+      ...(details && Object.keys(details).length > 0 ? { details } : {}),
+    }
+  }
+
+  return {
+    code: error instanceof DOMException ? error.name : fallbackCode,
+    message: error instanceof Error ? error.message : String(error),
+  }
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true
+  if (typeof value === "string" || typeof value === "boolean") return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  if (isRecord(value)) return Object.values(value).every(isJsonValue)
+  return false
 }
 
 function actionError(
@@ -748,6 +786,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
       }
 
       const activeSaveId = await ensureActiveSave()
+      const playerTurnAgentId = await resolvePlayerTurnAgentIdForSave(activeSaveId)
       const workspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
       const maxTurn = getMaxTurnFromTurnFiles(workspaceFilesBefore)
       const historyBefore = await getHistoryForSave(activeSaveId)
@@ -779,22 +818,23 @@ export const playFrontendBridge: PlayFrontendBridge = {
         const providerPresetMap = buildAgentProviderPresetMap(
           activeWorkspaceTransaction.workspaceFiles,
         )
-        // 读 master agent 会话上下文快照注入(无则 null,runtime 层兜底初始化)
+        // 读玩家回合入口 agent 会话上下文快照注入（无则由 runtime 层兜底初始化）。
         const agentContext = readAgentContextFromWorkspace(
           activeWorkspaceTransaction.workspaceFiles,
           activeSaveId,
+          playerTurnAgentId,
         )
-        // resolve master agent 上下文 token 预算(model.contextWindow 或 256k 默认)
-        const masterConfig = resolveAgentModelConfig("master", providerPresetMap)
+        // 按玩家回合入口 agent 的模型配置解析上下文 token 预算。
+        const playerTurnConfig = resolveAgentModelConfig(playerTurnAgentId, providerPresetMap)
         const contextTokenBudget = resolveTokenBudget(
-          masterConfig?.parameters.common.contextWindow ?? null,
+          playerTurnConfig?.parameters.common.contextWindow ?? null,
         )
         // 过程节点累积器:从事件流累积 thought/tool/interim,turn 收尾写入 turn 文件.
         // 与前端 turnProcessLog 用同一份事件数据,节点带 agentId 区分 delegated agent.
         const timelineCollector = createTurnTimelineCollector()
         const result = await runAgentRuntimeTurn(
           {
-            agentId: "master",
+            agentId: playerTurnAgentId,
             userInput: content,
             injection: input.injection,
             recentHistory: historyBefore,
@@ -803,9 +843,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
             signal: currentController.signal,
             agentContext: agentContext ?? undefined,
             contextTokenBudget,
-            // Master is a narrative-type agent: one-shot narrative compression +
+            // 玩家正式回合入口使用 narrative 压缩：one-shot narrative compression +
             // ContextBudgetExhaustedError fallback (tool-token-budget R2, unchanged).
-            // No timeoutMs — master relies on one-shot compression + user abort,
+            // No timeoutMs — narrative turns rely on one-shot compression + user abort;
             // a timeout would mis-kill narrative deep thought (design §0/§1.3 约束8).
             compressionMode: "narrative",
             // 三个回调同时 emit 事件(给前端实时渲染)+ 喂 collector(给 turn 文件持久化).
@@ -846,7 +886,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 round: options.round,
                 ...(agentConfig ? { config: agentConfig } : {}),
                 onDelta: options.onDelta
-                  ? (delta, round, kind) => options.onDelta!(options.agentId ?? "master", delta, round, kind)
+                  ? (delta, round, kind) => options.onDelta!(options.agentId ?? playerTurnAgentId, delta, round, kind)
                   : undefined,
               })
             },
@@ -872,15 +912,15 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 tools,
                 // ai.ts onDelta is (delta, round, kind); adapt the runtime's
                 // (agentId, delta, round, kind) signature by binding options.agentId
-                // (the entry agent id "master" or a delegated target id).
+                // (the current entry agent id or a delegated target id).
                 onDelta: options.onDelta
-                  ? (delta, round, kind) => options.onDelta!(options.agentId ?? "master", delta, round, kind)
+                  ? (delta, round, kind) => options.onDelta!(options.agentId ?? playerTurnAgentId, delta, round, kind)
                   : undefined,
                 round: options.round,
                 ...(agentConfig ? { config: agentConfig } : {}),
               })
             },
-            toolCallMode: resolveAgentModelConfig("master", providerPresetMap)?.toolCallMode
+            toolCallMode: playerTurnConfig?.toolCallMode
               ?? getBrowserAiConfig()?.toolCallMode
               ?? "text",
             ...createBrowserScriptRunners({
@@ -958,12 +998,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
 
         stageRawAirpHistoryTurnFile(workspaceTransaction, {
           turn: nextTurn,
-          entryAgentId: "master",
+          entryAgentId: playerTurnAgentId,
           timeline: turnTimeline,
         })
         // 通知前端 token 消耗（耗时由前端自己计时，不在此 emit）。
         if (turnStats) emitTurnStats(nextTurn, turnStats)
-        // R4:写回 master agent 会话上下文快照(本轮正文追加 + 压缩结果落盘)
+        // R4:写回玩家回合入口 agent 会话上下文快照（本轮正文追加 + 压缩结果落盘）.
         // contextUpdate.assistant 是原始 replyText(含选项块),改传 cleanReply 保持上下文干净.
         const contextUpdate = result.contextUpdate
         if (contextUpdate) {
@@ -973,6 +1013,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             user: contextUpdate.user,
             assistant: cleanReply,
             compressedContext: contextUpdate.compressedContext,
+            agentId: playerTurnAgentId,
           })
           trace.emit({
             type: "agent_context_staged",
@@ -1061,6 +1102,19 @@ export const playFrontendBridge: PlayFrontendBridge = {
       if (!userInput) {
         throw new Error("interaction.invokeAgent requires non-empty input.")
       }
+      const invocationId = input.invocationId?.trim() || createInvocationId()
+      const purpose = input.purpose?.trim() || undefined
+      const commitMode = input.commitMode ?? "workspace"
+      if (commitMode === "workspace-with-checkpoint") {
+        throw new Error(
+          "interaction.invokeAgent commitMode workspace-with-checkpoint is reserved but not implemented yet.",
+        )
+      }
+      if (input.checkpointReason !== undefined && commitMode === "workspace") {
+        throw new Error(
+          "interaction.invokeAgent checkpointReason requires commitMode workspace-with-checkpoint.",
+        )
+      }
 
       const slot = input.contextSlot
       const shouldPersist = input.persist === true
@@ -1084,25 +1138,34 @@ export const playFrontendBridge: PlayFrontendBridge = {
       // invokeAgent 是旁路调用:不推进 turn、不写历史.
       // 结果直接返回调用方(游戏前端自行处理 NPC 视角/UI 修正等).
       async function executeInvokeAgentBody(): Promise<InvokeAgentResult> {
-        const activeSaveId = await ensureActiveSave()
-        const invokeWorkspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
-        const invokeMaxTurn = getMaxTurnFromTurnFiles(invokeWorkspaceFilesBefore)
-        const historyBefore = await getHistoryForSave(activeSaveId)
-
         const invokeController = new AbortController()
         const invokeTimestamp = Date.now()
+        let activeSaveId: string | null = null
+        let invokeWorkspaceFilesBefore: WorkspaceFile[] = []
         // 旁路调用 trace collector：独立路径落盘，不与主 turn trace 混淆。
         // 让系统监视器(DebugView)也能看到旁路调用的 runtime 事件。
-        const trace = createRuntimeTraceCollector(invokeMaxTurn)
-        trace.emit({
-          type: "turn_started",
-          ok: true,
-          data: { agentId, inputLength: input.input.length, historyCount: historyBefore.length },
-        })
+        let trace = createRuntimeTraceCollector(0)
         let workspaceTransaction: RuntimeWorkspaceTransaction | null = null
+        emitAgentInvocation({
+          type: "started",
+          invocationId,
+          agentId,
+          ...(purpose ? { purpose } : {}),
+        })
         try {
+          activeSaveId = await ensureActiveSave()
+          const currentActiveSaveId = activeSaveId
+          invokeWorkspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(currentActiveSaveId)
+          const invokeMaxTurn = getMaxTurnFromTurnFiles(invokeWorkspaceFilesBefore)
+          const historyBefore = await getHistoryForSave(currentActiveSaveId)
+          trace = createRuntimeTraceCollector(invokeMaxTurn)
+          trace.emit({
+            type: "turn_started",
+            ok: true,
+            data: { agentId, inputLength: input.input.length, historyCount: historyBefore.length },
+          })
           workspaceTransaction = createRuntimeWorkspaceTransaction(
-            await listEffectiveWorkspaceFilesForActiveSave(activeSaveId),
+            await listEffectiveWorkspaceFilesForActiveSave(currentActiveSaveId),
           )
           const workspaceFiles = workspaceTransaction!.workspaceFiles
           const providerPresetMap = buildAgentProviderPresetMap(workspaceFiles)
@@ -1118,7 +1181,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           // 持久化由 persist 参数控制(默认 false,不读 entryMode)。
           // persist:true → 读写 context-<slot>.json;persist:false → 不读不写,调完即弃。
           const agentContext = shouldPersist
-            ? readAgentContextFromWorkspace(workspaceFiles, activeSaveId, agentId, slot)
+            ? readAgentContextFromWorkspace(workspaceFiles, currentActiveSaveId, agentId, slot)
             : null
 
           // resolve target agent 上下文 token 预算.
@@ -1147,17 +1210,41 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 : {}),
               // 旁路调用绑 onAskUser 以防目标 agent 需要 ask_user
               // (复用进程内 interaction-events 总线).
-              // 旁路 agent 活动信号通过独立的 agent-activity 事件通道 emit
-              // (见下方 onDelta/onTool/onRoundEnd 回调), 不经过 turn-delta/turn-tool
-              // 通道, 不污染主 turn timeline.
-              onDelta: (agentId) => {
-                emitAgentActivity(agentId, "delta")
+              // 旁路 agent 活动信号通过独立的 invocation 事件通道 emit。
+              // 同时保留 legacy agent-activity 心跳，供旧前端过渡期使用。
+              onDelta: (emittingAgentId, delta, round, kind) => {
+                emitAgentInvocation({
+                  type: "delta",
+                  invocationId,
+                  agentId: emittingAgentId,
+                  round,
+                  kind,
+                  delta,
+                })
+                emitAgentActivity(emittingAgentId, "delta")
               },
-              onRoundEnd: (agentId) => {
-                emitAgentActivity(agentId, "round-end")
+              onRoundEnd: (emittingAgentId, round, finishReason) => {
+                emitAgentInvocation({
+                  type: "round-end",
+                  invocationId,
+                  agentId: emittingAgentId,
+                  round,
+                  kind: finishReasonToKind(finishReason),
+                })
+                emitAgentActivity(emittingAgentId, "round-end")
               },
-              onTool: (agentId) => {
-                emitAgentActivity(agentId, "tool")
+              onTool: (emittingAgentId, round, callId, name, status, output) => {
+                emitAgentInvocation({
+                  type: "tool",
+                  invocationId,
+                  agentId: emittingAgentId,
+                  round,
+                  callId,
+                  name,
+                  status,
+                  ...(output !== undefined ? { output } : {}),
+                })
+                emitAgentActivity(emittingAgentId, "tool")
               },
               onAskUser: (requestId, request) =>
                 emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
@@ -1180,7 +1267,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
                   signal: options.signal,
                   round: options.round,
                   ...(modelConfig ? { config: modelConfig } : {}),
-                  onDelta: undefined,
+                  onDelta: options.onDelta
+                    ? (delta, round, kind) => options.onDelta!(options.agentId ?? agentId, delta, round, kind)
+                    : undefined,
                 })
               },
               async callModelNative(messages, options, tools) {
@@ -1200,7 +1289,11 @@ export const playFrontendBridge: PlayFrontendBridge = {
                   debugLabel: options.debugLabel,
                   signal: options.signal,
                   tools,
-                  onDelta: undefined,
+                  onDelta: options.onDelta
+                    ? (delta, round, kind) => options.onDelta!(options.agentId ?? agentId, delta, round, kind)
+                    : undefined,
+                  round: options.round,
+                  ...(modelConfig ? { config: modelConfig } : {}),
                 })
               },
               emitTrace: trace.emit,
@@ -1245,7 +1338,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
               },
               exposedWorkspaceOperations: undefined,
               collaborationPolicy: undefined,
-              semanticSearchOwnerId: activeSaveId,
+              semanticSearchOwnerId: currentActiveSaveId,
             },
           )
 
@@ -1253,7 +1346,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
           // persist:false → 不写 context,调完即弃.工作区写入(若有)用同一事务提交.
           if (shouldPersist && result.contextUpdate) {
             stageAgentContextFile(workspaceTransaction!, {
-              saveId: activeSaveId,
+              saveId: currentActiveSaveId,
               turn: result.contextUpdate.turn,
               user: result.contextUpdate.user,
               assistant: result.replyText,
@@ -1273,11 +1366,18 @@ export const playFrontendBridge: PlayFrontendBridge = {
             path: formatAgentTracePath(agentId, invokeTimestamp),
             content: serializeRuntimeTraceEvents(trace.events),
           })
-          await commitWorkspaceFilesForSave(activeSaveId, workspaceTransaction!.finalWorkspaceFiles())
+          await commitWorkspaceFilesForSave(currentActiveSaveId, workspaceTransaction!.finalWorkspaceFiles())
+          emitAgentInvocation({ type: "completed", invocationId, agentId })
 
-          return { response: result.replyText }
+          return { invocationId, response: result.replyText }
         } catch (error) {
           workspaceTransaction?.discard()
+          emitAgentInvocation({
+            type: "failed",
+            invocationId,
+            agentId,
+            error: platformErrorFromUnknown(error),
+          })
           rejectAllInteractionRequests(error)
           // 旁路 trace 失败落盘（事务已 discard，直接写文件系统）
           trace.emit({
@@ -1285,15 +1385,17 @@ export const playFrontendBridge: PlayFrontendBridge = {
             ok: false,
             data: errorToTraceDataWithStack(error),
           })
-          try {
-            await writeRuntimeTraceFileForSave(
-              activeSaveId,
-              invokeWorkspaceFilesBefore,
-              formatAgentTracePath(agentId, invokeTimestamp),
-              trace.events,
-            )
-          } catch {
-            // trace 落盘失败不掩盖原始错误
+          if (activeSaveId) {
+            try {
+              await writeRuntimeTraceFileForSave(
+                activeSaveId,
+                invokeWorkspaceFilesBefore,
+                formatAgentTracePath(agentId, invokeTimestamp),
+                trace.events,
+              )
+            } catch {
+              // trace 落盘失败不掩盖原始错误
+            }
           }
           throw error
         }

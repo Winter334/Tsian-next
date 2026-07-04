@@ -188,7 +188,7 @@ export interface AgentRuntimeCapabilities {
   /**
    * inspect_frontend capability. Loads the active card's packaged frontend
    * in a hidden iframe (reusing the real /play load path), collects structural
-   * + diagnostic snapshots, and can drive an ephemeral master agent turn /
+   * + diagnostic snapshots, and can drive an ephemeral formal-turn entrypoint /
    * DOM interactions. Implemented in platform-host/frontend-inspector.ts.
    */
   runInspectFrontend?(

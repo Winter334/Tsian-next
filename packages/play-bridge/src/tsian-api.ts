@@ -8,6 +8,8 @@
 // 详见 docs/sdk/play-frontend-api.md（API 文档）。
 
 import type {
+  AgentInvocationCommitMode,
+  AgentInvocationEvent,
   CheckpointSummary,
   DeepQueryResult,
   InjectionMessage,
@@ -25,7 +27,7 @@ import type {
   WorkspaceWriteResult,
   WorkspaceScope,
 } from "@tsian/contracts"
-import { createBridge, type Bridge } from "./bridge"
+import { createBridge } from "./bridge"
 
 // ════════════════════════════════════════════════════════════════
 // 类型定义
@@ -39,6 +41,15 @@ export interface SendOptions {
 }
 
 export interface InvokeAgentOptions {
+  /** 调用方自定义 invocation id；用于调用完成前过滤 onAgentInvocation 事件。省略时 SDK 自动生成。 */
+  invocationId?: string
+  /** 调用目的标签（如 setup / post-turn-maintenance），透传到 started 事件。 */
+  purpose?: string
+  /** Workspace 提交策略。省略等同 workspace；workspace-with-checkpoint 为后续维护类流程预留，
+   *  平台未实现完整 checkpoint 语义时会 fail loud。 */
+  commitMode?: AgentInvocationCommitMode
+  /** 预留给 workspace-with-checkpoint 的 checkpoint 原因/标签；默认 workspace 模式不使用。 */
+  checkpointReason?: string
   injection?: InjectionMessage[]
   /** 上下文隔离 slot。不同 slot 读写不同 context-<slot>.json，防止上下文串。 */
   contextSlot?: string
@@ -88,6 +99,14 @@ export interface AskRequest {
 /** 旁路调用(invokeAgent)活动信号类型。不携带文本内容，只通知"agent 正在活动"。 */
 export type AgentActivityKind = "delta" | "tool" | "round-end"
 
+function createInvocationId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID()
+  }
+
+  return `invoke-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
 export interface SessionHistory {
   entries: SessionHistoryEntry[]
   turn: number
@@ -112,6 +131,8 @@ export interface TsianApi {
   onTurnEnd(cb: (result: TurnEndResult) => void): () => void
   onTool(cb: (tool: ToolEvent) => void): () => void
   onAsk(cb: (ask: AskRequest) => void): () => void
+  /** invokeAgent 过程事件订阅；用 invocationId 区分并发调用。 */
+  onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void
   /** 旁路调用(invokeAgent)活动信号订阅。不携带文本内容，不污染主 turn stream。
    *  前端 useSetupState 用此做 understanding running 心跳脉冲。 */
   onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void
@@ -186,11 +207,12 @@ export function createTsian(): TsianApi {
     }
   }
 
-  // ── 事件分发：把 8 个平台事件路由到 5 个语义回调 ──
+  // ── 事件分发：把平台事件路由到领域语义回调 ──
   const messageCallbacks = new Set<(msg: MessageDelta) => void>()
   const roundEndCallbacks = new Set<(round: RoundEnd) => void>()
   const toolCallbacks = new Set<(tool: ToolEvent) => void>()
   const askCallbacks = new Set<(ask: AskRequest) => void>()
+  const agentInvocationCallbacks = new Set<(event: AgentInvocationEvent) => void>()
   const agentActivityCallbacks = new Set<(agentId: string, kind: AgentActivityKind) => void>()
 
   bridge.on({
@@ -255,6 +277,14 @@ export function createTsian(): TsianApi {
         return
       }
 
+      if (event === "agent-invocation" && payload && "type" in payload && "invocationId" in payload) {
+        const invocationEvent = payload as AgentInvocationEvent
+        for (const cb of agentInvocationCallbacks) {
+          try { cb(invocationEvent) } catch (err) { console.error("[tsian] onAgentInvocation callback threw", err) }
+        }
+        return
+      }
+
       if (event === "agent-activity" && payload && "agentId" in payload && "kind" in payload) {
         const agentId = (payload as { agentId?: string }).agentId ?? ""
         const kind = (payload as { kind?: string }).kind as AgentActivityKind
@@ -300,7 +330,18 @@ export function createTsian(): TsianApi {
     },
 
     async invokeAgent(agentId: string, input: string, options?: InvokeAgentOptions): Promise<InvokeAgentResult> {
-      const params: Record<string, unknown> = { agentId, input }
+      const invocationId = options?.invocationId?.trim() || createInvocationId()
+      const purpose = options?.purpose?.trim()
+      const params: Record<string, unknown> = { agentId, input, invocationId }
+      if (purpose) {
+        params.purpose = purpose
+      }
+      if (options?.commitMode !== undefined) {
+        params.commitMode = options.commitMode
+      }
+      if (options?.checkpointReason !== undefined) {
+        params.checkpointReason = options.checkpointReason
+      }
       if (options?.injection && options.injection.length > 0) {
         params.injection = options.injection
       }
@@ -336,6 +377,11 @@ export function createTsian(): TsianApi {
     onAsk(cb: (ask: AskRequest) => void): () => void {
       askCallbacks.add(cb)
       return () => { askCallbacks.delete(cb) }
+    },
+
+    onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void {
+      agentInvocationCallbacks.add(cb)
+      return () => { agentInvocationCallbacks.delete(cb) }
     },
 
     onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void {

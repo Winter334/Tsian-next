@@ -45,6 +45,7 @@ import {
   getPlatformActiveGameCard,
   resolveAgentModelConfig,
 } from "./internal"
+import { resolvePlayerTurnAgentIdFromManifest } from "./runtime-entrypoints"
 import { readAgentContextFromWorkspace, getMaxTurnFromTurnFiles, getHistoryFromTurnFiles, getSessionHistoryFromTurnFiles } from "./history-turns"
 import { createBrowserSkillScriptRunner } from "./browser-skill-script-executor"
 import {
@@ -115,7 +116,7 @@ function createInspectionBridge(state: InspectSessionState): PlayFrontendBridge 
       },
       async invokeAgent(_input: InvokeAgentRequest): Promise<InvokeAgentResult> {
         // Frontend inspector doesn't support invokeAgent — it's a diagnostic
-        // tool that runs ephemeral master turns only. Reject with a clear error.
+        // tool that runs ephemeral formal-turn entrypoint turns only. Reject with a clear error.
         throw new Error("interaction.invokeAgent is not available in frontend inspector mode.")
       },
       async stop(): Promise<void> {
@@ -765,22 +766,24 @@ async function runEphemeralTurn(
       await listEffectiveWorkspaceFilesForSave(save.id, card),
     )
     const activeWorkspaceTransaction = workspaceTransaction
+    const playerTurnAgentId = resolvePlayerTurnAgentIdFromManifest(card.manifest)
     const providerPresetMap = buildAgentProviderPresetMap(
       activeWorkspaceTransaction.workspaceFiles,
     )
     const agentContext = readAgentContextFromWorkspace(
       activeWorkspaceTransaction.workspaceFiles,
       save.id,
+      playerTurnAgentId,
     )
-    const masterConfig = resolveAgentModelConfig("master", providerPresetMap)
+    const playerTurnConfig = resolveAgentModelConfig(playerTurnAgentId, providerPresetMap)
     const contextTokenBudget = resolveTokenBudget(
-      masterConfig?.parameters.common.contextWindow ?? null,
+      playerTurnConfig?.parameters.common.contextWindow ?? null,
     )
 
     // 4. 跑回合(capabilities 照 index.ts:751-827 接全).
     const result = await runAgentRuntimeTurn(
       {
-        agentId: "master",
+        agentId: playerTurnAgentId,
         userInput: content,
         recentHistory: historyBefore,
         turn: maxTurn,
@@ -819,7 +822,7 @@ async function runEphemeralTurn(
             round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
             onDelta: options.onDelta
-              ? (delta, round, kind) => options.onDelta!(options.agentId ?? "master", delta, round, kind)
+              ? (delta, round, kind) => options.onDelta!(options.agentId ?? playerTurnAgentId, delta, round, kind)
               : undefined,
           })
         },
@@ -841,13 +844,13 @@ async function runEphemeralTurn(
             signal: options.signal,
             tools,
             onDelta: options.onDelta
-              ? (delta, round, kind) => options.onDelta!(options.agentId ?? "master", delta, round, kind)
+              ? (delta, round, kind) => options.onDelta!(options.agentId ?? playerTurnAgentId, delta, round, kind)
               : undefined,
             round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
           })
         },
-        toolCallMode: resolveAgentModelConfig("master", providerPresetMap)?.toolCallMode
+        toolCallMode: playerTurnConfig?.toolCallMode
           ?? getBrowserAiConfig()?.toolCallMode
           ?? "text",
         runBrowserScript: createBrowserSkillScriptRunner({

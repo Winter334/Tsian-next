@@ -7,6 +7,16 @@ export interface GameCardManifest {
   author?: GameCardAuthor
   cover?: GameCardCover
   frontend?: GameCardFrontendBinding
+  runtime?: GameCardRuntimeConfig
+}
+
+export interface GameCardRuntimeConfig {
+  entrypoints?: GameCardRuntimeEntrypoints
+}
+
+export interface GameCardRuntimeEntrypoints {
+  /** Agent id used by tsian.send() / interaction.sendMessage formal player turns. */
+  playerTurn?: string
 }
 
 export interface GameCardAuthor {

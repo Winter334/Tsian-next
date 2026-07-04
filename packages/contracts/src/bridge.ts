@@ -1,5 +1,6 @@
 import type { AiDebugRecord } from "./debug"
 import type {
+  AgentInvocationEvent,
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
@@ -110,6 +111,7 @@ export interface AskUserResponse {
 
 export type RemotePlayBridgeRequestParams =
   | MessageInteractionRequest
+  | InvokeAgentRequest
   | AskUserResponse
   | DeepQueryRequest
   | PlatformActionRequest
@@ -186,6 +188,7 @@ export type RemotePlayBridgeEventName =
   | "turn-tool"
   | "turn-options"
   | "interaction-request"
+  | "agent-invocation"
   | "agent-activity"
 
 /**
@@ -277,6 +280,7 @@ export type RemotePlayBridgeEventPayload =
       options?: string[]
       allowCustom?: boolean
     }
+  | AgentInvocationEvent
   | {
       agentId: string
       kind: "delta" | "tool" | "round-end"
