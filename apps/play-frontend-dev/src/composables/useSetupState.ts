@@ -67,8 +67,11 @@ const characterSetupStatus = ref<CharacterSetupStatus>("selecting")
 const playSetupStatus = ref<PlaySetupStatus>("idle")
 const playSetupMessages = ref<DialogMessage[]>([])
 const playSetupError = ref("")
-const playSetupHeartbeat = ref(0)
-let playSetupHeartbeatUnsub: Array<() => void> = []
+// 流式文本累积：onAgentInvocation delta 按 invocationId 过滤后追加到这里，
+// PlaySetupDialog 在 running 态展示；落定后由 handleAgentResponse 清空。
+const playSetupStreamingText = ref("")
+let activeInvocationId: string | null = null
+let playSetupInvocationSubscribed = false
 
 // ── 开局确认状态（Step 5）──
 const playSetupSummary = ref<string | null>(null)
@@ -77,32 +80,53 @@ const playSetupSummary = ref<string | null>(null)
 const initializing = ref(true)
 const initialized = ref(false)
 
-// understanding running 阶段计时
-let understandingStartedAt = 0
-let stageTimer = 0
+// ── understanding 阶段文案（Step 2）──
+// 阶段由 onAgentInvocation 的 tool 事件驱动（单调推进），替代旧的 STAGE_INTERVAL 时间硬切。
+// 0 = 观察，1 = 阅读，2 = 整理/写入，3 = 导演校准（agent_call）。
+const understandingStage = ref(0)
+let understandingActiveInvocationId: string | null = null
+let understandingInvocationSubscribed = false
 
-// agent 心跳：understanding running 时监听 onAgentActivity（独立通道，
-// 不经过 turn-delta/turn-tool，不污染主游玩 stream），递增计数器给
-// running 组件"它还活着"的视觉脉冲信号
-const agentHeartbeat = ref(0)
-let heartbeatUnsub: Array<() => void> = []
-
-function startHeartbeat(): void {
-  stopHeartbeat()
-  const { tsian } = useTsian()
-  heartbeatUnsub = [
-    tsian.onAgentActivity(() => {
-      if (understandingStatus.value === "running") {
-        agentHeartbeat.value++
-      }
-    }),
-  ]
+function ensurePlaySetupInvocationSubscription(tsian: ReturnType<typeof useTsian>["tsian"]): void {
+  if (playSetupInvocationSubscribed) return
+  playSetupInvocationSubscribed = true
+  tsian.onAgentInvocation((event) => {
+    if (!activeInvocationId || event.invocationId !== activeInvocationId) return
+    // MVP 只展示编排者（world-architect）的 content delta；
+    // delegated agent_call 产生的 delta（agentId !== "world-architect"）过滤掉，
+    // 其过程通过 tool 事件（name: "agent_call"）隐含感知。
+    if (event.type === "delta" && event.kind === "content" && event.agentId === "world-architect") {
+      playSetupStreamingText.value += event.delta
+    }
+    // completed/failed 由 Promise resolve/reject 驱动，不在此处理。
+  })
 }
 
-function stopHeartbeat(): void {
-  for (const unsub of heartbeatUnsub) unsub()
-  heartbeatUnsub = []
-  agentHeartbeat.value = 0
+function ensureUnderstandingInvocationSubscription(tsian: ReturnType<typeof useTsian>["tsian"]): void {
+  if (understandingInvocationSubscribed) return
+  understandingInvocationSubscribed = true
+  tsian.onAgentInvocation((event) => {
+    if (!understandingActiveInvocationId || event.invocationId !== understandingActiveInvocationId) return
+    if (event.type === "tool") {
+      understandingStage.value = Math.max(understandingStage.value, mapToolToStage(event))
+    }
+    // completed/failed 由 understandingStatus 驱动，不在此处理。
+  })
+}
+
+/** 工具事件 → 面向玩家的术式阶段文案（单调推进，不倒退）。 */
+function mapToolToStage(event: { name: string; status: string }): number {
+  // 只在 success/running 时推进；loading 与 failed 不影响阶段。
+  if (event.status !== "success" && event.status !== "running") return understandingStage.value
+  const name = event.name
+  // agent_call 导演写 brief → 阶段 3（导演正在校准剧情方向）
+  if (name === "agent_call") return 3
+  // write/edit/copy/move/delete（落盘/整理）→ 阶段 2
+  if (name === "write" || name === "edit" || name === "copy" || name === "move" || name === "delete") return 2
+  // read/list/search/glob/diff/use_skill（观察/阅读）→ 阶段 1
+  if (name === "read" || name === "list" || name === "search" || name === "glob" || name === "diff" || name === "use_skill") return 1
+  // 未知工具不推进
+  return understandingStage.value
 }
 
 // ── workspace 读写（通过 bridge）──
@@ -281,16 +305,18 @@ async function startOpeningUnderstanding(): Promise<void> {
   busy.value = true
   errorText.value = ""
   understandingStatus.value = "running"
-  understandingStartedAt = Date.now()
-  agentHeartbeat.value = 0
+  understandingStage.value = 0
   setView("understanding")
 
-  // 启动 agent 心跳监听（不污染主游玩 stream）
-  startHeartbeat()
+  // 事件驱动阶段文案：订阅 onAgentInvocation tool 事件，按 invocationId 过滤后映射成 STAGES。
+  const invocationId = `understanding-${Date.now().toString(36)}`
+  understandingActiveInvocationId = invocationId
+  ensureUnderstandingInvocationSubscription(tsian)
 
   try {
     const prompt = buildOpeningInitializationPrompt(manifest.value, chapterIndex.value)
     const result = await tsian.invokeAgent("world-architect", prompt, {
+      invocationId,
       contextSlot: "understanding",
       persist: false,
     })
@@ -307,7 +333,7 @@ async function startOpeningUnderstanding(): Promise<void> {
     errorText.value = message
     understandingStatus.value = "failed"
   } finally {
-    stopHeartbeat()
+    understandingActiveInvocationId = null
     busy.value = false
   }
 }
@@ -481,25 +507,6 @@ function nextDialogId(): string {
   return `dialog-${dialogMessageSeq}`
 }
 
-/** 启动 play-setup 心跳监听（独立于 understanding 的心跳）。 */
-function startPlaySetupHeartbeat(): void {
-  stopPlaySetupHeartbeat()
-  const { tsian } = useTsian()
-  playSetupHeartbeatUnsub = [
-    tsian.onAgentActivity(() => {
-      if (playSetupStatus.value === "running") {
-        playSetupHeartbeat.value++
-      }
-    }),
-  ]
-}
-
-function stopPlaySetupHeartbeat(): void {
-  for (const unsub of playSetupHeartbeatUnsub) unsub()
-  playSetupHeartbeatUnsub = []
-  playSetupHeartbeat.value = 0
-}
-
 /** 读取 setup-summary.json 判断完成态。 */
 async function loadSetupSummary(
   tsian: ReturnType<typeof useTsian>["tsian"],
@@ -588,10 +595,15 @@ async function startPlaySetupDialog(): Promise<void> {
 
   playSetupStatus.value = "running"
   playSetupError.value = ""
-  startPlaySetupHeartbeat()
+  // 流式接入：生成 invocationId，订阅 onAgentInvocation delta，清空累积文本。
+  const invocationId = `play-setup-${Date.now().toString(36)}`
+  activeInvocationId = invocationId
+  playSetupStreamingText.value = ""
+  ensurePlaySetupInvocationSubscription(tsian)
 
   try {
     const result = await tsian.invokeAgent("world-architect", prompt, {
+      invocationId,
       contextSlot: "play-setup",
       persist: true,
     })
@@ -600,7 +612,8 @@ async function startPlaySetupDialog(): Promise<void> {
     playSetupStatus.value = "failed"
     playSetupError.value = err instanceof Error ? err.message : "对话启动失败"
   } finally {
-    stopPlaySetupHeartbeat()
+    playSetupStreamingText.value = ""
+    activeInvocationId = null
   }
 }
 
@@ -624,10 +637,15 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
 
   playSetupStatus.value = "running"
   playSetupError.value = ""
-  startPlaySetupHeartbeat()
+  // 流式接入：新一轮调用，生成新 invocationId + 清空累积文本。
+  const invocationId = `play-setup-${Date.now().toString(36)}`
+  activeInvocationId = invocationId
+  playSetupStreamingText.value = ""
+  ensurePlaySetupInvocationSubscription(tsian)
 
   try {
     const result = await tsian.invokeAgent("world-architect", input, {
+      invocationId,
       contextSlot: "play-setup",
       persist: true,
     })
@@ -636,7 +654,8 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
     playSetupStatus.value = "failed"
     playSetupError.value = err instanceof Error ? err.message : "对话失败，请重试"
   } finally {
-    stopPlaySetupHeartbeat()
+    playSetupStreamingText.value = ""
+    activeInvocationId = null
   }
 }
 
@@ -644,6 +663,10 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
 async function handleAgentResponse(response: string): Promise<void> {
   const { tsian } = useTsian()
   const parsed = parseStoryOptions(response)
+  // 落定：把完整文本 push 成 NarrativeMessage 落定消息，并清空流式累积。
+  // 流式和落定是两套渲染——这里切到落定消息后，流式块不再展示。
+  playSetupStreamingText.value = ""
+  activeInvocationId = null
   playSetupMessages.value.push({
     id: nextDialogId(),
     role: "agent",
@@ -666,7 +689,8 @@ function resetPlaySetupDialog(): void {
   playSetupStatus.value = "idle"
   playSetupMessages.value = []
   playSetupError.value = ""
-  stopPlaySetupHeartbeat()
+  playSetupStreamingText.value = ""
+  activeInvocationId = null
 }
 
 /** 重试（从 failed 恢复）。 */
@@ -762,18 +786,15 @@ export function useSetupState() {
     errorText: readonly(errorText),
     initializing: readonly(initializing),
     initialized: readonly(initialized),
-    agentHeartbeat: readonly(agentHeartbeat),
+    understandingStage: readonly(understandingStage),
     characterBranch: readonly(characterBranch),
     selectedCharacter: readonly(selectedCharacter),
     characterSetupStatus: readonly(characterSetupStatus),
     playSetupStatus: readonly(playSetupStatus),
     playSetupMessages: readonly(playSetupMessages),
     playSetupError: readonly(playSetupError),
-    playSetupHeartbeat: readonly(playSetupHeartbeat),
+    playSetupStreamingText: readonly(playSetupStreamingText),
     playSetupSummary: readonly(playSetupSummary),
-
-    // 非响应式值（组件按需读取）
-    get understandingStartedAt() { return understandingStartedAt },
 
     // 可写状态（组件需直接改的）
     selectedChapterWritable: selectedChapter,

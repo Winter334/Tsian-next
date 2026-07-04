@@ -199,7 +199,9 @@ const WORLD_ARCHITECT_OPENING_SKILL_MD = text([
   "- `save/playthrough/runtime.json`：当前 activeSceneIds、player、status、extensions 等摘要。",
   "- `save/playthrough/mode.json`：只记录真正玩法系统的三态，例如“行动裁定”。",
   "",
-  "不写开局正文；不把导演 brief 写成世界建模报告。导演负责剧情指导文档。",
+  "不写开局正文；不把导演 brief 写成世界建模报告。",
+  "建模完成后，agent_call 导演写初始 save/director/current-brief.md（导演负责剧情指导文档，你负责提供建模结果作为输入）。",
+  "设定收尾时，agent_call 说书人拿开局正文文本，你负责把文本写入 save/playthrough/opening-narrative.json（格式 { \"narrative\": \"<文本>\" }）。",
 ])
 
 const WORLD_ARCHITECT_GAMEPLAY_ENABLEMENT_SKILL_MD = text([
@@ -269,6 +271,7 @@ const DIRECTOR_BRIEF_SKILL_MD = text([
   "- 何时需要刷新 brief。",
   "",
   "导演不直接面向玩家，不整理 runtime/entity；需要事实时 call 资料员。",
+  "被 world-architect 通过 agent_call 调用时：基于对方提供的建模结果写初始 brief，不需要自己重新读源文本。",
 ])
 
 const TSIAN_FRAMEWORK_KNOWLEDGE_MD = text([
@@ -658,7 +661,7 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
       id: "world-architect",
       title: "世界架构师",
       summary: "开局建模、schema/world model 设计、玩法启用方案与 pending patch；不写开局正文，不维护每回合 runtime。",
-      contacts: ["researcher", "stage-manager", "director"],
+      contacts: ["researcher", "stage-manager", "director", "storyteller"],
       contextPaths: ["docs/novel-airp-schema-guide.md", "save/source/README.md", "save/source/manifest.json", "save/schema/current.md", "save/schema/changelog.md", "save/playthrough/frontier.json", "save/playthrough/mode.json", "save/scenes/README.md", "save/relationships/README.md"],
       skills: { enabled: ["agents/world-architect/skills/开局建模/SKILL.md", "agents/world-architect/skills/玩法启用/SKILL.md", "agents/world-architect/skills/行动裁定/SKILL.md"], disabled: [] },
       platformTools: { enabled: ["workspace_read", "workspace_write", "workspace_semantic_search", "agent_call"], disabled: [] },
@@ -678,7 +681,9 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
       "- 玩法启用只处理真正改变剧情裁定逻辑的系统，不处理前端渲染模块。",
       "- 安全小改可直接维护；有风险或需要决策的变更写 pending patch。",
       "- 需要源文本或实体事实时 call 资料员。",
-      "- 不写开局正文，不维护每回合 runtime。",
+      "- 不写开局正文；通过 agent_call 说书人生成开局正文，你负责把结果落盘到 save/playthrough/opening-narrative.json。",
+      "- 不维护每回合 runtime。",
+      "- 开局建模后通过 agent_call 导演写初始 brief；不自己代写 save/director/current-brief.md。",
     ]),
   },
   {
