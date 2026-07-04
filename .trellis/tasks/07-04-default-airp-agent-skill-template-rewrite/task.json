@@ -3,7 +3,7 @@
   "name": "07-04-default-airp-agent-skill-template-rewrite",
   "title": "默认 AIRP Agent 与 Agent-local Skill 模板重写",
   "description": "重写默认卡 Agent 阵容、Agent-local Skills、mode 默认文件与相关文档。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": null,

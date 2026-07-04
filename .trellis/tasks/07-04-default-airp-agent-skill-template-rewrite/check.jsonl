@@ -1,1 +1,8 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/tasks/07-04-airp-agent-roster-skills/design.md","reason":"Check implementation remains aligned with parent roster/mode/Agent-local Skill decisions."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Verify Agent-local Skill registry paths, synthesized manifest entrypoint, and runtime workspace contracts."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Verify active save/card and future AgentInvocation orchestration semantics are preserved."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Run required build:web and review runtime turn flow risk checklist."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check workspace template/default save runtime/version behavior after adding mode.json and new notes paths."}
+{"file":".trellis/spec/guides/agent-skill-design-principles.md","reason":"Review final Agent/Skill placement for overbroad prompts or misplaced platform/gameplay logic."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Check active AI-facing template/docs no longer leave stale master-only routing concepts."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Confirm gameplay mode state is visible workspace data and not hidden config."}

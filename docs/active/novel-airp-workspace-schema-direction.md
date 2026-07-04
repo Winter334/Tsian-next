@@ -54,6 +54,8 @@ save/playthrough/
   mode.json
   frontier.json
   understanding-summary.json
+  setup-summary.json
+  opening-narrative.json
   branch.json
 
 save/director/
@@ -187,10 +189,11 @@ Pending patch files live under `save/schema/patches/pending/*.md`. When accepted
 
 ## Agent Responsibilities
 
-- `world-architect`: creates the initial schema draft, opening setup (entities + scene + relationships + director brief), and later schema patches.
-- `post-processing`: detects stale schema/brief after turns, applies safe schema changes, writes pending patches when confirmation is needed, maintains scene/relationship aggregation slices, and calls world-architect when schema design is needed.
-- player-turn entry Agent: consumes current brief, runtime vars, and visible entity data; it should not invent schema ad hoc.
-- `retrieval`: helps read source, entity, scene, and relationship details and returns concise findings.
+- `storyteller`: player-turn entry Agent. Consumes current brief, runtime vars, schema, and visible entity data; writes player-facing prose and options; calls researcher when facts are missing; does not invent schema ad hoc.
+- `researcher`: read-only source/entity/scene/relationship/schema/brief retrieval. Returns concise findings and source paths; does not write save data or story prose.
+- `stage-manager`: after-turn maintenance Agent. Updates runtime, entities, scenes, relationships, memory/status extensions, applies safe schema clarifications, writes pending patches when confirmation is needed, and calls world-architect when schema design is needed.
+- `world-architect`: creates the initial schema/world model, opening setup structures, gameplay enablement plans, and later schema design/pending patches.
+- `director`: maintains `save/director/current-brief.md` and metadata for pacing, foreshadowing, spoiler boundaries, and canon/branch balance.
 
 ## Aggregation Layer (scenes / relationships)
 

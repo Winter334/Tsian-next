@@ -355,7 +355,7 @@ async function isCurrentBuiltinBlankGameCard(record: LocalGameCardRecord): Promi
   if (
     record.manifest.cover?.url !== BUILTIN_BLANK_GAME_CARD_COVER_URL
     || record.manifest.cover?.alt !== "Blank Agent Runtime cover"
-    || record.manifest.runtime?.entrypoints?.playerTurn !== "master"
+    || record.manifest.runtime?.entrypoints?.playerTurn !== "storyteller"
   ) {
     return false
   }
@@ -382,7 +382,7 @@ function createBuiltinBlankGameCardRecord(
     },
     runtime: {
       entrypoints: {
-        playerTurn: "master",
+        playerTurn: "storyteller",
       },
     },
     ...(frontend ? { frontend } : {}),

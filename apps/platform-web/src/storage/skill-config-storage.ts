@@ -4,7 +4,7 @@ import { localDb } from "./db"
  * Storage API for player-saved skill config overrides.
  *
  * Overrides are keyed by the skill **directory** path (e.g. "skills/web-search"
- * or "agents/master/skills/my-skill"), the same key `buildSkillRegistry` uses
+ * or "agents/storyteller/skills/my-skill"), the same key `buildSkillRegistry` uses
  * to attach `configItems` to a `SkillRegistryEntry`. The skill directory is
  * derived from the `SKILL.md` path by stripping the trailing `/SKILL.md`.
  *

@@ -77,7 +77,7 @@ Agent Runtime 是 AIRP 回合的核心。
 
 AIRP 特色优先放在 Agent 职责、skill、content 和 runtime 数据结构中，而不是注册大量只服务默认事件/档案系统的窄工具。
 
-检索不被某个 Agent 垄断——平台不把检索锁在 retrieval agent 后面，master 仍可直接 `workspace.search/read`。默认阵容中的 retrieval agent 是省 context 的封装：它在自己的上下文里做多步搜索，只把精炼结论回灌 master，避免 master 的上下文被原始文件内容塞满。这不改变「工具应尽量通用」的原则。
+检索不被某个 Agent 垄断——平台不把检索锁在 `researcher` 后面；配置的玩家正式回合入口 Agent 仍可直接使用通用 workspace 读/搜能力。默认阵容中的 `researcher` 是省 context 的封装：它在自己的上下文里做多步搜索，只把精炼结论回灌调用方，避免入口 Agent 的上下文被原始文件内容塞满。这不改变「工具应尽量通用」的原则。
 
 ## 6. 平台边界
 
@@ -169,7 +169,7 @@ Game Card 是可复用、可分发的 workspace 模板；Save Instance 是玩家
 
 - `apps/platform-web/src/platform-host/index.ts` 仍是浏览器平台主控。
 - `apps/platform-web/src/agent-runtime/index.ts` 承载 MVP Agent Runtime。
-- 每轮默认走 master 单步模型调用（master 直接执笔写正文，narrative agent 已移除），master 按需 `agent_call` 联系 retrieval/post-processing/world-architect。
+- 默认卡的玩家正式回合入口由 `runtime.entrypoints.playerTurn` 指向 `storyteller`；`storyteller` 直接写玩家可读正文，并可按需通过 `agent_call` 联系 `researcher` 获取精炼事实。回合后 `stage-manager` 等后台维护由前端/内容层在需要时显式调用，平台核心不硬编码固定流水线。
 - 本地存储已有 Game Card 记录、Save Instance、snapshot、history、checkpoint 和 Runtime Workspace files；新建默认 save 会从内置空白 Game Card 复制 workspace 模板。
 - 内置空白 Game Card 会声明 workspace assistant entrypoint，当前为普通工作区内容 `agents/studio-assistant/AGENT.md`；它带有临时官方知识库 `docs/tsian-framework-knowledge.md` 和查询型本地 Skill，用于后续助手 UI / 管理 Agent 读取事实而不是硬猜平台行为。
 - 当前不再提供同进程官方默认游戏前端；内置空白 Game Card 只提供 workspace 模板，默认可玩前端属于后续 remote/packaged Game Card frontend 工作。

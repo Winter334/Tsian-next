@@ -104,7 +104,7 @@ await tsian.send("我向酒馆老板打听消息")
 {
   "runtime": {
     "entrypoints": {
-      "playerTurn": "master"
+      "playerTurn": "storyteller"
     }
   }
 }
@@ -483,7 +483,7 @@ interface CheckpointSummary {
 
 ## 6. workspace 读写
 
-前端可在 workspace 里读写文件，**自己维护状态**（角色卡、设置、存档元数据等）。这是独立于 agent 工具调用的前端通道——agent 的 `workspace_read`/`workspace_write` 走 agent runtime，前端的 `tsian.workspace.*` 走桥 RPC，两条路径独立。
+前端可在 workspace 里读写文件，**自己维护状态**（角色卡、设置、存档元数据等）。这是独立于 agent 工具调用的前端通道——agent runtime 里的 `read` / `write` 等短工具名受 `workspace_read` / `workspace_write` platformTools gate 控制，前端的 `tsian.workspace.*` 走桥 RPC，两条路径独立。
 
 ```ts
 tsian.workspace.read(path, scope?)

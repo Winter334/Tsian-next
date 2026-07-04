@@ -31,7 +31,7 @@
 - `GameCardManifest.summary` is the single player-facing intro field. Do not add or persist a parallel Game Card `description`; legacy imports may fold an old `description` into `summary` only when `summary` is missing/blank.
 - `GameCardManifest.id` and `version` remain package/runtime metadata; ordinary player-facing UI should not expose them as editable fields.
 - `GameCardManifest.frontend` is optional. A frontend-less Game Card is reusable card content, not a playable card. When provided it must be `remote` or `packaged`; same-realm `builtin` frontends are not supported.
-- `GameCardManifest.runtime.entrypoints.playerTurn` is card-authored runtime configuration for the formal player-turn entry Agent id. Current default templates may explicitly set it to `master`, but runtime code must read the manifest field and fail loud when it is missing/blank; it must not silently fall back to `master` or any other hardcoded Agent id.
+- `GameCardManifest.runtime.entrypoints.playerTurn` is card-authored runtime configuration for the formal player-turn entry Agent id. Current default templates explicitly set it to `storyteller`, but runtime code must read the manifest field and fail loud when it is missing/blank; it must not silently fall back to `storyteller`, `master`, or any other hardcoded Agent id.
 - Card content files are stored per-file (one row per file), not embedded on the card row, so a single file write touches one row and bumps the card's `updatedAt` rather than rewriting the whole card.
 - Packaged frontends are built static files; the platform must not run source builds, npm install, or framework-specific bundling on them. Their files are stored beside the reusable Game Card; saves created from a card do not copy those files or the card content files.
 - A `packaged` frontend must run in an iframe reusing the play-bridge protocol; it must not run in the platform JS realm.
@@ -85,7 +85,7 @@
 
 ### Contracts
 
-- `interaction.invokeAgent` is a **bypass call**: it runs a target agent once, returns the reply directly to the caller, does **not** advance the turn, write raw history, update the runtime snapshot, or create a checkpoint. This is what makes it distinct from `interaction.sendMessage` (the main turn) and from the `agent_call` tool (master-initiated delegation inside a turn).
+- `interaction.invokeAgent` is a **bypass call**: it runs a target agent once, returns the reply directly to the caller, does **not** advance the turn, write raw history, update the runtime snapshot, or create a checkpoint. This is what makes it distinct from `interaction.sendMessage` (the main turn) and from the `agent_call` tool (current-Agent-initiated delegation inside a turn).
 - `InvokeAgentRequest` carries two context-management options (both optional, added in task 07-01):
   - `contextSlot?: string` — isolates the agent's context file. `agentContextPath(agentId, slot)` returns `save/agents/<id>/context-<slot>.json` when a slot is present, and `save/agents/<id>/context.json` when omitted (backward-compatible). The slot is **untrusted frontend input** and is sanitized inside `agentContextPath`: `slot.replace(/[^a-zA-Z0-9_-]/g, "-")` — only `[a-zA-Z0-9_-]` survives, preventing `../` traversal and special-character injection. Never inline a raw slot into a path.
   - `persist?: boolean` — controls context-file read/write. `true` = read `context[-slot].json` before the call and write back the updated snapshot after a successful call (cross-call persistence). `false`/omitted = one-shot call, no context read or write. **Default is `false`.**
@@ -226,7 +226,7 @@
 
 - Empty save runtime data on an active save -> fill `save/...` defaults before runtime reads files.
 - Effective workspace missing the entry agent definition -> fail with a clear runtime error; do not fall back to legacy hardcoded prompts.
-- Missing/blank `runtime.entrypoints.playerTurn` on the save-bound Game Card -> fail before the turn with a clear `game-card.json` configuration error; do not fall back to `master`.
+- Missing/blank `runtime.entrypoints.playerTurn` on the save-bound Game Card -> fail before the turn with a clear `game-card.json` configuration error; do not fall back to any hardcoded entry Agent id.
 - Effective workspace missing `agents/<agent>/SOUL.md` -> continue without `soulFile`; this is compatibility input, not a runtime error.
 - Missing declared `contextPaths` -> include missing path diagnostics in prompt context; do not fail the turn for that reason alone.
 - Model returns empty reply -> keep existing empty-reply error behavior.
@@ -402,19 +402,19 @@
 
 ### Scope / Trigger
 
-- When Agent Runtime tool loops estimate runtime message tokens before each model call and compress when the budget is crossed. Two compression modes: `narrative` (master) and `task` (delegated `agent_call` targets + desktop assistant).
+- When Agent Runtime tool loops estimate runtime message tokens before each model call and compress when the budget is crossed. Two compression modes: `narrative` (formal player-turn entry Agent, default `storyteller`) and `task` (delegated `agent_call` targets + desktop assistant).
 
 ### Contracts
 
 - The tool loop has **no per-Agent round limit**. Termination conditions are: `finishReason === "stop"` / no tool calls; abort; and the mode-specific budget fallback.
 - Before every model call, the loop estimates runtime-message tokens. When tokens exceed the budget trigger threshold (85%), the loop branches on `compressionMode`:
 
-  **Narrative mode (master):**
+  **Narrative mode (formal player-turn entry Agent):**
   - First crossing: compress the narrative span (compress only the narrative summary + recent turns, preserve all tool interactions), update the agent-context snapshot in place, splice-replace the narrative span in the runtime messages, mark `compressedThisTurn = true`, continue the loop.
   - Only the entry-agent steady-state path (an agent-context snapshot was injected) performs in-turn narrative compression. The `最近对话：` fallback path has no injectable snapshot and skips compression; it still runs the budget fallback.
   - A second budget crossing (or any crossing when narrative compression is unavailable) is the fallback: return the last round's stripped text if present; otherwise throw `ContextBudgetExhaustedError`.
   - In-turn narrative compression is allowed at most once per turn.
-  - Master does **not** create a timeout controller — narrative mode relies on one-shot compression + user abort; a timeout would mis-kill narrative deep thought.
+  - The narrative entry Agent does **not** create a timeout controller — narrative mode relies on one-shot compression + user abort; a timeout would mis-kill narrative deep thought.
 
   **Task mode (delegated `agent_call` targets + desktop assistant):**
   - Every crossing is a compression attempt (no cap; multi-compress unlimited). Before compressing, check inactivity: if no activity (tool/round-end) has occurred for `inactivityTimeoutMs`, throw `TaskTimeoutError`.
@@ -423,7 +423,7 @@
   - After compression, if yield < 10% (compression barely reduced tokens), throw `TaskCompressionStalledError` (stall early-exit, do not burn budget waiting for timeout).
   - Task compression never touches the agent-context snapshot (in-turn tool-interaction compression is separate from cross-turn snapshot). The in-turn summary text lives only within the turn. The **assistant** has cross-turn snapshot persistence (see "Assistant Cross-Turn Context Persistence"); **delegated `agent_call` targets** have no cross-turn persistence.
 
-- **Inactivity timeout fallback (task mode only):** delegated `agent_call` and the desktop assistant each create an independent `AbortController` + **resettable** inactivity timer, merged with the user-abort signal into a composite signal. The timer resets on every activity signal (model delta, tool call, round-end); it only fires after `inactivityTimeoutMs` (default 600s) of continuous inactivity. On timeout, the catch re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true }` so master can distinguish; assistant: thrown to the view). The runtime tool loop also checks `lastActivityAt` internally at each compression trigger as a second guard.
+- **Inactivity timeout fallback (task mode only):** delegated `agent_call` and the desktop assistant each create an independent `AbortController` + **resettable** inactivity timer, merged with the user-abort signal into a composite signal. The timer resets on every activity signal (model delta, tool call, round-end); it only fires after `inactivityTimeoutMs` (default 600s) of continuous inactivity. On timeout, the catch re-surfaces `TaskTimeoutError` (delegated: wrapped as `AGENT_CALL_FAILED` observation with `{ timeout: true }` so the caller can distinguish; assistant: thrown to the view). The runtime tool loop also checks `lastActivityAt` internally at each compression trigger as a second guard.
 - The view recognizes `ContextBudgetExhaustedError`, `TaskTimeoutError`, and `TaskCompressionStalledError` by error name (no runtime-internal import). All three route to the same soft-halt branch (symmetric with abort): keep already-streamed thought, append a soft note when content exists (or set content to the soft prompt when empty), persist the session, and do **not** set an error message or pop the placeholder.
 
 ### Validation & Error Matrix
@@ -431,11 +431,11 @@
 - Narrative first crossing with a snapshot available -> compress narrative span, continue loop (trace `mode: narrative`).
 - Narrative second crossing (or no snapshot) -> return last stripped text if present, otherwise `ContextBudgetExhaustedError`.
 - Task crossing -> check inactivity timeout; if no activity for `inactivityTimeoutMs` → `TaskTimeoutError`; else locate span, compress, check stall; if compressed continue (trace `mode: task`); if not compressible or no span -> fallback.
-- Task inactivity timeout (delegated) -> `AGENT_CALL_FAILED` with `{ timeout: true }`; master continues its own loop. (assistant) -> soft prompt "任务无响应超时，已中止".
+- Task inactivity timeout (delegated) -> `AGENT_CALL_FAILED` with `{ timeout: true }`; the calling Agent continues its own loop. (assistant) -> soft prompt "任务无响应超时，已中止".
 - Task compression stall (yield < 10%) -> `TaskCompressionStalledError` -> delegated: `AGENT_CALL_FAILED` with `{ stalled: true }`; assistant: soft prompt "上下文持续膨胀且压缩无效，已中止".
 - Compression failure (model call fails/empty summary) -> `ContextCompressionFailedError` (routes to the error-message branch, not the soft-halt branch).
 - Tool interactions are never compressed in narrative mode; task mode compresses only the tool-interaction span.
-- Master passes `narrative` mode and no `timeoutMs`; master behavior is unchanged.
+- The formal player-turn entry passes `narrative` mode and no `timeoutMs`.
 
 ## Scenario: Parallel agent_call Within A Round
 
@@ -476,18 +476,19 @@
 
 - The desktop assistant persists a per-session agent context snapshot as a **virtual file** at `.tsian/local/assistant/sessions/<sessionId>/context.json`. This lives in the `local-assistant-files` Dexie map (same map as agent identity files); the `sessions/` subdirectory separates session state from cross-session identity. The snapshot is agent-visible: the assistant can `workspace_read`/`workspace_list`/`workspace_write` it.
 - Multi-session isolation: each session has its own `sessions/<sessionId>/context.json`; switching sessions does not cross-contaminate context. This is why the path is per-session, not a single shared file.
-- The snapshot is separate from visible messages (the UI display layer, max 200). Visible messages are the UI display layer; the snapshot is the agent context steady-state layer. This mirrors master's `saveHistory` vs `agents/master/context.json` separation.
+- The snapshot is separate from visible messages (the UI display layer, max 200). Visible messages are the UI display layer; the snapshot is the agent context steady-state layer. This mirrors the formal player-turn Agent's visible history vs `save/agents/<entry>/context.json` separation.
 - Turn-start: when a context file is absent (legacy session), reconstruct recentTurns from visible-message history (no summary). Derive the next turn from the snapshot so `lastCompressedTurn` dedup works (fixing the prior turn=1-always bug). Inject the snapshot + token budget into the turn.
-- Entry turn-start compression runs in **both** modes (narrative and task). Task mode (assistant) compresses the snapshot with a task-summary prompt + 用户/助手 labels; narrative mode (master) uses defaults (unchanged). This snapshot compression is independent of in-turn tool-interaction compression.
+- Entry turn-start compression runs in **both** modes (narrative and task). Task mode (assistant) compresses the snapshot with a task-summary prompt + 用户/助手 labels; narrative mode (formal player-turn Agent, including the default `storyteller`) uses defaults. This snapshot compression is independent of in-turn tool-interaction compression.
 - Turn-end (success path only): append the turn to the snapshot and persist directly via `saveLocalAssistantFiles` (merge). It does **not** go through the save transaction — `.tsian/local/` paths have no entry in the save transaction layer (both path validators reject `.tsian/local/`). The direct-merge is the correct local-basket channel, consistent with the resource manager and identity-file writes.
-- Turn failure: discard; do not append the failed turn. The snapshot on disk stays at its turn-start state (symmetric to master).
+- Turn failure: discard; do not append the failed turn. The snapshot on disk stays at its turn-start state (symmetric to formal player turns).
 - **Assistant `workspace.write`/`workspace.delete` for `.tsian/local/`**: route directly to `saveLocalAssistantFiles`/`deleteLocalAssistantFile` (bypass the save transaction), so the assistant's level-4 write permission to `.tsian/` actually lands in the local basket. Non-local-assistant `platform-meta` writes still go through the platform file path. This closes the gap where the permission layer allowed the write but the transaction layer rejected `.tsian/local/`.
 - **Three-layer write routing for the assistant** (level 4): `card-content` → save transaction → commit → card content files (edits the mounted card — swap card swaps data); `save-runtime` → save transaction → commit → save files; `platform-meta` + local-assistant path → direct local-basket (not in save transaction/checkpoint/distribute). Runtime card agents (level 1) cannot reach `.tsian/` at all — the permission layer blocks them.
 - Session delete cleans up the context virtual file alongside the visible-messages key (no orphan data).
 - Cross-load recovery: the Dexie map (including `sessions/<id>/context.json`) restores on browser refresh/reopen; the next turn recovers the snapshot — the assistant does not lose context across loads.
-- Formal player-turn snapshots are now keyed by the card-configured entry Agent id. Older notes that name `master` refer only to default-template content, not a platform fallback.
+- Formal player-turn snapshots are now keyed by the card-configured entry Agent id. Older notes that name `master` refer only to historical default-template content, not a platform fallback.
+- AI-facing instructions should distinguish platform tool exposure gates from runtime callable tool names: `workspace_read`/`workspace_write`/`workspace_semantic_search` are `agent.json.platformTools` enablement keys, while models call short tools such as `read`, `list`, `search`, `semantic_search`, `write`, and `edit`.
 - **Tool-call + process-node cross-turn persistence (dual-layer, mirroring the model where UI render context ≠ agent context):**
-  - **Agent layer** (snapshot `recentTurns` → `context.json`): tool calls live with the prose, same compression lifespan (recent K rounds raw, earlier compressed into summary). Reconstruction is mode-split: native → structured messages (assistant.toolCalls + tool result role); text → tool-call blocks + observation user messages. Compression presents tool calls to the model (not "discard tool details"). Master does not fill tool calls.
+  - **Agent layer** (snapshot `recentTurns` → `context.json`): tool calls live with the prose, same compression lifespan (recent K rounds raw, earlier compressed into summary). Reconstruction is mode-split: native → structured messages (assistant.toolCalls + tool result role); text → tool-call blocks + observation user messages. Compression presents tool calls to the model (not "discard tool details"). Formal player-turn Agents do not fill tool calls.
   - **UI layer** (session messages store): tool calls (agent-layer fallback) + process nodes (UI display: thought/tool/interim in occurrence order). Both not compressed, retained up to the message cap. The view reconstructs process nodes 1:1 into the timeline (preserves interleaved order, no type-grouping).
   - **Process-node collection (eliminates double-write)**: both native + text loops accumulate process nodes (thought from delta accumulation, interim from tool_calls round content, tool from the tool callback). The host writes everything on the success path; the UI success path no longer calls `persistCurrentSession` (eliminates the host-write + UI-rewrite double-IO race). Catch paths (abort/error) still use `persistCurrentSession` as fallback.
   - **Observation volume**: the persistence layer does not truncate — stores the tool-return-layer result as-is. `workspace_read` already truncates at the return layer (line limit + offset paging); the agent pages via `offset`. `agent_call`/`inspect_frontend` etc. have no paging yet (tool deficiency, to be patched later).
@@ -498,7 +499,7 @@
 - Corrupted context virtual file -> fall back to an empty snapshot -> turn proceeds.
 - Turn failure -> snapshot on disk unchanged (no append of the failed turn).
 - Session delete -> both visible-messages key and context virtual file removed (no orphan).
-- Formal player-turn entry configured as `master` -> narrative mode, `save/agents/master/context.json`, and default compression prompt; another configured entry id uses the matching `save/agents/<entry>/context.json` path.
+- Formal player-turn entry configured as `storyteller` in the current default template -> narrative mode, `save/agents/storyteller/context.json`, and default compression prompt; any other configured entry id uses the matching `save/agents/<entry>/context.json` path.
 - `AssistantChatInput` without `sessionId` -> compile error (required field).
 
 ## Avoid
@@ -531,7 +532,7 @@
 - **Special-tool registration touches many files** (mirrors `agent_call`): contracts, permissions, registry allow-set (a tool missing from this Set is silently filtered out on read), workspace-tools (name + types + dispatch), tool-schemas (gating), runtime capabilities threading, assistant default config, the inspector factory, and capability injection. UI switch definitions live in a single shared source imported by both the assistant config panel and studio view. **Default enablement is explicit config, not runtime derivation**: each agent type's default-on tools are written as an explicit array; a runtime-derivation approach was removed because it made "enable a default-on tool" misjudge as already-on and skip the write.
 - **Loading reuse**: the inspector calls the same packaged-frontend URL resolver + mount helper as `/play` (1:1 mirror). Does not reimplement mounting.
 - **Dedicated bridge**: the inspector uses its own bridge with `interaction.sendMessage` → `runEphemeralTurn`. Must NOT use the play bridge (it ensures an active save, broadcasts streaming to the player frontend, and uses a module-level controller that aborts player turns). `query` reuses the read-only base bridge; `platform.runAction` returns unavailable; no `debug` bridge.
-- **Ephemeral save isolation**: `runEphemeralTurn` creates a local save without setting it active or emitting saves-changed, uses its own `AbortController` (not the module-level one), does not commit the turn, and deletes the ephemeral save in `finally`. Capabilities must mirror the `sendMessage` path completely — missing any one causes master agent tool-call failures.
+- **Ephemeral save isolation**: `runEphemeralTurn` creates a local save without setting it active or emitting saves-changed, uses its own `AbortController` (not the module-level one), does not commit the turn, and deletes the ephemeral save in `finally`. Capabilities must mirror the `sendMessage` path completely — missing any one causes entry-Agent tool-call failures.
 - **send bypasses mount's request path**: the inspector calls `bridge.interaction.sendMessage` directly (not via frontend RPC). Mount's `turn-completed` event is bound to the request-response path, so mount will NOT forward it for inspector-driven turns. The inspector must self-postMessage a `turn-completed` event to the iframe with the session id so the frontend renders message bubbles.
 - **Streaming delta forwarding** still works via the mount's bus subscriptions (independent of request path), but only after handshake (origin accepted). The inspector must guard `bridgeReady` before `send` — if handshake hasn't completed, all delta events are swallowed and the turn runs blind to the frontend.
 - **Collection is parent-window-side**: the inspector reads `iframe.contentDocument` and hijacks the iframe content window's `onerror`/`unhandledrejection`/`console` (same-origin required — `allow-same-origin` sandbox). Does not require frontend cooperation — blank/broken frontends that never send `ready` can still be diagnosed via DOM empty-state + resource 404 inference.
@@ -572,7 +573,7 @@
 - **GC**: save deletion drops the corresponding embeddings. Storage-layer direct (no cross-layer call into agent-runtime).
 - **ownerId propagation**: the host injects the active save id as a capability; the runtime threads it to the operation execution context. The runtime layer intentionally does not hold the real save id.
 - **DB name bump** (rename-and-reset convention: no migration, old store abandoned). The Service Worker `DB_NAME` must mirror.
-- A retrieval agent is seeded with `workspace_semantic_search` enabled + semantic-vs-literal guidance; existing saves upgrade via the default workspace version bump.
+- The default `researcher` agent is seeded with `workspace_semantic_search` exposure enabled and semantic-vs-literal guidance that tells the model to call `semantic_search` for semantic lookup and `read` for full files; existing saves upgrade via the default workspace version bump.
 
 ### Validation & Error Matrix
 
@@ -628,7 +629,7 @@ A new platform tool must be wired through **all** of the following, or it will n
 | 5 | `agent-runtime/tool-schemas.ts` | Define `<name>Schema: ToolSchema`; add `can<Name>` check + `schemas.push(<name>Schema)` in `buildToolSchemas` | Model never sees the tool's parameter schema — tool is invisible even if everything else is wired |
 | 6 | `agent-runtime/workspace-tools.ts` | Add `normalize<Name>Arguments` function; add dispatch branch in `executeRuntimeWorkspaceToolCalls` (`else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.<name>)`) | Tool calls from the model have no handler — falls through to the "unknown tool" path |
 | 7 | `agent-runtime/index.ts` | Add `can<Name>` check via `platformToolEnabled`; add to `toolNames` array (conditional spread) | **Tool name not in the "当前可用工具名称" list — model doesn't know the tool exists, even if schema is registered.** This was the `test_skill_script` bug: steps 1-6 were done but step 7 was missed. |
-| 8 | `agent-runtime/index.ts` | Thread `run<Name>: capabilities.run<Name>` in **both** capability-threading sites (there are two: one for the entry agent path, one for delegated `agent_call` targets) | Tool works for master but not for delegated agents (or vice versa) |
+| 8 | `agent-runtime/index.ts` | Thread `run<Name>: capabilities.run<Name>` in **both** capability-threading sites (there are two: one for the entry agent path, one for delegated `agent_call` targets) | Tool works for entry agents but not for delegated agents (or vice versa) |
 | 8b | `platform-host/index.ts` + `platform-host/assistant-chat.ts` | Inject script runners via `...createBrowserScriptRunners({ workspaceTransaction, signal, emitTrace })` in **all three** `runAgentRuntimeTurn` capability objects: `sendMessage` (index.ts), `invokeAgent` (index.ts), and **assistant-chat** (assistant-chat.ts — the desktop assistant's own turn path, separate from `sendMessage`). The assistant runs through `assistant-chat.ts`, not `sendMessage` — missing this injection means the assistant agent gets `<NAME>_UNAVAILABLE` even though the tool is registered and enabled. The factory (`createBrowserScriptRunners` in `browser-skill-script-executor.ts`) creates both `runBrowserScript` + `runTestSkillScript` in one call, so adding a new script-related capability only needs one change in the factory. | Tool works for game agents but not for the desktop assistant |
 | 9 | `agent-runtime/tool-controls.ts` | Add to `PLATFORM_TOOL_CONTROL_GROUPS` (UI toggle card) | No on/off switch in the assistant config panel or Studio agent config — tool is invisible to the user |
 | 10 | `views/AssistantView.vue` | Add to the `TOOL_LABELS` map (`<name>: { verb, noun, unit }`) | Tool calls show as raw tool name in the timeline instead of a readable label |
