@@ -51,6 +51,28 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 - **Pruning + GC**: `pruneCheckpointsForSave` runs at the end of every `commitSuccessfulRuntimeTurnForSave`. Keeps recent 50 + every 20 turns sparse + all initial/manual + current turn; deletes the rest. GC is a simple full-scan (collect referenced hashes from remaining manifests → delete orphan blobs by ownerSaveId) — no incremental refcount, because single-save blob count is tens-to-low-hundreds and pruning runs once per turn (dwarfed by the LLM call). M/K come from `getCheckpointPruneConfig()` seam (hardcoded 50/20 today; `platform-config` task will wire it to `.tsian/` config source).
 - **Hash computation is async** (`crypto.subtle.digest`) and cannot run inside a Dexie transaction. Checkpoint build = hash+write blobs (outside tx) → small tx to write the thin-manifest record. Restore = prefetch all blobs by manifest (outside tx) → small tx to overwrite workspace + prune turns + delete future checkpoints.
 
+### invokeAgent `workspace-with-checkpoint` commit mode
+
+`invokeAgent` is a side-channel call (does not advance turn, does not write history). Its `commitMode` (`packages/contracts/src/runtime.ts:680`, `AgentInvocationCommitMode`) selects the workspace commit strategy:
+
+- `"workspace"` (default) → `commitWorkspaceFilesForSave` (writes workspace files only, **no checkpoint**).
+- `"workspace-with-checkpoint"` → `commitWorkspaceFilesWithCheckpointForSave` (writes workspace files **and creates a checkpoint** in one Dexie transaction).
+
+**Checkpoint reason enum** (`storage/db.ts`, `LocalCheckpointRecord.reason`): `"initial" | "after-turn" | "manual" | "post-turn-maintenance"`. The contracts layer `InvokeAgentRequest.checkpointReason` is a free `string`; platform-host validates it and maps to the closed storage enum. MVP only accepts `"post-turn-maintenance"`; unknown values throw fail-loud.
+
+**Replace-on-create semantics**: when `workspace-with-checkpoint` succeeds, the same Dexie transaction that writes the maintenance checkpoint **deletes same-turn `after-turn` checkpoints** (`turn === invokeMaxTurn && reason === "after-turn"`). The maintenance checkpoint becomes that turn's canonical checkpoint (post-maintenance state). This avoids restore confusion where a pre-maintenance `after-turn` would show "correct narrative, stale state". On failure, no checkpoint is created and the `after-turn` survives as the fallback.
+
+**Turn attribution**: the checkpoint's `turn` = caller-supplied `invokeMaxTurn` (invokeAgent does not advance turn). Same turn as the `sendMessage` `after-turn` checkpoint, different `reason` and `createdAt`.
+
+**Prune interaction**: `post-turn-maintenance` is not in the `initial`/`manual` auto-keep class. It survives via the "current turn" rule (`cp.turn === currentTurn`) and sparse-point rule. When the turn ages out, prune reclaims it normally — replace-on-create already guarantees no same-turn `after-turn` lingers, so no stale pre-maintenance point resurfaces.
+
+**`completed` event ordering**: `emitAgentInvocation({ type: "completed" })` fires **after** the commit function returns, so the frontend receives `completed` only when workspace + checkpoint are durable and restore-ready.
+
+**Validation matrix** (`platform-host/index.ts`):
+- `commitMode === "workspace"` + `checkpointReason !== undefined` → throw (reason requires checkpoint mode).
+- `commitMode === "workspace-with-checkpoint"` + `checkpointReason` provided + `!== "post-turn-maintenance"` → throw (MVP rejects unknown reasons).
+- `commitMode === "workspace-with-checkpoint"` + `checkpointReason` omitted → defaults to `"post-turn-maintenance"`.
+
 ## Quality
 
 - Run `npm run build:web` for any storage change.
