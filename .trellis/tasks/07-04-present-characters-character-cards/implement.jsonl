@@ -1,1 +1,10 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "前端 workspace 数据消费与类型安全约定；本任务新增 character 强类型、parseCharacter、useRelationships 需遵守。"}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "platform-web 侧 Vue 组件规范；新增 CharacterView/CharacterCard/各 pane/原子组件需遵守。"}
+{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "composable 规范；新增 useRelationships 与现有 useEntity/useScene 同构，需遵守 hook 约定。"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "platform-web storage 层约定；本任务微调 workspace-templates 中 character schema 需遵守。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/prd.md", "reason": "本任务 PRD：D1–D9 决策、R1–R25 需求、AC 是实施的权威来源。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/design.md", "reason": "本任务 design：组件架构、character schema 微调、数据流、错误降级、已知取舍。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/implement.md", "reason": "本任务 implement：8 步有序执行清单、验证命令、rollback 点。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/research/preview-character-card.html", "reason": "角色卡视觉与结构参考预览（烛火书卷·重铸主题）；组件布局/样式直接参考此 HTML。"}
+{"file": ".trellis/tasks/archive/2026-07/07-05-runtime-scene-character-schema-ui-align/prd.md", "reason": "schema 对齐任务 PRD（已归档）：character identity/gauges/appearance 原始方向 + 本任务微调依据。"}
+{"file": ".trellis/tasks/07-03-play-frontend-status-bar/prd.md", "reason": "父任务 principle：runtime as current context index / scene ref-only / 权威归属 / 渲染控制字段语义提示。"}

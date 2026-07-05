@@ -27,7 +27,9 @@
     "07-04-runtime-summary-injection",
     "07-04-airp-agent-roster-skills",
     "07-05-runtime-world-time-field",
-    "07-05-runtime-scene-character-schema-ui-align"
+    "07-05-runtime-scene-character-schema-ui-align",
+    "07-05-character-image-upload-persistence",
+    "07-05-status-bar-character-field-pinning"
   ],
   "parent": null,
   "relatedFiles": [],

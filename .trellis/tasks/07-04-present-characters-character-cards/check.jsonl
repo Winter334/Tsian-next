@@ -1,1 +1,8 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "验证 character 强类型、parseCharacter 错误分级、useRelationships 错误策略符合契约。"}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "验证新增 Vue 组件 props/emits/scoped 样式符合规范。"}
+{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "验证 useRelationships 与现有 useEntity/useScene 同构且符合 composable 约定。"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "验证 workspace-templates character schema 微调符合 storage 层约定。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/prd.md", "reason": "对照 AC 与 R1–R25 逐条检查。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/design.md", "reason": "对照组件架构、字段清单、数据流、错误降级进行核对。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/implement.md", "reason": "逐 Step 核对执行清单是否完成。"}
+{"file": ".trellis/tasks/07-04-present-characters-character-cards/research/preview-character-card.html", "reason": "对照视觉/结构参考，确认 UI 落地与预览一致（立绘栏固定、tabs 只切右侧、polarity 视觉、六维卡片、自由命名量表）。"}
