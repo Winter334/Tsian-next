@@ -41,6 +41,10 @@ interface ExtensionItem {
   body?: unknown
 }
 
+interface RuntimeLikeInput extends Runtime {
+  // worldTime 等固定字段进入必检；详见 isRuntimeLike。
+}
+
 /** 读取失败兜底 RuntimeData。 */
 function loadFailedData(error: "load-failed" | "not-found"): RuntimeData {
   return {
@@ -54,13 +58,14 @@ function loadFailedData(error: "load-failed" | "not-found"): RuntimeData {
 
 /**
  * 校验 runtime.json 固定字段是否齐备。
- * 对齐 workspace-templates.ts:1387 模板：turn/activeSceneIds/player/extensions
+ * 对齐 workspace-templates.ts 默认模板：turn/worldTime/activeSceneIds/player/extensions
  * 为必检；activeScene/inventory/status/updatedAtTurn/updatedBy 允许 null/缺省。
  */
-function isRuntimeLike(raw: unknown): raw is Runtime {
+function isRuntimeLike(raw: unknown): raw is RuntimeLikeInput {
   if (typeof raw !== "object" || raw === null) return false
   const r = raw as Record<string, unknown>
   if (typeof r.turn !== "number") return false
+  if (typeof r.worldTime !== "string") return false
   if (!Array.isArray(r.activeSceneIds)) return false
   if (typeof r.player !== "object" || r.player === null) return false
   if (typeof r.extensions !== "object" || r.extensions === null) return false
@@ -287,6 +292,7 @@ export function parseRuntime(raw: unknown): RuntimeData {
   // 固定字段原样保留（runtime 模板对齐）
   const runtime: Runtime = {
     turn: raw.turn,
+    worldTime: raw.worldTime,
     activeSceneIds: raw.activeSceneIds,
     activeScene: raw.activeScene as Runtime["activeScene"],
     player: raw.player as Runtime["player"],

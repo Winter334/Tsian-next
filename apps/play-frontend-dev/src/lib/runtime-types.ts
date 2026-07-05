@@ -106,6 +106,8 @@ export interface RuntimeData {
  */
 export interface Runtime {
   turn: number
+  /** 当前世界/剧情时间；空字符串表示未知或尚未建立。 */
+  worldTime: string
   activeSceneIds: string[]
   activeScene: { ref: string; name: string } | null
   player: {
