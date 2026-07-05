@@ -100,7 +100,7 @@ export interface RuntimeData {
 }
 
 /**
- * runtime.json 结构（与 workspace-templates.ts:1387 默认模板对齐）。
+ * runtime.json 结构（与 workspace-templates.ts 默认模板对齐）。
  * 固定字段原样保留，不由 parse 层转成 display item——由 UI 子任务按各自
  * 专门 UI 消费（角色卡、状态栏、场景面板等）。
  */
@@ -108,14 +108,14 @@ export interface Runtime {
   turn: number
   /** 当前世界/剧情时间；空字符串表示未知或尚未建立。 */
   worldTime: string
-  activeSceneIds: string[]
-  activeScene: { ref: string; name: string } | null
-  player: {
-    character: { ref: string; name: string } | null
-    location: { ref: string; name: string } | null
-  }
-  inventory: { primaryContainer: { ref: string; name: string }; state?: string } | null
-  status: Array<{ id: string; description: string; level?: string }>
+  /** 当前地点指针；null 表示未知或不适用。 */
+  location: { ref: string; name: string } | null
+  /** 当前天气字符串；空字符串表示未知或不适用。 */
+  weather: string
+  /** 当前活跃场景指针数组，每项 { ref, name }。 */
+  activeSceneRefs: Array<{ ref: string; name: string }>
+  /** 主角指针；null 表示未指定。 */
+  protagonistRef: { ref: string; name: string } | null
   /** 扩展字段：动态玩法字段，render→category 映射后分桶。 */
   extensions: Record<string, unknown>
   updatedAtTurn: number
@@ -123,12 +123,12 @@ export interface Runtime {
 }
 
 /**
- * 实体/场景文件解析结果。实体的 fields/sections/status 是固定 schema，
+ * 实体/场景文件解析结果。实体的 identity/appearance/attributes/gauges/status 是固定 schema，
  * 由 UI 子任务专门渲染，parse 层只处理 extensions。`entity` 保留原始 JSON
  * 供 UI 取固定字段。
  */
 export interface EntityData {
-  /** 原始实体/场景 JSON（含 id/name/brief/fields/sections/status 等固定字段）。 */
+  /** 原始实体/场景 JSON（含 id/name/brief/identity/appearance/attributes/gauges/status 等固定字段）。 */
   entity: Record<string, unknown>
   /** extensions 解析出的扩展项（按 category 分桶）。 */
   displayItems: DisplayItems

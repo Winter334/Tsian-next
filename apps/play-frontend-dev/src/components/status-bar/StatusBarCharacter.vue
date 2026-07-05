@@ -8,9 +8,9 @@
  *   点击 emit toggle（展开状态栏）。
  * - 无角色时：默认占位"?" + 暗化边框（折叠态）/"未设定角色"（展开态）。
  *
- * 数据来源：runtime.player.character（{ ref, name } | null）。
+ * 数据来源：runtime.protagonistRef（{ ref, name } | null）。
  * 有 ref 时通过 useEntity(ref) 读取实体获取 name/brief（entity 文件内 name/brief
- * 是权威值，runtime.player.character.name 是冗余快照——优先用 entity 的）。
+ * 是权威值，runtime.protagonistRef.name 是冗余快照——优先用 entity 的）。
  * ref 为 null → 显示"未设定角色"。
  *
  * 不抛错：useEntity 内部 catch，error 走 error ref（type-safety §"play-frontend

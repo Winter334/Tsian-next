@@ -366,7 +366,7 @@ function backToBranchChoice(): void {
   }
 }
 
-/** 确认原著角色选择。写入 runtime.json 的 player.character。 */
+/** 确认原著角色选择。写入 runtime.json 的 protagonistRef。 */
 async function confirmCanonCharacter(candidate: { id?: string; name: string; brief: string; gender?: string }): Promise<void> {
   if (busy.value) return
   const { tsian } = useTsian()
@@ -430,7 +430,7 @@ function resetCharacterSetup(): void {
   characterSetupStatus.value = "selecting"
 }
 
-/** read-modify-write runtime.json 的 player.character 字段。 */
+/** read-modify-write runtime.json 的 protagonistRef 字段。 */
 async function writePlayerCharacter(
   tsian: ReturnType<typeof useTsian>["tsian"],
   ref: string,
@@ -443,10 +443,7 @@ async function writePlayerCharacter(
   }
   const updated = {
     ...runtime,
-    player: {
-      ...(runtime as Record<string, unknown>).player as Record<string, unknown> | undefined,
-      character: { ref, name },
-    },
+    protagonistRef: { ref, name },
   }
   await tsian.workspace.write(RUNTIME_PATH, `${JSON.stringify(updated, null, 2)}\n`)
 }
@@ -469,7 +466,7 @@ async function ensureUniqueLocalId(
   return `${base}-${Date.now()}`
 }
 
-/** 读取 runtime.json 的 player.character，用于重载恢复。 */
+/** 读取 runtime.json 的 protagonistRef，用于重载恢复。 */
 async function loadPlayerCharacter(
   tsian: ReturnType<typeof useTsian>["tsian"],
 ): Promise<SelectedCharacter | null> {
@@ -477,12 +474,10 @@ async function loadPlayerCharacter(
   if (!file?.content) return null
   const runtime = safeJsonParse(file.content)
   if (!runtime || typeof runtime !== "object") return null
-  const player = (runtime as Record<string, unknown>).player
-  if (!player || typeof player !== "object") return null
-  const character = (player as Record<string, unknown>).character
-  if (!character || typeof character !== "object") return null
-  const ref = (character as Record<string, unknown>).ref
-  const name = (character as Record<string, unknown>).name
+  const protagonist = (runtime as Record<string, unknown>).protagonistRef
+  if (!protagonist || typeof protagonist !== "object") return null
+  const ref = (protagonist as Record<string, unknown>).ref
+  const name = (protagonist as Record<string, unknown>).name
   if (typeof ref !== "string" || typeof name !== "string") return null
   // brief + gender 从实体文件读取
   const localId = ref.startsWith("character:") ? ref.slice("character:".length) : ref
@@ -729,7 +724,7 @@ async function initialize(): Promise<void> {
       if (summary) {
         understandingSummary.value = summary
         understandingStatus.value = "ready"
-        // 检查是否已有 player.character（重载恢复）
+        // 检查是否已有 protagonistRef（重载恢复）
         const existingCharacter = await loadPlayerCharacter(tsian)
         if (existingCharacter) {
           selectedCharacter.value = existingCharacter

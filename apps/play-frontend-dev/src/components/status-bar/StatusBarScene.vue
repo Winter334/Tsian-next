@@ -3,7 +3,7 @@
  * StatusBarScene — 状态栏"地点时间"区（仅展开态渲染）。
  *
  * design §5.2：
- * - 场景名 fallback 链：activeScene.name → activeSceneIds[0] → "未知场景"。
+ * - 场景名 fallback 链：activeSceneRefs[0].name → activeSceneRefs[0].ref → "未知场景"。
  * - 时间：runtime.worldTime，空字符串显示"时间未知"。
  * - 场景名：--font-serif，--prose，稍大；时间：--font-mono，--prose-dim，小字。
  *
@@ -20,8 +20,9 @@ const props = defineProps<{
 const sceneName = computed(() => {
   const r = props.runtime
   if (!r) return "未知场景"
-  if (r.activeScene?.name) return r.activeScene.name
-  if (r.activeSceneIds.length > 0) return r.activeSceneIds[0]!
+  const first = r.activeSceneRefs[0]
+  if (first?.name && first.name.trim().length > 0) return first.name
+  if (first?.ref && first.ref.trim().length > 0) return first.ref
   return "未知场景"
 })
 

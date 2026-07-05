@@ -47,8 +47,10 @@ const error = computed(() => runtimeData.value.error)
 const status = computed(() => runtimeData.value.status)
 const displayItems = computed(() => runtimeData.value.displayItems)
 
-const character = computed(() => runtime.value?.player?.character ?? null)
-const runtimeStatus = computed(() => runtime.value?.status ?? [])
+// 角色来源：runtime.protagonistRef（新 shape，替代旧 runtime.player.character）。
+const character = computed(() => runtime.value?.protagonistRef ?? null)
+// 状态数据来源改为主角 entity.status，由 StatusBarStatus 内部 useEntity 读取。
+const protagonistRefStr = computed(() => runtime.value?.protagonistRef?.ref ?? null)
 const tags = computed(() => displayItems.value.tags)
 const metrics = computed(() => displayItems.value.metrics)
 const refs = computed(() => displayItems.value.refs)
@@ -111,7 +113,11 @@ const showLoading = computed(
       <!-- 展开态：渲染其余分区（v-if 避免折叠态占布局） -->
       <div v-if="!collapsed" class="sb-expanded-body">
         <StatusBarScene :runtime="runtime" />
-        <StatusBarStatus :status="runtimeStatus" :tags="tags" />
+        <StatusBarStatus
+          :key="protagonistRefStr ?? 'none'"
+          :protagonist-ref="protagonistRefStr"
+          :tags="tags"
+        />
         <StatusBarMetrics :metrics="metrics" />
         <StatusBarRefs :refs="refs" />
       </div>

@@ -58,16 +58,16 @@ function loadFailedData(error: "load-failed" | "not-found"): RuntimeData {
 
 /**
  * 校验 runtime.json 固定字段是否齐备。
- * 对齐 workspace-templates.ts 默认模板：turn/worldTime/activeSceneIds/player/extensions
- * 为必检；activeScene/inventory/status/updatedAtTurn/updatedBy 允许 null/缺省。
+ * 对齐 workspace-templates.ts 默认模板：turn/worldTime/weather/activeSceneRefs/extensions
+ * 为必检；location/protagonistRef/updatedAtTurn/updatedBy 允许 null/缺省。
  */
 function isRuntimeLike(raw: unknown): raw is RuntimeLikeInput {
   if (typeof raw !== "object" || raw === null) return false
   const r = raw as Record<string, unknown>
   if (typeof r.turn !== "number") return false
   if (typeof r.worldTime !== "string") return false
-  if (!Array.isArray(r.activeSceneIds)) return false
-  if (typeof r.player !== "object" || r.player === null) return false
+  if (typeof r.weather !== "string") return false
+  if (!Array.isArray(r.activeSceneRefs)) return false
   if (typeof r.extensions !== "object" || r.extensions === null) return false
   return true
 }
@@ -277,11 +277,11 @@ export function parseExtensions(
 /**
  * 解析 runtime.json 为 RuntimeData。
  *
- * 1. 校验 raw 是对象且含 turn/activeSceneIds/player/extensions 等固定字段；
+ * 1. 校验 raw 是对象且含 turn/worldTime/weather/activeSceneRefs/extensions 等固定字段；
  *    不通过 → load-failed 路径，runtime=null（D7）。
  * 2. 遍历 extensions：render 不在 9 种预设 → itemErrors（D6）；在预设 → 按
  *    RENDER_TO_CATEGORY 取 category，按 design §3.2 检查字段缺失打 fallback（D8）。
- * 3. 固定字段（turn/activeScene/player/inventory/status）原样放进 runtime，
+ * 3. 固定字段（turn/worldTime/weather/location/activeSceneRefs/protagonistRef）原样放进 runtime，
  *    不转 display item——由 UI 子任务按各自专门 UI 消费。
  */
 export function parseRuntime(raw: unknown): RuntimeData {
@@ -289,18 +289,19 @@ export function parseRuntime(raw: unknown): RuntimeData {
     return loadFailedData("load-failed")
   }
 
+  const r = raw as unknown as Record<string, unknown>
+
   // 固定字段原样保留（runtime 模板对齐）
   const runtime: Runtime = {
     turn: raw.turn,
     worldTime: raw.worldTime,
-    activeSceneIds: raw.activeSceneIds,
-    activeScene: raw.activeScene as Runtime["activeScene"],
-    player: raw.player as Runtime["player"],
-    inventory: (raw.inventory ?? null) as Runtime["inventory"],
-    status: Array.isArray(raw.status) ? raw.status : [],
+    location: (r.location ?? null) as Runtime["location"],
+    weather: raw.weather,
+    activeSceneRefs: raw.activeSceneRefs as Runtime["activeSceneRefs"],
+    protagonistRef: (r.protagonistRef ?? null) as Runtime["protagonistRef"],
     extensions: raw.extensions,
-    updatedAtTurn: typeof raw.updatedAtTurn === "number" ? raw.updatedAtTurn : 0,
-    updatedBy: typeof raw.updatedBy === "string" ? raw.updatedBy : null,
+    updatedAtTurn: typeof r.updatedAtTurn === "number" ? (r.updatedAtTurn as number) : 0,
+    updatedBy: typeof r.updatedBy === "string" ? (r.updatedBy as string) : null,
   }
 
   const { displayItems, itemErrors } = parseExtensions(raw.extensions)

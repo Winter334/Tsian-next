@@ -2,27 +2,62 @@
 /**
  * StatusBarStatus — 状态栏"状态"区。
  *
- * design §5.4：
+ * design §5.4（对齐新 schema）：
  * - 小标题"状态" + 渐变细线。
- * - runtime.status 数组：每项 description + 可选 level 小标签。
+ * - 数据源：主角 entity.status 数组（每项 { id, name?, description?, polarity? }），
+ *   通过 useEntity(protagonistRef) 按需读取；旧 runtime.status 已废弃。
+ * - polarity: positive/negative/neutral（替代旧 level）。
  * - displayItems.tags：tag 类扩展项，label: value 或仅 label。
  * - 空态："暂无状态"（--whisper，小字斜置）。
  *
  * 不抛错：父容器只在 runtime 存在时渲染本区；本组件按字段 fallback。
  */
-import { computed } from "vue"
+import { computed, onMounted } from "vue"
 import type { DisplayItem } from "../../lib/runtime-types"
+import { useEntity } from "../../composables/useEntity"
 
-interface RuntimeStatus {
+type Polarity = "positive" | "negative" | "neutral"
+
+interface EntityStatus {
   id: string
-  description: string
-  level?: string
+  name?: string
+  description?: string
+  polarity?: Polarity
 }
 
 const props = defineProps<{
-  status: RuntimeStatus[]
+  /** 主角 entity ref（`character:<localId>`）；null 时不加载。 */
+  protagonistRef: string | null
   tags: DisplayItem[]
 }>()
+
+// 通过 useEntity 按需读取主角实体，从 entity.status 提取状态数组。
+// useEntity 在 setup 期捕获 ref 字符串；父容器通过 :key=protagonistRef 变化重挂本组件，
+// 因此 setup 内直接用当前 ref 即可。ref 为空时不发起读取。
+const { data: entityData, load: loadEntity } = useEntity(props.protagonistRef ?? "")
+
+onMounted(() => {
+  if (props.protagonistRef) void loadEntity()
+})
+
+const statusList = computed<EntityStatus[]>(() => {
+  const raw = entityData.value?.entity?.status
+  if (!Array.isArray(raw)) return []
+  const out: EntityStatus[] = []
+  for (const item of raw) {
+    if (typeof item !== "object" || item === null) continue
+    const r = item as Record<string, unknown>
+    const id = typeof r.id === "string" ? r.id : null
+    if (!id) continue
+    const name = typeof r.name === "string" && r.name.length > 0 ? r.name : undefined
+    const description = typeof r.description === "string" && r.description.length > 0 ? r.description : undefined
+    const p = r.polarity
+    const polarity: Polarity | undefined =
+      p === "positive" || p === "negative" || p === "neutral" ? p : undefined
+    out.push({ id, name, description, polarity })
+  }
+  return out
+})
 
 interface TagRow {
   label: string
@@ -40,7 +75,24 @@ const tagRows = computed<TagRow[]>(() => {
   })
 })
 
-const isEmpty = computed(() => props.status.length === 0 && tagRows.value.length === 0)
+const isEmpty = computed(() => statusList.value.length === 0 && tagRows.value.length === 0)
+
+/**
+ * 状态行主展示文本：优先 name，其次 description，兜底 id。
+ * design.md §6 / PRD D3：状态以名字为主视觉；description 作为 tooltip（title 属性）。
+ */
+function statusText(s: EntityStatus): string {
+  return s.name ?? s.description ?? s.id
+}
+
+/**
+ * 状态行 tooltip：主展示是 name 时展示 description；主展示已是 description/id 时省略。
+ * 避免同一段文字在主内容与 tooltip 中重复。
+ */
+function statusTooltip(s: EntityStatus): string | undefined {
+  if (s.name && s.description && s.name !== s.description) return s.description
+  return undefined
+}
 </script>
 
 <template>
@@ -51,9 +103,13 @@ const isEmpty = computed(() => props.status.length === 0 && tagRows.value.length
     </header>
 
     <ul v-if="!isEmpty" class="status-list">
-      <li v-for="s in status" :key="s.id" class="status-row">
-        <span class="status-desc">{{ s.description }}</span>
-        <span v-if="s.level" class="status-level">{{ s.level }}</span>
+      <li v-for="s in statusList" :key="s.id" class="status-row" :title="statusTooltip(s)">
+        <span class="status-desc">{{ statusText(s) }}</span>
+        <span
+          v-if="s.polarity"
+          class="status-polarity"
+          :class="`polarity-${s.polarity}`"
+        >{{ s.polarity }}</span>
       </li>
       <li v-for="(t, idx) in tagRows" :key="`tag-${idx}`" class="status-row tag-row">
         <span class="tag-label">{{ t.label }}</span>
@@ -116,7 +172,7 @@ const isEmpty = computed(() => props.status.length === 0 && tagRows.value.length
   color: var(--prose);
   line-height: 1.4;
 }
-.status-level {
+.status-polarity {
   font-family: var(--font-mono);
   font-size: 0.65rem;
   color: var(--prose-dim);
@@ -125,6 +181,18 @@ const isEmpty = computed(() => props.status.length === 0 && tagRows.value.length
   padding: 0 6px;
   letter-spacing: 0.05em;
   flex-shrink: 0;
+  text-transform: lowercase;
+}
+.status-polarity.polarity-positive {
+  color: #7ea968;
+  border-color: rgba(126, 169, 104, 0.4);
+}
+.status-polarity.polarity-negative {
+  color: #c76d5a;
+  border-color: rgba(199, 109, 90, 0.4);
+}
+.status-polarity.polarity-neutral {
+  color: var(--prose-dim);
 }
 
 .tag-row .tag-label {
