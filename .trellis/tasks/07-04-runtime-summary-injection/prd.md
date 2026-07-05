@@ -1,28 +1,47 @@
-# runtime 摘要注入 master
+# 当前上下文多消息注入 storyteller
 
 ## Goal
 
-让前端在玩家发送行动前，基于 `runtime.json` 和前端可显示状态编译一段易读的当前局面摘要，通过 `send(..., { injection })` 提供给 master，减少 master 自行读取 runtime 引用实体的成本。
+让前端在玩家发送行动前，基于 `runtime.json` 当前上下文索引，分别读取 runtime/world、当前场景、主角/当前视角角色，并编译成多条 storyteller 友好的 injection message，减少 storyteller 每轮自行读取高频上下文的成本，同时避免摘要双源和 prompt cache 粒度过粗。
+
+## Background / Direction
+
+最新父任务方向：`runtime.json` 是当前上下文索引与世界变量载体，不再复制 scene/entity 摘要。UI 和 injection 都是派生投影：需要显示或注入时读取权威文件并格式化。
+
+Injection 也不应把 runtime + scene + protagonist 拼成一条大消息。为了减少 LLM prompt cache 失效范围，应按信息块拆成多条 injection message：runtime/world 一条、active scene 一条、protagonist 一条。
 
 ## Requirements
 
-- R1: 使用与状态栏/详情 UI 同源的 runtime 渲染数据，而不是另起一套 schema 解释逻辑。
-- R2: 将当前可显示的 runtime 内容、必要引用摘要、关键状态编译为人类可读 Markdown/文本。
-- R3: injection 只帮助 master 理解玩家本轮行动，不让前端承担状态维护或剧情推理。
-- R4: 不要求第一版做复杂防御性限制；读取失败或无法格式化时跳过对应项或降级为简单文本。
-- R5: injection 内容应明确其来源是当前 runtime/前端编译摘要；若后续 workspace 工具读取冲突，以 workspace 权威文件为准。
-- R6: 可配置或可关闭，避免在不需要时额外污染 master 上下文。
+- R1: 使用 `runtime.json` 作为当前上下文索引，读取其中的世界变量、`activeSceneRefs` / 当前场景引用、`protagonistRef` / 当前视角角色引用。
+  （对应 `07-05-runtime-scene-character-schema-ui-align` 定义的新 runtime shape：
+  `turn/worldTime/location/weather/activeSceneRefs/protagonistRef/extensions`；不再读旧的
+  `activeSceneIds` / `runtime.player.character`。）
+- R2: 生成多条 injection message，而不是一条大 runtime 摘要；每条 message 对应一个稳定信息块。
+- R3: runtime/world block 包含剧情内时间（`worldTime`）、天气/环境（`weather`）、地点/位置（`location.{ref,name}`）、当前 scene refs（`activeSceneRefs[*]`）、protagonist ref（`protagonistRef`）等世界变量与入口引用。
+- R4: active scene block 读取当前场景文件（`save/scenes/<localId>.json`）并去结构化为 storyteller 可读文本；只展开一层场景文件，不递归展开 `present` 中的人物或其它 refs。
+- R5: protagonist block 读取主角/当前视角角色实体，并去结构化为 storyteller 可读文本；包含 name/brief、
+  `identity`（age/gender/race/class/title）、`appearance`、`attributes`（体魄/悟性/气运/根骨/法力/魅力）、
+  `gauges`（hp/mp/sp/hunger/stamina）、`status`（含 polarity）、goals 等叙事高频信息。
+- R6: 不把 injection 当成权威数据或缓存文件；它是发送前从 workspace 权威文件派生的临时上下文。
+- R7: 不承担 schema 维护或剧情推理；若文件缺失或格式错误，对应 block 降级或跳过，不阻断玩家发送。
+- R8: storyteller 如果仍缺信息，应使用 workspace 工具读取更多实体/关系，或 call 资料员；前端注入器不递归替 storyteller 做资料员工作。
+- R9: 可配置或可关闭，避免在不需要时额外污染 storyteller 上下文。
 
 ## Acceptance Criteria
 
-- [ ] 发送玩家行动时可附带 runtime 当前局面摘要 injection。
-- [ ] 摘要至少包含 runtime 中的若干可显示字段。
-- [ ] 摘要格式对 master 友好，不是原始冗余 JSON。
-- [ ] 不改变 runtime/entity 数据，不承担维护职责。
-- [ ] injection 失败不阻断玩家发送。
+- [ ] 发送玩家行动时可附带多条 current context injection messages。
+- [ ] 至少生成 runtime/world block；当 ref 存在且读取成功时生成 active scene block 和 protagonist block。
+- [ ] active scene block 不递归展开 scene.present / refs 指向的实体详情。
+- [ ] protagonist block 使用角色实体权威信息，不复制 runtime 摘要。
+- [ ] injection 内容为 storyteller 友好文本，不是原始冗余 JSON。
+- [ ] 某个 block 生成失败不阻断玩家发送，其它 block 仍可发送。
+- [ ] 不改变 runtime/entity/scene 数据，不承担维护职责。
 - [ ] 通过 `npm run build --workspace play-frontend-dev`。
 
 ## Dependencies
 
 - 依赖 `.trellis/tasks/07-04-frontend-runtime-render-infra`。
-- 可在左侧状态栏 MVP 后实施。
+- 依赖 `.trellis/tasks/07-05-runtime-scene-character-schema-ui-align`：
+  runtime 当前上下文索引字段固定为 `worldTime/weather/location/activeSceneRefs/protagonistRef`；
+  character entity 固定 schema 为 `identity/appearance/attributes/gauges/status`（含 polarity）。
+- 建议在角色卡 UI 与 runtime 索引口径稳定后实施。
