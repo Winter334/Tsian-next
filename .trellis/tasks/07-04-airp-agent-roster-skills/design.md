@@ -410,3 +410,9 @@ invokeAgent(director)            # 开局或阶段性剧情指导
 场记"接触相关实体时顺带修正" runtime ref 快照与 entity 的漂移。但没有显式对照机制时，顺带修正不易发生。
 
 动工前需决定：场记维护回合后是否加一个轻量校验步骤——对比 runtime ref 摘要与 entity 实际 `name`/`brief`，不一致就更新 runtime 快照。把"希望发生"变成"机制上必然发生"。ref 快照语义见 `07-04-renderable-runtime-entity-schema` OQ-3。
+
+### OQ-5: 脚本 vs 工具形态（已独立成任务）
+
+讨论中提出：当前脚本绑定 Skill 是单层能力发现，简单如 `roll_dice` 也要 use_skill + 等一轮 + 读 SKILL.md。是否需要一层"类 MCP 工具"让原子能力直接暴露给 Agent？
+
+此问题已于 2026-07-05 独立沉淀为任务 `07-05-agent-tool-mechanism`，作为平台层基础设施（不挂本任务下）。本任务（airp-roster）在实施行动裁定 Skill 时，可关注工具机制任务的进展——若工具机制先行，`roll_dice`/`calculate_expression` 应做成公共工具而非 Skill action；若本任务先行，可先在 Skill 里声明 action，待工具机制落地后迁移。
