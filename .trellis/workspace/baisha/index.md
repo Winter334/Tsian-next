@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 125
-- **Last Active**: 2026-07-04
+- **Total Sessions**: 126
+- **Last Active**: 2026-07-05
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~713 | Active |
+| `journal-3.md` | ~748 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 126 | 2026-07-05 | 07-04-runtime-summary-injection: 发送前多消息 runtime 上下文注入 | `6c25684`, `712debb`, `9fb1acc` | `feat/play-frontend-status-bar` |
 | 125 | 2026-07-04 | 回合后场记编排 + card.entrypoints bridge API | `17b5731` | `master` |
 | 124 | 2026-07-04 | 默认 AIRP Agent 模板重写 | `95e392c` | `feat/airp-agent-invocation-entrypoints` |
 | 123 | 2026-07-03 | 修复 play frontend 类型检查 | `86cead3` | `feat/play-frontend-message-windowing` |

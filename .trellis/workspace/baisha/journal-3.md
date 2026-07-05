@@ -711,3 +711,38 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 126: 07-04-runtime-summary-injection: 发送前多消息 runtime 上下文注入
+
+**Date**: 2026-07-05
+**Task**: 07-04-runtime-summary-injection: 发送前多消息 runtime 上下文注入
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+为 play-frontend 引入发送前多消息 runtime 上下文注入：新增 lib/context-injection.ts 纯函数把 runtime.json/当前 scene/protagonist 编译为多条 storyteller-friendly injection message；useTsian.send 接入并新增 lastSendError；StoryView 输入区上方渲染错误 banner。阻断策略：ref 存在但 load 失败或 runtime 未就绪 → 阻断发送；ref 缺省则跳过该 block；runtime.extensions.frontendInjection.enabled=false short-circuit 不注入。hook-guidelines 补 composable init cycle 与 pre-send 注入模式两个 pattern。build 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6c25684` | (see git log) |
+| `712debb` | (see git log) |
+| `9fb1acc` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
