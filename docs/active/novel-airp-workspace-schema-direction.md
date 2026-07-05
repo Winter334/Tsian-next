@@ -160,7 +160,7 @@ Recommended extension shape:
 }
 ```
 
-First-pass preset render types: `text`, `number`, `progress`, `tag`, `tags`, `list`, `section`, `ref`, `cards`. Add new render types only after updating the frontend preset and this schema guidance; do not invent arbitrary UI component names in runtime/entity data.
+First-pass preset render types: `text`, `number`, `progress`, `tag`, `tags`, `list`, `section`, `ref`, `cards`. Add new render types only after updating the frontend preset and this schema guidance; do not invent arbitrary UI component names in runtime/entity data. `render` is optional: omit it when the field is a plain value and the frontend should display it as text. When a `render` value is present but not in the preset list, frontends fail loud (warn + hide the field) rather than silently degrading; Agents that need non-text rendering must use a preset type or wait for the frontend to add it. New render types and their field shapes are introduced via predesigned scripts/tools that validate at write time, not by Agents inventing UI component names in data.
 
 Fixed baseline schemas such as character, scene, container, item, and runtime can be rendered by bespoke frontend components. `extensions` are only the dynamic slot mechanism for new or temporary fields (for example corruption, alert level, contract target, or special resource), not a universal renderer replacing those components.
 

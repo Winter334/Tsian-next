@@ -949,7 +949,7 @@ const NOVEL_AIRP_SCHEMA_GUIDE_MD = text([
   "",
   "- `fields`：稳定 label/value 键值对，前端状态栏/卡片行式渲染。",
   "- `sections`：title/body 段落块。",
-  "- `extensions`：动态玩家可见字段，子 key 可用中文，值内用有限 `render` preset（text/number/progress/tag/tags/list/section/ref/cards）。",
+  "- `extensions`：动态玩家可见字段，子 key 可用中文，值内用有限 `render` preset（text/number/progress/tag/tags/list/section/ref/cards）。`render` 可省略，省略时前端按朴素文本展示 value；写了 `render` 但值不在 preset 里时前端 fail loud（warn + 隐藏该字段），不静默降级。需要新 render 类型时通过脚本/工具在写入时校验，不要在数据里发明任意 UI 组件名。",
   "",
   "固定基础 schema 由前端做专门 UI；`extensions` 只是这些 UI 内的新字段扩展槽，不是万能 renderer。",
   "",

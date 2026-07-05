@@ -292,22 +292,20 @@ A universal renderer would make every UI look like a generic JSON dashboard. The
 
 ## 9. Open Questions (动工前讨论)
 
-> 以下问题在 2026-07-05 设计评审中提出，留待本任务进入实现阶段时逐一讨论定方案。现在不强行决定，避免纸上谈兵。
+> 以下问题在 2026-07-05 设计评审中提出。本任务主体在评审前已由 airp-roster 子任务（默认 Agent/Skill 模板重写）顺带完成，OQ 处理结果记录如下。
 
-### OQ-1: 契约可执行原型
+### OQ-1: 契约可执行原型 ~~（待讨论）~~ → 关闭
 
-当前 implement.md 清单全是文档/template 更新，没有可执行验证。风险：契约落到任务 2（`07-04-frontend-runtime-render-infra`）的前端解析时才发现某些约定不好用。
+讨论结论：任务 2（`07-04-frontend-runtime-render-infra`）本身就是契约的可执行验证——它会实现完整的前端解析基础设施。单独再做一个 30 行原型无意义。若任务 2 发现契约不好用，回头改 schema docs（这正是 schema 任务"文档级"性质的好处）。
 
-动工前需决定：是否在本任务额外产出一个最小可执行原型（一个 `runtime.json` 示例 + ~30 行前端解析函数把 `extensions` 归一成 display items），用以提前验证契约可消费性？§5 的 JSON 例子离可执行原型只差一步，成本低。
+### OQ-2: render type 演进策略 ~~（待讨论）~~ → 部分解决 + 转移
 
-### OQ-2: render type 演进策略
+讨论结论：不补 meter/grid/badge/timer 等新预设类型。用户判断：Agent 通过脚本写入时校验更可靠，新 render 类型的字段定义交给"脚本校验 + 实际需求"驱动，在 `action-resolution-system` / `containers` 等任务里由对应 Skill + 脚本一起定，而不是现在空想。
 
-当前预设 `text/number/progress/tag/tags/list/section/ref/cards` 对开局够用，但 RPG 长线常见 UI（装备槽/grid、带阈值 meter、状态计时器、badge）没有对应类型。加新 render type 是 schema 变更还是前端版本变更？谁决定？旧存档遇到未知 render 怎么处理？
+本任务只补一句 schema 约定："`render` 可省略 → 朴素文本展示；写了 `render` 但值不在 preset 里 → fail loud（warn + 隐藏），不静默降级"。已落地到 `novel-airp-workspace-schema-direction.md` §render preset 段落和 `NOVEL_AIRP_SCHEMA_GUIDE_MD`。
 
-动工前需决定：在 design 里补一节"render type 演进策略"，明确加新类型的流程（更新 schema docs + 前端实现 fallback + 旧存档降级），并考虑预留 `render: "custom"` + `component` 字段作为逃生口（前端可忽略未知 component，避免 Agent 发明 UI 让前端崩）。
+"脚本校验前移"导向了独立的平台层任务 `07-05-agent-tool-mechanism`（类 MCP 工具发现 + 卡定制层），不属本任务。
 
-### OQ-3: ref 快照 vs entity 权威的漂移校验
+### OQ-3: ref 快照 vs entity 权威的漂移校验 ~~（待讨论）~~ → 关闭
 
-P4 / §3.4 说 runtime 里的 `ref.name` 是展示快照、entity `name` 是权威，漂移"靠场记顺带修正"。但场记怎么知道哪里漂移了？没有显式对照机制时，"顺带修正"容易变成"永远不修正直到 bug 爆发"。
-
-动工前需决定：是否在本任务约定一个轻量校验钩子——场记维护回合后对比 runtime ref 摘要与 entity 实际 `name`/`brief`，发现不一致就更新 runtime 快照。本任务定义 ref 快照语义；场记的校验行为归 `07-04-airp-agent-roster-skills` 的场记 Skill（见该任务 OQ-4）。
+讨论结论：本任务已定义 ref 快照语义（§3.4 name/aliases/localId 语义 + direction doc P4 runtime/entity authority）。实际的场记漂移校验机制归 `07-04-airp-agent-roster-skills` OQ-4（场记漂移校验钩子），不在 schema 任务范围。
