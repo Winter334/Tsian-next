@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "check 阶段核对前端质量规范（含构建/lint 要求）"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "check 阶段核对新增类型是否消除 any / 类型安全"}
+{"file": ".trellis/spec/platform-web/frontend/component-guidelines.md", "reason": "check StoryView banner 是否符合组件规范"}
+{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "check useTsian 改动是否符合 composable 规范"}
+{"file": ".trellis/spec/guides/data-fileification-principle.md", "reason": "check 是否遵守 injection 派生自权威文件、不落盘的原则"}
+{"file": ".trellis/tasks/07-04-runtime-summary-injection/design.md", "reason": "check 是否与 design 决策一致"}
+{"file": ".trellis/tasks/07-04-runtime-summary-injection/prd.md", "reason": "check AC 是否满足；含 AC 与实现差异回填提示"}

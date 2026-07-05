@@ -23,20 +23,24 @@ Injection 也不应把 runtime + scene + protagonist 拼成一条大消息。为
   `identity`（age/gender/race/class/title）、`appearance`、`attributes`（体魄/悟性/气运/根骨/法力/魅力）、
   `gauges`（hp/mp/sp/hunger/stamina）、`status`（含 polarity）、goals 等叙事高频信息。
 - R6: 不把 injection 当成权威数据或缓存文件；它是发送前从 workspace 权威文件派生的临时上下文。
-- R7: 不承担 schema 维护或剧情推理；若文件缺失或格式错误，对应 block 降级或跳过，不阻断玩家发送。
+- R7: 不承担 schema 维护或剧情推理。上下文健康度分两类：
+  - ref 缺省（`activeSceneRefs=[]` / `protagonistRef=null`）→ 跳过该 block，不阻断发送。
+  - ref 存在但对应文件缺失、JSON 解析失败或读取抛错 → 阻断本轮发送并在 UI 提示原因，
+    避免以缺失关键上下文的方式喂给 storyteller，导致核心流程弱化或输出退化。
+  - runtime.json 未就绪 → 阻断发送（与 ref 加载失败等价）。
 - R8: storyteller 如果仍缺信息，应使用 workspace 工具读取更多实体/关系，或 call 资料员；前端注入器不递归替 storyteller 做资料员工作。
 - R9: 可配置或可关闭，避免在不需要时额外污染 storyteller 上下文。
 
 ## Acceptance Criteria
 
-- [ ] 发送玩家行动时可附带多条 current context injection messages。
-- [ ] 至少生成 runtime/world block；当 ref 存在且读取成功时生成 active scene block 和 protagonist block。
-- [ ] active scene block 不递归展开 scene.present / refs 指向的实体详情。
-- [ ] protagonist block 使用角色实体权威信息，不复制 runtime 摘要。
-- [ ] injection 内容为 storyteller 友好文本，不是原始冗余 JSON。
-- [ ] 某个 block 生成失败不阻断玩家发送，其它 block 仍可发送。
-- [ ] 不改变 runtime/entity/scene 数据，不承担维护职责。
-- [ ] 通过 `npm run build --workspace play-frontend-dev`。
+- [x] 发送玩家行动时可附带多条 current context injection messages。
+- [x] 至少生成 runtime/world block；当 ref 存在且读取成功时生成 active scene block 和 protagonist block。
+- [x] active scene block 不递归展开 scene.present / refs 指向的实体详情。
+- [x] protagonist block 使用角色实体权威信息，不复制 runtime 摘要。
+- [x] injection 内容为 storyteller 友好文本，不是原始冗余 JSON。
+- [x] ref 缺省时对应 block 跳过，不阻断发送；ref 存在但 load 失败或 runtime 未就绪时阻断发送并在 UI 提示。
+- [x] 不改变 runtime/entity/scene 数据，不承担维护职责。
+- [x] 通过 `npm run build --workspace play-frontend-dev`。
 
 ## Dependencies
 
