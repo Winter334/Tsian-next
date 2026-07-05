@@ -317,6 +317,7 @@ async function startOpeningUnderstanding(): Promise<void> {
     const prompt = buildOpeningInitializationPrompt(manifest.value, chapterIndex.value)
     const result = await tsian.invokeAgent("world-architect", prompt, {
       invocationId,
+      purpose: "opening-understanding",
       contextSlot: "understanding",
       persist: false,
     })
@@ -604,6 +605,7 @@ async function startPlaySetupDialog(): Promise<void> {
   try {
     const result = await tsian.invokeAgent("world-architect", prompt, {
       invocationId,
+      purpose: "opening-play-setup",
       contextSlot: "play-setup",
       persist: true,
     })
@@ -646,6 +648,7 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
   try {
     const result = await tsian.invokeAgent("world-architect", input, {
       invocationId,
+      purpose: "opening-play-setup",
       contextSlot: "play-setup",
       persist: true,
     })

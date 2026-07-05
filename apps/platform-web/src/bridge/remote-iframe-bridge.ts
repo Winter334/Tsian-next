@@ -19,7 +19,7 @@ import type {
   WorkspaceWriteRequest,
 } from "@tsian/contracts"
 
-import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats, subscribeAgentActivity, subscribeAgentInvocation } from "../streaming-events"
+import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats, subscribeAgentInvocation } from "../streaming-events"
 import { subscribeInteractionRequest, resolveInteractionRequest } from "../interaction-events"
 
 export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
@@ -752,18 +752,9 @@ export function mountRemoteIframeFrontend(
     })
   })
 
-  // Forward full invokeAgent invocation events. This is the content-carrying
-  // replacement for legacy agent-activity; keep both during the transition.
+  // Forward full invokeAgent invocation events to the remote frontend.
   const unsubscribeAgentInvocation = subscribeAgentInvocation((event) => {
     postEvent("agent-invocation", event)
-  })
-
-  // Forward agent-activity signals (from invokeAgent 旁路调用) to the remote
-  // frontend as `agent-activity`, so useSetupState can pulse the understanding
-  // running heartbeat. Independent from turn-delta/turn-tool — does not carry
-  // text content, does not pollute the main turn stream.
-  const unsubscribeAgentActivity = subscribeAgentActivity((agentId, kind) => {
-    postEvent("agent-activity", { agentId, kind })
   })
 
   window.addEventListener("message", onMessage)
@@ -780,7 +771,6 @@ export function mountRemoteIframeFrontend(
     unsubscribeTurnStats?.()
     unsubscribeInteractionRequest?.()
     unsubscribeAgentInvocation?.()
-    unsubscribeAgentActivity?.()
     if (iframe.parentElement === container) {
       iframe.remove()
     }

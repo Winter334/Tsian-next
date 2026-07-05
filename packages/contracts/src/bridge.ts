@@ -203,7 +203,6 @@ export type RemotePlayBridgeEventName =
   | "turn-options"
   | "interaction-request"
   | "agent-invocation"
-  | "agent-activity"
 
 /**
  * `turn-tool` 事件 output 字段形态。

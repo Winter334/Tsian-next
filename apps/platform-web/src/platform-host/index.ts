@@ -95,7 +95,7 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
-import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats, emitAgentActivity, emitAgentInvocation } from "../streaming-events"
+import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats, emitAgentInvocation } from "../streaming-events"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   markPlatformHostReady,
@@ -1235,7 +1235,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
               // 旁路调用绑 onAskUser 以防目标 agent 需要 ask_user
               // (复用进程内 interaction-events 总线).
               // 旁路 agent 活动信号通过独立的 invocation 事件通道 emit。
-              // 同时保留 legacy agent-activity 心跳，供旧前端过渡期使用。
               onDelta: (emittingAgentId, delta, round, kind) => {
                 emitAgentInvocation({
                   type: "delta",
@@ -1245,7 +1244,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
                   kind,
                   delta,
                 })
-                emitAgentActivity(emittingAgentId, "delta")
               },
               onRoundEnd: (emittingAgentId, round, finishReason) => {
                 emitAgentInvocation({
@@ -1255,7 +1253,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
                   round,
                   kind: finishReasonToKind(finishReason),
                 })
-                emitAgentActivity(emittingAgentId, "round-end")
               },
               onTool: (emittingAgentId, round, callId, name, status, output) => {
                 emitAgentInvocation({
@@ -1268,7 +1265,6 @@ export const playFrontendBridge: PlayFrontendBridge = {
                   status,
                   ...(output !== undefined ? { output } : {}),
                 })
-                emitAgentActivity(emittingAgentId, "tool")
               },
               onAskUser: (requestId, request) =>
                 emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),

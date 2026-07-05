@@ -402,8 +402,6 @@ type AgentInvocationEvent =
 
 `agentId` 是实际产出事件的 Agent。若被调用 Agent 在内部用 `agent_call` 调用了联系人，delegated Agent 的事件也会使用同一个 `invocationId`，但 `agentId` 会变成 delegated Agent 的 id。
 
-`onAgentActivity(cb)` 仍保留作为旧版心跳兼容通道（只给 `delta | tool | round-end`，不含文本内容）。新 UI 应优先使用 `onAgentInvocation`。
-
 ---
 
 ## 5. 数据
@@ -665,7 +663,6 @@ interface TsianApi {
   onTool(cb: (tool: ToolEvent) => void): () => void
   onAsk(cb: (ask: AskRequest) => void): () => void
   onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void
-  onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void
 
   // 回答 ask_user
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
@@ -763,7 +760,6 @@ type AgentInvocationEvent =
   | { type: "tool"; invocationId: string; agentId: string; round: number; callId: string; name: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput }
   | { type: "completed"; invocationId: string; agentId: string }
   | { type: "failed"; invocationId: string; agentId: string; error: PlatformActionError }
-type AgentActivityKind = "delta" | "tool" | "round-end"
 ```
 
 ### 数据类型
@@ -844,7 +840,6 @@ interface WorkspaceWriteResult {
 | `bridge.on({ onEvent })` 里 `turn-round-end` | `tsian.onRoundEnd(cb)` |
 | `bridge.on({ onEvent })` 里 `turn-tool` | `tsian.onTool(cb)` |
 | `bridge.on({ onEvent })` 里 `agent-invocation` | `tsian.onAgentInvocation(cb)` |
-| `bridge.on({ onEvent })` 里 `agent-activity` | `tsian.onAgentActivity(cb)`（兼容旧心跳；新 UI 优先用 `onAgentInvocation`） |
 | `bridge.on({ onEvent })` 里 `turn-completed` + `onTurnOptions` | `tsian.onTurnEnd(cb)`（聚合） |
 | `bridge.on({ onInteractionRequest })` | `tsian.onAsk(cb)` |
 | `createSessionHistory(bridge)` | `tsian.history.get()` |

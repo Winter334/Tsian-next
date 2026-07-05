@@ -18,7 +18,6 @@ export type {
   TurnEndResult,
   ToolEvent,
   AskRequest,
-  AgentActivityKind,
   SessionHistory,
 } from "./tsian-api"
 

@@ -97,9 +97,6 @@ export interface AskRequest {
   allowCustom?: boolean
 }
 
-/** 旁路调用(invokeAgent)活动信号类型。不携带文本内容，只通知"agent 正在活动"。 */
-export type AgentActivityKind = "delta" | "tool" | "round-end"
-
 function createInvocationId(): string {
   if (typeof globalThis.crypto?.randomUUID === "function") {
     return globalThis.crypto.randomUUID()
@@ -134,9 +131,6 @@ export interface TsianApi {
   onAsk(cb: (ask: AskRequest) => void): () => void
   /** invokeAgent 过程事件订阅；用 invocationId 区分并发调用。 */
   onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void
-  /** 旁路调用(invokeAgent)活动信号订阅。不携带文本内容，不污染主 turn stream。
-   *  前端 useSetupState 用此做 understanding running 心跳脉冲。 */
-  onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void
 
   // ── 回答 ask_user ──
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
@@ -220,7 +214,6 @@ export function createTsian(): TsianApi {
   const toolCallbacks = new Set<(tool: ToolEvent) => void>()
   const askCallbacks = new Set<(ask: AskRequest) => void>()
   const agentInvocationCallbacks = new Set<(event: AgentInvocationEvent) => void>()
-  const agentActivityCallbacks = new Set<(agentId: string, kind: AgentActivityKind) => void>()
 
   bridge.on({
     onEvent(event, payload) {
@@ -288,15 +281,6 @@ export function createTsian(): TsianApi {
         const invocationEvent = payload as AgentInvocationEvent
         for (const cb of agentInvocationCallbacks) {
           try { cb(invocationEvent) } catch (err) { console.error("[tsian] onAgentInvocation callback threw", err) }
-        }
-        return
-      }
-
-      if (event === "agent-activity" && payload && "agentId" in payload && "kind" in payload) {
-        const agentId = (payload as { agentId?: string }).agentId ?? ""
-        const kind = (payload as { kind?: string }).kind as AgentActivityKind
-        for (const cb of agentActivityCallbacks) {
-          try { cb(agentId, kind) } catch (err) { console.error("[tsian] onAgentActivity callback threw", err) }
         }
         return
       }
@@ -389,11 +373,6 @@ export function createTsian(): TsianApi {
     onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void {
       agentInvocationCallbacks.add(cb)
       return () => { agentInvocationCallbacks.delete(cb) }
-    },
-
-    onAgentActivity(cb: (agentId: string, kind: AgentActivityKind) => void): () => void {
-      agentActivityCallbacks.add(cb)
-      return () => { agentActivityCallbacks.delete(cb) }
     },
 
     async answer(requestId: string, text: string, cancelled?: boolean): Promise<void> {
