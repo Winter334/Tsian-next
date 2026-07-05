@@ -9,6 +9,7 @@ import AppNav from "./components/AppNav.vue"
 import StatusBar from "./components/StatusBar.vue"
 import StoryView from "./components/story/StoryView.vue"
 import SetupWizard from "./components/setup/SetupWizard.vue"
+import CharacterView from "./components/character/CharacterView.vue"
 import { useTsian } from "./composables/useTsian"
 import { useStatusBarCollapsed } from "./composables/useStatusBarCollapsed"
 
@@ -31,7 +32,7 @@ const NAV_COLLAPSED_KEY = "tsian.navCollapsed"
 const navCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === "true")
 // navCurrent 扩展为 story / character / settings（design §4.2 / §2.3）。
 // - story：剧情流（StoryView，v-show 保留滚动 + stream 状态）。
-// - character：角色卡全屏视图（MVP 占位，完整 UI 归角色卡子任务）。
+// - character：角色卡全屏视图（CharacterView，v-if 卸载/重挂）。
 // - settings：设置视图占位。
 const navCurrent = ref<"story" | "character" | "settings">("story")
 
@@ -132,11 +133,9 @@ function onNavigate(item: "story" | "character" | "settings") {
       <!-- 视图路由：story / character / settings（Step 5 接入 CheckpointView）。
            用 v-show 而非 v-if：切换视图不销毁 StoryView，保留滚动位置 + stream 状态 -->
       <StoryView v-show="navCurrent === 'story'" />
-      <div v-if="navCurrent === 'character'" class="view-stage view-stage-character">
-        <CornerBrackets :size="15" :inset="25" />
-        <p class="placeholder-text">角色</p>
-        <p class="placeholder-sub">角色卡视图待接入</p>
-      </div>
+      <!-- 角色卡视图：v-if 卸载/重挂——切换走时释放 useEntity/useScene 读取，
+           回来时重新读 runtime/scene。视图自身处理 padding 联动（.character-view）。 -->
+      <CharacterView v-if="navCurrent === 'character'" />
       <div v-else-if="navCurrent === 'settings'" class="view-stage">
         <CornerBrackets :size="15" :inset="25" />
         <p class="placeholder-text">烛火书卷 · 重铸</p>
@@ -242,9 +241,17 @@ function onNavigate(item: "story" | "character" | "settings") {
 
 <!-- 全局（非 scoped）样式：StoryView 的 .story-view 在 StoryView scoped 边界内，
      App.vue scoped 样式无法穿透 data-v 属性触达。用全局 :has() 选择器联动
-     状态栏折叠态 padding-left（design §4.3 / §7），同 .view-stage 折叠联动模式。 -->
+     状态栏折叠态 padding-left（design §4.3 / §7），同 .view-stage 折叠联动模式。
+     CharacterView 的 .character-view 同样在 scoped 边界内，需全局 :has() 联动
+     nav/status-bar 折叠态 padding。 -->
 <style>
 .app-root:has(.status-bar.collapsed) .story-view {
   padding-left: 48px;
+}
+.app-root:has(.status-bar.collapsed) .character-view {
+  padding-left: 48px;
+}
+.app-root:has(.app-nav.collapsed) .character-view {
+  padding-right: 56px;
 }
 </style>
