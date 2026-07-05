@@ -33,13 +33,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 玩家可以在角色卡上把至少 3 类字段（status / attribute / gauge）钉选到状态栏。
-- [ ] 钉选配置存 localStorage，不写入 workspace。
-- [ ] 钉选配置只保存字段引用/路径，不保存字段值快照。
-- [ ] 状态栏钉选区在 entity 字段变化时（回合后刷新）自动更新展示当前值。
-- [ ] 玩家可以取消钉选。
-- [ ] 未配置钉选时，状态栏保持 MVP 行为（不破坏现有 07-04-left-status-bar-mvp 行为）。
-- [ ] 通过 `npm run build --workspace play-frontend-dev`。
+- [x] 玩家可以在角色卡上把至少 3 类字段（status / attribute / gauge）钉选到状态栏。
+- [x] 钉选配置存 localStorage，不写入 workspace。
+- [x] 钉选配置只保存字段引用/路径，不保存字段值快照。
+- [x] 状态栏钉选区在 entity 字段变化时（回合后刷新）自动更新展示当前值。
+- [x] 玩家可以取消钉选。
+- [x] 未配置钉选时，状态栏保持 MVP 行为（不破坏现有 07-04-left-status-bar-mvp 行为）。
+- [x] 通过 `npm run build --workspace play-frontend-dev`。
 
 ## Out of Scope
 
