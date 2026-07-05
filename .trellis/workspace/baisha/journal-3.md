@@ -746,3 +746,37 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 127: 07-05-status-bar-character-field-pinning: 左侧状态栏角色字段钉选
+
+**Date**: 2026-07-05
+**Task**: 07-05-status-bar-character-field-pinning: 左侧状态栏角色字段钉选
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+在 play-frontend 引入左侧状态栏钉选机制：新增 lib/pin-types.ts (PinTarget + readPinValue 6 kinds + missing)、composables/useStatusBarPins.ts (localStorage 模块单例)、共享 PinButton 组件；在角色卡 6 处（StatusChips/IdentityFacts/AttributeCard/GaugeBar/OverviewPane 外貌/GoalsBlock）集成 hover pin；状态栏新增 StatusBarPinned 分区并插入到 Status 之后/Metrics 之前，空钉选整段隐藏（保持 MVP 行为）。存储只保留字段引用，渲染时从主角 entity 重读；主角切换/回合刷新通过 :key remount 触发。build 通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8bda07d` | (see git log) |
+| `c413ccb` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
