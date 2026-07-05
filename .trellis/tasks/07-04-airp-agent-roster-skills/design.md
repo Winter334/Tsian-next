@@ -382,3 +382,31 @@ invokeAgent(director)            # 开局或阶段性剧情指导
 - 场记维护 runtime/entity/scene/relationship 和 `extensions`，让前端可以渲染状态栏、人物卡、背包、物品详情。
 - 导演维护剧情指导，不整理结构化状态。
 - 资料员按需提供实体、源文本、场景和关系资料。
+
+## 12. Open Questions (动工前讨论)
+
+> 以下问题在 2026-07-05 设计评审中提出，留待本任务进入实现阶段时逐一讨论定方案。现在不强行决定，避免纸上谈兵。
+
+### OQ-1: 导演 Agent 触发条件
+
+§3.5 说导演"可由前端固定轮数调用，或由场记标记 brief 过期后调用"，但没说固定轮数是多少、"brief 过期"由谁判定。若无人主动调用，导演是僵尸 Agent。
+
+动工前需决定导演的最小触发契约：每 N 轮前端自动 `invokeAgent("director")`？N 是多少？还是场记在 brief 写 `stale: true` 后前端检测再调用？第一版可选最简单的（如每 10 轮 + 开局各一次），但必须明确。
+
+### OQ-2: deferred 状态转换路径
+
+§4 的 `mode.json` 三态 `enabled/disabled/deferred` 只有入口没有出口。场记"提出轻量建议"后呢？玩家在哪审批？UI 形态是什么？
+
+动工前需决定 deferred → enabled 的最小转换路径：场记在 runtime/brief 写 `pendingSuggestions` → 前端状态栏角落渲染提示 → 玩家点击弹三态选择 → 写 `mode.json` → 触发世界架构师初始化。第一版可粗糙，但转换路径必须存在，否则 deferred 是死胡同——玩家永远停在 deferred，场记每次重复建议，没有出口。
+
+### OQ-3: Agent-local Skill 同名映射 mode.json
+
+§5 说同一玩法名可在多个 Agent 下有同名 Skill（如"行动裁定"在说书人/场记/世界架构师下都有）。`mode.json` 的 key 是玩法名——玩家启用"行动裁定"时，是启用说书人的、场记的、还是全部的？
+
+动工前需在 design 里显式写一句：`mode.json` key 是玩法名，启用后所有拥有同名 Skill 的 Agent 在相关场景下加载各自 Skill。明确这个映射关系，避免实现时纠结。
+
+### OQ-4: 场记的漂移校验钩子
+
+场记"接触相关实体时顺带修正" runtime ref 快照与 entity 的漂移。但没有显式对照机制时，顺带修正不易发生。
+
+动工前需决定：场记维护回合后是否加一个轻量校验步骤——对比 runtime ref 摘要与 entity 实际 `name`/`brief`，不一致就更新 runtime 快照。把"希望发生"变成"机制上必然发生"。ref 快照语义见 `07-04-renderable-runtime-entity-schema` OQ-3。

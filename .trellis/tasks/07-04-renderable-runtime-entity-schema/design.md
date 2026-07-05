@@ -289,3 +289,25 @@ A universal renderer would make every UI look like a generic JSON dashboard. The
 ### Why keep `name` instead of using id localId?
 
 `id` is for stable references and file paths; `name` is for display. They often match today but can diverge for localization, aliases, disguises, slugs, or revealed identities.
+
+## 9. Open Questions (动工前讨论)
+
+> 以下问题在 2026-07-05 设计评审中提出，留待本任务进入实现阶段时逐一讨论定方案。现在不强行决定，避免纸上谈兵。
+
+### OQ-1: 契约可执行原型
+
+当前 implement.md 清单全是文档/template 更新，没有可执行验证。风险：契约落到任务 2（`07-04-frontend-runtime-render-infra`）的前端解析时才发现某些约定不好用。
+
+动工前需决定：是否在本任务额外产出一个最小可执行原型（一个 `runtime.json` 示例 + ~30 行前端解析函数把 `extensions` 归一成 display items），用以提前验证契约可消费性？§5 的 JSON 例子离可执行原型只差一步，成本低。
+
+### OQ-2: render type 演进策略
+
+当前预设 `text/number/progress/tag/tags/list/section/ref/cards` 对开局够用，但 RPG 长线常见 UI（装备槽/grid、带阈值 meter、状态计时器、badge）没有对应类型。加新 render type 是 schema 变更还是前端版本变更？谁决定？旧存档遇到未知 render 怎么处理？
+
+动工前需决定：在 design 里补一节"render type 演进策略"，明确加新类型的流程（更新 schema docs + 前端实现 fallback + 旧存档降级），并考虑预留 `render: "custom"` + `component` 字段作为逃生口（前端可忽略未知 component，避免 Agent 发明 UI 让前端崩）。
+
+### OQ-3: ref 快照 vs entity 权威的漂移校验
+
+P4 / §3.4 说 runtime 里的 `ref.name` 是展示快照、entity `name` 是权威，漂移"靠场记顺带修正"。但场记怎么知道哪里漂移了？没有显式对照机制时，"顺带修正"容易变成"永远不修正直到 bug 爆发"。
+
+动工前需决定：是否在本任务约定一个轻量校验钩子——场记维护回合后对比 runtime ref 摘要与 entity 实际 `name`/`brief`，发现不一致就更新 runtime 快照。本任务定义 ref 快照语义；场记的校验行为归 `07-04-airp-agent-roster-skills` 的场记 Skill（见该任务 OQ-4）。

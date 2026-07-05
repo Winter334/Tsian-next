@@ -98,3 +98,15 @@ UI 设计应按实体类型和渲染类型预留槽位：
 ## Next Step
 
 从子任务 1：`.trellis/tasks/07-04-renderable-runtime-entity-schema` 开始，先把可渲染 runtime/entity schema 约定规划清楚，再进入前端基础设施与 UI 实现。
+
+## Open Questions (集成阶段讨论)
+
+> 2026-07-05 设计评审提出，留待子任务集成阶段讨论。
+
+### OQ-1: 集成验证
+
+当前 7 个子任务无一个是"把所有 UI 拼起来跑完整回合看体验"的集成验证任务。最后一个子任务做完 ≠ 系统体验成立。接缝问题（事件时序、状态刷新一致性、检查点恢复后 UI 重读 workspace）无人管。
+
+集成阶段需决定：由父任务保留集成验证职责（所有子任务完成后跑一次完整流程：开局 → 几轮剧情 → 状态栏刷新 → injection → 场记维护，检查 cross-child acceptance criteria），或新增一个轻量子任务 `07-04-status-bar-integration-verify`。
+
+注：`runtime-summary-injection` 的实际效果验证也归此处。用户 2026-07-05 判断：injection 排最后可接受，整个大系统必然经历返工调整，留到集成验证时一起调整。
