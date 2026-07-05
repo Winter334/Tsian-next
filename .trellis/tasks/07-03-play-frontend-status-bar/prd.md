@@ -26,11 +26,11 @@
 
 ## Core Principles
 
-### P1. Runtime as Status Surface
+### P1. Runtime as Current Context Index
 
-`save/playthrough/runtime.json` 本身是当前局面/状态栏数据面。它可以包含主角相关信息、世界变量、时间、坐标、位置、全局状态、临时机制、背包摘要等不适合单文件化的离散运行时变量。
+`save/playthrough/runtime.json` 不再作为“所有状态摘要的大杂烩”。它是当前上下文索引与世界变量载体：记录剧情内时间/纪年、天气/环境、当前位置/地点引用、当前场景引用、主角/当前视角角色引用，以及少量确实属于世界层的运行时变量。
 
-维护 `runtime.json` 本身就等价于维护状态栏可消费的数据面。不是所有 runtime 字段都必须渲染；前端可以根据字段显示标识、当前 UI 空间与自身设计选择性展示。
+runtime 可以服务左侧状态栏和 storyteller injection，但它不复制 scene/entity 的摘要。状态栏、角色卡和 injection 需要人物/场景详情时，应沿 runtime 中的 ref 读取权威文件并生成各自的派生投影。
 
 ### P2. Fixed UI + Dynamic Extension Slots
 
@@ -49,19 +49,29 @@ UI 设计应按实体类型和渲染类型预留槽位：
 
 是否需要更细的 `group` / `order` / `priority` 由具体 UI 子任务按实际需要决定。
 
-### P4. Runtime and Entity Authority
+### P4. Runtime, Scene, and Entity Authority
 
-`runtime.json` 是当前局面/状态栏数据面的权威；entity 文件是实体档案权威。两者允许存在摘要重叠，因为它们服务不同问题：runtime 回答“玩家此刻需要看到/让 master 知道什么”，entity 回答“这个实体长期是什么”。
+`runtime.json` 是当前上下文索引和世界变量权威；scene 文件是场景结构权威；entity 文件是实体档案权威。三者不互相复制摘要：
 
-漂移问题不靠前端过度限制来预防，而靠后处理 Agent 在维护当前局面和接触相关实体时顺带修正。只有明显会造成无法渲染、运行错误或无限递归的结构需要前端降级处理。
+- runtime 存当前世界变量与入口 refs，例如 `activeSceneRefs`、`protagonistRef`。
+- scene 存场景结构与在场 refs，不复制人物 `name` / `brief` / `status`。
+- entity 存人物/物品/容器自身档案，例如 `name`、`brief`、`appearance`、`status`、`fields`、`sections`、`goals`。
+
+UI 和 injection 都是派生投影：需要显示或注入时读取权威文件并格式化。漂移问题不靠复制摘要解决，而靠避免双源。
 
 ### P5. Name / Alias Semantics
 
 实体 `name` 保持为必填主显示名/当前 UI 标签；`id` 后半段是稳定 localId，可与 `name` 相同但不承担显示语义。`aliases` 是可选替代名称，只在存在昵称、称号、旧名、伪装名、不同称呼等时维护。前端优先显示 `name`，缺失时 fallback 到 ref/localId。
 
-### P6. Frontend Runtime Injection
+### P6. Frontend Current Context Injection
 
-前端可以在玩家发送行动前，把 `runtime.json` 中当前可显示的内容和必要引用编译成易读的“当前局面摘要”并通过 injection 提供给 master。该处理以渲染同源数据为基础，只做读取、格式化和必要降级，不承担 schema 维护；是否启用和展开程度由对应子任务验证。
+前端可以在玩家发送行动前，把当前上下文编译成 storyteller 友好的 injection。该 injection 不应是一条巨大的 runtime 摘要消息，而应按缓存粒度拆成多条 injection message，例如：
+
+1. runtime/world block：剧情时间、天气、地点、当前 scene refs、protagonist ref。
+2. active scene block：当前场景文件的一跳去结构化投影，只列出场景结构和在场 refs，不递归展开人物。
+3. protagonist block：主角/当前视角角色实体的一跳去结构化投影。
+
+拆成多条 message 是为了减少 prompt cache 失效范围：scene 变化不应导致 protagonist block 失效，主角状态变化也不应导致 runtime/world block 失效。storyteller 如果还缺信息，应使用 workspace 工具或 call 资料员补充。
 
 ### P7. Agent / Skill Responsibility
 

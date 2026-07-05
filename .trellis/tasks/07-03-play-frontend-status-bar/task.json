@@ -26,7 +26,8 @@
     "07-04-containers-inventory-item-details",
     "07-04-runtime-summary-injection",
     "07-04-airp-agent-roster-skills",
-    "07-05-runtime-world-time-field"
+    "07-05-runtime-world-time-field",
+    "07-05-runtime-scene-character-schema-ui-align"
   ],
   "parent": null,
   "relatedFiles": [],
