@@ -18,6 +18,8 @@ import GaugeBar from "./GaugeBar.vue"
 const props = defineProps<{
   attributes?: CharacterAttributes
   gauges?: CharacterGauge[]
+  /** 当前角色 entity ref；透传给 AttributeCard / GaugeBar 用于构造 pin target。 */
+  entityRef: string | null
 }>()
 
 interface AttrRow {
@@ -59,6 +61,7 @@ const hasGauges = computed(() => gaugeList.value.length > 0)
           :key="a.name"
           :name="a.name"
           :value="a.value"
+          :entity-ref="entityRef"
         />
       </div>
     </div>
@@ -70,6 +73,7 @@ const hasGauges = computed(() => gaugeList.value.length > 0)
           v-for="g in gaugeList"
           :key="g.id"
           :gauge="g"
+          :entity-ref="entityRef"
         />
       </div>
     </div>

@@ -23,6 +23,8 @@ const props = defineProps<{
   displayItems: DisplayItems
   /** 主角 ref，透传给 InventoryPane（未来"仅主角可查看"策略）。 */
   protagonistRef: string | null
+  /** 当前角色 entity ref（用于 PinButton 构造 target；null 时禁用 pin）。 */
+  entityRef: string | null
 }>()
 
 const emit = defineEmits<{
@@ -76,12 +78,14 @@ function onSelect(ref: string) {
         :entity="entity"
         :relationships="relationships"
         :display-items="displayItems"
+        :entity-ref="entityRef"
         @select="onSelect"
       />
       <AttributesPane
         v-else-if="activeTab === 'attributes'"
         :attributes="entity.attributes"
         :gauges="entity.gauges"
+        :entity-ref="entityRef"
       />
       <InventoryPane
         v-else

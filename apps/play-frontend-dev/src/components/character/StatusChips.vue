@@ -8,12 +8,21 @@
  * - 不展示 level / minor / severe 等内部字段值。
  * - polarity 颜色映射（design §6）：
  *   positive → #7ea968；negative → --blood/#c76d5a；neutral → --prose-dim。
+ *
+ * task 07-05-status-bar-character-field-pinning：
+ * - 每个 chip 加 PinButton；`entityRef` 由父组件传入（null 时不渲染 pin）。
+ * - 父容器 `.status-chip` 设 `position: relative` 承载 pin。
  */
 import type { CharacterStatus } from "../../lib/character-types"
+import PinButton from "./PinButton.vue"
 
-defineProps<{
+const props = defineProps<{
   status: CharacterStatus[]
+  /** 当前角色 entity ref；用于构造钉选 target。null 时不渲染 PinButton。 */
+  entityRef: string | null
 }>()
+
+void props
 
 function statusText(s: CharacterStatus): string {
   return s.name ?? s.description ?? s.id
@@ -35,6 +44,15 @@ function statusTooltip(s: CharacterStatus): string | undefined {
       :title="statusTooltip(s)"
     >
       {{ statusText(s) }}
+      <PinButton
+        v-if="entityRef"
+        :target="{
+          entityRef,
+          kind: 'status',
+          key: s.id,
+          label: s.name ?? s.id,
+        }"
+      />
     </span>
   </div>
 </template>
@@ -46,13 +64,14 @@ function statusTooltip(s: CharacterStatus): string | undefined {
   gap: 8px;
 }
 .status-chip {
+  position: relative;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(181, 137, 61, 0.035);
   color: var(--prose);
   font-family: var(--font-serif);
   font-size: 0.82rem;
-  padding: 4px 10px;
+  padding: 4px 22px 4px 10px;
   cursor: default;
   transition: border-color 0.2s, background 0.2s, color 0.2s;
 }
@@ -60,6 +79,11 @@ function statusTooltip(s: CharacterStatus): string | undefined {
   color: var(--ember-bright);
   border-color: var(--ember);
   background: rgba(181, 137, 61, 0.08);
+}
+/* 父 hover 时 PinButton 半显 */
+.status-chip:hover :deep(.pin-btn),
+.status-chip :deep(.pin-btn.active) {
+  opacity: 0.85;
 }
 .status-chip.polarity-positive {
   border-color: rgba(126, 169, 104, 0.55);

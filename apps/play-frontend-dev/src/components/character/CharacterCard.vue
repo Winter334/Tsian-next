@@ -84,6 +84,7 @@ function onSelect(ref: string) {
           :relationships="relationships"
           :display-items="displayItems"
           :protagonist-ref="protagonistRef"
+          :entity-ref="entityRef"
           @select="onSelect"
         />
       </template>

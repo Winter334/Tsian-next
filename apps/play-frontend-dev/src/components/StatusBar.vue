@@ -24,6 +24,7 @@ import { useRuntime } from "../composables/useRuntime"
 import StatusBarScene from "./status-bar/StatusBarScene.vue"
 import StatusBarCharacter from "./status-bar/StatusBarCharacter.vue"
 import StatusBarStatus from "./status-bar/StatusBarStatus.vue"
+import StatusBarPinned from "./status-bar/StatusBarPinned.vue"
 import StatusBarMetrics from "./status-bar/StatusBarMetrics.vue"
 import StatusBarRefs from "./status-bar/StatusBarRefs.vue"
 
@@ -117,6 +118,10 @@ const showLoading = computed(
           :key="protagonistRefStr ?? 'none'"
           :protagonist-ref="protagonistRefStr"
           :tags="tags"
+        />
+        <StatusBarPinned
+          :key="`pinned-${protagonistRefStr ?? 'none'}`"
+          :protagonist-ref="protagonistRefStr"
         />
         <StatusBarMetrics :metrics="metrics" />
         <StatusBarRefs :refs="refs" />

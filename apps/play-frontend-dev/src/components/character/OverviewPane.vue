@@ -21,11 +21,14 @@ import IdentityFacts from "./IdentityFacts.vue"
 import StatusChips from "./StatusChips.vue"
 import RelationshipList from "./RelationshipList.vue"
 import GoalsBlock from "./GoalsBlock.vue"
+import PinButton from "./PinButton.vue"
 
 const props = defineProps<{
   entity: CharacterEntity
   relationships: RelationshipFile | null
   displayItems: DisplayItems
+  /** 当前角色 entity ref；透传给身份/状态/目标子组件用于构造 pin target。 */
+  entityRef: string | null
 }>()
 
 const emit = defineEmits<{
@@ -63,7 +66,7 @@ function onSelect(ref: string) {
       <div v-if="aliases.length > 0" class="char-aliases">
         <span v-for="a in aliases" :key="a" class="char-alias">{{ a }}</span>
       </div>
-      <IdentityFacts :identity="entity.identity" />
+      <IdentityFacts :identity="entity.identity" :entity-ref="entityRef" />
     </div>
 
     <div class="overview-grid">
@@ -72,13 +75,17 @@ function onSelect(ref: string) {
         <div class="section-title">当前形象</div>
         <div class="narrative-block">
           <p>{{ entity.appearance }}</p>
+          <PinButton
+            v-if="entityRef"
+            :target="{ entityRef, kind: 'appearance', label: '外貌' }"
+          />
         </div>
       </div>
 
       <!-- 3. 当前状态 -->
       <div v-if="statusList.length > 0" class="overview-section">
         <div class="section-title">当前状态</div>
-        <StatusChips :status="statusList" />
+        <StatusChips :status="statusList" :entity-ref="entityRef" />
       </div>
 
       <!-- 4. 关系 -->
@@ -90,7 +97,7 @@ function onSelect(ref: string) {
       <!-- 5. 意图与目标 -->
       <div v-if="hasGoals" class="overview-section full">
         <div class="section-title">意图与目标</div>
-        <GoalsBlock :goals="entity.goals" />
+        <GoalsBlock :goals="entity.goals" :entity-ref="entityRef" />
       </div>
 
       <!-- 6. 背景摘记 -->
@@ -224,13 +231,20 @@ function onSelect(ref: string) {
   border-bottom: 1px solid var(--line);
 }
 .narrative-block {
+  position: relative;
   font-size: 0.88rem;
   line-height: 1.85;
   color: var(--prose-dim);
-  padding: 2px 0 0;
+  padding: 2px 22px 0 0;
 }
 .narrative-block p {
   margin: 0;
+}
+.narrative-block:hover :deep(.pin-btn) {
+  opacity: 0.85;
+}
+.narrative-block :deep(.pin-btn.active) {
+  opacity: 1;
 }
 
 /* extensions 分区朴素渲染 */

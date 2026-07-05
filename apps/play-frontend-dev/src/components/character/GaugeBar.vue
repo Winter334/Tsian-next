@@ -8,12 +8,18 @@
  *   accent → --ember；danger → --blood；warning → --ember-bright；
  *   success → 成功色；muted → --prose-dim；neutral → --ember。
  * - max 缺省 100，min 缺省 0。
+ *
+ * task 07-05-status-bar-character-field-pinning：
+ * - 行右端加 PinButton；kind=gauge, key=gauge.id, label=gauge.name。
  */
 import { computed } from "vue"
 import type { CharacterGauge } from "../../lib/character-types"
+import PinButton from "./PinButton.vue"
 
 const props = defineProps<{
   gauge: CharacterGauge
+  /** 当前角色 entity ref；null 时不渲染 PinButton。 */
+  entityRef: string | null
 }>()
 
 const max = computed(() => props.gauge.max ?? 100)
@@ -49,16 +55,31 @@ const valueText = computed(() => {
       />
     </div>
     <span class="gauge-value">{{ valueText }}</span>
+    <PinButton
+      v-if="entityRef"
+      :target="{
+        entityRef,
+        kind: 'gauge',
+        key: gauge.id,
+        label: gauge.name,
+      }"
+    />
   </div>
 </template>
 
 <style scoped>
 .gauge-row {
+  position: relative;
   display: grid;
   grid-template-columns: 88px 1fr 56px;
   align-items: center;
   gap: 12px;
   font-size: 0.82rem;
+  padding-right: 20px;
+}
+.gauge-row:hover :deep(.pin-btn),
+.gauge-row :deep(.pin-btn.active) {
+  opacity: 0.85;
 }
 .gauge-label {
   color: var(--prose-dim);

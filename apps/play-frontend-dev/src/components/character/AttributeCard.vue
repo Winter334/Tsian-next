@@ -6,22 +6,41 @@
  * - 卡片：name + 大数字（font-display）。
  * - value null 时展示"—"（缺省维度）。
  * - 不展示基准 5（基准只进入规则语义，UI 不解释）。
+ *
+ * task 07-05-status-bar-character-field-pinning：
+ * - 右上角 PinButton；kind=attribute，key=中文键（体魄/悟性/…），label=同键。
  */
-defineProps<{
+import PinButton from "./PinButton.vue"
+
+const props = defineProps<{
   name: string
   value: number | null
+  /** 当前角色 entity ref；null 时不渲染 PinButton。 */
+  entityRef: string | null
 }>()
+
+void props
 </script>
 
 <template>
   <div class="attribute-card">
     <span class="attribute-name">{{ name }}</span>
     <span class="attribute-value">{{ value === null ? "—" : value }}</span>
+    <PinButton
+      v-if="entityRef"
+      :target="{
+        entityRef,
+        kind: 'attribute',
+        key: name,
+        label: name,
+      }"
+    />
   </div>
 </template>
 
 <style scoped>
 .attribute-card {
+  position: relative;
   border: 1px solid var(--line);
   background: rgba(181, 137, 61, 0.03);
   border-radius: 10px;
@@ -36,6 +55,10 @@ defineProps<{
   border-color: var(--line-strong);
   background: rgba(181, 137, 61, 0.05);
   box-shadow: 0 0 14px rgba(181, 137, 61, 0.08);
+}
+.attribute-card:hover :deep(.pin-btn),
+.attribute-card :deep(.pin-btn.active) {
+  opacity: 0.85;
 }
 .attribute-name {
   font-size: 0.82rem;
