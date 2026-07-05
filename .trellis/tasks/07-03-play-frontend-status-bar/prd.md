@@ -78,6 +78,7 @@ UI 设计应按实体类型和渲染类型预留槽位：
 | 5 | `.trellis/tasks/07-04-containers-inventory-item-details` | 容器/背包/物品详情 | 支持逐层查看物品与容器 |
 | 6 | `.trellis/tasks/07-04-runtime-summary-injection` | 前端编译 runtime 当前局面摘要并 injection 给 master | 降低 master 自行读取 ref 的成本 |
 | 7 | `.trellis/tasks/07-04-airp-agent-roster-skills` | AIRP Agent 阵容调整与 Skill 化 | 核心能力组织，避免 Agent.md 膨胀 |
+| 8 | `.trellis/tasks/07-05-runtime-world-time-field` | 将当前世界/剧情时间提升为 `runtime.worldTime` 固定字段 | 支撑状态栏与 runtime 摘要 injection 的稳定时间入口；不做完整日历系统 |
 
 ## Cross-Child Acceptance Criteria
 
@@ -105,7 +106,7 @@ UI 设计应按实体类型和渲染类型预留槽位：
 
 ### OQ-1: 集成验证
 
-当前 7 个子任务无一个是"把所有 UI 拼起来跑完整回合看体验"的集成验证任务。最后一个子任务做完 ≠ 系统体验成立。接缝问题（事件时序、状态刷新一致性、检查点恢复后 UI 重读 workspace）无人管。
+当前子任务完成 ≠ 系统体验成立。最后仍需集成验证。接缝问题（事件时序、状态刷新一致性、检查点恢复后 UI 重读 workspace）无人管。
 
 集成阶段需决定：由父任务保留集成验证职责（所有子任务完成后跑一次完整流程：开局 → 几轮剧情 → 状态栏刷新 → injection → 场记维护，检查 cross-child acceptance criteria），或新增一个轻量子任务 `07-04-status-bar-integration-verify`。
 

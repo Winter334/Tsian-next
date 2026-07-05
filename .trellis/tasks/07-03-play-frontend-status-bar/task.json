@@ -25,7 +25,8 @@
     "07-04-present-characters-character-cards",
     "07-04-containers-inventory-item-details",
     "07-04-runtime-summary-injection",
-    "07-04-airp-agent-roster-skills"
+    "07-04-airp-agent-roster-skills",
+    "07-05-runtime-world-time-field"
   ],
   "parent": null,
   "relatedFiles": [],
