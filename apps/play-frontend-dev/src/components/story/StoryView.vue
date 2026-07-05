@@ -37,6 +37,7 @@ const {
   checkpoints,
   openingNarrative,
   syncPhase,
+  lastSendError,
   send,
   stop,
   restore,
@@ -314,6 +315,25 @@ const mergedStream = computed(() => {
   return result
 })
 
+// 上下文注入阻断态 → 中文文案（design §D7 / implement.md Step 5）。
+// send 阻断时 useTsian.send 会置 lastSendError，此 banner 显示原因；
+// 下次 send 前置检查通过时清空 lastSendError（在 useTsian.send 内做），
+// 用户未再发送前保留显示。样式复用 SyncToast sync-failed 错误配色（血珀）。
+const lastSendErrorText = computed<string | null>(() => {
+  const err = lastSendError.value
+  if (!err) return null
+  switch (err.reason) {
+    case "runtime-not-ready":
+      return "运行时上下文未就绪"
+    case "scene-load-failed":
+      return err.detail ? `场景数据加载失败（${err.detail}）` : "场景数据加载失败"
+    case "protagonist-load-failed":
+      return err.detail ? `主角数据加载失败（${err.detail}）` : "主角数据加载失败"
+    default:
+      return "上下文未就绪"
+  }
+})
+
 async function onSend(text: string) {
   await send(text)
 }
@@ -438,6 +458,18 @@ function onEdit(content: string) {
       :phase="syncPhase"
       @retry="retrySyncAfterTurn"
     />
+
+    <!-- 上下文注入阻断 banner：出现在 Composer 上方（输入区上方），复用 sync-failed 血珀配色。
+         useTsian.send 阻断时置 lastSendError；下次 send 触发时清空，用户未操作前保留。 -->
+    <div
+      v-if="lastSendErrorText"
+      class="send-error-banner"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="mark" aria-hidden="true" />
+      <span class="label">上下文未就绪：{{ lastSendErrorText }}</span>
+    </div>
 
     <!-- Composer：正常流布局，固定在滚动区下方（flex 列底部），与正文同宽 52em 居中 -->
     <Composer
@@ -637,5 +669,51 @@ function onEdit(content: string) {
 @keyframes hint-pulse {
   0%, 100% { opacity: 0.4; }
   50% { opacity: 0.7; }
+}
+
+/* 上下文注入阻断 banner：52em 居中、Composer 上方；复用 SyncToast sync-failed 血珀配色语言。 */
+.send-error-banner {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 52em;
+  width: fit-content;
+  margin: 0 auto 8px;
+  padding: 9px 16px;
+  border: 1px solid var(--blood);
+  border-radius: 6px;
+  background: rgba(10, 5, 6, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--prose-dim);
+  letter-spacing: 0.06em;
+}
+.send-error-banner .mark {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  position: relative;
+}
+.send-error-banner .mark::before,
+.send-error-banner .mark::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10px;
+  height: 1.5px;
+  background: var(--blood);
+}
+.send-error-banner .mark::before {
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+.send-error-banner .mark::after {
+  transform: translate(-50%, -50%) rotate(-45deg);
+}
+.send-error-banner .label {
+  white-space: nowrap;
 }
 </style>

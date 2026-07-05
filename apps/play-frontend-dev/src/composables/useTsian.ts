@@ -9,6 +9,8 @@ import type {
 } from "@tsian/play-bridge"
 import type { TurnPhase } from "../types"
 import { triggerSyncAfterTurn, useSyncAfterTurn } from "./useSyncAfterTurn"
+import { buildContextInjection } from "../lib/context-injection"
+import type { BuildInjectionBlockedReason } from "../lib/context-injection"
 
 /**
  * useTsian — 单例 TsianApi + 5 订阅映射到响应式状态。
@@ -59,6 +61,11 @@ const turnOptions = ref<string[]>([])
 // 独立于 stream——reloadHistory/restore 替换 stream 时不会被冲掉
 const openingNarrative = ref<string | null>(null)
 const PLAY_SETUP_CONTEXT_PATH = "save/agents/world-architect/context-play-setup.json"
+
+// 最近一次 send 被阻断的原因（design §5 / §9）。
+// - blocked 分支：不推 user StreamItem、不切 turnPhase、不发 tsian.send，仅置此 ref。
+// - 下次 send 进入前置检查前清空。UI（StoryView）v-if 渲染 banner。
+const lastSendError = ref<{ reason: BuildInjectionBlockedReason; detail?: string } | null>(null)
 
 // 订阅是否已注册（只注册一次，避免多组件重复订阅）
 let subscribed = false
@@ -219,6 +226,7 @@ export function useTsian() {
     checkpoints: readonly(checkpoints),
     openingNarrative: readonly(openingNarrative),
     syncPhase,
+    lastSendError: readonly(lastSendError),
 
     // 操作方法
     tsian,
@@ -228,6 +236,22 @@ export function useTsian() {
       if (!tsian.ready || turnPhase.value === "streaming") return
       // 同步进行中或失败时不允许发送（避免在旧状态上继续）
       if (syncPhase.value === "syncing" || syncPhase.value === "sync-failed") return
+      // 前置状态检查通过：先清空上一次阻断态，进入 injection 构建。
+      lastSendError.value = null
+      // 用动态 import 避免与 useRuntime 的顶层 import useTsian 形成模块初始化循环
+      // （useRuntime 顶层 static import useTsian；若这里 static import useRuntime，
+      // 会在 useTsian 模块尚未完成初始化时被求值）。
+      const { useRuntime } = await import("./useRuntime")
+      const { runtimeData } = useRuntime()
+      const result = await buildContextInjection({
+        workspace: tsian.workspace,
+        runtimeData: runtimeData.value,
+      })
+      if (result.status === "blocked") {
+        // 阻断分支（design §9）：不推 StreamItem、不切 turnPhase、不 tsian.send。
+        lastSendError.value = { reason: result.reason, detail: result.detail }
+        return
+      }
       // 不清空 stream（镜像 legacy：所有内容按顺序累积，跨轮保留）
       // 只重置流式累积器 + 选项
       streamingText.value = ""
@@ -241,7 +265,10 @@ export function useTsian() {
       })
       turnPhase.value = "streaming"
       try {
-        await tsian.send(text)
+        await tsian.send(
+          text,
+          result.messages.length > 0 ? { injection: result.messages } : undefined,
+        )
       } catch (err) {
         const msg = err && typeof err === "object" && "message" in err
           ? (err as { message: string }).message
