@@ -484,8 +484,9 @@ function onEdit(content: string) {
   margin-top: 52px;     /* 顶栏高度 */
   height: calc(100% - 52px);  /* 精确填满顶栏以下空间 */
   padding-right: 180px; /* 让出 nav 空间 */
-  padding-left: 0;
+  padding-left: 240px;  /* 让出左侧状态栏空间（design §4.3）；折叠态由 App.vue :has 联动 */
   overflow: hidden;     /* flex 容器本身不滚动，滚动交给 .story-scroll */
+  transition: padding-left 0.3s ease;  /* 同步状态栏 GSAP width 动画时长 */
 }
 
 /* 恢复过渡 CSS 遮罩：立即盖住屏幕（不依赖 WebGL 初始化），

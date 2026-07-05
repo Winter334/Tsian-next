@@ -5,11 +5,14 @@ import gsap from "gsap"
 /**
  * AppNav — 右侧可折叠导航（仅主游玩态）。
  *
- * prd 屏2：展开态 ~180px 竖排图标+文字标签（故事/检查点/设置），
+ * prd 屏2：展开态 ~180px 竖排图标+文字标签（故事/角色/设置），
  * 当前态 --ember 左边框 + --ember-bright；折叠态 ~56px 仅图标无 Tooltip（hover 不弹标签）。
  * GSAP width 动画 + 偏好持久化（localStorage）。
+ *
+ * nav 项扩展：design §4.2 / D3 — 新增"角色"项，与状态栏头像点击共用同一视图切换
+ * （navCurrent: "story" | "character" | "settings"）。
  */
-type NavItem = "story" | "settings"
+type NavItem = "story" | "character" | "settings"
 
 const props = defineProps<{
   current: NavItem
@@ -24,6 +27,8 @@ const navRef = ref<HTMLElement | null>(null)
 
 const items: Array<{ key: NavItem; label: string; icon: string }> = [
   { key: "story", label: "故事", icon: "M4 6h16M4 12h16M4 18h10" },
+  // 角色：人形剪影（头+肩），区分于故事与设置。标准 Material person 图标路径。
+  { key: "character", label: "角色", icon: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" },
   { key: "settings", label: "设置", icon: "M12 8a4 4 0 100 8 4 4 0 000-8z" },
 ]
 

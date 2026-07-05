@@ -6,9 +6,11 @@ import TsianLogo from "./components/TsianLogo.vue"
 import BurningReveal from "./components/BurningReveal.vue"
 import AppHeader from "./components/AppHeader.vue"
 import AppNav from "./components/AppNav.vue"
+import StatusBar from "./components/StatusBar.vue"
 import StoryView from "./components/story/StoryView.vue"
 import SetupWizard from "./components/setup/SetupWizard.vue"
 import { useTsian } from "./composables/useTsian"
+import { useStatusBarCollapsed } from "./composables/useStatusBarCollapsed"
 
 // App.vue 根组件。
 // 开屏状态机（design §5 / prd D5-D6）：
@@ -27,11 +29,19 @@ const mode = ref<"wizard" | "play">("wizard")
 // nav 折叠状态（localStorage 持久化）
 const NAV_COLLAPSED_KEY = "tsian.navCollapsed"
 const navCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === "true")
-const navCurrent = ref<"story" | "settings">("story")
+// navCurrent 扩展为 story / character / settings（design §4.2 / §2.3）。
+// - story：剧情流（StoryView，v-show 保留滚动 + stream 状态）。
+// - character：角色卡全屏视图（MVP 占位，完整 UI 归角色卡子任务）。
+// - settings：设置视图占位。
+const navCurrent = ref<"story" | "character" | "settings">("story")
 
 watch(navCollapsed, (v) => {
   localStorage.setItem(NAV_COLLAPSED_KEY, String(v))
 })
+
+// 左侧状态栏折叠偏好（localStorage 持久化，模块级单例；design §4.4）。
+// 不写入 workspace——纯前端 UI 偏好，同 navCollapsed 模式。
+const { statusCollapsed, toggle: toggleStatusCollapsed } = useStatusBarCollapsed()
 
 // bridge 状态（useTsian 单例共享）
 const { ready, turnCount } = useTsian()
@@ -66,7 +76,16 @@ function onToggleNav() {
   navCollapsed.value = !navCollapsed.value
 }
 
-function onNavigate(item: "story" | "settings") {
+function onToggleStatus() {
+  toggleStatusCollapsed()
+}
+
+/** 点击状态栏角色头像 → 切到角色卡全屏视图（design §4.2 / D3）。 */
+function onOpenCharacter() {
+  navCurrent.value = "character"
+}
+
+function onNavigate(item: "story" | "character" | "settings") {
   navCurrent.value = item
 }
 </script>
@@ -93,7 +112,9 @@ function onNavigate(item: "story" | "settings") {
         :ready="ready"
         :turn-count="Math.max(0, turnCount - 1)"
         :nav-collapsed="navCollapsed"
+        :status-bar-collapsed="statusCollapsed"
         @toggle-nav="onToggleNav"
+        @toggle-status-bar="onToggleStatus"
       />
       <AppNav
         v-if="phase === 'revealed'"
@@ -101,14 +122,25 @@ function onNavigate(item: "story" | "settings") {
         :collapsed="navCollapsed"
         @navigate="onNavigate"
       />
+      <StatusBar
+        v-if="phase === 'revealed'"
+        :collapsed="statusCollapsed"
+        @toggle="onToggleStatus"
+        @open-character="onOpenCharacter"
+      />
 
-      <!-- 视图路由：story / checkpoints / settings（Step 5 接入 CheckpointView）。
+      <!-- 视图路由：story / character / settings（Step 5 接入 CheckpointView）。
            用 v-show 而非 v-if：切换视图不销毁 StoryView，保留滚动位置 + stream 状态 -->
       <StoryView v-show="navCurrent === 'story'" />
-      <div v-if="navCurrent !== 'story'" class="view-stage">
+      <div v-if="navCurrent === 'character'" class="view-stage view-stage-character">
+        <CornerBrackets :size="15" :inset="25" />
+        <p class="placeholder-text">角色</p>
+        <p class="placeholder-sub">角色卡视图待接入</p>
+      </div>
+      <div v-else-if="navCurrent === 'settings'" class="view-stage">
         <CornerBrackets :size="15" :inset="25" />
         <p class="placeholder-text">烛火书卷 · 重铸</p>
-        <p class="placeholder-sub">{{ navCurrent }} 视图待接入</p>
+        <p class="placeholder-sub">设置视图待接入</p>
       </div>
     </main>
 
@@ -162,7 +194,9 @@ function onNavigate(item: "story" | "settings") {
   width: 100%;
 }
 
-/* 视图舞台：右侧留 nav 空间，顶部留 header 空间 */
+/* 视图舞台：右侧留 nav 空间，顶部留 header 空间，左侧留状态栏空间。
+   状态栏展开 240px / 折叠 48px（design §4.3），通过 :has() 选择器联动 padding-left，
+   同 AppNav 折叠态 padding-right 联动模式。 */
 .view-stage {
   position: relative;
   height: 100%;
@@ -172,13 +206,17 @@ function onNavigate(item: "story" | "settings") {
   justify-content: center;
   gap: 12px;
   text-align: center;
-  /* 顶部 header 52px + 右侧 nav 180px（折叠 56px） */
+  /* 顶部 header 52px + 右侧 nav 180px（折叠 56px） + 左侧状态栏 240px（折叠 48px） */
   padding-top: 52px;
   padding-right: 180px;
-  transition: padding-right 0.3s ease;
+  padding-left: 240px;
+  transition: padding-right 0.3s ease, padding-left 0.3s ease;
 }
 .app-root:has(.app-nav.collapsed) .view-stage {
   padding-right: 56px;
+}
+.app-root:has(.status-bar.collapsed) .view-stage {
+  padding-left: 48px;
 }
 
 .placeholder-text {
@@ -199,5 +237,14 @@ function onNavigate(item: "story" | "settings") {
   color: var(--prose-dim);
   letter-spacing: 0.3em;
   text-transform: uppercase;
+}
+</style>
+
+<!-- 全局（非 scoped）样式：StoryView 的 .story-view 在 StoryView scoped 边界内，
+     App.vue scoped 样式无法穿透 data-v 属性触达。用全局 :has() 选择器联动
+     状态栏折叠态 padding-left（design §4.3 / §7），同 .view-stage 折叠联动模式。 -->
+<style>
+.app-root:has(.status-bar.collapsed) .story-view {
+  padding-left: 48px;
 }
 </style>

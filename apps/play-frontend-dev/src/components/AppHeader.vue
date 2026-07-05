@@ -8,15 +8,19 @@ import TsianLogo from "./TsianLogo.vue"
  * prd 屏2：左=静态简化 Logo+连接状态点；中=无文字；右=轮次徽章 `第 N 轮`（ember pill mono）+nav 折叠按钮。
  * 底边 --line + 激光扫描线。
  * 向导期由父组件 v-if 控制不渲染（:has(.setup-shell) 机制）。
+ *
+ * 状态栏折叠按钮（design §4.3）：左侧 Logo 旁新增 28×28 折叠按钮，与右侧 nav 折叠按钮对称。
  */
 const props = defineProps<{
   ready: boolean
   turnCount: number
   navCollapsed: boolean
+  statusBarCollapsed: boolean
 }>()
 
 const emit = defineEmits<{
   toggleNav: []
+  toggleStatusBar: []
 }>()
 
 const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
@@ -24,8 +28,15 @@ const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
 
 <template>
   <header class="app-header">
-    <!-- 左：静态简化 Logo + 连接状态点 -->
+    <!-- 左：状态栏折叠按钮 + 静态简化 Logo + 连接状态点 -->
     <div class="header-left">
+      <button
+        class="nav-toggle status-toggle"
+        :aria-label="statusBarCollapsed ? '展开状态栏' : '折叠状态栏'"
+        @click="emit('toggleStatusBar')"
+      >
+        <span class="toggle-icon" :class="{ collapsed: statusBarCollapsed }" />
+      </button>
       <TsianLogo :animated="false" :size="28" />
       <span class="status-dot" :class="{ connected: ready }" :title="ready ? '已连接' : '连接中…'" />
     </div>
