@@ -20,3 +20,5 @@ This layer documents how frontend/browser consumers should use `@tsian/contracts
 - `packages/contracts/src/frontend-package.ts`
 - `apps/platform-web/src/bridge/play-frontend-bridge.ts`
 - `apps/platform-web/src/platform-host/index.ts`
+- `apps/play-frontend-dev/src/composables/useRuntime.ts` — runtime read/parse/refresh composable (workspace consumption + runtimeStale bus)
+- `apps/play-frontend-dev/src/lib/parse-runtime.ts` — shared extension parsing contract (parseRuntime/parseEntity/parseScene)

@@ -102,8 +102,205 @@ try {
 ```
 
 
+## Scenario: play-frontend Workspace Data Consumption
+
+### 1. Scope / Trigger
+
+- Trigger: a play frontend (`apps/play-frontend-dev/**` or any packaged/remote game card frontend) reading `save/playthrough/runtime.json`, `save/entities/<type>/<localId>.json`, or `save/scenes/<localId>.json` for UI rendering.
+
+### 2. Signatures
+
+- `tsian.workspace.read(path: string, scope?: WorkspaceScope): Promise<WorkspaceReadResult | null>` — the only sanctioned read exit. `WorkspaceReadResult.content` is a **string** and must be `JSON.parse`d by the consumer.
+- `WorkspaceScope` for save-scoped runtime data is `"save-runtime"` (covers `save/**`). Pass it explicitly; do not rely on path-prefix inference.
+
+### 3. Contracts
+
+- Read result is `null` when the path does not exist (e.g. fresh save before any runtime write). This is **not** an error — treat it as `"not-found"` and let the UI decide whether to render empty or hide.
+- `JSON.parse` may throw on corrupted/partial writes. Catch it locally and surface as `"load-failed"`, not as a thrown exception — play frontends must never crash the游玩面 because of a malformed workspace file.
+- Bridge/RPC `read` rejections (platform/bridge errors) follow the same pattern: catch, set `error: "load-failed"`, do not re-throw.
+
+### 4. Validation & Error Matrix
+
+| Condition | Treatment | Surfaces as |
+|---|---|---|
+| `file === null` | UI hides the panel or shows empty state | `error: "not-found"` |
+| `JSON.parse` throws | UI shows "状态暂不可用" or hides | `error: "load-failed"` |
+| `workspace.read` rejects | same as parse failure | `error: "load-failed"` |
+| Parsed object missing fixed fields | same as parse failure (do not silently coerce) | `error: "load-failed"` |
+
+### 5. Good/Base/Bad Cases
+
+- **Good**: `useRuntime()` catches all three failure modes, writes a typed `error` field on the returned `RuntimeData`, and the UI branch on `error` decides render-vs-hide.
+- **Base**: a `useEntity(ref)` helper that returns `{ data, error, load }` with `load()` performing the read+parse+catch and never throwing.
+- **Bad**: `const runtime = JSON.parse((await tsian.workspace.read(...)).content)` — no null check, no try/catch, crashes the component on missing/corrupt files.
+
+### 6. Tests Required
+
+- Assert `useRuntime()` returns `{ runtime: null, error: "not-found" }` when `workspace.read` resolves to `null` (no throw).
+- Assert `useRuntime()` returns `{ runtime: null, error: "load-failed" }` when `content` is malformed JSON (no throw).
+- Assert a successful read populates `runtime` and `displayItems` with `status: "ready"`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+async function loadRuntime() {
+  const file = await tsian.workspace.read("save/playthrough/runtime.json")
+  return JSON.parse(file.content)  // crashes on null file or bad JSON
+}
+```
+
+#### Correct
+
+```ts
+async function refresh() {
+  try {
+    const file = await tsian.workspace.read(RUNTIME_PATH, "save-runtime")
+    if (file === null) { runtimeData.value = { runtime: null, error: "not-found", ... }; return }
+    let parsed: unknown
+    try { parsed = JSON.parse(file.content) }
+    catch { runtimeData.value = { runtime: null, error: "load-failed", ... }; return }
+    runtimeData.value = parseRuntime(parsed)   // parseRuntime also validates fixed fields
+  } catch {
+    runtimeData.value = { runtime: null, error: "load-failed", ... }
+  }
+}
+```
+
+## Scenario: Runtime Extension Parsing Contract
+
+### 1. Scope / Trigger
+
+- Trigger: any play frontend code that turns `runtime.extensions` / `entity.extensions` / `scene.extensions` into display items for status bar, character cards, container panels, or runtime injection UI.
+
+### 2. Signatures
+
+- `parseRuntime(raw: unknown): RuntimeData` — pure function; validates fixed fields, then parses `extensions`.
+- `parseEntity(raw: unknown): { displayItems: DisplayItems; itemErrors: DisplayItemError[] }` / `parseScene(raw)` — pure functions; parse `extensions` only (fixed `fields`/`sections`/`status` stay on the raw entity for UI-specific rendering).
+- Shared `parseExtensions(ext)` underlies all three — **do not** reimplement extension parsing per UI component (R7).
+
+### 3. Contracts
+
+- **render → category** is a fixed mapping (`lib/render-mapping.ts`): `progress/number → metric`, `tag/tags/text → tag`, `ref/cards/list → ref`, `section → section`. UI components select items by `category`, not by `render`.
+- **Unknown render** (value present but not in the 9 presets) → `itemErrors` with `error: "unknown-render"`. Do not degrade unknown renders to text — fail loud so schema drift is visible.
+- **Omitted `render`** → treat as `"text"` (schema OQ-2: `render` may be omitted for plain text display). This is **not** an unknown-render error.
+- **Missing/typed-wrong fields** (e.g. `progress` without `value`) → degrade per render type and mark `fallback: true` on the `DisplayItem`. Do not push these into `itemErrors` — they are common Agent write slips and the UI can still show something useful.
+
+### 4. Validation & Error Matrix
+
+| Condition | Treatment | Surfaces as |
+|---|---|---|
+| `render` field omitted | effective render = `"text"`, normal item | `DisplayItem` in `tags` bucket |
+| `render` value not in 9 presets | `itemErrors` entry, item dropped from buckets | `DisplayItemError { error: "unknown-render" }` |
+| `render` valid but `value` missing | per-render fallback, item stays in bucket | `DisplayItem.fallback = true` |
+| `extensions` is not an object | empty buckets, no errors | empty `DisplayItems` |
+
+### 5. Good/Base/Bad Cases
+
+- **Good**: UI status bar reads `displayItems.metrics` + `displayItems.tags` and renders them; separately reads `itemErrors` to show a dev-mode warning.
+- **Base**: character card calls `parseEntity` on a `workspace.read` result and renders `displayItems` alongside the fixed `fields`/`sections`.
+- **Bad**: a UI component re-implements `if (render === "progress") ...` switches on `extensions` directly — duplicates the shared parser and will diverge.
+
+### 6. Tests Required
+
+- Assert a runtime with `extensions: { "腐化值": { render: "progress", value: 37, max: 100 } }` produces one `DisplayItem` in `metrics` with no `fallback`.
+- Assert `extensions: { "x": { render: "radar" } }` produces one `DisplayItemError` with `error: "unknown-render"` and empty buckets.
+- Assert `extensions: { "x": { render: "progress" } }` (missing `value`) produces a `DisplayItem` with `fallback: true` and `value: 0`.
+- Assert `extensions: { "x": { value: "hello" } }` (omitted `render`) produces a `text` item in `tags`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Per-component re-implementation
+for (const [key, item] of Object.entries(runtime.extensions)) {
+  if (item.render === "progress") metrics.push({ label: key, value: item.value ?? 0 })
+  else if (item.render === "tag") tags.push({ label: key, value: item.value })
+  // ... and 7 more branches, no unknown-render handling, no fallback marker
+}
+```
+
+#### Correct
+
+```ts
+import { parseRuntime } from "../lib/parse-runtime"
+const { displayItems, itemErrors } = parseRuntime(raw)
+// UI renders displayItems.metrics / .tags / .refs / .sections by category
+// itemErrors rendered separately (dev-mode warning or hidden)
+```
+
+## Scenario: Runtime Refresh Trigger Bus
+
+### 1. Scope / Trigger
+
+- Trigger: wiring a play-frontend composable that needs to re-read `runtime.json` after turn completion, post-turn sync, checkpoint restore, or player-initiated workspace mutations.
+
+### 2. Signatures
+
+- `emitRuntimeStale(): void` — module-level payload-less signal that runtime data may be out of date.
+- `onRuntimeStale(cb: () => void): () => void` — subscribe; returns unsubscribe. Callbacks are isolated (one throwing callback does not block others).
+- `setOnSynced(cb: () => void)` (from `useSyncAfterTurn`) — single-consumer hook for post-turn-sync completion. Currently last-writer-wins; if a second consumer appears, upgrade it to multi-callback before registering.
+
+### 3. Contracts
+
+- The bus is **payload-less**: subscribers respond by re-reading their own data. Do not attach event details (they cause "detail doesn't match my context" false-negatives).
+- `useRuntime()` auto-subscribes to `ready`, `onTurnEnd`, `setOnSynced`, and `onRuntimeStale`. UI components calling `useRuntime()` do **not** need to wire these themselves.
+- Checkpoint `restore()` has no event broadcast — callers must explicitly invoke `useRuntime().refresh()` after restore succeeds.
+- Player-initiated actions that mutate workspace (future UI: use item, move inventory) should call `emitRuntimeStale()` on success. Do **not** globally wrap `runAction`/`invokeAgent` to auto-emit — most calls do not touch runtime and would cause noise refreshes.
+
+### 4. Validation & Error Matrix
+
+| Trigger source | Mechanism | Who wires it |
+|---|---|---|
+| bridge ready | `watch(ready, immediate)` | `useRuntime` (internal) |
+| turn completed | `tsian.onTurnEnd` | `useRuntime` (internal) |
+| post-turn sync done | `setOnSynced` | `useRuntime` (internal) |
+| checkpoint restore | explicit `refresh()` call | caller (e.g. StoryView) |
+| player action mutates workspace | `emitRuntimeStale()` | future UI component |
+
+### 5. Good/Base/Bad Cases
+
+- **Good**: a future inventory panel calls `emitRuntimeStale()` after a successful `tsian.runAction("use-item", ...)`; `useRuntime` re-reads automatically; the panel does not know who subscribes.
+- **Base**: StoryView calls `await restore(id)` then `void refreshRuntime()` — restore has no event, so the explicit call is the contract.
+- **Bad**: wrapping `tsian.runAction` globally to `emitRuntimeStale()` on every call — read-history / query calls would trigger pointless runtime re-reads.
+
+### 6. Tests Required
+
+- Assert `emitRuntimeStale()` invokes all subscribers even when one throws (isolation).
+- Assert `onRuntimeStale` returned unsubscribe removes the callback from subsequent emits.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Globally wrap runAction to auto-refresh
+const origRunAction = tsian.runAction
+tsian.runAction = async (action, params) => {
+  const r = await origRunAction(action, params)
+  emitRuntimeStale()   // fires even for read-only queries — noise
+  return r
+}
+```
+
+#### Correct
+
+```ts
+// The UI that knows it mutated workspace emits explicitly
+async function onUseItem() {
+  await tsian.runAction("use-item", { itemId })
+  emitRuntimeStale()   // this action actually changed runtime
+}
+```
+
 ## Avoid
 
 - Do not call platform-web storage, model config, or platform-host internals from a play frontend.
 - Do not assume platform-owned events/archives/mod resources exist.
 - Do not widen bridge payloads to `unknown` to bypass a compile error; update the shared contract or normalize at the boundary.
+- Do not reimplement `extensions` parsing per UI component — use the shared `parseExtensions`/`parseRuntime`/`parseEntity` so render→category, unknown-render, and fallback rules stay consistent (R7).
+- Do not degrade unknown `render` values to text — push them to `itemErrors` so schema drift is visible. (Omitted `render` is a separate case and maps to `text`.)
+- Do not throw out of workspace-read composables — surface `error: "not-found" | "load-failed"` and let the UI decide.
+- Do not globally wrap `runAction`/`invokeAgent` to auto-emit `runtimeStale`; only the component that knows it mutated workspace should emit.

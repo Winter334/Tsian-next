@@ -13,6 +13,7 @@ import RestoreDialog from "../checkpoints/RestoreDialog.vue"
 import BurningReveal from "../BurningReveal.vue"
 import { useTsian, type StreamItem } from "../../composables/useTsian"
 import { useTurnState } from "../../composables/useTurnState"
+import { useRuntime } from "../../composables/useRuntime"
 
 /**
  * StoryView — 对话流容器（核心游玩面）。
@@ -44,6 +45,10 @@ const {
   retrySyncAfterTurn,
   resetSyncPhase,
 } = useTsian()
+
+// useRuntime 模块级单例：在 setup 层调用以正确注册刷新触发（watch/onTurnEnd 等
+// 需在组件 setup 期间注册）。refreshRuntime 供 checkpoint restore 后显式刷新（D4）。
+const { refresh: refreshRuntime } = useRuntime()
 
 const INITIAL_VISIBLE_TURNS = 40
 const LOAD_OLDER_TURNS = 20
@@ -203,6 +208,9 @@ async function onRestoreConfirm() {
   restoreTarget.value = null
   // 后台执行 restore（host 裁剪 + reloadHistory + loadCheckpoints 重建）
   await restore(id)
+  // checkpoint restore 无事件源（D4），显式调 refreshRuntime() 刷新 runtime 数据。
+  // 仅这一行 + import + setup 层 destructure，不改 restore 流程逻辑。
+  void refreshRuntime()
   resetWindowToLatest()
   await nextTick()
   if (storyRef.value) storyRef.value.scrollTop = storyRef.value.scrollHeight
