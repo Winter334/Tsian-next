@@ -595,11 +595,35 @@ function normalizeActionExecutorReference(
     )
   }
 
+  // helpers: optional string array of helper source file paths. Each entry
+  // must be a non-empty trimmed string; invalid entries are rejected rather
+  // than silently dropped.
+  const rawHelpers = Array.isArray(value.helpers) ? value.helpers : undefined
+  let helpers: string[] | undefined
+  if (rawHelpers !== undefined) {
+    const normalized: string[] = []
+    for (let i = 0; i < rawHelpers.length; i++) {
+      const entry = rawHelpers[i]
+      if (typeof entry !== "string" || !entry.trim()) {
+        throw toolError(
+          "ACTION_EXECUTOR_INVALID",
+          `Action executor helpers must be non-empty strings: ${actionName}`,
+          { index, name: actionName, helperIndex: i },
+        )
+      }
+      normalized.push(entry.trim())
+    }
+    if (normalized.length > 0) {
+      helpers = normalized
+    }
+  }
+
   return {
     type,
     name: explicitName || path,
     path,
     ...(timeoutMs ? { timeoutMs } : {}),
+    ...(helpers ? { helpers } : {}),
   }
 }
 
@@ -1596,6 +1620,68 @@ export function resolveBrowserScriptPath(
   return resolvedPath
 }
 
+/**
+ * Resolve a helper source file path declared by `executor.helpers`.
+ *
+ * Path resolution:
+ * - Relative path (starts with `./` or `../`, or contains no `/`):
+ *   relative to the Skill's directory (same root as `resolveBrowserScriptPath`).
+ * - Absolute path (contains `/` but does not start with `./` or `../`):
+ *   resolved from workspace root. Allowed but discouraged — breaks Skill
+ *   self-containment. Path escape (`../` climbing above workspace root) is rejected.
+ *
+ * Returns the absolute workspace path. Does NOT verify the file exists —
+ * existence is checked by the executor when it reads the file.
+ */
+export function resolveHelperPath(
+  skillPath: string,
+  skillName: string,
+  helperPath: string,
+): string {
+  const skillDirectory = skillDirectoryPath(skillPath)
+  if (!skillDirectory) {
+    throw toolError(
+      "BROWSER_SCRIPT_PATH_INVALID",
+      `Helper resolution requires a skill directory: ${skillName}`,
+      { helperPath, skillPath },
+    )
+  }
+
+  const normalized = normalizeWorkspaceFilePath(helperPath)
+  const isRelative =
+    normalized.startsWith("./") ||
+    normalized.startsWith("../") ||
+    !normalized.includes("/")
+
+  if (isRelative) {
+    const stripped = normalized.startsWith("./") ? normalized.slice(2) : normalized
+    const resolved = stripped
+      ? `${skillDirectory}/${stripped}`
+      : skillDirectory
+    if (!resolved.startsWith(`${skillDirectory}/`) && resolved !== skillDirectory) {
+      throw toolError(
+        "BROWSER_SCRIPT_PATH_INVALID",
+        `Helper path must stay under the declaring Skill directory: ${helperPath}`,
+        { helperPath, skillPath, resolved },
+      )
+    }
+    return resolved
+  }
+
+  // Absolute path: resolve from workspace root. Reject `../` escape —
+  // normalizeWorkspaceFilePath already trims leading slashes, so a path
+  // starting with `../` after normalization means it tried to climb above root.
+  if (normalized.startsWith("../")) {
+    throw toolError(
+      "BROWSER_SCRIPT_PATH_INVALID",
+      `Helper absolute path must not escape workspace root: ${helperPath}`,
+      { helperPath, normalized },
+    )
+  }
+  return normalized
+}
+
+
 function workspaceOperationRequestFromToolCall(
   call: RuntimeWorkspaceToolCall,
 ): WorkspaceOperationRequest {
@@ -1660,6 +1746,9 @@ async function executeSkillAction(
         scriptPath,
         input,
         timeoutMs: effectiveExecutorTimeoutMs(action.executor),
+        ...(action.executor.helpers && action.executor.helpers.length > 0
+          ? { helpers: action.executor.helpers }
+          : {}),
         // Carry declared config items (defaults included) so the executor can
         // merge player overrides and inject `tsian.config`. Omitted when the
         // skill declares no config (keeps `tsian.config` an empty object).

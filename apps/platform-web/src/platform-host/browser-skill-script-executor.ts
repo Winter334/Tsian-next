@@ -22,6 +22,7 @@ import { buildSkillRegistry } from "../agent-runtime/registry"
 import {
   parseActionDeclarations,
   resolveBrowserScriptPath,
+  resolveHelperPath,
 } from "../agent-runtime/workspace-tools"
 import {
   readSkillConfig,
@@ -600,6 +601,57 @@ function resolveAndInlineImportScripts(
   return { ok: true, item: inlinedHeader + strippedSource }
 }
 
+/**
+ * Read each declared helper file and concatenate its source between the
+ * (already importScripts-inlined) header and the script body. Helper paths
+ * resolve relative to the Skill directory by default; absolute paths resolve
+ * from workspace root (discouraged — breaks Skill self-containment).
+ *
+ * Returns `{ ok: true, item: header + helpers + scriptBody }` on success, or
+ * `{ ok: false, error }` when a helper file is missing or its path escapes.
+ */
+async function resolveAndConcatHelpers(
+  inlinedSource: string,
+  request: RuntimeBrowserScriptExecutorRequest,
+  workspaceFiles: WorkspaceFile[],
+): Promise<PlatformActionResult> {
+  const helpers = request.helpers
+  if (!helpers || helpers.length === 0) {
+    return { ok: true, item: inlinedSource }
+  }
+
+  const parts: string[] = []
+  for (const rawPath of helpers) {
+    let resolvedPath: string
+    try {
+      resolvedPath = resolveHelperPath(request.skillPath, request.skillName, rawPath)
+    } catch (error) {
+      return actionError(
+        "BROWSER_SCRIPT_HELPER_PATH_INVALID",
+        error instanceof Error ? error.message : "Helper path is invalid.",
+        { helperPath: rawPath, skillPath: request.skillPath },
+      )
+    }
+
+    const helperFile = readWorkspaceFileFromFiles(workspaceFiles, resolvedPath)
+    if (!helperFile) {
+      return actionError(
+        "BROWSER_SCRIPT_HELPER_NOT_FOUND",
+        `Helper file was not found: ${resolvedPath}`,
+        { helperPath: rawPath, resolvedPath, scriptPath: request.scriptPath },
+      )
+    }
+
+    parts.push(helperFile.content)
+  }
+
+  if (parts.length === 0) {
+    return { ok: true, item: inlinedSource }
+  }
+
+  return { ok: true, item: parts.join("\n") + "\n" + inlinedSource }
+}
+
 async function handleSdkRequest(
   options: BrowserSkillScriptRunnerOptions,
   message: BrowserScriptWorkerMessage,
@@ -908,7 +960,19 @@ export function createBrowserSkillScriptRunner(
     if (!inlined.ok) {
       return inlined
     }
-    const finalSource = inlined.item as string
+
+    // helper 拼接：读 executor.helpers 声明的 helper 文件源码，拼到
+    // vendor 库之后、脚本本体之前。helper 路径支持相对（Skill 目录）和绝对
+    // （workspace 根）。文件缺失/路径逃逸报清晰错误，不静默跳过。
+    const helperSource = await resolveAndConcatHelpers(
+      inlined.item as string,
+      request,
+      options.workspaceTransaction.workspaceFiles,
+    )
+    if (!helperSource.ok) {
+      return helperSource
+    }
+    const finalSource = helperSource.item as string
 
     // Merge declared config defaults with player-saved overrides, then inject
     // as `tsian.config`. A skill without configItems yields an empty object —
@@ -1005,6 +1069,9 @@ export function createTestSkillScriptRunner(
         scriptPath,
         input: input.input,
         timeoutMs,
+        ...(action.executor.helpers && action.executor.helpers.length > 0
+          ? { helpers: action.executor.helpers }
+          : {}),
         ...(skill.configItems && skill.configItems.length > 0
           ? { configItems: skill.configItems }
           : {}),

@@ -114,6 +114,13 @@ export interface RuntimeActionExecutorReference {
   name: string
   path?: string
   timeoutMs?: number
+  /**
+   * Helper source files to concatenate before the script source at eval time.
+   * Relative paths (`_common.js`, `./foo.js`, `sub/bar.js`) resolve against the
+   * Skill's scripts/ directory; absolute paths (`agents/.../scripts/foo.js`)
+   * resolve from workspace root. Omitted when the script needs no helpers.
+   */
+  helpers?: string[]
 }
 
 export interface RuntimeActionExecutorResult {
@@ -254,6 +261,13 @@ export interface RuntimeBrowserScriptExecutorRequest {
   scriptPath: string
   input: Record<string, unknown>
   timeoutMs: number
+  /**
+   * Helper source file paths declared by `executor.helpers`. The browser-script
+   * executor reads each file and concatenates its source before the script
+   * source (after importScripts inlining). Same path resolution as
+   * `RuntimeActionExecutorReference.helpers`.
+   */
+  helpers?: string[]
   /**
    * Config items declared by the skill's `skill.config` (carried from the
    * `SkillRegistryEntry`). The browser-script executor merges these defaults

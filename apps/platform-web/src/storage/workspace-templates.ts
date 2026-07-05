@@ -178,9 +178,9 @@ const STAGE_MANAGER_ACTION_RESOLUTION_SKILL_MD = text([
 ])
 
 // ── 开局建模脚本基础设施 ──
-// 共享工具函数（从旧 OPENING_SCRIPT_COMMON 提取，95e392c^ 历史版本）。
-// 每个脚本 JS 用 `${OPENING_SCRIPT_COMMON}${text([...])}` 拼接。
-const OPENING_SCRIPT_COMMON = text([
+// 共享 helper JS（从旧 OPENING_SCRIPT_COMMON 提取，95e392c^ 历史版本）。
+// 共享 helper JS。作为独立 _common.js / _validation.js 文件内容，由 executor.helpers 声明拼接。
+const OPENING_COMMON_JS = text([
   "const OPENING_SCHEMA = 'tsian.opening.initial-understanding.v1';",
   "const MANIFEST_PATH = 'save/source/manifest.json';",
   "const CHAPTER_INDEX_PATH = 'save/source/chapters.index.json';",
@@ -205,9 +205,9 @@ const OPENING_SCRIPT_COMMON = text([
   "}",
 ])
 
-// 校验函数（从旧 OPENING_COMMIT_UNDERSTANDING_SCRIPT_JS 提取，按拆分后脚本共用）。
+// 校验 helper JS。作为独立 _validation.js 文件内容，由 executor.helpers 声明拼接。
 // 仅含 commit_* 脚本需要的校验工具；inspect/read 脚本不依赖此常量。
-const OPENING_SCRIPT_VALIDATION = text([
+const OPENING_VALIDATION_JS = text([
   "function normalizeString(value, code, label, maxLength) {",
   "  if (typeof value !== 'string' || !value.trim()) fail(code, label + ' must be a non-empty string.');",
   "  const normalized = value.trim();",
@@ -315,7 +315,7 @@ const OPENING_SCRIPT_VALIDATION = text([
 ])
 
 // inspect_source_opening — 直接复用旧 OPENING_INSPECT_SOURCE_SCRIPT_JS。
-const INSPECT_SOURCE_OPENING_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
+const INSPECT_SOURCE_OPENING_SCRIPT_JS = `${text([
   "async function inspectSourceOpening(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -340,7 +340,7 @@ const INSPECT_SOURCE_OPENING_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
 ])}`
 
 // read_opening_slice — 直接复用旧 OPENING_READ_SLICE_SCRIPT_JS。
-const READ_OPENING_SLICE_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
+const READ_OPENING_SLICE_SCRIPT_JS = `${text([
   "async function readOpeningSlice(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -380,7 +380,7 @@ const READ_OPENING_SLICE_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
 ])}`
 
 // commit_entities — normalizeEntity 校验 + ensureSourceRefsKnown + 逐个写入 save/entities/<type>/<localId>.json。
-const COMMIT_ENTITIES_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPENING_SCRIPT_VALIDATION}${text([
+const COMMIT_ENTITIES_SCRIPT_JS = `${text([
   "async function commitEntities(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -410,7 +410,7 @@ const COMMIT_ENTITIES_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPENING_SCRIPT_VALI
 
 // commit_scenes_and_relationships — 合并 scenes + relationships，共享一次 loadExistingEntityIds 调用。
 // input: { scenes: [...], relationships: [...] }。output: { writes, sceneCount, relationshipCount }。
-const COMMIT_SCENES_AND_RELATIONSHIPS_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPENING_SCRIPT_VALIDATION}${text([
+const COMMIT_SCENES_AND_RELATIONSHIPS_SCRIPT_JS = `${text([
   "async function commitScenesAndRelationships(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -449,7 +449,7 @@ const COMMIT_SCENES_AND_RELATIONSHIPS_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPE
 // commit_runtime_and_frontier — 合并 runtime + frontier，一次写入开局状态。
 // input: { runtime: {turn, activeSceneIds, player, status?, extensions?}, frontier: {sourceWindow, extractedThrough?, notes?} }。
 // output: { writes }。
-const COMMIT_RUNTIME_AND_FRONTIER_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPENING_SCRIPT_VALIDATION}${text([
+const COMMIT_RUNTIME_AND_FRONTIER_SCRIPT_JS = `${text([
   "async function commitRuntimeAndFrontier(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -511,7 +511,7 @@ const COMMIT_RUNTIME_AND_FRONTIER_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPENING
 ])}`
 
 // commit_understanding_summary — normalizeCandidate 校验 + 写 understanding-summary.json 为 {status:"ready", title, candidateCharacters}。
-const COMMIT_UNDERSTANDING_SUMMARY_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPENING_SCRIPT_VALIDATION}${text([
+const COMMIT_UNDERSTANDING_SUMMARY_SCRIPT_JS = `${text([
   "async function commitUnderstandingSummary(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -534,7 +534,7 @@ const COMMIT_UNDERSTANDING_SUMMARY_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${OPENIN
 ])}`
 
 // commit_opening_narrative — narrative 非空校验 + 写 opening-narrative.json 为 {narrative, createdAt}。
-const COMMIT_OPENING_NARRATIVE_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
+const COMMIT_OPENING_NARRATIVE_SCRIPT_JS = `${text([
   "async function commitOpeningNarrative(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -554,7 +554,7 @@ const COMMIT_OPENING_NARRATIVE_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
 ])}`
 
 // commit_setup_summary — summary 非空校验（≤2000）+ 写入 save/playthrough/setup-summary.json 为 {status:"complete", summary, committedAt}。
-const COMMIT_SETUP_SUMMARY_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
+const COMMIT_SETUP_SUMMARY_SCRIPT_JS = `${text([
   "async function commitSetupSummary(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -576,7 +576,7 @@ const COMMIT_SETUP_SUMMARY_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
 
 // commit_mode — 三态校验 + 合并写入 save/playthrough/mode.json。
 // input: { mode: Record<string, "enabled"|"disabled"|"deferred"> }。读取现有 mode.json 合并传入键（不覆盖未传入的键）。
-const COMMIT_MODE_SCRIPT_JS = `${OPENING_SCRIPT_COMMON}${text([
+const COMMIT_MODE_SCRIPT_JS = `${text([
   "async function commitMode(input, tsian, signal) {",
   "  try {",
   "    signal.throwIfAborted();",
@@ -646,7 +646,7 @@ const PLAY_SETUP_SKILL_MD = text([
   "    \"description\": \"校验 summary 非空（≤2000）并写入 save/playthrough/setup-summary.json 为 {status:complete, summary, committedAt}。玩家确认设定后提交。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"required\": [\"summary\"], \"properties\": { \"summary\": { \"type\": \"string\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-setup-summary.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-setup-summary.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\"] }",
   "  }",
   "]",
   "```",
@@ -683,49 +683,49 @@ const WORLD_ARCHITECT_OPENING_SKILL_MD = text([
   "    \"description\": \"观察导入源 manifest 与开头章节预览，选择开局阅读窗口。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"properties\": { \"previewCount\": { \"type\": \"number\" }, \"previewCharacters\": { \"type\": \"number\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/inspect-source-opening.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/inspect-source-opening.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\"] }",
   "  },",
   "  {",
   "    \"name\": \"read_opening_slice\",",
   "    \"description\": \"连续读开头章节正文，返回拼接文本与窗口元信息。可多次调用。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"properties\": { \"startIndex\": { \"type\": \"number\" }, \"endIndex\": { \"type\": \"number\" }, \"maxCharacters\": { \"type\": \"number\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/read-opening-slice.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/read-opening-slice.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\"] }",
   "  },",
   "  {",
   "    \"name\": \"commit_entities\",",
   "    \"description\": \"校验实体 id/必填字段/sourceRefs 并写入 save/entities/<type>/<localId>.json。先于 scenes/relationships/runtime 提交。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"required\": [\"entities\"], \"properties\": { \"entities\": { \"type\": \"array\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-entities.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-entities.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\", \"_validation.js\"] }",
   "  },",
   "  {",
   "    \"name\": \"commit_scenes_and_relationships\",",
   "    \"description\": \"校验场景与关系 ref 指向已存在实体，分别写入 save/scenes/<localId>.json 与 save/relationships/<scope>.json。共享一次 entity id 加载。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"required\": [\"scenes\", \"relationships\"], \"properties\": { \"scenes\": { \"type\": \"array\" }, \"relationships\": { \"type\": \"array\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-scenes-and-relationships.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-scenes-and-relationships.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\", \"_validation.js\"] }",
   "  },",
   "  {",
   "    \"name\": \"commit_runtime_and_frontier\",",
   "    \"description\": \"校验 runtime.activeSceneIds 指向已写 scene、player.character 指向已写 entity，校验 frontier.sourceWindow 章节路径存在，一次写入 runtime.json 与 frontier.json。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"required\": [\"runtime\", \"frontier\"], \"properties\": { \"runtime\": { \"type\": \"object\" }, \"frontier\": { \"type\": \"object\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-runtime-and-frontier.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-runtime-and-frontier.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\", \"_validation.js\"] }",
   "  },",
   "  {",
   "    \"name\": \"commit_understanding_summary\",",
   "    \"description\": \"校验 title 与 candidateCharacters 并写入 save/playthrough/understanding-summary.json 为 {status, title, candidateCharacters}。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"required\": [\"title\", \"candidateCharacters\"], \"properties\": { \"title\": { \"type\": \"string\" }, \"candidateCharacters\": { \"type\": \"array\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-understanding-summary.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-understanding-summary.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\", \"_validation.js\"] }",
   "  },",
   "  {",
   "    \"name\": \"commit_opening_narrative\",",
   "    \"description\": \"校验 narrative 非空并写入 save/playthrough/opening-narrative.json 为 {narrative, createdAt}。设定收尾时由 world-architect 落盘。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"required\": [\"narrative\"], \"properties\": { \"narrative\": { \"type\": \"string\" } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-opening-narrative.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-opening-narrative.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\"] }",
   "  }",
   "]",
   "```",
@@ -794,7 +794,7 @@ const WORLD_ARCHITECT_GAMEPLAY_ENABLEMENT_SKILL_MD = text([
   "    \"description\": \"校验每个玩法值为 enabled/disabled/deferred，读取现有 mode.json 合并传入键后写回 save/playthrough/mode.json。未传入的键保持不变。\",",
   "    \"inputSchema\": { \"type\": \"object\", \"required\": [\"mode\"], \"properties\": { \"mode\": { \"type\": \"object\", \"additionalProperties\": { \"type\": \"string\", \"enum\": [\"enabled\", \"disabled\", \"deferred\"] } } } },",
   "    \"outputSchema\": { \"type\": \"object\" },",
-  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-mode.js\", \"timeoutMs\": 10000 }",
+  "    \"executor\": { \"type\": \"browser_script\", \"path\": \"scripts/commit-mode.js\", \"timeoutMs\": 10000, \"helpers\": [\"_common.js\"] }",
   "  }",
   "]",
   "```",
@@ -1300,6 +1300,8 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
   { path: "agents/stage-manager/skills/schema演进检查/SKILL.md", content: STAGE_MANAGER_SCHEMA_SKILL_MD },
   { path: "agents/stage-manager/skills/行动裁定/SKILL.md", content: STAGE_MANAGER_ACTION_RESOLUTION_SKILL_MD },
   { path: "agents/world-architect/skills/开局建模/SKILL.md", content: WORLD_ARCHITECT_OPENING_SKILL_MD },
+  { path: "agents/world-architect/skills/开局建模/scripts/_common.js", content: OPENING_COMMON_JS },
+  { path: "agents/world-architect/skills/开局建模/scripts/_validation.js", content: OPENING_VALIDATION_JS },
   { path: "agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js", content: INSPECT_SOURCE_OPENING_SCRIPT_JS },
   { path: "agents/world-architect/skills/开局建模/scripts/read-opening-slice.js", content: READ_OPENING_SLICE_SCRIPT_JS },
   { path: "agents/world-architect/skills/开局建模/scripts/commit-entities.js", content: COMMIT_ENTITIES_SCRIPT_JS },
@@ -1308,8 +1310,10 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
   { path: "agents/world-architect/skills/开局建模/scripts/commit-understanding-summary.js", content: COMMIT_UNDERSTANDING_SUMMARY_SCRIPT_JS },
   { path: "agents/world-architect/skills/开局建模/scripts/commit-opening-narrative.js", content: COMMIT_OPENING_NARRATIVE_SCRIPT_JS },
   { path: "agents/world-architect/skills/游玩设定/SKILL.md", content: PLAY_SETUP_SKILL_MD },
+  { path: "agents/world-architect/skills/游玩设定/scripts/_common.js", content: OPENING_COMMON_JS },
   { path: "agents/world-architect/skills/游玩设定/scripts/commit-setup-summary.js", content: COMMIT_SETUP_SUMMARY_SCRIPT_JS },
   { path: "agents/world-architect/skills/玩法启用/SKILL.md", content: WORLD_ARCHITECT_GAMEPLAY_ENABLEMENT_SKILL_MD },
+  { path: "agents/world-architect/skills/玩法启用/scripts/_common.js", content: OPENING_COMMON_JS },
   { path: "agents/world-architect/skills/玩法启用/scripts/commit-mode.js", content: COMMIT_MODE_SCRIPT_JS },
   { path: "agents/world-architect/skills/行动裁定/SKILL.md", content: WORLD_ARCHITECT_ACTION_RESOLUTION_SKILL_MD },
   { path: "agents/director/skills/剧情指导维护/SKILL.md", content: DIRECTOR_BRIEF_SKILL_MD },
