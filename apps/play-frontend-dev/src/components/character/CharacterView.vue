@@ -146,6 +146,7 @@ const scenePresentEmpty = computed(
       <CharacterSlot
         :key="selectedRef ?? 'none'"
         :selected-ref="selectedRef"
+        :protagonist-ref="protagonistRef"
         @select="onSelect"
       />
     </template>

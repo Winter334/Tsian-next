@@ -86,6 +86,12 @@ export interface CharacterEntity {
   status?: CharacterStatus[]
   goals?: CharacterGoals
   background?: string
+  /**
+   * 当前持有的容器指针数组，每项 `{ ref, count? }`；ref 指向 container entity。
+   * 缺省或空数组表示角色未持有容器。物品数量落在 container.contents[*].count。
+   * design §4 / task 07-04 D2。
+   */
+  containers?: Array<{ ref: string; count?: number }>
   /** 原始 extensions JSON，由 UI 自行调 parseExtensionsOnly 解析。 */
   extensions?: Record<string, unknown>
   updatedAtTurn?: number

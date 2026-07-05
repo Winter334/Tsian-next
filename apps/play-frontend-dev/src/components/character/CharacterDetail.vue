@@ -21,6 +21,8 @@ const props = defineProps<{
   entity: CharacterEntity
   relationships: RelationshipFile | null
   displayItems: DisplayItems
+  /** 主角 ref，透传给 InventoryPane（未来"仅主角可查看"策略）。 */
+  protagonistRef: string | null
 }>()
 
 const emit = defineEmits<{
@@ -81,7 +83,11 @@ function onSelect(ref: string) {
         :attributes="entity.attributes"
         :gauges="entity.gauges"
       />
-      <InventoryPane v-else />
+      <InventoryPane
+        v-else
+        :containers="entity.containers"
+        :protagonist-ref="protagonistRef"
+      />
     </div>
   </div>
 </template>

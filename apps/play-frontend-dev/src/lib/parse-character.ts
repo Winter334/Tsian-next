@@ -151,6 +151,26 @@ function parseAliases(raw: unknown): string[] | undefined {
 }
 
 /**
+ * 归一 containers 数组（逐项校验 ref 字符串；count 可选 number）。
+ * 缺 ref 的项丢弃；空数组返回 undefined（调用方按"未持有容器"降级）。
+ * 对齐 task 07-04 design §4 / §5.3。
+ */
+function parseContainers(raw: unknown): Array<{ ref: string; count?: number }> | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: Array<{ ref: string; count?: number }> = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const ref = asString(item.ref)
+    if (!ref) continue
+    const entry: { ref: string; count?: number } = { ref }
+    const count = asNumber(item.count)
+    if (count !== undefined) entry.count = count
+    out.push(entry)
+  }
+  return out.length > 0 ? out : undefined
+}
+
+/**
  * parseCharacter — 把 raw JSON 归一为 CharacterEntity。
  *
  * 必检 id/name/brief；缺一返回 null。其余字段逐项归一，类型不符则丢弃该字段，
@@ -191,6 +211,9 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
 
   const background = asString(raw.background)
   if (background) entity.background = background
+
+  const containers = parseContainers(raw.containers)
+  if (containers) entity.containers = containers
 
   if (isRecord(raw.extensions)) {
     entity.extensions = raw.extensions

@@ -18,6 +18,8 @@ import CharacterCard from "./CharacterCard.vue"
 
 const props = defineProps<{
   selectedRef: string | null
+  /** 主角 ref，透传给 CharacterCard → CharacterDetail → InventoryPane。 */
+  protagonistRef: string | null
 }>()
 
 const emit = defineEmits<{
@@ -55,6 +57,7 @@ function onSelect(ref: string) {
     :loading="loading"
     :relationships="relationshipsData"
     :entity-ref="selectedRef"
+    :protagonist-ref="protagonistRef"
     @select="onSelect"
   />
 </template>

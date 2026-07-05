@@ -25,6 +25,8 @@ const props = defineProps<{
   relationships: RelationshipFile | null
   /** 实体 ref（用于 entity null 时降级展示 localId）。 */
   entityRef: string | null
+  /** 主角 ref，透传给 CharacterDetail → InventoryPane。 */
+  protagonistRef: string | null
 }>()
 
 const emit = defineEmits<{
@@ -81,6 +83,7 @@ function onSelect(ref: string) {
           :entity="entity!"
           :relationships="relationships"
           :display-items="displayItems"
+          :protagonist-ref="protagonistRef"
           @select="onSelect"
         />
       </template>
