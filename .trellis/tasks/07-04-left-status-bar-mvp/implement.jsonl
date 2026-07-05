@@ -1,1 +1,2 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Play frontend workspace consumption and runtime parsing contract; status bar reads runtime via useRuntime and must follow error/empty-state patterns."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Build/check expectations for play-frontend-dev changes; component and composable conventions."}
