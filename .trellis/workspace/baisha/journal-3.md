@@ -780,3 +780,37 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 128: 07-05 Agent Tool 机制：类 MCP 工具发现与卡定制层
+
+**Date**: 2026-07-06
+**Task**: 07-05 Agent Tool 机制：类 MCP 工具发现与卡定制层
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+落地 Tool 层（parallel to Skill）：contracts 加 ToolRegistryEntry / RegistryDiagnostic / AgentToolConfig / AgentContextEntry.toolIndex 与 enabled/disabledTools；registry.ts 加 tool 路径解析、parseToolManifest、buildToolRegistry、filterToolsForAgent，reserved-name 拒绝 + same-scope 冲突 skip + agent-local shadow shared 全部走诊断；context.ts 组装 toolIndex；buildEnabledToolSchemas 追加 userTools 注入原生 function schema；workspace-tools.ts 加 executeUserTool 与 dispatch（tsian.config 恒 {}）；browser-skill-script-executor 泛化 owner root（Skill + Tool 共用），Worker SDK 加 tsian.lib.random.nextInt/dice（advantage/disadvantage 仅 count===1 生效）；Studio snapshot 带 tools + toolDiagnostics，新增自定义 Tools 与诊断两节；workspace-templates 加 tools/README.md + tools/roll_dice（数值 modifier only，遵循 AIRP 价值化规则）；docs/reference/tool-vs-skill.md 记边界 + tsian.lib admission 规则。build:contracts + build:web 通过，AI-facing 层 scope grep 零残迹。附带 07-04-action-resolution-system PRD Blocked On 记录。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d6d4a1` | (see git log) |
+| `4406b1a` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

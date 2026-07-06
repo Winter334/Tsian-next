@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 127
-- **Last Active**: 2026-07-05
+- **Total Sessions**: 128
+- **Last Active**: 2026-07-06
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~782 | Active |
+| `journal-3.md` | ~816 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 128 | 2026-07-06 | 07-05 Agent Tool 机制：类 MCP 工具发现与卡定制层 | `6d6d4a1`, `4406b1a` | `feat/play-frontend-status-bar` |
 | 127 | 2026-07-05 | 07-05-status-bar-character-field-pinning: 左侧状态栏角色字段钉选 | `8bda07d`, `c413ccb` | `feat/play-frontend-status-bar` |
 | 126 | 2026-07-05 | 07-04-runtime-summary-injection: 发送前多消息 runtime 上下文注入 | `6c25684`, `712debb`, `9fb1acc` | `feat/play-frontend-status-bar` |
 | 125 | 2026-07-04 | 回合后场记编排 + card.entrypoints bridge API | `17b5731` | `master` |
