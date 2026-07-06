@@ -1469,75 +1469,14 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
   { path: "docs/tsian-framework-knowledge.md", content: TSIAN_FRAMEWORK_KNOWLEDGE_MD },
   { path: "docs/novel-airp-schema-guide.md", content: NOVEL_AIRP_SCHEMA_GUIDE_MD },
   { path: "docs/novel-airp-schema-reference.md", content: NOVEL_AIRP_SCHEMA_REFERENCE_MD },
-]
-
-export const RUNTIME_DEFAULT_CARD_PATHS = new Set<string>([])
-
-export const DEFAULT_SAVE_RUNTIME_FILES: Array<{
-  path: string
-  content: string
-}> = [
-  {
-    path: "save/README.md",
-    content: text(["# Save Runtime Data", "", "This directory contains runtime data for the active novel AIRP save slot.", "", "Main novel AIRP runtime paths: `source/`, `schema/`, `entities/`, `scenes/`, `relationships/`, `playthrough/`, `director/`, `memory/`, and `agents/`."]),
-  },
-  { path: "save/agents/storyteller/notes.md", content: "# 说书人 Notes\n\n" },
-  { path: "save/agents/researcher/notes.md", content: "# 资料员 Notes\n\n" },
-  { path: "save/agents/stage-manager/notes.md", content: "# 场记 Notes\n\n" },
-  { path: "save/agents/world-architect/notes.md", content: "# 世界架构师 Notes\n\n" },
-  { path: "save/agents/director/notes.md", content: "# 导演 Notes\n\n" },
-  {
-    path: "save/history/README.md",
-    content: text(["# History", "", "Keep this playthrough's durable conversation records and timeline summaries here.", "Raw player-facing AIRP turns are stored under `save/history/turns/` as one JSON file per successful turn."]),
-  },
-  { path: "save/history/turns/README.md", content: text(["# Raw AIRP Turns", "", "Each successful AIRP turn is stored here as `turn-000001.json`, `turn-000002.json`, and so on.", "Turn files contain the player input and final assistant narrative only."]) },
-  { path: "save/memory/README.md", content: text(["# Runtime Memory", "", "Store this playthrough's long-term summaries, durable facts, and retrieval-oriented notes here."]) },
-  {
-    path: "save/source/README.md",
-    content: text(["# Source Corpus", "", "Imported novel text belongs here. The source corpus is the factual basis for derived schema, entities, scenes, relationships, and director briefs.", "", "Recommended layout:", "", "```text", "save/source/manifest.json", "save/source/normalized.md or save/source/novel.txt", "save/source/chapters/chapter-0001.md", "save/source/chunks/chapter-0001-003.md", "```", "", "Track progress in `save/playthrough/frontier.json` and expand the source frontier as play needs it."]),
-  },
-  { path: "save/source/manifest.json", content: json({ title: "", importedAt: null, normalizedPath: null, chapterCount: 0, chunkCount: 0, notes: "Fill this when a novel is imported." }) },
-  {
-    path: "save/schema/README.md",
-    content: text(["# Schema", "", "This directory holds the living schema for this novel AIRP save.", "", "- `current.md` is the authoritative human/Agent-readable schema.", "- `changelog.md` records applied changes and reasons.", "- `deprecated.md` records retired fields or concepts.", "- `patches/pending/*.md` records decision/risk/migration changes awaiting confirmation.", "- `patches/applied/*.md` records accepted patches after they are applied.", "", "Safe additive changes can update `current.md` and `changelog.md` directly. Use pending Markdown patches only when confirmation is needed."]),
-  },
-  {
-    path: "save/schema/current.md",
-    content: text(["# Current Novel AIRP Schema", "", "Status: draft", "", "## Entity Model", "", "Entity ids use `<type>:<localId>` and map to `save/entities/<type>/<localId>.json`.", "", "Required fields: `id`, `name`, `brief`.", "", "Recommended fields when useful: `gender`, `aliases`, `visibility`, `lifecycle`, `origin`, `sourceRefs`, `tags`, `identity`, `appearance`, `attributes`, `gauges`, `status`, `goals`, `background`, `containers`, `extensions`, `updatedAtTurn`, `updatedBy`. Deprecated: `fields`, `sections`.", "", "For `character` entities, recommended authoritative fields include `identity` (age/gender/role/affiliation/realm; deprecated keys: race/class/title), `appearance` (single narrative string; deprecated: label/value pairs), `attributes` (six dimensions 体魄/悟性/气运/根骨/法力/魅力, baseline 5), `gauges` (free-named array of `{ id, name, value, max?, min?, unit?, tone? }`; deprecated: fixed 5 keys hp/mp/sp/hunger/stamina), `status` (each `{ id, name?, description?, polarity? }` where polarity is `positive`/`negative`/`neutral`; deprecated: `status[].level`), `goals` (`{ current?, shortTerm?, longTerm? }`, each a string), `background` (single narrative string), and optional `containers` (array of `{ ref, count? }` pointing to container entities; `count` defaults to 1; omit when the character holds no container). `relationships` is not embedded in the character entity; it continues to live in `save/relationships/character-<localId>.json` shards.", "", "For `container` entities at `save/entities/container/<localId>.json`, fields are: `id`, `name`, `brief`, `type=\"container\"`, `contents: Array<{ ref, count? }>` (ref points to item or nested container entity; count defaults to 1), optional `status` (same shape as character status), `extensions`, `updatedAtTurn`, `updatedBy`. No capacity field; contents store ref+count only and do not duplicate child item name/brief.", "", "For `item` entities at `save/entities/item/<localId>.json`, fields are: `id`, `name`, `brief`, `type` (one of `equipment`/`material`/`consumable`/`special`/`other`), optional `tags: string[]`, `extensions`, `updatedAtTurn`, `updatedBy`. Items do not carry `status` (condition changes edit name/brief or use extensions) and do not carry `quantity` (quantity lives on container.contents[*].count).", "", "Omit `visibility` for ordinary player-known data. Use explicit `hidden`, `future-spoiler`, or `director-only` only for exceptions.", "", "## Frontend-readable Fields", "", "The default frontend may read `name`, `brief`, `gender`, `tags`, `identity`, `appearance`, `attributes`, `gauges`, `status`, `goals`, `background`, `containers`, `extensions`, and summaries in `save/playthrough/runtime.json`, including fixed `worldTime` (current story/world time string; empty means unknown/not established), `weather`, `location`, `activeSceneRefs`, and `protagonistRef`. It may also read `save/relationships/character-<localId>.json` shards for relationship edges, and read container/item entities on demand when opening a character's inventory.", "", "Fixed schemas (character/scene/container/item/runtime) can have bespoke frontend UI. Use `extensions` only for new or temporary player-visible fields that should enter those UI extension slots, including dynamic time mechanisms such as moon phase or countdowns; the primary current story/world time belongs in `runtime.worldTime`. Extension values choose finite `render` presets such as `text`, `number`, `progress`, `tag`, `tags`, `list`, `section`, `ref`, or `cards`.", "", "## Runtime Shape", "", "`save/playthrough/runtime.json` uses fixed fields: `turn`, `worldTime`, `location` (`{ ref, name } | null`), `weather`, `activeSceneRefs` (each `{ ref, name }`), `protagonistRef` (`{ ref, name } | null`), `extensions`, `updatedAtTurn`, `updatedBy`. Deprecated fields no longer written: `activeSceneIds`, `activeScene`, `player`, `inventory`, `status`.", "", "## Scene Shape", "", "`save/scenes/<localId>.json` `present` items are ref-only `{ ref }` pointers. Names/briefs/status are read from entity authority, not stored inline.", "", "## Gameplay Modes", "", "`save/playthrough/mode.json` stores gameplay mode states. It is not a UI module list. The default first gameplay mode is `行动裁定: deferred`.", "", "## Schema Evolution", "", "Safe additive changes update this file and `changelog.md`. Decision/risk/migration changes use pending Markdown patches."]),
-  },
-  { path: "save/schema/changelog.md", content: "# Schema Changelog\n\n" },
-  { path: "save/schema/deprecated.md", content: "# Deprecated Schema Concepts\n\n" },
-  { path: "save/schema/patches/pending/README.md", content: "# Pending Schema Patches\n\nPut Markdown schema patches awaiting confirmation here.\n" },
-  { path: "save/schema/patches/applied/README.md", content: "# Applied Schema Patches\n\nMove accepted schema patches here after applying them to current.md and changelog.md.\n" },
-  {
-    path: "save/entities/README.md",
-    content: text(["# Entities", "", "Store semantic entities as JSON files at `save/entities/<type>/<localId>.json`.", "", "Minimum entity:", "", "```json", "{", "  \"id\": \"character:萧玄\",", "  \"name\": \"萧玄\",", "  \"brief\": \"青玄门外门弟子，当前卷入山门冲突。\",", "  \"gender\": \"男\"", "}", "```", "", "Container example (`save/entities/container/<localId>.json`):", "", "```json", "{", "  \"id\": \"container:萧玄行囊\",", "  \"name\": \"外门弟子行囊\",", "  \"brief\": \"入门时统一发放的青灰色布囊。\",", "  \"type\": \"container\",", "  \"contents\": [", "    { \"ref\": \"item:清心丹\", \"count\": 3 },", "    { \"ref\": \"item:粗铁短剑\" }", "  ]", "}", "```", "", "Item example (`save/entities/item/<localId>.json`):", "", "```json", "{", "  \"id\": \"item:粗铁短剑\",", "  \"name\": \"粗铁短剑\",", "  \"brief\": \"制式短剑，刃口有小豁。\",", "  \"type\": \"equipment\",", "  \"tags\": [\"制式\", \"近战\"]", "}", "```", "", "`item.type` uses one of `equipment` / `material` / `consumable` / `special` / `other`. Quantity is stored on the containing container.contents[*].count, not on the item itself.", "", "`localId` may be Chinese, but must not contain path separators, colon, NUL, empty path segments, `.`, or `..`."]),
-  },
-  { path: "save/scenes/README.md", content: SCENES_README_MD },
-  { path: "save/relationships/README.md", content: RELATIONSHIPS_README_MD },
-  {
-    path: "save/playthrough/README.md",
-    content: text(["# Playthrough 回合运行时", "", "本目录存放存档级运行时变量、player 设置、source frontier、玩法 mode、setup 摘要与 branch 摘要。", "", "- `runtime.json`：高频访问、玩家面向或前端管理的摘要，含 `worldTime`（当前世界/剧情时间字符串，未知时为空）、`weather`、`location`（当前地点 `{ ref, name } | null`）、`activeSceneRefs`（当前活跃场景指针数组，每项 `{ ref, name }`）、`protagonistRef`（主角指针 `{ ref, name } | null`）；也可通过 `extensions` 承载新增/临时的玩家可见运行时字段，例如月相、倒计时或诅咒周期。旧字段 `activeSceneIds`/`activeScene`/`player`/`inventory`/`status` 已废弃。", "- `mode.json`：真正玩法系统的启用状态表。value 只能是 `enabled` / `disabled` / `deferred`。默认仅包含 `行动裁定: deferred`。", "- `player.json`：玩家 persona/视角设置。", "- `frontier.json`：源文本抽取/阅读进度。", "- `understanding-summary.json`：开局理解摘要。", "- `setup-summary.json`：游玩设定对话完成信号。", "- `opening-narrative.json`：开局叙事文本。", "- `branch.json`：玩家创建的分支摘要，不是源文本的重写。", "", "不要把人物卡、容器/背包、物品详情、状态栏或场景面板写入 `mode.json`。这些是前端默认渲染结构，有数据就渲染，没有就不渲染。", "", "纯前端 view state（活跃标签、滚动位置、折叠面板、瞬时过滤、悬停状态）默认不应存这里。"]),
-  },
-  { path: "save/playthrough/runtime.json", content: json({ turn: 0, worldTime: "", location: null, weather: "", activeSceneRefs: [], protagonistRef: null, extensions: {}, updatedAtTurn: 0, updatedBy: null }) },
-  { path: "save/playthrough/mode.json", content: json({ "行动裁定": "deferred" }) },
-  { path: "save/playthrough/player.json", content: json({ viewpoint: null, character: null, preferences: {} }) },
-  { path: "save/playthrough/frontier.json", content: json({ sourceWindow: { start: null, end: null }, extractedThrough: null, notes: "Track how far the imported source has been normalized, chunked, and extracted." }) },
-  { path: "save/playthrough/understanding-summary.json", content: json({ status: "pending", title: null, candidateCharacters: [] }) },
-  { path: "save/playthrough/setup-summary.json", content: json({ status: "pending", summary: null }) },
-  { path: "save/playthrough/opening-narrative.json", content: json({ narrative: null, createdAt: null }) },
-  { path: "save/playthrough/branch.json", content: json({ summary: "", divergenceLevel: "none", importantEvents: [] }) },
-  {
-    path: "save/director/README.md",
-    content: text(["# Director Brief", "", "This directory stores the current creative direction brief and metadata.", "", "`current-brief.md` should help the storyteller use available material without leaking future spoilers or over-scripted plans.", "`current-brief.meta.json` records source/entity/turn basis and staleness hints."]),
-  },
-  { path: "save/director/current-brief.md", content: text(["# Current Director Brief", "", "No director brief has been prepared yet.", "", "Expected sections when available: stage goal, tone boundaries, available narrative entities, avoid/spoiler boundaries, and refresh triggers."]) },
-  { path: "save/director/current-brief.meta.json", content: json({ basedOn: [], updatedAtTurn: 0, expiresAfterTurn: null, notes: "" }) },
   // ---- Reference Tool: roll_dice ----
   // Task 07-05 seeds a single reference Tool at the shared `tools/` scope so
   // authors have a working `tool.json` + browser_script example. Modifier is
   // strictly numeric — no expression evaluator, no scope object (AIRP value-rule
   // principle; see task PRD Notes). tsian.config is empty for Tools by design.
+  //
+  // Belongs in DEFAULT_WORKSPACE_FILES (card-content scope): `tools/**` is
+  // reusable card content, not save-runtime data.
   {
     path: "tools/README.md",
     content: text([
@@ -1636,6 +1575,70 @@ export const DEFAULT_SAVE_RUNTIME_FILES: Array<{
       "return rollDice(input, tsian);",
     ]),
   },
+]
+
+export const RUNTIME_DEFAULT_CARD_PATHS = new Set<string>([])
+
+export const DEFAULT_SAVE_RUNTIME_FILES: Array<{
+  path: string
+  content: string
+}> = [
+  {
+    path: "save/README.md",
+    content: text(["# Save Runtime Data", "", "This directory contains runtime data for the active novel AIRP save slot.", "", "Main novel AIRP runtime paths: `source/`, `schema/`, `entities/`, `scenes/`, `relationships/`, `playthrough/`, `director/`, `memory/`, and `agents/`."]),
+  },
+  { path: "save/agents/storyteller/notes.md", content: "# 说书人 Notes\n\n" },
+  { path: "save/agents/researcher/notes.md", content: "# 资料员 Notes\n\n" },
+  { path: "save/agents/stage-manager/notes.md", content: "# 场记 Notes\n\n" },
+  { path: "save/agents/world-architect/notes.md", content: "# 世界架构师 Notes\n\n" },
+  { path: "save/agents/director/notes.md", content: "# 导演 Notes\n\n" },
+  {
+    path: "save/history/README.md",
+    content: text(["# History", "", "Keep this playthrough's durable conversation records and timeline summaries here.", "Raw player-facing AIRP turns are stored under `save/history/turns/` as one JSON file per successful turn."]),
+  },
+  { path: "save/history/turns/README.md", content: text(["# Raw AIRP Turns", "", "Each successful AIRP turn is stored here as `turn-000001.json`, `turn-000002.json`, and so on.", "Turn files contain the player input and final assistant narrative only."]) },
+  { path: "save/memory/README.md", content: text(["# Runtime Memory", "", "Store this playthrough's long-term summaries, durable facts, and retrieval-oriented notes here."]) },
+  {
+    path: "save/source/README.md",
+    content: text(["# Source Corpus", "", "Imported novel text belongs here. The source corpus is the factual basis for derived schema, entities, scenes, relationships, and director briefs.", "", "Recommended layout:", "", "```text", "save/source/manifest.json", "save/source/normalized.md or save/source/novel.txt", "save/source/chapters/chapter-0001.md", "save/source/chunks/chapter-0001-003.md", "```", "", "Track progress in `save/playthrough/frontier.json` and expand the source frontier as play needs it."]),
+  },
+  { path: "save/source/manifest.json", content: json({ title: "", importedAt: null, normalizedPath: null, chapterCount: 0, chunkCount: 0, notes: "Fill this when a novel is imported." }) },
+  {
+    path: "save/schema/README.md",
+    content: text(["# Schema", "", "This directory holds the living schema for this novel AIRP save.", "", "- `current.md` is the authoritative human/Agent-readable schema.", "- `changelog.md` records applied changes and reasons.", "- `deprecated.md` records retired fields or concepts.", "- `patches/pending/*.md` records decision/risk/migration changes awaiting confirmation.", "- `patches/applied/*.md` records accepted patches after they are applied.", "", "Safe additive changes can update `current.md` and `changelog.md` directly. Use pending Markdown patches only when confirmation is needed."]),
+  },
+  {
+    path: "save/schema/current.md",
+    content: text(["# Current Novel AIRP Schema", "", "Status: draft", "", "## Entity Model", "", "Entity ids use `<type>:<localId>` and map to `save/entities/<type>/<localId>.json`.", "", "Required fields: `id`, `name`, `brief`.", "", "Recommended fields when useful: `gender`, `aliases`, `visibility`, `lifecycle`, `origin`, `sourceRefs`, `tags`, `identity`, `appearance`, `attributes`, `gauges`, `status`, `goals`, `background`, `containers`, `extensions`, `updatedAtTurn`, `updatedBy`. Deprecated: `fields`, `sections`.", "", "For `character` entities, recommended authoritative fields include `identity` (age/gender/role/affiliation/realm; deprecated keys: race/class/title), `appearance` (single narrative string; deprecated: label/value pairs), `attributes` (six dimensions 体魄/悟性/气运/根骨/法力/魅力, baseline 5), `gauges` (free-named array of `{ id, name, value, max?, min?, unit?, tone? }`; deprecated: fixed 5 keys hp/mp/sp/hunger/stamina), `status` (each `{ id, name?, description?, polarity? }` where polarity is `positive`/`negative`/`neutral`; deprecated: `status[].level`), `goals` (`{ current?, shortTerm?, longTerm? }`, each a string), `background` (single narrative string), and optional `containers` (array of `{ ref, count? }` pointing to container entities; `count` defaults to 1; omit when the character holds no container). `relationships` is not embedded in the character entity; it continues to live in `save/relationships/character-<localId>.json` shards.", "", "For `container` entities at `save/entities/container/<localId>.json`, fields are: `id`, `name`, `brief`, `type=\"container\"`, `contents: Array<{ ref, count? }>` (ref points to item or nested container entity; count defaults to 1), optional `status` (same shape as character status), `extensions`, `updatedAtTurn`, `updatedBy`. No capacity field; contents store ref+count only and do not duplicate child item name/brief.", "", "For `item` entities at `save/entities/item/<localId>.json`, fields are: `id`, `name`, `brief`, `type` (one of `equipment`/`material`/`consumable`/`special`/`other`), optional `tags: string[]`, `extensions`, `updatedAtTurn`, `updatedBy`. Items do not carry `status` (condition changes edit name/brief or use extensions) and do not carry `quantity` (quantity lives on container.contents[*].count).", "", "Omit `visibility` for ordinary player-known data. Use explicit `hidden`, `future-spoiler`, or `director-only` only for exceptions.", "", "## Frontend-readable Fields", "", "The default frontend may read `name`, `brief`, `gender`, `tags`, `identity`, `appearance`, `attributes`, `gauges`, `status`, `goals`, `background`, `containers`, `extensions`, and summaries in `save/playthrough/runtime.json`, including fixed `worldTime` (current story/world time string; empty means unknown/not established), `weather`, `location`, `activeSceneRefs`, and `protagonistRef`. It may also read `save/relationships/character-<localId>.json` shards for relationship edges, and read container/item entities on demand when opening a character's inventory.", "", "Fixed schemas (character/scene/container/item/runtime) can have bespoke frontend UI. Use `extensions` only for new or temporary player-visible fields that should enter those UI extension slots, including dynamic time mechanisms such as moon phase or countdowns; the primary current story/world time belongs in `runtime.worldTime`. Extension values choose finite `render` presets such as `text`, `number`, `progress`, `tag`, `tags`, `list`, `section`, `ref`, or `cards`.", "", "## Runtime Shape", "", "`save/playthrough/runtime.json` uses fixed fields: `turn`, `worldTime`, `location` (`{ ref, name } | null`), `weather`, `activeSceneRefs` (each `{ ref, name }`), `protagonistRef` (`{ ref, name } | null`), `extensions`, `updatedAtTurn`, `updatedBy`. Deprecated fields no longer written: `activeSceneIds`, `activeScene`, `player`, `inventory`, `status`.", "", "## Scene Shape", "", "`save/scenes/<localId>.json` `present` items are ref-only `{ ref }` pointers. Names/briefs/status are read from entity authority, not stored inline.", "", "## Gameplay Modes", "", "`save/playthrough/mode.json` stores gameplay mode states. It is not a UI module list. The default first gameplay mode is `行动裁定: deferred`.", "", "## Schema Evolution", "", "Safe additive changes update this file and `changelog.md`. Decision/risk/migration changes use pending Markdown patches."]),
+  },
+  { path: "save/schema/changelog.md", content: "# Schema Changelog\n\n" },
+  { path: "save/schema/deprecated.md", content: "# Deprecated Schema Concepts\n\n" },
+  { path: "save/schema/patches/pending/README.md", content: "# Pending Schema Patches\n\nPut Markdown schema patches awaiting confirmation here.\n" },
+  { path: "save/schema/patches/applied/README.md", content: "# Applied Schema Patches\n\nMove accepted schema patches here after applying them to current.md and changelog.md.\n" },
+  {
+    path: "save/entities/README.md",
+    content: text(["# Entities", "", "Store semantic entities as JSON files at `save/entities/<type>/<localId>.json`.", "", "Minimum entity:", "", "```json", "{", "  \"id\": \"character:萧玄\",", "  \"name\": \"萧玄\",", "  \"brief\": \"青玄门外门弟子，当前卷入山门冲突。\",", "  \"gender\": \"男\"", "}", "```", "", "Container example (`save/entities/container/<localId>.json`):", "", "```json", "{", "  \"id\": \"container:萧玄行囊\",", "  \"name\": \"外门弟子行囊\",", "  \"brief\": \"入门时统一发放的青灰色布囊。\",", "  \"type\": \"container\",", "  \"contents\": [", "    { \"ref\": \"item:清心丹\", \"count\": 3 },", "    { \"ref\": \"item:粗铁短剑\" }", "  ]", "}", "```", "", "Item example (`save/entities/item/<localId>.json`):", "", "```json", "{", "  \"id\": \"item:粗铁短剑\",", "  \"name\": \"粗铁短剑\",", "  \"brief\": \"制式短剑，刃口有小豁。\",", "  \"type\": \"equipment\",", "  \"tags\": [\"制式\", \"近战\"]", "}", "```", "", "`item.type` uses one of `equipment` / `material` / `consumable` / `special` / `other`. Quantity is stored on the containing container.contents[*].count, not on the item itself.", "", "`localId` may be Chinese, but must not contain path separators, colon, NUL, empty path segments, `.`, or `..`."]),
+  },
+  { path: "save/scenes/README.md", content: SCENES_README_MD },
+  { path: "save/relationships/README.md", content: RELATIONSHIPS_README_MD },
+  {
+    path: "save/playthrough/README.md",
+    content: text(["# Playthrough 回合运行时", "", "本目录存放存档级运行时变量、player 设置、source frontier、玩法 mode、setup 摘要与 branch 摘要。", "", "- `runtime.json`：高频访问、玩家面向或前端管理的摘要，含 `worldTime`（当前世界/剧情时间字符串，未知时为空）、`weather`、`location`（当前地点 `{ ref, name } | null`）、`activeSceneRefs`（当前活跃场景指针数组，每项 `{ ref, name }`）、`protagonistRef`（主角指针 `{ ref, name } | null`）；也可通过 `extensions` 承载新增/临时的玩家可见运行时字段，例如月相、倒计时或诅咒周期。旧字段 `activeSceneIds`/`activeScene`/`player`/`inventory`/`status` 已废弃。", "- `mode.json`：真正玩法系统的启用状态表。value 只能是 `enabled` / `disabled` / `deferred`。默认仅包含 `行动裁定: deferred`。", "- `player.json`：玩家 persona/视角设置。", "- `frontier.json`：源文本抽取/阅读进度。", "- `understanding-summary.json`：开局理解摘要。", "- `setup-summary.json`：游玩设定对话完成信号。", "- `opening-narrative.json`：开局叙事文本。", "- `branch.json`：玩家创建的分支摘要，不是源文本的重写。", "", "不要把人物卡、容器/背包、物品详情、状态栏或场景面板写入 `mode.json`。这些是前端默认渲染结构，有数据就渲染，没有就不渲染。", "", "纯前端 view state（活跃标签、滚动位置、折叠面板、瞬时过滤、悬停状态）默认不应存这里。"]),
+  },
+  { path: "save/playthrough/runtime.json", content: json({ turn: 0, worldTime: "", location: null, weather: "", activeSceneRefs: [], protagonistRef: null, extensions: {}, updatedAtTurn: 0, updatedBy: null }) },
+  { path: "save/playthrough/mode.json", content: json({ "行动裁定": "deferred" }) },
+  { path: "save/playthrough/player.json", content: json({ viewpoint: null, character: null, preferences: {} }) },
+  { path: "save/playthrough/frontier.json", content: json({ sourceWindow: { start: null, end: null }, extractedThrough: null, notes: "Track how far the imported source has been normalized, chunked, and extracted." }) },
+  { path: "save/playthrough/understanding-summary.json", content: json({ status: "pending", title: null, candidateCharacters: [] }) },
+  { path: "save/playthrough/setup-summary.json", content: json({ status: "pending", summary: null }) },
+  { path: "save/playthrough/opening-narrative.json", content: json({ narrative: null, createdAt: null }) },
+  { path: "save/playthrough/branch.json", content: json({ summary: "", divergenceLevel: "none", importantEvents: [] }) },
+  {
+    path: "save/director/README.md",
+    content: text(["# Director Brief", "", "This directory stores the current creative direction brief and metadata.", "", "`current-brief.md` should help the storyteller use available material without leaking future spoilers or over-scripted plans.", "`current-brief.meta.json` records source/entity/turn basis and staleness hints."]),
+  },
+  { path: "save/director/current-brief.md", content: text(["# Current Director Brief", "", "No director brief has been prepared yet.", "", "Expected sections when available: stage goal, tone boundaries, available narrative entities, avoid/spoiler boundaries, and refresh triggers."]) },
+  { path: "save/director/current-brief.meta.json", content: json({ basedOn: [], updatedAtTurn: 0, expiresAfterTurn: null, notes: "" }) },
   {
     path: WORKSPACE_MANIFEST_PATH,
     content: json({
