@@ -30,3 +30,15 @@
 ## Notes
 
 行动裁定是第一版真正玩法系统。它的实现应保持可扩展，但不要一开始设计成完整 TRPG 规则引擎；先满足轻量判定、修正和对抗，再根据剧情和后续 Skill 扩展。
+
+## Planning Decisions (2026-07-05)
+
+- 脚本能力载体：**工具化**（类 MCP tool），不做共享 helper，也不做每次都要 skill 冷加载的 Agent-local Skill 内嵌脚本。理由：分发 & 加载成本、复用性、Agent 单轮内直接调用。
+- 因此本任务 **依赖** `07-05-agent-tool-mechanism` 先完成基础机制；在其 GA 前，本任务 planning 暂停，不进入 design/implement 补齐阶段。
+- 裁定结果定位：**类 DM 掷骰**——重点是产出随机结果 + 情境偏置（advantage / disadvantage），让剧情出现一波三折；不做完整 TRPG 规则输出，不要求 narrative 生成能力。
+- 默认 rules/schema：**内置默认规则与示例**（不由世界架构师临时生成），启用时直接可用，避免冷启空转。
+- 子任务粒度：不再拆分，作为单一复杂任务推进（tool 机制就绪后）。
+
+## Blocked On
+
+- `07-05-agent-tool-mechanism`（planning 中）→ 需其确定 tool 注册/调用/结果协议后，本任务再补 `design.md` / `implement.md` 并进入实施。
