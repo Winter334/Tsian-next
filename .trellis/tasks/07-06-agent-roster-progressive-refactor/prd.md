@@ -48,13 +48,18 @@
    - 已从默认 Agent / Skill / schema guide / README 中移除所有面向 Agent 的 `mode.json` 与 `enabled/disabled/deferred` 软开关语义（零表面痕迹）。
    - 已从 stage-manager / world-architect `contextPaths` 中移除 `save/playthrough/mode.json`。
    - `roll_dice` Tool 作为通用能力保留；行动裁定规则的重新引入延后到具体玩家流程重构子任务。
+   - 已知残留（不属于本任务范围）：`apps/play-frontend-dev/src/lib/source.ts:465,470` 的 `buildPlaySetupPrompt` 仍含 mode.json 三态选择与 `commit_mode` 引用文本，由 Step 4 游玩设定子任务处理。
 
-2. 开局向导：世界架构师 + 导演重构（下一步）
-   - 目标：处理玩家开局流程中第一个涉及 Agent 的步骤，重写世界架构师与导演的 `AGENT.md` / `SOUL.md`，并设计该步骤实际需要的 Skill / Tool。
-   - 范围：只覆盖开局向导该一步，不处理正式回合。
+2. Understanding 步：world-architect + director 重构（进行中，`07-06-understanding-step-world-architect-director`）
+   - 目标：开局向导 Step 2 Understanding——重写 world-architect / director 的 AGENT.md / SOUL.md，审视 `开局建模` / `剧情指导维护` Skill 与两者 contextPaths。
+   - 范围：只覆盖 Step 2 Understanding，不触碰 Step 4 游玩设定。
 
-3. 后续步骤待补
-   - 按玩家实际流程继续拆分；遇到已处理 Agent 时只补充当前步骤需要的职责和能力。
+3. 游玩设定步：world-architect（+ storyteller 协作）重构（待启动）
+   - 目标：开局向导 Step 4 游玩设定——重写 `游玩设定` Skill，清理 `buildPlaySetupPrompt` 中 mode.json 残留，审视 world-architect 在本步的职责（+ agent_call storyteller 拿开局正文的协作）。
+   - 范围：只覆盖 Step 4 游玩设定 + Step 5 开局确认过渡。
+
+4. 后续步骤待补
+   - 按玩家实际流程继续拆分（开局确认/生成 → 正式玩家回合 → 回合后维护 → 前台状态反馈）；遇到已处理 Agent 时只补充当前步骤需要的职责和能力。
 
 ## Player Flow Map (working)
 
@@ -63,13 +68,15 @@
 | # | 玩家步骤 | 涉及 Agent | 状态 |
 | - | - | - | - |
 | 0 | 前端开局操作（导入源、选卡） | — 无 Agent — | 不在本任务范围 |
-| 1 | 开局向导 / 世界建模 | world-architect, director | 待启动 |
+| 1a | 开局向导 Step 2：Understanding（初始世界建模） | world-architect, director | 进行中 (`07-06-understanding-step-world-architect-director`) |
+| 1b | 开局向导 Step 4：游玩设定对话 | world-architect, storyteller (agent_call) | 待启动 |
+| 1c | 开局向导 Step 5：开局确认过渡 | — 无 Agent — | 不在本任务范围 |
 | 2 | 开局确认 / 生成 | world-architect, storyteller | 待规划 |
 | 3 | 正式玩家回合 | storyteller, researcher | 待规划 |
 | 4 | 回合后维护 | stage-manager, researcher, world-architect | 待规划 |
 | 5 | 前台状态反馈 | stage-manager | 待规划 |
 
-前置清理（`mode.json` 抽象）已归档，属于全流程共享的历史包袱清理，不绑定单一步骤。
+前置清理（`mode.json` 抽象）已归档，属于全流程共享的历史包袱清理，不绑定单一步骤。Step 1/3/5 是纯前端步骤，无 Agent 参与。
 
 ## Current Agent / Skill / Tool Ledger
 
