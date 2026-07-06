@@ -411,6 +411,13 @@ export interface AgentConfig {
   contacts: string[]
   contextPaths: string[]
   skills: AgentSkillConfig
+  /**
+   * Agent-scoped Tool whitelist/blacklist. Empty `enabled` means "no user
+   * tools exposed by default" — enabling is explicit per agent. Agent-local
+   * tools (under `agents/<agentId>/tools/`) are always available to their
+   * owning agent regardless of `enabled`.
+   */
+  tools?: AgentToolConfig
   platformTools: AgentPlatformToolConfig
   workspaceAccess: AgentWorkspaceAccessConfig
   knowledgeMount?: string
@@ -444,6 +451,10 @@ export interface AgentRegistryEntry {
   defaultSkills: string[]
   enabledSkills: string[]
   disabledSkills: string[]
+  /** Explicit user-tool whitelist parsed from `agent.json.tools.enabled`. */
+  enabledTools: string[]
+  /** Explicit user-tool blacklist parsed from `agent.json.tools.disabled`. */
+  disabledTools: string[]
   platformTools: AgentPlatformToolConfig
   workspaceAccess: AgentWorkspaceAccessConfig
   contextPaths: string[]
@@ -462,6 +473,8 @@ export interface AgentContextEntry {
   soulFile?: WorkspaceFile
   notesFile?: WorkspaceFile
   skillIndex: SkillRegistryEntry[]
+  /** Tools visible to this Agent after `tools.enabled/disabled` filtering. */
+  toolIndex: ToolRegistryEntry[]
   contextFiles: WorkspaceFile[]
   knowledgeFiles: WorkspaceFile[]
   missingContextPaths: string[]
@@ -533,6 +546,80 @@ export interface SkillDetailEntry {
   registry: SkillRegistryEntry
   file: WorkspaceFile
   resources: SkillResourceEntry[]
+}
+
+/**
+ * Agent Tool layer (parallel to Skill layer, MCP-like).
+ *
+ * A Tool is an atomic callable capability declared by a `tool.json` manifest
+ * plus a sibling `browser_script`. Tools are exposed directly to the Agent's
+ * native function calling schemas — no `use_skill` activation required. See
+ * `.trellis/spec/*` for the Tool vs Skill boundary.
+ *
+ * Path layout (mirrors the Skill layer):
+ *   - Shared:      `tools/<id>/tool.json`
+ *   - Agent-local: `agents/<agentId>/tools/<id>/tool.json`
+ *   - User-local:  `.tsian/local/<agentId>/tools/<id>/tool.json`
+ */
+export interface AgentToolConfig {
+  enabled: string[]
+  disabled: string[]
+}
+
+export type ToolRegistryScope = "shared" | "agent-local"
+
+/**
+ * A single Tool registry entry. `name` is the wire name used by the Agent's
+ * native function-calling schema (English snake_case). `title`/`description`
+ * are Chinese-native and shown to users in Studio. `parameters` is a
+ * JSON-Schema-shaped object suitable for direct injection into the model's
+ * function schema.
+ */
+export interface ToolRegistryEntry {
+  /** Registry id derived from the directory name (e.g. `roll_dice`). */
+  id: string
+  /** Wire name used by native function-calling. Equal to `id` today. */
+  name: string
+  /** Chinese-native short title shown in Studio. */
+  title: string
+  /** Chinese-native description that also becomes the function schema `description`. */
+  description: string
+  /** Absolute workspace path to the `tool.json` manifest. */
+  path: string
+  /** Absolute workspace path to the tool's directory (script root). */
+  directoryPath: string
+  scope: ToolRegistryScope
+  /** Owning agent id when `scope === "agent-local"`. */
+  agentId?: string
+  /** JSON-Schema-shaped parameters block. */
+  parameters: Record<string, unknown>
+  /** Executor reference (only `browser_script` supported today). */
+  executor: {
+    type: string
+    /** Script path relative to `directoryPath` (e.g. `run.js`). */
+    path: string
+    /** Optional per-tool timeout override. */
+    timeoutMs?: number
+    /** Optional helper script paths (relative to `directoryPath`). */
+    helpers?: string[]
+  }
+  updatedAt: number
+}
+
+/**
+ * A single registry diagnostic emitted by tool/skill discovery. Diagnostics
+ * are shown in Studio's registry-health panel and never abort registry build.
+ */
+export interface RegistryDiagnostic {
+  level: "error" | "warn" | "info"
+  /** Stable machine code (e.g. `TOOL_MANIFEST_INVALID_JSON`). */
+  code: string
+  /** Human-readable Chinese-native message. */
+  message: string
+  /** Optional workspace path that triggered the diagnostic. */
+  path?: string
+  /** Optional fix hint shown alongside the message. */
+  hint?: string
 }
 
 export interface WorkspaceListResult {

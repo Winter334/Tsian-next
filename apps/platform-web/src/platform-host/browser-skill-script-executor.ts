@@ -222,6 +222,81 @@ const tsian = Object.freeze({
       const v = currentConfig[key];
       return v !== undefined ? { enumerable: true, configurable: true, value: v, writable: false } : undefined;
     },
+  }),
+  // tsian.lib.*：脚本可复用的确定性小工具。收纳原则（见 design.md §6）：
+  // 纯函数、平台不承担精确算术、无隐藏状态、无 IO、无网络。
+  // v1 只有 random（uncertainty 建模）。刻意不加 math / 表达式求值器：AIRP 不是 TTRPG，
+  // 衍生数值由前端在状态变更点算好写入 workspace，LLM 只读终值。
+  lib: Object.freeze({
+    // random：不做加密安全，只做故事骰。Math.random 的可预测性对叙事无害，
+    // 不满足需求的场景应绕开 SDK 走宿主 crypto 通道（v1 未开放）。
+    random: Object.freeze({
+      // nextInt(minInclusive, maxInclusive)：闭区间整数。参数非有限数 / min > max 抛错。
+      nextInt(minInclusive, maxInclusive) {
+        var lo = Number(minInclusive);
+        var hi = Number(maxInclusive);
+        if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+          throw Object.assign(new Error("tsian.lib.random.nextInt requires finite numbers."), {
+            code: "TSIAN_LIB_RANDOM_INVALID_ARGS",
+            details: { minInclusive: minInclusive, maxInclusive: maxInclusive },
+          });
+        }
+        lo = Math.floor(lo);
+        hi = Math.floor(hi);
+        if (lo > hi) {
+          throw Object.assign(new Error("tsian.lib.random.nextInt: min must be <= max."), {
+            code: "TSIAN_LIB_RANDOM_INVALID_ARGS",
+            details: { minInclusive: lo, maxInclusive: hi },
+          });
+        }
+        return lo + Math.floor(Math.random() * (hi - lo + 1));
+      },
+      // dice({ sides, count?, modifier?, advantage?, disadvantage? })
+      // - sides ≥ 2, count ≥ 1（默认 1），modifier 数值（默认 0）
+      // - advantage / disadvantage 只在 count === 1 时生效（otherwise silently ignored）
+      // - 返回 { rolls, kept, modifier, total }（kept 是应用 adv/dis 之后被计数的骰值数组）
+      dice(input) {
+        var opts = isRecord(input) ? input : {};
+        var sides = Math.floor(Number(opts.sides));
+        var count = opts.count === undefined ? 1 : Math.floor(Number(opts.count));
+        var modifier = opts.modifier === undefined ? 0 : Number(opts.modifier);
+        var advantage = Boolean(opts.advantage);
+        var disadvantage = Boolean(opts.disadvantage);
+        if (!Number.isFinite(sides) || sides < 2) {
+          throw Object.assign(new Error("tsian.lib.random.dice: sides must be >= 2."), {
+            code: "TSIAN_LIB_RANDOM_INVALID_ARGS",
+            details: { sides: opts.sides },
+          });
+        }
+        if (!Number.isFinite(count) || count < 1) {
+          throw Object.assign(new Error("tsian.lib.random.dice: count must be >= 1."), {
+            code: "TSIAN_LIB_RANDOM_INVALID_ARGS",
+            details: { count: opts.count },
+          });
+        }
+        if (!Number.isFinite(modifier)) {
+          throw Object.assign(new Error("tsian.lib.random.dice: modifier must be a finite number."), {
+            code: "TSIAN_LIB_RANDOM_INVALID_ARGS",
+            details: { modifier: opts.modifier },
+          });
+        }
+        var rolls = [];
+        // adv/dis 对 count === 1：滚两次取高/低；其他 count 忽略（design.md §6）
+        var rollTimes = (count === 1 && (advantage || disadvantage)) ? 2 : count;
+        for (var i = 0; i < rollTimes; i++) {
+          rolls.push(1 + Math.floor(Math.random() * sides));
+        }
+        var kept;
+        if (count === 1 && (advantage || disadvantage) && !(advantage && disadvantage)) {
+          kept = [advantage ? Math.max(rolls[0], rolls[1]) : Math.min(rolls[0], rolls[1])];
+        } else {
+          kept = rolls.slice();
+        }
+        var sum = 0;
+        for (var j = 0; j < kept.length; j++) sum += kept[j];
+        return { rolls: rolls, kept: kept, modifier: modifier, total: sum + modifier };
+      },
+    }),
   })
 });
 
@@ -461,9 +536,33 @@ function skillDirectoryPath(skillPath: string): string {
   return slashIndex >= 0 ? skillPath.slice(0, slashIndex) : ""
 }
 
-function isScriptUnderSkillDirectory(request: RuntimeBrowserScriptExecutorRequest): boolean {
-  const skillDirectory = skillDirectoryPath(request.skillPath)
-  return Boolean(skillDirectory) && request.scriptPath.startsWith(`${skillDirectory}/`)
+/**
+ * Resolve the owning directory for a browser-script request.
+ *
+ * - Tool owner (`ownerType === "tool"`): use the explicit `rootDirectory`
+ *   carried by the Tool dispatch branch. An empty/missing value returns "" —
+ *   downstream code treats that as an invalid request.
+ * - Skill owner (default): derive from `skillPath`. Callers that omit
+ *   `ownerType` entirely still work — the pre-Tool code path is preserved.
+ */
+function resolveOwnerRoot(request: RuntimeBrowserScriptExecutorRequest): string {
+  if (request.ownerType === "tool") {
+    return request.rootDirectory ?? ""
+  }
+  return skillDirectoryPath(request.skillPath)
+}
+
+/**
+ * Owner-agnostic label for diagnostics. `"skill"` (default) preserves the
+ * existing wording so Skill-owned errors remain unchanged.
+ */
+function ownerLabel(request: RuntimeBrowserScriptExecutorRequest): "skill" | "tool" {
+  return request.ownerType === "tool" ? "tool" : "skill"
+}
+
+function isScriptUnderOwnerDirectory(request: RuntimeBrowserScriptExecutorRequest): boolean {
+  const root = resolveOwnerRoot(request)
+  return Boolean(root) && request.scriptPath.startsWith(`${root}/`)
 }
 
 /**
@@ -499,12 +598,13 @@ function resolveAndInlineImportScripts(
   request: RuntimeBrowserScriptExecutorRequest,
   workspaceFiles: WorkspaceFile[],
 ): PlatformActionResult {
-  const skillDirectory = skillDirectoryPath(request.skillPath)
-  if (!skillDirectory) {
+  const ownerRoot = resolveOwnerRoot(request)
+  const label = ownerLabel(request)
+  if (!ownerRoot) {
     return actionError(
       "BROWSER_SCRIPT_PATH_INVALID",
-      "Browser script requires a skill directory to resolve vendor imports.",
-      { skillPath: request.skillPath },
+      `Browser script requires a ${label} directory to resolve vendor imports.`,
+      { skillPath: request.skillPath, rootDirectory: request.rootDirectory ?? null },
     )
   }
 
@@ -525,20 +625,19 @@ function resolveAndInlineImportScripts(
       const trimmed = rawPath.trim()
       if (!trimmed) continue
 
-      // 拒绝绝对 URL / 绝对路径（协议前缀或 / 开头）——vendor 必须是 skill 目录内相对路径
+      // 拒绝绝对 URL / 绝对路径（协议前缀或 / 开头）——vendor 必须是 owner 目录内相对路径
       if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) || trimmed.startsWith("/")) {
         return actionError(
           "BROWSER_SCRIPT_VENDOR_PATH_INVALID",
-          `importScripts path must be a relative path under the skill directory (no absolute URLs): ${trimmed}`,
-          { skillPath: request.skillPath, vendorPath: trimmed },
+          `importScripts path must be a relative path under the ${label} directory (no absolute URLs): ${trimmed}`,
+          { skillPath: request.skillPath, rootDirectory: request.rootDirectory ?? null, vendorPath: trimmed },
         )
       }
 
-      // 路径相对 skill 目录拼接，再规范化（解析 .. 和 . 段）
-      // 规范化后校验逃逸：skills/my-skill/../escape.js → skills/escape.js → 不以 skillDir/ 开头 → 拦截
-      const combined = trimmed.startsWith(`${skillDirectory}/`)
+      // 路径相对 owner 目录拼接，再规范化（解析 .. 和 . 段）
+      const combined = trimmed.startsWith(`${ownerRoot}/`)
         ? trimmed
-        : `${skillDirectory}/${trimmed}`
+        : `${ownerRoot}/${trimmed}`
       const normalized = normalizeWorkspacePath(combined, {
         allowEmpty: false,
         rejectTrailingSlash: true,
@@ -547,17 +646,17 @@ function resolveAndInlineImportScripts(
         return actionError(
           "BROWSER_SCRIPT_VENDOR_PATH_INVALID",
           `importScripts path is invalid: ${trimmed}`,
-          { skillPath: request.skillPath, vendorPath: trimmed, error: normalized.message },
+          { skillPath: request.skillPath, rootDirectory: request.rootDirectory ?? null, vendorPath: trimmed, error: normalized.message },
         )
       }
       const resolvedPath = normalized.path
 
-      // 逃逸校验：规范化后必须以 skillDirectory/ 开头（防 ../ 逃逸）
-      if (!resolvedPath.startsWith(`${skillDirectory}/`)) {
+      // 逃逸校验：规范化后必须以 ownerRoot/ 开头（防 ../ 逃逸）
+      if (!resolvedPath.startsWith(`${ownerRoot}/`)) {
         return actionError(
           "BROWSER_SCRIPT_VENDOR_PATH_INVALID",
-          `importScripts path must stay under the skill directory: ${trimmed}`,
-          { skillPath: request.skillPath, vendorPath: trimmed, resolvedPath },
+          `importScripts path must stay under the ${label} directory: ${trimmed}`,
+          { skillPath: request.skillPath, rootDirectory: request.rootDirectory ?? null, vendorPath: trimmed, resolvedPath },
         )
       }
 
@@ -571,7 +670,7 @@ function resolveAndInlineImportScripts(
         return actionError(
           "BROWSER_SCRIPT_VENDOR_NOT_FOUND",
           `importScripts vendor file was not found: ${trimmed}`,
-          { skillPath: request.skillPath, vendorPath: trimmed, resolvedPath },
+          { skillPath: request.skillPath, rootDirectory: request.rootDirectory ?? null, vendorPath: trimmed, resolvedPath },
         )
       }
 
@@ -581,7 +680,7 @@ function resolveAndInlineImportScripts(
         return actionError(
           "BROWSER_SCRIPT_VENDOR_NOT_JS",
           `importScripts vendor file must be JavaScript (.js/.mjs): ${trimmed}`,
-          { skillPath: request.skillPath, vendorPath: trimmed, mediaType },
+          { skillPath: request.skillPath, rootDirectory: request.rootDirectory ?? null, vendorPath: trimmed, mediaType },
         )
       }
 
@@ -624,12 +723,14 @@ async function resolveAndConcatHelpers(
   for (const rawPath of helpers) {
     let resolvedPath: string
     try {
-      resolvedPath = resolveHelperPath(request.skillPath, request.skillName, rawPath)
+      resolvedPath = request.ownerType === "tool"
+        ? resolveToolHelperPath(request, rawPath)
+        : resolveHelperPath(request.skillPath, request.skillName, rawPath)
     } catch (error) {
       return actionError(
         "BROWSER_SCRIPT_HELPER_PATH_INVALID",
         error instanceof Error ? error.message : "Helper path is invalid.",
-        { helperPath: rawPath, skillPath: request.skillPath },
+        { helperPath: rawPath, skillPath: request.skillPath, rootDirectory: request.rootDirectory ?? null },
       )
     }
 
@@ -650,6 +751,45 @@ async function resolveAndConcatHelpers(
   }
 
   return { ok: true, item: parts.join("\n") + "\n" + inlinedSource }
+}
+
+/**
+ * Tool-owned helper path resolution. Stricter than Skill:
+ * - Only root-relative paths (relative to Tool's `rootDirectory`).
+ * - Absolute paths (starting with `/` or containing `:` protocol) rejected.
+ * - `../` escaping the Tool root rejected.
+ *
+ * Tools are single-directory units — cross-tool helper reuse is not a design
+ * goal. Keep Tool boundary tight; if reuse ever matters, revisit here.
+ */
+function resolveToolHelperPath(
+  request: RuntimeBrowserScriptExecutorRequest,
+  helperPath: string,
+): string {
+  const root = request.rootDirectory ?? ""
+  if (!root) {
+    throw new Error("Tool helper resolution requires a rootDirectory.")
+  }
+  const trimmed = helperPath.trim()
+  if (!trimmed) {
+    throw new Error(`Tool helper path is empty.`)
+  }
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(trimmed) || trimmed.startsWith("/")) {
+    throw new Error(`Tool helper path must be relative to the tool directory: ${helperPath}`)
+  }
+  const stripped = trimmed.startsWith("./") ? trimmed.slice(2) : trimmed
+  const combined = stripped.startsWith(`${root}/`) ? stripped : `${root}/${stripped}`
+  const normalized = normalizeWorkspacePath(combined, {
+    allowEmpty: false,
+    rejectTrailingSlash: true,
+  })
+  if (!normalized.ok) {
+    throw new Error(`Tool helper path is invalid: ${helperPath} (${normalized.message})`)
+  }
+  if (!normalized.path.startsWith(`${root}/`)) {
+    throw new Error(`Tool helper path must stay under the tool directory: ${helperPath}`)
+  }
+  return normalized.path
 }
 
 async function handleSdkRequest(
@@ -913,12 +1053,13 @@ export function createBrowserSkillScriptRunner(
     request: RuntimeBrowserScriptExecutorRequest,
     executorContext?: RuntimeControlledExecutorContext,
   ): Promise<PlatformActionResult> => {
-    if (!isScriptUnderSkillDirectory(request)) {
+    if (!isScriptUnderOwnerDirectory(request)) {
       return actionError(
         "BROWSER_SCRIPT_PATH_INVALID",
-        "Browser script path must stay under the declaring Skill directory.",
+        `Browser script path must stay under the declaring ${ownerLabel(request)} directory.`,
         {
           skillPath: request.skillPath,
+          rootDirectory: request.rootDirectory ?? null,
           scriptPath: request.scriptPath,
         },
       )
@@ -977,10 +1118,15 @@ export function createBrowserSkillScriptRunner(
     // Merge declared config defaults with player-saved overrides, then inject
     // as `tsian.config`. A skill without configItems yields an empty object —
     // `config.API_KEY` returns undefined and the script handles the missing key.
-    const playerValues = request.configItems && request.configItems.length > 0
+    // Tool owner: `tsian.config` is always `{}` by design (PRD R12) — never
+    // touch readSkillConfig even if a stray configItems field slipped in.
+    const isToolOwner = request.ownerType === "tool"
+    const playerValues = !isToolOwner && request.configItems && request.configItems.length > 0
       ? await readSkillConfig(request.skillPath)
       : {}
-    const mergedConfig = mergeSkillConfig(request.configItems, playerValues)
+    const mergedConfig = isToolOwner
+      ? {}
+      : mergeSkillConfig(request.configItems, playerValues)
 
     return runWorkerScript(options, request, finalSource, executorContext, mergedConfig)
   }

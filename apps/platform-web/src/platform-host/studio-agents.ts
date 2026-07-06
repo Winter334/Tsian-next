@@ -2,18 +2,23 @@ import type {
   AgentContextEntry,
   AgentPlatformToolName,
   AgentRegistryEntry,
+  RegistryDiagnostic,
   SkillDetailEntry,
   SkillRegistryEntry,
+  ToolRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
 import type { LocalGameCardRecord } from "../storage"
 import {
   buildAgentRegistry,
   buildSkillRegistry,
+  buildToolRegistry,
   isSkillEnabledForAgent,
+  isToolEnabledForAgent,
   loadSkillDetail,
   skillMatchesReference,
   skillMetadataReference,
+  toolMatchesReference,
 } from "../agent-runtime/registry"
 import { assembleAgentContext } from "../agent-runtime/context"
 import {
@@ -45,6 +50,21 @@ export interface PlatformStudioSnapshot {
   usingSaveContext: boolean
   agents: AgentRegistryEntry[]
   skills: SkillRegistryEntry[]
+  /**
+   * All Tool manifests discovered in the workspace (shared + agent-local +
+   * `.tsian/local/**`). Studio renders per-Agent enable/disable state by
+   * cross-referencing this list with `agent.tools.enabled/disabled` and the
+   * usual same-name-shadowing rules (see `filterToolsForAgent`). Empty when no
+   * `tool.json` files are present.
+   */
+  tools: ToolRegistryEntry[]
+  /**
+   * Registry-health diagnostics collected during Tool discovery for the
+   * current workspace. Studio renders a badge + panel listing severity, code,
+   * message, path, hint. Skill-side diagnostics still flow through their own
+   * `SkillRegistryEntry.errors` field — the tool layer is additive.
+   */
+  toolDiagnostics: RegistryDiagnostic[]
   providerPresets: PlatformStudioProviderPresetOption[]
 }
 
@@ -62,6 +82,22 @@ export interface PlatformStudioAgentSkillToggleInput {
 
 export interface PlatformStudioAgentSkillDeleteInput {
   skillPath: string
+}
+
+/**
+ * Toggle a Tool's visibility for a specific Agent. Mirrors the Skill toggle
+ * flow: rewrites `agent.json.tools.enabled/disabled` such that the tool ends
+ * up in the requested state under the same shadow/whitelist rules used at
+ * runtime (`isToolEnabledForAgent`).
+ *
+ * `toolName` is the wire name declared in `tool.json` (`ToolRegistryEntry.name`).
+ * Tools in the `.tsian/local/**` scope are not distributed but are still
+ * gated by the same `enabled/disabled` fields.
+ */
+export interface PlatformStudioAgentToolToggleInput {
+  agentId: string
+  toolName: string
+  enabled: boolean
 }
 
 export interface PlatformStudioAgentPlatformToolToggleInput {
@@ -117,6 +153,7 @@ export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapsho
   const context = await activeStudioWorkspaceFiles(card)
   const agents = buildAgentRegistry(context.files)
   const skills = buildSkillRegistry(context.files)
+  const toolRegistry = buildToolRegistry(context.files)
 
   return {
     card,
@@ -124,6 +161,8 @@ export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapsho
     usingSaveContext: context.usingSaveContext,
     agents,
     skills,
+    tools: toolRegistry.tools,
+    toolDiagnostics: toolRegistry.diagnostics,
     providerPresets: listBrowserAiProviderPresetOptions(),
   }
 }
@@ -452,6 +491,88 @@ export async function updatePlatformStudioAgentPlatformToolEnabled(
       disabled,
     },
   })
+}
+
+/**
+ * Toggle a Tool's visibility for the given Agent. Follows the same explicit-
+ * intent pattern as `updatePlatformStudioAgentPlatformToolEnabled`:
+ *
+ * 1. Remove any prior reference from both `tools.enabled` and `tools.disabled`.
+ * 2. Append to whichever list matches the requested state.
+ *
+ * We don't try to be clever about no-op writes: writing the explicit choice
+ * defends against the same silent-drift bug that hit platform tool toggles
+ * (default-state derivation makes "enable an already-enabled tool" look
+ * like a no-op and skip persistence).
+ *
+ * `tools.enabled` is a whitelist when non-empty (see `isToolEnabledForAgent`);
+ * before Studio ever emits `enabled=true` for the *first* tool, that flip
+ * would flip semantics from "declare = expose" to whitelist mode. Studio
+ * callers should therefore avoid adding a whitelist entry unless the user
+ * explicitly opted into whitelist mode — this handler stays neutral and just
+ * writes what it was told to write.
+ */
+export async function updatePlatformStudioAgentToolEnabled(
+  input: PlatformStudioAgentToolToggleInput,
+): Promise<WorkspaceFile> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  const toolRegistry = buildToolRegistry(context.files)
+  const tool = toolRegistry.tools.find((entry) => entry.name === input.toolName)
+  if (!tool) {
+    throw new Error(`Tool 未找到：${input.toolName}`)
+  }
+  if (tool.scope === "agent-local" && tool.agentId !== agent.id) {
+    throw new Error("这个 Agent 不能开关其它 Agent 的私有 Tool。")
+  }
+
+  // Drop any existing references to this tool from both lists before appending
+  // the explicit choice. This mirrors `removeSkillReferences` but for Tools.
+  const stripReferences = (values: string[]): string[] =>
+    values.filter((value) => !toolMatchesReference(tool, value))
+  const appendReference = (values: string[]): string[] => {
+    const cleaned = stripReferences(values)
+    return cleaned.includes(tool.name) ? cleaned : [...cleaned, tool.name]
+  }
+
+  let enabled = stripReferences(agent.enabledTools)
+  let disabled = stripReferences(agent.disabledTools)
+  if (input.enabled) {
+    enabled = appendReference(enabled)
+  } else {
+    disabled = appendReference(disabled)
+  }
+
+  const configFile = agentConfigFileForAgent(context.files, agent)
+  const config = parseAgentConfigRecord(configFile)
+  const existingTools = isRecord((config as Record<string, unknown>).tools)
+    ? ((config as Record<string, unknown>).tools as Record<string, unknown>)
+    : {}
+
+  return writeAgentConfigRecord(card.id, agent, {
+    ...config,
+    tools: {
+      ...existingTools,
+      enabled,
+      disabled,
+    },
+  })
+}
+
+/**
+ * Whether a Tool is currently visible to the Agent, using the runtime rule.
+ * Studio uses this to render the correct switch state before write-through.
+ */
+export function isPlatformStudioToolEnabledForAgent(
+  tool: ToolRegistryEntry,
+  agent: AgentRegistryEntry,
+): boolean {
+  return isToolEnabledForAgent(tool, agent)
 }
 
 export async function updatePlatformStudioAgentWorkspaceAccess(

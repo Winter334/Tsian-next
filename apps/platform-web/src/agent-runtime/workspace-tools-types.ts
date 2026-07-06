@@ -255,7 +255,36 @@ export interface RuntimeControlledExecutorContext {
 }
 
 export interface RuntimeBrowserScriptExecutorRequest {
+  /**
+   * Owner kind driving root-directory resolution and config injection.
+   *
+   * - `"skill"` (default, back-compat): root derived from `skillPath`; the
+   *   Skill's declared `configItems` (if any) are merged with player-saved
+   *   overrides and injected as `tsian.config`.
+   * - `"tool"`: root taken from `rootDirectory`; `tsian.config` is empty.
+   *
+   * Old Skill callers can omit this field entirely — the executor treats an
+   * absent value as `"skill"` and reads `skillPath` as it did before the
+   * Tool layer landed.
+   */
+  ownerType?: "skill" | "tool"
+  /**
+   * Declaring directory of the owner (Skill dir or Tool dir). Required when
+   * `ownerType === "tool"`; ignored for Skill callers (they carry `skillPath`).
+   * The executor uses this as the root against which `scriptPath`,
+   * `importScripts('./x.js')`, and `helpers` entries are validated.
+   */
+  rootDirectory?: string
+  /**
+   * Skill name. Retained for back-compat with existing Skill call sites; the
+   * Tool dispatch branch passes the Tool `name` in the same field so trace
+   * events keep a single label column.
+   */
   skillName: string
+  /**
+   * Path to `SKILL.md`. Kept for back-compat; not used for Tools (they
+   * carry `rootDirectory` instead). Trace events reference this field.
+   */
   skillPath: string
   actionName: string
   scriptPath: string
@@ -272,7 +301,8 @@ export interface RuntimeBrowserScriptExecutorRequest {
    * Config items declared by the skill's `skill.config` (carried from the
    * `SkillRegistryEntry`). The browser-script executor merges these defaults
    * with player-saved overrides and injects the result as `tsian.config`.
-   * Absent when the skill declares no config.
+   * Absent when the skill declares no config, and always absent for Tools
+   * (Tool scripts get an empty `tsian.config` by design — see PRD R12).
    */
   configItems?: SkillConfigItem[]
 }

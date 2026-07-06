@@ -3,7 +3,13 @@ import type {
   AgentRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
-import { buildAgentRegistry, buildSkillRegistry, filterSkillsForAgent } from "./registry"
+import {
+  buildAgentRegistry,
+  buildSkillRegistry,
+  buildToolRegistry,
+  filterSkillsForAgent,
+  filterToolsForAgent,
+} from "./registry"
 
 export interface AgentContextAssemblyOptions {
   agentId?: string
@@ -124,6 +130,14 @@ export function assembleAgentContext(
     }
   }
 
+  const toolRegistry = buildToolRegistry(files)
+  const filteredTools = filterToolsForAgent(toolRegistry.tools, agent)
+  // Tool registry diagnostics are surfaced through the Studio diagnostics
+  // channel (see §9). For now they are collected but not yet routed; the
+  // §9 wiring will replace this comment with a real sink.
+  void toolRegistry.diagnostics
+  void filteredTools.diagnostics
+
   const entry: AgentContextEntry = {
     agent,
     agentFile,
@@ -131,6 +145,7 @@ export function assembleAgentContext(
       buildSkillRegistry(files, { agentId: agent.id }),
       agent,
     ),
+    toolIndex: filteredTools.tools,
     contextFiles,
     knowledgeFiles,
     missingContextPaths,

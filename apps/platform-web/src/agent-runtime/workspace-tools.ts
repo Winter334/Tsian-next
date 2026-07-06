@@ -6,6 +6,7 @@ import type {
   PlatformActionResult,
   SkillConfigItem,
   SkillRegistryEntry,
+  ToolRegistryEntry,
   TurnToolOutput,
   WorkspaceFile,
   WorkspaceOperationName,
@@ -1786,6 +1787,137 @@ async function executeSkillAction(
   }
 }
 
+/**
+ * Execute a user-defined Tool call. Mirrors `executeSkillAction` but sources
+ * the executor reference from `ToolRegistryEntry.executor` (already resolved
+ * to `directoryPath + executor.path`) and passes owner metadata so the
+ * browser-script executor validates paths against the Tool root, not a Skill
+ * directory.
+ *
+ * The Tool must be visible to the calling Agent (already filtered by
+ * `filterToolsForAgent` when the schema was injected). We re-check by name
+ * against `context.agentContext.toolIndex` for defense in depth — a stray call
+ * to a Tool the Agent cannot see is treated as unsupported.
+ *
+ * `tsian.config` is always empty for Tools (PRD R12) — no configItems threaded.
+ * `outputSchema` validation is deferred (see task PRD Notes & implement.md §7
+ * rollback point).
+ */
+async function executeUserTool(
+  context: RuntimeWorkspaceToolExecutionContext,
+  tool: ToolRegistryEntry,
+  input: Record<string, unknown>,
+): Promise<Record<string, unknown> | null | boolean | number | string> {
+  if (!context.runBrowserScript) {
+    throw toolError(
+      "BROWSER_SCRIPT_UNAVAILABLE",
+      "Browser script executor is not available in this runtime.",
+      { tool: tool.name },
+    )
+  }
+
+  if (tool.executor.type !== BROWSER_SCRIPT_EXECUTOR_TYPE) {
+    throw toolError(
+      "TOOL_EXECUTOR_UNSUPPORTED",
+      `Tool executor type is not supported: ${tool.executor.type}`,
+      { tool: tool.name, executor: tool.executor },
+    )
+  }
+
+  // Resolve script path relative to the Tool directory. Same normalization
+  // as Skills but rooted at directoryPath instead of the Skill's dir.
+  const rawPath = tool.executor.path
+  const stripped = rawPath.startsWith("./") ? rawPath.slice(2) : rawPath
+  const combined = stripped.startsWith(`${tool.directoryPath}/`)
+    ? stripped
+    : `${tool.directoryPath}/${stripped}`
+  const scriptPath = combined
+
+  if (!context.workspaceFiles.some((file) => file.path === scriptPath)) {
+    throw toolError(
+      "TOOL_SCRIPT_NOT_FOUND",
+      `Tool script file was not found: ${scriptPath}`,
+      { tool: tool.name, scriptPath, directoryPath: tool.directoryPath },
+    )
+  }
+
+  const timeoutMs = tool.executor.timeoutMs ?? DEFAULT_CONTROLLED_EXECUTOR_TIMEOUT_MS
+  const executorRef: RuntimeActionExecutorReference = {
+    type: BROWSER_SCRIPT_EXECUTOR_TYPE,
+    name: tool.name,
+    path: tool.executor.path,
+    ...(tool.executor.timeoutMs !== undefined ? { timeoutMs: tool.executor.timeoutMs } : {}),
+    ...(tool.executor.helpers && tool.executor.helpers.length > 0
+      ? { helpers: tool.executor.helpers }
+      : {}),
+  }
+
+  const result = await runWithExecutorTimeout(
+    executorRef,
+    context.signal,
+    () => context.runBrowserScript!(
+      {
+        ownerType: "tool",
+        rootDirectory: tool.directoryPath,
+        // Reuse the skillName/skillPath slots for tool identity so trace events
+        // keep a consistent label column. The executor branches on ownerType.
+        skillName: tool.name,
+        skillPath: tool.path,
+        actionName: tool.name,
+        scriptPath,
+        input,
+        timeoutMs,
+        ...(tool.executor.helpers && tool.executor.helpers.length > 0
+          ? { helpers: tool.executor.helpers }
+          : {}),
+        // Tools never carry configItems — tsian.config is `{}` by design.
+      },
+      {
+        agentContext: context.agentContext,
+        exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+      },
+    ),
+  )
+
+  if (!result.ok) {
+    throw toolError(
+      result.error?.code ?? "TOOL_SCRIPT_FAILED",
+      result.error?.message ?? `Tool script failed: ${scriptPath}`,
+      {
+        tool: tool.name,
+        scriptPath,
+        scriptError: result.error ?? null,
+      },
+    )
+  }
+
+  const output = result.item
+  if (output === undefined || output === null) return null
+  if (
+    typeof output === "boolean" ||
+    typeof output === "number" ||
+    typeof output === "string" ||
+    (typeof output === "object" && output !== null)
+  ) {
+    return output as Record<string, unknown>
+  }
+  return null
+}
+
+/**
+ * Look up a Tool visible to the Agent by wire name. Returns `undefined` when
+ * no Tool exists — the caller can decide whether to fall through to the
+ * unsupported-tool branch or emit a stricter error.
+ */
+function resolveVisibleToolByName(
+  context: RuntimeWorkspaceToolExecutionContext,
+  name: string,
+): ToolRegistryEntry | undefined {
+  const tools = context.agentContext?.toolIndex
+  if (!tools || tools.length === 0) return undefined
+  return tools.find((entry) => entry.name === name)
+}
+
 function activateSkillByName(
   context: RuntimeWorkspaceToolExecutionContext,
   input: Record<string, unknown>,
@@ -2203,14 +2335,30 @@ async function executeRuntimeWorkspaceToolCall(
         observation.result = stripped
       }
     } else {
-      observation = {
-        index,
-        name: call.name,
-        ok: false,
-        error: toolError(
-          "UNSUPPORTED_WORKSPACE_TOOL",
-          `Unsupported workspace tool: ${call.name}`,
-        ),
+      // User Tool dispatch (07-05 task): after platform built-ins and workspace
+      // operations, before the unsupported-fallback. Only Tools visible to this
+      // Agent (already filtered by `filterToolsForAgent` during schema build)
+      // are reachable — a stray call to a hidden Tool falls through to the
+      // unsupported branch below.
+      const tool = resolveVisibleToolByName(context, call.name)
+      if (tool) {
+        const toolInput = isRecord(call.arguments) ? call.arguments : {}
+        observation = {
+          index,
+          name: call.name,
+          ok: true,
+          result: await executeUserTool(context, tool, toolInput),
+        }
+      } else {
+        observation = {
+          index,
+          name: call.name,
+          ok: false,
+          error: toolError(
+            "UNSUPPORTED_WORKSPACE_TOOL",
+            `Unsupported workspace tool: ${call.name}`,
+          ),
+        }
       }
     }
   } catch (error) {

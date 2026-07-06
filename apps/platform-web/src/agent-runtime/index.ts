@@ -1375,6 +1375,10 @@ async function callAgentModelWithWorkspaceToolsNative(
     enabledPlatformTools: permissions.enabledTools,
     allowAgentCall,
     visibleContacts,
+    // User Tools already filtered for this Agent by `filterToolsForAgent`
+    // during context assembly (context.ts). Exposed alongside platform tools
+    // in the native function-calling schema — see PRD R3.
+    userTools: agentContext.toolIndex,
   })
 
   // turn 内 token 预算 + 压缩(tool-token-budget R2 + 06-20-agent-task-compression).

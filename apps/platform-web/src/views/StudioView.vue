@@ -291,6 +291,74 @@
                       </div>
                     </div>
                   </section>
+
+                  <!-- 自定义 Tools（07-05 task 增，与平台工具并列，共享 selectedAgent 视图） -->
+                  <section class="border border-neon-deep/35 bg-panel/55">
+                    <div class="flex items-center justify-between border-b border-neon-deep/25 px-3 py-2">
+                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">自定义 Tools</p>
+                      <p class="font-mono text-[11px] text-text-dim">
+                        {{ toolsVisibleForSelectedAgent.length }} / {{ toolsForSelectedAgent.length }} 可见
+                      </p>
+                    </div>
+                    <div v-if="toolsForSelectedAgent.length === 0" class="px-3 py-3 text-sm text-text-dim">
+                      当前工作区没有自定义 Tool。放置 <code class="font-mono text-[11px]">tools/&lt;id&gt;/tool.json</code> 即可注册。
+                    </div>
+                    <ul v-else class="grid gap-2 p-3">
+                      <li
+                        v-for="tool in toolsForSelectedAgent"
+                        :key="tool.path"
+                        class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border border-neon-deep/20 bg-elevated/30 px-3 py-2"
+                      >
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-2">
+                            <p class="truncate font-mono text-xs text-text-main">{{ tool.name }}</p>
+                            <span class="border border-neon-deep/30 px-1 py-0.5 font-mono text-[10px] uppercase text-neon-muted">
+                              {{ tool.scope === "agent-local" ? "私有" : "共享" }}
+                            </span>
+                          </div>
+                          <p class="mt-0.5 truncate text-[11px] leading-5 text-text-dim">{{ tool.description }}</p>
+                        </div>
+                        <button
+                          type="button"
+                          class="border border-neon-deep/40 px-2 py-1 font-mono text-[11px] uppercase tracking-wider"
+                          :class="toolEnabledForAgent(tool) ? 'bg-neon-muted/10 text-neon-strong' : 'text-text-dim'"
+                          :disabled="togglingToolName === tool.name"
+                          @click="toggleUserTool(tool, !toolEnabledForAgent(tool))"
+                        >
+                          {{ toolEnabledForAgent(tool) ? "启用" : "禁用" }}
+                        </button>
+                      </li>
+                    </ul>
+                  </section>
+
+                  <!-- 注册诊断（Tool 层，仅有诊断时显示） -->
+                  <section
+                    v-if="toolDiagnostics.length > 0"
+                    class="border border-red-500/40 bg-panel/55"
+                  >
+                    <div class="flex items-center justify-between border-b border-red-500/30 px-3 py-2">
+                      <p class="font-mono text-[11px] uppercase tracking-wider text-red-300">Tool 注册诊断</p>
+                      <p class="font-mono text-[11px] text-red-300">{{ toolDiagnostics.length }} 条</p>
+                    </div>
+                    <ul class="grid gap-2 p-3">
+                      <li
+                        v-for="(diag, index) in toolDiagnostics"
+                        :key="`${diag.code}-${index}`"
+                        class="border border-red-500/25 bg-elevated/30 px-3 py-2"
+                      >
+                        <div class="flex flex-wrap items-center gap-2">
+                          <span
+                            class="border px-1 py-0.5 font-mono text-[10px] uppercase"
+                            :class="diagLevelClass(diag.level)"
+                          >{{ diag.level }}</span>
+                          <span class="font-mono text-[11px] text-text-main">{{ diag.code }}</span>
+                          <span v-if="diag.path" class="truncate font-mono text-[11px] text-text-dim">{{ diag.path }}</span>
+                        </div>
+                        <p class="mt-1 text-[12px] leading-5 text-text-main">{{ diag.message }}</p>
+                        <p v-if="diag.hint" class="mt-0.5 text-[11px] leading-5 text-text-dim">Hint: {{ diag.hint }}</p>
+                      </li>
+                    </ul>
+                  </section>
                 </div>
               </div>
             </div>
@@ -349,14 +417,20 @@ import { isSkillEnabledForAgent } from "../agent-runtime/registry"
 import {
   getPlatformStudioAgentContext,
   getPlatformStudioSnapshot,
+  isPlatformStudioToolEnabledForAgent,
   updatePlatformStudioAgentPlatformToolEnabled,
   updatePlatformStudioAgentSkillEnabled,
+  updatePlatformStudioAgentToolEnabled,
   deletePlatformStudioSkill,
   updatePlatformStudioAgentWorkspaceAccess,
   updatePlatformStudioAgentProviderPreset,
   waitForPlatformHostReady,
   type PlatformStudioSnapshot,
 } from "../platform-host"
+import type {
+  RegistryDiagnostic,
+  ToolRegistryEntry,
+} from "@tsian/contracts"
 
 type StudioSection = "agent" | "soul" | "skills" | "tools"
 
@@ -455,6 +529,58 @@ const skillsForSelectedAgent = computed(() => {
 const selectedEnabledSkillCount = computed(() =>
   skillsForSelectedAgent.value.filter(skillEnabled).length
 )
+
+// Tools discoverable for the selected Agent: shared tools + this agent's
+// agent-local tools. Filtering here matches `filterToolsForAgent` scoping
+// (agent-local tools are private to their owner).
+const toolsForSelectedAgent = computed<ToolRegistryEntry[]>(() => {
+  if (!snapshot.value || !selectedAgent.value) {
+    return []
+  }
+  const tools = snapshot.value.tools ?? []
+  return tools.filter((tool) =>
+    tool.scope === "shared" || tool.agentId === selectedAgent.value?.id
+  )
+})
+const toolsVisibleForSelectedAgent = computed(() => {
+  const agent = selectedAgent.value
+  if (!agent) return []
+  return toolsForSelectedAgent.value.filter((tool) =>
+    isPlatformStudioToolEnabledForAgent(tool, agent)
+  )
+})
+const toolDiagnostics = computed<RegistryDiagnostic[]>(() =>
+  snapshot.value?.toolDiagnostics ?? []
+)
+const togglingToolName = ref<string | null>(null)
+function toolEnabledForAgent(tool: ToolRegistryEntry): boolean {
+  const agent = selectedAgent.value
+  return agent ? isPlatformStudioToolEnabledForAgent(tool, agent) : false
+}
+function diagLevelClass(level: RegistryDiagnostic["level"]): string {
+  if (level === "error") return "border-red-500/50 text-red-300"
+  if (level === "warn") return "border-yellow-500/50 text-yellow-200"
+  return "border-neon-deep/50 text-neon-muted"
+}
+async function toggleUserTool(tool: ToolRegistryEntry, enabled: boolean): Promise<void> {
+  const agent = selectedAgent.value
+  if (!agent || togglingToolName.value) return
+  togglingToolName.value = tool.name
+  try {
+    await updatePlatformStudioAgentToolEnabled({
+      agentId: agent.id,
+      toolName: tool.name,
+      enabled,
+    })
+    await reloadSnapshotAndSelectedAgent()
+    setFeedback(enabled ? `已启用 Tool：${tool.name}` : `已禁用 Tool：${tool.name}`, "ok")
+  } catch (error) {
+    setFeedback(error instanceof Error ? error.message : "更新 Tool 状态失败。", "error")
+  } finally {
+    togglingToolName.value = null
+  }
+}
+
 const workspaceAccessDescription = computed(() => {
   const level = selectedAgent.value?.workspaceAccess.level ?? 1
   return workspaceAccessOptions.find((option) => option.level === level)?.description
@@ -464,7 +590,10 @@ const statusLabel = computed(() => {
   if (!snapshot.value) {
     return "未加载游戏卡"
   }
-  return `${snapshot.value.agents.length} 个 Agent · ${snapshot.value.skills.length} 个 Skill`
+  const toolCount = snapshot.value.tools?.length ?? 0
+  const diagCount = snapshot.value.toolDiagnostics?.length ?? 0
+  const base = `${snapshot.value.agents.length} 个 Agent · ${snapshot.value.skills.length} 个 Skill · ${toolCount} 个 Tool`
+  return diagCount > 0 ? `${base} · ⚠ ${diagCount} 条注册诊断` : base
 })
 const feedbackTone = computed(() => {
   if (feedbackKind.value === "ok") return "text-neon"

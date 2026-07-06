@@ -1,6 +1,7 @@
 import type {
   AgentPlatformToolName,
   AgentRegistryEntry,
+  ToolRegistryEntry,
 } from "@tsian/contracts"
 import { AGENT_PLATFORM_TOOL_NAMES } from "./permissions"
 import {
@@ -494,6 +495,18 @@ export function buildEnabledToolSchemas(options: {
   enabledPlatformTools: AgentPlatformToolName[]
   allowAgentCall: boolean
   visibleContacts: AgentRegistryEntry[]
+  /**
+   * User tools already filtered for this Agent (see
+   * `filterToolsForAgent` in `registry.ts`). Each entry is exposed to the
+   * model as a top-level function alongside the platform tools.
+   *
+   * The caller is responsible for filtering; this function only guards
+   * against accidental name collisions with platform-reserved schemas as
+   * defense-in-depth — a colliding entry is silently dropped here because
+   * registry parsing already emits a `TOOL_NAME_RESERVED` diagnostic when
+   * it happens.
+   */
+  userTools?: ToolRegistryEntry[]
 }): ToolSchema[] {
   const canCallAgents =
     options.allowAgentCall && options.visibleContacts.length > 0
@@ -562,6 +575,24 @@ export function buildEnabledToolSchemas(options: {
   )
   if (canTestSkillScript) {
     schemas.push(testSkillScriptSchema)
+  }
+
+  // Append user tools last. Names already emitted by the platform above win
+  // as a defense-in-depth against registry misses (see doc comment on
+  // buildEnabledToolSchemas.userTools).
+  if (options.userTools && options.userTools.length > 0) {
+    const takenNames = new Set(schemas.map((schema) => schema.name))
+    for (const tool of options.userTools) {
+      if (takenNames.has(tool.name)) {
+        continue
+      }
+      takenNames.add(tool.name)
+      schemas.push({
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      })
+    }
   }
 
   return schemas

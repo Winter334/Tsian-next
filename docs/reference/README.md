@@ -19,3 +19,7 @@
 - `../active/current-state-handoff.md`
 - `../active/airp-workflow-platform-direction.md`
 - `../active/deferred-work.md`
+
+## 契约参考
+
+- [`tool-vs-skill.md`](./tool-vs-skill.md) — Tool 与 Skill 层的职责区分、`tool.json` 契约、`tsian.lib.*` 收纳原则、冲突规则、安全姿势（07-05 任务落地）。

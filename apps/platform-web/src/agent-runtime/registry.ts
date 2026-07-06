@@ -2,12 +2,15 @@ import type {
   AgentConfig,
   AgentPlatformToolName,
   AgentRegistryEntry,
+  RegistryDiagnostic,
   SkillActionSummary,
   SkillConfigItem,
   SkillDetailEntry,
   SkillRegistryEntry,
   SkillRegistryScope,
   SkillResourceEntry,
+  ToolRegistryEntry,
+  ToolRegistryScope,
   WorkspaceFile,
 } from "@tsian/contracts"
 
@@ -45,6 +48,12 @@ const AGENT_LOCAL_SKILL_FILE_PATH_PATTERN = /^(?:agents\/([^/]+)|\.tsian\/local\
 // `agents/<agent>/skills/<id>/skill.config` (also `.tsian/local/<agent>/...`).
 // Matches the same directory prefixes as the SKILL.md patterns above.
 const SKILL_CONFIG_FILE_PATH_PATTERN = /^(?:skills\/([^/]+)|(?:agents\/([^/]+)|\.tsian\/local\/([^/]+))\/skills\/([^/]+))\/skill\.config$/
+// Tool manifest paths parallel to Skill paths. See `.trellis/tasks/07-05-agent-tool-mechanism/design.md`.
+//   - Shared:      tools/<id>/tool.json
+//   - Agent-local: agents/<agentId>/tools/<id>/tool.json
+//   - User-local:  .tsian/local/<agentId>/tools/<id>/tool.json (bundled with agent-local for registry purposes)
+const SHARED_TOOL_MANIFEST_PATH_PATTERN = /^tools\/([^/]+)\/tool\.json$/
+const AGENT_LOCAL_TOOL_MANIFEST_PATH_PATTERN = /^(?:agents\/([^/]+)|\.tsian\/local\/([^/]+))\/tools\/([^/]+)\/tool\.json$/
 const DEFAULT_AGENT_ACCESS_LEVEL = 1
 const MAX_AGENT_ACCESS_LEVEL = 4
 const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
@@ -681,6 +690,16 @@ function normalizeAgentSkillConfig(value: unknown): AgentConfig["skills"] {
   }
 }
 
+// User-tool whitelist/blacklist from `agent.json.tools`. Missing/invalid keys
+// default to empty arrays so pre-Tool-mechanism agent files remain compatible.
+function normalizeAgentToolConfig(value: unknown): { enabled: string[]; disabled: string[] } {
+  const record = isRecord(value) ? value : {}
+  return {
+    enabled: jsonStringArray(record.enabled),
+    disabled: jsonStringArray(record.disabled),
+  }
+}
+
 function normalizeAgentPlatformToolConfig(
   value: unknown,
 ): AgentConfig["platformTools"] {
@@ -720,6 +739,8 @@ function buildAgentRegistryEntry(
   const entryMode = normalizeAgentEntryMode(config.entryMode)
   const system = config.system === true
 
+  const toolConfig = normalizeAgentToolConfig(config.tools)
+
   return {
     id,
     title,
@@ -730,6 +751,8 @@ function buildAgentRegistryEntry(
     defaultSkills: [],
     enabledSkills: skills.enabled,
     disabledSkills: skills.disabled,
+    enabledTools: toolConfig.enabled,
+    disabledTools: toolConfig.disabled,
     platformTools,
     workspaceAccess: normalizeAgentWorkspaceAccessConfig(config.workspaceAccess),
     contextPaths: jsonStringArray(config.contextPaths),
@@ -907,4 +930,411 @@ export function loadSkillDetail(
     file,
     resources,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Tool registry (§2 of .trellis/tasks/07-05-agent-tool-mechanism/implement.md)
+// ---------------------------------------------------------------------------
+
+interface ToolPathInfo {
+  scope: ToolRegistryScope
+  toolId: string
+  directoryPath: string
+  agentId?: string
+}
+
+// Platform-reserved tool names. Custom tools cannot claim these — platform
+// built-ins are compiled schemas (tool-schemas.ts) and always win. Derived
+// from AGENT_PLATFORM_TOOL_NAMES plus the two Skill-machinery names that
+// are currently hard-wired (use_skill / run_script). Kept as Set<string> so
+// user manifest names (arbitrary strings) can be checked without narrowing.
+const RESERVED_TOOL_NAMES: ReadonlySet<string> = new Set<string>([
+  ...AGENT_PLATFORM_TOOL_NAMES,
+  "use_skill",
+  "run_script",
+])
+
+const DEFAULT_TOOL_TIMEOUT_MS = 5000
+const MAX_TOOL_TIMEOUT_MS = 60_000
+const SUPPORTED_TOOL_EXECUTOR_TYPE = "browser_script"
+const TOOL_NAME_PATTERN = /^[a-z][a-z0-9_]{0,63}$/
+
+function toolPathInfo(path: string): ToolPathInfo | null {
+  const sharedMatch = SHARED_TOOL_MANIFEST_PATH_PATTERN.exec(path)
+  if (sharedMatch?.[1]) {
+    const toolId = sharedMatch[1]
+    return {
+      scope: "shared",
+      toolId,
+      directoryPath: `tools/${toolId}`,
+    }
+  }
+
+  const localMatch = AGENT_LOCAL_TOOL_MANIFEST_PATH_PATTERN.exec(path)
+  // Group 1: agents/<agent>/tools/<tool> ; Group 2: .tsian/local/<agent>/tools/<tool>
+  // Group 3: <tool> in both cases.
+  const localAgentId = localMatch?.[1] ?? localMatch?.[2]
+  if (localAgentId && localMatch?.[3]) {
+    const toolId = localMatch[3]
+    const isUserLocal = Boolean(localMatch?.[2])
+    const directoryPath = isUserLocal
+      ? `.tsian/local/${localAgentId}/tools/${toolId}`
+      : `agents/${localAgentId}/tools/${toolId}`
+    return {
+      scope: "agent-local",
+      toolId,
+      directoryPath,
+      agentId: localAgentId,
+    }
+  }
+
+  return null
+}
+
+/**
+ * Attempt to parse a `tool.json` file into a `ToolRegistryEntry`. Returns
+ * either a valid entry or a list of diagnostics describing why the manifest
+ * was rejected. Never throws.
+ */
+function parseToolManifest(
+  file: WorkspaceFile,
+  pathInfo: ToolPathInfo,
+): { entry: ToolRegistryEntry | null; diagnostics: RegistryDiagnostic[] } {
+  const diagnostics: RegistryDiagnostic[] = []
+
+  let raw: unknown
+  try {
+    raw = JSON.parse(file.content)
+  } catch {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID_JSON",
+      message: `工具清单 JSON 解析失败：${file.path}`,
+      path: file.path,
+      hint: "检查 tool.json 的语法（缺失逗号、多余引号等）。",
+    })
+    return { entry: null, diagnostics }
+  }
+
+  if (!isRecord(raw)) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID",
+      message: `工具清单必须是 JSON 对象：${file.path}`,
+      path: file.path,
+    })
+    return { entry: null, diagnostics }
+  }
+
+  const name = jsonString(raw.name)
+  if (!name) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID",
+      message: `工具清单缺少必填字段 name：${file.path}`,
+      path: file.path,
+      hint: "补上英文 snake_case 的 name，例如 \"roll_dice\"。",
+    })
+    return { entry: null, diagnostics }
+  }
+  if (!TOOL_NAME_PATTERN.test(name)) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID",
+      message: `工具 name 非法（需要英文 snake_case，长度 1-64）：${name}`,
+      path: file.path,
+    })
+    return { entry: null, diagnostics }
+  }
+
+  const description = jsonString(raw.description)
+  if (!description) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID",
+      message: `工具清单缺少必填字段 description：${file.path}`,
+      path: file.path,
+    })
+    return { entry: null, diagnostics }
+  }
+
+  if (!isRecord(raw.parameters)) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID",
+      message: `工具清单缺少 parameters 对象：${file.path}`,
+      path: file.path,
+      hint: "parameters 需要是符合 JSON Schema 的 object。",
+    })
+    return { entry: null, diagnostics }
+  }
+
+  const executorRaw = raw.executor
+  if (!isRecord(executorRaw)) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID",
+      message: `工具清单缺少 executor 对象：${file.path}`,
+      path: file.path,
+    })
+    return { entry: null, diagnostics }
+  }
+
+  const executorType = jsonString(executorRaw.type)
+  if (executorType !== SUPPORTED_TOOL_EXECUTOR_TYPE) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_MANIFEST_INVALID",
+      message: `工具 executor.type 仅支持 "${SUPPORTED_TOOL_EXECUTOR_TYPE}"：${file.path}`,
+      path: file.path,
+    })
+    return { entry: null, diagnostics }
+  }
+
+  const executorPath = jsonString(executorRaw.path)
+  if (!executorPath || executorPath.startsWith("/") || executorPath.includes("..")) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_SCRIPT_PATH_INVALID",
+      message: `工具 executor.path 非法或不安全：${file.path}`,
+      path: file.path,
+      hint: "使用相对路径，例如 \"./run.js\"，不允许绝对路径或 \"..\"。",
+    })
+    return { entry: null, diagnostics }
+  }
+
+  const timeoutMs = normalizeToolTimeout(executorRaw.timeoutMs)
+  const helpers = jsonStringArray(executorRaw.helpers)
+  for (const helper of helpers) {
+    if (helper.startsWith("/") || helper.includes("..")) {
+      diagnostics.push({
+        level: "error",
+        code: "TOOL_SCRIPT_PATH_INVALID",
+        message: `工具 executor.helpers 含非法路径 \"${helper}\"：${file.path}`,
+        path: file.path,
+      })
+      return { entry: null, diagnostics }
+    }
+  }
+
+  if (RESERVED_TOOL_NAMES.has(name)) {
+    diagnostics.push({
+      level: "error",
+      code: "TOOL_NAME_RESERVED",
+      message: `工具 name "${name}" 与平台内建冲突，已跳过：${file.path}`,
+      path: file.path,
+      hint: "换一个不与平台工具重名的英文 snake_case name。",
+    })
+    return { entry: null, diagnostics }
+  }
+
+  const title = jsonString(raw.title) ?? name
+
+  const entry: ToolRegistryEntry = {
+    id: pathInfo.toolId,
+    name,
+    title,
+    description,
+    path: file.path,
+    directoryPath: pathInfo.directoryPath,
+    scope: pathInfo.scope,
+    parameters: raw.parameters as Record<string, unknown>,
+    executor: {
+      type: SUPPORTED_TOOL_EXECUTOR_TYPE,
+      path: executorPath,
+      ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+      ...(helpers.length > 0 ? { helpers } : {}),
+    },
+    updatedAt: file.updatedAt,
+  }
+  if (pathInfo.agentId) {
+    entry.agentId = pathInfo.agentId
+  }
+
+  return { entry, diagnostics }
+}
+
+function normalizeToolTimeout(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined
+  }
+  if (value <= 0) {
+    return DEFAULT_TOOL_TIMEOUT_MS
+  }
+  return Math.min(Math.floor(value), MAX_TOOL_TIMEOUT_MS)
+}
+
+/**
+ * Discover all valid tool manifests in the workspace. Diagnostics are surfaced
+ * out-of-band rather than thrown; invalid manifests are skipped so a broken
+ * tool never blocks the rest of the card from loading.
+ *
+ * Same-scope duplicate `name` collisions skip *all* conflicting entries with
+ * an error diagnostic so the winner is never arbitrary. Cross-scope
+ * (agent-local vs shared) conflicts are resolved later in `filterToolsForAgent`.
+ */
+export function buildToolRegistry(
+  files: WorkspaceFile[],
+): { tools: ToolRegistryEntry[]; diagnostics: RegistryDiagnostic[] } {
+  const diagnostics: RegistryDiagnostic[] = []
+  const parsedByName = new Map<string, ToolRegistryEntry[]>()
+
+  for (const file of files) {
+    const pathInfo = toolPathInfo(file.path)
+    if (!pathInfo) {
+      continue
+    }
+
+    const { entry, diagnostics: parseDiagnostics } = parseToolManifest(file, pathInfo)
+    diagnostics.push(...parseDiagnostics)
+    if (!entry) {
+      continue
+    }
+
+    // Same-scope duplicate keys: shared+name, or agent-local+agentId+name.
+    const scopeKey =
+      entry.scope === "shared"
+        ? `shared::${entry.name}`
+        : `agent-local::${entry.agentId ?? ""}::${entry.name}`
+    const bucket = parsedByName.get(scopeKey)
+    if (bucket) {
+      bucket.push(entry)
+    } else {
+      parsedByName.set(scopeKey, [entry])
+    }
+  }
+
+  const tools: ToolRegistryEntry[] = []
+  for (const [scopeKey, entries] of parsedByName) {
+    if (entries.length === 1) {
+      tools.push(entries[0])
+      continue
+    }
+    // Same-scope name conflict: skip every conflicting entry (conservative).
+    for (const dup of entries) {
+      diagnostics.push({
+        level: "error",
+        code: "TOOL_NAME_DUPLICATE_SAME_SCOPE",
+        message: `同一层存在多个同名工具 "${dup.name}"，全部跳过：${dup.path}`,
+        path: dup.path,
+        hint: "重命名其中之一，或删除多余的 tool.json 目录。",
+      })
+    }
+    void scopeKey
+  }
+
+  return {
+    tools: tools.sort(compareToolEntries),
+    diagnostics,
+  }
+}
+
+function compareToolEntries(left: ToolRegistryEntry, right: ToolRegistryEntry): number {
+  const scopeOrder: Record<ToolRegistryScope, number> = {
+    shared: 0,
+    "agent-local": 1,
+  }
+  const scopeDiff = scopeOrder[left.scope] - scopeOrder[right.scope]
+  if (scopeDiff !== 0) {
+    return scopeDiff
+  }
+  const agentDiff = compareText(left.agentId ?? "", right.agentId ?? "")
+  if (agentDiff !== 0) {
+    return agentDiff
+  }
+  return compareText(left.name, right.name)
+}
+
+/**
+ * Match a `agent.json.tools.enabled/disabled` reference against a Tool entry.
+ * Accepts the manifest `name`, the manifest `title`, the directory path
+ * (`tools/roll_dice`), or the full manifest path (`tools/roll_dice/tool.json`).
+ * Case-insensitive.
+ */
+export function toolMatchesReference(
+  tool: ToolRegistryEntry,
+  reference: string,
+): boolean {
+  const key = normalizedLookupKey(reference)
+  if (!key) {
+    return false
+  }
+  return (
+    key === normalizedLookupKey(tool.name) ||
+    key === normalizedLookupKey(tool.title) ||
+    key === normalizedLookupKey(tool.id) ||
+    key === normalizedLookupKey(tool.directoryPath) ||
+    key === normalizedLookupKey(tool.path)
+  )
+}
+
+function referencesContainTool(
+  references: string[],
+  tool: ToolRegistryEntry,
+): boolean {
+  return references.some((reference) => toolMatchesReference(tool, reference))
+}
+
+/**
+ * Whether a discovered Tool is visible to the given Agent by
+ * `tools.enabled/disabled` rules (before shadowing).
+ *
+ * Semantics (see PRD R10):
+ * - Agent-local tools are only visible to their owning Agent, ever.
+ * - `tools.disabled` is always a blacklist.
+ * - `tools.enabled` is a *whitelist*: when non-empty, unlisted tools are hidden.
+ * - Otherwise every discovered tool is visible ("declare = expose" default).
+ */
+export function isToolEnabledForAgent(
+  tool: ToolRegistryEntry,
+  agent: AgentRegistryEntry,
+): boolean {
+  if (tool.scope === "agent-local" && tool.agentId !== agent.id) {
+    return false
+  }
+  if (agent.disabledTools.length > 0 && referencesContainTool(agent.disabledTools, tool)) {
+    return false
+  }
+  if (agent.enabledTools.length > 0) {
+    return referencesContainTool(agent.enabledTools, tool)
+  }
+  return true
+}
+
+/**
+ * Filter the full tool registry for a given Agent and resolve agent-local
+ * shadowing over same-named shared tools. Emits `TOOL_AGENT_LOCAL_OVERRIDES_SHARED`
+ * info diagnostics when shadowing actually happens.
+ */
+export function filterToolsForAgent(
+  tools: ToolRegistryEntry[],
+  agent: AgentRegistryEntry,
+): { tools: ToolRegistryEntry[]; diagnostics: RegistryDiagnostic[] } {
+  const diagnostics: RegistryDiagnostic[] = []
+  const enabled = tools.filter((tool) => isToolEnabledForAgent(tool, agent))
+
+  const localToolNames = new Set(
+    enabled
+      .filter((tool) => tool.scope === "agent-local" && tool.agentId === agent.id)
+      .map((tool) => normalizedLookupKey(tool.name)),
+  )
+
+  const filtered = enabled.filter((tool) => {
+    if (tool.scope !== "shared") {
+      return true
+    }
+    const key = normalizedLookupKey(tool.name)
+    if (!key || !localToolNames.has(key)) {
+      return true
+    }
+    diagnostics.push({
+      level: "info",
+      code: "TOOL_AGENT_LOCAL_OVERRIDES_SHARED",
+      message: `Agent-local 工具覆盖了同名的公共工具 "${tool.name}"（Agent: ${agent.id}）。`,
+      path: tool.path,
+    })
+    return false
+  })
+
+  return { tools: filtered, diagnostics }
 }
