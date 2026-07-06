@@ -50,9 +50,13 @@
    - `roll_dice` Tool 作为通用能力保留；行动裁定规则的重新引入延后到具体玩家流程重构子任务。
    - 已知残留（不属于本任务范围）：`apps/play-frontend-dev/src/lib/source.ts:465,470` 的 `buildPlaySetupPrompt` 仍含 mode.json 三态选择与 `commit_mode` 引用文本，由 Step 4 游玩设定子任务处理。
 
-2. Understanding 步：world-architect + director 重构（进行中，`07-06-understanding-step-world-architect-director`）
-   - 目标：开局向导 Step 2 Understanding——重写 world-architect / director 的 AGENT.md / SOUL.md，审视 `开局建模` / `剧情指导维护` Skill 与两者 contextPaths。
-   - 范围：只覆盖 Step 2 Understanding，不触碰 Step 4 游玩设定。
+2. Understanding 步：world-architect + director 重构 ✅ 已完成 (`07-06-understanding-step-world-architect-director`)
+   - world-architect AGENT.md 补 3 条方法论（不写玩家正文/脚本重试/已读内容边界）；SOUL.md 补 2 句人格。
+   - 开局建模 Skill description 精简（列产物+agent_call 导演）、triggers 收敛为一条、第8步标注不在开局建模流程执行。
+   - storyteller contextPaths 从 5 条减为 2 条（移除 schema-guide/schema-current/runtime.json——前两者写正文不需要，runtime.json 已有前端 injection 优化覆盖）。
+   - 5 个 Agent 显式 `tools.disabled: ["roll_dice"]`（之前未传 tools 字段导致默认全可见）。
+   - director AGENT.md/SOUL.md/剧情指导维护 Skill 审视确认不改。
+   - 确立设计原则：AGENT.md 写定位方法论、Skill 写流程、Tool 看复用性、contextPaths 是参考文件不是职责边界。
 
 3. 游玩设定步：world-architect（+ storyteller 协作）重构（待启动）
    - 目标：开局向导 Step 4 游玩设定——重写 `游玩设定` Skill，清理 `buildPlaySetupPrompt` 中 mode.json 残留，审视 world-architect 在本步的职责（+ agent_call storyteller 拿开局正文的协作）。
@@ -68,7 +72,7 @@
 | # | 玩家步骤 | 涉及 Agent | 状态 |
 | - | - | - | - |
 | 0 | 前端开局操作（导入源、选卡） | — 无 Agent — | 不在本任务范围 |
-| 1a | 开局向导 Step 2：Understanding（初始世界建模） | world-architect, director | 进行中 (`07-06-understanding-step-world-architect-director`) |
+| 1a | 开局向导 Step 2：Understanding（初始世界建模） | world-architect, director | ✅ 已完成 |
 | 1b | 开局向导 Step 4：游玩设定对话 | world-architect, storyteller (agent_call) | 待启动 |
 | 1c | 开局向导 Step 5：开局确认过渡 | — 无 Agent — | 不在本任务范围 |
 | 2 | 开局确认 / 生成 | world-architect, storyteller | 待规划 |

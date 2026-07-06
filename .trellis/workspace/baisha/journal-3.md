@@ -916,3 +916,43 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 
 - `python .trellis/scripts/task.py archive 07-06-mode-json-abstraction-cleanup`
 - 下一子任务：开局向导 world-architect + director 重构（Player Flow Map #1）
+
+
+## Session 132: Understanding 步 world-architect + director 重构
+
+**Date**: 2026-07-06
+**Task**: 07-06-understanding-step-world-architect-director
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+作为 07-06-agent-roster-progressive-refactor 父任务的第二个子任务（Player Flow Map #1a），按玩家流程 Step 2 Understanding 重构沿途涉及的 Agent/Skill/Tool 配置。确立设计原则：AGENT.md 写定位方法论（不写具体步骤）、SOUL.md 写人格底色、Skill description/triggers 精简无解释、Skill 正文专注流程、Tool 看复用性、contextPaths 是参考文件不是职责边界。
+
+### Main Changes
+
+- `world-architect/AGENT.md`：补 3 条方法论（不写玩家正文、脚本错误重试、只用已读内容）。
+- `world-architect/SOUL.md`：补 2 句人格（已读内容边界、脚本错误当建模对话）。
+- `开局建模` Skill：description 精简为列产物+agent_call 导演；triggers 收敛为一条；第8步 commit_opening_narrative 标注"不在开局建模流程执行"。
+- `storyteller agent.json`：contextPaths 从 5 条减为 2 条（移除 schema-guide.md / schema/current.md / runtime.json）。runtime.json 移除理由：前端 07-04-runtime-summary-injection 已实现 buildContextInjection 去结构化 injection，contextPaths 原文注入与之重叠冗余。
+- 5 个 Agent `agent.json`：显式 `tools: { enabled: [], disabled: ["roll_dice"] }`。之前未传 tools 字段导致运行时 isToolEnabledForAgent 走 return true 分支，roll_dice 默认全可见。
+- director AGENT.md/SOUL.md/剧情指导维护 Skill 审视确认不改。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| pending | finalize commit after archive |
+
+### Testing
+
+- [OK] npm run build:web — 12.70s
+- [pending] 浏览器验证 Understanding 流程
+
+### Status
+
+[OK] **Completed** — ready to archive
+
+### Next Steps
+
+- 浏览器验证：导入小说 → 点开始理解 → world-architect 跑开局建模 → agent_call 导演写 brief → understanding-summary.json 产出
+- 下一子任务：Step 4 游玩设定重构（含 buildPlaySetupPrompt mode.json 残留清理）
