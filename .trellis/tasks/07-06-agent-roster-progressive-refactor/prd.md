@@ -42,21 +42,51 @@
 
 ## Initial Child Task Map
 
-1. `mode.json` 抽象清理
-   - 目标：彻底废弃面向 Agent 的软玩法开关，删除默认 `mode.json` 种子、`commit_mode` 脚本和 Agent-facing 文档引用。
-   - 角色：前置清理，不重构具体 Agent 职责。
+1. `mode.json` 抽象清理 ✅ 已归档 (`07-06-mode-json-abstraction-cleanup`)
+   - 已删除默认 `save/playthrough/mode.json` 种子与默认路径登记。
+   - 已删除世界架构师 `玩法启用` Skill 与 `commit_mode` 脚本；同时删除三处 `行动裁定` Skill（storyteller / stage-manager / world-architect），其为 mode.json 软开关唯一消费者，留下会成为悬挂引用。
+   - 已从默认 Agent / Skill / schema guide / README 中移除所有面向 Agent 的 `mode.json` 与 `enabled/disabled/deferred` 软开关语义（零表面痕迹）。
+   - 已从 stage-manager / world-architect `contextPaths` 中移除 `save/playthrough/mode.json`。
+   - `roll_dice` Tool 作为通用能力保留；行动裁定规则的重新引入延后到具体玩家流程重构子任务。
 
-2. 开局向导：世界架构师 + 导演重构
+2. 开局向导：世界架构师 + 导演重构（下一步）
    - 目标：处理玩家开局流程中第一个涉及 Agent 的步骤，重写世界架构师与导演的 `AGENT.md` / `SOUL.md`，并设计该步骤实际需要的 Skill / Tool。
    - 范围：只覆盖开局向导该一步，不处理正式回合。
 
 3. 后续步骤待补
    - 按玩家实际流程继续拆分；遇到已处理 Agent 时只补充当前步骤需要的职责和能力。
 
+## Player Flow Map (working)
+
+玩家实际流程与对应子任务归属：
+
+| # | 玩家步骤 | 涉及 Agent | 状态 |
+| - | - | - | - |
+| 0 | 前端开局操作（导入源、选卡） | — 无 Agent — | 不在本任务范围 |
+| 1 | 开局向导 / 世界建模 | world-architect, director | 待启动 |
+| 2 | 开局确认 / 生成 | world-architect, storyteller | 待规划 |
+| 3 | 正式玩家回合 | storyteller, researcher | 待规划 |
+| 4 | 回合后维护 | stage-manager, researcher, world-architect | 待规划 |
+| 5 | 前台状态反馈 | stage-manager | 待规划 |
+
+前置清理（`mode.json` 抽象）已归档，属于全流程共享的历史包袱清理，不绑定单一步骤。
+
+## Current Agent / Skill / Tool Ledger
+
+`mode.json` 清理归档后，默认阵容当前状态：
+
+- **storyteller** / 说书人：`AGENT.md` / `SOUL.md` 保留；`skills.enabled = []`（`行动裁定` Skill 已删除）。`contextPaths` 无变化。待开局向导 / 正式回合子任务重写职责。
+- **researcher** / 资料员：`AGENT.md` 已移除“不判断玩法启用”，其余保留；两个 Skill（`实体读取` / `资料检索`）保留。
+- **stage-manager** / 场记：`AGENT.md` 移除 `deferred 玩法` 描述；skills 从三项减为 `状态栏维护` + `schema演进检查`；`contextPaths` 移除 `mode.json`。
+- **world-architect** / 世界架构师：`AGENT.md` 移除 `mode 状态`；skills 从四项减为 `开局建模` + `游玩设定`；`contextPaths` 移除 `mode.json`。待开局向导子任务重写核心职责。
+- **director** / 导演：`SKILL.md` 中“需要 schema 或玩法设计”改为“需要 schema 设计”。其他不变，待开局向导子任务重写。
+- **共享 Tools**：`roll_dice`（reference tool）保留不动。
+- **共享 Skills 目录 (`skills/`)**：默认不放共享玩法 Skill，仅结构占位。
+
 ## Acceptance Criteria
 
 - [ ] 父任务下的每个子任务都有明确流程步骤、涉及 Agent、交付边界与验收标准。
-- [ ] `mode.json` 抽象清理子任务完成并归档。
+- [x] `mode.json` 抽象清理子任务完成并归档。
 - [ ] 开局向导中涉及世界架构师与导演的步骤完成并归档。
 - [ ] 每个已处理 Agent 的 `AGENT.md` / `SOUL.md` / Skill / Tool / contextPaths 分层职责在父任务中可追踪。
 - [ ] 后续流程步骤不会要求一次性重构未进入该步骤的 Agent。

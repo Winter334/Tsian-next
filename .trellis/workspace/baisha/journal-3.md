@@ -880,3 +880,39 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 131: mode.json 抽象清理
+
+**Date**: 2026-07-06
+**Task**: 07-06-mode-json-abstraction-cleanup
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+作为 07-06-agent-roster-progressive-refactor 父任务的首个子任务，彻底废弃 novel AIRP 中面向 Agent 的 `save/playthrough/mode.json` 软玩法开关抽象。零表面痕迹清理：删除默认种子、`commit_mode` 脚本、`玩法启用` Skill、三处 `行动裁定` Skill (storyteller / stage-manager / world-architect)；从 schema guide/reference、runtime README、playthrough README、agents README、各 Agent AGENT.md 与 agent.json summary/contextPaths/skills 中移除所有 `mode.json` 与 `enabled/disabled/deferred` 语义。roll_dice Tool 作为通用能力保留，行动裁定规则延后到玩家流程重构子任务。
+
+### Main Changes
+
+- `apps/platform-web/src/storage/workspace-templates.ts`：删除 `STORYTELLER_ACTION_RESOLUTION_SKILL_MD` / `STAGE_MANAGER_ACTION_RESOLUTION_SKILL_MD` / `WORLD_ARCHITECT_ACTION_RESOLUTION_SKILL_MD` / `WORLD_ARCHITECT_GAMEPLAY_ENABLEMENT_SKILL_MD` / `COMMIT_MODE_SCRIPT_JS`；删除 `save/playthrough/mode.json` 种子；从 `DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS` 移除 `mode.json`；stage-manager/world-architect `contextPaths` 移除 `mode.json`；三 Agent skills 相应精简；schema guide/reference 中 `## mode.json` / `## Gameplay Modes` 段落全部删除，语言边界与权威归属条目对应更新；playthrough/runtime/agents README 内联字符串去掉玩法/mode 引用。
+- 父任务 `07-06-agent-roster-progressive-refactor/prd.md`：Child Task Map 标记 mode.json 清理为已归档；新增 Player Flow Map（0-5 步骤）与 Current Agent / Skill / Tool Ledger；Acceptance Criteria 勾选对应条目。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| pending | (finalize commit after archive) |
+
+### Testing
+
+- [OK] `grep` on `workspace-templates.ts` for `mode.json` / `commit_mode` / `commit-mode` / `COMMIT_MODE` / `GAMEPLAY_ENABLEMENT` / `ACTION_RESOLUTION` / `行动裁定` / `玩法启用` — zero hits
+- [OK] `npm run build:web` — built in 21.07s (warnings on chunk size only, pre-existing)
+
+### Status
+
+[OK] **Completed** — ready to archive
+
+### Next Steps
+
+- `python .trellis/scripts/task.py archive 07-06-mode-json-abstraction-cleanup`
+- 下一子任务：开局向导 world-architect + director 重构（Player Flow Map #1）
