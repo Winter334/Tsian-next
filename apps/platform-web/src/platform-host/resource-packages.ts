@@ -42,6 +42,11 @@ export type SkillPackageSource =
   | { kind: "agent-local"; cardId: string; agentId: string; skillId: string; skillPath?: string }
   | { kind: "assistant-local"; skillId: string; skillPath?: string }
 
+export type ToolPackageSource =
+  | { kind: "card-shared"; cardId: string; toolId: string; toolPath?: string }
+  | { kind: "agent-local"; cardId: string; agentId: string; toolId: string; toolPath?: string }
+  | { kind: "assistant-local"; toolId: string; toolPath?: string }
+
 export type AgentInstallTarget =
   | { kind: "card"; cardId: string }
   | { kind: "assistant" }
@@ -51,8 +56,13 @@ export type SkillInstallTarget =
   | { kind: "agent-local"; cardId: string; agentId: string }
   | { kind: "assistant-local" }
 
+export type ToolInstallTarget =
+  | { kind: "card-shared"; cardId: string }
+  | { kind: "agent-local"; cardId: string; agentId: string }
+  | { kind: "assistant-local" }
+
 export interface ResourcePackageInspection {
-  resourceType: "agent" | "skill"
+  resourceType: "agent" | "skill" | "tool"
   resourceId: string
   name: string
   summary: string
@@ -118,6 +128,29 @@ export async function exportSkillPackage(source: SkillPackageSource): Promise<Bl
   }, sourceFiles)
 }
 
+export async function exportToolPackage(source: ToolPackageSource): Promise<Blob> {
+  const sourceFiles = source.kind === "assistant-local"
+    ? await assistantToolPackageFiles(source)
+    : await cardToolPackageFiles(source)
+  const toolFile = sourceFiles.find((file) => file.path === "tool.json")
+  if (!toolFile) {
+    throw new Error("Tool 缺少 tool.json，无法导出。")
+  }
+  const manifest = parseToolManifestMetadata(toolFile.content)
+  const resourceId = source.toolId
+  const name = cleanString(manifest.title) ?? cleanString(manifest.name) ?? resourceId
+  const summary = cleanString(manifest.description) ?? "Tool resource package."
+
+  return buildResourcePackage({
+    resourceType: "tool",
+    resourceId,
+    name,
+    summary,
+    author: "",
+    version: DEFAULT_RESOURCE_VERSION,
+  }, sourceFiles)
+}
+
 export async function inspectResourcePackage(blob: Blob): Promise<ResourcePackageInspection> {
   const parsed = await parseResourcePackage(blob)
   return {
@@ -156,6 +189,19 @@ export async function installSkillPackage(blob: Blob, target: SkillInstallTarget
   await replaceCardContentDirectory(target.cardId, directory, parsed.files)
 }
 
+export async function installToolPackage(blob: Blob, target: ToolInstallTarget): Promise<void> {
+  const parsed = await parseResourcePackage(blob, "tool")
+  if (target.kind === "assistant-local") {
+    await replaceAssistantToolDirectory(parsed.manifest.resourceId, parsed.files)
+    return
+  }
+
+  const directory = target.kind === "agent-local"
+    ? `agents/${target.agentId}/tools/${parsed.manifest.resourceId}`
+    : `tools/${parsed.manifest.resourceId}`
+  await replaceCardContentDirectory(target.cardId, directory, parsed.files)
+}
+
 export async function replaceCardContentDirectory(
   cardId: string,
   directoryPath: string,
@@ -178,11 +224,24 @@ export async function replaceAssistantDefinition(files: TextPackageFile[]): Prom
     `${LOCAL_ASSISTANT_DIR}/AGENT.md`,
     `${LOCAL_ASSISTANT_DIR}/SOUL.md`,
     `${LOCAL_ASSISTANT_DIR}/skills`,
+    `${LOCAL_ASSISTANT_DIR}/tools`,
   ], files.map((file) => assistantWorkspaceFile(file.path, file.content)), { skipDefaultMerge: true })
 }
 
 export async function replaceAssistantSkillDirectory(skillId: string, files: TextPackageFile[]): Promise<void> {
   const directory = `${LOCAL_ASSISTANT_DIR}/skills/${normalizePackagePath(skillId)}`
+  await replaceLocalAssistantFiles([
+    directory,
+  ], files.map((file) => ({
+    path: `${directory}/${file.path}`,
+    content: file.content,
+    createdAt: 0,
+    updatedAt: Date.now(),
+  })))
+}
+
+export async function replaceAssistantToolDirectory(toolId: string, files: TextPackageFile[]): Promise<void> {
+  const directory = `${LOCAL_ASSISTANT_DIR}/tools/${normalizePackagePath(toolId)}`
   await replaceLocalAssistantFiles([
     directory,
   ], files.map((file) => ({
@@ -225,6 +284,17 @@ async function cardSkillPackageFiles(
   return cardDirectoryPackageFiles(source.cardId, skillDirectory)
 }
 
+async function cardToolPackageFiles(
+  source: Extract<ToolPackageSource, { kind: "card-shared" | "agent-local" }>,
+): Promise<TextPackageFile[]> {
+  const toolDirectory = source.toolPath
+    ? toolDirectoryFromToolPath(source.toolPath)
+    : source.kind === "agent-local"
+      ? `agents/${source.agentId}/tools/${source.toolId}`
+      : `tools/${source.toolId}`
+  return cardDirectoryPackageFiles(source.cardId, toolDirectory)
+}
+
 async function assistantDefinitionPackageFiles(): Promise<TextPackageFile[]> {
   const prefix = `${LOCAL_ASSISTANT_DIR}/`
   const files = (await loadLocalAssistantFiles())
@@ -238,6 +308,7 @@ async function assistantDefinitionPackageFiles(): Promise<TextPackageFile[]> {
         || relativePath === "AGENT.md"
         || relativePath === "SOUL.md"
         || relativePath.startsWith("skills/")
+        || relativePath.startsWith("tools/")
       ) {
         return [{ path: normalizePackagePath(relativePath), content: file.content }]
       }
@@ -258,12 +329,32 @@ async function assistantSkillPackageFiles(source: Extract<SkillPackageSource, { 
   return sortPackageFiles(files)
 }
 
+async function assistantToolPackageFiles(source: Extract<ToolPackageSource, { kind: "assistant-local" }>): Promise<TextPackageFile[]> {
+  const toolDirectory = source.toolPath
+    ? toolDirectoryFromToolPath(source.toolPath)
+    : `${LOCAL_ASSISTANT_DIR}/tools/${normalizePackagePath(source.toolId)}`
+  const prefix = `${toolDirectory}/`
+  const files = (await loadLocalAssistantFiles())
+    .flatMap((file): TextPackageFile[] => file.path.startsWith(prefix)
+      ? [{ path: normalizePackagePath(file.path.slice(prefix.length)), content: file.content }]
+      : [])
+  return sortPackageFiles(files)
+}
+
 function skillDirectoryFromSkillPath(skillPath: string): string {
   const path = normalizePackagePath(skillPath)
   if (!path.endsWith("/SKILL.md")) {
     throw new Error(`Skill 路径必须指向 SKILL.md：${skillPath}`)
   }
   return path.slice(0, -"/SKILL.md".length)
+}
+
+function toolDirectoryFromToolPath(toolPath: string): string {
+  const path = normalizePackagePath(toolPath)
+  if (!path.endsWith("/tool.json")) {
+    throw new Error(`Tool 路径必须指向 tool.json：${toolPath}`)
+  }
+  return path.slice(0, -"/tool.json".length)
 }
 
 function buildResourcePackage(
@@ -364,7 +455,7 @@ function validateResourceManifest(manifest: ResourcePackageManifest): void {
   if (manifest.schema !== RESOURCE_PACKAGE_SCHEMA) {
     throw new Error(`不支持的资源包 schema：${manifest.schema}`)
   }
-  if (manifest.resourceType !== "agent" && manifest.resourceType !== "skill") {
+  if (manifest.resourceType !== "agent" && manifest.resourceType !== "skill" && manifest.resourceType !== "tool") {
     throw new Error(`不支持的资源类型：${manifest.resourceType}`)
   }
   if (manifest.files.length === 0) {
@@ -383,8 +474,14 @@ function validateRequiredFiles(resourceType: ResourcePackageManifest["resourceTy
     }
     return
   }
-  if (!pathSet.has("SKILL.md")) {
-    throw new Error("Skill 资源包缺少 SKILL.md。")
+  if (resourceType === "skill") {
+    if (!pathSet.has("SKILL.md")) {
+      throw new Error("Skill 资源包缺少 SKILL.md。")
+    }
+    return
+  }
+  if (!pathSet.has("tool.json")) {
+    throw new Error("Tool 资源包缺少 tool.json。")
   }
 }
 
@@ -436,6 +533,15 @@ function parseAgentConfig(source: string): Partial<AgentConfig> {
   try {
     const parsed = JSON.parse(source) as unknown
     return isRecord(parsed) ? parsed as Partial<AgentConfig> : {}
+  } catch {
+    return {}
+  }
+}
+
+function parseToolManifestMetadata(source: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(source) as unknown
+    return isRecord(parsed) ? parsed : {}
   } catch {
     return {}
   }

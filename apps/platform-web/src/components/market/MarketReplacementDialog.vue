@@ -43,7 +43,7 @@ import type { LocalGameCardView } from "@/storage/game-cards"
 import { computed } from "vue"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import { getGameCardCoverUrl } from "@/lib/game-card-display"
-import type { AgentUploadOption, MarketUploadSelectionPayload, SkillUploadOption } from "./types"
+import type { AgentUploadOption, MarketUploadSelectionPayload, SkillUploadOption, ToolUploadOption } from "./types"
 
 interface ReplacementOption {
   key: string
@@ -58,6 +58,7 @@ const props = defineProps<{
   cards: LocalGameCardView[]
   agentOptions: AgentUploadOption[]
   skillOptions: SkillUploadOption[]
+  toolOptions: ToolUploadOption[]
   loading: boolean
 }>()
 
@@ -72,6 +73,8 @@ const resourceLabel = computed(() => {
       return " Agent"
     case "skill":
       return " Skill"
+    case "tool":
+      return " Tool"
     case "game_card":
     default:
       return "游戏卡"
@@ -97,6 +100,14 @@ const options = computed<ReplacementOption[]>(() => {
         summary: option.summary,
         resourceId: option.resourceId,
         selection: { resourceType: "skill", source: option.source },
+      }))
+    case "tool":
+      return props.toolOptions.map((option) => ({
+        key: option.key,
+        label: option.label,
+        summary: option.summary,
+        resourceId: option.resourceId,
+        selection: { resourceType: "tool", source: option.source },
       }))
     case "game_card":
     default:

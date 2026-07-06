@@ -1,0 +1,11 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required checks for platform-web changes and source references for platform host / views."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Market UI changes happen in Vue route/components; use component and route-view conventions."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Package install/upload mutations must refresh via platform APIs and preserve local assistant file semantics."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Assistant local files and card content storage boundaries are relevant to Tool install/export targets."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Contracts change affects frontend consumers and required builds."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Contracts package authoring constraints for MarketResourceType change."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Contract build and consuming build requirements."}
+{"file":".trellis/spec/guides/agent-skill-design-principles.md","reason":"Tool/Skill distribution symmetry and capability-boundary guidance."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Tool packages are file-based workspace content and assistant-visible local files."}
+{"file":".trellis/tasks/archive/2026-07/07-05-agent-tool-mechanism/prd.md","reason":"Source requirements for Tool directory semantics, creative workshop notes, and local Tool boundary."}
+{"file":".trellis/tasks/archive/2026-07/07-05-agent-tool-mechanism/design.md","reason":"Technical design for Tool registry paths and Studio Tool management behavior used by distribution planning."}

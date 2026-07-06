@@ -2,7 +2,7 @@
   <div class="grid gap-4">
     <div class="grid gap-2">
       <p class="font-mono text-xs text-text-dim">选择资源类型：</p>
-      <div class="grid gap-2 sm:grid-cols-3">
+      <div class="grid gap-2 sm:grid-cols-4">
         <button
           v-for="option in resourceTypes"
           :key="option.type"
@@ -87,7 +87,7 @@
         </div>
       </template>
 
-      <template v-else>
+      <template v-else-if="uploadType === 'skill'">
         <p v-if="skillOptions.length === 0" class="text-sm text-text-dim">当前加载卡没有可上传的 Skill。</p>
         <div v-else class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
           <button
@@ -100,6 +100,32 @@
           >
             <div :class="skillVisual.coverClass" class="absolute inset-0 grid place-items-center">
               <component :is="skillVisual.icon" class="h-10 w-10 text-text-main/70" aria-hidden="true" />
+            </div>
+            <div class="pointer-events-none absolute inset-0 bg-noise opacity-30 mix-blend-overlay" aria-hidden="true" />
+            <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/85 to-transparent p-2.5">
+              <h3 class="truncate text-xs font-bold text-text-main">{{ option.label }}</h3>
+              <p class="mt-0.5 truncate text-[10px] leading-3.5 text-text-dim/90">{{ option.summary || '暂无简介' }}</p>
+              <div class="mt-1 font-mono text-[10px] text-text-dim">
+                <span class="truncate">{{ option.resourceId }}</span>
+              </div>
+            </div>
+          </button>
+        </div>
+      </template>
+
+      <template v-else-if="uploadType === 'tool'">
+        <p v-if="toolOptions.length === 0" class="text-sm text-text-dim">当前加载卡没有可上传的 Tool。</p>
+        <div v-else class="grid gap-3 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-4">
+          <button
+            v-for="option in toolOptions"
+            :key="option.key"
+            type="button"
+            class="retro-focus selection-tile group relative aspect-[4/5] w-full overflow-hidden border border-neon-deep/40 transition-shadow group-hover:shadow-neon-glow disabled:cursor-not-allowed disabled:opacity-45"
+            :disabled="uploading"
+            @click="selectTool(option.key)"
+          >
+            <div :class="toolVisual.coverClass" class="absolute inset-0 grid place-items-center">
+              <component :is="toolVisual.icon" class="h-10 w-10 text-text-main/70" aria-hidden="true" />
             </div>
             <div class="pointer-events-none absolute inset-0 bg-noise opacity-30 mix-blend-overlay" aria-hidden="true" />
             <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-void via-void/85 to-transparent p-2.5">
@@ -127,6 +153,7 @@ import type {
   MarketResourceTypeOption,
   MarketUploadSelectionPayload,
   SkillUploadOption,
+  ToolUploadOption,
 } from "./types"
 
 const props = defineProps<{
@@ -135,6 +162,7 @@ const props = defineProps<{
   cards: LocalGameCardView[]
   agentOptions: AgentUploadOption[]
   skillOptions: SkillUploadOption[]
+  toolOptions: ToolUploadOption[]
   loading: boolean
   uploading: boolean
 }>()
@@ -148,6 +176,7 @@ const uploadType = ref<MarketResourceType>(props.initialType)
 const gameCardVisual = getResourceTypeVisual("game_card")
 const agentVisual = getResourceTypeVisual("agent")
 const skillVisual = getResourceTypeVisual("skill")
+const toolVisual = getResourceTypeVisual("tool")
 
 watch(() => props.initialType, (value) => {
   uploadType.value = value
@@ -172,6 +201,13 @@ function selectSkill(key: string): void {
   const option = props.skillOptions.find((candidate) => candidate.key === key)
   if (option) {
     emit("prepare-upload", { resourceType: "skill", source: option.source })
+  }
+}
+
+function selectTool(key: string): void {
+  const option = props.toolOptions.find((candidate) => candidate.key === key)
+  if (option) {
+    emit("prepare-upload", { resourceType: "tool", source: option.source })
   }
 }
 </script>

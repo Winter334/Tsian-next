@@ -139,6 +139,7 @@
             :cards="uploadCards"
             :agent-options="agentUploadOptions"
             :skill-options="skillUploadOptions"
+            :tool-options="toolUploadOptions"
             :loading="localResourcesLoading"
             :uploading="uploading"
             @prepare-upload="handlePrepareUpload"
@@ -167,6 +168,7 @@
       :cards="uploadCards"
       :agent-options="agentUploadOptions"
       :skill-options="skillUploadOptions"
+      :tool-options="toolUploadOptions"
       :loading="localResourcesLoading"
       @close="replacementDialogOpen = false"
       @select="handleReplacementSelected"
@@ -178,9 +180,9 @@
 import { computed, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
 import { ArrowLeft, Search, Store, Upload, UserRound } from "lucide-vue-next"
-import type { MarketPackage, MarketResourceType, SkillRegistryEntry, WorkspaceFile } from "@tsian/contracts"
+import type { MarketPackage, MarketResourceType, SkillRegistryEntry, ToolRegistryEntry, WorkspaceFile } from "@tsian/contracts"
 import type { LocalGameCardView } from "@/storage/game-cards"
-import { buildAgentRegistry, buildSkillRegistry } from "@/agent-runtime/registry"
+import { buildAgentRegistry, buildSkillRegistry, buildToolRegistry } from "@/agent-runtime/registry"
 import { toast } from "@/composables/useToast"
 import { confirm } from "@/composables/useConfirm"
 import { openDialogForm } from "@/composables/useDialogForm"
@@ -190,11 +192,13 @@ import {
   exportAgentPackage,
   exportPlatformGameCardPackage,
   exportSkillPackage,
+  exportToolPackage,
   getPlatformActiveGameCard,
   importPlatformGameCardPackage,
   inspectResourcePackage,
   installAgentPackage,
   installSkillPackage,
+  installToolPackage,
   listPlatformGameCards,
 } from "@/platform-host"
 import {
@@ -223,6 +227,7 @@ import type {
   MarketUploadSelectionPayload,
   MarketUploadSubmitPayload,
   SkillUploadOption,
+  ToolUploadOption,
 } from "@/components/market/types"
 
 type MarketScope = "all" | "mine"
@@ -242,6 +247,7 @@ const resourceTypeOptions: MarketResourceTypeOption[] = [
   resourceTypeOption("game_card", resourceTypeVisuals.game_card, "完整卡包"),
   resourceTypeOption("agent", resourceTypeVisuals.agent, "角色与流程代理"),
   resourceTypeOption("skill", resourceTypeVisuals.skill, "可复用能力"),
+  resourceTypeOption("tool", resourceTypeVisuals.tool, "原生函数工具"),
 ]
 
 const screen = ref<Screen>({ kind: "list" })
@@ -339,6 +345,29 @@ const skillUploadOptions = computed<SkillUploadOption[]>(() => {
   return options
 })
 
+const toolUploadOptions = computed<ToolUploadOption[]>(() => {
+  const options: ToolUploadOption[] = []
+  for (const card of localCards.value) {
+    const files = cardFilesById.value[card.id] ?? []
+    for (const tool of buildToolRegistry(files).tools) {
+      options.push(toolUploadOptionFromRegistry(tool, card))
+    }
+  }
+  for (const tool of buildToolRegistry(assistantFiles.value).tools) {
+    if (tool.scope !== "agent-local" || tool.agentId !== LOCAL_ASSISTANT_AGENT_ID || !tool.path.startsWith(".tsian/local/assistant/tools/")) {
+      continue
+    }
+    options.push({
+      key: `assistant:${tool.id}`,
+      label: `${tool.title} · 桌面助手`,
+      summary: tool.description,
+      resourceId: tool.id,
+      source: { kind: "assistant-local", toolId: tool.id, toolPath: tool.path },
+    })
+  }
+  return options
+})
+
 const emptyMessage = computed(() => {
   if (marketScope.value === "mine") {
     if (searchQuery.value || tagQuery.value) {
@@ -354,6 +383,8 @@ const emptyMessage = computed(() => {
       return "创意工坊还没有 Agent，成为第一个上传者吧。"
     case "skill":
       return "创意工坊还没有 Skill，成为第一个上传者吧。"
+    case "tool":
+      return "创意工坊还没有 Tool，成为第一个上传者吧。"
     case "game_card":
     default:
       return "创意工坊还没有游戏卡，成为第一个上传者吧。"
@@ -593,7 +624,15 @@ function uploadMetadataDefaults(selection: MarketUploadSelectionPayload): Market
       version: "0.1.0",
     }
   }
-  const option = skillUploadOptions.value.find((candidate) => sameSkillSource(candidate.source, selection.source))
+  if (selection.resourceType === "skill") {
+    const option = skillUploadOptions.value.find((candidate) => sameSkillSource(candidate.source, selection.source))
+    return {
+      title: option?.label ?? "",
+      summary: option?.summary ?? "",
+      version: "0.1.0",
+    }
+  }
+  const option = toolUploadOptions.value.find((candidate) => sameToolSource(candidate.source, selection.source))
   return {
     title: option?.label ?? "",
     summary: option?.summary ?? "",
@@ -625,6 +664,24 @@ function sameSkillSource(left: SkillUploadOption["source"], right: SkillUploadOp
         && left.cardId === right.cardId
         && left.skillId === right.skillId
         && left.skillPath === right.skillPath
+  }
+}
+
+function sameToolSource(left: ToolUploadOption["source"], right: ToolUploadOption["source"]): boolean {
+  switch (left.kind) {
+    case "assistant-local":
+      return right.kind === "assistant-local" && left.toolId === right.toolId && left.toolPath === right.toolPath
+    case "agent-local":
+      return right.kind === "agent-local"
+        && left.cardId === right.cardId
+        && left.agentId === right.agentId
+        && left.toolId === right.toolId
+        && left.toolPath === right.toolPath
+    case "card-shared":
+      return right.kind === "card-shared"
+        && left.cardId === right.cardId
+        && left.toolId === right.toolId
+        && left.toolPath === right.toolPath
   }
 }
 
@@ -709,35 +766,45 @@ async function installGameCardPackage(pkg: MarketPackage): Promise<void> {
 }
 
 function buildInstallOptions(resourceType: MarketPackage["resourceType"], resourceId: string): MarketInstallTargetOption[] {
-  if (resourceType === "agent") {
-    return [
-      ...localCards.value.map((card) => {
-        const exists = (cardFilesById.value[card.id] ?? []).some((file) => file.path === `agents/${resourceId}/agent.json`)
-        return {
-          key: `card:${card.id}`,
-          label: `安装到游戏卡：${card.manifest.name || card.id}`,
-          description: exists ? "已存在同 id Agent，将替换安装。" : "写入该卡的 agents/ 目录。",
-          requiresConfirm: exists,
-          confirmTitle: "替换 Agent",
-          confirmMessage: `游戏卡「${card.manifest.name || card.id}」中已存在 Agent「${resourceId}」。替换会删除旧目录后写入新资源。`,
+  switch (resourceType) {
+    case "agent":
+      return [
+        ...localCards.value.map((card) => {
+          const exists = (cardFilesById.value[card.id] ?? []).some((file) => file.path === `agents/${resourceId}/agent.json`)
+          return {
+            key: `card:${card.id}`,
+            label: `安装到游戏卡：${card.manifest.name || card.id}`,
+            description: exists ? "已存在同 id Agent，将替换安装。" : "写入该卡的 agents/ 目录。",
+            requiresConfirm: exists,
+            confirmTitle: "替换 Agent",
+            confirmMessage: `游戏卡「${card.manifest.name || card.id}」中已存在 Agent「${resourceId}」。替换会删除旧目录后写入新资源。`,
+            resourceType: "agent" as const,
+            target: { kind: "card" as const, cardId: card.id },
+          }
+        }),
+        {
+          key: "assistant",
+          label: "覆盖桌面助手",
+          description: "替换助手定义、skills 和 tools，保留 sessions/traces/notes。",
+          severity: "danger",
+          requiresConfirm: true,
+          confirmTitle: "覆盖桌面助手",
+          confirmMessage: "将替换当前桌面助手定义、skills 和 tools，保留会话、trace 和 notes。此操作无法自动撤销。",
           resourceType: "agent" as const,
-          target: { kind: "card" as const, cardId: card.id },
-        }
-      }),
-      {
-        key: "assistant",
-        label: "覆盖桌面助手",
-        description: "替换助手定义和 skills，保留 sessions/traces/notes。",
-        severity: "danger",
-        requiresConfirm: true,
-        confirmTitle: "覆盖桌面助手",
-        confirmMessage: "将替换当前桌面助手定义，保留会话、trace 和 notes。此操作无法自动撤销。",
-        resourceType: "agent" as const,
-        target: { kind: "assistant" as const },
-      },
-    ]
+          target: { kind: "assistant" as const },
+        },
+      ]
+    case "skill":
+      return buildSkillInstallOptions(resourceId)
+    case "tool":
+      return buildToolInstallOptions(resourceId)
+    case "game_card":
+    default:
+      return []
   }
+}
 
+function buildSkillInstallOptions(resourceId: string): MarketInstallTargetOption[] {
   return [
     ...localCards.value.flatMap((card) => {
       const files = cardFilesById.value[card.id] ?? []
@@ -780,6 +847,49 @@ function buildInstallOptions(resourceType: MarketPackage["resourceType"], resour
   ]
 }
 
+function buildToolInstallOptions(resourceId: string): MarketInstallTargetOption[] {
+  return [
+    ...localCards.value.flatMap((card) => {
+      const files = cardFilesById.value[card.id] ?? []
+      const cardSharedExists = files.some((file) => file.path === `tools/${resourceId}/tool.json`)
+      const options: MarketInstallTargetOption[] = [{
+        key: `tool-card-shared:${card.id}`,
+        label: `安装到卡共享：${card.manifest.name || card.id}`,
+        description: cardSharedExists ? "共享 Tool 已存在，将替换安装。" : "写入该卡的 tools/ 目录。",
+        requiresConfirm: cardSharedExists,
+        confirmTitle: "替换共享 Tool",
+        confirmMessage: `游戏卡「${card.manifest.name || card.id}」中已存在共享 Tool「${resourceId}」。替换会删除旧目录后写入新资源。`,
+        resourceType: "tool",
+        target: { kind: "card-shared", cardId: card.id },
+      }]
+      for (const agent of buildAgentRegistry(files)) {
+        const exists = files.some((file) => file.path === `agents/${agent.id}/tools/${resourceId}/tool.json`)
+        options.push({
+          key: `tool-agent-local:${card.id}:${agent.id}`,
+          label: `安装到 ${agent.title}：${card.manifest.name || card.id}`,
+          description: exists ? "Agent-local Tool 已存在，将替换安装。" : "写入该 Agent 的 tools/ 目录。",
+          requiresConfirm: exists,
+          confirmTitle: "替换 Agent Tool",
+          confirmMessage: `Agent「${agent.title}」中已存在 Tool「${resourceId}」。替换会删除旧目录后写入新资源。`,
+          resourceType: "tool",
+          target: { kind: "agent-local", cardId: card.id, agentId: agent.id },
+        })
+      }
+      return options
+    }),
+    {
+      key: "tool-assistant-local",
+      label: "安装到桌面助手",
+      description: "写入桌面助手的本地 tools/ 目录。",
+      requiresConfirm: assistantFiles.value.some((file) => file.path === `.tsian/local/assistant/tools/${resourceId}/tool.json`),
+      confirmTitle: "替换助手 Tool",
+      confirmMessage: `桌面助手中已存在 Tool「${resourceId}」。替换会删除旧目录后写入新资源。`,
+      resourceType: "tool",
+      target: { kind: "assistant-local" },
+    },
+  ]
+}
+
 async function handleInstallTargetSelected(option: MarketInstallTargetOption): Promise<void> {
   const blob = pendingInstallBlob.value
   if (!blob) {
@@ -804,8 +914,10 @@ async function handleInstallTargetSelected(option: MarketInstallTargetOption): P
   try {
     if (option.resourceType === "agent") {
       await installAgentPackage(blob, option.target)
-    } else {
+    } else if (option.resourceType === "skill") {
       await installSkillPackage(blob, option.target)
+    } else {
+      await installToolPackage(blob, option.target)
     }
     toast.success("资源已安装。")
     feedback.value = "资源已安装。"
@@ -820,11 +932,16 @@ async function handleInstallTargetSelected(option: MarketInstallTargetOption): P
 }
 
 async function exportMarketSelection(selection: MarketUploadSelectionPayload): Promise<Blob> {
-  return selection.resourceType === "game_card"
-    ? exportPlatformGameCardPackage(selection.cardId)
-    : selection.resourceType === "agent"
-      ? exportAgentPackage(selection.source)
-      : exportSkillPackage(selection.source)
+  switch (selection.resourceType) {
+    case "game_card":
+      return exportPlatformGameCardPackage(selection.cardId)
+    case "agent":
+      return exportAgentPackage(selection.source)
+    case "skill":
+      return exportSkillPackage(selection.source)
+    case "tool":
+      return exportToolPackage(selection.source)
+  }
 }
 
 function startEditPackage(): void {
@@ -863,8 +980,12 @@ function replacementSelectionLabel(selection: MarketUploadSelectionPayload): str
     const option = agentUploadOptions.value.find((candidate) => sameAgentSource(candidate.source, selection.source))
     return option?.label ?? "Agent"
   }
-  const option = skillUploadOptions.value.find((candidate) => sameSkillSource(candidate.source, selection.source))
-  return option?.label ?? "Skill"
+  if (selection.resourceType === "skill") {
+    const option = skillUploadOptions.value.find((candidate) => sameSkillSource(candidate.source, selection.source))
+    return option?.label ?? "Skill"
+  }
+  const option = toolUploadOptions.value.find((candidate) => sameToolSource(candidate.source, selection.source))
+  return option?.label ?? "Tool"
 }
 
 async function handleSavePackageEdit(metadata: Required<MarketUploadMetadata>): Promise<void> {
@@ -982,6 +1103,18 @@ function skillUploadOptionFromRegistry(skill: SkillRegistryEntry, card: LocalGam
     source: skill.scope === "agent-local" && skill.agentId
       ? { kind: "agent-local", cardId: card.id, agentId: skill.agentId, skillId: skill.id, skillPath: skill.path }
       : { kind: "card-shared", cardId: card.id, skillId: skill.id, skillPath: skill.path },
+  }
+}
+
+function toolUploadOptionFromRegistry(tool: ToolRegistryEntry, card: LocalGameCardView): ToolUploadOption {
+  return {
+    key: `card:${card.id}:${tool.path}`,
+    label: `${tool.title} · ${card.manifest.name || card.id}`,
+    summary: tool.description,
+    resourceId: tool.id,
+    source: tool.scope === "agent-local" && tool.agentId
+      ? { kind: "agent-local", cardId: card.id, agentId: tool.agentId, toolId: tool.id, toolPath: tool.path }
+      : { kind: "card-shared", cardId: card.id, toolId: tool.id, toolPath: tool.path },
   }
 }
 </script>

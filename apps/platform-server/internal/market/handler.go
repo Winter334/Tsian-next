@@ -226,6 +226,7 @@ func (h *Handler) handleCounts(w http.ResponseWriter, r *http.Request, uploaderI
 		string(ResourceGameCard): counts[ResourceGameCard],
 		string(ResourceAgent):    counts[ResourceAgent],
 		string(ResourceSkill):    counts[ResourceSkill],
+		string(ResourceTool):     counts[ResourceTool],
 	}})
 }
 
@@ -754,7 +755,7 @@ func validateUploadZip(content []byte, resourceType ResourceType) (*uploadManife
 			Name:            manifest.Name,
 			Summary:         manifest.Summary,
 		}, nil
-	case ResourceAgent, ResourceSkill:
+	case ResourceAgent, ResourceSkill, ResourceTool:
 		manifest, err := validateResourcePackageZip(content, resourceType)
 		if err != nil {
 			return nil, err
@@ -929,6 +930,10 @@ func validateResourcePackageZip(content []byte, expectedType ResourceType) (*res
 		if !listedPaths["SKILL.md"] {
 			return nil, errors.New("skill package missing SKILL.md")
 		}
+	case ResourceTool:
+		if !listedPaths["tool.json"] {
+			return nil, errors.New("tool package missing tool.json")
+		}
 	}
 
 	manifest.ResourceID = resourceID
@@ -1019,7 +1024,7 @@ func parseListLimit(value string) (int, error) {
 
 func parseResourceType(value string) (ResourceType, error) {
 	switch ResourceType(value) {
-	case ResourceGameCard, ResourceAgent, ResourceSkill:
+	case ResourceGameCard, ResourceAgent, ResourceSkill, ResourceTool:
 		return ResourceType(value), nil
 	default:
 		return "", fmt.Errorf("unsupported resourceType: %s", value)
@@ -1153,6 +1158,8 @@ func downloadFileName(pkg PackageWithUploader) string {
 		return id + ".tsian-agent.zip"
 	case ResourceSkill:
 		return id + ".tsian-skill.zip"
+	case ResourceTool:
+		return id + ".tsian-tool.zip"
 	default:
 		return id + ".tsian-card.zip"
 	}

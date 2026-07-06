@@ -27,7 +27,7 @@
 tools/<id>/tool.json            # 共享 Tool，所有 Agent 可见
 tools/<id>/run.js
 agents/<agent>/tools/<id>/…     # Agent 私有 Tool，仅该 Agent 可见；同名可覆盖共享
-.tsian/local/<agent>/tools/<id>/…  # 机器私有 Tool，不入 checkpoint、不随卡包分发
+.tsian/local/<agent>/tools/<id>/…  # 机器私有 Tool，不入 checkpoint、不随卡包分发；可显式导出为 Tool 资源包
 ```
 
 Skill 目录布局同构：`skills/<id>/SKILL.md`、`agents/<agent>/skills/<id>/SKILL.md`、`.tsian/local/<agent>/skills/<id>/SKILL.md`。
@@ -102,7 +102,14 @@ Tool 脚本运行在同一个 Web Worker sandbox 里，但：
 
 - Tool 脚本运行在 Worker 里，与主线程 DOM/localStorage 隔离。
 - 与 Skill 相同：`workspace.*` 通过 SDK RPC 走主线程，受 Agent `workspaceAccess` 权限约束。
-- Tool 目录内容可以进创意工坊分发（除 `.tsian/local/**` 以外）——审阅同 Skill：审 `run.js`、审 `helpers`、审 `tool.json.parameters`。
+- 卡内容里的 Tool 目录内容可以进创意工坊分发——审阅同 Skill：审 `run.js`、审 `helpers`、审 `tool.json.parameters`。`.tsian/local/**` 默认不随卡包分发，但可由用户显式上传为独立 Tool 资源包。
+
+## 创意工坊分发
+
+- 完整游戏卡包会携带卡内容里的共享 Tool（`tools/<id>/...`）与 Agent-local Tool（`agents/<agent>/tools/<id>/...`）。
+- 创意工坊也支持独立 Tool 资源包：包内容是某个 Tool 目录内的文本文件，根目录必须包含 `tool.json`，可安装到卡共享 `tools/`、指定 Agent 的 `agents/<agent>/tools/`，或桌面助手 `.tsian/local/assistant/tools/`。
+- `.tsian/local/**` 默认仍是本机私有：不进 checkpoint，也不随完整卡包自动分发；只有用户显式上传为 Tool 资源包，或上传完整桌面助手 Agent 包时才会分发。
+- Tool 资源包只携带 Tool 目录内容，不携带 `agent.json.tools.enabled/disabled` 启停状态；安装后是否对某个 Agent 暴露仍由 Studio / 助手配置面板管理。
 
 ## Studio 面板
 

@@ -5,6 +5,8 @@ import type {
   AgentPackageSource,
   SkillInstallTarget,
   SkillPackageSource,
+  ToolInstallTarget,
+  ToolPackageSource,
 } from "@/platform-host"
 import type { ResourceTypeVisual } from "./resource-type-visual"
 
@@ -52,6 +54,14 @@ export interface SkillUploadOption {
   resourceId: string
 }
 
+export interface ToolUploadOption {
+  key: string
+  label: string
+  summary: string
+  source: ToolPackageSource
+  resourceId: string
+}
+
 export interface MarketUploadMetadata {
   title?: string
   summary?: string
@@ -64,6 +74,7 @@ export type MarketUploadSelectionPayload =
   | { resourceType: "game_card"; cardId: string }
   | { resourceType: "agent"; source: AgentPackageSource }
   | { resourceType: "skill"; source: SkillPackageSource }
+  | { resourceType: "tool"; source: ToolPackageSource }
 
 export type MarketUploadSubmitPayload = MarketUploadSelectionPayload & MarketUploadMetadata
 
@@ -89,6 +100,17 @@ export type MarketInstallTargetOption =
       confirmMessage?: string
       resourceType: "skill"
       target: SkillInstallTarget
+    }
+  | {
+      key: string
+      label: string
+      description: string
+      severity?: "normal" | "danger"
+      requiresConfirm?: boolean
+      confirmTitle?: string
+      confirmMessage?: string
+      resourceType: "tool"
+      target: ToolInstallTarget
     }
 
 export interface MarketInstallDialogState {

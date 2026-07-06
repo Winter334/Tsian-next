@@ -1536,16 +1536,21 @@ export {
 export {
   exportAgentPackage,
   exportSkillPackage,
+  exportToolPackage,
   inspectResourcePackage,
   installAgentPackage,
   installSkillPackage,
+  installToolPackage,
   replaceCardContentDirectory,
   replaceAssistantDefinition,
   replaceAssistantSkillDirectory,
+  replaceAssistantToolDirectory,
   type AgentPackageSource,
   type SkillPackageSource,
+  type ToolPackageSource,
   type AgentInstallTarget,
   type SkillInstallTarget,
+  type ToolInstallTarget,
   type ResourcePackageInspection,
 } from "./resource-packages"
 export { getPlatformActiveGameCard, waitForPlatformHostReady }

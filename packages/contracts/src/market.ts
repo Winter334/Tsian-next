@@ -1,4 +1,4 @@
-export type MarketResourceType = "game_card" | "agent" | "skill"
+export type MarketResourceType = "game_card" | "agent" | "skill" | "tool"
 
 export interface MarketPackageUploader {
   id: string

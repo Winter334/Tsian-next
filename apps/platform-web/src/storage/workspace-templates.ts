@@ -1493,7 +1493,7 @@ export const DEFAULT_WORKSPACE_FILES: Array<{
       "",
       "- `tools/<id>/` 共享 Tool，所有 Agent 可见（除非 `agent.json.tools.disabled` 屏蔽）。",
       "- `agents/<agent>/tools/<id>/` Agent 私有 Tool，只对该 Agent 可见；同名可覆盖共享 Tool。",
-      "- `.tsian/local/<agent>/tools/<id>/` 机器私有 Tool，不入 checkpoint，不随卡包分发。",
+      "- `.tsian/local/<agent>/tools/<id>/` 机器私有 Tool，不入 checkpoint，不随卡包分发；可显式上传为独立 Tool 资源包。",
       "",
       "`tool.json` 必填字段：`name`（小写下划线，长度 ≤ 64）、`description`、`parameters`（JSON Schema）、`executor.type=\"browser_script\"`、`executor.path`。可选：`timeoutMs`、`helpers`、`outputSchema`。",
       "",

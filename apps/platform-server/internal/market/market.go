@@ -11,6 +11,7 @@ const (
 	ResourceGameCard ResourceType = "game_card"
 	ResourceAgent    ResourceType = "agent"
 	ResourceSkill    ResourceType = "skill"
+	ResourceTool     ResourceType = "tool"
 )
 
 type Package struct {

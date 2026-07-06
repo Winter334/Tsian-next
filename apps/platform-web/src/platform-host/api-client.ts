@@ -221,6 +221,8 @@ function marketUploadFileName(resourceType: MarketResourceType): string {
       return "package.tsian-agent.zip"
     case "skill":
       return "package.tsian-skill.zip"
+    case "tool":
+      return "package.tsian-tool.zip"
     case "game_card":
     default:
       return "package.tsian-card.zip"

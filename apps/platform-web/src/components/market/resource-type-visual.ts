@@ -1,5 +1,5 @@
 import type { Component } from "vue"
-import { Bot, Gamepad2, Sparkles } from "lucide-vue-next"
+import { Bot, Gamepad2, Sparkles, Wrench } from "lucide-vue-next"
 import type { MarketResourceType } from "@tsian/contracts"
 
 /**
@@ -43,10 +43,19 @@ const SKILL_VISUAL: ResourceTypeVisual = {
   accentClass: "border-[#a87055] text-[#d4987a]",
 }
 
+const TOOL_VISUAL: ResourceTypeVisual = {
+  icon: Wrench,
+  label: "Tool",
+  coverClass:
+    "bg-[radial-gradient(circle_at_30%_20%,rgba(198,149,74,0.34),transparent_30%),linear-gradient(135deg,#3a311d,#1e2420)]",
+  accentClass: "border-[#c6954a] text-[#e0b45f]",
+}
+
 export const resourceTypeVisuals: Record<MarketResourceType, ResourceTypeVisual> = {
   game_card: GAME_CARD_VISUAL,
   agent: AGENT_VISUAL,
   skill: SKILL_VISUAL,
+  tool: TOOL_VISUAL,
 }
 
 export function getResourceTypeVisual(type: MarketResourceType): ResourceTypeVisual {

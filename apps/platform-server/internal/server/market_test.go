@@ -523,6 +523,18 @@ func TestMarketCountsAndCursorPagination(t *testing.T) {
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("agent upload status = %d", resp.StatusCode)
 	}
+	toolZip := buildResourcePackageZip(t,
+		`{"schema":"tsian.resource.package.v1","resourceType":"tool","resourceId":"tool-paged","name":"Paged Tool","summary":"Runs tools.","author":"Author","version":"1.0.0","files":[{"path":"tool.json"},{"path":"run.js"}]}`,
+		map[string][]byte{
+			"tool.json": []byte(`{"name":"tool_paged","title":"Paged Tool","description":"Runs tools.","parameters":{"type":"object"},"executor":{"type":"browser_script","path":"./run.js"}}`),
+			"run.js":    []byte("return { ok: true }\n"),
+		},
+	)
+	resp = uploadPackage(t, client, server.URL+"/api/v1/market/packages", toolZip, uploadOptions{ResourceType: "tool"})
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("tool upload status = %d", resp.StatusCode)
+	}
 
 	countsResp, err := client.Get(server.URL + "/api/v1/market/packages/counts")
 	if err != nil {
@@ -535,7 +547,7 @@ func TestMarketCountsAndCursorPagination(t *testing.T) {
 	if err := json.NewDecoder(countsResp.Body).Decode(&countsBody); err != nil {
 		t.Fatalf("decode counts: %v", err)
 	}
-	if countsBody.Counts["game_card"] != 3 || countsBody.Counts["agent"] != 1 || countsBody.Counts["skill"] != 0 {
+	if countsBody.Counts["game_card"] != 3 || countsBody.Counts["agent"] != 1 || countsBody.Counts["skill"] != 0 || countsBody.Counts["tool"] != 1 {
 		t.Fatalf("counts = %+v", countsBody.Counts)
 	}
 
@@ -713,6 +725,37 @@ func TestMarketResourcePackages(t *testing.T) {
 		t.Fatalf("skill upload status = %d, body: %s", skillResp.StatusCode, body)
 	}
 
+	toolZip := buildResourcePackageZip(t,
+		`{"schema":"tsian.resource.package.v1","resourceType":"tool","resourceId":"roll-dice","name":"Roll Dice","summary":"Rolls dice directly.","author":"Author C","version":"0.4.0","files":[{"path":"tool.json","mediaType":"application/json"},{"path":"run.js","mediaType":"text/javascript"}]}`,
+		map[string][]byte{
+			"tool.json": []byte(`{"name":"roll_dice","title":"Roll Dice","description":"Rolls dice directly.","parameters":{"type":"object","properties":{"sides":{"type":"number"}}},"executor":{"type":"browser_script","path":"./run.js"}}`),
+			"run.js":    []byte("return { rolls: [1], total: 1 }\n"),
+		},
+	)
+	toolResp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", toolZip, uploadOptions{ResourceType: "tool", Tags: "dice, utility"})
+	defer toolResp.Body.Close()
+	if toolResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(toolResp.Body)
+		t.Fatalf("tool upload status = %d, body: %s", toolResp.StatusCode, body)
+	}
+	var toolPkg struct {
+		ID              string   `json:"id"`
+		ResourceType    string   `json:"resourceType"`
+		ResourceID      string   `json:"resourceId"`
+		ResourceAuthor  string   `json:"resourceAuthor"`
+		ResourceVersion string   `json:"resourceVersion"`
+		Tags            []string `json:"tags"`
+	}
+	if err := json.NewDecoder(toolResp.Body).Decode(&toolPkg); err != nil {
+		t.Fatalf("decode tool upload: %v", err)
+	}
+	if toolPkg.ResourceType != "tool" || toolPkg.ResourceID != "roll-dice" || toolPkg.ResourceAuthor != "Author C" || toolPkg.ResourceVersion != "0.4.0" {
+		t.Fatalf("tool package = %+v", toolPkg)
+	}
+	if !stringSlicesEqual(toolPkg.Tags, []string{"dice", "utility"}) {
+		t.Fatalf("tool tags = %+v", toolPkg.Tags)
+	}
+
 	agentListResp, err := client.Get(server.URL + "/api/v1/market/packages?resourceType=agent")
 	if err != nil {
 		t.Fatalf("list agents: %v", err)
@@ -741,6 +784,34 @@ func TestMarketResourcePackages(t *testing.T) {
 	}
 	if len(listBody.Packages) != 1 || listBody.Packages[0].ResourceID != "story-master" {
 		t.Fatalf("agent tag list = %+v", listBody.Packages)
+	}
+
+	toolListResp, err := client.Get(server.URL + "/api/v1/market/packages?resourceType=tool")
+	if err != nil {
+		t.Fatalf("list tools: %v", err)
+	}
+	defer toolListResp.Body.Close()
+	if err := json.NewDecoder(toolListResp.Body).Decode(&listBody); err != nil {
+		t.Fatalf("decode tool list: %v", err)
+	}
+	if len(listBody.Packages) != 1 || listBody.Packages[0].ResourceType != "tool" || listBody.Packages[0].ResourceID != "roll-dice" {
+		t.Fatalf("tool list = %+v", listBody.Packages)
+	}
+
+	toolDownloadResp, err := client.Get(server.URL + "/api/v1/market/packages/" + toolPkg.ID + "/download")
+	if err != nil {
+		t.Fatalf("download tool: %v", err)
+	}
+	defer toolDownloadResp.Body.Close()
+	if got := toolDownloadResp.Header.Get("Content-Disposition"); got != `attachment; filename="roll-dice.tsian-tool.zip"` {
+		t.Fatalf("tool download disposition = %q", got)
+	}
+	toolDownloadedBytes, err := io.ReadAll(toolDownloadResp.Body)
+	if err != nil {
+		t.Fatalf("read tool download: %v", err)
+	}
+	if !bytes.Equal(toolDownloadedBytes, toolZip) {
+		t.Fatalf("tool download content mismatch")
 	}
 
 	downloadResp, err := client.Get(server.URL + "/api/v1/market/packages/" + agentPkg.ID + "/download")
@@ -804,7 +875,7 @@ func TestMarketContentManagementUpdateAndOwnership(t *testing.T) {
 	if err := json.NewDecoder(countsResp.Body).Decode(&countsBody); err != nil {
 		t.Fatalf("decode my counts: %v", err)
 	}
-	if countsBody.Counts["game_card"] != 1 || countsBody.Counts["agent"] != 0 || countsBody.Counts["skill"] != 0 {
+	if countsBody.Counts["game_card"] != 1 || countsBody.Counts["agent"] != 0 || countsBody.Counts["skill"] != 0 || countsBody.Counts["tool"] != 0 {
 		t.Fatalf("my counts = %+v", countsBody.Counts)
 	}
 
@@ -1006,6 +1077,14 @@ func TestMarketResourcePackageValidation(t *testing.T) {
 			zipBytes: buildResourcePackageZip(t,
 				`{"schema":"tsian.resource.package.v1","resourceType":"agent","resourceId":"agent-a","name":"Agent A","summary":"Agent summary.","author":"Author","version":"1.0.0","files":[{"path":"agent.json"}]}`,
 				map[string][]byte{"agent.json": []byte(`{"id":"agent-a"}`)},
+			),
+		},
+		{
+			name:         "tool missing tool.json",
+			resourceType: "tool",
+			zipBytes: buildResourcePackageZip(t,
+				`{"schema":"tsian.resource.package.v1","resourceType":"tool","resourceId":"tool-a","name":"Tool A","summary":"Tool summary.","author":"Author","version":"1.0.0","files":[{"path":"run.js"}]}`,
+				map[string][]byte{"run.js": []byte("return {}\n")},
 			),
 		},
 		{

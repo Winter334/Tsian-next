@@ -329,7 +329,7 @@ export async function runAssistantChat(
     workspaceFiles = await cardContentFilesToWorkspaceFiles(activeCard)
   }
 
-  // Merge local assistant files (identity, SOUL, notes, skills) into the
+  // Merge local assistant files (identity, SOUL, notes, skills, tools) into the
   // workspace. These are platform-local and persist across card switches.
   const localAssistantFiles = await loadLocalAssistantFiles()
   const localPaths = new Set(localAssistantFiles.map((file) => file.path))

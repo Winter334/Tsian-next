@@ -107,6 +107,7 @@ func (r *SQLiteRepository) Counts(ctx context.Context, filter CountFilter) (Coun
 		ResourceGameCard: 0,
 		ResourceAgent:    0,
 		ResourceSkill:    0,
+		ResourceTool:     0,
 	}
 	for rows.Next() {
 		var resourceType string
