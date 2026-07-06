@@ -9,6 +9,7 @@ import type {
   InjectionMessage,
   PlatformActionRequest,
   PlatformActionResult,
+  ToolRegistryEntry,
   TurnTimelineItem,
   TurnToolOutput,
   WorkspaceFile,
@@ -37,6 +38,8 @@ export interface AgentRuntimeTurnInput {
   recentHistory: ConversationMessageRecord[]
   turn: number
   workspaceFiles?: WorkspaceFile[]
+  /** Host-level user Tool filter applied after Agent enablement/scoping. */
+  toolFilter?: (tool: ToolRegistryEntry) => boolean
   signal?: AbortSignal
   /**
    * Streaming text-delta sink. Invoked for every streamed text chunk across all

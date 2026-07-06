@@ -1497,11 +1497,13 @@ export {
   updateLocalAssistantSkillEnabled,
   updateLocalAssistantSkillConfig,
   updateLocalAssistantPlatformToolEnabled,
+  updateLocalAssistantToolEnabled,
   updateLocalAssistantWorkspaceAccess,
   getLocalAssistantToolCallMode,
   type LocalAssistantConfig,
   type LocalAssistantSkillToggleInput,
   type LocalAssistantPlatformToolToggleInput,
+  type LocalAssistantToolToggleInput,
 } from "./local-assistant"
 export {
   initializePlatformHost,

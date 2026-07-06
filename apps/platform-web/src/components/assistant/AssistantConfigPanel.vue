@@ -1,6 +1,38 @@
 <template>
   <div class="flex max-h-[70vh] min-h-0 flex-col">
     <div class="grid min-h-0 flex-1 gap-3 overflow-auto p-1">
+      <!-- Workspace Access section -->
+      <section class="border border-neon-deep/35 bg-panel/55">
+        <div class="border-b border-neon-deep/25 px-3 py-2">
+          <p class="text-sm font-bold text-text-main">权限边界</p>
+          <p class="mt-0.5 text-xs leading-5 text-text-dim">决定桌面助手能维护哪些 Workspace 区域。</p>
+        </div>
+        <div class="grid gap-3 p-3">
+          <label class="grid gap-2">
+            <span class="text-xs font-bold text-text-main">Workspace 权限</span>
+            <Select
+              :model-value="String(workspaceLevel)"
+              :disabled="applying || !agent"
+              @update:model-value="(value) => updateWorkspaceAccessLevel(Number(value))"
+            >
+              <SelectTrigger class="h-9 w-full">
+                <SelectValue placeholder="选择权限等级" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem
+                  v-for="option in workspaceAccessOptions"
+                  :key="option.level"
+                  :value="String(option.level)"
+                >
+                  {{ option.label }}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </label>
+          <p class="text-xs leading-5 text-text-dim">{{ workspaceAccessDescription }}</p>
+        </div>
+      </section>
+
       <!-- Skills section -->
       <section class="border border-neon-deep/35 bg-panel/55">
         <div class="flex items-center justify-between border-b border-neon-deep/25 px-3 py-2">
@@ -67,62 +99,82 @@
         </div>
       </section>
 
-      <!-- Platform Tools section -->
+      <!-- Capability section -->
       <section class="border border-neon-deep/35 bg-panel/55">
-        <div class="border-b border-neon-deep/25 px-3 py-2">
-          <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">平台工具</p>
-        </div>
-        <div class="grid gap-3 p-3">
-          <div
-            v-for="group in platformToolGroups"
-            :key="group.title"
-            class="border border-neon-deep/20 bg-elevated/30"
-          >
-            <div class="border-b border-neon-deep/20 px-3 py-1.5">
-              <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">{{ group.title }}</p>
-            </div>
-            <div class="grid gap-2 p-3">
-              <PlatformToolCard
-                v-for="tool in group.tools"
-                :key="tool.id"
-                :tool="tool"
-                :enabled="platformToolEnabled(tool.id)"
-                :disabled="applying || !agent"
-                @toggle="(enabled) => togglePlatformTool(tool.id, enabled)"
-              />
-            </div>
+        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-neon-deep/25 px-3 py-2">
+          <div>
+            <p class="text-sm font-bold text-text-main">能力开关</p>
+            <p class="mt-0.5 text-xs leading-5 text-text-dim">平台能力与助手本地 Tool 共用这一组可调用能力配置。</p>
+          </div>
+          <div class="flex flex-wrap items-center justify-end gap-3">
+            <p class="font-mono text-[11px] text-text-dim">
+              {{ enabledAssistantCapabilityCount }} / {{ assistantCapabilities.length }} 已启用
+            </p>
+            <ParamTip
+              v-if="toolDiagnostics.length > 0"
+              tone="warning"
+              label="助手本地 Tool 诊断"
+              :trigger-text="`${toolDiagnostics.length} 条诊断`"
+            >
+              <div class="grid gap-2">
+                <p class="text-xs font-bold text-warning">助手本地 Tool 诊断</p>
+                <div
+                  v-for="(diag, index) in toolDiagnostics"
+                  :key="`${diag.code}-${index}`"
+                  class="border border-neon-deep/30 bg-elevated/50 p-2"
+                >
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span
+                      class="border px-1 py-0.5 font-mono text-[10px] uppercase"
+                      :class="diagLevelClass(diag.level)"
+                    >{{ diag.level }}</span>
+                    <span class="font-mono text-[11px] text-text-main">{{ diag.code }}</span>
+                  </div>
+                  <p v-if="diag.path" class="mt-1 truncate font-mono text-[11px] text-text-dim">{{ diag.path }}</p>
+                  <p class="mt-1 text-[11px] leading-5 text-text-main">{{ diag.message }}</p>
+                  <p v-if="diag.hint" class="mt-0.5 text-[11px] leading-5 text-text-dim">Hint: {{ diag.hint }}</p>
+                </div>
+              </div>
+            </ParamTip>
           </div>
         </div>
-      </section>
 
-      <!-- Workspace Access section -->
-      <section class="border border-neon-deep/35 bg-panel/55">
-        <div class="border-b border-neon-deep/25 px-3 py-2">
-          <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">Workspace 权限</p>
+        <div class="grid gap-2 p-3">
+          <article
+            v-for="capability in assistantCapabilities"
+            :key="capability.key"
+            class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border border-neon-deep/25 bg-elevated/35 p-3 transition-colors hover:bg-elevated/55"
+          >
+            <div class="min-w-0">
+              <div class="flex min-w-0 flex-wrap items-center gap-2">
+                <p class="truncate text-sm font-bold text-text-main">{{ capability.title }}</p>
+                <span class="border border-neon-deep/35 px-1.5 py-0.5 text-[10px] leading-none text-neon-muted">
+                  {{ capability.badge }}
+                </span>
+                <ParamTip :tip="capability.description" :label="capability.title" />
+              </div>
+              <p class="mt-1 line-clamp-2 text-xs leading-5 text-text-dim">
+                {{ capability.description }}
+              </p>
+              <p v-if="capability.path" class="mt-1 truncate font-mono text-[11px] text-text-dim/80">
+                {{ capability.path }}
+              </p>
+            </div>
+            <Switch
+              class="mt-0.5"
+              :model-value="capability.enabled"
+              :disabled="capability.disabled"
+              :aria-label="capability.title"
+              @update:model-value="(value) => toggleAssistantCapability(capability, Boolean(value))"
+            />
+          </article>
         </div>
-        <div class="grid gap-3 p-3">
-          <label class="grid gap-2">
-            <span class="text-xs font-bold text-text-main">权限等级</span>
-            <Select
-              :model-value="String(workspaceLevel)"
-              :disabled="applying || !agent"
-              @update:model-value="(value) => updateWorkspaceAccessLevel(Number(value))"
-            >
-              <SelectTrigger class="h-9 w-full">
-                <SelectValue placeholder="选择权限等级" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem
-                  v-for="option in workspaceAccessOptions"
-                  :key="option.level"
-                  :value="String(option.level)"
-                >
-                  {{ option.label }}
-                </SelectItem>
-              </SelectContent>
-            </Select>
-          </label>
-          <p class="text-xs leading-5 text-text-dim">{{ workspaceAccessDescription }}</p>
+
+        <div
+          v-if="tools.length === 0"
+          class="border-t border-neon-deep/20 px-3 py-2 text-xs leading-5 text-text-dim"
+        >
+          还没有助手本地 Tool。放置 <code class="font-mono text-[11px]">.tsian/local/assistant/tools/&lt;id&gt;/tool.json</code> 后会出现在这里。
         </div>
       </section>
 
@@ -165,7 +217,9 @@ import { computed, onMounted, ref } from "vue"
 import type {
   AgentPlatformToolName,
   AgentRegistryEntry,
+  RegistryDiagnostic,
   SkillRegistryEntry,
+  ToolRegistryEntry,
 } from "@tsian/contracts"
 import {
   Select,
@@ -176,15 +230,16 @@ import {
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { isAgentPlatformToolEnabled } from "@/agent-runtime/permissions"
-import { PLATFORM_TOOL_CONTROL_GROUPS } from "@/agent-runtime/tool-controls"
-import { isSkillEnabledForAgent } from "@/agent-runtime/registry"
+import { PLATFORM_TOOL_CONTROL_GROUPS, type PlatformToolControl } from "@/agent-runtime/tool-controls"
+import { isSkillEnabledForAgent, isToolEnabledForAgent } from "@/agent-runtime/registry"
 import { toast } from "@/composables/useToast"
-import PlatformToolCard from "@/components/common/PlatformToolCard.vue"
+import { ParamTip } from "@/components/ui/tip"
 import {
   getLocalAssistantConfig,
   updateLocalAssistantPlatformToolEnabled,
   updateLocalAssistantSkillConfig,
   updateLocalAssistantSkillEnabled,
+  updateLocalAssistantToolEnabled,
   updateLocalAssistantWorkspaceAccess,
   type LocalAssistantConfig,
 } from "@/platform-host"
@@ -195,8 +250,34 @@ const emit = defineEmits<{
   (event: "close"): void
 }>()
 
+type AssistantCapability =
+  | {
+      kind: "platform"
+      key: string
+      title: string
+      description: string
+      badge: string
+      path?: string
+      enabled: boolean
+      disabled: boolean
+      tool: PlatformToolControl
+    }
+  | {
+      kind: "tool"
+      key: string
+      title: string
+      description: string
+      badge: string
+      path: string
+      enabled: boolean
+      disabled: boolean
+      tool: ToolRegistryEntry
+    }
+
 const agent = ref<AgentRegistryEntry | null>(null)
 const skills = ref<SkillRegistryEntry[]>([])
+const tools = ref<ToolRegistryEntry[]>([])
+const toolDiagnostics = ref<RegistryDiagnostic[]>([])
 
 /**
  * 草稿覆盖层:只记录与原始持久化状态不同的字段。toggle 只改草稿,
@@ -205,6 +286,7 @@ const skills = ref<SkillRegistryEntry[]>([])
  */
 const skillOverrides = ref(new Map<string, boolean>())
 const platformToolOverrides = ref(new Map<AgentPlatformToolName, boolean>())
+const toolOverrides = ref(new Map<string, boolean>())
 const workspaceLevelOverride = ref<number | null>(null)
 const applying = ref(false)
 
@@ -218,8 +300,6 @@ const skillConfigInitial = ref(new Map<string, Record<string, string>>())
  * 应用时逐 skill 调 updateLocalAssistantSkillConfig 保存全量。
  */
 const skillConfigDraft = ref(new Map<string, Record<string, string>>())
-
-const platformToolGroups = PLATFORM_TOOL_CONTROL_GROUPS
 
 const workspaceAccessOptions = [
   {
@@ -259,6 +339,44 @@ function platformToolEnabled(tool: AgentPlatformToolName): boolean {
   return agent.value ? isAgentPlatformToolEnabled(agent.value, tool) : false
 }
 
+function toolEnabled(tool: ToolRegistryEntry): boolean {
+  if (toolOverrides.value.has(tool.name)) {
+    return toolOverrides.value.get(tool.name) ?? false
+  }
+  return agent.value ? isToolEnabledForAgent(tool, agent.value) : false
+}
+
+const assistantCapabilities = computed<AssistantCapability[]>(() => {
+  const platformCapabilities = PLATFORM_TOOL_CONTROL_GROUPS.flatMap((group) =>
+    group.tools.map<AssistantCapability>((tool) => ({
+      kind: "platform",
+      key: `platform:${tool.id}`,
+      title: tool.label,
+      description: tool.description,
+      badge: `平台能力 · ${group.title}`,
+      enabled: platformToolEnabled(tool.id),
+      disabled: applying.value || !agent.value,
+      tool,
+    })),
+  )
+  const localToolCapabilities = tools.value.map<AssistantCapability>((tool) => ({
+    kind: "tool",
+    key: `tool:${tool.path}`,
+    title: tool.name,
+    description: tool.description,
+    badge: "助手本地 Tool",
+    path: tool.path,
+    enabled: toolEnabled(tool),
+    disabled: applying.value || !agent.value,
+    tool,
+  }))
+  return [...platformCapabilities, ...localToolCapabilities]
+})
+
+const enabledAssistantCapabilityCount = computed(() =>
+  assistantCapabilities.value.filter((capability) => capability.enabled).length
+)
+
 const workspaceLevel = computed(() => workspaceLevelOverride.value ?? agent.value?.workspaceAccess.level ?? 1)
 
 const enabledSkillCount = computed(() => skills.value.filter((s) => skillEnabled(s)).length)
@@ -272,11 +390,6 @@ function isSecretKey(key: string): boolean {
   const upper = key.toUpperCase()
   return ["KEY", "SECRET", "TOKEN", "PASSWORD"].some((s) => upper.includes(s))
 }
-
-/** 技能声明了 configItems 的列表(只这些渲染配置区)。 */
-const skillsWithConfig = computed(() =>
-  skills.value.filter((skill) => skill.configItems && skill.configItems.length > 0),
-)
 
 /**
  * 取某 skill 某 key 的当前显示值:草稿优先,回退初始值,再回退默认值。
@@ -324,12 +437,19 @@ function skillConfigChanged(skillPath: string): boolean {
 const hasChanges = computed(() =>
   skillOverrides.value.size > 0
   || platformToolOverrides.value.size > 0
+  || toolOverrides.value.size > 0
   || workspaceLevelOverride.value !== null
   || skillConfigDraft.value.size > 0,
 )
 
 function entrySummary(value: string | undefined): string {
   return value?.trim() || "暂无简介。"
+}
+
+function diagLevelClass(level: RegistryDiagnostic["level"]): string {
+  if (level === "error") return "border-red-500/50 text-red-300"
+  if (level === "warn") return "border-yellow-500/50 text-yellow-200"
+  return "border-neon-deep/50 text-neon-muted"
 }
 
 // --- 草稿写入(只改 override,不持久化) ---
@@ -361,6 +481,28 @@ function togglePlatformTool(tool: AgentPlatformToolName, enabled: boolean): void
   platformToolOverrides.value = next
 }
 
+function toggleTool(tool: ToolRegistryEntry, enabled: boolean): void {
+  if (applying.value) {
+    return
+  }
+  const original = agent.value ? isToolEnabledForAgent(tool, agent.value) : false
+  const next = new Map(toolOverrides.value)
+  if (enabled === original) {
+    next.delete(tool.name)
+  } else {
+    next.set(tool.name, enabled)
+  }
+  toolOverrides.value = next
+}
+
+function toggleAssistantCapability(capability: AssistantCapability, enabled: boolean): void {
+  if (capability.kind === "platform") {
+    togglePlatformTool(capability.tool.id, enabled)
+    return
+  }
+  toggleTool(capability.tool, enabled)
+}
+
 function updateWorkspaceAccessLevel(level: number): void {
   if (applying.value) {
     return
@@ -372,6 +514,8 @@ async function reload(): Promise<void> {
   const result: LocalAssistantConfig = await getLocalAssistantConfig()
   agent.value = result.agent
   skills.value = result.skills
+  tools.value = result.tools
+  toolDiagnostics.value = result.toolDiagnostics
   // Build initial config values per skill: player-saved value ?? default.
   const initial = new Map<string, Record<string, string>>()
   for (const skill of result.skills) {
@@ -391,6 +535,7 @@ async function reload(): Promise<void> {
 function resetOverrides(): void {
   skillOverrides.value = new Map()
   platformToolOverrides.value = new Map()
+  toolOverrides.value = new Map()
   workspaceLevelOverride.value = null
   skillConfigDraft.value = new Map()
 }
@@ -410,6 +555,9 @@ async function applyChanges(): Promise<boolean> {
     }
     for (const [tool, enabled] of platformToolOverrides.value) {
       await updateLocalAssistantPlatformToolEnabled({ tool, enabled })
+    }
+    for (const [toolName, enabled] of toolOverrides.value) {
+      await updateLocalAssistantToolEnabled({ toolName, enabled })
     }
     if (workspaceLevelOverride.value !== null) {
       await updateLocalAssistantWorkspaceAccess(workspaceLevelOverride.value)

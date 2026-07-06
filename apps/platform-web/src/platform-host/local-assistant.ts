@@ -1,14 +1,18 @@
 import type {
   AgentPlatformToolName,
   AgentRegistryEntry,
+  RegistryDiagnostic,
   SkillRegistryEntry,
+  ToolRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
 import type { BrowserAiToolCallMode } from "../config/ai"
 import {
   buildAgentRegistry,
   buildSkillRegistry,
+  buildToolRegistry,
   isSkillEnabledForAgent,
+  toolMatchesReference,
 } from "../agent-runtime/registry"
 import {
   buildAgentProviderPresetMap,
@@ -26,6 +30,7 @@ import {
   readSkillConfig,
   writeSkillConfig,
   LOCAL_ASSISTANT_AGENT_ID,
+  LOCAL_ASSISTANT_DIR,
   normalizeWorkspaceFilePath,
 } from "../storage"
 import {
@@ -48,7 +53,19 @@ export interface LocalAssistantPlatformToolToggleInput {
   enabled: boolean
 }
 
+export interface LocalAssistantToolToggleInput {
+  toolName: string
+  enabled: boolean
+}
+
 const LOCAL_ASSISTANT_AGENT_CONFIG_PATH = ".tsian/local/assistant/agent.json"
+const LOCAL_ASSISTANT_TOOL_ROOT = `${LOCAL_ASSISTANT_DIR}/tools/`
+
+function isLocalAssistantTool(tool: ToolRegistryEntry): boolean {
+  return tool.scope === "agent-local"
+    && tool.agentId === LOCAL_ASSISTANT_AGENT_ID
+    && tool.path.startsWith(LOCAL_ASSISTANT_TOOL_ROOT)
+}
 
 /**
  * Resolve the desktop assistant's workspace actor level from its agent.json
@@ -217,6 +234,8 @@ export async function updateLocalAssistantModel(
 export interface LocalAssistantConfig {
   agent: AgentRegistryEntry | null
   skills: SkillRegistryEntry[]
+  tools: ToolRegistryEntry[]
+  toolDiagnostics: RegistryDiagnostic[]
   providerPresets: PlatformStudioProviderPresetOption[]
   skillConfigValues: Record<string, Record<string, string>>
 }
@@ -236,6 +255,11 @@ export async function getLocalAssistantConfig(): Promise<LocalAssistantConfig> {
     includeLocal: true,
     agentId: LOCAL_ASSISTANT_AGENT_ID,
   })
+  const toolRegistry = buildToolRegistry(files)
+  const tools = toolRegistry.tools.filter(isLocalAssistantTool)
+  const toolDiagnostics = toolRegistry.diagnostics.filter((diag) =>
+    !diag.path || diag.path.startsWith(LOCAL_ASSISTANT_TOOL_ROOT)
+  )
 
   // Preload player-saved overrides only for skills that declare config items —
   // skills without `skill.config` have nothing to render or save.
@@ -249,6 +273,8 @@ export async function getLocalAssistantConfig(): Promise<LocalAssistantConfig> {
   return {
     agent,
     skills,
+    tools,
+    toolDiagnostics,
     providerPresets: listBrowserAiProviderPresetOptions(),
     skillConfigValues,
   }
@@ -357,6 +383,60 @@ export async function updateLocalAssistantPlatformToolEnabled(
     files.push({
       path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
       content: JSON.stringify({ platformTools: nextTools }, null, 2) + "\n",
+      createdAt: 0,
+      updatedAt: Date.now(),
+    })
+  }
+  await saveLocalAssistantFiles(files)
+}
+
+/**
+ * Toggle a local assistant Tool by rewriting
+ * `.tsian/local/assistant/agent.json` `tools.enabled/disabled`.
+ */
+export async function updateLocalAssistantToolEnabled(
+  input: LocalAssistantToolToggleInput,
+): Promise<void> {
+  const files = await loadLocalAssistantFiles()
+  const configIndex = files.findIndex((file) => file.path === LOCAL_ASSISTANT_AGENT_CONFIG_PATH)
+  const tool = buildToolRegistry(files).tools.find((candidate) =>
+    candidate.name === input.toolName && isLocalAssistantTool(candidate)
+  )
+  if (!tool) {
+    throw new Error(`Tool "${input.toolName}" 不存在。`)
+  }
+
+  const existingAgent = buildAgentRegistry(files).find((candidate) => candidate.id === LOCAL_ASSISTANT_AGENT_ID)
+  const stripReferences = (values: string[]): string[] =>
+    values.filter((value) => !toolMatchesReference(tool, value))
+  const appendReference = (values: string[]): string[] => {
+    const cleaned = stripReferences(values)
+    return cleaned.includes(tool.name) ? cleaned : [...cleaned, tool.name]
+  }
+
+  let enabled = stripReferences(existingAgent?.enabledTools ?? [])
+  let disabled = stripReferences(existingAgent?.disabledTools ?? [])
+  if (input.enabled) {
+    enabled = appendReference(enabled)
+  } else {
+    disabled = appendReference(disabled)
+  }
+
+  const nextTools = { enabled, disabled }
+  if (configIndex >= 0) {
+    const config = parseAgentConfigRecord(files[configIndex])
+    const existingTools = isRecord((config as Record<string, unknown>).tools)
+      ? ((config as Record<string, unknown>).tools as Record<string, unknown>)
+      : {}
+    files[configIndex] = {
+      ...files[configIndex],
+      content: JSON.stringify({ ...config, tools: { ...existingTools, ...nextTools } }, null, 2) + "\n",
+      updatedAt: Date.now(),
+    }
+  } else {
+    files.push({
+      path: LOCAL_ASSISTANT_AGENT_CONFIG_PATH,
+      content: JSON.stringify({ tools: nextTools }, null, 2) + "\n",
       createdAt: 0,
       updatedAt: Date.now(),
     })

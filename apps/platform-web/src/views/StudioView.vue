@@ -191,16 +191,16 @@
             <div v-else class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
               <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
                 <p class="font-mono text-[11px] uppercase tracking-wider text-neon">运行配置</p>
-                <p class="font-mono text-[11px] text-text-dim">服务商 · Workspace 权限 · 平台工具</p>
+                <p class="font-mono text-[11px] text-text-dim">运行身份 · 权限边界 · 能力开关</p>
               </div>
 
               <div class="min-h-0 overflow-auto p-3">
-                <div class="grid gap-3">
-                  <!-- 服务商 + Workspace 权限：并排在上方，常用配置无需滚动可见 -->
+                <div class="grid gap-4">
                   <div class="grid gap-3 xl:grid-cols-2">
                     <section class="border border-neon-deep/35 bg-panel/55">
                       <div class="border-b border-neon-deep/25 px-3 py-2">
-                        <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">API 服务商</p>
+                        <p class="text-sm font-bold text-text-main">运行身份</p>
+                        <p class="mt-0.5 text-xs leading-5 text-text-dim">选择此 Agent 发起模型调用时使用的服务商预设。</p>
                       </div>
                       <div class="grid gap-3 p-3">
                         <label class="grid gap-2">
@@ -233,11 +233,12 @@
 
                     <section class="border border-neon-deep/35 bg-panel/55">
                       <div class="border-b border-neon-deep/25 px-3 py-2">
-                        <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">Workspace 权限</p>
+                        <p class="text-sm font-bold text-text-main">权限边界</p>
+                        <p class="mt-0.5 text-xs leading-5 text-text-dim">决定此 Agent 能维护哪些 Workspace 区域。</p>
                       </div>
                       <div class="grid gap-3 p-3">
                         <label class="grid gap-2">
-                          <span class="text-xs font-bold text-text-main">权限等级</span>
+                          <span class="text-xs font-bold text-text-main">Workspace 权限</span>
                           <Select
                             :model-value="String(selectedAgent?.workspaceAccess.level ?? 1)"
                             :disabled="updatingWorkspaceAccess"
@@ -264,100 +265,82 @@
                     </section>
                   </div>
 
-                  <!-- 平台工具：全宽在下，大屏 3 列网格铺开，避免右侧大片空白 -->
                   <section class="border border-neon-deep/35 bg-panel/55">
-                    <div class="border-b border-neon-deep/25 px-3 py-2">
-                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">平台工具</p>
-                    </div>
-                    <div class="grid gap-3 p-3 xl:grid-cols-3">
-                      <div
-                        v-for="group in platformToolGroups"
-                        :key="group.title"
-                        class="border border-neon-deep/20 bg-elevated/30"
-                      >
-                        <div class="border-b border-neon-deep/20 px-3 py-1.5">
-                          <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">{{ group.title }}</p>
-                        </div>
-                        <div class="grid gap-2 p-3">
-                          <PlatformToolCard
-                            v-for="tool in group.tools"
-                            :key="tool.id"
-                            :tool="tool"
-                            :enabled="platformToolEnabled(tool.id)"
-                            :disabled="togglingPlatformTool === tool.id"
-                            @toggle="(enabled) => togglePlatformTool(tool.id, enabled)"
-                          />
-                        </div>
+                    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-neon-deep/25 px-3 py-2">
+                      <div>
+                        <p class="text-sm font-bold text-text-main">能力开关</p>
+                        <p class="mt-0.5 text-xs leading-5 text-text-dim">平台能力与自定义 Tool 共用这一组可调用能力配置。</p>
+                      </div>
+                      <div class="flex flex-wrap items-center justify-end gap-3">
+                        <p class="font-mono text-[11px] text-text-dim">
+                          {{ enabledRuntimeCapabilityCount }} / {{ runtimeCapabilities.length }} 已启用
+                        </p>
+                        <ParamTip
+                          v-if="toolDiagnostics.length > 0"
+                          tone="warning"
+                          label="Tool 注册诊断"
+                          :trigger-text="`${toolDiagnostics.length} 条诊断`"
+                        >
+                          <div class="grid gap-2">
+                            <p class="text-xs font-bold text-warning">Tool 注册诊断</p>
+                            <div
+                              v-for="(diag, index) in toolDiagnostics"
+                              :key="`${diag.code}-${index}`"
+                              class="border border-neon-deep/30 bg-elevated/50 p-2"
+                            >
+                              <div class="flex flex-wrap items-center gap-2">
+                                <span
+                                  class="border px-1 py-0.5 font-mono text-[10px] uppercase"
+                                  :class="diagLevelClass(diag.level)"
+                                >{{ diag.level }}</span>
+                                <span class="font-mono text-[11px] text-text-main">{{ diag.code }}</span>
+                              </div>
+                              <p v-if="diag.path" class="mt-1 truncate font-mono text-[11px] text-text-dim">{{ diag.path }}</p>
+                              <p class="mt-1 text-[11px] leading-5 text-text-main">{{ diag.message }}</p>
+                              <p v-if="diag.hint" class="mt-0.5 text-[11px] leading-5 text-text-dim">Hint: {{ diag.hint }}</p>
+                            </div>
+                          </div>
+                        </ParamTip>
                       </div>
                     </div>
-                  </section>
 
-                  <!-- 自定义 Tools（07-05 task 增，与平台工具并列，共享 selectedAgent 视图） -->
-                  <section class="border border-neon-deep/35 bg-panel/55">
-                    <div class="flex items-center justify-between border-b border-neon-deep/25 px-3 py-2">
-                      <p class="font-mono text-[11px] uppercase tracking-wider text-neon-muted">自定义 Tools</p>
-                      <p class="font-mono text-[11px] text-text-dim">
-                        {{ toolsVisibleForSelectedAgent.length }} / {{ toolsForSelectedAgent.length }} 可见
-                      </p>
-                    </div>
-                    <div v-if="toolsForSelectedAgent.length === 0" class="px-3 py-3 text-sm text-text-dim">
-                      当前工作区没有自定义 Tool。放置 <code class="font-mono text-[11px]">tools/&lt;id&gt;/tool.json</code> 即可注册。
-                    </div>
-                    <ul v-else class="grid gap-2 p-3">
-                      <li
-                        v-for="tool in toolsForSelectedAgent"
-                        :key="tool.path"
-                        class="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border border-neon-deep/20 bg-elevated/30 px-3 py-2"
+                    <div class="grid gap-2 p-3 2xl:grid-cols-2">
+                      <article
+                        v-for="capability in runtimeCapabilities"
+                        :key="capability.key"
+                        class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border border-neon-deep/25 bg-elevated/35 p-3 transition-colors hover:bg-elevated/55"
                       >
                         <div class="min-w-0">
-                          <div class="flex items-center gap-2">
-                            <p class="truncate font-mono text-xs text-text-main">{{ tool.name }}</p>
-                            <span class="border border-neon-deep/30 px-1 py-0.5 font-mono text-[10px] uppercase text-neon-muted">
-                              {{ tool.scope === "agent-local" ? "私有" : "共享" }}
+                          <div class="flex min-w-0 flex-wrap items-center gap-2">
+                            <p class="truncate text-sm font-bold text-text-main">{{ capability.title }}</p>
+                            <span class="border border-neon-deep/35 px-1.5 py-0.5 text-[10px] leading-none text-neon-muted">
+                              {{ capability.badge }}
                             </span>
+                            <ParamTip :tip="capability.description" :label="capability.title" />
                           </div>
-                          <p class="mt-0.5 truncate text-[11px] leading-5 text-text-dim">{{ tool.description }}</p>
+                          <p class="mt-1 line-clamp-2 text-xs leading-5 text-text-dim">
+                            {{ capability.description }}
+                          </p>
+                          <p v-if="capability.path" class="mt-1 truncate font-mono text-[11px] text-text-dim/80">
+                            {{ capability.path }}
+                          </p>
                         </div>
-                        <button
-                          type="button"
-                          class="border border-neon-deep/40 px-2 py-1 font-mono text-[11px] uppercase tracking-wider"
-                          :class="toolEnabledForAgent(tool) ? 'bg-neon-muted/10 text-neon-strong' : 'text-text-dim'"
-                          :disabled="togglingToolName === tool.name"
-                          @click="toggleUserTool(tool, !toolEnabledForAgent(tool))"
-                        >
-                          {{ toolEnabledForAgent(tool) ? "启用" : "禁用" }}
-                        </button>
-                      </li>
-                    </ul>
-                  </section>
-
-                  <!-- 注册诊断（Tool 层，仅有诊断时显示） -->
-                  <section
-                    v-if="toolDiagnostics.length > 0"
-                    class="border border-red-500/40 bg-panel/55"
-                  >
-                    <div class="flex items-center justify-between border-b border-red-500/30 px-3 py-2">
-                      <p class="font-mono text-[11px] uppercase tracking-wider text-red-300">Tool 注册诊断</p>
-                      <p class="font-mono text-[11px] text-red-300">{{ toolDiagnostics.length }} 条</p>
+                        <Switch
+                          class="mt-0.5"
+                          :model-value="capability.enabled"
+                          :disabled="capability.disabled"
+                          :aria-label="capability.title"
+                          @update:model-value="(value) => toggleRuntimeCapability(capability, Boolean(value))"
+                        />
+                      </article>
                     </div>
-                    <ul class="grid gap-2 p-3">
-                      <li
-                        v-for="(diag, index) in toolDiagnostics"
-                        :key="`${diag.code}-${index}`"
-                        class="border border-red-500/25 bg-elevated/30 px-3 py-2"
-                      >
-                        <div class="flex flex-wrap items-center gap-2">
-                          <span
-                            class="border px-1 py-0.5 font-mono text-[10px] uppercase"
-                            :class="diagLevelClass(diag.level)"
-                          >{{ diag.level }}</span>
-                          <span class="font-mono text-[11px] text-text-main">{{ diag.code }}</span>
-                          <span v-if="diag.path" class="truncate font-mono text-[11px] text-text-dim">{{ diag.path }}</span>
-                        </div>
-                        <p class="mt-1 text-[12px] leading-5 text-text-main">{{ diag.message }}</p>
-                        <p v-if="diag.hint" class="mt-0.5 text-[11px] leading-5 text-text-dim">Hint: {{ diag.hint }}</p>
-                      </li>
-                    </ul>
+
+                    <div
+                      v-if="toolsForSelectedAgent.length === 0"
+                      class="border-t border-neon-deep/20 px-3 py-2 text-xs leading-5 text-text-dim"
+                    >
+                      当前工作区还没有自定义 Tool。放置 <code class="font-mono text-[11px]">tools/&lt;id&gt;/tool.json</code> 后会出现在这里。
+                    </div>
                   </section>
                 </div>
               </div>
@@ -400,7 +383,7 @@ import {
   Wrench,
 } from "lucide-vue-next"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
-import PlatformToolCard from "@/components/common/PlatformToolCard.vue"
+import { ParamTip } from "@/components/ui/tip"
 import {
   Select,
   SelectContent,
@@ -412,7 +395,7 @@ import { Switch } from "@/components/ui/switch"
 import { confirm } from "@/composables/useConfirm"
 import { ACTIVE_CARD_CHANGED_EVENT, isActiveCardChangedEvent } from "@/lib/platform-events"
 import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
-import { PLATFORM_TOOL_CONTROL_GROUPS, PLATFORM_TOOL_CONTROLS } from "../agent-runtime/tool-controls"
+import { PLATFORM_TOOL_CONTROL_GROUPS, PLATFORM_TOOL_CONTROLS, type PlatformToolControl } from "../agent-runtime/tool-controls"
 import { isSkillEnabledForAgent } from "../agent-runtime/registry"
 import {
   getPlatformStudioAgentContext,
@@ -445,7 +428,29 @@ const sections: Array<{
   { id: "tools", label: "运行配置", icon: SlidersHorizontal },
 ]
 
-const platformToolGroups = PLATFORM_TOOL_CONTROL_GROUPS
+type RuntimeCapability =
+  | {
+      kind: "platform"
+      key: string
+      title: string
+      description: string
+      badge: string
+      path?: string
+      enabled: boolean
+      disabled: boolean
+      tool: PlatformToolControl
+    }
+  | {
+      kind: "tool"
+      key: string
+      title: string
+      description: string
+      badge: string
+      path: string
+      enabled: boolean
+      disabled: boolean
+      tool: ToolRegistryEntry
+    }
 
 const workspaceAccessOptions = [
   {
@@ -542,15 +547,38 @@ const toolsForSelectedAgent = computed<ToolRegistryEntry[]>(() => {
     tool.scope === "shared" || tool.agentId === selectedAgent.value?.id
   )
 })
-const toolsVisibleForSelectedAgent = computed(() => {
-  const agent = selectedAgent.value
-  if (!agent) return []
-  return toolsForSelectedAgent.value.filter((tool) =>
-    isPlatformStudioToolEnabledForAgent(tool, agent)
-  )
-})
 const toolDiagnostics = computed<RegistryDiagnostic[]>(() =>
   snapshot.value?.toolDiagnostics ?? []
+)
+const runtimeCapabilities = computed<RuntimeCapability[]>(() => {
+  const platformCapabilities = PLATFORM_TOOL_CONTROL_GROUPS.flatMap((group) =>
+    group.tools.map<RuntimeCapability>((tool) => ({
+      kind: "platform",
+      key: `platform:${tool.id}`,
+      title: tool.label,
+      description: tool.description,
+      badge: `平台能力 · ${group.title}`,
+      enabled: platformToolEnabled(tool.id),
+      disabled: togglingPlatformTool.value === tool.id,
+      tool,
+    })),
+  )
+  const userToolCapabilities = toolsForSelectedAgent.value.map<RuntimeCapability>((tool) => ({
+    kind: "tool",
+    key: `tool:${tool.path}`,
+    title: tool.name,
+    description: tool.description,
+    badge: `自定义 Tool · ${tool.scope === "agent-local" ? "私有" : "共享"}`,
+    path: tool.path,
+    enabled: toolEnabledForAgent(tool),
+    disabled: togglingToolName.value === tool.name,
+    tool,
+  }))
+
+  return [...platformCapabilities, ...userToolCapabilities]
+})
+const enabledRuntimeCapabilityCount = computed(() =>
+  runtimeCapabilities.value.filter((capability) => capability.enabled).length
 )
 const togglingToolName = ref<string | null>(null)
 function toolEnabledForAgent(tool: ToolRegistryEntry): boolean {
@@ -579,6 +607,14 @@ async function toggleUserTool(tool: ToolRegistryEntry, enabled: boolean): Promis
   } finally {
     togglingToolName.value = null
   }
+}
+
+function toggleRuntimeCapability(capability: RuntimeCapability, enabled: boolean): void {
+  if (capability.kind === "platform") {
+    void togglePlatformTool(capability.tool.id, enabled)
+    return
+  }
+  void toggleUserTool(capability.tool, enabled)
 }
 
 const workspaceAccessDescription = computed(() => {

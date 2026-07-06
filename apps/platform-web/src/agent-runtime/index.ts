@@ -812,7 +812,10 @@ function getEntryAgentContext(
     )
   }
 
-  const context = assembleAgentContext(input.workspaceFiles, { agentId: input.agentId })
+  const context = assembleAgentContext(input.workspaceFiles, {
+    agentId: input.agentId,
+    toolFilter: input.toolFilter,
+  })
   if (!context) {
     throw new Error(
       `Entry Agent "${input.agentId}" was not found. Restore agents/${input.agentId}/AGENT.md or recreate the default workspace.`,
@@ -1130,6 +1133,7 @@ function createAgentCallRunner(
 
     const targetContext = assembleAgentContext(input.workspaceFiles, {
       agentId: targetAgent.id,
+      toolFilter: input.toolFilter,
     })
     if (!targetContext) {
       throw agentCallError(

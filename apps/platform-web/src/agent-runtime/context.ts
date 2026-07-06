@@ -1,6 +1,7 @@
 import type {
   AgentContextEntry,
   AgentRegistryEntry,
+  ToolRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
 import {
@@ -14,6 +15,8 @@ import {
 export interface AgentContextAssemblyOptions {
   agentId?: string
   agentPath?: string
+  /** Optional host-level filter for user Tools after Agent enablement/scoping. */
+  toolFilter?: (tool: ToolRegistryEntry) => boolean
 }
 
 const AGENT_FILE_NAME = "AGENT.md"
@@ -132,9 +135,11 @@ export function assembleAgentContext(
 
   const toolRegistry = buildToolRegistry(files)
   const filteredTools = filterToolsForAgent(toolRegistry.tools, agent)
-  // Tool registry diagnostics are surfaced through the Studio diagnostics
-  // channel (see §9). For now they are collected but not yet routed; the
-  // §9 wiring will replace this comment with a real sink.
+  const toolIndex = options.toolFilter
+    ? filteredTools.tools.filter(options.toolFilter)
+    : filteredTools.tools
+  // Tool registry diagnostics are surfaced through Studio / assistant config
+  // diagnostics channels. Runtime context keeps only visible callable entries.
   void toolRegistry.diagnostics
   void filteredTools.diagnostics
 
@@ -145,7 +150,7 @@ export function assembleAgentContext(
       buildSkillRegistry(files, { agentId: agent.id }),
       agent,
     ),
-    toolIndex: filteredTools.tools,
+    toolIndex,
     contextFiles,
     knowledgeFiles,
     missingContextPaths,

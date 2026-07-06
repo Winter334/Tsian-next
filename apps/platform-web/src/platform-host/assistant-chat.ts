@@ -6,6 +6,7 @@ import type {
   ConversationMessageRecord,
   TurnToolOutput,
   TurnTimelineItem,
+  ToolRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
 import { runAgentRuntimeTurn } from "../agent-runtime"
@@ -312,6 +313,11 @@ export async function runAssistantChat(
 
   const history = input.history ?? []
   const agentId = LOCAL_ASSISTANT_AGENT_ID
+  const localAssistantToolRoot = ".tsian/local/assistant/tools/"
+  const localAssistantToolFilter = (tool: ToolRegistryEntry): boolean =>
+    tool.scope === "agent-local"
+    && tool.agentId === LOCAL_ASSISTANT_AGENT_ID
+    && tool.path.startsWith(localAssistantToolRoot)
 
   // Build effective workspace files from card content (+ save if active).
   const activeSaveId = await getActiveSaveId()
@@ -452,6 +458,7 @@ export async function runAssistantChat(
         // (之前恒传 turn:0 → 每轮 turn=1,破坏 lastCompressedTurn 去重).
         turn: nextAssistantTurn - 1,
         workspaceFiles: workspaceTransaction.workspaceFiles,
+        toolFilter: localAssistantToolFilter,
         signal: compositeSignal,
         // 注入持久化快照(任务摘要 + 最近 K 轮)+ token 预算(之前都不传,runtime
         // 兜底初始化且 contextUpdate 被丢弃 → 无跨 turn 持久化).对称 master 路径.
