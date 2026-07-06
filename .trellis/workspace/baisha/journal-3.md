@@ -847,3 +847,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 130: roll_dice 对抗裁定扩展
+
+**Date**: 2026-07-06
+**Task**: roll_dice 对抗裁定扩展
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+将 07-04-action-resolution-system 缩窄为 roll_dice Tool 对抗扩展：新增 opposed 输入、dc/opposed 互斥、winner/margin/tie 输出，保持 numeric modifier 与单方 DC 路径；补 PRD/design/implement 与 storage spec，并通过 implement/check 子代理及 npm run build:web 验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a4c6462` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
