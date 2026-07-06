@@ -16,6 +16,7 @@ import type { CharacterEntity, RelationshipFile } from "../../lib/character-type
 import type { DisplayItems } from "../../lib/runtime-types"
 import { emptyDisplayItems } from "../../lib/runtime-types"
 import { parseExtensionsOnly } from "../../lib/parse-entity"
+import { pickDefaultAvatarUrl } from "../../lib/character-avatar"
 import CharacterPortrait from "./CharacterPortrait.vue"
 import CharacterDetail from "./CharacterDetail.vue"
 
@@ -31,6 +32,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [ref: string]
+  "portrait-updated": []
 }>()
 
 // displayItems：从 entity.extensions 解析（entity null 时为空桶）。
@@ -59,6 +61,21 @@ const localId = computed(() => {
 
 const hasEntity = computed(() => props.entity !== null)
 
+// 默认头像 URL：按性别选择内置 asset（task 07-05 design D5 / R5）。
+// entity null 时回退男图（pickDefaultAvatarUrl 对空对象返回男图）。
+const defaultAvatarUrl = computed(() => {
+  if (props.entity) return pickDefaultAvatarUrl(props.entity)
+  return pickDefaultAvatarUrl({})
+})
+
+// 上传权限：只有 entityRef 与 protagonistRef 都非空且相等时允许（task 07-05 R8）。
+const canUploadPortrait = computed(
+  () => props.entityRef !== null && props.protagonistRef !== null && props.entityRef === props.protagonistRef,
+)
+
+// 上传头像 workspace 路径（entity.portrait.path）。
+const portraitPath = computed(() => props.entity?.portrait?.path)
+
 // entity 切换时不重置 CharacterDetail 的 tab 状态——tab 是 UI 偏好，
 // 切换角色时保持上次看的 tab 体验更连贯。CharacterDetail 内部持有 tab state。
 // 父 CharacterView 用 :key=selectedRef 控制 CharacterCard remount，
@@ -67,13 +84,24 @@ const hasEntity = computed(() => props.entity !== null)
 function onSelect(ref: string) {
   emit("select", ref)
 }
+
+function onPortraitUpdated() {
+  emit("portrait-updated")
+}
 </script>
 
 <template>
   <section class="char-card">
     <!-- 左侧固定立绘栏（不随标签切换） -->
     <div class="portrait-column">
-      <CharacterPortrait :name="portraitName" />
+      <CharacterPortrait
+        :name="portraitName"
+        :portrait-path="portraitPath"
+        :fallback-src="defaultAvatarUrl"
+        :can-upload="canUploadPortrait"
+        :entity-ref="entityRef"
+        @portrait-updated="onPortraitUpdated"
+      />
     </div>
 
     <!-- 右侧详情栏（只有这里随标签切换） -->

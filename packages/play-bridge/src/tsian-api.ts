@@ -152,7 +152,7 @@ export interface TsianApi {
     read(path: string, scope?: WorkspaceScope): Promise<WorkspaceReadResult | null>
     list(path?: string, scope?: WorkspaceScope): Promise<WorkspaceEntry[]>
     search(query: string, options?: { scope?: WorkspaceScope; limit?: number; contextLines?: number; ignoreCase?: boolean }): Promise<WorkspaceSearchResult[]>
-    write(path: string, content: string, scope?: WorkspaceScope): Promise<WorkspaceWriteResult>
+    write(path: string, content: string | Blob, scope?: WorkspaceScope): Promise<WorkspaceWriteResult>
   }
 
   // ── 卡配置 ──
@@ -449,7 +449,7 @@ export function createTsian(): TsianApi {
         })
       },
 
-      async write(path: string, content: string, scope?: WorkspaceScope): Promise<WorkspaceWriteResult> {
+      async write(path: string, content: string | Blob, scope?: WorkspaceScope): Promise<WorkspaceWriteResult> {
         return bridge.call<WorkspaceWriteResult>("workspace.write", {
           path,
           content,

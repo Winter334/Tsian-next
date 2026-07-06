@@ -64,7 +64,8 @@ export interface WorkspaceSearchRequest {
 
 export interface WorkspaceWriteRequest {
   path: string
-  content: string
+  /** Text content for text writes, or a Blob for binary/media writes. */
+  content: string | Blob
   scope?: WorkspaceScope
 }
 

@@ -16,6 +16,25 @@ import type { DisplayItems, DisplayItemError } from "./runtime-types"
 /** 状态倾向语义提示，决定 UI 颜色 tone（design D5）。 */
 export type Polarity = "positive" | "negative" | "neutral"
 
+/**
+ * 角色立绘（玩家上传头像）UI/media 引用元数据。
+ *
+ * task 07-05 design D3：`portrait` 只作为 UI/media 引用，不内嵌 base64 或
+ * object URL，也不默认进入 AIRP runtime / character injection。`path` 指向
+ * save-runtime workspace 中的 media asset（如
+ * `save/assets/portraits/characters/萧玄.webp`）。
+ */
+export interface CharacterPortraitMeta {
+  /** save-runtime workspace media asset 路径，非空字符串。 */
+  path: string
+  /** MIME 类型，当前上传流程写入 `image/webp`。 */
+  mimeType?: string
+  /** 最近一次更新 ISO timestamp。 */
+  updatedAt?: string
+  /** 最近一次更新来源（当前上传流程写 `player`）。 */
+  updatedBy?: string
+}
+
 /** character entity 的稳定身份锚点（design §2.1）。所有键可选。 */
 export interface CharacterIdentity {
   /** 年龄；允许 string（如"十七"）或 number。 */
@@ -80,12 +99,22 @@ export interface CharacterEntity {
   brief: string
   aliases?: string[]
   identity?: CharacterIdentity
+  /**
+   * 顶层 gender 兼容字段。默认头像选择优先 `identity.gender`，缺失时回退此字段
+   * （task 07-05 design D5 / R5）。仅用于 UI 默认头像 fallback，不替代 identity。
+   */
+  gender?: string
   appearance?: string
   attributes?: CharacterAttributes
   gauges?: CharacterGauge[]
   status?: CharacterStatus[]
   goals?: CharacterGoals
   background?: string
+  /**
+   * 玩家上传头像的 UI/media 引用元数据（task 07-05 design D2/D3）。
+   * 缺省表示该角色无上传头像，UI 展示内置默认头像。
+   */
+  portrait?: CharacterPortraitMeta
   /**
    * 当前持有的容器指针数组，每项 `{ ref, count? }`；ref 指向 container entity。
    * 缺省或空数组表示角色未持有容器。物品数量落在 container.contents[*].count。

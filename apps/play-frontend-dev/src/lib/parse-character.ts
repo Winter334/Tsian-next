@@ -19,6 +19,7 @@ import type {
   CharacterGauge,
   CharacterGoals,
   CharacterIdentity,
+  CharacterPortraitMeta,
   CharacterStatus,
   GaugeTone,
   Polarity,
@@ -171,6 +172,25 @@ function parseContainers(raw: unknown): Array<{ ref: string; count?: number }> |
 }
 
 /**
+ * 归一 portrait 元数据（task 07-05 design D2/D3）。
+ * 必检 path 非空字符串；mimeType/updatedAt/updatedBy 可选字符串。
+ * 缺 path 或非对象 → undefined（UI 按"无上传头像"展示默认头像）。
+ */
+function parsePortrait(raw: unknown): CharacterPortraitMeta | undefined {
+  if (!isRecord(raw)) return undefined
+  const path = asString(raw.path)
+  if (!path) return undefined
+  const out: CharacterPortraitMeta = { path }
+  const mimeType = asString(raw.mimeType)
+  if (mimeType) out.mimeType = mimeType
+  const updatedAt = asString(raw.updatedAt)
+  if (updatedAt) out.updatedAt = updatedAt
+  const updatedBy = asString(raw.updatedBy)
+  if (updatedBy) out.updatedBy = updatedBy
+  return out
+}
+
+/**
  * parseCharacter — 把 raw JSON 归一为 CharacterEntity。
  *
  * 必检 id/name/brief；缺一返回 null。其余字段逐项归一，类型不符则丢弃该字段，
@@ -194,6 +214,10 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
   const identity = parseIdentity(raw.identity)
   if (identity) entity.identity = identity
 
+  // 顶层 gender 兼容字段（task 07-05 design D5）：仅用于默认头像 fallback。
+  const gender = asString(raw.gender)
+  if (gender) entity.gender = gender
+
   const appearance = asString(raw.appearance)
   if (appearance) entity.appearance = appearance
 
@@ -214,6 +238,10 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
 
   const containers = parseContainers(raw.containers)
   if (containers) entity.containers = containers
+
+  // portrait UI/media 引用元数据（task 07-05 design D3）。
+  const portrait = parsePortrait(raw.portrait)
+  if (portrait) entity.portrait = portrait
 
   if (isRecord(raw.extensions)) {
     entity.extensions = raw.extensions

@@ -24,6 +24,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   select: [ref: string]
+  "portrait-updated": []
 }>()
 
 const entityRef = computed(() => props.selectedRef ?? "")
@@ -49,6 +50,12 @@ const loading = computed(() => entityError.value === null && !entityData.value &
 function onSelect(ref: string) {
   emit("select", ref)
 }
+
+// 头像上传成功后重新加载 entity，刷新 portrait 元数据（task 07-05 design §"Upload flow"）。
+function onPortraitUpdated() {
+  void loadEntity()
+  emit("portrait-updated")
+}
 </script>
 
 <template>
@@ -59,5 +66,6 @@ function onSelect(ref: string) {
     :entity-ref="selectedRef"
     :protagonist-ref="protagonistRef"
     @select="onSelect"
+    @portrait-updated="onPortraitUpdated"
   />
 </template>

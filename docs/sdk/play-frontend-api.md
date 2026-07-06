@@ -490,6 +490,8 @@ tsian.workspace.search(query, options?)
 tsian.workspace.write(path, content, scope?)
 ```
 
+`content` 可以是 `string`（文本写入）或 `Blob`（二进制/媒体写入，如图片）。文本写入保持原有语义；`Blob` 写入走同一 `save-runtime` workspace 通道，适合玩家上传头像等媒体资产。
+
 ### WorkspaceScope
 
 ```ts
@@ -543,9 +545,16 @@ const results = await tsian.workspace.search("流萤", { limit: 20, contextLines
 ### write
 
 ```ts
+// 文本写入
 await tsian.workspace.write("save/character.json", JSON.stringify(charState))
 // → WorkspaceWriteResult：{ path, scope, file, changed }
+
+// 二进制/媒体写入（Blob）
+const blob = new Blob([bytes], { type: "image/webp" })
+await tsian.workspace.write("save/assets/portraits/characters/萧玄.webp", blob, "save-runtime")
 ```
+
+`content` 接受 `string | Blob`。`string` 用于文本文件（JSON/MD/配置等），`Blob` 用于二进制/媒体资产（图片等）。两种写入都走同一 `save-runtime` workspace 通道，返回相同的 `WorkspaceWriteResult`。
 
 **典型用法：前端持有状态 + 每轮注入**
 
@@ -681,7 +690,7 @@ interface TsianApi {
     search(query: string, options?: {
       scope?: WorkspaceScope; limit?: number; contextLines?: number; ignoreCase?: boolean
     }): Promise<WorkspaceSearchResult[]>
-    write(path: string, content: string, scope?: WorkspaceScope): Promise<WorkspaceWriteResult>
+    write(path: string, content: string | Blob, scope?: WorkspaceScope): Promise<WorkspaceWriteResult>
   }
 
   // 卡配置

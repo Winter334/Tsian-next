@@ -400,10 +400,10 @@ function normalizeWorkspaceWriteRequest(value: unknown): WorkspaceWriteRequest {
       "workspace.write requires a non-empty string path.",
     )
   }
-  if (typeof record.content !== "string") {
+  if (typeof record.content !== "string" && !(record.content instanceof Blob)) {
     throw new RemoteBridgeRpcError(
       "INVALID_WORKSPACE_CONTENT",
-      "workspace.write requires string content.",
+      "workspace.write requires string or Blob content.",
     )
   }
   return {
