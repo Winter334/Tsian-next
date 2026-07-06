@@ -814,3 +814,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 129: 自定义 Tools 创意工坊分发
+
+**Date**: 2026-07-06
+**Task**: 自定义 Tools 创意工坊分发
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+新增创意工坊 Tool 资源类型，支持 Tool 包导出/安装、后端校验、市场 UI、助手包携带 tools，并完成构建与服务端测试验证。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `85018da` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
