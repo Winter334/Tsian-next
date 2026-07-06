@@ -1,1 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check storage/template change with required npm run build:web quality bar."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Check AI-facing schema/description text for zero stale tieBreak/reroll/mode wording and avoid unnecessary concepts."}
+{"file":"docs/reference/tool-vs-skill.md","reason":"Check that roll_dice remains a Tool-shaped one-call ability and does not drift into Skill/SOP responsibilities."}

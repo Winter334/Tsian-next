@@ -81,6 +81,66 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 - Do not add migrations or compatibility layers for local IndexedDB without explicit approval.
 - Do not create duplicate storage helpers for the same table.
 
+## Scenario: Built-in roll_dice Tool Seed
+
+### 1. Scope / Trigger
+
+- Trigger: changing the default `tools/roll_dice/tool.json` or `tools/roll_dice/run.js` seed in `apps/platform-web/src/storage/workspace-templates.ts`.
+- This is an AI-facing Tool contract: the JSON schema and descriptions are shown to LLMs as native function-calling surface.
+
+### 2. Signatures
+
+- Tool name: `roll_dice`.
+- Required input: `sides: integer >= 2`.
+- Optional input: `count?: integer >= 1`, `modifier?: number`, `dc?: number`, `advantage?: boolean`, `disadvantage?: boolean`, `reason?: string`, `opposed?: object`.
+- `opposed` fields: `sides?: integer >= 2`, `count?: integer >= 1`, `modifier?: number`, `advantage?: boolean`, `disadvantage?: boolean`.
+
+### 3. Contracts
+
+- Without `opposed`, `dc` is allowed and output may include `dc` plus `success: boolean`.
+- With `opposed`, `dc` is forbidden. Output includes `opposed`, `margin = total - opposed.total`, and `winner: "self" | "opposed" | "tie"`.
+- `opposed.sides` and `opposed.count` default to the top-level `sides` / `count`; `opposed.modifier` defaults to `0`.
+- `modifier` is numeric-only at both levels. Do not add expression evaluation, entity-path lookup, variables, DSLs, or `tsian.lib.math` to this Tool.
+- A tie is a valid output. Do not add `tieBreak`, reroll, or forced-winner behavior at the Tool layer.
+
+### 4. Validation & Error Matrix
+
+- `dc` + `opposed` together -> `ROLL_DICE_INVALID_ARGS`, before random generation.
+- Top-level `modifier` missing -> use `0`.
+- Top-level or opposed `modifier` present but not a finite number -> `ROLL_DICE_INVALID_ARGS`, before random generation.
+- Empty-string modifier -> `ROLL_DICE_INVALID_ARGS`; do not allow `Number("") === 0` to pass silently.
+- Invalid `sides` / `count` -> fail loud through the dice helper / Tool argument validation.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `roll_dice({ sides: 20, modifier: 2, opposed: { modifier: 1 }, reason: "追逐对抗" })` returns both sides, `margin`, and `winner`.
+- Base: `roll_dice({ sides: 20, modifier: 1, dc: 13 })` keeps the single-check `success` path.
+- Bad: `roll_dice({ sides: 20, dc: 15, opposed: {} })` must fail instead of returning both success and winner.
+
+### 6. Tests Required
+
+- Build/typecheck: run `npm run build:web` for `workspace-templates.ts` changes.
+- Behavior check: verify single `dc` path, opposed defaulting, `winner` values (`self` / `opposed` / `tie`), `dc + opposed` pre-roll error, and invalid modifier pre-roll error.
+- AI-facing check: grep the changed Tool block for stale `tieBreak`, `reroll`, or mode-gating concepts.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```json
+{ "sides": 20, "dc": 15, "opposed": { "modifier": 2 } }
+```
+
+This asks the Tool to produce both a threshold success and an opposed winner.
+
+#### Correct
+
+```json
+{ "sides": 20, "modifier": 1, "opposed": { "modifier": 2 }, "reason": "双方争夺主动权" }
+```
+
+This asks for one opposed fact. If totals tie, the Tool returns `winner: "tie"` and the storyteller handles the narrative.
+
 ## Source References
 
 - `apps/platform-web/src/storage/db.ts`
