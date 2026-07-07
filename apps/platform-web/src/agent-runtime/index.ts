@@ -672,7 +672,7 @@ function buildWorkspaceToolInstructions(
 
   const sharedRules = [
     "Runtime 工具是可选能力；只在当前上下文不足、需要读取/修改 workspace、需要联系 Agent 或需要检查前端时使用。",
-    `Skill 使用两步：先调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 选择可见 Skill Index 中的 name；下一轮框架会注入完整 SKILL.md，再按其中说明读取 references 或执行脚本。`,
+    `调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 选择可见 Skill Index 中的 name；observation 会返回该 Skill 的完整 SKILL.md 与声明的 action，按其中说明执行脚本。`,
     ...(canReadWorkspace
       ? [
           `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 Skill 入口文件；Skill 入口由 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后自动注入。`,
@@ -1249,10 +1249,7 @@ function createAgentCallRunner(
         targetAgent: {
           id: targetContext.agent.id,
           title: targetContext.agent.title,
-          summary: targetContext.agent.summary,
         },
-        historyMode: agentCall.historyMode,
-        metadata: completedMetadata,
         response,
       }
     } catch (error) {
@@ -1289,7 +1286,6 @@ function createAgentCallRunner(
             ? `agent_call 上下文压缩无效中止 for Agent "${targetContext.agent.id}".`
             : `agent_call failed for Agent "${targetContext.agent.id}".`,
         {
-          ...failedMetadata,
           cause: errorToTraceData(error),
           ...(isTimeout ? { timeout: true, inactivityTimeoutMs } : {}),
           ...(isTaskStall ? { stalled: true } : {}),

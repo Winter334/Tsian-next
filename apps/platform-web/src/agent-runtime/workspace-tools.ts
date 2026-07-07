@@ -1625,15 +1625,53 @@ export function resolveBrowserScriptPath(
  * Resolve a helper source file path declared by `executor.helpers`.
  *
  * Path resolution:
- * - Relative path (starts with `./` or `../`, or contains no `/`):
- *   relative to the Skill's directory (same root as `resolveBrowserScriptPath`).
- * - Absolute path (contains `/` but does not start with `./` or `../`):
+ * - Relative path (`_common.js`, `./foo.js`, `sub/bar.js`, `../foo.js`):
+ *   relative to the declaring Skill's `scripts/` directory.
+ * - Workspace-root path (`/agents/...`, `agents/...`, `skills/...`, `save/...`, ...):
  *   resolved from workspace root. Allowed but discouraged — breaks Skill
- *   self-containment. Path escape (`../` climbing above workspace root) is rejected.
+ *   self-containment.
  *
- * Returns the absolute workspace path. Does NOT verify the file exists —
- * existence is checked by the executor when it reads the file.
+ * Relative helpers must stay under the declaring Skill directory after segment
+ * resolution. Returns the absolute workspace path. Does NOT verify the file
+ * exists — existence is checked by the executor when it reads the file.
  */
+const WORKSPACE_ROOT_HELPER_PREFIXES = new Set([
+  ".tsian",
+  "agents",
+  "docs",
+  "frontend",
+  "save",
+  "skills",
+  "tools",
+])
+
+function resolveWorkspacePathFromBase(basePath: string, rawPath: string): string {
+  const baseSegments = basePath.split("/").filter(Boolean)
+  const rawSegments = rawPath
+    .trim()
+    .replace(/\\/g, "/")
+    .split("/")
+
+  const stack = [...baseSegments]
+  for (const segment of rawSegments) {
+    if (!segment || segment === ".") continue
+    if (segment === "..") {
+      stack.pop()
+      continue
+    }
+    stack.push(segment)
+  }
+
+  return normalizeWorkspaceFilePath(stack.join("/"))
+}
+
+function isWorkspaceRootHelperPath(rawPath: string, normalizedPath: string, skillDirectory: string): boolean {
+  if (rawPath.trim().startsWith("/")) return true
+  if (normalizedPath.startsWith(`${skillDirectory}/`)) return true
+  const [firstSegment] = normalizedPath.split("/")
+  return !!firstSegment && WORKSPACE_ROOT_HELPER_PREFIXES.has(firstSegment)
+}
+
 export function resolveHelperPath(
   skillPath: string,
   skillName: string,
@@ -1649,37 +1687,20 @@ export function resolveHelperPath(
   }
 
   const normalized = normalizeWorkspaceFilePath(helperPath)
-  const isRelative =
-    normalized.startsWith("./") ||
-    normalized.startsWith("../") ||
-    !normalized.includes("/")
-
-  if (isRelative) {
-    const stripped = normalized.startsWith("./") ? normalized.slice(2) : normalized
-    const resolved = stripped
-      ? `${skillDirectory}/${stripped}`
-      : skillDirectory
-    if (!resolved.startsWith(`${skillDirectory}/`) && resolved !== skillDirectory) {
-      throw toolError(
-        "BROWSER_SCRIPT_PATH_INVALID",
-        `Helper path must stay under the declaring Skill directory: ${helperPath}`,
-        { helperPath, skillPath, resolved },
-      )
-    }
-    return resolved
+  if (isWorkspaceRootHelperPath(helperPath, normalized, skillDirectory)) {
+    return normalized
   }
 
-  // Absolute path: resolve from workspace root. Reject `../` escape —
-  // normalizeWorkspaceFilePath already trims leading slashes, so a path
-  // starting with `../` after normalization means it tried to climb above root.
-  if (normalized.startsWith("../")) {
+  const scriptsDirectory = `${skillDirectory}/scripts`
+  const resolved = resolveWorkspacePathFromBase(scriptsDirectory, helperPath)
+  if (!resolved.startsWith(`${skillDirectory}/`)) {
     throw toolError(
       "BROWSER_SCRIPT_PATH_INVALID",
-      `Helper absolute path must not escape workspace root: ${helperPath}`,
-      { helperPath, normalized },
+      `Helper path must stay under the declaring Skill directory: ${helperPath}`,
+      { helperPath, skillPath, resolved },
     )
   }
-  return normalized
+  return resolved
 }
 
 
@@ -1960,8 +1981,7 @@ function activateSkillByName(
     skill: {
       name: skill.name,
       title: skill.title,
-      scope: skill.scope,
-      ...(skill.agentId ? { agentId: skill.agentId } : {}),
+      path: skill.path,
     },
     activated: true,
     content: file.content,
@@ -2105,17 +2125,10 @@ async function executeRunScript(
     skill: {
       name: loadedSkill.skill.name,
       title: loadedSkill.skill.title,
-      scope: loadedSkill.skill.scope,
-      ...(loadedSkill.skill.agentId ? { agentId: loadedSkill.skill.agentId } : {}),
     },
     action: {
       name: action.name,
-      description: action.description,
-      hasInputSchema: action.inputSchema !== undefined,
-      hasOutputSchema: action.outputSchema !== undefined,
     },
-    executor: action.executor,
-    input: actionInput,
     output: execution.output,
   }
 }
