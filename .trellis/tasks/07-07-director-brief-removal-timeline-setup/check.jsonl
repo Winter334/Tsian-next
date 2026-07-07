@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "检查移除 director/brief 后是否残留概念痕迹——contextPaths、Skill 正文、README、schema guide 中是否还有导演/brief 暗示。"}
+{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "原则 9 验证——timeline 字段是否有真实消费者（researcher 映射是 D，但开局锚点本身是 world-architect 的产物+前端可读）；visibility director-only 移除是否彻底。"}

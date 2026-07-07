@@ -993,3 +993,78 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - 子任务 B：导演/brief 移除 + timeline 建立
+
+---
+
+## Session 134: 导演/brief 移除 + timeline 建立
+
+### Task
+
+`07-07-director-brief-removal-timeline-setup`（父任务 `07-06-agent-roster-progressive-refactor` 子任务 B）
+
+### Summary
+
+落实素材库模型第一步架构转变：原子化移除 director Agent + brief 文档体系，同时建立 timeline 机制（frontier.json.timeline 字段 + 开局第一个锚点 + worldTime 元年初始化）。移除与建立必须同提交完成——移除 brief 后 researcher 找素材失去依据，必须同时有 timeline 替代其索引功能。
+
+调研阶段发现两个关键事实改变了执行范围：
+1. `runtime.worldTime` 已由归档任务 `07-05-runtime-world-time-field` 端到端交付（schema/seed/opening write/stage-manager 维护指引/前端 type+parse+inject+render），B 只补 timeline 锚点 + 元年初始化指引，不重建 worldTime 机制。
+2. `UnderstandingRunning.vue` STAGES 数组有 pre-existing bug：`STAGES[4]`"导演正在校准…"是 dead code（mapToolToStage 最大产出 3，永远到不了 4），`STAGES[3]`"正在写入…"与 `STAGES[2]`"正在整理开局资料…"语义重叠。顺带修复。
+
+### Main Changes
+
+**workspace-templates.ts（移除类）：**
+- `DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS` 移除 4 个 director/brief 路径（保留 frontier.json）。
+- 删除 `DIRECTOR_BRIEF_SKILL_MD` 常量。
+- `DEFAULT_WORKSPACE_FILES` 删除 director agent.json/AGENT.md/SOUL.md + 剧情指导维护 SKILL.md 文件登记。
+- `DEFAULT_SAVE_RUNTIME_FILES` 删除 save/agents/director/notes.md + save/director/* 3 个文件登记。
+- storyteller/stage-manager contextPaths 移除 current-brief.md。
+- 4 个 Agent contacts 数组移除 director 条目。
+- researcher 检索 Skill 正文移除 brief 提及。
+- world-architect 开局建模 Skill 移除"agent_call 导演写 brief"步骤（description + step 7 + spoiler-safe note）。
+- TSIAN_FRAMEWORK_KNOWLEDGE_MD / 顶层 README / agents/README / save/README / save/source/README 移除 director 提及。
+- schema guide/reference 移除"runtime 与 director brief"措辞、save/director/ 路径、director 职责行。
+- visibility 枚举 director-only 移除（Principle 9：导演移除后无消费者，剩余 player-known/hidden/future-spoiler 覆盖所有用例）。
+
+**workspace-templates.ts（建立类）：**
+- frontier.json 种子新增 `timeline: [{ chapter: 1, time: "元年", label: "开局" }]`。
+- commit_runtime_and_frontier 脚本新增 timeline 透传 + 每项校验（{ chapter: number, time: string, label: string }，OPENING_TIMELINE_* 错误码）。脚本不硬编码"元年"——领域决策由 Skill 指示。
+- world-architect 开局建模 Skill 新增 step 5：commit_runtime_and_frontier 时传 worldTime="元年" + timeline=[{chapter: sourceWindow.start, time:"元年", label:"开局"}]。
+- schema guide/reference + save/playthrough/README 记录 frontier.json.timeline 字段（结构 + label 约束"不是剧情摘要" + 与 sourceWindow 独立性）。
+
+**前端清理：**
+- UnderstandingRunning.vue STAGES 5→3（移除 dead code STAGES[4] + 语义重叠 STAGES[3]）。
+- useSetupState.ts mapToolToStage 移除 agent_call→3 分支 + 注释更新。
+- source.ts buildOpeningInitializationPrompt 删除"agent_call 导演写 brief"指令（第 5 条），6/7 顺位上移。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| (本 session 提交) | refactor(airp): 导演/brief 移除 + timeline 建立 |
+| (本 session 提交) | chore(task): 父任务 PRD 标记 B 完成 + journal Session 134 |
+
+### Testing
+
+- [OK] npm run build --workspace play-frontend-dev
+- [OK] npm run build:web
+- [OK] rg "\bdirector\b|导演" workspace-templates.ts → 0 概念命中
+- [OK] rg "current-brief|剧情指导" workspace-templates.ts → 0
+- [OK] rg "\bdirector\b" play-frontend-dev/src → 0
+- [OK] rg "director-only" 两 app → 0
+- [OK] rg "timeline" workspace-templates.ts → 14 命中（seed + script + schema guide + reference + Skill step + README + tool description）
+- [ ] 浏览器验证待做（用户自行）：开局向导 Step 2 确认 frontier.timeline + worldTime="元年" + 无 save/director/
+
+### Design Decisions
+
+- **§4 worldTime 元年初始化**：由 Skill 指示 world-architect 传"元年"，脚本保持机械透传不硬编码——"元年"是领域决策，后续若改基准表述只改 Skill 文本。
+- **§6 STAGES 精简**：移除 dead code + 语义重叠项，精简为 3 项（观察/阅读/整理写入）。移除 agent_call→3 分支——新模型下开局不 agent_call 任何 Agent（timeline 锚点自己建）。
+- **§7 开局 prompt 第 5 条**：删除不替换——原第 5 条是跨 Agent 协作提醒；timeline 锚点是 world-architect 自身职责，步骤在 Skill 正文，prompt 不重复枚举。
+- **§8 director-only 移除**：导演没了没人消费"导演专用"标记，剩余三个 visibility 值覆盖所有用例。
+
+### Status
+
+[OK] **Completed** — 静态验证全通过，浏览器验证待用户自行做
+
+### Next Steps
+
+- 子任务 C：游玩设定步重构（依赖 B：导演已移除、timeline 已建）

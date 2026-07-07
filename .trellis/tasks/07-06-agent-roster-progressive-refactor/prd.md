@@ -123,10 +123,13 @@ A. entity schema 精简 ✅ 已完成 (`07-07-entity-schema-prune-no-consumer-fi
    - 修复 commit-entities 脚本与 schema guide 字段名不一致。
    - runtime/scene/relationship 的 updatedAtTurn/updatedBy 保留（有 stage-manager 消费者）。
 
-B. 导演与 brief 移除 + timeline 建立
-   - 移除 director Agent（agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill）、移除 brief 文档（current-brief.md/.meta.json）、清理所有 Agent 对 brief 的引用（contextPaths/Skill 正文）。
-   - frontier.json 新增 timeline 字段，world-architect 开局建模 Skill 补充建第一个锚点步骤，runtime.worldTime 元年初始化。
-   - 导演移除与 timeline 建立必须同时完成——不能先移除 brief 再建 timeline（中间状态 researcher 没有找素材依据），也不能先建 timeline 再移除 brief（timeline 建好后 brief 还在，Agent 困惑该读哪个）。
+B. 导演与 brief 移除 + timeline 建立 ✅ 已完成 (`07-07-director-brief-removal-timeline-setup`)
+   - 移除 director Agent（agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill）、移除 brief 文档（current-brief.md/.meta.json/README.md）、清理所有 Agent 对 brief 的引用（contextPaths/Skill 正文/contacts/schema 文档）。
+   - frontier.json 新增 timeline 字段，world-architect 开局建模 Skill 补充建第一个锚点步骤，runtime.worldTime 元年初始化（Skill 指示传 "元年"，脚本不硬编码）。
+   - commit_runtime_and_frontier 脚本新增 timeline 透传 + 每项校验（{ chapter, time, label }）。
+   - visibility 枚举 director-only 移除（Principle 9：导演移除后无消费者）。
+   - 前端清理：UnderstandingRunning STAGES 5→3（移除 dead code STAGES[4] + 语义重叠 STAGES[3]）、mapToolToStage 移除 agent_call→3 分支、buildOpeningInitializationPrompt 删除"agent_call 导演写 brief"指令。
+   - ⚠️ 浏览器验证待做（用户自行）：开局向导 Step 2 确认 frontier.timeline 锚点 + worldTime="元年" + 无 save/director/。
    - 依赖 A（entity 字段先清理）。
 
 C. 游玩设定步重构
@@ -155,7 +158,7 @@ E. 回合后维护 + frontier 推进触发
 | # | 玩家步骤 | 涉及 Agent | 状态 |
 | - | - | - | - |
 | 0 | 前端开局操作（导入源、选卡） | — 无 Agent — | 不在本任务范围 |
-| 1a | 开局向导 Step 2：Understanding（初始世界建模 + timeline 建立） | world-architect | ✅ 已完成（timeline 待补） |
+| 1a | 开局向导 Step 2：Understanding（初始世界建模 + timeline 建立） | world-architect | ✅ 已完成 |
 | 1b | 开局向导 Step 4：游玩设定对话 | world-architect, storyteller (agent_call) | 待启动 |
 | 1c | 开局向导 Step 5：开局确认过渡 | — 无 Agent — | 不在本任务范围 |
 | 2 | 正式玩家回合 | storyteller, researcher | 待规划 |
@@ -168,13 +171,13 @@ E. 回合后维护 + frontier 推进触发
 
 ## Current Agent / Skill / Tool Ledger
 
-当前默认阵容状态（含架构转变影响标注）：
+当前默认阵容状态（B 完成后更新）：
 
-- **storyteller** / 说书人：`AGENT.md` / `SOUL.md` 保留；`skills.enabled = []`；`contextPaths = [README.md, current-brief.md]`。⚠️ 新模型下 contextPaths 的 `current-brief.md` 要移除（brief 废弃）。待正式玩家回合子任务重写职责。
-- **researcher** / 资料员：`AGENT.md` 保留；两个 Skill（`实体读取` / `资料检索`）保留。⚠️ 新模型下需新增"找不到时映射 timeline 推进 frontier"职责。待正式玩家回合子任务处理。
-- **stage-manager** / 场记：`AGENT.md` 保留；skills = `状态栏维护` + `schema演进检查`；`contextPaths` 含 `current-brief.md`。⚠️ 新模型下 contextPaths 的 `current-brief.md` 要移除；需新增"维护 worldTime"职责。待回合后维护子任务处理。
-- **world-architect** / 世界架构师：`AGENT.md` 已补方法论；skills = `开局建模` + `游玩设定`。⚠️ 新模型下需新增"推进 frontier + 维护 timeline"职责。待相关子任务处理。
-- **director** / 导演：⚠️ **新模型下标记为待移除**。`AGENT.md` / `SOUL.md` / `剧情指导维护` Skill / `current-brief.md` / `.meta.json` 全部待清理。导演移除作为独立子任务（Child Task Map #5）。
+- **storyteller** / 说书人：`AGENT.md` / `SOUL.md` 保留；`skills.enabled = []`；`contextPaths = [README.md]`（brief 已移除）。待正式玩家回合子任务 D 重写职责（用已有素材自由创作）。
+- **researcher** / 资料员：`AGENT.md` 保留；两个 Skill（`实体读取` / `资料检索`）保留，已清理 brief 提及。⚠️ 待正式玩家回合子任务 D 新增"找不到时映射 timeline 推进 frontier"职责。
+- **stage-manager** / 场记：`AGENT.md` 保留；skills = `状态栏维护` + `schema演进检查`；`contextPaths` 已移除 `current-brief.md`。⚠️ 待回合后维护子任务 E 新增"维护 worldTime"职责重写（07-05 已交付基础 worldTime 维护指引，E 做职责重写）。
+- **world-architect** / 世界架构师：`AGENT.md` 已补方法论；skills = `开局建模`（已补 timeline 锚点步骤 + worldTime 元年初始化）+ `游玩设定`。⚠️ 待子任务 E 新增"推进 frontier + 追加 timeline 锚点"Skill（ongoing，非开局）。
+- **director** / 导演：**已移除**（B 完成）。agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill/current-brief.md/.meta.json/README.md 全部删除。visibility 枚举 director-only 同步移除。
 - **共享 Tools**：`roll_dice` 已对所有 Agent `tools.disabled`。保留为通用能力。
 - **共享 Skills 目录 (`skills/`)**：默认不放共享玩法 Skill，仅结构占位。
 
@@ -183,9 +186,9 @@ E. 回合后维护 + frontier 推进触发
 - [ ] 父任务下的每个子任务都有明确流程步骤、涉及 Agent、交付边界与验收标准。
 - [x] `mode.json` 抽象清理子任务完成并归档。
 - [x] Understanding 步 world-architect + director 重构完成（导演保留部分待后续清理）。
-- [ ] entity schema 精简完成。
-- [ ] 导演与 brief 移除完成。
-- [ ] timeline 机制建立完成。
+- [x] entity schema 精简完成。
+- [x] 导演与 brief 移除完成。
+- [x] timeline 机制建立完成。
 - [ ] 游玩设定步完成。
 - [ ] 正式玩家回合 storyteller + researcher 重构完成。
 - [ ] 回合后维护 stage-manager 重构完成。
