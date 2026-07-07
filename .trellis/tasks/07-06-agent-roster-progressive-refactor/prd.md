@@ -97,57 +97,56 @@ frontier.json 新增:
 - R5: timeline 机制（元年基准 + worldTime 维护 + 锚点渐进补充 + researcher 映射找素材）随相关步骤逐步建立，不一次性全建。
 - R6: 每个子任务完成后必须更新父任务的流程地图与当前 Agent / Skill / Tool 职责表，保持整体架构可读。
 - R7: 不把 UI 模块、状态栏字段、人物卡、背包等前端渲染结构混入玩法 / Agent 职责重构，除非该流程步骤明确依赖它们。
-- R8: 后台 agent 调用（问题 1）作为平台能力另行讨论，不阻塞当前 Agent 重构进度；在平台能力就绪前，frontier 推进走串行路径。
+- R8: frontier 推进采用 A' 方案（前端检查边界触发 invokeAgent），用已有平台机制，不开发后台 agent 调用能力。后台 agent 调用（问题 1）作为平台能力另行讨论，不阻塞当前重构进度。
 
 ## Initial Child Task Map
+
+### 已完成
 
 1. `mode.json` 抽象清理 ✅ 已归档 (`07-06-mode-json-abstraction-cleanup`)
    - 已删除默认 `save/playthrough/mode.json` 种子与默认路径登记。
    - 已删除世界架构师 `玩法启用` Skill 与 `commit_mode` 脚本；同时删除三处 `行动裁定` Skill。
    - 已从默认 Agent / Skill / schema guide / README 中移除所有面向 Agent 的 `mode.json` 与软开关语义。
-   - 已知残留：`apps/play-frontend-dev/src/lib/source.ts:465,470` 的 `buildPlaySetupPrompt` 仍含 mode.json 残留，由 Step 4 游玩设定子任务处理。
+   - 已知残留：`apps/play-frontend-dev/src/lib/source.ts:465,470` 的 `buildPlaySetupPrompt` 仍含 mode.json 残留，由子任务 C 处理。
 
 2. Understanding 步：world-architect + director 重构 ✅ 已完成 (`07-06-understanding-step-world-architect-director`)
    - world-architect AGENT.md 补 3 条方法论；SOUL.md 补 2 句人格。
    - 开局建模 Skill description/triggers 精简；第8步标注不在开局建模流程执行。
-   - storyteller contextPaths 从 5 条减为 2 条（移除 schema-guide/schema-current/runtime.json）。
+   - storyteller contextPaths 从 5 条减为 2 条。
    - 5 个 Agent 显式 `tools.disabled: ["roll_dice"]`。
-   - ⚠️ 架构转变后需重新审视：该子任务保留了 director 不改的结论——新模型下导演要移除，需在后续子任务中清理。
+   - ⚠️ 架构转变后需重新审视：该子任务保留了 director 不改的结论——新模型下导演要移除，由子任务 B 清理。
 
-3. entity schema 精简（`07-07-entity-schema-prune-no-consumer-fields`，已创建待实现）
+### 落实素材库模型的 5 个子任务（按依赖顺序）
+
+A. entity schema 精简（`07-07-entity-schema-prune-no-consumer-fields`，已创建待实现）
    - 移除 entity 的 `updatedAt`/`updatedBy`/`sourceRefs`/`origin` 四个无消费者字段。
    - 修复 commit-entities 脚本与 schema guide 字段名不一致。
-   - 源于 Understanding 步验证发现，按"每个字段必须有一个真实消费者"原则判断。
+   - 无依赖，纯 schema 字段移除，先做掉清理基础。
 
-4. 游玩设定步：world-architect（+ storyteller 协作）重构（待启动）
-   - 目标：开局向导 Step 4 游玩设定——重写 `游玩设定` Skill，清理 `buildPlaySetupPrompt` 中 mode.json 残留，审视 world-architect 在本步的职责（+ agent_call storyteller 拿开局正文的协作）。
-   - 范围：只覆盖 Step 4 游玩设定 + Step 5 开局确认过渡。
-   - 新模型影响：本步原涉及导演（agent_call 写 brief）→ 需移除导演参与，审视 brief 在本步的角色。
+B. 导演与 brief 移除 + timeline 建立
+   - 移除 director Agent（agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill）、移除 brief 文档（current-brief.md/.meta.json）、清理所有 Agent 对 brief 的引用（contextPaths/Skill 正文）。
+   - frontier.json 新增 timeline 字段，world-architect 开局建模 Skill 补充建第一个锚点步骤，runtime.worldTime 元年初始化。
+   - 导演移除与 timeline 建立必须同时完成——不能先移除 brief 再建 timeline（中间状态 researcher 没有找素材依据），也不能先建 timeline 再移除 brief（timeline 建好后 brief 还在，Agent 困惑该读哪个）。
+   - 依赖 A（entity 字段先清理）。
 
-5. 导演与 brief 移除（待规划）
-   - 目标：移除 director Agent（agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill）、移除 brief 文档（current-brief.md/.meta.json）、清理所有 Agent 对 brief 的引用（contextPaths/Skill 正文）。
-   - 范围：架构层面清理，但作为独立子任务因为它跨多个步骤。
-   - 前置：timeline 机制需先在某个步骤建立，否则 researcher 找素材失去映射依据。
+C. 游玩设定步重构
+   - 重写 `游玩设定` Skill，清理 `buildPlaySetupPrompt` 中 mode.json 残留，审视 world-architect 在本步职责（+ agent_call storyteller 拿开局正文）。
+   - 范围：Step 4 游玩设定 + Step 5 开局确认过渡。
+   - 依赖 B（导演已移除、timeline 已建）。
 
-6. timeline 机制建立（待规划）
-   - 目标：在 frontier.json 新增 timeline 字段，world-architect 开局建第一个锚点，建立 `runtime.worldTime` 元年基准初始化逻辑。
-   - 范围：schema 变更 + Understanding 步开局建模 Skill 补充 timeline 建立步骤。
-   - 可能与游玩设定步或导演移除合并，视具体拆分而定。
+D. 正式玩家回合重构
+   - storyteller 用已有素材自由创作（不读 brief，用 runtime injection + entity 素材）。researcher 检索 + 映射 timeline 推进 frontier 找新素材。
+   - 核心步骤，storyteller + researcher 职责重写。
+   - 依赖 B C。
 
-7. 正式玩家回合：storyteller + researcher 重构（待规划）
-   - 目标：正式玩家回合——storyteller 用已有素材自由创作、researcher 检索 + 推进 frontier 找新素材。
-   - 新模型核心：storyteller 不再读 brief，用 runtime injection + entity 素材创作。researcher 新增"找不到时映射 timeline 推进 frontier"职责。
+E. 回合后维护 + frontier 推进触发
+   - stage-manager 维护 worldTime（元年基准推算）。前端回合后检查 worldTime/锚点/sourceWindow 边界，触发 world-architect 推进（A' 方案，用已有 invokeAgent，不改平台）。
+   - 回合后维护与 frontier 触发紧耦合，合并一个任务。
+   - 依赖 D。
 
-8. 回合后维护：stage-manager 重构（待规划）
-   - 目标：场记整理变动 + 维护 `worldTime`（元年基准推算）。
-   - 新模型核心：场记不再检测 brief 刷新，改为维护 worldTime。
+### 后续
 
-9. frontier 推进触发（待规划，依赖平台能力 C）
-   - 目标：前端在场记完成后检查 worldTime/锚点/sourceWindow 边界，触发 world-architect 推进。
-   - 平台依赖：若 agent_call 后台调用就绪，推进不阻塞玩家；否则串行。
-
-10. 后续步骤待补
-    - 按玩家实际流程继续拆分；遇到已处理 Agent 时只补充当前步骤需要的职责和能力。
+后续步骤待补——按玩家实际流程继续拆分；遇到已处理 Agent 时只补充当前步骤需要的职责和能力。
 
 ## Player Flow Map (working)
 
@@ -161,7 +160,7 @@ frontier.json 新增:
 | 1c | 开局向导 Step 5：开局确认过渡 | — 无 Agent — | 不在本任务范围 |
 | 2 | 正式玩家回合 | storyteller, researcher | 待规划 |
 | 3 | 回合后维护 | stage-manager | 待规划 |
-| 4 | frontier 推进触发 | world-architect (前端触发) | 待规划（依赖平台能力 C） |
+| 4 | frontier 推进触发 | world-architect (前端触发) | 待规划（A' 方案，用已有 invokeAgent，不改平台） |
 
 新模型下导演不在 Player Flow Map 中——它被移除。Step 1/3/5 是纯前端步骤，无 Agent 参与。
 
