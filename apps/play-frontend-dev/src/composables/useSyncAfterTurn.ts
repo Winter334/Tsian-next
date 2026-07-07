@@ -1,5 +1,5 @@
 import { readonly, ref } from "vue"
-import { useTsian } from "./useTsian"
+import { getTsianClient } from "./useTsian"
 import type { SyncPhase } from "../types"
 
 /**
@@ -32,7 +32,7 @@ export function setOnSynced(cb: () => void): void {
  * 若卡未配置 postTurnMaintenance，直接 return（不启动同步流程）。
  */
 export async function triggerSyncAfterTurn(turn: number): Promise<void> {
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
 
   // 上一轮同步未结束（syncing/sync-failed）时不重复触发；
   // sync-failed 需用户显式重试，不自动覆盖。
@@ -45,7 +45,7 @@ export async function triggerSyncAfterTurn(turn: number): Promise<void> {
 /** 用户点击"重试"：重新发起同步调用。 */
 export async function retrySyncAfterTurn(): Promise<void> {
   if (syncPhase.value !== "sync-failed") return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   const input = "请重新维护上一回合的 runtime/entity/scene/relationship/memory/status bar 变动。"
   await runSyncInvocation(tsian, input, `sync-retry-${Date.now().toString(36)}`, "post-turn-maintenance-retry")
 }
@@ -58,7 +58,7 @@ export async function retrySyncAfterTurn(): Promise<void> {
  * - 失败（failed 事件或 Promise reject）：handleSyncFailed
  */
 async function runSyncInvocation(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
   input: string,
   invocationId: string,
   purpose: string,
@@ -98,7 +98,7 @@ async function runSyncInvocation(
   }
 }
 
-function ensureInvocationSubscription(tsian: ReturnType<typeof useTsian>["tsian"]): void {
+function ensureInvocationSubscription(tsian: ReturnType<typeof getTsianClient>): void {
   if (invocationSubscribed) return
   invocationSubscribed = true
   tsian.onAgentInvocation((event) => {

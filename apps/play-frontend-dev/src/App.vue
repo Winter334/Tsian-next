@@ -45,7 +45,7 @@ watch(navCollapsed, (v) => {
 const { statusCollapsed, toggle: toggleStatusCollapsed } = useStatusBarCollapsed()
 
 // bridge 状态（useTsian 单例共享）
-const { ready, turnCount } = useTsian()
+const { ready, turnCount, loadOpeningNarrative } = useTsian()
 
 function onLogoClick() {
   phase.value = "burning"
@@ -67,7 +67,6 @@ function onRevealed() {
 /** Step 5 "进入故事"：先加载开局叙事，再在 Step 5 画面上启动 scroll 烧蚀。
  *  等 BurningReveal @shown 后才切 mode=play，避免 canvas delay 期间露出下方 StoryView。 */
 async function onEnterPlay() {
-  const { loadOpeningNarrative } = useTsian()
   await loadOpeningNarrative()
   enterPlayPending.value = true
   phase.value = "burning"

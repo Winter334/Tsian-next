@@ -11,7 +11,7 @@ import { ref } from "vue"
 import type { Ref } from "vue"
 import type { EntityData } from "../lib/runtime-types"
 import { parseScene } from "../lib/parse-entity"
-import { useTsian } from "./useTsian"
+import { getTsianClient } from "./useTsian"
 
 /**
  * 把 scene id 转成 workspace 文件路径。
@@ -39,7 +39,7 @@ export function useScene(id: string): {
   const error = ref<"load-failed" | "not-found" | null>(null)
 
   async function load(): Promise<void> {
-    const { tsian } = useTsian()
+    const tsian = getTsianClient()
     const path = sceneIdToPath(id)
     try {
       const file = await tsian.workspace.read(path, "save-runtime")

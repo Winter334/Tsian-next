@@ -14,7 +14,7 @@ import { ref } from "vue"
 import type { Ref } from "vue"
 import type { RelationshipFile } from "../lib/character-types"
 import { parseRelationships } from "../lib/parse-character"
-import { useTsian } from "./useTsian"
+import { getTsianClient } from "./useTsian"
 
 /**
  * 把 subject ref 转成 relationships 分片 workspace 路径。
@@ -47,7 +47,7 @@ export function useRelationships(subjectRef: string): {
   const error = ref<"load-failed" | "not-found" | null>(null)
 
   async function load(): Promise<void> {
-    const { tsian } = useTsian()
+    const tsian = getTsianClient()
     const path = subjectRefToRelationshipPath(subjectRef)
     try {
       const file = await tsian.workspace.read(path, "save-runtime")

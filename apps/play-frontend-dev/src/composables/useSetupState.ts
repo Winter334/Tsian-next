@@ -1,5 +1,5 @@
 import { ref, readonly } from "vue"
-import { useTsian } from "./useTsian"
+import { getTsianClient } from "./useTsian"
 import { parseStoryOptions } from "@tsian/play-bridge"
 import {
   SOURCE_MANIFEST_PATH,
@@ -87,7 +87,7 @@ const understandingStage = ref(0)
 let understandingActiveInvocationId: string | null = null
 let understandingInvocationSubscribed = false
 
-function ensurePlaySetupInvocationSubscription(tsian: ReturnType<typeof useTsian>["tsian"]): void {
+function ensurePlaySetupInvocationSubscription(tsian: ReturnType<typeof getTsianClient>): void {
   if (playSetupInvocationSubscribed) return
   playSetupInvocationSubscribed = true
   tsian.onAgentInvocation((event) => {
@@ -102,7 +102,7 @@ function ensurePlaySetupInvocationSubscription(tsian: ReturnType<typeof useTsian
   })
 }
 
-function ensureUnderstandingInvocationSubscription(tsian: ReturnType<typeof useTsian>["tsian"]): void {
+function ensureUnderstandingInvocationSubscription(tsian: ReturnType<typeof getTsianClient>): void {
   if (understandingInvocationSubscribed) return
   understandingInvocationSubscribed = true
   tsian.onAgentInvocation((event) => {
@@ -129,14 +129,14 @@ function mapToolToStage(event: { name: string; status: string }): number {
 
 // ── workspace 读写（通过 bridge）──
 
-async function loadSourceManifest(tsian: ReturnType<typeof useTsian>["tsian"]): Promise<SourceManifest | null> {
+async function loadSourceManifest(tsian: ReturnType<typeof getTsianClient>): Promise<SourceManifest | null> {
   const file = await tsian.workspace.read(SOURCE_MANIFEST_PATH)
   if (!file?.content) return null
   const data = safeJsonParse(file.content)
   return isSourceManifest(data) ? data : null
 }
 
-async function loadChapterIndex(tsian: ReturnType<typeof useTsian>["tsian"]): Promise<ChapterIndexFile | null> {
+async function loadChapterIndex(tsian: ReturnType<typeof getTsianClient>): Promise<ChapterIndexFile | null> {
   const file = await tsian.workspace.read(CHAPTER_INDEX_PATH)
   if (!file?.content) return null
   const data = safeJsonParse(file.content)
@@ -156,7 +156,7 @@ async function loadChapterIndex(tsian: ReturnType<typeof useTsian>["tsian"]): Pr
   return { version: 1, chapters }
 }
 
-async function loadUnderstandingSummary(tsian: ReturnType<typeof useTsian>["tsian"]): Promise<OpeningUnderstandingSummary | null> {
+async function loadUnderstandingSummary(tsian: ReturnType<typeof getTsianClient>): Promise<OpeningUnderstandingSummary | null> {
   const file = await tsian.workspace.read(INITIAL_SUMMARY_PATH)
   if (!file?.content) return null
   const data = safeJsonParse(file.content)
@@ -164,7 +164,7 @@ async function loadUnderstandingSummary(tsian: ReturnType<typeof useTsian>["tsia
 }
 
 async function ensureChapterCharacters(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
   index: ChapterIndexFile | null,
 ): Promise<ChapterIndexFile | null> {
   if (!index || index.chapters.every((ch) => typeof ch.characters === "number")) return index
@@ -185,7 +185,7 @@ async function ensureChapterCharacters(
 }
 
 async function writeCorpus(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
   corpus: { manifest: SourceManifest; chapterIndex: ChapterIndexFile; chapters: Array<{ path: string; content: string }> },
 ): Promise<void> {
   for (const ch of corpus.chapters) {
@@ -253,7 +253,7 @@ async function startImport(
   input: { text: string; title: string; fileName?: string },
 ): Promise<void> {
   if (busy.value) return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   busy.value = true
   errorText.value = ""
   statusText.value = "读取文本…"
@@ -299,7 +299,7 @@ function confirmReimport(): void {
 
 async function startOpeningUnderstanding(): Promise<void> {
   if (!manifest.value || busy.value) return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   busy.value = true
   errorText.value = ""
   understandingStatus.value = "running"
@@ -338,7 +338,7 @@ async function startOpeningUnderstanding(): Promise<void> {
 }
 
 async function loadChapterPreview(path: string): Promise<string> {
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   const file = await tsian.workspace.read(path)
   return excerptText(file?.content ?? "") || "暂无可预览内容。"
 }
@@ -367,7 +367,7 @@ function backToBranchChoice(): void {
 /** 确认原著角色选择。写入 runtime.json 的 protagonistRef。 */
 async function confirmCanonCharacter(candidate: { id?: string; name: string; brief: string; gender?: string }): Promise<void> {
   if (busy.value) return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   busy.value = true
   errorText.value = ""
   try {
@@ -387,7 +387,7 @@ async function confirmCanonCharacter(candidate: { id?: string; name: string; bri
 /** 确认原创角色。创建实体文件 + 写入 runtime.json。 */
 async function confirmOriginalCharacter(form: OriginalCharacterFormData): Promise<void> {
   if (busy.value) return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   busy.value = true
   errorText.value = ""
   try {
@@ -430,7 +430,7 @@ function resetCharacterSetup(): void {
 
 /** read-modify-write runtime.json 的 protagonistRef 字段。 */
 async function writePlayerCharacter(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
   ref: string,
   name: string,
 ): Promise<void> {
@@ -448,7 +448,7 @@ async function writePlayerCharacter(
 
 /** 生成唯一 localId：original-<name>，冲突加序号后缀。 */
 async function ensureUniqueLocalId(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
   name: string,
 ): Promise<string> {
   const base = `original-${name}`
@@ -466,7 +466,7 @@ async function ensureUniqueLocalId(
 
 /** 读取 runtime.json 的 protagonistRef，用于重载恢复。 */
 async function loadPlayerCharacter(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
 ): Promise<SelectedCharacter | null> {
   const file = await tsian.workspace.read(RUNTIME_PATH)
   if (!file?.content) return null
@@ -503,7 +503,7 @@ function nextDialogId(): string {
 
 /** 读取 setup-summary.json 判断完成态。 */
 async function loadSetupSummary(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
 ): Promise<SetupSummary | null> {
   const file = await tsian.workspace.read(SETUP_SUMMARY_PATH)
   if (!file?.content) return null
@@ -518,7 +518,7 @@ async function loadSetupSummary(
 const PLAY_SETUP_CONTEXT_PATH = "save/agents/world-architect/context-play-setup.json"
 
 async function restorePlaySetupMessages(
-  tsian: ReturnType<typeof useTsian>["tsian"],
+  tsian: ReturnType<typeof getTsianClient>,
 ): Promise<boolean> {
   const file = await tsian.workspace.read(PLAY_SETUP_CONTEXT_PATH)
   if (!file?.content) return false
@@ -560,7 +560,7 @@ async function restorePlaySetupMessages(
 /** 构造初始 prompt 并发起第一次 invokeAgent，激活 agent + skill。 */
 async function startPlaySetupDialog(): Promise<void> {
   if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
 
   // 检查是否已完成（重载恢复）
   const summary = await loadSetupSummary(tsian)
@@ -615,7 +615,7 @@ async function startPlaySetupDialog(): Promise<void> {
 /** 玩家发送消息（选项点击或自由输入）→ 下一轮 invokeAgent。 */
 async function sendPlaySetupMessage(input: string): Promise<void> {
   if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
 
   // 清除最后一条 agent 消息的选项（已选中，不再显示）
   const msgs = playSetupMessages.value
@@ -657,7 +657,7 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
 
 /** 处理 agent 返回的 response：parseStoryOptions 提取 cleanText + options，push agent message，检查完成态。 */
 async function handleAgentResponse(response: string): Promise<void> {
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   const parsed = parseStoryOptions(response)
   // 落定：把完整文本 push 成 NarrativeMessage 落定消息，并清空流式累积。
   // 流式和落定是两套渲染——这里切到落定消息后，流式块不再展示。
@@ -711,7 +711,7 @@ async function retryPlaySetupDialog(): Promise<void> {
 
 async function initialize(): Promise<void> {
   if (initialized.value) return
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
 
   try {
     const existingManifest = await loadSourceManifest(tsian)

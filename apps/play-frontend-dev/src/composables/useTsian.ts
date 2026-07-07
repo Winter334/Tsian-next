@@ -181,20 +181,29 @@ function subscribe(): void {
 }
 
 /**
- * useTsian — 在组件中调用，返回响应式 bridge 状态 + 操作方法。
- * 自动在挂载时注册订阅（多次调用安全，单例共享）。
+ * getTsianClient — 非 setup 上下文（事件回调 / async 函数 / 模块级函数）使用的 plain accessor。
+ *
+ * 返回单例 TsianApi，并确保订阅已注册（幂等）。不调用任何 Vue lifecycle hook，
+ * 因此可以在 `onUnmounted` 之外安全调用，不会触发 "onUnmounted is called when
+ * there is no active component instance" 警告。
+ *
+ * 组件 setup 上下文应继续使用 `useTsian()`（它内部调本函数 + 注册 lifecycle hook）。
+ */
+export function getTsianClient(): TsianApi {
+  const tsian = getTsian()
+  subscribe()
+  return tsian
+}
+
+/**
+ * useTsian — 在组件 setup 中调用，返回响应式 bridge 状态 + 操作方法。
+ * 自动在挂载时注册订阅（多次调用安全，单例共享），并在卸载时清理 ready 轮询。
+ *
+ * 必须在组件 setup 同步阶段调用（内部注册 onUnmounted）。
+ * 事件回调 / async 函数 / 模块级函数请用 `getTsianClient()`。
  */
 export function useTsian() {
-  const tsian = getTsian()
-
-  // 组件挂载时确保订阅已注册 + 等 ready
-  // （subscribe 是模块级幂等，多组件安全）
-  subscribe()
-
-  onUnmounted(() => {
-    // 不在组件卸载时取消订阅：状态是模块级共享的，组件卸载不应清空状态。
-    // 真正清理在 app 卸载时（一般不需要）。
-  })
+  const tsian = getTsianClient()
 
   // ready 状态轮询（bridge.ready 是 getter，非响应式；轮询同步到 ref）
   let readyPoll = 0

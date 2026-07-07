@@ -18,7 +18,7 @@ import type { Ref } from "vue"
 import type { RuntimeData } from "../lib/runtime-types"
 import { emptyDisplayItems } from "../lib/runtime-types"
 import { parseRuntime } from "../lib/parse-runtime"
-import { useTsian } from "./useTsian"
+import { useTsian, getTsianClient } from "./useTsian"
 import { setOnSynced } from "./useSyncAfterTurn"
 import { onRuntimeStale } from "./useRuntimeStaleBus"
 
@@ -64,7 +64,7 @@ async function refresh(): Promise<void> {
   }
   refreshing = true
 
-  const { tsian } = useTsian()
+  const tsian = getTsianClient()
   runtimeData.value = { ...runtimeData.value, status: "loading" }
 
   try {
