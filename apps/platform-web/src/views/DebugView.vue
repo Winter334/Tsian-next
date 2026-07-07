@@ -111,10 +111,23 @@
             <p class="font-mono text-[11px] uppercase tracking-wider text-text-dim">近期调用消耗</p>
             <span class="font-mono text-[10px] text-text-dim">峰值 {{ formatTokens(usageChartPeakTotal) }} · 最近 {{ usageChartBars.length }} 次</span>
           </div>
-          <svg viewBox="0 0 100 46" preserveAspectRatio="none" shape-rendering="crispEdges" class="h-40 w-full overflow-visible md:h-44">
-            <line x1="5" y1="40" x2="98" y2="40" stroke="currentColor" stroke-width="0.25" vector-effect="non-scaling-stroke" class="text-neon-deep/50" />
-            <line x1="5" y1="22.5" x2="98" y2="22.5" stroke="currentColor" stroke-width="0.18" stroke-dasharray="1,1" vector-effect="non-scaling-stroke" class="text-neon-deep/35" />
-            <line x1="5" y1="5" x2="98" y2="5" stroke="currentColor" stroke-width="0.25" vector-effect="non-scaling-stroke" class="text-neon-deep/35" />
+          <svg viewBox="0 0 100 62" preserveAspectRatio="none" shape-rendering="crispEdges" class="h-52 w-full overflow-visible md:h-56">
+            <line x1="5" y1="24" x2="98" y2="24" stroke="currentColor" stroke-width="0.22" stroke-dasharray="1,1" vector-effect="non-scaling-stroke" class="text-neon-deep/35" />
+            <line x1="5" y1="45" x2="98" y2="45" stroke="currentColor" stroke-width="0.18" stroke-dasharray="1,1" vector-effect="non-scaling-stroke" class="text-neon-deep/28" />
+            <line x1="5" y1="58" x2="98" y2="58" stroke="currentColor" stroke-width="0.25" vector-effect="non-scaling-stroke" class="text-neon-deep/50" />
+            <polyline
+              v-for="segment in usageChartLineSegments"
+              :key="segment.id"
+              class="usage-chart-hit-line"
+              :points="segment.points"
+              fill="none"
+              stroke="#f6ecd7"
+              stroke-width="1.05"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+              shape-rendering="geometricPrecision"
+            />
             <g v-for="bar in usageChartBars" :key="bar.id">
               <title>{{ usageChartBarTitle(bar) }}</title>
               <rect
@@ -162,33 +175,6 @@
                 opacity="0.82"
               />
             </g>
-            <polyline
-              v-for="segment in usageChartLineSegments"
-              :key="segment.id"
-              class="usage-chart-hit-line"
-              :points="segment.points"
-              fill="none"
-              stroke="#f6ecd7"
-              stroke-width="1.05"
-              stroke-linecap="square"
-              stroke-linejoin="miter"
-              vector-effect="non-scaling-stroke"
-              shape-rendering="geometricPrecision"
-            />
-            <line
-              v-for="dot in usageChartLineDots"
-              :key="dot.id"
-              class="usage-chart-hit-marker"
-              :style="usageChartAnimationStyle(dot)"
-              :x1="dot.x - 1.25"
-              :x2="dot.x + 1.25"
-              :y1="dot.y"
-              :y2="dot.y"
-              stroke="#f6ecd7"
-              stroke-width="1.55"
-              stroke-linecap="square"
-              vector-effect="non-scaling-stroke"
-            />
           </svg>
           <div class="flex flex-wrap gap-x-5 gap-y-1 font-mono text-[11px] text-text-dim">
             <span style="color: #5ee08b">■ 缓存命中</span>
@@ -261,7 +247,9 @@
           </div>
           <p v-else class="border border-neon-deep/35 bg-panel/60 p-4 text-sm text-text-dim">暂无检查点。</p>
         </section>
+        </div>
 
+        <div v-else class="grid min-w-0 gap-3">
         <!-- 运行日志（trace 人类可读事件流） -->
         <section class="grid gap-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -312,6 +300,7 @@
             </p>
           </div>
         </section>
+        </div>
       </div>
     </main>
 
@@ -380,19 +369,31 @@ interface UsageChartBar extends UsageChartPoint {
   hOutput: number
 }
 
+type MonitorTabId = "overview" | "recovery" | "logs"
+
+const monitorTabs: Array<{ id: MonitorTabId; code: string; label: string }> = [
+  { id: "overview", code: "01", label: "总览" },
+  { id: "recovery", code: "02", label: "恢复" },
+  { id: "logs", code: "03", label: "日志" },
+]
+
 const USAGE_CHART_LIMIT = 20
 const USAGE_CHART_LEFT = 5
 const USAGE_CHART_RIGHT = 98
-const USAGE_CHART_TOP = 5
-const USAGE_CHART_BOTTOM = 40
-const USAGE_CHART_HEIGHT = USAGE_CHART_BOTTOM - USAGE_CHART_TOP
+const USAGE_CHART_HIT_TOP = 6
+const USAGE_CHART_HIT_BOTTOM = 24
+const USAGE_CHART_HIT_HEIGHT = USAGE_CHART_HIT_BOTTOM - USAGE_CHART_HIT_TOP
+const USAGE_CHART_BAR_TOP = 35
+const USAGE_CHART_BAR_BOTTOM = 58
+const USAGE_CHART_BAR_HEIGHT = USAGE_CHART_BAR_BOTTOM - USAGE_CHART_BAR_TOP
 const USAGE_CHART_BAR_MAX_WIDTH = 5.8
 const USAGE_CHART_BAR_MIN_WIDTH = 1.8
-const USAGE_CHART_BAR_GAP = 1.25
+const USAGE_CHART_BAR_GAP = 0.18
 
 const loading = ref(false)
 const errorMessage = ref("")
 const lastRefreshAt = ref("")
+const activeMonitorTab = ref<MonitorTabId>("overview")
 const platformContext = shallowRef<PlatformContextShell | null>(null)
 const aiDebugRecords = shallowRef<AiDebugRecord[]>([])
 const sessionHistory = shallowRef<SessionHistoryEntry[]>([])
@@ -526,16 +527,16 @@ const usageChartBars = computed<UsageChartBar[]>(() => {
 
   const maxTotal = Math.max(usageChartPeakTotal.value, 1)
   const chartWidth = USAGE_CHART_RIGHT - USAGE_CHART_LEFT
-  const slotWidth = chartWidth / points.length
+  const slotWidth = chartWidth / USAGE_CHART_LIMIT
   const barWidth = clampNumber(slotWidth - USAGE_CHART_BAR_GAP, USAGE_CHART_BAR_MIN_WIDTH, USAGE_CHART_BAR_MAX_WIDTH)
+  const startSlot = USAGE_CHART_LIMIT - points.length
 
   return points.map((point, index) => {
-    const lineX = points.length === 1
-      ? USAGE_CHART_LEFT + chartWidth / 2
-      : USAGE_CHART_LEFT + index * slotWidth + slotWidth / 2
+    const slotIndex = startSlot + index
+    const lineX = USAGE_CHART_LEFT + slotIndex * slotWidth + slotWidth / 2
     const x = lineX - barWidth / 2
-    let y = USAGE_CHART_BOTTOM
-    const partHeight = (value: number) => (value / maxTotal) * USAGE_CHART_HEIGHT
+    let y = USAGE_CHART_BAR_BOTTOM
+    const partHeight = (value: number) => (value / maxTotal) * USAGE_CHART_BAR_HEIGHT
 
     const hCached = partHeight(point.cached)
     y -= hCached
@@ -555,7 +556,7 @@ const usageChartBars = computed<UsageChartBar[]>(() => {
 
     const lineY = point.hitRate === null
       ? null
-      : USAGE_CHART_BOTTOM - (point.hitRate / 100) * USAGE_CHART_HEIGHT
+      : USAGE_CHART_HIT_BOTTOM - (point.hitRate / 100) * USAGE_CHART_HIT_HEIGHT
 
     return {
       ...point,
@@ -600,10 +601,6 @@ const usageChartLineSegments = computed(() => {
 
   return segments
 })
-
-const usageChartLineDots = computed(() => usageChartBars.value
-  .filter((bar): bar is UsageChartBar & { lineY: number } => bar.lineY !== null)
-  .map((bar) => ({ id: bar.id, x: bar.lineX, y: bar.lineY, animationDelayMs: bar.animationDelayMs + 120 })))
 
 /** 按 provider+model 分组的统计。 */
 const providerStats = computed(() => {
@@ -941,11 +938,6 @@ onBeforeUnmount(() => {
   filter: drop-shadow(0 0 2px rgba(246, 236, 215, 0.5));
 }
 
-.usage-chart-hit-marker {
-  animation: usage-chart-blip 420ms ease-out both;
-  filter: drop-shadow(0 0 3px rgba(246, 236, 215, 0.65));
-}
-
 @keyframes usage-chart-rise {
   from {
     opacity: 0;
@@ -968,25 +960,9 @@ onBeforeUnmount(() => {
   }
 }
 
-@keyframes usage-chart-blip {
-  0% {
-    opacity: 0;
-    transform: scaleX(0.2);
-  }
-  70% {
-    opacity: 1;
-    transform: scaleX(1.2);
-  }
-  100% {
-    opacity: 1;
-    transform: scaleX(1);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .usage-chart-bar,
-  .usage-chart-hit-line,
-  .usage-chart-hit-marker {
+  .usage-chart-hit-line {
     animation: none;
   }
 }
