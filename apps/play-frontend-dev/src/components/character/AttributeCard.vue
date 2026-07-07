@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * AttributeCard — 六维基础维度单卡（属性页）。
+ * AttributeCard — 基础维度单卡（属性页）。
  *
  * design §4.5 / D7：
  * - 卡片：name + 大数字（font-display）。
@@ -8,7 +8,7 @@
  * - 不展示基准 5（基准只进入规则语义，UI 不解释）。
  *
  * task 07-05-status-bar-character-field-pinning：
- * - 右上角 PinButton；kind=attribute，key=中文键（体魄/悟性/…），label=同键。
+ * - 右上角 PinButton；kind=attribute，key=维度键名（由世界观定），label=同键。
  */
 import PinButton from "./PinButton.vue"
 

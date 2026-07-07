@@ -3,7 +3,7 @@
  * AttributesPane — 属性标签页（角色卡右侧详情区）。
  *
  * design §4.5 / D7 / R13：
- * - 基础维度（AttributeCard × 6）：体魄/悟性/气运/根骨/法力/魅力。
+ * - 基础维度（AttributeCard × N）：键名由世界架构师按世界观定义（默认六维兜底）。
  *   每张卡片：name + 大数字。缺省维度展示"—"。
  * - 特殊量表（GaugeBar × N）：entity.gauges → name + progress bar + value。
  * - 不展示基准 5（基准只进入规则语义，UI 不解释）。
@@ -27,24 +27,13 @@ interface AttrRow {
   value: number | null
 }
 
-const ATTR_KEYS: Array<{ key: keyof CharacterAttributes; label: string }> = [
-  { key: "体魄", label: "体魄" },
-  { key: "悟性", label: "悟性" },
-  { key: "气运", label: "气运" },
-  { key: "根骨", label: "根骨" },
-  { key: "法力", label: "法力" },
-  { key: "魅力", label: "魅力" },
-]
-
 const attrRows = computed<AttrRow[]>(() => {
   const attrs = props.attributes
-  return ATTR_KEYS.map(({ key, label }) => {
-    const v = attrs?.[key]
-    return {
-      name: label,
-      value: typeof v === "number" && Number.isFinite(v) ? v : null,
-    }
-  })
+  if (!attrs) return []
+  return Object.entries(attrs).map(([key, v]) => ({
+    name: key,
+    value: typeof v === "number" && Number.isFinite(v) ? v : null,
+  }))
 })
 
 const gaugeList = computed(() => props.gauges ?? [])

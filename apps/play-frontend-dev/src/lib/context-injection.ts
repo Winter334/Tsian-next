@@ -202,17 +202,13 @@ export function formatProtagonistBlock(
     lines.push(`- 外貌：${appearance}`)
   }
 
-  // attributes 固定六维顺序：体魄/悟性/气运/根骨/法力/魅力，全缺省则跳过整行
+  // attributes：固定 6 维，键名由世界观定，按 JSON 写入顺序遍历，全缺省则跳过整行
   const attributes = characterJson["attributes"]
   if (attributes && typeof attributes === "object" && !Array.isArray(attributes)) {
     const attr = attributes as Record<string, unknown>
-    const order: Array<"体魄" | "悟性" | "气运" | "根骨" | "法力" | "魅力"> = [
-      "体魄", "悟性", "气运", "根骨", "法力", "魅力",
-    ]
     const parts: string[] = []
-    for (const key of order) {
-      const n = getNumber(attr, key)
-      if (n !== undefined) parts.push(`${key} ${n}`)
+    for (const [key, n] of Object.entries(attr)) {
+      if (typeof n === "number" && Number.isFinite(n)) parts.push(`${key} ${n}`)
     }
     if (parts.length > 0) {
       lines.push(`- 属性：${parts.join(" · ")}`)

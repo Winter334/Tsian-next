@@ -94,14 +94,13 @@ function parseGauges(raw: unknown): CharacterGauge[] | undefined {
   return out.length > 0 ? out : undefined
 }
 
-/** 归一六维 attributes（逐键校验 number；非 number 丢弃）。 */
+/** 归一 attributes（固定 6 维，键名由世界架构师按世界观定义）。
+ *  遍历全部键取 number 值，非 number 丢弃该键。 */
 function parseAttributes(raw: unknown): CharacterAttributes | undefined {
   if (!isRecord(raw)) return undefined
   const out: CharacterAttributes = {}
-  const KEYS: Array<keyof CharacterAttributes> = ["体魄", "悟性", "气运", "根骨", "法力", "魅力"]
-  for (const k of KEYS) {
-    const v = raw[k]
-    if (typeof v === "number" && Number.isFinite(v)) out[k] = v
+  for (const [key, v] of Object.entries(raw)) {
+    if (typeof v === "number" && Number.isFinite(v)) out[key] = v
   }
   return Object.keys(out).length > 0 ? out : undefined
 }

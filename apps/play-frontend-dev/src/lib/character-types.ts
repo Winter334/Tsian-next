@@ -92,15 +92,12 @@ export interface CharacterTrait {
   effects?: string[]
 }
 
-/** 六维基础维度（design D7）。键名固定中文；值为正整数，基线 5（不在 UI 解释）。 */
-export interface CharacterAttributes {
-  体魄?: number
-  悟性?: number
-  气运?: number
-  根骨?: number
-  法力?: number
-  魅力?: number
-}
+/**
+ * 基础维度（design D7）。固定 6 维，键名由世界架构师按世界观定义
+ * （默认六维兜底：体魄/悟性/气运/根骨/法力/魅力）；值为正整数，基线 5（不在 UI 解释）。
+ * 类型放开为 Record<string, number>，运行时按 JSON 写入顺序遍历，不硬编码键名。
+ */
+export type CharacterAttributes = Record<string, number>
 
 /**
  * character entity 强类型视图（design §3.1）。

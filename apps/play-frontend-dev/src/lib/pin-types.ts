@@ -15,7 +15,6 @@
  * - 静态类型全部严格；本文件不出现 `any`。
  */
 import type {
-  CharacterAttributes,
   CharacterEntity,
   CharacterGauge,
   CharacterGoals,
@@ -28,7 +27,7 @@ import type {
 /** 钉选路径 kind（design §5）。 */
 export type PinPathKind =
   | "status" // key = status.id
-  | "attribute" // key = attributes 的中文键（体魄/悟性/气运/根骨/法力/魅力）
+  | "attribute" // key = attributes 的维度键名（由世界观定，不固定）
   | "gauge" // key = gauge.id
   | "identity" // key = age|gender|role|affiliation|realm
   | "appearance" // 无 key
@@ -79,16 +78,6 @@ const GOALS_KEYS: ReadonlySet<keyof CharacterGoals> = new Set<keyof CharacterGoa
   "longTerm",
 ])
 
-/** attributes 子键白名单（六维中文键）。 */
-const ATTRIBUTE_KEYS: ReadonlySet<keyof CharacterAttributes> = new Set<keyof CharacterAttributes>([
-  "体魄",
-  "悟性",
-  "气运",
-  "根骨",
-  "法力",
-  "魅力",
-])
-
 function missing(target: PinTarget): PinValue {
   return { kind: "missing", target, label: target.label }
 }
@@ -130,10 +119,9 @@ export function readPinValue(entity: CharacterEntity | null | undefined, target:
     case "attribute": {
       const key = target.key
       if (key === undefined) return missing(target)
-      if (!ATTRIBUTE_KEYS.has(key as keyof CharacterAttributes)) return missing(target)
       const attrs = entity.attributes
       if (attrs === undefined) return missing(target)
-      const v = attrs[key as keyof CharacterAttributes]
+      const v = attrs[key]
       if (typeof v !== "number" || !Number.isFinite(v)) return missing(target)
       return { kind: "attribute", label: target.label, value: v }
     }
