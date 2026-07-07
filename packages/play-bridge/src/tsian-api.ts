@@ -145,6 +145,9 @@ export interface TsianApi {
   readonly checkpoints: {
     list(): Promise<CheckpointSummary[]>
     restore(checkpointId: string): Promise<{ turn: number }>
+    /** 创建 turn 0 manual 检查点并替换旧 initial 检查点（开局设定收尾用）。
+     *  label 可选，默认 "开局设定"。返回新检查点 summary。 */
+    create(label?: string): Promise<CheckpointSummary>
   }
 
   // ── workspace（前端自己维护状态）──
@@ -416,6 +419,20 @@ export function createTsian(): TsianApi {
           throw e
         }
         return result.item as { turn: number }
+      },
+
+      async create(label?: string): Promise<CheckpointSummary> {
+        const result = await bridge.call<PlatformActionResult<CheckpointSummary>>(
+          "platform.runAction",
+          { action: "create-checkpoint", params: label ? { label } : {} },
+        )
+        if (!result || !result.ok) {
+          const err = result?.error
+          const e = new Error(err?.message ?? "创建检查点失败。")
+          if (err) (e as Error & { code?: string }).code = err.code
+          throw e
+        }
+        return result.item as CheckpointSummary
       },
     },
 

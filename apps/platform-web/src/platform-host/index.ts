@@ -172,6 +172,7 @@ import {
   readLocalGameCardContentFile,
   deleteLocalGameCardContentFile,
   deleteLocalGameCardContentPathForCard,
+  replaceInitialCheckpointForSave,
   replaceWorkspaceFilesForSave,
   restoreCheckpointForSave,
   setActiveGameCardId,
@@ -445,6 +446,36 @@ async function executePlatformAction(
     return {
       ok: true,
       item: restored,
+    }
+  }
+
+  if (request.action === "create-checkpoint") {
+    const activeSaveId = await getActiveSaveId()
+    if (!activeSaveId) {
+      return actionError(
+        "ACTIVE_SAVE_REQUIRED",
+        "当前没有激活中的会话。",
+      )
+    }
+
+    const labelRaw = request.params?.label
+    const label = typeof labelRaw === "string" && labelRaw.trim()
+      ? labelRaw.trim()
+      : "开局设定"
+
+    try {
+      const summary = await replaceInitialCheckpointForSave(activeSaveId, {
+        turn: 0,
+        label,
+      })
+      // 检查点列表变了（新增 manual + 删除 initial），通知订阅方刷新。
+      emitTurnDebugReady(0)
+      return { ok: true, item: summary }
+    } catch (error) {
+      return actionError(
+        "CHECKPOINT_CREATE_FAILED",
+        error instanceof Error ? error.message : "创建检查点失败。",
+      )
     }
   }
 

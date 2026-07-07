@@ -45,7 +45,7 @@ watch(navCollapsed, (v) => {
 const { statusCollapsed, toggle: toggleStatusCollapsed } = useStatusBarCollapsed()
 
 // bridge 状态（useTsian 单例共享）
-const { ready, turnCount, loadOpeningNarrative } = useTsian()
+const { ready, turnCount, tsian, loadOpeningNarrative } = useTsian()
 
 function onLogoClick() {
   phase.value = "burning"
@@ -64,10 +64,16 @@ function onRevealed() {
   enterPlayPending.value = false
 }
 
-/** Step 5 "进入故事"：先加载开局叙事，再在 Step 5 画面上启动 scroll 烧蚀。
- *  等 BurningReveal @shown 后才切 mode=play，避免 canvas delay 期间露出下方 StoryView。 */
+/** Step 5 "进入故事"：先加载开局叙事，再创建开局设定检查点（替换 initial 空模板），
+ *  最后在 Step 5 画面上启动 scroll 烧蚀。等 BurningReveal @shown 后才切 mode=play，避免 canvas delay 期间露出下方 StoryView。
+ *  检查点创建失败不阻塞进入游戏（console.error + 继续）。 */
 async function onEnterPlay() {
   await loadOpeningNarrative()
+  try {
+    await tsian.checkpoints.create("开局设定")
+  } catch (err) {
+    console.error("[App] 创建开局设定检查点失败:", err)
+  }
   enterPlayPending.value = true
   phase.value = "burning"
 }

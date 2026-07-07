@@ -189,6 +189,46 @@ export async function deleteCheckpointsForSave(saveId: string): Promise<void> {
   await Promise.all(rows.map((item) => localDb.checkpoints.delete(item.id)))
 }
 
+/**
+ * 开局设定收尾：创建 turn 0 `manual` 检查点（含设定后 workspace 快照），
+ * 同事务删除旧 `initial` 检查点（空模板）。替换后 turn 0 只剩一个检查点——
+ * 开局设定完成状态，玩家回溯不会丢设定。
+ *
+ * 哈希计算在事务外（crypto.subtle 异步），put+delete 在一个小事务内。
+ */
+export async function replaceInitialCheckpointForSave(
+  saveId: string,
+  input: {
+    turn: number
+    label?: string
+  },
+): Promise<LocalCheckpointSummary> {
+  const files = (await listCheckpointWorkspaceFilesForSave(saveId))
+    .filter((f) => !isAppendOnlyLogPath(f.path))
+  const record = await buildCheckpointRecordForSave(saveId, {
+    turn: input.turn,
+    reason: "manual",
+    label: input.label,
+    files,
+  })
+
+  await localDb.transaction(
+    "rw",
+    [localDb.checkpoints],
+    async () => {
+      await localDb.checkpoints.put(record)
+      // 删除该 save 的所有 initial 检查点（通常只有 1 条）
+      const initialCheckpoints = await localDb.checkpoints
+        .where("saveId").equals(saveId)
+        .and((cp) => cp.reason === "initial")
+        .toArray()
+      await Promise.all(initialCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)))
+    },
+  )
+
+  return toCheckpointSummary(record)
+}
+
 // ── 裁剪 + GC（Block D）──
 
 /**
