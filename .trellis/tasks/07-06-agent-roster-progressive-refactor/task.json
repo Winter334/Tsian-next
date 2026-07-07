@@ -21,7 +21,8 @@
   "children": [
     "07-06-mode-json-abstraction-cleanup",
     "07-07-director-brief-removal-timeline-setup",
-    "07-07-play-setup-step-refactor"
+    "07-07-play-setup-step-refactor",
+    "07-07-player-turn-refactor"
   ],
   "parent": null,
   "relatedFiles": [],

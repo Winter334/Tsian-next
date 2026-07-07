@@ -143,8 +143,10 @@ C. 游玩设定步重构 ✅ 已完成 (`07-07-play-setup-step-refactor`)
    - 范围：Step 4 游玩设定 + Step 5 开局确认过渡。
    - 依赖 B（导演已移除、timeline 已建）。
 
-D. 正式玩家回合重构
-   - storyteller 用已有素材自由创作（不读 brief，用 runtime injection + entity 素材）。researcher 检索 + 映射 timeline 推进 frontier 找新素材。
+D. 正式玩家回合重构 ✅ 已完成 (`07-07-player-turn-refactor`)
+   - storyteller 重写为正文写作者：AGENT.md 含写正文方法论 + 裁定方法论（何时/怎么判定、数值设置、大成功大失败、处理结果）；启用 roll_dice（移出 tools.disabled）；新增 workspace_write；contextPaths 新增 writing-styles.md；新增文风学习 Skill（call researcher 找章节 → 总结进 writing-styles.md → contextPaths 注入）；新增三个 Agent-local 查询 Tool（read_entity/read_scene/read_relationships，输入 ref 返回格式化人类可读文本，省 token 省往返）。
+   - researcher 重写为素材库模型资料员：移除 semantic_search 依赖；AGENT.md 重写（直接读 + timeline 映射定位、找不到返回含已读范围的简短说明）；资料检索 Skill 重写（timeline 映射 + read/search 流程，不推进 frontier）；contextPaths 新增 frontier.json 常驻可读；保持只读（无 workspace_write/agent_call）。
+   - roll_dice Tool 扩展：count===1 时大成功（自然最大值）/大失败（自然 1），优先于常规 success/winner；modifier 和 opposed.modifier 扩展为 number|string，string 为纯数字算术表达式（白名单 + Function 严格模式求值，支持 + - * / ^ 和 sqrt()），求值失败返回 ROLL_DICE_INVALID_ARGS。storage spec 同步更新。
    - 核心步骤，storyteller + researcher 职责重写。
    - 依赖 B C。
 
@@ -167,7 +169,7 @@ E. 回合后维护 + frontier 推进触发
 | 1a | 开局向导 Step 2：Understanding（初始世界建模 + timeline 建立） | world-architect | ✅ 已完成 |
 | 1b | 开局向导 Step 4：游玩设定对话 | world-architect, storyteller (agent_call) | ✅ 已完成 |
 | 1c | 开局向导 Step 5：开局确认过渡 | — 无 Agent — | 不在本任务范围 |
-| 2 | 正式玩家回合 | storyteller, researcher | 待规划 |
+| 2 | 正式玩家回合 | storyteller, researcher | ✅ 已完成 |
 | 3 | 回合后维护 | stage-manager | 待规划 |
 | 4 | frontier 推进触发 | world-architect (前端触发) | 待规划（A' 方案，用已有 invokeAgent，不改平台） |
 
@@ -177,15 +179,15 @@ E. 回合后维护 + frontier 推进触发
 
 ## Current Agent / Skill / Tool Ledger
 
-当前默认阵容状态（C 完成后更新）：
+当前默认阵容状态（D 完成后更新）：
 
-- **storyteller** / 说书人：`AGENT.md` / `SOUL.md` 保留；`skills.enabled = []`；`contextPaths = [README.md]`（brief 已移除）。Step 4 中由 world-architect `agent_call` 复用其通用叙事职责生成开局正文 + 初始选项（流程指令在 world-architect Skill《游玩设定》与 agent_call request 中，不改 storyteller 自身）。待正式玩家回合子任务 D 重写职责（用已有素材自由创作）。
-- **researcher** / 资料员：`AGENT.md` 保留；两个 Skill（`实体读取` / `资料检索`）保留，已清理 brief 提及。⚠️ 待正式玩家回合子任务 D 新增"找不到时映射 timeline 推进 frontier"职责。
+- **storyteller** / 说书人：`AGENT.md` 重写为写正文方法论 + 裁定方法论（何时/怎么判定、数值设置、大成功大失败、处理结果）；`SOUL.md` 保留；`tools.disabled = []`（roll_dice 已启用）；`platformTools` 新增 `workspace_write`；`contextPaths = [README.md, save/agents/storyteller/writing-styles.md]`；`skills.enabled = [agents/storyteller/skills/文风学习/SKILL.md]`（新：遇到新场景类型 call researcher 找原著类似章节，学习文风总结进 writing-styles.md）。新增三个 Agent-local 查询 Tool（`agents/storyteller/tools/`）：`read_entity`（输入 ref → 读实体 JSON → 格式化文本）、`read_scene`（读场景 + 在场实体 name/brief → 格式化文本）、`read_relationships`（读关系分片 → 格式化文本），省 token 省往返。默认模板新增 `save/agents/storyteller/writing-styles.md`（初始 `# 文风学习记录`）。
+- **researcher** / 资料员：`AGENT.md` 重写为素材库模型定位（直接读 + timeline 映射，不用 semantic_search，找不到返回含已读范围的简短说明）；`SOUL.md` 保留；`platformTools` 移除 `workspace_semantic_search`（仅 `workspace_read`，保持只读无 write/agent_call）；`contextPaths` 新增 `save/playthrough/frontier.json`（常驻可读已读窗口 + timeline 锚点）。两个 Skill：`实体读取`（轻改，确认不提 semantic_search）+ `资料检索`（重写：timeline 映射 + read/search 流程，不推进 frontier，找不到返回简短说明）。
 - **stage-manager** / 场记：`AGENT.md` 保留；skills = `状态栏维护` + `schema演进检查`；`contextPaths` 已移除 `current-brief.md`。⚠️ 待回合后维护子任务 E 新增"维护 worldTime"职责重写（07-05 已交付基础 worldTime 维护指引，E 做职责重写）。
 - **world-architect** / 世界架构师：`AGENT.md` 已补方法论（本任务不改）；skills = `开局建模`（已补 timeline 锚点步骤 + worldTime 元年初始化）+ `游玩设定`（C 已重写：通俗问题访谈 + 单一 action `commit_play_setup` 收尾，新增 `commit-play-setup.js` 脚本与 `_validation.js` helper）。⚠️ 待子任务 E 新增"推进 frontier + 追加 timeline 锚点"Skill（ongoing，非开局）。
 - **character schema**：新增永久特质字段 `traits[]`（`{ id, name?, description?, effects? }`，`id` 用 `trait:<localId>`），区别于 `status[]` 临时状态；前端类型/解析/context injection 已支持，前端 UI 留给后续游戏界面渐进重构步骤。
 - **director** / 导演：**已移除**（B 完成）。agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill/current-brief.md/.meta.json/README.md 全部删除。visibility 枚举 director-only 同步移除。
-- **共享 Tools**：`roll_dice` 已对所有 Agent `tools.disabled`。保留为通用能力。
+- **共享 Tools**：`roll_dice` 已对 storyteller 启用（移出 `tools.disabled`），其余 Agent 仍 `tools.disabled: ["roll_dice"]`。D 扩展：`count === 1` 时大成功（自然最大值）/大失败（自然 1）优先于常规 `success`/`winner`；`modifier` 和 `opposed.modifier` 接受 `number | string`，string 为纯数字算术表达式（`+ - * / ^` + `sqrt()`，白名单 + Function 严格模式求值），求值失败返回 `ROLL_DICE_INVALID_ARGS`。保留为通用能力。
 - **共享 Skills 目录 (`skills/`)**：默认不放共享玩法 Skill，仅结构占位。
 
 ## Acceptance Criteria
@@ -197,7 +199,7 @@ E. 回合后维护 + frontier 推进触发
 - [x] 导演与 brief 移除完成。
 - [x] timeline 机制建立完成。
 - [x] 游玩设定步完成。
-- [ ] 正式玩家回合 storyteller + researcher 重构完成。
+- [x] 正式玩家回合 storyteller + researcher 重构完成。
 - [ ] 回合后维护 stage-manager 重构完成。
 - [ ] 每个已处理 Agent 的 AGENT.md / SOUL.md / Skill / Tool / contextPaths 分层职责在父任务中可追踪。
 - [ ] 后续流程步骤不会要求一次性重构未进入该步骤的 Agent。

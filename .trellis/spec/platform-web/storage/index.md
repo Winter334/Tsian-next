@@ -92,35 +92,46 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 
 - Tool name: `roll_dice`.
 - Required input: `sides: integer >= 2`.
-- Optional input: `count?: integer >= 1`, `modifier?: number`, `dc?: number`, `advantage?: boolean`, `disadvantage?: boolean`, `reason?: string`, `opposed?: object`.
-- `opposed` fields: `sides?: integer >= 2`, `count?: integer >= 1`, `modifier?: number`, `advantage?: boolean`, `disadvantage?: boolean`.
+- Optional input: `count?: integer >= 1`, `modifier?: number | string`, `dc?: number`, `advantage?: boolean`, `disadvantage?: boolean`, `reason?: string`, `opposed?: object`.
+- `opposed` fields: `sides?: integer >= 2`, `count?: integer >= 1`, `modifier?: number | string`, `advantage?: boolean`, `disadvantage?: boolean`.
+- `modifier` (both levels) accepts a number or a pure-numeric arithmetic expression string supporting `+ - * / ^` (power) and `sqrt()`. No variable names, entity paths, or function names other than `sqrt`. Evaluation failure → `ROLL_DICE_INVALID_ARGS`.
 
 ### 3. Contracts
 
 - Without `opposed`, `dc` is allowed and output may include `dc` plus `success: boolean`.
 - With `opposed`, `dc` is forbidden. Output includes `opposed`, `margin = total - opposed.total`, and `winner: "self" | "opposed" | "tie"`.
 - `opposed.sides` and `opposed.count` default to the top-level `sides` / `count`; `opposed.modifier` defaults to `0`.
-- `modifier` is numeric-only at both levels. Do not add expression evaluation, entity-path lookup, variables, DSLs, or `tsian.lib.math` to this Tool.
+- `modifier` (both levels) may be a number or a pure-numeric arithmetic expression string. The Tool evaluates expressions via a restricted parser (whitelist regex → `^` to `**`, `sqrt` to `Math.sqrt` → `Function` constructor in strict mode). It does not accept `eval`, variable names, entity paths, or DSLs. Agent reads numeric values from context injection and assembles the expression (e.g. `"15-12"` for an attribute differential); the Tool does the arithmetic so the Agent doesn't have to.
+- `count === 1` triggers critical success/failure: `kept[0] === 1` → `criticalFailure: true`; `kept[0] === sides` → `criticalSuccess: true`. These are returned as output fields and take priority over regular `success`/`winner`:
+  - Single check (`dc`): `criticalSuccess` → `success = true` regardless of dc; `criticalFailure` → `success = false` regardless of dc.
+  - Opposed: each side is checked independently. One side `criticalSuccess` and the other `criticalFailure` → the `criticalSuccess` side wins. Otherwise regular `margin`/`winner` logic applies.
+  - `count > 1`: the two `critical*` fields are not emitted; no critical judgment is made.
 - A tie is a valid output. Do not add `tieBreak`, reroll, or forced-winner behavior at the Tool layer.
 
 ### 4. Validation & Error Matrix
 
 - `dc` + `opposed` together -> `ROLL_DICE_INVALID_ARGS`, before random generation.
 - Top-level `modifier` missing -> use `0`.
-- Top-level or opposed `modifier` present but not a finite number -> `ROLL_DICE_INVALID_ARGS`, before random generation.
+- Top-level or opposed `modifier` present but not a finite number and not a string -> `ROLL_DICE_INVALID_ARGS`, before random generation.
+- `modifier` string that fails the whitelist regex, is empty, throws during evaluation, or yields a non-finite result -> `ROLL_DICE_INVALID_ARGS`, before random generation.
 - Empty-string modifier -> `ROLL_DICE_INVALID_ARGS`; do not allow `Number("") === 0` to pass silently.
 - Invalid `sides` / `count` -> fail loud through the dice helper / Tool argument validation.
 
 ### 5. Good/Base/Bad Cases
 
-- Good: `roll_dice({ sides: 20, modifier: 2, opposed: { modifier: 1 }, reason: "追逐对抗" })` returns both sides, `margin`, and `winner`.
+- Good: `roll_dice({ sides: 20, modifier: "15-12", opposed: { modifier: 1 }, reason: "追逐对抗" })` returns both sides, `margin`, and `winner`; the string modifier is evaluated as `3`.
+- Good: `roll_dice({ sides: 20, modifier: "sqrt(4)", dc: 13 })` evaluates the modifier to `2` and keeps the single-check `success` path.
 - Base: `roll_dice({ sides: 20, modifier: 1, dc: 13 })` keeps the single-check `success` path.
-- Bad: `roll_dice({ sides: 20, dc: 15, opposed: {} })` must fail instead of returning both success and winner.
+- Critical (count === 1): a roll whose `kept[0] === 20` on `sides: 20` returns `criticalSuccess: true`; with a `dc`, `success = true` regardless of `total`. A roll whose `kept[0] === 1` returns `criticalFailure: true`; `success = false` regardless of `total`.
+- Bad: `roll_dice({ sides: 20, dc: 15, opposed: { "modifier": 2 } })` must fail instead of returning both success and winner.
+- Bad: `roll_dice({ sides: 20, modifier: "attributes.体魄" })` must fail (`ROLL_DICE_INVALID_ARGS`) — entity paths and variable names are not in the whitelist.
+- Bad: `roll_dice({ sides: 20, modifier: "1/0" })` must fail (`ROLL_DICE_INVALID_ARGS`) — non-finite result.
 
 ### 6. Tests Required
 
 - Build/typecheck: run `npm run build:web` for `workspace-templates.ts` changes.
-- Behavior check: verify single `dc` path, opposed defaulting, `winner` values (`self` / `opposed` / `tie`), `dc + opposed` pre-roll error, and invalid modifier pre-roll error.
+- Behavior check: verify single `dc` path, opposed defaulting, `winner` values (`self` / `opposed` / `tie`), `dc + opposed` pre-roll error, invalid modifier pre-roll error, `count === 1` critical success/failure priority over `success`/`winner`, and `count > 1` emitting no `critical*` fields.
+- Expression check: string `modifier` is evaluated (`"15-12"` → `3`, `"sqrt(4)"` → `2`, `"1/0"` → error); whitelist rejects entity paths, variable names, and non-`sqrt` function names.
 - AI-facing check: grep the changed Tool block for stale `tieBreak`, `reroll`, or mode-gating concepts.
 
 ### 7. Wrong vs Correct
@@ -133,13 +144,19 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 
 This asks the Tool to produce both a threshold success and an opposed winner.
 
+```json
+{ "sides": 20, "modifier": "attributes.体魄 - 12", "dc": 13 }
+```
+
+This asks the Tool to read an entity path; the whitelist rejects it with `ROLL_DICE_INVALID_ARGS`. Read the numeric value yourself and pass `"15-12"`.
+
 #### Correct
 
 ```json
-{ "sides": 20, "modifier": 1, "opposed": { "modifier": 2 }, "reason": "双方争夺主动权" }
+{ "sides": 20, "modifier": "15-12", "opposed": { "modifier": 2 }, "reason": "双方争夺主动权" }
 ```
 
-This asks for one opposed fact. If totals tie, the Tool returns `winner: "tie"` and the storyteller handles the narrative.
+This asks for one opposed fact. The string modifier is evaluated as `3`. If totals tie, the Tool returns `winner: "tie"` and the storyteller handles the narrative.
 
 ## Source References
 
