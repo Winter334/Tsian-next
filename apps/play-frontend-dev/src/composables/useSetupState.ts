@@ -82,7 +82,7 @@ const initialized = ref(false)
 
 // ── understanding 阶段文案（Step 2）──
 // 阶段由 onAgentInvocation 的 tool 事件驱动（单调推进），替代旧的 STAGE_INTERVAL 时间硬切。
-// 0 = 观察，1 = 阅读，2 = 整理/写入，3 = 导演校准（agent_call）。
+// 0 = 观察，1 = 阅读，2 = 整理/写入。
 const understandingStage = ref(0)
 let understandingActiveInvocationId: string | null = null
 let understandingInvocationSubscribed = false
@@ -119,8 +119,6 @@ function mapToolToStage(event: { name: string; status: string }): number {
   // 只在 success/running 时推进；loading 与 failed 不影响阶段。
   if (event.status !== "success" && event.status !== "running") return understandingStage.value
   const name = event.name
-  // agent_call 导演写 brief → 阶段 3（导演正在校准剧情方向）
-  if (name === "agent_call") return 3
   // write/edit/copy/move/delete（落盘/整理）→ 阶段 2
   if (name === "write" || name === "edit" || name === "copy" || name === "move" || name === "delete") return 2
   // read/list/search/glob/diff/use_skill（观察/阅读）→ 阶段 1
