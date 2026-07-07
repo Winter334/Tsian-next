@@ -956,3 +956,40 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 
 - 浏览器验证：导入小说 → 点开始理解 → world-architect 跑开局建模 → agent_call 导演写 brief → understanding-summary.json 产出
 - 下一子任务：Step 4 游玩设定重构（含 buildPlaySetupPrompt mode.json 残留清理）
+
+
+## Session 133: entity schema 精简
+
+**Date**: 2026-07-07
+**Task**: 07-07-entity-schema-prune-no-consumer-fields
+**Branch**: `feat/play-frontend-status-bar`
+
+### Summary
+
+按"每个字段必须有一个真实消费者"原则移除 entity 的四个无消费者字段：updatedAt/updatedBy（审计字段，DB 思维残留）、sourceRefs（冗余索引，semantic_search 替代）、origin（约束标记，方法论覆盖）。修复 commit-entities 脚本写 updatedAt 而 schema guide 用 updatedAtTurn 的字段名不一致。
+
+### Main Changes
+
+- commit-entities 脚本：移除 ensureSourceRefsKnown 校验 + normalizeEntity 不再处理 sourceRefs + 不再强制写 updatedBy/updatedAt。
+- 开局建模 Skill：执行步骤/重试策略/action description 移除 sourceRefs/origin。
+- schema guide/reference：字段清单、container/item 字段说明、示例、origin 枚举段落全面清理。
+- save/schema/current.md 种子同步更新。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1738fda` | refactor(airp): entity schema 精简 — 移除无消费者字段 |
+
+### Testing
+
+- [OK] npm run build:web — 16.56s
+- [OK] grep 验证 entity 上下文 sourceRefs/origin/updatedAt/updatedBy 零残留（废弃声明除外）
+
+### Status
+
+[OK] **Completed** — ready to archive
+
+### Next Steps
+
+- 子任务 B：导演/brief 移除 + timeline 建立

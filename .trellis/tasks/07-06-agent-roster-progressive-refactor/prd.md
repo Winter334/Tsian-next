@@ -118,10 +118,10 @@ frontier.json 新增:
 
 ### 落实素材库模型的 5 个子任务（按依赖顺序）
 
-A. entity schema 精简（`07-07-entity-schema-prune-no-consumer-fields`，已创建待实现）
+A. entity schema 精简 ✅ 已完成 (`07-07-entity-schema-prune-no-consumer-fields`)
    - 移除 entity 的 `updatedAt`/`updatedBy`/`sourceRefs`/`origin` 四个无消费者字段。
    - 修复 commit-entities 脚本与 schema guide 字段名不一致。
-   - 无依赖，纯 schema 字段移除，先做掉清理基础。
+   - runtime/scene/relationship 的 updatedAtTurn/updatedBy 保留（有 stage-manager 消费者）。
 
 B. 导演与 brief 移除 + timeline 建立
    - 移除 director Agent（agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill）、移除 brief 文档（current-brief.md/.meta.json）、清理所有 Agent 对 brief 的引用（contextPaths/Skill 正文）。

@@ -395,6 +395,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+function enableOpenAiCompatibleStreamUsage(body: Record<string, unknown>, kind: BrowserAiProviderKind): void {
+  if (kind !== "openai-compatible") return
+  const streamOptions = isRecord(body.stream_options) ? { ...body.stream_options } : {}
+  streamOptions.include_usage = true
+  body.stream_options = streamOptions
+}
+
 function parseOptionalJsonObjectText(input: string, label: string): Record<string, unknown> | undefined {
   const trimmed = input.trim()
   if (!trimmed) {
@@ -1117,6 +1124,7 @@ const openaiAdapter: ProviderAdapter = {
   buildStreamRequestBody(config, messages, tools) {
     const body = this.buildNativeRequestBody(config, messages, tools)
     body.stream = true
+    enableOpenAiCompatibleStreamUsage(body, config.kind)
     return body
   },
   extractStreamDelta(data) {
@@ -2371,6 +2379,7 @@ export async function streamAssistantReplyText(
   const url = adapter.buildStreamUrl(config)
   const requestBody = adapter.buildRequestBody(config, messages)
   ;(requestBody as Record<string, unknown>).stream = true
+  enableOpenAiCompatibleStreamUsage(requestBody, config.kind)
   const messageSegments = buildDebugMessageSegments(messages)
 
   pushAiDebugRecord({
