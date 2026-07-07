@@ -115,4 +115,4 @@
 
 父任务应随每个子任务完成持续更新流程地图，而不是提前写死全量路线。目标是保持重构节奏与玩家真实流程一致，避免为了架构完整性过度设计。
 
-渐进重构的验证环节会暴露 schema 问题——这些问题不绑定玩家流程某一步骤，属于跨步骤的 schema 演进，单独拆子任务处理。如 `07-07-entity-schema-prune-no-consumer-fields`：验证 Understanding 步产出时发现 entity 的 `updatedAt`/`updatedBy`/`sourceRefs`/`origin` 无真实消费者，按"每个字段必须有一个真实消费者"原则（`agent-skill-design-principles.md` 原则 9）移除。
+渐进重构的验证环节会暴露 schema 问题——这些问题不绑定玩家流程某一步骤，属于跨步骤的 schema 演进，单独拆子任务处理。如 `07-07-entity-schema-prune-no-consumer-fields`：验证 Understanding 步产出时发现 entity 的 `updatedAt`/`updatedBy`/`sourceRefs`/`origin` 无真实消费者，按"每个字段必须有一个真实消费者"原则（`airp-data-capability-design-principles.md` 原则 9）移除。

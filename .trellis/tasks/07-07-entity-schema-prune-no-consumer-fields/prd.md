@@ -6,7 +6,7 @@
 
 ## Goal
 
-按"每个字段必须有一个真实消费者"原则（`agent-skill-design-principles.md` 原则 9），移除 entity schema 中无真实消费者的三个字段：`updatedAt`/`updatedBy`、`sourceRefs`、`origin`。同时修复 `commit-entities` 脚本与 schema guide 的字段名不一致（`updatedAt` vs `updatedAtTurn`）。
+按"每个字段必须有一个真实消费者"原则（`airp-data-capability-design-principles.md` 原则 9），移除 entity schema 中无真实消费者的三个字段：`updatedAt`/`updatedBy`、`sourceRefs`、`origin`。同时修复 `commit-entities` 脚本与 schema guide 的字段名不一致（`updatedAt` vs `updatedAtTurn`）。
 
 ## Background
 
@@ -80,6 +80,6 @@
 
 ## Notes
 
-- 本子任务源于 `07-06-understanding-step-world-architect-director` 验证发现，思维方法已沉淀为 `agent-skill-design-principles.md` 原则 9。
+- 本子任务源于 `07-06-understanding-step-world-architect-director` 验证发现，思维方法已沉淀为 `airp-data-capability-design-principles.md` 原则 9。
 - runtime/scene/relationship 的 `updatedAtTurn`/`updatedBy` 保留——它们有 stage-manager 回合后维护作为消费者，且与 entity 的审计字段语义不同（回合号是 runtime 状态的一部分）。
 - 设计遵循"发现无消费者字段时直接删，不要降级保留"——降级保留是最差状态，既不消费又要维护。
