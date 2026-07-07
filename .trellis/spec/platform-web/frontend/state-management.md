@@ -128,18 +128,20 @@ const provider = providerParamsForKind(config.parameters, config.kind)
 
 ### Contracts
 
-- The desktop has one currently loaded Game Card and a separate active Save Instance, both stored in `meta`.
+- The desktop may have zero or one currently loaded Game Card and a separate active Save Instance, both stored in `meta`.
+- Platform shell views may enter a no-card state; card-dependent apps (Play, Studio, Assistant, Game entrypoints, card workspace mutations) must lock or fail loudly with a clear "load a game card first" message instead of creating a default card implicitly.
 - Desktop apps (Play, Studio, Assistant, Game entrypoints) use the current Game Card by default and must not add their own ordinary card picker.
 - Save-scoped runtime work must use the active save's own `gameCardId` when composing an effective workspace or resolving `runtime.entrypoints.playerTurn` (not the current Game Card).
 - Selecting or creating a save updates the current Game Card to that save's card. Opening/loading a Game Card may update the current Game Card without requiring a save.
-- If no current Game Card is stored, platform initialization may derive one from the active save, first save, or built-in blank card.
+- Platform initialization and active-card query APIs validate/clear stale ids only; they must not auto-create or auto-load a default Game Card. Default card creation happens only from explicit user actions such as "创建游戏".
 
 ### Validation & Error Matrix
 
-- Stored current Game Card id does not exist -> initialize/fall back to an existing card.
+- Stored current Game Card id does not exist -> clear the active Game Card id and surface no-card shell state.
 - `setPlatformActiveGameCard` receives an unknown card id -> throw a clear error.
 - Active save belongs to a different card than the current Game Card -> Studio may show card-only content, but save-scoped runtime operations must still use the save's card.
-- No active save -> Play/Runtime save-scoped queries may show empty or not-configured states; Studio registry views should still read current card content.
+- No current Game Card -> Play/Studio/Assistant and card-scope workspace mutations are locked or fail loud; My Apps / Market / platform settings remain usable.
+- No active save -> Play/Runtime save-scoped queries may show empty or not-configured states; Studio registry views should still read current card content when a current card is loaded.
 
 ## Bridge State
 
@@ -272,7 +274,7 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 
 ### Invariants
 
-- The builtin blank card (`source: "builtin"`) is an **invisible internal template**: it stays in DB as the copy source for default-card creation, but is never shown to users and never used as the active card fallback. Active-card resolution prefers a save-bound non-builtin card → then any existing local card → and only auto-creates a fresh editable default card when no local card exists at all (idempotent: checks for existing local cards before creating). New saves bind to the active local card (never builtin). Card-delete fallback picks a remaining local card or auto-creates one. The library view filters builtin cards from the list. Builtin cards still cannot be deleted or directly mutated.
+- The builtin blank card (`source: "builtin"`) is an **invisible internal template**: it stays in DB as the copy source for default-card creation, but is never shown to users and never used as the active card fallback. Active-card resolution validates the stored current-card id and may return no current card; it must not select an arbitrary card or create a fresh editable default card implicitly. New saves bind to the active local card (never builtin). Card-delete fallback picks a remaining local card or clears the current-card pointer when none remain. The library view filters builtin cards from the list. Builtin cards still cannot be deleted or directly mutated.
 - Creation reuses existing storage primitives (copy + put + set-active); no new storage layer, no `platform.runAction` extension. Platform-level create-card actions are explicitly out of scope for this route.
 - Because the builtin template has no frontend files, attaching a default frontend to the copy requires a same-id upsert after the initial copy (copy content + unique id first, then inject frontend files + binding).
 - Default frontend files are static string constants (no build pipeline); the SW serves them raw. They use relative references which resolve under the SW virtual prefix; no HTML rewriting by the SW.

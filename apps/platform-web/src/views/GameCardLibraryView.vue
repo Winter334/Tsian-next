@@ -48,6 +48,14 @@
               <button
                 type="button"
                 class="retro-focus inline-flex h-8 items-center gap-2 border border-neon-deep/40 bg-elevated px-3 font-mono text-xs text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                @click="openPackagePicker"
+              >
+                <Download class="h-3.5 w-3.5" aria-hidden="true" />
+                导入卡包
+              </button>
+              <button
+                type="button"
+                class="retro-focus inline-flex h-8 items-center gap-2 border border-neon-deep/40 bg-elevated px-3 font-mono text-xs text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
                 @click="router.push('/market')"
               >
                 <Store class="h-3.5 w-3.5" aria-hidden="true" />
@@ -148,6 +156,9 @@
           {{ cards.length }} 个应用
         </p>
         <p v-if="feedback" class="min-w-0 truncate font-mono text-[11px] text-text-dim">{{ feedback }}</p>
+        <p v-else-if="cards.length > 0 && !activeGameCardId" class="min-w-0 truncate font-mono text-[11px] text-warning">
+          未加载游戏卡。选择一个应用并点击加载。
+        </p>
       </footer>
 
       <input
@@ -299,7 +310,7 @@ async function refreshCards() {
       getPlatformActiveGameCardId(),
     ])
     cards.value = loadedCards.filter((card) => card.source !== "builtin")
-    activeGameCardId.value = loadedActiveGameCardId
+    activeGameCardId.value = loadedActiveGameCardId ?? ""
     // 不默认选中第一张卡：选中只由 hover/focus/键盘导航驱动，列表加载时不应有"选中态"。
     if (!cards.value.some((card) => card.id === selectedCardId.value)) {
       selectedCardId.value = ""

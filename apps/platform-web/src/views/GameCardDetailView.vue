@@ -668,7 +668,7 @@ async function refreshData() {
     }
 
     card.value = loadedCard
-    activeGameCardId.value = loadedActiveGameCardId
+    activeGameCardId.value = loadedActiveGameCardId ?? ""
     frontendFiles.value = loadedFrontendFiles
     syncFrontendDraft(loadedCard)
     syncMetadataDraft(loadedCard)

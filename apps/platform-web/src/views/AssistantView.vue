@@ -193,24 +193,51 @@
         <!-- Empty state -->
         <div v-else-if="messages.length === 0" class="grid h-full min-h-[260px] place-items-center p-6">
           <div class="max-w-md text-center">
-            <span class="mx-auto grid h-14 w-14 place-items-center border border-neon/40 bg-neon/8 text-neon">
-              <Sparkles class="h-7 w-7" aria-hidden="true" />
-            </span>
-            <p class="mt-4 font-mono text-xs uppercase tracking-[0.22em] text-neon">桌面助手</p>
-            <p class="mt-2 text-sm leading-6 text-text-dim">
-              向助手询问当前游戏卡的内容、Agent、Skill 或编辑方式。
-            </p>
-            <div class="mt-5 flex flex-wrap justify-center gap-2">
-              <button
-                v-for="suggestion in suggestions"
-                :key="suggestion.label"
-                type="button"
-                class="retro-focus border border-neon-deep/40 bg-panel/50 px-3 py-1.5 font-mono text-xs text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
-                @click="sendSuggestion(suggestion.message)"
-              >
-                {{ suggestion.label }}
-              </button>
-            </div>
+            <template v-if="hasActiveCard">
+              <span class="mx-auto grid h-14 w-14 place-items-center border border-neon/40 bg-neon/8 text-neon">
+                <Sparkles class="h-7 w-7" aria-hidden="true" />
+              </span>
+              <p class="mt-4 font-mono text-xs uppercase tracking-[0.22em] text-neon">桌面助手</p>
+              <p class="mt-2 text-sm leading-6 text-text-dim">
+                向助手询问当前游戏卡的内容、Agent、Skill 或编辑方式。
+              </p>
+              <div class="mt-5 flex flex-wrap justify-center gap-2">
+                <button
+                  v-for="suggestion in suggestions"
+                  :key="suggestion.label"
+                  type="button"
+                  class="retro-focus border border-neon-deep/40 bg-panel/50 px-3 py-1.5 font-mono text-xs text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                  @click="sendSuggestion(suggestion.message)"
+                >
+                  {{ suggestion.label }}
+                </button>
+              </div>
+            </template>
+            <template v-else>
+              <span class="mx-auto grid h-14 w-14 place-items-center border border-neon-muted/40 bg-panel/60 text-neon-muted">
+                <Bot class="h-7 w-7" aria-hidden="true" />
+              </span>
+              <p class="mt-4 font-mono text-xs uppercase tracking-[0.22em] text-warning">未加载游戏卡</p>
+              <p class="mt-2 text-sm leading-6 text-text-dim">
+                桌面助手需要一张游戏卡作为上下文。请先创建、导入或加载一张游戏卡。
+              </p>
+              <div class="mt-5 flex flex-wrap justify-center gap-2">
+                <button
+                  type="button"
+                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+                  @click="goToLibrary"
+                >
+                  去我的应用
+                </button>
+                <button
+                  type="button"
+                  class="retro-focus inline-flex h-8 items-center gap-2 border border-neon-deep/40 bg-elevated px-3 font-mono text-xs text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+                  @click="goToMarket"
+                >
+                  去创意工坊
+                </button>
+              </div>
+            </template>
           </div>
         </div>
 
@@ -560,8 +587,8 @@
             <button
               type="button"
               class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center px-3 font-mono text-xs"
-              :disabled="sending"
-              title="添加附件"
+              :disabled="sending || inputLocked"
+              :title="inputLocked ? '请先加载游戏卡后再添加附件' : '添加附件'"
               @click="fileInputRef?.click()"
             >
               <Paperclip class="h-4 w-4" aria-hidden="true" />
@@ -578,9 +605,9 @@
               ref="inputRef"
               v-model="inputText"
               class="retro-focus max-h-[160px] min-h-[44px] flex-1 resize-none overflow-y-auto border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
-              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+              :placeholder="inputPlaceholder"
               rows="1"
-              :disabled="sending"
+              :disabled="sending || inputLocked"
               @keydown.enter.exact.prevent="send"
               @input="autoGrow"
               @paste="handlePaste"
@@ -588,8 +615,8 @@
             <button
               type="submit"
               class="retro-button retro-focus inline-flex h-11 shrink-0 items-center justify-center gap-2 px-4 font-mono text-xs"
-              :disabled="sending || (!inputText.trim() && pendingAttachments.length === 0)"
-              title="发送"
+              :disabled="sending || inputLocked || (!inputText.trim() && pendingAttachments.length === 0)"
+              :title="inputLocked ? '请先加载游戏卡后再发送' : '发送'"
             >
               <Send class="h-4 w-4" aria-hidden="true" />
               发送
@@ -658,7 +685,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, nextTick, computed, watch, onBeforeUnmount, onMounted } from "vue"
-import { useRoute } from "vue-router"
+import { useRoute, useRouter } from "vue-router"
 import "highlight.js/styles/atom-one-dark.min.css"
 import { Bot, Check, ChevronDown, ChevronRight, Copy, FileText, HelpCircle, Loader2, Paperclip, Pencil, Plus, Send, Settings, Sparkles, Square, Trash2, User, Wrench, Brain, X } from "lucide-vue-next"
 import type { ConversationMessageRecord } from "@tsian/contracts"
@@ -812,6 +839,7 @@ const dragOver = ref(false)
 // 仍把 scrollTop 持久化到会话(assistant-scroll-top:{id}),供硬刷新/重开
 // 场景恢复;进入会话/获焦时单次兜底恢复(若极端情况下被重置为 0 则补回).
 const route = useRoute()
+const router = useRouter()
 const ASSISTANT_ROUTE_PATH = "/assistant"
 // rAF 节流标记:scroll 期间每帧最多写一次 scrollTop 到存储.
 let scrollPersistScheduled = false
@@ -857,6 +885,13 @@ const contextTotal = ref(0)
 const showAssistantConfig = ref(false)
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
+const hasActiveCard = computed(() => Boolean(cardName.value))
+const inputLocked = computed(() => !hasActiveCard.value)
+const inputPlaceholder = computed(() =>
+  inputLocked.value
+    ? "请先加载游戏卡后再使用助手"
+    : "输入消息，Enter 发送，Shift+Enter 换行",
+)
 const configButtonTitle = computed(() => {
   if (assistantProviderPresetId.value) {
     const name = providerPresets.value.find((p) => p.id === assistantProviderPresetId.value)?.name ?? "所选预设已失效"
@@ -1095,7 +1130,7 @@ const ACCEPTED_FILE_TYPES = "image/*,.txt,.json,.md,.markdown,.csv,.xml,.yaml,.y
 
 /** 添加文件为待发附件. 图片生成缩略图 previewUrl. */
 async function addFileAsAttachment(file: File) {
-  if (!activeSessionId.value) return
+  if (!activeSessionId.value || inputLocked.value) return
   try {
     const ref = await saveAssistantAttachment(activeSessionId.value, file)
     const previewUrl = ref.kind === "image" ? URL.createObjectURL(file) : undefined
@@ -1124,6 +1159,7 @@ function handlePaste(event: ClipboardEvent) {
 function handleDrop(event: DragEvent) {
   event.preventDefault()
   dragOver.value = false
+  if (inputLocked.value) return
   if (!event.dataTransfer?.files) return
   for (const file of event.dataTransfer.files) {
     void addFileAsAttachment(file)
@@ -1266,14 +1302,30 @@ function renderAssistantContentSegments(content: string): AssistantContentSegmen
 }
 
 function sendSuggestion(message: string) {
+  if (inputLocked.value) {
+    return
+  }
   inputText.value = message
   send()
+}
+
+function goToLibrary() {
+  void router.push("/library")
+}
+
+function goToMarket() {
+  void router.push("/market")
 }
 
 async function send() {
   const content = inputText.value.trim()
   const attachments = pendingAttachments.value.map((p) => p.ref)
   if ((!content && attachments.length === 0) || sending.value) {
+    return
+  }
+
+  if (inputLocked.value) {
+    errorMessage.value = "当前没有加载游戏卡。请先在我的应用中创建、导入或加载一张游戏卡。"
     return
   }
 

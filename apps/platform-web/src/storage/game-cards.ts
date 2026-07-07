@@ -439,6 +439,7 @@ export async function setActiveGameCardId(cardId: string | null): Promise<void> 
   const normalized = cardId?.trim()
   if (!normalized) {
     await localDb.meta.delete(ACTIVE_GAME_CARD_KEY)
+    void clearAiDebugRecords().catch(() => { /* ignore: diagnostics cleanup */ })
     return
   }
 
@@ -895,10 +896,9 @@ export async function getBuiltinBlankGameCard(): Promise<LocalGameCardView> {
  * carries no frontend, so copying its (empty) frontend files would yield a
  * card with no frontend.
  *
- * Used by the fallback rework (task 06-21 子3 Phase A) so that
- * `ensureActiveGameCardId` / `deletePlatformGameCard` can auto-create an
- * editable default card instead of falling back to the builtin template.
- * The caller is responsible for `setActiveGameCardId` afterwards.
+ * Used by explicit default-card creation flows. The caller is responsible for
+ * `setActiveGameCardId` afterwards when the user explicitly creates/loads the
+ * card; active-card queries and deletion fallbacks must not call this helper.
  *
  * Unlike `createDefaultPlatformGameCard` (host layer), this helper lives in
  * storage so both `internal.ts` and `game-cards.ts` (host) can call it without

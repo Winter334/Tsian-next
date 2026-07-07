@@ -25,6 +25,41 @@
       @changed="refreshSaves"
     />
 
+    <!-- 未加载游戏卡引导 -->
+    <div
+      v-else-if="phase === 'no-card-guide'"
+      class="absolute inset-0 grid place-items-center bg-void px-6"
+      role="alert"
+    >
+      <section class="w-full max-w-md border border-neon-muted/40 bg-panel/90 p-5 text-center">
+        <FolderOpen class="mx-auto h-8 w-8 text-neon-muted" aria-hidden="true" />
+        <p class="mt-3 font-mono text-[11px] uppercase tracking-[0.22em] text-warning">
+          未加载游戏卡
+        </p>
+        <p class="mt-3 text-sm leading-7 text-text-dim">
+          开始游戏需要先创建、导入或加载一张游戏卡。
+        </p>
+        <div class="mt-5 flex flex-wrap justify-center gap-2">
+          <button
+            type="button"
+            class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
+            @click="goToLibrary"
+          >
+            <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
+            去我的应用
+          </button>
+          <button
+            type="button"
+            class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
+            @click="goToMarket"
+          >
+            <Store class="h-3.5 w-3.5" aria-hidden="true" />
+            去创意工坊
+          </button>
+        </div>
+      </section>
+    </div>
+
     <!-- 无可玩前端引导 -->
     <div
       v-else-if="phase === 'unplayable-guide'"
@@ -103,7 +138,7 @@
 import type { GameCardFrontendBinding } from "@tsian/contracts"
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
 import { useRouter } from "vue-router"
-import { ArrowLeft, FolderOpen, MonitorOff, Settings } from "lucide-vue-next"
+import { ArrowLeft, FolderOpen, MonitorOff, Settings, Store } from "lucide-vue-next"
 import GameLauncherPanel from "@/components/play/GameLauncherPanel.vue"
 import { toast } from "@/composables/useToast"
 
@@ -142,6 +177,7 @@ import { hasPlayableFrontend } from "@/lib/game-card-display"
 type PlayPhase =
   | "resolving"
   | "launcher"
+  | "no-card-guide"
   | "unplayable-guide"
   | "remote-loading"
   | "remote-ready"
@@ -344,12 +380,14 @@ async function enterLauncher() {
     }
 
     activeCard.value = card
-    activeGameCardId.value = cardId
+    activeGameCardId.value = cardId ?? ""
     activeSaveId.value = saveId ?? ""
     saves.value = allSaves
 
     if (!card) {
-      setError("无可用游戏卡", "当前没有可用的游戏卡，请先导入或创建一张。")
+      activeCard.value = null
+      activeGameCardId.value = ""
+      phase.value = "no-card-guide"
       return
     }
 
@@ -398,6 +436,10 @@ function goToLibrary() {
   void router.push("/library")
 }
 
+function goToMarket() {
+  void router.push("/market")
+}
+
 function goToCardDetail() {
   if (activeCard.value) {
     void router.push({ name: "game-card-detail", params: { cardId: activeCard.value.id } })
@@ -421,7 +463,7 @@ function onActiveCardChanged(event: Event) {
     return
   }
   // launcher 态重新解析（卡可能被换）；playing 态不打断
-  if (phase.value === "launcher" || phase.value === "unplayable-guide") {
+  if (phase.value === "launcher" || phase.value === "unplayable-guide" || phase.value === "no-card-guide") {
     void enterLauncher()
   }
 }

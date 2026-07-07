@@ -104,7 +104,6 @@ import {
 import {
   buildAgentProviderPresetMap,
   cardContentFilesToWorkspaceFiles,
-  ensureActiveGameCardId,
   getPlatformActiveGameCard,
   gameCardForSave,
   isRecord,
@@ -367,7 +366,7 @@ async function executeWorkspaceOperationForActiveSave(
           path: writeInput.path,
           content: writeInput.content,
           data: writeInput.data,
-          ownerContext: { saveId, cardId },
+          ownerContext: { saveId, cardId: cardId ?? undefined },
           operation: "write",
         }) as WorkspaceFile
         // frontend/src/** 写入 → 防抖触发平台重建（R6）。fire-and-forget，
@@ -396,7 +395,7 @@ async function executeWorkspaceOperationForActiveSave(
         const deletedPaths = await executeWorkspaceMutation({
           scope: deleteInput.scope,
           path: deleteInput.path,
-          ownerContext: { saveId, cardId },
+          ownerContext: { saveId, cardId: cardId ?? undefined },
           operation: "delete",
         }) as string[]
         // frontend/src/** 删除 → 同样触发重建（源码文件被删影响构建）。

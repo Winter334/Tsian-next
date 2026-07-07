@@ -32,10 +32,36 @@
         <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">正在读取工作室</p>
       </div>
 
-      <div v-else-if="errorMessage" class="retro-inset grid h-full min-h-[360px] place-items-center p-4">
+      <div v-else-if="errorMessage && !isNoCardError" class="retro-inset grid h-full min-h-[360px] place-items-center p-4">
         <div class="max-w-lg border border-danger/40 bg-danger/10 p-4">
           <p class="font-mono text-xs uppercase tracking-wider text-danger">工作室不可用</p>
           <p class="mt-2 text-sm leading-6 text-text-dim">{{ errorMessage }}</p>
+        </div>
+      </div>
+
+      <div v-else-if="isNoCardError" class="retro-inset grid h-full min-h-[360px] place-items-center p-4">
+        <div class="max-w-md text-center">
+          <FolderOpen class="mx-auto h-10 w-10 text-neon-muted" aria-hidden="true" />
+          <p class="mt-3 font-mono text-xs uppercase tracking-[0.22em] text-warning">未加载游戏卡</p>
+          <p class="mt-3 text-sm leading-6 text-text-dim">
+            工作室需要一张已加载的游戏卡。请先创建、导入或加载一张游戏卡。
+          </p>
+          <div class="mt-5 flex flex-wrap justify-center gap-2">
+            <button
+              type="button"
+              class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+              @click="goToLibrary"
+            >
+              去我的应用
+            </button>
+            <button
+              type="button"
+              class="retro-focus inline-flex h-8 items-center gap-2 border border-neon-deep/40 bg-elevated px-3 font-mono text-xs text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+              @click="goToMarket"
+            >
+              去创意工坊
+            </button>
+          </div>
         </div>
       </div>
 
@@ -534,6 +560,7 @@ const skillsForSelectedAgent = computed(() => {
 const selectedEnabledSkillCount = computed(() =>
   skillsForSelectedAgent.value.filter(skillEnabled).length
 )
+const isNoCardError = computed(() => errorMessage.value === "当前没有加载游戏卡。")
 
 // Tools discoverable for the selected Agent: shared tools + this agent's
 // agent-local tools. Filtering here matches `filterToolsForAgent` scoping
@@ -845,6 +872,14 @@ function openWorkspace() {
     name: "workspace",
     query: { cardId: snapshot.value.card.id },
   })
+}
+
+function goToLibrary() {
+  router.push("/library")
+}
+
+function goToMarket() {
+  router.push("/market")
 }
 
 function openPathDirectory(path: string) {

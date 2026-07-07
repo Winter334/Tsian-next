@@ -17,8 +17,6 @@ import {
   isRecord,
 } from "./internal"
 import {
-  createDefaultEditableCard,
-  createLocalSave,
   createLocalSaveFromGameCard,
   deleteLocalGameCard,
   deleteLocalGameCardContentFile,
@@ -30,7 +28,6 @@ import {
   exportGameCardPackage,
   getActiveGameCardId,
   getActiveSaveId,
-  getBuiltinBlankGameCard,
   getLocalGameCard,
   importGameCardFrontendPackage,
   importGameCardPackage,
@@ -87,32 +84,32 @@ async function activeSaveExists(saveId: string): Promise<boolean> {
 
 async function syncActiveGameCardFromSave(saveId: string | null): Promise<void> {
   if (!saveId) {
+    await setActiveGameCardId(null)
     return
   }
 
   const save = (await listLocalSaves()).find((item) => item.id === saveId)
   if (!save) {
+    await setActiveGameCardId(null)
     return
   }
 
-  await setActiveGameCardId(save.gameCardId ?? (await getBuiltinBlankGameCard()).id)
+  const card = await gameCardForSave(save)
+  await setActiveGameCardId(card?.id ?? null)
 }
 
 export async function ensureActiveSave(): Promise<string> {
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("无法创建存档：当前没有加载游戏卡。请先在我的应用中创建、导入或加载一张游戏卡。")
+  }
+
   const activeSaveId = await getActiveSaveId()
   if (activeSaveId && await activeSaveExists(activeSaveId)) {
     await syncActiveGameCardFromSave(activeSaveId)
     return activeSaveId
   }
 
-  // Fallback rework (task 06-21 子3 Phase A3): bind new saves to the active
-  // local card (never the builtin template). `getPlatformActiveGameCard` goes
-  // through `ensureActiveGameCardId`, which auto-creates an editable default
-  // card when no local card exists, so this never returns the builtin.
-  const activeCard = await getPlatformActiveGameCard()
-  if (!activeCard) {
-    throw new Error("无法创建存档：当前没有可用的游戏卡。")
-  }
   const created = await createLocalSaveFromGameCard(activeCard)
   await setActiveSaveId(created.id)
   await setActiveGameCardId(activeCard.id)
@@ -249,29 +246,10 @@ export async function initializePlatformHost(): Promise<void> {
 
   const saves = await listLocalSaves()
   const activeSaveId = await getActiveSaveId()
-  const storedActiveCardId = await getActiveGameCardId()
-  const hasStoredActiveCard = Boolean(storedActiveCardId && await getLocalGameCard(storedActiveCardId))
-  await ensureActiveGameCardId(saves)
+  await ensureActiveGameCardId()
 
-  if (activeSaveId) {
-    const activeSave = saves.find((save) => save.id === activeSaveId)
-    if (activeSave) {
-      if (!hasStoredActiveCard) {
-        await syncActiveGameCardFromSave(activeSaveId)
-      }
-      markPlatformHostReady()
-      return
-    }
-
+  if (activeSaveId && !saves.some((save) => save.id === activeSaveId)) {
     await setActiveSaveId(null)
-  }
-
-  if (saves.length > 0) {
-    const next = saves[0]
-    await setActiveSaveId(next.id)
-    if (!hasStoredActiveCard) {
-      await syncActiveGameCardFromSave(next.id)
-    }
   }
 
   markPlatformHostReady()
@@ -284,9 +262,14 @@ export async function listPlatformSaves() {
 export async function createPlatformSave(input?: {
   name?: string
 }) {
-  const created = await createLocalSave(input?.name)
+  const activeCard = await getPlatformActiveGameCard()
+  if (!activeCard) {
+    throw new Error("无法创建存档：当前没有加载游戏卡。请先在我的应用中创建、导入或加载一张游戏卡。")
+  }
+
+  const created = await createLocalSaveFromGameCard(activeCard, input)
   await setActiveSaveId(created.id)
-  await setActiveGameCardId(created.gameCardId ?? (await getBuiltinBlankGameCard()).id)
+  await setActiveGameCardId(activeCard.id)
   emitSavesChanged()
   emitActiveCardChanged()
   return created
@@ -454,17 +437,12 @@ export async function deletePlatformGameCard(
   await deleteLocalGameCard(card.id)
 
   if (wasActiveCard) {
-    // Fallback rework (task 06-21 子3 Phase A4): never fall back to the builtin
-    // template. Prefer a remaining local card; if none, auto-create a fresh
-    // editable default card.
     const remainingCards = await listLocalGameCards()
     const remainingLocal = remainingCards.filter((item) => item.source !== "builtin")
     if (remainingLocal.length > 0) {
       await setActiveGameCardId(remainingLocal[0].id)
     } else {
-      const created = await createDefaultEditableCard()
-      await setActiveGameCardId(created.id)
-      await buildDefaultFrontendQuiet(created.id)
+      await setActiveGameCardId(null)
     }
   }
 

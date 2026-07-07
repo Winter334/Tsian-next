@@ -24,7 +24,6 @@ import {
   deleteWorkspacePathForSave,
   getActiveGameCardId,
   getActiveSaveId,
-  getBuiltinBlankGameCard,
   getLocalGameCard,
   initializeWorkspaceForSave,
   listEffectiveWorkspaceFilesForSave,
@@ -308,9 +307,12 @@ export async function listPlatformWorkspaceDirectory(input: {
     throw new Error(`会话 "${saveId}" 不存在。`)
   }
 
-  const sourceCard = save.gameCardId
-    ? await getLocalGameCard(save.gameCardId)
-    : await getBuiltinBlankGameCard()
+  const gameCardId = save.gameCardId?.trim()
+  if (!gameCardId) {
+    throw new Error(`存档 "${saveId}" 未绑定游戏卡。`)
+  }
+
+  const sourceCard = await getLocalGameCard(gameCardId)
   if (!sourceCard) {
     throw new Error(`存档 "${saveId}" 的游戏卡不存在。`)
   }
