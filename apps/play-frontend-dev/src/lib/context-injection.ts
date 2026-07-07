@@ -70,6 +70,11 @@ function getNumber(obj: Record<string, unknown>, key: string): number | undefine
   return typeof v === "number" && Number.isFinite(v) ? v : undefined
 }
 
+/** 任意 JSON 值是否为非数组对象。 */
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
 // ── formatter（design §7） ────────────────────────────────────────
 
 /**
@@ -258,6 +263,34 @@ export function formatProtagonistBlock(
     if (statusLines.length > 0) {
       lines.push("- 状态：")
       lines.push(...statusLines)
+    }
+  }
+
+  // traits：数组，每项 { id, name?, description?, effects? }（task 07-07 design §6）
+  // 永久性稳定特质，注入给 storyteller 让正文反映特质效果。
+  const traits = characterJson["traits"]
+  if (Array.isArray(traits) && traits.length > 0) {
+    const traitLines: string[] = []
+    for (const t of traits) {
+      if (!isRecord(t)) continue
+      const tName = getString(t, "name") ?? getString(t, "id")
+      if (!tName) continue
+      const description = getString(t, "description")
+      let entry = `  · ${tName}`
+      if (description) entry += ` — ${description}`
+      traitLines.push(entry)
+      const effects = t["effects"]
+      if (Array.isArray(effects)) {
+        for (const e of effects) {
+          if (typeof e === "string" && e.trim()) {
+            traitLines.push(`    · 效果：${e.trim()}`)
+          }
+        }
+      }
+    }
+    if (traitLines.length > 0) {
+      lines.push("- 特质：")
+      lines.push(...traitLines)
     }
   }
 

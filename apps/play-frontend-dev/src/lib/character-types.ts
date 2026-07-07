@@ -78,6 +78,20 @@ export interface CharacterGoals {
   longTerm?: string
 }
 
+/**
+ * 永久性稳定特质（task 07-07 design §2.1）。
+ *
+ * 表示特殊体质、天赋、系统、血脉、命格等稳定能力来源，区别于 `status[]`
+ * （当前临时状态）。`id` 必填（`trait:<localId>` 格式），`name` 主展示，
+ * `description` 表达特质本身的设定说明，`effects` 为具体可用效果/限制/叙事影响。
+ */
+export interface CharacterTrait {
+  id: string
+  name?: string
+  description?: string
+  effects?: string[]
+}
+
 /** 六维基础维度（design D7）。键名固定中文；值为正整数，基线 5（不在 UI 解释）。 */
 export interface CharacterAttributes {
   体魄?: number
@@ -108,6 +122,12 @@ export interface CharacterEntity {
   attributes?: CharacterAttributes
   gauges?: CharacterGauge[]
   status?: CharacterStatus[]
+  /**
+   * 永久性稳定特质数组（task 07-07 design §2）。每项 `{ id, name?, description?, effects? }`，
+   * 表示特殊体质、天赋、系统、血脉、命格等稳定能力来源；区别于 `status[]`（当前临时状态）。
+   * 缺省表示该角色无永久特质；旧存档无此字段仍可解析。
+   */
+  traits?: CharacterTrait[]
   goals?: CharacterGoals
   background?: string
   /**

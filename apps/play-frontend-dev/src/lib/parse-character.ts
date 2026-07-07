@@ -21,6 +21,7 @@ import type {
   CharacterIdentity,
   CharacterPortraitMeta,
   CharacterStatus,
+  CharacterTrait,
   GaugeTone,
   Polarity,
   RelationshipEdge,
@@ -127,6 +128,38 @@ function parseStatus(raw: unknown): CharacterStatus[] | undefined {
   return out.length > 0 ? out : undefined
 }
 
+/**
+ * 归一 traits 数组（task 07-07 design §2.4）。
+ *
+ * 永久性稳定特质，区别于 status[]（临时状态）。逐项校验 id 必填；
+ * name/description 可选字符串，effects 可选字符串数组。缺 id 的项丢弃。
+ */
+function parseTraits(raw: unknown): CharacterTrait[] | undefined {
+  if (!Array.isArray(raw)) return undefined
+  const out: CharacterTrait[] = []
+  for (const item of raw) {
+    if (!isRecord(item)) continue
+    const id = asString(item.id)
+    if (!id) continue
+    const t: CharacterTrait = { id }
+    const name = asString(item.name)
+    if (name) t.name = name
+    const description = asString(item.description)
+    if (description) t.description = description
+    const effectsRaw = item.effects
+    if (Array.isArray(effectsRaw)) {
+      const effects: string[] = []
+      for (const e of effectsRaw) {
+        const s = asString(e)
+        if (s) effects.push(s)
+      }
+      if (effects.length > 0) t.effects = effects
+    }
+    out.push(t)
+  }
+  return out.length > 0 ? out : undefined
+}
+
 /** 归一 goals 对象（逐键校验 string）。 */
 function parseGoals(raw: unknown): CharacterGoals | undefined {
   if (!isRecord(raw)) return undefined
@@ -229,6 +262,9 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
 
   const status = parseStatus(raw.status)
   if (status) entity.status = status
+
+  const traits = parseTraits(raw.traits)
+  if (traits) entity.traits = traits
 
   const goals = parseGoals(raw.goals)
   if (goals) entity.goals = goals

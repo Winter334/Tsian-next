@@ -80,9 +80,9 @@ onUnmounted(() => {
           <NarrativeMessage v-if="msg.role === 'agent'" :content="msg.content" />
           <UserMessage v-else :content="msg.content" />
           <StoryOptions
-            v-if="msg.options && msg.options.length > 0"
+            v-if="msg.options && msg.options.length > 0 && status !== 'complete'"
             :options="[...msg.options]"
-            :disabled="status === 'running' || status === 'complete'"
+            :disabled="status === 'running'"
             @select="onSelectOption"
           />
         </template>

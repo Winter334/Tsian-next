@@ -132,8 +132,14 @@ B. 导演与 brief 移除 + timeline 建立 ✅ 已完成 (`07-07-director-brief
    - ⚠️ 浏览器验证待做（用户自行）：开局向导 Step 2 确认 frontier.timeline 锚点 + worldTime="元年" + 无 save/director/。
    - 依赖 A（entity 字段先清理）。
 
-C. 游玩设定步重构
-   - 重写 `游玩设定` Skill，清理 `buildPlaySetupPrompt` 中 mode.json 残留，审视 world-architect 在本步职责（+ agent_call storyteller 拿开局正文）。
+C. 游玩设定步重构 ✅ 已完成 (`07-07-play-setup-step-refactor`)
+   - 重写 `游玩设定` Skill：访谈用通俗问题 + `[[选项]]` 模板（特别设定 / 能力详情 / 处境详情 / 收尾确认），开局钩子由 Agent 安排，收尾 `agent_call` storyteller → 单一 action `commit_play_setup` 一次落盘（traits + setup-summary + opening-narrative），不展示开局正文，附 `[[选项]]` 初始行动选项。零 mode.json/玩法启用/commit_mode/director/brief 残留。
+   - 清理 `buildPlaySetupPrompt` 中 mode.json/三态玩法/玩法启用/commit_mode/agent_call storyteller 指令，改为精简指令。
+   - 新增 `character.traits[]` 永久特质 schema（`{ id, name?, description?, effects? }`），前端类型/解析/context injection（`formatProtagonistBlock` 输出 traits block）支持；本任务不新增 traits 前端 UI。
+   - 新增 `commit_play_setup` Skill action：一次校验并写入主角 traits[]（按 id 去重覆盖，保留其他字段）、setup-summary.json、opening-narrative.json；返回值不含 narrative 正文，避免 Step 4 UI 提前展示。
+   - Step 4 UI：`PlaySetupDialog` complete 时隐藏 `StoryOptions`（选项仍保留在 context slot 供 StoryView 恢复）。
+   - schema 文档（guide/reference/current.md）新增 traits 字段说明，明确永久特质 vs `status[]` 临时状态。
+   - 旧 `commit-setup-summary.js` / `commit-opening-narrative.js` 保留在默认模板，Skill 正文只引导 `commit_play_setup`。
    - 范围：Step 4 游玩设定 + Step 5 开局确认过渡。
    - 依赖 B（导演已移除、timeline 已建）。
 
@@ -159,7 +165,7 @@ E. 回合后维护 + frontier 推进触发
 | - | - | - | - |
 | 0 | 前端开局操作（导入源、选卡） | — 无 Agent — | 不在本任务范围 |
 | 1a | 开局向导 Step 2：Understanding（初始世界建模 + timeline 建立） | world-architect | ✅ 已完成 |
-| 1b | 开局向导 Step 4：游玩设定对话 | world-architect, storyteller (agent_call) | 待启动 |
+| 1b | 开局向导 Step 4：游玩设定对话 | world-architect, storyteller (agent_call) | ✅ 已完成 |
 | 1c | 开局向导 Step 5：开局确认过渡 | — 无 Agent — | 不在本任务范围 |
 | 2 | 正式玩家回合 | storyteller, researcher | 待规划 |
 | 3 | 回合后维护 | stage-manager | 待规划 |
@@ -171,12 +177,13 @@ E. 回合后维护 + frontier 推进触发
 
 ## Current Agent / Skill / Tool Ledger
 
-当前默认阵容状态（B 完成后更新）：
+当前默认阵容状态（C 完成后更新）：
 
-- **storyteller** / 说书人：`AGENT.md` / `SOUL.md` 保留；`skills.enabled = []`；`contextPaths = [README.md]`（brief 已移除）。待正式玩家回合子任务 D 重写职责（用已有素材自由创作）。
+- **storyteller** / 说书人：`AGENT.md` / `SOUL.md` 保留；`skills.enabled = []`；`contextPaths = [README.md]`（brief 已移除）。Step 4 中由 world-architect `agent_call` 复用其通用叙事职责生成开局正文 + 初始选项（流程指令在 world-architect Skill《游玩设定》与 agent_call request 中，不改 storyteller 自身）。待正式玩家回合子任务 D 重写职责（用已有素材自由创作）。
 - **researcher** / 资料员：`AGENT.md` 保留；两个 Skill（`实体读取` / `资料检索`）保留，已清理 brief 提及。⚠️ 待正式玩家回合子任务 D 新增"找不到时映射 timeline 推进 frontier"职责。
 - **stage-manager** / 场记：`AGENT.md` 保留；skills = `状态栏维护` + `schema演进检查`；`contextPaths` 已移除 `current-brief.md`。⚠️ 待回合后维护子任务 E 新增"维护 worldTime"职责重写（07-05 已交付基础 worldTime 维护指引，E 做职责重写）。
-- **world-architect** / 世界架构师：`AGENT.md` 已补方法论；skills = `开局建模`（已补 timeline 锚点步骤 + worldTime 元年初始化）+ `游玩设定`。⚠️ 待子任务 E 新增"推进 frontier + 追加 timeline 锚点"Skill（ongoing，非开局）。
+- **world-architect** / 世界架构师：`AGENT.md` 已补方法论（本任务不改）；skills = `开局建模`（已补 timeline 锚点步骤 + worldTime 元年初始化）+ `游玩设定`（C 已重写：通俗问题访谈 + 单一 action `commit_play_setup` 收尾，新增 `commit-play-setup.js` 脚本与 `_validation.js` helper）。⚠️ 待子任务 E 新增"推进 frontier + 追加 timeline 锚点"Skill（ongoing，非开局）。
+- **character schema**：新增永久特质字段 `traits[]`（`{ id, name?, description?, effects? }`，`id` 用 `trait:<localId>`），区别于 `status[]` 临时状态；前端类型/解析/context injection 已支持，前端 UI 留给后续游戏界面渐进重构步骤。
 - **director** / 导演：**已移除**（B 完成）。agent.json/AGENT.md/SOUL.md/剧情指导维护 Skill/current-brief.md/.meta.json/README.md 全部删除。visibility 枚举 director-only 同步移除。
 - **共享 Tools**：`roll_dice` 已对所有 Agent `tools.disabled`。保留为通用能力。
 - **共享 Skills 目录 (`skills/`)**：默认不放共享玩法 Skill，仅结构占位。
@@ -189,7 +196,7 @@ E. 回合后维护 + frontier 推进触发
 - [x] entity schema 精简完成。
 - [x] 导演与 brief 移除完成。
 - [x] timeline 机制建立完成。
-- [ ] 游玩设定步完成。
+- [x] 游玩设定步完成。
 - [ ] 正式玩家回合 storyteller + researcher 重构完成。
 - [ ] 回合后维护 stage-manager 重构完成。
 - [ ] 每个已处理 Agent 的 AGENT.md / SOUL.md / Skill / Tool / contextPaths 分层职责在父任务中可追踪。
