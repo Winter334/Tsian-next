@@ -14,13 +14,15 @@
  *
  * 不抛错：父组件保证 entity 非 null；本组件按字段缺省 fallback。
  */
-import { computed } from "vue"
-import type { CharacterEntity, RelationshipFile } from "../../lib/character-types"
+import { computed, ref } from "vue"
+import type { CharacterEntity, CharacterTrait, RelationshipFile } from "../../lib/character-types"
 import type { DisplayItems } from "../../lib/runtime-types"
 import IdentityFacts from "./IdentityFacts.vue"
 import StatusChips from "./StatusChips.vue"
 import RelationshipList from "./RelationshipList.vue"
 import GoalsBlock from "./GoalsBlock.vue"
+import TraitCards from "./TraitCards.vue"
+import TraitDetailModal from "./TraitDetailModal.vue"
 import PinButton from "./PinButton.vue"
 
 const props = defineProps<{
@@ -36,6 +38,8 @@ const emit = defineEmits<{
 }>()
 
 const aliases = computed(() => props.entity.aliases ?? [])
+const traits = computed(() => props.entity.traits ?? [])
+const selectedTrait = ref<CharacterTrait | null>(null)
 const statusList = computed(() => props.entity.status ?? [])
 const hasAppearance = computed(
   () => typeof props.entity.appearance === "string" && props.entity.appearance.length > 0,
@@ -46,6 +50,7 @@ const hasBackground = computed(
 const hasGoals = computed(() => Boolean(props.entity.goals))
 const edges = computed(() => props.relationships?.edges ?? [])
 const hasRelationships = computed(() => edges.value.length > 0)
+const hasTraits = computed(() => traits.value.length > 0)
 
 const hasMetrics = computed(() => props.displayItems.metrics.length > 0)
 const hasTags = computed(() => props.displayItems.tags.length > 0)
@@ -54,6 +59,14 @@ const hasSections = computed(() => props.displayItems.sections.length > 0)
 
 function onSelect(ref: string) {
   emit("select", ref)
+}
+
+function openTrait(trait: CharacterTrait) {
+  selectedTrait.value = trait
+}
+
+function closeTrait() {
+  selectedTrait.value = null
 }
 </script>
 
@@ -70,7 +83,13 @@ function onSelect(ref: string) {
     </div>
 
     <div class="overview-grid">
-      <!-- 2. 当前形象 -->
+      <!-- 2. 天赋特质 -->
+      <div v-if="hasTraits" class="overview-section full">
+        <div class="section-title">天赋特质</div>
+        <TraitCards :traits="traits" @open="openTrait" />
+      </div>
+
+      <!-- 3. 当前形象 -->
       <div v-if="hasAppearance" class="overview-section full">
         <div class="section-title">当前形象</div>
         <div class="narrative-block">
@@ -164,6 +183,8 @@ function onSelect(ref: string) {
         </div>
       </div>
     </div>
+
+    <TraitDetailModal :trait="selectedTrait" @close="closeTrait" />
   </div>
 </template>
 
