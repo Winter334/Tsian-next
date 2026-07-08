@@ -836,7 +836,7 @@ const COMMIT_OPENING_NARRATIVE_SCRIPT_JS = `${text([
   "return commitOpeningNarrative(input, tsian, signal);",
 ])}`
 
-// commit_setup_summary — summary 非空校验（≤2000）+ 写入 save/playthrough/setup-summary.json 为 {status:"complete", summary, committedAt}。
+// commit_setup_summary — summary 非空校验（≤2000）+ 写入 save/playthrough/setup-summary.json 为 {status:"complete", summary, committedAt, enteredPlay:false}。
 const COMMIT_SETUP_SUMMARY_SCRIPT_JS = `${text([
   "async function commitSetupSummary(input, tsian, signal) {",
   "  try {",
@@ -845,7 +845,7 @@ const COMMIT_SETUP_SUMMARY_SCRIPT_JS = `${text([
   "    const summary = typeof input.summary === 'string' ? input.summary.trim() : '';",
   "    if (!summary) fail('OPENING_SETUP_SUMMARY_REQUIRED', 'summary must be a non-empty string.');",
   "    if (summary.length > 2000) fail('OPENING_SETUP_SUMMARY_TOO_LONG', 'summary is too long.', { maxLength: 2000, length: summary.length });",
-  "    const summaryFile = { status: 'complete', summary, committedAt: new Date().toISOString() };",
+  "    const summaryFile = { status: 'complete', summary, committedAt: new Date().toISOString(), enteredPlay: false };",
   "    const file = await tsian.workspace.write({ scope: 'save-runtime', path: 'save/playthrough/setup-summary.json', content: JSON.stringify(summaryFile, null, 2) + '\\n', mediaType: 'application/json' });",
   "    tsian.trace('setup_summary_committed', { size: file.content.length, write: file.path });",
   "    return { status: 'ready', write: { path: file.path, size: file.content.length } };",
@@ -908,8 +908,8 @@ const COMMIT_PLAY_SETUP_SCRIPT_JS = `${text([
   "    const mergedTraits = Array.from(mergedById.values());",
   "    const updatedEntity = { ...protagonist, traits: mergedTraits };",
   "    const entityWrite = await tsian.workspace.write({ scope: 'save-runtime', path: entityPath, content: JSON.stringify(updatedEntity, null, 2) + '\\n', mediaType: 'application/json' });",
-  "    // 6. 写 setup-summary.json = { status: 'complete', summary, committedAt }",
-  "    const summaryFile = { status: 'complete', summary, committedAt: new Date().toISOString() };",
+  "    // 6. 写 setup-summary.json = { status: 'complete', summary, committedAt, enteredPlay:false }",
+  "    const summaryFile = { status: 'complete', summary, committedAt: new Date().toISOString(), enteredPlay: false };",
   "    const summaryWrite = await tsian.workspace.write({ scope: 'save-runtime', path: 'save/playthrough/setup-summary.json', content: JSON.stringify(summaryFile, null, 2) + '\\n', mediaType: 'application/json' });",
   "    // 7. 写 opening-narrative.json = { narrative, createdAt }",
   "    const narrativeFile = { narrative: openingNarrative, createdAt: new Date().toISOString() };",
@@ -2045,7 +2045,7 @@ export const DEFAULT_SAVE_RUNTIME_FILES: Array<{
   { path: "save/relationships/README.md", content: RELATIONSHIPS_README_MD },
   {
     path: "save/playthrough/README.md",
-    content: text(["# Playthrough 回合运行时", "", "本目录存放存档级运行时变量、player 设置、source frontier、setup 摘要与 branch 摘要。", "", "- `runtime.json`：高频访问、玩家面向或前端管理的摘要，含 `worldTime`（当前世界/剧情时间字符串，未知时为空）、`weather`、`location`（当前地点 `{ ref, name } | null`）、`activeSceneRefs`（当前活跃场景指针数组，每项 `{ ref, name }`）、`protagonistRef`（主角指针 `{ ref, name } | null`）；也可通过 `extensions` 承载新增/临时的玩家可见运行时字段，例如月相、倒计时或诅咒周期。旧字段 `activeSceneIds`/`activeScene`/`player`/`inventory`/`status` 已废弃。", "- `player.json`：玩家 persona/视角设置。", "- `frontier.json`：源文本抽取/阅读进度与时间标记锚点。含 `sourceWindow`（已读章节窗口）、`extractedThrough`（已抽取到的最远章节）、`timeline`（时间标记锚点数组，每项 `{ chapter, time, label }`）、`notes`。", "- `understanding-summary.json`：开局理解摘要。", "- `setup-summary.json`：游玩设定对话完成信号。", "- `opening-narrative.json`：开局叙事文本。", "- `branch.json`：玩家创建的分支摘要，不是源文本的重写。", "", "纯前端 view state（活跃标签、滚动位置、折叠面板、瞬时过滤、悬停状态）默认不应存这里。"]),
+    content: text(["# Playthrough 回合运行时", "", "本目录存放存档级运行时变量、player 设置、source frontier、setup 摘要与 branch 摘要。", "", "- `runtime.json`：高频访问、玩家面向或前端管理的摘要，含 `worldTime`（当前世界/剧情时间字符串，未知时为空）、`weather`、`location`（当前地点 `{ ref, name } | null`）、`activeSceneRefs`（当前活跃场景指针数组，每项 `{ ref, name }`）、`protagonistRef`（主角指针 `{ ref, name } | null`）；也可通过 `extensions` 承载新增/临时的玩家可见运行时字段，例如月相、倒计时或诅咒周期。旧字段 `activeSceneIds`/`activeScene`/`player`/`inventory`/`status` 已废弃。", "- `player.json`：玩家 persona/视角设置。", "- `frontier.json`：源文本抽取/阅读进度与时间标记锚点。含 `sourceWindow`（已读章节窗口）、`extractedThrough`（已抽取到的最远章节）、`timeline`（时间标记锚点数组，每项 `{ chapter, time, label }`）、`notes`。", "- `understanding-summary.json`：开局理解摘要。", "- `setup-summary.json`：游玩设定对话完成信号；`enteredPlay` 由前端在玩家点击进入故事后置为 `true`，用于重开存档时恢复主游玩界面。", "- `opening-narrative.json`：开局叙事文本。", "- `branch.json`：玩家创建的分支摘要，不是源文本的重写。", "", "纯前端 view state（活跃标签、滚动位置、折叠面板、瞬时过滤、悬停状态）默认不应存这里。"]),
   },
   { path: "save/playthrough/runtime.json", content: json({ turn: 0, worldTime: "", location: null, weather: "", activeSceneRefs: [], protagonistRef: null, extensions: {}, updatedAtTurn: 0, updatedBy: null }) },
   { path: "save/playthrough/player.json", content: json({ viewpoint: null, character: null, preferences: {} }) },

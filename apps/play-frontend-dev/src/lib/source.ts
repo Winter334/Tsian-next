@@ -149,6 +149,7 @@ export interface SetupSummary {
   status: "pending" | "complete"
   summary?: string | null
   committedAt?: string
+  enteredPlay?: boolean
 }
 
 export interface OpeningNarrative {

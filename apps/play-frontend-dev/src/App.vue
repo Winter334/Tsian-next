@@ -12,6 +12,7 @@ import SetupWizard from "./components/setup/SetupWizard.vue"
 import CharacterView from "./components/character/CharacterView.vue"
 import { useTsian } from "./composables/useTsian"
 import { useStatusBarCollapsed } from "./composables/useStatusBarCollapsed"
+import { SETUP_SUMMARY_PATH, isSetupSummary, safeJsonParse } from "./lib/source"
 
 // App.vue 根组件。
 // 开屏状态机（design §5 / prd D5-D6）：
@@ -47,6 +48,54 @@ const { statusCollapsed, toggle: toggleStatusCollapsed } = useStatusBarCollapsed
 // bridge 状态（useTsian 单例共享）
 const { ready, turnCount, tsian, loadOpeningNarrative } = useTsian()
 
+async function hasEnteredPlayCheckpoint(): Promise<boolean> {
+  const checkpoints = await tsian.checkpoints.list()
+  return checkpoints.some((cp) => cp.turn === 0 && cp.reason === "manual" && cp.label === "开局设定")
+}
+
+async function hasFormalTurns(): Promise<boolean> {
+  const history = await tsian.history.get()
+  return history.entries.length > 0
+}
+
+async function shouldRestorePlayMode(): Promise<boolean> {
+  const file = await tsian.workspace.read(SETUP_SUMMARY_PATH, "save-runtime")
+  const summary = file?.content ? safeJsonParse(file.content) : null
+  if (!isSetupSummary(summary) || summary.status !== "complete") return false
+  if (summary.enteredPlay === true) return true
+  return await hasEnteredPlayCheckpoint() || await hasFormalTurns()
+}
+
+async function restoreSavedMode(): Promise<void> {
+  try {
+    await tsian.waitForReady()
+    if (await shouldRestorePlayMode()) {
+      mode.value = "play"
+      await loadOpeningNarrative()
+    }
+  } catch {
+    // 没有激活存档或 workspace 未就绪时保持默认向导入口。
+  }
+}
+
+async function markEnteredPlay(): Promise<void> {
+  const file = await tsian.workspace.read(SETUP_SUMMARY_PATH, "save-runtime")
+  const summary = file?.content ? safeJsonParse(file.content) : null
+  if (!isSetupSummary(summary) || summary.status !== "complete") {
+    throw new Error("setup-summary.json 尚未完成，无法标记进入故事。")
+  }
+  if (summary.enteredPlay === true) return
+  await tsian.workspace.write(
+    SETUP_SUMMARY_PATH,
+    `${JSON.stringify({ ...summary, enteredPlay: true }, null, 2)}\n`,
+    "save-runtime",
+  )
+}
+
+onMounted(() => {
+  void restoreSavedMode()
+})
+
 function onLogoClick() {
   phase.value = "burning"
 }
@@ -64,11 +113,12 @@ function onRevealed() {
   enterPlayPending.value = false
 }
 
-/** Step 5 "进入故事"：先加载开局叙事，再创建开局设定检查点（替换 initial 空模板），
+/** Step 5 "进入故事"：先加载开局叙事，标记开局向导已进入故事，再创建开局设定检查点（替换 initial 空模板），
  *  最后在 Step 5 画面上启动 scroll 烧蚀。等 BurningReveal @shown 后才切 mode=play，避免 canvas delay 期间露出下方 StoryView。
  *  检查点创建失败不阻塞进入游戏（console.error + 继续）。 */
 async function onEnterPlay() {
   await loadOpeningNarrative()
+  await markEnteredPlay()
   try {
     await tsian.checkpoints.create("开局设定")
   } catch (err) {
@@ -165,7 +215,7 @@ function onNavigate(item: "story" | "character" | "settings") {
     <!-- burning：WebGL 燃烧幕布。开屏用 paper（红橙火焰），enterPlay 翻转用 scroll（琥珀金火焰） -->
     <BurningReveal
       v-if="phase === 'burning'"
-      :variant="enterPlayPending || mode === 'play' ? 'scroll' : 'paper'"
+      :variant="enterPlayPending ? 'scroll' : 'paper'"
       :duration="5000"
       :delay="400"
       @shown="onCurtainShown"
