@@ -66,6 +66,7 @@ const defaultSelectedRef = computed<string | null>(() => {
 })
 
 const selectedRef = ref<string | null>(null)
+const portraitRefreshToken = ref(0)
 
 // 当默认选中变化时（首次加载、场景切换 remount 后），同步 selectedRef。
 watch(
@@ -84,6 +85,10 @@ onMounted(() => {
 
 function onSelect(ref: string) {
   selectedRef.value = ref
+}
+
+function onPortraitUpdated() {
+  portraitRefreshToken.value += 1
 }
 
 // 状态派生（用于模板分支）
@@ -141,6 +146,7 @@ const scenePresentEmpty = computed(
         :selected-ref="selectedRef"
         :protagonist-ref="protagonistRef"
         :relationships="null"
+        :portrait-refresh-token="portraitRefreshToken"
         @select="onSelect"
       />
       <Transition name="character-card-switch" mode="out-in">
@@ -149,6 +155,7 @@ const scenePresentEmpty = computed(
           :selected-ref="selectedRef"
           :protagonist-ref="protagonistRef"
           @select="onSelect"
+          @portrait-updated="onPortraitUpdated"
         />
       </Transition>
     </template>
@@ -161,17 +168,16 @@ const scenePresentEmpty = computed(
 
 <style scoped>
 .character-view {
-  /* 让出顶部 header 52px + 右侧 nav 180px + 左侧状态栏 240px。
-     nav/status-bar 折叠态由 App.vue 全局 :has() 联动（同 StoryView 模式）。 */
+  /* 让出顶部 header；左右按侧栏展开状态平滑让位。 */
   display: flex;
-  height: calc(100% - 52px);
+  height: calc(100% - var(--play-header-height));
   width: 100%;
   min-width: 0;
-  margin-top: 52px;
-  padding-right: 180px;
-  padding-left: 240px;
+  margin-top: var(--play-header-height);
+  padding-right: var(--play-right-panel);
+  padding-left: var(--play-left-panel);
   overflow: hidden;
-  transition: padding-right 0.3s ease, padding-left 0.3s ease;
+  transition: padding-right 0.3s var(--play-sidebar-ease), padding-left 0.3s var(--play-sidebar-ease);
   box-sizing: border-box;
 }
 .cv-empty {

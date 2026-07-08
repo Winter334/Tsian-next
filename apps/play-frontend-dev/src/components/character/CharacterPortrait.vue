@@ -6,7 +6,7 @@
  * - 3:4.15 比例（保留原有暗色仪式风边框/内层细线/底部渐变）。
  * - 有上传头像时展示 workspace binary 图片；无上传或读取失败时展示默认头像。
  * - 不再展示首字占位。
- * - protagonist 可通过图片下方常驻按钮上传/更换图片（canUpload 控制）。
+ * - 当前允许上传的角色可通过图片下方常驻按钮上传/更换图片（canUpload 控制）。
  * - 上传流程：验证 → preparePortraitBlob → 写 Blob 到
  *   `save/assets/portraits/characters/<localId>.webp` → 读 entity JSON →
  *   patch portrait 元数据 → 写回 entity JSON → emit portrait-updated。
@@ -23,7 +23,7 @@ const props = defineProps<{
   portraitPath?: string
   /** 默认头像 URL（按性别选择的内置 asset URL）。 */
   fallbackSrc: string
-  /** 是否允许上传/更换（仅 protagonist）。 */
+  /** 是否允许上传/更换当前角色肖像。 */
   canUpload: boolean
   /** 实体 ref（`character:<localId>`），用于派生 localId 与 entity JSON 路径。 */
   entityRef: string | null
@@ -203,7 +203,7 @@ async function patchEntityPortraitMetadata(): Promise<void> {
       />
     </div>
 
-    <!-- 上传/更换按钮（仅 protagonist，常驻在图片下方） -->
+    <!-- 上传/更换按钮（canUpload 控制，常驻在图片下方） -->
     <button
       v-if="canUpload"
       type="button"

@@ -2,62 +2,16 @@
 /**
  * StatusBarStatus — 状态栏"状态"区。
  *
- * design §5.4（对齐新 schema）：
- * - 小标题"状态" + 渐变细线。
- * - 数据源：主角 entity.status 数组（每项 { id, name?, description?, polarity? }），
- *   通过 useEntity(protagonistRef) 按需读取；旧 runtime.status 已废弃。
- * - polarity: positive/negative/neutral（替代旧 level）。
- * - displayItems.tags：tag 类扩展项，label: value 或仅 label。
- * - 空态："暂无状态"（--whisper，小字斜置）。
- *
- * 不抛错：父容器只在 runtime 存在时渲染本区；本组件按字段 fallback。
+ * 主数据源为主角 entity.status；runtime tags 作为补充状态展示。
  */
-import { computed, onMounted } from "vue"
+import { computed } from "vue"
+import type { CharacterStatus } from "../../lib/character-types"
 import type { DisplayItem } from "../../lib/runtime-types"
-import { useEntity } from "../../composables/useEntity"
-
-type Polarity = "positive" | "negative" | "neutral"
-
-interface EntityStatus {
-  id: string
-  name?: string
-  description?: string
-  polarity?: Polarity
-}
 
 const props = defineProps<{
-  /** 主角 entity ref（`character:<localId>`）；null 时不加载。 */
-  protagonistRef: string | null
+  statuses: CharacterStatus[]
   tags: DisplayItem[]
 }>()
-
-// 通过 useEntity 按需读取主角实体，从 entity.status 提取状态数组。
-// useEntity 在 setup 期捕获 ref 字符串；父容器通过 :key=protagonistRef 变化重挂本组件，
-// 因此 setup 内直接用当前 ref 即可。ref 为空时不发起读取。
-const { data: entityData, load: loadEntity } = useEntity(props.protagonistRef ?? "")
-
-onMounted(() => {
-  if (props.protagonistRef) void loadEntity()
-})
-
-const statusList = computed<EntityStatus[]>(() => {
-  const raw = entityData.value?.entity?.status
-  if (!Array.isArray(raw)) return []
-  const out: EntityStatus[] = []
-  for (const item of raw) {
-    if (typeof item !== "object" || item === null) continue
-    const r = item as Record<string, unknown>
-    const id = typeof r.id === "string" ? r.id : null
-    if (!id) continue
-    const name = typeof r.name === "string" && r.name.length > 0 ? r.name : undefined
-    const description = typeof r.description === "string" && r.description.length > 0 ? r.description : undefined
-    const p = r.polarity
-    const polarity: Polarity | undefined =
-      p === "positive" || p === "negative" || p === "neutral" ? p : undefined
-    out.push({ id, name, description, polarity })
-  }
-  return out
-})
 
 interface TagRow {
   label: string
@@ -75,21 +29,15 @@ const tagRows = computed<TagRow[]>(() => {
   })
 })
 
-const isEmpty = computed(() => statusList.value.length === 0 && tagRows.value.length === 0)
+const isEmpty = computed(() => props.statuses.length === 0 && tagRows.value.length === 0)
 
-/**
- * 状态行主展示文本：优先 name，其次 description，兜底 id。
- * design.md §6 / PRD D3：状态以名字为主视觉；description 作为 tooltip（title 属性）。
- */
-function statusText(s: EntityStatus): string {
+/** 状态行主展示文本：优先 name，其次 description，兜底 id。 */
+function statusText(s: CharacterStatus): string {
   return s.name ?? s.description ?? s.id
 }
 
-/**
- * 状态行 tooltip：主展示是 name 时展示 description；主展示已是 description/id 时省略。
- * 避免同一段文字在主内容与 tooltip 中重复。
- */
-function statusTooltip(s: EntityStatus): string | undefined {
+/** 状态行 tooltip：主展示是 name 时展示 description；主展示已是 description/id 时省略。 */
+function statusTooltip(s: CharacterStatus): string | undefined {
   if (s.name && s.description && s.name !== s.description) return s.description
   return undefined
 }
@@ -97,115 +45,118 @@ function statusTooltip(s: EntityStatus): string | undefined {
 
 <template>
   <section class="sb-status">
-    <header class="sb-section-head">
-      <h3 class="sb-section-title">状态</h3>
-      <span class="sb-section-line" />
+    <header class="section-title-row">
+      <h3 class="section-title">状态</h3>
+      <span class="section-line" />
     </header>
 
     <ul v-if="!isEmpty" class="status-list">
-      <li v-for="s in statusList" :key="s.id" class="status-row" :title="statusTooltip(s)">
+      <li
+        v-for="s in statuses"
+        :key="s.id"
+        class="status-row"
+        :class="s.polarity ? `polarity-${s.polarity}` : undefined"
+        :title="statusTooltip(s)"
+      >
+        <span class="status-dot" aria-hidden="true"></span>
         <span class="status-desc">{{ statusText(s) }}</span>
-        <span
-          v-if="s.polarity"
-          class="status-polarity"
-          :class="`polarity-${s.polarity}`"
-        >{{ s.polarity }}</span>
       </li>
       <li v-for="(t, idx) in tagRows" :key="`tag-${idx}`" class="status-row tag-row">
+        <span class="status-dot" aria-hidden="true"></span>
         <span class="tag-label">{{ t.label }}</span>
         <span v-if="t.value" class="tag-value">{{ t.value }}</span>
       </li>
     </ul>
 
-    <p v-else class="sb-empty">暂无状态</p>
+    <p v-else class="sb-empty">未见异常</p>
   </section>
 </template>
 
 <style scoped>
 .sb-status {
-  padding: 12px 16px;
+  padding: 14px 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  border-bottom: 1px solid rgba(181, 137, 61, 0.14);
 }
-
-/* 分区小标题 + 渐变细线（design §8） */
-.sb-section-head {
+.section-title-row {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-.sb-section-title {
+.section-title {
   margin: 0;
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  color: var(--prose-faint);
-  text-transform: uppercase;
   flex-shrink: 0;
+  font-family: var(--font-display);
+  font-size: 0.86rem;
+  color: var(--ember-bright);
+  letter-spacing: 0.08em;
+  text-shadow: 0 0 10px rgba(232, 169, 72, 0.12);
 }
-.sb-section-line {
+.section-line {
   flex: 1;
   height: 1px;
-  background: linear-gradient(90deg, var(--line-strong), transparent);
-  opacity: 0.6;
+  background: linear-gradient(90deg, rgba(232, 169, 72, 0.42), transparent);
+  opacity: 0.58;
 }
-
 .status-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
 }
-
 .status-row {
+  min-width: 0;
   display: flex;
-  align-items: baseline;
-  gap: 6px;
-  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
 }
-.status-desc {
+.status-dot {
+  flex-shrink: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--prose-muted);
+  box-shadow: 0 0 6px rgba(181, 137, 61, 0.16);
+}
+.status-row.polarity-positive .status-dot {
+  background: #7ea968;
+  box-shadow: 0 0 8px rgba(126, 169, 104, 0.34);
+}
+.status-row.polarity-negative .status-dot {
+  background: #c76d5a;
+  box-shadow: 0 0 8px rgba(199, 109, 90, 0.34);
+}
+.status-row.polarity-neutral .status-dot,
+.tag-row .status-dot {
+  background: var(--ember);
+  box-shadow: 0 0 8px rgba(181, 137, 61, 0.28);
+}
+.status-desc,
+.tag-label {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-family: var(--font-serif);
-  font-size: 0.82rem;
+  font-size: 0.8rem;
   color: var(--prose);
   line-height: 1.4;
 }
-.status-polarity {
-  font-family: var(--font-mono);
-  font-size: 0.65rem;
+.tag-label {
   color: var(--prose-muted);
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 0 6px;
-  letter-spacing: 0.05em;
+}
+.tag-value {
+  margin-left: auto;
   flex-shrink: 0;
-  text-transform: lowercase;
-}
-.status-polarity.polarity-positive {
-  color: #7ea968;
-  border-color: rgba(126, 169, 104, 0.4);
-}
-.status-polarity.polarity-negative {
-  color: #c76d5a;
-  border-color: rgba(199, 109, 90, 0.4);
-}
-.status-polarity.polarity-neutral {
-  color: var(--prose-muted);
-}
-
-.tag-row .tag-label {
-  font-family: var(--font-serif);
-  font-size: 0.78rem;
-  color: var(--prose-muted);
-}
-.tag-row .tag-value {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--ember-bright);
 }
-
 .sb-empty {
   margin: 0;
   font-family: var(--font-serif);

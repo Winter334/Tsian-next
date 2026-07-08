@@ -97,7 +97,7 @@ const hasGauges = computed(() => gaugeList.value.length > 0)
 .attribute-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
+  gap: 16px;
 }
 .gauge-list {
   display: flex;

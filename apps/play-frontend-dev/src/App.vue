@@ -142,7 +142,7 @@ function onNavigate(item: "story" | "character" | "settings") {
           <StoryView v-show="navCurrent === 'story'" class="view-layer" />
         </Transition>
         <!-- 角色卡视图：v-if 卸载/重挂——切换走时释放 useEntity/useScene 读取，
-             回来时重新读 runtime/scene。视图自身处理 padding 联动（.character-view）。 -->
+             回来时重新读 runtime/scene。主视图按侧栏展开状态平滑让位。 -->
         <Transition name="view-soft">
           <CharacterView v-if="navCurrent === 'character'" class="view-layer" />
         </Transition>
@@ -180,6 +180,12 @@ function onNavigate(item: "story" | "character" | "settings") {
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  --play-header-height: 52px;
+  --play-left-rail: 48px;
+  --play-left-panel: 312px;
+  --play-right-rail: 56px;
+  --play-right-panel: 180px;
+  --play-sidebar-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* 纸张幕布：暖白米黄古卷底 + 纸纹斑点，遮住氛围层，承载 idle logo */
@@ -230,9 +236,7 @@ function onNavigate(item: "story" | "character" | "settings") {
   transform: translateY(-4px);
 }
 
-/* 视图舞台：右侧留 nav 空间，顶部留 header 空间，左侧留状态栏空间。
-   状态栏展开 240px / 折叠 48px（design §4.3），通过 :has() 选择器联动 padding-left，
-   同 AppNav 折叠态 padding-right 联动模式。 */
+/* 视图舞台：顶部留 header，左右按侧栏展开状态让位。 */
 .view-stage {
   position: relative;
   height: 100%;
@@ -242,19 +246,12 @@ function onNavigate(item: "story" | "character" | "settings") {
   justify-content: center;
   gap: 12px;
   text-align: center;
-  /* 顶部 header 52px + 右侧 nav 180px（折叠 56px） + 左侧状态栏 240px（折叠 48px） */
-  padding-top: 52px;
-  padding-right: 180px;
-  padding-left: 240px;
-  transition: padding-right 0.3s ease, padding-left 0.3s ease;
+  /* 顶部 header + 展开侧栏空间；折叠态由全局 :has() 规则切换到 rail。 */
+  padding-top: var(--play-header-height);
+  padding-right: var(--play-right-panel);
+  padding-left: var(--play-left-panel);
+  transition: padding-right 0.3s var(--play-sidebar-ease), padding-left 0.3s var(--play-sidebar-ease);
 }
-.app-root:has(.app-nav.collapsed) .view-stage {
-  padding-right: 56px;
-}
-.app-root:has(.status-bar.collapsed) .view-stage {
-  padding-left: 48px;
-}
-
 .placeholder-text {
   margin: 0;
   font-family: var(--font-display);
@@ -276,20 +273,17 @@ function onNavigate(item: "story" | "character" | "settings") {
 }
 </style>
 
-<!-- 全局（非 scoped）样式：StoryView 的 .story-view 在 StoryView scoped 边界内，
-     App.vue scoped 样式无法穿透 data-v 属性触达。用全局 :has() 选择器联动
-     状态栏折叠态 padding-left（design §4.3 / §7），同 .view-stage 折叠联动模式。
-     CharacterView 的 .character-view 同样在 scoped 边界内，需全局 :has() 联动
-     nav/status-bar 折叠态 padding。 -->
+<!-- 全局（非 scoped）样式：视图在侧栏展开/折叠时让位，padding 动画与侧栏宽度动画同步。 -->
 <style>
-.app-root:has(.status-bar.collapsed) .story-view {
-  padding-left: 48px;
+.app-root:has(.status-bar.collapsed) .story-view,
+.app-root:has(.status-bar.collapsed) .character-view,
+.app-root:has(.status-bar.collapsed) .view-stage {
+  padding-left: var(--play-left-rail);
 }
-.app-root:has(.status-bar.collapsed) .character-view {
-  padding-left: 48px;
-}
-.app-root:has(.app-nav.collapsed) .character-view {
-  padding-right: 56px;
+.app-root:has(.app-nav.collapsed) .story-view,
+.app-root:has(.app-nav.collapsed) .character-view,
+.app-root:has(.app-nav.collapsed) .view-stage {
+  padding-right: var(--play-right-rail);
 }
 
 @media (prefers-reduced-motion: reduce) {

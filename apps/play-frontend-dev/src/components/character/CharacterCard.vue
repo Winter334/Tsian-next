@@ -68,9 +68,9 @@ const defaultAvatarUrl = computed(() => {
   return pickDefaultAvatarUrl({})
 })
 
-// 上传权限：只有 entityRef 与 protagonistRef 都非空且相等时允许（task 07-05 R8）。
+// 上传权限：当前选中角色实体存在且 entityRef 非空时允许更换肖像。
 const canUploadPortrait = computed(
-  () => props.entityRef !== null && props.protagonistRef !== null && props.entityRef === props.protagonistRef,
+  () => props.entityRef !== null && props.entity !== null,
 )
 
 // 上传头像 workspace 路径（entity.portrait.path）。
