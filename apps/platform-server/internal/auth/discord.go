@@ -31,6 +31,10 @@ type discordUserResponse struct {
 	Avatar   *string `json:"avatar"`
 }
 
+type discordGuildMemberResponse struct {
+	Roles []string `json:"roles"`
+}
+
 func NewDiscordClient(cfg config.Config) *DiscordClient {
 	return &DiscordClient{
 		cfg: cfg,
@@ -45,7 +49,7 @@ func (c *DiscordClient) AuthorizeURL(state string) string {
 	values.Set("client_id", c.cfg.DiscordClientID)
 	values.Set("redirect_uri", c.callbackURL())
 	values.Set("response_type", "code")
-	values.Set("scope", "identify")
+	values.Set("scope", strings.Join(c.scopes(), " "))
 	values.Set("state", state)
 	return "https://discord.com/oauth2/authorize?" + values.Encode()
 }
@@ -115,8 +119,60 @@ func (c *DiscordClient) FetchMe(ctx context.Context, accessToken string) (user.D
 	}, nil
 }
 
+func (c *DiscordClient) RegistrationAllowed(ctx context.Context, accessToken string) (bool, error) {
+	if !c.cfg.DiscordRegistrationGateEnabled() {
+		return true, nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, discordAPIBase+"/users/@me/guilds/"+url.PathEscape(c.cfg.DiscordRegistrationGuildID)+"/member", nil)
+	if err != nil {
+		return false, fmt.Errorf("build discord guild member request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/json")
+
+	res, err := c.httpClient.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("fetch discord guild member: %w", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode == http.StatusNotFound {
+		return false, nil
+	}
+	if res.StatusCode < 200 || res.StatusCode >= 300 {
+		return false, fmt.Errorf("fetch discord guild member: status %d", res.StatusCode)
+	}
+
+	var body discordGuildMemberResponse
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		return false, fmt.Errorf("decode discord guild member response: %w", err)
+	}
+	return hasAllowedRole(body.Roles, c.cfg.DiscordRegistrationRoleIDs), nil
+}
+
 func (c *DiscordClient) callbackURL() string {
 	return c.cfg.BaseURL + "/api/v1/auth/callback"
+}
+
+func (c *DiscordClient) scopes() []string {
+	scopes := []string{"identify"}
+	if c.cfg.DiscordRegistrationGateEnabled() {
+		scopes = append(scopes, "guilds.members.read")
+	}
+	return scopes
+}
+
+func hasAllowedRole(memberRoles []string, allowedRoleIDs []string) bool {
+	allowed := make(map[string]struct{}, len(allowedRoleIDs))
+	for _, roleID := range allowedRoleIDs {
+		allowed[roleID] = struct{}{}
+	}
+	for _, roleID := range memberRoles {
+		if _, ok := allowed[roleID]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func discordAvatarURL(discordID string, avatar *string) *string {

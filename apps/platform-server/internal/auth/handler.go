@@ -1,19 +1,34 @@
 package auth
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 
 	"tsian/platform-server/internal/config"
 	"tsian/platform-server/internal/user"
 )
 
+var (
+	errDiscordRegistrationForbidden    = errors.New("discord registration forbidden")
+	errDiscordRegistrationLookupFailed = errors.New("discord registration lookup failed")
+)
+
+type discordOAuthClient interface {
+	AuthorizeURL(state string) string
+	Exchange(ctx context.Context, code string) (string, error)
+	FetchMe(ctx context.Context, accessToken string) (user.DiscordIdentity, error)
+	RegistrationAllowed(ctx context.Context, accessToken string) (bool, error)
+}
+
 type Handler struct {
 	cfg     config.Config
 	db      *sql.DB
 	users   user.Repository
-	discord *DiscordClient
+	discord discordOAuthClient
 }
 
 type userResponse struct {
@@ -38,6 +53,10 @@ func (h *Handler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "discord oauth is not configured", http.StatusServiceUnavailable)
 		return
 	}
+	if h.cfg.DiscordRegistrationGateMisconfigured() {
+		http.Error(w, "discord registration gate is misconfigured", http.StatusServiceUnavailable)
+		return
+	}
 
 	state, err := GenerateToken()
 	if err != nil {
@@ -53,6 +72,10 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	state := r.URL.Query().Get("state")
 	if code == "" || state == "" {
 		http.Error(w, "missing oauth code or state", http.StatusBadRequest)
+		return
+	}
+	if h.cfg.DiscordRegistrationGateMisconfigured() {
+		http.Error(w, "discord registration gate is misconfigured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -73,12 +96,47 @@ func (h *Handler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
+	if err := h.authorizeDiscordRegistration(r.Context(), accessToken, identity); err != nil {
+		if errors.Is(err, errDiscordRegistrationForbidden) {
+			http.Error(w, "discord role is not allowed to register", http.StatusForbidden)
+			return
+		}
+		if errors.Is(err, errDiscordRegistrationLookupFailed) {
+			http.Error(w, "failed to look up user", http.StatusInternalServerError)
+			return
+		}
+		http.Error(w, "failed to verify discord registration", http.StatusBadGateway)
+		return
+	}
 	account, err := h.users.UpsertDiscord(r.Context(), identity)
 	if err != nil {
 		http.Error(w, "failed to save user", http.StatusInternalServerError)
 		return
 	}
 	h.setSessionAndRedirect(w, r, account)
+}
+
+func (h *Handler) authorizeDiscordRegistration(ctx context.Context, accessToken string, identity user.DiscordIdentity) error {
+	if !h.cfg.DiscordRegistrationGateEnabled() {
+		return nil
+	}
+
+	_, err := h.users.FindByIdentity(ctx, user.ProviderDiscord, identity.DiscordID)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, user.ErrNotFound) {
+		return fmt.Errorf("%w: %v", errDiscordRegistrationLookupFailed, err)
+	}
+
+	allowed, err := h.discord.RegistrationAllowed(ctx, accessToken)
+	if err != nil {
+		return err
+	}
+	if !allowed {
+		return errDiscordRegistrationForbidden
+	}
+	return nil
 }
 
 func (h *Handler) HandleMockLogin(w http.ResponseWriter, r *http.Request) {

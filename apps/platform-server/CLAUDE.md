@@ -41,7 +41,7 @@ npm run dev:server
 | `GET` | `/` / 任意非 API 路径 | serve `platform-web/dist` SPA（无构建产物时返回 `tsian platform-server` 占位文本） |
 | `GET` | `/healthz` | 返回 `ok` |
 | `GET` | `/api/v1/auth/login` | Discord OAuth 登录入口，302 到 Discord authorize URL |
-| `GET` | `/api/v1/auth/callback` | Discord OAuth callback，换 token、拉 identity、建/更新用户、发 session cookie |
+| `GET` | `/api/v1/auth/callback` | Discord OAuth callback，换 token、拉 identity、按配置检查新注册身份组、建/更新用户、发 session cookie |
 | `GET` | `/api/v1/auth/me` | 登录态返回 `{ id, handle, displayName, avatarUrl, authProviders }`，未登录 401 |
 | `POST` | `/api/v1/auth/logout` | 删除 session 并清 cookie |
 | `GET` | `/api/v1/auth/mock-login` | 仅 `TSIAN_MOCK_AUTH=true` 时启用的本地开发登录 |
@@ -56,11 +56,15 @@ npm run dev:server
 | `TSIAN_BASE_URL` | OAuth 回调基准 URL | `http://localhost:8080` |
 | `TSIAN_DISCORD_CLIENT_ID` | Discord OAuth client id | 空 |
 | `TSIAN_DISCORD_CLIENT_SECRET` | Discord OAuth secret | 空 |
+| `TSIAN_DISCORD_REGISTRATION_GUILD_ID` | 限制新 Discord 注册必须来自的服务器 ID | 空 |
+| `TSIAN_DISCORD_REGISTRATION_ROLE_IDS` | 允许新 Discord 注册的身份组 ID，逗号分隔 | 空 |
 | `TSIAN_DB_PATH` | SQLite 数据库路径 | `data/tsian.db` |
 | `TSIAN_DATA_DIR` | 后续市场/云存档文件根目录 | `data` |
 | `TSIAN_STATIC_DIR` | platform-web build 输出目录 | `../platform-web/dist` |
 | `TSIAN_COOKIE_SECURE` | session cookie 是否 `Secure` | `TSIAN_BASE_URL` 为 https 时 true |
 | `TSIAN_MOCK_AUTH` | 开启 mock-login | false |
+
+`TSIAN_DISCORD_REGISTRATION_GUILD_ID` 与 `TSIAN_DISCORD_REGISTRATION_ROLE_IDS` 需同时配置才会启用 Discord 新注册门槛；只配置其中一个时 OAuth 登录会 fail closed。门槛只检查首次创建账号的 Discord 身份，已注册身份后续登录不再检查服务器身份组。
 
 ---
 
