@@ -253,8 +253,19 @@ void props.protagonistRef
 <template>
   <div class="inventory-pane">
     <div v-if="!hasContainers" class="inv-empty">
-      <div class="icon">🎒</div>
-      <div class="text">未持有容器</div>
+      <div class="inv-empty-emblem" aria-hidden="true">
+        <svg class="inv-empty-glyph" viewBox="0 0 96 96" fill="none">
+          <path d="M24 42h48l-5 30H29l-5-30Z" />
+          <path d="M34 42v-9c0-8 6-14 14-14s14 6 14 14v9" />
+          <path d="M36 56h24" />
+          <path d="M43 66h10" />
+        </svg>
+      </div>
+      <div class="inv-empty-copy">
+        <div class="inv-empty-kicker">NO CONTAINER</div>
+        <div class="inv-empty-title">未持有容器</div>
+        <p class="inv-empty-hint">这个角色尚未记录可查看的背包或储物器具。</p>
+      </div>
     </div>
     <InventoryGrid
       v-else
@@ -286,21 +297,112 @@ void props.protagonistRef
   min-width: 0;
 }
 .inv-empty {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px 0;
-  gap: 12px;
+  min-height: 260px;
+  padding: 42px 24px;
+  overflow: hidden;
+  border: 1px solid rgba(181, 137, 61, 0.16);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 28%, rgba(181, 137, 61, 0.12), transparent 38%),
+    linear-gradient(180deg, rgba(181, 137, 61, 0.055), rgba(6, 6, 8, 0.02)),
+    rgba(6, 6, 8, 0.28);
   color: var(--prose-faint);
 }
-.inv-empty .icon {
-  font-size: 3rem;
-  opacity: 0.3;
+.inv-empty::before {
+  content: "";
+  position: absolute;
+  inset: 10px;
+  border: 1px solid rgba(181, 137, 61, 0.09);
+  border-radius: 8px;
+  pointer-events: none;
 }
-.inv-empty .text {
+.inv-empty::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(circle at 50% 42%, black, transparent 72%);
+  opacity: 0.28;
+  pointer-events: none;
+}
+.inv-empty-emblem {
+  position: relative;
+  z-index: 1;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(181, 137, 61, 0.24);
+  border-radius: 999px;
+  background:
+    radial-gradient(circle at 50% 38%, rgba(232, 169, 72, 0.14), transparent 58%),
+    rgba(10, 5, 6, 0.7);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
+    0 18px 42px rgba(0, 0, 0, 0.24);
+}
+.inv-empty-emblem::before,
+.inv-empty-emblem::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: 42px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(181, 137, 61, 0.42), transparent);
+  transform: translateX(-50%);
+}
+.inv-empty-emblem::before {
+  top: 15px;
+}
+.inv-empty-emblem::after {
+  bottom: 15px;
+}
+.inv-empty-glyph {
+  width: 58px;
+  height: 58px;
+  stroke: rgba(232, 169, 72, 0.68);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 10px rgba(181, 137, 61, 0.14));
+}
+.inv-empty-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  margin-top: 16px;
+  text-align: center;
+}
+.inv-empty-kicker {
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.58rem;
+  color: var(--whisper);
+  letter-spacing: 0.18em;
+}
+.inv-empty-title {
+  font-family: var(--font-display);
+  font-size: 1.08rem;
+  color: var(--ember-bright);
   letter-spacing: 0.08em;
+}
+.inv-empty-hint {
+  max-width: 19rem;
+  margin: 4px 0 0;
+  font-family: var(--font-serif);
+  font-size: 0.76rem;
+  line-height: 1.7;
+  color: var(--prose-faint);
 }
 </style>
