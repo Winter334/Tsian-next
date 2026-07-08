@@ -136,15 +136,23 @@ function onNavigate(item: "story" | "character" | "settings") {
       />
 
       <!-- 视图路由：story / character / settings（Step 5 接入 CheckpointView）。
-           用 v-show 而非 v-if：切换视图不销毁 StoryView，保留滚动位置 + stream 状态 -->
-      <StoryView v-show="navCurrent === 'story'" />
-      <!-- 角色卡视图：v-if 卸载/重挂——切换走时释放 useEntity/useScene 读取，
-           回来时重新读 runtime/scene。视图自身处理 padding 联动（.character-view）。 -->
-      <CharacterView v-if="navCurrent === 'character'" />
-      <div v-else-if="navCurrent === 'settings'" class="view-stage">
-        <CornerBrackets :size="15" :inset="25" />
-        <p class="placeholder-text">烛火书卷 · 重铸</p>
-        <p class="placeholder-sub">设置视图待接入</p>
+           StoryView 保持 v-show：切换视图不销毁 StoryView，保留滚动位置 + stream 状态。 -->
+      <div class="view-stack">
+        <Transition name="view-soft">
+          <StoryView v-show="navCurrent === 'story'" class="view-layer" />
+        </Transition>
+        <!-- 角色卡视图：v-if 卸载/重挂——切换走时释放 useEntity/useScene 读取，
+             回来时重新读 runtime/scene。视图自身处理 padding 联动（.character-view）。 -->
+        <Transition name="view-soft">
+          <CharacterView v-if="navCurrent === 'character'" class="view-layer" />
+        </Transition>
+        <Transition name="view-soft">
+          <div v-if="navCurrent === 'settings'" class="view-stage view-layer">
+            <CornerBrackets :size="15" :inset="25" />
+            <p class="placeholder-text">烛火书卷 · 重铸</p>
+            <p class="placeholder-sub">设置视图待接入</p>
+          </div>
+        </Transition>
       </div>
     </main>
 
@@ -196,6 +204,30 @@ function onNavigate(item: "story" | "character" | "settings") {
   z-index: 0;
   height: 100%;
   width: 100%;
+}
+
+.view-stack {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+.view-layer {
+  position: absolute;
+  inset: 0;
+}
+.view-soft-enter-active {
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.view-soft-leave-active {
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.view-soft-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.view-soft-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
 }
 
 /* 视图舞台：右侧留 nav 空间，顶部留 header 空间，左侧留状态栏空间。
@@ -258,5 +290,12 @@ function onNavigate(item: "story" | "character" | "settings") {
 }
 .app-root:has(.app-nav.collapsed) .character-view {
   padding-right: 56px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .view-soft-enter-active,
+  .view-soft-leave-active {
+    transition: none;
+  }
 }
 </style>

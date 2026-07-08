@@ -143,12 +143,14 @@ const scenePresentEmpty = computed(
         :relationships="null"
         @select="onSelect"
       />
-      <CharacterSlot
-        :key="selectedRef ?? 'none'"
-        :selected-ref="selectedRef"
-        :protagonist-ref="protagonistRef"
-        @select="onSelect"
-      />
+      <Transition name="character-card-switch" mode="out-in">
+        <CharacterSlot
+          :key="selectedRef ?? 'none'"
+          :selected-ref="selectedRef"
+          :protagonist-ref="protagonistRef"
+          @select="onSelect"
+        />
+      </Transition>
     </template>
     <!-- 兜底空态 -->
     <div v-else class="cv-empty">
@@ -185,5 +187,25 @@ const scenePresentEmpty = computed(
   color: var(--prose-faint);
   font-style: italic;
   letter-spacing: 0.06em;
+}
+.character-card-switch-enter-active {
+  transition: opacity 240ms cubic-bezier(0.22, 1, 0.36, 1), transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.character-card-switch-leave-active {
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+.character-card-switch-enter-from {
+  opacity: 0;
+  transform: translateX(12px);
+}
+.character-card-switch-leave-to {
+  opacity: 0;
+  transform: translateX(-8px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .character-card-switch-enter-active,
+  .character-card-switch-leave-active {
+    transition: none;
+  }
 }
 </style>

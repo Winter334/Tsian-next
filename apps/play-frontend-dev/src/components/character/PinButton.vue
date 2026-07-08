@@ -36,7 +36,18 @@ function onClick(): void {
     :title="active ? '取消钉选' : '钉选到状态栏'"
     @click.stop="onClick"
   >
-    <span aria-hidden="true" class="pin-glyph">📌</span>
+    <svg
+      aria-hidden="true"
+      class="pin-icon"
+      viewBox="0 0 24 24"
+      fill="none"
+    >
+      <circle cx="17.6" cy="6.4" r="1.6" />
+      <path d="M18.7 5.3 20.2 3.8" />
+      <path d="M16.4 7.6 9.2 14.8" />
+      <path d="M9.2 14.8 4.7 19.3" />
+      <path d="M8.1 15.9 10.7 18.5" />
+    </svg>
   </button>
 </template>
 
@@ -52,9 +63,8 @@ function onClick(): void {
   background: transparent;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 120ms ease, color 120ms ease, transform 120ms ease;
-  color: var(--prose-muted);
-  font-size: 0.75rem;
+  transition: opacity 140ms ease, color 140ms ease, transform 140ms ease;
+  color: var(--prose-faint);
   line-height: 1;
   display: inline-flex;
   align-items: center;
@@ -62,9 +72,19 @@ function onClick(): void {
   z-index: 2;
 }
 
-.pin-glyph {
-  filter: grayscale(0.6);
-  transition: filter 120ms ease;
+.pin-icon {
+  width: 15px;
+  height: 15px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transform-origin: 50% 50%;
+  transition: transform 140ms ease, filter 140ms ease;
+}
+.pin-icon circle {
+  fill: currentColor;
+  stroke: none;
 }
 
 /* 父容器 hover 时半透明显现（父容器自行加 `position: relative` 与 hover 选择器）。 */
@@ -76,14 +96,14 @@ function onClick(): void {
 .pin-btn:hover {
   opacity: 1;
   color: var(--ember-bright);
-  transform: scale(1.08);
+  transform: translateY(-1px) rotate(-5deg) scale(1.06);
 }
 
 .pin-btn.active {
   opacity: 1;
   color: var(--ember-bright);
 }
-.pin-btn.active .pin-glyph {
-  filter: none;
+.pin-btn.active .pin-icon {
+  filter: drop-shadow(0 0 4px rgba(232, 169, 72, 0.42));
 }
 </style>

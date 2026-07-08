@@ -73,25 +73,30 @@ function onSelect(ref: string) {
     </div>
 
     <div class="tab-content">
-      <OverviewPane
-        v-if="activeTab === 'overview'"
-        :entity="entity"
-        :relationships="relationships"
-        :display-items="displayItems"
-        :entity-ref="entityRef"
-        @select="onSelect"
-      />
-      <AttributesPane
-        v-else-if="activeTab === 'attributes'"
-        :attributes="entity.attributes"
-        :gauges="entity.gauges"
-        :entity-ref="entityRef"
-      />
-      <InventoryPane
-        v-else
-        :containers="entity.containers"
-        :protagonist-ref="protagonistRef"
-      />
+      <Transition name="detail-pane" mode="out-in">
+        <OverviewPane
+          v-if="activeTab === 'overview'"
+          key="overview"
+          :entity="entity"
+          :relationships="relationships"
+          :display-items="displayItems"
+          :entity-ref="entityRef"
+          @select="onSelect"
+        />
+        <AttributesPane
+          v-else-if="activeTab === 'attributes'"
+          key="attributes"
+          :attributes="entity.attributes"
+          :gauges="entity.gauges"
+          :entity-ref="entityRef"
+        />
+        <InventoryPane
+          v-else
+          key="inventory"
+          :containers="entity.containers"
+          :protagonist-ref="protagonistRef"
+        />
+      </Transition>
     </div>
   </div>
 </template>
@@ -163,5 +168,25 @@ function onSelect(ref: string) {
 }
 .tab-content::-webkit-scrollbar {
   display: none;
+}
+.detail-pane-enter-active {
+  transition: opacity 220ms cubic-bezier(0.22, 1, 0.36, 1), transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.detail-pane-leave-active {
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+.detail-pane-enter-from {
+  opacity: 0;
+  transform: translateX(10px);
+}
+.detail-pane-leave-to {
+  opacity: 0;
+  transform: translateX(-6px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .detail-pane-enter-active,
+  .detail-pane-leave-active {
+    transition: none;
+  }
 }
 </style>
