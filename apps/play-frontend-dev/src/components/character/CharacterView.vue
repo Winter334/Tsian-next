@@ -182,7 +182,7 @@ const scenePresentEmpty = computed(
   margin: 0;
   font-family: var(--font-serif);
   font-size: 0.9rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
   letter-spacing: 0.06em;
 }

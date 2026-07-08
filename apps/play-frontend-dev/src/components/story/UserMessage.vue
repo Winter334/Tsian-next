@@ -93,7 +93,7 @@ const emit = defineEmits<{
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  color: var(--whisper);
+  color: var(--prose-faint);
   opacity: 0;
   transition: opacity 0.2s, color 0.2s, background 0.2s;
 }

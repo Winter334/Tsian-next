@@ -116,7 +116,7 @@ function textRing(rng: Rng, radius: number, id: string, color: string, opacity: 
   const right = fromPolar(radius, 0.25)
   const path = `<path id="${id}" d="M ${top.x.toFixed(2)} ${top.y.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 0 1 ${right.x.toFixed(2)} ${right.y.toFixed(2)} A ${r.toFixed(2)} ${r.toFixed(2)} 0 1 1 ${top.x.toFixed(2)} ${top.y.toFixed(2)} Z" fill="none" stroke="none"/>`
   const textLength = (circumference * 0.995).toFixed(2)
-  return `${path}<text class="magic-rune" fill="${color}" opacity="${opacity}" font-family="Segoe UI Symbol, Noto Serif SC, serif" font-size="${size}" textLength="${textLength}" lengthAdjust="spacing"><textPath href="#${id}" startOffset="0%">${text}</textPath></text>`
+  return `${path}<text class="magic-rune" fill="${color}" opacity="${opacity}" font-family="Segoe UI Symbol, Noto Sans SC, sans-serif" font-size="${size}" textLength="${textLength}" lengthAdjust="spacing"><textPath href="#${id}" startOffset="0%">${text}</textPath></text>`
 }
 
 function textRingLayer(rng: Rng, radius: number, id: string, opacity: number): string {

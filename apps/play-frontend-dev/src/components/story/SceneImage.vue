@@ -50,7 +50,7 @@ defineProps<{
 }
 .placeholder-glyph {
   font-size: 2rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   opacity: 0.5;
 }
 

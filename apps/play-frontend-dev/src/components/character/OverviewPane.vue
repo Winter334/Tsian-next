@@ -189,7 +189,7 @@ function onSelect(ref: string) {
 .char-brief {
   font-size: 0.92rem;
   line-height: 1.8;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   max-width: 52em;
 }
 .char-aliases {
@@ -201,7 +201,7 @@ function onSelect(ref: string) {
 .char-alias {
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 1px 8px;
@@ -224,8 +224,8 @@ function onSelect(ref: string) {
 .section-title {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
@@ -234,7 +234,7 @@ function onSelect(ref: string) {
   position: relative;
   font-size: 0.88rem;
   line-height: 1.85;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   padding: 2px 22px 0 0;
 }
 .narrative-block p {
@@ -270,7 +270,7 @@ function onSelect(ref: string) {
 .ext-metric-label {
   font-family: var(--font-serif);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -283,7 +283,7 @@ function onSelect(ref: string) {
 .ext-metric-unit {
   margin-left: 2px;
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .ext-metric-track {
   height: 4px;
@@ -306,7 +306,7 @@ function onSelect(ref: string) {
 .ext-tag {
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 1px 8px;
@@ -328,7 +328,7 @@ function onSelect(ref: string) {
 }
 .ext-ref-label {
   font-family: var(--font-serif);
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -357,6 +357,6 @@ function onSelect(ref: string) {
 .ext-section-body {
   font-size: 0.82rem;
   line-height: 1.7;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 </style>

@@ -161,11 +161,11 @@ onMounted(async () => {
 .meta-tag {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.06em;
 }
 .meta-dot {
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-size: 0.65rem;
 }
 
@@ -204,7 +204,7 @@ onMounted(async () => {
   border-radius: 0 4px 4px 0;
   cursor: pointer;
   text-align: left;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-family: var(--font-serif);
   transition: all 0.25s cubic-bezier(0.22, 1, 0.36, 1);
 }
@@ -250,7 +250,7 @@ onMounted(async () => {
 .chapter-size {
   font-family: var(--font-mono);
   font-size: 0.63rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 
 /* ember 竖线分隔 */
@@ -293,7 +293,7 @@ onMounted(async () => {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   color: var(--ember);
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .preview-title {
@@ -308,7 +308,7 @@ onMounted(async () => {
   font-family: var(--font-serif);
   font-size: 0.85rem;
   line-height: 1.85;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: pre-wrap;
 }
 

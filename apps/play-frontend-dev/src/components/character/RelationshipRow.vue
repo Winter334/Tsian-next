@@ -83,7 +83,7 @@ function onClick() {
 }
 .ref-brief {
   grid-column: 2;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-size: 0.72rem;
   white-space: nowrap;
   overflow: hidden;

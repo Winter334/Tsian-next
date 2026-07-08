@@ -10,7 +10,7 @@
  * - 点击 emit `select(ref)`。
  * - 不显示 raw ref/id。
  *
- * 每行独立 CharacterListItem（内部 useEntity），:key=ref 在 refs 变化时 remount。
+ * 每行独立 CharacterListItem（内部 useEntity），:key=entityRef 在 refs 变化时 remount。
  */
 import { computed } from "vue"
 import type { RelationshipFile } from "../../lib/character-types"
@@ -59,7 +59,7 @@ function onSelect(ref: string) {
       <CharacterListItem
         v-for="p in presentRefs"
         :key="p.ref"
-        :ref="p.ref"
+        :entity-ref="p.ref"
         :selected="selectedRef === p.ref"
         @select="onSelect"
       />
@@ -72,7 +72,7 @@ function onSelect(ref: string) {
         <CharacterListItem
           v-for="r in relatedRefs"
           :key="r.ref"
-          :ref="r.ref"
+          :entity-ref="r.ref"
           :selected="selectedRef === r.ref"
           @select="onSelect"
         />
@@ -95,8 +95,8 @@ function onSelect(ref: string) {
 .char-list-title {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   padding: 0 16px 12px;
   border-bottom: 1px solid var(--line);
@@ -105,8 +105,8 @@ function onSelect(ref: string) {
 .char-list-section {
   font-family: var(--font-mono);
   font-size: 0.6rem;
-  letter-spacing: 0.12em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   padding: 16px 16px 8px;
   text-transform: uppercase;
 }
@@ -119,7 +119,7 @@ function onSelect(ref: string) {
   padding: 8px 16px;
   font-family: var(--font-serif);
   font-size: 0.75rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
 }
 </style>

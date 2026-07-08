@@ -117,8 +117,8 @@ function onSelect(ref: string) {
 .card-kicker {
   font-family: var(--font-mono);
   font-size: 0.62rem;
-  letter-spacing: 0.18em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   margin-bottom: 4px;
 }
 .card-title {
@@ -135,10 +135,10 @@ function onSelect(ref: string) {
 .tab {
   background: transparent;
   border: none;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   padding: 14px 20px 12px;
   cursor: pointer;
   position: relative;
@@ -158,5 +158,10 @@ function onSelect(ref: string) {
   min-height: 0;
   overflow-y: auto;
   padding-top: 22px;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.tab-content::-webkit-scrollbar {
+  display: none;
 }
 </style>

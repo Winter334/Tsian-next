@@ -134,7 +134,7 @@ defineExpose({ getInput, readFile })
   box-shadow: inset 0 0 12px var(--ember-glow);
 }
 .title-input::placeholder {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 
 .file-drop {
@@ -177,7 +177,7 @@ defineExpose({ getInput, readFile })
 .drop-copy {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.05em;
 }
 

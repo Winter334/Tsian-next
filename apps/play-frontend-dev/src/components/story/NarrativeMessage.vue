@@ -60,7 +60,7 @@ const html = computed(() => renderMarkdown(props.content || ""))
   border-left: 2px solid var(--ember);
   padding-left: 16px;
   margin: 1em 0;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-style: italic;
 }
 

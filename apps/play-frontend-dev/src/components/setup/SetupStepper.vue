@@ -321,7 +321,7 @@ function markStatus(i: number): "done" | "current" | "locked" {
   font-family: var(--font-serif);
   font-size: 0.75rem;
   letter-spacing: 0.06em;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   transition: color 0.3s, text-shadow 0.3s;
 }
@@ -333,6 +333,6 @@ function markStatus(i: number): "done" | "current" | "locked" {
   color: var(--ember);
 }
 .fuse-label.locked {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 </style>

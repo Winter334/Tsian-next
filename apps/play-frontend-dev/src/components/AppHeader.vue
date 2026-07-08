@@ -106,7 +106,7 @@ const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   padding: 2px 10px;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
 }
 
 /* nav 折叠按钮 */

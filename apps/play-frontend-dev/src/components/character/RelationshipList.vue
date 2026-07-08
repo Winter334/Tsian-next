@@ -57,7 +57,7 @@ watch(() => props.edges, () => {
   margin: 0;
   font-family: var(--font-serif);
   font-size: 0.78rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
 }
 </style>

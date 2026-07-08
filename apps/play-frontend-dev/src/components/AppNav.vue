@@ -103,7 +103,7 @@ function onItemClick(key: NavItem) {
   border: none;
   border-radius: 4px;
   cursor: pointer;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   transition: color 0.2s, background 0.2s;
   white-space: nowrap;
 }
@@ -132,6 +132,6 @@ function onItemClick(key: NavItem) {
 .nav-label {
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
 }
 </style>

@@ -135,7 +135,7 @@ onUnmounted(() => {
 
 .card-copy {
   font-size: 0.82rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   line-height: 1.5;
 }
 

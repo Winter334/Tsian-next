@@ -95,8 +95,8 @@ const facts = computed<FactRow[]>(() => {
   display: block;
   font-family: var(--font-mono);
   font-size: 0.58rem;
-  letter-spacing: 0.12em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   margin-bottom: 3px;
 }
 .fact-value {

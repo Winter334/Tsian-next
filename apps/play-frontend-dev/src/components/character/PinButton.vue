@@ -53,7 +53,7 @@ function onClick(): void {
   cursor: pointer;
   opacity: 0;
   transition: opacity 120ms ease, color 120ms ease, transform 120ms ease;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-size: 0.75rem;
   line-height: 1;
   display: inline-flex;

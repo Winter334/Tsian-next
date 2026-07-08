@@ -70,12 +70,12 @@ const rows = computed<GoalRow[]>(() => {
 .target-label {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  color: var(--whisper);
+  letter-spacing: 0.06em;
+  color: var(--prose-faint);
   padding-top: 2px;
 }
 .target-text {
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .target-row:hover :deep(.pin-btn) {
   opacity: 0.85;

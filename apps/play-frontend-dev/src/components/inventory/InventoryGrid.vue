@@ -157,7 +157,7 @@ function onKeydown(event: KeyboardEvent, item: InventoryGridItem) {
 .inv-cell-name {
   font-family: var(--font-serif);
   font-size: 0.72rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   line-height: 1.25;
   padding: 0 2px;
   white-space: nowrap;
@@ -171,7 +171,7 @@ function onKeydown(event: KeyboardEvent, item: InventoryGridItem) {
   padding: 24px 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
 }
 </style>

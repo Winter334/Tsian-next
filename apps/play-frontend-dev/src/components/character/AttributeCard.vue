@@ -62,7 +62,7 @@ void props
 }
 .attribute-name {
   font-size: 0.82rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.08em;
 }
 .attribute-value {

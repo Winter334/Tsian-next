@@ -292,7 +292,7 @@ void props.protagonistRef
   justify-content: center;
   padding: 60px 0;
   gap: 12px;
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 .inv-empty .icon {
   font-size: 3rem;
@@ -301,6 +301,6 @@ void props.protagonistRef
 .inv-empty .text {
   font-family: var(--font-mono);
   font-size: 0.75rem;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.08em;
 }
 </style>

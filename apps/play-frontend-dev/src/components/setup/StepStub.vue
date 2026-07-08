@@ -55,7 +55,7 @@ const emit = defineEmits<{
 
 .stub-glyph {
   font-size: 2rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   opacity: 0.5;
   line-height: 1;
 }
@@ -73,14 +73,14 @@ const emit = defineEmits<{
   font-family: var(--font-mono);
   font-size: 0.72rem;
   color: var(--ember);
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
 }
 
 .stub-hint {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   text-align: center;
 }
 
@@ -93,8 +93,8 @@ const emit = defineEmits<{
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  letter-spacing: 0.1em;
-  color: var(--prose-dim);
+  letter-spacing: 0.06em;
+  color: var(--prose-muted);
   transition: border-color 0.2s, color 0.2s;
 }
 .stub-back:hover {

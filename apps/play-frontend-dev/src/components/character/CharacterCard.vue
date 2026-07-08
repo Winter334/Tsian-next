@@ -140,6 +140,7 @@ function onPortraitUpdated() {
   min-width: 0;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 14px;
   padding-top: 22px;
 }
@@ -156,7 +157,7 @@ function onPortraitUpdated() {
   justify-content: center;
   height: 100%;
   gap: 12px;
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 .missing-glyph {
   font-family: var(--font-display);
@@ -169,14 +170,14 @@ function onPortraitUpdated() {
 .missing-name {
   font-family: var(--font-display);
   font-size: 1.4rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.06em;
 }
 .missing-hint {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  letter-spacing: 0.18em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
 }
 </style>

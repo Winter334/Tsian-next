@@ -191,11 +191,11 @@ defineExpose({ setText })
   outline: none;
 }
 .composer-input::placeholder {
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
 }
 .composer-input:disabled {
-  opacity: 0.5;
+  opacity: 0.7;
 }
 
 /* ── 底线：ember 渐变线 ── */
@@ -302,7 +302,7 @@ defineExpose({ setText })
   cursor: not-allowed;
   border-color: var(--line);
   background: var(--void-deep);
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 
 /* ── 停止按钮：blood 圆形 ── */

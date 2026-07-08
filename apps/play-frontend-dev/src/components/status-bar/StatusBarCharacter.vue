@@ -138,11 +138,11 @@ const avatarGlyph = computed(() => {
   box-shadow: 0 0 10px rgba(181, 137, 61, 0.25);
 }
 .sb-char-collapsed.empty {
-  border-color: var(--whisper);
+  border-color: var(--prose-faint);
   background: var(--void-deep);
 }
 .sb-char-collapsed.empty:hover {
-  border-color: var(--prose-dim);
+  border-color: var(--prose-muted);
   box-shadow: none;
 }
 
@@ -158,7 +158,7 @@ const avatarGlyph = computed(() => {
   letter-spacing: 0;
 }
 .sb-char-collapsed.empty .avatar-glyph {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 
 /* ── 展开态：头像 + 名字 + brief ── */
@@ -197,7 +197,7 @@ const avatarGlyph = computed(() => {
   box-shadow: 0 0 8px rgba(181, 137, 61, 0.2);
 }
 .sb-char-expanded.empty .avatar-square {
-  border-color: var(--whisper);
+  border-color: var(--prose-faint);
 }
 
 /* 展开态首字：稍大 */
@@ -208,7 +208,7 @@ const avatarGlyph = computed(() => {
   font-weight: 700;
 }
 .sb-char-expanded.empty .avatar-square .avatar-glyph {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 
 .char-meta {
@@ -228,14 +228,14 @@ const avatarGlyph = computed(() => {
   text-overflow: ellipsis;
 }
 .sb-char-expanded.empty .char-name {
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-style: italic;
 }
 
 .char-brief {
   font-family: var(--font-serif);
   font-size: 0.75rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

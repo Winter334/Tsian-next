@@ -28,7 +28,7 @@ const text = computed(() => {
 .turn-meta {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   letter-spacing: 0.08em;
   margin: 16px 0 24px;
   text-align: right;

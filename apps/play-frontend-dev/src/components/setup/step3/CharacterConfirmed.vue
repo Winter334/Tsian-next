@@ -216,7 +216,7 @@ onUnmounted(() => {
 }
 .card-brief {
   font-size: 0.82rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   line-height: 1.5;
   max-width: 280px;
 }
@@ -239,8 +239,8 @@ onUnmounted(() => {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--whisper);
-  letter-spacing: 0.12em;
+  color: var(--prose-faint);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .hint-fade-enter-active {

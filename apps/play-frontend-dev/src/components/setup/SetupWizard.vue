@@ -536,11 +536,11 @@ onMounted(() => {
   font-family: var(--font-mono);
   font-size: 0.78rem;
   letter-spacing: 0.08em;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   transition: border-color 0.2s, color 0.2s, box-shadow 0.2s, filter 0.2s, transform 0.1s;
 }
 .setup-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.58;
   cursor: not-allowed;
 }
 

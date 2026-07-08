@@ -1,5 +1,5 @@
-/* 字体加载（Cinzel + Noto Serif SC + JetBrains Mono） */
-@import url("https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700&family=Noto+Serif+SC:wght@400;600;900&family=JetBrains+Mono:wght@400;600&display=swap");
+/* 字体加载（ZCOOL XiaoWei + Noto Sans SC + JetBrains Mono） */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;600;700&family=ZCOOL+XiaoWei&display=swap");
 
 /* ═══════════════════════════════════════════════════════════════
  * Tsian 前端设计 token — 烛火书卷·重铸（A+ 暗色仪式系）
@@ -19,17 +19,19 @@
 
   /* 文字 */
   --prose: #d4c9b4;       /* 灰烬暖白，正文 */
-  --prose-dim: #8a8073;   /* 次要正文 */
-  --whisper: #5c5347;     /* 余烬灰，边框/极次要 */
+  --prose-dim: #a69a89;   /* 次要正文：可读但不抢主层级 */
+  --prose-muted: #918577; /* 小号说明文字 */
+  --prose-faint: #7a7064; /* 弱提示/标签文字，仍保持可读 */
+  --whisper: #5c5347;     /* 余烬灰，装饰/边框/极次要氛围 */
 
   /* 线/边框 */
   --line: rgba(181, 137, 61, 0.15);
   --line-strong: rgba(181, 137, 61, 0.4);
 
   /* 字体 */
-  --font-display: "Cinzel", "Noto Serif SC", Georgia, serif;
-  --font-serif: "Noto Serif SC", Georgia, serif;
-  --font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+  --font-display: "ZCOOL XiaoWei", "Noto Sans SC", serif;
+  --font-serif: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Noto Sans SC", "JetBrains Mono", ui-sans-serif, sans-serif;
 
   /* 氛围 */
   --vignette: radial-gradient(circle, transparent 40%, rgba(6, 6, 8, 0.85) 100%);
@@ -44,8 +46,13 @@ body {
   background: var(--void);
   color: var(--prose);
   font-family: var(--font-serif);
+  font-weight: 400;
+  line-height: 1.5;
   height: 100%;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 #app {

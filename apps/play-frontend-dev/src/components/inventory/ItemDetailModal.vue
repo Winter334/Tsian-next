@@ -301,7 +301,7 @@ watch(
   border-radius: 6px;
   background: transparent;
   border: 1px solid transparent;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-size: 1.2rem;
   line-height: 1;
   cursor: pointer;
@@ -345,7 +345,7 @@ watch(
   margin: 0;
   font-size: 0.88rem;
   line-height: 1.75;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .tag-list {
   display: flex;
@@ -355,7 +355,7 @@ watch(
 .tag-chip {
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 1px 8px;
@@ -369,8 +369,8 @@ watch(
 .section-title {
   font-family: var(--font-mono);
   font-size: 0.62rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
@@ -397,7 +397,7 @@ watch(
 .ext-metric-label {
   font-family: var(--font-serif);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .ext-metric-value {
   font-family: var(--font-mono);
@@ -407,7 +407,7 @@ watch(
 .ext-metric-unit {
   margin-left: 2px;
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .ext-metric-track {
   height: 4px;
@@ -428,7 +428,7 @@ watch(
 .ext-tag {
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 1px 8px;
@@ -449,7 +449,7 @@ watch(
 }
 .ext-ref-label {
   font-family: var(--font-serif);
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .ext-ref-name {
   font-family: var(--font-mono);
@@ -471,7 +471,7 @@ watch(
 .ext-section-inner-body {
   font-size: 0.82rem;
   line-height: 1.7;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 
 .fallback {
@@ -480,7 +480,7 @@ watch(
   align-items: center;
   gap: 10px;
   padding: 32px 0 24px;
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 .fallback-glyph {
   font-family: var(--font-display);
@@ -494,7 +494,7 @@ watch(
 .fallback-name {
   font-family: var(--font-display);
   font-size: 1.2rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.06em;
 }
 .fallback-text {

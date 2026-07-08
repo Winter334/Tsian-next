@@ -60,7 +60,7 @@ defineExpose({ getInput })
   box-shadow: inset 0 0 12px var(--ember-glow);
 }
 .title-input::placeholder {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 
 .paste-textarea {
@@ -82,6 +82,6 @@ defineExpose({ getInput })
   box-shadow: inset 0 0 12px var(--ember-glow);
 }
 .paste-textarea::placeholder {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 </style>

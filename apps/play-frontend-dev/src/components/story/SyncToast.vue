@@ -60,7 +60,7 @@ const emit = defineEmits<{
   -webkit-backdrop-filter: blur(8px);
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.06em;
   animation: toast-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
 }

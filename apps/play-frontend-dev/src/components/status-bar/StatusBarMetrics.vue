@@ -126,8 +126,8 @@ function formatNumber(v: number): string {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   flex-shrink: 0;
 }
@@ -163,7 +163,7 @@ function formatNumber(v: number): string {
 .metric-label {
   font-family: var(--font-serif);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -178,7 +178,7 @@ function formatNumber(v: number): string {
 .metric-unit {
   margin-left: 2px;
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 
 /* progress 数值条：4px 高，圆角 2px，rgba(181,137,61,0.1) 轨道（design §5.5/§8） */
@@ -198,7 +198,7 @@ function formatNumber(v: number): string {
   margin: 0;
   font-family: var(--font-serif);
   font-size: 0.75rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
 }
 </style>

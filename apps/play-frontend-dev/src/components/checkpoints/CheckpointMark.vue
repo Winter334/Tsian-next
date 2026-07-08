@@ -103,7 +103,7 @@ const emit = defineEmits<{
   white-space: nowrap;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   letter-spacing: 0.08em;
   margin-top: 4px;
   transition: color 0.3s;

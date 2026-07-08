@@ -167,18 +167,18 @@ const showLoading = computed(
 .sb-fatal-text {
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--whisper);
-  letter-spacing: 0.14em;
+  color: var(--prose-faint);
+  letter-spacing: 0.08em;
   text-align: center;
   font-style: italic;
   animation: sb-fade 1.2s ease-in-out infinite alternate;
 }
 .sb-fatal-text {
   animation: none;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 @keyframes sb-fade {
-  0% { opacity: 0.5; }
+  0% { opacity: 0.72; }
   100% { opacity: 1; }
 }
 </style>

@@ -63,7 +63,7 @@ defineProps<{
   box-shadow: inset 0 0 24px var(--ember-glow);
 }
 .story-option:disabled {
-  opacity: 0.4;
+  opacity: 0.62;
   cursor: not-allowed;
 }
 

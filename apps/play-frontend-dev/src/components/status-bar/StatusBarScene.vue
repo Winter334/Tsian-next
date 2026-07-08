@@ -63,7 +63,7 @@ const worldTime = computed(() => {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.7rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.04em;
   white-space: nowrap;
   overflow: hidden;

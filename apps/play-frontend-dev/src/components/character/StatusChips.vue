@@ -103,10 +103,10 @@ function statusTooltip(s: CharacterStatus): string | undefined {
 }
 .status-chip.polarity-neutral {
   border-color: rgba(92, 83, 71, 0.75);
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .status-chip.polarity-neutral:hover {
-  border-color: var(--prose-dim);
+  border-color: var(--prose-muted);
   color: var(--prose);
 }
 </style>

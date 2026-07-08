@@ -175,7 +175,7 @@ onUnmounted(() => {
   overflow-y: auto;
   font-family: var(--font-serif);
   font-size: 0.9rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   line-height: 1.6;
   text-align: center;
   scrollbar-width: thin;
@@ -226,7 +226,7 @@ onUnmounted(() => {
   font-family: var(--font-serif);
   font-size: 0.95rem;
   line-height: 1.75;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: pre-wrap;
   word-break: break-word;
 }

@@ -142,7 +142,7 @@ onMounted(async () => {
 .meta-item {
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.05em;
 }
 .meta-num {
@@ -196,7 +196,7 @@ onMounted(async () => {
   box-shadow: inset 0 0 24px rgba(232, 169, 72, 0.15), 0 0 12px rgba(232, 169, 72, 0.2);
 }
 .branch-card:disabled {
-  opacity: 0.3;
+  opacity: 0.56;
   cursor: not-allowed;
 }
 .branch-card.selected:disabled {
@@ -236,7 +236,7 @@ onMounted(async () => {
 }
 .branch-copy {
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 
 /* 四角括号 */
@@ -262,7 +262,7 @@ onMounted(async () => {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   letter-spacing: 0.08em;
 }
 .hint-fade-enter-active {

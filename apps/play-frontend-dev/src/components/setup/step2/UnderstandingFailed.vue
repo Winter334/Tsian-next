@@ -91,7 +91,7 @@ const emit = defineEmits<{
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   text-align: left;
   line-height: 1.7;
   word-break: break-word;
@@ -107,7 +107,7 @@ const emit = defineEmits<{
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.06em;
   color: var(--blood);
   transition: background 0.2s, box-shadow 0.2s, color 0.2s;
 }

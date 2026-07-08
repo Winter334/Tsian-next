@@ -208,8 +208,8 @@ async function onConfirm() {
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  letter-spacing: 0.12em;
-  color: var(--prose-dim);
+  letter-spacing: 0.08em;
+  color: var(--prose-muted);
   transition: border-color 0.2s, color 0.2s;
 }
 .cancel-btn:hover {
@@ -227,7 +227,7 @@ async function onConfirm() {
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   font-weight: 600;
   transition: box-shadow 0.25s, filter 0.25s, transform 0.1s;
 }

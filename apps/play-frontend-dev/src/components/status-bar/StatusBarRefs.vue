@@ -68,8 +68,8 @@ const hasContent = computed(() => rows.value.length > 0)
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   flex-shrink: 0;
 }
@@ -98,7 +98,7 @@ const hasContent = computed(() => rows.value.length > 0)
 
 .ref-label {
   font-family: var(--font-serif);
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -179,13 +179,13 @@ onUnmounted(() => {
   margin: 0;
   font-family: var(--font-serif);
   font-size: 1rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .empty-sub {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   letter-spacing: 0.05em;
 }
 .empty-back {
@@ -197,8 +197,8 @@ onUnmounted(() => {
   cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  letter-spacing: 0.1em;
-  color: var(--prose-dim);
+  letter-spacing: 0.06em;
+  color: var(--prose-muted);
   transition: border-color 0.2s, color 0.2s;
 }
 .empty-back:hover {
@@ -336,7 +336,7 @@ onUnmounted(() => {
   font-family: var(--font-mono);
   font-size: 0.68rem;
   font-weight: 400;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border: 1px solid var(--line);
   border-radius: 3px;
   padding: 0 4px;
@@ -355,7 +355,7 @@ onUnmounted(() => {
   align-items: baseline;
   gap: 6px;
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   line-height: 1.4;
 }
 .brief-text {
@@ -380,7 +380,7 @@ onUnmounted(() => {
   display: block;
   margin-top: 4px;
   font-size: 0.76rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   line-height: 1.5;
   white-space: normal;
   word-break: break-all;

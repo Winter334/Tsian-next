@@ -139,8 +139,8 @@ function statusTooltip(s: EntityStatus): string | undefined {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   flex-shrink: 0;
 }
@@ -175,7 +175,7 @@ function statusTooltip(s: EntityStatus): string | undefined {
 .status-polarity {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 6px;
@@ -192,13 +192,13 @@ function statusTooltip(s: EntityStatus): string | undefined {
   border-color: rgba(199, 109, 90, 0.4);
 }
 .status-polarity.polarity-neutral {
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 
 .tag-row .tag-label {
   font-family: var(--font-serif);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .tag-row .tag-value {
   font-family: var(--font-mono);
@@ -210,7 +210,7 @@ function statusTooltip(s: EntityStatus): string | undefined {
   margin: 0;
   font-family: var(--font-serif);
   font-size: 0.75rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
 }
 </style>

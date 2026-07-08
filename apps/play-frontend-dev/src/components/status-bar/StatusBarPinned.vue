@@ -166,8 +166,8 @@ function itemKey(v: PinValue, idx: number): string {
   margin: 0;
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   flex-shrink: 0;
 }
@@ -206,7 +206,7 @@ function itemKey(v: PinValue, idx: number): string {
 .pin-status-polarity {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 0 6px;
@@ -223,7 +223,7 @@ function itemKey(v: PinValue, idx: number): string {
   border-color: rgba(199, 109, 90, 0.4);
 }
 .pin-status-polarity.polarity-neutral {
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 
 /* attribute row */
@@ -236,7 +236,7 @@ function itemKey(v: PinValue, idx: number): string {
 .pin-attr-label {
   font-family: var(--font-serif);
   font-size: 0.8rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .pin-attr-value {
   font-family: var(--font-mono);
@@ -259,7 +259,7 @@ function itemKey(v: PinValue, idx: number): string {
 .pin-gauge-label {
   font-family: var(--font-serif);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -273,7 +273,7 @@ function itemKey(v: PinValue, idx: number): string {
 .pin-gauge-unit {
   margin-left: 2px;
   font-size: 0.65rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .pin-gauge-track {
   height: 3px;
@@ -318,12 +318,12 @@ function itemKey(v: PinValue, idx: number): string {
 .pin-chip-label {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.1em;
-  color: var(--whisper);
+  letter-spacing: 0.06em;
+  color: var(--prose-faint);
   flex-shrink: 0;
 }
 .pin-chip-sep {
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-size: 0.7rem;
 }
 .pin-chip-value {
@@ -338,7 +338,7 @@ function itemKey(v: PinValue, idx: number): string {
   font-family: var(--font-serif);
   font-size: 0.8rem;
   line-height: 1.5;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -351,7 +351,7 @@ function itemKey(v: PinValue, idx: number): string {
   gap: 6px;
   font-family: var(--font-serif);
   font-size: 0.78rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
 }
 .pin-missing-label {
@@ -360,7 +360,7 @@ function itemKey(v: PinValue, idx: number): string {
   white-space: nowrap;
 }
 .pin-missing-sep {
-  color: var(--whisper);
+  color: var(--prose-faint);
   flex-shrink: 0;
 }
 </style>

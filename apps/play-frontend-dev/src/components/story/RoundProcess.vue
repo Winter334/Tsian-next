@@ -86,7 +86,7 @@ const summary = computed(() => {
   cursor: pointer;
   padding: 6px 0;
   font-family: var(--font-mono);
-  color: var(--whisper);
+  color: var(--prose-faint);
   transition: color 0.2s;
 }
 .rp-head:hover {
@@ -105,11 +105,11 @@ const summary = computed(() => {
 }
 .rp-label {
   color: var(--ember);
-  letter-spacing: 0.18em;
+  letter-spacing: 0.08em;
   flex-shrink: 0;
 }
 .rp-summary {
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-family: var(--font-serif);
   font-size: 0.82rem;
   letter-spacing: 0;

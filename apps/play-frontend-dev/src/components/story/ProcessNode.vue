@@ -161,12 +161,12 @@ const preview = computed(() => {
 }
 
 .agent-tag { color: var(--ember); }
-.glyph { color: var(--whisper); }
-.node-kind { color: var(--ember); letter-spacing: 0.1em; flex-shrink: 0; }
-.node-name { color: var(--prose-dim); }
+.glyph { color: var(--prose-faint); }
+.node-kind { color: var(--ember); letter-spacing: 0.06em; flex-shrink: 0; }
+.node-name { color: var(--prose-muted); }
 .node-summary { color: var(--prose); font-family: var(--font-serif); font-size: 0.85rem; }
 .node-preview {
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   font-family: var(--font-serif);
   font-size: 0.85rem;
   overflow: hidden;
@@ -176,7 +176,7 @@ const preview = computed(() => {
 /* chevron：展开时旋转 90°，过渡平滑 */
 .chevron {
   margin-left: auto;
-  color: var(--whisper);
+  color: var(--prose-faint);
   flex-shrink: 0;
   width: 13px;
   height: 13px;
@@ -217,10 +217,10 @@ const preview = computed(() => {
   padding: 8px 12px 12px;
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   border-top: 1px solid var(--line);
 }
 .tool-item { display: flex; justify-content: space-between; padding: 4px 0; }
 .tool-item-name { color: var(--ember); }
-.tool-item-status { color: var(--whisper); }
+.tool-item-status { color: var(--prose-faint); }
 </style>

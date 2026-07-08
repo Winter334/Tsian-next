@@ -51,12 +51,12 @@ function onClick(index: number, isLast: boolean) {
   font-family: var(--font-mono);
   font-size: 0.72rem;
   letter-spacing: 0.08em;
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 .crumb {
   background: transparent;
   border: none;
-  color: var(--whisper);
+  color: var(--prose-faint);
   font: inherit;
   padding: 2px 4px;
   cursor: pointer;

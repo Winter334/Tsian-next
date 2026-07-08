@@ -188,7 +188,7 @@ onUnmounted(() => {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
 }
 .required {
   color: var(--ember);
@@ -208,7 +208,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 .field-input::placeholder {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 .field-input:focus {
   outline: none;
@@ -231,7 +231,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 .field-textarea::placeholder {
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 .field-textarea:focus {
   outline: none;
@@ -255,7 +255,7 @@ onUnmounted(() => {
 }
 .submit-btn:disabled {
   cursor: not-allowed;
-  opacity: 0.35;
+  opacity: 0.56;
 }
 .submit-btn:not(:disabled):hover {
   box-shadow: 0 0 16px var(--ember-glow);
@@ -277,7 +277,7 @@ onUnmounted(() => {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   transition: color 0.2s;
 }
 .optional-toggle:hover {

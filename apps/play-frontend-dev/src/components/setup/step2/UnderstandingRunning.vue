@@ -119,7 +119,7 @@ const STAGES = [
   margin: 0;
   font-family: var(--font-serif);
   font-size: 0.9rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.04em;
   text-align: center;
 }

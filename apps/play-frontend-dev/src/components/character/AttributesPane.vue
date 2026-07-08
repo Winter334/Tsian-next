@@ -88,8 +88,8 @@ const hasGauges = computed(() => gaugeList.value.length > 0)
 .section-title {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  letter-spacing: 0.14em;
-  color: var(--whisper);
+  letter-spacing: 0.08em;
+  color: var(--prose-faint);
   text-transform: uppercase;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);

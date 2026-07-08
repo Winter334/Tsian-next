@@ -82,7 +82,7 @@ const valueText = computed(() => {
   opacity: 0.85;
 }
 .gauge-label {
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -6,7 +6,7 @@
  * - 3:4.15 比例（保留原有暗色仪式风边框/内层细线/底部渐变）。
  * - 有上传头像时展示 workspace binary 图片；无上传或读取失败时展示默认头像。
  * - 不再展示首字占位。
- * - protagonist 可通过 hover/focus 覆盖按钮上传/更换图片（canUpload 控制）。
+ * - protagonist 可通过图片下方常驻按钮上传/更换图片（canUpload 控制）。
  * - 上传流程：验证 → preparePortraitBlob → 写 Blob 到
  *   `save/assets/portraits/characters/<localId>.webp` → 读 entity JSON →
  *   patch portrait 元数据 → 写回 entity JSON → emit portrait-updated。
@@ -193,15 +193,17 @@ async function patchEntityPortraitMetadata(): Promise<void> {
 </script>
 
 <template>
-  <div class="portrait-frame">
-    <img
-      v-if="displaySrc"
-      class="portrait-img"
-      :src="displaySrc"
-      :alt="name"
-    />
+  <div class="portrait-stack">
+    <div class="portrait-frame">
+      <img
+        v-if="displaySrc"
+        class="portrait-img"
+        :src="displaySrc"
+        :alt="name"
+      />
+    </div>
 
-    <!-- 上传/更换覆盖按钮（仅 protagonist，hover/focus 可见） -->
+    <!-- 上传/更换按钮（仅 protagonist，常驻在图片下方） -->
     <button
       v-if="canUpload"
       type="button"
@@ -231,6 +233,14 @@ async function patchEntityPortraitMetadata(): Promise<void> {
 </template>
 
 <style scoped>
+.portrait-stack {
+  width: 100%;
+  max-width: 340px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+}
 .portrait-frame {
   width: 100%;
   max-width: 340px;
@@ -279,44 +289,40 @@ async function patchEntityPortraitMetadata(): Promise<void> {
   z-index: 1;
 }
 .portrait-upload-btn {
-  position: absolute;
-  bottom: 14px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  padding: 6px 14px;
-  border: 1px solid rgba(181, 137, 61, 0.4);
-  border-radius: 6px;
-  background: rgba(6, 6, 8, 0.72);
+  width: 100%;
+  min-height: 38px;
+  padding: 8px 14px;
+  border: 1px solid rgba(181, 137, 61, 0.36);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(181, 137, 61, 0.12), rgba(181, 137, 61, 0.04)),
+    rgba(6, 6, 8, 0.72);
   color: var(--ember-bright);
   font-family: var(--font-mono);
   font-size: 0.72rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.16em;
   cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.18s ease;
-  backdrop-filter: blur(2px);
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease;
 }
-.portrait-frame:hover .portrait-upload-btn,
+.portrait-upload-btn:hover,
 .portrait-upload-btn:focus-visible {
-  opacity: 1;
+  border-color: rgba(232, 169, 72, 0.62);
+  background:
+    linear-gradient(180deg, rgba(232, 169, 72, 0.16), rgba(181, 137, 61, 0.06)),
+    rgba(10, 5, 6, 0.86);
+  color: #f3c979;
 }
 .portrait-upload-btn:disabled {
   cursor: progress;
-  opacity: 1;
+  color: var(--prose-muted);
+  border-color: rgba(181, 137, 61, 0.24);
 }
 .portrait-status {
-  position: absolute;
-  bottom: 10px;
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 3;
-  padding: 4px 10px;
-  border-radius: 4px;
+  padding: 6px 10px;
+  border-radius: 6px;
   font-family: var(--font-mono);
   font-size: 0.68rem;
-  letter-spacing: 0.1em;
-  max-width: 90%;
+  letter-spacing: 0.06em;
   text-align: center;
 }
 .portrait-status--error {

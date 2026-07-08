@@ -2,9 +2,9 @@
 /**
  * CharacterListItem — 在场/关联人物列表单行（CharacterList 子项）。
  *
- * 每行独立 useEntity(ref) 取对方实体的 name/brief（design §4.2 / R12 / R6）。
+ * 每行独立 useEntity(entityRef) 取对方实体的 name/brief（design §4.2 / R12 / R6）。
  * useEntity 是非单例薄封装：每个 CharacterListItem 实例独立持有 data/error。
- * 父 CharacterList 通过 :key=ref 在 refs 变化时 remount 本行。
+ * 父 CharacterList 通过 :key=entityRef 在 refs 变化时 remount 本行。
  *
  * - 单行：首字头像 + name + brief（1 行截断）。
  * - 高亮 selectedRef。
@@ -16,7 +16,7 @@ import { computed, onMounted } from "vue"
 import { useEntity } from "../../composables/useEntity"
 
 const props = defineProps<{
-  ref: string
+  entityRef: string
   selected: boolean
 }>()
 
@@ -24,7 +24,7 @@ const emit = defineEmits<{
   select: [ref: string]
 }>()
 
-const { data: entityData, error: entityError, load: loadEntity } = useEntity(props.ref)
+const { data: entityData, error: entityError, load: loadEntity } = useEntity(props.entityRef)
 
 onMounted(() => {
   void loadEntity()
@@ -44,8 +44,8 @@ const displayBrief = computed(() => {
 })
 
 const localId = computed(() => {
-  const idx = props.ref.indexOf(":")
-  return idx >= 0 ? props.ref.slice(idx + 1) : props.ref
+  const idx = props.entityRef.indexOf(":")
+  return idx >= 0 ? props.entityRef.slice(idx + 1) : props.entityRef
 })
 
 const avatarGlyph = computed(() => {
@@ -54,7 +54,7 @@ const avatarGlyph = computed(() => {
 })
 
 function onClick() {
-  emit("select", props.ref)
+  emit("select", props.entityRef)
 }
 </script>
 
@@ -81,7 +81,7 @@ function onClick() {
   padding: 8px 16px;
   cursor: pointer;
   transition: background 0.2s, color 0.2s;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   background: transparent;
   border: none;
   border-left: 2px solid transparent;
@@ -132,7 +132,7 @@ function onClick() {
 }
 .char-list-brief {
   font-size: 0.68rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

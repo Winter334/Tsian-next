@@ -138,11 +138,11 @@ function onKeydown(e: KeyboardEvent) {
   outline: none;
 }
 .composer-input::placeholder {
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-style: italic;
 }
 .composer-input:disabled {
-  opacity: 0.5;
+  opacity: 0.7;
 }
 
 .ink-line {
@@ -203,6 +203,6 @@ function onKeydown(e: KeyboardEvent) {
   cursor: not-allowed;
   border-color: var(--line);
   background: var(--void-deep);
-  color: var(--whisper);
+  color: var(--prose-faint);
 }
 </style>

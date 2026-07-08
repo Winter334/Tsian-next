@@ -442,7 +442,7 @@ onUnmounted(() => {
   font-family: var(--font-serif);
   font-size: 0.88rem;
   line-height: 1.75;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   max-height: 180px;
   overflow-y: auto;
   scrollbar-width: thin;
@@ -471,7 +471,7 @@ onUnmounted(() => {
 .card-status {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   letter-spacing: 0.15em;
   text-transform: uppercase;
 }

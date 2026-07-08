@@ -556,9 +556,9 @@ function onEdit(content: string) {
   margin: 2px 0 24px;
   font-family: var(--font-mono);
   font-size: 0.68rem;
-  color: var(--whisper);
-  letter-spacing: 0.14em;
-  opacity: 0.72;
+  color: var(--prose-faint);
+  letter-spacing: 0.08em;
+  opacity: 0.88;
 }
 .history-loader.loading {
   color: var(--ember);
@@ -604,10 +604,10 @@ function onEdit(content: string) {
   background:
     radial-gradient(circle at 35% 20%, rgba(43, 4, 4, 0.72), transparent 70%),
     rgba(10, 5, 6, 0.82);
-  color: var(--whisper);
+  color: var(--prose-faint);
   font-family: var(--font-mono);
   font-size: 0.68rem;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   cursor: pointer;
   box-shadow: 0 0 18px rgba(43, 4, 4, 0.36), inset 0 0 10px rgba(181, 137, 61, 0.04);
   transition: color 0.25s, border-color 0.25s, box-shadow 0.25s, transform 0.25s;
@@ -656,19 +656,19 @@ function onEdit(content: string) {
 .empty-title {
   font-family: var(--font-serif);
   font-size: 1.2rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   margin: 0 0 8px;
 }
 .empty-hint {
   font-family: var(--font-mono);
   font-size: 0.8rem;
-  color: var(--whisper);
+  color: var(--prose-faint);
   margin: 0;
   animation: hint-pulse 2.5s ease-in-out infinite;
 }
 @keyframes hint-pulse {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+  0%, 100% { opacity: 0.7; }
+  50% { opacity: 0.95; }
 }
 
 /* 上下文注入阻断 banner：52em 居中、Composer 上方；复用 SyncToast sync-failed 血珀配色语言。 */
@@ -688,7 +688,7 @@ function onEdit(content: string) {
   -webkit-backdrop-filter: blur(8px);
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--prose-dim);
+  color: var(--prose-muted);
   letter-spacing: 0.06em;
 }
 .send-error-banner .mark {
