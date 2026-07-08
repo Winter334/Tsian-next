@@ -1068,3 +1068,34 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - 子任务 C：游玩设定步重构（依赖 B：导演已移除、timeline 已建）
+
+
+## Session 131: 归档状态栏父任务
+
+**Date**: 2026-07-08
+**Task**: 归档状态栏父任务
+**Branch**: `master`
+
+### Summary
+
+按用户确认归档已完成的游戏前端状态栏设计与实现父任务；未做代码变更。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
