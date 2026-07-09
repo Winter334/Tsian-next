@@ -1115,3 +1115,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 - **world-architect**：新增 `frontier推进` Skill + 3 script actions（read_frontier_window/commit_frontier_materials/commit_frontier_state）；AGENT.md 补充 ongoing 推进方法论
 - **前端**：useSyncAfterTurn 切换 commitMode 为 workspace-with-checkpoint；新增 useFrontierAdvance composable（边界检查 + 去重 + invokeAgent）；frontier-trigger-state.json 持久化；FrontierToast 三态提示；useRuntime 集成
 - **验证**：build:web / build:contracts / build play-frontend-dev 全部通过
+
+
+## Session 132: 美化角色状态显示
+
+**Date**: 2026-07-09
+**Task**: 美化角色状态显示
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+美化角色档案当前状态为暗色状态札记，新增状态详情弹窗；移除左侧状态栏状态分区；验证 play-frontend-dev 构建通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `de5ed90` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
