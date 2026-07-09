@@ -301,8 +301,9 @@ async function runInspectFrontend(
         )
       }
       const unsub = subscribeTimeline(sessionState)
+      let sendResult: MessageInteractionResult
       try {
-        await bridge.interaction.sendMessage({ content: input.send.message })
+        sendResult = await bridge.interaction.sendMessage({ content: input.send.message })
       } finally {
         unsub()
       }
@@ -322,7 +323,7 @@ async function runInspectFrontend(
           kind: "event",
           sessionId: sessionState.sessionId,
           event: "turn-completed",
-          payload: {},
+          payload: { turn: sendResult.turn },
         },
         "*",
       )
@@ -907,10 +908,11 @@ async function runEphemeralTurn(
     state.timeline.push({
       t: Date.now(),
       event: "turn-completed",
-      payload: {},
+      payload: { turn: nextTurn },
     })
 
-    return {}
+    return { turn: nextTurn }
+
   } finally {
     // 6. 删 ephemeral save(不 commit、不碰 active 指针).design §5 步骤7.
     await deleteLocalSave(save.id)

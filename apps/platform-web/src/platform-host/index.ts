@@ -1110,7 +1110,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         }
 
         emitTurnDebugReady(nextTurn)
-        return {}
+        return { turn: nextTurn }
       } catch (error) {
         workspaceTransaction?.discard()
         // Reject any pending ask_user requests when the turn fails.

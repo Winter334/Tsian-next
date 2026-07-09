@@ -757,6 +757,8 @@ export interface MessageInteractionRequest {
 }
 
 export interface MessageInteractionResult {
+  /** The formal player-turn number committed by the platform. */
+  turn: number
 }
 
 /** invokeAgent workspace commit strategy.
