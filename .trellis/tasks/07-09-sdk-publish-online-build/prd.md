@@ -43,6 +43,15 @@
 - [x] 两个包的 `npm pack --dry-run` 内容符合预期。
 - [x] 真实 npm publish 未被自动执行，需用户明确确认。
 
+## Completion Notes
+
+- 用户手动完成 npm organization / OTP / publish 流程后，已验证：
+  - `npm view @tsian/contracts@0.1.0 version dist.tarball` 返回 `0.1.0` 与 registry tarball。
+  - `npm view @tsian/play-bridge@0.1.0 version dependencies dist.tarball` 返回 `0.1.0`，并声明 `@tsian/contracts: 0.1.0`。
+  - `https://esm.sh/@tsian/play-bridge@0.1.0` 返回 HTTP 200，`x-esm-path` 指向 `play-bridge.mjs`。
+  - `https://esm.sh/@tsian/contracts@0.1.0` 返回 HTTP 200。
+  - `@tsian/play-bridge` 的 esm.sh 类型声明可解析到 `@tsian/contracts@0.1.0`。
+
 ## Out of Scope
 
 - 真实执行 `npm publish`。
