@@ -538,11 +538,25 @@ export async function importPlatformGameCardFrontendPackage(
     throw new Error("内置游戏卡不能直接替换前端，请先另存为本地副本。")
   }
   const result = await importGameCardFrontendPackage(cardId, input)
+  const frontendFiles = await listLocalGameCardFrontendFiles(cardId)
+  const hasSourceFiles = frontendFiles.some((file) => file.path.startsWith("frontend/src/"))
+  try {
+    if (hasSourceFiles) {
+      await buildFrontend(cardId)
+    }
+  } catch (error) {
+    emitGameCardsChanged()
+    if (await getActiveGameCardId() === cardId) {
+      emitActiveCardChanged()
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    throw new Error(`前端源码包已导入，但在线构建失败：${message}`)
+  }
   emitGameCardsChanged()
   if (await getActiveGameCardId() === cardId) {
     emitActiveCardChanged()
   }
-  return result
+  return await getLocalGameCard(cardId) ?? result
 }
 
 export async function exportPlatformGameCardFrontendPackage(cardId: string): Promise<Blob> {
