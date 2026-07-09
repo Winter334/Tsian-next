@@ -199,20 +199,20 @@ void props
 .sb-char-expanded::before {
   content: "";
   position: absolute;
-  left: 34px;
-  right: 34px;
-  top: 44px;
-  height: 148px;
-  border-radius: 50%;
+  left: 20px;
+  right: 20px;
+  top: 48px;
+  height: 170px;
+  border-radius: 38%;
   background: radial-gradient(circle, rgba(232, 169, 72, 0.10), transparent 68%);
   opacity: 0.82;
   pointer-events: none;
 }
 .hero-wrap {
   position: relative;
-  width: 126px;
+  width: min(188px, calc(100% - 32px));
   margin-top: 4px;
-  aspect-ratio: 3 / 4.15;
+  aspect-ratio: 1 / 1;
 }
 .hero-aura {
   position: absolute;
