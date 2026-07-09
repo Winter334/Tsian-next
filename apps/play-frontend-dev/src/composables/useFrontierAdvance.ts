@@ -51,6 +51,8 @@ const FRONTIER_ADVANCE_INPUT =
 // ── trigger-state 类型 ──
 interface TriggerState {
   version: number
+  /** 源章节已读完终态标记：true 时短路，不再读 runtime/frontier/manifest。 */
+  exhausted: boolean
   lastChecked: {
     turn: number
     plotOrder: number
@@ -71,7 +73,7 @@ interface TriggerState {
 }
 
 function defaultTriggerState(): TriggerState {
-  return { version: 1, lastChecked: null, lastCompleted: null, lastFailed: null }
+  return { version: 1, exhausted: false, lastChecked: null, lastCompleted: null, lastFailed: null }
 }
 
 // ── trigger-state 读写 ──
@@ -82,6 +84,7 @@ async function loadTriggerState(tsian: ReturnType<typeof getTsianClient>): Promi
     const parsed = JSON.parse(file.content) as Partial<TriggerState>
     return {
       version: typeof parsed.version === "number" ? parsed.version : 1,
+      exhausted: typeof parsed.exhausted === "boolean" ? parsed.exhausted : false,
       lastChecked: parsed.lastChecked ?? null,
       lastCompleted: parsed.lastCompleted ?? null,
       lastFailed: parsed.lastFailed ?? null,
@@ -123,21 +126,27 @@ function parseJsonFile(content: string | undefined): Record<string, unknown> | n
  *
  * 在 useRuntime refresh 完成后调用（setOnSynced 链式）。流程：
  * 1. 去重：isInFlight → return
- * 2. 读 runtime.plotOrder
- * 3. 读 frontier.json → timeline source 锚点 max order + sourceWindow.end
- * 4. 读 source manifest → totalChapters (chapterCount 字段)
- * 5. 去重：lastCompleted.key === plotOrder → return
- * 6. 去重：lastFailed.key === plotOrder 且非手动重试 → return
- * 7. 条件：plotOrder > lastSourceOrder AND sourceWindow.end < totalChapters
- * 8. 满足 → invokeAgent("world-architect", frontier-advance)
- * 9. onAgentInvocation completed/failed 驱动状态轴 + 持久化 trigger-state
+ * 2. 读 trigger-state；exhausted === true → return（源章节已读完短路）
+ * 3. 读 runtime.plotOrder
+ * 4. 读 frontier.json → timeline source 锚点 max order + sourceWindow.end
+ * 5. 读 source manifest → totalChapters (chapterCount 字段)
+ * 6. 去重：lastCompleted.key === plotOrder → return
+ * 7. 去重：lastFailed.key === plotOrder 且非手动重试 → return
+ * 8. 条件：plotOrder > lastSourceOrder AND sourceWindow.end < totalChapters
+ *    - sourceWindow.end >= totalChapters → 置 exhausted=true 持久化 → return
+ * 9. 满足 → invokeAgent("world-architect", frontier-advance)
+ * 10. onAgentInvocation completed/failed 驱动状态轴 + 持久化 trigger-state
  */
 export async function checkFrontierAdvance(): Promise<void> {
   if (isInFlight) return
 
   const tsian = getTsianClient()
 
-  // 1. 读 runtime.plotOrder
+  // 1. 读 trigger-state；exhausted 短路（源章节已读完，不再读 runtime/frontier/manifest）
+  const triggerState = await loadTriggerState(tsian)
+  if (triggerState.exhausted) return
+
+  // 2. 读 runtime.plotOrder
   const runtimeFile = await tsian.workspace.read(RUNTIME_PATH, "save-runtime")
   const runtime = parseJsonFile(runtimeFile?.content)
   if (!runtime) return
@@ -145,7 +154,7 @@ export async function checkFrontierAdvance(): Promise<void> {
   if (typeof plotOrderRaw !== "number" || !Number.isFinite(plotOrderRaw)) return
   const plotOrder = plotOrderRaw
 
-  // 2. 读 frontier.json
+  // 3. 读 frontier.json
   const frontierFile = await tsian.workspace.read(FRONTIER_PATH, "save-runtime")
   const frontier = parseJsonFile(frontierFile?.content)
   if (!frontier) return
@@ -169,15 +178,12 @@ export async function checkFrontierAdvance(): Promise<void> {
       : undefined
   const sourceWindowEndNum = typeof sourceWindowEnd === "number" ? sourceWindowEnd : 0
 
-  // 3. 读 source manifest totalChapters（字段名 chapterCount）
+  // 4. 读 source manifest totalChapters（字段名 chapterCount）
   const manifestFile = await tsian.workspace.read(MANIFEST_PATH, "save-runtime")
   const manifest = parseJsonFile(manifestFile?.content)
   if (!manifest) return
   const chapterCountRaw = manifest.chapterCount
   const totalChapters = typeof chapterCountRaw === "number" ? chapterCountRaw : 0
-
-  // 4. 读 trigger-state（去重）
-  const triggerState = await loadTriggerState(tsian)
 
   // 更新 lastChecked（调试信息，不阻塞流程）
   const checkedKey = plotOrder
@@ -208,7 +214,8 @@ export async function checkFrontierAdvance(): Promise<void> {
     return
   }
   if (totalChapters <= 0 || sourceWindowEndNum >= totalChapters) {
-    // 没有更多未读章节
+    // 没有更多未读章节 → 标记 exhausted 终态，后续回合短路
+    triggerState.exhausted = true
     await saveTriggerState(tsian, triggerState)
     return
   }
