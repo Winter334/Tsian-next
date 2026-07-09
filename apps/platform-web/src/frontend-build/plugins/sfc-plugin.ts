@@ -27,6 +27,7 @@ import type {
  */
 
 const VUE_NAMESPACE = "workspace"
+const SOURCE_PREFIX = "frontend/src/"
 
 export interface SfcPluginInput {
   sources: Map<string, string>
@@ -48,6 +49,13 @@ function loadCompiler(): Promise<typeof import("@vue/compiler-sfc")> {
     compilerPromise = import("@vue/compiler-sfc")
   }
   return compilerPromise
+}
+
+function normalizeWorkspaceSourcePath(path: string): string {
+  const normalized = path.replace(/^\/+/, "")
+  return normalized.startsWith(SOURCE_PREFIX)
+    ? normalized.slice(SOURCE_PREFIX.length)
+    : normalized
 }
 
 /** Compile a .vue SFC source into a JS module string. */
@@ -173,11 +181,12 @@ export function createSfcPlugin(input: SfcPluginInput): Plugin {
       build.onLoad(
         { filter: /\.vue$/, namespace: VUE_NAMESPACE },
         async (args) => {
-          const source = sources.get(args.path)
+          const sourcePath = normalizeWorkspaceSourcePath(args.path)
+          const source = sources.get(sourcePath)
           if (source === undefined) {
             return { errors: [{ text: `SFC 源码未找到: ${args.path}` }] }
           }
-          const compiled = await compileSfc(source, args.path)
+          const compiled = await compileSfc(source, sourcePath)
           if (compiled.errors.length > 0) {
             return { errors: compiled.errors.map((text) => ({ text })) }
           }
