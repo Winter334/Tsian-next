@@ -192,7 +192,7 @@ E. 回合后维护 + frontier 推进触发 ✅
 
 ## Acceptance Criteria
 
-- [ ] 父任务下的每个子任务都有明确流程步骤、涉及 Agent、交付边界与验收标准。
+- [x] 父任务下的每个子任务都有明确流程步骤、涉及 Agent、交付边界与验收标准。
 - [x] `mode.json` 抽象清理子任务完成并归档。
 - [x] Understanding 步 world-architect + director 重构完成（导演保留部分待后续清理）。
 - [x] entity schema 精简完成。
@@ -202,8 +202,8 @@ E. 回合后维护 + frontier 推进触发 ✅
 - [x] 正式玩家回合 storyteller + researcher 重构完成。
 - [x] 回合后维护 stage-manager 重构完成。
 - [x] 每个已处理 Agent 的 AGENT.md / SOUL.md / Skill / Tool / contextPaths 分层职责在父任务中可追踪。
-- [ ] 后续流程步骤不会要求一次性重构未进入该步骤的 Agent。
-- [ ] 必要构建 / 检查通过。
+- [x] 后续流程步骤不会要求一次性重构未进入该步骤的 Agent。
+- [x] 必要构建 / 检查通过。
 
 ## Out of Scope
 
