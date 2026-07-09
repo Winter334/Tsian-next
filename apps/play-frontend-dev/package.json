@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@tsian/contracts": "0.0.0",
-    "@tsian/play-bridge": "0.0.0",
+    "@tsian/contracts": "0.1.0",
+    "@tsian/play-bridge": "0.1.0",
     "@vue/compiler-sfc": "^3.5.39",
     "animejs": "^4.5.0",
     "gsap": "^3.15.0",

@@ -24,6 +24,8 @@ const ESBUILD_WASM_URL = "/esbuild.wasm"
 const SOURCE_PREFIX = "frontend/src/"
 const CACHE_NAME = "tsian-builder-cache"
 const WASM_CACHE_KEY = "esbuild-wasm"
+const PLAY_BRIDGE_IMPORT = "@tsian/play-bridge"
+const PLAY_BRIDGE_CDN_URL = "https://esm.sh/@tsian/play-bridge@0.1.0"
 
 const ENTRY_CANDIDATES = ["main.ts", "main.tsx", "main.jsx", "main.js", "index.ts", "index.tsx"]
 
@@ -134,15 +136,19 @@ interface FrameworkConfig {
   jsxImportSource?: string
 }
 
+function createBaseCoreImportMap(): Map<string, string> {
+  return new Map([[PLAY_BRIDGE_IMPORT, PLAY_BRIDGE_CDN_URL]])
+}
+
 function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
   switch (framework) {
     case "vue": {
-      const m = new Map<string, string>()
+      const m = createBaseCoreImportMap()
       m.set("vue", "https://esm.sh/vue@3")
       return { coreImportMap: m }
     }
     case "react": {
-      const m = new Map<string, string>()
+      const m = createBaseCoreImportMap()
       m.set("react", "https://esm.sh/react@18")
       m.set("react-dom", "https://esm.sh/react-dom@18")
       m.set("react-dom/client", "https://esm.sh/react-dom@18/client")
@@ -150,19 +156,19 @@ function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
       return { coreImportMap: m, jsx: "automatic", jsxImportSource: "react" }
     }
     case "preact": {
-      const m = new Map<string, string>()
+      const m = createBaseCoreImportMap()
       m.set("preact", "https://esm.sh/preact@10")
       m.set("preact/jsx-runtime", "https://esm.sh/preact@10/jsx-runtime")
       return { coreImportMap: m, jsx: "automatic", jsxImportSource: "preact" }
     }
     case "vanilla":
     default:
-      return { coreImportMap: new Map() }
+      return { coreImportMap: createBaseCoreImportMap() }
     case "svelte":
       // SFC compiler stub reserved (plugins/svelte-plugin.ts); NOT mounted
       // yet — svelte cards fall through to the pure-TS path until the second
       // SFC compiler is integrated. See prd.md D10 + svelte-plugin.ts TODO.
-      return { coreImportMap: new Map() }
+      return { coreImportMap: createBaseCoreImportMap() }
   }
 }
 
