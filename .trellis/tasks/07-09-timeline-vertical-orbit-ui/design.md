@@ -24,7 +24,7 @@
 - `parse-frontier.ts`
   - 修复 `isFrontierLike` 类型守卫，使 `timeline` 在 TypeScript 中正确收窄为 `unknown[]`。
 - `TimelineHeader.vue` / `TimelineLegend.vue`
-  - 保留文件但当前视图不再使用；后续若需要可删除或重用。
+  - 已删除。最终 UI 不需要独立标题/图例组件，信息内聚到命轨树卡片中。
 
 ## 3. 数据模型
 

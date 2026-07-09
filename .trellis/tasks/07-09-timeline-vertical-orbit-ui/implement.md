@@ -22,7 +22,7 @@
   - 修复 `isFrontierLike` 类型守卫，让 `timeline` 正确收窄为 `unknown[]`。
 
 - [x] `TimelineHeader.vue` / `TimelineLegend.vue`
-  - 当前时间线视图不再使用，文件保留。
+  - 已删除，避免保留未使用组件和旧 UI 语义。
 
 ## Validation
 
