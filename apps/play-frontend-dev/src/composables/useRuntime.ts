@@ -136,11 +136,18 @@ function registerTriggers(): void {
   })
 
   // sync 完成自动刷新：useSyncAfterTurn 已有 setOnSynced 钩子。
-  // 注意：setOnSynced 是幂等"只保留最后一个"的回调（见 useSyncAfterTurn.ts 注释）。
-  // 本任务注册的 refresh 回调是当前唯一消费者，无冲突；
-  // 若未来有其他消费者需改 setOnSynced 为支持多回调，避免后续踩坑。
-  setOnSynced(() => {
-    void refresh()
+  // 回调改为 async：先 await refresh()（确保 runtime 数据已刷新），
+  // 再链式触发 frontier 边界检查（useFrontierAdvance.checkFrontierAdvance）。
+  // 用动态 import 避免与 useFrontierAdvance 的模块初始化循环
+  // （useFrontierAdvance 顶层 static import useTsian，与 useRuntime 同构）。
+  // void 前缀：frontier 检查是 fire-and-forget，不阻塞 synced Toast 淡出。
+  setOnSynced(async () => {
+    await refresh()
+    // hook-guidelines.md 动态 import 模式：useFrontierAdvance 是 consumer composable，
+    // 其顶层 import useTsian（leaf）；useRuntime 也 import useTsian。两者无反向依赖，
+    // 但保持动态 import 一致性，避免未来引入循环时踩坑。
+    const { checkFrontierAdvance } = await import("./useFrontierAdvance")
+    void checkFrontierAdvance()
   })
 
   // runtimeStale 事件触发刷新（事件总线，D4/D5）

@@ -1,1 +1,6 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/guides/airp-data-capability-design-principles.md", "reason": "设计 stage-manager/world-architect 新职责、read_maintenance_context Tool、frontier推进 Skill actions 时遵循能力供给分级、字段消费者验证、skill 封装判据"}
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "重命名 状态栏维护→回合后维护 Skill、重写 stage-manager/world-architect AGENT.md 时避免残留概念痕迹"}
+{"file": ".trellis/spec/guides/data-fileification-principle.md", "reason": "新增 runtime.plotOrder 字段、frontier.json timeline 锚点新字段、frontier-trigger-state.json 时判断数据落点"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "useFrontierAdvance composable 的模块级状态、SyncPhase 状态机扩展"}
+{"file": ".trellis/spec/platform-web/frontend/hook-guidelines.md", "reason": "useFrontierAdvance 与 useSyncAfterTurn/useRuntime 的回调集成模式"}
+{"file": ".trellis/tasks/07-06-agent-roster-progressive-refactor/design.md", "reason": "父任务素材库模型设计、A' 方案、timeline 方案、子任务拆分依据——本任务的技术设计直接基于此文档"}

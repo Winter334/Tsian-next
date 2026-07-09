@@ -7,6 +7,7 @@ import RoundProcess from "./RoundProcess.vue"
 import TurnMeta from "./TurnMeta.vue"
 import StoryOptions from "./StoryOptions.vue"
 import SyncToast from "./SyncToast.vue"
+import FrontierToast from "./FrontierToast.vue"
 import Composer from "./Composer.vue"
 import CheckpointMark from "../checkpoints/CheckpointMark.vue"
 import RestoreDialog from "../checkpoints/RestoreDialog.vue"
@@ -14,6 +15,7 @@ import BurningReveal from "../BurningReveal.vue"
 import { useTsian, type StreamItem } from "../../composables/useTsian"
 import { useTurnState } from "../../composables/useTurnState"
 import { useRuntime } from "../../composables/useRuntime"
+import { useFrontierAdvance } from "../../composables/useFrontierAdvance"
 
 /**
  * StoryView — 对话流容器（核心游玩面）。
@@ -46,6 +48,13 @@ const {
   retrySyncAfterTurn,
   resetSyncPhase,
 } = useTsian()
+
+// useFrontierAdvance 模块级单例：frontier 推进触发状态（非阻塞，不锁 Composer）。
+const {
+  phase: frontierPhase,
+  retryFrontierAdvance,
+  resetFrontierAdvancePhase,
+} = useFrontierAdvance()
 
 // useRuntime 模块级单例：在 setup 层调用以正确注册刷新触发（watch/onTurnEnd 等
 // 需在组件 setup 期间注册）。refreshRuntime 供 checkpoint restore 后显式刷新（D4）。
@@ -220,6 +229,8 @@ async function onRestoreConfirm() {
   resetTurnTimer()
   // 重置同步状态：丢弃 syncing/synced/sync-failed 残留，避免重建后 Toast 错挂
   resetSyncPhase()
+  // 重置 frontier 推进状态：丢弃 advancing/succeeded/failed 残留，避免重建后 Toast 错挂
+  resetFrontierAdvancePhase()
   // restore 完成，对话流已重建在幕布下方——等燃烧烧穿后移除幕布
 }
 
@@ -457,6 +468,15 @@ function onEdit(content: string) {
       v-if="syncPhase !== 'idle'"
       :phase="syncPhase"
       @retry="retrySyncAfterTurn"
+    />
+
+    <!-- frontier 推进 Toast：素材边界拓展状态（非阻塞，不锁 Composer）。
+         frontierPhase 由 useFrontierAdvance 驱动；idle 时不渲染。
+         与 SyncToast 独立——可同时显示（维护成功后 frontier 触发）。 -->
+    <FrontierToast
+      v-if="frontierPhase !== 'idle'"
+      :phase="frontierPhase"
+      @retry="retryFrontierAdvance"
     />
 
     <!-- 上下文注入阻断 banner：出现在 Composer 上方（输入区上方），复用 sync-failed 血珀配色。
