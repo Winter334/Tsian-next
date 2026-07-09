@@ -429,6 +429,17 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   z-index: 0; /* 与 stage-play 同层，在燃烧幕布 z:1 之下 */
+  --setup-stage-top-offset: 20px;
+  --setup-stage-bottom-offset: 40px;
+  --setup-stage-content-justify: flex-start;
+}
+
+@media (min-width: 1024px) and (min-height: 820px) {
+  .setup-shell {
+    --setup-stage-top-offset: clamp(32px, 5vh, 64px);
+    --setup-stage-bottom-offset: clamp(32px, 5vh, 64px);
+    --setup-stage-content-justify: center;
+  }
 }
 
 .setup-body {
@@ -458,17 +469,21 @@ onMounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  padding-top: 20px;
-  padding-bottom: 40px;
+  padding-top: var(--setup-stage-top-offset);
+  padding-bottom: var(--setup-stage-bottom-offset);
 }
 
 .stage-content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: var(--setup-stage-content-justify);
 }
 /* 对话步骤需要满高 flex 布局，让消息列表滚动区 + Composer 正确撑开 */
 .stage-content--dialog {
   display: flex;
   flex-direction: column;
+  justify-content: flex-start;
   min-height: 0;
 }
 
