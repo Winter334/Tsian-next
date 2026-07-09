@@ -544,6 +544,8 @@ export function mountRemoteIframeFrontend(
   iframe.title = options.title ?? "Tsian remote game frontend"
   iframe.src = resolved.url
   iframe.sandbox.value = options.sandbox ?? REMOTE_IFRAME_SANDBOX
+  iframe.allowFullscreen = true
+  iframe.setAttribute("allow", "fullscreen")
   // 用容器相对单位(h-full)而非视口单位(h-dvh):游戏 iframe 必须填满桌面
   // 窗口内容区(= 窗口高 − 标题栏 − padding),否则会撑成整个浏览器视口高,
   // 被 .desktop-window 的 overflow:hidden 裁掉底部,且窗口越浮动裁得越多。

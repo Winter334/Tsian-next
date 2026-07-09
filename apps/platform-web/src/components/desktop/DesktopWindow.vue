@@ -8,6 +8,7 @@
       'desktop-window--minimized': window.minimized,
     }"
     :style="windowStyle"
+    :data-desktop-window-id="window.id"
     :aria-label="window.title"
     @pointerdown="$emit('focus', window.id)"
     @contextmenu.stop
