@@ -29,9 +29,10 @@ const items: Array<{ key: NavItem; label: string; icon: string }> = [
   { key: "story", label: "故事", icon: "M4 6h16M4 12h16M4 18h10" },
   // 角色：人形剪影（头+肩），区分于故事与设置。标准 Material person 图标路径。
   { key: "character", label: "角色", icon: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" },
-  // 时间线：主干线 + 分支节点（一条横线从左到右，中间分出一条支线向下再回到主线）。
-  { key: "timeline", label: "时间线", icon: "M3 12h4m4 0h6m-6 0v-5m0 5c0-3 0-5 2-5s2 2 2 5" },
-  { key: "settings", label: "设置", icon: "M12 8a4 4 0 100 8 4 4 0 000-8z" },
+  // 时间线：纵向命轨 + 三个节点标签，避免旧图标像抽象折线。
+  { key: "timeline", label: "时间线", icon: "M7 4v16M7 6m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M11 6h7M7 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M11 12h5M7 18m-2 0a2 2 0 1 0 4 0a2 2 0 1 0 -4 0M11 18h7" },
+  // 设置：三段调校滑杆，比齿轮更适合当前克制线性导航。
+  { key: "settings", label: "设置", icon: "M4 7h7M15 7h5M13 7a2 2 0 1 0 4 0 2 2 0 1 0 -4 0M4 12h3M11 12h9M7 12a2 2 0 1 0 4 0 2 2 0 1 0 -4 0M4 17h10M18 17h2M14 17a2 2 0 1 0 4 0 2 2 0 1 0 -4 0" },
 ]
 
 // GSAP width 动画（collapsed 变化时）
