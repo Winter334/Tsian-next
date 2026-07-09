@@ -20,10 +20,12 @@ const syncPhase = ref<SyncPhase>("idle")
 let activeInvocationId: string | null = null
 let syncedTimer: ReturnType<typeof setTimeout> | null = null
 let invocationSubscribed = false
-let onSyncedCallback: (() => void) | null = null
+let onSyncedCallback: (() => void | Promise<void>) | null = null
 
-/** 注册"同步完成"回调（状态栏数据源刷新等）。幂等，只保留最后一个。 */
-export function setOnSynced(cb: () => void): void {
+/** 注册"同步完成"回调（状态栏数据源刷新等）。幂等，只保留最后一个。
+ *  回调支持 async（返回 Promise）——handleSynced 会 await 它，确保 runtime 刷新
+ *  等下游依赖在 frontier 检查触发前完成。 */
+export function setOnSynced(cb: () => void | Promise<void>): void {
   onSyncedCallback = cb
 }
 
@@ -38,7 +40,7 @@ export async function triggerSyncAfterTurn(turn: number): Promise<void> {
   // sync-failed 需用户显式重试，不自动覆盖。
   if (syncPhase.value === "syncing" || syncPhase.value === "sync-failed") return
 
-  const input = `玩家回合 #${turn} 已完成，正文已落定。请维护本回合的 runtime/entity/scene/relationship/memory/status bar 变动。`
+  const input = `玩家回合 #${turn} 已完成，正文已落定。请维护本回合的 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。`
   await runSyncInvocation(tsian, input, `sync-turn-${turn}-${Date.now().toString(36)}`, "post-turn-maintenance")
 }
 
@@ -46,7 +48,7 @@ export async function triggerSyncAfterTurn(turn: number): Promise<void> {
 export async function retrySyncAfterTurn(): Promise<void> {
   if (syncPhase.value !== "sync-failed") return
   const tsian = getTsianClient()
-  const input = "请重新维护上一回合的 runtime/entity/scene/relationship/memory/status bar 变动。"
+  const input = "请重新维护上一回合的 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。"
   await runSyncInvocation(tsian, input, `sync-retry-${Date.now().toString(36)}`, "post-turn-maintenance-retry")
 }
 
@@ -82,13 +84,14 @@ async function runSyncInvocation(
     await tsian.invokeAgent(agentId, input, {
       invocationId,
       purpose,
-      commitMode: "workspace",
+      commitMode: "workspace-with-checkpoint",
+      checkpointReason: "post-turn-maintenance",
       persist: true,
     })
     // 成功 resolve：onAgentInvocation 的 completed 事件会驱动 synced，
     // 但若平台未发 completed 事件（仅 resolve），这里兜底切 synced。
     if (activeInvocationId === invocationId && syncPhase.value === "syncing") {
-      handleSynced()
+      void handleSynced()
     }
   } catch (err) {
     if (activeInvocationId === invocationId) {
@@ -105,19 +108,30 @@ function ensureInvocationSubscription(tsian: ReturnType<typeof getTsianClient>):
     if (!activeInvocationId) return
     if (event.invocationId !== activeInvocationId) return
     if (event.type === "completed") {
-      handleSynced()
+      void handleSynced()
     } else if (event.type === "failed") {
       handleSyncFailed()
     }
   })
 }
 
-function handleSynced(): void {
+/**
+ * 同步成功处理。async 以支持 onSynced 回调返回 Promise（如 useRuntime.refresh +
+ * 链式 frontier 检查）。1.5s 淡出定时器在回调完成后启动，确保下游依赖
+ * （runtime 刷新、frontier 触发）在 Toast 切到 idle 前跑完。
+ *
+ * Toast 立即切 synced（视觉反馈），回调异步跑完后启动淡出计时。
+ * 若回调异常只 log 不影响 Toast 状态轴。
+ */
+async function handleSynced(): Promise<void> {
   syncPhase.value = "synced"
   activeInvocationId = null
-  // 触发状态栏数据源刷新（待 07-04-left-status-bar-mvp 接入实际状态栏 composable）
+  // 触发状态栏数据源刷新 + 链式 frontier 检查（useRuntime 注册的 async 回调）
   try {
-    onSyncedCallback?.()
+    const result = onSyncedCallback?.()
+    if (result instanceof Promise) {
+      await result
+    }
   } catch (err) {
     console.error("[useSyncAfterTurn] onSynced callback threw:", err)
   }

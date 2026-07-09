@@ -12,7 +12,7 @@ import gsap from "gsap"
  * nav 项扩展：design §4.2 / D3 — 新增"角色"项，与状态栏头像点击共用同一视图切换
  * （navCurrent: "story" | "character" | "settings"）。
  */
-type NavItem = "story" | "character" | "settings"
+type NavItem = "story" | "character" | "timeline" | "settings"
 
 const props = defineProps<{
   current: NavItem
@@ -29,6 +29,8 @@ const items: Array<{ key: NavItem; label: string; icon: string }> = [
   { key: "story", label: "故事", icon: "M4 6h16M4 12h16M4 18h10" },
   // 角色：人形剪影（头+肩），区分于故事与设置。标准 Material person 图标路径。
   { key: "character", label: "角色", icon: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" },
+  // 时间线：主干线 + 分支节点（一条横线从左到右，中间分出一条支线向下再回到主线）。
+  { key: "timeline", label: "时间线", icon: "M3 12h4m4 0h6m-6 0v-5m0 5c0-3 0-5 2-5s2 2 2 5" },
   { key: "settings", label: "设置", icon: "M12 8a4 4 0 100 8 4 4 0 000-8z" },
 ]
 

@@ -1099,3 +1099,19 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+## 2026-07-09: 07-08 回合后维护 + frontier 推进触发 — 实现完成
+
+### Brainstorm 关键决策
+- 触发机制从"worldTime 字符串变动 + 锚点距窗口 3 章"演进为 `plotOrder > 最后 source 锚点 order`——用线性 order 坐标轴做精确数字比较
+- timeline 锚点分 `kind: "source" | "player"`：source 由 world-architect 建（含 order），player 由 stage-manager 追加（含 alignment/sourceRef）
+- worldTime（给玩家看的字符串）与 plotOrder（给机器判断的数字）分离
+- 源文无时间词时 world-architect 从剧情推断估算 time 设锚点
+- timeline 可视化渲染（分支图 UI）拆到后续子任务，本任务只做数据模型
+
+### 实现内容
+- **schema**：frontier.json timeline 锚点加 kind/order/turn/alignment/sourceRef；runtime.json 加 plotOrder；种子更新
+- **stage-manager**：contextPaths 加 frontier.json；AGENT.md 重写；`状态栏维护`→`回合后维护` Skill 重写；新增 `read_maintenance_context` Tool
+- **world-architect**：新增 `frontier推进` Skill + 3 script actions（read_frontier_window/commit_frontier_materials/commit_frontier_state）；AGENT.md 补充 ongoing 推进方法论
+- **前端**：useSyncAfterTurn 切换 commitMode 为 workspace-with-checkpoint；新增 useFrontierAdvance composable（边界检查 + 去重 + invokeAgent）；frontier-trigger-state.json 持久化；FrontierToast 三态提示；useRuntime 集成
+- **验证**：build:web / build:contracts / build play-frontend-dev 全部通过

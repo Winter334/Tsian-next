@@ -69,6 +69,7 @@ function isRuntimeLike(raw: unknown): raw is RuntimeLikeInput {
   if (typeof r.weather !== "string") return false
   if (!Array.isArray(r.activeSceneRefs)) return false
   if (typeof r.extensions !== "object" || r.extensions === null) return false
+  // plotOrder：07-08 新增字段，旧存档可能缺省 → 不强制校验，解析时兜底默认 0
   return true
 }
 
@@ -295,6 +296,8 @@ export function parseRuntime(raw: unknown): RuntimeData {
   const runtime: Runtime = {
     turn: raw.turn,
     worldTime: raw.worldTime,
+    // plotOrder：07-08 新增字段，旧存档可能缺省 → 兜底 0（表示尚未建立剧情进度坐标）
+    plotOrder: typeof r.plotOrder === "number" && Number.isFinite(r.plotOrder) ? (r.plotOrder as number) : 0,
     location: (r.location ?? null) as Runtime["location"],
     weather: raw.weather,
     activeSceneRefs: raw.activeSceneRefs as Runtime["activeSceneRefs"],
