@@ -19,7 +19,13 @@ npm run dev:server
 
 默认监听 `:8080`。
 
+后端启动时会自动加载 `.env` 文件，适合本地 Discord OAuth / SQLite 路径配置。真实进程环境变量优先，不会被 `.env` 文件覆盖。
+
 ## 关键环境变量
+
+本地可复制 `apps/platform-server/.env.example` 为 `apps/platform-server/.env.local`，填入 Discord OAuth 凭据。`.env.local` 已被根 `.gitignore` 忽略，不要提交真实 secret。
+
+加载顺序为：项目根 `.env` → 项目根 `.env.local` → `apps/platform-server/.env` → `apps/platform-server/.env.local` → 当前工作目录 `.env` → 当前工作目录 `.env.local`。后加载的文件会覆盖先加载的文件，但不会覆盖已经存在的进程环境变量。
 
 | 变量 | 用途 | 默认 |
 |---|---|---|

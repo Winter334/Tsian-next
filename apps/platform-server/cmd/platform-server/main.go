@@ -12,6 +12,10 @@ import (
 )
 
 func main() {
+	if err := config.LoadDefaultEnvFiles(); err != nil {
+		log.Fatal(err)
+	}
+
 	cfg := config.Load()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
