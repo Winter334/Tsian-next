@@ -1248,3 +1248,47 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 136: 回合后维护 + frontier 推进触发（07-08）
+
+**Date**: 2026-07-10
+**Task**: 07-08-post-turn-maintenance-frontier-trigger（父任务 07-06 子任务 E）
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+完成回合后维护与 frontier 推进触发的全部实现：建立线性 order 坐标轴（source/player 锚点 + runtime.plotOrder），改造 stage-manager 维护 plotOrder 与 player 锚点，新增 world-architect frontier推进 Skill，前端 useFrontierAdvance composable 在维护完成后检查 plotOrder > 最后 source 锚点 order 边界触发推进。代码于 2026-07-09 落地，本次 session 补记任务文档（implement.md 复选框 + journal）。
+
+### Main Changes
+
+- **schema 变更 + 种子**（workspace-templates.ts）：frontier.json timeline 锚点新增 `kind`/`order`/`turn`/`alignment`/`sourceRef` 字段；runtime.json 新增 `plotOrder`；种子 timeline 首锚点改为 `{kind:"source",order:1,...}`，runtime 种子加 `plotOrder:1`。schema guide + reference 文档同步更新。
+- **stage-manager 改造**：contextPaths 加入 `save/playthrough/frontier.json`；AGENT.md 重写为 plotOrder 映射 + player 锚点追加 + scene 生命周期；`状态栏维护` Skill 重命名为 `回合后维护` 并重写；新增 Agent-local Tool `read_maintenance_context`（聚合 turn 正文/runtime/scene/entity/relationship/timeline，只读不写）。
+- **world-architect frontier推进 Skill**：新增 `frontier推进` Skill（read_frontier_window → 识别剧情节点建 source 锚点 + 抽最小素材增量 → commit_frontier_materials → commit_frontier_state），3 个 script action，order 严格递增赋值；AGENT.md 补 ongoing 推进方法论（不写 runtime/player 锚点/scene）。
+- **useSyncAfterTurn**：commitMode 从 `"workspace"` 切换为 `"workspace-with-checkpoint"` + `checkpointReason:"post-turn-maintenance"`；invoke input 提及 plotOrder/timeline。
+- **useFrontierAdvance composable**（新文件）：checkFrontierAdvance/retryFrontierAdvance + phase 状态机 + onAgentInvocation 事件订阅 + frontier-trigger-state.json 去重；FrontierToast.vue 三态（正在拓展素材边界…/已拓展素材边界/素材边界拓展失败+重试）；useRuntime refresh 后链式调用 checkFrontierAdvance。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d874b11` | feat(play-ui): 回合后维护 + frontier 推进触发 |
+| `3189a29` | feat(play-ui): frontier 推进窗口语义化与读完短路 |
+| `d4db46c` | feat(play-ui): 时间线可视化渲染 + 修复开局路径新字段丢失 |
+| `8fc74f9` | fix(play-runtime): use committed turn for maintenance |
+
+### Testing
+
+- [OK] `npm run build:contracts` 通过
+- [OK] `npm run build:web` 通过（16.89s）
+- [OK] `npm run build --workspace play-frontend-dev` 通过（6.68s）
+- [PENDING] 浏览器手动验证：开局种子字段 / 维护后 plotOrder / frontier 触发 + Toast / 推进期间 Composer 不锁——待用户手测
+
+### Status
+
+[OK] **代码完成，文档补记完毕；浏览器手测待用户执行**
+
+### Next Steps
+
+- 用户浏览器手测 6.4 四项验证点
+- 手测通过后归档 07-08，父任务 07-06 五个子任务全部完成可评估归档
