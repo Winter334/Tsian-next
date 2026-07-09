@@ -10,6 +10,7 @@ import StatusBar from "./components/StatusBar.vue"
 import StoryView from "./components/story/StoryView.vue"
 import SetupWizard from "./components/setup/SetupWizard.vue"
 import CharacterView from "./components/character/CharacterView.vue"
+import TimelineView from "./components/timeline/TimelineView.vue"
 import { useTsian } from "./composables/useTsian"
 import { useStatusBarCollapsed } from "./composables/useStatusBarCollapsed"
 import { SETUP_SUMMARY_PATH, isSetupSummary, safeJsonParse } from "./lib/source"
@@ -35,7 +36,7 @@ const navCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === "true")
 // - story：剧情流（StoryView，v-show 保留滚动 + stream 状态）。
 // - character：角色卡全屏视图（CharacterView，v-if 卸载/重挂）。
 // - settings：设置视图占位。
-const navCurrent = ref<"story" | "character" | "settings">("story")
+const navCurrent = ref<"story" | "character" | "timeline" | "settings">("story")
 
 watch(navCollapsed, (v) => {
   localStorage.setItem(NAV_COLLAPSED_KEY, String(v))
@@ -141,7 +142,7 @@ function onOpenCharacter() {
   navCurrent.value = "character"
 }
 
-function onNavigate(item: "story" | "character" | "settings") {
+function onNavigate(item: "story" | "character" | "timeline" | "settings") {
   navCurrent.value = item
 }
 </script>
@@ -195,6 +196,10 @@ function onNavigate(item: "story" | "character" | "settings") {
              回来时重新读 runtime/scene。主视图按侧栏展开状态平滑让位。 -->
         <Transition name="view-soft">
           <CharacterView v-if="navCurrent === 'character'" class="view-layer" />
+        </Transition>
+        <!-- 时间线视图：v-if 卸载/重挂——切走时释放 frontier 读取，回来时重新读 frontier.json。 -->
+        <Transition name="view-soft">
+          <TimelineView v-if="navCurrent === 'timeline'" class="view-layer timeline-view" />
         </Transition>
         <Transition name="view-soft">
           <div v-if="navCurrent === 'settings'" class="view-stage view-layer">
@@ -327,11 +332,13 @@ function onNavigate(item: "story" | "character" | "settings") {
 <style>
 .app-root:has(.status-bar.collapsed) .story-view,
 .app-root:has(.status-bar.collapsed) .character-view,
+.app-root:has(.status-bar.collapsed) .timeline-view,
 .app-root:has(.status-bar.collapsed) .view-stage {
   padding-left: var(--play-left-rail);
 }
 .app-root:has(.app-nav.collapsed) .story-view,
 .app-root:has(.app-nav.collapsed) .character-view,
+.app-root:has(.app-nav.collapsed) .timeline-view,
 .app-root:has(.app-nav.collapsed) .view-stage {
   padding-right: var(--play-right-rail);
 }

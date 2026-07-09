@@ -108,6 +108,8 @@ export interface Runtime {
   turn: number
   /** 当前世界/剧情时间；空字符串表示未知或尚未建立。 */
   worldTime: string
+  /** 剧情进度坐标（数字，单调递增）；表示玩家当前走到哪个 source order。前端用于判断 frontier 推进触发。 */
+  plotOrder: number
   /** 当前地点指针；null 表示未知或不适用。 */
   location: { ref: string; name: string } | null
   /** 当前天气字符串；空字符串表示未知或不适用。 */
