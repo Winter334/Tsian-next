@@ -66,6 +66,7 @@ onMounted(() => {
 .timeline-view {
   /* view-stage 已提供 padding（顶 header + 左右栏让位）；
      这里覆盖 align/justify 让内容靠上 + 居中。 */
+  box-sizing: border-box;
   align-items: center;
   justify-content: flex-start;
   overflow-y: auto;
@@ -75,6 +76,9 @@ onMounted(() => {
   position: relative;
   width: 100%;
   max-width: 1040px;
+  min-height: 100%;
+  box-sizing: border-box;
+  flex: 1 0 auto;
   padding: 12px 28px 28px;
   display: flex;
   flex-direction: column;

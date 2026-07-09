@@ -8,6 +8,7 @@
   - 不再渲染 `TimelineHeader` / `TimelineLegend`，减少上下空白与说明噪音。
   - 每次挂载主动调用 `refreshFrontier()`，避免显示旧 frontier 缓存。
   - 作为滚动 root 传给 `TimelineGraph`。
+  - 最终全屏微调：滚动容器参与满高布局，避免短时间线在大屏中垂直挤成一团。
 
 - [x] `TimelineGraph.vue`
   - 改为正常文档流 + CSS grid 的命轨树。
@@ -17,6 +18,7 @@
   - 当前 source 用节点呼吸和卡片光效表示，不写额外“当前”文本。
   - alignment 的 row class 与 dot class 分离，避免背景样式污染整行产生光带。
   - 支持 source-only 紧凑布局，避免没有 player 时预留大块分支空白。
+  - 最终全屏微调：tree/body 填满可用高度，短列表用 `space-evenly` 纵向分布，让命轨向上下两端延展。
 
 - [x] `parse-frontier.ts`
   - 修复 `isFrontierLike` 类型守卫，让 `timeline` 正确收窄为 `unknown[]`。

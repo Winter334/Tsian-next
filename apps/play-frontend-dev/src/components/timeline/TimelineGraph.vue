@@ -681,7 +681,10 @@ function nodeAlignmentClass(item: RenderItem): string {
 .timeline-tree {
   position: relative;
   width: 100%;
+  min-height: 100%;
   padding: 0 0 12px;
+  display: flex;
+  flex-direction: column;
 }
 
 .tree-body {
@@ -695,8 +698,11 @@ function nodeAlignmentClass(item: RenderItem): string {
 
   position: relative;
   display: flex;
+  flex: 1 0 auto;
   flex-direction: column;
+  justify-content: space-evenly;
   gap: 0;
+  min-height: 100%;
   padding: 2px 0 12px;
 }
 
