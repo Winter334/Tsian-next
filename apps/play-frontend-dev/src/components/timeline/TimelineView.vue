@@ -3,10 +3,10 @@
  * TimelineView — 时间线可视化视图根（由 App.vue 在 navCurrent==='timeline' 时挂载）。
  *
  * 消费 useFrontier() 的 frontierData + useRuntime() 的 runtime.plotOrder，
- * 组合 TimelineHeader + TimelineGraph + TimelineLegend 渲染分支图。
+ * 组合 TimelineHeader + TimelineGraph + TimelineLegend 渲染纵向命轨树。
  *
  * 布局：view-stage 同款 padding（顶 header + 左右栏让位），内部居中 max-width
- * ~900px 可垂直滚动。暗色玻璃底容器，匹配"烛火书卷·重铸"美学。
+ * ~900px 可垂直滚动。暗色背景上直接承载 tree，不再额外插入会影响文档流的装饰层。
  *
  * 空态/降级：
  * - frontier 读取中 → "读取时间线…"
@@ -14,14 +14,12 @@
  * - frontier 为 null → "尚未建立时间线"
  * - 只有开局一个锚点 → 正常渲染（主干上一个点）
  */
-import { computed } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { useFrontier } from "../../composables/useFrontier"
 import { useRuntime } from "../../composables/useRuntime"
-import TimelineHeader from "./TimelineHeader.vue"
 import TimelineGraph from "./TimelineGraph.vue"
-import TimelineLegend from "./TimelineLegend.vue"
 
-const { frontierData } = useFrontier()
+const { frontierData, refresh: refreshFrontier } = useFrontier()
 const { runtimeData } = useRuntime()
 
 const frontier = computed(() => frontierData.value.frontier)
@@ -32,10 +30,16 @@ const plotOrder = computed(() => runtimeData.value.runtime?.plotOrder ?? 0)
 const isLoading = computed(() => frontierStatus.value === "loading" || frontierStatus.value === "idle")
 const hasError = computed(() => frontierStatus.value === "error")
 const hasFrontier = computed(() => frontier.value !== null && frontier.value.timeline.length > 0)
+const scrollRootRef = ref<HTMLElement | null>(null)
+
+onMounted(() => {
+  // 时间线视图 v-if 挂载；每次进入主动刷新，避免看到 useFrontier 模块级旧缓存。
+  void refreshFrontier()
+})
 </script>
 
 <template>
-  <div class="timeline-view view-stage">
+  <div class="timeline-view view-stage" ref="scrollRootRef">
     <div class="timeline-container">
       <!-- 读取中 -->
       <div v-if="isLoading" class="timeline-placeholder">
@@ -50,11 +54,9 @@ const hasFrontier = computed(() => frontier.value !== null && frontier.value.tim
         <p v-if="frontierError" class="placeholder-sub-sm">{{ frontierError }}</p>
       </div>
 
-      <!-- 正常渲染 -->
+      <!-- 正常渲染：纵向命轨树 -->
       <template v-else-if="frontier">
-        <TimelineHeader :frontier="frontier" :plot-order="plotOrder" />
-        <TimelineGraph :frontier="frontier" :plot-order="plotOrder" />
-        <TimelineLegend />
+        <TimelineGraph :frontier="frontier" :plot-order="plotOrder" :scroll-root="scrollRootRef" />
       </template>
     </div>
   </div>
@@ -70,12 +72,13 @@ const hasFrontier = computed(() => frontier.value !== null && frontier.value.tim
 }
 
 .timeline-container {
+  position: relative;
   width: 100%;
-  max-width: 900px;
-  padding: 32px 28px 48px;
+  max-width: 1040px;
+  padding: 12px 28px 28px;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  gap: 12px;
 }
 
 /* ── 占位态 ── */

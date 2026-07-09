@@ -74,7 +74,7 @@ function parseAnchor(raw: unknown): TimelineAnchor | null {
 /**
  * 校验 frontier.json 是否为合法对象（含 timeline 数组）。
  */
-function isFrontierLike(raw: unknown): raw is Record<string, unknown> {
+function isFrontierLike(raw: unknown): raw is Record<string, unknown> & { timeline: unknown[] } {
   if (typeof raw !== "object" || raw === null) return false
   const r = raw as Record<string, unknown>
   if (!Array.isArray(r.timeline)) return false
@@ -93,7 +93,8 @@ export function parseFrontier(raw: unknown): FrontierData {
     return loadFailedData("load-failed")
   }
 
-  const r = raw as Record<string, unknown>
+  // raw 已被 isFrontierLike 窄化为 Record<string, unknown> & { timeline: unknown[] }
+  const r = raw
 
   // 解析 timeline 锚点（跳过无效项）
   const timeline: TimelineAnchor[] = []

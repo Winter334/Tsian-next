@@ -1,10 +1,13 @@
 <script setup lang="ts">
 /**
- * TimelineHeader — 时间线视图标题区。
+ * TimelineHeader — 时间线视图标题区（叙事状态版）。
  *
- * 展示 section title row（"剧情时间线" + 渐变线）+ 事实行
- * （已读窗口、剧情进度、锚点总数）。纯展示。
+ * 展示 section title row（"剧情时间线" + 渐变线）+ 叙事状态行
+ * （当前节点名 + 弱化 meta：章节/原著节点数/玩家事件数）。纯展示。
+ *
+ * 不再默认暴露工程字段 order（见 design.md §8.1）。
  */
+import { computed } from "vue"
 import type { Frontier, SourceAnchor, PlayerAnchor } from "../../lib/frontier-types"
 
 const props = defineProps<{
@@ -12,45 +15,55 @@ const props = defineProps<{
   plotOrder: number
 }>()
 
-function countAnchors(timeline: Frontier["timeline"]): { source: number; player: number } {
-  let source = 0
-  let player = 0
-  for (const a of timeline) {
-    if (a.kind === "source") source++
-    else player++
-  }
-  return { source, player }
-}
+/** source 锚点按 order 升序。 */
+const sources = computed<SourceAnchor[]>(() => {
+  return props.frontier.timeline
+    .filter((a): a is SourceAnchor => a.kind === "source")
+    .sort((a, b) => a.order - b.order)
+})
 
-function windowLabel(sw: Frontier["sourceWindow"]): string {
-  if (sw.start === null || sw.end === null) return "未建立"
-  return `第 ${sw.start} – ${sw.end} 章`
-}
+/** player 锚点数量。 */
+const playerCount = computed<number>(() => {
+  let n = 0
+  for (const a of props.frontier.timeline) {
+    if (a.kind === "player") n += 1
+  }
+  return n
+})
+
+/**
+ * 当前剧情节点：优先精确匹配 plotOrder，否则取 order <= plotOrder 的最后一个，
+ * 最后 fallback 第一个 source（见 design.md §3.2 / §4.3）。
+ */
+const currentSource = computed<SourceAnchor | null>(() => {
+  const list = sources.value
+  if (list.length === 0) return null
+  const exact = list.find((s) => s.order === props.plotOrder)
+  if (exact) return exact
+  const preceding = [...list].reverse().find((s) => s.order <= props.plotOrder)
+  if (preceding) return preceding
+  return list[0]!
+})
+
+/** 当前节点用于 PlayerAnchor 类型守卫的占位（消除未使用导入告警）。 */
+void (undefined as unknown as PlayerAnchor)
 </script>
 
 <template>
   <header class="timeline-header">
     <div class="section-title-row">
       <h3 class="section-title">剧情时间线</h3>
-      <span class="section-line" />
     </div>
-    <div class="timeline-facts">
-      <div class="fact">
-        <span class="fact-label">已读窗口</span>
-        <span class="fact-value">{{ windowLabel(frontier.sourceWindow) }}</span>
-      </div>
-      <div class="fact">
-        <span class="fact-label">剧情进度</span>
-        <span class="fact-value">order {{ plotOrder }}</span>
-      </div>
-      <div class="fact">
-        <span class="fact-label">剧情节点</span>
-        <span class="fact-value">{{ countAnchors(frontier.timeline).source }}</span>
-      </div>
-      <div class="fact">
-        <span class="fact-label">玩家事件</span>
-        <span class="fact-value">{{ countAnchors(frontier.timeline).player }}</span>
-      </div>
+    <div class="timeline-status" v-if="currentSource">
+      <span class="status-current">当前</span>
+      <span class="status-label">{{ currentSource.label }}</span>
+    </div>
+    <div class="timeline-meta" v-if="currentSource">
+      <span>第 {{ currentSource.chapter }} 章</span>
+      <span class="meta-dot" aria-hidden="true">·</span>
+      <span>原著节点 {{ sources.length }}</span>
+      <span class="meta-dot" aria-hidden="true">·</span>
+      <span>玩家事件 {{ playerCount }}</span>
     </div>
   </header>
 </template>
@@ -64,7 +77,7 @@ function windowLabel(sw: Frontier["sourceWindow"]): string {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 16px;
+  margin-bottom: 14px;
 }
 
 .section-title {
@@ -78,36 +91,39 @@ function windowLabel(sw: Frontier["sourceWindow"]): string {
   white-space: nowrap;
 }
 
-.section-line {
-  flex: 1;
-  height: 1px;
-  background: linear-gradient(90deg, rgba(232, 169, 72, 0.42), transparent);
-}
-
-.timeline-facts {
+.timeline-status {
   display: flex;
-  flex-wrap: wrap;
-  gap: 24px;
-  margin-bottom: 8px;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 4px;
 }
 
-.fact {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.fact-label {
+.status-current {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: 0.72rem;
   color: var(--prose-faint);
   letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
-.fact-value {
+.status-label {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--ember-bright);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 8px rgba(232, 169, 72, 0.1);
+}
+
+.timeline-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-family: var(--font-mono);
-  font-size: 0.85rem;
-  color: var(--prose-dim);
+  font-size: 0.72rem;
+  color: var(--prose-faint);
+  letter-spacing: 0.04em;
+}
+
+.meta-dot {
+  color: var(--whisper);
 }
 </style>
