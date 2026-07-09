@@ -1148,3 +1148,36 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 ### Next Steps
 
 - None - task complete
+
+
+## Session 133: frontier 推进窗口语义化与读完短路
+
+**Date**: 2026-07-09
+**Task**: frontier 推进窗口语义化与读完短路
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+将 frontier 推进从固定10章改为语义节点驱动（至少1-2个故事节点 + 15章硬上限），并为源章节读完状态加 exhausted 终态短路。改了 workspace-templates.ts（windowSize 10→15 + Skill 文案语义化 + 超读提取约束）和 useFrontierAdvance.ts（trigger-state 加 exhausted 字段 + 短路逻辑）。讨论中确认了未完结小说已由现有兜底覆盖、读完不会白调 API 只白跑文件 IO、连载追加更新记为 follow-up。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3189a29` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

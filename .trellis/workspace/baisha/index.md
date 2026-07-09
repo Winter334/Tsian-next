@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 132
+- **Total Sessions**: 133
 - **Last Active**: 2026-07-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~1150 | Active |
+| `journal-3.md` | ~1183 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 133 | 2026-07-09 | frontier 推进窗口语义化与读完短路 | `3189a29` | `feat/timeline-orbit-svg-polish` |
 | 132 | 2026-07-09 | 美化角色状态显示 | `de5ed90` | `feat/timeline-orbit-svg-polish` |
 | 131 | 2026-07-08 | 归档状态栏父任务 | - | `master` |
 | 130 | 2026-07-06 | roll_dice 对抗裁定扩展 | `a4c6462` | `feat/play-frontend-status-bar` |
