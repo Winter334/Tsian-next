@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 134
+- **Total Sessions**: 135
 - **Last Active**: 2026-07-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~1216 | Active |
+| `journal-3.md` | ~1250 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 135 | 2026-07-09 | SDK publish preparation | `6701d3d`, `a22f951` | `feat/timeline-orbit-svg-polish` |
 | 134 | 2026-07-09 | Timeline fullscreen orbit stretch | `0100be6` | `feat/timeline-orbit-svg-polish` |
 | 133 | 2026-07-09 | frontier 推进窗口语义化与读完短路 | `3189a29` | `feat/timeline-orbit-svg-polish` |
 | 132 | 2026-07-09 | 美化角色状态显示 | `de5ed90` | `feat/timeline-orbit-svg-polish` |

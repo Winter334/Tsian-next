@@ -1214,3 +1214,37 @@ Finished timeline vertical orbit polish by making the timeline view and graph fi
 ### Next Steps
 
 - None - task complete
+
+
+## Session 135: SDK publish preparation
+
+**Date**: 2026-07-09
+**Task**: SDK publish preparation
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing, pinned platform online builds to the verified play-bridge CDN version, and verified npm registry plus esm.sh availability after publish.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6701d3d` | (see git log) |
+| `a22f951` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
