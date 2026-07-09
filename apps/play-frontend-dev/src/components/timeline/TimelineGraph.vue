@@ -361,12 +361,7 @@ function buildTrunkPath(points: Point[], height: number): string {
   if (points.length === 0) return ""
   const sorted = [...points].sort((a, b) => a.y - b.y)
   const x = sorted.reduce((sum, p) => sum + p.x, 0) / sorted.length
-  const firstY = sorted[0]!.y
-  const lastY = sorted[sorted.length - 1]!.y
-  const pad = points.length === 1 ? 46 : 34
-  const start = { x, y: Math.max(0, firstY - pad) }
-  const end = { x, y: Math.min(height, lastY + pad) }
-  return `${moveTo(start)} ${lineTo(end)}`
+  return `${moveTo({ x, y: 0 })} ${lineTo({ x, y: height })}`
 }
 
 function railPointBefore(node: Point, junction: Point): Point {
@@ -703,7 +698,7 @@ function nodeAlignmentClass(item: RenderItem): string {
   justify-content: space-evenly;
   gap: 0;
   min-height: 100%;
-  padding: 2px 0 12px;
+  padding: 36px 0 44px;
 }
 
 .tree-body.source-only {
