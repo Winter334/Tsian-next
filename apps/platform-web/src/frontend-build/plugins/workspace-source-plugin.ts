@@ -1,5 +1,10 @@
 import type { Loader, Plugin } from "esbuild-wasm"
 import {
+  toImportMetaGlobMessage,
+  transformImportMetaGlob,
+  type GlobTransformLoader,
+} from "../glob-transform"
+import {
   compileStylePreprocessor,
   toStylePreprocessorMessage,
   type StylePreprocessorLanguage,
@@ -212,6 +217,12 @@ function loaderFor(path: string, query: string): Loader {
   return "text"
 }
 
+function globTransformLoader(loader: Loader): GlobTransformLoader | undefined {
+  return loader === "js" || loader === "jsx" || loader === "ts" || loader === "tsx"
+    ? loader
+    : undefined
+}
+
 interface SourceResolution {
   loaded?: LoadedSource
   error?: string
@@ -375,9 +386,29 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
                 }
               }
             }
+            const loader = loaderFor(loaded.path, loaded.query)
+            const transformLoader = loaded.query ? undefined : globTransformLoader(loader)
+            if (transformLoader && typeof loaded.contents === "string") {
+              try {
+                const transformed = await transformImportMetaGlob({
+                  code: loaded.contents,
+                  importer: loaded.path,
+                  loader: transformLoader,
+                  sources,
+                })
+                return {
+                  contents: transformed.code,
+                  loader,
+                }
+              } catch (error) {
+                return {
+                  errors: [toImportMetaGlobMessage(error, { importer: loaded.path })],
+                }
+              }
+            }
             return {
               contents: loaded.contents,
-              loader: loaderFor(loaded.path, loaded.query),
+              loader,
             }
           }
           return {

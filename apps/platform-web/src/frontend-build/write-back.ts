@@ -23,6 +23,8 @@ export interface WriteBackInput {
   cardId: string
   outputFiles: OutputFile[]
   metafile: Metafile
+  /** Exact stdin sourcefile identity used by the root build entry. */
+  entryPoint: string
   /** bare import name → esm.sh URL (core framework entries + collected extras). */
   importMap: Map<string, string>
 }
@@ -36,19 +38,23 @@ function normalizeOutputPath(path: string): string {
   return path.replace(/^\/+/, "")
 }
 
-/** Find the entry JS output via metafile (the output with `entryPoint` set). */
-function findEntryOutputPath(metafile: Metafile): string {
-  for (const [outputPath, output] of Object.entries(metafile.outputs)) {
-    if (output.entryPoint) {
-      return normalizeOutputPath(outputPath)
-    }
+/** Find the one JS output whose metafile identity matches the root stdin sourcefile. */
+function findEntryOutputPath(metafile: Metafile, entryPoint: string): string {
+  const matches = Object.entries(metafile.outputs)
+    .filter(([outputPath, output]) => output.entryPoint === entryPoint && /\.m?js$/i.test(outputPath))
+    .map(([outputPath]) => normalizeOutputPath(outputPath))
+  if (matches.length === 1) return matches[0]
+  if (matches.length === 0) {
+    throw new Error(`构建产物缺少根入口文件（metafile entryPoint=${JSON.stringify(entryPoint)}）`)
   }
-  throw new Error("构建产物缺少入口文件（metafile 无 entryPoint 输出）")
+  throw new Error(
+    `构建产物存在多个根入口文件（metafile entryPoint=${JSON.stringify(entryPoint)}）: ${matches.join(", ")}`,
+  )
 }
 
 export async function writeBackDist(input: WriteBackInput): Promise<WriteBackResult> {
-  const { cardId, outputFiles, metafile, importMap } = input
-  const entryJsRel = findEntryOutputPath(metafile)
+  const { cardId, outputFiles, metafile, entryPoint, importMap } = input
+  const entryJsRel = findEntryOutputPath(metafile, entryPoint)
 
   // 1. Write all non-html output files to frontend/dist/.
   // esbuild outputs paths like `assets/stdin.js` (relative to outdir) but may

@@ -3,6 +3,7 @@ import type { FrontendFramework } from "@tsian/contracts"
 import { getLocalGameCard, listLocalGameCardFrontendFiles } from "../storage"
 import { isTextFilePath } from "@/lib/media-type"
 import { blobToWorkspaceFile } from "@/lib/workspace-blob"
+import { transformImportMetaGlob } from "./glob-transform"
 import { cdnExternalPlugin } from "./plugins/cdn-external-plugin"
 import { createSfcPlugin } from "./plugins/sfc-plugin"
 import { workspaceSourcePlugin, type WorkspaceSourceContent } from "./plugins/workspace-source-plugin"
@@ -195,7 +196,7 @@ interface LoadedSources {
   entryContent: string
 }
 
-function entryLoaderFor(path: string) {
+function entryLoaderFor(path: string): "js" | "jsx" | "ts" | "tsx" {
   const lowerPath = path.toLowerCase()
   if (lowerPath.endsWith(".tsx")) return "tsx"
   if (lowerPath.endsWith(".jsx")) return "jsx"
@@ -277,6 +278,13 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
   const framework: FrontendFramework = frontend.framework ?? "vanilla"
   const config = frameworkConfig(framework)
   const { sources, entryPath, entryContent } = await loadSources(cardId)
+  const entryLoader = entryLoaderFor(entryPath)
+  const transformedEntry = await transformImportMetaGlob({
+    code: entryContent,
+    importer: entryPath,
+    loader: entryLoader,
+    sources,
+  })
 
   const cdn = cdnExternalPlugin({ coreImports: config.coreImportMap })
 
@@ -291,10 +299,10 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
 
   const result = await esbuild.build({
     stdin: {
-      contents: entryContent,
+      contents: transformedEntry.code,
       sourcefile: entryPath,
       resolveDir: "frontend/src",
-      loader: entryLoaderFor(entryPath),
+      loader: entryLoader,
     },
     bundle: true,
     format: "esm",
@@ -325,6 +333,7 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
     cardId,
     outputFiles: result.outputFiles ?? [],
     metafile: result.metafile!,
+    entryPoint: `${SOURCE_PREFIX}${entryPath}`,
     importMap,
   })
 

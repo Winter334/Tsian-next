@@ -1,5 +1,10 @@
 import type { Loader, PartialMessage, Plugin } from "esbuild-wasm"
 import {
+  toImportMetaGlobMessage,
+  transformImportMetaGlob,
+  type GlobTransformLoader,
+} from "../glob-transform"
+import {
   compileStylePreprocessor,
   toStylePreprocessorMessage,
   type StylePreprocessorLanguage,
@@ -129,30 +134,112 @@ function validateStyleBlock(descriptor: SFCDescriptor, index: number, filename: 
   return undefined
 }
 
+function scriptLoader(language: string | undefined): GlobTransformLoader {
+  const normalized = language?.toLowerCase()
+  if (normalized === "tsx") return "tsx"
+  if (normalized === "ts") return "ts"
+  if (normalized === "jsx") return "jsx"
+  return "js"
+}
+
+function scriptBlockOffset(block: SFCScriptBlock): { line: number; column: number } {
+  return {
+    line: block.loc.start.line - 1,
+    column: block.loc.start.column - 1,
+  }
+}
+
+async function transformSfcScripts(
+  compiler: typeof import("@vue/compiler-sfc"),
+  source: string,
+  filename: string,
+  descriptor: SFCDescriptor,
+  sources: Map<string, string | Uint8Array>,
+): Promise<{ source: string; descriptor: SFCDescriptor; errors: PartialMessage[] }> {
+  const blocks = [descriptor.script, descriptor.scriptSetup].filter(
+    (block): block is SFCScriptBlock => block !== null,
+  )
+  const replacements: Array<{ start: number; end: number; code: string }> = []
+  for (const [index, block] of blocks.entries()) {
+    const offset = scriptBlockOffset(block)
+    try {
+      const transformed = await transformImportMetaGlob({
+        code: block.content,
+        importer: filename,
+        loader: scriptLoader(block.lang),
+        sources,
+        sourceLineOffset: offset.line,
+        sourceColumnOffset: offset.column,
+        diagnosticSource: source,
+        bindingPrefix: `${index}_`,
+      })
+      if (transformed.changed) {
+        replacements.push({
+          start: block.loc.start.offset,
+          end: block.loc.end.offset,
+          code: transformed.code,
+        })
+      }
+    } catch (error) {
+      return {
+        source,
+        descriptor,
+        errors: [toImportMetaGlobMessage(error, { importer: filename })],
+      }
+    }
+  }
+  if (replacements.length === 0) return { source, descriptor, errors: [] }
+
+  let transformedSource = source
+  for (const replacement of replacements.sort((left, right) => right.start - left.start)) {
+    transformedSource = `${transformedSource.slice(0, replacement.start)}${replacement.code}${transformedSource.slice(replacement.end)}`
+  }
+  const reparsed: SFCParseResult = compiler.parse(transformedSource, { filename })
+  const errors = reparsed.errors.map((error) => ({ text: errorMessage(filename, error) }))
+  return {
+    source: transformedSource,
+    descriptor: reparsed.descriptor,
+    errors,
+  }
+}
+
 /** Compile a .vue SFC source into a JS module string. */
 async function compileSfc(
   source: string,
   filename: string,
-): Promise<{ js: string; errors: string[] }> {
+  sources: Map<string, string | Uint8Array>,
+): Promise<{ js: string; errors: PartialMessage[] }> {
   const compiler = await loadCompiler()
-  const errors: string[] = []
+  const errors: PartialMessage[] = []
+  const scopeSource = source
 
-  // 1. Parse → descriptor (template/script/style blocks).
+  // 1. Parse → transform script blocks → reparse descriptor.
   const parseResult: SFCParseResult = compiler.parse(source, { filename })
   for (const e of parseResult.errors) {
-    errors.push(errorMessage(filename, e))
+    errors.push({ text: errorMessage(filename, e) })
   }
   if (errors.length > 0) {
     return { js: "", errors }
   }
-  const descriptor: SFCDescriptor = parseResult.descriptor
-  const id = scopeIdFor(source)
+  const transformed = await transformSfcScripts(
+    compiler,
+    source,
+    filename,
+    parseResult.descriptor,
+    sources,
+  )
+  if (transformed.errors.length > 0) {
+    return { js: "", errors: transformed.errors }
+  }
+  source = transformed.source
+  const descriptor: SFCDescriptor = transformed.descriptor
+  const id = scopeIdFor(scopeSource)
   const scopeIdAttr = `data-v-${id}`
   const hasScopedStyle = descriptor.styles.some((styleBlock) => styleBlock.scoped)
 
   for (let i = 0; i < descriptor.styles.length; i++) {
     const styleError = validateStyleBlock(descriptor, i, filename)
-    if (styleError) errors.push(styleError)
+    if (styleError) errors.push({ text: styleError })
   }
   if (errors.length > 0) {
     return { js: "", errors }
@@ -173,7 +260,7 @@ async function compileSfc(
       })
       scriptContent = scriptBlock.content
     } catch (e) {
-      return { js: "", errors: [errorMessage(filename, `script 编译失败: ${(e as Error).message}`)] }
+      return { js: "", errors: [{ text: errorMessage(filename, `script 编译失败: ${(e as Error).message}`) }] }
     }
   }
 
@@ -191,7 +278,7 @@ async function compileSfc(
     }
     const templateResult = compiler.compileTemplate(templateOpts)
     for (const e of templateResult.errors) {
-      errors.push(errorMessage(filename, e))
+      errors.push({ text: errorMessage(filename, e) })
     }
     if (errors.length > 0) {
       return { js: "", errors }
@@ -366,9 +453,9 @@ export function createSfcPlugin(input: SfcPluginInput): Plugin {
             return undefined
           }
 
-          const compiled = await compileSfc(source, sourcePath)
+          const compiled = await compileSfc(source, sourcePath, sources)
           if (compiled.errors.length > 0) {
-            return { errors: compiled.errors.map((text) => ({ text })) }
+            return { errors: compiled.errors }
           }
           return { contents: compiled.js, loader: "ts" }
         },
