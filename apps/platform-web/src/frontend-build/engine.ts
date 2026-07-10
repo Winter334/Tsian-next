@@ -3,7 +3,7 @@ import type { FrontendFramework } from "@tsian/contracts"
 import { getLocalGameCard, listLocalGameCardFrontendFiles } from "../storage"
 import { cdnExternalPlugin } from "./plugins/cdn-external-plugin"
 import { createSfcPlugin } from "./plugins/sfc-plugin"
-import { workspaceSourcePlugin } from "./plugins/workspace-source-plugin"
+import { workspaceSourcePlugin, type WorkspaceSourceContent } from "./plugins/workspace-source-plugin"
 import { writeBackDist } from "./write-back"
 
 /**
@@ -27,7 +27,20 @@ const WASM_CACHE_KEY = "esbuild-wasm"
 const PLAY_BRIDGE_IMPORT = "@tsian/play-bridge"
 const PLAY_BRIDGE_CDN_URL = "https://esm.sh/@tsian/play-bridge@0.1.0"
 
-const ENTRY_CANDIDATES = ["main.ts", "main.tsx", "main.jsx", "main.js", "index.ts", "index.tsx"]
+const ENTRY_CANDIDATES = [
+  "main.ts",
+  "main.tsx",
+  "main.mts",
+  "main.jsx",
+  "main.js",
+  "main.mjs",
+  "index.ts",
+  "index.tsx",
+  "index.mts",
+  "index.jsx",
+  "index.js",
+  "index.mjs",
+]
 
 /** Fetch the esbuild wasm binary, caching in Cache API after first download. */
 async function fetchWasmWithCache(url: string): Promise<ArrayBuffer> {
@@ -175,19 +188,36 @@ function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
 // ─── Source loading ─────────────────────────────────────────────────────
 
 interface LoadedSources {
-  sources: Map<string, string>
+  sources: Map<string, WorkspaceSourceContent>
   entryPath: string
   entryContent: string
+}
+
+function isTextBuildSourcePath(path: string): boolean {
+  return /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|vue|css|json|svg)$/i.test(path)
+}
+
+function entryLoaderFor(path: string) {
+  const lowerPath = path.toLowerCase()
+  if (lowerPath.endsWith(".tsx")) return "tsx"
+  if (lowerPath.endsWith(".jsx")) return "jsx"
+  if (lowerPath.endsWith(".ts") || lowerPath.endsWith(".mts") || lowerPath.endsWith(".cts")) return "ts"
+  return "js"
 }
 
 /** Preload all `frontend/src/**` files from IndexedDB into memory. */
 async function loadSources(cardId: string): Promise<LoadedSources> {
   const allFiles = await listLocalGameCardFrontendFiles(cardId)
-  const sources = new Map<string, string>()
+  const sources = new Map<string, WorkspaceSourceContent>()
   for (const file of allFiles) {
     if (!file.path.startsWith(SOURCE_PREFIX)) continue
     const relPath = file.path.slice(SOURCE_PREFIX.length)
-    sources.set(relPath, await file.data.text())
+    sources.set(
+      relPath,
+      isTextBuildSourcePath(relPath)
+        ? await file.data.text()
+        : new Uint8Array(await file.data.arrayBuffer()),
+    )
   }
   if (sources.size === 0) {
     throw new Error("游戏卡 frontend/src/ 下无源码文件，无法构建")
@@ -205,7 +235,11 @@ async function loadSources(cardId: string): Promise<LoadedSources> {
       `未找到入口文件（尝试过 ${ENTRY_CANDIDATES.join(", ")}），frontend/src/ 下需包含其一`,
     )
   }
-  return { sources, entryPath, entryContent: sources.get(entryPath)! }
+  const entryContent = sources.get(entryPath)
+  if (typeof entryContent !== "string") {
+    throw new Error(`入口文件必须是文本源码: ${entryPath}`)
+  }
+  return { sources, entryPath, entryContent }
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────
@@ -254,13 +288,7 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
       contents: entryContent,
       sourcefile: entryPath,
       resolveDir: "frontend/src",
-      loader: entryPath.endsWith(".tsx")
-        ? "tsx"
-        : entryPath.endsWith(".jsx")
-          ? "jsx"
-          : entryPath.endsWith(".ts")
-            ? "ts"
-            : "js",
+      loader: entryLoaderFor(entryPath),
     },
     bundle: true,
     format: "esm",

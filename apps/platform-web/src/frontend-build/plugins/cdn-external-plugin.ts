@@ -46,8 +46,13 @@ export function cdnExternalPlugin(
     plugin: {
       name: "cdn-external",
       setup(build) {
-        // Bare import = does not start with ".", "/", "http", or "data:".
+        // Bare import = does not start with ".", "/", "@/", "http", or "data:".
         build.onResolve({ filter: /^[^./]/ }, (args) => {
+          // `@/x` is the packaged frontend's source-root alias, not a package.
+          // Let the workspace-source plugin resolve it into the workspace namespace.
+          if (args.path.startsWith("@/")) {
+            return undefined
+          }
           // Skip URL/protocol imports (http, https, data) — leave as-is.
           if (/^(https?:|data:)/.test(args.path)) {
             return undefined

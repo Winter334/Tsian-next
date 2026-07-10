@@ -32,11 +32,15 @@ export interface WriteBackResult {
   entryHtmlPath: string
 }
 
+function normalizeOutputPath(path: string): string {
+  return path.replace(/^\/+/, "")
+}
+
 /** Find the entry JS output via metafile (the output with `entryPoint` set). */
 function findEntryOutputPath(metafile: Metafile): string {
   for (const [outputPath, output] of Object.entries(metafile.outputs)) {
     if (output.entryPoint) {
-      return outputPath
+      return normalizeOutputPath(outputPath)
     }
   }
   throw new Error("构建产物缺少入口文件（metafile 无 entryPoint 输出）")
@@ -55,7 +59,7 @@ export async function writeBackDist(input: WriteBackInput): Promise<WriteBackRes
   // below won't recognize freshly-written files and will delete them.
   const newPaths = new Set<string>()
   for (const file of outputFiles) {
-    const rel = file.path.replace(/^\/+/, "")
+    const rel = normalizeOutputPath(file.path)
     const distPath = DIST_PREFIX + rel
     await writeLocalGameCardFrontendFile(cardId, { path: distPath, data: file.contents })
     newPaths.add(distPath)
@@ -64,7 +68,7 @@ export async function writeBackDist(input: WriteBackInput): Promise<WriteBackRes
   // 2. Collect CSS outputs for <link> tags (strip leading slash, same as step 1).
   const cssRelPaths = outputFiles
     .filter((f) => f.path.endsWith(".css"))
-    .map((f) => f.path.replace(/^\/+/, ""))
+    .map((f) => normalizeOutputPath(f.path))
 
   // 3. Generate index.html with import map + entry script + css links.
   const importMapJson = JSON.stringify({
