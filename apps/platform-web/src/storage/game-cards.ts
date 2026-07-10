@@ -5,7 +5,11 @@ import type {
   GameCardRuntimeEntrypoints,
 } from "@tsian/contracts"
 import { FRONTEND_FRAMEWORKS } from "@tsian/contracts"
-import { inferMediaTypeFromPath } from "@/lib/media-type"
+import {
+  inferMediaTypeFromPath,
+  isMeaningfulMediaType,
+  resolveMediaType,
+} from "@/lib/media-type"
 import {
   localDb,
   type LocalGameCardContentFileRecord,
@@ -32,14 +36,21 @@ type GameCardSource = LocalGameCardRecord["source"]
 export interface PutLocalGameCardInput {
   manifest: GameCardManifest
   /** undefined = leave the content table untouched; array = full replace inside the write transaction. */
-  contentFiles?: GameCardContentFile[]
+  contentFiles?: PutLocalGameCardContentFileInput[]
   frontendFiles?: PutLocalGameCardFrontendFileInput[]
   source?: GameCardSource
+}
+
+export interface PutLocalGameCardContentFileInput extends GameCardContentFile {
+  /** Internal binary channel used when copying/importing card content. */
+  data?: Blob
 }
 
 export interface PutLocalGameCardFrontendFileInput {
   path: string
   data: Blob | ArrayBuffer | Uint8Array | string
+  /** Transient write hint persisted through Blob.type, not a Dexie field. */
+  mediaType?: string
 }
 
 export interface LocalGameCardFrontendFile {
@@ -219,11 +230,12 @@ function normalizeManifest(manifest: GameCardManifest): GameCardManifest {
 }
 
 function normalizeTemplateFile(
-  file: GameCardContentFile,
-): GameCardContentFile {
+  file: PutLocalGameCardContentFileInput,
+): PutLocalGameCardContentFileInput {
   return {
     path: normalizeWorkspaceFilePath(file.path),
-    content: typeof file.content === "string" ? file.content : "",
+    content: file.data ? "" : (typeof file.content === "string" ? file.content : ""),
+    ...(file.data ? { data: file.data } : {}),
     ...(typeof file.mediaType === "string" && file.mediaType.trim()
       ? { mediaType: file.mediaType.trim() }
       : {}),
@@ -257,9 +269,9 @@ function assertNonReservedContentPath(path: string): void {
 }
 
 function normalizeTemplateFiles(
-  files: GameCardContentFile[],
-): GameCardContentFile[] {
-  const filesByPath = new Map<string, GameCardContentFile>()
+  files: PutLocalGameCardContentFileInput[],
+): PutLocalGameCardContentFileInput[] {
+  const filesByPath = new Map<string, PutLocalGameCardContentFileInput>()
   for (const file of files) {
     const normalized = normalizeTemplateFile(file)
     assertNonReservedContentPath(normalized.path)
@@ -291,6 +303,23 @@ function toBlob(data: PutLocalGameCardFrontendFileInput["data"], mediaType: stri
   return new Blob([data], { type: mediaType })
 }
 
+function frontendFileMediaType(
+  path: string,
+  file: PutLocalGameCardFrontendFileInput,
+): string {
+  const explicit = file.mediaType?.trim()
+  if (explicit) {
+    return explicit
+  }
+  if (file.data instanceof Blob && isMeaningfulMediaType(file.data.type)) {
+    return file.data.type
+  }
+  if (typeof file.data === "string") {
+    return inferMediaTypeFromPath(path, { fallback: "text/plain" })
+  }
+  return resolveMediaType(path, file.data instanceof Blob ? file.data.type : undefined)
+}
+
 function normalizeFrontendFile(
   gameCardId: string,
   file: PutLocalGameCardFrontendFileInput,
@@ -301,7 +330,7 @@ function normalizeFrontendFile(
     throw new Error(`Game card frontend file must live under frontend/: ${path}`)
   }
 
-  const data = toBlob(file.data, inferMediaTypeFromPath(path))
+  const data = toBlob(file.data, frontendFileMediaType(path, file))
   return {
     id: gameCardFrontendFileId(gameCardId, path),
     gameCardId,
@@ -469,7 +498,8 @@ export async function putLocalGameCard(
       id: gameCardContentFileId(manifest.id, file.path),
       gameCardId: manifest.id,
       path: file.path,
-      content: file.content,
+      content: file.data ? "" : file.content,
+      ...(file.data ? { data: file.data } : {}),
       createdAt: now,
       updatedAt: now,
     }))

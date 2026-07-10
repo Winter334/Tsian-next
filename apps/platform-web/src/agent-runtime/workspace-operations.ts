@@ -924,7 +924,10 @@ function diffWorkspaceFile(
     )
   }
 
-  const nextContent = normalizeContent(request.content)
+  // The Agent-facing schema names the proposed content `expectedContent`.
+  // Keep `content` as a compatibility fallback for browser scripts that used
+  // the operation-level request shape before the dedicated schema was added.
+  const nextContent = normalizeContent(request.expectedContent ?? request.content)
   return {
     path,
     scope,
@@ -1003,12 +1006,31 @@ async function writeWorkspaceFile(
   }
 }
 
-/** Count non-overlapping occurrences of `needle` in `haystack`. `needle` must
- *  be non-empty (validated by the caller). Uses split-join to avoid regex
- *  metacharacter interpretation — `oldString` is a literal string. */
+/** Count non-overlapping literal occurrences. `needle` must be non-empty. */
 function countOccurrences(haystack: string, needle: string): number {
   if (needle.length === 0) return 0
   return haystack.split(needle).length - 1
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+}
+
+function multilineLiteralPattern(value: string): RegExp {
+  const source = value
+    .split(/\r\n|\r|\n/)
+    .map(escapeRegExp)
+    .join("(?:\\r\\n|\\r|\\n)")
+  return new RegExp(source, "g")
+}
+
+function preferredLineEnding(value: string): "\r\n" | "\r" | "\n" {
+  const match = /\r\n|\r|\n/.exec(value)
+  return match?.[0] === "\r\n" || match?.[0] === "\r" ? match[0] : "\n"
+}
+
+function normalizeReplacementLineEndings(value: string, lineEnding: string): string {
+  return value.replace(/\r\n|\r|\n/g, lineEnding)
 }
 
 /** Apply a partial edit to a workspace file via literal string replacement.
@@ -1065,7 +1087,14 @@ async function editWorkspaceFile(
   }
 
   const content = existing.content
-  const matchCount = countOccurrences(content, oldString)
+  const hasMultilineOldString = /\r|\n/.test(oldString)
+  const exactMatchCount = countOccurrences(content, oldString)
+  const multilinePattern = exactMatchCount === 0 && hasMultilineOldString
+    ? multilineLiteralPattern(oldString)
+    : undefined
+  const matchCount = multilinePattern
+    ? Array.from(content.matchAll(multilinePattern)).length
+    : exactMatchCount
   if (matchCount === 0) {
     throw workspaceOperationError(
       "WORKSPACE_EDIT_NO_MATCH",
@@ -1081,11 +1110,16 @@ async function editWorkspaceFile(
     )
   }
 
-  // Single replacement: String.replace with a string pattern replaces only
-  // the first match. replaceAll path uses split-join to substitute every one.
-  const nextContent = replaceAll
-    ? content.split(oldString).join(newString)
-    : content.replace(oldString, newString)
+  // Exact matches preserve literal replacement behavior. If a multiline
+  // oldString differs only by LF/CRLF convention, accept it and emit the
+  // replacement using the matched file's line ending.
+  const nextContent = multilinePattern
+    ? content.replace(multilinePattern, (matched) =>
+        normalizeReplacementLineEndings(newString, preferredLineEnding(matched))
+      )
+    : replaceAll
+      ? content.split(oldString).join(newString)
+      : content.replace(oldString, newString)
 
   if (nextContent === content) {
     return { path, scope: pathScope, file: existing, changed: false }

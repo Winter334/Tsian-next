@@ -1,6 +1,8 @@
 import * as esbuild from "esbuild-wasm"
 import type { FrontendFramework } from "@tsian/contracts"
 import { getLocalGameCard, listLocalGameCardFrontendFiles } from "../storage"
+import { isTextFilePath } from "@/lib/media-type"
+import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { cdnExternalPlugin } from "./plugins/cdn-external-plugin"
 import { createSfcPlugin } from "./plugins/sfc-plugin"
 import { workspaceSourcePlugin, type WorkspaceSourceContent } from "./plugins/workspace-source-plugin"
@@ -193,10 +195,6 @@ interface LoadedSources {
   entryContent: string
 }
 
-function isTextBuildSourcePath(path: string): boolean {
-  return /\.(ts|tsx|mts|cts|js|jsx|mjs|cjs|vue|css|json|svg)$/i.test(path)
-}
-
 function entryLoaderFor(path: string) {
   const lowerPath = path.toLowerCase()
   if (lowerPath.endsWith(".tsx")) return "tsx"
@@ -212,12 +210,20 @@ async function loadSources(cardId: string): Promise<LoadedSources> {
   for (const file of allFiles) {
     if (!file.path.startsWith(SOURCE_PREFIX)) continue
     const relPath = file.path.slice(SOURCE_PREFIX.length)
-    sources.set(
-      relPath,
-      isTextBuildSourcePath(relPath)
-        ? await file.data.text()
-        : new Uint8Array(await file.data.arrayBuffer()),
-    )
+    if (isTextFilePath(relPath)) {
+      const workspaceFile = await blobToWorkspaceFile({
+        path: file.path,
+        blob: file.data,
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt,
+      })
+      if (workspaceFile.binary) {
+        throw new Error(`文本源码被投影为二进制文件: ${file.path}`)
+      }
+      sources.set(relPath, workspaceFile.content)
+    } else {
+      sources.set(relPath, new Uint8Array(await file.data.arrayBuffer()))
+    }
   }
   if (sources.size === 0) {
     throw new Error("游戏卡 frontend/src/ 下无源码文件，无法构建")

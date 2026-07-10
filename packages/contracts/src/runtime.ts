@@ -286,9 +286,9 @@ export interface WorkspaceOperationRequest {
   ignoreCase?: boolean
   /** Text content for write, or a Blob for binary writes. */
   content?: string | Blob
-  /** write: optimistic-concurrency guard. When set (string), the write is
-   *  rejected if the file's current content does not match — detects stale
-   *  overwrites. Omit to skip the check (unconditional overwrite). */
+  /** diff: proposed next text content. The Agent-facing diff schema names this
+   *  field `expectedContent`; `content` remains a compatibility input for
+   *  internal/browser-script callers. write: optimistic-concurrency guard. */
   expectedContent?: string
   /** edit: the exact string to find. Must match exactly once unless
    *  `replaceAll` is set. Include surrounding lines for uniqueness. */

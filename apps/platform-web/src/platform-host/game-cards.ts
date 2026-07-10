@@ -339,6 +339,7 @@ export async function copyPlatformGameCardAsLocal(
     frontendFiles: frontendFiles.map((file) => ({
       path: file.path,
       data: file.data,
+      mediaType: file.data.type,
     })),
     source: "local",
   })

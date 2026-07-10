@@ -38,7 +38,7 @@ import {
   writeLocalGameCardContentFile,
   type RuntimeWorkspaceTransaction,
 } from "../storage"
-import { executeWorkspaceMutation } from "./workspace-volumes"
+import { cardFrontendVolume, executeWorkspaceMutation } from "./workspace-volumes"
 import {
   createRuntimeTraceCollector,
   serializeRuntimeTraceEvents,
@@ -53,7 +53,7 @@ import {
 } from "../runtime-host/ai"
 import { getBrowserAiConfig } from "../config/ai"
 import { resolveBrowserAiConfigForModel } from "../config/ai"
-import { binaryPlaceholderText } from "@/lib/media-type"
+import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import { createFrontendInspector } from "./frontend-inspector"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
@@ -325,8 +325,11 @@ export async function runAssistantChat(
   if (activeSaveId) {
     workspaceFiles = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
   } else {
-    // No active save: use card content only.
-    workspaceFiles = await cardContentFilesToWorkspaceFiles(activeCard)
+    // No active save: use the card's editable content and packaged frontend.
+    workspaceFiles = [
+      ...await cardContentFilesToWorkspaceFiles(activeCard),
+      ...await cardFrontendVolume.enumerate(activeCard.id),
+    ].sort((left, right) => left.path.localeCompare(right.path))
   }
 
   // Merge local assistant files (identity, SOUL, notes, skills, tools) into the
@@ -339,26 +342,21 @@ export async function runAssistantChat(
   ]
 
   // Merge temp attachments (current session's pasted/dropped files) into the
-  // workspace at temp/<sessionId>/<name> paths. Images carry binary + imageMimeType;
-  // text files carry empty content (agent uses workspace_read to fetch content).
+  // workspace at temp/<sessionId>/<name> paths. Text attachments are decoded
+  // before the runtime receives its snapshot; images keep their binary channel.
   const sessionAttachments = await listAttachmentsBySession(input.sessionId)
-  const tempPaths = new Set(sessionAttachments.map((r) => r.path))
+  const tempPaths = new Set(sessionAttachments.map((record) => record.path))
+  const tempFiles = await Promise.all(sessionAttachments.map((record) =>
+    blobToWorkspaceFile({
+      path: record.path,
+      blob: record.data,
+      createdAt: record.createdAt,
+      updatedAt: record.createdAt,
+    })
+  ))
   workspaceFiles = [
     ...workspaceFiles.filter((file) => !tempPaths.has(file.path)),
-    ...sessionAttachments.map((record) => {
-      const isImage = record.kind === "image"
-      const file: WorkspaceFile = {
-        path: record.path,
-        content: isImage ? binaryPlaceholderText(record.data, record.path) : "",
-        createdAt: record.createdAt,
-        updatedAt: record.createdAt,
-      }
-      if (isImage) {
-        file.binary = record.data
-        file.imageMimeType = record.mimeType
-      }
-      return file
-    }),
+    ...tempFiles,
   ].sort((left, right) => left.path.localeCompare(right.path))
 
   const controller = new AbortController()

@@ -7,8 +7,10 @@ import type {
 import {
   binaryPlaceholderText,
   inferMediaTypeFromPath,
-  isTextMediaType,
+  isImageMediaType,
+  resolveBlobMediaType,
 } from "@/lib/media-type"
+import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { normalizeWorkspacePath } from "@/lib/workspace-path"
 import {
   listLocalGameCardContentFiles,
@@ -110,18 +112,31 @@ function ordinaryWorkspaceFiles(files: WorkspaceFile[]): WorkspaceFile[] {
   return files.filter((file) => isOrdinaryWorkspacePath(file.path))
 }
 
+function blobWorkspaceFile(
+  blob: Blob,
+  path: string,
+  createdAt: number,
+  updatedAt: number,
+): WorkspaceFile {
+  const mediaType = resolveBlobMediaType(path, blob)
+  return {
+    path,
+    content: binaryPlaceholderText(blob, path, mediaType),
+    binary: blob,
+    ...(isImageMediaType(mediaType) ? { imageMimeType: mediaType } : {}),
+    createdAt,
+    updatedAt,
+  }
+}
+
 function toWorkspaceFile(record: LocalWorkspaceFileRecord): WorkspaceFile {
   if (record.data) {
-    return {
-      path: record.path,
-      // Binary files surface a placeholder string (not "") so agents do not
-      // misjudge the file as empty. Future multimodal support will replace
-      // this with an image content block through an independent channel.
-      content: binaryPlaceholderText(record.data, record.path),
-      binary: record.data,
-      createdAt: record.createdAt,
-      updatedAt: record.updatedAt,
-    }
+    return blobWorkspaceFile(
+      record.data,
+      record.path,
+      record.createdAt,
+      record.updatedAt,
+    )
   }
   return {
     path: record.path,
@@ -136,13 +151,7 @@ export function toWorkspaceFileFromGameCardContent(
 ): WorkspaceFile {
   const path = normalizeWorkspaceFilePath(file.path)
   if (file.data) {
-    return {
-      path,
-      content: binaryPlaceholderText(file.data, path),
-      binary: file.data,
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    }
+    return blobWorkspaceFile(file.data, path, file.createdAt, file.updatedAt)
   }
   return {
     path,
@@ -157,6 +166,7 @@ function cloneWorkspaceFile(file: WorkspaceFile): WorkspaceFile {
     path: file.path,
     content: file.content,
     ...(file.binary ? { binary: file.binary } : {}),
+    ...(file.imageMimeType ? { imageMimeType: file.imageMimeType } : {}),
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
   }
@@ -353,29 +363,16 @@ export async function listEffectiveWorkspaceFilesForSave(
     filesByPath.set(workspaceFile.path, workspaceFile)
   }
 
-  // 前端文件（card-frontend，纯二进制存储）只读接入 effective list。与
-  // cardFrontendVolume.enumerate 同构（storage 层不依赖 host 层 volume，直接用原生
-  // API）。文本类前端文件（html/css/js/json/svg）→ await data.text() 填 content；
-  // 媒体类（图片/音视频）→ binary + placeholder。write/delete 路径经 host 层 dispatch
-  // 走 volume，待子3 补单文件 API。
+  // Card frontend files reuse the same Blob projection as the Studio volume so
+  // MIME precedence, fatal UTF-8 decoding, and image metadata cannot drift.
   for (const frontendFile of await listLocalGameCardFrontendFiles(card.id)) {
-    const mediaType = inferMediaTypeFromPath(frontendFile.path)
-    if (isTextMediaType(mediaType) || mediaType === "image/svg+xml") {
-      filesByPath.set(frontendFile.path, {
-        path: frontendFile.path,
-        content: await frontendFile.data.text(),
-        createdAt: frontendFile.createdAt,
-        updatedAt: frontendFile.updatedAt,
-      })
-    } else {
-      filesByPath.set(frontendFile.path, {
-        path: frontendFile.path,
-        content: binaryPlaceholderText(frontendFile.data, frontendFile.path),
-        binary: frontendFile.data,
-        createdAt: frontendFile.createdAt,
-        updatedAt: frontendFile.updatedAt,
-      })
-    }
+    const workspaceFile = await blobToWorkspaceFile({
+      path: frontendFile.path,
+      blob: frontendFile.data,
+      createdAt: frontendFile.createdAt,
+      updatedAt: frontendFile.updatedAt,
+    })
+    filesByPath.set(workspaceFile.path, workspaceFile)
   }
 
   // 合成 manifest 文件（game-card.json，不存表，list 时 JSON.stringify 注入）。
@@ -558,13 +555,17 @@ function writeWorkspaceFileToFiles(
   const existingIndex = workspaceFiles.findIndex((file) => file.path === path)
   const existing = existingIndex >= 0 ? workspaceFiles[existingIndex] : undefined
   const nextFile: WorkspaceFile = binaryData
-    ? {
-        path,
-        content: binaryPlaceholderText(binaryData, path),
-        binary: binaryData,
-        createdAt: existing?.createdAt ?? now,
-        updatedAt: now,
-      }
+    ? (() => {
+        const mediaType = resolveBlobMediaType(path, binaryData)
+        return {
+          path,
+          content: binaryPlaceholderText(binaryData, path, mediaType),
+          binary: binaryData,
+          ...(isImageMediaType(mediaType) ? { imageMimeType: mediaType } : {}),
+          createdAt: existing?.createdAt ?? now,
+          updatedAt: now,
+        }
+      })()
     : {
         path,
         content: input.content as string,

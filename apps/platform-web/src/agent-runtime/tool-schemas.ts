@@ -390,7 +390,7 @@ const workspaceEditSchema: ToolSchema = {
       },
       oldString: {
         type: "string",
-        description: "The exact string to find in the file. Must match exactly once unless replaceAll is true. Include surrounding lines for uniqueness. If it matches zero times the file may have changed since you read it — re-read and retry.",
+        description: "The exact string to find in the file. Must match exactly once unless replaceAll is true. Include surrounding lines for uniqueness. Multiline matches accept LF/CRLF line-ending differences. If it matches zero times the file may have changed since you read it — re-read and retry.",
       },
       newString: {
         type: "string",

@@ -9,6 +9,7 @@
  * 详见任务 06-22-split-platform-host-index 的 design.md。
  */
 
+import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import type {
   AgentRegistryEntry,
   WorkspaceFile,
@@ -31,6 +32,7 @@ import {
   setActiveGameCardId,
   writeLocalGameCardContentFile,
   writeLocalGameCardFrontendFile,
+  toWorkspaceFileFromGameCardContent,
   type LocalGameCardRecord,
   type LocalSaveRecord,
 } from "../storage"
@@ -91,13 +93,7 @@ export async function cardContentFilesToWorkspaceFiles(
   card: NonNullable<Awaited<ReturnType<typeof getLocalGameCard>>>,
 ): Promise<WorkspaceFile[]> {
   const files = await listLocalGameCardContentFiles(card.id)
-  return files.map((file) => ({
-    path: file.path,
-    content: file.content,
-    ...(file.data ? { binary: file.data } : {}),
-    createdAt: file.createdAt,
-    updatedAt: file.updatedAt,
-  }))
+  return files.map(toWorkspaceFileFromGameCardContent)
 }
 
 // ── 卡片内容文件写入/删除 ──
@@ -122,13 +118,7 @@ export async function writeCardContentFileForCard(
     ...(input.data ? { data: input.data } : { content: input.content ?? "" }),
   })
 
-  return {
-    path: file.path,
-    content: file.content,
-    ...(file.data ? { binary: file.data } : {}),
-    createdAt: file.createdAt,
-    updatedAt: file.updatedAt,
-  }
+  return toWorkspaceFileFromGameCardContent(file)
 }
 
 export async function writeCardContentFileForActiveCard(input: {
@@ -146,13 +136,7 @@ export async function writeCardContentFileForActiveCard(input: {
     ...(input.data ? { data: input.data } : { content: input.content ?? "" }),
   })
 
-  return {
-    path: file.path,
-    content: file.content,
-    ...(file.data ? { binary: file.data } : {}),
-    createdAt: file.createdAt,
-    updatedAt: file.updatedAt,
-  }
+  return toWorkspaceFileFromGameCardContent(file)
 }
 
 export async function deleteCardContentPathForActiveCard(
@@ -197,20 +181,12 @@ export async function writeFrontendFileForActiveCard(input: {
     data: input.data ?? input.content ?? "",
   })
 
-  // LocalGameCardFrontendFile carries only `data: Blob` (no `content` field),
-  // so we can't read text back from the stored record. For the staged snapshot
-  // used by same-turn reads, reconstruct the WorkspaceFile from the input:
-  // text writes → `content` (no binary, so read sees real text not a binary
-  // placeholder); binary writes (Blob) → `binary` (read shows placeholder, same
-  // as card-content media files). Mirrors writeCardContentFileForActiveCard.
-  return {
+  return blobToWorkspaceFile({
     path: file.path,
-    ...(input.data
-      ? { content: "", binary: input.data }
-      : { content: input.content ?? "" }),
+    blob: file.data,
     createdAt: file.createdAt,
     updatedAt: file.updatedAt,
-  }
+  })
 }
 
 export async function deleteFrontendPathForActiveCard(

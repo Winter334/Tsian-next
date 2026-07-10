@@ -59,7 +59,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
 import { Save } from "lucide-vue-next"
-import type { WorkspaceValidationResult } from "@tsian/contracts"
+import type { WorkspaceFile, WorkspaceValidationResult } from "@tsian/contracts"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
 import { emitWorkspaceContentChanged } from "@/lib/workspace-events"
@@ -264,6 +264,13 @@ async function ensureTargetPathAvailable(targetPath: string) {
   }
 }
 
+function requireTextFile(file: WorkspaceFile): WorkspaceFile {
+  if (file.binary) {
+    throw new Error(`文件「${file.path}」是二进制文件，不能在文本编辑器中打开或保存。`)
+  }
+  return file
+}
+
 async function validateSavedFile() {
   const validator = editorValidator.value
   if (!validator) {
@@ -304,31 +311,33 @@ async function saveDraft() {
   try {
     if (mode.value === "create") {
       await ensureTargetPathAvailable(targetPath)
-      const result = await writePlatformWorkspaceFile({
+      const { file } = await writePlatformWorkspaceFile({
         cardId: props.cardId,
         path: targetPath,
         content: content.value,
       })
-      applySavedFile(result.file.path, result.file.content)
+      const savedFile = requireTextFile(file)
+      applySavedFile(savedFile.path, savedFile.content)
       mode.value = "edit"
-      feedback.value = `已保存：${result.file.path}`
-      emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: result.file.path })
-      await syncEditorRoute(result.file.path)
+      feedback.value = `已保存：${savedFile.path}`
+      emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: savedFile.path })
+      await syncEditorRoute(savedFile.path)
       await validateSavedFile()
       return
     }
 
     if (contentChanged.value) {
-      const result = await writePlatformWorkspaceFile({
+      const { file } = await writePlatformWorkspaceFile({
         cardId: props.cardId,
         path: originalPath.value,
         content: content.value,
         expectedContent: expectedContent.value,
       })
-      applySavedFile(result.file.path, result.file.content)
-      feedback.value = `已保存：${result.file.path}`
-      emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: result.file.path })
-      await syncEditorRoute(result.file.path)
+      const savedFile = requireTextFile(file)
+      applySavedFile(savedFile.path, savedFile.content)
+      feedback.value = `已保存：${savedFile.path}`
+      emitWorkspaceContentChanged({ cardId: props.cardId ?? "", path: savedFile.path })
+      await syncEditorRoute(savedFile.path)
       await validateSavedFile()
       return
     }
@@ -385,10 +394,10 @@ async function loadFile() {
 
   loading.value = true
   try {
-    const file = await readPlatformWorkspaceFile({
+    const file = requireTextFile(await readPlatformWorkspaceFile({
       cardId: props.cardId,
       path: initialPath,
-    })
+    }))
     applySavedFile(file.path, file.content)
   } catch (error) {
     loadError.value = errorMessage(error, "无法打开文件。")

@@ -11,7 +11,7 @@ import type {
 } from "@tsian/contracts"
 import { FRONTEND_FRAMEWORKS, FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
-import { inferMediaTypeFromPath } from "@/lib/media-type"
+import { inferMediaTypeFromPath, resolveBlobMediaType } from "@/lib/media-type"
 import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile, writeLocalGameCardContentFile } from "./game-cards"
 import type { LocalGameCardRecord } from "./db"
 
@@ -665,7 +665,7 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
     })),
     frontendFiles: frontendFiles.map((file) => ({
       path: file.path,
-      mediaType: inferMediaTypeFromPath(file.path),
+      mediaType: resolveBlobMediaType(file.path, file.data),
       size: file.size,
     })),
     ...(coverFile
@@ -930,6 +930,7 @@ export async function importGameCardFrontendPackage(
   const frontendFiles = manifest.files.map((file) => ({
     path: `${FRONTEND_PREFIX}${file.path}`,
     data: fileBytes.get(file.path)!,
+    mediaType: file.mediaType,
   }))
 
   const frontendBinding: GameCardFrontendBinding = {
@@ -995,7 +996,7 @@ export async function exportGameCardFrontendPackage(cardId: string): Promise<Blo
     bridgeVersion: frontend.bridgeVersion,
     files: frontendFiles.map((file) => ({
       path: stripPrefix(file.path),
-      mediaType: inferMediaTypeFromPath(file.path),
+      mediaType: resolveBlobMediaType(file.path, file.data),
       size: file.size,
     })),
     exportedAt: new Date().toISOString(),
