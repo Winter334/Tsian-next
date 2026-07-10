@@ -13,6 +13,72 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
   - **Keep import query/hash text in `OnResolveResult.suffix`, not `path`.** For VFS imports such as `logo.png?url`, return `{ path: "logo.png", suffix: "?url" }`; `onLoad` receives the pair as `args.path` + `args.suffix`. If the query is concatenated into `path`, esbuild's file loader may emit a stored filename containing `?url` while the browser/SW requests only the pathname, producing a packaged-iframe 404; extension/MIME inference can also degrade (for example SVG inline data becoming `text/plain`). Vue virtual style loaders must inspect `args.suffix` as well, or `?tsian-style=N` falls through and the raw SFC is compiled a second time. See `workspace-source-plugin.ts` and `sfc-plugin.ts`.
 - After touching `src/frontend-build/`, use layered validation: each capability child passes focused fixtures/probes and hands off a browser matrix; a parent with several related children may run one consolidated source-package test through upload → IndexedDB → browser esbuild-wasm → dist write-back → SW → packaged iframe after all children finish. The parent remains incomplete until that full loop passes.
 
+## Browser `import.meta.glob` VFS Contract
+
+### 1. Scope / Trigger
+
+Use this contract when changing the `import.meta.glob` transform, workspace source loading, Vue SFC script compilation, or esbuild output materialization under `src/frontend-build/`.
+
+### 2. Signatures
+
+```ts
+interface GlobTransformInput {
+  code: string
+  importer: string
+  loader: "js" | "jsx" | "ts" | "tsx"
+  sources: Map<string, string | Uint8Array>
+}
+
+interface GlobTransformResult {
+  code: string
+  changed: boolean
+}
+```
+
+### 3. Contracts
+
+- Keep the parser/matcher behind a source-text gate plus memoized literal dynamic import; plain source must return unchanged without loading the transform chunk.
+- Transform all three source boundaries: stdin entry, workspace JS/TS/JSX modules, and Vue `<script>` / `<script setup>` blocks before `compileScript`.
+- Enumerate only canonical `sources` Map keys. Patterns are POSIX, case-sensitive, root-bound, and may start only with `./`, `../`, or `@/`.
+- Generated import specifiers remain relative so existing workspace resolution stays authoritative.
+- Lazy glob chunks also carry metafile `entryPoint`; HTML entry selection must match the exact root identity `frontend/src/${entryPath}`, never the first truthy entry point.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| No glob macro | Return unchanged; do not request transform chunk |
+| Dynamic/interpolated/array pattern | Build-time error with importer and location |
+| Root escape, scheme, absolute, query/hash, encoded separator | Build-time error |
+| Unknown/computed/spread/non-boolean option | Build-time error |
+| Non-direct `import.meta.glob` access | Build-time error |
+| Empty match | Successful `{}` result |
+| Multiple metafile entry points | Select exact root; zero/multiple root matches fail loudly |
+
+### 5. Good / Base / Bad Cases
+
+- Good: `import.meta.glob("./pages/*.ts")` generates sorted dynamic imports from the Map and esbuild emits split chunks.
+- Base: an ordinary TypeScript module bypasses parser/matcher loading.
+- Bad: `import.meta.glob(pattern)`, `import.meta["glob"]`, or `../../outside/*.ts` fails during build rather than in the iframe.
+
+### 6. Tests Required
+
+- Pure transform fixtures: lazy/eager, relative/alias keys, ordering, empty/self exclusion, TS/JSX, Vue block offsets, and the error matrix.
+- Real Map VFS + esbuild-wasm fixture: root entry, nested module, Vue script, lazy chunks, eager root graph, CSS/assets, and metafile root selection.
+- `npm run build:web`, production lazy-chunk inspection, and the parent consolidated browser product loop.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: dynamic chunks can be mistaken for the HTML root entry.
+const entry = Object.entries(metafile.outputs).find(([, output]) => output.entryPoint)
+
+// Correct: pass and match the exact stdin root identity.
+const entryPoint = `frontend/src/${sourceEntryPath}`
+const entry = Object.entries(metafile.outputs)
+  .filter(([, output]) => output.entryPoint === entryPoint)
+```
+
 ## Browser Style Preprocessor Contract
 
 ### 1. Scope / Trigger

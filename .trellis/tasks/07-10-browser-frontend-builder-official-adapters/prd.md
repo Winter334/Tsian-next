@@ -11,7 +11,8 @@
 - Vue SFC 复用官方 `@vue/compiler-sfc`；普通 CSS、CSS Modules、资源输出优先复用 esbuild 内置 loader。
 - 现有任务 `07-09-source-frontend-package-build` 已打通源码包上传与在线构建；本任务聚焦构建器能力和可靠性，不重复设计上传协议。
 - 第一阶段 `07-10-vue-vfs-css-modules` 已完成并归档（commit `b07a204`，archive commit `9d9e8ce`）：当前基线已包含 canonical VFS 解析、`@/` alias、extension-less/目录入口、query/hash `suffix` 处理、二进制资源、输出路径归一化、Vue `<script setup>` binding/render/scope、虚拟 SFC styles 和 CSS Modules。
-- 第二阶段 `07-10-sass-less-vfs-adapters` 已完成实现与聚焦验证，正在收尾；其完整浏览器产品回路已纳入父任务最终综合 fixture。下一能力目标为 `07-10-import-meta-glob-vfs`。不要启动父任务作为代码实施目标。
+- 第二阶段 `07-10-sass-less-vfs-adapters` 已完成并归档（implementation commit `27af439`，archive commit `4de7468`）；其完整浏览器产品回路已纳入父任务最终综合 fixture。
+- 第三阶段 `07-10-import-meta-glob-vfs` 已完成实现、聚焦验证并归档；完整浏览器产品回路继续由父任务最终综合 fixture 覆盖。当前下一交付项为 Worker 子构建与物化，父任务本身不作为代码实施目标。
 
 ## Requirements
 
@@ -56,13 +57,14 @@
    - 任务：`07-10-vue-vfs-css-modules`（已归档）。
    - 已使用 `@vue/compiler-sfc` 官方 `genDefaultAs`，并以 esbuild `local-css` 支持独立及 Vue CSS Modules。
    - 已加固 alias、目录入口、asset query/suffix、图片、scoped style、style `url(...)` 和输出路径。
-2. **Sass/Less 虚拟文件适配 — 实施完成待收尾**
-   - 任务：`07-10-sass-less-vfs-adapters`（in_progress）。
+2. **Sass/Less 虚拟文件适配 — 已完成**
+   - 任务：`07-10-sass-less-vfs-adapters`（已归档）。
    - 已实现官方浏览器编译器懒加载、共享 strict Map VFS adapter、standalone/Vue style接入及结构化诊断。
-   - 子任务记录 production chunk体积与聚焦 probe；网络冷/热成本和完整产品回路由父任务最终综合 fixture统一验证。
-3. **`import.meta.glob` VFS 子集 — 后续**
-   - 任务：`07-10-import-meta-glob-vfs`（planning）。
-   - 定义明确的 Vite 兼容子集，从 VFS key 枚举生成 eager/lazy imports。
+   - 子任务已记录 production chunk体积与聚焦 probe；网络冷/热成本和完整产品回路由父任务最终综合 fixture统一验证。
+3. **`import.meta.glob` VFS 子集 — 已完成**
+   - 任务：`07-10-import-meta-glob-vfs`（已归档）。
+   - 已实现单静态 pattern、relative/`@/`、lazy/eager、浏览器 matcher 语法与 fail-loud 边界，并完成聚焦 transform / esbuild-wasm 验证。
+   - 完整上传、IndexedDB、Service Worker 与 packaged iframe 回路仍由父任务最终综合 fixture 统一验证。
 4. **Worker 子构建与物化 — 最后**
    - 任务：`07-10-worker-subbuild-materialization`（planning）。
    - 支持明确的 worker import 形式，使用同一 VFS 独立构建 worker，并将产物写入 SW-backed `frontend/dist/**`。
