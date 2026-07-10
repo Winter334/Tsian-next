@@ -5,6 +5,11 @@ import tailwindcss from "@tailwindcss/vite"
 
 export default defineConfig({
   plugins: [vue(), tailwindcss()],
+  // Dart Sass's browser build relies on runtime constructor/function names.
+  // Keep them intact in production minification as required by its bundler docs.
+  esbuild: {
+    keepNames: true,
+  },
   server: {
     proxy: {
       "/api": "http://localhost:8080",

@@ -1,4 +1,9 @@
 import type { Loader, Plugin } from "esbuild-wasm"
+import {
+  compileStylePreprocessor,
+  toStylePreprocessorMessage,
+  type StylePreprocessorLanguage,
+} from "../style-preprocessors"
 
 /**
  * Workspace source plugin — feeds source files from IndexedDB memory into
@@ -34,6 +39,9 @@ const RESOLVE_EXTENSIONS = [
   ".cjs",
   ".vue",
   ".css",
+  ".scss",
+  ".sass",
+  ".less",
   ".json",
   ".png",
   ".jpg",
@@ -63,8 +71,13 @@ const INDEX_EXTENSIONS = [
   ".cjs",
   ".vue",
   ".css",
+  ".scss",
+  ".sass",
+  ".less",
   ".json",
 ]
+
+const STYLE_RESOLVE_EXTENSIONS = new Set([".scss", ".sass", ".less"])
 
 interface SourceRequest {
   path: string
@@ -155,19 +168,30 @@ function hasExplicitExtension(path: string): boolean {
   return /\.[^/.]+$/.test(leaf)
 }
 
-function candidatePaths(path: string): string[] {
+function sourceResolutionTiers(path: string): string[][] {
   const normalized = normalizeWorkspaceSourcePath(path)
   const base = normalized.replace(/\/+$/, "")
-  const candidates = [normalized]
-  if (!hasExplicitExtension(base)) {
-    for (const ext of RESOLVE_EXTENSIONS) {
-      candidates.push(base + ext)
-    }
-    for (const ext of INDEX_EXTENSIONS) {
-      candidates.push(`${base}/index${ext}`)
+  if (hasExplicitExtension(base)) return [[normalized]]
+
+  const tiers: string[][] = [[normalized]]
+  for (const ext of RESOLVE_EXTENSIONS) {
+    if (!STYLE_RESOLVE_EXTENSIONS.has(ext)) {
+      tiers.push([base + ext])
     }
   }
-  return candidates
+  tiers.push([...STYLE_RESOLVE_EXTENSIONS].map((extension) => `${base}${extension}`))
+  for (const ext of INDEX_EXTENSIONS) {
+    if (!STYLE_RESOLVE_EXTENSIONS.has(ext)) {
+      tiers.push([`${base}/index${ext}`])
+    }
+  }
+  tiers.push([...STYLE_RESOLVE_EXTENSIONS].map((extension) => `${base}/index${extension}`))
+  return tiers
+}
+
+function stylePreprocessorLanguage(path: string): StylePreprocessorLanguage | undefined {
+  const match = /\.(scss|sass|less)$/i.exec(path)
+  return match?.[1]?.toLowerCase() as StylePreprocessorLanguage | undefined
 }
 
 /** Pick an esbuild loader by file extension. `.vue` is left to the sfc plugin. */
@@ -181,25 +205,42 @@ function loaderFor(path: string, query: string): Loader {
   if (lowerPath.endsWith(".ts") || lowerPath.endsWith(".mts") || lowerPath.endsWith(".cts")) return "ts"
   if (lowerPath.endsWith(".jsx")) return "jsx"
   if (lowerPath.endsWith(".js") || lowerPath.endsWith(".mjs") || lowerPath.endsWith(".cjs")) return "js"
-  if (lowerPath.endsWith(".module.css")) return "local-css"
-  if (lowerPath.endsWith(".css")) return "css"
+  if (lowerPath.endsWith(".module.css") || /\.module\.(scss|sass|less)$/.test(lowerPath)) return "local-css"
+  if (lowerPath.endsWith(".css") || /\.(scss|sass|less)$/.test(lowerPath)) return "css"
   if (lowerPath.endsWith(".json")) return "json"
   if (/\.(png|jpe?g|webp|gif|svg|ico|avif|woff2?|ttf|otf|eot|wasm)$/.test(lowerPath)) return "file"
   return "text"
 }
 
+interface SourceResolution {
+  loaded?: LoadedSource
+  error?: string
+}
+
 function loadSource(
   sources: Map<string, WorkspaceSourceContent>,
   path: string,
-): LoadedSource | undefined {
+): SourceResolution {
   const request = splitSourceRequest(path)
-  for (const candidate of candidatePaths(request.path)) {
-    const contents = sources.get(candidate)
-    if (contents !== undefined) {
-      return { ...request, path: candidate, contents }
+  for (const tier of sourceResolutionTiers(request.path)) {
+    const existing = tier.filter((candidate) => sources.has(candidate))
+    if (existing.length > 1) {
+      return {
+        error: `样式源码解析存在歧义 ${JSON.stringify(request.path)}: ${existing.join(", ")}`,
+      }
+    }
+    const candidate = existing[0]
+    if (candidate) {
+      return {
+        loaded: {
+          ...request,
+          path: candidate,
+          contents: sources.get(candidate)!,
+        },
+      }
     }
   }
-  return undefined
+  return {}
 }
 
 function toText(contents: WorkspaceSourceContent): string {
@@ -230,6 +271,7 @@ function unsupportedQueryError(path: string, query: string): string | undefined 
 interface ResolvedSource {
   path: string
   suffix: string
+  error?: string
 }
 
 function toResolvedSource(loaded: LoadedSource): ResolvedSource {
@@ -243,12 +285,13 @@ function resolveExistingSource(
   sources: Map<string, WorkspaceSourceContent>,
   path: string,
 ): ResolvedSource {
-  const loaded = loadSource(sources, path)
-  if (loaded) return toResolvedSource(loaded)
+  const resolution = loadSource(sources, path)
+  if (resolution.loaded) return toResolvedSource(resolution.loaded)
   const request = splitSourceRequest(path)
   return {
     path: request.path,
     suffix: `${request.query ? `?${request.query}` : ""}${request.hash ? `#${request.hash}` : ""}`,
+    error: resolution.error,
   }
 }
 
@@ -263,6 +306,7 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
           path: resolved.path,
           suffix: resolved.suffix,
           namespace: WORKSPACE_NAMESPACE,
+          ...(resolved.error ? { errors: [{ text: resolved.error }] } : {}),
         }
       })
 
@@ -276,6 +320,7 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
           path: resolved.path,
           suffix: resolved.suffix,
           namespace: WORKSPACE_NAMESPACE,
+          ...(resolved.error ? { errors: [{ text: resolved.error }] } : {}),
         }
       })
 
@@ -284,7 +329,11 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
       build.onLoad(
         { filter: /.*/, namespace: WORKSPACE_NAMESPACE },
         async (args) => {
-          const loaded = loadSource(sources, `${args.path}${args.suffix}`)
+          const resolution = loadSource(sources, `${args.path}${args.suffix}`)
+          if (resolution.error) {
+            return { errors: [{ text: resolution.error }] }
+          }
+          const loaded = resolution.loaded
           if (loaded !== undefined) {
             const unsupported = unsupportedQueryError(loaded.path, loaded.query)
             if (unsupported) {
@@ -295,6 +344,35 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
               return {
                 contents: `export default ${JSON.stringify(toText(loaded.contents))}`,
                 loader: "js",
+              }
+            }
+            const language = loaded.query ? undefined : stylePreprocessorLanguage(loaded.path)
+            if (language) {
+              if (typeof loaded.contents !== "string") {
+                return { errors: [{ text: `${language} 样式源码必须是文本文件: ${loaded.path}` }] }
+              }
+              try {
+                const compiled = await compileStylePreprocessor({
+                  language,
+                  source: loaded.contents,
+                  filename: loaded.path,
+                  sources,
+                })
+                return {
+                  contents: compiled.css,
+                  loader: loaderFor(loaded.path, loaded.query),
+                  resolveDir: loaded.path.includes("/")
+                    ? loaded.path.slice(0, loaded.path.lastIndexOf("/"))
+                    : ".",
+                  watchFiles: compiled.dependencies,
+                }
+              } catch (error) {
+                return {
+                  errors: [toStylePreprocessorMessage(error, {
+                    language,
+                    filename: loaded.path,
+                  })],
+                }
               }
             }
             return {

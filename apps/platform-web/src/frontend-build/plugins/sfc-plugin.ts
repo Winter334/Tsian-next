@@ -1,4 +1,9 @@
-import type { Loader, Plugin } from "esbuild-wasm"
+import type { Loader, PartialMessage, Plugin } from "esbuild-wasm"
+import {
+  compileStylePreprocessor,
+  toStylePreprocessorMessage,
+  type StylePreprocessorLanguage,
+} from "../style-preprocessors"
 import type {
   SFCDescriptor,
   SFCParseResult,
@@ -100,6 +105,13 @@ function styleModuleName(styleBlock: SFCStyleBlock): string | undefined {
   return typeof styleBlock.module === "string" ? styleBlock.module : "$style"
 }
 
+function styleLanguage(styleBlock: SFCStyleBlock): "css" | StylePreprocessorLanguage | undefined {
+  const language = styleBlock.lang?.toLowerCase() ?? "css"
+  return language === "css" || language === "scss" || language === "sass" || language === "less"
+    ? language
+    : undefined
+}
+
 function validateStyleBlock(descriptor: SFCDescriptor, index: number, filename: string): string | undefined {
   const styleBlock = descriptor.styles[index]
   if (!styleBlock) {
@@ -111,7 +123,7 @@ function validateStyleBlock(descriptor: SFCDescriptor, index: number, filename: 
   if (typeof styleBlock.module === "string" && !styleBlock.module.trim()) {
     return `SFC CSS module 名称无效: ${filename}`
   }
-  if (styleBlock.lang && styleBlock.lang !== "css") {
+  if (!styleLanguage(styleBlock)) {
     return `SFC style lang=\"${styleBlock.lang}\" 暂不支持: ${filename}`
   }
   return undefined
@@ -242,40 +254,67 @@ async function compileSfcStyle(
   source: string,
   filename: string,
   styleIndex: number,
-): Promise<{ css: string; loader: Loader; errors: string[] }> {
+  sources: Map<string, string | Uint8Array>,
+): Promise<{ css: string; loader: Loader; errors: PartialMessage[]; dependencies: string[] }> {
   const compiler = await loadCompiler()
-  const errors: string[] = []
+  const errors: PartialMessage[] = []
   const parseResult: SFCParseResult = compiler.parse(source, { filename })
   for (const e of parseResult.errors) {
-    errors.push(errorMessage(filename, e))
+    errors.push({ text: errorMessage(filename, e) })
   }
   if (errors.length > 0) {
-    return { css: "", loader: "css", errors }
+    return { css: "", loader: "css", errors, dependencies: [] }
   }
 
   const descriptor = parseResult.descriptor
   const styleError = validateStyleBlock(descriptor, styleIndex, filename)
   if (styleError) {
-    return { css: "", loader: "css", errors: [styleError] }
+    return { css: "", loader: "css", errors: [{ text: styleError }], dependencies: [] }
   }
 
   const styleBlock = descriptor.styles[styleIndex]
+  const language = styleLanguage(styleBlock)!
+  let styleSource = styleBlock.content
+  let dependencies: string[] = []
+  if (language !== "css") {
+    try {
+      const preprocessed = await compileStylePreprocessor({
+        language,
+        source: styleSource,
+        filename,
+        sources,
+        sourceLineOffset: styleBlock.loc.start.line - 1,
+        sourceColumnOffset: styleBlock.loc.start.column,
+      })
+      styleSource = preprocessed.css
+      dependencies = preprocessed.dependencies
+    } catch (error) {
+      return {
+        css: "",
+        loader: "css",
+        errors: [toStylePreprocessorMessage(error, { language, filename })],
+        dependencies: [],
+      }
+    }
+  }
+
   const styleResult: SFCStyleCompileResults = await compiler.compileStyleAsync({
     filename,
-    source: styleBlock.content,
+    source: styleSource,
     id: scopeIdFor(source),
     scoped: styleBlock.scoped,
     isProd: true,
   })
   for (const e of styleResult.errors) {
-    errors.push(errorMessage(filename, e as Error))
+    errors.push({ text: errorMessage(filename, e as Error) })
   }
   return errors.length > 0
-    ? { css: "", loader: "css", errors }
+    ? { css: "", loader: "css", errors, dependencies }
     : {
         css: styleResult.code,
         loader: styleModuleName(styleBlock) ? "local-css" : "css",
         errors: [],
+        dependencies,
       }
 }
 
@@ -307,11 +346,18 @@ export function createSfcPlugin(input: SfcPluginInput): Plugin {
             if (!Number.isInteger(styleIndex) || styleIndex < 0) {
               return { errors: [{ text: `SFC style 索引无效: ${args.path}` }] }
             }
-            const compiled = await compileSfcStyle(source, sourcePath, styleIndex)
+            const compiled = await compileSfcStyle(source, sourcePath, styleIndex, sources)
             if (compiled.errors.length > 0) {
-              return { errors: compiled.errors.map((text) => ({ text })) }
+              return { errors: compiled.errors }
             }
-            return { contents: compiled.css, loader: compiled.loader }
+            return {
+              contents: compiled.css,
+              loader: compiled.loader,
+              resolveDir: sourcePath.includes("/")
+                ? sourcePath.slice(0, sourcePath.lastIndexOf("/"))
+                : ".",
+              watchFiles: compiled.dependencies,
+            }
           }
 
           if (request.query) {
