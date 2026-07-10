@@ -1326,3 +1326,36 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 137: 修复工作区可编辑文本读取
+
+**Date**: 2026-07-10
+**Task**: 修复工作区可编辑文本读取
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+统一可编辑文本与 Blob 工作区投影，恢复 Vue 等源码的资源管理器和桌面 Agent 读写，保真前端 MIME，增加二进制防误写，并修复 diff 参数与 CRLF 多行 edit。构建及用户浏览器复测通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `46d7e41` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
