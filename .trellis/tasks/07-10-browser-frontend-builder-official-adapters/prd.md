@@ -8,9 +8,10 @@
 
 - 构建发生在浏览器内，源码来自 IndexedDB 预加载后的 `Map<string, string | Uint8Array>`，没有 Node `fs/path` 和真实文件系统。
 - `@vitejs/plugin-vue`、`unplugin-vue/esbuild` 及常见 Vue/esbuild、Sass、Less、glob、worker 插件大多依赖 Node/Vite，不能直接挂到当前 `esbuild-wasm` 构建中。
-- Vue SFC 应继续复用官方 `@vue/compiler-sfc`；普通 CSS、CSS Modules、资源输出应优先复用 esbuild 内置 loader。
-- 当前工作区已有未提交的 `frontend-build` 兼容修复：二进制资源、路径归一化、`@/` alias、基础 asset query、Vue `<script setup>` binding/render/scope、SFC style 虚拟 CSS import。这些改动是第一阶段的当前基线，需要纳入任务、审查和回归验证，不得被覆盖或重复实现。
+- Vue SFC 复用官方 `@vue/compiler-sfc`；普通 CSS、CSS Modules、资源输出优先复用 esbuild 内置 loader。
 - 现有任务 `07-09-source-frontend-package-build` 已打通源码包上传与在线构建；本任务聚焦构建器能力和可靠性，不重复设计上传协议。
+- 第一阶段 `07-10-vue-vfs-css-modules` 已完成并归档（commit `b07a204`，archive commit `9d9e8ce`）：当前基线已包含 canonical VFS 解析、`@/` alias、extension-less/目录入口、query/hash `suffix` 处理、二进制资源、输出路径归一化、Vue `<script setup>` binding/render/scope、虚拟 SFC styles 和 CSS Modules。
+- 第二阶段 `07-10-sass-less-vfs-adapters` 已完成实现与聚焦验证，正在收尾；其完整浏览器产品回路已纳入父任务最终综合 fixture。下一能力目标为 `07-10-import-meta-glob-vfs`。不要启动父任务作为代码实施目标。
 
 ## Requirements
 
@@ -31,7 +32,7 @@
 ### R3. 分阶段可交付
 
 - 本请求作为父任务管理，不直接承载大范围实现。
-- 每个子任务必须可独立规划、实现、验证和归档。
+- 每个能力子任务必须可独立规划、实现、完成静态检查与聚焦能力验证并归档；完整上传、IndexedDB、browser esbuild-wasm、SW 与 packaged iframe 回路集中在父任务最终集成阶段执行。
 - 第一阶段先收敛现有兼容修复、Vue 官方 API、CSS Modules 和自动化回归，再推进预处理器、glob 和 Worker。
 - 后续子任务不得要求前置阶段之外的隐式未提交状态；依赖和顺序写入各自设计/实施计划。
 
@@ -42,34 +43,40 @@
 - 构建失败必须进入现有 frontend build status 诊断链路，并指出文件、能力和原因。
 - 不修改 play bridge 协议、Game Card package contract、Dexie schema 或 Service Worker DB 名。
 
+### R5. 父任务综合集成测试
+
+- Sass/Less、`import.meta.glob` 和 Worker 子任务完成后，构造一个综合测试前端源码包，一次覆盖新增能力与既有 Vue/CSS/VFS 能力的组合。
+- 综合测试走真实上传 → IndexedDB → browser esbuild-wasm → dist write-back → Service Worker → packaged iframe 链路，并覆盖成功输出、资源加载、Console/Network、失败诊断和旧 dist 保留。
+- 子任务负责维护可移交的用例矩阵和聚焦验证证据；完整浏览器回路、网络懒加载证据及冷/热性能测量由父任务最终集成阶段统一完成。
+- 综合 fixture 的源码应可重复生成；二进制 zip 只放未跟踪 `tmp/`，是否保留长期 fixture 源码在父任务集成设计中决定。
+
 ## Task Map
 
-1. **Vue/VFS 加固与 CSS Modules**
-   - 吸收和审查当前工作区兼容修复。
-   - 使用 `@vue/compiler-sfc` 官方默认导出重写能力。
-   - 使用 esbuild `local-css` 支持普通 CSS Modules 和 Vue `<style module>`。
-   - 建立浏览器内构建回归样例，覆盖 alias、目录入口、asset query、图片、scoped style 和 style `url(...)`。
-2. **Sass/Less 虚拟文件适配**
-   - 动态加载浏览器编译器。
-   - 支持 SFC style 与独立样式文件中的虚拟相对 import。
-   - 监控并记录 bundle/首次构建成本。
-3. **`import.meta.glob` VFS 子集**
-   - 定义并实现明确的 Vite 兼容子集。
-   - 从 VFS key 枚举生成 eager/lazy imports。
-4. **Worker 子构建与物化**
-   - 支持明确的 worker import 形式。
-   - 使用同一 VFS 独立构建 worker，并将产物写入可由 SW 加载的 `frontend/dist/**`。
+1. **Vue/VFS 加固与 CSS Modules — 已完成**
+   - 任务：`07-10-vue-vfs-css-modules`（已归档）。
+   - 已使用 `@vue/compiler-sfc` 官方 `genDefaultAs`，并以 esbuild `local-css` 支持独立及 Vue CSS Modules。
+   - 已加固 alias、目录入口、asset query/suffix、图片、scoped style、style `url(...)` 和输出路径。
+2. **Sass/Less 虚拟文件适配 — 实施完成待收尾**
+   - 任务：`07-10-sass-less-vfs-adapters`（in_progress）。
+   - 已实现官方浏览器编译器懒加载、共享 strict Map VFS adapter、standalone/Vue style接入及结构化诊断。
+   - 子任务记录 production chunk体积与聚焦 probe；网络冷/热成本和完整产品回路由父任务最终综合 fixture统一验证。
+3. **`import.meta.glob` VFS 子集 — 后续**
+   - 任务：`07-10-import-meta-glob-vfs`（planning）。
+   - 定义明确的 Vite 兼容子集，从 VFS key 枚举生成 eager/lazy imports。
+4. **Worker 子构建与物化 — 最后**
+   - 任务：`07-10-worker-subbuild-materialization`（planning）。
+   - 支持明确的 worker import 形式，使用同一 VFS 独立构建 worker，并将产物写入 SW-backed `frontend/dist/**`。
 
 ## Cross-Child Acceptance Criteria
 
 - [ ] 各子任务均有独立、可执行的验收场景和错误矩阵。
-- [ ] Vue SFC 默认导出组装不再依赖正则替换 `export default`。
-- [ ] `<script setup>` 本地组件、render function、scoped style 和 CSS Modules 在 packaged iframe 中正常工作。
-- [ ] Sass/Less、`import.meta.glob`、Worker 的已声明兼容子集均通过浏览器内真实构建验证。
+- [x] Vue SFC 默认导出组装不再依赖正则替换 `export default`。
+- [x] `<script setup>` 本地组件、render function、scoped style 和 CSS Modules 已完成构建验证，并通过真实 packaged iframe 无控制台错误的烟雾验证。
+- [ ] 父任务最终综合测试前端包通过真实浏览器回路验证 Sass/Less、`import.meta.glob`、Worker 的已声明兼容子集。
 - [ ] 未支持的语法或模式在构建期产生明确、可定位错误。
 - [ ] 真实 `play-frontend-dev` 源码包在线构建成功并在 packaged iframe 中渲染。
 - [ ] 每个修改 `apps/platform-web` 的子任务均通过 `npm run build:web`。
-- [ ] 每个修改 `src/frontend-build/` 的子任务均完成真实浏览器回路验证；不能用 `build:web` 代替。
+- [ ] 父任务最终集成阶段对所有 `src/frontend-build/` 修改运行一次完整真实浏览器回路；各能力子任务不得只做 `build:web`，还需提供聚焦 fixture/probe 和可移交用例矩阵。
 
 ## Out of Scope
 

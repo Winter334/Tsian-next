@@ -11,7 +11,73 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
   - **`esbuild.initialize` is "call exactly once" per page lifetime.** esbuild-wasm guards it internally (`Cannot call "initialize" more than once`) and reuses one long-lived service for all `esbuild.build` calls. Cache the init promise on `globalThis` (NOT a module-level variable — vite HMR reloads the module and resets module state, diverging from esbuild-wasm's surviving module state). Wrap `initialize` to swallow the "more than once" error (it means a service is already alive = success), and clear the cache only on genuine failure. See `engine.ts` `ensureEsbuildInitialized`.
   - **esbuild `outputFiles[i].path` may carry a leading slash** (`/assets/stdin.js`). Concatenating a prefix (`frontend/dist/` + `/assets/...`) yields a double slash (`frontend/dist//assets/...`). The storage layer normalizes it on write, but any in-memory `Set` of "newly written paths" holds the un-normalized form — a later stale-file cleanup that compares against normalized stored paths won't match and will delete the freshly-written files. Strip the leading slash before concatenating. See `write-back.ts`.
   - **Keep import query/hash text in `OnResolveResult.suffix`, not `path`.** For VFS imports such as `logo.png?url`, return `{ path: "logo.png", suffix: "?url" }`; `onLoad` receives the pair as `args.path` + `args.suffix`. If the query is concatenated into `path`, esbuild's file loader may emit a stored filename containing `?url` while the browser/SW requests only the pathname, producing a packaged-iframe 404; extension/MIME inference can also degrade (for example SVG inline data becoming `text/plain`). Vue virtual style loaders must inspect `args.suffix` as well, or `?tsian-style=N` falls through and the raw SFC is compiled a second time. See `workspace-source-plugin.ts` and `sfc-plugin.ts`.
-- After touching `src/frontend-build/`, manually verify the full loop in the browser (create default card → /play renders the placeholder shell → edit `frontend/src/main.ts` → ~800ms later dist rebuilds and /play reloads). The build command alone is insufficient evidence.
+- After touching `src/frontend-build/`, use layered validation: each capability child passes focused fixtures/probes and hands off a browser matrix; a parent with several related children may run one consolidated source-package test through upload → IndexedDB → browser esbuild-wasm → dist write-back → SW → packaged iframe after all children finish. The parent remains incomplete until that full loop passes.
+
+## Browser Style Preprocessor Contract
+
+### 1. Scope / Trigger
+
+Use this contract when changing Sass, Less, or another browser-side style preprocessor under `src/frontend-build/`.
+
+### 2. Signatures
+
+```ts
+type StylePreprocessorLanguage = "scss" | "sass" | "less"
+interface StylePreprocessorInput {
+  language: StylePreprocessorLanguage
+  source: string
+  filename: string
+  sources: Map<string, string | Uint8Array>
+}
+interface StylePreprocessorResult {
+  css: string
+  dependencies: string[]
+  sourceMap?: unknown
+}
+```
+
+### 3. Contracts
+
+- Use literal, memoized dynamic imports: `import("sass")` and pinned `import("less/lib/less/index.js")`.
+- Dart Sass production builds require name preservation; keep Vite `esbuild.keepNames: true` unless a browser probe proves an equivalent replacement.
+- Less uses its pinned core factory and Map FileManager. Do not use its package-root bootstrap or `window.less` / `window.LESS_PLUGINS`.
+- Strictly bind imports to `frontend/src/`; reject root escape, schemes/authority, query/hash, backslashes, NUL, and encoded separator/control forms.
+- Order: preprocessor → Vue scoped rewrite → esbuild `css`/`local-css`.
+- `?raw`, `?url`, and `?inline` bypass preprocessing.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Missing/ambiguous import | Fail with language, entry, and requested import |
+| Binary style source | Fail; never decode as text |
+| Root escape/invalid URL | Fail even for Less `(optional)` |
+| Less JavaScript/`@plugin` | Fail without execution |
+| Plain CSS/Vue | Request neither compiler |
+| Sass or Less | Request only its own compiler |
+
+### 5. Good / Base / Bad Cases
+
+- Good: SCSS `@use` resolves a Map-backed partial and reports its canonical dependency.
+- Base: plain CSS bypasses the dispatcher.
+- Bad: `../../secret`, `pkg:theme`, a binary partial, or a Less plugin fails loudly.
+
+### 6. Tests Required
+
+- Child: type-check/build, strict-VFS fixtures, compiler security/diagnostic probes, and production chunk inspection.
+- Parent: real source-package browser loop; assert styles/modules/assets, Console/Network, lazy isolation, warm reuse, failure status, and old-dist preservation.
+- Compiler upgrade: rerun production Sass and Less factory/global/DOM safety probes.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: ambient browser bootstrap.
+const less = await import("less")
+
+// Correct: pinned core factory with explicit VFS environment.
+const { default: createLess } = await import("less/lib/less/index.js")
+```
+
 
 ## Project Rules
 
