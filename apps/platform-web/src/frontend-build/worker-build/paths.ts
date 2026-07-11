@@ -255,8 +255,12 @@ export function workerResourceLoaderForPath(path: string, query: string): Loader
   const scriptLoader = scriptLoaderForPath(path)
   if (scriptLoader) return scriptLoader
   if (path.toLowerCase().endsWith(".json")) return "json"
-  if (/\.(png|jpe?g|webp|gif|svg|ico|avif|woff2?|ttf|otf|eot|wasm)$/i.test(path)) return "file"
+  if (isFileLoaderAssetPath(path)) return "file"
   return "text"
+}
+
+export function isFileLoaderAssetPath(path: string): boolean {
+  return /\.(png|jpe?g|webp|gif|svg|ico|avif|woff2?|ttf|otf|eot|wasm)$/i.test(path)
 }
 
 function stableHash(value: string): string {

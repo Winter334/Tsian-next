@@ -9,6 +9,7 @@ import {
   toDirectWorkerConstructorMessage,
 } from "./diagnostics"
 import {
+  isFileLoaderAssetPath,
   isStyleSourcePath,
   isVueSourcePath,
   loadWorkspaceSource,
@@ -45,6 +46,10 @@ function urlAssetModule(path: string): string {
     "const cleanAssetUrl = assetUrl.replace(/[?#].*$/, \"\")",
     "export default new URL(cleanAssetUrl, import.meta.url).href",
   ].join("\n")
+}
+
+function shouldWrapFileLoaderUrl(path: string, suffix: string, kind: string): boolean {
+  return !suffix && kind === "import-statement" && isFileLoaderAssetPath(path)
 }
 
 function unsupportedWorkerQueryError(path: string, query: string): string | undefined {
@@ -84,7 +89,7 @@ function unsupportedWorkerSourceKind(path: string): string | undefined {
 function unsupportedWorkerResourceKind(path: string, query: string): string | undefined {
   if (scriptLoaderForPath(path)) return undefined
   if (path.toLowerCase().endsWith(".json")) return undefined
-  if (/\.(png|jpe?g|webp|gif|svg|ico|avif|woff2?|ttf|otf|eot|wasm)$/i.test(path)) return undefined
+  if (isFileLoaderAssetPath(path)) return undefined
   if (query === "raw" || query === "url" || query === "inline") return undefined
   return `Worker 构建暂不支持此资源类型: ${path}`
 }
@@ -112,7 +117,9 @@ export function createWorkerSourcePlugin({ sources }: WorkerSourcePluginInput): 
         const resolved = resolveExistingWorkspaceSource(sources, resolveAlias(args.path))
         return {
           path: resolved.path,
-          suffix: resolved.suffix,
+          suffix: shouldWrapFileLoaderUrl(resolved.path, resolved.suffix, args.kind)
+            ? "?url"
+            : resolved.suffix,
           namespace: WORKER_WORKSPACE_NAMESPACE,
           ...(resolved.error ? { errors: [{ text: resolved.error }] } : {}),
         }
@@ -125,7 +132,9 @@ export function createWorkerSourcePlugin({ sources }: WorkerSourcePluginInput): 
         )
         return {
           path: resolved.path,
-          suffix: resolved.suffix,
+          suffix: shouldWrapFileLoaderUrl(resolved.path, resolved.suffix, args.kind)
+            ? "?url"
+            : resolved.suffix,
           namespace: WORKER_WORKSPACE_NAMESPACE,
           ...(resolved.error ? { errors: [{ text: resolved.error }] } : {}),
         }

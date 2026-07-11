@@ -218,7 +218,7 @@ function loaderFor(path: string, query: string): Loader {
   if (lowerPath.endsWith(".module.css") || /\.module\.(scss|sass|less)$/.test(lowerPath)) return "local-css"
   if (lowerPath.endsWith(".css") || /\.(scss|sass|less)$/.test(lowerPath)) return "css"
   if (lowerPath.endsWith(".json")) return "json"
-  if (/\.(png|jpe?g|webp|gif|svg|ico|avif|woff2?|ttf|otf|eot|wasm)$/.test(lowerPath)) return "file"
+  if (isFileLoaderAssetPath(lowerPath)) return "file"
   return "text"
 }
 
@@ -278,6 +278,14 @@ function urlAssetModule(path: string): string {
     "const cleanAssetUrl = assetUrl.replace(/[?#].*$/, \"\")",
     "export default new URL(cleanAssetUrl, import.meta.url).href",
   ].join("\n")
+}
+
+function isFileLoaderAssetPath(path: string): boolean {
+  return /\.(png|jpe?g|webp|gif|svg|ico|avif|woff2?|ttf|otf|eot|wasm)$/i.test(path)
+}
+
+function shouldWrapFileLoaderUrl(path: string, suffix: string, kind: string): boolean {
+  return !suffix && kind === "import-statement" && isFileLoaderAssetPath(path)
 }
 
 function unsupportedQueryError(path: string, query: string): string | undefined {
@@ -343,7 +351,9 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
         const resolved = resolveExistingSource(sources, resolveAlias(args.path))
         return {
           path: resolved.path,
-          suffix: resolved.suffix,
+          suffix: shouldWrapFileLoaderUrl(resolved.path, resolved.suffix, args.kind)
+            ? "?url"
+            : resolved.suffix,
           namespace: WORKSPACE_NAMESPACE,
           ...(resolved.error ? { errors: [{ text: resolved.error }] } : {}),
         }
@@ -355,11 +365,20 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
           sources,
           resolveRelative(args.path, args.importer),
         )
+        if (resolved.error) {
+          return {
+            path: resolved.path,
+            suffix: resolved.suffix,
+            namespace: WORKSPACE_NAMESPACE,
+            errors: [{ text: resolved.error }],
+          }
+        }
         return {
           path: resolved.path,
-          suffix: resolved.suffix,
+          suffix: shouldWrapFileLoaderUrl(resolved.path, resolved.suffix, args.kind)
+            ? "?url"
+            : resolved.suffix,
           namespace: WORKSPACE_NAMESPACE,
-          ...(resolved.error ? { errors: [{ text: resolved.error }] } : {}),
         }
       })
 
