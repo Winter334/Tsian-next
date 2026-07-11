@@ -38,7 +38,7 @@ export type {
   InspectFrontendInput,
   InspectFrontendStructure,
   InspectFrontendDiagnostics,
-  InspectFrontendTimelineEntry,
+  InspectFrontendActivityEntry,
   InspectFrontendActionSnapshot,
   InspectFrontendResult,
   RuntimeControlledExecutorContext,
@@ -71,7 +71,7 @@ import type {
   InspectFrontendInput,
   InspectFrontendStructure,
   InspectFrontendDiagnostics,
-  InspectFrontendTimelineEntry,
+  InspectFrontendActivityEntry,
   InspectFrontendActionSnapshot,
   InspectFrontendResult,
   RuntimeControlledExecutorContext,
@@ -912,8 +912,22 @@ function normalizeAgentCallArguments(
   }
 }
 
-const INSPECT_FRONTEND_WAIT_MODES = new Set(["bridge-ready", "turn-completed"])
-const INSPECT_FRONTEND_RUNTIME_MODES = new Set(["real", "mock"])
+const INSPECT_FRONTEND_WAIT_MODES = new Set(["runtime-settled"])
+const INSPECT_FRONTEND_OPERATIONS = new Set(["inspect", "finish"])
+const INSPECT_FRONTEND_REMOVED_FIELDS = new Set([
+  "send",
+  "refresh",
+  "runtime",
+  "screenshot",
+])
+const INSPECT_FRONTEND_ALLOWED_FIELDS = new Set([
+  "operation",
+  "actions",
+  "observeBetween",
+  "autoWait",
+  "wait",
+  "timeoutMs",
+])
 const INSPECT_DOM_ACTION_TYPES = new Set<InspectDomActionType>([
   "click",
   "type",
@@ -927,11 +941,6 @@ const INSPECT_DOM_ACTION_TYPES = new Set<InspectDomActionType>([
 ])
 const INSPECT_SCROLL_TARGETS = new Set(["top", "bottom"])
 
-/**
- * 校验 inspect_frontend 工具入参。手写校验（镜像 normalizeAgentCallArguments），
- * 无 cardId 参数——inspector 内部从 getPlatformActiveGameCard() 取当前卡。
- * wait 默认 bridge-ready；只把实际提供的字段放进结果。
- */
 /**
  * 校验 test_skill_script 工具入参。手写校验（镜像 normalizeInspectFrontendArguments）。
  */
@@ -1001,21 +1010,33 @@ function normalizeAskUserArguments(input: Record<string, unknown>): AskUserReque
 function normalizeInspectFrontendArguments(
   input: Record<string, unknown>,
 ): InspectFrontendInput {
-  const result: InspectFrontendInput = {}
-
-  if (input.send !== undefined) {
-    if (!isRecord(input.send)) {
+  for (const key of Object.keys(input)) {
+    if (INSPECT_FRONTEND_REMOVED_FIELDS.has(key)) {
       throw toolError(
-        "INSPECT_FRONTEND_SEND_INVALID",
-        "inspect_frontend send must be an object with a message string.",
+        "INSPECT_FRONTEND_ARGUMENT_REMOVED",
+        `inspect_frontend ${key} is no longer supported. Operate the current Play iframe through actions.`,
       )
     }
-    const message = normalizeRequiredString(
-      input.send.message,
-      "INSPECT_FRONTEND_MESSAGE_REQUIRED",
-      "inspect_frontend send.message must be a non-empty string.",
+    if (!INSPECT_FRONTEND_ALLOWED_FIELDS.has(key)) {
+      throw toolError(
+        "INSPECT_FRONTEND_ARGUMENT_UNKNOWN",
+        `inspect_frontend received an unknown argument: ${key}.`,
+      )
+    }
+  }
+
+  const operation = input.operation ?? "inspect"
+  if (
+    typeof operation !== "string"
+    || !INSPECT_FRONTEND_OPERATIONS.has(operation)
+  ) {
+    throw toolError(
+      "INSPECT_FRONTEND_OPERATION_INVALID",
+      "inspect_frontend operation must be one of: inspect, finish.",
     )
-    result.send = { message }
+  }
+  const result: InspectFrontendInput = {
+    operation: operation as "inspect" | "finish",
   }
 
   if (input.actions !== undefined) {
@@ -1051,63 +1072,133 @@ function normalizeInspectFrontendArguments(
         type: type as InspectDomActionType,
         selector,
       }
-      if (typeof raw.text === "string" && raw.text) action.text = raw.text
-      if (typeof raw.key === "string" && raw.key) action.key = raw.key
-      if (
-        typeof raw.to === "string"
-        && INSPECT_SCROLL_TARGETS.has(raw.to as "top" | "bottom")
-      ) {
+      if (raw.text !== undefined) {
+        if (typeof raw.text !== "string") {
+          throw toolError(
+            "INSPECT_FRONTEND_ACTION_TEXT_INVALID",
+            `inspect_frontend actions[${i}].text must be a string.`,
+          )
+        }
+        action.text = raw.text
+      }
+      if (raw.key !== undefined) {
+        if (typeof raw.key !== "string" || !raw.key) {
+          throw toolError(
+            "INSPECT_FRONTEND_ACTION_KEY_INVALID",
+            `inspect_frontend actions[${i}].key must be a non-empty string.`,
+          )
+        }
+        action.key = raw.key
+      }
+      if (raw.to !== undefined) {
+        if (
+          typeof raw.to !== "string"
+          || !INSPECT_SCROLL_TARGETS.has(raw.to as "top" | "bottom")
+        ) {
+          throw toolError(
+            "INSPECT_FRONTEND_ACTION_SCROLL_INVALID",
+            `inspect_frontend actions[${i}].to must be top or bottom.`,
+          )
+        }
         action.to = raw.to as "top" | "bottom"
       }
-      // selectOption:按 option value 或 label 文本匹配
-      if (typeof raw.value === "string" && raw.value) action.value = raw.value
-      if (typeof raw.label === "string" && raw.label) action.label = raw.label
-      // check:checked 默认 true,false=取消勾选
-      if (typeof raw.checked === "boolean") action.checked = raw.checked
+      if (raw.value !== undefined) {
+        if (typeof raw.value !== "string") {
+          throw toolError(
+            "INSPECT_FRONTEND_ACTION_VALUE_INVALID",
+            `inspect_frontend actions[${i}].value must be a string.`,
+          )
+        }
+        action.value = raw.value
+      }
+      if (raw.label !== undefined) {
+        if (typeof raw.label !== "string") {
+          throw toolError(
+            "INSPECT_FRONTEND_ACTION_LABEL_INVALID",
+            `inspect_frontend actions[${i}].label must be a string.`,
+          )
+        }
+        action.label = raw.label
+      }
+      if (raw.checked !== undefined) {
+        if (typeof raw.checked !== "boolean") {
+          throw toolError(
+            "INSPECT_FRONTEND_ACTION_CHECKED_INVALID",
+            `inspect_frontend actions[${i}].checked must be a boolean.`,
+          )
+        }
+        action.checked = raw.checked
+      }
       return action
     })
   }
 
-  if (typeof input.observeBetween === "boolean") {
+  if (input.observeBetween !== undefined) {
+    if (typeof input.observeBetween !== "boolean") {
+      throw toolError(
+        "INSPECT_FRONTEND_OBSERVE_BETWEEN_INVALID",
+        "inspect_frontend observeBetween must be a boolean.",
+      )
+    }
     result.observeBetween = input.observeBetween
   }
-  if (typeof input.refresh === "boolean") {
-    result.refresh = input.refresh
-  }
-  if (typeof input.autoWait === "boolean") {
+  if (input.autoWait !== undefined) {
+    if (typeof input.autoWait !== "boolean") {
+      throw toolError(
+        "INSPECT_FRONTEND_AUTO_WAIT_INVALID",
+        "inspect_frontend autoWait must be a boolean.",
+      )
+    }
     result.autoWait = input.autoWait
   }
 
   if (input.wait !== undefined) {
     if (
       typeof input.wait !== "string"
-      || !INSPECT_FRONTEND_WAIT_MODES.has(input.wait as "bridge-ready" | "turn-completed")
+      || !INSPECT_FRONTEND_WAIT_MODES.has(input.wait)
     ) {
       throw toolError(
         "INSPECT_FRONTEND_WAIT_INVALID",
-        "inspect_frontend wait must be one of: bridge-ready, turn-completed.",
+        "inspect_frontend wait must be runtime-settled.",
       )
     }
-    result.wait = input.wait as "bridge-ready" | "turn-completed"
-  } else {
-    result.wait = "bridge-ready"
+    result.wait = "runtime-settled"
   }
 
-  if (input.runtime !== undefined) {
+  if (input.timeoutMs !== undefined) {
     if (
-      typeof input.runtime !== "string"
-      || !INSPECT_FRONTEND_RUNTIME_MODES.has(input.runtime as "real" | "mock")
+      !Number.isInteger(input.timeoutMs)
+      || (input.timeoutMs as number) <= 0
+      || (input.timeoutMs as number) > 900_000
     ) {
       throw toolError(
-        "INSPECT_FRONTEND_RUNTIME_INVALID",
-        "inspect_frontend runtime must be one of: real, mock.",
+        "INSPECT_FRONTEND_TIMEOUT_INVALID",
+        "inspect_frontend timeoutMs must be an integer between 1 and 900000.",
       )
     }
-    result.runtime = input.runtime as "real" | "mock"
+    if (result.wait !== "runtime-settled") {
+      throw toolError(
+        "INSPECT_FRONTEND_TIMEOUT_WITHOUT_WAIT",
+        "inspect_frontend timeoutMs requires wait=runtime-settled.",
+      )
+    }
+    result.timeoutMs = input.timeoutMs as number
   }
 
-  if (typeof input.screenshot === "boolean") {
-    result.screenshot = input.screenshot
+  if (result.operation === "finish") {
+    const conflicting = [
+      "actions",
+      "observeBetween",
+      "autoWait",
+      "wait",
+      "timeoutMs",
+    ].filter((key) => input[key] !== undefined)
+    if (conflicting.length > 0) {
+      throw toolError(
+        "INSPECT_FINISH_ARGUMENT_CONFLICT",
+        `inspect_frontend finish cannot be combined with: ${conflicting.join(", ")}.`,
+      )
+    }
   }
 
   return result

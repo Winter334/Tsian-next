@@ -159,7 +159,9 @@ import {
 } from "@/lib/platform-events"
 import {
   mountRemoteIframeFrontend,
+  registerPlayFrontendTarget,
   resolveRemoteFrontendUrl,
+  type MountedRemoteIframeFrontend,
 } from "../bridge"
 import { resolvePackagedFrontendUrl } from "../package-loader/packaged-frontend"
 import {
@@ -199,7 +201,8 @@ const packagedFrontendSandbox = "allow-scripts allow-same-origin allow-forms"
 // Shows a non-blocking overlay so the player knows a reload is coming.
 const isRebuilding = ref(false)
 
-let disposeFrontend: (() => void) | null = null
+let frontendHandle: MountedRemoteIframeFrontend | null = null
+let unregisterFrontendTarget: (() => void) | null = null
 let isDisposed = false
 let mountVersion = 0
 
@@ -213,8 +216,10 @@ const loadingLabel = computed(() =>
 )
 
 function unmountFrontend() {
-  disposeFrontend?.()
-  disposeFrontend = null
+  unregisterFrontendTarget?.()
+  unregisterFrontendTarget = null
+  frontendHandle?.dispose()
+  frontendHandle = null
 }
 
 function setError(title: string, message: string) {
@@ -235,6 +240,7 @@ function setMissingFrontendError(cardName: string | undefined) {
 
 function mountRemoteFrontend(
   frontend: GameCardFrontendBinding & { kind: "remote" },
+  cardId: string,
   title: string | undefined,
   version: number,
 ) {
@@ -250,7 +256,7 @@ function mountRemoteFrontend(
   }
 
   phase.value = "remote-loading"
-  disposeFrontend = mountRemoteIframeFrontend(frontendMount.value, {
+  frontendHandle = mountRemoteIframeFrontend(frontendMount.value, {
     url: resolvedUrl.url,
     bridge: playFrontendBridge,
     title,
@@ -264,6 +270,11 @@ function mountRemoteFrontend(
         setError("远程前端加载失败", message)
       }
     },
+  })
+  unregisterFrontendTarget = registerPlayFrontendTarget({
+    kind: "remote",
+    gameCardId: cardId,
+    mount: frontendHandle,
   })
 }
 
@@ -287,7 +298,7 @@ async function mountPackagedFrontend(
     return
   }
 
-  disposeFrontend = mountRemoteIframeFrontend(frontendMount.value, {
+  frontendHandle = mountRemoteIframeFrontend(frontendMount.value, {
     url,
     bridge: playFrontendBridge,
     // Service Worker-backed virtual URLs need a same-origin controlled iframe client.
@@ -303,6 +314,12 @@ async function mountPackagedFrontend(
         setError("打包前端加载失败", message)
       }
     },
+  })
+  unregisterFrontendTarget = registerPlayFrontendTarget({
+    kind: "packaged",
+    gameCardId: cardId,
+    entry: frontend.entry,
+    mount: frontendHandle,
   })
 }
 
@@ -332,7 +349,7 @@ async function mountActiveFrontend() {
     }
 
     if (frontend.kind === "remote") {
-      mountRemoteFrontend(frontend, activeCardRecord?.manifest.name, version)
+      mountRemoteFrontend(frontend, activeCardRecord.id, activeCardRecord.manifest.name, version)
       return
     }
 

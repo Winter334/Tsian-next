@@ -523,35 +523,100 @@
 
 ## Scenario: Assistant Frontend Inspection Tool (inspect_frontend)
 
-### Scope / Trigger
+### 1. Scope / Trigger
 
-- When platform-web adds or changes the `inspect_frontend` platform tool, the frontend inspector capability, or the inspection bridge/session lifecycle.
+- Trigger: changing `inspect_frontend`, the visible Play iframe target registry, remote iframe bridge activity metadata, debug baseline lifecycle, DOM actions, or AI-facing frontend inspection instructions.
+- This is a cross-layer platform tool: agent-runtime schemas/types describe the tool, platform-host executes it, bridge activity observes the real Play iframe, storage protects/restores the save-runtime baseline, and PlayView owns the iframe.
 
-### Contracts
+### 2. Signatures
 
-- **Inspect types live in agent-runtime**, not platform-host. This respects the spec rule "agent-runtime must not import platform-host." The implementation (orchestration logic) lives in platform-host and imports the types — never the reverse.
-- **Special-tool registration touches many files** (mirrors `agent_call`): contracts, permissions, registry allow-set (a tool missing from this Set is silently filtered out on read), workspace-tools (name + types + dispatch), tool-schemas (gating), runtime capabilities threading, assistant default config, the inspector factory, and capability injection. UI switch definitions live in a single shared source imported by both the assistant config panel and studio view. **Default enablement is explicit config, not runtime derivation**: each agent type's default-on tools are written as an explicit array; a runtime-derivation approach was removed because it made "enable a default-on tool" misjudge as already-on and skip the write.
-- **Loading reuse**: the inspector calls the same packaged-frontend URL resolver + mount helper as `/play` (1:1 mirror). Does not reimplement mounting.
-- **Dedicated bridge**: the inspector uses its own bridge with `interaction.sendMessage` → `runEphemeralTurn`. Must NOT use the play bridge (it ensures an active save, broadcasts streaming to the player frontend, and uses a module-level controller that aborts player turns). `query` reuses the read-only base bridge; `platform.runAction` returns unavailable; no `debug` bridge.
-- **Ephemeral save isolation**: `runEphemeralTurn` creates a local save without setting it active or emitting saves-changed, uses its own `AbortController` (not the module-level one), does not commit the turn, and deletes the ephemeral save in `finally`. Capabilities must mirror the `sendMessage` path completely — missing any one causes entry-Agent tool-call failures.
-- **send bypasses mount's request path**: the inspector calls `bridge.interaction.sendMessage` directly (not via frontend RPC). Mount's `turn-completed` event is bound to the request-response path, so mount will NOT forward it for inspector-driven turns. The inspector must self-postMessage a `turn-completed` event to the iframe with the session id so the frontend renders message bubbles.
-- **Streaming delta forwarding** still works via the mount's bus subscriptions (independent of request path), but only after handshake (origin accepted). The inspector must guard `bridgeReady` before `send` — if handshake hasn't completed, all delta events are swallowed and the turn runs blind to the frontend.
-- **Collection is parent-window-side**: the inspector reads `iframe.contentDocument` and hijacks the iframe content window's `onerror`/`unhandledrejection`/`console` (same-origin required — `allow-same-origin` sandbox). Does not require frontend cooperation — blank/broken frontends that never send `ready` can still be diagnosed via DOM empty-state + resource 404 inference.
-- **`renderedText` after send/refresh is ephemeral-turn-sourced**, not DOM-sourced: the inspector reads the ephemeral turn result (replyText + history) to populate `renderedText`, bypassing unreliable frontend render timing. `domSummary` still reads real DOM (with a micro-tick buffer). This dual approach ensures `renderedText` is always populated after a turn even if DOM rendering is slow.
-- **DOM serialization**: limits depth, skips empty text nodes, truncates long attributes. For input/textarea/select elements, reads `.value` and injects it as a virtual attribute (because `.value` is a JS property, not a DOM attribute).
-- **Single-session serial**: a new inspect call disposes the previous hidden iframe first. Dispose also resets the ephemeral turn result and save id (not resetting causes cross-call state leakage where a previous turn's messages appear in the next inspect's initial DOM). The diff baseline is intentionally preserved across calls.
-- **diff baseline**: the previous inspect's `structure` + `diagnostics.errors` is retained. First inspect has no diff. Cross-card inspect pollutes the baseline (not bucketed by card) — known boundary, acceptable since the inspector only checks the active card.
-- **Deferred options**: `runtime:"mock"` and `screenshot:true` return not-supported errors (interface reserved, not implemented in v1).
+```ts
+type InspectOperation = "inspect" | "finish"
+type InspectWait = "runtime-settled"
+type InspectDomActionType =
+  | "click" | "type" | "press" | "scroll"
+  | "selectOption" | "check" | "fill" | "hover" | "focus"
 
-### Validation & Error Matrix
+interface InspectFrontendInput {
+  operation?: InspectOperation
+  actions?: InspectDomAction[]
+  observeBetween?: boolean
+  autoWait?: boolean
+  wait?: InspectWait
+  timeoutMs?: number
+}
+```
 
-- No active game card -> `INSPECT_FRONTEND_NO_ACTIVE_CARD`.
-- Active card frontend missing or not `packaged` -> `INSPECT_FRONTEND_NOT_PACKAGED` (with `cardId` + `frontendKind` details).
-- `send` with `wait !== "turn-completed"` -> `INSPECT_FRONTEND_SEND_WAIT_MISMATCH` (send requires waiting for turn completion to collect timeline).
-- `send` when `bridgeReady` is false (handshake timeout) -> `INSPECT_FRONTEND_BRIDGE_NOT_READY` (delta events would be swallowed; turn would run blind).
-- `runtime:"mock"` / `screenshot:true` -> not-supported errors.
-- DOM action selector not found -> `INSPECT_SELECTOR_NOT_FOUND`.
-- Large results (timeline > 200 entries, actionSnapshots > 50, domSummary at limit) -> `truncated: true`.
+`operation` defaults to `"inspect"`. `finish` is mutually exclusive with actions/wait/timeout/observe/auto-wait fields.
+
+### 3. Contracts
+
+- **Visible Play iframe only**: inspector borrows the current `/play` packaged iframe registered by `PlayView`; it must not create alternate targets, secondary runtime state, private bridge sessions, or fallback targets. Remote/cross-origin frontends are unsupported and fail loudly.
+- **PlayView owns disposal**: inspector may subscribe/read the borrowed mount handle, but must never dispose/remove the Play iframe. Generation changes reset diagnostics/activity/diff for the new iframe.
+- **Real bridge path**: UI actions must operate DOM inside the iframe. Runtime side effects must be triggered by the frontend's own bridge calls (`workspace.*`, `interaction.*`, `platform.*`), not by inspector-side direct storage/runtime shortcuts.
+- **Debug baseline**: the first inspect establishes a persistent global baseline marker for the active save/checkpoint. Prune, same-turn maintenance replacement, and turn-0 initial replacement must protect the exact checkpoint id. `finish` restores that exact baseline, clears the marker after successful restore, and reloads Play.
+- **Activity metadata only**: bridge activity entries record sequence, request id, method, phase, relative time, and error code/message. Do not record params, results, story text, workspace content, or other business payloads.
+- **DOM action fidelity**: browser-internal actions must use iframe-realm constructors/property setters, focus when appropriate, dispatch the relevant pointer/mouse/keyboard/input/change events, and verify observable browser state where possible. If a target is hidden, disabled, obscured, readonly, a file input, or verification fails, return a structured action error instead of reporting success.
+- **Runtime-settled**: waiting is generic bridge-chain waiting. The active chain starts when an action triggers `interaction.sendMessage`; while active, all bridge RPCs are tracked until in-flight is zero and the iframe is quiet for 2 seconds. Timeouts stop inspector waiting only; they do not abort real bridge/runtime work.
+
+### 4. Validation & Error Matrix
+
+- No Play iframe / launcher state -> `INSPECT_FRONTEND_TARGET_UNAVAILABLE`.
+- Remote or cross-origin frontend -> `INSPECT_FRONTEND_REMOTE_UNSUPPORTED`.
+- Building/reloading/not ready -> `INSPECT_FRONTEND_TARGET_BUSY` or `INSPECT_FRONTEND_TARGET_NOT_READY`.
+- Active save/card mismatch with target or marker -> `INSPECT_FRONTEND_SAVE_MISMATCH`.
+- No same-current-turn canonical checkpoint -> `INSPECT_FRONTEND_BASELINE_UNAVAILABLE`.
+- Invalid/deleted marker checkpoint -> return one invalid-marker error and clear the marker.
+- DOM selector invalid/missing -> `INSPECT_SELECTOR_INVALID` / `INSPECT_SELECTOR_NOT_FOUND`.
+- Action target hidden, disabled, not pointer-hit, readonly, not fillable/typeable/checkable/selectable/focusable, or file input -> structured `INSPECT_*` action error; do not silently mutate fallback state.
+- Action verification mismatch after fill/type/select/check/scroll/focus -> structured `INSPECT_*_VERIFY_FAILED`.
+- `wait:"runtime-settled"` with actions but no new send -> `INSPECT_RUNTIME_NOT_TRIGGERED`; without active chain -> `INSPECT_RUNTIME_NOT_ACTIVE`; timeout -> successful snapshot with `runtime.status:"timeout"`.
+- `finish` with no marker -> `DEBUG_SESSION_NOT_ACTIVE`; busy bridge -> `DEBUG_SESSION_BUSY`; restore success but reload timeout -> `ok:true` with `restored.reloadReady:false`.
+
+### 5. Good/Base/Bad Cases
+
+- Good: player opens a packaged Play save, assistant calls `inspect_frontend` with `fill` + `click`; frontend handlers call real bridge/workspace APIs; inspector returns current DOM, diagnostics, activity, and debugSession.
+- Base: pure inspect with no actions still establishes/reuses the baseline and returns the visible iframe structure.
+- Bad: creating an alternate iframe/session, running a private runtime turn, bypassing frontend UI to mutate runtime/storage, or returning success after a canceled/failed DOM edit.
+- Bad: using `HTMLElement.click()` alone for user activation-sensitive UI; use a browser-internal activation sequence and verify target/action state where possible.
+
+### 6. Tests Required
+
+- Build/type-check: `npm run build:web` after platform-web inspector changes; `npm run build:contracts` only if shared contract source changes.
+- Browser/manual matrix: no Play, launcher, remote, packaged, minimized, building/reload, build failed with old iframe still mounted.
+- Baseline matrix: turn 0 initial/manual, turn >0 after-turn/post-maintenance, strict currentTurn missing checkpoint, marker persistence, save mismatch, invalid marker cleanup.
+- Action matrix: click, fill/type, press Enter/Space/Tab, selectOption, check, hover, focus, scroll; verify ordinary Vue/form handlers observe the action and failed/unsupported targets fail loudly.
+- Activity matrix: no send triggered, active continuation, multiple sends, follow-up RPCs, failed RPC, long pending request, timeout then continuation, 2-second quiet rule.
+- Finish matrix: no session, busy, wrong save, missing target, restore success, reload timeout partial success, repeated finish.
+- AI-facing grep: active schemas/prompts/docs must not teach alternate iframe/session targets, private runtime turns, direct inspector send/refresh/runtime/screenshot controls, bridge-ready wait, or old turn timeline as current behavior.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Wrong: bypasses the player-visible frontend and can leave the assistant debugging a fake scene.
+const target = createAlternateInspectionTarget()
+await runPrivateInspectionTurn({ message })
+```
+
+```ts
+// Reports success even if business UI depends on pointer/focus/default activation.
+element.dispatchEvent(new MouseEvent("click"))
+```
+
+#### Correct
+
+```ts
+const target = getPlayFrontendTarget()
+// Borrow target.mount.iframe only; PlayView remains the owner.
+```
+
+```ts
+// Use iframe-realm events/property setters, focus/default activation, and verify result state.
+activateElement(element, iframeWindow)
+verifyEditableText(input, expected, "fill")
+```
 
 ## Scenario: Save-Runtime Semantic Search
 

@@ -189,10 +189,9 @@ export interface AgentRuntimeCapabilities {
    */
   toolCallMode?: BrowserAiToolCallMode
   /**
-   * inspect_frontend capability. Loads the active card's packaged frontend
-   * in a hidden iframe (reusing the real /play load path), collects structural
-   * + diagnostic snapshots, and can drive an ephemeral formal-turn entrypoint /
-   * DOM interactions. Implemented in platform-host/frontend-inspector.ts.
+   * inspect_frontend capability. Borrows the packaged iframe mounted by the
+   * current Play view, collects structural/diagnostic snapshots, performs DOM
+   * actions, and manages the save-runtime rollback session.
    */
   runInspectFrontend?(
     input: InspectFrontendInput,

@@ -14,6 +14,7 @@ import {
   pruneCheckpointsForSave,
 } from "./checkpoints"
 import { deleteBlobsForSave } from "./blobs"
+import { getProtectedFrontendDebugCheckpointId } from "./frontend-debug-session"
 import { getBuiltinBlankGameCard } from "./game-cards"
 import {
   createDefaultSaveRuntimeFiles,
@@ -247,6 +248,7 @@ export async function commitWorkspaceFilesWithCheckpointForSave(
   },
 ): Promise<void> {
   const now = Date.now()
+  const protectedCheckpointId = await getProtectedFrontendDebugCheckpointId(saveId)
 
   const workspaceRecords = new Map<string, ReturnType<typeof createLocalWorkspaceFileRecord>>()
   for (const file of saveRuntimeFilesFromEffectiveWorkspace(workspaceFiles)) {
@@ -288,7 +290,11 @@ export async function commitWorkspaceFilesWithCheckpointForSave(
       const sameTurnAfterTurnCheckpoints = await localDb.checkpoints
         .where("saveId")
         .equals(saveId)
-        .and((cp) => cp.turn === input.turn && cp.reason === "after-turn")
+        .and((cp) => (
+          cp.turn === input.turn
+          && cp.reason === "after-turn"
+          && cp.id !== protectedCheckpointId
+        ))
         .toArray()
       await Promise.all(
         sameTurnAfterTurnCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)),

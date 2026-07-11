@@ -4,6 +4,7 @@ import type {
   AskUserResult,
   ContentPart,
   PlatformActionResult,
+  RemotePlayBridgeMethod,
   SkillConfigItem,
   SkillRegistryEntry,
   TurnToolOutput,
@@ -183,22 +184,12 @@ export interface InspectDomAction {
 }
 
 export interface InspectFrontendInput {
-  /** 驱动回合（烧 token，语义化原语，非任意 bridgeCall） */
-  send?: { message: string }
-  /** DOM 交互（same-origin contentDocument.querySelector + dispatchEvent） */
+  operation?: "inspect" | "finish"
   actions?: InspectDomAction[]
-  /** 每个 action 之间采一次结构层快照 */
   observeBetween?: boolean
-  /** 操作后拉最新 snapshot（语义化原语） */
-  refresh?: boolean
-  /** 观测点，默认 bridge-ready */
-  wait?: "bridge-ready" | "turn-completed"
-  /** auto-waiting：每个 action 前等元素可操作，默认 true */
   autoWait?: boolean
-  /** 预留，初版只 real，传 mock 报 not-supported */
-  runtime?: "real" | "mock"
-  /** 预留，初版不做，传 true 报 not-supported */
-  screenshot?: boolean
+  wait?: "runtime-settled"
+  timeoutMs?: number
 }
 
 export interface InspectFrontendStructure {
@@ -215,10 +206,13 @@ export interface InspectFrontendDiagnostics {
   bridgeHandshake: "pending" | "ready" | "timeout"
 }
 
-export interface InspectFrontendTimelineEntry {
-  t: number
-  event: "turn-delta" | "turn-tool" | "turn-round-end" | "turn-completed"
-  payload: unknown
+export interface InspectFrontendActivityEntry {
+  sequence: number
+  requestId: string
+  method: RemotePlayBridgeMethod
+  phase: "started" | "completed" | "failed"
+  relativeMs: number
+  error?: { code: string; message: string }
 }
 
 export interface InspectFrontendActionSnapshot {
@@ -229,11 +223,32 @@ export interface InspectFrontendActionSnapshot {
 
 export interface InspectFrontendResult {
   ok: boolean
+  operation: "inspect" | "finish"
   cardId: string
   entry: string
+  frameGeneration?: number
+  debugSession?: {
+    active: boolean
+    saveId: string
+    baselineCheckpointId: string
+    baselineTurn: number
+    startedAt: number
+    rollbackScope: "save-runtime"
+  }
   structure: InspectFrontendStructure
   diagnostics: InspectFrontendDiagnostics
-  timeline?: InspectFrontendTimelineEntry[]
+  activity?: InspectFrontendActivityEntry[]
+  runtime?: {
+    status: "not-requested" | "active" | "settled" | "settled-with-failures" | "timeout"
+    sendCount: number
+    inFlight: number
+    quietMs: number
+  }
+  restored?: {
+    restored: boolean
+    restoredTurn: number
+    reloadReady: boolean
+  }
   actionSnapshots?: InspectFrontendActionSnapshot[]
   fileLineMap?: Record<string, { source: string; line: number }[]>
   diff?: {
