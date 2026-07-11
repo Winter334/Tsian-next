@@ -1,0 +1,6 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Check required commands for platform-web and contract changes."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Verify runtime boundary normalization and shared-shape usage after implementation."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Verify build expectations and avoid broad hidden fallbacks."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Validate additive result shapes and consuming frontend compatibility."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Review AI-facing tool descriptions and embedded assistant guidance for noise and residual misleading concepts."}
+{"file":".trellis/tasks/07-11-frontend-inspection-agent-observability/research/current-implementation.md","reason":"Review implementation against documented current defects and intended evidence fixes."}

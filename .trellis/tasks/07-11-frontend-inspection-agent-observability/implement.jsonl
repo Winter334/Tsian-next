@@ -1,0 +1,7 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web frontend index: required checks and relevant frontend/runtime specs for inspect_frontend implementation."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Runtime boundary and shared contract guidance for changing inspect_frontend result/input shapes."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Placement rules for splitting inspector responsibilities across platform-host and agent-runtime without growing index.ts."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required validation and platform-web build quality rules."}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Consumer contract expectations when changing shared frontend/runtime result types."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Tool schema and assistant instruction wording must remove noise and avoid exposing irrelevant internal mechanics."}
+{"file":".trellis/tasks/07-11-frontend-inspection-agent-observability/research/current-implementation.md","reason":"Task research with current inspect_frontend implementation evidence and file anchors."}
