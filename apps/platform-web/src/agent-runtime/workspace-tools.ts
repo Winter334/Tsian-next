@@ -24,7 +24,7 @@ import {
 import { normalizeWorkspacePath } from "@/lib/workspace-path"
 import { compactLargeValueForModel } from "./tool-memory"
 
-// barrel re-export (public API — 23 type + 1 value)
+// barrel re-export (public API — 29 type + 1 value)
 export type {
   RuntimeWorkspaceToolCall,
   RuntimeWorkspaceToolName,
@@ -36,6 +36,15 @@ export type {
   RuntimeAgentCallArguments,
   InspectDomActionType,
   InspectDomAction,
+  InspectFrontendWaitMode,
+  InspectFrontendWaitStatus,
+  InspectFrontendWaitSummary,
+  InspectFrontendInteractableKind,
+  InspectFrontendInteractable,
+  InspectFrontendActionResult,
+  InspectFrontendDiagnosticsSummary,
+  InspectFrontendBuildSummary,
+  InspectFrontendSourceHint,
   InspectFrontendInput,
   InspectFrontendStructure,
   InspectFrontendDiagnostics,
@@ -69,6 +78,7 @@ import type {
   RuntimeAgentCallArguments,
   InspectDomActionType,
   InspectDomAction,
+  InspectFrontendWaitMode,
   InspectFrontendInput,
   InspectFrontendStructure,
   InspectFrontendDiagnostics,
@@ -913,7 +923,10 @@ function normalizeAgentCallArguments(
   }
 }
 
-const INSPECT_FRONTEND_WAIT_MODES = new Set(["runtime-settled"])
+const INSPECT_FRONTEND_WAIT_MODES = new Set<InspectFrontendWaitMode>([
+  "runtime-settled",
+  "dom-stable",
+])
 const INSPECT_FRONTEND_OPERATIONS = new Set(["inspect", "finish"])
 const INSPECT_FRONTEND_REMOVED_FIELDS = new Set([
   "send",
@@ -1156,14 +1169,14 @@ function normalizeInspectFrontendArguments(
   if (input.wait !== undefined) {
     if (
       typeof input.wait !== "string"
-      || !INSPECT_FRONTEND_WAIT_MODES.has(input.wait)
+      || !INSPECT_FRONTEND_WAIT_MODES.has(input.wait as InspectFrontendWaitMode)
     ) {
       throw toolError(
         "INSPECT_FRONTEND_WAIT_INVALID",
-        "inspect_frontend wait must be runtime-settled.",
+        "inspect_frontend wait must be runtime-settled or dom-stable.",
       )
     }
-    result.wait = "runtime-settled"
+    result.wait = input.wait as InspectFrontendWaitMode
   }
 
   if (input.timeoutMs !== undefined) {

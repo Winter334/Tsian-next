@@ -1,7 +1,11 @@
 import type {
+  InspectFrontendActionResult,
   InspectFrontendActivityEntry,
+  InspectFrontendBuildSummary,
   InspectFrontendInput,
   InspectFrontendResult,
+  InspectFrontendSourceHint,
+  InspectFrontendWaitSummary,
 } from "../agent-runtime/workspace-tools"
 import {
   getPlayFrontendTarget,
@@ -36,6 +40,7 @@ import type { LocalSaveRecord } from "../storage/db"
 import { getMaxTurnFromTurnFiles } from "./history-turns"
 import { getPlatformActiveGameCard } from "./internal"
 import {
+  collectInspectInteractables,
   collectInspectStructure,
   computeInspectDiff,
   emptyInspectStructure,
@@ -47,6 +52,7 @@ import {
 import {
   createFrontendDiagnosticsCollector,
   emptyInspectDiagnostics,
+  emptyInspectDiagnosticsSummary,
   type FrontendDiagnosticsCollector,
 } from "./frontend-inspector-diagnostics"
 
@@ -55,7 +61,14 @@ const MAX_ACTION_SNAPSHOTS = 50
 const RUNTIME_QUIET_MS = 2_000
 const RUNTIME_TRIGGER_TIMEOUT_MS = 5_000
 const DEFAULT_RUNTIME_TIMEOUT_MS = 300_000
+const DOM_STABLE_TIMEOUT_MS = 2_000
+const DOM_STABLE_QUIET_MS = 150
 const FINISH_RELOAD_TIMEOUT_MS = 10_000
+
+interface ReadyPackagedTargetResult {
+  target: PlayFrontendTarget
+  activeCardId: string
+}
 
 interface RuntimeChainState {
   active: boolean
@@ -87,9 +100,13 @@ interface ValidDebugSession {
 interface CapturedFrame {
   structure: InspectFrontendResult["structure"]
   diagnostics: InspectFrontendResult["diagnostics"]
+  diagnosticsSummary: NonNullable<InspectFrontendResult["diagnosticsSummary"]>
+  interactables: NonNullable<InspectFrontendResult["interactables"]>
   activity: InspectFrontendActivityEntry[]
   diff?: InspectFrontendResult["diff"]
   fileLineMap?: InspectFrontendResult["fileLineMap"]
+  frontendBuild?: InspectFrontendBuildSummary
+  sourceHints?: InspectFrontendSourceHint[]
   truncated: boolean
 }
 
@@ -125,15 +142,21 @@ async function runLiveFrontendInspection(
   input: InspectFrontendInput,
 ): Promise<InspectFrontendResult> {
   let target: PlayFrontendTarget | null = null
+  let cardIdHint = ""
   let session: LiveFrameSession | null = null
   let debugRecord: FrontendDebugSessionRecord | null = null
+  let actionResults: InspectFrontendActionResult[] | undefined
+  let wait: InspectFrontendWaitSummary | undefined
   try {
     const existing = await loadOptionalStoredDebugSession()
     debugRecord = existing?.record ?? null
     if (existing) {
       await assertDebugSessionActiveSave(existing)
+      cardIdHint = existing.record.gameCardId
     }
-    target = await requireReadyPackagedTarget()
+    const readyTarget = await requireReadyPackagedTarget()
+    target = readyTarget.target
+    cardIdHint = readyTarget.activeCardId
     session = getOrCreateFrameSession(target)
     debugRecord = await ensureDebugSession(target, session, existing)
 
@@ -141,34 +164,67 @@ async function runLiveFrontendInspection(
     let actionSnapshots: InspectFrontendResult["actionSnapshots"]
     if (input.actions?.length) {
       const doc = requireFrameDocument(target)
-      actionSnapshots = await runInspectDomActions(doc, input.actions, {
+      const execution = await runInspectDomActions(doc, input.actions, {
         autoWait: input.autoWait !== false,
         observeBetween: input.observeBetween === true,
         bridgeState: () => bridgeStateFor(target!),
+        activitySequence: () => target!.mount.activitySequence,
       })
+      actionSnapshots = execution.snapshots
+      actionResults = execution.actions
       await inspectMicroTick()
     }
 
     let runtime = runtimeSummary(session, session.chain?.active ? "active" : "not-requested")
+    wait = notRequestedWaitSummary(session)
     if (input.wait === "runtime-settled") {
       if (input.actions?.length) {
-        const triggered = await waitForBridgeActivityAfter(session, activityCursor)
-        if (!triggered) {
-          throw new InspectorFailure(
-            "INSPECT_RUNTIME_NOT_TRIGGERED",
-            "The actions did not trigger bridge activity in the current Play iframe.",
+        wait = await waitForRuntimeTriggered(session, activityCursor)
+        if (wait.status === "not-triggered") {
+          runtime = runtimeSummary(session, session.chain?.active ? "active" : "not-requested")
+        } else {
+          const settled = await waitForRuntimeSettled(
+            session,
+            input.timeoutMs ?? DEFAULT_RUNTIME_TIMEOUT_MS,
+            wait,
           )
+          runtime = settled.runtime
+          wait = settled.wait
         }
       } else if (!session.chain?.active) {
+        wait = {
+          mode: "runtime-settled",
+          status: "not-active",
+          waitedMs: 0,
+          activityBefore: activityCursor,
+          activityAfter: session.target.mount.activitySequence,
+          triggered: false,
+          settled: false,
+        }
         throw new InspectorFailure(
           "INSPECT_RUNTIME_NOT_ACTIVE",
           "The current Play iframe has no active bridge chain to continue waiting for.",
+          wait,
         )
+      } else {
+        const settled = await waitForRuntimeSettled(
+          session,
+          input.timeoutMs ?? DEFAULT_RUNTIME_TIMEOUT_MS,
+          {
+            mode: "runtime-settled",
+            status: "triggered",
+            waitedMs: 0,
+            activityBefore: activityCursor,
+            activityAfter: session.target.mount.activitySequence,
+            triggered: true,
+          },
+        )
+        runtime = settled.runtime
+        wait = settled.wait
       }
-      runtime = await waitForRuntimeSettled(
-        session,
-        input.timeoutMs ?? DEFAULT_RUNTIME_TIMEOUT_MS,
-      )
+    } else if (input.wait === "dom-stable") {
+      wait = await waitForDomStable(target)
+      runtime = runtimeSummary(session, session.chain?.active ? "active" : "not-requested")
     }
 
     const captured = await captureFrame(session)
@@ -182,8 +238,14 @@ async function runLiveFrontendInspection(
       debugSession: toDebugSessionView(debugRecord, true),
       structure: captured.structure,
       diagnostics: captured.diagnostics,
+      wait,
+      interactables: captured.interactables,
+      diagnosticsSummary: captured.diagnosticsSummary,
+      ...(captured.frontendBuild ? { frontendBuild: captured.frontendBuild } : {}),
+      ...(captured.sourceHints?.length ? { sourceHints: captured.sourceHints } : {}),
       activity: captured.activity,
       runtime,
+      ...(actionResults?.length ? { actions: actionResults } : {}),
       ...(snapshots?.length ? { actionSnapshots: snapshots } : {}),
       ...(captured.fileLineMap ? { fileLineMap: captured.fileLineMap } : {}),
       ...(captured.diff ? { diff: captured.diff } : {}),
@@ -198,6 +260,11 @@ async function runLiveFrontendInspection(
       target,
       session,
       debugRecord,
+      {
+        actions: actionResults ?? (error instanceof InspectDomActionError ? error.actionResults : undefined),
+        wait,
+        cardIdHint,
+      },
     )
   }
 }
@@ -221,7 +288,8 @@ async function runFinishFrontendInspection(): Promise<InspectFrontendResult> {
       )
     }
 
-    target = await requireReadyPackagedTarget()
+    const readyTarget = await requireReadyPackagedTarget()
+    target = readyTarget.target
     if (target.gameCardId !== existing.record.gameCardId) {
       throw new InspectorFailure(
         "INSPECT_FRONTEND_SAVE_MISMATCH",
@@ -271,6 +339,9 @@ async function runFinishFrontendInspection(): Promise<InspectFrontendResult> {
         entry: oldEntry,
         structure: emptyInspectStructure(),
         diagnostics: emptyInspectDiagnostics(),
+        interactables: [],
+        diagnosticsSummary: emptyInspectDiagnosticsSummary(),
+        ...(buildFrontendBuildSummary(existing.record.gameCardId) ? { frontendBuild: buildFrontendBuildSummary(existing.record.gameCardId) } : {}),
         debugSession: toDebugSessionView(existing.record, true),
         restored: {
           restored: true,
@@ -302,6 +373,9 @@ async function runFinishFrontendInspection(): Promise<InspectFrontendResult> {
         entry: oldEntry,
         structure: emptyInspectStructure(),
         diagnostics: emptyInspectDiagnostics(),
+        interactables: [],
+        diagnosticsSummary: emptyInspectDiagnosticsSummary(),
+        ...(buildFrontendBuildSummary(existing.record.gameCardId) ? { frontendBuild: buildFrontendBuildSummary(existing.record.gameCardId) } : {}),
         debugSession: toDebugSessionView(existing.record, false),
         restored: {
           restored: true,
@@ -328,6 +402,10 @@ async function runFinishFrontendInspection(): Promise<InspectFrontendResult> {
       debugSession: toDebugSessionView(existing.record, false),
       structure: captured.structure,
       diagnostics: captured.diagnostics,
+      interactables: captured.interactables,
+      diagnosticsSummary: captured.diagnosticsSummary,
+      ...(captured.frontendBuild ? { frontendBuild: captured.frontendBuild } : {}),
+      ...(captured.sourceHints?.length ? { sourceHints: captured.sourceHints } : {}),
       activity: captured.activity,
       restored: {
         restored: true,
@@ -348,7 +426,7 @@ async function runFinishFrontendInspection(): Promise<InspectFrontendResult> {
   }
 }
 
-async function requireReadyPackagedTarget(): Promise<PlayFrontendTarget> {
+async function requireReadyPackagedTarget(): Promise<ReadyPackagedTargetResult> {
   const activeCard = await getPlatformActiveGameCard()
   const target = getPlayFrontendTarget()
   syncFrameSession(target)
@@ -363,41 +441,46 @@ async function requireReadyPackagedTarget(): Promise<PlayFrontendTarget> {
     throw new InspectorFailure(
       "INSPECT_FRONTEND_TARGET_BUSY",
       "The active frontend is rebuilding. Retry after the current Play iframe has been replaced.",
+      { cardId: activeCard.id },
     )
   }
   if (!target) {
     throw new InspectorFailure(
       "INSPECT_FRONTEND_TARGET_UNAVAILABLE",
       "No Play iframe is mounted. Open the intended save in Play and wait for it to finish loading.",
+      { cardId: activeCard.id },
     )
   }
   if (target.kind !== "packaged") {
     throw new InspectorFailure(
       "INSPECT_FRONTEND_REMOTE_UNSUPPORTED",
       "inspect_frontend only supports the same-origin packaged frontend mounted in Play.",
+      { cardId: activeCard.id },
     )
   }
   if (target.gameCardId !== activeCard.id) {
     throw new InspectorFailure(
       "INSPECT_FRONTEND_TARGET_BUSY",
       "The active card and mounted Play frontend are changing. Retry after Play settles.",
+      { cardId: activeCard.id },
     )
   }
   if (target.mount.status !== "ready") {
     throw new InspectorFailure(
       "INSPECT_FRONTEND_TARGET_NOT_READY",
       `The mounted Play iframe is ${target.mount.status}. Retry after its bridge is ready.`,
-      { status: target.mount.status },
+      { status: target.mount.status, cardId: activeCard.id },
     )
   }
   if (!target.mount.iframe.isConnected) {
     throw new InspectorFailure(
       "INSPECT_FRONTEND_TARGET_UNAVAILABLE",
       "The registered Play iframe is no longer connected.",
+      { cardId: activeCard.id },
     )
   }
   requireFrameDocument(target)
-  return target
+  return { target, activeCardId: activeCard.id }
 }
 
 function requireFrameDocument(target: PlayFrontendTarget): Document {
@@ -706,31 +789,72 @@ function ensureBridgeChainAfter(
   }
 }
 
-async function waitForBridgeActivityAfter(
+function hasBridgeStartAfter(
   session: LiveFrameSession,
   afterSequence: number,
-): Promise<boolean> {
-  const deadline = Date.now() + RUNTIME_TRIGGER_TIMEOUT_MS
+): boolean {
+  return session.activity.some((entry) => (
+    entry.sequence > afterSequence
+    && entry.phase === "started"
+  ))
+}
+
+async function waitForRuntimeTriggered(
+  session: LiveFrameSession,
+  afterSequence: number,
+): Promise<InspectFrontendWaitSummary> {
+  const startedAt = Date.now()
+  const deadline = startedAt + RUNTIME_TRIGGER_TIMEOUT_MS
   while (Date.now() < deadline) {
     assertCurrentTarget(session)
-    if (session.target.mount.activitySequence > afterSequence) {
+    if (hasBridgeStartAfter(session, afterSequence)) {
       ensureBridgeChainAfter(session, afterSequence)
-      return Boolean(session.chain?.active)
+      return {
+        mode: "runtime-settled",
+        status: "triggered",
+        waitedMs: Date.now() - startedAt,
+        activityBefore: afterSequence,
+        activityAfter: session.target.mount.activitySequence,
+        triggerTimeoutMs: RUNTIME_TRIGGER_TIMEOUT_MS,
+        triggered: Boolean(session.chain?.active),
+      }
     }
     await inspectMicroTick(25)
   }
   if (session.target.mount.activitySequence > afterSequence) {
     ensureBridgeChainAfter(session, afterSequence)
-    return Boolean(session.chain?.active)
+    return {
+      mode: "runtime-settled",
+      status: "triggered",
+      waitedMs: Date.now() - startedAt,
+      activityBefore: afterSequence,
+      activityAfter: session.target.mount.activitySequence,
+      triggerTimeoutMs: RUNTIME_TRIGGER_TIMEOUT_MS,
+      triggered: Boolean(session.chain?.active),
+    }
   }
-  return false
+  return {
+    mode: "runtime-settled",
+    status: "not-triggered",
+    waitedMs: Date.now() - startedAt,
+    activityBefore: afterSequence,
+    activityAfter: session.target.mount.activitySequence,
+    triggerTimeoutMs: RUNTIME_TRIGGER_TIMEOUT_MS,
+    triggered: false,
+    settled: false,
+  }
 }
 
 async function waitForRuntimeSettled(
   session: LiveFrameSession,
   timeoutMs: number,
-): Promise<NonNullable<InspectFrontendResult["runtime"]>> {
-  const deadline = Date.now() + timeoutMs
+  triggerWait: InspectFrontendWaitSummary,
+): Promise<{
+  runtime: NonNullable<InspectFrontendResult["runtime"]>
+  wait: InspectFrontendWaitSummary
+}> {
+  const startedAt = Date.now()
+  const deadline = startedAt + timeoutMs
   while (Date.now() < deadline) {
     assertCurrentTarget(session)
     if (
@@ -742,11 +866,107 @@ async function waitForRuntimeSettled(
         ? "settled-with-failures"
         : "settled"
       session.chain.active = false
-      return runtimeSummary(session, status)
+      return {
+        runtime: runtimeSummary(session, status),
+        wait: {
+          ...triggerWait,
+          status,
+          waitedMs: triggerWait.waitedMs + Date.now() - startedAt,
+          activityAfter: session.target.mount.activitySequence,
+          settleTimeoutMs: timeoutMs,
+          triggered: true,
+          settled: true,
+        },
+      }
     }
     await inspectMicroTick(50)
   }
-  return runtimeSummary(session, "timeout")
+  return {
+    runtime: runtimeSummary(session, "timeout"),
+    wait: {
+      ...triggerWait,
+      status: "timeout",
+      waitedMs: triggerWait.waitedMs + Date.now() - startedAt,
+      activityAfter: session.target.mount.activitySequence,
+      settleTimeoutMs: timeoutMs,
+      triggered: triggerWait.triggered ?? true,
+      settled: false,
+    },
+  }
+}
+
+async function waitForDomStable(
+  target: PlayFrontendTarget,
+): Promise<InspectFrontendWaitSummary> {
+  const startedAt = Date.now()
+  const activityBefore = target.mount.activitySequence
+  let lastSignature = targetDomSignature(target)
+  let stableSince = Date.now()
+  await inspectMicroTick(25)
+  while (Date.now() - startedAt < DOM_STABLE_TIMEOUT_MS) {
+    assertCurrentTargetGeneration(target)
+    const nextSignature = targetDomSignature(target)
+    const now = Date.now()
+    if (nextSignature !== lastSignature) {
+      lastSignature = nextSignature
+      stableSince = now
+    } else if (now - stableSince >= DOM_STABLE_QUIET_MS) {
+      return {
+        mode: "dom-stable",
+        status: "settled",
+        waitedMs: now - startedAt,
+        activityBefore,
+        activityAfter: target.mount.activitySequence,
+        settled: true,
+      }
+    }
+    await inspectMicroTick(25)
+  }
+  return {
+    mode: "dom-stable",
+    status: "timeout",
+    waitedMs: Date.now() - startedAt,
+    activityBefore,
+    activityAfter: target.mount.activitySequence,
+    settleTimeoutMs: DOM_STABLE_TIMEOUT_MS,
+    settled: false,
+  }
+}
+
+function notRequestedWaitSummary(session: LiveFrameSession): InspectFrontendWaitSummary {
+  return {
+    mode: "none",
+    status: "not-requested",
+    waitedMs: 0,
+    activityBefore: session.target.mount.activitySequence,
+    activityAfter: session.target.mount.activitySequence,
+  }
+}
+
+function targetDomSignature(target: PlayFrontendTarget): string {
+  const doc = target.mount.iframe.contentDocument
+  if (!doc?.body) return ""
+  const controls = Array.from(doc.querySelectorAll("input, textarea, select"))
+    .slice(0, 200)
+    .map((element, index) => {
+      const tag = element.tagName.toLowerCase()
+      if (tag === "select") {
+        const select = element as HTMLSelectElement
+        const selected = Array.from(select.selectedOptions).map((option) => option.value).join(",")
+        return `${index}:select:${select.value.slice(0, 200)}:${selected.slice(0, 200)}`
+      }
+      if (tag === "textarea") {
+        return `${index}:textarea:${(element as HTMLTextAreaElement).value.slice(0, 200)}`
+      }
+      const input = element as HTMLInputElement
+      const type = input.type.toLowerCase()
+      if (type === "checkbox" || type === "radio") {
+        return `${index}:input:${type}:checked=${input.checked}`
+      }
+      return `${index}:input:${type}:${input.value.slice(0, 200)}`
+    })
+    .join("\n")
+  return `${doc.body.textContent?.replace(/\s+/g, " ").trim().slice(0, 2_000) ?? ""}\n${doc.body.childElementCount}\n${controls}`
 }
 
 function assertCurrentTarget(session: LiveFrameSession): void {
@@ -754,6 +974,21 @@ function assertCurrentTarget(session: LiveFrameSession): void {
   if (
     !current
     || current.generation !== session.target.generation
+    || current.mount.status !== "ready"
+  ) {
+    disposeCurrentFrameSession()
+    throw new InspectorFailure(
+      "INSPECT_FRONTEND_TARGET_CHANGED",
+      "The Play iframe was replaced or closed during inspection. Retry against the current frame.",
+    )
+  }
+}
+
+function assertCurrentTargetGeneration(target: PlayFrontendTarget): void {
+  const current = getPlayFrontendTarget()
+  if (
+    !current
+    || current.generation !== target.generation
     || current.mount.status !== "ready"
   ) {
     disposeCurrentFrameSession()
@@ -810,11 +1045,14 @@ function bridgeHandshakeFor(
 }
 
 async function captureFrame(session: LiveFrameSession): Promise<CapturedFrame> {
+  const doc = session.target.mount.iframe.contentDocument
   const structure = collectInspectStructure(
-    session.target.mount.iframe.contentDocument,
+    doc,
     bridgeStateFor(session.target),
   )
+  const interactables = collectInspectInteractables(doc)
   const diagnostics = session.collector.snapshot(bridgeHandshakeFor(session.target))
+  const diagnosticsSummary = session.collector.summary()
   const currentSnapshot: InspectSnapshot = {
     structure,
     errors: diagnostics.errors,
@@ -824,12 +1062,18 @@ async function captureFrame(session: LiveFrameSession): Promise<CapturedFrame> {
   const fileLineMap = diagnostics.errors.length
     ? await buildFileLineMap(session.target.gameCardId, diagnostics.errors)
     : undefined
+  const frontendBuild = buildFrontendBuildSummary(session.target.gameCardId)
+  const sourceHints = buildSourceHints(fileLineMap, frontendBuild)
   return {
     structure,
     diagnostics,
+    diagnosticsSummary,
+    interactables,
     activity: session.activity.slice(),
     ...(diff ? { diff } : {}),
     ...(fileLineMap ? { fileLineMap } : {}),
+    ...(frontendBuild ? { frontendBuild } : {}),
+    ...(sourceHints.length ? { sourceHints } : {}),
     truncated: session.activityTruncated || session.collector.truncated,
   }
 }
@@ -839,18 +1083,82 @@ async function buildFileLineMap(
   errors: InspectFrontendResult["diagnostics"]["errors"],
 ): Promise<InspectFrontendResult["fileLineMap"] | undefined> {
   const files = await listLocalGameCardFrontendFiles(cardId)
-  const nameToSource = new Map<string, string>()
+  const nameToSources = new Map<string, string[]>()
   for (const file of files) {
-    nameToSource.set(file.path.split("/").pop() ?? file.path, file.path)
+    if (!file.path.startsWith("frontend/src/")) continue
+    const fileName = file.path.split("/").pop()
+    if (!fileName) continue
+    const entries = nameToSources.get(fileName) ?? []
+    entries.push(file.path)
+    nameToSources.set(fileName, entries)
   }
   const map: NonNullable<InspectFrontendResult["fileLineMap"]> = {}
   for (const error of errors) {
     const fileName = error.source?.split("/").pop()
-    const source = fileName ? nameToSource.get(fileName) : undefined
-    if (!fileName || !source || typeof error.line !== "number") continue
-    ;(map[fileName] ??= []).push({ source, line: error.line })
+    const sources = fileName ? nameToSources.get(fileName) : undefined
+    if (!fileName || !sources || sources.length !== 1 || typeof error.line !== "number") continue
+    ;(map[fileName] ??= []).push({ source: sources[0]!, line: error.line })
   }
   return Object.keys(map).length ? map : undefined
+}
+
+function buildFrontendBuildSummary(cardId: string): InspectFrontendBuildSummary | undefined {
+  if (!cardId) return undefined
+  const status = getFrontendBuildStatus(cardId)
+  return {
+    status: status.status,
+    lastBuiltAt: status.lastBuiltAt,
+    ...(status.error ? { error: { ...status.error } } : {}),
+  }
+}
+
+function normalizeFrontendSourcePath(path: string): string | null {
+  const normalized = path.replace(/\\/g, "/").replace(/^\/+/, "")
+  if (normalized.startsWith("frontend/src/")) return normalized
+  const sourceIndex = normalized.indexOf("/frontend/src/")
+  if (sourceIndex >= 0) return normalized.slice(sourceIndex + 1)
+  const srcIndex = normalized.indexOf("src/")
+  if (srcIndex >= 0) return `frontend/${normalized.slice(srcIndex)}`
+  return null
+}
+
+function buildSourceHints(
+  fileLineMap: InspectFrontendResult["fileLineMap"] | undefined,
+  frontendBuild: InspectFrontendBuildSummary | undefined,
+): InspectFrontendSourceHint[] {
+  const hints: InspectFrontendSourceHint[] = []
+  if (fileLineMap) {
+    for (const entries of Object.values(fileLineMap)) {
+      for (const entry of entries) {
+        hints.push({
+          kind: "runtime-error",
+          path: entry.source,
+          line: entry.line,
+          confidence: "high",
+        })
+      }
+    }
+  }
+  const buildErrorPath = frontendBuild?.error?.file
+    ? normalizeFrontendSourcePath(frontendBuild.error.file)
+    : null
+  if (frontendBuild?.status === "failed" && buildErrorPath) {
+    hints.push({
+      kind: "build-error",
+      path: buildErrorPath,
+      ...(typeof frontendBuild.error?.line === "number" ? { line: frontendBuild.error.line } : {}),
+      confidence: "high",
+      message: frontendBuild.error?.message,
+    })
+  }
+  return hints
+}
+
+function cardIdFromFailure(failure: InspectorFailure): string | undefined {
+  const details = failure.details
+  if (!details || typeof details !== "object") return undefined
+  const cardId = (details as { cardId?: unknown }).cardId
+  return typeof cardId === "string" && cardId ? cardId : undefined
 }
 
 async function buildFailureResult(
@@ -859,6 +1167,11 @@ async function buildFailureResult(
   target: PlayFrontendTarget | null,
   session: LiveFrameSession | null,
   debugRecord: FrontendDebugSessionRecord | null,
+  evidence: {
+    actions?: InspectFrontendActionResult[]
+    wait?: InspectFrontendWaitSummary
+    cardIdHint?: string
+  } = {},
 ): Promise<InspectFrontendResult> {
   const failure = normalizeFailure(error)
   let captured: CapturedFrame | null = null
@@ -873,16 +1186,27 @@ async function buildFailureResult(
       captured = null
     }
   }
+  const fallbackCardId = target?.gameCardId ?? debugRecord?.gameCardId ?? evidence.cardIdHint ?? cardIdFromFailure(failure) ?? ""
+  const fallbackFrontendBuild = captured?.frontendBuild
+    ?? buildFrontendBuildSummary(fallbackCardId)
+  const fallbackSourceHints = captured?.sourceHints
+    ?? buildSourceHints(captured?.fileLineMap, fallbackFrontendBuild)
   return {
     ok: false,
     operation,
-    cardId: target?.gameCardId ?? debugRecord?.gameCardId ?? "",
+    cardId: fallbackCardId,
     entry: target?.entry ?? "",
     ...(target ? { frameGeneration: target.generation } : {}),
     ...(debugRecord ? { debugSession: toDebugSessionView(debugRecord, true) } : {}),
     structure: captured?.structure ?? emptyInspectStructure(),
     diagnostics: captured?.diagnostics ?? emptyInspectDiagnostics(),
+    ...(evidence.wait ? { wait: evidence.wait } : session ? { wait: notRequestedWaitSummary(session) } : {}),
+    interactables: captured?.interactables ?? [],
+    diagnosticsSummary: captured?.diagnosticsSummary ?? emptyInspectDiagnosticsSummary(),
+    ...(fallbackFrontendBuild ? { frontendBuild: fallbackFrontendBuild } : {}),
+    ...(fallbackSourceHints.length ? { sourceHints: fallbackSourceHints } : {}),
     ...(captured ? { activity: captured.activity } : {}),
+    ...(evidence.actions?.length ? { actions: evidence.actions } : {}),
     ...(session ? {
       runtime: runtimeSummary(
         session,

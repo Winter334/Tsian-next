@@ -1,6 +1,8 @@
 import type {
   InspectDomAction,
+  InspectFrontendActionResult,
   InspectFrontendActionSnapshot,
+  InspectFrontendInteractable,
   InspectFrontendResult,
   InspectFrontendStructure,
 } from "../agent-runtime/workspace-tools"
@@ -9,6 +11,16 @@ const ACTION_WAIT_TIMEOUT_MS = 1_000
 const MAX_DOM_DEPTH = 8
 const MAX_ARIA_NAME = 80
 const MAX_DOM_SUMMARY = 8_000
+const MAX_INTERACTABLES = 80
+const MAX_INTERACTABLE_TEXT = 120
+const MAX_CONTROL_SIGNATURES = 200
+const MAX_CONTROL_VALUE_SIGNATURE = 200
+const INTERACTABLE_DATA_ATTRIBUTES = [
+  "data-testid",
+  "data-test",
+  "data-action",
+  "data-role",
+]
 const KEY_SELECTORS = [
   "#messages",
   "#message-list",
@@ -46,6 +58,7 @@ export class InspectDomActionError extends Error {
     readonly code: string,
     message: string,
     readonly details?: Record<string, unknown>,
+    readonly actionResults?: InspectFrontendActionResult[],
   ) {
     super(message)
     this.name = "InspectDomActionError"
@@ -81,6 +94,218 @@ export function collectInspectStructure(
   }
 }
 
+export function collectInspectInteractables(
+  doc: Document | null,
+): InspectFrontendInteractable[] {
+  if (!doc?.body) return []
+  const result: InspectFrontendInteractable[] = []
+  for (const element of Array.from(doc.body.querySelectorAll("*"))) {
+    if (result.length >= MAX_INTERACTABLES) break
+    if (!isVisibleElement(element) || !shouldIncludeInteractable(element)) continue
+    const kind = inferInteractableKind(element)
+    const selector = selectorForElement(element)
+    if (!selector) continue
+    const summary: InspectFrontendInteractable = {
+      ref: `i${result.length + 1}`,
+      kind,
+      selector,
+      visible: true,
+    }
+    const name = shortElementName(element)
+    if (name) summary.name = name
+    appendElementState(summary, element)
+    result.push(summary)
+  }
+  return result
+}
+
+function shouldIncludeInteractable(element: Element): boolean {
+  const tag = element.tagName.toLowerCase()
+  const role = element.getAttribute("role")?.trim().toLowerCase() ?? ""
+  if (["button", "textarea", "select", "option"].includes(tag)) return true
+  if (tag === "input" && (element as HTMLInputElement).type.toLowerCase() !== "hidden") return true
+  if (tag === "a" && element.hasAttribute("href")) return true
+  if ([
+    "button",
+    "link",
+    "checkbox",
+    "radio",
+    "tab",
+    "option",
+    "menuitem",
+    "combobox",
+    "textbox",
+    "dialog",
+    "status",
+    "alert",
+  ].includes(role)) return true
+  if (INTERACTABLE_DATA_ATTRIBUTES.some((name) => element.hasAttribute(name))) return true
+  if (element.hasAttribute("aria-label")) return true
+  return isClickableGeneric(element)
+}
+
+function inferInteractableKind(element: Element): InspectFrontendInteractable["kind"] {
+  const tag = element.tagName.toLowerCase()
+  const role = element.getAttribute("role")?.trim().toLowerCase() ?? ""
+  if (tag === "input") {
+    const type = (element as HTMLInputElement).type.toLowerCase()
+    if (type === "checkbox") return "checkbox"
+    if (type === "radio") return "radio"
+    return "input"
+  }
+  if (tag === "textarea") return "textarea"
+  if (tag === "select") return "select"
+  if (tag === "option") return "option"
+  if (tag === "button" || role === "button") return "button"
+  if ((tag === "a" && element.hasAttribute("href")) || role === "link") return "link"
+  if (role === "checkbox") return "checkbox"
+  if (role === "radio") return "radio"
+  if (role === "tab") return "tab"
+  if (role === "option") return "option"
+  if (tag === "dialog" || role === "dialog") return "dialog"
+  if (role === "status" || role === "alert") return "status"
+  if (hasCardSignal(element)) return "card"
+  return "generic"
+}
+
+function shortElementName(element: Element): string {
+  const name = computeAccessibleName(element)
+  if (name) return name.slice(0, MAX_INTERACTABLE_TEXT)
+  const text = element.textContent?.replace(/\s+/g, " ").trim() ?? ""
+  return text.slice(0, MAX_INTERACTABLE_TEXT)
+}
+
+function appendElementState(
+  target: InspectFrontendInteractable | NonNullable<InspectFrontendActionResult["target"]>,
+  element: Element,
+): void {
+  const html = element as HTMLElement
+  const tag = element.tagName.toLowerCase()
+  const input = tag === "input" ? element as HTMLInputElement : null
+  const textField = tag === "input" || tag === "textarea"
+  if (element.getAttribute("aria-disabled") === "true" || ("disabled" in html && Boolean((html as HTMLButtonElement).disabled))) {
+    target.disabled = true
+  }
+  if (element.getAttribute("aria-readonly") === "true" || (textField && Boolean((element as HTMLInputElement | HTMLTextAreaElement).readOnly))) {
+    target.readonly = true
+  }
+  if (element.getAttribute("aria-checked") === "true" || Boolean(input?.checked)) {
+    ;(target as InspectFrontendInteractable).checked = true
+  }
+  const expanded = element.getAttribute("aria-expanded")
+  if (expanded === "true" || expanded === "false") {
+    ;(target as InspectFrontendInteractable).expanded = expanded === "true"
+  }
+  const selected = element.getAttribute("aria-selected")
+  if (selected === "true" || selected === "false") {
+    ;(target as InspectFrontendInteractable).selected = selected === "true"
+  }
+}
+
+function hasCardSignal(element: Element): boolean {
+  return Array.from(element.classList).some((className) => (
+    /(^|-)(card|method-card|option-card)(-|$)/i.test(className)
+  )) || element.getAttribute("data-role")?.toLowerCase().includes("card") === true
+}
+
+function isClickableGeneric(element: Element): boolean {
+  const html = element as HTMLElement
+  if (hasCardSignal(element)) return shortElementName(element).length > 0
+  if (element.hasAttribute("tabindex")) return true
+  if (typeof html.onclick === "function") return true
+  try {
+    const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+    if (style?.cursor === "pointer" && shortElementName(element)) return true
+  } catch {
+    // Ignore style lookup failures for detached/replacing frames.
+  }
+  return false
+}
+
+function isVisibleElement(element: Element): boolean {
+  if (element.getAttribute("aria-hidden") === "true" || element.hasAttribute("hidden")) {
+    return false
+  }
+  const view = element.ownerDocument.defaultView
+  if (!view) return false
+  try {
+    const style = view.getComputedStyle(element)
+    if (style.display === "none" || style.visibility === "hidden") return false
+    const rect = element.getBoundingClientRect()
+    return rect.width > 0 && rect.height > 0
+  } catch {
+    return true
+  }
+}
+
+function selectorForElement(element: Element): string | null {
+  const doc = element.ownerDocument
+  if (element.id) {
+    const selector = `#${cssIdent(doc, element.id)}`
+    if (isUniqueSelector(doc, selector, element)) return selector
+  }
+  for (const attr of INTERACTABLE_DATA_ATTRIBUTES) {
+    const value = element.getAttribute(attr)
+    if (!value) continue
+    const selector = `${element.tagName.toLowerCase()}[${attr}="${cssString(value)}"]`
+    if (isUniqueSelector(doc, selector, element)) return selector
+  }
+  const ariaLabel = element.getAttribute("aria-label")
+  if (ariaLabel) {
+    const selector = `${element.tagName.toLowerCase()}[aria-label="${cssString(ariaLabel)}"]`
+    if (isUniqueSelector(doc, selector, element)) return selector
+  }
+  return cssPathForElement(element)
+}
+
+function cssPathForElement(element: Element): string | null {
+  const doc = element.ownerDocument
+  const parts: string[] = []
+  let current: Element | null = element
+  while (current && current !== doc.body && current !== doc.documentElement) {
+    const tag = current.tagName.toLowerCase()
+    let part = tag
+    const stableClass = Array.from(current.classList)
+      .find((className) => !GENERIC_SKIP_CLASSES.has(className) && !className.startsWith("vue-"))
+    if (stableClass) {
+      part += `.${cssIdent(doc, stableClass)}`
+    }
+    const parent: Element | null = current.parentElement
+    if (parent) {
+      const currentTag = current.tagName
+      const sameTag = (Array.from(parent.children) as Element[])
+        .filter((candidate) => candidate.tagName === currentTag)
+      if (sameTag.length > 1) {
+        part += `:nth-of-type(${sameTag.indexOf(current) + 1})`
+      }
+    }
+    parts.unshift(part)
+    const selector = parts.join(" > ")
+    if (isUniqueSelector(doc, selector, element)) return selector
+    current = parent
+  }
+  const selector = parts.join(" > ")
+  return selector || null
+}
+
+function isUniqueSelector(doc: Document, selector: string, element: Element): boolean {
+  try {
+    const matches = doc.querySelectorAll(selector)
+    return matches.length === 1 && matches[0] === element
+  } catch {
+    return false
+  }
+}
+
+function cssIdent(doc: Document, value: string): string {
+  const escape = doc.defaultView?.CSS?.escape ?? globalThis.CSS?.escape
+  if (typeof escape === "function") return escape(value)
+  return value.replace(/[^a-zA-Z0-9_-]/g, "\\$&")
+}
+
+function cssString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
+}
 export function computeInspectDiff(
   previous: InspectSnapshot | null,
   current: InspectSnapshot,
@@ -122,6 +347,11 @@ export function computeInspectDiff(
     : undefined
 }
 
+export interface InspectDomActionExecution {
+  snapshots: InspectFrontendActionSnapshot[]
+  actions: InspectFrontendActionResult[]
+}
+
 export async function runInspectDomActions(
   doc: Document,
   actions: InspectDomAction[],
@@ -129,48 +359,170 @@ export async function runInspectDomActions(
     autoWait: boolean
     observeBetween: boolean
     bridgeState: () => InspectFrontendStructure["bridgeState"]
+    activitySequence: () => number
   },
-): Promise<InspectFrontendActionSnapshot[]> {
+): Promise<InspectDomActionExecution> {
   const snapshots: InspectFrontendActionSnapshot[] = []
+  const actionResults: InspectFrontendActionResult[] = []
   for (let step = 0; step < actions.length; step += 1) {
     const action = actions[step]!
-    if (options.autoWait) {
-      const actionable = await waitForActionable(doc, action.selector, ACTION_WAIT_TIMEOUT_MS)
-      if (!actionable) {
-        const element = querySelector(doc, action.selector)
-        throw new InspectDomActionError(
-          "INSPECT_WAIT_TIMEOUT",
-          `Timed out waiting for an actionable selector: ${action.selector}`,
-          {
-            selector: action.selector,
-            timeoutMs: ACTION_WAIT_TIMEOUT_MS,
-            step,
-            found: Boolean(element),
-            ...(element ? {
-              tag: element.tagName.toLowerCase(),
-              disabled: element.hasAttribute("disabled"),
-              hidden: element.hasAttribute("hidden"),
-              ariaHidden: element.getAttribute("aria-hidden"),
-            } : {}),
-          },
-        )
+    let matchedCount = 0
+    let target: InspectFrontendActionResult["target"] | undefined
+    const beforeSignature = domSignature(doc)
+    const activityBefore = options.activitySequence()
+    try {
+      if (options.autoWait) {
+        const actionable = await waitForActionable(doc, action.selector, ACTION_WAIT_TIMEOUT_MS)
+        if (!actionable) {
+          const element = querySelector(doc, action.selector)
+          matchedCount = countSelectorMatches(doc, action.selector)
+          target = element ? summarizeActionTarget(element, action.selector) : undefined
+          throw new InspectDomActionError(
+            "INSPECT_WAIT_TIMEOUT",
+            `Timed out waiting for an actionable selector: ${action.selector}`,
+            {
+              selector: action.selector,
+              timeoutMs: ACTION_WAIT_TIMEOUT_MS,
+              step,
+              found: Boolean(element),
+              ...(element ? {
+                tag: element.tagName.toLowerCase(),
+                disabled: element.hasAttribute("disabled"),
+                hidden: element.hasAttribute("hidden"),
+                ariaHidden: element.getAttribute("aria-hidden"),
+              } : {}),
+            },
+          )
+        }
       }
-    }
-    applyAction(doc, action)
-    if (options.observeBetween) {
+      matchedCount = countSelectorMatches(doc, action.selector)
+      const element = querySelector(doc, action.selector)
+      target = element ? summarizeActionTarget(element, action.selector) : undefined
+      applyAction(doc, action)
       await inspectMicroTick()
-      const structure = collectInspectStructure(doc, options.bridgeState())
-      snapshots.push({
+      const activityAfter = options.activitySequence()
+      const result: InspectFrontendActionResult = {
         step,
         action,
-        after: {
-          domSummary: structure.domSummary,
-          bridgeState: structure.bridgeState,
+        ok: true,
+        matchedCount,
+        ...(target ? { target } : {}),
+        effect: {
+          domChanged: beforeSignature !== domSignature(doc),
+          bridgeTriggered: activityAfter > activityBefore,
+        },
+      }
+      actionResults.push(result)
+      if (options.observeBetween) {
+        const structure = collectInspectStructure(doc, options.bridgeState())
+        snapshots.push({
+          step,
+          action,
+          after: {
+            domSummary: structure.domSummary,
+            bridgeState: structure.bridgeState,
+          },
+        })
+      }
+    } catch (error) {
+      const failure = normalizeDomActionError(error)
+      const activityAfter = options.activitySequence()
+      actionResults.push({
+        step,
+        action,
+        ok: false,
+        matchedCount,
+        ...(target ? { target } : {}),
+        effect: {
+          domChanged: beforeSignature !== domSignature(doc),
+          bridgeTriggered: activityAfter > activityBefore,
+        },
+        error: {
+          code: failure.code,
+          message: failure.message,
+          ...(failure.details !== undefined ? { details: failure.details } : {}),
         },
       })
+      throw new InspectDomActionError(
+        failure.code,
+        failure.message,
+        failure.details,
+        actionResults,
+      )
     }
   }
-  return snapshots
+  return { snapshots, actions: actionResults }
+}
+
+function countSelectorMatches(doc: Document, selector: string): number {
+  try {
+    return doc.querySelectorAll(selector).length
+  } catch {
+    throw new InspectDomActionError(
+      "INSPECT_SELECTOR_INVALID",
+      `Invalid selector: ${selector}`,
+      { selector },
+    )
+  }
+}
+
+function summarizeActionTarget(
+  element: Element,
+  selector: string,
+): NonNullable<InspectFrontendActionResult["target"]> {
+  const target: NonNullable<InspectFrontendActionResult["target"]> = {
+    tag: element.tagName.toLowerCase(),
+    role: computeAriaRole(element),
+    selector,
+    visible: isVisibleElement(element),
+  }
+  const name = shortElementName(element)
+  if (name) target.name = name
+  appendElementState(target, element)
+  return target
+}
+
+function normalizeDomActionError(error: unknown): InspectDomActionError {
+  if (error instanceof InspectDomActionError) return error
+  return new InspectDomActionError(
+    "INSPECT_ACTION_FAILED",
+    error instanceof Error ? error.message : String(error),
+  )
+}
+
+function domSignature(doc: Document): string {
+  if (!doc.body) return ""
+  return [
+    doc.body.textContent?.replace(/\s+/g, " ").trim().slice(0, 2_000) ?? "",
+    serializeAria(doc.body).slice(0, 4_000),
+    controlStateSignature(doc),
+  ].join("\n")
+}
+
+function controlStateSignature(doc: Document): string {
+  const controls = Array.from(doc.querySelectorAll("input, textarea, select"))
+    .slice(0, MAX_CONTROL_SIGNATURES)
+  return controls.map((element, index) => {
+    const selector = selectorForElement(element) ?? `${element.tagName.toLowerCase()}#${index}`
+    const tag = element.tagName.toLowerCase()
+    if (tag === "select") {
+      const select = element as HTMLSelectElement
+      const selected = Array.from(select.selectedOptions)
+        .map((option) => option.value)
+        .join(",")
+        .slice(0, MAX_CONTROL_VALUE_SIGNATURE)
+      return `${selector}:select:${select.value.slice(0, MAX_CONTROL_VALUE_SIGNATURE)}:${selected}`
+    }
+    if (tag === "textarea") {
+      return `${selector}:textarea:${(element as HTMLTextAreaElement).value.slice(0, MAX_CONTROL_VALUE_SIGNATURE)}`
+    }
+    const input = element as HTMLInputElement
+    const type = input.type.toLowerCase()
+    if (type === "checkbox" || type === "radio") {
+      return `${selector}:input:${type}:checked=${input.checked}`
+    }
+    return `${selector}:input:${type}:${input.value.slice(0, MAX_CONTROL_VALUE_SIGNATURE)}`
+  }).join("\n")
 }
 
 export function inspectMicroTick(delayMs: number = 50): Promise<void> {
@@ -1060,23 +1412,6 @@ function computeAriaState(element: Element): string {
 
 function collectKeyComputedStyles(doc: Document): Record<string, string>[] {
   const result: Record<string, string>[] = []
-  const rootStyle = doc.defaultView?.getComputedStyle(doc.documentElement)
-  if (rootStyle) {
-    const variables: Record<string, string> = { selector: ":root" }
-    for (const name of [
-      "--bg",
-      "--fg",
-      "--accent",
-      "--void",
-      "--surface",
-      "--primary",
-      "--font-size",
-    ]) {
-      const value = rootStyle.getPropertyValue(name).trim()
-      if (value) variables[name] = value
-    }
-    if (Object.keys(variables).length > 1) result.push(variables)
-  }
   for (const selector of KEY_SELECTORS) {
     const element = doc.querySelector(selector)
     const style = element ? doc.defaultView?.getComputedStyle(element) : null

@@ -148,7 +148,7 @@ const agentCallSchema: ToolSchema = {
 const inspectFrontendSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend,
   description:
-    "Inspect and operate the packaged frontend currently mounted in the player's real Play window. The first inspect starts a persistent save-runtime rollback session. Use DOM actions to follow the frontend's real UI, optionally wait for bridge activity to settle, inspect again after source rebuilds, and call operation=finish when done to restore the pre-debug runtime state. The structural domSummary is an accessibility snapshot, not raw HTML.",
+    "Inspect and operate the packaged frontend currently mounted in the player's real Play window. The first inspect starts a persistent save-runtime rollback session. Use returned interactables/selectors to follow the frontend's real UI, choose dom-stable for pure UI state changes, choose runtime-settled when the UI should trigger a player turn or bridge-backed work, inspect again after source rebuilds, and call operation=finish when done to restore the pre-debug runtime state. The structural domSummary is an accessibility snapshot, not raw HTML.",
   parameters: {
     type: "object",
     properties: {
@@ -184,16 +184,16 @@ const inspectFrontendSchema: ToolSchema = {
       },
       wait: {
         type: "string",
-        enum: ["runtime-settled"],
-        description:
-          "After actions trigger bridge activity, wait until observed bridge RPCs finish and remain quiet for 2 seconds. This covers player turns and pure frontend workspace operations. Without actions, continues an already active chain.",
+          enum: ["runtime-settled", "dom-stable"],
+          description:
+            "After actions, choose runtime-settled when the UI should start a player turn or bridge-backed work. Choose dom-stable for pure frontend changes such as tabs, dialogs, forms, and expand/collapse. Results include wait telemetry and preserve action evidence even when the requested wait condition is not triggered.",
       },
       timeoutMs: {
         type: "integer",
         minimum: 1,
         maximum: 900000,
-        description:
-          "runtime-settled timeout in milliseconds. Defaults to 300000; maximum 900000.",
+          description:
+            "runtime-settled timeout in milliseconds. Defaults to 300000; maximum 900000. Omit timeoutMs for dom-stable.",
       },
       autoWait: {
         type: "boolean",

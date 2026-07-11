@@ -62,10 +62,12 @@ built frontend artifacts.
 
 ## 4. Inspection And Actions
 
-The tool returns an accessibility-oriented DOM summary, selected computed
-styles, visible text, bridge state, runtime errors, console output, resource
-failures, source hints, and a diff from the previous inspection of the same
-iframe generation.
+The tool returns a filtered Agent-facing page snapshot: an accessibility-oriented
+DOM summary, visible text, a concise interactables/selector map, bridge state,
+wait telemetry, action execution summaries, runtime/build diagnostics, high-
+confidence source hints, and a diff from the previous inspection of the same
+iframe generation. It does not return raw HTML, full computed styles, full bridge
+payloads, or full resource timing dumps by default.
 
 Actions operate the current iframe document:
 
@@ -78,28 +80,44 @@ Actions operate the current iframe document:
 - `hover`
 - `focus`
 
-Events and realm checks use the iframe's own window. `observeBetween` captures a
-structural snapshot after each action. A source rebuild replaces the iframe;
-the next inspection takes the new generation and resets diagnostics, activity,
-and diff state.
+Events and realm checks use the iframe's own window. Every action returns a
+compact result with selector match count, target summary, success/error, and
+whether it changed DOM or immediately triggered bridge activity. `observeBetween`
+still captures structural snapshots after each action. A source rebuild replaces
+the iframe; the next inspection takes the new generation and resets diagnostics,
+activity, and diff state.
 
 Player turns must be triggered through the frontend's own controls. The
 inspector does not call the play bridge interaction API directly.
 
-## 5. Runtime Settling
+## 5. Waiting And Settling
 
-`wait: "runtime-settled"` waits for the real UI-triggered run:
+`wait: "runtime-settled"` is for UI actions that should start a player turn or
+other bridge-backed work:
 
-1. With actions, at least one new `interaction.sendMessage` request must be
-   observed shortly after those actions.
+1. With actions, at least one new bridge request must be observed shortly after
+   those actions.
 2. From that request onward, every bridge RPC contributes to the same activity
    window.
 3. The window settles only after in-flight requests reach zero and no new RPC
    appears for two continuous seconds.
 
-Without actions, the wait continues an already observed active chain. If no
-chain exists, the tool returns `INSPECT_RUNTIME_NOT_ACTIVE`. A timeout stops only
-the inspector wait; it does not cancel the real bridge request.
+`wait: "dom-stable"` is for pure frontend UI changes such as tabs, dialogs,
+form edits, expand/collapse, and import-mode switches. It waits for the visible
+DOM to stop changing and does not require bridge activity.
+
+Every waited inspection includes `wait` telemetry: mode, status, actual waited
+milliseconds, activity sequence before/after, trigger timeout when relevant, and
+whether the wait triggered/settled. `runtime.quietMs` remains bridge quiet time,
+not the tool call's waited duration.
+
+If DOM actions succeed but `runtime-settled` is not triggered, the result keeps
+`ok: true`, `wait.status: "not-triggered"`, final page evidence, and action
+summaries. This is normal for pure frontend UI actions; use `dom-stable` for
+those checks. Without actions, `runtime-settled` continues an already observed
+active chain. If no chain exists, the tool returns `INSPECT_RUNTIME_NOT_ACTIVE`.
+A timeout stops only the inspector wait; it does not cancel the real bridge
+request.
 
 Activity contains metadata only:
 
@@ -117,7 +135,21 @@ activity: Array<{
 Request parameters, results, story text, and workspace content never enter this
 activity log.
 
-## 6. Finish And Restore
+## 6. Diagnostics, Build Status, And Source Hints
+
+`diagnostics.resourceFailures` contains real resource element error events.
+Resource Timing zero-byte anomalies are folded into
+`diagnosticsSummary.resourceTimingAnomalies` so cached/CDN timing noise does not
+look like broken assets. Console and runtime errors stay bounded; summary counts
+surface the scale without expanding duplicates.
+
+Each inspection includes compact `frontendBuild` when a card is known:
+`status`, `lastBuiltAt`, and build error `file`/`line`/`message` when failed.
+`sourceHints` are high-confidence only: runtime error file-line matches and build
+error paths. The inspector does not guess source files from visible text or CSS
+classes.
+
+## 7. Finish And Restore
 
 The assistant must call `operation: "finish"` after verification.
 
@@ -140,7 +172,7 @@ save-runtime data. If remounting does not become ready, the result reports
 `restored: true` and `reloadReady: false`; the marker remains cleared because
 the runtime restore already succeeded.
 
-## 7. Tool Shape
+## 8. Tool Shape
 
 ```ts
 inspect_frontend({
@@ -148,7 +180,7 @@ inspect_frontend({
   actions?: InspectDomAction[]
   observeBetween?: boolean
   autoWait?: boolean
-  wait?: "runtime-settled"
+  wait?: "runtime-settled" | "dom-stable"
   timeoutMs?: number
 })
 ```
@@ -167,20 +199,28 @@ Examples:
 ```
 
 ```json
+{ "actions": [{ "type": "click", "selector": "[data-action=\"open-import\"]" }], "wait": "dom-stable" }
+```
+
+```json
 { "operation": "finish" }
 ```
 
-## 8. Assistant Workflow
+## 9. Assistant Workflow
 
 1. Ask the player to open the intended packaged frontend and save in Play.
 2. Call `inspect_frontend` once to establish the baseline and read the scene.
-3. Reproduce through DOM actions and the frontend's real controls.
-4. Read structure, diagnostics, activity, runtime state, and source hints.
-5. Edit `frontend/src/**`, then wait for the platform rebuild and Play remount.
-6. Inspect the new generation and verify the diff and diagnostics.
-7. Call `operation: "finish"` to restore save-runtime.
+3. Reproduce through DOM actions and the frontend's real controls. Use returned
+   interactables/selectors as anchors.
+4. Use `dom-stable` for pure UI changes and `runtime-settled` only when the UI
+   should trigger a player turn or bridge-backed work.
+5. Read structure, action summaries, wait telemetry, diagnostics summary,
+   frontend build status, activity, runtime state, and source hints.
+6. Edit `frontend/src/**`, then wait for the platform rebuild and Play remount.
+7. Inspect the new generation and verify the diff and diagnostics.
+8. Call `operation: "finish"` to restore save-runtime.
 
-## 9. Boundaries
+## 10. Boundaries
 
 - Cross-origin remote frontend inspection is unsupported.
 - The tool does not drive the launcher or select saves.
@@ -190,7 +230,7 @@ Examples:
 - The debug flow assumes the assistant has exclusive control of Play while
   reproducing and verifying.
 
-## 10. Review Checklist
+## 11. Review Checklist
 
 1. Is the target the iframe currently owned by Play?
 2. Are all player turns triggered through real frontend controls?

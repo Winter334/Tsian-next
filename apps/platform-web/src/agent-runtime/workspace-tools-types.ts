@@ -183,12 +183,97 @@ export interface InspectDomAction {
   checked?: boolean
 }
 
+export type InspectFrontendWaitMode = "runtime-settled" | "dom-stable"
+
+export type InspectFrontendWaitStatus =
+  | "not-requested"
+  | "triggered"
+  | "settled"
+  | "settled-with-failures"
+  | "not-triggered"
+  | "timeout"
+  | "not-active"
+
+export interface InspectFrontendWaitSummary {
+  mode: "none" | InspectFrontendWaitMode
+  status: InspectFrontendWaitStatus
+  waitedMs: number
+  activityBefore: number
+  activityAfter: number
+  triggerTimeoutMs?: number
+  settleTimeoutMs?: number
+  triggered?: boolean
+  settled?: boolean
+}
+
+export type InspectFrontendInteractableKind =
+  | "button" | "input" | "textarea" | "select" | "link"
+  | "checkbox" | "radio" | "card" | "tab" | "option"
+  | "dialog" | "status" | "generic"
+
+export interface InspectFrontendInteractable {
+  ref: string
+  kind: InspectFrontendInteractableKind
+  name?: string
+  selector: string
+  visible: boolean
+  disabled?: boolean
+  readonly?: boolean
+  checked?: boolean
+  selected?: boolean
+  expanded?: boolean
+}
+
+export interface InspectFrontendActionResult {
+  step: number
+  action: InspectDomAction
+  ok: boolean
+  matchedCount: number
+  target?: {
+    tag: string
+    role: string
+    name?: string
+    selector: string
+    visible: boolean
+    disabled?: boolean
+    readonly?: boolean
+  }
+  effect?: {
+    domChanged: boolean
+    bridgeTriggered: boolean
+  }
+  error?: { code: string; message: string; details?: unknown }
+}
+
+export interface InspectFrontendDiagnosticsSummary {
+  errors: number
+  consoleErrors: number
+  consoleWarnings: number
+  resourceFailures: number
+  resourceTimingAnomalies: number
+  resourceTimingAnomaliesCollapsed?: boolean
+}
+
+export interface InspectFrontendBuildSummary {
+  status: "idle" | "building" | "ok" | "failed"
+  lastBuiltAt: string | null
+  error?: { message: string; file?: string; line?: number }
+}
+
+export interface InspectFrontendSourceHint {
+  kind: "runtime-error" | "build-error"
+  path: string
+  line?: number
+  confidence: "high"
+  message?: string
+}
+
 export interface InspectFrontendInput {
   operation?: "inspect" | "finish"
   actions?: InspectDomAction[]
   observeBetween?: boolean
   autoWait?: boolean
-  wait?: "runtime-settled"
+  wait?: InspectFrontendWaitMode
   timeoutMs?: number
 }
 
@@ -237,6 +322,12 @@ export interface InspectFrontendResult {
   }
   structure: InspectFrontendStructure
   diagnostics: InspectFrontendDiagnostics
+  wait?: InspectFrontendWaitSummary
+  interactables?: InspectFrontendInteractable[]
+  actions?: InspectFrontendActionResult[]
+  diagnosticsSummary?: InspectFrontendDiagnosticsSummary
+  frontendBuild?: InspectFrontendBuildSummary
+  sourceHints?: InspectFrontendSourceHint[]
   activity?: InspectFrontendActivityEntry[]
   runtime?: {
     status: "not-requested" | "active" | "settled" | "settled-with-failures" | "timeout"

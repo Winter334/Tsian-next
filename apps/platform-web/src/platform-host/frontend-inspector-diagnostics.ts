@@ -1,5 +1,6 @@
 import type {
   InspectFrontendDiagnostics,
+  InspectFrontendDiagnosticsSummary,
 } from "../agent-runtime/workspace-tools"
 
 const MAX_ERRORS = 50
@@ -13,6 +14,7 @@ export interface FrontendDiagnosticsCollector {
   snapshot(
     bridgeHandshake: InspectFrontendDiagnostics["bridgeHandshake"],
   ): InspectFrontendDiagnostics
+  summary(): InspectFrontendDiagnosticsSummary
   dispose(): void
 }
 
@@ -25,6 +27,16 @@ export function emptyInspectDiagnostics(): InspectFrontendDiagnostics {
   }
 }
 
+export function emptyInspectDiagnosticsSummary(): InspectFrontendDiagnosticsSummary {
+  return {
+    errors: 0,
+    consoleErrors: 0,
+    consoleWarnings: 0,
+    resourceFailures: 0,
+    resourceTimingAnomalies: 0,
+  }
+}
+
 export function createFrontendDiagnosticsCollector(
   iframe: HTMLIFrameElement,
 ): FrontendDiagnosticsCollector {
@@ -34,6 +46,7 @@ export function createFrontendDiagnosticsCollector(
     return {
       truncated: false,
       snapshot: () => emptyInspectDiagnostics(),
+      summary: () => emptyInspectDiagnosticsSummary(),
       dispose: () => undefined,
     }
   }
@@ -41,6 +54,8 @@ export function createFrontendDiagnosticsCollector(
   const errors: InspectFrontendDiagnostics["errors"] = []
   const consoleEntries: InspectFrontendDiagnostics["console"] = []
   const resourceFailures: InspectFrontendDiagnostics["resourceFailures"] = []
+  let resourceTimingAnomalies = 0
+  let resourceTimingAnomaliesCollapsed = false
   let truncated = false
   let disposed = false
 
@@ -153,10 +168,8 @@ export function createFrontendDiagnosticsCollector(
         && entry.decodedBodySize === 0
         && entry.duration > 0
       ) {
-        pushBounded(resourceFailures, {
-          url: entry.name,
-          reason: "Resource timing has no transferred or decoded bytes.",
-        }, MAX_RESOURCE_FAILURES)
+        resourceTimingAnomalies += 1
+        resourceTimingAnomaliesCollapsed = true
       }
     }
   } catch {
@@ -173,6 +186,16 @@ export function createFrontendDiagnosticsCollector(
         console: consoleEntries.slice(),
         resourceFailures: resourceFailures.slice(),
         bridgeHandshake,
+      }
+    },
+    summary() {
+      return {
+        errors: errors.length,
+        consoleErrors: consoleEntries.filter((entry) => entry.level === "error").length,
+        consoleWarnings: consoleEntries.filter((entry) => entry.level === "warn").length,
+        resourceFailures: resourceFailures.length,
+        resourceTimingAnomalies,
+        ...(resourceTimingAnomaliesCollapsed ? { resourceTimingAnomaliesCollapsed: true } : {}),
       }
     },
     dispose() {
