@@ -1,0 +1,8 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web frontend entry spec; required checks and relevant layer overview for Assistant config UI changes."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue component and route/view UI conventions for adding the Assistant config panel knowledge section."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Local assistant file merge/seed behavior and Vue/Dexie state refresh conventions relevant to update button behavior."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required build checks and platform-web quality guardrails."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Storage layout for .tsian/local/assistant and local-assistant Dexie-backed virtual files."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"AI-facing document cleanup rules for removing stale concepts from assistant-visible knowledge."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Principle for keeping assistant-managed knowledge as workspace-visible files rather than hidden DB fields."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Guidance for adding refresh helpers without growing unrelated modules or god files."}

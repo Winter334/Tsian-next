@@ -4,15 +4,17 @@
 
 推荐阅读顺序：
 
-1. `current-state-handoff.md`
-2. `airp-workflow-platform-direction.md`
-3. `agent-framework-runtime-workspace-direction.md`
-4. `play-frontend-sdk-direction.md`
-5. `assistant-frontend-inspection-direction.md`
-6. `deferred-work.md`
+1. `documentation-map.md`
+2. `current-state-handoff.md`
+3. `airp-workflow-platform-direction.md`
+4. `agent-framework-runtime-workspace-direction.md`
+5. `play-frontend-sdk-direction.md`
+6. `assistant-frontend-inspection-direction.md`
+7. `deferred-work.md`
 
 维护规则：
 
+- 文档分层、阅读顺序、平台内置助手知识与游戏卡 `docs/` 的边界更新 `documentation-map.md`。
 - 当前实现状态只更新 `current-state-handoff.md`。
 - 平台级产品与架构方向更新 `airp-workflow-platform-direction.md`。
 - Agent Framework、Skill 和 Runtime Workspace 方向更新 `agent-framework-runtime-workspace-direction.md`。
@@ -25,6 +27,7 @@
 当前 active 集合：
 
 - `README.md`
+- `documentation-map.md`
 - `current-state-handoff.md`
 - `airp-workflow-platform-direction.md`
 - `agent-framework-runtime-workspace-direction.md`

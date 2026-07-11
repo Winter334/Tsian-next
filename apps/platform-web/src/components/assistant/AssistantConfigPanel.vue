@@ -12,7 +12,7 @@
             <span class="text-xs font-bold text-text-main">Workspace 权限</span>
             <Select
               :model-value="String(workspaceLevel)"
-              :disabled="applying || !agent"
+              :disabled="applying || updatingKnowledge || !agent"
               @update:model-value="(value) => updateWorkspaceAccessLevel(Number(value))"
             >
               <SelectTrigger class="h-9 w-full">
@@ -30,6 +30,31 @@
             </Select>
           </label>
           <p class="text-xs leading-5 text-text-dim">{{ workspaceAccessDescription }}</p>
+        </div>
+      </section>
+
+      <section class="border border-neon-deep/35 bg-panel/55">
+        <div class="border-b border-neon-deep/25 px-3 py-2">
+          <p class="text-sm font-bold text-text-main">助手知识库</p>
+          <p class="mt-0.5 text-xs leading-5 text-text-dim">
+            更新桌面助手理解 Tsian 所需的基础说明。
+          </p>
+        </div>
+        <div class="grid gap-3 p-3">
+          <p class="text-xs leading-5 text-text-dim">
+            只会更新助手用于理解 Tsian 的内置说明；不会改变你的助手设定、风格、个人笔记、模型与权限设置、自定义能力，也不会修改当前游戏卡内容。
+          </p>
+          <div class="flex justify-end">
+            <button
+              type="button"
+              class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs disabled:opacity-45"
+              :disabled="applying || updatingKnowledge || hasChanges"
+              :title="hasChanges ? '请先应用或取消未保存的助手配置变更' : '更新助手理解 Tsian 所需的基础说明'"
+              @click="refreshKnowledge"
+            >
+              {{ updatingKnowledge ? "更新中..." : "更新助手知识" }}
+            </button>
+          </div>
         </div>
       </section>
 
@@ -55,7 +80,7 @@
               </span>
               <Switch
                 :model-value="skillEnabled(skill)"
-                :disabled="applying || !agent"
+                :disabled="applying || updatingKnowledge || !agent"
                 :aria-label="skill.title"
                 @update:model-value="(value) => toggleSkill(skill, Boolean(value))"
               />
@@ -83,7 +108,7 @@
                   class="retro-focus h-8 w-full border border-neon-deep/30 bg-panel/60 px-2 font-mono text-xs text-text-main"
                   :type="isSecretKey(item.key) ? 'password' : 'text'"
                   :value="configValue(skill.path, item)"
-                  :disabled="applying"
+                  :disabled="applying || updatingKnowledge"
                   :placeholder="item.defaultValue || ''"
                   spellcheck="false"
                   autocomplete="off"
@@ -185,7 +210,7 @@
       <button
         type="button"
         class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs"
-        :disabled="applying"
+        :disabled="applying || updatingKnowledge"
         @click="cancelChanges"
       >
         取消
@@ -194,7 +219,7 @@
         <button
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs disabled:opacity-45"
-          :disabled="!hasChanges || applying"
+              :disabled="!hasChanges || applying || updatingKnowledge"
           @click="applyChanges"
         >
           应用
@@ -202,7 +227,7 @@
         <button
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center px-3 font-mono text-xs disabled:opacity-45"
-          :disabled="applying"
+          :disabled="applying || updatingKnowledge"
           @click="confirmChanges"
         >
           确定
@@ -233,9 +258,11 @@ import { isAgentPlatformToolEnabled } from "@/agent-runtime/permissions"
 import { PLATFORM_TOOL_CONTROL_GROUPS, type PlatformToolControl } from "@/agent-runtime/tool-controls"
 import { isSkillEnabledForAgent, isToolEnabledForAgent } from "@/agent-runtime/registry"
 import { toast } from "@/composables/useToast"
+import { confirm } from "@/composables/useConfirm"
 import { ParamTip } from "@/components/ui/tip"
 import {
   getLocalAssistantConfig,
+  refreshLocalAssistantKnowledge,
   updateLocalAssistantPlatformToolEnabled,
   updateLocalAssistantSkillConfig,
   updateLocalAssistantSkillEnabled,
@@ -289,6 +316,7 @@ const platformToolOverrides = ref(new Map<AgentPlatformToolName, boolean>())
 const toolOverrides = ref(new Map<string, boolean>())
 const workspaceLevelOverride = ref<number | null>(null)
 const applying = ref(false)
+const updatingKnowledge = ref(false)
 
 /**
  * Skill config 初始值(玩家已存值 ?? 默认值),reload 时填充。
@@ -355,7 +383,7 @@ const assistantCapabilities = computed<AssistantCapability[]>(() => {
       description: tool.description,
       badge: `平台能力 · ${group.title}`,
       enabled: platformToolEnabled(tool.id),
-      disabled: applying.value || !agent.value,
+      disabled: applying.value || updatingKnowledge.value || !agent.value,
       tool,
     })),
   )
@@ -367,7 +395,7 @@ const assistantCapabilities = computed<AssistantCapability[]>(() => {
     badge: "助手本地 Tool",
     path: tool.path,
     enabled: toolEnabled(tool),
-    disabled: applying.value || !agent.value,
+    disabled: applying.value || updatingKnowledge.value || !agent.value,
     tool,
   }))
   return [...platformCapabilities, ...localToolCapabilities]
@@ -530,6 +558,32 @@ async function reload(): Promise<void> {
     initial.set(skill.path, values)
   }
   skillConfigInitial.value = initial
+}
+
+async function refreshKnowledge(): Promise<void> {
+  if (applying.value || updatingKnowledge.value || hasChanges.value) {
+    return
+  }
+  const confirmed = await confirm({
+    title: "更新助手知识",
+    message: "将更新桌面助手理解 Tsian 所需的基础说明。此操作不会改变你的助手设定、风格、个人笔记、模型与权限设置、自定义能力，也不会修改当前游戏卡内容。是否继续？",
+    confirmText: "更新",
+    cancelText: "取消",
+  })
+  if (!confirmed) {
+    return
+  }
+  updatingKnowledge.value = true
+  try {
+    const result = await refreshLocalAssistantKnowledge()
+    await reload()
+    emit("change")
+    toast.success(`助手知识已更新（${result.updatedPaths.length} 个文件）。`)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "更新助手知识失败。")
+  } finally {
+    updatingKnowledge.value = false
+  }
 }
 
 function resetOverrides(): void {

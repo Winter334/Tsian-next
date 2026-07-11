@@ -1570,6 +1570,7 @@ export {
   updateLocalAssistantProviderPreset,
   updateLocalAssistantModel,
   getLocalAssistantConfig,
+  refreshLocalAssistantKnowledge,
   updateLocalAssistantSkillEnabled,
   updateLocalAssistantSkillConfig,
   updateLocalAssistantPlatformToolEnabled,

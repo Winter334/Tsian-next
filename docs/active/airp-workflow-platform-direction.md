@@ -171,7 +171,7 @@ Game Card 是可复用、可分发的 workspace 模板；Save Instance 是玩家
 - `apps/platform-web/src/agent-runtime/index.ts` 承载 MVP Agent Runtime。
 - 默认卡的玩家正式回合入口由 `runtime.entrypoints.playerTurn` 指向 `storyteller`；`storyteller` 直接写玩家可读正文，并可按需通过 `agent_call` 联系 `researcher` 获取精炼事实。回合后 `stage-manager` 等后台维护由前端/内容层在需要时显式调用，平台核心不硬编码固定流水线。
 - 本地存储已有 Game Card 记录、Save Instance、snapshot、history、checkpoint 和 Runtime Workspace files；新建默认 save 会从内置空白 Game Card 复制 workspace 模板。
-- 内置空白 Game Card 会声明 workspace assistant entrypoint，当前为普通工作区内容 `agents/studio-assistant/AGENT.md`；它带有临时官方知识库 `docs/tsian-framework-knowledge.md` 和查询型本地 Skill，用于后续助手 UI / 管理 Agent 读取事实而不是硬猜平台行为。
+- 桌面助手当前是平台本地助手，默认文件位于 `.tsian/local/assistant/`，不是 Game Card manifest 声明的 `studio-assistant`。平台内置 `framework-knowledge` 提供通用概念和边界；具体 Game Card 的世界观、玩法 schema、前端约定和卡内 SOP 应写入该卡随卡分发的 `docs/`，由助手按需读取。
 - 当前不再提供同进程官方默认游戏前端；内置空白 Game Card 只提供 workspace 模板，默认可玩前端属于后续 remote/packaged Game Card frontend 工作。
 - 远程 iframe 前端 bridge 已可按 active Game Card frontend binding 加载远程网页，使用 compatibility-first sandbox（`allow-scripts allow-same-origin allow-forms`）和 postMessage session/source/origin 过滤。
 - Game Card 本地导入/导出包格式已采用 `*.tsian-card.zip`，包内包含 `game-card.json`、`workspace/*` 和可选已构建 `frontend/*` 静态文件；导入只创建/更新 reusable Game Card，不创建 Save Instance。打包前端通过本地 IndexedDB + Service Worker 虚拟资源 URL 进入 iframe，并复用同一 bridge。当前 Service Worker 方案要求 iframe 保留 `allow-same-origin`，否则 opaque-origin sandbox 会绕过本地虚拟资源层。

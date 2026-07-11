@@ -201,13 +201,13 @@ The flat entity store (`save/entities/`) is the entity authority but carries no 
 
 - `save/scenes/<localId>.json` — one scene per file. Records `{ id, name, location, present, status, updatedTurn }`. `present` is a derived navigation snapshot (ref + name + brief + status summary), not an entity copy. `status`: `active`/`background`/`resolved` (resolved scenes are not deleted — plot is traceable). Supports multi-scene natively (original-character dual-line, canon multi-line).
 - `save/relationships/<scope>.json` — one character subject per file. `<scope>` = character subject scope (e.g. `character-萧玄`). Records `{ subject, edges, updatedTurn }` where `subject` and every `edges[].to` must be character/person refs in the current schema (`character:<localId>`). Absorbs long-novel social relationship explosion: a subject's file is small, retrieval is O(1). Bidirectional character relations write an edge on both sides; intentionally one-sided perception/knowledge may write only the subject side. Non-character associations (location, affiliation, item, scene, event, corpse/evidence, concept) do not belong here; keep them in the appropriate fixed field, existing ref-bearing structure, or `extensions.render="ref"` until a unified reference-value schema is designed.
-- `save/playthrough/runtime.json` adds `activeSceneIds: [...]` — pointers to current active scenes (navigation entry, not scene content authority).
+- `save/playthrough/runtime.json` adds `activeSceneRefs: [...]` — pointers to current active scenes (navigation entry, not scene content authority).
 
 ## Authority
 
 - entity json is the entity authority.
 - scene / relationship json are derived snapshots (present summaries derive from entities; relationship edges reference character ids); lost ones are rebuildable, not a second source of truth.
-- `runtime.activeSceneIds` are pointers, not scene content authority.
+- `runtime.activeSceneRefs` are pointers, not scene content authority.
 
 When two copies of the same data exist, the authority / derived relationship and refresh timing must be written down to avoid dual authority.
 

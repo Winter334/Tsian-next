@@ -139,5 +139,6 @@ npm run build:web
 
 ## 文档
 
-- [docs/](docs/) — 项目方向与设计文档
-- 桌面助手内置框架知识参考：平台架构、前端开发指南、记忆系统设计指南
+- [docs/active/documentation-map.md](docs/active/documentation-map.md) — 文档分层、阅读顺序、平台助手知识与游戏卡 `docs/` 的维护边界
+- [docs/](docs/) — 当前项目方向、实现状态、SDK 与设计文档入口
+- 桌面助手内置知识是平台通用概念与边界说明；具体游戏卡的世界观、玩法 schema 和前端约定应随游戏卡 `docs/` 分发

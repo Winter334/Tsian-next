@@ -104,6 +104,30 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 - The text editor must reject any loaded or just-written `WorkspaceFile` carrying `binary` before applying `content`; a binary placeholder is diagnostic text, never an editable/savable baseline. Keep the guard even when routing already sends known media to the media viewer, because unknown binaries and inconsistent metadata can still reach the editor route.
 - `WorkspaceMediaView.vue` reads `WorkspaceFile.binary` (Blob) and renders `<img>`/`<audio>`/`<video>` via `URL.createObjectURL`; revoke on unmount.
 
+### Convention: Player-Facing Copy Hides Internal Implementation Details
+
+**What**: UI text shown to players should describe user-visible outcomes and safety guarantees, not internal paths, filenames, schemas, API names, or developer jargon. Internal anchors may appear in developer docs, logs, diagnostics, or advanced tooltips only when the player needs them to act.
+
+**Why**: Tsian exposes a file-like workspace, but most configuration panels are still product UI. Copy such as `.tsian/local/assistant/skills/framework-knowledge/`, `AGENT.md`, `SOUL.md`, `Tool/Skill`, or `docs/` is useful to developers and assistant maintainers, but in ordinary player-facing controls it makes the product feel like an implementation manual and obscures the actual promise: what will change and what will be protected.
+
+**Rules**:
+- Lead with the player outcome: "更新助手理解 Tsian 所需的基础说明" rather than "替换 framework-knowledge 文件".
+- State protection in user concepts: "不会改变你的助手设定、风格、个人笔记、模型与权限设置、自定义能力或当前游戏卡内容".
+- Keep exact paths/API names out of primary labels and descriptions unless the task is explicitly a file-manager/editor workflow where the path is the object being edited.
+- If precision is needed for maintainers, put paths in docs/specs or an advanced diagnostic detail, not the default player copy.
+
+**Wrong**:
+
+```vue
+<p>只会替换 .tsian/local/assistant/skills/framework-knowledge/ 下的官方知识文件；不会修改 AGENT.md、SOUL.md、Tool/Skill 或 docs。</p>
+```
+
+**Correct**:
+
+```vue
+<p>只会更新助手用于理解 Tsian 的内置说明；不会改变你的助手设定、风格、个人笔记、模型与权限设置、自定义能力，也不会修改当前游戏卡内容。</p>
+```
+
 ## Bridge And Persistence
 
 - Components may call exported platform-host functions for platform shell actions.

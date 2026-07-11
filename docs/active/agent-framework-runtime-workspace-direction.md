@@ -65,15 +65,15 @@ agents/
 
 团队由 Agent 联系关系自然形成。每个 Agent 只需要知道与自己业务有承接关系的其它 Agent。
 
-### 默认阵容：小说 AIRP 后台剧组
+### 推荐阵容：小说 AIRP 后台剧组
 
-默认 AIRP 阵容采用 **玩家入口 + 后台 specialists** 的可替换模型，而非平台硬编码流水线：
+小说 AIRP 推荐阵容采用 **玩家入口 + 后台 specialists** 的可替换模型，而非平台硬编码流水线。当前内置模板已落地 `storyteller`、`researcher`、`stage-manager`、`world-architect`；`director` 是推荐的可选剧情指导角色，是否进入默认模板由后续通用创作模板任务决定。
 
 - **`storyteller` / 说书人**：当前默认卡通过 `runtime.entrypoints.playerTurn` 显式把玩家正式回合入口配置为 `storyteller`。它读取 brief、runtime、schema 和可见实体资料，直接写玩家可读正文，并在信息不足时按需 `agent_call` 联系 `researcher`。
 - **`researcher` / 资料员**：只读检索 source、entity、scene、relationship、schema 与 brief，返回精炼事实和来源路径。
 - **`stage-manager` / 场记**：回合后维护 runtime、entities、scenes、relationships、memory 和可渲染状态；具体何时调用由前端/内容层决定，平台核心不硬编码 `storyteller -> stage-manager` 管线。
 - **`world-architect` / 世界架构师**：开局建模、schema/world model 设计、玩法启用方案和 pending patch。
-- **`director` / 导演**：维护剧情方向 brief、节奏、伏笔、原著/分支平衡和元数据。
+- **`director` / 导演（可选）**：维护剧情方向 brief、节奏、伏笔、原著/分支平衡和元数据。当前内置模板未把它作为已落地默认 Agent。
 
 默认阵容只是推荐组合，作者可以替换、增删或改造任何 Agent。例如某个战斗 runtime 可以额外提供 rule-referee。只要相关 Agent 被声明为联系人，并能被 `agent_call` 调用，就不需要额外维护一份全局团队装配表。
 
@@ -326,8 +326,8 @@ save/  (save runtime data, one entity per flat file)
 目录约定：
 
 - 根 `README.md` 说明工作区用途和重要入口。
-- `agents/` 存 Game Card 拥有的 Agent 定义。当前默认阵容：`storyteller`（由默认卡 manifest 配为玩家正式回合入口，直接写正文）、`researcher`（只读检索，精炼回灌资料）、`stage-manager`（回合后维护 runtime/entity/scene/relationship/memory/status）、`world-architect`（开局建模、schema 与玩法启用设计）、`director`（剧情指导 brief）。核心默认 Skill 采用 Agent-local 路径 `agents/<agent>/skills/<skill>/SKILL.md`。
-- `agents/studio-assistant/` 可作为游戏卡声明的工作区助手入口。它仍是普通 workspace 内容，游戏卡作者可以替换、删除或改造。
+- `agents/` 存 Game Card 拥有的 Agent 定义。当前内置模板已落地：`storyteller`（由默认卡 manifest 配为玩家正式回合入口，直接写正文）、`researcher`（只读检索，精炼回灌资料）、`stage-manager`（回合后维护 runtime/entity/scene/relationship/memory/status）、`world-architect`（开局建模、schema 与玩法启用设计）。`director` 是推荐的可选剧情指导角色，不是当前模板已落地事实。核心默认 Skill 采用 Agent-local 路径 `agents/<agent>/skills/<skill>/SKILL.md`。
+- 桌面助手不是 Game Card manifest 中声明的卡内 Agent；当前实现使用平台本地 `.tsian/local/assistant/`。若未来需要卡声明助手入口，应先设计 manifest 契约和迁移路径。
 - `skills/` 存共享 Skill。`agents/<agent>/skills/` 存 Agent-local Skill。
 - `docs/` 存官方或游戏卡作者维护的说明文档。默认 `docs/novel-airp-schema-guide.md` 是 novel AIRP 速查层（常驻相关 agent contextPaths），`docs/novel-airp-schema-reference.md` 是详尽字段手册（按需 read，不常驻）。
 - `save/source/` 存导入的小说原文、manifest 和章节切分。
@@ -337,17 +337,17 @@ save/  (save runtime data, one entity per flat file)
 - `save/relationships/` 存关系分片，一 subject 一文件 `<scope>.json`，吸收长篇关系爆炸。
 - `save/history/` 存玩家面对的原始 AIRP 回合记录和压缩后的剧情时间线，不存所有中间过程。原始记录按 `save/history/turns/turn-*.json` 一回合一文件保存，便于 workspace 搜索直接定位具体回合。
 - `save/memory/` 存本次游玩的长期记忆、摘要和可检索事实。
-- `save/playthrough/` 存运行时变量（`runtime.json` 含 `activeSceneIds` 指针）、player、mode、frontier、setup 摘要、opening narrative 与 branch。`mode.json` 只记录真正玩法系统的 `enabled` / `disabled` / `deferred` 状态，不记录 UI 渲染模块。**不使用** `save/frontend/view-state.json` — 纯前端 view state（active tabs、scroll positions、collapsed panels、transient filters、hover state）不应存 workspace。
+- `save/playthrough/` 存运行时变量（`runtime.json` 含 `activeSceneRefs` 指针）、player、mode、frontier、setup 摘要、opening narrative 与 branch。`mode.json` 只记录真正玩法系统的 `enabled` / `disabled` / `deferred` 状态，不记录 UI 渲染模块。**不使用** `save/frontend/view-state.json` — 纯前端 view state（active tabs、scroll positions、collapsed panels、transient filters、hover state）不应存 workspace。
 - `save/director/` 存当前 storyteller-safe 导演 brief 和元数据。
 - `.tsian/` 是平台 metadata、trace、checkpoint 空间。普通 Agent/Skill/frontend workspace read/list/search 不暴露 `.tsian/*`，普通 workspace 写入和删除也不能修改 `.tsian/*`。Trace 落 `.tsian/save/traces/turns/*.jsonl`（跟随 checkpoint）。**注意**：checkpoint 元数据、embedding 索引是 Dexie 表，不在 `.tsian/` 文件里——不要因目录占位 README 误判数据位置。
 
-## 10. Workspace Assistant
+## 10. Desktop Assistant
 
-Game Card 可以在 manifest 中声明一个助手 Agent，例如内置空白卡默认使用 `studio-assistant`。这个助手不是平台隐藏人格，而是随 Game Card content 分发的普通 Agent 定义。未来平台助手 UI 可以把它作为入口；它的指令和本地 Skill 属于卡内容，备注和会话记录属于当前存档运行时数据。
+桌面助手当前是平台本地管理 Agent，默认文件位于 `.tsian/local/assistant/`，不是 Game Card manifest 中的 `studio-assistant`。`GameCardManifest` 当前没有 `assistant` 字段；如果未来需要卡声明助手入口，应另开设计任务明确 manifest 契约、迁移和 UI 入口。
 
-默认 `studio-assistant` 的第一版职责是帮助玩家和作者理解、检查和维护当前 workspace：Agent/Skill 定义、状态约定、前端数据、诊断事实、游戏卡内容等。它不应获得绕过 bridge/tool/action 边界的特殊能力，也不应声称可以直接访问宿主文件系统、API key 或平台内部对象。
+平台内置 `framework-knowledge` Skill 只承载 Tsian 平台通用概念和边界。具体 Game Card 的世界观、玩法 schema、前端约定和卡内 SOP 应写入该卡随卡分发的 `docs/`，由桌面助手通过 `knowledgeMount: "docs/"` 和 workspace read/search 按需读取。
 
-为了减少幻觉，默认助手带有 Agent-local `framework-knowledge` Skill。该 Skill 不声明 action，而是要求助手先读取或搜索 `docs/tsian-framework-knowledge.md`，再根据当前 workspace 的 README、schema、Agent 和 Skill 文件回答框架问题。如果官方知识库尚未覆盖某个问题，助手应该明确区分当前事实与建议。
+助手本地 notes、会话上下文、trace、自定义 Tool/Skill 和配置属于 `.tsian/local/assistant/`。平台提供“更新助手知识”时只刷新官方 `framework-knowledge` 文件，不应覆盖 `AGENT.md`、`SOUL.md`、`notes.md`、`agent.json`、模型/权限配置、自定义 Tool/Skill 或当前 Game Card `docs/`。
 
 完整的首次启动世界创建流程属于后续内容层设计。它更可能是收集世界观、主题和初始设定，然后复用官方默认 Agent、Skill、状态契约和前端内容，并把结果写入普通 workspace 文件；不应在基础设施阶段硬编码成平台流程。
 
@@ -407,9 +407,9 @@ Tsian 不需要 OpenClaw 式个人助手主机安全模型。
 当前 MVP 中：
 
 - Agent Runtime 仍在 `apps/platform-web/src/agent-runtime/index.ts`。
-- 默认阵容采用小说 AIRP 后台剧组模型：当前默认卡在 `runtime.entrypoints.playerTurn` 中显式配置 `storyteller` 作为玩家正式回合入口；该默认入口直接写玩家可读正文并按需联系 `researcher`（只读检索，精炼回灌资料）。`stage-manager` 负责回合后维护 runtime/entity/scene/relationship/memory/status，`world-architect` 负责开局建模、schema/world model 与玩法启用设计，`director` 负责剧情指导 brief。平台核心不硬编码 `storyteller -> stage-manager` 流水线；后台维护由前端/内容层在需要时显式调用。
+- 推荐小说 AIRP 后台剧组模型：当前默认卡在 `runtime.entrypoints.playerTurn` 中显式配置 `storyteller` 作为玩家正式回合入口；该默认入口直接写玩家可读正文并按需联系 `researcher`（只读检索，精炼回灌资料）。当前内置模板已落地 `stage-manager` 与 `world-architect`；`director` 是推荐的可选剧情指导角色，不是当前模板已落地事实。平台核心不硬编码 `storyteller -> stage-manager` 流水线；后台维护由前端/内容层在需要时显式调用。
 - 存储包含 snapshot、history、checkpoint、Game Card content files，以及 save runtime workspace files；结构化状态不再使用独立平台表。
-- 新 Game Card 默认写入 `agents/storyteller/`、`agents/researcher/`、`agents/stage-manager/`、`agents/world-architect/`、`agents/director/`（agent.json + AGENT.md + SOUL.md）以及各自 Agent-local `SKILL.md`，并写入 `docs/tsian-framework-knowledge.md`、`docs/novel-airp-schema-guide.md`（速查层）、`docs/novel-airp-schema-reference.md`（详尽字段手册）等卡内容；新存档默认写入 `save/agents/*` notes、`save/history/*`、`save/source/*`、`save/schema/*`、`save/entities/*`、`save/scenes/*`、`save/relationships/*`、`save/playthrough/*`（含 `runtime.json` 带 `activeSceneIds`、`mode.json` 默认 `{ "行动裁定": "deferred" }`、`understanding-summary.json`、`setup-summary.json`、`opening-narrative.json`）、`save/director/*`、`save/memory/*` 和 `.tsian` 入口文件。novel AIRP 实体采用扁平 `save/entities/<type>/<localId>.json` 一实体一文件模型，**不使用** 06-24 的 `save/world/<type>/<id>/index.json` 一实体一目录 + `_ref`/`_dir` 升级模型；场景/关系聚合层 `save/scenes/`、`save/relationships/` 是派生导航视图。默认 workspace version 为 12。
+- 当前内置 Game Card 模板写入 `agents/storyteller/`、`agents/researcher/`、`agents/stage-manager/`、`agents/world-architect/`（agent.json + AGENT.md + SOUL.md）以及各自 Agent-local `SKILL.md`，并写入过渡性的随卡 `docs/*` 等卡内容；新存档默认写入 `save/agents/*` notes、`save/history/*`、`save/source/*`、`save/schema/*`、`save/entities/*`、`save/scenes/*`、`save/relationships/*`、`save/playthrough/*`（`runtime.json` 使用 `activeSceneRefs`）、`save/memory/*` 和 `.tsian` 入口文件。novel AIRP 实体采用扁平 `save/entities/<type>/<localId>.json` 一实体一文件模型，**不使用** 06-24 的 `save/world/<type>/<id>/index.json` 一实体一目录 + `_ref`/`_dir` 升级模型；场景/关系聚合层 `save/scenes/`、`save/relationships/` 是派生导航视图。默认 workspace version 为 13。当前默认模板后续会替换为更通用、适合创作的模板，因此不把当前随卡 docs 作为平台通用知识维护。
 - `agent-registry` 与 `skill-registry` 已能扫描 workspace 中的 `AGENT.md` / `SKILL.md` 并返回轻量索引。
 - `skill-detail` 已能按选中 `SKILL.md` path 加载 Skill 正文和资源索引。
 - `agent-context` 已能按 Agent 组装 `AGENT.md`、notes/session、轻量 Skill Index 和声明的 context files。

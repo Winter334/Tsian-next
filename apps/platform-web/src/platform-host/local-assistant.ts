@@ -26,12 +26,14 @@ import {
 } from "../config/ai"
 import {
   loadLocalAssistantFiles,
+  refreshLocalAssistantFrameworkKnowledgeFiles,
   saveLocalAssistantFiles,
   readSkillConfig,
   writeSkillConfig,
   LOCAL_ASSISTANT_AGENT_ID,
   LOCAL_ASSISTANT_DIR,
   normalizeWorkspaceFilePath,
+  type LocalAssistantKnowledgeRefreshResult,
 } from "../storage"
 import {
   parseAgentConfigRecord,
@@ -220,6 +222,10 @@ export async function updateLocalAssistantModel(
   }
 
   await saveLocalAssistantFiles(files)
+}
+
+export async function refreshLocalAssistantKnowledge(): Promise<LocalAssistantKnowledgeRefreshResult> {
+  return refreshLocalAssistantFrameworkKnowledgeFiles()
 }
 
 /**
