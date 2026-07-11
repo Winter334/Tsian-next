@@ -1,0 +1,14 @@
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web 总体边界、Agent Runtime、platform-host、bridge 与必跑构建要求"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "Agent Runtime 工具调用、task/narrative 模式、agent_call、运行时纯度边界与模型上下文契约"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "助手 context 虚拟文件、Dexie/local-assistant-files、UI 会话消息与本地状态约定"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "platform-web 构建、fail-loud 与跨层质量要求"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": ".tsian/local 与 assistant context / trace 生命周期、存储边界和 checkpoint 排除规则"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts authoring 边界与 build:contracts 要求"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "共享类型导出、可选字段、contracts 变更质量检查"}
+{"file": ".trellis/spec/contracts/frontend/index.md", "reason": "contracts consumer 构建要求和 platform-web 消费边界"}
+{"file": ".trellis/spec/contracts/frontend/type-safety.md", "reason": "前端消费 shared contracts 的类型安全和桥接/运行时 payload 约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "contracts → runtime → host → storage/UI 跨层数据流和格式边界"}
+{"file": ".trellis/spec/guides/data-fileification-principle.md", "reason": "assistant context 作为可见虚拟文件而非隐藏 DB 字段的设计原则"}
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "移除历史 raw tool replay 概念时避免残留 AI-facing prompt 噪声"}
+{"file": ".trellis/spec/guides/module-structure-guide.md", "reason": "新增 projection / tool-memory helper 时保持 agent-runtime 文件职责清晰"}
+{"file": ".trellis/tasks/07-11-task-context-handoff/research/current-implementation.md", "reason": "当前实现锚点、问题根因和外部参考原则摘要"}
