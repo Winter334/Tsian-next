@@ -1429,3 +1429,38 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 140: Task 模式上下文管理优化
+
+**Date**: 2026-07-11
+**Task**: Task 模式上下文管理优化
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+为桌面助手/task 模式拆分 raw 工具日志与模型工具记忆：新增 AgentContextToolMemory/top-level toolMemories、deterministic projection 与预算/placeholder 策略，历史工具不再以 provider tool protocol 回放；agent_call 等模型 observation 改为递归 compact，UI/debug 仍保留完整 raw toolCalls/timeline。验证 npm run build:contracts 与 npm run build:web 通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5827d5e` | (see git log) |
+| `82bcca1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
