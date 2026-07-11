@@ -104,8 +104,10 @@ export interface FrontendPackageFileEntry {
 
 export interface FrontendPackageManifest {
   schema: typeof FRONTEND_PACKAGE_SCHEMA
-  /** Package-root-relative entry path without a leading slash or frontend/ prefix. Must exist in files. */
+  /** Package-root-relative entry path without a leading slash or frontend/ prefix. Must exist in files for dist packages; source packages may generate it during import-time build. */
   entry: string
+  /** Frontend source framework; used when a package carries frontend/src/** sources that need platform online build. */
+  framework?: FrontendFramework
   bridgeVersion: "tsian.play-bridge.v1"
   files: FrontendPackageFileEntry[]
   exportedAt?: string

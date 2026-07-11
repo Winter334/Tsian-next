@@ -169,10 +169,11 @@ function subscribe(): void {
       streamingReasoning.value = ""
       turnOptions.value = parsed.options.length > 0 ? parsed.options : (result.options ?? [])
       turnPhase.value = "standby"
-      turnCount.value += 1
+      const completedTurn = result.turn ?? turnCount.value + 1
+      turnCount.value = completedTurn
       // 回合后同步：正文落定后发起回合后维护 Agent 调用（若卡配置了 postTurnMaintenance）。
       // triggerSyncAfterTurn 内部读 entrypoints 决定是否启动；不阻塞主回合流程。
-      void triggerSyncAfterTurn(turnCount.value)
+      void triggerSyncAfterTurn(completedTurn)
     }),
   )
 

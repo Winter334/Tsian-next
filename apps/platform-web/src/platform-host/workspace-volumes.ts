@@ -30,7 +30,12 @@ import {
   writeWorkspaceFileForSave,
   type LocalWorkspaceFileRecord,
 } from "../storage"
-import { binaryPlaceholderText, inferMediaTypeFromPath, isTextMediaType } from "@/lib/media-type"
+import {
+  binaryPlaceholderText,
+  isImageMediaType,
+  resolveBlobMediaType,
+} from "@/lib/media-type"
+import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 
 /**
  * WorkspaceVolume — host 层存储后端适配器（子5: 06-21-workspace-storage-volume-abstraction）。
@@ -105,52 +110,24 @@ export const cardFrontendVolume: WorkspaceVolume = {
   scope: "card-frontend",
   async enumerate(cardId) {
     const files = await listLocalGameCardFrontendFiles(cardId)
-    // 前端文件存 data: Blob（无 content 字段）。文本类（html/css/js/json/svg 等）
-    // → await data.text() 填 content（Explorer 能编辑/查看）；媒体类（图片/音视频）
-    // → binary + placeholder（走媒体查看器）。svg 是 image/svg+xml 但实际是文本，
-    // 单独判一下。
-    return Promise.all(files.map(async (r) => {
-      const mediaType = inferMediaTypeFromPath(r.path)
-      if (isTextMediaType(mediaType) || mediaType === "image/svg+xml") {
-        return {
-          path: r.path,
-          content: await r.data.text(),
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-        }
-      }
-      return {
-        path: r.path,
-        content: binaryPlaceholderText(r.data, r.path),
-        binary: r.data,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      }
-    }))
+    return Promise.all(files.map((file) => blobToWorkspaceFile({
+      path: file.path,
+      blob: file.data,
+      createdAt: file.createdAt,
+      updatedAt: file.updatedAt,
+    })))
   },
   async write(cardId, { path, content, data }) {
-    // Frontend files are stored as `data: Blob`. Text content (html/css/js/...)
-    // is wrapped into a Blob here; a caller-supplied Blob passes through.
+    // Frontend files are stored as Blob. String writes express text intent;
+    // caller-supplied Blob writes preserve their binary/type intent.
     const payload: Blob | string = data instanceof Blob ? data : (content ?? "")
     const rec = await writeLocalGameCardFrontendFile(cardId, { path, data: payload })
-    // Mirror enumerate's text/media split so the returned WorkspaceFile matches
-    // what a subsequent read sees.
-    const mediaType = inferMediaTypeFromPath(rec.path)
-    if (isTextMediaType(mediaType) || mediaType === "image/svg+xml") {
-      return {
-        path: rec.path,
-        content: await rec.data.text(),
-        createdAt: rec.createdAt,
-        updatedAt: rec.updatedAt,
-      }
-    }
-    return {
+    return blobToWorkspaceFile({
       path: rec.path,
-      content: binaryPlaceholderText(rec.data, rec.path),
-      binary: rec.data,
+      blob: rec.data,
       createdAt: rec.createdAt,
       updatedAt: rec.updatedAt,
-    }
+    })
   },
   async delete(cardId, pathPrefix) {
     return deleteLocalGameCardFrontendPathForCard(cardId, pathPrefix)
@@ -361,33 +338,21 @@ export const tempVolume: WorkspaceVolume = {
   scope: "temp",
   async enumerate(sessionId) {
     const records = await listAttachmentsBySession(sessionId)
-    return records.map((record) => {
-      const isImage = record.kind === "image"
-      return {
-        path: record.path,
-        content: isImage
-          ? binaryPlaceholderText(record.data, record.path)
-          : "" as string, // text 附件内容不在这里展开(agent 用 workspace_read 取)
-        ...(isImage ? { binary: record.data } : {}),
-        ...(isImage ? { imageMimeType: record.mimeType } : {}),
-        createdAt: record.createdAt,
-        updatedAt: record.createdAt,
-      }
-    })
+    return Promise.all(records.map((record) => blobToWorkspaceFile({
+      path: record.path,
+      blob: record.data,
+      createdAt: record.createdAt,
+      updatedAt: record.createdAt,
+    })))
   },
   async write(sessionId, input) {
     const record = await writeAttachmentRecord(sessionId, input)
-    const isImage = record.kind === "image"
-    return {
+    return blobToWorkspaceFile({
       path: record.path,
-      content: isImage
-        ? binaryPlaceholderText(record.data, record.path)
-        : input.content ?? "",
-      ...(isImage ? { binary: record.data } : {}),
-      ...(isImage ? { imageMimeType: record.mimeType } : {}),
+      blob: record.data,
       createdAt: record.createdAt,
       updatedAt: record.createdAt,
-    }
+    })
   },
   async delete(sessionId, pathPrefix) {
     return deleteAttachmentsByPathPrefix(sessionId, pathPrefix)
@@ -401,10 +366,12 @@ export const tempVolume: WorkspaceVolume = {
  */
 function toWorkspaceFileFromRecord(record: LocalWorkspaceFileRecord): WorkspaceFile {
   if (record.data) {
+    const mediaType = resolveBlobMediaType(record.path, record.data)
     return {
       path: record.path,
-      content: binaryPlaceholderText(record.data, record.path),
+      content: binaryPlaceholderText(record.data, record.path, mediaType),
       binary: record.data,
+      ...(isImageMediaType(mediaType) ? { imageMimeType: mediaType } : {}),
       createdAt: record.createdAt,
       updatedAt: record.updatedAt,
     }

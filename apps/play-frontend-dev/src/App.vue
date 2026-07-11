@@ -202,10 +202,11 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
           <TimelineView v-if="navCurrent === 'timeline'" class="view-layer timeline-view" />
         </Transition>
         <Transition name="view-soft">
-          <div v-if="navCurrent === 'settings'" class="view-stage view-layer">
+          <div v-if="navCurrent === 'settings'" class="view-stage view-layer settings-placeholder">
             <CornerBrackets :size="15" :inset="25" />
-            <p class="placeholder-text">烛火书卷 · 重铸</p>
-            <p class="placeholder-sub">设置视图待接入</p>
+            <p class="placeholder-kicker">设置</p>
+            <p class="placeholder-text">此处暂未开放可调项目</p>
+            <p class="placeholder-sub">当前版本没有需要玩家手动配置的内容；后续加入显示、叙事或辅助选项时会放在这里。</p>
           </div>
         </Transition>
       </div>
@@ -307,6 +308,14 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
   padding-left: var(--play-left-panel);
   transition: padding-right 0.3s var(--play-sidebar-ease), padding-left 0.3s var(--play-sidebar-ease);
 }
+.placeholder-kicker {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  color: var(--ember);
+  letter-spacing: 0.28em;
+}
+
 .placeholder-text {
   margin: 0;
   font-family: var(--font-display);
@@ -319,12 +328,13 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
 }
 
 .placeholder-sub {
+  max-width: 520px;
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  line-height: 1.9;
   color: var(--prose-dim);
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 </style>
 

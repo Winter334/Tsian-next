@@ -1,6 +1,6 @@
 import type {
   AgentContextSnapshot,
-  AgentContextToolCall,
+  AgentContextToolMemory,
   AttachmentRef,
   ContentPart,
   ConversationMessageRecord,
@@ -34,11 +34,12 @@ import {
 } from "../storage"
 import {
   createRuntimeWorkspaceTransaction,
-  replaceWorkspaceFilesForSave,
+  commitWorkspaceChangesForSave,
   writeLocalGameCardContentFile,
+  type RuntimeWorkspaceChanges,
   type RuntimeWorkspaceTransaction,
 } from "../storage"
-import { executeWorkspaceMutation } from "./workspace-volumes"
+import { cardFrontendVolume, executeWorkspaceMutation } from "./workspace-volumes"
 import {
   createRuntimeTraceCollector,
   serializeRuntimeTraceEvents,
@@ -53,7 +54,7 @@ import {
 } from "../runtime-host/ai"
 import { getBrowserAiConfig } from "../config/ai"
 import { resolveBrowserAiConfigForModel } from "../config/ai"
-import { binaryPlaceholderText } from "@/lib/media-type"
+import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import { createFrontendInspector } from "./frontend-inspector"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
@@ -77,6 +78,10 @@ import {
   appendTurnToContext,
   serializeAgentContext,
 } from "../agent-runtime/context-lifecycle"
+import {
+  applyTaskToolMemoryRetention,
+  sortToolMemoriesStable,
+} from "../agent-runtime/tool-memory"
 import {
   getActiveSaveId,
   getLocalGameCard,
@@ -155,8 +160,8 @@ async function stageAssistantContextFile(
     assistant: string
     compressedContext?: AgentContextSnapshot
     fallbackContext: AgentContextSnapshot
-    /** 本轮工具调用(agent 层:跟正文同寿命压缩,最近 K 轮原文、早期进 summary). */
-    toolCalls?: AgentContextToolCall[]
+    /** 本轮 model-facing 工具记忆投影,合并到 top-level toolMemories. */
+    toolMemories?: AgentContextToolMemory[]
   },
 ): Promise<void> {
   // 基础快照:本轮压缩了→用压缩结果;否则用 turn 开头读出的快照;无则空快照
@@ -167,14 +172,21 @@ async function stageAssistantContextFile(
         schema: ASSISTANT_CONTEXT_SCHEMA,
         agentId: ASSISTANT_CONTEXT_AGENT_ID,
       })
-  // 追加本轮正文(保持最近 K 轮)+ 工具调用(挂在 assistant entry 上),saveId 用 sessionId(语义复用)
-  const updated = appendTurnToContext(
+  // 追加本轮正文(保持 text-only recentTurns),saveId 用 sessionId(语义复用)
+  const appended = appendTurnToContext(
     { ...base, saveId: input.sessionId },
     input.turn,
     input.user,
     input.assistant,
-    input.toolCalls,
   )
+  const mergedToolMemories = applyTaskToolMemoryRetention(sortToolMemoriesStable([
+    ...(appended.toolMemories ?? []),
+    ...(input.toolMemories ?? []),
+  ]))
+  const updated: AgentContextSnapshot = {
+    ...appended,
+    ...(mergedToolMemories.length > 0 ? { toolMemories: mergedToolMemories } : {}),
+  }
   const file: WorkspaceFile = {
     path: assistantContextPath(input.sessionId),
     content: serializeAgentContext(updated),
@@ -325,8 +337,11 @@ export async function runAssistantChat(
   if (activeSaveId) {
     workspaceFiles = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
   } else {
-    // No active save: use card content only.
-    workspaceFiles = await cardContentFilesToWorkspaceFiles(activeCard)
+    // No active save: use the card's editable content and packaged frontend.
+    workspaceFiles = [
+      ...await cardContentFilesToWorkspaceFiles(activeCard),
+      ...await cardFrontendVolume.enumerate(activeCard.id),
+    ].sort((left, right) => left.path.localeCompare(right.path))
   }
 
   // Merge local assistant files (identity, SOUL, notes, skills, tools) into the
@@ -339,26 +354,21 @@ export async function runAssistantChat(
   ]
 
   // Merge temp attachments (current session's pasted/dropped files) into the
-  // workspace at temp/<sessionId>/<name> paths. Images carry binary + imageMimeType;
-  // text files carry empty content (agent uses workspace_read to fetch content).
+  // workspace at temp/<sessionId>/<name> paths. Text attachments are decoded
+  // before the runtime receives its snapshot; images keep their binary channel.
   const sessionAttachments = await listAttachmentsBySession(input.sessionId)
-  const tempPaths = new Set(sessionAttachments.map((r) => r.path))
+  const tempPaths = new Set(sessionAttachments.map((record) => record.path))
+  const tempFiles = await Promise.all(sessionAttachments.map((record) =>
+    blobToWorkspaceFile({
+      path: record.path,
+      blob: record.data,
+      createdAt: record.createdAt,
+      updatedAt: record.createdAt,
+    })
+  ))
   workspaceFiles = [
     ...workspaceFiles.filter((file) => !tempPaths.has(file.path)),
-    ...sessionAttachments.map((record) => {
-      const isImage = record.kind === "image"
-      const file: WorkspaceFile = {
-        path: record.path,
-        content: isImage ? binaryPlaceholderText(record.data, record.path) : "",
-        createdAt: record.createdAt,
-        updatedAt: record.createdAt,
-      }
-      if (isImage) {
-        file.binary = record.data
-        file.imageMimeType = record.mimeType
-      }
-      return file
-    }),
+    ...tempFiles,
   ].sort((left, right) => left.path.localeCompare(right.path))
 
   const controller = new AbortController()
@@ -732,9 +742,10 @@ export async function runAssistantChat(
     // 独立 IO 的竞态风险.前端正常 turn 结束不再调 persistCurrentSession.
     //
     // 组装完整消息列表:history(不含本轮)+ 本轮 user(带 attachments)+ 本轮 assistant.
-    // assistant 条带 toolCalls(UI 层:不压缩完整保留,挂消息上不占条数名额,随消息截到 200 条).
+    // assistant 条带 toolCalls(UI/debug 层:不压缩完整保留,挂消息上不占条数名额,随消息截到 200 条).
     const inputAttachments = input.attachments
     const turnToolCalls = result.contextUpdate?.toolCalls
+    const turnToolMemories = result.contextUpdate?.toolMemories
     const turnTimelineItems = result.contextUpdate?.timelineItems
     const fullMessages: ConversationMessageRecord[] = [
       ...history,
@@ -757,7 +768,7 @@ export async function runAssistantChat(
     // 是平台本地数据,不随存档 checkpoint/distribute.对称 master 的 stageAgentContextFile
     // (master 走 save 事务因 agents/master/context.json 属 save/).turn 失败走 catch
     // discard(事务),且不调本函数 → context 不写回.
-    // toolCalls 写入 agent 层 context.json(recentTurns assistant entry,跟正文同寿命压缩).
+    // model-facing 工具记忆写入 top-level context.toolMemories；raw toolCalls 仅留在 UI 会话消息.
     const assistantContextUpdate = result.contextUpdate
     if (assistantContextUpdate) {
       await stageAssistantContextFile({
@@ -767,13 +778,14 @@ export async function runAssistantChat(
         assistant: assistantContextUpdate.assistant,
         compressedContext: assistantContextUpdate.compressedContext,
         fallbackContext: assistantContext,
-        ...(turnToolCalls && turnToolCalls.length > 0 ? { toolCalls: turnToolCalls } : {}),
+        ...(turnToolMemories && turnToolMemories.length > 0 ? { toolMemories: turnToolMemories } : {}),
       })
     }
 
     // Commit workspace changes (no checkpoint, no turn increment).
     const finalFiles = activeWorkspaceTransaction.finalWorkspaceFiles()
-    await commitAssistantWorkspaceFiles(activeSaveId, finalFiles)
+    const workspaceChanges = activeWorkspaceTransaction.finalWorkspaceChanges()
+    await commitAssistantWorkspaceFiles(activeSaveId, finalFiles, workspaceChanges)
 
     // Notify debug subscribers (DebugView) that new AI debug records are ready.
     // Mirrors master turn completion in platform-host/index.ts — without this,
@@ -828,6 +840,7 @@ export async function runAssistantChat(
 async function commitAssistantWorkspaceFiles(
   saveId: string | null,
   files: WorkspaceFile[],
+  changes: RuntimeWorkspaceChanges,
 ): Promise<void> {
   // Persist local assistant files (.tsian/local/assistant/*) to the Dexie
   // meta store so they survive card switches independent of save state.
@@ -856,19 +869,11 @@ async function commitAssistantWorkspaceFiles(
     return
   }
 
-  // Active save: persist save-runtime and platform-meta files (excluding local assistant).
-  const saveRuntimeFiles = nonLocalFiles
-    .filter((file) => file.path.startsWith("save/") || file.path.startsWith(".tsian/"))
-    .map((file) => ({
-      path: file.path,
-      content: file.content,
-      ...(file.binary ? { data: file.binary } : {}),
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    }))
-  if (saveRuntimeFiles.length > 0) {
-    await replaceWorkspaceFilesForSave(saveId, saveRuntimeFiles)
-  }
+  // Active save: persist only save-runtime and per-save platform-meta paths
+  // explicitly touched by the assistant turn. This keeps frontend bridge writes
+  // made during inspect_frontend from being clobbered by the assistant's
+  // turn-start workspace snapshot.
+  await commitWorkspaceChangesForSave(saveId, changes)
 
   // Also persist card-content changes (from knowledge mount writes).
   // See isCardContentWritebackPath — reserved paths (save/, .tsian/, frontend/,

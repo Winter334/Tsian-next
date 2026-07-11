@@ -55,8 +55,8 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 
 `invokeAgent` is a side-channel call (does not advance turn, does not write history). Its `commitMode` (`packages/contracts/src/runtime.ts:680`, `AgentInvocationCommitMode`) selects the workspace commit strategy:
 
-- `"workspace"` (default) → `commitWorkspaceFilesForSave` (writes workspace files only, **no checkpoint**).
-- `"workspace-with-checkpoint"` → `commitWorkspaceFilesWithCheckpointForSave` (writes workspace files **and creates a checkpoint** in one Dexie transaction).
+- `"workspace"` (default) → `commitWorkspaceChangesForSave` (commits only the side-channel transaction's explicit save-runtime changes, **no checkpoint**).
+- `"workspace-with-checkpoint"` → `commitWorkspaceChangesWithCheckpointForSave` (merges the side-channel transaction's explicit changes into current save workspace and creates a checkpoint in one Dexie transaction).
 
 **Checkpoint reason enum** (`storage/db.ts`, `LocalCheckpointRecord.reason`): `"initial" | "after-turn" | "manual" | "post-turn-maintenance"`. The contracts layer `InvokeAgentRequest.checkpointReason` is a free `string`; platform-host validates it and maps to the closed storage enum. MVP only accepts `"post-turn-maintenance"`; unknown values throw fail-loud.
 

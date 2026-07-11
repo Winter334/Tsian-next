@@ -1,89 +1,256 @@
 /**
- * Shared media-type inference. Replaces the four duplicate
- * `inferMediaType`/`normalizeMediaType` helpers that lived in
- * `workspace-file-types.ts`, `game-cards.ts`, `game-card-packages.ts`,
- * and `workspace.ts`.
- *
- * `mediaType` is no longer stored on workspace/content records — it is
- * derived from the file path at consumption points. The zip manifest
- * (`GameCardPackageFileEntry.mediaType`) remains an external format
- * contract and is populated via `inferMediaTypeFromPath` on export.
+ * Shared media-type and editable-text classification for workspace, package,
+ * and frontend-build consumers. Internal workspace records do not store a
+ * separate mediaType field; packaged frontend files preserve an explicit type
+ * through Blob.type.
  */
 
-/** Infer a media type from a file path's extension. */
+const GENERIC_BINARY_MEDIA_TYPE = "application/octet-stream"
+
+const EXACT_TEXT_FILE_NAMES = new Set([
+  ".dockerignore",
+  ".editorconfig",
+  ".env",
+  ".eslintignore",
+  ".gitattributes",
+  ".gitignore",
+  ".gitmodules",
+  ".npmrc",
+  ".prettierignore",
+  ".stylelintignore",
+  ".yarnrc",
+  "authors",
+  "changelog",
+  "codeowners",
+  "containerfile",
+  "contributors",
+  "dockerfile",
+  "gemfile",
+  "gnumakefile",
+  "license",
+  "makefile",
+  "notice",
+  "procfile",
+  "rakefile",
+  "readme",
+  "robots.txt",
+  "security",
+  "skill.config",
+])
+
+const MEDIA_TYPE_BY_EXTENSION = new Map<string, string>([
+  // Web source and styles.
+  [".astro", "text/x-astro"],
+  [".cjs", "text/javascript"],
+  [".css", "text/css"],
+  [".cts", "text/typescript"],
+  [".htm", "text/html"],
+  [".html", "text/html"],
+  [".js", "text/javascript"],
+  [".jsx", "text/javascript"],
+  [".less", "text/x-less"],
+  [".mjs", "text/javascript"],
+  [".mts", "text/typescript"],
+  [".sass", "text/x-sass"],
+  [".scss", "text/x-scss"],
+  [".svelte", "text/x-svelte"],
+  [".ts", "text/typescript"],
+  [".tsx", "text/typescript"],
+  [".vue", "text/x-vue"],
+
+  // Documentation, configuration, and structured data.
+  [".cfg", "text/plain"],
+  [".conf", "text/plain"],
+  [".config", "text/plain"],
+  [".csv", "text/csv"],
+  [".diff", "text/x-diff"],
+  [".env", "text/plain"],
+  [".gql", "application/graphql"],
+  [".graphql", "application/graphql"],
+  [".ini", "text/plain"],
+  [".json", "application/json"],
+  [".json5", "application/json5"],
+  [".jsonc", "application/json"],
+  [".jsonl", "application/x-ndjson"],
+  [".lock", "text/plain"],
+  [".log", "text/plain"],
+  [".markdown", "text/markdown"],
+  [".md", "text/markdown"],
+  [".mdx", "text/mdx"],
+  [".patch", "text/x-diff"],
+  [".properties", "text/plain"],
+  [".sql", "application/sql"],
+  [".toml", "application/toml"],
+  [".tsv", "text/tab-separated-values"],
+  [".txt", "text/plain"],
+  [".xml", "application/xml"],
+  [".xsd", "application/xml"],
+  [".xsl", "application/xml"],
+  [".xslt", "application/xml"],
+  [".yaml", "text/yaml"],
+  [".yml", "text/yaml"],
+
+  // Common templates and scripts remain editable text even when the browser
+  // builder does not have a loader/compiler for them.
+  [".bash", "text/x-shellscript"],
+  [".bat", "text/plain"],
+  [".cmd", "text/plain"],
+  [".ejs", "text/x-template"],
+  [".fish", "text/x-shellscript"],
+  [".hbs", "text/x-handlebars-template"],
+  [".handlebars", "text/x-handlebars-template"],
+  [".jade", "text/x-pug"],
+  [".liquid", "text/x-liquid"],
+  [".mustache", "text/x-mustache"],
+  [".njk", "text/x-nunjucks"],
+  [".nunjucks", "text/x-nunjucks"],
+  [".php", "text/x-php"],
+  [".ps1", "text/plain"],
+  [".pug", "text/x-pug"],
+  [".sh", "text/x-shellscript"],
+  [".tpl", "text/x-template"],
+  [".twig", "text/x-twig"],
+  [".zsh", "text/x-shellscript"],
+
+  // Images.
+  [".svg", "image/svg+xml"],
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".webp", "image/webp"],
+  [".gif", "image/gif"],
+  [".avif", "image/avif"],
+
+  // Audio.
+  [".mp3", "audio/mpeg"],
+  [".ogg", "audio/ogg"],
+  [".wav", "audio/wav"],
+  [".m4a", "audio/mp4"],
+  [".flac", "audio/flac"],
+
+  // Video.
+  [".mp4", "video/mp4"],
+  [".webm", "video/webm"],
+  [".mov", "video/quicktime"],
+
+  // Fonts, bytecode, and common opaque archives.
+  [".woff", "font/woff"],
+  [".woff2", "font/woff2"],
+  [".wasm", "application/wasm"],
+  [".zip", "application/zip"],
+  [".gz", "application/gzip"],
+  [".pdf", "application/pdf"],
+])
+
+function normalizedMediaType(mediaType: string): string {
+  return mediaType.split(";", 1)[0]?.trim().toLowerCase() ?? ""
+}
+
+function fileNameFromPath(path: string): string {
+  const withoutQuery = path.split(/[?#]/, 1)[0] ?? path
+  return withoutQuery.replace(/\\/g, "/").split("/").pop()?.toLowerCase() ?? ""
+}
+
+/** Infer a media type from a path's exact filename or extension. */
 export function inferMediaTypeFromPath(
   pathInput: string,
   options?: { fallback?: string },
 ): string {
-  const fallback = options?.fallback ?? "application/octet-stream"
-  const path = pathInput.toLowerCase()
-  // Text
-  if (path.endsWith(".json")) return "application/json"
-  if (path.endsWith(".jsonl")) return "application/x-ndjson"
-  if (path.endsWith(".md") || path.endsWith(".markdown")) return "text/markdown"
-  if (path.endsWith(".txt")) return "text/plain"
-  if (path.endsWith(".ts") || path.endsWith(".tsx")) return "text/typescript"
-  if (path.endsWith(".js") || path.endsWith(".mjs") || path.endsWith(".jsx")) return "text/javascript"
-  if (path.endsWith(".css")) return "text/css"
-  if (path.endsWith(".html") || path.endsWith(".htm")) return "text/html"
-  if (path.endsWith(".yaml") || path.endsWith(".yml")) return "text/yaml"
-  // Image
-  if (path.endsWith(".svg")) return "image/svg+xml"
-  if (path.endsWith(".png")) return "image/png"
-  if (path.endsWith(".jpg") || path.endsWith(".jpeg")) return "image/jpeg"
-  if (path.endsWith(".webp")) return "image/webp"
-  if (path.endsWith(".gif")) return "image/gif"
-  if (path.endsWith(".avif")) return "image/avif"
-  // Audio
-  if (path.endsWith(".mp3")) return "audio/mpeg"
-  if (path.endsWith(".ogg")) return "audio/ogg"
-  if (path.endsWith(".wav")) return "audio/wav"
-  if (path.endsWith(".m4a")) return "audio/mp4"
-  if (path.endsWith(".flac")) return "audio/flac"
-  // Video
-  if (path.endsWith(".mp4")) return "video/mp4"
-  if (path.endsWith(".webm")) return "video/webm"
-  if (path.endsWith(".mov")) return "video/quicktime"
-  // Font / wasm
-  if (path.endsWith(".woff")) return "font/woff"
-  if (path.endsWith(".woff2")) return "font/woff2"
-  if (path.endsWith(".wasm")) return "application/wasm"
-  return fallback
+  const fallback = options?.fallback ?? GENERIC_BINARY_MEDIA_TYPE
+  const fileName = fileNameFromPath(pathInput)
+  if (!fileName) return fallback
+
+  if (
+    EXACT_TEXT_FILE_NAMES.has(fileName)
+    || fileName.startsWith(".env.")
+    || (fileName.startsWith(".") && fileName.endsWith("rc"))
+  ) {
+    return "text/plain"
+  }
+
+  const dotIndex = fileName.lastIndexOf(".")
+  const extension = dotIndex >= 0 ? fileName.slice(dotIndex) : ""
+  return MEDIA_TYPE_BY_EXTENSION.get(extension) ?? fallback
 }
 
-/** Workspace-domain wrapper: unknown extensions default to `text/plain`
- *  (workspace files are text-oriented). Package/frontend code uses the raw
- *  `inferMediaTypeFromPath` with the `application/octet-stream` fallback. */
+/** Workspace-authored strings are text even when their extension is unknown. */
 export function inferWorkspaceMediaType(path: string): string {
   return inferMediaTypeFromPath(path, { fallback: "text/plain" })
 }
 
 export function isTextMediaType(mediaType: string): boolean {
-  const type = mediaType.toLowerCase()
+  const type = normalizedMediaType(mediaType)
   return type.startsWith("text/")
+    || type === "image/svg+xml"
     || type === "application/json"
+    || type.endsWith("+json")
+    || type === "application/json5"
     || type === "application/x-ndjson"
-    || type === "text/yaml"
+    || type === "application/ndjson"
+    || type === "application/xml"
+    || type.endsWith("+xml")
     || type === "application/yaml"
+    || type === "application/x-yaml"
+    || type === "application/toml"
+    || type === "application/x-toml"
+    || type === "application/javascript"
+    || type === "application/ecmascript"
+    || type === "application/typescript"
+    || type === "application/graphql"
+    || type === "application/sql"
+}
+
+/** Path-only editable-text predicate shared by workspace and frontend build. */
+export function isTextFilePath(path: string): boolean {
+  return isTextMediaType(inferMediaTypeFromPath(path))
 }
 
 export function isImageMediaType(mediaType: string): boolean {
-  return mediaType.toLowerCase().startsWith("image/")
+  return normalizedMediaType(mediaType).startsWith("image/")
 }
 
 export function isAudioMediaType(mediaType: string): boolean {
-  return mediaType.toLowerCase().startsWith("audio/")
+  return normalizedMediaType(mediaType).startsWith("audio/")
 }
 
 export function isVideoMediaType(mediaType: string): boolean {
-  return mediaType.toLowerCase().startsWith("video/")
+  return normalizedMediaType(mediaType).startsWith("video/")
 }
 
-/** Placeholder text returned as `WorkspaceFile.content` for binary files, so
- *  agents reading the file do not mistake it for an empty file. Future
- *  multimodal support will replace this with an image content block through
- *  an independent channel. */
-export function binaryPlaceholderText(blob: Blob, path: string): string {
-  const mediaType = inferMediaTypeFromPath(path)
+/** Blank and generic octet-stream MIME values do not carry useful intent. */
+export function isMeaningfulMediaType(mediaType: string | undefined): boolean {
+  const type = normalizedMediaType(mediaType ?? "")
+  return Boolean(type) && type !== GENERIC_BINARY_MEDIA_TYPE
+}
+
+/** Meaningful explicit MIME wins; otherwise infer from the path. */
+export function resolveMediaType(
+  path: string,
+  explicitMediaType?: string,
+  options?: { fallback?: string },
+): string {
+  const explicit = explicitMediaType?.trim()
+  if (explicit && isMeaningfulMediaType(explicit)) {
+    return explicit
+  }
+  return inferMediaTypeFromPath(path, options)
+}
+
+/** Resolve a stored Blob's effective MIME without trusting generic octet-stream. */
+export function resolveBlobMediaType(
+  path: string,
+  blob: Blob,
+  options?: { fallback?: string },
+): string {
+  return resolveMediaType(path, blob.type, options)
+}
+
+/** Placeholder returned as WorkspaceFile.content for opaque binary data. */
+export function binaryPlaceholderText(
+  blob: Blob,
+  path: string,
+  resolvedMediaType?: string,
+): string {
+  const mediaType = resolvedMediaType?.trim() || resolveBlobMediaType(path, blob)
   return `[binary file: ${mediaType}, ${blob.size} bytes — 不可读取为文本]`
 }

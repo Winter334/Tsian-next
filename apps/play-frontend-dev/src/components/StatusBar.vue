@@ -6,7 +6,7 @@
  * - fixed left, top 52px, bottom 0, z 19（与 AppNav 对称）。
  * - GSAP width 动画 312↔48，duration 0.3s，ease power2.inOut（同 AppNav）。
  * - 展开态是 overlay 命册侧卷，不参与主视图排版。
- * - 展开态：天时地利 → 玩家概要 → 个人信息 → 状态 → 数值 → 钉选/关联。
+ * - 展开态：天时地利 → 玩家概要 → 个人信息 → 数值 → 钉选/关联。
  * - 折叠态：只渲染当前角色小肖像入口，点击展开。
  * - emit toggle（折叠态头像点击展开）+ open-character（展开态头像点击进角色卡）。
  *
@@ -28,7 +28,6 @@ import type { CharacterEntity } from "../lib/character-types"
 import StatusBarScene from "./status-bar/StatusBarScene.vue"
 import StatusBarCharacter from "./status-bar/StatusBarCharacter.vue"
 import StatusBarIdentity from "./status-bar/StatusBarIdentity.vue"
-import StatusBarStatus from "./status-bar/StatusBarStatus.vue"
 import StatusBarPinned from "./status-bar/StatusBarPinned.vue"
 import StatusBarMetrics from "./status-bar/StatusBarMetrics.vue"
 import StatusBarRefs from "./status-bar/StatusBarRefs.vue"
@@ -59,7 +58,6 @@ const displayItems = computed(() => runtimeData.value.displayItems)
 // 角色来源：runtime.protagonistRef（新 shape，替代旧 runtime.player.character）。
 const characterSnapshot = computed(() => runtime.value?.protagonistRef ?? null)
 const protagonistRefStr = computed(() => characterSnapshot.value?.ref ?? null)
-const tags = computed(() => displayItems.value.tags)
 const metrics = computed(() => displayItems.value.metrics)
 const refs = computed(() => displayItems.value.refs)
 
@@ -164,7 +162,6 @@ const characterBrief = computed(() => {
 
 const hasCharacter = computed(() => Boolean(protagonistRefStr.value && characterName.value))
 
-const characterStatuses = computed(() => characterEntity.value?.status ?? [])
 const characterGauges = computed(() => characterEntity.value?.gauges ?? [])
 
 const portraitPath = computed(() => {
@@ -321,7 +318,6 @@ const showLoading = computed(
           @open-character="emit('open-character')"
         />
         <StatusBarIdentity :entity="characterEntity" />
-        <StatusBarStatus :statuses="characterStatuses" :tags="tags" />
         <StatusBarMetrics :gauges="characterGauges" :metrics="metrics" />
         <StatusBarPinned
           :key="`pinned-${protagonistRefStr ?? 'none'}-${runtime?.updatedAtTurn ?? 0}`"

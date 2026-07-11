@@ -142,8 +142,8 @@ import {
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import {
   commitSuccessfulRuntimeTurnForSave,
-  commitWorkspaceFilesForSave,
-  commitWorkspaceFilesWithCheckpointForSave,
+  commitWorkspaceChangesForSave,
+  commitWorkspaceChangesWithCheckpointForSave,
   createRuntimeWorkspaceTransaction,
   createLocalSave,
   createLocalSaveFromGameCard,
@@ -154,6 +154,7 @@ import {
   exportGameCardPackage,
   getActiveGameCardId,
   getActiveSaveId,
+  getFrontendDebugSession,
   getBuiltinBlankGameCard,
   getHistoryForSave,
   getLocalGameCard,
@@ -426,6 +427,40 @@ async function executePlatformAction(
       return actionError(
         "CHECKPOINT_ID_REQUIRED",
         "restore-checkpoint 需要非空 checkpointId。",
+      )
+    }
+
+    const checkpoints = await listCheckpointsForSave(activeSaveId)
+    const checkpoint = checkpoints.find((item) => item.id === checkpointId.trim())
+    const debugSession = await getFrontendDebugSession()
+    const baselineCheckpoint = debugSession.status === "valid"
+      ? checkpoints.find((item) => item.id === debugSession.record.checkpointId)
+      : undefined
+    if (
+      checkpoint
+      && debugSession.status === "valid"
+      && debugSession.record.saveId === activeSaveId
+      && (
+        checkpoint.turn < debugSession.record.baselineTurn
+        || (
+          checkpoint.turn === debugSession.record.baselineTurn
+          && baselineCheckpoint
+          && checkpoint.createdAt < baselineCheckpoint.createdAt
+        )
+      )
+    ) {
+      return actionError(
+        "FRONTEND_DEBUG_BASELINE_FLOOR",
+        "前端调试会话期间不能恢复到调试 baseline 之前。请先完成前端自检回滚。",
+        {
+          checkpointId: checkpoint.id,
+          checkpointTurn: checkpoint.turn,
+          checkpointCreatedAt: checkpoint.createdAt,
+          baselineTurn: debugSession.record.baselineTurn,
+          ...(baselineCheckpoint
+            ? { baselineCreatedAt: baselineCheckpoint.createdAt }
+            : {}),
+        },
       )
     }
 
@@ -1110,7 +1145,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
         }
 
         emitTurnDebugReady(nextTurn)
-        return {}
+        return { turn: nextTurn }
       } catch (error) {
         workspaceTransaction?.discard()
         // Reject any pending ask_user requests when the turn fails.
@@ -1416,15 +1451,16 @@ export const playFrontendBridge: PlayFrontendBridge = {
             path: formatAgentTracePath(agentId, invokeTimestamp),
             content: serializeRuntimeTraceEvents(trace.events),
           })
+          const workspaceChanges = workspaceTransaction!.finalWorkspaceChanges()
           await (commitMode === "workspace-with-checkpoint"
-            ? commitWorkspaceFilesWithCheckpointForSave(
+            ? commitWorkspaceChangesWithCheckpointForSave(
                 currentActiveSaveId,
-                workspaceTransaction!.finalWorkspaceFiles(),
+                workspaceChanges,
                 { turn: invokeMaxTurn, checkpointReason: "post-turn-maintenance" },
               )
-            : commitWorkspaceFilesForSave(
+            : commitWorkspaceChangesForSave(
                 currentActiveSaveId,
-                workspaceTransaction!.finalWorkspaceFiles(),
+                workspaceChanges,
               ))
           emitAgentInvocation({ type: "completed", invocationId, agentId })
 

@@ -10,7 +10,240 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
   - **esbuild plugin objects may only carry `name` + `setup`.** Attaching extra fields (e.g. a `result` handle for post-build reads) throws `Invalid option on plugin "<name>": "<field>"` at runtime. A TS intersection type (`Plugin & { result }`) lies to tsc but esbuild rejects it. Return extra data as a sibling on a wrapper object (`{ plugin, result }`), not on the Plugin itself. See `cdn-external-plugin.ts`.
   - **`esbuild.initialize` is "call exactly once" per page lifetime.** esbuild-wasm guards it internally (`Cannot call "initialize" more than once`) and reuses one long-lived service for all `esbuild.build` calls. Cache the init promise on `globalThis` (NOT a module-level variable — vite HMR reloads the module and resets module state, diverging from esbuild-wasm's surviving module state). Wrap `initialize` to swallow the "more than once" error (it means a service is already alive = success), and clear the cache only on genuine failure. See `engine.ts` `ensureEsbuildInitialized`.
   - **esbuild `outputFiles[i].path` may carry a leading slash** (`/assets/stdin.js`). Concatenating a prefix (`frontend/dist/` + `/assets/...`) yields a double slash (`frontend/dist//assets/...`). The storage layer normalizes it on write, but any in-memory `Set` of "newly written paths" holds the un-normalized form — a later stale-file cleanup that compares against normalized stored paths won't match and will delete the freshly-written files. Strip the leading slash before concatenating. See `write-back.ts`.
-- After touching `src/frontend-build/`, manually verify the full loop in the browser (create default card → /play renders the placeholder shell → edit `frontend/src/main.ts` → ~800ms later dist rebuilds and /play reloads). The build command alone is insufficient evidence.
+  - **Keep import query/hash text in `OnResolveResult.suffix`, not `path`.** For VFS imports such as `logo.png?url`, return `{ path: "logo.png", suffix: "?url" }`; `onLoad` receives the pair as `args.path` + `args.suffix`. If the query is concatenated into `path`, esbuild's file loader may emit a stored filename containing `?url` while the browser/SW requests only the pathname, producing a packaged-iframe 404; extension/MIME inference can also degrade (for example SVG inline data becoming `text/plain`). Vue virtual style loaders must inspect `args.suffix` as well, or `?tsian-style=N` falls through and the raw SFC is compiled a second time. See `workspace-source-plugin.ts` and `sfc-plugin.ts`.
+  - **JS `?url` asset imports need module-relative URL normalization for packaged iframes.** esbuild's file loader returns strings relative to the importing JS output (for example `./badge-HASH.svg`). If a Vue component puts that raw string in DOM (`<img :src>`), the browser resolves it relative to `frontend/dist/index.html`, not the JS module, and requests `frontend/dist/badge-HASH.svg` instead of `frontend/dist/assets/badge-HASH.svg`. Wrap explicit `?url` imports as a JS module that imports the file through an internal file-loader query, strips any internal query/hash from the generated string, then exports `new URL(cleanAssetUrl, import.meta.url).href`. Apply the same rule inside Worker subbuilds; do not leak internal queries such as `?__tsian_url_asset` to DOM/runtime URLs.
+- After touching `src/frontend-build/`, use layered validation: each capability child passes focused fixtures/probes and hands off a browser matrix; a parent with several related children may run one consolidated source-package test through upload → IndexedDB → browser esbuild-wasm → dist write-back → SW → packaged iframe after all children finish. The parent remains incomplete until that full loop passes.
+
+## Browser `import.meta.glob` VFS Contract
+
+### 1. Scope / Trigger
+
+Use this contract when changing the `import.meta.glob` transform, workspace source loading, Vue SFC script compilation, or esbuild output materialization under `src/frontend-build/`.
+
+### 2. Signatures
+
+```ts
+interface GlobTransformInput {
+  code: string
+  importer: string
+  loader: "js" | "jsx" | "ts" | "tsx"
+  sources: Map<string, string | Uint8Array>
+}
+
+interface GlobTransformResult {
+  code: string
+  changed: boolean
+}
+```
+
+### 3. Contracts
+
+- Keep the parser/matcher behind a source-text gate plus memoized literal dynamic import; plain source must return unchanged without loading the transform chunk.
+- Transform all three source boundaries: stdin entry, workspace JS/TS/JSX modules, and Vue `<script>` / `<script setup>` blocks before `compileScript`.
+- Enumerate only canonical `sources` Map keys. Patterns are POSIX, case-sensitive, root-bound, and may start only with `./`, `../`, or `@/`.
+- Generated import specifiers remain relative so existing workspace resolution stays authoritative.
+- Lazy glob chunks also carry metafile `entryPoint`; HTML entry selection must match the exact root identity `frontend/src/${entryPath}`, never the first truthy entry point.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| No glob macro | Return unchanged; do not request transform chunk |
+| Dynamic/interpolated/array pattern | Build-time error with importer and location |
+| Root escape, scheme, absolute, query/hash, encoded separator | Build-time error |
+| Unknown/computed/spread/non-boolean option | Build-time error |
+| Non-direct `import.meta.glob` access | Build-time error |
+| Empty match | Successful `{}` result |
+| Multiple metafile entry points | Select exact root; zero/multiple root matches fail loudly |
+
+### 5. Good / Base / Bad Cases
+
+- Good: `import.meta.glob("./pages/*.ts")` generates sorted dynamic imports from the Map and esbuild emits split chunks.
+- Base: an ordinary TypeScript module bypasses parser/matcher loading.
+- Bad: `import.meta.glob(pattern)`, `import.meta["glob"]`, or `../../outside/*.ts` fails during build rather than in the iframe.
+
+### 6. Tests Required
+
+- Pure transform fixtures: lazy/eager, relative/alias keys, ordering, empty/self exclusion, TS/JSX, Vue block offsets, and the error matrix.
+- Real Map VFS + esbuild-wasm fixture: root entry, nested module, Vue script, lazy chunks, eager root graph, CSS/assets, and metafile root selection.
+- `npm run build:web`, production lazy-chunk inspection, and the parent consolidated browser product loop.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: dynamic chunks can be mistaken for the HTML root entry.
+const entry = Object.entries(metafile.outputs).find(([, output]) => output.entryPoint)
+
+// Correct: pass and match the exact stdin root identity.
+const entryPoint = `frontend/src/${sourceEntryPath}`
+const entry = Object.entries(metafile.outputs)
+  .filter(([, output]) => output.entryPoint === entryPoint)
+```
+
+## Browser Worker Subbuild Contract
+
+### 1. Scope / Trigger
+
+Use this contract when changing `?worker` imports, Worker subbuild orchestration, frontend-build output materialization, packaged frontend dist replacement, or Worker-related diagnostics under `src/frontend-build/`.
+
+### 2. Signatures
+
+```ts
+// Main source syntax: the only supported Worker entry form.
+import WorkerCtor from "./path/to/worker?worker"
+
+const worker = new WorkerCtor(options?: WorkerOptions)
+```
+
+```ts
+interface FrontendBuildContext {
+  sources: Map<string, string | Uint8Array>
+  workerEntries: Map<string, QueuedWorkerEntry>
+}
+
+interface WorkerBuildResult {
+  entryPath: string
+  key: string
+  entryOutputPath: string
+  outputFiles: OutputFile[]
+  metafile: Metafile
+}
+
+interface ReplaceLocalGameCardFrontendDistInput {
+  files: PutLocalGameCardFrontendFileInput[]
+  keepPaths: Set<string>
+}
+```
+
+### 3. Contracts
+
+- `?worker` imports are accepted only as ordinary static ESM default imports from relative or `@/` VFS paths. The query must be exactly `?worker`; no duplicate keys, values, `&url`, `&inline`, `?sharedworker`, re-export, type import, import attributes, dynamic import, or CommonJS `require`.
+- Generated constructors may accept `WorkerOptions`, but must always force `{ type: "module" }`. Do not add classic Worker mode without a new task.
+- Worker entry builds are queued during the main esbuild build and executed after the main build succeeds. Do not call nested `esbuild.build()` from plugin callbacks.
+- Same canonical Worker entry dedupes to one subbuild; different entries build independently and do not share chunks in v1.
+- Worker output paths live under `assets/workers/<stable-key>/` with `entry.js`, `chunks/[name]-[hash]`, and `assets/[name]-[hash]`. The constructor URL must resolve from the packaged iframe document/dist root, e.g. `new URL("./assets/workers/<key>/entry.js", window.location.href)`, not from a fragile current module path.
+- Worker graph allowed inputs: JS/TS/JSX/TSX, JSON, `?raw`, `?url`, `?inline`, relative/`@/` VFS imports, dynamic import chunks, file-loader assets, and existing `import.meta.glob` transform. Worker `?url` follows the same module-relative URL normalization as main graph `?url`: export `new URL(cleanAssetUrl, import.meta.url).href`, not the raw file-loader string.
+- Worker graph forbidden inputs: Vue SFC, CSS/Sass/Less, bare package imports, CDN/URL imports, nested `?worker` / `?sharedworker`, and direct `new Worker(...)` / `new SharedWorker(...)`.
+- Direct Worker constructors are forbidden across executable source boundaries: stdin entry, workspace JS/TS/JSX/TSX modules, Vue `<script>` / `<script setup>`, and Worker child graph modules.
+- Write-back must replace `frontend/dist/**` using a full successful output set: main outputs + Worker outputs + generated `index.html`. If any main or Worker build fails, do not call dist replacement; old dist remains mounted.
+- `replaceLocalGameCardFrontendDist()` may only write `frontend/dist/**` paths and should preserve `createdAt`, write new records, delete stale dist records, and update card `updatedAt` in one transaction.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| `import W from "./w?worker"` | Build succeeds; wrapper exports constructor; Worker entry is queued and subbuilt |
+| Duplicate imports of same canonical entry | One Worker subbuild/output set is reused |
+| `?worker=1`, duplicated `worker`, `?worker&url`, `?worker&inline`, `?sharedworker` | Build-time error |
+| non-default import, re-export, type import, import attributes, dynamic import, CJS require | Build-time error |
+| direct `new Worker(...)` / `new SharedWorker(...)` in entry/workspace/Vue/Worker code | Build-time error pointing to `?worker` constructor syntax |
+| Worker imports Vue/CSS/Sass/Less | Build-time error |
+| Worker imports bare package, `http(s):`, `data:`, or other URL/scheme | Build-time error explaining main import map does not apply to Worker |
+| Worker imports unknown extension without explicit query | Build-time error; do not fall through to text loader |
+| Worker imports unknown non-style extension with `?raw` / `?url` / `?inline` | Allowed through the explicit query loader |
+| Worker subbuild emits CSS output | Invariant failure before write-back |
+| Worker subbuild fails | Old `frontend/dist/**` remains; build status records failure |
+
+### 5. Good / Base / Bad Cases
+
+- Good: `import DemoWorker from "./workers/demo.worker.ts?worker"; new DemoWorker({ name: "demo" })` creates a module Worker whose entry/chunks/assets are served from `frontend/dist/assets/workers/**`.
+- Base: a normal source build without `?worker` queues no Worker entries and does not run Worker subbuilds.
+- Bad: `new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })` must fail during build rather than becoming a packaged-iframe 404.
+- Bad: `import textUrl from "./template.txt?url"` is valid inside a Worker, but `import text from "./template.txt"` must fail because unknown unqueried resources are not part of the Worker graph contract.
+
+### 6. Tests Required
+
+- `npm run build:web` for any `src/frontend-build/**` or packaged-dist storage helper change.
+- `git diff --check`.
+- Focused Worker fixtures/probes: supported `?worker`, duplicate entry dedupe, two independent entries, Worker TS dependency, JSON, `?raw`/`?url`/`?inline`, dynamic import chunk, `import.meta.glob`, and the error matrix above.
+- Dist replacement check: successful rebuild replaces stale Worker outputs without deleting current main/Worker outputs; failed Worker build preserves old dist.
+- Parent/final browser product loop: packaged iframe Worker message round-trip plus Network evidence for SW-backed Worker entry/chunk/asset loads.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: bypasses VFS subbuild/materialization and may fail only in iframe runtime.
+const worker = new Worker(new URL("./workers/demo.worker.ts", import.meta.url), { type: "module" })
+
+// Correct: lets the platform build Worker outputs into frontend/dist/**.
+import DemoWorker from "./workers/demo.worker.ts?worker"
+const worker = new DemoWorker({ name: "demo" })
+```
+
+```ts
+// Wrong: Worker module graph cannot use the page's HTML import map.
+import { reactive } from "vue"
+
+// Correct: Worker graph stays within VFS/source/resource imports supported by the platform builder.
+import { compute } from "./compute"
+import payload from "./payload.json"
+```
+
+## Browser Style Preprocessor Contract
+
+### 1. Scope / Trigger
+
+Use this contract when changing Sass, Less, or another browser-side style preprocessor under `src/frontend-build/`.
+
+### 2. Signatures
+
+```ts
+type StylePreprocessorLanguage = "scss" | "sass" | "less"
+interface StylePreprocessorInput {
+  language: StylePreprocessorLanguage
+  source: string
+  filename: string
+  sources: Map<string, string | Uint8Array>
+}
+interface StylePreprocessorResult {
+  css: string
+  dependencies: string[]
+  sourceMap?: unknown
+}
+```
+
+### 3. Contracts
+
+- Use literal, memoized dynamic imports: `import("sass")` and pinned `import("less/lib/less/index.js")`.
+- Dart Sass production builds require name preservation; keep Vite `esbuild.keepNames: true` unless a browser probe proves an equivalent replacement.
+- Less uses its pinned core factory and Map FileManager. Do not use its package-root bootstrap or `window.less` / `window.LESS_PLUGINS`.
+- Strictly bind imports to `frontend/src/`; reject root escape, schemes/authority, query/hash, backslashes, NUL, and encoded separator/control forms.
+- Order: preprocessor → Vue scoped rewrite → esbuild `css`/`local-css`.
+- `?raw`, `?url`, and `?inline` bypass preprocessing.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Missing/ambiguous import | Fail with language, entry, and requested import |
+| Binary style source | Fail; never decode as text |
+| Root escape/invalid URL | Fail even for Less `(optional)` |
+| Less JavaScript/`@plugin` | Fail without execution |
+| Plain CSS/Vue | Request neither compiler |
+| Sass or Less | Request only its own compiler |
+
+### 5. Good / Base / Bad Cases
+
+- Good: SCSS `@use` resolves a Map-backed partial and reports its canonical dependency.
+- Base: plain CSS bypasses the dispatcher.
+- Bad: `../../secret`, `pkg:theme`, a binary partial, or a Less plugin fails loudly.
+
+### 6. Tests Required
+
+- Child: type-check/build, strict-VFS fixtures, compiler security/diagnostic probes, and production chunk inspection.
+- Parent: real source-package browser loop; assert styles/modules/assets, Console/Network, lazy isolation, warm reuse, failure status, and old-dist preservation.
+- Compiler upgrade: rerun production Sass and Less factory/global/DOM safety probes.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: ambient browser bootstrap.
+const less = await import("less")
+
+// Correct: pinned core factory with explicit VFS environment.
+const { default: createLess } = await import("less/lib/less/index.js")
+```
+
 
 ## Project Rules
 

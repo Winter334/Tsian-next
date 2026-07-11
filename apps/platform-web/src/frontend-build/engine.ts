@@ -1,9 +1,21 @@
 import * as esbuild from "esbuild-wasm"
 import type { FrontendFramework } from "@tsian/contracts"
 import { getLocalGameCard, listLocalGameCardFrontendFiles } from "../storage"
+import { isTextFilePath } from "@/lib/media-type"
+import { blobToWorkspaceFile } from "@/lib/workspace-blob"
+import { transformImportMetaGlob } from "./glob-transform"
 import { cdnExternalPlugin } from "./plugins/cdn-external-plugin"
 import { createSfcPlugin } from "./plugins/sfc-plugin"
-import { workspaceSourcePlugin } from "./plugins/workspace-source-plugin"
+import { workspaceSourcePlugin, type WorkspaceSourceContent } from "./plugins/workspace-source-plugin"
+import {
+  assertNoDirectWorkerConstructors,
+  toDirectWorkerConstructorMessage,
+} from "./worker-build/diagnostics"
+import {
+  buildQueuedWorkerEntries,
+  createFrontendBuildContext,
+} from "./worker-build"
+import { createWorkerPlugin } from "./worker-build/plugin"
 import { writeBackDist } from "./write-back"
 
 /**
@@ -24,8 +36,23 @@ const ESBUILD_WASM_URL = "/esbuild.wasm"
 const SOURCE_PREFIX = "frontend/src/"
 const CACHE_NAME = "tsian-builder-cache"
 const WASM_CACHE_KEY = "esbuild-wasm"
+const PLAY_BRIDGE_IMPORT = "@tsian/play-bridge"
+const PLAY_BRIDGE_CDN_URL = "https://esm.sh/@tsian/play-bridge@0.2.0-beta.0"
 
-const ENTRY_CANDIDATES = ["main.ts", "main.tsx", "main.jsx", "main.js", "index.ts", "index.tsx"]
+const ENTRY_CANDIDATES = [
+  "main.ts",
+  "main.tsx",
+  "main.mts",
+  "main.jsx",
+  "main.js",
+  "main.mjs",
+  "index.ts",
+  "index.tsx",
+  "index.mts",
+  "index.jsx",
+  "index.js",
+  "index.mjs",
+]
 
 /** Fetch the esbuild wasm binary, caching in Cache API after first download. */
 async function fetchWasmWithCache(url: string): Promise<ArrayBuffer> {
@@ -134,15 +161,19 @@ interface FrameworkConfig {
   jsxImportSource?: string
 }
 
+function createBaseCoreImportMap(): Map<string, string> {
+  return new Map([[PLAY_BRIDGE_IMPORT, PLAY_BRIDGE_CDN_URL]])
+}
+
 function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
   switch (framework) {
     case "vue": {
-      const m = new Map<string, string>()
+      const m = createBaseCoreImportMap()
       m.set("vue", "https://esm.sh/vue@3")
       return { coreImportMap: m }
     }
     case "react": {
-      const m = new Map<string, string>()
+      const m = createBaseCoreImportMap()
       m.set("react", "https://esm.sh/react@18")
       m.set("react-dom", "https://esm.sh/react-dom@18")
       m.set("react-dom/client", "https://esm.sh/react-dom@18/client")
@@ -150,38 +181,59 @@ function frameworkConfig(framework: FrontendFramework): FrameworkConfig {
       return { coreImportMap: m, jsx: "automatic", jsxImportSource: "react" }
     }
     case "preact": {
-      const m = new Map<string, string>()
+      const m = createBaseCoreImportMap()
       m.set("preact", "https://esm.sh/preact@10")
       m.set("preact/jsx-runtime", "https://esm.sh/preact@10/jsx-runtime")
       return { coreImportMap: m, jsx: "automatic", jsxImportSource: "preact" }
     }
     case "vanilla":
     default:
-      return { coreImportMap: new Map() }
+      return { coreImportMap: createBaseCoreImportMap() }
     case "svelte":
       // SFC compiler stub reserved (plugins/svelte-plugin.ts); NOT mounted
       // yet — svelte cards fall through to the pure-TS path until the second
       // SFC compiler is integrated. See prd.md D10 + svelte-plugin.ts TODO.
-      return { coreImportMap: new Map() }
+      return { coreImportMap: createBaseCoreImportMap() }
   }
 }
 
 // ─── Source loading ─────────────────────────────────────────────────────
 
 interface LoadedSources {
-  sources: Map<string, string>
+  sources: Map<string, WorkspaceSourceContent>
   entryPath: string
   entryContent: string
+}
+
+function entryLoaderFor(path: string): "js" | "jsx" | "ts" | "tsx" {
+  const lowerPath = path.toLowerCase()
+  if (lowerPath.endsWith(".tsx")) return "tsx"
+  if (lowerPath.endsWith(".jsx")) return "jsx"
+  if (lowerPath.endsWith(".ts") || lowerPath.endsWith(".mts") || lowerPath.endsWith(".cts")) return "ts"
+  return "js"
 }
 
 /** Preload all `frontend/src/**` files from IndexedDB into memory. */
 async function loadSources(cardId: string): Promise<LoadedSources> {
   const allFiles = await listLocalGameCardFrontendFiles(cardId)
-  const sources = new Map<string, string>()
+  const sources = new Map<string, WorkspaceSourceContent>()
   for (const file of allFiles) {
     if (!file.path.startsWith(SOURCE_PREFIX)) continue
     const relPath = file.path.slice(SOURCE_PREFIX.length)
-    sources.set(relPath, await file.data.text())
+    if (isTextFilePath(relPath)) {
+      const workspaceFile = await blobToWorkspaceFile({
+        path: file.path,
+        blob: file.data,
+        createdAt: file.createdAt,
+        updatedAt: file.updatedAt,
+      })
+      if (workspaceFile.binary) {
+        throw new Error(`文本源码被投影为二进制文件: ${file.path}`)
+      }
+      sources.set(relPath, workspaceFile.content)
+    } else {
+      sources.set(relPath, new Uint8Array(await file.data.arrayBuffer()))
+    }
   }
   if (sources.size === 0) {
     throw new Error("游戏卡 frontend/src/ 下无源码文件，无法构建")
@@ -199,7 +251,11 @@ async function loadSources(cardId: string): Promise<LoadedSources> {
       `未找到入口文件（尝试过 ${ENTRY_CANDIDATES.join(", ")}），frontend/src/ 下需包含其一`,
     )
   }
-  return { sources, entryPath, entryContent: sources.get(entryPath)! }
+  const entryContent = sources.get(entryPath)
+  if (typeof entryContent !== "string") {
+    throw new Error(`入口文件必须是文本源码: ${entryPath}`)
+  }
+  return { sources, entryPath, entryContent }
 }
 
 // ─── Public API ─────────────────────────────────────────────────────────
@@ -231,13 +287,31 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
   const framework: FrontendFramework = frontend.framework ?? "vanilla"
   const config = frameworkConfig(framework)
   const { sources, entryPath, entryContent } = await loadSources(cardId)
+  const entryLoader = entryLoaderFor(entryPath)
+  try {
+    await assertNoDirectWorkerConstructors({
+      code: entryContent,
+      importer: entryPath,
+      loader: entryLoader,
+    })
+  } catch (error) {
+    const message = toDirectWorkerConstructorMessage(error, { importer: entryPath })
+    throw Object.assign(new Error(message.text), { messageDetail: message })
+  }
+  const transformedEntry = await transformImportMetaGlob({
+    code: entryContent,
+    importer: entryPath,
+    loader: entryLoader,
+    sources,
+  })
 
   const cdn = cdnExternalPlugin({ coreImports: config.coreImportMap })
+  const buildContext = createFrontendBuildContext(sources)
 
-  // Plugin order matters: sfcPlugin (specific .vue filter) must register its
-  // onLoad BEFORE workspaceSourcePlugin's catch-all, so .vue is compiled by
-  // the SFC compiler rather than returned as raw text.
-  const plugins: esbuild.Plugin[] = [cdn.plugin]
+  // Plugin order matters: workerPlugin handles ?worker before CDN/workspace catch-alls;
+  // sfcPlugin (specific .vue filter) must register its onLoad before workspaceSourcePlugin's
+  // catch-all so .vue is compiled by the SFC compiler rather than returned as raw text.
+  const plugins: esbuild.Plugin[] = [createWorkerPlugin({ context: buildContext }), cdn.plugin]
   if (framework === "vue") {
     plugins.push(createSfcPlugin({ sources }))
   }
@@ -245,16 +319,10 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
 
   const result = await esbuild.build({
     stdin: {
-      contents: entryContent,
+      contents: transformedEntry.code,
       sourcefile: entryPath,
       resolveDir: "frontend/src",
-      loader: entryPath.endsWith(".tsx")
-        ? "tsx"
-        : entryPath.endsWith(".jsx")
-          ? "jsx"
-          : entryPath.endsWith(".ts")
-            ? "ts"
-            : "js",
+      loader: entryLoader,
     },
     bundle: true,
     format: "esm",
@@ -281,10 +349,15 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
     }
   }
 
+  const workerResults = await buildQueuedWorkerEntries(buildContext)
+  const workerOutputFiles = workerResults.flatMap((worker) => worker.outputFiles)
+
   const writeBack = await writeBackDist({
     cardId,
     outputFiles: result.outputFiles ?? [],
+    workerOutputFiles,
     metafile: result.metafile!,
+    entryPoint: `${SOURCE_PREFIX}${entryPath}`,
     importMap,
   })
 

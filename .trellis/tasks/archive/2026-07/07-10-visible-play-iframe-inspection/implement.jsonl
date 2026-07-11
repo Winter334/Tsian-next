@@ -1,0 +1,10 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "platform-web 总体边界、bridge/runtime/storage 归属与必跑构建"}
+{"file": ".trellis/spec/platform-web/frontend/state-management.md", "reason": "Vue、Dexie、跨视图事件、Play bridge 与 checkpoint 状态约定"}
+{"file": ".trellis/spec/platform-web/frontend/type-safety.md", "reason": "工具参数、运行时边界与结构化错误类型安全约定"}
+{"file": ".trellis/spec/platform-web/frontend/quality-guidelines.md", "reason": "platform-web fail-loud、构建与跨层审查要求"}
+{"file": ".trellis/spec/platform-web/storage/index.md", "reason": "checkpoint thin manifest、恢复、裁剪、GC 与 .tsian 生命周期契约"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "bridge→inspector→storage→PlayView 跨层数据流设计检查"}
+{"file": ".trellis/spec/guides/ai-facing-content-changes.md", "reason": "彻底删除旧 hidden/ephemeral AI-facing 概念而非降级兼容"}
+{"file": ".trellis/spec/guides/module-structure-guide.md", "reason": "拆分 frontend-inspector 的 DOM、诊断与编排职责"}
+{"file": ".trellis/tasks/07-10-visible-play-iframe-inspection/research/current-implementation.md", "reason": "现有 inspector、Play mount、bridge、checkpoint 与诊断链路调研锚点"}

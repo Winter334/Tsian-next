@@ -14,12 +14,18 @@ export interface WorkspaceWriteInput {
   data?: unknown
 }
 
+export interface RuntimeWorkspaceChanges {
+  writtenFiles: WorkspaceFile[]
+  deletedPaths: string[]
+}
+
 export interface RuntimeWorkspaceTransaction {
   readonly workspaceFiles: WorkspaceFile[]
   write(input: WorkspaceWriteInput): WorkspaceFile
   writePlatformFile(input: WorkspaceWriteInput): WorkspaceFile
   delete(path: unknown): { deletedPaths: string[] }
   finalWorkspaceFiles(): WorkspaceFile[]
+  finalWorkspaceChanges(): RuntimeWorkspaceChanges
   discard(): void
 }
 

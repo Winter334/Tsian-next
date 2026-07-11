@@ -1115,3 +1115,489 @@ Completed creative workshop owner content management: mine scope, metadata edit,
 - **world-architect**：新增 `frontier推进` Skill + 3 script actions（read_frontier_window/commit_frontier_materials/commit_frontier_state）；AGENT.md 补充 ongoing 推进方法论
 - **前端**：useSyncAfterTurn 切换 commitMode 为 workspace-with-checkpoint；新增 useFrontierAdvance composable（边界检查 + 去重 + invokeAgent）；frontier-trigger-state.json 持久化；FrontierToast 三态提示；useRuntime 集成
 - **验证**：build:web / build:contracts / build play-frontend-dev 全部通过
+
+
+## Session 132: 美化角色状态显示
+
+**Date**: 2026-07-09
+**Task**: 美化角色状态显示
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+美化角色档案当前状态为暗色状态札记，新增状态详情弹窗；移除左侧状态栏状态分区；验证 play-frontend-dev 构建通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `de5ed90` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 133: frontier 推进窗口语义化与读完短路
+
+**Date**: 2026-07-09
+**Task**: frontier 推进窗口语义化与读完短路
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+将 frontier 推进从固定10章改为语义节点驱动（至少1-2个故事节点 + 15章硬上限），并为源章节读完状态加 exhausted 终态短路。改了 workspace-templates.ts（windowSize 10→15 + Skill 文案语义化 + 超读提取约束）和 useFrontierAdvance.ts（trigger-state 加 exhausted 字段 + 短路逻辑）。讨论中确认了未完结小说已由现有兜底覆盖、读完不会白调 API 只白跑文件 IO、连载追加更新记为 follow-up。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3189a29` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 134: Timeline fullscreen orbit stretch
+
+**Date**: 2026-07-09
+**Task**: Timeline fullscreen orbit stretch
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+Finished timeline vertical orbit polish by making the timeline view and graph fill fullscreen height so short timelines extend toward the available top and bottom; build passed.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0100be6` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 135: SDK publish preparation
+
+**Date**: 2026-07-09
+**Task**: SDK publish preparation
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing, pinned platform online builds to the verified play-bridge CDN version, and verified npm registry plus esm.sh availability after publish.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6701d3d` | (see git log) |
+| `a22f951` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 136: 回合后维护 + frontier 推进触发（07-08）
+
+**Date**: 2026-07-10
+**Task**: 07-08-post-turn-maintenance-frontier-trigger（父任务 07-06 子任务 E）
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+完成回合后维护与 frontier 推进触发的全部实现：建立线性 order 坐标轴（source/player 锚点 + runtime.plotOrder），改造 stage-manager 维护 plotOrder 与 player 锚点，新增 world-architect frontier推进 Skill，前端 useFrontierAdvance composable 在维护完成后检查 plotOrder > 最后 source 锚点 order 边界触发推进。代码于 2026-07-09 落地，本次 session 补记任务文档（implement.md 复选框 + journal）。
+
+### Main Changes
+
+- **schema 变更 + 种子**（workspace-templates.ts）：frontier.json timeline 锚点新增 `kind`/`order`/`turn`/`alignment`/`sourceRef` 字段；runtime.json 新增 `plotOrder`；种子 timeline 首锚点改为 `{kind:"source",order:1,...}`，runtime 种子加 `plotOrder:1`。schema guide + reference 文档同步更新。
+- **stage-manager 改造**：contextPaths 加入 `save/playthrough/frontier.json`；AGENT.md 重写为 plotOrder 映射 + player 锚点追加 + scene 生命周期；`状态栏维护` Skill 重命名为 `回合后维护` 并重写；新增 Agent-local Tool `read_maintenance_context`（聚合 turn 正文/runtime/scene/entity/relationship/timeline，只读不写）。
+- **world-architect frontier推进 Skill**：新增 `frontier推进` Skill（read_frontier_window → 识别剧情节点建 source 锚点 + 抽最小素材增量 → commit_frontier_materials → commit_frontier_state），3 个 script action，order 严格递增赋值；AGENT.md 补 ongoing 推进方法论（不写 runtime/player 锚点/scene）。
+- **useSyncAfterTurn**：commitMode 从 `"workspace"` 切换为 `"workspace-with-checkpoint"` + `checkpointReason:"post-turn-maintenance"`；invoke input 提及 plotOrder/timeline。
+- **useFrontierAdvance composable**（新文件）：checkFrontierAdvance/retryFrontierAdvance + phase 状态机 + onAgentInvocation 事件订阅 + frontier-trigger-state.json 去重；FrontierToast.vue 三态（正在拓展素材边界…/已拓展素材边界/素材边界拓展失败+重试）；useRuntime refresh 后链式调用 checkFrontierAdvance。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d874b11` | feat(play-ui): 回合后维护 + frontier 推进触发 |
+| `3189a29` | feat(play-ui): frontier 推进窗口语义化与读完短路 |
+| `d4db46c` | feat(play-ui): 时间线可视化渲染 + 修复开局路径新字段丢失 |
+| `8fc74f9` | fix(play-runtime): use committed turn for maintenance |
+
+### Testing
+
+- [OK] `npm run build:contracts` 通过
+- [OK] `npm run build:web` 通过（16.89s）
+- [OK] `npm run build --workspace play-frontend-dev` 通过（6.68s）
+- [PENDING] 浏览器手动验证：开局种子字段 / 维护后 plotOrder / frontier 触发 + Toast / 推进期间 Composer 不锁——待用户手测
+
+### Status
+
+[OK] **代码完成，文档补记完毕；浏览器手测待用户执行**
+
+### Next Steps
+
+- 用户浏览器手测 6.4 四项验证点
+- 手测通过后归档 07-08，父任务 07-06 五个子任务全部完成可评估归档
+
+
+## Session 136: 浏览器前端构建器 Vue VFS 与 CSS Modules
+
+**Date**: 2026-07-10
+**Task**: 浏览器前端构建器 Vue VFS 与 CSS Modules
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+完善浏览器内 esbuild-wasm 前端构建：加固 VFS 路径、asset query/suffix 与输出归一化，使用 compiler-sfc 官方组件 binding，支持 Vue/独立 CSS Modules；创建父任务及 Sass/Less、import.meta.glob、Worker 后续子任务。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b07a204` | (see git log) |
+| `ba137ed` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 137: 修复工作区可编辑文本读取
+
+**Date**: 2026-07-10
+**Task**: 修复工作区可编辑文本读取
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+统一可编辑文本与 Blob 工作区投影，恢复 Vue 等源码的资源管理器和桌面 Agent 读写，保真前端 MIME，增加二进制防误写，并修复 diff 参数与 CRLF 多行 edit。构建及用户浏览器复测通过。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `46d7e41` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 138: Sass Less 虚拟文件适配
+
+**Date**: 2026-07-10
+**Task**: Sass Less 虚拟文件适配
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+实现浏览器端 Sass/SCSS 与 Less 懒加载编译器、strict Map VFS importer/FileManager、standalone 与 Vue SFC scoped/CSS Modules 接入及结构化诊断；完成 production build、聚焦安全/解析验证和 chunk 记录，并将完整浏览器产品回路移交父任务综合测试前端包。
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `27af439` | (see git log) |
+| `6ef9293` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 139: 可见 Play iframe 前端自检收尾
+
+**Date**: 2026-07-11
+**Task**: 可见 Play iframe 前端自检收尾
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+完成 visible-play-iframe-inspection：配置 Trellis workspaces spec 映射；将 inspect_frontend 改为接管当前真实 Play packaged iframe，删除旧隐藏/隔离复现模型，新增 Play target registry、bridge activity、debug baseline marker、checkpoint 保护、finish 回滚与 iframe 重挂；强化浏览器内 DOM actions 的 pointer/input/focus/verification 行为；更新 AI-facing 文档和 platform-web inspect_frontend code-spec；npm run build:web 通过，用户完成手动浏览器测试后归档任务。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `20f03f0` | (see git log) |
+| `64a4f5a` | (see git log) |
+| `7fba1c1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 140: Task 模式上下文管理优化
+
+**Date**: 2026-07-11
+**Task**: Task 模式上下文管理优化
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+为桌面助手/task 模式拆分 raw 工具日志与模型工具记忆：新增 AgentContextToolMemory/top-level toolMemories、deterministic projection 与预算/placeholder 策略，历史工具不再以 provider tool protocol 回放；agent_call 等模型 observation 改为递归 compact，UI/debug 仍保留完整 raw toolCalls/timeline。验证 npm run build:contracts 与 npm run build:web 通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5827d5e` | (see git log) |
+| `82bcca1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 141: 修复 inspect_frontend 导入写入被覆盖
+
+**Date**: 2026-07-11
+**Task**: 修复 inspect_frontend 导入写入被覆盖
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+修复桌面助手/inspect_frontend 导入流程中 side-channel workspace 旧快照覆盖 frontend bridge 写入的问题，改为变更集提交并更新 runtime-settled bridge activity 语义；build:web 与浏览器复现验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f4564a` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 142: 完成 Worker 子构建物化
+
+**Date**: 2026-07-11
+**Task**: 完成 Worker 子构建物化
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+实现浏览器内前端构建器 ?worker 默认 constructor 子集：主构建排队 Worker entry、成功后独立 esbuild-wasm 子构建、Worker outputs 与主 outputs 一起写回 frontend/dist，并补充 Worker/VFS 契约 spec 与验证记录；最终父任务进入综合浏览器回路验证阶段。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0e88509` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 143: 前端自检工具 Agent 可行动观测优化
+
+**Date**: 2026-07-11
+**Task**: 前端自检工具 Agent 可行动观测优化
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+优化 inspect_frontend 的 Agent-facing 观测结果：过滤 resource timing 噪声，新增 dom-stable wait、wait telemetry、action summaries、interactables、frontendBuild 与高置信 sourceHints，并更新工具 schema、助手说明和方向文档。验证 npm run build:web 通过；build:contracts 未运行（未改 packages/contracts）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ed76c10` | (see git log) |
+| `3a4c1bb` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 144: 完成前端构建器最终集成验证
+
+**Date**: 2026-07-11
+**Task**: 完成前端构建器最终集成验证
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+完成浏览器内前端构建器官方能力适配父任务最终集成：构造综合源码型前端 fixture，验证 Sass/Less、import.meta.glob、Worker、Vue/CSS/VFS 真实导入到 IndexedDB、browser esbuild-wasm 构建、frontend/dist 写回、Service Worker 与 packaged iframe 链路；发现并修复 JS/Worker ?url asset 在 packaged iframe 中相对 index.html 解析导致 404 的问题；验证失败诊断保留旧 dist，并通过真实 play-frontend-dev 源码包回归。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0a3cb4f` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

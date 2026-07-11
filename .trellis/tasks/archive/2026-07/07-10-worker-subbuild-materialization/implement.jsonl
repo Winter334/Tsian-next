@@ -1,0 +1,7 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web frontend scope and required checks for frontend-build changes."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Browser esbuild-wasm runtime traps, suffix invariant, layered validation, and frontend-build contracts."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Strict TypeScript, packaged frontend boundary, Service Worker/IndexedDB invariants, and runtime normalization expectations."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Keep worker subbuild orchestration in focused modules instead of expanding engine/workspace plugin responsibilities."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Search/reuse existing VFS path, output, and diagnostic patterns before introducing new helpers."}
+{"file":".trellis/tasks/archive/2026-07/07-10-import-meta-glob-vfs/research/validation.md","reason":"Prior evidence for import.meta.glob transform, dynamic chunks, exact metafile entry selection, and parent handoff matrix."}
+{"file":".trellis/tasks/archive/2026-07/07-10-sass-less-vfs-adapters/research/validation.md","reason":"Prior pattern for child focused validation versus parent final browser loop handoff."}

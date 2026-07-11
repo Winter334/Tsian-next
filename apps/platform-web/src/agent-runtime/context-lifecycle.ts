@@ -1,7 +1,7 @@
 import type {
   AgentContextSnapshot,
   AgentContextTurnEntry,
-  AgentContextToolCall,
+  AgentContextToolMemory,
   ConversationMessageRecord,
   AiChatMessage,
   ContentPart,
@@ -9,6 +9,7 @@ import type {
 import type { RuntimeChatMessage } from "../runtime-host/ai"
 import type { RuntimeTraceDebugLabel } from "./trace"
 import { getPlatformConfig } from "../config/platform-config"
+import { sortToolMemoriesStable } from "./tool-memory"
 
 /**
  * master agent 会话上下文生命周期与压缩持久化.
@@ -73,6 +74,18 @@ export function getContextKeepRecentTurns(): number {
 export function getTaskKeepRecentRounds(): number {
   return getPlatformConfig().contextCompression.taskKeepRecentRounds
 }
+/** task 模式跨 turn 工具记忆单条模型可见字符预算. */
+export function getTaskToolMemoryPerToolCharLimit(): number {
+  return getPlatformConfig().contextCompression.toolMemoryPerToolCharLimit
+}
+/** task 模式跨 turn 最近工具记忆模型可见总字符预算. */
+export function getTaskToolMemoryTotalRecentCharLimit(): number {
+  return getPlatformConfig().contextCompression.toolMemoryTotalRecentCharLimit
+}
+/** task 模式跨 turn 工具记忆保持 summary 可见的最近 assistant turn 数. */
+export function getTaskToolMemoryKeepRecentTurns(): number {
+  return getPlatformConfig().contextCompression.toolMemoryKeepRecentTurns
+}
 /** 摘要目标体积(token),送 model 时告知压缩到约此体积. */
 export const TARGET_COMPRESSION_TOKENS = 2000
 
@@ -133,22 +146,23 @@ export function estimateRuntimeMessagesTokens(messages: RuntimeChatMessage[]): n
   }, 0)
 }
 
-/** 估算 context 快照(summary + recentTurns, 含工具调用)的 token 总量. */
+/** 估算 context 快照(summary + recentTurns + top-level toolMemories)的 token 总量. */
 export function estimateContextTokens(context: AgentContextSnapshot): number {
   const summaryTokens = context.summary ? estimateTokenCount(context.summary) : 0
-  const recentTokens = context.recentTurns.reduce((sum, entry) => {
-    let tokens = estimateTokenCount(entry.content)
-    // 助手 entry 的 toolCalls: observation + arguments 计入(工具调用跨 turn 保留).
-    if (entry.toolCalls) {
-      for (const call of entry.toolCalls) {
-        tokens += estimateTokenCount(call.observation)
-        tokens += estimateTokenCount(call.arguments)
-        tokens += estimateTokenCount(call.name)
-      }
-    }
-    return sum + tokens
+  const recentTokens = context.recentTurns.reduce(
+    (sum, entry) => sum + estimateTokenCount(entry.content),
+    0,
+  )
+  const toolMemoryTokens = (context.toolMemories ?? []).reduce((sum, memory) => {
+    const parts = [
+      memory.title,
+      memory.summaryText,
+      memory.argsSummary ?? "",
+      ...(memory.anchors ?? []),
+    ]
+    return sum + estimateTokenCount(parts.join("\n"))
   }, 0)
-  return summaryTokens + recentTokens
+  return summaryTokens + recentTokens + toolMemoryTokens
 }
 
 /**
@@ -202,12 +216,18 @@ export function parseAgentContext(
         .map(parseTurnEntry)
         .filter((e): e is AgentContextTurnEntry => e !== null)
     : []
+  const toolMemories = Array.isArray(obj.toolMemories)
+    ? (obj.toolMemories as unknown[])
+        .map(parseToolMemoryEntry)
+        .filter((memory): memory is AgentContextToolMemory => memory !== null)
+    : []
   return {
     schema: (options?.schema ?? AGENT_CONTEXT_SCHEMA) as AgentContextSnapshot["schema"],
     saveId,
     agentId: options?.agentId ?? AGENT_CONTEXT_AGENT_ID,
     summary: typeof obj.summary === "string" ? obj.summary : null,
     recentTurns,
+    ...(toolMemories.length > 0 ? { toolMemories: sortToolMemoriesStable(toolMemories) } : {}),
     lastCompressedTurn:
       typeof obj.lastCompressedTurn === "number" ? obj.lastCompressedTurn : null,
     updatedAt: typeof obj.updatedAt === "string" ? obj.updatedAt : new Date(0).toISOString(),
@@ -224,39 +244,46 @@ function parseTurnEntry(raw: unknown): AgentContextTurnEntry | null {
   ) {
     return null
   }
-  // 解析 toolCalls(助手 assistant entry 带,跨 turn 保留工具调用).数组时逐条校验.
-  const toolCalls = Array.isArray(obj.toolCalls)
-    ? (obj.toolCalls as unknown[])
-        .map(parseToolCallEntry)
-        .filter((c): c is AgentContextToolCall => c !== null)
-    : undefined
+  // 旧 context.json 可能有 turn-level toolCalls；项目未上线,无需迁移,新结构直接忽略。
   return {
     turn: obj.turn,
     role: obj.role,
     content: obj.content,
-    ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
   }
 }
 
-/** 解析单个 AgentContextToolCall(assistant entry 的工具调用记录). */
-function parseToolCallEntry(raw: unknown): AgentContextToolCall | null {
+/** 解析单个 model-facing AgentContextToolMemory(top-level). */
+function parseToolMemoryEntry(raw: unknown): AgentContextToolMemory | null {
   if (!raw || typeof raw !== "object") return null
   const obj = raw as Record<string, unknown>
   if (
     typeof obj.id !== "string" ||
-    typeof obj.name !== "string" ||
-    typeof obj.arguments !== "string" ||
-    typeof obj.observation !== "string"
+    typeof obj.sourceToolCallId !== "string" ||
+    typeof obj.turn !== "number" ||
+    typeof obj.toolName !== "string" ||
+    (obj.status !== "success" && obj.status !== "failed") ||
+    (obj.visibility !== "summary" && obj.visibility !== "placeholder") ||
+    typeof obj.title !== "string" ||
+    typeof obj.summaryText !== "string"
   ) {
     return null
   }
+  const anchors = Array.isArray(obj.anchors)
+    ? obj.anchors.filter((anchor): anchor is string => typeof anchor === "string")
+    : undefined
   return {
     id: obj.id,
-    name: obj.name,
-    arguments: obj.arguments,
-    observation: obj.observation,
-    ...(typeof obj.truncated === "boolean" ? { truncated: obj.truncated } : {}),
-    ...(typeof obj.failed === "boolean" ? { failed: obj.failed } : {}),
+    sourceToolCallId: obj.sourceToolCallId,
+    turn: obj.turn,
+    ...(typeof obj.round === "number" ? { round: obj.round } : {}),
+    toolName: obj.toolName,
+    status: obj.status,
+    visibility: obj.visibility,
+    title: obj.title,
+    summaryText: obj.summaryText,
+    ...(anchors && anchors.length > 0 ? { anchors } : {}),
+    ...(typeof obj.argsSummary === "string" ? { argsSummary: obj.argsSummary } : {}),
+    ...(typeof obj.tokenEstimate === "number" ? { tokenEstimate: obj.tokenEstimate } : {}),
   }
 }
 
@@ -422,39 +449,45 @@ const ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT = [
 /** 助手快照压缩用 system prompt 的导出访问点(供 host/runtime 按 mode 传入). */
 export { ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT }
 
-const COMPRESSION_TOOL_ARGUMENT_PREVIEW_LIMIT = 400
-const COMPRESSION_TOOL_OBSERVATION_PREVIEW_LIMIT = 1_200
+const COMPRESSION_TOOL_MEMORY_PREVIEW_LIMIT = 1_200
 
 function previewCompressionToolText(text: string, limit: number): string {
   if (text.length <= limit) return text
   return `${text.slice(0, limit)}\n...[truncated ${text.length - limit} chars]`
 }
 
-function formatCompressionToolCall(call: AgentContextToolCall): string {
-  const args = previewCompressionToolText(call.arguments, COMPRESSION_TOOL_ARGUMENT_PREVIEW_LIMIT)
-  const observation = previewCompressionToolText(call.observation, COMPRESSION_TOOL_OBSERVATION_PREVIEW_LIMIT)
-  return `  工具调用 ${call.name}(${args}) → ${observation}`
+function formatCompressionToolMemory(memory: AgentContextToolMemory): string {
+  const summary = previewCompressionToolText(memory.summaryText, COMPRESSION_TOOL_MEMORY_PREVIEW_LIMIT)
+  const anchors = memory.anchors && memory.anchors.length > 0
+    ? ` anchors=${memory.anchors.join(", ")}`
+    : ""
+  return `  工具记忆 ${memory.title} [${memory.toolName}/${memory.status}/${memory.visibility}]${anchors} → ${summary}`
 }
 
-/** 构建压缩调用的 user prompt:旧 summary(若有) + 被压缩轮次正文(含工具调用).
- *  助手 entry 带 toolCalls 时,工具调用作为"已做工作"依据呈现给压缩 model(name/args/observation),
- *  但只给短预览:压缩模型需要事实线索,不需要完整工具原文. */
+/** 构建压缩调用的 user prompt:旧 summary(若有) + 被压缩轮次正文 + 相关工具记忆.
+ *  工具记忆来自 top-level toolMemories,只给受预算投影/占位符,不再给 raw observation. */
 function buildCompressionPrompt(
   oldSummary: string | null,
   compressEntries: AgentContextTurnEntry[],
+  toolMemories: AgentContextToolMemory[] = [],
   userLabel = "玩家",
   assistantLabel = "叙事",
 ): string {
+  const memoriesByTurn = new Map<number, AgentContextToolMemory[]>()
+  for (const memory of sortToolMemoriesStable(toolMemories)) {
+    const list = memoriesByTurn.get(memory.turn) ?? []
+    list.push(memory)
+    memoriesByTurn.set(memory.turn, list)
+  }
   return [
     oldSummary ? `此前的梗概：\n${oldSummary}\n` : "",
     "需要压缩的剧情正文：",
     ...compressEntries.map((entry) => {
       const label = entry.role === "user" ? userLabel : assistantLabel
       const base = `${entry.turn}. ${label}: ${entry.content}`
-      // 助手 assistant entry 带工具调用:附上工具调用记录供压缩 model 参考.
-      if (entry.role === "assistant" && entry.toolCalls && entry.toolCalls.length > 0) {
-        const toolLines = entry.toolCalls.map(formatCompressionToolCall).join("\n")
-        return `${base}\n${toolLines}`
+      if (entry.role === "assistant") {
+        const toolLines = memoriesByTurn.get(entry.turn)?.map(formatCompressionToolMemory).join("\n")
+        if (toolLines) return `${base}\n${toolLines}`
       }
       return base
     }),
@@ -494,9 +527,12 @@ export async function compressContext(
 
   // 2. 被压缩轮次 + 旧 summary 一起送 model 生成摘要
   const systemPrompt = options.systemPrompt ?? COMPRESSION_SYSTEM_PROMPT
+  const compressedTurns = new Set(compressEntries.map((entry) => entry.turn))
+  const compressionToolMemories = (context.toolMemories ?? []).filter((memory) => compressedTurns.has(memory.turn))
   const prompt = buildCompressionPrompt(
     context.summary,
     compressEntries,
+    compressionToolMemories,
     options.userLabel,
     options.assistantLabel,
   )
@@ -523,10 +559,18 @@ export async function compressContext(
     context.lastCompressedTurn ?? 0,
   )
 
+  const remainingToolMemories = (context.toolMemories ?? []).filter(
+    (memory) => memory.turn > maxCompressedTurn,
+  )
+  const contextWithoutToolMemories = Object.fromEntries(
+    Object.entries(context).filter(([key]) => key !== "toolMemories"),
+  ) as Omit<AgentContextSnapshot, "toolMemories">
+
   return {
-    ...context,
+    ...contextWithoutToolMemories,
     summary: trimmedSummary,
     recentTurns: keepEntries,
+    ...(remainingToolMemories.length > 0 ? { toolMemories: remainingToolMemories } : {}),
     lastCompressedTurn: maxCompressedTurn,
     updatedAt: new Date().toISOString(),
   }
@@ -714,16 +758,13 @@ export function appendTurnToContext(
   turn: number,
   user: string,
   assistant: string,
-  /** 本轮工具调用记录(仅助手填, master 不传). 挂在 assistant entry 上,
-   *  agent 层跟正文同寿命: 最近 K 轮原文保留, 早期随正文压缩进 summary. */
-  toolCalls?: AgentContextToolCall[],
 ): AgentContextSnapshot {
   return {
     ...context,
     recentTurns: [
       ...context.recentTurns,
       { turn, role: "user", content: user },
-      { turn, role: "assistant", content: assistant, ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}) },
+      { turn, role: "assistant", content: assistant },
     ],
     updatedAt: new Date().toISOString(),
   }

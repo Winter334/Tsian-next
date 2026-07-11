@@ -459,7 +459,6 @@ function onEdit(content: string) {
       @click="scrollToLatest"
     >
       <span class="jump-glyph" aria-hidden="true">⌄</span>
-      <span class="jump-label">最近</span>
     </button>
 
     <!-- 回合后同步 Toast：正文落定后浮起，朴素克制 + 卡片扫光签名。
@@ -618,42 +617,134 @@ function onEdit(content: string) {
   z-index: 8;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 10px 6px 8px;
-  border: 1px solid var(--line-strong);
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid rgba(181, 137, 61, 0.34);
   border-radius: 999px;
   background:
-    radial-gradient(circle at 35% 20%, rgba(43, 4, 4, 0.72), transparent 70%),
-    rgba(10, 5, 6, 0.82);
-  color: var(--prose-faint);
+    radial-gradient(circle at 22% 22%, rgba(232, 169, 72, 0.15), transparent 38%),
+    linear-gradient(135deg, rgba(181, 137, 61, 0.13), rgba(155, 58, 46, 0.07) 48%, rgba(6, 6, 8, 0.42)),
+    rgba(10, 5, 6, 0.78);
+  color: var(--prose-muted);
   font-family: var(--font-mono);
   font-size: 0.68rem;
   letter-spacing: 0.08em;
   cursor: pointer;
-  box-shadow: 0 0 18px rgba(43, 4, 4, 0.36), inset 0 0 10px rgba(181, 137, 61, 0.04);
-  transition: color 0.25s, border-color 0.25s, box-shadow 0.25s, transform 0.25s;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 rgba(232, 169, 72, 0.08),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.18),
+    0 12px 28px rgba(0, 0, 0, 0.24),
+    0 0 18px rgba(43, 4, 4, 0.30);
+  transition: color 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease, background 0.22s ease;
+  animation: jump-latest-enter 220ms ease-out both;
 }
-.jump-latest:hover {
+.jump-latest::before {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border: 1px solid rgba(181, 137, 61, 0.10);
+  border-radius: inherit;
+  pointer-events: none;
+}
+.jump-latest::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(112deg, transparent 0%, rgba(232, 169, 72, 0.16) 38%, transparent 62%);
+  opacity: 0.22;
+  transform: translateX(-24%);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+.jump-latest:hover,
+.jump-latest:focus-visible {
   color: var(--ember-bright);
-  border-color: var(--ember);
-  box-shadow: 0 0 18px var(--ember-glow), inset 0 0 12px rgba(181, 137, 61, 0.08);
-  transform: translateY(-1px);
+  border-color: rgba(232, 169, 72, 0.64);
+  background:
+    radial-gradient(circle at 22% 22%, rgba(232, 169, 72, 0.22), transparent 42%),
+    linear-gradient(135deg, rgba(181, 137, 61, 0.18), rgba(155, 58, 46, 0.09) 48%, rgba(6, 6, 8, 0.38)),
+    rgba(12, 6, 7, 0.88);
+  box-shadow:
+    inset 0 1px 0 rgba(232, 169, 72, 0.12),
+    inset 0 -10px 22px rgba(0, 0, 0, 0.20),
+    0 14px 30px rgba(0, 0, 0, 0.28),
+    0 0 22px rgba(181, 137, 61, 0.18);
+  transform: translateY(-2px);
+}
+.jump-latest:hover::after,
+.jump-latest:focus-visible::after {
+  opacity: 0.42;
+  transform: translateX(-6%);
+}
+.jump-latest:focus-visible {
+  outline: 1px solid rgba(232, 169, 72, 0.62);
+  outline-offset: 3px;
 }
 .jump-glyph {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: 1px solid var(--line-strong);
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border: 1px solid rgba(232, 169, 72, 0.42);
   border-radius: 50%;
-  color: var(--ember);
-  font-size: 0.9rem;
-  line-height: 1;
-  box-shadow: 0 0 5px rgba(181, 137, 61, 0.12);
+  color: transparent;
+  background:
+    radial-gradient(circle, rgba(232, 169, 72, 0.10), transparent 68%),
+    rgba(6, 6, 8, 0.34);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
+    0 0 10px rgba(181, 137, 61, 0.14);
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s ease;
 }
-.jump-label {
-  line-height: 1;
+.jump-glyph::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border: 1px solid rgba(181, 137, 61, 0.26);
+  border-radius: 50%;
+}
+.jump-glyph::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid var(--ember-bright);
+  border-bottom: 1.5px solid var(--ember-bright);
+  transform: translate(-50%, -50%) rotate(45deg);
+  box-shadow: 2px 2px 7px rgba(232, 169, 72, 0.28);
+}
+.jump-latest:hover .jump-glyph,
+.jump-latest:focus-visible .jump-glyph {
+  border-color: rgba(232, 169, 72, 0.76);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.035),
+    0 0 14px rgba(181, 137, 61, 0.28);
+  transform: rotate(-8deg) scale(1.04);
+}
+@keyframes jump-latest-enter {
+  from { opacity: 0; transform: translateY(5px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .jump-latest {
+    animation: none;
+    transition-duration: 0.01ms;
+  }
+  .jump-latest::after,
+  .jump-glyph {
+    transition-duration: 0.01ms;
+  }
 }
 
 @media (max-width: 920px) {

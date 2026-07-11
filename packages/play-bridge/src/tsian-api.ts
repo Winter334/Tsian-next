@@ -75,6 +75,8 @@ export interface RoundEnd {
 }
 
 export interface TurnEndResult {
+  /** 平台提交的正式玩家回合号。 */
+  turn?: number
   /** 剧情选项（若有）。 */
   options?: string[]
   /** token 消耗统计（若有）。 */
@@ -196,6 +198,9 @@ export function createTsian(): TsianApi {
     }
     if (event === "turn-completed") {
       const result: TurnEndResult = {}
+      if (payload && "turn" in payload && typeof payload.turn === "number") {
+        result.turn = payload.turn
+      }
       if (pendingOptions && pendingOptions.length > 0) {
         result.options = pendingOptions
       }

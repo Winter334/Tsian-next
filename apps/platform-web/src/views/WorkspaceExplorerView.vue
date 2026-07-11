@@ -1056,7 +1056,10 @@ function openFile(path: string) {
 
   contextMenu.value = null
   const mediaType = inferMediaTypeFromPath(path)
-  if (isImageMediaType(mediaType) || isAudioMediaType(mediaType) || isVideoMediaType(mediaType)) {
+  if (
+    mediaType !== "image/svg+xml"
+    && (isImageMediaType(mediaType) || isAudioMediaType(mediaType) || isVideoMediaType(mediaType))
+  ) {
     openMediaRoute(path)
   } else {
     openEditorRoute(path)

@@ -11,7 +11,7 @@ import type {
 } from "@tsian/contracts"
 import { FRONTEND_FRAMEWORKS, FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
 import { strToU8, unzipSync, zipSync } from "fflate"
-import { inferMediaTypeFromPath } from "@/lib/media-type"
+import { inferMediaTypeFromPath, resolveBlobMediaType } from "@/lib/media-type"
 import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile, writeLocalGameCardContentFile } from "./game-cards"
 import type { LocalGameCardRecord } from "./db"
 
@@ -665,7 +665,7 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
     })),
     frontendFiles: frontendFiles.map((file) => ({
       path: file.path,
-      mediaType: inferMediaTypeFromPath(file.path),
+      mediaType: resolveBlobMediaType(file.path, file.data),
       size: file.size,
     })),
     ...(coverFile
@@ -790,10 +790,21 @@ function normalizeFrontendPackageManifest(value: unknown): FrontendPackageManife
     )
   }
   const files = value.files.map((item) => normalizeFrontendPackageFileEntry(item))
+  const frameworkValue = value.framework
+  const framework = typeof frameworkValue === "string" && frameworkValue.trim()
+    ? frameworkValue.trim()
+    : undefined
+  if (framework !== undefined && !FRONTEND_FRAMEWORKS.includes(framework as FrontendFramework)) {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_FRAMEWORK_UNSUPPORTED",
+      `Unsupported frontend framework: ${framework}`,
+    )
+  }
 
   const manifest: FrontendPackageManifest = {
     schema: FRONTEND_PACKAGE_SCHEMA,
     entry,
+    ...(framework ? { framework: framework as FrontendFramework } : {}),
     bridgeVersion: FRONTEND_BRIDGE_VERSION,
     files,
   }
@@ -889,8 +900,19 @@ export async function importGameCardFrontendPackage(
     }
   }
 
-  // Entry must exist in manifest files.
-  if (!manifestPaths.has(manifest.entry)) {
+  const hasSourceFiles = manifest.files.some((file) => file.path.startsWith("src/"))
+  const hasVueSource = manifest.files.some((file) => file.path.endsWith(".vue"))
+  if (hasVueSource && manifest.framework !== "vue") {
+    throw new GameCardPackageError(
+      "FRONTEND_PACKAGE_FRAMEWORK_REQUIRED",
+      "Frontend package contains .vue sources and must declare framework: \"vue\".",
+    )
+  }
+
+  // Dist packages must carry the entry file. Source packages may point entry at
+  // the generated dist path (usually dist/index.html); the platform build below
+  // creates it from src/** after import.
+  if (!manifestPaths.has(manifest.entry) && !hasSourceFiles) {
     throw new GameCardPackageError(
       "FRONTEND_PACKAGE_ENTRY_MISSING",
       `Frontend package entry is not in file list: ${manifest.entry}`,
@@ -908,11 +930,13 @@ export async function importGameCardFrontendPackage(
   const frontendFiles = manifest.files.map((file) => ({
     path: `${FRONTEND_PREFIX}${file.path}`,
     data: fileBytes.get(file.path)!,
+    mediaType: file.mediaType,
   }))
 
   const frontendBinding: GameCardFrontendBinding = {
     kind: "packaged",
     entry: `${FRONTEND_PREFIX}${manifest.entry}`,
+    ...(manifest.framework ? { framework: manifest.framework } : {}),
     bridgeVersion: manifest.bridgeVersion,
   }
 
@@ -968,10 +992,11 @@ export async function exportGameCardFrontendPackage(cardId: string): Promise<Blo
   const packageManifest: FrontendPackageManifest = {
     schema: FRONTEND_PACKAGE_SCHEMA,
     entry: entryPath,
+    ...(frontend.framework ? { framework: frontend.framework } : {}),
     bridgeVersion: frontend.bridgeVersion,
     files: frontendFiles.map((file) => ({
       path: stripPrefix(file.path),
-      mediaType: inferMediaTypeFromPath(file.path),
+      mediaType: resolveBlobMediaType(file.path, file.data),
       size: file.size,
     })),
     exportedAt: new Date().toISOString(),

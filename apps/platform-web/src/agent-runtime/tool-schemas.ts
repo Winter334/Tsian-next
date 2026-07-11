@@ -148,18 +148,15 @@ const agentCallSchema: ToolSchema = {
 const inspectFrontendSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend,
   description:
-    "Inspect the active game card's packaged frontend in a hidden iframe using the real /play load path, returning a structural + diagnostic snapshot. The structural `domSummary` is an aria snapshot (accessibility tree YAML: role + accessible name + state), not raw HTML. Supports driving one configured player-turn entry Agent turn (send), DOM interactions (actions), and refreshing the latest snapshot (refresh); these compose to cover a full player flow. No cardId — the active card is inspected. Use it to close the write→inspect→fix loop on authored frontends. Example: inspect_frontend with send={message:\"...\"}, or actions=[{type:\"click\",selector:\"#send\"}], observeBetween=true.",
+    "Inspect and operate the packaged frontend currently mounted in the player's real Play window. The first inspect starts a persistent save-runtime rollback session. Use returned interactables/selectors to follow the frontend's real UI, choose dom-stable for pure UI state changes, choose runtime-settled when the UI should trigger a player turn or bridge-backed work, inspect again after source rebuilds, and call operation=finish when done to restore the pre-debug runtime state. The structural domSummary is an accessibility snapshot, not raw HTML.",
   parameters: {
     type: "object",
     properties: {
-      send: {
-        type: "object",
+      operation: {
+        type: "string",
+        enum: ["inspect", "finish"],
         description:
-          "Drive one configured player-turn entry Agent turn on an ephemeral save (consumes tokens). The ephemeral save is discarded after the turn, leaving player saves untouched.",
-        properties: {
-          message: { type: "string" },
-        },
-        required: ["message"],
+          "inspect (default) operates the current Play iframe; finish restores the debug baseline and ends the session.",
       },
       actions: {
         type: "array",
@@ -185,15 +182,18 @@ const inspectFrontendSchema: ToolSchema = {
         description:
           "Take a structural snapshot between each action to observe stepwise state changes.",
       },
-      refresh: {
-        type: "boolean",
-        description:
-          "Pull the latest runtime snapshot after operations (semantic wrapper — no bridge protocol knowledge needed).",
-      },
       wait: {
         type: "string",
-        enum: ["bridge-ready", "turn-completed"],
-        description: "Observation point to wait for. Defaults to \"bridge-ready\".",
+          enum: ["runtime-settled", "dom-stable"],
+          description:
+            "After actions, choose runtime-settled when the UI should start a player turn or bridge-backed work. Choose dom-stable for pure frontend changes such as tabs, dialogs, forms, and expand/collapse. Results include wait telemetry and preserve action evidence even when the requested wait condition is not triggered.",
+      },
+      timeoutMs: {
+        type: "integer",
+        minimum: 1,
+        maximum: 900000,
+          description:
+            "runtime-settled timeout in milliseconds. Defaults to 300000; maximum 900000. Omit timeoutMs for dom-stable.",
       },
       autoWait: {
         type: "boolean",
@@ -390,7 +390,7 @@ const workspaceEditSchema: ToolSchema = {
       },
       oldString: {
         type: "string",
-        description: "The exact string to find in the file. Must match exactly once unless replaceAll is true. Include surrounding lines for uniqueness. If it matches zero times the file may have changed since you read it — re-read and retry.",
+        description: "The exact string to find in the file. Must match exactly once unless replaceAll is true. Include surrounding lines for uniqueness. Multiline matches accept LF/CRLF line-ending differences. If it matches zero times the file may have changed since you read it — re-read and retry.",
       },
       newString: {
         type: "string",

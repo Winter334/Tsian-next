@@ -1,8 +1,7 @@
 import type { Metafile, OutputFile } from "esbuild-wasm"
 import {
-  deleteLocalGameCardFrontendFile,
-  listLocalGameCardFrontendFiles,
-  writeLocalGameCardFrontendFile,
+  replaceLocalGameCardFrontendDist,
+  type PutLocalGameCardFrontendFileInput,
 } from "../storage"
 
 /**
@@ -22,7 +21,10 @@ const DIST_PREFIX = "frontend/dist/"
 export interface WriteBackInput {
   cardId: string
   outputFiles: OutputFile[]
+  workerOutputFiles?: OutputFile[]
   metafile: Metafile
+  /** Exact stdin sourcefile identity used by the root build entry. */
+  entryPoint: string
   /** bare import name → esm.sh URL (core framework entries + collected extras). */
   importMap: Map<string, string>
 }
@@ -32,41 +34,56 @@ export interface WriteBackResult {
   entryHtmlPath: string
 }
 
-/** Find the entry JS output via metafile (the output with `entryPoint` set). */
-function findEntryOutputPath(metafile: Metafile): string {
-  for (const [outputPath, output] of Object.entries(metafile.outputs)) {
-    if (output.entryPoint) {
-      return outputPath
-    }
+function normalizeOutputPath(path: string): string {
+  return path.replace(/^\/+/, "")
+}
+
+/** Find the one JS output whose metafile identity matches the root stdin sourcefile. */
+function findEntryOutputPath(metafile: Metafile, entryPoint: string): string {
+  const matches = Object.entries(metafile.outputs)
+    .filter(([outputPath, output]) => output.entryPoint === entryPoint && /\.m?js$/i.test(outputPath))
+    .map(([outputPath]) => normalizeOutputPath(outputPath))
+  if (matches.length === 1) return matches[0]
+  if (matches.length === 0) {
+    throw new Error(`构建产物缺少根入口文件（metafile entryPoint=${JSON.stringify(entryPoint)}）`)
   }
-  throw new Error("构建产物缺少入口文件（metafile 无 entryPoint 输出）")
+  throw new Error(
+    `构建产物存在多个根入口文件（metafile entryPoint=${JSON.stringify(entryPoint)}）: ${matches.join(", ")}`,
+  )
 }
 
 export async function writeBackDist(input: WriteBackInput): Promise<WriteBackResult> {
-  const { cardId, outputFiles, metafile, importMap } = input
-  const entryJsRel = findEntryOutputPath(metafile)
+  const { cardId, outputFiles, workerOutputFiles = [], metafile, entryPoint, importMap } = input
+  const entryJsRel = findEntryOutputPath(metafile, entryPoint)
 
-  // 1. Write all non-html output files to frontend/dist/.
+  const workerCss = workerOutputFiles
+    .map((file) => normalizeOutputPath(file.path))
+    .filter((path) => path.endsWith(".css"))
+  if (workerCss.length > 0) {
+    throw new Error(`Worker 构建不应产生 CSS 产物: ${workerCss.join(", ")}`)
+  }
+
   // esbuild outputs paths like `assets/stdin.js` (relative to outdir) but may
   // carry a leading slash (`/assets/stdin.js`); strip it so DIST_PREFIX concat
   // doesn't produce a double slash (`frontend/dist//assets/...`). The storage
   // layer normalizes paths on write, but our `newPaths` set must hold the
-  // SAME normalized form the storage layer stores, or the stale-file cleanup
-  // below won't recognize freshly-written files and will delete them.
+  // SAME normalized form the storage layer stores, or stale cleanup will not
+  // recognize freshly-written files.
+  const allOutputFiles = [...outputFiles, ...workerOutputFiles]
   const newPaths = new Set<string>()
-  for (const file of outputFiles) {
-    const rel = file.path.replace(/^\/+/, "")
+  const files: PutLocalGameCardFrontendFileInput[] = allOutputFiles.map((file) => {
+    const rel = normalizeOutputPath(file.path)
     const distPath = DIST_PREFIX + rel
-    await writeLocalGameCardFrontendFile(cardId, { path: distPath, data: file.contents })
     newPaths.add(distPath)
-  }
+    return { path: distPath, data: file.contents }
+  })
 
-  // 2. Collect CSS outputs for <link> tags (strip leading slash, same as step 1).
+  // CSS links are only for the main graph. Worker graph style imports are
+  // rejected before this point, so worker outputs must not contribute links.
   const cssRelPaths = outputFiles
     .filter((f) => f.path.endsWith(".css"))
-    .map((f) => f.path.replace(/^\/+/, ""))
+    .map((f) => normalizeOutputPath(f.path))
 
-  // 3. Generate index.html with import map + entry script + css links.
   const importMapJson = JSON.stringify({
     imports: Object.fromEntries(importMap),
   })
@@ -91,16 +108,13 @@ ${linkTags}
 </html>`
 
   const entryHtmlPath = DIST_PREFIX + "index.html"
-  await writeLocalGameCardFrontendFile(cardId, { path: entryHtmlPath, data: html })
+  files.push({ path: entryHtmlPath, data: html })
   newPaths.add(entryHtmlPath)
 
-  // 4. Clean old dist files not in the new output set.
-  const existing = await listLocalGameCardFrontendFiles(cardId)
-  for (const file of existing) {
-    if (file.path.startsWith(DIST_PREFIX) && !newPaths.has(file.path)) {
-      await deleteLocalGameCardFrontendFile(cardId, file.path)
-    }
-  }
+  const distPaths = await replaceLocalGameCardFrontendDist(cardId, {
+    files,
+    keepPaths: newPaths,
+  })
 
-  return { distPaths: [...newPaths], entryHtmlPath }
+  return { distPaths, entryHtmlPath }
 }

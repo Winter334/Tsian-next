@@ -1,0 +1,10 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web ownership and required build check."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Place shared classification in lib and persistence logic in storage."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Fail-loud, scope, and browser-build runtime constraints."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Workspace binary dual-track and visible-editable-manageable contract."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Text editor and media viewer routing contract."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Frontend package MIME import/export precedence contract."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Dexie constraints and no-migration/no-duplicate-helper rules."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Eliminate duplicated MIME and Blob projection classifiers."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace manifest-to-Blob-to-workspace-to-editor data flow."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Visible files must remain human- and assistant-manageable."}

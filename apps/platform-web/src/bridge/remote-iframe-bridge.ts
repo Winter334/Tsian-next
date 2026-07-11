@@ -64,12 +64,33 @@ export interface MountRemoteIframeFrontendOptions {
   onLoad?: () => void
   onError?: (message: string) => void
   onBridgeReady?: () => void
-  /**
-   * 握手完成时透出 mount 为本会话生成的 sessionId.自检等需要自行向 iframe
-   * postMessage 事件的调用方用它构造匹配 sessionId 的事件(如 turn-completed).
-   * PlayView 不传此回调,行为零影响.
-   */
-  onSessionId?: (sessionId: string) => void
+}
+
+export type RemoteIframeMountStatus = "loading" | "ready" | "error" | "disposed"
+
+export interface RemoteBridgeActivityEntry {
+  sequence: number
+  requestId: string
+  method: RemotePlayBridgeMethod
+  phase: "started" | "completed" | "failed"
+  at: number
+  error?: {
+    code: string
+    message: string
+  }
+}
+
+export interface MountedRemoteIframeFrontend {
+  readonly iframe: HTMLIFrameElement
+  readonly sessionId: string
+  readonly status: RemoteIframeMountStatus
+  readonly activitySequence: number
+  readonly inFlightRequestCount: number
+  readonly lastActivityAt: number | null
+  subscribeStatus(listener: (status: RemoteIframeMountStatus) => void): () => void
+  subscribeActivity(listener: (entry: RemoteBridgeActivityEntry) => void): () => void
+  waitForReady(timeoutMs: number): Promise<boolean>
+  dispose(): void
 }
 
 class RemoteBridgeRpcError extends Error {
@@ -530,7 +551,7 @@ export function resolveRemoteFrontendUrl(
 export function mountRemoteIframeFrontend(
   container: HTMLElement,
   options: MountRemoteIframeFrontendOptions,
-): () => void {
+): MountedRemoteIframeFrontend {
   const resolved = resolveRemoteFrontendUrl(options.url)
   if (!resolved.ok) {
     throw new Error(resolved.error.message)
@@ -540,10 +561,48 @@ export function mountRemoteIframeFrontend(
   const iframe = document.createElement("iframe")
   let disposed = false
   let acceptedOrigin: string | null = null
+  let status: RemoteIframeMountStatus = "loading"
+  let activitySequence = 0
+  let inFlightRequestCount = 0
+  let lastActivityAt: number | null = null
+  const statusListeners = new Set<(status: RemoteIframeMountStatus) => void>()
+  const activityListeners = new Set<(entry: RemoteBridgeActivityEntry) => void>()
+
+  function setStatus(nextStatus: RemoteIframeMountStatus): void {
+    if (status === nextStatus) {
+      return
+    }
+    status = nextStatus
+    for (const listener of statusListeners) {
+      listener(status)
+    }
+  }
+
+  function emitActivity(
+    requestId: string,
+    method: RemotePlayBridgeMethod,
+    phase: RemoteBridgeActivityEntry["phase"],
+    error?: RemotePlayBridgeError,
+  ): void {
+    const entry: RemoteBridgeActivityEntry = {
+      sequence: ++activitySequence,
+      requestId,
+      method,
+      phase,
+      at: Date.now(),
+      ...(error ? { error: { code: error.code, message: error.message } } : {}),
+    }
+    lastActivityAt = entry.at
+    for (const listener of activityListeners) {
+      listener(entry)
+    }
+  }
 
   iframe.title = options.title ?? "Tsian remote game frontend"
   iframe.src = resolved.url
   iframe.sandbox.value = options.sandbox ?? REMOTE_IFRAME_SANDBOX
+  iframe.allowFullscreen = true
+  iframe.setAttribute("allow", "fullscreen")
   // 用容器相对单位(h-full)而非视口单位(h-dvh):游戏 iframe 必须填满桌面
   // 窗口内容区(= 窗口高 − 标题栏 − padding),否则会撑成整个浏览器视口高,
   // 被 .desktop-window 的 overflow:hidden 裁掉底部,且窗口越浮动裁得越多。
@@ -555,6 +614,7 @@ export function mountRemoteIframeFrontend(
   })
   iframe.addEventListener("error", () => {
     if (!disposed) {
+      setStatus("error")
       options.onError?.("远程前端 iframe 加载失败。")
     }
   })
@@ -618,6 +678,11 @@ export function mountRemoteIframeFrontend(
       return
     }
 
+    const requestId = message.id
+    const method = message.method
+    inFlightRequestCount += 1
+    emitActivity(requestId, method, "started")
+
     try {
       if (message.method === "interaction.sendMessage") {
         const result = await options.bridge.interaction.sendMessage(
@@ -632,7 +697,8 @@ export function mountRemoteIframeFrontend(
           result,
         }
         postToRemote(response, targetOrigin)
-        postEvent("turn-completed", {})
+        postEvent("turn-completed", { turn: result.turn })
+        emitActivity(requestId, method, "completed")
         return
       }
 
@@ -650,16 +716,21 @@ export function mountRemoteIframeFrontend(
         result,
       }
       postToRemote(response, targetOrigin)
+      emitActivity(requestId, method, "completed")
     } catch (error) {
+      const bridgeError = toBridgeError(error)
       const response: RemotePlayBridgeResponseMessage = {
         channel: REMOTE_PLAY_BRIDGE_CHANNEL,
         kind: "response",
         sessionId,
         id: message.id,
         ok: false,
-        error: toBridgeError(error),
+        error: bridgeError,
       }
       postToRemote(response, targetOrigin)
+      emitActivity(requestId, method, "failed", bridgeError)
+    } finally {
+      inFlightRequestCount = Math.max(0, inFlightRequestCount - 1)
     }
   }
 
@@ -683,7 +754,7 @@ export function mountRemoteIframeFrontend(
         methods: REMOTE_PLAY_BRIDGE_METHODS,
       }
       postToRemote(ready, event.origin)
-      options.onSessionId?.(sessionId)
+      setStatus("ready")
       options.onBridgeReady?.()
       return
     }
@@ -760,19 +831,79 @@ export function mountRemoteIframeFrontend(
   window.addEventListener("message", onMessage)
   container.replaceChildren(iframe)
 
-  return () => {
-    disposed = true
-    window.removeEventListener("message", onMessage)
-    unsubscribeTurnDebugReady?.()
-    unsubscribeTurnDelta?.()
-    unsubscribeTurnRoundEnd?.()
-    unsubscribeTurnTool?.()
-    unsubscribeTurnOptions?.()
-    unsubscribeTurnStats?.()
-    unsubscribeInteractionRequest?.()
-    unsubscribeAgentInvocation?.()
-    if (iframe.parentElement === container) {
-      iframe.remove()
-    }
+  const handle: MountedRemoteIframeFrontend = {
+    iframe,
+    sessionId,
+    get status() {
+      return status
+    },
+    get activitySequence() {
+      return activitySequence
+    },
+    get inFlightRequestCount() {
+      return inFlightRequestCount
+    },
+    get lastActivityAt() {
+      return lastActivityAt
+    },
+    subscribeStatus(listener) {
+      statusListeners.add(listener)
+      return () => statusListeners.delete(listener)
+    },
+    subscribeActivity(listener) {
+      activityListeners.add(listener)
+      return () => activityListeners.delete(listener)
+    },
+    waitForReady(timeoutMs) {
+      if (status === "ready") {
+        return Promise.resolve(true)
+      }
+      if (status === "error" || status === "disposed") {
+        return Promise.resolve(false)
+      }
+      return new Promise((resolve) => {
+        let settled = false
+        let timer = 0
+        const finish = (ready: boolean) => {
+          if (settled) {
+            return
+          }
+          settled = true
+          window.clearTimeout(timer)
+          unsubscribe()
+          resolve(ready)
+        }
+        const unsubscribe = handle.subscribeStatus((nextStatus) => {
+          if (nextStatus === "ready") {
+            finish(true)
+          } else if (nextStatus === "error" || nextStatus === "disposed") {
+            finish(false)
+          }
+        })
+        timer = window.setTimeout(() => finish(false), Math.max(0, timeoutMs))
+      })
+    },
+    dispose() {
+      if (disposed) {
+        return
+      }
+      disposed = true
+      setStatus("disposed")
+      window.removeEventListener("message", onMessage)
+      unsubscribeTurnDebugReady?.()
+      unsubscribeTurnDelta?.()
+      unsubscribeTurnRoundEnd?.()
+      unsubscribeTurnTool?.()
+      unsubscribeTurnOptions?.()
+      unsubscribeTurnStats?.()
+      unsubscribeInteractionRequest?.()
+      unsubscribeAgentInvocation?.()
+      statusListeners.clear()
+      activityListeners.clear()
+      if (iframe.parentElement === container) {
+        iframe.remove()
+      }
+    },
   }
+  return handle
 }

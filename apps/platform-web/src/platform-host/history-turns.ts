@@ -217,7 +217,7 @@ export function getMaxTurnFromTurnFiles(workspaceFiles: WorkspaceFile[]): number
  * 从 workspace 文件列表重建完整对话历史(ConversationMessageRecord[]).
  * 读 `save/history/turns/turn-*.json` → parse → 按 turn 升序,从 timeline 过滤
  * user/assistant 项映射为 ConversationMessageRecord(干净正文).
- * 空目录/无 turn 文件 → 返回 [](新建存档/ephemeral save 兜底).
+ * 空目录/无 turn 文件 → 返回 [](新建存档兜底).
  * 只提取 user/assistant 项 —— agent 注入路径(recentHistory)只给干净正文,
  * process items 留给前端渲染 / agent 主动 workspace_read 查.
  */

@@ -11,6 +11,7 @@ import {
 import { isAppendOnlyLogPath, extractTurnFromLogPath } from "../platform-host/history-turns"
 import { hashFile, putBlobIfAbsent, getBlob, deleteOrphanBlobs } from "./blobs"
 import { getPlatformConfig } from "../config/platform-config"
+import { getProtectedFrontendDebugCheckpointId } from "./frontend-debug-session"
 
 export interface LocalCheckpointSummary extends Omit<CheckpointSummary, "reason"> {
   saveId: string
@@ -102,6 +103,7 @@ export async function listCheckpointsForSave(
 export async function restoreCheckpointForSave(
   saveId: string,
   checkpointId: string,
+  options: { deleteSameTurnAfterCreatedAt?: number } = {},
 ): Promise<{ turn: number } | null> {
   const checkpoint = await localDb.checkpoints.get(checkpointId)
   if (!checkpoint || checkpoint.saveId !== saveId) {
@@ -167,7 +169,11 @@ export async function restoreCheckpointForSave(
       //    方案 R：回溯即删，与 turn 文件裁剪语义一致，避免幽灵 checkpoint 污染列表。
       const futureCheckpoints = await localDb.checkpoints
         .where("saveId").equals(saveId)
-        .and((cp) => cp.turn > targetTurn)
+        .and((cp) => cp.turn > targetTurn || (
+          options.deleteSameTurnAfterCreatedAt !== undefined
+          && cp.turn === targetTurn
+          && cp.createdAt > options.deleteSameTurnAfterCreatedAt
+        ))
         .toArray()
       await Promise.all(futureCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)))
 
@@ -203,6 +209,7 @@ export async function replaceInitialCheckpointForSave(
     label?: string
   },
 ): Promise<LocalCheckpointSummary> {
+  const protectedCheckpointId = await getProtectedFrontendDebugCheckpointId(saveId)
   const files = (await listCheckpointWorkspaceFilesForSave(saveId))
     .filter((f) => !isAppendOnlyLogPath(f.path))
   const record = await buildCheckpointRecordForSave(saveId, {
@@ -220,7 +227,7 @@ export async function replaceInitialCheckpointForSave(
       // 删除该 save 的所有 initial 检查点（通常只有 1 条）
       const initialCheckpoints = await localDb.checkpoints
         .where("saveId").equals(saveId)
-        .and((cp) => cp.reason === "initial")
+        .and((cp) => cp.reason === "initial" && cp.id !== protectedCheckpointId)
         .toArray()
       await Promise.all(initialCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)))
     },
@@ -250,7 +257,10 @@ export function getCheckpointPruneConfig(): { keepRecent: number; sparseEvery: n
  */
 export async function pruneCheckpointsForSave(saveId: string): Promise<void> {
   const { keepRecent, sparseEvery } = getCheckpointPruneConfig()
-  const records = await localDb.checkpoints.where("saveId").equals(saveId).toArray()
+  const [records, protectedCheckpointId] = await Promise.all([
+    localDb.checkpoints.where("saveId").equals(saveId).toArray(),
+    getProtectedFrontendDebugCheckpointId(saveId),
+  ])
   if (records.length === 0) return
 
   // 按 createdAt 降序（新→旧），便于"保留最近 N 条"。
@@ -258,6 +268,9 @@ export async function pruneCheckpointsForSave(saveId: string): Promise<void> {
   const currentTurn = sorted.length > 0 ? Math.max(...records.map((r) => r.turn)) : 0
 
   const keepIds = new Set<string>()
+  if (protectedCheckpointId) {
+    keepIds.add(protectedCheckpointId)
+  }
   for (const cp of sorted) {
     // 保留：initial / manual（用户或系统显式建的，不自动回收）。
     if (cp.reason === "initial" || cp.reason === "manual") {

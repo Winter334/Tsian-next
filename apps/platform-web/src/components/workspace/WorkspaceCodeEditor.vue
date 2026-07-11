@@ -81,6 +81,8 @@ function languageExtension(): Extension {
   if (
     path.endsWith(".ts")
     || path.endsWith(".tsx")
+    || path.endsWith(".mts")
+    || path.endsWith(".cts")
     || mediaType.includes("typescript")
   ) {
     return javascript({ typescript: true, jsx: path.endsWith(".tsx") })
@@ -94,10 +96,29 @@ function languageExtension(): Extension {
   ) {
     return javascript({ jsx: path.endsWith(".jsx") })
   }
-  if (path.endsWith(".css") || mediaType.includes("css")) {
+  if (
+    path.endsWith(".css")
+    || path.endsWith(".scss")
+    || path.endsWith(".sass")
+    || path.endsWith(".less")
+    || mediaType.includes("css")
+    || mediaType.includes("scss")
+    || mediaType.includes("sass")
+    || mediaType.includes("less")
+  ) {
     return css()
   }
-  if (path.endsWith(".html") || path.endsWith(".htm") || mediaType.includes("html")) {
+  if (
+    path.endsWith(".html")
+    || path.endsWith(".htm")
+    || path.endsWith(".vue")
+    || path.endsWith(".svelte")
+    || path.endsWith(".astro")
+    || mediaType.includes("html")
+    || mediaType.includes("vue")
+    || mediaType.includes("svelte")
+    || mediaType.includes("astro")
+  ) {
     return html()
   }
   if (

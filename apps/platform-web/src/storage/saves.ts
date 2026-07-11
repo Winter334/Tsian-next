@@ -6,6 +6,7 @@ import {
   localDb,
   type LocalGameCardRecord,
   type LocalSaveRecord,
+  type LocalWorkspaceFileRecord,
 } from "./db"
 import {
   createCheckpointForSave,
@@ -14,6 +15,7 @@ import {
   pruneCheckpointsForSave,
 } from "./checkpoints"
 import { deleteBlobsForSave } from "./blobs"
+import { getProtectedFrontendDebugCheckpointId } from "./frontend-debug-session"
 import { getBuiltinBlankGameCard } from "./game-cards"
 import {
   createDefaultSaveRuntimeFiles,
@@ -22,8 +24,11 @@ import {
   listWorkspaceFilesForSave,
   saveRuntimeFilesFromEffectiveWorkspace,
 } from "./workspace"
+import type {
+  RuntimeWorkspaceChanges,
+  CheckpointWorkspaceFile,
+} from "./workspace-types"
 import { getMaxTurnFromTurnFiles, getHistoryFromTurnFiles, isAppendOnlyLogPath } from "../platform-host/history-turns"
-
 const ACTIVE_SAVE_KEY = "active-save-id"
 
 function createSaveId(): string {
@@ -181,10 +186,10 @@ export async function commitSuccessfulRuntimeTurnForSave(
 }
 
 /**
- * Commit only workspace files for a save (no snapshot/history/checkpoint update).
- * Used by `invokeAgent` persistent path to write context.json without advancing
- * turn or polluting the narrative snapshot. Mirrors the workspace-file portion of
- * `commitSuccessfulRuntimeTurnForSave` but skips snapshot, history, and checkpoint.
+ * Full-replace workspace commit helper for callers that own the entire save
+ * workspace snapshot. Do not use for side-channel invokeAgent commits: those
+ * use `commitWorkspaceChangesForSave` so concurrent frontend bridge writes are
+ * preserved.
  */
 export async function commitWorkspaceFilesForSave(
   saveId: string,
@@ -217,6 +222,195 @@ export async function commitWorkspaceFilesForSave(
   )
 }
 
+function recordsFromWorkspaceChanges(
+  saveId: string,
+  changes: RuntimeWorkspaceChanges,
+): {
+  writtenRecords: Map<string, LocalWorkspaceFileRecord>
+  deletedPaths: string[]
+} {
+  const writtenRecords = new Map<string, LocalWorkspaceFileRecord>()
+  for (const file of saveRuntimeFilesFromEffectiveWorkspace(changes.writtenFiles)) {
+    const record = createLocalWorkspaceFileRecord(saveId, file)
+    writtenRecords.set(record.path, record)
+  }
+
+  return {
+    writtenRecords,
+    deletedPaths: Array.from(new Set(changes.deletedPaths)).sort(),
+  }
+}
+
+function pathMatchesDeletedPath(path: string, deletedPath: string): boolean {
+  return path === deletedPath || path.startsWith(`${deletedPath}/`)
+}
+
+function applyWorkspaceChangesToRecords(
+  records: LocalWorkspaceFileRecord[],
+  changes: {
+    writtenRecords: Map<string, LocalWorkspaceFileRecord>
+    deletedPaths: string[]
+  },
+): LocalWorkspaceFileRecord[] {
+  const recordsByPath = new Map<string, LocalWorkspaceFileRecord>()
+  for (const record of records) {
+    if (changes.deletedPaths.some((path) => pathMatchesDeletedPath(record.path, path))) {
+      continue
+    }
+    recordsByPath.set(record.path, record)
+  }
+  for (const record of changes.writtenRecords.values()) {
+    recordsByPath.set(record.path, record)
+  }
+  return Array.from(recordsByPath.values())
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function checkpointFilesFromRecords(
+  records: LocalWorkspaceFileRecord[],
+): CheckpointWorkspaceFile[] {
+  return records
+    .map(({ id: _id, saveId: _saveId, ...file }) => file)
+    // 追加型日志（turn 文件 + traces）不进 checkpoint（存档级共享；回溯到 N = 裁剪到 1..N）。
+    .filter((file) => !isAppendOnlyLogPath(file.path))
+    .sort((left, right) => left.path.localeCompare(right.path))
+}
+
+function workspaceRecordSignature(records: LocalWorkspaceFileRecord[]): string {
+  return records
+    .map((record) => [
+      record.path,
+      record.createdAt,
+      record.updatedAt,
+      record.content,
+      record.data?.size ?? 0,
+      record.data?.type ?? "",
+    ].join("\u0000"))
+    .sort()
+    .join("\u0001")
+}
+
+async function applyWorkspaceChangesInTransaction(
+  saveId: string,
+  changes: {
+    writtenRecords: Map<string, LocalWorkspaceFileRecord>
+    deletedPaths: string[]
+  },
+): Promise<boolean> {
+  const existingWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+  const changedPaths = new Set<string>()
+  for (const record of existingWorkspace) {
+    if (changes.deletedPaths.some((path) => pathMatchesDeletedPath(record.path, path))) {
+      await localDb.workspaceFiles.delete(record.id)
+      changedPaths.add(record.path)
+    }
+  }
+  for (const record of changes.writtenRecords.values()) {
+    await localDb.workspaceFiles.put(record)
+    changedPaths.add(record.path)
+  }
+  return changedPaths.size > 0
+}
+
+export async function commitWorkspaceChangesForSave(
+  saveId: string,
+  changes: RuntimeWorkspaceChanges,
+): Promise<void> {
+  const normalized = recordsFromWorkspaceChanges(saveId, changes)
+  if (normalized.writtenRecords.size === 0 && normalized.deletedPaths.length === 0) {
+    return
+  }
+
+  const now = Date.now()
+  await localDb.transaction(
+    "rw",
+    [localDb.saves, localDb.workspaceFiles],
+    async () => {
+      const changed = await applyWorkspaceChangesInTransaction(saveId, normalized)
+      if (!changed) return
+      const save = await localDb.saves.get(saveId)
+      if (save) {
+        await localDb.saves.put({
+          ...save,
+          updatedAt: now,
+        })
+      }
+    },
+  )
+}
+
+export async function commitWorkspaceChangesWithCheckpointForSave(
+  saveId: string,
+  changes: RuntimeWorkspaceChanges,
+  input: {
+    turn: number
+    checkpointReason: "post-turn-maintenance"
+  },
+): Promise<void> {
+  const normalized = recordsFromWorkspaceChanges(saveId, changes)
+  const protectedCheckpointId = await getProtectedFrontendDebugCheckpointId(saveId)
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const now = Date.now()
+    const currentWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+    const currentSignature = workspaceRecordSignature(currentWorkspace)
+    const mergedWorkspace = applyWorkspaceChangesToRecords(currentWorkspace, normalized)
+    const checkpoint = await buildCheckpointRecordForSave(saveId, {
+      turn: input.turn,
+      reason: input.checkpointReason,
+      label: `回合 ${input.turn} · 维护`,
+      files: checkpointFilesFromRecords(mergedWorkspace),
+    }, now)
+
+    const committed = await localDb.transaction(
+      "rw",
+      [localDb.saves, localDb.workspaceFiles, localDb.checkpoints],
+      async () => {
+        const latestWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+        if (workspaceRecordSignature(latestWorkspace) !== currentSignature) {
+          return false
+        }
+
+        await applyWorkspaceChangesInTransaction(saveId, normalized)
+
+        // replace-on-create (design D3): 删同 turn 的 after-turn checkpoint，让维护点
+        // 取代 pre-maintenance 状态成为该回合的规范 checkpoint。
+        // 不删 manual/initial/其它 turn 的记录。
+        const sameTurnAfterTurnCheckpoints = await localDb.checkpoints
+          .where("saveId")
+          .equals(saveId)
+          .and((cp) => (
+            cp.turn === input.turn
+            && cp.reason === "after-turn"
+            && cp.id !== protectedCheckpointId
+          ))
+          .toArray()
+        await Promise.all(
+          sameTurnAfterTurnCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)),
+        )
+
+        await localDb.checkpoints.put(checkpoint)
+
+        const save = await localDb.saves.get(saveId)
+        if (save) {
+          await localDb.saves.put({
+            ...save,
+            updatedAt: now,
+          })
+        }
+        return true
+      },
+    )
+
+    if (committed) {
+      await pruneCheckpointsForSave(saveId)
+      return
+    }
+  }
+
+  throw new Error("Workspace changed while creating the invokeAgent maintenance checkpoint; retry the invocation.")
+}
+
 /**
  * Commit workspace files for a save AND create a `post-turn-maintenance` checkpoint
  * in the same Dexie transaction. Used by `invokeAgent` `workspace-with-checkpoint`
@@ -224,9 +418,14 @@ export async function commitWorkspaceFilesForSave(
  * the post-maintenance workspace and create a recoverable checkpoint so restore to
  * that turn reflects the post-maintenance state (not the pre-maintenance one).
  *
+ * Full-replace workspace + checkpoint helper for callers that own the entire
+ * save workspace snapshot. Side-channel invokeAgent commits must use
+ * `commitWorkspaceChangesWithCheckpointForSave`, which merges explicit staged
+ * changes into current persisted workspace before checkpointing.
+ *
  * Mirrors the Dexie transaction structure of `commitSuccessfulRuntimeTurnForSave`
- * but with key differences reflecting that `invokeAgent` is a side-channel call:
- * - checkpoint turn = caller-supplied `turn` (invokeAgent does NOT advance turn).
+ * with key differences for a side-channel-style commit:
+ * - checkpoint turn = caller-supplied `turn` (the helper does NOT advance turn).
  * - reason = `"post-turn-maintenance"` (debugging/restore distinction).
  * - label = `回合 ${turn} · 维护`.
  * - replace-on-create (design D3): inside the same transaction, delete this save's
@@ -247,6 +446,7 @@ export async function commitWorkspaceFilesWithCheckpointForSave(
   },
 ): Promise<void> {
   const now = Date.now()
+  const protectedCheckpointId = await getProtectedFrontendDebugCheckpointId(saveId)
 
   const workspaceRecords = new Map<string, ReturnType<typeof createLocalWorkspaceFileRecord>>()
   for (const file of saveRuntimeFilesFromEffectiveWorkspace(workspaceFiles)) {
@@ -288,7 +488,11 @@ export async function commitWorkspaceFilesWithCheckpointForSave(
       const sameTurnAfterTurnCheckpoints = await localDb.checkpoints
         .where("saveId")
         .equals(saveId)
-        .and((cp) => cp.turn === input.turn && cp.reason === "after-turn")
+        .and((cp) => (
+          cp.turn === input.turn
+          && cp.reason === "after-turn"
+          && cp.id !== protectedCheckpointId
+        ))
         .toArray()
       await Promise.all(
         sameTurnAfterTurnCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)),

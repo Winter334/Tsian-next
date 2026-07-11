@@ -1,35 +1,31 @@
 import type { AttachmentRef } from "@tsian/contracts"
 import { localDb, type LocalAssistantAttachmentRecord } from "./db"
 import { listAssistantSessions } from "./assistant-conversations"
-import { inferMediaTypeFromPath } from "@/lib/media-type"
+import {
+  inferMediaTypeFromPath,
+  isImageMediaType,
+  isTextMediaType,
+  resolveMediaType,
+} from "@/lib/media-type"
+import { decodeUtf8Blob } from "@/lib/workspace-blob"
 
 /** MIME 前缀判断:图片类附件走多模态,其他按文本处理. */
 function isImageMime(mimeType: string): boolean {
-  return mimeType.startsWith("image/")
+  return isImageMediaType(mimeType)
 }
 
-/** 文本类 MIME 白名单:这些文件内容可提取为文本注入消息. */
-const TEXT_MIME_PREFIXES = [
-  "text/",
-  "application/json",
-  "application/xml",
-  "application/yaml",
-  "application/x-yaml",
-  "application/x-ndjson",
-]
-
+/** 文本类 MIME 判断与 workspace 共用同一来源. */
 function isTextMime(mimeType: string): boolean {
-  return TEXT_MIME_PREFIXES.some(
-    (prefix) => mimeType === prefix || mimeType.startsWith(prefix),
-  )
+  return isTextMediaType(mimeType)
 }
 
-/** 识别附件种类: image 走多模态, text 走文本注入, 其他视为 text(降级). */
+/** 识别附件种类:图片走多模态,文本走内容注入,其它类型在保存边界拒绝. */
 function classifyAttachmentKind(
   mimeType: string,
 ): "image" | "text" {
   if (isImageMime(mimeType)) return "image"
-  return "text"
+  if (isTextMime(mimeType)) return "text"
+  throw new Error(`不支持读取该附件类型：${mimeType || "未知类型"}`)
 }
 
 /** 生成确定性附件 id. */
@@ -56,9 +52,9 @@ export async function saveAssistantAttachment(
   file: File,
 ): Promise<AttachmentRef> {
   const id = createAttachmentId()
-  const mimeType = file.type || "application/octet-stream"
-  const kind = classifyAttachmentKind(mimeType)
   const path = attachmentPath(sessionId, file.name)
+  const mimeType = resolveMediaType(path, file.type)
+  const kind = classifyAttachmentKind(mimeType)
   const record: LocalAssistantAttachmentRecord = {
     id,
     sessionId,
@@ -118,7 +114,7 @@ export async function readTextAttachment(
 ): Promise<string | undefined> {
   const record = await getAssistantAttachmentRecord(path)
   if (!record) return undefined
-  return record.data.text()
+  return decodeUtf8Blob(record.data, record.path)
 }
 
 /** 列出某会话的所有附件(用于 VFS temp/ 目录组装). */
@@ -181,11 +177,17 @@ export async function writeAttachmentRecord(
   const path = input.path
   // 从 path 提取文件名
   const name = path.split("/").pop() ?? path
-  const mimeType = inferMediaTypeFromPath(path)
-  const isImage = mimeType.startsWith("image/")
-  const kind: "image" | "text" = isImage ? "image" : "text"
-  // 构造 Blob: 二进制用 data, 文本用 content 转 Blob
-  const blob = input.data ?? new Blob([input.content ?? ""], { type: mimeType })
+  const inferredMediaType = inferMediaTypeFromPath(path)
+  const mimeType = resolveMediaType(path, input.data?.type, {
+    fallback: input.data ? "application/octet-stream" : "text/plain",
+  })
+  const kind = classifyAttachmentKind(mimeType)
+  // 构造 Blob:二进制用 data并保留其有效 MIME；文本用 content 转 Blob。
+  const blob = input.data
+    ? (input.data.type === mimeType ? input.data : input.data.slice(0, input.data.size, mimeType))
+    : new Blob([input.content ?? ""], {
+        type: inferredMediaType === "application/octet-stream" ? "text/plain" : mimeType,
+      })
   const size = blob.size
   // 已有同 path 记录则覆盖(upsert by path)
   const existing = await getAssistantAttachmentRecord(path)

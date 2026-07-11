@@ -1,0 +1,6 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Required platform-web checks and ownership boundaries for review."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review browser-runtime esbuild behavior, entry/output safety, VFS invariants, and layered validation evidence."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Review AST parsing, diagnostics, dynamic imports, and dependency types without unsafe bypasses."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Check responsibility boundaries across transform, path logic, and existing plugins."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Check new path logic against existing VFS helpers and prevent semantic drift."}
+{"file":".trellis/tasks/archive/2026-07/07-10-import-meta-glob-vfs/research/planning.md","reason":"Review implementation against the confirmed architecture and resolved compatibility contract."}

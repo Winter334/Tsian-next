@@ -1,3 +1,4 @@
+import type { PartialMessage } from "esbuild-wasm"
 import { buildFrontend } from "./engine"
 import {
   getFrontendBuildStatus,
@@ -56,6 +57,32 @@ export function triggerFrontendRebuild(cardId: string, writtenPath: string): voi
   rebuildTimers.set(cardId, timer)
 }
 
+/** Extract the first esbuild-style structured diagnostic from an error/cause chain. */
+function structuredBuildMessage(error: unknown): PartialMessage | undefined {
+  let current: unknown = error
+  const visited = new Set<unknown>()
+  while (current && typeof current === "object" && !visited.has(current)) {
+    visited.add(current)
+    const candidate = current as {
+      errors?: unknown
+      messageDetail?: unknown
+      cause?: unknown
+    }
+    if (Array.isArray(candidate.errors)) {
+      const message = candidate.errors.find((item): item is PartialMessage => (
+        Boolean(item && typeof item === "object" && typeof (item as PartialMessage).text === "string")
+      ))
+      if (message) return message
+    }
+    if (candidate.messageDetail && typeof candidate.messageDetail === "object"
+      && typeof (candidate.messageDetail as PartialMessage).text === "string") {
+      return candidate.messageDetail as PartialMessage
+    }
+    current = candidate.cause
+  }
+  return undefined
+}
+
 /** Run one rebuild, guarding against concurrent builds for the same card. */
 async function runRebuild(cardId: string): Promise<void> {
   // If a build is already running for this card, wait for it then rebuild again.
@@ -80,8 +107,14 @@ async function runRebuild(cardId: string): Promise<void> {
       setFrontendBuildOk(cardId)
       emitFrontendReload()
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e)
-      setFrontendBuildFailed(cardId, { message })
+      const structured = structuredBuildMessage(e)
+      const message = structured?.text ?? (e instanceof Error ? e.message : String(e))
+      const location = structured?.location
+      setFrontendBuildFailed(cardId, {
+        message,
+        ...(location?.file ? { file: location.file } : {}),
+        ...(typeof location?.line === "number" ? { line: location.line } : {}),
+      })
       // Do NOT emit frontend-reload on failure — keep the old dist mounted.
       // But DO settle the rebuilding overlay so PlayView hides it.
       emitFrontendRebuildSettled()

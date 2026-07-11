@@ -40,7 +40,7 @@ export async function triggerSyncAfterTurn(turn: number): Promise<void> {
   // sync-failed 需用户显式重试，不自动覆盖。
   if (syncPhase.value === "syncing" || syncPhase.value === "sync-failed") return
 
-  const input = `玩家回合 #${turn} 已完成，正文已落定。请维护本回合的 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。`
+  const input = `玩家回合 #${turn} 已完成，正文已落定。请按回合后维护标准流程执行：第一步调用 read_maintenance_context({ turn: ${turn}, includeTimeline: true }) 聚合事实；基于聚合上下文维护 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。只有聚合上下文缺失必要事实时，才进行有针对性的补充 workspace_read。`
   await runSyncInvocation(tsian, input, `sync-turn-${turn}-${Date.now().toString(36)}`, "post-turn-maintenance")
 }
 
@@ -48,7 +48,7 @@ export async function triggerSyncAfterTurn(turn: number): Promise<void> {
 export async function retrySyncAfterTurn(): Promise<void> {
   if (syncPhase.value !== "sync-failed") return
   const tsian = getTsianClient()
-  const input = "请重新维护上一回合的 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。"
+  const input = "请重新按回合后维护标准流程维护上一回合：第一步调用 read_maintenance_context({ includeTimeline: true }) 聚合事实；基于聚合上下文维护 runtime（含 worldTime/plotOrder）/entity/scene/relationship/memory/timeline 变动。只有聚合上下文缺失必要事实时，才进行有针对性的补充 workspace_read。"
   await runSyncInvocation(tsian, input, `sync-retry-${Date.now().toString(36)}`, "post-turn-maintenance-retry")
 }
 

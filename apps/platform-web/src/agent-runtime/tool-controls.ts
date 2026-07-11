@@ -67,7 +67,7 @@ export const PLATFORM_TOOL_CONTROL_GROUPS: PlatformToolControlGroup[] = [
         id: "inspect_frontend",
         label: "前端自检",
         description:
-          "允许在隐藏 iframe 里加载当前卡的 packaged 前端，观测渲染、报错和桥状态，驱动一回合或模拟玩家交互，形成写前端→自检→改→复查闭环。",
+          "允许接管玩家当前 Play 窗口中的 packaged 前端，通过真实 UI 复现、观测和修复，并在结束时恢复调试前的存档运行时。",
       },
       {
         id: "test_skill_script",

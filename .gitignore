@@ -1,5 +1,6 @@
 node_modules/
 dist/
+.env
 .env.local
 *.tsbuildinfo
 .DS_Store
@@ -10,6 +11,7 @@ Thumbs.db
 # AI / 工作环境配置（个人环境，不入库）
 .claude/
 .omc/
+.zcode/plans/
 
 # OpenSpec change 工作流过程产物
 openspec/changes/*/.debug-context.md

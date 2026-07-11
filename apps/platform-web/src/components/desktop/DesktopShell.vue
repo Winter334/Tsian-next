@@ -142,6 +142,21 @@ interface ContextMenuState {
   icon: DesktopLauncher | null
 }
 
+type FullscreenRequestElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void
+  mozRequestFullScreen?: () => Promise<void> | void
+  msRequestFullscreen?: () => Promise<void> | void
+}
+
+type FullscreenDocument = Document & {
+  webkitFullscreenElement?: Element | null
+  mozFullScreenElement?: Element | null
+  msFullscreenElement?: Element | null
+  webkitExitFullscreen?: () => Promise<void> | void
+  mozCancelFullScreen?: () => Promise<void> | void
+  msExitFullscreen?: () => Promise<void> | void
+}
+
 const route = useRoute()
 const router = useRouter()
 const desktop = useDesktopWindows()
@@ -154,6 +169,7 @@ const stageBounds = ref<DesktopBounds>({ width: 1280, height: 720 })
 const isNarrow = ref(false)
 let clockTimer: number | null = null
 let resizeObserver: ResizeObserver | null = null
+let browserFullscreenWindowId = ""
 
 watch(
   () => route.fullPath,
@@ -245,12 +261,123 @@ function closeWindow(id: string) {
   })
 }
 
-function setFullscreen(id: string, fullscreen: boolean) {
+async function setFullscreen(id: string, fullscreen: boolean) {
+  const target = desktop.windows.value.find((window) => window.id === id)
+  if (!target) {
+    return
+  }
+
+  if (target.appId === "play") {
+    if (fullscreen) {
+      const enteredBrowserFullscreen = await requestPlayIframeFullscreen(id)
+      if (enteredBrowserFullscreen) {
+        browserFullscreenWindowId = id
+        applyDesktopFullscreen(id, true)
+        return
+      }
+    } else if (browserFullscreenWindowId === id && browserFullscreenElement()) {
+      await exitBrowserFullscreen()
+      browserFullscreenWindowId = ""
+    }
+  }
+
+  applyDesktopFullscreen(id, fullscreen)
+}
+
+function applyDesktopFullscreen(id: string, fullscreen: boolean) {
   desktop.setFullscreen(id, fullscreen)
   const active = desktop.activeWindow.value
   if (active?.id === id) {
     navigateTo(active.routePath)
   }
+}
+
+async function requestPlayIframeFullscreen(id: string) {
+  const iframe = findPlayIframe(id)
+  if (!iframe) {
+    return false
+  }
+
+  const currentFullscreenElement = browserFullscreenElement()
+  if (currentFullscreenElement === iframe) {
+    return true
+  }
+
+  return requestBrowserFullscreen(iframe)
+}
+
+function findPlayIframe(id: string) {
+  return findDesktopWindowElement(id)?.querySelector("iframe") ?? null
+}
+
+function findDesktopWindowElement(id: string) {
+  const stage = stageRef.value
+  if (!stage) {
+    return null
+  }
+
+  for (const candidate of stage.querySelectorAll<HTMLElement>(".desktop-window")) {
+    if (candidate.dataset.desktopWindowId === id) {
+      return candidate
+    }
+  }
+
+  return null
+}
+
+async function requestBrowserFullscreen(element: FullscreenRequestElement) {
+  const request = element.requestFullscreen
+    ?? element.webkitRequestFullscreen
+    ?? element.mozRequestFullScreen
+    ?? element.msRequestFullscreen
+
+  if (!request) {
+    return false
+  }
+
+  try {
+    await Promise.resolve(request.call(element))
+    return true
+  } catch {
+    return false
+  }
+}
+
+function browserFullscreenElement() {
+  const fullscreenDocument = document as FullscreenDocument
+  return document.fullscreenElement
+    ?? fullscreenDocument.webkitFullscreenElement
+    ?? fullscreenDocument.mozFullScreenElement
+    ?? fullscreenDocument.msFullscreenElement
+    ?? null
+}
+
+async function exitBrowserFullscreen() {
+  const fullscreenDocument = document as FullscreenDocument
+  const exit = document.exitFullscreen
+    ?? fullscreenDocument.webkitExitFullscreen
+    ?? fullscreenDocument.mozCancelFullScreen
+    ?? fullscreenDocument.msExitFullscreen
+
+  if (!exit) {
+    return
+  }
+
+  try {
+    await Promise.resolve(exit.call(document))
+  } catch {
+    // Browser fullscreen exit may be rejected if the user already left fullscreen.
+  }
+}
+
+function onBrowserFullscreenChange() {
+  if (!browserFullscreenWindowId || browserFullscreenElement()) {
+    return
+  }
+
+  const id = browserFullscreenWindowId
+  browserFullscreenWindowId = ""
+  desktop.setFullscreen(id, false)
 }
 
 function moveWindow(id: string, geometry: Pick<DesktopWindowGeometry, "x" | "y">) {
@@ -330,6 +457,10 @@ onMounted(() => {
   updateClock()
   clockTimer = window.setInterval(updateClock, 30_000)
   window.addEventListener("keydown", onKeydown)
+  document.addEventListener("fullscreenchange", onBrowserFullscreenChange)
+  document.addEventListener("webkitfullscreenchange", onBrowserFullscreenChange)
+  document.addEventListener("mozfullscreenchange", onBrowserFullscreenChange)
+  document.addEventListener("MSFullscreenChange", onBrowserFullscreenChange)
 
   resizeObserver = new ResizeObserver(updateStageBounds)
   if (stageRef.value) {
@@ -340,6 +471,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeydown)
+  document.removeEventListener("fullscreenchange", onBrowserFullscreenChange)
+  document.removeEventListener("webkitfullscreenchange", onBrowserFullscreenChange)
+  document.removeEventListener("mozfullscreenchange", onBrowserFullscreenChange)
+  document.removeEventListener("MSFullscreenChange", onBrowserFullscreenChange)
   resizeObserver?.disconnect()
   if (clockTimer !== null) {
     window.clearInterval(clockTimer)

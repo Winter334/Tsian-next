@@ -3,7 +3,7 @@
  * TimelineView — 时间线可视化视图根（由 App.vue 在 navCurrent==='timeline' 时挂载）。
  *
  * 消费 useFrontier() 的 frontierData + useRuntime() 的 runtime.plotOrder，
- * 组合 TimelineHeader + TimelineGraph + TimelineLegend 渲染纵向命轨树。
+ * 挂载 TimelineGraph 渲染纵向命轨树。
  *
  * 布局：view-stage 同款 padding（顶 header + 左右栏让位），内部居中 max-width
  * ~900px 可垂直滚动。暗色背景上直接承载 tree，不再额外插入会影响文档流的装饰层。
@@ -66,6 +66,7 @@ onMounted(() => {
 .timeline-view {
   /* view-stage 已提供 padding（顶 header + 左右栏让位）；
      这里覆盖 align/justify 让内容靠上 + 居中。 */
+  box-sizing: border-box;
   align-items: center;
   justify-content: flex-start;
   overflow-y: auto;
@@ -75,6 +76,9 @@ onMounted(() => {
   position: relative;
   width: 100%;
   max-width: 1040px;
+  min-height: 100%;
+  box-sizing: border-box;
+  flex: 1 0 auto;
   padding: 12px 28px 28px;
   display: flex;
   flex-direction: column;
