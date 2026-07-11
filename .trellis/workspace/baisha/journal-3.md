@@ -1532,3 +1532,38 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 143: 前端自检工具 Agent 可行动观测优化
+
+**Date**: 2026-07-11
+**Task**: 前端自检工具 Agent 可行动观测优化
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+优化 inspect_frontend 的 Agent-facing 观测结果：过滤 resource timing 噪声，新增 dom-stable wait、wait telemetry、action summaries、interactables、frontendBuild 与高置信 sourceHints，并更新工具 schema、助手说明和方向文档。验证 npm run build:web 通过；build:contracts 未运行（未改 packages/contracts）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ed76c10` | (see git log) |
+| `3a4c1bb` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
