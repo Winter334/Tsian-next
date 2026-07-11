@@ -10,7 +10,7 @@
  * （stage-manager 维护时追加）。`order` 是共享线性轴上的单调递增整数，
  * 与原著精确时间标记无关。`alignment` + `sourceRef` 编码分支的分叉/并回关系。
  *
- * 本文件只出类型，不创渲染组件。类型仅在 play-frontend-dev 本地使用，
+ * 本文件只出类型，不创渲染组件。类型仅在远程前端源码内使用，
  * 不上升到 @tsian/contracts（与 07-08 R9 的"frontier 概念不进入平台 contracts"一致）。
  */
 

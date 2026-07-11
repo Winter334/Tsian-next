@@ -12,6 +12,8 @@
     "dev:web": "npm run dev --workspace platform-web",
     "dev:frontend": "npm run dev --workspace play-frontend-dev",
     "build:web": "npm run build --workspace platform-web",
-    "build:contracts": "npm run build --workspace @tsian/contracts"
+    "build:contracts": "npm run build --workspace @tsian/contracts",
+    "package:frontend": "node scripts/package-play-frontend-source.mjs",
+    "sync:frontend": "node scripts/sync-play-frontend-source.mjs"
   }
 }
