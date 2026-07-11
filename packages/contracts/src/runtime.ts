@@ -25,14 +25,14 @@ export interface ConversationMessageRecord {
   /** 附件元数据列表. 不持久化 Blob 本体(Blob 存 Dexie 表);
    *  这里只存引用路径,加载时按路径从附件表取回 Blob. */
   attachments?: AttachmentRef[]
-  /** assistant 消息的工具调用记录(仅助手填). agent 层用:context.json rebuild
-   *  还原为 tool_call + tool_result message.UI 层挂消息上不占条数名额,
-   *  随消息截到 MAX_STORED_MESSAGES 保留/丢弃;不压缩,完整保留. */
+  /** assistant 消息的原始工具调用记录(仅助手填). UI/debug 层使用:
+   *  刷新/重进会话后可回看工具调用参数与 observation；不作为 agent
+   *  model context 的跨 turn 回放来源。模型可见的 task 工具历史使用
+   *  AgentContextSnapshot.toolMemories 的受预算投影。 */
   toolCalls?: AgentContextToolCall[]
   /** assistant 消息的过程节点 timeline(thought/tool/interim,按发生顺序). UI 层用:
    *  刷新/重进会话后重建 timeline 历史节点(保留穿插顺序).与 toolCalls 分离——
-   *  toolCalls 服务 agent 上下文(需要 observation/arguments),timeline 服务
-   *  UI 显示(需要 TurnToolOutput 形态的 output).仅助手填,不压缩完整保留. */
+   *  toolCalls/timeline 服务 UI 与 debug 回溯,不压缩完整保留。 */
   timeline?: TurnTimelineItem[]
 }
 
@@ -122,7 +122,7 @@ export interface AgentContextToolCall {
   id: string
   /** 工具名(workspace_read / agent_call / inspect_frontend …). */
   name: string
-  /** 调用参数(JSON 序列化字符串). UI 展示 + 压缩 prompt 用. */
+  /** 调用参数(JSON 序列化字符串). UI/debug 展示用. */
   arguments: string
   /** 工具返回 observation(文本化). 直接存工具返回层结果,持久化层不截断. */
   observation: string
@@ -132,20 +132,50 @@ export interface AgentContextToolCall {
   failed?: boolean
 }
 
+export type AgentContextToolMemoryVisibility = "summary" | "placeholder"
+export type AgentContextToolMemoryStatus = "success" | "failed"
+
+/**
+ * Model-facing task-mode tool memory. This is a bounded deterministic
+ * projection of a raw tool call, not the raw UI/debug observation. It is stored
+ * at AgentContextSnapshot.toolMemories so dialogue recentTurns remain text-only.
+ */
+export interface AgentContextToolMemory {
+  /** Stable id for this model-facing memory part. */
+  id: string
+  /** Raw tool call id for UI/debug correlation; not a model raw-log handle. */
+  sourceToolCallId: string
+  /** Assistant turn number that produced this memory. */
+  turn: number
+  /** Tool-loop round if known. */
+  round?: number
+  /** Tool name such as read / agent_call / inspect_frontend. */
+  toolName: string
+  status: AgentContextToolMemoryStatus
+  /** summary = bounded summaryText visible; placeholder = action trace only. */
+  visibility: AgentContextToolMemoryVisibility
+  /** Short model-facing title, e.g. "read apps/foo.ts". */
+  title: string
+  /** Bounded model-facing summary or placeholder line. */
+  summaryText: string
+  /** File/resource anchors extracted from args/result. */
+  anchors?: string[]
+  /** Bounded argument summary; avoid full JSON for large args. */
+  argsSummary?: string
+  /** Coarse estimate used for deterministic budget decisions. */
+  tokenEstimate?: number
+}
+
 /**
  * One剧情正文 entry inside an `AgentContextSnapshot.recentTurns` list.
  * Stored as原文 (user input or assistant final reply); tool process / thought
- * streams are intentionally excluded so压缩摘要 stays pure剧情.
- * 助手路径额外在 assistant entry 上带 toolCalls(工具调用跨 turn 保留),
- * master 不填(剧情型 agent 工具少、正文是真相).
+ * streams are intentionally excluded so压缩摘要 stays pure剧情/对话.
+ * Task-mode 工具行动痕迹独立存到 snapshot.toolMemories。
  */
 export interface AgentContextTurnEntry {
   turn: number
   role: "user" | "assistant"
   content: string
-  /** 该 turn 工具调用记录(仅助手填, master 不填). agent 层跟正文同寿命:
-   *  最近 K 轮原文保留, 早期随正文压缩进 summary. */
-  toolCalls?: AgentContextToolCall[]
 }
 
 /**
@@ -171,8 +201,10 @@ export interface AgentContextSnapshot {
   agentId: string
   /** 早期摘要(压缩后产生).null = 尚未触发压缩.master 叙事梗概,助手任务摘要. */
   summary: string | null
-  /** 最近 K=5 轮正文(user+assistant 对,带 turn 索引,原文).按 turn 升序. */
+  /** 最近 K=5 轮正文(user+assistant 对,带 turn 索引,原文).按 turn 升序；不含工具原文. */
   recentTurns: AgentContextTurnEntry[]
+  /** task 模式 model-facing 工具记忆投影；raw/UI 工具记录仍在 ConversationMessageRecord.toolCalls. */
+  toolMemories?: AgentContextToolMemory[]
   /** 上次压缩覆盖到第几轮(防重复压缩).null = 未压缩过. */
   lastCompressedTurn: number | null
   /** ISO timestamp,最后一次更新时间. */

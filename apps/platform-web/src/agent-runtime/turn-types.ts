@@ -1,6 +1,7 @@
 import type {
   AgentContextSnapshot,
   AgentContextToolCall,
+  AgentContextToolMemory,
   AiChatMessage,
   AskUserRequest,
   AskUserResult,
@@ -113,10 +114,13 @@ export interface AgentRuntimeTurnContextUpdate {
   assistant: string
   /** 本轮开头压缩后的快照(若触发了压缩).无压缩则 undefined. */
   compressedContext?: AgentContextSnapshot
-  /** 本轮工具调用记录(仅助手有,master 无).供 host 双层写入:
-   *  agent context.json(recentTurns assistant entry,跟正文同寿命压缩)+
-   *  UI 会话消息存储(ConversationMessageRecord.toolCalls,不压缩完整保留). */
+  /** 本轮原始工具调用记录(仅助手有,master 无).供 host 写入
+   *  UI 会话消息存储(ConversationMessageRecord.toolCalls),完整保留用于回溯/debug;
+   *  不再写入 AgentContextSnapshot.recentTurns. */
   toolCalls?: AgentContextToolCall[]
+  /** 本轮 task-mode model-facing 工具记忆投影.供 host 合并到
+   *  AgentContextSnapshot.toolMemories,有独立预算/placeholder 策略. */
+  toolMemories?: AgentContextToolMemory[]
   /** 本轮过程节点 timeline items(thought/tool/interim,按发生顺序).供 host 写入
    *  会话消息存储 timeline 字段,UI 刷新后重建 timeline.仅助手有(runtime 采集,消除双写). */
   timelineItems?: TurnTimelineItem[]

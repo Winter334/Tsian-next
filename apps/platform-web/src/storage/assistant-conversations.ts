@@ -70,7 +70,7 @@ function normalizeMessages(
     if (typeof item?.role === "string" && typeof item.content === "string") {
       // 保留 attachments 字段(附件引用元数据);非数组或缺失时省略.
       const attachments = Array.isArray(item.attachments) ? { attachments: item.attachments } : {}
-      // 保留 toolCalls 字段(助手工具调用跨 turn 保留,agent 层用);
+      // 保留 toolCalls 字段(UI/debug raw 工具记录,用于刷新/重进会话后回看历史工具过程);
       // 非数组或缺失时省略.
       const toolCalls = Array.isArray(item.toolCalls) ? { toolCalls: item.toolCalls } : {}
       // 保留 timeline 字段(thought/tool/interim 按发生顺序,UI 层重建 timeline);

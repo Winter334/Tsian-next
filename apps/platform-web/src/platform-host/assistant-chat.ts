@@ -1,6 +1,6 @@
 import type {
   AgentContextSnapshot,
-  AgentContextToolCall,
+  AgentContextToolMemory,
   AttachmentRef,
   ContentPart,
   ConversationMessageRecord,
@@ -77,6 +77,10 @@ import {
   appendTurnToContext,
   serializeAgentContext,
 } from "../agent-runtime/context-lifecycle"
+import {
+  applyTaskToolMemoryRetention,
+  sortToolMemoriesStable,
+} from "../agent-runtime/tool-memory"
 import {
   getActiveSaveId,
   getLocalGameCard,
@@ -155,8 +159,8 @@ async function stageAssistantContextFile(
     assistant: string
     compressedContext?: AgentContextSnapshot
     fallbackContext: AgentContextSnapshot
-    /** 本轮工具调用(agent 层:跟正文同寿命压缩,最近 K 轮原文、早期进 summary). */
-    toolCalls?: AgentContextToolCall[]
+    /** 本轮 model-facing 工具记忆投影,合并到 top-level toolMemories. */
+    toolMemories?: AgentContextToolMemory[]
   },
 ): Promise<void> {
   // 基础快照:本轮压缩了→用压缩结果;否则用 turn 开头读出的快照;无则空快照
@@ -167,14 +171,21 @@ async function stageAssistantContextFile(
         schema: ASSISTANT_CONTEXT_SCHEMA,
         agentId: ASSISTANT_CONTEXT_AGENT_ID,
       })
-  // 追加本轮正文(保持最近 K 轮)+ 工具调用(挂在 assistant entry 上),saveId 用 sessionId(语义复用)
-  const updated = appendTurnToContext(
+  // 追加本轮正文(保持 text-only recentTurns),saveId 用 sessionId(语义复用)
+  const appended = appendTurnToContext(
     { ...base, saveId: input.sessionId },
     input.turn,
     input.user,
     input.assistant,
-    input.toolCalls,
   )
+  const mergedToolMemories = applyTaskToolMemoryRetention(sortToolMemoriesStable([
+    ...(appended.toolMemories ?? []),
+    ...(input.toolMemories ?? []),
+  ]))
+  const updated: AgentContextSnapshot = {
+    ...appended,
+    ...(mergedToolMemories.length > 0 ? { toolMemories: mergedToolMemories } : {}),
+  }
   const file: WorkspaceFile = {
     path: assistantContextPath(input.sessionId),
     content: serializeAgentContext(updated),
@@ -730,9 +741,10 @@ export async function runAssistantChat(
     // 独立 IO 的竞态风险.前端正常 turn 结束不再调 persistCurrentSession.
     //
     // 组装完整消息列表:history(不含本轮)+ 本轮 user(带 attachments)+ 本轮 assistant.
-    // assistant 条带 toolCalls(UI 层:不压缩完整保留,挂消息上不占条数名额,随消息截到 200 条).
+    // assistant 条带 toolCalls(UI/debug 层:不压缩完整保留,挂消息上不占条数名额,随消息截到 200 条).
     const inputAttachments = input.attachments
     const turnToolCalls = result.contextUpdate?.toolCalls
+    const turnToolMemories = result.contextUpdate?.toolMemories
     const turnTimelineItems = result.contextUpdate?.timelineItems
     const fullMessages: ConversationMessageRecord[] = [
       ...history,
@@ -755,7 +767,7 @@ export async function runAssistantChat(
     // 是平台本地数据,不随存档 checkpoint/distribute.对称 master 的 stageAgentContextFile
     // (master 走 save 事务因 agents/master/context.json 属 save/).turn 失败走 catch
     // discard(事务),且不调本函数 → context 不写回.
-    // toolCalls 写入 agent 层 context.json(recentTurns assistant entry,跟正文同寿命压缩).
+    // model-facing 工具记忆写入 top-level context.toolMemories；raw toolCalls 仅留在 UI 会话消息.
     const assistantContextUpdate = result.contextUpdate
     if (assistantContextUpdate) {
       await stageAssistantContextFile({
@@ -765,7 +777,7 @@ export async function runAssistantChat(
         assistant: assistantContextUpdate.assistant,
         compressedContext: assistantContextUpdate.compressedContext,
         fallbackContext: assistantContext,
-        ...(turnToolCalls && turnToolCalls.length > 0 ? { toolCalls: turnToolCalls } : {}),
+        ...(turnToolMemories && turnToolMemories.length > 0 ? { toolMemories: turnToolMemories } : {}),
       })
     }
 

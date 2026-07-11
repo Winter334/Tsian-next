@@ -40,6 +40,12 @@ export interface PlatformConfigContextCompression {
    *  计数单位不同(一个 turn = 一对 user+assistant 正文;一个 round = 一对 assistant toolCalls + observation),
    *  token 量差异大,不应共用同一值. */
   taskKeepRecentRounds: number
+  /** 单个 task 工具记忆投影的模型可见字符预算. */
+  toolMemoryPerToolCharLimit: number
+  /** 最近 task 工具记忆投影的模型可见总字符预算. */
+  toolMemoryTotalRecentCharLimit: number
+  /** 保留 summary 可见投影的最近 assistant turn 数；更早转 placeholder. */
+  toolMemoryKeepRecentTurns: number
 }
 
 export interface PlatformConfigRag {
@@ -95,7 +101,15 @@ function createEmptyPlatformConfigDraft(): BrowserPlatformConfigDraft {
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   provider: createEmptyPlatformConfigDraft(),
   checkpointPrune: { keepRecent: 50, sparseEvery: 20 },
-  contextCompression: { narrativeTriggerRatio: 0.85, taskTriggerRatio: 0.45, keepRecentTurns: 5, taskKeepRecentRounds: 5 },
+  contextCompression: {
+    narrativeTriggerRatio: 0.85,
+    taskTriggerRatio: 0.45,
+    keepRecentTurns: 5,
+    taskKeepRecentRounds: 5,
+    toolMemoryPerToolCharLimit: 8_000,
+    toolMemoryTotalRecentCharLimit: 32_000,
+    toolMemoryKeepRecentTurns: 3,
+  },
   rag: { defaultLimit: 5, maxLimit: 8 },
   ai: { chatTimeoutMs: 600_000 },
   assistant: { maxStoredMessages: 200 },
@@ -248,6 +262,9 @@ function mergePlatformConfig(raw: unknown): PlatformConfig | null {
           ),
           keepRecentTurns: normalizePositiveInt(compression.keepRecentTurns, DEFAULT_PLATFORM_CONFIG.contextCompression.keepRecentTurns),
           taskKeepRecentRounds: normalizePositiveInt(compression.taskKeepRecentRounds, DEFAULT_PLATFORM_CONFIG.contextCompression.taskKeepRecentRounds),
+          toolMemoryPerToolCharLimit: normalizePositiveInt(compression.toolMemoryPerToolCharLimit, DEFAULT_PLATFORM_CONFIG.contextCompression.toolMemoryPerToolCharLimit),
+          toolMemoryTotalRecentCharLimit: normalizePositiveInt(compression.toolMemoryTotalRecentCharLimit, DEFAULT_PLATFORM_CONFIG.contextCompression.toolMemoryTotalRecentCharLimit),
+          toolMemoryKeepRecentTurns: normalizePositiveInt(compression.toolMemoryKeepRecentTurns, DEFAULT_PLATFORM_CONFIG.contextCompression.toolMemoryKeepRecentTurns),
         }
       })()
     : { ...DEFAULT_PLATFORM_CONFIG.contextCompression }

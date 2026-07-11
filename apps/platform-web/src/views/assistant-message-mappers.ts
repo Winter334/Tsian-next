@@ -31,8 +31,8 @@ export function agentCallDisplay(output: TurnToolOutput | undefined): {
 /**
  * 把会话消息存储的 ConversationMessageRecord[] 映射为 ChatMessage[].
  * assistant 消息带 toolCalls 时,重建历史 tool 节点到 timeline(折叠态可展开),
- * 让玩家刷新/重进会话后能回看历史工具调用(与 ZCode 客户端跨会话保留一致).
- * 数据源 = 会话消息存储(不压缩完整保留),非 context.json(压缩后丢早期).
+ * 让玩家刷新/重进会话后能回看历史工具调用过程。
+ * 数据源 = UI 会话消息存储(raw/debug 完整保留),非 context.json(模型上下文会压缩/投影).
  * 历史节点 id 加 hist-tool- 前缀防与流式节点 callId 冲突.
  */
 export function mapStoredMessagesToChat(stored: ConversationMessageRecord[]): ChatMessage[] {
@@ -88,7 +88,7 @@ export function tryParseAgentCallOutput(call: AgentContextToolCall): { output: T
 /**
  * 把 ChatMessage[] 映射回 ConversationMessageRecord[](供 AssistantView 持久化).
  * assistant 消息的 timeline 节点转回 timeline(TurnTimelineItem 形态,process items)
- * + toolCalls(agent 层用,从 tool 节点提取 observation).
+ * + toolCalls(UI/debug raw 工具记录,从 tool 节点提取 observation).
  * turn 成功后 host 已写消息(含 toolCalls + timeline),AssistantView 再写一次补上 timeline
  * (host 不持有 thought/interim 采集,UI 层 timeline 是唯一源).后写覆盖,无竞态.
  */
@@ -124,7 +124,7 @@ export function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRe
             ...(node.output !== undefined ? { output: node.output } : {}),
           }
         })
-      // toolCalls(agent 层用):从 tool 节点提取 observation 文本化.
+      // toolCalls(UI/debug raw):从 tool 节点提取 observation 文本化.
       const toolCalls: AgentContextToolCall[] = []
       for (const node of msg.timeline) {
         if (node.type === "tool") {
