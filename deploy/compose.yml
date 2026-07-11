@@ -1,0 +1,26 @@
+name: tsian-platform
+
+services:
+  tsian-platform:
+    build:
+      context: ${TSIAN_BUILD_CONTEXT:-..}
+      dockerfile: Dockerfile
+    image: ${TSIAN_IMAGE_NAME:-tsian-platform}:${TSIAN_IMAGE_TAG:-local}
+    container_name: ${TSIAN_CONTAINER_NAME:-tsian-platform}
+    restart: unless-stopped
+    environment:
+      TSIAN_ADDR: ${TSIAN_ADDR:-:8080}
+      TSIAN_BASE_URL: ${TSIAN_BASE_URL:?set TSIAN_BASE_URL in deploy/.env}
+      TSIAN_DISCORD_CLIENT_ID: ${TSIAN_DISCORD_CLIENT_ID:-}
+      TSIAN_DISCORD_CLIENT_SECRET: ${TSIAN_DISCORD_CLIENT_SECRET:-}
+      TSIAN_DISCORD_REGISTRATION_GUILD_ID: ${TSIAN_DISCORD_REGISTRATION_GUILD_ID:-}
+      TSIAN_DISCORD_REGISTRATION_ROLE_IDS: ${TSIAN_DISCORD_REGISTRATION_ROLE_IDS:-}
+      TSIAN_DB_PATH: ${TSIAN_DB_PATH:-/data/tsian.db}
+      TSIAN_DATA_DIR: ${TSIAN_DATA_DIR:-/data}
+      TSIAN_STATIC_DIR: ${TSIAN_STATIC_DIR:-/app/public}
+      TSIAN_COOKIE_SECURE: ${TSIAN_COOKIE_SECURE:-true}
+      TSIAN_MOCK_AUTH: ${TSIAN_MOCK_AUTH:-false}
+    volumes:
+      - ${TSIAN_HOST_DATA_DIR:-./data}:/data
+    ports:
+      - "${TSIAN_HOST_BIND:-127.0.0.1}:${TSIAN_HOST_PORT:-18080}:8080"
