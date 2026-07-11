@@ -1498,3 +1498,37 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 142: 完成 Worker 子构建物化
+
+**Date**: 2026-07-11
+**Task**: 完成 Worker 子构建物化
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+实现浏览器内前端构建器 ?worker 默认 constructor 子集：主构建排队 Worker entry、成功后独立 esbuild-wasm 子构建、Worker outputs 与主 outputs 一起写回 frontend/dist，并补充 Worker/VFS 契约 spec 与验证记录；最终父任务进入综合浏览器回路验证阶段。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0e88509` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
