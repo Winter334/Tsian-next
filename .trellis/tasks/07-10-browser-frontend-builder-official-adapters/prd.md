@@ -12,7 +12,9 @@
 - 现有任务 `07-09-source-frontend-package-build` 已打通源码包上传与在线构建；本任务聚焦构建器能力和可靠性，不重复设计上传协议。
 - 第一阶段 `07-10-vue-vfs-css-modules` 已完成并归档（commit `b07a204`，archive commit `9d9e8ce`）：当前基线已包含 canonical VFS 解析、`@/` alias、extension-less/目录入口、query/hash `suffix` 处理、二进制资源、输出路径归一化、Vue `<script setup>` binding/render/scope、虚拟 SFC styles 和 CSS Modules。
 - 第二阶段 `07-10-sass-less-vfs-adapters` 已完成并归档（implementation commit `27af439`，archive commit `4de7468`）；其完整浏览器产品回路已纳入父任务最终综合 fixture。
-- 第三阶段 `07-10-import-meta-glob-vfs` 已完成实现、聚焦验证并归档；完整浏览器产品回路继续由父任务最终综合 fixture 覆盖。当前下一交付项为 Worker 子构建与物化，父任务本身不作为代码实施目标。
+- 第三阶段 `07-10-import-meta-glob-vfs` 已完成实现、聚焦验证并归档；完整浏览器产品回路已纳入父任务最终综合 fixture。
+- 第四阶段 `07-10-worker-subbuild-materialization` 已完成实现并归档（implementation commit `0e88509`，archive commit `f74cb99`）；父任务最终综合验证已覆盖 Worker constructor、entry/chunks/assets、message round-trip 与失败诊断。
+- 父任务最终综合验证发现并修复了 JS/Worker `?url` asset 在 packaged iframe 中相对 `index.html` 解析导致 404 的问题；`?url` 现在通过 `new URL(cleanAssetUrl, import.meta.url).href` 输出模块相对绝对 URL。
 
 ## Requirements
 
@@ -65,20 +67,21 @@
    - 任务：`07-10-import-meta-glob-vfs`（已归档）。
    - 已实现单静态 pattern、relative/`@/`、lazy/eager、浏览器 matcher 语法与 fail-loud 边界，并完成聚焦 transform / esbuild-wasm 验证。
    - 完整上传、IndexedDB、Service Worker 与 packaged iframe 回路仍由父任务最终综合 fixture 统一验证。
-4. **Worker 子构建与物化 — 最后**
-   - 任务：`07-10-worker-subbuild-materialization`（planning）。
-   - 支持明确的 worker import 形式，使用同一 VFS 独立构建 worker，并将产物写入 SW-backed `frontend/dist/**`。
+4. **Worker 子构建与物化 — 已完成**
+   - 任务：`07-10-worker-subbuild-materialization`（已归档）。
+   - 已支持 `?worker` 默认 constructor、module Worker 子构建、entry 去重、Worker chunks/assets 物化和 fail-loud 诊断。
+   - 父任务最终综合 fixture 已验证 Worker message round-trip、Worker entry/chunk/asset SW-backed 加载和失败旧 dist 保留。
 
 ## Cross-Child Acceptance Criteria
 
-- [ ] 各子任务均有独立、可执行的验收场景和错误矩阵。
+- [x] 各子任务均有独立、可执行的验收场景和错误矩阵。
 - [x] Vue SFC 默认导出组装不再依赖正则替换 `export default`。
 - [x] `<script setup>` 本地组件、render function、scoped style 和 CSS Modules 已完成构建验证，并通过真实 packaged iframe 无控制台错误的烟雾验证。
-- [ ] 父任务最终综合测试前端包通过真实浏览器回路验证 Sass/Less、`import.meta.glob`、Worker 的已声明兼容子集。
-- [ ] 未支持的语法或模式在构建期产生明确、可定位错误。
-- [ ] 真实 `play-frontend-dev` 源码包在线构建成功并在 packaged iframe 中渲染。
-- [ ] 每个修改 `apps/platform-web` 的子任务均通过 `npm run build:web`。
-- [ ] 父任务最终集成阶段对所有 `src/frontend-build/` 修改运行一次完整真实浏览器回路；各能力子任务不得只做 `build:web`，还需提供聚焦 fixture/probe 和可移交用例矩阵。
+- [x] 父任务最终综合测试前端包通过真实浏览器回路验证 Sass/Less、`import.meta.glob`、Worker 的已声明兼容子集。
+- [x] 未支持的语法或模式在构建期产生明确、可定位错误。
+- [x] 真实 `play-frontend-dev` 源码包在线构建成功并在 packaged iframe 中渲染。
+- [x] 每个修改 `apps/platform-web` 的子任务均通过 `npm run build:web`。
+- [x] 父任务最终集成阶段对所有 `src/frontend-build/` 修改运行一次完整真实浏览器回路；各能力子任务不得只做 `build:web`，还需提供聚焦 fixture/probe 和可移交用例矩阵。
 
 ## Out of Scope
 

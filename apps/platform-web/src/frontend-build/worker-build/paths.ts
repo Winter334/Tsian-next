@@ -250,7 +250,7 @@ export function scriptLoaderForPath(path: string): GlobTransformLoader | undefin
 export function workerResourceLoaderForPath(path: string, query: string): Loader {
   const params = new URLSearchParams(query)
   if (params.has("inline")) return "dataurl"
-  if (params.has("url")) return "file"
+  if (params.has("url") || params.has("__tsian_url_asset")) return "file"
 
   const scriptLoader = scriptLoaderForPath(path)
   if (scriptLoader) return scriptLoader

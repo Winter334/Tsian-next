@@ -24,9 +24,27 @@ export interface WorkerSourcePluginInput {
 }
 
 const WORKER_WORKSPACE_NAMESPACE = "worker-workspace"
+const INTERNAL_URL_ASSET_QUERY = "__tsian_url_asset"
 
 function toText(contents: WorkspaceSourceContent): string {
   return typeof contents === "string" ? contents : new TextDecoder().decode(contents)
+}
+
+function sourceDir(path: string): string {
+  return path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "."
+}
+
+function sourceBasename(path: string): string {
+  return path.split("/").pop() ?? path
+}
+
+function urlAssetModule(path: string): string {
+  const specifier = `./${sourceBasename(path)}?${INTERNAL_URL_ASSET_QUERY}`
+  return [
+    `import assetUrl from ${JSON.stringify(specifier)}`,
+    "const cleanAssetUrl = assetUrl.replace(/[?#].*$/, \"\")",
+    "export default new URL(cleanAssetUrl, import.meta.url).href",
+  ].join("\n")
 }
 
 function unsupportedWorkerQueryError(path: string, query: string): string | undefined {
@@ -41,9 +59,15 @@ function unsupportedWorkerQueryError(path: string, query: string): string | unde
 
   const supportedKeys = ["raw", "url", "inline"]
   const selectedKeys = uniqueKeys.filter((key) => supportedKeys.includes(key))
-  const unsupportedKey = uniqueKeys.find((key) => !supportedKeys.includes(key))
+  const unsupportedKey = uniqueKeys.find((key) => !supportedKeys.includes(key) && key !== INTERNAL_URL_ASSET_QUERY)
   if (unsupportedKey) {
     return `Worker 构建暂不支持 query 参数 "${unsupportedKey}": ${path}?${query}`
+  }
+  if (uniqueKeys.includes(INTERNAL_URL_ASSET_QUERY)) {
+    if (keys.length !== 1) {
+      return `Worker 内部 url asset query 不能与其它参数组合: ${path}?${query}`
+    }
+    return undefined
   }
   if (selectedKeys.length !== 1 || keys.length !== 1 || query !== selectedKeys[0]) {
     return `Worker 构建 query 必须且只能使用 raw、url、inline 之一: ${path}?${query}`
@@ -140,6 +164,13 @@ export function createWorkerSourcePlugin({ sources }: WorkerSourcePluginInput): 
             return {
               contents: `export default ${JSON.stringify(toText(loaded.contents))}`,
               loader: "js",
+            }
+          }
+          if (params.has("url")) {
+            return {
+              contents: urlAssetModule(loaded.path),
+              loader: "js",
+              resolveDir: sourceDir(loaded.path),
             }
           }
 
