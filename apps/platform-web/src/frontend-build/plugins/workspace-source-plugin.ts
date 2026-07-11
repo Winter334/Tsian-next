@@ -9,6 +9,10 @@ import {
   toStylePreprocessorMessage,
   type StylePreprocessorLanguage,
 } from "../style-preprocessors"
+import {
+  assertNoDirectWorkerConstructors,
+  toDirectWorkerConstructorMessage,
+} from "../worker-build/diagnostics"
 
 /**
  * Workspace source plugin — feeds source files from IndexedDB memory into
@@ -389,6 +393,17 @@ export function workspaceSourcePlugin({ sources }: WorkspaceSourcePluginInput): 
             const loader = loaderFor(loaded.path, loaded.query)
             const transformLoader = loaded.query ? undefined : globTransformLoader(loader)
             if (transformLoader && typeof loaded.contents === "string") {
+              try {
+                await assertNoDirectWorkerConstructors({
+                  code: loaded.contents,
+                  importer: loaded.path,
+                  loader: transformLoader,
+                })
+              } catch (error) {
+                return {
+                  errors: [toDirectWorkerConstructorMessage(error, { importer: loaded.path })],
+                }
+              }
               try {
                 const transformed = await transformImportMetaGlob({
                   code: loaded.contents,

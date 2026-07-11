@@ -79,6 +79,105 @@ const entry = Object.entries(metafile.outputs)
   .filter(([, output]) => output.entryPoint === entryPoint)
 ```
 
+## Browser Worker Subbuild Contract
+
+### 1. Scope / Trigger
+
+Use this contract when changing `?worker` imports, Worker subbuild orchestration, frontend-build output materialization, packaged frontend dist replacement, or Worker-related diagnostics under `src/frontend-build/`.
+
+### 2. Signatures
+
+```ts
+// Main source syntax: the only supported Worker entry form.
+import WorkerCtor from "./path/to/worker?worker"
+
+const worker = new WorkerCtor(options?: WorkerOptions)
+```
+
+```ts
+interface FrontendBuildContext {
+  sources: Map<string, string | Uint8Array>
+  workerEntries: Map<string, QueuedWorkerEntry>
+}
+
+interface WorkerBuildResult {
+  entryPath: string
+  key: string
+  entryOutputPath: string
+  outputFiles: OutputFile[]
+  metafile: Metafile
+}
+
+interface ReplaceLocalGameCardFrontendDistInput {
+  files: PutLocalGameCardFrontendFileInput[]
+  keepPaths: Set<string>
+}
+```
+
+### 3. Contracts
+
+- `?worker` imports are accepted only as ordinary static ESM default imports from relative or `@/` VFS paths. The query must be exactly `?worker`; no duplicate keys, values, `&url`, `&inline`, `?sharedworker`, re-export, type import, import attributes, dynamic import, or CommonJS `require`.
+- Generated constructors may accept `WorkerOptions`, but must always force `{ type: "module" }`. Do not add classic Worker mode without a new task.
+- Worker entry builds are queued during the main esbuild build and executed after the main build succeeds. Do not call nested `esbuild.build()` from plugin callbacks.
+- Same canonical Worker entry dedupes to one subbuild; different entries build independently and do not share chunks in v1.
+- Worker output paths live under `assets/workers/<stable-key>/` with `entry.js`, `chunks/[name]-[hash]`, and `assets/[name]-[hash]`. The constructor URL must resolve from the packaged iframe document/dist root, e.g. `new URL("./assets/workers/<key>/entry.js", window.location.href)`, not from a fragile current module path.
+- Worker graph allowed inputs: JS/TS/JSX/TSX, JSON, `?raw`, `?url`, `?inline`, relative/`@/` VFS imports, dynamic import chunks, file-loader assets, and existing `import.meta.glob` transform.
+- Worker graph forbidden inputs: Vue SFC, CSS/Sass/Less, bare package imports, CDN/URL imports, nested `?worker` / `?sharedworker`, and direct `new Worker(...)` / `new SharedWorker(...)`.
+- Direct Worker constructors are forbidden across executable source boundaries: stdin entry, workspace JS/TS/JSX/TSX modules, Vue `<script>` / `<script setup>`, and Worker child graph modules.
+- Write-back must replace `frontend/dist/**` using a full successful output set: main outputs + Worker outputs + generated `index.html`. If any main or Worker build fails, do not call dist replacement; old dist remains mounted.
+- `replaceLocalGameCardFrontendDist()` may only write `frontend/dist/**` paths and should preserve `createdAt`, write new records, delete stale dist records, and update card `updatedAt` in one transaction.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| `import W from "./w?worker"` | Build succeeds; wrapper exports constructor; Worker entry is queued and subbuilt |
+| Duplicate imports of same canonical entry | One Worker subbuild/output set is reused |
+| `?worker=1`, duplicated `worker`, `?worker&url`, `?worker&inline`, `?sharedworker` | Build-time error |
+| non-default import, re-export, type import, import attributes, dynamic import, CJS require | Build-time error |
+| direct `new Worker(...)` / `new SharedWorker(...)` in entry/workspace/Vue/Worker code | Build-time error pointing to `?worker` constructor syntax |
+| Worker imports Vue/CSS/Sass/Less | Build-time error |
+| Worker imports bare package, `http(s):`, `data:`, or other URL/scheme | Build-time error explaining main import map does not apply to Worker |
+| Worker imports unknown extension without explicit query | Build-time error; do not fall through to text loader |
+| Worker imports unknown non-style extension with `?raw` / `?url` / `?inline` | Allowed through the explicit query loader |
+| Worker subbuild emits CSS output | Invariant failure before write-back |
+| Worker subbuild fails | Old `frontend/dist/**` remains; build status records failure |
+
+### 5. Good / Base / Bad Cases
+
+- Good: `import DemoWorker from "./workers/demo.worker.ts?worker"; new DemoWorker({ name: "demo" })` creates a module Worker whose entry/chunks/assets are served from `frontend/dist/assets/workers/**`.
+- Base: a normal source build without `?worker` queues no Worker entries and does not run Worker subbuilds.
+- Bad: `new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })` must fail during build rather than becoming a packaged-iframe 404.
+- Bad: `import textUrl from "./template.txt?url"` is valid inside a Worker, but `import text from "./template.txt"` must fail because unknown unqueried resources are not part of the Worker graph contract.
+
+### 6. Tests Required
+
+- `npm run build:web` for any `src/frontend-build/**` or packaged-dist storage helper change.
+- `git diff --check`.
+- Focused Worker fixtures/probes: supported `?worker`, duplicate entry dedupe, two independent entries, Worker TS dependency, JSON, `?raw`/`?url`/`?inline`, dynamic import chunk, `import.meta.glob`, and the error matrix above.
+- Dist replacement check: successful rebuild replaces stale Worker outputs without deleting current main/Worker outputs; failed Worker build preserves old dist.
+- Parent/final browser product loop: packaged iframe Worker message round-trip plus Network evidence for SW-backed Worker entry/chunk/asset loads.
+
+### 7. Wrong vs Correct
+
+```ts
+// Wrong: bypasses VFS subbuild/materialization and may fail only in iframe runtime.
+const worker = new Worker(new URL("./workers/demo.worker.ts", import.meta.url), { type: "module" })
+
+// Correct: lets the platform build Worker outputs into frontend/dist/**.
+import DemoWorker from "./workers/demo.worker.ts?worker"
+const worker = new DemoWorker({ name: "demo" })
+```
+
+```ts
+// Wrong: Worker module graph cannot use the page's HTML import map.
+import { reactive } from "vue"
+
+// Correct: Worker graph stays within VFS/source/resource imports supported by the platform builder.
+import { compute } from "./compute"
+import payload from "./payload.json"
+```
+
 ## Browser Style Preprocessor Contract
 
 ### 1. Scope / Trigger

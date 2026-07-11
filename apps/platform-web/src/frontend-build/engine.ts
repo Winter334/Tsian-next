@@ -7,6 +7,15 @@ import { transformImportMetaGlob } from "./glob-transform"
 import { cdnExternalPlugin } from "./plugins/cdn-external-plugin"
 import { createSfcPlugin } from "./plugins/sfc-plugin"
 import { workspaceSourcePlugin, type WorkspaceSourceContent } from "./plugins/workspace-source-plugin"
+import {
+  assertNoDirectWorkerConstructors,
+  toDirectWorkerConstructorMessage,
+} from "./worker-build/diagnostics"
+import {
+  buildQueuedWorkerEntries,
+  createFrontendBuildContext,
+} from "./worker-build"
+import { createWorkerPlugin } from "./worker-build/plugin"
 import { writeBackDist } from "./write-back"
 
 /**
@@ -279,6 +288,16 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
   const config = frameworkConfig(framework)
   const { sources, entryPath, entryContent } = await loadSources(cardId)
   const entryLoader = entryLoaderFor(entryPath)
+  try {
+    await assertNoDirectWorkerConstructors({
+      code: entryContent,
+      importer: entryPath,
+      loader: entryLoader,
+    })
+  } catch (error) {
+    const message = toDirectWorkerConstructorMessage(error, { importer: entryPath })
+    throw Object.assign(new Error(message.text), { messageDetail: message })
+  }
   const transformedEntry = await transformImportMetaGlob({
     code: entryContent,
     importer: entryPath,
@@ -287,11 +306,12 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
   })
 
   const cdn = cdnExternalPlugin({ coreImports: config.coreImportMap })
+  const buildContext = createFrontendBuildContext(sources)
 
-  // Plugin order matters: sfcPlugin (specific .vue filter) must register its
-  // onLoad BEFORE workspaceSourcePlugin's catch-all, so .vue is compiled by
-  // the SFC compiler rather than returned as raw text.
-  const plugins: esbuild.Plugin[] = [cdn.plugin]
+  // Plugin order matters: workerPlugin handles ?worker before CDN/workspace catch-alls;
+  // sfcPlugin (specific .vue filter) must register its onLoad before workspaceSourcePlugin's
+  // catch-all so .vue is compiled by the SFC compiler rather than returned as raw text.
+  const plugins: esbuild.Plugin[] = [createWorkerPlugin({ context: buildContext }), cdn.plugin]
   if (framework === "vue") {
     plugins.push(createSfcPlugin({ sources }))
   }
@@ -329,9 +349,13 @@ export async function buildFrontend(cardId: string): Promise<BuildFrontendResult
     }
   }
 
+  const workerResults = await buildQueuedWorkerEntries(buildContext)
+  const workerOutputFiles = workerResults.flatMap((worker) => worker.outputFiles)
+
   const writeBack = await writeBackDist({
     cardId,
     outputFiles: result.outputFiles ?? [],
+    workerOutputFiles,
     metafile: result.metafile!,
     entryPoint: `${SOURCE_PREFIX}${entryPath}`,
     importMap,

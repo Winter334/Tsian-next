@@ -9,6 +9,10 @@ import {
   toStylePreprocessorMessage,
   type StylePreprocessorLanguage,
 } from "../style-preprocessors"
+import {
+  assertNoDirectWorkerConstructors,
+  toDirectWorkerConstructorMessage,
+} from "../worker-build/diagnostics"
 import type {
   SFCDescriptor,
   SFCParseResult,
@@ -162,11 +166,28 @@ async function transformSfcScripts(
   const replacements: Array<{ start: number; end: number; code: string }> = []
   for (const [index, block] of blocks.entries()) {
     const offset = scriptBlockOffset(block)
+    const loader = scriptLoader(block.lang)
+    try {
+      await assertNoDirectWorkerConstructors({
+        code: block.content,
+        importer: filename,
+        loader,
+        sourceLineOffset: offset.line,
+        sourceColumnOffset: offset.column,
+        diagnosticSource: source,
+      })
+    } catch (error) {
+      return {
+        source,
+        descriptor,
+        errors: [toDirectWorkerConstructorMessage(error, { importer: filename })],
+      }
+    }
     try {
       const transformed = await transformImportMetaGlob({
         code: block.content,
         importer: filename,
-        loader: scriptLoader(block.lang),
+        loader,
         sources,
         sourceLineOffset: offset.line,
         sourceColumnOffset: offset.column,

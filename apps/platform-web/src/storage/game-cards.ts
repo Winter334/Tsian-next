@@ -61,6 +61,11 @@ export interface LocalGameCardFrontendFile {
   updatedAt: number
 }
 
+export interface ReplaceLocalGameCardFrontendDistInput {
+  files: PutLocalGameCardFrontendFileInput[]
+  keepPaths: Set<string>
+}
+
 export interface LocalGameCardContentFile {
   path: string
   content: string
@@ -855,6 +860,57 @@ export async function deleteLocalGameCardFrontendFile(
       await localDb.gameCards.update(id, { updatedAt: now })
     },
   )
+}
+
+export async function replaceLocalGameCardFrontendDist(
+  gameCardId: string,
+  input: ReplaceLocalGameCardFrontendDistInput,
+): Promise<string[]> {
+  const id = gameCardId.trim()
+  if (!id) {
+    throw new Error("Game card id is required.")
+  }
+
+  const now = Date.now()
+  const records = input.files.map((file) => normalizeFrontendFile(id, file, now))
+  for (const record of records) {
+    if (!record.path.startsWith("frontend/dist/")) {
+      throw new Error(`Replacement frontend dist file must live under frontend/dist/: ${record.path}`)
+    }
+  }
+  const keepPaths = new Set(
+    [...input.keepPaths].map((path) => normalizePackageFilePath(path, "frontend file path")),
+  )
+  for (const record of records) {
+    keepPaths.add(record.path)
+  }
+
+  await localDb.transaction(
+    "rw",
+    [localDb.gameCardFrontendFiles, localDb.gameCards],
+    async () => {
+      const existing = await localDb.gameCardFrontendFiles
+        .where("gameCardId")
+        .equals(id)
+        .toArray()
+      const existingById = new Map(existing.map((record) => [record.id, record]))
+      for (const record of records) {
+        const existingRecord = existingById.get(record.id)
+        if (existingRecord) {
+          record.createdAt = existingRecord.createdAt
+        }
+        await localDb.gameCardFrontendFiles.put(record)
+      }
+      const toDelete = existing.filter((record) =>
+        record.path.startsWith("frontend/dist/") && !keepPaths.has(record.path)
+      )
+      for (const record of toDelete) {
+        await localDb.gameCardFrontendFiles.delete(record.id)
+      }
+      await localDb.gameCards.update(id, { updatedAt: now })
+    },
+  )
+  return records.map((record) => record.path).sort((left, right) => left.localeCompare(right))
 }
 
 export async function deleteLocalGameCardFrontendPathForCard(
