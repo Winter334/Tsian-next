@@ -258,20 +258,24 @@
         </div>
 
         <div v-else-if="activeTab === 'frontend'" class="retro-inset grid gap-4 p-4">
-          <div class="flex flex-wrap items-start justify-between gap-3">
+          <div class="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p class="font-mono text-xs uppercase tracking-wider text-neon">
                 前端绑定
               </p>
-              <p class="mt-1 text-sm leading-6 text-text-dim">
-                {{ frontendStatusDescription }}
+              <p class="mt-1 font-mono text-[11px] text-text-dim">
+                当前：{{ frontendStatusLabel }}
               </p>
             </div>
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="border border-neon-deep/50 bg-elevated px-2 py-1 font-mono text-[11px] text-text-dim">
-                {{ frontendStatusLabel }}
-              </span>
-            </div>
+            <button
+              type="button"
+              class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
+              :disabled="!canApplyFrontendDraft"
+              @click="applyFrontendBindingDraft"
+            >
+              <Save class="h-3.5 w-3.5" aria-hidden="true" />
+              {{ frontendApplyLabel }}
+            </button>
           </div>
 
           <p v-if="feedback" class="border border-neon-deep/40 bg-neon/10 px-3 py-2 text-sm text-neon">
@@ -285,31 +289,31 @@
                   type="button"
                   class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
                   :class="frontendMode === 'none' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
-                  @click="frontendMode = 'none'"
+                  @click="setFrontendMode('none')"
                 >
                   <XCircle class="h-4 w-4" aria-hidden="true" />
                   <span class="font-mono text-xs">未配置</span>
-                  <span class="text-xs leading-5">保留为内容模板。</span>
+                  <span class="text-xs leading-5">内容模板</span>
                 </button>
                 <button
                   type="button"
                   class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
                   :class="frontendMode === 'remote' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
-                  @click="frontendMode = 'remote'"
+                  @click="setFrontendMode('remote')"
                 >
                   <Link2 class="h-4 w-4" aria-hidden="true" />
                   <span class="font-mono text-xs">Remote URL</span>
-                  <span class="text-xs leading-5">通过 iframe 加载。</span>
+                  <span class="text-xs leading-5">iframe</span>
                 </button>
                 <button
                   type="button"
                   class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
                   :class="frontendMode === 'packaged' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
-                  @click="frontendMode = 'packaged'"
+                  @click="setFrontendMode('packaged')"
                 >
                   <PackageOpen class="h-4 w-4" aria-hidden="true" />
                   <span class="font-mono text-xs">Packaged</span>
-                  <span class="text-xs leading-5">使用卡包内文件。</span>
+                  <span class="text-xs leading-5">卡内文件</span>
                 </button>
               </div>
 
@@ -320,64 +324,33 @@
                   type="url"
                   class="retro-focus h-9 border border-neon-deep/55 bg-panel px-3 font-mono text-xs text-text-main placeholder:text-text-dim/60"
                   placeholder="https://example.com/tsian-game/"
-                  @keyup.enter="saveFrontendBinding"
+                  @keyup.enter="applyFrontendBindingDraft"
                 />
               </label>
-
-              <div v-if="frontendMode === 'remote'" class="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                  :disabled="frontendSaving || !remoteUrl.trim() || card?.source === 'builtin'"
-                  @click="saveFrontendBinding"
-                >
-                  <Save class="h-3.5 w-3.5" aria-hidden="true" />
-                  保存前端绑定
-                </button>
-                <button
-                  v-if="card?.manifest.frontend"
-                  type="button"
-                  class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
-                  :disabled="frontendSaving || card?.source === 'builtin'"
-                  @click="clearFrontendBinding"
-                >
-                  <XCircle class="h-3.5 w-3.5" aria-hidden="true" />
-                  清除前端绑定
-                </button>
-              </div>
 
               <div v-if="frontendMode === 'packaged'" class="grid gap-3 border border-neon-deep/30 bg-panel/40 p-3">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                   <span class="font-mono text-[10px] uppercase tracking-wider text-neon-muted">前端包</span>
-                  <span v-if="packagedEntryDisplay" class="font-mono text-[10px] text-text-dim">入口 {{ packagedEntryDisplay }}</span>
+                  <span v-if="packageDraftLabel" class="font-mono text-[10px] text-text-dim">{{ packageDraftLabel }}</span>
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <button
                     type="button"
                     class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
-                    :disabled="frontendPackageSaving || card?.source === 'builtin'"
+                    :disabled="frontendPackageSaving || frontendSaving || card?.source === 'builtin'"
                     @click="openFrontendPackagePicker"
                   >
                     <Upload class="h-3.5 w-3.5" aria-hidden="true" />
-                    上传前端包
+                    选择前端包
                   </button>
                   <button
                     type="button"
                     class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs"
-                    :disabled="frontendPackageSaving || frontendFiles.length === 0"
+                    :disabled="frontendPackageSaving || frontendSaving || frontendFiles.length === 0"
                     @click="handleExportFrontendPackage"
                   >
                     <Download class="h-3.5 w-3.5" aria-hidden="true" />
                     导出前端包
-                  </button>
-                  <button
-                    type="button"
-                    class="retro-button retro-focus inline-flex h-9 items-center gap-2 px-3 font-mono text-xs text-danger"
-                    :disabled="frontendPackageSaving || frontendFiles.length === 0 || card?.source === 'builtin'"
-                    @click="handleClearFrontendPackage"
-                  >
-                    <XCircle class="h-3.5 w-3.5" aria-hidden="true" />
-                    清除前端包
                   </button>
                 </div>
                 <input
@@ -398,7 +371,7 @@
                 <span class="font-mono text-[11px] text-text-dim">{{ frontendFiles.length }} 个</span>
               </div>
               <div v-if="frontendFiles.length === 0" class="border border-neon-deep/35 bg-panel/55 p-3 text-sm leading-6 text-text-dim">
-                当前游戏卡没有打包前端文件，上传一个 .tsian-frontend.zip 即可开始。
+                暂无文件
               </div>
               <div v-else class="max-h-[340px] overflow-auto border border-neon-deep/35 bg-panel/55">
                 <div
@@ -448,7 +421,6 @@ import {
 import type { Component } from "vue"
 import type { LocalGameCardRecord } from "@/storage/db"
 import {
-  getFrontendStatusDescription,
   getFrontendStatusLabel,
   getGameCardAuthor,
   getGameCardCoverUrl,
@@ -499,6 +471,7 @@ const frontendFiles = ref<PlatformGameCardFrontendFileSummary[]>([])
 const frontendMode = ref<FrontendMode>("none")
 const remoteUrl = ref("")
 const packagedEntry = ref("")
+const pendingFrontendPackageFile = ref<File | null>(null)
 const metadataName = ref("")
 const metadataIntro = ref("")
 const metadataAuthor = ref("")
@@ -545,15 +518,33 @@ const coverSourceLabel = computed(() => {
   return ""
 })
 const frontendStatusLabel = computed(() => getFrontendStatusLabel(card.value))
-const frontendStatusDescription = computed(() => getFrontendStatusDescription(card.value))
-const packagedEntryDisplay = computed(() => {
-  const frontend = card.value?.manifest.frontend
-  if (frontend?.kind === "packaged") {
-    return frontend.entry
-  }
-  return ""
-})
 const isLoadedCard = computed(() => Boolean(card.value && activeGameCardId.value === card.value.id))
+const frontendDraftChanged = computed(() => {
+  const frontend = card.value?.manifest.frontend
+  if (pendingFrontendPackageFile.value) return true
+  if (frontendMode.value === "none") return Boolean(frontend)
+  if (frontendMode.value === "remote") {
+    return frontend?.kind !== "remote" || remoteUrl.value.trim() !== frontend.url
+  }
+  return frontend?.kind !== "packaged" || packagedEntry.value !== frontend.entry
+})
+const canApplyFrontendDraft = computed(() => {
+  if (!card.value || card.value.source === "builtin") return false
+  if (frontendSaving.value || frontendPackageSaving.value) return false
+  if (!frontendDraftChanged.value) return false
+  if (frontendMode.value === "remote") return Boolean(remoteUrl.value.trim())
+  if (frontendMode.value === "packaged") {
+    return Boolean(pendingFrontendPackageFile.value || packagedEntry.value)
+  }
+  return true
+})
+const frontendApplyLabel = computed(() => frontendSaving.value ? "应用中…" : "应用")
+const packageDraftLabel = computed(() => {
+  if (pendingFrontendPackageFile.value) {
+    return `待应用 ${pendingFrontendPackageFile.value.name}`
+  }
+  return packagedEntry.value
+})
 
 const hasUnsavedChanges = computed(() => {
   if (!card.value) return false
@@ -565,25 +556,43 @@ const hasUnsavedChanges = computed(() => {
   return false
 })
 
+function defaultPackagedEntry(): string {
+  return frontendFiles.value.find((file) => file.path.endsWith(".html"))?.path
+    ?? frontendFiles.value[0]?.path
+    ?? ""
+}
+
+function setFrontendMode(mode: FrontendMode) {
+  frontendMode.value = mode
+  if (mode !== "packaged") {
+    pendingFrontendPackageFile.value = null
+  }
+  if (mode === "packaged" && !packagedEntry.value) {
+    packagedEntry.value = defaultPackagedEntry()
+  }
+  feedback.value = ""
+}
+
 function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
   const frontend = loadedCard.manifest.frontend
   if (!frontend) {
     frontendMode.value = "none"
     remoteUrl.value = ""
-    packagedEntry.value = frontendFiles.value.find((file) => file.path.endsWith(".html"))?.path
-      ?? frontendFiles.value[0]?.path
-      ?? ""
+    packagedEntry.value = defaultPackagedEntry()
+    pendingFrontendPackageFile.value = null
     return
   }
 
   if (frontend.kind === "remote") {
     frontendMode.value = "remote"
     remoteUrl.value = frontend.url
+    pendingFrontendPackageFile.value = null
     return
   }
 
   frontendMode.value = "packaged"
   packagedEntry.value = frontend.entry
+  pendingFrontendPackageFile.value = null
 }
 
 function syncMetadataDraft(loadedCard: LocalGameCardRecord) {
@@ -830,12 +839,41 @@ async function saveFrontendBinding() {
   }
 }
 
+async function applyFrontendBindingDraft() {
+  if (!card.value || !canApplyFrontendDraft.value) {
+    return
+  }
+
+  if (frontendMode.value === "none") {
+    await clearFrontendBinding()
+    return
+  }
+
+  if (frontendMode.value === "packaged" && pendingFrontendPackageFile.value) {
+    frontendSaving.value = true
+    feedback.value = ""
+    try {
+      await importPlatformGameCardFrontendPackage(card.value.id, pendingFrontendPackageFile.value)
+      pendingFrontendPackageFile.value = null
+      feedback.value = "已应用前端包。"
+      await refreshData()
+    } catch (error) {
+      feedback.value = error instanceof Error ? error.message : "应用前端包失败。"
+    } finally {
+      frontendSaving.value = false
+    }
+    return
+  }
+
+  await saveFrontendBinding()
+}
+
 async function clearFrontendBinding() {
   if (!card.value?.manifest.frontend) {
     return
   }
   const confirmed = await confirm({
-    message: "清除这张游戏卡的前端绑定？这会移除全部打包前端文件，游戏卡内容和存档保留。",
+    message: "清除当前前端绑定？",
     severity: "danger",
     confirmText: "清除",
   })
@@ -852,7 +890,7 @@ function openFrontendPackagePicker() {
   frontendPackageInput.value?.click()
 }
 
-async function handleFrontendPackageSelected(event: Event) {
+function handleFrontendPackageSelected(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ""
@@ -864,18 +902,9 @@ async function handleFrontendPackageSelected(event: Event) {
     return
   }
 
-  frontendPackageSaving.value = true
+  frontendMode.value = "packaged"
+  pendingFrontendPackageFile.value = file
   feedback.value = ""
-  try {
-    await importPlatformGameCardFrontendPackage(card.value.id, file)
-    frontendMode.value = "packaged"
-    feedback.value = "已上传并替换前端包。"
-    await refreshData()
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "上传前端包失败。"
-  } finally {
-    frontendPackageSaving.value = false
-  }
 }
 
 async function handleExportFrontendPackage() {
@@ -891,37 +920,6 @@ async function handleExportFrontendPackage() {
     feedback.value = `已导出前端包：${filename}`
   } catch (error) {
     feedback.value = error instanceof Error ? error.message : "导出前端包失败。"
-  } finally {
-    frontendPackageSaving.value = false
-  }
-}
-
-async function handleClearFrontendPackage() {
-  if (!card.value || frontendFiles.value.length === 0) {
-    return
-  }
-  if (card.value.source === "builtin") {
-    feedback.value = "内置游戏卡不能直接替换前端，请先另存为本地副本。"
-    return
-  }
-  const confirmed = await confirm({
-    message: "清除这张游戏卡的打包前端包？这会移除全部打包前端文件和入口绑定。",
-    severity: "danger",
-    confirmText: "清除",
-  })
-  if (!confirmed) {
-    return
-  }
-
-  frontendPackageSaving.value = true
-  feedback.value = ""
-  try {
-    await updatePlatformGameCardFrontend(card.value.id, null)
-    frontendMode.value = "none"
-    feedback.value = "已清除前端包。"
-    await refreshData()
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "清除前端包失败。"
   } finally {
     frontendPackageSaving.value = false
   }
