@@ -1464,3 +1464,37 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 141: 修复 inspect_frontend 导入写入被覆盖
+
+**Date**: 2026-07-11
+**Task**: 修复 inspect_frontend 导入写入被覆盖
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+修复桌面助手/inspect_frontend 导入流程中 side-channel workspace 旧快照覆盖 frontend bridge 写入的问题，改为变更集提交并更新 runtime-settled bridge activity 语义；build:web 与浏览器复现验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f4564a` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
