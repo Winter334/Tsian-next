@@ -34,8 +34,9 @@ import {
 } from "../storage"
 import {
   createRuntimeWorkspaceTransaction,
-  replaceWorkspaceFilesForSave,
+  commitWorkspaceChangesForSave,
   writeLocalGameCardContentFile,
+  type RuntimeWorkspaceChanges,
   type RuntimeWorkspaceTransaction,
 } from "../storage"
 import { cardFrontendVolume, executeWorkspaceMutation } from "./workspace-volumes"
@@ -783,7 +784,8 @@ export async function runAssistantChat(
 
     // Commit workspace changes (no checkpoint, no turn increment).
     const finalFiles = activeWorkspaceTransaction.finalWorkspaceFiles()
-    await commitAssistantWorkspaceFiles(activeSaveId, finalFiles)
+    const workspaceChanges = activeWorkspaceTransaction.finalWorkspaceChanges()
+    await commitAssistantWorkspaceFiles(activeSaveId, finalFiles, workspaceChanges)
 
     // Notify debug subscribers (DebugView) that new AI debug records are ready.
     // Mirrors master turn completion in platform-host/index.ts — without this,
@@ -838,6 +840,7 @@ export async function runAssistantChat(
 async function commitAssistantWorkspaceFiles(
   saveId: string | null,
   files: WorkspaceFile[],
+  changes: RuntimeWorkspaceChanges,
 ): Promise<void> {
   // Persist local assistant files (.tsian/local/assistant/*) to the Dexie
   // meta store so they survive card switches independent of save state.
@@ -866,19 +869,11 @@ async function commitAssistantWorkspaceFiles(
     return
   }
 
-  // Active save: persist save-runtime and platform-meta files (excluding local assistant).
-  const saveRuntimeFiles = nonLocalFiles
-    .filter((file) => file.path.startsWith("save/") || file.path.startsWith(".tsian/"))
-    .map((file) => ({
-      path: file.path,
-      content: file.content,
-      ...(file.binary ? { data: file.binary } : {}),
-      createdAt: file.createdAt,
-      updatedAt: file.updatedAt,
-    }))
-  if (saveRuntimeFiles.length > 0) {
-    await replaceWorkspaceFilesForSave(saveId, saveRuntimeFiles)
-  }
+  // Active save: persist only save-runtime and per-save platform-meta paths
+  // explicitly touched by the assistant turn. This keeps frontend bridge writes
+  // made during inspect_frontend from being clobbered by the assistant's
+  // turn-start workspace snapshot.
+  await commitWorkspaceChangesForSave(saveId, changes)
 
   // Also persist card-content changes (from knowledge mount writes).
   // See isCardContentWritebackPath — reserved paths (save/, .tsian/, frontend/,

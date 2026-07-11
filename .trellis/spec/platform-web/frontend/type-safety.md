@@ -557,7 +557,7 @@ interface InspectFrontendInput {
 - **Debug baseline**: the first inspect establishes a persistent global baseline marker for the active save/checkpoint. Prune, same-turn maintenance replacement, and turn-0 initial replacement must protect the exact checkpoint id. `finish` restores that exact baseline, clears the marker after successful restore, and reloads Play.
 - **Activity metadata only**: bridge activity entries record sequence, request id, method, phase, relative time, and error code/message. Do not record params, results, story text, workspace content, or other business payloads.
 - **DOM action fidelity**: browser-internal actions must use iframe-realm constructors/property setters, focus when appropriate, dispatch the relevant pointer/mouse/keyboard/input/change events, and verify observable browser state where possible. If a target is hidden, disabled, obscured, readonly, a file input, or verification fails, return a structured action error instead of reporting success.
-- **Runtime-settled**: waiting is generic bridge-chain waiting. The active chain starts when an action triggers `interaction.sendMessage`; while active, all bridge RPCs are tracked until in-flight is zero and the iframe is quiet for 2 seconds. Timeouts stop inspector waiting only; they do not abort real bridge/runtime work.
+- **Runtime-settled**: waiting is generic bridge-chain waiting. With actions, the active chain starts when an action triggers any bridge activity (`workspace.*`, `interaction.*`, `platform.*`, etc.); `interaction.sendMessage` additionally records formal player-turn `sendCount`. While active, all bridge RPCs are tracked until in-flight is zero and the iframe is quiet for 2 seconds. Timeouts stop inspector waiting only; they do not abort real bridge/runtime work.
 
 ### 4. Validation & Error Matrix
 
@@ -570,7 +570,7 @@ interface InspectFrontendInput {
 - DOM selector invalid/missing -> `INSPECT_SELECTOR_INVALID` / `INSPECT_SELECTOR_NOT_FOUND`.
 - Action target hidden, disabled, not pointer-hit, readonly, not fillable/typeable/checkable/selectable/focusable, or file input -> structured `INSPECT_*` action error; do not silently mutate fallback state.
 - Action verification mismatch after fill/type/select/check/scroll/focus -> structured `INSPECT_*_VERIFY_FAILED`.
-- `wait:"runtime-settled"` with actions but no new send -> `INSPECT_RUNTIME_NOT_TRIGGERED`; without active chain -> `INSPECT_RUNTIME_NOT_ACTIVE`; timeout -> successful snapshot with `runtime.status:"timeout"`.
+- `wait:"runtime-settled"` with actions but no new bridge activity -> `INSPECT_RUNTIME_NOT_TRIGGERED`; without active chain -> `INSPECT_RUNTIME_NOT_ACTIVE`; timeout -> successful snapshot with `runtime.status:"timeout"`.
 - `finish` with no marker -> `DEBUG_SESSION_NOT_ACTIVE`; busy bridge -> `DEBUG_SESSION_BUSY`; restore success but reload timeout -> `ok:true` with `restored.reloadReady:false`.
 
 ### 5. Good/Base/Bad Cases

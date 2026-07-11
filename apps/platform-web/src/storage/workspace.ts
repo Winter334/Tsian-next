@@ -30,6 +30,7 @@ export type {
   WorkspaceListInput,
   WorkspaceWriteInput,
   RuntimeWorkspaceTransaction,
+  RuntimeWorkspaceChanges,
 } from "./workspace-types"
 // re-export public path API (no local binding)
 export {
@@ -59,6 +60,7 @@ import type {
   WorkspaceListInput,
   WorkspaceWriteInput,
   RuntimeWorkspaceTransaction,
+  RuntimeWorkspaceChanges,
 } from "./workspace-types"
 
 import {
@@ -621,31 +623,60 @@ export function createRuntimeWorkspaceTransaction(
   const stagedFiles = baselineFiles
     .map(cloneWorkspaceFile)
     .sort((left, right) => left.path.localeCompare(right.path))
+  const writtenPathSet = new Set<string>()
+  const deletedPathSet = new Set<string>()
+
+  function finalWorkspaceChanges(): RuntimeWorkspaceChanges {
+    const stagedFilesByPath = new Map(stagedFiles.map((file) => [file.path, file]))
+    const writtenFiles = Array.from(writtenPathSet)
+      .map((path) => stagedFilesByPath.get(path))
+      .filter((file): file is WorkspaceFile => Boolean(file))
+      .map(cloneWorkspaceFile)
+      .sort((left, right) => left.path.localeCompare(right.path))
+
+    return {
+      writtenFiles,
+      deletedPaths: Array.from(deletedPathSet).sort(),
+    }
+  }
 
   return {
     workspaceFiles: stagedFiles,
     write(input) {
-      return writeWorkspaceFileToFiles(stagedFiles, input, {
+      const file = writeWorkspaceFileToFiles(stagedFiles, input, {
         allowPlatformMetadata: false,
       })
+      writtenPathSet.add(file.path)
+      return file
     },
     writePlatformFile(input) {
-      return writeWorkspaceFileToFiles(stagedFiles, input, {
+      const file = writeWorkspaceFileToFiles(stagedFiles, input, {
         allowPlatformMetadata: true,
       })
+      writtenPathSet.add(file.path)
+      return file
     },
     delete(path) {
-      return deleteWorkspacePathFromFiles(stagedFiles, path, {
+      const targetPath = normalizeWorkspaceTargetPath(path)
+      assertOrdinarySaveRuntimeMutationPath(targetPath)
+      const result = deleteWorkspacePathFromFiles(stagedFiles, targetPath, {
         allowPlatformMetadata: false,
       })
+      if (result.deletedPaths.length > 0) {
+        deletedPathSet.add(targetPath)
+      }
+      return result
     },
     finalWorkspaceFiles() {
       return stagedFiles
         .map(cloneWorkspaceFile)
         .sort((left, right) => left.path.localeCompare(right.path))
     },
+    finalWorkspaceChanges,
     discard() {
       stagedFiles.splice(0, stagedFiles.length)
+      writtenPathSet.clear()
+      deletedPathSet.clear()
     },
   }
 }

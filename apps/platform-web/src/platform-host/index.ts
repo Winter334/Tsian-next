@@ -142,8 +142,8 @@ import {
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import {
   commitSuccessfulRuntimeTurnForSave,
-  commitWorkspaceFilesForSave,
-  commitWorkspaceFilesWithCheckpointForSave,
+  commitWorkspaceChangesForSave,
+  commitWorkspaceChangesWithCheckpointForSave,
   createRuntimeWorkspaceTransaction,
   createLocalSave,
   createLocalSaveFromGameCard,
@@ -1451,15 +1451,16 @@ export const playFrontendBridge: PlayFrontendBridge = {
             path: formatAgentTracePath(agentId, invokeTimestamp),
             content: serializeRuntimeTraceEvents(trace.events),
           })
+          const workspaceChanges = workspaceTransaction!.finalWorkspaceChanges()
           await (commitMode === "workspace-with-checkpoint"
-            ? commitWorkspaceFilesWithCheckpointForSave(
+            ? commitWorkspaceChangesWithCheckpointForSave(
                 currentActiveSaveId,
-                workspaceTransaction!.finalWorkspaceFiles(),
+                workspaceChanges,
                 { turn: invokeMaxTurn, checkpointReason: "post-turn-maintenance" },
               )
-            : commitWorkspaceFilesForSave(
+            : commitWorkspaceChangesForSave(
                 currentActiveSaveId,
-                workspaceTransaction!.finalWorkspaceFiles(),
+                workspaceChanges,
               ))
           emitAgentInvocation({ type: "completed", invocationId, agentId })
 

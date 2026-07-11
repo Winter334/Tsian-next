@@ -1248,7 +1248,7 @@ const FRAMEWORK_KNOWLEDGE_REF_FRONTEND_DEVELOPMENT = [
   "`inspect_frontend` operates the packaged frontend currently mounted in the player's Play window. Ask the player to open the intended save and wait until its frontend is ready before inspecting.",
   "",
   "1. Call `inspect_frontend({})` to read the real scene and establish the save-runtime rollback baseline.",
-  "2. Reproduce through `actions` such as `fill` and `click`; use `wait: \"runtime-settled\"` when those actions should trigger a player turn.",
+  "2. Reproduce through `actions` such as `fill` and `click`; use `wait: \"runtime-settled\"` when those actions should trigger a player turn or other bridge-backed frontend work such as workspace writes.",
   "3. Read structure, diagnostics, activity, runtime state, source hints, and generation-aware diffs.",
   "4. Edit `frontend/src/**`, read `frontend-build-status`, and inspect again after Play mounts the rebuilt generation.",
   "5. Always call `inspect_frontend({ operation: \"finish\" })` when verification is complete. This restores test-time save-runtime while preserving frontend source and build output.",

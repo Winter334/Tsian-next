@@ -53,7 +53,7 @@ import {
 const MAX_ACTIVITY_ENTRIES = 200
 const MAX_ACTION_SNAPSHOTS = 50
 const RUNTIME_QUIET_MS = 2_000
-const RUNTIME_TRIGGER_TIMEOUT_MS = 1_000
+const RUNTIME_TRIGGER_TIMEOUT_MS = 5_000
 const DEFAULT_RUNTIME_TIMEOUT_MS = 300_000
 const FINISH_RELOAD_TIMEOUT_MS = 10_000
 
@@ -62,6 +62,7 @@ interface RuntimeChainState {
   startSequence: number
   sendCount: number
   failed: boolean
+  trigger: "bridge" | "send"
 }
 
 interface LiveFrameSession {
@@ -151,17 +152,17 @@ async function runLiveFrontendInspection(
     let runtime = runtimeSummary(session, session.chain?.active ? "active" : "not-requested")
     if (input.wait === "runtime-settled") {
       if (input.actions?.length) {
-        const triggered = await waitForSendAfter(session, activityCursor)
+        const triggered = await waitForBridgeActivityAfter(session, activityCursor)
         if (!triggered) {
           throw new InspectorFailure(
             "INSPECT_RUNTIME_NOT_TRIGGERED",
-            "The actions did not trigger interaction.sendMessage in the current Play iframe.",
+            "The actions did not trigger bridge activity in the current Play iframe.",
           )
         }
       } else if (!session.chain?.active) {
         throw new InspectorFailure(
           "INSPECT_RUNTIME_NOT_ACTIVE",
-          "The current Play iframe has no active send chain to continue waiting for.",
+          "The current Play iframe has no active bridge chain to continue waiting for.",
         )
       }
       runtime = await waitForRuntimeSettled(
@@ -470,9 +471,11 @@ function recordActivity(
         startSequence: entry.sequence,
         sendCount: 1,
         failed: false,
+        trigger: "send",
       }
     } else {
       session.chain.sendCount += 1
+      session.chain.trigger = "send"
     }
   }
   if (session.chain?.active && entry.phase === "failed") {
@@ -681,17 +684,46 @@ async function assertDebugSessionActiveSave(
   }
 }
 
-async function waitForSendAfter(
+function ensureBridgeChainAfter(
+  session: LiveFrameSession,
+  afterSequence: number,
+): void {
+  if (session.chain?.active) return
+  const firstStarted = session.activity.find((entry) => (
+    entry.sequence > afterSequence
+    && entry.phase === "started"
+  ))
+  if (!firstStarted) return
+  session.chain = {
+    active: true,
+    startSequence: firstStarted.sequence,
+    sendCount: 0,
+    failed: session.activity.some((entry) => (
+      entry.sequence > afterSequence
+      && entry.phase === "failed"
+    )),
+    trigger: "bridge",
+  }
+}
+
+async function waitForBridgeActivityAfter(
   session: LiveFrameSession,
   afterSequence: number,
 ): Promise<boolean> {
   const deadline = Date.now() + RUNTIME_TRIGGER_TIMEOUT_MS
   while (Date.now() < deadline) {
     assertCurrentTarget(session)
-    if (session.lastSendStartedSequence > afterSequence) return true
+    if (session.target.mount.activitySequence > afterSequence) {
+      ensureBridgeChainAfter(session, afterSequence)
+      return Boolean(session.chain?.active)
+    }
     await inspectMicroTick(25)
   }
-  return session.lastSendStartedSequence > afterSequence
+  if (session.target.mount.activitySequence > afterSequence) {
+    ensureBridgeChainAfter(session, afterSequence)
+    return Boolean(session.chain?.active)
+  }
+  return false
 }
 
 async function waitForRuntimeSettled(

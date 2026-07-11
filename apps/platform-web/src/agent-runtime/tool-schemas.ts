@@ -186,7 +186,7 @@ const inspectFrontendSchema: ToolSchema = {
         type: "string",
         enum: ["runtime-settled"],
         description:
-          "After actions trigger a real send, wait until all observed bridge RPCs finish and remain quiet for 2 seconds. Without actions, continues an already active chain.",
+          "After actions trigger bridge activity, wait until observed bridge RPCs finish and remain quiet for 2 seconds. This covers player turns and pure frontend workspace operations. Without actions, continues an already active chain.",
       },
       timeoutMs: {
         type: "integer",
