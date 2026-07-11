@@ -37,7 +37,7 @@ const SOURCE_PREFIX = "frontend/src/"
 const CACHE_NAME = "tsian-builder-cache"
 const WASM_CACHE_KEY = "esbuild-wasm"
 const PLAY_BRIDGE_IMPORT = "@tsian/play-bridge"
-const PLAY_BRIDGE_CDN_URL = "https://esm.sh/@tsian/play-bridge@0.1.0"
+const PLAY_BRIDGE_CDN_URL = "https://esm.sh/@tsian/play-bridge@0.2.0-beta.0"
 
 const ENTRY_CANDIDATES = [
   "main.ts",
