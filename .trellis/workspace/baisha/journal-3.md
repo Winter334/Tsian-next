@@ -1393,3 +1393,39 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 139: 可见 Play iframe 前端自检收尾
+
+**Date**: 2026-07-11
+**Task**: 可见 Play iframe 前端自检收尾
+**Package**: platform-web
+**Branch**: `feat/timeline-orbit-svg-polish`
+
+### Summary
+
+完成 visible-play-iframe-inspection：配置 Trellis workspaces spec 映射；将 inspect_frontend 改为接管当前真实 Play packaged iframe，删除旧隐藏/隔离复现模型，新增 Play target registry、bridge activity、debug baseline marker、checkpoint 保护、finish 回滚与 iframe 重挂；强化浏览器内 DOM actions 的 pointer/input/focus/verification 行为；更新 AI-facing 文档和 platform-web inspect_frontend code-spec；npm run build:web 通过，用户完成手动浏览器测试后归档任务。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `20f03f0` | (see git log) |
+| `64a4f5a` | (see git log) |
+| `7fba1c1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
