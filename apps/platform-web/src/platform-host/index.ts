@@ -27,7 +27,6 @@ import type {
   WorkspaceDeleteResult,
   WorkspaceEntry,
   WorkspaceListRequest,
-  WorkspaceListResult,
   WorkspaceFile,
   WorkspaceMoveResult,
   WorkspaceOperationName,
@@ -315,8 +314,18 @@ function normalizeWorkspaceActionRequest(
     ),
   } as WorkspaceOperationRequest
 }
-
-
+function normalizeWorkspaceListEntries(result: unknown): WorkspaceEntry[] {
+  if (Array.isArray(result)) {
+    return result as WorkspaceEntry[]
+  }
+  if (isRecord(result)) {
+    const entries = result.entries
+    if (Array.isArray(entries)) {
+      return entries as WorkspaceEntry[]
+    }
+  }
+  throw new Error("workspace.list returned an invalid result shape.")
+}
 
 async function executeWorkspaceOperationForActiveSave(
   saveId: string,
@@ -806,13 +815,14 @@ export const playFrontendBridge: PlayFrontendBridge = {
       if (!activeSaveId) {
         return []
       }
-      return executeWorkspaceOperationForActiveSave(activeSaveId, {
+      const result = await executeWorkspaceOperationForActiveSave(activeSaveId, {
         operation: "list",
         scope: "effective",
         ...(typeof req.path === "string" ? { path: req.path } : {}),
       }, {
         actorLevel: 1,
-      }) as Promise<WorkspaceEntry[]>
+      })
+      return normalizeWorkspaceListEntries(result)
     },
 
     async search(req: WorkspaceSearchRequest): Promise<WorkspaceSearchResult[]> {

@@ -1,6 +1,7 @@
 import { ref, readonly } from "vue"
 import { getTsianClient } from "./useTsian"
 import { parseStoryOptions } from "@tsian/play-bridge"
+import type { WorkspaceEntry } from "@tsian/play-bridge"
 import {
   SOURCE_MANIFEST_PATH,
   CHAPTER_INDEX_PATH,
@@ -446,6 +447,30 @@ async function writePlayerCharacter(
   await tsian.workspace.write(RUNTIME_PATH, `${JSON.stringify(updated, null, 2)}\n`)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+/** 兼容 workspace.list 的数组形态与旧 list result 对象形态。 */
+function normalizeWorkspaceListEntries(listResult: unknown): WorkspaceEntry[] {
+  const rawEntries = Array.isArray(listResult)
+    ? listResult
+    : isRecord(listResult) && Array.isArray(listResult.entries)
+      ? listResult.entries
+      : null
+
+  if (!rawEntries) {
+    throw new Error("workspace.list 返回格式无效")
+  }
+
+  return rawEntries.map((entry, index) => {
+    if (!isRecord(entry) || typeof entry.path !== "string") {
+      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].path`)
+    }
+    return entry as WorkspaceEntry
+  })
+}
+
 /** 生成唯一 localId：original-<name>，冲突加序号后缀。 */
 async function ensureUniqueLocalId(
   tsian: ReturnType<typeof getTsianClient>,
@@ -454,7 +479,7 @@ async function ensureUniqueLocalId(
   const base = `original-${name}`
   const listResult = await tsian.workspace.list(CHARACTER_ENTITIES_ROOT)
   const existing = new Set(
-    listResult.map((f) => f.path.split("/").pop()?.replace(/\.json$/, "") ?? ""),
+    normalizeWorkspaceListEntries(listResult).map((f) => f.path.split("/").pop()?.replace(/\.json$/, "") ?? ""),
   )
   if (!existing.has(base)) return base
   for (let i = 2; i < 100; i++) {
