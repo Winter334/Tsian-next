@@ -195,11 +195,14 @@ import {
   exportToolPackage,
   getPlatformActiveGameCard,
   importPlatformGameCardPackage,
+  inspectPlatformGameCardPackage,
   inspectResourcePackage,
   installAgentPackage,
   installSkillPackage,
   installToolPackage,
   listPlatformGameCards,
+  listPlatformSaves,
+  updatePlatformGameCardMetadata,
 } from "@/platform-host"
 import {
   listLocalGameCardContentFiles,
@@ -587,7 +590,7 @@ async function handlePrepareUpload(selection: MarketUploadSelectionPayload): Pro
     confirmText: "确认上传",
     fields: [
       { name: "title", label: "标题（可选）", type: "text", defaultValue: defaults.title ?? "", placeholder: "资源标题" },
-      { name: "version", label: "版本（可选）", type: "text", defaultValue: defaults.version ?? "", placeholder: "0.1.0", mono: true },
+      { name: "version", label: "版本", type: "text", defaultValue: defaults.version ?? "", placeholder: "0.1.0", mono: true },
       { name: "author", label: "作者（可选）", type: "text", defaultValue: defaults.author ?? "", placeholder: "作者名" },
       { name: "summary", label: "简介（可选）", type: "textarea", rows: 3, defaultValue: defaults.summary ?? "", placeholder: "资源简介" },
       { name: "tags", label: "Tags（可选，逗号分隔）", type: "text", defaultValue: defaults.tags ?? "", placeholder: "tool, narrative", mono: true },
@@ -596,12 +599,16 @@ async function handlePrepareUpload(selection: MarketUploadSelectionPayload): Pro
   if (!values) {
     return
   }
+  const version = requireVersion(values.version)
+  if (!version) {
+    return
+  }
   await handleUpload({
     ...selection,
     title: optionalFormValue(values.title),
     summary: optionalFormValue(values.summary),
     author: optionalFormValue(values.author),
-    version: optionalFormValue(values.version),
+    version,
     tags: optionalFormValue(values.tags),
   })
 }
@@ -690,6 +697,15 @@ function optionalFormValue(value: string | undefined): string | undefined {
   return trimmed || undefined
 }
 
+function requireVersion(value: string | undefined): string | null {
+  const trimmed = value?.trim() ?? ""
+  if (!trimmed) {
+    toast.error("版本不能为空。")
+    return null
+  }
+  return trimmed
+}
+
 function uploadTypeLabel(type: MarketResourceType): string {
   return resourceTypeOptions.find((option) => option.type === type)?.label ?? "资源"
 }
@@ -699,15 +715,17 @@ async function handleUpload(payload: MarketUploadSubmitPayload): Promise<void> {
   feedback.value = ""
   errorMessage.value = ""
   try {
-    const blob = await exportMarketSelection(payload)
+    const blob = await exportMarketSelection(payload, { version: payload.version })
     const pkg = await marketApi.upload(blob, {
       resourceType: payload.resourceType,
       title: payload.title,
       summary: payload.summary,
       author: payload.author,
-      version: payload.version,
       tags: payload.tags,
     })
+    if (payload.resourceType === "game_card") {
+      await syncUploadedGameCardVersion(payload.cardId, payload.version)
+    }
     toast.success(`已上传：${pkg.name}`)
     screen.value = { kind: "list" }
     await refresh()
@@ -717,6 +735,23 @@ async function handleUpload(payload: MarketUploadSubmitPayload): Promise<void> {
   } finally {
     uploading.value = false
   }
+}
+
+async function syncUploadedGameCardVersion(cardId: string, version: string | undefined): Promise<void> {
+  const targetVersion = version?.trim()
+  if (!targetVersion) {
+    return
+  }
+  const card = (await listPlatformGameCards()).find((candidate) => candidate.id === cardId)
+  if (!card || card.manifest.version === targetVersion) {
+    return
+  }
+  await updatePlatformGameCardMetadata(card.id, {
+    name: card.manifest.name,
+    summary: card.manifest.summary,
+    authorName: card.manifest.author?.name,
+    version: targetVersion,
+  })
 }
 
 async function handleDownloadInstall(pkg: MarketPackage): Promise<void> {
@@ -745,12 +780,26 @@ async function handleDownloadInstall(pkg: MarketPackage): Promise<void> {
 }
 
 async function installGameCardPackage(pkg: MarketPackage): Promise<void> {
+  const blob = await marketApi.download(pkg.id)
+  const inspection = await inspectPlatformGameCardPackage(blob)
+  const incoming = inspection.manifest
   const cards = await listPlatformGameCards()
-  const existing = cards.find((card) => card.manifest.id === pkg.resourceId)
+  const existing = cards.find((card) => card.manifest.id === incoming.id)
   if (existing) {
+    const targetVersion = incoming.version.trim()
+    const affectedSaves = (await listPlatformSaves()).filter((save) => {
+      if (save.gameCardId !== incoming.id) {
+        return false
+      }
+      const savedVersion = save.gameCardVersion?.trim() ?? ""
+      return !savedVersion || savedVersion !== targetVersion
+    })
+    const saveWarning = affectedSaves.length > 0
+      ? `\n\n检测到 ${affectedSaves.length} 个旧版存档，首次继续时会询问是否使用新版。`
+      : ""
     const confirmed = await confirm({
       title: "卡包已安装",
-      message: `本地已有同名卡包「${existing.manifest.name || pkg.resourceId}」。覆盖将替换本地内容，无法撤销。`,
+      message: `本地已有「${existing.manifest.name || incoming.name || pkg.resourceId}」。安装后将替换本地卡包，已有存档会保留。${saveWarning}`,
       severity: "danger",
       confirmText: "覆盖",
     })
@@ -759,7 +808,6 @@ async function installGameCardPackage(pkg: MarketPackage): Promise<void> {
     }
   }
 
-  const blob = await marketApi.download(pkg.id)
   const imported = await importPlatformGameCardPackage(blob)
   feedback.value = `已安装：${getGameCardTitle(imported)}`
   toast.success(`已安装：${getGameCardTitle(imported)}`)
@@ -931,16 +979,19 @@ async function handleInstallTargetSelected(option: MarketInstallTargetOption): P
   }
 }
 
-async function exportMarketSelection(selection: MarketUploadSelectionPayload): Promise<Blob> {
+async function exportMarketSelection(
+  selection: MarketUploadSelectionPayload,
+  options: { version?: string } = {},
+): Promise<Blob> {
   switch (selection.resourceType) {
     case "game_card":
-      return exportPlatformGameCardPackage(selection.cardId)
+      return exportPlatformGameCardPackage(selection.cardId, { version: options.version })
     case "agent":
-      return exportAgentPackage(selection.source)
+      return exportAgentPackage(selection.source, { version: options.version })
     case "skill":
-      return exportSkillPackage(selection.source)
+      return exportSkillPackage(selection.source, { version: options.version })
     case "tool":
-      return exportToolPackage(selection.source)
+      return exportToolPackage(selection.source, { version: options.version })
   }
 }
 
@@ -998,15 +1049,25 @@ async function handleSavePackageEdit(metadata: Required<MarketUploadMetadata>): 
   errorMessage.value = ""
   try {
     const replacement = replacementSelection.value
-    const blob = replacement ? await exportMarketSelection(replacement) : null
+    let replacementVersion: string | undefined
+    if (replacement) {
+      const requiredVersion = requireVersion(metadata.version)
+      if (!requiredVersion) {
+        return
+      }
+      replacementVersion = requiredVersion
+    }
+    const blob = replacement ? await exportMarketSelection(replacement, { version: replacementVersion }) : null
     const updated = await marketApi.update(pkg.id, blob, {
       resourceType: pkg.resourceType,
       title: metadata.title,
       summary: metadata.summary,
       author: metadata.author,
-      version: metadata.version,
       tags: metadata.tags,
     })
+    if (replacement?.resourceType === "game_card") {
+      await syncUploadedGameCardVersion(replacement.cardId, replacementVersion)
+    }
     detailPackage.value = updated
     editSaveToken.value++
     clearReplacement()

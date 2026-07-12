@@ -530,6 +530,22 @@ export async function renameLocalSave(saveId: string, name: string): Promise<Loc
   return updated
 }
 
+export async function updateLocalSaveGameCardVersion(saveId: string, gameCardVersion: string): Promise<LocalSaveRecord> {
+  const trimmed = gameCardVersion.trim()
+  if (!trimmed) {
+    throw new Error("游戏卡版本不能为空。")
+  }
+
+  const existing = await localDb.saves.get(saveId)
+  if (!existing) {
+    throw new Error(`存档 "${saveId}" 不存在。`)
+  }
+
+  const updated: LocalSaveRecord = { ...existing, gameCardVersion: trimmed }
+  await localDb.saves.put(updated)
+  return updated
+}
+
 export async function deleteLocalSave(saveId: string): Promise<void> {
   await localDb.saves.delete(saveId)
 

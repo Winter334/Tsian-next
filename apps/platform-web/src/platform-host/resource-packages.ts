@@ -70,6 +70,10 @@ export interface ResourcePackageInspection {
   files: Array<{ path: string; content: string }>
 }
 
+export interface ResourcePackageExportOptions {
+  version?: string
+}
+
 interface TextPackageFile {
   path: string
   content: string
@@ -80,7 +84,10 @@ interface ParsedResourcePackage {
   files: TextPackageFile[]
 }
 
-export async function exportAgentPackage(source: AgentPackageSource): Promise<Blob> {
+export async function exportAgentPackage(
+  source: AgentPackageSource,
+  options: ResourcePackageExportOptions = {},
+): Promise<Blob> {
   const sourceFiles = source.kind === "assistant"
     ? await assistantDefinitionPackageFiles()
     : await cardDirectoryPackageFiles(source.cardId, `agents/${source.agentId}`)
@@ -100,11 +107,14 @@ export async function exportAgentPackage(source: AgentPackageSource): Promise<Bl
     name,
     summary,
     author: "",
-    version: DEFAULT_RESOURCE_VERSION,
+    version: options.version?.trim() || DEFAULT_RESOURCE_VERSION,
   }, sourceFiles)
 }
 
-export async function exportSkillPackage(source: SkillPackageSource): Promise<Blob> {
+export async function exportSkillPackage(
+  source: SkillPackageSource,
+  options: ResourcePackageExportOptions = {},
+): Promise<Blob> {
   const sourceFiles = source.kind === "assistant-local"
     ? await assistantSkillPackageFiles(source)
     : await cardSkillPackageFiles(source)
@@ -124,11 +134,14 @@ export async function exportSkillPackage(source: SkillPackageSource): Promise<Bl
     name,
     summary,
     author: "",
-    version: DEFAULT_RESOURCE_VERSION,
+    version: options.version?.trim() || DEFAULT_RESOURCE_VERSION,
   }, sourceFiles)
 }
 
-export async function exportToolPackage(source: ToolPackageSource): Promise<Blob> {
+export async function exportToolPackage(
+  source: ToolPackageSource,
+  options: ResourcePackageExportOptions = {},
+): Promise<Blob> {
   const sourceFiles = source.kind === "assistant-local"
     ? await assistantToolPackageFiles(source)
     : await cardToolPackageFiles(source)
@@ -147,7 +160,7 @@ export async function exportToolPackage(source: ToolPackageSource): Promise<Blob
     name,
     summary,
     author: "",
-    version: DEFAULT_RESOURCE_VERSION,
+    version: options.version?.trim() || DEFAULT_RESOURCE_VERSION,
   }, sourceFiles)
 }
 

@@ -77,10 +77,9 @@ type storedPackageBlobs struct {
 }
 
 type publishMetadata struct {
-	Name            string
-	Summary         string
-	ResourceAuthor  string
-	ResourceVersion string
+	Name           string
+	Summary        string
+	ResourceAuthor string
 }
 
 type packageUpdatePayload struct {
@@ -319,7 +318,7 @@ func (h *Handler) HandleUpload(w http.ResponseWriter, r *http.Request) {
 		ResourceType:      resourceType,
 		ResourceID:        manifest.ResourceID,
 		ResourceAuthor:    metadata.ResourceAuthor,
-		ResourceVersion:   metadata.ResourceVersion,
+		ResourceVersion:   manifest.ResourceVersion,
 		Name:              metadata.Name,
 		Summary:           metadata.Summary,
 		Tags:              tags,
@@ -685,7 +684,7 @@ func (h *Handler) buildPackageUpdate(ctx context.Context, existing PackageWithUp
 		Update: PackageUpdate{
 			ResourceID:        manifest.ResourceID,
 			ResourceAuthor:    metadata.ResourceAuthor,
-			ResourceVersion:   metadata.ResourceVersion,
+			ResourceVersion:   manifest.ResourceVersion,
 			Name:              metadata.Name,
 			Summary:           metadata.Summary,
 			Tags:              tags,
@@ -710,10 +709,6 @@ func formPublishMetadata(r *http.Request, manifest *uploadManifest) (publishMeta
 	if !hasAuthor {
 		resourceAuthor = manifest.ResourceAuthor
 	}
-	resourceVersion, hasVersion := optionalMultipartValue(r, "version")
-	if !hasVersion {
-		resourceVersion = manifest.ResourceVersion
-	}
 	if name == "" {
 		return publishMetadata{}, errors.New("title is required")
 	}
@@ -721,10 +716,9 @@ func formPublishMetadata(r *http.Request, manifest *uploadManifest) (publishMeta
 		return publishMetadata{}, errors.New("summary is required")
 	}
 	return publishMetadata{
-		Name:            name,
-		Summary:         summary,
-		ResourceAuthor:  resourceAuthor,
-		ResourceVersion: resourceVersion,
+		Name:           name,
+		Summary:        summary,
+		ResourceAuthor: resourceAuthor,
 	}, nil
 }
 
@@ -820,6 +814,10 @@ func validatePackageZip(content []byte) (*manifestPayload, error) {
 	if card.Schema != "tsian.game-card.v1" {
 		return nil, fmt.Errorf("unsupported manifest schema: %s", card.Schema)
 	}
+	card.ID = strings.TrimSpace(card.ID)
+	card.Name = strings.TrimSpace(card.Name)
+	card.Version = strings.TrimSpace(card.Version)
+	card.Summary = strings.TrimSpace(card.Summary)
 	if card.ID == "" {
 		return nil, errors.New("manifest missing id")
 	}

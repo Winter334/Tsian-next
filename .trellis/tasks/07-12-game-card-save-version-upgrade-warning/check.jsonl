@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Quality gate requires npm run build:web for platform-web changes."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Check correct emits and save/card active-state behavior after mutation."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check no Dexie schema change and storage helper boundaries."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Review end-to-end data flow and edge cases for missing/changed versions."}

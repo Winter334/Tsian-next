@@ -640,7 +640,26 @@ export async function importGameCardPackage(
   return savedCard
 }
 
-export async function exportGameCardPackage(cardId: string): Promise<Blob> {
+export interface GameCardPackageExportOptions {
+  version?: string
+}
+
+export interface GameCardPackageInspection {
+  manifest: GameCardManifest
+}
+
+export async function inspectGameCardPackage(
+  input: Blob | ArrayBuffer | Uint8Array,
+): Promise<GameCardPackageInspection> {
+  const entries = zipEntries(await toUint8Array(input))
+  const packageManifest = packageManifestFromEntries(entries)
+  return { manifest: packageManifest.manifest }
+}
+
+export async function exportGameCardPackage(
+  cardId: string,
+  options: GameCardPackageExportOptions = {},
+): Promise<Blob> {
   const card = await getLocalGameCard(cardId)
   if (!card) {
     throw new GameCardPackageError(
@@ -655,9 +674,13 @@ export async function exportGameCardPackage(cardId: string): Promise<Blob> {
   const contentFiles = coverFile?.contentPath
     ? allContentFiles.filter((file) => file.path !== coverFile.contentPath)
     : allContentFiles
+  const manifest = normalizeGameCardManifest({
+    ...card.manifest,
+    ...(options.version?.trim() ? { version: options.version.trim() } : {}),
+  })
   const packageManifest: GameCardPackageManifest = {
     schema: GAME_CARD_PACKAGE_SCHEMA,
-    manifest: normalizeGameCardManifest(card.manifest),
+    manifest,
     workspaceFiles: contentFiles.map((file) => ({
       path: `${WORKSPACE_PREFIX}${file.path}`,
       mediaType: inferMediaTypeFromPath(file.path),

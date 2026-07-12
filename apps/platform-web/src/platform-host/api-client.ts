@@ -87,7 +87,6 @@ export interface MarketPublishParams {
   title?: string
   summary?: string
   author?: string
-  version?: string
   tags?: string
 }
 
@@ -225,9 +224,6 @@ function marketPackageForm(file: Blob | null, params: MarketUpdateParams): FormD
   }
   if (params.author !== undefined) {
     form.append("author", params.author)
-  }
-  if (params.version !== undefined) {
-    form.append("version", params.version)
   }
   if (params.tags !== undefined) {
     form.append("tags", params.tags)
