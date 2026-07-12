@@ -504,6 +504,9 @@ export interface AgentContextEntry {
   agentFile: WorkspaceFile
   soulFile?: WorkspaceFile
   notesFile?: WorkspaceFile
+  /** Agent 伴生文件 PREFILL.md，runtime 以 assistant 角色注入消息序列末尾，
+   * 作为创作身份接受示范（prefill 技术）。不落盘、不进 context.json。 */
+  prefillFile?: WorkspaceFile
   skillIndex: SkillRegistryEntry[]
   /** Tools visible to this Agent after `tools.enabled/disabled` filtering. */
   toolIndex: ToolRegistryEntry[]

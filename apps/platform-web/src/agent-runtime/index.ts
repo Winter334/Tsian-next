@@ -891,6 +891,13 @@ function buildEntryAgentMessages(
     },
     // 前端注入（after-input）：玩家输入之后、工具循环之前。
     ...afterInputInjection,
+    // Agent prefill: 以 assistant 角色注入 PREFILL.md 内容，作为创作身份接受示范。
+    // 位于消息序列末尾（模型生成前的最后输入），最大化 prefill 续写效果。
+    // 不落盘、不进 context.json（与 injection 同理），不破坏 system+history+
+    // workspace context 稳定前缀缓存。详见 design §9 缓存命中分析。
+    ...(context.prefillFile
+      ? [{ role: "assistant" as const, content: context.prefillFile.content }]
+      : []),
   ]
 }
 

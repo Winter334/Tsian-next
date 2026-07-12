@@ -21,6 +21,7 @@ export interface AgentContextAssemblyOptions {
 
 const AGENT_FILE_NAME = "AGENT.md"
 const SOUL_FILE_NAME = "SOUL.md"
+const PREFILL_FILE_NAME = "PREFILL.md"
 
 function cleanString(value: string | undefined): string | undefined {
   const cleaned = value?.trim()
@@ -108,6 +109,9 @@ export function assembleAgentContext(
   const soulFile = agentDirectory
     ? filesByPath.get(`${agentDirectory}/${SOUL_FILE_NAME}`)
     : undefined
+  const prefillFile = agentDirectory
+    ? filesByPath.get(`${agentDirectory}/${PREFILL_FILE_NAME}`)
+    : undefined
   const contextFiles: WorkspaceFile[] = []
   const missingContextPaths: string[] = []
 
@@ -161,6 +165,9 @@ export function assembleAgentContext(
   }
   if (notesFile) {
     entry.notesFile = notesFile
+  }
+  if (prefillFile) {
+    entry.prefillFile = prefillFile
   }
 
   return entry
