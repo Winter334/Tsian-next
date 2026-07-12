@@ -1546,6 +1546,7 @@ export {
   updatePlatformStudioAgentToolEnabled,
   updatePlatformStudioAgentWorkspaceAccess,
   updatePlatformStudioAgentProviderPreset,
+  updatePlatformStudioAgentModuleEnabled,
   isPlatformStudioToolEnabledForAgent,
   type PlatformStudioSnapshot,
   type PlatformStudioProviderPresetOption,
@@ -1556,6 +1557,8 @@ export {
   type PlatformStudioAgentToolToggleInput,
   type PlatformStudioAgentWorkspaceAccessInput,
   type PlatformStudioAgentProviderPresetInput,
+  type PlatformStudioAgentModuleToggleInput,
+  type PlatformStudioModuleInfo,
 } from "./studio-agents"
 export {
   getLocalAssistantProviderPreset,
