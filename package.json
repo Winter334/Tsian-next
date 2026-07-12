@@ -2,16 +2,19 @@
   "name": "tsian",
   "private": true,
   "workspaces": [
+    "apps/admin-web",
     "apps/platform-web",
     "apps/play-frontend-dev",
     "packages/contracts",
-    "packages/play-bridge"
+    "packages/play-bridge",
+    "packages/web-utils"
   ],
   "scripts": {
     "dev:server": "go -C ./apps/platform-server run ./cmd/platform-server",
     "dev:web": "npm run dev --workspace platform-web",
     "dev:frontend": "npm run dev --workspace play-frontend-dev",
     "build:web": "npm run build --workspace platform-web",
+    "build:admin": "npm run build --workspace admin-web",
     "build:contracts": "npm run build --workspace @tsian/contracts",
     "package:frontend": "node scripts/package-play-frontend-source.mjs",
     "sync:frontend": "node scripts/sync-play-frontend-source.mjs"

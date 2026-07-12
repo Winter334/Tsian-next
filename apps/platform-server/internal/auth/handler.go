@@ -39,6 +39,11 @@ type userResponse struct {
 	AuthProviders []string `json:"authProviders"`
 }
 
+type adminMeResponse struct {
+	User    userResponse `json:"user"`
+	IsAdmin bool         `json:"isAdmin"`
+}
+
 func NewHandler(cfg config.Config, db *sql.DB, users user.Repository) *Handler {
 	return &Handler{
 		cfg:     cfg,
@@ -175,6 +180,15 @@ func (h *Handler) HandleMe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, toUserResponse(account))
+}
+
+func (h *Handler) HandleAdminMe(w http.ResponseWriter, r *http.Request) {
+	account, ok := user.FromContext(r.Context())
+	if !ok || account == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, http.StatusOK, adminMeResponse{User: toUserResponse(account), IsAdmin: true})
 }
 
 func (h *Handler) setSessionAndRedirect(w http.ResponseWriter, r *http.Request, account *user.User) {

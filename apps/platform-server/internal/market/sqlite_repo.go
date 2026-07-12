@@ -26,11 +26,12 @@ func (r *SQLiteRepository) List(ctx context.Context, filter ListFilter) (ListRes
 	}
 
 	query := `SELECT p.id, p.resource_type, p.resource_id, p.resource_author, p.resource_version,
-		p.name, p.summary, p.tags, p.cover_blob_key, p.cover_thumb_blob_key, p.uploader_id, p.download_count, p.created_at, p.updated_at,
-		u.display_name, u.avatar_url
-		FROM market_packages p
-		JOIN users u ON p.uploader_id = u.id
-		WHERE 1=1`
+			p.name, p.summary, p.tags, p.cover_blob_key, p.cover_thumb_blob_key, p.uploader_id, p.download_count,
+			p.hidden_at, p.hidden_by, p.created_at, p.updated_at,
+			u.display_name, u.avatar_url
+			FROM market_packages p
+			JOIN users u ON p.uploader_id = u.id
+			WHERE 1=1`
 
 	var args []any
 	query, args = appendListFilters(query, args, filter)
@@ -95,6 +96,14 @@ func (r *SQLiteRepository) Counts(ctx context.Context, filter CountFilter) (Coun
 		query += ` AND uploader_id = ?`
 		args = append(args, filter.UploaderID)
 	}
+	switch filter.Visibility {
+	case VisibilityAll:
+		// Count all packages.
+	case VisibilityHidden:
+		query += ` AND hidden_at IS NOT NULL`
+	default:
+		query += ` AND hidden_at IS NULL`
+	}
 	query += ` GROUP BY resource_type`
 
 	rows, err := r.db.QueryContext(ctx, query, args...)
@@ -124,12 +133,25 @@ func (r *SQLiteRepository) Counts(ctx context.Context, filter CountFilter) (Coun
 }
 
 func (r *SQLiteRepository) GetByID(ctx context.Context, id string) (*PackageWithUploader, error) {
-	row := r.db.QueryRowContext(ctx, `SELECT p.id, p.resource_type, p.resource_id, p.resource_author, p.resource_version,
-		p.name, p.summary, p.tags, p.cover_blob_key, p.cover_thumb_blob_key, p.uploader_id, p.download_count, p.created_at, p.updated_at,
-		u.display_name, u.avatar_url
-		FROM market_packages p
-		JOIN users u ON p.uploader_id = u.id
-		WHERE p.id = ?`, id)
+	return r.getByID(ctx, id, false)
+}
+
+func (r *SQLiteRepository) GetByIDForAdmin(ctx context.Context, id string) (*PackageWithUploader, error) {
+	return r.getByID(ctx, id, true)
+}
+
+func (r *SQLiteRepository) getByID(ctx context.Context, id string, includeHidden bool) (*PackageWithUploader, error) {
+	query := `SELECT p.id, p.resource_type, p.resource_id, p.resource_author, p.resource_version,
+			p.name, p.summary, p.tags, p.cover_blob_key, p.cover_thumb_blob_key, p.uploader_id, p.download_count,
+			p.hidden_at, p.hidden_by, p.created_at, p.updated_at,
+			u.display_name, u.avatar_url
+			FROM market_packages p
+			JOIN users u ON p.uploader_id = u.id
+			WHERE p.id = ?`
+	if !includeHidden {
+		query += ` AND p.hidden_at IS NULL`
+	}
+	row := r.db.QueryRowContext(ctx, query, id)
 	item, err := scanPackageWithUploaderRow(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -181,6 +203,31 @@ func (r *SQLiteRepository) Update(ctx context.Context, id string, update Package
 	return nil
 }
 
+func (r *SQLiteRepository) SetHidden(ctx context.Context, id string, hiddenBy string) error {
+	now := time.Now().UTC().Format(time.RFC3339)
+	result, err := r.db.ExecContext(ctx, `UPDATE market_packages SET hidden_at = ?, hidden_by = ?, updated_at = ? WHERE id = ?`,
+		now, hiddenBy, now, id)
+	if err != nil {
+		return fmt.Errorf("hide market package: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+func (r *SQLiteRepository) ClearHidden(ctx context.Context, id string) error {
+	result, err := r.db.ExecContext(ctx, `UPDATE market_packages SET hidden_at = NULL, hidden_by = NULL, updated_at = ? WHERE id = ?`,
+		time.Now().UTC().Format(time.RFC3339), id)
+	if err != nil {
+		return fmt.Errorf("unhide market package: %w", err)
+	}
+	if affected, err := result.RowsAffected(); err == nil && affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 func (r *SQLiteRepository) Delete(ctx context.Context, id string) error {
 	result, err := r.db.ExecContext(ctx, `DELETE FROM market_packages WHERE id = ?`, id)
 	if err != nil {
@@ -212,13 +259,26 @@ func appendListFilters(query string, args []any, filter ListFilter) (string, []a
 		args = append(args, filter.UploaderID)
 	}
 	if filter.Query != "" {
-		query += ` AND (p.name LIKE ? OR p.summary LIKE ?)`
+		query += ` AND (p.name LIKE ? OR p.summary LIKE ? OR p.resource_id LIKE ?)`
 		like := "%" + filter.Query + "%"
+		args = append(args, like, like, like)
+	}
+	if filter.UploaderQuery != "" {
+		query += ` AND (p.uploader_id LIKE ? OR u.display_name LIKE ?)`
+		like := "%" + filter.UploaderQuery + "%"
 		args = append(args, like, like)
 	}
 	if filter.Tag != "" {
 		query += ` AND p.tags LIKE ?`
 		args = append(args, `%"`+filter.Tag+`"%`)
+	}
+	switch filter.Visibility {
+	case VisibilityAll:
+		// Include visible and hidden packages.
+	case VisibilityHidden:
+		query += ` AND p.hidden_at IS NOT NULL`
+	default:
+		query += ` AND p.hidden_at IS NULL`
 	}
 	return query, args
 }
@@ -239,15 +299,18 @@ func scanPackageWithUploader(rows *sql.Rows) (PackageWithUploader, error) {
 	var coverThumbBlobKey sql.NullString
 	var avatarURL sql.NullString
 	var tagsJSON string
+	var hiddenAt sql.NullString
+	var hiddenBy sql.NullString
 	var createdAt, updatedAt string
 	if err := rows.Scan(
 		&item.ID, (*string)(&item.ResourceType), &item.ResourceID, &item.ResourceAuthor, &item.ResourceVersion,
-		&item.Name, &item.Summary, &tagsJSON, &coverBlobKey, &coverThumbBlobKey, &item.UploaderID, &item.DownloadCount, &createdAt, &updatedAt,
+		&item.Name, &item.Summary, &tagsJSON, &coverBlobKey, &coverThumbBlobKey, &item.UploaderID, &item.DownloadCount,
+		&hiddenAt, &hiddenBy, &createdAt, &updatedAt,
 		&item.UploaderDisplayName, &avatarURL,
 	); err != nil {
 		return item, fmt.Errorf("scan market package: %w", err)
 	}
-	if err := hydratePackageFields(&item, coverBlobKey, coverThumbBlobKey, avatarURL, tagsJSON, createdAt, updatedAt); err != nil {
+	if err := hydratePackageFields(&item, coverBlobKey, coverThumbBlobKey, avatarURL, tagsJSON, hiddenAt, hiddenBy, createdAt, updatedAt); err != nil {
 		return item, err
 	}
 	return item, nil
@@ -259,26 +322,40 @@ func scanPackageWithUploaderRow(row *sql.Row) (PackageWithUploader, error) {
 	var coverThumbBlobKey sql.NullString
 	var avatarURL sql.NullString
 	var tagsJSON string
+	var hiddenAt sql.NullString
+	var hiddenBy sql.NullString
 	var createdAt, updatedAt string
 	if err := row.Scan(
 		&item.ID, (*string)(&item.ResourceType), &item.ResourceID, &item.ResourceAuthor, &item.ResourceVersion,
-		&item.Name, &item.Summary, &tagsJSON, &coverBlobKey, &coverThumbBlobKey, &item.UploaderID, &item.DownloadCount, &createdAt, &updatedAt,
+		&item.Name, &item.Summary, &tagsJSON, &coverBlobKey, &coverThumbBlobKey, &item.UploaderID, &item.DownloadCount,
+		&hiddenAt, &hiddenBy, &createdAt, &updatedAt,
 		&item.UploaderDisplayName, &avatarURL,
 	); err != nil {
 		return item, err
 	}
-	if err := hydratePackageFields(&item, coverBlobKey, coverThumbBlobKey, avatarURL, tagsJSON, createdAt, updatedAt); err != nil {
+	if err := hydratePackageFields(&item, coverBlobKey, coverThumbBlobKey, avatarURL, tagsJSON, hiddenAt, hiddenBy, createdAt, updatedAt); err != nil {
 		return item, err
 	}
 	return item, nil
 }
 
-func hydratePackageFields(item *PackageWithUploader, coverBlobKey sql.NullString, coverThumbBlobKey sql.NullString, avatarURL sql.NullString, tagsJSON string, createdAt string, updatedAt string) error {
+func hydratePackageFields(item *PackageWithUploader, coverBlobKey sql.NullString, coverThumbBlobKey sql.NullString, avatarURL sql.NullString, tagsJSON string, hiddenAt sql.NullString, hiddenBy sql.NullString, createdAt string, updatedAt string) error {
 	item.CoverBlobKey = coverBlobKey.String
 	item.CoverThumbBlobKey = coverThumbBlobKey.String
 	if avatarURL.Valid {
 		avatar := avatarURL.String
 		item.UploaderAvatarURL = &avatar
+	}
+	if hiddenAt.Valid && hiddenAt.String != "" {
+		parsedHiddenAt, err := parseTime(hiddenAt.String)
+		if err != nil {
+			return err
+		}
+		item.HiddenAt = &parsedHiddenAt
+	}
+	if hiddenBy.Valid && hiddenBy.String != "" {
+		hiddenByValue := hiddenBy.String
+		item.HiddenBy = &hiddenByValue
 	}
 	if err := json.Unmarshal([]byte(tagsJSON), &item.Tags); err != nil {
 		return fmt.Errorf("parse package tags: %w", err)

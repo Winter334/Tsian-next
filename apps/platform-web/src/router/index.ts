@@ -70,6 +70,11 @@ const router = createRouter({
       component: () => import("../views/PlayView.vue"),
     },
     {
+      path: "/announcements",
+      name: "announcements",
+      component: () => import("../views/AnnouncementCenterView.vue"),
+    },
+    {
       path: "/debug",
       name: "debug",
       component: () => import("../views/DebugView.vue"),

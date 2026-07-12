@@ -52,8 +52,12 @@ import {
   streamAssistantReplyText,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
-import { getBrowserAiConfig } from "../config/ai"
-import { resolveBrowserAiConfigForModel } from "../config/ai"
+import {
+  DEFAULT_BROWSER_AI_STREAMING,
+  DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
+  getBrowserAiConfig,
+  resolveBrowserAiConfigForModel,
+} from "../config/ai"
 import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import { createFrontendInspector } from "./frontend-inspector"
@@ -428,7 +432,7 @@ export async function runAssistantChat(
   const localAssistantToolCallMode =
     assistantModelConfig?.toolCallMode
     ?? getBrowserAiConfig()?.toolCallMode
-    ?? "text"
+    ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE
 
   // 读会话 agent 上下文快照(虚拟文件 sessions/<sessionId>/context.json,已在
   // localAssistantFiles 里加载,零额外 IO).无则从 history 兜底初始化(旧会话迁移).
@@ -520,7 +524,7 @@ export async function runAssistantChat(
           // Text-protocol streaming gate (mirrors callModelNative below).
           const streamingEnabled = agentConfig
             ? agentConfig.streaming
-            : getBrowserAiConfig()?.streaming ?? false
+            : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
           if (!options.onDelta || !streamingEnabled) {
             return generateAssistantReply(messages, {
               debugLabel: options.debugLabel,
@@ -552,7 +556,7 @@ export async function runAssistantChat(
           // back to the global config's flag when this agent has no preset.
           const streamingEnabled = agentConfig
             ? agentConfig.streaming
-            : getBrowserAiConfig()?.streaming ?? false
+            : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
           if (!options.onDelta || !streamingEnabled) {
             return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
               debugLabel: options.debugLabel,

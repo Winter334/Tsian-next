@@ -1,8 +1,11 @@
 import type {
+  Announcement,
+  AnnouncementListResponse,
   MarketPackage,
   MarketPackageCountsResponse,
   MarketPackageListResponse,
   MarketResourceType,
+  PresenceSummaryResponse,
   User,
 } from "@tsian/contracts"
 
@@ -165,6 +168,23 @@ export const marketApi = {
       throw new ApiError(text.trim() || `下载失败 (${response.status})`, response.status)
     }
     return response.blob()
+  },
+}
+
+export const announcementsApi = {
+  async list(): Promise<Announcement[]> {
+    const response = await apiFetch<AnnouncementListResponse>("/api/v1/announcements")
+    return response.announcements
+  },
+}
+
+export const presenceApi = {
+  async heartbeat(): Promise<PresenceSummaryResponse> {
+    return apiFetch<PresenceSummaryResponse>("/api/v1/presence/heartbeat", { method: "POST" })
+  },
+
+  async summary(): Promise<PresenceSummaryResponse> {
+    return apiFetch<PresenceSummaryResponse>("/api/v1/presence/summary")
   },
 }
 

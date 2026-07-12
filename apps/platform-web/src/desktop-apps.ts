@@ -3,6 +3,7 @@ import { defineAsyncComponent } from "vue"
 import type { RouteLocationNormalizedLoaded } from "vue-router"
 import {
   Activity,
+  Bell,
   Bot,
   CircleUser,
   FilePenLine,
@@ -29,6 +30,7 @@ export type DesktopAppId =
   | "play"
   | "settings"
   | "account"
+  | "announcements"
   | "debug"
 
 export interface DesktopWindowInput {
@@ -88,6 +90,7 @@ const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDe
 const PlayView = defineAsyncComponent(() => import("./views/PlayView.vue"))
 const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"))
 const AccountView = defineAsyncComponent(() => import("./views/AccountView.vue"))
+const AnnouncementCenterView = defineAsyncComponent(() => import("./views/AnnouncementCenterView.vue"))
 const DebugView = defineAsyncComponent(() => import("./views/DebugView.vue"))
 
 const desktopApps: DesktopAppDefinition[] = [
@@ -236,6 +239,22 @@ const desktopApps: DesktopAppDefinition[] = [
   },
 ]
 
+const announcementDefinition: DesktopAppDefinition = {
+  appId: "announcements",
+  label: "公告中心",
+  shortLabel: "公告",
+  routeName: "announcements",
+  routePath: "/announcements",
+  title: "公告中心",
+  caption: "平台消息与更新记录",
+  icon: Bell,
+  component: AnnouncementCenterView,
+  defaultWidth: 760,
+  defaultHeight: 560,
+  minWidth: 460,
+  minHeight: 360,
+}
+
 const gameLauncherDefinition: DesktopAppDefinition = {
   appId: "game-launcher",
   label: "应用属性",
@@ -374,6 +393,14 @@ export function desktopWindowForRoute(
     })
   }
 
+  if (routeName === "announcements") {
+    return windowInputFromDefinition(announcementDefinition, {
+      id: announcementDefinition.appId,
+      routePath: route.fullPath || announcementDefinition.routePath,
+      props: {},
+    })
+  }
+
   const app = desktopApps.find((candidate) => candidate.routeName === routeName)
   if (!app) {
     return null
@@ -414,6 +441,14 @@ function windowInputFromDefinition(
     minHeight: app.minHeight,
     fullscreenable: app.fullscreenable,
   }
+}
+
+export function announcementWindowInput(): DesktopWindowInput {
+  return windowInputFromDefinition(announcementDefinition, {
+    id: announcementDefinition.appId,
+    routePath: announcementDefinition.routePath,
+    props: {},
+  })
 }
 
 export const fallbackDesktopIcon = MonitorCog

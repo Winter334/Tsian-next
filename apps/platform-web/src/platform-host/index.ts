@@ -131,6 +131,8 @@ import {
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
 import {
+  DEFAULT_BROWSER_AI_STREAMING,
+  DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
   getBrowserAiConfig,
   listBrowserAiProviderPresetOptions,
   resolveBrowserAiConfigForProviderId,
@@ -962,7 +964,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
               // callModelNative below.
               const streamingEnabled = agentConfig
                 ? agentConfig.streaming
-                : getBrowserAiConfig()?.streaming ?? false
+                : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
               if (!options.onDelta || !streamingEnabled) {
                 return generateAssistantReply(messages, {
                   debugLabel: options.debugLabel,
@@ -987,7 +989,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
               // back to the global config's flag when this agent has no preset.
               const streamingEnabled = agentConfig
                 ? agentConfig.streaming
-                : getBrowserAiConfig()?.streaming ?? false
+                : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
               if (!options.onDelta || !streamingEnabled) {
                 return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
                   debugLabel: options.debugLabel,
@@ -1012,7 +1014,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
             },
             toolCallMode: playerTurnConfig?.toolCallMode
               ?? getBrowserAiConfig()?.toolCallMode
-              ?? "text",
+              ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
             ...createBrowserScriptRunners({
               workspaceTransaction: activeWorkspaceTransaction,
               signal: currentController.signal,
@@ -1339,7 +1341,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
                 const streamingEnabled = modelConfig
                   ? modelConfig.streaming
-                  : getBrowserAiConfig()?.streaming ?? false
+                  : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
                 if (!options.onDelta || !streamingEnabled) {
                   return generateAssistantReply(messages, {
                     debugLabel: options.debugLabel,
@@ -1361,7 +1363,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
                 const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
                 const streamingEnabled = modelConfig
                   ? modelConfig.streaming
-                  : getBrowserAiConfig()?.streaming ?? false
+                  : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
                 if (!options.onDelta || !streamingEnabled) {
                   return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
                     debugLabel: options.debugLabel,
@@ -1384,7 +1386,7 @@ export const playFrontendBridge: PlayFrontendBridge = {
               emitTrace: trace.emit,
               toolCallMode: targetConfig?.toolCallMode
                 ?? getBrowserAiConfig()?.toolCallMode
-                ?? "text",
+                ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
               ...createBrowserScriptRunners({
                 workspaceTransaction: workspaceTransaction!,
                 signal: invokeController.signal,
