@@ -1322,6 +1322,20 @@ function validateFrontmatterFile(file: WorkspaceFile): WorkspaceValidationResult
   }]
 }
 
+function defaultWorkspaceValidator(path: string | undefined): "json" | "frontmatter" | undefined {
+  if (!path) {
+    return undefined
+  }
+  const lowerPath = path.toLowerCase()
+  if (lowerPath.endsWith(".json")) {
+    return "json"
+  }
+  if (lowerPath.endsWith("/skill.md") || lowerPath === "skill.md") {
+    return "frontmatter"
+  }
+  return undefined
+}
+
 function validateWorkspaceFile(
   files: WorkspaceFile[],
   scope: WorkspaceScope,
@@ -1338,9 +1352,17 @@ function validateWorkspaceFile(
   const path = request.path === undefined
     ? undefined
     : normalizeWorkspaceOperationFilePath(request.path)
-  const validator = request.validator
-    ?? (path?.endsWith(".json") ? "json" : "frontmatter")
+  const validator = request.validator ?? defaultWorkspaceValidator(path)
 
+  if (!validator) {
+    return {
+      scope,
+      path,
+      valid: true,
+      validator: "plain",
+      errors: [],
+    }
+  }
   if (!path) {
     return {
       scope,

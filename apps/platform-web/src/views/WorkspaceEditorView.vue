@@ -171,7 +171,7 @@ function routeQueryString(value: unknown): string {
 function isFrontmatterDefinitionPath(path: string): boolean {
   const segments = path.split("/").filter(Boolean)
   const fileName = segments[segments.length - 1]
-  return fileName === "agent.md" || fileName === "skill.md"
+  return fileName === "skill.md"
 }
 
 function errorMessage(error: unknown, fallback: string): string {
