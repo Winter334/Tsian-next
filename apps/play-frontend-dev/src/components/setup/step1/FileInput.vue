@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from "vue"
+import { readTextFileWithEncoding } from "../../../lib/text-decoding"
 
 /**
  * FileInput — 文件导入（真实拖放 + 选择文件）。
@@ -18,11 +19,13 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const dropZone = ref<HTMLElement | null>(null)
 const dragging = ref(false)
 const selectedFileName = ref("")
+const decodedEncodingLabel = ref("")
 
 function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement
   if (input.files?.[0]) {
     selectedFileName.value = input.files[0].name
+    decodedEncodingLabel.value = ""
   }
 }
 
@@ -44,6 +47,7 @@ function onDrop(e: DragEvent) {
     transfer.items.add(dropped)
     fileInput.value.files = transfer.files
     selectedFileName.value = dropped.name
+    decodedEncodingLabel.value = ""
     emit("autoImport")
   }
 }
@@ -54,8 +58,7 @@ function getInput(): { text: string; title: string; fileName?: string } {
   if (!file) {
     return { text: "", title: title.value.trim() }
   }
-  // 文件读取是异步的，但 legacy 代码在 startImport 里 await file.text()。
-  // 这里返回标记，让父组件知道需要异步读取。
+  // 文件读取是异步的，父组件通过 readFile() 读取并解码真实内容。
   return {
     text: "", // 占位，父组件通过 readFile() 异步获取
     title: title.value.trim(),
@@ -67,8 +70,10 @@ function getInput(): { text: string; title: string; fileName?: string } {
 async function readFile(): Promise<{ text: string; title: string; fileName?: string } | null> {
   const file = fileInput.value?.files?.[0]
   if (!file) return null
+  const decoded = await readTextFileWithEncoding(file)
+  decodedEncodingLabel.value = decoded.encodingLabel
   return {
-    text: await file.text(),
+    text: decoded.text,
     title: title.value.trim(),
     fileName: file.name,
   }
@@ -101,7 +106,10 @@ defineExpose({ getInput, readFile })
         @change="onFileChange"
       />
       <span class="drop-title">拖入或选择 .txt / .md 文件</span>
-      <span class="drop-copy">{{ selectedFileName || "支持拖放，或点击选择。" }}</span>
+      <span class="drop-copy">
+        {{ selectedFileName || "支持拖放，或点击选择。" }}
+        <template v-if="decodedEncodingLabel"> · {{ decodedEncodingLabel }}</template>
+      </span>
       <!-- 四角括号 -->
       <span class="bracket tl" aria-hidden="true" />
       <span class="bracket tr" aria-hidden="true" />
