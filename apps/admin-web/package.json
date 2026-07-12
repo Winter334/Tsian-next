@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@fontsource/jetbrains-mono": "^5.2.8",
-    "@tsian/contracts": "0.2.0-beta.0",
+    "@tsian/contracts": "0.2.0-beta.1",
     "@tsian/web-utils": "0.0.0",
     "lucide-vue-next": "^1.0.0",
     "vue": "^3.5.13",

@@ -37,7 +37,9 @@ const SOURCE_PREFIX = "frontend/src/"
 const CACHE_NAME = "tsian-builder-cache"
 const WASM_CACHE_KEY = "esbuild-wasm"
 const PLAY_BRIDGE_IMPORT = "@tsian/play-bridge"
-const PLAY_BRIDGE_CDN_URL = "https://esm.sh/@tsian/play-bridge@0.2.0-beta.0"
+// 测试阶段：跟随 npm beta dist-tag 自动解析最新 beta 版，免去每次发版手动改版本号。
+// 正式阶段应改为锁定具体版本（如 @0.2.0），避免 beta breaking 变更即时影响线上卡构建。
+const PLAY_BRIDGE_CDN_URL = "https://esm.sh/@tsian/play-bridge@beta"
 
 const ENTRY_CANDIDATES = [
   "main.ts",
