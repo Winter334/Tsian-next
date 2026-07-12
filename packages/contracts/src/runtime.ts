@@ -436,12 +436,37 @@ export interface AgentWorkspaceAccessConfig {
   level: number
 }
 
+/** contextPath 条目对象形式：支持指定注入角色与内联模板。path 与 template 互斥。 */
+export interface ContextPathObject {
+  /** workspace 文件路径。与 template 互斥。 */
+  path?: string
+  /** 内联模板字符串（非文件路径）。与 path 互斥。 */
+  template?: string
+  /** 注入消息角色。默认 "user"。 */
+  role?: "system" | "user" | "assistant"
+}
+
+/** contextPath 条目：纯字符串（向后兼容）或对象形式（支持 role/template）。 */
+export type ContextPathEntry = string | ContextPathObject
+
+/** 编译后的注入条目（宏已展开）。携带 role 与最终内容，供消息构建层消费。 */
+export interface ContextInjection {
+  role: "system" | "user" | "assistant"
+  content: string
+  /** 来源描述（用于 meta 信息显示，如文件路径或 "inline template"）。 */
+  source: string
+}
+
 export interface AgentConfig {
   id: string
   title: string
   summary: string
   contacts: string[]
-  contextPaths: string[]
+  /** workspace 注入条目列表。纯字符串向后兼容；对象形式支持 role/template 与宏展开。 */
+  contextPaths: ContextPathEntry[]
+  /** 启用的规则模块名列表（文件名 stem）。用于 {{file:...?enabled}} 条件检查。
+   *  未提供时 ?enabled 条件默认为"包含"（向后兼容）。 */
+  enabledModules?: string[]
   skills: AgentSkillConfig
   /**
    * Agent-scoped Tool whitelist/blacklist. Empty `enabled` means "no user
@@ -489,7 +514,9 @@ export interface AgentRegistryEntry {
   disabledTools: string[]
   platformTools: AgentPlatformToolConfig
   workspaceAccess: AgentWorkspaceAccessConfig
-  contextPaths: string[]
+  contextPaths: ContextPathEntry[]
+  /** 启用的规则模块名列表（解析后，默认空数组）。用于 {{file:...?enabled}} 条件检查。 */
+  enabledModules: string[]
   knowledgeMount?: string
   providerPresetId?: string
   /** Entry mode resolved from agent.json; defaults to `"persistent"`. */
@@ -510,7 +537,9 @@ export interface AgentContextEntry {
   skillIndex: SkillRegistryEntry[]
   /** Tools visible to this Agent after `tools.enabled/disabled` filtering. */
   toolIndex: ToolRegistryEntry[]
-  contextFiles: WorkspaceFile[]
+  /** 编译后的注入条目（宏已展开）。替代旧的 contextFiles——后者是原始文件，
+   *  前者是宏展开后的编译产物，携带 role 和最终内容。 */
+  contextInjections: ContextInjection[]
   knowledgeFiles: WorkspaceFile[]
   missingContextPaths: string[]
 }

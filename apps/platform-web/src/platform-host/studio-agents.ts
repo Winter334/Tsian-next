@@ -44,6 +44,24 @@ export interface PlatformStudioProviderPresetOption {
   name: string
 }
 
+/**
+ * One discoverable rule-module file (`agents/<agentId>/modules/*.md` or
+ * `.tsian/local/<agentId>/modules/*.md`). Studio renders a per-module Switch
+ * whose state reflects whether `agent.enabledModules` includes `stem`; the
+ * stem is what `{{file:modules/*.md?enabled}}` matches against
+ * (see `macro-engine.ts` `fileStem`).
+ */
+export interface PlatformStudioModuleInfo {
+  /** Agent id that owns this module. */
+  agentId: string
+  /** File stem (filename without extension) — matched against `enabledModules`. */
+  stem: string
+  /** Display name extracted from the file's first `# ` line, fallback to stem. */
+  title: string
+  /** Workspace file path. */
+  path: string
+}
+
 export interface PlatformStudioSnapshot {
   card: LocalGameCardRecord
   activeSaveId?: string
@@ -65,6 +83,13 @@ export interface PlatformStudioSnapshot {
    * `SkillRegistryEntry.errors` field — the tool layer is additive.
    */
   toolDiagnostics: RegistryDiagnostic[]
+  /**
+   * Rule-module files discovered under `agents/<id>/modules/*.md` (and
+   * `.tsian/local/<id>/modules/*.md`). Studio renders a per-Agent "规则模块"
+   * Switch section; toggling updates `agent.enabledModules` (the list the
+   * `{{file:...?enabled}}` macro consults). Empty when no module files exist.
+   */
+  modules: PlatformStudioModuleInfo[]
   providerPresets: PlatformStudioProviderPresetOption[]
 }
 
@@ -106,6 +131,21 @@ export interface PlatformStudioAgentPlatformToolToggleInput {
   enabled: boolean
 }
 
+/**
+ * Toggle a rule module's enabled state for a specific Agent. Mirrors the
+ * Skill/Tool toggle flow: rewrites `agent.json.enabledModules` such that the
+ * module stem ends up in (enabled=true) or out of (enabled=false) the list
+ * that `{{file:modules/*.md?enabled}}` consults.
+ *
+ * `moduleStem` is the module file's name without extension (the same value
+ * `macro-engine.ts` `fileStem` produces).
+ */
+export interface PlatformStudioAgentModuleToggleInput {
+  agentId: string
+  moduleStem: string
+  enabled: boolean
+}
+
 export interface PlatformStudioAgentWorkspaceAccessInput {
   agentId: string
   level: number
@@ -144,6 +184,68 @@ async function activeStudioWorkspaceFiles(
   }
 }
 
+/**
+ * Extract a display title from module file content: the first non-empty line,
+ * stripped of a leading `# ` heading marker. Falls back to `stem` when the
+ * file has no heading (or is empty), matching how skill titles fall back to
+ * the file stem elsewhere.
+ */
+function extractModuleTitle(content: string, stem: string): string {
+  const firstLine = content.split("\n").find((line) => line.trim())
+  if (firstLine && firstLine.startsWith("# ")) {
+    return firstLine.slice(2).trim()
+  }
+  return stem
+}
+
+/**
+ * Discover rule-module files for every Agent in the workspace. Matches both
+ * the distributed `agents/<id>/modules/*.md` layout and the local-only
+ * `.tsian/local/<id>/modules/*.md` layout (the latter mirrors how local skills
+ * and tools shadow their distributed counterparts). Returns a flat list keyed
+ * by `agentId`; Studio filters per selected Agent.
+ */
+function discoverPlatformStudioModules(
+  files: WorkspaceFile[],
+): PlatformStudioModuleInfo[] {
+  const modules: PlatformStudioModuleInfo[] = []
+  // `agents/<id>/modules/<name>.md` (segments: ["agents", id, "modules", name])
+  // `.tsian/local/<id>/modules/<name>.md` (segments: [".tsian","local",id,...])
+  for (const file of files) {
+    const segments = file.path.split("/")
+    if (segments.length < 2) continue
+    const lastIndex = segments.length - 1
+    const name = segments[lastIndex]
+    const modulesDir = segments[lastIndex - 1]
+    if (modulesDir !== "modules" || !name.endsWith(".md")) continue
+
+    let agentId: string | null = null
+    if (
+      segments.length === 4
+      && segments[0] === "agents"
+    ) {
+      agentId = segments[1]
+    } else if (
+      segments.length === 5
+      && segments[0] === ".tsian"
+      && segments[1] === "local"
+    ) {
+      agentId = segments[2]
+    }
+    if (!agentId) continue
+
+    const stem = name.slice(0, -".md".length)
+    modules.push({
+      agentId,
+      stem,
+      title: extractModuleTitle(file.content, stem),
+      path: file.path,
+    })
+  }
+  modules.sort((a, b) => a.path.localeCompare(b.path))
+  return modules
+}
+
 export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapshot> {
   const card = await getPlatformActiveGameCard()
   if (!card) {
@@ -154,6 +256,7 @@ export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapsho
   const agents = buildAgentRegistry(context.files)
   const skills = buildSkillRegistry(context.files)
   const toolRegistry = buildToolRegistry(context.files)
+  const modules = discoverPlatformStudioModules(context.files)
 
   return {
     card,
@@ -163,6 +266,7 @@ export async function getPlatformStudioSnapshot(): Promise<PlatformStudioSnapsho
     skills,
     tools: toolRegistry.tools,
     toolDiagnostics: toolRegistry.diagnostics,
+    modules,
     providerPresets: listBrowserAiProviderPresetOptions(),
   }
 }
@@ -620,4 +724,48 @@ export async function updatePlatformStudioAgentProviderPreset(
   }
 
   return writeAgentConfigRecord(card.id, agent, nextConfig)
+}
+
+/**
+ * Toggle a rule module's enabled state for an Agent by rewriting
+ * `agent.json.enabledModules`. Follows the same explicit-intent pattern as
+ * `updatePlatformStudioAgentPlatformToolEnabled`: unconditionally remove the
+ * stem from the list first, then append it when `enabled=true`. This defends
+ * against the same silent-drift bug that hit platform tool toggles (default-
+ * state derivation makes "enable an already-enabled module" look like a no-op
+ * and skip persistence).
+ *
+ * `enabledModules` is the list `{{file:modules/*.md?enabled}}` consults
+ * (`macro-engine.ts` `isFileEnabled`); `undefined` in the raw config means
+ * "all modules included" (backward compat), but once Studio writes an explicit
+ * list the macro switches to whitelist semantics.
+ */
+export async function updatePlatformStudioAgentModuleEnabled(
+  input: PlatformStudioAgentModuleToggleInput,
+): Promise<WorkspaceFile> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  const stem = input.moduleStem.trim()
+  if (!stem) {
+    throw new Error("moduleStem 不能为空。")
+  }
+
+  // Drop any prior reference, then append when enabling — explicit intent.
+  let enabledModules = agent.enabledModules.filter((value) => value !== stem)
+  if (input.enabled) {
+    enabledModules = [...enabledModules, stem]
+  }
+
+  const configFile = agentConfigFileForAgent(context.files, agent)
+  const config = parseAgentConfigRecord(configFile)
+
+  return writeAgentConfigRecord(card.id, agent, {
+    ...config,
+    enabledModules,
+  })
 }

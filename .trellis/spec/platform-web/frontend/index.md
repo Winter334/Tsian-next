@@ -23,9 +23,23 @@ Use these specs when changing `apps/platform-web/src/**`.
 - `apps/platform-web/src/agent-runtime/index.ts`
 - `apps/platform-web/src/agent-runtime/trace.ts`
 - `apps/platform-web/src/agent-runtime/diagnostics.ts`
+- `apps/platform-web/src/agent-runtime/macro-engine.ts`
 - `apps/platform-web/src/platform-host/index.ts`
 - `apps/platform-web/src/views/LobbyView.vue`
 - `apps/platform-web/src/views/DebugView.vue`
+
+## Context Injection Composer
+
+`contextPaths` in `agent.json` supports three entry forms (see `ContextPathEntry` in contracts):
+- **String** `"path"` — backward-compatible: one `user` message per file, content macro-expanded
+- **Path object** `{path, role}` — one file, inject as specified role, content macro-expanded
+- **Template object** `{template, role}` — inline template string, macro-expanded, inject as specified role
+
+**Macro engine** (`macro-engine.ts`): `expandMacros()` processes `{{file:path}}`, `{{file:path?enabled}}`, `{{file:dir/*.md?enabled}}` (1-layer glob, no recursion), `{{random:A,B,C}}`, then implicit whitespace cleanup. Relative paths resolve against the injected file's directory (template objects use the agent directory). `enabledModules: string[]` on `AgentConfig` controls `?enabled` inclusion by file stem; empty/absent defaults to include all (backward-compatible).
+
+**Compilation flow**: `registry.ts` parses entries → `context.ts` `assembleAgentContext` resolves files + expands macros → `index.ts` `buildAgentContextMessages_split` emits one `RuntimeChatMessage` per injection (with role + source label). Empty compiled content is skipped. `AgentContextEntry.contextInjections: ContextInjection[]` replaces the former `contextFiles`.
+
+**Cache**: pure-string entries preserve the existing one-file-per-message split (prefix cache stable). `{{random}}` causes per-turn cache miss — use sparingly.
 
 ## Trace Diagnostics
 

@@ -1,6 +1,7 @@
 import type {
   AgentContextEntry,
   AgentRegistryEntry,
+  ContextInjection,
   ToolRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
@@ -11,6 +12,7 @@ import {
   filterSkillsForAgent,
   filterToolsForAgent,
 } from "./registry"
+import { expandMacros, normalizeWorkspaceFilePath } from "./macro-engine"
 
 export interface AgentContextAssemblyOptions {
   agentId?: string
@@ -26,31 +28,6 @@ const PREFILL_FILE_NAME = "PREFILL.md"
 function cleanString(value: string | undefined): string | undefined {
   const cleaned = value?.trim()
   return cleaned || undefined
-}
-
-function normalizeWorkspaceFilePath(value: string | undefined): string | null {
-  const raw = value?.trim()
-  if (!raw) {
-    return null
-  }
-
-  const hadTrailingSlash = /[\\/]$/.test(raw)
-  const normalized = raw
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/+$/, "")
-
-  if (!normalized || hadTrailingSlash) {
-    return null
-  }
-
-  const segments = normalized.split("/")
-  if (segments.some((segment) => segment === "." || segment === ".." || segment === "")) {
-    return null
-  }
-
-  return normalized
 }
 
 function findAgent(
@@ -112,18 +89,66 @@ export function assembleAgentContext(
   const prefillFile = agentDirectory
     ? filesByPath.get(`${agentDirectory}/${PREFILL_FILE_NAME}`)
     : undefined
-  const contextFiles: WorkspaceFile[] = []
+  const contextInjections: ContextInjection[] = []
   const missingContextPaths: string[] = []
 
-  for (const declaredPath of agent.contextPaths) {
-    const path = normalizeWorkspaceFilePath(declaredPath)
-    const file = path ? filesByPath.get(path) : undefined
-    if (file) {
-      contextFiles.push(file)
+  for (const entry of agent.contextPaths) {
+    // 1. Resolve entry form → raw content, role, source, baseDir for macros.
+    let rawContent: string
+    let role: "system" | "user" | "assistant"
+    let source: string
+    let baseDir: string
+
+    if (typeof entry === "string") {
+      // Pure string: read file, role=user (backward compat).
+      const path = normalizeWorkspaceFilePath(entry)
+      const file = path ? filesByPath.get(path) : undefined
+      if (!file || !path) {
+        missingContextPaths.push(path ?? entry)
+        continue
+      }
+      rawContent = file.content
+      role = "user"
+      source = file.path
+      baseDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+    } else if (entry.path) {
+      // Path object: read file, role may be specified.
+      const path = normalizeWorkspaceFilePath(entry.path)
+      const file = path ? filesByPath.get(path) : undefined
+      if (!file || !path) {
+        missingContextPaths.push(path ?? entry.path)
+        continue
+      }
+      rawContent = file.content
+      role = entry.role ?? "user"
+      source = file.path
+      baseDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+    } else if (entry.template) {
+      // Template object: inline template string, role may be specified.
+      rawContent = entry.template
+      role = entry.role ?? "user"
+      source = "inline template"
+      baseDir = agentDirectory ?? ""
+    } else {
       continue
     }
 
-    missingContextPaths.push(path ?? declaredPath)
+    // 2. Expand macros ({{file:...}}, {{random:...}}, implicit whitespace cleanup).
+    //    enabledModules empty → pass undefined so ?enabled defaults to include.
+    const expanded = expandMacros(rawContent, {
+      baseDir,
+      filesByPath,
+      enabledModules: agent.enabledModules.length > 0 ? agent.enabledModules : undefined,
+    })
+    missingContextPaths.push(...expanded.missing)
+
+    // 3. Skip empty content — no empty messages injected.
+    const content = expanded.content.trim()
+    if (!content) {
+      continue
+    }
+
+    contextInjections.push({ role, content, source })
   }
 
   const knowledgeFiles: WorkspaceFile[] = []
@@ -155,7 +180,7 @@ export function assembleAgentContext(
       agent,
     ),
     toolIndex,
-    contextFiles,
+    contextInjections,
     knowledgeFiles,
     missingContextPaths,
   }
