@@ -67,7 +67,7 @@ function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"]
   if (role === "system") return "system.agent"
   if (role === "tool") return "tool.observation"
   if (text.startsWith("Workspace Agent 上下文（元信息）") || text.startsWith("目标 Agent 上下文（元信息）")) return "workspace.meta"
-  if (text.startsWith("Workspace 文件 ")) return "workspace.file"
+  if (text.startsWith("Workspace 注入 ")) return "workspace.file"
   if (text.startsWith("早期任务摘要：") || text.startsWith("早期剧情摘要：") || text.startsWith("最近对话：") || text.startsWith("最近对话窗口：") || text === "（暂无历史对话）") return "history"
   if (text.startsWith("当前问答轮次：") || text.startsWith("当前回合：")) return "turn.runtime"
   if (text.startsWith("用户本轮提问：") || text.startsWith("玩家本轮输入：")) return "turn.input"

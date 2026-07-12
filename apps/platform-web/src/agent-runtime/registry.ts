@@ -2,6 +2,8 @@ import type {
   AgentConfig,
   AgentPlatformToolName,
   AgentRegistryEntry,
+  ContextPathEntry,
+  ContextPathObject,
   RegistryDiagnostic,
   SkillActionSummary,
   SkillConfigItem,
@@ -652,6 +654,66 @@ function jsonStringArray(value: unknown): string[] {
   return items
 }
 
+/**
+ * Parse `agent.json.contextPaths` into `ContextPathEntry[]`. Accepts the
+ * backward-compatible flat `string[]` form plus object entries (`{path, role}`
+ * or `{template, role}`). Deduplicates by lowercased path/template key. Object
+ * entries with both `path` and `template` (or neither) are skipped.
+ */
+function parseContextPathEntries(value: unknown): ContextPathEntry[] {
+  if (!Array.isArray(value)) {
+    return []
+  }
+
+  const seen = new Set<string>()
+  const items: ContextPathEntry[] = []
+  for (const entry of value) {
+    if (typeof entry === "string") {
+      const trimmed = entry.trim()
+      if (!trimmed) {
+        continue
+      }
+      const key = trimmed.toLowerCase()
+      if (seen.has(key)) {
+        continue
+      }
+      seen.add(key)
+      items.push(trimmed)
+      continue
+    }
+
+    if (isRecord(entry)) {
+      const path = jsonString(entry.path)
+      const template = jsonString(entry.template)
+      // path and template are mutually exclusive; skip if both or neither.
+      if (!path === !template) {
+        continue
+      }
+
+      const obj: ContextPathObject = {}
+      if (path) {
+        obj.path = path
+      } else {
+        obj.template = template
+      }
+
+      const role = entry.role
+      if (role === "system" || role === "user" || role === "assistant") {
+        obj.role = role
+      }
+
+      const key = (obj.path ?? obj.template ?? "").toLowerCase()
+      if (!key || seen.has(key)) {
+        continue
+      }
+      seen.add(key)
+      items.push(obj)
+    }
+  }
+
+  return items
+}
+
 function jsonPlatformToolArray(value: unknown): AgentPlatformToolName[] {
   return jsonStringArray(value)
     .filter((item): item is AgentPlatformToolName =>
@@ -755,7 +817,8 @@ function buildAgentRegistryEntry(
     disabledTools: toolConfig.disabled,
     platformTools,
     workspaceAccess: normalizeAgentWorkspaceAccessConfig(config.workspaceAccess),
-    contextPaths: jsonStringArray(config.contextPaths),
+    contextPaths: parseContextPathEntries(config.contextPaths),
+    enabledModules: jsonStringArray(config.enabledModules),
     entryMode,
     system,
     ...(knowledgeMount ? { knowledgeMount } : {}),

@@ -695,23 +695,23 @@ function buildWorkspaceToolInstructions(
 function buildAgentContextMessages_split(
   context: AgentContextEntry,
   label: "Workspace Agent 上下文" | "目标 Agent 上下文",
-): { role: "user"; content: string }[] {
-  const messages: { role: "user"; content: string }[] = [
+): RuntimeChatMessage[] {
+  const messages: RuntimeChatMessage[] = [
     { role: "user", content: `${label}（元信息）：\n${formatAgentRuntimeContextMeta(context)}` },
   ]
-  for (const file of context.contextFiles) {
+  for (const injection of context.contextInjections) {
     messages.push({
-      role: "user",
-      content: `Workspace 文件 ${file.path}：\n${formatWorkspaceFile(file)}`,
+      role: injection.role,
+      content: `Workspace 注入 ${injection.source}：\n${injection.content}`,
     })
   }
   return messages
 }
 
 /**
- * workspace.context 的元信息部分（不含 contextFiles 全文）。
+ * workspace.context 的元信息部分（不含 contextInjections 全文）。
  *
- * 含 header（Agent id/title/summary/path）+ notesFile + contextFiles 存在性提示 +
+ * 含 header（Agent id/title/summary/path）+ notesFile + contextInjections 来源提示 +
  * missingContextPaths + skillIndex。这些字段字节量小、变化频率低，归同条 message；
  * 偶发 miss（agent 编辑定义/写 notes/装 skill 时）可接受，不值得为这点字节再拆。
  */
@@ -723,10 +723,10 @@ function formatAgentRuntimeContextMeta(context: AgentContextEntry): string {
     "",
     formatOptionalWorkspaceFile("Agent notes", context.notesFile),
     "",
-    "声明的 contextPaths 文件：",
-    context.contextFiles.length === 0
-      ? "（暂无已加载 contextPaths 文件）"
-      : context.contextFiles.map((file) => `- ${file.path}`).join("\n"),
+    "声明的 contextPaths 注入条目：",
+    context.contextInjections.length === 0
+      ? "（暂无已加载 contextPaths 注入条目）"
+      : context.contextInjections.map((inj) => `- ${inj.source}`).join("\n"),
     "",
     "缺失的 contextPaths：",
     formatMissingContextPaths(context),
@@ -863,7 +863,7 @@ function buildEntryAgentMessages(
       }),
     },
     // history(已发生剧情,跨 turn 字节级不变)紧随 system,作为最长稳定前缀.
-    // workspace.context 含 contextFiles 文件正文/skillIndex 等 Agent 写入后即变
+    // workspace.context 含 contextInjections 注入正文/skillIndex 等 Agent 写入后即变
     // 的动态内容,后置于 history 之前会提前缓存断点使其后 history 全部 miss
     // (见 design 设计修正记录 修正 1).
     ...historyMessages,
@@ -1039,8 +1039,9 @@ function buildDelegatedAgentMessages(
       ].join("\n"),
     },
     { role: "user", content: `最近对话窗口：\n${formatHistory(history)}` },
-    // 目标 Agent 上下文同样拆成元信息段 + 逐文件段（与 entry 路径一致）。
-    ...buildAgentContextMessages_split(targetContext, "目标 Agent 上下文"),
+    // 目标 Agent 上下文同样拆成元信息段 + 逐条注入段（与 entry 路径一致）。
+    // 注入只产 system/user/assistant + string content，安全降维为 AiChatMessage[]。
+    ...(buildAgentContextMessages_split(targetContext, "目标 Agent 上下文") as AiChatMessage[]),
     { role: "user", content: [`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n") },
     { role: "user", content: `玩家本轮输入：\n${input.userInput}` },
     {
