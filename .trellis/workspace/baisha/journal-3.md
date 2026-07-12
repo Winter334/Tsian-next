@@ -1669,3 +1669,37 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 147: Market resource version alignment
+
+**Date**: 2026-07-12
+**Task**: Market resource version alignment
+**Package**: platform-web
+**Branch**: `feat/game-card-save-version-upgrade-warning`
+
+### Summary
+
+Added save/card version confirmation, aligned Market resourceVersion with package manifest versions, and made Game Card install prompts inspect downloaded package versions.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5523c04` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
