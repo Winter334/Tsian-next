@@ -32,6 +32,7 @@ import {
   importGameCardFrontendPackage,
   importGameCardPackage,
   initializeWorkspaceForSave,
+  inspectGameCardPackage,
   listEffectiveWorkspaceFilesForSave,
   listLocalGameCardContentFiles,
   listLocalGameCardFrontendFiles,
@@ -44,6 +45,7 @@ import {
   replaceWorkspaceFilesForSave,
   setActiveGameCardId,
   setActiveSaveId,
+  updateLocalSaveGameCardVersion,
   writeLocalGameCardContentFile,
   writeWorkspaceFileForSave,
 } from "../storage"
@@ -521,9 +523,16 @@ export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | 
   return result
 }
 
-export async function exportPlatformGameCardPackage(cardId: string) {
+export async function inspectPlatformGameCardPackage(input: Blob | ArrayBuffer | Uint8Array) {
+  return inspectGameCardPackage(input)
+}
+
+export async function exportPlatformGameCardPackage(
+  cardId: string,
+  options?: { version?: string },
+) {
   await ensureBuiltinBlankGameCard()
-  return exportGameCardPackage(cardId)
+  return exportGameCardPackage(cardId, options)
 }
 
 export async function importPlatformGameCardFrontendPackage(
@@ -595,6 +604,12 @@ export async function selectPlatformSave(saveId: string) {
 
 export async function renamePlatformSave(saveId: string, name: string) {
   const updated = await renameLocalSave(saveId, name)
+  emitSavesChanged()
+  return updated
+}
+
+export async function updatePlatformSaveGameCardVersion(saveId: string, gameCardVersion: string): Promise<LocalSaveRecord> {
+  const updated = await updateLocalSaveGameCardVersion(saveId, gameCardVersion)
   emitSavesChanged()
   return updated
 }

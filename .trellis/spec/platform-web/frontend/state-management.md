@@ -143,6 +143,137 @@ const provider = providerParamsForKind(config.parameters, config.kind)
 - No current Game Card -> Play/Studio/Assistant and card-scope workspace mutations are locked or fail loud; My Apps / Market / platform settings remain usable.
 - No active save -> Play/Runtime save-scoped queries may show empty or not-configured states; Studio registry views should still read current card content when a current card is loaded.
 
+### Save/Card Version Confirmation
+
+#### 1. Scope / Trigger
+
+- Trigger: changing save selection, Game Card package install/overwrite, or any UI that starts a save against a currently installed Game Card.
+- Purpose: Game Cards are runtime dependencies for saves. Same-id card overwrites do not delete saves, but existing saves will run against the current installed card content unless the user explicitly keeps/installs another card version.
+
+#### 2. Signatures
+
+- Save record field: `LocalSaveRecord.gameCardVersion?: string` records the Game Card version that this save has been created with or explicitly confirmed against.
+- Current card field: `LocalGameCardRecord.manifest.version` is the installed Game Card version used for comparison.
+- Platform mutation: `updatePlatformSaveGameCardVersion(saveId: string, gameCardVersion: string): Promise<LocalSaveRecord>` updates the save's confirmed card version and emits `SAVES_CHANGED_EVENT` after success.
+- Storage mutation: `updateLocalSaveGameCardVersion(saveId: string, gameCardVersion: string): Promise<LocalSaveRecord>` performs the Dexie write only and must not emit UI/platform events.
+
+#### 3. Contracts
+
+- Compare versions as trimmed strings. Do not infer semver ordering; equality means confirmed, inequality means confirmation required.
+- Missing/blank `save.gameCardVersion` is an unknown old save and requires confirmation before starting.
+- Confirming a save against the current card version updates only `gameCardVersion`; it must not change `updatedAt` or save runtime files.
+- The confirmation gate belongs before frontend mount / save start, not inside the play frontend. Canceling must leave the user in the launcher and must not call `selectPlatformSave` / mount the frontend.
+- Same-id Game Card overwrite from the Market must warn about affected saves, but must not delete saves and must not batch-update their `gameCardVersion`. Each affected save confirms independently on first continue.
+
+#### 4. Validation & Error Matrix
+
+- `save.gameCardVersion?.trim() === card.manifest.version.trim()` -> continue without prompt.
+- `save.gameCardVersion` missing/blank -> show unknown-version confirmation before continuing.
+- Trimmed save version differs from trimmed card version -> show old-version confirmation before continuing.
+- Player cancels confirmation -> do not update the save and do not start the frontend.
+- Player confirms, but save update fails -> surface the error, do not start the frontend.
+- Storage update receives a blank target version -> throw a clear local error.
+- Storage update receives an unknown save id -> throw a clear local error.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: A save created on card `1.0.0` sees local card `1.1.0`; launcher marks it as old, prompts once, updates `gameCardVersion` to `1.1.0`, then starts play.
+- Base: A save already confirmed on `1.1.0` starts immediately when the installed card is still `1.1.0`.
+- Bad: Market overwrite silently changes local card content and then the old save starts without any warning.
+- Bad: Market overwrite preemptively rewrites every affected save's `gameCardVersion`, hiding which saves the player has actually reviewed.
+
+#### 6. Tests Required
+
+- Run `npm run build:web` after changing this flow.
+- Verify launcher badge and confirmation for missing and mismatched `gameCardVersion`.
+- Verify cancel blocks frontend mount and leaves `gameCardVersion` unchanged.
+- Verify confirm updates `gameCardVersion`, preserves `updatedAt`, emits save refresh through platform-host, and allows start.
+- Verify same-id Market overwrite warning mentions affected saves but does not delete saves or update their versions.
+
+#### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Silent dependency switch: old saves run new card content without user confirmation.
+await selectPlatformSave(save.id)
+await mountActiveFrontend()
+```
+
+#### Correct
+
+```ts
+if ((save.gameCardVersion?.trim() ?? "") !== card.manifest.version.trim()) {
+  const confirmed = await confirm({ message: "继续后会使用当前本地游戏卡运行。" })
+  if (!confirmed) return
+  await updatePlatformSaveGameCardVersion(save.id, card.manifest.version)
+}
+await selectPlatformSave(save.id)
+await mountActiveFrontend()
+```
+
+### Market Resource Version Authority
+
+#### 1. Scope / Trigger
+
+- Trigger: changing Market upload, package replacement, package install, or server-side Market `resourceVersion` handling.
+- Purpose: players must see one version for a downloadable resource. The Market display version, update checks, and installed package version must not drift.
+
+#### 2. Signatures
+
+- Market response field: `MarketPackage.resourceVersion` is a package-version index for display/listing/update checks.
+- Game Card package version: `game-card.json -> manifest.version`.
+- Agent / Skill / Tool package version: `resource-package.json -> version`.
+- Upload/export option: Market upload UI passes the player-entered `版本` into package export so the zip manifest carries that version.
+
+#### 3. Contracts
+
+- `resourceVersion` must mirror the uploaded package manifest version. It is not independent editable metadata.
+- Initial upload persists the parsed package version.
+- Metadata-only publish edits preserve the existing `resourceVersion`.
+- Replacement upload persists the replacement package version.
+- Client multipart `version` fields must not override package manifest versions on the server.
+- Game Card install prompts should inspect the downloaded package and use its real manifest id/version for overwrite and save-impact checks; do not trust historical Market metadata when making local install decisions.
+- Player-facing UI may show/edit a simple `版本` field during upload/replacement, but must not explain internal manifest/resourceVersion mechanics.
+
+#### 4. Validation & Error Matrix
+
+- Upload package version `0.1.0` with form version `9.9.9` -> Market response `resourceVersion === "0.1.0"`.
+- Metadata-only edit with form version `9.9.9` -> existing `resourceVersion` unchanged.
+- Replacement package version `2.0.0` with form version `9.9.9` -> Market response `resourceVersion === "2.0.0"`.
+- Upload/replacement UI receives blank version -> block locally with `版本不能为空。` before exporting.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: Upload a Game Card with version `0.2.0`; the generated zip manifest, Market `v0.2.0`, and local card version after successful upload all match.
+- Base: Edit title/summary/tags only; the Market version remains unchanged.
+- Bad: Edit a published package's version field without replacing the package, so Market shows `v1.1.0` while downloads still install `v1.0.0`.
+- Bad: Game Card overwrite warning uses stale `pkg.resourceVersion` instead of the downloaded package's manifest version.
+
+#### 6. Tests Required
+
+- Run `npm run build:web` after Market frontend changes.
+- Run platform-server Market tests after server upload/update changes.
+- Verify Game Card install warning uses downloaded package id/version.
+- Verify metadata-only edit cannot change version.
+
+#### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await marketApi.upload(blob, { resourceType: "game_card", version: "9.9.9" })
+// Server stores 9.9.9 even if game-card.json still says 0.1.0.
+```
+
+#### Correct
+
+```ts
+const blob = await exportPlatformGameCardPackage(cardId, { version: "0.1.0" })
+await marketApi.upload(blob, { resourceType: "game_card" })
+// Server indexes the version parsed from game-card.json.
+```
+
 ## Bridge State
 
 - Bridge payloads must stay framework-neutral and serializable.

@@ -209,8 +209,8 @@ func TestMarketUploadListDownload(t *testing.T) {
 		t.Fatalf("upload without auth status = %d, want %d", uploadResp.StatusCode, http.StatusUnauthorized)
 	}
 
-	// Upload with auth.
-	uploadResp = uploadPackage(t, client, server.URL+"/api/v1/market/packages", zipBytes, uploadOptions{})
+	// Upload with auth. Multipart version metadata must not override the package version.
+	uploadResp = uploadPackage(t, client, server.URL+"/api/v1/market/packages", zipBytes, uploadOptions{Version: "9.9.9"})
 	defer uploadResp.Body.Close()
 	if uploadResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(uploadResp.Body)
@@ -732,7 +732,7 @@ func TestMarketResourcePackages(t *testing.T) {
 			"run.js":    []byte("return { rolls: [1], total: 1 }\n"),
 		},
 	)
-	toolResp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", toolZip, uploadOptions{ResourceType: "tool", Tags: "dice, utility"})
+	toolResp := uploadPackage(t, client, server.URL+"/api/v1/market/packages", toolZip, uploadOptions{ResourceType: "tool", Version: "9.9.9", Tags: "dice, utility"})
 	defer toolResp.Body.Close()
 	if toolResp.StatusCode != http.StatusCreated {
 		body, _ := io.ReadAll(toolResp.Body)
@@ -908,7 +908,7 @@ func TestMarketContentManagementUpdateAndOwnership(t *testing.T) {
 	if err := json.NewDecoder(metadataResp.Body).Decode(&metadataPkg); err != nil {
 		t.Fatalf("decode metadata update: %v", err)
 	}
-	if metadataPkg.ResourceID != "owned-card" || metadataPkg.Name != "Retitled Card" || metadataPkg.Summary != "Updated summary." || metadataPkg.ResourceAuthor != "Owner Author" || metadataPkg.ResourceVersion != "1.0.1" {
+	if metadataPkg.ResourceID != "owned-card" || metadataPkg.Name != "Retitled Card" || metadataPkg.Summary != "Updated summary." || metadataPkg.ResourceAuthor != "Owner Author" || metadataPkg.ResourceVersion != "1.0.0" {
 		t.Fatalf("metadata update package = %+v", metadataPkg)
 	}
 	if !stringSlicesEqual(metadataPkg.Tags, []string{"updated", "mine"}) {
@@ -929,7 +929,7 @@ func TestMarketContentManagementUpdateAndOwnership(t *testing.T) {
 	}
 
 	replacementZip := buildGameCardPackageZip(t, "replacement-card", "Replacement Card", "2.0.0", "Replacement summary.")
-	replaceResp := updatePackage(t, ownerClient, patchURL, replacementZip, uploadOptions{Tags: "replacement"})
+	replaceResp := updatePackage(t, ownerClient, patchURL, replacementZip, uploadOptions{Version: "9.9.9", Tags: "replacement"})
 	defer replaceResp.Body.Close()
 	if replaceResp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(replaceResp.Body)

@@ -96,6 +96,12 @@
               <div class="flex items-center gap-2">
                 <h3 class="truncate text-base font-bold text-text-main">{{ save.name }}</h3>
                 <span
+                  v-if="saveNeedsVersionConfirmation(save)"
+                  class="shrink-0 border border-warning/60 bg-warning/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-warning"
+                >
+                  旧版存档
+                </span>
+                <span
                   v-if="save.id === activeSaveId"
                   class="shrink-0 border border-neon/60 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider text-neon"
                 >
@@ -111,7 +117,7 @@
                 type="button"
                 class="retro-button retro-focus inline-flex h-8 items-center gap-1.5 px-3 font-mono text-xs"
                 :disabled="busy"
-                @click="emit('continue', save.id)"
+                @click="requestContinue(save)"
               >
                 <Play class="h-3.5 w-3.5" aria-hidden="true" />
                 继续
@@ -195,6 +201,7 @@ import {
   createPlatformSaveFromGameCard,
   deletePlatformSave,
   renamePlatformSave,
+  updatePlatformSaveGameCardVersion,
 } from "../../platform-host"
 
 const props = defineProps<{
@@ -227,6 +234,56 @@ const createInputRef = ref<HTMLInputElement | null>(null)
 const renamingId = ref("")
 const renameName = ref("")
 const renameInputRef = ref<HTMLInputElement | null>(null)
+
+function normalizedVersion(value: string | undefined): string {
+  return value?.trim() ?? ""
+}
+
+function currentCardVersion(): string {
+  return normalizedVersion(props.card.manifest.version)
+}
+
+function saveVersion(save: LocalSaveRecord): string {
+  return normalizedVersion(save.gameCardVersion)
+}
+
+function saveNeedsVersionConfirmation(save: LocalSaveRecord): boolean {
+  const savedVersion = saveVersion(save)
+  return !savedVersion || savedVersion !== currentCardVersion()
+}
+
+async function requestContinue(save: LocalSaveRecord) {
+  if (busy.value) {
+    return
+  }
+
+  if (!saveNeedsVersionConfirmation(save)) {
+    emit("continue", save.id)
+    return
+  }
+
+  const confirmed = await confirm({
+    title: "继续旧版存档？",
+    message: `存档「${save.name}」记录的游戏卡版本是「${saveVersion(save) || "未知版本"}」，当前本地游戏卡版本是「${currentCardVersion() || "未知版本"}」。\n\n继续后会使用当前本地游戏卡的规则、角色能力、前端与模板运行；存档文件会保留。`,
+    confirmText: "使用当前版本继续",
+    cancelText: "暂不继续",
+    severity: "danger",
+  })
+  if (!confirmed) {
+    return
+  }
+
+  busy.value = true
+  try {
+    await updatePlatformSaveGameCardVersion(save.id, currentCardVersion())
+    emit("changed")
+    emit("continue", save.id)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "更新存档版本失败，未启动游戏前端。")
+  } finally {
+    busy.value = false
+  }
+}
 
 function startCreate() {
   creating.value = true

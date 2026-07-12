@@ -129,11 +129,16 @@
         <label class="grid gap-1 text-xs text-text-dim">
           版本
           <input
+            v-if="hasReplacement"
             v-model="draft.version"
+            required
             type="text"
             class="retro-focus retro-select-surface h-8 border border-neon-deep/45 bg-elevated px-2 font-mono text-sm text-text-main"
             @input="markDirty('version')"
           />
+          <span v-else class="flex h-8 items-center border border-neon-deep/30 bg-void/30 px-2 font-mono text-sm text-text-main">
+            v{{ pkg.resourceVersion || "未标记" }}
+          </span>
         </label>
         <label class="grid gap-1 text-xs text-text-dim">
           作者
@@ -257,6 +262,7 @@ interface EditDraft {
 type DirtyField = "title" | "version" | "author" | "summary"
 
 const visual = computed(() => getResourceTypeVisual(props.pkg.resourceType))
+const hasReplacement = computed(() => Boolean(props.replacementLabel))
 const coverFailed = ref(false)
 const editing = ref(false)
 const editError = ref("")
@@ -277,7 +283,12 @@ watch(() => props.saveToken, () => {
 })
 
 watch(() => props.replacementDefaults, (defaults) => {
-  if (!editing.value || !defaults) {
+  if (!editing.value) {
+    return
+  }
+  if (!defaults) {
+    draft.version = props.pkg.resourceVersion
+    dirty.version = false
     return
   }
   applyDefaults(defaults)
@@ -336,6 +347,10 @@ function submitEdit(): void {
   }
   if (!metadata.title) {
     editError.value = "标题不能为空。"
+    return
+  }
+  if (hasReplacement.value && !metadata.version) {
+    editError.value = "版本不能为空。"
     return
   }
   if (!metadata.summary) {
