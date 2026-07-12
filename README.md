@@ -109,6 +109,17 @@ npm run build:runtime-core
 npm run build:web
 ```
 
+### 游戏前端构建与部署
+
+游戏前端 `apps/play-frontend-dev` 是远程前端，构建产物直接部署到静态站点（Cloudflare Pages / Vercel 等），游戏卡绑定该部署地址以 iframe 加载。
+
+```bash
+# 构建游戏前端（产物输出到 apps/play-frontend-dev/dist）
+npm run build --workspace play-frontend-dev
+```
+
+`vite.config.ts` 已设 `base: "./"`（相对路径，便于子路径部署）与 `minify: false`（可读 ESM，供助手在线编辑场景）。
+
 ## 路线图
 
 ### MVP 基座（已完成）
