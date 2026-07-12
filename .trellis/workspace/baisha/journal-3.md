@@ -1635,3 +1635,37 @@ Prepared @tsian/contracts and @tsian/play-bridge 0.1.0 for public npm publishing
 ### Next Steps
 
 - None - task complete
+
+
+## Session 146: 解耦平台硬编码剧情选项
+
+**Date**: 2026-07-12
+**Task**: 解耦平台硬编码剧情选项
+**Package**: platform-web
+**Branch**: `master`
+
+### Summary
+
+移除平台 runtime guard 与 platform-host 对 [[选项]] 的硬编码玩法侵入；新正式 turn 原样持久化 assistant 文本，不再写新 options timeline item 或 turn-options 事件。默认 play frontend 接管本地选项解析并保留旧 timeline/options 兼容；默认卡三人写手 AGENT.md 补充默认前端选项格式约定；更新 SDK/bridge/docs 注释为 legacy/backcompat。验证通过：contracts tsc、platform-web vue-tsc、play-bridge tsc、play-frontend-dev vite build。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `227fb74` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

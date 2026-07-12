@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 145
+- **Total Sessions**: 146
 - **Last Active**: 2026-07-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~1637 | Active |
+| `journal-3.md` | ~1671 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 146 | 2026-07-12 | 解耦平台硬编码剧情选项 | `227fb74` | `master` |
 | 145 | 2026-07-12 | 提取酒馆预设写作 Agent 技术 | `fe43a75` | `master` |
 | 144 | 2026-07-11 | 完成前端构建器最终集成验证 | `0a3cb4f` | `feat/timeline-orbit-svg-polish` |
 | 143 | 2026-07-11 | 前端自检工具 Agent 可行动观测优化 | `ed76c10`, `3a4c1bb` | `feat/timeline-orbit-svg-polish` |
