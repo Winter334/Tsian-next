@@ -118,6 +118,8 @@ type packageResponse struct {
 	CoverThumbURL   *string          `json:"coverThumbUrl"`
 	Uploader        uploaderResponse `json:"uploader"`
 	DownloadCount   int              `json:"downloadCount"`
+	HiddenAt        *string          `json:"hiddenAt,omitempty"`
+	HiddenBy        *string          `json:"hiddenBy,omitempty"`
 	CreatedAt       string           `json:"createdAt"`
 	UpdatedAt       string           `json:"updatedAt"`
 }
@@ -1129,6 +1131,8 @@ func toPackageResponse(item PackageWithUploader) packageResponse {
 			AvatarURL:   item.UploaderAvatarURL,
 		},
 		DownloadCount: item.DownloadCount,
+		HiddenAt:      formatOptionalTime(item.HiddenAt),
+		HiddenBy:      item.HiddenBy,
 		CreatedAt:     item.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
 		UpdatedAt:     item.UpdatedAt.Format("2006-01-02T15:04:05Z07:00"),
 	}
@@ -1139,6 +1143,14 @@ func versionedPackageURL(path string, updatedAt time.Time) string {
 		return path
 	}
 	return path + "?v=" + strconv.FormatInt(updatedAt.Unix(), 10)
+}
+
+func formatOptionalTime(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.Format("2006-01-02T15:04:05Z07:00")
+	return &formatted
 }
 
 func authorName(manifest *manifestPayload) string {

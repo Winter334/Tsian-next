@@ -13,9 +13,11 @@ type Config struct {
 	DiscordClientSecret        string
 	DiscordRegistrationGuildID string
 	DiscordRegistrationRoleIDs []string
+	AdminDiscordIDs            []string
 	DBPath                     string
 	DataDir                    string
 	StaticDir                  string
+	AdminStaticDir             string
 	CookieSecure               bool
 	MockAuth                   bool
 }
@@ -29,9 +31,11 @@ func Load() Config {
 		DiscordClientSecret:        os.Getenv("TSIAN_DISCORD_CLIENT_SECRET"),
 		DiscordRegistrationGuildID: envString("TSIAN_DISCORD_REGISTRATION_GUILD_ID", ""),
 		DiscordRegistrationRoleIDs: envList("TSIAN_DISCORD_REGISTRATION_ROLE_IDS"),
+		AdminDiscordIDs:            envList("TSIAN_ADMIN_DISCORD_IDS"),
 		DBPath:                     envString("TSIAN_DB_PATH", "data/tsian.db"),
 		DataDir:                    envString("TSIAN_DATA_DIR", "data"),
 		StaticDir:                  envString("TSIAN_STATIC_DIR", "../platform-web/dist"),
+		AdminStaticDir:             envString("TSIAN_ADMIN_STATIC_DIR", "../admin-web/dist"),
 		CookieSecure:               envBool("TSIAN_COOKIE_SECURE", strings.HasPrefix(baseURL, "https://")),
 		MockAuth:                   envBool("TSIAN_MOCK_AUTH", false),
 	}

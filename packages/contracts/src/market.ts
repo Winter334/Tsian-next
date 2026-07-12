@@ -1,5 +1,7 @@
 export type MarketResourceType = "game_card" | "agent" | "skill" | "tool"
 
+export type AdminMarketVisibility = "all" | "visible" | "hidden"
+
 export interface MarketPackageUploader {
   id: string
   displayName: string
@@ -32,4 +34,20 @@ export type MarketPackageCounts = Record<MarketResourceType, number>
 
 export interface MarketPackageCountsResponse {
   counts: MarketPackageCounts
+}
+
+export interface AdminMarketPackage extends MarketPackage {
+  hiddenAt: string | null
+  hiddenBy: string | null
+}
+
+export interface AdminMarketPackageListResponse {
+  packages: AdminMarketPackage[]
+  nextCursor: string | null
+}
+
+export interface AdminMarketPackageUpdateRequest {
+  name: string
+  summary: string
+  tags: string[]
 }

@@ -91,6 +91,24 @@
           <span class="truncate">{{ window.shortLabel }}</span>
         </button>
       </div>
+      <div class="desktop-system-tray flex items-center gap-1 border-l border-neon-deep/35 pl-2" @click.stop>
+        <button
+          type="button"
+          class="desktop-task-button retro-focus px-2"
+          :class="{ 'desktop-task-button--active': unreadCount > 0 }"
+          title="公告中心"
+          @click="openAnnouncementCenter"
+        >
+          <Bell class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span class="hidden sm:inline">公告</span>
+          <span v-if="unreadCount > 0" class="text-neon">{{ unreadCount }}</span>
+        </button>
+        <div class="desktop-task-button px-2" title="当前在线人数">
+          <RadioTower class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+          <span class="hidden sm:inline">在线</span>
+          <span>{{ onlineCount ?? "--" }}</span>
+        </div>
+      </div>
       <div class="desktop-auth flex items-center gap-1 border-l border-neon-deep/35 pl-2" @click.stop>
         <button
           type="button"
@@ -120,9 +138,10 @@
 <script setup lang="ts">
 import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { useRoute, useRouter } from "vue-router"
-import { MonitorDot, UserRound } from "lucide-vue-next"
+import { Bell, MonitorDot, RadioTower, UserRound } from "lucide-vue-next"
 import DesktopWindow from "./DesktopWindow.vue"
 import {
+  announcementWindowInput,
   desktopLaunchers,
   desktopWindowForLauncher,
   desktopWindowForRoute,
@@ -135,6 +154,8 @@ import {
   type DesktopWindowGeometry,
 } from "@/composables/useDesktopWindows"
 import { useAuth } from "@/composables/useAuth"
+import { useAnnouncements } from "@/composables/useAnnouncements"
+import { usePresence } from "@/composables/usePresence"
 
 interface ContextMenuState {
   x: number
@@ -161,6 +182,8 @@ const route = useRoute()
 const router = useRouter()
 const desktop = useDesktopWindows()
 const { currentUser, loggedIn } = useAuth()
+const { unreadCount } = useAnnouncements()
+const { onlineCount } = usePresence()
 const selectedDesktopIcon = ref("")
 const contextMenu = ref<ContextMenuState | null>(null)
 const desktopClock = ref("")
@@ -399,6 +422,12 @@ function openAccountCenter() {
   if (!input) {
     return
   }
+  desktop.openWindow(input, stageBounds.value)
+  navigateTo(input.routePath)
+}
+
+function openAnnouncementCenter() {
+  const input = announcementWindowInput()
   desktop.openWindow(input, stageBounds.value)
   navigateTo(input.routePath)
 }

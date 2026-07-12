@@ -8,10 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 
+	"tsian/platform-server/internal/admin"
+	"tsian/platform-server/internal/announcement"
 	"tsian/platform-server/internal/auth"
 	"tsian/platform-server/internal/config"
 	"tsian/platform-server/internal/market"
 	"tsian/platform-server/internal/middleware"
+	"tsian/platform-server/internal/presence"
 	"tsian/platform-server/internal/storage"
 	"tsian/platform-server/internal/user"
 )
@@ -29,6 +32,10 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	users := user.NewSQLiteRepository(s.db)
 	authHandler := auth.NewHandler(s.cfg, s.db, users)
+	adminAuthorizer := admin.NewAuthorizer(s.cfg)
+	adminOnly := func(handler http.HandlerFunc) http.Handler {
+		return middleware.RequireAdmin(s.db, users, adminAuthorizer, handler)
+	}
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -39,6 +46,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/auth/callback", authHandler.HandleCallback)
 	mux.Handle("GET /api/v1/auth/me", middleware.RequireAuth(s.db, users, http.HandlerFunc(authHandler.HandleMe)))
 	mux.HandleFunc("POST /api/v1/auth/logout", authHandler.HandleLogout)
+	mux.Handle("GET /api/v1/admin/me", adminOnly(http.HandlerFunc(authHandler.HandleAdminMe)))
 	if s.cfg.MockAuth {
 		mux.HandleFunc("GET /api/v1/auth/mock-login", authHandler.HandleMockLogin)
 	}
@@ -59,9 +67,33 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/market/packages/{id}/cover", marketHandler.HandleCover)
 	mux.HandleFunc("GET /api/v1/market/packages/{id}/cover-thumb", marketHandler.HandleCoverThumb)
 
+	announcementRepo := announcement.NewSQLiteRepository(s.db)
+	announcementHandler := announcement.NewHandler(announcementRepo)
+	mux.HandleFunc("GET /api/v1/announcements", announcementHandler.HandleList)
+	mux.Handle("GET /api/v1/admin/announcements", adminOnly(http.HandlerFunc(announcementHandler.HandleList)))
+	mux.Handle("POST /api/v1/admin/announcements", adminOnly(http.HandlerFunc(announcementHandler.HandleCreate)))
+	mux.Handle("PATCH /api/v1/admin/announcements/{id}", adminOnly(http.HandlerFunc(announcementHandler.HandleUpdate)))
+	mux.Handle("DELETE /api/v1/admin/announcements/{id}", adminOnly(http.HandlerFunc(announcementHandler.HandleDelete)))
+
+	presenceRepo := presence.NewSQLiteRepository(s.db)
+	presenceHandler := presence.NewHandler(presenceRepo, s.db, users, s.cfg.CookieSecure)
+	mux.HandleFunc("POST /api/v1/presence/heartbeat", presenceHandler.HandleHeartbeat)
+	mux.HandleFunc("GET /api/v1/presence/summary", presenceHandler.HandleSummary)
+
+	mux.Handle("GET /api/v1/admin/market/packages", adminOnly(http.HandlerFunc(marketHandler.HandleAdminList)))
+	mux.Handle("GET /api/v1/admin/market/packages/{id}", adminOnly(http.HandlerFunc(marketHandler.HandleAdminGet)))
+	mux.Handle("PATCH /api/v1/admin/market/packages/{id}", adminOnly(http.HandlerFunc(marketHandler.HandleAdminUpdate)))
+	mux.Handle("POST /api/v1/admin/market/packages/{id}/hide", adminOnly(http.HandlerFunc(marketHandler.HandleAdminHide)))
+	mux.Handle("POST /api/v1/admin/market/packages/{id}/unhide", adminOnly(http.HandlerFunc(marketHandler.HandleAdminUnhide)))
+	mux.Handle("DELETE /api/v1/admin/market/packages/{id}", adminOnly(http.HandlerFunc(marketHandler.HandleAdminDelete)))
+
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})
+	mux.HandleFunc("GET /admin", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/admin/", http.StatusFound)
+	})
+	mux.Handle("/admin/", spaHandler{staticDir: s.cfg.AdminStaticDir, urlPrefix: "/admin"})
 	mux.Handle("/", spaHandler{staticDir: s.cfg.StaticDir})
 
 	return middleware.Log(middleware.Recover(mux))
@@ -69,6 +101,7 @@ func (s *Server) Handler() http.Handler {
 
 type spaHandler struct {
 	staticDir string
+	urlPrefix string
 }
 
 func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +115,11 @@ func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	requestPath := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if h.urlPrefix != "" {
+		prefix := strings.TrimPrefix(path.Clean("/"+h.urlPrefix), "/")
+		requestPath = strings.TrimPrefix(requestPath, prefix)
+		requestPath = strings.TrimPrefix(requestPath, "/")
+	}
 	if requestPath == "." {
 		requestPath = ""
 	}

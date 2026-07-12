@@ -64,26 +64,44 @@ func migrate(ctx context.Context, db *sql.DB) error {
 		`CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)`,
 		`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`,
 		`CREATE TABLE IF NOT EXISTS market_packages (
+					id TEXT PRIMARY KEY,
+					resource_type TEXT NOT NULL DEFAULT 'game_card',
+					card_id TEXT NOT NULL,
+					card_author TEXT NOT NULL DEFAULT '',
+					card_version TEXT NOT NULL DEFAULT '',
+					resource_id TEXT NOT NULL DEFAULT '',
+					resource_author TEXT NOT NULL DEFAULT '',
+					resource_version TEXT NOT NULL DEFAULT '',
+					name TEXT NOT NULL,
+					summary TEXT NOT NULL,
+					tags TEXT NOT NULL DEFAULT '[]',
+					cover_blob_key TEXT,
+					cover_thumb_blob_key TEXT,
+					uploader_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+					download_count INTEGER NOT NULL DEFAULT 0,
+					hidden_at TEXT,
+					hidden_by TEXT REFERENCES users(id) ON DELETE SET NULL,
+					created_at TEXT NOT NULL,
+					updated_at TEXT NOT NULL
+				)`,
+		`CREATE INDEX IF NOT EXISTS idx_market_packages_created ON market_packages(created_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_market_packages_downloads ON market_packages(download_count DESC)`,
+		`CREATE TABLE IF NOT EXISTS announcements (
 				id TEXT PRIMARY KEY,
-				resource_type TEXT NOT NULL DEFAULT 'game_card',
-				card_id TEXT NOT NULL,
-				card_author TEXT NOT NULL DEFAULT '',
-				card_version TEXT NOT NULL DEFAULT '',
-				resource_id TEXT NOT NULL DEFAULT '',
-				resource_author TEXT NOT NULL DEFAULT '',
-				resource_version TEXT NOT NULL DEFAULT '',
-				name TEXT NOT NULL,
-				summary TEXT NOT NULL,
-				tags TEXT NOT NULL DEFAULT '[]',
-				cover_blob_key TEXT,
-				cover_thumb_blob_key TEXT,
-				uploader_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-				download_count INTEGER NOT NULL DEFAULT 0,
+				title TEXT NOT NULL,
+				body TEXT NOT NULL,
 				created_at TEXT NOT NULL,
 				updated_at TEXT NOT NULL
 			)`,
-		`CREATE INDEX IF NOT EXISTS idx_market_packages_created ON market_packages(created_at DESC)`,
-		`CREATE INDEX IF NOT EXISTS idx_market_packages_downloads ON market_packages(download_count DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_announcements_created ON announcements(created_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS presence_sessions (
+				id TEXT PRIMARY KEY,
+				user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+				last_seen_at TEXT NOT NULL,
+				created_at TEXT NOT NULL
+			)`,
+		`CREATE INDEX IF NOT EXISTS idx_presence_sessions_last_seen ON presence_sessions(last_seen_at)`,
+		`CREATE INDEX IF NOT EXISTS idx_presence_sessions_user ON presence_sessions(user_id)`,
 	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {
@@ -92,6 +110,9 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	}
 	if err := ensureMarketPackageColumns(ctx, db); err != nil {
 		return fmt.Errorf("migrate market packages: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_market_packages_hidden ON market_packages(hidden_at)`); err != nil {
+		return fmt.Errorf("create market hidden index: %w", err)
 	}
 	return nil
 }
@@ -126,6 +147,12 @@ func ensureMarketPackageColumns(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	if err := addColumn("cover_thumb_blob_key", "cover_thumb_blob_key TEXT"); err != nil {
+		return err
+	}
+	if err := addColumn("hidden_at", "hidden_at TEXT"); err != nil {
+		return err
+	}
+	if err := addColumn("hidden_by", "hidden_by TEXT REFERENCES users(id) ON DELETE SET NULL"); err != nil {
 		return err
 	}
 
