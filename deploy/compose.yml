@@ -18,6 +18,8 @@ services:
       TSIAN_DB_PATH: ${TSIAN_DB_PATH:-/data/tsian.db}
       TSIAN_DATA_DIR: ${TSIAN_DATA_DIR:-/data}
       TSIAN_STATIC_DIR: ${TSIAN_STATIC_DIR:-/app/public}
+      TSIAN_ADMIN_STATIC_DIR: ${TSIAN_ADMIN_STATIC_DIR:-/app/admin}
+      TSIAN_ADMIN_DISCORD_IDS: ${TSIAN_ADMIN_DISCORD_IDS:-}
       TSIAN_COOKIE_SECURE: ${TSIAN_COOKIE_SECURE:-true}
       TSIAN_MOCK_AUTH: ${TSIAN_MOCK_AUTH:-false}
     volumes:
