@@ -20,6 +20,80 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `SkillResourceEntry` describes a bundled skill resource file without its content.
 - `RuntimeDiagnosticSummary`, `RuntimeDiagnosticFact`, `RuntimeDiagnosticHealth`, and `RuntimeDiagnosticsQueryParams` describe compact Agent-facing diagnostics returned by `runtime-diagnostics`.
 
+## Scenario: Programmable Output Rendering Rules
+
+### 1. Scope / Trigger
+
+- Trigger: changing play-turn output parsing/rendering, adding card-configurable render rules, migrating hardcoded `[[选项]]` handling, or exposing user/card-authored regex/HTML transforms to play frontends.
+
+### 2. Signatures
+
+- Future render-rule files should live in workspace files, not hidden DB fields:
+  - card default: card-content scope, e.g. `render-rules.json` or `render/output-rules.json`.
+  - player/save override: save-runtime scope, e.g. `save/render-rules.override.json`.
+- A first rule schema may be trust-oriented and lightweight: `{ schema, rules: Array<{ id, name, enabled, stage, find, replace }> }`, where `stage` starts with `"preMarkdown" | "postHtml"`.
+- Existing `TurnTimelineItem.options` is a legacy shared shape. New output concepts should prefer a generic output-module/timeline rule shape over adding one hardcoded timeline variant per gameplay format.
+
+### 3. Contracts
+
+- **Trust model**: Game-card render rules are creator-programmable content, like prompts, Skills, card frontends, and Agent definitions. The platform is not a commercial SaaS content firewall. Community distribution/review and player trust decide whether to use a card's rules.
+- **Platform boundary**: The platform must still keep provider credentials, platform-meta secrets, and host DOM/private APIs out of game-frontends. Do not compensate for over-broad bridge powers by building heavy render-rule sanitizers; keep bridge powers scoped instead.
+- **Rule visibility**: Rules must be plain workspace files and should be inspectable/toggleable by the player. Compilation/runtime failures disable or skip the offending rule and fall back to plain markdown; they must not crash the play UI.
+- **Options migration direction**: `[[选项]]` is not a permanent platform primitive. Its current host parser + bridge event + frontend renderer is legacy coupling. Migrate it into the same output-rule pipeline as other card-defined blocks (likely as an initial locked built-in rule) so frontends are not forced by the platform to implement one gameplay-specific marker.
+- **No new hardcoded gameplay renderers**: Do not add new platform-host parsers for `<aftertalk>`, `<parallel_world>`, status panels, etc. Use configurable output rules or structured workspace/runtime state.
+
+### 4. Validation & Error Matrix
+
+| Condition | Treatment | Surfaces as |
+|---|---|---|
+| Card default rules missing | Use built-in/default rules only | normal render |
+| Save override missing | Use card defaults | normal render |
+| Rule regex fails to compile | Disable/skip that rule | settings warning / console diagnostic |
+| Rule replace throws | Skip that rule for this render | settings warning / console diagnostic |
+| All rules fail | Render raw markdown text | playable fallback |
+| Card tries to access provider secrets through render rules | Impossible by bridge boundary | no API surface |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `<aftertalk>...</aftertalk>` is rendered by a card-provided `preMarkdown` rule into a details/card block; the player can inspect/disable the rule.
+- Base: `[[选项]]` remains supported through a locked built-in output rule while old cards migrate.
+- Bad: platform-host adds another bespoke parser for `<aftertalk>` and forces all play frontends to render it.
+- Bad: render-rule design starts with a full commercial XSS sanitizer/permission system before there is evidence the creator ecosystem needs that cost.
+
+### 6. Tests Required
+
+- Rule loader merges card defaults + save overrides and degrades when either is missing.
+- Invalid regex does not crash `NarrativeMessage` / story rendering.
+- Legacy `[[选项]]` behavior remains compatible during migration.
+- New output rules do not require packaged/remote frontends to implement marker-specific code unless they opt into the rule/component.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// New gameplay block hardcoded in host/parser/frontend:
+const AFTERTALK_RE = /<aftertalk>([\s\S]*?)<\/aftertalk>/g
+```
+
+#### Correct
+
+```json
+{
+  "schema": "tsian.render-rules.v1",
+  "rules": [
+    {
+      "id": "aftertalk-card",
+      "name": "凝嘤嘤札记",
+      "enabled": true,
+      "stage": "preMarkdown",
+      "find": "<aftertalk[^>]*>([\\s\\S]*?)</aftertalk>",
+      "replace": "<details class=\"aftertalk-card\"><summary>凝嘤嘤札记</summary>$1</details>"
+    }
+  ]
+}
+```
+
 ## Bridge Consumption
 
 - Play frontends call `bridge.interaction.sendMessage({ content })` to submit player input.
