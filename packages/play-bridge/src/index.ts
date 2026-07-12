@@ -21,7 +21,8 @@ export type {
   SessionHistory,
 } from "./tsian-api"
 
-// parseStoryOptions 是纯解析工具（前端流式渲染时用，不涉及 RPC），保留独立导出。
+// parseStoryOptions 是 legacy/default-frontend 兼容 helper（不涉及 RPC）。
+// 新前端不必采用该约定；若支持 [[选项]]，可直接使用或自行实现 parser。
 export { parseStoryOptions } from "./story-options"
 export type { ParsedStoryOptions } from "./story-options"
 

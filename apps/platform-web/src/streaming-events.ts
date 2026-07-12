@@ -120,9 +120,8 @@ export function subscribeTurnOptions(cb: TurnOptionsListener): () => void {
 }
 
 /**
- * emit turn-options:turn 收尾时若从正文提取到剧情选项,通知前端渲染按钮.
- * 与 turn-delta/turn-tool 同总线,remote-iframe-bridge 转发为 `turn-options` 事件.
- * 前端缓存 options,finalizeTurn 时清理本地流式显示 + 渲染按钮(玩家点选 = 新 turn 输入).
+ * legacy emit turn-options:保留给旧平台/旧前端兼容。新正式 turn 不再由
+ * platform-host 解析玩法选项并 emit；默认前端自行解析其支持的游戏卡输出约定。
  */
 export function emitTurnOptions(turn: number, options: string[]): void {
   // 浅克隆：回调内 unsubscribe 不影响本轮派发
@@ -145,7 +144,7 @@ export function subscribeTurnStats(cb: TurnStatsListener): () => void {
 }
 
 /** emit turn-stats:turn 收尾时把本轮耗时 + token usage 通知前端,
- *  供正文末尾显示 meta 行。与 turn-options 同总线,remote-iframe-bridge
+ *  供正文末尾显示 meta 行。与 turn-delta/turn-tool 同总线,remote-iframe-bridge
  *  转发为 `turn-stats` 事件。 */
 export function emitTurnStats(turn: number, stats: TurnStats): void {
   // 浅克隆：回调内 unsubscribe 不影响本轮派发

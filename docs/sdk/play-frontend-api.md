@@ -26,9 +26,9 @@ tsian.onMessage((msg) => {
   if (msg.kind === "content") appendToStory(msg.delta)
 })
 
-// 回合定稿（含剧情选项 + token 统计）
+// 回合定稿（含 token 统计；legacy options 仅旧平台/旧事件可能提供）
 tsian.onTurnEnd((result) => {
-  if (result.options) renderOptions(result.options)
+  if (result.options) renderOptions(result.options) // 兼容旧 turn-options；新前端可自行解析正文约定
   if (result.stats) renderTokenCount(result.stats)
 })
 
@@ -41,7 +41,7 @@ await tsian.send("我推开酒馆的门")
 ### 导入
 
 ```ts
-import { createTsian, parseStoryOptions } from "@tsian/play-bridge"
+import { createTsian } from "@tsian/play-bridge"
 import type {
   TsianApi, MessageDelta, RoundEnd, TurnEndResult,
   ToolEvent, AskRequest, SessionHistory,
@@ -50,7 +50,7 @@ import type {
 } from "@tsian/play-bridge"
 ```
 
-`createTsian()` 是唯一入口，返回 `TsianApi` 实例。`parseStoryOptions` 是纯解析工具（从流式正文里剥离 `[[选项]]…[[/选项]]` 标记块），不涉及 RPC，独立导出。所有领域类型从包直接导入，无需额外 `import "@tsian/contracts"`。
+`createTsian()` 是唯一入口，返回 `TsianApi` 实例。所有领域类型从包直接导入，无需额外 `import "@tsian/contracts"`。`parseStoryOptions` 仍作为 legacy/default-frontend 兼容 helper 从包导出，但新前端不需要采用 `[[选项]]` 约定，也不应把它当作平台保证的正式回合能力。
 
 ---
 
@@ -83,7 +83,7 @@ tsian.waitForReady().then(() => {
 
 ### 3.1 `tsian.send(text, options?)`
 
-玩家正式回合输入，推进剧情 turn/history/checkpoint/options 等正式回合语义。前端不传 `agentId`；入口 Agent 由游戏卡 `game-card.json` 的 `runtime.entrypoints.playerTurn` 决定。
+玩家正式回合输入，推进剧情 turn/history/checkpoint 等正式回合语义。前端不传 `agentId`；入口 Agent 由游戏卡 `game-card.json` 的 `runtime.entrypoints.playerTurn` 决定。
 
 ```ts
 await tsian.send("我向酒馆老板打听消息")
@@ -231,12 +231,12 @@ off()
 |---|---|---|---|
 | `onMessage` | `turn-delta` | 正式回合每个 token 增量 | 流式渲染（累加 delta） |
 | `onRoundEnd` | `turn-round-end` | 正式回合每轮边界 | 区分中间轮(interim) vs 最终轮(final) |
-| `onTurnEnd` | `turn-options` + `turn-stats` + `turn-completed` 聚合 | 正式回合定稿 | 渲染选项 + 统计 + 收尾 |
+| `onTurnEnd` | `turn-stats` + `turn-completed` 聚合（兼容 legacy `turn-options`） | 正式回合定稿 | 统计 + 收尾 |
 | `onTool` | `turn-tool` | 正式回合每次工具状态变更 | 渲染工具过程节点 |
 | `onAsk` | `interaction-request` | AI 提问时 | 渲染 ask_user 交互面板 |
 | `onAgentInvocation` | `agent-invocation` | `invokeAgent` 的 started/delta/round/tool/completed/failed | 渲染指定 Agent 调用的流式文本、工具进度与完成/失败状态 |
 
-**为什么需要三粒度**：单靠 `onMessage` 分不清一段 content delta 是中间轮的 interim 文本还是最终轮的剧情正文——`onRoundEnd` 的 `kind` 标记补上这个信息。`onTurnEnd` 把回合收尾的三个独立信号（选项、统计、完成）聚合成一次回调，前端不用自己缓存 `turn-options` 等待 `turn-completed`。
+**为什么需要三粒度**：单靠 `onMessage` 分不清一段 content delta 是中间轮的 interim 文本还是最终轮的剧情正文——`onRoundEnd` 的 `kind` 标记补上这个信息。`onTurnEnd` 把回合收尾信号聚合成一次回调，前端不用自己等待 `turn-completed` 后再查询统计；legacy `turn-options` 若出现也会并入结果。
 
 ### 4.1 `tsian.onMessage(cb)`
 
@@ -290,7 +290,7 @@ interface RoundEnd {
 
 ### 4.3 `tsian.onTurnEnd(cb)`
 
-回合定稿。**SDK 聚合**了 `turn-options`（剧情选项）、`turn-stats`（token 统计）、`turn-completed`（完成信号）三个底层事件，合并成一次回调。前端不用自己缓存选项等完成信号。
+回合定稿。SDK 聚合 `turn-stats`（token 统计）与 `turn-completed`（完成信号），并兼容旧平台可能发出的 `turn-options`（剧情选项）事件。新正式 turn 不保证提供 `result.options`；若前端采用某个游戏卡/默认前端的选项标记约定，应从正文文本自行解析。
 
 ```ts
 tsian.onTurnEnd((result: TurnEndResult) => {
@@ -309,7 +309,7 @@ tsian.onTurnEnd((result: TurnEndResult) => {
 
 ```ts
 interface TurnEndResult {
-  options?: string[]    // 剧情选项（无则 undefined）
+  options?: string[]    // Legacy 剧情选项（旧 turn-options 事件提供；新正式 turn 可为 undefined）
   stats?: TurnStats     // token 消耗统计（无则 undefined）
 }
 ```

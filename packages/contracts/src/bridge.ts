@@ -219,7 +219,7 @@ export type RemotePlayBridgeEventName =
  */
 export type { TurnToolOutput } from "./runtime"
 /**
- * turn 内 timeline 项(thought/tool/interim/user/assistant/options),持久化到
+ * turn 内 timeline 项(thought/tool/interim/user/assistant/legacy options),持久化到
  * workspace turn 文件 `save/history/turns/turn-NNNNNN.json` 的 `timeline` 字段
  * (schema v2),以及助手会话消息存储的 `ConversationMessageRecord.timeline` 字段.
  *
@@ -242,13 +242,13 @@ export type { TurnStats } from "./runtime"
  * 经 `query.query({ resource: "session-history" })` 一次返回全部 turn.
  * 前端用此数据单源重建完整对话(timeline 逐项渲染),不依赖 snapshot 渲染.
  *
- * timeline 是单一有序数组,含 user/assistant/interim/thought/tool/options 项,
+ * timeline 是单一有序数组,含 user/assistant/interim/thought/tool 以及 legacy options 项,
  * 按真实发生顺序排列.stats 归入 assistant item(不再在 entry 层).
  */
 export interface SessionHistoryEntry {
   turn: number
   createdAt: string
-  /** turn 内完整 timeline(user + process items + assistant + options),按发生顺序.
+  /** turn 内完整 timeline(user + process items + assistant + legacy options),按发生顺序.
    *  替代旧的 messages + processNodes + stats 分裂结构. */
   timeline: TurnTimelineItem[]
 }

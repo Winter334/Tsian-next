@@ -1,5 +1,6 @@
 import { reactive, ref, readonly, onUnmounted } from "vue"
-import { createTsian, parseStoryOptions } from "@tsian/play-bridge"
+import { createTsian } from "@tsian/play-bridge"
+import { parseStoryOptions } from "../lib/story-options"
 import type {
   TsianApi,
   MessageDelta,

@@ -1,6 +1,6 @@
 import { ref, readonly } from "vue"
 import { getTsianClient } from "./useTsian"
-import { parseStoryOptions } from "@tsian/play-bridge"
+import { parseStoryOptions } from "../lib/story-options"
 import type { WorkspaceEntry } from "@tsian/play-bridge"
 import {
   SOURCE_MANIFEST_PATH,

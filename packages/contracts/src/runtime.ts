@@ -84,8 +84,8 @@ export interface TurnStats {
  *  - tool:      工具调用节点,按 callId 去重,output 带 agent_call 结构化分支.
  *  - interim:   tool_calls 轮模型在调用工具前输出的过渡文本(如"我先看一下…"),
  *               当正常可见回复处理,始终展开.
- *  - options:   剧情选项(AI 输出的 [[选项]] 块被 host 剥离后存入 timeline),
- *               reload 时天然恢复,不依赖运行时事件.
+ *  - options:   legacy 剧情选项项。旧 turn 可包含 host 早期从 [[选项]] 块提取的选项；
+ *               新 turn 不应由 platform-host 生成该项，默认前端可自行解析正文约定。
  *
  *  ask 节点(ask_user 交互)不入 TurnTimelineItem——仅存在于内存
  *  AssistantTimelineNode,持久化边界拍平成 interim 文本.

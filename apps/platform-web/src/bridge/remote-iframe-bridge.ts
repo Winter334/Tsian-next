@@ -797,10 +797,9 @@ export function mountRemoteIframeFrontend(
     })
   })
 
-  // Forward extracted story options to the remote frontend as `turn-options`,
-  // so it can render choice buttons after the turn's narrative. The host strips
-  // the option block before storing to snapshot/turn files, so the frontend uses
-  // this event to get the options list (player clicks = new turn input).
+  // Legacy turn-options forwarding. New formal turns are not parsed by the host;
+  // default/custom frontends should parse any game-card-specific option markers
+  // from narrative text themselves. Keep this event for older paths/saves.
   const unsubscribeTurnOptions = subscribeTurnOptions((turn, options) => {
     postEvent("turn-options", { turn, options })
   })

@@ -94,7 +94,7 @@ import {
 } from "../agent-runtime/workspace-operations"
 import { createDebugBridge, resolveRemoteFrontendUrl } from "../bridge"
 import { emitTurnDebugReady } from "../debug-events"
-import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnOptions, emitTurnStats, emitAgentInvocation } from "../streaming-events"
+import { emitTurnDelta, emitTurnRoundEnd, emitTurnTool, emitTurnStats, emitAgentInvocation } from "../streaming-events"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import {
   markPlatformHostReady,
@@ -122,7 +122,6 @@ import {
   stageRawAirpHistoryTurnFile,
 } from "./history-turns"
 import { createTurnTimelineCollector } from "./turn-timeline-collector"
-import { extractStoryOptions } from "./story-options"
 import {
   generateAssistantReply,
   generateAssistantReplyNative,
@@ -1056,15 +1055,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
           throw new DOMException("Agent Runtime turn was aborted.", "AbortError")
         }
 
-        // 剧情选项剥离:从 replyText 提取 [[选项]]块 → options(给前端渲染按钮)
-        // + cleanReply(存入 snapshot/turn 文件/context.json,agent 上下文干净).
-        // 剥离单点:下游 snapshot/turn 文件/context.json 全部用 cleanReply,零冗余.
-        const { options: storyOptions, cleanText: cleanReply } = extractStoryOptions(result.replyText)
+        const replyText = result.replyText
 
         const nextHistory: ConversationMessageRecord[] = [
           ...historyBefore,
           { role: "user", content },
-          { role: "assistant", content: cleanReply },
+          { role: "assistant", content: replyText },
         ]
 
         // 本轮 token usage（来自 runtime 最后一轮 model call）。
@@ -1078,13 +1074,14 @@ export const playFrontendBridge: PlayFrontendBridge = {
             }
           : undefined
 
-        // 拼 turn 完整 timeline: user → process items(interim/thought/tool) → assistant(带 stats) → options
-        // 单一有序数组,顺序即发生顺序,替代旧的 messages + processNodes + stats 分裂结构.
+        // 拼 turn 完整 timeline: user → process items(interim/thought/tool) → assistant(带 stats)。
+        // 单一有序数组,顺序即发生顺序,替代旧的 messages + processNodes + stats 分裂结构。
+        // 玩法/前端约定的输出块（如默认前端的 [[选项]]）保留在 assistant 正文中，
+        // 由游戏前端自行解析渲染；platform-host 不再解释或剥离这类 marker。
         const turnTimeline: TurnTimelineItem[] = [
           { kind: "user", content },
           ...timelineCollector.getTimelineItems(),
-          { kind: "assistant", content: cleanReply, ...(turnStats ? { stats: turnStats } : {}) },
-          ...(storyOptions.length > 0 ? [{ kind: "options" as const, items: storyOptions }] : []),
+          { kind: "assistant", content: replyText, ...(turnStats ? { stats: turnStats } : {}) },
         ]
 
         stageRawAirpHistoryTurnFile(workspaceTransaction, {
@@ -1094,15 +1091,14 @@ export const playFrontendBridge: PlayFrontendBridge = {
         })
         // 通知前端 token 消耗（耗时由前端自己计时，不在此 emit）。
         if (turnStats) emitTurnStats(nextTurn, turnStats)
-        // R4:写回玩家回合入口 agent 会话上下文快照（本轮正文追加 + 压缩结果落盘）.
-        // contextUpdate.assistant 是原始 replyText(含选项块),改传 cleanReply 保持上下文干净.
+        // R4:写回玩家回合入口 agent 会话上下文快照（本轮正文追加 + 压缩结果落盘）。
         const contextUpdate = result.contextUpdate
         if (contextUpdate) {
           const stagedContext = stageAgentContextFile(workspaceTransaction, {
             saveId: activeSaveId,
             turn: contextUpdate.turn,
             user: contextUpdate.user,
-            assistant: cleanReply,
+            assistant: replyText,
             compressedContext: contextUpdate.compressedContext,
             agentId: playerTurnAgentId,
           })
@@ -1117,18 +1113,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
           })
         }
 
-        // 剧情选项:有则 emit turn-options 事件,前端缓存后 finalizeTurn 渲染按钮.
-        if (storyOptions.length > 0) {
-          emitTurnOptions(nextTurn, storyOptions)
-        }
-
         trace.emit({
           type: "turn_completed",
           ok: true,
           data: {
-            replyLength: cleanReply.length,
+            replyLength: replyText.length,
             historyCount: nextHistory.length,
-            storyOptions: storyOptions.length,
           },
         })
         stageRuntimeTraceFile(

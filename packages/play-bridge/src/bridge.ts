@@ -29,7 +29,7 @@ export interface BridgeHandlers {
     options?: string[],
     allowCustom?: boolean,
   ) => void
-  /** turn-options 快捷通道：turn 收尾提取到剧情选项，前端渲染按钮(玩家点选 = 新 turn 输入)。 */
+  /** legacy turn-options 快捷通道：旧平台可能在 turn 收尾转发选项；新前端不应依赖它。 */
   onTurnOptions?: (turn: number, options: string[]) => void
 }
 
@@ -144,7 +144,7 @@ export function createBridge(): Bridge {
           handlers.onInteractionRequest?.(p.requestId, p.question, p.options, p.allowCustom)
         }
       }
-      // turn-options 快捷通道：turn 收尾提取到剧情选项
+      // legacy turn-options 快捷通道（新正式 turn 不保证发出）
       if (msg.event === "turn-options" && msg.payload) {
         const p = msg.payload as { turn?: number; options?: string[] }
         if (typeof p.turn === "number" && Array.isArray(p.options)) {

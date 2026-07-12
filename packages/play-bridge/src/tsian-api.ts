@@ -77,7 +77,7 @@ export interface RoundEnd {
 export interface TurnEndResult {
   /** 平台提交的正式玩家回合号。 */
   turn?: number
-  /** 剧情选项（若有）。 */
+  /** Legacy 剧情选项（若旧平台/旧 turn-options 事件提供）。新正式 turn 不保证包含；前端可自行解析卡/前端约定。 */
   options?: string[]
   /** token 消耗统计（若有）。 */
   stats?: TurnStats
@@ -182,7 +182,7 @@ export interface TsianApi {
 export function createTsian(): TsianApi {
   const bridge = createBridge()
 
-  // ── onTurnEnd 聚合：缓存 turn-options + turn-stats，turn-completed 时合并触发 ──
+  // ── onTurnEnd legacy 聚合：若旧平台发出 turn-options，则缓存并随 turn-completed 合并触发 ──
   let pendingOptions: string[] | undefined
   let pendingStats: TurnStats | undefined
   const turnEndCallbacks = new Set<(result: TurnEndResult) => void>()
