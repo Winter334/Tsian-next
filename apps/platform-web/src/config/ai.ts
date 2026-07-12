@@ -22,6 +22,9 @@ export type BrowserAiReasoningEffort = "" | "minimal" | "low" | "medium" | "high
  */
 export type BrowserAiToolCallMode = "native" | "text"
 
+export const DEFAULT_BROWSER_AI_TOOL_CALL_MODE: BrowserAiToolCallMode = "native"
+export const DEFAULT_BROWSER_AI_STREAMING: boolean = true
+
 export interface BrowserAiCommonModelParameters {
   contextWindow: number | null
   maxOutputTokens: number | null
@@ -102,7 +105,7 @@ export interface BrowserAiModelConfig {
    * Required tool-call mode for this model. Lives on the model (not the preset
    * or parameters) because support varies per model under one endpoint. Missing
    * on stored data → the model is dropped at read time (prototype-period
-   * destructive update, no migration); new models default to `text`.
+   * destructive update, no migration); new models default to native.
    */
   toolCallMode: BrowserAiToolCallMode
   /**
@@ -110,11 +113,9 @@ export interface BrowserAiModelConfig {
    * tool-call modes support streaming. Lets the player opt out for endpoints
    * that do not support `stream: true` (e.g. some proxies answer 200 +
    * `text/event-stream` but emit an error body). Missing on stored data →
-   * defaulted from `toolCallMode` at read time (native → true, text → false,
-   * conservative so old text configs don't suddenly start streaming); new
-   * models inherit the same default. Text-mode streaming uses post-hoc
-   * parsing (accumulate buffer, parse at round end) instead of incremental
-   * tag-boundary state machines.
+   * false on the read path for compatibility; new models default to streaming.
+   * Text-mode streaming uses post-hoc parsing (accumulate buffer, parse at
+   * round end) instead of incremental tag-boundary state machines.
    */
   streaming: boolean
 }
@@ -334,9 +335,8 @@ function normalizeToolCallMode(input: unknown): BrowserAiToolCallMode | null {
 /**
  * Normalize a stored `streaming` flag. Returns `true` only for an explicit
  * `true`/`"true"` value; anything else (missing, `false`, invalid) returns
- * `false`. Both native and text tool-call modes honor an explicit `true` —
- * the toolCallMode-derived default (native → true, text → false) is applied
- * by callers when the stored value is missing, not inside this function.
+ * `false`. New-model defaults are applied by creators, not this read-path
+ * normalizer.
  */
 function normalizeStreaming(input: unknown): boolean {
   return input === true || input === "true"
@@ -634,8 +634,8 @@ function normalizeModelConfig(input: unknown): BrowserAiModelConfig | null {
   if (!toolCallMode) {
     return null
   }
-  // streaming: explicit true/false honored for both modes; missing → false
-  // (callers apply the toolCallMode-derived default at create time).
+  // streaming: explicit true/false honored for both modes; missing → false on
+  // read path for compatibility (new-model defaults are applied at create time).
   const streaming = normalizeStreaming(record.streaming)
   return {
     id,
@@ -679,18 +679,14 @@ export function createBrowserAiModelConfig(
   input: Partial<BrowserAiModelConfig & { model: string }> = {},
 ): BrowserAiModelConfig {
   const id = readStoredText(input.id ?? input.model)
-  // New models default to the conservative text protocol; an explicit
-  // native/text input is honored.
-  const toolCallMode = normalizeToolCallMode(input.toolCallMode) ?? "text"
+  const toolCallMode = normalizeToolCallMode(input.toolCallMode) ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE
   return {
     id,
     label: readStoredText(input.label) || undefined,
     parameters: normalizeModelParameters(input.parameters),
     enabled: input.enabled !== false,
     toolCallMode,
-    // Streaming: explicit true/false honored for both native and text modes.
-    // Missing → false (conservative default; text configs don't auto-stream).
-    streaming: normalizeStreaming(input.streaming),
+    streaming: input.streaming === undefined ? DEFAULT_BROWSER_AI_STREAMING : normalizeStreaming(input.streaming),
   }
 }
 
@@ -865,7 +861,7 @@ function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): Brows
     baseUrl,
     apiKey,
     models: defaultModel
-      ? [{ id: defaultModel, parameters: createDefaultBrowserAiModelParameters(), enabled: true, toolCallMode: "text", streaming: false }]
+      ? [createBrowserAiModelConfig({ id: defaultModel })]
       : [],
     fallbackStrategy: "primary-only",
     fetchedModels: [],
@@ -943,8 +939,8 @@ function getEnvAiConfig(): BrowserAiConfig | null {
     apiKey,
     model,
     parameters: createDefaultBrowserAiModelParameters(),
-    toolCallMode: "text",
-    streaming: false,
+    toolCallMode: DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
+    streaming: DEFAULT_BROWSER_AI_STREAMING,
   }
 }
 
@@ -1027,13 +1023,7 @@ export function createBrowserAiProviderPreset(
     const seedModel = readStoredText(input.defaultModel ?? input.model)
     if (seedModel) {
       models = [
-        {
-          id: seedModel,
-          parameters: createDefaultBrowserAiModelParameters(),
-          enabled: true,
-          toolCallMode: "text",
-          streaming: false,
-        },
+        createBrowserAiModelConfig({ id: seedModel }),
       ]
     }
   }

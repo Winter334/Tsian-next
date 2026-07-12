@@ -122,6 +122,8 @@ import {
   type BrowserAiToolCallMode,
   type BrowserEmbeddingConfig,
   type BrowserPlatformConfigDraft,
+  DEFAULT_BROWSER_AI_STREAMING,
+  DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
   cloneBrowserAiModelParameters,
   createBrowserAiModelConfig,
   createBrowserAiProviderPreset,
@@ -164,10 +166,10 @@ const editingModelParameters = computed<BrowserAiModelParameters>(
 )
 
 const editingModelToolCallMode = computed<BrowserAiToolCallMode>(
-  () => editingModel.value?.toolCallMode ?? "text",
+  () => editingModel.value?.toolCallMode ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
 )
 
-const editingModelStreaming = computed<boolean>(() => editingModel.value?.streaming ?? false)
+const editingModelStreaming = computed<boolean>(() => editingModel.value?.streaming ?? DEFAULT_BROWSER_AI_STREAMING)
 
 const activeTypeId = ref("")
 

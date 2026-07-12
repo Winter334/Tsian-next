@@ -20,6 +20,7 @@ import {
   resolveAgentModelConfig,
 } from "./internal"
 import {
+  DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
   getBrowserAiConfig,
   listBrowserAiProviderPresetOptions,
   getBrowserAiProviderPresetModels,
@@ -482,11 +483,12 @@ export async function updateLocalAssistantWorkspaceAccess(level: number): Promis
  * Resolve the local assistant agent's currently effective tool-call mode.
  * Mirrors the resolution used by the chat turn: the selected provider preset's
  * primary model `toolCallMode`, falling back to the platform-global active
- * provider, then to `"text"`. Used by AssistantView to surface the active mode.
+ * provider, then to the app default. Used by AssistantView to surface the active
+ * mode.
  */
 export async function getLocalAssistantToolCallMode(): Promise<BrowserAiToolCallMode> {
   const files = await loadLocalAssistantFiles()
   const presetMap = buildAgentProviderPresetMap(files)
   const resolved = resolveAgentModelConfig(LOCAL_ASSISTANT_AGENT_ID, presetMap)
-  return resolved?.toolCallMode ?? getBrowserAiConfig()?.toolCallMode ?? "text"
+  return resolved?.toolCallMode ?? getBrowserAiConfig()?.toolCallMode ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE
 }

@@ -109,6 +109,8 @@ import { RefreshCw, Search } from "lucide-vue-next"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import ModelParamsFields from "./ModelParamsFields.vue"
 import {
+  DEFAULT_BROWSER_AI_STREAMING,
+  DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
   cloneBrowserAiModelParameters,
   createDefaultBrowserAiModelParameters,
   fetchBrowserAiProviderModels,
@@ -144,8 +146,8 @@ const fetchError = ref("")
 const error = ref("")
 const inputRef = ref<HTMLInputElement | null>(null)
 const params = ref<BrowserAiModelParameters>(createDefaultBrowserAiModelParameters())
-const toolCallMode = ref<BrowserAiToolCallMode>("text")
-const streaming = ref(false)
+const toolCallMode = ref<BrowserAiToolCallMode>(DEFAULT_BROWSER_AI_TOOL_CALL_MODE)
+const streaming = ref(DEFAULT_BROWSER_AI_STREAMING)
 
 const canFetch = computed(
   () => Boolean(props.preset?.baseUrl.trim() && props.preset?.apiKey.trim()),
@@ -169,8 +171,8 @@ watch(
       fetchError.value = ""
       error.value = ""
       params.value = createDefaultBrowserAiModelParameters()
-      toolCallMode.value = "text"
-      streaming.value = false
+      toolCallMode.value = DEFAULT_BROWSER_AI_TOOL_CALL_MODE
+      streaming.value = DEFAULT_BROWSER_AI_STREAMING
       nextTick(() => inputRef.value?.focus())
     }
   },
