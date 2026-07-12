@@ -39,7 +39,6 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - **Trust model**: Game-card render rules are creator-programmable content, like prompts, Skills, card frontends, and Agent definitions. The platform is not a commercial SaaS content firewall. Community distribution/review and player trust decide whether to use a card's rules.
 - **Platform boundary**: The platform must still keep provider credentials, platform-meta secrets, and host DOM/private APIs out of game-frontends. Do not compensate for over-broad bridge powers by building heavy render-rule sanitizers; keep bridge powers scoped instead.
 - **Rule visibility**: Rules must be plain workspace files and should be inspectable/toggleable by the player. Compilation/runtime failures disable or skip the offending rule and fall back to plain markdown; they must not crash the play UI.
-- **Context separation**: Tsian is not SillyTavern's "what you see is what the model sees" chat-history model. The play frontend's rendered narrative/HTML is not automatically the LLM context. Runtime assembles model context from clean turn timeline/context snapshots/workspace files. Therefore display-only render transforms do **not** require SillyTavern-style prompt-cleaning regexes by default. Add prompt/context stripping only when a raw output block is intentionally persisted into assistant text or context snapshots.
 - **Options migration direction**: `[[选项]]` is not a permanent platform primitive. Its current host parser + bridge event + frontend renderer is legacy coupling. Migrate it into the same output-rule pipeline as other card-defined blocks (likely as an initial locked built-in rule) so frontends are not forced by the platform to implement one gameplay-specific marker.
 - **No new hardcoded gameplay renderers**: Do not add new platform-host parsers for `<aftertalk>`, `<parallel_world>`, status panels, etc. Use configurable output rules or structured workspace/runtime state.
 
@@ -57,9 +56,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 ### 5. Good/Base/Bad Cases
 
 - Good: `<aftertalk>...</aftertalk>` is rendered by a card-provided `preMarkdown` rule into a details/card block; the player can inspect/disable the rule.
-- Good: a display-only rule changes only frontend presentation; the model's next-turn context remains the platform-assembled clean context, not the rendered HTML.
 - Base: `[[选项]]` remains supported through a locked built-in output rule while old cards migrate.
-- Bad: porting SillyTavern prompt-cleaning regexes wholesale even though Tsian display HTML is not automatically sent back to the LLM.
 - Bad: platform-host adds another bespoke parser for `<aftertalk>` and forces all play frontends to render it.
 - Bad: render-rule design starts with a full commercial XSS sanitizer/permission system before there is evidence the creator ecosystem needs that cost.
 
