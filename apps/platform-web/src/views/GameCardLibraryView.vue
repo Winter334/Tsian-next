@@ -250,6 +250,7 @@ import {
   deletePlatformGameCard,
   getPlatformActiveGameCardId,
   importPlatformGameCardPackage,
+  inspectPlatformGameCardPackage,
   listPlatformGameCards,
   listPlatformSaves,
   setPlatformActiveGameCard,
@@ -478,6 +479,21 @@ async function handlePackageSelected(event: Event) {
   importError.value = ""
   feedback.value = ""
   try {
+    const inspection = await inspectPlatformGameCardPackage(file)
+    const incoming = inspection.manifest
+    const existing = cards.value.find((card) => card.manifest.id === incoming.id)
+    if (existing) {
+      const confirmed = await confirm({
+        title: "卡包已安装",
+        message: `本地已有「${existing.manifest.name || incoming.name || incoming.id}」。导入后将替换本地卡包，已有存档会保留。`,
+        severity: "danger",
+        confirmText: "覆盖",
+      })
+      if (!confirmed) {
+        return
+      }
+    }
+
     const imported = await importPlatformGameCardPackage(file)
     feedback.value = `已导入：${getGameCardTitle(imported)}`
     toast.success(`已导入：${getGameCardTitle(imported)}`)
