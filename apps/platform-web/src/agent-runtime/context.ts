@@ -230,6 +230,8 @@ export function assembleAgentContext(
     entry.notesFile = notesFile
   }
   if (prefillFile) {
+    // 保留供 deep-query/UI 诊断访问。消息构建层不读此字段，
+    // 通过 contextInjectionsByPosition["tail"] 消费（上方 compat 迁移已处理）。
     entry.prefillFile = prefillFile
   }
 

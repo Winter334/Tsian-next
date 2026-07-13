@@ -5,6 +5,7 @@ import type {
   AgentContextToolCall,
   AgentContextToolMemory,
   ContextInjection,
+  ContextPathPosition,
   TurnTimelineItem,
   AiChatMessage,
   AskUserRequest,
@@ -788,6 +789,26 @@ function buildAgentContextMessages_split(
   return messages
 }
 
+/** 列出所有 position 组的注入条目来源，按 position 分组显示。 */
+function formatAllContextInjections(context: AgentContextEntry): string {
+  const positions: ContextPathPosition[] = ["before-history", "workspace-context", "after-input", "tail"]
+  const lines: string[] = []
+  let total = 0
+  for (const pos of positions) {
+    const group = context.contextInjectionsByPosition[pos]
+    if (group.length === 0) continue
+    lines.push(`  [${pos}]`)
+    for (const inj of group) {
+      lines.push(`    - ${inj.source}`)
+    }
+    total += group.length
+  }
+  if (total === 0) {
+    return "（暂无已加载 contextPaths 注入条目）"
+  }
+  return lines.join("\n")
+}
+
 /**
  * workspace.context 的元信息部分（不含 contextInjections 全文）。
  *
@@ -804,9 +825,7 @@ function formatAgentRuntimeContextMeta(context: AgentContextEntry): string {
     formatOptionalWorkspaceFile("Agent notes", context.notesFile),
     "",
     "声明的 contextPaths 注入条目：",
-    context.contextInjections.length === 0
-      ? "（暂无已加载 contextPaths 注入条目）"
-      : context.contextInjections.map((inj) => `- ${inj.source}`).join("\n"),
+    formatAllContextInjections(context),
     "",
     "缺失的 contextPaths：",
     formatMissingContextPaths(context),

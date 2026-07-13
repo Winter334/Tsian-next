@@ -562,8 +562,8 @@ export interface AgentContextEntry {
    *  4 个数组始终存在（即使为空），便于消费侧无需判空。 */
   contextInjectionsByPosition: Record<ContextPathPosition, ContextInjection[]>
   /** workspace-context 组的注入条目（= contextInjectionsByPosition["workspace-context"]）。
-   *  保留字段，向后兼容 buildDelegatedAgentMessages 等仍按单一数组消费的路径。
-   *  新代码应优先读取 contextInjectionsByPosition。 */
+   *  保留字段供 debug 元信息显示（formatAgentRuntimeContextMeta）使用。
+   *  消息构建层应优先读取 contextInjectionsByPosition。 */
   contextInjections: ContextInjection[]
   knowledgeFiles: WorkspaceFile[]
   missingContextPaths: string[]
