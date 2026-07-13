@@ -537,6 +537,8 @@ export interface AgentRegistryEntry {
   contextPaths: ContextPathEntry[]
   /** 启用的规则模块名列表（解析后，默认空数组）。用于 {{file:...?enabled}} 条件检查。 */
   enabledModules: string[]
+  /** Raw agent.json 是否显式声明 enabledModules；未声明时 ?enabled 宏保持 include-all 兼容语义。 */
+  enabledModulesConfigured: boolean
   knowledgeMount?: string
   providerPresetId?: string
   /** Entry mode resolved from agent.json; defaults to `"persistent"`. */

@@ -214,7 +214,19 @@
               </div>
             </div>
 
-            <div v-else class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
+            <div v-else-if="activeSection === 'sequence'" class="h-full min-h-0">
+              <MessageSequenceEditor
+                v-if="snapshot && selectedAgent"
+                :agent="selectedAgent"
+                :context="agentContext"
+                :card-id="snapshot.card.id"
+                :modules="modulesForSelectedAgent"
+                @saved="handleSequenceSaved"
+                @error="handleSequenceError"
+              />
+            </div>
+
+            <div v-else-if="activeSection === 'tools'" class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)]">
               <div class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/25 px-3 py-2">
                 <p class="font-mono text-[11px] uppercase tracking-wider text-neon">运行配置</p>
                 <p class="font-mono text-[11px] text-text-dim">运行身份 · 权限边界 · 能力开关</p>
@@ -368,41 +380,6 @@
                       当前工作区还没有自定义 Tool。放置 <code class="font-mono text-[11px]">tools/&lt;id&gt;/tool.json</code> 后会出现在这里。
                     </div>
                   </section>
-
-                  <section
-                    v-if="modulesForSelectedAgent.length > 0"
-                    class="border border-neon-deep/35 bg-panel/55"
-                  >
-                    <div class="flex flex-wrap items-start justify-between gap-3 border-b border-neon-deep/25 px-3 py-2">
-                      <div>
-                        <p class="text-sm font-bold text-text-main">规则模块</p>
-                        <p class="mt-0.5 text-xs leading-5 text-text-dim">切换此 Agent 的可选规则模块（对应 contextPaths 中 <code class="font-mono text-[11px]">{{ MODULE_MACRO_EXAMPLE }}</code> 宏的启用列表）。</p>
-                      </div>
-                      <p class="font-mono text-[11px] text-text-dim">
-                        {{ modulesForSelectedAgent.filter((m) => isModuleEnabled(selectedAgent!, m.stem)).length }} / {{ modulesForSelectedAgent.length }} 已启用
-                      </p>
-                    </div>
-
-                    <div class="grid gap-2 p-3 2xl:grid-cols-2">
-                      <article
-                        v-for="module in modulesForSelectedAgent"
-                        :key="module.path"
-                        class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3 border border-neon-deep/25 bg-elevated/35 p-3 transition-colors hover:bg-elevated/55"
-                      >
-                        <div class="min-w-0">
-                          <p class="truncate text-sm font-bold text-text-main">{{ module.title }}</p>
-                          <p class="mt-1 truncate font-mono text-[11px] text-text-dim/80">{{ module.path }}</p>
-                        </div>
-                        <Switch
-                          class="mt-0.5"
-                          :model-value="isModuleEnabled(selectedAgent!, module.stem)"
-                          :disabled="togglingModuleStem === module.stem"
-                          :aria-label="module.title"
-                          @update:model-value="(value) => toggleModule(module.stem, Boolean(value))"
-                        />
-                      </article>
-                    </div>
-                  </section>
                 </div>
               </div>
             </div>
@@ -438,12 +415,14 @@ import {
   Bot,
   FileText,
   FolderOpen,
+  ListTree,
   RefreshCw,
   SlidersHorizontal,
   Trash2,
   Wrench,
 } from "lucide-vue-next"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
+import MessageSequenceEditor from "@/components/studio/MessageSequenceEditor.vue"
 import { ParamTip } from "@/components/ui/tip"
 import {
   Select,
@@ -468,7 +447,6 @@ import {
   deletePlatformStudioSkill,
   updatePlatformStudioAgentWorkspaceAccess,
   updatePlatformStudioAgentProviderPreset,
-  updatePlatformStudioAgentModuleEnabled,
   waitForPlatformHostReady,
   type PlatformStudioSnapshot,
   type PlatformStudioModuleInfo,
@@ -478,7 +456,7 @@ import type {
   ToolRegistryEntry,
 } from "@tsian/contracts"
 
-type StudioSection = "agent" | "soul" | "skills" | "tools"
+type StudioSection = "agent" | "soul" | "skills" | "sequence" | "tools"
 
 const sections: Array<{
   id: StudioSection
@@ -488,6 +466,7 @@ const sections: Array<{
   { id: "agent", label: "AGENT.md", icon: FileText },
   { id: "soul", label: "SOUL.md", icon: FileText },
   { id: "skills", label: "Skills", icon: Wrench },
+  { id: "sequence", label: "消息序列", icon: ListTree },
   { id: "tools", label: "运行配置", icon: SlidersHorizontal },
 ]
 
@@ -537,9 +516,6 @@ const workspaceAccessOptions = [
     description: "允许访问平台元数据能力，仅适合受信任的维护 Agent。",
   },
 ]
-
-/** 示例宏文本，模板里用插值渲染（避免在 mustache 里嵌套 mustache）。 */
-const MODULE_MACRO_EXAMPLE = "{{file:modules/*.md?enabled}}"
 
 const router = useRouter()
 const snapshot = ref<PlatformStudioSnapshot | null>(null)
@@ -625,7 +601,6 @@ const modulesForSelectedAgent = computed<PlatformStudioModuleInfo[]>(() => {
   const agentId = selectedAgent.value.id
   return snapshot.value.modules.filter((module) => module.agentId === agentId)
 })
-const togglingModuleStem = ref<string | null>(null)
 const toolDiagnostics = computed<RegistryDiagnostic[]>(() =>
   snapshot.value?.toolDiagnostics ?? []
 )
@@ -685,30 +660,6 @@ async function toggleUserTool(tool: ToolRegistryEntry, enabled: boolean): Promis
     setFeedback(error instanceof Error ? error.message : "更新 Tool 状态失败。", "error")
   } finally {
     togglingToolName.value = null
-  }
-}
-
-function isModuleEnabled(agent: AgentRegistryEntry, stem: string): boolean {
-  return agent.enabledModules.includes(stem)
-}
-
-async function toggleModule(stem: string, enabled: boolean): Promise<void> {
-  const agent = selectedAgent.value
-  if (!agent || togglingModuleStem.value) return
-  togglingModuleStem.value = stem
-  try {
-    await updatePlatformStudioAgentModuleEnabled({
-      agentId: agent.id,
-      moduleStem: stem,
-      enabled,
-    })
-    await reloadSnapshotAndSelectedAgent()
-    setFeedback(enabled ? `已启用规则模块：${stem}` : `已禁用规则模块：${stem}`, "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "更新规则模块状态失败。", "error")
-    await reloadSnapshotAndSelectedAgent()
-  } finally {
-    togglingModuleStem.value = null
   }
 }
 
@@ -795,6 +746,23 @@ async function reloadSnapshotAndSelectedAgent() {
     selectedAgentId.value = next.agents[0]?.id ?? ""
   }
   await loadSelectedAgentContext()
+}
+
+async function refreshSnapshotAfterSequenceSave(message: string) {
+  const next = await getPlatformStudioSnapshot()
+  snapshot.value = next
+  if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
+    selectedAgentId.value = next.agents[0]?.id ?? ""
+  }
+  setFeedback(message, "ok")
+}
+
+function handleSequenceSaved(message: string) {
+  void refreshSnapshotAfterSequenceSave(message)
+}
+
+function handleSequenceError(message: string) {
+  setFeedback(message, "error")
 }
 
 async function loadSelectedAgentContext() {

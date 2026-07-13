@@ -843,6 +843,7 @@ function buildAgentRegistryEntry(
     workspaceAccess: normalizeAgentWorkspaceAccessConfig(config.workspaceAccess),
     contextPaths: parseContextPathEntries(config.contextPaths),
     enabledModules: jsonStringArray(config.enabledModules),
+    enabledModulesConfigured: Array.isArray(config.enabledModules),
     entryMode,
     system,
     ...(knowledgeMount ? { knowledgeMount } : {}),

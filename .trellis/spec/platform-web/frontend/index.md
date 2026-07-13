@@ -31,13 +31,15 @@ Use these specs when changing `apps/platform-web/src/**`.
 ## Context Injection Composer
 
 `contextPaths` in `agent.json` supports three entry forms (see `ContextPathEntry` in contracts):
-- **String** `"path"` — backward-compatible: one `user` message per file, content macro-expanded
-- **Path object** `{path, role}` — one file, inject as specified role, content macro-expanded
-- **Template object** `{template, role}` — inline template string, macro-expanded, inject as specified role
+- **String** `"path"` — backward-compatible: one `user` message per file, content macro-expanded, injected at `workspace-context`
+- **Path object** `{path, role, position}` — one file, inject as specified role and message-sequence position, content macro-expanded
+- **Template object** `{template, role, position}` — inline template string, macro-expanded, inject as specified role and message-sequence position
 
-**Macro engine** (`macro-engine.ts`): `expandMacros()` processes `{{file:path}}`, `{{file:path?enabled}}`, `{{file:dir/*.md?enabled}}` (1-layer glob, no recursion), `{{random:A,B,C}}`, then implicit whitespace cleanup. Relative paths resolve against the injected file's directory (template objects use the agent directory). `enabledModules: string[]` on `AgentConfig` controls `?enabled` inclusion by file stem; empty/absent defaults to include all (backward-compatible).
+`position` is optional and defaults to `"workspace-context"`. Legal values, in runtime skeleton order, are `"before-history"` (system prompt 后、history 前), `"workspace-context"` (history 后、turn-runtime 前), `"after-input"` (玩家输入后、tail 前), and `"tail"` (消息序列绝对末尾，PREFILL.md 兼容迁移层). The message builder consumes `AgentContextEntry.contextInjectionsByPosition`; `contextInjections` is only the `workspace-context` alias retained for debug metadata.
 
-**Compilation flow**: `registry.ts` parses entries → `context.ts` `assembleAgentContext` resolves files + expands macros → `index.ts` `buildAgentContextMessages_split` emits one `RuntimeChatMessage` per injection (with role + source label). Empty compiled content is skipped. `AgentContextEntry.contextInjections: ContextInjection[]` replaces the former `contextFiles`.
+**Macro engine** (`macro-engine.ts`): `expandMacros()` processes `{{file:path}}`, `{{file:path?enabled}}`, `{{file:dir/*.md?enabled}}` (1-layer glob, no recursion), `{{random:A,B,C}}`, then implicit whitespace cleanup. Relative paths resolve against the injected file's directory (template objects use the agent directory). `enabledModules: string[]` on `AgentConfig` controls `?enabled` inclusion by file stem; absent defaults to include all (backward-compatible), while an explicitly configured empty array means include none.
+
+**Compilation flow**: `registry.ts` parses entries → `context.ts` `assembleAgentContext` resolves files + expands macros + groups by position → `index.ts` emits one `RuntimeChatMessage` per injection (with role + source label) at the declared skeleton position. Empty compiled content is skipped. `AgentContextEntry.contextInjectionsByPosition` is the authoritative message-building field.
 
 **Cache**: pure-string entries preserve the existing one-file-per-message split (prefix cache stable). `{{random}}` causes per-turn cache miss — use sparingly.
 

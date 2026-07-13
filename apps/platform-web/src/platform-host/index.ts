@@ -1546,6 +1546,7 @@ export {
   updatePlatformStudioAgentToolEnabled,
   updatePlatformStudioAgentWorkspaceAccess,
   updatePlatformStudioAgentProviderPreset,
+  updatePlatformStudioAgentContextPaths,
   updatePlatformStudioAgentModuleEnabled,
   isPlatformStudioToolEnabledForAgent,
   type PlatformStudioSnapshot,
@@ -1557,6 +1558,7 @@ export {
   type PlatformStudioAgentToolToggleInput,
   type PlatformStudioAgentWorkspaceAccessInput,
   type PlatformStudioAgentProviderPresetInput,
+  type PlatformStudioAgentContextPathsUpdateInput,
   type PlatformStudioAgentModuleToggleInput,
   type PlatformStudioModuleInfo,
 } from "./studio-agents"

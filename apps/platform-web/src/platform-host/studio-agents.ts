@@ -2,6 +2,9 @@ import type {
   AgentContextEntry,
   AgentPlatformToolName,
   AgentRegistryEntry,
+  ContextPathEntry,
+  ContextPathObject,
+  ContextPathPosition,
   RegistryDiagnostic,
   SkillDetailEntry,
   SkillRegistryEntry,
@@ -154,6 +157,95 @@ export interface PlatformStudioAgentWorkspaceAccessInput {
 export interface PlatformStudioAgentProviderPresetInput {
   agentId: string
   providerPresetId: string | null
+}
+
+export interface PlatformStudioAgentContextPathsUpdateInput {
+  agentId: string
+  contextPaths: ContextPathEntry[]
+  enabledModules?: string[]
+}
+
+const CONTEXT_PATH_POSITIONS = new Set<ContextPathPosition>([
+  "before-history",
+  "workspace-context",
+  "after-input",
+  "tail",
+])
+
+function normalizeContextPathRole(value: unknown): ContextPathObject["role"] | undefined {
+  return value === "system" || value === "user" || value === "assistant"
+    ? value
+    : undefined
+}
+
+function normalizeContextPathPosition(value: unknown): ContextPathPosition | undefined {
+  return typeof value === "string" && CONTEXT_PATH_POSITIONS.has(value as ContextPathPosition)
+    ? value as ContextPathPosition
+    : undefined
+}
+
+function normalizeContextPathEntriesForWrite(entries: ContextPathEntry[]): ContextPathEntry[] {
+  if (!Array.isArray(entries)) {
+    throw new Error("contextPaths 必须是数组。")
+  }
+
+  const normalized: ContextPathEntry[] = []
+  for (const entry of entries) {
+    if (typeof entry === "string") {
+      const path = normalizeWorkspaceFilePath(entry)
+      if (path) {
+        normalized.push(path)
+      }
+      continue
+    }
+
+    if (!isRecord(entry)) {
+      continue
+    }
+
+    const path = typeof entry.path === "string"
+      ? normalizeWorkspaceFilePath(entry.path)
+      : ""
+    const template = typeof entry.template === "string" && entry.template.trim()
+      ? entry.template
+      : ""
+    if (!path === !template) {
+      continue
+    }
+
+    const next: ContextPathObject = {}
+    if (path) {
+      next.path = path
+    } else {
+      next.template = template
+    }
+
+    const role = normalizeContextPathRole(entry.role)
+    if (role) {
+      next.role = role
+    }
+    const position = normalizeContextPathPosition(entry.position)
+    if (position) {
+      next.position = position
+    }
+    normalized.push(next)
+  }
+
+  return normalized
+}
+
+function normalizeEnabledModulesForWrite(values: string[]): string[] {
+  const seen = new Set<string>()
+  const normalized: string[] = []
+  for (const value of values) {
+    const item = value.trim()
+    if (!item || seen.has(item)) {
+      continue
+    }
+    seen.add(item)
+    normalized.push(item)
+  }
+  return normalized
 }
 
 async function activeStudioWorkspaceFiles(
@@ -721,6 +813,29 @@ export async function updatePlatformStudioAgentProviderPreset(
     nextConfig.providerPresetId = presetId
   } else {
     delete nextConfig.providerPresetId
+  }
+
+  return writeAgentConfigRecord(card.id, agent, nextConfig)
+}
+
+export async function updatePlatformStudioAgentContextPaths(
+  input: PlatformStudioAgentContextPathsUpdateInput,
+): Promise<WorkspaceFile> {
+  const card = await getPlatformActiveGameCard()
+  if (!card) {
+    throw new Error("当前没有加载游戏卡。")
+  }
+
+  const context = await activeStudioWorkspaceFiles(card)
+  const agent = findStudioAgent(context.files, input.agentId)
+  const configFile = agentConfigFileForAgent(context.files, agent)
+  const config = parseAgentConfigRecord(configFile)
+  const nextConfig: Record<string, unknown> = {
+    ...config,
+    contextPaths: normalizeContextPathEntriesForWrite(input.contextPaths),
+  }
+  if (input.enabledModules) {
+    nextConfig.enabledModules = normalizeEnabledModulesForWrite(input.enabledModules)
   }
 
   return writeAgentConfigRecord(card.id, agent, nextConfig)

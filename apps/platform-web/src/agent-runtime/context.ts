@@ -149,11 +149,12 @@ export function assembleAgentContext(
     }
 
     // 2. Expand macros ({{file:...}}, {{random:...}}, implicit whitespace cleanup).
-    //    enabledModules empty → pass undefined so ?enabled defaults to include.
+    //    enabledModules 未配置 → pass undefined so ?enabled defaults to include.
+    //    enabledModules 已显式配置（即使为空数组）→ 按白名单过滤。
     const expanded = expandMacros(rawContent, {
       baseDir,
       filesByPath,
-      enabledModules: agent.enabledModules.length > 0 ? agent.enabledModules : undefined,
+      enabledModules: agent.enabledModulesConfigured ? agent.enabledModules : undefined,
     })
     missingContextPaths.push(...expanded.missing)
 
