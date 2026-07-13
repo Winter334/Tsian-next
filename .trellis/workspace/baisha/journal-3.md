@@ -1737,3 +1737,37 @@ Added save/card version confirmation, aligned Market resourceVersion with packag
 ### Next Steps
 
 - None - task complete
+
+
+## Session 149: stage-manager 回合后维护优化
+
+**Date**: 2026-07-13
+**Task**: stage-manager 回合后维护优化
+**Package**: platform-web
+**Branch**: `task/stage-manager-post-turn-optimize`
+
+### Summary
+
+实现 stage-manager 回合后维护优化：事务内自动清理过期 scene，read_maintenance_context 返回 previousTurnBody 并移除 sceneCleanupCandidates，stage-manager 改用维护工具 timeline 且去除 frontier.json 注入；补充 storage spec 的 checkpoint hook 规则。验证 build:web、diff check 与 trellis-check 均通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a3abcad` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
