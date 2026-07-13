@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Agent Runtime 在 platform-web/frontend，消息序列构建在 agent-runtime/index.ts"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "ContextPathObject/ContextInjection/AgentContextEntry 契约在 contracts/backend，新增 position 字段"}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guides：跨层数据流、代码复用、模块结构"}
+{"file": "docs/active/message-sequence-architecture-analysis.md", "reason": "消息序列架构分析文档：原预设 vs Tsian 对比、7个核心问题、原预设条目索引"}
+{"file": ".trellis/tasks/07-13-message-sequence-declaration/design.md", "reason": "技术设计：position 值集、数据流、整合器、locateHistorySpan 改造、缓存分析"}

@@ -4,6 +4,7 @@ import type {
   AgentRegistryEntry,
   ContextPathEntry,
   ContextPathObject,
+  ContextPathPosition,
   RegistryDiagnostic,
   SkillActionSummary,
   SkillConfigItem,
@@ -66,6 +67,15 @@ const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
   "workspace_semantic_search",
   "ask_user",
   "test_skill_script",
+])
+
+/** 合法的 contextPath position 值集。解析/校验时用于过滤非法值，缺失或非法值
+ *  回退到默认 "workspace-context"（向后兼容）。与 `ContextPathPosition` 契约保持同步。 */
+const CONTEXT_PATH_POSITIONS = new Set<ContextPathPosition>([
+  "before-history",
+  "workspace-context",
+  "after-input",
+  "tail",
 ])
 
 // Mirrors the `tsian-actions` fence pattern in workspace-tools.ts. Kept here so
@@ -658,7 +668,10 @@ function jsonStringArray(value: unknown): string[] {
  * Parse `agent.json.contextPaths` into `ContextPathEntry[]`. Accepts the
  * backward-compatible flat `string[]` form plus object entries (`{path, role}`
  * or `{template, role}`). Deduplicates by lowercased path/template key. Object
- * entries with both `path` and `template` (or neither) are skipped.
+ * entries with both `path` and `template` (or neither) are skipped. Object
+ * entries may declare `position` (one of the 4 legal `ContextPathPosition`
+ * values); missing or invalid `position` falls back to the default
+ * `"workspace-context"`, which is applied at the compilation layer.
  */
 function parseContextPathEntries(value: unknown): ContextPathEntry[] {
   if (!Array.isArray(value)) {
@@ -700,6 +713,17 @@ function parseContextPathEntries(value: unknown): ContextPathEntry[] {
       const role = entry.role
       if (role === "system" || role === "user" || role === "assistant") {
         obj.role = role
+      }
+
+      // Validate position: only carry through legal values. Missing/invalid
+      // position is left undefined here so the compilation layer defaults to
+      // "workspace-context" — keeping the registry entry faithful to input.
+      const position = entry.position
+      if (
+        typeof position === "string" &&
+        CONTEXT_PATH_POSITIONS.has(position as ContextPathPosition)
+      ) {
+        obj.position = position as ContextPathPosition
       }
 
       const key = (obj.path ?? obj.template ?? "").toLowerCase()

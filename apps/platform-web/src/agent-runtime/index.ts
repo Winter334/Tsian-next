@@ -4,6 +4,7 @@ import type {
   AgentContextSnapshot,
   AgentContextToolCall,
   AgentContextToolMemory,
+  ContextInjection,
   TurnTimelineItem,
   AiChatMessage,
   AskUserRequest,
@@ -321,19 +322,35 @@ function locateHistorySpan(
   if (messages.length <= 1 || messages[0].role !== "system") {
     return { start: -1, end: -1 }
   }
-  const first = messages[1]
-  const firstText = messageContentToText(first.content)
+  // before-history 注入(contextPaths position: "before-history")插在 system 和 history
+  // 之间，每条注入消息以 `<!-- source: xxx -->` 注释前缀开头（contextInjectionsToMessages
+  // 产出格式）。扫描跳过这些注入消息，找到 history 段的真正起点。
+  // 无 before-history 注入时：messages[1] 不以 `<!-- source:` 开头 → start 停在 1，行为不变。
+  let start = 1
+  while (start < messages.length) {
+    const text = messageContentToText(messages[start].content)
+    if (text.startsWith("<!-- source:")) {
+      start += 1
+      continue
+    }
+    break
+  }
+  // 扫描后 start 指向第一条非 before-history 注入消息。若已越界，结构异常。
+  if (start >= messages.length) {
+    return { start: -1, end: -1 }
+  }
+  const firstHistoryText = messageContentToText(messages[start].content)
   // 兜底路径(未注入 agentContext):剧情段首条是"最近对话："拍扁文本,无独立 message 序列.
-  if (first.role === "user" && firstText.startsWith("最近对话：")) {
+  if (messages[start].role === "user" && firstHistoryText.startsWith("最近对话：")) {
     return { start: -1, end: -1 }
   }
-  // delegated agent:index 1 是"调用方 Agent："而非剧情段,无独立剧情段可压.
-  if (first.role === "user" && firstText.startsWith("调用方 Agent：")) {
+  // delegated agent:history 段首条是"最近对话窗口："（buildDelegatedAgentMessages 产出），
+  // 无独立剧情 message 序列可压（delegated 无 agentContext 快照注入）。
+  // 注意：delegated 路径的"调用方 Agent："在 before-history 注入之前（如果有），已被
+  // 上面的 `<!-- source:` 扫描跳过；无 before-history 时 start=1 仍指向"调用方 Agent："。
+  if (messages[start].role === "user" && firstHistoryText.startsWith("调用方 Agent：")) {
     return { start: -1, end: -1 }
   }
-  // Phase 0 修正后顺序:history 紧随 system,start 恒为 1
-  // (workspace.context 已后置到 history 之后,不再使 start 偏移到 2).
-  const start = 1
   let end = -1
   for (let i = start + 1; i < messages.length; i += 1) {
     if (messages[i].role === "user") {
@@ -678,6 +695,69 @@ function buildWorkspaceToolInstructions(
 }
 
 /**
+ * 把一组 ContextInjection 编译成逐条 RuntimeChatMessage。每条注入消息用 HTML 注释
+ * 前缀标注来源（`<!-- source: xxx -->`），供 locateHistorySpan 扫描识别 before-history
+ * 注入消息，以及 debug 时辨别来源。注释在合并时被保留（整合器只做 role 合并 + 换行
+ * 拼接，不删注释），模型将 HTML 注释视为元信息，不影响理解。
+ *
+ * 每个 injection 产出一条独立消息（不合并），合并由 mergeConsecutiveRoleMessages
+ * 整合器在发送给模型前统一处理。保持逐条产出是为了 locateHistorySpan/replaceHistorySpan
+ * 等基于未整合数组的边界扫描逻辑不受整合器影响。
+ */
+function contextInjectionsToMessages(
+  injections: ContextInjection[],
+): RuntimeChatMessage[] {
+  return injections.map((inj) => ({
+    role: inj.role,
+    content: `<!-- source: ${inj.source} -->\n${inj.content}`,
+  }))
+}
+
+/**
+ * 消息序列整合器：合并连续相同 role 的消息，纯换行拼接内容，不加自动 XML 标签。
+ *
+ * 设计理由（design §消息整合器）：
+ * - Claude/Gemini API 不接受连续相同 role 消息，OpenAI 接受但内部加隐式分割。合并后
+ *   用换行拼接，比多条消息的前缀标注更紧凑、更省 token。
+ * - 不加自动标签：酒馆预设大量使用跨条目标签（开标签在条目A、闭标签在条目B）和嵌套
+ *   标签。自动加标签会破坏这些结构——给只含开标签的条目再包一层，导致双重嵌套或
+ *   结构错乱。标签完全由作者在 contextPath 条目内容里显式写。
+ * - 不连续的相同 role 不合并（如 [system, user, system] 保持三条）。
+ *
+ * 调用时机：仅在 native/text 两个工具循环每轮调用 model API 前对当前 messages 数组
+ * 过一遍整合器，产出新数组传给 API。工具循环内的 splice-replace / span 定位操作的是
+ * 未整合的原始数组，整合器不 mutate 原数组。
+ *
+ * tool 角色（native 模式）不与 assistant 合并：tool 消息有独立语义（工具 observation），
+ * 且 provider native API 要求 tool 消息跟在 assistant toolCalls 之后，合并会破坏结构。
+ * 整合器按 role 严格相等判断，role="tool" 只与 role="tool" 合并（实践中不会连续出现
+ * 两条 tool），天然跳过与 assistant 的合并。
+ */
+function mergeConsecutiveRoleMessages(
+  messages: RuntimeChatMessage[],
+): RuntimeChatMessage[] {
+  const result: RuntimeChatMessage[] = []
+  for (const msg of messages) {
+    const last = result[result.length - 1]
+    if (last && last.role === msg.role) {
+      // 合并：纯换行拼接，不加自动标签（标签由作者在内容里显式写）。
+      // content 可能是 string 或 ContentPart[]；合并只处理 string content
+      // （连续同 role 的注入消息都是 string；多模态 ContentPart[] 只出现在
+      // 当前轮 user 输入，不会与同 role 注入消息连续）。
+      if (typeof last.content === "string" && typeof msg.content === "string") {
+        last.content += `\n\n${msg.content}`
+      } else {
+        // 多模态 content 不合并（罕见边界：同 role 连续但其中一条是 ContentPart[]）。
+        result.push({ ...msg })
+      }
+    } else {
+      result.push({ ...msg })
+    }
+  }
+  return result
+}
+
+/**
  * 构建 workspace.context 的 message 序列（元信息段 + 逐文件段）。
  *
  * 拆分目标：让稳定 contextFile（文档/README 等会话中不变的大文件）各自独立进入
@@ -689,6 +769,9 @@ function buildWorkspaceToolInstructions(
  * 边界，重排无额外收益。`label` 区分 entry（"Workspace Agent 上下文"）与 delegated
  * （"目标 Agent 上下文"）路径。
  *
+ * 注入消息从 contextInjectionsByPosition["workspace-context"] 取（= 旧 contextInjections
+ * 字段，向后兼容）。每条注入用 `<!-- source: xxx -->` 注释前缀标注来源（contextInjectionsToMessages）。
+ *
  * 边界安全性：所有边界锚定（locateHistorySpan 扫"当前回合："、locateTaskInteractionSpan
  * 从末尾按工具形态扫描）都不依赖固定 message index，拆成 N 条不影响压缩/边界判定。
  */
@@ -699,12 +782,9 @@ function buildAgentContextMessages_split(
   const messages: RuntimeChatMessage[] = [
     { role: "user", content: `${label}（元信息）：\n${formatAgentRuntimeContextMeta(context)}` },
   ]
-  for (const injection of context.contextInjections) {
-    messages.push({
-      role: injection.role,
-      content: `Workspace 注入 ${injection.source}：\n${injection.content}`,
-    })
-  }
+  // 注入消息从 workspace-context 组取（= 旧 contextInjections 字段，向后兼容）。
+  // 每条注入用 `<!-- source: xxx -->` 注释前缀标注来源。
+  messages.push(...contextInjectionsToMessages(context.contextInjectionsByPosition["workspace-context"]))
   return messages
 }
 
@@ -862,6 +942,10 @@ function buildEntryAgentMessages(
         toolCallMode,
       }),
     },
+    // before-history 注入（contextPaths position: "before-history"）：system prompt 之后、
+    // history 之前。稳定前缀层，只放稳定内容（越狱确认等）。无声明时为空数组，消息序列
+    // 与旧逻辑一致（history 紧随 system）。每条注入用 `<!-- source: xxx -->` 注释前缀。
+    ...contextInjectionsToMessages(context.contextInjectionsByPosition["before-history"]),
     // history(已发生剧情,跨 turn 字节级不变)紧随 system,作为最长稳定前缀.
     // workspace.context 含 contextInjections 注入正文/skillIndex 等 Agent 写入后即变
     // 的动态内容,后置于 history 之前会提前缓存断点使其后 history 全部 miss
@@ -869,7 +953,8 @@ function buildEntryAgentMessages(
     ...historyMessages,
     // workspace.context 拆成元信息段 + 逐文件段（任务 06-30-workspace-context-cache-split）：
     // 稳定文件各自独立命中前缀缓存，动态文件单独 miss 互不拖累。仍在 history 之后，
-    // 不破坏 design 修正记录 1 的缓存边界。
+    // 不破坏 design 修正记录 1 的缓存边界。注入消息从 contextInjectionsByPosition
+    // ["workspace-context"] 取（= 旧 contextInjections，向后兼容）。
     ...buildAgentContextMessages_split(context, "Workspace Agent 上下文"),
     // task-mode 助手的跨 turn 工具记忆作为普通工作日志放在 workspace context 后，
     // 避免高频变化块提前破坏大段稳定前缀缓存；不使用 provider tool protocol。
@@ -890,13 +975,14 @@ function buildEntryAgentMessages(
     },
     // 前端注入（after-input）：玩家输入之后、工具循环之前。
     ...afterInputInjection,
-    // Agent prefill: 以 assistant 角色注入 PREFILL.md 内容，作为创作身份接受示范。
-    // 位于消息序列末尾（模型生成前的最后输入），最大化 prefill 续写效果。
-    // 不落盘、不进 context.json（与 injection 同理），不破坏 system+history+
-    // workspace context 稳定前缀缓存。详见 design §9 缓存命中分析。
-    ...(context.prefillFile
-      ? [{ role: "assistant" as const, content: context.prefillFile.content }]
-      : []),
+    // after-input 注入（contextPaths position: "after-input"）：玩家输入 + 前端注入之后、
+    // tail 之前。紧贴续写点的框架模板层（COT 问题框架、输出格式模板）。无声明时为空。
+    ...contextInjectionsToMessages(context.contextInjectionsByPosition["after-input"]),
+    // tail 注入（contextPaths position: "tail"）：消息序列绝对末尾，续写引导。
+    // 替代旧 PREFILL.md 独立机制——PREFILL.md 兼容迁移在 context.ts 完成（无 tail
+    // contextPath 时自动将 PREFILL.md 内容转为 tail 注入）。有 tail contextPath 时
+    // PREFILL.md 被忽略。不落盘、不进 context.json，不破坏稳定前缀缓存。
+    ...contextInjectionsToMessages(context.contextInjectionsByPosition["tail"]),
   ]
 }
 
@@ -1013,6 +1099,17 @@ function buildDelegatedAgentMessages(
     ? getVisibleAgentContacts(input.workspaceFiles, targetContext)
     : []
   const permissions = deriveAgentRuntimePermissionProfile(targetContext.agent)
+  // contextInjectionsToMessages 产 RuntimeChatMessage[]，但注入消息只有
+  // system/user/assistant + string content（无 tool role），安全降维为 AiChatMessage[]。
+  const beforeHistoryMessages = contextInjectionsToMessages(
+    targetContext.contextInjectionsByPosition["before-history"],
+  ) as AiChatMessage[]
+  const afterInputMessages = contextInjectionsToMessages(
+    targetContext.contextInjectionsByPosition["after-input"],
+  ) as AiChatMessage[]
+  const tailMessages = contextInjectionsToMessages(
+    targetContext.contextInjectionsByPosition["tail"],
+  ) as AiChatMessage[]
   return [
     {
       role: "system",
@@ -1030,6 +1127,9 @@ function buildDelegatedAgentMessages(
         toolCallMode,
       }),
     },
+    // before-history 注入（contextPaths position: "before-history"）：system prompt 之后、
+    // 调用方信息之前。delegated 路径同样支持（续写引导可能有用）。无声明时为空。
+    ...beforeHistoryMessages,
     {
       role: "user",
       content: [
@@ -1040,7 +1140,8 @@ function buildDelegatedAgentMessages(
     },
     { role: "user", content: `最近对话窗口：\n${formatHistory(history)}` },
     // 目标 Agent 上下文同样拆成元信息段 + 逐条注入段（与 entry 路径一致）。
-    // 注入只产 system/user/assistant + string content，安全降维为 AiChatMessage[]。
+    // workspace-context 组注入由 buildAgentContextMessages_split 从
+    // contextInjectionsByPosition["workspace-context"] 取。安全降维为 AiChatMessage[]。
     ...(buildAgentContextMessages_split(targetContext, "目标 Agent 上下文") as AiChatMessage[]),
     { role: "user", content: [`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n") },
     { role: "user", content: `玩家本轮输入：\n${input.userInput}` },
@@ -1056,6 +1157,11 @@ function buildDelegatedAgentMessages(
         "请只回答调用方请求，不要输出给玩家的最终正文，也不要提到工具协议。",
       ].join("\n"),
     },
+    // after-input 注入（contextPaths position: "after-input"）：调用请求之后、tail 之前。
+    ...afterInputMessages,
+    // tail 注入（contextPaths position: "tail"）：消息序列绝对末尾，续写引导。
+    // delegated agent 如果声明了 tail 注入也尊重（PREFILL.md 兼容迁移兜底）。
+    ...tailMessages,
   ]
 }
 
@@ -1530,7 +1636,11 @@ async function callAgentModelWithWorkspaceToolsNative(
             }
           }) as AgentRuntimeModelCallOptions["onDelta"],
     }
-    const result = await capabilities.callModelNative!(runtimeMessages, callOptions, tools)
+    // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求）。
+    // 产出新数组传给 API，不 mutate runtimeMessages（工具循环的 splice-replace/
+    // span 定位继续操作未整合的原始数组）。
+    const mergedMessages = mergeConsecutiveRoleMessages(runtimeMessages)
+    const result = await capabilities.callModelNative!(mergedMessages, callOptions, tools)
     assertNotAborted(options.signal)
     lastRoundText = result.text
     // Track the latest round's usage; the final stop round's input tokens
@@ -1583,7 +1693,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       debugLabel: options.debugLabel,
       ok: true,
       data: {
-        messageCount: runtimeMessages.length,
+        messageCount: mergedMessages.length,
         outputLength: result.text.length,
         hasToolCalls: result.toolCalls.length > 0,
         toolCallCount: result.toolCalls.length,
@@ -1733,13 +1843,15 @@ async function callAgentModelWithWorkspaceTools(
   const collectedTimelineItems: TurnTimelineItem[] = []
   if (!input.workspaceFiles || !agentContext) {
     // text 路径:messages 是 RuntimeChatMessage[](超集),text 模式无 role:tool,安全降级为 AiChatMessage[].
-    const response = await capabilities.callModel(messages as AiChatMessage[], options)
+    // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求），产出新数组传给 API。
+    const mergedMessages = mergeConsecutiveRoleMessages(messages)
+    const response = await capabilities.callModel(mergedMessages as AiChatMessage[], options)
     capabilities.emitTrace?.({
       type: "model_call_completed",
       debugLabel: options.debugLabel,
       ok: true,
       data: {
-        messageCount: messages.length,
+        messageCount: mergedMessages.length,
         outputLength: response.length,
         hasToolCalls: false,
         toolCallCount: 0,
@@ -1928,7 +2040,11 @@ async function callAgentModelWithWorkspaceTools(
         : undefined,
     }
 
-    const response = await capabilities.callModel(nextMessages as AiChatMessage[], callOptions)
+    // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求）。
+    // 产出新数组传给 API，不 mutate nextMessages（工具循环的 splice-replace/
+    // span 定位继续操作未整合的原始数组）。
+    const mergedMessages = mergeConsecutiveRoleMessages(nextMessages as RuntimeChatMessage[])
+    const response = await capabilities.callModel(mergedMessages as AiChatMessage[], callOptions)
     assertNotAborted(options.signal)
     lastRoundText = response
     // 清空本轮 content 累积器:下一轮 onDelta 重新累积(或回合已结束).
@@ -1945,7 +2061,7 @@ async function callAgentModelWithWorkspaceTools(
       debugLabel: options.debugLabel,
       ok: true,
       data: {
-        messageCount: nextMessages.length,
+        messageCount: mergedMessages.length,
         outputLength: response.length,
         hasToolCalls: toolCalls.length > 0,
         toolCallCount: toolCalls.length,

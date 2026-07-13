@@ -436,7 +436,23 @@ export interface AgentWorkspaceAccessConfig {
   level: number
 }
 
-/** contextPath 条目对象形式：支持指定注入角色与内联模板。path 与 template 互斥。 */
+/**
+ * 注入在消息序列中的位置。控制 contextPath 条目编译后注入到消息骨架的哪个区段。
+ *
+ * - `"before-history"`：system prompt 之后、history 之前（稳定前缀层，只放稳定内容）
+ * - `"workspace-context"`（默认）：history 之后、turn-runtime 之前（现有行为，向后兼容）
+ * - `"after-input"`：玩家输入之后、tail 之前（紧贴续写点的框架模板层）
+ * - `"tail"`：消息序列绝对末尾（续写引导，替代 PREFILL.md 独立机制）
+ *
+ * 不写 position 的条目默认 `"workspace-context"`，保持向后兼容。
+ */
+export type ContextPathPosition =
+  | "before-history"
+  | "workspace-context"
+  | "after-input"
+  | "tail"
+
+/** contextPath 条目对象形式：支持指定注入角色、内联模板与消息序列位置。path 与 template 互斥。 */
 export interface ContextPathObject {
   /** workspace 文件路径。与 template 互斥。 */
   path?: string
@@ -444,17 +460,21 @@ export interface ContextPathObject {
   template?: string
   /** 注入消息角色。默认 "user"。 */
   role?: "system" | "user" | "assistant"
+  /** 注入在消息序列中的位置。默认 "workspace-context"（向后兼容）。 */
+  position?: ContextPathPosition
 }
 
 /** contextPath 条目：纯字符串（向后兼容）或对象形式（支持 role/template）。 */
 export type ContextPathEntry = string | ContextPathObject
 
-/** 编译后的注入条目（宏已展开）。携带 role 与最终内容，供消息构建层消费。 */
+/** 编译后的注入条目（宏已展开）。携带 role、最终内容与消息序列位置，供消息构建层消费。 */
 export interface ContextInjection {
   role: "system" | "user" | "assistant"
   content: string
   /** 来源描述（用于 meta 信息显示，如文件路径或 "inline template"）。 */
   source: string
+  /** 注入在消息序列中的位置。编译时从 contextPath 条目携带，默认 "workspace-context"。 */
+  position: ContextPathPosition
 }
 
 export interface AgentConfig {
@@ -531,14 +551,19 @@ export interface AgentContextEntry {
   agentFile: WorkspaceFile
   soulFile?: WorkspaceFile
   notesFile?: WorkspaceFile
-  /** Agent 伴生文件 PREFILL.md，runtime 以 assistant 角色注入消息序列末尾，
-   * 作为创作身份接受示范（prefill 技术）。不落盘、不进 context.json。 */
+  /** Agent 伴生文件 PREFILL.md。legacy 兼容字段：当无 `position: "tail"` 的 contextPath
+   *  时，编译层自动将此文件内容转为 tail 注入；有 tail contextPath 时此字段不使用。
+   *  消息构建层（index.ts）不应直接消费此字段，应读取 contextInjectionsByPosition["tail"]。 */
   prefillFile?: WorkspaceFile
   skillIndex: SkillRegistryEntry[]
   /** Tools visible to this Agent after `tools.enabled/disabled` filtering. */
   toolIndex: ToolRegistryEntry[]
-  /** 编译后的注入条目（宏已展开）。替代旧的 contextFiles——后者是原始文件，
-   *  前者是宏展开后的编译产物，携带 role 和最终内容。 */
+  /** 编译后的注入条目按 position 分组。消息构建层按骨架顺序从各组取注入。
+   *  4 个数组始终存在（即使为空），便于消费侧无需判空。 */
+  contextInjectionsByPosition: Record<ContextPathPosition, ContextInjection[]>
+  /** workspace-context 组的注入条目（= contextInjectionsByPosition["workspace-context"]）。
+   *  保留字段，向后兼容 buildDelegatedAgentMessages 等仍按单一数组消费的路径。
+   *  新代码应优先读取 contextInjectionsByPosition。 */
   contextInjections: ContextInjection[]
   knowledgeFiles: WorkspaceFile[]
   missingContextPaths: string[]

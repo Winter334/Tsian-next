@@ -2,6 +2,7 @@ import type {
   AgentContextEntry,
   AgentRegistryEntry,
   ContextInjection,
+  ContextPathPosition,
   ToolRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
@@ -89,18 +90,29 @@ export function assembleAgentContext(
   const prefillFile = agentDirectory
     ? filesByPath.get(`${agentDirectory}/${PREFILL_FILE_NAME}`)
     : undefined
-  const contextInjections: ContextInjection[] = []
+
+  /** 按 position 分组的注入缓冲区。4 个数组始终存在（即使为空）。 */
+  const contextInjectionsByPosition: Record<
+    ContextPathPosition,
+    ContextInjection[]
+  > = {
+    "before-history": [],
+    "workspace-context": [],
+    "after-input": [],
+    tail: [],
+  }
   const missingContextPaths: string[] = []
 
   for (const entry of agent.contextPaths) {
-    // 1. Resolve entry form → raw content, role, source, baseDir for macros.
+    // 1. Resolve entry form → raw content, role, source, baseDir, position for macros.
     let rawContent: string
     let role: "system" | "user" | "assistant"
     let source: string
     let baseDir: string
+    let position: ContextPathPosition
 
     if (typeof entry === "string") {
-      // Pure string: read file, role=user (backward compat).
+      // Pure string: read file, role=user (backward compat), default position.
       const path = normalizeWorkspaceFilePath(entry)
       const file = path ? filesByPath.get(path) : undefined
       if (!file || !path) {
@@ -111,6 +123,7 @@ export function assembleAgentContext(
       role = "user"
       source = file.path
       baseDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+      position = "workspace-context"
     } else if (entry.path) {
       // Path object: read file, role may be specified.
       const path = normalizeWorkspaceFilePath(entry.path)
@@ -123,12 +136,14 @@ export function assembleAgentContext(
       role = entry.role ?? "user"
       source = file.path
       baseDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
+      position = entry.position ?? "workspace-context"
     } else if (entry.template) {
       // Template object: inline template string, role may be specified.
       rawContent = entry.template
       role = entry.role ?? "user"
       source = "inline template"
       baseDir = agentDirectory ?? ""
+      position = entry.position ?? "workspace-context"
     } else {
       continue
     }
@@ -148,8 +163,30 @@ export function assembleAgentContext(
       continue
     }
 
-    contextInjections.push({ role, content, source })
+    // 4. Resolve position: missing/invalid → "workspace-context" (backward compat).
+    //    Position was resolved per-branch above (string entries default, object
+    //    entries read entry.position). Group the compiled injection accordingly.
+    contextInjectionsByPosition[position].push({ role, content, source, position })
   }
+
+  // PREFILL.md legacy compat migration: when no contextPath declared `position:
+  // "tail"`, auto-create a tail injection from PREFILL.md so existing agents
+  // (and old game-card archives) keep their prefill behavior without config
+  // changes. If the tail group already has entries, PREFILL.md is ignored.
+  if (
+    contextInjectionsByPosition["tail"].length === 0 &&
+    prefillFile &&
+    prefillFile.content.trim()
+  ) {
+    contextInjectionsByPosition["tail"].push({
+      role: "assistant",
+      content: prefillFile.content,
+      source: "PREFILL.md (compat)",
+      position: "tail",
+    })
+  }
+
+  const contextInjections = contextInjectionsByPosition["workspace-context"]
 
   const knowledgeFiles: WorkspaceFile[] = []
   if (agent.knowledgeMount) {
@@ -180,6 +217,7 @@ export function assembleAgentContext(
       agent,
     ),
     toolIndex,
+    contextInjectionsByPosition,
     contextInjections,
     knowledgeFiles,
     missingContextPaths,

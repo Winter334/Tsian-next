@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/platform-web/frontend/index.md", "reason": "Agent Runtime 在 platform-web/frontend，验证消息序列构建正确性"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "验证契约变更（position 字段）正确性和向后兼容"}
+{"file": ".trellis/spec/guides/index.md", "reason": "Shared thinking guides：跨层一致性、代码复用检查"}
+{"file": "docs/active/message-sequence-architecture-analysis.md", "reason": "验收对照：7个核心问题是否解决、原预设消息序列是否还原"}
