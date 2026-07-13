@@ -551,10 +551,6 @@ export interface AgentContextEntry {
   agentFile: WorkspaceFile
   soulFile?: WorkspaceFile
   notesFile?: WorkspaceFile
-  /** Agent 伴生文件 PREFILL.md。legacy 兼容字段：当无 `position: "tail"` 的 contextPath
-   *  时，编译层自动将此文件内容转为 tail 注入；有 tail contextPath 时此字段不使用。
-   *  消息构建层（index.ts）不应直接消费此字段，应读取 contextInjectionsByPosition["tail"]。 */
-  prefillFile?: WorkspaceFile
   skillIndex: SkillRegistryEntry[]
   /** Tools visible to this Agent after `tools.enabled/disabled` filtering. */
   toolIndex: ToolRegistryEntry[]
