@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 149
+- **Total Sessions**: 150
 - **Last Active**: 2026-07-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~1773 | Active |
+| `journal-3.md` | ~1807 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 150 | 2026-07-13 | stage-manager 维护优化第二轮 | `2d7c73d` | `task/stage-manager-maintenance-round2` |
 | 149 | 2026-07-13 | stage-manager 回合后维护优化 | `a3abcad` | `task/stage-manager-post-turn-optimize` |
 | 148 | 2026-07-13 | 消息序列编辑 UI | `568f74f` | `feat/message-sequence-editor-ui` |
 | 147 | 2026-07-12 | Market resource version alignment | `5523c04` | `feat/game-card-save-version-upgrade-warning` |

@@ -1771,3 +1771,37 @@ Added save/card version confirmation, aligned Market resourceVersion with packag
 ### Next Steps
 
 - None - task complete
+
+
+## Session 150: stage-manager 维护优化第二轮
+
+**Date**: 2026-07-13
+**Task**: stage-manager 维护优化第二轮
+**Package**: platform-web
+**Branch**: `task/stage-manager-maintenance-round2`
+
+### Summary
+
+read_maintenance_context 的 readEntityBrief 改为 readEntity 返回完整 entity JSON，消除 stage-manager 为判断字段变更而回退 workspace_read 的往返。新增 save/memory/records.md 作为 recall/scene/npc_action 记录文件，加入 stage-manager contextPaths，并将 AGENT.md/SKILL 措辞改为基于上下文已注入的 records.md/seeds.md 内容维护，不再诱导模型回读文件。验证 build:web、diff check 与 grep 均通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2d7c73d` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
