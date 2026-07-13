@@ -185,6 +185,7 @@ import {
   type RuntimeWorkspaceTransaction,
   WorkspaceStorageError,
 } from "../storage"
+import { cleanupScenesInTransaction } from "./scene-cleanup"
 import { triggerFrontendRebuild, readFrontendBuildStatus } from "../frontend-build/trigger"
 import {
   DEFAULT_FRONTEND_BINDING,
@@ -1453,6 +1454,9 @@ export const playFrontendBridge: PlayFrontendBridge = {
             path: formatAgentTracePath(agentId, invokeTimestamp),
             content: serializeRuntimeTraceEvents(trace.events),
           })
+          if (commitMode === "workspace-with-checkpoint") {
+            cleanupScenesInTransaction(workspaceTransaction!)
+          }
           const workspaceChanges = workspaceTransaction!.finalWorkspaceChanges()
           await (commitMode === "workspace-with-checkpoint"
             ? commitWorkspaceChangesWithCheckpointForSave(

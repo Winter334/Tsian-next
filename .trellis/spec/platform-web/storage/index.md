@@ -66,6 +66,8 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 
 **Prune interaction**: `post-turn-maintenance` is not in the `initial`/`manual` auto-keep class. It survives via the "current turn" rule (`cp.turn === currentTurn`) and sparse-point rule. When the turn ages out, prune reclaims it normally — replace-on-create already guarantees no same-turn `after-turn` lingers, so no stale pre-maintenance point resurfaces.
 
+**Maintenance-side cleanup / derived state hooks**: if invokeAgent maintenance needs to auto-clean derived save-runtime files (e.g. stale `save/scenes/*.json`), stage those mutations into the same `RuntimeWorkspaceTransaction` **before** `finalWorkspaceChanges()` and before `commitWorkspaceChangesWithCheckpointForSave`. Do not delete committed workspace files after the checkpoint commit: post-commit deletes would not be in the checkpoint manifest, so restoring the post-maintenance checkpoint would resurrect stale files. Best-effort cleanup belongs in the host/runtime orchestration layer when it depends on AIRP semantics, but its mutations must still enter the maintenance transaction.
+
 **`completed` event ordering**: `emitAgentInvocation({ type: "completed" })` fires **after** the commit function returns, so the frontend receives `completed` only when workspace + checkpoint are durable and restore-ready.
 
 **Validation matrix** (`platform-host/index.ts`):
