@@ -1,6 +1,7 @@
 export * from "./admin"
 export * from "./announcement"
 export * from "./bridge"
+export * from "./cloud-backup"
 export * from "./debug"
 export * from "./frontend-package"
 export * from "./game-card"

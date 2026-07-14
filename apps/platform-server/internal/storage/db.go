@@ -102,6 +102,31 @@ func migrate(ctx context.Context, db *sql.DB) error {
 			)`,
 		`CREATE INDEX IF NOT EXISTS idx_presence_sessions_last_seen ON presence_sessions(last_seen_at)`,
 		`CREATE INDEX IF NOT EXISTS idx_presence_sessions_user ON presence_sessions(user_id)`,
+		`CREATE TABLE IF NOT EXISTS cloud_backups (
+				id TEXT PRIMARY KEY,
+				owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				name TEXT NOT NULL,
+				card_id TEXT NOT NULL,
+				card_version TEXT NOT NULL,
+				revision_id TEXT NOT NULL,
+				manifest_json TEXT NOT NULL,
+				size_bytes INTEGER NOT NULL,
+				file_count INTEGER NOT NULL,
+				created_at TEXT NOT NULL,
+				updated_at TEXT NOT NULL
+			)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_backups_owner_updated ON cloud_backups(owner_user_id, updated_at DESC)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_backups_owner_card_updated ON cloud_backups(owner_user_id, card_id, updated_at DESC)`,
+		`CREATE TABLE IF NOT EXISTS cloud_backup_blobs (
+				owner_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+				hash TEXT NOT NULL,
+				size_bytes INTEGER NOT NULL,
+				media_type TEXT NOT NULL,
+				storage_key TEXT NOT NULL,
+				created_at TEXT NOT NULL,
+				PRIMARY KEY(owner_user_id, hash)
+			)`,
+		`CREATE INDEX IF NOT EXISTS idx_cloud_backup_blobs_owner ON cloud_backup_blobs(owner_user_id)`,
 	}
 	for _, statement := range statements {
 		if _, err := db.ExecContext(ctx, statement); err != nil {

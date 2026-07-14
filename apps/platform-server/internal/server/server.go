@@ -11,6 +11,7 @@ import (
 	"tsian/platform-server/internal/admin"
 	"tsian/platform-server/internal/announcement"
 	"tsian/platform-server/internal/auth"
+	"tsian/platform-server/internal/cloudbackup"
 	"tsian/platform-server/internal/config"
 	"tsian/platform-server/internal/market"
 	"tsian/platform-server/internal/middleware"
@@ -53,6 +54,17 @@ func (s *Server) Handler() http.Handler {
 
 	// Market / Workshop
 	blobStore := &storage.FileSystemBlobStore{Root: s.cfg.DataDir}
+
+	cloudBackupRepo := cloudbackup.NewSQLiteRepository(s.db)
+	cloudBackupHandler := cloudbackup.NewHandler(cloudBackupRepo, blobStore)
+	mux.Handle("GET /api/v1/cloud-backups", middleware.RequireAuth(s.db, users, http.HandlerFunc(cloudBackupHandler.HandleList)))
+	mux.Handle("POST /api/v1/cloud-backups/prepare", middleware.RequireAuth(s.db, users, http.HandlerFunc(cloudBackupHandler.HandlePrepare)))
+	mux.Handle("PUT /api/v1/cloud-backups/blobs/{hash}", middleware.RequireAuth(s.db, users, http.HandlerFunc(cloudBackupHandler.HandleUploadBlob)))
+	mux.Handle("POST /api/v1/cloud-backups/{id}/commit", middleware.RequireAuth(s.db, users, http.HandlerFunc(cloudBackupHandler.HandleCommit)))
+	mux.Handle("GET /api/v1/cloud-backups/{id}/manifest", middleware.RequireAuth(s.db, users, http.HandlerFunc(cloudBackupHandler.HandleManifest)))
+	mux.Handle("GET /api/v1/cloud-backups/{id}/blobs/{hash}", middleware.RequireAuth(s.db, users, http.HandlerFunc(cloudBackupHandler.HandleDownloadBlob)))
+	mux.Handle("DELETE /api/v1/cloud-backups/{id}", middleware.RequireAuth(s.db, users, http.HandlerFunc(cloudBackupHandler.HandleDelete)))
+
 	marketRepo := market.NewSQLiteRepository(s.db)
 	marketHandler := market.NewHandler(marketRepo, blobStore)
 	mux.HandleFunc("GET /api/v1/market/packages", marketHandler.HandleList)

@@ -15,6 +15,9 @@ export interface LocalSaveRecord {
   name: string
   gameCardId?: string
   gameCardVersion?: string
+  cloudBackupId?: string
+  cloudBackupRevisionId?: string
+  cloudBackedUpAt?: number
   createdAt: number
   updatedAt: number
 }

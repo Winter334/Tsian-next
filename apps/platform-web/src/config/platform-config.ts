@@ -61,6 +61,10 @@ export interface PlatformConfigAssistant {
   maxStoredMessages: number
 }
 
+export interface PlatformConfigCloudBackup {
+  autoBackupEnabled: boolean
+}
+
 /**
  * 平台配置根 schema。`embeddingConfig` 保留在 `provider`（BrowserPlatformConfigDraft）
  * 内，不另设独立字段——避免两份副本不同步（ai.ts 现有结构如此，P3 改动最小）。
@@ -72,6 +76,7 @@ export interface PlatformConfig {
   rag: PlatformConfigRag
   ai: PlatformConfigAi
   assistant: PlatformConfigAssistant
+  cloudBackup: PlatformConfigCloudBackup
 }
 
 export type PlatformConfigSectionKey =
@@ -81,6 +86,7 @@ export type PlatformConfigSectionKey =
   | "rag"
   | "ai"
   | "assistant"
+  | "cloudBackup"
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Defaults
@@ -113,6 +119,7 @@ export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
   rag: { defaultLimit: 5, maxLimit: 8 },
   ai: { chatTimeoutMs: 600_000 },
   assistant: { maxStoredMessages: 200 },
+  cloudBackup: { autoBackupEnabled: false },
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -292,7 +299,12 @@ function mergePlatformConfig(raw: unknown): PlatformConfig | null {
     ? { maxStoredMessages: normalizePositiveInt((rawAssistant as Record<string, unknown>).maxStoredMessages, DEFAULT_PLATFORM_CONFIG.assistant.maxStoredMessages) }
     : { ...DEFAULT_PLATFORM_CONFIG.assistant }
 
-  return { provider, checkpointPrune, contextCompression, rag, ai, assistant }
+  const rawCloudBackup = raw.cloudBackup
+  const cloudBackup: PlatformConfigCloudBackup = isPlainObject(rawCloudBackup)
+    ? { autoBackupEnabled: (rawCloudBackup as Record<string, unknown>).autoBackupEnabled === true }
+    : { ...DEFAULT_PLATFORM_CONFIG.cloudBackup }
+
+  return { provider, checkpointPrune, contextCompression, rag, ai, assistant, cloudBackup }
 }
 
 function cloneConfig(config: PlatformConfig): PlatformConfig {
@@ -314,5 +326,6 @@ function cloneConfig(config: PlatformConfig): PlatformConfig {
     rag: { ...config.rag },
     ai: { ...config.ai },
     assistant: { ...config.assistant },
+    cloudBackup: { ...config.cloudBackup },
   }
 }

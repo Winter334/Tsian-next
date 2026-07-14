@@ -1,6 +1,11 @@
 import type {
   Announcement,
   AnnouncementListResponse,
+  CloudBackupCommitRequest,
+  CloudBackupListResponse,
+  CloudBackupManifestResponse,
+  CloudBackupPrepareRequest,
+  CloudBackupPrepareResponse,
   MarketPackage,
   MarketPackageCountsResponse,
   MarketPackageListResponse,
@@ -21,6 +26,32 @@ export class ApiError extends Error {
   }
 }
 
+async function errorMessageFromResponse(response: Response, fallback: string): Promise<string> {
+  const text = await response.text().catch(() => "")
+  const trimmed = text.trim()
+  if (!trimmed) {
+    return fallback
+  }
+
+  try {
+    const parsed = JSON.parse(trimmed) as unknown
+    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+      const error = (parsed as { error?: unknown }).error
+      if (typeof error === "string" && error.trim()) {
+        return error.trim()
+      }
+      const message = (parsed as { message?: unknown }).message
+      if (typeof message === "string" && message.trim()) {
+        return message.trim()
+      }
+    }
+  } catch {
+    // Non-JSON error bodies are already displayable text.
+  }
+
+  return trimmed
+}
+
 export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers)
   if (typeof init.body === "string" && !headers.has("Content-Type")) {
@@ -34,8 +65,10 @@ export async function apiFetch<T>(path: string, init: RequestInit = {}): Promise
   })
 
   if (!response.ok) {
-    const text = await response.text().catch(() => "")
-    throw new ApiError(text.trim() || `API request failed (${response.status})`, response.status)
+    throw new ApiError(
+      await errorMessageFromResponse(response, `API request failed (${response.status})`),
+      response.status,
+    )
   }
 
   if (response.status === 204) {
@@ -133,8 +166,10 @@ export const marketApi = {
       body: form,
     })
     if (!response.ok) {
-      const text = await response.text().catch(() => "")
-      throw new ApiError(text.trim() || `上传失败 (${response.status})`, response.status)
+      throw new ApiError(
+        await errorMessageFromResponse(response, `上传失败 (${response.status})`),
+        response.status,
+      )
     }
     return (await response.json()) as MarketPackage
   },
@@ -147,8 +182,10 @@ export const marketApi = {
       body: form,
     })
     if (!response.ok) {
-      const text = await response.text().catch(() => "")
-      throw new ApiError(text.trim() || `更新失败 (${response.status})`, response.status)
+      throw new ApiError(
+        await errorMessageFromResponse(response, `更新失败 (${response.status})`),
+        response.status,
+      )
     }
     return (await response.json()) as MarketPackage
   },
@@ -163,10 +200,76 @@ export const marketApi = {
       { credentials: "include" },
     )
     if (!response.ok) {
-      const text = await response.text().catch(() => "")
-      throw new ApiError(text.trim() || `下载失败 (${response.status})`, response.status)
+      throw new ApiError(
+        await errorMessageFromResponse(response, `下载失败 (${response.status})`),
+        response.status,
+      )
     }
     return response.blob()
+  },
+}
+
+export const cloudBackupApi = {
+  async list(cardId?: string): Promise<CloudBackupListResponse> {
+    const query = new URLSearchParams()
+    if (cardId?.trim()) {
+      query.set("cardId", cardId.trim())
+    }
+    const qs = query.toString()
+    return apiFetch<CloudBackupListResponse>(`/api/v1/cloud-backups${qs ? `?${qs}` : ""}`)
+  },
+
+  async prepare(request: CloudBackupPrepareRequest): Promise<CloudBackupPrepareResponse> {
+    return apiFetch<CloudBackupPrepareResponse>("/api/v1/cloud-backups/prepare", {
+      method: "POST",
+      body: JSON.stringify(request),
+    })
+  },
+
+  async uploadBlob(hash: string, blob: Blob, mediaType: string): Promise<void> {
+    const headers = new Headers()
+    headers.set("Content-Type", mediaType || blob.type || "application/octet-stream")
+    const response = await fetch(`${API_BASE}/api/v1/cloud-backups/blobs/${encodeURIComponent(hash)}`, {
+      method: "PUT",
+      credentials: "include",
+      headers,
+      body: blob,
+    })
+    if (!response.ok) {
+      throw new ApiError(
+        await errorMessageFromResponse(response, `上传云备份文件失败 (${response.status})`),
+        response.status,
+      )
+    }
+  },
+
+  async commit(id: string, request: CloudBackupCommitRequest): Promise<CloudBackupManifestResponse> {
+    return apiFetch<CloudBackupManifestResponse>(`/api/v1/cloud-backups/${encodeURIComponent(id)}/commit`, {
+      method: "POST",
+      body: JSON.stringify(request),
+    })
+  },
+
+  async manifest(id: string): Promise<CloudBackupManifestResponse> {
+    return apiFetch<CloudBackupManifestResponse>(`/api/v1/cloud-backups/${encodeURIComponent(id)}/manifest`)
+  },
+
+  async downloadBlob(id: string, hash: string): Promise<Blob> {
+    const response = await fetch(
+      `${API_BASE}/api/v1/cloud-backups/${encodeURIComponent(id)}/blobs/${encodeURIComponent(hash)}`,
+      { credentials: "include" },
+    )
+    if (!response.ok) {
+      throw new ApiError(
+        await errorMessageFromResponse(response, `下载云备份文件失败 (${response.status})`),
+        response.status,
+      )
+    }
+    return response.blob()
+  },
+
+  async delete(id: string): Promise<void> {
+    await apiFetch<void>(`/api/v1/cloud-backups/${encodeURIComponent(id)}`, { method: "DELETE" })
   },
 }
 

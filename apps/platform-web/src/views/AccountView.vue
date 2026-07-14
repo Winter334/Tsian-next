@@ -26,8 +26,8 @@
           <div v-else class="account-name account-name--guest">访客</div>
           <div v-if="loggedIn" class="account-opid">OP-ID: {{ currentUser?.handle }}</div>
           <p class="account-desc">
-            <template v-if="loggedIn">游戏卡与存档将同步到云端，多设备续玩。</template>
-            <template v-else>登录后同步游戏卡、存档到云端，多设备续玩。当前以访客身份使用本地数据，不会跨设备保留。</template>
+            <template v-if="loggedIn">可在控制面板开启云备份，换设备继续游玩。</template>
+            <template v-else>登录后可在控制面板开启云备份。当前以访客身份使用本地数据，不会跨设备保留。</template>
           </p>
         </div>
       </div>

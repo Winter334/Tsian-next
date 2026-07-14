@@ -68,6 +68,11 @@
         @save="handleSaveEmbeddingConfig"
       />
 
+      <CloudBackupScreen
+        v-else-if="screen.kind === 'cloud-backup'"
+        @save="handleSaveCloudBackupConfig"
+      />
+
       <PlatformTunablesScreen
         v-else-if="screen.kind === 'tunables'"
         @save="handleSaveTunables"
@@ -111,6 +116,7 @@ import ModelConfigScreen from "@/components/settings/ModelConfigScreen.vue"
 import AddModelDialog from "@/components/settings/AddModelDialog.vue"
 import EditModelParamsDialog from "@/components/settings/EditModelParamsDialog.vue"
 import SemanticSearchScreen from "@/components/settings/SemanticSearchScreen.vue"
+import CloudBackupScreen from "@/components/settings/CloudBackupScreen.vue"
 import PlatformTunablesScreen from "@/components/settings/PlatformTunablesScreen.vue"
 import { confirm } from "@/composables/useConfirm"
 import { openDialogForm } from "@/composables/useDialogForm"
@@ -138,6 +144,7 @@ import {
   type PlatformConfigAssistant,
   type PlatformConfigCheckpointPrune,
   type PlatformConfigContextCompression,
+  type PlatformConfigCloudBackup,
   type PlatformConfigAi,
   getPlatformConfig,
   savePlatformConfig,
@@ -149,6 +156,7 @@ type Screen =
   | { kind: "providers" }
   | { kind: "models"; typeId: string; presetId: string }
   | { kind: "semantic-search" }
+  | { kind: "cloud-backup" }
   | { kind: "tunables" }
 
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(clonePlatformConfigDraft(getBrowserPlatformConfigDraft()))
@@ -224,6 +232,8 @@ const headerTitle = computed(() => {
       return activePreset.value ? `${activePreset.value.name || "未命名"} · 模型` : "模型配置"
     case "semantic-search":
       return "语义检索"
+    case "cloud-backup":
+      return "云备份"
     case "tunables":
       return "运行参数"
     default:
@@ -260,6 +270,8 @@ function enterHubEntry(id: string): void {
     activeTypeId.value = platformConfigDraft.value.providerTypes[0]?.id ?? ""
   } else if (id === "semantic-search") {
     screen.value = { kind: "semantic-search" }
+  } else if (id === "cloud-backup") {
+    screen.value = { kind: "cloud-backup" }
   } else if (id === "platform-tunables") {
     screen.value = { kind: "tunables" }
   }
@@ -271,6 +283,7 @@ function goBack(): void {
   } else if (
     screen.value.kind === "providers"
     || screen.value.kind === "semantic-search"
+    || screen.value.kind === "cloud-backup"
     || screen.value.kind === "tunables"
   ) {
     screen.value = { kind: "hub" }
@@ -293,6 +306,15 @@ async function handleSaveEmbeddingConfig(
   })
   // 同步本地 draft(embeddingConfig 是 draft 的一部分),让 hub 状态提示保持一致.
   platformConfigDraft.value = clonePlatformConfigDraft(getBrowserPlatformConfigDraft())
+}
+
+async function handleSaveCloudBackupConfig(config: PlatformConfigCloudBackup): Promise<void> {
+  const current = getPlatformConfig()
+  await savePlatformConfig({
+    ...current,
+    cloudBackup: config,
+  })
+  toast.success("云备份设置已保存。")
 }
 
 async function handleSaveTunables(input: {

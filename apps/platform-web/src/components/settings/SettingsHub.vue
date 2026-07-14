@@ -25,7 +25,7 @@
 
 <script setup lang="ts">
 import type { Component } from "vue"
-import { Bot, Search, SlidersHorizontal } from "lucide-vue-next"
+import { Bot, Cloud, Search, SlidersHorizontal } from "lucide-vue-next"
 import { computed } from "vue"
 import type { BrowserPlatformConfigDraft } from "@/config/ai"
 
@@ -68,6 +68,13 @@ const entries = computed<HubEntry[]>(() => {
       title: "语义检索",
       subtitle: props.draft.embeddingConfig.enabled ? "已启用" : "未启用",
       icon: Search,
+    },
+    {
+      id: "cloud-backup",
+      kind: "云端",
+      title: "云备份",
+      subtitle: "备份当前进度，换设备继续玩",
+      icon: Cloud,
     },
     {
       id: "platform-tunables",

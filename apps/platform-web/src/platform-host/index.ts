@@ -186,6 +186,7 @@ import {
   WorkspaceStorageError,
 } from "../storage"
 import { cleanupScenesInTransaction } from "./scene-cleanup"
+import { scheduleAutoBackupForSave } from "./cloud-backups"
 import { triggerFrontendRebuild, readFrontendBuildStatus } from "../frontend-build/trigger"
 import {
   DEFAULT_FRONTEND_BINDING,
@@ -1136,6 +1137,8 @@ export const playFrontendBridge: PlayFrontendBridge = {
           checkpointReason: "after-turn",
         })
 
+        scheduleAutoBackupForSave(activeSaveId)
+
         // Proactive embed enqueue:turn commit 是 play-time 真实写瓶颈(raw turn +
         // maintenance 都 staged → 经此 commit),落库后对当轮 save-runtime 文件做
         // staleness 检查 + 异步入队,让索引每轮后自动追新,不等下次搜索才补.
@@ -1633,4 +1636,16 @@ export {
   type ToolInstallTarget,
   type ResourcePackageInspection,
 } from "./resource-packages"
+export {
+  backupPlatformSaveToCloud,
+  CloudBackupConflictError,
+  deleteCloudBackup,
+  deleteCloudBackupForSave,
+  exportPlatformSaveBackup,
+  importPlatformSaveBackup,
+  listAllCloudBackups,
+  listCloudBackupsForCard,
+  pullCloudBackupToLocal,
+  scheduleAutoBackupForSave,
+} from "./cloud-backups"
 export { getPlatformActiveGameCard, waitForPlatformHostReady }
