@@ -53,16 +53,22 @@
 
         <TimelineFixedRow
           title="过往剧情"
-          role="user"
+          :role="messageLayerRoles.historySummary"
           :sources="historySources"
           tip="这里放已经发生过的剧情或对话摘要，帮助 Agent 接上前文。"
+          editable
+          :disabled="saving"
+          @update:role="(value) => updateMessageLayerRole('historySummary', value)"
         />
 
         <TimelineFixedRow
           title="当前资料包"
-          role="user"
+          :role="messageLayerRoles.workspaceContextMeta"
           :sources="workspaceMetaSources"
           tip="这里会放当前 Agent 的笔记、已加载资料提示，以及可用能力的简表。"
+          editable
+          :disabled="saving"
+          @update:role="(value) => updateMessageLayerRole('workspaceContextMeta', value)"
         />
 
         <PositionBucket
@@ -77,16 +83,22 @@
 
         <TimelineFixedRow
           title="工具记忆"
-          role="user"
+          :role="messageLayerRoles.toolMemory"
           :sources="['有些助手会使用']"
           tip="如果这个 Agent 会记住自己用过的工具，这里会放相关记录；普通剧情回合通常没有。"
+          editable
+          :disabled="saving"
+          @update:role="(value) => updateMessageLayerRole('toolMemory', value)"
         />
 
         <TimelineFixedRow
           title="当前回合信息"
-          role="user"
+          :role="messageLayerRoles.turnRuntime"
           :sources="['回合编号']"
           tip="这里告诉 Agent 当前是第几轮，让它知道本次输入发生在什么时候。"
+          editable
+          :disabled="saving"
+          @update:role="(value) => updateMessageLayerRole('turnRuntime', value)"
         />
 
         <TimelineFixedRow
@@ -159,13 +171,17 @@ import {
 import EntryEditDialog from "./EntryEditDialog.vue"
 import PositionBucket from "./PositionBucket.vue"
 import TimelineFixedRow from "./TimelineFixedRow.vue"
-import type { EditableContextPathEntry } from "./message-sequence"
+import type { EditableContextPathEntry, ContextPathRole, MessageLayerKey, MessageLayerRoles } from "./message-sequence"
 import {
   CONTEXT_PATH_POSITIONS,
+  DEFAULT_MESSAGE_LAYER_ROLES,
+  MESSAGE_LAYER_KEYS,
   createEditableEntry,
   editableEntrySummary,
   normalizeEditableEntry,
+  normalizeMessageLayerRoles,
   serializeEditableEntry,
+  serializeMessageLayerRoles,
   validateSerializedEntries,
 } from "./message-sequence"
 
@@ -218,7 +234,9 @@ function copyGroups(source: EntryGroups, mode: "draft" | "saved" = "draft"): Ent
 }
 
 const groups = reactive<EntryGroups>(createEmptyGroups())
+const messageLayerRoles = reactive<MessageLayerRoles>({ ...DEFAULT_MESSAGE_LAYER_ROLES })
 const baselineGroups = ref<EntryGroups>(createEmptyGroups())
+const baselineMessageLayerRoles = ref<MessageLayerRoles>({ ...DEFAULT_MESSAGE_LAYER_ROLES })
 const enabledModulesDraft = ref<string[]>([])
 const enabledModulesConfiguredDraft = ref(false)
 const baselineEnabledModules = ref<string[]>([])
@@ -260,6 +278,16 @@ function replaceGroups(next: EntryGroups): void {
   }
 }
 
+function replaceMessageLayerRoles(next: MessageLayerRoles): void {
+  for (const key of MESSAGE_LAYER_KEYS) {
+    messageLayerRoles[key] = next[key]
+  }
+}
+
+function copyMessageLayerRoles(source: MessageLayerRoles): MessageLayerRoles {
+  return { ...source }
+}
+
 function hydrateFromAgent(): void {
   const next = createEmptyGroups()
   for (const entry of props.agent.contextPaths) {
@@ -268,6 +296,9 @@ function hydrateFromAgent(): void {
   }
   replaceGroups(next)
   baselineGroups.value = copyGroups(next)
+  const nextMessageLayerRoles = normalizeMessageLayerRoles(props.agent.messageLayers)
+  replaceMessageLayerRoles(nextMessageLayerRoles)
+  baselineMessageLayerRoles.value = copyMessageLayerRoles(nextMessageLayerRoles)
   enabledModulesDraft.value = props.agent.enabledModulesConfigured
     ? [...props.agent.enabledModules]
     : props.modules.map((module) => module.stem)
@@ -308,6 +339,15 @@ function serializeEntries(): ContextPathEntry[] {
   return flattenEntries().map(serializeEditableEntry)
 }
 
+function updateMessageLayerRole(key: MessageLayerKey, role: ContextPathRole): void {
+  if (messageLayerRoles[key] === role) {
+    return
+  }
+  messageLayerRoles[key] = role
+  dirty.value = true
+  localError.value = ""
+}
+
 async function saveDraft(): Promise<void> {
   if (saving.value || !dirty.value) {
     return
@@ -330,10 +370,12 @@ async function saveDraft(): Promise<void> {
       ...(enabledModulesConfiguredDraft.value
         ? { enabledModules: enabledModulesDraft.value }
         : {}),
+      messageLayers: serializeMessageLayerRoles(messageLayerRoles),
     })
     const savedGroups = copyGroups(groups, "saved")
     replaceGroups(savedGroups)
     baselineGroups.value = copyGroups(savedGroups)
+    baselineMessageLayerRoles.value = copyMessageLayerRoles(messageLayerRoles)
     baselineEnabledModules.value = [...enabledModulesDraft.value]
     baselineEnabledModulesConfigured.value = enabledModulesConfiguredDraft.value
     dirty.value = false
@@ -349,6 +391,7 @@ async function saveDraft(): Promise<void> {
 
 function revertDraft(): void {
   replaceGroups(baselineGroups.value)
+  replaceMessageLayerRoles(baselineMessageLayerRoles.value)
   enabledModulesDraft.value = [...baselineEnabledModules.value]
   enabledModulesConfiguredDraft.value = baselineEnabledModulesConfigured.value
   dirty.value = false

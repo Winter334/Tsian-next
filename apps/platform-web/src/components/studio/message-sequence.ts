@@ -2,10 +2,13 @@ import type {
   ContextPathEntry,
   ContextPathObject,
   ContextPathPosition,
+  MessageLayersConfig,
 } from "@tsian/contracts"
 
 export type ContextPathRole = "system" | "user" | "assistant"
 export type ContextPathKind = "path" | "template"
+export type MessageLayerKey = keyof MessageLayersConfig
+export type MessageLayerRoles = Record<MessageLayerKey, ContextPathRole>
 
 export interface EditableContextPathEntry {
   id: string
@@ -26,6 +29,20 @@ export const CONTEXT_PATH_POSITIONS: ContextPathPosition[] = [
 ]
 
 export const CONTEXT_PATH_ROLES: ContextPathRole[] = ["system", "user", "assistant"]
+
+export const MESSAGE_LAYER_KEYS: MessageLayerKey[] = [
+  "historySummary",
+  "workspaceContextMeta",
+  "toolMemory",
+  "turnRuntime",
+]
+
+export const DEFAULT_MESSAGE_LAYER_ROLES: MessageLayerRoles = {
+  historySummary: "user",
+  workspaceContextMeta: "user",
+  toolMemory: "user",
+  turnRuntime: "user",
+}
 
 export const MODULES_ENABLED_MACRO = "{{file:modules/*.md?enabled}}"
 
@@ -62,6 +79,26 @@ function normalizeRole(value: unknown): ContextPathRole {
     : "user"
 }
 
+export function normalizeMessageLayerRoles(value: MessageLayersConfig | undefined): MessageLayerRoles {
+  return {
+    historySummary: normalizeRole(value?.historySummary?.role),
+    workspaceContextMeta: normalizeRole(value?.workspaceContextMeta?.role),
+    toolMemory: normalizeRole(value?.toolMemory?.role),
+    turnRuntime: normalizeRole(value?.turnRuntime?.role),
+  }
+}
+
+export function serializeMessageLayerRoles(roles: MessageLayerRoles): MessageLayersConfig {
+  const result: MessageLayersConfig = {}
+  for (const key of MESSAGE_LAYER_KEYS) {
+    const role = normalizeRole(roles[key])
+    if (role !== DEFAULT_MESSAGE_LAYER_ROLES[key]) {
+      result[key] = { role }
+    }
+  }
+  return result
+}
+
 function normalizePosition(value: unknown): ContextPathPosition {
   return CONTEXT_PATH_POSITIONS.includes(value as ContextPathPosition)
     ? value as ContextPathPosition
@@ -91,7 +128,8 @@ export function roleBadgeClass(role: ContextPathRole): string {
 }
 
 export function isModuleMacroTemplate(value: string): boolean {
-  return /\{\{\s*file:modules\/\*\.md\?enabled\s*\}\}/.test(value)
+  const normalized = value.replace(/\\/g, "/")
+  return /\{\{\s*file:\s*modules\/[^}?]+\.md\s*\?enabled\s*\}\}/.test(normalized)
 }
 
 export function editableEntrySummary(entry: EditableContextPathEntry): string {

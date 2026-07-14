@@ -5,6 +5,7 @@ import type {
   ContextPathEntry,
   ContextPathObject,
   ContextPathPosition,
+  MessageLayersConfig,
   RegistryDiagnostic,
   SkillDetailEntry,
   SkillRegistryEntry,
@@ -48,10 +49,10 @@ export interface PlatformStudioProviderPresetOption {
 }
 
 /**
- * One discoverable rule-module file (`agents/<agentId>/modules/*.md` or
- * `.tsian/local/<agentId>/modules/*.md`). Studio renders a per-module Switch
+ * One discoverable rule-module file under `agents/<agentId>/modules/` or
+ * `.tsian/local/<agentId>/modules/`. Studio renders a per-module Switch
  * whose state reflects whether `agent.enabledModules` includes `stem`; the
- * stem is what `{{file:modules/*.md?enabled}}` matches against
+ * stem is what `{{file:modules/...md?enabled}}` matches against
  * (see `macro-engine.ts` `fileStem`).
  */
 export interface PlatformStudioModuleInfo {
@@ -87,8 +88,8 @@ export interface PlatformStudioSnapshot {
    */
   toolDiagnostics: RegistryDiagnostic[]
   /**
-   * Rule-module files discovered under `agents/<id>/modules/*.md` (and
-   * `.tsian/local/<id>/modules/*.md`). Studio renders a per-Agent "规则模块"
+   * Rule-module files discovered under `agents/<id>/modules/` (and
+   * `.tsian/local/<id>/modules/`). Studio renders a per-Agent "规则模块"
    * Switch section; toggling updates `agent.enabledModules` (the list the
    * `{{file:...?enabled}}` macro consults). Empty when no module files exist.
    */
@@ -163,7 +164,15 @@ export interface PlatformStudioAgentContextPathsUpdateInput {
   agentId: string
   contextPaths: ContextPathEntry[]
   enabledModules?: string[]
+  messageLayers?: MessageLayersConfig
 }
+
+const MESSAGE_LAYER_KEYS: Array<keyof MessageLayersConfig> = [
+  "historySummary",
+  "workspaceContextMeta",
+  "toolMemory",
+  "turnRuntime",
+]
 
 const CONTEXT_PATH_POSITIONS = new Set<ContextPathPosition>([
   "before-history",
@@ -248,6 +257,32 @@ function normalizeEnabledModulesForWrite(values: string[]): string[] {
   return normalized
 }
 
+function normalizeMessageLayersForWrite(value: MessageLayersConfig): MessageLayersConfig {
+  if (!isRecord(value)) {
+    throw new Error("messageLayers 必须是对象。")
+  }
+
+  const normalized: MessageLayersConfig = {}
+  for (const key of MESSAGE_LAYER_KEYS) {
+    const layer = value[key]
+    if (layer === undefined) {
+      continue
+    }
+    if (!isRecord(layer)) {
+      throw new Error(`messageLayers.${key} 必须是对象。`)
+    }
+    const role = layer.role
+    if (role === undefined) {
+      continue
+    }
+    if (role !== "system" && role !== "user" && role !== "assistant") {
+      throw new Error(`messageLayers.${key}.role 必须是 system、user 或 assistant。`)
+    }
+    normalized[key] = { role }
+  }
+  return normalized
+}
+
 async function activeStudioWorkspaceFiles(
   card: LocalGameCardRecord,
 ): Promise<{
@@ -292,8 +327,8 @@ function extractModuleTitle(content: string, stem: string): string {
 
 /**
  * Discover rule-module files for every Agent in the workspace. Matches both
- * the distributed `agents/<id>/modules/*.md` layout and the local-only
- * `.tsian/local/<id>/modules/*.md` layout (the latter mirrors how local skills
+ * the distributed `agents/<id>/modules/` layout and the local-only
+ * `.tsian/local/<id>/modules/` layout (the latter mirrors how local skills
  * and tools shadow their distributed counterparts). Returns a flat list keyed
  * by `agentId`; Studio filters per selected Agent.
  */
@@ -301,28 +336,23 @@ function discoverPlatformStudioModules(
   files: WorkspaceFile[],
 ): PlatformStudioModuleInfo[] {
   const modules: PlatformStudioModuleInfo[] = []
-  // `agents/<id>/modules/<name>.md` (segments: ["agents", id, "modules", name])
-  // `.tsian/local/<id>/modules/<name>.md` (segments: [".tsian","local",id,...])
+  // `agents/<id>/modules/.../<name>.md` and
+  // `.tsian/local/<id>/modules/.../<name>.md` mirror macro resolution where
+  // `{{file:modules/...}}` is relative to the Agent directory.
   for (const file of files) {
     const segments = file.path.split("/")
-    if (segments.length < 2) continue
-    const lastIndex = segments.length - 1
-    const name = segments[lastIndex]
-    const modulesDir = segments[lastIndex - 1]
-    if (modulesDir !== "modules" || !name.endsWith(".md")) continue
+    const name = segments[segments.length - 1]
+    if (!name?.endsWith(".md")) continue
 
     let agentId: string | null = null
-    if (
-      segments.length === 4
-      && segments[0] === "agents"
-    ) {
-      agentId = segments[1]
+    if (segments[0] === "agents" && segments[2] === "modules") {
+      agentId = segments[1] ?? null
     } else if (
-      segments.length === 5
-      && segments[0] === ".tsian"
+      segments[0] === ".tsian"
       && segments[1] === "local"
+      && segments[3] === "modules"
     ) {
-      agentId = segments[2]
+      agentId = segments[2] ?? null
     }
     if (!agentId) continue
 
@@ -836,6 +866,14 @@ export async function updatePlatformStudioAgentContextPaths(
   }
   if (input.enabledModules) {
     nextConfig.enabledModules = normalizeEnabledModulesForWrite(input.enabledModules)
+  }
+  if (input.messageLayers) {
+    const messageLayers = normalizeMessageLayersForWrite(input.messageLayers)
+    if (Object.keys(messageLayers).length > 0) {
+      nextConfig.messageLayers = messageLayers
+    } else {
+      delete nextConfig.messageLayers
+    }
   }
 
   return writeAgentConfigRecord(card.id, agent, nextConfig)
