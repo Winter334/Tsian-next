@@ -1900,7 +1900,7 @@ async function callAgentModelWithWorkspaceTools(
   if (!input.workspaceFiles || !agentContext) {
     // text 路径:messages 是 RuntimeChatMessage[](超集),text 模式无 role:tool,安全降级为 AiChatMessage[].
     // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求），产出新数组传给 API。
-    const mergedMessages = mergeConsecutiveRoleMessages(messages)
+    const mergedMessages = stripInternalMarkers(mergeConsecutiveRoleMessages(messages))
     const response = await capabilities.callModel(mergedMessages as AiChatMessage[], options)
     capabilities.emitTrace?.({
       type: "model_call_completed",
@@ -2100,7 +2100,7 @@ async function callAgentModelWithWorkspaceTools(
     // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求）。
     // 产出新数组传给 API，不 mutate nextMessages（工具循环的 splice-replace/
     // span 定位继续操作未整合的原始数组）。
-    const mergedMessages = mergeConsecutiveRoleMessages(nextMessages as RuntimeChatMessage[])
+    const mergedMessages = stripInternalMarkers(mergeConsecutiveRoleMessages(nextMessages as RuntimeChatMessage[]))
     const response = await capabilities.callModel(mergedMessages as AiChatMessage[], callOptions)
     assertNotAborted(options.signal)
     lastRoundText = response
