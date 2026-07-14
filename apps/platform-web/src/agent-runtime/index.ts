@@ -142,6 +142,15 @@ const DELEGATED_AGENT_PLATFORM_GUARD = [
   "如果工具说明中列出了可联系 Agent，你可以在确有必要时通过 agent_call 咨询自己的联系人；否则请把需要协作的建议写在输出里。",
 ].join("\n")
 
+// ─── 固定层标记前缀 ────────────────────────────────────────────────────
+// locateHistorySpan 按这些前缀识别消息边界（不依赖 role）。
+// stripInternalMarkers 在发送给模型前剥离这些前缀（模型不可见）。
+const LAYER_PREFIX = "<!-- tsian-layer:"
+const WORKSPACE_CONTEXT_META_TAG = "<!-- tsian-layer: workspace-context-meta -->"
+const TOOL_MEMORY_TAG = "<!-- tsian-layer: tool-memory -->"
+const TURN_RUNTIME_TAG = "<!-- tsian-layer: turn-runtime -->"
+const PLAYER_INPUT_TAG = "<!-- tsian-layer: player-input -->"
+
 /**
  * 判断 entry agent 是否为桌面助手(local agent,非 AIRP 剧情入口).
  * 助手 path 形如 `.tsian/local/assistant/AGENT.md`,AIRP card agent 形如 `agents/<id>/AGENT.md`.
@@ -273,15 +282,16 @@ function formatHistory(history: ConversationMessageRecord[]): string {
 function buildAgentContextMessages(
   context: AgentContextSnapshot,
   isAssistant: boolean,
+  historySummaryRole: "system" | "user" | "assistant" = "user",
 ): RuntimeChatMessage[] {
   const messages: RuntimeChatMessage[] = []
   if (context.summary) {
     const summaryLabel = isAssistant ? "早期任务摘要" : "早期剧情摘要"
-    messages.push({ role: "user", content: `${summaryLabel}：\n${context.summary}` })
+    messages.push({ role: historySummaryRole, content: `${summaryLabel}：\n${context.summary}` })
   }
   if (context.recentTurns.length === 0) {
     if (!context.summary) {
-      messages.push({ role: "user", content: "（暂无历史对话）" })
+      messages.push({ role: historySummaryRole, content: "（暂无历史对话）" })
     }
   } else {
     for (const entry of context.recentTurns) {
@@ -320,12 +330,12 @@ function messageContentToText(content: string | ContentPart[]): string {
 function locateHistorySpan(
   messages: ReadonlyArray<MessageLike>,
 ): { start: number; end: number } {
-  if (messages.length <= 1 || messages[0].role !== "system") {
+  if (messages.length <= 1) {
     return { start: -1, end: -1 }
   }
-  // before-history 注入(contextPaths position: "before-history")插在 system 和 history
-  // 之间，每条注入消息以 `<!-- source: xxx -->` 注释前缀开头（contextInjectionsToMessages
-  // 产出格式）。扫描跳过这些注入消息，找到 history 段的真正起点。
+  // before-history 注入(contextPaths position: "before-history")插在 systemPrompt 和
+  // history 之间，每条注入消息以 `<!-- source: xxx -->` 注释前缀开头
+  // （contextInjectionsToMessages 产出格式）。扫描跳过这些注入消息，找到 history 段起点。
   // 无 before-history 注入时：messages[1] 不以 `<!-- source:` 开头 → start 停在 1，行为不变。
   let start = 1
   while (start < messages.length) {
@@ -342,30 +352,24 @@ function locateHistorySpan(
   }
   const firstHistoryText = messageContentToText(messages[start].content)
   // 兜底路径(未注入 agentContext):剧情段首条是"最近对话："拍扁文本,无独立 message 序列.
-  if (messages[start].role === "user" && firstHistoryText.startsWith("最近对话：")) {
+  if (firstHistoryText.startsWith("最近对话：")) {
     return { start: -1, end: -1 }
   }
   // delegated agent:history 段首条是"最近对话窗口："（buildDelegatedAgentMessages 产出），
   // 无独立剧情 message 序列可压（delegated 无 agentContext 快照注入）。
   // 注意：delegated 路径的"调用方 Agent："在 before-history 注入之前（如果有），已被
   // 上面的 `<!-- source:` 扫描跳过；无 before-history 时 start=1 仍指向"调用方 Agent："。
-  if (messages[start].role === "user" && firstHistoryText.startsWith("调用方 Agent：")) {
+  if (firstHistoryText.startsWith("调用方 Agent：")) {
     return { start: -1, end: -1 }
   }
+  // end: 扫描第一条带 <!-- tsian-layer: 前缀的消息（固定层标记），即为 history 段终点。
+  // 不依赖 role——固定层的 role 可由 messageLayers 配置改变。
   let end = -1
   for (let i = start + 1; i < messages.length; i += 1) {
-    if (messages[i].role === "user") {
-      const text = messageContentToText(messages[i].content)
-      if (
-        text.startsWith("Workspace Agent 上下文")
-        || text.startsWith("目标 Agent 上下文")
-        || text.startsWith("最近工具工作记录")
-        || text.startsWith("当前回合：")
-        || text.startsWith("当前问答轮次：")
-      ) {
-        end = i
-        break
-      }
+    const text = messageContentToText(messages[i].content)
+    if (text.startsWith(LAYER_PREFIX)) {
+      end = i
+      break
     }
   }
   if (end === -1) {
@@ -759,6 +763,32 @@ function mergeConsecutiveRoleMessages(
 }
 
 /**
+ * 剥离消息内容开头的内部标记前缀（`<!-- tsian-layer: -->` 和 `<!-- source: -->`）。
+ * 在 mergeConsecutiveRoleMessages 之后、API 调用之前执行——模型看到的是干净内容。
+ * 只剥离消息**开头**的标记（`^` 锚定），不剥离消息内部合法的 HTML 注释。
+ * 只处理 string content；ContentPart[]（多模态）不处理。
+ */
+function stripInternalMarkers(messages: RuntimeChatMessage[]): RuntimeChatMessage[] {
+  const layerRe = /^<!-- tsian-layer: [^>]* -->\n?/
+  const sourceRe = /^<!-- source: [^>]* -->\n?/
+  return messages.map(msg => {
+    if (typeof msg.content !== "string") return msg
+    let content = msg.content
+    // 可能同时有 layer 和 source 前缀（理论上不会，但防御性循环 2 次）
+    for (let i = 0; i < 2; i++) {
+      if (layerRe.test(content)) {
+        content = content.replace(layerRe, "")
+      } else if (sourceRe.test(content)) {
+        content = content.replace(sourceRe, "")
+      } else {
+        break
+      }
+    }
+    return { ...msg, content }
+  })
+}
+
+/**
  * 构建 workspace.context 的 message 序列（元信息段 + 逐文件段）。
  *
  * 拆分目标：让稳定 contextFile（文档/README 等会话中不变的大文件）各自独立进入
@@ -779,9 +809,10 @@ function mergeConsecutiveRoleMessages(
 function buildAgentContextMessages_split(
   context: AgentContextEntry,
   label: "Workspace Agent 上下文" | "目标 Agent 上下文",
+  metaRole: "system" | "user" | "assistant" = "user",
 ): RuntimeChatMessage[] {
   const messages: RuntimeChatMessage[] = [
-    { role: "user", content: `${label}（元信息）：\n${formatAgentRuntimeContextMeta(context)}` },
+    { role: metaRole, content: `${WORKSPACE_CONTEXT_META_TAG}\n${label}（元信息）：\n${formatAgentRuntimeContextMeta(context)}` },
   ]
   // 注入消息从 workspace-context 组取（= 旧 contextInjections 字段，向后兼容）。
   // 每条注入用 `<!-- source: xxx -->` 注释前缀标注来源。
@@ -845,20 +876,12 @@ function buildWorkspaceAgentSystemPrompt(
     toolCallMode?: BrowserAiToolCallMode
   },
 ): string {
+  const soulContent = context.soulFile?.content.trim()
   return [
     guard,
     "",
-    "下面是当前 Agent 的 AGENT.md 内容，优先遵循它定义的注册信息、职责、输出习惯和协作边界。",
-    "",
-    formatWorkspaceFile(context.agentFile),
-    ...(context.soulFile
-      ? [
-          "",
-          "下面是当前 Agent 的 SOUL.md 内容，它描述更持久的身份、工作方式和表达偏好。",
-          "",
-          formatWorkspaceFile(context.soulFile),
-        ]
-      : []),
+    context.agentFile.content.trim(),
+    ...(soulContent ? ["", soulContent] : []),
     "",
     "Runtime Workspace 工具说明：",
     buildWorkspaceToolInstructions(options),
@@ -928,17 +951,23 @@ function buildEntryAgentMessages(
   const entryGuard = isAssistant ? ASSISTANT_AGENT_PLATFORM_GUARD : ENTRY_AGENT_PLATFORM_GUARD
   const turnLabel = isAssistant ? "当前问答轮次" : "当前回合"
   const inputLabel = isAssistant ? "用户本轮提问" : "玩家本轮输入"
+  // 固定层 role 配置（messageLayers）。未配置的层保持默认 role。
+  const ml = context.agent.messageLayers
+  const historySummaryRole = ml.historySummary?.role ?? "user"
+  const metaRole = ml.workspaceContextMeta?.role ?? "user"
+  const toolMemoryRole = ml.toolMemory?.role ?? "user"
+  const turnRuntimeRole = ml.turnRuntime?.role ?? "user"
   // 剧情正文层:优先用注入的 context 快照(独立 message 序列);未注入则从
   // recentHistory(turn 文件重建)兜底——旧逻辑 formatHistory 也是拍扁文本,这里
   // 保持兜底用文本形式(首 turn/旧存档迁移场景,非稳态路径).
   const historyMessages: RuntimeChatMessage[] = agentContext
-    ? buildAgentContextMessages(agentContext, isAssistant)
+    ? buildAgentContextMessages(agentContext, isAssistant, historySummaryRole)
     : [{ role: "user", content: `最近对话：\n${formatHistory(history)}` }]
   const toolMemoryLog = isAssistant
     ? renderToolMemoriesForModel(agentContext?.toolMemories)
     : null
   const toolMemoryMessages: RuntimeChatMessage[] = toolMemoryLog
-    ? [{ role: "user", content: toolMemoryLog }]
+    ? [{ role: toolMemoryRole, content: `${TOOL_MEMORY_TAG}\n${toolMemoryLog}` }]
     : []
   // 前端 injection：按 position 分两组，before-input 在框架信息后/玩家输入前，
   // after-input 在玩家输入后。不落盘、不进 context.json，平台不解释语义。
@@ -974,13 +1003,13 @@ function buildEntryAgentMessages(
     // 稳定文件各自独立命中前缀缓存，动态文件单独 miss 互不拖累。仍在 history 之后，
     // 不破坏 design 修正记录 1 的缓存边界。注入消息从 contextInjectionsByPosition
     // ["workspace-context"] 取（= 旧 contextInjections，向后兼容）。
-    ...buildAgentContextMessages_split(context, "Workspace Agent 上下文"),
+    ...buildAgentContextMessages_split(context, "Workspace Agent 上下文", metaRole),
     // task-mode 助手的跨 turn 工具记忆作为普通工作日志放在 workspace context 后，
     // 避免高频变化块提前破坏大段稳定前缀缓存；不使用 provider tool protocol。
     ...toolMemoryMessages,
     {
-      role: "user",
-      content: `${turnLabel}：${currentRuntimeTurnNumber(input)}`,
+      role: turnRuntimeRole,
+      content: `${TURN_RUNTIME_TAG}\n${turnLabel}：${currentRuntimeTurnNumber(input)}`,
     },
     // 前端注入（before-input）：框架信息之后、玩家输入之前。
     ...beforeInputInjection,
@@ -989,8 +1018,8 @@ function buildEntryAgentMessages(
     {
       role: "user",
       ...(input.userInputAttachments && input.userInputAttachments.length > 0
-        ? { content: [{ type: "text" as const, text: `${inputLabel}：\n${input.userInput}` }, ...input.userInputAttachments] as ContentPart[] }
-        : { content: `${inputLabel}：\n${input.userInput}` }),
+        ? { content: [{ type: "text" as const, text: `${PLAYER_INPUT_TAG}\n${inputLabel}：\n${input.userInput}` }, ...input.userInputAttachments] as ContentPart[] }
+        : { content: `${PLAYER_INPUT_TAG}\n${inputLabel}：\n${input.userInput}` }),
     },
     // 前端注入（after-input）：玩家输入之后、工具循环之前。
     ...afterInputInjection,
@@ -1118,6 +1147,10 @@ function buildDelegatedAgentMessages(
     ? getVisibleAgentContacts(input.workspaceFiles, targetContext)
     : []
   const permissions = deriveAgentRuntimePermissionProfile(targetContext.agent)
+  // 固定层 role 配置（从目标 agent 的 messageLayers 读取）。
+  const ml = targetContext.agent.messageLayers
+  const metaRole = ml.workspaceContextMeta?.role ?? "user"
+  const turnRuntimeRole = ml.turnRuntime?.role ?? "user"
   // contextInjectionsToMessages 产 RuntimeChatMessage[]，但注入消息只有
   // system/user/assistant + string content（无 tool role），安全降维为 AiChatMessage[]。
   const beforeHistoryMessages = contextInjectionsToMessages(
@@ -1161,9 +1194,9 @@ function buildDelegatedAgentMessages(
     // 目标 Agent 上下文同样拆成元信息段 + 逐条注入段（与 entry 路径一致）。
     // workspace-context 组注入由 buildAgentContextMessages_split 从
     // contextInjectionsByPosition["workspace-context"] 取。安全降维为 AiChatMessage[]。
-    ...(buildAgentContextMessages_split(targetContext, "目标 Agent 上下文") as AiChatMessage[]),
-    { role: "user", content: [`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n") },
-    { role: "user", content: `玩家本轮输入：\n${input.userInput}` },
+    ...(buildAgentContextMessages_split(targetContext, "目标 Agent 上下文", metaRole) as AiChatMessage[]),
+    { role: turnRuntimeRole, content: `${TURN_RUNTIME_TAG}\n${[`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n")}` },
+    { role: "user", content: `${PLAYER_INPUT_TAG}\n玩家本轮输入：\n${input.userInput}` },
     {
       role: "user",
       content: [
@@ -1616,7 +1649,11 @@ async function callAgentModelWithWorkspaceToolsNative(
           Object.assign(toolOptions.agentContextSnapshot!, compressed)
           compressedThisTurn = true
           // native 路径:buildAgentContextMessages 已产 RuntimeChatMessage[],无需 aiChatMessagesToRuntime.
-          const newHistory = buildAgentContextMessages(toolOptions.agentContextSnapshot!, isAssistantEntryAgent(agentContext.agent.path))
+          const newHistory = buildAgentContextMessages(
+            toolOptions.agentContextSnapshot!,
+            isAssistantEntryAgent(agentContext.agent.path),
+            agentContext.agent.messageLayers.historySummary?.role ?? "user",
+          )
           replaceHistorySpan(runtimeMessages, historySpan, newHistory)
           historySpan.end = historySpan.start + newHistory.length
           capabilities.emitTrace?.({
@@ -1658,7 +1695,7 @@ async function callAgentModelWithWorkspaceToolsNative(
     // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求）。
     // 产出新数组传给 API，不 mutate runtimeMessages（工具循环的 splice-replace/
     // span 定位继续操作未整合的原始数组）。
-    const mergedMessages = mergeConsecutiveRoleMessages(runtimeMessages)
+    const mergedMessages = stripInternalMarkers(mergeConsecutiveRoleMessages(runtimeMessages))
     const result = await capabilities.callModelNative!(mergedMessages, callOptions, tools)
     assertNotAborted(options.signal)
     lastRoundText = result.text
@@ -2020,6 +2057,7 @@ async function callAgentModelWithWorkspaceTools(
           const newHistory = buildAgentContextMessages(
             toolOptions!.agentContextSnapshot!,
             agentContext ? isAssistantEntryAgent(agentContext.agent.path) : false,
+            agentContext?.agent.messageLayers.historySummary?.role ?? "user",
           )
           // text 模式 buildAgentContextMessages 无 role:tool,安全降级为 AiChatMessage[].
           replaceHistorySpan(nextMessages, historySpan, newHistory as AiChatMessage[])

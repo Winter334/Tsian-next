@@ -477,6 +477,26 @@ export interface ContextInjection {
   position: ContextPathPosition
 }
 
+/** 单个固定注入层的 role 配置。 */
+export interface MessageLayerConfig {
+  /** 注入消息角色。不写则保持该层默认 role。 */
+  role?: "system" | "user" | "assistant"
+}
+
+/** 固定注入层 role 配置。所有字段可选，不写 = 该层保持默认 role。
+ *  systemPrompt 层不在配置范围内（固定 system）。
+ *  不支持禁用层——所有层始终注入。 */
+export interface MessageLayersConfig {
+  /** 早期剧情/任务摘要。默认 role: user */
+  historySummary?: MessageLayerConfig
+  /** Agent 上下文元信息（contextPaths 索引、skill 索引等）。默认 role: user */
+  workspaceContextMeta?: MessageLayerConfig
+  /** 工具记忆日志（task-mode 助手）。默认 role: user */
+  toolMemory?: MessageLayerConfig
+  /** 当前回合号。默认 role: user */
+  turnRuntime?: MessageLayerConfig
+}
+
 export interface AgentConfig {
   id: string
   title: string
@@ -507,8 +527,7 @@ export interface AgentConfig {
    * whether to read/write context.json.
    */
   entryMode?: "persistent" | "ephemeral"
-  /**
-   * System-level agent marker. `true` for master and assistant — these are
+  /** System-level agent marker. `true` for master and assistant — these are
    * platform-essential agents. The field is informational: it tells the
    * assistant agent (via workspace_read) that these agents should not be
    * renamed or deleted. The Studio agent panel has no delete/rename UI, so
@@ -516,6 +535,8 @@ export interface AgentConfig {
    * management UIs.
    */
   system?: boolean
+  /** 固定注入层的 role 配置。可选，不写则全部默认。 */
+  messageLayers?: MessageLayersConfig
 }
 
 export interface AgentRegistryEntry {
@@ -545,6 +566,8 @@ export interface AgentRegistryEntry {
   entryMode: "persistent" | "ephemeral"
   /** System-level agent marker resolved from agent.json; defaults to `false`. */
   system: boolean
+  /** 解析后的固定层 role 配置。空对象 = 全部默认。 */
+  messageLayers: MessageLayersConfig
   updatedAt: number
 }
 

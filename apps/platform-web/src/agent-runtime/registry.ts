@@ -5,6 +5,7 @@ import type {
   ContextPathEntry,
   ContextPathObject,
   ContextPathPosition,
+  MessageLayersConfig,
   RegistryDiagnostic,
   SkillActionSummary,
   SkillConfigItem,
@@ -805,6 +806,34 @@ function normalizeAgentWorkspaceAccessConfig(
   }
 }
 
+const VALID_LAYER_ROLES = new Set(["system", "user", "assistant"])
+
+/** Parse a single MessageLayerConfig: keep `role` only if it's a legal value. */
+function normalizeLayerRole(record: unknown): "system" | "user" | "assistant" | undefined {
+  if (!isRecord(record)) return undefined
+  const role = record.role
+  if (typeof role === "string" && VALID_LAYER_ROLES.has(role)) {
+    return role as "system" | "user" | "assistant"
+  }
+  return undefined
+}
+
+/** Parse messageLayers from raw agent.json config. Returns empty object on
+ *  absence/malformed input (= all layers keep default role). */
+function normalizeMessageLayersConfig(value: unknown): MessageLayersConfig {
+  if (!isRecord(value)) return {}
+  const result: MessageLayersConfig = {}
+  const historySummaryRole = normalizeLayerRole(value.historySummary)
+  if (historySummaryRole) result.historySummary = { role: historySummaryRole }
+  const metaRole = normalizeLayerRole(value.workspaceContextMeta)
+  if (metaRole) result.workspaceContextMeta = { role: metaRole }
+  const toolMemoryRole = normalizeLayerRole(value.toolMemory)
+  if (toolMemoryRole) result.toolMemory = { role: toolMemoryRole }
+  const turnRuntimeRole = normalizeLayerRole(value.turnRuntime)
+  if (turnRuntimeRole) result.turnRuntime = { role: turnRuntimeRole }
+  return result
+}
+
 function buildAgentRegistryEntry(
   file: WorkspaceFile,
   pathInfo: AgentPathInfo,
@@ -827,6 +856,8 @@ function buildAgentRegistryEntry(
 
   const toolConfig = normalizeAgentToolConfig(config.tools)
 
+  const messageLayers = normalizeMessageLayersConfig(config.messageLayers)
+
   return {
     id,
     title,
@@ -846,6 +877,7 @@ function buildAgentRegistryEntry(
     enabledModulesConfigured: Array.isArray(config.enabledModules),
     entryMode,
     system,
+    messageLayers,
     ...(knowledgeMount ? { knowledgeMount } : {}),
     ...(providerPresetId ? { providerPresetId } : {}),
     updatedAt: file.updatedAt,
