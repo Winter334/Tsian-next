@@ -115,14 +115,14 @@
               class="retro-focus retro-select-surface min-h-72 w-full resize-y border border-neon-deep/55 bg-elevated px-3 py-2 font-mono text-xs leading-5 text-text-main placeholder:text-text-dim/60"
             />
           </label>
-
-          <ModuleSwitchList
-            v-if="isModuleTemplate"
-            :modules="modules"
-            :enabled-modules="enabledModulesDraft"
-            @update:enabled-modules="enabledModulesDraft = $event"
-          />
         </section>
+
+        <ModuleSwitchList
+          v-if="hasModuleMacros"
+          :modules="modulesForCurrentMacros"
+          :enabled-modules="enabledModulesDraft"
+          @update:enabled-modules="enabledModulesDraft = $event"
+        />
       </div>
 
       <p v-if="error" class="mt-2 font-mono text-[11px] text-danger">{{ error }}</p>
@@ -164,7 +164,8 @@ import {
   cloneEditableEntry,
   CONTEXT_PATH_POSITIONS,
   CONTEXT_PATH_ROLES,
-  isModuleMacroTemplate,
+  extractEnabledModuleMacroPaths,
+  modulePathMatchesEnabledMacroPath,
   positionDescription,
   positionLabel,
 } from "./message-sequence"
@@ -191,7 +192,22 @@ const loadingFile = ref(false)
 const fileError = ref("")
 const error = ref("")
 
-const isModuleTemplate = computed(() => draft.value?.kind === "template" && isModuleMacroTemplate(draft.value.template))
+const currentModuleMacroText = computed(() => {
+  if (!draft.value) {
+    return ""
+  }
+  return draft.value.kind === "template" ? draft.value.template : fileDraft.value
+})
+const currentModuleMacroPaths = computed(() => extractEnabledModuleMacroPaths(currentModuleMacroText.value))
+const hasModuleMacros = computed(() => currentModuleMacroPaths.value.length > 0)
+const modulesForCurrentMacros = computed(() => {
+  const macroPaths = currentModuleMacroPaths.value
+  if (macroPaths.length === 0) {
+    return []
+  }
+  return props.modules.filter((module) =>
+    macroPaths.some((macroPath) => modulePathMatchesEnabledMacroPath(module.path, macroPath)))
+})
 
 watch(
   () => [props.open, props.entry] as const,
@@ -340,7 +356,7 @@ async function confirm(): Promise<void> {
 
   try {
     await saveFileIfNeeded(current)
-    emit("save", { ...current, modified: true }, isModuleTemplate.value ? [...enabledModulesDraft.value] : undefined)
+    emit("save", { ...current, modified: true }, hasModuleMacros.value ? [...enabledModulesDraft.value] : undefined)
     emit("update:open", false)
   } catch (e) {
     error.value = e instanceof Error ? e.message : "保存条目失败。"

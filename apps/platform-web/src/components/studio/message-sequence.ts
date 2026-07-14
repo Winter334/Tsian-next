@@ -44,7 +44,7 @@ export const DEFAULT_MESSAGE_LAYER_ROLES: MessageLayerRoles = {
   turnRuntime: "user",
 }
 
-export const MODULES_ENABLED_MACRO = "{{file:modules/*.md?enabled}}"
+const MODULE_ENABLED_FILE_MACRO_PATTERN = /\{\{\s*file:\s*(modules\/[^}?]*?\.md)\s*\?enabled\s*\}\}/g
 
 const POSITION_LABELS: Record<ContextPathPosition, string> = {
   "before-history": "历史前补充",
@@ -127,9 +127,61 @@ export function roleBadgeClass(role: ContextPathRole): string {
   return "border-emerald-400/45 bg-emerald-500/10 text-emerald-200"
 }
 
+function normalizeModuleMacroText(value: string): string {
+  return value.replace(/\\/g, "/")
+}
+
+export function extractEnabledModuleMacroPaths(value: string): string[] {
+  const normalized = normalizeModuleMacroText(value)
+  const paths: string[] = []
+  const seen = new Set<string>()
+  MODULE_ENABLED_FILE_MACRO_PATTERN.lastIndex = 0
+
+  let match = MODULE_ENABLED_FILE_MACRO_PATTERN.exec(normalized)
+  while (match) {
+    const path = match[1]?.trim()
+    if (path && !seen.has(path)) {
+      seen.add(path)
+      paths.push(path)
+    }
+    match = MODULE_ENABLED_FILE_MACRO_PATTERN.exec(normalized)
+  }
+
+  return paths
+}
+
+function moduleMacroPathPattern(path: string): RegExp | null {
+  const normalized = normalizeModuleMacroText(path).trim()
+  if (!normalized) {
+    return null
+  }
+
+  const segments = normalized.split("/")
+  const regexParts = segments.map((segment) => {
+    const escaped = segment.replace(/[.+?^${}()|[\]\\]/g, "\\$&")
+    return escaped.replace(/\*/g, "[^/]*")
+  })
+  try {
+    return new RegExp(`^${regexParts.join("/")}$`)
+  } catch {
+    return null
+  }
+}
+
+export function modulePathMatchesEnabledMacroPath(modulePath: string, macroPath: string): boolean {
+  const normalizedModulePath = normalizeModuleMacroText(modulePath)
+  const segments = normalizedModulePath.split("/")
+  const modulesIndex = segments.indexOf("modules")
+  if (modulesIndex < 0) {
+    return false
+  }
+
+  const relativeModulePath = segments.slice(modulesIndex).join("/")
+  return moduleMacroPathPattern(macroPath)?.test(relativeModulePath) ?? false
+}
+
 export function isModuleMacroTemplate(value: string): boolean {
-  const normalized = value.replace(/\\/g, "/")
-  return /\{\{\s*file:\s*modules\/[^}?]+\.md\s*\?enabled\s*\}\}/.test(normalized)
+  return extractEnabledModuleMacroPaths(value).length > 0
 }
 
 export function editableEntrySummary(entry: EditableContextPathEntry): string {

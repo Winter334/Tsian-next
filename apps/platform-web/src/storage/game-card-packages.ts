@@ -10,7 +10,8 @@ import type {
   GameCardRuntimeEntrypoints,
 } from "@tsian/contracts"
 import { FRONTEND_FRAMEWORKS, FRONTEND_PACKAGE_SCHEMA } from "@tsian/contracts"
-import { strToU8, unzipSync, zipSync } from "fflate"
+import { strToU8, zipSync } from "fflate"
+import { unzipSyncRepaired } from "@/lib/legacy-zip-path-encoding"
 import { inferMediaTypeFromPath, resolveBlobMediaType } from "@/lib/media-type"
 import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile, writeLocalGameCardContentFile } from "./game-cards"
 import type { LocalGameCardRecord } from "./db"
@@ -392,7 +393,7 @@ async function toUint8Array(input: Blob | ArrayBuffer | Uint8Array): Promise<Uin
 
 function zipEntries(input: Uint8Array): Record<string, Uint8Array> {
   try {
-    return unzipSync(input)
+    return unzipSyncRepaired(input)
   } catch {
     throw new GameCardPackageError(
       "GAME_CARD_PACKAGE_ZIP_INVALID",

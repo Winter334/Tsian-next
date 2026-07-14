@@ -1,5 +1,6 @@
 import type { AgentConfig, MarketResourceType, WorkspaceFile } from "@tsian/contracts"
-import { strToU8, unzipSync, zipSync } from "fflate"
+import { strToU8, zipSync } from "fflate"
+import { unzipSyncRepaired } from "../lib/legacy-zip-path-encoding"
 import { inferMediaTypeFromPath } from "../lib/media-type"
 import { emitGameCardsChanged } from "../lib/platform-events"
 import {
@@ -399,7 +400,7 @@ async function parseResourcePackage(
   blob: Blob,
   expectedType?: ResourcePackageManifest["resourceType"],
 ): Promise<ParsedResourcePackage> {
-  const entries = unzipSync(new Uint8Array(await blob.arrayBuffer()))
+  const entries = unzipSyncRepaired(new Uint8Array(await blob.arrayBuffer()))
   const manifestBytes = entries[RESOURCE_PACKAGE_MANIFEST_PATH]
   if (!manifestBytes) {
     throw new Error("资源包缺少 resource-package.json。")

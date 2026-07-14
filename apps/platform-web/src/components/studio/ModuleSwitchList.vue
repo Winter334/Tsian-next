@@ -62,8 +62,6 @@ function toggleModule(stem: string, enabled: boolean): void {
   } else {
     next.delete(stem)
   }
-  emit("update:enabledModules", props.modules
-    .map((module) => module.stem)
-    .filter((moduleStem) => next.has(moduleStem)))
+  emit("update:enabledModules", Array.from(next))
 }
 </script>

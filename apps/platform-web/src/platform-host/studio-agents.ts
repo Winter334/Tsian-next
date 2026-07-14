@@ -340,7 +340,8 @@ function discoverPlatformStudioModules(
   // `.tsian/local/<id>/modules/.../<name>.md` mirror macro resolution where
   // `{{file:modules/...}}` is relative to the Agent directory.
   for (const file of files) {
-    const segments = file.path.split("/")
+    const path = file.path
+    const segments = path.split("/")
     const name = segments[segments.length - 1]
     if (!name?.endsWith(".md")) continue
 
@@ -361,7 +362,7 @@ function discoverPlatformStudioModules(
       agentId,
       stem,
       title: extractModuleTitle(file.content, stem),
-      path: file.path,
+      path,
     })
   }
   modules.sort((a, b) => a.path.localeCompare(b.path))

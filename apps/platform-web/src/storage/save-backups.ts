@@ -2,7 +2,8 @@ import type {
   CloudBackupFileEntry,
   CloudBackupManifestResponse,
 } from "@tsian/contracts"
-import { strToU8, unzipSync, zipSync } from "fflate"
+import { strToU8, zipSync } from "fflate"
+import { unzipSyncRepaired } from "@/lib/legacy-zip-path-encoding"
 import {
   inferMediaTypeFromPath,
   resolveBlobMediaType,
@@ -260,7 +261,7 @@ function normalizeSaveBackupManifest(value: unknown): SaveBackupManifest {
 export async function parseLocalSaveBackupPackage(
   input: Blob | ArrayBuffer | Uint8Array,
 ): Promise<ParsedSaveBackupPackage> {
-  const entries = unzipSync(await toUint8Array(input))
+  const entries = unzipSyncRepaired(await toUint8Array(input))
   const manifestBytes = entries[SAVE_BACKUP_MANIFEST_PATH]
   if (!manifestBytes) {
     throw new SaveBackupPackageError("SAVE_BACKUP_MANIFEST_MISSING", "存档备份缺少清单文件。")
