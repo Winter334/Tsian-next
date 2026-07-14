@@ -1,0 +1,66 @@
+{
+  "id": "storyteller",
+  "title": "三人写手",
+  "summary": "玩家正式回合入口——Ninedc、Deach 和凝嘤嘤三人协作写沉浸式正文和选项。",
+  "contextPaths": [
+    {
+      "path": "agents/storyteller/prefill-accept.md",
+      "role": "assistant",
+      "position": "before-history"
+    },
+    {
+      "template": "{{file:modules/增强/抗过拟合.md?enabled}}{{file:modules/增强/抗绝望.md?enabled}}{{file:modules/增强/抗抢话.md?enabled}}{{file:modules/活人感/活人感与动作塑造基准.md?enabled}}{{file:modules/活人感/叙事推进基准.md?enabled}}",
+      "role": "system",
+      "position": "before-history"
+    },
+    {
+      "path": "agents/storyteller/prism.md",
+      "role": "system",
+      "position": "before-history"
+    },
+    {
+      "path": "agents/storyteller/cot-template.md",
+      "role": "system",
+      "position": "before-history"
+    },
+    {
+      "path": "agents/storyteller/style-container.md",
+      "role": "system",
+      "position": "workspace-context"
+    },
+    {
+      "template": "{{file:modules/人称/*.md?enabled}}{{file:modules/正文优化/反全知.md?enabled}}{{file:modules/正文优化/反发情.md?enabled}}{{file:modules/正文优化/反科幻.md?enabled}}{{file:modules/正文优化/反回避色色.md?enabled}}{{file:modules/正文优化/增加对白.md?enabled}}{{file:modules/正文优化/禁用词表.md?enabled}}",
+      "role": "system",
+      "position": "workspace-context"
+    }
+  ],
+  "enabledModules": [
+    "活人感与动作塑造基准",
+    "叙事推进基准",
+    "第三人称",
+    "反全知",
+    "禁用词表",
+    "增加对白",
+    "快捷回复",
+    "杀超雄"
+  ],
+  "skills": {
+    "enabled": [
+      "掷骰"
+    ],
+    "disabled": []
+  },
+  "tools": {
+    "enabled": [],
+    "disabled": []
+  },
+  "platformTools": {
+    "enabled": [],
+    "disabled": []
+  },
+  "workspaceAccess": {
+    "level": 1
+  },
+  "entryMode": "persistent",
+  "system": true
+}
