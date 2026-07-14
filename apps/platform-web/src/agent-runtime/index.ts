@@ -119,29 +119,6 @@ function resolveEntryCompressionMode(input: AgentRuntimeTurnInput): RuntimeCompr
   return input.compressionMode ?? "narrative"
 }
 
-/** turn 结束时需写回 context.json 的本轮正文 + 压缩结果(若有). */
-const ENTRY_AGENT_PLATFORM_GUARD = [
-  "你是当前回合的入口 Agent。",
-  "你会收到自己的 AGENT.md、可选 SOUL.md、最近对话（含早期剧情摘要）、工作区上下文和玩家本轮输入。",
-  "根据 AGENT.md 的指引决定如何处理本轮输入。如果需要，可以通过 agent_call 联系你的联系人 Agent 获取专业判断。",
-  "你的输出是对话的最终回复，直接面向玩家或用户。具体输出格式由当前游戏卡与前端约定决定。",
-].join("\n")
-
-const ASSISTANT_AGENT_PLATFORM_GUARD = [
-  "你是用户的桌面助手 Agent。",
-  "你会收到自己的 AGENT.md、可选 SOUL.md、最近对话（含早期任务摘要）、工作区上下文和用户本轮提问。",
-  "根据 AGENT.md 的指引回答用户关于当前游戏卡、工作区约定、框架行为或维护决策的问题。",
-  "你的输出是对话的最终回复，直接面向用户。",
-].join("\n")
-
-const DELEGATED_AGENT_PLATFORM_GUARD = [
-  "你是 Tsian AIRP 中被 agent_call 临时调用的专业 Agent。",
-  "你会收到自己的 AGENT.md、可选 SOUL.md、工作区上下文、调用方请求、必要的最近对话和玩家本轮输入。",
-  "你不直接面对玩家；你的输出会作为 observation 返回给调用方，由调用方决定如何使用。",
-  "请专注回答调用方请求，返回建议、判断、草案、连续性检查或需要沉淀的事实提示。",
-  "如果工具说明中列出了可联系 Agent，你可以在确有必要时通过 agent_call 咨询自己的联系人；否则请把需要协作的建议写在输出里。",
-].join("\n")
-
 // ─── 固定层标记前缀 ────────────────────────────────────────────────────
 // locateHistorySpan 按这些前缀识别消息边界（不依赖 role）。
 // stripInternalMarkers 在发送给模型前剥离这些前缀（模型不可见）。
@@ -867,7 +844,6 @@ function formatAgentRuntimeContextMeta(context: AgentContextEntry): string {
 }
 
 function buildWorkspaceAgentSystemPrompt(
-  guard: string,
   context: AgentContextEntry,
   options: {
     allowAgentCall: boolean
@@ -878,8 +854,6 @@ function buildWorkspaceAgentSystemPrompt(
 ): string {
   const soulContent = context.soulFile?.content.trim()
   return [
-    guard,
-    "",
     context.agentFile.content.trim(),
     ...(soulContent ? ["", soulContent] : []),
     "",
@@ -948,7 +922,6 @@ function buildEntryAgentMessages(
     : []
   const permissions = deriveAgentRuntimePermissionProfile(context.agent)
   const isAssistant = isAssistantEntryAgent(context.agent.path)
-  const entryGuard = isAssistant ? ASSISTANT_AGENT_PLATFORM_GUARD : ENTRY_AGENT_PLATFORM_GUARD
   const turnLabel = isAssistant ? "当前问答轮次" : "当前回合"
   const inputLabel = isAssistant ? "用户本轮提问" : "玩家本轮输入"
   // 固定层 role 配置（messageLayers）。未配置的层保持默认 role。
@@ -976,7 +949,7 @@ function buildEntryAgentMessages(
   return [
     {
       role: "system",
-      content: buildWorkspaceAgentSystemPrompt(entryGuard, context, {
+      content: buildWorkspaceAgentSystemPrompt(context, {
         allowAgentCall:
           isAgentPlatformToolEnabled(context.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
           && canExposeAgentCallInPrompt(
@@ -1165,7 +1138,7 @@ function buildDelegatedAgentMessages(
   return [
     {
       role: "system",
-      content: buildWorkspaceAgentSystemPrompt(DELEGATED_AGENT_PLATFORM_GUARD, targetContext, {
+      content: buildWorkspaceAgentSystemPrompt(targetContext, {
         allowAgentCall:
           isAgentPlatformToolEnabled(targetContext.agent, AGENT_PLATFORM_TOOL_NAMES.agentCall)
           && canExposeAgentCallInPrompt(
