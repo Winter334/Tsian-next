@@ -1805,3 +1805,37 @@ read_maintenance_context 的 readEntityBrief 改为 readEntity 返回完整 enti
 ### Next Steps
 
 - None - task complete
+
+
+## Session 151: Opening turn history
+
+**Date**: 2026-07-15
+**Task**: Opening turn history
+**Package**: platform-web
+**Branch**: `feat/studio-message-layer-role-ui`
+
+### Summary
+
+Planned reply projection/opening history task tree, implemented child task to render opening from turn history in the default frontend, and archived the completed child task.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a7c0cd4` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
