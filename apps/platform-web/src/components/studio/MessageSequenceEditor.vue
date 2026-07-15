@@ -55,7 +55,7 @@
           title="过往剧情"
           :role="messageLayerRoles.historySummary"
           :sources="historySources"
-          tip="这里放已经发生过的剧情或对话摘要，帮助 Agent 接上前文。"
+          tip="已发生过的剧情或对话会逐条以原始 User/Assistant 角色注入，此处仅控制早期剧情摘要（压缩后生成）的消息角色。"
           editable
           :disabled="saving"
           @update:role="(value) => updateMessageLayerRole('historySummary', value)"
