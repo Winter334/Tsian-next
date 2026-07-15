@@ -42,9 +42,9 @@
         />
 
         <PositionBucket
-          position="before-history"
-          :entries="groups['before-history']"
-          @update:entries="(value) => setGroup('before-history', value)"
+          position="prelude"
+          :entries="groups.prelude"
+          @update:entries="(value) => setGroup('prelude', value)"
           @add="addEntry"
           @edit="editEntry"
           @delete="deleteEntry"
@@ -62,19 +62,19 @@
         />
 
         <TimelineFixedRow
-          title="当前资料包"
-          :role="messageLayerRoles.workspaceContextMeta"
-          :sources="workspaceMetaSources"
-          tip="这里会放当前 Agent 的笔记、已加载资料提示，以及可用能力的简表。"
+          title="上下文元信息"
+          :role="messageLayerRoles.contextMeta"
+          :sources="['可用能力简表']"
+          tip="这里放当前 Agent 可用的 Skill 索引。"
           editable
           :disabled="saving"
-          @update:role="(value) => updateMessageLayerRole('workspaceContextMeta', value)"
+          @update:role="(value) => updateMessageLayerRole('contextMeta', value)"
         />
 
         <PositionBucket
-          position="workspace-context"
-          :entries="groups['workspace-context']"
-          @update:entries="(value) => setGroup('workspace-context', value)"
+          position="runtime"
+          :entries="groups.runtime"
+          @update:entries="(value) => setGroup('runtime', value)"
           @add="addEntry"
           @edit="editEntry"
           @delete="deleteEntry"
@@ -121,19 +121,9 @@
         />
 
         <PositionBucket
-          position="after-input"
-          :entries="groups['after-input']"
-          @update:entries="(value) => setGroup('after-input', value)"
-          @add="addEntry"
-          @edit="editEntry"
-          @delete="deleteEntry"
-          @drag-end="markDraftDirty"
-        />
-
-        <PositionBucket
-          position="tail"
-          :entries="groups.tail"
-          @update:entries="(value) => setGroup('tail', value)"
+          position="framing"
+          :entries="groups.framing"
+          @update:entries="(value) => setGroup('framing', value)"
           @add="addEntry"
           @edit="editEntry"
           @delete="deleteEntry"
@@ -146,6 +136,7 @@
       :open="dialogOpen"
       :entry="editingEntry"
       :card-id="cardId"
+      :agent-path="agent.path"
       :modules="modules"
       :enabled-modules="enabledModulesDraft"
       @update:open="dialogOpen = $event"
@@ -201,10 +192,9 @@ type EntryGroups = Record<ContextPathPosition, EditableContextPathEntry[]>
 
 function createEmptyGroups(): EntryGroups {
   return {
-    "before-history": [],
-    "workspace-context": [],
-    "after-input": [],
-    tail: [],
+    prelude: [],
+    runtime: [],
+    framing: [],
   }
 }
 
@@ -217,7 +207,7 @@ function cloneSavedEntry(entry: EditableContextPathEntry): EditableContextPathEn
     && entry.originalWasString
     && !entry.modified
     && entry.role === "user"
-    && entry.position === "workspace-context"
+    && entry.position === "runtime"
   return {
     ...entry,
     originalWasString: stringCompat,
@@ -256,11 +246,6 @@ const systemPromptSources = computed(() => [
 const historySources = computed(() => props.context
   ? ["过往剧情 / 对话摘要"]
   : ["最近对话"])
-const workspaceMetaSources = computed(() => [
-  props.context?.notesFile ? "角色笔记" : "角色笔记（暂无）",
-  "已加载资料提示",
-  "可用能力简表",
-])
 
 watch(
   () => [props.agent, props.modules.map((module) => module.stem).join("\u0000")] as const,
