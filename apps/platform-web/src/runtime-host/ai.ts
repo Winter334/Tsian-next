@@ -68,7 +68,7 @@ function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"]
   if (role === "tool") return "tool.observation"
   if (text.startsWith("Workspace Agent 上下文（元信息）") || text.startsWith("目标 Agent 上下文（元信息）")) return "workspace.meta"
   // contextInjectionsToMessages 产出的注入消息用 `<!-- source: xxx -->` 注释前缀。
-  // 覆盖 workspace-context / before-history / after-input / tail 各 position 的注入。
+  // 覆盖 prelude / runtime / framing 各 position 的注入。
   if (text.startsWith("<!-- source:")) return "workspace.file"
   if (text.startsWith("Workspace 注入 ")) return "workspace.file"
   if (text.startsWith("早期任务摘要：") || text.startsWith("早期剧情摘要：") || text.startsWith("最近对话：") || text.startsWith("最近对话窗口：") || text === "（暂无历史对话）") return "history"
@@ -84,8 +84,8 @@ function inferMessageSegmentLabel(text: string, role: RuntimeChatMessage["role"]
 function segmentStability(label: string): AiDebugMessageSegment["stability"] {
   if (label === "system.agent") return "stable"
   if (label === "history" || label === "assistant.response") return "semi-stable"
-  // workspace.context 拆分后（任务 06-30-workspace-context-cache-split）：
-  // workspace.meta（header/skillIndex 等）和 workspace.file（各 contextFile 独立一条）
+  // 注入点重设计后（prelude/runtime/framing 三层）：
+  // workspace.meta（Skill Index 等）和 workspace.file（各 contextFile 独立一条）
   // 标 semi-stable——理论可变（agent 写 runtime.json），但希望多数轮次命中前缀缓存。
   // 与 history 同语义。稳定的文件自然命中、动态的单独 miss 互不拖累。
   if (label === "workspace.meta" || label === "workspace.file") return "semi-stable"

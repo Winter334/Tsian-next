@@ -123,7 +123,7 @@ function resolveEntryCompressionMode(input: AgentRuntimeTurnInput): RuntimeCompr
 // locateHistorySpan 按这些前缀识别消息边界（不依赖 role）。
 // stripInternalMarkers 在发送给模型前剥离这些前缀（模型不可见）。
 const LAYER_PREFIX = "<!-- tsian-layer:"
-const WORKSPACE_CONTEXT_META_TAG = "<!-- tsian-layer: workspace-context-meta -->"
+const CONTEXT_META_TAG = "<!-- tsian-layer: context-meta -->"
 const TOOL_MEMORY_TAG = "<!-- tsian-layer: tool-memory -->"
 const TURN_RUNTIME_TAG = "<!-- tsian-layer: turn-runtime -->"
 const PLAYER_INPUT_TAG = "<!-- tsian-layer: player-input -->"
@@ -280,16 +280,16 @@ function buildAgentContextMessages(
 
 /**
  * 定位工具循环 messages 里的剧情正文段边界,供 turn 内压剧情后 slice+替换用
- * (design §2.4).剧情段 = system(index 0)之后、框架信息 user 之前的独立 message
- * 序列(summary + recentTurns).顺序(Phase 0 修正后):system → history → workspace.context
- * → turn.runtime → turn.input ...,故 history 段恒从 index 1 开始.
- * 框架信息锚点:当前回合:/当前问答轮次:(workspace.context 现在在 history 之后,
+ * (design §2.4).剧情段 = prelude 段之后、runtime 段之前的独立 message
+ * 序列(summary + recentTurns).顺序:system → prelude → history → runtime
+ * → turn.runtime → turn.input ...,故 history 段在 prelude 之后开始.
+ * 框架信息锚点:当前回合:/当前问答轮次:(runtime 段在 history 之后,
  * 属动态段,不再是 history 的一部分).
  *
  * 返回 { start, end }(半开区间),start<0 表示无独立剧情段可压,调用方跳过压缩:
- * - entry 稳态路径(注入了 agentContext):start=1, end=框架信息前.
+ * - entry 稳态路径(注入了 agentContext):start=prelude 后, end=框架信息前.
  * - entry 兜底路径(未注入,剧情段首条是"最近对话："拍扁文本):{-1,-1}.
- * - delegated agent 路径(index 1 是调用方 Agent,非剧情段,无独立剧情段可压):{-1,-1}.
+ * - delegated agent 路径(调用方 Agent 非剧情段,无独立剧情段可压):{-1,-1}.
  * - 无框架信息锚点(结构不符):{-1,-1}.
  */
 /** 消息形状(content 放宽以兼容多模态). 历史段/工具交互段的 content 在实践中始终是 string
@@ -310,20 +310,20 @@ function locateHistorySpan(
   if (messages.length <= 1) {
     return { start: -1, end: -1 }
   }
-  // before-history 注入(contextPaths position: "before-history")插在 systemPrompt 和
-  // history 之间，每条注入消息以 `<!-- source: xxx -->` 注释前缀开头
-  // （contextInjectionsToMessages 产出格式）。扫描跳过这些注入消息，找到 history 段起点。
-  // 无 before-history 注入时：messages[1] 不以 `<!-- source:` 开头 → start 停在 1，行为不变。
+  // prelude 段（context-meta 元信息 + prelude position 注入）插在 systemPrompt 和
+  // history 之间。prelude 注入消息以 `<!-- source: xxx -->` 前缀开头，context-meta 头
+  // 以 `<!-- tsian-layer: context-meta -->` 前缀开头。扫描跳过这两种前缀的消息，
+  // 找到 history 段起点。无 prelude 注入时：messages[1] 不含这两种前缀 → start 停在 1。
   let start = 1
   while (start < messages.length) {
     const text = messageContentToText(messages[start].content)
-    if (text.startsWith("<!-- source:")) {
+    if (text.startsWith("<!-- source:") || text.startsWith(LAYER_PREFIX)) {
       start += 1
       continue
     }
     break
   }
-  // 扫描后 start 指向第一条非 before-history 注入消息。若已越界，结构异常。
+  // 扫描后 start 指向第一条非 prelude 消息。若已越界，结构异常。
   if (start >= messages.length) {
     return { start: -1, end: -1 }
   }
@@ -334,12 +334,14 @@ function locateHistorySpan(
   }
   // delegated agent:history 段首条是"最近对话窗口："（buildDelegatedAgentMessages 产出），
   // 无独立剧情 message 序列可压（delegated 无 agentContext 快照注入）。
-  // 注意：delegated 路径的"调用方 Agent："在 before-history 注入之前（如果有），已被
-  // 上面的 `<!-- source:` 扫描跳过；无 before-history 时 start=1 仍指向"调用方 Agent："。
+  // 注意：delegated 路径的"调用方 Agent："在 prelude 注入之后，已被上面的前缀扫描跳过；
+  // 无 prelude 时 start=1 仍指向"调用方 Agent："。
   if (firstHistoryText.startsWith("调用方 Agent：")) {
     return { start: -1, end: -1 }
   }
   // end: 扫描第一条带 <!-- tsian-layer: 前缀的消息（固定层标记），即为 history 段终点。
+  // history 之后的第一个固定层是 runtime 段的 context-meta 头（如果 runtime 段有注入
+  // 文件，它们以 <!-- source: 开头，不带固定层标记，会被跳过——end 会扫到 turn-runtime）。
   // 不依赖 role——固定层的 role 可由 messageLayers 配置改变。
   let end = -1
   for (let i = start + 1; i < messages.length; i += 1) {
@@ -649,7 +651,7 @@ function buildWorkspaceToolInstructions(
       ...sharedRules,
       `当前可用工具名称：${toolNames.join(", ")}。具体参数以 API tools schema 为准，不要在正文中手写工具调用块。`,
       ...(canCallAgents ? [`${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 的 agentId 从可见 Agent 联系人中选择。`] : []),
-      "多个相互独立的只读工具可以在同一轮并行调用。",
+      "多个相互独立、无写冲突的工具可以在同一轮并行调用。并行返回混合结果时，只重发失败的那一个，不要全量重发。",
       "收到 observation 后继续完成任务；最终输出只包含给玩家/调用方的正文，不包含工具细节。",
     ].join("\n")
   }
@@ -678,7 +680,7 @@ function buildWorkspaceToolInstructions(
 
 /**
  * 把一组 ContextInjection 编译成逐条 RuntimeChatMessage。每条注入消息用 HTML 注释
- * 前缀标注来源（`<!-- source: xxx -->`），供 locateHistorySpan 扫描识别 before-history
+ * 前缀标注来源（`<!-- source: xxx -->`），供 locateHistorySpan 扫描识别 prelude
  * 注入消息，以及 debug 时辨别来源。注释在合并时被保留（整合器只做 role 合并 + 换行
  * 拼接，不删注释），模型将 HTML 注释视为元信息，不影响理解。
  *
@@ -766,40 +768,34 @@ function stripInternalMarkers(messages: RuntimeChatMessage[]): RuntimeChatMessag
 }
 
 /**
- * 构建 workspace.context 的 message 序列（元信息段 + 逐文件段）。
- *
- * 拆分目标：让稳定 contextFile（文档/README 等会话中不变的大文件）各自独立进入
- * 前缀缓存命中区，动态 contextFile（runtime.json/brief 等每轮或偶变文件）单独
- * miss、互不拖累。详见任务 06-30-workspace-context-cache-split 的 design.md。
- *
- * 顺序保持 contextPaths 声明顺序——稳定的自然落在前缀区、动态的在尾部。不重排，
- * 避免破坏 agent 作者的语境组织意图，且 provider 前缀缓存按 token 匹配不按 message
- * 边界，重排无额外收益。`label` 区分 entry（"Workspace Agent 上下文"）与 delegated
- * （"目标 Agent 上下文"）路径。
- *
- * 注入消息从 contextInjectionsByPosition["workspace-context"] 取（= 旧 contextInjections
- * 字段，向后兼容）。每条注入用 `<!-- source: xxx -->` 注释前缀标注来源（contextInjectionsToMessages）。
- *
- * 边界安全性：所有边界锚定（locateHistorySpan 扫"当前回合："、locateTaskInteractionSpan
- * 从末尾按工具形态扫描）都不依赖固定 message index，拆成 N 条不影响压缩/边界判定。
+ * 构建 prelude 段消息：上下文元信息（Skill Index）+ prelude position 注入文件。
+ * 放在 system 之后、history 之前——跨轮稳定内容命中前缀缓存。
  */
-function buildAgentContextMessages_split(
+function buildPreludeMessages(
   context: AgentContextEntry,
   label: "Workspace Agent 上下文" | "目标 Agent 上下文",
   metaRole: "system" | "user" | "assistant" = "user",
 ): RuntimeChatMessage[] {
   const messages: RuntimeChatMessage[] = [
-    { role: metaRole, content: `${WORKSPACE_CONTEXT_META_TAG}\n${label}（元信息）：\n${formatAgentRuntimeContextMeta(context)}` },
+    { role: metaRole, content: `${CONTEXT_META_TAG}\n${label}（元信息）：\n${formatContextMeta(context)}` },
   ]
-  // 注入消息从 workspace-context 组取（= 旧 contextInjections 字段，向后兼容）。
-  // 每条注入用 `<!-- source: xxx -->` 注释前缀标注来源。
-  messages.push(...contextInjectionsToMessages(context.contextInjectionsByPosition["workspace-context"]))
+  messages.push(...contextInjectionsToMessages(context.contextInjectionsByPosition.prelude))
   return messages
+}
+
+/**
+ * 构建 runtime 段消息：runtime position 注入文件（runtime.json、frontier.json 等）。
+ * 放在 history 之后、turn-runtime 之前——每轮可能变化的状态文件。
+ */
+function buildRuntimeMessages(
+  context: AgentContextEntry,
+): RuntimeChatMessage[] {
+  return contextInjectionsToMessages(context.contextInjectionsByPosition.runtime)
 }
 
 /** 列出所有 position 组的注入条目来源，按 position 分组显示。 */
 function formatAllContextInjections(context: AgentContextEntry): string {
-  const positions: ContextPathPosition[] = ["before-history", "workspace-context", "after-input", "tail"]
+  const positions: ContextPathPosition[] = ["prelude", "runtime", "framing"]
   const lines: string[] = []
   let total = 0
   for (const pos of positions) {
@@ -818,26 +814,10 @@ function formatAllContextInjections(context: AgentContextEntry): string {
 }
 
 /**
- * workspace.context 的元信息部分（不含 contextInjections 全文）。
- *
- * 含 header（Agent id/title/summary/path）+ notesFile + contextInjections 来源提示 +
- * missingContextPaths + skillIndex。这些字段字节量小、变化频率低，归同条 message；
- * 偶发 miss（agent 编辑定义/写 notes/装 skill 时）可接受，不值得为这点字节再拆。
+ * 上下文元信息部分（Skill Index）。精简后只含 skill 索引，跨轮稳定。
  */
-function formatAgentRuntimeContextMeta(context: AgentContextEntry): string {
+function formatContextMeta(context: AgentContextEntry): string {
   return [
-    `Agent：${context.agent.id} — ${context.agent.title}`,
-    `Agent 摘要：${context.agent.summary || "（无摘要）"}`,
-    `Agent 定义路径：${context.agent.path}`,
-    "",
-    formatOptionalWorkspaceFile("Agent notes", context.notesFile),
-    "",
-    "声明的 contextPaths 注入条目：",
-    formatAllContextInjections(context),
-    "",
-    "缺失的 contextPaths：",
-    formatMissingContextPaths(context),
-    "",
     "可见 Skill Index（仅摘要，未加载 Skill 详情）：",
     formatSkillIndex(context),
   ].join("\n")
@@ -927,7 +907,7 @@ function buildEntryAgentMessages(
   // 固定层 role 配置（messageLayers）。未配置的层保持默认 role。
   const ml = context.agent.messageLayers
   const historySummaryRole = ml.historySummary?.role ?? "user"
-  const metaRole = ml.workspaceContextMeta?.role ?? "user"
+  const metaRole = ml.contextMeta?.role ?? "user"
   const toolMemoryRole = ml.toolMemory?.role ?? "user"
   const turnRuntimeRole = ml.turnRuntime?.role ?? "user"
   // 剧情正文层:优先用注入的 context 快照(独立 message 序列);未注入则从
@@ -963,21 +943,16 @@ function buildEntryAgentMessages(
         toolCallMode,
       }),
     },
-    // before-history 注入（contextPaths position: "before-history"）：system prompt 之后、
-    // history 之前。稳定前缀层，只放稳定内容（越狱确认等）。无声明时为空数组，消息序列
-    // 与旧逻辑一致（history 紧随 system）。每条注入用 `<!-- source: xxx -->` 注释前缀。
-    ...contextInjectionsToMessages(context.contextInjectionsByPosition["before-history"]),
-    // history(已发生剧情,跨 turn 字节级不变)紧随 system,作为最长稳定前缀.
-    // workspace.context 含 contextInjections 注入正文/skillIndex 等 Agent 写入后即变
-    // 的动态内容,后置于 history 之前会提前缓存断点使其后 history 全部 miss
-    // (见 design 设计修正记录 修正 1).
+    // prelude 段（背景层）：上下文元信息（Skill Index）+ prelude position 注入。
+    // 放在 system 之后、history 之前——跨轮稳定内容命中前缀缓存。
+    ...buildPreludeMessages(context, "Workspace Agent 上下文", metaRole),
+    // history(已发生剧情,跨 turn 字节级不变)。prelude 在其之前命中缓存,
+    // history 尾部每轮增长只 miss 最后一对。
     ...historyMessages,
-    // workspace.context 拆成元信息段 + 逐文件段（任务 06-30-workspace-context-cache-split）：
-    // 稳定文件各自独立命中前缀缓存，动态文件单独 miss 互不拖累。仍在 history 之后，
-    // 不破坏 design 修正记录 1 的缓存边界。注入消息从 contextInjectionsByPosition
-    // ["workspace-context"] 取（= 旧 contextInjections，向后兼容）。
-    ...buildAgentContextMessages_split(context, "Workspace Agent 上下文", metaRole),
-    // task-mode 助手的跨 turn 工具记忆作为普通工作日志放在 workspace context 后，
+    // runtime 段（状态层）：runtime position 注入（runtime.json、frontier.json 等）。
+    // 放在 history 之后——每轮可能变化的状态文件，不指望前缀缓存命中。
+    ...buildRuntimeMessages(context),
+    // task-mode 助手的跨 turn 工具记忆作为普通工作日志放在 runtime 段后，
     // 避免高频变化块提前破坏大段稳定前缀缓存；不使用 provider tool protocol。
     ...toolMemoryMessages,
     {
@@ -996,14 +971,10 @@ function buildEntryAgentMessages(
     },
     // 前端注入（after-input）：玩家输入之后、工具循环之前。
     ...afterInputInjection,
-    // after-input 注入（contextPaths position: "after-input"）：玩家输入 + 前端注入之后、
-    // tail 之前。紧贴续写点的框架模板层（COT 问题框架、输出格式模板）。无声明时为空。
-    ...contextInjectionsToMessages(context.contextInjectionsByPosition["after-input"]),
-    // tail 注入（contextPaths position: "tail"）：消息序列绝对末尾，续写引导。
-    // 替代旧 PREFILL.md 独立机制——PREFILL.md 兼容迁移在 context.ts 完成（无 tail
-    // contextPath 时自动将 PREFILL.md 内容转为 tail 注入）。有 tail contextPath 时
-    // PREFILL.md 被忽略。不落盘、不进 context.json，不破坏稳定前缀缓存。
-    ...contextInjectionsToMessages(context.contextInjectionsByPosition["tail"]),
+    // framing 段（框架层）：framing position 注入（思考模板、输出格式、续写引导）。
+    // 放在玩家输入之后、消息序列末尾。PREFILL.md 兼容迁移在 context.ts 完成
+    //（无 framing contextPath 时自动将 PREFILL.md 内容转为 framing 注入）。
+    ...contextInjectionsToMessages(context.contextInjectionsByPosition.framing),
   ]
 }
 
@@ -1122,18 +1093,12 @@ function buildDelegatedAgentMessages(
   const permissions = deriveAgentRuntimePermissionProfile(targetContext.agent)
   // 固定层 role 配置（从目标 agent 的 messageLayers 读取）。
   const ml = targetContext.agent.messageLayers
-  const metaRole = ml.workspaceContextMeta?.role ?? "user"
+  const metaRole = ml.contextMeta?.role ?? "user"
   const turnRuntimeRole = ml.turnRuntime?.role ?? "user"
   // contextInjectionsToMessages 产 RuntimeChatMessage[]，但注入消息只有
   // system/user/assistant + string content（无 tool role），安全降维为 AiChatMessage[]。
-  const beforeHistoryMessages = contextInjectionsToMessages(
-    targetContext.contextInjectionsByPosition["before-history"],
-  ) as AiChatMessage[]
-  const afterInputMessages = contextInjectionsToMessages(
-    targetContext.contextInjectionsByPosition["after-input"],
-  ) as AiChatMessage[]
-  const tailMessages = contextInjectionsToMessages(
-    targetContext.contextInjectionsByPosition["tail"],
+  const framingMessages = contextInjectionsToMessages(
+    targetContext.contextInjectionsByPosition.framing,
   ) as AiChatMessage[]
   return [
     {
@@ -1152,9 +1117,8 @@ function buildDelegatedAgentMessages(
         toolCallMode,
       }),
     },
-    // before-history 注入（contextPaths position: "before-history"）：system prompt 之后、
-    // 调用方信息之前。delegated 路径同样支持（续写引导可能有用）。无声明时为空。
-    ...beforeHistoryMessages,
+    // prelude 段（背景层）：元信息 + prelude 注入。system 之后、调用方信息之前。
+    ...(buildPreludeMessages(targetContext, "目标 Agent 上下文", metaRole) as AiChatMessage[]),
     {
       role: "user",
       content: [
@@ -1164,10 +1128,8 @@ function buildDelegatedAgentMessages(
       ].join("\n"),
     },
     { role: "user", content: `最近对话窗口：\n${formatHistory(history)}` },
-    // 目标 Agent 上下文同样拆成元信息段 + 逐条注入段（与 entry 路径一致）。
-    // workspace-context 组注入由 buildAgentContextMessages_split 从
-    // contextInjectionsByPosition["workspace-context"] 取。安全降维为 AiChatMessage[]。
-    ...(buildAgentContextMessages_split(targetContext, "目标 Agent 上下文", metaRole) as AiChatMessage[]),
+    // runtime 段（状态层）：runtime 注入。history 之后、turn-runtime 之前。
+    ...(buildRuntimeMessages(targetContext) as AiChatMessage[]),
     { role: turnRuntimeRole, content: `${TURN_RUNTIME_TAG}\n${[`当前回合：${currentRuntimeTurnNumber(input)}`, `historyMode：${agentCall.historyMode}`].join("\n")}` },
     { role: "user", content: `${PLAYER_INPUT_TAG}\n玩家本轮输入：\n${input.userInput}` },
     {
@@ -1182,11 +1144,8 @@ function buildDelegatedAgentMessages(
         "请只回答调用方请求，不要输出给玩家的最终正文，也不要提到工具协议。",
       ].join("\n"),
     },
-    // after-input 注入（contextPaths position: "after-input"）：调用请求之后、tail 之前。
-    ...afterInputMessages,
-    // tail 注入（contextPaths position: "tail"）：消息序列绝对末尾，续写引导。
-    // delegated agent 如果声明了 tail 注入也尊重（PREFILL.md 兼容迁移兜底）。
-    ...tailMessages,
+    // framing 段（框架层）：framing 注入（思考模板、续写引导）。消息序列末尾。
+    ...framingMessages,
   ]
 }
 

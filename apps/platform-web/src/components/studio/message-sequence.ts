@@ -4,11 +4,19 @@ import type {
   ContextPathPosition,
   MessageLayersConfig,
 } from "@tsian/contracts"
+import type { PlatformStudioModuleInfo } from "@/platform-host"
 
 export type ContextPathRole = "system" | "user" | "assistant"
 export type ContextPathKind = "path" | "template"
 export type MessageLayerKey = keyof MessageLayersConfig
 export type MessageLayerRoles = Record<MessageLayerKey, ContextPathRole>
+
+export interface ModuleSwitchGroup {
+  key: string
+  macroPath: string
+  label: string
+  modules: PlatformStudioModuleInfo[]
+}
 
 export interface EditableContextPathEntry {
   id: string
@@ -22,42 +30,39 @@ export interface EditableContextPathEntry {
 }
 
 export const CONTEXT_PATH_POSITIONS: ContextPathPosition[] = [
-  "before-history",
-  "workspace-context",
-  "after-input",
-  "tail",
+  "prelude",
+  "runtime",
+  "framing",
 ]
 
 export const CONTEXT_PATH_ROLES: ContextPathRole[] = ["system", "user", "assistant"]
 
 export const MESSAGE_LAYER_KEYS: MessageLayerKey[] = [
   "historySummary",
-  "workspaceContextMeta",
+  "contextMeta",
   "toolMemory",
   "turnRuntime",
 ]
 
 export const DEFAULT_MESSAGE_LAYER_ROLES: MessageLayerRoles = {
   historySummary: "user",
-  workspaceContextMeta: "user",
+  contextMeta: "user",
   toolMemory: "user",
   turnRuntime: "user",
 }
 
-const MODULE_ENABLED_FILE_MACRO_PATTERN = /\{\{\s*file:\s*(modules\/[^}?]*?\.md)\s*\?enabled\s*\}\}/g
+const MODULE_ENABLED_FILE_MACRO_PATTERN = /\{\{\s*file:\s*(modules\/[^}?]*?(?:\.md|\*[^}?]*))\s*\?enabled\s*\}\}/g
 
 const POSITION_LABELS: Record<ContextPathPosition, string> = {
-  "before-history": "历史前补充",
-  "workspace-context": "常规资料区",
-  "after-input": "输入后要求",
-  tail: "续写前提示",
+  prelude: "背景层",
+  runtime: "状态层",
+  framing: "框架层",
 }
 
 const POSITION_DESCRIPTIONS: Record<ContextPathPosition, string> = {
-  "before-history": "放在过往剧情之前，适合长期稳定、很少变化的基础规则。",
-  "workspace-context": "放在过往剧情之后，适合写作规则、资料文件和可选模块。",
-  "after-input": "放在玩家本轮输入之后，适合本轮输出格式、检查清单或思考框架。",
-  tail: "放在最末尾，最靠近模型开始写作的位置，适合起笔句或预填充。",
+  prelude: "放在过往剧情之前，适合长期稳定的规则、参考资料和衔接内容。",
+  runtime: "放在过往剧情之后，适合每轮可能变化的状态文件。",
+  framing: "放在玩家输入之后、消息末尾，适合输出框架和续写引导。",
 }
 
 const ROLE_LABELS: Record<ContextPathRole, string> = {
@@ -82,7 +87,7 @@ function normalizeRole(value: unknown): ContextPathRole {
 export function normalizeMessageLayerRoles(value: MessageLayersConfig | undefined): MessageLayerRoles {
   return {
     historySummary: normalizeRole(value?.historySummary?.role),
-    workspaceContextMeta: normalizeRole(value?.workspaceContextMeta?.role),
+    contextMeta: normalizeRole(value?.contextMeta?.role),
     toolMemory: normalizeRole(value?.toolMemory?.role),
     turnRuntime: normalizeRole(value?.turnRuntime?.role),
   }
@@ -102,7 +107,7 @@ export function serializeMessageLayerRoles(roles: MessageLayerRoles): MessageLay
 function normalizePosition(value: unknown): ContextPathPosition {
   return CONTEXT_PATH_POSITIONS.includes(value as ContextPathPosition)
     ? value as ContextPathPosition
-    : "workspace-context"
+    : "runtime"
 }
 
 export function positionLabel(position: ContextPathPosition): string {
@@ -180,6 +185,72 @@ export function modulePathMatchesEnabledMacroPath(modulePath: string, macroPath:
   return moduleMacroPathPattern(macroPath)?.test(relativeModulePath) ?? false
 }
 
+export function moduleDirectoryLabel(path: string): string {
+  const normalized = normalizeModuleMacroText(path).trim().replace(/\/+$/, "")
+  if (!normalized) {
+    return "规则模块"
+  }
+
+  const wildcardIndex = normalized.indexOf("*")
+  const pathForDirectory = wildcardIndex >= 0
+    ? normalized.slice(0, wildcardIndex)
+    : normalized
+  const segments = pathForDirectory.split("/").filter(Boolean)
+
+  if (segments.length === 0) {
+    return normalized
+  }
+
+  const lastSegment = segments[segments.length - 1]
+  const directorySegments = lastSegment?.includes(".")
+    ? segments.slice(0, -1)
+    : segments
+  if (directorySegments.length === 0) {
+    return normalized
+  }
+
+  return directorySegments.join("/")
+}
+
+export function buildModuleSwitchGroups(
+  modules: PlatformStudioModuleInfo[],
+  macroPaths: string[],
+): ModuleSwitchGroup[] {
+  const groups: ModuleSwitchGroup[] = []
+  const seen = new Set<string>()
+
+  for (const macroPath of macroPaths) {
+    const normalizedMacroPath = normalizeModuleMacroText(macroPath).trim()
+    if (!normalizedMacroPath || seen.has(normalizedMacroPath)) {
+      continue
+    }
+    seen.add(normalizedMacroPath)
+
+    groups.push({
+      key: normalizedMacroPath,
+      macroPath: normalizedMacroPath,
+      label: moduleDirectoryLabel(normalizedMacroPath),
+      modules: modules.filter((module) => modulePathMatchesEnabledMacroPath(module.path, normalizedMacroPath)),
+    })
+  }
+
+  return groups
+}
+
+export function duplicateVisibleModuleStems(groups: ModuleSwitchGroup[]): string[] {
+  const counts = new Map<string, number>()
+  for (const group of groups) {
+    for (const module of group.modules) {
+      counts.set(module.stem, (counts.get(module.stem) ?? 0) + 1)
+    }
+  }
+
+  return Array.from(counts.entries())
+    .filter(([, count]) => count > 1)
+    .map(([stem]) => stem)
+    .sort((a, b) => a.localeCompare(b))
+}
+
 export function isModuleMacroTemplate(value: string): boolean {
   return extractEnabledModuleMacroPaths(value).length > 0
 }
@@ -194,7 +265,7 @@ export function editableEntrySummary(entry: EditableContextPathEntry): string {
 }
 
 export function createEditableEntry(
-  position: ContextPathPosition = "workspace-context",
+  position: ContextPathPosition = "runtime",
 ): EditableContextPathEntry {
   return {
     id: newEntryId(),
@@ -218,7 +289,7 @@ export function normalizeEditableEntry(
       path: entry,
       template: "",
       role: "user",
-      position: "workspace-context",
+      position: "runtime",
       originalWasString: true,
       modified: false,
     }
@@ -253,7 +324,7 @@ export function serializeEditableEntry(entry: EditableContextPathEntry): Context
       entry.originalWasString &&
       !entry.modified &&
       role === "user" &&
-      position === "workspace-context"
+      position === "runtime"
     ) {
       return path
     }

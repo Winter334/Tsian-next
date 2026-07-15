@@ -7,7 +7,7 @@ import {
 } from "./workspace-tools-types"
 
 const DEFAULT_TEXT_PREVIEW_LIMIT = 2_000
-const LARGE_FIELD_INLINE_LIMIT = 6_000
+const LARGE_FIELD_INLINE_LIMIT = 20_000
 const COMPACT_RECURSION_DEPTH = 4
 const LARGE_FIELD_NAMES = new Set([
   "content",

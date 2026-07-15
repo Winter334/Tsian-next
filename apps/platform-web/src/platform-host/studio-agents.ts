@@ -169,16 +169,15 @@ export interface PlatformStudioAgentContextPathsUpdateInput {
 
 const MESSAGE_LAYER_KEYS: Array<keyof MessageLayersConfig> = [
   "historySummary",
-  "workspaceContextMeta",
+  "contextMeta",
   "toolMemory",
   "turnRuntime",
 ]
 
 const CONTEXT_PATH_POSITIONS = new Set<ContextPathPosition>([
-  "before-history",
-  "workspace-context",
-  "after-input",
-  "tail",
+  "prelude",
+  "runtime",
+  "framing",
 ])
 
 function normalizeContextPathRole(value: unknown): ContextPathObject["role"] | undefined {

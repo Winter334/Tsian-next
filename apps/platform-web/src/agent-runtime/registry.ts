@@ -71,12 +71,11 @@ const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
 ])
 
 /** 合法的 contextPath position 值集。解析/校验时用于过滤非法值，缺失或非法值
- *  回退到默认 "workspace-context"（向后兼容）。与 `ContextPathPosition` 契约保持同步。 */
+ *  回退到默认 "runtime"。与 `ContextPathPosition` 契约保持同步。 */
 const CONTEXT_PATH_POSITIONS = new Set<ContextPathPosition>([
-  "before-history",
-  "workspace-context",
-  "after-input",
-  "tail",
+  "prelude",
+  "runtime",
+  "framing",
 ])
 
 // Mirrors the `tsian-actions` fence pattern in workspace-tools.ts. Kept here so
@@ -670,9 +669,9 @@ function jsonStringArray(value: unknown): string[] {
  * backward-compatible flat `string[]` form plus object entries (`{path, role}`
  * or `{template, role}`). Deduplicates by lowercased path/template key. Object
  * entries with both `path` and `template` (or neither) are skipped. Object
- * entries may declare `position` (one of the 4 legal `ContextPathPosition`
+ * entries may declare `position` (one of the 3 legal `ContextPathPosition`
  * values); missing or invalid `position` falls back to the default
- * `"workspace-context"`, which is applied at the compilation layer.
+ * `"runtime"`, which is applied at the compilation layer.
  */
 function parseContextPathEntries(value: unknown): ContextPathEntry[] {
   if (!Array.isArray(value)) {
@@ -718,7 +717,7 @@ function parseContextPathEntries(value: unknown): ContextPathEntry[] {
 
       // Validate position: only carry through legal values. Missing/invalid
       // position is left undefined here so the compilation layer defaults to
-      // "workspace-context" — keeping the registry entry faithful to input.
+      // "runtime" — keeping the registry entry faithful to input.
       const position = entry.position
       if (
         typeof position === "string" &&
@@ -825,8 +824,8 @@ function normalizeMessageLayersConfig(value: unknown): MessageLayersConfig {
   const result: MessageLayersConfig = {}
   const historySummaryRole = normalizeLayerRole(value.historySummary)
   if (historySummaryRole) result.historySummary = { role: historySummaryRole }
-  const metaRole = normalizeLayerRole(value.workspaceContextMeta)
-  if (metaRole) result.workspaceContextMeta = { role: metaRole }
+  const metaRole = normalizeLayerRole(value.contextMeta)
+  if (metaRole) result.contextMeta = { role: metaRole }
   const toolMemoryRole = normalizeLayerRole(value.toolMemory)
   if (toolMemoryRole) result.toolMemory = { role: toolMemoryRole }
   const turnRuntimeRole = normalizeLayerRole(value.turnRuntime)

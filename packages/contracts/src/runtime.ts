@@ -439,18 +439,18 @@ export interface AgentWorkspaceAccessConfig {
 /**
  * 注入在消息序列中的位置。控制 contextPath 条目编译后注入到消息骨架的哪个区段。
  *
- * - `"before-history"`：system prompt 之后、history 之前（稳定前缀层，只放稳定内容）
- * - `"workspace-context"`（默认）：history 之后、turn-runtime 之前（现有行为，向后兼容）
- * - `"after-input"`：玩家输入之后、tail 之前（紧贴续写点的框架模板层）
- * - `"tail"`：消息序列绝对末尾（续写引导，替代 PREFILL.md 独立机制）
+ * - `"prelude"`：system prompt 之后、history 之前。背景层——适合长期稳定、很少变化的
+ *   规则、参考资料和衔接内容。跨轮命中前缀缓存。
+ * - `"runtime"`（默认）：history 之后、turn-runtime 之前。状态层——适合每轮可能变化的
+ *   状态文件（runtime.json、frontier.json、记忆文件等）。
+ * - `"framing"`：玩家输入之后、消息序列末尾。框架层——适合输出格式、思考框架和续写引导。
  *
- * 不写 position 的条目默认 `"workspace-context"`，保持向后兼容。
+ * 不写 position 的条目默认 `"runtime"`。
  */
 export type ContextPathPosition =
-  | "before-history"
-  | "workspace-context"
-  | "after-input"
-  | "tail"
+  | "prelude"
+  | "runtime"
+  | "framing"
 
 /** contextPath 条目对象形式：支持指定注入角色、内联模板与消息序列位置。path 与 template 互斥。 */
 export interface ContextPathObject {
@@ -460,7 +460,7 @@ export interface ContextPathObject {
   template?: string
   /** 注入消息角色。默认 "user"。 */
   role?: "system" | "user" | "assistant"
-  /** 注入在消息序列中的位置。默认 "workspace-context"（向后兼容）。 */
+  /** 注入在消息序列中的位置。默认 "runtime"。 */
   position?: ContextPathPosition
 }
 
@@ -473,7 +473,7 @@ export interface ContextInjection {
   content: string
   /** 来源描述（用于 meta 信息显示，如文件路径或 "inline template"）。 */
   source: string
-  /** 注入在消息序列中的位置。编译时从 contextPath 条目携带，默认 "workspace-context"。 */
+  /** 注入在消息序列中的位置。编译时从 contextPath 条目携带，默认 "runtime"。 */
   position: ContextPathPosition
 }
 
@@ -489,8 +489,8 @@ export interface MessageLayerConfig {
 export interface MessageLayersConfig {
   /** 早期剧情/任务摘要。默认 role: user */
   historySummary?: MessageLayerConfig
-  /** Agent 上下文元信息（contextPaths 索引、skill 索引等）。默认 role: user */
-  workspaceContextMeta?: MessageLayerConfig
+  /** Agent 上下文元信息（Skill Index 等）。默认 role: user */
+  contextMeta?: MessageLayerConfig
   /** 工具记忆日志（task-mode 助手）。默认 role: user */
   toolMemory?: MessageLayerConfig
   /** 当前回合号。默认 role: user */
@@ -580,12 +580,8 @@ export interface AgentContextEntry {
   /** Tools visible to this Agent after `tools.enabled/disabled` filtering. */
   toolIndex: ToolRegistryEntry[]
   /** 编译后的注入条目按 position 分组。消息构建层按骨架顺序从各组取注入。
-   *  4 个数组始终存在（即使为空），便于消费侧无需判空。 */
+   *  3 个数组始终存在（即使为空），便于消费侧无需判空。 */
   contextInjectionsByPosition: Record<ContextPathPosition, ContextInjection[]>
-  /** workspace-context 组的注入条目（= contextInjectionsByPosition["workspace-context"]）。
-   *  保留字段供 debug 元信息显示（formatAgentRuntimeContextMeta）使用。
-   *  消息构建层应优先读取 contextInjectionsByPosition。 */
-  contextInjections: ContextInjection[]
   knowledgeFiles: WorkspaceFile[]
   missingContextPaths: string[]
 }

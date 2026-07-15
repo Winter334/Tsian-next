@@ -24,7 +24,6 @@ export interface AgentContextAssemblyOptions {
 
 const AGENT_FILE_NAME = "AGENT.md"
 const SOUL_FILE_NAME = "SOUL.md"
-const PREFILL_FILE_NAME = "PREFILL.md"
 
 function cleanString(value: string | undefined): string | undefined {
   const cleaned = value?.trim()
@@ -87,19 +86,15 @@ export function assembleAgentContext(
   const soulFile = agentDirectory
     ? filesByPath.get(`${agentDirectory}/${SOUL_FILE_NAME}`)
     : undefined
-  const prefillFile = agentDirectory
-    ? filesByPath.get(`${agentDirectory}/${PREFILL_FILE_NAME}`)
-    : undefined
 
-  /** 按 position 分组的注入缓冲区。4 个数组始终存在（即使为空）。 */
+  /** 按 position 分组的注入缓冲区。3 个数组始终存在（即使为空）。 */
   const contextInjectionsByPosition: Record<
     ContextPathPosition,
     ContextInjection[]
   > = {
-    "before-history": [],
-    "workspace-context": [],
-    "after-input": [],
-    tail: [],
+    prelude: [],
+    runtime: [],
+    framing: [],
   }
   const missingContextPaths: string[] = []
 
@@ -123,7 +118,7 @@ export function assembleAgentContext(
       role = "user"
       source = file.path
       baseDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
-      position = "workspace-context"
+      position = "runtime"
     } else if (entry.path) {
       // Path object: read file, role may be specified.
       const path = normalizeWorkspaceFilePath(entry.path)
@@ -136,14 +131,14 @@ export function assembleAgentContext(
       role = entry.role ?? "user"
       source = file.path
       baseDir = path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : ""
-      position = entry.position ?? "workspace-context"
+      position = entry.position ?? "runtime"
     } else if (entry.template) {
       // Template object: inline template string, role may be specified.
       rawContent = entry.template
       role = entry.role ?? "user"
       source = "inline template"
       baseDir = agentDirectory ?? ""
-      position = entry.position ?? "workspace-context"
+      position = entry.position ?? "runtime"
     } else {
       continue
     }
@@ -164,30 +159,11 @@ export function assembleAgentContext(
       continue
     }
 
-    // 4. Resolve position: missing/invalid → "workspace-context" (backward compat).
+    // 4. Resolve position: missing/invalid → "runtime".
     //    Position was resolved per-branch above (string entries default, object
     //    entries read entry.position). Group the compiled injection accordingly.
     contextInjectionsByPosition[position].push({ role, content, source, position })
   }
-
-  // PREFILL.md legacy compat migration: when no contextPath declared `position:
-  // "tail"`, auto-create a tail injection from PREFILL.md so existing agents
-  // (and old game-card archives) keep their prefill behavior without config
-  // changes. If the tail group already has entries, PREFILL.md is ignored.
-  if (
-    contextInjectionsByPosition["tail"].length === 0 &&
-    prefillFile &&
-    prefillFile.content.trim()
-  ) {
-    contextInjectionsByPosition["tail"].push({
-      role: "assistant",
-      content: prefillFile.content,
-      source: "PREFILL.md (compat)",
-      position: "tail",
-    })
-  }
-
-  const contextInjections = contextInjectionsByPosition["workspace-context"]
 
   const knowledgeFiles: WorkspaceFile[] = []
   if (agent.knowledgeMount) {
@@ -219,7 +195,6 @@ export function assembleAgentContext(
     ),
     toolIndex,
     contextInjectionsByPosition,
-    contextInjections,
     knowledgeFiles,
     missingContextPaths,
   }
