@@ -90,6 +90,32 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 <span>{{ action.executor.type }}</span>
 ```
 
+### Convention: Studio Message Sequence File Macro Controls
+
+**What**: Message-sequence editing keeps file macro authoring in Studio but delegates file content management to Workspace. Enabled module switches are grouped by the `{{file:modules/... ?enabled}}` macro source that exposes them, while switch persistence remains the runtime `enabledModules` file-stem whitelist.
+
+**Why**: The runtime contract intentionally treats same-stem module files as one toggle (`enabledModules` contains stems, not paths). Studio should make directory/macro boundaries readable without inventing path-scoped state that runtime will not honor. File content editing already has a full Workspace editor with save guards, so Studio should route there instead of adding nested Markdown editors.
+
+**Rules**:
+- In message-sequence UI, render enabled module switches by macro path/directory group, not as one flat list, when a single entry contains multiple `{{file:modules/...*.md?enabled}}` macros.
+- Toggle state and writes use `module.stem`; duplicate visible stems should be explained as linked, not split into independent switches.
+- Path pickers in Studio may select workspace paths, but they must not edit content directly. Use `listPlatformWorkspaceDirectory` for browsing and leave writes to existing editor/resource-manager flows.
+- Path pickers launched from an existing `FloatingWindow` should be embedded panels, not another `FloatingWindow`; nested modal shields block the Workspace windows they try to open and degrade long-list UX.
+- `编辑` actions route to `workspace-editor` with `{ cardId, path, mode: "edit", editorId }`; `目录` actions route to `workspace` with `{ cardId, path: parentDirectory }`. If the message-entry dialog has unsaved changes, confirm that leaving will discard them, close the dialog, then route.
+- Do not add another module-content edit modal inside the message sequence dialog.
+
+**Example**:
+
+```vue
+<ModuleSwitchList
+  :groups="moduleSwitchGroups"
+  :enabled-modules="enabledModulesDraft"
+  @update:enabled-modules="enabledModulesDraft = $event"
+  @edit-module="openWorkspaceEditor"
+  @open-module-directory="openWorkspaceDirectory"
+/>
+```
+
 ### Convention: Workspace Editor Simplification And Media Viewer Routing
 
 **What**: `WorkspaceEditorView.vue` is a text-only editor (toolbar has only Save; CodeMirror owns Ctrl+Z undo; no mediaType dropdown, no validate/restore buttons). Files route by media type on open: text → editor, image/audio/video → `WorkspaceMediaView.vue`. The desktop shell supports a per-window `beforeClose` guard so the editor can prompt save/discard/cancel on unsaved changes.

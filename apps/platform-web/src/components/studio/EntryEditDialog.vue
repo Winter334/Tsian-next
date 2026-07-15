@@ -78,12 +78,35 @@
             <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider"
+                @click="openPathFilePicker"
+              >
+                选择文件
+              </button>
+              <button
+                type="button"
                 class="retro-button retro-focus inline-flex h-7 items-center gap-1.5 px-2 font-mono text-[10px] uppercase tracking-wider disabled:opacity-45"
                 :disabled="loadingFile || !draft.path.trim()"
                 @click="loadFileContent"
               >
                 <RefreshCw class="h-3 w-3" :class="{ 'animate-spin': loadingFile }" aria-hidden="true" />
                 读取文件
+              </button>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center px-2 font-mono text-[10px] uppercase tracking-wider disabled:opacity-45"
+                :disabled="!draft.path.trim()"
+                @click="openWorkspaceEditor(draft.path)"
+              >
+                编辑
+              </button>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center px-2 font-mono text-[10px] uppercase tracking-wider disabled:opacity-45"
+                :disabled="!draft.path.trim()"
+                @click="openWorkspaceDirectory(draft.path)"
+              >
+                目录
               </button>
               <span v-if="fileError" class="font-mono text-[10px] text-warning">{{ fileError }}</span>
               <span v-else-if="loadedPath" class="font-mono text-[10px] text-text-dim">已读取 {{ loadedPath }}</span>
@@ -102,6 +125,28 @@
         </section>
 
         <section v-else class="grid gap-2 border border-neon-deep/30 bg-panel/35 p-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p class="font-mono text-[11px] uppercase tracking-wider text-text-dim">宏插入</p>
+              <p class="mt-1 text-xs text-text-dim">可选择 Agent 目录内文件或 modules 子目录；高级宏仍可手写。</p>
+            </div>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center px-2 font-mono text-[10px] uppercase tracking-wider"
+                @click="openTemplateFilePicker"
+              >
+                插入文件宏
+              </button>
+              <button
+                type="button"
+                class="retro-button retro-focus inline-flex h-7 items-center px-2 font-mono text-[10px] uppercase tracking-wider"
+                @click="openTemplateModuleDirectoryPicker"
+              >
+                插入模块目录宏
+              </button>
+            </div>
+          </div>
           <label class="grid gap-1.5">
             <span class="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-text-dim">
               内联文本
@@ -117,11 +162,23 @@
           </label>
         </section>
 
+        <WorkspacePathPicker
+          :open="pickerOpen"
+          :card-id="cardId"
+          :mode="pickerMode"
+          :title="pickerTitle"
+          :initial-path="pickerInitialPath"
+          @update:open="pickerOpen = $event"
+          @select="handlePickerSelect"
+        />
+
         <ModuleSwitchList
           v-if="hasModuleMacros"
-          :modules="modulesForCurrentMacros"
+          :groups="moduleSwitchGroups"
           :enabled-modules="enabledModulesDraft"
           @update:enabled-modules="enabledModulesDraft = $event"
+          @edit-module="openWorkspaceEditor"
+          @open-module-directory="openWorkspaceDirectory"
         />
       </div>
 
@@ -141,7 +198,8 @@
 
 <script setup lang="ts">
 import type { ContextPathPosition, WorkspaceFile } from "@tsian/contracts"
-import { computed, ref, watch } from "vue"
+import { computed, nextTick, ref, watch } from "vue"
+import { useRouter } from "vue-router"
 import { RefreshCw } from "lucide-vue-next"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
@@ -153,27 +211,32 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { ParamTip } from "@/components/ui/tip"
+import { confirm as confirmDialog } from "@/composables/useConfirm"
 import {
   readPlatformWorkspaceFile,
   writePlatformWorkspaceFile,
   type PlatformStudioModuleInfo,
 } from "@/platform-host"
 import ModuleSwitchList from "./ModuleSwitchList.vue"
+import WorkspacePathPicker from "./WorkspacePathPicker.vue"
 import type { EditableContextPathEntry } from "./message-sequence"
 import {
+  buildModuleSwitchGroups,
   cloneEditableEntry,
   CONTEXT_PATH_POSITIONS,
   CONTEXT_PATH_ROLES,
   extractEnabledModuleMacroPaths,
-  modulePathMatchesEnabledMacroPath,
   positionDescription,
   positionLabel,
 } from "./message-sequence"
+
+type PickerPurpose = "path-file" | "template-file" | "template-module-directory"
 
 const props = defineProps<{
   open: boolean
   entry: EditableContextPathEntry | null
   cardId: string
+  agentPath: string
   modules: PlatformStudioModuleInfo[]
   enabledModules: string[]
 }>()
@@ -183,6 +246,7 @@ const emit = defineEmits<{
   (event: "save", entry: EditableContextPathEntry, enabledModules?: string[]): void
 }>()
 
+const router = useRouter()
 const draft = ref<EditableContextPathEntry | null>(null)
 const enabledModulesDraft = ref<string[]>([])
 const fileDraft = ref("")
@@ -191,7 +255,33 @@ const loadedPath = ref("")
 const loadingFile = ref(false)
 const fileError = ref("")
 const error = ref("")
+const pickerOpen = ref(false)
+const pickerMode = ref<"file" | "directory">("file")
+const pickerPurpose = ref<PickerPurpose>("path-file")
+const pickerInitialPath = ref("")
 
+const agentDirectory = computed(() => directoryOf(props.agentPath))
+const hasDraftChanges = computed(() => {
+  const current = draft.value
+  const source = props.entry
+  if (!current || !source) {
+    return false
+  }
+  if (current.kind !== source.kind) {
+    return true
+  }
+  if (current.kind === "path") {
+    return current.path.trim() !== source.path.trim()
+      || current.role !== source.role
+      || current.position !== source.position
+      || fileDraft.value !== fileOriginal.value
+      || enabledModulesChanged()
+  }
+  return current.template !== source.template
+    || current.role !== source.role
+    || current.position !== source.position
+    || enabledModulesChanged()
+})
 const currentModuleMacroText = computed(() => {
   if (!draft.value) {
     return ""
@@ -200,13 +290,15 @@ const currentModuleMacroText = computed(() => {
 })
 const currentModuleMacroPaths = computed(() => extractEnabledModuleMacroPaths(currentModuleMacroText.value))
 const hasModuleMacros = computed(() => currentModuleMacroPaths.value.length > 0)
-const modulesForCurrentMacros = computed(() => {
-  const macroPaths = currentModuleMacroPaths.value
-  if (macroPaths.length === 0) {
-    return []
+const moduleSwitchGroups = computed(() => buildModuleSwitchGroups(props.modules, currentModuleMacroPaths.value))
+const pickerTitle = computed(() => {
+  if (pickerPurpose.value === "path-file") {
+    return "选择引用文件"
   }
-  return props.modules.filter((module) =>
-    macroPaths.some((macroPath) => modulePathMatchesEnabledMacroPath(module.path, macroPath)))
+  if (pickerPurpose.value === "template-file") {
+    return "选择要插入的文件宏"
+  }
+  return "选择模块目录"
 })
 
 watch(
@@ -221,6 +313,7 @@ watch(
       fileError.value = ""
       error.value = ""
       enabledModulesDraft.value = []
+      pickerOpen.value = false
       return
     }
 
@@ -270,7 +363,88 @@ function requireDraft(): EditableContextPathEntry | null {
 }
 
 function normalizePath(value: string): string {
-  return value.trim().replace(/\\+/g, "/").replace(/^\/+/, "")
+  return value.trim().replace(/\\+/g, "/").replace(/^\/+/, "").replace(/\/+/g, "/").replace(/\/+$/, "")
+}
+
+function directoryOf(path: string): string {
+  const parts = normalizePath(path).split("/").filter(Boolean)
+  parts.pop()
+  return parts.join("/")
+}
+
+function createEditorSessionId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
+}
+
+function enabledModulesChanged(): boolean {
+  const baseline = new Set(props.enabledModules)
+  const current = new Set(enabledModulesDraft.value)
+  if (baseline.size !== current.size) {
+    return true
+  }
+  for (const stem of baseline) {
+    if (!current.has(stem)) {
+      return true
+    }
+  }
+  return false
+}
+
+async function confirmDiscardBeforeLeaving(): Promise<boolean> {
+  if (!hasDraftChanges.value) {
+    return true
+  }
+  return await confirmDialog({
+    title: "离开消息条目编辑",
+    message: "当前还有未保存的修改，如果此时离开会被丢弃。",
+    confirmText: "确认",
+    cancelText: "取消",
+    severity: "danger",
+  })
+}
+
+async function leaveDialogAndNavigate(navigate: () => void): Promise<void> {
+  const shouldLeave = await confirmDiscardBeforeLeaving()
+  if (!shouldLeave) {
+    return
+  }
+  emit("update:open", false)
+  await nextTick()
+  navigate()
+}
+
+async function openWorkspaceDirectory(path: string): Promise<void> {
+  const normalizedPath = normalizePath(path)
+  if (!normalizedPath) {
+    return
+  }
+  await leaveDialogAndNavigate(() => {
+    void router.push({
+      name: "workspace",
+      query: {
+        cardId: props.cardId,
+        path: directoryOf(normalizedPath),
+      },
+    })
+  })
+}
+
+async function openWorkspaceEditor(path: string): Promise<void> {
+  const normalizedPath = normalizePath(path)
+  if (!normalizedPath) {
+    return
+  }
+  await leaveDialogAndNavigate(() => {
+    void router.push({
+      name: "workspace-editor",
+      query: {
+        cardId: props.cardId,
+        path: normalizedPath,
+        mode: "edit",
+        editorId: createEditorSessionId(),
+      },
+    })
+  })
 }
 
 function rejectBinaryFile(file: WorkspaceFile): void {
@@ -309,6 +483,103 @@ async function loadFileContent(): Promise<void> {
     fileError.value = e instanceof Error ? e.message : "读取文件失败。"
   } finally {
     loadingFile.value = false
+  }
+}
+
+function openPicker(purpose: PickerPurpose, mode: "file" | "directory", initialPath: string): void {
+  pickerPurpose.value = purpose
+  pickerMode.value = mode
+  pickerInitialPath.value = normalizePath(initialPath)
+  pickerOpen.value = true
+  error.value = ""
+  fileError.value = ""
+}
+
+function openPathFilePicker(): void {
+  const currentPath = draft.value?.kind === "path" ? draft.value.path : ""
+  openPicker("path-file", "file", directoryOf(currentPath))
+}
+
+function openTemplateFilePicker(): void {
+  openPicker("template-file", "file", agentDirectory.value)
+}
+
+function openTemplateModuleDirectoryPicker(): void {
+  const preferredModuleDirectory = props.modules[0]
+    ? directoryOf(props.modules[0].path)
+    : `${agentDirectory.value}/modules`
+  openPicker("template-module-directory", "directory", preferredModuleDirectory)
+}
+
+function macroPathForAgentFile(path: string): string | null {
+  const normalizedPath = normalizePath(path)
+  const base = normalizePath(agentDirectory.value)
+  if (!base) {
+    return normalizedPath
+  }
+  if (normalizedPath === base) {
+    return ""
+  }
+  if (normalizedPath.startsWith(`${base}/`)) {
+    return normalizedPath.slice(base.length + 1)
+  }
+  return null
+}
+
+function appendTemplateMacro(macro: string): void {
+  const current = requireDraft()
+  if (!current || current.kind !== "template") {
+    return
+  }
+  current.template = current.template.trimEnd()
+    ? `${current.template.trimEnd()}\n${macro}`
+    : macro
+}
+
+function insertFileMacro(path: string): void {
+  const macroPath = macroPathForAgentFile(path)
+  if (!macroPath) {
+    error.value = "内联文件宏只能引用当前 Agent 目录内的文件。"
+    return
+  }
+  appendTemplateMacro(`{{file:${macroPath}}}`)
+}
+
+function isModulesMacroDirectory(path: string): boolean {
+  return path === "modules" || path.startsWith("modules/")
+}
+
+function insertModuleDirectoryMacro(path: string): void {
+  const macroPath = macroPathForAgentFile(path)
+  if (!macroPath || !isModulesMacroDirectory(macroPath)) {
+    error.value = "模块目录宏请选择当前 Agent 的 modules 目录或子目录。"
+    return
+  }
+  appendTemplateMacro(`{{file:${macroPath}/*.md?enabled}}`)
+}
+
+async function handlePickerSelect(path: string): Promise<void> {
+  const current = requireDraft()
+  if (!current) {
+    return
+  }
+
+  if (pickerPurpose.value === "path-file") {
+    if (current.kind !== "path") {
+      return
+    }
+    current.path = normalizePath(path)
+    await loadFileContent()
+    return
+  }
+
+  if (current.kind !== "template") {
+    return
+  }
+  if (pickerPurpose.value === "template-file") {
+    insertFileMacro(path)
+  } else {
+    insertModuleDirectoryMacro(path)
   }
 }
 
