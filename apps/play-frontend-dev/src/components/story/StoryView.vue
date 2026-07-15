@@ -37,7 +37,6 @@ const {
   streamingText,
   turnOptions,
   checkpoints,
-  openingNarrative,
   syncPhase,
   lastSendError,
   send,
@@ -91,9 +90,7 @@ const suppressTopAutoLoad = ref(false)
 
 const renderedTurnCount = computed(() => Math.max(0, turnCount.value - (streaming.value ? 0 : 1)))
 const latestVisibleStartTurn = computed(() => deriveLatestVisibleStartTurn(renderedTurnCount.value))
-const earliestTurnVisible = computed(() => visibleStartTurn.value <= 1)
 const hasOlderTurns = computed(() => visibleStartTurn.value > 1)
-const showOpeningNarrative = computed(() => Boolean(openingNarrative.value) && earliestTurnVisible.value)
 const turnOptionsForDisplay = computed<string[]>(() => [...turnOptions.value])
 
 function deriveLatestVisibleStartTurn(totalTurns: number): number {
@@ -252,7 +249,7 @@ function onRestoreRevealed() {
 // 检查点标记：在对应 turn 的 assistant 消息后插入 CheckpointMark。
 type MergedItem =
   | Extract<StreamItem, { kind: "user" }>
-  | Extract<StreamItem, { kind: "assistant" }>
+  | (Extract<StreamItem, { kind: "assistant" }> & { turn: number })
   | { kind: "round-process"; id: string; round: number; nodes: ProcessNodeData[] }
   | { kind: "checkpoint"; id: string; checkpointId: string; turn: number; createdAt: number }
 
@@ -269,12 +266,7 @@ const mergedStream = computed(() => {
   const result: MergedItem[] = []
   const src = visibleStream.value
   const cpMap = checkpointByTurn.value
-  // initial 检查点（turn=0）只在最早 turn 可见时插入，避免最近窗口顶部误接开局。
-  const cp0 = cpMap.get(0)
-  if (cp0 && earliestTurnVisible.value) {
-    result.push({ kind: "checkpoint", id: `cp-${cp0.turn}`, checkpointId: cp0.id, turn: cp0.turn, createdAt: cp0.createdAt })
-  }
-  let currentTurn = visibleStartTurn.value - 1  // 追踪当前 turn 编号（user 出现时 +1）
+  let currentTurn = visibleStartTurn.value - 1  // 追踪当前 turn 编号（user 出现时 +1；assistant-only 开局归属 turn 0）
   let i = 0
   while (i < src.length) {
     const item = src[i]!
@@ -285,7 +277,7 @@ const mergedStream = computed(() => {
       continue
     }
     if (item.kind === "assistant") {
-      result.push(item)
+      result.push({ ...item, turn: currentTurn })
       // 在该 turn 的 assistant 后插入检查点标记（如果有）
       const cp = cpMap.get(currentTurn)
       if (cp) {
@@ -384,13 +376,6 @@ function onEdit(content: string) {
     <!-- 滚动区：flex:1 占满剩余空间，内部 52em 居中正文流 -->
     <div class="story-scroll" ref="storyRef" @scroll="onStoryScroll">
       <div class="story-inner">
-        <!-- 开局叙事：独立于 stream，最早 turn 可见时才接在正式历史前方 -->
-        <NarrativeMessage
-          v-if="showOpeningNarrative"
-          :content="openingNarrative ?? ''"
-          class="opening-narrative"
-        />
-
         <div
           v-if="hasOlderTurns"
           class="history-loader"
@@ -411,7 +396,11 @@ function onEdit(content: string) {
             :editable="item.id === lastUserMsgId"
             @edit="onEdit"
           />
-          <NarrativeMessage v-else-if="item.kind === 'assistant'" :content="item.content" />
+          <NarrativeMessage
+            v-else-if="item.kind === 'assistant'"
+            :content="item.content"
+            :class="{ 'opening-narrative': item.turn === 0 }"
+          />
           <CheckpointMark
             v-else-if="item.kind === 'checkpoint'"
             :turn="item.turn"
@@ -443,8 +432,8 @@ function onEdit(content: string) {
           @select="onSelectOption"
         />
 
-        <!-- 空状态（有开局叙事时不显示） -->
-        <div v-if="stream.length === 0 && !openingNarrative && !streaming" class="empty-state">
+        <!-- 空状态 -->
+        <div v-if="stream.length === 0 && !streaming" class="empty-state">
           <p class="empty-title">故事尚未开始</p>
           <p class="empty-hint">在下方写下你的行动…</p>
         </div>

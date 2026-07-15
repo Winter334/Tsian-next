@@ -58,11 +58,6 @@ const streamingReasoning = ref("")
 // 当前轮剧情选项（onTurnEnd 填充，send 时清空）
 const turnOptions = ref<string[]>([])
 
-// 开局叙事（Step 4 对话收尾写入 opening-narrative.json，进入 play 后 StoryView 特殊渲染）
-// 独立于 stream——reloadHistory/restore 替换 stream 时不会被冲掉
-const openingNarrative = ref<string | null>(null)
-const PLAY_SETUP_CONTEXT_PATH = "save/agents/world-architect/context-play-setup.json"
-
 // 最近一次 send 被阻断的原因（design §5 / §9）。
 // - blocked 分支：不推 user StreamItem、不切 turnPhase、不发 tsian.send，仅置此 ref。
 // - 下次 send 进入前置检查前清空。UI（StoryView）v-if 渲染 banner。
@@ -170,8 +165,8 @@ function subscribe(): void {
       streamingReasoning.value = ""
       turnOptions.value = parsed.options.length > 0 ? parsed.options : (result.options ?? [])
       turnPhase.value = "standby"
-      const completedTurn = result.turn ?? turnCount.value + 1
-      turnCount.value = completedTurn
+      const completedTurn = result.turn ?? turnCount.value
+      turnCount.value = completedTurn + 1
       // 回合后同步：正文落定后发起回合后维护 Agent 调用（若卡配置了 postTurnMaintenance）。
       // triggerSyncAfterTurn 内部读 entrypoints 决定是否启动；不阻塞主回合流程。
       void triggerSyncAfterTurn(completedTurn)
@@ -235,7 +230,6 @@ export function useTsian() {
     streamingText: readonly(streamingText),
     turnOptions: readonly(turnOptions),
     checkpoints: readonly(checkpoints),
-    openingNarrative: readonly(openingNarrative),
     syncPhase,
     lastSendError: readonly(lastSendError),
 
@@ -330,25 +324,6 @@ export function useTsian() {
     async loadCheckpoints(): Promise<void> {
       checkpoints.value = await tsian.checkpoints.list()
     },
-    /** 读取开局叙事（Step 4 对话收尾写入 opening-narrative.json）。
-     *  供 Step 5 确认 / enterPlay 时调用，StoryView 特殊渲染为第一条消息。
-     *  同时从 play-setup context slot 恢复最后一条 agent 选项，避免开局初始选项丢失。 */
-    async loadOpeningNarrative(): Promise<void> {
-      try {
-        const file = await tsian.workspace.read("save/playthrough/opening-narrative.json")
-        if (file?.content) {
-          const data = JSON.parse(file.content) as { narrative?: string | null }
-          openingNarrative.value = typeof data.narrative === "string" && data.narrative.trim()
-            ? data.narrative
-            : null
-        } else {
-          openingNarrative.value = null
-        }
-      } catch {
-        openingNarrative.value = null
-      }
-      await loadPlaySetupOptions()
-    },
     /** 恢复到指定检查点。host 执行 restore（裁剪 turn 文件 + 删除未来 checkpoint）后，
      *  前端重建 stream + checkpoints + 兜底恢复最后一轮选项。 */
     async restore(checkpointId: string): Promise<void> {
@@ -356,31 +331,6 @@ export function useTsian() {
       await reloadHistory()
       await tsian.checkpoints.list().then((cps) => { checkpoints.value = cps })
     },
-  }
-
-  /** 从 Step 4 play-setup context slot 恢复最后一条 agent 回复中的 [[选项]]。
-   *  openingNarrative 不是正式 turn 文件，Step 4 收尾回复里的初始选项也不会进入 turnOptions；
-   *  enterPlay 前调用本函数，把初始选项带到 StoryView。 */
-  async function loadPlaySetupOptions(): Promise<void> {
-    // 已有正式回合选项时不覆盖（例如用户已经开始游玩后重新加载 openingNarrative）
-    if (turnOptions.value.length > 0) return
-    try {
-      const file = await tsian.workspace.read(PLAY_SETUP_CONTEXT_PATH)
-      if (!file?.content) return
-      const data = JSON.parse(file.content) as { recentTurns?: Array<{ role?: string; content?: string }> }
-      const recentTurns = Array.isArray(data.recentTurns) ? data.recentTurns : []
-      for (let i = recentTurns.length - 1; i >= 0; i -= 1) {
-        const entry = recentTurns[i]
-        if (entry?.role !== "assistant" || typeof entry.content !== "string") continue
-        const parsed = parseStoryOptions(entry.content)
-        if (parsed.options.length > 0) {
-          turnOptions.value = parsed.options
-        }
-        return
-      }
-    } catch {
-      // 初始选项是增强展示；失败时不阻塞进入 StoryView。
-    }
   }
 
   /** 从 workspace turn 文件单源重建对话（首次加载 + restore 回溯后复用）。
@@ -421,19 +371,24 @@ export function useTsian() {
     // 了 options 时，才恢复它们（会话重开场景）。
     turnOptions.value = []
     // 兜底恢复最后一轮未选的选项：会话中途关闭再重开时，玩家尚未选择
-    // 的剧情选项应继续显示。host 已把 options 持久化进 timeline，这里从
-    // 最后一轮倒序找 options 项填进 turnOptions（实时轮选项走 onTurnEnd 填充，
-    // 此处只补 loadHistory/reloadHistory 时的一次性恢复）。
+    // 的剧情选项应继续显示。默认前端从 assistant 正文约定解析 [[选项]]；
+    // legacy turn 的结构化 options 项仍作为兜底。
     if (h.entries.length > 0) {
       const lastEntry = h.entries[h.entries.length - 1]!
-      const lastOptions = [...lastEntry.timeline].reverse().find((it) => it.kind === "options")
-      if (lastOptions && lastOptions.kind === "options" && lastOptions.items.length > 0) {
-        turnOptions.value = lastOptions.items
+      for (let itemIndex = lastEntry.timeline.length - 1; itemIndex >= 0; itemIndex -= 1) {
+        const item = lastEntry.timeline[itemIndex]!
+        if (item.kind === "assistant") {
+          const parsed = parseStoryOptions(item.content)
+          if (parsed.options.length > 0) {
+            turnOptions.value = parsed.options
+          }
+          return
+        }
+        if (item.kind === "options" && item.items.length > 0) {
+          turnOptions.value = item.items
+          return
+        }
       }
-    }
-    // 开局叙事不是正式 turn 文件；如果尚无正式历史选项，则从 Step 4 对话 context 兜底恢复初始选项。
-    if (turnOptions.value.length === 0 && openingNarrative.value) {
-      await loadPlaySetupOptions()
     }
   }
 }
