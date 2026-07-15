@@ -66,9 +66,9 @@ const POSITION_DESCRIPTIONS: Record<ContextPathPosition, string> = {
 }
 
 const ROLE_LABELS: Record<ContextPathRole, string> = {
-  system: "规则",
-  user: "资料",
-  assistant: "预填充",
+  system: "System",
+  user: "User",
+  assistant: "Assistant",
 }
 
 let nextEntryId = 0
