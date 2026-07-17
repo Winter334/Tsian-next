@@ -1839,3 +1839,37 @@ Planned reply projection/opening history task tree, implemented child task to re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 152: Text Tool Protocol v2
+
+**Date**: 2026-07-17
+**Task**: Text Tool Protocol v2
+**Package**: platform-web
+**Branch**: `task/model-tool-probe-gemini-fetch`
+
+### Summary
+
+Implemented Text Tool Protocol v2 as a peer text-based tool-calling mode: schema-derived manifest, v2 JSON-array calls, stable text call ids, non-executable replay records/observations, protocol-error retry handling, neutral settings/probe wording, and updated specs.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7c62392` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

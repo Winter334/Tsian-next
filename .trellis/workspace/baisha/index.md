@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-3.md`
-- **Total Sessions**: 151
-- **Last Active**: 2026-07-15
+- **Total Sessions**: 152
+- **Last Active**: 2026-07-17
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~1841 | Active |
+| `journal-3.md` | ~1875 | Active |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +31,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 152 | 2026-07-17 | Text Tool Protocol v2 | `7c62392` | `task/model-tool-probe-gemini-fetch` |
 | 151 | 2026-07-15 | Opening turn history | `a7c0cd4` | `feat/studio-message-layer-role-ui` |
 | 150 | 2026-07-13 | stage-manager 维护优化第二轮 | `2d7c73d` | `task/stage-manager-maintenance-round2` |
 | 149 | 2026-07-13 | stage-manager 回合后维护优化 | `a3abcad` | `task/stage-manager-post-turn-optimize` |
