@@ -20,11 +20,11 @@
 
 ## Acceptance Criteria
 
-- [ ] `platform-host/index.ts` 聚焦 bridge assembly / barrel / re-export。
-- [ ] 被抽出的 host modules 命名符合职责。
-- [ ] Bridge API、runtime trace path、workspace action commit 语义保持不变。
-- [ ] `npm run build:web` 通过。
-- [ ] 无循环依赖、无死 import。
+- [x] `platform-host/index.ts` 聚焦 bridge assembly / barrel / re-export。
+- [x] 被抽出的 host modules 命名符合职责。
+- [x] Bridge API、runtime trace path、workspace action commit 语义保持不变。
+- [x] `npm run build:web` 通过。
+- [x] 无循环依赖、无死 import。
 
 ## Out of Scope
 
