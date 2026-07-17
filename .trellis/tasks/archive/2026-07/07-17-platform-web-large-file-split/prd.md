@@ -50,11 +50,11 @@
 
 ## Acceptance Criteria
 
-- [ ] 已创建并链接 6 个子任务，且每个子任务有面向自身文件特点的拆分策略。
-- [ ] 每个子任务的规划中都包含备份/回滚步骤，不允许无基线直接改大文件。
-- [ ] 每个子任务完成后 `npm run build:web` 通过，失败结果必须如实记录并回滚或修复。
-- [ ] 父任务最终复核确认目标大文件不再作为新职责堆积点；保留下来的大文件必须有明确理由。
-- [ ] 父任务最终复核确认没有改变 AI provider 行为、Agent Runtime turn 语义、默认 workspace 文件内容、platform bridge API 或 Assistant UI 行为，除非对应子任务获得单独批准。
+- [x] 已创建并链接 6 个子任务，且每个子任务有面向自身文件特点的拆分策略。
+- [x] 每个子任务的规划中都包含备份/回滚步骤，不允许无基线直接改大文件。
+- [x] 每个子任务完成后 `npm run build:web` 通过，失败结果必须如实记录并回滚或修复。
+- [x] 父任务最终复核确认目标大文件不再作为新职责堆积点；保留下来的大文件必须有明确理由。
+- [x] 父任务最终复核确认没有改变 AI provider 行为、Agent Runtime turn 语义、默认 workspace 文件内容、platform bridge API 或 Assistant UI 行为，除非对应子任务获得单独批准。
 
 ## Out of Scope
 
