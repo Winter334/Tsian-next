@@ -1873,3 +1873,41 @@ Implemented Text Tool Protocol v2 as a peer text-based tool-calling mode: schema
 ### Next Steps
 
 - None - task complete
+
+
+## Session 153: Platform Web 大文件拆分
+
+**Date**: 2026-07-17
+**Task**: Platform Web 大文件拆分
+**Package**: platform-web
+**Branch**: `task/model-tool-probe-gemini-fetch`
+
+### Summary
+
+完成 platform-web 六个大文件/区域的结构性拆分：workspace templates、AI config/runtime、workspace tools、agent-runtime index、platform-host index、AssistantView；所有子任务归档，最终 build:web 通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8466711` | (see git log) |
+| `b86c76d` | (see git log) |
+| `d3a1f50` | (see git log) |
+| `11d2655` | (see git log) |
+| `f065e38` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
