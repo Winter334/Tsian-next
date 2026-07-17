@@ -20,11 +20,11 @@
 
 ## Acceptance Criteria
 
-- [ ] `AssistantView.vue` 降为 route shell，不再承载所有 UI 和状态细节。
-- [ ] 子组件 props/emits 明确，未引入隐式全局状态。
-- [ ] 主要 Assistant 交互路径保持不变。
-- [ ] `npm run build:web` 通过。
-- [ ] 回滚点按 UI seam 记录。
+- [x] `AssistantView.vue` 降为 route shell，不再承载所有 UI 和状态细节。
+- [x] 子组件 props/emits 明确，未引入隐式全局状态。
+- [x] 主要 Assistant 交互路径保持不变。
+- [x] `npm run build:web` 通过。
+- [x] 回滚点按 UI seam 记录。
 
 ## Out of Scope
 
