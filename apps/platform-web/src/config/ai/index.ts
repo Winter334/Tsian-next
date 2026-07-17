@@ -21,7 +21,7 @@ export type {
   BrowserOpenAiCompatibleModelParameters,
   BrowserOpenAiResponsesModelParameters,
   BrowserPlatformConfigDraft,
-} from "./ai/types"
+} from "./types"
 export {
   DEFAULT_BROWSER_AI_STREAMING,
   DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
@@ -32,8 +32,8 @@ export {
   createDefaultBrowserGeminiModelParameters,
   createDefaultBrowserOpenAiCompatibleModelParameters,
   createDefaultBrowserOpenAiResponsesModelParameters,
-} from "./ai/defaults"
-export type { BrowserAiActiveProviderParameters } from "./ai/normalize"
+} from "./defaults"
+export type { BrowserAiActiveProviderParameters } from "./normalize"
 export {
   cloneBrowserAiModelParameters,
   createBrowserAiModelConfig,
@@ -44,7 +44,7 @@ export {
   providerParamsForKind,
   validateBrowserAiModelParameters,
   validateBrowserPlatformConfigDraft,
-} from "./ai/normalize"
+} from "./normalize"
 export {
   PROVIDER_TYPE_KINDS,
   createBrowserAiProviderPreset,
@@ -64,5 +64,5 @@ export {
   saveBrowserPlatformConfigDraft,
   saveBrowserPlatformConfigDraftLenient,
   saveEmbeddingConfig,
-} from "./ai/providers"
-export { fetchBrowserAiProviderModels } from "./ai/model-fetch"
+} from "./providers"
+export { fetchBrowserAiProviderModels } from "./model-fetch"

@@ -10,13 +10,13 @@ export type {
   RuntimeChatMessage,
   StreamAssistantReplyNativeOptions,
   StreamAssistantReplyTextOptions,
-} from "./ai/types"
-export { getAiDebugRecords } from "./ai/debug-records"
+} from "./types"
+export { getAiDebugRecords } from "./debug-records"
 export {
   generateAssistantReply,
   generateAssistantReplyNative,
   streamAssistantReplyNative,
   streamAssistantReplyText,
-} from "./ai/calls"
-export { probeAssistantNativeToolCalling } from "./ai/probes"
-export { stripForDisplay } from "./ai/tool-calls"
+} from "./calls"
+export { probeAssistantNativeToolCalling } from "./probes"
+export { stripForDisplay } from "./tool-calls"

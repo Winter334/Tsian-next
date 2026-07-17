@@ -1,0 +1,33 @@
+{
+  "id": "platform-web-large-file-split",
+  "name": "platform-web-large-file-split",
+  "title": "Platform Web 大文件拆分",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-07-17",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "task/model-tool-probe-gemini-fetch",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-17-split-workspace-templates",
+    "07-17-split-ai-config-runtime",
+    "07-17-split-agent-runtime-workspace-tools",
+    "07-17-split-agent-runtime-index",
+    "07-17-split-assistant-view",
+    "07-17-split-platform-host-index"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

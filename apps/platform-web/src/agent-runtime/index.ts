@@ -4,8 +4,6 @@ import type {
   AgentContextSnapshot,
   AgentContextToolCall,
   AgentContextToolMemory,
-  ContextInjection,
-  ContextPathPosition,
   TurnTimelineItem,
   AiChatMessage,
   AskUserRequest,
@@ -74,8 +72,6 @@ import {
   type RuntimeBrowserScriptExecutorRequest,
   type RuntimeWorkspaceToolObservation,
   type RuntimeWorkspaceToolSessionState,
-  collectActivatedSkillContents,
-  type ActivatedSkillContent,
 } from "./workspace-tools"
 import {
   assignTextToolCallIds,
@@ -83,7 +79,6 @@ import {
   formatTextToolManifest,
   formatTextToolObservations,
   formatTextToolProtocolError,
-  isTextToolInteractionMessage,
   parseTextToolProtocolResponse,
   stripTextProtocolArtifacts,
   TEXT_TOOL_CALLS_CLOSE_TAG,
@@ -101,6 +96,28 @@ import {
   renderToolMemoriesForModel,
 } from "./tool-memory"
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
+import {
+  buildAgentContextMessages,
+  locateHistorySpan,
+  locateTaskInteractionSpan,
+  replaceHistorySpan,
+} from "./orchestration/history"
+import {
+  mergeConsecutiveRoleMessages,
+  stripInternalMarkers,
+} from "./orchestration/message-formatting"
+import {
+  PLAYER_INPUT_TAG,
+  TOOL_MEMORY_TAG,
+  TURN_RUNTIME_TAG,
+  buildPreludeMessages,
+  buildRuntimeMessages,
+  contextInjectionsToMessages,
+} from "./orchestration/context-injections"
+import {
+  injectActivatedSkillMessagesNative,
+  injectActivatedSkillMessagesText,
+} from "./orchestration/skill-activation"
 
 // barrel re-export (public API — 8 types)
 export type {
@@ -128,15 +145,6 @@ import type {
 function resolveEntryCompressionMode(input: AgentRuntimeTurnInput): RuntimeCompressionMode {
   return input.compressionMode ?? "narrative"
 }
-
-// ─── 固定层标记前缀 ────────────────────────────────────────────────────
-// locateHistorySpan 按这些前缀识别消息边界（不依赖 role）。
-// stripInternalMarkers 在发送给模型前剥离这些前缀（模型不可见）。
-const LAYER_PREFIX = "<!-- tsian-layer:"
-const CONTEXT_META_TAG = "<!-- tsian-layer: context-meta -->"
-const TOOL_MEMORY_TAG = "<!-- tsian-layer: tool-memory -->"
-const TURN_RUNTIME_TAG = "<!-- tsian-layer: turn-runtime -->"
-const PLAYER_INPUT_TAG = "<!-- tsian-layer: player-input -->"
 
 /**
  * 判断 entry agent 是否为桌面助手(local agent,非 AIRP 剧情入口).
@@ -258,276 +266,8 @@ function formatHistory(history: ConversationMessageRecord[]): string {
     .join("\n")
 }
 
-/**
- * 把 agent 会话上下文快照展开为对话正文 message 序列。
- *
- * summary(若有)作一条 user message 前言(早期任务/剧情摘要);recentTurns 每条
- * 展开为独立 user/assistant message。新结构中 recentTurns 只承载文本对话，
- * 历史工具行动痕迹由 top-level toolMemories 另行渲染为普通工作日志，不再
- * 还原为 provider tool protocol 历史消息。
- */
-function buildAgentContextMessages(
-  context: AgentContextSnapshot,
-  isAssistant: boolean,
-  historySummaryRole: "system" | "user" | "assistant" = "user",
-): RuntimeChatMessage[] {
-  const messages: RuntimeChatMessage[] = []
-  if (context.summary) {
-    const summaryLabel = isAssistant ? "早期任务摘要" : "早期剧情摘要"
-    messages.push({ role: historySummaryRole, content: `${summaryLabel}：\n${context.summary}` })
-  }
-  if (context.recentTurns.length === 0) {
-    if (!context.summary) {
-      messages.push({ role: historySummaryRole, content: "（暂无历史对话）" })
-    }
-  } else {
-    for (const entry of context.recentTurns) {
-      messages.push({ role: entry.role, content: entry.content })
-    }
-  }
-  return messages
-}
-
-/**
- * 定位工具循环 messages 里的剧情正文段边界,供 turn 内压剧情后 slice+替换用
- * (design §2.4).剧情段 = prelude 段之后、runtime 段之前的独立 message
- * 序列(summary + recentTurns).顺序:system → prelude → history → runtime
- * → turn.runtime → turn.input ...,故 history 段在 prelude 之后开始.
- * 框架信息锚点:当前回合:/当前问答轮次:(runtime 段在 history 之后,
- * 属动态段,不再是 history 的一部分).
- *
- * 返回 { start, end }(半开区间),start<0 表示无独立剧情段可压,调用方跳过压缩:
- * - entry 稳态路径(注入了 agentContext):start=prelude 后, end=框架信息前.
- * - entry 兜底路径(未注入,剧情段首条是"最近对话："拍扁文本):{-1,-1}.
- * - delegated agent 路径(调用方 Agent 非剧情段,无独立剧情段可压):{-1,-1}.
- * - 无框架信息锚点(结构不符):{-1,-1}.
- */
-/** 消息形状(content 放宽以兼容多模态). 历史段/工具交互段的 content 在实践中始终是 string
- *  (多模态 ContentPart 只出现在当前轮 user 输入),但类型层面需要兼容. */
-type MessageLike = { role: string; content: string | ContentPart[]; toolCalls?: unknown[] }
-
-function messageContentToText(content: string | ContentPart[]): string {
-  if (typeof content === "string") return content
-  return content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text")
-    .map((part) => part.text)
-    .join("")
-}
-
-function locateHistorySpan(
-  messages: ReadonlyArray<MessageLike>,
-): { start: number; end: number } {
-  if (messages.length <= 1) {
-    return { start: -1, end: -1 }
-  }
-  // prelude 段（context-meta 元信息 + prelude position 注入）插在 systemPrompt 和
-  // history 之间。prelude 注入消息以 `<!-- source: xxx -->` 前缀开头，context-meta 头
-  // 以 `<!-- tsian-layer: context-meta -->` 前缀开头。扫描跳过这两种前缀的消息，
-  // 找到 history 段起点。无 prelude 注入时：messages[1] 不含这两种前缀 → start 停在 1。
-  let start = 1
-  while (start < messages.length) {
-    const text = messageContentToText(messages[start].content)
-    if (text.startsWith("<!-- source:") || text.startsWith(LAYER_PREFIX)) {
-      start += 1
-      continue
-    }
-    break
-  }
-  // 扫描后 start 指向第一条非 prelude 消息。若已越界，结构异常。
-  if (start >= messages.length) {
-    return { start: -1, end: -1 }
-  }
-  const firstHistoryText = messageContentToText(messages[start].content)
-  // 兜底路径(未注入 agentContext):剧情段首条是"最近对话："拍扁文本,无独立 message 序列.
-  if (firstHistoryText.startsWith("最近对话：")) {
-    return { start: -1, end: -1 }
-  }
-  // delegated agent:history 段首条是"最近对话窗口："（buildDelegatedAgentMessages 产出），
-  // 无独立剧情 message 序列可压（delegated 无 agentContext 快照注入）。
-  // 注意：delegated 路径的"调用方 Agent："在 prelude 注入之后，已被上面的前缀扫描跳过；
-  // 无 prelude 时 start=1 仍指向"调用方 Agent："。
-  if (firstHistoryText.startsWith("调用方 Agent：")) {
-    return { start: -1, end: -1 }
-  }
-  // end: 扫描第一条带 <!-- tsian-layer: 前缀的消息（固定层标记），即为 history 段终点。
-  // history 之后的第一个固定层是 runtime 段的 context-meta 头（如果 runtime 段有注入
-  // 文件，它们以 <!-- source: 开头，不带固定层标记，会被跳过——end 会扫到 turn-runtime）。
-  // 不依赖 role——固定层的 role 可由 messageLayers 配置改变。
-  let end = -1
-  for (let i = start + 1; i < messages.length; i += 1) {
-    const text = messageContentToText(messages[i].content)
-    if (text.startsWith(LAYER_PREFIX)) {
-      end = i
-      break
-    }
-  }
-  if (end === -1) {
-    return { start: -1, end: -1 }
-  }
-  return { start, end }
-}
-
-/**
- * 用压缩后的快照重建剧情段并 splice 替换原段(design §2.4).两种循环都直接用
- * buildAgentContextMessages 的结果(native 产 RuntimeChatMessage[],text 产同结构).
- * buildAgentContextMessages 产出的 AiChatMessage[].system / 框架信息 /
- * 本轮输入 / 后续 tool 交互保留不动.
- */
-function replaceHistorySpan<T extends MessageLike>(
-  messages: T[],
-  span: { start: number; end: number },
-  newMessages: T[],
-): void {
-  messages.splice(span.start, span.end - span.start, ...newMessages)
-}
-
-/**
- * 列举一个 message 是否属于"工具交互"(供 locateTaskInteractionSpan 从末尾向前扫描).
- * - native 形态:`role === "tool"` 或 `role === "assistant" && toolCalls?.length > 0`.
- * - text 形态：Text Tool Protocol v2 的 call-records / observations /
- *   protocol-error 消息。
- *
- * 框架段 user(含历史窗口/目标上下文/请求等 section)不含这些标签,不会被误判为工具交互.
- */
-function isTaskInteractionMessage(
-  message: MessageLike,
-  mode: "native" | "text",
-): boolean {
-  if (mode === "native") {
-    if (message.role === "tool") return true
-    if (message.role === "assistant" && Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
-      return true
-    }
-    return false
-  }
-  // text
-  return isTextToolInteractionMessage(message)
-}
-
-/**
- * 定位任务型 messages 的工具交互段边界,供任务压缩 slice+替换用(design §2.8).
- * 工具交互段 = 框架段之后到 messages 末尾(assistant toolCalls + tool observation 交替).
- * 从末尾向前扫描,跳过所有"工具交互 message",定位到第一条"非工具交互"message 的下一索引.
- *
- * 两种 messages 结构都适用(delegated 单条框架 user / assistant entry 多条框架),扫描逻辑
- * 不依赖框架段锚点,只依赖工具交互的 message 形态.兜底(无工具交互)→ {-1,-1},跳过压缩.
- */
-function locateTaskInteractionSpan(
-  messages: ReadonlyArray<MessageLike>,
-  mode: "native" | "text",
-): { start: number; end: number } {
-  if (messages.length === 0) return { start: -1, end: -1 }
-  let idx = messages.length - 1
-  while (idx >= 0 && isTaskInteractionMessage(messages[idx], mode)) {
-    idx -= 1
-  }
-  // idx 指向最后一条"非工具交互"message(或 -1 表示全是工具交互,异常结构).
-  // 工具交互段起点 = idx + 1.若 idx+1 >= messages.length → 无工具交互段.
-  const start = idx + 1
-  if (start >= messages.length) return { start: -1, end: -1 }
-  return { start, end: messages.length }
-}
-
 function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
   return input.turn + 1
-}
-
-function formatWorkspaceFile(file: WorkspaceFile): string {
-  const content = file.content.trim() || "（空文件）"
-  return [
-    `--- ${file.path} ---`,
-    content,
-  ].join("\n")
-}
-
-function formatOptionalWorkspaceFile(
-  label: string,
-  file: WorkspaceFile | undefined,
-): string {
-  if (!file) {
-    return `${label}：\n（未提供）`
-  }
-
-  return `${label}：\n${formatWorkspaceFile(file)}`
-}
-
-function formatMissingContextPaths(context: AgentContextEntry): string {
-  if (context.missingContextPaths.length === 0) {
-    return "（无缺失 contextPaths）"
-  }
-
-  return context.missingContextPaths.map((path) => `- ${path}`).join("\n")
-}
-
-function formatSkillIndex(context: AgentContextEntry): string {
-  if (context.skillIndex.length === 0) {
-    return "（暂无可见 Skill）"
-  }
-
-  return context.skillIndex
-    .map((skill) => {
-      const triggers = skill.triggers.length
-        ? ` triggers=${skill.triggers.join(", ")}`
-        : ""
-      return `- ${skill.name}: ${skill.description || skill.summary || "（无描述）"}${triggers}`
-    })
-    .join("\n")
-}
-
-/**
- * Build the context message body for a skill whose full SKILL.md was activated
- * via use_skill. The framework injects this as a user message after the round's
- * tool observations so the model sees the skill text in the next round without
- * spending a tool-result round on it. Both tool loops (native and text) call
- * this via collectActivatedSkillContents + this body builder.
- *
- * Skill 是卡模板精心设计的可控内容，全文注入。截断会让 tsian-actions JSON
- * 块的 inputSchema 可能丢失——agent 不知道脚本参数，是难以察觉的问题。
- */
-function formatActivatedSkillMessageBody(skill: ActivatedSkillContent): string {
-  const header = `已激活 Skill「${skill.name}」。以下是该 Skill 的说明；遵循其指导，并用 run_script 执行其声明的 browser_script action。`
-  return [header, "", skill.content].join("\n")
-}
-
-/**
- * Inject full SKILL.md content for skills newly activated via use_skill into
- * the native tool-loop message array. Called after the round's tool
- * observations are threaded back, before the next model call. Mutates
- * `messages` in place (native loop uses a mutable array).
- */
-function injectActivatedSkillMessagesNative(
-  messages: RuntimeChatMessage[],
-  sessionState: RuntimeWorkspaceToolSessionState | undefined,
-  workspaceFiles: WorkspaceFile[],
-): void {
-  const contents = collectActivatedSkillContents(sessionState, workspaceFiles)
-  for (const skill of contents) {
-    messages.push({
-      role: "user",
-      content: formatActivatedSkillMessageBody(skill),
-    })
-  }
-}
-
-/**
- * Inject full SKILL.md content for skills newly activated via use_skill into
- * the text tool-loop message array. Returns a new array (text loop keeps an
- * immutable nextMessages style).
- */
-function injectActivatedSkillMessagesText(
-  messages: AiChatMessage[],
-  sessionState: RuntimeWorkspaceToolSessionState | undefined,
-  workspaceFiles: WorkspaceFile[],
-): AiChatMessage[] {
-  const contents = collectActivatedSkillContents(sessionState, workspaceFiles)
-  if (contents.length === 0) {
-    return messages
-  }
-  const injected: AiChatMessage[] = contents.map((skill) => ({
-    role: "user",
-    content: formatActivatedSkillMessageBody(skill),
-  }))
-  return [...messages, ...injected]
 }
 
 function getVisibleAgentContacts(
@@ -651,151 +391,6 @@ function buildWorkspaceToolInstructions(
     formatTextToolManifest(options.tools),
     "可执行协议块前后的普通文字会作为过程文本保留；不要把工具观察、调用记录或协议标签放进最终回复。",
     "收到 observations 后继续完成任务；最终输出不要包含协议标签、observation、工具细节或实现说明。",
-  ].join("\n")
-}
-
-/**
- * 把一组 ContextInjection 编译成逐条 RuntimeChatMessage。每条注入消息用 HTML 注释
- * 前缀标注来源（`<!-- source: xxx -->`），供 locateHistorySpan 扫描识别 prelude
- * 注入消息，以及 debug 时辨别来源。注释在合并时被保留（整合器只做 role 合并 + 换行
- * 拼接，不删注释），模型将 HTML 注释视为元信息，不影响理解。
- *
- * 每个 injection 产出一条独立消息（不合并），合并由 mergeConsecutiveRoleMessages
- * 整合器在发送给模型前统一处理。保持逐条产出是为了 locateHistorySpan/replaceHistorySpan
- * 等基于未整合数组的边界扫描逻辑不受整合器影响。
- */
-function contextInjectionsToMessages(
-  injections: ContextInjection[],
-): RuntimeChatMessage[] {
-  return injections.map((inj) => ({
-    role: inj.role,
-    content: `<!-- source: ${inj.source} -->\n${inj.content}`,
-  }))
-}
-
-/**
- * 消息序列整合器：合并连续相同 role 的消息，纯换行拼接内容，不加自动 XML 标签。
- *
- * 设计理由（design §消息整合器）：
- * - Claude/Gemini API 不接受连续相同 role 消息，OpenAI 接受但内部加隐式分割。合并后
- *   用换行拼接，比多条消息的前缀标注更紧凑、更省 token。
- * - 不加自动标签：酒馆预设大量使用跨条目标签（开标签在条目A、闭标签在条目B）和嵌套
- *   标签。自动加标签会破坏这些结构——给只含开标签的条目再包一层，导致双重嵌套或
- *   结构错乱。标签完全由作者在 contextPath 条目内容里显式写。
- * - 不连续的相同 role 不合并（如 [system, user, system] 保持三条）。
- *
- * 调用时机：仅在 native/text 两个工具循环每轮调用 model API 前对当前 messages 数组
- * 过一遍整合器，产出新数组传给 API。工具循环内的 splice-replace / span 定位操作的是
- * 未整合的原始数组，整合器不 mutate 原数组。
- *
- * tool 角色（native 模式）不与 assistant 合并：tool 消息有独立语义（工具 observation），
- * 且 provider native API 要求 tool 消息跟在 assistant toolCalls 之后，合并会破坏结构。
- * 整合器按 role 严格相等判断，role="tool" 只与 role="tool" 合并（实践中不会连续出现
- * 两条 tool），天然跳过与 assistant 的合并。
- */
-function mergeConsecutiveRoleMessages(
-  messages: RuntimeChatMessage[],
-): RuntimeChatMessage[] {
-  const result: RuntimeChatMessage[] = []
-  for (const msg of messages) {
-    const last = result[result.length - 1]
-    if (last && last.role === msg.role) {
-      // 合并：纯换行拼接，不加自动标签（标签由作者在内容里显式写）。
-      // content 可能是 string 或 ContentPart[]；合并只处理 string content
-      // （连续同 role 的注入消息都是 string；多模态 ContentPart[] 只出现在
-      // 当前轮 user 输入，不会与同 role 注入消息连续）。
-      if (typeof last.content === "string" && typeof msg.content === "string") {
-        last.content += `\n\n${msg.content}`
-      } else {
-        // 多模态 content 不合并（罕见边界：同 role 连续但其中一条是 ContentPart[]）。
-        result.push({ ...msg })
-      }
-    } else {
-      result.push({ ...msg })
-    }
-  }
-  return result
-}
-
-/**
- * 剥离消息内容开头的内部标记前缀（`<!-- tsian-layer: -->` 和 `<!-- source: -->`）。
- * 在 mergeConsecutiveRoleMessages 之后、API 调用之前执行——模型看到的是干净内容。
- * 只剥离消息**开头**的标记（`^` 锚定），不剥离消息内部合法的 HTML 注释。
- * 只处理 string content；ContentPart[]（多模态）不处理。
- */
-function stripInternalMarkers(messages: RuntimeChatMessage[]): RuntimeChatMessage[] {
-  const layerRe = /^<!-- tsian-layer: [^>]* -->\n?/
-  const sourceRe = /^<!-- source: [^>]* -->\n?/
-  return messages.map(msg => {
-    if (typeof msg.content !== "string") return msg
-    let content = msg.content
-    // 可能同时有 layer 和 source 前缀（理论上不会，但防御性循环 2 次）
-    for (let i = 0; i < 2; i++) {
-      if (layerRe.test(content)) {
-        content = content.replace(layerRe, "")
-      } else if (sourceRe.test(content)) {
-        content = content.replace(sourceRe, "")
-      } else {
-        break
-      }
-    }
-    return { ...msg, content }
-  })
-}
-
-/**
- * 构建 prelude 段消息：上下文元信息（Skill Index）+ prelude position 注入文件。
- * 放在 system 之后、history 之前——跨轮稳定内容命中前缀缓存。
- */
-function buildPreludeMessages(
-  context: AgentContextEntry,
-  label: "Workspace Agent 上下文" | "目标 Agent 上下文",
-  metaRole: "system" | "user" | "assistant" = "user",
-): RuntimeChatMessage[] {
-  const messages: RuntimeChatMessage[] = [
-    { role: metaRole, content: `${CONTEXT_META_TAG}\n${label}（元信息）：\n${formatContextMeta(context)}` },
-  ]
-  messages.push(...contextInjectionsToMessages(context.contextInjectionsByPosition.prelude))
-  return messages
-}
-
-/**
- * 构建 runtime 段消息：runtime position 注入文件（runtime.json、frontier.json 等）。
- * 放在 history 之后、turn-runtime 之前——每轮可能变化的状态文件。
- */
-function buildRuntimeMessages(
-  context: AgentContextEntry,
-): RuntimeChatMessage[] {
-  return contextInjectionsToMessages(context.contextInjectionsByPosition.runtime)
-}
-
-/** 列出所有 position 组的注入条目来源，按 position 分组显示。 */
-function formatAllContextInjections(context: AgentContextEntry): string {
-  const positions: ContextPathPosition[] = ["prelude", "runtime", "framing"]
-  const lines: string[] = []
-  let total = 0
-  for (const pos of positions) {
-    const group = context.contextInjectionsByPosition[pos]
-    if (group.length === 0) continue
-    lines.push(`  [${pos}]`)
-    for (const inj of group) {
-      lines.push(`    - ${inj.source}`)
-    }
-    total += group.length
-  }
-  if (total === 0) {
-    return "（暂无已加载 contextPaths 注入条目）"
-  }
-  return lines.join("\n")
-}
-
-/**
- * 上下文元信息部分（Skill Index）。精简后只含 skill 索引，跨轮稳定。
- */
-function formatContextMeta(context: AgentContextEntry): string {
-  return [
-    "可见 Skill Index（仅摘要，未加载 Skill 详情）：",
-    formatSkillIndex(context),
   ].join("\n")
 }
 

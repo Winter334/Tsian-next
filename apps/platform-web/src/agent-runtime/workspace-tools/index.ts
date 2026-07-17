@@ -32,17 +32,28 @@ export type {
   RuntimeWorkspaceToolSessionState,
   RuntimeWorkspaceToolExecutionContext,
   RuntimeTestSkillScriptInput,
-} from "./workspace-tools/index"
-export { RUNTIME_WORKSPACE_TOOL_NAMES } from "./workspace-tools/index"
+} from "../workspace-tools-types"
+export { RUNTIME_WORKSPACE_TOOL_NAMES } from "../workspace-tools-types"
+
 export {
   createRuntimeWorkspaceToolSessionState,
+} from "./shared"
+export {
   stripThinkBlocks,
   extractThinkBlocks,
+} from "./parsing"
+export {
   parseActionDeclarations,
+  collectActivatedSkillContents,
+  type ActivatedSkillContent,
+} from "./skill-actions"
+export {
   resolveBrowserScriptPath,
   resolveHelperPath,
-  collectActivatedSkillContents,
+} from "./action-executors"
+export {
   executeRuntimeWorkspaceToolCalls,
+} from "./tool-execution"
+export {
   formatNativeToolObservationContent,
-  type ActivatedSkillContent,
-} from "./workspace-tools/index"
+} from "./observations"
