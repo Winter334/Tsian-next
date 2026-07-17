@@ -1,0 +1,426 @@
+import type {
+  InvokeAgentRequest,
+  InvokeAgentResult,
+  JsonValue,
+  PlatformActionError,
+  WorkspaceFile,
+} from "@tsian/contracts"
+import { runAgentRuntimeTurn } from "../agent-runtime"
+import { assembleAgentContext } from "../agent-runtime/context"
+import {
+  DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
+  resolveTokenBudget,
+} from "../agent-runtime/context-lifecycle"
+import {
+  createRuntimeTraceCollector,
+  errorToTraceDataWithStack,
+  formatAgentTracePath,
+  serializeRuntimeTraceEvents,
+} from "../agent-runtime/trace"
+import {
+  DEFAULT_BROWSER_AI_STREAMING,
+  DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
+  getBrowserAiConfig,
+} from "../config/ai"
+import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
+import {
+  generateAssistantReply,
+  generateAssistantReplyNative,
+  streamAssistantReplyNative,
+  streamAssistantReplyText,
+  type RuntimeChatMessage,
+} from "../runtime-host/ai"
+import { emitAgentInvocation } from "../streaming-events"
+import {
+  commitWorkspaceChangesForSave,
+  commitWorkspaceChangesWithCheckpointForSave,
+  createRuntimeWorkspaceTransaction,
+  getHistoryForSave,
+  type RuntimeWorkspaceTransaction,
+} from "../storage"
+import { createBrowserScriptRunners } from "./browser-skill-script-executor"
+import { ensureActiveSave } from "./game-cards"
+import {
+  getMaxTurnFromTurnFiles,
+  readAgentContextFromWorkspace,
+  stageAgentContextFile,
+} from "./history-turns"
+import {
+  buildAgentProviderPresetMap,
+  isRecord,
+  listEffectiveWorkspaceFilesForActiveSave,
+  resolveAgentModelConfig,
+} from "./internal"
+import { finishReasonToKind } from "./runtime-events"
+import { writeRuntimeTraceFileForSave } from "./runtime-traces"
+import { cleanupScenesInTransaction } from "./scene-cleanup"
+
+/** 旁路调用排队锁：同一 agentId + slot 串行执行，避免 context.json 读写竞争。
+ *  key = `${agentId}:${slot ?? "default"}`，value = 当前正在执行的 Promise。
+ *  不同 agent 或不同 slot 可真并行。条目在执行完成后自动清理。 */
+const invokeAgentQueue = new Map<string, Promise<unknown>>()
+
+function createInvocationId(): string {
+  if (typeof globalThis.crypto?.randomUUID === "function") {
+    return globalThis.crypto.randomUUID()
+  }
+
+  return `invoke-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+}
+
+function platformErrorFromUnknown(error: unknown, fallbackCode = "AGENT_INVOCATION_FAILED"): PlatformActionError {
+  if (isRecord(error) && typeof error.code === "string" && typeof error.message === "string") {
+    const details = isRecord(error.details)
+      ? Object.fromEntries(
+          Object.entries(error.details).filter((entry): entry is [string, JsonValue] =>
+            isJsonValue(entry[1]),
+          ),
+        )
+      : undefined
+    return {
+      code: error.code,
+      message: error.message,
+      ...(details && Object.keys(details).length > 0 ? { details } : {}),
+    }
+  }
+
+  return {
+    code: error instanceof DOMException ? error.name : fallbackCode,
+    message: error instanceof Error ? error.message : String(error),
+  }
+}
+
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true
+  if (typeof value === "string" || typeof value === "boolean") return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  if (isRecord(value)) return Object.values(value).every(isJsonValue)
+  return false
+}
+
+export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgentResult> {
+  const agentId = input.agentId.trim()
+  if (!agentId) {
+    throw new Error("interaction.invokeAgent requires a non-empty agentId.")
+  }
+  const userInput = input.input
+  if (!userInput) {
+    throw new Error("interaction.invokeAgent requires non-empty input.")
+  }
+  const invocationId = input.invocationId?.trim() || createInvocationId()
+  const purpose = input.purpose?.trim() || undefined
+  const commitMode = input.commitMode ?? "workspace"
+  if (input.checkpointReason !== undefined && commitMode === "workspace") {
+    throw new Error(
+      "interaction.invokeAgent checkpointReason requires commitMode workspace-with-checkpoint.",
+    )
+  }
+  // workspace-with-checkpoint 的 checkpointReason 校验（MVP）：
+  // - 省略 → 默认 "post-turn-maintenance"。
+  // - 提供 → 必须是非空字符串且等于 "post-turn-maintenance"（未知值 fail loud，不静默落库）。
+  if (commitMode === "workspace-with-checkpoint") {
+    if (
+      input.checkpointReason !== undefined &&
+      input.checkpointReason !== "post-turn-maintenance"
+    ) {
+      throw new Error(
+        "interaction.invokeAgent checkpointReason must be \"post-turn-maintenance\" (MVP); unknown values are rejected.",
+      )
+    }
+  }
+
+  const slot = input.contextSlot
+  const shouldPersist = input.persist === true
+  const queueKey = `${agentId}:${slot ?? "default"}`
+
+  // 同 slot 串行排队：前一个完成（成功/失败）后后一个才开始执行，
+  // 确保 context.json 读写不竞争。不同 slot 或不同 agent 可真并行。
+  const previous = invokeAgentQueue.get(queueKey) ?? Promise.resolve()
+  const currentPromise = previous
+    .catch(() => {})
+    .then(() => executeInvokeAgentBody())
+  invokeAgentQueue.set(queueKey, currentPromise)
+  currentPromise.finally(() => {
+    if (invokeAgentQueue.get(queueKey) === currentPromise) {
+      invokeAgentQueue.delete(queueKey)
+    }
+  })
+  return currentPromise as Promise<InvokeAgentResult>
+
+  // ── 旁路调用实际执行体（闭包，捕获上方所有变量）──
+  // invokeAgent 是旁路调用:不推进 turn、不写历史.
+  // 结果直接返回调用方(游戏前端自行处理 NPC 视角/UI 修正等).
+  async function executeInvokeAgentBody(): Promise<InvokeAgentResult> {
+    const invokeController = new AbortController()
+    const invokeTimestamp = Date.now()
+    let activeSaveId: string | null = null
+    let invokeWorkspaceFilesBefore: WorkspaceFile[] = []
+    // 旁路调用 trace collector：独立路径落盘，不与主 turn trace 混淆。
+    // 让系统监视器(DebugView)也能看到旁路调用的 runtime 事件。
+    let trace = createRuntimeTraceCollector(0)
+    let workspaceTransaction: RuntimeWorkspaceTransaction | null = null
+    emitAgentInvocation({
+      type: "started",
+      invocationId,
+      agentId,
+      ...(purpose ? { purpose } : {}),
+    })
+    try {
+      activeSaveId = await ensureActiveSave()
+      const currentActiveSaveId = activeSaveId
+      invokeWorkspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(currentActiveSaveId)
+      const invokeMaxTurn = getMaxTurnFromTurnFiles(invokeWorkspaceFilesBefore)
+      const historyBefore = await getHistoryForSave(currentActiveSaveId)
+      trace = createRuntimeTraceCollector(invokeMaxTurn)
+      trace.emit({
+        type: "turn_started",
+        ok: true,
+        data: { agentId, inputLength: input.input.length, historyCount: historyBefore.length },
+      })
+      workspaceTransaction = createRuntimeWorkspaceTransaction(
+        await listEffectiveWorkspaceFilesForActiveSave(currentActiveSaveId),
+      )
+      const workspaceFiles = workspaceTransaction!.workspaceFiles
+      const providerPresetMap = buildAgentProviderPresetMap(workspaceFiles)
+
+      // 装配目标 agent context,检查 agent 存在.
+      const targetContext = assembleAgentContext(workspaceFiles, { agentId })
+      if (!targetContext) {
+        throw new Error(
+          `Agent "${agentId}" was not found. Restore agents/${agentId}/AGENT.md or recreate the agent.`,
+        )
+      }
+
+      // 持久化由 persist 参数控制(默认 false,不读 entryMode)。
+      // persist:true → 读写 context-<slot>.json;persist:false → 不读不写,调完即弃。
+      const agentContext = shouldPersist
+        ? readAgentContextFromWorkspace(workspaceFiles, currentActiveSaveId, agentId, slot)
+        : null
+
+      // resolve target agent 上下文 token 预算.
+      const targetConfig = resolveAgentModelConfig(agentId, providerPresetMap)
+      const contextTokenBudget = resolveTokenBudget(
+        targetConfig?.parameters.common.contextWindow ?? null,
+      )
+
+      const result = await runAgentRuntimeTurn(
+        {
+          agentId,
+          userInput,
+          injection: input.injection,
+          recentHistory: historyBefore,
+          turn: invokeMaxTurn,
+          workspaceFiles,
+          signal: invokeController.signal,
+          agentContext: agentContext ?? undefined,
+          contextTokenBudget,
+          // 旁路调用用 task 模式压缩(工具交互段压缩,不压剧情正文).
+          compressionMode: "task",
+          ...(shouldPersist
+            ? {
+                timeoutMs: DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
+              }
+            : {}),
+          // 旁路调用绑 onAskUser 以防目标 agent 需要 ask_user
+          // (复用进程内 interaction-events 总线).
+          // 旁路 agent 活动信号通过独立的 invocation 事件通道 emit。
+          onDelta: (emittingAgentId, delta, round, kind) => {
+            emitAgentInvocation({
+              type: "delta",
+              invocationId,
+              agentId: emittingAgentId,
+              round,
+              kind,
+              delta,
+            })
+          },
+          onRoundEnd: (emittingAgentId, round, finishReason) => {
+            emitAgentInvocation({
+              type: "round-end",
+              invocationId,
+              agentId: emittingAgentId,
+              round,
+              kind: finishReasonToKind(finishReason),
+            })
+          },
+          onTool: (emittingAgentId, round, callId, name, status, output) => {
+            emitAgentInvocation({
+              type: "tool",
+              invocationId,
+              agentId: emittingAgentId,
+              round,
+              callId,
+              name,
+              status,
+              ...(output !== undefined ? { output } : {}),
+            })
+          },
+          onAskUser: (requestId, request) =>
+            emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
+        },
+        {
+          callModel(messages, options) {
+            const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+            const streamingEnabled = modelConfig
+              ? modelConfig.streaming
+              : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
+            if (!options.onDelta || !streamingEnabled) {
+              return generateAssistantReply(messages, {
+                debugLabel: options.debugLabel,
+                signal: options.signal,
+                ...(modelConfig ? { config: modelConfig } : {}),
+              })
+            }
+            return streamAssistantReplyText(messages, {
+              debugLabel: options.debugLabel,
+              signal: options.signal,
+              round: options.round,
+              ...(modelConfig ? { config: modelConfig } : {}),
+              onDelta: options.onDelta
+                ? (delta, round, kind) => options.onDelta!(options.agentId ?? agentId, delta, round, kind)
+                : undefined,
+            })
+          },
+          async callModelNative(messages, options, tools) {
+            const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
+            const streamingEnabled = modelConfig
+              ? modelConfig.streaming
+              : getBrowserAiConfig()?.streaming ?? DEFAULT_BROWSER_AI_STREAMING
+            if (!options.onDelta || !streamingEnabled) {
+              return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
+                debugLabel: options.debugLabel,
+                signal: options.signal,
+                tools,
+                ...(modelConfig ? { config: modelConfig } : {}),
+              })
+            }
+            return streamAssistantReplyNative(messages as RuntimeChatMessage[], {
+              debugLabel: options.debugLabel,
+              signal: options.signal,
+              tools,
+              onDelta: options.onDelta
+                ? (delta, round, kind) => options.onDelta!(options.agentId ?? agentId, delta, round, kind)
+                : undefined,
+              round: options.round,
+              ...(modelConfig ? { config: modelConfig } : {}),
+            })
+          },
+          emitTrace: trace.emit,
+          toolCallMode: targetConfig?.toolCallMode
+            ?? getBrowserAiConfig()?.toolCallMode
+            ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
+          ...createBrowserScriptRunners({
+            workspaceTransaction: workspaceTransaction!,
+            signal: invokeController.signal,
+          }),
+          actionExecutorPolicy: undefined,
+          // 旁路调用也接入 workspace mutation 适配器——agent 的 skill 脚本
+          // (如 commit_opening_understanding)和 workspace_write 工具都需要写入能力。
+          // 事务已在上方创建(同一 workspaceTransaction)，写入会随事务一起 commit。
+          workspaceMutations: {
+            write: (writeInput) => {
+              if (writeInput.scope === "platform-meta") {
+                return workspaceTransaction!.writePlatformFile({
+                  path: writeInput.path,
+                  content: writeInput.content,
+                  ...(writeInput.data ? { data: writeInput.data } : {}),
+                })
+              }
+              if (writeInput.scope !== "save-runtime") {
+                throw new Error("Runtime Agent turns can only stage save-runtime workspace writes.")
+              }
+              return workspaceTransaction!.write({
+                path: writeInput.path,
+                content: writeInput.content,
+                ...(writeInput.data ? { data: writeInput.data } : {}),
+              })
+            },
+            delete: (deleteInput) => {
+              if (deleteInput.scope !== "save-runtime") {
+                throw new Error("Runtime Agent turns can only stage save-runtime workspace deletes.")
+              }
+              return {
+                scope: deleteInput.scope,
+                ...workspaceTransaction!.delete(deleteInput.path),
+              }
+            },
+          },
+          exposedWorkspaceOperations: undefined,
+          collaborationPolicy: undefined,
+          semanticSearchOwnerId: currentActiveSaveId,
+        },
+      )
+
+      // persist:true → 写回 context-<slot>.json(不推进 turn、不写历史、不更新 snapshot).
+      // persist:false → 不写 context,调完即弃.工作区写入(若有)用同一事务提交.
+      if (shouldPersist && result.contextUpdate) {
+        stageAgentContextFile(workspaceTransaction!, {
+          saveId: currentActiveSaveId,
+          turn: result.contextUpdate.turn,
+          user: result.contextUpdate.user,
+          assistant: result.replyText,
+          compressedContext: result.contextUpdate.compressedContext,
+          agentId,
+          slot,
+        })
+      }
+      // 旁路 trace 落盘（独立路径，不与主 turn trace 混淆）
+      trace.emit({
+        type: "turn_completed",
+        ok: true,
+        data: { agentId, replyLength: result.replyText.length },
+      })
+      // trace 走事务提交（与主 turn 一致），用旁路专用路径
+      workspaceTransaction!.writePlatformFile({
+        path: formatAgentTracePath(agentId, invokeTimestamp),
+        content: serializeRuntimeTraceEvents(trace.events),
+      })
+      if (commitMode === "workspace-with-checkpoint") {
+        cleanupScenesInTransaction(workspaceTransaction!)
+      }
+      const workspaceChanges = workspaceTransaction!.finalWorkspaceChanges()
+      await (commitMode === "workspace-with-checkpoint"
+        ? commitWorkspaceChangesWithCheckpointForSave(
+            currentActiveSaveId,
+            workspaceChanges,
+            { turn: invokeMaxTurn, checkpointReason: "post-turn-maintenance" },
+          )
+        : commitWorkspaceChangesForSave(
+            currentActiveSaveId,
+            workspaceChanges,
+          ))
+      emitAgentInvocation({ type: "completed", invocationId, agentId })
+
+      return { invocationId, response: result.replyText }
+    } catch (error) {
+      workspaceTransaction?.discard()
+      emitAgentInvocation({
+        type: "failed",
+        invocationId,
+        agentId,
+        error: platformErrorFromUnknown(error),
+      })
+      rejectAllInteractionRequests(error)
+      // 旁路 trace 失败落盘（事务已 discard，直接写文件系统）
+      trace.emit({
+        type: "turn_failed",
+        ok: false,
+        data: errorToTraceDataWithStack(error),
+      })
+      if (activeSaveId) {
+        try {
+          await writeRuntimeTraceFileForSave(
+            activeSaveId,
+            invokeWorkspaceFilesBefore,
+            formatAgentTracePath(agentId, invokeTimestamp),
+            trace.events,
+          )
+        } catch {
+          // trace 落盘失败不掩盖原始错误
+        }
+      }
+      throw error
+    }
+  }
+}
