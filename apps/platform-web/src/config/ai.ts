@@ -15,9 +15,10 @@ export type BrowserAiReasoningEffort = "" | "minimal" | "low" | "medium" | "high
  *   `tools`/`tool_calls`, OpenAI Responses `tools`/`function_call`, Gemini
  *   `functionDeclarations`/`functionCall`, Claude `tools`/`tool_use`).
  *   Provides structured text/tool-call event boundaries, enabling streaming.
- * - `text`: the legacy `<tsian-tool-call>` text-embedding protocol. Kept as a
- *   manual fallback for endpoints without native tool support. Streaming is
- *   supported by accumulating the full text and parsing tool calls post-hoc.
+ * - `text`: Text Tool Protocol v2 carried in ordinary chat text. The model
+ *   emits `<tsian-tool-calls>` JSON arrays, and the runtime parses them after
+ *   each response round. Streaming is supported by accumulating the full text
+ *   and parsing protocol blocks post-hoc.
  * No `auto` mode: the user configures this explicitly per model.
  */
 export type BrowserAiToolCallMode = "native" | "text"

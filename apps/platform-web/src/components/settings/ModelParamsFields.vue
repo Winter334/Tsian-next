@@ -76,7 +76,7 @@
             <SelectValue placeholder="文本" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="text">文本（兼容）</SelectItem>
+            <SelectItem value="text">文本协议</SelectItem>
             <SelectItem value="native">原生（function calling）</SelectItem>
           </SelectContent>
         </Select>
@@ -559,7 +559,7 @@ const tips = {
   maxOutputTokens: "模型单次回复的最大 token 数。值越大回复越长，但消耗更多额度。对应 max_tokens / max_output_tokens。",
   temperature: "采样温度，控制输出随机性。0 更确定/聚焦，2 更发散/有创意，常见值 0.7。对应 temperature。",
   topP: "核采样阈值：只从累计概率达到 top_p 的候选词中采样。与温度二选一调节即可。对应 top_p。",
-  toolCallMode: "模型调用工具的方式。原生 = 使用 function calling，结构化工具边界更清晰；文本（兼容）= 把工具调用嵌在回复文本里，适合不支持原生工具的接口。",
+  toolCallMode: "模型调用工具的方式。原生 = 使用 API function calling 字段；文本协议 = 在普通聊天文本中承载 Tsian 工具调用协议。",
   streaming: "开启后逐 token 流式返回回复，首字更快；关闭则一次性返回完整结果。",
   frequencyPenalty: "对已出现的高频词施加惩罚以降低重复。正值减少重复，负值增加重复，范围 -2~2。对应 frequency_penalty。",
   presencePenalty: "鼓励引入新话题。正值提升模型谈论新内容的概率，负值相反，范围 -2~2。对应 presence_penalty。",

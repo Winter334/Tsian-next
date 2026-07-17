@@ -10,6 +10,7 @@ import type { RuntimeChatMessage } from "../runtime-host/ai"
 import type { RuntimeTraceDebugLabel } from "./trace"
 import { getPlatformConfig } from "../config/platform-config"
 import { sortToolMemoriesStable } from "./tool-memory"
+import { extractTextToolNameFromMessage } from "./text-tool-protocol"
 
 /**
  * master agent 会话上下文生命周期与压缩持久化.
@@ -636,7 +637,7 @@ function buildTaskCompressionPrompt(
     .join("\n")
 }
 
-/** 从 message 提取工具名(若有):native assistant.toolCalls[0].name 或 text content 的 <tsian-tool-call> 块.无则 undefined. */
+/** 从 message 提取工具名(若有):native assistant.toolCalls[0].name 或 Text Tool Protocol v2 记录/观察.无则 undefined. */
 function extractToolNameFromMessage(message: TaskCompressionMessage): string | undefined {
   // native: assistant 带 toolCalls,取首个调用名(一轮通常一个工具调用)
   if (message.role === "assistant" && Array.isArray(message.toolCalls) && message.toolCalls.length > 0) {
@@ -645,21 +646,9 @@ function extractToolNameFromMessage(message: TaskCompressionMessage): string | u
       return first.name
     }
   }
-  // text: assistant content 含 <tsian-tool-call>{"name":"..."}</tsian-tool-call>
-  if (message.role === "assistant") {
-    const text = messageContentToText(message.content)
-    const match = text.match(/<tsian-tool-call>\s*(\{[\s\S]*?\})\s*<\/tsian-tool-call>/)
-    if (match) {
-      try {
-        const parsed = JSON.parse(match[1]) as { name?: string }
-        if (typeof parsed.name === "string") {
-          return parsed.name
-        }
-      } catch {
-        // 解析失败忽略,toolName 非关键
-      }
-    }
-  }
+  // text: Text Tool Protocol v2 call records/observations.
+  const textToolName = extractTextToolNameFromMessage(message)
+  if (textToolName) return textToolName
   return undefined
 }
 

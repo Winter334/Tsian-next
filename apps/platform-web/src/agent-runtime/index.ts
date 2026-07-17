@@ -61,10 +61,7 @@ import {
   createRuntimeWorkspaceToolSessionState,
   executeRuntimeWorkspaceToolCalls,
   formatNativeToolObservationContent,
-  formatRuntimeWorkspaceToolObservationMessage,
-  parseRuntimeWorkspaceToolCalls,
   RUNTIME_WORKSPACE_TOOL_NAMES,
-  stripRuntimeWorkspaceToolCallBlocks,
   stripThinkBlocks,
   extractThinkBlocks,
   type RuntimeActionExecutorPolicy,
@@ -80,6 +77,19 @@ import {
   collectActivatedSkillContents,
   type ActivatedSkillContent,
 } from "./workspace-tools"
+import {
+  assignTextToolCallIds,
+  formatTextToolCallRecords,
+  formatTextToolManifest,
+  formatTextToolObservations,
+  formatTextToolProtocolError,
+  isTextToolInteractionMessage,
+  parseTextToolProtocolResponse,
+  stripTextProtocolArtifacts,
+  TEXT_TOOL_CALLS_CLOSE_TAG,
+  TEXT_TOOL_CALLS_OPEN_TAG,
+  TEXT_TOOL_PROTOCOL_MAX_RETRIES,
+} from "./text-tool-protocol"
 import type {
   ModelCallResult,
   NativeToolCall,
@@ -374,8 +384,8 @@ function replaceHistorySpan<T extends MessageLike>(
 /**
  * 列举一个 message 是否属于"工具交互"(供 locateTaskInteractionSpan 从末尾向前扫描).
  * - native 形态:`role === "tool"` 或 `role === "assistant" && toolCalls?.length > 0`.
- * - text 形态:`role === "user" && content 含 <tsian-tool-observation>` 或
- *   `role === "assistant" && content 含 <tsian-tool-call>`.
+ * - text 形态：Text Tool Protocol v2 的 call-records / observations /
+ *   protocol-error 消息。
  *
  * 框架段 user(含历史窗口/目标上下文/请求等 section)不含这些标签,不会被误判为工具交互.
  */
@@ -391,10 +401,7 @@ function isTaskInteractionMessage(
     return false
   }
   // text
-  const text = messageContentToText(message.content)
-  if (message.role === "user" && text.includes("<tsian-tool-observation>")) return true
-  if (message.role === "assistant" && text.includes("<tsian-tool-call>")) return true
-  return false
+  return isTextToolInteractionMessage(message)
 }
 
 /**
@@ -577,66 +584,42 @@ function platformToolEnabled(
   return tools.includes(tool)
 }
 
+function buildEnabledRuntimeToolSchemas(options: {
+  agentContext: AgentContextEntry
+  enabledPlatformTools: AgentPlatformToolName[]
+  allowAgentCall: boolean
+  visibleContacts: AgentRegistryEntry[]
+}): ToolSchema[] {
+  return buildEnabledToolSchemas({
+    enabledPlatformTools: options.enabledPlatformTools,
+    allowAgentCall: options.allowAgentCall,
+    visibleContacts: options.visibleContacts,
+    // User Tools already filtered for this Agent by `filterToolsForAgent`
+    // during context assembly (context.ts). Expose the same filtered list in
+    // both native schema mode and Text Tool Protocol manifest mode.
+    userTools: options.agentContext.toolIndex,
+  })
+}
+
 function buildWorkspaceToolInstructions(
   options: {
     allowAgentCall: boolean
     visibleContacts: AgentRegistryEntry[]
     enabledPlatformTools: AgentPlatformToolName[]
     toolCallMode?: BrowserAiToolCallMode
+    tools: ToolSchema[]
   },
 ): string {
-  const canCallAgents = options.allowAgentCall && options.visibleContacts.length > 0
   const canReadWorkspace = platformToolEnabled(
     options.enabledPlatformTools,
     AGENT_PLATFORM_TOOL_NAMES.workspaceRead,
   )
-  const canWriteWorkspace = platformToolEnabled(
-    options.enabledPlatformTools,
-    AGENT_PLATFORM_TOOL_NAMES.workspaceWrite,
-  )
-  const canInspectFrontend = platformToolEnabled(
-    options.enabledPlatformTools,
-    AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
-  )
-  const canTestSkillScript = platformToolEnabled(
-    options.enabledPlatformTools,
-    AGENT_PLATFORM_TOOL_NAMES.testSkillScript,
-  )
-  const canSemanticSearch = platformToolEnabled(
-    options.enabledPlatformTools,
-    AGENT_PLATFORM_TOOL_NAMES.workspaceSemanticSearch,
-  )
   const isNative = options.toolCallMode === "native"
-  const toolNames = [
-    RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
-    RUNTIME_WORKSPACE_TOOL_NAMES.runScript,
-    ...(canCallAgents ? [RUNTIME_WORKSPACE_TOOL_NAMES.agentCall] : []),
-    ...(canReadWorkspace
-      ? [
-          RUNTIME_WORKSPACE_TOOL_NAMES.read,
-          RUNTIME_WORKSPACE_TOOL_NAMES.list,
-          RUNTIME_WORKSPACE_TOOL_NAMES.search,
-          RUNTIME_WORKSPACE_TOOL_NAMES.glob,
-        ]
-      : []),
-    ...(canWriteWorkspace
-      ? [
-          RUNTIME_WORKSPACE_TOOL_NAMES.diff,
-          RUNTIME_WORKSPACE_TOOL_NAMES.write,
-          RUNTIME_WORKSPACE_TOOL_NAMES.edit,
-          RUNTIME_WORKSPACE_TOOL_NAMES.copy,
-          RUNTIME_WORKSPACE_TOOL_NAMES.move,
-          RUNTIME_WORKSPACE_TOOL_NAMES.delete,
-        ]
-      : []),
-    ...(canSemanticSearch ? [RUNTIME_WORKSPACE_TOOL_NAMES.semanticSearch] : []),
-    ...(canInspectFrontend ? [RUNTIME_WORKSPACE_TOOL_NAMES.inspectFrontend] : []),
-    ...(canTestSkillScript ? [RUNTIME_WORKSPACE_TOOL_NAMES.testSkillScript] : []),
-  ]
+  const toolNames = options.tools.map((tool) => tool.name)
 
   const sharedRules = [
     "Runtime 工具是可选能力；只在当前上下文不足、需要读取/修改 workspace、需要联系 Agent 或需要检查前端时使用。",
-    `调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 选择可见 Skill Index 中的 name；observation 会返回该 Skill 的完整 SKILL.md 与声明的 action，按其中说明执行脚本。`,
+    `调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 选择可见 Skill Index 中的 name；observation 会确认激活，下一轮会自动注入完整 SKILL.md 与可执行 action。`,
     ...(canReadWorkspace
       ? [
           `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 Skill 入口文件；Skill 入口由 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后自动注入。`,
@@ -650,31 +633,24 @@ function buildWorkspaceToolInstructions(
     return [
       ...sharedRules,
       `当前可用工具名称：${toolNames.join(", ")}。具体参数以 API tools schema 为准，不要在正文中手写工具调用块。`,
-      ...(canCallAgents ? [`${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 的 agentId 从可见 Agent 联系人中选择。`] : []),
+      ...(options.allowAgentCall ? [`${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 的 agentId 从可见 Agent 联系人中选择。`] : []),
       "多个相互独立、无写冲突的工具可以在同一轮并行调用。并行返回混合结果时，只重发失败的那一个，不要全量重发。",
       "收到 observation 后继续完成任务；最终输出只包含给玩家/调用方的正文，不包含工具细节。",
     ].join("\n")
   }
 
-  const textExamples = [
-    `<tsian-tool-call>`,
-    `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"prose-style"}}`,
-    `</tsian-tool-call>`,
-    ...(canReadWorkspace
-      ? [
-          `<tsian-tool-call>`,
-          `{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.read}","arguments":{"path":"world/canon.md","offset":1,"limit":200}}`,
-          `</tsian-tool-call>`,
-        ]
-      : []),
-  ]
-
   return [
     ...sharedRules,
-    `当前可用工具名称：${toolNames.join(", ")}。`,
-    "工具调用格式必须独占一个 XML 块；块内只能放一段纯 JSON，不要加 Markdown fence、注释或解释。",
-    ...textExamples,
-    "收到 observation 后继续完成任务；最终输出不要包含工具调用块、observation、工具细节或实现说明。",
+    "当前工具调用模式：Text Tool Protocol v2。普通聊天文本承载 Tsian 工具协议；这是与 API 原生 function calling 并列的工具调用方式。",
+    `可执行工具调用只能使用一个 ${TEXT_TOOL_CALLS_OPEN_TAG} JSON 数组块；单个工具也必须写成一元素数组。`,
+    "调用格式：",
+    TEXT_TOOL_CALLS_OPEN_TAG,
+    `[{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"prose-style"}}]`,
+    TEXT_TOOL_CALLS_CLOSE_TAG,
+    "当前可用工具清单：",
+    formatTextToolManifest(options.tools),
+    "可执行协议块前后的普通文字会作为过程文本保留；不要把工具观察、调用记录或协议标签放进最终回复。",
+    "收到 observations 后继续完成任务；最终输出不要包含协议标签、observation、工具细节或实现说明。",
   ].join("\n")
 }
 
@@ -833,12 +809,18 @@ function buildWorkspaceAgentSystemPrompt(
   },
 ): string {
   const soulContent = context.soulFile?.content.trim()
+  const tools = buildEnabledRuntimeToolSchemas({
+    agentContext: context,
+    enabledPlatformTools: options.enabledPlatformTools,
+    allowAgentCall: options.allowAgentCall,
+    visibleContacts: options.visibleContacts,
+  })
   return [
     context.agentFile.content.trim(),
     ...(soulContent ? ["", soulContent] : []),
     "",
     "Runtime Workspace 工具说明：",
-    buildWorkspaceToolInstructions(options),
+    buildWorkspaceToolInstructions({ ...options, tools }),
   ].join("\n")
 }
 
@@ -1454,14 +1436,11 @@ async function callAgentModelWithWorkspaceToolsNative(
       toolOptions.agentCallDepth,
       visibleContacts,
     )
-  const tools = buildEnabledToolSchemas({
+  const tools = buildEnabledRuntimeToolSchemas({
+    agentContext,
     enabledPlatformTools: permissions.enabledTools,
     allowAgentCall,
     visibleContacts,
-    // User Tools already filtered for this Agent by `filterToolsForAgent`
-    // during context assembly (context.ts). Exposed alongside platform tools
-    // in the native function-calling schema — see PRD R3.
-    userTools: agentContext.toolIndex,
   })
 
   // turn 内 token 预算 + 压缩(tool-token-budget R2 + 06-20-agent-task-compression).
@@ -1851,12 +1830,15 @@ async function callAgentModelWithWorkspaceTools(
   }
 
   // Native function-calling dispatch: when the active model opts into native
-  // tools and the host provides `callModelNative`, run the structured tool
-  // loop. Otherwise fall through to the text-protocol loop (unchanged).
-  const useNativeToolCalling =
-    capabilities.toolCallMode === "native"
-    && typeof capabilities.callModelNative === "function"
-  if (useNativeToolCalling && toolOptions) {
+  // tools, require the host's structured native caller. Do not switch modes
+  // automatically; model configuration is the single source of truth.
+  if (capabilities.toolCallMode === "native") {
+    if (typeof capabilities.callModelNative !== "function") {
+      throw new Error("Native tool calling is selected, but the host does not provide a native tool-calling model adapter.")
+    }
+    if (!toolOptions) {
+      throw new Error("Native tool calling requires workspace tool-loop options.")
+    }
     return callAgentModelWithWorkspaceToolsNative(
       messages,
       input,
@@ -1872,9 +1854,6 @@ async function callAgentModelWithWorkspaceTools(
   let nextMessages: AiChatMessage[] = messages as AiChatMessage[]
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
-  // 每轮 content 文本累积器(供采集 interim/thought processNode,对称 native 循环).
-  // text 模式无独立 reasoning stream(kind 恒 "content");思考内容在正文里被 stripThinkBlocks 剥离.
-  let roundContent = ""
   // turn 内 token 预算 + 压缩(text 循环对称版).按 compressionMode 分流(narrative/task),
   // 与 native 循环一致.仅 entry 稳态路径(注入了 context 快照)做 narrative 压剧情;
   // task 模式压工具交互段 + 多次 + 时长兜底 + 早退.
@@ -1897,6 +1876,7 @@ async function callAgentModelWithWorkspaceTools(
   // text-protocol 路径 callModel 返回 string 不带 usage,此变量恒 undefined.
   // 声明它只为与 native loop 的 return 结构对称(避免类型分叉).
   let lastRoundUsage: { input?: number; output?: number; total?: number } | undefined
+  let protocolErrorRetriesRemaining = TEXT_TOOL_PROTOCOL_MAX_RETRIES
 
   for (let round = 0; ; round += 1) {
     assertNotAborted(options.signal)
@@ -1918,7 +1898,7 @@ async function callAgentModelWithWorkspaceTools(
           }
           const interactionSpan = locateTaskInteractionSpan(nextMessages, "text")
           if (interactionSpan.start < 0) {
-            const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
+            const finalText = stripThinkBlocks(stripTextProtocolArtifacts(lastRoundText)).trim()
             if (finalText) {
               return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
@@ -1938,7 +1918,7 @@ async function callAgentModelWithWorkspaceTools(
             compressOptions,
           )
           if (!result.compressed) {
-            const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
+            const finalText = stripThinkBlocks(stripTextProtocolArtifacts(lastRoundText)).trim()
             if (finalText) {
               return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
@@ -1967,7 +1947,7 @@ async function callAgentModelWithWorkspaceTools(
         } else {
           // narrative 模式(tool-token-budget R2,保持原样)
           if (compressedThisTurn || !canCompressNarrative) {
-            const finalText = stripRuntimeWorkspaceToolCallBlocks(lastRoundText).trim()
+            const finalText = stripThinkBlocks(stripTextProtocolArtifacts(lastRoundText)).trim()
             if (finalText) {
               return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
@@ -2011,22 +1991,10 @@ async function callAgentModelWithWorkspaceTools(
       }
     }
 
-    // 构建 callOptions:绑定 round + 包装 onDelta 累积 roundContent(供 processNode 采集).
-    // 对称 native 循环的 callOptions 构建(index.ts:1636-1654).
+    // 构建 callOptions:绑定 round,对称 native 循环的 callOptions 构建(index.ts:1636-1654).
     const callOptions: AgentRuntimeModelCallOptions = {
       ...options,
       round,
-      // Text 模式 onDelta:累积本轮 content 文本供采集 interim/thought processNode.
-      // text 协议无独立 reasoning stream(kind 恒 "content");思考内容在正文里被
-      // stripThinkBlocks 剥离喂模型,但 UI 流式期仍可见(由 render 层 stripForDisplay).
-      onDelta: options.onDelta
-        ? (agentId, delta, r, kind) => {
-            if (r === round && kind === "content") {
-              roundContent += delta
-            }
-            options.onDelta!(agentId, delta, r, kind)
-          }
-        : undefined,
     }
 
     // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求）。
@@ -2036,11 +2004,13 @@ async function callAgentModelWithWorkspaceTools(
     const response = await capabilities.callModel(mergedMessages as AiChatMessage[], callOptions)
     assertNotAborted(options.signal)
     lastRoundText = response
-    // 清空本轮 content 累积器:下一轮 onDelta 重新累积(或回合已结束).
-    roundContent = ""
 
-    const toolCalls = parseRuntimeWorkspaceToolCalls(response)
-    const finishReason: "stop" | "tool_calls" = toolCalls.length > 0 ? "tool_calls" : "stop"
+    const parseResult = parseTextToolProtocolResponse(response)
+    const isProtocolError = parseResult.kind === "protocol_error"
+    const toolCalls = parseResult.kind === "tool_calls"
+      ? assignTextToolCallIds(parseResult.calls, round)
+      : []
+    const finishReason: "stop" | "tool_calls" = parseResult.kind === "stop" ? "stop" : "tool_calls"
     const traceToolCalls = toolCalls
       .map((tc) => tc.call)
       .filter((c): c is { name: string; arguments: Record<string, unknown> } => Boolean(c))
@@ -2048,7 +2018,7 @@ async function callAgentModelWithWorkspaceTools(
       type: "model_call_completed",
       agentId: agentContext.agent.id,
       debugLabel: options.debugLabel,
-      ok: true,
+      ok: !isProtocolError,
       data: {
         messageCount: mergedMessages.length,
         outputLength: response.length,
@@ -2059,6 +2029,7 @@ async function callAgentModelWithWorkspaceTools(
         ...(traceToolCalls.length > 0
           ? { toolCalls: traceToolCallsSummary(traceToolCalls) }
           : {}),
+        ...(isProtocolError ? { protocolError: parseResult.error } : {}),
       },
     })
 
@@ -2071,11 +2042,11 @@ async function callAgentModelWithWorkspaceTools(
     // round 结束通知 UI 这一轮的 finishReason,让它构建 timeline round 边界.
     options.onRoundEnd?.(agentContext.agent.id, round, finishReason)
 
-    if (toolCalls.length === 0) {
-      // stop 轮:剥离 tool-call blocks + think blocks 得到干净正文.
-      // B3: stripThinkBlocks 剥离  三种常见原生思考标签,
+    if (parseResult.kind === "stop") {
+      // stop 轮:剥离 text protocol artifacts + think blocks 得到干净正文.
+      // B3: stripThinkBlocks 剥离三种常见原生思考标签,
       // 防止思考内容喂回模型污染上下文(与渲染层无关,这是平台硬需求).
-      const cleanContent = stripThinkBlocks(stripRuntimeWorkspaceToolCallBlocks(response)).trim()
+      const cleanContent = stripThinkBlocks(stripTextProtocolArtifacts(response)).trim()
       // B3: 从 response 提取 think 块内容 → thought processNode(与 native 同构).
       // native 模式 thought 来自 reasoning stream;text 模式从正文标签提取.
       const thinkBlocks = extractThinkBlocks(response)
@@ -2086,8 +2057,39 @@ async function callAgentModelWithWorkspaceTools(
       return { text: cleanContent, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
     }
 
-    // 采集 interim processNode:tool_calls 轮的过渡文本(剥离 tool-call + think blocks 后的正文).
-    const interimText = stripThinkBlocks(stripRuntimeWorkspaceToolCallBlocks(response)).trim()
+    if (parseResult.kind === "protocol_error") {
+      const interimText = stripThinkBlocks(stripTextProtocolArtifacts(parseResult.interimText)).trim()
+      if (interimText) {
+        collectedTimelineItems.push({ kind: "interim", id: `interim-r${round}`, round, text: interimText, collapsed: false })
+      }
+      const thinkBlocksProtocolRound = extractThinkBlocks(response)
+      if (thinkBlocksProtocolRound.length > 0) {
+        const combinedThink = thinkBlocksProtocolRound.join("\n\n")
+        collectedTimelineItems.push({ kind: "thought", id: `thought-r${round}`, round, text: combinedThink, collapsed: true })
+      }
+      if (protocolErrorRetriesRemaining <= 0) {
+        throw new Error(`Text Tool Protocol error after retry exhaustion: ${parseResult.error.code}: ${parseResult.error.message}`)
+      }
+      const retryRemaining = protocolErrorRetriesRemaining
+      protocolErrorRetriesRemaining -= 1
+      const protocolAssistantContent = stripThinkBlocks(stripTextProtocolArtifacts(parseResult.interimText)).trim()
+      nextMessages = [
+        ...nextMessages,
+        ...(protocolAssistantContent
+          ? [{ role: "assistant" as const, content: protocolAssistantContent }]
+          : []),
+        {
+          role: "user",
+          content: formatTextToolProtocolError(parseResult.error, retryRemaining),
+        },
+      ]
+      continue
+    }
+
+    protocolErrorRetriesRemaining = TEXT_TOOL_PROTOCOL_MAX_RETRIES
+
+    // 采集 interim processNode:tool_calls 轮的过渡文本(剥离 executable block + think blocks 后的正文).
+    const interimText = stripThinkBlocks(stripTextProtocolArtifacts(parseResult.interimText)).trim()
     if (interimText) {
       collectedTimelineItems.push({ kind: "interim", id: `interim-r${round}`, round, text: interimText, collapsed: false })
     }
@@ -2153,27 +2155,28 @@ async function callAgentModelWithWorkspaceTools(
       },
       onAskUser: options.onAskUser,
     }, toolCalls)
+    const executedCalls = toolCalls
+      .map((p) => p.call)
+      .filter((call): call is NonNullable<typeof call> => call !== undefined)
+    const observationMessage = formatTextToolObservations(executedCalls, observations)
     nextMessages = [
       ...nextMessages,
       {
         role: "assistant",
-        // B3: 喂回模型的是剥离后的干净正文(去掉 think blocks + tool-call blocks).
-        // 原始 response 含思考标签和工具调用块,会污染上下文窗口.工具调用块已
-        // 被 parseRuntimeWorkspaceToolCalls 解析执行,思考内容已采集为 thought
-        // processNode,正文是模型真正需要记住的部分.
-        content: stripThinkBlocks(stripRuntimeWorkspaceToolCallBlocks(response)).trim(),
+        // Text Tool Protocol v2 replays non-executable call records only.
+        // The executable block and think blocks stay out of model history;
+        // surrounding prose was already collected as interim process text.
+        content: formatTextToolCallRecords(executedCalls),
       },
       // workspace_read 图片结果:image ContentPart 追加到 user 消息(text observation + image parts).
-      // 无 image 时保持纯 string content(text-protocol 兼容).
+      // 无 image 时保持纯 string content(text protocol mode).
       (() => {
-        const imageParts = observations.flatMap((obs) => obs.imageParts ?? [])
-        const textContent = formatRuntimeWorkspaceToolObservationMessage(observations)
-        if (imageParts.length === 0) {
-          return { role: "user" as const, content: textContent }
+        if (observationMessage.imageParts.length === 0) {
+          return { role: "user" as const, content: observationMessage.text }
         }
         return {
           role: "user" as const,
-          content: [{ type: "text" as const, text: textContent }, ...imageParts] as ContentPart[],
+          content: [{ type: "text" as const, text: observationMessage.text }, ...observationMessage.imageParts] as ContentPart[],
         }
       })(),
     ]

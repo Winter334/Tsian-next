@@ -188,8 +188,8 @@ export interface AgentRuntimeCapabilities {
     tools: ToolSchema[],
   ): Promise<ModelCallResult>
   /**
-   * Active model's tool-call mode. Defaults to `"text"` when omitted so the
-   * runtime falls back to the legacy text-protocol tool loop.
+   * Active model's tool-call mode. Defaults to `"text"` when omitted; the
+   * selected mode controls runtime dispatch without automatic mode switching.
    */
   toolCallMode?: BrowserAiToolCallMode
   /**

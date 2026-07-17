@@ -2087,12 +2087,12 @@ function classifyNativeToolProbeError(error: unknown): string {
     return `鉴权失败：${message}`
   }
   if (/tool|function|schema|tool_choice|toolchoice|toolConfig|functionCalling/i.test(message)) {
-    return `API 拒绝工具调用参数：${message}。建议切换为文本（兼容）模式。`
+    return `API 拒绝工具调用参数：${message}`
   }
   if (/timeout|timed out|network|fetch|超时|网络/i.test(message)) {
     return `网络或接口超时：${message}`
   }
-  return `原生工具调用测试失败：${message}。建议切换为文本（兼容）模式。`
+  return `原生工具调用测试失败：${message}`
 }
 
 export async function probeAssistantNativeToolCalling(
@@ -2122,12 +2122,12 @@ export async function probeAssistantNativeToolCalling(
     if (result.toolCalls.length > 0) {
       return {
         ok: false,
-        message: `API 返回了工具调用，但不是测试工具（${result.toolCalls.map((call) => call.name).join(", ")}）。请检查接口工具调用兼容性。`,
+        message: `API 返回了工具调用，但不是测试工具（${result.toolCalls.map((call) => call.name).join(", ")}）。`,
       }
     }
     return {
       ok: false,
-      message: "API 返回了普通回复，但没有发起工具调用；建议切换为文本（兼容）模式。",
+      message: "API 返回了普通回复，但没有发起工具调用。",
     }
   } catch (error) {
     return { ok: false, message: classifyNativeToolProbeError(error) }
@@ -2420,17 +2420,16 @@ export async function streamAssistantReplyNative(
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// Text-protocol streaming (task 06-26-text-protocol-and-agent-entry)
+// Text-protocol streaming (Text Tool Protocol v2)
 //
-// Mirrors streamAssistantReplyNative but for the <tsian-tool-call> text-
-// embedding protocol. Uses AiChatMessage[] (not RuntimeChatMessage[]), sends
-// stream:true via buildRequestBody (not buildStreamRequestBody which expects
-// native message shape), and does NOT extract tool calls or reasoning from
-// structured SSE fields — tool calls live in the content text as
-// <tsian-tool-call> blocks, parsed post-hoc by the runtime layer at round
-// end. The onDelta callback receives a display-stripped buffer (closed
-// tool-call/think blocks hidden, unclosed tail blocks still visible) so the
-// UI doesn't show raw XML tags during streaming.
+// Mirrors streamAssistantReplyNative but for the <tsian-tool-calls> text
+// protocol. Uses AiChatMessage[] (not RuntimeChatMessage[]), sends stream:true
+// via buildRequestBody (not buildStreamRequestBody which expects native message
+// shape), and does NOT extract tool calls or reasoning from structured SSE
+// fields — executable tool calls live in the content text as a v2 JSON-array
+// block, parsed post-hoc by the runtime layer at round end. The onDelta
+// callback receives raw content deltas; the render layer applies stripForDisplay
+// so the UI doesn't show raw protocol/think tags during streaming.
 // ─────────────────────────────────────────────────────────────────────────
 
 // Display-only patterns mirror the authoritative THINK_BLOCK_PATTERNS in
@@ -2438,7 +2437,12 @@ export async function streamAssistantReplyNative(
 // display strip is best-effort (render aid), while agent-runtime's
 // stripThinkBlocks is the authoritative parse (model-boundary contract).
 // Same precedent as registry.ts mirroring tsian-actions fence patterns.
-const DISPLAY_TOOL_CALL_PATTERN = /<tsian-tool-call>\s*[\s\S]*?\s*<\/tsian-tool-call>/g
+const DISPLAY_PROTOCOL_PATTERNS = [
+  /<tsian-tool-calls>\s*[\s\S]*?\s*<\/tsian-tool-calls>/g,
+  /<tsian-tool-call-records>\s*[\s\S]*?\s*<\/tsian-tool-call-records>/g,
+  /<tsian-tool-observations>\s*[\s\S]*?\s*<\/tsian-tool-observations>/g,
+  /<tsian-tool-protocol-error>\s*[\s\S]*?\s*<\/tsian-tool-protocol-error>/g,
+]
 const DISPLAY_THINK_PATTERNS = [
   /<thought>\s*[\s\S]*?\s*<\/thought>/g,
   /<thinking>\s*[\s\S]*?\s*<\/thinking>/g,
@@ -2446,7 +2450,10 @@ const DISPLAY_THINK_PATTERNS = [
 ]
 
 export function stripForDisplay(text: string): string {
-  let result = text.replace(DISPLAY_TOOL_CALL_PATTERN, "")
+  let result = text
+  for (const pattern of DISPLAY_PROTOCOL_PATTERNS) {
+    result = result.replace(pattern, "")
+  }
   for (const pattern of DISPLAY_THINK_PATTERNS) {
     result = result.replace(pattern, "")
   }
@@ -2455,12 +2462,11 @@ export function stripForDisplay(text: string): string {
 
 export interface StreamAssistantReplyTextOptions extends GenerateAssistantReplyOptions {
   /**
-   * Streaming text-delta callback for text-protocol mode. Invoked with the
-   * display-stripped accumulated buffer (not incremental deltas) and
-   * `kind: "content"` only — text protocol has no separate reasoning stream;
-   * chain-of-thought lives in the content text as <think>/<thought>/
-   * <thinking> blocks, stripped by stripForDisplay for display and by
-   * stripThinkBlocks for the authoritative round-end parse.
+   * Streaming text-delta callback for text-protocol mode. Invoked with raw
+   * incremental content deltas and `kind: "content"` only — text protocol has
+   * no separate reasoning stream; chain-of-thought lives in the content text as
+   * <think>/<thought>/<thinking> blocks, stripped by stripForDisplay for display
+   * and by stripThinkBlocks for the authoritative round-end parse.
    */
   onDelta?: (delta: string, round: number, kind: "reasoning" | "content") => void
   /** Tool-loop round index for this single stream call. Defaults to 0. */
@@ -2472,11 +2478,10 @@ export interface StreamAssistantReplyTextOptions extends GenerateAssistantReplyO
  * `stream: true` to the provider's chat endpoint and accumulates the full
  * response via SSE. Unlike `streamAssistantReplyNative`, this returns
  * `Promise<string>` (the raw full text, NOT a `ModelCallResult`) because
- * text-protocol tool calls are embedded in the content and parsed by the
- * runtime layer post-hoc. The `onDelta` callback receives the
- * display-stripped buffer on every content chunk. Falls back to one-shot
- * `generateAssistantReply` when the endpoint does not answer with
- * `text/event-stream`.
+ * Text Tool Protocol calls are embedded in the content and parsed by the
+ * runtime layer post-hoc. The `onDelta` callback receives raw content deltas.
+ * Falls back to one-shot `generateAssistantReply` when the endpoint does not
+ * answer with `text/event-stream`.
  */
 export async function streamAssistantReplyText(
   messages: AiChatMessage[],
@@ -2660,7 +2665,8 @@ export async function streamAssistantReplyText(
         // here — text protocol has no structured tool-call or reasoning
         // fields. The finish reason is also not needed; the runtime layer
         // determines tool_calls vs stop by parsing the full buffer at round
-        // end (parseRuntimeWorkspaceToolCalls returns empty → stop).
+        // end: the Agent Runtime classifies the round by parsing the full
+        // Text Tool Protocol v2 buffer after streaming completes.
       }
     }
   } finally {

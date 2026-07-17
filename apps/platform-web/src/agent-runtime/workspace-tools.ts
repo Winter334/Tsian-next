@@ -102,7 +102,6 @@ import type {
   RuntimeLoadedSkill,
   SkillActionParseResult,
 } from "./workspace-tools-types"
-const TOOL_CALL_PATTERN = /<tsian-tool-call>\s*([\s\S]*?)\s*<\/tsian-tool-call>/g
 const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
 const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
 const DEFAULT_AGENT_CALL_HISTORY_MODE: RuntimeAgentCallHistoryMode = "recent"
@@ -359,76 +358,6 @@ function emitToolObservationTrace(
   emitAgentCallTrace(context, call, observation, durationMs)
   emitWorkspaceToolTrace(context, call, observation, durationMs)
   emitActionCallTrace(context, call, observation, durationMs)
-}
-
-function parseToolCall(raw: string): ParsedRuntimeWorkspaceToolCall {
-  let parsed: unknown
-  try {
-    parsed = JSON.parse(raw)
-  } catch (error) {
-    return {
-      raw,
-      error: toolError(
-        "TOOL_CALL_JSON_INVALID",
-        error instanceof Error ? error.message : "Tool call JSON is invalid.",
-      ),
-    }
-  }
-
-  if (!isRecord(parsed)) {
-    return {
-      raw,
-      error: toolError(
-        "TOOL_CALL_INVALID",
-        "Tool call must be a JSON object.",
-      ),
-    }
-  }
-
-  const name = typeof parsed.name === "string" ? parsed.name.trim() : ""
-  if (!name) {
-    return {
-      raw,
-      error: toolError(
-        "TOOL_NAME_REQUIRED",
-        "Tool call requires a non-empty string name.",
-      ),
-    }
-  }
-
-  const args = parsed.arguments
-  if (args !== undefined && !isRecord(args)) {
-    return {
-      raw,
-      error: toolError(
-        "TOOL_ARGUMENTS_INVALID",
-        "Tool call arguments must be a JSON object when provided.",
-      ),
-    }
-  }
-
-  return {
-    raw,
-    call: {
-      name,
-      arguments: args ?? {},
-    },
-  }
-}
-
-export function parseRuntimeWorkspaceToolCalls(
-  text: string,
-): ParsedRuntimeWorkspaceToolCall[] {
-  const calls: ParsedRuntimeWorkspaceToolCall[] = []
-  for (const match of text.matchAll(TOOL_CALL_PATTERN)) {
-    calls.push(parseToolCall(match[1] ?? ""))
-  }
-
-  return calls
-}
-
-export function stripRuntimeWorkspaceToolCallBlocks(text: string): string {
-  return text.replace(TOOL_CALL_PATTERN, "").trim()
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -2249,8 +2178,8 @@ async function executeRunScript(
  *   response 不截断（UI 侧控制长度）。
  *
  * **本函数只服务 UI/trace 旁路的 turn-tool 事件，给完整结果**（不截断，
- *  显示策略交给前端按需折叠）。喂回模型的路径在
- *  `formatRuntimeWorkspaceToolObservationMessage` / `formatNativeToolObservationContent`，
+ *  显示策略交给前端按需折叠）。喂回模型的路径在 text-tool-protocol 的
+ *  Text Tool Protocol v2 observation formatter 和 `formatNativeToolObservationContent`，
  *  那里经 `compactToolObservationForModel` 对大结果做 preview+续读线索，
  *  与本旁路分离——debug/trace 保留完整事实，模型上下文只拿 compact 版。
  */
@@ -2606,19 +2535,6 @@ export async function executeRuntimeWorkspaceToolCalls(
 
   // Restore the original call order (invariant: observations[i] corresponds to calls[i]).
   return calls.map((_, index) => observations.get(index)!)
-}
-
-export function formatRuntimeWorkspaceToolObservationMessage(
-  observations: RuntimeWorkspaceToolObservation[],
-): string {
-  const compactObservations = observations.map(compactToolObservationForModel)
-  return [
-    "Workspace tool observations:",
-    "<tsian-tool-observation>",
-    JSON.stringify(compactObservations, null, 2),
-    "</tsian-tool-observation>",
-    "Use these observations to continue. If you have enough context, provide the required final output without tool-call blocks.",
-  ].join("\n")
 }
 
 function compactUnknownResultForModel(result: unknown): unknown {
