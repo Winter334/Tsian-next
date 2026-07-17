@@ -91,6 +91,7 @@
       :preset="activePreset"
       :kind="activeTypeKind"
       :test-model="testActiveModel"
+      :test-tool-calling="testActiveModelToolCalling"
       @confirm="handleAddModelConfirm"
     />
 
@@ -102,6 +103,7 @@
       :initial-tool-call-mode="editingModelToolCallMode"
       :initial-streaming="editingModelStreaming"
       :test-model="testActiveModel"
+      :test-tool-calling="testActiveModelToolCalling"
       @confirm="handleEditModelParamsConfirm"
     />
   </section>
@@ -136,6 +138,7 @@ import {
   createDefaultBrowserAiModelParameters,
   fetchBrowserAiProviderModels,
   getBrowserPlatformConfigDraft,
+  normalizeBrowserAiProviderBaseUrl,
   resolveBrowserAiConfigFromProviderPreset,
   saveBrowserPlatformConfigDraftLenient,
   saveEmbeddingConfig,
@@ -149,7 +152,7 @@ import {
   getPlatformConfig,
   savePlatformConfig,
 } from "@/config/platform-config"
-import { generateAssistantReply } from "@/runtime-host/ai"
+import { generateAssistantReply, probeAssistantNativeToolCalling } from "@/runtime-host/ai"
 
 type Screen =
   | { kind: "hub" }
@@ -348,7 +351,7 @@ async function handleAddPreset(typeId: string): Promise<void> {
     confirmText: "添加",
     testLabel: "测试连通性",
     test: async (vals) => {
-      const baseUrl = vals.baseUrl.trim()
+      const baseUrl = normalizeBrowserAiProviderBaseUrl(vals.baseUrl)
       const apiKey = vals.apiKey.trim()
       if (!baseUrl) {
         return { ok: false, message: "请先填写接口地址。" }
@@ -384,7 +387,7 @@ async function handleAddPreset(typeId: string): Promise<void> {
   }
   const preset = createBrowserAiProviderPreset({
     name: values.name.trim(),
-    baseUrl: values.baseUrl.trim(),
+    baseUrl: normalizeBrowserAiProviderBaseUrl(values.baseUrl),
     apiKey: values.apiKey.trim(),
   })
   type.presets.push(preset)
@@ -408,7 +411,7 @@ async function handleEditPreset(typeId: string, presetId: string): Promise<void>
     confirmText: "保存",
     testLabel: "测试连通性",
     test: async (vals) => {
-      const baseUrl = vals.baseUrl.trim()
+      const baseUrl = normalizeBrowserAiProviderBaseUrl(vals.baseUrl)
       const apiKey = vals.apiKey.trim()
       if (!baseUrl) {
         return { ok: false, message: "请先填写接口地址。" }
@@ -443,7 +446,7 @@ async function handleEditPreset(typeId: string, presetId: string): Promise<void>
     presetId,
     patch: {
       name: values.name.trim(),
-      baseUrl: values.baseUrl.trim(),
+      baseUrl: normalizeBrowserAiProviderBaseUrl(values.baseUrl),
       apiKey: values.apiKey.trim(),
     },
   })
@@ -639,6 +642,40 @@ async function testActiveModel(payload: {
       message: error instanceof Error ? error.message : "Chat ping 失败。",
     }
   }
+}
+
+async function testActiveModelToolCalling(payload: {
+  modelId: string
+  parameters: BrowserAiModelParameters
+  toolCallMode: BrowserAiToolCallMode
+  streaming: boolean
+}): Promise<{ ok: boolean; message: string }> {
+  const preset = activePreset.value
+  if (!preset) {
+    return { ok: false, message: "未选择服务商预设。" }
+  }
+  const modelId = payload.modelId.trim()
+  if (!modelId) {
+    return { ok: false, message: "请先填写模型 id。" }
+  }
+  const testPreset: BrowserAiProviderPreset = {
+    ...preset,
+    models: [
+      createBrowserAiModelConfig({
+        id: modelId,
+        parameters: cloneBrowserAiModelParameters(payload.parameters),
+        toolCallMode: "native",
+        streaming: false,
+        enabled: true,
+      }),
+    ],
+    fallbackStrategy: "primary-only",
+  }
+  const config = resolveBrowserAiConfigFromProviderPreset(testPreset, activeTypeKind.value, modelId)
+  if (!config) {
+    return { ok: false, message: "预设缺少接口地址、API 密钥或模型配置。" }
+  }
+  return probeAssistantNativeToolCalling(config)
 }
 
 function handleSetStrategy(strategy: "primary-only" | "ordered"): void {

@@ -216,6 +216,7 @@ interface StoredBrowserPlatformConfigDraft {
 const LEGACY_PROVIDER_ID = "local-chat-provider"
 const DEFAULT_PROVIDER_NAME = "OpenAI 兼容服务"
 const MODEL_FETCH_TIMEOUT_MS = 60_000
+const MODEL_FETCH_MAX_PAGES = 10
 const PROTECTED_CUSTOM_REQUEST_KEYS = new Set([
   "apikey",
   "authorization",
@@ -243,6 +244,10 @@ const PROTECTED_CUSTOM_REQUEST_KEYS = new Set([
   "temperature",
   "thinking",
   "tools",
+  "tool_choice",
+  "tool_config",
+  "toolchoice",
+  "toolconfig",
   "top_k",
   "top_p",
 ])
@@ -254,6 +259,36 @@ function readEnvText(key: string): string {
 
 function readStoredText(value: unknown): string {
   return typeof value === "string" ? value.trim() : ""
+}
+
+const KNOWN_BROWSER_AI_ENDPOINT_SUFFIXES = [
+  "/chat/completions",
+  "/responses",
+  "/messages",
+  "/models",
+  "/embeddings",
+] as const
+
+export function normalizeBrowserAiProviderBaseUrl(input: string): string {
+  let value = input.trim()
+  if (!value) {
+    return ""
+  }
+
+  if (value.startsWith("//")) {
+    value = `https:${value}`
+  } else if (!/^[a-z][a-z\d+.-]*:\/\//i.test(value)) {
+    value = `https://${value}`
+  }
+
+  value = value.replace(/\/+$/, "")
+  const lower = value.toLowerCase()
+  for (const suffix of KNOWN_BROWSER_AI_ENDPOINT_SUFFIXES) {
+    if (lower.endsWith(suffix)) {
+      return value.slice(0, -suffix.length).replace(/\/+$/, "")
+    }
+  }
+  return value
 }
 
 function createProviderId(): string {
@@ -696,7 +731,7 @@ function normalizeProviderPreset(input: unknown, index: number): BrowserAiProvid
   }
 
   const record = input as Record<string, unknown>
-  const baseUrl = readStoredText(record.baseUrl)
+  const baseUrl = normalizeBrowserAiProviderBaseUrl(readStoredText(record.baseUrl))
   const apiKey = readStoredText(record.apiKey)
   const legacyDefaultModel = readStoredText(record.defaultModel ?? record.model)
   const id = readStoredText(record.id) || `provider-${index + 1}`
@@ -847,7 +882,7 @@ export function resolveEmbeddingConfig(): BrowserEmbeddingConfig | null {
 }
 
 function normalizeLegacyChatDraft(input?: Partial<LegacyBrowserAiConfig>): BrowserAiProviderPreset | null {
-  const baseUrl = readStoredText(input?.baseUrl)
+  const baseUrl = normalizeBrowserAiProviderBaseUrl(readStoredText(input?.baseUrl))
   const apiKey = readStoredText(input?.apiKey)
   const defaultModel = readStoredText(input?.model)
 
@@ -935,7 +970,7 @@ function getEnvAiConfig(): BrowserAiConfig | null {
   return {
     providerName: "环境默认",
     kind: "openai-compatible",
-    baseUrl,
+    baseUrl: normalizeBrowserAiProviderBaseUrl(baseUrl),
     apiKey,
     model,
     parameters: createDefaultBrowserAiModelParameters(),
@@ -987,7 +1022,7 @@ function resolveProviderConfig(
     providerId: provider.id,
     providerName: provider.name,
     kind,
-    baseUrl: provider.baseUrl,
+    baseUrl: normalizeBrowserAiProviderBaseUrl(provider.baseUrl),
     apiKey: provider.apiKey,
     model: primary.id,
     parameters: cloneModelParameters(primary.parameters),
@@ -1031,7 +1066,7 @@ export function createBrowserAiProviderPreset(
   return {
     id: readStoredText(input.id) || createProviderId(),
     name: readStoredText(input.name) || DEFAULT_PROVIDER_NAME,
-    baseUrl: readStoredText(input.baseUrl),
+    baseUrl: normalizeBrowserAiProviderBaseUrl(readStoredText(input.baseUrl)),
     apiKey: readStoredText(input.apiKey),
     models,
     fallbackStrategy: normalizeFallbackStrategy(input.fallbackStrategy),
@@ -1377,29 +1412,19 @@ export function validateBrowserPlatformConfigDraft(input: BrowserPlatformConfigD
   }
 }
 
-function buildModelsUrl(baseUrl: string): string {
-  const normalized = baseUrl.trim().replace(/\/+$/, "")
+function buildModelsUrlForKind(baseUrl: string, kind: BrowserAiProviderKind, pageToken?: string): string {
+  const normalized = normalizeBrowserAiProviderBaseUrl(baseUrl)
   if (!normalized) {
     throw new Error("请先填写接口地址。")
   }
-
-  return `${normalized}/models`
-}
-
-/** Build the model-list endpoint URL for a given provider kind. */
-function buildModelsUrlForKind(baseUrl: string, kind: BrowserAiProviderKind): string {
-  const normalized = baseUrl.trim().replace(/\/+$/, "")
-  if (!normalized) {
-    throw new Error("请先填写接口地址。")
-  }
+  const url = new URL(`${normalized}/models`)
   if (kind === "gemini") {
-    // Gemini v1beta listModels; the API key goes in the query string.
-    return `${normalized}/models`
+    url.searchParams.set("pageSize", "1000")
+    if (pageToken) {
+      url.searchParams.set("pageToken", pageToken)
+    }
   }
-  if (kind === "claude") {
-    return `${normalized}/models`
-  }
-  return `${normalized}/models`
+  return url.toString()
 }
 
 /** Auth + metadata headers for a model-list / chat request, per kind. */
@@ -1417,6 +1442,16 @@ function buildProviderHeadersForKind(
   return { Authorization: `Bearer ${apiKey}`, ...extra }
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function extractGeminiNextPageToken(payload: unknown): string {
+  return isRecord(payload) && typeof payload.nextPageToken === "string"
+    ? payload.nextPageToken.trim()
+    : ""
+}
+
 /**
  * Extract model entries from a model-list response, accounting for per-kind
  * response shapes. Gemini returns `{ models: [{ name: "models/gemini-..." }] }`;
@@ -1424,19 +1459,21 @@ function buildProviderHeadersForKind(
  */
 function extractModelEntriesForKind(payload: unknown, kind: BrowserAiProviderKind): BrowserAiModelEntry[] {
   if (kind === "gemini") {
-    const models = typeof payload === "object" && payload !== null
-      ? (payload as { models?: unknown }).models
-      : undefined
+    const models = isRecord(payload) ? payload.models : undefined
     if (!Array.isArray(models)) {
       return []
     }
     const seen = new Set<string>()
     const result: BrowserAiModelEntry[] = []
     for (const item of models) {
-      if (typeof item !== "object" || item === null) {
+      if (!isRecord(item)) {
         continue
       }
-      const rawName = readStoredText((item as { name?: unknown }).name)
+      const supportedMethods = item.supportedGenerationMethods
+      if (Array.isArray(supportedMethods) && !supportedMethods.includes("generateContent")) {
+        continue
+      }
+      const rawName = readStoredText(item.name)
       // Gemini names look like "models/gemini-1.5-flash"; strip the prefix.
       const id = rawName.replace(/^models\//, "").trim()
       if (!id || seen.has(id)) {
@@ -1513,23 +1550,44 @@ export async function fetchBrowserAiProviderModels(
   }, MODEL_FETCH_TIMEOUT_MS)
 
   try {
-    const response = await fetch(buildModelsUrlForKind(provider.baseUrl, kind), {
-      method: "GET",
-      headers: buildProviderHeadersForKind(kind, apiKey),
-      signal: controller.signal,
-    })
-    const payload = await readJsonPayload(response)
+    const allModels: BrowserAiModelEntry[] = []
+    const seen = new Set<string>()
+    let pageToken = ""
 
-    if (!response.ok) {
-      throw new Error(extractErrorMessage(payload) ?? `拉取模型失败，HTTP ${response.status}。`)
+    for (let page = 0; page < MODEL_FETCH_MAX_PAGES; page += 1) {
+      const response = await fetch(buildModelsUrlForKind(provider.baseUrl, kind, pageToken), {
+        method: "GET",
+        headers: buildProviderHeadersForKind(kind, apiKey),
+        signal: controller.signal,
+      })
+      const payload = await readJsonPayload(response)
+
+      if (!response.ok) {
+        throw new Error(extractErrorMessage(payload) ?? `拉取模型失败，HTTP ${response.status}。`)
+      }
+
+      for (const model of extractModelEntriesForKind(payload, kind)) {
+        if (seen.has(model.id)) {
+          continue
+        }
+        seen.add(model.id)
+        allModels.push(model)
+      }
+
+      if (kind !== "gemini") {
+        break
+      }
+      pageToken = extractGeminiNextPageToken(payload)
+      if (!pageToken) {
+        break
+      }
     }
 
-    const models = extractModelEntriesForKind(payload, kind)
-    if (models.length === 0) {
+    if (allModels.length === 0) {
       throw new Error("没有从服务商返回内容中找到可用模型。")
     }
 
-    return models
+    return allModels
   } catch (error) {
     if (controller.signal.aborted && !options.signal?.aborted) {
       throw new Error("拉取模型超时，请检查接口地址或网络。")

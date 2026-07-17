@@ -58,6 +58,9 @@ Conventions:
 - `BrowserAiModelParameters` is nested: `common: { contextWindow, maxOutputTokens, temperature, topP }` plus `provider: { openaiCompatible?, openaiResponses?, deepseek?, gemini?, claude? }`.
 - Provider branches carry protocol knobs and branch-local `customRequestParamsText`: OpenAI/DeepSeek penalties + reasoning, Responses reasoning, Gemini generation/thinking/schema fields, Claude service tier + extended-thinking fields.
 - `resolveBrowserAiConfigFromProviderPreset(provider, kind, modelId?)` builds a runtime config from an in-memory Settings draft for model ping.
+- `normalizeBrowserAiProviderBaseUrl(input)` performs minimal provider-agnostic URL cleanup for chat providers: trim, add `https://` when no scheme is present, remove trailing slashes, and strip obvious endpoint suffixes (`/models`, `/chat/completions`, `/responses`, `/messages`, `/embeddings`).
+- `fetchBrowserAiProviderModels({ baseUrl, apiKey, kind })` fetches model ids for Settings; Gemini uses `{ models, nextPageToken }`, while OpenAI-compatible / Responses / DeepSeek / Claude use the generic `{ data }` or bare-array extraction.
+- `probeAssistantNativeToolCalling(config)` sends one non-streaming native tool-call probe with a harmless `tsian_tool_probe` schema and returns `{ ok, message }` without executing workspace tools or persisting results.
 - `getBrowserAiProviderPresetModels(providerId)` reads `contextWindow` from `parameters.common.contextWindow`.
 
 ### 3. Contracts
@@ -72,6 +75,9 @@ Conventions:
 - Resolution order for every model call: Agent-selected preset -> platform-global active provider -> complete `VITE_AI_*` environment defaults. AIRP play turns and desktop Assistant chat turns pass the resolved config only when non-null.
 - Per-Agent provider selection stores only `providerPresetId?: string` on Agent config. The preset including `apiKey`/`baseUrl` stays platform-local and is never distributed with game-card content.
 - Settings model ping uses an in-memory draft config, forces non-streaming chat, and surfaces pass/fail text in the UI.
+- Settings native tool-call probe is a separate manual model-level test. It forces `toolCallMode: "native"` and `streaming: false` for the probe call only, sends exactly one harmless probe tool, never executes workspace tools, never auto-switches the model's saved `toolCallMode`, and never persists the probe result.
+- Chat provider base URL normalization is intentionally minimal and provider-agnostic. Do not guess official roots or middleman protocol variants; only trim, add a missing `https://`, strip trailing slash, and remove obvious endpoint suffixes. If the remaining URL is wrong, the connectivity/model/tool tests should surface the provider error.
+- Gemini model-list fetch follows `nextPageToken` and filters out entries whose `supportedGenerationMethods` exists and lacks `generateContent`; entries without that field are kept for proxy compatibility.
 
 ### 4. Validation & Error Matrix
 
@@ -80,7 +86,12 @@ Conventions:
 - Stored model config missing/invalid `toolCallMode` -> model dropped; a preset left with zero models is caught by validation.
 - `toolCallMode` other than `native`/`text` at save time -> validation throws.
 - Model fetch with blank base URL / blank API key -> throw a clear local error before network fetch.
-- Model fetch HTTP error -> surface provider error message when present, otherwise status-based error.
+- Chat provider base URL entered as a bare host or copied endpoint -> normalize to a provider-agnostic API root by adding `https://`, removing trailing slashes, and stripping known endpoint suffixes only; do not add provider-specific paths such as Gemini `/v1beta`.
+- Gemini model-list item with `supportedGenerationMethods` missing -> keep it (proxy compatibility).
+- Gemini model-list item with `supportedGenerationMethods` present but without `generateContent` -> hide it from chat model selection.
+- Settings native tool-call probe returns no tool call -> show a failure suggesting text-compatible mode; do not mutate saved model config.
+- Settings native tool-call probe provider rejects `tools` / `tool_choice` / `toolConfig` -> surface the provider error as a tool-call-parameter failure; do not execute or emulate tools locally.
+- Settings native tool-call probe auth/network failure -> show the failure in the test result only; no persistence side effects.
 - Common numeric model parameter outside range -> validation throws with a field-specific error.
 - Active provider custom JSON is invalid, not an object, or tries to override protected runtime fields -> validation/runtime request build throws with a clear error.
 - Gemini `responseSchemaText` non-empty but invalid JSON object -> fail before sending the request.
@@ -91,6 +102,13 @@ Conventions:
 ### 5. Good/Base/Bad Cases
 
 - Good: OpenAI Responses maps `parameters.common.maxOutputTokens` -> `max_output_tokens`, `parameters.provider.openaiResponses.reasoningEffort` -> `reasoning.effort`, and keeps `store: false` after custom JSON merge.
+- Good: A player pastes `https://proxy.example.com/v1/chat/completions`; Settings stores/uses `https://proxy.example.com/v1` without trying to infer whether the proxy is OpenAI-compatible or Gemini-native.
+- Good: Gemini `/models` returns both `embedContent`-only and `generateContent` models; Settings only offers `generateContent` entries for chat.
+- Good: Native tool-call probe returns `tsian_tool_probe`; Settings reports native tool support but does not save any capability field.
+- Base: Inactive provider branches may be populated because the UI creates defaults; runtime reads only the branch selected by `BrowserAiProviderType.kind`.
+- Bad: Provider base URL normalization rewrites an unknown middleman path to an official provider root or adds `/v1beta` because the selected kind is Gemini.
+- Bad: Treating a successful model-list fetch or ordinary chat ping as proof that native tool calling works.
+- Bad: Persisting `nativeToolCallSupported` / last probe status on the model config without a new schema decision.
 - Good: Claude defaults to `thinkingMode: "disabled"`, so unsupported models do not receive a `thinking` object unless the user enables advanced thinking.
 - Base: Inactive provider branches may be populated because the UI creates defaults; runtime reads only the branch selected by `BrowserAiProviderType.kind`.
 - Bad: A request builder reads old top-level `parameters.reasoningEffort` or reads the OpenAI-compatible branch for a Responses preset.
@@ -101,6 +119,8 @@ Conventions:
 - `npm run build:web` after any platform-web provider config/runtime/UI change.
 - For request-builder changes, assert or manually inspect that each provider maps common + active-branch fields correctly and that runtime-owned keys survive custom JSON.
 - For Settings UI changes, verify add/edit windows round-trip nested `common` and active provider branch values, hide irrelevant provider controls, and show model ping pass/fail.
+- For Settings native tool-call probe changes, verify the probe is manual, model-level, non-streaming, native-mode-only for the probe call, and does not persist state or auto-switch `toolCallMode`.
+- For provider model-list changes, verify Gemini pagination and `generateContent` filtering while OpenAI-compatible `{ data: [...] }` extraction still works.
 - For provider config normalization changes, verify missing old flat parameter fields normalize to defaults rather than being migrated.
 
 ### 7. Wrong vs Correct
@@ -118,6 +138,35 @@ if (model.providerKind === "openai-responses") {
 ```ts
 const provider = providerParamsForKind(config.parameters, config.kind)
 // Adapter narrows the branch it owns, then maps to provider-native names.
+```
+
+#### Wrong
+
+```ts
+// Do not infer provider roots for unknown middlemen.
+const baseUrl = kind === "gemini" ? `${host}/v1beta` : `${host}/v1`
+```
+
+#### Correct
+
+```ts
+const baseUrl = normalizeBrowserAiProviderBaseUrl(input)
+// Only trims, adds https://, removes trailing slash, and strips known endpoint suffixes.
+```
+
+#### Wrong
+
+```ts
+// Chat ping success does not prove native tool support.
+await generateAssistantReply([{ role: "user", content: "Reply OK" }], { config })
+model.nativeToolCallSupported = true
+```
+
+#### Correct
+
+```ts
+const result = await probeAssistantNativeToolCalling({ ...config, toolCallMode: "native", streaming: false })
+// Display result in Settings only; do not persist it to BrowserAiModelConfig.
 ```
 
 ## Scenario: Current Game Card And Active Save State

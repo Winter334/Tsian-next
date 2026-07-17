@@ -512,6 +512,7 @@ function buildResponsesRequestBody(input: {
   input: unknown[]
   parameters: BrowserAiModelParameters
   tools?: unknown[]
+  toolChoice?: unknown
   stream?: boolean
 }): Record<string, unknown> {
   const common = input.parameters.common
@@ -545,6 +546,12 @@ function buildResponsesRequestBody(input: {
     result.tools = input.tools
   } else {
     delete result.tools
+  }
+
+  if (input.toolChoice !== undefined) {
+    result.tool_choice = input.toolChoice
+  } else {
+    delete result.tool_choice
   }
 
   if (input.stream) {
@@ -920,6 +927,10 @@ function extractAssistantText(payload: unknown): string {
 // to their native shapes.
 // ---------------------------------------------------------------------------
 
+interface NativeRequestBuildOptions {
+  forceToolName?: string
+}
+
 interface ProviderAdapter {
   buildUrl(config: BrowserAiConfig): string
   buildHeaders(config: BrowserAiConfig): Record<string, string>
@@ -935,6 +946,7 @@ interface ProviderAdapter {
     config: BrowserAiConfig,
     messages: RuntimeChatMessage[],
     tools: ToolSchema[],
+    options?: NativeRequestBuildOptions,
   ): Record<string, unknown>
   /**
    * Parse a complete (non-streaming) native response into a structured
@@ -958,6 +970,7 @@ interface ProviderAdapter {
     config: BrowserAiConfig,
     messages: RuntimeChatMessage[],
     tools: ToolSchema[],
+    options?: NativeRequestBuildOptions,
   ): Record<string, unknown>
   /**
    * Extract the visible text delta (the assistant's reply content, not its
@@ -1021,7 +1034,7 @@ const openaiAdapter: ProviderAdapter = {
     })
   },
   extractText: extractAssistantText,
-  buildNativeRequestBody(config, messages, tools) {
+  buildNativeRequestBody(config, messages, tools, options) {
     const body = buildChatCompletionsRequestBody({
       model: config.model,
       messages: [],
@@ -1060,6 +1073,12 @@ const openaiAdapter: ProviderAdapter = {
         parameters: tool.parameters,
       },
     }))
+    if (options?.forceToolName) {
+      body.tool_choice = {
+        type: "function",
+        function: { name: options.forceToolName },
+      }
+    }
     return body
   },
   extractNativeResult(payload) {
@@ -1124,8 +1143,8 @@ const openaiAdapter: ProviderAdapter = {
   buildStreamUrl(config) {
     return buildChatCompletionsUrl(config.baseUrl)
   },
-  buildStreamRequestBody(config, messages, tools) {
-    const body = this.buildNativeRequestBody(config, messages, tools)
+  buildStreamRequestBody(config, messages, tools, options) {
+    const body = this.buildNativeRequestBody(config, messages, tools, options)
     body.stream = true
     enableOpenAiCompatibleStreamUsage(body, config.kind)
     return body
@@ -1211,26 +1230,28 @@ const responsesAdapter: ProviderAdapter = {
     })
   },
   extractText: extractResponsesText,
-  buildNativeRequestBody(config, messages, tools) {
+  buildNativeRequestBody(config, messages, tools, options) {
     const responseTools = buildResponsesTools(tools)
     return buildResponsesRequestBody({
       model: config.model,
       input: buildResponsesNativeInput(messages),
       parameters: config.parameters,
       ...(responseTools.length > 0 ? { tools: responseTools } : {}),
+      ...(options?.forceToolName ? { toolChoice: { type: "function", name: options.forceToolName } } : {}),
     })
   },
   extractNativeResult: extractResponsesResult,
   buildStreamUrl(config) {
     return buildResponsesUrl(config.baseUrl)
   },
-  buildStreamRequestBody(config, messages, tools) {
+  buildStreamRequestBody(config, messages, tools, options) {
     const responseTools = buildResponsesTools(tools)
     return buildResponsesRequestBody({
       model: config.model,
       input: buildResponsesNativeInput(messages),
       parameters: config.parameters,
       ...(responseTools.length > 0 ? { tools: responseTools } : {}),
+      ...(options?.forceToolName ? { toolChoice: { type: "function", name: options.forceToolName } } : {}),
       stream: true,
     })
   },
@@ -1408,6 +1429,7 @@ function buildGeminiRequestBody(input: {
   contents: Record<string, unknown>[]
   system?: string
   tools?: ToolSchema[]
+  forceToolName?: string
 }): Record<string, unknown> {
   const provider = providerParamsForKind(input.config.parameters, "gemini") as BrowserGeminiModelParameters
   const body: Record<string, unknown> = {
@@ -1427,6 +1449,14 @@ function buildGeminiRequestBody(input: {
         })),
       },
     ]
+    if (input.forceToolName) {
+      body.toolConfig = {
+        functionCallingConfig: {
+          mode: "ANY",
+          allowedFunctionNames: [input.forceToolName],
+        },
+      }
+    }
   }
   return mergeProviderCustomParams(body, provider.customRequestParamsText)
 }
@@ -1476,6 +1506,7 @@ function buildClaudeRequestBody(input: {
   messages: Record<string, unknown>[]
   system?: string
   tools?: ToolSchema[]
+  forceToolName?: string
 }): Record<string, unknown> {
   const provider = providerParamsForKind(input.config.parameters, "claude") as BrowserClaudeModelParameters
   const body: Record<string, unknown> = {
@@ -1492,6 +1523,13 @@ function buildClaudeRequestBody(input: {
       description: tool.description,
       input_schema: tool.parameters,
     }))
+    if (input.forceToolName) {
+      body.tool_choice = {
+        type: "tool",
+        name: input.forceToolName,
+        disable_parallel_tool_use: true,
+      }
+    }
   }
   return mergeProviderCustomParams(body, provider.customRequestParamsText)
 }
@@ -1537,13 +1575,14 @@ const geminiAdapter: ProviderAdapter = {
     }
     throw new Error("Gemini response format is not supported.")
   },
-  buildNativeRequestBody(config, messages, tools) {
+  buildNativeRequestBody(config, messages, tools, options) {
     const { system, rest } = splitSystemMessages(messages)
     return buildGeminiRequestBody({
       config,
       system,
       contents: rest.map((message) => buildGeminiNativeContent(message)),
       tools,
+      forceToolName: options?.forceToolName,
     })
   },
   extractNativeResult(payload) {
@@ -1596,9 +1635,9 @@ const geminiAdapter: ProviderAdapter = {
     const base = config.baseUrl.replace(/\/+$/, "")
     return `${base}/models/${encodeURIComponent(config.model)}:streamGenerateContent?alt=sse`
   },
-  buildStreamRequestBody(config, messages, tools) {
+  buildStreamRequestBody(config, messages, tools, options) {
     // Gemini controls streaming via the URL; the body is the native shape.
-    return this.buildNativeRequestBody(config, messages, tools)
+    return this.buildNativeRequestBody(config, messages, tools, options)
   },
   extractStreamDelta(data) {
     if (typeof data !== "object" || data === null) return undefined
@@ -1681,13 +1720,14 @@ const claudeAdapter: ProviderAdapter = {
     }
     throw new Error("Claude response format is not supported.")
   },
-  buildNativeRequestBody(config, messages, tools) {
+  buildNativeRequestBody(config, messages, tools, options) {
     const { system, rest } = splitSystemMessages(messages)
     return buildClaudeRequestBody({
       config,
       system,
       messages: rest.map((message) => buildClaudeNativeMessage(message)),
       tools,
+      forceToolName: options?.forceToolName,
     })
   },
   extractNativeResult(payload) {
@@ -1734,8 +1774,8 @@ const claudeAdapter: ProviderAdapter = {
   buildStreamUrl(config) {
     return `${config.baseUrl.replace(/\/+$/, "")}/messages`
   },
-  buildStreamRequestBody(config, messages, tools) {
-    const body = this.buildNativeRequestBody(config, messages, tools)
+  buildStreamRequestBody(config, messages, tools, options) {
+    const body = this.buildNativeRequestBody(config, messages, tools, options)
     body.stream = true
     return body
   },
@@ -1892,6 +1932,8 @@ export async function generateAssistantReply(
 export interface GenerateAssistantReplyNativeOptions extends GenerateAssistantReplyOptions {
   /** Native tool schemas to advertise; empty means a native call without tools. */
   tools?: ToolSchema[]
+  /** Probe-only: ask the provider to force one specific native tool call. */
+  forceToolName?: string
 }
 
 export interface StreamAssistantReplyNativeOptions extends GenerateAssistantReplyNativeOptions {
@@ -1934,7 +1976,7 @@ export async function generateAssistantReplyNative(
   const adapter = selectAdapter(config.kind)
   const url = adapter.buildUrl(config)
   const tools = options.tools ?? []
-  const requestBody = adapter.buildNativeRequestBody(config, messages, tools)
+  const requestBody = adapter.buildNativeRequestBody(config, messages, tools, { forceToolName: options.forceToolName })
   const messageSegments = buildDebugMessageSegments(messages)
 
   pushAiDebugRecord({
@@ -2018,6 +2060,80 @@ export async function generateAssistantReplyNative(
   return { ...result, usage }
 }
 
+const TOOL_CALL_PROBE_NAME = "tsian_tool_probe"
+const TOOL_CALL_PROBE_TOOL: ToolSchema = {
+  name: TOOL_CALL_PROBE_NAME,
+  description: "Probe whether this model can call tools.",
+  parameters: {
+    type: "object",
+    required: ["ping"],
+    properties: {
+      ping: {
+        type: "string",
+        description: "A short ping value.",
+      },
+    },
+  },
+}
+
+export interface NativeToolCallingProbeResult {
+  ok: boolean
+  message: string
+}
+
+function classifyNativeToolProbeError(error: unknown): string {
+  const message = error instanceof Error ? error.message : String(error)
+  if (/401|403|api key|apikey|unauthori[sz]ed|forbidden|permission|鉴权|密钥/i.test(message)) {
+    return `鉴权失败：${message}`
+  }
+  if (/tool|function|schema|tool_choice|toolchoice|toolConfig|functionCalling/i.test(message)) {
+    return `API 拒绝工具调用参数：${message}。建议切换为文本（兼容）模式。`
+  }
+  if (/timeout|timed out|network|fetch|超时|网络/i.test(message)) {
+    return `网络或接口超时：${message}`
+  }
+  return `原生工具调用测试失败：${message}。建议切换为文本（兼容）模式。`
+}
+
+export async function probeAssistantNativeToolCalling(
+  config: BrowserAiConfig,
+  options: { signal?: AbortSignal } = {},
+): Promise<NativeToolCallingProbeResult> {
+  try {
+    const result = await generateAssistantReplyNative(
+      [
+        {
+          role: "user",
+          content: `Call the ${TOOL_CALL_PROBE_NAME} tool now with {"ping":"pong"}. Do not answer in text.`,
+        },
+      ],
+      {
+        config: { ...config, toolCallMode: "native", streaming: false },
+        debugLabel: "settings-tool-probe",
+        signal: options.signal,
+        tools: [TOOL_CALL_PROBE_TOOL],
+        forceToolName: TOOL_CALL_PROBE_NAME,
+      },
+    )
+
+    if (result.toolCalls.some((call) => call.name === TOOL_CALL_PROBE_NAME)) {
+      return { ok: true, message: "支持原生工具调用。" }
+    }
+    if (result.toolCalls.length > 0) {
+      return {
+        ok: false,
+        message: `API 返回了工具调用，但不是测试工具（${result.toolCalls.map((call) => call.name).join(", ")}）。请检查接口工具调用兼容性。`,
+      }
+    }
+    return {
+      ok: false,
+      message: "API 返回了普通回复，但没有发起工具调用；建议切换为文本（兼容）模式。",
+    }
+  } catch (error) {
+    return { ok: false, message: classifyNativeToolProbeError(error) }
+  }
+}
+
 /**
  * Split a raw SSE chunk buffer into complete lines plus a trailing partial
  * line. `data:` payloads are returned decoded; `event:` lines surface the
@@ -2090,7 +2206,7 @@ export async function streamAssistantReplyNative(
   const adapter = selectAdapter(config.kind)
   const url = adapter.buildStreamUrl(config)
   const tools = options.tools ?? []
-  const requestBody = adapter.buildStreamRequestBody(config, messages, tools)
+  const requestBody = adapter.buildStreamRequestBody(config, messages, tools, { forceToolName: options.forceToolName })
   const messageSegments = buildDebugMessageSegments(messages)
 
   pushAiDebugRecord({

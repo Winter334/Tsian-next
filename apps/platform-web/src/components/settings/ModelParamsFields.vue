@@ -447,19 +447,30 @@
       </label>
     </section>
 
-    <section v-if="testModel" class="model-param-section">
+    <section v-if="testModel || testToolCalling" class="model-param-section">
       <div class="model-param-section__header">
         <span>TEST</span>
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button
+          v-if="testModel"
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center gap-1.5 px-3 font-mono text-xs disabled:opacity-45"
-          :disabled="testing || !modelId.trim()"
+          :disabled="isTesting || !modelId.trim()"
           @click="runModelPing"
         >
-          <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': testing }" aria-hidden="true" />
-          测试当前模型
+          <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': testingChat }" aria-hidden="true" />
+          Chat 测试
+        </button>
+        <button
+          v-if="testToolCalling"
+          type="button"
+          class="retro-button retro-focus inline-flex h-8 items-center gap-1.5 px-3 font-mono text-xs disabled:opacity-45"
+          :disabled="isTesting || !modelId.trim()"
+          @click="runToolCallingProbe"
+        >
+          <RefreshCw class="h-3.5 w-3.5" :class="{ 'animate-spin': testingToolCalling }" aria-hidden="true" />
+          原生工具调用测试
         </button>
         <span v-if="!modelId.trim()" class="font-mono text-[10px] text-text-dim/70">请先填写模型 id。</span>
         <span
@@ -475,7 +486,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from "vue"
+import { computed, ref, watch } from "vue"
 import { RefreshCw } from "lucide-vue-next"
 import {
   Select,
@@ -521,6 +532,12 @@ const props = withDefaults(defineProps<{
     toolCallMode: BrowserAiToolCallMode
     streaming: boolean
   }) => Promise<{ ok: boolean; message: string }>
+  testToolCalling?: (payload: {
+    modelId: string
+    parameters: BrowserAiModelParameters
+    toolCallMode: BrowserAiToolCallMode
+    streaming: boolean
+  }) => Promise<{ ok: boolean; message: string }>
 }>(), {
   modelId: "",
 })
@@ -559,8 +576,18 @@ const tips = {
   customRequestParams: "以 JSON 形式追加任意请求参数，会合并到发送给接口的请求体中。适合配置未被面板覆盖的字段，如 { \"seed\": 42 }。",
 } as const
 
-const testing = ref(false)
+const testingChat = ref(false)
+const testingToolCalling = ref(false)
 const testResult = ref<{ ok: boolean; message: string } | null>(null)
+
+const isTesting = computed(() => testingChat.value || testingToolCalling.value)
+
+watch(
+  () => props.modelId,
+  () => {
+    testResult.value = null
+  },
+)
 
 const openaiCompatible = computed(
   () => props.parameters.provider.openaiCompatible ?? createDefaultBrowserOpenAiCompatibleModelParameters(),
@@ -712,7 +739,7 @@ function onStreamingChange(value: boolean): void {
 }
 
 async function runModelPing(): Promise<void> {
-  if (!props.testModel || testing.value) {
+  if (!props.testModel || isTesting.value) {
     return
   }
   const modelId = props.modelId.trim()
@@ -720,22 +747,52 @@ async function runModelPing(): Promise<void> {
     testResult.value = { ok: false, message: "请先填写模型 id。" }
     return
   }
-  testing.value = true
+  testingChat.value = true
   testResult.value = null
   try {
-    testResult.value = await props.testModel({
+    const result = await props.testModel({
       modelId,
       parameters: cloneBrowserAiModelParameters(props.parameters),
       toolCallMode: props.toolCallMode,
       streaming: props.streaming,
     })
+    testResult.value = { ...result, message: `Chat：${result.message}` }
   } catch (error) {
     testResult.value = {
       ok: false,
-      message: error instanceof Error ? error.message : "模型测试失败。",
+      message: error instanceof Error ? `Chat：${error.message}` : "Chat：模型测试失败。",
     }
   } finally {
-    testing.value = false
+    testingChat.value = false
+  }
+}
+
+async function runToolCallingProbe(): Promise<void> {
+  if (!props.testToolCalling || isTesting.value) {
+    return
+  }
+  const modelId = props.modelId.trim()
+  if (!modelId) {
+    testResult.value = { ok: false, message: "请先填写模型 id。" }
+    return
+  }
+  testingToolCalling.value = true
+  testResult.value = null
+  try {
+    const result = await props.testToolCalling({
+      modelId,
+      parameters: cloneBrowserAiModelParameters(props.parameters),
+      toolCallMode: props.toolCallMode,
+      streaming: props.streaming,
+    })
+    testResult.value = { ...result, message: `工具调用：${result.message}` }
+  } catch (error) {
+    testResult.value = {
+      ok: false,
+      message: error instanceof Error ? `工具调用：${error.message}` : "工具调用：测试失败。",
+    }
+  } finally {
+    testingToolCalling.value = false
   }
 }
 

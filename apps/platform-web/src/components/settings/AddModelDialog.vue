@@ -75,6 +75,7 @@
           :streaming="streaming"
           :model-id="modelId"
           :test-model="testModel"
+          :test-tool-calling="testToolCalling"
           @update:parameters="params = $event"
           @update:tool-call-mode="toolCallMode = $event"
           @update:streaming="streaming = $event"
@@ -126,6 +127,12 @@ const props = defineProps<{
   preset: BrowserAiProviderPreset | null
   kind: BrowserAiProviderKind
   testModel?: (payload: {
+    modelId: string
+    parameters: BrowserAiModelParameters
+    toolCallMode: BrowserAiToolCallMode
+    streaming: boolean
+  }) => Promise<{ ok: boolean; message: string }>
+  testToolCalling?: (payload: {
     modelId: string
     parameters: BrowserAiModelParameters
     toolCallMode: BrowserAiToolCallMode
