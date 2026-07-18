@@ -57,10 +57,6 @@ const streamingReasoning = ref("")
 // 当前轮剧情选项（onTurnEnd 填充，send 时清空）
 const turnOptions = ref<string[]>([])
 
-// 开局叙事（Step 4 对话收尾写入 opening-narrative.json，进入 play 后 StoryView 特殊渲染）
-// 独立于 stream——reloadHistory/restore 替换 stream 时不会被冲掉
-const openingNarrative = ref<string | null>(null)
-
 // 最近一次 send 被阻断的原因（design §5 / §9）。
 // - blocked 分支：不推 user StreamItem、不切 turnPhase、不发 tsian.send，仅置此 ref。
 // - 下次 send 进入前置检查前清空。UI（StoryView）v-if 渲染 banner。
@@ -267,7 +263,6 @@ export function useTsian() {
     streamingText: readonly(streamingText),
     turnOptions: readonly(turnOptions),
     checkpoints: readonly(checkpoints),
-    openingNarrative: readonly(openingNarrative),
     syncPhase,
     lastSendError: readonly(lastSendError),
 
@@ -358,23 +353,8 @@ export function useTsian() {
     async loadCheckpoints(): Promise<void> {
       checkpoints.value = await tsian.checkpoints.list()
     },
-    /** 读取开局叙事（Step 4 对话收尾写入 opening-narrative.json）。
-     *  供 Step 5 确认 / enterPlay 时调用，StoryView 特殊渲染为第一条消息。
-     *  同时从 play-setup context slot 恢复最后一条 agent 选项，避免开局初始选项丢失。 */
+    /** 开局正文已通过 turn 0 history 加载；这里只恢复 turn 0 projected choices。 */
     async loadOpeningNarrative(): Promise<void> {
-      try {
-        const file = await tsian.workspace.read("save/playthrough/opening-narrative.json")
-        if (file?.content) {
-          const data = JSON.parse(file.content) as { narrative?: string | null }
-          openingNarrative.value = typeof data.narrative === "string" && data.narrative.trim()
-            ? data.narrative
-            : null
-        } else {
-          openingNarrative.value = null
-        }
-      } catch {
-        openingNarrative.value = null
-      }
       await loadPlaySetupOptions()
     },
     /** 恢复到指定检查点。host 执行 restore（裁剪 turn 文件 + 删除未来 checkpoint）后，
@@ -387,10 +367,10 @@ export function useTsian() {
   }
 
   /** 从 turn 0 history 的 projected assistant item 恢复初始选项。
-   *  openingNarrative 不是正式 turn 文件；Step 4 收尾写入的 turn 0 assistant
-   *  会携带 projections.choices，enterPlay 前调用本函数把初始选项带到 StoryView。 */
+   *  Step 4 收尾写入的 turn 0 assistant 会携带 projections.choices，
+   *  enterPlay 前调用本函数把初始选项带到 StoryView。 */
   async function loadPlaySetupOptions(): Promise<void> {
-    // 已有正式回合选项时不覆盖（例如用户已经开始游玩后重新加载 openingNarrative）
+    // 已有正式回合选项时不覆盖。
     if (turnOptions.value.length > 0) return
     try {
       const file = await tsian.workspace.read("save/history/turns/turn-000000.json")
@@ -449,8 +429,8 @@ export function useTsian() {
         applyAssistantChoices(lastAssistant)
       }
     }
-    // 开局叙事不是正式 turn 文件；如果尚无正式历史选项，则从 Step 4 对话 context 兜底恢复初始选项。
-    if (turnOptions.value.length === 0 && openingNarrative.value) {
+    // 如果尚无正式历史选项，尝试从 turn 0 projected assistant 恢复初始选项。
+    if (turnOptions.value.length === 0) {
       await loadPlaySetupOptions()
     }
   }

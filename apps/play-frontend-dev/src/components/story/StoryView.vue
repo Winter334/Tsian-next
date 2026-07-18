@@ -37,7 +37,6 @@ const {
   streamingText,
   turnOptions,
   checkpoints,
-  openingNarrative,
   syncPhase,
   lastSendError,
   send,
@@ -93,7 +92,6 @@ const renderedTurnCount = computed(() => Math.max(0, turnCount.value - (streamin
 const latestVisibleStartTurn = computed(() => deriveLatestVisibleStartTurn(renderedTurnCount.value))
 const earliestTurnVisible = computed(() => visibleStartTurn.value <= 1)
 const hasOlderTurns = computed(() => visibleStartTurn.value > 1)
-const showOpeningNarrative = computed(() => Boolean(openingNarrative.value) && earliestTurnVisible.value)
 const turnOptionsForDisplay = computed<string[]>(() => [...turnOptions.value])
 
 function deriveLatestVisibleStartTurn(totalTurns: number): number {
@@ -384,13 +382,6 @@ function onEdit(content: string) {
     <!-- 滚动区：flex:1 占满剩余空间，内部 52em 居中正文流 -->
     <div class="story-scroll" ref="storyRef" @scroll="onStoryScroll">
       <div class="story-inner">
-        <!-- 开局叙事：独立于 stream，最早 turn 可见时才接在正式历史前方 -->
-        <NarrativeMessage
-          v-if="showOpeningNarrative"
-          :content="openingNarrative ?? ''"
-          class="opening-narrative"
-        />
-
         <div
           v-if="hasOlderTurns"
           class="history-loader"
@@ -443,8 +434,8 @@ function onEdit(content: string) {
           @select="onSelectOption"
         />
 
-        <!-- 空状态（有开局叙事时不显示） -->
-        <div v-if="stream.length === 0 && !openingNarrative && !streaming" class="empty-state">
+        <!-- 空状态 -->
+        <div v-if="stream.length === 0 && !streaming" class="empty-state">
           <p class="empty-title">故事尚未开始</p>
           <p class="empty-hint">在下方写下你的行动…</p>
         </div>
@@ -752,13 +743,6 @@ function onEdit(content: string) {
     left: auto;
     right: 24px;
   }
-}
-
-/* 开局叙事：与后续消息之间留呼吸空间，底部分隔线暗示"叙事 → 游玩"分界 */
-.opening-narrative {
-  margin-bottom: 28px;
-  padding-bottom: 24px;
-  border-bottom: 1px solid var(--line);
 }
 
 .empty-state {

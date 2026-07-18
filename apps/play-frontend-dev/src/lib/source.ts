@@ -15,7 +15,6 @@ export const INITIAL_SUMMARY_PATH = "save/playthrough/understanding-summary.json
 export const RUNTIME_PATH = "save/playthrough/runtime.json"
 export const FRONTIER_PATH = "save/playthrough/frontier.json"
 export const SETUP_SUMMARY_PATH = "save/playthrough/setup-summary.json"
-export const OPENING_NARRATIVE_PATH = "save/playthrough/opening-narrative.json"
 export const CHARACTER_ENTITIES_ROOT = "save/entities/character/"
 const NORMALIZATION_VERSION = "novel-source-v1"
 const PSEUDO_CHAPTER_TARGET = 15_000
@@ -153,21 +152,10 @@ export interface SetupSummary {
   enteredPlay?: boolean
 }
 
-export interface OpeningNarrative {
-  narrative: string | null
-  createdAt: string | null
-}
-
 export function isSetupSummary(value: unknown): value is SetupSummary {
   return typeof value === "object"
     && value !== null
     && ((value as { status?: unknown }).status === "pending" || (value as { status?: unknown }).status === "complete")
-}
-
-export function isOpeningNarrative(value: unknown): value is OpeningNarrative {
-  return typeof value === "object"
-    && value !== null
-    && "narrative" in value
 }
 
 // ── JSON 安全解析 + 类型守卫 ──
