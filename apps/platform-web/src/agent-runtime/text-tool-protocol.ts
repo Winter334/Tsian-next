@@ -47,6 +47,12 @@ const CALL_RECORDS_PATTERN = /<tsian-tool-call-records>\s*([\s\S]*?)\s*<\/tsian-
 const OBSERVATIONS_PATTERN = /<tsian-tool-observations>\s*([\s\S]*?)\s*<\/tsian-tool-observations>/g
 const PROTOCOL_ERROR_PATTERN = /<tsian-tool-protocol-error>\s*([\s\S]*?)\s*<\/tsian-tool-protocol-error>/g
 
+const NON_EXECUTABLE_TEXT_PROTOCOL_TAGS = [
+  TEXT_TOOL_CALL_RECORDS_TAG,
+  TEXT_TOOL_OBSERVATIONS_TAG,
+  TEXT_TOOL_PROTOCOL_ERROR_TAG,
+] as const
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
@@ -85,6 +91,30 @@ function countOccurrences(text: string, needle: string): number {
     count += 1
     offset = index + needle.length
   }
+}
+
+function firstTextProtocolTag(text: string, tags: readonly string[]): string | undefined {
+  let first: { tag: string; index: number } | undefined
+  for (const tag of tags) {
+    const index = text.indexOf(`<${tag}>`)
+    if (index < 0) continue
+    if (!first || index < first.index) {
+      first = { tag, index }
+    }
+  }
+  return first?.tag
+}
+
+function firstNonExecutableTextProtocolTag(text: string): string | undefined {
+  return firstTextProtocolTag(text, NON_EXECUTABLE_TEXT_PROTOCOL_TAGS)
+}
+
+function nonExecutableProtocolError(tag: string): RuntimeWorkspaceToolError {
+  return protocolError(
+    "TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG",
+    `<${tag}> is runtime history, not an executable tool-call format. To call tools, emit exactly one ${TEXT_TOOL_CALLS_OPEN_TAG} JSON array block; if no tool call is needed, answer normally without protocol tags.`,
+    { tag },
+  )
 }
 
 export function stripTextExecutableToolCalls(text: string): string {
@@ -150,6 +180,15 @@ export function parseTextToolProtocolResponse(text: string): TextToolProtocolPar
   const matches = [...text.matchAll(clonePattern(EXECUTABLE_CALLS_PATTERN))]
   const openTagCount = countOccurrences(text, TEXT_TOOL_CALLS_OPEN_TAG)
   const closeTagCount = countOccurrences(text, TEXT_TOOL_CALLS_CLOSE_TAG)
+  const nonExecutableTag = firstNonExecutableTextProtocolTag(text)
+
+  if (nonExecutableTag) {
+    return {
+      kind: "protocol_error",
+      error: nonExecutableProtocolError(nonExecutableTag),
+      interimText: stripTextProtocolArtifacts(text),
+    }
+  }
 
   if (matches.length === 0) {
     if (openTagCount > 0 || closeTagCount > 0) {

@@ -81,8 +81,11 @@ import {
   formatTextToolProtocolError,
   parseTextToolProtocolResponse,
   stripTextProtocolArtifacts,
+  TEXT_TOOL_CALL_RECORDS_TAG,
   TEXT_TOOL_CALLS_CLOSE_TAG,
   TEXT_TOOL_CALLS_OPEN_TAG,
+  TEXT_TOOL_OBSERVATIONS_TAG,
+  TEXT_TOOL_PROTOCOL_ERROR_TAG,
   TEXT_TOOL_PROTOCOL_MAX_RETRIES,
 } from "./text-tool-protocol"
 import type {
@@ -350,30 +353,18 @@ function buildWorkspaceToolInstructions(
     tools: ToolSchema[]
   },
 ): string {
-  const canReadWorkspace = platformToolEnabled(
-    options.enabledPlatformTools,
-    AGENT_PLATFORM_TOOL_NAMES.workspaceRead,
-  )
   const isNative = options.toolCallMode === "native"
   const toolNames = options.tools.map((tool) => tool.name)
 
   const sharedRules = [
-    "Runtime 工具是可选能力；只在当前上下文不足、需要读取/修改 workspace、需要联系 Agent 或需要检查前端时使用。",
-    `调用 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 选择可见 Skill Index 中的 name；observation 会确认激活，下一轮会自动注入完整 SKILL.md 与可执行 action。`,
-    ...(canReadWorkspace
-      ? [
-          `不要用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 读取 Skill 入口文件；Skill 入口由 ${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill} 激活后自动注入。`,
-          `长文件用 ${RUNTIME_WORKSPACE_TOOL_NAMES.read} 的 offset/limit 分段读取；看到 truncated/totalLines/returnedLines 时按需续读。`,
-        ]
-      : []),
-    `只有 browser_script action 才用 ${RUNTIME_WORKSPACE_TOOL_NAMES.runScript}；单次 workspace 读写优先使用顶层工具。`,
+    "只在需要更多信息、需要执行操作、需要确认事实，或任务明确要求时调用工具。",
+    "只能调用当前可用工具清单中的工具。",
   ]
 
   if (isNative) {
     return [
       ...sharedRules,
       `当前可用工具名称：${toolNames.join(", ")}。具体参数以 API tools schema 为准，不要在正文中手写工具调用块。`,
-      ...(options.allowAgentCall ? [`${RUNTIME_WORKSPACE_TOOL_NAMES.agentCall} 的 agentId 从可见 Agent 联系人中选择。`] : []),
       "多个相互独立、无写冲突的工具可以在同一轮并行调用。并行返回混合结果时，只重发失败的那一个，不要全量重发。",
       "收到 observation 后继续完成任务；最终输出只包含给玩家/调用方的正文，不包含工具细节。",
     ].join("\n")
@@ -381,16 +372,32 @@ function buildWorkspaceToolInstructions(
 
   return [
     ...sharedRules,
-    "当前工具调用模式：Text Tool Protocol v2。普通聊天文本承载 Tsian 工具协议；这是与 API 原生 function calling 并列的工具调用方式。",
-    `可执行工具调用只能使用一个 ${TEXT_TOOL_CALLS_OPEN_TAG} JSON 数组块；单个工具也必须写成一元素数组。`,
-    "调用格式：",
-    TEXT_TOOL_CALLS_OPEN_TAG,
-    `[{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"prose-style"}}]`,
-    TEXT_TOOL_CALLS_CLOSE_TAG,
+    "当前工具调用方式：在回复中写工具调用块。",
+    `需要调用工具时，本轮只输出一个 ${TEXT_TOOL_CALLS_OPEN_TAG} JSON 数组块。`,
+    "规则：",
+    "- JSON 必须是数组；单个工具也写成一元素数组；数组不能为空。",
+    "- 一轮最多一个工具调用块；不要使用 Markdown 代码块；不要在 JSON 中写注释。",
+    "- 工具名必须来自当前可用工具清单，arguments 必须符合对应说明。",
+    "你可能会在历史消息中看到这些系统标签：",
+    `- <${TEXT_TOOL_CALL_RECORDS_TAG}>：过去已经发起过的工具调用记录。`,
+    `- <${TEXT_TOOL_OBSERVATIONS_TAG}>：工具调用返回的结果。`,
+    `- <${TEXT_TOOL_PROTOCOL_ERROR_TAG}>：上一轮工具调用格式错误的提示。`,
+    `这些标签只供阅读；不要模仿、复制或输出。新的工具调用只能使用 ${TEXT_TOOL_CALLS_OPEN_TAG}。`,
     "当前可用工具清单：",
     formatTextToolManifest(options.tools),
-    "可执行协议块前后的普通文字会作为过程文本保留；不要把工具观察、调用记录或协议标签放进最终回复。",
-    "收到 observations 后继续完成任务；最终输出不要包含协议标签、observation、工具细节或实现说明。",
+    "收到工具结果后：",
+    `- 阅读 <${TEXT_TOOL_OBSERVATIONS_TAG}> 中的结果。`,
+    `- 还需要工具时，再输出 ${TEXT_TOOL_CALLS_OPEN_TAG}。`,
+    "- 信息足够时，直接输出最终结果。",
+    "- 最终结果不要包含任何 <tsian-...> 标签、工具 JSON、工具结果原文或实现说明。",
+    "正确示例（把工具名和参数替换为当前可用工具清单中的实际值）：",
+    TEXT_TOOL_CALLS_OPEN_TAG,
+    `[{"name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"可见Skill名称"}}]`,
+    TEXT_TOOL_CALLS_CLOSE_TAG,
+    "错误示例（不要这样输出）：",
+    `<${TEXT_TOOL_CALL_RECORDS_TAG}>`,
+    `[{"id":"text-r1-c0","name":"${RUNTIME_WORKSPACE_TOOL_NAMES.useSkill}","arguments":{"name":"可见Skill名称"}}]`,
+    `</${TEXT_TOOL_CALL_RECORDS_TAG}>`,
   ].join("\n")
 }
 
