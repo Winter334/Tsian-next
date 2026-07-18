@@ -1946,3 +1946,37 @@ Implemented Text Tool Protocol v2 as a peer text-based tool-calling mode: schema
 ### Next Steps
 
 - None - task complete
+
+
+## Session 155: Redesign checkpoint API
+
+**Date**: 2026-07-18
+**Task**: Redesign checkpoint API
+**Package**: platform-web
+**Branch**: `feat/agent-reply-regex-projection`
+
+### Summary
+
+Implemented generalized checkpoint create/update/overwrite/delete APIs, retention-based pruning, invokeAgent checkpoint options, SDK/docs/spec updates, npm beta package refresh, and synchronized frontend checkpoint usage.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `53ee3c1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
