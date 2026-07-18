@@ -335,6 +335,151 @@ await marketApi.upload(blob, { resourceType: "game_card" })
 - Desktop Assistant streaming UI: push an empty reactive assistant placeholder before the await, append deltas into it, and reconcile with the final reply text after. Deltas are buffered in a queue and released on `requestAnimationFrame` (typewriter throttling) so a token burst does not thrash the renderer. Auto-scroll during streaming only scrolls when the user is pinned to the bottom; a user scrolling up freezes auto-scroll and surfaces the jump-to-bottom affordance — never yank the view. A "stop generating" button aborts the turn's `AbortController`; on abort, keep the partial text and append a `（已停止）` marker, or drop the placeholder if nothing streamed. Persistence runs only after the await resolves — never persist half-streamed text mid-flight. Tool process lines render transient status rows during the turn for both native and Text Tool Protocol modes and are cleared in `finally`; persisted process history comes from the runtime-collected timeline/tool records, not from transient UI rows.
 - **Play frontend turn rendering (timeline model)**: turn files use schema `tsian.airp.history.turn.v2` with a single ordered `timeline: TurnTimelineItem[]` array (user → interim/thought/tool process items → assistant with stats, plus legacy options when reading older turns), replacing the old split `messages + processNodes + stats` structure. `TurnTimelineItem` is a discriminated union with `kind` field (`user | assistant | interim | thought | tool | options`), where `options` is a legacy/backcompat item rather than a platform-owned requirement for new turns. The array order is the real occurrence order — renderers iterate items and don't need to understand `round` semantics or assemble `user → [processNodes block] → assistant`. `renderSessionHistory` and the streaming path (`beginTurn` + `renderProcessNodes` + `finalizeTurn`) both render from the same timeline model. `turn-completed` does in-place DOM correction via `finalizeTurn` (no `reloadHistory` rebuild needed since the timeline model makes rebuild order-correct too, but in-place is more efficient). `reloadHistory` is for reload/checkpoint-restore only. Historical story options may be present as `{kind:"options",items}` in the timeline and reload should keep restoring them for old saves; new gameplay/front-end markers should be parsed by the game frontend/default frontend, not by platform-host. `ask` nodes (ask_user interaction) are NOT in `TurnTimelineItem` — they exist only in the in-memory `AssistantTimelineNode` and are flattened to `interim` text at the persistence boundary. `TurnProcessNode` was deleted; the collector produces `TurnTimelineItem` directly. No backward compatibility for v1 turn files (parse returns null).
 
+## Scenario: Reply Projection And Projected Assistant Turn Results
+
+### 1. Scope / Trigger
+
+- Trigger: changing formal player-turn reply persistence, assistant timeline item shape, `interaction.sendMessage`, `turn-completed`, play-bridge `TurnEndResult`, browser-script setup actions that write opening turn 0, or card/frontend reply projection rules.
+- Purpose: keep LLM-visible clean content, frontend display content, and arbitrary card/frontend projection data separated without adding gameplay-specific platform schemas such as first-class `options`.
+
+### 2. Signatures
+
+- Rule file path: `config/reply-projection.json` in game-card content scope.
+- Rule file schema: `schema: "tsian.reply-projection.v1"`, `rules: ReplyProjectionRule[]`.
+- Rule fields:
+  - `id?: string`
+  - `match: "/.../flags"` regex literal string
+  - replacement group: `text?: string`, `content?: string`, `display?: string`
+  - extraction group: `project?: Record<string, string>`
+- Assistant timeline item (`packages/contracts/src/runtime.ts`):
+  - `kind: "assistant"`
+  - `content: string`
+  - `displayContent?: string`
+  - `projections?: Record<string, JsonValue>`
+  - `stats?: TurnStats`
+- `MessageInteractionResult`: `{ turn: number; assistant: AssistantTurnTimelineItem }`.
+- `turn-completed` bridge payload: `{ turn: number; assistant?: AssistantTurnTimelineItem }`.
+- SDK `TurnEndResult`: `{ turn?: number; assistant?: AssistantTurnTimelineItem }`.
+- Browser-script setup helper: `tsian.reply.project(text)` returns projected `{ content, displayContent?, projections? }` through a narrow `reply.project` SDK operation. Do not expose generic `platform.runAction` to runtime scripts for this.
+
+### 3. Contracts
+
+- Projection runs on the final complete assistant reply only, not on streaming deltas.
+- `content` lane and `display` lane both start from raw reply; `projections` starts empty.
+- Rules run in file order.
+- Replacement group semantics:
+  - `text` applies one replacement to both current text lanes and must not be combined with `content` or `display`.
+  - `content` applies only to the current clean context lane.
+  - `display` applies only to the current display lane.
+  - `content` and `display` may coexist for different replacements of the same matched tag.
+- `project` extraction may be used alone or with any valid replacement group.
+- `project` key syntax:
+  - `key` set/overwrite.
+  - `key[]` append to array.
+  - value pipes start with `$&`, `$0`, `$1`, or `$<name>` and may use `trim`, `lines`, `stripList`.
+- Plain project keys on multiple matches use last match wins. Use `key[]` to collect values.
+- `displayContent` is persisted only when final display lane differs from final `content`.
+- Frontend display fallback is `assistant.displayContent ?? assistant.content`; platform stores display text as an uninterpreted string and does not sanitize or label it as Markdown/HTML/DSL.
+- Formal turn persistence must use projected clean `content` for:
+  - turn assistant `content`
+  - future LLM history reconstruction
+  - player-turn `context.json`
+  - semantic turn chunking
+- Raw model reply is not durably stored in turn history for v1.
+- `turn-completed` and `interaction.sendMessage` must carry the same projected assistant item.
+- `TurnEndResult.options` / `pendingOptions` are not part of the new SDK turn-end path. Gameplay choices belong under card/frontend projection keys such as `assistant.projections.choices`.
+- Opening turn 0 must use the same projector through `tsian.reply.project()`, then write projected assistant item to `turn-000000.json` and projected clean content to player-turn context seed.
+- Projection diagnostics are metadata-only runtime trace/debug facts. Do not put error details into `content`, `displayContent`, or `projections`, and do not include reply text previews in trace data.
+
+### 4. Validation & Error Matrix
+
+- Missing `config/reply-projection.json` -> identity projection, no turn failure.
+- Invalid JSON/schema/unsupported schema -> identity projection, diagnostic emitted, no turn failure.
+- Invalid regex literal -> skip that rule, diagnostic emitted, continue later rules.
+- Rule has `text` plus `content` or `display` -> skip that rule, diagnostic emitted.
+- Rule has no replacement group and no `project` -> skip that rule, diagnostic emitted.
+- Invalid pipe start/capture/transform -> skip that project entry or rule per projector implementation, diagnostic emitted, no turn failure.
+- Rule execution throws unexpectedly -> skip rule, diagnostic emitted, continue later rules.
+- Projected `displayContent === content` -> omit `displayContent` field.
+- Projection emits no keys -> omit `projections` field.
+- Browser setup script calls `tsian.reply.project` with non-string/blank text -> return a clear script-side error or normalize consistently with setup validation; do not write turn 0 with unvalidated content.
+
+### 5. Good/Base/Bad Cases
+
+- Good: `[[选项]]...[[/选项]]` rule uses `text: ""` plus `project: { "choices": "$1|lines|stripList" }`; the LLM context gets clean narrative and the frontend reads `assistant.projections.choices`.
+- Good: inline card rule uses `content: "$1"`, `display: "<item-card id=\"$1\"></item-card>"`, and `project: { "cards[]": "$1" }`.
+- Base: a card without `config/reply-projection.json` keeps old identity behavior: assistant `content` is the raw final reply and no projections are present.
+- Bad: adding `options?: string[]` to `MessageInteractionResult`, `TurnEndResult`, or assistant timeline items reintroduces platform gameplay semantics.
+- Bad: semantic indexing reads raw turn file text or legacy `messages` only and misses v2 timeline assistant `content`; indexers must extract clean user/assistant content from timeline.
+- Bad: `invokeAgent` persistent context writes raw `replyText` while formal turns write projected content; side-channel persistent contexts must also use projected clean content when they persist assistant text.
+- Bad: exposing generic `platform.runAction` inside browser scripts just to project opening text grants unrelated platform capabilities; use narrow `tsian.reply.project`.
+
+### 6. Tests Required
+
+- Run `npm run build:contracts` after contract shape changes.
+- Run `npm run build:web` after platform-web / bridge / SDK / dev frontend changes.
+- Grep for stale new-path fields: `pendingOptions`, `TurnEndResult` with `options`, `result.options`, `pendingStats`, and unintended `result.stats` uses.
+- Grep validation frontend for stale parser use: `parseStoryOptions` under `tmp/沉浸阅读器/frontend/src` should have no hits after migration.
+- Verify formal turn files persist projected assistant item and future LLM history/context use projected clean `content`.
+- Verify semantic chunking extracts v2 timeline user/assistant `content`.
+- Verify `invokeAgent` persistent context path uses projected clean assistant content.
+- Verify opening turn 0 writes projected assistant item and seeds context with clean content.
+- Verify broken projection config does not fail a turn and emits diagnostics without content fragments.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Gameplay-specific shortcut: leaks choices into platform/SDK schema.
+export interface TurnEndResult {
+  turn?: number
+  options?: string[]
+}
+```
+
+#### Correct
+
+```ts
+export interface TurnEndResult {
+  turn?: number
+  assistant?: AssistantTurnTimelineItem
+}
+
+const choices = Array.isArray(result.assistant?.projections?.choices)
+  ? result.assistant.projections.choices.filter((item): item is string => typeof item === "string")
+  : []
+```
+
+#### Wrong
+
+```ts
+// Persistent context gets raw UI tags.
+stageAgentContextFile(tx, { assistant: result.replyText, ...input })
+```
+
+#### Correct
+
+```ts
+const projected = projectAssistantReply({ rawReply: result.replyText, workspaceFiles })
+stageAgentContextFile(tx, { assistant: projected.content, ...input })
+```
+
+#### Wrong
+
+```js
+// Browser script receives broad platform control just to project opening text.
+await tsian.platform.runAction({ action: "restore-checkpoint", params: { checkpointId } })
+```
+
+#### Correct
+
+```js
+const projected = await tsian.reply.project(openingReply)
+// Write turn 0 assistant item from projected content/displayContent/projections.
+```
+
+
 ## Avoid
 
 - Do not add compatibility migrations unless explicitly requested.

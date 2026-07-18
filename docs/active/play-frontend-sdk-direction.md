@@ -28,7 +28,7 @@ SDK 负责把助手无法自实现的那一层——与平台的协议契约—�
 
 - 桥协议握手（hello / ready / sessionId）。
 - RPC 传输与 id 匹配——但**不暴露 method 字符串**，封装成领域方法（`tsian.send` / `tsian.history.get` / `tsian.workspace.read` / `tsian.query` / `tsian.runAction`）。
-- 事件订阅——但**不暴露原始事件名**，路由 + 聚合成 5 个语义回调（`onMessage` / `onRoundEnd` / `onTurnEnd` / `onTool` / `onAsk`）。`onTurnEnd` 聚合 `turn-stats` + `turn-completed`，并兼容旧平台可能发出的 `turn-options`。
+- 事件订阅——但**不暴露原始事件名**，路由 + 聚合成 5 个语义回调（`onMessage` / `onRoundEnd` / `onTurnEnd` / `onTool` / `onAsk`）。`onTurnEnd` 由 `turn-completed` 驱动，并携带平台已提交的 projected assistant item。
 - injection 透传（`send`/`invokeAgent` 的 `injection` 参数），校验结构但不解释语义。
 - workspace 读写（`tsian.workspace.read/list/search/write`）——独立 RPC method，不再塞进 `query.query`。
 - 错误归一与状态暴露（`ready` / `waitForReady()` / `sessionId`）。
@@ -59,9 +59,9 @@ SDK 的对外类型签名即公开 API，当正式契约对待，不随手破坏
 | 流式增量（回合进行中） | `tsian.onMessage` 发结构化 delta（`kind` 区分 reasoning/content） | 前端自处理 |
 | 工具过程（回合进行中） | `tsian.onTool` 单次状态变更 | 前端自处理 |
 | 轮边界（回合进行中） | `tsian.onRoundEnd` 区分 interim vs final | 前端自处理 |
-| 回合定稿 | `tsian.onTurnEnd` 聚合 stats + 完成信号（兼容 legacy options） | 前端收尾 |
+| 回合定稿 | `tsian.onTurnEnd` 传回 projected assistant item（含 `content` / `displayContent` / `projections` / `stats`） | 前端收尾 |
 
-关键设计：**回合进行中，前端用流式增量就地渲染（过程节点穿插、流式正文），`onTurnEnd` 到达时就地修正流式 DOM 为正式态（折叠过程节点、按默认前端/游戏卡约定解析选项标记、渲染选项按钮）。不在此 reloadHistory 重建**——重建会 `$story.innerHTML=""` 全清，破坏流式时已正确的穿插顺序，且冲掉就地渲染的选项按钮。**重载/回溯后**（无流式 DOM）才用 `history.get()` 从 turn 文件单源重建。
+关键设计：**回合进行中，前端用流式增量就地渲染（过程节点穿插、流式正文），`onTurnEnd` 到达时就地修正流式 DOM 为正式态（折叠过程节点、使用 projected assistant 的 `displayContent ?? content`，并从游戏卡/前端约定的 `projections` key 渲染按钮等结构化 UI）。不在此 reloadHistory 重建**——重建会 `$story.innerHTML=""` 全清，破坏流式时已正确的穿插顺序，且冲掉就地渲染的按钮。**重载/回溯后**（无流式 DOM）才用 `history.get()` 从 turn 文件单源重建。
 
 这让前端的流式实现从"必须正确"降级为"尽力流畅"——即使增量累加有偏差，回溯/重载后 `history.get()` 从文件重建即归零纠正。数据正确性押在 workspace turn 文件，不押在前端累加。
 

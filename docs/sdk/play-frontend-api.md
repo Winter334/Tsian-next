@@ -26,10 +26,14 @@ tsian.onMessage((msg) => {
   if (msg.kind === "content") appendToStory(msg.delta)
 })
 
-// 回合定稿（含 token 统计；legacy options 仅旧平台/旧事件可能提供）
+// 回合定稿（turn-completed 携带已投影并持久化的 assistant item）
 tsian.onTurnEnd((result) => {
-  if (result.options) renderOptions(result.options) // 兼容旧 turn-options；新前端可自行解析正文约定
-  if (result.stats) renderTokenCount(result.stats)
+  const assistant = result.assistant
+  if (!assistant) return
+  renderAssistant(assistant.displayContent ?? assistant.content)
+  const choices = assistant.projections?.choices
+  if (Array.isArray(choices)) renderOptions(choices.filter((it): it is string => typeof it === "string"))
+  if (assistant.stats) renderTokenCount(assistant.stats.totalTokens)
 })
 
 // 发送玩家行动
@@ -50,7 +54,7 @@ import type {
 } from "@tsian/play-bridge"
 ```
 
-`createTsian()` 是唯一入口，返回 `TsianApi` 实例。所有领域类型从包直接导入，无需额外 `import "@tsian/contracts"`。`parseStoryOptions` 仍作为 legacy/default-frontend 兼容 helper 从包导出，但新前端不需要采用 `[[选项]]` 约定，也不应把它当作平台保证的正式回合能力。
+`createTsian()` 是唯一入口，返回 `TsianApi` 实例。所有领域类型从包直接导入，无需额外 `import "@tsian/contracts"`。`parseStoryOptions` 仍作为 legacy/default-frontend 兼容 helper 从包导出；新正式回合的结构化 UI 数据应优先由 `TurnEndResult.assistant.projections` 承载，具体 key 由游戏卡/前端约定。
 
 ---
 
@@ -231,12 +235,12 @@ off()
 |---|---|---|---|
 | `onMessage` | `turn-delta` | 正式回合每个 token 增量 | 流式渲染（累加 delta） |
 | `onRoundEnd` | `turn-round-end` | 正式回合每轮边界 | 区分中间轮(interim) vs 最终轮(final) |
-| `onTurnEnd` | `turn-stats` + `turn-completed` 聚合（兼容 legacy `turn-options`） | 正式回合定稿 | 统计 + 收尾 |
+| `onTurnEnd` | `turn-completed` | 正式回合定稿 | projected assistant + 收尾 |
 | `onTool` | `turn-tool` | 正式回合每次工具状态变更 | 渲染工具过程节点 |
 | `onAsk` | `interaction-request` | AI 提问时 | 渲染 ask_user 交互面板 |
 | `onAgentInvocation` | `agent-invocation` | `invokeAgent` 的 started/delta/round/tool/completed/failed | 渲染指定 Agent 调用的流式文本、工具进度与完成/失败状态 |
 
-**为什么需要三粒度**：单靠 `onMessage` 分不清一段 content delta 是中间轮的 interim 文本还是最终轮的剧情正文——`onRoundEnd` 的 `kind` 标记补上这个信息。`onTurnEnd` 把回合收尾信号聚合成一次回调，前端不用自己等待 `turn-completed` 后再查询统计；legacy `turn-options` 若出现也会并入结果。
+**为什么需要三粒度**：单靠 `onMessage` 分不清一段 content delta 是中间轮的 interim 文本还是最终轮的剧情正文——`onRoundEnd` 的 `kind` 标记补上这个信息。`onTurnEnd` 把回合收尾信号和已持久化的 projected assistant item 聚合成一次回调，前端不用自己等待 `turn-completed` 后再查询正式 assistant 数据。
 
 ### 4.1 `tsian.onMessage(cb)`
 
@@ -290,17 +294,20 @@ interface RoundEnd {
 
 ### 4.3 `tsian.onTurnEnd(cb)`
 
-回合定稿。SDK 聚合 `turn-stats`（token 统计）与 `turn-completed`（完成信号），并兼容旧平台可能发出的 `turn-options`（剧情选项）事件。新正式 turn 不保证提供 `result.options`；若前端采用某个游戏卡/默认前端的选项标记约定，应从正文文本自行解析。
+回合定稿。`turn-completed` 会携带平台已提交并持久化的 projected assistant timeline item。前端显示时通常使用 `assistant.displayContent ?? assistant.content`；结构化 UI 数据从 `assistant.projections` 读取，key 由游戏卡/前端约定（例如某个卡约定 `choices: string[]`）。Token 统计随 `assistant.stats` 一起到达。
 
 ```ts
 tsian.onTurnEnd((result: TurnEndResult) => {
-  // 选项（若有）：玩家点选 = 填输入框发送 = 新 turn
-  if (result.options && result.options.length > 0) {
-    renderOptionButtons(result.options)
-  }
-  // token 统计（若有）
-  if (result.stats) {
-    renderTokenCount(result.stats.totalTokens)
+  const assistant = result.assistant
+  if (assistant) {
+    renderAssistant(assistant.displayContent ?? assistant.content)
+    const choices = assistant.projections?.choices
+    if (Array.isArray(choices)) {
+      renderOptionButtons(choices.filter((it): it is string => typeof it === "string"))
+    }
+    if (assistant.stats) {
+      renderTokenCount(assistant.stats.totalTokens)
+    }
   }
   // 收尾：停计时器、折叠过程节点、流式区转正式态
   finalizeTurn()
@@ -309,8 +316,16 @@ tsian.onTurnEnd((result: TurnEndResult) => {
 
 ```ts
 interface TurnEndResult {
-  options?: string[]    // Legacy 剧情选项（旧 turn-options 事件提供；新正式 turn 可为 undefined）
-  stats?: TurnStats     // token 消耗统计（无则 undefined）
+  turn?: number
+  assistant?: AssistantTurnTimelineItem
+}
+
+interface AssistantTurnTimelineItem {
+  kind: "assistant"
+  content: string
+  displayContent?: string
+  projections?: Record<string, JsonValue>
+  stats?: TurnStats
 }
 ```
 
@@ -644,7 +659,7 @@ const result = await tsian.query("agent-registry")
 const result = await tsian.runAction("some-future-action", { foo: "bar" })
 ```
 
-**何时用通用入口**：当某个平台能力还没有对应的语义化方法时。语义化方法是高频能力的便捷封装，通用入口保证平台所有能力都可达——SDK 是翻译层不是决策层，不丢能力。返回类型是 `unknown`，前端按平台文档断言具体形状。
+**何时用通用入口**：当某个平台能力还没有对应的语义化方法时。语义化方法是高频能力的便捷封装，通用入口保证平台所有能力都可达——SDK 是翻译层不是决策层，不丢能力。返回类型是 `unknown`，当前为底层 `PlatformActionResult` 形态（`{ ok, item?, error? }`）；前端按平台文档断言具体形状并自行处理 `ok/item/error`。
 
 ---
 
@@ -745,8 +760,8 @@ interface RoundEnd {
   agentId: string
 }
 interface TurnEndResult {
-  options?: string[]
-  stats?: TurnStats
+  turn?: number
+  assistant?: AssistantTurnTimelineItem
 }
 interface ToolEvent {
   agentId: string
@@ -800,6 +815,13 @@ interface TurnStats {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
+}
+interface AssistantTurnTimelineItem {
+  kind: "assistant"
+  content: string
+  displayContent?: string
+  projections?: Record<string, JsonValue>
+  stats?: TurnStats
 }
 ```
 
