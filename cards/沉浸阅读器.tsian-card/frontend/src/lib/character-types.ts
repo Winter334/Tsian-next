@@ -92,11 +92,6 @@ export interface CharacterTrait {
   effects?: string[]
 }
 
-/** 人物履历项：只展示 event 文本，不承载 turn/tags/eventKinds 等索引字段。 */
-export interface CharacterHistoryEvent {
-  event: string
-}
-
 /**
  * 基础维度（design D7）。固定 6 维，键名由世界架构师按世界观定义
  * （默认六维兜底：体魄/悟性/气运/根骨/法力/魅力）；值为正整数，基线 5（不在 UI 解释）。
@@ -132,11 +127,6 @@ export interface CharacterEntity {
   traits?: CharacterTrait[]
   goals?: CharacterGoals
   background?: string
-  /**
-   * 人物履历数组。每项只包含 `{ event: string }`，表示长期影响角色态度、关系、目标、创伤、秘密、承诺或恩怨的重要经历。
-   * 不是检索索引；不展示也不维护 turn/tags/eventKinds 等内部字段。
-   */
-  history?: CharacterHistoryEvent[]
   /**
    * 玩家上传头像的 UI/media 引用元数据（task 07-05 design D2/D3）。
    * 缺省表示该角色无上传头像，UI 展示内置默认头像。

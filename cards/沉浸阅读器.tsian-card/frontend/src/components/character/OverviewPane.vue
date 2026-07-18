@@ -9,9 +9,8 @@
  * 3. 当前状态（StatusChips）：entity.status → chips；polarity 决定颜色。
  * 4. 关系（RelationshipList）：从 relationships.edges → useEntity 取 name/brief；点击 select。
  * 5. 意图与目标（GoalsBlock）：entity.goals → 三行 label-text。
- * 6. 人物履历：entity.history[] → event 文本列表；无有效条目不展示。
- * 7. 背景摘记：entity.background 单段字符串；缺省不展示。
- * 8. extensions：displayItems.tags/refs/sections/metrics 分别进入对应小区域。
+ * 6. 背景摘记：entity.background 单段字符串；缺省不展示。
+ * 7. extensions：displayItems.tags/refs/sections/metrics 分别进入对应小区域。
  *
  * 不抛错：父组件保证 entity 非 null；本组件按字段缺省 fallback。
  */
@@ -49,13 +48,6 @@ const hasBackground = computed(
   () => typeof props.entity.background === "string" && props.entity.background.length > 0,
 )
 const hasGoals = computed(() => Boolean(props.entity.goals))
-const historyEvents = computed(() =>
-  (props.entity.history ?? []).filter(
-    (item): item is { event: string } =>
-      typeof item === "object" && item !== null && typeof item.event === "string" && item.event.length > 0,
-  ),
-)
-const hasHistory = computed(() => historyEvents.value.length > 0)
 const edges = computed(() => props.relationships?.edges ?? [])
 const hasRelationships = computed(() => edges.value.length > 0)
 const hasTraits = computed(() => traits.value.length > 0)
@@ -127,17 +119,7 @@ function closeTrait() {
         <GoalsBlock :goals="entity.goals" :entity-ref="entityRef" />
       </div>
 
-      <!-- 6. 人物履历 -->
-      <div v-if="hasHistory" class="overview-section full">
-        <div class="section-title">人物履历</div>
-        <ol class="history-list">
-          <li v-for="(item, idx) in historyEvents" :key="`history-${idx}`" class="history-row">
-            {{ item.event }}
-          </li>
-        </ol>
-      </div>
-
-      <!-- 7. 背景摘记 -->
+      <!-- 6. 背景摘记 -->
       <div v-if="hasBackground" class="overview-section full">
         <div class="section-title">背景摘记</div>
         <div class="narrative-block">
@@ -145,7 +127,7 @@ function closeTrait() {
         </div>
       </div>
 
-      <!-- 8. extensions 分区 -->
+      <!-- 7. extensions 分区 -->
       <div v-if="hasMetrics" class="overview-section full">
         <div class="section-title">数值</div>
         <ul class="ext-metric-list">
@@ -284,25 +266,6 @@ function closeTrait() {
 }
 .narrative-block :deep(.pin-btn.active) {
   opacity: 1;
-}
-
-.history-list {
-  margin: 0;
-  padding-left: 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.history-row {
-  font-size: 0.84rem;
-  line-height: 1.75;
-  color: var(--prose-muted);
-  padding-left: 2px;
-}
-.history-row::marker {
-  font-family: var(--font-mono);
-  font-size: 0.68rem;
-  color: var(--prose-faint);
 }
 
 /* extensions 分区朴素渲染 */

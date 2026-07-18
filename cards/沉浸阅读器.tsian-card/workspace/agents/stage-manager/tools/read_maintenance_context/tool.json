@@ -1,0 +1,24 @@
+{
+  "name": "read_maintenance_context",
+  "title": "读取维护上下文",
+  "description": "回合后维护首选入口：聚合目标回合的 user/assistant 正文、runtime.json、active scenes、相关 entities/relationships 摘要与 scene 清理客观候选，一次返回。省去你多次 workspace_read 聚合事实的往返。只读不写，不输出删除决策（只给客观候选，由你自行判断是否删除）。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "turn": {
+        "type": "number",
+        "description": "目标回合号。省略时默认取当前 max turn。"
+      },
+      "includeTimeline": {
+        "type": "boolean",
+        "description": "是否包含 frontier.json timeline 摘要（source/player 锚点列表）。默认 false。"
+      }
+    }
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 8000
+  }
+}

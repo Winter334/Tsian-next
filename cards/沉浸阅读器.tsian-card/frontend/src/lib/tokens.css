@@ -1,0 +1,78 @@
+/* 字体加载（ZCOOL XiaoWei + Noto Sans SC + JetBrains Mono） */
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Noto+Sans+SC:wght@400;500;600;700&family=ZCOOL+XiaoWei&display=swap");
+
+/* ═══════════════════════════════════════════════════════════════
+ * Tsian 前端设计 token — 烛火书卷·重铸（A+ 暗色仪式系）
+ * 全局 :root，非 scoped。所有 SFC scoped 样式引用这些变量。
+ * 配色来源：lachisa 近黑底 + 暗血径向氛围 + 古金/琥珀 + 暖白正文。
+ * ═══════════════════════════════════════════════════════════════ */
+:root {
+  /* 底色 */
+  --void: #060608;        /* 近黑底，带暖色温 */
+  --void-deep: #0a0506;   /* 深处，径向氛围起点 */
+  --ember-glow: #2b0404;  /* 暗血红径向氛围光 */
+
+  /* 强调 */
+  --ember: #b5893d;        /* 古金，强调/激活/连线 */
+  --ember-bright: #e8a948; /* 烛火琥珀，标题/当前态 */
+  --blood: #9b3a2e;        /* 血珀，警示/失败/删除 */
+
+  /* 文字 */
+  --prose: #d4c9b4;       /* 灰烬暖白，正文 */
+  --prose-dim: #a69a89;   /* 次要正文：可读但不抢主层级 */
+  --prose-muted: #918577; /* 小号说明文字 */
+  --prose-faint: #7a7064; /* 弱提示/标签文字，仍保持可读 */
+  --whisper: #5c5347;     /* 余烬灰，装饰/边框/极次要氛围 */
+
+  /* 线/边框 */
+  --line: rgba(181, 137, 61, 0.15);
+  --line-strong: rgba(181, 137, 61, 0.4);
+
+  /* 字体 */
+  --font-display: "ZCOOL XiaoWei", "Noto Sans SC", serif;
+  --font-serif: "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Noto Sans SC", "JetBrains Mono", ui-sans-serif, sans-serif;
+
+  /* 氛围 */
+  --vignette: radial-gradient(circle, transparent 40%, rgba(6, 6, 8, 0.85) 100%);
+  --dot-grid: radial-gradient(rgba(255, 255, 255, 0.03) 15%, transparent 16%);
+}
+
+/* 全局基底 */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--void);
+  color: var(--prose);
+  font-family: var(--font-serif);
+  font-weight: 400;
+  line-height: 1.5;
+  height: 100%;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+#app {
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* 滚动条（暗色仪式系） */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--whisper);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ember);
+}

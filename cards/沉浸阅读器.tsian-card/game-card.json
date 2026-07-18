@@ -1,0 +1,1269 @@
+{
+  "schema": "tsian.game-card.package.v1",
+  "manifest": {
+    "schema": "tsian.game-card.v1",
+    "id": "local.game-card-2",
+    "name": "沉浸阅读器",
+    "version": "0.2.1",
+    "summary": "沉浸阅读器\n导入小说后Agent会提取小说中的内容为你构建一个世界，你可以选择扮演原著角色或者原创角色游玩。",
+    "author": {
+      "name": "流萤白沙"
+    },
+    "cover": {
+      "workspacePath": ".cover/cover.png"
+    },
+    "frontend": {
+      "kind": "packaged",
+      "entry": "frontend/dist/index.html",
+      "framework": "vue",
+      "bridgeVersion": "tsian.play-bridge.v1"
+    },
+    "runtime": {
+      "entrypoints": {
+        "playerTurn": "storyteller",
+        "postTurnMaintenance": "stage-manager"
+      }
+    }
+  },
+  "workspaceFiles": [
+    {
+      "path": "workspace/README.md",
+      "mediaType": "text/markdown",
+      "size": 502
+    },
+    {
+      "path": "workspace/agents/README.md",
+      "mediaType": "text/markdown",
+      "size": 320
+    },
+    {
+      "path": "workspace/agents/researcher/AGENT.md",
+      "mediaType": "text/markdown",
+      "size": 423
+    },
+    {
+      "path": "workspace/agents/researcher/SOUL.md",
+      "mediaType": "text/markdown",
+      "size": 109
+    },
+    {
+      "path": "workspace/agents/researcher/agent.json",
+      "mediaType": "application/json",
+      "size": 1408
+    },
+    {
+      "path": "workspace/agents/researcher/skills/实体读取/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 579
+    },
+    {
+      "path": "workspace/agents/researcher/skills/资料检索/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 606
+    },
+    {
+      "path": "workspace/agents/stage-manager/AGENT.md",
+      "mediaType": "text/markdown",
+      "size": 2208
+    },
+    {
+      "path": "workspace/agents/stage-manager/SOUL.md",
+      "mediaType": "text/markdown",
+      "size": 69
+    },
+    {
+      "path": "workspace/agents/stage-manager/agent.json",
+      "mediaType": "application/json",
+      "size": 1538
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/schema演进检查/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 454
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/回合后维护/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 4402
+    },
+    {
+      "path": "workspace/agents/stage-manager/tools/read_maintenance_context/run.js",
+      "mediaType": "text/javascript",
+      "size": 10048
+    },
+    {
+      "path": "workspace/agents/stage-manager/tools/read_maintenance_context/tool.json",
+      "mediaType": "application/json",
+      "size": 730
+    },
+    {
+      "path": "workspace/agents/storyteller/AGENT.md",
+      "mediaType": "text/markdown",
+      "size": 165
+    },
+    {
+      "path": "workspace/agents/storyteller/SOUL.md",
+      "mediaType": "text/markdown",
+      "size": 350
+    },
+    {
+      "path": "workspace/agents/storyteller/agent.json",
+      "mediaType": "application/json",
+      "size": 877
+    },
+    {
+      "path": "workspace/agents/storyteller/creation-guide.md",
+      "mediaType": "text/markdown",
+      "size": 2380
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/NSFW追加/Nsfw必开.md",
+      "mediaType": "text/markdown",
+      "size": 372
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/NSFW追加/Sex_Guide.md",
+      "mediaType": "text/markdown",
+      "size": 1712
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/NSFW追加/用词要求.md",
+      "mediaType": "text/markdown",
+      "size": 245
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/NSFW追加/自定义1.md",
+      "mediaType": "text/markdown",
+      "size": 5
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/NSFW追加/自定义2.md",
+      "mediaType": "text/markdown",
+      "size": 5
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/人称/第一人称.md",
+      "mediaType": "text/markdown",
+      "size": 142
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/人称/第三人称.md",
+      "mediaType": "text/markdown",
+      "size": 52
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/人称/第二人称.md",
+      "mediaType": "text/markdown",
+      "size": 165
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/N-轻小说.md",
+      "mediaType": "text/markdown",
+      "size": 1132
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/N-黄文.md",
+      "mediaType": "text/markdown",
+      "size": 528
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/俄式苦难文风.md",
+      "mediaType": "text/markdown",
+      "size": 343
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/修仙日常文风.md",
+      "mediaType": "text/markdown",
+      "size": 1104
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/写实西幻.md",
+      "mediaType": "text/markdown",
+      "size": 331
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/冷冽与梦核.md",
+      "mediaType": "text/markdown",
+      "size": 372
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/反差.md",
+      "mediaType": "text/markdown",
+      "size": 363
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/反差色情.md",
+      "mediaType": "text/markdown",
+      "size": 1468
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/古风言情.md",
+      "mediaType": "text/markdown",
+      "size": 1242
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/后311.md",
+      "mediaType": "text/markdown",
+      "size": 319
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/吐槽文风.md",
+      "mediaType": "text/markdown",
+      "size": 2598
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/四字为锋.md",
+      "mediaType": "text/markdown",
+      "size": 1330
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/恋爱小说.md",
+      "mediaType": "text/markdown",
+      "size": 343
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/成人童话.md",
+      "mediaType": "text/markdown",
+      "size": 395
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/搞笑网文.md",
+      "mediaType": "text/markdown",
+      "size": 352
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/散文小说.md",
+      "mediaType": "text/markdown",
+      "size": 735
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/日系ASMR.md",
+      "mediaType": "text/markdown",
+      "size": 846
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/旧录像带质感.md",
+      "mediaType": "text/markdown",
+      "size": 721
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/显性高压.md",
+      "mediaType": "text/markdown",
+      "size": 329
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/晋江文学.md",
+      "mediaType": "text/markdown",
+      "size": 348
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/暗黑西幻.md",
+      "mediaType": "text/markdown",
+      "size": 346
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/木珠文风.md",
+      "mediaType": "text/markdown",
+      "size": 757
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/流转心跳叙事.md",
+      "mediaType": "text/markdown",
+      "size": 1033
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/深渊童谣.md",
+      "mediaType": "text/markdown",
+      "size": 327
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/烤面包机.md",
+      "mediaType": "text/markdown",
+      "size": 1315
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/现代情欲小说.md",
+      "mediaType": "text/markdown",
+      "size": 397
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/白描文风.md",
+      "mediaType": "text/markdown",
+      "size": 327
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/碎嘴子.md",
+      "mediaType": "text/markdown",
+      "size": 1333
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/红楼一梦.md",
+      "mediaType": "text/markdown",
+      "size": 1611
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/聊天风格.md",
+      "mediaType": "text/markdown",
+      "size": 106
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/花间辞色体.md",
+      "mediaType": "text/markdown",
+      "size": 1161
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/西方魔幻.md",
+      "mediaType": "text/markdown",
+      "size": 314
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/辰东网文.md",
+      "mediaType": "text/markdown",
+      "size": 343
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/魔幻现实.md",
+      "mediaType": "text/markdown",
+      "size": 328
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/文风/黄文.md",
+      "mediaType": "text/markdown",
+      "size": 280
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/占有与支配.md",
+      "mediaType": "text/markdown",
+      "size": 241
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/反全知.md",
+      "mediaType": "text/markdown",
+      "size": 42
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/微观与宏观.md",
+      "mediaType": "text/markdown",
+      "size": 187
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/情绪化通感.md",
+      "mediaType": "text/markdown",
+      "size": 261
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/杀声述.md",
+      "mediaType": "text/markdown",
+      "size": 99
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/杀揭示.md",
+      "mediaType": "text/markdown",
+      "size": 156
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/杀比拟.md",
+      "mediaType": "text/markdown",
+      "size": 45
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/杀说明.md",
+      "mediaType": "text/markdown",
+      "size": 51
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/杀超雄.md",
+      "mediaType": "text/markdown",
+      "size": 77
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/杀转折词.md",
+      "mediaType": "text/markdown",
+      "size": 189
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/杀骨骼描写.md",
+      "mediaType": "text/markdown",
+      "size": 397
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/白描.md",
+      "mediaType": "text/markdown",
+      "size": 20
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/杀八股/自定义杀什么.md",
+      "mediaType": "text/markdown",
+      "size": 5
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/正文优化/快捷回复.md",
+      "mediaType": "text/markdown",
+      "size": 687
+    },
+    {
+      "path": "workspace/agents/storyteller/modules/正文优化/禁用词表.md",
+      "mediaType": "text/markdown",
+      "size": 1000
+    },
+    {
+      "path": "workspace/agents/storyteller/output-format.md",
+      "mediaType": "text/markdown",
+      "size": 184
+    },
+    {
+      "path": "workspace/agents/storyteller/prefill-accept.md",
+      "mediaType": "text/markdown",
+      "size": 98
+    },
+    {
+      "path": "workspace/agents/storyteller/skills/掷骰/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 3110
+    },
+    {
+      "path": "workspace/agents/storyteller/skills/掷骰/scripts/run.js",
+      "mediaType": "text/javascript",
+      "size": 6560
+    },
+    {
+      "path": "workspace/agents/storyteller/tools/read_entity/run.js",
+      "mediaType": "text/javascript",
+      "size": 4909
+    },
+    {
+      "path": "workspace/agents/storyteller/tools/read_entity/tool.json",
+      "mediaType": "application/json",
+      "size": 601
+    },
+    {
+      "path": "workspace/agents/storyteller/tools/read_relationships/run.js",
+      "mediaType": "text/javascript",
+      "size": 2991
+    },
+    {
+      "path": "workspace/agents/storyteller/tools/read_relationships/tool.json",
+      "mediaType": "application/json",
+      "size": 604
+    },
+    {
+      "path": "workspace/agents/storyteller/tools/read_scene/run.js",
+      "mediaType": "text/javascript",
+      "size": 3242
+    },
+    {
+      "path": "workspace/agents/storyteller/tools/read_scene/tool.json",
+      "mediaType": "application/json",
+      "size": 551
+    },
+    {
+      "path": "workspace/agents/world-architect/AGENT.md",
+      "mediaType": "text/markdown",
+      "size": 603
+    },
+    {
+      "path": "workspace/agents/world-architect/SOUL.md",
+      "mediaType": "text/markdown",
+      "size": 205
+    },
+    {
+      "path": "workspace/agents/world-architect/agent.json",
+      "mediaType": "application/json",
+      "size": 1674
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/frontier推进/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 3761
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/frontier推进/scripts/_common.js",
+      "mediaType": "text/javascript",
+      "size": 2623
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/frontier推进/scripts/_validation.js",
+      "mediaType": "text/javascript",
+      "size": 9547
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/frontier推进/scripts/commit-frontier-materials.js",
+      "mediaType": "text/javascript",
+      "size": 3201
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/frontier推进/scripts/commit-frontier-state.js",
+      "mediaType": "text/javascript",
+      "size": 6107
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/frontier推进/scripts/read-frontier-window.js",
+      "mediaType": "text/javascript",
+      "size": 3208
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 6518
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/_common.js",
+      "mediaType": "text/javascript",
+      "size": 2623
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/_validation.js",
+      "mediaType": "text/javascript",
+      "size": 9547
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-entities.js",
+      "mediaType": "text/javascript",
+      "size": 1291
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-runtime-and-frontier.js",
+      "mediaType": "text/javascript",
+      "size": 7256
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-scenes-and-relationships.js",
+      "mediaType": "text/javascript",
+      "size": 2570
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-understanding-summary.js",
+      "mediaType": "text/javascript",
+      "size": 1433
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js",
+      "mediaType": "text/javascript",
+      "size": 1274
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/开局建模/scripts/read-opening-slice.js",
+      "mediaType": "text/javascript",
+      "size": 2271
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/游玩设定/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 2881
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_common.js",
+      "mediaType": "text/javascript",
+      "size": 2623
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_validation.js",
+      "mediaType": "text/javascript",
+      "size": 9547
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/commit-play-setup.js",
+      "mediaType": "text/javascript",
+      "size": 7681
+    },
+    {
+      "path": "workspace/agents/world-architect/skills/游玩设定/scripts/commit-setup-summary.js",
+      "mediaType": "text/javascript",
+      "size": 1305
+    },
+    {
+      "path": "workspace/config/reply-projection.json",
+      "mediaType": "application/json",
+      "size": 247
+    },
+    {
+      "path": "workspace/docs/README.md",
+      "mediaType": "text/markdown",
+      "size": 204
+    },
+    {
+      "path": "workspace/docs/novel-airp-schema-guide.md",
+      "mediaType": "text/markdown",
+      "size": 7781
+    },
+    {
+      "path": "workspace/docs/novel-airp-schema-reference.md",
+      "mediaType": "text/markdown",
+      "size": 8873
+    },
+    {
+      "path": "workspace/docs/tsian-framework-knowledge.md",
+      "mediaType": "text/markdown",
+      "size": 791
+    },
+    {
+      "path": "workspace/skills/README.md",
+      "mediaType": "text/markdown",
+      "size": 154
+    },
+    {
+      "path": "workspace/tools/README.md",
+      "mediaType": "text/markdown",
+      "size": 1009
+    },
+    {
+      "path": "workspace/tools/roll_dice/run.js",
+      "mediaType": "text/javascript",
+      "size": 6560
+    },
+    {
+      "path": "workspace/tools/roll_dice/tool.json",
+      "mediaType": "application/json",
+      "size": 2788
+    }
+  ],
+  "frontendFiles": [
+    {
+      "path": "frontend/dist/assets/chunk-5XJCMGU4.js",
+      "mediaType": "text/javascript",
+      "size": 8069
+    },
+    {
+      "path": "frontend/dist/assets/chunk-5XJCMGU4.js.map",
+      "mediaType": "application/octet-stream",
+      "size": 21417
+    },
+    {
+      "path": "frontend/dist/assets/chunk-AJDHTJCV.js",
+      "mediaType": "text/javascript",
+      "size": 9466
+    },
+    {
+      "path": "frontend/dist/assets/chunk-AJDHTJCV.js.map",
+      "mediaType": "application/octet-stream",
+      "size": 42518
+    },
+    {
+      "path": "frontend/dist/assets/chunk-B6CKF5TT.js",
+      "mediaType": "text/javascript",
+      "size": 25976
+    },
+    {
+      "path": "frontend/dist/assets/chunk-B6CKF5TT.js.map",
+      "mediaType": "application/octet-stream",
+      "size": 69744
+    },
+    {
+      "path": "frontend/dist/assets/default-female-23YJG6F5.png",
+      "mediaType": "image/png",
+      "size": 912426
+    },
+    {
+      "path": "frontend/dist/assets/default-male-X3ZUZSQE.png",
+      "mediaType": "image/png",
+      "size": 1251472
+    },
+    {
+      "path": "frontend/dist/assets/stdin.css",
+      "mediaType": "text/css",
+      "size": 197480
+    },
+    {
+      "path": "frontend/dist/assets/stdin.css.map",
+      "mediaType": "application/octet-stream",
+      "size": 370845
+    },
+    {
+      "path": "frontend/dist/assets/stdin.js",
+      "mediaType": "text/javascript",
+      "size": 539880
+    },
+    {
+      "path": "frontend/dist/assets/stdin.js.map",
+      "mediaType": "application/octet-stream",
+      "size": 1059580
+    },
+    {
+      "path": "frontend/dist/assets/useFrontierAdvance-XDJ2FVA3.js",
+      "mediaType": "text/javascript",
+      "size": 333
+    },
+    {
+      "path": "frontend/dist/assets/useFrontierAdvance-XDJ2FVA3.js.map",
+      "mediaType": "application/octet-stream",
+      "size": 93
+    },
+    {
+      "path": "frontend/dist/assets/useRuntime-IHSKX7ZO.js",
+      "mediaType": "text/javascript",
+      "size": 155
+    },
+    {
+      "path": "frontend/dist/assets/useRuntime-IHSKX7ZO.js.map",
+      "mediaType": "application/octet-stream",
+      "size": 93
+    },
+    {
+      "path": "frontend/dist/index.html",
+      "mediaType": "text/html",
+      "size": 634
+    },
+    {
+      "path": "frontend/src/App.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 13727
+    },
+    {
+      "path": "frontend/src/assets/avatars/default-female.png",
+      "mediaType": "image/png",
+      "size": 912426
+    },
+    {
+      "path": "frontend/src/assets/avatars/default-male.png",
+      "mediaType": "image/png",
+      "size": 1251472
+    },
+    {
+      "path": "frontend/src/components/AppHeader.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 4234
+    },
+    {
+      "path": "frontend/src/components/AppNav.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 4142
+    },
+    {
+      "path": "frontend/src/components/AtmosphereLayer.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2218
+    },
+    {
+      "path": "frontend/src/components/BurningReveal.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5568
+    },
+    {
+      "path": "frontend/src/components/CornerBrackets.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 1317
+    },
+    {
+      "path": "frontend/src/components/EmberForge.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 6012
+    },
+    {
+      "path": "frontend/src/components/StatusBar.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 13231
+    },
+    {
+      "path": "frontend/src/components/TsianLogo.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5785
+    },
+    {
+      "path": "frontend/src/components/character/AttributeCard.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 4341
+    },
+    {
+      "path": "frontend/src/components/character/AttributesPane.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2936
+    },
+    {
+      "path": "frontend/src/components/character/CharacterCard.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 6018
+    },
+    {
+      "path": "frontend/src/components/character/CharacterDetail.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5042
+    },
+    {
+      "path": "frontend/src/components/character/CharacterList.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5224
+    },
+    {
+      "path": "frontend/src/components/character/CharacterListItem.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 9585
+    },
+    {
+      "path": "frontend/src/components/character/CharacterPortrait.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 9861
+    },
+    {
+      "path": "frontend/src/components/character/CharacterSlot.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2467
+    },
+    {
+      "path": "frontend/src/components/character/CharacterView.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 7593
+    },
+    {
+      "path": "frontend/src/components/character/GaugeBar.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 3129
+    },
+    {
+      "path": "frontend/src/components/character/GoalsBlock.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2323
+    },
+    {
+      "path": "frontend/src/components/character/IdentityFacts.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2949
+    },
+    {
+      "path": "frontend/src/components/character/InventoryPane.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 12220
+    },
+    {
+      "path": "frontend/src/components/character/OverviewPane.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 11256
+    },
+    {
+      "path": "frontend/src/components/character/PinButton.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2770
+    },
+    {
+      "path": "frontend/src/components/character/RelationshipList.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 1883
+    },
+    {
+      "path": "frontend/src/components/character/RelationshipRow.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2419
+    },
+    {
+      "path": "frontend/src/components/character/StatusChips.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 7101
+    },
+    {
+      "path": "frontend/src/components/character/StatusDetailModal.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 7415
+    },
+    {
+      "path": "frontend/src/components/character/TraitCards.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5350
+    },
+    {
+      "path": "frontend/src/components/character/TraitDetailModal.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 6656
+    },
+    {
+      "path": "frontend/src/components/checkpoints/CheckpointMark.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2778
+    },
+    {
+      "path": "frontend/src/components/checkpoints/RestoreDialog.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 6223
+    },
+    {
+      "path": "frontend/src/components/inventory/InventoryBreadcrumb.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2065
+    },
+    {
+      "path": "frontend/src/components/inventory/InventoryGrid.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5089
+    },
+    {
+      "path": "frontend/src/components/inventory/ItemDetailModal.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 13538
+    },
+    {
+      "path": "frontend/src/components/inventory/ItemIcon.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5332
+    },
+    {
+      "path": "frontend/src/components/setup/SetupStepper.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 8649
+    },
+    {
+      "path": "frontend/src/components/setup/SetupWizard.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 18031
+    },
+    {
+      "path": "frontend/src/components/setup/StepStub.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2299
+    },
+    {
+      "path": "frontend/src/components/setup/step1/FileInput.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5680
+    },
+    {
+      "path": "frontend/src/components/setup/step1/MethodChoose.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 4708
+    },
+    {
+      "path": "frontend/src/components/setup/step1/PasteInput.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 1980
+    },
+    {
+      "path": "frontend/src/components/setup/step1/SplitReview.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 8661
+    },
+    {
+      "path": "frontend/src/components/setup/step2/UnderstandingFailed.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2639
+    },
+    {
+      "path": "frontend/src/components/setup/step2/UnderstandingReady.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 7730
+    },
+    {
+      "path": "frontend/src/components/setup/step2/UnderstandingRunning.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 3927
+    },
+    {
+      "path": "frontend/src/components/setup/step2/magicCircleGenerator.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 11998
+    },
+    {
+      "path": "frontend/src/components/setup/step3/CanonCharacterSelect.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 11865
+    },
+    {
+      "path": "frontend/src/components/setup/step3/CharacterConfirmed.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 6372
+    },
+    {
+      "path": "frontend/src/components/setup/step3/OriginalCharacterForm.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 8982
+    },
+    {
+      "path": "frontend/src/components/setup/step4/PlaySetupDialog.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 6739
+    },
+    {
+      "path": "frontend/src/components/setup/step4/SetupComposer.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5004
+    },
+    {
+      "path": "frontend/src/components/setup/step5/OpeningConfirm.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 14480
+    },
+    {
+      "path": "frontend/src/components/status-bar/StatusBarCharacter.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 8285
+    },
+    {
+      "path": "frontend/src/components/status-bar/StatusBarIdentity.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 3443
+    },
+    {
+      "path": "frontend/src/components/status-bar/StatusBarMetrics.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 7420
+    },
+    {
+      "path": "frontend/src/components/status-bar/StatusBarPinned.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 10494
+    },
+    {
+      "path": "frontend/src/components/status-bar/StatusBarRefs.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2643
+    },
+    {
+      "path": "frontend/src/components/status-bar/StatusBarScene.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 3893
+    },
+    {
+      "path": "frontend/src/components/status-bar/StatusBarStatus.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 4231
+    },
+    {
+      "path": "frontend/src/components/story/Composer.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 9842
+    },
+    {
+      "path": "frontend/src/components/story/FrontierToast.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5172
+    },
+    {
+      "path": "frontend/src/components/story/NarrativeMessage.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2119
+    },
+    {
+      "path": "frontend/src/components/story/ProcessNode.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 8243
+    },
+    {
+      "path": "frontend/src/components/story/RoundProcess.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 4195
+    },
+    {
+      "path": "frontend/src/components/story/SceneImage.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 1613
+    },
+    {
+      "path": "frontend/src/components/story/StoryOptions.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 2244
+    },
+    {
+      "path": "frontend/src/components/story/StoryView.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 28390
+    },
+    {
+      "path": "frontend/src/components/story/SyncToast.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 5604
+    },
+    {
+      "path": "frontend/src/components/story/TurnMeta.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 851
+    },
+    {
+      "path": "frontend/src/components/story/UserMessage.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 3030
+    },
+    {
+      "path": "frontend/src/components/timeline/TimelineGraph.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 31704
+    },
+    {
+      "path": "frontend/src/components/timeline/TimelineView.vue",
+      "mediaType": "text/plain; charset=utf-8",
+      "size": 4696
+    },
+    {
+      "path": "frontend/src/composables/useAtmosphere.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 4046
+    },
+    {
+      "path": "frontend/src/composables/useEntity.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 2589
+    },
+    {
+      "path": "frontend/src/composables/useFrontier.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 4267
+    },
+    {
+      "path": "frontend/src/composables/useFrontierAdvance.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 13648
+    },
+    {
+      "path": "frontend/src/composables/useRelationships.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 3492
+    },
+    {
+      "path": "frontend/src/composables/useRuntime.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 6896
+    },
+    {
+      "path": "frontend/src/composables/useRuntimeStaleBus.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 1308
+    },
+    {
+      "path": "frontend/src/composables/useScene.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 2333
+    },
+    {
+      "path": "frontend/src/composables/useSetupState.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 33899
+    },
+    {
+      "path": "frontend/src/composables/useStatusBarCollapsed.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 1486
+    },
+    {
+      "path": "frontend/src/composables/useStatusBarPins.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 5406
+    },
+    {
+      "path": "frontend/src/composables/useSyncAfterTurn.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 6876
+    },
+    {
+      "path": "frontend/src/composables/useTsian.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 18921
+    },
+    {
+      "path": "frontend/src/composables/useTurnState.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 2909
+    },
+    {
+      "path": "frontend/src/lib/character-avatar.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 2118
+    },
+    {
+      "path": "frontend/src/lib/character-types.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 6493
+    },
+    {
+      "path": "frontend/src/lib/context-injection.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 15838
+    },
+    {
+      "path": "frontend/src/lib/frontier-types.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 3498
+    },
+    {
+      "path": "frontend/src/lib/image-processing.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 4420
+    },
+    {
+      "path": "frontend/src/lib/item-types.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 2257
+    },
+    {
+      "path": "frontend/src/lib/markdown.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 1456
+    },
+    {
+      "path": "frontend/src/lib/parse-character.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 11666
+    },
+    {
+      "path": "frontend/src/lib/parse-entity.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 2117
+    },
+    {
+      "path": "frontend/src/lib/parse-frontier.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 5041
+    },
+    {
+      "path": "frontend/src/lib/parse-item.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 5449
+    },
+    {
+      "path": "frontend/src/lib/parse-runtime.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 11426
+    },
+    {
+      "path": "frontend/src/lib/pin-types.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 6767
+    },
+    {
+      "path": "frontend/src/lib/render-mapping.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 1195
+    },
+    {
+      "path": "frontend/src/lib/runtime-types.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 5837
+    },
+    {
+      "path": "frontend/src/lib/shader.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 13958
+    },
+    {
+      "path": "frontend/src/lib/source.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 16008
+    },
+    {
+      "path": "frontend/src/lib/text-decoding.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 3410
+    },
+    {
+      "path": "frontend/src/lib/tokens.css",
+      "mediaType": "text/css; charset=utf-8",
+      "size": 2871
+    },
+    {
+      "path": "frontend/src/main.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 300
+    },
+    {
+      "path": "frontend/src/types.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 1734
+    }
+  ],
+  "coverFiles": [
+    {
+      "path": "cover/cover.png",
+      "mediaType": "image/png",
+      "size": 1751017
+    }
+  ],
+  "exportedAt": "2026-07-18T06:56:45.939Z",
+  "exporter": {
+    "name": "platform-web",
+    "version": "0.0.0"
+  }
+}

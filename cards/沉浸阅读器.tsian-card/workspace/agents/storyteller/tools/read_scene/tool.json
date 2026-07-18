@@ -1,0 +1,23 @@
+{
+  "name": "read_scene",
+  "title": "读取场景",
+  "description": "输入场景 ref（如 scene:山门冲突），读场景文件并读取每个在场实体的 name/brief，格式化为人类可读文本返回（场景名、状态、地点、简介、在场角色 name+brief）。省去你自己 read 场景再 read 每个实体的多次往返。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "ref": {
+        "type": "string",
+        "description": "场景 id，格式 scene:<localId>。"
+      }
+    },
+    "required": [
+      "ref"
+    ]
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 5000
+  }
+}

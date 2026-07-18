@@ -1,0 +1,69 @@
+{
+  "id": "researcher",
+  "title": "资料员",
+  "summary": "只读检索 source、entity、scene、relationship、schema，按调用方问题返回精炼事实。",
+  "contacts": [
+    "storyteller",
+    "stage-manager",
+    "world-architect"
+  ],
+  "contextPaths": [
+    {
+      "path": "docs/novel-airp-schema-guide.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/source/README.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/entities/README.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/scenes/README.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/relationships/README.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/schema/current.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/playthrough/frontier.json",
+      "role": "user",
+      "position": "prelude"
+    }
+  ],
+  "skills": {
+    "enabled": [
+      "agents/researcher/skills/实体读取/SKILL.md",
+      "agents/researcher/skills/资料检索/SKILL.md"
+    ],
+    "disabled": []
+  },
+  "tools": {
+    "enabled": [],
+    "disabled": [
+      "roll_dice"
+    ]
+  },
+  "platformTools": {
+    "enabled": [
+      "workspace_read"
+    ],
+    "disabled": []
+  },
+  "workspaceAccess": {
+    "level": 1
+  }
+}

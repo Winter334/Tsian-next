@@ -18,7 +18,6 @@ import type {
   CharacterEntity,
   CharacterGauge,
   CharacterGoals,
-  CharacterHistoryEvent,
   CharacterIdentity,
   CharacterPortraitMeta,
   CharacterStatus,
@@ -173,17 +172,6 @@ function parseGoals(raw: unknown): CharacterGoals | undefined {
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-function parseHistory(raw: unknown): CharacterHistoryEvent[] | undefined {
-  if (!Array.isArray(raw)) return undefined
-  const out: CharacterHistoryEvent[] = []
-  for (const item of raw) {
-    if (!isRecord(item)) continue
-    const event = asString(item.event)
-    if (event) out.push({ event })
-  }
-  return out.length > 0 ? out : undefined
-}
-
 /** 归一 aliases（string[]）。 */
 function parseAliases(raw: unknown): string[] | undefined {
   if (!Array.isArray(raw)) return undefined
@@ -282,9 +270,6 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
 
   const background = asString(raw.background)
   if (background) entity.background = background
-
-  const history = parseHistory(raw.history)
-  if (history) entity.history = history
 
   const containers = parseContainers(raw.containers)
   if (containers) entity.containers = containers

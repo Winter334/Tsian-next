@@ -1,0 +1,13 @@
+{
+  "schema": "tsian.reply-projection.v1",
+  "rules": [
+    {
+      "id": "choices",
+      "match": "/\\[\\[选项\\]\\]([\\s\\S]*?)\\[\\[\\/选项\\]\\]/g",
+      "text": "",
+      "project": {
+        "choices": "$1|lines|stripList"
+      }
+    }
+  ]
+}

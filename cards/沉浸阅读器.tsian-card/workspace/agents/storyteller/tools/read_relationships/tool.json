@@ -1,0 +1,23 @@
+{
+  "name": "read_relationships",
+  "title": "读取关系",
+  "description": "输入角色实体 ref（如 character:萧玄），读对应人物关系分片 save/relationships/<scope>.json，格式化为人类可读文本返回（主体名 + 各条角色关系 to/type/note）。供社交场景快速了解角色间关系；非角色关联不应写入 relationships。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "ref": {
+        "type": "string",
+        "description": "主体角色实体 id，格式 <type>:<localId>，如 character:萧玄。"
+      }
+    },
+    "required": [
+      "ref"
+    ]
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 3000
+  }
+}

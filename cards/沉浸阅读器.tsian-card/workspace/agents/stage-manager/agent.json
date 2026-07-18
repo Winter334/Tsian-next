@@ -1,0 +1,73 @@
+{
+  "id": "stage-manager",
+  "title": "场记",
+  "summary": "回合后维护 runtime、entities、scenes、relationships、memory 和可渲染 extensions。",
+  "contacts": [
+    "researcher",
+    "world-architect"
+  ],
+  "contextPaths": [
+    {
+      "path": "docs/novel-airp-schema-guide.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/schema/current.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/playthrough/runtime.json",
+      "role": "user",
+      "position": "runtime"
+    },
+    {
+      "path": "save/playthrough/frontier.json",
+      "role": "user",
+      "position": "runtime"
+    },
+    {
+      "path": "save/scenes/README.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/relationships/README.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/memory/seeds.md",
+      "role": "user",
+      "position": "runtime"
+    }
+  ],
+  "skills": {
+    "enabled": [
+      "agents/stage-manager/skills/回合后维护/SKILL.md",
+      "agents/stage-manager/skills/schema演进检查/SKILL.md"
+    ],
+    "disabled": []
+  },
+  "tools": {
+    "enabled": [
+      "agents/stage-manager/tools/read_maintenance_context/tool.json",
+      "agents/stage-manager/tools/commit_turn_recall/tool.json"
+    ],
+    "disabled": [
+      "roll_dice"
+    ]
+  },
+  "platformTools": {
+    "enabled": [
+      "workspace_read",
+      "workspace_write",
+      "agent_call"
+    ],
+    "disabled": []
+  },
+  "workspaceAccess": {
+    "level": 1
+  }
+}

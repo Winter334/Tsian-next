@@ -1,0 +1,92 @@
+{
+  "name": "roll_dice",
+  "title": "掷骰",
+  "description": "掷骰用于不确定性建模，支持单方 DC 检定与双方对抗；`dc` 与 `opposed` 互斥。`count === 1` 时自然 1 为大失败（`criticalFailure`）、自然最大值为大成功（`criticalSuccess`），优先于常规 `success`/`winner` 判定；`count > 1` 时不判定大成功/大失败。`modifier` 可传数值或纯数字算术表达式字符串（支持 + - * / ^ 和 sqrt()），例如 \"15-12\" 表示双方属性差值；求值失败返回错误。可选 `advantage`/`disadvantage` 在 count === 1 时生效。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "sides": {
+        "type": "integer",
+        "minimum": 2,
+        "description": "骰面数，例如 20 表示 d20。"
+      },
+      "count": {
+        "type": "integer",
+        "minimum": 1,
+        "default": 1,
+        "description": "投掷次数，默认 1。"
+      },
+      "modifier": {
+        "type": [
+          "number",
+          "string"
+        ],
+        "default": 0,
+        "description": "加在总和上的数值调整。可传数字或纯数字算术表达式字符串（支持 + - * / ^ 和 sqrt()），例如 \"15-12\" 表示双方属性差值。不接受变量名、实体路径或除 sqrt 外的函数名。"
+      },
+      "dc": {
+        "type": "number",
+        "description": "单方成功阈值（Difficulty Class）。给出时结果里会带 success 布尔；不可与 opposed 同时使用。"
+      },
+      "advantage": {
+        "type": "boolean",
+        "default": false,
+        "description": "优势：仅在 count === 1 时生效，滚两次取高。"
+      },
+      "disadvantage": {
+        "type": "boolean",
+        "default": false,
+        "description": "劣势：仅在 count === 1 时生效，滚两次取低。"
+      },
+      "opposed": {
+        "type": "object",
+        "additionalProperties": false,
+        "description": "对抗方的一次掷骰；用于双方对抗，不可与 dc 同时使用。未提供 sides/count 时继承顶层值，modifier 默认 0。",
+        "properties": {
+          "sides": {
+            "type": "integer",
+            "minimum": 2,
+            "description": "对抗方骰面数；默认继承顶层 sides。"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "对抗方投掷次数；默认继承顶层 count。"
+          },
+          "modifier": {
+            "type": [
+              "number",
+              "string"
+            ],
+            "default": 0,
+            "description": "对抗方加在总和上的数值调整。可传数字或纯数字算术表达式字符串（支持 + - * / ^ 和 sqrt()）。"
+          },
+          "advantage": {
+            "type": "boolean",
+            "default": false,
+            "description": "对抗方优势：仅在 count === 1 时生效，滚两次取高。"
+          },
+          "disadvantage": {
+            "type": "boolean",
+            "default": false,
+            "description": "对抗方劣势：仅在 count === 1 时生效，滚两次取低。"
+          }
+        }
+      },
+      "reason": {
+        "type": "string",
+        "maxLength": 200,
+        "description": "触发掷骰的叙事原因（供日志阅读，不影响结果）。"
+      }
+    },
+    "required": [
+      "sides"
+    ]
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 3000
+  }
+}

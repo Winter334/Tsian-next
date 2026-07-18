@@ -1,0 +1,26 @@
+{
+  "name": "commit_turn_recall",
+  "title": "写入回合召回元数据",
+  "description": "为目标正式 turn 写入卡片私有 meta.recall。只读取并重写 save/history/turns/turn-NNNNNN.json 的 meta.recall，不修改 timeline 正文；会校验 schema、剧情坐标、实体 ref、事件类型、标签和摘要。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "turn": {
+        "type": "number",
+        "description": "目标回合号。省略时默认取当前 max turn。"
+      },
+      "recall": {
+        "type": "object",
+        "additionalProperties": true,
+        "description": "回合召回元数据。字段使用中文：剧情坐标、时间、涉及实体、事件类型、标签、摘要；schema 可省略，由工具补为沉浸阅读器.turn-recall.v1。"
+      }
+    },
+    "required": ["recall"]
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 8000
+  }
+}
