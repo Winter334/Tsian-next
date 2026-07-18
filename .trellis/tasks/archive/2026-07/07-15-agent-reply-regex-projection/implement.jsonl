@@ -1,0 +1,13 @@
+{"file":".trellis/tasks/07-15-agent-reply-regex-projection/prd.md","reason":"Final requirements, product decisions, acceptance criteria, and out-of-scope boundaries for the reply projection task."}
+{"file":".trellis/tasks/07-15-agent-reply-regex-projection/design.md","reason":"Technical design for projection rule format, pipeline semantics, bridge contract changes, turn0 reuse, and tmp/沉浸阅读器 validation target."}
+{"file":".trellis/tasks/07-15-agent-reply-regex-projection/implement.md","reason":"Ordered implementation checklist, validation commands, and rollback points for Phase 2 execution."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web frontend/runtime package index and required build checks for platform-web changes."}
+{"file":".trellis/spec/platform-web/frontend/directory-structure.md","reason":"Placement guidance for new platform-host modules and bridge/platform runtime responsibilities."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Bridge state, turn rendering, workspace fileification, and runtime state contracts affected by realtime turn result changes."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Required validation and bridge/runtime review checklist for platform-web and contract changes."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Storage and turn-file/checkpoint contracts affected by assistant timeline item persistence."}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Contract authoring requirements and required build checks for shared runtime/bridge shape changes."}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Contract consumer guidance for platform-web and play frontend use of shared shapes."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Cross-layer data-flow checklist for raw reply -> projection -> storage -> bridge -> frontend display."}
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"Justification for storing projection rules as workspace-visible card content instead of private DB fields."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Guidance for removing legacy options semantics from AI-facing/SDK surfaces without leaving misleading traces."}
