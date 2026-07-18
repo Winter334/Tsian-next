@@ -366,7 +366,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     await commitSuccessfulRuntimeTurnForSave(activeSaveId, {
       history: nextHistory,
       workspaceFiles: workspaceTransaction.finalWorkspaceFiles(),
-      checkpointReason: "after-turn",
+      reason: "after-turn",
     })
 
     scheduleAutoBackupForSave(activeSaveId)

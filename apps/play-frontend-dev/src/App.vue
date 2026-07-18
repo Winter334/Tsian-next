@@ -47,11 +47,18 @@ watch(navCollapsed, (v) => {
 const { statusCollapsed, toggle: toggleStatusCollapsed } = useStatusBarCollapsed()
 
 // bridge 状态（useTsian 单例共享）
-const { ready, turnCount, tsian } = useTsian()
+const { ready, turnCount, tsian, loadOpeningNarrative } = useTsian()
 
 async function hasEnteredPlayCheckpoint(): Promise<boolean> {
   const checkpoints = await tsian.checkpoints.list()
-  return checkpoints.some((cp) => cp.turn === 0 && cp.reason === "manual" && cp.label === "开局设定")
+  return checkpoints.some((cp) => (
+    cp.turn === 0
+    && (
+      cp.tags?.includes("opening-complete")
+      || cp.metadata?.enteredPlay === true
+      || cp.label === "开局设定"
+    )
+  ))
 }
 
 async function hasFormalTurns(): Promise<boolean> {
@@ -72,6 +79,7 @@ async function restoreSavedMode(): Promise<void> {
     await tsian.waitForReady()
     if (await shouldRestorePlayMode()) {
       mode.value = "play"
+      await loadOpeningNarrative()
     }
   } catch {
     // 没有激活存档或 workspace 未就绪时保持默认向导入口。
@@ -113,15 +121,39 @@ function onRevealed() {
   enterPlayPending.value = false
 }
 
-/** Step 5 "进入故事"：标记开局向导已进入故事，再创建开局设定检查点（替换 initial 空模板），
+async function markEnteredPlayCheckpoint(): Promise<void> {
+  const checkpoints = await tsian.checkpoints.list({ includeHidden: true })
+  const initial = checkpoints
+    .filter((cp) => cp.turn === 0)
+    .sort((left, right) => left.createdAt - right.createdAt)[0]
+
+  const options = {
+    label: "开局设定",
+    retention: "pinned" as const,
+    source: "card" as const,
+    tags: ["opening-complete"],
+    metadata: { enteredPlay: true },
+    reason: "manual",
+  }
+
+  if (initial) {
+    await tsian.checkpoints.overwrite(initial.id, options)
+    return
+  }
+
+  await tsian.checkpoints.create(options)
+}
+
+/** Step 5 "进入故事"：先加载开局叙事，标记开局向导已进入故事，再显式覆盖开局初始检查点，
  *  最后在 Step 5 画面上启动 scroll 烧蚀。等 BurningReveal @shown 后才切 mode=play，避免 canvas delay 期间露出下方 StoryView。
- *  检查点创建失败不阻塞进入游戏（console.error + 继续）。 */
+ *  检查点更新失败不阻塞进入游戏（console.error + 继续）。 */
 async function onEnterPlay() {
+  await loadOpeningNarrative()
   await markEnteredPlay()
   try {
-    await tsian.checkpoints.create("开局设定")
+    await markEnteredPlayCheckpoint()
   } catch (err) {
-    console.error("[App] 创建开局设定检查点失败:", err)
+    console.error("[App] 更新开局设定检查点失败:", err)
   }
   enterPlayPending.value = true
   phase.value = "burning"

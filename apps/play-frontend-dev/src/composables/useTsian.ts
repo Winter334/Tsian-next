@@ -1,6 +1,5 @@
 import { reactive, ref, readonly, onUnmounted } from "vue"
 import { createTsian } from "@tsian/play-bridge"
-import { parseStoryOptions } from "../lib/story-options"
 import type {
   TsianApi,
   MessageDelta,
@@ -58,6 +57,10 @@ const streamingReasoning = ref("")
 // 当前轮剧情选项（onTurnEnd 填充，send 时清空）
 const turnOptions = ref<string[]>([])
 
+// 开局叙事（Step 4 对话收尾写入 opening-narrative.json，进入 play 后 StoryView 特殊渲染）
+// 独立于 stream——reloadHistory/restore 替换 stream 时不会被冲掉
+const openingNarrative = ref<string | null>(null)
+
 // 最近一次 send 被阻断的原因（design §5 / §9）。
 // - blocked 分支：不推 user StreamItem、不切 turnPhase、不发 tsian.send，仅置此 ref。
 // - 下次 send 进入前置检查前清空。UI（StoryView）v-if 渲染 banner。
@@ -85,12 +88,10 @@ function createFallbackAssistantFromStream(): { content: string } | null {
 }
 
 function createAssistantStreamItem(
-  item: { content: string; displayContent?: string; projections?: Record<string, unknown>; stats?: { totalTokens?: number } },
+  item: { content: string; displayContent?: string; stats?: { totalTokens?: number } },
   id: string,
 ): StreamItem | null {
-  const visibleContent = displayAssistantContent(item)
-  const parsed = parseStoryOptions(visibleContent)
-  const content = item.projections ? visibleContent : parsed.cleanText
+  const content = displayAssistantContent(item)
   if (!content.trim()) return null
   return {
     kind: "assistant",
@@ -100,12 +101,16 @@ function createAssistantStreamItem(
   }
 }
 
-function assistantChoices(
-  item: { content: string; displayContent?: string; projections?: Record<string, unknown> | undefined },
-): string[] {
-  const projected = projectedChoices(item)
-  if (projected.length > 0) return projected
-  return parseStoryOptions(displayAssistantContent(item)).options
+function pushAssistantItem(
+  item: { content: string; displayContent?: string; projections?: Record<string, unknown>; stats?: { totalTokens?: number } },
+  id: string,
+): void {
+  const streamItem = createAssistantStreamItem(item, id)
+  if (streamItem) stream.value.push(streamItem)
+}
+
+function applyAssistantChoices(item: { projections?: Record<string, unknown> | undefined } | null | undefined): void {
+  turnOptions.value = item ? projectedChoices(item) : []
 }
 
 function subscribe(): void {
@@ -190,11 +195,12 @@ function subscribe(): void {
     tsian.onTurnEnd((result: TurnEndResult) => {
       // 落定：host turn-completed 携带已投影并持久化的 assistant item。
       const assistant = result.assistant ?? createFallbackAssistantFromStream()
-      const streamItem = assistant ? createAssistantStreamItem(assistant, `assistant-${Date.now()}`) : null
-      if (streamItem) stream.value.push(streamItem)
+      if (assistant) {
+        pushAssistantItem(assistant, `assistant-${Date.now()}`)
+      }
       streamingText.value = ""
       streamingReasoning.value = ""
-      turnOptions.value = assistant ? assistantChoices(assistant) : []
+      applyAssistantChoices(result.assistant)
       turnPhase.value = "standby"
       const completedTurn = result.turn ?? turnCount.value
       turnCount.value = completedTurn + 1
@@ -261,6 +267,7 @@ export function useTsian() {
     streamingText: readonly(streamingText),
     turnOptions: readonly(turnOptions),
     checkpoints: readonly(checkpoints),
+    openingNarrative: readonly(openingNarrative),
     syncPhase,
     lastSendError: readonly(lastSendError),
 
@@ -351,6 +358,25 @@ export function useTsian() {
     async loadCheckpoints(): Promise<void> {
       checkpoints.value = await tsian.checkpoints.list()
     },
+    /** 读取开局叙事（Step 4 对话收尾写入 opening-narrative.json）。
+     *  供 Step 5 确认 / enterPlay 时调用，StoryView 特殊渲染为第一条消息。
+     *  同时从 play-setup context slot 恢复最后一条 agent 选项，避免开局初始选项丢失。 */
+    async loadOpeningNarrative(): Promise<void> {
+      try {
+        const file = await tsian.workspace.read("save/playthrough/opening-narrative.json")
+        if (file?.content) {
+          const data = JSON.parse(file.content) as { narrative?: string | null }
+          openingNarrative.value = typeof data.narrative === "string" && data.narrative.trim()
+            ? data.narrative
+            : null
+        } else {
+          openingNarrative.value = null
+        }
+      } catch {
+        openingNarrative.value = null
+      }
+      await loadPlaySetupOptions()
+    },
     /** 恢复到指定检查点。host 执行 restore（裁剪 turn 文件 + 删除未来 checkpoint）后，
      *  前端重建 stream + checkpoints + 兜底恢复最后一轮选项。 */
     async restore(checkpointId: string): Promise<void> {
@@ -358,6 +384,26 @@ export function useTsian() {
       await reloadHistory()
       await tsian.checkpoints.list().then((cps) => { checkpoints.value = cps })
     },
+  }
+
+  /** 从 turn 0 history 的 projected assistant item 恢复初始选项。
+   *  openingNarrative 不是正式 turn 文件；Step 4 收尾写入的 turn 0 assistant
+   *  会携带 projections.choices，enterPlay 前调用本函数把初始选项带到 StoryView。 */
+  async function loadPlaySetupOptions(): Promise<void> {
+    // 已有正式回合选项时不覆盖（例如用户已经开始游玩后重新加载 openingNarrative）
+    if (turnOptions.value.length > 0) return
+    try {
+      const file = await tsian.workspace.read("save/history/turns/turn-000000.json")
+      if (!file?.content) return
+      const data = JSON.parse(file.content) as { timeline?: Array<{ kind?: string; projections?: Record<string, unknown> }> }
+      const timeline = Array.isArray(data.timeline) ? data.timeline : []
+      const assistant = [...timeline].reverse().find((item) => item.kind === "assistant")
+      if (assistant) {
+        applyAssistantChoices(assistant)
+      }
+    } catch {
+      // 初始选项是增强展示；失败时不阻塞进入 StoryView。
+    }
   }
 
   /** 从 workspace turn 文件单源重建对话（首次加载 + restore 回溯后复用）。
@@ -376,7 +422,6 @@ export function useTsian() {
           const assistant = createAssistantStreamItem({
             content: item.content,
             ...(item.displayContent !== undefined ? { displayContent: item.displayContent } : {}),
-            ...(item.projections ? { projections: item.projections } : {}),
             ...(item.stats ? { stats: item.stats } : {}),
           }, `h-assistant-${entry.turn}-${items.length}`)
           if (assistant) items.push(assistant)
@@ -394,28 +439,19 @@ export function useTsian() {
     stream.value = items
     turnCount.value = h.turn
     // 先清空 turnOptions——restore 回溯后旧轮的未选选项可能残留在 turnOptions 里，
-    // 属于被抹除的 turn，必须丢弃。只有当重建后的最后一轮 timeline 里确实持久化
-    // 了 options 时，才恢复它们（会话重开场景）。
+    // 属于被抹除的 turn，必须丢弃。只有当重建后的最后一轮 projected assistant
+    // 确实携带 choices 时，才恢复它们（会话重开场景）。
     turnOptions.value = []
-    // 兜底恢复最后一轮未选的选项：会话中途关闭再重开时，玩家尚未选择
-    // 的剧情选项应继续显示。新正式 turn 读取 projected assistant；legacy turn
-    // 的结构化 options 项仍作为兜底。
     if (h.entries.length > 0) {
       const lastEntry = h.entries[h.entries.length - 1]!
-      for (let itemIndex = lastEntry.timeline.length - 1; itemIndex >= 0; itemIndex -= 1) {
-        const item = lastEntry.timeline[itemIndex]!
-        if (item.kind === "assistant") {
-          const choices = assistantChoices(item)
-          if (choices.length > 0) {
-            turnOptions.value = choices
-          }
-          return
-        }
-        if (item.kind === "options" && item.items.length > 0) {
-          turnOptions.value = item.items
-          return
-        }
+      const lastAssistant = [...lastEntry.timeline].reverse().find((it) => it.kind === "assistant")
+      if (lastAssistant && lastAssistant.kind === "assistant") {
+        applyAssistantChoices(lastAssistant)
       }
+    }
+    // 开局叙事不是正式 turn 文件；如果尚无正式历史选项，则从 Step 4 对话 context 兜底恢复初始选项。
+    if (turnOptions.value.length === 0 && openingNarrative.value) {
+      await loadPlaySetupOptions()
     }
   }
 }

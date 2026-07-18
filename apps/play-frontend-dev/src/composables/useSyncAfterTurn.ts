@@ -84,8 +84,7 @@ async function runSyncInvocation(
     await tsian.invokeAgent(agentId, input, {
       invocationId,
       purpose,
-      commitMode: "workspace-with-checkpoint",
-      checkpointReason: "post-turn-maintenance",
+      checkpoint: { mode: "current-turn-auto" },
       persist: true,
     })
     // 成功 resolve：onAgentInvocation 的 completed 事件会驱动 synced，

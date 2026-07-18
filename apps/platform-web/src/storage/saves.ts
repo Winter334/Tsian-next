@@ -1,20 +1,24 @@
 import type {
   ConversationMessageRecord,
+  CreateCheckpointOptions,
+  JsonValue,
+  OverwriteCheckpointOptions,
   WorkspaceFile,
 } from "@tsian/contracts"
 import {
   localDb,
+  type LocalCheckpointRecord,
   type LocalGameCardRecord,
   type LocalSaveRecord,
   type LocalWorkspaceFileRecord,
 } from "./db"
 import {
-  createCheckpointForSave,
   buildCheckpointRecordForSave,
+  checkpointRetention,
   deleteCheckpointsForSave,
   pruneCheckpointsForSave,
 } from "./checkpoints"
-import { deleteBlobsForSave } from "./blobs"
+import { deleteBlobsForSave, deleteOrphanBlobs } from "./blobs"
 import { getProtectedFrontendDebugCheckpointId } from "./frontend-debug-session"
 import { getBuiltinBlankGameCard } from "./game-cards"
 import {
@@ -98,6 +102,8 @@ export async function createLocalSaveFromGameCard(
     turn: 0,
     reason: "initial",
     label: "初始状态",
+    retention: "pinned",
+    source: "platform",
     files: checkpointWorkspaceFiles,
   }, now)
 
@@ -126,7 +132,7 @@ export async function commitSuccessfulRuntimeTurnForSave(
   input: {
     history: ConversationMessageRecord[]
     workspaceFiles: WorkspaceFile[]
-    checkpointReason: "after-turn"
+    reason?: string
   },
 ): Promise<void> {
   const now = Date.now()
@@ -151,7 +157,9 @@ export async function commitSuccessfulRuntimeTurnForSave(
   // crypto.subtle.digest 是异步的，不能在 Dexie 事务内 await。
   const checkpoint = await buildCheckpointRecordForSave(saveId, {
     turn: checkpointTurn,
-    reason: input.checkpointReason,
+    reason: input.reason,
+    retention: "auto",
+    source: "platform",
     files: checkpointWorkspaceFiles,
   }, now)
 
@@ -339,12 +347,93 @@ export async function commitWorkspaceChangesForSave(
   )
 }
 
-export async function commitWorkspaceChangesWithCheckpointForSave(
+function normalizeTags(tags: string[] | undefined): string[] | undefined {
+  if (!tags) return undefined
+  const normalized = Array.from(
+    new Set(tags.map((tag) => tag.trim()).filter(Boolean)),
+  )
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function cloneMetadata(
+  metadata: Record<string, JsonValue> | undefined,
+): Record<string, JsonValue> | undefined {
+  return metadata ? { ...metadata } : undefined
+}
+
+function patchCheckpointMetadata(
+  record: LocalCheckpointRecord,
+  patch: OverwriteCheckpointOptions,
+  now: number,
+): LocalCheckpointRecord {
+  const next: LocalCheckpointRecord = {
+    ...record,
+    label: patch.label?.trim() || record.label,
+    updatedAt: now,
+  }
+  if (patch.reason !== undefined) {
+    const reason = patch.reason.trim()
+    if (reason) next.reason = reason
+    else delete next.reason
+  }
+  if (patch.retention !== undefined) next.retention = patch.retention
+  if (patch.source !== undefined) next.source = patch.source
+  if (patch.tags !== undefined) {
+    const tags = normalizeTags(patch.tags)
+    if (tags) next.tags = tags
+    else delete next.tags
+  }
+  if (patch.visible !== undefined) next.visible = patch.visible
+  if (patch.metadata !== undefined) {
+    const metadata = cloneMetadata(patch.metadata)
+    if (metadata && Object.keys(metadata).length > 0) next.metadata = metadata
+    else delete next.metadata
+  }
+  return next
+}
+
+function findCurrentTurnAutoCheckpoint(
+  records: LocalCheckpointRecord[],
+  turn: number,
+  protectedCheckpointId: string | null,
+): LocalCheckpointRecord | undefined {
+  return records
+    .filter((record) => (
+      record.id !== protectedCheckpointId
+      && record.turn === turn
+      && checkpointRetention(record) === "auto"
+    ))
+    .sort((left, right) => right.createdAt - left.createdAt)[0]
+}
+
+async function garbageCollectCheckpointBlobsForSave(saveId: string): Promise<void> {
+  const remaining = await localDb.checkpoints.where("saveId").equals(saveId).toArray()
+  const referencedHashes = new Set<string>()
+  for (const cp of remaining) {
+    for (const entry of cp.manifest) {
+      referencedHashes.add(entry.hash)
+    }
+  }
+  await deleteOrphanBlobs(saveId, referencedHashes)
+}
+
+export type WorkspaceCommitCheckpointOption =
+  | false
+  | ({ mode: "create" } & CreateCheckpointOptions)
+  | ({ mode: "overwrite"; checkpointId: string } & OverwriteCheckpointOptions)
+  | {
+      mode: "current-turn-auto"
+      label?: string
+      tags?: string[]
+      metadata?: Record<string, JsonValue>
+    }
+
+export async function commitWorkspaceChangesWithOptionalCheckpointForSave(
   saveId: string,
   changes: RuntimeWorkspaceChanges,
   input: {
     turn: number
-    checkpointReason: "post-turn-maintenance"
+    checkpoint: WorkspaceCommitCheckpointOption
   },
 ): Promise<void> {
   const normalized = recordsFromWorkspaceChanges(saveId, changes)
@@ -355,12 +444,91 @@ export async function commitWorkspaceChangesWithCheckpointForSave(
     const currentWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
     const currentSignature = workspaceRecordSignature(currentWorkspace)
     const mergedWorkspace = applyWorkspaceChangesToRecords(currentWorkspace, normalized)
-    const checkpoint = await buildCheckpointRecordForSave(saveId, {
-      turn: input.turn,
-      reason: input.checkpointReason,
-      label: `回合 ${input.turn} · 维护`,
-      files: checkpointFilesFromRecords(mergedWorkspace),
-    }, now)
+    const checkpointFiles = checkpointFilesFromRecords(mergedWorkspace)
+    const existingCheckpoints = await localDb.checkpoints.where("saveId").equals(saveId).toArray()
+
+    let checkpointToPut: LocalCheckpointRecord | null = null
+    let obsoleteCheckpointIds: string[] = []
+    if (input.checkpoint && input.checkpoint.mode === "create") {
+      checkpointToPut = await buildCheckpointRecordForSave(saveId, {
+        turn: input.turn,
+        reason: input.checkpoint.reason,
+        label: input.checkpoint.label,
+        retention: input.checkpoint.retention ?? "pinned",
+        source: input.checkpoint.source ?? "agent",
+        tags: input.checkpoint.tags,
+        visible: input.checkpoint.visible,
+        metadata: input.checkpoint.metadata,
+        files: checkpointFiles,
+      }, now)
+    } else if (input.checkpoint && input.checkpoint.mode === "overwrite") {
+      const checkpointOption = input.checkpoint
+      const existing = existingCheckpoints.find((record) => record.id === checkpointOption.checkpointId)
+      if (!existing) {
+        throw new Error(`Checkpoint "${checkpointOption.checkpointId}" was not found.`)
+      }
+      if (existing.saveId !== saveId) {
+        throw new Error(`Checkpoint "${checkpointOption.checkpointId}" does not belong to the active save.`)
+      }
+      const patched = patchCheckpointMetadata(existing, checkpointOption, now)
+      checkpointToPut = await buildCheckpointRecordForSave(saveId, {
+        id: existing.id,
+        turn: input.turn,
+        reason: patched.reason,
+        label: patched.label,
+        retention: checkpointRetention(patched),
+        source: patched.source,
+        tags: patched.tags,
+        visible: patched.visible,
+        metadata: patched.metadata,
+        updatedAt: now,
+        files: checkpointFiles,
+      }, existing.createdAt)
+    } else if (input.checkpoint && input.checkpoint.mode === "current-turn-auto") {
+      const existing = findCurrentTurnAutoCheckpoint(existingCheckpoints, input.turn, protectedCheckpointId)
+      if (existing) {
+        const patched = patchCheckpointMetadata(existing, {
+          label: input.checkpoint.label,
+          retention: "auto",
+          source: "platform",
+          tags: input.checkpoint.tags,
+          metadata: input.checkpoint.metadata,
+          reason: existing.reason ?? "post-turn-maintenance",
+        }, now)
+        checkpointToPut = await buildCheckpointRecordForSave(saveId, {
+          id: existing.id,
+          turn: input.turn,
+          reason: patched.reason,
+          label: patched.label,
+          retention: "auto",
+          source: patched.source ?? "platform",
+          tags: patched.tags,
+          visible: patched.visible,
+          metadata: patched.metadata,
+          updatedAt: now,
+          files: checkpointFiles,
+        }, existing.createdAt)
+      } else {
+        checkpointToPut = await buildCheckpointRecordForSave(saveId, {
+          turn: input.turn,
+          reason: "post-turn-maintenance",
+          label: input.checkpoint.label ?? `回合 ${input.turn} · 维护`,
+          retention: "auto",
+          source: "platform",
+          tags: input.checkpoint.tags,
+          metadata: input.checkpoint.metadata,
+          files: checkpointFiles,
+        }, now)
+      }
+      obsoleteCheckpointIds = existingCheckpoints
+        .filter((record) => (
+          record.id !== checkpointToPut!.id
+          && record.id !== protectedCheckpointId
+          && record.turn === input.turn
+          && checkpointRetention(record) === "auto"
+        ))
+        .map((record) => record.id)
+    }
 
     const committed = await localDb.transaction(
       "rw",
@@ -371,147 +539,100 @@ export async function commitWorkspaceChangesWithCheckpointForSave(
           return false
         }
 
-        await applyWorkspaceChangesInTransaction(saveId, normalized)
+        const changed = await applyWorkspaceChangesInTransaction(saveId, normalized)
+        if (checkpointToPut) {
+          for (const checkpointId of obsoleteCheckpointIds) {
+            await localDb.checkpoints.delete(checkpointId)
+          }
+          await localDb.checkpoints.put(checkpointToPut)
+        }
 
-        // replace-on-create (design D3): 删同 turn 的 after-turn checkpoint，让维护点
-        // 取代 pre-maintenance 状态成为该回合的规范 checkpoint。
-        // 不删 manual/initial/其它 turn 的记录。
-        const sameTurnAfterTurnCheckpoints = await localDb.checkpoints
-          .where("saveId")
-          .equals(saveId)
-          .and((cp) => (
-            cp.turn === input.turn
-            && cp.reason === "after-turn"
-            && cp.id !== protectedCheckpointId
-          ))
-          .toArray()
-        await Promise.all(
-          sameTurnAfterTurnCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)),
-        )
-
-        await localDb.checkpoints.put(checkpoint)
-
-        const save = await localDb.saves.get(saveId)
-        if (save) {
-          await localDb.saves.put({
-            ...save,
-            updatedAt: now,
-          })
+        if (changed || checkpointToPut) {
+          const save = await localDb.saves.get(saveId)
+          if (save) {
+            await localDb.saves.put({
+              ...save,
+              updatedAt: now,
+            })
+          }
         }
         return true
       },
     )
 
     if (committed) {
-      await pruneCheckpointsForSave(saveId)
+      if (checkpointToPut) {
+        await pruneCheckpointsForSave(saveId)
+        await garbageCollectCheckpointBlobsForSave(saveId)
+      }
       return
     }
   }
 
-  throw new Error("Workspace changed while creating the invokeAgent maintenance checkpoint; retry the invocation.")
+  throw new Error("Workspace changed while committing invokeAgent workspace changes; retry the invocation.")
+}
+
+export async function commitWorkspaceChangesWithCheckpointForSave(
+  saveId: string,
+  changes: RuntimeWorkspaceChanges,
+  input: {
+    turn: number
+    reason?: string
+  },
+): Promise<void> {
+  await commitWorkspaceChangesWithOptionalCheckpointForSave(saveId, changes, {
+    turn: input.turn,
+    checkpoint: {
+      mode: "current-turn-auto",
+      label: `回合 ${input.turn} · 维护`,
+      metadata: input.reason ? { legacyReason: input.reason } : undefined,
+    },
+  })
 }
 
 /**
- * Commit workspace files for a save AND create a `post-turn-maintenance` checkpoint
- * in the same Dexie transaction. Used by `invokeAgent` `workspace-with-checkpoint`
- * commit mode: maintenance-style invocations (e.g. post-turn stage-manager) commit
- * the post-maintenance workspace and create a recoverable checkpoint so restore to
- * that turn reflects the post-maintenance state (not the pre-maintenance one).
- *
- * Full-replace workspace + checkpoint helper for callers that own the entire
- * save workspace snapshot. Side-channel invokeAgent commits must use
- * `commitWorkspaceChangesWithCheckpointForSave`, which merges explicit staged
- * changes into current persisted workspace before checkpointing.
- *
- * Mirrors the Dexie transaction structure of `commitSuccessfulRuntimeTurnForSave`
- * with key differences for a side-channel-style commit:
- * - checkpoint turn = caller-supplied `turn` (the helper does NOT advance turn).
- * - reason = `"post-turn-maintenance"` (debugging/restore distinction).
- * - label = `回合 ${turn} · 维护`.
- * - replace-on-create (design D3): inside the same transaction, delete this save's
- *   `after-turn` checkpoints where `turn === input.turn`, so the maintenance point
- *   supersedes the pre-maintenance after-turn point. Does NOT delete
- *   `manual`/`initial`/other-turn records.
- * - does NOT write history or update runtimeSnapshot (invokeAgent doesn't advance turn).
- *
- * After the transaction, calls `pruneCheckpointsForSave(saveId)` (same as the main
- * turn-commit path).
+ * @deprecated Use `commitWorkspaceChangesWithOptionalCheckpointForSave` for new callers.
  */
 export async function commitWorkspaceFilesWithCheckpointForSave(
   saveId: string,
   workspaceFiles: WorkspaceFile[],
   input: {
     turn: number
-    checkpointReason: "post-turn-maintenance"
+    reason?: string
   },
 ): Promise<void> {
-  const now = Date.now()
-  const protectedCheckpointId = await getProtectedFrontendDebugCheckpointId(saveId)
-
   const workspaceRecords = new Map<string, ReturnType<typeof createLocalWorkspaceFileRecord>>()
   for (const file of saveRuntimeFilesFromEffectiveWorkspace(workspaceFiles)) {
     const record = createLocalWorkspaceFileRecord(saveId, file)
     workspaceRecords.set(record.path, record)
   }
 
-  const checkpointWorkspaceFiles = Array.from(workspaceRecords.values())
-    .map(({ id: _id, saveId: _saveId, ...file }) => file)
-    // 追加型日志（turn 文件 + traces）不进 checkpoint（存档级共享；回溯到 N = 裁剪到 1..N）。
-    .filter((file) => !isAppendOnlyLogPath(file.path))
-    .sort((left, right) => left.path.localeCompare(right.path))
-  // 事务外：算哈希 + 写 blobs → 产出 thin-manifest checkpoint 记录。
-  // crypto.subtle.digest 是异步的，不能在 Dexie 事务内 await。
-  const checkpoint = await buildCheckpointRecordForSave(saveId, {
+  const currentWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
+  const currentByPath = new Map(currentWorkspace.map((record) => [record.path, record]))
+  const writtenFiles: WorkspaceFile[] = []
+  const deletedPaths: string[] = []
+  for (const record of workspaceRecords.values()) {
+    writtenFiles.push({
+      path: record.path,
+      content: record.content,
+      ...(record.data ? { binary: record.data } : {}),
+      createdAt: record.createdAt,
+      updatedAt: record.updatedAt,
+    })
+    currentByPath.delete(record.path)
+  }
+  for (const stale of currentByPath.values()) {
+    deletedPaths.push(stale.path)
+  }
+
+  await commitWorkspaceChangesWithOptionalCheckpointForSave(saveId, { writtenFiles, deletedPaths }, {
     turn: input.turn,
-    reason: input.checkpointReason,
-    label: `回合 ${input.turn} · 维护`,
-    files: checkpointWorkspaceFiles,
-  }, now)
-
-  await localDb.transaction(
-    "rw",
-    [
-      localDb.saves,
-      localDb.workspaceFiles,
-      localDb.checkpoints,
-    ],
-    async () => {
-      const existingWorkspace = await localDb.workspaceFiles.where("saveId").equals(saveId).toArray()
-      await Promise.all(existingWorkspace.map((record) => localDb.workspaceFiles.delete(record.id)))
-      for (const record of workspaceRecords.values()) {
-        await localDb.workspaceFiles.put(record)
-      }
-
-      // replace-on-create (design D3): 删同 turn 的 after-turn checkpoint，让维护点
-      // 取代 pre-maintenance 状态成为该回合的规范 checkpoint。
-      // 不删 manual/initial/其它 turn 的记录。
-      const sameTurnAfterTurnCheckpoints = await localDb.checkpoints
-        .where("saveId")
-        .equals(saveId)
-        .and((cp) => (
-          cp.turn === input.turn
-          && cp.reason === "after-turn"
-          && cp.id !== protectedCheckpointId
-        ))
-        .toArray()
-      await Promise.all(
-        sameTurnAfterTurnCheckpoints.map((cp) => localDb.checkpoints.delete(cp.id)),
-      )
-
-      await localDb.checkpoints.put(checkpoint)
-
-      const save = await localDb.saves.get(saveId)
-      if (save) {
-        await localDb.saves.put({
-          ...save,
-          updatedAt: now,
-        })
-      }
+    checkpoint: {
+      mode: "current-turn-auto",
+      label: `回合 ${input.turn} · 维护`,
+      metadata: input.reason ? { legacyReason: input.reason } : undefined,
     },
-  )
-
-  // 维护 checkpoint 提交后裁剪检查点 + GC 孤儿 blob（与主回合提交一致）。
-  await pruneCheckpointsForSave(saveId)
+  })
 }
 
 export async function renameLocalSave(saveId: string, name: string): Promise<LocalSaveRecord> {

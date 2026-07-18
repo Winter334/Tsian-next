@@ -3,6 +3,7 @@ import type {
   AgentRegistryEntry,
   DeepQueryRequest,
   DeepQueryResult,
+  ListCheckpointOptions,
   RuntimeDiagnosticSummary,
   RuntimeDiagnosticsQueryParams,
   SkillDetailEntry,
@@ -77,7 +78,7 @@ export async function queryResource<T = unknown>(request: DeepQueryRequest): Pro
     }
 
     return {
-      items: (await listCheckpointsForSave(activeSaveId)) as T[],
+      items: (await listCheckpointsForSave(activeSaveId, request.params as ListCheckpointOptions | undefined)) as T[],
     } as DeepQueryResult<T>
   }
 

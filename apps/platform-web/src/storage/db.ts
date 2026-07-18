@@ -1,6 +1,9 @@
 import type {
   AttachmentRef,
+  CheckpointRetention,
+  CheckpointSource,
   GameCardManifest,
+  JsonValue,
   WorkspaceScope,
 } from "@tsian/contracts"
 import Dexie, { type Table } from "dexie"
@@ -79,8 +82,15 @@ export interface LocalCheckpointRecord {
   saveId: string
   turn: number
   label: string
-  reason: "initial" | "after-turn" | "manual" | "post-turn-maintenance"
+  /** Compatibility data only; behavior must not switch on closed reason values. */
+  reason?: string
   createdAt: number
+  updatedAt?: number
+  retention?: CheckpointRetention
+  source?: CheckpointSource
+  tags?: string[]
+  visible?: boolean
+  metadata?: Record<string, JsonValue>
   /** Thin manifest：状态文件按内容哈希引用 blob 表（turn 文件不进 manifest，存档级共享）。
    *  内容寻址去重——跨检查点未变更文件共享一份 blob，零重复拷贝。 */
   manifest: Array<{ path: string; hash: string; createdAt: number; updatedAt: number }>

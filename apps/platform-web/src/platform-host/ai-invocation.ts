@@ -33,10 +33,11 @@ import {
 import { emitAgentInvocation } from "../streaming-events"
 import {
   commitWorkspaceChangesForSave,
-  commitWorkspaceChangesWithCheckpointForSave,
+  commitWorkspaceChangesWithOptionalCheckpointForSave,
   createRuntimeWorkspaceTransaction,
   getHistoryForSave,
   type RuntimeWorkspaceTransaction,
+  type WorkspaceCommitCheckpointOption,
 } from "../storage"
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import { ensureActiveSave } from "./game-cards"
@@ -69,6 +70,15 @@ function createInvocationId(): string {
   return `invoke-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
 }
 
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true
+  if (typeof value === "string" || typeof value === "boolean") return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  if (isRecord(value)) return Object.values(value).every(isJsonValue)
+  return false
+}
+
 function platformErrorFromUnknown(error: unknown, fallbackCode = "AGENT_INVOCATION_FAILED"): PlatformActionError {
   if (isRecord(error) && typeof error.code === "string" && typeof error.message === "string") {
     const details = isRecord(error.details)
@@ -91,13 +101,90 @@ function platformErrorFromUnknown(error: unknown, fallbackCode = "AGENT_INVOCATI
   }
 }
 
-function isJsonValue(value: unknown): value is JsonValue {
-  if (value === null) return true
-  if (typeof value === "string" || typeof value === "boolean") return true
-  if (typeof value === "number") return Number.isFinite(value)
-  if (Array.isArray(value)) return value.every(isJsonValue)
-  if (isRecord(value)) return Object.values(value).every(isJsonValue)
-  return false
+function normalizeTags(tags: string[] | undefined): string[] | undefined {
+  const normalized = Array.from(new Set((tags ?? []).map((tag) => tag.trim()).filter(Boolean)))
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function normalizeInvokeAgentCheckpointOption(input: InvokeAgentRequest): WorkspaceCommitCheckpointOption {
+  const legacyCheckpointRequested = input.commitMode === "workspace-with-checkpoint"
+  const hasExplicitCheckpoint = input.checkpoint !== undefined
+
+  if (input.commitMode !== undefined && input.commitMode !== "workspace" && input.commitMode !== "workspace-with-checkpoint") {
+    throw new Error('interaction.invokeAgent commitMode must be "workspace" or "workspace-with-checkpoint" when provided.')
+  }
+
+  if (input.commitMode === "workspace" && input.checkpointReason !== undefined) {
+    throw new Error("interaction.invokeAgent checkpointReason requires commitMode workspace-with-checkpoint or checkpoint option.")
+  }
+
+  if (hasExplicitCheckpoint && legacyCheckpointRequested) {
+    throw new Error("interaction.invokeAgent cannot combine checkpoint with legacy commitMode workspace-with-checkpoint.")
+  }
+
+  if (!hasExplicitCheckpoint) {
+    if (!legacyCheckpointRequested) {
+      return false
+    }
+    if (
+      input.checkpointReason !== undefined
+      && input.checkpointReason !== "post-turn-maintenance"
+    ) {
+      throw new Error(
+        'interaction.invokeAgent checkpointReason must be "post-turn-maintenance" for legacy workspace-with-checkpoint.',
+      )
+    }
+    return { mode: "current-turn-auto" }
+  }
+
+  const checkpoint = input.checkpoint
+  if (checkpoint === false) {
+    if (input.checkpointReason !== undefined) {
+      throw new Error("interaction.invokeAgent checkpointReason is not valid when checkpoint is false.")
+    }
+    return false
+  }
+  if (checkpoint === true) {
+    if (input.checkpointReason !== undefined) {
+      throw new Error("interaction.invokeAgent checkpointReason is not valid when checkpoint is true.")
+    }
+    return { mode: "create" }
+  }
+  if (typeof checkpoint !== "object" || checkpoint === null || Array.isArray(checkpoint)) {
+    throw new Error("interaction.invokeAgent checkpoint must be a boolean or object when provided.")
+  }
+
+  if (checkpoint.mode === "overwrite") {
+    if (typeof checkpoint.checkpointId !== "string" || !checkpoint.checkpointId.trim()) {
+      throw new Error("interaction.invokeAgent checkpoint overwrite requires checkpointId.")
+    }
+    return {
+      ...checkpoint,
+      mode: "overwrite",
+      checkpointId: checkpoint.checkpointId.trim(),
+      ...(checkpoint.tags ? { tags: normalizeTags(checkpoint.tags) } : {}),
+    }
+  }
+
+  if (checkpoint.mode === "current-turn-auto") {
+    return {
+      mode: "current-turn-auto",
+      ...(checkpoint.label?.trim() ? { label: checkpoint.label.trim() } : {}),
+      ...(checkpoint.tags ? { tags: normalizeTags(checkpoint.tags) } : {}),
+      ...(checkpoint.metadata ? { metadata: checkpoint.metadata } : {}),
+    }
+  }
+
+  if (checkpoint.mode === undefined || checkpoint.mode === "create") {
+    return {
+      ...checkpoint,
+      mode: "create",
+      ...(checkpoint.label?.trim() ? { label: checkpoint.label.trim() } : {}),
+      ...(checkpoint.tags ? { tags: normalizeTags(checkpoint.tags) } : {}),
+    }
+  }
+
+  throw new Error('interaction.invokeAgent checkpoint.mode must be "create", "overwrite", or "current-turn-auto".')
 }
 
 export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgentResult> {
@@ -111,25 +198,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
   }
   const invocationId = input.invocationId?.trim() || createInvocationId()
   const purpose = input.purpose?.trim() || undefined
-  const commitMode = input.commitMode ?? "workspace"
-  if (input.checkpointReason !== undefined && commitMode === "workspace") {
-    throw new Error(
-      "interaction.invokeAgent checkpointReason requires commitMode workspace-with-checkpoint.",
-    )
-  }
-  // workspace-with-checkpoint 的 checkpointReason 校验（MVP）：
-  // - 省略 → 默认 "post-turn-maintenance"。
-  // - 提供 → 必须是非空字符串且等于 "post-turn-maintenance"（未知值 fail loud，不静默落库）。
-  if (commitMode === "workspace-with-checkpoint") {
-    if (
-      input.checkpointReason !== undefined &&
-      input.checkpointReason !== "post-turn-maintenance"
-    ) {
-      throw new Error(
-        "interaction.invokeAgent checkpointReason must be \"post-turn-maintenance\" (MVP); unknown values are rejected.",
-      )
-    }
-  }
+  const checkpointOption = normalizeInvokeAgentCheckpointOption(input)
 
   const slot = input.contextSlot
   const shouldPersist = input.persist === true
@@ -410,15 +479,15 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
         path: formatAgentTracePath(agentId, invokeTimestamp),
         content: serializeRuntimeTraceEvents(trace.events),
       })
-      if (commitMode === "workspace-with-checkpoint") {
+      if (checkpointOption !== false) {
         cleanupScenesInTransaction(workspaceTransaction!)
       }
       const workspaceChanges = workspaceTransaction!.finalWorkspaceChanges()
-      await (commitMode === "workspace-with-checkpoint"
-        ? commitWorkspaceChangesWithCheckpointForSave(
+      await (checkpointOption !== false
+        ? commitWorkspaceChangesWithOptionalCheckpointForSave(
             currentActiveSaveId,
             workspaceChanges,
-            { turn: invokeMaxTurn, checkpointReason: "post-turn-maintenance" },
+            { turn: invokeMaxTurn, checkpoint: checkpointOption },
           )
         : commitWorkspaceChangesForSave(
             currentActiveSaveId,

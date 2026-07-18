@@ -11,7 +11,7 @@ import SetupComposer from "./SetupComposer.vue"
  * PlaySetupDialog — 游玩设定对话（Step 4）。
  *
  * 向导内的轻量 Agent 对话界面。多轮 invokeAgent 驱动，
- * parseStoryOptions 解析 [[选项]] 块，复用 StoryView 的消息组件语言。
+ * 助手回复通过平台 reply projection 提取 choices，复用 StoryView 的消息组件语言。
  * 布局适配向导 720px 框架。
  */
 const {

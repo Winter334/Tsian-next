@@ -1,3 +1,5 @@
+import type { CreateCheckpointOptions, OverwriteCheckpointOptions } from "./debug"
+
 /** 多模态消息内容的一个组成部分. 图片走多模态 content block,
  *  文本仍用 plain string (向后兼容). */
 export type ContentPart =
@@ -882,10 +884,20 @@ export interface MessageInteractionResult {
 
 /** invokeAgent workspace commit strategy.
  *  - "workspace" (default): commit save-runtime workspace changes without creating a checkpoint.
- *  - "workspace-with-checkpoint": reserved for post-turn maintenance flows that need a
- *    recoverable checkpoint after committing workspace changes; current platform builds may
- *    reject it until checkpoint reason/storage semantics are implemented end-to-end. */
+ *  - "workspace-with-checkpoint": deprecated compatibility alias for
+ *    `checkpoint: { mode: "current-turn-auto" }` when no explicit checkpoint option is supplied. */
 export type AgentInvocationCommitMode = "workspace" | "workspace-with-checkpoint"
+
+export type InvokeAgentCheckpointOption =
+  | boolean
+  | ({ mode?: "create" } & CreateCheckpointOptions)
+  | ({ mode: "overwrite"; checkpointId: string } & OverwriteCheckpointOptions)
+  | {
+      mode: "current-turn-auto"
+      label?: string
+      tags?: string[]
+      metadata?: Record<string, JsonValue>
+    }
 
 /** invokeAgent 请求：游戏前端按 agentId 直接调用某个 agent（NPC 视角、
  *  UI 触发的单次修正等）。与 sendMessage 不同：不推进 turn、不写历史、
@@ -898,10 +910,11 @@ export interface InvokeAgentRequest {
   invocationId?: string
   /** 调用目的标签（如 post-turn-maintenance / setup），仅用于前端过滤、日志和调试。 */
   purpose?: string
-  /** Workspace 提交策略。省略等同 "workspace"；"workspace-with-checkpoint" 为后续
-   *  场记/维护类调用预留，平台未实现完整 checkpoint 语义时应 fail loud。 */
+  /** Checkpoint operation to run after the workspace commit succeeds. */
+  checkpoint?: InvokeAgentCheckpointOption
+  /** @deprecated Use `checkpoint` instead. `workspace-with-checkpoint` maps to current-turn-auto. */
   commitMode?: AgentInvocationCommitMode
-  /** 预留给 workspace-with-checkpoint 的 checkpoint 原因/标签；默认 workspace 模式不使用。 */
+  /** @deprecated Compatibility data for legacy workspace-with-checkpoint callers. */
   checkpointReason?: string
   /** 前端注入的上下文消息（本轮有效，不落盘）。 */
   injection?: InjectionMessage[]

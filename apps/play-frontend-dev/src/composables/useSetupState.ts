@@ -1,6 +1,5 @@
 import { ref, readonly } from "vue"
 import { getTsianClient } from "./useTsian"
-import { parseStoryOptions } from "../lib/story-options"
 import type { WorkspaceEntry } from "@tsian/play-bridge"
 import {
   SOURCE_MANIFEST_PATH,
@@ -451,6 +450,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+interface ProjectedAssistantMessage {
+  content: string
+  displayContent?: string
+  projections?: Record<string, unknown>
+}
+
+async function projectAssistantMessage(
+  tsian: ReturnType<typeof getTsianClient>,
+  content: string,
+): Promise<ProjectedAssistantMessage> {
+  const result = await tsian.runAction("reply-project", { text: content })
+  if (isRecord(result) && result.ok === false) {
+    const error = isRecord(result.error) ? result.error : null
+    throw new Error(typeof error?.message === "string" ? error.message : "reply projection failed")
+  }
+  const projected = isRecord(result) && isRecord(result.item) ? result.item : result
+  if (isRecord(projected) && typeof projected.content === "string") {
+    return {
+      content: projected.content,
+      ...(typeof projected.displayContent === "string" ? { displayContent: projected.displayContent } : {}),
+      ...(isRecord(projected.projections) ? { projections: projected.projections } : {}),
+    }
+  }
+  return { content }
+}
+
+function displayAssistantContent(item: ProjectedAssistantMessage): string {
+  return item.displayContent ?? item.content
+}
+
+function projectedChoices(item: ProjectedAssistantMessage): string[] {
+  const choices = item.projections?.choices
+  return Array.isArray(choices) ? choices.filter((choice): choice is string => typeof choice === "string") : []
+}
+
 /** 兼容 workspace.list 的数组形态与旧 list result 对象形态。 */
 function normalizeWorkspaceListEntries(listResult: unknown): WorkspaceEntry[] {
   const rawEntries = Array.isArray(listResult)
@@ -562,8 +596,9 @@ async function restorePlaySetupMessages(
     if (role === "user") {
       restored.push({ id: nextDialogId(), role: "user", content })
     } else if (role === "assistant") {
-      const parsed = parseStoryOptions(content)
-      // 最后一条 agent 消息保留 options（玩家可能还没选），
+      const projected = await projectAssistantMessage(tsian, content)
+      const choices = projectedChoices(projected)
+      // 最后一条 agent 消息保留 choices（玩家可能还没选），
       // 更早的 agent 消息选项已过期，不恢复
       const isLast = restored.filter((m) => m.role === "agent").length
         === recentTurns.filter((e) => typeof e === "object" && e !== null
@@ -571,8 +606,8 @@ async function restorePlaySetupMessages(
       restored.push({
         id: nextDialogId(),
         role: "agent",
-        content: parsed.cleanText,
-        ...(isLast && parsed.options.length > 0 ? { options: parsed.options } : {}),
+        content: displayAssistantContent(projected),
+        ...(isLast && choices.length > 0 ? { options: choices } : {}),
       })
     }
   }
@@ -680,10 +715,11 @@ async function sendPlaySetupMessage(input: string): Promise<void> {
   }
 }
 
-/** 处理 agent 返回的 response：parseStoryOptions 提取 cleanText + options，push agent message，检查完成态。 */
+/** 处理 agent 返回的 response：使用平台投影提取 display text + choices，push agent message，检查完成态。 */
 async function handleAgentResponse(response: string): Promise<void> {
   const tsian = getTsianClient()
-  const parsed = parseStoryOptions(response)
+  const projected = await projectAssistantMessage(tsian, response)
+  const choices = projectedChoices(projected)
   // 落定：把完整文本 push 成 NarrativeMessage 落定消息，并清空流式累积。
   // 流式和落定是两套渲染——这里切到落定消息后，流式块不再展示。
   playSetupStreamingText.value = ""
@@ -691,8 +727,8 @@ async function handleAgentResponse(response: string): Promise<void> {
   playSetupMessages.value.push({
     id: nextDialogId(),
     role: "agent",
-    content: parsed.cleanText,
-    ...(parsed.options.length > 0 ? { options: parsed.options } : {}),
+    content: displayAssistantContent(projected),
+    ...(choices.length > 0 ? { options: choices } : {}),
   })
 
   // 检查 setup-summary 是否 complete

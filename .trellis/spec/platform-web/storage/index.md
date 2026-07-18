@@ -47,33 +47,115 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 
 - **Append-only logs never enter checkpoint manifests** — turn files (`save/history/turns/turn-NNNNNN.json`) and runtime traces (`.tsian/save/traces/turns/turn-NNNNNN.jsonl`) are both append-only per-save logs: each turn appends one file, old files never change. Identified by `isAppendOnlyLogPath` (`history-turns.ts`). Restoring to turn N = prune the save's append-only logs to 1..N (`extractTurnFromLogPath`); logs 1..N already live in the save workspace (append-only), no copy from checkpoint needed. `isTurnFilePath` is a stricter subset (turn files only) used by the chunker for `semantic-type: "turn"` — traces are not turn semantic, so chunker must not use `isAppendOnlyLogPath`.
 - **State files** (world/state/memory/agents/frontend, plus any `.tsian/` non-local non-log files) go through content addressing: SHA-256 hash → `blobs` table (deduped by `[hash+ownerSaveId]`) → manifest entry. Unchanged files across checkpoints share one blob row, zero duplicate copies.
-- **Restore = scheme R (prune-on-restore)**: restoring to turn N prunes turn files to 1..N **and deletes checkpoints with turn > N** (the abandoned future branch). Rationale: with turn files pruned, future checkpoints cannot be restored anyway (their turn files are gone), so they have no retention value; leaving them pollutes the list with ghosts and risks state/turn mismatch. Restore has a confirm dialog (play-frontend) to prevent accidental triggers.
-- **Pruning + GC**: `pruneCheckpointsForSave` runs at the end of every `commitSuccessfulRuntimeTurnForSave`. Keeps recent 50 + every 20 turns sparse + all initial/manual + current turn; deletes the rest. GC is a simple full-scan (collect referenced hashes from remaining manifests → delete orphan blobs by ownerSaveId) — no incremental refcount, because single-save blob count is tens-to-low-hundreds and pruning runs once per turn (dwarfed by the LLM call). M/K come from `getCheckpointPruneConfig()` seam (hardcoded 50/20 today; `platform-config` task will wire it to `.tsian/` config source).
-- **Hash computation is async** (`crypto.subtle.digest`) and cannot run inside a Dexie transaction. Checkpoint build = hash+write blobs (outside tx) → small tx to write the thin-manifest record. Restore = prefetch all blobs by manifest (outside tx) → small tx to overwrite workspace + prune turns + delete future checkpoints.
+- **Checkpoint record layers**: metadata (`label`, `retention`, `source`, `tags`, `visible`, `metadata`, timestamps, compatibility `reason`) is distinct from the snapshot manifest. `updateCheckpointForSave` changes metadata only; it must not rebuild the manifest or change the restore target. `overwriteCheckpointForSave` preserves checkpoint id/identity and rebuilds the manifest from current save state.
+- **Retention is the pruning contract**: `retention: "pinned"` survives ordinary automatic prune; `retention: "auto"` participates in the platform recent+sparse policy. The compatibility `reason?: string` field may remain on records/summaries for old UI/debug labels, but new behavior must not switch on closed reason values.
+- **Default create semantics**: generic `createCheckpointForSave` / SDK `checkpoints.create()` create a new current-state checkpoint at the active/current turn. Explicit SDK/card calls default to `retention: "pinned"`; formal turn and maintenance checkpoints use `retention: "auto"`.
+- **Restore = scheme R (prune-on-restore)**: restoring to turn N prunes turn files to 1..N **and deletes checkpoints with turn > N** (the abandoned future branch). Rationale: with turn files pruned, future checkpoints cannot be restored anyway (their turn files are gone), so they have no retention value; leaving them pollutes the list with ghosts and risks state/turn mismatch. Restore has a confirm dialog (play-frontend) to prevent accidental triggers. Restore, delete, overwrite, and prune paths must GC orphan checkpoint blobs by scanning remaining manifests before deleting unreferenced blobs.
+- **Pruning + GC**: `pruneCheckpointsForSave` runs at the end of automatic checkpoint-producing flows. Keeps pinned checkpoints, recent automatic checkpoints, sparse automatic checkpoints, and the current turn; deletes other `auto` checkpoints. GC is a simple full-scan (collect referenced hashes from remaining manifests → delete orphan blobs by ownerSaveId) — no incremental refcount, because single-save blob count is tens-to-low-hundreds and pruning runs once per turn (dwarfed by the LLM call). M/K come from `getCheckpointPruneConfig()` seam (hardcoded 50/20 today; `platform-config` task will wire it to `.tsian/` config source).
+- **Hash computation is async** (`crypto.subtle.digest`) and cannot run inside a Dexie transaction. Checkpoint build/overwrite = hash+write blobs (outside tx) → small tx to write the thin-manifest record. Restore = prefetch all blobs by manifest (outside tx) → small tx to overwrite workspace + prune turns + delete future checkpoints.
 
-### invokeAgent `workspace-with-checkpoint` commit mode
+### invokeAgent checkpoint option
 
-`invokeAgent` is a side-channel call (does not advance turn, does not write history). Its `commitMode` (`packages/contracts/src/runtime.ts:680`, `AgentInvocationCommitMode`) selects the workspace commit strategy:
+`invokeAgent` is a side-channel call (does not advance turn, does not write history). By default it commits only the side-channel transaction's explicit save-runtime changes and creates **no checkpoint**. New callers request checkpoint behavior through `InvokeAgentRequest.checkpoint`:
 
-- `"workspace"` (default) → `commitWorkspaceChangesForSave` (commits only the side-channel transaction's explicit save-runtime changes, **no checkpoint**).
-- `"workspace-with-checkpoint"` → `commitWorkspaceChangesWithCheckpointForSave` (merges the side-channel transaction's explicit changes into current save workspace and creates a checkpoint in one Dexie transaction).
+- Omitted / `false` → workspace commit only.
+- `true` or `{ mode: "create" }` → create a post-commit checkpoint from the merged workspace snapshot. Defaults to `retention: "pinned"` unless provided.
+- `{ mode: "overwrite", checkpointId }` → overwrite that checkpoint's manifest from the merged post-commit workspace, preserving checkpoint id.
+- `{ mode: "current-turn-auto" }` → overwrite the current turn's canonical automatic checkpoint; if absent, create it. The resulting checkpoint has `retention: "auto"` and participates in prune.
 
-**Checkpoint reason enum** (`storage/db.ts`, `LocalCheckpointRecord.reason`): `"initial" | "after-turn" | "manual" | "post-turn-maintenance"`. The contracts layer `InvokeAgentRequest.checkpointReason` is a free `string`; platform-host validates it and maps to the closed storage enum. MVP only accepts `"post-turn-maintenance"`; unknown values throw fail-loud.
+**Legacy compatibility**: `commitMode: "workspace-with-checkpoint"` is deprecated and maps to `{ mode: "current-turn-auto" }` when no explicit `checkpoint` option is supplied. `checkpointReason` is compatibility data only; legacy callers may still pass `"post-turn-maintenance"`, but new behavior must not require reason enums.
 
-**Replace-on-create semantics**: when `workspace-with-checkpoint` succeeds, the same Dexie transaction that writes the maintenance checkpoint **deletes same-turn `after-turn` checkpoints** (`turn === invokeMaxTurn && reason === "after-turn"`). The maintenance checkpoint becomes that turn's canonical checkpoint (post-maintenance state). This avoids restore confusion where a pre-maintenance `after-turn` would show "correct narrative, stale state". On failure, no checkpoint is created and the `after-turn` survives as the fallback.
+**Transactional requirement**: `commitWorkspaceChangesWithOptionalCheckpointForSave` merges explicit side-channel workspace changes into the current save workspace and writes/overwrites the checkpoint in one Dexie transaction. The snapshot manifest must be built from the merged post-change workspace, not the pre-commit workspace. If the workspace changes concurrently, retry; if retries fail, throw and do not emit `completed`.
 
-**Turn attribution**: the checkpoint's `turn` = caller-supplied `invokeMaxTurn` (invokeAgent does not advance turn). Same turn as the `sendMessage` `after-turn` checkpoint, different `reason` and `createdAt`.
+**Current-turn auto canonicalization**: after a maintenance/current-turn-auto checkpoint is written, same-turn obsolete automatic checkpoints are deleted in the same transaction (protected frontend-debug baseline excluded). This makes restore for a turn land on the post-maintenance state, not a stale pre-maintenance checkpoint.
 
-**Prune interaction**: `post-turn-maintenance` is not in the `initial`/`manual` auto-keep class. It survives via the "current turn" rule (`cp.turn === currentTurn`) and sparse-point rule. When the turn ages out, prune reclaims it normally — replace-on-create already guarantees no same-turn `after-turn` lingers, so no stale pre-maintenance point resurfaces.
-
-**Maintenance-side cleanup / derived state hooks**: if invokeAgent maintenance needs to auto-clean derived save-runtime files (e.g. stale `save/scenes/*.json`), stage those mutations into the same `RuntimeWorkspaceTransaction` **before** `finalWorkspaceChanges()` and before `commitWorkspaceChangesWithCheckpointForSave`. Do not delete committed workspace files after the checkpoint commit: post-commit deletes would not be in the checkpoint manifest, so restoring the post-maintenance checkpoint would resurrect stale files. Best-effort cleanup belongs in the host/runtime orchestration layer when it depends on AIRP semantics, but its mutations must still enter the maintenance transaction.
+**Maintenance-side cleanup / derived state hooks**: if invokeAgent maintenance needs to auto-clean derived save-runtime files (e.g. stale `save/scenes/*.json`), stage those mutations into the same `RuntimeWorkspaceTransaction` **before** `finalWorkspaceChanges()` and before checkpoint commit. Do not delete committed workspace files after the checkpoint commit: post-commit deletes would not be in the checkpoint manifest, so restoring the checkpoint would resurrect stale files. Best-effort cleanup belongs in the host/runtime orchestration layer when it depends on AIRP semantics, but its mutations must still enter the maintenance transaction.
 
 **`completed` event ordering**: `emitAgentInvocation({ type: "completed" })` fires **after** the commit function returns, so the frontend receives `completed` only when workspace + checkpoint are durable and restore-ready.
 
-**Validation matrix** (`platform-host/index.ts`):
-- `commitMode === "workspace"` + `checkpointReason !== undefined` → throw (reason requires checkpoint mode).
-- `commitMode === "workspace-with-checkpoint"` + `checkpointReason` provided + `!== "post-turn-maintenance"` → throw (MVP rejects unknown reasons).
-- `commitMode === "workspace-with-checkpoint"` + `checkpointReason` omitted → defaults to `"post-turn-maintenance"`.
+### Checkpoint API code-spec
+
+#### 1. Scope / Trigger
+
+- Trigger: changing checkpoint storage helpers, `platform.runAction` checkpoint actions, SDK `tsian.checkpoints`, checkpoint list queries, restore behavior, prune/GC, or `interaction.invokeAgent.checkpoint`.
+
+#### 2. Signatures
+
+- Contracts: `CheckpointSummary`, `ListCheckpointOptions`, `CreateCheckpointOptions`, `UpdateCheckpointOptions`, `OverwriteCheckpointOptions`, `InvokeAgentCheckpointOption`.
+- SDK: `checkpoints.list(options?)`, `create(options?: string | CreateCheckpointOptions)`, `update(id, patch)`, `overwrite(id, options?)`, `delete(id)`, `restore(id)`.
+- Platform actions: `create-checkpoint`, `update-checkpoint`, `overwrite-checkpoint`, `delete-checkpoint`, `restore-checkpoint`.
+- Storage helpers: create/update/overwrite/delete/list/restore plus `commitWorkspaceChangesWithOptionalCheckpointForSave` for workspace+checkpoint atomic commits.
+
+#### 3. Contracts
+
+- `create` always creates a new checkpoint from current state; it must not hide opening-specific initial replacement.
+- `update` changes metadata only and must not change `manifest`, `turn`, or restore target.
+- `overwrite` preserves checkpoint id and `createdAt`, rebuilds `manifest` from current state, and may patch metadata/`updatedAt`.
+- `delete` is explicit and destructive; it must protect active frontend-debug baseline checkpoints and GC blobs afterward.
+- `list` hides `visible: false` by default; `includeHidden: true` is for platform/debug paths that must see protected hidden baselines.
+- `reason` is compatibility metadata only; `retention` controls pruning and `source`/`tags`/`metadata` describe producers/business labels.
+
+#### 4. Validation & Error Matrix
+
+- No active save -> `ACTIVE_SAVE_REQUIRED`.
+- Missing/blank checkpoint id -> `CHECKPOINT_ID_REQUIRED`.
+- Unknown checkpoint id -> `CHECKPOINT_NOT_FOUND`.
+- Delete/overwrite protected frontend-debug baseline -> `CHECKPOINT_PROTECTED`.
+- `invokeAgent` explicit `checkpoint` combined with legacy `commitMode: "workspace-with-checkpoint"` -> fail loud.
+- `invokeAgent.checkpoint.mode` not `create`/`overwrite`/`current-turn-auto` -> fail loud at bridge/host boundary.
+- Workspace changes during workspace+checkpoint commit -> retry up to the helper limit, then throw retryable error.
+
+#### 5. Good/Base/Bad Cases
+
+- Good: opening completion lists hidden/visible checkpoints, finds the initial checkpoint, then calls `overwrite(initial.id, { label: "开局设定", retention: "pinned", source: "card", tags: ["opening-complete"] })`.
+- Good: post-turn maintenance calls `invokeAgent(..., { checkpoint: { mode: "current-turn-auto" }, persist: true })`; restore to that turn sees post-maintenance save-runtime state and the checkpoint remains auto-prunable.
+- Base: a user/card creates `checkpoints.create("决战前")`; it becomes a pinned current-state checkpoint.
+- Bad: using `create` to create a turn-0 manual checkpoint and secretly delete `initial`.
+- Bad: pruning by `reason === "after-turn"` or protecting by `reason === "manual"` instead of `retention`.
+
+#### 6. Tests Required
+
+- Run `npm run build:contracts` for contract changes and `npm run build:web` for platform/SDK consumers.
+- Verify create/list current-turn behavior, update metadata-only behavior, overwrite same-id new snapshot behavior, delete+restore errors, restore future-branch pruning, and protected frontend-debug baseline floor.
+- Verify `invokeAgent` default creates no checkpoint, `checkpoint: true` creates one, `mode: "overwrite"` preserves id, and `mode: "current-turn-auto"` canonicalizes same-turn auto checkpoints.
+- Search for stale reason-switches in checkpoint storage/UI: `reason === "after-turn"|"manual"|"initial"` should not drive pruning/protection.
+
+#### 7. Wrong vs Correct
+
+##### Wrong
+
+```ts
+if (checkpoint.reason === "manual") keepIds.add(checkpoint.id)
+```
+
+##### Correct
+
+```ts
+if (checkpointRetention(checkpoint) === "pinned") keepIds.add(checkpoint.id)
+```
+
+##### Wrong
+
+```ts
+await tsian.checkpoints.create("开局设定")
+// Hidden side effect: deletes initial checkpoint.
+```
+
+##### Correct
+
+```ts
+const initial = (await tsian.checkpoints.list({ includeHidden: true }))
+  .find((checkpoint) => checkpoint.tags?.includes("initial") || checkpoint.reason === "initial")
+if (initial) {
+  await tsian.checkpoints.overwrite(initial.id, {
+    label: "开局设定",
+    retention: "pinned",
+    source: "card",
+    tags: ["opening-complete"],
+  })
+}
+```
+
 
 ## Quality
 

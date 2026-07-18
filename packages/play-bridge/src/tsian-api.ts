@@ -12,16 +12,21 @@ import type {
   AgentInvocationEvent,
   AssistantTurnTimelineItem,
   CheckpointSummary,
+  CreateCheckpointOptions,
   DeepQueryResult,
   GameCardRuntimeEntrypoints,
   InjectionMessage,
+  InvokeAgentCheckpointOption,
   InvokeAgentResult,
+  ListCheckpointOptions,
   MessageInteractionResult,
+  OverwriteCheckpointOptions,
   PlatformActionResult,
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
   SessionHistoryEntry,
   TurnToolOutput,
+  UpdateCheckpointOptions,
   WorkspaceEntry,
   WorkspaceReadResult,
   WorkspaceSearchResult,
@@ -46,10 +51,11 @@ export interface InvokeAgentOptions {
   invocationId?: string
   /** 调用目的标签（如 setup / post-turn-maintenance），透传到 started 事件。 */
   purpose?: string
-  /** Workspace 提交策略。省略等同 workspace；workspace-with-checkpoint 为后续维护类流程预留，
-   *  平台未实现完整 checkpoint 语义时会 fail loud。 */
+  /** Workspace 提交成功后执行的 checkpoint 操作。 */
+  checkpoint?: InvokeAgentCheckpointOption
+  /** @deprecated Use `checkpoint` instead. `workspace-with-checkpoint` maps to current-turn-auto. */
   commitMode?: AgentInvocationCommitMode
-  /** 预留给 workspace-with-checkpoint 的 checkpoint 原因/标签；默认 workspace 模式不使用。 */
+  /** @deprecated Compatibility data for legacy workspace-with-checkpoint callers. */
   checkpointReason?: string
   injection?: InjectionMessage[]
   /** 上下文隔离 slot。不同 slot 读写不同 context-<slot>.json，防止上下文串。 */
@@ -143,11 +149,15 @@ export interface TsianApi {
     get(): Promise<SessionHistory>
   }
   readonly checkpoints: {
-    list(): Promise<CheckpointSummary[]>
+    list(options?: ListCheckpointOptions): Promise<CheckpointSummary[]>
     restore(checkpointId: string): Promise<{ turn: number }>
-    /** 创建 turn 0 manual 检查点并替换旧 initial 检查点（开局设定收尾用）。
-     *  label 可选，默认 "开局设定"。返回新检查点 summary。 */
-    create(label?: string): Promise<CheckpointSummary>
+    /** Create a checkpoint from the current active save state. */
+    create(options?: string | CreateCheckpointOptions): Promise<CheckpointSummary>
+    /** Update checkpoint metadata only; does not rebuild snapshot/manifest. */
+    update(checkpointId: string, patch: UpdateCheckpointOptions): Promise<CheckpointSummary>
+    /** Preserve checkpoint id while replacing its snapshot with current active save state. */
+    overwrite(checkpointId: string, options?: OverwriteCheckpointOptions): Promise<CheckpointSummary>
+    delete(checkpointId: string): Promise<void>
   }
 
   // ── workspace（前端自己维护状态）──
@@ -318,6 +328,9 @@ export function createTsian(): TsianApi {
       if (purpose) {
         params.purpose = purpose
       }
+      if (options?.checkpoint !== undefined) {
+        params.checkpoint = options.checkpoint
+      }
       if (options?.commitMode !== undefined) {
         params.commitMode = options.commitMode
       }
@@ -387,10 +400,10 @@ export function createTsian(): TsianApi {
     },
 
     checkpoints: {
-      async list(): Promise<CheckpointSummary[]> {
+      async list(options?: ListCheckpointOptions): Promise<CheckpointSummary[]> {
         const result = await bridge.call<DeepQueryResult<CheckpointSummary>>(
           "query.query",
-          { resource: "checkpoints" },
+          { resource: "checkpoints", ...(options ? { params: options } : {}) },
         )
         return result?.items ?? []
       },
@@ -409,10 +422,13 @@ export function createTsian(): TsianApi {
         return result.item as { turn: number }
       },
 
-      async create(label?: string): Promise<CheckpointSummary> {
+      async create(options?: string | CreateCheckpointOptions): Promise<CheckpointSummary> {
+        const params = typeof options === "string"
+          ? { label: options }
+          : options ?? {}
         const result = await bridge.call<PlatformActionResult<CheckpointSummary>>(
           "platform.runAction",
-          { action: "create-checkpoint", params: label ? { label } : {} },
+          { action: "create-checkpoint", params },
         )
         if (!result || !result.ok) {
           const err = result?.error
@@ -421,6 +437,47 @@ export function createTsian(): TsianApi {
           throw e
         }
         return result.item as CheckpointSummary
+      },
+
+      async update(checkpointId: string, patch: UpdateCheckpointOptions): Promise<CheckpointSummary> {
+        const result = await bridge.call<PlatformActionResult<CheckpointSummary>>(
+          "platform.runAction",
+          { action: "update-checkpoint", params: { checkpointId, ...patch } },
+        )
+        if (!result || !result.ok) {
+          const err = result?.error
+          const e = new Error(err?.message ?? "更新检查点失败。")
+          if (err) (e as Error & { code?: string }).code = err.code
+          throw e
+        }
+        return result.item as CheckpointSummary
+      },
+
+      async overwrite(checkpointId: string, options?: OverwriteCheckpointOptions): Promise<CheckpointSummary> {
+        const result = await bridge.call<PlatformActionResult<CheckpointSummary>>(
+          "platform.runAction",
+          { action: "overwrite-checkpoint", params: { checkpointId, ...(options ?? {}) } },
+        )
+        if (!result || !result.ok) {
+          const err = result?.error
+          const e = new Error(err?.message ?? "覆盖检查点失败。")
+          if (err) (e as Error & { code?: string }).code = err.code
+          throw e
+        }
+        return result.item as CheckpointSummary
+      },
+
+      async delete(checkpointId: string): Promise<void> {
+        const result = await bridge.call<PlatformActionResult<void>>(
+          "platform.runAction",
+          { action: "delete-checkpoint", params: { checkpointId } },
+        )
+        if (!result || !result.ok) {
+          const err = result?.error
+          const e = new Error(err?.message ?? "删除检查点失败。")
+          if (err) (e as Error & { code?: string }).code = err.code
+          throw e
+        }
       },
     },
 

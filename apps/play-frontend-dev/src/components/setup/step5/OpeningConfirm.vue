@@ -12,7 +12,7 @@ import { generateMagicCircle } from "../step2/magicCircleGenerator"
  * 魔法阵有淡入淡出生命周期——自然产生、自然消失、循环再生。
  * 玩家点"进入故事"由 SetupWizard action bar 触发 enterPlay → 烧蚀过渡翻转 mode。
  *
- * 开局 assistant 回复已写入 turn 0 history；玩家点"进入故事"后，StoryView 从正式历史流渲染第一条消息。
+ * 不展示开局叙事全文——叙事留给 StoryView 特殊渲染为第一条消息。
  */
 const { playSetupSummary, understandingSummary, manifest } = useSetupState()
 

@@ -627,7 +627,7 @@ async function ensureDebugSession(
   const activitySequence = target.mount.activitySequence
   const workspaceFiles = await listEffectiveWorkspaceFilesForSave(save.id, card)
   const currentTurn = getMaxTurnFromTurnFiles(workspaceFiles)
-  const checkpoints = await listCheckpointsForSave(save.id)
+  const checkpoints = await listCheckpointsForSave(save.id, { includeHidden: true })
   const checkpoint = selectCanonicalBaseline(checkpoints, currentTurn)
   if (!checkpoint) {
     throw new InspectorFailure(
@@ -674,14 +674,13 @@ function selectCanonicalBaseline(
   const sameTurn = checkpoints
     .filter((checkpoint) => checkpoint.turn === currentTurn)
     .sort((left, right) => right.createdAt - left.createdAt)
-  const reasons = currentTurn > 0
-    ? ["post-turn-maintenance", "after-turn"]
-    : ["manual", "initial"]
-  for (const reason of reasons) {
-    const checkpoint = sameTurn.find((item) => item.reason === reason)
-    if (checkpoint) return checkpoint
-  }
-  return null
+  const preferred = sameTurn.find((checkpoint) => (
+    checkpoint.retention === "auto"
+    && (checkpoint.source === "platform" || checkpoint.source === "agent")
+  ))
+  if (preferred) return preferred
+  const pinnedBaseline = sameTurn.find((checkpoint) => checkpoint.retention === "pinned")
+  return pinnedBaseline ?? sameTurn[0] ?? null
 }
 
 async function requireStoredDebugSession(): Promise<ValidDebugSession> {
@@ -715,7 +714,7 @@ async function validateStoredDebugSession(
 ): Promise<ValidDebugSession> {
   const save = (await listLocalSaves()).find((item) => item.id === record.saveId)
   const card = await getLocalGameCard(record.gameCardId)
-  const checkpoint = (await listCheckpointsForSave(record.saveId))
+  const checkpoint = (await listCheckpointsForSave(record.saveId, { includeHidden: true }))
     .find((item) => item.id === record.checkpointId)
   if (
     !save

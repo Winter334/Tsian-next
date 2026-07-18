@@ -1,8 +1,8 @@
 # Tsian 游戏前端 API 参考
 
-`@tsian/play-bridge` 是游戏前端与 Tsian 平台之间的**领域 API**。它把桥协议的裸 RPC（`bridge.call("interaction.sendMessage", ...)`、事件名、params 结构）包装成前端开发者心智里的动词：`tsian.send()`、`tsian.onMessage()`、`tsian.history.get()`……
+`@tsian/play-bridge` 是游戏前端与 Tsian 平台之间的**领域 API**。它把底层桥协议包装成前端开发者心智里的动词：`tsian.send()`、`tsian.onMessage()`、`tsian.history.get()`……
 
-前端开发者（或生成前端的助手 agent）只需要这份文档 + 包的 TS 类型导出，不需要接触 `postMessage` 握手、RPC id 匹配、method 字符串。协议层留在包内部，不公开导出。
+前端开发者（或生成前端的助手 agent）只需要这份文档 + 包的 TS 类型导出，不需要接触底层握手、消息路由或协议方法名。协议层留在包内部，不公开导出。
 
 > 本文档对应 `@tsian/play-bridge` 领域 API 第一版。API 形态允许后续根据实际前端开发反馈调整。
 > 方向背景见 `docs/active/play-frontend-sdk-direction.md`。
@@ -68,7 +68,7 @@ tsian.sessionId    // string | null — 握手后的会话 id
 await tsian.waitForReady()  // Promise<void> — resolve 后可通信
 ```
 
-`createTsian()` 内部自动启动桥握手（与平台 parent 的 `postMessage` 握手）。握手是异步的——构造后 `tsian.ready` 可能为 `false`。
+`createTsian()` 内部自动启动与平台 parent 的桥握手。握手是异步的——构造后 `tsian.ready` 可能为 `false`。
 
 - **`ready`**（只读布尔）：轮询握手状态的同步标志。UI 里做禁用/启用判断用（如发送按钮 `disabled = !tsian.ready`）。
 - **`waitForReady()`**：返回一个 Promise，握手完成时 resolve。**推荐用它触发首屏初始化**（拉历史、启用输入），而不是自己轮询 `ready`。
@@ -145,8 +145,9 @@ try {
 | `input` | `string` | 给 agent 的输入 |
 | `options.invocationId` | `string` | invocation 级 id；建议调用前生成并传入，用于过滤并发事件。省略时 SDK 自动生成 |
 | `options.purpose` | `string` | 调用目的标签，会出现在 `started` 事件里，便于 UI/日志过滤 |
-| `options.commitMode` | `"workspace" \| "workspace-with-checkpoint"` | Workspace 提交策略。省略等同 `"workspace"`；`"workspace-with-checkpoint"` 是后续维护类流程预留，当前平台未实现完整 checkpoint 语义时会 fail loud |
-| `options.checkpointReason` | `string` | 预留给 `workspace-with-checkpoint` 的 checkpoint 原因/标签；默认 `workspace` 模式不使用 |
+| `options.checkpoint` | `boolean \| { mode?: "create", ... } \| { mode: "overwrite", checkpointId, ... } \| { mode: "current-turn-auto", ... }` | Workspace 提交成功后执行的 checkpoint 操作。`current-turn-auto` 会覆盖/更新当前回合自动 checkpoint，适合回合后维护 |
+| `options.commitMode` | `"workspace" \| "workspace-with-checkpoint"` | 已废弃兼容字段。旧 `"workspace-with-checkpoint"` 会映射为 `checkpoint: { mode: "current-turn-auto" }` |
+| `options.checkpointReason` | `string` | 已废弃兼容数据，仅随旧 `commitMode` 使用 |
 | `options.injection` | `InjectionMessage[]` | 注入上下文（同 send），可选 |
 | `options.contextSlot` | `string` | 可选上下文隔离 slot；配合 `persist` 防止不同调用方上下文串 |
 | `options.persist` | `boolean` | `true` 时读写目标 Agent 的 `context[-slot].json`；默认 `false`，一次性调用 |
@@ -221,7 +222,7 @@ await tsian.send("我走向角落的陌生人", {
 
 ## 4. 订阅
 
-六个语义回调，每个返回一个 **unsubscribe 函数**。正式回合使用 `onMessage` / `onRoundEnd` / `onTool` / `onTurnEnd`；前端指定 Agent 的任务调用使用 `onAgentInvocation`。SDK 内部路由和聚合底层事件，前端通常不需要接触 postMessage 事件名。
+六个语义回调，每个返回一个 **unsubscribe 函数**。正式回合使用 `onMessage` / `onRoundEnd` / `onTool` / `onTurnEnd`；前端指定 Agent 的任务调用使用 `onAgentInvocation`。SDK 内部路由和聚合底层事件，前端通常不需要接触底层事件名。
 
 ```ts
 const off = tsian.onMessage((msg) => { ... })
@@ -455,19 +456,33 @@ interface SessionHistoryEntry {
 
 `history.get()` 是重载/回溯后重建对话的唯一入口——它从 workspace 的 turn 文件读回，是数据真相源（不是前端内存累加）。前端刷新、回到剧情视图、恢复检查点后都该调用它。
 
-### 5.2 `tsian.checkpoints.list()` / `tsian.checkpoints.restore()`
+### 5.2 `tsian.checkpoints.*`
 
-检查点（存档）回溯。平台在每回合后自动生成 `after-turn` 检查点，初始有 `initial` 检查点。
+检查点（存档）回溯与显式管理。平台在每回合后自动生成 `retention: "auto"` 检查点；前端/卡片可创建或固定 `retention: "pinned"` 检查点。
 
 ```ts
 const checkpoints = await tsian.checkpoints.list()
 // CheckpointSummary[]，按新→旧排序
 
 for (const cp of checkpoints) {
-  renderCheckpointCard(cp.turn, cp.reason, cp.createdAt, () => {
+  renderCheckpointCard(cp.turn, cp.retention, cp.createdAt, () => {
     restoreCheckpoint(cp.id)
   })
 }
+
+// 从当前活动存档状态创建一个新 checkpoint
+const cp = await tsian.checkpoints.create({
+  label: "关键选择前",
+  retention: "pinned",
+  source: "card",
+  tags: ["choice"],
+})
+
+// 只更新元数据，不重建 manifest，不改变 restore 目标
+await tsian.checkpoints.update(cp.id, { label: "关键选择前（已命名）" })
+
+// 保留 id，替换为当前活动存档状态
+await tsian.checkpoints.overwrite(cp.id, { label: "关键选择后" })
 
 async function restoreCheckpoint(id: string) {
   const { turn } = await tsian.checkpoints.restore(id)
@@ -479,24 +494,39 @@ async function restoreCheckpoint(id: string) {
 ```
 
 ```ts
+type CheckpointRetention = "auto" | "pinned"
+type CheckpointSource = "platform" | "user" | "card" | "agent"
+
 interface CheckpointSummary {
   id: string
   turn: number
   label: string
-  reason: "initial" | "after-turn" | "manual"
   createdAt: number
+  updatedAt?: number
+  retention: CheckpointRetention
+  source?: CheckpointSource
+  tags?: string[]
+  visible?: boolean
+  metadata?: Record<string, JsonValue>
   messageCount: number
   workspaceFileCount: number
+  /** 兼容数据，不再作为行为开关。 */
+  reason?: string
 }
 ```
 
-`restore(checkpointId)` 返回 `{ turn: number }`（回溯到的回合号）。**恢复是破坏性操作**——回滚此后所有进度，UI 侧应做二次确认。恢复后前端内存的流式 DOM 已失效，必须用 `history.get()` 从文件重建。
+- `list(options?)` 返回当前活动存档 checkpoint，默认不含 `visible: false` 的隐藏项；可传 `includeHidden`、`retention`、`source`、`tags` 过滤。
+- `create(options?)` 从当前活动存档状态创建一个新 checkpoint。兼容 `create("label")`。
+- `update(id, patch)` 只改 metadata/label/retention/source/tags/visible/reason，不重建 snapshot/manifest。
+- `overwrite(id, options?)` 保留 checkpoint id，使用当前活动存档状态替换 snapshot/manifest，并可同时更新 metadata。
+- `delete(id)` 显式删除 checkpoint；受前端调试保护的 baseline checkpoint 会被拒绝删除。
+- `restore(id)` 返回 `{ turn: number }`（回溯到的回合号）。**恢复是破坏性操作**——回滚此后所有进度，UI 侧应做二次确认。恢复后前端内存的流式 DOM 已失效，必须用 `history.get()` 从文件重建。
 
 ---
 
 ## 6. workspace 读写
 
-前端可在 workspace 里读写文件，**自己维护状态**（角色卡、设置、存档元数据等）。这是独立于 agent 工具调用的前端通道——agent runtime 里的 `read` / `write` 等短工具名受 `workspace_read` / `workspace_write` platformTools gate 控制，前端的 `tsian.workspace.*` 走桥 RPC，两条路径独立。
+前端可在 workspace 里读写文件，**自己维护状态**（角色卡、设置、存档元数据等）。这是独立于 agent 工具调用的前端通道——agent runtime 里的 `read` / `write` 等短工具名受 `workspace_read` / `workspace_write` platformTools gate 控制，前端使用 `tsian.workspace.*`，两条路径独立。
 
 ```ts
 tsian.workspace.read(path, scope?)
@@ -629,7 +659,7 @@ const invocationId = `sync-turn-${turn}-${Date.now().toString(36)}`
 await tsian.invokeAgent(maintenanceAgentId, input, {
   invocationId,
   purpose: "post-turn-maintenance",
-  commitMode: "workspace",
+  checkpoint: { mode: "current-turn-auto" },
   persist: true,
 })
 ```
@@ -638,13 +668,15 @@ await tsian.invokeAgent(maintenanceAgentId, input, {
 
 ---
 
-## 8. 通用入口
+## 8. 低层 escape hatch
 
-高频能力走语义化方法（`send`/`onMessage`/`history`...）。冷门或未来新增的平台能力走两个通用入口——领域语言里的"查资源 / 执行动作"，**不暴露 RPC method 字符串**。
+高频能力都应该走语义化方法（`send` / `invokeAgent` / `onMessage` / `history` / `checkpoints` / `workspace` / `card`）。`query` 和 `runAction` 只作为**临时逃生入口**保留：当平台能力还没有 SDK 语义封装、且当前前端确实需要访问时才使用。
+
+常规游戏前端不应优先使用它们，也不应通过它们重新实现本文档已经包装好的能力。新增高频用法时，优先给 `TsianApi` 增加明确的领域方法。
 
 ### 8.1 `tsian.query(resource, params?)`
 
-查询类资源（只读）。
+临时查询 escape hatch。返回值是 `unknown`，调用方必须知道目标 resource 的具体形态并自行断言。
 
 ```ts
 const result = await tsian.query("agent-registry")
@@ -653,13 +685,13 @@ const result = await tsian.query("agent-registry")
 
 ### 8.2 `tsian.runAction(action, params?)`
 
-执行类动作（可能有副作用）。
+临时动作 escape hatch。动作可能有副作用；调用方必须知道目标 action 的具体返回形态并自行处理错误。
 
 ```ts
 const result = await tsian.runAction("some-future-action", { foo: "bar" })
 ```
 
-**何时用通用入口**：当某个平台能力还没有对应的语义化方法时。语义化方法是高频能力的便捷封装，通用入口保证平台所有能力都可达——SDK 是翻译层不是决策层，不丢能力。返回类型是 `unknown`，当前为底层 `PlatformActionResult` 形态（`{ ok, item?, error? }`）；前端按平台文档断言具体形状并自行处理 `ok/item/error`。
+返回类型是 `unknown`。不要在普通前端逻辑中直接拼平台 action/resource 来绕过已有 SDK 方法；如果某个能力开始频繁使用，应补一个语义化 SDK 方法。
 
 ---
 
@@ -694,7 +726,11 @@ interface TsianApi {
   // 数据
   readonly history: { get(): Promise<SessionHistory> }
   readonly checkpoints: {
-    list(): Promise<CheckpointSummary[]>
+    list(options?: ListCheckpointOptions): Promise<CheckpointSummary[]>
+    create(options?: string | CreateCheckpointOptions): Promise<CheckpointSummary>
+    update(checkpointId: string, patch: UpdateCheckpointOptions): Promise<CheckpointSummary>
+    overwrite(checkpointId: string, options?: OverwriteCheckpointOptions): Promise<CheckpointSummary>
+    delete(checkpointId: string): Promise<void>
     restore(checkpointId: string): Promise<{ turn: number }>
   }
 
@@ -729,10 +765,23 @@ interface SendOptions {
 interface InvokeAgentOptions {
   invocationId?: string
   purpose?: string
+  checkpoint?: InvokeAgentCheckpointOption
+  /** @deprecated use checkpoint */
+  commitMode?: "workspace" | "workspace-with-checkpoint"
+  /** @deprecated compatibility data */
+  checkpointReason?: string
   injection?: InjectionMessage[]
   contextSlot?: string
   persist?: boolean
 }
+```
+
+```ts
+type InvokeAgentCheckpointOption =
+  | boolean
+  | ({ mode?: "create" } & CreateCheckpointOptions)
+  | ({ mode: "overwrite"; checkpointId: string } & OverwriteCheckpointOptions)
+  | { mode: "current-turn-auto"; label?: string; tags?: string[]; metadata?: Record<string, JsonValue> }
 ```
 
 ### InjectionMessage
@@ -802,10 +851,16 @@ interface CheckpointSummary {
   id: string
   turn: number
   label: string
-  reason: "initial" | "after-turn" | "manual"
   createdAt: number
+  updatedAt?: number
+  retention: "auto" | "pinned"
+  source?: "platform" | "user" | "card" | "agent"
+  tags?: string[]
+  visible?: boolean
+  metadata?: Record<string, JsonValue>
   messageCount: number
   workspaceFileCount: number
+  reason?: string
 }
 interface InvokeAgentResult {
   invocationId: string
@@ -854,30 +909,3 @@ interface WorkspaceWriteResult {
   path: string; scope: WorkspaceScope; file: WorkspaceFile; changed: boolean
 }
 ```
-
----
-
-## 附：从裸 bridge 迁移
-
-旧版 SDK 暴露裸 `bridge.call` + `bridge.on({...})`。迁移到领域 API 的对应关系：
-
-| 旧（裸 bridge） | 新（领域 API） |
-|---|---|
-| `bridge.call("interaction.sendMessage", {content})` | `tsian.send(content)` |
-| `bridge.call("interaction.invokeAgent", {agentId, input})` | `tsian.invokeAgent(agentId, input)` |
-| `bridge.respondInteraction(requestId, text)` | `tsian.answer(requestId, text)` |
-| `bridge.on({ onReady })` | `tsian.waitForReady().then(...)` |
-| `bridge.on({ onEvent })` 里 `turn-delta` | `tsian.onMessage(cb)` |
-| `bridge.on({ onEvent })` 里 `turn-round-end` | `tsian.onRoundEnd(cb)` |
-| `bridge.on({ onEvent })` 里 `turn-tool` | `tsian.onTool(cb)` |
-| `bridge.on({ onEvent })` 里 `agent-invocation` | `tsian.onAgentInvocation(cb)` |
-| `bridge.on({ onEvent })` 里 `turn-completed` + `onTurnOptions` | `tsian.onTurnEnd(cb)`（聚合） |
-| `bridge.on({ onInteractionRequest })` | `tsian.onAsk(cb)` |
-| `createSessionHistory(bridge)` | `tsian.history.get()` |
-| `listCheckpoints(bridge)` | `tsian.checkpoints.list()` |
-| `restoreCheckpoint(bridge, id)` | `tsian.checkpoints.restore(id)` |
-| `bridge.call("query.query", {resource:"workspace.read", ...})` | `tsian.workspace.read(path)` |
-| `bridge.call("query.query", {resource:...})` | `tsian.query(resource)` |
-| `bridge.call("platform.runAction", {action, params})` | `tsian.runAction(action, params)` |
-
-参考实现：`apps/play-frontend-dev/src/main.ts` 是迁移到领域 API 的完整前端示例，可作 fork 起点。

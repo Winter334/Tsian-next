@@ -2,6 +2,7 @@ import type {
   AskUserResponse,
   DeepQueryRequest,
   InjectionMessage,
+  InvokeAgentCheckpointOption,
   InvokeAgentRequest,
   JsonValue,
   MessageInteractionRequest,
@@ -224,6 +225,138 @@ function normalizeMessageInteractionRequest(value: unknown): MessageInteractionR
   return { content: record.content, ...(injection ? { injection } : {}) }
 }
 
+function isJsonValue(value: unknown): value is JsonValue {
+  if (value === null) return true
+  if (typeof value === "string" || typeof value === "boolean") return true
+  if (typeof value === "number") return Number.isFinite(value)
+  if (Array.isArray(value)) return value.every(isJsonValue)
+  if (isRecord(value)) return Object.values(value).every(isJsonValue)
+  return false
+}
+
+function normalizeJsonMetadata(
+  value: unknown,
+  code: string,
+): Record<string, JsonValue> | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) {
+    throw new RemoteBridgeRpcError(code, "checkpoint.metadata must be a JSON object when provided.")
+  }
+  const result: Record<string, JsonValue> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (!isJsonValue(item)) {
+      throw new RemoteBridgeRpcError(code, `checkpoint.metadata.${key} must be JSON-compatible.`)
+    }
+    result[key] = item
+  }
+  return result
+}
+
+function normalizeStringArray(
+  value: unknown,
+  code: string,
+  field: string,
+): string[] | undefined {
+  if (value === undefined) return undefined
+  if (!Array.isArray(value)) {
+    throw new RemoteBridgeRpcError(code, `${field} must be an array of strings when provided.`)
+  }
+  const result = value.map((item) => {
+    if (typeof item !== "string") {
+      throw new RemoteBridgeRpcError(code, `${field} must be an array of strings when provided.`)
+    }
+    return item.trim()
+  }).filter(Boolean)
+  return result.length > 0 ? Array.from(new Set(result)) : undefined
+}
+
+function normalizeInvokeAgentCheckpoint(value: unknown): InvokeAgentCheckpointOption | undefined {
+  if (value === undefined) return undefined
+  if (typeof value === "boolean") return value
+  if (!isRecord(value)) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_CHECKPOINT",
+      "interaction.invokeAgent checkpoint must be a boolean or object when provided.",
+    )
+  }
+
+  const mode = value.mode === undefined ? undefined : typeof value.mode === "string" ? value.mode.trim() : ""
+  if (mode !== undefined && mode !== "create" && mode !== "overwrite" && mode !== "current-turn-auto") {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_CHECKPOINT",
+      'interaction.invokeAgent checkpoint.mode must be "create", "overwrite", or "current-turn-auto".',
+    )
+  }
+
+  const label = typeof value.label === "string" && value.label.trim() ? value.label.trim() : undefined
+  const tags = normalizeStringArray(value.tags, "INVALID_INVOKE_AGENT_CHECKPOINT", "checkpoint.tags")
+  const metadata = normalizeJsonMetadata(value.metadata, "INVALID_INVOKE_AGENT_CHECKPOINT")
+
+  if (mode === "current-turn-auto") {
+    return {
+      mode,
+      ...(label ? { label } : {}),
+      ...(tags ? { tags } : {}),
+      ...(metadata ? { metadata } : {}),
+    }
+  }
+
+  const reason = typeof value.reason === "string" && value.reason.trim() ? value.reason.trim() : undefined
+  const retention = value.retention === "auto" || value.retention === "pinned" ? value.retention : undefined
+  if (value.retention !== undefined && !retention) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_CHECKPOINT",
+      'checkpoint.retention must be "auto" or "pinned" when provided.',
+    )
+  }
+  const source = value.source === "platform" || value.source === "user" || value.source === "card" || value.source === "agent"
+    ? value.source
+    : undefined
+  if (value.source !== undefined && !source) {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_CHECKPOINT",
+      'checkpoint.source must be "platform", "user", "card", or "agent" when provided.',
+    )
+  }
+  if (value.visible !== undefined && typeof value.visible !== "boolean") {
+    throw new RemoteBridgeRpcError(
+      "INVALID_INVOKE_AGENT_CHECKPOINT",
+      "checkpoint.visible must be a boolean when provided.",
+    )
+  }
+
+  if (mode === "overwrite") {
+    if (typeof value.checkpointId !== "string" || !value.checkpointId.trim()) {
+      throw new RemoteBridgeRpcError(
+        "INVALID_INVOKE_AGENT_CHECKPOINT",
+        "interaction.invokeAgent checkpoint overwrite requires checkpointId.",
+      )
+    }
+    return {
+      mode,
+      checkpointId: value.checkpointId.trim(),
+      ...(label ? { label } : {}),
+      ...(retention ? { retention } : {}),
+      ...(source ? { source } : {}),
+      ...(tags ? { tags } : {}),
+      ...(typeof value.visible === "boolean" ? { visible: value.visible } : {}),
+      ...(metadata ? { metadata } : {}),
+      ...(reason ? { reason } : {}),
+    }
+  }
+
+  return {
+    ...(mode ? { mode: "create" as const } : {}),
+    ...(label ? { label } : {}),
+    ...(retention ? { retention } : {}),
+    ...(source ? { source } : {}),
+    ...(tags ? { tags } : {}),
+    ...(typeof value.visible === "boolean" ? { visible: value.visible } : {}),
+    ...(metadata ? { metadata } : {}),
+    ...(reason ? { reason } : {}),
+  }
+}
+
 function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
   const record = requireRecordParams(
     value,
@@ -263,6 +396,7 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
     typeof record.checkpointReason === "string" && record.checkpointReason.trim()
       ? record.checkpointReason.trim()
       : undefined
+  const checkpoint = normalizeInvokeAgentCheckpoint(record.checkpoint)
   const contextSlot =
     typeof record.contextSlot === "string" && record.contextSlot.trim()
       ? record.contextSlot.trim()
@@ -274,6 +408,7 @@ function normalizeInvokeAgentRequest(value: unknown): InvokeAgentRequest {
     ...(invocationId ? { invocationId } : {}),
     ...(purpose ? { purpose } : {}),
     ...(commitMode ? { commitMode: commitMode as InvokeAgentRequest["commitMode"] } : {}),
+    ...(checkpoint !== undefined ? { checkpoint } : {}),
     ...(checkpointReason ? { checkpointReason } : {}),
     ...(injection ? { injection } : {}),
     ...(contextSlot ? { contextSlot } : {}),

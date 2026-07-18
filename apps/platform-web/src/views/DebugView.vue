@@ -755,11 +755,24 @@ function checkpointTurn(value: unknown): string {
 
 function checkpointReasonLabel(value: unknown): string {
   if (!isRecord(value)) return "unknown"
-  if (value.reason === "initial") return "初始"
-  if (value.reason === "after-turn") return "回合后"
-  if (value.reason === "manual") return "手动"
-  if (value.reason === "post-turn-maintenance") return "维护"
-  return "unknown"
+  const retention = value.retention === "pinned" ? "固定" : value.retention === "auto" ? "自动" : ""
+  const source = value.source === "platform"
+    ? "平台"
+    : value.source === "user"
+      ? "用户"
+      : value.source === "card"
+        ? "卡片"
+        : value.source === "agent"
+          ? "Agent"
+          : ""
+  if (retention || source) return [retention, source].filter(Boolean).join(" · ")
+  const legacyReasonLabels: Record<string, string> = {
+    initial: "初始",
+    "after-turn": "回合后",
+    manual: "手动",
+    "post-turn-maintenance": "维护",
+  }
+  return typeof value.reason === "string" ? legacyReasonLabels[value.reason] ?? "unknown" : "unknown"
 }
 
 function checkpointTime(value: unknown): string {
