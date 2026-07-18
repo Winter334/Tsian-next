@@ -68,6 +68,17 @@ export interface TurnStats {
   totalTokens?: number
 }
 
+export interface AssistantTurnTimelineItem {
+  kind: "assistant"
+  /** Clean assistant text used for future LLM-visible history/context. */
+  content: string
+  /** Optional frontend display lane. When absent, display falls back to content. */
+  displayContent?: string
+  /** Frontend/card-defined structured projections. Platform keeps this generic. */
+  projections?: Record<string, JsonValue>
+  stats?: TurnStats
+}
+
 /** turn 内 timeline 项,按真实发生顺序排列.单一有序数组替代旧的
  *  messages + processNodes 分裂结构——processNodes 永远是一整块,无法表达
  *  interim→thought→tool→…→assistant 的穿插顺序.timeline 数组顺序即发生顺序,
@@ -95,7 +106,7 @@ export interface TurnStats {
  *  mapper 边界双向转换(ask → interim 拍平). */
 export type TurnTimelineItem =
   | { kind: "user"; content: string; attachments?: AttachmentRef[] }
-  | { kind: "assistant"; content: string; stats?: TurnStats }
+  | AssistantTurnTimelineItem
   | { kind: "interim"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
   | { kind: "thought"; id: string; round: number; agentId?: string; text: string; collapsed: boolean }
   | {
@@ -865,6 +876,8 @@ export interface MessageInteractionRequest {
 export interface MessageInteractionResult {
   /** The formal player-turn number committed by the platform. */
   turn: number
+  /** The projected assistant item committed to the turn timeline. */
+  assistant: AssistantTurnTimelineItem
 }
 
 /** invokeAgent workspace commit strategy.

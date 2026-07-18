@@ -1,4 +1,5 @@
 import type {
+  AssistantTurnTimelineItem,
   ConversationMessageRecord,
   PlayFrontendBridge,
   TurnStats,
@@ -56,6 +57,7 @@ import {
   writeRuntimeTraceFileForSave,
 } from "./runtime-traces"
 import { createTurnTimelineCollector } from "./turn-timeline-collector"
+import { projectAssistantReply } from "./reply-projection"
 
 type SendMessageInput = Parameters<PlayFrontendBridge["interaction"]["sendMessage"]>[0]
 type SendMessageResult = Awaited<ReturnType<PlayFrontendBridge["interaction"]["sendMessage"]>>
@@ -250,12 +252,6 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
 
     const replyText = result.replyText
 
-    const nextHistory: ConversationMessageRecord[] = [
-      ...historyBefore,
-      { role: "user", content },
-      { role: "assistant", content: replyText },
-    ]
-
     // 本轮 token usage（来自 runtime 最后一轮 model call）。
     // 耗时由前端自己计时（setInterval），不在此处记录。
     const usage = result.usage
@@ -267,14 +263,61 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
         }
       : undefined
 
-    // 拼 turn 完整 timeline: user → process items(interim/thought/tool) → assistant(带 stats)。
+    const projectedReply = projectAssistantReply(
+      replyText,
+      activeWorkspaceTransaction.workspaceFiles,
+    )
+    for (const diagnostic of projectedReply.diagnostics) {
+      trace.emit({
+        type: diagnostic.scope === "config"
+          ? "reply_projection_config_failed"
+          : "reply_projection_rule_failed",
+        ok: false,
+        data: {
+          code: diagnostic.code,
+          message: diagnostic.message,
+          path: diagnostic.path ?? "",
+          ruleId: diagnostic.ruleId ?? "",
+          ruleIndex: diagnostic.ruleIndex ?? -1,
+        },
+      })
+    }
+    trace.emit({
+      type: "reply_projection_completed",
+      ok: true,
+      data: {
+        configPresent: projectedReply.configPresent,
+        ruleCount: projectedReply.ruleCount,
+        appliedRuleCount: projectedReply.appliedRuleCount,
+        diagnosticCount: projectedReply.diagnostics.length,
+        rawContentLength: replyText.length,
+        contentLength: projectedReply.content.length,
+        displayContentLength: projectedReply.displayContent?.length ?? null,
+        projectionKeys: Object.keys(projectedReply.projections ?? {}).sort(),
+      },
+    })
+    const assistantItem: AssistantTurnTimelineItem = {
+      kind: "assistant",
+      content: projectedReply.content,
+      ...(projectedReply.displayContent !== undefined ? { displayContent: projectedReply.displayContent } : {}),
+      ...(projectedReply.projections ? { projections: projectedReply.projections } : {}),
+      ...(turnStats ? { stats: turnStats } : {}),
+    }
+
+    const nextHistory: ConversationMessageRecord[] = [
+      ...historyBefore,
+      { role: "user", content },
+      { role: "assistant", content: assistantItem.content },
+    ]
+
+    // 拼 turn 完整 timeline: user → process items(interim/thought/tool) → projected assistant(带 stats)。
     // 单一有序数组,顺序即发生顺序,替代旧的 messages + processNodes + stats 分裂结构。
-    // 玩法/前端约定的输出块（如默认前端的 [[选项]]）保留在 assistant 正文中，
-    // 由游戏前端自行解析渲染；platform-host 不再解释或剥离这类 marker。
+    // 投影规则由工作区 config/reply-projection.json 声明；platform-host 只保存通用
+    // content/displayContent/projections，不理解玩法语义（如 choices）。
     const turnTimeline: TurnTimelineItem[] = [
       { kind: "user", content },
       ...timelineCollector.getTimelineItems(),
-      { kind: "assistant", content: replyText, ...(turnStats ? { stats: turnStats } : {}) },
+      assistantItem,
     ]
 
     stageRawAirpHistoryTurnFile(workspaceTransaction, {
@@ -291,7 +334,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
         saveId: activeSaveId,
         turn: contextUpdate.turn,
         user: contextUpdate.user,
-        assistant: replyText,
+        assistant: assistantItem.content,
         compressedContext: contextUpdate.compressedContext,
         agentId: playerTurnAgentId,
       })
@@ -310,7 +353,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       type: "turn_completed",
       ok: true,
       data: {
-        replyLength: replyText.length,
+        replyLength: assistantItem.content.length,
         historyCount: nextHistory.length,
       },
     })
@@ -340,7 +383,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     }
 
     emitTurnDebugReady(nextTurn)
-    return { turn: nextTurn }
+    return { turn: nextTurn, assistant: assistantItem }
   } catch (error) {
     workspaceTransaction?.discard()
     // Reject any pending ask_user requests when the turn fails.

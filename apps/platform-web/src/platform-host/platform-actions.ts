@@ -12,6 +12,8 @@ import {
   restoreCheckpointForSave,
   WorkspaceStorageError,
 } from "../storage"
+import { listEffectiveWorkspaceFilesForActiveSave } from "./internal"
+import { projectAssistantReply } from "./reply-projection"
 import { isRecord } from "./internal"
 import { resolveLocalAssistantActorLevel } from "./local-assistant"
 import {
@@ -54,6 +56,38 @@ function workspaceActionError(error: unknown, fallbackCode: string, fallbackMess
 export async function executePlatformAction(
   request: PlatformActionRequest,
 ): Promise<PlatformActionResult> {
+  if (request.action === "reply-project") {
+    const activeSaveId = await getActiveSaveId()
+    if (!activeSaveId) {
+      return actionError(
+        "ACTIVE_SAVE_REQUIRED",
+        "当前没有激活中的会话。",
+      )
+    }
+
+    const text = request.params?.text
+    if (typeof text !== "string") {
+      return actionError(
+        "REPLY_PROJECT_TEXT_REQUIRED",
+        "reply-project 需要字符串 text 参数。",
+      )
+    }
+
+    const projected = projectAssistantReply(
+      text,
+      await listEffectiveWorkspaceFilesForActiveSave(activeSaveId),
+    )
+    return {
+      ok: true,
+      item: {
+        kind: "assistant",
+        content: projected.content,
+        ...(projected.displayContent !== undefined ? { displayContent: projected.displayContent } : {}),
+        ...(projected.projections ? { projections: projected.projections } : {}),
+      },
+    }
+  }
+
   if (request.action === "restore-checkpoint") {
     const activeSaveId = await getActiveSaveId()
     if (!activeSaveId) {

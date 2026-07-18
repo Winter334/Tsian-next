@@ -697,7 +697,7 @@ export function mountRemoteIframeFrontend(
           result,
         }
         postToRemote(response, targetOrigin)
-        postEvent("turn-completed", { turn: result.turn })
+        postEvent("turn-completed", { turn: result.turn, assistant: result.assistant })
         emitActivity(requestId, method, "completed")
         return
       }

@@ -70,6 +70,44 @@ const unsubscribers: Array<() => void> = []
 // 历史是否已加载（避免视图切换重复 loadHistory 覆盖实时 stream）
 let historyLoaded = false
 
+function displayAssistantContent(item: { content: string; displayContent?: string }): string {
+  return item.displayContent ?? item.content
+}
+
+function projectedChoices(item: { projections?: Record<string, unknown> | undefined }): string[] {
+  const choices = item.projections?.choices
+  return Array.isArray(choices) ? choices.filter((choice): choice is string => typeof choice === "string") : []
+}
+
+function createFallbackAssistantFromStream(): { content: string } | null {
+  const content = streamingText.value
+  return content.trim() ? { content } : null
+}
+
+function createAssistantStreamItem(
+  item: { content: string; displayContent?: string; projections?: Record<string, unknown>; stats?: { totalTokens?: number } },
+  id: string,
+): StreamItem | null {
+  const visibleContent = displayAssistantContent(item)
+  const parsed = parseStoryOptions(visibleContent)
+  const content = item.projections ? visibleContent : parsed.cleanText
+  if (!content.trim()) return null
+  return {
+    kind: "assistant",
+    id,
+    content,
+    tokens: item.stats?.totalTokens,
+  }
+}
+
+function assistantChoices(
+  item: { content: string; displayContent?: string; projections?: Record<string, unknown> | undefined },
+): string[] {
+  const projected = projectedChoices(item)
+  if (projected.length > 0) return projected
+  return parseStoryOptions(displayAssistantContent(item)).options
+}
+
 function subscribe(): void {
   if (subscribed) return
   const tsian = getTsian()
@@ -150,20 +188,13 @@ function subscribe(): void {
 
   unsubscribers.push(
     tsian.onTurnEnd((result: TurnEndResult) => {
-      // 落定：streamingText 清洗选项块后推入 stream 为 assistant
-      const raw = streamingText.value
-      const parsed = parseStoryOptions(raw)
-      if (parsed.cleanText.trim()) {
-        stream.value.push({
-          kind: "assistant",
-          id: `assistant-${Date.now()}`,
-          content: parsed.cleanText,
-          tokens: result.stats?.totalTokens,
-        })
-      }
+      // 落定：host turn-completed 携带已投影并持久化的 assistant item。
+      const assistant = result.assistant ?? createFallbackAssistantFromStream()
+      const streamItem = assistant ? createAssistantStreamItem(assistant, `assistant-${Date.now()}`) : null
+      if (streamItem) stream.value.push(streamItem)
       streamingText.value = ""
       streamingReasoning.value = ""
-      turnOptions.value = parsed.options.length > 0 ? parsed.options : (result.options ?? [])
+      turnOptions.value = assistant ? assistantChoices(assistant) : []
       turnPhase.value = "standby"
       const completedTurn = result.turn ?? turnCount.value
       turnCount.value = completedTurn + 1
@@ -290,16 +321,12 @@ export function useTsian() {
       // 前端先收尾：把已收到的流式文本落定为 assistant 消息，
       // 因为 host abort 后 onTurnEnd 不会再触发，前端必须自己收束状态。
       const partial = streamingText.value
-      const parsed = parseStoryOptions(partial)
-      if (parsed.cleanText.trim()) {
+      if (partial.trim()) {
         stream.value.push({
           kind: "assistant",
           id: `assistant-stopped-${Date.now()}`,
-          content: parsed.cleanText,
+          content: partial,
         })
-      }
-      if (parsed.options.length > 0) {
-        turnOptions.value = parsed.options
       }
       streamingText.value = ""
       streamingReasoning.value = ""
@@ -346,13 +373,13 @@ export function useTsian() {
         if (item.kind === "user") {
           items.push({ kind: "user", id: `h-user-${entry.turn}-${items.length}`, content: item.content })
         } else if (item.kind === "assistant") {
-          const parsed = parseStoryOptions(item.content)
-          items.push({
-            kind: "assistant",
-            id: `h-assistant-${entry.turn}-${items.length}`,
-            content: parsed.cleanText,
-            tokens: item.stats?.totalTokens,
-          })
+          const assistant = createAssistantStreamItem({
+            content: item.content,
+            ...(item.displayContent !== undefined ? { displayContent: item.displayContent } : {}),
+            ...(item.projections ? { projections: item.projections } : {}),
+            ...(item.stats ? { stats: item.stats } : {}),
+          }, `h-assistant-${entry.turn}-${items.length}`)
+          if (assistant) items.push(assistant)
         } else if (item.kind === "interim") {
           items.push({ kind: "interim", id: `h-interim-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null })
         } else if (item.kind === "thought") {
@@ -371,16 +398,16 @@ export function useTsian() {
     // 了 options 时，才恢复它们（会话重开场景）。
     turnOptions.value = []
     // 兜底恢复最后一轮未选的选项：会话中途关闭再重开时，玩家尚未选择
-    // 的剧情选项应继续显示。默认前端从 assistant 正文约定解析 [[选项]]；
-    // legacy turn 的结构化 options 项仍作为兜底。
+    // 的剧情选项应继续显示。新正式 turn 读取 projected assistant；legacy turn
+    // 的结构化 options 项仍作为兜底。
     if (h.entries.length > 0) {
       const lastEntry = h.entries[h.entries.length - 1]!
       for (let itemIndex = lastEntry.timeline.length - 1; itemIndex >= 0; itemIndex -= 1) {
         const item = lastEntry.timeline[itemIndex]!
         if (item.kind === "assistant") {
-          const parsed = parseStoryOptions(item.content)
-          if (parsed.options.length > 0) {
-            turnOptions.value = parsed.options
+          const choices = assistantChoices(item)
+          if (choices.length > 0) {
+            turnOptions.value = choices
           }
           return
         }

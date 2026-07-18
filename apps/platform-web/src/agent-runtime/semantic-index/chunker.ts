@@ -27,8 +27,20 @@ export interface Chunk {
   fileCreatedAt?: number
 }
 
-/** raw turn 记录的最小解析形状(schema `tsian.airp.history.turn.v1`). */
+type RawTurnTimelineItem =
+  | { kind: "user"; content: string }
+  | { kind: "assistant"; content: string }
+  | { kind: string; [key: string]: unknown }
+
+/** raw turn 记录的最小解析形状(schema `tsian.airp.history.turn.v2`). */
 interface RawTurnRecord {
+  turn: number
+  createdAt: string
+  timeline: RawTurnTimelineItem[]
+}
+
+/** legacy raw turn 记录的最小解析形状(schema `tsian.airp.history.turn.v1`). */
+interface LegacyRawTurnRecord {
   turn: number
   createdAt: string
   messages: Array<{ role: string; content: string }>
@@ -88,23 +100,23 @@ export function deriveSemanticType(path: string): WorkspaceSemanticType | null {
 
 /** raw turn:一个文件一个 chunk. 解析失败(JSON 损坏)→ 空数组,不阻塞索引. */
 function chunkRawTurn(file: WorkspaceFile): Chunk[] {
-  let record: RawTurnRecord
+  let record: RawTurnRecord | LegacyRawTurnRecord
   try {
-    record = JSON.parse(file.content) as RawTurnRecord
+    record = JSON.parse(file.content) as RawTurnRecord | LegacyRawTurnRecord
   } catch {
     // 损坏 JSON 跳过,不阻塞索引. 调用方可加日志/trace 可观测.
     return []
   }
-  if (
-    typeof record?.turn !== "number" ||
-    !Array.isArray(record?.messages) ||
-    record.messages.length === 0
-  ) {
+  if (typeof record?.turn !== "number") {
     return []
   }
 
-  const user = record.messages.find((m) => m.role === "user")?.content ?? ""
-  const assistant = record.messages.find((m) => m.role === "assistant")?.content ?? ""
+  const conversation = extractTurnConversation(record)
+  if (!conversation) {
+    return []
+  }
+
+  const { user, assistant } = conversation
   // user/assistant 直拼(无前情提要前缀,MVP 不做). 拼不出正文则跳过.
   const text = `玩家：${user}\n叙事：${assistant}`
   if (!user && !assistant) {
@@ -122,6 +134,33 @@ function chunkRawTurn(file: WorkspaceFile): Chunk[] {
       ...(fileCreatedAt !== undefined ? { fileCreatedAt } : {}),
     },
   ]
+}
+
+function extractTurnConversation(
+  record: RawTurnRecord | LegacyRawTurnRecord,
+): { user: string; assistant: string } | null {
+  if ("timeline" in record) {
+    if (!Array.isArray(record.timeline) || record.timeline.length === 0) {
+      return null
+    }
+    const user = record.timeline.find(
+      (item): item is { kind: "user"; content: string } =>
+        item.kind === "user" && typeof item.content === "string",
+    )?.content ?? ""
+    const assistant = record.timeline.find(
+      (item): item is { kind: "assistant"; content: string } =>
+        item.kind === "assistant" && typeof item.content === "string",
+    )?.content ?? ""
+    return { user, assistant }
+  }
+
+  if (!Array.isArray(record.messages) || record.messages.length === 0) {
+    return null
+  }
+  return {
+    user: record.messages.find((message) => message.role === "user")?.content ?? "",
+    assistant: record.messages.find((message) => message.role === "assistant")?.content ?? "",
+  }
 }
 
 /**

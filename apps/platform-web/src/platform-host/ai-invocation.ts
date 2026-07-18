@@ -54,6 +54,7 @@ import {
 import { finishReasonToKind } from "./runtime-events"
 import { writeRuntimeTraceFileForSave } from "./runtime-traces"
 import { cleanupScenesInTransaction } from "./scene-cleanup"
+import { projectAssistantReply } from "./reply-projection"
 
 /** 旁路调用排队锁：同一 agentId + slot 串行执行，避免 context.json 读写竞争。
  *  key = `${agentId}:${slot ?? "default"}`，value = 当前正在执行的 Promise。
@@ -355,11 +356,44 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
       // persist:true → 写回 context-<slot>.json(不推进 turn、不写历史、不更新 snapshot).
       // persist:false → 不写 context,调完即弃.工作区写入(若有)用同一事务提交.
       if (shouldPersist && result.contextUpdate) {
+        const projectedReply = projectAssistantReply(
+          result.replyText,
+          workspaceTransaction!.workspaceFiles,
+        )
+        for (const diagnostic of projectedReply.diagnostics) {
+          trace.emit({
+            type: diagnostic.scope === "config"
+              ? "reply_projection_config_failed"
+              : "reply_projection_rule_failed",
+            ok: false,
+            data: {
+              code: diagnostic.code,
+              message: diagnostic.message,
+              path: diagnostic.path ?? "",
+              ruleId: diagnostic.ruleId ?? "",
+              ruleIndex: diagnostic.ruleIndex ?? -1,
+            },
+          })
+        }
+        trace.emit({
+          type: "reply_projection_completed",
+          ok: true,
+          data: {
+            configPresent: projectedReply.configPresent,
+            ruleCount: projectedReply.ruleCount,
+            appliedRuleCount: projectedReply.appliedRuleCount,
+            diagnosticCount: projectedReply.diagnostics.length,
+            rawContentLength: result.replyText.length,
+            contentLength: projectedReply.content.length,
+            displayContentLength: projectedReply.displayContent?.length ?? null,
+            projectionKeys: Object.keys(projectedReply.projections ?? {}).sort(),
+          },
+        })
         stageAgentContextFile(workspaceTransaction!, {
           saveId: currentActiveSaveId,
           turn: result.contextUpdate.turn,
           user: result.contextUpdate.user,
-          assistant: result.replyText,
+          assistant: projectedReply.content,
           compressedContext: result.contextUpdate.compressedContext,
           agentId,
           slot,

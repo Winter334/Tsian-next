@@ -32,6 +32,7 @@ import {
 } from "../storage"
 import { inferMediaTypeFromPath } from "../lib/media-type"
 import { normalizeWorkspacePath } from "../lib/workspace-path"
+import { projectAssistantReply } from "./reply-projection"
 
 interface BrowserSkillScriptRunnerOptions {
   workspaceTransaction: Pick<RuntimeWorkspaceTransaction, "workspaceFiles" | "write" | "delete">
@@ -209,6 +210,11 @@ const tsian = Object.freeze({
   trace(label, data) {
     postLog("trace", label, data);
   },
+  reply: Object.freeze({
+    project(text) {
+      return rpc("reply.project", { text: String(text || "") });
+    }
+  }),
   // config 通过 Proxy 动态读取 currentConfig（execute 消息到达后赋值），
   // 避免顶层引用未定义的 message 变量。
   config: new Proxy({}, {
@@ -799,6 +805,47 @@ async function handleSdkRequest(
 ): Promise<unknown> {
   const op = typeof message.op === "string" ? message.op : ""
   const args = isRecord(message.args) ? message.args : {}
+
+  if (op === "reply.project") {
+    const text = typeof args.text === "string" ? args.text : ""
+    const projected = projectAssistantReply(text, options.workspaceTransaction.workspaceFiles)
+    for (const diagnostic of projected.diagnostics) {
+      options.emitTrace?.({
+        type: diagnostic.scope === "config"
+          ? "reply_projection_config_failed"
+          : "reply_projection_rule_failed",
+        ok: false,
+        data: {
+          code: diagnostic.code,
+          message: diagnostic.message,
+          path: diagnostic.path ?? "",
+          ruleId: diagnostic.ruleId ?? "",
+          ruleIndex: diagnostic.ruleIndex ?? -1,
+        },
+      })
+    }
+    options.emitTrace?.({
+      type: "reply_projection_completed",
+      ok: true,
+      data: {
+        source: "browser-script-sdk",
+        configPresent: projected.configPresent,
+        ruleCount: projected.ruleCount,
+        appliedRuleCount: projected.appliedRuleCount,
+        diagnosticCount: projected.diagnostics.length,
+        rawContentLength: text.length,
+        contentLength: projected.content.length,
+        displayContentLength: projected.displayContent?.length ?? null,
+        projectionKeys: Object.keys(projected.projections ?? {}).sort(),
+      },
+    })
+    return {
+      kind: "assistant",
+      content: projected.content,
+      ...(projected.displayContent !== undefined ? { displayContent: projected.displayContent } : {}),
+      ...(projected.projections ? { projections: projected.projections } : {}),
+    }
+  }
 
   if (op.startsWith("workspace.")) {
     const operation = op.slice("workspace.".length)

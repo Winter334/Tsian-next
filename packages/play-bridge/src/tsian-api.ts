@@ -10,6 +10,7 @@
 import type {
   AgentInvocationCommitMode,
   AgentInvocationEvent,
+  AssistantTurnTimelineItem,
   CheckpointSummary,
   DeepQueryResult,
   GameCardRuntimeEntrypoints,
@@ -20,7 +21,6 @@ import type {
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
   SessionHistoryEntry,
-  TurnStats,
   TurnToolOutput,
   WorkspaceEntry,
   WorkspaceReadResult,
@@ -77,10 +77,8 @@ export interface RoundEnd {
 export interface TurnEndResult {
   /** 平台提交的正式玩家回合号。 */
   turn?: number
-  /** Legacy 剧情选项（若旧平台/旧 turn-options 事件提供）。新正式 turn 不保证包含；前端可自行解析卡/前端约定。 */
-  options?: string[]
-  /** token 消耗统计（若有）。 */
-  stats?: TurnStats
+  /** 平台提交并持久化的投影后 assistant timeline item。 */
+  assistant?: AssistantTurnTimelineItem
 }
 
 export interface ToolEvent {
@@ -182,33 +180,18 @@ export interface TsianApi {
 export function createTsian(): TsianApi {
   const bridge = createBridge()
 
-  // ── onTurnEnd legacy 聚合：若旧平台发出 turn-options，则缓存并随 turn-completed 合并触发 ──
-  let pendingOptions: string[] | undefined
-  let pendingStats: TurnStats | undefined
+  // ── onTurnEnd 聚合：turn-completed 直接携带平台提交的 projected assistant item ──
   const turnEndCallbacks = new Set<(result: TurnEndResult) => void>()
 
   function handleEvent(event: RemotePlayBridgeEventName, payload: RemotePlayBridgeEventPayload): void {
-    if (event === "turn-options" && payload && "options" in payload && Array.isArray(payload.options)) {
-      pendingOptions = payload.options as string[]
-      return
-    }
-    if (event === "turn-stats" && payload && "stats" in payload) {
-      pendingStats = payload.stats as TurnStats
-      return
-    }
     if (event === "turn-completed") {
       const result: TurnEndResult = {}
       if (payload && "turn" in payload && typeof payload.turn === "number") {
         result.turn = payload.turn
       }
-      if (pendingOptions && pendingOptions.length > 0) {
-        result.options = pendingOptions
+      if (payload && "assistant" in payload) {
+        result.assistant = payload.assistant as AssistantTurnTimelineItem | undefined
       }
-      if (pendingStats) {
-        result.stats = pendingStats
-      }
-      pendingOptions = undefined
-      pendingStats = undefined
       for (const cb of turnEndCallbacks) {
         try { cb(result) } catch (err) { console.error("[tsian] onTurnEnd callback threw", err) }
       }

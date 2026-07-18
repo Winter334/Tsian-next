@@ -1,6 +1,7 @@
 import type { AiDebugRecord } from "./debug"
 import type {
   AgentInvocationEvent,
+  AssistantTurnTimelineItem,
   ConversationMessageRecord,
   DeepQueryRequest,
   DeepQueryResult,
@@ -229,7 +230,7 @@ export type { TurnToolOutput } from "./runtime"
  * ask 节点(ask_user 交互)不入 TurnTimelineItem——仅存在于内存
  * AssistantTimelineNode,持久化边界拍平成 interim 文本.
  */
-export type { TurnTimelineItem } from "./runtime"
+export type { TurnTimelineItem, AssistantTurnTimelineItem } from "./runtime"
 
 /** 单个 turn 的 token 消耗统计，供前端在正文末尾显示 meta 行。
  *  耗时由前端自己计时（setInterval），不在此结构中——本结构只承载
@@ -257,6 +258,7 @@ export type RemotePlayBridgeEventPayload =
   | Record<string, never>
   | {
       turn: number
+      assistant?: AssistantTurnTimelineItem
     }
   | {
       agentId: string

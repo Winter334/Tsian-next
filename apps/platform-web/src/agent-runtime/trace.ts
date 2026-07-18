@@ -17,6 +17,9 @@ export type RuntimeTraceEventType =
   | "context_compressed"
   | "context_compressed_in_turn"
   | "context_compression_failed"
+  | "reply_projection_config_failed"
+  | "reply_projection_rule_failed"
+  | "reply_projection_completed"
   | "script_log"
   | "workspace_mutation"
 

@@ -37,6 +37,7 @@ export type {
   SessionHistoryEntry,
   CheckpointSummary,
   ConversationMessageRecord,
+  AssistantTurnTimelineItem,
   TurnTimelineItem,
   WorkspaceReadResult,
   WorkspaceEntry,
