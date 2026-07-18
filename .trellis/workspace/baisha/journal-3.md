@@ -1911,3 +1911,38 @@ Implemented Text Tool Protocol v2 as a peer text-based tool-calling mode: schema
 ### Next Steps
 
 - None - task complete
+
+
+## Session 154: 通用 Agent 回复正则投影系统
+
+**Date**: 2026-07-18
+**Task**: 通用 Agent 回复正则投影系统
+**Package**: platform-web
+**Branch**: `feat/agent-reply-regex-projection`
+
+### Summary
+
+实现平台侧通用回复投影管线，扩展 projected assistant turn result 契约，迁移验证前端 choices 投影，并记录跨层 code-spec。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fc770c7` | (see git log) |
+| `32fa7e5` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
