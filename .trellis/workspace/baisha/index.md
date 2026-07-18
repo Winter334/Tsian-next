@@ -7,8 +7,8 @@
 ## Current Status
 
 <!-- @@@auto:current-status -->
-- **Active File**: `journal-3.md`
-- **Total Sessions**: 155
+- **Active File**: `journal-4.md`
+- **Total Sessions**: 156
 - **Last Active**: 2026-07-18
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-3.md` | ~1982 | Active |
+| `journal-4.md` | ~41 | Active |
+| `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
 <!-- @@@/auto:active-documents -->
@@ -31,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 156 | 2026-07-18 | Turn history recall system | `b5947d7` | `task/turn-history-recall` |
 | 155 | 2026-07-18 | Redesign checkpoint API | `53ee3c1` | `feat/agent-reply-regex-projection` |
 | 154 | 2026-07-18 | 通用 Agent 回复正则投影系统 | `fc770c7`, `32fa7e5` | `feat/agent-reply-regex-projection` |
 | 153 | 2026-07-17 | Platform Web 大文件拆分 | `8466711`, `b86c76d`, `d3a1f50`, `11d2655`, `f065e38` | `task/model-tool-probe-gemini-fetch` |
