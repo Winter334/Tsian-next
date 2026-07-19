@@ -1,5 +1,7 @@
 node_modules/
 dist/
+!cards/沉浸阅读器.tsian-card/frontend/dist/
+!cards/沉浸阅读器.tsian-card/frontend/dist/**
 .env
 .env.local
 *.tsbuildinfo

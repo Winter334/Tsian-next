@@ -78,25 +78,42 @@ function normalizeRelationships(rawRelationships, knownEntityIds) {
 }
 function normalizeCandidate(rawCandidate, index) {
   if (!isRecord(rawCandidate)) fail('OPENING_CANDIDATE_INVALID', 'Each candidate character must be an object.', { index });
-  const parsed = normalizeEntityId(rawCandidate.id, 'Candidate id');
-  if (parsed.type !== 'character') fail('OPENING_CANDIDATE_TYPE_INVALID', 'Candidate id must use character:<localId>.', { id: parsed.id, type: parsed.type });
-  var candidate = { id: parsed.id, name: normalizeString(rawCandidate.name, 'OPENING_CANDIDATE_NAME_REQUIRED', 'Candidate name', 120), brief: normalizeString(rawCandidate.brief, 'OPENING_CANDIDATE_BRIEF_REQUIRED', 'Candidate brief', 500) };
+  var errors = [];
+  var parsed;
+  try { parsed = normalizeEntityId(rawCandidate.id, 'Candidate id'); } catch (e) { errors.push({ field: 'id', code: e.code, message: e.message, details: e.details }); parsed = { id: '', type: '' }; }
+  if (parsed && parsed.type !== 'character') errors.push({ field: 'id', code: 'OPENING_CANDIDATE_TYPE_INVALID', message: 'Candidate id must use character:<localId>.', details: { id: parsed.id, type: parsed.type } });
+  var name, brief;
+  try { name = normalizeString(rawCandidate.name, 'OPENING_CANDIDATE_NAME_REQUIRED', 'Candidate name', 120); } catch (e) { errors.push({ field: 'name', code: e.code, message: e.message, details: e.details }); }
+  try { brief = normalizeString(rawCandidate.brief, 'OPENING_CANDIDATE_BRIEF_REQUIRED', 'Candidate brief', 500); } catch (e) { errors.push({ field: 'brief', code: e.code, message: e.message, details: e.details }); }
+  if (errors.length > 0) fail(errors[0].code, errors.length + ' field(s) failed; fix all and retry.', { fieldErrors: errors });
+  var candidate = { id: parsed.id, name: name, brief: brief };
   if (typeof rawCandidate.gender === 'string' && rawCandidate.gender.trim()) candidate.gender = rawCandidate.gender.trim();
   return candidate;
 }
-function normalizeWindow(rawWindow, knownPaths) {
+function normalizeWindowChapter(rawChapter, index, knownRefs, codePrefix) {
+  if (!isRecord(rawChapter)) fail(codePrefix + '_WINDOW_CHAPTER_INVALID', 'Window chapters must be objects.', { index: index });
+  const rawRef = typeof rawChapter.ref === 'string' && rawChapter.ref.trim() ? rawChapter.ref.trim() : '';
+  const rawPath = typeof rawChapter.path === 'string' && rawChapter.path.trim() ? rawChapter.path.trim() : '';
+  const sourceRef = normalizeString(rawRef || rawPath, codePrefix + '_WINDOW_CHAPTER_REF_REQUIRED', 'Window chapter source reference', 240);
+  if (!knownRefs.has(sourceRef)) fail(codePrefix + '_SOURCE_REF_UNKNOWN', 'Window chapter source reference is not in imported chapter index.', { ref: sourceRef });
+  const normalized = { index: normalizePositiveInt(rawChapter.index, index + 1, 1, 999999), title: typeof rawChapter.title === 'string' ? rawChapter.title.trim() : '' };
+  if (rawRef) normalized.ref = sourceRef;
+  else normalized.path = sourceRef;
+  return normalized;
+}
+function normalizeWindow(rawWindow, knownRefs) {
   if (!isRecord(rawWindow)) fail('OPENING_WINDOW_INVALID', 'Window must be an object.');
-  const startIndex = normalizePositiveInt(rawWindow.startIndex, 1, 1, 999999);
-  const endIndex = normalizePositiveInt(rawWindow.endIndex, startIndex, startIndex, 999999);
-  const reason = normalizeString(rawWindow.reason, 'OPENING_WINDOW_REASON_REQUIRED', 'Window reason', 1000);
-  const chapters = Array.isArray(rawWindow.chapters) ? rawWindow.chapters : [];
-  const normalizedChapters = chapters.map((chapter, index) => {
-    if (!isRecord(chapter)) fail('OPENING_WINDOW_CHAPTER_INVALID', 'Window chapters must be objects.', { index });
-    const path = normalizeString(chapter.path, 'OPENING_WINDOW_CHAPTER_PATH_REQUIRED', 'Window chapter path', 240);
-    if (!knownPaths.has(path)) fail('OPENING_SOURCE_REF_UNKNOWN', 'Window chapter path is not in imported chapter index.', { path });
-    return { index: normalizePositiveInt(chapter.index, index + 1, 1, 999999), title: typeof chapter.title === 'string' ? chapter.title.trim() : '', path };
-  });
-  return { startIndex, endIndex, reason, chapters: normalizedChapters };
+  var startIndex = normalizePositiveInt(rawWindow.startIndex, 1, 1, 999999);
+  var endIndex = normalizePositiveInt(rawWindow.endIndex, startIndex, startIndex, 999999);
+  var errors = [];
+  var reason;
+  try { reason = normalizeString(rawWindow.reason, 'OPENING_WINDOW_REASON_REQUIRED', 'Window reason', 1000); } catch (e) { errors.push({ field: 'reason', code: e.code, message: e.message, details: e.details }); }
+  var chapters = Array.isArray(rawWindow.chapters) ? rawWindow.chapters : [];
+  var normalizedChapters = chapters.map(function (chapter, index) {
+    try { return normalizeWindowChapter(chapter, index, knownRefs, 'OPENING'); } catch (e) { errors.push({ field: 'chapters[' + index + '].ref', code: e.code, message: e.message, details: e.details }); return null; }
+  }).filter(function (c) { return c !== null; });
+  if (errors.length > 0) fail(errors[0].code, errors.length + ' field(s) failed; fix all and retry.', { fieldErrors: errors });
+  return { startIndex: startIndex, endIndex: endIndex, reason: reason, chapters: normalizedChapters };
 }
 async function loadExistingEntityIds(tsian) {
   const result = await tsian.workspace.glob({ scope: 'effective', pattern: 'save/entities/*/*.json', limit: 10000 });

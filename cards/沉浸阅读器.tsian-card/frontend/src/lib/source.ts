@@ -1,22 +1,21 @@
 /**
  * lib/source.ts — 小说导入纯文本处理工具。
  *
- * 从 source-import.legacy.ts 提取的无副作用纯函数：规范化、章节检测、
- * corpus 构建、格式化。所有 DOM/bridge 交互在 useSetupState.ts 中处理。
- *
- * 路径常量与 legacy 保持一致，workspace 文件结构不变。
+ * 纯函数：规范化、章节检测、corpus 构建、格式化。所有 DOM/bridge 交互在
+ * useSetupState.ts 中处理；长文本导入通过 source-import.worker.ts 调用这里。
  */
 
 // ── workspace 路径常量 ──
 export const SOURCE_MANIFEST_PATH = "save/source/manifest.json"
 export const CHAPTER_INDEX_PATH = "save/source/chapters.index.json"
-export const CHAPTERS_ROOT = "save/source/chapters/"
+export const SOURCE_SHARDS_ROOT = "save/source/shards/"
 export const INITIAL_SUMMARY_PATH = "save/playthrough/understanding-summary.json"
 export const RUNTIME_PATH = "save/playthrough/runtime.json"
 export const FRONTIER_PATH = "save/playthrough/frontier.json"
 export const SETUP_SUMMARY_PATH = "save/playthrough/setup-summary.json"
 export const CHARACTER_ENTITIES_ROOT = "save/entities/character/"
-const NORMALIZATION_VERSION = "novel-source-v1"
+export const SOURCE_TARGET_SHARD_CHARACTERS = 1_000_000
+const NORMALIZATION_VERSION = "novel-source-sharded-v1"
 const PSEUDO_CHAPTER_TARGET = 15_000
 
 // ── 类型 ──
@@ -41,18 +40,70 @@ export interface SourceManifest {
   chapterCount: number
   files: {
     chaptersIndex: string
-    chaptersRoot: string
+    chaptersRoot?: string
+    shardsRoot?: string
+  }
+  storage?: {
+    kind: "sharded"
+    targetShardCharacters: number
   }
 }
 
-export interface ChapterIndexFile {
-  version: 1
-  chapters: ReadonlyArray<{
-    title: string
-    path: string
-    characters?: number
-  }>
+export interface LegacyChapterIndexEntry {
+  title: string
+  path: string
+  characters?: number
 }
+
+export interface ShardedChapterSource {
+  kind: "shard"
+  shardId: string
+  path: string
+  start: number
+  end: number
+}
+
+export interface ShardedChapterIndexEntry {
+  index: number
+  ref: string
+  title: string
+  characters: number
+  source: ShardedChapterSource
+}
+
+export type ChapterIndexEntry = LegacyChapterIndexEntry | ShardedChapterIndexEntry
+
+export interface SourceShardMeta {
+  id: string
+  path: string
+  startChapter: number
+  endChapter: number
+  characters: number
+}
+
+export interface SourceShardFile extends SourceShardMeta {
+  content: string
+}
+
+export interface SourceStorageDescriptor {
+  kind: "sharded"
+  targetShardCharacters: number
+  shardsRoot: string
+}
+
+export interface LegacyChapterIndexFile {
+  version: 1
+  chapters: ReadonlyArray<LegacyChapterIndexEntry>
+}
+
+export interface ShardedChapterIndexFile {
+  version: 2
+  storage: SourceStorageDescriptor
+  shards: ReadonlyArray<SourceShardMeta>
+  chapters: ReadonlyArray<ShardedChapterIndexEntry>
+}
+
+export type ChapterIndexFile = LegacyChapterIndexFile | ShardedChapterIndexFile
 
 export interface SourceChapter {
   title: string
@@ -69,10 +120,21 @@ export interface BuildInput {
   importMode: ImportMode
 }
 
+export type SourceImportProgressPhase = "normalizing" | "detecting" | "splitting" | "sharding" | "complete"
+
+export interface BuildSourceCorpusProgress {
+  phase: SourceImportProgressPhase
+  message: string
+  current?: number
+  total?: number
+}
+
+export type BuildSourceCorpusProgressHandler = (progress: BuildSourceCorpusProgress) => void
+
 export interface BuiltSourceCorpus {
   manifest: SourceManifest
   chapterIndex: ChapterIndexFile
-  chapters: SourceChapter[]
+  shards: SourceShardFile[]
 }
 
 interface ChapterCandidate {
@@ -86,6 +148,12 @@ interface ChapterCandidate {
 interface ChapterDetectionResult {
   candidates: ChapterCandidate[]
   confidence: ChapterConfidence
+}
+
+interface ParsedSourceChapter {
+  title: string
+  content: string
+  pseudo: boolean
 }
 
 export interface OpeningCandidateCharacter {
@@ -325,7 +393,7 @@ function findChapterCandidates(text: string): ChapterDetectionResult {
 function splitByCandidates(
   text: string,
   detected: ChapterDetectionResult,
-): Array<{ title: string; content: string; pseudo: boolean }> {
+): ParsedSourceChapter[] {
   return detected.candidates.map((current, index) => {
     const next = detected.candidates[index + 1]
     return {
@@ -338,9 +406,9 @@ function splitByCandidates(
 
 function splitPseudoChapters(
   text: string,
-): Array<{ title: string; content: string; pseudo: boolean }> {
+): ParsedSourceChapter[] {
   const paragraphs = text.split(/\n{2,}/)
-  const chapters: Array<{ title: string; content: string; pseudo: boolean }> = []
+  const chapters: ParsedSourceChapter[] = []
   let current: string[] = []
   let size = 0
 
@@ -382,36 +450,149 @@ function pad4(num: number): string {
   return String(num).padStart(4, "0")
 }
 
+function chapterRef(chapterNumber: number): string {
+  return `source:chapter-${pad4(chapterNumber)}`
+}
+
+function shardId(shardNumber: number): string {
+  return `source-shard-${pad4(shardNumber)}`
+}
+
+function formatChapterMarkdown(chapter: ParsedSourceChapter): string {
+  return chapter.content.trimStart().startsWith("#")
+    ? chapter.content
+    : `# ${chapter.title}\n\n${chapter.content}`
+}
+
+function buildShardedCorpusFiles(
+  sourceChapters: ParsedSourceChapter[],
+  onProgress?: BuildSourceCorpusProgressHandler,
+): { shards: SourceShardFile[]; chapters: ShardedChapterIndexEntry[]; shardMetas: SourceShardMeta[] } {
+  const shards: SourceShardFile[] = []
+  const chapters: ShardedChapterIndexEntry[] = []
+  let currentParts: string[] = []
+  let currentLength = 0
+  let currentStartChapter = 0
+  let currentEndChapter = 0
+  let currentShardId = ""
+  let currentShardPath = ""
+
+  const ensureShard = (chapterNumber: number): void => {
+    if (currentParts.length > 0) return
+    currentStartChapter = chapterNumber
+    currentEndChapter = chapterNumber
+    currentShardId = shardId(shards.length + 1)
+    currentShardPath = `${SOURCE_SHARDS_ROOT}${currentShardId}.md`
+  }
+
+  const flush = (): void => {
+    if (currentParts.length === 0) return
+    const content = currentParts.join("")
+    shards.push({
+      id: currentShardId,
+      path: currentShardPath,
+      startChapter: currentStartChapter,
+      endChapter: currentEndChapter,
+      characters: content.length,
+      content,
+    })
+    onProgress?.({
+      phase: "sharding",
+      message: `构建分片 ${shards.length}…`,
+      current: shards.length,
+    })
+    currentParts = []
+    currentLength = 0
+    currentStartChapter = 0
+    currentEndChapter = 0
+    currentShardId = ""
+    currentShardPath = ""
+  }
+
+  sourceChapters.forEach((chapter, index) => {
+    const chapterNumber = index + 1
+    const content = formatChapterMarkdown(chapter)
+    const separatorLength = currentParts.length > 0 ? 2 : 0
+    if (currentParts.length > 0 && currentLength + separatorLength + content.length > SOURCE_TARGET_SHARD_CHARACTERS) {
+      flush()
+    }
+
+    ensureShard(chapterNumber)
+    currentEndChapter = chapterNumber
+
+    const separator = currentParts.length > 0 ? "\n\n" : ""
+    const start = currentLength + separator.length
+    if (separator) {
+      currentParts.push(separator)
+      currentLength += separator.length
+    }
+    currentParts.push(content)
+    currentLength += content.length
+    const end = currentLength
+
+    chapters.push({
+      index: chapterNumber,
+      ref: chapterRef(chapterNumber),
+      title: chapter.title,
+      characters: excerptText(content, Number.MAX_SAFE_INTEGER).length,
+      source: {
+        kind: "shard",
+        shardId: currentShardId,
+        path: currentShardPath,
+        start,
+        end,
+      },
+    })
+
+    if ((chapterNumber % 100) === 0) {
+      onProgress?.({
+        phase: "sharding",
+        message: `构建分片 ${shards.length + 1}…`,
+        current: chapterNumber,
+        total: sourceChapters.length,
+      })
+    }
+
+    if (content.length >= SOURCE_TARGET_SHARD_CHARACTERS) {
+      flush()
+    }
+  })
+
+  flush()
+
+  onProgress?.({
+    phase: "sharding",
+    message: `构建分片 ${shards.length}/${shards.length}…`,
+    current: shards.length,
+    total: shards.length,
+  })
+
+  const shardMetas = shards.map(({ content: _content, ...meta }) => meta)
+  return { shards, chapters, shardMetas }
+}
+
 // ── corpus 构建 ──
 
 export function buildSourceCorpus(
   rawText: string,
   input: Omit<BuildInput, "text">,
+  onProgress?: BuildSourceCorpusProgressHandler,
 ): BuiltSourceCorpus {
+  onProgress?.({ phase: "normalizing", message: "整理文本…" })
   const normalized = normalizeNovelText(rawText)
   if (!normalized.trim()) {
     throw new Error("导入文本为空。")
   }
 
+  onProgress?.({ phase: "detecting", message: "识别章节…" })
   const detected = findChapterCandidates(normalized)
   const useDetected = detected.candidates.length > 0
+  onProgress?.({ phase: "splitting", message: useDetected ? "切分章节…" : "按长度切分片段…" })
   const sourceChapters = useDetected
     ? splitByCandidates(normalized, detected)
     : splitPseudoChapters(normalized)
-  const chapters = sourceChapters.map<SourceChapter>((chapter, index) => {
-    const chapterNumber = index + 1
-    const id = chapter.pseudo ? `pseudo-chapter-${pad4(chapterNumber)}` : `chapter-${pad4(chapterNumber)}`
-    const path = `${CHAPTERS_ROOT}${id}.md`
-    const content = chapter.content.trimStart().startsWith("#")
-      ? chapter.content
-      : `# ${chapter.title}\n\n${chapter.content}`
-    return {
-      title: chapter.title,
-      path,
-      content,
-      characters: excerptText(content, Number.MAX_SAFE_INTEGER).length,
-    }
-  })
+  onProgress?.({ phase: "sharding", message: "构建分片…", current: 0 })
+  const { shards, chapters, shardMetas } = buildShardedCorpusFiles(sourceChapters, onProgress)
 
   const manifest: SourceManifest = {
     version: 1,
@@ -429,14 +610,25 @@ export function buildSourceCorpus(
     chapterCount: chapters.length,
     files: {
       chaptersIndex: CHAPTER_INDEX_PATH,
-      chaptersRoot: CHAPTERS_ROOT,
+      shardsRoot: SOURCE_SHARDS_ROOT,
+    },
+    storage: {
+      kind: "sharded",
+      targetShardCharacters: SOURCE_TARGET_SHARD_CHARACTERS,
     },
   }
-  const chapterIndex: ChapterIndexFile = {
-    version: 1,
-    chapters: chapters.map(({ title, path, characters }) => ({ title, path, characters })),
+  const chapterIndex: ShardedChapterIndexFile = {
+    version: 2,
+    storage: {
+      kind: "sharded",
+      targetShardCharacters: SOURCE_TARGET_SHARD_CHARACTERS,
+      shardsRoot: SOURCE_SHARDS_ROOT,
+    },
+    shards: shardMetas,
+    chapters,
   }
-  return { manifest, chapterIndex, chapters }
+  onProgress?.({ phase: "complete", message: "源文本处理完成", current: shards.length, total: shards.length })
+  return { manifest, chapterIndex, shards }
 }
 
 export function buildPlaySetupPrompt(

@@ -179,7 +179,7 @@ const items = computed<RenderItem[]>(() => {
         phase = "mid"
       }
 
-      const branchSide = activeSide
+      const branchSide: Side = activeSide
       result.push({
         key: `plr-${player.order}-${player.turn}`,
         kind: "player",

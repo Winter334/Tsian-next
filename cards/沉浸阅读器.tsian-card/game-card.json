@@ -34,487 +34,507 @@
     {
       "path": "workspace/agents/README.md",
       "mediaType": "text/markdown",
-      "size": 320
+      "size": 612
     },
     {
       "path": "workspace/agents/researcher/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 423
+      "size": 917
     },
     {
       "path": "workspace/agents/researcher/SOUL.md",
       "mediaType": "text/markdown",
-      "size": 109
+      "size": 303
     },
     {
       "path": "workspace/agents/researcher/agent.json",
       "mediaType": "application/json",
-      "size": 1408
+      "size": 1474
     },
     {
       "path": "workspace/agents/researcher/skills/实体读取/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 579
+      "size": 965
     },
     {
       "path": "workspace/agents/researcher/skills/资料检索/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 606
+      "size": 1189
     },
     {
       "path": "workspace/agents/stage-manager/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 2208
+      "size": 3569
     },
     {
       "path": "workspace/agents/stage-manager/SOUL.md",
       "mediaType": "text/markdown",
-      "size": 69
+      "size": 231
     },
     {
       "path": "workspace/agents/stage-manager/agent.json",
       "mediaType": "application/json",
-      "size": 1538
+      "size": 1654
     },
     {
       "path": "workspace/agents/stage-manager/skills/schema演进检查/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 454
+      "size": 848
     },
     {
       "path": "workspace/agents/stage-manager/skills/回合后维护/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 4402
+      "size": 9061
+    },
+    {
+      "path": "workspace/agents/stage-manager/tools/commit_turn_recall/run.js",
+      "mediaType": "text/javascript",
+      "size": 7752
+    },
+    {
+      "path": "workspace/agents/stage-manager/tools/commit_turn_recall/tool.json",
+      "mediaType": "application/json",
+      "size": 993
     },
     {
       "path": "workspace/agents/stage-manager/tools/read_maintenance_context/run.js",
       "mediaType": "text/javascript",
-      "size": 10048
+      "size": 10194
     },
     {
       "path": "workspace/agents/stage-manager/tools/read_maintenance_context/tool.json",
       "mediaType": "application/json",
-      "size": 730
+      "size": 974
     },
     {
       "path": "workspace/agents/storyteller/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 165
+      "size": 451
     },
     {
       "path": "workspace/agents/storyteller/SOUL.md",
       "mediaType": "text/markdown",
-      "size": 350
+      "size": 1423
     },
     {
       "path": "workspace/agents/storyteller/agent.json",
       "mediaType": "application/json",
-      "size": 877
+      "size": 1074
     },
     {
       "path": "workspace/agents/storyteller/creation-guide.md",
       "mediaType": "text/markdown",
-      "size": 2380
+      "size": 6340
     },
     {
       "path": "workspace/agents/storyteller/modules/NSFW追加/Nsfw必开.md",
       "mediaType": "text/markdown",
-      "size": 372
+      "size": 938
     },
     {
       "path": "workspace/agents/storyteller/modules/NSFW追加/Sex_Guide.md",
       "mediaType": "text/markdown",
-      "size": 1712
+      "size": 4334
     },
     {
       "path": "workspace/agents/storyteller/modules/NSFW追加/用词要求.md",
       "mediaType": "text/markdown",
-      "size": 245
+      "size": 647
     },
     {
       "path": "workspace/agents/storyteller/modules/NSFW追加/自定义1.md",
       "mediaType": "text/markdown",
-      "size": 5
+      "size": 11
     },
     {
       "path": "workspace/agents/storyteller/modules/NSFW追加/自定义2.md",
       "mediaType": "text/markdown",
-      "size": 5
+      "size": 11
     },
     {
       "path": "workspace/agents/storyteller/modules/人称/第一人称.md",
       "mediaType": "text/markdown",
-      "size": 142
+      "size": 326
     },
     {
       "path": "workspace/agents/storyteller/modules/人称/第三人称.md",
       "mediaType": "text/markdown",
-      "size": 52
+      "size": 120
     },
     {
       "path": "workspace/agents/storyteller/modules/人称/第二人称.md",
       "mediaType": "text/markdown",
-      "size": 165
+      "size": 407
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/N-轻小说.md",
       "mediaType": "text/markdown",
-      "size": 1132
+      "size": 2620
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/N-黄文.md",
       "mediaType": "text/markdown",
-      "size": 528
+      "size": 1088
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/俄式苦难文风.md",
       "mediaType": "text/markdown",
-      "size": 343
+      "size": 923
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/修仙日常文风.md",
       "mediaType": "text/markdown",
-      "size": 1104
+      "size": 3072
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/写实西幻.md",
       "mediaType": "text/markdown",
-      "size": 331
+      "size": 887
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/冷冽与梦核.md",
       "mediaType": "text/markdown",
-      "size": 372
+      "size": 1010
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/反差.md",
       "mediaType": "text/markdown",
-      "size": 363
+      "size": 983
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/反差色情.md",
       "mediaType": "text/markdown",
-      "size": 1468
+      "size": 3668
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/古风言情.md",
       "mediaType": "text/markdown",
-      "size": 1242
+      "size": 3346
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/后311.md",
       "mediaType": "text/markdown",
-      "size": 319
+      "size": 845
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/吐槽文风.md",
       "mediaType": "text/markdown",
-      "size": 2598
+      "size": 6721
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/四字为锋.md",
       "mediaType": "text/markdown",
-      "size": 1330
+      "size": 3560
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/恋爱小说.md",
       "mediaType": "text/markdown",
-      "size": 343
+      "size": 923
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/成人童话.md",
       "mediaType": "text/markdown",
-      "size": 395
+      "size": 1079
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/搞笑网文.md",
       "mediaType": "text/markdown",
-      "size": 352
+      "size": 950
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/散文小说.md",
       "mediaType": "text/markdown",
-      "size": 735
+      "size": 1989
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/日系ASMR.md",
       "mediaType": "text/markdown",
-      "size": 846
+      "size": 1896
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/旧录像带质感.md",
       "mediaType": "text/markdown",
-      "size": 721
+      "size": 1767
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/显性高压.md",
       "mediaType": "text/markdown",
-      "size": 329
+      "size": 881
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/晋江文学.md",
       "mediaType": "text/markdown",
-      "size": 348
+      "size": 938
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/暗黑西幻.md",
       "mediaType": "text/markdown",
-      "size": 346
+      "size": 932
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/木珠文风.md",
       "mediaType": "text/markdown",
-      "size": 757
+      "size": 2055
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/流转心跳叙事.md",
       "mediaType": "text/markdown",
-      "size": 1033
+      "size": 2827
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/深渊童谣.md",
       "mediaType": "text/markdown",
-      "size": 327
+      "size": 875
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/烤面包机.md",
       "mediaType": "text/markdown",
-      "size": 1315
+      "size": 3485
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/现代情欲小说.md",
       "mediaType": "text/markdown",
-      "size": 397
+      "size": 1085
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/白描文风.md",
       "mediaType": "text/markdown",
-      "size": 327
+      "size": 875
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/碎嘴子.md",
       "mediaType": "text/markdown",
-      "size": 1333
+      "size": 3701
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/红楼一梦.md",
       "mediaType": "text/markdown",
-      "size": 1611
+      "size": 4465
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/聊天风格.md",
       "mediaType": "text/markdown",
-      "size": 106
+      "size": 246
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/花间辞色体.md",
       "mediaType": "text/markdown",
-      "size": 1161
+      "size": 3139
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/西方魔幻.md",
       "mediaType": "text/markdown",
-      "size": 314
+      "size": 836
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/辰东网文.md",
       "mediaType": "text/markdown",
-      "size": 343
+      "size": 923
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/魔幻现实.md",
       "mediaType": "text/markdown",
-      "size": 328
+      "size": 878
     },
     {
       "path": "workspace/agents/storyteller/modules/文风/黄文.md",
       "mediaType": "text/markdown",
-      "size": 280
+      "size": 708
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/占有与支配.md",
       "mediaType": "text/markdown",
-      "size": 241
+      "size": 533
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/反全知.md",
       "mediaType": "text/markdown",
-      "size": 42
+      "size": 114
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/微观与宏观.md",
       "mediaType": "text/markdown",
-      "size": 187
+      "size": 389
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/情绪化通感.md",
       "mediaType": "text/markdown",
-      "size": 261
+      "size": 619
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/杀声述.md",
       "mediaType": "text/markdown",
-      "size": 99
+      "size": 285
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/杀揭示.md",
       "mediaType": "text/markdown",
-      "size": 156
+      "size": 444
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/杀比拟.md",
       "mediaType": "text/markdown",
-      "size": 45
+      "size": 109
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/杀说明.md",
       "mediaType": "text/markdown",
-      "size": 51
+      "size": 141
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/杀超雄.md",
       "mediaType": "text/markdown",
-      "size": 77
+      "size": 193
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/杀转折词.md",
       "mediaType": "text/markdown",
-      "size": 189
+      "size": 435
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/杀骨骼描写.md",
       "mediaType": "text/markdown",
-      "size": 397
+      "size": 1105
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/白描.md",
       "mediaType": "text/markdown",
-      "size": 20
+      "size": 46
     },
     {
       "path": "workspace/agents/storyteller/modules/杀八股/自定义杀什么.md",
       "mediaType": "text/markdown",
-      "size": 5
+      "size": 11
     },
     {
       "path": "workspace/agents/storyteller/modules/正文优化/快捷回复.md",
       "mediaType": "text/markdown",
-      "size": 687
+      "size": 1695
     },
     {
       "path": "workspace/agents/storyteller/modules/正文优化/禁用词表.md",
       "mediaType": "text/markdown",
-      "size": 1000
+      "size": 2742
     },
     {
       "path": "workspace/agents/storyteller/output-format.md",
       "mediaType": "text/markdown",
-      "size": 184
+      "size": 390
     },
     {
       "path": "workspace/agents/storyteller/prefill-accept.md",
       "mediaType": "text/markdown",
-      "size": 98
+      "size": 326
+    },
+    {
+      "path": "workspace/agents/storyteller/skills/历史召回/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 4410
+    },
+    {
+      "path": "workspace/agents/storyteller/skills/历史召回/scripts/recall-turns.js",
+      "mediaType": "text/javascript",
+      "size": 13217
     },
     {
       "path": "workspace/agents/storyteller/skills/掷骰/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 3110
+      "size": 4694
     },
     {
       "path": "workspace/agents/storyteller/skills/掷骰/scripts/run.js",
       "mediaType": "text/javascript",
-      "size": 6560
+      "size": 7044
     },
     {
       "path": "workspace/agents/storyteller/tools/read_entity/run.js",
       "mediaType": "text/javascript",
-      "size": 4909
+      "size": 5028
     },
     {
       "path": "workspace/agents/storyteller/tools/read_entity/tool.json",
       "mediaType": "application/json",
-      "size": 601
+      "size": 717
     },
     {
       "path": "workspace/agents/storyteller/tools/read_relationships/run.js",
       "mediaType": "text/javascript",
-      "size": 2991
+      "size": 3043
     },
     {
       "path": "workspace/agents/storyteller/tools/read_relationships/tool.json",
       "mediaType": "application/json",
-      "size": 604
+      "size": 782
     },
     {
       "path": "workspace/agents/storyteller/tools/read_scene/run.js",
       "mediaType": "text/javascript",
-      "size": 3242
+      "size": 3296
     },
     {
       "path": "workspace/agents/storyteller/tools/read_scene/tool.json",
       "mediaType": "application/json",
-      "size": 551
+      "size": 727
     },
     {
       "path": "workspace/agents/world-architect/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 603
+      "size": 1153
     },
     {
       "path": "workspace/agents/world-architect/SOUL.md",
       "mediaType": "text/markdown",
-      "size": 205
+      "size": 479
     },
     {
       "path": "workspace/agents/world-architect/agent.json",
       "mediaType": "application/json",
-      "size": 1674
+      "size": 1736
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 3761
+      "size": 5647
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/scripts/_common.js",
       "mediaType": "text/javascript",
-      "size": 2623
+      "size": 5687
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/scripts/_validation.js",
       "mediaType": "text/javascript",
-      "size": 9547
+      "size": 11212
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/scripts/commit-frontier-materials.js",
       "mediaType": "text/javascript",
-      "size": 3201
+      "size": 3291
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/scripts/commit-frontier-state.js",
       "mediaType": "text/javascript",
-      "size": 6107
+      "size": 5765
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/scripts/read-frontier-window.js",
       "mediaType": "text/javascript",
-      "size": 3208
+      "size": 3323
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 6518
+      "size": 8255
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/_common.js",
       "mediaType": "text/javascript",
-      "size": 2623
+      "size": 5687
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/_validation.js",
       "mediaType": "text/javascript",
-      "size": 9547
+      "size": 11212
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-entities.js",
@@ -524,12 +544,12 @@
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-runtime-and-frontier.js",
       "mediaType": "text/javascript",
-      "size": 7256
+      "size": 7368
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-scenes-and-relationships.js",
       "mediaType": "text/javascript",
-      "size": 2570
+      "size": 2624
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/commit-understanding-summary.js",
@@ -539,32 +559,32 @@
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/inspect-source-opening.js",
       "mediaType": "text/javascript",
-      "size": 1274
+      "size": 1345
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/read-opening-slice.js",
       "mediaType": "text/javascript",
-      "size": 2271
+      "size": 2334
     },
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 2881
+      "size": 5083
     },
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_common.js",
       "mediaType": "text/javascript",
-      "size": 2623
+      "size": 5687
     },
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_validation.js",
       "mediaType": "text/javascript",
-      "size": 9547
+      "size": 11212
     },
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/scripts/commit-play-setup.js",
       "mediaType": "text/javascript",
-      "size": 7681
+      "size": 7897
     },
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/scripts/commit-setup-summary.js",
@@ -574,7 +594,7 @@
     {
       "path": "workspace/config/reply-projection.json",
       "mediaType": "application/json",
-      "size": 247
+      "size": 255
     },
     {
       "path": "workspace/docs/README.md",
@@ -584,12 +604,12 @@
     {
       "path": "workspace/docs/novel-airp-schema-guide.md",
       "mediaType": "text/markdown",
-      "size": 7781
+      "size": 13586
     },
     {
       "path": "workspace/docs/novel-airp-schema-reference.md",
       "mediaType": "text/markdown",
-      "size": 8873
+      "size": 15323
     },
     {
       "path": "workspace/docs/tsian-framework-knowledge.md",
@@ -599,109 +619,59 @@
     {
       "path": "workspace/skills/README.md",
       "mediaType": "text/markdown",
-      "size": 154
+      "size": 244
     },
     {
       "path": "workspace/tools/README.md",
       "mediaType": "text/markdown",
-      "size": 1009
+      "size": 1631
     },
     {
       "path": "workspace/tools/roll_dice/run.js",
       "mediaType": "text/javascript",
-      "size": 6560
+      "size": 7044
     },
     {
       "path": "workspace/tools/roll_dice/tool.json",
       "mediaType": "application/json",
-      "size": 2788
+      "size": 3624
     }
   ],
   "frontendFiles": [
     {
-      "path": "frontend/dist/assets/chunk-5XJCMGU4.js",
-      "mediaType": "text/javascript",
-      "size": 8069
-    },
-    {
-      "path": "frontend/dist/assets/chunk-5XJCMGU4.js.map",
-      "mediaType": "application/octet-stream",
-      "size": 21417
-    },
-    {
-      "path": "frontend/dist/assets/chunk-AJDHTJCV.js",
-      "mediaType": "text/javascript",
-      "size": 9466
-    },
-    {
-      "path": "frontend/dist/assets/chunk-AJDHTJCV.js.map",
-      "mediaType": "application/octet-stream",
-      "size": 42518
-    },
-    {
-      "path": "frontend/dist/assets/chunk-B6CKF5TT.js",
-      "mediaType": "text/javascript",
-      "size": 25976
-    },
-    {
-      "path": "frontend/dist/assets/chunk-B6CKF5TT.js.map",
-      "mediaType": "application/octet-stream",
-      "size": 69744
-    },
-    {
-      "path": "frontend/dist/assets/default-female-23YJG6F5.png",
+      "path": "frontend/dist/assets/default-female-B8cZBfNb.png",
       "mediaType": "image/png",
       "size": 912426
     },
     {
-      "path": "frontend/dist/assets/default-male-X3ZUZSQE.png",
+      "path": "frontend/dist/assets/default-male-D8SnaOHO.png",
       "mediaType": "image/png",
       "size": 1251472
     },
     {
-      "path": "frontend/dist/assets/stdin.css",
+      "path": "frontend/dist/assets/index-D8C66qLb.js",
+      "mediaType": "text/javascript",
+      "size": 1016362
+    },
+    {
+      "path": "frontend/dist/assets/index-xR8pARfi.css",
       "mediaType": "text/css",
-      "size": 197480
+      "size": 206574
     },
     {
-      "path": "frontend/dist/assets/stdin.css.map",
-      "mediaType": "application/octet-stream",
-      "size": 370845
-    },
-    {
-      "path": "frontend/dist/assets/stdin.js",
+      "path": "frontend/dist/assets/source-import.worker-C_uK7gaR.js",
       "mediaType": "text/javascript",
-      "size": 539880
-    },
-    {
-      "path": "frontend/dist/assets/stdin.js.map",
-      "mediaType": "application/octet-stream",
-      "size": 1059580
-    },
-    {
-      "path": "frontend/dist/assets/useFrontierAdvance-XDJ2FVA3.js",
-      "mediaType": "text/javascript",
-      "size": 333
-    },
-    {
-      "path": "frontend/dist/assets/useFrontierAdvance-XDJ2FVA3.js.map",
-      "mediaType": "application/octet-stream",
-      "size": 93
-    },
-    {
-      "path": "frontend/dist/assets/useRuntime-IHSKX7ZO.js",
-      "mediaType": "text/javascript",
-      "size": 155
-    },
-    {
-      "path": "frontend/dist/assets/useRuntime-IHSKX7ZO.js.map",
-      "mediaType": "application/octet-stream",
-      "size": 93
+      "size": 12584
     },
     {
       "path": "frontend/dist/index.html",
       "mediaType": "text/html",
-      "size": 634
+      "size": 573
+    },
+    {
+      "path": "frontend/dist/scroll.webp",
+      "mediaType": "image/webp",
+      "size": 1440778
     },
     {
       "path": "frontend/src/App.vue",
@@ -791,7 +761,7 @@
     {
       "path": "frontend/src/components/character/CharacterPortrait.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 9861
+      "size": 9885
     },
     {
       "path": "frontend/src/components/character/CharacterSlot.vue",
@@ -886,7 +856,7 @@
     {
       "path": "frontend/src/components/inventory/ItemDetailModal.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 13538
+      "size": 13495
     },
     {
       "path": "frontend/src/components/inventory/ItemIcon.vue",
@@ -901,7 +871,7 @@
     {
       "path": "frontend/src/components/setup/SetupWizard.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 18031
+      "size": 18344
     },
     {
       "path": "frontend/src/components/setup/StepStub.vue",
@@ -926,7 +896,7 @@
     {
       "path": "frontend/src/components/setup/step1/SplitReview.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 8661
+      "size": 10562
     },
     {
       "path": "frontend/src/components/setup/step2/UnderstandingFailed.vue",
@@ -1071,7 +1041,7 @@
     {
       "path": "frontend/src/components/timeline/TimelineGraph.vue",
       "mediaType": "text/plain; charset=utf-8",
-      "size": 31704
+      "size": 31710
     },
     {
       "path": "frontend/src/components/timeline/TimelineView.vue",
@@ -1121,7 +1091,7 @@
     {
       "path": "frontend/src/composables/useSetupState.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 33899
+      "size": 37446
     },
     {
       "path": "frontend/src/composables/useStatusBarCollapsed.ts",
@@ -1229,9 +1199,24 @@
       "size": 13958
     },
     {
+      "path": "frontend/src/lib/source-import-worker.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 1756
+    },
+    {
+      "path": "frontend/src/lib/source-import.worker.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 1050
+    },
+    {
+      "path": "frontend/src/lib/source-reader.ts",
+      "mediaType": "text/typescript; charset=utf-8",
+      "size": 2272
+    },
+    {
       "path": "frontend/src/lib/source.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 16008
+      "size": 21316
     },
     {
       "path": "frontend/src/lib/text-decoding.ts",
@@ -1240,7 +1225,7 @@
     },
     {
       "path": "frontend/src/lib/tokens.css",
-      "mediaType": "text/css; charset=utf-8",
+      "mediaType": "text/css",
       "size": 2871
     },
     {

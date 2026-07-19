@@ -58,8 +58,6 @@ const typeLabel = computed<string>(() => {
       return "特殊"
     case "other":
       return "其它"
-    default:
-      return String(e.type)
   }
 })
 

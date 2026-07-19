@@ -4,11 +4,12 @@ async function inspectSourceOpening(input, tsian, signal) {
     const previewCount = normalizePositiveInt(input && input.previewCount, 8, 1, 20);
     const previewCharacters = normalizePositiveInt(input && input.previewCharacters, 700, 120, 2000);
     const source = await loadSource(tsian);
+    const cache = new Map();
     const earlyChapters = [];
     for (const chapter of source.chapters.slice(0, previewCount)) {
       signal.throwIfAborted();
-      const content = await readText(tsian, chapter.path);
-      earlyChapters.push({ ...chapter, preview: clipText(content, previewCharacters) });
+      const content = await readSourceChapter(tsian, chapter, cache);
+      earlyChapters.push({ ...compactSourceChapter(chapter), preview: clipText(content, previewCharacters) });
     }
     const result = { schema: OPENING_SCHEMA, title: source.manifest.title || '导入小说', totalCharacters: source.manifest.totalCharacters || 0, chapterCount: source.chapters.length, earlyChapters };
     tsian.trace('opening_source_inspected', { title: result.title, chapterCount: result.chapterCount, previewCount: earlyChapters.length });

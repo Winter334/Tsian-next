@@ -12,16 +12,11 @@ async function commitFrontierState(input, tsian, signal) {
     const newStart = normalizePositiveInt(input.sourceWindow.start, currentEnd + 1, currentEnd + 1, 999999);
     if (newStart !== currentEnd + 1) fail('FRONTIER_WINDOW_NOT_SEQUENTIAL', 'sourceWindow.start must equal current sourceWindow.end + 1.', { expected: currentEnd + 1, got: newStart });
     const newEnd = normalizePositiveInt(input.sourceWindow.end, newStart, newStart, 999999);
-    // 3. 加载 source 校验章节路径
+    // 3. 加载 source 校验章节引用
     const source = await loadSource(tsian);
-    const knownPaths = new Set(source.chapters.map((chapter) => chapter.path));
+    const knownRefs = new Set(source.chapters.map(sourceRefForChapter).filter(Boolean));
     const chaptersRaw = Array.isArray(input.sourceWindow.chapters) ? input.sourceWindow.chapters : [];
-    const chapters = chaptersRaw.map((chapter, index) => {
-      if (!isRecord(chapter)) fail('FRONTIER_WINDOW_CHAPTER_INVALID', 'Window chapters must be objects.', { index });
-      const path = normalizeString(chapter.path, 'FRONTIER_WINDOW_CHAPTER_PATH_REQUIRED', 'Window chapter path', 240);
-      if (!knownPaths.has(path)) fail('FRONTIER_SOURCE_REF_UNKNOWN', 'Window chapter path is not in imported chapter index.', { path });
-      return { index: normalizePositiveInt(chapter.index, index + 1, 1, 999999), title: typeof chapter.title === 'string' ? chapter.title.trim() : '', path };
-    });
+    const chapters = chaptersRaw.map((chapter, index) => normalizeWindowChapter(chapter, index, knownRefs, 'FRONTIER'));
     // 4. 校验 timeline source 锚点
     const timelineRaw = Array.isArray(input.timelineAnchors) ? input.timelineAnchors : [];
     if (timelineRaw.length === 0) fail('FRONTIER_TIMELINE_ANCHORS_REQUIRED', 'At least one source anchor is required.');
@@ -45,8 +40,9 @@ async function commitFrontierState(input, tsian, signal) {
       newAnchors.push({ kind: 'source', order: order, chapter: chapter, time: time, label: label });
     }
     // 5. 校验 extractedThrough
-    const extractedThrough = typeof input.extractedThrough === 'string' && input.extractedThrough.trim() ? input.extractedThrough.trim() : (chapters.length ? chapters[chapters.length - 1].path : null);
-    if (extractedThrough && !knownPaths.has(extractedThrough)) fail('FRONTIER_SOURCE_REF_UNKNOWN', 'extractedThrough must point to an imported chapter file.', { extractedThrough });
+    const lastChapterRef = chapters.length ? sourceRefForChapter(chapters[chapters.length - 1]) : null;
+    const extractedThrough = typeof input.extractedThrough === 'string' && input.extractedThrough.trim() ? input.extractedThrough.trim() : lastChapterRef;
+    if (extractedThrough && !knownRefs.has(extractedThrough)) fail('FRONTIER_SOURCE_REF_UNKNOWN', 'extractedThrough must point to an imported source chapter.', { extractedThrough });
     // 6. 合并 timeline（追加新 source 锚点到现有数组）
     const mergedTimeline = existingTimeline.concat(newAnchors);
     const notes = typeof frontier.notes === 'string' ? frontier.notes : '';

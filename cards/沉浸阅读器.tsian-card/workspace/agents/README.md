@@ -1,12 +1,12 @@
 # Agents
 
-Agent 配置放在 `agents/<agent>/agent.json`。`AGENT.md` 是岗位说明（SOP），`SOUL.md` 是工作风格。
+`agents/` 存放本卡定义的运行时 Agent 团队。每个子目录是一个 Agent：
 
-默认阵容：
+- `agent.json` — 机器配置（id、title、contacts、skills、contextPaths、权限）。
+- `AGENT.md` — 岗位 SOP：什么时候行动、读哪些文件、如何输出、何时委托。
+- `SOUL.md` — 可选的人格风格与长期表达偏好。
+- `skills/` — Agent-local Skill（按需加载的能力/知识包）。
+- `tools/` — Agent-local 工具脚本与 schema。
+- `modules/` — 可被 `enabledModules` 启用的可选内容文件。
 
-- `storyteller` / 三人写手：玩家正式回合入口。
-- `researcher` / 资料员：只读资料检索。
-- `stage-manager` / 场记：回合后维护。
-- `world-architect` / 世界架构师：开局建模与 schema 设计。
-
-Agent-local Skills 放在 `agents/<agent>/skills/<skill>/SKILL.md`，默认优先按岗位定制。
+具体阵容以各 `agent.json` 为准。

@@ -38,6 +38,7 @@ const {
   manifest,
   chapterIndex,
   busy,
+  statusText,
   errorText,
   initializing,
   characterBranch,
@@ -406,6 +407,7 @@ onMounted(() => {
             {{ actions.secondaryLabel }}
           </button>
         </div>
+        <p v-if="busy && statusText" class="setup-status" aria-live="polite">{{ statusText }}</p>
         <div class="action-right">
           <button
             class="setup-btn primary"
@@ -540,6 +542,15 @@ onMounted(() => {
   align-items: center;
   gap: 10px;
 }
+.setup-status {
+  flex: 1;
+  margin: 0;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  color: var(--prose-faint);
+}
 
 /* 按钮基础 */
 .setup-btn {
@@ -581,5 +592,11 @@ onMounted(() => {
   transform: scale(0.96);
 }
 
-/* 状态文案已移除（用户反馈：在按钮行里像被禁用的按钮，造成混淆） */
+@media (max-width: 640px) {
+  .setup-status {
+    order: 3;
+    flex-basis: 100%;
+    padding-top: 4px;
+  }
+}
 </style>

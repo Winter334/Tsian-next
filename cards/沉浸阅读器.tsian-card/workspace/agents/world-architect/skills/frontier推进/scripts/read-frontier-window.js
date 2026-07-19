@@ -16,17 +16,18 @@ async function readFrontierWindow(input, tsian, signal) {
     // 3. 读窗口内章节文本
     const chapters = [];
     const parts = [];
+    const cache = new Map();
     let totalCharacters = 0;
     const maxCharacters = 120000;
     for (const chapter of source.chapters.slice(nextStart - 1, nextEnd)) {
       signal.throwIfAborted();
-      const content = await readText(tsian, chapter.path);
+      const content = await readSourceChapter(tsian, chapter, cache);
       const cleaned = cleanText(content);
       const remaining = maxCharacters - totalCharacters;
       if (remaining <= 0) break;
       const used = cleaned.length > remaining ? cleaned.slice(0, remaining) : cleaned;
       totalCharacters += used.length;
-      chapters.push({ ...chapter, charactersRead: used.length, truncated: used.length < cleaned.length });
+      chapters.push({ ...compactSourceChapter(chapter), charactersRead: used.length, truncated: used.length < cleaned.length });
       var body = used;
       var nl = body.indexOf('\n');
       var firstLine = (nl === -1 ? body : body.slice(0, nl)).trim();

@@ -8,7 +8,6 @@ import {
   RUNTIME_PATH,
   SETUP_SUMMARY_PATH,
   CHARACTER_ENTITIES_ROOT,
-  buildSourceCorpus,
   buildOpeningInitializationPrompt,
   buildPlaySetupPrompt,
   safeJsonParse,
@@ -18,6 +17,10 @@ import {
   excerptText,
   type SourceManifest,
   type ChapterIndexFile,
+  type ChapterIndexEntry,
+  type LegacyChapterIndexEntry,
+  type ShardedChapterIndexEntry,
+  type BuiltSourceCorpus,
   type OpeningUnderstandingSummary,
   type ImportMode,
   type CharacterBranch,
@@ -28,6 +31,8 @@ import {
   type DialogMessage,
   type SetupSummary,
 } from "../lib/source"
+import { buildSourceCorpusInWorker } from "../lib/source-import-worker"
+import { loadSourceChapterPreview, type SourceTextCache } from "../lib/source-reader"
 
 /**
  * useSetupState — 向导响应式状态机（替代 source-import.legacy.ts 闭包 state）。
@@ -57,6 +62,7 @@ const understandingSummary = ref<OpeningUnderstandingSummary | null>(null)
 const busy = ref(false)
 const statusText = ref("等待选择导入方式")
 const errorText = ref("")
+const sourcePreviewCache: SourceTextCache = new Map()
 
 // ── 角色设定状态（Step 3）──
 const characterBranch = ref<CharacterBranch | null>(null)
@@ -140,17 +146,72 @@ async function loadChapterIndex(tsian: ReturnType<typeof getTsianClient>): Promi
   const file = await tsian.workspace.read(CHAPTER_INDEX_PATH)
   if (!file?.content) return null
   const data = safeJsonParse(file.content)
-  if (typeof data !== "object" || data === null || !Array.isArray((data as { chapters?: unknown }).chapters)) {
+  if (!isRecord(data) || !Array.isArray(data.chapters)) {
     return null
   }
-  const chapters = (data as { chapters: unknown[] }).chapters.flatMap((chapter) => {
-    if (typeof chapter !== "object" || chapter === null) return []
-    const item = chapter as { title?: unknown; path?: unknown; characters?: unknown }
-    if (typeof item.title !== "string" || typeof item.path !== "string") return []
+
+  if (data.version === 2) {
+    const chapters = data.chapters.flatMap((chapter): ShardedChapterIndexEntry[] => {
+      if (!isRecord(chapter) || !isRecord(chapter.source)) return []
+      const source = chapter.source
+      if (source.kind !== "shard"
+        || typeof source.shardId !== "string"
+        || typeof source.path !== "string"
+        || typeof source.start !== "number"
+        || typeof source.end !== "number"
+      ) {
+        return []
+      }
+      const index = typeof chapter.index === "number" ? chapter.index : 0
+      if (index <= 0 || typeof chapter.title !== "string") return []
+      return [{
+        index,
+        ref: typeof chapter.ref === "string" && chapter.ref.trim() ? chapter.ref : `source:chapter-${String(index).padStart(4, "0")}`,
+        title: chapter.title,
+        characters: typeof chapter.characters === "number" ? chapter.characters : Math.max(0, source.end - source.start),
+        source: {
+          kind: "shard",
+          shardId: source.shardId,
+          path: source.path,
+          start: source.start,
+          end: source.end,
+        },
+      }]
+    })
+    const shards = Array.isArray(data.shards)
+      ? data.shards.flatMap((shard) => {
+        if (!isRecord(shard)
+          || typeof shard.id !== "string"
+          || typeof shard.path !== "string"
+          || typeof shard.startChapter !== "number"
+          || typeof shard.endChapter !== "number"
+          || typeof shard.characters !== "number"
+        ) {
+          return []
+        }
+        return [{ id: shard.id, path: shard.path, startChapter: shard.startChapter, endChapter: shard.endChapter, characters: shard.characters }]
+      })
+      : []
+    const rawStorage = isRecord(data.storage) ? data.storage : {}
+    return {
+      version: 2,
+      storage: {
+        kind: "sharded",
+        targetShardCharacters: typeof rawStorage.targetShardCharacters === "number" ? rawStorage.targetShardCharacters : 1_000_000,
+        shardsRoot: typeof rawStorage.shardsRoot === "string" ? rawStorage.shardsRoot : "save/source/shards/",
+      },
+      shards,
+      chapters,
+    }
+  }
+
+  const chapters = data.chapters.flatMap((chapter): LegacyChapterIndexEntry[] => {
+    if (!isRecord(chapter)) return []
+    if (typeof chapter.title !== "string" || typeof chapter.path !== "string") return []
     return [{
-      title: item.title,
-      path: item.path,
-      ...(typeof item.characters === "number" ? { characters: item.characters } : {}),
+      title: chapter.title,
+      path: chapter.path,
+      ...(typeof chapter.characters === "number" ? { characters: chapter.characters } : {}),
     }]
   })
   return { version: 1, chapters }
@@ -167,7 +228,7 @@ async function ensureChapterCharacters(
   tsian: ReturnType<typeof getTsianClient>,
   index: ChapterIndexFile | null,
 ): Promise<ChapterIndexFile | null> {
-  if (!index || index.chapters.every((ch) => typeof ch.characters === "number")) return index
+  if (!index || index.version === 2 || index.chapters.every((ch) => typeof ch.characters === "number")) return index
 
   const chapters = await Promise.all(
     index.chapters.map(async (ch) => {
@@ -186,11 +247,17 @@ async function ensureChapterCharacters(
 
 async function writeCorpus(
   tsian: ReturnType<typeof getTsianClient>,
-  corpus: { manifest: SourceManifest; chapterIndex: ChapterIndexFile; chapters: Array<{ path: string; content: string }> },
+  corpus: BuiltSourceCorpus,
+  onProgress?: (current: number, total: number) => void,
+  onIndexWrite?: () => void,
 ): Promise<void> {
-  for (const ch of corpus.chapters) {
-    await tsian.workspace.write(ch.path, ch.content)
+  const total = corpus.shards.length
+  for (let index = 0; index < corpus.shards.length; index += 1) {
+    const shard = corpus.shards[index]!
+    await tsian.workspace.write(shard.path, shard.content)
+    onProgress?.(index + 1, total)
   }
+  onIndexWrite?.()
   await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(corpus.chapterIndex, null, 2)}\n`)
   await tsian.workspace.write(SOURCE_MANIFEST_PATH, `${JSON.stringify(corpus.manifest, null, 2)}\n`)
 }
@@ -256,19 +323,28 @@ async function startImport(
   const tsian = getTsianClient()
   busy.value = true
   errorText.value = ""
+  sourcePreviewCache.clear()
   statusText.value = "读取文本…"
 
   try {
     const sourceFormat = mode === "file" && input.fileName?.toLowerCase().endsWith(".md") ? "md" : "txt"
-    statusText.value = "整理章节…"
-    const corpus = buildSourceCorpus(input.text, {
+    const corpus = await buildSourceCorpusInWorker({
+      text: input.text,
       title: input.title || undefined,
       fileName: input.fileName,
       sourceFormat,
       importMode: mode,
+    }, (progress) => {
+      statusText.value = progress.total && progress.current !== undefined
+        ? `${progress.message.replace(/…$/, "")} ${progress.current}/${progress.total}…`
+        : progress.message
     })
-    statusText.value = "写入章节…"
-    await writeCorpus(tsian, corpus)
+    statusText.value = "写入源文本 0/" + corpus.shards.length + "…"
+    await writeCorpus(tsian, corpus, (current, total) => {
+      statusText.value = `写入源文本 ${current}/${total}…`
+    }, () => {
+      statusText.value = "写入索引…"
+    })
     manifest.value = corpus.manifest
     chapterIndex.value = corpus.chapterIndex
     selectedChapter.value = 0
@@ -289,6 +365,7 @@ function confirmReimport(): void {
   if (window.confirm("重新导入会覆盖当前小说文本与章节目录。确定要换源吗？")) {
     manifest.value = null
     chapterIndex.value = null
+    sourcePreviewCache.clear()
     selectedChapter.value = 0
     understandingStatus.value = "idle"
     understandingSummary.value = null
@@ -337,10 +414,9 @@ async function startOpeningUnderstanding(): Promise<void> {
   }
 }
 
-async function loadChapterPreview(path: string): Promise<string> {
+async function loadChapterPreview(chapter: ChapterIndexEntry): Promise<string> {
   const tsian = getTsianClient()
-  const file = await tsian.workspace.read(path)
-  return excerptText(file?.content ?? "") || "暂无可预览内容。"
+  return loadSourceChapterPreview(tsian, chapter, sourcePreviewCache)
 }
 
 // ── 角色设定操作（Step 3）──
@@ -501,7 +577,20 @@ function normalizeWorkspaceListEntries(listResult: unknown): WorkspaceEntry[] {
     if (!isRecord(entry) || typeof entry.path !== "string") {
       throw new Error(`workspace.list 返回条目格式无效：entries[${index}].path`)
     }
-    return entry as WorkspaceEntry
+    if (typeof entry.name !== "string") {
+      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].name`)
+    }
+    if (entry.kind !== "file" && entry.kind !== "directory") {
+      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].kind`)
+    }
+    return {
+      path: entry.path,
+      name: entry.name,
+      kind: entry.kind,
+      ...(typeof entry.updatedAt === "number" ? { updatedAt: entry.updatedAt } : {}),
+      ...(typeof entry.size === "number" ? { size: entry.size } : {}),
+      ...(typeof entry.childCount === "number" ? { childCount: entry.childCount } : {}),
+    }
   })
 }
 

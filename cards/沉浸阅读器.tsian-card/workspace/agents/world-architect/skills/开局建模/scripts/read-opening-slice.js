@@ -9,15 +9,16 @@ async function readOpeningSlice(input, tsian, signal) {
     let totalCharacters = 0;
     const selectedChapters = [];
     const parts = [];
+    const cache = new Map();
     for (const chapter of source.chapters.slice(startIndex - 1, endIndex)) {
       signal.throwIfAborted();
-      const content = await readText(tsian, chapter.path);
+      const content = await readSourceChapter(tsian, chapter, cache);
       const cleaned = cleanText(content);
       const remaining = maxCharacters - totalCharacters;
       if (remaining <= 0) break;
       const used = cleaned.length > remaining ? cleaned.slice(0, remaining) : cleaned;
       totalCharacters += used.length;
-      selectedChapters.push({ ...chapter, charactersRead: used.length, truncated: used.length < cleaned.length });
+      selectedChapters.push({ ...compactSourceChapter(chapter), charactersRead: used.length, truncated: used.length < cleaned.length });
       var body = used;
       var nl = body.indexOf('\n');
       var firstLine = (nl === -1 ? body : body.slice(0, nl)).trim();

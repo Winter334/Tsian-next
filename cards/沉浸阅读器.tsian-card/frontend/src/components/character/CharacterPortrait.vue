@@ -132,7 +132,7 @@ async function onFileChange(event: Event): Promise<void> {
   const prepared = await preparePortraitBlob(file)
   if ("error" in prepared) {
     uploading.value = false
-    uploadStatus.value = prepared.error
+    uploadStatus.value = prepared.error ?? "头像处理失败"
     return
   }
 

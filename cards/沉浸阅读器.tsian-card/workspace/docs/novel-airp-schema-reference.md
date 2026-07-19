@@ -43,7 +43,7 @@
 }
 ```
 
-`identity`/`appearance`/`attributes`/`gauges`/`status`/`traits`/`goals`/`background` 为 character 权威结构。旧字段 `fields`、`sections`、`status[].level` 已废弃，不再新增。`identity` 键为 `age`/`gender`/`role`/`affiliation`/`realm`（旧键 `race`/`class`/`title` 已废弃）。`attributes` 固定6维，键名由世界架构师按世界观定义，基线为 5。`gauges` 是自由命名数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`（旧固定 5 key `hp`/`mp`/`sp`/`hunger`/`stamina` 已废弃）。`appearance` 是单段叙事字符串（旧 label/value 键值对已废弃）。`goals` 是 `{ current?, shortTerm?, longTerm? }`，每项字符串。`background` 是单段字符串。`status[].polarity` 取值 `positive`/`negative`/`neutral`。`traits` 是永久性稳定特质数组，每项 `{ id, name?, description?, effects? }`，`id` 必填（`trait:<localId>` 格式），表示特殊体质、天赋、系统、血脉、命格等稳定能力来源；区别于 `status[]`（当前临时状态），`traits[]` 是永久性的，不随单回合状态变化消失。`relationships` 不内嵌于 character entity；走 `save/relationships/character-<localId>.json` 分片。
+`identity`/`appearance`/`attributes`/`gauges`/`status`/`traits`/`goals`/`background` 为 character 权威结构。`identity` 键为 `age`/`gender`/`role`/`affiliation`/`realm`。`attributes` 固定6维，键名由世界架构师按世界观定义，基线为 5。`gauges` 是自由命名数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`。`appearance` 是单段叙事字符串。`goals` 是 `{ current?, shortTerm?, longTerm? }`，每项字符串。`background` 是单段字符串。`status[].polarity` 取值 `positive`/`negative`/`neutral`。`traits` 是永久性稳定特质数组，每项 `{ id, name?, description?, effects? }`，`id` 必填（`trait:<localId>` 格式），表示特殊体质、天赋、系统、血脉、命格等稳定能力来源；区别于 `status[]`（当前临时状态），`traits[]` 是永久性的，不随单回合状态变化消失。`relationships` 不内嵌于 character entity；走 `save/relationships/character-<localId>.json` 分片。
 
 character 可选 `history?: Array<{ event: string }>`：人物履历，只记录会长期影响角色态度、关系、目标、创伤、秘密、承诺、恩怨或重要物件绑定的经历。每条只包含 `event` 一个字段；时间自然写入 `event` 文本，不另设 `time`。不要写 `turn`、`tags`、`eventKinds`、`涉及实体` 等内部检索字段；它不是 turn 索引，只是角色资料和正文 Agent 发起历史召回的语义入口。普通流水账不写入。
 
@@ -109,7 +109,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ## Runtime 变量
 
-`save/playthrough/runtime.json` 存放高频访问、玩家面向或前端管理的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。`plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，前端用于判断是否触发 frontier 推进（`plotOrder > 最后 source 锚点 order` 时触发）。未知或尚未建立时写空字符串/0。
+`save/playthrough/runtime.json` 存放高频访问、玩家面向或前端管理的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。`plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，用于判断是否触发 frontier 推进（`plotOrder > 最后 source 锚点 order` 时触发）。未知或尚未建立时写空字符串/0。
 
 ```json
 {
@@ -129,7 +129,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 }
 ```
 
-`activeSceneRefs` 是当前活跃场景指针数组（每项 `{ ref, name }`）；场景内容权威在 `save/scenes/<id>.json`，runtime 只存指针。`protagonistRef` 是当前主角指针（`{ ref, name }`），主角实体权威仍在 `save/entities/character/<localId>.json`。`location` 是当前地点指针 `{ ref, name } | null`。`weather` 是当前天气字符串。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，前端用于判断是否触发 frontier 推进。旧字段 `activeSceneIds`/`activeScene`/`player`/`inventory`/`status` 已废弃。`extensions` 仍用于月相、倒计时、诅咒周期、节气规则等新增/临时时间机制；当前世界/剧情时间本身写 `worldTime`，剧情进度坐标写 `plotOrder`。纯前端 view state 默认不写入 workspace。
+`activeSceneRefs` 是当前活跃场景指针数组（每项 `{ ref, name }`）；场景内容权威在 `save/scenes/<id>.json`，runtime 只存指针。`protagonistRef` 是当前主角指针（`{ ref, name }`），主角实体权威仍在 `save/entities/character/<localId>.json`。`location` 是当前地点指针 `{ ref, name } | null`。`weather` 是当前天气字符串。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，用于判断是否触发 frontier 推进。`extensions` 仍用于月相、倒计时、诅咒周期、节气规则等新增/临时时间机制；当前世界/剧情时间本身写 `worldTime`，剧情进度坐标写 `plotOrder`。
 
 ## frontier.json
 
@@ -137,8 +137,8 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ```json
 {
-  "sourceWindow": { "start": 1, "end": 8, "chapters": [{ "index": 1, "title": "第 1 章", "path": "save/source/chapters/0001.md" }] },
-  "extractedThrough": "save/source/chapters/0008.md",
+  "sourceWindow": { "start": 1, "end": 8, "chapters": [{ "index": 1, "title": "第 1 章", "ref": "source:chapter-0001" }] },
+  "extractedThrough": "source:chapter-0008",
   "timeline": [
     { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局" },
     { "kind": "source", "order": 2, "chapter": 4, "time": "二年春", "label": "离山历练" },
@@ -152,8 +152,8 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 字段：
 
-- `sourceWindow`：已读章节窗口。`start`/`end` 为章节号（闭区间），`chapters` 为窗口章节元信息数组（每项 `{ index, title, path }`）。推进 frontier 时移动。
-- `extractedThrough`：已抽取到的最远章节文件路径（`save/source/chapters/NNNN.md`）；缺省取窗口末章 path。
+- `sourceWindow`：已读章节窗口。`start`/`end` 为章节号（闭区间），`chapters` 为窗口章节元信息数组（每项 `{ index, title, ref }`）。推进 frontier 时移动。
+- `extractedThrough`：已抽取到的最远源章节引用；缺省取窗口末章 ref。
 - `timeline`：时间标记锚点数组，用 `kind` 字段区分两类锚点：
   - source 锚点：`{ kind: "source", order, chapter, time, label }`。world-architect 推进时建立，标记原著剧情节点。
     - `order`：单调递增整数，是我们建立的线性坐标轴，表示剧情事件先后顺序，与原著精确时间标记无关。即使原著写“回到过去”，`order` 也严格递增——`time` 字段可能变化，但 `order` 只向前。source 锚点 order 由 world-architect 推进时递增赋值。
@@ -180,7 +180,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 - `notes`：抽取进度备注。
 - `updatedAt` / `updatedBy`：维护锚点。
 
-`timeline` 与 `sourceWindow` 独立：`sourceWindow` 记录已读窗口，`timeline` 记录锚点。推进时 `sourceWindow` 移动、`timeline` 追加新 source 锚点。两者通过 `chapter` 字段关联。`runtime.plotOrder` 是前端做触发判断的剧情进度坐标，等于玩家当前走到的 source 锚点 order。
+`timeline` 与 `sourceWindow` 独立：`sourceWindow` 记录已读窗口，`timeline` 记录锚点。推进时 `sourceWindow` 移动、`timeline` 追加新 source 锚点。两者通过 `chapter` 字段关联。`runtime.plotOrder` 是判断是否触发 frontier 推进的剧情进度坐标，等于玩家当前走到的 source 锚点 order。
 
 ## Turn recall metadata
 

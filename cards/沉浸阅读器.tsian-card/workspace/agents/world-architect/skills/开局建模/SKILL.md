@@ -48,7 +48,7 @@ appliesTo:
   },
   {
     "name": "commit_runtime_and_frontier",
-    "description": "校验 runtime.activeSceneRefs 指向已写 scene、protagonistRef/location 指向已写 entity，接受 runtime.worldTime/weather 字符串（缺省为空），校验 frontier.sourceWindow 章节路径存在与 frontier.timeline 锚点格式，一次写入 runtime.json 与 frontier.json。",
+    "description": "校验 runtime.activeSceneRefs 指向已写 scene、protagonistRef/location 指向已写 entity，接受 runtime.worldTime/weather 字符串（缺省为空），校验 frontier.sourceWindow 章节引用存在与 frontier.timeline 锚点格式，一次写入 runtime.json 与 frontier.json。",
     "inputSchema": { "type": "object", "required": ["runtime", "frontier"], "properties": { "runtime": { "type": "object" }, "frontier": { "type": "object" } } },
     "outputSchema": { "type": "object" },
     "executor": { "type": "browser_script", "path": "scripts/commit-runtime-and-frontier.js", "timeoutMs": 10000, "helpers": ["_common.js", "_validation.js"] }
@@ -74,8 +74,6 @@ appliesTo:
 
 开局正文不在本 Skill 落盘；后续「游玩设定」Skill 会调用 storyteller 生成 openingReply，并通过 `commit_play_setup` 写入 turn 0 history 与玩家回合上下文。
 
-无依赖的 commit 脚本可在一轮内同时调用。例如 `commit_understanding_summary` 与 `commit_runtime_and_frontier` 互不依赖，可并行发出工具调用，框架串行执行后一并返回。
-
 ## 产物落点（直接 workspace_write，不走脚本）
 
 - `save/schema/current.md` 与 `save/schema/changelog.md`：当前 schema 草案与变更理由。
@@ -84,7 +82,7 @@ appliesTo:
 
 脚本返回校验错误时按 code/message 修正后重试，不放弃。常见错误：
 
-- `OPENING_SOURCE_REF_UNKNOWN` — 窗口章节 path 指向不存在章节 → 检查 path 是否来自 `read_opening_slice` 结果。
+- `OPENING_SOURCE_REF_UNKNOWN` — 窗口章节引用不存在 → 检查引用是否来自 `read_opening_slice` 结果。
 - `OPENING_WINDOW_REASON_REQUIRED` — `frontier.sourceWindow.reason` 缺失 → 补一句话窗口选择理由。
 - `OPENING_ENTITY_ID_INVALID` — id 格式错 → 改成 `<type>:<localId>`。
 - `OPENING_ENTITY_TYPE_INVALID` — `container` 实体需 `type="container"`；`item` 实体 `type` 需为 equipment/material/consumable/special/other 之一 → 补/改正 `type` 字段。

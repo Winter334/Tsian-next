@@ -242,6 +242,98 @@ This asks the Tool to read an entity path; the whitelist rejects it with `ROLL_D
 
 This asks for one opposed fact. The string modifier is evaluated as `3`. If totals tie, the Tool returns `winner: "tie"` and the storyteller handles the narrative.
 
+## Scenario: Sharded Novel Source Corpus
+
+### 1. Scope / Trigger
+
+- Trigger: changing novel source import, `save/source/manifest.json`, `save/source/chapters.index.json`, source-reading browser scripts, frontier source windows, or AI-facing docs that tell Agents how to read source text.
+- This is a cross-layer storage contract: play frontend import writes it, runtime workspace scripts read it, Agents receive action outputs, and frontend preview/timeline UI consumes metadata.
+
+### 2. Signatures
+
+- Manifest path: `save/source/manifest.json`.
+- Chapter index path: `save/source/chapters.index.json`.
+- New shard root: `save/source/shards/`.
+- New shard files: `save/source/shards/source-shard-0001.md`, `source-shard-0002.md`, ...
+- New chapter refs: `source:chapter-0001`, `source:chapter-0002`, ...
+- Legacy chapter path support: `save/source/chapters/chapter-0001.md` may still exist in old saves and is read through `chapter.path` only as a compatibility fallback.
+
+### 3. Contracts
+
+- New imports write a v2 sharded index. They must not write one file per chapter.
+- `chapters.index.json` v2 shape:
+  - `version: 2`.
+  - `storage.kind: "sharded"`.
+  - `storage.targetShardCharacters: number` (current default: about `1000000`).
+  - `shards[]`: `{ id, path, startChapter, endChapter, characters }`.
+  - `chapters[]`: `{ index, ref, title, characters, source }`.
+  - `chapter.source`: `{ kind: "shard", shardId, path, start, end }`, where `start/end` are JavaScript string offsets inside the shard content.
+- Legacy v1 shape remains readable in runtime source readers: `chapters[]` entries may contain `{ title, path, characters }`.
+- `frontier.sourceWindow.chapters[]` stores compact source metadata:
+  - New v2 writes use `{ index, title, ref }`.
+  - Legacy entries with `{ index, title, path }` remain accepted.
+- `frontier.extractedThrough` is a source reference string. New writes use `chapter.ref`; legacy saves may contain chapter file paths.
+- AI-facing Skill/docs should not teach Agents to depend on shard paths or per-chapter file paths. Agents should use source-reading actions and chapter refs.
+
+### 4. Validation & Error Matrix
+
+- Missing `manifest.status === "ready"` -> source is not ready; opening/frontier readers fail loud.
+- Missing or non-array `chapters.index.json.chapters` -> invalid chapter index.
+- v2 chapter without `source.kind === "shard"`, `source.path`, numeric `start`, numeric `end` -> invalid chapter entry.
+- v2 `source.end < source.start` -> invalid chapter offsets.
+- Missing shard file when reading a v2 chapter -> source file missing, include shard path and chapter ref in details.
+- Legacy chapter without `path` and no valid v2 `source` -> invalid chapter entry.
+- `frontier.sourceWindow.chapters[*].ref` or legacy `path` not present in the loaded source index -> unknown source reference.
+- `frontier.extractedThrough` not present in known refs/paths -> unknown source reference.
+
+### 5. Good/Base/Bad Cases
+
+- Good: a 5000-chapter import writes tens of `source-shard-*.md` files, one v2 index, and one ready manifest; preview and runtime actions read chapters by `ref` through the shared source reader.
+- Good: `read_frontier_window` reads 15 adjacent v2 chapters and caches shard content within the script invocation, so adjacent chapters in one shard do not cause 15 workspace reads.
+- Base: an old save with v1 `chapters[] = [{ title, path, characters }]` still works in formal-play runtime source readers.
+- Bad: a new import writes `save/source/chapters/chapter-0001.md` for every chapter.
+- Bad: an AI-facing Skill tells the model to read `sourceWindow.chapters[*].path` or hard-codes `save/source/chapters/` as the source layout.
+- Bad: frontend preview reads shard-backed chapters by assuming `chapter.path`; v2 entries may not have `path`.
+
+### 6. Tests Required
+
+- Build/typecheck: run `npm run build --workspace play-frontend-dev` for play frontend source changes and `npm run build:web` for platform template/storage changes.
+- Import behavior: generate or import a long synthetic novel; assert shard count is based on shard size, not chapter count, and `manifest.json` is written after shards/index.
+- Frontend preview: verify v2 shard-backed preview and legacy v1 `chapter.path` preview fallback.
+- Runtime actions: verify `inspect_source_opening`, `read_opening_slice`, and `read_frontier_window` return readable text for v2 and legacy v1 source indexes.
+- Frontier state: verify `commit_runtime_and_frontier` / `commit_frontier_state` accept new `ref` metadata and reject unknown refs.
+- AI-facing check: grep changed workspace templates/card docs for stale `sourceWindow.chapters[*].path`, `save/source/chapters/`, and instructions that expose shard internals to Agents.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const file = await tsian.workspace.read(chapter.path)
+```
+
+This only works for legacy v1 indexes. New v2 chapters are shard-backed and may not have `path`.
+
+```md
+Read `save/source/chapters/` files from `sourceWindow.chapters[*].path`.
+```
+
+This teaches Agents a storage layout that no longer exists for new imports.
+
+#### Correct
+
+```ts
+const text = await readSourceChapter(tsian, chapter)
+```
+
+The shared reader handles v2 shard slicing and legacy `chapter.path` fallback.
+
+```md
+Use the source-reading action/window metadata and cite chapter refs; source storage may be sharded.
+```
+
+This preserves the Agent-facing chapter concept without exposing storage internals.
+
 ## Source References
 
 - `apps/platform-web/src/storage/db.ts`

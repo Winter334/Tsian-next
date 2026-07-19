@@ -44,13 +44,14 @@ async function commitRuntimeAndFrontier(input, tsian, signal) {
     const extensions = {};
     for (const key of Object.keys(rawExtensions)) { if (key.trim()) extensions[key] = rawExtensions[key]; }
     const runtimeFile = { turn, worldTime, plotOrder: 1, location, weather, activeSceneRefs, protagonistRef, extensions, updatedAtTurn: turn, updatedBy: 'world-architect' };
-    // frontier 校验（先校验再写，避免 runtime 半成品落盘）：sourceWindow.chapters path → loadSource knownPaths
+    // frontier 校验（先校验再写，避免 runtime 半成品落盘）：sourceWindow.chapters ref → loadSource knownRefs
     if (!isRecord(input.frontier.sourceWindow)) fail('OPENING_WINDOW_INVALID', 'frontier.sourceWindow must be an object.');
     const source = await loadSource(tsian);
-    const knownPaths = new Set(source.chapters.map((chapter) => chapter.path));
-    const window = normalizeWindow(input.frontier.sourceWindow, knownPaths);
-    const extractedThrough = typeof input.frontier.extractedThrough === 'string' && input.frontier.extractedThrough.trim() ? input.frontier.extractedThrough.trim() : (window.chapters[window.chapters.length - 1] && window.chapters[window.chapters.length - 1].path) || null;
-    if (extractedThrough && !knownPaths.has(extractedThrough)) fail('OPENING_SOURCE_REF_UNKNOWN', 'frontier.extractedThrough must point to an imported chapter file.', { extractedThrough });
+    const knownRefs = new Set(source.chapters.map(sourceRefForChapter).filter(Boolean));
+    const window = normalizeWindow(input.frontier.sourceWindow, knownRefs);
+    const lastWindowRef = window.chapters.length ? sourceRefForChapter(window.chapters[window.chapters.length - 1]) : null;
+    const extractedThrough = typeof input.frontier.extractedThrough === 'string' && input.frontier.extractedThrough.trim() ? input.frontier.extractedThrough.trim() : lastWindowRef;
+    if (extractedThrough && !knownRefs.has(extractedThrough)) fail('OPENING_SOURCE_REF_UNKNOWN', 'frontier.extractedThrough must point to an imported source chapter.', { extractedThrough });
     const notes = typeof input.frontier.notes === 'string' && input.frontier.notes.trim() ? input.frontier.notes.trim() : window.reason;
     const timelineRaw = Array.isArray(input.frontier.timeline) ? input.frontier.timeline : [];
     const timeline = timelineRaw.map(function (anchor, index) {

@@ -5,7 +5,7 @@
 ## 主路径
 
 ```text
-save/source/         # 导入的源文本：manifest、chapters、chunks
+save/source/         # 导入的源文本：manifest、chapter index、source reader 可读源
 save/schema/         # 当前 schema、changelog、deprecated 笔记、Markdown patches
 save/entities/       # 语义实体，存为 save/entities/<type>/<localId>.json
 save/scenes/         # 场景分片，存为 save/scenes/<localId>.json（一场景一文件）
@@ -27,12 +27,12 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 - `runtime.protagonistRef` 是当前主角指针 `{ ref, name }`；主角实体权威仍在 `save/entities/character/<localId>.json`。
 - `runtime.location` 是当前地点指针 `{ ref, name } | null`。
 - `runtime.worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台时间，也不等同于 turn。未知或尚未建立时写空字符串。
-- `runtime.plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合维护，前端用于判断是否触发 frontier 推进。
+- `runtime.plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合维护，用于判断是否触发 frontier 推进。
 - `runtime.weather` 是当前天气字符串；未知时写空字符串。
 
 ## runtime.json
 
-当前世界/剧情时间写固定字段 `worldTime`，天气写 `weather`。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记每回合维护，前端用于判断是否触发 frontier 推进。月相、倒计时、诅咒周期等新增/临时时间机制仍可放在 `extensions`。旧字段 `activeSceneIds`/`activeScene`/`player`/`inventory`/`status` 已废弃，不再写入 runtime。
+当前世界/剧情时间写固定字段 `worldTime`，天气写 `weather`。`plotOrder` 是数字，单调递增，表示玩家当前走到哪个 source order；场记每回合维护，用于判断是否触发 frontier 推进。月相、倒计时、诅咒周期等新增/临时时间机制仍可放在 `extensions`。
 
 ```json
 {
@@ -58,7 +58,7 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 ```json
 {
   "sourceWindow": { "start": 1, "end": 8, "chapters": [...] },
-  "extractedThrough": "save/source/chapters/0008.md",
+  "extractedThrough": "source:chapter-0008",
   "timeline": [
     { "kind": "source", "order": 1, "chapter": 1, "time": "元年", "label": "开局" },
     { "kind": "player", "order": 2, "turn": 8, "time": "二年春", "label": "离开山门", "alignment": "diverged", "sourceRef": 2 }
@@ -70,7 +70,7 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 ```
 
 - `sourceWindow`：已读章节窗口（`start`/`end` 为章节号，`chapters` 为窗口章节元信息）。推进 frontier 时移动。
-- `extractedThrough`：已抽取到的最远章节文件路径。
+- `extractedThrough`：已抽取到的最远源章节引用。
 - `timeline`：时间标记锚点数组，用 `kind` 区分 source/player：
   - source 锚点 `{ kind: "source", order, chapter, time, label }`：world-architect 推进时建立，标记原著剧情节点。
   - player 锚点 `{ kind: "player", order, turn, time, label, alignment, sourceRef }`：stage-manager 维护时追加，标记玩家视角显著事件。
@@ -119,12 +119,12 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 }
 ```
 
-按需使用：`gender`、`aliases`、`visibility`、`lifecycle`、`tags`、`identity`、`appearance`、`attributes`、`gauges`、`status`、`traits`、`goals`、`background`、`history`、`containers`、`portrait`、`extensions`。旧字段 `fields`、`sections`、`origin`、`sourceRefs`、`updatedAtTurn`、`updatedBy` 已废弃，不再新增。
+按需使用：`gender`、`aliases`、`visibility`、`lifecycle`、`tags`、`identity`、`appearance`、`attributes`、`gauges`、`status`、`traits`、`goals`、`background`、`history`、`containers`、`portrait`、`extensions`。
 
 ## character identity / appearance / attributes / gauges / status / traits / goals / background / containers
 
-- `identity`：稳定身份键值对，键为 `age`/`gender`/`role`/`affiliation`/`realm`（如 年龄/性别/身份/所属/境界）。旧键 `race`/`class`/`title` 已废弃。
-- `appearance`：当前形象叙事字符串（单段），描述角色当下外貌。旧 label/value 键值对形态已废弃。
+- `identity`：稳定身份键值对，键为 `age`/`gender`/`role`/`affiliation`/`realm`（如 年龄/性别/身份/所属/境界）。
+- `appearance`：当前形象叙事字符串（单段），描述角色当下外貌。
 - `attributes`：固定6维基础属性，键名由世界架构师按世界观定义（默认`体魄`/`悟性`/`气运`/`根骨`/`法力`/`魅力`），值为正整数，基线 5。维度分两类：**修炼型**（`法力`，随境界暴涨）和**天赋型**（`悟性`/`气运`/`根骨`/`魅力`，先天素质，与境界关系小）；`体魄`介于两者之间（天生体质＋修炼强化）。填值时按角色境界估算法力量级，天赋维度按角色资质给，不要把所有维度压在同一小区间。
 
   以下是示例刻度尺（仅供参照——不同小说的战力差距天差地别，有的境界间差百倍，有的几乎没有差距，按实际世界观调整）：
@@ -142,8 +142,8 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
   | 大乘 | 5000+ | 100+ | 1-15 |
 
   没有剧情佐证时也要按境界大致估算，不要留空或全填基线——空值或全 5 比不合理估值更糟，因为掷骰对抗会直接用这些数值做差值。跨境界法力差距应大到低境界方几乎不可能正面赢，这靠数值刻度本身保证，不靠掷骰时事后主观找补。
-- `gauges`：自由命名量表数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`。`id`/`name`/`value` 必填；`tone` 取值 `neutral`/`accent`/`success`/`warning`/`danger`/`muted`。旧固定 5 key `hp`/`mp`/`sp`/`hunger`/`stamina` 已废弃。
-- `status`：状态项数组，每项 `{ id, name?, description?, polarity? }`。`polarity` 取值 `positive`/`negative`/`neutral`；旧 `status[].level` 已废弃。`status[]` 表示当前临时状态（受伤、中毒、灵力亏空、buff）。
+- `gauges`：自由命名量表数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`。`id`/`name`/`value` 必填；`tone` 取值 `neutral`/`accent`/`success`/`warning`/`danger`/`muted`。
+- `status`：状态项数组，每项 `{ id, name?, description?, polarity? }`。`polarity` 取值 `positive`/`negative`/`neutral`。`status[]` 表示当前临时状态（受伤、中毒、灵力亏空、buff）。
 - `traits`：永久性稳定特质数组，每项 `{ id, name?, description?, effects? }`。`id` 必填（`trait:<localId>` 格式）；`name` 主展示；`description` 表达特质本身的设定说明；`effects` 为字符串数组，表达具体可用效果/限制/叙事影响（如「能够堪破虚妄」「心神不受外力影响」）。表示特殊体质、天赋、系统、血脉、命格等稳定能力来源。区别于 `status[]`（当前临时状态）：`traits[]` 是永久性的，不随单回合状态变化消失。旧存档无此字段仍可解析。
 - `goals`：意图与目标 `{ current?, shortTerm?, longTerm? }`，每项字符串。缺省项不写入。
 - `background`：背景摘记，单段叙事字符串。

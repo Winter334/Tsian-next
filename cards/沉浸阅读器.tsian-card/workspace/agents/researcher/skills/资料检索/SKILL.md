@@ -18,8 +18,8 @@ appliesTo:
 1. 确认调用方真正问的事实范围。
 2. 读 `save/playthrough/frontier.json` 确定已读窗口（`sourceWindow.start` ~ `sourceWindow.end`）和 timeline 锚点。
 3. 映射 `runtime.worldTime` 到 timeline 锚点，定位当前剧情对应的原著时间段。
-4. 在已读范围内直接读相关章节文件、entity、scene。用 `search` 在章节中按关键词定位段落。
-5. 找到 → 提取相关内容，返回精炼结论 + 来源路径 + 不确定性。
+4. 在已读范围内直接读相关源章节、entity、scene。用 `search` 在已读源内容中按关键词定位段落。
+5. 找到 → 提取相关内容，返回精炼结论 + 来源章节/锚点 + 不确定性。
 6. 找不到 → 返回“已在已读章节 1-8 及现有实体中检索，暂无相关内容”之类的简短说明。不告知哪里有未读章节。
 
 ## 不做

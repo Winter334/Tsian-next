@@ -3,18 +3,18 @@ name: frontier推进
 title: frontier推进
 description: 推进 source frontier，读取下一段源章节窗口，识别剧情节点建立 source 锚点，抽取最小素材增量。
 triggers:
-  - 前端基于 plotOrder 客观计算触发 frontier 推进时
+  - 推进 source frontier 时
 appliesTo:
   - world-architect
 ---
 
 # frontier推进
 
-被前端触发时推进 source frontier：读下一段源章节窗口，识别剧情节点建立 source 锚点，抽取最小素材增量。推进只扩展素材边界，不产生剧情方向指导。
+推进 source frontier：读下一段源章节窗口，识别剧情节点建立 source 锚点，抽取最小素材增量。推进只扩展素材边界。
 
 ## 推进流程
 
-1. `read_frontier_window` → 读当前 frontier.json 的 sourceWindow，计算下一段最多 15 章窗口，读 `save/source/chapters/` 下对应章节，返回章节文本 + frontier 状态。
+1. `read_frontier_window` → 读当前 frontier.json 的 sourceWindow，计算下一段最多 15 章窗口，通过 source reader 读取对应章节，返回章节文本 + frontier 状态。
 2. 识别剧情节点 + 抽取最小素材增量。
 3. `commit_frontier_materials` → 校验并写入 entities/relationships/schema patches 增量。
 4. `commit_frontier_state` → 校验 order 递增、sourceWindow 顺序推进、timeline 锚点 chapter 在窗口内，写入 frontier.json（合并新 source 锚点到 timeline 数组）。
@@ -61,7 +61,7 @@ appliesTo:
 [
   {
     "name": "read_frontier_window",
-    "description": "读 frontier.json 当前 sourceWindow，计算下一段最多 15 章窗口，读 save/source/chapters/ 下对应章节文本，返回章节文本与 frontier 状态。只读不写。",
+    "description": "读 frontier.json 当前 sourceWindow，计算下一段最多 15 章窗口，通过 source reader 读取对应章节文本，返回章节文本与 frontier 状态。只读不写。",
     "inputSchema": { "type": "object", "properties": {} },
     "outputSchema": { "type": "object" },
     "executor": { "type": "browser_script", "path": "scripts/read-frontier-window.js", "timeoutMs": 15000, "helpers": ["_common.js"] }

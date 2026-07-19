@@ -7,12 +7,7 @@ import { formatNumber, formatCharacters, formatOptionalCharacters, type SourceMa
 /**
  * SplitReview — 导入结果确认（概览 + 双栏章节/预览）。
  *
- * 保留双栏结构，提升精致感：
- * - 概览区：书名 Cinzel + ember-bright + 分隔线 + 统计 mono 标签化
- * - 章节列表：选中项 ember 左条 + 背景渐入 + 文字变亮，切换时 GSAP 高亮过渡
- * - 预览区：切换章节时 opacity+translateY 过渡（非硬切），逐段 Serif 文字
- * - 双栏间 ember 竖线分隔（非 gap 空白）
- * - 章节卡片进场 GSAP stagger
+ * 章节目录使用固定行高虚拟滚动，避免长篇导入时渲染几千个按钮。
  */
 const props = defineProps<{
   manifest: SourceManifest | null
@@ -21,16 +16,29 @@ const props = defineProps<{
 
 const { selectedChapterWritable, loadChapterPreview } = useSetupState()
 
+const ROW_HEIGHT = 58
+const OVERSCAN = 6
+
 const previewText = ref("读取预览中…")
 const previewTitle = ref("")
 const previewKey = ref(0) // 用于触发预览区 Transition
 const listRef = ref<HTMLElement | null>(null)
 const previewRef = ref<HTMLElement | null>(null)
+const scrollTop = ref(0)
+const viewportHeight = ref(380)
 
 const chapters = computed(() => props.chapterIndex?.chapters ?? [])
 const selectedIndex = computed(() =>
-  Math.max(0, Math.min(selectedChapterWritable.value, chapters.value.length - 1)),
+  Math.max(0, Math.min(selectedChapterWritable.value, Math.max(0, chapters.value.length - 1))),
 )
+const totalListHeight = computed(() => chapters.value.length * ROW_HEIGHT)
+const visibleStart = computed(() => Math.max(0, Math.floor(scrollTop.value / ROW_HEIGHT) - OVERSCAN))
+const visibleEnd = computed(() => Math.min(
+  chapters.value.length,
+  Math.ceil((scrollTop.value + viewportHeight.value) / ROW_HEIGHT) + OVERSCAN,
+))
+const visibleChapters = computed(() => chapters.value.slice(visibleStart.value, visibleEnd.value))
+const visibleOffset = computed(() => visibleStart.value * ROW_HEIGHT)
 
 async function loadPreview() {
   const ch = chapters.value[selectedIndex.value]
@@ -42,10 +50,19 @@ async function loadPreview() {
   previewTitle.value = ch.title || `第 ${selectedIndex.value + 1} 章`
   previewText.value = "读取预览中…"
   try {
-    previewText.value = await loadChapterPreview(ch.path)
+    previewText.value = await loadChapterPreview(ch)
   } catch {
     previewText.value = "预览读取失败。"
   }
+}
+
+function updateViewportMetrics() {
+  if (!listRef.value) return
+  viewportHeight.value = listRef.value.clientHeight || 380
+}
+
+function onScroll() {
+  scrollTop.value = listRef.value?.scrollTop ?? 0
 }
 
 function selectChapter(i: number) {
@@ -55,14 +72,41 @@ function selectChapter(i: number) {
   previewKey.value++
 }
 
+function scrollSelectedIntoView() {
+  const el = listRef.value
+  if (!el || chapters.value.length === 0) return
+  const top = selectedIndex.value * ROW_HEIGHT
+  const bottom = top + ROW_HEIGHT
+  const viewportTop = el.scrollTop
+  const viewportBottom = viewportTop + el.clientHeight
+  if (top < viewportTop) {
+    el.scrollTop = top
+  } else if (bottom > viewportBottom) {
+    el.scrollTop = bottom - el.clientHeight
+  }
+  scrollTop.value = el.scrollTop
+}
+
 // 章节选择变化时重新加载预览
-watch(selectedChapterWritable, loadPreview)
+watch(selectedChapterWritable, async () => {
+  await loadPreview()
+  await nextTick()
+  scrollSelectedIntoView()
+})
+
+watch(chapters, () => {
+  if (selectedChapterWritable.value >= chapters.value.length) {
+    selectedChapterWritable.value = Math.max(0, chapters.value.length - 1)
+  }
+  void loadPreview()
+})
 
 onMounted(async () => {
+  updateViewportMetrics()
   await loadPreview()
-  // 章节列表进场动画
   await nextTick()
-  if (listRef.value) {
+  scrollSelectedIntoView()
+  if (listRef.value && chapters.value.length <= 200) {
     const cards = listRef.value.querySelectorAll(".chapter-card")
     gsap.fromTo(cards,
       { opacity: 0, x: -16 },
@@ -91,21 +135,25 @@ onMounted(async () => {
     <!-- 双栏：章节列表 | ember 竖线 | 预览 -->
     <div class="review-panes">
       <!-- 章节列表 -->
-      <div ref="listRef" class="chapter-list">
-        <button
-          v-for="(ch, i) in chapters"
-          :key="i"
-          class="chapter-card"
-          :class="{ selected: i === selectedIndex }"
-          type="button"
-          @click="selectChapter(i)"
-        >
-          <span class="chapter-num">{{ String(i + 1).padStart(3, '0') }}</span>
-          <span class="chapter-main">
-            <span class="chapter-title">{{ ch.title || `第 ${i + 1} 章` }}</span>
-            <span class="chapter-size">{{ formatOptionalCharacters(ch.characters) }}</span>
-          </span>
-        </button>
+      <div ref="listRef" class="chapter-list" @scroll="onScroll">
+        <div class="chapter-spacer" :style="{ height: `${totalListHeight}px` }">
+          <div class="chapter-window" :style="{ transform: `translateY(${visibleOffset}px)` }">
+            <button
+              v-for="(ch, offset) in visibleChapters"
+              :key="'ref' in ch ? ch.ref : ch.path"
+              class="chapter-card"
+              :class="{ selected: (visibleStart + offset) === selectedIndex }"
+              type="button"
+              @click="selectChapter(visibleStart + offset)"
+            >
+              <span class="chapter-num">{{ String(visibleStart + offset + 1).padStart(3, '0') }}</span>
+              <span class="chapter-main">
+                <span class="chapter-title">{{ ch.title || `第 ${visibleStart + offset + 1} 章` }}</span>
+                <span class="chapter-size">{{ formatOptionalCharacters(ch.characters) }}</span>
+              </span>
+            </button>
+          </div>
+        </div>
       </div>
 
       <!-- ember 竖线分隔 -->
@@ -178,11 +226,22 @@ onMounted(async () => {
 /* 章节列表 */
 .chapter-list {
   flex: 0 0 210px;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+.chapter-spacer {
+  position: relative;
+  width: 100%;
+}
+.chapter-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  overflow-y: auto;
-  padding-right: 8px;
+  will-change: transform;
 }
 /* 滚动条细化 */
 .chapter-list::-webkit-scrollbar {
@@ -194,6 +253,7 @@ onMounted(async () => {
 }
 
 .chapter-card {
+  height: 56px;
   display: flex;
   align-items: center;
   gap: 10px;

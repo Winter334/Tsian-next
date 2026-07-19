@@ -14,7 +14,7 @@ appliesTo:
 
 ## 访谈
 
-逐轮提问，每次最多 1～2 个问题。每个问题附带默认前端识别的 `[[选项]]` 模板，允许自由输入。
+逐轮提问，每次最多 1～2 个问题。每个问题附带 `[[选项]]` 模板，允许自由输入。
 
 ### 问题 1：特别设定
 
@@ -81,7 +81,7 @@ appliesTo:
 3. storyteller 返回后，调 `commit_play_setup` 一次写入：
    - 主角 entity 的 `traits[]`（每项 `{ id, name, description?, effects? }`，`id` 用 `trait:<localId>` 格式）
    - `setup-summary.json`（小说简介式 summary）
-   - `save/history/turns/turn-000000.json`（开局 assistant 回复，包含正文与内嵌 `[[选项]]`；脚本会通过 `config/reply-projection.json` 投影为 clean content + `projections.choices`）
+   - `save/history/turns/turn-000000.json`（开局 assistant 回复，包含正文与内嵌 `[[选项]]`）
    - `save/agents/<playerTurnAgent>/context.json`（玩家正式回合入口 Agent 的 turn 0 上下文种子，只写 clean content）
 4. 最终回复玩家：「开局已准备好，进入故事即可开始。」
 5. 不在回复中展示开局正文全文。

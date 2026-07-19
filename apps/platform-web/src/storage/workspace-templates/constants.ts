@@ -1,4 +1,4 @@
-export const DEFAULT_WORKSPACE_VERSION = 16
+export const DEFAULT_WORKSPACE_VERSION = 17
 export const WORKSPACE_MANIFEST_PATH = ".tsian/manifest.json"
 
 export const DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS = new Set([
