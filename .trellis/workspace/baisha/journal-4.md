@@ -107,3 +107,37 @@ Implemented card-level turn recall metadata and storyteller history recall skill
 ### Next Steps
 
 - None - task complete
+
+
+## Session 159: 提交剩余卡片改动
+
+**Date**: 2026-07-19
+**Task**: 提交剩余卡片改动
+**Package**: platform-web
+**Branch**: `task/07-19-timeline-injection-bg-events`
+
+### Summary
+
+按用户要求将剩余工作区改动一并提交：补充 storyteller 可见履历上下文与 read_entity history 输出，修正 source-import worker 导入路径，并将 NSFW 细节指南从常驻模块迁移为按需 Skill 且更新卡资源清单。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `60591b1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
