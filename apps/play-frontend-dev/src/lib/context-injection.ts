@@ -3,8 +3,8 @@
  *
  * 对齐：`.trellis/tasks/07-04-runtime-summary-injection/design.md`。
  *
- * 纯函数、无 vue 依赖：入参 `workspace.read` + `runtime` 快照，出参 3 类 block 的
- * `InjectionMessage[]` 或阻断态。UI 层（useTsian.send）决定阻断时是否推 StreamItem。
+ * 纯函数、无 vue 依赖：入参 `workspace.read` + `runtime` 快照，出参 runtime / timeline /
+ * scene / protagonist 等 block 的 `InjectionMessage[]` 或阻断态。UI 层（useTsian.send）决定阻断时是否推 StreamItem。
  *
  * 边界（design §2）：
  * - 不引入新协议、新持久化文件；injection 是发送前的临时派生上下文。
@@ -12,6 +12,8 @@
  * - 不改 runtime/entity/scene 数据（全流程只调 workspace.read）。
  */
 import type { InjectionMessage } from "@tsian/contracts"
+import type { Frontier, PlayerAnchor, SourceAnchor, TimelineAnchor } from "./frontier-types"
+import { parseFrontier } from "./parse-frontier"
 import type { Runtime, RuntimeData } from "./runtime-types"
 
 // ── 契约类型（design §6） ─────────────────────────────────────────
@@ -73,6 +75,116 @@ function getNumber(obj: Record<string, unknown>, key: string): number | undefine
 /** 任意 JSON 值是否为非数组对象。 */
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null && !Array.isArray(v)
+}
+
+const FRONTIER_PATH = "save/playthrough/frontier.json"
+const SOURCE_ANCHOR_BEFORE_COUNT = 2
+const SOURCE_ANCHOR_AFTER_COUNT = 3
+const PLAYER_ANCHOR_COUNT = 3
+
+function isSourceAnchor(anchor: TimelineAnchor): anchor is SourceAnchor {
+  return anchor.kind === "source"
+}
+
+function isPlayerAnchor(anchor: TimelineAnchor): anchor is PlayerAnchor {
+  return anchor.kind === "player"
+}
+
+function selectNearbySourceAnchors(
+  timeline: TimelineAnchor[],
+  plotOrder: number,
+): SourceAnchor[] {
+  const sourceAnchors = timeline
+    .filter(isSourceAnchor)
+    .slice()
+    .sort((a, b) => a.order - b.order)
+  const before = sourceAnchors
+    .filter(anchor => anchor.order <= plotOrder)
+    .slice(-SOURCE_ANCHOR_BEFORE_COUNT)
+  const after = sourceAnchors
+    .filter(anchor => anchor.order > plotOrder)
+    .slice(0, SOURCE_ANCHOR_AFTER_COUNT)
+  return [...before, ...after]
+}
+
+function selectRecentPlayerAnchors(timeline: TimelineAnchor[]): PlayerAnchor[] {
+  return timeline
+    .filter(isPlayerAnchor)
+    .slice()
+    .sort((a, b) => a.turn - b.turn || a.order - b.order)
+    .slice(-PLAYER_ANCHOR_COUNT)
+}
+
+function formatPlayerAlignment(alignment: PlayerAnchor["alignment"]): string {
+  if (alignment === "aligned") return "贴近原著"
+  if (alignment === "rejoined") return "并回主干"
+  return "偏离原著"
+}
+
+export function formatTimelineBlock(runtime: Runtime, frontier: Frontier): string | null {
+  const plotOrder = Number.isFinite(runtime.plotOrder) ? runtime.plotOrder : 0
+  const sourceAnchors = selectNearbySourceAnchors(frontier.timeline, plotOrder)
+  const playerAnchors = selectRecentPlayerAnchors(frontier.timeline)
+
+  if (sourceAnchors.length === 0 && playerAnchors.length === 0) {
+    return null
+  }
+
+  const lines: string[] = []
+  lines.push("【原著剧情节点参考】")
+  lines.push(`- 当前剧情坐标：plotOrder ${plotOrder}`)
+  lines.push(`- 当前剧情时间：${orDefault(runtime.worldTime, "未知")}`)
+  lines.push("- 说明：source 节点是从原著中抽出的剧情节点，用来提供当前位置与后续方向感。")
+  lines.push("- 使用边界：这些节点不是已发生事实列表，也不是必须复刻的剧本；玩家行动可以贴近、偏离、改写或暂时绕开。")
+  lines.push("- 写作注意：不要把尚未在玩家视角中发生的原著节点直接写成已经发生的事实。")
+
+  if (sourceAnchors.length > 0) {
+    lines.push("- 当前坐标附近的 source 节点：")
+    for (const anchor of sourceAnchors) {
+      const side = anchor.order <= plotOrder ? "坐标≤当前" : "坐标>当前"
+      lines.push(
+        `  · [${side}] order ${anchor.order}｜chapter ${anchor.chapter}｜time ${orDefault(anchor.time, "未知")}｜${anchor.label}`,
+      )
+    }
+  }
+
+  if (playerAnchors.length > 0) {
+    lines.push("- 最近玩家 if 线节点：")
+    for (const anchor of playerAnchors) {
+      const sourceRef = anchor.sourceRef === null ? "无" : `source order ${anchor.sourceRef}`
+      lines.push(
+        `  · turn ${anchor.turn}｜order ${anchor.order}｜time ${orDefault(anchor.time, "未知")}｜${formatPlayerAlignment(anchor.alignment)}｜sourceRef: ${sourceRef}｜${anchor.label}`,
+      )
+    }
+  }
+
+  return lines.join("
+")
+}
+
+async function loadFrontier(
+  workspace: BuildInjectionInput["workspace"],
+): Promise<Frontier | null> {
+  let file: { content: string } | null
+  try {
+    file = await workspace.read(FRONTIER_PATH, "save-runtime")
+  } catch {
+    return null
+  }
+  if (file === null) return null
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(file.content)
+  } catch {
+    return null
+  }
+
+  const frontierData = parseFrontier(parsed)
+  if (frontierData.status !== "ready" || !frontierData.frontier) {
+    return null
+  }
+  return frontierData.frontier
 }
 
 // ── formatter（design §7） ────────────────────────────────────────
@@ -319,9 +431,10 @@ export function formatProtagonistBlock(
  * 1. kill-switch：`runtime.extensions.frontendInjection.enabled === false` → ok, messages=[]。
  * 2. runtime 未就绪：`status !== "ready" || !runtime` → blocked "runtime-not-ready"。
  * 3. 拼 runtime/world message。
- * 4. 对每个 activeSceneRefs[*]：workspace.read；null/抛错/JSON.parse 失败 → blocked "scene-load-failed"。
- * 5. protagonistRef 若有：workspace.read；错误同上 → blocked "protagonist-load-failed"。
- * 6. 返回 { status: "ok", messages }，每条 role="system", position="before-input"。
+ * 4. 尝试读取 frontier timeline，成功则追加原著剧情节点参考；失败静默跳过。
+ * 5. 对每个 activeSceneRefs[*]：workspace.read；null/抛错/JSON.parse 失败 → blocked "scene-load-failed"。
+ * 6. protagonistRef 若有：workspace.read；错误同上 → blocked "protagonist-load-failed"。
+ * 7. 返回 { status: "ok", messages }；timeline 使用 role="user"，其余 block 保持现有 role，position="before-input"。
  */
 export async function buildContextInjection(
   input: BuildInjectionInput,
@@ -357,7 +470,20 @@ export async function buildContextInjection(
     position: "before-input",
   })
 
-  // 4. scene blocks：对每个 activeSceneRefs[*] 逐条读取；任一失败即阻断
+  // 4. timeline block：辅助信息，失败不阻断
+  const frontier = await loadFrontier(workspace)
+  if (frontier) {
+    const timelineBlock = formatTimelineBlock(runtime, frontier)
+    if (timelineBlock) {
+      messages.push({
+        role: "user",
+        content: timelineBlock,
+        position: "before-input",
+      })
+    }
+  }
+
+  // 5. scene blocks：对每个 activeSceneRefs[*] 逐条读取；任一失败即阻断
   for (const sceneEntry of runtime.activeSceneRefs) {
     const ref = sceneEntry.ref
     if (!ref) continue
