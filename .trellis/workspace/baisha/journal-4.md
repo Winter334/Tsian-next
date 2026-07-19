@@ -39,3 +39,37 @@ Implemented card-level turn recall metadata and storyteller history recall skill
 ### Next Steps
 
 - None - task complete
+
+
+## Session 157: 长篇小说导入性能优化
+
+**Date**: 2026-07-19
+**Task**: 长篇小说导入性能优化
+**Package**: platform-web
+**Branch**: `feat/long-novel-import-performance`
+
+### Summary
+
+实现长篇小说导入 shard 存储与 Worker 分章构建：新导入写 save/source/shards 与 v2 chapters.index，前端预览和 runtime opening/frontier source reader 支持 shard+旧 path 兼容；确认页章节列表虚拟化并显示导入进度；刷新沉浸阅读器卡包 dist 与 metadata；补充 sharded source corpus code-spec。验证：play-frontend build、platform-web build、skipLibCheck vue-tsc、diff check、卡包 metadata、镜像与 AI-facing stale path 检查通过；完整 vue-tsc 仍受第三方声明问题阻塞。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `68616e8` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
