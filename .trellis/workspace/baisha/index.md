@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 157
+- **Total Sessions**: 158
 - **Last Active**: 2026-07-19
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~75 | Active |
+| `journal-4.md` | ~109 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 158 | 2026-07-19 | 时间线注入原著剧情节点 | `a8fce1e` | `task/07-19-timeline-injection-bg-events` |
 | 157 | 2026-07-19 | 长篇小说导入性能优化 | `68616e8` | `feat/long-novel-import-performance` |
 | 156 | 2026-07-18 | Turn history recall system | `b5947d7` | `task/turn-history-recall` |
 | 155 | 2026-07-18 | Redesign checkpoint API | `53ee3c1` | `feat/agent-reply-regex-projection` |

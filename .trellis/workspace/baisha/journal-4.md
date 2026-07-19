@@ -73,3 +73,37 @@ Implemented card-level turn recall metadata and storyteller history recall skill
 ### Next Steps
 
 - None - task complete
+
+
+## Session 158: 时间线注入原著剧情节点
+
+**Date**: 2026-07-19
+**Task**: 时间线注入原著剧情节点
+**Package**: platform-web
+**Branch**: `task/07-19-timeline-injection-bg-events`
+
+### Summary
+
+收敛背景事件状态机方案为轻量 timeline 注入；开发前端在发送前读取 frontier timeline，以 user before-input 注入当前 plotOrder 附近原著剧情节点与最近玩家 if 线节点。验证 play-frontend-dev build 通过，tsc 受既有 Vue shim 问题阻塞。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a8fce1e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
