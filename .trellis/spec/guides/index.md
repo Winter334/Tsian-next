@@ -27,6 +27,7 @@ These guides help you **ask the right questions before coding**.
 | [AI-Facing Content Changes](./ai-facing-content-changes.md) | Avoid leaving residual concept traces when removing/auto-inferring a concept from tool schemas, prompts, or descriptions | When removing a parameter from a tool schema, auto-inferring a concept the agent used to pass, or rewriting tool/prompt descriptions |
 | [Module Structure Guide](./module-structure-guide.md) | Keep source files focused on one responsibility; split god files along seams | When a file accumulates unrelated concerns, before adding a function that doesn't fit the file's theme |
 | [AIRP 数据与能力设计原则](./airp-data-capability-design-principles.md) | 泛用方法论：能力供给分级、归属决策、skill 封装判据、数据权威、分片、产物落点、写入策略、文档分层、字段消费者验证 | 涉及 agent/skill/tool 能力设计、schema 字段设计、写入策略、数据权威与派生、聚合层、文档分层、审查过度设计时 |
+| [提示词自包含与口吻指南](./prompt-self-contained-and-tone.md) | 写 Skill / AGENT.md / 工具 description 时避免两类错误：开发侧因果解释污染；默认 Agent 知道本上下文之外的概念 | 写或改 AI-facing 提示词、引用跨 Skill 概念、发现 Agent 行为偏差疑似来自提示词时 |
 
 ---
 
@@ -91,6 +92,15 @@ These guides help you **ask the right questions before coding**.
 - [ ] You're reviewing a design that feels over-engineered and need to verify field/capability necessity
 
 → Read [AIRP 数据与能力设计原则](./airp-data-capability-design-principles.md)
+
+### When to Think About Prompt Self-Containedness & Tone
+
+- [ ] You're writing or editing a SKILL.md / AGENT.md / tool `description`
+- [ ] You're about to reference a concept from another Skill or doc inside a prompt
+- [ ] You're explaining "why" a step exists or "what happens later" inside a prompt
+- [ ] Agent behavior deviates from intent and you suspect the prompt leaked dev-side framing or assumed outside knowledge
+
+→ Read [提示词自包含与口吻指南](./prompt-self-contained-and-tone.md)
 
 ---
 

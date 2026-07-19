@@ -77,14 +77,18 @@ appliesTo:
 玩家选择「直接开始」后：
 
 1. 整理给 storyteller 的上下文：主角信息、traits、已读开局素材边界、本局设定摘要。
-2. `agent_call` storyteller，`expectedOutput` 要求返回【开局正文】+【初始选项】3～5 个。
-3. storyteller 返回后，调 `commit_play_setup` 一次写入：
+2. 把主角和开局会出场的相关 character entity 调整到开局切入点这一刻的真实状态（开局切入点见「开局钩子」）。调整后 storyteller 读到的主角实体，就是开局切入点这一刻的真实状态，不会把切入点之后的事件当作已发生。开局建模阶段为理解整段已读开局素材，可能把后续章节的事件也写进了实体，这里要按切入点裁回去。
+   - 切入点之前（含）已发生的关系变化、状态、目标、履历：在切入点这一刻已经发生，写入 entity（`history` / `status` / `goals`）和 relationships 分片。
+   - 切入点之后才发生的关系变化、新状态、新目标、履历：在切入点这一刻还没发生，从 entity 的 `history` / `status` / `goals` 和 relationships 分片中拿掉。
+   - 玩家访谈中给主角加的 `traits` 留到下一步 `commit_play_setup` 合并，这里不动 traits。
+3. `agent_call` storyteller，`expectedOutput` 要求返回【开局正文】+【初始选项】3～5 个。
+4. storyteller 返回后，调 `commit_play_setup` 一次写入：
    - 主角 entity 的 `traits[]`（每项 `{ id, name, description?, effects? }`，`id` 用 `trait:<localId>` 格式）
    - `setup-summary.json`（小说简介式 summary）
    - `save/history/turns/turn-000000.json`（开局 assistant 回复，包含正文与内嵌 `[[选项]]`）
    - `save/agents/<playerTurnAgent>/context.json`（玩家正式回合入口 Agent 的 turn 0 上下文种子，只写 clean content）
-4. 最终回复玩家：「开局已准备好，进入故事即可开始。」
-5. 不在回复中展示开局正文全文。
+5. 最终回复玩家：「开局已准备好，进入故事即可开始。」
+6. 不在回复中展示开局正文全文。
 
 ## 可用 action
 

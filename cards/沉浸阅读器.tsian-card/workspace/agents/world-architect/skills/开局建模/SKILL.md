@@ -59,6 +59,7 @@ appliesTo:
     "inputSchema": { "type": "object", "required": ["title", "candidateCharacters"], "properties": { "title": { "type": "string" }, "candidateCharacters": { "type": "array" } } },
     "outputSchema": { "type": "object" },
     "executor": { "type": "browser_script", "path": "scripts/commit-understanding-summary.js", "timeoutMs": 10000, "helpers": ["_common.js", "_validation.js"] }
+  }
 
 ]
 ```
@@ -67,7 +68,7 @@ appliesTo:
 
 1. `inspect_source_opening` → 观察导入源结构和章节预览。
 2. `read_opening_slice` → 连续阅读开头剧情（可多次调用）。读够的判据：主要角色登场、冲突建立、开局场景可定。
-3. `commit_entities` → 写入实体（先写，后续 ref 依赖）。每实体至少 `id` / `name` / `brief`，按需加 `gender` / `tags` / `aliases` / `identity` / `appearance` / `attributes`。character 的 `attributes` 按境界参照 schema guide 的示例刻度尺填写；没有剧情佐证时也要估算，不要全填基线或留空。
+3. `commit_entities` → 写入实体（先写，后续 ref 依赖）。每实体至少 `id` / `name` / `brief`，按需加 `gender` / `tags` / `aliases` / `identity` / `appearance` / `attributes`。character 的 `attributes` 按境界参照 schema guide 的示例刻度尺填写；没有剧情佐证时也要估算，不要全填基线或留空。实体只反映开局锚点这一刻为真的事实——开局锚点 = `timeline` 第一个锚点，对应 `sourceWindow.startIndex` 这一章、`time="元年"`；窗口里开局锚点之后章节才出现的关系变化、新状态、新目标、履历、新登场的关联，不要写入 entity（`history` / `status` / `goals` / `containers` 等）和 relationships 分片。具体判据和反例见末尾「spoiler-safe」。
 4. `commit_scenes_and_relationships` → 写入场景与人物关系（校验 present/location ref 指向已写实体；relationship subject/to 均必须是 `character:<localId>`；双向角色关系两边各写一条；非角色关联不要写入 relationships）。
 5. `commit_runtime_and_frontier` → 写入 runtime（校验 activeSceneRefs 指向已写 scene、protagonistRef/location 指向已写 entity；`worldTime` 传 `"元年"`，`weather` 写当前天气字符串，未知则留空）与 frontier（`sourceWindow` 传 `{ startIndex, endIndex, reason, chapters }`：`startIndex`/`endIndex`/`chapters` 复用 `read_opening_slice` 返回的窗口字段，`reason` 写一句话说明为何选此窗口；`timeline` 传第一个锚点 `[{ kind: "source", order: 1, chapter: <开局起始章>, time: "元年", label: "开局" }]`，`chapter` 用 `sourceWindow.startIndex` 的值。脚本会自动按数组顺序赋 `order`（从 1 递增），`kind` 固定为 `"source"`）。
 6. `commit_understanding_summary` → 写入理解摘要。`candidateCharacters` 从已写 character 类型 entity 提取 `{id, name, brief, gender?}`；无合适原著角色时给空数组。
@@ -90,9 +91,13 @@ appliesTo:
 - `OPENING_REF_UNKNOWN` / `OPENING_RELATIONSHIP_SUBJECT_UNKNOWN` / `OPENING_RELATIONSHIP_TO_UNKNOWN` / `OPENING_RUNTIME_SCENE_UNKNOWN` / `OPENING_RUNTIME_PROTAGONIST_UNKNOWN` / `OPENING_RUNTIME_LOCATION_UNKNOWN` — ref 指向不存在的实体/场景 → 确认目标已在之前 commit 中写入或已存在。
 - `OPENING_RELATIONSHIP_SUBJECT_TYPE_INVALID` / `OPENING_RELATIONSHIP_TO_TYPE_INVALID` — relationships 只记录角色/人物关系，subject/to 必须是 `character:<localId>`；地点、组织、物品、事件、尸体/线索等非角色关联放到对应字段、已有 ref 结构或 `extensions.render="ref"`，不要写入 relationships。
 - `OPENING_SCENE_PRESENT_REQUIRED` — 场景 present 不能为空。
-- `OPENING_TIMELINE_ANCHOR_INVALID` / `OPENING_TIMELINE_TIME_REQUIRED` / `OPENING_TIMELINE_LABEL_REQUIRED` — frontier.timeline 锚点格式错 → 每项需为 `{ chapter: number, time: string, label: string }`（脚本自动补 `kind: "source"` 和 `order`），`chapter` 用 `sourceWindow.start`。
+- `OPENING_TIMELINE_ANCHOR_INVALID` / `OPENING_TIMELINE_TIME_REQUIRED` / `OPENING_TIMELINE_LABEL_REQUIRED` — frontier.timeline 锚点格式错 → 每项需为 `{ chapter: number, time: string, label: string }`（脚本自动补 `kind: "source"` 和 `order`），`chapter` 用 `sourceWindow.startIndex`。
 - 缺必填 → 补齐。
 
 ## spoiler-safe
 
-只使用开头窗口中读到的内容。不推断、不剧透未来剧情。实体都只反映开局已知事实。
+只使用开头窗口中读到的内容。不推断、不剧透未来剧情。
+
+实体只反映开局锚点这一刻为真的事实。开局锚点 = `timeline` 第一个锚点，对应 `sourceWindow.startIndex` 这一章、`time="元年"`。窗口里开局锚点之后章节才出现的关系变化、新状态、新目标、履历、新登场的关联，不要写入 entity（`history` / `status` / `goals` / `containers` 等）和 relationships 分片——它们在开局时刻还没发生，只作为你理解世界的背景。
+
+例：窗口是第 1~6 章，开局锚点是第 1 章、元年。第 3 章角色 A 与 B 初次合作、第 5 章 A 与 B 反目——A 的 `history` 不写这两件事，A↔B 的 relationship 不写"合作"或"敌对"，A 的 `goals.current` 不写第 5 章之后的"修复与 B 的关系"。开局时刻 A 与 B 的关系只反映第 1 章已知的状态。
