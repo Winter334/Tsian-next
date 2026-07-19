@@ -307,6 +307,21 @@ export function formatProtagonistBlock(
     }
   }
 
+  // history：人物履历是 character entity 的正式字段；只输出 event 文本。
+  const history = characterJson["history"]
+  if (Array.isArray(history) && history.length > 0) {
+    const historyLines: string[] = []
+    for (const item of history) {
+      if (!isRecord(item)) continue
+      const event = getString(item, "event")
+      if (event) historyLines.push(`  · ${event}`)
+    }
+    if (historyLines.length > 0) {
+      lines.push("- 履历：")
+      lines.push(...historyLines)
+    }
+  }
+
   return lines.join("\n")
 }
 

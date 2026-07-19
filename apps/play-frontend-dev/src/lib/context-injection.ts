@@ -158,8 +158,7 @@ export function formatTimelineBlock(runtime: Runtime, frontier: Frontier): strin
     }
   }
 
-  return lines.join("
-")
+  return lines.join("\n")
 }
 
 async function loadFrontier(
@@ -416,6 +415,21 @@ export function formatProtagonistBlock(
     if (goalLines.length > 0) {
       lines.push("- 目标：")
       lines.push(...goalLines)
+    }
+  }
+
+  // history：人物履历是 character entity 的正式字段；只输出 event 文本。
+  const history = characterJson["history"]
+  if (Array.isArray(history) && history.length > 0) {
+    const historyLines: string[] = []
+    for (const item of history) {
+      if (!isRecord(item)) continue
+      const event = getString(item, "event")
+      if (event) historyLines.push(`  · ${event}`)
+    }
+    if (historyLines.length > 0) {
+      lines.push("- 履历：")
+      lines.push(...historyLines)
     }
   }
 

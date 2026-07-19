@@ -1,7 +1,7 @@
 {
   "name": "read_entity",
   "title": "读取实体",
-  "description": "输入实体 ref（如 character:萧玄），读取实体 JSON 并格式化为人类可读文本返回（name/brief/identity/appearance/attributes/gauges/status/traits/goals/background）。省去你自己 read 文件再解析 JSON 的往返。",
+  "description": "输入实体 ref（如 character:萧玄），读取实体 JSON 并格式化为人类可读文本返回（name/brief/identity/appearance/attributes/gauges/status/traits/goals/history/background）。",
   "parameters": {
     "type": "object",
     "additionalProperties": false,

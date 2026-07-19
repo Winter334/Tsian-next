@@ -67,6 +67,15 @@ function formatGoals(goals, lines) {
     if (typeof goals[key] === 'string' && goals[key].trim()) lines.push('目标：' + labels[key] + '：' + goals[key]);
   }
 }
+function formatHistory(history, lines) {
+  if (!Array.isArray(history) || !history.length) return;
+  const events = history.map(function (item) {
+    return isRecord(item) && typeof item.event === 'string' ? item.event.trim() : '';
+  }).filter(Boolean);
+  if (!events.length) return;
+  lines.push('履历：');
+  for (const event of events) lines.push('- ' + event);
+}
 async function readEntity(input, tsian, signal) {
   if (!isRecord(input)) fail('READ_ENTITY_INVALID_ARGS', 'input must be an object.', { input: input });
   const parsed = parseRef(input.ref);
@@ -88,6 +97,7 @@ async function readEntity(input, tsian, signal) {
   formatStatus(entity.status, lines);
   formatTraits(entity.traits, lines);
   formatGoals(entity.goals, lines);
+  formatHistory(entity.history, lines);
   pushPart(lines, '背景', entity.background);
   const text = lines.join('\n');
   tsian.trace('read_entity', { ref: input.ref, path: path, length: text.length });

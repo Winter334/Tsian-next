@@ -129,12 +129,7 @@
     {
       "path": "workspace/agents/storyteller/modules/NSFW追加/Nsfw必开.md",
       "mediaType": "text/markdown",
-      "size": 938
-    },
-    {
-      "path": "workspace/agents/storyteller/modules/NSFW追加/Sex_Guide.md",
-      "mediaType": "text/markdown",
-      "size": 4334
+      "size": 1611
     },
     {
       "path": "workspace/agents/storyteller/modules/NSFW追加/用词要求.md",
@@ -427,6 +422,11 @@
       "size": 326
     },
     {
+      "path": "workspace/agents/storyteller/skills/NSFW场景指导/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 5047
+    },
+    {
       "path": "workspace/agents/storyteller/skills/历史召回/SKILL.md",
       "mediaType": "text/markdown",
       "size": 4410
@@ -449,12 +449,12 @@
     {
       "path": "workspace/agents/storyteller/tools/read_entity/run.js",
       "mediaType": "text/javascript",
-      "size": 5028
+      "size": 5447
     },
     {
       "path": "workspace/agents/storyteller/tools/read_entity/tool.json",
       "mediaType": "application/json",
-      "size": 717
+      "size": 725
     },
     {
       "path": "workspace/agents/storyteller/tools/read_relationships/run.js",
@@ -524,7 +524,7 @@
     {
       "path": "workspace/agents/world-architect/skills/开局建模/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 8255
+      "size": 8260
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/_common.js",
@@ -1131,7 +1131,7 @@
     {
       "path": "frontend/src/lib/context-injection.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 15838
+      "size": 16365
     },
     {
       "path": "frontend/src/lib/frontier-types.ts",
@@ -1201,7 +1201,7 @@
     {
       "path": "frontend/src/lib/source-import-worker.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 1756
+      "size": 1824
     },
     {
       "path": "frontend/src/lib/source-import.worker.ts",

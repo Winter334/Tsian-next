@@ -1,4 +1,4 @@
-import WorkerCtor from "./source-import.worker?worker"
+import WorkerCtor from "./source-import.worker.ts?worker"
 import type { BuildInput, BuildSourceCorpusProgress, BuiltSourceCorpus } from "./source"
 
 interface SourceImportProgressMessage {

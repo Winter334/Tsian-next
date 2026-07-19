@@ -28,7 +28,8 @@
   "skills": {
     "enabled": [
       "agents/storyteller/skills/掷骰/SKILL.md",
-      "agents/storyteller/skills/历史召回/SKILL.md"
+      "agents/storyteller/skills/历史召回/SKILL.md",
+      "agents/storyteller/skills/NSFW场景指导/SKILL.md"
     ],
     "disabled": []
   },
