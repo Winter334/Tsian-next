@@ -141,3 +141,37 @@ Implemented card-level turn recall metadata and storyteller history recall skill
 ### Next Steps
 
 - None - task complete
+
+
+## Session 160: 移除资料员 Agent
+
+**Date**: 2026-07-20
+**Task**: 移除资料员 Agent
+**Package**: platform-web
+**Branch**: `task/07-19-remove-researcher-agent`
+
+### Summary
+
+移除 researcher/资料员 Agent：删除当前沉浸阅读器卡与默认 workspace 模板中的 researcher 资源、contacts、默认 notes seed 和 AI-facing 引用；将事实获取说明改为使用注入上下文、专用工具、定向读取或现有 stage-manager/world-architect 能力。验证 active surface grep 无 researcher/资料员/资料检索 残留，npm run build:web 通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `55bf2fc` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
