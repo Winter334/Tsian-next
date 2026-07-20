@@ -52,7 +52,8 @@
   "tools": {
     "enabled": [
       "agents/stage-manager/tools/read_maintenance_context/tool.json",
-      "agents/stage-manager/tools/commit_turn_recall/tool.json"
+      "agents/stage-manager/tools/commit_turn_recall/tool.json",
+      "tools/update_entity/tool.json"
     ],
     "disabled": [
       "roll_dice"

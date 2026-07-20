@@ -35,7 +35,9 @@
   },
   "tools": {
     "enabled": [],
-    "disabled": []
+    "disabled": [
+      "update_entity"
+    ]
   },
   "platformTools": {
     "enabled": [],

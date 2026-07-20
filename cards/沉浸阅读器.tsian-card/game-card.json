@@ -39,7 +39,7 @@
     {
       "path": "workspace/agents/stage-manager/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 3584
+      "size": 3651
     },
     {
       "path": "workspace/agents/stage-manager/SOUL.md",
@@ -49,7 +49,7 @@
     {
       "path": "workspace/agents/stage-manager/agent.json",
       "mediaType": "application/json",
-      "size": 1635
+      "size": 1675
     },
     {
       "path": "workspace/agents/stage-manager/skills/schema演进检查/SKILL.md",
@@ -59,7 +59,7 @@
     {
       "path": "workspace/agents/stage-manager/skills/回合后维护/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 9061
+      "size": 9190
     },
     {
       "path": "workspace/agents/stage-manager/tools/commit_turn_recall/run.js",
@@ -94,7 +94,7 @@
     {
       "path": "workspace/agents/storyteller/agent.json",
       "mediaType": "application/json",
-      "size": 1136
+      "size": 1165
     },
     {
       "path": "workspace/agents/storyteller/creation-guide.md",
@@ -454,7 +454,7 @@
     {
       "path": "workspace/agents/world-architect/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 1162
+      "size": 1319
     },
     {
       "path": "workspace/agents/world-architect/SOUL.md",
@@ -610,6 +610,16 @@
       "path": "workspace/tools/roll_dice/tool.json",
       "mediaType": "application/json",
       "size": 3624
+    },
+    {
+      "path": "workspace/tools/update_entity/run.js",
+      "mediaType": "text/javascript",
+      "size": 16738
+    },
+    {
+      "path": "workspace/tools/update_entity/tool.json",
+      "mediaType": "application/json",
+      "size": 1636
     }
   ],
   "frontendFiles": [

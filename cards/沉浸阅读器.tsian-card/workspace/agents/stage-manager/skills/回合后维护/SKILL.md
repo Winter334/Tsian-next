@@ -17,7 +17,7 @@ appliesTo:
 1. 第一轮先调用 `read_maintenance_context({ turn: 目标回合号, includeTimeline: true })`，用它聚合本回合正文、runtime、active scenes、相关 entities/relationships、scene 清理候选和 timeline。
 2. 基于聚合上下文判断本回合已发生变化，维护 runtime/entity/scene/relationship/memory/timeline。
 3. 写入本回合 `meta.recall`：调用 `commit_turn_recall`，为目标 turn 维护历史召回元数据。
-4. 用现有 workspace.write/edit/delete 做小而清晰的写入。
+4. 已有 entity 的小范围字段变化调用 `update_entity`；runtime、scene、relationship、memory、timeline 等其他目标继续用 workspace.write/edit/delete 做小而清晰的写入。
 
 ## 回退流程
 
