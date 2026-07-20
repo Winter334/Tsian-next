@@ -175,3 +175,37 @@ Implemented card-level turn recall metadata and storyteller history recall skill
 ### Next Steps
 
 - None - task complete
+
+
+## Session 161: Add entity field patch tool
+
+**Date**: 2026-07-20
+**Task**: Add entity field patch tool
+**Package**: platform-web
+**Branch**: `task/07-19-remove-researcher-agent`
+
+### Summary
+
+Added the current immersive-reader card's shared update_entity Tool for safe field-oriented entity add/update/delete operations, wired stage-manager and world-architect visibility while excluding storyteller, synchronized card packaging, and validated operator behavior, safety, builds, and manifest consistency.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d0ae58` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
