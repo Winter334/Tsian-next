@@ -336,7 +336,7 @@ export function formatProtagonistBlock(
  * 3. 拼 runtime/world message。
  * 4. 对每个 activeSceneRefs[*]：workspace.read；null/抛错/JSON.parse 失败 → blocked "scene-load-failed"。
  * 5. protagonistRef 若有：workspace.read；错误同上 → blocked "protagonist-load-failed"。
- * 6. 返回 { status: "ok", messages }，每条 role="system", position="before-input"。
+ * 6. 返回 { status: "ok", messages }，每条 role="user", position="before-input"。
  */
 export async function buildContextInjection(
   input: BuildInjectionInput,
@@ -367,7 +367,7 @@ export async function buildContextInjection(
 
   // 3. runtime/world block（必发）
   messages.push({
-    role: "system",
+    role: "user",
     content: formatRuntimeBlock(runtime),
     position: "before-input",
   })
@@ -397,7 +397,7 @@ export async function buildContextInjection(
       return { status: "blocked", reason: "scene-load-failed", detail: ref }
     }
     messages.push({
-      role: "system",
+      role: "user",
       content: formatSceneBlock(parsed as Record<string, unknown>, ref),
       position: "before-input",
     })
@@ -427,7 +427,7 @@ export async function buildContextInjection(
       return { status: "blocked", reason: "protagonist-load-failed", detail: ref }
     }
     messages.push({
-      role: "system",
+      role: "user",
       content: formatProtagonistBlock(parsed as Record<string, unknown>, ref),
       position: "before-input",
     })

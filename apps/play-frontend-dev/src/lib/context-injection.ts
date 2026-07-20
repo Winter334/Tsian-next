@@ -448,7 +448,7 @@ export function formatProtagonistBlock(
  * 4. 尝试读取 frontier timeline，成功则追加原著剧情节点参考；失败静默跳过。
  * 5. 对每个 activeSceneRefs[*]：workspace.read；null/抛错/JSON.parse 失败 → blocked "scene-load-failed"。
  * 6. protagonistRef 若有：workspace.read；错误同上 → blocked "protagonist-load-failed"。
- * 7. 返回 { status: "ok", messages }；timeline 使用 role="user"，其余 block 保持现有 role，position="before-input"。
+ * 7. 返回 { status: "ok", messages }；动态上下文 block 均使用 role="user", position="before-input"。
  */
 export async function buildContextInjection(
   input: BuildInjectionInput,
@@ -479,7 +479,7 @@ export async function buildContextInjection(
 
   // 3. runtime/world block（必发）
   messages.push({
-    role: "system",
+    role: "user",
     content: formatRuntimeBlock(runtime),
     position: "before-input",
   })
@@ -522,7 +522,7 @@ export async function buildContextInjection(
       return { status: "blocked", reason: "scene-load-failed", detail: ref }
     }
     messages.push({
-      role: "system",
+      role: "user",
       content: formatSceneBlock(parsed as Record<string, unknown>, ref),
       position: "before-input",
     })
@@ -552,7 +552,7 @@ export async function buildContextInjection(
       return { status: "blocked", reason: "protagonist-load-failed", detail: ref }
     }
     messages.push({
-      role: "system",
+      role: "user",
       content: formatProtagonistBlock(parsed as Record<string, unknown>, ref),
       position: "before-input",
     })

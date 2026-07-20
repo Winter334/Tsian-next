@@ -1106,7 +1106,7 @@
     {
       "path": "frontend/src/lib/context-injection.ts",
       "mediaType": "text/typescript; charset=utf-8",
-      "size": 16365
+      "size": 16357
     },
     {
       "path": "frontend/src/lib/frontier-types.ts",
