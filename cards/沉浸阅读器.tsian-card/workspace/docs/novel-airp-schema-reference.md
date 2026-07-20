@@ -133,7 +133,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ## frontier.json
 
-`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点，供资料员映射 `runtime.worldTime` → `timeline` 锚点 → `sourceWindow` 位置找素材。
+`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点，供场记维护剧情坐标，并供前端与正文上下文展示原著剧情节点。
 
 ```json
 {

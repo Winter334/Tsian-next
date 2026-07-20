@@ -190,7 +190,6 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 
 ## Agent 职责
 
-- `storyteller` / 三人写手：玩家正式回合入口，写沉浸式正文和选项；信息不足时 call 资料员。
-- `researcher` / 资料员：只读 source/entity/scene/relationship/schema，返回精炼事实。
+- `storyteller` / 三人写手：玩家正式回合入口，写沉浸式正文和选项。
 - `stage-manager` / 场记：回合后维护 runtime、entities、scenes、relationships、memory 与可渲染状态；必要时 call 世界架构师。
 - `world-architect` / 世界架构师：开局建模、schema 设计与 pending patch。

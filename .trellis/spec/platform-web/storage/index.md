@@ -22,7 +22,7 @@ Tables:
 - `skillConfigs`
 - `embeddingIndex`
 
-Built-in blank game cards seed the default Runtime Workspace template, including the default novel AIRP Agent roster (`storyteller`, `researcher`, `stage-manager`, `world-architect`, `director`), Agent-local Skills, framework knowledge docs, save runtime files, and `.tsian` platform metadata. The built-in blank card's configured player-turn entrypoint is `storyteller`. Refreshing a stale `source: "builtin"` game card is allowed, but save workspaces must use non-overwriting workspace-version upgrades.
+Built-in blank game cards seed the default Runtime Workspace template, including the default novel AIRP Agent roster (`storyteller`, `stage-manager`, `world-architect`), Agent-local Skills, framework knowledge docs, save runtime files, and `.tsian` platform metadata. The built-in blank card's configured player-turn entrypoint is `storyteller`. Refreshing a stale `source: "builtin"` game card is allowed, but save workspaces must use non-overwriting workspace-version upgrades.
 
 No old local data migration is expected.
 

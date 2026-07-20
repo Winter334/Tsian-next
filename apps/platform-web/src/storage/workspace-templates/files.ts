@@ -1,6 +1,5 @@
 import { DEFAULT_WORKSPACE_VERSION, WORKSPACE_MANIFEST_PATH } from "./constants"
 import { json, text, type TemplateFile } from "./utils"
-import { RESEARCHER_AGENT_FILES, RESEARCHER_SKILL_FILES } from "./agents/researcher"
 import { STAGE_MANAGER_AGENT_FILES, STAGE_MANAGER_SKILL_FILES } from "./agents/stage-manager"
 import { STORYTELLER_FILES, WRITING_RULES_MD } from "./agents/storyteller"
 import { WORLD_ARCHITECT_AGENT_FILES, WORLD_ARCHITECT_SKILL_FILES } from "./agents/world-architect"
@@ -22,7 +21,7 @@ export const DEFAULT_WORKSPACE_FILES: TemplateFile[] = [
       "This effective workspace combines Game Card content with active save runtime data. Runtime play data lives under `save/`.",
       "The `.tsian/` directory is platform-owned metadata and is hidden from ordinary Agent, Skill, and frontend workspace APIs.",
       "",
-      "This default card uses the novel AIRP backstage crew: `storyteller`, `researcher`, `stage-manager`, and `world-architect`. Read `docs/novel-airp-schema-guide.md` before changing novel source, schema, entity, or playthrough files.",
+      "This default card uses the novel AIRP backstage crew: `storyteller`, `stage-manager`, and `world-architect`. Read `docs/novel-airp-schema-guide.md` before changing novel source, schema, entity, or playthrough files.",
     ]),
   },
   {
@@ -35,7 +34,6 @@ export const DEFAULT_WORKSPACE_FILES: TemplateFile[] = [
       "默认阵容：",
       "",
       "- `storyteller` / 三人写手：玩家正式回合入口。",
-      "- `researcher` / 资料员：只读资料检索。",
       "- `stage-manager` / 场记：回合后维护。",
       "- `world-architect` / 世界架构师：开局建模与 schema 设计。",
       "",
@@ -43,10 +41,8 @@ export const DEFAULT_WORKSPACE_FILES: TemplateFile[] = [
     ]),
   },
   ...STORYTELLER_FILES,
-  ...RESEARCHER_AGENT_FILES,
   ...STAGE_MANAGER_AGENT_FILES,
   ...WORLD_ARCHITECT_AGENT_FILES,
-  ...RESEARCHER_SKILL_FILES,
   ...STAGE_MANAGER_SKILL_FILES,
   ...WORLD_ARCHITECT_SKILL_FILES,
   {
@@ -79,7 +75,6 @@ export const DEFAULT_SAVE_RUNTIME_FILES: TemplateFile[] = [
   { path: "save/agents/storyteller/notes.md", content: "# 三人写手 Notes\n\n" },
   { path: "save/agents/storyteller/writing-styles.md", content: "# 文风学习记录\n\n" },
   { path: "save/agents/storyteller/writing-rules.md", content: WRITING_RULES_MD },
-  { path: "save/agents/researcher/notes.md", content: "# 资料员 Notes\n\n" },
   { path: "save/agents/stage-manager/notes.md", content: "# 场记 Notes\n\n" },
   { path: "save/agents/world-architect/notes.md", content: "# 世界架构师 Notes\n\n" },
   {

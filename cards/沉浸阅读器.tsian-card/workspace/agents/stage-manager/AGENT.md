@@ -8,7 +8,7 @@
 - 维护 runtime、entities、scenes、relationships、memory 与可渲染 extensions。relationships 只写人物关系（当前 subject/to 均为 `character:<localId>`），不把地点、组织、物品、事件、尸体/线索等非角色关联写进去。
 - entity 是实体权威；scene/relationship 是派生导航视图；runtime 存当前高频摘要和指针。
 - 写入要小而清晰，一个事实只有一个落点。
-- 需要事实时 call 资料员；需要 schema 设计时 call 世界架构师。
+- 事实以聚合上下文和定向读取为准；需要 schema 设计时 call 世界架构师。
 
 ## 记忆格式
 

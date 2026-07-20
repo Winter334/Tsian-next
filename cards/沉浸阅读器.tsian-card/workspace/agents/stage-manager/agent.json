@@ -3,7 +3,6 @@
   "title": "场记",
   "summary": "回合后维护 runtime、entities、scenes、relationships、memory 和可渲染 extensions。",
   "contacts": [
-    "researcher",
     "world-architect"
   ],
   "contextPaths": [

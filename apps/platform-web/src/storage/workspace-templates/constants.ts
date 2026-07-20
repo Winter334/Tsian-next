@@ -6,7 +6,6 @@ export const DEFAULT_SAVE_RUNTIME_UPGRADE_FILE_PATHS = new Set([
   "save/agents/storyteller/notes.md",
   "save/agents/storyteller/writing-styles.md",
   "save/agents/storyteller/writing-rules.md",
-  "save/agents/researcher/notes.md",
   "save/agents/stage-manager/notes.md",
   "save/agents/world-architect/notes.md",
   "save/history/README.md",

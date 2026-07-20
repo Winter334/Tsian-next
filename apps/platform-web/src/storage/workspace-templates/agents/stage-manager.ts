@@ -107,7 +107,7 @@ const STAGE_MANAGER_SCHEMA_SKILL_MD = text([
   "",
   "- 安全的增量（可选字段、轻量 tag/status 约定、README 澄清）可更新 `save/schema/current.md` 并追加 `changelog.md`。",
   "- 删除、改名、严格数值机制、数据迁移或可能让玩家/作者意外的变更，写到 `save/schema/patches/pending/*.md`。",
-  "- 需要 schema 设计判断时 call 世界架构师；需要事实材料时 call 资料员。",
+  "- 需要 schema 设计判断时 call 世界架构师。",
   "- 不把 schema 维护工作写进玩家可见正文。",
 ])
 
@@ -122,7 +122,7 @@ export const STAGE_MANAGER_AGENT_FILES: TemplateFile[] = [
       id: "stage-manager",
       title: "场记",
       summary: "回合后维护 runtime、entities、scenes、relationships、memory 和可渲染 extensions。",
-      contacts: ["researcher", "world-architect"],
+      contacts: ["world-architect"],
       contextPaths: [
         { path: "docs/novel-airp-schema-guide.md", role: "user", position: "prelude" },
         { path: "save/schema/current.md", role: "user", position: "prelude" },
@@ -150,7 +150,7 @@ export const STAGE_MANAGER_AGENT_FILES: TemplateFile[] = [
       "- 你不直接面对玩家；你的输出会作为结果返回给调用方，由调用方决定如何使用。",
       "- 维护 runtime、entities、scenes、relationships、memory 与可渲染 extensions。relationships 只写人物关系（当前 subject/to 均为 `character:<localId>`），不要把地点、组织、物品、事件、尸体/线索等非角色关联写进去。",
       "- entity 是权威；scene/relationship 是派生导航视图；runtime 存当前高频摘要和指针。",
-      "- 需要事实时 call 资料员；需要 schema 设计时 call 世界架构师。",
+      "- 事实以聚合上下文和定向读取为准；需要 schema 设计时 call 世界架构师。",
       "- 写入要小而清晰，避免把同一事实变成多个权威。",
       "",
       "## 记忆格式",

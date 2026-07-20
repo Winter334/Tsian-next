@@ -1,0 +1,4 @@
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Check template/storage changes and required build command."}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"Verify no active AI-facing researcher/资料员 residue remains."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Check replacement prompt/doc wording is self-contained and not developer-facing."}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"Check removed Agent had no remaining real consumer or duplicated state."}

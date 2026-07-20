@@ -202,8 +202,7 @@ export const NOVEL_AIRP_SCHEMA_GUIDE_MD = text([
   "",
   "## Agent 职责",
   "",
-  "- `storyteller` / 三人写手：玩家正式回合入口，写沉浸式正文和选项；信息不足时 call 资料员。",
-"- `researcher` / 资料员：只读 source/entity/scene/relationship/schema，返回精炼事实。",
+  "- `storyteller` / 三人写手：玩家正式回合入口，写沉浸式正文和选项。",
 "- `stage-manager` / 场记：回合后维护 runtime、entities、scenes、relationships、memory 与可渲染状态；必要时 call 世界架构师。",
 "- `world-architect` / 世界架构师：开局建模、schema 设计与 pending patch。",
 ])
@@ -339,7 +338,7 @@ export const NOVEL_AIRP_SCHEMA_REFERENCE_MD = text([
   "",
   "## frontier.json",
   "",
-  "`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点，供资料员映射 `runtime.worldTime` → `timeline` 锚点 → `sourceWindow` 位置找素材。",
+  "`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点，供场记维护剧情坐标，并供前端与正文上下文展示原著剧情节点。",
   "",
   "```json",
   "{",

@@ -3,7 +3,6 @@
   "title": "世界架构师",
   "summary": "开局建模、schema/world model 设计与 pending patch；不维护每回合 runtime。",
   "contacts": [
-    "researcher",
     "stage-manager",
     "storyteller"
   ],

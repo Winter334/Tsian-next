@@ -29,7 +29,7 @@
     {
       "path": "workspace/README.md",
       "mediaType": "text/markdown",
-      "size": 502
+      "size": 488
     },
     {
       "path": "workspace/agents/README.md",
@@ -37,34 +37,9 @@
       "size": 612
     },
     {
-      "path": "workspace/agents/researcher/AGENT.md",
-      "mediaType": "text/markdown",
-      "size": 917
-    },
-    {
-      "path": "workspace/agents/researcher/SOUL.md",
-      "mediaType": "text/markdown",
-      "size": 303
-    },
-    {
-      "path": "workspace/agents/researcher/agent.json",
-      "mediaType": "application/json",
-      "size": 1474
-    },
-    {
-      "path": "workspace/agents/researcher/skills/实体读取/SKILL.md",
-      "mediaType": "text/markdown",
-      "size": 965
-    },
-    {
-      "path": "workspace/agents/researcher/skills/资料检索/SKILL.md",
-      "mediaType": "text/markdown",
-      "size": 1189
-    },
-    {
       "path": "workspace/agents/stage-manager/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 3569
+      "size": 3584
     },
     {
       "path": "workspace/agents/stage-manager/SOUL.md",
@@ -74,12 +49,12 @@
     {
       "path": "workspace/agents/stage-manager/agent.json",
       "mediaType": "application/json",
-      "size": 1654
+      "size": 1635
     },
     {
       "path": "workspace/agents/stage-manager/skills/schema演进检查/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 848
+      "size": 809
     },
     {
       "path": "workspace/agents/stage-manager/skills/回合后维护/SKILL.md",
@@ -114,12 +89,12 @@
     {
       "path": "workspace/agents/storyteller/SOUL.md",
       "mediaType": "text/markdown",
-      "size": 1423
+      "size": 1429
     },
     {
       "path": "workspace/agents/storyteller/agent.json",
       "mediaType": "application/json",
-      "size": 1074
+      "size": 1136
     },
     {
       "path": "workspace/agents/storyteller/creation-guide.md",
@@ -419,17 +394,17 @@
     {
       "path": "workspace/agents/storyteller/prefill-accept.md",
       "mediaType": "text/markdown",
-      "size": 326
+      "size": 331
     },
     {
       "path": "workspace/agents/storyteller/skills/NSFW场景指导/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 5047
+      "size": 5138
     },
     {
       "path": "workspace/agents/storyteller/skills/历史召回/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 4410
+      "size": 4499
     },
     {
       "path": "workspace/agents/storyteller/skills/历史召回/scripts/recall-turns.js",
@@ -454,7 +429,7 @@
     {
       "path": "workspace/agents/storyteller/tools/read_entity/tool.json",
       "mediaType": "application/json",
-      "size": 725
+      "size": 671
     },
     {
       "path": "workspace/agents/storyteller/tools/read_relationships/run.js",
@@ -479,7 +454,7 @@
     {
       "path": "workspace/agents/world-architect/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 1153
+      "size": 1162
     },
     {
       "path": "workspace/agents/world-architect/SOUL.md",
@@ -489,7 +464,7 @@
     {
       "path": "workspace/agents/world-architect/agent.json",
       "mediaType": "application/json",
-      "size": 1736
+      "size": 1717
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/SKILL.md",
@@ -524,7 +499,7 @@
     {
       "path": "workspace/agents/world-architect/skills/开局建模/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 8260
+      "size": 9475
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/_common.js",
@@ -569,7 +544,7 @@
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 5083
+      "size": 6029
     },
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_common.js",
@@ -604,17 +579,17 @@
     {
       "path": "workspace/docs/novel-airp-schema-guide.md",
       "mediaType": "text/markdown",
-      "size": 13586
+      "size": 13452
     },
     {
       "path": "workspace/docs/novel-airp-schema-reference.md",
       "mediaType": "text/markdown",
-      "size": 15323
+      "size": 15312
     },
     {
       "path": "workspace/docs/tsian-framework-knowledge.md",
       "mediaType": "text/markdown",
-      "size": 791
+      "size": 776
     },
     {
       "path": "workspace/skills/README.md",

@@ -13,5 +13,5 @@ triggers:
 
 - 安全的增量（可选字段、轻量 tag/status 约定、README 澄清）可更新 `save/schema/current.md` 并追加 `changelog.md`。
 - 删除、改名、严格数值机制、数据迁移或可能让玩家/作者意外的变更，写到 `save/schema/patches/pending/*.md`。
-- 需要 schema 设计判断时 call 世界架构师；需要事实材料时 call 资料员。
+- 需要 schema 设计判断时 call 世界架构师。
 - 不把 schema 维护工作写进玩家可见正文。
