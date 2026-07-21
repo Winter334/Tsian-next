@@ -558,6 +558,39 @@ html, body, #app {
   font-size: 0.68rem;
 }
 
+.desktop-shell--narrow .desktop-taskbar {
+  gap: 0.25rem;
+  overflow-x: hidden;
+  padding-inline: 0.25rem;
+}
+
+.desktop-shell--narrow .desktop-start-button {
+  width: 30px;
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.desktop-shell--narrow .desktop-start-label,
+.desktop-shell--narrow .desktop-auth-label {
+  display: none;
+}
+
+.desktop-shell--narrow .desktop-system-tray,
+.desktop-shell--narrow .desktop-auth {
+  flex: 0 0 auto;
+  gap: 0.25rem;
+  padding-left: 0.25rem;
+}
+
+.desktop-shell--narrow .desktop-task-list {
+  flex-basis: 0;
+  scrollbar-width: none;
+}
+
+.desktop-shell--narrow .desktop-task-list::-webkit-scrollbar {
+  display: none;
+}
+
 .announcement-prose {
   color: var(--color-text-main);
   font-size: 0.95rem;

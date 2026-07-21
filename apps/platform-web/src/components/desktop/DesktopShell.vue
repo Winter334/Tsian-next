@@ -73,7 +73,7 @@
         @click.stop="showDesktop"
       >
         <MonitorDot class="h-4 w-4" aria-hidden="true" />
-        TSian
+        <span class="desktop-start-label">TSian</span>
       </button>
       <div class="desktop-task-list" aria-label="已打开的窗口">
         <button
@@ -123,8 +123,8 @@
             class="h-4 w-4 rounded-full border border-neon-deep/50"
           />
           <UserRound v-else class="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-          <span v-if="!loggedIn" class="hidden sm:inline">登录</span>
-          <span v-else class="truncate max-w-[120px]">{{ currentUser?.displayName }}</span>
+          <span v-if="!loggedIn" class="desktop-auth-label">登录</span>
+          <span v-else class="desktop-auth-label truncate max-w-[120px]">{{ currentUser?.displayName }}</span>
         </button>
       </div>
       <div class="desktop-clock">{{ desktopClock }}</div>
