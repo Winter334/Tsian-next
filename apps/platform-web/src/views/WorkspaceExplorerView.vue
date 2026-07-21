@@ -207,7 +207,7 @@
           </div>
         </section>
 
-        <section class="retro-inset min-h-[420px] overflow-hidden">
+        <section class="workspace-directory-list retro-inset min-h-[420px] min-w-0 overflow-hidden">
           <div v-if="directoryLoading" class="grid min-h-[360px] place-items-center">
             <p class="font-mono text-xs uppercase tracking-[0.22em] text-neon">
               正在读取目录
@@ -226,19 +226,19 @@
           <div v-else-if="directoryEntries.length === 0" class="grid min-h-[360px] place-items-center">
             <p class="font-mono text-sm text-text-dim">这个目录是空的。</p>
           </div>
-          <div v-else class="min-w-[720px]">
-            <div class="grid grid-cols-[minmax(260px,1fr)_150px_130px_170px] border-b border-neon-deep/35 bg-void/65 px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-text-dim">
+          <div v-else class="workspace-directory-table">
+            <div class="workspace-directory-row workspace-directory-header border-b border-neon-deep/35 bg-void/65 px-3 py-2 font-mono text-[11px] uppercase tracking-wider text-text-dim">
               <span>名称</span>
-              <span>类型</span>
-              <span>大小</span>
-              <span>更新时间</span>
+              <span class="workspace-directory-detail">类型</span>
+              <span class="workspace-directory-detail">大小</span>
+              <span class="workspace-directory-detail">更新时间</span>
             </div>
             <div
               v-for="entry in visibleEntries"
               :key="entry.path"
               role="button"
               tabindex="0"
-              class="retro-focus grid w-full grid-cols-[minmax(260px,1fr)_150px_130px_170px] items-center gap-0 border-b border-neon-deep/20 px-3 py-2 text-left hover:bg-elevated/45"
+              class="workspace-directory-row retro-focus w-full items-center border-b border-neon-deep/20 px-3 py-2 text-left hover:bg-elevated/45"
               :class="[
                 selectedEntryPath === entry.path ? 'bg-neon/10 text-neon' : 'text-text-main',
                 clipboard?.kind === 'cut' && clipboard.sourcePath === entry.path ? 'opacity-50' : '',
@@ -265,9 +265,9 @@
                 />
                 <span v-else class="truncate font-mono text-xs">{{ entry.name }}</span>
               </span>
-              <span class="truncate font-mono text-[11px] text-text-dim">{{ entryTypeLabel(entry) }}</span>
-              <span class="font-mono text-[11px] text-text-dim">{{ entrySizeLabel(entry) }}</span>
-              <span class="font-mono text-[11px] text-text-dim">{{ entry.updatedAt ? formatDateTime(entry.updatedAt) : "--" }}</span>
+              <span class="workspace-directory-detail truncate font-mono text-[11px] text-text-dim">{{ entryTypeLabel(entry) }}</span>
+              <span class="workspace-directory-detail font-mono text-[11px] text-text-dim">{{ entrySizeLabel(entry) }}</span>
+              <span class="workspace-directory-detail font-mono text-[11px] text-text-dim">{{ entry.updatedAt ? formatDateTime(entry.updatedAt) : "--" }}</span>
             </div>
           </div>
         </section>
@@ -1306,3 +1306,32 @@ onBeforeUnmount(() => {
   window.removeEventListener(WORKSPACE_CONTENT_CHANGED_EVENT, onWorkspaceContentChanged)
 })
 </script>
+
+<style scoped>
+.workspace-directory-list {
+  container-type: inline-size;
+}
+
+.workspace-directory-table {
+  min-width: 720px;
+}
+
+.workspace-directory-row {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) 150px 130px 170px;
+}
+
+@container (max-width: 719px) {
+  .workspace-directory-table {
+    min-width: 0;
+  }
+
+  .workspace-directory-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-directory-detail {
+    display: none;
+  }
+}
+</style>
