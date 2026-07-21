@@ -1,0 +1,10 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Verify required builds and enforce metadata-only traces with no prompt or secret content."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Review fail-loud behavior, scope discipline, bridge neutrality, and avoidance of duplicate storage helpers."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Check Settings UX, object URL cleanup, route/component ownership, and storage API use."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Audit Provider secrets, Dexie/cache integrity, runtime capability wiring, and staged workspace changes."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Verify no DB schema drift, platform config projection and generic write/delete are secret-safe, and guarded output stops at the consistency-owned source-registration handoff without sourceGuard transaction/storage metadata."}
+{"file":"packages/contracts/src/runtime.ts","reason":"Verify optional InvokeAgentRequest.generatedMediaSourceGuard stays serializable/additive and matches all consumers."}
+{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Verify InvokeAgentOptions forwards the authoritative guard and omission preserves legacy generic callers."}
+{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Verify malformed or extra guard fields reject the RPC instead of being dropped."}
+{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Verify requiredSourceGuard closure enforces Tool guard and assetId before Provider, uses closure guard for handoff, and never downgrades to ordinary write."}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Trace good, base, failure, and abort paths across UI, adapter, Tool, host, and transaction."}

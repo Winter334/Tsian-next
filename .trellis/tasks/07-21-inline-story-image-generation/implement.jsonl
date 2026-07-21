@@ -1,0 +1,14 @@
+{"file":"packages/contracts/src/runtime.ts","reason":"Parent integration must verify InvokeAgentRequest exposes optional generatedMediaSourceGuard as a serializable shared shape while runtime guard normalization/hash/path remain in play-bridge."}
+{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Parent integration must verify InvokeAgentOptions.generatedMediaSourceGuard is forwarded unchanged and remains optional for generic callers."}
+{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Parent integration must verify remote invokeAgent requests strictly normalize/reject malformed generatedMediaSourceGuard rather than silently dropping it."}
+{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Parent integration must verify invokeAgent captures the normalized guard as authoritative requiredSourceGuard for the generate_image runner without agentId/purpose hardcoding."}
+{"file":"apps/platform-web/src/storage/game-card-packages.ts","reason":"Parent integration must verify the UI/repack child fixes text inventory from UTF-16 content.length to actual UTF-8 ZIP entry bytes before exported/checked-in/disk comparisons."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/prd.md","reason":"父任务已确认的产品决策、子任务地图、跨层需求与端到端验收标准。"}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/design.md","reason":"平台能力、存储一致性、卡内协议和前端之间的共享架构、权威数据与契约。"}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/implement.md","reason":"子任务 readiness gate、执行顺序、跨子任务场景和父任务完成条件。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本功能跨 Provider、Agent Runtime、storage、bridge 和卡前端，需遵守完整数据流与边界契约检查。"}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"决定平台能力与卡内可编辑语义的归属，并验证每个字段、资产与派生状态的真实消费者。"}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"platform-web Agent Runtime、bridge、配置 UI 与构建要求。"}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"save-runtime Blob、增量提交、checkpoint manifest、restore、prune 与 GC 的权威约束。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"共享 runtime/game-card/bridge 契约变更及 build:contracts 要求。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"平台和游戏前端消费共享契约时的类型与兼容要求。"}

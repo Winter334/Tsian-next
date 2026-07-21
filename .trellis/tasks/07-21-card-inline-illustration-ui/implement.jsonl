@@ -1,0 +1,15 @@
+{"file":"packages/contracts/src/runtime.ts","reason":"UI dual-channel invocation depends on optional serializable InvokeAgentRequest.generatedMediaSourceGuard while keeping the guard shape generic."}
+{"file":"packages/play-bridge/src/tsian-api.ts","reason":"InvokeAgentOptions must expose and explicitly forward generatedMediaSourceGuard equal to the Agent-input sourceGuard without breaking ordinary callers."}
+{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Verify strict remote normalization rejects malformed host authority rather than silently dropping it and allowing an ordinary invocation."}
+{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Verify normalized requiredSourceGuard closure is authoritative, mismatch is pre-Provider zero-write, and failure remains isolated to the current card."}
+{"file":"apps/platform-web/src/storage/game-card-packages.ts","reason":"UI/repack tooling child owns the prerequisite exporter fix: text workspace inventory size must use actual UTF-8 ZIP entry bytes rather than UTF-16 content.length; add ASCII/Chinese/emoji/binary regressions before trusting repack comparisons."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Play frontend 的 bridge 边界、Reply Projection 处理、exporter 所属 platform-web 改动与必需 build:web 质量门。"}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Vue 组件职责、玩家文案、键盘焦点、workspace 二进制媒体与 Object URL 清理约定。"}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"turn v2 timeline、displayContent fallback、invokeAgent 事件、restore/reload 与模块级状态约定。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"前端构建、运行时验证与 packaged frontend dist 写回质量门。"}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"workspace Blob、增量提交、checkpoint/restore authority 与异步媒体一致性边界。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"共享 contracts 的消费入口，避免 UI 重复定义 bridge/runtime shape。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"invokeAgent、contextSlot/persist、WorkspaceReadResult、assistant timeline 与 play frontend fail-soft 合同。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 UI、bridge、Agent、workspace、checkpoint 和卡包跨层数据流。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"指导复用现有 entrypoint、Blob/Object URL 和 modal seam，避免双源逻辑漂移。"}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"指导 pure parser、thin composable、state registry 与视觉组件的职责拆分。"}

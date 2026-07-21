@@ -1,0 +1,14 @@
+{"file":"packages/contracts/src/runtime.ts","reason":"Verify optional InvokeAgentRequest.generatedMediaSourceGuard is the shared serializable shape and all producer/consumer builds are covered."}
+{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Verify InvokeAgentOptions forwards the authoritative guard and omission preserves generic invokeAgent compatibility."}
+{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Verify malformed/extra generatedMediaSourceGuard fields fail strict RPC normalization instead of becoming an unguarded invocation."}
+{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Verify requiredSourceGuard closure enforces Tool guard/assetId equality before Provider and prevents ordinary-write downgrade; absence retains ordinary/self-guarded generic paths."}
+{"file":"apps/platform-web/src/storage/game-card-packages.ts","reason":"Check ASCII/Chinese/emoji text and binary export inventory against actual ZIP entry bytes before accepting parent repack evidence."}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/prd.md","reason":"逐项核对父任务 AC1-AC10、范围边界和已确认交互决策。"}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/design.md","reason":"检查四个子任务实现是否遵守同一权威数据、稳定 identity、失败与并发语义。"}
+{"file":".trellis/tasks/07-21-inline-story-image-generation/implement.md","reason":"执行跨子任务端到端场景、构建命令和父任务完成 gate。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核各层输入输出格式、验证责任、错误传播和 round-trip 一致性。"}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"审查是否出现无消费者字段、第二权威数据、错误能力归属或过度设计。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"platform-web 变更的质量、构建和禁止模式检查。"}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"验证正式回合与旁路图片并发、checkpoint path patch、restore、prune 和 Blob GC。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"检查共享 contract 的生产者/消费者同步及构建证据。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"检查卡前端和 play-bridge 对新增 entrypoint/结果类型的正确消费。"}

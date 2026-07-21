@@ -1,0 +1,31 @@
+{
+  "id": "inline-story-image-generation",
+  "name": "inline-story-image-generation",
+  "title": "正文内嵌文生图",
+  "description": "为沉浸阅读器实现正文内1-3张按需生成的插图，覆盖平台生图能力、异步存档一致性、卡内Agent协议和前端交互。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "cross-layer: platform image capability + storage + 沉浸阅读器 card/frontend",
+  "package": "platform-web",
+  "priority": "P1",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-07-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-21-platform-image-generation",
+    "07-21-image-save-consistency",
+    "07-21-card-illustration-agent-protocol",
+    "07-21-card-inline-illustration-ui"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

@@ -1,0 +1,13 @@
+{"file":"packages/contracts/src/runtime.ts","reason":"Verify UI uses the shared optional generatedMediaSourceGuard request contract and does not duplicate or specialize the wire shape for the card."}
+{"file":"packages/play-bridge/src/tsian-api.ts","reason":"Verify InvokeAgentOptions forwards the exact same guard as Agent input and remains compatible for callers that omit it."}
+{"file":"apps/platform-web/src/bridge/remote-iframe-bridge.ts","reason":"Verify malformed required guards fail the RPC instead of being dropped into an unguarded path."}
+{"file":"apps/platform-web/src/platform-host/ai-invocation.ts","reason":"Verify host closure rather than Agent echo is authority, required failures are pre-Provider zero-write, and one failure only affects its card."}
+{"file":"apps/platform-web/src/storage/game-card-packages.ts","reason":"Verify corrected exporter inventory reports actual ZIP entry bytes for ASCII/Chinese/emoji text and binary files, so exported/checked-in/disk comparison is meaningful."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"复核 Play frontend 只经 bridge 访问平台，并完成 exporter 改动要求的 build:web、source build 与浏览器检查。"}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"检查组件 cleanup、键盘/焦点、玩家文案、移动端和 Object URL 生命周期。"}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"检查 displayContent、turn timeline、invokeAgent side-channel、reload/restore 与非持久 UI state 没有漂移。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"执行并审查 source build、packaged iframe、dist replacement 与最终质量门。"}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"复核稳定 Blob 资产、checkpoint authority、restore race 与 UI 不越权写一致性状态。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"复核 entrypoint、invokeAgent options、workspace binary read 与 assistant turn 类型使用正确。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"端到端审查 streaming→projection→parser→Agent→workspace→restore 数据流与失败路径。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查没有重复实现 identity/path/parser 或整树覆盖两棵 frontend source。"}
