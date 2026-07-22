@@ -46,6 +46,13 @@ const internalValue = computed(() => {
   return props.nullable ? offset + 1 : offset
 })
 
+const fillPercent = computed(() => {
+  if (internalMax.value <= 0) {
+    return 0
+  }
+  return Math.min(100, Math.max(0, (internalValue.value / internalMax.value) * 100))
+})
+
 const readout = computed(() => {
   if (props.nullable && props.modelValue === null) {
     return "不发送"
@@ -79,6 +86,7 @@ function onInput(event: Event): void {
     <input
       type="range"
       class="retro-range retro-focus h-2 w-full cursor-pointer appearance-none"
+      :style="{ '--retro-range-fill': `${fillPercent}%` }"
       :min="0"
       :max="internalMax"
       :step="1"

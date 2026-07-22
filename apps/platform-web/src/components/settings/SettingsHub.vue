@@ -80,7 +80,7 @@ const entries = computed<HubEntry[]>(() => {
       id: "platform-tunables",
       kind: "平台",
       title: "运行参数",
-      subtitle: "检查点 / 压缩 / 超时 / 历史",
+      subtitle: "进度整理 / 长对话 / AI 等待 / 助手聊天",
       icon: SlidersHorizontal,
     },
   ]
