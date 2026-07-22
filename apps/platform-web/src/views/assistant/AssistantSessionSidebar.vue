@@ -1,7 +1,18 @@
 <template>
   <aside class="flex min-h-0 flex-col border-r border-neon-deep/30 bg-[#2a271f]">
     <div class="flex items-center justify-between border-b border-neon-deep/25 px-3 py-2.5">
-      <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">会话</p>
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="assistant-sidebar-close retro-focus grid h-6 w-6 place-items-center border border-neon-deep/40 bg-panel/50 text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
+          aria-label="关闭会话列表"
+          title="关闭会话列表"
+          @click="$emit('close')"
+        >
+          <X class="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+        <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">会话</p>
+      </div>
       <button
         type="button"
         class="retro-focus grid h-6 w-6 place-items-center border border-neon-deep/40 bg-panel/50 text-text-dim transition-colors hover:border-neon/55 hover:text-neon"
@@ -81,7 +92,7 @@
 </template>
 
 <script setup lang="ts">
-import { Loader2, Pencil, Plus, Trash2 } from "lucide-vue-next"
+import { Loader2, Pencil, Plus, Trash2, X } from "lucide-vue-next"
 import type { AssistantSessionSummary } from "@/storage"
 import { formatSessionTime } from "./format"
 
@@ -99,5 +110,18 @@ defineEmits<{
   select: [id: string]
   startRename: [id: string]
   delete: [id: string]
+  close: []
 }>()
 </script>
+
+<style scoped>
+.assistant-sidebar-close {
+  display: grid;
+}
+
+@container (min-width: 720px) {
+  .assistant-sidebar-close {
+    display: none;
+  }
+}
+</style>

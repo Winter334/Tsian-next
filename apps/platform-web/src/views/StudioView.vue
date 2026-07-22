@@ -1,5 +1,5 @@
 <template>
-  <section class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+  <section class="studio-view grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
     <header class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
       <div class="min-w-0">
         <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Game Card Studio</p>
@@ -65,8 +65,34 @@
         </div>
       </div>
 
-      <div v-else-if="snapshot" class="grid h-full min-h-0 gap-3 xl:grid-cols-[300px_minmax(0,1fr)]">
-        <aside class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/35">
+      <div v-else-if="snapshot" class="studio-workspace grid h-full min-h-0 gap-3">
+        <div class="studio-agent-picker border border-neon-deep/35 bg-elevated/35 p-2">
+          <label class="grid min-w-0 flex-1 gap-1">
+            <span class="font-mono text-[10px] uppercase tracking-wider text-neon">Agent</span>
+            <select
+              :value="selectedAgentId"
+              class="retro-focus retro-select-surface h-8 min-w-0 border border-neon-deep/45 bg-elevated px-2 font-mono text-xs text-text-main"
+              aria-label="选择 Agent"
+              @change="selectAgentById(($event.target as HTMLSelectElement).value)"
+            >
+              <option v-for="agent in snapshot.agents" :key="agent.id" :value="agent.id">
+                {{ agent.title }}{{ agent.system ? " · 主入口" : "" }}
+              </option>
+            </select>
+          </label>
+          <button
+            v-if="selectedAgent"
+            type="button"
+            class="retro-focus mt-4 inline-flex h-8 w-8 shrink-0 items-center justify-center border border-neon-deep/40 bg-elevated text-text-dim hover:text-neon"
+            :aria-label="`打开 ${selectedAgent.title} 目录`"
+            title="打开目录"
+            @click="openPathDirectory(selectedAgent.path)"
+          >
+            <FolderOpen class="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <aside class="studio-agent-sidebar grid min-h-0 grid-rows-[auto_minmax(0,1fr)] border border-neon-deep/35 bg-elevated/35">
           <div class="flex items-center justify-between gap-3 border-b border-neon-deep/35 px-3 py-2">
             <div class="min-w-0">
               <p class="font-mono text-[11px] uppercase tracking-wider text-neon">Agents</p>
@@ -793,6 +819,13 @@ async function selectAgent(agent: AgentRegistryEntry) {
   await loadSelectedAgentContext()
 }
 
+function selectAgentById(agentId: string) {
+  const agent = snapshot.value?.agents.find((candidate) => candidate.id === agentId)
+  if (agent) {
+    void selectAgent(agent)
+  }
+}
+
 async function toggleSkill(skill: SkillRegistryEntry, enabled: boolean) {
   if (!selectedAgent.value) {
     return
@@ -955,3 +988,39 @@ function onActiveCardChanged(event: Event) {
   void refresh()
 }
 </script>
+
+<style scoped>
+.studio-view {
+  container-type: inline-size;
+}
+
+.studio-workspace {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.studio-agent-picker {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.studio-agent-sidebar {
+  display: none;
+}
+
+@container (min-width: 960px) {
+  .studio-workspace {
+    grid-template-columns: 300px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+
+  .studio-agent-picker {
+    display: none;
+  }
+
+  .studio-agent-sidebar {
+    display: grid;
+  }
+}
+</style>

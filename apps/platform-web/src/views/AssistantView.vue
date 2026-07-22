@@ -1,20 +1,32 @@
 <template>
-  <section class="grid h-full min-h-0 grid-cols-[220px_minmax(0,1fr)] overflow-hidden bg-[#24251f]">
-    <AssistantSessionSidebar
-      :sessions="sessions"
-      :active-session-id="activeSessionId"
-      :running-session-ids="runningSessionIds"
-      :session-creating="sessionCreating"
-      :session-renaming="sessionRenaming"
-      :session-deleting="sessionDeleting"
-      @create="handleCreateSession"
-      @select="handleSelectSession"
-      @start-rename="handleStartRename"
-      @delete="handleDeleteSessionById"
+  <section class="assistant-view relative h-full min-h-0 overflow-hidden bg-[#24251f]">
+    <div class="assistant-layout">
+      <AssistantSessionSidebar
+        class="assistant-session-sidebar"
+        :class="{ 'assistant-session-sidebar--open': sessionDrawerOpen }"
+        :sessions="sessions"
+        :active-session-id="activeSessionId"
+        :running-session-ids="runningSessionIds"
+        :session-creating="sessionCreating"
+        :session-renaming="sessionRenaming"
+        :session-deleting="sessionDeleting"
+        @create="handleCreateSessionFromSidebar"
+        @select="handleSelectSessionFromSidebar"
+        @start-rename="handleStartRename"
+        @delete="handleDeleteSessionById"
+        @close="sessionDrawerOpen = false"
+      />
+
+    <button
+      v-if="sessionDrawerOpen"
+      type="button"
+      class="assistant-session-backdrop"
+      aria-label="关闭会话列表"
+      @click="sessionDrawerOpen = false"
     />
 
     <!-- Chat panel -->
-    <section class="grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
+    <section class="assistant-chat-panel grid min-h-0 grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <AssistantChatHeader
         :card-title="cardTitle"
         :provider-presets="providerPresets"
@@ -25,6 +37,7 @@
         :context-total="contextTotal"
         :running-session-count="runningSessionIds.size"
         :config-button-title="configButtonTitle"
+        @open-sessions="sessionDrawerOpen = true"
         @preset-change="handlePresetChange"
         @model-change="handleModelChange"
         @open-config="showAssistantConfig = true"
@@ -114,6 +127,7 @@
         @cancel-ask="cancelAsk"
       />
     </section>
+    </div>
 
     <!-- Rename modal -->
     <div
@@ -312,6 +326,7 @@ const assistantModels = ref<Array<{ id: string; label: string; contextWindow: nu
 const contextUsed = ref(0)
 const contextTotal = ref(0)
 const showAssistantConfig = ref(false)
+const sessionDrawerOpen = ref(false)
 
 const cardTitle = computed(() => cardName.value || "未加载游戏卡")
 const hasActiveCard = computed(() => Boolean(cardName.value))
@@ -395,6 +410,16 @@ async function loadActiveSession() {
   }
 
   await scrollToBottom()
+}
+
+async function handleSelectSessionFromSidebar(id: string) {
+  await handleSelectSession(id)
+  sessionDrawerOpen.value = false
+}
+
+async function handleCreateSessionFromSidebar() {
+  await handleCreateSession()
+  sessionDrawerOpen.value = false
 }
 
 async function handleSelectSession(id: string) {
@@ -1113,6 +1138,68 @@ function onActiveCardChanged(event: Event) {
 </script>
 
 <style scoped>
+.assistant-view {
+  container-type: inline-size;
+}
+
+.assistant-layout {
+  position: relative;
+  display: grid;
+  height: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: hidden;
+}
+
+.assistant-session-sidebar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  width: min(280px, calc(100% - 2.5rem));
+  pointer-events: none;
+  visibility: hidden;
+  transform: translateX(-100%);
+  transition: transform 0.16s ease-out, visibility 0s linear 0.16s;
+}
+
+.assistant-session-sidebar--open {
+  pointer-events: auto;
+  visibility: visible;
+  transform: translateX(0);
+  transition-delay: 0s;
+}
+
+.assistant-session-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.5);
+}
+
+.assistant-chat-panel {
+  min-width: 0;
+}
+
+@container (min-width: 720px) {
+  .assistant-layout {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .assistant-session-sidebar {
+    position: relative;
+    z-index: auto;
+    width: auto;
+    pointer-events: auto;
+    visibility: visible;
+    transform: none;
+    transition: none;
+  }
+
+  .assistant-session-backdrop {
+    display: none;
+  }
+}
+
 .fade-enter-active,
 .fade-leave-active {
   transition: opacity 0.18s ease;

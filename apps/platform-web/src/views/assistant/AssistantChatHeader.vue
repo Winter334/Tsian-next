@@ -1,6 +1,15 @@
 <template>
   <header class="flex flex-wrap items-center justify-between gap-2 border-b border-neon-deep/30 bg-[#2d2a23] px-4 py-2.5">
     <div class="flex min-w-0 items-center gap-2.5">
+      <button
+        type="button"
+        class="assistant-session-trigger retro-focus grid h-7 w-7 shrink-0 place-items-center border border-neon-deep/55 bg-elevated text-text-dim hover:text-neon"
+        aria-label="打开会话列表"
+        title="会话"
+        @click="$emit('openSessions')"
+      >
+        <PanelLeft class="h-4 w-4" aria-hidden="true" />
+      </button>
       <span class="grid h-7 w-7 shrink-0 place-items-center border border-neon/45 bg-neon/10 text-neon">
         <Bot class="h-4 w-4" aria-hidden="true" />
       </span>
@@ -86,7 +95,7 @@
 </template>
 
 <script setup lang="ts">
-import { Bot, Settings } from "lucide-vue-next"
+import { Bot, PanelLeft, Settings } from "lucide-vue-next"
 import ContextRing from "@/components/assistant/ContextRing.vue"
 import {
   Select,
@@ -109,8 +118,21 @@ defineProps<{
 }>()
 
 defineEmits<{
+  openSessions: []
   presetChange: [presetId: string]
   modelChange: [modelId: string]
   openConfig: []
 }>()
 </script>
+
+<style scoped>
+.assistant-session-trigger {
+  display: grid;
+}
+
+@container (min-width: 720px) {
+  .assistant-session-trigger {
+    display: none;
+  }
+}
+</style>

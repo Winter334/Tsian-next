@@ -69,7 +69,7 @@
         <textarea
           ref="inputRef"
           :value="inputText"
-          class="retro-focus max-h-[160px] min-h-[44px] flex-1 resize-none overflow-y-auto border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
+          class="retro-focus max-h-[160px] min-h-[44px] min-w-0 flex-1 resize-none overflow-y-auto border border-neon-deep/40 bg-panel/55 px-3.5 py-2.5 text-sm leading-6 text-text-main placeholder:text-text-dim focus:border-neon/55"
           :placeholder="inputPlaceholder"
           rows="1"
           :disabled="sending || inputLocked"

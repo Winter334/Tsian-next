@@ -1,7 +1,7 @@
 <template>
-  <section class="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
-    <div class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2">
-      <div class="flex flex-wrap items-center gap-2">
+  <section class="market-view grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden">
+    <div class="market-toolbar retro-toolbar border-b px-3 py-2">
+      <div class="market-toolbar-primary flex min-w-0 flex-wrap items-center gap-2">
         <button
           v-if="screen.kind !== 'list'"
           type="button"
@@ -19,8 +19,6 @@
           <Upload class="h-3.5 w-3.5" aria-hidden="true" />
           上传资源
         </button>
-      </div>
-      <div class="flex flex-wrap items-center gap-2">
         <select
           v-model="sortMode"
           class="retro-focus retro-select-surface min-w-[100px] border border-neon-deep/45 bg-elevated px-2 py-1 font-mono text-xs text-text-main"
@@ -29,8 +27,10 @@
           <option value="newest">最新</option>
           <option value="downloads">下载量</option>
         </select>
-        <MarketTagFilter v-model="tagQuery" @update:model-value="onTagInput" />
-        <label class="relative min-w-[220px]">
+      </div>
+      <div class="market-toolbar-filters flex min-w-0 flex-wrap items-center gap-2">
+        <MarketTagFilter class="market-tag-filter" v-model="tagQuery" @update:model-value="onTagInput" />
+        <label class="market-search relative min-w-[220px]">
           <Search class="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-neon-muted" aria-hidden="true" />
           <span class="sr-only">搜索创意工坊</span>
           <input
@@ -44,8 +44,9 @@
       </div>
     </div>
 
-    <main class="m-3 grid min-h-0 gap-3 overflow-auto lg:grid-cols-[220px_minmax(0,1fr)]">
+    <main class="market-content m-3 grid min-h-0 gap-3 overflow-auto">
       <MarketResourceTypeSidebar
+        class="market-resource-sidebar"
         v-model="currentType"
         :options="resourceTypeOptions"
         :counts="resourceCounts"
@@ -54,7 +55,29 @@
         @toggle-scope="toggleMarketScope"
       />
 
-      <section class="retro-inset min-h-0 overflow-auto p-3">
+      <div v-if="screen.kind === 'list'" class="market-compact-filters min-w-0 gap-2">
+        <label class="min-w-0 flex-1">
+          <span class="sr-only">资源类型</span>
+          <select
+            :value="currentType"
+            class="retro-focus retro-select-surface h-8 w-full min-w-0 border border-neon-deep/45 bg-elevated px-2 font-mono text-xs text-text-main"
+            @change="switchType(($event.target as HTMLSelectElement).value as MarketResourceType)"
+          >
+            <option v-for="option in resourceTypeOptions" :key="option.type" :value="option.type">
+              {{ option.label }} · {{ resourceCounts[option.type] ?? 0 }}
+            </option>
+          </select>
+        </label>
+        <button
+          type="button"
+          class="retro-button retro-focus inline-flex h-8 shrink-0 items-center px-3 font-mono text-xs"
+          @click="toggleMarketScope"
+        >
+          {{ marketScope === "mine" ? "全部资源" : "我的上传" }}
+        </button>
+      </div>
+
+      <section class="market-result-pane retro-inset min-h-0 overflow-auto p-3">
         <div v-if="screen.kind === 'list'" class="grid gap-3">
           <div v-if="marketScope === 'mine' && !loggedIn" class="grid place-items-center py-12">
             <UserRound class="h-10 w-10 text-neon-muted" aria-hidden="true" />
@@ -1179,3 +1202,80 @@ function toolUploadOptionFromRegistry(tool: ToolRegistryEntry, card: LocalGameCa
   }
 }
 </script>
+
+<style scoped>
+.market-view {
+  container-type: inline-size;
+}
+
+.market-toolbar {
+  display: grid;
+  min-width: 0;
+  gap: 0.5rem;
+}
+
+.market-toolbar-primary {
+  justify-content: space-between;
+}
+
+.market-toolbar-filters {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.market-tag-filter,
+.market-search {
+  min-width: 0;
+  width: 100%;
+}
+
+.market-content {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.market-resource-sidebar {
+  display: none;
+}
+
+.market-compact-filters {
+  display: flex;
+}
+
+@container (min-width: 760px) {
+  .market-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .market-toolbar-primary {
+    justify-content: flex-start;
+  }
+
+  .market-toolbar-filters {
+    display: flex;
+  }
+
+  .market-tag-filter {
+    min-width: 160px;
+    width: auto;
+  }
+
+  .market-search {
+    min-width: 220px;
+    width: auto;
+  }
+
+  .market-content {
+    grid-template-columns: 220px minmax(0, 1fr);
+  }
+
+  .market-resource-sidebar {
+    display: grid;
+  }
+
+  .market-compact-filters {
+    display: none;
+  }
+}
+</style>
