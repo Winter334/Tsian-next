@@ -57,7 +57,10 @@
     "disabled": []
   },
   "tools": {
-    "enabled": [],
+    "enabled": [
+      "tools/json_edit/tool.json",
+      "tools/text_edit/tool.json"
+    ],
     "disabled": [
       "roll_dice"
     ]

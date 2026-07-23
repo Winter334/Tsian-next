@@ -75,9 +75,9 @@ appliesTo:
 
 开局正文不在本 Skill 落盘；后续「游玩设定」Skill 会调用 storyteller 生成 openingReply，并通过 `commit_play_setup` 写入 turn 0 history 与玩家回合上下文。
 
-## 产物落点（直接 workspace_write，不走脚本）
+## 产物落点（直接维护）
 
-- `save/schema/current.md` 与 `save/schema/changelog.md`：当前 schema 草案与变更理由。
+- `save/schema/current.md` 与 `save/schema/changelog.md`：当前 schema 草案与变更理由。Markdown/text 文档维护可用 `text_edit`；JSON 局部修正可用 `json_edit`。开局实体、场景、关系、runtime、frontier 的主提交优先使用上方 commit_* action，以获得跨文件校验。
 
 ## 重试策略
 

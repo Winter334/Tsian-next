@@ -15,16 +15,11 @@
     },
     {
       "path": "agents/storyteller/output-format.md",
-      "role": "system",
+      "role": "user",
       "position": "framing"
     }
   ],
-  "enabledModules": [
-    "第三人称",
-    "禁用词表",
-    "快捷回复",
-    "杀超雄"
-  ],
+  "enabledModules": ["第三人称", "禁用词表", "快捷回复", "杀超雄"],
   "skills": {
     "enabled": [
       "agents/storyteller/skills/掷骰/SKILL.md",
@@ -35,9 +30,7 @@
   },
   "tools": {
     "enabled": [],
-    "disabled": [
-      "update_entity"
-    ]
+    "disabled": []
   },
   "platformTools": {
     "enabled": [],

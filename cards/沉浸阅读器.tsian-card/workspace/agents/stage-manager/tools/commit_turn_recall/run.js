@@ -23,10 +23,7 @@ function isRecord(value) {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 function fail(code, message, details) {
-  const error = new Error('commit_turn_recall: ' + message);
-  error.code = code;
-  if (details !== undefined) error.details = details;
-  throw error;
+  throw { code: code, message: 'commit_turn_recall: ' + message, details: details || {} };
 }
 function parseJson(content, path) {
   try {
@@ -191,4 +188,14 @@ async function commitTurnRecall(input, tsian, signal) {
   tsian.trace('turn_recall_committed', { turn: turn, path: file.path, entityCount: recall['涉及实体'].length, eventTypeCount: recall['事件类型'].length, tagCount: recall['标签'].length });
   return { status: 'written', turn: turn, path: file.path, recall: recall };
 }
-return commitTurnRecall(input, tsian, signal);
+async function runCommitTurnRecall(input, tsian, signal) {
+  try {
+    return await commitTurnRecall(input, tsian, signal);
+  } catch (error) {
+    if (error && typeof error.code === 'string' && error.message) {
+      return { status: 'failed', error: error };
+    }
+    throw error;
+  }
+}
+return runCommitTurnRecall(input, tsian, signal);

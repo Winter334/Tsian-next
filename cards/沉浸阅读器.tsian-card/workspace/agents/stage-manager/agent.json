@@ -5,43 +5,7 @@
   "contacts": [
     "world-architect"
   ],
-  "contextPaths": [
-    {
-      "path": "docs/novel-airp-schema-guide.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/schema/current.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/playthrough/runtime.json",
-      "role": "user",
-      "position": "runtime"
-    },
-    {
-      "path": "save/playthrough/frontier.json",
-      "role": "user",
-      "position": "runtime"
-    },
-    {
-      "path": "save/scenes/README.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/relationships/README.md",
-      "role": "user",
-      "position": "prelude"
-    },
-    {
-      "path": "save/memory/seeds.md",
-      "role": "user",
-      "position": "runtime"
-    }
-  ],
+  "contextPaths": [],
   "skills": {
     "enabled": [
       "agents/stage-manager/skills/回合后维护/SKILL.md",
@@ -53,7 +17,8 @@
     "enabled": [
       "agents/stage-manager/tools/read_maintenance_context/tool.json",
       "agents/stage-manager/tools/commit_turn_recall/tool.json",
-      "tools/update_entity/tool.json"
+      "tools/json_edit/tool.json",
+      "tools/text_edit/tool.json"
     ],
     "disabled": [
       "roll_dice"

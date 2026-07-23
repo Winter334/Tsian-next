@@ -11,7 +11,19 @@ triggers:
 
 原则：小改直接维护，大改写待确认方案。
 
-- 安全的增量（可选字段、轻量 tag/status 约定、README 澄清）可更新 `save/schema/current.md` 并追加 `changelog.md`。
-- 删除、改名、严格数值机制、数据迁移或可能让玩家/作者意外的变更，写到 `save/schema/patches/pending/*.md`。
+## 什么时候读取参考
+
+普通回合维护不默认读取 schema 文档。触发本 Skill 后，按需读取：
+
+- `save/schema/current.md`：当前存档 living schema 约定。
+- `save/schema/changelog.md`：已应用变更记录。
+- `docs/novel-airp-schema-guide.md`：默认卡 schema 速查。
+- `docs/novel-airp-schema-reference.md`：详尽字段参考。
+
+## 处理规则
+
+- 安全的增量（可选字段、轻量 tag/status 约定、装备槽位小补充、README 澄清）可更新 `save/schema/current.md` 并追加 `changelog.md`。
+- 删除、改名、严格数值机制、背包/装备结构迁移、复杂战斗规则或可能让玩家/作者意外的变更，写到 `save/schema/patches/pending/*.md`。
+- JSON 文档局部维护优先用 `json_edit`；Markdown/text 行级维护优先用 `text_edit`。
 - 需要 schema 设计判断时 call 世界架构师。
 - 不把 schema 维护工作写进玩家可见正文。

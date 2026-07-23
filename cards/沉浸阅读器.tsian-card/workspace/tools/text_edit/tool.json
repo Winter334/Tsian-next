@@ -1,0 +1,73 @@
+{
+  "name": "text_edit",
+  "title": "编辑文本行",
+  "description": "行级编辑 save/ 下 Markdown/文本文件。target 是 `save/...` 路径。支持 `create` 显式创建、`append` 追加行、`replace` 用 find 定位并替换整行、`remove` 用 find 定位并删除整行；也可用 `ops` 顺序执行多个同形操作。replace/remove 的 find 必须恰好命中一行，0 或多匹配都会失败。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "target": {
+        "type": "string",
+        "description": "单操作目标文本路径，必须是 save/...。"
+      },
+      "create": {
+        "type": "string",
+        "description": "目标不存在时的初始文本；目标已存在时传 create 会失败。"
+      },
+      "append": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "要追加到文件末尾的行。"
+      },
+      "replace": {
+        "type": "array",
+        "description": "替换整行的指令列表，每项 `{find,line}`。",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "find": { "type": "string" },
+            "line": { "type": "string" }
+          },
+          "required": ["find", "line"]
+        }
+      },
+      "remove": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "要删除的行定位文本；每项必须恰好匹配一行。"
+      },
+      "ops": {
+        "type": "array",
+        "description": "多个操作，按顺序执行，遇错停止，不回滚已成功操作。每项字段同单操作。",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "target": { "type": "string" },
+            "create": { "type": "string" },
+            "append": { "type": "array", "items": { "type": "string" } },
+            "replace": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "find": { "type": "string" },
+                  "line": { "type": "string" }
+                },
+                "required": ["find", "line"]
+              }
+            },
+            "remove": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 10000
+  }
+}

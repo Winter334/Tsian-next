@@ -1,7 +1,7 @@
 {
   "name": "read_maintenance_context",
   "title": "读取维护上下文",
-  "description": "回合后维护首选入口：聚合目标回合的 user/assistant 正文、runtime.json、active scenes、相关 entities/relationships 摘要与 scene 清理客观候选，一次返回。省去你多次 workspace_read 聚合事实的往返。只读不写，不输出删除决策（只给客观候选，由你自行判断是否删除）。",
+  "description": "回合后维护首选入口：聚合目标回合正文、runtime、active scene JSON、相关 entity/relationship JSON、memory 文本行、scene 清理候选和 optional timeline。只做 AIRP 导航聚合，不做字段级 schema 投影；普通回合优先用本工具，缺必要事实时再定向补读。",
   "parameters": {
     "type": "object",
     "additionalProperties": false,
@@ -12,13 +12,17 @@
       },
       "includeTimeline": {
         "type": "boolean",
-        "description": "是否包含 frontier.json timeline 摘要（source/player 锚点列表）。默认 false。"
+        "description": "是否包含 frontier.json timeline 摘要并把 frontier JSON 加入 docs。默认 false。"
+      },
+      "memory": {
+        "type": "boolean",
+        "description": "是否包含 memory records tail 与 seeds 行。默认 true。"
       }
     }
   },
   "executor": {
     "type": "browser_script",
     "path": "run.js",
-    "timeoutMs": 8000
+    "timeoutMs": 10000
   }
 }

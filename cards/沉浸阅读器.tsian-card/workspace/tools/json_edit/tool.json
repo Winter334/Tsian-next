@@ -1,0 +1,62 @@
+{
+  "name": "json_edit",
+  "title": "编辑 JSON",
+  "description": "结构化编辑 save/ 下 JSON 文件。target 用 ref（如 `character:萧澈`、`scene:萧门大婚`）或路径（如 `save/playthrough/runtime.json`）。支持 `create` 显式创建、`set` 点路径设置、`append` 数组去重追加、`upsert` 数组项按 match 浅合并、`remove` 严格删除一个数组项、`unset` 删除字段；也可用 `ops` 顺序执行多个同形操作。返回 changedPaths 短摘要；预期错误返回短 error，不返回文件全文。",
+  "parameters": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "target": {
+        "type": "string",
+        "description": "单操作目标：`<type>:<localId>` ref 或 `save/...json` 路径。"
+      },
+      "create": {
+        "type": "object",
+        "description": "目标不存在时的初始 JSON 对象；目标已存在时传 create 会失败。"
+      },
+      "set": {
+        "type": "object",
+        "description": "点路径到 JSON 值的映射；缺失中间对象会自动创建。"
+      },
+      "append": {
+        "type": "object",
+        "description": "点路径到数组项列表的映射；目标数组不存在则创建，重复项按深度相等跳过。"
+      },
+      "upsert": {
+        "type": "object",
+        "description": "点路径到 upsert 指令列表的映射；每项 `{match,set?,unset?}`，按 match 更新一个数组项或新增。"
+      },
+      "remove": {
+        "type": "object",
+        "description": "点路径到删除条件列表的映射；每个条件必须恰好匹配一个数组项。"
+      },
+      "unset": {
+        "type": "array",
+        "items": { "type": "string" },
+        "description": "要删除的字段点路径列表。"
+      },
+      "ops": {
+        "type": "array",
+        "description": "多个操作，按顺序执行，遇错停止，不回滚已成功操作。每项字段同单操作。",
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "target": { "type": "string" },
+            "create": { "type": "object" },
+            "set": { "type": "object" },
+            "append": { "type": "object" },
+            "upsert": { "type": "object" },
+            "remove": { "type": "object" },
+            "unset": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 10000
+  }
+}

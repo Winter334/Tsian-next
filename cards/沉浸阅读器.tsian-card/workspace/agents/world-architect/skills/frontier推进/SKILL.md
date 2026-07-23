@@ -21,6 +21,8 @@ appliesTo:
 
 素材增量提交成功后才推进 frontier 状态。若素材提交失败，不推进 sourceWindow/extractedThrough/timeline。无可抽取素材时也需通过空 materials 提交明确完成后再推进 frontier。
 
+主流程优先使用本 Skill 的 commit_* action，以获得 sourceWindow、timeline、entity 与 relationship 的跨文件校验。`json_edit` / `text_edit` 适合用于局部修正、schema patch 或文档维护。
+
 ## 抽取什么
 
 - 新登场角色（entity）：identity/appearance/attributes（按境界参照 schema guide 示例刻度尺填写），不抽 sourceRefs/origin。
