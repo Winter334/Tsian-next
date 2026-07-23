@@ -209,3 +209,37 @@ Added the current immersive-reader card's shared update_entity Tool for safe fie
 ### Next Steps
 
 - None - task complete
+
+
+## Session 162: Stage manager maintenance tool optimization
+
+**Date**: 2026-07-23
+**Task**: Stage manager maintenance tool optimization
+**Package**: platform-web
+**Branch**: `task/stage-manager-maintenance-tool-optimization`
+
+### Summary
+
+Added generic json_edit/text_edit AIRP tools, enhanced stage-manager maintenance context and recall errors, updated agent/skill guidance, and archived the stage-manager maintenance tool optimization task.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6c8c298` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
