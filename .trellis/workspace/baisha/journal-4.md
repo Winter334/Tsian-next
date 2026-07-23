@@ -243,3 +243,37 @@ Added generic json_edit/text_edit AIRP tools, enhanced stage-manager maintenance
 ### Next Steps
 
 - None - task complete
+
+
+## Session 163: Workshop game card update detection
+
+**Date**: 2026-07-23
+**Task**: Workshop game card update detection
+**Package**: platform-web
+**Branch**: `task/stage-manager-maintenance-tool-optimization`
+
+### Summary
+
+Implemented workshop-installed game card update detection using MarketPackage.resourceVersion, added local marketOrigin bookkeeping, My Apps desktop/card update badges, background refresh triggers, confirmation-based update install, and storage spec updates.
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `96577a1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
