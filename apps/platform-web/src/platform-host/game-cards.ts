@@ -31,6 +31,7 @@ import {
   getLocalGameCard,
   importGameCardFrontendPackage,
   importGameCardPackage,
+  type GameCardPackageImportOptions,
   initializeWorkspaceForSave,
   inspectGameCardPackage,
   listEffectiveWorkspaceFilesForSave,
@@ -516,9 +517,12 @@ export async function updatePlatformGameCardFrontend(
   return result
 }
 
-export async function importPlatformGameCardPackage(input: Blob | ArrayBuffer | Uint8Array) {
+export async function importPlatformGameCardPackage(
+  input: Blob | ArrayBuffer | Uint8Array,
+  options?: GameCardPackageImportOptions,
+) {
   await ensureBuiltinBlankGameCard()
-  const result = await importGameCardPackage(input)
+  const result = await importGameCardPackage(input, options)
   emitGameCardsChanged()
   return result
 }

@@ -274,6 +274,7 @@ html, body, #app {
 }
 
 .desktop-icon-glyph {
+  position: relative;
   display: grid;
   height: 50px;
   width: 50px;
@@ -286,6 +287,24 @@ html, body, #app {
   box-shadow:
     inset 1px 1px 0 rgba(246, 236, 215, 0.22),
     0 8px 18px rgba(0, 0, 0, 0.28);
+}
+
+.desktop-icon-badge {
+  position: absolute;
+  right: -0.58rem;
+  top: -0.48rem;
+  border: 1px solid rgba(255, 246, 221, 0.82);
+  background: linear-gradient(135deg, #ff4d3d, #f3a53a);
+  padding: 0.05rem 0.28rem;
+  font-family: var(--font-mono);
+  font-size: 0.58rem;
+  line-height: 1.05;
+  color: #1f130d;
+  text-shadow: 0 1px 0 rgba(255, 246, 221, 0.45);
+  box-shadow:
+    0 0 0 1px rgba(255, 77, 61, 0.28),
+    0 0 12px rgba(255, 77, 61, 0.58),
+    0 4px 10px rgba(0, 0, 0, 0.42);
 }
 
 .desktop-icon-label {

@@ -217,6 +217,7 @@ import {
   exportSkillPackage,
   exportToolPackage,
   getPlatformActiveGameCard,
+  gameCardMarketOriginFromPackage,
   importPlatformGameCardPackage,
   inspectPlatformGameCardPackage,
   inspectResourcePackage,
@@ -225,6 +226,7 @@ import {
   installToolPackage,
   listPlatformGameCards,
   listPlatformSaves,
+  refreshWorkshopGameCardUpdates,
   updatePlatformGameCardMetadata,
 } from "@/platform-host"
 import {
@@ -831,7 +833,10 @@ async function installGameCardPackage(pkg: MarketPackage): Promise<void> {
     }
   }
 
-  const imported = await importPlatformGameCardPackage(blob)
+  const imported = await importPlatformGameCardPackage(blob, {
+    marketOrigin: gameCardMarketOriginFromPackage(pkg),
+  })
+  await refreshWorkshopGameCardUpdates({ force: true })
   feedback.value = `已安装：${getGameCardTitle(imported)}`
   toast.success(`已安装：${getGameCardTitle(imported)}`)
 }

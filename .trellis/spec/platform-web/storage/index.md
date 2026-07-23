@@ -6,7 +6,7 @@ Use these specs when changing `apps/platform-web/src/storage/**` or any Dexie ta
 
 ## Storage Layout
 
-Dexie database name: `tsian-agent-runtime-v13`.
+Dexie database name: `tsian-agent-runtime-v14`.
 
 Tables:
 
@@ -25,6 +25,86 @@ Tables:
 Built-in blank game cards seed the default Runtime Workspace template, including the default novel AIRP Agent roster (`storyteller`, `stage-manager`, `world-architect`), Agent-local Skills, framework knowledge docs, save runtime files, and `.tsian` platform metadata. The built-in blank card's configured player-turn entrypoint is `storyteller`. Refreshing a stale `source: "builtin"` game card is allowed, but save workspaces must use non-overwriting workspace-version upgrades.
 
 No old local data migration is expected.
+
+## Scenario: Workshop Game Card Market Origin And Update Detection
+
+### 1. Scope / Trigger
+
+- Trigger: changing local Game Card records, Game Card package import from the Market, workshop-installed update detection, or UI badges/actions that update an installed workshop Game Card.
+- This is an internal bookkeeping contract. Workshop origin is not card-authored content and is not exported as editable workspace data.
+
+### 2. Signatures
+
+- DB field: `LocalGameCardRecord.marketOrigin?: LocalGameCardMarketOrigin`.
+- Origin shape:
+  ```ts
+  interface LocalGameCardMarketOrigin {
+    packageId: string
+    resourceId: string
+    resourceVersion: string
+  }
+  ```
+- Storage write option: `PutLocalGameCardInput.marketOrigin?: LocalGameCardMarketOrigin | null`.
+- Package import option: `importGameCardPackage(input, { marketOrigin? })` and platform wrapper `importPlatformGameCardPackage(input, { marketOrigin? })`.
+- Update check signal: compare local `marketOrigin.resourceVersion` with remote `MarketPackage.resourceVersion` fetched by `marketOrigin.packageId`.
+
+### 3. Contracts
+
+- Only Game Cards installed or updated from a concrete workshop `MarketPackage.id` get `marketOrigin`.
+- `packageId` is the only lineage key for update checks. Do not search by `resourceId` to find an inferred/latest package.
+- `resourceVersion` is the only update signal. Do not use `updatedAt` for update prompts, because metadata-only edits can change it.
+- `GameCardManifest.version` remains the Game Card's own display/runtime version; it is not the workshop update-detection source of truth.
+- Local file imports pass no origin and clear any previous origin when they overwrite a same-id card. Ordinary metadata/content/frontend edits that omit `marketOrigin` preserve the existing origin.
+- Update checks are silent background bookkeeping: failures must not toast, prompt, or clear the last successful update state.
+- A successful workshop update writes the new package's origin from the remote `MarketPackage`, then refreshes update state.
+
+### 4. Validation & Error Matrix
+
+- Missing/blank `marketOrigin.packageId`, `resourceId`, or `resourceVersion` on an explicit origin write -> throw during storage normalization.
+- Missing `marketOrigin` on a local card -> skip update detection for that card.
+- Remote package fetch fails -> preserve previous update results and record only internal error state.
+- Remote package `resourceType !== "game_card"` -> no update for that card.
+- Local trimmed origin version equals remote trimmed `resourceVersion` -> no update.
+- Local trimmed origin version differs from remote trimmed `resourceVersion` -> update available.
+- Downloaded update package manifest id differs from local card id -> reject the update before import.
+
+### 5. Good/Base/Bad Cases
+
+- Good: installing workshop package `pkg-1` with `resourceVersion: "1.1.0"` stores `{ packageId: "pkg-1", resourceId, resourceVersion: "1.1.0" }`; later `GET pkg-1` returns `"1.2.0"`, so My Apps shows `更新`.
+- Base: a disk-imported card has no `marketOrigin`; it never shows a workshop update badge.
+- Base: a player edits card metadata locally; `putLocalGameCard` omits `marketOrigin`, so the origin is preserved for future update checks.
+- Bad: using `updatedAt` to show `更新` after an author changes only tags or summary.
+- Bad: binding an old imported card to the first workshop package with the same `resourceId`; multiple packages can share a resource id.
+
+### 6. Tests Required
+
+- Run `npm run build:web` after storage/frontend changes.
+- Run `git diff --check` after changing the DB name or badge styles.
+- Verify DB name literals match in `storage/db.ts` and `public/tsian-game-card-frontend-sw.js`.
+- Verify local file import overwrites do not leave stale `marketOrigin` behind.
+- Verify metadata/frontend-only writes preserve `marketOrigin`.
+- Verify update prompt appears only for `resourceVersion` mismatch, not `updatedAt` changes.
+- Verify update cancellation performs no download/import, and update confirmation preserves saves while replacing local card content.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const hasUpdate = local.marketOrigin?.resourceId === pkg.resourceId
+  && local.updatedAt !== Date.parse(pkg.updatedAt)
+```
+
+This guesses lineage by `resourceId` and treats metadata timestamp changes as content updates.
+
+#### Correct
+
+```ts
+const hasUpdate = local.marketOrigin?.packageId === pkg.id
+  && local.marketOrigin.resourceVersion.trim() !== pkg.resourceVersion.trim()
+```
+
+This follows the installed workshop package lineage and only uses the author's explicit resource version.
 
 ## .tsian/ Layout
 

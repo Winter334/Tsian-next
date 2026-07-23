@@ -17,13 +17,13 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue"
+import { onBeforeUnmount, onMounted, ref } from "vue"
 import DesktopShell from "./components/desktop/DesktopShell.vue"
 import FloatingWindow from "./components/feedback/FloatingWindow.vue"
 import SplashScreen from "./components/SplashScreen.vue"
 import ToastHost from "./components/feedback/ToastHost.vue"
 import ConfirmHost from "./components/feedback/ConfirmHost.vue"
-import { initializePlatformHost } from "./platform-host"
+import { initializePlatformHost, refreshWorkshopGameCardUpdates, WORKSHOP_GAME_CARD_UPDATE_RESUME_INTERVAL_MS, workshopGameCardUpdatesLastSuccessfulCheckAt } from "./platform-host"
 import { cleanupOrphanAttachments } from "./storage"
 import { preheatPlatformConfig } from "./config/platform-config"
 import { useAuth } from "./composables/useAuth"
@@ -55,8 +55,21 @@ function finishSplash() {
   showSplash.value = false
 }
 
+function onVisibilityChange(): void {
+  if (document.visibilityState !== "visible") {
+    return
+  }
+  const lastCheckedAt = workshopGameCardUpdatesLastSuccessfulCheckAt.value
+  if (lastCheckedAt > 0 && Date.now() - lastCheckedAt < WORKSHOP_GAME_CARD_UPDATE_RESUME_INTERVAL_MS) {
+    return
+  }
+  void refreshWorkshopGameCardUpdates({ minIntervalMs: WORKSHOP_GAME_CARD_UPDATE_RESUME_INTERVAL_MS })
+}
+
 onMounted(async () => {
   await initializePlatformHost()
+  void refreshWorkshopGameCardUpdates()
+  document.addEventListener("visibilitychange", onVisibilityChange)
   void initAuth()
   // 预热平台配置 cache：读 .tsian/local/platform-config.json → merge 默认 → 内存。
   // 完成前 46 个同步读调用点用默认值（provider 未配时本就走 env/默认，窗口无感）。
@@ -67,6 +80,10 @@ onMounted(async () => {
   void cleanupOrphanAttachments().catch(() => {
     // 清理失败不影响应用启动
   })
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener("visibilitychange", onVisibilityChange)
 })
 </script>
 

@@ -169,6 +169,22 @@ export {
   type PlatformGameCardDeleteResult,
 } from "./game-cards"
 export {
+  WORKSHOP_GAME_CARD_UPDATE_MIN_INTERVAL_MS,
+  WORKSHOP_GAME_CARD_UPDATE_RESUME_INTERVAL_MS,
+  gameCardMarketOriginFromPackage,
+  getWorkshopGameCardUpdate,
+  hasWorkshopGameCardUpdates,
+  installWorkshopGameCardUpdate,
+  refreshWorkshopGameCardUpdates,
+  workshopGameCardUpdateCount,
+  workshopGameCardUpdates,
+  workshopGameCardUpdatesChecking,
+  workshopGameCardUpdatesLastErrorMessage,
+  workshopGameCardUpdatesLastSuccessfulCheckAt,
+  type WorkshopGameCardUpdateInfo,
+  type WorkshopGameCardUpdateRefreshOptions,
+} from "./game-card-updates"
+export {
   exportAgentPackage,
   exportSkillPackage,
   exportToolPackage,

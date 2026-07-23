@@ -28,7 +28,7 @@ import { writeBackDist } from "./write-back"
  * Why esbuild-wasm: browser-native build, no FS access, lazy-loaded. The wasm
  * binary is served same-origin from `/esbuild.wasm` (copied to public/ at
  * build time via the prebuild hook) and cached in Cache API after first load
- * — standalone, does NOT touch the main Dexie DB `tsian-agent-runtime-v13`
+ * — standalone, does NOT touch the main Dexie DB `tsian-agent-runtime-v14`
  * (per storage spec, touching main DB tables requires a DB name bump).
  */
 

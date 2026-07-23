@@ -14,7 +14,7 @@ import { strToU8, zipSync } from "fflate"
 import { unzipSyncRepaired } from "@/lib/legacy-zip-path-encoding"
 import { inferMediaTypeFromPath, resolveBlobMediaType } from "@/lib/media-type"
 import { BUILTIN_BLANK_GAME_CARD_ID, getLocalGameCard, listLocalGameCardContentFiles, listLocalGameCardFrontendFiles, putLocalGameCard, readLocalGameCardContentFile, writeLocalGameCardContentFile } from "./game-cards"
-import type { LocalGameCardRecord } from "./db"
+import type { LocalGameCardMarketOrigin, LocalGameCardRecord } from "./db"
 
 const GAME_CARD_PACKAGE_SCHEMA = "tsian.game-card.package.v1"
 export const GAME_CARD_MANIFEST_SCHEMA = "tsian.game-card.v1"
@@ -546,8 +546,13 @@ function validatePackagedFrontendEntry(
   }
 }
 
+export interface GameCardPackageImportOptions {
+  marketOrigin?: LocalGameCardMarketOrigin
+}
+
 export async function importGameCardPackage(
   input: Blob | ArrayBuffer | Uint8Array,
+  options: GameCardPackageImportOptions = {},
 ): Promise<LocalGameCardRecord> {
   const entries = zipEntries(await toUint8Array(input))
   const packageManifest = packageManifestFromEntries(entries)
@@ -627,6 +632,7 @@ export async function importGameCardPackage(
     contentFiles,
     frontendFiles,
     source: "imported",
+    marketOrigin: options.marketOrigin ?? null,
   })
 
   // Write the cover as a binary content file (Blob) after the card row + text

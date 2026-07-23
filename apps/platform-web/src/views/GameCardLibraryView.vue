@@ -115,10 +115,25 @@
                 loaded
               </span>
 
+              <button
+                v-if="cardUpdateInfo(card)"
+                type="button"
+                class="retro-focus absolute right-2 top-2 border border-warning bg-danger px-2 py-1 font-mono text-[10px] text-void shadow-[0_0_12px_rgba(255,77,61,0.5)] transition-transform hover:-translate-y-0.5 disabled:opacity-60"
+                :disabled="!!updatingCardId"
+                :title="`更新${getGameCardTitle(card)}`"
+                :aria-label="`更新${getGameCardTitle(card)}`"
+                @click.stop="updateCardFromWorkshop(card)"
+              >
+                更新
+              </button>
+
               <!-- 快捷操作（hover 可见） -->
               <div
-                class="absolute right-1.5 top-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
-                :class="selectedCardId === card.id ? 'opacity-100' : ''"
+                class="absolute right-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100"
+                :class="[
+                  selectedCardId === card.id ? 'opacity-100' : '',
+                  cardUpdateInfo(card) ? 'top-8' : 'top-1.5',
+                ]"
               >
                 <button
                   type="button"
@@ -249,11 +264,15 @@ import {
   createDefaultPlatformGameCard,
   deletePlatformGameCard,
   getPlatformActiveGameCardId,
+  getWorkshopGameCardUpdate,
   importPlatformGameCardPackage,
+  installWorkshopGameCardUpdate,
   inspectPlatformGameCardPackage,
   listPlatformGameCards,
   listPlatformSaves,
+  refreshWorkshopGameCardUpdates,
   setPlatformActiveGameCard,
+  type WorkshopGameCardUpdateInfo,
 } from "../platform-host"
 
 const router = useRouter()
@@ -266,6 +285,7 @@ const deleting = ref(false)
 const loadingCard = ref(false)
 const creating = ref(false)
 const copyingId = ref("")
+const updatingCardId = ref("")
 const errorMessage = ref("")
 const importError = ref("")
 const feedback = ref("")
@@ -316,6 +336,7 @@ async function refreshCards() {
     if (!cards.value.some((card) => card.id === selectedCardId.value)) {
       selectedCardId.value = ""
     }
+    void refreshWorkshopGameCardUpdates()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡。"
   } finally {
@@ -357,6 +378,14 @@ function canLoadCard(card: LocalGameCardRecord): boolean {
 
 function canDeleteCard(card: LocalGameCardRecord): boolean {
   return card.source !== "builtin" && !deleting.value
+}
+
+function cardUpdateInfo(card: LocalGameCardRecord): WorkshopGameCardUpdateInfo | null {
+  return getWorkshopGameCardUpdate(card.id)
+}
+
+function updateConfirmMessage(update: WorkshopGameCardUpdateInfo): string {
+  return `当前版本：${update.currentVersion}\n最新版本：${update.latestVersion}\n\n更新会替换本地游戏卡内容，已有存档会保留。`
 }
 
 function openCardContextMenu(card: LocalGameCardRecord, event: MouseEvent) {
@@ -467,6 +496,38 @@ async function quickLoad(card: LocalGameCardRecord) {
   }
 }
 
+async function updateCardFromWorkshop(card: LocalGameCardRecord) {
+  const update = cardUpdateInfo(card)
+  if (!update || updatingCardId.value) {
+    return
+  }
+
+  selectedCardId.value = card.id
+  const confirmed = await confirm({
+    title: "发现新版本",
+    message: updateConfirmMessage(update),
+    severity: "danger",
+    confirmText: "更新",
+  })
+  if (!confirmed) {
+    return
+  }
+
+  updatingCardId.value = card.id
+  importError.value = ""
+  feedback.value = ""
+  try {
+    const imported = await installWorkshopGameCardUpdate(update)
+    toast.success(`已更新：${getGameCardTitle(imported)}`)
+    feedback.value = `已更新：${getGameCardTitle(imported)}`
+    await refreshCards()
+  } catch (error) {
+    importError.value = error instanceof Error ? error.message : "更新游戏卡失败。"
+  } finally {
+    updatingCardId.value = ""
+  }
+}
+
 async function handlePackageSelected(event: Event) {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
@@ -495,6 +556,7 @@ async function handlePackageSelected(event: Event) {
     }
 
     const imported = await importPlatformGameCardPackage(file)
+    await refreshWorkshopGameCardUpdates({ force: true })
     feedback.value = `已导入：${getGameCardTitle(imported)}`
     toast.success(`已导入：${getGameCardTitle(imported)}`)
     selectedCardId.value = imported.id

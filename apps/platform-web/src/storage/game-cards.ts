@@ -14,6 +14,7 @@ import {
   localDb,
   type LocalGameCardContentFileRecord,
   type LocalGameCardFrontendFileRecord,
+  type LocalGameCardMarketOrigin,
   type LocalGameCardRecord,
 } from "./db"
 import {
@@ -39,6 +40,8 @@ export interface PutLocalGameCardInput {
   contentFiles?: PutLocalGameCardContentFileInput[]
   frontendFiles?: PutLocalGameCardFrontendFileInput[]
   source?: GameCardSource
+  /** undefined = preserve existing origin; object = store origin; null = clear origin. */
+  marketOrigin?: LocalGameCardMarketOrigin | null
 }
 
 export interface PutLocalGameCardContentFileInput extends GameCardContentFile {
@@ -97,6 +100,25 @@ function requireNonEmptyString(value: string, fieldName: string): string {
     throw new Error(`Game card ${fieldName} is required.`)
   }
   return normalized
+}
+
+function normalizeMarketOrigin(origin: LocalGameCardMarketOrigin): LocalGameCardMarketOrigin {
+  return {
+    packageId: requireNonEmptyString(origin.packageId, "marketOrigin.packageId"),
+    resourceId: requireNonEmptyString(origin.resourceId, "marketOrigin.resourceId"),
+    resourceVersion: requireNonEmptyString(origin.resourceVersion, "marketOrigin.resourceVersion"),
+  }
+}
+
+function marketOriginPatch(
+  input: LocalGameCardMarketOrigin | null | undefined,
+  existing: LocalGameCardRecord | undefined,
+): Pick<LocalGameCardRecord, "marketOrigin"> | Record<string, never> {
+  if (input === null) {
+    return {}
+  }
+  const origin = input === undefined ? existing?.marketOrigin : input
+  return origin ? { marketOrigin: normalizeMarketOrigin(origin) } : {}
 }
 
 function normalizePackageFilePath(value: string, fieldName: string): string {
@@ -360,9 +382,11 @@ function cloneGameCardFrontendFileRecord(
 }
 
 function cloneLocalGameCardRecord(record: LocalGameCardRecord): LocalGameCardRecord {
+  const marketOrigin = record.marketOrigin ? normalizeMarketOrigin(record.marketOrigin) : undefined
   return {
     ...record,
     manifest: normalizeManifest(record.manifest),
+    ...(marketOrigin ? { marketOrigin } : {}),
   }
 }
 
@@ -512,6 +536,7 @@ export async function putLocalGameCard(
     id: manifest.id,
     manifest,
     source: input.source ?? existing?.source ?? "local",
+    ...marketOriginPatch(input.marketOrigin, existing),
     createdAt: existing?.createdAt ?? now,
     updatedAt: now,
   }

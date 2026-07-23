@@ -25,10 +25,17 @@ export interface LocalSaveRecord {
   updatedAt: number
 }
 
+export interface LocalGameCardMarketOrigin {
+  packageId: string
+  resourceId: string
+  resourceVersion: string
+}
+
 export interface LocalGameCardRecord {
   id: string
   manifest: GameCardManifest
   source: "builtin" | "local" | "imported"
+  marketOrigin?: LocalGameCardMarketOrigin
   createdAt: number
   updatedAt: number
 }
@@ -192,14 +199,13 @@ export class TsianLocalDb extends Dexie {
   embeddingIndex!: Table<LocalEmbeddingIndexRecord, string>
 
   constructor() {
-    // DB name bumped v12 -> v13: added blobs table for checkpoint content-addressing
-    // (task 06-26-checkpoint-storage-dedup). Checkpoint workspaceFiles → thin manifest
-    // referencing blobs by SHA-256 hash; cross-checkpoint dedup of unchanged state files.
-    // Prototype project — no migration; the old v12 database is abandoned and
-    // a fresh v13 store is created (same rename-and-reset convention).
+    // DB name bumped v13 -> v14: added game card marketOrigin bookkeeping
+    // for workshop-installed card update detection (task 07-22-workshop-game-card-update-detection).
+    // Prototype project — no migration; the old v13 database is abandoned and
+    // a fresh v14 store is created (same rename-and-reset convention).
     // The service worker
     // (`tsian-game-card-frontend-sw.js`) mirrors this name.
-    super("tsian-agent-runtime-v13")
+    super("tsian-agent-runtime-v14")
 
     this.version(1).stores({
       meta: "&key",

@@ -18,7 +18,7 @@
           :class="{
             'desktop-icon--selected': selectedDesktopIcon === icon.id,
           }"
-          :aria-label="`打开${icon.label}`"
+          :aria-label="desktopIconAriaLabel(icon)"
           @click.stop="selectDesktopIcon(icon.id)"
           @dblclick.stop="openDesktopIcon(icon.id)"
           @contextmenu.prevent.stop="openIconContextMenu(icon, $event)"
@@ -27,6 +27,7 @@
         >
           <span class="desktop-icon-glyph">
             <component :is="icon.icon" class="h-7 w-7" aria-hidden="true" />
+            <span v-if="showWorkshopUpdateBadge(icon.id)" class="desktop-icon-badge">更新</span>
           </span>
           <span class="desktop-icon-label">{{ icon.label }}</span>
         </button>
@@ -156,6 +157,7 @@ import {
 import { useAuth } from "@/composables/useAuth"
 import { useAnnouncements } from "@/composables/useAnnouncements"
 import { usePresence } from "@/composables/usePresence"
+import { hasWorkshopGameCardUpdates } from "@/platform-host"
 
 interface ContextMenuState {
   x: number
@@ -430,6 +432,16 @@ function openAnnouncementCenter() {
   const input = announcementWindowInput()
   desktop.openWindow(input, stageBounds.value)
   navigateTo(input.routePath)
+}
+
+function showWorkshopUpdateBadge(id: DesktopAppId): boolean {
+  return id === "my-apps" && hasWorkshopGameCardUpdates.value
+}
+
+function desktopIconAriaLabel(icon: DesktopLauncher): string {
+  return showWorkshopUpdateBadge(icon.id)
+    ? `打开${icon.label}，有游戏卡更新`
+    : `打开${icon.label}`
 }
 
 function syncRouteToActiveWindow() {
