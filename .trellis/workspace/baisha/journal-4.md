@@ -312,3 +312,38 @@ Implemented workshop-installed game card update detection using MarketPackage.re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 165: 装备 Schema 与 Stage Manager 同步
+
+**Date**: 2026-07-25
+**Task**: 装备 Schema 与 Stage Manager 同步
+**Package**: platform-web
+**Branch**: `task/stage-manager-maintenance-tool-optimization`
+
+### Summary
+
+统一内部模板、living schema、正式卡 AIRP 文档与实际 Stage Manager 的装备字段和维护语义，恢复未知 extensions.render 的 warn-and-hide 契约，并按磁盘完整重建正式卡 workspaceFiles 清单；构建与完整复查通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b3c1037` | (see git log) |
+| `c5b187b` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
