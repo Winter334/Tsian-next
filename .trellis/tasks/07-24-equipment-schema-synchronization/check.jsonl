@@ -1,0 +1,5 @@
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"核对模板变更、版本边界、构建要求和正式卡清单一致性。"}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"检查字段消费者、权威/派生和能力归属没有过度设计。"}
+{"file":".trellis/spec/guides/ai-facing-content-changes.md","reason":"检查 AI-facing 文本没有遗留平台求值器、旧工具或错误 fallback 概念。"}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"核对 AGENT/Skill 指令自包含、可执行且无开发侧解释污染。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"核对正式卡保留现有 generic-edit 工作流而非复制旧模板。"}
