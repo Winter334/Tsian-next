@@ -40,12 +40,15 @@ export function useEntity(entityRef: string): {
 } {
   const data = ref<EntityData | null>(null)
   const error = ref<"load-failed" | "not-found" | null>(null)
+  let loadVersion = 0
 
   async function load(): Promise<void> {
+    const version = ++loadVersion
     const tsian = getTsianClient()
     const path = refToEntityPath(entityRef)
     try {
       const file = await tsian.workspace.read(path, "save-runtime")
+      if (version !== loadVersion) return
       if (file === null) {
         error.value = "not-found"
         data.value = null
@@ -62,6 +65,7 @@ export function useEntity(entityRef: string): {
       error.value = null
       data.value = parseEntity(parsed)
     } catch {
+      if (version !== loadVersion) return
       // read 抛错（桥/平台异常）→ load-failed，不向上抛（D7）
       error.value = "load-failed"
       data.value = null

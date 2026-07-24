@@ -1,10 +1,10 @@
 /**
- * lib/image-processing.ts — 上传头像图片处理纯函数（验证 + 解码 + 裁剪 + WebP 导出）。
+ * lib/image-processing.ts — 上传头像图片处理纯函数（验证 + 解码 + 等比缩放 + WebP 导出）。
  *
- * task 07-05 design §"Upload flow" / R7：
+ * task 07-24 R7：
  * - 支持 png/jpg/webp，源文件大小上限 5MB。
  * - 解码（createImageBitmap 优先，Image fallback）。
- * - 中心裁剪到 3:4.15 比例。
+ * - 保持原始宽高比，最大边缩放至 1024；小图不放大。
  * - canvas.toBlob 导出 image/webp quality 0.9。
  * - 错误返回人类可读中文提示，不抛错。
  */
@@ -14,9 +14,6 @@ const ALLOWED_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"])
 
 /** 源文件大小上限（5MB）。 */
 const MAX_FILE_SIZE = 5 * 1024 * 1024
-
-/** 目标宽高比（3:4.15，与立绘栏一致）。 */
-const TARGET_ASPECT = 3 / 4.15
 
 /** WebP 导出质量。 */
 const WEBP_QUALITY = 0.9
@@ -29,7 +26,7 @@ export type PreparePortraitResult =
   | { error: string }
 
 /**
- * 把上传的图片文件验证、解码、中心裁剪为 3:4.15，导出为 WebP Blob。
+ * 把上传的图片文件验证、解码、按原始比例缩放至最大边 1024，导出为 WebP Blob。
  *
  * @param file 用户选择的图片文件。
  * @returns 成功返回 `{ blob }`，失败返回 `{ error }`（中文提示，不抛错）。
@@ -60,36 +57,14 @@ export async function preparePortraitBlob(file: File): Promise<PreparePortraitRe
   const srcW = bitmap.width
   const srcH = bitmap.height
   if (srcW <= 0 || srcH <= 0) {
+    closeDecodedImage(bitmap)
     return { error: "图片尺寸无效。" }
   }
 
-  // ── 中心裁剪到 3:4.15 ──
-  const srcAspect = srcW / srcH
-  let cropX = 0
-  let cropY = 0
-  let cropW = srcW
-  let cropH = srcH
-  if (srcAspect > TARGET_ASPECT) {
-    // 源图偏宽：左右裁剪
-    cropW = Math.round(srcH * TARGET_ASPECT)
-    cropX = Math.round((srcW - cropW) / 2)
-  } else if (srcAspect < TARGET_ASPECT) {
-    // 源图偏高：上下裁剪
-    cropH = Math.round(srcW / TARGET_ASPECT)
-    cropY = Math.round((srcH - cropH) / 2)
-  }
-
-  // ── 计算导出尺寸（限制最大边长，保持 3:4.15）──
-  let outW = cropW
-  let outH = cropH
-  if (outH > MAX_EXPORT_DIMENSION) {
-    outH = MAX_EXPORT_DIMENSION
-    outW = Math.round(outH * TARGET_ASPECT)
-  }
-  if (outW > MAX_EXPORT_DIMENSION) {
-    outW = MAX_EXPORT_DIMENSION
-    outH = Math.round(outW / TARGET_ASPECT)
-  }
+  // ── 计算导出尺寸（保持原始比例，小图不放大） ──
+  const scale = Math.min(1, MAX_EXPORT_DIMENSION / Math.max(srcW, srcH))
+  const outW = Math.max(1, Math.round(srcW * scale))
+  const outH = Math.max(1, Math.round(srcH * scale))
 
   // ── canvas 绘制 + WebP 导出 ──
   const canvas = document.createElement("canvas")
@@ -97,20 +72,23 @@ export async function preparePortraitBlob(file: File): Promise<PreparePortraitRe
   canvas.height = outH
   const ctx = canvas.getContext("2d")
   if (!ctx) {
+    closeDecodedImage(bitmap)
     return { error: "无法创建画布上下文。" }
   }
-  ctx.drawImage(bitmap, cropX, cropY, cropW, cropH, 0, 0, outW, outH)
+  ctx.drawImage(bitmap, 0, 0, srcW, srcH, 0, 0, outW, outH)
 
-  // 释放 ImageBitmap 资源（HTMLImageElement 无 close 方法）。
-  if (bitmap instanceof ImageBitmap) {
-    bitmap.close()
-  }
+  closeDecodedImage(bitmap)
 
   const blob = await canvasToBlob(canvas)
   if (!blob) {
     return { error: "图片导出失败，浏览器可能不支持 WebP 编码。" }
   }
   return { blob }
+}
+
+/** 释放 createImageBitmap 产生的解码资源。 */
+function closeDecodedImage(image: ImageBitmap | HTMLImageElement): void {
+  if (typeof ImageBitmap !== "undefined" && image instanceof ImageBitmap) image.close()
 }
 
 /** 用 Image 元素解码图片（createImageBitmap 不可用时的 fallback）。 */

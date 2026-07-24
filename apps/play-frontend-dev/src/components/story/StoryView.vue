@@ -523,8 +523,8 @@ function onEdit(content: string) {
   position: relative;
   display: flex;
   flex-direction: column;
-  margin-top: 52px;     /* 顶栏高度 */
-  height: calc(100% - 52px);  /* 精确填满顶栏以下空间 */
+  margin-top: var(--play-header-height);
+  height: calc(100% - var(--play-header-height));
   padding-right: var(--play-right-panel);  /* 展开右侧 nav 空间；折叠态由 App.vue :has 切换到 rail */
   padding-left: var(--play-left-panel);    /* 展开左侧状态栏空间；折叠态由 App.vue :has 切换到 rail */
   overflow: hidden;     /* flex 容器本身不滚动，滚动交给 .story-scroll */
@@ -727,6 +727,18 @@ function onEdit(content: string) {
   from { opacity: 0; transform: translateY(5px) scale(0.97); }
   to { opacity: 1; transform: translateY(0) scale(1); }
 }
+@media (max-width: 720px) {
+  .story-view {
+    height: calc(100% - var(--play-header-height) - var(--play-bottom-nav-height));
+    padding: 0;
+    transition: none;
+  }
+
+  .story-inner {
+    padding: 26px 14px 18px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .jump-latest {
     animation: none;

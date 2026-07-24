@@ -23,6 +23,13 @@ export interface ContainerContent {
   count?: number
 }
 
+/** 装备物品的只读描述；mods 保留原始表达式字符串，前端不执行。 */
+export interface ItemEquipment {
+  slot?: string
+  mods?: Record<string, string>
+  effects?: string[]
+}
+
 /**
  * container entity 强类型视图。id/name/brief 必填；type 必须为 "container"；
  * contents 至少存在（可为空数组）。design §2 / §5.1。
@@ -55,6 +62,7 @@ export interface ItemEntity {
   brief: string
   type: ItemType
   tags?: string[]
+  equipment?: ItemEquipment
   extensions?: Record<string, unknown>
   updatedAtTurn?: number
   updatedBy?: string | null

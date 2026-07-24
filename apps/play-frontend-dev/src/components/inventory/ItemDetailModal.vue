@@ -1,504 +1,369 @@
 <script setup lang="ts">
-/**
- * ItemDetailModal — 物品/容器详情模态。
- *
- * design §6.4 / task 07-04 D6：
- * - props：entity（可 null）+ entityRef + breadcrumb 路径 + loading + gridItems（容器 contents 网格预解析）。
- * - 若 entity 是容器 → 展示 breadcrumb + 名称 + type chip + brief + extensions + contents InventoryGrid。
- * - 若 entity 是物品 → 展示 breadcrumb + 名称 + type chip + brief + tags + extensions。
- * - entity null + loading → 加载态；entity null + !loading → "档案缺失"降级。
- * - 关闭：ESC / 遮罩点击 / 右上关闭按钮 → emit `close`。
- * - 嵌套容器：InventoryGrid emit select → 本组件 emit `select(ref)` 上抛。
- * - 面包屑：InventoryBreadcrumb emit navigate → 本组件 emit `navigate(index)` 上抛。
- *
- * extensions 分区：直接消费父组件传入的 DisplayItems（父组件调 parseExtensionsOnly）。
- */
-import { computed, onMounted, onUnmounted, watch } from "vue"
-import type { InventoryEntity } from "../../lib/item-types"
-import { isContainerEntity } from "../../lib/item-types"
+/** ItemDetailModal — 普通/装备物品共用的单物品 Reka Dialog。 */
+import { computed } from "vue"
+import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+} from "reka-ui"
+import type { CharacterEquipmentSlot } from "../../lib/character-types"
+import type { ItemEntity } from "../../lib/item-types"
 import type { DisplayItems } from "../../lib/runtime-types"
-import { emptyDisplayItems } from "../../lib/runtime-types"
-import InventoryBreadcrumb from "./InventoryBreadcrumb.vue"
-import InventoryGrid, { type InventoryGridItem } from "./InventoryGrid.vue"
+
+export interface EquippedSlotContext {
+  name: string
+  slot: CharacterEquipmentSlot
+}
 
 const props = defineProps<{
-  entity: InventoryEntity | null
+  open: boolean
+  entity: ItemEntity | null
   entityRef: string
-  breadcrumb: Array<{ ref: string; name: string }>
   loading: boolean
-  /** 容器 contents 预解析结果，由父组件负责读取。非容器实体传空数组即可。 */
-  gridItems: InventoryGridItem[]
-  /** entity.extensions 预解析结果，由父组件负责调 parseExtensionsOnly。 */
   displayItems: DisplayItems
+  equippedSlots: EquippedSlotContext[]
+  returnFocus?: HTMLElement | null
 }>()
 
 const emit = defineEmits<{
-  select: [ref: string]
-  navigate: [index: number]
-  close: []
+  "update:open": [value: boolean]
 }>()
 
-const isContainer = computed(
-  () => props.entity !== null && isContainerEntity(props.entity),
-)
-
-const typeLabel = computed<string>(() => {
-  const e = props.entity
-  if (!e) return ""
-  switch (e.type) {
-    case "container":
-      return "容器"
-    case "equipment":
-      return "装备"
-    case "material":
-      return "材料"
-    case "consumable":
-      return "消耗品"
-    case "special":
-      return "特殊"
-    case "other":
-      return "其它"
+const typeLabel = computed(() => {
+  switch (props.entity?.type) {
+    case "equipment": return "装备"
+    case "material": return "材料"
+    case "consumable": return "消耗品"
+    case "special": return "特殊"
+    case "other": return "其它"
+    default: return "物品"
   }
 })
 
-const tags = computed<string[]>(() => {
-  const e = props.entity
-  if (!e || isContainerEntity(e)) return []
-  return e.tags ?? []
+const localId = computed(() => {
+  const idx = props.entityRef.indexOf(":")
+  return idx >= 0 ? props.entityRef.slice(idx + 1) : props.entityRef
 })
 
-const displayItems = computed<DisplayItems>(
-  () => props.displayItems ?? emptyDisplayItems(),
+const hasExtensions = computed(() =>
+  props.displayItems.metrics.length > 0 ||
+  props.displayItems.tags.length > 0 ||
+  props.displayItems.refs.length > 0 ||
+  props.displayItems.sections.length > 0,
 )
-const hasMetrics = computed(() => displayItems.value.metrics.length > 0)
-const hasExtTags = computed(() => displayItems.value.tags.length > 0)
-const hasRefs = computed(() => displayItems.value.refs.length > 0)
-const hasSections = computed(() => displayItems.value.sections.length > 0)
 
-const localIdFallback = computed(() => {
-  const r = props.entityRef
-  const idx = r.indexOf(":")
-  return idx >= 0 ? r.slice(idx + 1) : r
-})
-
-function onBackdropClick() {
-  emit("close")
+function restoreFocus(event: Event): void {
+  if (!props.returnFocus?.isConnected) return
+  event.preventDefault()
+  props.returnFocus.focus()
 }
-
-function onCardClick(e: MouseEvent) {
-  // 阻止冒泡到遮罩
-  e.stopPropagation()
-}
-
-function onClose() {
-  emit("close")
-}
-
-function onSelect(ref: string) {
-  emit("select", ref)
-}
-
-function onNavigate(index: number) {
-  emit("navigate", index)
-}
-
-function onKeydown(e: KeyboardEvent) {
-  if (e.key === "Escape") {
-    e.preventDefault()
-    emit("close")
-  }
-}
-
-onMounted(() => {
-  window.addEventListener("keydown", onKeydown)
-})
-onUnmounted(() => {
-  window.removeEventListener("keydown", onKeydown)
-})
-
-// 打开时锁滚动条，关闭时恢复。用 body overflow 简单处理。
-watch(
-  () => props.entity,
-  () => {
-    // 无需要额外操作；模态挂载/卸载由父 v-if 控制
-  },
-)
 </script>
 
 <template>
-  <div class="modal-mask" role="presentation" @click="onBackdropClick">
-    <div
-      class="modal-card"
-      role="dialog"
-      aria-modal="true"
-      @click="onCardClick"
-    >
-      <button
-        type="button"
-        class="modal-close"
-        aria-label="关闭"
-        @click="onClose"
-      >×</button>
-
-      <!-- 面包屑 -->
-      <InventoryBreadcrumb
-        v-if="breadcrumb.length > 1"
-        :path="breadcrumb"
-        @navigate="onNavigate"
-      />
-
-      <!-- 主体：entity 有效 -->
-      <template v-if="entity">
-        <div class="title-row">
-          <div class="title-name">{{ entity.name }}</div>
-          <span class="type-chip">{{ typeLabel }}</span>
-        </div>
-        <p class="brief">{{ entity.brief }}</p>
-
-        <!-- 物品 tags -->
-        <div v-if="tags.length > 0" class="tag-list">
-          <span v-for="t in tags" :key="t" class="tag-chip">{{ t }}</span>
-        </div>
-
-        <!-- extensions 分区 -->
-        <section v-if="hasMetrics" class="ext-section">
-          <div class="section-title">数值</div>
-          <ul class="ext-metric-list">
-            <li
-              v-for="(m, idx) in displayItems.metrics"
-              :key="`metric-${idx}`"
-              class="ext-metric-row"
-            >
-              <div class="ext-metric-head">
-                <span class="ext-metric-label">{{ m.label }}</span>
-                <span class="ext-metric-value">
-                  {{ typeof m.value === "number" ? m.value : 0
-                  }}<span v-if="m.unit" class="ext-metric-unit">{{ m.unit }}</span>
-                </span>
-              </div>
-              <div v-if="m.render === 'progress'" class="ext-metric-track">
-                <div
-                  class="ext-metric-fill"
-                  :style="{
-                    width: `${Math.max(0, Math.min(100, ((typeof m.value === 'number' ? m.value : 0) - (m.min ?? 0)) / ((m.max ?? 100) - (m.min ?? 0)) * 100))}%`
-                  }"
-                />
-              </div>
-            </li>
-          </ul>
-        </section>
-
-        <section v-if="hasExtTags" class="ext-section">
-          <div class="section-title">标签</div>
-          <div class="ext-tags">
-            <span
-              v-for="(t, idx) in displayItems.tags"
-              :key="`ext-tag-${idx}`"
-              class="ext-tag"
-            >{{ t.label }}<template v-if="typeof t.value === 'string' && t.value.length > 0">：{{ t.value }}</template></span>
+  <DialogRoot :open="open" @update:open="emit('update:open', $event)">
+    <DialogPortal>
+      <DialogOverlay class="item-overlay" />
+      <DialogContent class="item-dialog" @close-auto-focus="restoreFocus">
+        <header class="item-head">
+          <div>
+            <DialogTitle class="item-title">{{ entity?.name ?? localId }}</DialogTitle>
+            <DialogDescription class="item-description">
+              {{ entity ? `${typeLabel} · 单物品详情` : "物品档案" }}
+            </DialogDescription>
           </div>
-        </section>
+          <DialogClose class="item-close" aria-label="关闭物品详情">×</DialogClose>
+        </header>
 
-        <section v-if="hasRefs" class="ext-section">
-          <div class="section-title">关联</div>
-          <ul class="ext-ref-list">
-            <li
-              v-for="(r, idx) in displayItems.refs"
-              :key="`ext-ref-${idx}`"
-              class="ext-ref-row"
-            >
-              <span class="ext-ref-label">{{ r.label }}</span>
-              <span v-if="r.name" class="ext-ref-name">{{ r.name }}</span>
-            </li>
-          </ul>
-        </section>
+        <div v-if="loading" class="item-fallback">读取物品档案…</div>
+        <div v-else-if="!entity" class="item-fallback">物品档案缺失</div>
 
-        <section v-if="hasSections" class="ext-section">
-          <div class="section-title">详情</div>
-          <div class="ext-sections">
-            <div
-              v-for="(s, idx) in displayItems.sections"
-              :key="`sec-${idx}`"
-              class="ext-section-inner"
-            >
-              <div v-if="s.title" class="ext-section-inner-title">{{ s.title }}</div>
-              <div v-if="s.body" class="ext-section-inner-body">{{ s.body }}</div>
+        <div v-else class="item-scroll">
+          <p class="item-brief">{{ entity.brief }}</p>
+          <div v-if="entity.tags?.length" class="tag-list">
+            <span v-for="tag in entity.tags" :key="tag">{{ tag }}</span>
+          </div>
+
+          <section v-if="entity.equipment?.slot" class="item-section">
+            <h3>建议槽位</h3>
+            <p>{{ entity.equipment.slot }}</p>
+          </section>
+
+          <section v-if="entity.equipment?.mods && Object.keys(entity.equipment.mods).length" class="item-section">
+            <h3>原始修正规则</h3>
+            <dl class="rule-list">
+              <template v-for="(rule, name) in entity.equipment.mods" :key="name">
+                <dt>{{ name }}</dt><dd>{{ rule }}</dd>
+              </template>
+            </dl>
+            <p class="raw-note">仅展示原始规则，界面不会执行这些表达式。</p>
+          </section>
+
+          <section v-if="entity.equipment?.effects?.length" class="item-section">
+            <h3>叙事效果</h3>
+            <ul><li v-for="effect in entity.equipment.effects" :key="effect">{{ effect }}</li></ul>
+          </section>
+
+          <section v-if="equippedSlots.length" class="item-section">
+            <h3>当前装备</h3>
+            <div v-for="context in equippedSlots" :key="context.name" class="equipped-context">
+              <strong>{{ context.name }}</strong>
+              <span v-if="Object.keys(context.slot.applied ?? {}).length">
+                <template v-for="([name, value], index) in Object.entries(context.slot.applied ?? {})" :key="name">
+                  <span v-if="index">、</span>{{ name }}{{ value >= 0 ? "+" : "" }}{{ value }}
+                </template>
+              </span>
+              <span v-else>无已记录实际贡献</span>
             </div>
-          </div>
-        </section>
+          </section>
 
-        <!-- 容器内容网格 -->
-        <section v-if="isContainer" class="ext-section">
-          <div class="section-title">内含</div>
-          <InventoryGrid
-            :items="gridItems"
-            empty-text="空容器"
-            @select="onSelect"
-          />
-        </section>
-      </template>
+          <section v-if="hasExtensions" class="item-section">
+            <h3>附加信息</h3>
+            <dl v-if="displayItems.metrics.length" class="rule-list">
+              <template v-for="item in displayItems.metrics" :key="item.label">
+                <dt>{{ item.label }}</dt><dd>{{ item.value }}{{ item.unit ?? "" }}</dd>
+              </template>
+            </dl>
+            <div v-if="displayItems.tags.length" class="tag-list">
+              <span v-for="(item, index) in displayItems.tags" :key="`${item.label}-${index}`">
+                {{ item.label }}<template v-if="typeof item.value === 'string'">：{{ item.value }}</template>
+              </span>
+            </div>
+            <dl v-if="displayItems.refs.length" class="rule-list extension-ref-list">
+              <template v-for="(item, index) in displayItems.refs" :key="`${item.label}-${index}`">
+                <dt>{{ item.label }}</dt>
+                <dd>{{ item.name ?? item.ref ?? (typeof item.value === 'string' ? item.value : "未记录") }}</dd>
+              </template>
+            </dl>
+            <p v-for="(item, index) in displayItems.sections" :key="`${item.label}-${index}`">
+              <strong>{{ item.title ?? item.label }}</strong><br />{{ item.body }}
+            </p>
+          </section>
+        </div>
 
-      <!-- 加载态 -->
-      <div v-else-if="loading" class="fallback">
-        <div class="fallback-glyph">…</div>
-        <div class="fallback-text">读取中…</div>
-      </div>
-
-      <!-- 档案缺失 -->
-      <div v-else class="fallback">
-        <div class="fallback-glyph">{{ localIdFallback.charAt(0) || "?" }}</div>
-        <div class="fallback-name">{{ localIdFallback || "未知" }}</div>
-        <div class="fallback-text">档案缺失</div>
-      </div>
-    </div>
-  </div>
+        <footer class="item-actions">
+          <DialogClose class="item-done">关闭</DialogClose>
+        </footer>
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <style scoped>
-.modal-mask {
+.item-overlay {
   position: fixed;
   inset: 0;
-  z-index: 60;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: rgba(6, 6, 8, 0.7);
-  backdrop-filter: blur(6px);
-}
-.modal-card {
-  position: relative;
-  width: min(560px, 100%);
-  max-height: 80vh;
-  overflow-y: auto;
-  background: var(--void-deep);
-  border: 1px solid var(--line-strong);
-  border-radius: 12px;
-  padding: 24px 26px 22px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.02),
-    0 26px 60px rgba(0, 0, 0, 0.5);
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.modal-card::before {
-  content: "";
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(181, 137, 61, 0.1);
-  border-radius: 8px;
-  pointer-events: none;
-}
-.modal-close {
-  position: absolute;
-  top: 10px;
-  right: 12px;
-  width: 26px;
-  height: 26px;
-  border-radius: 6px;
-  background: transparent;
-  border: 1px solid transparent;
-  color: var(--prose-muted);
-  font-size: 1.2rem;
-  line-height: 1;
-  cursor: pointer;
-  transition: color 0.2s, border-color 0.2s, background 0.2s;
-  z-index: 1;
-}
-.modal-close:hover {
-  color: var(--ember-bright);
-  border-color: var(--line);
-  background: rgba(181, 137, 61, 0.06);
-}
-.modal-close:focus-visible {
-  outline: 1px solid rgba(232, 169, 72, 0.5);
-  outline-offset: 1px;
+  z-index: 150;
+  background: rgba(3, 3, 5, 0.82);
+  backdrop-filter: blur(7px);
 }
 
-.title-row {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  flex-wrap: wrap;
+.item-dialog {
+  position: fixed;
+  z-index: 151;
+  top: 50%;
+  left: 50%;
+  width: min(600px, calc(100vw - 44px));
+  max-height: min(760px, calc(100dvh - 44px));
+  transform: translate(-50%, -50%);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 14px;
+  padding: 24px 26px 20px;
+  box-sizing: border-box;
+  border: 1px solid var(--line-strong);
+  border-radius: 5px 14px 5px 14px;
+  background:
+    linear-gradient(105deg, transparent 49.8%, rgba(181, 137, 61, 0.07) 50%, transparent 50.2%),
+    radial-gradient(circle at 20% 8%, rgba(181, 137, 61, 0.11), transparent 38%),
+    rgba(10, 7, 8, 0.99);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.68);
+  outline: none;
 }
-.title-name {
+
+.item-dialog:focus-visible {
+  box-shadow: 0 0 0 2px var(--ember-bright), 0 28px 80px rgba(0, 0, 0, 0.68);
+}
+
+.item-head,
+.item-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.item-title {
+  margin: 0;
   font-family: var(--font-display);
   font-size: 1.55rem;
+  letter-spacing: 0.07em;
   color: var(--ember-bright);
-  font-weight: 700;
-  letter-spacing: 0.04em;
 }
-.type-chip {
+
+.item-description {
+  margin-top: 3px;
   font-family: var(--font-mono);
   font-size: 0.62rem;
-  letter-spacing: 0.16em;
-  color: var(--ember);
-  border: 1px solid rgba(181, 137, 61, 0.35);
-  border-radius: 10px;
-  padding: 2px 8px;
-  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  color: var(--prose-faint);
 }
-.brief {
-  margin: 0;
-  font-size: 0.88rem;
-  line-height: 1.75;
+
+.item-close,
+.item-done {
+  border: 1px solid var(--line);
+  background: rgba(6, 6, 8, 0.62);
+  color: var(--prose-muted);
+  cursor: pointer;
+}
+
+.item-close {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  font-size: 1.35rem;
+}
+
+.item-done {
+  min-height: 36px;
+  margin-left: auto;
+  padding: 7px 18px;
+  border-radius: 5px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+}
+
+.item-close:hover,
+.item-close:focus-visible,
+.item-done:hover,
+.item-done:focus-visible {
+  outline: 2px solid var(--ember-bright);
+  outline-offset: 2px;
+  color: var(--ember-bright);
+}
+
+.item-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 5px;
+  scrollbar-width: none;
+}
+
+.item-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.item-brief {
+  margin: 0 0 16px;
+  line-height: 1.8;
   color: var(--prose-muted);
 }
+
 .tag-list {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-.tag-chip {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--prose-muted);
+
+.tag-list span {
+  padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  padding: 1px 8px;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: var(--prose-muted);
 }
 
-.ext-section {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+.item-section {
+  margin-top: 18px;
 }
-.section-title {
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
-  letter-spacing: 0.08em;
-  color: var(--prose-faint);
-  text-transform: uppercase;
+
+.item-section h3 {
+  margin: 0 0 9px;
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
-}
-.ext-metric-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-.ext-metric-row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.ext-metric-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 8px;
-}
-.ext-metric-label {
-  font-family: var(--font-serif);
-  font-size: 0.78rem;
-  color: var(--prose-muted);
-}
-.ext-metric-value {
   font-family: var(--font-mono);
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  color: var(--prose-faint);
+}
+
+.item-section p,
+.item-section li {
   font-size: 0.8rem;
-  color: var(--ember-bright);
-}
-.ext-metric-unit {
-  margin-left: 2px;
-  font-size: 0.7rem;
-  color: var(--prose-muted);
-}
-.ext-metric-track {
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(181, 137, 61, 0.1);
-  overflow: hidden;
-}
-.ext-metric-fill {
-  height: 100%;
-  background: var(--ember);
-  transition: width 0.4s ease;
-}
-.ext-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.ext-tag {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  color: var(--prose-muted);
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 1px 8px;
-}
-.ext-ref-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.ext-ref-row {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  font-size: 0.78rem;
-}
-.ext-ref-label {
-  font-family: var(--font-serif);
-  color: var(--prose-muted);
-}
-.ext-ref-name {
-  font-family: var(--font-mono);
-  font-size: 0.72rem;
-  color: var(--ember-bright);
-  margin-left: auto;
-}
-.ext-sections {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.ext-section-inner-title {
-  font-family: var(--font-serif);
-  font-size: 0.86rem;
-  color: var(--prose);
-  margin-bottom: 4px;
-}
-.ext-section-inner-body {
-  font-size: 0.82rem;
   line-height: 1.7;
   color: var(--prose-muted);
 }
 
-.fallback {
+.item-section ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.rule-list {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) 1fr;
+  gap: 6px 14px;
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.rule-list dt {
+  color: var(--prose-muted);
+}
+
+.rule-list dd {
+  margin: 0;
+  color: var(--ember-bright);
+  overflow-wrap: anywhere;
+}
+
+.extension-ref-list {
+  margin-top: 10px;
+}
+
+.raw-note {
+  margin: 8px 0 0;
+  color: var(--prose-faint) !important;
+  font-size: 0.68rem !important;
+}
+
+.equipped-context {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 10px;
-  padding: 32px 0 24px;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 8px 0;
+  border-bottom: 1px dashed rgba(181, 137, 61, 0.14);
+  font-size: 0.76rem;
+  color: var(--prose-muted);
+}
+
+.equipped-context strong {
+  color: var(--ember-bright);
+}
+
+.item-fallback {
+  display: grid;
+  place-items: center;
+  min-height: 180px;
   color: var(--prose-faint);
 }
-.fallback-glyph {
-  font-family: var(--font-display);
-  font-size: 3.2rem;
-  color: var(--ember-bright);
-  opacity: 0.4;
-  font-weight: 700;
-  text-shadow: 0 0 16px rgba(232, 169, 72, 0.12);
-  line-height: 1;
-}
-.fallback-name {
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  color: var(--prose-muted);
-  letter-spacing: 0.06em;
-}
-.fallback-text {
-  font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+
+@media (max-width: 720px) {
+  .item-dialog {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    max-height: calc(100dvh - 34px);
+    transform: none;
+    padding: 20px 18px calc(16px + env(safe-area-inset-bottom));
+    border-radius: 16px 16px 0 0;
+  }
 }
 </style>

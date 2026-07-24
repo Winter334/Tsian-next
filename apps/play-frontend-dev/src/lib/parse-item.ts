@@ -16,6 +16,7 @@ import type {
   ContainerContent,
   ContainerEntity,
   ItemEntity,
+  ItemEquipment,
   ItemType,
 } from "./item-types"
 
@@ -61,8 +62,9 @@ function parseContents(raw: unknown): ContainerContent[] {
     if (!isRecord(item)) continue
     const ref = asString(item.ref)
     if (!ref) continue
-    const entry: ContainerContent = { ref }
     const count = asNumber(item.count)
+    if (count !== undefined && count <= 0) continue
+    const entry: ContainerContent = { ref }
     if (count !== undefined) entry.count = count
     out.push(entry)
   }
@@ -98,6 +100,28 @@ function parseStatus(
 function parseExtensions(raw: unknown): Record<string, unknown> | undefined {
   if (!isRecord(raw)) return undefined
   return raw
+}
+
+/** 归一装备描述；至少保留一个合法字段时才附加。 */
+function parseEquipment(raw: unknown): ItemEquipment | undefined {
+  if (!isRecord(raw)) return undefined
+  const out: ItemEquipment = {}
+
+  const slot = asString(raw.slot)
+  if (slot) out.slot = slot
+
+  if (isRecord(raw.mods)) {
+    const mods: Record<string, string> = {}
+    for (const [attribute, rule] of Object.entries(raw.mods)) {
+      if (typeof rule === "string") mods[attribute] = rule
+    }
+    if (Object.keys(mods).length > 0) out.mods = mods
+  }
+
+  const effects = asStringArray(raw.effects)
+  if (effects) out.effects = effects
+
+  return Object.keys(out).length > 0 ? out : undefined
 }
 
 function parseUpdatedBy(raw: unknown): string | null | undefined {
@@ -160,6 +184,8 @@ export function parseItem(raw: unknown): ItemEntity | null {
 
   const tags = asStringArray(raw.tags)
   if (tags) entity.tags = tags
+  const equipment = parseEquipment(raw.equipment)
+  if (equipment) entity.equipment = equipment
   const extensions = parseExtensions(raw.extensions)
   if (extensions) entity.extensions = extensions
   const updatedAtTurn = asNumber(raw.updatedAtTurn)

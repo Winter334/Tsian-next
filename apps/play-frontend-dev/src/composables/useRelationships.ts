@@ -45,12 +45,15 @@ export function useRelationships(subjectRef: string): {
 } {
   const data = ref<RelationshipFile | null>(null)
   const error = ref<"load-failed" | "not-found" | null>(null)
+  let loadVersion = 0
 
   async function load(): Promise<void> {
+    const version = ++loadVersion
     const tsian = getTsianClient()
     const path = subjectRefToRelationshipPath(subjectRef)
     try {
       const file = await tsian.workspace.read(path, "save-runtime")
+      if (version !== loadVersion) return
       if (file === null) {
         // 分片不存在（多数角色无关系分片）→ not-found，UI 隐藏关系区段（非错误）。
         error.value = "not-found"
@@ -76,6 +79,7 @@ export function useRelationships(subjectRef: string): {
       error.value = null
       data.value = rel
     } catch {
+      if (version !== loadVersion) return
       // read 抛错（桥/平台异常）→ load-failed，不向上抛（type-safety §D7）
       error.value = "load-failed"
       data.value = null

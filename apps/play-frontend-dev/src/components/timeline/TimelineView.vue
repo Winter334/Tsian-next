@@ -151,6 +151,18 @@ onMounted(() => {
   color: var(--prose-faint);
 }
 
+@media (max-width: 720px) {
+  .timeline-view {
+    height: calc(100% - var(--play-header-height) - var(--play-bottom-nav-height));
+    margin-top: var(--play-header-height);
+    padding: 0;
+  }
+
+  .timeline-container {
+    padding: 10px 12px 24px;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .placeholder-glyph { animation: none; }
 }

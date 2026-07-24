@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from "vue"
+import { onBeforeUnmount, onMounted, ref, watch } from "vue"
 import AtmosphereLayer from "./components/AtmosphereLayer.vue"
 import CornerBrackets from "./components/CornerBrackets.vue"
 import TsianLogo from "./components/TsianLogo.vue"
@@ -37,6 +37,21 @@ const navCollapsed = ref(localStorage.getItem(NAV_COLLAPSED_KEY) === "true")
 // - character：角色卡全屏视图（CharacterView，v-if 卸载/重挂）。
 // - settings：设置视图占位。
 const navCurrent = ref<"story" | "character" | "timeline" | "settings">("story")
+const statusDrawerOpen = ref(false)
+const statusDrawerReturnFocus = ref<HTMLElement | null>(null)
+const appHeader = ref<InstanceType<typeof AppHeader> | null>(null)
+const desktopMedia = window.matchMedia("(min-width: 721px)")
+
+function closeMobileStatusDrawer(event: MediaQueryListEvent): void {
+  if (!event.matches) return
+  statusDrawerReturnFocus.value = appHeader.value?.desktopStatusButton ?? null
+  statusDrawerOpen.value = false
+}
+
+function openMobileStatusDrawer(): void {
+  statusDrawerReturnFocus.value = appHeader.value?.mobileStatusButton ?? null
+  statusDrawerOpen.value = true
+}
 
 watch(navCollapsed, (v) => {
   localStorage.setItem(NAV_COLLAPSED_KEY, String(v))
@@ -101,7 +116,12 @@ async function markEnteredPlay(): Promise<void> {
 }
 
 onMounted(() => {
+  desktopMedia.addEventListener("change", closeMobileStatusDrawer)
   void restoreSavedMode()
+})
+
+onBeforeUnmount(() => {
+  desktopMedia.removeEventListener("change", closeMobileStatusDrawer)
 })
 
 function onLogoClick() {
@@ -169,10 +189,12 @@ function onToggleStatus() {
 
 /** 点击状态栏角色头像 → 切到角色卡全屏视图（design §4.2 / D3）。 */
 function onOpenCharacter() {
+  statusDrawerOpen.value = false
   navCurrent.value = "character"
 }
 
 function onNavigate(item: "story" | "character" | "timeline" | "settings") {
+  statusDrawerOpen.value = false
   navCurrent.value = item
 }
 </script>
@@ -196,12 +218,14 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
     >
       <AppHeader
         v-if="phase === 'revealed'"
+        ref="appHeader"
         :ready="ready"
         :turn-count="Math.max(0, turnCount - 1)"
         :nav-collapsed="navCollapsed"
         :status-bar-collapsed="statusCollapsed"
         @toggle-nav="onToggleNav"
         @toggle-status-bar="onToggleStatus"
+        @open-status="openMobileStatusDrawer"
       />
       <AppNav
         v-if="phase === 'revealed'"
@@ -212,6 +236,9 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
       <StatusBar
         v-if="phase === 'revealed'"
         :collapsed="statusCollapsed"
+        :mobile-open="statusDrawerOpen"
+        :mobile-return-focus="statusDrawerReturnFocus"
+        @update:mobile-open="statusDrawerOpen = $event"
         @toggle="onToggleStatus"
         @open-character="onOpenCharacter"
       />
@@ -264,9 +291,11 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
 .app-root {
   position: relative;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   --play-header-height: 52px;
+  --play-bottom-nav-height: 0px;
   --play-left-rail: 48px;
   --play-left-panel: 312px;
   --play-right-rail: 56px;
@@ -366,6 +395,31 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
   color: var(--prose-dim);
   letter-spacing: 0.08em;
 }
+
+@media (max-width: 720px) {
+  .app-root {
+    --play-header-height: calc(46px + env(safe-area-inset-top));
+    --play-bottom-nav-height: calc(62px + env(safe-area-inset-bottom));
+  }
+
+  .view-stage {
+    height: calc(100% - var(--play-header-height) - var(--play-bottom-nav-height));
+    margin-top: var(--play-header-height);
+    padding: 16px 14px 22px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    transition: none;
+  }
+
+  .placeholder-text {
+    font-size: clamp(1.8rem, 10vw, 2.5rem);
+  }
+
+  .placeholder-sub {
+    max-width: 90vw;
+    padding: 0 8px;
+  }
+}
 </style>
 
 <!-- 全局（非 scoped）样式：视图在侧栏展开/折叠时让位，padding 动画与侧栏宽度动画同步。 -->
@@ -381,6 +435,24 @@ function onNavigate(item: "story" | "character" | "timeline" | "settings") {
 .app-root:has(.app-nav.collapsed) .timeline-view,
 .app-root:has(.app-nav.collapsed) .view-stage {
   padding-right: var(--play-right-rail);
+}
+
+@media (max-width: 720px) {
+  .app-root .story-view,
+  .app-root .character-view,
+  .app-root .timeline-view,
+  .app-root .view-stage,
+  .app-root:has(.status-bar.collapsed) .story-view,
+  .app-root:has(.status-bar.collapsed) .character-view,
+  .app-root:has(.status-bar.collapsed) .timeline-view,
+  .app-root:has(.status-bar.collapsed) .view-stage,
+  .app-root:has(.app-nav.collapsed) .story-view,
+  .app-root:has(.app-nav.collapsed) .character-view,
+  .app-root:has(.app-nav.collapsed) .timeline-view,
+  .app-root:has(.app-nav.collapsed) .view-stage {
+    padding-left: 0;
+    padding-right: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

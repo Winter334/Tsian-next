@@ -19,28 +19,36 @@
  */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import gsap from "gsap"
+import {
+  DialogClose,
+  DialogContent,
+  DialogDescription,
+  DialogOverlay,
+  DialogPortal,
+  DialogRoot,
+  DialogTitle,
+} from "reka-ui"
 import { useRuntime } from "../composables/useRuntime"
 import { getTsianClient } from "../composables/useTsian"
 import { refToEntityPath } from "../composables/useEntity"
 import { parseCharacter } from "../lib/parse-character"
 import { pickDefaultAvatarUrl } from "../lib/character-avatar"
 import type { CharacterEntity } from "../lib/character-types"
-import StatusBarScene from "./status-bar/StatusBarScene.vue"
 import StatusBarCharacter from "./status-bar/StatusBarCharacter.vue"
-import StatusBarIdentity from "./status-bar/StatusBarIdentity.vue"
-import StatusBarPinned from "./status-bar/StatusBarPinned.vue"
-import StatusBarMetrics from "./status-bar/StatusBarMetrics.vue"
-import StatusBarRefs from "./status-bar/StatusBarRefs.vue"
+import StatusBarBody from "./status-bar/StatusBarBody.vue"
 
 const STATUS_BAR_EXPANDED_WIDTH = 312
 const STATUS_BAR_COLLAPSED_WIDTH = 48
 
 const props = defineProps<{
   collapsed: boolean
+  mobileOpen: boolean
+  mobileReturnFocus?: HTMLElement | null
 }>()
 
 const emit = defineEmits<{
   toggle: []
+  "update:mobile-open": [value: boolean]
   "open-character": []
 }>()
 
@@ -162,8 +170,6 @@ const characterBrief = computed(() => {
 
 const hasCharacter = computed(() => Boolean(protagonistRefStr.value && characterName.value))
 
-const characterGauges = computed(() => characterEntity.value?.gauges ?? [])
-
 const portraitPath = computed(() => {
   const parsedPath = characterEntity.value?.portrait?.path
   if (parsedPath && parsedPath.trim().length > 0) return parsedPath
@@ -238,6 +244,8 @@ async function loadPortraitBinary(path: string | undefined): Promise<void> {
 }
 
 onBeforeUnmount(() => {
+  entityLoadVersion += 1
+  portraitLoadVersion += 1
   revokePortraitUrl()
 })
 
@@ -272,6 +280,12 @@ const showFatalError = computed(
 const showLoading = computed(
   () => status.value === "loading" && runtime.value === null && error.value === null,
 )
+
+function restoreMobileFocus(event: Event): void {
+  if (!props.mobileReturnFocus?.isConnected) return
+  event.preventDefault()
+  props.mobileReturnFocus.focus()
+}
 </script>
 
 <template>
@@ -303,30 +317,58 @@ const showLoading = computed(
       />
 
       <!-- 展开态：命册侧卷。 -->
-      <div v-else class="sb-expanded-body">
-        <StatusBarScene :runtime="runtime" />
-        <StatusBarCharacter
-          :character="characterSnapshot"
-          :collapsed="false"
-          :has-character="hasCharacter"
-          :name="characterName"
-          :brief="characterBrief"
-          :portrait-src="portraitSrc"
-          :loading="entityLoading"
-          :entity-error="entityError"
-          @toggle="emit('toggle')"
-          @open-character="emit('open-character')"
-        />
-        <StatusBarIdentity :entity="characterEntity" />
-        <StatusBarMetrics :gauges="characterGauges" :metrics="metrics" />
-        <StatusBarPinned
-          :key="`pinned-${protagonistRefStr ?? 'none'}-${runtime?.updatedAtTurn ?? 0}`"
-          :protagonist-ref="protagonistRefStr"
-        />
-        <StatusBarRefs :refs="refs" />
-      </div>
+      <StatusBarBody
+        v-else
+        :runtime="runtime"
+        :character-snapshot="characterSnapshot"
+        :character-entity="characterEntity"
+        :has-character="hasCharacter"
+        :character-name="characterName"
+        :character-brief="characterBrief"
+        :portrait-src="portraitSrc"
+        :entity-loading="entityLoading"
+        :entity-error="entityError"
+        :metrics="metrics"
+        :refs="refs"
+        :protagonist-ref="protagonistRefStr"
+        @toggle="emit('toggle')"
+        @open-character="emit('open-character')"
+      />
     </template>
   </aside>
+
+  <DialogRoot :open="mobileOpen" @update:open="emit('update:mobile-open', $event)">
+    <DialogPortal>
+      <DialogOverlay class="status-drawer-overlay" />
+      <DialogContent class="status-drawer" @close-auto-focus="restoreMobileFocus">
+        <header class="status-drawer-head">
+          <div>
+            <DialogTitle class="status-drawer-title">旅途状态</DialogTitle>
+            <DialogDescription class="status-drawer-description">天时、角色与钉选记录</DialogDescription>
+          </div>
+          <DialogClose class="status-drawer-close" aria-label="关闭状态抽屉">×</DialogClose>
+        </header>
+        <div v-if="showLoading" class="sb-loading"><span class="sb-loading-text">载入中…</span></div>
+        <div v-else-if="showFatalError" class="sb-fatal"><span class="sb-fatal-text">状态暂不可用</span></div>
+        <StatusBarBody
+          v-else
+          :runtime="runtime"
+          :character-snapshot="characterSnapshot"
+          :character-entity="characterEntity"
+          :has-character="hasCharacter"
+          :character-name="characterName"
+          :character-brief="characterBrief"
+          :portrait-src="portraitSrc"
+          :entity-loading="entityLoading"
+          :entity-error="entityError"
+          :metrics="metrics"
+          :refs="refs"
+          :protagonist-ref="protagonistRefStr"
+          @open-character="emit('open-character')"
+        />
+      </DialogContent>
+    </DialogPortal>
+  </DialogRoot>
 </template>
 
 <style scoped>
@@ -365,6 +407,14 @@ const showLoading = computed(
   box-shadow:
     inset -1px 0 0 rgba(232, 169, 72, 0.08),
     10px 0 28px rgba(0, 0, 0, 0.22);
+}
+
+.status-drawer-overlay {
+  display: none;
+}
+
+.status-drawer {
+  display: none;
 }
 
 .sb-expanded-body {
@@ -412,5 +462,81 @@ const showLoading = computed(
 @keyframes sb-fade {
   0% { opacity: 0.72; }
   100% { opacity: 1; }
+}
+
+@media (max-width: 720px) {
+  .status-bar {
+    display: none;
+  }
+
+  .status-drawer-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 170;
+    display: block;
+    background: rgba(3, 3, 5, 0.8);
+    backdrop-filter: blur(5px);
+  }
+
+  .status-drawer {
+    position: fixed;
+    z-index: 171;
+    inset: 0 auto 0 0;
+    width: min(88vw, 360px);
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    padding: calc(16px + env(safe-area-inset-top)) 0 calc(12px + env(safe-area-inset-bottom));
+    box-sizing: border-box;
+    border: 0;
+    border-right: 1px solid var(--line-strong);
+    background:
+      radial-gradient(circle at 30% 10%, rgba(181, 137, 61, 0.13), transparent 38%),
+      rgba(9, 5, 6, 0.98);
+    box-shadow: 24px 0 74px rgba(0, 0, 0, 0.62);
+    outline: none;
+  }
+
+  .status-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 14px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .status-drawer-title {
+    margin: 0;
+    font-family: var(--font-display);
+    font-size: 1.25rem;
+    letter-spacing: 0.08em;
+    color: var(--ember-bright);
+  }
+
+  .status-drawer-description {
+    margin-top: 3px;
+    font-family: var(--font-mono);
+    font-size: 0.6rem;
+    color: var(--prose-faint);
+  }
+
+  .status-drawer-close {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    background: rgba(6, 6, 8, 0.56);
+    color: var(--prose-muted);
+    font-size: 1.35rem;
+    cursor: pointer;
+  }
+
+  .status-drawer-close:hover,
+  .status-drawer-close:focus-visible {
+    outline: 2px solid var(--ember-bright);
+    outline-offset: 2px;
+    color: var(--ember-bright);
+  }
 }
 </style>

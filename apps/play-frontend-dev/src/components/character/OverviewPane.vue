@@ -1,10 +1,8 @@
 <script setup lang="ts">
 /**
- * OverviewPane — 概况标签页（角色卡右侧详情区）。
+ * OverviewPane — 角色模式右侧档案区。
  *
- * design §4.4 / R3 / R15–R18：
- * 分区顺序：
- * 1. 身份锚点（IdentityFacts）：name + brief + aliases + identity.* → fact chips。
+ * 页面级姓名与身份由共享舞台持有；这里从简介和字段档案开始。
  * 2. 当前形象：entity.appearance 单段字符串；缺省不展示。
  * 3. 当前状态（StatusChips）：entity.status → chips；polarity 决定颜色。
  * 4. 关系（RelationshipList）：从 relationships.edges → useEntity 取 name/brief；点击 select。
@@ -80,9 +78,8 @@ function closeTrait() {
 
 <template>
   <div class="overview-main">
-    <!-- 1. 身份锚点 -->
+    <!-- 舞台之后从简介与身份字段继续，避免重复姓名标题。 -->
     <div class="identity-panel">
-      <div class="char-name">{{ entity.name }}</div>
       <div class="char-brief">{{ entity.brief }}</div>
       <div v-if="aliases.length > 0" class="char-aliases">
         <span v-for="a in aliases" :key="a" class="char-alias">{{ a }}</span>
@@ -216,14 +213,6 @@ function closeTrait() {
 .identity-panel {
   border-bottom: 1px solid var(--line);
   padding-bottom: 16px;
-}
-.char-name {
-  font-family: var(--font-display);
-  font-size: 2rem;
-  color: var(--ember-bright);
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  margin-bottom: 6px;
 }
 .char-brief {
   font-size: 0.92rem;

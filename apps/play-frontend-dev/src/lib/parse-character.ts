@@ -16,6 +16,8 @@
 import type {
   CharacterAttributes,
   CharacterEntity,
+  CharacterEquipment,
+  CharacterEquipmentSlot,
   CharacterGauge,
   CharacterGoals,
   CharacterHistoryEvent,
@@ -102,6 +104,33 @@ function parseAttributes(raw: unknown): CharacterAttributes | undefined {
   const out: CharacterAttributes = {}
   for (const [key, v] of Object.entries(raw)) {
     if (typeof v === "number" && Number.isFinite(v)) out[key] = v
+  }
+  return Object.keys(out).length > 0 ? out : undefined
+}
+
+/**
+ * 归一动态装备槽。单槽非法仅丢弃该槽，并按源对象遍历顺序写入结果。
+ * `ref` 必须显式存在且为非空字符串或 null；`applied` 只保留有限数值。
+ */
+function parseEquipment(raw: unknown): CharacterEquipment | undefined {
+  if (!isRecord(raw)) return undefined
+  const out: CharacterEquipment = {}
+  for (const [slotName, slotRaw] of Object.entries(raw)) {
+    if (!isRecord(slotRaw)) continue
+    const refRaw = slotRaw.ref
+    if (refRaw !== null && asString(refRaw) === undefined) continue
+
+    const slot: CharacterEquipmentSlot = {
+      ref: refRaw === null ? null : (refRaw as string),
+    }
+    if (isRecord(slotRaw.applied)) {
+      const applied: Record<string, number> = {}
+      for (const [attribute, value] of Object.entries(slotRaw.applied)) {
+        if (typeof value === "number" && Number.isFinite(value)) applied[attribute] = value
+      }
+      if (Object.keys(applied).length > 0) slot.applied = applied
+    }
+    out[slotName] = slot
   }
   return Object.keys(out).length > 0 ? out : undefined
 }
@@ -207,8 +236,9 @@ function parseContainers(raw: unknown): Array<{ ref: string; count?: number }> |
     if (!isRecord(item)) continue
     const ref = asString(item.ref)
     if (!ref) continue
-    const entry: { ref: string; count?: number } = { ref }
     const count = asNumber(item.count)
+    if (count !== undefined && count <= 0) continue
+    const entry: { ref: string; count?: number } = { ref }
     if (count !== undefined) entry.count = count
     out.push(entry)
   }
@@ -267,6 +297,9 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
 
   const attributes = parseAttributes(raw.attributes)
   if (attributes) entity.attributes = attributes
+
+  const equipment = parseEquipment(raw.equipment)
+  if (equipment) entity.equipment = equipment
 
   const gauges = parseGauges(raw.gauges)
   if (gauges) entity.gauges = gauges

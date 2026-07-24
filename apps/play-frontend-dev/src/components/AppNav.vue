@@ -65,15 +65,17 @@ function onItemClick(key: NavItem) {
     <button
       v-for="item in items"
       :key="item.key"
+      type="button"
       class="nav-item"
       :class="{ active: current === item.key }"
       :title="collapsed ? '' : item.label"
+      :aria-current="current === item.key ? 'page' : undefined"
       @click="onItemClick(item.key)"
     >
       <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
         <path :d="item.icon" stroke-linecap="round" stroke-linejoin="round" />
       </svg>
-      <span v-if="!collapsed" class="nav-label">{{ item.label }}</span>
+      <span class="nav-label">{{ item.label }}</span>
     </button>
   </nav>
 </template>
@@ -115,9 +117,14 @@ function onItemClick(key: NavItem) {
   padding: 0;
 }
 
-.nav-item:hover {
+.nav-item:hover,
+.nav-item:focus-visible {
   color: var(--prose);
   background: rgba(181, 137, 61, 0.05);
+}
+.nav-item:focus-visible {
+  outline: 2px solid var(--ember-bright);
+  outline-offset: -2px;
 }
 
 /* 当前态：ember-bright 文字 + 微暖底（不用竖线指示） */
@@ -132,9 +139,74 @@ function onItemClick(key: NavItem) {
   flex-shrink: 0;
 }
 
+.app-nav.collapsed .nav-label {
+  display: none;
+}
+
 .nav-label {
   font-family: var(--font-mono);
   font-size: 0.8rem;
   letter-spacing: 0.06em;
+}
+
+@media (max-width: 720px) {
+  .app-nav,
+  .app-nav.collapsed {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100% !important;
+    height: var(--play-bottom-nav-height);
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    padding: 5px 4px env(safe-area-inset-bottom);
+    box-sizing: border-box;
+    border-top: 1px solid var(--line-strong);
+    border-left: 0;
+    background: rgba(7, 4, 5, 0.94);
+    backdrop-filter: blur(14px);
+  }
+
+  .nav-item,
+  .app-nav.collapsed .nav-item {
+    position: relative;
+    min-width: 0;
+    height: auto;
+    min-height: 48px;
+    flex-direction: column;
+    justify-content: center;
+    gap: 2px;
+    padding: 3px 2px;
+    margin: 0 2px;
+    border-radius: 7px 2px 7px 2px;
+  }
+
+  .app-nav.collapsed .nav-label,
+  .nav-label {
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.58rem;
+    letter-spacing: 0.05em;
+  }
+
+  .nav-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .nav-item.active::after {
+    content: "";
+    position: absolute;
+    top: 1px;
+    left: 28%;
+    right: 28%;
+    height: 1px;
+    background: var(--ember-bright);
+    box-shadow: 0 0 7px rgba(232, 169, 72, 0.5);
+  }
 }
 </style>

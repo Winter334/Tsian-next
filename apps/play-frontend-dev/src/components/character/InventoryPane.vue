@@ -1,408 +1,334 @@
 <script setup lang="ts">
-/**
- * InventoryPane — 角色卡背包 tab 内容（替换占位为真实实现）。
- *
- * design §6.1 / task 07-04 D7：
- * - props：`{ containers, protagonistRef }`
- *   - containers：character.containers 数组（`{ref, count?}`），缺省或空 → 空态。
- *   - protagonistRef：主角 ref（本任务当前未用于展示区分，占位透传，供未来"仅主角可查看"策略）。
- * - 顶层：每个 container ref 用 useEntity 拉取 → 展示 InventoryGrid（container variant）。
- * - 点击容器 → 打开 ItemDetailModal，breadcrumb 从当前容器开始；模态内容器可继续深入嵌套。
- * - 模态内点击嵌套容器 → breadcrumb push，modalEntityRef 更新，重新拉取。
- * - 模态内点击面包屑 → breadcrumb slice 到 index，重新拉取。
- * - 关闭模态 → 清 modalEntityRef / breadcrumb / gridItems。
- *
- * 不抛错：useEntity 内部处理读取异常；parseContainer/parseItem 失败返回 null。
- * 模态内 entity 是 null 但 loading=false → 展示"档案缺失"。
- */
-import { computed, onMounted, ref, watch } from "vue"
-import { useEntity } from "../../composables/useEntity"
-import type {
-  ContainerContent,
-  ContainerEntity,
-  InventoryEntity,
-} from "../../lib/item-types"
+/** InventoryPane — 在面板内导航容器，并用单物品 Dialog 展示详情。 */
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import type { CharacterEquipment } from "../../lib/character-types"
+import type { ContainerContent, ContainerEntity, InventoryEntity, ItemEntity } from "../../lib/item-types"
 import { isContainerEntity } from "../../lib/item-types"
-import { parseContainer, parseItem } from "../../lib/parse-item"
+import { loadInventoryEntity } from "../../lib/load-inventory-entity"
 import { parseExtensionsOnly } from "../../lib/parse-entity"
-import type { DisplayItems } from "../../lib/runtime-types"
 import { emptyDisplayItems } from "../../lib/runtime-types"
-import InventoryGrid, {
-  type InventoryGridItem,
-} from "../inventory/InventoryGrid.vue"
+import type { DisplayItems } from "../../lib/runtime-types"
+import InventoryBreadcrumb from "../inventory/InventoryBreadcrumb.vue"
+import InventoryGrid from "../inventory/InventoryGrid.vue"
+import type { InventoryGridItem } from "../inventory/InventoryGrid.vue"
 import ItemDetailModal from "../inventory/ItemDetailModal.vue"
+import type { EquippedSlotContext } from "../inventory/ItemDetailModal.vue"
 
 const props = defineProps<{
   containers?: Array<{ ref: string; count?: number }>
-  protagonistRef: string | null
+  equipment?: CharacterEquipment
+  highlightedItemRef: string | null
+  requestedItemRef: string | null
 }>()
 
-/** 单个 ref 的读取槽位。 */
+const emit = defineEmits<{
+  "highlight-item": [ref: string | null]
+  "request-consumed": []
+}>()
+
 interface RefSlot {
   ref: string
   count?: number
   entity: InventoryEntity | null
-  status: "ready" | "missing" | "loading"
+  status: "ready" | "missing" | "loading" | "cycle"
 }
 
-/** 拉取一个 ref 的实体并解析为 InventoryEntity。 */
-async function fetchInventoryEntity(entityRef: string): Promise<{
-  entity: InventoryEntity | null
-  status: "ready" | "missing"
-}> {
-  const { data, error, load } = useEntity(entityRef)
-  await load()
-  if (error.value !== null || data.value === null) {
-    return { entity: null, status: "missing" }
+const path = ref<Array<{ ref: string; name: string }>>([])
+const currentContainer = ref<ContainerEntity | null>(null)
+const slots = ref<RefSlot[]>([])
+const panelLoading = ref(false)
+const panelMessage = ref("")
+let navigationVersion = 0
+
+const selectedItem = ref<ItemEntity | null>(null)
+const selectedItemRef = ref("")
+const selectedItemOpen = ref(false)
+const selectedItemLoading = ref(false)
+const selectedDisplayItems = ref<DisplayItems>(emptyDisplayItems())
+const itemReturnFocus = ref<HTMLElement | null>(null)
+let itemRequestVersion = 0
+
+const equipmentByRef = computed(() => {
+  const map = new Map<string, EquippedSlotContext[]>()
+  for (const [name, slot] of Object.entries(props.equipment ?? {})) {
+    if (!slot.ref) continue
+    const contexts = map.get(slot.ref) ?? []
+    contexts.push({ name, slot })
+    map.set(slot.ref, contexts)
   }
-  const raw = data.value.entity
-  const container = parseContainer(raw)
-  if (container) return { entity: container, status: "ready" }
-  const item = parseItem(raw)
-  if (item) return { entity: item, status: "ready" }
-  return { entity: null, status: "missing" }
-}
-
-// ============ 顶层容器网格 ============
-
-const topSlots = ref<RefSlot[]>([])
-
-const topGridItems = computed<InventoryGridItem[]>(() =>
-  topSlots.value.map((s) => ({
-    ref: s.ref,
-    count: s.count,
-    entity: s.entity,
-    status: s.status,
-  })),
-)
-
-const hasContainers = computed(
-  () => Array.isArray(props.containers) && props.containers.length > 0,
-)
-
-async function loadTopContainers() {
-  const list = props.containers ?? []
-  // 先构建 loading 占位，保证 UI 顺序稳定
-  topSlots.value = list.map((c) => ({
-    ref: c.ref,
-    count: c.count,
-    entity: null,
-    status: "loading" as const,
-  }))
-  // 并行拉取
-  const results = await Promise.all(
-    list.map(async (c, idx) => {
-      const { entity, status } = await fetchInventoryEntity(c.ref)
-      return { idx, entity, status }
-    }),
-  )
-  const next = topSlots.value.slice()
-  for (const r of results) {
-    if (r.idx >= 0 && r.idx < next.length) {
-      next[r.idx] = {
-        ref: next[r.idx].ref,
-        count: next[r.idx].count,
-        entity: r.entity,
-        status: r.status,
-      }
-    }
-  }
-  topSlots.value = next
-}
-
-onMounted(() => {
-  void loadTopContainers()
+  return map
 })
+
+const gridItems = computed<InventoryGridItem[]>(() => slots.value.map((slot) => ({
+  ...slot,
+  equippedSlots: equipmentByRef.value.get(slot.ref)?.map((context) => context.name),
+  highlighted: slot.ref === props.highlightedItemRef,
+})))
+
+const atRoot = computed(() => path.value.length === 0)
+const panelTitle = computed(() => currentContainer.value?.name ?? "持有容器")
 
 watch(
   () => props.containers,
-  () => {
-    void loadTopContainers()
-  },
+  () => void resetToRoot(),
   { deep: true },
 )
 
-// ============ 模态状态 ============
-
-const modalOpen = ref(false)
-const modalEntityRef = ref<string>("")
-const modalEntity = ref<InventoryEntity | null>(null)
-const modalLoading = ref(false)
-const modalDisplayItems = ref<DisplayItems>(emptyDisplayItems())
-/** 模态内容器 contents 网格已解析。 */
-const modalGridSlots = ref<RefSlot[]>([])
-
-const breadcrumb = ref<Array<{ ref: string; name: string }>>([])
-
-const modalGridItems = computed<InventoryGridItem[]>(() =>
-  modalGridSlots.value.map((s) => ({
-    ref: s.ref,
-    count: s.count,
-    entity: s.entity,
-    status: s.status,
-  })),
+watch(
+  () => props.requestedItemRef,
+  (entityRef) => {
+    if (!entityRef) return
+    void openItemByRef(entityRef).finally(() => emit("request-consumed"))
+  },
 )
 
-/** 拉取模态当前 ref 的 entity + extensions + contents 网格（若容器）。 */
-async function loadModalEntity(entityRef: string) {
-  modalLoading.value = true
-  modalEntity.value = null
-  modalDisplayItems.value = emptyDisplayItems()
-  modalGridSlots.value = []
-  const { entity, status } = await fetchInventoryEntity(entityRef)
-  if (modalEntityRef.value !== entityRef) {
-    // 并发切换：忽略过期结果
-    return
-  }
-  if (status !== "ready" || entity === null) {
-    modalEntity.value = null
-    modalLoading.value = false
-    return
-  }
-  modalEntity.value = entity
-  // extensions 分区
-  if (entity.extensions) {
-    const { displayItems } = parseExtensionsOnly({ extensions: entity.extensions })
-    modalDisplayItems.value = displayItems
-  }
-  // 容器 → 预取 contents
-  if (isContainerEntity(entity)) {
-    const contents: ContainerContent[] = entity.contents
-    modalGridSlots.value = contents.map((c) => ({
-      ref: c.ref,
-      count: c.count,
-      entity: null,
-      status: "loading" as const,
-    }))
-    const results = await Promise.all(
-      contents.map(async (c, idx) => {
-        const r = await fetchInventoryEntity(c.ref)
-        return { idx, entity: r.entity, status: r.status }
-      }),
-    )
-    if (modalEntityRef.value === entityRef) {
-      const next = modalGridSlots.value.slice()
-      for (const r of results) {
-        if (r.idx >= 0 && r.idx < next.length) {
-          next[r.idx] = {
-            ref: next[r.idx].ref,
-            count: next[r.idx].count,
-            entity: r.entity,
-            status: r.status,
-          }
-        }
-      }
-      modalGridSlots.value = next
+onMounted(() => void resetToRoot())
+onBeforeUnmount(() => {
+  navigationVersion += 1
+  itemRequestVersion += 1
+})
+
+async function resetToRoot(): Promise<void> {
+  path.value = []
+  currentContainer.value = null
+  panelMessage.value = ""
+  await loadSlots(props.containers ?? [], ++navigationVersion)
+}
+
+async function loadSlots(contents: ContainerContent[], version: number): Promise<void> {
+  panelLoading.value = true
+  const currentPathRefs = new Set(path.value.map((segment) => segment.ref))
+  const nextSlots: RefSlot[] = contents.map((entry) => ({
+    ref: entry.ref,
+    count: entry.count,
+    entity: null,
+    status: currentPathRefs.has(entry.ref) ? "cycle" : "loading",
+  }))
+  slots.value = nextSlots
+
+  const results = await Promise.all(nextSlots.map(async (slot, index) => {
+    if (slot.status === "cycle") {
+      return { index, entity: null, status: "cycle" as const }
     }
+    const result = await loadInventoryEntity(slot.ref)
+    return { index, entity: result.entity, status: result.status }
+  }))
+
+  if (version !== navigationVersion) return
+  const next = nextSlots.slice()
+  for (const result of results) {
+    const current = next[result.index]
+    if (!current) continue
+    next[result.index] = { ...current, entity: result.entity, status: result.status }
   }
-  modalLoading.value = false
+  slots.value = next
+  panelLoading.value = false
 }
 
-/** 从顶层网格 / 嵌套网格 → 打开或深入模态。 */
-function openEntity(entityRef: string) {
-  // 优先从已解析槽位取 name，避免面包屑短暂显示 localId。
-  const displayName = findDisplayName(entityRef)
-  modalEntityRef.value = entityRef
-  breadcrumb.value = [...breadcrumb.value, { ref: entityRef, name: displayName }]
-  modalOpen.value = true
-  void loadModalEntity(entityRef)
-}
-
-function findDisplayName(entityRef: string): string {
-  for (const s of modalGridSlots.value) {
-    if (s.ref === entityRef && s.entity) return s.entity.name
+async function selectGridItem(item: InventoryGridItem, trigger: HTMLElement): Promise<void> {
+  if (item.status !== "ready" || !item.entity) return
+  if (isContainerEntity(item.entity)) {
+    await enterContainer(item.ref, item.entity)
+  } else {
+    itemReturnFocus.value = trigger
+    openItem(item.ref, item.entity)
   }
-  for (const s of topSlots.value) {
-    if (s.ref === entityRef && s.entity) return s.entity.name
+}
+
+async function enterContainer(entityRef: string, container: ContainerEntity): Promise<void> {
+  if (path.value.some((segment) => segment.ref === entityRef)) {
+    panelMessage.value = "检测到循环容器引用，无法继续进入。"
+    return
   }
-  const idx = entityRef.indexOf(":")
-  return idx >= 0 ? entityRef.slice(idx + 1) : entityRef
+  path.value = [...path.value, { ref: entityRef, name: container.name }]
+  currentContainer.value = container
+  panelMessage.value = ""
+  await loadSlots(container.contents, ++navigationVersion)
 }
 
-function onTopSelect(entityRef: string) {
-  // 打开新模态：重置 breadcrumb 从顶层新根开始
-  breadcrumb.value = []
-  openEntity(entityRef)
+async function navigate(index: number): Promise<void> {
+  if (index < 0 || index >= path.value.length) return
+  const version = ++navigationVersion
+  panelLoading.value = true
+  const target = path.value[index]
+  const result = await loadInventoryEntity(target.ref)
+  if (version !== navigationVersion) return
+  if (!result.entity || !isContainerEntity(result.entity)) {
+    panelMessage.value = "该容器已不可读。"
+    panelLoading.value = false
+    return
+  }
+  path.value = path.value.slice(0, index + 1)
+  currentContainer.value = result.entity
+  panelMessage.value = ""
+  await loadSlots(result.entity.contents, version)
 }
 
-function onModalSelect(entityRef: string) {
-  openEntity(entityRef)
+function openItem(entityRef: string, entity: ItemEntity): void {
+  selectedItemRef.value = entityRef
+  selectedItem.value = entity
+  selectedDisplayItems.value = entity.extensions
+    ? parseExtensionsOnly({ extensions: entity.extensions }).displayItems
+    : emptyDisplayItems()
+  selectedItemLoading.value = false
+  selectedItemOpen.value = true
+  emit("highlight-item", entityRef)
 }
 
-function onNavigate(index: number) {
-  if (index < 0 || index >= breadcrumb.value.length) return
-  const target = breadcrumb.value[index]
-  breadcrumb.value = breadcrumb.value.slice(0, index + 1)
-  modalEntityRef.value = target.ref
-  void loadModalEntity(target.ref)
+async function openItemByRef(entityRef: string): Promise<void> {
+  const activeElement = document.activeElement
+  itemReturnFocus.value = activeElement instanceof HTMLElement ? activeElement : null
+  const version = ++itemRequestVersion
+  selectedItemRef.value = entityRef
+  selectedItem.value = null
+  selectedDisplayItems.value = emptyDisplayItems()
+  selectedItemLoading.value = true
+  selectedItemOpen.value = true
+  emit("highlight-item", entityRef)
+
+  const result = await loadInventoryEntity(entityRef)
+  if (version !== itemRequestVersion) return
+  if (result.entity && !isContainerEntity(result.entity)) {
+    selectedItem.value = result.entity
+    selectedDisplayItems.value = result.entity.extensions
+      ? parseExtensionsOnly({ extensions: result.entity.extensions }).displayItems
+      : emptyDisplayItems()
+  }
+  selectedItemLoading.value = false
 }
 
-function onClose() {
-  modalOpen.value = false
-  modalEntityRef.value = ""
-  modalEntity.value = null
-  modalDisplayItems.value = emptyDisplayItems()
-  modalGridSlots.value = []
-  breadcrumb.value = []
+function updateItemOpen(open: boolean): void {
+  selectedItemOpen.value = open
+  if (!open) {
+    itemRequestVersion += 1
+    selectedItem.value = null
+    selectedItemRef.value = ""
+    selectedItemLoading.value = false
+    selectedDisplayItems.value = emptyDisplayItems()
+    emit("highlight-item", null)
+  }
 }
-
-// 未来可能基于 protagonistRef 做"仅主角可查看"策略；当前仅作 props 声明。
-void props.protagonistRef
 </script>
 
 <template>
   <div class="inventory-pane">
-    <div v-if="!hasContainers" class="inv-empty">
-      <div class="inv-empty-emblem" aria-hidden="true">
-        <svg class="inv-empty-glyph" viewBox="0 0 96 96" fill="none">
-          <path d="M24 42h48l-5 30H29l-5-30Z" />
-          <path d="M34 42v-9c0-8 6-14 14-14s14 6 14 14v9" />
-          <path d="M36 56h24" />
-          <path d="M43 66h10" />
-        </svg>
+    <header class="inventory-head">
+      <div>
+        <span class="inventory-kicker">CONTAINER GRAPH</span>
+        <h2>{{ panelTitle }}</h2>
       </div>
-      <div class="inv-empty-copy">
-        <div class="inv-empty-kicker">NO CONTAINER</div>
-        <div class="inv-empty-title">未持有容器</div>
-        <p class="inv-empty-hint">这个角色尚未记录可查看的背包或储物器具。</p>
-      </div>
+      <button v-if="!atRoot" type="button" class="root-button" @click="resetToRoot">全部容器</button>
+    </header>
+
+    <InventoryBreadcrumb :path="path" @navigate="navigate" />
+    <p v-if="panelMessage" class="panel-message" role="status">{{ panelMessage }}</p>
+
+    <div v-if="panelLoading && slots.length === 0" class="inventory-empty">读取容器…</div>
+    <div v-else-if="atRoot && !containers?.length" class="inventory-empty">
+      <strong>未持有容器</strong>
+      <span>这个角色尚未记录可查看的背包或储物器具。</span>
     </div>
     <InventoryGrid
       v-else
-      :items="topGridItems"
-      empty-text="未持有容器"
-      @select="onTopSelect"
+      :items="gridItems"
+      :empty-text="atRoot ? '未持有容器' : '空容器'"
+      @select="selectGridItem"
+      @highlight="emit('highlight-item', $event)"
     />
 
     <ItemDetailModal
-      v-if="modalOpen"
-      :entity="modalEntity"
-      :entity-ref="modalEntityRef"
-      :breadcrumb="breadcrumb"
-      :loading="modalLoading"
-      :grid-items="modalGridItems"
-      :display-items="modalDisplayItems"
-      @select="onModalSelect"
-      @navigate="onNavigate"
-      @close="onClose"
+      :open="selectedItemOpen"
+      :entity="selectedItem"
+      :entity-ref="selectedItemRef"
+      :loading="selectedItemLoading"
+      :display-items="selectedDisplayItems"
+      :equipped-slots="equipmentByRef.get(selectedItemRef) ?? []"
+      :return-focus="itemReturnFocus"
+      @update:open="updateItemOpen"
     />
   </div>
 </template>
 
 <style scoped>
 .inventory-pane {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  min-width: 0;
 }
-.inv-empty {
-  position: relative;
+
+.inventory-head {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 260px;
-  padding: 42px 24px;
-  overflow: hidden;
-  border: 1px solid rgba(181, 137, 61, 0.16);
-  border-radius: 12px;
-  background:
-    radial-gradient(circle at 50% 28%, rgba(181, 137, 61, 0.12), transparent 38%),
-    linear-gradient(180deg, rgba(181, 137, 61, 0.055), rgba(6, 6, 8, 0.02)),
-    rgba(6, 6, 8, 0.28);
-  color: var(--prose-faint);
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
 }
-.inv-empty::before {
-  content: "";
-  position: absolute;
-  inset: 10px;
-  border: 1px solid rgba(181, 137, 61, 0.09);
-  border-radius: 8px;
-  pointer-events: none;
-}
-.inv-empty::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
-  background-size: 24px 24px;
-  mask-image: radial-gradient(circle at 50% 42%, black, transparent 72%);
-  opacity: 0.28;
-  pointer-events: none;
-}
-.inv-empty-emblem {
-  position: relative;
-  z-index: 1;
-  width: 88px;
-  height: 88px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(181, 137, 61, 0.24);
-  border-radius: 999px;
-  background:
-    radial-gradient(circle at 50% 38%, rgba(232, 169, 72, 0.14), transparent 58%),
-    rgba(10, 5, 6, 0.7);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.025),
-    0 18px 42px rgba(0, 0, 0, 0.24);
-}
-.inv-empty-emblem::before,
-.inv-empty-emblem::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  width: 42px;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(181, 137, 61, 0.42), transparent);
-  transform: translateX(-50%);
-}
-.inv-empty-emblem::before {
-  top: 15px;
-}
-.inv-empty-emblem::after {
-  bottom: 15px;
-}
-.inv-empty-glyph {
-  width: 58px;
-  height: 58px;
-  stroke: rgba(232, 169, 72, 0.68);
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  filter: drop-shadow(0 0 10px rgba(181, 137, 61, 0.14));
-}
-.inv-empty-copy {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  margin-top: 16px;
-  text-align: center;
-}
-.inv-empty-kicker {
+
+.inventory-kicker {
   font-family: var(--font-mono);
-  font-size: 0.58rem;
+  font-size: 0.54rem;
+  letter-spacing: 0.16em;
   color: var(--whisper);
-  letter-spacing: 0.18em;
 }
-.inv-empty-title {
+
+.inventory-head h2 {
+  margin: 3px 0 0;
   font-family: var(--font-display);
-  font-size: 1.08rem;
+  font-size: 1.18rem;
+  letter-spacing: 0.07em;
   color: var(--ember-bright);
-  letter-spacing: 0.08em;
 }
-.inv-empty-hint {
-  max-width: 19rem;
-  margin: 4px 0 0;
-  font-family: var(--font-serif);
-  font-size: 0.76rem;
-  line-height: 1.7;
+
+.root-button {
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  padding: 5px 2px;
+  background: transparent;
+  color: var(--prose-muted);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  cursor: pointer;
+}
+
+.root-button:hover,
+.root-button:focus-visible {
+  color: var(--ember-bright);
+  outline: 2px solid var(--ember-bright);
+  outline-offset: 2px;
+}
+
+.panel-message {
+  margin: 0;
+  padding: 7px 9px;
+  border-left: 2px solid var(--blood);
+  background: rgba(155, 58, 46, 0.08);
+  font-size: 0.7rem;
+  color: var(--prose-muted);
+}
+
+.inventory-empty {
+  min-height: 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  text-align: center;
   color: var(--prose-faint);
+}
+
+.inventory-empty strong {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  letter-spacing: 0.08em;
+  color: var(--prose-muted);
+}
+
+.inventory-empty span {
+  max-width: 18rem;
+  font-size: 0.72rem;
+  line-height: 1.7;
 }
 </style>

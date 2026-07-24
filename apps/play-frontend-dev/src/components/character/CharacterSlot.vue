@@ -1,45 +1,44 @@
 <script setup lang="ts">
-/**
- * CharacterSlot — 选中角色的 entity/relationships 读取 + CharacterCard 渲染。
- *
- * design §4.1：CharacterView 通过 :key=selectedRef 触发本组件 remount，重新读取
- * 选中角色数据。useEntity / useRelationships 在 setup 期绑定 selectedRef；
- * remount 后重新 setup，自动读取新角色的 entity/relationships。
- *
- * 不抛错：useEntity / useRelationships 内部 catch，error 走 error ref
- * （type-safety §"play-frontend Workspace Data Consumption"）。
- * entity 读取失败 → parseCharacter 返回 null → CharacterCard 降级显示 localId + "档案缺失"。
- */
-import { computed, onMounted } from "vue"
+/** CharacterSlot — 选中角色的数据读取边界。 */
+import { computed, ref, watch } from "vue"
 import { useEntity } from "../../composables/useEntity"
 import { useRelationships } from "../../composables/useRelationships"
 import { parseCharacter } from "../../lib/parse-character"
 import CharacterCard from "./CharacterCard.vue"
+import type { CharacterMode } from "./CharacterStage.vue"
 
 const props = defineProps<{
   selectedRef: string | null
-  /** 主角 ref，透传给 CharacterCard → CharacterDetail → InventoryPane。 */
   protagonistRef: string | null
+  activeMode: CharacterMode
+  trackScrollTop: number
+  mobileHeroCollapsed: boolean
+  portraitRefreshToken: number
+  runtimeRevision: number
 }>()
 
 const emit = defineEmits<{
   select: [ref: string]
   "portrait-updated": []
+  "open-character-drawer": [trigger: HTMLButtonElement]
+  "update:active-mode": [mode: CharacterMode]
+  "update:track-scroll": [mode: CharacterMode, value: number]
 }>()
 
 const entityRef = computed(() => props.selectedRef ?? "")
-
 const { data: entityData, error: entityError, load: loadEntity } = useEntity(entityRef.value)
 const { data: relationshipsData, load: loadRelationships } = useRelationships(entityRef.value)
 
-onMounted(() => {
-  if (entityRef.value) {
+watch(
+  () => props.runtimeRevision,
+  () => {
+    if (!entityRef.value) return
     void loadEntity()
     void loadRelationships()
-  }
-})
+  },
+  { immediate: true },
+)
 
-// 把 entity raw JSON 解析为 CharacterEntity 强类型。
 const character = computed(() => {
   if (entityError.value !== null || !entityData.value) return null
   return parseCharacter(entityData.value.entity)
@@ -47,25 +46,40 @@ const character = computed(() => {
 
 const loading = computed(() => entityError.value === null && !entityData.value && Boolean(entityRef.value))
 
-function onSelect(ref: string) {
-  emit("select", ref)
+const characterCard = ref<InstanceType<typeof CharacterCard> | null>(null)
+
+function focusCharacterDrawerTrigger(): void {
+  characterCard.value?.focusCharacterDrawerTrigger()
 }
 
-// 头像上传成功后重新加载 entity，刷新 portrait 元数据（task 07-05 design §"Upload flow"）。
-function onPortraitUpdated() {
+defineExpose({ focusCharacterDrawerTrigger })
+
+function onPortraitUpdated(): void {
   void loadEntity()
   emit("portrait-updated")
+}
+
+function updateTrackScroll(mode: CharacterMode, value: number): void {
+  emit("update:track-scroll", mode, value)
 }
 </script>
 
 <template>
   <CharacterCard
+    ref="characterCard"
     :entity="character"
     :loading="loading"
     :relationships="relationshipsData"
     :entity-ref="selectedRef"
     :protagonist-ref="protagonistRef"
-    @select="onSelect"
+    :active-mode="activeMode"
+    :track-scroll-top="trackScrollTop"
+    :mobile-hero-collapsed="mobileHeroCollapsed"
+    :portrait-refresh-token="portraitRefreshToken"
+    @select="emit('select', $event)"
     @portrait-updated="onPortraitUpdated"
+    @open-character-drawer="emit('open-character-drawer', $event)"
+    @update:active-mode="emit('update:active-mode', $event)"
+    @update:track-scroll="updateTrackScroll"
   />
 </template>

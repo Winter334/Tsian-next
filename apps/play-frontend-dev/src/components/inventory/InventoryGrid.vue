@@ -1,42 +1,34 @@
 <script setup lang="ts">
-/**
- * InventoryGrid — 图标网格（顶层容器 / 容器 contents 复用）。
- *
- * design §6.2 / task 07-04 D4：
- * - 父组件负责 useEntity 读取（避免网格内部重复读取）。
- * - CSS grid，固定列宽 64-72px，自适应列数。
- * - 每格：ItemIcon + count 角标（count > 1） + 底部名字（截断）。
- * - 容器格：边框 `--ember` 半透明，`data-variant="container"`。
- * - entity 缺失：首字 fallback + 暗化边框，title="档案缺失"。
- * - 空 contents：展示 `<div class="empty">`（"空容器"）。
- *
- * emit `select(ref)`：点击非缺失格触发。缺失格仍可点击但父组件可决定是否忽略。
- */
+/** InventoryGrid — 容器与物品共用的统一方格。 */
 import type { InventoryEntity } from "../../lib/item-types"
 import { isContainerEntity } from "../../lib/item-types"
 import ItemIcon from "./ItemIcon.vue"
 
-/** 网格单元：由父组件预解析实体，含读取状态。 */
 export interface InventoryGridItem {
   ref: string
   count?: number
   entity: InventoryEntity | null
-  /** ready = 读取到实体；missing = 读不到；loading = 读取中。 */
-  status: "ready" | "missing" | "loading"
+  status: "ready" | "missing" | "loading" | "cycle"
+  equippedSlots?: string[]
+  highlighted?: boolean
 }
 
-const props = defineProps<{
+defineProps<{
   items: InventoryGridItem[]
-  /** 网格容器为空时展示的文案；缺省则展示"空容器"。 */
   emptyText?: string
 }>()
 
 const emit = defineEmits<{
-  select: [ref: string]
+  select: [item: InventoryGridItem, trigger: HTMLElement]
+  highlight: [ref: string | null]
 }>()
 
+function selectItem(event: MouseEvent, item: InventoryGridItem): void {
+  emit("select", item, event.currentTarget as HTMLElement)
+}
+
 function displayName(item: InventoryGridItem): string {
-  if (item.entity && item.entity.name.length > 0) return item.entity.name
+  if (item.entity?.name) return item.entity.name
   const idx = item.ref.indexOf(":")
   return idx >= 0 ? item.ref.slice(idx + 1) : item.ref
 }
@@ -45,43 +37,41 @@ function isContainer(item: InventoryGridItem): boolean {
   return item.entity !== null && isContainerEntity(item.entity)
 }
 
-function onClick(item: InventoryGridItem) {
-  emit("select", item.ref)
-}
-
-function onKeydown(event: KeyboardEvent, item: InventoryGridItem) {
-  if (event.key === "Enter" || event.key === " ") {
-    event.preventDefault()
-    onClick(item)
-  }
+function slotBadge(item: InventoryGridItem): string {
+  const slots = item.equippedSlots ?? []
+  if (slots.length === 0) return ""
+  return slots.length === 1 ? slots[0] : `${slots[0]} +${slots.length - 1}`
 }
 </script>
 
 <template>
-  <div v-if="items.length === 0" class="grid-empty">
-    <span>{{ emptyText ?? "空容器" }}</span>
-  </div>
+  <div v-if="items.length === 0" class="grid-empty">{{ emptyText ?? "空容器" }}</div>
   <div v-else class="inv-grid" role="list">
     <button
-      v-for="item in items"
-      :key="item.ref"
+      v-for="(item, index) in items"
+      :key="`${item.ref}-${index}`"
       type="button"
       class="inv-cell"
+      :class="{ highlighted: item.highlighted }"
       role="listitem"
       :data-variant="isContainer(item) ? 'container' : 'item'"
-      :data-missing="item.status === 'missing' ? 'true' : undefined"
-      :title="item.status === 'missing' ? '档案缺失' : displayName(item)"
-      @click="onClick(item)"
-      @keydown="onKeydown($event, item)"
+      :data-status="item.status"
+      :aria-disabled="item.status === 'loading' || item.status === 'missing' || item.status === 'cycle'"
+      :aria-label="`${displayName(item)}${isContainer(item) ? '，容器，进入' : ''}${item.status === 'loading' ? '，读取中' : item.status === 'missing' ? '，档案缺失' : item.status === 'cycle' ? '，循环引用，无法进入' : ''}${slotBadge(item) ? `，已装备于${slotBadge(item)}` : ''}`"
+      :title="item.status === 'cycle' ? '检测到循环引用，无法进入' : item.status === 'missing' ? '档案缺失' : displayName(item)"
+      @click="selectItem($event, item)"
+      @mouseenter="emit('highlight', item.ref)"
+      @mouseleave="emit('highlight', null)"
+      @focus="emit('highlight', item.ref)"
+      @blur="emit('highlight', null)"
     >
-      <div class="inv-cell-icon">
-        <ItemIcon :entity="item.entity" :entity-ref="item.ref" />
-      </div>
-      <span
-        v-if="typeof item.count === 'number' && item.count > 1"
-        class="inv-cell-count"
-      >×{{ item.count }}</span>
-      <div class="inv-cell-name">{{ displayName(item) }}</div>
+      <span class="inv-cell-icon"><ItemIcon :entity="item.entity" :entity-ref="item.ref" /></span>
+      <span v-if="typeof item.count === 'number' && item.count > 1" class="inv-cell-count">×{{ item.count }}</span>
+      <span v-if="slotBadge(item)" class="inv-cell-equipped">{{ slotBadge(item) }}</span>
+      <span class="inv-cell-name">{{ displayName(item) }}</span>
+      <span v-if="isContainer(item)" class="inv-cell-enter">进入</span>
+      <span v-else-if="item.status === 'missing'" class="inv-cell-enter">缺失</span>
+      <span v-else-if="item.status === 'cycle'" class="inv-cell-enter">循环</span>
     </button>
   </div>
 </template>
@@ -89,89 +79,137 @@ function onKeydown(event: KeyboardEvent, item: InventoryGridItem) {
 <style scoped>
 .inv-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 10px;
   padding: 4px 0;
 }
+
 .inv-cell {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
-  padding: 6px 4px 4px;
-  background: var(--void-deep);
+  aspect-ratio: 1;
+  min-width: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  place-items: center;
+  gap: 2px;
+  padding: 7px 5px 5px;
+  overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: border-color 0.2s, background-color 0.2s, box-shadow 0.2s;
+  border-radius: 5px 10px 4px 9px;
+  background:
+    radial-gradient(circle at 50% 35%, rgba(181, 137, 61, 0.08), transparent 48%),
+    rgba(10, 5, 6, 0.58);
   color: inherit;
   font: inherit;
-  text-align: center;
+  cursor: pointer;
   outline: none;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
-.inv-cell:hover {
-  border-color: var(--ember);
-  box-shadow: 0 0 12px rgba(181, 137, 61, 0.16);
+
+.inv-cell:hover:not([aria-disabled="true"]),
+.inv-cell:focus-visible:not([aria-disabled="true"]),
+.inv-cell.highlighted {
+  border-color: rgba(232, 169, 72, 0.64);
+  background:
+    radial-gradient(circle at 50% 35%, rgba(232, 169, 72, 0.16), transparent 54%),
+    rgba(10, 5, 6, 0.74);
+  box-shadow: 0 0 18px rgba(181, 137, 61, 0.14);
 }
+
 .inv-cell:focus-visible {
-  border-color: var(--ember-bright);
-  box-shadow: 0 0 0 1px rgba(232, 169, 72, 0.35);
+  outline: 2px solid var(--ember-bright);
+  outline-offset: 2px;
 }
+
 .inv-cell[data-variant="container"] {
-  border-color: rgba(181, 137, 61, 0.5);
+  border-color: rgba(181, 137, 61, 0.42);
+  background:
+    repeating-linear-gradient(135deg, rgba(181, 137, 61, 0.035) 0 4px, transparent 4px 9px),
+    rgba(10, 5, 6, 0.7);
 }
-.inv-cell[data-variant="container"]::before {
-  /* 内层细线，参考 CharacterPortrait 风格 */
+
+.inv-cell[data-variant="container"]::after {
   content: "";
   position: absolute;
-  inset: 3px;
-  border: 1px solid rgba(181, 137, 61, 0.15);
-  border-radius: 5px;
+  inset: 4px;
+  border: 1px solid rgba(181, 137, 61, 0.12);
+  border-radius: 3px 7px 3px 7px;
   pointer-events: none;
 }
-.inv-cell[data-missing="true"] {
-  border-color: rgba(120, 120, 130, 0.35);
-  opacity: 0.72;
+
+.inv-cell[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.55;
 }
+
+.inv-cell[data-status="cycle"],
+.inv-cell[data-status="missing"] {
+  border-color: rgba(155, 58, 46, 0.42);
+}
+
 .inv-cell-icon {
-  aspect-ratio: 1 / 1;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  width: 64%;
+  aspect-ratio: 1;
 }
-.inv-cell-count {
+
+.inv-cell-count,
+.inv-cell-equipped {
   position: absolute;
+  z-index: 2;
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  background: rgba(6, 6, 8, 0.86);
+}
+
+.inv-cell-count {
   top: 4px;
-  right: 6px;
-  font-family: var(--font-mono);
-  font-size: 0.62rem;
+  right: 5px;
   color: var(--ember-bright);
-  letter-spacing: 0.04em;
-  background: rgba(6, 6, 8, 0.72);
-  padding: 1px 5px;
-  border-radius: 8px;
-  line-height: 1.4;
 }
-.inv-cell-name {
-  font-family: var(--font-serif);
-  font-size: 0.72rem;
-  color: var(--prose-muted);
-  line-height: 1.25;
-  padding: 0 2px;
-  white-space: nowrap;
+
+.inv-cell-equipped {
+  top: 4px;
+  left: 4px;
+  max-width: calc(100% - 24px);
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
+  padding: 1px 4px;
+  border: 1px solid rgba(232, 169, 72, 0.3);
+  border-radius: 6px;
+  color: var(--ember-bright);
 }
-.grid-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px 0;
+
+.inv-cell-name {
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  color: var(--prose-muted);
+}
+
+.inv-cell-enter {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.5rem;
   letter-spacing: 0.08em;
   color: var(--prose-faint);
+}
+
+.grid-empty {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  color: var(--prose-faint);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .inv-cell {
+    transition: none;
+  }
 }
 </style>

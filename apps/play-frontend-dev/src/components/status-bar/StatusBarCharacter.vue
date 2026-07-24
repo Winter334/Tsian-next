@@ -34,6 +34,7 @@ void props
   <!-- 折叠态：当前角色小肖像，点击展开状态栏 -->
   <button
     v-if="collapsed"
+    type="button"
     class="sb-char-collapsed"
     :class="{ empty: !hasCharacter }"
     :aria-label="hasCharacter ? `展开状态栏 — ${name}` : '展开状态栏'"
@@ -50,6 +51,7 @@ void props
   <!-- 展开态：大肖像玩家概要，点击进角色卡 -->
   <button
     v-else
+    type="button"
     class="sb-char-expanded"
     :class="{ empty: !hasCharacter }"
     :aria-label="hasCharacter ? `查看角色卡 — ${name}` : '未设定角色'"

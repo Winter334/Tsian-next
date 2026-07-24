@@ -104,6 +104,15 @@ export interface CharacterHistoryEvent {
  */
 export type CharacterAttributes = Record<string, number>
 
+/** 角色动态装备槽。`applied` 是已结算进 attributes 的实际贡献。 */
+export interface CharacterEquipmentSlot {
+  ref: string | null
+  applied?: Record<string, number>
+}
+
+/** 动态槽位名到装备槽的映射；键顺序即展示与结算顺序。 */
+export type CharacterEquipment = Record<string, CharacterEquipmentSlot>
+
 /**
  * character entity 强类型视图（design §3.1）。
  * id/name/brief 必填；其余字段可选。extensions 由 parseCharacter 透传 raw，
@@ -122,6 +131,8 @@ export interface CharacterEntity {
   gender?: string
   appearance?: string
   attributes?: CharacterAttributes
+  /** 动态装备槽；槽位名与顺序来自 workspace 数据，不由前端补齐或排序。 */
+  equipment?: CharacterEquipment
   gauges?: CharacterGauge[]
   status?: CharacterStatus[]
   /**

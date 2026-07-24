@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed } from "vue"
+import { computed, ref } from "vue"
 import TsianLogo from "./TsianLogo.vue"
 
 /**
@@ -21,9 +21,14 @@ const props = defineProps<{
 const emit = defineEmits<{
   toggleNav: []
   toggleStatusBar: []
+  openStatus: []
 }>()
 
 const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
+const desktopStatusButton = ref<HTMLButtonElement | null>(null)
+const mobileStatusButton = ref<HTMLButtonElement | null>(null)
+
+defineExpose({ desktopStatusButton, mobileStatusButton })
 </script>
 
 <template>
@@ -31,11 +36,25 @@ const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
     <!-- 左：状态栏折叠按钮 + 静态简化 Logo + 连接状态点 -->
     <div class="header-left">
       <button
-        class="nav-toggle status-toggle"
+        ref="desktopStatusButton"
+        type="button"
+        class="nav-toggle status-toggle desktop-status-toggle"
         :aria-label="statusBarCollapsed ? '展开状态栏' : '折叠状态栏'"
         @click="emit('toggleStatusBar')"
       >
         <span class="toggle-icon" :class="{ collapsed: statusBarCollapsed }" />
+      </button>
+      <button
+        ref="mobileStatusButton"
+        type="button"
+        class="nav-toggle mobile-status-toggle"
+        aria-label="打开状态抽屉"
+        @click="emit('openStatus')"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M5 6h14M5 12h9M5 18h11" />
+          <circle cx="18" cy="12" r="2" />
+        </svg>
       </button>
       <TsianLogo :animated="false" :size="28" />
       <span class="status-dot" :class="{ connected: ready }" :title="ready ? '已连接' : '连接中…'" />
@@ -46,7 +65,12 @@ const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
     <!-- 右：轮次徽章 + nav 折叠按钮 -->
     <div class="header-right">
       <span class="turn-badge">{{ turnLabel }}</span>
-      <button class="nav-toggle" :aria-label="navCollapsed ? '展开导航' : '折叠导航'" @click="emit('toggleNav')">
+      <button
+        type="button"
+        class="nav-toggle"
+        :aria-label="navCollapsed ? '展开导航' : '折叠导航'"
+        @click="emit('toggleNav')"
+      >
         <span class="toggle-icon" :class="{ collapsed: navCollapsed }" />
       </button>
     </div>
@@ -109,6 +133,19 @@ const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
   letter-spacing: 0.06em;
 }
 
+.mobile-status-toggle {
+  display: none;
+}
+
+.mobile-status-toggle svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
 /* nav 折叠按钮 */
 .nav-toggle {
   background: transparent;
@@ -122,8 +159,13 @@ const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
   justify-content: center;
   transition: border-color 0.2s;
 }
-.nav-toggle:hover {
+.nav-toggle:hover,
+.nav-toggle:focus-visible {
   border-color: var(--ember);
+}
+.nav-toggle:focus-visible {
+  outline: 2px solid var(--ember-bright);
+  outline-offset: 2px;
 }
 .toggle-icon {
   width: 14px;
@@ -162,5 +204,44 @@ const turnLabel = computed(() => `第 ${props.turnCount} 轮`)
 @keyframes scan {
   0% { background-position: 200% 0; }
   100% { background-position: -200% 0; }
+}
+
+@media (max-width: 720px) {
+  .app-header {
+    height: var(--play-header-height);
+    padding: env(safe-area-inset-top) 12px 0;
+    box-sizing: border-box;
+  }
+
+  .header-left,
+  .header-right {
+    gap: 8px;
+  }
+
+  .desktop-status-toggle,
+  .header-right .nav-toggle {
+    display: none;
+  }
+
+  .mobile-status-toggle {
+    display: flex;
+    color: var(--prose);
+  }
+
+  .turn-badge {
+    padding: 2px 8px;
+    font-size: 0.68rem;
+  }
+
+  .scan-line {
+    animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-dot.connected,
+  .scan-line {
+    animation: none;
+  }
 }
 </style>
