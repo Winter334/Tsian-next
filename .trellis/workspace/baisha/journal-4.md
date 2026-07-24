@@ -277,3 +277,38 @@ Implemented workshop-installed game card update detection using MarketPackage.re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 164: 角色详情响应式重设计与装备展示
+
+**Date**: 2026-07-24
+**Task**: 角色详情响应式重设计与装备展示
+**Package**: platform-web
+**Branch**: `task/stage-manager-maintenance-tool-optimization`
+
+### Summary
+
+重构开发版正式游戏角色详情为角色/物品共享立绘舞台，接入只读装备与容器浏览，保留完整立绘上传，并完成移动角色页及全局状态抽屉/底部导航适配；构建与完整质量复查通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0352218` | (see git log) |
+| `6a91893` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

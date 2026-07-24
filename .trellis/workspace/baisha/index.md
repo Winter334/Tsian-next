@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 163
-- **Last Active**: 2026-07-23
+- **Total Sessions**: 164
+- **Last Active**: 2026-07-24
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~279 | Active |
+| `journal-4.md` | ~314 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 164 | 2026-07-24 | 角色详情响应式重设计与装备展示 | `0352218`, `6a91893` | `task/stage-manager-maintenance-tool-optimization` |
 | 163 | 2026-07-23 | Workshop game card update detection | `96577a1` | `task/stage-manager-maintenance-tool-optimization` |
 | 162 | 2026-07-23 | Stage manager maintenance tool optimization | `6c8c298` | `task/stage-manager-maintenance-tool-optimization` |
 | 161 | 2026-07-20 | Add entity field patch tool | `6d0ae58` | `task/07-19-remove-researcher-agent` |
