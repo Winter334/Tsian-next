@@ -39,7 +39,7 @@
     {
       "path": "workspace/agents/stage-manager/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 3651
+      "size": 4569
     },
     {
       "path": "workspace/agents/stage-manager/SOUL.md",
@@ -49,22 +49,22 @@
     {
       "path": "workspace/agents/stage-manager/agent.json",
       "mediaType": "application/json",
-      "size": 1675
+      "size": 1170
     },
     {
       "path": "workspace/agents/stage-manager/skills/schema演进检查/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 809
+      "size": 1366
     },
     {
       "path": "workspace/agents/stage-manager/skills/回合后维护/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 9190
+      "size": 11628
     },
     {
       "path": "workspace/agents/stage-manager/tools/commit_turn_recall/run.js",
       "mediaType": "text/javascript",
-      "size": 7752
+      "size": 7985
     },
     {
       "path": "workspace/agents/stage-manager/tools/commit_turn_recall/tool.json",
@@ -74,12 +74,12 @@
     {
       "path": "workspace/agents/stage-manager/tools/read_maintenance_context/run.js",
       "mediaType": "text/javascript",
-      "size": 10194
+      "size": 11460
     },
     {
       "path": "workspace/agents/stage-manager/tools/read_maintenance_context/tool.json",
       "mediaType": "application/json",
-      "size": 974
+      "size": 1092
     },
     {
       "path": "workspace/agents/storyteller/AGENT.md",
@@ -94,7 +94,7 @@
     {
       "path": "workspace/agents/storyteller/agent.json",
       "mediaType": "application/json",
-      "size": 1165
+      "size": 1111
     },
     {
       "path": "workspace/agents/storyteller/creation-guide.md",
@@ -454,7 +454,7 @@
     {
       "path": "workspace/agents/world-architect/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 1319
+      "size": 1362
     },
     {
       "path": "workspace/agents/world-architect/SOUL.md",
@@ -464,12 +464,12 @@
     {
       "path": "workspace/agents/world-architect/agent.json",
       "mediaType": "application/json",
-      "size": 1717
+      "size": 1794
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 5647
+      "size": 5869
     },
     {
       "path": "workspace/agents/world-architect/skills/frontier推进/scripts/_common.js",
@@ -499,7 +499,7 @@
     {
       "path": "workspace/agents/world-architect/skills/开局建模/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 9475
+      "size": 9663
     },
     {
       "path": "workspace/agents/world-architect/skills/开局建模/scripts/_common.js",
@@ -544,7 +544,7 @@
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 6029
+      "size": 6095
     },
     {
       "path": "workspace/agents/world-architect/skills/游玩设定/scripts/_common.js",
@@ -579,12 +579,12 @@
     {
       "path": "workspace/docs/novel-airp-schema-guide.md",
       "mediaType": "text/markdown",
-      "size": 13452
+      "size": 14745
     },
     {
       "path": "workspace/docs/novel-airp-schema-reference.md",
       "mediaType": "text/markdown",
-      "size": 15312
+      "size": 20655
     },
     {
       "path": "workspace/docs/tsian-framework-knowledge.md",
@@ -602,6 +602,16 @@
       "size": 1631
     },
     {
+      "path": "workspace/tools/json_edit/run.js",
+      "mediaType": "text/javascript",
+      "size": 21805
+    },
+    {
+      "path": "workspace/tools/json_edit/tool.json",
+      "mediaType": "application/json",
+      "size": 2558
+    },
+    {
       "path": "workspace/tools/roll_dice/run.js",
       "mediaType": "text/javascript",
       "size": 7044
@@ -612,14 +622,14 @@
       "size": 3624
     },
     {
-      "path": "workspace/tools/update_entity/run.js",
+      "path": "workspace/tools/text_edit/run.js",
       "mediaType": "text/javascript",
-      "size": 16738
+      "size": 7591
     },
     {
-      "path": "workspace/tools/update_entity/tool.json",
+      "path": "workspace/tools/text_edit/tool.json",
       "mediaType": "application/json",
-      "size": 1636
+      "size": 2563
     }
   ],
   "frontendFiles": [

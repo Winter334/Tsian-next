@@ -1,11 +1,22 @@
 {
   "id": "stage-manager",
   "title": "场记",
-  "summary": "回合后维护 runtime、entities、scenes、relationships、memory 和可渲染 extensions。",
+  "summary": "回合后维护 runtime、entities（含装备投影）、scenes、relationships、memory 和可渲染 extensions。",
   "contacts": [
     "world-architect"
   ],
-  "contextPaths": [],
+  "contextPaths": [
+    {
+      "path": "docs/novel-airp-schema-guide.md",
+      "role": "user",
+      "position": "prelude"
+    },
+    {
+      "path": "save/schema/current.md",
+      "role": "user",
+      "position": "prelude"
+    }
+  ],
   "skills": {
     "enabled": [
       "agents/stage-manager/skills/回合后维护/SKILL.md",

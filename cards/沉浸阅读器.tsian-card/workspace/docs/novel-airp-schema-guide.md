@@ -16,7 +16,7 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 
 ## 语言边界
 
-- 英文：JSON 字段、机器枚举、render preset、tone、visibility、lifecycle、entity type。
+- 英文：JSON 字段、机器枚举、展示方式 render、tone、visibility、lifecycle、entity type。
 - 中文：Agent/Skill 显示名、entity `name`/`brief`、字段 label、section title/body、extension key、玩家可见描述。
 
 ## 权威归属
@@ -119,13 +119,13 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 }
 ```
 
-按需使用：`gender`、`aliases`、`visibility`、`lifecycle`、`tags`、`identity`、`appearance`、`attributes`、`gauges`、`status`、`traits`、`goals`、`background`、`history`、`containers`、`portrait`、`extensions`。
+按需使用：`gender`、`aliases`、`visibility`、`lifecycle`、`tags`、`identity`、`appearance`、`attributes`、`gauges`、`status`、`traits`、`goals`、`background`、`history`、`containers`、`equipment`、`portrait`、`extensions`。
 
-## character identity / appearance / attributes / gauges / status / traits / goals / background / containers
+## character identity / appearance / attributes / gauges / status / traits / goals / background / containers / equipment
 
 - `identity`：稳定身份键值对，键为 `age`/`gender`/`role`/`affiliation`/`realm`（如 年龄/性别/身份/所属/境界）。
 - `appearance`：当前形象叙事字符串（单段），描述角色当下外貌。
-- `attributes`：固定6维基础属性，键名由世界架构师按世界观定义（默认`体魄`/`悟性`/`气运`/`根骨`/`法力`/`魅力`），值为正整数，基线 5。维度分两类：**修炼型**（`法力`，随境界暴涨）和**天赋型**（`悟性`/`气运`/`根骨`/`魅力`，先天素质，与境界关系小）；`体魄`介于两者之间（天生体质＋修炼强化）。填值时按角色境界估算法力量级，天赋维度按角色资质给，不要把所有维度压在同一小区间。
+- `attributes`：固定6维基础属性，键名由世界架构师按世界观定义（默认`体魄`/`悟性`/`气运`/`根骨`/`法力`/`魅力`），值为非负整数，基线 5。维度分两类：**修炼型**（`法力`，随境界暴涨）和**天赋型**（`悟性`/`气运`/`根骨`/`魅力`，先天素质，与境界关系小）；`体魄`介于两者之间（天生体质＋修炼强化）。填值时按角色境界估算法力量级，天赋维度按角色资质给，不要把所有维度压在同一小区间。
 
   以下是示例刻度尺（仅供参照——不同小说的战力差距天差地别，有的境界间差百倍，有的几乎没有差距，按实际世界观调整）：
 
@@ -149,15 +149,16 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
 - `background`：背景摘记，单段叙事字符串。
 - `history`：人物履历数组，形态为 `Array<{ event: string }>`。只记录会长期影响角色态度、关系、目标、创伤、秘密、承诺、恩怨或重要物件绑定的经历；每条只写 `event`，时间自然写进文本。不写 `turn`、`tags`、`eventKinds` 等内部索引字段，不记录普通流水账。
 - `containers`：当前持有的容器指针数组，每项 `{ ref, count? }`，ref 指向 container entity；`count` 缺省视为 1。角色不持有容器时省略该字段或写空数组。物品数量不落在这里，落在 container.contents[*].count。
-- `portrait`：玩家上传头像的 UI/媒体引用元数据 `{ path, mimeType?, updatedAt?, updatedBy? }`，`path` 指向 `save/assets/portraits/characters/<localId>.webp`。仅前端 UI 使用，不进入 AIRP injection；agent 重写 character entity 时应保留该字段，不要删除。
+- `equipment`：当前装备栏，类型为 `Record<string, { ref: string | null; applied?: Record<string, number> }>`。槽位名由当前游戏数据动态定义，不预设通用人体槽位；JSON key 顺序就是维护和展示顺序。`ref` 指向已装备 item 或为 null，`applied` 记录上次完整装备刷新时本槽实际写入 `attributes` 的整数差值。装备不会从容器中移出；角色必须能从自己的 containers 递归找到该装备 ref。
+- `portrait`：玩家上传头像的 头像引用元数据 `{ path, mimeType?, updatedAt?, updatedBy? }`，`path` 指向 `save/assets/portraits/characters/<localId>.webp`。只供玩家界面显示头像；agent 重写 character entity 时应保留该字段，不要删除。
 - `relationships` 不内嵌于 character entity；继续走 `save/relationships/character-<localId>.json` 分片。该分片只记录人物关系：subject/to 当前均必须是 `character:<localId>`；地点、组织、物品、场景、事件、尸体/线索、概念等非角色关联不要写入 relationships。
 
 ## container / item entity
 
 容器与物品是独立实体，不内嵌于 character。
 
-- `container` entity 存于 `save/entities/container/<localId>.json`。字段：`id`、`name`、`brief`、`type="container"`、`contents: Array<{ ref, count? }>`（ref 指向 item 或嵌套 container 实体；count 缺省 1）、`status?`（可选，沿用 character status 数组形态）、`extensions?`。不设容量字段；不冗余存储子物品的 name/brief。
-- `item` entity 存于 `save/entities/item/<localId>.json`。字段：`id`、`name`、`brief`、`type`（取值 `equipment`/`material`/`consumable`/`special`/`other`）、`tags?: string[]`、`extensions?`。物品不设 `status`（品相变化直接改 name/brief 或走 extensions）；数量由持有者 container.contents[*].count 表达，item entity 自身不存 `quantity`。
+- `container` entity 存于 `save/entities/container/<localId>.json`。字段：`id`、`name`、`brief`、`type="container"`、`contents: Array<{ ref, count? }>`（ref 指向 item 或嵌套 container 实体；count 缺省 1）、`status?`（可选，沿用 character status 数组形态）、`extensions?`。容器只表达持有/收纳，不表达穿戴；装备中的物品仍应出现在角色持有的某个容器里。不设容量字段；不冗余存储子物品的 name/brief。
+- `item` entity 存于 `save/entities/item/<localId>.json`。字段：`id`、`name`、`brief`、`type`（取值 `equipment`/`material`/`consumable`/`special`/`other`）、`tags?: string[]`、`equipment?: { slot?: string; mods?: Record<string, string>; effects?: string[] }`、`extensions?`。`type="equipment"` 表示可穿戴/持握，不表示已经装备；当前穿戴关系写在角色 `equipment`。`slot` 只是建议槽位；`mods` 是 Stage Manager 解释的 Agent-facing 运算符字符串；`effects` 只参与叙事判断。物品不设 `status`（品相变化直接改 name/brief 或走 extensions）；数量由持有者 container.contents[*].count 表达，item entity 自身不存 `quantity`。
 
 ```json
 {
@@ -178,15 +179,24 @@ save/history/        # turn 正文权威；turn 文件可带 meta.recall 召回�
   "name": "粗铁短剑",
   "brief": "制式短剑，刃口有小豁，仍堪一用。",
   "type": "equipment",
-  "tags": ["制式", "近战"]
+  "tags": ["制式", "近战"],
+  "equipment": {
+    "slot": "武器",
+    "mods": {
+      "体魄": "+=2"
+    },
+    "effects": ["近身搏斗时略微提高威胁"]
+  }
 }
 ```
 
+装备字段均为可选。`mods` 只由 Stage Manager 在规则、维护基线和持有关系都明确时解释；平台没有 modifier 求值器。默认模板不会自动迁移已有存档或覆盖其 living schema。
+
 ## extensions
 
-- `extensions`：动态玩家可见字段，子 key 可用中文，值内用有限 `render` preset（text/number/progress/tag/tags/list/section/ref/cards）。`render` 可省略，省略时前端按朴素文本展示 value；写了 `render` 但值不在 preset 里时前端 fail loud（warn + 隐藏该字段），不静默降级。需要新 render 类型时通过脚本/工具在写入时校验，不要在数据里发明任意 UI 组件名。
+- `extensions`：动态玩家可见字段，子 key 可用中文，值内用有限展示方式（text/number/progress/tag/tags/list/section/ref/cards）。`render` 可省略，省略时按普通文本展示 value；显式填写时必须是已知 preset。遇到未知 `render`，消费者必须记录警告并隐藏该字段，不得静默降级成 text 或其他展示方式。
 
-固定基础 schema 由前端做专门 UI；`extensions` 只是这些 UI 内的新字段扩展槽，不是万能 renderer。
+固定基础字段会作为固定版块展示；`extensions` 只放少量世界观特有的补充信息，不要把角色、装备、容器、关系等核心事实藏进去。
 
 ## Agent 职责
 

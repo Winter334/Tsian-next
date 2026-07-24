@@ -37,21 +37,27 @@
   "containers": [
     { "ref": "container:萧玄行囊" }
   ],
+  "equipment": {
+    "武器": { "ref": "item:粗铁短剑", "applied": { "体魄": 2 } },
+    "护甲": { "ref": null }
+  },
   "extensions": {
     "腐化值": { "render": "progress", "value": 37, "max": 100, "tone": "danger" }
   }
 }
 ```
 
-`identity`/`appearance`/`attributes`/`gauges`/`status`/`traits`/`goals`/`background` 为 character 权威结构。`identity` 键为 `age`/`gender`/`role`/`affiliation`/`realm`。`attributes` 固定6维，键名由世界架构师按世界观定义，基线为 5。`gauges` 是自由命名数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`。`appearance` 是单段叙事字符串。`goals` 是 `{ current?, shortTerm?, longTerm? }`，每项字符串。`background` 是单段字符串。`status[].polarity` 取值 `positive`/`negative`/`neutral`。`traits` 是永久性稳定特质数组，每项 `{ id, name?, description?, effects? }`，`id` 必填（`trait:<localId>` 格式），表示特殊体质、天赋、系统、血脉、命格等稳定能力来源；区别于 `status[]`（当前临时状态），`traits[]` 是永久性的，不随单回合状态变化消失。`relationships` 不内嵌于 character entity；走 `save/relationships/character-<localId>.json` 分片。
+`identity`/`appearance`/`attributes`/`gauges`/`status`/`traits`/`goals`/`background`/`equipment` 为 character 权威结构。`identity` 键为 `age`/`gender`/`role`/`affiliation`/`realm`。`attributes` 固定6维、值为非负整数，键名由世界架构师按世界观定义，基线为 5；装备刷新后这里保存当前有效属性。`gauges` 是自由命名数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`。`appearance` 是单段叙事字符串。`goals` 是 `{ current?, shortTerm?, longTerm? }`，每项字符串。`background` 是单段字符串。`status[].polarity` 取值 `positive`/`negative`/`neutral`。`traits` 是永久性稳定特质数组，每项 `{ id, name?, description?, effects? }`，`id` 必填（`trait:<localId>` 格式），表示特殊体质、天赋、系统、血脉、命格等稳定能力来源；区别于 `status[]`（当前临时状态），`traits[]` 是永久性的，不随单回合状态变化消失。`relationships` 不内嵌于 character entity；走 `save/relationships/character-<localId>.json` 分片。
 
 character 可选 `history?: Array<{ event: string }>`：人物履历，只记录会长期影响角色态度、关系、目标、创伤、秘密、承诺、恩怨或重要物件绑定的经历。每条只包含 `event` 一个字段；时间自然写入 `event` 文本，不另设 `time`。不要写 `turn`、`tags`、`eventKinds`、`涉及实体` 等内部检索字段；它不是 turn 索引，只是角色资料和正文 Agent 发起历史召回的语义入口。普通流水账不写入。
 
 character 可选 `containers?: Array<{ ref, count? }>`：当前持有的容器指针数组，ref 指向 `save/entities/container/<localId>.json`，`count` 缺省视为 1。角色不持有容器时省略该字段或写空数组。物品数量不写在 character 层，落在 container.contents[*].count。
 
+character 可选 `equipment?: Record<string, { ref: string | null; applied?: Record<string, number> }>`：当前装备栏。槽位名由当前游戏数据动态定义，不预设通用人体槽位；JSON key 顺序就是维护和展示顺序。`ref` 指向当前装备 item；空槽位写 `null`。`applied` 记录上一次完整装备刷新时本槽实际写入 `attributes` 的整数差值，只用于下次刷新前撤销旧影响，不是角色的裸装属性。
+
 ## container / item entity
 
-容器与物品是独立实体，与 character 平级，通过 ref 从 character.containers 与 container.contents 引用。前端做专门 UI（背包网格 / 物品详情弹窗）；不需要用 extensions 承载它们。
+容器与物品是独立实体，与 character 平级，通过 ref 从 character.containers 与 container.contents 引用。背包、装备栏、物品详情等固定版块会直接读取这些结构；不需要用 extensions 承载它们。
 
 ```json
 {
@@ -69,7 +75,7 @@ character 可选 `containers?: Array<{ ref, count? }>`：当前持有的容器�
 }
 ```
 
-container 字段：`id`（必填，`container:<localId>`）、`name`、`brief`、`type`（固定字符串 `"container"`）、`contents: Array<{ ref, count? }>`（ref 指向 item 或嵌套 container 实体；count 缺省 1，负数或 0 视为无效）、`status?`（可选，与 character status 数组形态一致）、`extensions?`。不设容量字段；contents 只存 ref+count，不冗余子物品 name/brief（前端按 ref 回读实体权威）。嵌套 container 允许（书箱内套锦囊）但不做无限展开，UI 逐层进入。
+container 字段：`id`（必填，`container:<localId>`）、`name`、`brief`、`type`（固定字符串 `"container"`）、`contents: Array<{ ref, count? }>`（ref 指向 item 或嵌套 container 实体；count 缺省 1，负数或 0 视为无效）、`status?`（可选，与 character status 数组形态一致）、`extensions?`。容器只表达持有/收纳，不表达穿戴；装备中的物品仍应出现在角色持有的某个容器里。不设容量字段；contents 只存 ref+count，不冗余子物品 name/brief（展示时按 ref 回读实体权威）。嵌套 container 允许（书箱内套锦囊），需要判断是否持有某件装备时递归展开，并避免循环引用。
 
 ```json
 {
@@ -84,16 +90,90 @@ container 字段：`id`（必填，`container:<localId>`）、`name`、`brief`�
 }
 ```
 
-item 字段：`id`（必填，`item:<localId>`）、`name`、`brief`、`type`（取值 `equipment`/`material`/`consumable`/`special`/`other` 五类之一；未知或不便归类写 `other`）、`tags?: string[]`（自由标签，用于列表分组或详情 chip）、`extensions?`（承载新增/临时可见字段，如药力进度、耐久、附魔层数；沿用 extensions render preset）。物品自身不存 `quantity`：数量由持有者 container.contents[*].count 表达。物品也不存 `status`：品相变化直接改 name/brief 或用 extensions（如 `{ 破损度: { render: 'progress' } }`），不再区分 status/extensions 两条路径。
+item 字段：`id`（必填，`item:<localId>`）、`name`、`brief`、`type`（取值 `equipment`/`material`/`consumable`/`special`/`other` 五类之一；未知或不便归类写 `other`）、`tags?: string[]`（自由标签，用于列表分组或详情标签）、`equipment?: { slot?: string; mods?: Record<string, string>; effects?: string[] }`、`extensions?`（承载新增/临时可见字段，如药力进度、耐久、附魔层数；沿用 extensions 展示方式）。物品自身不存 `quantity`：数量由持有者 container.contents[*].count 表达。物品也不存 `status`：品相变化直接改 name/brief 或用 extensions（如 `{ 破损度: { render: 'progress' } }`），不再区分 status/extensions 两条路径。
 
-type 五类的语义指引：`equipment` 装备武器护甲等可佩戴/持握；`material` 材料矿石药材等制作/交易素材；`consumable` 消耗品丹药符箓一次性道具；`special` 剧情关键物任务物证；`other` 上述都不合适的杂项。归类不清时写 `other`，不发明第六类。
+type 五类的语义指引：`equipment` 装备武器护甲等可佩戴/持握；`material` 材料矿石药材等制作/交易素材；`consumable` 消耗品丹药符箓一次性道具；`special` 剧情关键物任务物证；`other` 上述都不合适的杂项。归类不清时写 `other`，不发明第六类。`equipment` 只是说明物品可装备，不表示已经装备；谁正在使用它写在角色 `equipment`。
+
+### 装备栏与装备刷新
+
+角色装备栏直接写在 character entity：
+
+```json
+{
+  "equipment": {
+    "武器": {
+      "ref": "item:玄铁剑",
+      "applied": { "体魄": 2, "法力": 1 }
+    },
+    "护甲": { "ref": null },
+    "饰品·左": { "ref": "item:聚灵玉佩", "applied": { "法力": 3 } },
+    "饰品·右": { "ref": null }
+  }
+}
+```
+
+装备栏只记录“这个角色当前把哪件持有物作为哪个槽位的装备使用”。槽位由当前游戏数据动态定义，不预设通用人体槽位；保持 JSON key 原始顺序。装备不会从行囊、剑匣、储物袋等容器中移出；角色必须能从自己的 `containers` 递归找到该装备 ref。若装备 ref 不再由该角色持有，刷新装备时视为失效：撤销旧 `applied`，将该槽位写为 `{ "ref": null }`。不检查其他角色是否也引用同一个 item ref。
+
+装备物品在 item entity 中写 `equipment`：
+
+```json
+{
+  "id": "item:聚灵玉佩",
+  "name": "聚灵玉佩",
+  "brief": "温润玉佩，能缓慢聚拢周身灵气。",
+  "type": "equipment",
+  "tags": ["玉佩", "灵器", "饰品"],
+  "equipment": {
+    "slot": "饰品·左",
+    "mods": {
+      "法力": "*=1.2",
+      "悟性": "+=floor(根骨 * 0.15)",
+      "气运": "=max(气运, 8)"
+    },
+    "effects": [
+      "修炼时更容易感知周围灵气流动",
+      "在灵气充沛之地效果更明显"
+    ]
+  }
+}
+```
+
+- `slot`：建议槽位名，不是平台强制约束；若当前角色装备栏采用对应槽位，可写同一自然名称。角色实际有哪些槽位只由该角色 `equipment` 的 key 决定。
+- `mods`：属性影响。key 是属性名；value 必须是 `+=`、`-=`、`*=`、`=` 开头的字符串。
+- `effects`：叙事效果，不自动改变数值。条件性、世界观性、战斗姿态等难以稳定量化的影响写在这里。
+
+`mods` 写法：
+
+```json
+{
+  "体魄": "+=2",
+  "气运": "-=1",
+  "法力": "*=1.2",
+  "魅力": "=max(魅力, 10)",
+  "悟性": "+=floor(根骨 * 0.15)"
+}
+```
+
+- `+=表达式`：当前属性增加表达式结果。
+- `-=表达式`：当前属性减少表达式结果。
+- `*=表达式`：当前属性乘以表达式结果，`applied` 记录新旧差值。
+- `=表达式`：当前属性设为表达式结果，`applied` 记录新旧差值。
+
+`mods` 是供 Stage Manager 解释的 Agent-facing 规则，不是平台可执行 DSL。表达式中可直接使用当前维护基线里的属性名，如 `体魄`、`悟性`、`根骨`、`法力`。有限函数只用 `floor`、`ceil`、`round`、`min`、`max`、`abs`、`clamp`。不要写裸数字、裸公式或对象式 modifier；所有 mods 都用上面的运算符字符串。平台没有 modifier 求值器，前端只读取维护后的投影。
+
+装备刷新规则：只有在装备、装备规则、角色属性或持有关系明确变化且所需上下文完整时，Stage Manager 才做一次完整角色投影维护。先从当前 `attributes` 撤销所有槽位旧 `applied` 得到基线；再验证每个非空 ref 可从角色 `containers` 递归到达且 item 的 `type` 为 `equipment`；然后按 `character.equipment` 的 JSON key 顺序解释合法 mods。每一步写回属性时取 `round` 后的整数，最低为 0，并把该槽实际整数差值写入新 `applied`。不可达 ref 撤销旧贡献后改成 `{ "ref": null }`。同一角色的 `attributes` 与整张 `equipment` 投影应一起写回；任一规则、属性引用、维护基线或持有关系无法确定时，保持旧投影，不猜测也不写部分结算结果。这里约定的是 Stage Manager 行为，不表示平台提供确定性求值器或数据库事务；已有存档也不会自动迁移或由模板覆盖 living schema。
+
+
+## extensions
+
+`extensions` 是动态玩家可见字段，子 key 可用中文；值内 `render` 只接受 `text`、`number`、`progress`、`tag`、`tags`、`list`、`section`、`ref`、`cards` 等已知 preset。省略 `render` 时可按普通文本展示 `value`；显式值未知时，消费者必须记录警告并隐藏该字段，不得静默降级成 text 或其他展示方式。固定的角色、装备、容器、关系事实不要藏进 extensions。
 
 ## 受控词表
 
 ### visibility
 
 ```text
-player-known      # 玩家面向的叙述/前端安全；省略时默认
+player-known      # 玩家面向的叙述/界面安全；省略时默认
 hidden            # 玩家当前看不见，但背景 Agent 可用
 future-spoiler    # 未来的原著信息；不要泄露进玩家面向的叙述
 ```
@@ -109,7 +189,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ## Runtime 变量
 
-`save/playthrough/runtime.json` 存放高频访问、玩家面向或前端管理的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。`plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，用于判断是否触发 frontier 推进（`plotOrder > 最后 source 锚点 order` 时触发）。未知或尚未建立时写空字符串/0。
+`save/playthrough/runtime.json` 存放高频访问、玩家面向或界面需要高频读取的摘要。`worldTime` 是当前世界/剧情时间的固定字符串字段；它不是平台墙钟时间，也不用于日历运算。`plotOrder` 是数字字段，单调递增，表示玩家当前走到哪个 source order；场记每回合读 frontier.json timeline 映射维护，用于判断是否触发 frontier 推进（`plotOrder > 最后 source 锚点 order` 时触发）。未知或尚未建立时写空字符串/0。
 
 ```json
 {
@@ -133,7 +213,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
 
 ## frontier.json
 
-`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点，供场记维护剧情坐标，并供前端与正文上下文展示原著剧情节点。
+`save/playthrough/frontier.json` 记录源文本抽取进度与时间标记锚点，供场记维护剧情坐标，并供界面与正文上下文展示原著剧情节点。
 
 ```json
 {
@@ -161,7 +241,7 @@ retired      # 已退出当前游玩，除非刻意重新引入
     - `time`：游戏时间字符串，自由粒度（默认年+季/月）。原文无明确时间词时从剧情推断估计；开局第一个锚点 `time` 固定 `"元年"`。
     - `label`：一句话客观标签，不是剧情摘要。
   - player 锚点：`{ kind: "player", order, turn, time, label, alignment, sourceRef }`。stage-manager 维护时追加，标记玩家视角显著事件。
-    - `order`：等于玩家当前所在 source 区间的起始 source 锚点 order。同一 source 区间内的多个 player 锚点共享相同 order，前端按 turn 排序展开。
+    - `order`：等于玩家当前所在 source 区间的起始 source 锚点 order。同一 source 区间内的多个 player 锚点共享相同 order，按 turn 排序展开。
     - `turn`：游戏回合号，分支内排序与后续精确找 turn 正文用。
     - `time`：游戏时间字符串（显示用）。
     - `label`：一句话客观描述。

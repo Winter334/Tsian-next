@@ -1,7 +1,7 @@
 ---
 name: 回合后维护
 title: 回合后维护
-description: 正式玩家回合落定后维护 runtime/entity/scene/relationship/memory/extensions 已发生事实，映射 plotOrder，追加 player 锚点，清理过期 scene。
+description: 正式玩家回合落定后维护 runtime/entity（含装备投影）/scene/relationship/memory/extensions 已发生事实，映射 plotOrder，追加 player 锚点，并维护 activeSceneRefs 以触发过期 scene 清理。
 triggers:
   - 正式玩家回合正文落定后的回合后维护
 appliesTo:
@@ -15,7 +15,7 @@ appliesTo:
 ## 标准流程
 
 1. 第一轮先调用 `read_maintenance_context({ turn: 目标回合号, includeTimeline: true })`，用它聚合本回合正文、runtime、active scenes、相关 entities/relationships、memory 文本、scene 清理候选和 timeline。
-2. 基于聚合上下文判断本回合已发生变化，维护 runtime/entity/scene/relationship/memory/timeline。
+2. 基于聚合上下文判断本回合已发生变化，维护 runtime/entity（含完整装备投影）/scene/relationship/memory/timeline。若装备维护还需要某个具体容器或 item 实体，先定向读取该文件及其递归容器链，直到能确认持有关系；不要靠目录枚举猜测。
 3. JSON 文件优先调用 `json_edit`；memory records、seeds 等行级文本优先调用 `text_edit`。
 4. 每个正式玩家回合维护结束前，调用 `commit_turn_recall` 写入当前 turn 的 `meta.recall`。
 
@@ -142,11 +142,37 @@ appliesTo:
 - `status` 表示当前临时状态；稳定能力写 `traits`。
 - 新建实体只写本回合已确认事实。结构不确定时触发 schema 演进检查或 call 世界架构师。
 
+### 装备维护
+
+角色装备栏类型为 `Record<string, { ref: string | null; applied?: Record<string, number> }>`。槽位名由当前游戏数据动态定义，不预设通用人体槽位；按 `character.equipment` 的 JSON key 原始顺序维护。每个非空 `ref` 必须指向 `type: "equipment"` 的 item，并能从该角色 `containers` 经嵌套 `container.contents` 递归到达；装备仍留在容器图中，不另建虚拟装备容器。
+
+装备 item 的可选元数据为 `equipment?: { slot?: string; mods?: Record<string, string>; effects?: string[] }`：
+
+- `slot` 是建议槽位，不是平台强制约束。
+- `mods` 的 key 是属性名，value 必须是 `+=`、`-=`、`*=`、`=` 开头的字符串。
+- 表达式只引用本次维护基线中的属性名，并只用 `floor`、`ceil`、`round`、`min`、`max`、`abs`、`clamp`。
+- `effects` 只影响叙事判断，不自动改变数值。
+- 这些规则由你根据明确上下文解释；平台没有 modifier 求值器。
+
+当装备 ref、item 装备规则、角色属性或持有关系明确变化时，执行一次完整角色装备维护：
+
+1. 从当前 `attributes` 逐槽减去所有旧 `applied`，得到本次维护基线。
+2. 验证每个非空 ref 可递归到达且 item 为 `type: "equipment"`；不可达 ref 仍纳入本次完整维护，撤销旧贡献后把该槽写为 `{ "ref": null }`。
+3. 按装备栏 key 顺序解释合法 `mods`。`+=` 增加表达式结果，`-=` 减少，`*=` 相乘，`=` 设为表达式结果；每步属性取 `round` 后整数且最低为 0。
+4. 每槽 `applied` 写该槽实际造成的整数差值；`character.attributes` 写最终当前有效属性。
+5. 用一个 `json_edit` 操作的 `set` 同时替换该角色完整 `attributes` 和完整 `equipment` 投影。这里要求的是一次工具操作内的完整角色写入，不表示平台提供数据库事务。
+
+任一规则、属性引用、维护基线或持有关系无法确定时，不猜测、不调用 `json_edit` 写部分装备结算；保持旧 `attributes`/`equipment`，并在最终回复的 entities 域说明无法完整维护的原因。既有存档不会自动迁移；缺少这些可选字段本身不是错误。
+
+### extensions.render
+
+`extensions` 的显式 `render` 只接受 schema 已知 preset（`text`、`number`、`progress`、`tag`、`tags`、`list`、`section`、`ref`、`cards`）。省略时可按普通文本处理；显式值未知时，在最终回复对应维护域记录警告并隐藏该字段，不把它静默改成 text 或其他 preset。
+
 ### scene（save/scenes/）
 
 - scene 文件里 `present` 只写 `{ ref }` 指针，name/brief/state 回读实体权威。
 - scene 是当前/后台 playthrough 局面导航缓存，不是剧情历史或检索主索引。
-- 过期 scene 确认不再作为 active/background 导航后可删除，不归档为历史资料。
+- 维护 `runtime.activeSceneRefs` 作为当前活跃场景指针；需要长期保留为后台导航的 scene 写 `status: "background"`。平台宿主会在维护结束后清理不在 `activeSceneRefs` 且非 background 的 scene；不要尝试用 `json_edit` / `text_edit` 直接删除文件。
 
 ### relationship（save/relationships/）
 
@@ -197,7 +223,7 @@ seeds 每条一行：
 **runtime.json**
 - ...
 
-**entities**
+**entities / equipment**
 - ...
 
 **relationships**
