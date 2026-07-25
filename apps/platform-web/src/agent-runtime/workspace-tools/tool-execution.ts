@@ -460,6 +460,7 @@ async function executeRuntimeWorkspaceToolCall(
           {
             agentContext: context.agentContext,
             exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+            workspaceFileFilter: context.workspaceFileFilter,
           },
         ),
       }
@@ -471,6 +472,7 @@ async function executeRuntimeWorkspaceToolCall(
           agentContext: context.agentContext,
           mutations: context.workspaceMutations,
           exposedOperations: context.exposedWorkspaceOperations,
+          fileFilter: context.workspaceFileFilter,
           semanticSearchOwnerId: context.semanticSearchOwnerId,
         },
       )

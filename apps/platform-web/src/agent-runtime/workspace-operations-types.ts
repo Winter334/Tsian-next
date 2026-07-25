@@ -37,6 +37,8 @@ export interface WorkspaceOperationExecutionContext {
   agentContext?: AgentContextEntry
   actorLevel?: number
   exposedOperations?: Iterable<WorkspaceOperationName>
+  /** Host-level visibility predicate for callers such as runtime game Agents. */
+  fileFilter?: (file: WorkspaceFile) => boolean
   mutations?: WorkspaceOperationMutationAdapter
   /** semantic_search 专用:owner id(save-runtime 下为 saveId),用于按 owner
    *  从向量库取/枚举该 owner 的语料. 其它 op 不用. */

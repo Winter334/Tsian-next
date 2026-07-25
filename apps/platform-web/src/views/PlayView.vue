@@ -259,6 +259,7 @@ function mountRemoteFrontend(
   frontendHandle = mountRemoteIframeFrontend(frontendMount.value, {
     url: resolvedUrl.url,
     bridge: playFrontendBridge,
+    gameCardId: cardId,
     title,
     onLoad() {
       if (!isDisposed && mountVersion === version) {
@@ -301,6 +302,7 @@ async function mountPackagedFrontend(
   frontendHandle = mountRemoteIframeFrontend(frontendMount.value, {
     url,
     bridge: playFrontendBridge,
+    gameCardId: cardId,
     // Service Worker-backed virtual URLs need a same-origin controlled iframe client.
     sandbox: packagedFrontendSandbox,
     title,
@@ -367,7 +369,7 @@ async function mountActiveFrontend() {
       `当前游戏前端类型不受支持：${String((frontend as { kind?: unknown }).kind)}`,
     )
   } catch (error) {
-    if (!isDisposed && mountVersion !== version) {
+    if (!isDisposed && mountVersion === version) {
       setError(
         "前端解析失败",
         error instanceof Error ? error.message : "解析游戏前端失败。",

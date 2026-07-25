@@ -59,6 +59,12 @@ export const playFrontendBridge: PlayFrontendBridge = {
       if (entrypoints.postTurnMaintenance) result.postTurnMaintenance = entrypoints.postTurnMaintenance
       return result
     },
+    async runAction() {
+      throw new Error("Frontend Actions require a mount-owned remote bridge session.")
+    },
+    async abortAction() {
+      // Direct/shared bridge calls do not own invocation state. Remote mounts do.
+    },
   },
   interaction: {
     sendMessage,

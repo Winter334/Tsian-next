@@ -1,6 +1,7 @@
 import type {
   AskUserResponse,
   DeepQueryRequest,
+  FrontendActionPublicError,
   InjectionMessage,
   InvokeAgentCheckpointOption,
   InvokeAgentRequest,
@@ -13,7 +14,9 @@ import type {
   RemotePlayBridgeEventMessage,
   RemotePlayBridgeMethod,
   RemotePlayBridgeReadyMessage,
+  RemotePlayBridgeResponseError,
   RemotePlayBridgeResponseMessage,
+  RemotePlayBridgeResponseResult,
   WorkspaceListRequest,
   WorkspaceReadRequest,
   WorkspaceSearchRequest,
@@ -22,6 +25,18 @@ import type {
 
 import { subscribeTurnDelta, subscribeTurnRoundEnd, subscribeTurnTool, subscribeTurnOptions, subscribeTurnStats, subscribeAgentInvocation } from "../streaming-events"
 import { subscribeInteractionRequest, resolveInteractionRequest } from "../interaction-events"
+import {
+  frontendActionExecutionService,
+} from "../platform-host/frontend-actions"
+import { isFrontendActionMountBindingCurrent } from "../storage/frontend-action-workspace"
+import { executePlatformActionForPlayFrontend } from "../platform-host/platform-actions"
+import {
+  createRemoteFrontendActionLifecycle,
+  normalizeFrontendActionPublicError,
+  normalizeRemoteFrontendActionAbortRequest,
+  normalizeRemoteFrontendActionRunRequest,
+  type RemoteFrontendActionService,
+} from "./remote-frontend-action-lifecycle"
 
 export const REMOTE_PLAY_BRIDGE_CHANNEL: RemotePlayBridgeChannel = "tsian.play-bridge.v1"
 const REMOTE_IFRAME_SANDBOX = "allow-scripts allow-same-origin allow-forms"
@@ -39,6 +54,8 @@ const REMOTE_PLAY_BRIDGE_METHODS: RemotePlayBridgeMethod[] = [
   "workspace.search",
   "workspace.write",
   "card.getEntrypoints",
+  "card.runAction",
+  "card.abortAction",
 ]
 const REMOTE_PLAY_BRIDGE_METHOD_SET = new Set<RemotePlayBridgeMethod>(
   REMOTE_PLAY_BRIDGE_METHODS,
@@ -60,6 +77,15 @@ export type RemoteFrontendUrlResolution =
 export interface MountRemoteIframeFrontendOptions {
   url: string
   bridge: PlayFrontendBridge
+  /** Exact game card expected by this mount; never accepted from iframe params. */
+  gameCardId: string
+  /** Test/service override; invocation ownership remains local to this mount. */
+  frontendActionService?: RemoteFrontendActionService
+  /** Test/query override for the authoritative post-commit save/card check. */
+  isFrontendActionBindingCurrent?: (
+    saveId: string,
+    gameCardId: string,
+  ) => boolean | Promise<boolean>
   sandbox?: string
   title?: string
   onLoad?: () => void
@@ -584,6 +610,10 @@ function toBridgeError(error: unknown): RemotePlayBridgeError {
   }
 }
 
+function toActionResponseError(error: unknown): FrontendActionPublicError {
+  return normalizeFrontendActionPublicError(error)
+}
+
 function dispatchRemoteBridgeRequest(
   bridge: PlayFrontendBridge,
   method: RemotePlayBridgeMethod,
@@ -638,7 +668,16 @@ function dispatchRemoteBridgeRequest(
     return bridge.card.getEntrypoints({})
   }
 
-  return bridge.platform.runAction(normalizePlatformActionRequest(params))
+  if (method === "platform.runAction") {
+    return executePlatformActionForPlayFrontend(
+      normalizePlatformActionRequest(params),
+    )
+  }
+
+  throw new RemoteBridgeRpcError(
+    "REMOTE_METHOD_UNSUPPORTED",
+    "Remote bridge method is not supported.",
+  )
 }
 
 export function resolveRemoteFrontendUrl(
@@ -761,6 +800,7 @@ export function mountRemoteIframeFrontend(
       | RemotePlayBridgeEventMessage,
     targetOrigin: string,
   ): void {
+    if (disposed) return
     iframe.contentWindow?.postMessage(
       message,
       targetOrigin === "null" ? "*" : targetOrigin,
@@ -785,6 +825,66 @@ export function mountRemoteIframeFrontend(
       },
       acceptedOrigin,
     )
+  }
+
+  const actionService: RemoteFrontendActionService = options.frontendActionService ?? {
+    async runAction(request) {
+      const result = await frontendActionExecutionService.runAction({
+        mountedGameCardId: request.expectedGameCardId,
+        invocationId: request.invocationId,
+        actionId: request.actionId,
+        input: request.input,
+        signal: request.signal,
+        beforeCommit: request.beforeCommit,
+        assertCommitAllowed: request.assertCommitAllowed,
+      })
+      return {
+        output: result.output,
+        ...(result.mutationEvent ? { mutation: result.mutationEvent } : {}),
+      }
+    },
+  }
+  const frontendActionLifecycle = createRemoteFrontendActionLifecycle({
+    expectedGameCardId: options.gameCardId,
+    service: actionService,
+    isCurrent: () => !disposed,
+    isCurrentBinding: options.isFrontendActionBindingCurrent
+      ?? isFrontendActionMountBindingCurrent,
+    onWorkspaceMutation(event) {
+      postEvent("workspace-mutation", event)
+    },
+  })
+
+  function postSuccessResponse(
+    requestId: string,
+    result: RemotePlayBridgeResponseResult,
+    targetOrigin: string,
+  ): void {
+    const response: RemotePlayBridgeResponseMessage = {
+      channel: REMOTE_PLAY_BRIDGE_CHANNEL,
+      kind: "response",
+      sessionId,
+      id: requestId,
+      ok: true,
+      result,
+    }
+    postToRemote(response, targetOrigin)
+  }
+
+  function postFailureResponse(
+    requestId: string,
+    error: RemotePlayBridgeResponseError,
+    targetOrigin: string,
+  ): void {
+    const response: RemotePlayBridgeResponseMessage = {
+      channel: REMOTE_PLAY_BRIDGE_CHANNEL,
+      kind: "response",
+      sessionId,
+      id: requestId,
+      ok: false,
+      error,
+    }
+    postToRemote(response, targetOrigin)
   }
 
   async function handleRemoteRequest(
@@ -819,6 +919,25 @@ export function mountRemoteIframeFrontend(
     emitActivity(requestId, method, "started")
 
     try {
+      if (method === "card.runAction") {
+        const result = await frontendActionLifecycle.runAction(
+          normalizeRemoteFrontendActionRunRequest(message.params),
+        )
+        // The lifecycle posts any durable mutation event synchronously before
+        // resolving, so this success response is observably ordered afterward.
+        postSuccessResponse(requestId, result, targetOrigin)
+        emitActivity(requestId, method, "completed")
+        return
+      }
+
+      if (method === "card.abortAction") {
+        const invocationId = normalizeRemoteFrontendActionAbortRequest(message.params)
+        frontendActionLifecycle.abortAction(invocationId)
+        postSuccessResponse(requestId, undefined, targetOrigin)
+        emitActivity(requestId, method, "completed")
+        return
+      }
+
       if (message.method === "interaction.sendMessage") {
         const result = await options.bridge.interaction.sendMessage(
           normalizeMessageInteractionRequest(message.params),
@@ -853,17 +972,14 @@ export function mountRemoteIframeFrontend(
       postToRemote(response, targetOrigin)
       emitActivity(requestId, method, "completed")
     } catch (error) {
-      const bridgeError = toBridgeError(error)
-      const response: RemotePlayBridgeResponseMessage = {
-        channel: REMOTE_PLAY_BRIDGE_CHANNEL,
-        kind: "response",
-        sessionId,
-        id: message.id,
-        ok: false,
-        error: bridgeError,
-      }
-      postToRemote(response, targetOrigin)
-      emitActivity(requestId, method, "failed", bridgeError)
+      const responseError = method === "card.runAction" || method === "card.abortAction"
+        ? toActionResponseError(error)
+        : toBridgeError(error)
+      postFailureResponse(requestId, responseError, targetOrigin)
+      emitActivity(requestId, method, "failed", {
+        code: responseError.code,
+        message: responseError.message,
+      })
     } finally {
       inFlightRequestCount = Math.max(0, inFlightRequestCount - 1)
     }
@@ -1022,6 +1138,7 @@ export function mountRemoteIframeFrontend(
         return
       }
       disposed = true
+      frontendActionLifecycle.dispose()
       setStatus("disposed")
       window.removeEventListener("message", onMessage)
       unsubscribeTurnDebugReady?.()

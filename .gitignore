@@ -1,5 +1,6 @@
 node_modules/
 dist/
+apps/platform-web/dist-runtime-preflight/
 !cards/沉浸阅读器.tsian-card/frontend/dist/
 !cards/沉浸阅读器.tsian-card/frontend/dist/**
 .env

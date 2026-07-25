@@ -255,7 +255,10 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
       const providerPresetMap = buildAgentProviderPresetMap(workspaceFiles)
 
       // 装配目标 agent context,检查 agent 存在.
-      const targetContext = assembleAgentContext(workspaceFiles, { agentId })
+      const targetContext = assembleAgentContext(workspaceFiles, {
+        agentId,
+        workspaceTrustBoundary: "runtime-game-agent",
+      })
       if (!targetContext) {
         throw new Error(
           `Agent "${agentId}" was not found. Restore agents/${agentId}/AGENT.md or recreate the agent.`,
@@ -282,6 +285,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
           recentHistory: historyBefore,
           turn: invokeMaxTurn,
           workspaceFiles,
+          workspaceTrustBoundary: "runtime-game-agent",
           signal: invokeController.signal,
           agentContext: agentContext ?? undefined,
           contextTokenBudget,

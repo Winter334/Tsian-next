@@ -45,16 +45,18 @@ await tsian.send("我推开酒馆的门")
 ### 导入
 
 ```ts
-import { createTsian } from "@tsian/play-bridge"
+import { createTsian, FrontendActionError } from "@tsian/play-bridge"
 import type {
   TsianApi, MessageDelta, RoundEnd, TurnEndResult,
   ToolEvent, AskRequest, SessionHistory,
   InjectionMessage, SendOptions, InvokeAgentOptions,
-  AgentInvocationEvent,
+  AgentInvocationEvent, FrontendActionOptions,
+  FrontendActionPublicError, FrontendActionRuntimeErrorCode,
+  JsonValue, RuntimeWorkspaceMutationEvent,
 } from "@tsian/play-bridge"
 ```
 
-`createTsian()` 是唯一入口，返回 `TsianApi` 实例。所有领域类型从包直接导入，无需额外 `import "@tsian/contracts"`。`parseStoryOptions` 仍作为 legacy/default-frontend 兼容 helper 从包导出；新正式回合的结构化 UI 数据应优先由 `TurnEndResult.assistant.projections` 承载，具体 key 由游戏卡/前端约定。
+`createTsian()` 是唯一入口，返回 `TsianApi` 实例。`FrontendActionError` 是 `tsian.card.runAction` 的公开错误类。所有领域类型从包直接导入，无需额外 `import "@tsian/contracts"`。`parseStoryOptions` 仍作为 legacy/default-frontend 兼容 helper 从包导出；新正式回合的结构化 UI 数据应优先由 `TurnEndResult.assistant.projections` 承载，具体 key 由游戏卡/前端约定。
 
 ---
 
@@ -222,7 +224,7 @@ await tsian.send("我走向角落的陌生人", {
 
 ## 4. 订阅
 
-六个语义回调，每个返回一个 **unsubscribe 函数**。正式回合使用 `onMessage` / `onRoundEnd` / `onTool` / `onTurnEnd`；前端指定 Agent 的任务调用使用 `onAgentInvocation`。SDK 内部路由和聚合底层事件，前端通常不需要接触底层事件名。
+七个语义回调，每个返回一个 **unsubscribe 函数**。正式回合使用 `onMessage` / `onRoundEnd` / `onTool` / `onTurnEnd`；前端指定 Agent 的任务调用使用 `onAgentInvocation`；Frontend Action 的 durable workspace commit 使用 `onWorkspaceMutation`。SDK 内部路由和聚合底层事件，前端通常不需要接触底层事件名。
 
 ```ts
 const off = tsian.onMessage((msg) => { ... })
@@ -240,6 +242,7 @@ off()
 | `onTool` | `turn-tool` | 正式回合每次工具状态变更 | 渲染工具过程节点 |
 | `onAsk` | `interaction-request` | AI 提问时 | 渲染 ask_user 交互面板 |
 | `onAgentInvocation` | `agent-invocation` | `invokeAgent` 的 started/delta/round/tool/completed/failed | 渲染指定 Agent 调用的流式文本、工具进度与完成/失败状态 |
+| `onWorkspaceMutation` | `workspace-mutation` | Frontend Action 非空事务已 durable commit | 按实际变化路径 authoritative reread 相关状态 |
 
 **为什么需要三粒度**：单靠 `onMessage` 分不清一段 content delta 是中间轮的 interim 文本还是最终轮的剧情正文——`onRoundEnd` 的 `kind` 标记补上这个信息。`onTurnEnd` 把回合收尾信号和已持久化的 projected assistant item 聚合成一次回调，前端不用自己等待 `turn-completed` 后再查询正式 assistant 数据。
 
@@ -417,6 +420,30 @@ type AgentInvocationEvent =
 ```
 
 `agentId` 是实际产出事件的 Agent。若被调用 Agent 在内部用 `agent_call` 调用了联系人，delegated Agent 的事件也会使用同一个 `invocationId`，但 `agentId` 会变成 delegated Agent 的 id。
+
+### 4.7 `tsian.onWorkspaceMutation(cb)`
+
+Frontend Action 的非空 workspace 事务 durable commit 后触发。event 只携带稳定排序的实际变化路径，不携带文件内容：
+
+```ts
+const off = tsian.onWorkspaceMutation((event: RuntimeWorkspaceMutationEvent) => {
+  if (event.actionId !== "apply-choice") return
+  void reloadAffectedState(event.writtenPaths, event.deletedPaths)
+})
+```
+
+```ts
+interface RuntimeWorkspaceMutationEvent {
+  invocationId: string
+  saveId: string
+  source: "frontend-action"
+  actionId: string
+  writtenPaths: string[]
+  deletedPaths: string[]
+}
+```
+
+`writtenPaths` 是实际内容变化，`deletedPaths` 是实际删除的具体文件，不是 delete 请求 prefix。byte-identical/空 delta、失败、回滚、取消、超时或冲突均不发 event。event 不承诺跨 invocation 的全局排序，订阅方必须把它当作失效通知并 authoritative reread 自己依赖的所有文件；不能只刷新 `runtime.json` 而遗漏其他 entity/container/item/state。subscriber 抛错不影响已提交事务或 Action Promise。用完调用 `off()` 取消订阅。
 
 ---
 
@@ -601,6 +628,8 @@ await tsian.workspace.write("save/assets/portraits/characters/萧玄.webp", blob
 
 `content` 接受 `string | Blob`。`string` 用于文本文件（JSON/MD/配置等），`Blob` 用于二进制/媒体资产（图片等）。两种写入都走同一 `save-runtime` workspace 通道，返回相同的 `WorkspaceWriteResult`。
 
+两种 `write` 都是现有的**立即写入 API**：每次调用独立持久化，不会自动加入 `tsian.card.runAction` 的 staged transaction，也不继承它的 all-or-nothing、read-set CAS、rollback 或 no-checkpoint 语义。需要对多次 save mutation 做严格输入/输出校验、冲突检测和原子提交时，应把整组操作实现为 Frontend Action；普通单文件即时保存继续使用 `workspace.write`。
+
 **典型用法：前端持有状态 + 每轮注入**
 
 前端要跨轮保持的角色状态，落盘到 `save-runtime`，每轮 `send` 时从文件读出再注入：
@@ -666,13 +695,49 @@ await tsian.invokeAgent(maintenanceAgentId, input, {
 
 **Toast 文案不应引用 agent 名**：UI 只描述阶段行为（如"本回合整理中"），不出现 `postTurnMaintenance` 的值或 agent title——这样 agent 改名只动模板，前端和 Toast 零改动。
 
+### 7.2 `tsian.card.runAction(actionId, input, options?)`
+
+调用当前 mounted 卡在固定目录发布的 Frontend Action。前端只传与卡约定好的 action id；平台不提供 action 枚举 API，也不会从 manifest 自动生成 UI。
+
+```ts
+try {
+  const result = await tsian.card.runAction(
+    "apply-choice",
+    { choiceId: "north-gate" },
+    { signal: controller.signal },
+  )
+  renderResult(result)
+} catch (error) {
+  if (error instanceof FrontendActionError) {
+    if (error.kind === "domain") showBusinessError(error.code, error.message)
+    else showRuntimeError(error.code)
+  }
+}
+```
+
+```ts
+interface FrontendActionOptions { signal?: AbortSignal }
+
+card.runAction(
+  actionId: string,
+  input: JsonValue,
+  options?: FrontendActionOptions,
+): Promise<JsonValue>
+```
+
+输入和输出必须是 strict JSON，并分别通过 Action manifest 的 Draft 2020-12 schema。失败统一抛 `FrontendActionError`；使用 `kind: "domain" | "runtime"` 与 `code` 判别，不解析 message。pre-aborted signal 不发送请求；活动调用 abort 会取消未提交工作，但 durable commit 已完成时 success/commit 胜过 late abort。
+
+Action 的 save mutation 在 invocation snapshot 上 staging，成功时经过 read-set CAS 后只提交实际变化路径；错误、输出无效、取消、超时或冲突均回滚。相关并发变化返回 `FRONTEND_ACTION_WORKSPACE_CONFLICT`，不自动重试；默认不创建 checkpoint。成功的非空 commit 会通过 `onWorkspaceMutation` 通知路径，调用方再 authoritative reread。
+
+Frontend Action 不通过 generic `tsian.runAction` / `platform.runAction`，也不会进入 Agent/Skill/Tool Registry。完整 manifest、hard limits、authoring、安全和错误码见 [`frontend-actions.md`](./frontend-actions.md)。
+
 ---
 
 ## 8. 低层 escape hatch
 
-高频能力都应该走语义化方法（`send` / `invokeAgent` / `onMessage` / `history` / `checkpoints` / `workspace` / `card`）。`query` 和 `runAction` 只作为**临时逃生入口**保留：当平台能力还没有 SDK 语义封装、且当前前端确实需要访问时才使用。
+高频能力都应该走语义化方法（`send` / `invokeAgent` / `onMessage` / `history` / `checkpoints` / `workspace` / `card`）。`query` 和 generic `runAction` 只作为**临时逃生入口**保留：当平台能力还没有 SDK 语义封装、且当前前端确实需要访问时才使用。
 
-常规游戏前端不应优先使用它们，也不应通过它们重新实现本文档已经包装好的能力。新增高频用法时，优先给 `TsianApi` 增加明确的领域方法。
+常规游戏前端不应优先使用它们，也不应通过它们重新实现本文档已经包装好的能力。特别是，卡内 Frontend Action 只能调用 `tsian.card.runAction`，不能传给 generic `tsian.runAction` / `platform.runAction`。remote play frontend 的 generic platform actions 使用 host-enforced closed allowlist；workspace-family、未知和未来新增 action 默认拒绝，params 不能伪造 actor/scope/save/session/caller 身份。如果某个其他 platform 能力开始频繁使用，应补一个语义化 SDK 方法。
 
 ### 8.1 `tsian.query(resource, params?)`
 
@@ -685,13 +750,13 @@ const result = await tsian.query("agent-registry")
 
 ### 8.2 `tsian.runAction(action, params?)`
 
-临时动作 escape hatch。动作可能有副作用；调用方必须知道目标 action 的具体返回形态并自行处理错误。
+host-owned platform action 的临时 escape hatch。动作可能有副作用；远程游戏前端只可调用 host 的 closed allowlist，未知/未来新增和 workspace-family action 默认拒绝。它**不执行卡内 Frontend Action**。
 
 ```ts
-const result = await tsian.runAction("some-future-action", { foo: "bar" })
+const result = await tsian.runAction("restore-checkpoint", { checkpointId })
 ```
 
-返回类型是 `unknown`。不要在普通前端逻辑中直接拼平台 action/resource 来绕过已有 SDK 方法；如果某个能力开始频繁使用，应补一个语义化 SDK 方法。
+返回类型是 `unknown`。不要在普通前端逻辑中直接拼 platform action 来绕过已有 SDK 方法；卡内 Action 使用 `tsian.card.runAction`。如果某个 host 能力开始频繁使用，应补一个语义化 SDK 方法。
 
 ---
 
@@ -719,6 +784,7 @@ interface TsianApi {
   onTool(cb: (tool: ToolEvent) => void): () => void
   onAsk(cb: (ask: AskRequest) => void): () => void
   onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void
+  onWorkspaceMutation(cb: (event: RuntimeWorkspaceMutationEvent) => void): () => void
 
   // 回答 ask_user
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
@@ -747,6 +813,7 @@ interface TsianApi {
   // 卡配置
   readonly card: {
     entrypoints(): Promise<GameCardRuntimeEntrypoints>
+    runAction(actionId: string, input: JsonValue, options?: FrontendActionOptions): Promise<JsonValue>
   }
 
   // 通用入口
@@ -773,6 +840,9 @@ interface InvokeAgentOptions {
   injection?: InjectionMessage[]
   contextSlot?: string
   persist?: boolean
+}
+interface FrontendActionOptions {
+  signal?: AbortSignal
 }
 ```
 
@@ -833,7 +903,43 @@ type AgentInvocationEvent =
   | { type: "tool"; invocationId: string; agentId: string; round: number; callId: string; name: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput }
   | { type: "completed"; invocationId: string; agentId: string }
   | { type: "failed"; invocationId: string; agentId: string; error: PlatformActionError }
+interface RuntimeWorkspaceMutationEvent {
+  invocationId: string
+  saveId: string
+  source: "frontend-action"
+  actionId: string
+  writtenPaths: string[]
+  deletedPaths: string[]
+}
 ```
+
+### Frontend Action 错误类型
+
+```ts
+type FrontendActionRuntimeErrorCode =
+  | "FRONTEND_ACTION_NOT_FOUND"
+  | "FRONTEND_ACTION_MANIFEST_INVALID"
+  | "FRONTEND_ACTION_INPUT_INVALID"
+  | "FRONTEND_ACTION_OUTPUT_INVALID"
+  | "FRONTEND_ACTION_TIMEOUT"
+  | "FRONTEND_ACTION_ABORTED"
+  | "FRONTEND_ACTION_WORKSPACE_CONFLICT"
+  | "FRONTEND_ACTION_EXECUTION_FAILED"
+  | "FRONTEND_ACTION_SESSION_REPLACED"
+
+type FrontendActionPublicError =
+  | { kind: "runtime"; code: FrontendActionRuntimeErrorCode; message: string; details?: JsonValue; correlationId?: string }
+  | { kind: "domain"; code: string; message: string; details?: JsonValue; correlationId?: string }
+
+class FrontendActionError extends Error {
+  readonly kind: "runtime" | "domain"
+  readonly code: string
+  readonly details?: JsonValue
+  readonly correlationId?: string
+}
+```
+
+完整验证、domain envelope 和 sanitization 契约见 [`frontend-actions.md`](./frontend-actions.md)。
 
 ### 数据类型
 

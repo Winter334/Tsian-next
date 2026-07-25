@@ -1399,8 +1399,14 @@ function validateWorkspaceFile(
 
 export async function executeWorkspaceOperation(
   requestInput: WorkspaceOperationRequest,
-  context: WorkspaceOperationExecutionContext,
+  rawContext: WorkspaceOperationExecutionContext,
 ): Promise<unknown> {
+  const context: WorkspaceOperationExecutionContext = rawContext.fileFilter
+    ? {
+        ...rawContext,
+        workspaceFiles: rawContext.workspaceFiles.filter(rawContext.fileFilter),
+      }
+    : rawContext
   const operation = normalizeWorkspaceOperationName(requestInput.operation)
   const scope = resolveOperationScope(operation, requestInput)
   const actorLevel = resolveWorkspaceActorLevel(context)

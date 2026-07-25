@@ -23,6 +23,7 @@ import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeC
 import type { ModelCallResult, NativeToolCall, RuntimeChatMessage } from "../runtime-host/ai"
 import type { BrowserAiToolCallMode } from "../config/ai"
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
+import type { AgentWorkspaceTrustBoundary } from "./frontend-action-isolation"
 
 // RuntimeCompressionMode first (referenced by AgentRuntimeTurnInput)
 export type RuntimeCompressionMode = "narrative" | "task"
@@ -39,6 +40,13 @@ export interface AgentRuntimeTurnInput {
   recentHistory: ConversationMessageRecord[]
   turn: number
   workspaceFiles?: WorkspaceFile[]
+  /**
+   * Explicit host-selected Workspace visibility boundary for the entry Agent.
+   * Omitted callers fail closed as runtime game Agents. Trusted authoring is
+   * reserved for the desktop assistant entry and is never inherited by
+   * delegated `agent_call` targets.
+   */
+  workspaceTrustBoundary?: AgentWorkspaceTrustBoundary
   /** Host-level user Tool filter applied after Agent enablement/scoping. */
   toolFilter?: (tool: ToolRegistryEntry) => boolean
   signal?: AbortSignal

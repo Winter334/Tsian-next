@@ -472,6 +472,10 @@ export async function runAssistantChat(
         // (之前恒传 turn:0 → 每轮 turn=1,破坏 lastCompressedTurn 去重).
         turn: nextAssistantTurn - 1,
         workspaceFiles: workspaceTransaction.workspaceFiles,
+        // Desktop assistant authoring is the sole trusted Agent Runtime entry.
+        // This is independent from its dynamically resolved workspace actor level;
+        // delegated card Agents are downgraded inside Agent Runtime.
+        workspaceTrustBoundary: "trusted-authoring",
         toolFilter: localAssistantToolFilter,
         signal: compositeSignal,
         // 注入持久化快照(任务摘要 + 最近 K 轮)+ token 预算(之前都不传,runtime

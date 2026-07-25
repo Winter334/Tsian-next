@@ -358,6 +358,7 @@ export type RuntimeInspectFrontendRunner = (
 export interface RuntimeControlledExecutorContext {
   agentContext?: AgentContextEntry
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
+  workspaceFileFilter?: (file: WorkspaceFile) => boolean
 }
 
 export interface RuntimeBrowserScriptExecutorRequest {
@@ -459,6 +460,7 @@ export interface RuntimeActionExecutorContext {
   agentContext?: AgentContextEntry
   workspaceMutations?: WorkspaceOperationMutationAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
+  workspaceFileFilter?: (file: WorkspaceFile) => boolean
   runBrowserScript?: RuntimeBrowserScriptRunner
   signal?: AbortSignal
 }
@@ -494,6 +496,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
+  workspaceFileFilter?: (file: WorkspaceFile) => boolean
   /** semantic_search 专用:owner id(save-runtime 下为 saveId). */
   semanticSearchOwnerId?: string
   signal?: AbortSignal

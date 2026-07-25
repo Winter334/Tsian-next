@@ -27,16 +27,17 @@ SDK 负责把助手无法自实现的那一层——与平台的协议契约—�
 ### 3.1 SDK 负责（封死，助手不碰）
 
 - 桥协议握手（hello / ready / sessionId）。
-- RPC 传输与 id 匹配——但**不暴露 method 字符串**，封装成领域方法（`tsian.send` / `tsian.history.get` / `tsian.workspace.read` / `tsian.query` / `tsian.runAction`）。
-- 事件订阅——但**不暴露原始事件名**，路由 + 聚合成 5 个语义回调（`onMessage` / `onRoundEnd` / `onTurnEnd` / `onTool` / `onAsk`）。`onTurnEnd` 由 `turn-completed` 驱动，并携带平台已提交的 projected assistant item。
+- RPC 传输与 id 匹配——但**不暴露 method 字符串**，封装成领域方法（`tsian.send` / `tsian.history.get` / `tsian.workspace.read` / `tsian.card.runAction` / `tsian.query` / generic `tsian.runAction`）。
+- 事件订阅——但**不暴露原始事件名**，路由 + 聚合成语义回调（正式回合的 `onMessage` / `onRoundEnd` / `onTurnEnd` / `onTool` / `onAsk`，side-channel 的 `onAgentInvocation`，Frontend Action commit 的 `onWorkspaceMutation`）。`onTurnEnd` 由 `turn-completed` 驱动，并携带平台已提交的 projected assistant item。
 - injection 透传（`send`/`invokeAgent` 的 `injection` 参数），校验结构但不解释语义。
-- workspace 读写（`tsian.workspace.read/list/search/write`）——独立 RPC method，不再塞进 `query.query`。
+- workspace 读写（`tsian.workspace.read/list/search/write`）——独立 RPC method，不再塞进 `query.query`。`workspace.write` 是即时、单次持久化 API，不自动加入 Frontend Action 的 staged transaction。
+- 卡自有 Frontend Action（`tsian.card.runAction(actionId, input, { signal? })`）——固定目录发布、strict JSON/schema、typed errors、abort/session 生命周期和 path-only mutation subscription；不通过 generic platform action。
 - 错误归一与状态暴露（`ready` / `waitForReady()` / `sessionId`）。
 - 全部相关 TS 类型导出（`TsianApi`、事件回调类型、`InjectionMessage`、workspace 类型等）。
 
 SDK 的对外类型签名即公开 API，当正式契约对待，不随手破坏。API 形态是第一版，允许根据实际前端开发反馈调整。详见 `docs/sdk/play-frontend-api.md`。
 
-**SDK 不暴露**：裸 `bridge.call`、`createBridge`/`Bridge`、RPC method 字符串（`"interaction.sendMessage"` 等）、原始事件名（`turn-delta` 等）。这些是包内部实现，前端开发者不需要接触。高频能力走语义化方法，冷门/未来新增走 `tsian.query`/`tsian.runAction` 通用入口（领域语言里的"查资源/执行动作"）。
+**SDK 不暴露**：裸 `bridge.call`、`createBridge`/`Bridge`、RPC method 字符串（`"interaction.sendMessage"`、`"card.runAction"` 等）、原始事件名（`turn-delta`、`workspace-mutation` 等）。这些是包内部实现，前端开发者不需要接触。高频能力走语义化方法，冷门/未来 host 能力走 `tsian.query`/generic `tsian.runAction` 通用入口（领域语言里的"查资源/执行平台动作"）。卡内 Frontend Action 始终走 `tsian.card.runAction`，generic dispatcher 不负责执行它。
 
 ### 3.2 SDK 不负责（助手地盘，自由构建）
 
@@ -75,7 +76,24 @@ SDK 的对外类型签名即公开 API，当正式契约对待，不随手破坏
 
 详见 API 文档 §3.3。
 
-## 6. 默认前端：三合一单真相源
+## 6. Frontend Action：卡前端的卡内业务入口
+
+Frontend Action 是 card-owned fixed resource：精确的 `frontend-actions/<id>/action.json` 即发布，不在 game-card manifest 增加 allowlist，也不提供枚举 RPC。它只供 mounted card frontend 通过 `tsian.card.runAction` 调用，与 Tool/Skill/Agent Registry 和 runtime model context 完全隔离；runtime game Agent 的 read/list/search/glob、`contextPaths` 和 macro expansion 也看不到 `frontend-actions/**`。桌面助手/资源管理器仍能创作这些 card-content 文件。
+
+SDK/host 边界固定为：
+
+- `tsian.card.runAction(actionId, input, { signal? }): Promise<JsonValue>`；不是 `tsian.runAction` / `platform.runAction`。
+- 输入/输出使用 strict JSON 与 strict Ajv Draft 2020-12 子集；错误抛 discriminated `FrontendActionError`（`kind: "runtime" | "domain"`）。合法卡业务 envelope 保留 domain code/details，非法 envelope/普通 throw 被 sanitization 为 execution failure。
+- 调用使用 `(sessionId, invocationId)` 隔离；abort 在 commit barrier 前阻止提交，durable commit 后的 late abort 不能撤销成功；dispose/session replacement 拒绝旧 Promise 并忽略 stale response/event。
+- Action 绑定 invocation-start immutable snapshot，mutation staging 后以完整 read-set CAS 提交；相关冲突零写入、不重试，read-only/no-op 同样验证，不自动创建 checkpoint。
+- 非空 durable commit 通过 `onWorkspaceMutation` 发送实际 written/deleted paths；event 不承诺全局顺序，表现层 authoritative reread 自己依赖的数据。
+- 现有 `tsian.workspace.write` 保持独立的 immediate API，不隐式加入 Action transaction。
+
+Worker 是 DOM/storage 隔离的执行环境，不是 deterministic 或 capability-secure sandbox。当前网络 fetch、时间、timers、随机数和动态代码执行仍可能可用；确定性由具体 Action 代码与测试保证。完整 manifest、hard limits、安全边界和 authoring 指南见 `docs/sdk/frontend-actions.md`。
+
+Generic `platform.runAction` 是 host-owned closed dispatcher。remote play frontend 的 caller identity 由 host 固定为 `play-frontend`；只允许显式 checkpoint/reply allowlist，workspace-family、未知和未来新增 action 默认拒绝，params 中 actor/scope/save/session/caller 字段不能参与提权。
+
+## 7. 默认前端：三合一单真相源
 
 不存在独立的"starter 模板"。默认前端 `apps/play-frontend-dev/src/main.ts` import 领域 API（`createTsian`），同时承担三个角色：
 
@@ -89,9 +107,9 @@ SDK 的对外类型签名即公开 API，当正式契约对待，不随手破坏
 
 fork 是快照不是引用：助手改的是复制到自己卡里的那份，官方默认前端后续更新不冲掉已 fork 的卡。这正是 packaged 形态提供的隔离。
 
-既然这份代码身兼三职，它的可读性即 API——助手要能读懂它学怎么用 SDK。`tsian.send` 调用、5 个 `on*` 回调注册、`history.get()` 重建这些位置要有清晰结构与注释，让助手 fork 时一眼懂"这段在干嘛、我能怎么改"。它既是实现又是教学样本。
+既然这份代码身兼三职，它的可读性即 API——助手要能读懂它学怎么用 SDK。`tsian.send` 调用、正式回合的 5 个 `on*` 回调注册、`history.get()` 重建这些位置要有清晰结构与注释，让助手 fork 时一眼懂"这段在干嘛、我能怎么改"。它既是实现又是教学样本。
 
-## 7. 助手 agent 职责
+## 8. 助手 agent 职责
 
 助手 agent 是玩家与前端代码之间的翻译层。玩家不手写前端代码，助手读 SDK 契约 + 玩家诉求，生成表现层。
 
@@ -112,28 +130,30 @@ fork 是快照不是引用：助手改的是复制到自己卡里的那份，官
 
 助手当前短板是反馈回路（盲写、写完看不到效果），不是脑力。补齐自检工具后迭代能力质变。在那之前，默认前端作为可跑起点比从零写更安全。自检工具的方向与能力边界见 `docs/active/assistant-frontend-inspection-direction.md`。
 
-## 8. 真相源单一化
+## 9. 真相源单一化
 
 每个环节的真相源唯一、官方维护：
 
 | 真相 | 来源 |
 |---|---|
 | `tsian.*` 有什么方法/回调/类型 | API 文档 `docs/sdk/play-frontend-api.md` + SDK 的 TS 类型导出（即真相） |
+| Frontend Action 的 manifest/authoring/transaction/security 契约 | `docs/sdk/frontend-actions.md` + SDK/contracts 类型 |
 | 怎么用 SDK 写前端 | API 文档 + 默认前端 `apps/play-frontend-dev/src/main.ts`（可 fork） |
 | 表现层示例 | 默认前端（可 fork） |
 
 官方更新桥加新能力时，语义化的高频能力加 `tsian.*` 方法，冷门能力走 `tsian.query`/`tsian.runAction` 通用入口——不暴露 method 字符串，助手现读 SDK 现用，随 SDK 发版自动到助手，因为玩家访问官方域名即拿最新平台 + 最新 SDK。
 
-## 9. 桥协议扩展（本次）
+## 10. 桥协议扩展
 
-本次 SDK 重设计伴随桥协议的**扩展**（加 method，非破坏性改动）：
+桥协议本身（`tsian.play-bridge.v1`）以 additive method/event 扩展：
 
-- `MessageInteractionRequest` / `InvokeAgentRequest` 加可选 `injection?: InjectionMessage[]` 字段（params 扩展，不改 method 名）。
-- 新增 4 个独立 RPC method：`workspace.read` / `workspace.list` / `workspace.search` / `workspace.write`——从 `query.query` 的 resource 分支拆出。`workspace.read` 返回 `WorkspaceReadResult | null`（null = 文件不存在，错误走 error 不吞）。
+- `MessageInteractionRequest` / `InvokeAgentRequest` 支持可选 `injection?: InjectionMessage[]`。
+- 独立 RPC method 包含 `workspace.read` / `workspace.list` / `workspace.search` / `workspace.write`，不再塞进 `query.query`。
+- Frontend Action 内部 method 为 `card.runAction` / `card.abortAction`，commit notification event 为 `workspace-mutation`；表现层只见 `tsian.card.runAction` / `tsian.onWorkspaceMutation`。
 
-桥协议本身（`tsian.play-bridge.v1`）的已有 method 名不变。agent runtime 里的 `read` / `write` 等短工具名受 `workspace_read` / `workspace_write` platformTools gate 控制，不经过桥的 `workspace.*`——两条路径独立，拆分只影响前端通道。
+已有 method 名与语义不变。agent runtime 的短工具、frontend immediate `workspace.*`、card Frontend Action 与 generic `platform.runAction` 是四条独立路径，不得因底层都能 mutation workspace 而混成一个授权入口。
 
-## 10. 落地路径
+## 11. 落地路径
 
 1. **抽协议层 SDK**：把前端内联的桥协议部分抠成 `packages/play-bridge` 的 `createBridge`（包内）+ `createTsian`（对外领域 API）。已完成。
 2. **重设计为领域 API**：`tsian.*` 方法 + 5 个语义回调 + injection + workspace 独立 RPC。已完成（`06-27-play-sdk-domain-api` 任务）。
@@ -142,7 +162,7 @@ fork 是快照不是引用：助手改的是复制到自己卡里的那份，官
 5. **发 CDN**：SDK 上 CDN，默认前端 import CDN 版本，用稳定 semver 范围。待做。
 6. **（未来）补爬虫工具**：助手能看效果迭代，闭环完整。
 
-## 11. 被取代的过渡构想
+## 12. 被取代的过渡构想
 
 以下在前期讨论中出现过，本方向下不再作为目标：
 
@@ -154,7 +174,7 @@ fork 是快照不是引用：助手改的是复制到自己卡里的那份，官
 - **SDK 走 semver 供玩家 pin 版本、官方远程更新独立化**：在官方同源更新模型下是伪约束。玩家访问官方域名即拿最新。
 - **snapshot 覆盖渲染（`turn-completed.snapshot` 到达时全量重渲染）**：被 `history.get()` 单源重建 + `onTurnEnd` 就地修正取代。回合进行中就地修正流式 DOM，不重建；重载/回溯后从 turn 文件单源重建。
 
-## 12. 检查清单
+## 13. 检查清单
 
 后续规划前端 / SDK / 助手相关新任务时，先问：
 
@@ -166,5 +186,8 @@ fork 是快照不是引用：助手改的是复制到自己卡里的那份，官
 6. 助手生成的前端是否触碰到 `postMessage` / RPC id 匹配 / `createBridge` / method 字符串？若是，说明 SDK 封装有缺口。
 7. 是否把数据正确性押在前端累加上而非 workspace turn 文件上？若是，回到"`history.get()` 单源重建"红线。
 8. injection 是否被平台解释语义或落盘？若是，违反"injection 只本轮有效、平台不解释"约定。
+9. 卡内业务动作是否走 `tsian.card.runAction`，且没有进入 Tool/Skill/Agent Registry 或 generic `platform.runAction`？
+10. Action mutation 后是否按 path event authoritative reread，而不是相信 event payload 或只刷新单一约定文件？
+11. 文档/实现是否错误宣称 Worker 是 deterministic/capability-secure sandbox，或把 immediate `workspace.write` 说成 Action transaction 的一部分？
 
 若答案显示实现正在重建被取代的过渡构想，应回到本文档重新切分边界。

@@ -159,9 +159,30 @@ function workspaceActionError(error: unknown, fallbackCode: string, fallbackMess
   )
 }
 
+const REMOTE_PLATFORM_ACTION_ALLOWLIST = new Set([
+  "reply-project",
+  "restore-checkpoint",
+  "create-checkpoint",
+  "update-checkpoint",
+  "overwrite-checkpoint",
+  "delete-checkpoint",
+])
+
+export type PlatformActionCaller = "trusted" | "play-frontend"
+
 export async function executePlatformAction(
   request: PlatformActionRequest,
+  options: { caller?: PlatformActionCaller } = {},
 ): Promise<PlatformActionResult> {
+  const caller = options.caller ?? "trusted"
+  if (caller === "play-frontend" && !REMOTE_PLATFORM_ACTION_ALLOWLIST.has(request.action)) {
+    return actionError(
+      "PLATFORM_ACTION_FORBIDDEN",
+      "This platform action is not available to game frontends.",
+      { action: request.action },
+    )
+  }
+
   if (request.action === "reply-project") {
     const activeSaveId = await getActiveSaveId()
     if (!activeSaveId) {
@@ -400,6 +421,12 @@ export async function executePlatformAction(
 
   const workspaceRequest = normalizeWorkspaceActionRequest(request)
   if (workspaceRequest) {
+    if (caller === "play-frontend") {
+      return actionError(
+        "PLATFORM_ACTION_FORBIDDEN",
+        "Workspace platform actions are not available to game frontends.",
+      )
+    }
     const activeSaveId = await getActiveSaveId()
     if (!activeSaveId) {
       return actionError(
@@ -436,4 +463,10 @@ export async function executePlatformAction(
     `不支持的平台动作：${request.action}`,
     { action: request.action },
   )
+}
+
+export function executePlatformActionForPlayFrontend(
+  request: PlatformActionRequest,
+): Promise<PlatformActionResult> {
+  return executePlatformAction(request, { caller: "play-frontend" })
 }

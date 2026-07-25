@@ -81,9 +81,71 @@ export interface WorkspaceBridge {
  *  让前端决定调用哪个 agent（如回合后维护入口），不硬编码 agent 名。 */
 export interface CardGetEntrypointsRequest {}
 
+/** Stable platform-owned failures exposed by Frontend Action invocations. */
+export type FrontendActionRuntimeErrorCode =
+  | "FRONTEND_ACTION_NOT_FOUND"
+  | "FRONTEND_ACTION_MANIFEST_INVALID"
+  | "FRONTEND_ACTION_INPUT_INVALID"
+  | "FRONTEND_ACTION_OUTPUT_INVALID"
+  | "FRONTEND_ACTION_TIMEOUT"
+  | "FRONTEND_ACTION_ABORTED"
+  | "FRONTEND_ACTION_WORKSPACE_CONFLICT"
+  | "FRONTEND_ACTION_EXECUTION_FAILED"
+  | "FRONTEND_ACTION_SESSION_REPLACED"
+
+export interface FrontendActionRuntimePublicError {
+  kind: "runtime"
+  code: FrontendActionRuntimeErrorCode
+  message: string
+  details?: JsonValue
+  correlationId?: string
+}
+
+/**
+ * Card-defined business failure. `code` is intentionally open: the platform
+ * validates the envelope but does not maintain a game-domain code allowlist.
+ */
+export interface FrontendActionDomainPublicError {
+  kind: "domain"
+  code: string
+  message: string
+  details?: JsonValue
+  correlationId?: string
+}
+
+export type FrontendActionPublicError =
+  | FrontendActionRuntimePublicError
+  | FrontendActionDomainPublicError
+
+export interface CardRunActionRequest {
+  invocationId: string
+  actionId: string
+  input: JsonValue
+}
+
+export type CardRunActionResult = JsonValue
+
+export interface CardAbortActionRequest {
+  invocationId: string
+}
+
+/** Path-only notification emitted after a durable, non-empty Action commit. */
+export interface RuntimeWorkspaceMutationEvent {
+  invocationId: string
+  saveId: string
+  source: "frontend-action"
+  actionId: string
+  writtenPaths: string[]
+  deletedPaths: string[]
+}
+
 export interface CardBridge {
   /** 返回当前卡 runtime.entrypoints；卡未配置时返回空对象 {}。 */
   getEntrypoints(req: CardGetEntrypointsRequest): Promise<GameCardRuntimeEntrypoints>
+  /** Execute a fixed-directory Frontend Action owned by the mounted card. */
+  runAction(req: CardRunActionRequest): Promise<CardRunActionResult>
+  /** Idempotently request cancellation of one invocation in this bridge session. */
+  abortAction(req: CardAbortActionRequest): Promise<void>
 }
 
 export interface DebugBridge {
@@ -115,6 +177,8 @@ export type RemotePlayBridgeMethod =
   | "workspace.search"
   | "workspace.write"
   | "card.getEntrypoints"
+  | "card.runAction"
+  | "card.abortAction"
 
 /** 玩家回答 ask_user 的 RPC payload。 */
 export interface AskUserResponse {
@@ -134,6 +198,8 @@ export type RemotePlayBridgeRequestParams =
   | WorkspaceSearchRequest
   | WorkspaceWriteRequest
   | CardGetEntrypointsRequest
+  | CardRunActionRequest
+  | CardAbortActionRequest
   | undefined
 
 export type RemotePlayBridgeResponseResult =
@@ -147,6 +213,7 @@ export type RemotePlayBridgeResponseResult =
   | WorkspaceSearchResult[]
   | WorkspaceWriteResult
   | GameCardRuntimeEntrypoints
+  | CardRunActionResult
   | null
   | undefined
 
@@ -155,6 +222,10 @@ export interface RemotePlayBridgeError {
   message: string
   details?: Record<string, JsonValue>
 }
+
+export type RemotePlayBridgeResponseError =
+  | RemotePlayBridgeError
+  | FrontendActionPublicError
 
 export interface RemotePlayBridgeHelloMessage {
   channel: RemotePlayBridgeChannel
@@ -192,7 +263,7 @@ export type RemotePlayBridgeResponseMessage =
       sessionId: string
       id: string
       ok: false
-      error: RemotePlayBridgeError
+      error: RemotePlayBridgeResponseError
     }
 
 export type RemotePlayBridgeEventName =
@@ -205,6 +276,7 @@ export type RemotePlayBridgeEventName =
   | "turn-options"
   | "interaction-request"
   | "agent-invocation"
+  | "workspace-mutation"
 
 /**
  * `turn-tool` 事件 output 字段形态。
@@ -297,6 +369,7 @@ export type RemotePlayBridgeEventPayload =
       allowCustom?: boolean
     }
   | AgentInvocationEvent
+  | RuntimeWorkspaceMutationEvent
   | {
       agentId: string
       kind: "delta" | "tool" | "round-end"

@@ -16,6 +16,14 @@
     "build:web": "npm run build --workspace platform-web",
     "build:admin": "npm run build --workspace admin-web",
     "build:contracts": "npm run build --workspace @tsian/contracts",
+    "test": "vitest run",
+    "test:frontend-actions": "vitest run apps/platform-web/src/platform-host/frontend-actions apps/platform-web/src/platform-host/browser-skill-script-executor.test.ts apps/platform-web/src/platform-host/platform-actions.test.ts apps/platform-web/src/platform-host/assistant-chat.frontend-action-isolation.test.ts apps/platform-web/src/agent-runtime/frontend-action-isolation.test.ts apps/platform-web/src/storage/frontend-action-workspace.test.ts apps/platform-web/src/bridge/remote-frontend-action-lifecycle.test.ts apps/platform-web/src/bridge/remote-iframe-bridge.test.ts packages/play-bridge/test/frontend-action.test.ts",
+    "test:frontend-actions:production-browser": "npm exec vite build -- --config apps/platform-web/vite.runtime-preflight.config.ts && node scripts/test-frontend-action-production-browser.mjs",
     "package:frontend": "node scripts/package-play-frontend-source.mjs"
+  },
+  "devDependencies": {
+    "fake-indexeddb": "^6.2.5",
+    "happy-dom": "^20.11.1",
+    "vitest": "^4.1.10"
   }
 }

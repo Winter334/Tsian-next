@@ -8,7 +8,8 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `WorkspaceFile`, `WorkspaceEntry`, `WorkspaceSearchResult`, `WorkspaceScope`, `WorkspaceOperationName`, `WorkspaceOperationRequest`, `WorkspaceDiffResult`, `WorkspacePatchResult`, `WorkspaceMoveResult`, `WorkspaceDeleteResult`, and `WorkspaceValidationResult` describe generic Runtime Workspace files, scoped operation requests, and operation results.
 - `MessageInteractionRequest` is `{ content: string; injection?: InjectionMessage[] }`. `InvokeAgentRequest` is `{ agentId: string; input: string; invocationId?: string; purpose?: string; checkpoint?: InvokeAgentCheckpointOption; commitMode?: AgentInvocationCommitMode; checkpointReason?: string; injection?: InjectionMessage[]; contextSlot?: string; persist?: boolean }`, and `InvokeAgentResult` is `{ invocationId: string; response: string }`. `checkpoint` is the preferred side-channel checkpoint request: omitted/`false` = no checkpoint, `true`/`{ mode: "create" }` = create after workspace commit, `{ mode: "overwrite", checkpointId }` = overwrite an existing checkpoint, `{ mode: "current-turn-auto" }` = overwrite/create the current turn's automatic checkpoint. Legacy `commitMode: "workspace-with-checkpoint"` maps to current-turn-auto only when no explicit `checkpoint` is provided; `checkpointReason` is compatibility data. `AgentInvocationEvent` is the discriminated event union for `invokeAgent` streaming (`started` / `delta` / `round-end` / `tool` / `completed` / `failed`). `InjectionMessage` carries `role` (system/user/assistant), `content`, and optional `position` (before-input/after-input, per-message). Injection is per-turn only — not persisted to turn history or context.json snapshots; the platform inserts it by role+position without interpreting semantics. `contextSlot` isolates invokeAgent context into `context-<slot>.json` (omitted → default `context.json`); `persist` controls whether the context file is read/written (`true` = read+writeback, `false`/omitted = one-shot, no read/write). Both are optional and default to one-shot behavior. `invocationId` may be supplied by the frontend so it can filter events before the Promise resolves; SDK/platform generate one when omitted. `purpose` is a caller-defined label for filtering, logs, and UI state, not behavior routing.
 - `DeepQueryRequest` / `DeepQueryResult<T>` wrap bridge query resources.
-- `PlatformActionRequest` / `PlatformActionResult<T>` wrap platform actions.
+- `PlatformActionRequest` / `PlatformActionResult<T>` wrap host-owned platform actions. They are not the Frontend Action contract.
+- `CardRunActionRequest`, `CardAbortActionRequest`, `CardRunActionResult`, `FrontendActionPublicError`, `FrontendActionRuntimeErrorCode`, and `RuntimeWorkspaceMutationEvent` describe card-owned Frontend Action RPC, typed errors, cancellation, and path-only durable-commit notifications. `JsonValue` is the only Action input/output/details value type; do not widen it to `unknown`.
 - `RemotePlayBridge*` types describe the serializable `tsian.play-bridge.v1` postMessage protocol used by remote iframe frontends.
 - `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views. `CheckpointSummary` exposes behavior fields (`retention: "auto" | "pinned"`, optional `source`, `tags`, `visible`, `metadata`) plus compatibility `reason?: string`; consumers must use `retention` for pruning/protection semantics, not closed `reason` values.
 - `GameCardManifest`, `GameCardFrontendBinding`, `GameCardPackageManifest`, `GameCardPackageFileEntry`, and `GameCardContentFile` describe reusable game cards, package files, frontend bindings, and card-owned content files. `GameCardWorkspaceTemplateFile` is a compatibility alias for `GameCardContentFile`. `GameCardManifest.summary` is the single Game Card intro field; there is no parallel Game Card `description` field. `GameCardManifest.frontend` is optional; when present, frontend bindings are remote or packaged only. `GameCardManifest.runtime.entrypoints.playerTurn` is the optional manifest-owned Agent id used by `send` / `interaction.sendMessage` formal player turns; platform runtime must fail loud when a playable card/save lacks a non-empty player-turn entrypoint instead of silently falling back to a hardcoded Agent id.
@@ -24,15 +25,150 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 
 - Play frontends call `bridge.interaction.sendMessage({ content })` to submit player input.
 - Play frontends read data through `bridge.query.query(...)`, in particular `session-history` for turn-by-turn dialogue history and turn number.
-- Play frontends use `bridge.platform.runAction(...)` for allowed platform actions such as `restore-checkpoint`.
+- Play frontends use `bridge.platform.runAction(...)` only for host-owned actions permitted by the remote caller's closed allowlist. Card-owned Frontend Actions use the semantic SDK `tsian.card.runAction(...)`; frontend code must not call the raw `card.runAction` RPC or generic dispatcher directly.
 - `bridge.debug?.onTurnDebugReady(cb)` is a signal to refresh data, not the source of truth.
 - Remote iframe frontends use `RemotePlayBridgeMessage` envelopes over `postMessage`; they must expect explicit `{ ok: true, result }` / `{ ok: false, error }` responses instead of thrown exceptions crossing the frame boundary.
-- The default remote iframe bridge exposes `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, and `platform.runAction`; it does not expose the `debug` namespace and must not expose `query.query({ resource: "ai-debug" })`.
+- The default remote iframe bridge exposes `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, host-owned `platform.runAction`, `workspace.*`, `card.getEntrypoints`, and the internal `card.runAction` / `card.abortAction` methods wrapped by play-bridge. It does not expose the `debug` namespace, must not expose `query.query({ resource: "ai-debug" })`, and must not offer a Frontend Action enumeration method.
 - Use `AgentRegistryEntry` for `bridge.query.query({ resource: "agent-registry" })` results.
 - Use `AgentContextEntry` for `bridge.query.query({ resource: "agent-context", params: { agentId } })` results.
 - Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results. Prefer `name` and `description` when presenting skills to an Agent; use `path` only for platform/debug queries such as `skill-detail`.
 - Use `SkillDetailEntry` for `bridge.query.query({ resource: "skill-detail", params: { path } })` results.
 - Use `RuntimeDiagnosticSummary` for `bridge.query.query({ resource: "runtime-diagnostics", params })` results. Diagnostics are facts-only summaries, not raw trace lines or repair instructions.
+
+## Scenario: Frontend Action Contract And SDK Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: changing shared `card.runAction` / `card.abortAction` request/result types, play-bridge `tsian.card.runAction`, `FrontendActionError`, strict JSON boundaries, workspace mutation events, session/abort behavior, or remote generic platform-action authorization.
+
+### 2. Signatures
+
+```ts
+type CardRunActionResult = JsonValue
+
+interface CardRunActionRequest {
+  invocationId: string
+  actionId: string
+  input: JsonValue
+}
+
+interface CardAbortActionRequest { invocationId: string }
+interface FrontendActionOptions { signal?: AbortSignal }
+
+tsian.card.runAction(
+  actionId: string,
+  input: JsonValue,
+  options?: FrontendActionOptions,
+): Promise<JsonValue>
+
+tsian.onWorkspaceMutation(
+  cb: (event: RuntimeWorkspaceMutationEvent) => void,
+): () => void
+```
+
+```ts
+type FrontendActionPublicError =
+  | { kind: "runtime"; code: FrontendActionRuntimeErrorCode; message: string; details?: JsonValue; correlationId?: string }
+  | { kind: "domain"; code: string; message: string; details?: JsonValue; correlationId?: string }
+
+interface RuntimeWorkspaceMutationEvent {
+  invocationId: string
+  saveId: string
+  source: "frontend-action"
+  actionId: string
+  writtenPaths: string[]
+  deletedPaths: string[]
+}
+```
+
+### 3. Contracts
+
+- Publication is card-owned fixed content at exact `frontend-actions/<id>/action.json`; it is not declared in `GameCardManifest`, not enumerable through bridge/query APIs, and not represented by Agent/Skill/Tool contract entries.
+- Public callers use `tsian.card.runAction`, never a generic `tsian.runAction` / `platform.runAction`. Raw `card.runAction` / `card.abortAction` are package-internal bridge methods.
+- `input`, result, public `details`, and mutation event fields remain JSON-serializable shared contracts. Action input/output specifically require strict JSON: finite primitives, dense arrays, and plain/null-prototype records with enumerable string data properties only; no lossy conversion.
+- Stable runtime codes are `FRONTEND_ACTION_NOT_FOUND`, `FRONTEND_ACTION_MANIFEST_INVALID`, `FRONTEND_ACTION_INPUT_INVALID`, `FRONTEND_ACTION_OUTPUT_INVALID`, `FRONTEND_ACTION_TIMEOUT`, `FRONTEND_ACTION_ABORTED`, `FRONTEND_ACTION_WORKSPACE_CONFLICT`, `FRONTEND_ACTION_EXECUTION_FAILED`, and `FRONTEND_ACTION_SESSION_REPLACED`.
+- `FrontendActionError.kind` discriminates platform/runtime failure from card-defined domain failure. The platform validates domain `code/message/details` but does not maintain a business-code allowlist. Invalid public/transport envelopes are sanitized to runtime execution failure; never expose raw stack, Worker source, internal path, schema compiler details, or Workspace content.
+- SDK generates invocationId before transport. A pre-aborted signal sends neither run nor abort request. Active abort sends `card.abortAction`; the host response owns the abort-versus-durable-commit race.
+- Pending calls/events are session-bound. Session replacement rejects old pending calls with `FRONTEND_ACTION_SESSION_REPLACED`; stale responses/events are ignored and listeners are cleaned.
+- `workspace-mutation` is path-only and emitted only after a durable non-empty Action commit. Paths are stable-sorted actual writes/concrete deletes. Subscribers treat it as invalidation and authoritative reread; invocationId is correlation, not global ordering.
+- Existing `tsian.workspace.write` remains a separate immediate API and must not be typed/documented as part of the Action transaction.
+- Remote generic `platform.runAction` uses host-fixed caller identity and a closed allowlist; unknown/future and workspace-family actions fail closed. Request params cannot supply authorization identity.
+
+### 4. Validation & Error Matrix
+
+| Condition | Public result |
+|---|---|
+| Non-strict SDK input | reject locally with runtime `FRONTEND_ACTION_INPUT_INVALID`; no run RPC |
+| Strict JSON but input schema mismatch | runtime `FRONTEND_ACTION_INPUT_INVALID`; Worker not started |
+| Missing exact action | runtime `FRONTEND_ACTION_NOT_FOUND` |
+| Invalid manifest/schema/ref/resource | runtime `FRONTEND_ACTION_MANIFEST_INVALID` |
+| Raw/host output is non-strict or schema-invalid | runtime `FRONTEND_ACTION_OUTPUT_INVALID`; no commit |
+| Valid dedicated domain envelope | `FrontendActionError { kind: "domain", code, message, details? }` |
+| Ordinary throw/invalid domain or transport envelope | sanitized runtime `FRONTEND_ACTION_EXECUTION_FAILED` |
+| Pre-aborted signal | runtime `FRONTEND_ACTION_ABORTED`; no run/abort RPC |
+| Abort before commit barrier | runtime `FRONTEND_ACTION_ABORTED`; zero commit/event |
+| Abort after durable commit | success/commit wins; no rollback to aborted |
+| Relevant read-set/binding/resource change | runtime `FRONTEND_ACTION_WORKSPACE_CONFLICT`; no retry/write/event |
+| Session replacement | old Promise rejects `FRONTEND_ACTION_SESSION_REPLACED`; stale response/event ignored |
+| Empty/byte-identical commit | success, no mutation event |
+| Remote generic action outside closed allowlist | `PLATFORM_ACTION_FORBIDDEN` before assistant actor resolution |
+
+### 5. Good/Base/Bad Cases
+
+- Good: import `createTsian`, `FrontendActionError`, and shared Action types from `@tsian/play-bridge`; call `tsian.card.runAction("apply-choice", { choiceId }, { signal })`; branch on `error.kind + error.code`.
+- Good: subscribe through `onWorkspaceMutation`, filter if useful, and reread every affected domain file from Workspace rather than trusting event order/content.
+- Base: an Action returns a scalar/record `JsonValue` and produces no mutation; Promise resolves and no event is required.
+- Bad: redefine the payload as `{ input: unknown }`, accept a Date/Blob, then rely on postMessage/JSON.stringify to coerce it.
+- Bad: call `tsian.runAction("apply-choice", ...)`, expose an action registry to generate UI, or reuse `PlatformActionError` without the runtime/domain discriminator.
+- Bad: globally refresh one fixed `runtime.json` for every event; actual paths can include any card-owned save state and event ordering is not authoritative.
+
+### 6. Tests Required
+
+- Contracts build: `npm run build:contracts`; consuming SDK/platform build after shape changes.
+- SDK strict JSON table: undefined, BigInt, NaN/Infinity, sparse array, accessor, Date/exotic object, symbol/non-enumerable property, and cycle reject before `card.runAction` transport.
+- SDK output/error table: strict output succeeds; invalid output rejects; valid runtime/domain envelopes preserve discriminator; invalid transport error is sanitized.
+- Lifecycle: pre-abort sends no request; active abort sends one matching invocationId; session replacement rejects old pending and ignores stale response/event; terminal cleanup prevents listener leaks.
+- Event: current-session mutation reaches all non-throwing subscribers, throwing subscribers are isolated, unsubscribe works, stale-session event is ignored.
+- Privilege: enumerate current host platform actions and assert the remote play-frontend caller can execute only the explicit closed allowlist; workspace and synthetic future action are forbidden.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const result = await tsian.runAction("apply-choice", { choiceId })
+if ((result as any).errorCode === "CONFLICT") retry()
+```
+
+This sends a card-owned operation to the host generic dispatcher, discards the typed error contract, and retries a snapshot conflict.
+
+#### Correct
+
+```ts
+try {
+  await tsian.card.runAction("apply-choice", { choiceId }, { signal })
+} catch (error) {
+  if (!(error instanceof FrontendActionError)) throw error
+  if (error.kind === "domain") showBusinessError(error.code, error.message)
+  else showRuntimeError(error.code) // conflict is surfaced; caller does not auto-retry
+}
+```
+
+#### Wrong
+
+```ts
+tsian.onWorkspaceMutation(({ writtenPaths }) => {
+  if (writtenPaths.length > 0) void reloadRuntimeJson()
+})
+```
+
+#### Correct
+
+```ts
+tsian.onWorkspaceMutation((event) => {
+  void rereadAuthoritativeFilesFor(event.actionId, event.writtenPaths, event.deletedPaths)
+})
+```
 
 ## Scenario: invokeAgent AgentInvocation Contract
 

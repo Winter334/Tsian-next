@@ -65,8 +65,8 @@
 - The iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Do not add top navigation, popups, downloads, or broader permissions without a new product/security decision.
 - Remote bridge messages use shared contract types; runtime validation belongs in platform-web, not in shared contracts.
 - The adapter must filter by mounted iframe content window, generated session id, and accepted handshake origin before dispatching requests.
-- The allowed remote methods are `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, `platform.runAction`, and the `workspace.*` methods (`workspace.read`, `workspace.list`, `workspace.search`, `workspace.write`). The default remote bridge must not expose the `debug` namespace and must reject `ai-debug` queries; a `turn-debug-ready` notification may be sent without debug records.
-- Workspace read/list/search/write are independent `workspace.*` RPC methods (split out of `query.query`), each with its own request/response shape and normalize validation. `workspace.read` returns `WorkspaceReadResult | null` (null = file not found; errors are not swallowed). Checkpoint restore reuses existing `platform.runAction` behavior. Agent `workspace_read`/`workspace_write` tools go through `agent-runtime/workspace-tools.ts`, not the bridge `workspace.*` methods — two independent paths.
+- The allowed remote methods are `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, host-owned `platform.runAction`, the `workspace.*` methods (`workspace.read`, `workspace.list`, `workspace.search`, `workspace.write`), `card.getEntrypoints`, and package-internal Frontend Action methods `card.runAction` / `card.abortAction`. The default remote bridge must not expose the `debug` namespace, must reject `ai-debug` queries, and must not expose an Action enumeration method; a `turn-debug-ready` notification may be sent without debug records.
+- Workspace read/list/search/write are independent immediate `workspace.*` RPC methods (split out of `query.query`), each with its own request/response shape and normalize validation. `workspace.read` returns `WorkspaceReadResult | null` (null = file not found; errors are not swallowed). Frontend Action mutations use the separate card Action transaction. Checkpoint restore reuses the host-owned `platform.runAction` behavior. Agent `workspace_read`/`workspace_write` tools go through `agent-runtime/workspace-tools.ts`, not bridge `workspace.*` or card Action methods — these paths remain independent.
 
 ### Validation & Error Matrix
 
@@ -76,6 +76,125 @@
 - Malformed remote request payload -> return a structured bridge error response when the request has a valid session/id; otherwise ignore.
 - Remote `ai-debug` query -> structured forbidden error response.
 - Iframe load error -> show a compact error state and do not mutate save data.
+
+## Scenario: Card-Owned Frontend Action Host Boundary
+
+### 1. Scope / Trigger
+
+- Trigger: changing Frontend Action discovery/manifest/schema/Worker execution, runtime Agent path isolation, remote card RPC lifecycle, public error projection, mutation event routing, or generic remote platform-action policy.
+
+### 2. Signatures
+
+```ts
+interface FrontendActionManifestV1 {
+  schemaVersion: 1
+  inputSchema: JsonValue
+  outputSchema: JsonValue
+  executor: {
+    type: "browser_script"
+    path: string
+    timeoutMs?: number
+    helpers?: string[]
+  }
+}
+
+resolveFrontendAction({ gameCardId, actionId, files }): ResolvedFrontendAction
+validateFrontendActionData(validator, value): FrontendActionDataValidationResult
+```
+
+- Published path: exact `frontend-actions/<id>/action.json` in bound-card `card-content`; id pattern `[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?`.
+- Remote methods: `card.runAction({ invocationId, actionId, input })`, `card.abortAction({ invocationId })`; SDK wraps these as `tsian.card.runAction`.
+- Mutation event: `{ invocationId, saveId, source: "frontend-action", actionId, writtenPaths, deletedPaths }`.
+
+### 3. Contracts
+
+- Fixed directory is publication. Do not add a game-card manifest field, action-list query, dynamic UI registry, Agent/Skill/Tool Registry entry, context entry, or Studio Agent capability panel for Frontend Actions.
+- Runtime game Agent paths filter `frontend-actions` and descendants from initial workspace projection and every read/list/search/glob/semantic/context/macro path. Desktop assistant/resource-manager authoring remains ordinary card-content management. Dedicated Action loading requires bound-card snapshot provenance; generic actor-level escalation is not a bypass.
+- Manifest and executor are closed shapes. id comes only from directory. executor/helper/static `importScripts` paths remain in the same Action root; executor/helper resources are text and Action resources must have exact `card-content` provenance.
+- Manifest hard limits: 64 KiB; schema each 64 KiB/depth 64/10,000 nodes; input/output each 1 MiB/depth 64/100,000 nodes; executor+helpers 2 MiB; helpers 16; timeout default 10,000 ms, range 100–30,000 ms; validation errors 50; compiled validator LRU 128.
+- Strict JSON accepts finite primitives, dense Array-prototype arrays, and Object/null-prototype records with own enumerable string data properties. Reject cycles, sparse/custom arrays, accessors, symbol/non-enumerable properties, unsupported primitive types, non-finite numbers, proxies that cannot be inspected, and exotic objects. Validate SDK input, direct host input, raw Worker output before loose normalization/postMessage, and cloned host output before commit.
+- Ajv 8 Draft 2020-12 uses strict/allErrors, no formats/coercion/default/removeAdditional/custom keyword/async loader. `$schema` is omitted or exact 2020-12; `$ref` only `#` / `#/...` resolvable same-document JSON Pointer. Reject remote/relative refs, `$async`, `$id`, anchors/dynamic/recursive refs, `$vocabulary`, unknown keywords, invalid schema positions, and compile failures. Production CSP must permit the actual Ajv and Action dynamic-function path plus the opaque-origin Action Worker. Every Action execution awaits a rejection-caching singleton gate that uses the production compiler/validator and default Worker before snapshot/schema resolution; gate failure creates no Action Worker and loads no snapshot. Never fall back to weaker validation.
+- Action context fixes actor level 1 and exposes only required workspace read/list/glob/write/delete plus dedicated domain-fail capability. Persistent mutations are ordinary `save-runtime`; reject card-content, card-frontend, temp/platform-meta and `.tsian/**`. Text/JSON-safe reads only; binary fails loud.
+- Frontend Actions run in opaque-origin `data:` Workers. Opaque origin is the primary platform-origin IndexedDB/Cache boundary; startup additionally removes/fixes `globalThis.indexedDB`, `globalThis.caches`, `globalThis.Worker`, `globalThis.SharedWorker`, `navigator.storage`, and `navigator.serviceWorker`, then self-checks them before accepting execute. Parameter shadowing is defense in depth only. This prevents ambient platform-origin storage/nested-Worker bypass of staged Workspace/CAS, but is not a deterministic, secure, or capability-secure sandbox: native fetch, Date/time/timers, Math.random, dynamic code generation, reflection, and future browser APIs remain outside the guarantee. Do not document a stronger claim.
+- Domain fail envelope permits only `code/message/details`: code `[A-Z][A-Z0-9_]{0,63}`, non-empty message <= 500 chars, strict details <= 64 KiB/depth 16. Valid envelope preserves open card code/details as `kind: "domain"`; ordinary throw/invalid envelope is sanitized runtime execution failure.
+- Invocation lifecycle is `(sessionId, invocationId)`: duplicate active ids reject; unknown/completed abort is idempotent; abort observed before commit forbids commit; durable commit wins over late abort; dispose/session replacement aborts/rejects old work, removes listeners/controllers and ignores stale response/event.
+- Non-empty durable commit emits one current-session path-only event after transaction and before success response. Actual paths are sorted; subscriber errors are isolated. Failure/no-op emits none. Consumers authoritative reread; event order is not global.
+- Generic remote `platform.runAction` sets host-internal caller=`play-frontend` and enforces the closed allowlist `reply-project`, `restore-checkpoint`, `create-checkpoint`, `update-checkpoint`, `overwrite-checkpoint`, `delete-checkpoint`. Workspace, unknown and future actions fail closed inside the executor; params cannot inject caller/actor/scope/save/card/session identity or reach assistant actor resolution.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Missing exact manifest | `FRONTEND_ACTION_NOT_FOUND` |
+| Invalid id, alias/case/path, unknown manifest field, bad helper/executor/resource | `FRONTEND_ACTION_MANIFEST_INVALID` |
+| Remote/unresolved `$ref`, unsupported schema feature/dialect, unknown keyword, schema/limit overflow | `FRONTEND_ACTION_MANIFEST_INVALID`; no Worker |
+| Input non-strict/schema invalid | `FRONTEND_ACTION_INPUT_INVALID`; no Worker |
+| Output non-strict/schema invalid | `FRONTEND_ACTION_OUTPUT_INVALID`; discard staging |
+| Forbidden operation/scope/binary result | sanitized runtime failure; discard staging |
+| Valid domain envelope | preserve `kind: "domain"`, code/message/details |
+| Invalid envelope/ordinary throw | `FRONTEND_ACTION_EXECUTION_FAILED`; no raw message/stack/source/path |
+| Timeout/abort before commit | typed timeout/aborted; terminate Worker; no commit/event |
+| Durable commit then late abort | commit, event and success remain authoritative |
+| Session replacement/dispose | reject/abort only old session, clean all pending state, ignore stale traffic |
+| Relevant CAS conflict including read-only/no-op | `FRONTEND_ACTION_WORKSPACE_CONFLICT`; zero writes/event; no retry |
+| Byte-identical or empty actual delta | success, no DB timestamp mutation/checkpoint/event |
+| Remote generic workspace/unknown/future platform action | `PLATFORM_ACTION_FORBIDDEN` before privileged path |
+
+### 5. Good/Base/Bad Cases
+
+- Good: `frontend-actions/apply-choice/action.json` owns strict object schemas and root-confined `run.js`; mounted frontend calls known id through `tsian.card.runAction` and rereads state after its mutation event.
+- Good: domain business condition uses the dedicated fail envelope and UI branches on `error.kind === "domain"`.
+- Base: a read-only Action validates its read set and returns JSON without creating checkpoint or event.
+- Bad: add Frontend Action summaries to `buildToolRegistry`, `buildSkillRegistry`, `agent-context`, or expose `listFrontendActions()` to build UI.
+- Bad: let Action use generic effective-live Workspace during execution, allow actor level from request, or describe Worker as deterministic because it has no DOM.
+- Bad: implement card Action as `executePlatformAction({ action: actionId })`, or protect generic actions with a `workspace.*` prefix denylist rather than closed allowlist.
+
+### 6. Tests Required
+
+- Registry/manifest: exact path/id, case/alias rejection, closed fields, root confinement, missing/duplicate/binary resources, timeout/helper/source/manifest limits.
+- Strict JSON/schema: primitives and nested object success; undefined/BigInt/non-finite/cycle/sparse/accessor/symbol/non-enumerable/exotic reject; Draft 2020-12 strict keyword/ref/dialect/limit/errors/cache table.
+- Runtime Agent isolation: direct read, list, search, glob, semantic/effective projection, contextPaths, macro expansion, Agent/Skill/Tool queries and model context cannot reveal `frontend-actions/**`; desktop assistant authoring remains available.
+- Worker: existing Skill/Tool parity; Action operation allowlist and scope enforcement; text-only reads; valid domain pass-through; invalid envelope/ordinary throw sanitization; malformed output; timeout; abort; cleanup. A real Chrome/Edge release gate must serve the production bundle under the exact canonical production CSP, compile and validate representative Draft 2020-12 data through production Ajv, execute the actual default Action Worker, and prove opaque origin plus unavailable IndexedDB/Cache/nested Worker/storage-manager globals. Fake Worker or duplicated Ajv setup is insufficient.
+- Bridge/lifecycle: duplicate invocation, pre/active/late abort barriers, dispose/session replacement, stale traffic suppression, event-before-success ordering and callback isolation.
+- Privilege: table-drive every current platform action plus a synthetic future action; only explicit remote allowlist succeeds and no play-frontend request reaches assistant actor resolution.
+- Builds: `npm run build:contracts`, play-bridge tests/build, platform-web tests, `npm run build:web`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const files = effectiveWorkspaceFiles
+const actions = buildToolRegistry(files.filter((f) => f.path.startsWith("frontend-actions/")))
+return bridge.platform.runAction({ action: requestedId, params })
+```
+
+#### Correct
+
+```ts
+const visibleAgentFiles = withoutFrontendActionFiles(effectiveWorkspaceFiles)
+const snapshot = await loadFrontendActionWorkspaceSnapshot(mountedGameCardId)
+const action = resolveFrontendAction({
+  gameCardId: snapshot.gameCardId,
+  actionId,
+  files: snapshot.cardContentFiles,
+})
+// execute through the dedicated card Action service, then strict validation + CAS commit
+```
+
+#### Wrong
+
+```ts
+if (request.action.startsWith("workspace.")) return forbidden()
+return executePlatformAction(request) // future actions become remotely callable
+```
+
+#### Correct
+
+```ts
+return executePlatformAction(request, { caller: "play-frontend" })
+// executor checks a closed REMOTE_PLATFORM_ACTION_ALLOWLIST; unknown defaults denied
+```
 
 ## Scenario: Bypass Invoke-Agent Context Slot And Persist
 

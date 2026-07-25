@@ -237,6 +237,139 @@ if (initial) {
 ```
 
 
+## Scenario: Frontend Action Snapshot And Read-Set CAS Commit
+
+### 1. Scope / Trigger
+
+- Trigger: changing Frontend Action invocation snapshot loading, workspace dependency tracking, staged save mutation semantics, optimistic commit, actual delta calculation, checkpoint behavior, or mutation event payloads.
+
+### 2. Signatures
+
+```ts
+loadFrontendActionWorkspaceSnapshot(
+  mountedGameCardId: string,
+): Promise<FrontendActionWorkspaceSnapshot>
+
+createFrontendActionWorkspaceDependencyTracker(
+  snapshot: FrontendActionWorkspaceSnapshot,
+): FrontendActionWorkspaceDependencyTracker
+
+commitFrontendActionWorkspace({
+  snapshot,
+  mountedGameCardId,
+  resources,
+  dependencies,
+  changes,
+  deletePrefixes,
+}): Promise<{
+  saveId: string
+  gameCardId: string
+  writtenPaths: readonly string[]
+  deletedPaths: readonly string[]
+  changed: boolean
+}>
+```
+
+```ts
+type FrontendActionWorkspaceDependency =
+  | { kind: "file"; scope; path; observed: "missing" | "present"; signature? }
+  | { kind: "list"; scope; path; recursive; entriesSignature }
+  | { kind: "glob"; scope; pattern; limit; truncated; matchesSignature }
+  | { kind: "write-baseline"; scope: "save-runtime"; path; observed; signature? }
+  | { kind: "delete-range"; scope: "save-runtime"; prefix; descendantsSignature }
+```
+
+### 3. Contracts
+
+- Before snapshot, run existing save Workspace initialization/upgrade. Then one Dexie readonly transaction binds active-save meta, save row, save→card, mounted gameCardId, card/content/frontend rows and save workspace rows. Mounted card must exactly match active save binding.
+- Snapshot files are immutable and retain provenance plus exact row/content signatures. Manifest/executor/helpers/importScripts must resolve from bound card's `card-content`, not merely a same-path effective overlay winner or a higher generic actor level.
+- During execution, all manifest/script/helper and business read/list/glob operations use invocation-start snapshot plus staged overlay only; no live DB reads. Staged read-after-write sees the staged result, but the optimistic dependency baseline remains the invocation-start persisted value.
+- Persistent Action mutations stage through `RuntimeWorkspaceTransaction` and are restricted to ordinary `save-runtime`; reject card-content, card-frontend, temp, platform-meta and `.tsian/**`. Existing frontend `tsian.workspace.write` remains a separate immediate API and never joins this transaction implicitly.
+- Track file-present/missing reads, exact list ordering/metadata and recursive flag, glob pattern/limit/truncated/result membership, every blind-write target baseline, every delete prefix's exact descendants, and all exact Action resource rows. `missing` is observable state, not absence of dependency.
+- `commitFrontendActionWorkspace` is one no-checkpoint Dexie read-write transaction over binding/resource/workspace rows. It revalidates active save/card/mount, Action resources, all read dependencies, write baselines and delete ranges, then applies only the actual delta. Relevant conflict means zero writes and no retry.
+- Validate dependencies even when Action is read-only or final delta is empty. A stale snapshot must not return success merely because there is nothing to write.
+- Merge from current storage, preserving unrelated concurrent paths. A byte-identical write folds to no-op; write/delete normalization has one final state per path. A new descendant under a tracked delete prefix conflicts.
+- Non-empty commit updates save `updatedAt` and returns stable-sorted actual written paths plus actual concrete deleted files. It does not create/update checkpoint. Empty delta writes no DB row/timestamp/checkpoint.
+- Mutation notification is emitted by host only after commit returns. It uses result paths, includes no content, and is absent for empty/failed/aborted/timed-out/conflicted calls. Subscribers authoritative reread because invocationId is correlation only and events have no global ordering guarantee.
+
+### 4. Validation & Error Matrix
+
+| Condition | Storage behavior |
+|---|---|
+| No active save / missing save/card / mounted-card mismatch at snapshot | fail before Worker; no staging/commit |
+| Active save, save→card, mounted card/session binding changes before commit | `FRONTEND_ACTION_WORKSPACE_CONFLICT`; zero writes |
+| Manifest/executor/helper card-content row changes or provenance differs | conflict; zero writes |
+| Read present→changed/deleted or missing→created | conflict; zero writes |
+| List entries/order/metadata or recursive result changes | conflict; zero writes |
+| Glob matches/limit truncation changes | conflict; zero writes |
+| Blind-write target baseline changes | conflict; zero writes |
+| Delete prefix gains/loses/changes descendant | conflict; zero writes |
+| Unrelated unobserved path changes | preserve concurrent change and apply Action actual delta |
+| Staged write equals invocation baseline/current row byte-for-byte | fold to no-op |
+| Read-only/no-op dependency is stale | conflict; do not report stale success |
+| Output/schema/error/abort/timeout before commit | discard transaction; no DB/checkpoint/event |
+| Successful non-empty actual delta | atomic write/delete + save timestamp; no checkpoint; return sorted paths |
+| Successful empty actual delta | no DB/timestamp/checkpoint/event |
+
+### 5. Good/Base/Bad Cases
+
+- Good: Action reads `save/card-state.json`, stages two related writes, an unrelated concurrent file is added, then CAS validates the read set and commits only the two actual changes while preserving the new file.
+- Good: Action reads a missing optional file; another caller creates it before commit, so the Action conflicts instead of returning a result based on absence.
+- Good: deleting `save/group` tracks the full descendant range and reports concrete deleted file paths after commit.
+- Base: read-only Action validates binding/resources/read set, returns JSON, and writes/checkpoints/events nothing.
+- Bad: reload live Workspace inside the Worker adapter, retry a conflict with the same invocation automatically, or commit all snapshot files back over current storage.
+- Bad: call generic checkpoint commit helper or treat Frontend Action as part of formal turn history.
+- Bad: emit requested write/delete prefixes rather than actual mutation paths, or update `updatedAt` for byte-identical no-op.
+
+### 6. Tests Required
+
+- Atomic snapshot: active save/card binding, exact card-content provenance, immutable rows and initialized Workspace.
+- Dependency table: present/missing file, direct/recursive list, glob membership/limit/truncated, blind write, delete range including initially empty prefix, Action resource mutation.
+- Concurrency: unrelated concurrent write survives; each related dependency change conflicts with zero writes; no automatic retry.
+- Staging: multi-write success is atomic; any execution/input/output/domain/abort/timeout failure discards all staged changes; read-your-writes does not replace baseline dependency.
+- Delta: byte-identical write and empty delta do not write timestamp/checkpoint/event; overlapping writes/deletes normalize; returned actual paths are stable-sorted concrete paths.
+- Read-only/no-op CAS still conflicts when binding/resource/read dependency changes.
+- Assert checkpoint count/manifests are unchanged for every Frontend Action success/failure path.
+- Integration event assertion: event only after durable non-empty commit, before remote success response; payload paths equal commit result; subscriber exception cannot alter storage result.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+for (const file of transaction.finalWorkspaceFiles()) {
+  await localDb.workspaceFiles.put(file) // overwrites unrelated concurrent paths
+}
+await createCheckpointForSave(saveId)
+```
+
+#### Correct
+
+```ts
+const result = await commitFrontendActionWorkspace({
+  snapshot,
+  mountedGameCardId,
+  resources,
+  dependencies: tracker.dependencies,
+  changes: transaction.finalWorkspaceChanges(),
+  deletePrefixes: tracker.deletePrefixes,
+})
+// Host emits only result.writtenPaths/result.deletedPaths when result.changed.
+```
+
+#### Wrong
+
+```ts
+if (changes.writtenFiles.length === 0) return { changed: false }
+```
+
+#### Correct
+
+```ts
+// Revalidate binding/resources/read set in the same transaction first.
+// Only then may a valid empty actual delta return changed: false.
+```
+
 ## Quality
 
 - Run `npm run build:web` for any storage change.

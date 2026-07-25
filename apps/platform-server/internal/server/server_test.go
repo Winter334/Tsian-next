@@ -6,13 +6,57 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"tsian/platform-server/internal/config"
 	"tsian/platform-server/internal/storage"
 )
+
+func TestPlatformWebStaticResponsesUseProductionCSP(t *testing.T) {
+	t.Parallel()
+
+	staticDir := t.TempDir()
+	adminDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(staticDir, "index.html"), []byte("platform index"), 0o600); err != nil {
+		t.Fatalf("write platform index: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(staticDir, "app.js"), []byte("export {}"), 0o600); err != nil {
+		t.Fatalf("write platform asset: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(adminDir, "index.html"), []byte("admin index"), 0o600); err != nil {
+		t.Fatalf("write admin index: %v", err)
+	}
+
+	cfg := config.Config{
+		DataDir:        t.TempDir(),
+		StaticDir:      staticDir,
+		AdminStaticDir: adminDir,
+	}
+	handler := New(cfg, nil).Handler()
+	expectedCSP := strings.TrimSpace(platformWebContentSecurityPolicy)
+	for _, requestPath := range []string{"/", "/app.js", "/client/route"} {
+		request := httptest.NewRequest(http.MethodGet, requestPath, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", requestPath, response.Code, http.StatusOK)
+		}
+		if got := response.Header().Get("Content-Security-Policy"); got != expectedCSP {
+			t.Fatalf("GET %s CSP = %q, want %q", requestPath, got, expectedCSP)
+		}
+	}
+
+	adminRequest := httptest.NewRequest(http.MethodGet, "/admin/", nil)
+	adminResponse := httptest.NewRecorder()
+	handler.ServeHTTP(adminResponse, adminRequest)
+	if got := adminResponse.Header().Get("Content-Security-Policy"); got != "" {
+		t.Fatalf("admin CSP = %q, want no platform-web policy", got)
+	}
+}
 
 func TestAuthMockLoginMeLogout(t *testing.T) {
 	t.Parallel()

@@ -11,6 +11,7 @@ import type {
   AgentInvocationCommitMode,
   AgentInvocationEvent,
   AssistantTurnTimelineItem,
+  CardRunActionResult,
   CheckpointSummary,
   CreateCheckpointOptions,
   DeepQueryResult,
@@ -18,12 +19,14 @@ import type {
   InjectionMessage,
   InvokeAgentCheckpointOption,
   InvokeAgentResult,
+  JsonValue,
   ListCheckpointOptions,
   MessageInteractionResult,
   OverwriteCheckpointOptions,
   PlatformActionResult,
   RemotePlayBridgeEventName,
   RemotePlayBridgeEventPayload,
+  RuntimeWorkspaceMutationEvent,
   SessionHistoryEntry,
   TurnToolOutput,
   UpdateCheckpointOptions,
@@ -34,6 +37,13 @@ import type {
   WorkspaceScope,
 } from "@tsian/contracts"
 import { createBridge } from "./bridge"
+import {
+  abortedError,
+  inputInvalidError,
+  toFrontendActionError,
+} from "./frontend-action-error"
+import { validateStrictJson } from "./strict-json"
+import { parseWorkspaceMutationEvent } from "./workspace-mutation"
 
 // ════════════════════════════════════════════════════════════════
 // 类型定义
@@ -63,6 +73,11 @@ export interface InvokeAgentOptions {
   /** 是否持久化上下文。true = 读写 context-slot.json（跨调用持久化）；
    *  false/省略 = 不读不写（一次性调用）。默认 false。 */
   persist?: boolean
+}
+
+export interface FrontendActionOptions {
+  /** Cancels the invocation. A pre-aborted signal sends no run request. */
+  signal?: AbortSignal
 }
 
 export interface MessageDelta {
@@ -137,6 +152,8 @@ export interface TsianApi {
   onAsk(cb: (ask: AskRequest) => void): () => void
   /** invokeAgent 过程事件订阅；用 invocationId 区分并发调用。 */
   onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void
+  /** Frontend Action durable workspace commits; payload contains paths only. */
+  onWorkspaceMutation(cb: (event: RuntimeWorkspaceMutationEvent) => void): () => void
 
   // ── 回答 ask_user ──
   answer(requestId: string, text: string, cancelled?: boolean): Promise<void>
@@ -172,6 +189,12 @@ export interface TsianApi {
   readonly card: {
     /** 当前卡 runtime 入口配置。前端用它决定调用哪个 agent（如回合后维护入口），不硬编码 agent 名。 */
     entrypoints(): Promise<GameCardRuntimeEntrypoints>
+    /** Execute one fixed-directory Frontend Action with strict JSON I/O. */
+    runAction(
+      actionId: string,
+      input: JsonValue,
+      options?: FrontendActionOptions,
+    ): Promise<JsonValue>
   }
 
   // ── 通用入口（覆盖冷门/未来新增能力，不暴露 RPC）──
@@ -215,6 +238,9 @@ export function createTsian(): TsianApi {
   const toolCallbacks = new Set<(tool: ToolEvent) => void>()
   const askCallbacks = new Set<(ask: AskRequest) => void>()
   const agentInvocationCallbacks = new Set<(event: AgentInvocationEvent) => void>()
+  const workspaceMutationCallbacks = new Set<
+    (event: RuntimeWorkspaceMutationEvent) => void
+  >()
 
   bridge.on({
     onEvent(event, payload) {
@@ -282,6 +308,15 @@ export function createTsian(): TsianApi {
         const invocationEvent = payload as AgentInvocationEvent
         for (const cb of agentInvocationCallbacks) {
           try { cb(invocationEvent) } catch (err) { console.error("[tsian] onAgentInvocation callback threw", err) }
+        }
+        return
+      }
+
+      if (event === "workspace-mutation") {
+        const mutationEvent = parseWorkspaceMutationEvent(payload)
+        if (!mutationEvent) return
+        for (const cb of workspaceMutationCallbacks) {
+          try { cb(mutationEvent) } catch (err) { console.error("[tsian] onWorkspaceMutation callback threw", err) }
         }
         return
       }
@@ -377,6 +412,11 @@ export function createTsian(): TsianApi {
     onAgentInvocation(cb: (event: AgentInvocationEvent) => void): () => void {
       agentInvocationCallbacks.add(cb)
       return () => { agentInvocationCallbacks.delete(cb) }
+    },
+
+    onWorkspaceMutation(cb: (event: RuntimeWorkspaceMutationEvent) => void): () => void {
+      workspaceMutationCallbacks.add(cb)
+      return () => { workspaceMutationCallbacks.delete(cb) }
     },
 
     async answer(requestId: string, text: string, cancelled?: boolean): Promise<void> {
@@ -523,6 +563,50 @@ export function createTsian(): TsianApi {
     card: {
       async entrypoints(): Promise<GameCardRuntimeEntrypoints> {
         return bridge.call<GameCardRuntimeEntrypoints>("card.getEntrypoints", {})
+      },
+
+      async runAction(
+        actionId: string,
+        input: JsonValue,
+        options?: FrontendActionOptions,
+      ): Promise<JsonValue> {
+        if (!validateStrictJson(input).ok) {
+          throw inputInvalidError()
+        }
+
+        const invocationId = createInvocationId()
+        const signal = options?.signal
+        if (signal?.aborted) {
+          throw abortedError()
+        }
+
+        const sendAbort = () => {
+          // Cancellation is best effort. The host response remains authoritative
+          // for the durable commit-versus-late-abort race.
+          void bridge.call<void>("card.abortAction", { invocationId }).catch(() => {})
+        }
+
+        try {
+          const output = await bridge.call<CardRunActionResult>(
+            "card.runAction",
+            { invocationId, actionId, input },
+            {
+              ...(signal ? { signal } : {}),
+              onAbort: sendAbort,
+            },
+          )
+          const outputValidation = validateStrictJson(output)
+          if (!outputValidation.ok) {
+            throw {
+              kind: "runtime",
+              code: "FRONTEND_ACTION_OUTPUT_INVALID",
+              message: "Frontend Action output did not satisfy the strict JSON transport limits.",
+            }
+          }
+          return outputValidation.value
+        } catch (error) {
+          throw toFrontendActionError(error)
+        }
       },
     },
 

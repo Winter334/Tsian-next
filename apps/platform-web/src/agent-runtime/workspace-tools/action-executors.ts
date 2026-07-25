@@ -794,6 +794,7 @@ export async function executeSkillAction(
       {
         agentContext: context.agentContext,
         exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+        workspaceFileFilter: context.workspaceFileFilter,
       },
     ) ?? Promise.resolve({
       ok: false,
@@ -909,6 +910,7 @@ export async function executeUserTool(
       {
         agentContext: context.agentContext,
         exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+        workspaceFileFilter: context.workspaceFileFilter,
       },
     ),
   )

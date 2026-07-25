@@ -863,6 +863,7 @@ async function handleSdkRequest(
       agentContext: executorContext?.agentContext,
       exposedOperations: executorContext?.exposedWorkspaceOperations
         ?? [],
+      fileFilter: executorContext?.workspaceFileFilter,
       mutations: {
         write: (input) => {
           const file = options.workspaceTransaction.write({
@@ -1112,8 +1113,14 @@ export function createBrowserSkillScriptRunner(
       )
     }
 
+    const visibleWorkspaceFiles = executorContext?.workspaceFileFilter
+      ? options.workspaceTransaction.workspaceFiles.filter(
+          executorContext.workspaceFileFilter,
+        )
+      : options.workspaceTransaction.workspaceFiles
+
     const scriptFile = readWorkspaceFileFromFiles(
-      options.workspaceTransaction.workspaceFiles,
+      visibleWorkspaceFiles,
       request.scriptPath,
     )
     if (!scriptFile) {
@@ -1143,7 +1150,7 @@ export function createBrowserSkillScriptRunner(
     const inlined = resolveAndInlineImportScripts(
       scriptFile.content,
       request,
-      options.workspaceTransaction.workspaceFiles,
+      visibleWorkspaceFiles,
     )
     if (!inlined.ok) {
       return inlined
@@ -1155,7 +1162,7 @@ export function createBrowserSkillScriptRunner(
     const helperSource = await resolveAndConcatHelpers(
       inlined.item as string,
       request,
-      options.workspaceTransaction.workspaceFiles,
+      visibleWorkspaceFiles,
     )
     if (!helperSource.ok) {
       return helperSource

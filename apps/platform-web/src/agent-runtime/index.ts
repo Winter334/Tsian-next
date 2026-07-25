@@ -20,6 +20,11 @@ import type {
 } from "@tsian/contracts"
 import { assembleAgentContext } from "./context"
 import {
+  workspaceFileFilterForAgentBoundary,
+  workspaceFilesForAgentBoundary,
+  type AgentWorkspaceTrustBoundary,
+} from "./frontend-action-isolation"
+import {
   AGENT_CONTEXT_AGENT_ID,
   appendTurnToContext,
   ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT,
@@ -133,6 +138,7 @@ export type {
   AgentRuntimeCollaborationPolicyInput,
   RuntimeCompressionMode,
 } from "./turn-types"
+export type { AgentWorkspaceTrustBoundary } from "./frontend-action-isolation"
 // import for internal use (local binding)
 import type {
   AgentRuntimeTurnInput,
@@ -183,6 +189,11 @@ interface WorkspaceToolLoopOptions {
   agentCallState: AgentCallTurnState
   agentCallDepth: number
   collaborationPolicy: AgentRuntimeCollaborationPolicy
+  /**
+   * Workspace visibility for this Agent step. The trusted desktop entry may
+   * author all card content; delegated steps always use runtime-game-agent.
+   */
+  workspaceTrustBoundary: AgentWorkspaceTrustBoundary
   /** 压缩模式:narrative=master 剧情压缩;task=子代理/助手任务压缩.决定压缩块分流. */
   compressionMode: RuntimeCompressionMode
   /**
@@ -437,6 +448,7 @@ function getEntryAgentContext(
 
   const context = assembleAgentContext(input.workspaceFiles, {
     agentId: input.agentId,
+    workspaceTrustBoundary: input.workspaceTrustBoundary,
     toolFilter: input.toolFilter,
   })
   if (!context) {
@@ -766,7 +778,15 @@ function createAgentCallRunner(
       )
     }
 
-    const registry = buildAgentRegistry(input.workspaceFiles)
+    const delegatedInput: AgentRuntimeTurnInput = {
+      ...input,
+      workspaceFiles: workspaceFilesForAgentBoundary(
+        input.workspaceFiles,
+        "runtime-game-agent",
+      ),
+      workspaceTrustBoundary: "runtime-game-agent",
+    }
+    const registry = buildAgentRegistry(delegatedInput.workspaceFiles!)
     const targetAgent = registry.find((agent) => agent.id === agentCall.agentId)
     if (!targetAgent) {
       throw agentCallError(
@@ -784,8 +804,9 @@ function createAgentCallRunner(
       )
     }
 
-    const targetContext = assembleAgentContext(input.workspaceFiles, {
+    const targetContext = assembleAgentContext(delegatedInput.workspaceFiles!, {
       agentId: targetAgent.id,
+      workspaceTrustBoundary: "runtime-game-agent",
       toolFilter: input.toolFilter,
     })
     if (!targetContext) {
@@ -838,7 +859,7 @@ function createAgentCallRunner(
         // delegated agent 无跨 turn 工具调用历史(无 AgentContextSnapshot),
         // buildDelegatedAgentMessages 产 AiChatMessage[](无 role:tool),安全升维为 RuntimeChatMessage[].
         buildDelegatedAgentMessages(
-          input,
+          delegatedInput,
           callerContext,          targetContext,
           agentCall,
           collaborationPolicy,
@@ -846,7 +867,7 @@ function createAgentCallRunner(
           metadata.targetDepth,
           capabilities.toolCallMode,
         ) as RuntimeChatMessage[],
-        input,
+        delegatedInput,
         capabilities,
         {
           debugLabel,
@@ -867,6 +888,7 @@ function createAgentCallRunner(
           agentCallState: state,
           agentCallDepth: metadata.targetDepth,
           collaborationPolicy,
+          workspaceTrustBoundary: "runtime-game-agent",
           compressionMode: "task",
           // delegated 预算:runtime 层不知目标 agent 的 contextWindow,用 256k 默认
           // (host 层 callModelNative 闭包按 options.agentId resolve 真实 config,
@@ -1299,6 +1321,9 @@ async function callAgentModelWithWorkspaceToolsNative(
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
+      workspaceFileFilter: workspaceFileFilterForAgentBoundary(
+        toolOptions?.workspaceTrustBoundary,
+      ),
       semanticSearchOwnerId: capabilities.semanticSearchOwnerId,
       signal: options.signal,
       debugLabel: options.debugLabel,
@@ -1725,6 +1750,9 @@ async function callAgentModelWithWorkspaceTools(
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
+      workspaceFileFilter: workspaceFileFilterForAgentBoundary(
+        toolOptions?.workspaceTrustBoundary,
+      ),
       semanticSearchOwnerId: capabilities.semanticSearchOwnerId,
       signal: options.signal,
       debugLabel: options.debugLabel,
@@ -1825,9 +1853,18 @@ async function callAgentModelWithWorkspaceTools(
 }
 
 export async function runAgentRuntimeTurn(
-  input: AgentRuntimeTurnInput,
+  rawInput: AgentRuntimeTurnInput,
   capabilities: AgentRuntimeCapabilities,
 ): Promise<AgentRuntimeTurnResult> {
+  const input: AgentRuntimeTurnInput = rawInput.workspaceFiles
+    ? {
+        ...rawInput,
+        workspaceFiles: workspaceFilesForAgentBoundary(
+          rawInput.workspaceFiles,
+          rawInput.workspaceTrustBoundary,
+        ),
+      }
+    : rawInput
   assertNotAborted(input.signal)
   const collaborationPolicy = normalizeAgentRuntimeCollaborationPolicy(
     capabilities.collaborationPolicy,
@@ -1956,6 +1993,7 @@ export async function runAgentRuntimeTurn(
         agentCallState,
         agentCallDepth: 0,
         collaborationPolicy,
+        workspaceTrustBoundary: input.workspaceTrustBoundary ?? "runtime-game-agent",
         compressionMode: entryCompressionMode,
         agentContextSnapshot: agentContextSnapshotForLoop ?? undefined,
         contextTokenBudget: budget,

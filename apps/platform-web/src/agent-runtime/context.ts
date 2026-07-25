@@ -14,10 +14,16 @@ import {
   filterToolsForAgent,
 } from "./registry"
 import { expandMacros, normalizeWorkspaceFilePath } from "./macro-engine"
+import {
+  workspaceFilesForAgentBoundary,
+  type AgentWorkspaceTrustBoundary,
+} from "./frontend-action-isolation"
 
 export interface AgentContextAssemblyOptions {
   agentId?: string
   agentPath?: string
+  /** Fail-closed by default; trusted authoring must be selected by the host. */
+  workspaceTrustBoundary?: AgentWorkspaceTrustBoundary
   /** Optional host-level filter for user Tools after Agent enablement/scoping. */
   toolFilter?: (tool: ToolRegistryEntry) => boolean
 }
@@ -60,13 +66,17 @@ export function assembleAgentContext(
   files: WorkspaceFile[],
   options: AgentContextAssemblyOptions,
 ): AgentContextEntry | null {
-  const agents = buildAgentRegistry(files)
+  const visibleFiles = workspaceFilesForAgentBoundary(
+    files,
+    options.workspaceTrustBoundary,
+  )
+  const agents = buildAgentRegistry(visibleFiles)
   const agent = findAgent(agents, options)
   if (!agent) {
     return null
   }
 
-  const filesByPath = new Map(files.map((file) => [file.path, file]))
+  const filesByPath = new Map(visibleFiles.map((file) => [file.path, file]))
   const agentFile = filesByPath.get(agent.path)
   if (!agentFile) {
     return null
@@ -169,14 +179,14 @@ export function assembleAgentContext(
   if (agent.knowledgeMount) {
     const mountDir = agent.knowledgeMount.replace(/\/+$/, "")
     const prefix = `${mountDir}/`
-    for (const file of files) {
+    for (const file of visibleFiles) {
       if (file.path === mountDir || file.path.startsWith(prefix)) {
         knowledgeFiles.push(file)
       }
     }
   }
 
-  const toolRegistry = buildToolRegistry(files)
+  const toolRegistry = buildToolRegistry(visibleFiles)
   const filteredTools = filterToolsForAgent(toolRegistry.tools, agent)
   const toolIndex = options.toolFilter
     ? filteredTools.tools.filter(options.toolFilter)
@@ -190,7 +200,7 @@ export function assembleAgentContext(
     agent,
     agentFile,
     skillIndex: filterSkillsForAgent(
-      buildSkillRegistry(files, { agentId: agent.id }),
+      buildSkillRegistry(visibleFiles, { agentId: agent.id }),
       agent,
     ),
     toolIndex,

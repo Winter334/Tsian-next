@@ -1,0 +1,29 @@
+{
+  "id": "deterministic-equipment-frontend-actions",
+  "name": "deterministic-equipment-frontend-actions",
+  "title": "确定性装备与前端 Action",
+  "description": "以卡内 Frontend Action 和场记本地 Skill 落地确定性装备管理与前端换装。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "platform-web",
+  "priority": "P2",
+  "creator": "baisha",
+  "assignee": "baisha",
+  "createdAt": "2026-07-25",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "task/stage-manager-maintenance-tool-optimization",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "07-25-card-frontend-action-runtime",
+    "07-25-deterministic-equipment-management"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

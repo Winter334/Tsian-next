@@ -125,6 +125,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
         recentHistory: historyBefore,
         turn: maxTurn,
         workspaceFiles: workspaceTransaction.workspaceFiles,
+        workspaceTrustBoundary: "runtime-game-agent",
         signal: currentController.signal,
         agentContext: agentContext ?? undefined,
         contextTokenBudget,

@@ -2,6 +2,7 @@ package server
 
 import (
 	"database/sql"
+	_ "embed"
 	"net/http"
 	"os"
 	"path"
@@ -24,6 +25,9 @@ type Server struct {
 	cfg config.Config
 	db  *sql.DB
 }
+
+//go:embed platform-web.csp
+var platformWebContentSecurityPolicy string
 
 func New(cfg config.Config, db *sql.DB) *Server {
 	return &Server{cfg: cfg, db: db}
@@ -106,14 +110,18 @@ func (s *Server) Handler() http.Handler {
 		http.Redirect(w, r, "/admin/", http.StatusFound)
 	})
 	mux.Handle("/admin/", spaHandler{staticDir: s.cfg.AdminStaticDir, urlPrefix: "/admin"})
-	mux.Handle("/", spaHandler{staticDir: s.cfg.StaticDir})
+	mux.Handle("/", spaHandler{
+		staticDir:             s.cfg.StaticDir,
+		contentSecurityPolicy: strings.TrimSpace(platformWebContentSecurityPolicy),
+	})
 
 	return middleware.Log(middleware.Recover(mux))
 }
 
 type spaHandler struct {
-	staticDir string
-	urlPrefix string
+	staticDir             string
+	urlPrefix             string
+	contentSecurityPolicy string
 }
 
 func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -124,6 +132,9 @@ func (h spaHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if strings.HasPrefix(r.URL.Path, "/api/") {
 		http.NotFound(w, r)
 		return
+	}
+	if h.contentSecurityPolicy != "" {
+		w.Header().Set("Content-Security-Policy", h.contentSecurityPolicy)
 	}
 
 	requestPath := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")

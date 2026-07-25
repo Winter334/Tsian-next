@@ -1,13 +1,14 @@
-# Tool 与 Skill 边界（07-05 任务落地）
+# Tool、Skill 与 Frontend Action 边界
 
-从 07-05 任务开始，Tsian 平台在原有 Skill 层之外正式引入 **Tool** 层。两层可以并存，覆盖不同的使用场景。本页是简明说明，配置字段以 `tool.json` / `agent.json` / `SKILL.md` 里的实际实现为准。
+从 07-05 任务开始，Tsian 平台在原有 Skill 层之外正式引入 **Tool** 层；Frontend Action 则是卡自己的游玩前端调用的第三种能力。三者都可以使用 `browser_script` 执行器，但发布源、调用者和可见性完全不同。本页是简明说明，配置字段以 `tool.json` / `agent.json` / `SKILL.md` / `frontend-actions/<id>/action.json` 的实际实现为准。
 
 ## 一句话区分
 
-- **Tool** = *能力*。直接暴露给 LLM 的原生函数调用。一次输入 → 一次输出。
-- **Skill** = *知识 + 一组 action*。LLM 先 `use_skill` 激活拿到全文说明，再用 `run_script` 触发脚本。
+- **Tool** = *直接给 LLM 的能力*。作为原生函数调用暴露，一次输入 → 一次输出。
+- **Skill** = *给 LLM 的知识 + 一组 action*。LLM 先 `use_skill` 激活说明，再用 `run_script` 触发脚本。
+- **Frontend Action** = *卡前端调用的卡内业务动作*。前端只按约定 id 调 `tsian.card.runAction()`；它不属于 LLM 能力面。
 
-两者的执行器都是同一个 `browser_script` runner；差异在**发现路径**、**LLM 可见形式**、**是否携带激活语义**。
+三者可以复用 Worker runner，但不能因此混用 Registry 或调用入口：Tool/Skill 面向 Agent，Frontend Action 只面向当前卡的 mounted frontend。
 
 ## 什么时候用 Tool
 
@@ -20,6 +21,35 @@
 - 有一段说明 / SOP / 用法指南，LLM 需要读过之后再决定如何组合多个 action。
 - 有多个相关 action 共享同一份领域知识。
 - 例：一整套「行动裁定」流程、entity 归一化流水线。
+
+## 什么时候用 Frontend Action
+
+- 只有卡自己的前端需要触发，且动作要把多次 `save-runtime` 读写作为一个受校验、可回滚的事务提交。
+- 需要 input/output JSON Schema、AbortSignal、超时、并发冲突检测或提交后的路径级 mutation event。
+- 前端已知道 action id；平台不会提供动态枚举 API，也不会从 Action 自动生成 UI。
+- 例：某个卡的按钮对其私有 save 数据做一组原子更新。领域结构仍由卡自己定义，平台不硬编码。
+
+不要把 Frontend Action 当成“可由前端调用的 Tool/Skill”。它不会进入 Agent、Skill、Tool Registry，不出现在模型上下文、查询结果或 Studio 的 Agent 能力面；`frontend-actions/**` 对 runtime game Agent 的 read/list/search/glob、`contextPaths` 和宏展开均不可见。桌面助手与资源管理器仍可把这些文件作为卡内容进行创作和管理。
+
+## Frontend Action 发布与调用
+
+固定目录本身就是发布声明，不在 `game-card.json` 增加 allowlist：
+
+```text
+frontend-actions/<kebab-id>/action.json
+frontend-actions/<kebab-id>/run.js
+frontend-actions/<kebab-id>/helpers/**
+```
+
+只有精确的 `frontend-actions/<id>/action.json` 会发布 Action；id 来自目录，不在 manifest 重复。调用必须使用：
+
+```ts
+const result = await tsian.card.runAction("apply-choice", input, { signal })
+```
+
+Frontend Action 不能通过 generic `tsian.runAction` 调用，也不能交给 `platform.runAction`。后两者是同一 host-owned platform action dispatcher 的 SDK/协议入口；远程 play frontend 只能调用 host 的固定 closed allowlist，未知/未来新增 action 默认拒绝，不能借 `workspace.*` action 或伪造 actor/scope/save/session 身份取得桌面助手权限。
+
+完整 manifest、严格 JSON/Schema、事务和错误契约见 [Frontend Actions](../sdk/frontend-actions.md)。
 
 ## 目录布局
 
@@ -100,9 +130,12 @@ Tool 脚本运行在同一个 Web Worker sandbox 里，但：
 
 ## 安全姿势
 
-- Tool 脚本运行在 Worker 里，与主线程 DOM/localStorage 隔离。
-- 与 Skill 相同：`workspace.*` 通过 SDK RPC 走主线程，受 Agent `workspaceAccess` 权限约束。
-- 卡内容里的 Tool 目录内容可以进创意工坊分发——审阅同 Skill：审 `run.js`、审 `helpers`、审 `tool.json.parameters`。`.tsian/local/**` 默认不随卡包分发，但可由用户显式上传为独立 Tool 资源包。
+- Tool/Skill 脚本运行在 Worker 里，与主线程 DOM/localStorage 隔离。
+- Tool/Skill 的 `workspace.*` 通过 SDK RPC 走主线程，受当前 Agent `workspaceAccess` 权限约束。
+- Frontend Action 固定使用 frontend actor level 1 和专用 operation allowlist；持久写入只允许普通 `save-runtime` 路径，不能写卡内容、卡前端或 `.tsian/**`。
+- Frontend Action 的多步 mutation 先 staging，严格输出校验和 read-set CAS 成功后才原子提交；失败、取消、超时或冲突零写入且不自动重试，也不创建 checkpoint。现有 `tsian.workspace.write` 仍是独立的立即写入 API，不属于这个事务。
+- Worker 不是 capability-secure 或 deterministic sandbox：当前 runner 保留原生 `fetch`、时间、计时器、随机数和动态代码执行能力，同时不提供 DOM、storage、XHR/WebSocket、nested Worker、IndexedDB/Cache 等参数能力。不要把“不接触主线程 DOM”描述成网络隔离或确定性保证。
+- 卡内容里的 Tool/Skill/Frontend Action 都随卡内容分发并需要审阅脚本、helpers 与声明文件；`.tsian/local/**` 默认不随卡包分发。
 
 ## 创意工坊分发
 
@@ -121,4 +154,7 @@ Tool 脚本运行在同一个 Web Worker sandbox 里，但：
 
 - ❌ 把「表达式求值 / 变量插值 / DSL」做成 Tool。改由前端算好写入 workspace。
 - ❌ 用 Tool 承载 SOP / 使用说明。这些属于 Skill 的 SKILL.md。
-- ❌ 用 Tool 做「有状态的多步流程」。多步流程应拆成多个 Tool 或做成 Skill action。
+- ❌ 用 Tool 做「有状态的多步流程」。面向 Agent 的多步流程应拆成多个 Tool 或做成 Skill action；只面向卡前端且需要原子 save mutation 时才考虑 Frontend Action。
+- ❌ 把 Tool/Skill 注册后再从前端调用，或把 Frontend Action 放入 Agent/Skill/Tool Registry。
+- ❌ 调用 `tsian.runAction("...")` / `platform.runAction("...")` 来执行卡内 Frontend Action。正确入口只有 `tsian.card.runAction(actionId, input, options)`。
+- ❌ 把 Worker 说成确定性、安全能力沙箱。具体 Action 的确定性要由作者代码与测试保证。

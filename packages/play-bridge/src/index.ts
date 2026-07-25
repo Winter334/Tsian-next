@@ -9,10 +9,12 @@
 // 详见 docs/sdk/play-frontend-api.md（API 文档）。
 
 export { createTsian } from "./tsian-api"
+export { FrontendActionError } from "./frontend-action-error"
 export type {
   TsianApi,
   SendOptions,
   InvokeAgentOptions,
+  FrontendActionOptions,
   MessageDelta,
   RoundEnd,
   TurnEndResult,
@@ -52,4 +54,8 @@ export type {
   WorkspaceWriteResult,
   WorkspaceScope,
   GameCardRuntimeEntrypoints,
+  JsonValue,
+  FrontendActionRuntimeErrorCode,
+  FrontendActionPublicError,
+  RuntimeWorkspaceMutationEvent,
 } from "@tsian/contracts"
