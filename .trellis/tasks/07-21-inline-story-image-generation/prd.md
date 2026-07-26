@@ -38,9 +38,9 @@
 ### R1. Platform capability boundary
 
 - 平台提供 host-owned、可由多个 Agent 复用的 `generate_image` 平台 Tool，而不是卡内 browser-script Tool；平台 Tool 全局 `sourceGuard` optional，但本次 `image-director` use case required。`InvokeAgentRequest` 与 play-bridge `InvokeAgentOptions` 同步新增可选、通用命名的 `generatedMediaSourceGuard?: GeneratedMediaTurnProjectionGuard`；因 `InvokeAgentRequest` 属于共享 wire contract，必要的 serializable guard shape 可由 contracts 声明并由 play-bridge identity module re-export/type-consume，严格 normalizer、hash、canonical encoding/path 算法仍唯一归 `packages/play-bridge/src/generated-media-identity.ts`。platform-web 增加 `@tsian/play-bridge` 真实依赖/TS path。
-- 无 invoke option 时，无 guard 的通用 Tool 调用写入 ordinary transaction；合法自带 Tool guard 进入 guarded path。正式 turn direct Tool 可无 guard。若 `invokeAgent.generatedMediaSourceGuard` 存在，host 先 strict-normalize 并把它作为 invocation-authoritative `requiredSourceGuard` closure 绑定给该调用内的 `generate_image` runner：Tool call 省略 `sourceGuard`、任一 guard 字段不匹配、或 `assetId` 不等于 host 从 required guard 派生的 identity，均在任何 Provider 付费请求与 workspace write 前以 `IMAGE_INVALID_ARGUMENTS` 失败，绝不降级 ordinary write；合法时 guarded handoff 必须使用 invocation option guard，Tool 字段只做一致性检查、不能改写 authority。其它合法 guarded 调用也由 host 在付费前重算并验证 `assetId`/path，图片验证后输出 `{ identityKey, assetPath, blob, sourceGuard }` 给一致性任务的 source-registration/storage seam；平台任务不把 sourceGuard 扩展为 transaction metadata，也不解析权威 turn projection。Tool 成功结果严格只有 `{ path, mediaType }`。
+- 无 invoke option 时，无 guard 的通用 Tool 调用写入 ordinary transaction；合法自带 Tool guard 进入 guarded path。正式 turn direct Tool 可无 guard。Tool 无 `sourceImagePaths` 时走 `/images/generations`；带 `1..4` 个合法 workspace 图片引用时走无 mask `/images/edits`，用于保持角色/场景视觉一致性，mask/局部重绘不进入 MVP。若 `invokeAgent.generatedMediaSourceGuard` 存在，host 先 strict-normalize 并把它作为 invocation-authoritative `requiredSourceGuard` closure 绑定给该调用内的 `generate_image` runner：Tool call 省略 `sourceGuard`、任一 guard 字段不匹配、或 `assetId` 不等于 host 从 required guard 派生的 identity，均在任何 Provider 付费请求与 workspace write 前以 `IMAGE_INVALID_ARGUMENTS` 失败，绝不降级 ordinary write；合法时 guarded handoff 必须使用 invocation option guard，Tool 字段只做一致性检查、不能改写 authority。其它合法 guarded 调用也由 host 在付费前重算并验证 `assetId`/path，图片验证后输出 `{ identityKey, assetPath, blob, sourceGuard }` 给一致性任务的 source-registration/storage seam；平台任务不把 sourceGuard 扩展为 transaction metadata，也不解析权威 turn projection。Tool 成功结果严格只有 `{ path, mediaType }`。
 - 该 Tool 是高成本能力，不加入默认平台工具集；每个 Agent 必须显式启用。
-- Provider 地址、密钥和模型属于平台本地配置，绝不进入卡包、Tool 入参、workspace、bridge payload、Agent 上下文或 trace。
+- Provider 地址、密钥和模型属于平台本地配置；除 `.tsian/local/platform-config.json` platform-meta 配置管理入口外，绝不进入卡包、Tool 入参、workspace/save-runtime、bridge payload、Agent 上下文或 trace。
 - 首版只支持单一全局 OpenAI-compatible 配置，不建立多 preset 或通用 Provider 插件系统；控制面板测试使用平台内置固定短 prompt/方形画幅，只在页面内存预览。
 
 ### R2. Illustration output contract
@@ -57,7 +57,7 @@
 - `image-director` 属于沉浸阅读器卡，前端通过可选 `GameCardRuntimeEntrypoints.imageGeneration?: { agentId: string; protocol: "tsian.image-director.v1" }` capability 发现；不引入更复杂 descriptor，禁止硬编码 Agent id。
 - 沉浸阅读器 UI 每次调用必须双写同一 authoritative identity：Agent input JSON 含 helper-derived `assetId` 与完整 `sourceGuard`，同时 `invokeAgent` options 含逐字段相同的 `generatedMediaSourceGuard`。该 option 才是 host commit authority；不得信任 Agent input、Tool arguments 或 Agent final result 回显来建立 authority。
 - local/package normalizers 和 host bridge 显式验证/透传 entrypoint object；play-bridge 将 `generatedMediaSourceGuard` 从 options 透传为 `InvokeAgentRequest`，remote bridge 对该 guard strict normalize，拒绝畸形/extra/非 canonical 字段而非静默删除。旧卡/旧调用无新增字段保持兼容。frontend ready/init 缓存 capability，只有 exact protocol v1 才允许交互，Agent id 只从 `.agentId` 读取；缺失、错误或未知 protocol 从首帧 fallback。
-- `image-director` 读取点击时的最新场景与实体资料，不冻结历史视觉快照；使用卡内固定美术风格，不提供玩家风格选择或自定义；输出 `landscape | portrait | square` 语义画幅并调用 `generate_image`。
+- `image-director` 读取点击时的最新场景与实体资料，不冻结历史视觉快照；使用卡内固定美术风格，不提供玩家风格选择或自定义；输出 `landscape | portrait | square` 语义画幅并调用 `generate_image`。如相关角色/场景已有可用的 save-runtime 图片资产引用（例如 entity `portrait.path`），Agent 可把这些路径作为 `sourceImagePaths` 传给 Tool，以走无 mask edits 保持视觉一致性；不得生成、传入或要求 mask。
 - storyteller 在 MVP 中不获得生图 Tool；未来自动插图可通过显式授权复用同一能力。
 
 ### R4. Inline frontend experience
@@ -97,7 +97,7 @@
 ## Acceptance Criteria
 
 - [ ] AC1: 控制面板可保存单一图像 Provider 配置并执行一次不落盘的测试生成；API key 不离开平台秘密边界。
-- [ ] AC2: 显式授权的 `image-director` 可通过通用 `generate_image` Tool 生成并持久化图片；未授权 Agent 看不到该 Tool。沉浸阅读器调用的 Agent input 与 `invokeAgent.generatedMediaSourceGuard` 必须携带逐字段相同的 helper-derived guard，Host 只把 option closure 当 commit authority。
+- [ ] AC2: 显式授权的 `image-director` 可通过通用 `generate_image` Tool 生成并持久化图片；Tool 无 `sourceImagePaths` 时走文生图，有合法参考图路径时走无 mask 图生图以保持视觉一致性；未授权 Agent 看不到该 Tool。沉浸阅读器调用的 Agent input 与 `invokeAgent.generatedMediaSourceGuard` 必须携带逐字段相同的 helper-derived guard，Host 只把 option closure 当 commit authority。
 - [ ] AC2a: required invoke option 存在时，Tool 漏 `sourceGuard`、guard 任一字段不匹配或 `assetId` 错误均在 Provider 前返回 `IMAGE_INVALID_ARGUMENTS`，零 Provider 调用、零 workspace/checkpoint write且不降级 ordinary write；完全匹配时成功走 option-authoritative guarded handoff。option 缺失时，Tool 无 guard 保持 ordinary write，合法自带 guard仍可进入 guarded path，正式 turn direct Tool 可无 guard；行为不依赖 agentId/purpose 字符串。
 - [ ] AC3: 开局和正式回合可产生 1–3 个正文内 closed-schema block；title/description/ref 长度与 grammar、entityRefs 去重和 `additionalProperties:false` 由唯一 runtime validator 执行，Agent 上下文不含 UI 标签。按正文顺序前 3 个完整合法 block 可交互，更多合法 block 仅显示不可交互描述且不增加费用；invalid object fallback 不 coerce，正文仍保留正确 inline placement。
 - [ ] AC3a: frontend ready/init 缓存 `{agentId,protocol}` capability；只有 exact `tsian.image-director.v1` 可交互，Agent id 只从 object 读取；缺失/invalid/未知 protocol 从首次渲染即降级全部 otherwise-valid description card，旧卡兼容且 diagnostic 可定位。
@@ -116,7 +116,7 @@
 - 玩家可选/自定义美术风格。
 - 多图像 Provider presets、ComfyUI、自定义 endpoint/request/JSONPath 映射。
 - 通用社区 Tool 配置入口或将 API key 暴露给 browser-script Tool。
-- 图像内容平台预审核、自动提示词规避或自动重试。
+- 图像内容平台预审核、自动提示词规避或自动重试；mask/局部重绘。
 - 全局任务队列、取消、进度百分比、费用配额、跨重载恢复正在运行的网络任务。
 - 历史回合视觉快照和多版本图片画廊。
 - 旧存档数据迁移。

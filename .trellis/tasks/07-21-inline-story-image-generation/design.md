@@ -40,7 +40,7 @@ storyteller raw reply
 | 插图意图与位置 | assistant turn 的 `displayContent` / projection | 卡前端、image-director 调用输入、source registration | 随 turn history 分支存在 |
 | invokeAgent guarded commit authority | strict-normalized `InvokeAgentRequest.generatedMediaSourceGuard` captured by host runner closure | `generate_image` required guard check、source registration | 单次 invocation transient；不信任 Agent/Tool 回显 |
 | 当前场景和角色资料 | `save/scenes/**`、`save/entities/**` | image-director 点击时读取 | 使用点击时最新值，不复制快照 |
-| 图像 Provider secret | 平台本地 config / Dexie meta | host image adapter | 不随卡或存档导出/回溯 |
+| 图像 Provider secret | 平台本地 config / Dexie meta / `.tsian/local/platform-config.json` platform-meta 管理入口 | host image adapter、具备 platform-meta 权限的高级配置管理 Agent/工具 | 不随卡或存档导出/回溯，不进入 Tool/trace/生成媒体产物 |
 | 生成图片 | save-runtime 稳定资产路径 | 前端、checkpoint | 二进制 Blob，跟随存档 |
 | 图片当前可恢复版本 | workspace path + checkpoint manifest path→hash | restore | 同一逻辑图片只有一个当前版本 |
 | `idle/generating/failed` | 前端内存 | 插图卡 | 不持久化；刷新后由资产存在性重建 |
@@ -169,6 +169,7 @@ Runner 行为矩阵：
 - prompt；
 - `aspect: "landscape" | "portrait" | "square"`；
 - 必填 `assetId`；
+- optional `sourceImagePaths?: string[]`：`1..4` 个普通 workspace/save-runtime 图片引用。存在时平台走无 mask `/images/edits`，用于让 Agent 参考已有角色/场景图片保持视觉一致性；缺失时走 `/images/generations`。MVP 不支持 mask/局部重绘，因为这更偏人类手动编辑；
 - 平台 Tool 全局 optional 的 `sourceGuard`。MVP `image-director` use case 必须提供完整 turn-projection guard，其它通用 Agent 可省略。
 
 Tool 成功结果严格只有 `{ path, mediaType }`，不含 guard、assetId、prompt、Provider/model、URL 或 bytes。无 invoke-required guard 且 Tool 无 guard时，host 用 `identityKey = assetId` 与 shared path helper 后执行 ordinary `transaction.write`，保持既有提交语义；无 invoke-required guard但 Tool 自带合法 guard时仍进入 guarded path。

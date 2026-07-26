@@ -8,6 +8,7 @@
 - [ ] Freeze `InvokeAgentRequest.generatedMediaSourceGuard?` and play-bridge `InvokeAgentOptions.generatedMediaSourceGuard?` with the same generic name/type semantics; SDK must forward it, remote bridge must strict-normalize it, and existing callers that omit it remain compatible.
 - [ ] Freeze exact source guard `{ kind: "turn-projection", turn, projectionKey: "illustrations", index, fingerprint }`; UI must put helper-derived `assetId + sourceGuard` in Agent input and the same guard in invoke options. Host treats only the option as authoritative.
 - [ ] Freeze invokeAgent runner semantics: host closes normalized option over `generate_image` as `requiredSourceGuard`; with it present, Tool omission, any guard-field mismatch, or wrong assetId yields pre-Provider `IMAGE_INVALID_ARGUMENTS`, zero Provider/zero write and no ordinary fallback; exact match uses the option guard for handoff. Without it, Tool guard remains optional: no guard ordinary write, valid self-guard guarded path; formal-turn direct Tool may be unguarded. No agentId/purpose hardcoding.
+- [ ] Freeze platform Tool image modes: `generate_image` without `sourceImagePaths` uses `/images/generations`; with `1..4` verified ordinary workspace image paths uses no-mask `/images/edits` for visual consistency. `sourceImagePaths` is optional and never echoed; mask/local repaint stays out of MVP.
 - [ ] Freeze result ownership: Tool success is only `{ path, mediaType }`; Agent echoes request `assetId/sourceGuard` and embeds Tool path/mediaType; frontend validates correlation but rereads only the shared-helper-derived path. Durable authority comes from invoke option closure plus source registration, not Agent echo.
 - [ ] Freeze guarded staging split: child 1 outputs `{ identityKey, assetPath, blob, sourceGuard }`; child 2 owns generic source registration and the final storage contract `{ identityKey, assetPath, source:{path,expectedRevision} }` without `sourceGuard`.
 - [ ] Freeze `GameCardRuntimeEntrypoints.imageGeneration?: { agentId:string, protocol:"tsian.image-director.v1" }`; local/package normalizers and host bridge preserve the object, old cards remain compatible, and frontend ready/init enables only exact v1 while reading Agent id only from `.agentId`.
@@ -35,10 +36,10 @@ Before starting each child:
 Task: `07-21-platform-image-generation`
 
 - [ ] Add local image config + settings UI.
-- [ ] Implement OpenAI-compatible adapter and in-memory test generation.
+- [ ] Implement OpenAI-compatible adapter and in-memory test generation. Adapter supports `/images/generations` plus no-mask `/images/edits` when Tool callers provide verified `sourceImagePaths`; Settings test remains generations-only.
 - [ ] Implement/export the single shared runtime identity helper in `@tsian/play-bridge`; add platform-web dependency/path wiring.
 - [ ] Register explicitly authorized host-owned Tool; extend contracts/play-bridge invoke request/options and remote strict normalization; bind invokeAgent's authoritative `requiredSourceGuard` closure without agentId/purpose routing.
-- [ ] Keep Tool success `{ path, mediaType }`; no option + no Tool guard uses ordinary transaction write, no option + legal Tool guard emits guarded handoff, and required option + exact Tool match emits an option-authoritative `{ identityKey, assetPath, blob, sourceGuard }` handoff to child 2's seam.
+- [ ] Keep Tool success `{ path, mediaType }`; no option + no Tool guard uses ordinary transaction write, no option + legal Tool guard emits guarded handoff, and required option + exact Tool match emits an option-authoritative `{ identityKey, assetPath, blob, sourceGuard }` handoff to child 2's seam. Validate both generations and no-mask edits modes, including source-image-path pre-Provider validation and no path/byte leaks.
 - [ ] Add pre-paid fail-closed tests: required option + Tool missing guard / each wrong guard field / wrong assetId all produce `IMAGE_INVALID_ARGUMENTS`, zero Provider calls, zero ordinary/generated-media writes; exact match succeeds. Also prove no option + no guard remains ordinary write and formal-turn direct Tool can be unguarded.
 - [ ] Validate secret boundaries, URL/base64 responses, aspect mapping and errors.
 
@@ -145,7 +146,7 @@ python ./.trellis/scripts/task.py validate 07-21-card-inline-illustration-ui
 - [ ] All four children are completed, checked and archived.
 - [ ] Parent acceptance criteria AC1–AC10 are mapped to passing child/integration evidence.
 - [ ] No product code was implemented directly under the parent task scope outside integration-only fixes.
-- [ ] No API key, prompt content or base64 image leaked into trace/turn/workspace text.
+- [ ] No API key outside the explicit `.tsian/local/platform-config.json` platform-meta configuration entry, no prompt content, and no base64 image leaked into trace/turn/save-runtime text.
 - [ ] No unfinished queue, task persistence, image version gallery or role portrait UI entered scope.
 - [ ] `trellis-check` passes and results are recorded before parent archival.
 

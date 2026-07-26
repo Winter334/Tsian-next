@@ -4,7 +4,7 @@
 
 本阶段只对齐兄弟任务，不写产品代码。以下契约已由本轮规划冻结；实施开始时逐项确认 sibling 落地位置和版本后再做卡侧集成：
 
-- [ ] 与 `07-21-platform-image-generation` 确认 `generate_image` 的最终 Tool name、Provider-neutral `prompt`、`aspect`、`assetId`、optional `sourceGuard` 和 success exactly `{ path, mediaType }`；Tool 不回显 guard/assetId，通用 Tool 不强制所有调用方携带 guard。
+- [ ] 与 `07-21-platform-image-generation` 确认 `generate_image` 的最终 Tool name、Provider-neutral `prompt`、`aspect`、`assetId`、optional `sourceImagePaths`、optional `sourceGuard` 和 success exactly `{ path, mediaType }`；Tool 不回显 guard/assetId/source image paths，通用 Tool 不强制所有调用方携带 guard。
 - [ ] 确认平台任务会同时扩展 `AgentPlatformToolName`、registry allow-list、Tool schema/executor，且不会把 `generate_image` 放入 `DEFAULT_AGENT_PLATFORM_TOOLS`。
 - [ ] 冻结并只消费 `packages/play-bridge/src/generated-media-identity.ts` 的唯一 shared helper/package-root export：strict guard normalization、exact persisted raw `$1|trim` fingerprint、NUL identity、asset path 与 golden vector。禁止在本任务/Agent Prompt/contracts 再实现 hashing/canonicalization。
 - [ ] 与 `07-21-image-save-consistency` 确认平台 guarded handoff `{identityKey,assetPath,blob,sourceGuard}`、card-agnostic source registration 与最终 exact-source storage metadata；本任务不定义 storage seam。
@@ -64,21 +64,21 @@ Exit gate: 合法 entrypoint 从 package/local manifest 一直传到 `tsian.card
 
 - [ ] 只接受 `schema: "tsian.image-director.request.v1"`。
 - [ ] 验证完整 `sourceGuard.kind === "turn-projection"`、非负 `turn/index`、固定 `projectionKey === "illustrations"`、fingerprint、helper-derived canonical `assetId`、完整 `prose`，并按 Phase 3.0 的唯一 closed-schema validator 合同验证 `brief`。
-- [ ] `image-director` 不重算/hash/重编号 source guard，不发明 identity/path；调用 `generate_image` 时把 request 的 `assetId` 与完整 guard 原样传递。
+- [ ] `image-director` 不重算/hash/重编号 source guard，不发明 identity/path；调用 `generate_image` 时把 request 的 `assetId` 与完整 guard 原样传递。可从已读取 scene/entity 当前 JSON 的既有图片引用（如 `portrait.path`）收集最多 4 个普通 workspace/save-runtime 图片路径作为 `sourceImagePaths` 参考图；不得从 request/prose 拼任意路径，不得传 URL/data/base64/inline bytes 或 mask。
 - [ ] 明确把 `scene:<localId>` 映射到 `save/scenes/<localId>.json`，把 `<type>:<localId>` 映射到 `save/entities/<type>/<localId>.json`；拒绝把输入 ref 直接当任意路径。
 - [ ] 所有 scene/entity 读取发生在 invocation 执行时；不要求或保存历史视觉 snapshot。
 - [ ] 单个 ref 缺失时使用剩余有效资料；无足够画面信息时失败当前 invocation，不伪造文件内容。
 - [ ] 从 `landscape | portrait | square` 选择一个 aspect；默认环境/多人叙事使用 landscape，portrait 只表示竖向构图而非头像产品。
 - [ ] prompt 仅含当前可见主体/动作、环境/时代/天气/光线、构图和 fixed style，Provider-neutral。
 - [ ] Tool 调用包含 request 的完整 `assetId/sourceGuard`；虽然平台 Tool guard 为 optional，本卡用例要求必填，缺失时 Agent 不得开始生图。
-- [ ] Tool success 严格只接受 `{path,mediaType}`。Agent 成功只返回 `tsian.image-director.result.v1` JSON，从 validated request 原样复制 `assetId/sourceGuard` 供 UI correlation，把 Tool fields 放入 `asset`；明确 final echo 不提供 commit authority。
+- [ ] Tool success 严格只接受 `{path,mediaType}`。Agent 成功只返回 `tsian.image-director.result.v1` JSON，从 validated request 原样复制 `assetId/sourceGuard` 供 UI correlation，把 Tool fields 放入 `asset`；明确 final echo 不提供 commit authority，且不回显 `sourceImagePaths`。
 - [ ] 最终回复不含 Markdown fence、解释、prompt、Provider、尺寸、URL/base64 或 scene/entity 原文。
 
 ### 2.3 Tool dependency integration
 
 - [ ] 平台 Tool 未合入时，保留明确阻塞状态；不要用 card-local browser script 替代通用 Tool。
 - [ ] 平台 Tool 合入后验证 Agent Tool schema 中确实出现 `generate_image`。
-- [ ] 验证 Tool trace/persisted debug 只含 metadata，完整 prompt、secret 与图片 payload 均被平台任务隐藏。
+- [ ] 验证 Tool trace/persisted debug 只含 metadata，完整 prompt、secret、sourceImagePaths 与图片 payload 均被平台任务隐藏。
 - [ ] 验证 `generate_image` 自行拥有媒体写入，不因此给 Agent generic `workspace_write`。
 
 Exit gate: image-director 可被发现，只看到必需 Tools，按最新 workspace 状态完成一次成功调用并返回 exact short JSON。
@@ -208,7 +208,7 @@ Exit gate: 通用能力可用，但 frontend-less blank template 没有无人消
 - [ ] registry 在 `agent.json + AGENT.md` 齐全时发现 image-director；缺 SOP fixture 时不发现。
 - [ ] image-director 可见 Tools 精确为 `workspace_read`、`generate_image`。
 - [ ] storyteller、world-architect、stage-manager 与默认 Tool 集均不含 `generate_image`。
-- [ ] 同一 source request 修改 scene/entity fixture 后再次调用，确认使用新资料而不是 turn-time snapshot。
+- [ ] 同一 source request 修改 scene/entity fixture 后再次调用，确认使用新资料而不是 turn-time snapshot；当 entity 中存在有效 `portrait.path` 等图片引用时，Agent 可把最多 4 个相关路径作为 `sourceImagePaths` 传给 Tool，缺失/无效引用只降级为无参考图或当前调用失败，不发明路径。
 - [ ] scene 或部分 entities 缺失时 fail-soft；没有 Tool success 时不返回伪造 asset。
 - [ ] aspect 只可能是 landscape/portrait/square。
 - [ ] UI 发送 equal Agent-input `sourceGuard` 与 option `generatedMediaSourceGuard`；strict remote normalizer 对 malformed/extra/noncanonical option fail closed，不静默删除。

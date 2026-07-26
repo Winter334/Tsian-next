@@ -37,6 +37,7 @@ storyteller raw reply（opening turn 0 或正式 turn）
   → image-director（one-shot / ephemeral）
       ├─ 读取点击时最新 scene/entity 文件
       ├─ 结合完整来源正文 + brief + fixed visual style
+      ├─ 可选收集已读 scene/entity 中现有图片资产引用作为 sourceImagePaths
       ├─ 选择 semantic aspect
       └─ 调用 host-owned generate_image，透传 input guard 供一致性检查
   → generated media transaction（兄弟任务）
@@ -208,7 +209,7 @@ The consistency-owned source-registration seam only receives a legally authorita
 - `assetId` 与 `sourceGuard` 都由前端通过 shared helper 从持久化 raw projection 构造；guard 必含 `kind: "turn-projection"`，`projectionKey` 必须为 `"illustrations"`。Agent 只校验并逐层原样传递，不自行重算 fingerprint/identity。
 - `prose` 来自该 assistant item 的 clean `content`，是完整来源回合正文，不是 marker 周边片段，也不包含最终 prompt。
 - 请求不携带 scene/entity 快照；Agent 在执行时自行读取最新文件。
-- 请求不携带 style、Provider、model、dimensions、API key 或历史图片数据。
+- 请求不携带 style、Provider、model、dimensions、API key 或历史图片数据；`sourceImagePaths` 不由前端请求指定，Agent 只能从点击时读取到的当前 scene/entity 文件中的既有图片引用派生。
 - frontend uses `persist: false`; each activation is a one-shot input, and sends the exact same guard separately as `InvokeAgentOptions.generatedMediaSourceGuard`; every attempt has a fresh `invocationId`.
 - The Agent-input copy is execution data. The invoke-option copy becomes the host's authoritative `requiredSourceGuard` closure; neither `purpose` nor the discovered Agent id selects guarded behavior.
 
@@ -307,8 +308,9 @@ storyteller 保持既有 Tool 行为，但在 `platformTools.disabled` 中明确
    - `portrait`: 纵向空间或完整人物动作构图，不表示头像功能；
    - `square`: 紧凑、平衡的近景或物件/小群体时刻。
 6. prompt 由“当前可见主体与动作、环境/时代/天气/光线、构图、固定风格、无文字/水印/UI”组成；Provider-neutral，不输出给玩家。
-7. 调用 `generate_image`，把已验证 request 的 `assetId` 与完整 `sourceGuard` 原样传递；禁止 hash raw projection、只传 turn、另造 block id 或发明 asset id。通用平台 Tool 中 guard 为 optional，但本卡 use case 缺少 `assetId`/guard 时不得调用 Tool。Tool success 只含 `{ path, mediaType }`。
-8. 成功后从 validated request 复制 `assetId/sourceGuard`，从 Tool success 复制 `path/mediaType` 到 `asset`，输出 §5.3 exact JSON；无额外散文或 fence。
+7. 从已读取的 scene/entity 当前 JSON 中收集可用图片引用作为可选参考图：MVP 只使用字段本身已经声明的普通 workspace/save-runtime 图片路径（例如 character entity 的 `portrait.path`），最多 `1..4` 个，按与 brief 最相关的角色/场景顺序去重；不得读取图片 bytes/base64，不得从 prose/brief 拼任意路径，不得传 URL/data URL/inline bytes，也不得生成或要求 mask。
+8. 调用 `generate_image`，把已验证 request 的 `assetId` 与完整 `sourceGuard` 原样传递；如第 7 步得到参考图则一并传 `sourceImagePaths`，否则省略该字段。禁止 hash raw projection、只传 turn、另造 block id 或发明 asset id。通用平台 Tool 中 guard 为 optional，但本卡 use case 缺少 `assetId`/guard 时不得调用 Tool。Tool success 只含 `{ path, mediaType }`。
+9. 成功后从 validated request 复制 `assetId/sourceGuard`，从 Tool success 复制 `path/mediaType` 到 `asset`，输出 §5.3 exact JSON；无额外散文或 fence。
 
 ## 7. Platform Tool dependency and visibility
 
@@ -326,7 +328,7 @@ storyteller 保持既有 Tool 行为，但在 `platformTools.disabled` 中明确
 
 平台通用 Tool schema 对 `sourceGuard` 保持 optional；只有携带 guard 的调用才进入 turn-projection source validation。本卡 image-director 把 optional 能力提升为 use-case-required，保证每次卡内插图都可执行 stale-result guard。
 
-Tool 输入不得包含 Provider secret/config。Tool trace/debug/persisted tool-call projection 必须 metadata-only：保留 invocation/aspect/status/path/mediaType 等 safe fields，redact full prompt，不记录 sourceGuard values、图片 body/base64；该能力由平台兄弟任务实现，本任务只做集成断言。
+Tool 输入不得包含 Provider secret/config。Tool trace/debug/persisted tool-call projection 必须 metadata-only：保留 invocation/endpoint/aspect/status/path/mediaType 等 safe fields，redact full prompt，不记录 sourceGuard values、sourceImagePaths、图片 body/base64；该能力由平台兄弟任务实现，本任务只做集成断言。
 
 ## 8. Optional card entrypoint
 

@@ -13,7 +13,7 @@ explicitly enabled Agent
   → optional invokeAgent.generatedMediaSourceGuard (invokeAgent only)
       → play-bridge forward + remote strict normalize
       → host captures invocation-authoritative requiredSourceGuard
-  → generate_image { prompt, aspect, assetId, sourceGuard? }
+  → generate_image { prompt, aspect, assetId, sourceImagePaths?, sourceGuard? }
   → Agent Runtime built-in dispatch
   → host capability runGenerateImage(input, requiredSourceGuard?)
   → strict-normalize Tool sourceGuard with @tsian/play-bridge shared helper
@@ -24,7 +24,8 @@ explicitly enabled Agent
           require exact Tool guard + assetId derived from required guard;
           mismatch/omission → IMAGE_INVALID_ARGUMENTS, zero fetch/write;
           guarded authority remains required guard
-  → generateImageBlob(config, prompt, aspect, signal)
+  → if sourceImagePaths present: read current workspace image Blobs, validate/decode them
+  → generateImageBlob(config, prompt, aspect, sourceImages?, signal)
   → if effective guarded source:
       guarded handoff { identityKey, assetPath, blob, sourceGuard }
         (required invoke path uses closure guard; Tool guard cannot override)
@@ -41,17 +42,17 @@ The layers have intentionally different authority:
 
 | Layer | Owns | Must not own |
 |---|---|---|
-| Settings | Config draft editing, chat-preset copy, fixed built-in paid test, object URL lifecycle | Player-editable test prompt/aspect, Provider protocol duplication, workspace writes |
+| Settings | Config draft editing, chat-preset copy, fixed built-in paid test, future Provider mode selection, object URL lifecycle | Player-editable test prompt/aspect, Provider protocol duplication, workspace writes |
 | Image config module | Normalize/validate/save/resolve `{ baseUrl, apiKey, model }` | Chat preset lifecycle, Agent selection |
-| Image adapter | URL/body/auth, aspect mapping, response extraction, URL download, Blob verification, sanitized errors | Workspace/checkpoint semantics |
+| Image adapter | Current OpenAI-compatible mode: `/images/generations` JSON request, `/images/edits` no-mask multipart request, URL/body/auth, aspect mapping, response extraction, URL download, Blob verification, sanitized errors; internal seam for future Provider modes | Workspace/checkpoint semantics, mask/local-region editing UX, Agent-visible Provider-specific Tool names |
 | Agent Runtime | Explicit Tool visibility, argument normalization, dispatch, short observation, metadata trace | API key, Provider request construction, arbitrary target path |
 | Play bridge / remote RPC boundary | Optional generic `generatedMediaSourceGuard` option→request mapping and strict closed-shape normalization | Runtime identity/hash/path duplication, card/agent-specific routing |
-| Platform host | Bind active transaction/current abort signal; for invokeAgent capture normalized option as `requiredSourceGuard`; use shared helper to derive/validate canonical target before paid fetch; stage ordinary unguarded Blob or emit guarded handoff whose authority is required option (or legal Tool self-guard when no option) | Trust Agent echo, branch on agentId/purpose, parse authoritative turn projection, define storage metadata, patch checkpoints |
+| Platform host | Bind active transaction/current abort signal; for invokeAgent capture normalized option as `requiredSourceGuard`; use shared helper to derive/validate canonical target before paid fetch; resolve optional workspace reference images into verified Blobs for no-mask edits; stage ordinary unguarded Blob or emit guarded handoff whose authority is required option (or legal Tool self-guard when no option) | Trust Agent echo, branch on agentId/purpose, parse authoritative turn projection, define storage metadata, patch checkpoints, accept remote/data/base64 image inputs from Tool args |
 | Save-consistency source-registration/storage seam | Read exact turn, generic projection lookup/raw fingerprint check, full turn revision, storage-facing generated-media write | Image Provider or card schema |
 
 This follows the existing seams evidenced by `AgentRuntimeCapabilities` (`apps/platform-web/src/agent-runtime/turn-types.ts:171-224`), Tool execution context (`apps/platform-web/src/agent-runtime/workspace-tools-types.ts:486-521`), and transaction staging (`apps/platform-web/src/storage/workspace.ts:620-681`).
 
-Naming boundary: `PlatformConfig.imageGeneration` is Provider-local `{baseUrl,apiKey,model}`. The separate card runtime entrypoint is optional `{agentId, protocol:"tsian.image-director.v1"}` capability propagated by contracts/manifest normalizers/host bridge in the protocol sibling. This platform Tool does not read that object and its shape does not change Tool authorization, request, adapter, or result. Likewise, this child never validates `IllustrationBriefV1`; it handles only generic raw projection identity/guard data, while storage/source-registration remains card-schema-agnostic.
+Naming boundary: `PlatformConfig.imageGeneration` is Provider-local `{baseUrl,apiKey,model}` for this MVP's single OpenAI-compatible mode. The Tool contract remains Provider-neutral: future ComfyUI or other modes should be selected in platform Settings and resolved by the host's internal adapter seam while preserving the same `generate_image` Tool name and semantic inputs. The separate card runtime entrypoint is optional `{agentId, protocol:"tsian.image-director.v1"}` capability propagated by contracts/manifest normalizers/host bridge in the protocol sibling. This platform Tool does not read that object and its shape does not change Tool authorization, request, adapter, or result. Likewise, this child never validates `IllustrationBriefV1`; it handles only generic raw projection identity/guard data, while storage/source-registration remains card-schema-agnostic.
 
 Delivery boundary: the existing `exportGameCardPackage` text-size defect at `apps/platform-web/src/storage/game-card-packages.ts:685-689` is fixed by the inline-UI child's repack tooling scope, not by this Provider/Tool child. That sibling changes text inventory to actual UTF-8 ZIP entry bytes, adds ASCII/Chinese/emoji text and binary regressions, and runs `npm run build:web`; this child must not duplicate or pull that work into the image capability implementation.
 
@@ -91,18 +92,18 @@ imageGeneration: { baseUrl: "", apiKey: "", model: "" }
 
 The persisted raw file stays `.tsian/local/platform-config.json`, backed by the existing single Dexie `meta` record (`apps/platform-web/src/storage/local-platform-config.ts:3-18`, `apps/platform-web/src/storage/local-platform-config.ts:58-73`). No DB schema/name change is needed.
 
-### 2.2 Secret-preserving workspace projection
+### 2.2 Platform-meta configuration boundary
 
-The current `loadLocalPlatformConfigFile()` returns the raw JSON content as a `WorkspaceFile` (`apps/platform-web/src/storage/local-platform-config.ts:32-50`), and `localPlatformConfigVolume.write()` overwrites that raw file from generic platform-meta writes (`apps/platform-web/src/platform-host/workspace-volumes.ts:298-330`). Adding `imageGeneration.apiKey` without changing this seam would expose the key to level-4 Assistant/workspace tools and allow generic workspace writes to overwrite it.
+The current `loadLocalPlatformConfigFile()` returns the raw JSON content as a `WorkspaceFile` (`apps/platform-web/src/storage/local-platform-config.ts:32-50`), and `localPlatformConfigVolume.write()` overwrites that raw file from generic platform-meta writes (`apps/platform-web/src/platform-host/workspace-volumes.ts:298-330`). For `imageGeneration.apiKey`, this is the intended privileged configuration boundary: `.tsian/local/platform-config.json` remains the platform-meta management entry that advanced Agent/tools with that permission may read and edit. The boundary is not “no workspace projection ever contains the key”; it is “the key exists only in platform-local config and the explicit platform-meta config entry, never in card/save-runtime, Tool I/O, bridge payloads, trace, or generated-media artifacts”.
 
-Keep one raw Dexie record, but split access semantics:
+Keep one raw Dexie record and do not add a second secret store:
 
 - **raw host config IO**: `readLocalPlatformConfigFileContent()` / `saveLocalPlatformConfigFile()` remain private-to-config/storage helpers and preserve all fields, including the key;
-- **workspace enumeration/projection**: `loadLocalPlatformConfigFile()` parses raw JSON, replaces/removes `imageGeneration.apiKey`, and emits only a redacted JSON string. It must never include key length, prefix, suffix or placeholder derived from the actual key;
-- **generic platform-meta write/delete**: when `.tsian/local/platform-config.json` is mutated through the volume/workspace path, parse and merge the non-secret projection with current raw host config while unconditionally preserving stored `imageGeneration.apiKey`; reject malformed writes. A generic delete resets only workspace-visible/non-secret sections (or is rejected), but must not delete the raw key. A workspace-originated mutation can never set, clear or rotate that key;
-- **Settings image helper**: the dedicated image-config save path is the only API that may update `imageGeneration.apiKey`.
+- **platform-meta enumeration/projection**: `loadLocalPlatformConfigFile()` may expose the raw `imageGeneration.apiKey` through `.tsian/local/platform-config.json` because platform-meta is the deliberate advanced configuration channel. Do not copy the key into any other workspace file, save-runtime path, card payload, Tool schema/arguments/result, bridge payload, trace or diagnostic summary;
+- **generic platform-meta write/delete**: when `.tsian/local/platform-config.json` is mutated through the volume/workspace path, parse and normalize the full platform config, including `imageGeneration.apiKey`. Writes may set, clear or rotate the key; delete resets the platform config to defaults, including clearing the key, as an explicit platform-meta configuration operation;
+- **Settings image helper**: the user-facing Settings screen is a convenience entry for editing the same section, not the only authority that may update `imageGeneration.apiKey`.
 
-This keeps the requested storage/cache while satisfying “API key does not enter workspace.” It also means config screen reads raw values through config helpers, never by reading the projected WorkspaceFile.
+This keeps the requested single storage/cache flow while treating platform-meta as an intentional privileged management surface.
 
 ### 2.3 Normalization and resolution
 
@@ -112,13 +113,13 @@ Create a narrow image-config module, separate from the richer chat Provider type
   - trim;
   - add `https://` only when no scheme is present;
   - remove trailing `/`;
-  - strip one exact trailing `/images/generations` if the player pasted the endpoint;
+  - strip one exact trailing `/images/generations` or `/images/edits` if the player pasted an endpoint;
   - reject credentials in URL, non-HTTP(S) schemes, query/hash, or an empty host.
 - normalize stored fields to trimmed strings; keep `apiKey` only in local config memory/file.
 - `resolveImageGenerationConfig()` returns `null` unless all three fields are non-empty and base URL validation succeeds.
 - `saveImageGenerationConfig()` does read-modify-write via `{ ...getPlatformConfig(), imageGeneration }` so no unrelated section is lost.
 
-Do not reuse `BrowserAiProviderPreset`: it carries models, fallback strategy and chat parameters outside MVP (`apps/platform-web/src/config/ai/providers.ts:61-88`, `apps/platform-web/src/config/ai/providers.ts:317-367`). The chat URL helper may inform behavior, but the image helper owns the fixed `/images/generations` suffix (`apps/platform-web/src/config/ai/normalize.ts:71-99`).
+Do not reuse `BrowserAiProviderPreset`: it carries models, fallback strategy and chat parameters outside MVP (`apps/platform-web/src/config/ai/providers.ts:61-88`, `apps/platform-web/src/config/ai/providers.ts:317-367`). The chat URL helper may inform behavior, but the image helper owns the fixed `/images/generations` and `/images/edits` suffixes (`apps/platform-web/src/config/ai/normalize.ts:71-99`).
 
 ## 3. Settings Experience
 
@@ -178,7 +179,16 @@ interface GenerateImageBlobInput {
   config: PlatformImageGenerationConfig
   prompt: string
   aspect: ImageAspect
+  sourceImages?: readonly VerifiedSourceImageBlob[]
   signal?: AbortSignal
+}
+
+interface VerifiedSourceImageBlob {
+  blob: Blob
+  mediaType: string
+  path: string
+  width: number
+  height: number
 }
 
 interface GeneratedImageBlob {
@@ -187,6 +197,7 @@ interface GeneratedImageBlob {
   width: number
   height: number
   source: "base64" | "url"
+  endpoint: "generations" | "edits"
   size: "1536x1024" | "1024x1536" | "1024x1024"
 }
 ```
@@ -203,9 +214,11 @@ const IMAGE_SIZE_BY_ASPECT = {
 
 Runtime validation still checks untyped Tool/UI boundaries before indexing it. Invalid aspect fails before fetch.
 
-### 4.2 Request
+### 4.2 Requests
 
-After validating all fields and prompt non-emptiness:
+After validating all fields, prompt non-emptiness and the aspect-size map, the adapter chooses the endpoint from `sourceImages`:
+
+**Text-to-image (`sourceImages` absent/empty):**
 
 ```http
 POST {normalizedBaseUrl}/images/generations
@@ -219,7 +232,22 @@ Content-Type: application/json
 }
 ```
 
-No extra response format, quality, count, style, negative prompt, custom params, or retry fields are sent. An external abort remains `AbortError`.
+**Image-to-image (`sourceImages.length >= 1`):**
+
+```http
+POST {normalizedBaseUrl}/images/edits
+Authorization: Bearer <apiKey>
+Content-Type: multipart/form-data
+
+model=...
+prompt=...
+size=1536x1024
+image[]=<host-read verified image Blob>
+```
+
+The Tool accepts `1..4` reference paths; the host resolves them from the current Runtime Workspace before the adapter call, rejects missing/non-image/non-decodable files, and passes verified image Blobs to the adapter. Reference images are Provider input only: they are not copied into Tool observation, result, trace, bridge payload, or generated-media metadata. `mask`, `maskPath`, transparent-region editing and local repaint controls are intentionally absent from the MVP because they are primarily human-directed editing affordances.
+
+No extra response format, quality, count, style, negative prompt, custom params, mask, or retry fields are sent. An external abort remains `AbortError`.
 
 ### 4.3 Response normalization
 
@@ -239,7 +267,7 @@ Headers and `Blob.type` are hints, not proof. Both branches use one verifier:
 2. inspect byte signatures for supported raster formats: PNG, JPEG, WebP, GIF and AVIF; derive the canonical MIME from bytes rather than accepting an arbitrary response header;
 3. reject SVG, HTML, JSON, generic octet-stream with no recognized signature, and MIME/signature disagreement;
 4. construct a Blob with canonical MIME;
-5. decode with `createImageBitmap`, require positive width/height, then close the bitmap in `finally`;
+5. decode with `createImageBitmap`, require positive width/height, then close the bitmap in `finally`; if `createImageBitmap` is unavailable in the runtime, return `IMAGE_RUNTIME_UNAVAILABLE` rather than accepting an unverified image;
 6. return canonical Blob and dimensions.
 
 This is stricter than checking `type.startsWith("image/")`. Once staged, existing workspace conversion preserves the Blob and exposes canonical image MIME (`apps/platform-web/src/storage/workspace.ts:117-149`; MIME resolution is at `apps/platform-web/src/lib/media-type.ts:220-255`).
@@ -257,8 +285,9 @@ class ImageGenerationError extends Error {
     httpStatus?: number
     aspect?: ImageAspect
     size?: string
-    source?: "base64" | "url"
-    mediaType?: string
+      source?: "base64" | "url"
+      endpoint?: "generations" | "edits"
+      mediaType?: string
     byteSize?: number
   }
 }
@@ -284,8 +313,9 @@ HTTP 401/403 maps to auth unless a parsed, allowlisted machine code identifies p
 
 | Value | Settings memory | Adapter local | Tool args | Workspace | Bridge/events | Trace |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| API key | password draft | yes | no | no (workspace projection redacted; generic write cannot alter it) | no | no |
+| API key | password draft | yes | no | platform-local config / `.tsian/local/platform-config.json` platform-meta only | no other bridge payload | no |
 | Prompt | built-in test constant / model-created | yes | yes | no new text file | existing Tool-call event identity only, no output echo | no |
+| Source image paths | n/a | host resolves to verified Blobs | bounded path strings only | existing workspace image Blobs | no bytes; no path echo beyond generic argument keys | no raw paths or bytes |
 | Provider error body | no | transient parse only | no | no | no | no |
 | URL response | no | immediate download only | no | no | no | no |
 | Base64 / Blob bytes | Blob preview only | yes | no | Blob only for Tool | no | no |
@@ -328,6 +358,12 @@ Schema:
       prompt: { type: "string", minLength: 1 },
       aspect: { type: "string", enum: ["landscape", "portrait", "square"] },
       assetId: { type: "string", pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" },
+      sourceImagePaths: {
+        type: "array",
+        minItems: 1,
+        maxItems: 4,
+        items: { type: "string", minLength: 1, maxLength: 240 }
+      },
       sourceGuard: {
         type: "object",
         required: ["kind", "turn", "projectionKey", "index", "fingerprint"],
@@ -344,6 +380,8 @@ Schema:
   }
 }
 ```
+
+`sourceImagePaths` is optional. When omitted, the adapter calls `/images/generations`. When present, it must contain `1..4` ordinary workspace image paths; the host reads each file from the current Runtime Workspace, requires `binary` + `imageMimeType`, runs the same raster verifier, and passes the verified Blobs to `/images/edits`. The schema deliberately has no `mask`, `maskPath`, URL, data URL, base64, or inline binary field: mask/local repaint is a human-directed editing workflow and stays out of this AI-led MVP. Reference image bytes never enter Tool observation/result, bridge payloads, trace, or persisted text memory.
 
 `sourceGuard` is optional so the platform Tool remains reusable beyond inline-story projection workflows. When supplied, it contains identifiers/digest only, never projection正文, prompt, workspace path or arbitrary JSON. The MVP defines no other guard kind. For the current card use case `projectionKey` is exactly `"illustrations"`. The frontend uses the shared play-bridge helper on the persisted raw projection body to create the guard and `assetId`; `image-director` validates and forwards both unchanged; this platform child strictly normalizes the guard and recomputes identity/path before any paid Provider request. The adapter ignores it, Tool output omits it, and trace records neither fingerprint nor source coordinates.
 
@@ -384,6 +422,7 @@ interface RuntimeGenerateImageInput {
   prompt: string
   aspect: ImageAspect
   assetId: string
+  sourceImagePaths?: string[]
   sourceGuard?: GeneratedMediaTurnProjectionGuard
 }
 
@@ -417,7 +456,7 @@ type ConsistencyOwnedGeneratedMediaCommitMetadata = {
 }
 ```
 
-Argument normalization rejects unknown aspect, blank prompt, noncanonical asset id, and—when Tool `sourceGuard` exists—non-integer coordinates, any V1 projection key other than `illustrations`, or fingerprint outside `sha256:<64 lowercase hex>` before the paid Provider call. When the invoke runner has `requiredSourceGuard`, omission of Tool guard, any field mismatch, or mismatch between `assetId` and the identity derived from the required guard also returns `IMAGE_INVALID_ARGUMENTS` before config resolution/fetch. These failures perform no ordinary write, guarded handoff or checkpoint work and cannot downgrade to the unguarded branch.
+Argument normalization rejects unknown aspect, blank prompt, noncanonical asset id, malformed `sourceImagePaths` (not an array, empty array, more than 4 items, blank/too-long/non-string path), and—when Tool `sourceGuard` exists—non-integer coordinates, any V1 projection key other than `illustrations`, or fingerprint outside `sha256:<64 lowercase hex>` before the paid Provider call. Source image paths are resolved by the host after authority checks but before Provider fetch: each path must be an ordinary workspace/save-runtime image file with `binary` and `imageMimeType`, must not be `.tsian/local/**`, URL, data URL, base64, or inline bytes, and must pass the shared raster verifier. Missing/non-image/non-decodable references fail before Provider and produce no write/handoff. When the invoke runner has `requiredSourceGuard`, omission of Tool guard, any field mismatch, or mismatch between `assetId` and the identity derived from the required guard also returns `IMAGE_INVALID_ARGUMENTS` before config resolution/fetch. These failures perform no ordinary write, guarded handoff or checkpoint work and cannot downgrade to the unguarded branch.
 
 Target identity is implemented only by the shared play-bridge module. It exposes the synchronous NUL-delimited UTF-8 preimage encoder, async SHA-256 derivation, raw projection fingerprint, and path helper. Host validation and sibling/card/frontend consumers import it rather than copying separators/encoding:
 
@@ -464,9 +503,10 @@ The host runner:
    - no required guard + valid Tool guard → derive identity from Tool guard, require exact assetId, guarded path;
    - required guard → require Tool guard exists and every field equals required; derive identity from required guard and require exact assetId; any omission/mismatch is `IMAGE_INVALID_ARGUMENTS` with zero Provider/write;
 4. derive asset path, resolve cached image config;
-5. call adapter with only config/prompt/aspect and the host abort signal;
-6. after complete image validation, call ordinary `transaction.write({ path: assetPath, data: blob })` only for the no-option/no-Tool-guard case; otherwise submit `{ identityKey, assetPath, blob, sourceGuard }` to the consistency-owned source-registration seam, using the required closure guard when present and the legal Tool guard only when no required guard exists;
-7. return `{ path: assetPath, mediaType }`.
+5. if `sourceImagePaths` exist, read each current workspace image Blob and verify it with the shared raster verifier; any invalid reference fails before Provider and does not reach write/handoff;
+6. call adapter with config/prompt/aspect plus verified source images when present (edits), or without source images (generations), and the host abort signal;
+7. after complete generated-image validation, call ordinary `transaction.write({ path: assetPath, data: blob })` only for the no-option/no-Tool-guard case; otherwise submit `{ identityKey, assetPath, blob, sourceGuard }` to the consistency-owned source-registration seam, using the required closure guard when present and the legal Tool guard only when no required guard exists;
+8. return `{ path: assetPath, mediaType }`.
 
 The platform runner does not parse the authoritative turn projection and does not create sourceGuard-bearing transaction metadata. Agent input/final-result echoes are not consulted for host authority. Guarded metadata can therefore arise only from the required-and-validated host option path or, when that option is absent, from a valid self-supplied Tool guard. The guarded source-registration seam validates the exact turn source and performs the final storage staging defined by `07-21-image-save-consistency`. Provider/Blob validation failure reaches neither ordinary write nor guarded handoff, so the pre-existing file remains unchanged.
 
@@ -493,6 +533,7 @@ Add a dedicated image trace branch in `workspace-tools/tracing.ts`:
 Success fields:
 
 - `tool: "generate_image"`;
+- `endpoint: "generations" | "edits"`;
 - `aspect` and mapped `size`;
 - stable output `path`;
 - canonical `mediaType`;
@@ -506,7 +547,7 @@ Failure fields:
 - optional `httpStatus`;
 - `durationMs`.
 
-Never pass the whole call, `call.arguments`, raw error, prompt, URL, response body, base64 or Blob to trace. The existing model-call completion summary stores only Tool name and argument keys (`agent-runtime/index.ts:1260-1276`) and should remain unchanged.
+Never pass the whole call, `call.arguments`, raw error, prompt, source image paths, URL, response body, base64 or Blob to trace. The existing model-call completion summary stores only Tool name and argument keys (`agent-runtime/index.ts:1260-1276`) and should remain unchanged.
 
 The normal observation and Tool event contain only `{ path, mediaType }` on success or `{ code, message }` plus allowlisted safe details on failure. They do not contain adapter diagnostics beyond that allowlist.
 
@@ -550,7 +591,21 @@ writeGeneratedMedia({
 
 That exact-source metadata contains no `sourceGuard`; storage does not parse turn projections. The consistency child owns touched-path/CAS merge, checkpoint path patch, restore linearization, stale late-result rejection, replacement, and Blob GC. This child owns Provider/Tool schema, invoke request/options propagation, remote strict normalization, invocation-authoritative required guard closure, the sole shared helper, pre-paid Tool guard/`assetId` binding, and lossless guarded handoff. Tool success remains exactly `{ path, mediaType }`.
 
-## 10. Compatibility and Rollback
+## 11. Future Provider Modes
+
+MVP ships one OpenAI-compatible mode and one semantic Tool, `generate_image`. Future ComfyUI or other image endpoints should extend the platform configuration/control panel with a Provider mode selector and internal adapter registry; Agent/card protocols should continue to call `generate_image` rather than Provider-specific Tools.
+
+Future mode switching contract:
+
+- Settings owns selecting the active Provider mode and mode-specific local config.
+- The host runner resolves the active mode and dispatches to the corresponding adapter automatically.
+- Tool input remains semantic (`prompt`, `aspect`, `assetId`, optional `sourceImagePaths`, optional `sourceGuard`) rather than workflow/node/endpoint-specific.
+- Tool schema/description may be generated from the active mode's **semantic capabilities** (for example whether reference images are supported), but must not expose Provider secrets or low-level workflow wiring. If a mode lacks a semantic capability, either omit that optional field from the schema/description or fail clearly before Provider fetch; do not ask Agents to choose OpenAI vs ComfyUI.
+- Provider-specific UI such as workflow selection, node mapping, queue polling, progress/cancel or mask/local repaint belongs to future tasks.
+
+This preserves stable card/Agent behavior while allowing the control panel to switch the underlying image backend later.
+
+## 12. Compatibility and Rollback
 
 - Existing platform config files lack `imageGeneration`; merge supplies the empty default. No migration is needed.
 - Existing Agent configs omit `generate_image`; because the Tool is not default, behavior remains unchanged.

@@ -107,8 +107,8 @@
 
 ## Out of Scope
 
-- Provider 配置、Provider 请求、`generate_image` Tool、图像 prompt 编排与 image Agent 本身。
+- Provider 配置、Provider 请求、`generate_image` Tool、图像 prompt 编排、sourceImagePaths 选择与 image Agent 本身。
 - 正式 turn 增量提交、source guard、checkpoint path patch、restore/commit 竞态和 Blob GC。
 - 全局生成队列、取消、配额、usage、自动生成或自动打开大图。正文卡的单次整卡激活已是付费同意，不增加确认 modal/常驻计费文案；Settings 测试的显式费用警告仍属平台任务。
-- 图片编辑、variation、画廊、历史版本、角色头像/地点图库和旧存档迁移。
+- mask/局部重绘、variation、画廊、历史版本、角色头像/地点图库和旧存档迁移。
 - 把卡特有插图 schema 提升为平台 timeline/bridge 一等字段。

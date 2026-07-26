@@ -80,8 +80,9 @@
   2. 根据 `sceneRef`、`entityRefs` 读取调用时最新 `save/scenes/**` 与 `save/entities/**` 文件；
   3. 结合来源回合完整 clean prose、结构化 brief 和固定 style，组装 Provider-neutral prompt；
   4. 只选择 `landscape | portrait | square` 之一作为语义画幅；
-  5. 调用 host-owned `generate_image`，并把 request 的 `assetId` 与 source guard 原样传递；
-  6. Tool success 只含 `{ path, mediaType }`；Agent 把已验证 request 的 `assetId/sourceGuard` 原样回显到最终 result，并把 Tool fields 放入 `asset`。
+  5. 如 scene/entity 最新资料中已有可用图片资产引用（例如角色 `portrait.path` 或后续同类 save-runtime image 引用），可把 `1..4` 个普通 workspace 图片路径作为 `sourceImagePaths` 传给 `generate_image`，让平台走无 mask `/images/edits` 以保持视觉一致性；不得传 URL/data/base64/inline bytes，不得生成或要求 mask；
+  6. 调用 host-owned `generate_image`，并把 request 的 `assetId` 与 source guard 原样传递；
+  7. Tool success 只含 `{ path, mediaType }`；Agent 把已验证 request 的 `assetId/sourceGuard` 原样回显到最终 result，并把 Tool fields 放入 `asset`。
 - `generate_image` 的通用平台 Tool schema 将 `sourceGuard` 保持为 optional，以便其它非 turn-projection 用例复用；但在本卡 image-director 协议中它是 use-case-required：request 缺失 guard 或 `assetId` 时 Agent 不得调用 Tool，每次本卡 Tool 调用都必须原样传递两者。
 - frontend 从 raw `projections.illustrations[index]` 调用 `@tsian/play-bridge` 唯一 shared helper，计算 fingerprint、完整 guard、`identityKey` 和 path。它必须把同一身份经两个独立通道发送：Agent input JSON 包含 `assetId: identityKey` 与 `sourceGuard`；`invokeAgent` options 包含 authoritative `generatedMediaSourceGuard: sourceGuard`。Agent 只严格验证并透传 input 副本，禁止 hash projection、改写 guard、发明 id/path；Agent final result 的 guard 只供 UI correlation，不能建立提交 authority。
 - remote bridge 必须严格规范化 option guard；host `invokeAgent` 捕获 normalized option 为 `requiredSourceGuard` closure 并据此绑定 `generate_image` runner，不得从 `agentId`、`purpose`、Agent input 或 final result 推导 required 模式。required option 存在时，Tool 缺 guard、任一 guard 字段不匹配或 `assetId` 不等于 host 从 required guard 派生的 identity，均必须在任何付费 Provider 请求前以 `IMAGE_INVALID_ARGUMENTS` 失败，且 Provider 调用、ordinary write、guarded write/handoff/source registration 全为零，绝不降级为 unguarded ordinary write；合法 handoff 使用 closure guard，Tool 字段仅作一致性检查。
@@ -89,7 +90,7 @@
 - Tool result 不回显 guard 或 assetId。Agent final result 从已验证 request 回显两者；frontend 必须与 pending request 逐字段比对，且 host contract 缺失、拒绝或 identity mismatch 只使当前卡失败。result path 不具 authority；frontend 再用 shared helper 派生 path 并通过 `workspace.read` 读取。图片一致性层只接收 authority-validated handoff，再用同一 helper 验证 raw projection，并丢弃 restore/分支改写后的迟到结果。
 - 点击时的 save workspace 是场景/实体的权威来源；不得在 turn projection、Agent 请求或其它卡文件中保存历史视觉快照。
 - ref 缺失或不可读时，Agent 可利用其余有效引用、brief 与来源正文继续；若不足以安全生成，则仅使当前插图失败，不得伪造资产引用。
-- `image-director` 不写通用 workspace 文件，也不自行 hash 或发明 assetId/asset path；它验证 request 后原样传给 Tool。host 按 `@tsian/play-bridge` shared helper 派生 expected identity/path，并在付费前校验 assetId。实际资产写入、来源校验与 checkpoint 一致性由 host-owned `generate_image` 及其提交链完成。
+- `image-director` 不写通用 workspace 文件，也不自行 hash 或发明 assetId/asset path；它验证 request 后原样传给 Tool。它可把已读 scene/entity 中现存图片引用作为 `sourceImagePaths` 参考图，但这些路径只影响 Provider 输入，不改变 asset identity、result authority 或 checkpoint 语义。host 按 `@tsian/play-bridge` shared helper 派生 expected identity/path，并在付费前校验 assetId。实际资产写入、来源校验与 checkpoint 一致性由 host-owned `generate_image` 及其提交链完成。
 
 ### R6. Expensive Tool visibility
 
@@ -140,7 +141,7 @@
 - [ ] AC1: 开局委派说明与 storyteller 正式输出说明使用同一 closed illustration brief schema；两者自包含精确 title/description 长度、scene/entity ref grammar、entityRefs 0..12 去重规则及 `additionalProperties:false`，要求正文原位置 1–3 块，普通回合明确默认 1 块。
 - [ ] AC2: 1、2、3 个完整 block 的投影结果均满足：clean `content` 无插图 block，`displayContent` 保留原位置，`projections.illustrations` 是按顺序追加的原始 JSON 字符串数组。
 - [ ] AC3: 完整 marker 内的无效 JSON、缺块、超量和未闭合 marker 均 fail-soft；完整 marker 始终与 Markdown 隔离。只有正文顺序最先三个 closed-schema valid block 可交互，额外 valid block 为不可交互描述块且不增加调用/Provider 成本；object-invalid fallback 仅读取 string title/description 且不 coerce，有任一可用字段时显示，无可用字段或 parse failure 时省略；任何情形都不阻断 turn 0、正式正文或 commit，也不因插图单独重试。UI 只有一个 runtime validator，平台 storage/source-registration 不解析 block schema。
-- [ ] AC4: frontend 将同一 helper-derived 身份经双通道发送：Agent input 带 `assetId`/完整 `{kind:"turn-projection",turn,projectionKey:"illustrations",index,fingerprint}` guard/完整来源 prose/结构化 brief，invoke options 带 authoritative `generatedMediaSourceGuard`。Agent 不 hash/发明 id，只校验并把 input 副本原样传给 Tool；Tool 只返回 `{path,mediaType}`；Agent final result 从 request 回显 assetId/guard 并把 Tool fields 放入 asset，但 echo 只用于 UI correlation。
+- [ ] AC4: frontend 将同一 helper-derived 身份经双通道发送：Agent input 带 `assetId`/完整 `{kind:"turn-projection",turn,projectionKey:"illustrations",index,fingerprint}` guard/完整来源 prose/结构化 brief，invoke options 带 authoritative `generatedMediaSourceGuard`。Agent 不 hash/发明 id，只校验并把 input 副本原样传给 Tool；Agent 可从点击时读取的 scene/entity 中收集既有图片引用作为 optional `sourceImagePaths`，但不得从 request/prose 拼任意路径或传 mask/URL/base64；Tool 只返回 `{path,mediaType}`；Agent final result 从 request 回显 assetId/guard 并把 Tool fields 放入 asset，但 echo 只用于 UI correlation。
 - [ ] AC4b: remote bridge 严格规范化 invoke option，host 捕获 `requiredSourceGuard` closure 且不按 `agentId`/`purpose` 路由。required option + Tool omitted guard、wrong guard 或 wrong derived `assetId` 均在 Provider 前返回 `IMAGE_INVALID_ARGUMENTS`，Provider/ordinary write/guarded write-handoff/source registration 都为零且无 ordinary downgrade；exact match 成功并只用 closure guard handoff。无 option + 无 Tool guard 仍支持 ordinary write，无 option + valid Tool self-guard 可 guarded，formal-turn direct Tool 可无 guard；缺失 host contract/mismatch 只失败当前卡。
 - [ ] AC4a: frontend ready/init 缓存 `{agentId,protocol}` entrypoint capability；只有 exact `tsian.image-director.v1` 可交互，缺失/错误/未知 protocol 从首帧降级，Agent id 只从 `imageGeneration.agentId` 读取。可交互未生成卡以整卡 pointer/Enter/Space 激活作为单次付费同意，无确认 modal/常驻费用或 action row，`aria-label="生成插图：<title>"` 且 in-flight 去重。Settings 测试费用警告不变。
 - [ ] AC5: 固定统一 style 位于卡内 Agent prompt/context；卡包与平台配置中没有玩家风格选项、Provider secret、最终 prompt 或 Provider-specific 参数。
