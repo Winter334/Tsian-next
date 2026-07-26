@@ -6,6 +6,7 @@ import type { ItemEntity } from "../../lib/item-types"
 import { loadInventoryEntity } from "../../lib/load-inventory-entity"
 import AttributeCard from "./AttributeCard.vue"
 import CharacterPortrait from "./CharacterPortrait.vue"
+import CharacterStageHighlights from "./CharacterStageHighlights.vue"
 import EquipmentSlot from "./EquipmentSlot.vue"
 import GaugeBar from "./GaugeBar.vue"
 
@@ -209,6 +210,14 @@ function onTrackScroll(): void {
             :entity-ref="effectivePinRef"
           />
         </div>
+
+        <CharacterStageHighlights
+          v-if="entity.status?.length || entity.traits?.length"
+          class="stage-highlights-band"
+          :status="entity.status"
+          :traits="entity.traits"
+          :entity-ref="effectivePinRef"
+        />
       </div>
     </div>
   </section>
@@ -251,10 +260,10 @@ function onTrackScroll(): void {
 .track-grid {
   min-height: calc(100% + 1px);
   display: grid;
-  grid-template-columns: minmax(84px, 116px) minmax(210px, 1fr) minmax(84px, 116px);
-  gap: clamp(8px, 1.4vw, 18px);
+  grid-template-columns: minmax(68px, 90px) minmax(280px, 1fr) minmax(68px, 90px);
+  gap: clamp(5px, 0.9vw, 12px);
   align-items: start;
-  padding: 58px 10px 96px;
+  padding: 54px 6px 118px;
   box-sizing: border-box;
 }
 
@@ -262,10 +271,10 @@ function onTrackScroll(): void {
   min-width: 0;
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 9px;
 }
 
-.track-right {
+.mode-items .track-right {
   padding-top: 50px;
 }
 
@@ -273,12 +282,12 @@ function onTrackScroll(): void {
   position: absolute;
   z-index: 2;
   top: 12px;
-  bottom: 12px;
   left: 50%;
-  width: min(44%, 330px);
+  width: min(58%, 430px);
+  max-height: min(84%, 760px);
   transform: translateX(-50%);
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, auto) auto;
   justify-items: center;
   gap: 8px;
   pointer-events: none;
@@ -316,22 +325,32 @@ function onTrackScroll(): void {
 }
 
 .stage-center :deep(.portrait-stack) {
-  width: auto;
-  height: 100%;
+  width: min(100%, 420px);
+  height: auto;
   min-height: 0;
   display: grid;
   place-items: center;
 }
 
 .stage-center :deep(.portrait-frame) {
-  width: auto;
-  height: 100%;
+  width: 100%;
+  height: auto;
   max-width: 100%;
-  max-height: 100%;
+  max-height: min(58dvh, 660px);
+}
+
+.stage-highlights-band {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  width: clamp(420px, 156%, 680px);
+  max-height: min(24dvh, 240px);
+  transform: translateX(-50%);
+  pointer-events: auto;
 }
 
 .stage-gauges {
-  width: min(100%, 330px);
+  width: 100%;
   display: grid;
   gap: 7px;
   padding: 9px 10px 7px;
@@ -383,7 +402,7 @@ function onTrackScroll(): void {
     width: 100%;
     transform: none;
     display: grid;
-    grid-template-rows: auto minmax(34dvh, 40dvh) auto;
+    grid-template-rows: auto minmax(34dvh, 40dvh) auto auto;
     justify-items: center;
     gap: 8px;
     padding: 14px 0 8px;
@@ -408,8 +427,15 @@ function onTrackScroll(): void {
     height: 100%;
   }
 
+  .stage-highlights-band {
+    position: static;
+    width: min(92vw, 430px);
+    max-height: none;
+    margin: 0 auto 10px;
+  }
+
   .stage-gauges {
-    width: min(90vw, 390px);
+    width: 100%;
   }
 
   .track-scroll {
@@ -429,7 +455,7 @@ function onTrackScroll(): void {
     gap: 10px;
   }
 
-  .track-right {
+  .mode-items .track-right {
     padding-top: 30px;
   }
 
@@ -448,7 +474,7 @@ function onTrackScroll(): void {
 
 @media (max-height: 680px) and (max-width: 720px) {
   .stage-center {
-    grid-template-rows: auto minmax(220px, 34dvh) auto;
+    grid-template-rows: auto minmax(220px, 34dvh) auto auto;
   }
 }
 

@@ -2,33 +2,29 @@
 /**
  * OverviewPane — 角色模式右侧档案区。
  *
- * 页面级姓名与身份由共享舞台持有；这里从简介和字段档案开始。
+ * 页面级姓名、当前状态、稳定特质和身份由共享舞台持有；这里从简介和阅读型档案开始。
  * 2. 当前形象：entity.appearance 单段字符串；缺省不展示。
- * 3. 当前状态（StatusChips）：entity.status → chips；polarity 决定颜色。
- * 4. 关系（RelationshipList）：从 relationships.edges → useEntity 取 name/brief；点击 select。
- * 5. 意图与目标（GoalsBlock）：entity.goals → 三行 label-text。
- * 6. 人物履历：entity.history[] → event 文本列表；无有效条目不展示。
- * 7. 背景摘记：entity.background 单段字符串；缺省不展示。
- * 8. extensions：displayItems.tags/refs/sections/metrics 分别进入对应小区域。
+ * 3. 关系（RelationshipList）：从 relationships.edges → useEntity 取 name/brief；点击 select。
+ * 4. 意图与目标（GoalsBlock）：entity.goals → 三行 label-text。
+ * 5. 人物履历：entity.history[] → event 文本列表；无有效条目不展示。
+ * 6. 背景摘记：entity.background 单段字符串；缺省不展示。
+ * 7. extensions：displayItems.tags/refs/sections/metrics 分别进入对应小区域。
  *
  * 不抛错：父组件保证 entity 非 null；本组件按字段缺省 fallback。
  */
-import { computed, ref } from "vue"
-import type { CharacterEntity, CharacterTrait, RelationshipFile } from "../../lib/character-types"
+import { computed } from "vue"
+import type { CharacterEntity, RelationshipFile } from "../../lib/character-types"
 import type { DisplayItems } from "../../lib/runtime-types"
 import IdentityFacts from "./IdentityFacts.vue"
-import StatusChips from "./StatusChips.vue"
 import RelationshipList from "./RelationshipList.vue"
 import GoalsBlock from "./GoalsBlock.vue"
-import TraitCards from "./TraitCards.vue"
-import TraitDetailModal from "./TraitDetailModal.vue"
 import PinButton from "./PinButton.vue"
 
 const props = defineProps<{
   entity: CharacterEntity
   relationships: RelationshipFile | null
   displayItems: DisplayItems
-  /** 当前角色 entity ref；透传给身份/状态/目标子组件用于构造 pin target。 */
+  /** 当前角色 entity ref；透传给身份、外貌和目标等可钉选字段。 */
   entityRef: string | null
 }>()
 
@@ -37,9 +33,6 @@ const emit = defineEmits<{
 }>()
 
 const aliases = computed(() => props.entity.aliases ?? [])
-const traits = computed(() => props.entity.traits ?? [])
-const selectedTrait = ref<CharacterTrait | null>(null)
-const statusList = computed(() => props.entity.status ?? [])
 const hasAppearance = computed(
   () => typeof props.entity.appearance === "string" && props.entity.appearance.length > 0,
 )
@@ -56,7 +49,6 @@ const historyEvents = computed(() =>
 const hasHistory = computed(() => historyEvents.value.length > 0)
 const edges = computed(() => props.relationships?.edges ?? [])
 const hasRelationships = computed(() => edges.value.length > 0)
-const hasTraits = computed(() => traits.value.length > 0)
 
 const hasMetrics = computed(() => props.displayItems.metrics.length > 0)
 const hasTags = computed(() => props.displayItems.tags.length > 0)
@@ -65,14 +57,6 @@ const hasSections = computed(() => props.displayItems.sections.length > 0)
 
 function onSelect(ref: string) {
   emit("select", ref)
-}
-
-function openTrait(trait: CharacterTrait) {
-  selectedTrait.value = trait
-}
-
-function closeTrait() {
-  selectedTrait.value = null
 }
 </script>
 
@@ -88,12 +72,6 @@ function closeTrait() {
     </div>
 
     <div class="overview-grid">
-      <!-- 2. 天赋特质 -->
-      <div v-if="hasTraits" class="overview-section full">
-        <div class="section-title">天赋特质</div>
-        <TraitCards :traits="traits" @open="openTrait" />
-      </div>
-
       <!-- 3. 当前形象 -->
       <div v-if="hasAppearance" class="overview-section full">
         <div class="section-title">当前形象</div>
@@ -104,12 +82,6 @@ function closeTrait() {
             :target="{ entityRef, kind: 'appearance', label: '外貌' }"
           />
         </div>
-      </div>
-
-      <!-- 3. 当前状态 -->
-      <div v-if="statusList.length > 0" class="overview-section">
-        <div class="section-title">当前状态</div>
-        <StatusChips :status="statusList" :entity-ref="entityRef" />
       </div>
 
       <!-- 4. 关系 -->
@@ -198,8 +170,6 @@ function closeTrait() {
         </div>
       </div>
     </div>
-
-    <TraitDetailModal :trait="selectedTrait" @close="closeTrait" />
   </div>
 </template>
 

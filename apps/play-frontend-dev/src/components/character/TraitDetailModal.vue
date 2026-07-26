@@ -48,7 +48,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="trait" class="modal-mask" role="presentation" @click="onBackdropClick">
+  <Teleport to="body">
+    <div v-if="trait" class="modal-mask" role="presentation" @click="onBackdropClick">
     <div
       class="modal-card"
       role="dialog"
@@ -88,14 +89,15 @@ onUnmounted(() => {
         <p v-else class="trait-empty">暂无明确效果。</p>
       </section>
     </div>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
 .modal-mask {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 240;
   display: flex;
   align-items: center;
   justify-content: center;

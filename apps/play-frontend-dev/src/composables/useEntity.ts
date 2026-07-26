@@ -8,8 +8,8 @@
  * 读取用 tsian.workspace.read(path, "save-runtime") 显式传 scope（不省略）。
  * content 是字符串需 JSON.parse；parse 异常 → error: "load-failed"（D7，不抛错）。
  */
-import { ref } from "vue"
-import type { Ref } from "vue"
+import { ref, toValue } from "vue"
+import type { MaybeRefOrGetter, Ref } from "vue"
 import type { EntityData } from "../lib/runtime-types"
 import { parseEntity } from "../lib/parse-entity"
 import { refToEntityPath } from "../lib/entity-ref"
@@ -24,7 +24,7 @@ export { refToEntityPath } from "../lib/entity-ref"
  * @returns { data, error, load } —— data 为 EntityData | null，error 为读取级错误。
  *   不自动 onMounted 加载——由 UI 子任务决定何时调 load()（展开/点击时）。
  */
-export function useEntity(entityRef: string): {
+export function useEntity(entityRef: MaybeRefOrGetter<string>): {
   data: Ref<EntityData | null>
   error: Ref<"load-failed" | "not-found" | null>
   load: () => Promise<void>
@@ -32,11 +32,23 @@ export function useEntity(entityRef: string): {
   const data = ref<EntityData | null>(null)
   const error = ref<"load-failed" | "not-found" | null>(null)
   let loadVersion = 0
+  let requestedRef = ""
 
   async function load(): Promise<void> {
     const version = ++loadVersion
     const tsian = getTsianClient()
-    const path = refToEntityPath(entityRef)
+    const refValue = toValue(entityRef)
+    if (refValue !== requestedRef) {
+      requestedRef = refValue
+      error.value = null
+      data.value = null
+    }
+    const path = refToEntityPath(refValue)
+    if (!path) {
+      error.value = refValue ? "not-found" : null
+      data.value = null
+      return
+    }
     try {
       const file = await tsian.workspace.read(path, "save-runtime")
       if (version !== loadVersion) return

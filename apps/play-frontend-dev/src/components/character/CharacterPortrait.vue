@@ -263,13 +263,13 @@ async function patchEntityPortraitMetadata(
 <style scoped>
 .portrait-stack {
   width: 100%;
-  max-width: 340px;
+  max-width: 420px;
 }
 
 .portrait-frame {
   width: 100%;
-  max-width: 340px;
-  aspect-ratio: 3 / 4.15;
+  max-width: 420px;
+  aspect-ratio: 3 / 3.35;
   border: 0;
   padding: 0;
   background:

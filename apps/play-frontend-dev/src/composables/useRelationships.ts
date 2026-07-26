@@ -10,8 +10,8 @@
  *   Workspace Data Consumption"）。
  * - 不自动 onMounted 加载——由 UI 决定。
  */
-import { ref } from "vue"
-import type { Ref } from "vue"
+import { ref, toValue } from "vue"
+import type { MaybeRefOrGetter, Ref } from "vue"
 import type { RelationshipFile } from "../lib/character-types"
 import { parseRelationships } from "../lib/parse-character"
 import { getTsianClient } from "./useTsian"
@@ -38,7 +38,7 @@ export function subjectRefToRelationshipPath(subjectRef: string): string {
  * @returns { data, error, load } —— data 为 RelationshipFile | null，
  *   error 为读取级错误。不自动 onMounted 加载——由 UI 决定何时调 load()。
  */
-export function useRelationships(subjectRef: string): {
+export function useRelationships(subjectRef: MaybeRefOrGetter<string>): {
   data: Ref<RelationshipFile | null>
   error: Ref<"load-failed" | "not-found" | null>
   load: () => Promise<void>
@@ -46,11 +46,23 @@ export function useRelationships(subjectRef: string): {
   const data = ref<RelationshipFile | null>(null)
   const error = ref<"load-failed" | "not-found" | null>(null)
   let loadVersion = 0
+  let requestedRef = ""
 
   async function load(): Promise<void> {
     const version = ++loadVersion
     const tsian = getTsianClient()
-    const path = subjectRefToRelationshipPath(subjectRef)
+    const refValue = toValue(subjectRef)
+    if (refValue !== requestedRef) {
+      requestedRef = refValue
+      error.value = null
+      data.value = null
+    }
+    const path = refValue ? subjectRefToRelationshipPath(refValue) : ""
+    if (!path) {
+      error.value = null
+      data.value = null
+      return
+    }
     try {
       const file = await tsian.workspace.read(path, "save-runtime")
       if (version !== loadVersion) return

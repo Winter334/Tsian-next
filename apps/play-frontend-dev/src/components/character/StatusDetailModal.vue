@@ -72,7 +72,8 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div v-if="status" class="modal-mask" role="presentation" @click="onBackdropClick">
+  <Teleport to="body">
+    <div v-if="status" class="modal-mask" role="presentation" @click="onBackdropClick">
     <div
       class="modal-card"
       :class="toneClass"
@@ -103,14 +104,15 @@ onUnmounted(() => {
         <p class="status-description">{{ description }}</p>
       </section>
     </div>
-  </div>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
 .modal-mask {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: 240;
   display: flex;
   align-items: center;
   justify-content: center;

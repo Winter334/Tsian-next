@@ -14,6 +14,7 @@ import { useRuntime } from "../../composables/useRuntime"
 import { getTsianClient } from "../../composables/useTsian"
 import { sceneIdToPath } from "../../composables/useScene"
 import { parseScene } from "../../lib/parse-entity"
+import { parseEntityRef } from "../../lib/entity-ref"
 import type { EntityData } from "../../lib/runtime-types"
 import CharacterList from "./CharacterList.vue"
 import CharacterSlot from "./CharacterSlot.vue"
@@ -118,7 +119,7 @@ function reconcileSelection(): void {
 }
 
 function onSelect(entityRef: string): void {
-  if (!presentRefs.value.some((entry) => entry.ref === entityRef)) return
+  if (parseEntityRef(entityRef, "character") === null) return
   if (characterDrawerOpen.value) characterDrawerReturnFocus.value = null
   selectedRef.value = entityRef
   characterDrawerOpen.value = false

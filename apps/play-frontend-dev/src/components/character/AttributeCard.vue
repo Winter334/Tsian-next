@@ -25,44 +25,63 @@ defineProps<{
 .attribute-mark {
   position: relative;
   width: 100%;
-  aspect-ratio: 1;
+  aspect-ratio: 0.92;
   min-width: 0;
   overflow: hidden;
-  padding: 12px;
+  padding: 10px;
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
   border: 0;
-  border-radius: 8px 1px 10px 2px;
-  background:
-    linear-gradient(45deg, transparent 49.45%, rgba(181, 137, 61, 0.34) 49.8%, rgba(181, 137, 61, 0.34) 50.2%, transparent 50.55%),
-    radial-gradient(circle at 75% 25%, rgba(232, 169, 72, 0.13), transparent 42%),
-    linear-gradient(145deg, rgba(181, 137, 61, 0.075), rgba(155, 58, 46, 0.035) 58%, rgba(6, 6, 8, 0.2));
-  box-shadow: inset 8px -8px 28px rgba(0, 0, 0, 0.18);
+  border-radius: 0;
+  background: transparent;
   outline: none;
-  transition: background-color 0.18s ease, filter 0.18s ease, transform 0.18s ease;
+  transition: filter 0.22s ease, transform 0.22s ease;
 }
 
+.attribute-mark::before,
 .attribute-mark::after {
   content: "";
   position: absolute;
-  left: 9px;
-  bottom: 8px;
-  width: 24%;
-  height: 2px;
-  background: linear-gradient(90deg, rgba(232, 169, 72, 0.5), transparent);
-  opacity: 0.46;
+  left: -18%;
+  top: 50%;
+  width: 136%;
+  transform: rotate(-45deg);
+  transform-origin: center;
+  pointer-events: none;
+}
+
+.attribute-mark::before {
+  height: 1px;
+  background: linear-gradient(90deg, transparent 6%, rgba(181, 137, 61, 0.32) 16%, rgba(232, 169, 72, 0.95) 50%, rgba(181, 137, 61, 0.34) 84%, transparent 94%);
+  opacity: 0.78;
+  box-shadow: 0 0 8px rgba(232, 169, 72, 0.24);
+}
+
+.attribute-mark::after {
+  height: 5px;
+  background: linear-gradient(90deg, transparent 14%, rgba(232, 169, 72, 0.02) 30%, rgba(232, 169, 72, 0.22) 50%, rgba(232, 169, 72, 0.02) 70%, transparent 86%);
+  opacity: 0;
+  filter: blur(2px);
+  transform: rotate(-45deg) translateX(-18%);
+  transition: opacity 0.24s ease, transform 0.34s ease;
 }
 
 .attribute-mark:hover,
 .attribute-mark:focus-visible {
-  background:
-    linear-gradient(45deg, transparent 49.2%, rgba(232, 169, 72, 0.76) 49.75%, rgba(232, 169, 72, 0.76) 50.25%, transparent 50.8%),
-    radial-gradient(circle at 75% 25%, rgba(232, 169, 72, 0.2), transparent 46%),
-    linear-gradient(145deg, rgba(181, 137, 61, 0.11), rgba(155, 58, 46, 0.055) 58%, rgba(6, 6, 8, 0.2));
-  filter: drop-shadow(0 9px 16px rgba(0, 0, 0, 0.22));
-  transform: translateY(-1px);
+  filter: drop-shadow(0 9px 18px rgba(232, 169, 72, 0.14)) drop-shadow(0 10px 18px rgba(0, 0, 0, 0.18));
+  transform: translateY(-2px) scale(1.035);
+}
+
+.attribute-mark:hover::before,
+.attribute-mark:focus-visible::before {
+  background: linear-gradient(90deg, transparent 4%, rgba(232, 169, 72, 0.5) 16%, rgba(255, 219, 142, 1) 50%, rgba(232, 169, 72, 0.54) 84%, transparent 96%);
+  opacity: 1;
+  box-shadow: 0 0 14px rgba(232, 169, 72, 0.52);
+}
+
+.attribute-mark:hover::after,
+.attribute-mark:focus-visible::after {
+  opacity: 1;
+  transform: rotate(-45deg) translateX(18%);
 }
 
 .attribute-mark:focus-visible {
@@ -72,31 +91,48 @@ defineProps<{
 
 .attribute-name,
 .attribute-value {
-  position: relative;
+  position: absolute;
   z-index: 1;
-  align-self: flex-start;
-}
-
-.attribute-name {
-  max-width: 70%;
+  max-width: calc(100% - 14px);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.attribute-name {
+  top: 9px;
+  left: 10px;
   font-family: var(--font-display);
-  font-size: 0.86rem;
-  letter-spacing: 0.06em;
+  font-size: 0.98rem;
+  letter-spacing: 0.075em;
   color: var(--prose-muted);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
 }
 
 .attribute-value {
+  right: 10px;
+  bottom: 9px;
   font-family: var(--font-display);
-  font-size: clamp(1.45rem, 2.4vw, 2rem);
+  font-size: clamp(1.28rem, 2vw, 1.72rem);
   line-height: 0.9;
   color: var(--ember-bright);
   font-variant-numeric: tabular-nums;
+  text-align: right;
   text-shadow: 0 0 14px rgba(232, 169, 72, 0.16);
+  transition: color 0.2s ease, text-shadow 0.2s ease;
 }
 
+.attribute-mark:hover .attribute-name,
+.attribute-mark:focus-visible .attribute-name {
+  color: var(--prose);
+  text-shadow: 0 0 10px rgba(232, 169, 72, 0.2);
+}
+
+.attribute-mark:hover .attribute-value,
+.attribute-mark:focus-visible .attribute-value {
+  color: #ffd98e;
+  text-shadow: 0 0 18px rgba(232, 169, 72, 0.45);
+}
 .attribute-mark:hover :deep(.pin-btn),
 .attribute-mark:focus-within :deep(.pin-btn),
 .attribute-mark :deep(.pin-btn.active) {
