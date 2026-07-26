@@ -347,3 +347,37 @@ Implemented workshop-installed game card update detection using MarketPackage.re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 166: 完成确定性装备管理与换装 UI
+
+**Date**: 2026-07-26
+**Task**: 完成确定性装备管理与换装 UI
+**Package**: platform-web
+**Branch**: `task/stage-manager-maintenance-tool-optimization`
+
+### Summary
+
+实现卡内确定性装备 Frontend Action 与场记 Skill、开发前端换装 UI、Action/Skill parity 与真实 Worker 传输回归；完成桌面/移动端验收及正式卡 Workspace inventory 校验。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7ff51bd` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
