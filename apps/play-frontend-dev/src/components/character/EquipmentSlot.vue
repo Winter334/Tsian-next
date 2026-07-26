@@ -7,14 +7,17 @@ import ItemIcon from "../inventory/ItemIcon.vue"
 
 const props = defineProps<{
   name: string
+  slotIndex: number
   slot: CharacterEquipmentSlot
   item: ItemEntity | null
   loading?: boolean
   highlighted?: boolean
+  interactive: boolean
 }>()
 
 const emit = defineEmits<{
   select: [ref: string]
+  activate: [trigger: HTMLElement]
   highlight: [ref: string | null]
 }>()
 
@@ -24,17 +27,24 @@ const shortLabel = computed(() => {
 })
 
 const appliedSummary = computed(() => {
-  const entries = Object.entries(props.slot.applied ?? {})
+  const slot = props.slot
+  if (slot.ref === null) return "无已记录贡献"
+  const entries = Object.entries(slot.applied ?? {})
   if (entries.length === 0) return "无已记录贡献"
   return entries.map(([name, value]) => `${name}${value >= 0 ? "+" : ""}${value}`).join("、")
 })
 
 const tooltip = computed(() => {
   const itemName = props.item?.name ?? (props.slot.ref ? "物品不可读" : "空槽")
-  return `${props.name} · ${itemName} · ${appliedSummary.value}`
+  const action = props.interactive ? "点击管理装备" : "装备记录不可用"
+  return `${props.name}第${props.slotIndex + 1}槽 · ${itemName} · ${appliedSummary.value} · ${action}`
 })
 
-function onClick(): void {
+function onClick(event: MouseEvent): void {
+  if (props.interactive) {
+    emit("activate", event.currentTarget as HTMLElement)
+    return
+  }
   if (props.slot.ref) emit("select", props.slot.ref)
 }
 </script>
@@ -43,8 +53,8 @@ function onClick(): void {
   <button
     type="button"
     class="equipment-slot"
-    :class="{ empty: !slot.ref, highlighted, missing: slot.ref && !item && !loading }"
-    :aria-disabled="!slot.ref"
+    :class="{ empty: !slot.ref, highlighted, missing: slot.ref && !item && !loading, unavailable: !interactive }"
+    :aria-disabled="!interactive"
     :aria-label="tooltip"
     :title="tooltip"
     @click="onClick"
@@ -58,7 +68,7 @@ function onClick(): void {
     </span>
     <span class="equipment-label">{{ shortLabel }}</span>
     <span class="equipment-state">
-      {{ loading ? "读取" : (item?.name ?? (slot.ref ? "缺失" : "空")) }}
+      {{ loading ? "读取" : (item?.name ?? (slot.ref ? "缺失" : interactive ? "选择装备" : "空")) }}
     </span>
   </button>
 </template>
@@ -126,13 +136,17 @@ function onClick(): void {
 
 .equipment-slot.empty {
   border-style: dashed;
+  opacity: 0.72;
+}
+
+.equipment-slot.unavailable {
   opacity: 0.54;
-  cursor: default;
+  cursor: help;
   transform: none;
 }
 
 .equipment-slot.empty:focus-visible {
-  opacity: 0.72;
+  opacity: 0.9;
 }
 
 .equipment-slot.missing {

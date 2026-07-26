@@ -3,6 +3,7 @@
 import { computed, ref } from "vue"
 import type { ComponentPublicInstance } from "vue"
 import type { CharacterEntity, RelationshipFile } from "../../lib/character-types"
+import type { EquipmentSlotSelection } from "../../composables/useEquipmentManagement"
 import type { DisplayItems } from "../../lib/runtime-types"
 import { emptyDisplayItems } from "../../lib/runtime-types"
 import { parseExtensionsOnly } from "../../lib/parse-entity"
@@ -22,12 +23,14 @@ const props = defineProps<{
   trackScrollTop: number
   mobileHeroCollapsed: boolean
   portraitRefreshToken: number
+  workspaceRefreshToken: number
 }>()
 
 const emit = defineEmits<{
   select: [ref: string]
   "portrait-updated": []
   "open-character-drawer": [trigger: HTMLButtonElement]
+  "activate-equipment": [selection: EquipmentSlotSelection]
   "update:active-mode": [mode: CharacterMode]
   "update:track-scroll": [mode: CharacterMode, value: number]
 }>()
@@ -61,6 +64,13 @@ defineExpose({ focusCharacterDrawerTrigger })
 function selectItem(entityRef: string): void {
   highlightedItemRef.value = entityRef
   requestedItemRef.value = entityRef
+}
+
+function activateEquipment(
+  entry: { slotType: string; slotIndex: number; slot: EquipmentSlotSelection["slot"] },
+  trigger: HTMLElement,
+): void {
+  emit("activate-equipment", { ...entry, trigger })
 }
 
 function updateTrackScroll(mode: CharacterMode, value: number): void {
@@ -116,13 +126,18 @@ function updateTrackScroll(mode: CharacterMode, value: number): void {
         :fallback-src="defaultAvatarUrl"
         :effective-pin-ref="effectivePinRef"
         :highlighted-item-ref="highlightedItemRef"
+        :equipment-interactive="entity.equipmentStatus === 'ready'"
         @portrait-updated="emit('portrait-updated')"
         @update:scroll-top="updateTrackScroll"
         @select-item="selectItem"
+        @activate-equipment="activateEquipment"
         @highlight-item="highlightedItemRef = $event"
       />
 
       <aside class="content-panel" :aria-label="activeMode === 'character' ? '角色档案' : '容器物品'">
+        <p v-if="activeMode === 'items' && entity.equipmentStatus === 'schema-corrupt'" class="equipment-unavailable" role="status">
+          装备记录暂时不可用。角色与容器仍可查看，请让场记检查后再管理装备。
+        </p>
         <Transition name="content-switch" mode="out-in">
           <OverviewPane
             v-if="activeMode === 'character'"
@@ -140,6 +155,7 @@ function updateTrackScroll(mode: CharacterMode, value: number): void {
             :equipment="entity.equipment"
             :highlighted-item-ref="highlightedItemRef"
             :requested-item-ref="requestedItemRef"
+            :refresh-token="workspaceRefreshToken"
             @highlight-item="highlightedItemRef = $event"
             @request-consumed="requestedItemRef = null"
           />
@@ -253,6 +269,16 @@ function updateTrackScroll(mode: CharacterMode, value: number): void {
 
 .content-panel::-webkit-scrollbar {
   display: none;
+}
+
+.equipment-unavailable {
+  margin: 0 0 14px;
+  padding: 9px 11px;
+  border-left: 2px solid var(--blood);
+  background: rgba(155, 58, 46, 0.08);
+  color: var(--prose-muted);
+  font-size: 0.72rem;
+  line-height: 1.65;
 }
 
 .entity-missing {

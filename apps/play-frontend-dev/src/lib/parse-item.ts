@@ -12,6 +12,7 @@
  * 复用 parse-character 的 isRecord/asString/asNumber 风格；不引入外部依赖。
  */
 
+import { parseEntityRef, validManagedName } from "./entity-ref"
 import type {
   ContainerContent,
   ContainerEntity,
@@ -55,17 +56,21 @@ function asStringArray(value: unknown): string[] | undefined {
   return out.length > 0 ? out : undefined
 }
 
-function parseContents(raw: unknown): ContainerContent[] {
-  if (!Array.isArray(raw)) return []
+function parseContents(raw: unknown): ContainerContent[] | null {
+  if (!Array.isArray(raw)) return null
   const out: ContainerContent[] = []
   for (const item of raw) {
-    if (!isRecord(item)) continue
-    const ref = asString(item.ref)
-    if (!ref) continue
-    const count = asNumber(item.count)
-    if (count !== undefined && count <= 0) continue
-    const entry: ContainerContent = { ref }
-    if (count !== undefined) entry.count = count
+    if (!isRecord(item)) return null
+    const keys = Object.keys(item)
+    if (keys.some((key) => key !== "ref" && key !== "count")) return null
+    const parsed = parseEntityRef(item.ref)
+    if (!parsed || (parsed.type !== "container" && parsed.type !== "item")) return null
+    if (parsed.type === "container") {
+      if (item.count !== undefined && item.count !== 1) return null
+    } else if (item.count !== undefined
+      && (!Number.isSafeInteger(item.count) || (item.count as number) <= 0)) return null
+    const entry: ContainerContent = { ref: parsed.ref }
+    if (item.count !== undefined) entry.count = item.count as number
     out.push(entry)
   }
   return out
@@ -102,26 +107,29 @@ function parseExtensions(raw: unknown): Record<string, unknown> | undefined {
   return raw
 }
 
-/** 归一装备描述；至少保留一个合法字段时才附加。 */
-function parseEquipment(raw: unknown): ItemEquipment | undefined {
-  if (!isRecord(raw)) return undefined
-  const out: ItemEquipment = {}
+function isSafeIntegerMap(value: unknown): value is Record<string, number> {
+  return isRecord(value)
+    && Object.entries(value).every(([key, entry]) => validManagedName(key) && Number.isSafeInteger(entry))
+}
 
-  const slot = asString(raw.slot)
-  if (slot) out.slot = slot
+/** 只接受 slotType/add/percent/effects；返回 null 表示结构损坏。 */
+function parseEquipment(raw: unknown): ItemEquipment | null {
+  if (!isRecord(raw)) return null
+  const allowed = new Set(["slotType", "add", "percent", "effects"])
+  if (Object.keys(raw).some((key) => !allowed.has(key)) || !validManagedName(raw.slotType)) return null
+  const out: ItemEquipment = { slotType: raw.slotType }
 
-  if (isRecord(raw.mods)) {
-    const mods: Record<string, string> = {}
-    for (const [attribute, rule] of Object.entries(raw.mods)) {
-      if (typeof rule === "string") mods[attribute] = rule
-    }
-    if (Object.keys(mods).length > 0) out.mods = mods
+  for (const key of ["add", "percent"] as const) {
+    if (raw[key] === undefined) continue
+    if (!isSafeIntegerMap(raw[key])) return null
+    if (Object.keys(raw[key]).length > 0) out[key] = { ...raw[key] }
   }
 
-  const effects = asStringArray(raw.effects)
-  if (effects) out.effects = effects
-
-  return Object.keys(out).length > 0 ? out : undefined
+  if (raw.effects !== undefined) {
+    if (!Array.isArray(raw.effects) || raw.effects.some((effect) => typeof effect !== "string")) return null
+    if (raw.effects.length > 0) out.effects = raw.effects.slice()
+  }
+  return out
 }
 
 function parseUpdatedBy(raw: unknown): string | null | undefined {
@@ -139,15 +147,16 @@ export function parseContainer(raw: unknown): ContainerEntity | null {
   const id = asString(raw.id)
   const name = asString(raw.name)
   const brief = asString(raw.brief)
-  if (!id || !name || !brief) return null
-  if (raw.type !== "container") return null
+  if (!id || !name || !brief || !parseEntityRef(id, "container") || raw.type !== "container") return null
 
+  const contents = parseContents(raw.contents)
+  if (contents === null) return null
   const entity: ContainerEntity = {
     id,
     name,
     brief,
     type: "container",
-    contents: parseContents(raw.contents),
+    contents,
   }
 
   const status = parseStatus(raw.status)
@@ -171,7 +180,7 @@ export function parseItem(raw: unknown): ItemEntity | null {
   const id = asString(raw.id)
   const name = asString(raw.name)
   const brief = asString(raw.brief)
-  if (!id || !name || !brief) return null
+  if (!id || !name || !brief || !parseEntityRef(id, "item")) return null
   const type = asString(raw.type)
   if (!type || !ITEM_TYPES.has(type as ItemType)) return null
 
@@ -180,12 +189,20 @@ export function parseItem(raw: unknown): ItemEntity | null {
     name,
     brief,
     type: type as ItemType,
+    equipmentStatus: raw.equipment === undefined
+      ? (type === "equipment" ? "schema-corrupt" : "absent")
+      : "schema-corrupt",
   }
 
   const tags = asStringArray(raw.tags)
   if (tags) entity.tags = tags
-  const equipment = parseEquipment(raw.equipment)
-  if (equipment) entity.equipment = equipment
+  if (raw.equipment !== undefined) {
+    const equipment = parseEquipment(raw.equipment)
+    if (equipment) {
+      entity.equipment = equipment
+      entity.equipmentStatus = "ready"
+    }
+  }
   const extensions = parseExtensions(raw.extensions)
   if (extensions) entity.extensions = extensions
   const updatedAtTurn = asNumber(raw.updatedAtTurn)

@@ -16,7 +16,7 @@ import type { DisplayItems } from "../../lib/runtime-types"
 
 export interface EquippedSlotContext {
   name: string
-  slot: CharacterEquipmentSlot
+  slot: Extract<CharacterEquipmentSlot, { ref: string }>
 }
 
 const props = defineProps<{
@@ -87,19 +87,27 @@ function restoreFocus(event: Event): void {
             <span v-for="tag in entity.tags" :key="tag">{{ tag }}</span>
           </div>
 
-          <section v-if="entity.equipment?.slot" class="item-section">
-            <h3>建议槽位</h3>
-            <p>{{ entity.equipment.slot }}</p>
-          </section>
-
-          <section v-if="entity.equipment?.mods && Object.keys(entity.equipment.mods).length" class="item-section">
-            <h3>原始修正规则</h3>
+          <section v-if="entity.equipment" class="item-section">
+            <h3>装备规则</h3>
             <dl class="rule-list">
-              <template v-for="(rule, name) in entity.equipment.mods" :key="name">
-                <dt>{{ name }}</dt><dd>{{ rule }}</dd>
-              </template>
+              <dt>槽位类型</dt><dd>{{ entity.equipment.slotType }}</dd>
             </dl>
-            <p class="raw-note">仅展示原始规则，界面不会执行这些表达式。</p>
+            <div v-if="Object.keys(entity.equipment.add ?? {}).length" class="rule-group">
+              <strong>固定增减</strong>
+              <dl class="rule-list">
+                <template v-for="(value, name) in entity.equipment.add" :key="name">
+                  <dt>{{ name }}</dt><dd>{{ value >= 0 ? "+" : "" }}{{ value }}</dd>
+                </template>
+              </dl>
+            </div>
+            <div v-if="Object.keys(entity.equipment.percent ?? {}).length" class="rule-group">
+              <strong>基线百分比</strong>
+              <dl class="rule-list">
+                <template v-for="(value, name) in entity.equipment.percent" :key="name">
+                  <dt>{{ name }}</dt><dd>{{ value >= 0 ? "+" : "" }}{{ value }}%</dd>
+                </template>
+              </dl>
+            </div>
           </section>
 
           <section v-if="entity.equipment?.effects?.length" class="item-section">
@@ -323,14 +331,20 @@ function restoreFocus(event: Event): void {
   overflow-wrap: anywhere;
 }
 
-.extension-ref-list {
-  margin-top: 10px;
+.rule-group {
+  margin-top: 12px;
 }
 
-.raw-note {
-  margin: 8px 0 0;
-  color: var(--prose-faint) !important;
-  font-size: 0.68rem !important;
+.rule-group > strong {
+  display: block;
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  color: var(--prose-faint);
+}
+
+.extension-ref-list {
+  margin-top: 10px;
 }
 
 .equipped-context {

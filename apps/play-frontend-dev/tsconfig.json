@@ -3,7 +3,13 @@
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "baseUrl": ".",
+    "paths": {
+      "@tsian/contracts": ["../../packages/contracts/dist/index.d.ts"],
+      "@tsian/play-bridge": ["../../packages/play-bridge/dist/index.d.ts"]
+    },
     "strict": true,
+    "skipLibCheck": true,
     "declaration": false,
     "outDir": "dist",
     "rootDir": "src",

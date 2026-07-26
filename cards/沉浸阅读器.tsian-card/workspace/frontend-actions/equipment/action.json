@@ -1,0 +1,106 @@
+{
+  "schemaVersion": 1,
+  "inputSchema": {
+    "oneOf": [
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode", "operation", "characterRef", "slotType", "slotIndex", "expectedCurrentRef", "itemRef"],
+        "properties": {
+          "mode": { "enum": ["preview", "commit"] },
+          "operation": { "const": "equip" },
+          "characterRef": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "slotType": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "slotIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "expectedCurrentRef": { "type": ["string", "null"], "maxLength": 120 },
+          "itemRef": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["mode", "operation", "characterRef", "slotType", "slotIndex", "expectedCurrentRef"],
+        "properties": {
+          "mode": { "enum": ["preview", "commit"] },
+          "operation": { "const": "unequip" },
+          "characterRef": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "slotType": { "type": "string", "minLength": 1, "maxLength": 80 },
+          "slotIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "expectedCurrentRef": { "type": "string", "minLength": 1, "maxLength": 120 }
+        }
+      }
+    ]
+  },
+  "outputSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": ["kind", "mode", "operation", "characterRef", "slot", "attributes", "equipment"],
+    "properties": {
+      "kind": { "const": "mutation" },
+      "mode": { "enum": ["preview", "commit"] },
+      "operation": { "enum": ["equip", "unequip"] },
+      "characterRef": { "type": "string" },
+      "slot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slotType", "slotIndex", "beforeRef", "afterRef"],
+        "properties": {
+          "slotType": { "type": "string" },
+          "slotIndex": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+          "beforeRef": { "type": ["string", "null"] },
+          "afterRef": { "type": ["string", "null"] }
+        }
+      },
+      "attributes": { "$ref": "#/$defs/attributeChange" },
+      "equipment": { "$ref": "#/$defs/equipment" }
+    },
+    "$defs": {
+      "safeInteger": { "type": "integer", "minimum": -9007199254740991, "maximum": 9007199254740991 },
+      "numericMap": {
+        "type": "object",
+        "propertyNames": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^\\S(?:.*\\S)?$" },
+        "additionalProperties": { "$ref": "#/$defs/safeInteger" }
+      },
+      "attributeChange": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["before", "after", "delta"],
+        "properties": {
+          "before": { "$ref": "#/$defs/numericMap" },
+          "after": { "$ref": "#/$defs/numericMap" },
+          "delta": { "$ref": "#/$defs/numericMap" }
+        }
+      },
+      "emptySlot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref"],
+        "properties": { "ref": { "type": "null" } }
+      },
+      "occupiedSlot": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ref"],
+        "properties": {
+          "ref": { "type": "string", "minLength": 1, "maxLength": 120 },
+          "applied": { "$ref": "#/$defs/numericMap" }
+        }
+      },
+      "equipment": {
+        "type": "object",
+        "propertyNames": { "type": "string", "minLength": 1, "maxLength": 80, "pattern": "^\\S(?:.*\\S)?$" },
+        "additionalProperties": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "oneOf": [{ "$ref": "#/$defs/emptySlot" }, { "$ref": "#/$defs/occupiedSlot" }] }
+        }
+      }
+    }
+  },
+  "executor": {
+    "type": "browser_script",
+    "path": "run.js",
+    "timeoutMs": 30000,
+    "helpers": ["equipment-core.js"]
+  }
+}

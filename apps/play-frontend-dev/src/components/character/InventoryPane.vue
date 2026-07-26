@@ -2,7 +2,7 @@
 /** InventoryPane — 在面板内导航容器，并用单物品 Dialog 展示详情。 */
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import type { CharacterEquipment } from "../../lib/character-types"
-import type { ContainerContent, ContainerEntity, InventoryEntity, ItemEntity } from "../../lib/item-types"
+import type { ContainerContent, ContainerEntity, InventoryEntity, InventoryEntityLoadStatus, ItemEntity } from "../../lib/item-types"
 import { isContainerEntity } from "../../lib/item-types"
 import { loadInventoryEntity } from "../../lib/load-inventory-entity"
 import { parseExtensionsOnly } from "../../lib/parse-entity"
@@ -19,6 +19,7 @@ const props = defineProps<{
   equipment?: CharacterEquipment
   highlightedItemRef: string | null
   requestedItemRef: string | null
+  refreshToken: number
 }>()
 
 const emit = defineEmits<{
@@ -30,7 +31,7 @@ interface RefSlot {
   ref: string
   count?: number
   entity: InventoryEntity | null
-  status: "ready" | "missing" | "loading" | "cycle"
+  status: InventoryEntityLoadStatus | "loading" | "cycle"
 }
 
 const path = ref<Array<{ ref: string; name: string }>>([])
@@ -50,11 +51,13 @@ let itemRequestVersion = 0
 
 const equipmentByRef = computed(() => {
   const map = new Map<string, EquippedSlotContext[]>()
-  for (const [name, slot] of Object.entries(props.equipment ?? {})) {
-    if (!slot.ref) continue
-    const contexts = map.get(slot.ref) ?? []
-    contexts.push({ name, slot })
-    map.set(slot.ref, contexts)
+  for (const [slotType, slots] of Object.entries(props.equipment ?? {})) {
+    slots.forEach((slot, slotIndex) => {
+      if (slot.ref === null) return
+      const contexts = map.get(slot.ref) ?? []
+      contexts.push({ name: `${slotType}第${slotIndex + 1}槽`, slot })
+      map.set(slot.ref, contexts)
+    })
   }
   return map
 })
@@ -72,6 +75,11 @@ watch(
   () => props.containers,
   () => void resetToRoot(),
   { deep: true },
+)
+
+watch(
+  () => props.refreshToken,
+  () => void refreshCurrentLayer(),
 )
 
 watch(
@@ -93,6 +101,31 @@ async function resetToRoot(): Promise<void> {
   currentContainer.value = null
   panelMessage.value = ""
   await loadSlots(props.containers ?? [], ++navigationVersion)
+}
+
+async function refreshCurrentLayer(): Promise<void> {
+  const version = ++navigationVersion
+  if (atRoot.value) {
+    currentContainer.value = null
+    await loadSlots(props.containers ?? [], version)
+    return
+  }
+  const current = path.value[path.value.length - 1]
+  if (!current) return
+  panelLoading.value = true
+  const result = await loadInventoryEntity(current.ref)
+  if (version !== navigationVersion) return
+  if (!result.entity || !isContainerEntity(result.entity)) {
+    panelMessage.value = "当前容器已不可读。"
+    panelLoading.value = false
+    return
+  }
+  currentContainer.value = result.entity
+  path.value = path.value.map((segment, index) => index === path.value.length - 1
+    ? { ...segment, name: result.entity?.name ?? segment.name }
+    : segment)
+  panelMessage.value = ""
+  await loadSlots(result.entity.contents, version)
 }
 
 async function loadSlots(contents: ContainerContent[], version: number): Promise<void> {
@@ -126,10 +159,11 @@ async function loadSlots(contents: ContainerContent[], version: number): Promise
 }
 
 async function selectGridItem(item: InventoryGridItem, trigger: HTMLElement): Promise<void> {
-  if (item.status !== "ready" || !item.entity) return
+  if (!item.entity) return
   if (isContainerEntity(item.entity)) {
+    if (item.status !== "ready") return
     await enterContainer(item.ref, item.entity)
-  } else {
+  } else if (item.status === "ready" || item.status === "schema-corrupt") {
     itemReturnFocus.value = trigger
     openItem(item.ref, item.entity)
   }

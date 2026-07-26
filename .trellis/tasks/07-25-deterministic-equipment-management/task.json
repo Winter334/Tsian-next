@@ -3,7 +3,7 @@
   "name": "deterministic-equipment-management",
   "title": "确定性装备管理与换装 UI",
   "description": "切换装备 Schema，提供卡内装备 Frontend Action、场记本地 Skill 和前端换装交互。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "platform-web",

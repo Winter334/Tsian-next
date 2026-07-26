@@ -1,3 +1,4 @@
+import { runEquipmentWorkerTransportPreflight } from "../src/platform-host/equipment-scripts/equipment-worker-preflight"
 import { ensureFrontendActionRuntimeReady } from "../src/platform-host/frontend-actions/preflight"
 
 const resultElement = document.querySelector<HTMLPreElement>("#result")
@@ -33,8 +34,11 @@ async function seedPlatformOriginStorage(): Promise<{ indexedDB: true; caches: t
 async function run(): Promise<void> {
   try {
     const pageOriginStorage = await seedPlatformOriginStorage()
-    const result = await ensureFrontendActionRuntimeReady()
-    publishResult("passed", { ok: true, pageOriginStorage, result })
+    const [result, equipmentTransport] = await Promise.all([
+      ensureFrontendActionRuntimeReady(),
+      runEquipmentWorkerTransportPreflight(),
+    ])
+    publishResult("passed", { ok: true, pageOriginStorage, result, equipmentTransport })
   } catch (error) {
     publishResult("failed", {
       ok: false,

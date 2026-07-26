@@ -20,7 +20,8 @@
   "skills": {
     "enabled": [
       "agents/stage-manager/skills/回合后维护/SKILL.md",
-      "agents/stage-manager/skills/schema演进检查/SKILL.md"
+      "agents/stage-manager/skills/schema演进检查/SKILL.md",
+      "agents/stage-manager/skills/装备管理/SKILL.md"
     ],
     "disabled": []
   },

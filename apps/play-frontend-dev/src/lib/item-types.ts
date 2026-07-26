@@ -23,12 +23,21 @@ export interface ContainerContent {
   count?: number
 }
 
-/** 装备物品的只读描述；mods 保留原始表达式字符串，前端不执行。 */
+/** 装备物品的确定性规则；前端只展示，不执行贡献公式。 */
 export interface ItemEquipment {
-  slot?: string
-  mods?: Record<string, string>
+  slotType: string
+  add?: Record<string, number>
+  percent?: Record<string, number>
   effects?: string[]
 }
+
+export type InventoryEntityLoadStatus =
+  | "ready"
+  | "missing"
+  | "read-failed"
+  | "invalid-json"
+  | "wrong-entity-type"
+  | "schema-corrupt"
 
 /**
  * container entity 强类型视图。id/name/brief 必填；type 必须为 "container"；
@@ -63,6 +72,8 @@ export interface ItemEntity {
   type: ItemType
   tags?: string[]
   equipment?: ItemEquipment
+  /** 装备规则字段缺省、有效或结构损坏。 */
+  equipmentStatus: "ready" | "absent" | "schema-corrupt"
   extensions?: Record<string, unknown>
   updatedAtTurn?: number
   updatedBy?: string | null

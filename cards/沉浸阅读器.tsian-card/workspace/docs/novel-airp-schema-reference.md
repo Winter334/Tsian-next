@@ -38,8 +38,8 @@
     { "ref": "container:萧玄行囊" }
   ],
   "equipment": {
-    "武器": { "ref": "item:粗铁短剑", "applied": { "体魄": 2 } },
-    "护甲": { "ref": null }
+    "武器": [{ "ref": "item:粗铁短剑", "applied": { "体魄": 2 } }],
+    "护甲": [{ "ref": null }]
   },
   "extensions": {
     "腐化值": { "render": "progress", "value": 37, "max": 100, "tone": "danger" }
@@ -47,13 +47,13 @@
 }
 ```
 
-`identity`/`appearance`/`attributes`/`gauges`/`status`/`traits`/`goals`/`background`/`equipment` 为 character 权威结构。`identity` 键为 `age`/`gender`/`role`/`affiliation`/`realm`。`attributes` 固定6维、值为非负整数，键名由世界架构师按世界观定义，基线为 5；装备刷新后这里保存当前有效属性。`gauges` 是自由命名数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`。`appearance` 是单段叙事字符串。`goals` 是 `{ current?, shortTerm?, longTerm? }`，每项字符串。`background` 是单段字符串。`status[].polarity` 取值 `positive`/`negative`/`neutral`。`traits` 是永久性稳定特质数组，每项 `{ id, name?, description?, effects? }`，`id` 必填（`trait:<localId>` 格式），表示特殊体质、天赋、系统、血脉、命格等稳定能力来源；区别于 `status[]`（当前临时状态），`traits[]` 是永久性的，不随单回合状态变化消失。`relationships` 不内嵌于 character entity；走 `save/relationships/character-<localId>.json` 分片。
+`identity`/`appearance`/`attributes`/`gauges`/`status`/`traits`/`goals`/`background`/`equipment` 为 character 权威结构。`identity` 键为 `age`/`gender`/`role`/`affiliation`/`realm`。`attributes` 固定6维、值为安全整数，键名由世界架构师按世界观定义，通常以 5 为建模基线；状态或装备贡献可使当前有效值低于 0。装备刷新后这里保存当前有效属性。`gauges` 是自由命名数组，每项 `{ id, name, value, max?, min?, unit?, tone? }`。`appearance` 是单段叙事字符串。`goals` 是 `{ current?, shortTerm?, longTerm? }`，每项字符串。`background` 是单段字符串。`status[].polarity` 取值 `positive`/`negative`/`neutral`。`traits` 是永久性稳定特质数组，每项 `{ id, name?, description?, effects? }`，`id` 必填（`trait:<localId>` 格式），表示特殊体质、天赋、系统、血脉、命格等稳定能力来源；区别于 `status[]`（当前临时状态），`traits[]` 是永久性的，不随单回合状态变化消失。`relationships` 不内嵌于 character entity；走 `save/relationships/character-<localId>.json` 分片。
 
 character 可选 `history?: Array<{ event: string }>`：人物履历，只记录会长期影响角色态度、关系、目标、创伤、秘密、承诺、恩怨或重要物件绑定的经历。每条只包含 `event` 一个字段；时间自然写入 `event` 文本，不另设 `time`。不要写 `turn`、`tags`、`eventKinds`、`涉及实体` 等内部检索字段；它不是 turn 索引，只是角色资料和正文 Agent 发起历史召回的语义入口。普通流水账不写入。
 
 character 可选 `containers?: Array<{ ref, count? }>`：当前持有的容器指针数组，ref 指向 `save/entities/container/<localId>.json`，`count` 缺省视为 1。角色不持有容器时省略该字段或写空数组。物品数量不写在 character 层，落在 container.contents[*].count。
 
-character 可选 `equipment?: Record<string, { ref: string | null; applied?: Record<string, number> }>`：当前装备栏。槽位名由当前游戏数据动态定义，不预设通用人体槽位；JSON key 顺序就是维护和展示顺序。`ref` 指向当前装备 item；空槽位写 `null`。`applied` 记录上一次完整装备刷新时本槽实际写入 `attributes` 的整数差值，只用于下次刷新前撤销旧影响，不是角色的裸装属性。
+character 可选 `equipment?: Record<string, Array<{ ref: string | null; applied?: Record<string, number> }>>`：key 是槽位类型，value 是固定容量的非空数组；保持 key 顺序与数组位置。精确空槽是 `{ "ref": null }`。occupied ref 必须是 canonical `item:<localId>`，`applied` 保存该槽当前实际整数贡献。
 
 ## container / item entity
 
@@ -90,31 +90,31 @@ container 字段：`id`（必填，`container:<localId>`）、`name`、`brief`�
 }
 ```
 
-item 字段：`id`（必填，`item:<localId>`）、`name`、`brief`、`type`（取值 `equipment`/`material`/`consumable`/`special`/`other` 五类之一；未知或不便归类写 `other`）、`tags?: string[]`（自由标签，用于列表分组或详情标签）、`equipment?: { slot?: string; mods?: Record<string, string>; effects?: string[] }`、`extensions?`（承载新增/临时可见字段，如药力进度、耐久、附魔层数；沿用 extensions 展示方式）。物品自身不存 `quantity`：数量由持有者 container.contents[*].count 表达。物品也不存 `status`：品相变化直接改 name/brief 或用 extensions（如 `{ 破损度: { render: 'progress' } }`），不再区分 status/extensions 两条路径。
+item 字段：`id`（必填，`item:<localId>`）、`name`、`brief`、`type`（取值 `equipment`/`material`/`consumable`/`special`/`other`）、`tags?: string[]`、`equipment?: { slotType: string; add?: Record<string, number>; percent?: Record<string, number>; effects?: string[] }`、`extensions?`。`slotType` 与目标槽位类型精确一致；`add`/`percent` 只引用角色已有属性且值为安全整数；`effects` 只用于叙事。数量只存于 container.contents[*].count。
 
 type 五类的语义指引：`equipment` 装备武器护甲等可佩戴/持握；`material` 材料矿石药材等制作/交易素材；`consumable` 消耗品丹药符箓一次性道具；`special` 剧情关键物任务物证；`other` 上述都不合适的杂项。归类不清时写 `other`，不发明第六类。`equipment` 只是说明物品可装备，不表示已经装备；谁正在使用它写在角色 `equipment`。
 
 ### 装备栏与装备刷新
 
-角色装备栏直接写在 character entity：
+角色装备栏按槽位类型分组为固定容量数组：
 
 ```json
 {
   "equipment": {
-    "武器": {
-      "ref": "item:玄铁剑",
-      "applied": { "体魄": 2, "法力": 1 }
-    },
-    "护甲": { "ref": null },
-    "饰品·左": { "ref": "item:聚灵玉佩", "applied": { "法力": 3 } },
-    "饰品·右": { "ref": null }
+    "武器": [
+      { "ref": "item:玄铁剑", "applied": { "体魄": 2, "法力": 1 } }
+    ],
+    "饰品": [
+      { "ref": null },
+      { "ref": null }
+    ]
   }
 }
 ```
 
-装备栏只记录“这个角色当前把哪件持有物作为哪个槽位的装备使用”。槽位由当前游戏数据动态定义，不预设通用人体槽位；保持 JSON key 原始顺序。装备不会从行囊、剑匣、储物袋等容器中移出；角色必须能从自己的 `containers` 递归找到该装备 ref。若装备 ref 不再由该角色持有，刷新装备时视为失效：撤销旧 `applied`，将该槽位写为 `{ "ref": null }`。不检查其他角色是否也引用同一个 item ref。
+装备仍留在角色独占的容器图中。容器引用和实体引用使用 canonical `<type>:<localId>`，文档 id 必须与路径精确一致。容器图用 active stack 判真实循环、completed 集去重菱形路径；其他角色不得到达该角色的任何容器。每个非空槽消耗该 item ref 的可达数量 1。
 
-装备物品在 item entity 中写 `equipment`：
+装备 item：
 
 ```json
 {
@@ -122,46 +122,18 @@ type 五类的语义指引：`equipment` 装备武器护甲等可佩戴/持握�
   "name": "聚灵玉佩",
   "brief": "温润玉佩，能缓慢聚拢周身灵气。",
   "type": "equipment",
-  "tags": ["玉佩", "灵器", "饰品"],
   "equipment": {
-    "slot": "饰品·左",
-    "mods": {
-      "法力": "*=1.2",
-      "悟性": "+=floor(根骨 * 0.15)",
-      "气运": "=max(气运, 8)"
-    },
-    "effects": [
-      "修炼时更容易感知周围灵气流动",
-      "在灵气充沛之地效果更明显"
-    ]
+    "slotType": "饰品",
+    "add": { "法力": 2 },
+    "percent": { "悟性": 15 },
+    "effects": ["静坐时更易感知周围灵气"]
   }
 }
 ```
 
-- `slot`：建议槽位名，不是平台强制约束；若当前角色装备栏采用对应槽位，可写同一自然名称。角色实际有哪些槽位只由该角色 `equipment` 的 key 决定。
-- `mods`：属性影响。key 是属性名；value 必须是 `+=`、`-=`、`*=`、`=` 开头的字符串。
-- `effects`：叙事效果，不自动改变数值。条件性、世界观性、战斗姿态等难以稳定量化的影响写在这里。
+当前非装备基线为 `baseline[attr] = attributes[attr] - Σ oldApplied[attr]`。每槽对属性的贡献只取整一次：`roundHalfAwayFromZero(add + abs(baseline) × percent / 100)`；所有槽读取同一基线，内部使用 BigInt，持久化值必须是安全整数。零贡献 key 省略，无非零贡献时省略 `applied`。
 
-`mods` 写法：
-
-```json
-{
-  "体魄": "+=2",
-  "气运": "-=1",
-  "法力": "*=1.2",
-  "魅力": "=max(魅力, 10)",
-  "悟性": "+=floor(根骨 * 0.15)"
-}
-```
-
-- `+=表达式`：当前属性增加表达式结果。
-- `-=表达式`：当前属性减少表达式结果。
-- `*=表达式`：当前属性乘以表达式结果，`applied` 记录新旧差值。
-- `=表达式`：当前属性设为表达式结果，`applied` 记录新旧差值。
-
-`mods` 是供 Stage Manager 解释的 Agent-facing 规则，不是平台可执行 DSL。表达式中可直接使用当前维护基线里的属性名，如 `体魄`、`悟性`、`根骨`、`法力`。有限函数只用 `floor`、`ceil`、`round`、`min`、`max`、`abs`、`clamp`。不要写裸数字、裸公式或对象式 modifier；所有 mods 都用上面的运算符字符串。平台没有 modifier 求值器，前端只读取维护后的投影。
-
-装备刷新规则：只有在装备、装备规则、角色属性或持有关系明确变化且所需上下文完整时，Stage Manager 才做一次完整角色投影维护。先从当前 `attributes` 撤销所有槽位旧 `applied` 得到基线；再验证每个非空 ref 可从角色 `containers` 递归到达且 item 的 `type` 为 `equipment`；然后按 `character.equipment` 的 JSON key 顺序解释合法 mods。每一步写回属性时取 `round` 后的整数，最低为 0，并把该槽实际整数差值写入新 `applied`。不可达 ref 撤销旧贡献后改成 `{ "ref": null }`。同一角色的 `attributes` 与整张 `equipment` 投影应一起写回；任一规则、属性引用、维护基线或持有关系无法确定时，保持旧投影，不猜测也不写部分结算结果。这里约定的是 Stage Manager 行为，不表示平台提供确定性求值器或数据库事务；已有存档也不会自动迁移或由模板覆盖 living schema。
+穿戴、卸下或替换只能调用装备管理 Skill；普通属性变化放入 `refresh.attributeChanges`，由 refresh 更新基线后重算全部有效装备。refresh 会清理 missing、unreachable、not-equipment 或 slot-type-mismatch 的结构合法旧槽；结构损坏、未知属性、数量不足、容器循环、共享容器或溢出全部失败且不写入。
 
 
 ## extensions

@@ -12,19 +12,10 @@ import { ref } from "vue"
 import type { Ref } from "vue"
 import type { EntityData } from "../lib/runtime-types"
 import { parseEntity } from "../lib/parse-entity"
+import { refToEntityPath } from "../lib/entity-ref"
 import { getTsianClient } from "./useTsian"
 
-/**
- * 把实体 ref 转成 workspace 文件路径。
- * `character:萧玄` → `save/entities/character/萧玄.json`
- */
-export function refToEntityPath(ref: string): string {
-  const idx = ref.indexOf(":")
-  if (idx <= 0) return `save/entities/${ref}.json`
-  const type = ref.slice(0, idx)
-  const localId = ref.slice(idx + 1)
-  return `save/entities/${type}/${localId}.json`
-}
+export { refToEntityPath } from "../lib/entity-ref"
 
 /**
  * useEntity — 实体按需读取薄封装。

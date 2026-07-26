@@ -1,9 +1,12 @@
 <script setup lang="ts">
 /** CharacterSlot — 选中角色的数据读取边界。 */
-import { computed, ref, watch } from "vue"
+import { computed, onBeforeUnmount, ref, watch } from "vue"
 import { useEntity } from "../../composables/useEntity"
+import { useEquipmentManagement, type EquipmentSlotSelection } from "../../composables/useEquipmentManagement"
 import { useRelationships } from "../../composables/useRelationships"
+import { useTsian } from "../../composables/useTsian"
 import { parseCharacter } from "../../lib/parse-character"
+import EquipmentManagementDialog from "../equipment/EquipmentManagementDialog.vue"
 import CharacterCard from "./CharacterCard.vue"
 import type { CharacterMode } from "./CharacterStage.vue"
 
@@ -26,8 +29,10 @@ const emit = defineEmits<{
 }>()
 
 const entityRef = computed(() => props.selectedRef ?? "")
+const { tsian } = useTsian()
 const { data: entityData, error: entityError, load: loadEntity } = useEntity(entityRef.value)
 const { data: relationshipsData, load: loadRelationships } = useRelationships(entityRef.value)
+const workspaceRefreshToken = ref(0)
 
 watch(
   () => props.runtimeRevision,
@@ -46,6 +51,30 @@ const character = computed(() => {
 
 const loading = computed(() => entityError.value === null && !entityData.value && Boolean(entityRef.value))
 
+async function reloadAuthoritativeCharacter(): Promise<void> {
+  if (!entityRef.value) return
+  await loadEntity()
+  workspaceRefreshToken.value += 1
+}
+
+const equipment = useEquipmentManagement(
+  tsian,
+  () => character.value,
+  reloadAuthoritativeCharacter,
+)
+const unsubscribeMutation = tsian.onWorkspaceMutation((event) => {
+  void equipment.handleWorkspaceMutation(event)
+})
+
+watch(
+  entityRef,
+  () => {
+    if (equipment.open.value) equipment.hide()
+  },
+)
+
+onBeforeUnmount(() => unsubscribeMutation())
+
 const characterCard = ref<InstanceType<typeof CharacterCard> | null>(null)
 
 function focusCharacterDrawerTrigger(): void {
@@ -57,6 +86,14 @@ defineExpose({ focusCharacterDrawerTrigger })
 function onPortraitUpdated(): void {
   void loadEntity()
   emit("portrait-updated")
+}
+
+function showEquipment(selection: EquipmentSlotSelection): void {
+  equipment.show(selection)
+}
+
+function updateEquipmentOpen(open: boolean): void {
+  if (!open) equipment.hide()
 }
 
 function updateTrackScroll(mode: CharacterMode, value: number): void {
@@ -76,10 +113,27 @@ function updateTrackScroll(mode: CharacterMode, value: number): void {
     :track-scroll-top="trackScrollTop"
     :mobile-hero-collapsed="mobileHeroCollapsed"
     :portrait-refresh-token="portraitRefreshToken"
+    :workspace-refresh-token="workspaceRefreshToken"
     @select="emit('select', $event)"
     @portrait-updated="onPortraitUpdated"
     @open-character-drawer="emit('open-character-drawer', $event)"
+    @activate-equipment="showEquipment"
     @update:active-mode="emit('update:active-mode', $event)"
     @update:track-scroll="updateTrackScroll"
+  />
+  <EquipmentManagementDialog
+    :open="equipment.open.value"
+    :selection="equipment.selection.value"
+    :candidates="equipment.candidates.value"
+    :loading="equipment.candidatesLoading.value"
+    :selected-item-ref="equipment.selectedItemRef.value"
+    :preview="equipment.preview.value"
+    :preview-pending="equipment.previewPending.value"
+    :commit-pending="equipment.commitPending.value"
+    :error-message="equipment.errorMessage.value"
+    :success-message="equipment.successMessage.value"
+    @update:open="updateEquipmentOpen"
+    @preview="equipment.runPreview"
+    @commit="equipment.commit"
   />
 </template>

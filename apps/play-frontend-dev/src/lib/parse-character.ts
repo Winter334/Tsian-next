@@ -30,6 +30,7 @@ import type {
   RelationshipEdge,
   RelationshipFile,
 } from "./character-types"
+import { parseEntityRef, validManagedName } from "./entity-ref"
 
 const VALID_POLARITIES: ReadonlySet<Polarity> = new Set(["positive", "negative", "neutral"])
 const VALID_TONES: ReadonlySet<GaugeTone> = new Set([
@@ -97,42 +98,53 @@ function parseGauges(raw: unknown): CharacterGauge[] | undefined {
   return out.length > 0 ? out : undefined
 }
 
-/** 归一 attributes（固定 6 维，键名由世界架构师按世界观定义）。
- *  遍历全部键取 number 值，非 number 丢弃该键。 */
-function parseAttributes(raw: unknown): CharacterAttributes | undefined {
-  if (!isRecord(raw)) return undefined
+/** 归一 attributes；任一受管键值损坏都会使整个映射无效。 */
+function parseAttributes(raw: unknown): CharacterAttributes | null {
+  if (!isRecord(raw)) return null
   const out: CharacterAttributes = {}
-  for (const [key, v] of Object.entries(raw)) {
-    if (typeof v === "number" && Number.isFinite(v)) out[key] = v
+  for (const [key, value] of Object.entries(raw)) {
+    if (!validManagedName(key) || !Number.isSafeInteger(value)) return null
+    out[key] = value as number
   }
-  return Object.keys(out).length > 0 ? out : undefined
+  return out
 }
 
-/**
- * 归一动态装备槽。单槽非法仅丢弃该槽，并按源对象遍历顺序写入结果。
- * `ref` 必须显式存在且为非空字符串或 null；`applied` 只保留有限数值。
- */
-function parseEquipment(raw: unknown): CharacterEquipment | undefined {
-  if (!isRecord(raw)) return undefined
-  const out: CharacterEquipment = {}
-  for (const [slotName, slotRaw] of Object.entries(raw)) {
-    if (!isRecord(slotRaw)) continue
-    const refRaw = slotRaw.ref
-    if (refRaw !== null && asString(refRaw) === undefined) continue
+function isSafeIntegerMap(value: unknown): value is Record<string, number> {
+  if (!isRecord(value)) return false
+  return Object.entries(value).every(([key, entry]) => validManagedName(key) && Number.isSafeInteger(entry))
+}
 
-    const slot: CharacterEquipmentSlot = {
-      ref: refRaw === null ? null : (refRaw as string),
-    }
-    if (isRecord(slotRaw.applied)) {
-      const applied: Record<string, number> = {}
-      for (const [attribute, value] of Object.entries(slotRaw.applied)) {
-        if (typeof value === "number" && Number.isFinite(value)) applied[attribute] = value
+function canonicalRef(value: unknown, expectedType: "character" | "container" | "item"): value is string {
+  return parseEntityRef(value, expectedType) !== null
+}
+
+/** 装备投影必须整体满足新数组 schema；任何坏槽都会使整个装备区域不可用。 */
+function parseEquipment(raw: unknown, attributes: CharacterAttributes): CharacterEquipment | null {
+  if (!isRecord(raw)) return null
+  const out: CharacterEquipment = {}
+  for (const [slotType, slotsRaw] of Object.entries(raw)) {
+    if (!validManagedName(slotType) || !Array.isArray(slotsRaw) || slotsRaw.length === 0) return null
+    const slots: CharacterEquipmentSlot[] = []
+    for (const rawSlot of slotsRaw) {
+      if (!isRecord(rawSlot)) return null
+      const keys = Object.keys(rawSlot)
+      if (rawSlot.ref === null) {
+        if (keys.length !== 1 || keys[0] !== "ref") return null
+        slots.push({ ref: null })
+        continue
       }
-      if (Object.keys(applied).length > 0) slot.applied = applied
+      if (!canonicalRef(rawSlot.ref, "item") || keys.some((key) => key !== "ref" && key !== "applied")) return null
+      const slot: CharacterEquipmentSlot = { ref: rawSlot.ref }
+      if (rawSlot.applied !== undefined) {
+        if (!isSafeIntegerMap(rawSlot.applied)
+          || Object.keys(rawSlot.applied).some((key) => !Object.prototype.hasOwnProperty.call(attributes, key))) return null
+        if (Object.keys(rawSlot.applied).length > 0) slot.applied = { ...rawSlot.applied }
+      }
+      slots.push(slot)
     }
-    out[slotName] = slot
+    out[slotType] = slots
   }
-  return Object.keys(out).length > 0 ? out : undefined
+  return out
 }
 
 /** 归一 status 数组（逐项校验 id；polarity 归一 union）。 */
@@ -225,21 +237,21 @@ function parseAliases(raw: unknown): string[] | undefined {
 }
 
 /**
- * 归一 containers 数组（逐项校验 ref 字符串；count 可选 number）。
- * 缺 ref 的项丢弃；空数组返回 undefined（调用方按"未持有容器"降级）。
- * 对齐 task 07-04 design §4 / §5.3。
+ * 归一角色持有容器根。根 entry 必须是 exact `{ ref, count? }`，且 count 只能缺省或为 1。
+ * 返回 null 表示 ownership projection 损坏；缺省字段仍表示没有持有容器。
  */
-function parseContainers(raw: unknown): Array<{ ref: string; count?: number }> | undefined {
-  if (!Array.isArray(raw)) return undefined
+function parseContainers(raw: unknown): Array<{ ref: string; count?: number }> | undefined | null {
+  if (raw === undefined) return undefined
+  if (!Array.isArray(raw)) return null
   const out: Array<{ ref: string; count?: number }> = []
   for (const item of raw) {
-    if (!isRecord(item)) continue
-    const ref = asString(item.ref)
-    if (!ref) continue
-    const count = asNumber(item.count)
-    if (count !== undefined && count <= 0) continue
-    const entry: { ref: string; count?: number } = { ref }
-    if (count !== undefined) entry.count = count
+    if (!isRecord(item)) return null
+    const keys = Object.keys(item)
+    if (keys.some((key) => key !== "ref" && key !== "count")
+      || !canonicalRef(item.ref, "container")
+      || (item.count !== undefined && item.count !== 1)) return null
+    const entry: { ref: string; count?: number } = { ref: item.ref }
+    if (item.count === 1) entry.count = 1
     out.push(entry)
   }
   return out.length > 0 ? out : undefined
@@ -278,9 +290,17 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
   const id = asString(raw.id)
   const name = asString(raw.name)
   const brief = asString(raw.brief)
-  if (!id || !name || !brief) return null
+  if (!id || !name || !brief || !canonicalRef(id, "character")) return null
 
-  const entity: CharacterEntity = { id, name, brief }
+  const attributes = raw.attributes === undefined ? undefined : parseAttributes(raw.attributes)
+  const containers = parseContainers(raw.containers)
+  const equipmentInputsReady = attributes !== null && containers !== null && raw.attributes !== undefined
+  const entity: CharacterEntity = {
+    id,
+    name,
+    brief,
+    equipmentStatus: raw.equipment === undefined ? "absent" : "schema-corrupt",
+  }
 
   const aliases = parseAliases(raw.aliases)
   if (aliases) entity.aliases = aliases
@@ -295,11 +315,15 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
   const appearance = asString(raw.appearance)
   if (appearance) entity.appearance = appearance
 
-  const attributes = parseAttributes(raw.attributes)
-  if (attributes) entity.attributes = attributes
+  if (attributes !== undefined && attributes !== null) entity.attributes = attributes
 
-  const equipment = parseEquipment(raw.equipment)
-  if (equipment) entity.equipment = equipment
+  if (raw.equipment !== undefined && equipmentInputsReady && attributes) {
+    const equipment = parseEquipment(raw.equipment, attributes)
+    if (equipment) {
+      entity.equipment = equipment
+      entity.equipmentStatus = "ready"
+    }
+  }
 
   const gauges = parseGauges(raw.gauges)
   if (gauges) entity.gauges = gauges
@@ -319,8 +343,7 @@ export function parseCharacter(raw: unknown): CharacterEntity | null {
   const history = parseHistory(raw.history)
   if (history) entity.history = history
 
-  const containers = parseContainers(raw.containers)
-  if (containers) entity.containers = containers
+  if (containers !== undefined && containers !== null) entity.containers = containers
 
   // portrait UI/media 引用元数据（task 07-05 design D3）。
   const portrait = parsePortrait(raw.portrait)

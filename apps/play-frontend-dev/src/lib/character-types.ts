@@ -105,17 +105,19 @@ export interface CharacterHistoryEvent {
 export type CharacterAttributes = Record<string, number>
 
 /** 角色动态装备槽。`applied` 是已结算进 attributes 的实际贡献。 */
-export interface CharacterEquipmentSlot {
-  ref: string | null
-  applied?: Record<string, number>
-}
+export type CharacterEquipmentSlot =
+  | { ref: null }
+  | { ref: string; applied?: Record<string, number> }
 
-/** 动态槽位名到装备槽的映射；键顺序即展示与结算顺序。 */
-export type CharacterEquipment = Record<string, CharacterEquipmentSlot>
+/** 动态槽位类型到固定容量槽位数组的映射；键与数组顺序均来自存档。 */
+export type CharacterEquipment = Record<string, CharacterEquipmentSlot[]>
+
+export type CharacterEquipmentStatus = "ready" | "absent" | "schema-corrupt"
 
 /**
  * character entity 强类型视图（design §3.1）。
- * id/name/brief 必填；其余字段可选。extensions 由 parseCharacter 透传 raw，
+ * id/name/brief 必填；其余字段可选。equipmentStatus 始终存在，供装备区域在
+ * 投影损坏时禁用交互但保留角色主体。extensions 由 parseCharacter 透传 raw，
  * 由 UI 调 parseExtensionsOnly/displayItems 单独解析（不在本类型展开）。
  */
 export interface CharacterEntity {
@@ -131,8 +133,10 @@ export interface CharacterEntity {
   gender?: string
   appearance?: string
   attributes?: CharacterAttributes
-  /** 动态装备槽；槽位名与顺序来自 workspace 数据，不由前端补齐或排序。 */
+  /** 动态装备槽；槽位类型、容量与顺序来自 workspace 数据。 */
   equipment?: CharacterEquipment
+  /** equipment 缺省、有效或结构损坏；损坏时仍保留其他角色字段供展示。 */
+  equipmentStatus: CharacterEquipmentStatus
   gauges?: CharacterGauge[]
   status?: CharacterStatus[]
   /**

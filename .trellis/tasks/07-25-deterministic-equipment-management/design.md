@@ -1,12 +1,53 @@
 # Technical Design
 
-## Dependency Gate
+## Dependency Gate And Frozen Baseline
 
-本任务只在 `07-25-card-frontend-action-runtime` 已提交并归档后开始。实现前先按实际落地的 manifest、错误和 test harness 契约复核本设计；不得在装备代码中复制桥接、权限、CAS 或通知能力。
+`07-25-card-frontend-action-runtime` 已由 `4cdeca9` 实现、由 `e174bb3` 归档。本任务直接使用最终 API：固定目录 manifest、strict JSON/Ajv、opaque-origin Worker、`tsian.action.fail`、immutable snapshot/read-set CAS、two-stage commit lease、path-only mutation event 和 no-checkpoint commit。装备代码不得复制桥接、权限、CAS 或通知能力。
+
+实现开始时记录 dirty baseline；保留全部现有 `07-21-*` planning edits。冻结正式卡 `frontend/**`、`frontendFiles`、coverFiles、manifest、exportedAt 和 exporter metadata。
+
+## Canonical Reference And Entity Loading
+
+### Reference grammar
+
+装备 Action/Skill 各自实现相同的 pure parser，并由 shared fixtures 约束：
+
+```text
+<ref>      := <type> ":" <localId>
+<type>     := "character" | "container" | "item"
+<segment>  := trimmed non-empty string, <= 80 UTF-16 code units
+<ref>      := <= 120 UTF-16 code units
+```
+
+segment 拒绝 `/`、`\\`、`:`、NUL、`.`、`..`；完整 ref 必须等于自身 trim 且恰有一个冒号。调用点必须传 expected type。canonical path：
+
+```text
+save/entities/<type>/<localId>.json
+```
+
+读取后：
+
+- document 必须是 plain JSON object；
+- `id` 必须与请求 ref 和 filename 精确一致；
+- container 要求 `type:"container"`；
+- item `type` 为 `equipment|material|consumable|special|other`；
+- character 不新增冗余 type 字段，靠 character schema/owned fields 判定。
+
+Action missing read 返回 `null`，Skill missing read 可能抛 operation error。两边各自用 local loader 归一为相同 core-level missing result，不让业务逻辑依赖 transport 差异。
+
+### Character discovery
+
+角色平铺在 `save/entities/character/*.json`。跨角色 ownership index 使用 direct：
+
+```js
+tsian.workspace.list({ scope: "effective", path: "save/entities/character" })
+```
+
+只处理直属 `<localId>.json` file entry；忽略目录和非 JSON。不得用 result 上限为 200 的 `glob` 枚举完整角色集。直属 JSON unreadable、JSON 非法、id/filename 不一致，或 ownership projection 非法时 fail closed，因为 exclusive ownership 无法证明。
 
 ## Canonical Data Model
 
-角色只保留：
+角色装备：
 
 ```ts
 type CharacterEquipment = Record<string, EquipmentSlot[]>
@@ -16,7 +57,12 @@ type EquipmentSlot =
   | { ref: string; applied?: Record<string, number> }
 ```
 
-物品只保留：
+- slotType 是非空 trimmed string，最长 80；数组非空，其现有长度是该类型固定容量。
+- empty exact shape 是 `{ref:null}`。
+- occupied exact shape 是 `{ref:itemRef, applied?}`。
+- output 保持 authored slotType key order、array positions 和 attribute key order。
+
+物品装备：
 
 ```ts
 interface ItemEquipment {
@@ -27,85 +73,136 @@ interface ItemEquipment {
 }
 ```
 
-Parser/validator 是 fail-closed：结构不是上述形态即报 corrupt，不接受 interim schema。写回只替换角色 document 的 `attributes` 和 `equipment`，其余字段从读取快照原样保留。
+Parser/validator fail closed，不接受旧 `slot/mods/operator`。写回复制读取到的 character document，只替换 `attributes` 和 `equipment`。
 
-## Deterministic Core
+## Deterministic Core Pipeline
 
-Frontend Action 与 Skill 分别内置同语义 core。core 分为五个无副作用阶段：
+Action 与 Skill 各自内置同语义 core。不得抽成跨资源 production module。每个 core 分为：
 
-1. **load**：读取角色、所有 relevant entities 和 container entries。
-2. **validate**：验证 schema、安全整数、slot 地址、ownership graph 和数量。
-3. **baseline**：按角色属性 key 顺序从 active attributes 减去所有旧 applied。
-4. **plan**：应用 operation/attributeChanges，验证或清理 projection，重算所有合法槽位。
-5. **normalize**：构造新 attributes/equipment、delta 和稳定业务结果；此时仍无写入。
+1. **parse input/ref**：closed input、operation-specific fields、canonical refs、safe slotIndex。
+2. **load**：target character、direct character index、target/foreign containers、所需 item documents。
+3. **validate structure**：character/equipment/attributes/old applied/root/container entries。
+4. **build graph**：target reachable containers + quantities，再做 foreign ownership proof。
+5. **recover baseline**：从 current attributes 按 stored old applied 原值撤销。
+6. **classify**：stored live/stale projection；refresh 清 stale，mutation 遇任何 stale 返回 refresh-required。
+7. **plan operation**：expected-ref、candidate、quantity demand、attributeChanges。
+8. **recalculate**：所有 live equipment 读取同一 post-change baseline。
+9. **normalize output/document**：strict JSON、key/order/slot capacity。
+10. **write last**：preview 不写；Action commit/Skill mutation 均只写一次 character。
 
-计划顺序固定为：
+Skill 没有 per-script savepoint。步骤 1–9 必须包含所有可失败工作，唯一 write 后不得再 parse、校验、计算或构造可能失败的 output。
 
-1. 验证 character attributes 与每个 stored applied；missing applied 当空 map，unknown applied key 是 corruption，`ref:null` 携 applied 是 corruption。
-2. 按存储的 old applied 原值恢复 baseline；item 当前规则即使已变，也不反推旧 contribution。
-3. refresh 把 default-empty attributeChanges 加到 recovered baseline；每个 key 必须已存在。
-4. 分类 stored projection；refresh 清 stale 时仍保留步骤 2 对其 old snapshot 的撤销。
-5. 所有 live item 都读取同一个 post-change baseline，独立算 contribution。
-6. final attributes = post-change baseline + all new applied；原子替换角色完整 attributes/equipment。
+### Validation precedence
 
-commit 仅在完整 plan 成功后写角色 entity。preview 返回同一 plan 的 public output，不执行 write。
+首个失败按固定顺序决定：
 
-### Exact arithmetic
+```text
+input/ref
+→ character/equipment structure
+→ attributes/old applied
+→ target slot/expected ref
+→ target graph
+→ foreign ownership proof
+→ all stored projection classification
+→ requested candidate
+→ resulting quantity
+→ arithmetic/output normalization
+```
 
-所有 JSON number 先验证 `Number.isSafeInteger` 再转 BigInt。BigInt reduction 是 unbounded，不在 partial sum 或 numerator 上做 safe-range check，避免不同 enumeration order 因中间越界得到不同结果。只在语义 checkpoint 检查 safe range：每属性 recovered baseline、应用 attributeChanges 后 baseline、每槽 round 后 contribution 和最终 persisted attribute。对每个角色已有属性：
+runtime schema/CAS/abort/timeout 是平台错误，不进入 business parity。
+
+## Exact Arithmetic
+
+所有受管 JSON number 先 `Number.isSafeInteger` 后转 BigInt。求和、numerator 和 cancellation 使用 unbounded BigInt，不因中间值越 safe range 而产生顺序依赖。
+
+对每个属性：
 
 ```text
 baseline = current - sum(oldApplied)
-refreshBaseline = baseline + attributeChanges
-numerator = 100 * add + abs(refreshBaseline) * percent
-contribution = roundAwayFromZero(numerator / 100)
-final = refreshBaseline + sum(contribution)
+postChangeBaseline = baseline + (refresh attributeChanges ?? 0)
+numerator = 100 * add + abs(postChangeBaseline) * percent
+contribution = roundHalfAwayFromZero(numerator / 100)
+final = postChangeBaseline + sum(contribution)
 ```
 
-属性遍历沿用角色原 key 顺序；modifier lookup 不依赖 object enumeration 顺序。规范化 applied 按角色属性顺序生成，零值 key 省略，全部为零则省略 applied。
-
-## Container Graph
-
-构建一次 canonical ownership index：
+half-away：
 
 ```text
-buildTargetGraph(character):
-  roots = character.containers in authored order
-  dfs(containerRef, activeStack, visited):
-    if containerRef in activeStack -> EQUIPMENT_CONTAINER_CYCLE
-    if containerRef in visited -> return
-    visited.add(containerRef)
-    for each entry in container authored order:
-      if entry resolves to container:
-        require entry.count absent or exactly 1
-        dfs(entry.ref)
-      else:
-        count = entry.count ?? 1; require positive safe integer
-        available[entry.ref] += count using unbounded BigInt
-  require every available result safe before comparison/output
-
-demand(ref) = number of non-null equipment slots using ref after operation
+magnitude = abs(numerator)
+quotient = magnitude / 100
+remainder = magnitude % 100
+if remainder * 2 >= 100: quotient += 1
+result = sign(numerator) * quotient
 ```
 
-同一唯一 container 内重复 item entry 和多个唯一 container 中的同 ref 都求和；visited 保证多路径不重复内容。为证明独占，对其他 character roots 做 deterministic traversal，但只要确认是否命中 target visited container set；完全无关图的 cycle/malformed branch 不阻塞目标操作。target container 被任一其他角色 reach 即 `EQUIPMENT_SHARED_CONTAINER`。同一 item ref 存在于互不共享的独占图中按各自 count 独立，不是 shared ownership。所有 error details 中的 refs/paths/slots 先 canonical sort。
+只在语义 checkpoint 检查 safe range：recovered baseline、post-change baseline、每槽 contribution、public reachable quantity/error detail，以及 final persisted attribute。BigInt 不得进入 Workspace write、output、SDK args 或 error details。
 
-图读取必须使用 Frontend Action runtime 的 list/glob/read adapter，因此 ownership、items 和 character 文件都进入 optimistic read set。Skill 执行也基于自身一次调用的有效 Workspace 快照和 staged mutations。
+## Container Graph And Ownership
+
+### Exact entries
+
+```ts
+interface RefEntry {
+  ref: string
+  count?: number
+}
+```
+
+root/contents entry 必须是只含 `ref/count?` 的 object。
+
+- character root / nested container ref：count absent → 1；显式只能 1；不会乘算 descendants。
+- item ref：count absent → 1；显式必须 positive safe integer。
+- 其他 type、额外字段、非法 count/ref → corruption。
+
+### Target traversal
+
+```text
+walkTarget(containerRef, activeStack, completed):
+  if containerRef in activeStack: cycle
+  if containerRef in completed: return
+  load/validate container
+  activeStack.add(containerRef)
+  for entry in authored order:
+    if container: recurse
+    if item: available[itemRef] += count using BigInt
+  activeStack.delete(containerRef)
+  completed.add(containerRef)
+```
+
+`activeStack` 区分 true back-edge；`completed` 处理 diamond/repeated path。target item ref 即使 document missing 仍累计 raw quantity；item validity 在 projection/candidate 阶段判断。
+
+### Foreign ownership proof
+
+完成 target set 后 direct-list 所有其他 characters，遍历其 container edges 直到：
+
+- 命中 target set → `EQUIPMENT_SHARED_CONTAINER`；
+- graph exhaustion → 该角色不共享。
+
+foreign traversal 同样使用 active/completed。只要外部 root/container/edge malformed 或 unreadable 导致无法排除 target overlap，就 fail closed；不与 target 相交的 foreign cycle 可终止该 branch，不单独把目标操作判为 target cycle。foreign item document、item modifiers 和 item count 不参与 container ownership proof。
+
+### Quantity
+
+变更后每个 occupied slot 对 ref 贡献 demand 1。available/demand 均用 BigInt 聚合；比较前后需要公开/写入的数值 checked-convert。`demand > available` → `EQUIPMENT_QUANTITY_EXHAUSTED`。
 
 ## Projection Classification
 
-先验证所有 slot 与旧 applied 的结构。结构/数值错误永远是 corruption；`ref:null` 只能是 `{ ref:null }`。结构合法后，existing occupied projection 的 missing entity、unreachable、non-equipment 或 item.slotType mismatch 都是 stale，无论是否为当前 target。
+先验证所有 slot/old applied 结构并恢复 baseline。结构错误始终 corruption；`ref:null` 只能 exact empty shape。
 
-- `refresh`：按 old snapshot 已恢复 baseline 后，把 stale slot 规范化为空并继续。
-- `equip`/`unequip`：任何 stored stale slot 都返回 `EQUIPMENT_REFRESH_REQUIRED`，目标槽也不能直接替换/清除；零写入。
-- 新 equip candidate 缺失、不可达、非装备或 type mismatch 是请求错误，分别返回 item-not-found/not-reachable/data-invalid/slot-type-mismatch，不视为可清 projection。
+结构合法的 occupied stored projection 分类：
 
-在清理/修改后，按 ref 聚合 occupied slot demand 并与 reachable available 比较；超额是 `EQUIPMENT_QUANTITY_EXHAUSTED` corruption，整次失败。Frontend Action v1 无 refresh，UI 对 refresh-required 只能提示先运行 Stage Manager maintenance/装备管理 refresh 后再重试，不通过 equip/unequip 偷做 repair。
+- item missing；
+- unreachable；
+- item type 非 equipment；
+- item equipment.slotType mismatch；
+- live。
 
-## Operations
+refresh 撤销 old applied 后清 stale 并继续；equip/unequip 遇任一 stored stale（target 或 unrelated）均返回 `EQUIPMENT_REFRESH_REQUIRED`，零写入。新 candidate missing/unreachable/non-equipment/type mismatch 分别是 request/domain error，不是 repair。
 
-### Exact manifest schemas
+## Operations And Schemas
 
-`action.json` 的 inputSchema 使用 `oneOf` 两个 `additionalProperties:false` object：
+### Action input
+
+`action.json.inputSchema` 用 `oneOf` 两个 `additionalProperties:false` object：
 
 ```ts
 type EquipmentActionInput =
@@ -128,7 +225,9 @@ type EquipmentActionInput =
     }
 ```
 
-所有 string 必须 `minLength:1` 且等于自身 trim；`slotIndex` 是 `minimum:0` 的 safe integer，runtime/core 还验证其不超过现有 array length-1。equip 必须 itemRef，unequip schema 中 itemRef 不存在。unequip 的 expectedCurrentRef 必须 nonempty string，因为空槽不能卸装；equip 可用 null 填空槽或 string 替换占用槽。outputSchema 对下面完整 nested shape 每层 `additionalProperties:false`，attributes/equipment 的 dynamic maps 用 safe-integer/slot schemas 约束：
+Schema 对 slotIndex 写 safe-integer bounds；canonical trim/ref/type 由 core 复核。unequip expectedCurrentRef 必须 non-null item ref。
+
+### Action output
 
 ```ts
 interface EquipmentMutationResult {
@@ -151,9 +250,22 @@ interface EquipmentMutationResult {
 }
 ```
 
-before/after 保留全部角色属性，delta 仅包含非零变化并按角色属性顺序。preview/commit 的业务 output 完全相同，仅 mode 不同。
+Schema 规则：
 
-Skill `equip`/`unequip` input/output 与 Action mutation schema 相同，但不暴露 mode（隐含 commit）；transport adapter parity 时补成 canonical mutation shape。Skill refresh 使用独立 schema：
+- fixed wrappers/slots `additionalProperties:false`；
+- dynamic numeric maps 使用 schema-valued `additionalProperties` + safe integer min/max；
+- equipment 使用 schema-valued `additionalProperties` 指向 `minItems:1` slot arrays；
+- fixed capacity 是 core 验证 before/after 各数组长度完全相同，不在 manifest 写一个全局 maxItems；
+- slot `oneOf` exact empty/occupied；
+- 不使用 remote ref、`$id`、anchor/dynamic vocabulary。
+
+before/after 保留全部属性，delta 只含非零变化，均按原 attribute order。preview/commit 业务结果仅 mode 不同。
+
+### Skill actions
+
+Skill 声明 `equip`、`unequip`、`refresh` 三个 browser-script action，使用三个薄入口和 Skill-local `scripts/equipment-core.js`。Skill action name 不由 runtime 注入，因此不要让单一入口猜测 operation。
+
+Skill declaration schema 仅为 discovery/浅层 guard；core 完整验证 nested input/output。equip/unequip 输出与 Action 去 mode 后一致。refresh：
 
 ```ts
 interface EquipmentRefreshResult {
@@ -174,23 +286,30 @@ interface EquipmentRefreshResult {
 }
 ```
 
-clearedSlots 按 character slotType authored order + slotIndex 排序。commit durable 后由平台附带 mutation lifecycle，不把文件内容放入 event。
+clearedSlots 按 authored slotType order + slotIndex。
 
-### Stage Manager Skill
+## Stable Errors And Runtime Adapters
 
-Skill 固定目录 `agents/stage-manager/skills/装备管理/`，声明三个 browser-script action：
+Core failure：
 
-- `equip`：等价于 Action `mode=commit, operation=equip`；
-- `unequip`：等价于 Action `mode=commit, operation=unequip`；
-- `refresh`：读取全部槽，清 stale projection，并在 baseline 上应用可选 attributeChanges 后重算。
+```ts
+interface EquipmentBusinessFailure {
+  code: string
+  message: string
+  details?: JsonValue
+}
+```
 
-refresh 返回独立 `EquipmentRefreshResult`，不伪造单一 target slot。Prompt 要求场记把正常属性增减交给 refresh，不得先用 generic edit 改 active attributes。shared parity 只比较 equip/unequip；refresh 使用 Skill-only vectors。
+Action adapter 捕获 core failure 并调用 `tsian.action.fail`。Skill adapter 抛带同字段的 error-like value；production run_script 会把它包装在 script error details 中。
 
-## Stable Errors And Precedence
+Parity normalizer：
 
-Domain validation 使用固定顺序，首个失败决定 code：input schema → character/slot structure → attributes/old applied → target slot/expected ref → target ownership graph/shared overlap → all stored projection classification → requested candidate → resulting quantity → arithmetic/output normalization。runtime input/output schema、CAS conflict、abort、timeout 属于平台 transport errors，不纳入两 core domain parity。
+- Action：只接受 dedicated domain envelope；
+- direct Skill harness：读取 thrown `code/message/details`；
+- production run_script regression：读取 wrapper 内 scriptError；
+- 比较 canonical `{code,details}`，不要求 raw envelope 相同。
 
-两个 core 对 shared operation 使用相同业务 code/details schema；diagnostic arrays 全部 canonical sort：
+稳定 codes/details：
 
 ```text
 EQUIPMENT_CHARACTER_NOT_FOUND { characterRef }
@@ -208,61 +327,144 @@ EQUIPMENT_CONTAINER_CYCLE { characterRef, containerRefs:string[] }
 EQUIPMENT_SHARED_CONTAINER { characterRef, otherCharacterRefs:string[], containerRefs:string[] }
 ```
 
-`EQUIPMENT_DATA_INVALID.area` 是 allowlisted enum（character/equipment/applied/item/container/count），不回传 raw path/content。Action core 通过 runtime dedicated `tsian.action.fail({ code, message, details })` 发出，SDK 得到 `kind:"domain"`；Skill core 发出 run_script domain failure。所有 code/message/details 满足 runtime envelope 的长度、strict-JSON 与无 raw path/content 限制。测试剥离 transport 后比较 `{ code, details }` exact deep equality。
+`EQUIPMENT_DATA_INVALID.area` allowlist：character/equipment/applied/item/container/count/ref/ownership。不得包含 raw path/content/stack。diagnostic arrays canonical sort。
 
 ## Canonical Black-Box Fixtures
 
-Canonical fixtures 分为两个 suites，但共享同一 case schema：
+Prospective test-only location：
+
+```text
+apps/platform-web/src/platform-host/equipment-scripts/
+├── equipment-cases.json
+├── equipment-script-harness.ts
+└── equipment-scripts.test.ts
+```
+
+Fixture content 区分 JSON/text encoding：
 
 ```ts
+type FixtureContent =
+  | { encoding: "json"; value: JsonValue }
+  | { encoding: "text"; value: string }
+
 interface EquipmentFixtureCase {
+  schemaVersion: 1
+  id: string
   suite: "shared-mutation" | "skill-refresh"
-  name: string
   operation: "equip" | "unequip" | "refresh"
-  workspace: Array<{ path: string; content: JsonValue }>
   input: Record<string, JsonValue>
+  workspace: Array<{
+    scope: "card-content" | "save-runtime"
+    path: string
+    content: FixtureContent
+  }>
   expected:
-    | { ok: true; output: JsonValue; writes: JsonValue }
-    | { ok: false; code: string; details: JsonValue; writes: [] }
+    | { ok: true; output: JsonValue; stateChanges: Array<{ path: string; content: FixtureContent }> }
+    | { ok: false; error: { code: string; details?: JsonValue }; stateChanges: [] }
 }
 ```
 
-`shared-mutation` 的 equip/unequip 分别运行 Action script 与 Skill script，通过 adapter 归一 mode 后 exact compare output/domain error/staged writes；`skill-refresh` 只运行 Skill。runtime CAS/abort/timeout/schema transport errors 由 runtime suite 测试，不混入业务 parity。
+Execution matrix：
 
-cases 至少覆盖：空槽装备、直接替换、卸装、负 baseline、正/负 percent、正负 half tie、一次取整反例、slot 与 add/percent key permutation、safe-limit cancellation、同 ref count、同 container 多路径去重、重复 item entry、quantity exhausted、stored item rules 已变但按 old applied 恢复、stale refresh、target/unrelated stale refresh-required、unknown old applied/attributeChanges、malformed applied/count/container-ref count、cycle/shared ownership、无关角色损坏不阻塞、各语义 checkpoint overflow、expected-ref conflict 和 preview zero-write。
+- shared-mutation：internal/formal × Action preview/commit/Skill；
+- skill-refresh：internal/formal × Skill；
+- each target fresh Workspace transaction；无 target-specific skip。
 
-Fixture 是合同数据，不抽取两个资源共享的 production core；否则无法证明分发副本一致。
+Harness 使用 production Action registry/import validator、production Skill declaration/path resolver 和 runtime transaction adapters；AsyncFunction 仅负责执行真实分发脚本文本。browser scripts 以 Babel `allowReturnOutsideFunction/allowAwaitOutsideFunction` 解析，不用普通 `node --check`。
 
-## Schema And Card Synchronization
+Normalizer 只剥离 mode、transport wrapper、correlationId 和 write wrapper。Action preview 零 writes；commit/Skill staged state 精确匹配；failure 零 writes。runtime CAS/abort/CSP/timeout 继续由 runtime child tests 覆盖。
 
-以新结构同步：
+最小 case matrix 包含 empty/replace/unequip、expected ref、positive/negative half ties、一次取整反例、order permutation、safe cancellation/overflow、duplicate/multi-path counts、quantity exhausted、true cycle、shared/indeterminate ownership、stored rule changed、target/unrelated stale、refresh idempotency、malformed ref/applied/count、unknown attributes 和 preview zero-write。
 
-1. internal AIRP guide/reference 和 default living schema/entity examples；
-2. internal default Workspace 的 `frontend-actions/equipment/**`；
-3. internal Stage Manager prompt/schema context 和 agent-local equipment Skill；
-4. formal card AIRP docs；
-5. formal Stage Manager Agent、现有 maintenance Skill 和新增 local equipment Skill；
-6. formal card `workspace/frontend-actions/equipment/**`；
-7. rebuild formal card `workspaceFiles` from disk。
+## Internal And Formal Resource Layout
 
-internal template constants 是同步 authority。测试把 default Workspace materialize 到临时目录，再对设备相关 Action、Skill、schema docs 与 formal Workspace 文件做 byte-for-byte 比较；只允许在明确 exception list 中保留 formal-card 特有 Stage Manager orchestration 差异。canonical suites 同时执行 materialized internal scripts 与 formal-card scripts，防止 TypeScript template escaping 漂移。
+Internal template 新建 scoped equipment Action module/group，不把 Action source 塞进 Stage Manager/docs collection。materialized paths：
 
-保留 card package metadata、coverFiles、frontendFiles 和 exportedAt。删除所有 interim operator/schema 指令，但不触碰 07-21 image-generation planning edits。
+```text
+frontend-actions/equipment/action.json
+frontend-actions/equipment/run.js
+agents/stage-manager/skills/装备管理/SKILL.md
+agents/stage-manager/skills/装备管理/scripts/equip.js
+agents/stage-manager/skills/装备管理/scripts/unequip.js
+agents/stage-manager/skills/装备管理/scripts/refresh.js
+agents/stage-manager/skills/装备管理/scripts/equipment-core.js
+```
+
+formal card 使用相同 Workspace paths。两份 Stage Manager `skills.enabled` exact whitelist 增加：
+
+```text
+agents/stage-manager/skills/装备管理/SKILL.md
+```
+
+internal materialization 和 formal files 对 equipment Action/Skill 做 byte parity。Action 不引用 Skill tree；Skill 不引用 Action tree。正式卡特有 Stage Manager tools/orchestration 只在 explicit comparison exception list 中排除。
 
 ## Frontend Integration
 
-`apps/play-frontend-dev` parser/type 层只解析新 schema 并提供展示数据，不计算 contribution。交互流程：
+### Data contracts
 
-1. 用户激活 equipment slot；
-2. inventory pane 过滤/标记同 slotType 的 reachable equipment candidates；
-3. 选 item 或 unequip，创建 AbortController + monotonically increasing generation，携带 current ref 调 preview；selection/character/slot change、relevant mutation、Dialog close/unmount 都 abort。
-4. 只有 generation、characterRef、slotType/index、expectedCurrentRef、selected item 仍匹配时才接收 preview；Dialog 展示 Action 返回的 before/after/delta。
-5. commit pending 禁止重复提交；确认时用相同 expectedCurrentRef 调 commit，不自动 retry。
-6. conflict 或相关 mutation 将 preview 标 stale，authoritative reread 后要求新 preview；refresh-required 提示先由 Stage Manager/维护流程 refresh，不能假装玩家端已修。
-7. 成功可先展示 Action output，但必须重读 authoritative character/container/item paths 收敛；path-filter mutation subscription 并在 unmount unsubscribe。
+`apps/play-frontend-dev` 只解析新 schema，不做 contribution arithmetic。character/item parser 对 equipment 部分 fail closed；equipment corrupt 时保留其他合法角色展示，但返回 equipment error state 并禁用装备交互。
 
-使用现有 Reka Dialog/focus patterns：focus trap、initial focus、Escape、return focus、keyboard list navigation、visible focus、live error announcement；移动端不增加第三套导航，保持独立滚动。不可用候选仍可被辅助技术识别并说明原因，不能只靠颜色。player-facing error 不展示 raw path/schema/internal code。
+entity/inventory loader 至少区分：missing、read-failed、invalid-json、wrong-entity-type、schema-corrupt。recursive candidate discovery 只提供 presentation metadata 和 read-path set；Action 仍是 ownership/count/type/arithmetic authority。
 
-## Packaging Boundary
+### State ownership
 
-本任务不修改 `cards/沉浸阅读器.tsian-card/frontend/**`，也不重建 `frontendFiles`。新增 card Workspace Action/Skill 必须进入 `workspaceFiles`；开发前端通过 build/browser 验证，正式成品前端延续既有后续导入流程。因此本 child 交付“开发前端可运行 UI + 正式卡 Workspace 能力”，不声称当前正式卡 dist 已有换装 UI；parent 在 later frontend import/export carrier 完成前保持 open/integration 状态。
+```text
+CharacterSlot
+  ├─ authoritative character read/reload
+  ├─ screen-local useEquipmentManagement
+  ├─ CharacterCard presentation coordinator
+  └─ EquipmentManagementDialog
+```
+
+- CharacterStage flatten `{slotType,slotIndex,slot}`，stable key `${slotType}:${slotIndex}`；empty slot 也可激活。
+- InventoryPane 保持现有 drill-in，用 refresh token 重读当前层；不变成全局 mutation store。
+- ItemDetailModal 展示 slotType/add/percent/effects 和 stored applied，不计算 contribution。
+
+建议新增：
+
+```text
+lib/equipment-action.ts
+lib/load-character-inventory.ts
+composables/useEquipmentManagement.ts
+components/equipment/EquipmentManagementDialog.vue
+```
+
+### Preview/commit races
+
+Preview：abort previous → generation++ → capture immutable identity → call Action → parse output → identity/generation 都匹配才 publish。角色/slot/candidate/mutation/dialog/unmount 使 preview abort+stale。
+
+Commit 从 accepted preview identity 构造，仅 mode 改 commit。commit request 先复制到局部常量；同一 commit mutation event 可能早于 response，event 可清 preview，但不能据此 abort commit。成功后 reread character + recursive containers/items，并用权威数据替换 UI snapshot。
+
+runtime `FRONTEND_ACTION_WORKSPACE_CONFLICT` 与 domain `EQUIPMENT_EXPECTED_REF_MISMATCH` 都 reread 并要求 fresh preview，不自动 retry。refresh-required 显示玩家可理解的维护提示。
+
+Dialog 使用 Reka focus trap/initial focus/Escape/close-auto-focus；candidate list 支持 keyboard navigation。不可用候选保持可聚焦/可读并说明原因，而不是只用 native disabled/颜色。
+
+## Schema, Prompt, And Card Synchronization
+
+同步：
+
+1. internal AIRP guide/reference、living schema/entity examples；
+2. internal equipment Action/Skill；
+3. internal Stage Manager prompt/maintenance guidance；
+4. formal AIRP docs；
+5. formal Stage Manager AGENT、maintenance Skill、new local Skill；
+6. formal equipment Action；
+7. formal workspaceFiles。
+
+旧 slot/mod/operator 指令从所有 AI-facing 表面删除，不写 fallback/迁移说明。Stage Manager 正常属性变化走 `装备管理.refresh(attributeChanges)`，不先 generic edit active attributes。
+
+## Inventory Rebuild And Frozen Carrier
+
+正式 inventory rebuild：
+
+1. deep-snapshot manifest/frontendFiles/coverFiles/exportedAt/exporter；
+2. walk raw `workspace/**` bytes；
+3. normalized package paths lexicographic sort；
+4. `size` 用 raw/UTF-8 bytes，不用 JS string.length；
+5. mediaType 用平台统一 inference；
+6. 只替换 workspaceFiles；
+7. 验证 disk/manifest one-to-one、unique、no orphan、size/mediaType；
+8. deep-compare protected subtrees；
+9. changed-path guard 断言 formal `frontend/**` 零变更。
+
+本 child 交付开发前端 UI + 正式卡 Workspace 能力，不声称 formal packaged dist 已有 UI。parent 等后续 frontend import/build/export 后再完成。

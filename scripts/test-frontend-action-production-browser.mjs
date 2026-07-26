@@ -174,6 +174,13 @@ async function main() {
       fail(`Production browser preflight failed: ${JSON.stringify(payload)}`)
     }
     const result = payload.result
+    const equipmentTransport = payload.equipmentTransport
+    if (
+      equipmentTransport?.equipmentDomainErrorTransported !== true
+      || equipmentTransport?.equipmentBusinessFailureWrites !== 0
+    ) {
+      fail("Equipment Action domain error did not survive the production Worker transport without writes.")
+    }
     if (payload.pageOriginStorage?.indexedDB !== true || payload.pageOriginStorage?.caches !== true) {
       fail("Preflight page did not seed platform-origin IndexedDB and Cache Storage sentinels.")
     }
@@ -193,7 +200,7 @@ async function main() {
       if (result[key] !== "undefined") fail(`Ambient capability ${key} remained available.`)
     }
     process.stdout.write(`Frontend Action production browser preflight passed with ${browser}.\n`)
-    process.stdout.write(`${JSON.stringify(result)}\n`)
+    process.stdout.write(`${JSON.stringify({ ...result, ...equipmentTransport })}\n`)
   } finally {
     launched?.child.kill()
     await new Promise((resolveClose) => server.close(resolveClose))

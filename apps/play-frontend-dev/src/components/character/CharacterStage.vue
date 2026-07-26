@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /** CharacterStage — 固定立绘中心与共享双轨滚动层。 */
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue"
-import type { CharacterEntity, RelationshipFile } from "../../lib/character-types"
+import type { CharacterEntity, CharacterEquipmentSlot, RelationshipFile } from "../../lib/character-types"
 import type { ItemEntity } from "../../lib/item-types"
 import { loadInventoryEntity } from "../../lib/load-inventory-entity"
 import AttributeCard from "./AttributeCard.vue"
@@ -20,13 +20,21 @@ const props = defineProps<{
   fallbackSrc: string
   effectivePinRef: string | null
   highlightedItemRef: string | null
+  equipmentInteractive: boolean
 }>()
+
+export interface IndexedEquipmentSlot {
+  slotType: string
+  slotIndex: number
+  slot: CharacterEquipmentSlot
+}
 
 const emit = defineEmits<{
   "portrait-updated": []
   "update:scroll-top": [mode: CharacterMode, value: number]
   "select-item": [ref: string]
   "highlight-item": [ref: string | null]
+  "activate-equipment": [selection: IndexedEquipmentSlot, trigger: HTMLElement]
 }>()
 
 const trackScroll = ref<HTMLElement | null>(null)
@@ -35,7 +43,9 @@ const loadingRefs = ref<Set<string>>(new Set())
 let equipmentLoadVersion = 0
 
 const attributes = computed(() => Object.entries(props.entity.attributes ?? {}))
-const equipment = computed(() => Object.entries(props.entity.equipment ?? {}))
+const equipment = computed<IndexedEquipmentSlot[]>(() => Object.entries(props.entity.equipment ?? {}).flatMap(
+  ([slotType, slots]) => slots.map((slot, slotIndex) => ({ slotType, slotIndex, slot })),
+))
 const leftAttributes = computed(() => attributes.value.filter((_, index) => index % 2 === 0))
 const rightAttributes = computed(() => attributes.value.filter((_, index) => index % 2 === 1))
 const leftEquipment = computed(() => equipment.value.filter((_, index) => index % 2 === 0))
@@ -81,7 +91,7 @@ onBeforeUnmount(() => {
 
 async function loadEquipmentItems(): Promise<void> {
   const version = ++equipmentLoadVersion
-  const refs = Array.from(new Set(equipment.value.flatMap(([, slot]) => slot.ref ? [slot.ref] : [])))
+  const refs = Array.from(new Set(equipment.value.flatMap(({ slot }) => slot.ref ? [slot.ref] : [])))
   loadingRefs.value = new Set(refs)
   const next: Record<string, ItemEntity | null> = {}
 
@@ -124,14 +134,17 @@ function onTrackScroll(): void {
             </template>
             <template v-else>
               <EquipmentSlot
-                v-for="([name, slot]) in leftEquipment"
-                :key="name"
-                :name="name"
-                :slot="slot"
-                :item="slot.ref ? (itemByRef[slot.ref] ?? null) : null"
-                :loading="Boolean(slot.ref && loadingRefs.has(slot.ref))"
-                :highlighted="Boolean(slot.ref && slot.ref === highlightedItemRef)"
+                v-for="entry in leftEquipment"
+                :key="`${entry.slotType}:${entry.slotIndex}`"
+                :name="entry.slotType"
+                :slot-index="entry.slotIndex"
+                :slot="entry.slot"
+                :item="entry.slot.ref ? (itemByRef[entry.slot.ref] ?? null) : null"
+                :loading="Boolean(entry.slot.ref && loadingRefs.has(entry.slot.ref))"
+                :highlighted="Boolean(entry.slot.ref && entry.slot.ref === highlightedItemRef)"
+                :interactive="equipmentInteractive"
                 @select="emit('select-item', $event)"
+                @activate="emit('activate-equipment', entry, $event)"
                 @highlight="emit('highlight-item', $event)"
               />
             </template>
@@ -151,14 +164,17 @@ function onTrackScroll(): void {
             </template>
             <template v-else>
               <EquipmentSlot
-                v-for="([name, slot]) in rightEquipment"
-                :key="name"
-                :name="name"
-                :slot="slot"
-                :item="slot.ref ? (itemByRef[slot.ref] ?? null) : null"
-                :loading="Boolean(slot.ref && loadingRefs.has(slot.ref))"
-                :highlighted="Boolean(slot.ref && slot.ref === highlightedItemRef)"
+                v-for="entry in rightEquipment"
+                :key="`${entry.slotType}:${entry.slotIndex}`"
+                :name="entry.slotType"
+                :slot-index="entry.slotIndex"
+                :slot="entry.slot"
+                :item="entry.slot.ref ? (itemByRef[entry.slot.ref] ?? null) : null"
+                :loading="Boolean(entry.slot.ref && loadingRefs.has(entry.slot.ref))"
+                :highlighted="Boolean(entry.slot.ref && entry.slot.ref === highlightedItemRef)"
+                :interactive="equipmentInteractive"
                 @select="emit('select-item', $event)"
+                @activate="emit('activate-equipment', entry, $event)"
                 @highlight="emit('highlight-item', $event)"
               />
             </template>

@@ -39,7 +39,7 @@
     {
       "path": "workspace/agents/stage-manager/AGENT.md",
       "mediaType": "text/markdown",
-      "size": 4569
+      "size": 4453
     },
     {
       "path": "workspace/agents/stage-manager/SOUL.md",
@@ -49,17 +49,42 @@
     {
       "path": "workspace/agents/stage-manager/agent.json",
       "mediaType": "application/json",
-      "size": 1170
+      "size": 1230
     },
     {
       "path": "workspace/agents/stage-manager/skills/schema演进检查/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 1366
+      "size": 1377
     },
     {
       "path": "workspace/agents/stage-manager/skills/回合后维护/SKILL.md",
       "mediaType": "text/markdown",
-      "size": 11628
+      "size": 10715
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/装备管理/SKILL.md",
+      "mediaType": "text/markdown",
+      "size": 3510
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/装备管理/scripts/equip.js",
+      "mediaType": "text/javascript",
+      "size": 86
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/装备管理/scripts/equipment-core.js",
+      "mediaType": "text/javascript",
+      "size": 28937
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/装备管理/scripts/refresh.js",
+      "mediaType": "text/javascript",
+      "size": 88
+    },
+    {
+      "path": "workspace/agents/stage-manager/skills/装备管理/scripts/unequip.js",
+      "mediaType": "text/javascript",
+      "size": 88
     },
     {
       "path": "workspace/agents/stage-manager/tools/commit_turn_recall/run.js",
@@ -579,17 +604,32 @@
     {
       "path": "workspace/docs/novel-airp-schema-guide.md",
       "mediaType": "text/markdown",
-      "size": 14745
+      "size": 14506
     },
     {
       "path": "workspace/docs/novel-airp-schema-reference.md",
       "mediaType": "text/markdown",
-      "size": 20655
+      "size": 17964
     },
     {
       "path": "workspace/docs/tsian-framework-knowledge.md",
       "mediaType": "text/markdown",
       "size": 776
+    },
+    {
+      "path": "workspace/frontend-actions/equipment/action.json",
+      "mediaType": "application/json",
+      "size": 4064
+    },
+    {
+      "path": "workspace/frontend-actions/equipment/equipment-core.js",
+      "mediaType": "text/javascript",
+      "size": 29003
+    },
+    {
+      "path": "workspace/frontend-actions/equipment/run.js",
+      "mediaType": "text/javascript",
+      "size": 452
     },
     {
       "path": "workspace/skills/README.md",

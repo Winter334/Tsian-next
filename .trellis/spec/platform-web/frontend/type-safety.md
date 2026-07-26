@@ -116,7 +116,7 @@ validateFrontendActionData(validator, value): FrontendActionDataValidationResult
 - Ajv 8 Draft 2020-12 uses strict/allErrors, no formats/coercion/default/removeAdditional/custom keyword/async loader. `$schema` is omitted or exact 2020-12; `$ref` only `#` / `#/...` resolvable same-document JSON Pointer. Reject remote/relative refs, `$async`, `$id`, anchors/dynamic/recursive refs, `$vocabulary`, unknown keywords, invalid schema positions, and compile failures. Production CSP must permit the actual Ajv and Action dynamic-function path plus the opaque-origin Action Worker. Every Action execution awaits a rejection-caching singleton gate that uses the production compiler/validator and default Worker before snapshot/schema resolution; gate failure creates no Action Worker and loads no snapshot. Never fall back to weaker validation.
 - Action context fixes actor level 1 and exposes only required workspace read/list/glob/write/delete plus dedicated domain-fail capability. Persistent mutations are ordinary `save-runtime`; reject card-content, card-frontend, temp/platform-meta and `.tsian/**`. Text/JSON-safe reads only; binary fails loud.
 - Frontend Actions run in opaque-origin `data:` Workers. Opaque origin is the primary platform-origin IndexedDB/Cache boundary; startup additionally removes/fixes `globalThis.indexedDB`, `globalThis.caches`, `globalThis.Worker`, `globalThis.SharedWorker`, `navigator.storage`, and `navigator.serviceWorker`, then self-checks them before accepting execute. Parameter shadowing is defense in depth only. This prevents ambient platform-origin storage/nested-Worker bypass of staged Workspace/CAS, but is not a deterministic, secure, or capability-secure sandbox: native fetch, Date/time/timers, Math.random, dynamic code generation, reflection, and future browser APIs remain outside the guarantee. Do not document a stronger claim.
-- Domain fail envelope permits only `code/message/details`: code `[A-Z][A-Z0-9_]{0,63}`, non-empty message <= 500 chars, strict details <= 64 KiB/depth 16. Valid envelope preserves open card code/details as `kind: "domain"`; ordinary throw/invalid envelope is sanitized runtime execution failure.
+- Domain fail envelope permits only `code/message/details`: code `[A-Z][A-Z0-9_]{0,63}`, non-empty message <= 500 chars, strict details <= 64 KiB/depth 16. Valid envelope preserves open card code/details as `kind: "domain"`; ordinary throw/invalid envelope is sanitized runtime execution failure. Because validation inspects `Reflect.ownKeys`, Action-local error-like values carrying hidden or symbol markers are not valid envelopes: adapters must copy only the three public fields into a fresh object before calling `tsian.action.fail`.
 - Invocation lifecycle is `(sessionId, invocationId)`: duplicate active ids reject; unknown/completed abort is idempotent; abort observed before commit forbids commit; durable commit wins over late abort; dispose/session replacement aborts/rejects old work, removes listeners/controllers and ignores stale response/event.
 - Non-empty durable commit emits one current-session path-only event after transaction and before success response. Actual paths are sorted; subscriber errors are isolated. Failure/no-op emits none. Consumers authoritative reread; event order is not global.
 - Generic remote `platform.runAction` sets host-internal caller=`play-frontend` and enforces the closed allowlist `reply-project`, `restore-checkpoint`, `create-checkpoint`, `update-checkpoint`, `overwrite-checkpoint`, `delete-checkpoint`. Workspace, unknown and future actions fail closed inside the executor; params cannot inject caller/actor/scope/save/card/session identity or reach assistant actor resolution.
@@ -154,7 +154,7 @@ validateFrontendActionData(validator, value): FrontendActionDataValidationResult
 - Registry/manifest: exact path/id, case/alias rejection, closed fields, root confinement, missing/duplicate/binary resources, timeout/helper/source/manifest limits.
 - Strict JSON/schema: primitives and nested object success; undefined/BigInt/non-finite/cycle/sparse/accessor/symbol/non-enumerable/exotic reject; Draft 2020-12 strict keyword/ref/dialect/limit/errors/cache table.
 - Runtime Agent isolation: direct read, list, search, glob, semantic/effective projection, contextPaths, macro expansion, Agent/Skill/Tool queries and model context cannot reveal `frontend-actions/**`; desktop assistant authoring remains available.
-- Worker: existing Skill/Tool parity; Action operation allowlist and scope enforcement; text-only reads; valid domain pass-through; invalid envelope/ordinary throw sanitization; malformed output; timeout; abort; cleanup. A real Chrome/Edge release gate must serve the production bundle under the exact canonical production CSP, compile and validate representative Draft 2020-12 data through production Ajv, execute the actual default Action Worker, and prove opaque origin plus unavailable IndexedDB/Cache/nested Worker/storage-manager globals. Fake Worker or duplicated Ajv setup is insufficient.
+- Worker: existing Skill/Tool parity; Action operation allowlist and scope enforcement; text-only reads; valid domain pass-through; invalid envelope/ordinary throw sanitization; malformed output; timeout; abort; cleanup. A real Chrome/Edge release gate must serve the production bundle under the exact canonical production CSP, compile and validate representative Draft 2020-12 data through production Ajv, execute the actual default Action Worker, and prove opaque origin plus unavailable IndexedDB/Cache/nested Worker/storage-manager globals. Any card adapter that wraps an internal marked business failure must also run through this gate and prove the public domain code survives with zero writes; a harness whose `tsian.action.fail` merely rethrows the supplied object cannot cover strict Worker-envelope transport. Fake Worker or duplicated Ajv setup is insufficient.
 - Bridge/lifecycle: duplicate invocation, pre/active/late abort barriers, dispose/session replacement, stale traffic suppression, event-before-success ordering and callback isolation.
 - Privilege: table-drive every current platform action plus a synthetic future action; only explicit remote allowlist succeeds and no play-frontend request reaches assistant actor resolution.
 - Builds: `npm run build:contracts`, play-bridge tests/build, platform-web tests, `npm run build:web`.
@@ -194,6 +194,93 @@ return executePlatformAction(request) // future actions become remotely callable
 ```ts
 return executePlatformAction(request, { caller: "play-frontend" })
 // executor checks a closed REMOTE_PLATFORM_ACTION_ALLOWLIST; unknown defaults denied
+```
+
+## Scenario: Action-Backed Derived Projection Client
+
+### 1. Scope / Trigger
+
+- Trigger: a packaged/play frontend previews and commits a card-owned Frontend Action whose output is a derived projection over Workspace state, especially when mutation events can arrive before the Action response.
+
+### 2. Signatures
+
+```ts
+interface DerivedPreviewIdentity {
+  characterRef: string
+  slotType: string
+  slotIndex: number
+  expectedCurrentRef: string | null
+  operation: "equip" | "unequip"
+  itemRef: string | null
+}
+
+interface DerivedActionClient {
+  preview(input: JsonValue, options: { signal: AbortSignal }): Promise<JsonValue>
+  commit(inputCapturedFromAcceptedPreview: JsonValue): Promise<JsonValue>
+  handleMutation(event: RuntimeWorkspaceMutationEvent): Promise<void>
+}
+```
+
+### 3. Contracts
+
+- The Action is the arithmetic and mutation authority. Frontend parsers may validate/display rules and output, but must not duplicate contribution formulas, ownership proofs, quantity decisions, or projection repair.
+- Preview lifecycle is: abort previous controller, increment a monotonic generation, capture an immutable request identity, run the Action, validate the closed output plus request/output identity, then publish only if generation and current identity still match.
+- Changing character, target slot, candidate, relevant Workspace state, closing the Dialog, or unmounting invalidates preview and accepted identity.
+- A client-side candidate traversal is not the Action's complete dependency set. If the Action proves foreign ownership or lists entity directories, conservatively invalidate accepted previews for mutations in those character/container namespaces. While candidate discovery is still in flight, also invalidate for item mutations because read paths are not complete until traversal returns.
+- Commit input is copied from the accepted preview identity and changes only commit-specific fields such as `mode`. Never recompute compare-and-set fields such as `expectedCurrentRef` from current reactive UI state.
+- Capture the immutable commit request before awaiting. A relevant mutation event while commit is pending records that reconciliation is required; it must not abort or invalidate the already-sent commit because durable commit may precede its success response.
+- Action mutation events are path-only invalidation signals. After success, expected-ref mismatch, Workspace CAS conflict, or a relevant event during commit, reread authoritative character/container/item state and require a fresh preview. Do not automatically retry a commit.
+- Action output is valid for immediate preview/result display only. Persistent UI state comes from authoritative rereads.
+- If a managed projection is corrupt but the enclosing entity remains displayable, preserve the readable entity fields, mark the managed region unavailable, and disable mutation rather than silently converting corruption to an empty projection.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Older preview resolves after generation/identity changed | Ignore response; do not publish preview/error |
+| Output is not closed, safe, or identity-consistent | Reject as invalid Action output; no commit |
+| Relevant mutation before preview response | Abort/invalidate preview, authoritative reread |
+| Relevant mutation before commit response | Keep commit pending; record reconciliation; reread after response |
+| Domain expected-ref mismatch | Reread, clear accepted preview, show fresh-preview guidance, no retry |
+| Runtime Workspace conflict | Reread, clear accepted preview, show fresh-preview guidance, no retry |
+| Refresh/repair-required domain error | Preserve state and tell the user maintenance is required; do not fake repair |
+| Dialog close or component unmount | Abort preview and remove listeners/controllers |
+| Corrupt managed projection with readable parent fields | Show parent; mark region unavailable; no mutation controls |
+
+### 5. Good/Base/Bad Cases
+
+- Good: accepted preview identity `{ expectedCurrentRef: null, itemRef: "item:blade" }` produces the commit request even if the current reactive character snapshot changes before the user confirms; the Action's compare-and-set decides the outcome.
+- Base: an unrelated mutation path does not invalidate the preview; a relevant path does.
+- Bad: compute a local projection for preview, rebuild `expectedCurrentRef` at commit time, or abort a pending commit when its own mutation event arrives first.
+
+### 6. Tests Required
+
+- Coordinator unit tests with deferred promises: prior preview signal becomes aborted and its late response cannot publish.
+- Identity tests: selection/character changes reject a late preview; commit input exactly matches the accepted preview identity except commit mode.
+- Event-order test: mutation-before-success neither aborts nor retries commit and triggers one or more authoritative rereads until no relevant event occurred during the latest reread.
+- Conflict tests: expected-ref mismatch and Workspace conflict reread, clear preview, and issue no automatic retry.
+- Parser tests: closed output shape, safe integers, canonical refs, target-slot projection consistency, and request/output identity.
+- Component/browser checks: focus trap, initial/return focus, Escape, keyboard candidate navigation, readable unavailable candidates, live errors, and independent desktop/mobile scrolling.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+await tsian.card.runAction("equipment", {
+  ...currentUiSelection,
+  mode: "commit",
+  expectedCurrentRef: currentCharacter.equipment[type][index].ref,
+})
+```
+
+#### Correct
+
+```ts
+const accepted = acceptedPreviewIdentity.value
+const request = Object.freeze({ ...requestFromIdentity(accepted), mode: "commit" })
+const result = await tsian.card.runAction("equipment", request)
+await reloadAuthoritativeState()
 ```
 
 ## Scenario: Bypass Invoke-Agent Context Slot And Persist

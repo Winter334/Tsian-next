@@ -1,0 +1,4020 @@
+{
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "id": "equip-empty-one-rounding",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture hero",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "Bag",
+              "brief": "Fixture bag",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "Sword",
+              "brief": "Fixture sword",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 2
+                },
+                "percent": {
+                  "力量": -50
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": null,
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 1
+            },
+            "after": {
+              "力量": 3
+            },
+            "delta": {
+              "力量": 2
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 2
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture hero",
+                "attributes": {
+                  "力量": 3
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:sword",
+                      "applied": {
+                        "力量": 2
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "replace-equipped-item",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": "item:old",
+        "itemRef": "item:new"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture hero",
+              "attributes": {
+                "力量": 7
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:old",
+                    "applied": {
+                      "力量": 2
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "Bag",
+              "brief": "Fixture bag",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:old"
+                },
+                {
+                  "ref": "item:new"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/old.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:old",
+              "name": "Old",
+              "brief": "Old sword",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 2
+                }
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/new.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:new",
+              "name": "New",
+              "brief": "New sword",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "percent": {
+                  "力量": 50
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": "item:old",
+            "afterRef": "item:new"
+          },
+          "attributes": {
+            "before": {
+              "力量": 7
+            },
+            "after": {
+              "力量": 8
+            },
+            "delta": {
+              "力量": 1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:new",
+                "applied": {
+                  "力量": 3
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture hero",
+                "attributes": {
+                  "力量": 8
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:new",
+                      "applied": {
+                        "力量": 3
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "unequip",
+      "suite": "shared-mutation",
+      "operation": "unequip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture hero",
+              "attributes": {
+                "力量": 7
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:sword",
+                    "applied": {
+                      "力量": 2
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "Bag",
+              "brief": "Fixture bag",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "Sword",
+              "brief": "Fixture sword",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 2
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "unequip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": "item:sword",
+            "afterRef": null
+          },
+          "attributes": {
+            "before": {
+              "力量": 7
+            },
+            "after": {
+              "力量": 5
+            },
+            "delta": {
+              "力量": -2
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": null
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture hero",
+                "attributes": {
+                  "力量": 5
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": null
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "expected-ref-mismatch",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:new"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture hero",
+              "attributes": {
+                "力量": 5
+              },
+              "containers": [],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:old"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_EXPECTED_REF_MISMATCH",
+          "details": {
+            "characterRef": "character:hero",
+            "slotType": "武器",
+            "slotIndex": 0,
+            "expectedCurrentRef": null,
+            "actualCurrentRef": "item:old"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "refresh-stale-and-attribute-change",
+      "suite": "skill-refresh",
+      "operation": "refresh",
+      "input": {
+        "characterRef": "character:hero",
+        "attributeChanges": {
+          "力量": 1
+        }
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture hero",
+              "attributes": {
+                "力量": 7
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:missing",
+                    "applied": {
+                      "力量": 2
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "Bag",
+              "brief": "Fixture bag",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:missing"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "refresh",
+          "characterRef": "character:hero",
+          "attributes": {
+            "before": {
+              "力量": 7
+            },
+            "after": {
+              "力量": 6
+            },
+            "delta": {
+              "力量": -1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": null
+              }
+            ]
+          },
+          "clearedSlots": [
+            {
+              "slotType": "武器",
+              "slotIndex": 0,
+              "previousRef": "item:missing",
+              "reason": "missing"
+            }
+          ]
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture hero",
+                "attributes": {
+                  "力量": 6
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": null
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "malformed-candidate-ref",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:bad/id"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "ref"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "malformed-old-applied",
+      "suite": "shared-mutation",
+      "operation": "unequip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:sword",
+                    "applied": {
+                      "力量": 1.5
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "applied",
+            "field": "力量"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "malformed-target-count",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword",
+                  "count": 0
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "count"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "diamond-container-graph",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:root"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/root.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:root",
+              "name": "root",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "container:left"
+                },
+                {
+                  "ref": "container:right"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/left.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:left",
+              "name": "left",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "container:shared"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/right.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:right",
+              "name": "right",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "container:shared"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/shared.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:shared",
+              "name": "shared",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": null,
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 1
+            },
+            "after": {
+              "力量": 2
+            },
+            "delta": {
+              "力量": 1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 1
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 2
+                },
+                "containers": [
+                  {
+                    "ref": "container:root"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:sword",
+                      "applied": {
+                        "力量": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "true-container-cycle",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:a"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/a.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:a",
+              "name": "a",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "container:b"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/b.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:b",
+              "name": "b",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "container:a"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_CONTAINER_CYCLE",
+          "details": {
+            "characterRef": "character:hero",
+            "containerRefs": [
+              "container:a",
+              "container:b",
+              "container:a"
+            ]
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "shared-container-ownership",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器"
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/other.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:other",
+              "name": "Other",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_SHARED_CONTAINER",
+          "details": {
+            "characterRef": "character:hero",
+            "otherCharacterRefs": [
+              "character:other"
+            ],
+            "containerRefs": [
+              "container:bag"
+            ]
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "ownership-indeterminate-malformed-root",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器"
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/other.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:other",
+              "name": "Other",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:other",
+                  "count": 2
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "ownership"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "foreign-item-count-irrelevant",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/other.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:other",
+              "name": "Other",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:other"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/other.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:other",
+              "name": "other",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:foreign",
+                  "count": 0
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": null,
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 1
+            },
+            "after": {
+              "力量": 2
+            },
+            "delta": {
+              "力量": 1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 1
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 2
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:sword",
+                      "applied": {
+                        "力量": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "duplicate-item-quantity",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 2
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  },
+                  {
+                    "ref": "item:sword",
+                    "applied": {
+                      "力量": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                },
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": null,
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 2
+            },
+            "after": {
+              "力量": 3
+            },
+            "delta": {
+              "力量": 1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 1
+                }
+              },
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 1
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 3
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:sword",
+                      "applied": {
+                        "力量": 1
+                      }
+                    },
+                    {
+                      "ref": "item:sword",
+                      "applied": {
+                        "力量": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "quantity-exhausted",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 2
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  },
+                  {
+                    "ref": "item:sword",
+                    "applied": {
+                      "力量": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_QUANTITY_EXHAUSTED",
+          "details": {
+            "characterRef": "character:hero",
+            "itemRef": "item:sword",
+            "available": 1,
+            "demanded": 2
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "unknown-candidate-attribute",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "敏捷": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_UNKNOWN_ATTRIBUTE",
+          "details": {
+            "characterRef": "character:hero",
+            "source": "item:sword",
+            "attributes": [
+              "敏捷"
+            ]
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "candidate-item-missing",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_ITEM_NOT_FOUND",
+          "details": {
+            "characterRef": "character:hero",
+            "itemRef": "item:sword"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "candidate-not-equipment",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "material"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "item"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "candidate-slot-type-mismatch",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "护甲"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_SLOT_TYPE_MISMATCH",
+          "details": {
+            "characterRef": "character:hero",
+            "itemRef": "item:sword",
+            "expectedSlotType": "武器",
+            "actualSlotType": "护甲"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "unrelated-stale-refresh-required",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 12
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ],
+                "护甲": [
+                  {
+                    "ref": "item:old",
+                    "applied": {
+                      "力量": 2
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_REFRESH_REQUIRED",
+          "details": {
+            "characterRef": "character:hero",
+            "staleSlots": [
+              {
+                "slotType": "护甲",
+                "slotIndex": 0,
+                "ref": "item:old",
+                "reason": "unreachable"
+              }
+            ]
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "stored-rule-changed",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": "item:old",
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 11
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:old",
+                    "applied": {
+                      "力量": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:old"
+                },
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/old.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:old",
+              "name": "old",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "护甲",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_REFRESH_REQUIRED",
+          "details": {
+            "characterRef": "character:hero",
+            "staleSlots": [
+              {
+                "slotType": "武器",
+                "slotIndex": 0,
+                "ref": "item:old",
+                "reason": "slot-type-mismatch"
+              }
+            ]
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "positive-half-tie",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "percent": {
+                  "力量": 50
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": null,
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 1
+            },
+            "after": {
+              "力量": 2
+            },
+            "delta": {
+              "力量": 1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 1
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 2
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:sword",
+                      "applied": {
+                        "力量": 1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "negative-half-tie",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "percent": {
+                  "力量": -50
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": null,
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 1
+            },
+            "after": {
+              "力量": 0
+            },
+            "delta": {
+              "力量": -1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": -1
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 0
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:sword",
+                      "applied": {
+                        "力量": -1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "safe-intermediate-cancellation",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 9007199254740991
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 9007199254740991
+                },
+                "percent": {
+                  "力量": -100
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": null,
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 9007199254740991
+            },
+            "after": {
+              "力量": 9007199254740991
+            },
+            "delta": {}
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword"
+              }
+            ]
+          }
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 9007199254740991
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:sword"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "final-attribute-overflow",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 9007199254740991
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 9007199254740991
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_INTEGER_OVERFLOW",
+          "details": {
+            "characterRef": "character:hero",
+            "stage": "final-attribute",
+            "attribute": "力量"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "refresh-idempotent-no-write",
+      "suite": "skill-refresh",
+      "operation": "refresh",
+      "input": {
+        "characterRef": "character:hero"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 11
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:sword",
+                    "applied": {
+                      "力量": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "refresh",
+          "characterRef": "character:hero",
+          "attributes": {
+            "before": {
+              "力量": 11
+            },
+            "after": {
+              "力量": 11
+            },
+            "delta": {}
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 1
+                }
+              }
+            ]
+          },
+          "clearedSlots": []
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "refresh-common-baseline-order",
+      "suite": "skill-refresh",
+      "operation": "refresh",
+      "input": {
+        "characterRef": "character:hero"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 1
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:a"
+                  },
+                  {
+                    "ref": "item:b"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:a"
+                },
+                {
+                  "ref": "item:b"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/a.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:a",
+              "name": "a",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "percent": {
+                  "力量": 50
+                }
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/b.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:b",
+              "name": "b",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "percent": {
+                  "力量": -50
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "refresh",
+          "characterRef": "character:hero",
+          "attributes": {
+            "before": {
+              "力量": 1
+            },
+            "after": {
+              "力量": 1
+            },
+            "delta": {}
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:a",
+                "applied": {
+                  "力量": 1
+                }
+              },
+              {
+                "ref": "item:b",
+                "applied": {
+                  "力量": -1
+                }
+              }
+            ]
+          },
+          "clearedSlots": []
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 1
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": "item:a",
+                      "applied": {
+                        "力量": 1
+                      }
+                    },
+                    {
+                      "ref": "item:b",
+                      "applied": {
+                        "力量": -1
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "refresh-change-overflow",
+      "suite": "skill-refresh",
+      "operation": "refresh",
+      "input": {
+        "characterRef": "character:hero",
+        "attributeChanges": {
+          "力量": 1
+        }
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 9007199254740991
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": []
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_INTEGER_OVERFLOW",
+          "details": {
+            "characterRef": "character:hero",
+            "stage": "changed-baseline",
+            "attribute": "力量"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "character-not-found",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_CHARACTER_NOT_FOUND",
+          "details": {
+            "characterRef": "character:hero"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "slot-not-found",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 1,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_SLOT_NOT_FOUND",
+          "details": {
+            "characterRef": "character:hero",
+            "slotType": "武器",
+            "slotIndex": 1
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "candidate-item-unreachable",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_ITEM_NOT_REACHABLE",
+          "details": {
+            "characterRef": "character:hero",
+            "itemRef": "item:sword"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "malformed-ref-extra-colon",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:bad:copy"
+      },
+      "workspace": [],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "ref"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "target-container-missing",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "container"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "ownership-indeterminate-character-identity",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/other.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:wrong",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "ownership"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "reachable-quantity-overflow",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword",
+                  "count": 9007199254740991
+                },
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_INTEGER_OVERFLOW",
+          "details": {
+            "characterRef": "character:hero",
+            "stage": "reachable-quantity"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "malformed-managed-field-on-ordinary-item",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": null,
+        "itemRef": "item:ore"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 10
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": null
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:ore"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/ore.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:ore",
+              "name": "ore",
+              "brief": "Fixture item",
+              "type": "material",
+              "equipment": {
+                "slot": "武器"
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": false,
+        "error": {
+          "code": "EQUIPMENT_DATA_INVALID",
+          "details": {
+            "characterRef": "character:hero",
+            "area": "item",
+            "field": "equipment"
+          }
+        },
+        "stateChanges": []
+      }
+    },
+    {
+      "id": "refresh-clears-stored-non-equipment",
+      "suite": "skill-refresh",
+      "operation": "refresh",
+      "input": {
+        "characterRef": "character:hero"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 11
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:ore",
+                    "applied": {
+                      "力量": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:ore"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/ore.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:ore",
+              "name": "ore",
+              "brief": "Fixture item",
+              "type": "material"
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "refresh",
+          "characterRef": "character:hero",
+          "attributes": {
+            "before": {
+              "力量": 11
+            },
+            "after": {
+              "力量": 10
+            },
+            "delta": {
+              "力量": -1
+            }
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": null
+              }
+            ]
+          },
+          "clearedSlots": [
+            {
+              "slotType": "武器",
+              "slotIndex": 0,
+              "previousRef": "item:ore",
+              "reason": "not-equipment"
+            }
+          ]
+        },
+        "stateChanges": [
+          {
+            "path": "save/entities/character/hero.json",
+            "content": {
+              "encoding": "json",
+              "value": {
+                "id": "character:hero",
+                "name": "Hero",
+                "brief": "Fixture character",
+                "attributes": {
+                  "力量": 10
+                },
+                "containers": [
+                  {
+                    "ref": "container:bag"
+                  }
+                ],
+                "equipment": {
+                  "武器": [
+                    {
+                      "ref": null
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "equip-same-item-no-write",
+      "suite": "shared-mutation",
+      "operation": "equip",
+      "input": {
+        "characterRef": "character:hero",
+        "slotType": "武器",
+        "slotIndex": 0,
+        "expectedCurrentRef": "item:sword",
+        "itemRef": "item:sword"
+      },
+      "workspace": [
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/character/hero.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "character:hero",
+              "name": "Hero",
+              "brief": "Fixture character",
+              "attributes": {
+                "力量": 11
+              },
+              "containers": [
+                {
+                  "ref": "container:bag"
+                }
+              ],
+              "equipment": {
+                "武器": [
+                  {
+                    "ref": "item:sword",
+                    "applied": {
+                      "力量": 1
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/container/bag.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "container:bag",
+              "name": "bag",
+              "brief": "Fixture container",
+              "type": "container",
+              "contents": [
+                {
+                  "ref": "item:sword"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "scope": "save-runtime",
+          "path": "save/entities/item/sword.json",
+          "content": {
+            "encoding": "json",
+            "value": {
+              "id": "item:sword",
+              "name": "sword",
+              "brief": "Fixture item",
+              "type": "equipment",
+              "equipment": {
+                "slotType": "武器",
+                "add": {
+                  "力量": 1
+                }
+              }
+            }
+          }
+        }
+      ],
+      "expected": {
+        "ok": true,
+        "output": {
+          "kind": "mutation",
+          "operation": "equip",
+          "characterRef": "character:hero",
+          "slot": {
+            "slotType": "武器",
+            "slotIndex": 0,
+            "beforeRef": "item:sword",
+            "afterRef": "item:sword"
+          },
+          "attributes": {
+            "before": {
+              "力量": 11
+            },
+            "after": {
+              "力量": 11
+            },
+            "delta": {}
+          },
+          "equipment": {
+            "武器": [
+              {
+                "ref": "item:sword",
+                "applied": {
+                  "力量": 1
+                }
+              }
+            ]
+          }
+        },
+        "stateChanges": []
+      }
+    }
+  ]
+}

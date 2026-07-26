@@ -15,8 +15,8 @@ appliesTo:
 ## 标准流程
 
 1. 第一轮先调用 `read_maintenance_context({ turn: 目标回合号, includeTimeline: true })`，用它聚合本回合正文、runtime、active scenes、相关 entities/relationships、memory 文本、scene 清理候选和 timeline。
-2. 基于聚合上下文判断本回合已发生变化，维护 runtime/entity（含完整装备投影）/scene/relationship/memory/timeline。若装备维护还需要某个具体容器或 item 实体，先定向读取该文件及其递归容器链，直到能确认持有关系；不要靠目录枚举猜测。
-3. JSON 文件优先调用 `json_edit`；memory records、seeds 等行级文本优先调用 `text_edit`。
+2. 基于聚合上下文判断本回合已发生变化，维护 runtime/entity/scene/relationship/memory/timeline。普通属性变化不要直接写入角色 `attributes`；把变化整理为非装备基线增量，并调用 `装备管理.refresh`。穿戴、卸下或替换分别调用 `装备管理.equip` / `装备管理.unequip`。
+3. JSON 文件优先调用 `json_edit`；memory records、seeds 等行级文本优先调用 `text_edit`。装备管理脚本自行验证持有关系、数量、固定容量和数值边界，不要用通用编辑工具补写其投影。
 4. 每个正式玩家回合维护结束前，调用 `commit_turn_recall` 写入当前 turn 的 `meta.recall`。
 
 ## 回退流程
@@ -144,25 +144,12 @@ appliesTo:
 
 ### 装备维护
 
-角色装备栏类型为 `Record<string, { ref: string | null; applied?: Record<string, number> }>`。槽位名由当前游戏数据动态定义，不预设通用人体槽位；按 `character.equipment` 的 JSON key 原始顺序维护。每个非空 `ref` 必须指向 `type: "equipment"` 的 item，并能从该角色 `containers` 经嵌套 `container.contents` 递归到达；装备仍留在容器图中，不另建虚拟装备容器。
-
-装备 item 的可选元数据为 `equipment?: { slot?: string; mods?: Record<string, string>; effects?: string[] }`：
-
-- `slot` 是建议槽位，不是平台强制约束。
-- `mods` 的 key 是属性名，value 必须是 `+=`、`-=`、`*=`、`=` 开头的字符串。
-- 表达式只引用本次维护基线中的属性名，并只用 `floor`、`ceil`、`round`、`min`、`max`、`abs`、`clamp`。
-- `effects` 只影响叙事判断，不自动改变数值。
-- 这些规则由你根据明确上下文解释；平台没有 modifier 求值器。
-
-当装备 ref、item 装备规则、角色属性或持有关系明确变化时，执行一次完整角色装备维护：
-
-1. 从当前 `attributes` 逐槽减去所有旧 `applied`，得到本次维护基线。
-2. 验证每个非空 ref 可递归到达且 item 为 `type: "equipment"`；不可达 ref 仍纳入本次完整维护，撤销旧贡献后把该槽写为 `{ "ref": null }`。
-3. 按装备栏 key 顺序解释合法 `mods`。`+=` 增加表达式结果，`-=` 减少，`*=` 相乘，`=` 设为表达式结果；每步属性取 `round` 后整数且最低为 0。
-4. 每槽 `applied` 写该槽实际造成的整数差值；`character.attributes` 写最终当前有效属性。
-5. 用一个 `json_edit` 操作的 `set` 同时替换该角色完整 `attributes` 和完整 `equipment` 投影。这里要求的是一次工具操作内的完整角色写入，不表示平台提供数据库事务。
-
-任一规则、属性引用、维护基线或持有关系无法确定时，不猜测、不调用 `json_edit` 写部分装备结算；保持旧 `attributes`/`equipment`，并在最终回复的 entities 域说明无法完整维护的原因。既有存档不会自动迁移；缺少这些可选字段本身不是错误。
+- `character.equipment` 是 `Record<string, Array<{ ref: string | null; applied?: Record<string, number> }>>`。key 是槽位类型，每个非空数组的现有长度是固定容量；精确空槽为 `{ "ref": null }`。
+- 装备 item 的 `equipment` 为 `{ slotType, add?, percent?, effects? }`。`add`/`percent` 是安全整数 map，`effects` 只用于叙事。
+- 穿戴或直接替换调用 `装备管理.equip`；卸下调用 `装备管理.unequip`。都传入目标 `slotType`、`slotIndex` 和当前精确 `expectedCurrentRef`。
+- 装备规则、持有关系或普通属性发生变化时调用 `装备管理.refresh`。普通属性增减汇总到 `attributeChanges`，它表示非装备基线的增量，不是最终属性覆写。
+- `refresh` 会撤销旧 `applied`、从同一基线按确定性规则重算，并清理结构合法但缺失、不可达、非装备或槽位类型不匹配的旧槽。数据损坏、未知属性、数量不足、共享容器或溢出会整体失败；修正输入数据后再重试。
+- 不使用 `json_edit` 直接修改角色 `attributes` 或 `equipment`，也不在回合后维护中自行计算贡献。
 
 ### extensions.render
 

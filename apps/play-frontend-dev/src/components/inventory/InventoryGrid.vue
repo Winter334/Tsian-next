@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /** InventoryGrid — 容器与物品共用的统一方格。 */
-import type { InventoryEntity } from "../../lib/item-types"
+import type { InventoryEntity, InventoryEntityLoadStatus } from "../../lib/item-types"
 import { isContainerEntity } from "../../lib/item-types"
 import ItemIcon from "./ItemIcon.vue"
 
@@ -8,7 +8,7 @@ export interface InventoryGridItem {
   ref: string
   count?: number
   entity: InventoryEntity | null
-  status: "ready" | "missing" | "loading" | "cycle"
+  status: InventoryEntityLoadStatus | "loading" | "cycle"
   equippedSlots?: string[]
   highlighted?: boolean
 }
@@ -24,6 +24,7 @@ const emit = defineEmits<{
 }>()
 
 function selectItem(event: MouseEvent, item: InventoryGridItem): void {
+  if (!canSelect(item)) return
   emit("select", item, event.currentTarget as HTMLElement)
 }
 
@@ -35,6 +36,24 @@ function displayName(item: InventoryGridItem): string {
 
 function isContainer(item: InventoryGridItem): boolean {
   return item.entity !== null && isContainerEntity(item.entity)
+}
+
+function canSelect(item: InventoryGridItem): boolean {
+  return item.status === "ready"
+    || item.status === "schema-corrupt" && item.entity !== null && !isContainer(item)
+}
+
+function statusLabel(item: InventoryGridItem): string {
+  switch (item.status) {
+    case "loading": return "读取中"
+    case "missing": return "档案缺失"
+    case "cycle": return "循环引用，无法进入"
+    case "read-failed": return "读取失败"
+    case "invalid-json": return "档案内容损坏"
+    case "wrong-entity-type": return "引用类型不符"
+    case "schema-corrupt": return "档案结构损坏"
+    default: return ""
+  }
 }
 
 function slotBadge(item: InventoryGridItem): string {
@@ -56,9 +75,9 @@ function slotBadge(item: InventoryGridItem): string {
       role="listitem"
       :data-variant="isContainer(item) ? 'container' : 'item'"
       :data-status="item.status"
-      :aria-disabled="item.status === 'loading' || item.status === 'missing' || item.status === 'cycle'"
-      :aria-label="`${displayName(item)}${isContainer(item) ? '，容器，进入' : ''}${item.status === 'loading' ? '，读取中' : item.status === 'missing' ? '，档案缺失' : item.status === 'cycle' ? '，循环引用，无法进入' : ''}${slotBadge(item) ? `，已装备于${slotBadge(item)}` : ''}`"
-      :title="item.status === 'cycle' ? '检测到循环引用，无法进入' : item.status === 'missing' ? '档案缺失' : displayName(item)"
+      :aria-disabled="!canSelect(item)"
+      :aria-label="`${displayName(item)}${isContainer(item) ? '，容器，进入' : ''}${statusLabel(item) ? `，${statusLabel(item)}` : ''}${slotBadge(item) ? `，已装备于${slotBadge(item)}` : ''}`"
+      :title="statusLabel(item) || displayName(item)"
       @click="selectItem($event, item)"
       @mouseenter="emit('highlight', item.ref)"
       @mouseleave="emit('highlight', null)"
@@ -70,8 +89,7 @@ function slotBadge(item: InventoryGridItem): string {
       <span v-if="slotBadge(item)" class="inv-cell-equipped">{{ slotBadge(item) }}</span>
       <span class="inv-cell-name">{{ displayName(item) }}</span>
       <span v-if="isContainer(item)" class="inv-cell-enter">进入</span>
-      <span v-else-if="item.status === 'missing'" class="inv-cell-enter">缺失</span>
-      <span v-else-if="item.status === 'cycle'" class="inv-cell-enter">循环</span>
+      <span v-else-if="statusLabel(item)" class="inv-cell-enter">{{ statusLabel(item) }}</span>
     </button>
   </div>
 </template>
@@ -143,7 +161,11 @@ function slotBadge(item: InventoryGridItem): string {
 }
 
 .inv-cell[data-status="cycle"],
-.inv-cell[data-status="missing"] {
+.inv-cell[data-status="missing"],
+.inv-cell[data-status="read-failed"],
+.inv-cell[data-status="invalid-json"],
+.inv-cell[data-status="wrong-entity-type"],
+.inv-cell[data-status="schema-corrupt"] {
   border-color: rgba(155, 58, 46, 0.42);
 }
 

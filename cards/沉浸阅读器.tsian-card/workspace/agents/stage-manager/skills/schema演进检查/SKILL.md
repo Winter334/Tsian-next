@@ -23,7 +23,7 @@ triggers:
 ## 处理规则
 
 - 安全的增量（可选字段、轻量 tag/status 约定、装备槽位小补充、README 澄清）可更新 `save/schema/current.md` 并追加 `changelog.md`。
-- 删除、改名、严格数值机制、背包/装备结构迁移、复杂战斗规则或可能让玩家/作者意外的变更，写到 `save/schema/patches/pending/*.md`。
+- 删除、改名、严格数值机制、装备栏容量或类型定义变化、复杂战斗规则或可能让玩家/作者意外的变更，写到 `save/schema/patches/pending/*.md`。
 - JSON 文档局部维护优先用 `json_edit`；Markdown/text 行级维护优先用 `text_edit`。
 - 需要 schema 设计判断时 call 世界架构师。
 - 不把 schema 维护工作写进玩家可见正文。
