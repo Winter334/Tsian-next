@@ -250,6 +250,40 @@ function closeTrait(): void {
   text-align: right;
 }
 
+@media (max-width: 720px) {
+  .stage-highlights {
+    width: 100%;
+    max-height: none;
+    gap: 7px;
+    padding: 10px 10px 12px;
+    border-radius: 10px;
+    mask-image: none;
+  }
+
+  .stage-highlights-head {
+    font-size: 0.54rem;
+  }
+
+  .stage-trait-grid {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .stage-trait {
+    min-height: 44px;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+
+  .stage-trait-title {
+    font-size: 0.82rem;
+  }
+
+  .stage-trait-preview {
+    font-size: 0.62rem;
+  }
+}
+
 @media (max-width: 900px) {
   .stage-trait-grid {
     grid-template-columns: 1fr;

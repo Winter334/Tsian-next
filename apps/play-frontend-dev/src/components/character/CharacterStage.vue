@@ -432,6 +432,7 @@ function onTrackScroll(): void {
     width: min(92vw, 430px);
     max-height: none;
     margin: 0 auto 10px;
+    transform: none;
   }
 
   .stage-gauges {

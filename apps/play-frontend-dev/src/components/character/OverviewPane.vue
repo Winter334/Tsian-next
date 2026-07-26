@@ -85,7 +85,7 @@ function onSelect(ref: string) {
       </div>
 
       <!-- 4. 关系 -->
-      <div v-if="hasRelationships" class="overview-section">
+      <div v-if="hasRelationships" class="overview-section full">
         <div class="section-title">关系</div>
         <RelationshipList :edges="edges" @select="onSelect" />
       </div>

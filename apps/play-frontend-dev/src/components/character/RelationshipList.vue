@@ -49,9 +49,15 @@ watch(() => props.edges, () => {
 
 <style scoped>
 .relationship-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 22px;
+}
+
+@media (max-width: 980px) {
+  .relationship-list {
+    grid-template-columns: 1fr;
+  }
 }
 .empty-state {
   margin: 0;

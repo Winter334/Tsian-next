@@ -139,6 +139,61 @@ defineProps<{
   opacity: 0.9;
 }
 
+@media (max-width: 720px) {
+  .attribute-mark {
+    min-height: 52px;
+    aspect-ratio: auto;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 18px;
+    padding: 7px 12px;
+    border-bottom: 1px solid rgba(181, 137, 61, 0.12);
+    background: linear-gradient(90deg, rgba(181, 137, 61, 0.035), transparent 58%);
+  }
+
+  .attribute-mark::before {
+    left: auto;
+    right: 44px;
+    top: 50%;
+    width: 38px;
+    height: 1px;
+    transform: rotate(-32deg);
+    background: linear-gradient(90deg, transparent, rgba(232, 169, 72, 0.72), transparent);
+    opacity: 0.58;
+    box-shadow: none;
+  }
+
+  .attribute-mark::after {
+    display: none;
+  }
+
+  .attribute-name,
+  .attribute-value {
+    position: static;
+    max-width: none;
+  }
+
+  .attribute-name {
+    font-family: var(--font-mono);
+    font-size: 0.74rem;
+    letter-spacing: 0.12em;
+    color: var(--prose-muted);
+  }
+
+  .attribute-value {
+    min-width: 42px;
+    font-size: 1.18rem;
+    text-align: right;
+  }
+
+  .attribute-mark:hover,
+  .attribute-mark:focus-visible {
+    filter: none;
+    transform: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .attribute-mark {
     transition: none;

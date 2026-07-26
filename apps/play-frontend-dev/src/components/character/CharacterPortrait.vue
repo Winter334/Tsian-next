@@ -5,7 +5,8 @@
  * 舞台只在显示层裁切；点击有效角色的立绘会打开完整图像 Dialog。上传流程保持
  * save-runtime workspace 路径与 portrait 元数据契约，object URL 在替换和卸载时释放。
  */
-import { computed, onBeforeUnmount, ref, watch } from "vue"
+import { gsap } from "gsap"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import {
   DialogClose,
   DialogContent,
@@ -41,6 +42,14 @@ const portraitUrl = ref<string | null>(null)
 const uploadStatus = ref<string | null>(null)
 const uploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
+const softMaskPath = ref<SVGPathElement | null>(null)
+const portraitInstanceId = `portrait-${Math.random().toString(36).slice(2)}`
+const softMaskId = `${portraitInstanceId}-soft-mask`
+const softMaskFilterId = `${portraitInstanceId}-soft-mask-filter`
+let portraitTimeline: gsap.core.Timeline | null = null
+const portraitMaskPathBase = "M18 6 C45 2 72 8 100 4 C132 0 162 8 194 5 C229 2 258 4 282 7 C292 33 286 55 291 82 C296 112 286 134 292 165 C297 198 286 220 292 251 C296 283 286 306 279 326 C244 331 218 321 184 326 C150 331 123 322 90 328 C59 333 35 324 18 319 C10 292 17 269 11 241 C5 211 17 188 10 158 C3 128 17 105 11 76 C6 45 13 25 18 6 Z"
+const portraitMaskPathWaveA = "M18 6 C45 2 72 8 100 4 C132 0 162 8 194 5 C229 2 258 4 282 7 C288 33 292 55 286 82 C282 112 297 134 287 165 C283 198 298 220 288 251 C292 283 284 306 279 326 C244 331 218 321 184 326 C150 331 123 322 90 328 C59 333 35 324 18 319 C14 292 8 269 15 241 C20 211 5 188 15 158 C19 128 4 105 15 76 C10 45 17 25 18 6 Z"
+const portraitMaskPathWaveB = "M18 6 C45 2 72 8 100 4 C132 0 162 8 194 5 C229 2 258 4 282 7 C296 33 284 55 296 82 C301 112 284 134 297 165 C302 198 284 220 297 251 C292 283 288 306 279 326 C244 331 218 321 184 326 C150 331 123 322 90 328 C59 333 35 324 18 319 C6 292 20 269 7 241 C0 211 20 188 6 158 C0 128 20 105 7 76 C9 45 12 25 18 6 Z"
 let portraitLoadVersion = 0
 let uploadVersion = 0
 let unmounted = false
@@ -107,7 +116,32 @@ watch(
   { immediate: true },
 )
 
+onMounted(() => {
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  if (reduceMotion || !softMaskPath.value) return
+
+  portraitTimeline = gsap.timeline({ repeat: -1 })
+  portraitTimeline
+    .to(softMaskPath.value, {
+      attr: { d: portraitMaskPathWaveA },
+      duration: 3.8,
+      ease: "sine.inOut",
+    })
+    .to(softMaskPath.value, {
+      attr: { d: portraitMaskPathWaveB },
+      duration: 4.2,
+      ease: "sine.inOut",
+    })
+    .to(softMaskPath.value, {
+      attr: { d: portraitMaskPathBase },
+      duration: 3.6,
+      ease: "sine.inOut",
+    })
+})
+
 onBeforeUnmount(() => {
+  portraitTimeline?.kill()
+  portraitTimeline = null
   unmounted = true
   uploadVersion += 1
   portraitLoadVersion += 1
@@ -204,7 +238,39 @@ async function patchEntityPortraitMetadata(
           class="portrait-frame portrait-frame--interactive"
           :aria-label="`查看${name}的完整立绘`"
         >
-          <img class="portrait-img" :src="displaySrc" :alt="name" />
+          <svg
+            class="portrait-svg"
+            viewBox="0 0 300 335"
+            preserveAspectRatio="none"
+            role="img"
+            :aria-label="name"
+          >
+            <defs>
+              <filter :id="softMaskFilterId" x="-4%" y="-4%" width="108%" height="108%">
+                <feGaussianBlur stdDeviation="5" />
+              </filter>
+
+              <mask :id="softMaskId" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="335">
+                <rect width="300" height="335" fill="black" />
+                <path
+                  ref="softMaskPath"
+                  class="portrait-mask-shape"
+                  :d="portraitMaskPathBase"
+                  fill="white"
+                  :filter="`url(#${softMaskFilterId})`"
+                />
+              </mask>
+            </defs>
+
+            <image
+              class="portrait-svg-image"
+              :href="displaySrc"
+              width="300"
+              height="335"
+              preserveAspectRatio="xMidYMid slice"
+              :mask="`url(#${softMaskId})`"
+            />
+          </svg>
           <span class="portrait-view-hint" aria-hidden="true">查看立绘</span>
         </button>
       </DialogTrigger>
@@ -247,7 +313,35 @@ async function patchEntityPortraitMetadata(
     </DialogRoot>
 
     <div v-else class="portrait-frame" aria-hidden="true">
-      <img class="portrait-img" :src="displaySrc" alt="" />
+      <svg
+        class="portrait-svg"
+        viewBox="0 0 300 335"
+        preserveAspectRatio="none"
+        role="img"
+        :aria-label="name"
+      >
+        <defs>
+          <filter :id="softMaskFilterId" x="-4%" y="-4%" width="108%" height="108%">
+            <feGaussianBlur stdDeviation="4" />
+          </filter>
+          <mask :id="softMaskId" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="335">
+            <rect width="300" height="335" fill="black" />
+            <path
+              :d="portraitMaskPathBase"
+              fill="white"
+              :filter="`url(#${softMaskFilterId})`"
+            />
+          </mask>
+        </defs>
+        <image
+          class="portrait-svg-image"
+          :href="displaySrc"
+          width="300"
+          height="335"
+          preserveAspectRatio="xMidYMid slice"
+          :mask="`url(#${softMaskId})`"
+        />
+      </svg>
     </div>
 
     <input
@@ -272,38 +366,11 @@ async function patchEntityPortraitMetadata(
   aspect-ratio: 3 / 3.35;
   border: 0;
   padding: 0;
-  background:
-    radial-gradient(circle at 50% 34%, rgba(181, 137, 61, 0.14), transparent 58%),
-    radial-gradient(circle at 50% 72%, rgba(155, 58, 46, 0.08), transparent 64%);
+  background: transparent;
   position: relative;
   display: block;
-  overflow: hidden;
+  overflow: visible;
   isolation: isolate;
-  clip-path: polygon(5% 1%, 94% 0, 98% 7%, 96% 19%, 100% 29%, 97% 42%, 100% 55%, 96% 68%, 99% 80%, 93% 97%, 78% 99%, 65% 96%, 48% 100%, 34% 97%, 19% 100%, 6% 96%, 2% 84%, 5% 71%, 1% 59%, 4% 45%, 0 31%, 5% 17%);
-}
-
-.portrait-frame::before,
-.portrait-frame::after {
-  content: "";
-  position: absolute;
-  pointer-events: none;
-  z-index: 2;
-}
-
-.portrait-frame::before {
-  inset: 0;
-  background:
-    radial-gradient(ellipse at 4% 18%, rgba(6, 6, 8, 0.95) 0 2%, transparent 9%),
-    radial-gradient(ellipse at 98% 32%, rgba(6, 6, 8, 0.9) 0 2%, transparent 10%),
-    radial-gradient(ellipse at 7% 78%, rgba(6, 6, 8, 0.92) 0 3%, transparent 11%),
-    radial-gradient(ellipse at 91% 88%, rgba(6, 6, 8, 0.88) 0 3%, transparent 12%);
-  mix-blend-mode: multiply;
-}
-
-.portrait-frame::after {
-  inset: auto 0 0;
-  height: 28%;
-  background: linear-gradient(transparent, rgba(6, 6, 8, 0.72));
 }
 
 .portrait-frame--interactive {
@@ -316,13 +383,17 @@ async function patchEntityPortraitMetadata(
   outline-offset: 4px;
 }
 
-.portrait-img {
+.portrait-svg {
   position: absolute;
   inset: 0;
   z-index: 1;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  overflow: visible;
+  filter: drop-shadow(0 0 10px rgba(6, 6, 8, 0.32)) drop-shadow(0 0 18px rgba(181, 137, 61, 0.07));
+}
+
+.portrait-svg-image {
   filter: saturate(0.9) contrast(1.03);
 }
 
@@ -496,7 +567,11 @@ async function patchEntityPortraitMetadata(
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .portrait-frame,
+  .portrait-frame::before,
+  .portrait-frame::after,
   .portrait-view-hint {
+    animation: none;
     transition: none;
   }
 }
