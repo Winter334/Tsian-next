@@ -33,13 +33,16 @@ const { tsian } = useTsian()
 const { data: entityData, error: entityError, load: loadEntity } = useEntity(entityRef)
 const { data: relationshipsData, load: loadRelationships } = useRelationships(entityRef)
 const workspaceRefreshToken = ref(0)
+let loadedRuntimeRevision: number | null = null
 
 watch(
   () => [entityRef.value, props.runtimeRevision] as const,
-  ([refValue]) => {
+  ([refValue, runtimeRevision]) => {
     if (!refValue) return
-    void loadEntity()
-    void loadRelationships()
+    const force = loadedRuntimeRevision !== null && runtimeRevision !== loadedRuntimeRevision
+    loadedRuntimeRevision = runtimeRevision
+    void loadEntity({ force })
+    void loadRelationships({ force })
   },
   { immediate: true },
 )
@@ -53,7 +56,7 @@ const loading = computed(() => entityError.value === null && !entityData.value &
 
 async function reloadAuthoritativeCharacter(): Promise<void> {
   if (!entityRef.value) return
-  await loadEntity()
+  await loadEntity({ force: true })
   workspaceRefreshToken.value += 1
 }
 
@@ -84,7 +87,7 @@ function focusCharacterDrawerTrigger(): void {
 defineExpose({ focusCharacterDrawerTrigger })
 
 function onPortraitUpdated(): void {
-  void loadEntity()
+  void loadEntity({ force: true })
   emit("portrait-updated")
 }
 

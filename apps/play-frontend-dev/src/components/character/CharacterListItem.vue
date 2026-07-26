@@ -83,7 +83,7 @@ function revokePortraitUrl(): void {
 }
 
 async function refreshEntityAndPortrait(): Promise<void> {
-  await loadEntity()
+  await loadEntity({ force: true })
   await loadPortraitThumbnail(portraitPath.value)
 }
 

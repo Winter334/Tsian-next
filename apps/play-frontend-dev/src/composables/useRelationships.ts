@@ -1,5 +1,5 @@
 /**
- * composables/useRelationships.ts — relationships 分片按需读取薄封装（非模块级单例）。
+ * composables/useRelationships.ts — relationships 分片按需读取薄封装（带模块级读取缓存）。
  *
  * 与 useEntity/useScene 同构（design §3.4）：
  * - 输入 subject ref（如 `character:萧玄`）。
@@ -16,6 +16,20 @@ import type { RelationshipFile } from "../lib/character-types"
 import { parseRelationships } from "../lib/parse-character"
 import { getTsianClient } from "./useTsian"
 
+type RelationshipsLoadError = "load-failed" | "not-found" | null
+
+interface RelationshipsCacheEntry {
+  data: RelationshipFile | null
+  error: RelationshipsLoadError
+}
+
+interface RelationshipsLoadOptions {
+  force?: boolean
+}
+
+const relationshipsCache = new Map<string, RelationshipsCacheEntry>()
+const relationshipsInFlight = new Map<string, Promise<RelationshipsCacheEntry>>()
+
 /**
  * 把 subject ref 转成 relationships 分片 workspace 路径。
  * `character:萧玄` → `save/relationships/character-萧玄.json`
@@ -30,6 +44,65 @@ export function subjectRefToRelationshipPath(subjectRef: string): string {
   return `save/relationships/${type}-${localId}.json`
 }
 
+async function readRelationships(path: string): Promise<RelationshipsCacheEntry> {
+  const tsian = getTsianClient()
+  try {
+    const file = await tsian.workspace.read(path, "save-runtime")
+    if (file === null) {
+      // 分片不存在（多数角色无关系分片）→ not-found，UI 隐藏关系区段（非错误）。
+      return { data: null, error: "not-found" }
+    }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(file.content)
+    } catch {
+      return { data: null, error: "load-failed" }
+    }
+
+    const rel = parseRelationships(parsed)
+    if (rel === null) {
+      // 必填字段缺失 → load-failed（type-safety §"play-frontend Workspace Data
+      // Consumption"：parsed object missing fixed fields → load-failed）。
+      return { data: null, error: "load-failed" }
+    }
+
+    return { data: rel, error: null }
+  } catch {
+    // read 抛错（桥/平台异常）→ load-failed，不向上抛（type-safety §D7）
+    return { data: null, error: "load-failed" }
+  }
+}
+
+async function loadRelationshipsCached(
+  path: string,
+  options: RelationshipsLoadOptions,
+): Promise<RelationshipsCacheEntry> {
+  if (!options.force) {
+    const cached = relationshipsCache.get(path)
+    if (cached) return cached
+    const pending = relationshipsInFlight.get(path)
+    if (pending) return pending
+  }
+
+  if (options.force) {
+    relationshipsCache.delete(path)
+    relationshipsInFlight.delete(path)
+  }
+
+  const promise = readRelationships(path)
+    .then((entry) => {
+      relationshipsCache.set(path, entry)
+      return entry
+    })
+    .finally(() => {
+      if (relationshipsInFlight.get(path) === promise) relationshipsInFlight.delete(path)
+    })
+
+  relationshipsInFlight.set(path, promise)
+  return promise
+}
+
 /**
  * useRelationships — relationships 分片按需读取薄封装。
  *
@@ -40,17 +113,16 @@ export function subjectRefToRelationshipPath(subjectRef: string): string {
  */
 export function useRelationships(subjectRef: MaybeRefOrGetter<string>): {
   data: Ref<RelationshipFile | null>
-  error: Ref<"load-failed" | "not-found" | null>
-  load: () => Promise<void>
+  error: Ref<RelationshipsLoadError>
+  load: (options?: RelationshipsLoadOptions) => Promise<void>
 } {
   const data = ref<RelationshipFile | null>(null)
-  const error = ref<"load-failed" | "not-found" | null>(null)
+  const error = ref<RelationshipsLoadError>(null)
   let loadVersion = 0
   let requestedRef = ""
 
-  async function load(): Promise<void> {
+  async function load(options: RelationshipsLoadOptions = {}): Promise<void> {
     const version = ++loadVersion
-    const tsian = getTsianClient()
     const refValue = toValue(subjectRef)
     if (refValue !== requestedRef) {
       requestedRef = refValue
@@ -63,39 +135,11 @@ export function useRelationships(subjectRef: MaybeRefOrGetter<string>): {
       data.value = null
       return
     }
-    try {
-      const file = await tsian.workspace.read(path, "save-runtime")
-      if (version !== loadVersion) return
-      if (file === null) {
-        // 分片不存在（多数角色无关系分片）→ not-found，UI 隐藏关系区段（非错误）。
-        error.value = "not-found"
-        data.value = null
-        return
-      }
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(file.content)
-      } catch {
-        error.value = "load-failed"
-        data.value = null
-        return
-      }
-      const rel = parseRelationships(parsed)
-      if (rel === null) {
-        // 必填字段缺失 → load-failed（type-safety §"play-frontend Workspace Data
-        // Consumption"：parsed object missing fixed fields → load-failed）。
-        error.value = "load-failed"
-        data.value = null
-        return
-      }
-      error.value = null
-      data.value = rel
-    } catch {
-      if (version !== loadVersion) return
-      // read 抛错（桥/平台异常）→ load-failed，不向上抛（type-safety §D7）
-      error.value = "load-failed"
-      data.value = null
-    }
+
+    const entry = await loadRelationshipsCached(path, options)
+    if (version !== loadVersion) return
+    error.value = entry.error
+    data.value = entry.data
   }
 
   return { data, error, load }

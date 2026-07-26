@@ -1,5 +1,5 @@
 /**
- * composables/useEntity.ts — 实体按需读取薄封装（非模块级单例）。
+ * composables/useEntity.ts — 实体按需读取薄封装（带模块级读取缓存）。
  *
  * 设计决策 D3：不预加载所有实体，由 UI 子任务按需读取。每个调用方独立持有
  * 自己的 data/error ref，调 load() 时才发起 workspace.read。
@@ -17,6 +17,66 @@ import { getTsianClient } from "./useTsian"
 
 export { refToEntityPath } from "../lib/entity-ref"
 
+type EntityLoadError = "load-failed" | "not-found" | null
+
+interface EntityCacheEntry {
+  data: EntityData | null
+  error: EntityLoadError
+}
+
+interface EntityLoadOptions {
+  force?: boolean
+}
+
+const entityCache = new Map<string, EntityCacheEntry>()
+const entityInFlight = new Map<string, Promise<EntityCacheEntry>>()
+
+async function readEntity(path: string): Promise<EntityCacheEntry> {
+  const tsian = getTsianClient()
+  try {
+    const file = await tsian.workspace.read(path, "save-runtime")
+    if (file === null) return { data: null, error: "not-found" }
+
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(file.content)
+    } catch {
+      return { data: null, error: "load-failed" }
+    }
+
+    return { data: parseEntity(parsed), error: null }
+  } catch {
+    // read 抛错（桥/平台异常）→ load-failed，不向上抛（D7）
+    return { data: null, error: "load-failed" }
+  }
+}
+
+async function loadEntityCached(path: string, options: EntityLoadOptions): Promise<EntityCacheEntry> {
+  if (!options.force) {
+    const cached = entityCache.get(path)
+    if (cached) return cached
+    const pending = entityInFlight.get(path)
+    if (pending) return pending
+  }
+
+  if (options.force) {
+    entityCache.delete(path)
+    entityInFlight.delete(path)
+  }
+
+  const promise = readEntity(path)
+    .then((entry) => {
+      entityCache.set(path, entry)
+      return entry
+    })
+    .finally(() => {
+      if (entityInFlight.get(path) === promise) entityInFlight.delete(path)
+    })
+
+  entityInFlight.set(path, promise)
+  return promise
+}
+
 /**
  * useEntity — 实体按需读取薄封装。
  *
@@ -26,17 +86,16 @@ export { refToEntityPath } from "../lib/entity-ref"
  */
 export function useEntity(entityRef: MaybeRefOrGetter<string>): {
   data: Ref<EntityData | null>
-  error: Ref<"load-failed" | "not-found" | null>
-  load: () => Promise<void>
+  error: Ref<EntityLoadError>
+  load: (options?: EntityLoadOptions) => Promise<void>
 } {
   const data = ref<EntityData | null>(null)
-  const error = ref<"load-failed" | "not-found" | null>(null)
+  const error = ref<EntityLoadError>(null)
   let loadVersion = 0
   let requestedRef = ""
 
-  async function load(): Promise<void> {
+  async function load(options: EntityLoadOptions = {}): Promise<void> {
     const version = ++loadVersion
-    const tsian = getTsianClient()
     const refValue = toValue(entityRef)
     if (refValue !== requestedRef) {
       requestedRef = refValue
@@ -49,30 +108,11 @@ export function useEntity(entityRef: MaybeRefOrGetter<string>): {
       data.value = null
       return
     }
-    try {
-      const file = await tsian.workspace.read(path, "save-runtime")
-      if (version !== loadVersion) return
-      if (file === null) {
-        error.value = "not-found"
-        data.value = null
-        return
-      }
-      let parsed: unknown
-      try {
-        parsed = JSON.parse(file.content)
-      } catch {
-        error.value = "load-failed"
-        data.value = null
-        return
-      }
-      error.value = null
-      data.value = parseEntity(parsed)
-    } catch {
-      if (version !== loadVersion) return
-      // read 抛错（桥/平台异常）→ load-failed，不向上抛（D7）
-      error.value = "load-failed"
-      data.value = null
-    }
+
+    const entry = await loadEntityCached(path, options)
+    if (version !== loadVersion) return
+    error.value = entry.error
+    data.value = entry.data
   }
 
   return { data, error, load }

@@ -39,6 +39,8 @@ const emit = defineEmits<{
 
 const { tsian } = useTsian()
 const portraitUrl = ref<string | null>(null)
+const loadedPortraitPath = ref<string | null>(null)
+const portraitLoading = ref(false)
 const uploadStatus = ref<string | null>(null)
 const uploading = ref(false)
 const fileInput = ref<HTMLInputElement | null>(null)
@@ -72,27 +74,36 @@ const entityJsonPath = computed(() => {
   return `save/entities/${type}/${id}.json`
 })
 
-/** 上传头像优先；缺失或读取失败时回退默认头像。 */
-const displaySrc = computed(() => portraitUrl.value ?? props.fallbackSrc)
+/** 上传头像优先；有上传路径但尚未加载完成时不闪回默认头像。 */
+const displaySrc = computed(() => {
+  if (portraitUrl.value && loadedPortraitPath.value === props.portraitPath) return portraitUrl.value
+  if (props.portraitPath && portraitLoading.value) return null
+  return props.fallbackSrc
+})
+const dialogSrc = computed(() => displaySrc.value ?? props.fallbackSrc)
 const canOpen = computed(() => props.entityRef !== null)
 
 function revokePortraitUrl(): void {
   if (!portraitUrl.value) return
   URL.revokeObjectURL(portraitUrl.value)
   portraitUrl.value = null
+  loadedPortraitPath.value = null
 }
 
 async function loadPortraitBinary(path = props.portraitPath): Promise<void> {
   const version = ++portraitLoadVersion
   if (!path) {
+    portraitLoading.value = false
     revokePortraitUrl()
     return
   }
+  portraitLoading.value = true
   try {
     const file = await tsian.workspace.read(path, "save-runtime")
     if (version !== portraitLoadVersion) return
     const blob = file?.binary
     if (!blob || blob.size === 0) {
+      if (version === portraitLoadVersion) portraitLoading.value = false
       revokePortraitUrl()
       return
     }
@@ -103,8 +114,13 @@ async function loadPortraitBinary(path = props.portraitPath): Promise<void> {
     }
     revokePortraitUrl()
     portraitUrl.value = nextUrl
+    loadedPortraitPath.value = path
+    portraitLoading.value = false
   } catch {
-    if (version === portraitLoadVersion) revokePortraitUrl()
+    if (version === portraitLoadVersion) {
+      portraitLoading.value = false
+      revokePortraitUrl()
+    }
   }
 }
 
@@ -263,11 +279,19 @@ async function patchEntityPortraitMetadata(
             </defs>
 
             <image
+              v-if="displaySrc"
               class="portrait-svg-image"
               :href="displaySrc"
               width="300"
               height="335"
               preserveAspectRatio="xMidYMid slice"
+              :mask="`url(#${softMaskId})`"
+            />
+            <rect
+              v-else
+              class="portrait-svg-placeholder"
+              width="300"
+              height="335"
               :mask="`url(#${softMaskId})`"
             />
           </svg>
@@ -289,7 +313,7 @@ async function patchEntityPortraitMetadata(
           </header>
 
           <div class="portrait-full-wrap">
-            <img class="portrait-full" :src="displaySrc" :alt="`${name}的完整立绘`" />
+            <img class="portrait-full" :src="dialogSrc" :alt="`${name}的完整立绘`" />
           </div>
 
           <div class="portrait-dialog-actions">
@@ -322,7 +346,7 @@ async function patchEntityPortraitMetadata(
       >
         <defs>
           <filter :id="softMaskFilterId" x="-4%" y="-4%" width="108%" height="108%">
-            <feGaussianBlur stdDeviation="4" />
+            <feGaussianBlur stdDeviation="5" />
           </filter>
           <mask :id="softMaskId" maskUnits="userSpaceOnUse" x="0" y="0" width="300" height="335">
             <rect width="300" height="335" fill="black" />
@@ -334,11 +358,19 @@ async function patchEntityPortraitMetadata(
           </mask>
         </defs>
         <image
+          v-if="displaySrc"
           class="portrait-svg-image"
           :href="displaySrc"
           width="300"
           height="335"
           preserveAspectRatio="xMidYMid slice"
+          :mask="`url(#${softMaskId})`"
+        />
+        <rect
+          v-else
+          class="portrait-svg-placeholder"
+          width="300"
+          height="335"
           :mask="`url(#${softMaskId})`"
         />
       </svg>
@@ -395,6 +427,10 @@ async function patchEntityPortraitMetadata(
 
 .portrait-svg-image {
   filter: saturate(0.9) contrast(1.03);
+}
+
+.portrait-svg-placeholder {
+  fill: rgba(235, 224, 204, 0.08);
 }
 
 .portrait-view-hint {
