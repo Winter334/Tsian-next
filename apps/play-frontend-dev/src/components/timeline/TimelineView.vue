@@ -70,6 +70,8 @@ onMounted(() => {
   align-items: center;
   justify-content: flex-start;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(181, 137, 61, 0.28) transparent;
 }
 
 .timeline-container {
@@ -83,6 +85,20 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+
+.timeline-view::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.timeline-view::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(181, 137, 61, 0.24);
+}
+
+.timeline-view::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 /* ── 占位态 ── */
@@ -156,6 +172,11 @@ onMounted(() => {
     height: calc(100% - var(--play-header-height) - var(--play-bottom-nav-height));
     margin-top: var(--play-header-height);
     padding: 0;
+    scrollbar-width: none;
+  }
+
+  .timeline-view::-webkit-scrollbar {
+    display: none;
   }
 
   .timeline-container {

@@ -56,7 +56,12 @@ const facts = computed<FactRow[]>(() => {
 
 <template>
   <div v-if="facts.length > 0" class="identity-facts">
-    <div v-for="f in facts" :key="f.key" class="fact-chip">
+    <div
+      v-for="f in facts"
+      :key="f.key"
+      class="fact-chip"
+      :class="{ 'fact-chip--long': f.value.length > 6 }"
+    >
       <span class="fact-label">{{ f.label }}</span>
       <span class="fact-value">{{ f.value }}</span>
       <PinButton
@@ -76,6 +81,7 @@ const facts = computed<FactRow[]>(() => {
 .identity-facts {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: dense;
   gap: 8px;
   margin-top: 14px;
 }
@@ -91,6 +97,9 @@ const facts = computed<FactRow[]>(() => {
 .fact-chip :deep(.pin-btn.active) {
   opacity: 0.85;
 }
+.fact-chip--long {
+  grid-column: span 2;
+}
 .fact-label {
   display: block;
   font-family: var(--font-mono);
@@ -102,10 +111,9 @@ const facts = computed<FactRow[]>(() => {
 .fact-value {
   display: block;
   font-size: 0.82rem;
+  line-height: 1.35;
   color: var(--prose);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
   padding-right: 20px;
 }
 </style>

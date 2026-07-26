@@ -464,6 +464,38 @@ function restoreMobileFocus(event: Event): void {
   100% { opacity: 1; }
 }
 
+@keyframes status-drawer-slide-in {
+  from {
+    opacity: 0.86;
+    transform: translateX(-102%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes status-drawer-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.82;
+    transform: translateX(-102%);
+  }
+}
+
+@keyframes status-drawer-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes status-drawer-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @media (max-width: 720px) {
   .status-bar {
     display: none;
@@ -476,6 +508,14 @@ function restoreMobileFocus(event: Event): void {
     display: block;
     background: rgba(3, 3, 5, 0.8);
     backdrop-filter: blur(5px);
+  }
+
+  .status-drawer-overlay[data-state="open"] {
+    animation: status-drawer-fade-in 0.22s ease-out;
+  }
+
+  .status-drawer-overlay[data-state="closed"] {
+    animation: status-drawer-fade-out 0.16s ease-in;
   }
 
   .status-drawer {
@@ -494,6 +534,14 @@ function restoreMobileFocus(event: Event): void {
       rgba(9, 5, 6, 0.98);
     box-shadow: 24px 0 74px rgba(0, 0, 0, 0.62);
     outline: none;
+  }
+
+  .status-drawer[data-state="open"] {
+    animation: status-drawer-slide-in 0.28s var(--play-sidebar-ease);
+  }
+
+  .status-drawer[data-state="closed"] {
+    animation: status-drawer-slide-out 0.18s ease-in;
   }
 
   .status-drawer-head {
@@ -537,6 +585,14 @@ function restoreMobileFocus(event: Event): void {
     outline: 2px solid var(--ember-bright);
     outline-offset: 2px;
     color: var(--ember-bright);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .status-drawer-overlay[data-state="open"],
+  .status-drawer-overlay[data-state="closed"],
+  .status-drawer[data-state="open"],
+  .status-drawer[data-state="closed"] {
+    animation: none;
   }
 }
 </style>

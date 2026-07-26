@@ -1079,6 +1079,17 @@ function nodeAlignmentClass(item: RenderItem): string {
   }
 }
 
+@media (max-width: 720px) {
+  .timeline-tree {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .timeline-tree::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .tree-row {
     opacity: 1;

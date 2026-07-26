@@ -307,6 +307,14 @@ const scenePresentEmpty = computed(() =>
   backdrop-filter: blur(5px);
 }
 
+.character-drawer-overlay[data-state="open"] {
+  animation: character-drawer-fade-in 0.22s ease-out;
+}
+
+.character-drawer-overlay[data-state="closed"] {
+  animation: character-drawer-fade-out 0.16s ease-in;
+}
+
 .character-drawer {
   position: fixed;
   z-index: 161;
@@ -324,6 +332,14 @@ const scenePresentEmpty = computed(() =>
     rgba(9, 5, 6, 0.98);
   box-shadow: 24px 0 70px rgba(0, 0, 0, 0.56);
   outline: none;
+}
+
+.character-drawer[data-state="open"] {
+  animation: character-drawer-slide-in 0.28s var(--play-sidebar-ease);
+}
+
+.character-drawer[data-state="closed"] {
+  animation: character-drawer-slide-out 0.18s ease-in;
 }
 
 .character-drawer-head {
@@ -369,6 +385,38 @@ const scenePresentEmpty = computed(() =>
   color: var(--ember-bright);
 }
 
+@keyframes character-drawer-slide-in {
+  from {
+    opacity: 0.86;
+    transform: translateX(-102%);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes character-drawer-slide-out {
+  from {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  to {
+    opacity: 0.82;
+    transform: translateX(-102%);
+  }
+}
+
+@keyframes character-drawer-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes character-drawer-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @media (min-width: 721px) {
   .character-drawer-overlay,
   .character-drawer {
@@ -404,8 +452,13 @@ const scenePresentEmpty = computed(() =>
 
 @media (prefers-reduced-motion: reduce) {
   .character-card-switch-enter-active,
-  .character-card-switch-leave-active {
+  .character-card-switch-leave-active,
+  .character-drawer-overlay[data-state="open"],
+  .character-drawer-overlay[data-state="closed"],
+  .character-drawer[data-state="open"],
+  .character-drawer[data-state="closed"] {
     transition: none;
+    animation: none;
   }
 }
 </style>
