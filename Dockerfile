@@ -14,6 +14,7 @@ RUN npm ci
 
 COPY apps/platform-web apps/platform-web
 COPY apps/admin-web apps/admin-web
+COPY cards/沉浸阅读器.tsian-card/workspace cards/沉浸阅读器.tsian-card/workspace
 COPY packages/contracts packages/contracts
 COPY packages/play-bridge packages/play-bridge
 COPY packages/web-utils packages/web-utils
