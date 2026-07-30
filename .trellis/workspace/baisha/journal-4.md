@@ -381,3 +381,25 @@ Implemented workshop-installed game card update detection using MarketPackage.re
 ### Next Steps
 
 - None - task complete
+
+
+## Session 167: 统一 AI Trace 核心存储与采集
+
+**Date**: 2026-07-30
+**Task**: 统一 AI Trace 核心存储与采集
+**Branch**: `master`
+
+### Summary
+
+实现全局 diagnosticRecords 联合表、统一 AI provider Trace、重试与关联链、四类前端错误采集；移除旧 Runtime Trace/AI Debug 读写，并通过独立质量检查。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `382cf8c` | (see git log) |
+| `4063dff` | (see git log) |
+
+### Status
+
+[OK] **Completed**

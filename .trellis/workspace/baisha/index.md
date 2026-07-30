@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 166
-- **Last Active**: 2026-07-26
+- **Total Sessions**: 167
+- **Last Active**: 2026-07-30
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~383 | Active |
+| `journal-4.md` | ~405 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 167 | 2026-07-30 | 统一 AI Trace 核心存储与采集 | `382cf8c`, `4063dff` | `master` |
 | 166 | 2026-07-26 | 完成确定性装备管理与换装 UI | `7ff51bd` | `task/stage-manager-maintenance-tool-optimization` |
 | 165 | 2026-07-25 | 装备 Schema 与 Stage Manager 同步 | `b3c1037`, `c5b187b` | `task/stage-manager-maintenance-tool-optimization` |
 | 164 | 2026-07-24 | 角色详情响应式重设计与装备展示 | `0352218`, `6a91893` | `task/stage-manager-maintenance-tool-optimization` |
