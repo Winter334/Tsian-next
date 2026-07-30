@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 168
+- **Total Sessions**: 169
 - **Last Active**: 2026-07-30
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~426 | Active |
+| `journal-4.md` | ~447 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 169 | 2026-07-30 | Trace JSON 折叠阅读优化 | `b224863` | `master` |
 | 168 | 2026-07-30 | 统一 AI Trace 监视器、诊断包与 workspace 投影 | `8292623` | `master` |
 | 167 | 2026-07-30 | 统一 AI Trace 核心存储与采集 | `382cf8c`, `4063dff` | `master` |
 | 166 | 2026-07-26 | 完成确定性装备管理与换装 UI | `7ff51bd` | `task/stage-manager-maintenance-tool-optimization` |
