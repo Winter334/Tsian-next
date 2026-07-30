@@ -1,0 +1,4 @@
+{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/storage-contract.md","reason":"核心任务新增 Dexie 表、清理策略、持久化 helper，并采用经批准的增量 schema 例外。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"request 生命周期从 Agent Runtime 穿过 host 到 runtime-host/storage。"}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"约束 schema 字段必须有真实消费者并保持单一权威。"}
+{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/code-evidence.md","reason":"标明四个 AI 请求入口、retry 事实源和旧 writer 位置。"}

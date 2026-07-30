@@ -1,0 +1,4 @@
+{"file":".trellis/spec/guides/data-fileification-principle.md","reason":"用现有 workspace 工具暴露虚拟诊断文件，同时明确权威与派生。"}
+{"file":".trellis/spec/guides/airp-data-capability-design-principles.md","reason":"约束只读能力边界、按需分片和单一权威。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"virtual adapter 横跨 storage、workspace operation、runtime 和 assistant host。"}
+{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/code-evidence.md","reason":"提供当前 WorkspaceFile 快照和统一 operation 入口证据。"}

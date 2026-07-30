@@ -1,0 +1,3 @@
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"检查 Trace 面板可读性、焦点、滚动与视图职责。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"检查 contracts/bridge/UI 一致性和回归。"}
+{"file":".trellis/tasks/07-30-unified-ai-trace-diagnostics-bundle/research/code-evidence.md","reason":"确认旧 runtime-trace/ai-debug 查询已退出主 UI。"}
