@@ -403,3 +403,24 @@ Implemented workshop-installed game card update detection using MarketPackage.re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 168: 统一 AI Trace 监视器、诊断包与 workspace 投影
+
+**Date**: 2026-07-30
+**Task**: 统一 AI Trace 监视器、诊断包与 workspace 投影
+**Branch**: `master`
+
+### Summary
+
+完成统一 Trace 监视器、Overview 同源统计、失败锚点诊断包、凭据二次脱敏，以及桌面助手按需只读 diagnostics workspace 投影；父任务全量 489 项测试与手动验收通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8292623` | (see git log) |
+
+### Status
+
+[OK] **Completed**
