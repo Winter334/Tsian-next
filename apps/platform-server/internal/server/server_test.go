@@ -8,7 +8,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -16,7 +15,7 @@ import (
 	"tsian/platform-server/internal/storage"
 )
 
-func TestPlatformWebStaticResponsesUseProductionCSP(t *testing.T) {
+func TestStaticResponsesDoNotSetContentSecurityPolicy(t *testing.T) {
 	t.Parallel()
 
 	staticDir := t.TempDir()
@@ -37,7 +36,6 @@ func TestPlatformWebStaticResponsesUseProductionCSP(t *testing.T) {
 		AdminStaticDir: adminDir,
 	}
 	handler := New(cfg, nil).Handler()
-	expectedCSP := strings.TrimSpace(platformWebContentSecurityPolicy)
 	for _, requestPath := range []string{"/", "/app.js", "/client/route"} {
 		request := httptest.NewRequest(http.MethodGet, requestPath, nil)
 		response := httptest.NewRecorder()
@@ -45,8 +43,8 @@ func TestPlatformWebStaticResponsesUseProductionCSP(t *testing.T) {
 		if response.Code != http.StatusOK {
 			t.Fatalf("GET %s status = %d, want %d", requestPath, response.Code, http.StatusOK)
 		}
-		if got := response.Header().Get("Content-Security-Policy"); got != expectedCSP {
-			t.Fatalf("GET %s CSP = %q, want %q", requestPath, got, expectedCSP)
+		if got := response.Header().Get("Content-Security-Policy"); got != "" {
+			t.Fatalf("GET %s CSP = %q, want no server-defined policy", requestPath, got)
 		}
 	}
 
@@ -54,7 +52,7 @@ func TestPlatformWebStaticResponsesUseProductionCSP(t *testing.T) {
 	adminResponse := httptest.NewRecorder()
 	handler.ServeHTTP(adminResponse, adminRequest)
 	if got := adminResponse.Header().Get("Content-Security-Policy"); got != "" {
-		t.Fatalf("admin CSP = %q, want no platform-web policy", got)
+		t.Fatalf("admin CSP = %q, want no server-defined policy", got)
 	}
 }
 

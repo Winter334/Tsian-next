@@ -133,7 +133,7 @@ Action 输入、输出、manifest/schema 和 domain error details 都不能依�
 - strict compile 遇到 unknown keyword、错误 schema position 或其他无效结构时 fail loud；不会退回浅层验证。
 - `format` 不执行语义验证；需要格式约束时用明确的 `pattern`、长度或枚举。
 
-Ajv 的 runtime compilation 和 browser-script runner 都需要生产 CSP 允许动态代码；Frontend Action 的 opaque-origin `data:` Worker 也需要 `worker-src data:`。平台发布策略因此显式包含 `script-src 'unsafe-eval'` 和 `worker-src ... data:`。每次真实 Action 调用在读取 snapshot、解析 schema 或启动 Action Worker 前，都会等待一个进程内 singleton runtime gate：它通过实际 `compileFrontendActionSchema` / `validateFrontendActionData` 编译并验证代表性 Draft 2020-12 schema，再通过实际默认 Worker factory 执行隔离探针。gate 的成功和失败都会缓存；失败时 RPC fail closed，不会回退到假 Worker、浅层 validator 或宽松 CSP。发布前还必须运行 `npm run test:frontend-actions:production-browser`，用 production Vite bundle、同一份生产 CSP 和真实 Chrome/Edge 执行同一 gate。
+Ajv 的 runtime compilation 和 browser-script runner 依赖动态代码能力；Frontend Action 的 opaque-origin Worker 使用 `data:` URL。`platform-server` 不对 platform-web 下发 CSP；部署方若自行添加 CSP，需要确保它兼容这些运行时能力。每次真实 Action 调用在读取 snapshot、解析 schema 或启动 Action Worker 前，都会等待一个进程内 singleton runtime gate：它通过实际 `compileFrontendActionSchema` / `validateFrontendActionData` 编译并验证代表性 Draft 2020-12 schema，再通过实际默认 Worker factory 执行隔离探针。gate 的成功和失败都会缓存；失败时 RPC fail closed，不会改用模拟 Worker 或浅层 validator。发布前还必须运行 `npm run test:frontend-actions:production-browser`，用 production Vite bundle 和真实 Chrome/Edge 执行同一 gate。
 
 ## 5. Action 脚本
 
@@ -183,7 +183,7 @@ Frontend Action 在 opaque-origin `data:` Worker 中执行，并只通过 host-m
 
 - 原生网络 `fetch` 当前可用；不能宣称网络隔离。
 - `Date`/时钟、timers 和 `Math.random` 未虚拟化；同样输入不保证仅因平台而可重放。
-- runner 使用动态函数构造来执行脚本，生产 CSP 明确允许所需的动态代码；不能宣称禁止 eval/code generation。
+- runner 使用动态函数构造来执行脚本；不能宣称禁止 eval/code generation。部署方自行添加 CSP 时必须保留该能力。
 - opaque origin 和 ambient-global taming 针对平台 origin storage/nested Worker bypass，不是对 JavaScript reflection、浏览器实现或所有未来 Web API 的完整 capability-security 证明。
 
 具体 Action 若要求确定性或更强的网络/能力约束，必须使用额外的专用执行环境和测试；平台不提供这些声明。

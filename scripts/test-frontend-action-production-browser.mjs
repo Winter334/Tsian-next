@@ -8,7 +8,6 @@ import process from "node:process"
 const root = resolve(import.meta.dirname, "..")
 const webRoot = join(root, "apps", "platform-web")
 const distRoot = join(webRoot, "dist-runtime-preflight")
-const cspPath = join(root, "apps", "platform-server", "internal", "server", "platform-web.csp")
 
 function fail(message) {
   throw new Error(message)
@@ -67,7 +66,7 @@ function contentType(pathname) {
   }
 }
 
-async function serve(csp) {
+async function serve() {
   let settleResult
   const result = new Promise((resolveResult) => { settleResult = resolveResult })
   const server = createServer(async (request, response) => {
@@ -78,7 +77,7 @@ async function serve(csp) {
         request.setEncoding("utf8")
         for await (const chunk of request) body += chunk
         settleResult(JSON.parse(body))
-        response.writeHead(204, { "Content-Security-Policy": csp }).end()
+        response.writeHead(204).end()
         return
       }
       const relativePath = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1))
@@ -90,7 +89,6 @@ async function serve(csp) {
       const content = await readFile(absolutePath)
       response.writeHead(200, {
         "Content-Type": contentType(absolutePath),
-        "Content-Security-Policy": csp,
         "Cache-Control": "no-store",
       })
       response.end(content)
@@ -134,22 +132,14 @@ function launchBrowser(browser, url, profile) {
 }
 
 async function main() {
-  const csp = (await readFile(cspPath, "utf8")).trim()
-  if (!csp.includes("script-src 'self' 'unsafe-eval'")) {
-    fail("Production CSP must permit Ajv and Action dynamic function compilation.")
-  }
-  if (!/worker-src[^;]*\bdata:/.test(csp)) {
-    fail("Production CSP must permit opaque-origin data: Frontend Action Workers.")
-  }
-
   const browser = await findBrowser()
   const profile = await mkdtemp(join(tmpdir(), "tsian-frontend-action-preflight-"))
-  const { server, result: browserResult, url } = await serve(csp)
+  const { server, result: browserResult, url } = await serve()
   let launched
   try {
     const response = await fetch(url)
-    if (response.headers.get("content-security-policy") !== csp) {
-      fail("Browser harness CSP differs from the canonical production CSP.")
+    if (!response.ok) {
+      fail(`Browser harness returned HTTP ${response.status}.`)
     }
     launched = launchBrowser(browser, url, profile)
     let timeoutId
