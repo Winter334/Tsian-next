@@ -98,6 +98,7 @@ import type {
   NativeToolCall,
   RuntimeChatMessage,
 } from "../runtime-host/ai"
+import { forkAiTraceOperationContext } from "../runtime-host/ai/trace-context"
 import type { BrowserAiToolCallMode } from "../config/ai"
 import {
   collectToolMemoriesForContext,
@@ -780,6 +781,7 @@ function createAgentCallRunner(
 
     const delegatedInput: AgentRuntimeTurnInput = {
       ...input,
+      traceContext: forkAiTraceOperationContext(input.traceContext),
       workspaceFiles: workspaceFilesForAgentBoundary(
         input.workspaceFiles,
         "runtime-game-agent",
@@ -873,6 +875,7 @@ function createAgentCallRunner(
           debugLabel,
           signal: compositeSignal,
           agentId: targetContext.agent.id,
+          traceContext: delegatedInput.traceContext,
           // Thread the caller's streaming/tool-event sinks so the delegated
           // agent's process is visible upstream (agentId bound by the tool
           // loop to targetContext.agent.id). Both native and text loops now
@@ -1123,6 +1126,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             debugLabel: options.debugLabel,
             signal: options.signal,
             agentId: agentContext.agent.id,
+            traceContext: options.traceContext,
           }
           const beforeTokens = totalTokens
           const result: TaskCompressionResult<RuntimeChatMessage> = await compressTaskContext<RuntimeChatMessage>(
@@ -1174,6 +1178,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             debugLabel: options.debugLabel,
             signal: options.signal,
             agentId: agentContext.agent.id,
+            traceContext: options.traceContext,
           }
           const compressed = await compressContext(
             toolOptions.agentContextSnapshot!,
@@ -1535,6 +1540,7 @@ async function callAgentModelWithWorkspaceTools(
             debugLabel: options.debugLabel,
             signal: options.signal,
             agentId: agentContext.agent.id,
+            traceContext: options.traceContext,
           }
           const beforeTokens = totalTokens
           const result: TaskCompressionResult<AiChatMessage> = await compressTaskContext<AiChatMessage>(
@@ -1584,6 +1590,7 @@ async function callAgentModelWithWorkspaceTools(
             debugLabel: options.debugLabel,
             signal: options.signal,
             agentId: agentContext.agent.id,
+            traceContext: options.traceContext,
           }
           const compressed = await compressContext(
             toolOptions!.agentContextSnapshot!,
@@ -1910,6 +1917,7 @@ export async function runAgentRuntimeTurn(
       debugLabel: "entry-agent",
       signal: input.signal,
       agentId: entryContext.agent.id,
+      traceContext: input.traceContext,
       // task 模式(助手)用任务摘要 prompt + "用户/助手"标签;
       // narrative 模式(master)不传 → compressContext 用默认剧情梗概 prompt + "玩家/叙事"标签.
       ...(entryCompressionMode === "task"
@@ -1983,6 +1991,7 @@ export async function runAgentRuntimeTurn(
         debugLabel: "entry-agent",
         signal: input.signal,
         agentId: entryContext.agent.id,
+        traceContext: input.traceContext,
         onDelta: input.onDelta,
         onRoundEnd: input.onRoundEnd,
         onTool: input.onTool,

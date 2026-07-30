@@ -2,6 +2,31 @@ export const AI_REQUEST_MAX_RETRIES = 3
 export const AI_REQUEST_MAX_ATTEMPTS = AI_REQUEST_MAX_RETRIES + 1
 export const AI_REQUEST_BASE_RETRY_DELAY_MS = 800
 
+export type AiRequestAttemptEvent =
+  | {
+      phase: "started"
+      attempt: number
+      maxAttempts: number
+      timestamp: number
+    }
+  | {
+      phase: "succeeded"
+      attempt: number
+      maxAttempts: number
+      timestamp: number
+    }
+  | {
+      phase: "failed"
+      attempt: number
+      maxAttempts: number
+      timestamp: number
+      error: unknown
+      retryable: boolean
+      willRetry: boolean
+      retryDelayMs?: number
+      aborted: boolean
+    }
+
 const AI_REQUEST_RETRYABLE_HTTP_STATUSES = new Set([408, 429, 500, 502, 503, 504])
 
 export class AiRequestTimeoutError extends Error {
@@ -20,6 +45,20 @@ export class AiHttpStatusError extends Error {
     this.name = "AiHttpStatusError"
     this.status = status
     this.payload = payload
+  }
+}
+
+export class AiResponseParseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "AiResponseParseError"
+  }
+}
+
+export class AiStreamResponseError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = "AiStreamResponseError"
   }
 }
 
@@ -161,13 +200,29 @@ export async function withAiRequestRetry<T>(input: {
   attempt: (context: { attempt: number; maxAttempts: number }) => Promise<T>
   shouldRetryError?: (error: unknown, context: { attempt: number; maxAttempts: number }) => boolean
   canRetryAfterError?: (error: unknown, context: { attempt: number; maxAttempts: number }) => boolean
+  onAttempt?: (event: AiRequestAttemptEvent) => void
+  retryDelayMs?: (retryNumber: number) => number
 }): Promise<T> {
   for (let attempt = 1; attempt <= AI_REQUEST_MAX_ATTEMPTS; attempt += 1) {
     throwIfSignalAborted(input.signal)
+    input.onAttempt?.({
+      phase: "started",
+      attempt,
+      maxAttempts: AI_REQUEST_MAX_ATTEMPTS,
+      timestamp: Date.now(),
+    })
     try {
-      return await input.attempt({ attempt, maxAttempts: AI_REQUEST_MAX_ATTEMPTS })
+      const result = await input.attempt({ attempt, maxAttempts: AI_REQUEST_MAX_ATTEMPTS })
+      input.onAttempt?.({
+        phase: "succeeded",
+        attempt,
+        maxAttempts: AI_REQUEST_MAX_ATTEMPTS,
+        timestamp: Date.now(),
+      })
+      return result
     } catch (error) {
       if (input.signal?.aborted) {
+        const abortReason = getAbortSignalReason(input.signal)
         console.warn(`[Tsian AI ${input.requestId}] ${input.operation} attempt failed`, {
           attempt,
           maxAttempts: AI_REQUEST_MAX_ATTEMPTS,
@@ -175,7 +230,17 @@ export async function withAiRequestRetry<T>(input: {
           aborted: true,
           failure: describeAiRequestFailure(error),
         })
-        throw getAbortSignalReason(input.signal)
+        input.onAttempt?.({
+          phase: "failed",
+          attempt,
+          maxAttempts: AI_REQUEST_MAX_ATTEMPTS,
+          timestamp: Date.now(),
+          error: abortReason,
+          retryable: false,
+          willRetry: false,
+          aborted: true,
+        })
+        throw abortReason
       }
 
       const retryable = input.shouldRetryError
@@ -185,7 +250,21 @@ export async function withAiRequestRetry<T>(input: {
         ? input.canRetryAfterError(error, { attempt, maxAttempts: AI_REQUEST_MAX_ATTEMPTS })
         : true
       const willRetry = retryable && retryAllowedByCaller && attempt < AI_REQUEST_MAX_ATTEMPTS
-      const retryInMs = willRetry ? aiRequestRetryDelayMs(attempt) : undefined
+      const retryInMs = willRetry
+        ? (input.retryDelayMs?.(attempt) ?? aiRequestRetryDelayMs(attempt))
+        : undefined
+
+      input.onAttempt?.({
+        phase: "failed",
+        attempt,
+        maxAttempts: AI_REQUEST_MAX_ATTEMPTS,
+        timestamp: Date.now(),
+        error,
+        retryable,
+        willRetry,
+        ...(retryInMs !== undefined ? { retryDelayMs: retryInMs } : {}),
+        aborted: false,
+      })
 
       console.warn(`[Tsian AI ${input.requestId}] ${input.operation} attempt failed`, {
         attempt,
@@ -209,7 +288,11 @@ export async function withAiRequestRetry<T>(input: {
   throw new Error("AI request retry loop exhausted unexpectedly.")
 }
 
-export async function readJsonPayload(response: Response, signal?: AbortSignal): Promise<unknown> {
+export async function readJsonPayload(
+  response: Response,
+  signal?: AbortSignal,
+  allowInvalid = false,
+): Promise<unknown> {
   try {
     return await response.json()
   } catch (error) {
@@ -219,7 +302,8 @@ export async function readJsonPayload(response: Response, signal?: AbortSignal):
     if (isAbortError(error)) {
       throw error
     }
-    return null
+    if (allowInvalid) return null
+    throw assignCause(new AiResponseParseError("AI response body is not valid JSON."), error)
   }
 }
 
@@ -280,7 +364,7 @@ export async function fetchJsonWithTimeout(input: {
       ...input.init,
       signal: timed.signal,
     })
-    const payload = await readJsonPayload(response, timed.signal)
+    const payload = await readJsonPayload(response, timed.signal, !response.ok)
     return { response, payload }
   } catch (error) {
     if (timed.timedOut()) {

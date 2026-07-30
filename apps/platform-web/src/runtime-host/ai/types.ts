@@ -1,9 +1,10 @@
-import type { AiChatMessage, AiDebugRecord, ContentPart } from "@tsian/contracts"
+import type { AiChatMessage, ContentPart } from "@tsian/contracts"
 
 import type { ToolSchema } from "../../agent-runtime/tool-schemas"
 import type { BrowserAiConfig } from "../../config/ai"
+import type { AiTraceOperationContext } from "./trace-context"
 
-export type { AiChatMessage, AiDebugRecord }
+export type { AiChatMessage }
 export type { ContentPart }
 
 /**
@@ -56,6 +57,7 @@ export interface GenerateAssistantReplyOptions {
   debugLabel?: string
   config?: BrowserAiConfig | null
   signal?: AbortSignal
+  traceContext?: AiTraceOperationContext
 }
 
 export interface NativeRequestBuildOptions {

@@ -43,17 +43,9 @@ Use these specs when changing `apps/platform-web/src/**`.
 
 **Cache**: pure-string entries preserve the existing one-file-per-message split (prefix cache stable). `{{random}}` causes per-turn cache miss — use sparingly.
 
-## Trace Diagnostics
+## Unified Diagnostics
 
-Runtime traces (`.tsian/save/traces/turns/turn-NNNNNN.jsonl`) are append-only per-save logs (see storage spec). They feed two layers:
-
-- **`diagnostics.ts`** builds `RuntimeDiagnosticSummary` (facts + health) from parsed trace files — the aggregated issue/health view consumed by the `runtime-diagnostics` query resource and DebugView's "最近问题" panel. The trace path pattern must match `formatRuntimeTracePath` (`.tsian/save/traces/turns/turn-*.jsonl`); a mismatch silently makes diagnostics return empty.
-- **`trace.ts`** owns the human-readable renderer (`formatTraceForHuman` / `formatTraceEventForHuman`) — a pure logfmt/rust-tracing-style formatter that flattens event `data` to `key=value` with friendly-name mapping, time offsets, and ok/FAIL markers. This is a **rendering layer only** — it does not change JSONL storage.
-
-**Trace collection principle**: trace records **metadata only** (event type, identifiers like agentId/skill/tool name, counts/duration/token numbers/finishReason/usage, result status ok/failed + error/stack). It does **not** record business content fragments — no `outputPreview`/`resultPreview` of reply text or tool results. Truncated content fragments are insufficient for diagnosis and overlap with turn files (full replies) and workspace files (full tool results). Developers know their architecture; players who can't read a trace hand it to the assistant agent (which reads JSONL via `runtime-diagnostics` and has workspace tools for full content). No "where to see full text" guidance lines in trace data either.
-
-- `errorToTraceDataWithStack(error)` extends `errorToTraceData` with a truncated `errorStack` (`TRACE_ERROR_STACK_LIMIT = 1000`); use it for failed-event trace emits.
-- The `runtime-trace` query resource returns raw trace events for a turn (`loadRuntimeTraceEvents`) — DebugView's "运行日志" section fetches it and renders via `formatTraceForHuman`, defaulting to the latest turn.
+Provider requests and unhandled frontend errors use the global `diagnosticRecords` table. Runtime Trace JSONL and AI Debug writers/readers are retired and must not be restored as compatibility paths. See [Unified Diagnostics Storage and Collection](../storage/diagnostics.md) for the cross-layer schema, recorder, sanitization, pagination, retention, and verification contract.
 
 ## Related Specs
 

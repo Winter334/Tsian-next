@@ -3,16 +3,15 @@ import { getBrowserAiConfig } from "../../config/ai"
 import { contentToTextPreview } from "./content"
 import {
   buildDebugMessageSegments,
-  createAiDebugRequestId,
   getChatTimeoutMs,
   logDebugGroup,
   maskSecret,
   previewText,
-  pushAiDebugRecord,
-  updateAiDebugRecord,
 } from "./debug-records"
 import {
   AiHttpStatusError,
+  AiResponseParseError,
+  AiStreamResponseError,
   createAiRequestTimeoutError,
   createTimedAbortSignal,
   fetchJsonWithTimeout,
@@ -23,11 +22,13 @@ import {
 import { selectAdapter } from "./providers"
 import { enableOpenAiCompatibleStreamUsage, extractErrorMessage, extractUsageFromPayload } from "./providers/shared"
 import { finalizeStreamedToolCalls } from "./tool-calls"
+import { beginAiRequestTrace } from "./trace-recorder"
 import type {
   AiChatMessage,
   GenerateAssistantReplyNativeOptions,
   GenerateAssistantReplyOptions,
   ModelCallResult,
+  NativeToolCall,
   RuntimeChatMessage,
   StreamAssistantReplyNativeOptions,
   StreamAssistantReplyTextOptions,
@@ -36,10 +37,6 @@ import type {
 function createAiHttpStatusError(response: Response, payload: unknown): AiHttpStatusError {
   const message = extractErrorMessage(payload) ?? `AI request failed with status ${response.status}.`
   return new AiHttpStatusError(response.status, payload, message)
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
 }
 
 function toPublicAiRequestError(error: unknown): unknown {
@@ -62,12 +59,23 @@ function logFinalAiError(requestId: string, error: unknown): void {
   console.warn(`[Tsian AI ${requestId}] error`, { error })
 }
 
-function updateAndThrowFinalAiError(requestId: string, error: unknown): never {
+function throwFinalAiError(requestId: string, error: unknown): never {
   const publicError = toPublicAiRequestError(error)
-  const message = errorMessage(publicError)
   logFinalAiError(requestId, error)
-  updateAiDebugRecord(requestId, { error: message })
   throw publicError
+}
+
+function parseProviderResponse<T>(extract: () => T): T {
+  try {
+    return extract()
+  } catch (error) {
+    if (error instanceof AiResponseParseError) throw error
+    const parseError = new AiResponseParseError(
+      error instanceof Error ? error.message : "AI response format is not supported.",
+    )
+    ;(parseError as Error & { cause?: unknown }).cause = error
+    throw parseError
+  }
 }
 
 export async function generateAssistantReply(
@@ -82,21 +90,23 @@ export async function generateAssistantReply(
     )
   }
 
-  const requestId = createAiDebugRequestId(options.debugLabel ?? "chat")
   const adapter = selectAdapter(config.kind)
   const url = adapter.buildUrl(config)
   const requestBody = adapter.buildRequestBody(config, messages)
-  const messageSegments = buildDebugMessageSegments(messages)
-  pushAiDebugRecord({
-    id: requestId,
-    kind: "chat",
-    label: options.debugLabel ?? "chat",
+  const requestHeaders = adapter.buildHeaders(config)
+  const trace = await beginAiRequestTrace({
+    context: options.traceContext,
+    provider: config.kind,
     model: config.model,
-    providerKind: config.kind,
-    createdAt: new Date().toISOString(),
-    messages: messages.map((message) => ({ ...message })),
-    messageSegments,
+    endpoint: url,
+    streaming: false,
+    parameters: config.parameters,
+    messages,
+    headers: requestHeaders,
+    body: requestBody,
   })
+  const requestId = trace.requestId
+  const messageSegments = buildDebugMessageSegments(messages)
 
   logDebugGroup(`[Tsian AI ${requestId}] request`, {
     url,
@@ -113,18 +123,18 @@ export async function generateAssistantReply(
 
   const timeoutMs = getChatTimeoutMs()
   const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${timeoutMs} ms.`
-  let payload: unknown
   try {
     const result = await withAiRequestRetry({
       requestId,
       operation: "request",
       signal: options.signal,
+      onAttempt: trace.onAttempt,
       attempt: async () => {
         const attemptResult = await fetchJsonWithTimeout({
           url,
           init: {
             method: "POST",
-            headers: adapter.buildHeaders(config),
+            headers: requestHeaders,
             body: JSON.stringify(requestBody),
           },
           signal: options.signal,
@@ -134,24 +144,28 @@ export async function generateAssistantReply(
         if (!attemptResult.response.ok) {
           throw createAiHttpStatusError(attemptResult.response, attemptResult.payload)
         }
-        return attemptResult
+        const content = parseProviderResponse(() => adapter.extractText(attemptResult.payload))
+        return {
+          ...attemptResult,
+          content,
+          usage: extractUsageFromPayload(attemptResult.payload, config.kind),
+        }
       },
     })
-    payload = result.payload
+    const payload = result.payload
+    const { content, usage } = result
+    await trace.succeed({ text: content, finishReason: "stop", usage, providerPayload: payload })
+
+    logDebugGroup(`[Tsian AI ${requestId}] response`, {
+      content: previewText(content, 2400),
+      payload,
+    })
+
+    return content
   } catch (error) {
-    updateAndThrowFinalAiError(requestId, error)
+    await trace.fail(error, { signal: options.signal })
+    throwFinalAiError(requestId, error)
   }
-
-  const content = adapter.extractText(payload)
-  const usage = extractUsageFromPayload(payload, config.kind)
-  updateAiDebugRecord(requestId, { responseText: content, usage })
-
-  logDebugGroup(`[Tsian AI ${requestId}] response`, {
-    content: previewText(content, 2400),
-    payload,
-  })
-
-  return content
 }
 
 export async function generateAssistantReplyNative(
@@ -166,30 +180,25 @@ export async function generateAssistantReplyNative(
     )
   }
 
-  const requestId = createAiDebugRequestId(options.debugLabel ?? "chat-native")
   const adapter = selectAdapter(config.kind)
   const url = adapter.buildUrl(config)
   const tools = options.tools ?? []
   const requestBody = adapter.buildNativeRequestBody(config, messages, tools, { forceToolName: options.forceToolName })
-  const messageSegments = buildDebugMessageSegments(messages)
-
-  pushAiDebugRecord({
-    id: requestId,
-    kind: "chat",
-    label: options.debugLabel ?? "chat-native",
+  const requestHeaders = adapter.buildHeaders(config)
+  const trace = await beginAiRequestTrace({
+    context: options.traceContext,
+    provider: config.kind,
     model: config.model,
-    providerKind: config.kind,
-    createdAt: new Date().toISOString(),
-    messages: messages.map((message): AiChatMessage => {
-      if (message.role === "tool") {
-        // Debug uses the flat AiChatMessage shape; thread tool
-        // observations back as a user turn carrying the observation text.
-        return { role: "user", content: `[tool:${message.toolCallId}] ${message.content}` }
-      }
-      return { role: message.role, content: message.content }
-    }),
-    messageSegments,
+    endpoint: url,
+    streaming: false,
+    parameters: config.parameters,
+    messages,
+    tools,
+    headers: requestHeaders,
+    body: requestBody,
   })
+  const requestId = trace.requestId
+  const messageSegments = buildDebugMessageSegments(messages)
 
   logDebugGroup(`[Tsian AI ${requestId}] native request`, {
     url,
@@ -210,18 +219,18 @@ export async function generateAssistantReplyNative(
 
   const timeoutMs = getChatTimeoutMs()
   const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${timeoutMs} ms.`
-  let payload: unknown
   try {
     const result = await withAiRequestRetry({
       requestId,
       operation: "native request",
       signal: options.signal,
+      onAttempt: trace.onAttempt,
       attempt: async () => {
         const attemptResult = await fetchJsonWithTimeout({
           url,
           init: {
             method: "POST",
-            headers: adapter.buildHeaders(config),
+            headers: requestHeaders,
             body: JSON.stringify(requestBody),
           },
           signal: options.signal,
@@ -231,26 +240,36 @@ export async function generateAssistantReplyNative(
         if (!attemptResult.response.ok) {
           throw createAiHttpStatusError(attemptResult.response, attemptResult.payload)
         }
-        return attemptResult
+        const modelResult = parseProviderResponse(() => adapter.extractNativeResult(attemptResult.payload))
+        return {
+          ...attemptResult,
+          modelResult,
+          usage: extractUsageFromPayload(attemptResult.payload, config.kind),
+        }
       },
     })
-    payload = result.payload
+    const payload = result.payload
+    const { modelResult, usage } = result
+    await trace.succeed({
+      text: modelResult.raw,
+      toolCalls: modelResult.toolCalls,
+      finishReason: modelResult.finishReason,
+      usage,
+      providerPayload: payload,
+    })
+
+    logDebugGroup(`[Tsian AI ${requestId}] native response`, {
+      text: previewText(modelResult.text, 2400),
+      toolCalls: modelResult.toolCalls,
+      finishReason: modelResult.finishReason,
+      payload,
+    })
+
+    return { ...modelResult, usage }
   } catch (error) {
-    updateAndThrowFinalAiError(requestId, error)
+    await trace.fail(error, { signal: options.signal })
+    throwFinalAiError(requestId, error)
   }
-
-  const result = adapter.extractNativeResult(payload)
-  const usage = extractUsageFromPayload(payload, config.kind)
-  updateAiDebugRecord(requestId, { responseText: result.raw, usage })
-
-  logDebugGroup(`[Tsian AI ${requestId}] native response`, {
-    text: previewText(result.text, 2400),
-    toolCalls: result.toolCalls,
-    finishReason: result.finishReason,
-    payload,
-  })
-
-  return { ...result, usage }
 }
 
 export async function streamAssistantReplyNative(
@@ -266,28 +285,25 @@ export async function streamAssistantReplyNative(
   }
 
   const round = options.round ?? 0
-  const requestId = createAiDebugRequestId(options.debugLabel ?? "chat-stream")
   const adapter = selectAdapter(config.kind)
   const url = adapter.buildStreamUrl(config)
   const tools = options.tools ?? []
   const requestBody = adapter.buildStreamRequestBody(config, messages, tools, { forceToolName: options.forceToolName })
-  const messageSegments = buildDebugMessageSegments(messages)
-
-  pushAiDebugRecord({
-    id: requestId,
-    kind: "chat",
-    label: options.debugLabel ?? "chat-stream",
+  const requestHeaders = adapter.buildHeaders(config)
+  const trace = await beginAiRequestTrace({
+    context: options.traceContext,
+    provider: config.kind,
     model: config.model,
-    providerKind: config.kind,
-    createdAt: new Date().toISOString(),
-    messages: messages.map((message): AiChatMessage => {
-      if (message.role === "tool") {
-        return { role: "user", content: `[tool:${message.toolCallId}] ${message.content}` }
-      }
-      return { role: message.role, content: message.content }
-    }),
-    messageSegments,
+    endpoint: url,
+    streaming: true,
+    parameters: config.parameters,
+    messages,
+    tools,
+    headers: requestHeaders,
+    body: requestBody,
   })
+  const requestId = trace.requestId
+  const messageSegments = buildDebugMessageSegments(messages)
 
   logDebugGroup(`[Tsian AI ${requestId}] stream request`, {
     url,
@@ -309,6 +325,11 @@ export async function streamAssistantReplyNative(
   const timeoutMs = getChatTimeoutMs()
   const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${timeoutMs} ms.`
   let emittedDelta = false
+  let providerPayload: unknown
+  let partialText = ""
+  let partialToolCalls: NativeToolCall[] = []
+  let partialUsage: ModelCallResult["usage"]
+  let partialFinishReason: ModelCallResult["finishReason"] | undefined
   const emitDelta = (delta: string, kind: "reasoning" | "content") => {
     if (!options.onDelta) return
     emittedDelta = true
@@ -316,12 +337,17 @@ export async function streamAssistantReplyNative(
   }
 
   try {
-    return await withAiRequestRetry({
+    const result = await withAiRequestRetry({
       requestId,
       operation: "stream request",
       signal: options.signal,
+      onAttempt: trace.onAttempt,
       canRetryAfterError: () => !emittedDelta,
       attempt: async () => {
+        partialText = ""
+        partialToolCalls = []
+        partialUsage = undefined
+        partialFinishReason = undefined
         const timed = createTimedAbortSignal({
           signal: options.signal,
           timeoutMs,
@@ -332,13 +358,13 @@ export async function streamAssistantReplyNative(
         try {
           const response = await fetch(url, {
             method: "POST",
-            headers: adapter.buildHeaders(config),
+            headers: requestHeaders,
             body: JSON.stringify(requestBody),
             signal: timed.signal,
           })
 
           if (!response.ok) {
-            const payload = await readJsonPayload(response, timed.signal)
+            const payload = await readJsonPayload(response, timed.signal, true)
             throw createAiHttpStatusError(response, payload)
           }
 
@@ -346,9 +372,13 @@ export async function streamAssistantReplyNative(
           const contentType = response.headers.get("content-type") ?? ""
           if (!contentType.includes("text/event-stream")) {
             const payload = await readJsonPayload(response, timed.signal)
-            const result = adapter.extractNativeResult(payload)
+            providerPayload = payload
+            const result = parseProviderResponse(() => adapter.extractNativeResult(payload))
             const usage = extractUsageFromPayload(payload, config.kind)
-            updateAiDebugRecord(requestId, { responseText: result.raw, usage })
+            partialText = result.raw
+            partialToolCalls = result.toolCalls
+            partialUsage = usage
+            partialFinishReason = result.finishReason
             logDebugGroup(`[Tsian AI ${requestId}] stream non-SSE fallback`, {
               text: previewText(result.text, 2400),
               toolCalls: result.toolCalls,
@@ -405,14 +435,15 @@ export async function streamAssistantReplyNative(
               let data: unknown
               try {
                 data = JSON.parse(dataRaw)
-              } catch {
-                // Skip malformed/keep-alive data lines.
-                continue
+              } catch (error) {
+                const parseError = new AiResponseParseError("AI stream contained an invalid JSON data event.")
+                ;(parseError as Error & { cause?: unknown }).cause = error
+                throw parseError
               }
 
-              const streamError = adapter.extractStreamError?.(data)
+              const streamError = adapter.extractStreamError?.(data) ?? extractErrorMessage(data)
               if (streamError) {
-                throw new Error(streamError)
+                throw new AiStreamResponseError(streamError)
               }
 
               // Provider usage arrives in the terminating chunk (OpenAI with
@@ -422,11 +453,13 @@ export async function streamAssistantReplyNative(
               const chunkUsage = extractUsageFromPayload(data, config.kind)
               if (chunkUsage) {
                 streamUsage = chunkUsage
+                partialUsage = chunkUsage
               }
 
               const delta = adapter.extractStreamDelta(data)
               if (delta !== undefined && delta !== "") {
                 textBuffer += delta
+                partialText = textBuffer
                 emitDelta(delta, "content")
               }
 
@@ -439,6 +472,7 @@ export async function streamAssistantReplyNative(
               }
 
               adapter.extractStreamToolCalls(data, { event: currentEvent, accumulator: toolAccumulator })
+              partialToolCalls = finalizeStreamedToolCalls(toolAccumulator)
               if (toolAccumulator.size > 0) {
                 isToolRound = true
               }
@@ -446,11 +480,14 @@ export async function streamAssistantReplyNative(
               const finish = adapter.extractStreamFinish(data)
               if (finish) {
                 finishReason = finish
+                partialFinishReason = finish
               }
             }
           }
 
           const toolCalls = finalizeStreamedToolCalls(toolAccumulator)
+          partialText = textBuffer
+          partialToolCalls = toolCalls
           const resolvedFinish: "stop" | "tool_calls" =
             finishReason ?? (isToolRound || toolCalls.length > 0 ? "tool_calls" : "stop")
 
@@ -462,7 +499,6 @@ export async function streamAssistantReplyNative(
             ...(streamUsage ? { usage: streamUsage } : {}),
           }
 
-          updateAiDebugRecord(requestId, { responseText: result.raw, usage: streamUsage })
           logDebugGroup(`[Tsian AI ${requestId}] stream response`, {
             text: previewText(result.text, 2400),
             toolCalls: result.toolCalls,
@@ -488,8 +524,34 @@ export async function streamAssistantReplyNative(
         }
       },
     })
+    await trace.succeed({
+      text: result.raw,
+      toolCalls: result.toolCalls,
+      finishReason: result.finishReason,
+      usage: result.usage,
+      ...(providerPayload !== undefined ? { providerPayload } : {}),
+    })
+    return result
   } catch (error) {
-    updateAndThrowFinalAiError(requestId, error)
+    await trace.fail(error, {
+      signal: options.signal,
+      ...(partialText
+        || partialToolCalls.length > 0
+        || partialUsage
+        || partialFinishReason
+        || providerPayload !== undefined
+        ? {
+            response: {
+              text: partialText,
+              toolCalls: partialToolCalls,
+              ...(partialFinishReason ? { finishReason: partialFinishReason } : {}),
+              ...(partialUsage ? { usage: partialUsage } : {}),
+              ...(providerPayload !== undefined ? { providerPayload } : {}),
+            },
+          }
+        : {}),
+    })
+    throwFinalAiError(requestId, error)
   }
 }
 
@@ -506,7 +568,6 @@ export async function streamAssistantReplyText(
   }
 
   const round = options.round ?? 0
-  const requestId = createAiDebugRequestId(options.debugLabel ?? "chat-stream-text")
   const adapter = selectAdapter(config.kind)
   // Use the non-stream URL builder + body builder (text protocol uses plain
   // AiChatMessage[], not RuntimeChatMessage[]). We inject stream:true after.
@@ -514,18 +575,20 @@ export async function streamAssistantReplyText(
   const requestBody = adapter.buildRequestBody(config, messages)
   ;(requestBody as Record<string, unknown>).stream = true
   enableOpenAiCompatibleStreamUsage(requestBody, config.kind)
-  const messageSegments = buildDebugMessageSegments(messages)
-
-  pushAiDebugRecord({
-    id: requestId,
-    kind: "chat",
-    label: options.debugLabel ?? "chat-stream-text",
+  const requestHeaders = adapter.buildHeaders(config)
+  const trace = await beginAiRequestTrace({
+    context: options.traceContext,
+    provider: config.kind,
     model: config.model,
-    providerKind: config.kind,
-    createdAt: new Date().toISOString(),
-    messages: messages.map((message) => ({ ...message })),
-    messageSegments,
+    endpoint: url,
+    streaming: true,
+    parameters: config.parameters,
+    messages,
+    headers: requestHeaders,
+    body: requestBody,
   })
+  const requestId = trace.requestId
+  const messageSegments = buildDebugMessageSegments(messages)
 
   logDebugGroup(`[Tsian AI ${requestId}] text stream request`, {
     url,
@@ -543,6 +606,10 @@ export async function streamAssistantReplyText(
   const timeoutMs = getChatTimeoutMs()
   const timeoutMessage = `[Tsian AI ${requestId}] request timed out after ${timeoutMs} ms.`
   let emittedDelta = false
+  let providerPayload: unknown
+  let finalUsage: ModelCallResult["usage"]
+  let finalFinishReason: ModelCallResult["finishReason"] | undefined
+  let partialText = ""
   const emitDelta = (delta: string) => {
     if (!options.onDelta) return
     emittedDelta = true
@@ -550,12 +617,16 @@ export async function streamAssistantReplyText(
   }
 
   try {
-    return await withAiRequestRetry({
+    const text = await withAiRequestRetry({
       requestId,
       operation: "text stream request",
       signal: options.signal,
+      onAttempt: trace.onAttempt,
       canRetryAfterError: () => !emittedDelta,
       attempt: async () => {
+        partialText = ""
+        finalUsage = undefined
+        finalFinishReason = undefined
         const timed = createTimedAbortSignal({
           signal: options.signal,
           timeoutMs,
@@ -566,13 +637,13 @@ export async function streamAssistantReplyText(
         try {
           const response = await fetch(url, {
             method: "POST",
-            headers: adapter.buildHeaders(config),
+            headers: requestHeaders,
             body: JSON.stringify(requestBody),
             signal: timed.signal,
           })
 
           if (!response.ok) {
-            const payload = await readJsonPayload(response, timed.signal)
+            const payload = await readJsonPayload(response, timed.signal, true)
             throw createAiHttpStatusError(response, payload)
           }
 
@@ -581,9 +652,11 @@ export async function streamAssistantReplyText(
           const contentType = response.headers.get("content-type") ?? ""
           if (!contentType.includes("text/event-stream")) {
             const payload = await readJsonPayload(response, timed.signal)
-            const content = adapter.extractText(payload)
+            providerPayload = payload
+            const content = parseProviderResponse(() => adapter.extractText(payload))
             const usage = extractUsageFromPayload(payload, config.kind)
-            updateAiDebugRecord(requestId, { responseText: content, usage })
+            finalUsage = usage
+            partialText = content
             logDebugGroup(`[Tsian AI ${requestId}] text stream non-SSE fallback`, {
               content: previewText(content, 2400),
               payload,
@@ -639,20 +712,22 @@ export async function streamAssistantReplyText(
               let data: unknown
               try {
                 data = JSON.parse(dataRaw)
-              } catch {
-                // Skip malformed/keep-alive data lines.
-                continue
+              } catch (error) {
+                const parseError = new AiResponseParseError("AI stream contained an invalid JSON data event.")
+                ;(parseError as Error & { cause?: unknown }).cause = error
+                throw parseError
               }
 
-              const streamError = adapter.extractStreamError?.(data)
+              const streamError = adapter.extractStreamError?.(data) ?? extractErrorMessage(data)
               if (streamError) {
-                throw new Error(streamError)
+                throw new AiStreamResponseError(streamError)
               }
 
               // Provider usage arrives in the terminating chunk.
               const chunkUsage = extractUsageFromPayload(data, config.kind)
               if (chunkUsage) {
                 streamUsage = chunkUsage
+                finalUsage = chunkUsage
               }
 
               // Text protocol: only extract content deltas. Tool calls and
@@ -661,6 +736,7 @@ export async function streamAssistantReplyText(
               const delta = adapter.extractStreamDelta(data)
               if (delta !== undefined && delta !== "") {
                 textBuffer += delta
+                partialText = textBuffer
                 // Emit the raw incremental delta. The UI accumulates this into
                 // streamingText; the render layer applies stripForDisplay at display
                 // time (closed blocks hidden, unclosed tail blocks visible). This
@@ -668,6 +744,9 @@ export async function streamAssistantReplyText(
                 // contract (incremental, accumulative).
                 emitDelta(delta)
               }
+
+              const finish = adapter.extractStreamFinish(data)
+              if (finish) finalFinishReason = finish
 
               // We do NOT call extractStreamToolCalls or extractStreamReasoningDelta
               // here — text protocol has no structured tool-call or reasoning
@@ -681,7 +760,8 @@ export async function streamAssistantReplyText(
           // Return the raw full text — the runtime layer will parse tool-call blocks
           // and strip think blocks post-hoc. Do NOT strip here; the authoritative
           // parse happens in the tool loop.
-          updateAiDebugRecord(requestId, { responseText: textBuffer, usage: streamUsage })
+          finalUsage = streamUsage
+          partialText = textBuffer
           logDebugGroup(`[Tsian AI ${requestId}] text stream response`, {
             text: previewText(textBuffer, 2400),
             usage: streamUsage,
@@ -705,7 +785,27 @@ export async function streamAssistantReplyText(
         }
       },
     })
+    await trace.succeed({
+      text,
+      finishReason: finalFinishReason ?? "stop",
+      usage: finalUsage,
+      ...(providerPayload !== undefined ? { providerPayload } : {}),
+    })
+    return text
   } catch (error) {
-    updateAndThrowFinalAiError(requestId, error)
+    await trace.fail(error, {
+      signal: options.signal,
+      ...(partialText || finalUsage || finalFinishReason || providerPayload !== undefined
+        ? {
+            response: {
+              text: partialText,
+              ...(finalFinishReason ? { finishReason: finalFinishReason } : {}),
+              ...(finalUsage ? { usage: finalUsage } : {}),
+              ...(providerPayload !== undefined ? { providerPayload } : {}),
+            },
+          }
+        : {}),
+    })
+    throwFinalAiError(requestId, error)
   }
 }

@@ -14,8 +14,6 @@ import {
 import {
   createRuntimeTraceCollector,
   errorToTraceDataWithStack,
-  formatAgentTracePath,
-  serializeRuntimeTraceEvents,
 } from "../agent-runtime/trace"
 import {
   DEFAULT_BROWSER_AI_STREAMING,
@@ -30,6 +28,7 @@ import {
   streamAssistantReplyText,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
+import { createAiTraceOperationContext } from "../runtime-host/ai/trace-context"
 import { emitAgentInvocation } from "../streaming-events"
 import {
   commitWorkspaceChangesForSave,
@@ -53,7 +52,6 @@ import {
   resolveAgentModelConfig,
 } from "./internal"
 import { finishReasonToKind } from "./runtime-events"
-import { writeRuntimeTraceFileForSave } from "./runtime-traces"
 import { cleanupScenesInTransaction } from "./scene-cleanup"
 import { projectAssistantReply } from "./reply-projection"
 
@@ -223,9 +221,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
   // 结果直接返回调用方(游戏前端自行处理 NPC 视角/UI 修正等).
   async function executeInvokeAgentBody(): Promise<InvokeAgentResult> {
     const invokeController = new AbortController()
-    const invokeTimestamp = Date.now()
-    let activeSaveId: string | null = null
-    let invokeWorkspaceFilesBefore: WorkspaceFile[] = []
+    const traceContext = createAiTraceOperationContext()
     // 旁路调用 trace collector：独立路径落盘，不与主 turn trace 混淆。
     // 让系统监视器(DebugView)也能看到旁路调用的 runtime 事件。
     let trace = createRuntimeTraceCollector(0)
@@ -237,9 +233,8 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
       ...(purpose ? { purpose } : {}),
     })
     try {
-      activeSaveId = await ensureActiveSave()
-      const currentActiveSaveId = activeSaveId
-      invokeWorkspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(currentActiveSaveId)
+      const currentActiveSaveId = await ensureActiveSave()
+      const invokeWorkspaceFilesBefore = await listEffectiveWorkspaceFilesForActiveSave(currentActiveSaveId)
       const invokeMaxTurn = getMaxTurnFromTurnFiles(invokeWorkspaceFilesBefore)
       const historyBefore = await getHistoryForSave(currentActiveSaveId)
       trace = createRuntimeTraceCollector(invokeMaxTurn)
@@ -291,6 +286,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
           contextTokenBudget,
           // 旁路调用用 task 模式压缩(工具交互段压缩,不压剧情正文).
           compressionMode: "task",
+          traceContext,
           ...(shouldPersist
             ? {
                 timeoutMs: DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
@@ -343,12 +339,14 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
               return generateAssistantReply(messages, {
                 debugLabel: options.debugLabel,
                 signal: options.signal,
+                traceContext: options.traceContext,
                 ...(modelConfig ? { config: modelConfig } : {}),
               })
             }
             return streamAssistantReplyText(messages, {
               debugLabel: options.debugLabel,
               signal: options.signal,
+              traceContext: options.traceContext,
               round: options.round,
               ...(modelConfig ? { config: modelConfig } : {}),
               onDelta: options.onDelta
@@ -365,6 +363,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
               return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
                 debugLabel: options.debugLabel,
                 signal: options.signal,
+                traceContext: options.traceContext,
                 tools,
                 ...(modelConfig ? { config: modelConfig } : {}),
               })
@@ -372,6 +371,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
             return streamAssistantReplyNative(messages as RuntimeChatMessage[], {
               debugLabel: options.debugLabel,
               signal: options.signal,
+              traceContext: options.traceContext,
               tools,
               onDelta: options.onDelta
                 ? (delta, round, kind) => options.onDelta!(options.agentId ?? agentId, delta, round, kind)
@@ -478,11 +478,6 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
         ok: true,
         data: { agentId, replyLength: result.replyText.length },
       })
-      // trace 走事务提交（与主 turn 一致），用旁路专用路径
-      workspaceTransaction!.writePlatformFile({
-        path: formatAgentTracePath(agentId, invokeTimestamp),
-        content: serializeRuntimeTraceEvents(trace.events),
-      })
       if (checkpointOption !== false) {
         cleanupScenesInTransaction(workspaceTransaction!)
       }
@@ -515,18 +510,6 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
         ok: false,
         data: errorToTraceDataWithStack(error),
       })
-      if (activeSaveId) {
-        try {
-          await writeRuntimeTraceFileForSave(
-            activeSaveId,
-            invokeWorkspaceFilesBefore,
-            formatAgentTracePath(agentId, invokeTimestamp),
-            trace.events,
-          )
-        } catch {
-          // trace 落盘失败不掩盖原始错误
-        }
-      }
       throw error
     }
   }

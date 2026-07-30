@@ -1,4 +1,3 @@
-import type { AiDebugRecord } from "./debug"
 import type {
   AgentInvocationEvent,
   AssistantTurnTimelineItem,
@@ -149,7 +148,6 @@ export interface CardBridge {
 }
 
 export interface DebugBridge {
-  getAiDebugRecords(): Promise<AiDebugRecord[]>
   onTurnDebugReady(cb: (turn: number) => void): () => void
 }
 

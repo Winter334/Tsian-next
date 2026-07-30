@@ -20,7 +20,7 @@ import type { CompressCallModel, TaskCompressionResult } from "./context-lifecyc
 import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
 import type { ToolSchema } from "./tool-schemas"
 import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, RuntimeTestSkillScriptInput, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
-import type { ModelCallResult, NativeToolCall, RuntimeChatMessage } from "../runtime-host/ai"
+import type { AiTraceOperationContext, ModelCallResult, NativeToolCall, RuntimeChatMessage } from "../runtime-host/ai"
 import type { BrowserAiToolCallMode } from "../config/ai"
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
 import type { AgentWorkspaceTrustBoundary } from "./frontend-action-isolation"
@@ -114,6 +114,8 @@ export interface AgentRuntimeTurnInput {
    * 仅 compressionMode==="task" 生效;narrative(master)忽略.未提供 → DEFAULT_TASK_INACTIVITY_TIMEOUT_MS.
    */
   timeoutMs?: number
+  /** In-memory provider-request correlation; never persisted as channel data. */
+  traceContext?: AiTraceOperationContext
 }
 
 export interface AgentRuntimeTurnContextUpdate {
@@ -150,6 +152,7 @@ export interface AgentRuntimeModelCallOptions {
   debugLabel: RuntimeTraceDebugLabel
   signal?: AbortSignal
   agentId?: string
+  traceContext?: AiTraceOperationContext
   /**
    * Streaming text-delta sink. Invoked with the current tool-loop `round` so
    * the caller can label thought vs final rounds, and a `kind` separating

@@ -6,7 +6,7 @@
 
 - `runtime.ts`：conversation message、JSON 值、runtime snapshot、workspace/query/runtime diagnostic、message interaction、deep query、platform action。
 - `bridge.ts`：`PlayFrontendBridge` 及 runtime/interaction/query/platform/debug 子桥。
-- `debug.ts`：`AiDebugRecord`、`AiChatMessage`、`CheckpointSummary`。
+- `debug.ts`：`AiChatMessage`、`CheckpointSummary`。
 - `frontend-package.ts`：`PlayFrontendManifest`。
 - `memory.ts`：generic memory schema 类型。当前没有 `memory-core` 运行时包。
 

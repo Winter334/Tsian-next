@@ -480,14 +480,6 @@ function normalizeDeepQueryRequest(value: unknown): DeepQueryRequest {
       "query.query requires a non-empty resource.",
     )
   }
-  if (resource === "ai-debug") {
-    throw new RemoteBridgeRpcError(
-      "REMOTE_RESOURCE_FORBIDDEN",
-      "Raw AI debug records are not exposed to remote game frontends.",
-      { resource },
-    )
-  }
-
   return {
     resource,
     params: optionalRecordParams(

@@ -21,7 +21,6 @@ import {
 } from "../agent-runtime/context-lifecycle"
 import {
   assistantContextPath,
-  assistantTracePath,
   deleteLocalAssistantPath,
   getAssistantAttachmentBase64,
   isAssistantDirectWritePath,
@@ -42,7 +41,6 @@ import {
 import { cardFrontendVolume, executeWorkspaceMutation } from "./workspace-volumes"
 import {
   createRuntimeTraceCollector,
-  serializeRuntimeTraceEvents,
   errorToTraceDataWithStack,
 } from "../agent-runtime/trace"
 import {
@@ -52,6 +50,7 @@ import {
   streamAssistantReplyText,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
+import { createAiTraceOperationContext } from "../runtime-host/ai/trace-context"
 import {
   DEFAULT_BROWSER_AI_STREAMING,
   DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
@@ -455,11 +454,9 @@ export async function runAssistantChat(
     assistantModelConfig?.parameters.common.contextWindow ?? null,
   )
 
-  // Trace collector:收集本轮 runtime 过程事件(turn/model/tool/context 等),
-  // turn 结束序列化落盘到 .tsian/local/assistant/traces/(与 context.json 同通道,
-  // 不进 save 事务).之前 emitTrace 是空函数,过程细节无处可查;现在有了持久出口,
-  // 刷新/切换会话后仍可在 traces/ 回看,且不污染聊天历史(过程与结论分离).
+  // Runtime events remain in-memory-only; provider requests use unified diagnostics.
   const traceCollector = createRuntimeTraceCollector(nextAssistantTurn)
+  const traceContext = createAiTraceOperationContext()
 
   try {
     const result = await runAgentRuntimeTurn(
@@ -486,6 +483,7 @@ export async function runAssistantChat(
         // (multi-compress tool interactions + timeout fallback + stall early-exit),
         // distinct from master's narrative compression.
         compressionMode: "task",
+        traceContext,
         timeoutMs: inactivityTimeoutMs,
         onDelta: (agentId, ...args) => {
           resetInactivityTimer()
@@ -533,12 +531,14 @@ export async function runAssistantChat(
             return generateAssistantReply(messages, {
               debugLabel: options.debugLabel,
               signal: options.signal,
+              traceContext: options.traceContext,
               ...(agentConfig ? { config: agentConfig } : {}),
             })
           }
           return streamAssistantReplyText(messages, {
             debugLabel: options.debugLabel,
             signal: options.signal,
+            traceContext: options.traceContext,
             round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
             onDelta: options.onDelta
@@ -565,6 +565,7 @@ export async function runAssistantChat(
             return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
               debugLabel: options.debugLabel,
               signal: options.signal,
+              traceContext: options.traceContext,
               tools,
               ...(agentConfig ? { config: agentConfig } : {}),
             })
@@ -572,6 +573,7 @@ export async function runAssistantChat(
           return streamAssistantReplyNative(messages as RuntimeChatMessage[], {
             debugLabel: options.debugLabel,
             signal: options.signal,
+            traceContext: options.traceContext,
             tools,
             // ai.ts onDelta is (delta, round, kind); adapt the runtime's
             // (agentId, delta, round, kind) signature by binding this assistant's id.
@@ -827,20 +829,6 @@ export async function runAssistantChat(
   } finally {
     if (inactivityTimer !== undefined) {
       clearTimeout(inactivityTimer)
-    }
-    // 落盘 trace:成功/失败都写,失败路径含 turn_failed 事件.
-    // 走 saveLocalAssistantFiles 直写 Dexie(与 context.json 同通道,不进 save 事务).
-    // 失败时文件名带 -failed-<ts> 后缀(assistantTracePath 对称 master 的 formatRuntimeTracePath).
-    const tracePath = assistantTracePath(nextAssistantTurn)
-    try {
-      await saveLocalAssistantFiles([{
-        path: tracePath,
-        content: serializeRuntimeTraceEvents(traceCollector.events),
-        createdAt: 0,
-        updatedAt: Date.now(),
-      }])
-    } catch {
-      // trace 落盘失败不影响主流程(诊断数据,非关键路径).
     }
   }
 }

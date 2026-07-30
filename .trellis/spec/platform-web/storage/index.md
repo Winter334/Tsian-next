@@ -4,6 +4,10 @@
 
 Use these specs when changing `apps/platform-web/src/storage/**` or any Dexie table/schema.
 
+## Topic Guides
+
+- [Unified Diagnostics Storage and Collection](./diagnostics.md) — provider-boundary AI Trace, frontend errors, sanitization, cursor queries, retention, health, and retired diagnostic surfaces.
+
 ## Storage Layout
 
 Dexie database name: `tsian-agent-runtime-v14`.
@@ -21,10 +25,11 @@ Tables:
 - `assistantAttachments`
 - `skillConfigs`
 - `embeddingIndex`
+- `diagnosticRecords` — global `ai-request` / `frontend-error` union records; see [Unified Diagnostics](./diagnostics.md).
 
 Built-in blank game cards seed the default Runtime Workspace template, including the default novel AIRP Agent roster (`storyteller`, `stage-manager`, `world-architect`), Agent-local Skills, framework knowledge docs, save runtime files, and `.tsian` platform metadata. The built-in blank card's configured player-turn entrypoint is `storyteller`. Refreshing a stale `source: "builtin"` game card is allowed, but save workspaces must use non-overwriting workspace-version upgrades.
 
-No old local data migration is expected.
+Local database changes normally use rename-and-reset. The explicitly approved diagnostics exception adds Dexie schema version 2 under the existing v14 database name so cards/saves remain intact; it does not migrate legacy diagnostic data.
 
 ## Scenario: Workshop Game Card Market Origin And Update Detection
 

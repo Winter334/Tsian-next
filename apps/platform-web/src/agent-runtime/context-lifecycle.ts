@@ -6,7 +6,7 @@ import type {
   AiChatMessage,
   ContentPart,
 } from "@tsian/contracts"
-import type { RuntimeChatMessage } from "../runtime-host/ai"
+import type { AiTraceOperationContext, RuntimeChatMessage } from "../runtime-host/ai"
 import type { RuntimeTraceDebugLabel } from "./trace"
 import { getPlatformConfig } from "../config/platform-config"
 import { sortToolMemoriesStable } from "./tool-memory"
@@ -363,6 +363,7 @@ export interface CompressCallOptions {
   debugLabel: RuntimeTraceDebugLabel
   signal?: AbortSignal
   agentId?: string
+  traceContext?: AiTraceOperationContext
   /**
    * 可选:覆盖默认压缩 system prompt(叙事梗概).助手快照压缩传
    * ASSISTANT_CONTEXT_COMPRESSION_SYSTEM_PROMPT(任务摘要风格);master 不传用默认.

@@ -1,6 +1,5 @@
 export type {
   AiChatMessage,
-  AiDebugRecord,
   ContentPart,
   GenerateAssistantReplyNativeOptions,
   GenerateAssistantReplyOptions,
@@ -11,7 +10,6 @@ export type {
   StreamAssistantReplyNativeOptions,
   StreamAssistantReplyTextOptions,
 } from "./ai/types"
-export { getAiDebugRecords } from "./ai/debug-records"
 export {
   generateAssistantReply,
   generateAssistantReplyNative,
@@ -20,3 +18,12 @@ export {
 } from "./ai/calls"
 export { probeAssistantNativeToolCalling } from "./ai/probes"
 export { stripForDisplay } from "./ai/tool-calls"
+export {
+  createAiTraceOperationContext,
+  forkAiTraceOperationContext,
+  type AiTraceOperationContext,
+} from "./ai/trace-context"
+export {
+  getDiagnosticStoreHealth,
+  subscribeDiagnosticStoreHealth,
+} from "./ai/trace-recorder"

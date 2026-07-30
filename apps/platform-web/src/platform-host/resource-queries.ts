@@ -4,20 +4,16 @@ import type {
   DeepQueryRequest,
   DeepQueryResult,
   ListCheckpointOptions,
-  RuntimeDiagnosticSummary,
-  RuntimeDiagnosticsQueryParams,
   SkillDetailEntry,
   SkillRegistryEntry,
 } from "@tsian/contracts"
 import { assembleAgentContext } from "../agent-runtime/context"
-import { buildRuntimeDiagnostics, loadRuntimeTraceEvents } from "../agent-runtime/diagnostics"
 import {
   buildAgentRegistry,
   buildSkillRegistry,
   loadSkillDetail,
 } from "../agent-runtime/registry"
 import { readFrontendBuildStatus } from "../frontend-build/trigger"
-import { getAiDebugRecords } from "../runtime-host/ai"
 import {
   getActiveSaveId,
   getHistoryForSave,
@@ -28,25 +24,6 @@ import {
 import { getPlatformActiveGameCardId } from "./game-cards"
 import { getSessionHistoryFromTurnFiles } from "./history-turns"
 import { listEffectiveWorkspaceFilesForActiveSave } from "./internal"
-
-function normalizeRuntimeDiagnosticsQueryParams(
-  params: Record<string, unknown> | undefined,
-): RuntimeDiagnosticsQueryParams {
-  return {
-    ...(typeof params?.turn === "number" && Number.isFinite(params.turn)
-      ? { turn: params.turn }
-      : {}),
-    ...(typeof params?.limit === "number" && Number.isFinite(params.limit)
-      ? { limit: params.limit }
-      : {}),
-    ...(typeof params?.lookbackTurns === "number" && Number.isFinite(params.lookbackTurns)
-      ? { lookbackTurns: params.lookbackTurns }
-      : {}),
-    ...(typeof params?.includeHealth === "boolean"
-      ? { includeHealth: params.includeHealth }
-      : {}),
-  }
-}
 
 export async function queryResource<T = unknown>(request: DeepQueryRequest): Promise<DeepQueryResult<T>> {
   const activeSaveId = await getActiveSaveId()
@@ -159,41 +136,6 @@ export async function queryResource<T = unknown>(request: DeepQueryRequest): Pro
     } catch {
       return { items: [] } as DeepQueryResult<T>
     }
-  }
-
-  if (request.resource === "runtime-diagnostics") {
-    if (!activeSaveId) {
-      return { items: [] } as DeepQueryResult<T>
-    }
-
-    const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
-    return {
-      items: buildRuntimeDiagnostics(
-        files,
-        normalizeRuntimeDiagnosticsQueryParams(request.params),
-      ) as RuntimeDiagnosticSummary[] as T[],
-    } as DeepQueryResult<T>
-  }
-
-  // 运行日志浏览器：返回指定回合（或全部）的原始 trace events，供 DebugView 渲染。
-  if (request.resource === "runtime-trace") {
-    if (!activeSaveId) {
-      return { items: [] } as DeepQueryResult<T>
-    }
-
-    const files = await listEffectiveWorkspaceFilesForActiveSave(activeSaveId)
-    const turn = typeof request.params?.turn === "number" && Number.isFinite(request.params.turn)
-      ? request.params.turn
-      : undefined
-    return {
-      items: loadRuntimeTraceEvents(files, turn) as T[],
-    } as DeepQueryResult<T>
-  }
-
-  if (request.resource === "ai-debug") {
-    return {
-      items: await getAiDebugRecords() as T[],
-    } as DeepQueryResult<T>
   }
 
   // 前端构建状态：助手写 frontend/src/** 后读此 resource 看构建结果

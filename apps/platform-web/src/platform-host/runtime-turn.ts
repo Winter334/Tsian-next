@@ -11,7 +11,6 @@ import { enqueueStaleEmbeddings } from "../agent-runtime/semantic-index/stalenes
 import {
   createRuntimeTraceCollector,
   errorToTraceDataWithStack,
-  formatRuntimeTracePath,
 } from "../agent-runtime/trace"
 import {
   DEFAULT_BROWSER_AI_STREAMING,
@@ -28,6 +27,7 @@ import {
   streamAssistantReplyText,
   type RuntimeChatMessage,
 } from "../runtime-host/ai"
+import { createAiTraceOperationContext } from "../runtime-host/ai/trace-context"
 import { emitTurnDelta, emitTurnRoundEnd, emitTurnStats, emitTurnTool } from "../streaming-events"
 import {
   commitSuccessfulRuntimeTurnForSave,
@@ -52,10 +52,6 @@ import {
 } from "./internal"
 import { resolvePlayerTurnAgentIdForSave } from "./runtime-entrypoints"
 import { finishReasonToKind } from "./runtime-events"
-import {
-  stageRuntimeTraceFile,
-  writeRuntimeTraceFileForSave,
-} from "./runtime-traces"
 import { createTurnTimelineCollector } from "./turn-timeline-collector"
 import { projectAssistantReply } from "./reply-projection"
 
@@ -76,6 +72,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
   const maxTurn = getMaxTurnFromTurnFiles(workspaceFilesBefore)
   const historyBefore = await getHistoryForSave(activeSaveId)
   const nextTurn = maxTurn + 1
+  const traceContext = createAiTraceOperationContext()
   const trace = createRuntimeTraceCollector(nextTurn)
   trace.emit({
     type: "turn_started",
@@ -134,6 +131,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
         // No timeoutMs — narrative turns rely on one-shot compression + user abort;
         // a timeout would mis-kill narrative deep thought (design §0/§1.3 约束8).
         compressionMode: "narrative",
+        traceContext,
         // 三个回调同时 emit 事件(给前端实时渲染)+ 喂 collector(给 turn 文件持久化).
         onDelta: (agentId, delta, round, kind) => {
           emitTurnDelta(agentId, delta, nextTurn, round, kind)
@@ -163,12 +161,14 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
             return generateAssistantReply(messages, {
               debugLabel: options.debugLabel,
               signal: options.signal,
+              traceContext: options.traceContext,
               ...(agentConfig ? { config: agentConfig } : {}),
             })
           }
           return streamAssistantReplyText(messages, {
             debugLabel: options.debugLabel,
             signal: options.signal,
+            traceContext: options.traceContext,
             round: options.round,
             ...(agentConfig ? { config: agentConfig } : {}),
             onDelta: options.onDelta
@@ -188,6 +188,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
             return generateAssistantReplyNative(messages as RuntimeChatMessage[], {
               debugLabel: options.debugLabel,
               signal: options.signal,
+              traceContext: options.traceContext,
               tools,
               ...(agentConfig ? { config: agentConfig } : {}),
             })
@@ -195,6 +196,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
           return streamAssistantReplyNative(messages as RuntimeChatMessage[], {
             debugLabel: options.debugLabel,
             signal: options.signal,
+            traceContext: options.traceContext,
             tools,
             // ai.ts onDelta is (delta, round, kind); adapt the runtime's
             // (agentId, delta, round, kind) signature by binding options.agentId
@@ -358,12 +360,6 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
         historyCount: nextHistory.length,
       },
     })
-    stageRuntimeTraceFile(
-      workspaceTransaction,
-      formatRuntimeTracePath(nextTurn),
-      trace.events,
-    )
-
     await commitSuccessfulRuntimeTurnForSave(activeSaveId, {
       history: nextHistory,
       workspaceFiles: workspaceTransaction.finalWorkspaceFiles(),
@@ -394,18 +390,6 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       ok: false,
       data: errorToTraceDataWithStack(error),
     })
-    if (workspaceTransaction) {
-      try {
-        await writeRuntimeTraceFileForSave(
-          activeSaveId,
-          workspaceTransaction.workspaceFiles,
-          formatRuntimeTracePath(nextTurn, Date.now()),
-          trace.events,
-        )
-      } catch {
-        // Failed-turn trace is best-effort and must not mask the original error.
-      }
-    }
     throw error
   } finally {
     if (previousTurnController === currentController) {

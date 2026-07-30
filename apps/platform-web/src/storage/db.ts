@@ -2,6 +2,7 @@ import type {
   AttachmentRef,
   CheckpointRetention,
   CheckpointSource,
+  DiagnosticRecord,
   GameCardManifest,
   JsonValue,
   WorkspaceScope,
@@ -197,15 +198,16 @@ export class TsianLocalDb extends Dexie {
   assistantAttachments!: Table<LocalAssistantAttachmentRecord, string>
   skillConfigs!: Table<LocalSkillConfigRecord, string>
   embeddingIndex!: Table<LocalEmbeddingIndexRecord, string>
+  diagnosticRecords!: Table<DiagnosticRecord, string>
 
-  constructor() {
+  constructor(databaseName = "tsian-agent-runtime-v14") {
     // DB name bumped v13 -> v14: added game card marketOrigin bookkeeping
     // for workshop-installed card update detection (task 07-22-workshop-game-card-update-detection).
     // Prototype project — no migration; the old v13 database is abandoned and
     // a fresh v14 store is created (same rename-and-reset convention).
     // The service worker
     // (`tsian-game-card-frontend-sw.js`) mirrors this name.
-    super("tsian-agent-runtime-v14")
+    super(databaseName)
 
     this.version(1).stores({
       meta: "&key",
@@ -219,6 +221,12 @@ export class TsianLocalDb extends Dexie {
       assistantAttachments: "&id, sessionId, path, createdAt",
       skillConfigs: "&skillPath, updatedAt",
       embeddingIndex: "&id, [scope+ownerId], path, type, updatedAt",
+    })
+
+    // Diagnostics are independent global bookkeeping. Keep the existing DB
+    // name so adding this table does not erase cards, saves, or checkpoints.
+    this.version(2).stores({
+      diagnosticRecords: "&id, recordType, timestamp, updatedAt, status, provider, model, operationId, parentRequestId, previousRequestId",
     })
   }
 }
