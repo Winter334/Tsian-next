@@ -172,12 +172,8 @@
 
           <details class="trace-section" open>
             <summary>请求</summary>
-            <div class="grid gap-2 p-3">
-              <p class="break-all font-mono text-[10px] text-text-dim">{{ aiRecord.endpoint }} · {{ aiRecord.streaming ? "stream" : "non-stream" }}</p>
-               <JsonBlock label="参数" :value="aiRecord.parameters" empty-text="无额外参数" />
-               <JsonBlock label="消息" :value="aiRecord.request.messages" />
-               <JsonBlock label="Headers（已脱敏）" :value="aiRecord.request.headers" empty-text="无请求 Headers" />
-               <JsonBlock label="Provider 请求体" :value="aiRecord.request.body" empty-text="无额外 Provider 请求体" />
+            <div class="p-3">
+              <JsonBlock label="完整请求" :value="requestJson" />
             </div>
           </details>
 
@@ -191,11 +187,10 @@
             </div>
           </details>
 
-          <details class="trace-section" open>
-            <summary>工具</summary>
-            <div class="grid gap-2 p-3 lg:grid-cols-2">
-              <JsonBlock label="工具声明" :value="aiRecord.request.tools" empty-text="无工具声明" />
-              <JsonBlock label="工具调用" :value="aiRecord.response?.toolCalls" empty-text="无工具调用" />
+          <details v-if="aiRecord.response?.toolCalls !== undefined" class="trace-section" open>
+            <summary>工具调用</summary>
+            <div class="p-3">
+              <JsonBlock label="工具调用" :value="aiRecord.response.toolCalls" />
             </div>
           </details>
 
@@ -378,6 +373,19 @@ const aiRecord = computed<DiagnosticAiRequestRecord | null>(() =>
   selectedRecord.value?.recordType === "ai-request" ? selectedRecord.value : null)
 const frontendError = computed<DiagnosticFrontendErrorRecord | null>(() =>
   selectedRecord.value?.recordType === "frontend-error" ? selectedRecord.value : null)
+const requestJson = computed(() => {
+  const record = aiRecord.value
+  if (!record) return undefined
+  return {
+    endpoint: record.endpoint,
+    streaming: record.streaming,
+    ...(record.parameters !== undefined ? { parameters: record.parameters } : {}),
+    messages: record.request.messages,
+    ...(record.request.tools !== undefined ? { tools: record.request.tools } : {}),
+    ...(record.request.headers !== undefined ? { headers: record.request.headers } : {}),
+    ...(record.request.body !== undefined ? { providerBody: record.request.body } : {}),
+  }
+})
 const rawJson = computed(() => selectedRecord.value ? JSON.stringify(selectedRecord.value, null, 2) : "")
 const selectedIsFailure = computed(() => selectedRecord.value !== null && (
   selectedRecord.value.recordType === "frontend-error"

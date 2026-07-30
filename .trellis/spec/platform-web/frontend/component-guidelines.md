@@ -18,6 +18,21 @@ Vue components use `<script setup lang="ts">`. Route views may own screen-local 
 - Keep repeated fixed-format elements stable with explicit grid/flex constraints.
 - Do not put long-running runtime logic inside templates.
 
+### Convention: Structured Diagnostic JSON
+
+**What**: Structured values in the unified Trace monitor use the reusable collapsible JSON tree under `components/debug/`. An AI request is presented as one composed request tree rather than separate static parameter/message/header/tool `<pre>` blocks; natural-language response text remains a readable text block, while provider payloads, tool calls, and error details reuse the tree.
+
+**Why**: Splitting large JSON into static blocks does not provide structural navigation and duplicates request context. A shared tree keeps the stored diagnostic value intact while adding folding, type colors, long-string previews, wrapping, and full-value copy behavior.
+
+**Layout contract**: A primitive leaf row is a flex row. Its key prefix must be non-shrinking and a wrapped string value must own only the remaining width (`min-w-0 flex-1`); otherwise a long multiline value can compress and visually overlap the key.
+
+```vue
+<span class="shrink-0">{{ key }}: </span>
+<span class="min-w-0 flex-1 whitespace-pre-wrap break-words">{{ value }}</span>
+```
+
+Keep the JSON tree display-only. Do not change diagnostics storage/contracts merely to support presentation state, and do not replace natural-language response text with escaped JSON string rendering.
+
 ### Convention: RetroOS Desktop Shell And Route Chrome
 
 **What**: The platform shell presents platform routes through a RetroOS desktop compositor: splash -> desktop wallpaper -> desktop application icons -> multiple desktop application windows -> taskbar entries for open windows. `App.vue` owns app boot and shell mounting; `components/desktop/*`, `desktop-apps.ts`, and `useDesktopWindows.ts` own window registration, open/focus/minimize/close/fullscreen state, route sync, and taskbar behavior. Desktop icons are launcher shortcuts and support double-click plus a right-click `Open` menu. Route views provide window contents such as toolbars, property tabs, inset panes, and status bars; they should not add a second outer title bar when the desktop shell already owns the application window frame.
