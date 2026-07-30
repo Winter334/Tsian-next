@@ -23,22 +23,26 @@ import { semanticSearch } from "./semantic-index/search"
 export type {
   WorkspaceOperationError,
   WorkspaceOperationMutationAdapter,
+  WorkspaceOperationVirtualReadAdapter,
   WorkspaceOperationExecutionContext,
 } from "./workspace-operations-types"
 export {
   WORKSPACE_OPERATION_NAMES,
   DEFAULT_RUNTIME_WORKSPACE_OPERATIONS,
   AUTHORING_WORKSPACE_OPERATIONS,
+  BUILT_IN_READ_ONLY_VIRTUAL_WORKSPACE_PREFIXES,
 } from "./workspace-operations-types"
 // import for internal use (local binding)
 import {
   WORKSPACE_OPERATION_NAMES,
   DEFAULT_RUNTIME_WORKSPACE_OPERATIONS,
   AUTHORING_WORKSPACE_OPERATIONS,
+  BUILT_IN_READ_ONLY_VIRTUAL_WORKSPACE_PREFIXES,
 } from "./workspace-operations-types"
 import type {
   WorkspaceOperationError,
   WorkspaceOperationMutationAdapter,
+  WorkspaceOperationVirtualReadAdapter,
   WorkspaceOperationExecutionContext,
 } from "./workspace-operations-types"
 const DEFAULT_SEARCH_LIMIT = 50
@@ -117,6 +121,83 @@ function workspaceOperationError(
   details?: unknown,
 ): WorkspaceOperationError {
   return details === undefined ? { code, message } : { code, message, details }
+}
+
+function pathMatchesPrefix(path: string, prefix: string): boolean {
+  return path === prefix || path.startsWith(`${prefix}/`)
+}
+
+function assertVirtualMutationAllowed(
+  operation: WorkspaceOperationName,
+  request: WorkspaceOperationRequest,
+  virtualReads: WorkspaceOperationVirtualReadAdapter | undefined,
+): void {
+  if (!EDIT_OPERATIONS.has(operation)) return
+  const readOnlyPrefixes = [
+    ...BUILT_IN_READ_ONLY_VIRTUAL_WORKSPACE_PREFIXES,
+    ...(virtualReads?.readonlyPathPrefixes ?? []),
+  ]
+  const paths = [normalizeWorkspaceOperationTargetPath(request.path)]
+  if (operation === "copy" || operation === "move") {
+    paths.push(normalizeWorkspaceOperationTargetPath(request.targetPath))
+  }
+  const readOnlyPath = paths.find((path) =>
+    readOnlyPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))
+  )
+  if (!readOnlyPath) return
+  throw workspaceOperationError(
+    "WORKSPACE_VIRTUAL_READ_ONLY",
+    `Virtual workspace path is read-only: ${readOnlyPath}`,
+    { operation, path: readOnlyPath },
+  )
+}
+
+function mergeWorkspaceEntries(
+  regular: { path: string; entries: WorkspaceEntry[] },
+  virtual: { path: string; entries: WorkspaceEntry[] } | undefined,
+): { path: string; entries: WorkspaceEntry[] } {
+  if (!virtual) return regular
+  const byPath = new Map(regular.entries.map((entry) => [entry.path, entry]))
+  for (const entry of virtual.entries) {
+    const existing = byPath.get(entry.path)
+    if (!existing) {
+      byPath.set(entry.path, entry)
+      continue
+    }
+    const merged: WorkspaceEntry = {
+      ...existing,
+      ...entry,
+      updatedAt: Math.max(existing.updatedAt ?? 0, entry.updatedAt ?? 0),
+    }
+    if (existing.kind === "directory" && entry.kind === "directory") {
+      merged.childCount = Math.max(existing.childCount ?? 0, entry.childCount ?? 0)
+    }
+    byPath.set(entry.path, merged)
+  }
+  return {
+    path: regular.path,
+    entries: [...byPath.values()].sort((left, right) => {
+      if (left.kind !== right.kind) return left.kind === "directory" ? -1 : 1
+      return left.name.localeCompare(right.name)
+    }),
+  }
+}
+
+function mergeWorkspaceSearchResults(
+  regular: WorkspaceSearchResult[],
+  virtual: WorkspaceSearchResult[] | undefined,
+  limit: number,
+): WorkspaceSearchResult[] {
+  if (!virtual?.length) return regular
+  const byPath = new Map(regular.map((result) => [result.path, result]))
+  for (const result of virtual) byPath.set(result.path, result)
+  return [...byPath.values()]
+    .sort((left, right) =>
+      right.score - left.score
+      || right.updatedAt - left.updatedAt
+      || left.path.localeCompare(right.path)
+    )
+    .slice(0, limit)
 }
 
 export function normalizeWorkspaceOperationFilePath(value: unknown): string {
@@ -1401,10 +1482,20 @@ export async function executeWorkspaceOperation(
   requestInput: WorkspaceOperationRequest,
   rawContext: WorkspaceOperationExecutionContext,
 ): Promise<unknown> {
+  const virtualPrefixes = [...new Set([
+    ...BUILT_IN_READ_ONLY_VIRTUAL_WORKSPACE_PREFIXES,
+    ...(rawContext.virtualReads?.readonlyPathPrefixes ?? []),
+  ])]
+  const shouldKeepFile = (file: WorkspaceFile): boolean =>
+    (rawContext.fileFilter?.(file) ?? true)
+    && !virtualPrefixes.some((prefix) => pathMatchesPrefix(file.path, prefix))
   const context: WorkspaceOperationExecutionContext = rawContext.fileFilter
+    || virtualPrefixes.length > 0
     ? {
         ...rawContext,
-        workspaceFiles: rawContext.workspaceFiles.filter(rawContext.fileFilter),
+        // A mounted virtual namespace is authoritative. Snapshot collisions
+        // must not leak through list/search/glob or a read fallback.
+        workspaceFiles: rawContext.workspaceFiles.filter(shouldKeepFile),
       }
     : rawContext
   const operation = normalizeWorkspaceOperationName(requestInput.operation)
@@ -1412,6 +1503,7 @@ export async function executeWorkspaceOperation(
   const actorLevel = resolveWorkspaceActorLevel(context)
 
   assertOperationExposed(operation, context.exposedOperations)
+  assertVirtualMutationAllowed(operation, requestInput, context.virtualReads)
 
   if (EDIT_OPERATIONS.has(operation) && scope === "effective") {
     assertMutableScope(scope)
@@ -1421,13 +1513,43 @@ export async function executeWorkspaceOperation(
   }
 
   if (operation === "list") {
-    return listWorkspaceEntries(context.workspaceFiles, scope, requestInput.path, actorLevel)
+    const regular = listWorkspaceEntries(context.workspaceFiles, scope, requestInput.path, actorLevel)
+    const virtualResult = await context.virtualReads?.list({
+      scope,
+      path: regular.path,
+      actorLevel,
+    })
+    const virtual = virtualResult
+      ? {
+          ...virtualResult,
+          entries: virtualResult.entries.filter((entry) =>
+            actorLevel >= accessForPath(entry.path).readLevel),
+        }
+      : undefined
+    return mergeWorkspaceEntries(regular, virtual)
   }
   if (operation === "search") {
-    return searchWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
+    const regular = searchWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
+    const virtualResult = await context.virtualReads?.search({
+      scope,
+      request: requestInput,
+      actorLevel,
+    })
+    const virtual = virtualResult?.filter((result) =>
+      actorLevel >= accessForPath(result.path).readLevel)
+    return mergeWorkspaceSearchResults(regular, virtual, normalizeSearchLimit(requestInput.limit))
   }
   if (operation === "read") {
-    const result = readWorkspaceFile(context.workspaceFiles, scope, requestInput.path, actorLevel, {
+    const path = normalizeWorkspaceOperationFilePath(requestInput.path)
+    assertReadAccess(path, actorLevel)
+    const virtual = await context.virtualReads?.read({
+      scope,
+      path,
+      actorLevel,
+      offset: requestInput.offset,
+      limit: requestInput.limit,
+    })
+    const result = virtual ?? readWorkspaceFile(context.workspaceFiles, scope, path, actorLevel, {
       offset: requestInput.offset,
       limit: requestInput.limit,
     })

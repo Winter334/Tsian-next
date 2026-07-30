@@ -461,6 +461,7 @@ async function executeRuntimeWorkspaceToolCall(
             agentContext: context.agentContext,
             exposedWorkspaceOperations: context.exposedWorkspaceOperations,
             workspaceFileFilter: context.workspaceFileFilter,
+            virtualWorkspaceReads: context.virtualWorkspaceReads,
           },
         ),
       }
@@ -474,6 +475,7 @@ async function executeRuntimeWorkspaceToolCall(
           exposedOperations: context.exposedWorkspaceOperations,
           fileFilter: context.workspaceFileFilter,
           semanticSearchOwnerId: context.semanticSearchOwnerId,
+          virtualReads: context.virtualWorkspaceReads,
         },
       )
       // workspace_read 图片结果:提取 imageBase64 到 imageParts(多模态通道),

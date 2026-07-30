@@ -461,6 +461,7 @@ export async function executeRunScript(
     workspaceFiles: context.workspaceFiles,
     agentContext: context.agentContext,
     workspaceMutations: context.workspaceMutations,
+    virtualWorkspaceReads: context.virtualWorkspaceReads,
     exposedWorkspaceOperations: context.exposedWorkspaceOperations,
     runBrowserScript: context.runBrowserScript,
     signal: context.signal,

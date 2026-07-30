@@ -1325,6 +1325,9 @@ async function callAgentModelWithWorkspaceToolsNative(
       runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
+      virtualWorkspaceReads: toolOptions.workspaceTrustBoundary === "trusted-authoring"
+        ? capabilities.virtualWorkspaceReads
+        : undefined,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
       workspaceFileFilter: workspaceFileFilterForAgentBoundary(
         toolOptions?.workspaceTrustBoundary,
@@ -1756,6 +1759,9 @@ async function callAgentModelWithWorkspaceTools(
       runInspectFrontend: capabilities.runInspectFrontend,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
+      virtualWorkspaceReads: toolOptions?.workspaceTrustBoundary === "trusted-authoring"
+        ? capabilities.virtualWorkspaceReads
+        : undefined,
       exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
       workspaceFileFilter: workspaceFileFilterForAgentBoundary(
         toolOptions?.workspaceTrustBoundary,

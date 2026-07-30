@@ -22,7 +22,10 @@ import type { ToolSchema } from "./tool-schemas"
 import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, RuntimeTestSkillScriptInput, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
 import type { AiTraceOperationContext, ModelCallResult, NativeToolCall, RuntimeChatMessage } from "../runtime-host/ai"
 import type { BrowserAiToolCallMode } from "../config/ai"
-import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
+import type {
+  WorkspaceOperationMutationAdapter,
+  WorkspaceOperationVirtualReadAdapter,
+} from "./workspace-operations"
 import type { AgentWorkspaceTrustBoundary } from "./frontend-action-isolation"
 
 // RuntimeCompressionMode first (referenced by AgentRuntimeTurnInput)
@@ -226,6 +229,7 @@ export interface AgentRuntimeCapabilities {
   ): Promise<PlatformActionResult>
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
+  virtualWorkspaceReads?: WorkspaceOperationVirtualReadAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   collaborationPolicy?: AgentRuntimeCollaborationPolicyInput
   emitTrace?: RuntimeTraceEmitter

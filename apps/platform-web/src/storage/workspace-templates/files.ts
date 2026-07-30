@@ -130,5 +130,4 @@ export const DEFAULT_SAVE_RUNTIME_FILES: TemplateFile[] = [
     }),
   },
   { path: ".tsian/README.md", content: text(["# Tsian Platform Metadata", "", "Files under `.tsian/` are owned by the platform for this save slot. They are hidden from ordinary Agent, Skill, and frontend workspace APIs."]) },
-  { path: ".tsian/save/traces/README.md", content: text(["# Traces", "", "Runtime trace files are platform-owned diagnostics input for this save."]) },
 ]

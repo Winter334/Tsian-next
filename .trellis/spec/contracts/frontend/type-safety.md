@@ -11,7 +11,7 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `PlatformActionRequest` / `PlatformActionResult<T>` wrap host-owned platform actions. They are not the Frontend Action contract.
 - `CardRunActionRequest`, `CardAbortActionRequest`, `CardRunActionResult`, `FrontendActionPublicError`, `FrontendActionRuntimeErrorCode`, and `RuntimeWorkspaceMutationEvent` describe card-owned Frontend Action RPC, typed errors, cancellation, and path-only durable-commit notifications. `JsonValue` is the only Action input/output/details value type; do not widen it to `unknown`.
 - `RemotePlayBridge*` types describe the serializable `tsian.play-bridge.v1` postMessage protocol used by remote iframe frontends.
-- `AiDebugRecord` and `CheckpointSummary` support debug/checkpoint views. `CheckpointSummary` exposes behavior fields (`retention: "auto" | "pinned"`, optional `source`, `tags`, `visible`, `metadata`) plus compatibility `reason?: string`; consumers must use `retention` for pruning/protection semantics, not closed `reason` values.
+- `DiagnosticRecord`, `DiagnosticRecordSummary`, `DiagnosticTraceOverview`, and `DiagnosticStoreHealth` support the in-process unified diagnostics view. `CheckpointSummary` supports checkpoint recovery and exposes behavior fields (`retention: "auto" | "pinned"`, optional `source`, `tags`, `visible`, `metadata`) plus compatibility `reason?: string`; consumers must use `retention` for pruning/protection semantics, not closed `reason` values.
 - `GameCardManifest`, `GameCardFrontendBinding`, `GameCardPackageManifest`, `GameCardPackageFileEntry`, and `GameCardContentFile` describe reusable game cards, package files, frontend bindings, and card-owned content files. `GameCardWorkspaceTemplateFile` is a compatibility alias for `GameCardContentFile`. `GameCardManifest.summary` is the single Game Card intro field; there is no parallel Game Card `description` field. `GameCardManifest.frontend` is optional; when present, frontend bindings are remote or packaged only. `GameCardManifest.runtime.entrypoints.playerTurn` is the optional manifest-owned Agent id used by `send` / `interaction.sendMessage` formal player turns; platform runtime must fail loud when a playable card/save lacks a non-empty player-turn entrypoint instead of silently falling back to a hardcoded Agent id.
 - `AgentConfig`, `AgentSkillConfig`, `AgentPlatformToolConfig`, `AgentWorkspaceAccessConfig`, and `AgentPlatformToolName` describe the machine-readable `agents/<agent>/agent.json` Agent configuration used by Studio and Agent Runtime.
 - `AgentRegistryEntry` describes lightweight `agents/<agent>/agent.json` index entries. `configPath` points to `agent.json`, `path` points to the required SOP `AGENT.md`, and entries include Skill enablement plus `platformTools` / `workspaceAccess` for runtime permission derivation. `defaultSkills` remains in the shared shape only as compatibility input.
@@ -19,7 +19,6 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - `SkillRegistryEntry` describes lightweight shared or agent-local `SKILL.md` index entries. Use `name` / `description` for model-facing Skill identity and keep `id` / `summary` / `path` for compatibility and bridge/UI/debug consumers.
 - `SkillDetailEntry` describes a loaded `SKILL.md` plus resource index for `skill-detail`.
 - `SkillResourceEntry` describes a bundled skill resource file without its content.
-- `RuntimeDiagnosticSummary`, `RuntimeDiagnosticFact`, `RuntimeDiagnosticHealth`, and `RuntimeDiagnosticsQueryParams` describe compact Agent-facing diagnostics returned by `runtime-diagnostics`.
 
 ## Bridge Consumption
 
@@ -28,12 +27,12 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - Play frontends use `bridge.platform.runAction(...)` only for host-owned actions permitted by the remote caller's closed allowlist. Card-owned Frontend Actions use the semantic SDK `tsian.card.runAction(...)`; frontend code must not call the raw `card.runAction` RPC or generic dispatcher directly.
 - `bridge.debug?.onTurnDebugReady(cb)` is a signal to refresh data, not the source of truth.
 - Remote iframe frontends use `RemotePlayBridgeMessage` envelopes over `postMessage`; they must expect explicit `{ ok: true, result }` / `{ ok: false, error }` responses instead of thrown exceptions crossing the frame boundary.
-- The default remote iframe bridge exposes `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, host-owned `platform.runAction`, `workspace.*`, `card.getEntrypoints`, and the internal `card.runAction` / `card.abortAction` methods wrapped by play-bridge. It does not expose the `debug` namespace, must not expose `query.query({ resource: "ai-debug" })`, and must not offer a Frontend Action enumeration method.
+- The default remote iframe bridge exposes `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, host-owned `platform.runAction`, `workspace.*`, `card.getEntrypoints`, and the internal `card.runAction` / `card.abortAction` methods wrapped by play-bridge. It does not expose the `debug` namespace or any retired diagnostic query resource, and must not offer a Frontend Action enumeration method.
 - Use `AgentRegistryEntry` for `bridge.query.query({ resource: "agent-registry" })` results.
 - Use `AgentContextEntry` for `bridge.query.query({ resource: "agent-context", params: { agentId } })` results.
 - Use `SkillRegistryEntry` for `bridge.query.query({ resource: "skill-registry" })` results. Prefer `name` and `description` when presenting skills to an Agent; use `path` only for platform/debug queries such as `skill-detail`.
 - Use `SkillDetailEntry` for `bridge.query.query({ resource: "skill-detail", params: { path } })` results.
-- Use `RuntimeDiagnosticSummary` for `bridge.query.query({ resource: "runtime-diagnostics", params })` results. Diagnostics are facts-only summaries, not raw trace lines or repair instructions.
+- Unified diagnostics are available only through the in-process optional `DebugBridge`; the remote iframe bridge does not expose diagnostic records or retired diagnostic query resources.
 
 ## Scenario: Frontend Action Contract And SDK Boundary
 

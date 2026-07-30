@@ -22,6 +22,17 @@ import type {
   WorkspaceWriteResult,
 } from "./runtime"
 import type { GameCardRuntimeEntrypoints } from "./game-card"
+import type {
+  DiagnosticBundleExportRequest,
+  DiagnosticBundleExportResult,
+  DiagnosticRecord,
+  DiagnosticRecordQuery,
+  DiagnosticRecordsChange,
+  DiagnosticRecordSummaryPage,
+  DiagnosticStoreHealth,
+  DiagnosticTraceFacets,
+  DiagnosticTraceOverview,
+} from "./diagnostics"
 
 export interface InteractionBridge {
   sendMessage(input: MessageInteractionRequest): Promise<MessageInteractionResult>
@@ -149,6 +160,13 @@ export interface CardBridge {
 
 export interface DebugBridge {
   onTurnDebugReady(cb: (turn: number) => void): () => void
+  queryDiagnosticSummaries(query?: DiagnosticRecordQuery): Promise<DiagnosticRecordSummaryPage>
+  getDiagnosticRecord(id: string): Promise<DiagnosticRecord | null>
+  getDiagnosticFacets(): Promise<DiagnosticTraceFacets>
+  getDiagnosticOverview(): Promise<DiagnosticTraceOverview>
+  getDiagnosticStoreHealth(): Promise<DiagnosticStoreHealth>
+  exportDiagnosticBundle(request: DiagnosticBundleExportRequest): Promise<DiagnosticBundleExportResult>
+  onDiagnosticRecordsChanged(cb: (change: DiagnosticRecordsChange) => void): () => void
 }
 
 export interface PlayFrontendBridge {

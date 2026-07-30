@@ -13,6 +13,24 @@ const mocks = vi.hoisted(() => ({
   callModelNative: vi.fn(),
   commitWorkspaceChangesForSave: vi.fn(),
   createBrowserScriptRunners: vi.fn(() => ({})),
+  createDiagnosticsWorkspaceAdapter: vi.fn(() => ({
+    readonlyPathPrefixes: [".tsian/local/diagnostics"],
+    list: (_input: unknown) => undefined,
+    read: async (input: { path: string }) => input.path
+      === ".tsian/local/diagnostics/requests/secret.json"
+      ? {
+          path: input.path,
+          content: "DIAGNOSTIC_VIRTUAL_SECRET",
+          createdAt: 1,
+          updatedAt: 2,
+          totalLines: 1,
+          returnedLines: 1,
+          offset: 1,
+          truncated: false,
+        }
+      : undefined,
+    search: async (_input: unknown) => [],
+  })),
   createFrontendInspector: vi.fn(),
   deleteCardContentPathForActiveCard: vi.fn(),
   deleteFrontendPathForActiveCard: vi.fn(),
@@ -90,6 +108,10 @@ vi.mock("./frontend-inspector", () => ({
   createFrontendInspector: mocks.createFrontendInspector,
 }))
 
+vi.mock("./diagnostics-workspace-adapter", () => ({
+  createDiagnosticsWorkspaceAdapter: mocks.createDiagnosticsWorkspaceAdapter,
+}))
+
 vi.mock("./internal", () => ({
   buildAgentProviderPresetMap: () => new Map<string, string>(),
   cardContentFilesToWorkspaceFiles: vi.fn(),
@@ -158,13 +180,13 @@ function assistantFiles(): WorkspaceFile[] {
   ]
 }
 
-function cardFiles(): WorkspaceFile[] {
+function cardFiles(workspaceLevel = 1): WorkspaceFile[] {
   return [
     file("agents/runtime/agent.json", agentConfig({
       id: "runtime",
       title: "Runtime Agent",
       contextPaths: ["frontend-actions/use-item/context.md"],
-      workspaceLevel: 1,
+      workspaceLevel,
     })),
     file("agents/runtime/AGENT.md", "Runtime instructions"),
     file("frontend-actions/use-item/run.js", "FRONTEND_ACTION_SECRET"),
@@ -220,6 +242,110 @@ beforeEach(() => {
 })
 
 describe("assistant-chat Frontend Action workspace boundary", () => {
+  it("mounts diagnostics virtual reads for the desktop assistant", async () => {
+    mocks.callModelNative
+      .mockResolvedValueOnce(nativeResult("tool_calls", "reading", [{
+        id: "read-diagnostic",
+        name: "read",
+        arguments: {
+          scope: "effective",
+          path: ".tsian/local/diagnostics/requests/secret.json",
+        },
+      }]))
+      .mockImplementationOnce(async (messages: RuntimeChatMessage[]) => {
+        expect(toolObservation(messages, "read-diagnostic"))
+          .toContain("DIAGNOSTIC_VIRTUAL_SECRET")
+        return nativeResult("stop", "assistant read diagnostic")
+      })
+
+    await expect(runAssistantChat({
+      message: "Read the diagnostic request",
+      sessionId: "diagnostics-session",
+    })).resolves.toMatchObject({ replyText: "assistant read diagnostic" })
+  })
+
+  it("drops diagnostics virtual reads for an ordinary runtime entry", async () => {
+    const calls: RuntimeChatMessage[][] = []
+    const result = await runAgentRuntimeTurn({
+      agentId: "runtime",
+      userInput: "Read diagnostics",
+      recentHistory: [],
+      turn: 0,
+      workspaceFiles: cardFiles(4),
+      workspaceTrustBoundary: "runtime-game-agent",
+    }, {
+      toolCallMode: "native",
+      callModel: vi.fn(),
+      callModelNative: vi.fn(async (messages) => {
+        calls.push(messages)
+        if (calls.length === 1) {
+          return nativeResult("tool_calls", "reading", [{
+            id: "runtime-diagnostic-read",
+            name: "read",
+            arguments: {
+              scope: "effective",
+              path: ".tsian/local/diagnostics/requests/secret.json",
+            },
+          }])
+        }
+        expect(toolObservation(messages, "runtime-diagnostic-read"))
+          .toContain("WORKSPACE_FILE_NOT_FOUND")
+        expect(toolObservation(messages, "runtime-diagnostic-read"))
+          .not.toContain("DIAGNOSTIC_VIRTUAL_SECRET")
+        return nativeResult("stop", "runtime blocked")
+      }),
+      virtualWorkspaceReads: mocks.createDiagnosticsWorkspaceAdapter(),
+    })
+
+    expect(result.replyText).toBe("runtime blocked")
+  })
+
+  it("drops diagnostics virtual reads for a delegated runtime Agent", async () => {
+    mocks.listEffectiveWorkspaceFilesForActiveSave.mockResolvedValue(cardFiles(4))
+    mocks.callModelNative.mockImplementation(
+      async (messages: RuntimeChatMessage[], options): Promise<ModelCallResult> => {
+        if (options.debugLabel === "agent:runtime") {
+          const readObservation = toolObservation(messages, "delegated-diagnostic-read")
+          if (!readObservation) {
+            return nativeResult("tool_calls", "reading", [{
+              id: "delegated-diagnostic-read",
+              name: "read",
+              arguments: {
+                scope: "effective",
+                path: ".tsian/local/diagnostics/requests/secret.json",
+              },
+            }])
+          }
+          expect(readObservation).toContain("WORKSPACE_FILE_NOT_FOUND")
+          expect(readObservation).not.toContain("DIAGNOSTIC_VIRTUAL_SECRET")
+          return nativeResult("stop", "delegated diagnostics blocked")
+        }
+
+        const delegatedObservation = toolObservation(messages, "delegate-diagnostics")
+        if (!delegatedObservation) {
+          return nativeResult("tool_calls", "delegating", [{
+            id: "delegate-diagnostics",
+            name: "agent_call",
+            arguments: {
+              agentId: "runtime",
+              request: "Read the diagnostic request",
+              historyMode: "minimal",
+            },
+          }])
+        }
+        expect(delegatedObservation).toContain("delegated diagnostics blocked")
+        return nativeResult("stop", "assistant received safe diagnostics result")
+      },
+    )
+
+    await expect(runAssistantChat({
+      message: "Ask the runtime Agent to inspect diagnostics",
+      sessionId: "delegated-diagnostics-session",
+    })).resolves.toMatchObject({
+      replyText: "assistant received safe diagnostics result",
+    })
+  })
+
   it("lets the real desktop assistant tool loop read Frontend Action files", async () => {
     mocks.callModelNative
       .mockResolvedValueOnce(nativeResult("tool_calls", "reading", [{

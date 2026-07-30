@@ -3,6 +3,7 @@ import type {
   DiagnosticRecord,
   DiagnosticRecordPage,
   DiagnosticRecordQuery,
+  DiagnosticRecordsChange,
   DiagnosticRecordSummary,
   DiagnosticRecordSummaryPage,
 } from "@tsian/contracts"
@@ -14,21 +15,18 @@ export const DIAGNOSTIC_MAX_BYTES = 100 * 1024 * 1024
 export const DIAGNOSTIC_QUERY_DEFAULT_LIMIT = 50
 export const DIAGNOSTIC_QUERY_MAX_LIMIT = 200
 
-export interface DiagnosticRecordsChange {
-  type: "upsert" | "delete"
-  ids: string[]
-}
+type StoredDiagnosticRecordsChange = DiagnosticRecordsChange & { type: "upsert" | "delete" }
 
-const diagnosticRecordListeners = new Set<(change: DiagnosticRecordsChange) => void>()
+const diagnosticRecordListeners = new Set<(change: StoredDiagnosticRecordsChange) => void>()
 
 export function subscribeDiagnosticRecords(
-  listener: (change: DiagnosticRecordsChange) => void,
+  listener: (change: StoredDiagnosticRecordsChange) => void,
 ): () => void {
   diagnosticRecordListeners.add(listener)
   return () => diagnosticRecordListeners.delete(listener)
 }
 
-function emitDiagnosticRecordsChange(change: DiagnosticRecordsChange): void {
+function emitDiagnosticRecordsChange(change: StoredDiagnosticRecordsChange): void {
   for (const listener of diagnosticRecordListeners) {
     try {
       listener(change)
@@ -294,6 +292,27 @@ export async function queryDiagnosticRecords(query: DiagnosticRecordQuery = {}):
   }
 }
 
+/**
+ * Cursor-bounded scan for consumers that need richer matching than
+ * DiagnosticRecordQuery.text (for example workspace regex search). The
+ * predicate runs while IndexedDB advances and collection.limit stops the scan
+ * as soon as enough matching records have been found.
+ */
+export async function scanDiagnosticRecords(
+  matches: (record: DiagnosticRecord) => boolean,
+  limit = DIAGNOSTIC_QUERY_DEFAULT_LIMIT,
+): Promise<DiagnosticRecord[]> {
+  const normalizedLimit = typeof limit === "number" && Number.isFinite(limit) && limit > 0
+    ? Math.min(DIAGNOSTIC_QUERY_MAX_LIMIT, Math.floor(limit))
+    : DIAGNOSTIC_QUERY_DEFAULT_LIMIT
+  return localDb.diagnosticRecords
+    .orderBy("timestamp")
+    .reverse()
+    .filter(matches)
+    .limit(normalizedLimit)
+    .toArray()
+}
+
 function summarizeDiagnosticRecord(record: DiagnosticRecord): DiagnosticRecordSummary {
   if (record.recordType === "frontend-error") {
     return {
@@ -317,8 +336,25 @@ function summarizeDiagnosticRecord(record: DiagnosticRecord): DiagnosticRecordSu
     operationId: record.operationId,
     durationMs: record.durationMs,
     retryCount: record.attempts.filter((attempt) => attempt.willRetry).length,
+    ...(record.response?.usage ? { usage: { ...record.response.usage } } : {}),
     ...(record.error?.message ? { message: record.error.message } : {}),
   }
+}
+
+export async function getAllDiagnosticRecordSummaries(): Promise<DiagnosticRecordSummary[]> {
+  const summaries: DiagnosticRecordSummary[] = []
+  await localDb.diagnosticRecords.orderBy("timestamp").reverse().each((record) => {
+    summaries.push(summarizeDiagnosticRecord(record))
+  })
+  return summaries
+}
+
+export async function getDiagnosticRecordSummaries(
+  ids: string[],
+): Promise<DiagnosticRecordSummary[]> {
+  if (ids.length === 0) return []
+  const records = await localDb.diagnosticRecords.bulkGet([...new Set(ids)])
+  return records.flatMap((record) => record ? [summarizeDiagnosticRecord(record)] : [])
 }
 
 export async function queryDiagnosticRecordSummaries(
@@ -332,27 +368,46 @@ export async function getDiagnosticRelationClosure(anchorId: string): Promise<Di
   const anchor = await localDb.diagnosticRecords.get(anchorId)
   if (!anchor) return []
   if (anchor.recordType !== "ai-request") return [anchor]
-  const operation = await localDb.diagnosticRecords
-    .where("operationId")
-    .equals(anchor.operationId)
-    .toArray() as DiagnosticAiRequestRecord[]
-  const byId = new Map(operation.map((record) => [record.id, record]))
-  const included = new Set<string>()
+  const included = new Map<string, DiagnosticAiRequestRecord>()
+  const loadedOperations = new Set<string>()
+  const queuedIds = new Set<string>([anchor.id])
   const queue = [anchor.id]
+
   while (queue.length > 0) {
     const id = queue.shift()!
-    if (included.has(id)) continue
-    const record = byId.get(id)
-    if (!record) continue
-    included.add(id)
-    if (record.parentRequestId) queue.push(record.parentRequestId)
-    if (record.previousRequestId) queue.push(record.previousRequestId)
-    for (const candidate of operation) {
-      if (candidate.parentRequestId === id || candidate.previousRequestId === id) queue.push(candidate.id)
+    const record = await localDb.diagnosticRecords.get(id)
+    if (record && record.recordType !== "ai-request") continue
+
+    const relatedIds: string[] = []
+    if (record) {
+      included.set(record.id, record)
+      relatedIds.push(...[record.parentRequestId, record.previousRequestId]
+        .filter((value): value is string => !!value))
+      if (!loadedOperations.has(record.operationId)) {
+        loadedOperations.add(record.operationId)
+        const operationRecords = await localDb.diagnosticRecords
+          .where("operationId")
+          .equals(record.operationId)
+          .toArray() as DiagnosticAiRequestRecord[]
+        relatedIds.push(...operationRecords.map((candidate) => candidate.id))
+      }
+    }
+
+    // Follow forward links even when this exact ID has aged out. Otherwise a
+    // retained descendant chain is severed at a missing parent/previous row.
+    const [children, successors] = await Promise.all([
+      localDb.diagnosticRecords.where("parentRequestId").equals(id).primaryKeys(),
+      localDb.diagnosticRecords.where("previousRequestId").equals(id).primaryKeys(),
+    ])
+    relatedIds.push(...children, ...successors)
+    for (const relatedId of relatedIds) {
+      if (queuedIds.has(relatedId)) continue
+      queuedIds.add(relatedId)
+      queue.push(relatedId)
     }
   }
-  return operation
-    .filter((record) => included.has(record.id))
+
+  return [...included.values()]
     .sort((left, right) => left.timestamp - right.timestamp || left.sequence - right.sequence)
 }
 

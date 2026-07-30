@@ -1,6 +1,6 @@
 # platform-web Frontend Specs
 
-`apps/platform-web` is the browser platform shell. It owns the Vue app, local platform host, Agent Runtime MVP implementation, Dexie persistence, bridge implementation, AI client/debug records, and remote/packaged frontend loading.
+`apps/platform-web` is the browser platform shell. It owns the Vue app, local platform host, Agent Runtime MVP implementation, Dexie persistence, bridge implementation, unified diagnostics, and remote/packaged frontend loading.
 
 Use these specs when changing `apps/platform-web/src/**`.
 
@@ -21,8 +21,8 @@ Use these specs when changing `apps/platform-web/src/**`.
 ## Source References
 
 - `apps/platform-web/src/agent-runtime/index.ts`
-- `apps/platform-web/src/agent-runtime/trace.ts`
-- `apps/platform-web/src/agent-runtime/diagnostics.ts`
+- `apps/platform-web/src/runtime-host/ai/trace-recorder.ts`
+- `apps/platform-web/src/storage/diagnostic-records.ts`
 - `apps/platform-web/src/agent-runtime/macro-engine.ts`
 - `apps/platform-web/src/platform-host/index.ts`
 - `apps/platform-web/src/views/LobbyView.vue`
@@ -49,4 +49,4 @@ Provider requests and unhandled frontend errors use the global `diagnosticRecord
 
 ## Related Specs
 
-- [Storage specs](../storage/index.md) — Dexie schema, checkpoint storage model, content-addressing, `.tsian/` layout (trace path prefix). Read when changing `src/storage/**` or any Dexie table.
+- [Storage specs](../storage/index.md) — Dexie schema, checkpoint storage model, content-addressing, `.tsian/` layout, and unified diagnostics. Read when changing `src/storage/**` or any Dexie table.

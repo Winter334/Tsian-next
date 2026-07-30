@@ -59,6 +59,7 @@ import {
 } from "../config/ai"
 import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
+import { createDiagnosticsWorkspaceAdapter } from "./diagnostics-workspace-adapter"
 import { createFrontendInspector } from "./frontend-inspector"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import { emitTurnDebugReady } from "../debug-events"
@@ -591,6 +592,10 @@ export async function runAssistantChat(
           signal: controller.signal,
           emitTrace: traceCollector.emit,
         }),
+        // On-demand only: diagnostics never enter workspaceFiles or the turn's
+        // initial context. Agent Runtime drops this capability for delegated
+        // runtime game Agents.
+        virtualWorkspaceReads: createDiagnosticsWorkspaceAdapter(),
         workspaceMutations: {
           write: (writeInput) => {
             // .tsian/local/assistant/* 是平台本地数据(不进存档/checkpoint/distribute),

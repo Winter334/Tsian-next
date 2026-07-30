@@ -65,7 +65,7 @@
 - The iframe sandbox is compatibility-first: `allow-scripts allow-same-origin allow-forms`. Do not add top navigation, popups, downloads, or broader permissions without a new product/security decision.
 - Remote bridge messages use shared contract types; runtime validation belongs in platform-web, not in shared contracts.
 - The adapter must filter by mounted iframe content window, generated session id, and accepted handshake origin before dispatching requests.
-- The allowed remote methods are `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, host-owned `platform.runAction`, the `workspace.*` methods (`workspace.read`, `workspace.list`, `workspace.search`, `workspace.write`), `card.getEntrypoints`, and package-internal Frontend Action methods `card.runAction` / `card.abortAction`. The default remote bridge must not expose the `debug` namespace, must reject `ai-debug` queries, and must not expose an Action enumeration method; a `turn-debug-ready` notification may be sent without debug records.
+- The allowed remote methods are `interaction.sendMessage`, `interaction.invokeAgent`, `query.query`, `platform.getPlatformContext`, host-owned `platform.runAction`, the `workspace.*` methods (`workspace.read`, `workspace.list`, `workspace.search`, `workspace.write`), `card.getEntrypoints`, and package-internal Frontend Action methods `card.runAction` / `card.abortAction`. The default remote bridge does not expose the `debug` namespace or any retired diagnostic query resource, and must not expose an Action enumeration method; a `turn-debug-ready` notification may be sent without debug records.
 - Workspace read/list/search/write are independent immediate `workspace.*` RPC methods (split out of `query.query`), each with its own request/response shape and normalize validation. `workspace.read` returns `WorkspaceReadResult | null` (null = file not found; errors are not swallowed). Frontend Action mutations use the separate card Action transaction. Checkpoint restore reuses the host-owned `platform.runAction` behavior. Agent `workspace_read`/`workspace_write` tools go through `agent-runtime/workspace-tools.ts`, not bridge `workspace.*` or card Action methods — these paths remain independent.
 
 ### Validation & Error Matrix
@@ -74,7 +74,6 @@
 - Unsupported persisted frontend kind, including stale `builtin` records -> show a compact unsupported frontend error state instead of silently mounting a different frontend.
 - Invalid or forbidden remote URL -> show a compact error state before iframe creation.
 - Malformed remote request payload -> return a structured bridge error response when the request has a valid session/id; otherwise ignore.
-- Remote `ai-debug` query -> structured forbidden error response.
 - Iframe load error -> show a compact error state and do not mutate save data.
 
 ## Scenario: Card-Owned Frontend Action Host Boundary
@@ -550,67 +549,26 @@ await reloadAuthoritativeState()
 - Existing save with runtime workspace version below current -> missing official save runtime files are created, existing same-path files preserved, manifest advances.
 - Existing save with current runtime workspace version -> deleted official save runtime files are not recreated on every turn.
 
-## Scenario: Runtime Trace Persistence
+## Scenario: Unified Diagnostics Boundary
 
 ### Scope / Trigger
 
-- When Agent Runtime emits turn/tool/action trace and platform-host persists it into Runtime Workspace.
+- When provider calls, diagnostic monitoring/export, or the desktop assistant diagnostics projection changes.
 
 ### Contracts
 
-- Trace is platform-owned workspace content: platform writes it, Agent context does not inject it by default, and ordinary workspace read/list/search hides it as part of `.tsian/*` metadata.
-- Trace lives under `.tsian/save/traces/turns/` as JSONL (one file per turn), follows checkpoint/restore, and successful turns include trace in the accepted workspace state before the after-turn checkpoint is created.
-- Failed turns attempt to write a `turn_failed` trace if workspace files are available, but failed-turn trace persistence must not mask the original runtime error.
-- Trace records **metadata only, no business content fragments** (no reply text / tool result previews — those live in turn files / workspace files). See the "Trace Diagnostics" section in the frontend spec index.
-- Trace must record summaries, not large raw payloads:
-  - model calls: message count, output length, tool-call count, finishReason, usage (input/output/total tokens when available), toolCalls summary (tool name + argument key names, not values);
-  - Skill loads: skill name/path, action count, declaration error count;
-  - Agent calls: caller/target ids, target title, input/output summaries, status or error, durationMs;
-  - workspace tools: path/query/limit, result count, file metadata for reads, no file content, durationMs;
-  - action executor policy checks: skill/action/executor metadata and compact allow/deny reason/source, no action input or script content;
-  - action calls: skill/action/executor, input/output summaries, status or error;
-  - browser scripts: script path/source size/start events and script log/trace summaries, no script source or large raw data;
-  - workspace mutations: write path/size or delete `deletedPaths` (no `updatedAt` file-metadata — not a diagnostic field);
-  - context compression: before/after token counts + ratio (the compression *effect*, not just the parameters);
-  - failed events (turn/agent_step/model): error message/code + truncated `errorStack` (`TRACE_ERROR_STACK_LIMIT`).
-  - Do not record mechanism-internal state (caller depth, max depth, call count, history mode) or skill固有属性 (scope, agentId) — they are not runtime diagnostics.
-- `agent-runtime` must not import Dexie/storage/bridge/host; it emits trace through an injected callback. `platform-host` owns trace persistence through explicit platform-owned workspace storage helpers.
-- Ordinary generic workspace reads must not expose `.tsian/*` unless the actor has platform-meta read level. Use dedicated resources (`runtime-diagnostics`) for Agent-facing facts.
+- Provider calls and unhandled frontend errors write the global `diagnosticRecords` IndexedDB table. Runtime Trace JSONL, AI Debug, and `runtime-diagnostics` are retired and must not be restored as writers, parsers, query resources, bridge methods, or UI inputs.
+- The monitor reads paged summaries and fetches full bodies only by ID. Overview and filter facets derive from the same unified summary projection.
+- Only the trusted desktop assistant receives the on-demand `.tsian/local/diagnostics/**` virtual read adapter. Runtime and delegated Agents receive no adapter, and the reserved prefix remains hidden/read-only even if an eager snapshot contains a colliding path.
+- Legacy trace paths may remain recognized only by save/checkpoint lifecycle cleanup. They are not active diagnostic data sources.
 
 ### Validation & Error Matrix
 
-- Successful turn -> one valid JSONL trace file under `.tsian/save/traces/turns/`.
-- Runtime failure after workspace is available -> failed trace is attempted and original error is rethrown.
-- Trace write failure on successful turn -> fail loudly before checkpoint creation.
-- Trace `data` contains non-JSON values -> collector normalizes to JSON-compatible values.
-- Workspace read/list/search on root or `.tsian` path -> no platform metadata contents are exposed.
-
-## Scenario: Agent-Facing Runtime Diagnostics
-
-### Scope / Trigger
-
-- When platform-web exposes compact Agent-facing diagnostics derived from Runtime Trace files.
-
-### Contracts
-
-- Diagnostics are an on-demand query view over `.tsian/save/traces/turns/*.jsonl`; do not persist derived diagnostic workspace files. The trace path pattern in `diagnostics.ts` must match `formatRuntimeTracePath` (`.tsian/save/traces/turns/turn-*.jsonl`).
-- `runtime-diagnostics` returns one summary per trace file / turn attempt, not one top-level item per raw trace event.
-- Default behavior prioritizes failed/anomalous traces. Successful-turn health summaries are returned only when `includeHealth` is true or an exact `turn` query requests them.
-- Summaries are facts-only. Do not add platform-authored repair suggestions, probable-cause narratives, or hardcoded `nextChecks`.
-- Lightweight normalization is allowed for runtime-area identification: `source`, `eventType`, raw `code`/`message`, Agent id/debug label, Skill/action/tool/executor names, and directly related workspace paths. Related paths must come from direct trace facts; drop `.tsian/*` paths from Agent-facing `relatedPaths`.
-- Diagnostics must stay bounded: result limit, lookback window, per-summary fact limit, related path limit, and message/details previews.
-- Malformed trace lines must not crash the whole query; return compact trace parse facts or counts.
-- The diagnostics builder must stay pure (workspace files in, summaries out; no Dexie/storage/bridge/host imports). `platform-host` owns the bridge query wiring.
-- Do not add `runtime-diagnostics` as a default live-turn Agent tool or prompt instruction.
-
-### Validation & Error Matrix
-
-- No active save / no trace files -> query returns `{ items: [] }`.
-- Failed trace file -> query returns a failed summary with raw error code/message facts when present.
-- Successful trace with `includeHealth` false and no anomalies -> omitted from default results.
-- Successful trace with `includeHealth` true -> compact health summary only; no raw event stream.
-- Trace with malformed JSONL line -> query still returns valid summaries and records malformed-line facts/counts.
-- Trace paths or details under `.tsian/*` -> omitted from `relatedPaths`.
+- Provider request succeeds/fails/retries -> one unified AI request record contains the complete lifecycle and attempts.
+- Monitor list -> summary page only; selected detail -> one ID-scoped full read.
+- Trusted desktop assistant reads diagnostics -> virtual list/read/search resolves on demand.
+- Runtime/delegated Agent or snapshot collision -> diagnostics path is not visible.
+- Any mutation touching the reserved diagnostics prefix -> `WORKSPACE_VIRTUAL_READ_ONLY`.
 
 ## Scenario: Turn Token Budget And In-Turn Compression (Narrative + Task modes)
 

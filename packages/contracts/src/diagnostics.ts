@@ -137,6 +137,7 @@ export interface DiagnosticRecordSummary {
   durationMs?: number
   retryCount?: number
   message?: string
+  usage?: DiagnosticAiUsage
 }
 
 export interface DiagnosticRecordSummaryPage {
@@ -150,4 +151,60 @@ export interface DiagnosticStoreHealth {
   lostRecordCount: number
   lastFailureAt?: number
   lastError?: string
+}
+
+export interface DiagnosticRecordsChange {
+  type: "upsert" | "delete" | "health"
+  ids: string[]
+}
+
+export interface DiagnosticTraceFacets {
+  providers: string[]
+  models: string[]
+  fromTimestamp?: number
+  toTimestamp?: number
+}
+
+export interface DiagnosticTraceProviderStats {
+  provider: string
+  model: string
+  calls: number
+  inputTokens: number
+  outputTokens: number
+  cachedTokens: number
+  cacheCreationTokens: number
+}
+
+export interface DiagnosticTraceOverview {
+  totalRecords: number
+  aiRequestCount: number
+  frontendErrorCount: number
+  succeededCount: number
+  failedCount: number
+  abortedCount: number
+  runningCount: number
+  interruptedCount: number
+  retriedRequestCount: number
+  usage: Required<DiagnosticAiUsage>
+  latestUsage?: {
+    timestamp: number
+    provider: string
+    model: string
+    usage: DiagnosticAiUsage
+  }
+  latestFailureId?: string
+  latestFailureTimestamp?: number
+  providers: DiagnosticTraceProviderStats[]
+}
+
+export interface DiagnosticBundleExportRequest {
+  selectedFailureId?: string
+  reproductionSteps: string
+}
+
+export interface DiagnosticBundleExportResult {
+  blob: Blob
+  fileName: string
+  anchorId: string
+  recordCount: number
 }

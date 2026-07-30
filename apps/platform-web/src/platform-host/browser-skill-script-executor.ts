@@ -864,6 +864,7 @@ async function handleSdkRequest(
       exposedOperations: executorContext?.exposedWorkspaceOperations
         ?? [],
       fileFilter: executorContext?.workspaceFileFilter,
+      virtualReads: executorContext?.virtualWorkspaceReads,
       mutations: {
         write: (input) => {
           const file = options.workspaceTransaction.write({

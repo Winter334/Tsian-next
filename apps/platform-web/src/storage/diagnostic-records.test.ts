@@ -35,7 +35,11 @@ function aiRecord(overrides: Partial<DiagnosticAiRequestRecord> = {}): Diagnosti
     endpoint: "https://example.test/chat/completions",
     streaming: false,
     request: { messages: [{ role: "user", content: "full request text" }] },
-    response: { text: "full response text", finishReason: "stop" },
+    response: {
+      text: "full response text",
+      finishReason: "stop",
+      usage: { input: 12, output: 3, total: 15, cached: 5 },
+    },
     attempts: [],
     ...overrides,
   }
@@ -70,22 +74,58 @@ describe("diagnostic record storage", () => {
     await putDiagnosticRecord(aiRecord({
       id: "request-2",
       requestId: "request-2",
-      parentRequestId: "request-1",
+      parentRequestId: "missing-parent",
       previousRequestId: "request-1",
       sequence: 2,
       timestamp: BASE_TIME + 1,
       updatedAt: BASE_TIME + 1,
     }))
     await putDiagnosticRecord(frontendRecord("frontend-1", BASE_TIME + 2))
+    await putDiagnosticRecord(aiRecord({
+      id: "request-detached",
+      requestId: "request-detached",
+      sequence: 3,
+      timestamp: BASE_TIME + 3,
+      updatedAt: BASE_TIME + 3,
+    }))
+    await putDiagnosticRecord(aiRecord({
+      id: "request-cross-operation",
+      requestId: "request-cross-operation",
+      operationId: "operation-2",
+      parentRequestId: "request-2",
+      sequence: 1,
+      timestamp: BASE_TIME + 4,
+      updatedAt: BASE_TIME + 4,
+    }))
+    await putDiagnosticRecord(aiRecord({
+      id: "request-through-missing-parent",
+      requestId: "request-through-missing-parent",
+      operationId: "operation-3",
+      parentRequestId: "missing-parent",
+      sequence: 1,
+      timestamp: BASE_TIME + 2,
+      updatedAt: BASE_TIME + 2,
+    }))
 
     expect((await getDiagnosticRecord("request-1"))?.sizeBytes).toBeGreaterThan(0)
     const page = await queryDiagnosticRecords({ offset: 0, limit: 2 })
-    expect(page.items.map((record) => record.id)).toEqual(["frontend-1", "request-2"])
+    expect(page.items.map((record) => record.id)).toEqual(["request-cross-operation", "request-detached"])
     expect(page.hasMore).toBe(true)
     expect((await queryDiagnosticRecordSummaries({ recordType: "ai-request" })).items[0])
-      .toMatchObject({ id: "request-2", provider: "openai-compatible", operationId: "operation-1" })
+      .toMatchObject({
+        id: "request-cross-operation",
+        provider: "openai-compatible",
+        operationId: "operation-2",
+        usage: { input: 12, output: 3, total: 15, cached: 5 },
+      })
     expect((await getDiagnosticRelationClosure("request-2")).map((record) => record.id))
-      .toEqual(["request-1", "request-2"])
+      .toEqual([
+        "request-1",
+        "request-2",
+        "request-through-missing-parent",
+        "request-detached",
+        "request-cross-operation",
+      ])
   })
 
   it("recursively removes credentials and replaces inline binary data before persistence", async () => {

@@ -25,14 +25,13 @@ export function isTurnFilePath(path: string): boolean {
   return path.startsWith(AIRP_HISTORY_TURN_PATH_PREFIX) && path.endsWith(".json")
 }
 
-/** 判断 workspace 路径是否为 runtime trace 文件（`.tsian/save/traces/turns/turn-*.jsonl`）。 */
+/** 仅供恢复/删除生命周期识别遗留 runtime trace 文件。 */
 export function isTraceFilePath(path: string): boolean {
   return path.startsWith(AIRP_RUNTIME_TRACE_PATH_PREFIX) && path.endsWith(".jsonl")
 }
 
-/** 判断是否为"追加型日志"文件——每回合新增一个、旧文件不变，存档级共享。
- *  turn 文件（对话历史）+ trace 文件（诊断日志）都属于此类：
- *  checkpoint 不存此类文件（恢复时按 turn 号裁剪到 1..N），避免内容寻址冗余。 */
+/** 判断是否为"追加型日志"文件。
+ * 活跃 turn 文件与遗留 trace 文件都不进 checkpoint；后者只为恢复/删除时裁剪。 */
 export function isAppendOnlyLogPath(path: string): boolean {
   return isTurnFilePath(path) || isTraceFilePath(path)
 }

@@ -16,7 +16,10 @@ import type {
   RuntimeTraceDebugLabel,
   RuntimeTraceEmitter,
 } from "./trace"
-import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
+import type {
+  WorkspaceOperationMutationAdapter,
+  WorkspaceOperationVirtualReadAdapter,
+} from "./workspace-operations"
 
 export interface RuntimeWorkspaceToolCall {
   name: string
@@ -359,6 +362,7 @@ export interface RuntimeControlledExecutorContext {
   agentContext?: AgentContextEntry
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   workspaceFileFilter?: (file: WorkspaceFile) => boolean
+  virtualWorkspaceReads?: WorkspaceOperationVirtualReadAdapter
 }
 
 export interface RuntimeBrowserScriptExecutorRequest {
@@ -459,6 +463,7 @@ export interface RuntimeActionExecutorContext {
   workspaceFiles: WorkspaceFile[]
   agentContext?: AgentContextEntry
   workspaceMutations?: WorkspaceOperationMutationAdapter
+  virtualWorkspaceReads?: WorkspaceOperationVirtualReadAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   workspaceFileFilter?: (file: WorkspaceFile) => boolean
   runBrowserScript?: RuntimeBrowserScriptRunner
@@ -495,6 +500,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   runTestSkillScript?: RuntimeTestSkillScriptRunner
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
+  virtualWorkspaceReads?: WorkspaceOperationVirtualReadAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   workspaceFileFilter?: (file: WorkspaceFile) => boolean
   /** semantic_search 专用:owner id(save-runtime 下为 saveId). */
