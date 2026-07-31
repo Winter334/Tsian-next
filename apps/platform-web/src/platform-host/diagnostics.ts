@@ -207,6 +207,14 @@ export function queryDiagnosticSummaries(query: DiagnosticRecordQuery = {}) {
   return queryDiagnosticRecordSummaries(query)
 }
 
+export async function getRetainedDiagnosticSummaries(): Promise<DiagnosticRecordSummary[]> {
+  return [...(await getSummaryCache()).values()].sort((left, right) =>
+    right.timestamp - left.timestamp
+    || right.updatedAt - left.updatedAt
+    || left.id.localeCompare(right.id)
+  )
+}
+
 export async function readDiagnosticRecord(id: string) {
   return (await getDiagnosticRecord(id)) ?? null
 }

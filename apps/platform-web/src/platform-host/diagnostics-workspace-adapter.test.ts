@@ -3,6 +3,7 @@ import type {
   DiagnosticAiRequestRecord,
   DiagnosticFrontendErrorRecord,
   DiagnosticRecord,
+  DiagnosticRecordSummary,
   WorkspaceFile,
   WorkspaceListResult,
   WorkspaceOperationRequest,
@@ -17,6 +18,7 @@ import {
   putDiagnosticRecord,
   scanDiagnosticRecords,
 } from "../storage/diagnostic-records"
+import { loadLocalAssistantFiles } from "../storage/local-assistant-files"
 import {
   createDiagnosticsWorkspaceAdapter,
   DIAGNOSTICS_FRONTEND_ERRORS_PATH,
@@ -24,6 +26,12 @@ import {
   DIAGNOSTICS_REQUESTS_PATH,
   DIAGNOSTICS_WORKSPACE_ROOT,
 } from "./diagnostics-workspace-adapter"
+import {
+  copyPlatformWorkspacePath,
+  listPlatformWorkspaceDirectory,
+  readPlatformWorkspaceFile,
+  searchPlatformWorkspace,
+} from "./workspace-ops"
 
 const BASE_TIME = 1_800_000_000_000
 
@@ -106,11 +114,39 @@ describe("diagnostics workspace projection", () => {
       scope: "platform-meta",
       path: DIAGNOSTICS_WORKSPACE_ROOT,
     }, context) as WorkspaceListResult
+    expect(diagnostics.readOnly).toBe(true)
+    expect(diagnostics.entries.every((entry) => entry.readOnly)).toBe(true)
     expect(diagnostics.entries.map((entry) => entry.path)).toEqual([
       DIAGNOSTICS_FRONTEND_ERRORS_PATH,
       DIAGNOSTICS_REQUESTS_PATH,
       DIAGNOSTICS_INDEX_PATH,
     ])
+
+    const requests = await executeWorkspaceOperation({
+      operation: "list",
+      scope: "platform-meta",
+      path: DIAGNOSTICS_REQUESTS_PATH,
+    }, context) as WorkspaceListResult
+    expect(requests).toMatchObject({
+      readOnly: true,
+      entries: [expect.objectContaining({
+        path: `${DIAGNOSTICS_REQUESTS_PATH}/request-1.json`,
+        readOnly: true,
+      })],
+    })
+
+    const frontendErrors = await executeWorkspaceOperation({
+      operation: "list",
+      scope: "platform-meta",
+      path: DIAGNOSTICS_FRONTEND_ERRORS_PATH,
+    }, context) as WorkspaceListResult
+    expect(frontendErrors).toMatchObject({
+      readOnly: true,
+      entries: [expect.objectContaining({
+        path: `${DIAGNOSTICS_FRONTEND_ERRORS_PATH}/error-1.json`,
+        readOnly: true,
+      })],
+    })
 
     const first = await executeWorkspaceOperation({
       operation: "read",
@@ -120,7 +156,7 @@ describe("diagnostics workspace projection", () => {
       limit: 1,
     }, context) as WorkspaceReadResult
     expect(JSON.parse(first.content)).toMatchObject({ id: "error-1", recordType: "frontend-error" })
-    expect(first).toMatchObject({ returnedLines: 1, offset: 1, truncated: true })
+    expect(first).toMatchObject({ returnedLines: 1, offset: 1, truncated: true, readOnly: true })
 
     const second = await executeWorkspaceOperation({
       operation: "read",
@@ -177,15 +213,23 @@ describe("diagnostics workspace projection", () => {
     const record = aiRecord("lazy-request")
     const getRecord = vi.fn(async () => record as DiagnosticRecord)
     const querySummaries = vi.fn(async () => ({ items: [], hasMore: false }))
+    const listSummaries = vi.fn(async () => [])
     const scanRecords = vi.fn(async () => [] as DiagnosticRecord[])
-    const adapter = createDiagnosticsWorkspaceAdapter({ getRecord, querySummaries, scanRecords })
+    const adapter = createDiagnosticsWorkspaceAdapter({
+      getRecord,
+      querySummaries,
+      listSummaries,
+      scanRecords,
+    })
 
     expect(getRecord).not.toHaveBeenCalled()
     expect(querySummaries).not.toHaveBeenCalled()
+    expect(listSummaries).not.toHaveBeenCalled()
     expect(scanRecords).not.toHaveBeenCalled()
     await adapter.list({ scope: "effective", path: ".tsian/local", actorLevel: 4 })
     expect(getRecord).not.toHaveBeenCalled()
     expect(querySummaries).not.toHaveBeenCalled()
+    expect(listSummaries).not.toHaveBeenCalled()
     expect(scanRecords).not.toHaveBeenCalled()
 
     await adapter.read({
@@ -195,7 +239,102 @@ describe("diagnostics workspace projection", () => {
     })
     expect(getRecord).toHaveBeenCalledTimes(1)
     expect(querySummaries).not.toHaveBeenCalled()
+    expect(listSummaries).not.toHaveBeenCalled()
     expect(scanRecords).not.toHaveBeenCalled()
+  })
+
+  it("copies virtual files and complete directories out as ordinary editable files", async () => {
+    const requestRecord = aiRecord("request-copy")
+    const errorRecord = frontendRecord("error-copy")
+    const records = new Map<string, DiagnosticRecord>([
+      [requestRecord.id, requestRecord],
+      [errorRecord.id, errorRecord],
+    ])
+    const summaries: DiagnosticRecordSummary[] = [
+      {
+        id: errorRecord.id,
+        recordType: "frontend-error",
+        timestamp: errorRecord.timestamp,
+        updatedAt: errorRecord.updatedAt,
+        sizeBytes: errorRecord.sizeBytes,
+        message: errorRecord.message,
+      },
+      {
+        id: requestRecord.id,
+        recordType: "ai-request",
+        timestamp: requestRecord.timestamp,
+        updatedAt: requestRecord.updatedAt,
+        sizeBytes: requestRecord.sizeBytes,
+        status: requestRecord.status,
+        provider: requestRecord.provider,
+        model: requestRecord.model,
+        operationId: requestRecord.operationId,
+        retryCount: 0,
+      },
+    ]
+    const adapter = createDiagnosticsWorkspaceAdapter({
+      getRecord: async (id) => records.get(id),
+      querySummaries: async ({ offset }) => ({
+        items: summaries.slice(offset, offset + 1),
+        hasMore: offset + 1 < summaries.length,
+      }),
+      listSummaries: async () => summaries,
+      scanRecords: async () => [],
+    })
+    const write = vi.fn(async (input: { path: string; content?: string; data?: Blob }) =>
+      file(input.path, input.content ?? ""))
+    const context = {
+      workspaceFiles: [] as WorkspaceFile[],
+      actorLevel: 4,
+      exposedOperations: ["copy"] as const,
+      virtualReads: adapter,
+      mutations: {
+        write,
+        delete: async () => ({ scope: "platform-meta" as const, deletedPaths: [] }),
+      },
+    }
+
+    const copiedFile = await executeWorkspaceOperation({
+      operation: "copy",
+      scope: "platform-meta",
+      path: `${DIAGNOSTICS_REQUESTS_PATH}/${requestRecord.id}.json`,
+      targetPath: "snapshots/request.json",
+    }, context)
+    expect(copiedFile).toMatchObject({ copiedPaths: ["snapshots/request.json"] })
+    expect(JSON.parse(write.mock.calls[0][0].content ?? "")).toEqual(requestRecord)
+
+    write.mockClear()
+    const copiedDirectory = await executeWorkspaceOperation({
+      operation: "copy",
+      scope: "platform-meta",
+      path: DIAGNOSTICS_WORKSPACE_ROOT,
+      targetPath: "snapshots/diagnostics",
+    }, context) as { copiedPaths: string[] }
+    expect(copiedDirectory.copiedPaths).toEqual(expect.arrayContaining([
+      "snapshots/diagnostics/index.jsonl",
+      `snapshots/diagnostics/requests/${requestRecord.id}.json`,
+      `snapshots/diagnostics/frontend-errors/${errorRecord.id}.json`,
+    ]))
+    const indexWrite = write.mock.calls.find(([input]) => input.path.endsWith("/index.jsonl"))?.[0]
+    expect(indexWrite?.content).toBe(summaries.map((summary) => JSON.stringify(summary)).join("\n"))
+    expect(write.mock.calls.every(([input]) => !("readOnly" in input))).toBe(true)
+
+    const conflictWrite = vi.fn(async (input: { path: string; content?: string }) =>
+      file(input.path, input.content ?? ""))
+    await expect(executeWorkspaceOperation({
+      operation: "copy",
+      scope: "platform-meta",
+      path: DIAGNOSTICS_WORKSPACE_ROOT,
+      targetPath: "snapshots/conflict",
+    }, {
+      ...context,
+      workspaceFiles: [file(
+        `snapshots/conflict/requests/${requestRecord.id}.json`,
+        "already here",
+      )],
+      mutations: { ...context.mutations, write: conflictWrite },
+    })).rejects.toMatchObject({ code: "WORKSPACE_TARGET_EXISTS" })
+    expect(conflictWrite).not.toHaveBeenCalled()
   })
 
   it("keeps diagnostics invisible without the desktop-only adapter", async () => {
@@ -236,6 +375,36 @@ describe("diagnostics workspace projection", () => {
     })).rejects.toMatchObject({ code: "WORKSPACE_VIRTUAL_READ_ONLY" })
   })
 
+  it("mounts diagnostics for the platform-owner local workspace host", async () => {
+    const record = aiRecord("owner-request", BASE_TIME, "owner-host-needle")
+    await putDiagnosticRecord(record)
+
+    const listed = await listPlatformWorkspaceDirectory({ path: DIAGNOSTICS_WORKSPACE_ROOT })
+    expect(listed).toMatchObject({ readOnly: true })
+    expect(listed.entries.map((entry) => entry.path)).toContain(DIAGNOSTICS_REQUESTS_PATH)
+
+    const path = `${DIAGNOSTICS_REQUESTS_PATH}/${record.id}.json`
+    const persisted = await getDiagnosticRecord(record.id)
+    const read = await readPlatformWorkspaceFile({ path })
+    expect(read.readOnly).toBe(true)
+    expect(JSON.parse(read.content)).toEqual(persisted)
+
+    const searched = await searchPlatformWorkspace({
+      query: "owner-host-needle",
+      path: DIAGNOSTICS_WORKSPACE_ROOT,
+    })
+    expect(searched).toEqual([
+      expect.objectContaining({ path, readOnly: true }),
+    ])
+
+    const targetPath = ".tsian/local/assistant/owner-request-snapshot.json"
+    await copyPlatformWorkspacePath({ path, targetPath })
+    const snapshot = (await loadLocalAssistantFiles()).find((file) => file.path === targetPath)
+    expect(snapshot).toBeDefined()
+    expect(JSON.parse(snapshot?.content ?? "")).toEqual(persisted)
+    expect(snapshot).not.toHaveProperty("readOnly")
+  })
+
   it("rejects every mutation touching diagnostics before calling storage", async () => {
     const write = vi.fn(async (input: { path: string; content?: string }) =>
       file(input.path, input.content ?? ""))
@@ -256,7 +425,8 @@ describe("diagnostics workspace projection", () => {
       },
       { operation: "edit", path: DIAGNOSTICS_INDEX_PATH, oldString: "x", newString: "y" },
       { operation: "delete", path: DIAGNOSTICS_WORKSPACE_ROOT },
-      { operation: "copy", path: `${DIAGNOSTICS_REQUESTS_PATH}/source.json`, targetPath: "world/copy.json" },
+      { operation: "copy", path: "world/source.md", targetPath: `${DIAGNOSTICS_REQUESTS_PATH}/copy.json` },
+      { operation: "move", path: `${DIAGNOSTICS_REQUESTS_PATH}/source.json`, targetPath: "world/moved.json" },
       { operation: "move", path: "world/source.md", targetPath: `${DIAGNOSTICS_REQUESTS_PATH}/moved.json` },
     ]
     for (const request of requests) {
@@ -286,8 +456,14 @@ describe("diagnostics workspace projection", () => {
     const record = aiRecord("request-1")
     const getRecord = vi.fn(async () => record as DiagnosticRecord)
     const querySummaries = vi.fn(async () => ({ items: [], hasMore: false }))
+    const listSummaries = vi.fn(async () => [])
     const scanRecords = vi.fn(async () => [] as DiagnosticRecord[])
-    const adapter = createDiagnosticsWorkspaceAdapter({ getRecord, querySummaries, scanRecords })
+    const adapter = createDiagnosticsWorkspaceAdapter({
+      getRecord,
+      querySummaries,
+      listSummaries,
+      scanRecords,
+    })
     const collision = file(`${DIAGNOSTICS_WORKSPACE_ROOT}/private-copy.json`, "not authoritative")
 
     const listed = await executeWorkspaceOperation({
@@ -331,6 +507,7 @@ describe("diagnostics workspace projection", () => {
     }, lowPrivilegeContext)).toEqual([])
     expect(getRecord).not.toHaveBeenCalled()
     expect(querySummaries).not.toHaveBeenCalled()
+    expect(listSummaries).not.toHaveBeenCalled()
     expect(scanRecords).not.toHaveBeenCalled()
   })
 

@@ -242,6 +242,8 @@ export interface WorkspaceEntry {
   updatedAt?: number
   size?: number
   childCount?: number
+  /** Read-view capability metadata. It is not part of persisted file records. */
+  readOnly?: boolean
 }
 
 export interface WorkspaceFile {
@@ -268,6 +270,8 @@ export interface WorkspaceFile {
  *  (`offset: 1`, `truncated: false`). Old consumers reading `path`/
  *  `content`/`updatedAt` are unaffected. */
 export interface WorkspaceReadResult extends WorkspaceFile {
+  /** Read-view capability metadata. It is not part of persisted file records. */
+  readOnly?: boolean
   /** Total lines in the file (`content.split("\n").length`). Always present
    *  for text files; for binary placeholders it is `1`. */
   totalLines?: number
@@ -744,6 +748,8 @@ export interface RegistryDiagnostic {
 export interface WorkspaceListResult {
   path: string
   entries: WorkspaceEntry[]
+  /** Whether the listed directory rejects mutations. */
+  readOnly?: boolean
 }
 
 export interface WorkspaceSearchMatch {
@@ -764,6 +770,8 @@ export interface WorkspaceSearchResult {
   path: string
   name: string
   updatedAt: number
+  /** Read-view capability metadata. It is not part of persisted file records. */
+  readOnly?: boolean
   /** Path-match score preserved from the legacy format: 2 = path hit,
    *  0 = content-only. Content hits do not raise the score so path-matched
    *  files still sort first. */

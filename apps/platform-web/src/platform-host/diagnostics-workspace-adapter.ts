@@ -16,6 +16,7 @@ import {
   queryDiagnosticRecordSummaries,
   scanDiagnosticRecords,
 } from "../storage/diagnostic-records"
+import { getRetainedDiagnosticSummaries } from "./diagnostics"
 
 export const DIAGNOSTICS_WORKSPACE_ROOT = BUILT_IN_READ_ONLY_VIRTUAL_WORKSPACE_PREFIXES[0]
 export const DIAGNOSTICS_INDEX_PATH = `${DIAGNOSTICS_WORKSPACE_ROOT}/index.jsonl`
@@ -36,6 +37,7 @@ interface DiagnosticsWorkspaceDependencies {
     items: DiagnosticRecordSummary[]
     hasMore: boolean
   }>
+  listSummaries(): Promise<DiagnosticRecordSummary[]>
   scanRecords(
     matches: (record: DiagnosticRecord) => boolean,
     limit: number,
@@ -45,6 +47,7 @@ interface DiagnosticsWorkspaceDependencies {
 const defaultDependencies: DiagnosticsWorkspaceDependencies = {
   getRecord: getDiagnosticRecord,
   querySummaries: queryDiagnosticRecordSummaries,
+  listSummaries: getRetainedDiagnosticSummaries,
   scanRecords: scanDiagnosticRecords,
 }
 
@@ -63,6 +66,7 @@ function directory(path: string, name: string, childCount?: number): WorkspaceEn
     name,
     kind: "directory",
     ...(childCount === undefined ? {} : { childCount }),
+    ...(isDiagnosticsPath(path) ? { readOnly: true } : {}),
   }
 }
 
@@ -78,15 +82,24 @@ function staticList(path: string): WorkspaceEntry[] | undefined {
         path: DIAGNOSTICS_INDEX_PATH,
         name: "index.jsonl",
         kind: "file",
+        readOnly: true,
       },
     ]
   }
-  if (path === DIAGNOSTICS_REQUESTS_PATH || path === DIAGNOSTICS_FRONTEND_ERRORS_PATH) {
-    // IDs are discovered through the paged index; listing this directory must
-    // not enumerate retained full-body records or fabricate an unpaged result.
-    return []
-  }
   return undefined
+}
+
+function summaryEntry(summary: DiagnosticRecordSummary): WorkspaceEntry {
+  return {
+    path: summary.recordType === "ai-request"
+      ? `${DIAGNOSTICS_REQUESTS_PATH}/${summary.id}.json`
+      : `${DIAGNOSTICS_FRONTEND_ERRORS_PATH}/${summary.id}.json`,
+    name: `${summary.id}.json`,
+    kind: "file",
+    size: summary.sizeBytes,
+    updatedAt: summary.updatedAt,
+    readOnly: true,
+  }
 }
 
 function positiveInteger(value: number | undefined, fallback: number, max: number): number {
@@ -119,6 +132,7 @@ function sliceTextRead(input: {
       returnedLines: totalLines,
       offset: 1,
       truncated: false,
+      readOnly: true,
     }
   }
   const offset = readOffset(input.offset)
@@ -133,6 +147,7 @@ function sliceTextRead(input: {
     returnedLines: selected.length,
     offset,
     truncated: offset + limit - 1 < totalLines,
+    readOnly: true,
   }
 }
 
@@ -193,13 +208,26 @@ export function createDiagnosticsWorkspaceAdapter(
 ): WorkspaceOperationVirtualReadAdapter {
   return {
     readonlyPathPrefixes: [DIAGNOSTICS_WORKSPACE_ROOT],
-    list({ scope, path, actorLevel }) {
+    async list({ scope, path, actorLevel }) {
       if (!supportsScope(scope) || actorLevel < 4) return undefined
+      if (path === DIAGNOSTICS_REQUESTS_PATH || path === DIAGNOSTICS_FRONTEND_ERRORS_PATH) {
+        const recordType = path === DIAGNOSTICS_REQUESTS_PATH ? "ai-request" : "frontend-error"
+        const entries = (await dependencies.listSummaries())
+          .filter((summary) => summary.recordType === recordType)
+          .map(summaryEntry)
+        return { path, entries, readOnly: true }
+      }
       const entries = staticList(path)
-      if (entries !== undefined) return { path, entries }
+      if (entries !== undefined) {
+        return {
+          path,
+          entries,
+          ...(isDiagnosticsPath(path) ? { readOnly: true } : {}),
+        }
+      }
       // The reserved namespace is authoritative even for an unknown child;
       // never fall back to a colliding eager WorkspaceFile snapshot.
-      return isDiagnosticsPath(path) ? { path, entries: [] } : undefined
+      return isDiagnosticsPath(path) ? { path, entries: [], readOnly: true } : undefined
     },
     async read({ scope, path, actorLevel, offset, limit }) {
       if (!supportsScope(scope) || actorLevel < 4) return undefined
@@ -224,6 +252,7 @@ export function createDiagnosticsWorkspaceAdapter(
           returnedLines: page.items.length,
           offset: normalizedOffset,
           truncated: page.hasMore,
+          readOnly: true,
         }
       }
 
@@ -245,6 +274,16 @@ export function createDiagnosticsWorkspaceAdapter(
     },
     async search({ scope, request, actorLevel }) {
       if (!supportsScope(scope) || actorLevel < 4) return undefined
+      const searchPath = typeof request.path === "string"
+        ? request.path.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "")
+        : ""
+      if (
+        searchPath
+        && !isDiagnosticsPath(searchPath)
+        && !DIAGNOSTICS_WORKSPACE_ROOT.startsWith(`${searchPath}/`)
+      ) {
+        return undefined
+      }
       const query = typeof request.query === "string" ? request.query.trim() : ""
       const pattern = typeof request.pattern === "string" ? request.pattern.trim() : ""
       if (!query && !pattern) return []
@@ -273,6 +312,9 @@ export function createDiagnosticsWorkspaceAdapter(
       const matched = new Map<string, WorkspaceSearchResult>()
       await dependencies.scanRecords((record) => {
         const path = recordPath(record)
+        if (isDiagnosticsPath(searchPath) && path !== searchPath && !path.startsWith(`${searchPath}/`)) {
+          return false
+        }
         const content = JSON.stringify(record, null, 2)
         const pathMatched = matchesPath(path)
         const contentMatches = searchMatches(content, matchLine, contextLines)
@@ -285,6 +327,7 @@ export function createDiagnosticsWorkspaceAdapter(
           score: (pathMatched ? 2 : 0) + (firstMatch ? 1 : 0),
           matches: contentMatches.matches,
           matchesTruncated: contentMatches.truncated,
+          readOnly: true,
           preview: firstMatch
             ? createPreview(firstMatch.line, firstMatch.line.indexOf(firstMatch.match))
             : path,

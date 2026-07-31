@@ -1,0 +1,9 @@
+{"file":".trellis/spec/contracts/backend/index.md","reason":"Shared workspace contract ownership and required build boundary."}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"Additive contract and consuming-build verification rules."}
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web ownership, diagnostics entry points, and required checks."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Resource manager and editor interaction conventions, including readonly UI and copy behavior."}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"Workspace scope, actor visibility, virtual adapter, and resource-manager boundary contracts."}
+{"file":".trellis/spec/platform-web/frontend/state-management.md","reason":"Workspace volume persistence, Save/checkpoint, and local assistant file boundaries."}
+{"file":".trellis/spec/platform-web/storage/index.md","reason":"Effective workspace composition, volume routing, mutations, and checkpoint semantics."}
+{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"Unified diagnostics authority, on-demand projection, retention, isolation, and readonly guarantees."}
+{"file":".trellis/spec/guides/prompt-self-contained-and-tone.md","reason":"Assistant-facing framework knowledge must be self-contained and avoid developer-side causal framing."}

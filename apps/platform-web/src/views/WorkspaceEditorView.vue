@@ -11,6 +11,7 @@
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <button
+          v-if="!readOnly"
           type="button"
           class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
           :disabled="loading || saving"
@@ -38,6 +39,7 @@
         v-else
         v-model="content"
         :path="draftPath"
+        :readonly="readOnly"
       />
     </main>
 
@@ -62,6 +64,10 @@ import { Save } from "lucide-vue-next"
 import type { WorkspaceFile, WorkspaceValidationResult } from "@tsian/contracts"
 import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
+import {
+  hasWorkspaceEditorDraftChanges,
+  workspaceEditorSaveShortcutAction,
+} from "@/lib/workspace-readonly"
 import { emitWorkspaceContentChanged } from "@/lib/workspace-events"
 import { confirmChoice } from "@/composables/useConfirm"
 import { clearBeforeClose, setBeforeClose } from "@/composables/useDesktopWindows"
@@ -96,6 +102,7 @@ const content = ref("")
 const expectedContent = ref("")
 const loading = ref(false)
 const saving = ref(false)
+const readOnly = ref(false)
 const loadError = ref("")
 const saveError = ref("")
 const feedback = ref("")
@@ -104,12 +111,16 @@ const mode = ref<EditorMode>("edit")
 
 const normalizedDraftPath = computed(() => normalizeDisplayPath(draftPath.value))
 const contentChanged = computed(() => content.value !== expectedContent.value)
-const hasDraftChanges = computed(() =>
-  mode.value === "create"
-  || contentChanged.value
-)
+const hasDraftChanges = computed(() => hasWorkspaceEditorDraftChanges({
+  readOnly: readOnly.value,
+  mode: mode.value,
+  content: content.value,
+  expectedContent: expectedContent.value,
+}))
 
-const modeLabel = computed(() => mode.value === "create" ? "新建文件" : "编辑文件")
+const modeLabel = computed(() =>
+  readOnly.value ? "只读文件" : mode.value === "create" ? "新建文件" : "编辑文件"
+)
 const mediaTypeLabel = computed(() => inferMediaTypeFromPath(normalizedDraftPath.value))
 
 const editorValidator = computed<EditorValidator | null>(() => {
@@ -138,6 +149,9 @@ const statusMessage = computed(() => {
       return `${validation.value.validator} 校验通过。`
     }
     return validation.value.errors.map((error) => error.message).join("；")
+  }
+  if (readOnly.value) {
+    return "只读文件。"
   }
   if (hasDraftChanges.value) {
     return "有未保存的更改。"
@@ -264,7 +278,7 @@ async function ensureTargetPathAvailable(targetPath: string) {
   }
 }
 
-function requireTextFile(file: WorkspaceFile): WorkspaceFile {
+function requireTextFile<T extends WorkspaceFile>(file: T): T {
   if (file.binary) {
     throw new Error(`文件「${file.path}」是二进制文件，不能在文本编辑器中打开或保存。`)
   }
@@ -285,6 +299,9 @@ async function validateSavedFile() {
 }
 
 async function saveDraft() {
+  if (readOnly.value) {
+    return
+  }
   const targetPath = normalizedDraftPath.value
   if (!targetPath) {
     loadError.value = ""
@@ -350,11 +367,12 @@ async function saveDraft() {
   }
 }
 
-function applySavedFile(path: string, nextContent: string) {
+function applySavedFile(path: string, nextContent: string, options: { readOnly?: boolean } = {}) {
   draftPath.value = path
   originalPath.value = path
   content.value = nextContent
   expectedContent.value = nextContent
+  readOnly.value = options.readOnly === true
 }
 
 async function syncEditorRoute(path: string) {
@@ -383,6 +401,7 @@ async function loadFile() {
   originalPath.value = initialPath
   content.value = ""
   expectedContent.value = ""
+  readOnly.value = false
   loadError.value = ""
   saveError.value = ""
   feedback.value = ""
@@ -398,7 +417,7 @@ async function loadFile() {
       cardId: props.cardId,
       path: initialPath,
     }))
-    applySavedFile(file.path, file.content)
+    applySavedFile(file.path, file.content, { readOnly: file.readOnly })
   } catch (error) {
     loadError.value = errorMessage(error, "无法打开文件。")
   } finally {
@@ -434,17 +453,17 @@ watch(() => [props.cardId, props.path, props.mode] as const, () => {
 // Ctrl+S / Cmd+S: save. Active only on the editor route so other views keep the
 // browser default. No editable-target guard: Ctrl+S must fire inside CodeMirror.
 function onGlobalKeydown(event: KeyboardEvent) {
-  if (props.minimized) {
-    return
-  }
-  const ctrl = event.ctrlKey || event.metaKey
-  if (!ctrl || (event.key !== "s" && event.key !== "S")) {
-    return
-  }
-  if (route.name !== "workspace-editor") {
-    return
-  }
+  const action = workspaceEditorSaveShortcutAction({
+    minimized: props.minimized === true,
+    routeName: route.name,
+    ctrlKey: event.ctrlKey,
+    metaKey: event.metaKey,
+    key: event.key,
+    readOnly: readOnly.value,
+  })
+  if (action === "ignore") return
   event.preventDefault()
+  if (action === "blocked") return
   void saveDraft()
 }
 

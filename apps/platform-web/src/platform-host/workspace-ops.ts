@@ -5,6 +5,7 @@ import type {
   WorkspaceCopyResult,
   WorkspaceMoveResult,
   WorkspaceOperationRequest,
+  WorkspaceReadResult,
   WorkspaceWriteResult,
   WorkspaceScope,
   WorkspaceSearchResult,
@@ -17,6 +18,7 @@ import {
   scopeForPath,
 } from "../agent-runtime/workspace-operations"
 import { cardFrontendVolume, executeWorkspaceMutation, manifestVolume } from "./workspace-volumes"
+import { createDiagnosticsWorkspaceAdapter } from "./diagnostics-workspace-adapter"
 import {
   cardContentFilesToWorkspaceFiles,
 } from "./internal"
@@ -294,6 +296,7 @@ export async function listPlatformWorkspaceDirectory(input: {
       workspaceFiles: allFiles,
       actorLevel: 4,
       exposedOperations: ["list"],
+      virtualReads: createDiagnosticsWorkspaceAdapter(),
     }) as WorkspaceListResult
   }
 
@@ -569,27 +572,32 @@ async function executeLocalWorkspaceOperation(
   const localAssistantFiles = await loadLocalAssistantFiles()
   const localConfigFiles = await loadLocalPlatformConfigFile()
   const allFiles = [...saveFiles, ...localAssistantFiles, ...localConfigFiles]
+  const virtualReads = createDiagnosticsWorkspaceAdapter()
 
   // 读操作用 effective(跨 scope 视野),与 write 路径一致——避免同一路径"读不到但移得动"
   // (隐患1)。allFiles 已合并 save/local-assistant/local-config,effective 能看到全部。
   if (request.operation === "list") {
     return executeWorkspaceOperation(
       { ...request, scope: "effective" },
-      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["list"] },
+      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["list"], virtualReads },
     )
   }
 
   if (request.operation === "search") {
+    const directoryPath = normalizeStudioDirectoryPath(request.path)
+    const prefix = directoryPath ? `${directoryPath}/` : ""
+    const workspaceFiles = allFiles.filter((file) =>
+      !directoryPath || file.path === directoryPath || file.path.startsWith(prefix))
     return executeWorkspaceOperation(
-      { ...request, scope: "effective" },
-      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["search"] },
+      { ...request, path: directoryPath || undefined, scope: "effective" },
+      { workspaceFiles, actorLevel: 4, exposedOperations: ["search"], virtualReads },
     )
   }
 
   if (request.operation === "read") {
     return executeWorkspaceOperation(
       { ...request, scope: "effective" },
-      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["read"] },
+      { workspaceFiles: allFiles, actorLevel: 4, exposedOperations: ["read"], virtualReads },
     )
   }
 
@@ -602,6 +610,7 @@ async function executeLocalWorkspaceOperation(
       workspaceFiles: allFiles,
       actorLevel: 4,
       exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+      virtualReads,
       mutations: {
         async write(writeInput) {
           // 按 input.scope 推导 ownerContext(隐患4 修复):card-scope 需 cardId,
@@ -735,6 +744,7 @@ async function executeCrossRootWorkspaceOperation(input: {
     workspaceFiles,
     actorLevel: 4,
     exposedOperations: AUTHORING_WORKSPACE_OPERATIONS,
+    ...(input.operation === "copy" ? { virtualReads: createDiagnosticsWorkspaceAdapter() } : {}),
     mutations: {
       write(writeInput) {
         // ownerContext 按 input.scope 推导(隐患4 修复):card-scope 用 input.cardId,
@@ -766,19 +776,19 @@ async function executeCrossRootWorkspaceOperation(input: {
 export async function readPlatformWorkspaceFile(input: {
   cardId?: string
   path: string
-}): Promise<WorkspaceFile> {
+}): Promise<WorkspaceReadResult> {
   if (!input.cardId && isTsianPath(input.path)) {
     return await executeLocalWorkspaceOperation({
       operation: "read",
       scope: "platform-meta",
       path: input.path,
-    }) as WorkspaceFile
+    }) as WorkspaceReadResult
   }
   return await executeStudioWorkspaceOperation(input.cardId ?? "", {
     operation: "read",
     scope: "effective",
     path: input.path,
-  }) as WorkspaceFile
+  }) as WorkspaceReadResult
 }
 
 export async function writePlatformWorkspaceFile(input: {

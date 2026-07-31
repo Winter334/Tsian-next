@@ -304,7 +304,7 @@
         打开
       </button>
       <button
-        v-if="contextMenu.entry && canModifyEntry(contextMenu.entry)"
+        v-if="contextMenu.entry && canCopyEntry(contextMenu.entry)"
         type="button"
         class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
         @click="copyEntry(contextMenu.entry)"
@@ -338,7 +338,7 @@
         删除
       </button>
       <button
-        v-if="!contextMenu.entry && isBrowsing"
+        v-if="!contextMenu.entry && canCreateHere()"
         type="button"
         class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
         @click="createNewFileFromContextMenu"
@@ -347,7 +347,7 @@
         新建文件
       </button>
       <button
-        v-if="!contextMenu.entry && isBrowsing"
+        v-if="!contextMenu.entry && canCreateHere()"
         type="button"
         class="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
         @click="createNewFolderFromContextMenu"
@@ -410,6 +410,11 @@ import type {
 } from "@tsian/contracts"
 import { inferWorkspaceMediaType } from "@/lib/workspace-file-types"
 import {
+  canCopyWorkspaceEntry,
+  canCreateWorkspaceEntry,
+  canMutateWorkspaceEntry,
+} from "@/lib/workspace-readonly"
+import {
   inferMediaTypeFromPath,
   isImageMediaType,
   isAudioMediaType,
@@ -455,6 +460,7 @@ const selectedRootKind = ref<"local" | "card">("card")
 const selectedCardId = ref("")
 const currentPath = ref("")
 const directoryEntries = ref<WorkspaceEntry[]>([])
+const currentDirectoryReadOnly = ref(false)
 const selectedEntryPath = ref("")
 const searchInput = ref("")
 const activeSearchQuery = ref("")
@@ -598,13 +604,11 @@ function entrySizeLabel(entry: WorkspaceEntry): string {
 }
 
 function canDeleteEntry(entry: WorkspaceEntry): boolean {
-  if (entry.path === "save") {
-    return false
-  }
-  if (/^save\/save-\d+$/.test(entry.path)) {
-    return false
-  }
-  return true
+  return canMutateWorkspaceEntry({
+    entry,
+    currentDirectoryReadOnly: currentDirectoryReadOnly.value,
+    directoryLoading: directoryLoading.value,
+  })
 }
 
 function canRenameEntry(entry: WorkspaceEntry): boolean {
@@ -613,6 +617,19 @@ function canRenameEntry(entry: WorkspaceEntry): boolean {
 
 function canModifyEntry(entry: WorkspaceEntry): boolean {
   return canDeleteEntry(entry)
+}
+
+function canCopyEntry(entry: WorkspaceEntry): boolean {
+  return !directoryLoading.value && canCopyWorkspaceEntry(entry)
+}
+
+function canCreateHere(): boolean {
+  return canCreateWorkspaceEntry({
+    isBrowsing: isBrowsing.value,
+    currentDirectoryReadOnly: currentDirectoryReadOnly.value,
+    directoryLoading: directoryLoading.value,
+    currentPath: currentPath.value,
+  })
 }
 
 function splitNameExt(name: string): { base: string; ext: string } {
@@ -642,8 +659,7 @@ function currentEntryNames(): Set<string> {
 
 function canPasteHere(): boolean {
   return Boolean(clipboard.value)
-    && isBrowsing.value
-    && currentPath.value !== "save"
+    && canCreateHere()
 }
 
 async function refreshRoots() {
@@ -660,6 +676,7 @@ async function refreshRoots() {
       selectedCardId.value = ""
       currentPath.value = ""
       directoryEntries.value = []
+      currentDirectoryReadOnly.value = false
       syncRouteState()
     }
   } catch (error) {
@@ -676,6 +693,7 @@ async function refreshRoots() {
 async function refreshDirectory() {
   if (!selectedCardId.value && currentPath.value !== ".tsian" && !currentPath.value.startsWith(".tsian/")) {
     directoryEntries.value = []
+    currentDirectoryReadOnly.value = false
     return
   }
 
@@ -694,6 +712,7 @@ async function refreshDirectory() {
 
     currentPath.value = result.path
     directoryEntries.value = result.entries
+    currentDirectoryReadOnly.value = result.readOnly === true
     if (!result.entries.some((entry) => entry.path === selectedEntryPath.value)) {
       selectedEntryPath.value = ""
     }
@@ -704,6 +723,7 @@ async function refreshDirectory() {
   } catch (error) {
     if (requestId === directoryRequestId) {
       directoryEntries.value = []
+      currentDirectoryReadOnly.value = false
       errorMessage.value = error instanceof Error ? error.message : "无法读取工作区目录。"
     }
   } finally {
@@ -760,6 +780,7 @@ function returnToRoot() {
   selectedCardId.value = ""
   currentPath.value = ""
   directoryEntries.value = []
+  currentDirectoryReadOnly.value = false
   selectedEntryPath.value = ""
   clearSearch()
   syncRouteState()
@@ -856,11 +877,7 @@ function enterRenameForNewEntry(entry: WorkspaceEntry) {
 }
 
 async function createNewFile() {
-  if (!isBrowsing.value) {
-    return
-  }
-  if (currentPath.value === "save") {
-    feedback.value = "请先进入具体存档槽，再新建文件。"
+  if (!canCreateHere()) {
     return
   }
 
@@ -884,11 +901,7 @@ async function createNewFile() {
 }
 
 async function createNewFolder() {
-  if (!isBrowsing.value) {
-    return
-  }
-  if (currentPath.value === "save") {
-    feedback.value = "请先进入具体存档槽，再新建文件夹。"
+  if (!canCreateHere()) {
     return
   }
 
@@ -1125,7 +1138,7 @@ async function deleteEntry(entry: WorkspaceEntry) {
 }
 
 function copyEntry(entry: WorkspaceEntry) {
-  if (!isBrowsing.value || !canModifyEntry(entry)) {
+  if (!isBrowsing.value || !canCopyEntry(entry)) {
     return
   }
   contextMenu.value = null
@@ -1156,7 +1169,7 @@ function cutEntry(entry: WorkspaceEntry) {
 
 async function pasteFromClipboard() {
   const cb = clipboard.value
-  if (!cb || !isBrowsing.value || currentPath.value === "save") {
+  if (!cb || !canPasteHere()) {
     return
   }
   contextMenu.value = null
@@ -1256,7 +1269,7 @@ function onGlobalKeydown(event: KeyboardEvent) {
   }
 
   if (event.key === "v" || event.key === "V") {
-    if (clipboard.value) {
+    if (canPasteHere()) {
       event.preventDefault()
       void pasteFromClipboard()
     }

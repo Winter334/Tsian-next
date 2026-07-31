@@ -553,22 +553,24 @@ await reloadAuthoritativeState()
 
 ### Scope / Trigger
 
-- When provider calls, diagnostic monitoring/export, or the desktop assistant diagnostics projection changes.
+- When provider calls, diagnostic monitoring/export, or an owner-facing diagnostics workspace projection changes.
 
 ### Contracts
 
 - Provider calls and unhandled frontend errors write the global `diagnosticRecords` IndexedDB table. Runtime Trace JSONL, AI Debug, and `runtime-diagnostics` are retired and must not be restored as writers, parsers, query resources, bridge methods, or UI inputs.
 - The monitor reads paged summaries and fetches full bodies only by ID. Overview and filter facets derive from the same unified summary projection.
-- Only the trusted desktop assistant receives the on-demand `.tsian/local/diagnostics/**` virtual read adapter. Runtime and delegated Agents receive no adapter, and the reserved prefix remains hidden/read-only even if an eager snapshot contains a colliding path.
+- Only trusted owner-facing hosts receive the on-demand `.tsian/local/diagnostics/**` virtual read adapter: the desktop assistant and the platform-owner resource manager. Runtime and delegated Agents receive no adapter, and the reserved prefix remains hidden/read-only even if an eager snapshot contains a colliding path.
+- Diagnostics list/read/search results carry generic `readOnly` view metadata. Copying a diagnostic file or directory to an ordinary writable path materializes a complete editable snapshot; copy-in and source-mutating operations remain forbidden.
 - Legacy trace paths may remain recognized only by save/checkpoint lifecycle cleanup. They are not active diagnostic data sources.
 
 ### Validation & Error Matrix
 
 - Provider request succeeds/fails/retries -> one unified AI request record contains the complete lifecycle and attempts.
 - Monitor list -> summary page only; selected detail -> one ID-scoped full read.
-- Trusted desktop assistant reads diagnostics -> virtual list/read/search resolves on demand.
+- Trusted desktop assistant or platform-owner resource manager reads diagnostics -> virtual list/read/search resolves on demand.
 - Runtime/delegated Agent or snapshot collision -> diagnostics path is not visible.
-- Any mutation touching the reserved diagnostics prefix -> `WORKSPACE_VIRTUAL_READ_ONLY`.
+- Copy diagnostics source to an ordinary writable path -> complete snapshot is written after collision preflight.
+- Write/edit/delete/move or copy into the reserved diagnostics prefix -> `WORKSPACE_VIRTUAL_READ_ONLY`.
 
 ## Scenario: Turn Token Budget And In-Turn Compression (Narrative + Task modes)
 

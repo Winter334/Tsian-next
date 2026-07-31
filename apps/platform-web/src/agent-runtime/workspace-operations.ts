@@ -6,6 +6,7 @@ import type {
   WorkspaceEntry,
   WorkspaceFile,
   WorkspaceGlobResult,
+  WorkspaceListResult,
   WorkspaceMoveResult,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
@@ -137,10 +138,10 @@ function assertVirtualMutationAllowed(
     ...BUILT_IN_READ_ONLY_VIRTUAL_WORKSPACE_PREFIXES,
     ...(virtualReads?.readonlyPathPrefixes ?? []),
   ]
-  const paths = [normalizeWorkspaceOperationTargetPath(request.path)]
-  if (operation === "copy" || operation === "move") {
-    paths.push(normalizeWorkspaceOperationTargetPath(request.targetPath))
-  }
+  const paths = operation === "copy"
+    ? [normalizeWorkspaceOperationTargetPath(request.targetPath)]
+    : [normalizeWorkspaceOperationTargetPath(request.path)]
+  if (operation === "move") paths.push(normalizeWorkspaceOperationTargetPath(request.targetPath))
   const readOnlyPath = paths.find((path) =>
     readOnlyPrefixes.some((prefix) => pathMatchesPrefix(path, prefix))
   )
@@ -153,9 +154,9 @@ function assertVirtualMutationAllowed(
 }
 
 function mergeWorkspaceEntries(
-  regular: { path: string; entries: WorkspaceEntry[] },
-  virtual: { path: string; entries: WorkspaceEntry[] } | undefined,
-): { path: string; entries: WorkspaceEntry[] } {
+  regular: WorkspaceListResult,
+  virtual: WorkspaceListResult | undefined,
+): WorkspaceListResult {
   if (!virtual) return regular
   const byPath = new Map(regular.entries.map((entry) => [entry.path, entry]))
   for (const entry of virtual.entries) {
@@ -180,6 +181,7 @@ function mergeWorkspaceEntries(
       if (left.kind !== right.kind) return left.kind === "directory" ? -1 : 1
       return left.name.localeCompare(right.name)
     }),
+    ...(virtual.readOnly === undefined ? {} : { readOnly: virtual.readOnly }),
   }
 }
 
@@ -1303,6 +1305,291 @@ async function moveWorkspacePath(
   }
 }
 
+function workspaceParentPath(path: string): string {
+  const slashIndex = path.lastIndexOf("/")
+  return slashIndex < 0 ? "" : path.slice(0, slashIndex)
+}
+
+function isWorkspaceFileNotFound(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "WORKSPACE_FILE_NOT_FOUND"
+}
+
+async function readCompleteVirtualFile(input: {
+  virtualReads: WorkspaceOperationVirtualReadAdapter
+  scope: WorkspaceScope
+  path: string
+  actorLevel: number
+}): Promise<WorkspaceFile | undefined> {
+  const MAX_VIRTUAL_COPY_READ_SLICES = 100_000
+  let offset = 1
+  let first: WorkspaceReadResult | undefined
+  let expectedTotalLines: number | undefined
+  let expectsTotalLines: boolean | undefined
+  let completedLines = 0
+  let sliceCount = 0
+  const contentSlices: string[] = []
+
+  while (true) {
+    sliceCount += 1
+    if (sliceCount > MAX_VIRTUAL_COPY_READ_SLICES) {
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_READ_INVALID",
+        `Virtual workspace read exceeded the slice limit while copying: ${input.path}`,
+        { path: input.path, offset, sliceLimit: MAX_VIRTUAL_COPY_READ_SLICES },
+      )
+    }
+    const slice = await input.virtualReads.read({
+      scope: input.scope,
+      path: input.path,
+      actorLevel: input.actorLevel,
+      offset,
+      limit: MAX_READ_LIMIT,
+    })
+    if (!slice) {
+      if (!first) return undefined
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_READ_CHANGED",
+        `Virtual workspace file disappeared while it was being copied: ${input.path}`,
+        { path: input.path, offset },
+      )
+    }
+    const slicePath = normalizeWorkspaceOperationFilePath(slice.path)
+    if (slicePath !== input.path) {
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_READ_INVALID",
+        `Virtual workspace read returned a different path while copying: ${slicePath}`,
+        { requestedPath: input.path, returnedPath: slicePath },
+      )
+    }
+    first ??= slice
+
+    if (slice.binary) {
+      if (slice.truncated) {
+        throw workspaceOperationError(
+          "WORKSPACE_VIRTUAL_READ_INVALID",
+          `Virtual binary workspace read was truncated while copying: ${input.path}`,
+          { path: input.path },
+        )
+      }
+      return {
+        path: input.path,
+        content: slice.content,
+        binary: slice.binary,
+        ...(slice.imageMimeType ? { imageMimeType: slice.imageMimeType } : {}),
+        createdAt: slice.createdAt,
+        updatedAt: slice.updatedAt,
+      }
+    }
+
+    const sliceOffset = slice.offset ?? offset
+    const returnedLines = slice.returnedLines
+      ?? (slice.content.length > 0 ? slice.content.split("\n").length : 0)
+    const contentLineCount = slice.content.length > 0
+      ? slice.content.split("\n").length
+      : returnedLines === 1 ? 1 : 0
+    if (
+      !Number.isSafeInteger(sliceOffset)
+      || sliceOffset !== offset
+      || !Number.isSafeInteger(returnedLines)
+      || returnedLines < 0
+      || contentLineCount !== returnedLines
+      || (sliceCount > 1 && returnedLines === 0)
+    ) {
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_READ_INVALID",
+        `Virtual workspace read returned invalid slice metadata while copying: ${input.path}`,
+        { path: input.path, requestedOffset: offset, returnedOffset: slice.offset, returnedLines },
+      )
+    }
+    expectsTotalLines ??= slice.totalLines !== undefined
+    if ((slice.totalLines !== undefined) !== expectsTotalLines) {
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_READ_INVALID",
+        `Virtual workspace read changed its total line metadata while copying: ${input.path}`,
+        { path: input.path, totalLines: slice.totalLines },
+      )
+    }
+    if (slice.totalLines !== undefined) {
+      if (!Number.isSafeInteger(slice.totalLines) || slice.totalLines < 0) {
+        throw workspaceOperationError(
+          "WORKSPACE_VIRTUAL_READ_INVALID",
+          `Virtual workspace read returned an invalid total line count while copying: ${input.path}`,
+          { path: input.path, totalLines: slice.totalLines },
+        )
+      }
+      expectedTotalLines ??= slice.totalLines
+      if (slice.totalLines !== expectedTotalLines || slice.updatedAt !== first.updatedAt) {
+        throw workspaceOperationError(
+          "WORKSPACE_VIRTUAL_READ_CHANGED",
+          `Virtual workspace file changed while it was being copied: ${input.path}`,
+          { path: input.path },
+        )
+      }
+    }
+
+    contentSlices.push(slice.content)
+    completedLines += returnedLines
+    if (!slice.truncated) {
+      if (expectedTotalLines !== undefined && completedLines !== expectedTotalLines) {
+        throw workspaceOperationError(
+          "WORKSPACE_VIRTUAL_READ_INVALID",
+          `Virtual workspace read ended with an incomplete line count while copying: ${input.path}`,
+          { path: input.path, totalLines: expectedTotalLines, completedLines },
+        )
+      }
+      break
+    }
+
+    if (returnedLines <= 0) {
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_READ_INVALID",
+        `Virtual workspace read did not advance while copying: ${input.path}`,
+        { path: input.path, offset },
+      )
+    }
+    const nextOffset = sliceOffset + returnedLines
+    if (nextOffset <= offset || (expectedTotalLines !== undefined && nextOffset > expectedTotalLines)) {
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_READ_INVALID",
+        `Virtual workspace read did not advance safely while copying: ${input.path}`,
+        { path: input.path, offset, nextOffset, totalLines: expectedTotalLines },
+      )
+    }
+    offset = nextOffset
+  }
+
+  if (!first) return undefined
+  return {
+    path: input.path,
+    content: contentSlices.join("\n"),
+    ...(first.imageMimeType ? { imageMimeType: first.imageMimeType } : {}),
+    createdAt: first.createdAt,
+    updatedAt: first.updatedAt,
+  }
+}
+
+async function collectVirtualDirectoryFiles(input: {
+  virtualReads: WorkspaceOperationVirtualReadAdapter
+  scope: WorkspaceScope
+  path: string
+  actorLevel: number
+  visited: Set<string>
+}): Promise<WorkspaceFile[]> {
+  if (input.visited.has(input.path)) {
+    throw workspaceOperationError(
+      "WORKSPACE_VIRTUAL_LIST_INVALID",
+      `Virtual workspace directory contains a cycle: ${input.path}`,
+      { path: input.path },
+    )
+  }
+  input.visited.add(input.path)
+
+  const listed = await input.virtualReads.list({
+    scope: input.scope,
+    path: input.path,
+    actorLevel: input.actorLevel,
+  })
+  if (!listed) {
+    throw workspaceOperationError(
+      "WORKSPACE_FILE_NOT_FOUND",
+      `Virtual workspace directory was not found: ${input.path}`,
+      { scope: input.scope, path: input.path },
+    )
+  }
+
+  const files: WorkspaceFile[] = []
+  for (const entry of [...listed.entries].sort((left, right) => left.path.localeCompare(right.path))) {
+    const entryPath = normalizeWorkspaceOperationTargetPath(entry.path)
+    const prefix = `${input.path}/`
+    if (!entryPath.startsWith(prefix) || entryPath.slice(prefix.length).includes("/")) {
+      throw workspaceOperationError(
+        "WORKSPACE_VIRTUAL_LIST_INVALID",
+        `Virtual workspace list returned a non-child entry: ${entryPath}`,
+        { directoryPath: input.path, entryPath },
+      )
+    }
+    assertReadAccess(entryPath, input.actorLevel)
+    if (entry.kind === "directory") {
+      files.push(...await collectVirtualDirectoryFiles({ ...input, path: entryPath }))
+      continue
+    }
+    const file = await readCompleteVirtualFile({ ...input, path: entryPath })
+    if (!file) {
+      throw workspaceOperationError(
+        "WORKSPACE_FILE_NOT_FOUND",
+        `Virtual workspace file was not found: ${entryPath}`,
+        { scope: input.scope, path: entryPath },
+      )
+    }
+    files.push(file)
+  }
+  if (files.length === 0) {
+    files.push({
+      path: `${input.path}/.keep`,
+      content: "",
+      createdAt: 0,
+      updatedAt: 0,
+    })
+  }
+  return files
+}
+
+async function collectVirtualSource(input: {
+  virtualReads: WorkspaceOperationVirtualReadAdapter | undefined
+  scope: WorkspaceScope
+  path: string
+  actorLevel: number
+}): Promise<{ files: WorkspaceFile[]; isDirectory: boolean } | undefined> {
+  if (!input.virtualReads) return undefined
+
+  const parentList = await input.virtualReads.list({
+    scope: input.scope,
+    path: workspaceParentPath(input.path),
+    actorLevel: input.actorLevel,
+  })
+  const entry = parentList?.entries.find((candidate) => candidate.path === input.path)
+  if (entry?.kind === "directory") {
+    return {
+      files: await collectVirtualDirectoryFiles({
+        ...input,
+        virtualReads: input.virtualReads,
+        visited: new Set(),
+      }),
+      isDirectory: true,
+    }
+  }
+  if (entry?.kind === "file") {
+    const file = await readCompleteVirtualFile({ ...input, virtualReads: input.virtualReads })
+    return file ? { files: [file], isDirectory: false } : undefined
+  }
+  if (parentList) return undefined
+
+  try {
+    const file = await readCompleteVirtualFile({ ...input, virtualReads: input.virtualReads })
+    if (file) return { files: [file], isDirectory: false }
+  } catch (error) {
+    if (!isWorkspaceFileNotFound(error)) throw error
+  }
+
+  const listed = await input.virtualReads.list({
+    scope: input.scope,
+    path: input.path,
+    actorLevel: input.actorLevel,
+  })
+  if (!listed) return undefined
+  return {
+    files: await collectVirtualDirectoryFiles({
+      ...input,
+      virtualReads: input.virtualReads,
+      visited: new Set(),
+    }),
+    isDirectory: true,
+  }
+}
+
 async function copyWorkspacePath(
   files: WorkspaceFile[],
   scope: WorkspaceScope,
@@ -1326,40 +1613,55 @@ async function copyWorkspacePath(
   }
 
   const prefix = `${fromPath}/`
-  const matches = files
+  let matches = files
     .filter((file) =>
       pathMatchesScope(file.path, fromScope)
       && (file.path === fromPath || file.path.startsWith(prefix))
     )
     .sort((left, right) => left.path.localeCompare(right.path))
+  let sourceIsDirectory = matches.length > 0 && !matches.some((file) => file.path === fromPath)
   if (matches.length === 0) {
-    throw workspaceOperationError(
-      "WORKSPACE_FILE_NOT_FOUND",
-      `Workspace path was not found in ${fromScope}: ${fromPath}`,
-      { scope: fromScope, path: fromPath },
-    )
+    const virtualSource = await collectVirtualSource({
+      virtualReads: context.virtualReads,
+      scope: fromScope,
+      path: fromPath,
+      actorLevel,
+    })
+    if (!virtualSource) {
+      throw workspaceOperationError(
+        "WORKSPACE_FILE_NOT_FOUND",
+        `Workspace path was not found in ${fromScope}: ${fromPath}`,
+        { scope: fromScope, path: fromPath },
+      )
+    }
+    matches = virtualSource.files
+    sourceIsDirectory = virtualSource.isDirectory
   }
 
-  const copiedPaths: string[] = []
-  for (const file of matches) {
-    const nextPath = file.path === fromPath
+  const plannedWrites = matches.map((file) => ({
+    file,
+    path: !sourceIsDirectory && file.path === fromPath
       ? toPath
-      : `${toPath}/${file.path.slice(prefix.length)}`
+      : `${toPath}/${file.path.slice(prefix.length)}`,
+  }))
+  const plannedPaths = new Set<string>()
+  for (const planned of plannedWrites) {
+    const nextPath = normalizeWorkspaceOperationFilePath(planned.path)
+    planned.path = nextPath
     assertEditAccess(nextPath, actorLevel)
-    if (findScopedFile(files, toScope, nextPath)) {
+    if (plannedPaths.has(nextPath) || findScopedFile(files, toScope, nextPath)) {
       throw workspaceOperationError(
         "WORKSPACE_TARGET_EXISTS",
         `Workspace copy target already exists: ${nextPath}`,
         { scope: toScope, path: nextPath },
       )
     }
+    plannedPaths.add(nextPath)
   }
 
   const mutations = assertMutationAdapter(context.mutations)
-  for (const file of matches) {
-    const nextPath = file.path === fromPath
-      ? toPath
-      : `${toPath}/${file.path.slice(prefix.length)}`
+  const copiedPaths: string[] = []
+  for (const { file, path: nextPath } of plannedWrites) {
     await mutations.write({
       scope: toScope,
       path: nextPath,
@@ -1530,9 +1832,15 @@ export async function executeWorkspaceOperation(
   }
   if (operation === "search") {
     const regular = searchWorkspaceFiles(context.workspaceFiles, scope, requestInput, actorLevel)
+    const virtualRequest = requestInput.path === undefined
+      ? requestInput
+      : {
+          ...requestInput,
+          path: normalizeWorkspaceOperationDirectoryPath(requestInput.path),
+        }
     const virtualResult = await context.virtualReads?.search({
       scope,
-      request: requestInput,
+      request: virtualRequest,
       actorLevel,
     })
     const virtual = virtualResult?.filter((result) =>

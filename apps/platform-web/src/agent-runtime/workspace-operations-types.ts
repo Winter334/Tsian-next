@@ -1,8 +1,8 @@
 import type {
   AgentContextEntry,
   WorkspaceDeleteResult,
-  WorkspaceEntry,
   WorkspaceFile,
+  WorkspaceListResult,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
   WorkspaceReadResult,
@@ -44,7 +44,8 @@ export interface WorkspaceOperationMutationAdapter {
 /**
  * On-demand files that are intentionally absent from the eager WorkspaceFile
  * snapshot. Returning undefined means the adapter does not own the requested
- * path/query. Read-only prefixes are checked before any mutation routing.
+ * path/query. Read-only prefixes reject mutation targets and source-mutating
+ * operations; copy may read a virtual source and write an ordinary target.
  */
 export interface WorkspaceOperationVirtualReadAdapter {
   readonlyPathPrefixes?: readonly string[]
@@ -52,8 +53,8 @@ export interface WorkspaceOperationVirtualReadAdapter {
     scope: WorkspaceScope
     path: string
     actorLevel: number
-  }): { path: string; entries: WorkspaceEntry[] } | undefined
-    | Promise<{ path: string; entries: WorkspaceEntry[] } | undefined>
+  }): WorkspaceListResult | undefined
+    | Promise<WorkspaceListResult | undefined>
   read(input: {
     scope: WorkspaceScope
     path: string

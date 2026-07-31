@@ -18,6 +18,7 @@ const FRAMEWORK_KNOWLEDGE_SKILL_MD = [
   "  - 用户询问 Tsian、Game Card、Save Instance、Runtime Workspace、Agent、Skill、Bridge、checkpoint 或桌面助手如何工作",
   "  - 用户询问当前问题应该查平台文档、助手知识还是游戏卡 docs",
   "  - 助手准备解释或维护 workspace、Agent、Skill、游戏前端或卡内容边界",
+  "  - 用户希望定位模型请求失败、重试、前端异常或一次操作的关联请求",
   "appliesTo:",
   "  - assistant",
   "---",
@@ -39,6 +40,7 @@ const FRAMEWORK_KNOWLEDGE_SKILL_MD = [
   "- `references/platform-concepts.md`：Tsian 核心概念和平台边界。",
   "- `references/documentation-boundaries.md`：人类文档、平台内置助手知识、游戏卡 `docs/` 的职责边界。",
   "- `references/workspace-and-authoring.md`：Runtime Workspace、Agent、Skill 与助手维护原则。",
+  "- `references/diagnostics.md`：诊断资源的定位、关联分析与只读快照流程。",
   "- `references/frontend-and-bridge.md`：游戏前端、Bridge 和 `inspect_frontend` 的通用边界。",
   "",
   "读取 reference 时使用普通 workspace read/list/search 工具。本 Skill 不声明 action。",
@@ -321,6 +323,38 @@ const FRONTEND_AND_BRIDGE_MD = [
   "",
 ].join("\n")
 
+const DIAGNOSTICS_MD = [
+  "# 诊断资源使用指南",
+  "",
+  "当用户需要定位模型请求失败、重试、前端异常，或核对一次操作是否在后续请求中恢复时，读取 `.tsian/local/diagnostics/`。",
+  "",
+  "## 目录",
+  "",
+  "- `index.jsonl`：按时间从新到旧列出当前诊断摘要。",
+  "- `requests/<request-id>.json`：模型请求、响应、尝试记录和错误详情。",
+  "- `frontend-errors/<error-id>.json`：前端异常详情。",
+  "",
+  "## 定位记录",
+  "",
+  "1. 已知大致时间、provider、model、状态或错误文字时，先读 `index.jsonl`；内容较多时按行继续读取。",
+  "2. 已知请求 ID、错误 ID、operation ID 或关键文字时，可以直接搜索 `.tsian/local/diagnostics/`。",
+  "3. 从摘要取得 ID 后，再读取对应的 request 或 frontend-error 文件。不要为了找一条记录而逐个读取全部正文。",
+  "",
+  "## 关联分析",
+  "",
+  "- 先看 `status`、`attempts` 和 `error`，区分请求失败、单次尝试失败后重试成功、主动中止与仍在运行。",
+  "- 使用 `operationId` 汇总同一次操作中的请求；使用 `parentRequestId` 和 `previousRequestId` 继续查看父请求与前后请求。",
+  "- 看到失败记录后，继续检查同一关联链中时间更晚的记录，确认是否已经重试成功或由后续请求完成。",
+  "- 前端异常与模型请求时间接近时，分别读取双方正文，再根据时间、操作 ID 和错误内容判断是否相关。不要只凭一条摘要下结论。",
+  "",
+  "## 只读与快照",
+  "",
+  "诊断资源只读，并会随保留周期变化。需要批注、整理或长期保存时，把单个文件或整个目录复制到用户指定的普通可写路径，并明确说明副本是复制时刻的快照。后续分析和编辑在副本上进行。",
+  "",
+  "不要尝试向诊断目录写入内容，也不要移动或删除其中的记录。",
+  "",
+].join("\n")
+
 const FRAMEWORK_KNOWLEDGE_SLUG = "framework-knowledge"
 
 function frameworkKnowledgeDir(localAssistantDir: string): string {
@@ -348,6 +382,9 @@ export function defaultFrameworkKnowledgeFileMap(localAssistantDir: string): Loc
     },
     [`${dir}/references/workspace-and-authoring.md`]: {
       content: WORKSPACE_AND_AUTHORING_MD,
+    },
+    [`${dir}/references/diagnostics.md`]: {
+      content: DIAGNOSTICS_MD,
     },
     [`${dir}/references/frontend-and-bridge.md`]: {
       content: FRONTEND_AND_BRIDGE_MD,
