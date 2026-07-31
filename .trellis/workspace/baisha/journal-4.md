@@ -445,3 +445,24 @@ Implemented workshop-installed game card update detection using MarketPackage.re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 170: 诊断虚拟卷资源管理器接入
+
+**Date**: 2026-07-31
+**Task**: 诊断虚拟卷资源管理器接入
+**Branch**: `master`
+
+### Summary
+
+将实时只读 diagnostics 虚拟卷接入资源管理器，补齐通用只读元数据、文件与目录复制快照、只读编辑器及桌面助手诊断知识；自动检查和用户浏览器验收均通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4d928c6` | (see git log) |
+
+### Status
+
+[OK] **Completed**
