@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 170
-- **Last Active**: 2026-07-31
+- **Total Sessions**: 171
+- **Last Active**: 2026-08-01
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~468 | Active |
+| `journal-4.md` | ~490 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 171 | 2026-08-01 | Spatial rendering and input foundation | `7867400`, `f5c8fd5` | `master` |
 | 170 | 2026-07-31 | 诊断虚拟卷资源管理器接入 | `4d928c6` | `master` |
 | 169 | 2026-07-30 | Trace JSON 折叠阅读优化 | `b224863` | `master` |
 | 168 | 2026-07-30 | 统一 AI Trace 监视器、诊断包与 workspace 投影 | `8292623` | `master` |

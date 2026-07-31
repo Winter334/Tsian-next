@@ -466,3 +466,25 @@ Implemented workshop-installed game card update detection using MarketPackage.re
 ### Status
 
 [OK] **Completed**
+
+
+## Session 171: Spatial rendering and input foundation
+
+**Date**: 2026-08-01
+**Task**: Spatial rendering and input foundation
+**Branch**: `master`
+
+### Summary
+
+Built and manually accepted the development-only Spatial HTML-in-Canvas lab: WebGL2 element capture, concave curved HTML surfaces, projected input, full-screen media-ready particle environment, lifecycle diagnostics, and durable platform-web Spatial UI contracts.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7867400` | (see git log) |
+| `f5c8fd5` | (see git log) |
+
+### Status
+
+[OK] **Completed**
