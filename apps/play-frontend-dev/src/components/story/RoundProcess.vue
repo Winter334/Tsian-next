@@ -1,46 +1,16 @@
 <script setup lang="ts">
-import { ref, computed } from "vue"
+import { computed, ref } from "vue"
 import { CollapsibleRoot, CollapsibleTrigger, CollapsibleContent } from "reka-ui"
 import ProcessNode, { type ProcessNodeData } from "./ProcessNode.vue"
 
-/**
- * RoundProcess — 本轮推演大折叠。
- *
- * 把一轮（或多轮）推演中的过程节点（interim/thought/tool/tool-group）整体收进
- * 一个无框大折叠，默认折叠，降低过程噪音、让正文流更干净。
- * 与内部 ProcessNode 小折叠（有边框）形成两级层次：大折叠管"推演过程"整体显隐，
- * 小折叠管单个思考/工具的明细。
- *
- * 样式语言：无框，仅一行 ember 标签 + 概要摘要；展开时左侧 ember 细线串联小折叠。
- */
+/** Outer process fold. Individual tools stay as direct rows in timeline order. */
 const props = defineProps<{
   nodes: ProcessNodeData[]
   round: number
 }>()
 
-// 默认折叠——推演过程是"可展开查看"的副信息，不抢占正文注意力
 const open = ref(false)
-
-// 概要摘要：统计轮数 / 思考 / 过渡 / 工具调用数
-const summary = computed(() => {
-  const rounds = new Set<number>()
-  let thoughts = 0
-  let interims = 0
-  let tools = 0
-  for (const n of props.nodes) {
-    if (n.round != null) rounds.add(n.round)
-    if (n.kind === "thought") thoughts += 1
-    else if (n.kind === "interim") interims += 1
-    else if (n.kind === "tool") tools += 1
-    else if (n.kind === "tool-group" && n.tools) tools += n.tools.length
-  }
-  const parts: string[] = []
-  if (rounds.size > 0) parts.push(`${rounds.size} 轮`)
-  if (thoughts > 0) parts.push(`${thoughts} 思考`)
-  if (interims > 0) parts.push(`${interims} 过渡`)
-  if (tools > 0) parts.push(`${tools} 工具`)
-  return parts.join(" · ")
-})
+const toolCount = computed(() => props.nodes.filter((node) => node.kind === "tool").length)
 </script>
 
 <template>
@@ -58,11 +28,18 @@ const summary = computed(() => {
           />
         </svg>
         <span class="rp-label">推演过程</span>
-        <span v-if="summary" class="rp-summary">{{ summary }}</span>
+        <span v-if="toolCount > 0" class="rp-summary" aria-live="polite">
+          <span class="rp-count-slot">
+            <Transition name="tool-count">
+              <span :key="toolCount" class="rp-count-number">{{ toolCount }}</span>
+            </Transition>
+          </span>
+          <span>次工具调用</span>
+        </span>
       </CollapsibleTrigger>
       <CollapsibleContent class="rp-body">
         <div class="rp-inner">
-          <ProcessNode v-for="n in nodes" :key="n.id" :node="n" />
+          <ProcessNode v-for="node in nodes" :key="node.id" :node="node" />
         </div>
       </CollapsibleContent>
     </div>
@@ -74,61 +51,100 @@ const summary = computed(() => {
   margin: 14px 0 18px;
 }
 
-/* 无框头部：仅一行 ember 标签 + 概要，hover 提亮 */
 .rp-head {
   display: flex;
   align-items: center;
   gap: 9px;
   width: 100%;
-  text-align: left;
-  background: transparent;
-  border: none;
-  cursor: pointer;
   padding: 6px 0;
-  font-family: var(--font-mono);
+  border: none;
+  background: transparent;
   color: var(--prose-faint);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  text-align: left;
   transition: color 0.2s;
 }
+
 .rp-head:hover {
   color: var(--ember);
 }
+
 .rp-chev {
   width: 12px;
   height: 12px;
-  color: var(--ember);
   flex-shrink: 0;
+  color: var(--ember);
   transform: rotate(0deg);
   transition: transform 0.25s ease;
 }
+
 .round-process:has([data-state="open"]) .rp-chev {
   transform: rotate(90deg);
 }
+
 .rp-label {
+  flex-shrink: 0;
   color: var(--ember);
   letter-spacing: 0.08em;
-  flex-shrink: 0;
 }
+
 .rp-summary {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.15em;
   color: var(--prose-muted);
   font-family: var(--font-serif);
   font-size: 0.82rem;
   letter-spacing: 0;
+  white-space: nowrap;
 }
 
-/* 展开体：左侧 ember 细线串联内部小折叠，无外框 */
+.rp-count-slot {
+  display: inline-grid;
+  width: 3ch;
+  overflow: hidden;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.rp-count-number {
+  grid-area: 1 / 1;
+  display: block;
+}
+
+.tool-count-enter-active,
+.tool-count-leave-active {
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tool-count-enter-from {
+  opacity: 0;
+  transform: translateY(45%);
+}
+
+.tool-count-leave-to {
+  opacity: 0;
+  transform: translateY(-45%);
+}
+
 :deep(.rp-body) {
   overflow: hidden;
 }
+
 :deep(.rp-body[data-state="open"]) {
   animation: rp-open 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
 :deep(.rp-body[data-state="closed"]) {
   animation: rp-close 0.24s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
 @keyframes rp-open {
   from { height: 0; opacity: 0; }
   to { height: var(--reka-collapsible-content-height); opacity: 1; }
 }
+
 @keyframes rp-close {
   from { height: var(--reka-collapsible-content-height); opacity: 1; }
   to { height: 0; opacity: 0; }
@@ -138,5 +154,19 @@ const summary = computed(() => {
   padding: 6px 0 10px 18px;
   margin-left: 4px;
   border-left: 1px solid var(--line);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rp-head,
+  .rp-chev,
+  .tool-count-enter-active,
+  .tool-count-leave-active {
+    transition-duration: 0.01ms;
+  }
+
+  :deep(.rp-body[data-state="open"]),
+  :deep(.rp-body[data-state="closed"]) {
+    animation: none;
+  }
 }
 </style>

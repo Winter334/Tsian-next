@@ -1340,8 +1340,8 @@ async function callAgentModelWithWorkspaceToolsNative(
       // so the executor's onTool stays callId/name/status only; the caller binds
       // turn. agentId is this loop's agent (entry or delegated target).
       onTool: options.onTool
-        ? (callId, name, status, output) => {
-            options.onTool!(agentContext.agent.id, round, callId, name, status, output)
+        ? (callId, name, status, output, displayName) => {
+            options.onTool!(agentContext.agent.id, round, callId, name, status, output, displayName)
             // 采集 tool processNode(按 callId 去重,与 UI onTool 回调同源,供持久化).
             const existing = collectedTimelineItems.find(
               (n): n is TurnTimelineItem & { kind: "tool" } => n.kind === "tool" && n.id === callId,
@@ -1349,6 +1349,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             if (existing) {
               existing.status = status
               if (output !== undefined) existing.output = output
+              if (displayName !== undefined) existing.displayName = displayName
             } else {
               collectedTimelineItems.push({
                 kind: "tool",
@@ -1358,10 +1359,17 @@ async function callAgentModelWithWorkspaceToolsNative(
                 status,
                 collapsed: true,
                 ...(output !== undefined ? { output } : {}),
+                ...(displayName !== undefined ? { displayName } : {}),
               })
             }
           }
-        : (callId: string, name: string, status: "loading" | "running" | "success" | "failed", output?: TurnToolOutput) => {
+        : (
+            callId: string,
+            name: string,
+            status: "loading" | "running" | "success" | "failed",
+            output?: TurnToolOutput,
+            displayName?: string,
+          ) => {
             // 无 UI onTool 时仍采集 processNode(按 callId 去重,供持久化).
             const existing = collectedTimelineItems.find(
               (n): n is TurnTimelineItem & { kind: "tool" } => n.kind === "tool" && n.id === callId,
@@ -1369,6 +1377,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             if (existing) {
               existing.status = status
               if (output !== undefined) existing.output = output
+              if (displayName !== undefined) existing.displayName = displayName
             } else {
               collectedTimelineItems.push({
                 kind: "tool",
@@ -1378,6 +1387,7 @@ async function callAgentModelWithWorkspaceToolsNative(
                 status,
                 collapsed: true,
                 ...(output !== undefined ? { output } : {}),
+                ...(displayName !== undefined ? { displayName } : {}),
               })
             }
           },
@@ -1772,9 +1782,9 @@ async function callAgentModelWithWorkspaceTools(
       emitTrace: capabilities.emitTrace,
       // 采集 tool processNode + 透传 UI onTool(text 模式工具过程显示 + processNode 持久化).
       // entry 和 delegated 路径共用此绑定(C2 验证:无条件绑定,不区分 entry/delegated).
-      onTool: (callId, name, status, output) => {
+      onTool: (callId, name, status, output, displayName) => {
         if (options.onTool) {
-          options.onTool(agentContext.agent.id, round, callId, name, status, output)
+          options.onTool(agentContext.agent.id, round, callId, name, status, output, displayName)
         }
         // 采集 tool processNode(按 callId 去重) + 透传 UI onTool(text 模式工具过程显示 + 持久化).
         // entry 和 delegated 路径共用此绑定(C2 验证:无条件绑定,不区分 entry/delegated).
@@ -1784,6 +1794,7 @@ async function callAgentModelWithWorkspaceTools(
         if (existing) {
           existing.status = status
           if (output !== undefined) existing.output = output
+          if (displayName !== undefined) existing.displayName = displayName
         } else {
           collectedTimelineItems.push({
             kind: "tool",
@@ -1793,6 +1804,7 @@ async function callAgentModelWithWorkspaceTools(
             status,
             collapsed: true,
             ...(output !== undefined ? { output } : {}),
+            ...(displayName !== undefined ? { displayName } : {}),
           })
         }
       },

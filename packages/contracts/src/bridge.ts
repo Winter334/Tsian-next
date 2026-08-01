@@ -367,6 +367,8 @@ export type RemotePlayBridgeEventPayload =
       round: number
       callId: string
       name: string
+      /** Optional player-facing Tool title. Falls back to `name` when absent. */
+      displayName?: string
       status: "loading" | "running" | "success" | "failed"
       output?: TurnToolOutput
     }

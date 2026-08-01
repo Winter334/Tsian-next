@@ -314,7 +314,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
               kind: finishReasonToKind(finishReason),
             })
           },
-          onTool: (emittingAgentId, round, callId, name, status, output) => {
+          onTool: (emittingAgentId, round, callId, name, status, output, displayName) => {
             emitAgentInvocation({
               type: "tool",
               invocationId,
@@ -324,6 +324,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
               name,
               status,
               ...(output !== undefined ? { output } : {}),
+              ...(displayName !== undefined ? { displayName } : {}),
             })
           },
           onAskUser: (requestId, request) =>

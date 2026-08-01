@@ -244,8 +244,8 @@ function onRestoreRevealed() {
   curtainReplaced.value = false
 }
 
-// 工具节点合并：同 round 连续 tool 合并成 tool-group（避免堆叠）
-// 过程聚合：连续的过程节点（interim/thought/tool/tool-group）整体收进一个 round-process
+// 过程聚合：连续的过程节点（interim/thought/tool）整体收进一个 round-process。
+// 节点按原始 timeline 顺序直接保留，不再合并工具或生成工具语义摘要。
 // 大折叠，降低过程噪音。user/assistant 原样透出，保持"玩家之举 → 推演 → 正文"的叙事流。
 // 检查点标记：在对应 turn 的 assistant 消息后插入 CheckpointMark。
 type MergedItem =
@@ -292,32 +292,14 @@ const mergedStream = computed(() => {
       i += 1
       continue
     }
-    // 收集连续过程节点（interim/thought/tool），内部合并同 round 连续 tool 成 tool-group
+    // 收集连续过程节点（interim/thought/tool），保持原始顺序和一节点一行。
     const nodes: ProcessNodeData[] = []
-    let round = item.round ?? 0
+    const round = item.round
     while (i < src.length) {
       const cur = src[i]!
       if (cur.kind === "user" || cur.kind === "assistant") break
-      if (cur.kind === "tool") {
-        const group: Extract<StreamItem, { kind: "tool" }>[] = [cur]
-        let j = i + 1
-        while (j < src.length) {
-          const next = src[j]
-          if (!next || next.kind !== "tool" || next.round !== cur.round) break
-          group.push(next)
-          j += 1
-        }
-        if (group.length > 1) {
-          nodes.push({ kind: "tool-group", id: `tg-${cur.round}-${cur.id}`, round: cur.round, agentId: cur.agentId, tools: group })
-        } else {
-          nodes.push(cur)
-        }
-        i = j
-      } else {
-        // interim / thought
-        nodes.push(cur)
-        i += 1
-      }
+      nodes.push(cur)
+      i += 1
     }
     result.push({ kind: "round-process", id: `rp-${round}-${result.length}`, round, nodes })
   }

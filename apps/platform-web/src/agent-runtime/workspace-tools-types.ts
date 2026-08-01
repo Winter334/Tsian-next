@@ -520,6 +520,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
     name: string,
     status: "loading" | "running" | "success" | "failed",
     output?: TurnToolOutput,
+    displayName?: string,
   ) => void
   /**
    * ask_user 工具回调（ask_user R3）。工具执行时 await 此回调，阻塞 turn 等待

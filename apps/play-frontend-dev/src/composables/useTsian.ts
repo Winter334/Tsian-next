@@ -45,7 +45,7 @@ export type StreamItem =
   | { kind: "assistant"; id: string; content: string; tokens?: number }
   | { kind: "interim"; id: string; round: number; text: string; agentId: string | null }
   | { kind: "thought"; id: string; round: number; text: string; agentId: string | null; collapsed: boolean }
-  | { kind: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; agentId: string }
+  | { kind: "tool"; id: string; round: number; name: string; displayName?: string; status: "loading" | "running" | "success" | "failed"; agentId: string }
 
 // 有序流：历史（loadHistory 重建）+ 实时（send/订阅 push），按真实顺序交织
 const stream = ref<StreamItem[]>([])
@@ -174,12 +174,14 @@ function subscribe(): void {
       )
       if (existing) {
         existing.status = tool.status
+        if (tool.displayName !== undefined) existing.displayName = tool.displayName
       } else {
         stream.value.push({
           kind: "tool",
           id: tool.callId,
           round: tool.round,
           name: tool.name,
+          ...(tool.displayName !== undefined ? { displayName: tool.displayName } : {}),
           status: tool.status,
           agentId: tool.agentId,
         })
@@ -410,7 +412,15 @@ export function useTsian() {
         } else if (item.kind === "thought") {
           items.push({ kind: "thought", id: `h-thought-${entry.turn}-${items.length}`, round: entry.turn, text: item.text, agentId: item.agentId ?? null, collapsed: true })
         } else if (item.kind === "tool") {
-          items.push({ kind: "tool", id: `h-tool-${entry.turn}-${items.length}`, round: item.round, name: item.name, status: item.status, agentId: item.agentId ?? "" })
+          items.push({
+            kind: "tool",
+            id: `h-tool-${entry.turn}-${items.length}`,
+            round: item.round,
+            name: item.name,
+            ...(item.displayName !== undefined ? { displayName: item.displayName } : {}),
+            status: item.status,
+            agentId: item.agentId ?? "",
+          })
         }
         // options 不进 stream（实时和历史选项统一由 turnOptions 单轮语义管，
         // 见下方兜底恢复最后一轮未选选项）

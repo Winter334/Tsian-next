@@ -141,9 +141,9 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
           emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason))
           timelineCollector.onRoundEnd(agentId, round, finishReason)
         },
-        onTool: (agentId, round, callId, name, status, output) => {
-          emitTurnTool(agentId, nextTurn, round, callId, name, status, output)
-          timelineCollector.onTool(agentId, round, callId, name, status, output)
+        onTool: (agentId, round, callId, name, status, output, displayName) => {
+          emitTurnTool(agentId, nextTurn, round, callId, name, status, output, displayName)
+          timelineCollector.onTool(agentId, round, callId, name, status, output, displayName)
         },
         onAskUser: (requestId, request) => emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
       },

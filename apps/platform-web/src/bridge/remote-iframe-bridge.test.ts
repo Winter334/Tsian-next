@@ -15,6 +15,7 @@ import type {
   RemoteFrontendActionService,
   RemoteFrontendActionServiceRequest,
 } from "./remote-frontend-action-lifecycle"
+import { emitTurnTool } from "../streaming-events"
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void
@@ -465,6 +466,44 @@ describe("remote iframe Frontend Action RPC", () => {
       ok: false,
       error: expect.objectContaining({ code: "FRONTEND_ACTION_INPUT_INVALID" }),
     }))
+    mounted.handle.dispose()
+  })
+})
+
+describe("remote iframe turn-tool forwarding", () => {
+  it("forwards an optional display name without requiring it", () => {
+    const mounted = harness({
+      async runAction() {
+        throw new Error("unused")
+      },
+    })
+
+    emitTurnTool(
+      "master",
+      3,
+      1,
+      "call-title",
+      "read_entity",
+      "loading",
+      undefined,
+      "读取实体",
+    )
+    emitTurnTool("master", 3, 1, "call-fallback", "read", "success")
+
+    const toolEvents = mounted.messages.filter(
+      (message): message is RemotePlayBridgeEventMessage => (
+        message.kind === "event" && message.event === "turn-tool"
+      ),
+    )
+    expect(toolEvents).toHaveLength(2)
+    expect(toolEvents[0]).toMatchObject({
+      payload: {
+        callId: "call-title",
+        name: "read_entity",
+        displayName: "读取实体",
+      },
+    })
+    expect(toolEvents[1]?.payload).not.toHaveProperty("displayName")
     mounted.handle.dispose()
   })
 })

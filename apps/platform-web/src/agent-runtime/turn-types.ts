@@ -86,6 +86,7 @@ export interface AgentRuntimeTurnInput {
     name: string,
     status: "loading" | "running" | "success" | "failed",
     output?: TurnToolOutput,
+    displayName?: string,
   ) => void
   /**
    * ask_user 工具回调（ask_user R3）。工具执行时 await 此回调，阻塞 turn 等待
@@ -178,6 +179,7 @@ export interface AgentRuntimeModelCallOptions {
     name: string,
     status: "loading" | "running" | "success" | "failed",
     output?: TurnToolOutput,
+    displayName?: string,
   ) => void
   /** ask_user 工具回调；threaded from `AgentRuntimeTurnInput.onAskUser`. */
   onAskUser?: (requestId: string, request: AskUserRequest) => Promise<AskUserResult>

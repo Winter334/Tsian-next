@@ -34,6 +34,95 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 - Use `SkillDetailEntry` for `bridge.query.query({ resource: "skill-detail", params: { path } })` results.
 - Unified diagnostics are available only through the in-process optional `DebugBridge`; the remote iframe bridge does not expose diagnostic records or retired diagnostic query resources.
 
+## Scenario: Tool Event Display Name And Player Status
+
+### 1. Scope / Trigger
+
+- Trigger: changing tool-process callbacks, `TurnTimelineItem` tool nodes, `AgentInvocationEvent` tool events, `turn-tool` remote payloads, play-bridge `ToolEvent`, or a player-facing tool activity renderer.
+
+### 2. Signatures
+
+```ts
+interface ToolEvent {
+  agentId: string
+  round: number
+  callId: string
+  name: string
+  displayName?: string
+  status: "loading" | "running" | "success" | "failed"
+  output?: TurnToolOutput
+}
+
+type ToolTimelineItem = {
+  kind: "tool"
+  id: string
+  round: number
+  agentId?: string
+  name: string
+  displayName?: string
+  status: ToolEvent["status"]
+  output?: TurnToolOutput
+  collapsed: boolean
+}
+```
+
+Internal `onTool` callbacks append `displayName?: string` after the existing optional `output`; formal-turn streaming, persisted timeline collection, `invokeAgent`, and remote bridge forwarding must all preserve the field.
+
+### 3. Contracts
+
+- `name` is the stable wire identifier. `displayName` is an optional opaque player-facing label, sourced from a visible custom `ToolRegistryEntry.title`; it is not a sentence fragment or localization template.
+- Platform built-ins, old history, and old senders may omit `displayName`. Consumers render `displayName ?? name`; no migration is required.
+- Loading and terminal events for one `callId` carry the same resolved display name when available. Upserts may fill a previously absent display name but must not clear one because a later event omitted the optional field.
+- The remote SDK accepts only non-empty string display names; invalid or blank values are omitted rather than coerced. The wire name remains available as fallback.
+- Player UI keeps tool identity and state separate. It must not prepend/append tense or outcome text to arbitrary titles. Default visible state mapping is `loading|running -> 运行中`, `success -> 成功`, `failed -> 失败`.
+- Player renderers may hide `agentId`, arguments, and `output`; transport/storage still preserve fields required by debug or other consumers. Presentation choices must not remove those contract fields globally.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required behavior |
+|---|---|
+| Visible custom Tool has a non-empty registry title | Emit and persist that title as `displayName` |
+| Platform built-in or no visible registry entry | Omit `displayName`; render `name` |
+| Old history/event lacks `displayName` | Render normally with `name`; no migration/error |
+| Later status event omits `displayName` | Update status/output without erasing the existing display name |
+| Remote payload has blank/non-string `displayName` | SDK omits the field and retains `name` fallback |
+| Unknown future tool name | Display the raw name plus generic status; never synthesize a sentence |
+
+### 5. Good/Base/Bad Cases
+
+- Good: custom `read_entity` emits `{ name: "read_entity", displayName: "读取实体", status: "loading" }`, then updates the same call to success; UI shows `读取实体` and `成功` as separate elements.
+- Base: built-in `workspace_read` emits no display name; UI shows `workspace_read` and `运行中`.
+- Bad: map unknown tools to `${name}了操作`, mutate `displayName` into `正在${displayName}`, or make title absence a runtime error.
+- Bad: add the field only to live `turn-tool` events while omitting persisted `TurnTimelineItem`, causing reload to regress to a different label.
+
+### 6. Tests Required
+
+- Contracts and consumers: run `npm run build:contracts`, `npm run build --workspace @tsian/play-bridge`, `npm run build:web`, and the consuming play-frontend build.
+- Runtime collector: assert loading -> success updates one call, retains display name/output, and omission on a later event does not erase metadata.
+- Remote bridge/SDK: assert a valid display name crosses the iframe boundary; absent/blank values remain optional and fall back to name.
+- Frontend: assert old-history fallback, generic status labels, no generated tool sentences, and unchanged timeline order; visually verify reduced-motion and terminal states stop animating.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+const summary = `${tool.displayName ?? tool.name}了操作`
+existing.displayName = next.displayName // erases a title when next omits it
+```
+
+#### Correct
+
+```ts
+const label = tool.displayName ?? tool.name
+const statusLabel = tool.status === "success"
+  ? "成功"
+  : tool.status === "failed" ? "失败" : "运行中"
+
+existing.status = next.status
+if (next.displayName !== undefined) existing.displayName = next.displayName
+```
+
 ## Scenario: Frontend Action Contract And SDK Boundary
 
 ### 1. Scope / Trigger

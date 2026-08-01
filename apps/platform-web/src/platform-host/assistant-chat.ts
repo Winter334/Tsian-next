@@ -249,6 +249,7 @@ export interface AssistantChatInput {
     name: string,
     status: "loading" | "running" | "success" | "failed",
     output?: TurnToolOutput,
+    displayName?: string,
   ) => void
   /**
    * Optional external abort signal (e.g. a "stop generating" button). Aborting
@@ -500,9 +501,9 @@ export async function runAssistantChat(
           input.onRoundEnd?.(agentId, round, finishReason)
         },
         onTool: input.onTool
-          ? (agentId, round, callId, name, status, output) => {
+          ? (agentId, round, callId, name, status, output, displayName) => {
               resetInactivityTimer()
-              input.onTool!(agentId, round, callId, name, status, output)
+              input.onTool!(agentId, round, callId, name, status, output, displayName)
             }
           : undefined,
         // ask_user 工具回调：复用进程内 interaction-events 总线（与游戏 host 同源），

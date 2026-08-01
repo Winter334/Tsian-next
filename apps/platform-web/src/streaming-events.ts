@@ -9,7 +9,7 @@
  *     区分链式推理（`reasoning`）与可见回复（`content`），供前端分别渲染到「思考」与正文区。
  *   - `turn-round-end`（子2b R1）：每轮结束，`emitTurnRoundEnd(agentId, turn, round, kind)`
  *     告知前端本轮属思考流还是最终回复，供前端把 `turn-delta` 文本归类到对应区块。
- *   - `turn-tool`（子2b R2）：工具调用执行前后，`emitTurnTool(agentId, turn, round, callId, name, status, output?)`
+ *   - `turn-tool`（子2b R2）：工具调用执行前后，`emitTurnTool(agentId, turn, round, callId, name, status, output?, displayName?)`
  *     告知前端工具状态与输出，供前端渲染工具卡片。
  *
  * 设计原则：
@@ -34,6 +34,7 @@ export type TurnToolListener = (
   name: string,
   status: TurnToolStatus,
   output?: TurnToolOutput,
+  displayName?: string,
 ) => void
 export type TurnOptionsListener = (turn: number, options: string[]) => void
 export type TurnStatsListener = (turn: number, stats: TurnStats) => void
@@ -99,12 +100,13 @@ export function emitTurnTool(
   name: string,
   status: TurnToolStatus,
   output?: TurnToolOutput,
+  displayName?: string,
 ): void {
   // 浅克隆：回调内 unsubscribe 不影响本轮派发
   const listeners = [...turnToolListeners]
   for (const listener of listeners) {
     try {
-      listener(agentId, turn, round, callId, name, status, output)
+      listener(agentId, turn, round, callId, name, status, output, displayName)
     } catch (err) {
       // 流式通道异常不冒泡到主链
       console.error("[streaming-events] turn-tool listener threw", err)

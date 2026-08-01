@@ -375,7 +375,9 @@ async function executeRuntimeWorkspaceToolCall(
   // Turn-tool event (子2b R2): notify the caller the tool is about to run.
   // callId uses the provider-assigned id (native) or falls back to `tool-${index}`.
   const callId = call.id ?? `tool-${index}`
-  context.onTool?.(callId, call.name, "loading")
+  const visibleTool = resolveVisibleToolByName(context, call.name)
+  const displayName = visibleTool?.title
+  context.onTool?.(callId, call.name, "loading", undefined, displayName)
 
   const toolStartedAt = Date.now()
   let observation: RuntimeWorkspaceToolObservation
@@ -507,14 +509,13 @@ async function executeRuntimeWorkspaceToolCall(
       // Agent (already filtered by `filterToolsForAgent` during schema build)
       // are reachable — a stray call to a hidden Tool falls through to the
       // unsupported branch below.
-      const tool = resolveVisibleToolByName(context, call.name)
-      if (tool) {
+      if (visibleTool) {
         const toolInput = isRecord(call.arguments) ? call.arguments : {}
         observation = {
           index,
           name: call.name,
           ok: true,
-          result: await executeUserTool(context, tool, toolInput),
+          result: await executeUserTool(context, visibleTool, toolInput),
         }
       } else {
         observation = {
@@ -551,7 +552,13 @@ async function executeRuntimeWorkspaceToolCall(
   // buildToolOutput 统一处理 success/failed：普通工具返回完整 string（不截断），
   // agent_call 返回结构化 {type:"agent_call", targetAgent, response, status}。
   const status: "success" | "failed" = observation.ok ? "success" : "failed"
-  context.onTool?.(callId, call.name, status, buildToolOutput(call, observation))
+  context.onTool?.(
+    callId,
+    call.name,
+    status,
+    buildToolOutput(call, observation),
+    displayName,
+  )
   return observation
 }
 

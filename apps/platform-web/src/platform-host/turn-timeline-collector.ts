@@ -111,6 +111,7 @@ export function createTurnTimelineCollector() {
     name: string,
     status: "loading" | "running" | "success" | "failed",
     output?: TurnToolOutput,
+    displayName?: string,
   ): void => {
     // 按 callId 去重:同一工具调用的 loading→success/failed 更新同一节点
     const existing = timeline.find(
@@ -120,6 +121,9 @@ export function createTurnTimelineCollector() {
       existing.status = status
       if (output !== undefined) {
         existing.output = output
+      }
+      if (displayName !== undefined) {
+        existing.displayName = displayName
       }
     } else {
       timeline.push({
@@ -131,6 +135,7 @@ export function createTurnTimelineCollector() {
         status,
         collapsed: true,
         ...(output !== undefined ? { output } : {}),
+        ...(displayName !== undefined ? { displayName } : {}),
       })
     }
   }

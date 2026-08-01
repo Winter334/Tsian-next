@@ -350,10 +350,13 @@ interface ToolEvent {
   round: number
   callId: string
   name: string                                    // 工具名：read/list/search/write/agent_call…
+  displayName?: string                            // 可选的玩家可见 Tool 标题
   status: "loading" | "running" | "success" | "failed"
   output?: TurnToolOutput                          // 工具返回（成功后填充）
 }
 ```
+
+`displayName` 是 Tool 注册项提供的不透明显示标题。前端应使用 `displayName ?? name`，旧历史、平台内置工具或旧发送方未提供该字段时稳定回退到 `name`；SDK 不对标题做本地化、变形或句式拼接。
 
 `TurnToolOutput` 是 `string`（普通工具 observation）或 `{ type: "agent_call", targetAgent, response, status, error? }`（agent_call 结构化返回）。前端自行决定怎么呈现——折叠卡片、自然语言摘要、或完全隐藏。
 
@@ -887,6 +890,7 @@ interface ToolEvent {
   round: number
   callId: string
   name: string
+  displayName?: string
   status: "loading" | "running" | "success" | "failed"
   output?: TurnToolOutput
 }
@@ -900,7 +904,7 @@ type AgentInvocationEvent =
   | { type: "started"; invocationId: string; agentId: string; purpose?: string }
   | { type: "delta"; invocationId: string; agentId: string; round: number; kind: "reasoning" | "content"; delta: string }
   | { type: "round-end"; invocationId: string; agentId: string; round: number; kind: "thought" | "final" }
-  | { type: "tool"; invocationId: string; agentId: string; round: number; callId: string; name: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput }
+  | { type: "tool"; invocationId: string; agentId: string; round: number; callId: string; name: string; displayName?: string; status: "loading" | "running" | "success" | "failed"; output?: TurnToolOutput }
   | { type: "completed"; invocationId: string; agentId: string }
   | { type: "failed"; invocationId: string; agentId: string; error: PlatformActionError }
 interface RuntimeWorkspaceMutationEvent {

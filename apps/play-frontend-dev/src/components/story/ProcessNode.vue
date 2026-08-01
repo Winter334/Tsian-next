@@ -1,107 +1,70 @@
 <script setup lang="ts">
-import { ref, computed } from "vue"
+import { computed, ref } from "vue"
 import { CollapsibleRoot, CollapsibleTrigger, CollapsibleContent } from "reka-ui"
 
-/**
- * ProcessNode — 过程节点（interim/thought/tool/tool-group）。
- *
- * prd 屏3：折叠卡 --void-deep + --line 边 + inset shadow；标签 mono。
- * tool-group：同 round 连续普通工具合并成自然语言摘要，展开看明细。
- * 接受 useTsian 的 StreamItem（kind 字段）或 tool-group 合并节点。
- *
- * 折叠动画：reka-ui CollapsibleContent 暴露 --reka-collapsible-content-height，
- * 用 data-state 驱动 keyframe。注意选择器必须精准命中 content 元素（.collapsible-body），
- * 不能用裸 [data-state]——Trigger 也有 data-state 但无该 CSS 变量，命中会导致高度跳动闪烁。
- */
-/** 过程节点数据（interim/thought/tool/tool-group）。供 RoundProcess 复用。 */
-export type ProcessNodeData = {
-  kind: "interim" | "thought" | "tool" | "tool-group"
-  id: string
-  round?: number
-  name?: string
-  status?: "loading" | "running" | "success" | "failed"
-  text?: string
-  agentId?: string | null
-  collapsed?: boolean
-  tools?: Array<{ kind: "tool"; id: string; name: string; status: "loading" | "running" | "success" | "failed" }>
-}
+export type ToolProcessStatus = "loading" | "running" | "success" | "failed"
+
+/** Player-facing process nodes. Tool protocol details remain outside this shape. */
+export type ProcessNodeData =
+  | {
+      kind: "interim"
+      id: string
+      round?: number
+      text: string
+      agentId?: string | null
+    }
+  | {
+      kind: "thought"
+      id: string
+      round?: number
+      text: string
+      agentId?: string | null
+      collapsed?: boolean
+    }
+  | {
+      kind: "tool"
+      id: string
+      round?: number
+      name: string
+      displayName?: string
+      status: ToolProcessStatus
+      agentId?: string | null
+    }
 
 const props = defineProps<{
   node: ProcessNodeData
 }>()
 
-// 初始展开状态：thought/tool/tool-group 默认折叠，interim 默认展开（镜像 legacy）
-const open = ref(props.node.kind === "interim")
+const thoughtOpen = ref(
+  props.node.kind === "thought" && props.node.collapsed === false,
+)
 
-const kindLabel: Record<string, string> = {
-  thought: "思考",
-  tool: "工具",
-  interim: "过渡",
-  "tool-group": "工具",
-}
+const toolName = computed(() => (
+  props.node.kind === "tool"
+    ? props.node.displayName ?? props.node.name
+    : ""
+))
 
-// 工具名 → 玩家可读摘要（移植自 legacy main.ts TOOL_LABEL）
-const TOOL_LABEL: Record<string, { verb: string; noun: string; unit: string | null }> = {
-  read: { verb: "读取", noun: "文件", unit: "个" },
-  list: { verb: "列出", noun: "条目", unit: "项" },
-  search: { verb: "搜索", noun: "匹配", unit: "处" },
-  glob: { verb: "匹配", noun: "文件", unit: "个" },
-  diff: { verb: "比对", noun: "差异", unit: null },
-  write: { verb: "写入", noun: "文件", unit: null },
-  edit: { verb: "编辑", noun: "文件", unit: null },
-  move: { verb: "移动", noun: "文件", unit: null },
-  delete: { verb: "删除", noun: "文件", unit: null },
-  semantic_search: { verb: "语义检索", noun: "记忆", unit: null },
-  use_skill: { verb: "激活", noun: "技能", unit: null },
-  run_script: { verb: "执行", noun: "脚本", unit: null },
-  inspect_frontend: { verb: "自检", noun: "前端", unit: null },
-  ask_user: { verb: "向玩家", noun: "提问", unit: null },
-}
+const toolStatus = computed<ToolProcessStatus>(() => (
+  props.node.kind === "tool" ? props.node.status : "loading"
+))
 
-// tool-group 合并摘要
-const groupSummary = computed(() => {
-  if (props.node.kind !== "tool-group" || !props.node.tools) return ""
-  const tools = props.node.tools
-  const byName = new Map<string, { count: number; name: string; status: string }>()
-  for (const t of tools) {
-    const existing = byName.get(t.name)
-    if (existing) existing.count += 1
-    else byName.set(t.name, { count: 1, name: t.name, status: t.status })
-  }
-  const sentences: string[] = []
-  for (const { count, name, status } of byName.values()) {
-    const label = TOOL_LABEL[name]
-    const verb = label?.verb ?? name
-    const noun = label?.noun ?? "操作"
-    if (status === "failed") {
-      sentences.push(`${verb}${noun}失败`)
-      continue
-    }
-    const unit = label?.unit ?? null
-    if (unit && count > 1) sentences.push(`${verb}了 ${count} ${unit}${noun}`)
-    else sentences.push(`${verb}了${noun}`)
-  }
-  return sentences.join("、")
-})
-
-// interim/thought 首行预览
-const preview = computed(() => {
-  const text = props.node.text
-  if (!text) return ""
-  return text.slice(0, 50) + (text.length > 50 ? "…" : "")
-})
+const toolStatusLabel = computed(() => ({
+  loading: "运行中",
+  running: "运行中",
+  success: "成功",
+  failed: "失败",
+})[toolStatus.value])
 </script>
 
 <template>
-  <CollapsibleRoot v-model:open="open">
-    <div class="process-node" :class="[node.kind, node.status]">
-      <CollapsibleTrigger class="process-head">
-        <span v-if="node.agentId" class="agent-tag">{{ node.agentId }}</span>
-        <span v-if="node.agentId" class="glyph">·</span>
-        <span class="node-kind">{{ kindLabel[node.kind] }}</span>
-        <span v-if="node.kind === 'tool-group'" class="node-summary">{{ groupSummary }}</span>
-        <span v-else-if="node.kind === 'tool' && node.name" class="node-name">{{ node.name }}</span>
-        <span v-else-if="preview" class="node-preview">{{ preview }}</span>
+  <div v-if="node.kind === 'interim'" class="process-interim">
+    {{ node.text }}
+  </div>
+  <CollapsibleRoot v-else-if="node.kind === 'thought'" v-model:open="thoughtOpen">
+    <div class="process-thought">
+      <CollapsibleTrigger class="thought-head">
+        <span class="thought-label">思考</span>
         <svg class="chevron" viewBox="0 0 24 24" aria-hidden="true">
           <path
             d="M9 6l6 6-6 6"
@@ -114,113 +77,261 @@ const preview = computed(() => {
         </svg>
       </CollapsibleTrigger>
       <CollapsibleContent class="collapsible-body">
-        <div class="process-body">
-          <template v-if="node.kind === 'tool-group' && node.tools">
-            <div v-for="(t, i) in node.tools" :key="i" class="tool-item">
-              <span class="tool-item-name">{{ t.name }}</span>
-              <span class="tool-item-status">{{ t.status }}</span>
-            </div>
-          </template>
-          <template v-else-if="node.text">{{ node.text }}</template>
-          <template v-else-if="node.status === 'failed'">失败</template>
-          <template v-else>（无内容）</template>
-        </div>
+        <div class="thought-body">{{ node.text }}</div>
       </CollapsibleContent>
     </div>
   </CollapsibleRoot>
+  <div
+    v-else
+    class="process-tool"
+    :class="`status-${toolStatus}`"
+    role="status"
+    aria-live="polite"
+    :aria-label="`${toolName}：${toolStatusLabel}`"
+  >
+    <span class="tool-name">{{ toolName }}</span>
+    <Transition name="tool-state" mode="out-in">
+      <span :key="toolStatus" class="tool-state" :class="`status-${toolStatus}`">
+        <span class="tool-state-icon" aria-hidden="true">
+          <svg v-if="toolStatus === 'success'" viewBox="0 0 20 20">
+            <path class="success-mark" d="M4.5 10.5l3.2 3.2 7.8-8" />
+          </svg>
+          <svg v-else-if="toolStatus === 'failed'" viewBox="0 0 20 20">
+            <path d="M5.5 5.5l9 9m0-9l-9 9" />
+          </svg>
+          <span v-else class="running-ring" />
+        </span>
+        <span class="tool-status-label">{{ toolStatusLabel }}</span>
+      </span>
+    </Transition>
+  </div>
 </template>
 
 <style scoped>
-.process-node {
-  background: var(--void-deep);
-  border: 1px solid var(--line);
-  border-radius: 4px;
-  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.4);
-  margin: 8px 0;
-  overflow: hidden;
-}
-.process-node.failed {
-  border-color: var(--blood);
+.process-interim {
+  margin: 9px 0 12px;
+  color: var(--prose-muted);
+  font-family: var(--font-serif);
+  font-size: 0.9rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
 }
 
-.process-head {
+.process-thought {
+  margin: 8px 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--void-deep);
+  box-shadow: inset 0 0 12px rgba(0, 0, 0, 0.4);
+}
+
+.thought-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  cursor: pointer;
-  background: transparent;
-  border: none;
   width: 100%;
-  text-align: left;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--ember);
+  cursor: pointer;
   font-family: var(--font-mono);
   font-size: 0.78rem;
+  text-align: left;
 }
-.process-head:hover {
+
+.thought-head:hover {
   background: rgba(181, 137, 61, 0.05);
 }
 
-.agent-tag { color: var(--ember); }
-.glyph { color: var(--prose-faint); }
-.node-kind { color: var(--ember); letter-spacing: 0.06em; flex-shrink: 0; }
-.node-name { color: var(--prose-muted); }
-.node-summary { color: var(--prose); font-family: var(--font-serif); font-size: 0.85rem; }
-.node-preview {
-  color: var(--prose-muted);
-  font-family: var(--font-serif);
-  font-size: 0.85rem;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.thought-label {
+  letter-spacing: 0.06em;
 }
-/* chevron：展开时旋转 90°，过渡平滑 */
+
 .chevron {
-  margin-left: auto;
-  color: var(--prose-faint);
-  flex-shrink: 0;
   width: 13px;
   height: 13px;
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--prose-faint);
   transform: rotate(0deg);
   transition: transform 0.25s ease, color 0.2s ease;
 }
-/* CollapsibleRoot open 时（data-state=open）旋转 chevron */
-.process-node:has([data-state="open"]) .chevron {
+
+.process-thought:has([data-state="open"]) .chevron {
+  color: var(--ember);
   transform: rotate(90deg);
-  color: var(--ember);
-}
-.process-head:hover .chevron {
-  color: var(--ember);
 }
 
-/* reka-ui CollapsibleContent 展开/收起动画。
-   精准命中 .collapsible-body（content 元素），避免裸 [data-state] 误伤 Trigger。
-   overflow hidden 防止高度动画期间内容溢出闪烁。 */
 :deep(.collapsible-body) {
   overflow: hidden;
 }
+
 :deep(.collapsible-body[data-state="open"]) {
   animation: collapsible-open 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
 :deep(.collapsible-body[data-state="closed"]) {
   animation: collapsible-close 0.22s cubic-bezier(0.22, 1, 0.36, 1);
 }
+
 @keyframes collapsible-open {
   from { height: 0; opacity: 0; }
   to { height: var(--reka-collapsible-content-height); opacity: 1; }
 }
+
 @keyframes collapsible-close {
   from { height: var(--reka-collapsible-content-height); opacity: 1; }
   to { height: 0; opacity: 0; }
 }
 
-.process-body {
-  padding: 8px 12px 12px;
+.thought-body {
+  padding: 9px 12px 12px;
+  border-top: 1px solid var(--line);
+  color: var(--prose-muted);
   font-family: var(--font-mono);
   font-size: 0.78rem;
-  color: var(--prose-muted);
-  border-top: 1px solid var(--line);
+  line-height: 1.65;
+  white-space: pre-wrap;
 }
-.tool-item { display: flex; justify-content: space-between; padding: 4px 0; }
-.tool-item-name { color: var(--ember); }
-.tool-item-status { color: var(--prose-faint); }
+
+.process-tool {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 30px;
+  padding: 5px 2px 5px 10px;
+  border-left: 1px solid rgba(181, 137, 61, 0.34);
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  animation: tool-row-enter 200ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes tool-row-enter {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.tool-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--prose-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-state {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 4.8rem;
+  flex-shrink: 0;
+  color: var(--prose-faint);
+  transform-origin: center;
+}
+
+.tool-state.status-success {
+  color: var(--ember-bright);
+  animation: tool-success-settle 320ms ease-out both;
+}
+
+.tool-state.status-failed {
+  color: var(--blood);
+  animation: tool-failed-settle 260ms ease-out both;
+}
+
+@keyframes tool-success-settle {
+  0% { filter: drop-shadow(0 0 0 transparent); }
+  45% { filter: drop-shadow(0 0 5px rgba(232, 169, 72, 0.55)); }
+  100% { filter: drop-shadow(0 0 0 transparent); }
+}
+
+@keyframes tool-failed-settle {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(-2px); }
+  65% { transform: translateX(2px); }
+}
+
+.tool-state-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+}
+
+.tool-state-icon svg {
+  width: 15px;
+  height: 15px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.success-mark {
+  stroke-dasharray: 18;
+  animation: success-mark-draw 260ms ease-out both;
+}
+
+@keyframes success-mark-draw {
+  from { stroke-dashoffset: 18; }
+  to { stroke-dashoffset: 0; }
+}
+
+.running-ring {
+  width: 11px;
+  height: 11px;
+  box-sizing: border-box;
+  border: 1.5px solid rgba(181, 137, 61, 0.28);
+  border-top-color: var(--ember-bright);
+  border-radius: 50%;
+  animation: tool-running-spin 1.1s linear infinite;
+}
+
+@keyframes tool-running-spin {
+  to { transform: rotate(360deg); }
+}
+
+.tool-status-label {
+  white-space: nowrap;
+}
+
+.tool-state-enter-active,
+.tool-state-leave-active {
+  transition: opacity 120ms ease, transform 120ms ease;
+}
+
+.tool-state-enter-from {
+  opacity: 0;
+  transform: translateY(2px);
+}
+
+.tool-state-leave-to {
+  opacity: 0;
+  transform: translateY(-2px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .process-tool,
+  .tool-state.status-success,
+  .tool-state.status-failed,
+  .success-mark,
+  .running-ring,
+  :deep(.collapsible-body[data-state="open"]),
+  :deep(.collapsible-body[data-state="closed"]) {
+    animation: none;
+  }
+
+  .chevron,
+  .tool-state-enter-active,
+  .tool-state-leave-active {
+    transition-duration: 0.01ms;
+  }
+}
 </style>

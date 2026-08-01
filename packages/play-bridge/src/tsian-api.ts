@@ -107,6 +107,8 @@ export interface ToolEvent {
   round: number
   callId: string
   name: string
+  /** Optional opaque player-facing label. Render `name` when absent. */
+  displayName?: string
   status: "loading" | "running" | "success" | "failed"
   output?: TurnToolOutput
 }
@@ -273,11 +275,15 @@ export function createTsian(): TsianApi {
       }
 
       if (event === "turn-tool" && payload && "callId" in payload && "name" in payload) {
+        const displayName = (payload as { displayName?: unknown }).displayName
         const tool: ToolEvent = {
           agentId: (payload as { agentId?: string }).agentId ?? "",
           round: (payload as { round?: number }).round ?? 0,
           callId: (payload as { callId?: string }).callId ?? "",
           name: (payload as { name?: string }).name ?? "",
+          ...(typeof displayName === "string" && displayName.trim().length > 0
+            ? { displayName }
+            : {}),
           status: (payload as { status?: ToolEvent["status"] }).status ?? "loading",
           ...(payload && "output" in payload ? { output: (payload as { output?: TurnToolOutput }).output } : {}),
         }
