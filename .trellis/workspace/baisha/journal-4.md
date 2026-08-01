@@ -488,3 +488,24 @@ Built and manually accepted the development-only Spatial HTML-in-Canvas lab: Web
 ### Status
 
 [OK] **Completed**
+
+
+## Session 172: 优化游戏前端工具调用体验
+
+**Date**: 2026-08-01
+**Task**: 优化游戏前端工具调用体验
+**Branch**: `master`
+
+### Summary
+
+为工具事件新增可选 displayName 并贯通实时、历史、invokeAgent 与远程 bridge；开发前端改为扁平过渡/工具列表、通用运行状态和可降级动画，仅保留思考折叠。contracts、play-bridge、platform-web、开发前端构建与聚焦测试通过，卡内源码和 packaged frontend 未改。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d59ac0b` | (see git log) |
+
+### Status
+
+[OK] **Completed**
