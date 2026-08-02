@@ -68,6 +68,12 @@ For each boundary:
 
 **Good**: Each layer only knows its neighbors
 
+### Mistake 4: Treating Browser Host Objects as Plain Records
+
+**Bad**: Freezing `DOMRect`, events, or other browser-owned objects with spread and assuming prototype accessors were copied.
+
+**Good**: Define the plain boundary type and copy every required field explicitly. Make the boundary test use non-enumerable accessors, not only object literals.
+
 ---
 
 ## Checklist for Cross-Layer Features
@@ -82,6 +88,8 @@ After implementation:
 - [ ] Tested with edge cases (null, empty, invalid)
 - [ ] Verified error handling at each boundary
 - [ ] Checked data survives round-trip
+- [ ] Replaced browser/runtime host objects with explicit plain snapshots before retaining them across events or frames
+- [ ] Tested the runtime property shape (including non-enumerable/prototype fields), not only convenient plain-object fixtures
 
 ---
 
