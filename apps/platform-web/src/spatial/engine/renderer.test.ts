@@ -1,15 +1,28 @@
 import { describe, expect, it } from "vitest"
 import type { HtmlInCanvasCapabilities } from "./capabilities"
+import { TransparentEnvironmentBase } from "./environment-base"
+import { DEFAULT_ENVIRONMENT_POST_PROCESSING } from "./environment-effects"
 import { SpatialMetrics } from "./metrics"
+import { SURFACE_MESH_COLUMNS, SURFACE_MESH_ROWS } from "./projection"
 import { SpatialRenderer } from "./renderer"
+import { DEFAULT_WINDOW_PRESENTATION_RENDER_OPTIONS } from "./source-presentation"
 
-function createGlHarness() {
+function createGlHarness(options: {
+  readonly failBufferAt?: number
+  readonly failProgramAt?: number
+} = {}) {
   let nextResourceId = 0
-  let createdSurfaceTextures = 0
+  let createdTextures = 0
   let createdFramebuffers = 0
+  let bufferCreateCount = 0
+  let programCreateCount = 0
+  let deletedBuffers = 0
   const framebufferBinds: Array<WebGLFramebuffer | null> = []
-  const textureAllocations: unknown[][] = []
-  const blendCalls: unknown[][] = []
+  const bufferUploads: ArrayBufferView[] = []
+  const drawCounts: number[] = []
+  const clearColors: Array<readonly [number, number, number, number]> = []
+  const blendCalls: Array<readonly [number, number, number, number]> = []
+  const uniform1fCalls: Array<readonly [string, number]> = []
   const resource = () => ({ id: ++nextResourceId })
   const gl = {
     VERTEX_SHADER: 1,
@@ -34,35 +47,45 @@ function createGlHarness() {
     BLEND: 20,
     SRC_ALPHA: 21,
     ONE_MINUS_SRC_ALPHA: 22,
-    ONE: 27,
     TRIANGLES: 23,
     FLOAT: 24,
     TEXTURE0: 25,
+    TEXTURE1: 28,
     RGBA8: 26,
+    ONE: 27,
     createShader: resource,
     shaderSource: () => undefined,
     compileShader: () => undefined,
     getShaderParameter: () => true,
     getShaderInfoLog: () => "",
     deleteShader: () => undefined,
-    createProgram: resource,
+    createProgram: () => {
+      programCreateCount += 1
+      return {
+        ...resource(),
+        linked: programCreateCount !== options.failProgramAt,
+      }
+    },
     attachShader: () => undefined,
     linkProgram: () => undefined,
-    getProgramParameter: () => true,
-    getProgramInfoLog: () => "",
+    getProgramParameter: (program: { linked?: boolean }) => program.linked !== false,
+    getProgramInfoLog: () => "forced program link failure",
     detachShader: () => undefined,
     deleteProgram: () => undefined,
-    createBuffer: resource,
+    createBuffer: () => {
+      bufferCreateCount += 1
+      return bufferCreateCount === options.failBufferAt ? null : resource()
+    },
     bindBuffer: () => undefined,
-    bufferData: () => undefined,
-    deleteBuffer: () => undefined,
+    bufferData: (_target: number, data: ArrayBufferView) => bufferUploads.push(data),
+    deleteBuffer: () => { deletedBuffers += 1 },
     createTexture: () => {
-      createdSurfaceTextures += 1
+      createdTextures += 1
       return resource()
     },
     bindTexture: () => undefined,
     texParameteri: () => undefined,
-    texImage2D: (...args: unknown[]) => textureAllocations.push(args),
+    texImage2D: () => undefined,
     deleteTexture: () => undefined,
     createFramebuffer: () => {
       createdFramebuffers += 1
@@ -75,31 +98,43 @@ function createGlHarness() {
     checkFramebufferStatus: () => 18,
     deleteFramebuffer: () => undefined,
     viewport: () => undefined,
-    clearColor: () => undefined,
+    clearColor: (red: number, green: number, blue: number, alpha: number) => {
+      clearColors.push([red, green, blue, alpha])
+    },
     clear: () => undefined,
     enable: () => undefined,
-    blendFuncSeparate: (...args: unknown[]) => blendCalls.push(args),
+    blendFuncSeparate: (
+      sourceRgb: number,
+      destinationRgb: number,
+      sourceAlpha: number,
+      destinationAlpha: number,
+    ) => blendCalls.push([sourceRgb, destinationRgb, sourceAlpha, destinationAlpha]),
     disable: () => undefined,
     useProgram: () => undefined,
-    getUniformLocation: resource,
+    getUniformLocation: (_program: WebGLProgram, name: string) => ({ ...resource(), name }),
     uniform4f: () => undefined,
     uniform2f: () => undefined,
-    uniform1f: () => undefined,
+    uniform1f: (location: { name?: string } | null, value: number) => {
+      uniform1fCalls.push([location?.name ?? "unknown", value])
+    },
     uniform1i: () => undefined,
     activeTexture: () => undefined,
-    drawArrays: () => undefined,
-    getAttribLocation: (_program: WebGLProgram, name: string) => name === "a_position" ? 0 : 1,
+    drawArrays: (_mode: number, _first: number, count: number) => drawCounts.push(count),
+    getAttribLocation: (_program: WebGLProgram, name: string) => name === "a_position" || name === "a_local" ? 0 : 1,
     enableVertexAttribArray: () => undefined,
     vertexAttribPointer: () => undefined,
   } as unknown as WebGL2RenderingContext
   return {
     gl,
     framebufferBinds,
+    bufferUploads,
+    drawCounts,
+    clearColors,
     blendCalls,
-    textureAllocations,
-    createdSurfaceTextures: () => createdSurfaceTextures,
+    uniform1fCalls,
+    createdTextures: () => createdTextures,
     createdFramebuffers: () => createdFramebuffers,
-    resetTrace: () => { framebufferBinds.length = 0 },
+    deletedBuffers: () => deletedBuffers,
   }
 }
 
@@ -127,18 +162,53 @@ function createCanvas(): HTMLCanvasElement {
   } as unknown as HTMLCanvasElement
 }
 
+function createSource(
+  canvas: HTMLCanvasElement,
+  attributes: Readonly<Record<string, string>>,
+): Element {
+  return {
+    isConnected: true,
+    parentElement: canvas,
+    ownerDocument: { defaultView: null },
+    getBoundingClientRect: () => ({ left: 120, top: 90, width: 480, height: 360 }),
+    getAttribute: (name: string) => attributes[name] ?? null,
+  } as unknown as Element
+}
+
+function registerCompositionSources(renderer: SpatialRenderer, canvas: HTMLCanvasElement): void {
+  renderer.elementTextures.register(createSource(canvas, {
+    "data-spatial-source": "window:active",
+    "data-spatial-window-active": "true",
+    "data-spatial-z": "101",
+    "data-spatial-scale": "1",
+  }))
+  renderer.elementTextures.register(createSource(canvas, {
+    "data-spatial-source": "shell:launcher",
+    "data-spatial-z": "10",
+    "data-spatial-scale": "1",
+  }))
+}
+
 describe("SpatialRenderer", () => {
-  it("draws environment to the default framebuffer before the transparent curved surface", () => {
-    const canvas = createCanvas()
-    const harness = createGlHarness()
+  it("releases a partially allocated mesh buffer when initialization fails", () => {
+    const harness = createGlHarness({ failBufferAt: 2 })
     const created = SpatialRenderer.create(
-      createCapabilities(canvas, harness.gl),
+      createCapabilities(createCanvas(), harness.gl),
       new SpatialMetrics(),
     )
+
+    expect(created.ok).toBe(false)
+    expect(harness.deletedBuffers()).toBe(1)
+  })
+
+  it("draws directly to the default framebuffer with no global composite target", () => {
+    const canvas = createCanvas()
+    const harness = createGlHarness()
+    const created = SpatialRenderer.create(createCapabilities(canvas, harness.gl), new SpatialMetrics())
     expect(created.ok).toBe(true)
     if (!created.ok) return
     created.renderer.resize(800, 600, 1)
-    harness.resetTrace()
+    harness.framebufferBinds.length = 0
 
     const report = created.renderer.render({
       time: 1000,
@@ -149,61 +219,309 @@ describe("SpatialRenderer", () => {
     expect(report.passes).toEqual([
       "environment-base",
       "environment-particles",
-      "surface-sources",
+      "surface-shell",
+      "surface-windows",
       "surface-foreground",
-      "curve-composite",
     ])
-    expect(harness.framebufferBinds[0]).toBeNull()
-    expect(harness.framebufferBinds[1]).not.toBeNull()
-    expect(harness.framebufferBinds[2]).toBeNull()
-    expect(harness.blendCalls).toEqual([
-      [21, 22, 27, 22],
-      [21, 22, 27, 22],
-      [21, 22, 27, 22],
-    ])
+    expect(harness.framebufferBinds).toEqual([null])
+    expect(harness.createdFramebuffers()).toBe(0)
+    expect(harness.createdTextures()).toBe(0)
   })
 
-  it("does not reallocate the static base or surface because particles render again", () => {
+  it("allocates a reusable horizontally tessellated Source mesh", () => {
+    const harness = createGlHarness()
+    const created = SpatialRenderer.create(
+      createCapabilities(createCanvas(), harness.gl),
+      new SpatialMetrics(),
+    )
+    expect(created.ok).toBe(true)
+    expect(harness.bufferUploads.map((data) => data.byteLength / Float32Array.BYTES_PER_ELEMENT))
+      .toEqual([24, SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6 * 4])
+    const mesh = harness.bufferUploads[1] as Float32Array
+    expect(Array.from(mesh.slice(0, 4))).toEqual([-1, -1, 0, 0])
+    expect(mesh[8]).toBe(-1)
+    expect(mesh[9]).toBeCloseTo(-1 + 2 / SURFACE_MESH_ROWS, 6)
+    expect(mesh[10]).toBe(0)
+    expect(mesh[11]).toBeCloseTo(1 / SURFACE_MESH_ROWS, 6)
+    expect(Array.from(mesh.slice(-4))).toEqual([1, 1, 1, 1])
+  })
+
+  it("owns one bounded environment target and one reusable Bloom pair", () => {
     const canvas = createCanvas()
     const harness = createGlHarness()
     const created = SpatialRenderer.create(
       createCapabilities(canvas, harness.gl),
       new SpatialMetrics(),
+      {
+        environmentEffects: {
+          ...DEFAULT_ENVIRONMENT_POST_PROCESSING,
+          enabled: true,
+          decorationEnabled: true,
+        },
+      },
     )
     expect(created.ok).toBe(true)
     if (!created.ok) return
-    created.renderer.resize(800, 600, 1)
-    expect(harness.textureAllocations).toHaveLength(1)
-    created.renderer.render({ time: 16, parallax: { x: 0, y: 0 }, transitionStrength: 0 })
-    created.renderer.render({ time: 32, parallax: { x: 0, y: 0 }, transitionStrength: 0 })
-    expect(harness.textureAllocations).toHaveLength(1)
-    expect(created.renderer.environmentFrameReason()).toBeNull()
-  })
 
-  it("recreates the transparent surface target when backing dimensions are unchanged", () => {
-    const canvas = createCanvas()
-    const initialGl = createGlHarness()
-    const metrics = new SpatialMetrics()
-    const created = SpatialRenderer.create(
-      createCapabilities(canvas, initialGl.gl),
-      metrics,
-    )
-    expect(created.ok).toBe(true)
-    if (!created.ok) return
-    created.renderer.resize(800, 600, 1)
-    expect(canvas.width).toBe(1600)
-    expect(canvas.height).toBe(1200)
-    expect(metrics.snapshot()).toMatchObject({ displayDpr: 1, internalRasterScale: 2 })
-    expect(initialGl.createdSurfaceTextures()).toBe(1)
-    expect(initialGl.createdFramebuffers()).toBe(1)
+    created.renderer.resize(2560, 1440, 2)
+    expect(harness.createdFramebuffers()).toBe(3)
+    expect(harness.createdTextures()).toBe(3)
+    const report = created.renderer.render({
+      time: 1_000,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+    })
+    expect(report.passes.slice(0, 5)).toEqual([
+      "environment-base",
+      "environment-particles",
+      "environment-bloom",
+      "environment-composite",
+      "environment-decoration",
+    ])
+    expect(harness.framebufferBinds.some((framebuffer) => framebuffer !== null)).toBe(true)
 
     created.renderer.handleContextLost()
-    const restoredGl = createGlHarness()
-    const restored = created.renderer.restore(createCapabilities(canvas, restoredGl.gl), 1)
-
+    const restoredHarness = createGlHarness()
+    const restored = created.renderer.restore(createCapabilities(canvas, restoredHarness.gl), 2)
     expect(restored.ok).toBe(true)
-    expect(restoredGl.createdSurfaceTextures()).toBe(1)
-    expect(restoredGl.createdFramebuffers()).toBe(1)
+    expect(restoredHarness.createdFramebuffers()).toBe(3)
+    expect(restoredHarness.createdTextures()).toBe(3)
+  })
+
+  it("leaves the framebuffer transparent only for an explicitly transparent environment", () => {
+    const defaultCanvas = createCanvas()
+    const defaultHarness = createGlHarness()
+    const defaultCreated = SpatialRenderer.create(
+      createCapabilities(defaultCanvas, defaultHarness.gl),
+      new SpatialMetrics(),
+    )
+    expect(defaultCreated.ok).toBe(true)
+    if (!defaultCreated.ok) return
+    registerCompositionSources(defaultCreated.renderer, defaultCanvas)
+    defaultCreated.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+    })
+
+    const transparentCanvas = createCanvas()
+    const transparentHarness = createGlHarness()
+    const transparentCreated = SpatialRenderer.create(
+      createCapabilities(transparentCanvas, transparentHarness.gl),
+      new SpatialMetrics(),
+      { environmentBase: new TransparentEnvironmentBase() },
+    )
+    expect(transparentCreated.ok).toBe(true)
+    if (!transparentCreated.ok) return
+    registerCompositionSources(transparentCreated.renderer, transparentCanvas)
+    const report = transparentCreated.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+    })
+
+    expect(defaultHarness.clearColors[defaultHarness.clearColors.length - 1])
+      .toEqual([0.001, 0.004, 0.011, 1])
+    expect(transparentHarness.clearColors[transparentHarness.clearColors.length - 1])
+      .toEqual([0, 0, 0, 0])
+    expect(transparentHarness.drawCounts).toHaveLength(defaultHarness.drawCounts.length - 1)
+    expect(transparentHarness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+    ])
+    expect(transparentHarness.blendCalls[transparentHarness.blendCalls.length - 1]).toEqual([
+      transparentHarness.gl.SRC_ALPHA,
+      transparentHarness.gl.ONE_MINUS_SRC_ALPHA,
+      transparentHarness.gl.ONE,
+      transparentHarness.gl.ONE_MINUS_SRC_ALPHA,
+    ])
+    expect(report.passes[0]).toBe("environment-base")
+
+    transparentCreated.renderer.handleContextLost()
+    const restoredHarness = createGlHarness()
+    const restored = transparentCreated.renderer.restore(
+      createCapabilities(transparentCanvas, restoredHarness.gl),
+      1,
+    )
+    expect(restored.ok).toBe(true)
+    transparentCreated.renderer.render({
+      time: 1000,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+    })
+    expect(restoredHarness.clearColors[restoredHarness.clearColors.length - 1])
+      .toEqual([0, 0, 0, 0])
+    expect(restoredHarness.drawCounts).toHaveLength(transparentHarness.drawCounts.length)
+  })
+
+  it("renders every flat-neutral product window as one sharp Source material", () => {
+    const canvas = createCanvas()
+    const harness = createGlHarness()
+    const created = SpatialRenderer.create(
+      createCapabilities(canvas, harness.gl),
+      new SpatialMetrics(),
+      {
+        environmentBase: new TransparentEnvironmentBase(),
+        windowStyle: "flat-neutral",
+      },
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    registerCompositionSources(created.renderer, canvas)
+
+    const report = created.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 1,
+    })
+
+    expect(report.passes).toEqual([
+      "environment-base",
+      "environment-particles",
+      "surface-shell",
+      "surface-windows",
+      "surface-foreground",
+    ])
+    expect(harness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+    ])
+    expect(harness.uniform1fCalls.filter(([name]) => name === "u_neutral_source"))
+      .toEqual([["u_neutral_source", 1], ["u_neutral_source", 1]])
+  })
+
+  it("hides capturing product windows and uses aperture uniforms only while animated", () => {
+    const canvas = createCanvas()
+    const harness = createGlHarness()
+    const created = SpatialRenderer.create(
+      createCapabilities(canvas, harness.gl),
+      new SpatialMetrics(),
+      {
+        environmentBase: new TransparentEnvironmentBase(),
+        windowStyle: "flat-neutral",
+        windowPresentation: {
+          ...DEFAULT_WINDOW_PRESENTATION_RENDER_OPTIONS,
+          enabled: true,
+        },
+      },
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.renderer.supportsWindowPresentation()).toBe(true)
+    registerCompositionSources(created.renderer, canvas)
+
+    created.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+      sourcePresentations: [{
+        sourceId: "window:active",
+        phase: "capturing-open",
+        progress: 0,
+      }],
+    })
+    expect(harness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+    ])
+
+    harness.drawCounts.length = 0
+    harness.uniform1fCalls.length = 0
+    created.renderer.render({
+      time: 100,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+      sourcePresentations: [{
+        sourceId: "window:active",
+        phase: "opening",
+        progress: 0.5,
+      }],
+    })
+    expect(harness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+    ])
+    expect(harness.uniform1fCalls).toContainEqual(["u_presentation_progress", 0.5])
+    expect(harness.uniform1fCalls.filter(([name]) => name === "u_neutral_source"))
+      .toEqual([["u_neutral_source", 1]])
+
+    harness.uniform1fCalls.length = 0
+    created.renderer.render({
+      time: 500,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+      sourcePresentations: [{
+        sourceId: "window:active",
+        phase: "visible",
+        progress: 1,
+      }],
+    })
+    expect(harness.uniform1fCalls.some(([name]) => name === "u_presentation_progress"))
+      .toBe(false)
+    expect(harness.uniform1fCalls.filter(([name]) => name === "u_neutral_source"))
+      .toEqual([["u_neutral_source", 1], ["u_neutral_source", 1]])
+  })
+
+  it("fails open to stable product rendering when the optional aperture program cannot link", () => {
+    const canvas = createCanvas()
+    const harness = createGlHarness({ failProgramAt: 4 })
+    const created = SpatialRenderer.create(
+      createCapabilities(canvas, harness.gl),
+      new SpatialMetrics(),
+      {
+        environmentBase: new TransparentEnvironmentBase(),
+        windowStyle: "flat-neutral",
+        windowPresentation: {
+          ...DEFAULT_WINDOW_PRESENTATION_RENDER_OPTIONS,
+          enabled: true,
+        },
+      },
+    )
+
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    expect(created.renderer.supportsWindowPresentation()).toBe(false)
+    registerCompositionSources(created.renderer, canvas)
+    created.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+      sourcePresentations: [{
+        sourceId: "window:active",
+        phase: "capturing-open",
+        progress: 0,
+      }],
+    })
+    expect(harness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+    ])
+  })
+
+  it("restores programs and mesh buffers without recreating a framebuffer", () => {
+    const canvas = createCanvas()
+    const initial = createGlHarness()
+    const created = SpatialRenderer.create(createCapabilities(canvas, initial.gl), new SpatialMetrics())
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    created.renderer.resize(800, 600, 1)
+    created.renderer.handleContextLost()
+
+    const restoredHarness = createGlHarness()
+    const restored = created.renderer.restore(createCapabilities(canvas, restoredHarness.gl), 1)
+    expect(restored.ok).toBe(true)
+    expect(restoredHarness.createdFramebuffers()).toBe(0)
+    expect(restoredHarness.bufferUploads).toHaveLength(2)
     expect(() => created.renderer.render({
       time: 0,
       parallax: { x: 0, y: 0 },

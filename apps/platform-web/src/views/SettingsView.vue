@@ -35,7 +35,14 @@
       <SettingsHub
         v-if="screen.kind === 'hub'"
         :draft="platformConfigDraft"
+        :appearance-selectable="appearanceSelectable"
         @enter="enterHubEntry"
+      />
+
+      <AppearanceScreen
+        v-else-if="screen.kind === 'appearance'"
+        :current-mode="getPlatformConfig().appearance.uiMode"
+        @select="handleAppearanceSwitch"
       />
 
       <ProviderManagementScreen
@@ -120,6 +127,7 @@ import EditModelParamsDialog from "@/components/settings/EditModelParamsDialog.v
 import SemanticSearchScreen from "@/components/settings/SemanticSearchScreen.vue"
 import CloudBackupScreen from "@/components/settings/CloudBackupScreen.vue"
 import PlatformTunablesScreen from "@/components/settings/PlatformTunablesScreen.vue"
+import AppearanceScreen from "@/components/settings/AppearanceScreen.vue"
 import { confirm } from "@/composables/useConfirm"
 import { openDialogForm } from "@/composables/useDialogForm"
 import { toast } from "@/composables/useToast"
@@ -149,9 +157,11 @@ import {
   type PlatformConfigContextCompression,
   type PlatformConfigCloudBackup,
   type PlatformConfigAi,
+  type PlatformUiMode,
   getPlatformConfig,
   savePlatformConfig,
 } from "@/config/platform-config"
+import { canSelectSpatialMode, switchPlatformUiMode } from "@/config/platform-ui-mode"
 import { generateAssistantReply, probeAssistantNativeToolCalling } from "@/runtime-host/ai"
 
 type Screen =
@@ -161,12 +171,14 @@ type Screen =
   | { kind: "semantic-search" }
   | { kind: "cloud-backup" }
   | { kind: "tunables" }
+  | { kind: "appearance" }
 
 const platformConfigDraft = ref<BrowserPlatformConfigDraft>(clonePlatformConfigDraft(getBrowserPlatformConfigDraft()))
 const addModelOpen = ref(false)
 const editingModelId = ref("")
 const editParamsOpen = ref(false)
 const screen = ref<Screen>({ kind: "hub" })
+const appearanceSelectable = canSelectSpatialMode()
 
 const editingModel = computed(() =>
   activePreset.value?.models.find((model) => model.id === editingModelId.value) ?? null,
@@ -239,6 +251,8 @@ const headerTitle = computed(() => {
       return "云备份"
     case "tunables":
       return "运行参数"
+    case "appearance":
+      return "桌面外观"
     default:
       return ""
   }
@@ -277,6 +291,8 @@ function enterHubEntry(id: string): void {
     screen.value = { kind: "cloud-backup" }
   } else if (id === "platform-tunables") {
     screen.value = { kind: "tunables" }
+  } else if (id === "appearance" && appearanceSelectable) {
+    screen.value = { kind: "appearance" }
   }
 }
 
@@ -288,8 +304,17 @@ function goBack(): void {
     || screen.value.kind === "semantic-search"
     || screen.value.kind === "cloud-backup"
     || screen.value.kind === "tunables"
+    || screen.value.kind === "appearance"
   ) {
     screen.value = { kind: "hub" }
+  }
+}
+
+async function handleAppearanceSwitch(mode: PlatformUiMode): Promise<void> {
+  try {
+    await switchPlatformUiMode(mode)
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "桌面模式保存失败。")
   }
 }
 

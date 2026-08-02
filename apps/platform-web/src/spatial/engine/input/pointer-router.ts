@@ -6,6 +6,9 @@ export interface RoutedPointerSample {
   readonly buttons: number
   readonly clientX: number
   readonly clientY: number
+  /** Trusted viewport/client coordinates retained beside Source-local clientX/Y. */
+  readonly screenClientX?: number
+  readonly screenClientY?: number
   readonly detail?: number
   readonly deltaX?: number
   readonly deltaY?: number
@@ -52,6 +55,8 @@ export interface PointerRouterAdapter<T extends object> {
   readonly focus: (target: T) => void
   readonly activate: (target: T, sample: RoutedPointerSample) => NativeActivationOutcome
   readonly activationPolicy?: (target: T) => PointerActivationPolicy
+  /** Promotes gesture capture without changing the original down target. */
+  readonly captureTarget?: (target: T, sample: RoutedPointerSample) => T
   readonly setCapture: (pointerId: number) => void
   readonly releaseCapture: (pointerId: number) => void
   readonly scroll?: (target: T, sample: RoutedPointerSample) => void
@@ -99,7 +104,7 @@ export class PointerRouter<T extends object> {
       target,
       activationAllowed,
     })
-    this.captures.set(sample.pointerId, target)
+    this.captures.set(sample.pointerId, this.adapter.captureTarget?.(target, sample) ?? target)
     this.adapter.setCapture(sample.pointerId)
     this.adapter.reportSyntheticDelivery?.({
       phase: "down",

@@ -65,7 +65,7 @@ function unsupported(missing: readonly string[]): UnsupportedHtmlInCanvas {
   return {
     supported: false,
     missing,
-    message: `Spatial lab requires experimental HTML-in-Canvas support: ${missing.join(", ")}.`,
+    message: `Spatial rendering requires experimental HTML-in-Canvas support: ${missing.join(", ")}.`,
   }
 }
 

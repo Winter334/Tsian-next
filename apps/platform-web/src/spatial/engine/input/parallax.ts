@@ -20,8 +20,10 @@ export function viewportParallaxTarget(
   if (viewport.width <= 0 || viewport.height <= 0) return { x: 0, y: 0 }
   const normalizedX = ((point.x - viewport.left) / viewport.width) * 2 - 1
   const normalizedY = 1 - ((point.y - viewport.top) / viewport.height) * 2
+  const targetX = -Math.max(-1, Math.min(1, normalizedX)) * limits.x
+  const targetY = -Math.max(-1, Math.min(1, normalizedY)) * limits.y
   return {
-    x: Math.max(-1, Math.min(1, normalizedX)) * limits.x,
-    y: Math.max(-1, Math.min(1, normalizedY)) * limits.y,
+    x: targetX === 0 ? 0 : targetX,
+    y: targetY === 0 ? 0 : targetY,
   }
 }

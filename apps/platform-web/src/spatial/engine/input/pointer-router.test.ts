@@ -62,6 +62,35 @@ describe("PointerRouter", () => {
     expect(router.captureCount()).toBe(0)
   })
 
+  it("can promote a drag capture to one stable gesture owner", () => {
+    const owner = { name: "owner" }
+    const handle = { name: "handle", parent: owner }
+    const other = { name: "other" }
+    const events: string[] = []
+    const router = new PointerRouter<FakeTarget>({
+      chain: (target) => target.parent ? [target.parent, target] : [target],
+      dispatch: (target, type) => { events.push(`${target.name}:${type}`); return true },
+      focus: () => undefined,
+      activate: (target) => {
+        events.push(`${target.name}:activate`)
+        return { status: "requested", detail: "test" }
+      },
+      captureTarget: (target) => target === handle ? owner : target,
+      setCapture: () => undefined,
+      releaseCapture: () => undefined,
+    })
+
+    router.down(handle, sample)
+    router.move(other, { ...sample, clientX: 100 })
+    router.up(other, sample)
+
+    expect(events).toContain("handle:pointerdown")
+    expect(events).toContain("owner:pointermove")
+    expect(events).toContain("owner:pointerup")
+    expect(events).not.toContain("handle:activate")
+    expect(router.captureCount()).toBe(0)
+  })
+
   it("cancel releases capture without activation", () => {
     const target = { name: "target" }
     const events: string[] = []

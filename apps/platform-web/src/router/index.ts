@@ -4,6 +4,7 @@
 // - 路径用 kebab-case；view 文件命名 PascalCase
 
 import { createRouter, createWebHashHistory } from "vue-router"
+import { platformAppRegistry } from "../platform-apps"
 
 const router = createRouter({
   history: createWebHashHistory(),
@@ -13,72 +14,12 @@ const router = createRouter({
       name: "desktop",
       component: () => import("../views/DesktopView.vue"),
     },
-    {
-      path: "/market",
-      name: "app-market",
-      component: () => import("../views/AppMarketView.vue"),
-    },
-    {
-      path: "/settings",
-      name: "settings",
-      component: () => import("../views/SettingsView.vue"),
-    },
-    {
-      path: "/account",
-      name: "account",
-      component: () => import("../views/AccountView.vue"),
-    },
-    {
-      path: "/library",
-      name: "library",
-      component: () => import("../views/GameCardLibraryView.vue"),
-    },
-    {
-      path: "/workspace",
-      name: "workspace",
-      component: () => import("../views/WorkspaceExplorerView.vue"),
-    },
-    {
-      path: "/workspace/editor",
-      name: "workspace-editor",
-      component: () => import("../views/WorkspaceEditorView.vue"),
-    },
-    {
-      path: "/workspace/media",
-      name: "workspace-media",
-      component: () => import("../views/WorkspaceMediaView.vue"),
-    },
-    {
-      path: "/studio",
-      name: "studio",
-      component: () => import("../views/StudioView.vue"),
-    },
-    {
-      path: "/cards/:cardId",
-      name: "game-card-detail",
-      component: () => import("../views/GameCardDetailView.vue"),
-      props: true,
-    },
-    {
-      path: "/assistant",
-      name: "assistant",
-      component: () => import("../views/AssistantView.vue"),
-    },
-    {
-      path: "/play",
-      name: "play",
-      component: () => import("../views/PlayView.vue"),
-    },
-    {
-      path: "/announcements",
-      name: "announcements",
-      component: () => import("../views/AnnouncementCenterView.vue"),
-    },
-    {
-      path: "/debug",
-      name: "debug",
-      component: () => import("../views/DebugView.vue"),
-    },
+    ...platformAppRegistry.map((app) => ({
+      path: app.route.path,
+      name: app.route.name,
+      component: app.retro.component,
+      props: app.route.props,
+    })),
   ],
 })
 

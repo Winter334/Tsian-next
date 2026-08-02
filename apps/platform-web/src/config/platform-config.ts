@@ -65,11 +65,18 @@ export interface PlatformConfigCloudBackup {
   autoBackupEnabled: boolean
 }
 
+export type PlatformUiMode = "retro" | "spatial"
+
+export interface PlatformConfigAppearance {
+  uiMode: PlatformUiMode
+}
+
 /**
  * 平台配置根 schema。`embeddingConfig` 保留在 `provider`（BrowserPlatformConfigDraft）
  * 内，不另设独立字段——避免两份副本不同步（ai.ts 现有结构如此，P3 改动最小）。
  */
 export interface PlatformConfig {
+  appearance: PlatformConfigAppearance
   provider: BrowserPlatformConfigDraft
   checkpointPrune: PlatformConfigCheckpointPrune
   contextCompression: PlatformConfigContextCompression
@@ -80,6 +87,7 @@ export interface PlatformConfig {
 }
 
 export type PlatformConfigSectionKey =
+  | "appearance"
   | "provider"
   | "checkpointPrune"
   | "contextCompression"
@@ -105,6 +113,7 @@ function createEmptyPlatformConfigDraft(): BrowserPlatformConfigDraft {
 }
 
 export const DEFAULT_PLATFORM_CONFIG: PlatformConfig = {
+  appearance: { uiMode: "retro" },
   provider: createEmptyPlatformConfigDraft(),
   checkpointPrune: { keepRecent: 50, sparseEvery: 20 },
   contextCompression: {
@@ -161,7 +170,7 @@ export async function preheatPlatformConfig(): Promise<void> {
       const raw = await readLocalPlatformConfigFileContent()
       if (raw === null) {
         // 无配置文件（首次启动）——用默认，不建文件（首次保存时才落盘）。
-        cache = cloneConfig(DEFAULT_PLATFORM_CONFIG)
+        cache = clonePlatformConfig(DEFAULT_PLATFORM_CONFIG)
         return
       }
       let parsed: unknown
@@ -169,21 +178,21 @@ export async function preheatPlatformConfig(): Promise<void> {
         parsed = JSON.parse(raw)
       } catch {
         await deleteLocalPlatformConfigFile()
-        cache = cloneConfig(DEFAULT_PLATFORM_CONFIG)
+        cache = clonePlatformConfig(DEFAULT_PLATFORM_CONFIG)
         toast.error("平台配置文件格式损坏，已重置为默认值。")
         return
       }
       const merged = mergePlatformConfig(parsed)
       if (!merged) {
         await deleteLocalPlatformConfigFile()
-        cache = cloneConfig(DEFAULT_PLATFORM_CONFIG)
+        cache = clonePlatformConfig(DEFAULT_PLATFORM_CONFIG)
         toast.error("平台配置 schema 不符，已重置为默认值。")
         return
       }
       cache = merged
     } catch (e) {
       // 读文件本身失败（Dexie 异常等）——用默认，不阻塞启动。
-      cache = cloneConfig(DEFAULT_PLATFORM_CONFIG)
+      cache = clonePlatformConfig(DEFAULT_PLATFORM_CONFIG)
       console.warn("[platform-config] preheat failed, using defaults:", e)
     } finally {
       preheatPromise = null
@@ -234,7 +243,7 @@ function normalizeTimeoutMs(value: unknown, fallback: number): number {
  * tunables 逐字段校验类型/范围，不符用默认。
  * 返回 null = schema 严重不符（非对象），调用方应删文件重置。
  */
-function mergePlatformConfig(raw: unknown): PlatformConfig | null {
+export function mergePlatformConfig(raw: unknown): PlatformConfig | null {
   if (!isPlainObject(raw)) {
     return null
   }
@@ -244,6 +253,13 @@ function mergePlatformConfig(raw: unknown): PlatformConfig | null {
   const provider: BrowserPlatformConfigDraft = isPlainObject(rawProvider) && Array.isArray((rawProvider as Record<string, unknown>).providerTypes)
     ? (rawProvider as unknown as BrowserPlatformConfigDraft)
     : createEmptyPlatformConfigDraft()
+
+  const rawAppearance = raw.appearance
+  const appearance: PlatformConfigAppearance = {
+    uiMode: isPlainObject(rawAppearance) && rawAppearance.uiMode === "spatial"
+      ? "spatial"
+      : "retro",
+  }
 
   const rawCheckpoint = raw.checkpointPrune
   const checkpointPrune: PlatformConfigCheckpointPrune = isPlainObject(rawCheckpoint)
@@ -304,11 +320,12 @@ function mergePlatformConfig(raw: unknown): PlatformConfig | null {
     ? { autoBackupEnabled: (rawCloudBackup as Record<string, unknown>).autoBackupEnabled === true }
     : { ...DEFAULT_PLATFORM_CONFIG.cloudBackup }
 
-  return { provider, checkpointPrune, contextCompression, rag, ai, assistant, cloudBackup }
+  return { appearance, provider, checkpointPrune, contextCompression, rag, ai, assistant, cloudBackup }
 }
 
-function cloneConfig(config: PlatformConfig): PlatformConfig {
+export function clonePlatformConfig(config: PlatformConfig): PlatformConfig {
   return {
+    appearance: { ...config.appearance },
     provider: {
       activeProviderId: config.provider.activeProviderId,
       providerTypes: config.provider.providerTypes.map((type) => ({

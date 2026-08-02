@@ -1,6 +1,12 @@
 import type { Component } from "vue"
 import { computed, markRaw, ref } from "vue"
 import type { DesktopAppId, DesktopWindowInput } from "@/desktop-apps"
+import {
+  canCloseWindow,
+  forgetWindowCloseGuard,
+} from "./window-close-guards"
+
+export { clearBeforeClose, setBeforeClose } from "./window-close-guards"
 
 export interface DesktopBounds {
   width: number
@@ -37,21 +43,6 @@ export interface DesktopWindowState extends DesktopWindowGeometry {
 const DEFAULT_BOUNDS: DesktopBounds = {
   width: 1280,
   height: 720,
-}
-
-// Module-level before-close handlers so route views (e.g. the workspace editor)
-// can register a close guard without holding the same `useDesktopWindows()`
-// instance as the desktop shell. Keyed by window id.
-const beforeCloseHandlers = new Map<string, () => Promise<boolean>>()
-
-/** Register a before-close guard for a window. Return false from the handler to cancel close. */
-export function setBeforeClose(id: string, handler: () => Promise<boolean>): void {
-  beforeCloseHandlers.set(id, handler)
-}
-
-/** Remove a before-close guard. Safe to call when no handler is registered. */
-export function clearBeforeClose(id: string): void {
-  beforeCloseHandlers.delete(id)
 }
 
 export function useDesktopWindows() {
@@ -137,19 +128,16 @@ export function useDesktopWindows() {
   }
 
   async function closeWindow(id: string) {
-    const handler = beforeCloseHandlers.get(id)
-    if (handler) {
-      const ok = await handler()
-      if (!ok) {
-        return // a view vetoed the close (e.g. editor with unsaved changes chose "cancel")
-      }
+    if (!await canCloseWindow(id)) {
+      return false
     }
     const wasActive = activeWindowId.value === id
     windows.value = windows.value.filter((window) => window.id !== id)
-    beforeCloseHandlers.delete(id)
+    forgetWindowCloseGuard(id)
     if (wasActive) {
       activeWindowId.value = topVisibleWindow()?.id ?? ""
     }
+    return true
   }
 
   function moveWindow(

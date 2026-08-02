@@ -2,7 +2,6 @@ import type { SpatialMetrics } from "./metrics"
 
 export type FrameReason =
   | "dirty"
-  | "camera"
   | "parallax"
   | "transition"
   | "particles"
@@ -29,7 +28,6 @@ export interface FrameSchedulerOptions {
 }
 
 const MOTION_REASONS = new Set<FrameReason>([
-  "camera",
   "parallax",
   "transition",
   "particles",

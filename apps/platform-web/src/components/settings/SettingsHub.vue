@@ -25,12 +25,13 @@
 
 <script setup lang="ts">
 import type { Component } from "vue"
-import { Bot, Cloud, Search, SlidersHorizontal } from "lucide-vue-next"
+import { Bot, Cloud, MonitorCog, Search, SlidersHorizontal } from "lucide-vue-next"
 import { computed } from "vue"
 import type { BrowserPlatformConfigDraft } from "@/config/ai"
 
 const props = defineProps<{
   draft: BrowserPlatformConfigDraft
+  appearanceSelectable?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -54,7 +55,7 @@ const entries = computed<HubEntry[]>(() => {
       modelCount += preset.models.length
     }
   }
-  return [
+  const result: HubEntry[] = [
     {
       id: "ai-providers",
       kind: "AI",
@@ -84,5 +85,15 @@ const entries = computed<HubEntry[]>(() => {
       icon: SlidersHorizontal,
     },
   ]
+  if (props.appearanceSelectable) {
+    result.push({
+      id: "appearance",
+      kind: "界面",
+      title: "桌面外观",
+      subtitle: "RetroOS / Spatial Desktop（本地实验）",
+      icon: MonitorCog,
+    })
+  }
+  return result
 })
 </script>

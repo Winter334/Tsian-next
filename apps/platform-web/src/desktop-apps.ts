@@ -1,37 +1,20 @@
 import type { Component } from "vue"
-import { defineAsyncComponent } from "vue"
 import type { RouteLocationNormalizedLoaded } from "vue-router"
 import {
-  Activity,
-  Bell,
-  Bot,
-  CircleUser,
-  FilePenLine,
-  FolderOpen,
-  Gamepad2,
-  HardDrive,
-  Image,
-  MessagesSquare,
-  MonitorCog,
-  PlaySquare,
-  Settings,
-  Store,
-} from "lucide-vue-next"
+  detailWindowIdFor,
+  editorWindowIdFor,
+  fallbackPlatformIcon,
+  platformAppById,
+  platformLaunchers,
+  platformWindowForLauncher,
+  platformWindowForRoute,
+  type PlatformAppId,
+  type PlatformLauncherDescriptor,
+  type PlatformWindowDescriptor,
+} from "./platform-apps"
 
-export type DesktopAppId =
-  | "market"
-  | "my-apps"
-  | "workspace-explorer"
-  | "workspace-editor"
-  | "workspace-media"
-  | "studio"
-  | "assistant"
-  | "game-launcher"
-  | "play"
-  | "settings"
-  | "account"
-  | "announcements"
-  | "debug"
+export type DesktopAppId = PlatformAppId
+export type DesktopLauncher = PlatformLauncherDescriptor
 
 export interface DesktopWindowInput {
   id: string
@@ -52,435 +35,44 @@ export interface DesktopWindowInput {
   fullscreenable?: boolean
 }
 
-export interface DesktopLauncher {
-  id: DesktopAppId
-  label: string
-  shortLabel: string
-  routePath: string
-  icon: Component
-  title: string
-  caption: string
-}
-
-interface DesktopAppDefinition {
-  appId: DesktopAppId
-  label: string
-  shortLabel: string
-  routeName: string
-  routePath: string
-  title: string
-  caption: string
-  icon: Component
-  component: Component
-  defaultWidth: number
-  defaultHeight: number
-  minWidth: number
-  minHeight: number
-  fullscreenable?: boolean
-}
-
-const AppMarketView = defineAsyncComponent(() => import("./views/AppMarketView.vue"))
-const GameCardLibraryView = defineAsyncComponent(() => import("./views/GameCardLibraryView.vue"))
-const WorkspaceExplorerView = defineAsyncComponent(() => import("./views/WorkspaceExplorerView.vue"))
-const WorkspaceEditorView = defineAsyncComponent(() => import("./views/WorkspaceEditorView.vue"))
-const WorkspaceMediaView = defineAsyncComponent(() => import("./views/WorkspaceMediaView.vue"))
-const StudioView = defineAsyncComponent(() => import("./views/StudioView.vue"))
-const AssistantView = defineAsyncComponent(() => import("./views/AssistantView.vue"))
-const GameCardDetailView = defineAsyncComponent(() => import("./views/GameCardDetailView.vue"))
-const PlayView = defineAsyncComponent(() => import("./views/PlayView.vue"))
-const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue"))
-const AccountView = defineAsyncComponent(() => import("./views/AccountView.vue"))
-const AnnouncementCenterView = defineAsyncComponent(() => import("./views/AnnouncementCenterView.vue"))
-const DebugView = defineAsyncComponent(() => import("./views/DebugView.vue"))
-
-const desktopApps: DesktopAppDefinition[] = [
-  {
-    appId: "market",
-    label: "创意工坊",
-    shortLabel: "工坊",
-    routeName: "app-market",
-    routePath: "/market",
-    title: "创意工坊",
-    caption: "分享与安装创意资源",
-    icon: Store,
-    component: AppMarketView,
-    defaultWidth: 980,
-    defaultHeight: 620,
-    minWidth: 560,
-    minHeight: 420,
-    fullscreenable: true,
-  },
-  {
-    appId: "my-apps",
-    label: "我的应用",
-    shortLabel: "应用",
-    routeName: "library",
-    routePath: "/library",
-    title: "我的应用",
-    caption: "已安装的游戏卡",
-    icon: FolderOpen,
-    component: GameCardLibraryView,
-    defaultWidth: 1120,
-    defaultHeight: 680,
-    minWidth: 620,
-    minHeight: 440,
-    fullscreenable: true,
-  },
-  {
-    appId: "workspace-explorer",
-    label: "资源管理器",
-    shortLabel: "资源管理器",
-    routeName: "workspace",
-    routePath: "/workspace",
-    title: "资源管理器",
-    caption: "游戏卡内容与存档文件",
-    icon: HardDrive,
-    component: WorkspaceExplorerView,
-    defaultWidth: 1180,
-    defaultHeight: 720,
-    minWidth: 720,
-    minHeight: 460,
-    fullscreenable: true,
-  },
-  {
-    appId: "studio",
-    label: "工作室",
-    shortLabel: "工作室",
-    routeName: "studio",
-    routePath: "/studio",
-    title: "工作室",
-    caption: "当前游戏卡的 Agent 配置",
-    icon: Bot,
-    component: StudioView,
-    defaultWidth: 1080,
-    defaultHeight: 680,
-    minWidth: 680,
-    minHeight: 460,
-    fullscreenable: true,
-  },
-  {
-    appId: "assistant",
-    label: "桌面助手",
-    shortLabel: "助手",
-    routeName: "assistant",
-    routePath: "/assistant",
-    title: "桌面助手",
-    caption: "游戏卡问答与编辑辅助",
-    icon: MessagesSquare,
-    component: AssistantView,
-    defaultWidth: 900,
-    defaultHeight: 640,
-    minWidth: 600,
-    minHeight: 420,
-    fullscreenable: true,
-  },
-  {
-    appId: "play",
-    label: "开始游戏",
-    shortLabel: "游戏",
-    routeName: "play",
-    routePath: "/play",
-    title: "游戏前端",
-    caption: "当前游戏卡的游玩窗口",
-    icon: PlaySquare,
-    component: PlayView,
-    defaultWidth: 1180,
-    defaultHeight: 720,
-    minWidth: 680,
-    minHeight: 460,
-    fullscreenable: true,
-  },
-  {
-    appId: "settings",
-    label: "控制面板",
-    shortLabel: "设置",
-    routeName: "settings",
-    routePath: "/settings",
-    title: "控制面板",
-    caption: "平台设置",
-    icon: Settings,
-    component: SettingsView,
-    defaultWidth: 860,
-    defaultHeight: 600,
-    minWidth: 520,
-    minHeight: 400,
-    fullscreenable: true,
-  },
-  {
-    appId: "account",
-    label: "账号中心",
-    shortLabel: "账号",
-    routeName: "account",
-    routePath: "/account",
-    title: "账号中心",
-    caption: "操作员身份",
-    icon: CircleUser,
-    component: AccountView,
-    defaultWidth: 720,
-    defaultHeight: 540,
-    minWidth: 480,
-    minHeight: 420,
-  },
-  {
-    appId: "debug",
-    label: "系统监视器",
-    shortLabel: "监视器",
-    routeName: "debug",
-    routePath: "/debug",
-    title: "系统监视器",
-    caption: "运行时诊断",
-    icon: Activity,
-    component: DebugView,
-    defaultWidth: 1180,
-    defaultHeight: 720,
-    minWidth: 720,
-    minHeight: 460,
-    fullscreenable: true,
-  },
-]
-
-const announcementDefinition: DesktopAppDefinition = {
-  appId: "announcements",
-  label: "公告中心",
-  shortLabel: "公告",
-  routeName: "announcements",
-  routePath: "/announcements",
-  title: "公告中心",
-  caption: "平台消息与更新记录",
-  icon: Bell,
-  component: AnnouncementCenterView,
-  defaultWidth: 760,
-  defaultHeight: 560,
-  minWidth: 460,
-  minHeight: 360,
-}
-
-const gameLauncherDefinition: DesktopAppDefinition = {
-  appId: "game-launcher",
-  label: "应用属性",
-  shortLabel: "属性",
-  routeName: "game-card-detail",
-  routePath: "/cards",
-  title: "应用属性",
-  caption: "游戏卡属性与存档",
-  icon: Gamepad2,
-  component: GameCardDetailView,
-  defaultWidth: 1180,
-  defaultHeight: 720,
-  minWidth: 720,
-  minHeight: 460,
-  fullscreenable: true,
-}
-
-const workspaceEditorDefinition: DesktopAppDefinition = {
-  appId: "workspace-editor",
-  label: "编辑器",
-  shortLabel: "编辑",
-  routeName: "workspace-editor",
-  routePath: "/workspace/editor",
-  title: "编辑器",
-  caption: "工作区文件",
-  icon: FilePenLine,
-  component: WorkspaceEditorView,
-  defaultWidth: 1040,
-  defaultHeight: 680,
-  minWidth: 680,
-  minHeight: 460,
-  fullscreenable: true,
-}
-
-const workspaceMediaDefinition: DesktopAppDefinition = {
-  appId: "workspace-media",
-  label: "媒体查看器",
-  shortLabel: "媒体",
-  routeName: "workspace-media",
-  routePath: "/workspace/media",
-  title: "媒体查看器",
-  caption: "图片 / 音频 / 视频",
-  icon: Image,
-  component: WorkspaceMediaView,
-  defaultWidth: 980,
-  defaultHeight: 640,
-  minWidth: 520,
-  minHeight: 420,
-  fullscreenable: true,
-}
-
-export const desktopLaunchers: DesktopLauncher[] = desktopApps.map((app) => ({
-  id: app.appId,
-  label: app.label,
-  shortLabel: app.shortLabel,
-  routePath: app.routePath,
-  icon: app.icon,
-  title: app.title,
-  caption: app.caption,
-}))
+export const desktopLaunchers: DesktopLauncher[] = [...platformLaunchers]
 
 export function desktopWindowForLauncher(appId: DesktopAppId): DesktopWindowInput | null {
-  const app = desktopApps.find((candidate) => candidate.appId === appId)
-  if (!app) {
-    return null
-  }
-
-  return windowInputFromDefinition(app, {
-    id: app.appId,
-    routePath: app.routePath,
-    props: {},
-  })
+  const descriptor = platformWindowForLauncher(appId)
+  return descriptor ? desktopInput(descriptor) : null
 }
 
 export function desktopWindowForRoute(
   route: RouteLocationNormalizedLoaded,
 ): DesktopWindowInput | null {
-  const routeName = String(route.name ?? "")
-  if (routeName === "desktop") {
-    return null
-  }
-
-  if (routeName === "game-card-detail") {
-    const cardId = String(route.params.cardId ?? "")
-    if (!cardId) {
-      return null
-    }
-
-    return windowInputFromDefinition(gameLauncherDefinition, {
-      id: detailWindowIdFor(cardId),
-      routePath: route.fullPath,
-      props: { cardId },
-    })
-  }
-
-  if (routeName === "workspace-editor") {
-    const cardId = queryString(route.query.cardId)
-    const path = queryString(route.query.path)
-    const mode = queryString(route.query.mode) === "create" ? "create" : "edit"
-    const editorId = queryString(route.query.editorId)
-    // Allow opening editors for .tsian/ paths without a cardId.
-    if (!cardId && !(path === ".tsian" || path.startsWith(".tsian/"))) {
-      return null
-    }
-
-    const titlePath = path ? fileName(path) : "新建文件"
-    const scopeKey = cardId || "tsian-local"
-    const id = editorWindowIdFor({ scopeKey, editorId, mode, path })
-    return windowInputFromDefinition(workspaceEditorDefinition, {
-      id,
-      routePath: route.fullPath,
-      props: { cardId, path, mode, editorId },
-      title: mode === "create" ? "新建文件" : titlePath,
-      caption: path || "工作区文件",
-    })
-  }
-
-  if (routeName === "workspace-media") {
-    const cardId = queryString(route.query.cardId)
-    const path = queryString(route.query.path)
-    // Allow opening media viewers for .tsian/ paths without a cardId.
-    if (!cardId && !(path === ".tsian" || path.startsWith(".tsian/"))) {
-      return null
-    }
-    if (!path) {
-      return null
-    }
-
-    const scopeKey = cardId || "tsian-local"
-    return windowInputFromDefinition(workspaceMediaDefinition, {
-      id: `${workspaceMediaDefinition.appId}:${scopeKey}:${path}`,
-      routePath: route.fullPath,
-      props: { cardId, path },
-      title: fileName(path),
-      caption: path,
-    })
-  }
-
-  if (routeName === "announcements") {
-    return windowInputFromDefinition(announcementDefinition, {
-      id: announcementDefinition.appId,
-      routePath: route.fullPath || announcementDefinition.routePath,
-      props: {},
-    })
-  }
-
-  const app = desktopApps.find((candidate) => candidate.routeName === routeName)
-  if (!app) {
-    return null
-  }
-
-  return windowInputFromDefinition(app, {
-    id: app.appId,
-    routePath: route.fullPath || app.routePath,
-    props: {},
-  })
-}
-
-function windowInputFromDefinition(
-  app: DesktopAppDefinition,
-  input: {
-    id: string
-    routePath: string
-    props: Record<string, unknown>
-    title?: string
-    caption?: string
-  },
-): DesktopWindowInput {
-  return {
-    id: input.id,
-    appId: app.appId,
-    label: app.label,
-    shortLabel: app.shortLabel,
-    routeName: app.routeName,
-    routePath: input.routePath,
-    title: input.title ?? app.title,
-    caption: input.caption ?? app.caption,
-    icon: app.icon,
-    component: app.component,
-    props: input.props,
-    defaultWidth: app.defaultWidth,
-    defaultHeight: app.defaultHeight,
-    minWidth: app.minWidth,
-    minHeight: app.minHeight,
-    fullscreenable: app.fullscreenable,
-  }
+  const descriptor = platformWindowForRoute(route)
+  return descriptor ? desktopInput(descriptor) : null
 }
 
 export function announcementWindowInput(): DesktopWindowInput {
-  return windowInputFromDefinition(announcementDefinition, {
-    id: announcementDefinition.appId,
-    routePath: announcementDefinition.routePath,
-    props: {},
+  const descriptor = platformWindowForRoute({
+    name: "announcements",
+    fullPath: "/announcements",
+    params: {},
+    query: {},
   })
+  if (!descriptor) throw new Error("Announcement app is missing from the platform registry.")
+  return desktopInput(descriptor)
 }
 
-export const fallbackDesktopIcon = MonitorCog
-
-/** Compute the desktop window id for a workspace-editor route. Editors use a
- *  stable `editorId` query param so the same editor window survives route
- *  syncs (save → path replace) and so the editor view can look up its own
- *  window id to register a before-close guard. */
-export function editorWindowIdFor(input: {
-  scopeKey: string
-  editorId: string
-  mode: string
-  path: string
-}): string {
-  if (input.editorId) {
-    return `${workspaceEditorDefinition.appId}:${input.scopeKey}:${input.editorId}`
+function desktopInput(descriptor: PlatformWindowDescriptor): DesktopWindowInput {
+  const app = platformAppById(descriptor.appId)
+  if (!app) throw new Error(`Unknown platform app: ${descriptor.appId}`)
+  return {
+    ...descriptor,
+    component: app.retro.component,
+    defaultWidth: app.retro.defaultSize.width,
+    defaultHeight: app.retro.defaultSize.height,
+    minWidth: app.retro.minSize.width,
+    minHeight: app.retro.minSize.height,
+    fullscreenable: app.retro.fullscreenable,
   }
-  return `${workspaceEditorDefinition.appId}:${input.scopeKey}:${input.mode}:${input.path || "untitled"}`
 }
 
-/** Compute the desktop window id for a game-card detail route. Mirrors the id
- *  built by `desktopWindowForRoute`'s game-card-detail branch so a detail view
- *  can look up its own window id to register a before-close guard. */
-export function detailWindowIdFor(cardId: string): string {
-  return `${gameLauncherDefinition.appId}:${cardId}`
-}
-
-function queryString(value: unknown): string {
-  return typeof value === "string" ? value : ""
-}
-
-function fileName(path: string): string {
-  const segments = path.split("/").filter(Boolean)
-  return segments[segments.length - 1] ?? path
-}
+export { detailWindowIdFor, editorWindowIdFor }
+export const fallbackDesktopIcon = fallbackPlatformIcon
