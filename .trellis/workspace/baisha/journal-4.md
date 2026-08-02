@@ -530,3 +530,25 @@ Separated Agent, UI, and audit projections; introduced shared runtime environmen
 ### Status
 
 [OK] **Completed**
+
+
+## Session 174: Spatial 桌面基础框架与缩放修复
+
+**Date**: 2026-08-02
+**Task**: Spatial 桌面基础框架与缩放修复
+**Branch**: `master`
+
+### Summary
+
+完成 Spatial 桌面外壳、物理曲面、多窗口生命周期与视觉框架；定位并修复 DOMRect 展开导致捕获缩放局部坐标冻结的问题，移除临时诊断并沉淀宿主对象显式快照规范。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `59a5b76` | (see git log) |
+| `44ce575` | (see git log) |
+
+### Status
+
+[OK] **Completed**
