@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 172
-- **Last Active**: 2026-08-01
+- **Total Sessions**: 173
+- **Last Active**: 2026-08-02
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~511 | Active |
+| `journal-4.md` | ~532 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 173 | 2026-08-02 | Agent context boundary and retrieval governance | `4c2af18` | `master` |
 | 172 | 2026-08-01 | 优化游戏前端工具调用体验 | `d59ac0b` | `master` |
 | 171 | 2026-08-01 | Spatial rendering and input foundation | `7867400`, `f5c8fd5` | `master` |
 | 170 | 2026-07-31 | 诊断虚拟卷资源管理器接入 | `4d928c6` | `master` |

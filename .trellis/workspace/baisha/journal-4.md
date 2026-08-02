@@ -509,3 +509,24 @@ Built and manually accepted the development-only Spatial HTML-in-Canvas lab: Web
 ### Status
 
 [OK] **Completed**
+
+
+## Session 173: Agent context boundary and retrieval governance
+
+**Date**: 2026-08-02
+**Task**: Agent context boundary and retrieval governance
+**Branch**: `master`
+
+### Summary
+
+Separated Agent, UI, and audit projections; introduced shared runtime environments, bounded observations and request preflight, desktop-only diagnostics queries, scoped retrieval, native tool correlation fixes, presentation-only persistence, regression tests, and executable specs.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4c2af18` | (see git log) |
+
+### Status
+
+[OK] **Completed**
