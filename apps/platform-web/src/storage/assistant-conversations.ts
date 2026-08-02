@@ -1,4 +1,8 @@
-import type { ConversationMessageRecord } from "@tsian/contracts"
+import type {
+  ConversationMessageRecord,
+  TurnTimelineItem,
+  UiToolPresentation,
+} from "@tsian/contracts"
 import { localDb } from "./db"
 import { assistantContextPath, deleteLocalAssistantFile } from "./local-assistant-files"
 import { deleteAttachmentsBySession } from "./assistant-attachments"
@@ -60,6 +64,84 @@ function createSessionId(): string {
   return `asst-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function normalizeToolPresentation(value: unknown): UiToolPresentation | undefined {
+  if (!isRecord(value) || value.type !== "agent_call" || !isRecord(value.targetAgent)) {
+    return undefined
+  }
+  if (
+    typeof value.targetAgent.id !== "string"
+    || typeof value.targetAgent.title !== "string"
+    || typeof value.response !== "string"
+    || (value.status !== "completed" && value.status !== "failed")
+  ) {
+    return undefined
+  }
+  const error = isRecord(value.error)
+    && typeof value.error.code === "string"
+    && typeof value.error.message === "string"
+    ? { code: value.error.code, message: value.error.message }
+    : undefined
+  return {
+    type: "agent_call",
+    targetAgent: {
+      id: value.targetAgent.id,
+      title: value.targetAgent.title,
+      ...(typeof value.targetAgent.summary === "string"
+        ? { summary: value.targetAgent.summary }
+        : {}),
+    },
+    response: value.response,
+    ...(value.responseTruncated === true ? { responseTruncated: true } : {}),
+    status: value.status,
+    ...(error ? { error } : {}),
+  }
+}
+
+function normalizeProcessTimeline(value: unknown): TurnTimelineItem[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((raw): TurnTimelineItem[] => {
+    if (!isRecord(raw)) return []
+    if (raw.kind === "thought" || raw.kind === "interim") {
+      if (typeof raw.id !== "string" || typeof raw.text !== "string") return []
+      return [{
+        kind: raw.kind,
+        id: raw.id,
+        round: typeof raw.round === "number" && Number.isFinite(raw.round) ? raw.round : 0,
+        ...(typeof raw.agentId === "string" ? { agentId: raw.agentId } : {}),
+        text: raw.text,
+        collapsed: typeof raw.collapsed === "boolean" ? raw.collapsed : raw.kind === "thought",
+      }]
+    }
+    if (
+      raw.kind !== "tool"
+      || typeof raw.id !== "string"
+      || typeof raw.name !== "string"
+      || (raw.status !== "loading"
+        && raw.status !== "running"
+        && raw.status !== "success"
+        && raw.status !== "failed")
+    ) {
+      return []
+    }
+    const presentation = normalizeToolPresentation(raw.presentation)
+    return [{
+      kind: "tool",
+      id: raw.id,
+      round: typeof raw.round === "number" && Number.isFinite(raw.round) ? raw.round : 0,
+      ...(typeof raw.agentId === "string" ? { agentId: raw.agentId } : {}),
+      name: raw.name,
+      ...(typeof raw.displayName === "string" ? { displayName: raw.displayName } : {}),
+      status: raw.status,
+      ...(presentation ? { presentation } : {}),
+      collapsed: typeof raw.collapsed === "boolean" ? raw.collapsed : true,
+    }]
+  })
+}
+
 function normalizeMessages(
   messages: ConversationMessageRecord[] | undefined,
 ): ConversationMessageRecord[] {
@@ -70,13 +152,11 @@ function normalizeMessages(
     if (typeof item?.role === "string" && typeof item.content === "string") {
       // 保留 attachments 字段(附件引用元数据);非数组或缺失时省略.
       const attachments = Array.isArray(item.attachments) ? { attachments: item.attachments } : {}
-      // 保留 toolCalls 字段(UI/debug raw 工具记录,用于刷新/重进会话后回看历史工具过程);
-      // 非数组或缺失时省略.
-      const toolCalls = Array.isArray(item.toolCalls) ? { toolCalls: item.toolCalls } : {}
-      // 保留 timeline 字段(thought/tool/interim 按发生顺序,UI 层重建 timeline);
-      // 非数组或缺失时省略.
-      const timeline = Array.isArray(item.timeline) ? { timeline: item.timeline } : {}
-      return { role: item.role, content: item.content, ...attachments, ...toolCalls, ...timeline }
+      // 只保留 presentation-only process timeline。旧 output/toolCalls 字段在
+      // reader 边界自然忽略，不扫描、不迁移，也不在后续写入时继续复制。
+      const normalizedTimeline = normalizeProcessTimeline(item.timeline)
+      const timeline = normalizedTimeline.length > 0 ? { timeline: normalizedTimeline } : {}
+      return { role: item.role, content: item.content, ...attachments, ...timeline }
     }
     return []
   })

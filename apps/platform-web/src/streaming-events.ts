@@ -9,8 +9,7 @@
  *     区分链式推理（`reasoning`）与可见回复（`content`），供前端分别渲染到「思考」与正文区。
  *   - `turn-round-end`（子2b R1）：每轮结束，`emitTurnRoundEnd(agentId, turn, round, kind)`
  *     告知前端本轮属思考流还是最终回复，供前端把 `turn-delta` 文本归类到对应区块。
- *   - `turn-tool`（子2b R2）：工具调用执行前后，`emitTurnTool(agentId, turn, round, callId, name, status, output?, displayName?)`
- *     告知前端工具状态与输出，供前端渲染工具卡片。
+ *   - `turn-tool`（子2b R2）：工具调用执行前后发送状态与可选 presentation。
  *
  * 设计原则：
  *   - **内部模块、勿扩散**：禁止作为通用事件总线复用；其它跨模块通信应走显式 API
@@ -19,7 +18,7 @@
  *   - 回调异常吞掉但 console.error，避免污染主链 fail loud 路径
  */
 
-import type { AgentInvocationEvent, TurnStats, TurnToolOutput } from "@tsian/contracts"
+import type { AgentInvocationEvent, TurnStats, UiToolPresentation } from "@tsian/contracts"
 
 export type TurnDeltaKind = "reasoning" | "content"
 export type TurnDeltaListener = (agentId: string, delta: string, turn: number, round: number, kind: TurnDeltaKind) => void
@@ -33,7 +32,7 @@ export type TurnToolListener = (
   callId: string,
   name: string,
   status: TurnToolStatus,
-  output?: TurnToolOutput,
+  presentation?: UiToolPresentation,
   displayName?: string,
 ) => void
 export type TurnOptionsListener = (turn: number, options: string[]) => void
@@ -99,14 +98,14 @@ export function emitTurnTool(
   callId: string,
   name: string,
   status: TurnToolStatus,
-  output?: TurnToolOutput,
+  presentation?: UiToolPresentation,
   displayName?: string,
 ): void {
   // 浅克隆：回调内 unsubscribe 不影响本轮派发
   const listeners = [...turnToolListeners]
   for (const listener of listeners) {
     try {
-      listener(agentId, turn, round, callId, name, status, output, displayName)
+      listener(agentId, turn, round, callId, name, status, presentation, displayName)
     } catch (err) {
       // 流式通道异常不冒泡到主链
       console.error("[streaming-events] turn-tool listener threw", err)

@@ -50,7 +50,7 @@ interface ToolEvent {
   name: string
   displayName?: string
   status: "loading" | "running" | "success" | "failed"
-  output?: TurnToolOutput
+  presentation?: UiToolPresentation
 }
 
 type ToolTimelineItem = {
@@ -61,12 +61,12 @@ type ToolTimelineItem = {
   name: string
   displayName?: string
   status: ToolEvent["status"]
-  output?: TurnToolOutput
+  presentation?: UiToolPresentation
   collapsed: boolean
 }
 ```
 
-Internal `onTool` callbacks append `displayName?: string` after the existing optional `output`; formal-turn streaming, persisted timeline collection, `invokeAgent`, and remote bridge forwarding must all preserve the field.
+Internal `onTool` callbacks carry optional `presentation` followed by `displayName`; formal-turn streaming, persisted timeline collection, `invokeAgent`, and remote bridge forwarding must preserve both fields.
 
 ### 3. Contracts
 
@@ -75,7 +75,7 @@ Internal `onTool` callbacks append `displayName?: string` after the existing opt
 - Loading and terminal events for one `callId` carry the same resolved display name when available. Upserts may fill a previously absent display name but must not clear one because a later event omitted the optional field.
 - The remote SDK accepts only non-empty string display names; invalid or blank values are omitted rather than coerced. The wire name remains available as fallback.
 - Player UI keeps tool identity and state separate. It must not prepend/append tense or outcome text to arbitrary titles. Default visible state mapping is `loading|running -> 运行中`, `success -> 成功`, `failed -> 失败`.
-- Player renderers may hide `agentId`, arguments, and `output`; transport/storage still preserve fields required by debug or other consumers. Presentation choices must not remove those contract fields globally.
+- `UiToolPresentation` is a closed UI-only union; currently only `agent_call` carries target/response/error, and response is bounded. Ordinary tools have no presentation payload. Raw arguments/results never enter bridge events or timeline persistence.
 
 ### 4. Validation & Error Matrix
 
@@ -84,7 +84,7 @@ Internal `onTool` callbacks append `displayName?: string` after the existing opt
 | Visible custom Tool has a non-empty registry title | Emit and persist that title as `displayName` |
 | Platform built-in or no visible registry entry | Omit `displayName`; render `name` |
 | Old history/event lacks `displayName` | Render normally with `name`; no migration/error |
-| Later status event omits `displayName` | Update status/output without erasing the existing display name |
+| Later status event omits `displayName` | Update status/presentation without erasing the existing display name |
 | Remote payload has blank/non-string `displayName` | SDK omits the field and retains `name` fallback |
 | Unknown future tool name | Display the raw name plus generic status; never synthesize a sentence |
 
@@ -98,7 +98,7 @@ Internal `onTool` callbacks append `displayName?: string` after the existing opt
 ### 6. Tests Required
 
 - Contracts and consumers: run `npm run build:contracts`, `npm run build --workspace @tsian/play-bridge`, `npm run build:web`, and the consuming play-frontend build.
-- Runtime collector: assert loading -> success updates one call, retains display name/output, and omission on a later event does not erase metadata.
+- Runtime collector: assert loading -> success updates one call, retains display name/presentation, and omission on a later event does not erase metadata.
 - Remote bridge/SDK: assert a valid display name crosses the iframe boundary; absent/blank values remain optional and fall back to name.
 - Frontend: assert old-history fallback, generic status labels, no generated tool sentences, and unchanged timeline order; visually verify reduced-motion and terminal states stop animating.
 

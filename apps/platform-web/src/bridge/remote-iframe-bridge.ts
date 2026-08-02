@@ -1028,7 +1028,7 @@ export function mountRemoteIframeFrontend(
 
   // Forward tool-call status/output to the remote frontend as `turn-tool`,
   // so it can render tool cards (loading -> success/failed).
-  const unsubscribeTurnTool = subscribeTurnTool((agentId, turn, round, callId, name, status, output, displayName) => {
+  const unsubscribeTurnTool = subscribeTurnTool((agentId, turn, round, callId, name, status, presentation, displayName) => {
     postEvent("turn-tool", {
       agentId,
       turn,
@@ -1036,7 +1036,7 @@ export function mountRemoteIframeFrontend(
       callId,
       name,
       status,
-      ...(output !== undefined ? { output } : {}),
+      ...(presentation !== undefined ? { presentation } : {}),
       ...(displayName !== undefined ? { displayName } : {}),
     })
   })

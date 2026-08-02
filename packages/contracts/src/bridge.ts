@@ -12,7 +12,7 @@ import type {
   PlatformActionRequest,
   PlatformActionResult,
   PlatformContextShell,
-  TurnToolOutput,
+  UiToolPresentation,
   TurnTimelineItem,
   TurnStats,
   WorkspaceEntry,
@@ -295,18 +295,10 @@ export type RemotePlayBridgeEventName =
   | "workspace-mutation"
 
 /**
- * `turn-tool` 事件 output 字段形态。
- *
- - 普通工具：output 是原始结果字符串（平台侧不再截断，完整透传，UI 侧决定显示/截断）。
- * - agent_call：output 是结构化对象，提取被调用 agent 的 title + response，
- *   让前端不用解析整坨 JSON 即可渲染玩家可读的"调了谁 + 答了什么"。
- *   截断交给 UI 侧；response 完整透传。
- *
- * discriminated union：前端按 `typeof output === "string"`（普通工具）vs
- * `typeof output === "object" && output.type === "agent_call"`（agent_call）分流渲染。
- * 旧前端收到 object output 时最坏情况是不显示（不匹配 string 渲染路径），不 break 功能。
+ * `turn-tool` presentation 是封闭的 UI 展示投影。普通工具只有调用身份、
+ * 名称和状态；当前只有 `agent_call` 声明结构化展示内容。
  */
-export type { TurnToolOutput } from "./runtime"
+export type { UiToolPresentation } from "./runtime"
 /**
  * turn 内 timeline 项(thought/tool/interim/user/assistant/legacy options),持久化到
  * workspace turn 文件 `save/history/turns/turn-NNNNNN.json` 的 `timeline` 字段
@@ -370,7 +362,7 @@ export type RemotePlayBridgeEventPayload =
       /** Optional player-facing Tool title. Falls back to `name` when absent. */
       displayName?: string
       status: "loading" | "running" | "success" | "failed"
-      output?: TurnToolOutput
+      presentation?: UiToolPresentation
     }
   | {
       turn: number

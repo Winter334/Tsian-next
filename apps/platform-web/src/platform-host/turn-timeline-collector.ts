@@ -1,4 +1,4 @@
-import type { TurnTimelineItem, TurnToolOutput } from "@tsian/contracts"
+import type { TurnTimelineItem, UiToolPresentation } from "@tsian/contracts"
 
 /**
  * turn 过程节点累积器:把 runtime 的 onDelta/onRoundEnd/onTool 事件流
@@ -110,7 +110,7 @@ export function createTurnTimelineCollector() {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: TurnToolOutput,
+    presentation?: UiToolPresentation,
     displayName?: string,
   ): void => {
     // 按 callId 去重:同一工具调用的 loading→success/failed 更新同一节点
@@ -119,8 +119,8 @@ export function createTurnTimelineCollector() {
     )
     if (existing) {
       existing.status = status
-      if (output !== undefined) {
-        existing.output = output
+      if (presentation !== undefined) {
+        existing.presentation = presentation
       }
       if (displayName !== undefined) {
         existing.displayName = displayName
@@ -134,7 +134,7 @@ export function createTurnTimelineCollector() {
         name,
         status,
         collapsed: true,
-        ...(output !== undefined ? { output } : {}),
+      ...(presentation !== undefined ? { presentation } : {}),
         ...(displayName !== undefined ? { displayName } : {}),
       })
     }

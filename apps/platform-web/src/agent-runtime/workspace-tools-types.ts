@@ -7,7 +7,7 @@ import type {
   RemotePlayBridgeMethod,
   SkillConfigItem,
   SkillRegistryEntry,
-  TurnToolOutput,
+  UiToolPresentation,
   WorkspaceFile,
   WorkspaceOperationName,
   WorkspaceOperationRequest,
@@ -40,6 +40,7 @@ export const RUNTIME_WORKSPACE_TOOL_NAMES = {
   inspectFrontend: "inspect_frontend",
   askUser: "ask_user",
   testSkillScript: "test_skill_script",
+  queryDiagnostics: "query_diagnostics",
   read: "read",
   list: "list",
   search: "search",
@@ -154,6 +155,29 @@ export interface RuntimeAgentCallArguments {
 
 export type RuntimeAgentCallRunner = (
   input: RuntimeAgentCallArguments,
+) => Promise<unknown>
+
+export type RuntimeDiagnosticsQueryInput =
+  | {
+      operation: "list"
+      recordType?: "ai-request" | "frontend-error"
+      status?: string
+      provider?: string
+      model?: string
+      operationId?: string
+      limit?: number
+    }
+  | { operation: "search"; query: string; recordType?: "ai-request" | "frontend-error"; limit?: number }
+  | {
+      operation: "read"
+      id: string
+      section?: "summary" | "error" | "attempts" | "request" | "response"
+      offset?: number
+      limit?: number
+    }
+
+export type RuntimeDiagnosticsQueryRunner = (
+  input: RuntimeDiagnosticsQueryInput,
 ) => Promise<unknown>
 
 /**
@@ -496,6 +520,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
   sessionState?: RuntimeWorkspaceToolSessionState
   runAgentCall?: RuntimeAgentCallRunner
   runInspectFrontend?: RuntimeInspectFrontendRunner
+  runQueryDiagnostics?: RuntimeDiagnosticsQueryRunner
   runBrowserScript?: RuntimeBrowserScriptRunner
   runTestSkillScript?: RuntimeTestSkillScriptRunner
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
@@ -508,6 +533,9 @@ export interface RuntimeWorkspaceToolExecutionContext {
   signal?: AbortSignal
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
+  /** Final serialized Agent observation budget. Values above the platform hard
+   * cap are clamped by the projector. */
+  observationCharBudget?: number
   /**
    * Tool process event callback (子2b R2). Invoked before/after each tool
    * executes with the tool's callId, name, status, and (for success/failed) a
@@ -519,7 +547,7 @@ export interface RuntimeWorkspaceToolExecutionContext {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: TurnToolOutput,
+    presentation?: UiToolPresentation,
     displayName?: string,
   ) => void
   /**

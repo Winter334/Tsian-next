@@ -5,7 +5,7 @@ import type {
   PlatformActionError,
   WorkspaceFile,
 } from "@tsian/contracts"
-import { runAgentRuntimeTurn } from "../agent-runtime"
+import { createGameRuntimeEnvironment, runAgentRuntimeTurn } from "../agent-runtime"
 import { assembleAgentContext } from "../agent-runtime/context"
 import {
   DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
@@ -271,6 +271,10 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
       const contextTokenBudget = resolveTokenBudget(
         targetConfig?.parameters.common.contextWindow ?? null,
       )
+      const browserScriptRunners = createBrowserScriptRunners({
+        workspaceTransaction: workspaceTransaction!,
+        signal: invokeController.signal,
+      })
 
       const result = await runAgentRuntimeTurn(
         {
@@ -279,59 +283,12 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
           injection: input.injection,
           recentHistory: historyBefore,
           turn: invokeMaxTurn,
-          workspaceFiles,
-          workspaceTrustBoundary: "runtime-game-agent",
           signal: invokeController.signal,
-          agentContext: agentContext ?? undefined,
-          contextTokenBudget,
-          // 旁路调用用 task 模式压缩(工具交互段压缩,不压剧情正文).
-          compressionMode: "task",
           traceContext,
-          ...(shouldPersist
-            ? {
-                timeoutMs: DEFAULT_TASK_INACTIVITY_TIMEOUT_MS,
-              }
-            : {}),
-          // 旁路调用绑 onAskUser 以防目标 agent 需要 ask_user
-          // (复用进程内 interaction-events 总线).
-          // 旁路 agent 活动信号通过独立的 invocation 事件通道 emit。
-          onDelta: (emittingAgentId, delta, round, kind) => {
-            emitAgentInvocation({
-              type: "delta",
-              invocationId,
-              agentId: emittingAgentId,
-              round,
-              kind,
-              delta,
-            })
-          },
-          onRoundEnd: (emittingAgentId, round, finishReason) => {
-            emitAgentInvocation({
-              type: "round-end",
-              invocationId,
-              agentId: emittingAgentId,
-              round,
-              kind: finishReasonToKind(finishReason),
-            })
-          },
-          onTool: (emittingAgentId, round, callId, name, status, output, displayName) => {
-            emitAgentInvocation({
-              type: "tool",
-              invocationId,
-              agentId: emittingAgentId,
-              round,
-              callId,
-              name,
-              status,
-              ...(output !== undefined ? { output } : {}),
-              ...(displayName !== undefined ? { displayName } : {}),
-            })
-          },
-          onAskUser: (requestId, request) =>
-            emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
         },
-        {
-          callModel(messages, options) {
+        createGameRuntimeEnvironment({
+          model: {
+          callText(messages, options) {
             const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
             const streamingEnabled = modelConfig
               ? modelConfig.streaming
@@ -355,7 +312,7 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
                 : undefined,
             })
           },
-          async callModelNative(messages, options, tools) {
+          async callNative(messages, options, tools) {
             const modelConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
             const streamingEnabled = modelConfig
               ? modelConfig.streaming
@@ -381,19 +338,20 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
               ...(modelConfig ? { config: modelConfig } : {}),
             })
           },
-          emitTrace: trace.emit,
           toolCallMode: targetConfig?.toolCallMode
             ?? getBrowserAiConfig()?.toolCallMode
             ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
-          ...createBrowserScriptRunners({
-            workspaceTransaction: workspaceTransaction!,
-            signal: invokeController.signal,
-          }),
-          actionExecutorPolicy: undefined,
+          },
+          controlledTools: {
+            browserScript: browserScriptRunners.runBrowserScript,
+            testSkillScript: browserScriptRunners.runTestSkillScript,
+          },
           // 旁路调用也接入 workspace mutation 适配器——agent 的 skill 脚本
           // (如 commit_opening_understanding)和 workspace_write 工具都需要写入能力。
           // 事务已在上方创建(同一 workspaceTransaction)，写入会随事务一起 commit。
-          workspaceMutations: {
+          workspace: {
+          files: workspaceTransaction!.workspaceFiles,
+          mutations: {
             write: (writeInput) => {
               if (writeInput.scope === "platform-meta") {
                 return workspaceTransaction!.writePlatformFile({
@@ -421,10 +379,54 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
               }
             },
           },
-          exposedWorkspaceOperations: undefined,
-          collaborationPolicy: undefined,
           semanticSearchOwnerId: currentActiveSaveId,
-        },
+          },
+          context: {
+            snapshot: agentContext ?? undefined,
+            compressionMode: "task",
+            contextCapacityTokens: contextTokenBudget,
+            requestInputBudgetTokens: Math.floor(contextTokenBudget * 0.7),
+            observationCharBudget: 32 * 1024,
+            ...(shouldPersist ? { inactivityTimeoutMs: DEFAULT_TASK_INACTIVITY_TIMEOUT_MS } : {}),
+          },
+          events: {
+            onDelta: (emittingAgentId, delta, round, kind) => {
+              emitAgentInvocation({
+                type: "delta",
+                invocationId,
+                agentId: emittingAgentId,
+                round,
+                kind,
+                delta,
+              })
+            },
+            onRoundEnd: (emittingAgentId, round, finishReason) => {
+              emitAgentInvocation({
+                type: "round-end",
+                invocationId,
+                agentId: emittingAgentId,
+                round,
+                kind: finishReasonToKind(finishReason),
+              })
+            },
+            onTool: (emittingAgentId, round, callId, name, status, presentation, displayName) => {
+              emitAgentInvocation({
+                type: "tool",
+                invocationId,
+                agentId: emittingAgentId,
+                round,
+                callId,
+                name,
+                status,
+                ...(presentation !== undefined ? { presentation } : {}),
+                ...(displayName !== undefined ? { displayName } : {}),
+              })
+            },
+            onAskUser: (requestId, request) =>
+              emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
+          },
+          audit: trace.emit,
+        }),
       )
 
       // persist:true → 写回 context-<slot>.json(不推进 turn、不写历史、不更新 snapshot).

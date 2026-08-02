@@ -61,6 +61,8 @@ export interface WorkspaceOperationVirtualReadAdapter {
     actorLevel: number
     offset?: number
     limit?: number
+    charOffset?: number
+    charLimit?: number
   }): WorkspaceReadResult | undefined | Promise<WorkspaceReadResult | undefined>
   search(input: {
     scope: WorkspaceScope

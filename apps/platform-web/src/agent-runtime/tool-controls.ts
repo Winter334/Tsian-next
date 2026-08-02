@@ -75,6 +75,11 @@ export const PLATFORM_TOOL_CONTROL_GROUPS: PlatformToolControlGroup[] = [
         description:
           "允许直接测试 Skill 的 browser_script action（不需要先 use_skill），返回结构化错误用于调试。形成写脚本→测试→看错误→改脚本闭环。",
       },
+      {
+        id: "query_diagnostics",
+        label: "诊断查询",
+        description: "按摘要、记录 ID 和分页区间查询平台诊断。",
+      },
     ],
   },
 ]

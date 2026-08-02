@@ -138,7 +138,7 @@ vi.mock("../frontend-build/trigger", () => ({
   triggerFrontendRebuild: mocks.triggerFrontendRebuild,
 }))
 
-import { runAgentRuntimeTurn } from "../agent-runtime"
+import { createGameRuntimeEnvironment, runAgentRuntimeTurn } from "../agent-runtime"
 import { runAssistantChat } from "./assistant-chat"
 
 function file(path: string, content: string): WorkspaceFile {
@@ -242,7 +242,7 @@ beforeEach(() => {
 })
 
 describe("assistant-chat Frontend Action workspace boundary", () => {
-  it("mounts diagnostics virtual reads for the desktop assistant", async () => {
+  it("does not mount diagnostics in ordinary desktop workspace reads", async () => {
     mocks.callModelNative
       .mockResolvedValueOnce(nativeResult("tool_calls", "reading", [{
         id: "read-diagnostic",
@@ -254,14 +254,16 @@ describe("assistant-chat Frontend Action workspace boundary", () => {
       }]))
       .mockImplementationOnce(async (messages: RuntimeChatMessage[]) => {
         expect(toolObservation(messages, "read-diagnostic"))
-          .toContain("DIAGNOSTIC_VIRTUAL_SECRET")
-        return nativeResult("stop", "assistant read diagnostic")
+          .toContain("WORKSPACE_FILE_NOT_FOUND")
+        expect(toolObservation(messages, "read-diagnostic"))
+          .not.toContain("DIAGNOSTIC_VIRTUAL_SECRET")
+        return nativeResult("stop", "assistant diagnostic workspace blocked")
       })
 
     await expect(runAssistantChat({
       message: "Read the diagnostic request",
       sessionId: "diagnostics-session",
-    })).resolves.toMatchObject({ replyText: "assistant read diagnostic" })
+    })).resolves.toMatchObject({ replyText: "assistant diagnostic workspace blocked" })
   })
 
   it("drops diagnostics virtual reads for an ordinary runtime entry", async () => {
@@ -273,10 +275,11 @@ describe("assistant-chat Frontend Action workspace boundary", () => {
       turn: 0,
       workspaceFiles: cardFiles(4),
       workspaceTrustBoundary: "runtime-game-agent",
-    }, {
+    }, createGameRuntimeEnvironment({
+      model: {
       toolCallMode: "native",
-      callModel: vi.fn(),
-      callModelNative: vi.fn(async (messages) => {
+      callText: vi.fn(),
+      callNative: vi.fn(async (messages) => {
         calls.push(messages)
         if (calls.length === 1) {
           return nativeResult("tool_calls", "reading", [{
@@ -294,8 +297,16 @@ describe("assistant-chat Frontend Action workspace boundary", () => {
           .not.toContain("DIAGNOSTIC_VIRTUAL_SECRET")
         return nativeResult("stop", "runtime blocked")
       }),
-      virtualWorkspaceReads: mocks.createDiagnosticsWorkspaceAdapter(),
-    })
+      },
+      controlledTools: {},
+      workspace: { files: cardFiles(4) },
+      context: {
+        compressionMode: "task",
+        contextCapacityTokens: 256_000,
+        requestInputBudgetTokens: 100_000,
+        observationCharBudget: 32 * 1024,
+      },
+    }))
 
     expect(result.replyText).toBe("runtime blocked")
   })
@@ -376,10 +387,11 @@ describe("assistant-chat Frontend Action workspace boundary", () => {
       turn: 0,
       workspaceFiles: cardFiles(),
       workspaceTrustBoundary: "runtime-game-agent",
-    }, {
+    }, createGameRuntimeEnvironment({
+      model: {
       toolCallMode: "native",
-      callModel: vi.fn(),
-      callModelNative: vi.fn(async (messages, _options, _tools: ToolSchema[]) => {
+      callText: vi.fn(),
+      callNative: vi.fn(async (messages, _options, _tools: ToolSchema[]) => {
         calls.push(messages)
         if (calls.length === 1) {
           expect(modelMessagesContain(messages, "HIDDEN_CONTEXT_SECRET")).toBe(false)
@@ -396,7 +408,16 @@ describe("assistant-chat Frontend Action workspace boundary", () => {
         expect(toolObservation(messages, "runtime-read")).not.toContain("FRONTEND_ACTION_SECRET")
         return nativeResult("stop", "runtime blocked")
       }),
-    })
+      },
+      controlledTools: {},
+      workspace: { files: cardFiles() },
+      context: {
+        compressionMode: "task",
+        contextCapacityTokens: 256_000,
+        requestInputBudgetTokens: 100_000,
+        observationCharBudget: 32 * 1024,
+      },
+    }))
 
     expect(result.replyText).toBe("runtime blocked")
   })

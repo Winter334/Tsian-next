@@ -7,6 +7,15 @@ import {
   type RuntimeWorkspaceToolObservation,
 } from "../workspace-tools-types"
 import { isRecord, traceBase } from "./shared"
+import { buildToolPresentation } from "./observations"
+
+function serializedLength(value: unknown): number {
+  try {
+    return JSON.stringify(value)?.length ?? String(value).length
+  } catch {
+    return String(value).length
+  }
+}
 
 function countResultItems(result: unknown): number | undefined {
   if (Array.isArray(result)) return result.length
@@ -200,10 +209,36 @@ function emitAgentCallTrace(
 export function emitToolObservationTrace(
   context: RuntimeWorkspaceToolExecutionContext,
   call: RuntimeWorkspaceToolCall,
-  observation: RuntimeWorkspaceToolObservation,
+  rawObservation: RuntimeWorkspaceToolObservation,
+  agentObservation: RuntimeWorkspaceToolObservation,
   durationMs?: number,
 ): void {
-  emitAgentCallTrace(context, call, observation, durationMs)
-  emitWorkspaceToolTrace(context, call, observation, durationMs)
-  emitActionCallTrace(context, call, observation, durationMs)
+  emitAgentCallTrace(context, call, rawObservation, durationMs)
+  emitWorkspaceToolTrace(context, call, rawObservation, durationMs)
+  emitActionCallTrace(context, call, rawObservation, durationMs)
+  const presentation = buildToolPresentation(call, rawObservation)
+  const agentText = (() => {
+    try {
+      return JSON.stringify({ ...agentObservation, imageParts: undefined })
+    } catch {
+      return ""
+    }
+  })()
+  const result = isRecord(agentObservation.result) ? agentObservation.result : {}
+  context.emitTrace?.({
+    type: "tool_projected",
+    ...traceBase(context),
+    ok: rawObservation.ok,
+    data: {
+      tool: call.name,
+      toolCallId: call.id,
+      rawChars: serializedLength(rawObservation),
+      agentChars: agentText.length,
+      uiChars: serializedLength(presentation),
+      truncated: agentText.includes('"truncatedForModel":true')
+        || result.truncated === true,
+      anchors: Array.isArray(result.anchors) ? result.anchors : undefined,
+      ...(durationMs !== undefined ? { durationMs } : {}),
+    },
+  })
 }

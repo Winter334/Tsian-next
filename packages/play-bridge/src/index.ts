@@ -35,7 +35,7 @@ export type {
   AgentInvocationEvent,
   InvokeAgentResult,
   TurnStats,
-  TurnToolOutput,
+  UiToolPresentation,
   SessionHistoryEntry,
   CheckpointSummary,
   CheckpointRetention,

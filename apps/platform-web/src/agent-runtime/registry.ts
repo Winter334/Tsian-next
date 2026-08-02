@@ -68,6 +68,7 @@ const AGENT_PLATFORM_TOOL_NAMES = new Set<AgentPlatformToolName>([
   "workspace_semantic_search",
   "ask_user",
   "test_skill_script",
+  "query_diagnostics",
 ])
 
 /** 合法的 contextPath position 值集。解析/校验时用于过滤非法值，缺失或非法值

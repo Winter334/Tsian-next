@@ -1,5 +1,11 @@
 import type { RuntimeChatMessage } from "../../runtime-host/ai"
 
+function carriesToolProtocol(message: RuntimeChatMessage): boolean {
+  return message.role === "tool"
+    || ("toolCallId" in message && message.toolCallId !== undefined)
+    || ("toolCalls" in message && message.toolCalls !== undefined && message.toolCalls.length > 0)
+}
+
 /**
  * 消息序列整合器：合并连续相同 role 的消息，纯换行拼接内容，不加自动 XML 标签。
  *
@@ -26,7 +32,12 @@ export function mergeConsecutiveRoleMessages(
   const result: RuntimeChatMessage[] = []
   for (const msg of messages) {
     const last = result[result.length - 1]
-    if (last && last.role === msg.role) {
+    if (
+      last
+      && last.role === msg.role
+      && !carriesToolProtocol(last)
+      && !carriesToolProtocol(msg)
+    ) {
       // 合并：纯换行拼接，不加自动标签（标签由作者在内容里显式写）。
       // content 可能是 string 或 ContentPart[]；合并只处理 string content
       // （连续同 role 的注入消息都是 string；多模态 ContentPart[] 只出现在

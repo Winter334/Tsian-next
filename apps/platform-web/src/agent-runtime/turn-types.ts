@@ -1,7 +1,7 @@
 import type {
   AgentContextSnapshot,
-  AgentContextToolCall,
   AgentContextToolMemory,
+  AgentPlatformToolName,
   AiChatMessage,
   AskUserRequest,
   AskUserResult,
@@ -12,19 +12,18 @@ import type {
   PlatformActionResult,
   ToolRegistryEntry,
   TurnTimelineItem,
-  TurnToolOutput,
+  UiToolPresentation,
   WorkspaceFile,
   WorkspaceOperationName,
 } from "@tsian/contracts"
 import type { CompressCallModel, TaskCompressionResult } from "./context-lifecycle"
 import type { RuntimeTraceDebugLabel, RuntimeTraceEmitter } from "./trace"
 import type { ToolSchema } from "./tool-schemas"
-import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, RuntimeTestSkillScriptInput, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
+import type { RuntimeActionExecutorPolicy, RuntimeAgentCallHistoryMode, RuntimeControlledExecutorContext, RuntimeBrowserScriptExecutorRequest, RuntimeTestSkillScriptInput, RuntimeDiagnosticsQueryRunner, InspectFrontendInput, InspectFrontendResult } from "./workspace-tools"
 import type { AiTraceOperationContext, ModelCallResult, NativeToolCall, RuntimeChatMessage } from "../runtime-host/ai"
 import type { BrowserAiToolCallMode } from "../config/ai"
 import type {
   WorkspaceOperationMutationAdapter,
-  WorkspaceOperationVirtualReadAdapter,
 } from "./workspace-operations"
 import type { AgentWorkspaceTrustBoundary } from "./frontend-action-isolation"
 
@@ -73,7 +72,7 @@ export interface AgentRuntimeTurnInput {
    */
   onRoundEnd?: (agentId: string, round: number, finishReason: "stop" | "tool_calls") => void
   /**
-   * Tool-call status/output notification (子2b R2). Invoked before/after each
+   * Tool-call status/presentation notification. Invoked before/after each
    * workspace tool executes, with the round index and tool identity so the
    * caller can render the tool process. `agentId` identifies which agent's tool
    * loop the call belongs to (distinguishes parallel delegated agents).
@@ -85,7 +84,7 @@ export interface AgentRuntimeTurnInput {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: TurnToolOutput,
+    presentation?: UiToolPresentation,
     displayName?: string,
   ) => void
   /**
@@ -106,6 +105,12 @@ export interface AgentRuntimeTurnInput {
    * 用于 R3 压缩阈值(85% budget).未提供 → runtime 用 256k 默认.
    */
   contextTokenBudget?: number
+  /** Product consumption ceiling checked against the final provider request. */
+  requestInputBudgetTokens?: number
+  /** Final serialized Agent observation ceiling. */
+  observationCharBudget?: number
+  /** Controlled platform tools physically supplied by the current Environment. */
+  controlledToolAvailability?: AgentPlatformToolName[]
   /**
    * 压缩模式(design 06-20-agent-task-compression):narrative=master 剧情压缩(默认);
    * task=子代理/助手任务压缩(多次+时长兜底+早退).未提供 → narrative.
@@ -128,10 +133,6 @@ export interface AgentRuntimeTurnContextUpdate {
   assistant: string
   /** 本轮开头压缩后的快照(若触发了压缩).无压缩则 undefined. */
   compressedContext?: AgentContextSnapshot
-  /** 本轮原始工具调用记录(仅助手有,master 无).供 host 写入
-   *  UI 会话消息存储(ConversationMessageRecord.toolCalls),完整保留用于回溯/debug;
-   *  不再写入 AgentContextSnapshot.recentTurns. */
-  toolCalls?: AgentContextToolCall[]
   /** 本轮 task-mode model-facing 工具记忆投影.供 host 合并到
    *  AgentContextSnapshot.toolMemories,有独立预算/placeholder 策略. */
   toolMemories?: AgentContextToolMemory[]
@@ -171,14 +172,14 @@ export interface AgentRuntimeModelCallOptions {
   round?: number
   /** Per-round end notification (子2b R1); threaded from `AgentRuntimeTurnInput.onRoundEnd`. */
   onRoundEnd?: (agentId: string, round: number, finishReason: "stop" | "tool_calls") => void
-  /** Tool-call status/output notification (子2b R2); threaded from `AgentRuntimeTurnInput.onTool`. */
+  /** Tool-call status/presentation notification. */
   onTool?: (
     agentId: string,
     round: number,
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: TurnToolOutput,
+    presentation?: UiToolPresentation,
     displayName?: string,
   ) => void
   /** ask_user 工具回调；threaded from `AgentRuntimeTurnInput.onAskUser`. */
@@ -216,6 +217,7 @@ export interface AgentRuntimeCapabilities {
   runInspectFrontend?(
     input: InspectFrontendInput,
   ): Promise<InspectFrontendResult>
+  runQueryDiagnostics?: RuntimeDiagnosticsQueryRunner
   runBrowserScript?(
     request: RuntimeBrowserScriptExecutorRequest,
     context?: RuntimeControlledExecutorContext,
@@ -231,7 +233,6 @@ export interface AgentRuntimeCapabilities {
   ): Promise<PlatformActionResult>
   actionExecutorPolicy?: RuntimeActionExecutorPolicy
   workspaceMutations?: WorkspaceOperationMutationAdapter
-  virtualWorkspaceReads?: WorkspaceOperationVirtualReadAdapter
   exposedWorkspaceOperations?: Iterable<WorkspaceOperationName>
   collaborationPolicy?: AgentRuntimeCollaborationPolicyInput
   emitTrace?: RuntimeTraceEmitter
@@ -239,6 +240,51 @@ export interface AgentRuntimeCapabilities {
    *  runtime 层不持有真实 saveId(见 createInitialAgentContext 注释),通过此
    *  capability 把 owner 上下文传给 workspace 工具执行. 其它 op 不用. */
   semanticSearchOwnerId?: string
+}
+
+export interface AgentRuntimeEventSink {
+  onDelta?: AgentRuntimeTurnInput["onDelta"]
+  onRoundEnd?: AgentRuntimeTurnInput["onRoundEnd"]
+  onTool?: AgentRuntimeTurnInput["onTool"]
+  onAskUser?: AgentRuntimeTurnInput["onAskUser"]
+}
+
+/** Host-composed boundary for one runtime environment. Environment identity is
+ * descriptive only; authorization follows the supplied ports and workspace
+ * view, never a mode branch inside the model/tool loop. */
+export interface AgentRuntimeEnvironment {
+  workspace: {
+    files: WorkspaceFile[]
+    trustBoundary: AgentWorkspaceTrustBoundary
+    mutations?: WorkspaceOperationMutationAdapter
+    exposedOperations?: Iterable<WorkspaceOperationName>
+    fileFilter?: (file: WorkspaceFile) => boolean
+    semanticSearchOwnerId?: string
+    toolFilter?: (tool: ToolRegistryEntry) => boolean
+  }
+  context: {
+    snapshot?: AgentContextSnapshot
+    compressionMode: RuntimeCompressionMode
+    contextCapacityTokens: number
+    requestInputBudgetTokens: number
+    observationCharBudget: number
+    inactivityTimeoutMs?: number
+  }
+  model: {
+    callText: AgentRuntimeCapabilities["callModel"]
+    callNative?: AgentRuntimeCapabilities["callModelNative"]
+    toolCallMode: BrowserAiToolCallMode
+  }
+  controlledTools: {
+    inspectFrontend?: AgentRuntimeCapabilities["runInspectFrontend"]
+    queryDiagnostics?: RuntimeDiagnosticsQueryRunner
+    browserScript?: AgentRuntimeCapabilities["runBrowserScript"]
+    testSkillScript?: AgentRuntimeCapabilities["runTestSkillScript"]
+    actionExecutorPolicy?: RuntimeActionExecutorPolicy
+  }
+  events?: AgentRuntimeEventSink
+  audit?: RuntimeTraceEmitter
+  collaborationPolicy?: AgentRuntimeCollaborationPolicyInput
 }
 
 export interface AgentRuntimeCollaborationPolicy {

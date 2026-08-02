@@ -52,6 +52,8 @@ const MAX_SEARCH_LIMIT = 200
  *  `offset` is supplied. Matches common agent read tools and keeps a single
  *  read under roughly 20–50k tokens. */
 const DEFAULT_READ_LIMIT = 2000
+const DEFAULT_CHAR_READ_LIMIT = 24 * 1024
+const MAX_CHAR_READ_LIMIT = 24 * 1024
 
 /** Blob → base64 字符串(不带 data URL prefix). 用于 workspace_read 图片
  *  返回 imageBase64 字段,供 agent runtime 构造 image ContentPart. */
@@ -668,7 +670,7 @@ function readWorkspaceFile(
   scope: WorkspaceScope,
   pathInput: unknown,
   actorLevel: number,
-  options: { offset?: number; limit?: number } = {},
+  options: { offset?: number; limit?: number; charOffset?: number; charLimit?: number } = {},
 ): WorkspaceReadResult {
   const path = normalizeWorkspaceOperationFilePath(pathInput)
   assertReadAccess(path, actorLevel)
@@ -699,6 +701,31 @@ function readWorkspaceFile(
     }
   }
 
+  const usesLineRange = options.offset !== undefined || options.limit !== undefined
+  const usesCharRange = options.charOffset !== undefined || options.charLimit !== undefined
+  if (usesLineRange && usesCharRange) {
+    throw workspaceOperationError(
+      "WORKSPACE_READ_RANGE_MUTEX",
+      "workspace.read line offset/limit and charOffset/charLimit are mutually exclusive.",
+    )
+  }
+  if (usesCharRange) {
+    const charOffset = normalizeCharOffset(options.charOffset)
+    const charLimit = normalizeCharLimit(options.charLimit)
+    const totalChars = file.content.length
+    const content = file.content.slice(charOffset, charOffset + charLimit)
+    const nextCharOffset = charOffset + content.length
+    return {
+      ...cloned,
+      content,
+      totalChars,
+      returnedChars: content.length,
+      charOffset,
+      truncated: nextCharOffset < totalChars,
+      ...(nextCharOffset < totalChars ? { nextCharOffset } : {}),
+    }
+  }
+
   const lines = file.content.split("\n")
   const totalLines = lines.length
 
@@ -712,6 +739,9 @@ function readWorkspaceFile(
       totalLines,
       returnedLines: totalLines,
       offset: 1,
+      totalChars: file.content.length,
+      returnedChars: file.content.length,
+      charOffset: 0,
       truncated: false,
     }
   }
@@ -728,17 +758,27 @@ function readWorkspaceFile(
       totalLines,
       returnedLines: 0,
       offset,
+      totalChars: file.content.length,
+      returnedChars: 0,
+      charOffset: file.content.length,
       truncated: false,
     }
   }
 
   const slice = lines.slice(offset - 1, offset - 1 + limit)
+  const content = slice.join("\n")
+  const charOffset = lines
+    .slice(0, offset - 1)
+    .reduce((total, line) => total + line.length + 1, 0)
   return {
     ...cloned,
-    content: slice.join("\n"),
+    content,
     totalLines,
     returnedLines: slice.length,
     offset,
+    totalChars: file.content.length,
+    returnedChars: content.length,
+    charOffset,
     truncated: offset + limit - 1 < totalLines,
   }
 }
@@ -790,6 +830,7 @@ function searchWorkspaceFiles(
   const queryLower = mode === "query" ? queryRaw.toLowerCase() : ""
   const contextLines = normalizeContextLines(input.contextLines)
   const limit = normalizeSearchLimit(input.limit)
+  const searchRoot = normalizeWorkspaceOperationDirectoryPath(input.path)
 
   // Per-line matcher shared by both modes via buildSearchMatches.
   const matchLine = (line: string): string | null => {
@@ -814,6 +855,7 @@ function searchWorkspaceFiles(
   }
 
   return scopedReadableFiles(files, scope, actorLevel)
+    .filter((file) => !searchRoot || pathMatchesPrefix(file.path, searchRoot))
     .flatMap((file): WorkspaceSearchResult[] => {
       const lowerPath = file.path.toLowerCase()
       const matchesPath = pathMatches(lowerPath, file.path)
@@ -1303,6 +1345,18 @@ async function moveWorkspacePath(
     toPath,
     movedPaths,
   }
+}
+
+function normalizeCharOffset(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0
+  return Math.floor(value)
+}
+
+function normalizeCharLimit(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
+    return DEFAULT_CHAR_READ_LIMIT
+  }
+  return Math.min(Math.floor(value), MAX_CHAR_READ_LIMIT)
 }
 
 function workspaceParentPath(path: string): string {
@@ -1856,10 +1910,14 @@ export async function executeWorkspaceOperation(
       actorLevel,
       offset: requestInput.offset,
       limit: requestInput.limit,
+      charOffset: requestInput.charOffset,
+      charLimit: requestInput.charLimit,
     })
     const result = virtual ?? readWorkspaceFile(context.workspaceFiles, scope, path, actorLevel, {
       offset: requestInput.offset,
       limit: requestInput.limit,
+      charOffset: requestInput.charOffset,
+      charLimit: requestInput.charLimit,
     })
     // 图片 binary 文件:async base64 编码,设置 imageBase64 + imageMimeType,
     // 清除 isBinaryPlaceholder(不再是不可读的 binary,而是可发 LLM 的 image block).

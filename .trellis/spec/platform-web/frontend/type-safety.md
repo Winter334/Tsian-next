@@ -453,7 +453,7 @@ await reloadAuthoritativeState()
 - The Agent Runtime supports two peer tool-call modes, selected per model via `toolCallMode`:
   - `text`: Text Tool Protocol v2. `callModel` returns ordinary chat text; the text loop parses exactly one executable `<tsian-tool-calls>` JSON-array block per tool-call round, assigns stable text call ids (`text-r<round>-c<index>`), executes through the shared tool executor, and threads non-executable `<tsian-tool-call-records>` plus `<tsian-tool-observations>` back as model context. Legacy `<tsian-tool-call>` is not an executable format. If a model echoes any non-executable runtime-history tag (`<tsian-tool-call-records>`, `<tsian-tool-observations>`, or `<tsian-tool-protocol-error>`) in a fresh response, the parser must return a protocol error and retry through the bounded protocol-error path; it must not treat the response as a normal `stop` whose stripped final text is empty.
   - `native`: API-native function calling. The runtime sends the provider's native `tools` field and structured messages (assistant `toolCalls` + tool observation role with `toolCallId`), and returns a structured result. Tool execution logic is shared with the text path.
-- Enabled tool schemas are built from the same `ToolSchema[]` source for both modes. Native mode sends them to the provider; text mode renders them into the Text Tool Protocol manifest. This keeps platform tools, `ask_user`, `agent_call`, workspace tools, inspect/test tools, and filtered user Tools consistent across modes.
+- Enabled tool schemas are built from the same `ToolSchema[]` source for both modes. Native mode sends them to the provider; text mode renders them into the Text Tool Protocol manifest. Controlled tools such as `inspect_frontend`, `test_skill_script`, and `query_diagnostics` require both Agent config enablement and a physically supplied Environment port.
 - The `toolCallMode` capability is resolved once per turn from the entry/local-assistant agent's model config and drives the whole turn's dispatch, including delegated `agent_call` loops. Host model-call closures may still resolve provider/model parameters by `options.agentId`, but the protocol mode is not automatically switched. If `native` is selected and no native caller is available, fail loudly.
 - Streaming (SSE) is supported in both modes when the selected model config enables it. Native streaming extracts provider text/reasoning/tool-call fields; Text Tool Protocol streaming sends raw content deltas and parses `<tsian-tool-calls>` only after the response round completes. Both modes emit `onRoundEnd` and `onTool` events from entry and delegated tool loops.
 - Effective runtime permissions are derived from the current Agent's `agent.json` (`platformTools` and `workspaceAccess`).
@@ -466,10 +466,11 @@ await reloadAuthoritativeState()
 - `run_script` requires that the named Skill has already been activated via `use_skill` by the same Agent during the same tool loop; otherwise `SKILL_NOT_ACTIVATED`. It validates action availability, executor type (`browser_script` only), and input before invoking the executor. It checks the lightweight executor-class policy before running (default allows `browser_script`; injected policy may deny it — no Settings UI/localStorage/trust state for this slice). It may validate successful executor output when the action declares optional `outputSchema`. It is kept serial (not parallel) because `browser_script` has side effects and a bounded timeout.
 - `agent_call` is exposed only when the current Agent has visible contacts, the tool loop allows Agent calls, and the Agent's platform tool config enables `agent_call`. It validates the target against the caller's `contacts` (a runtime stability boundary, not a full security model). It builds the target Agent's own context (`AGENT.md`, optional `SOUL.md`, notes/session, declared context files, filtered lightweight Skill Index) and returns a structured observation; the target response does not directly become player-visible history. `historyMode` defaults to `recent`.
 - Agent Runtime collaboration policy is code-level/default-only: defaults are `maxDepth=2`, `historyWindows={ minimal: 0, recent: 6, scene: 12 }`; runtime capabilities may inject policy overrides, but there is no Settings UI/localStorage/trust state. The tool loop has **no per-Agent round limit** and `agent_call` has **no per-turn call-count limit** — termination relies on `finishReason: stop`, abort, and the mode-specific budget fallback. `maxDepth=2` remains as the recursion safety net. The root turn shares one `agent_call` budget across the entry agent and nested delegated steps.
-- Delegated Agents derive their own runtime permissions from the target Agent's `agent.json`; the caller Agent's permissions must not leak into the target Agent step. They may use their own workspace operations, `use_skill`/`run_script`, and limited nested `agent_call` (contacts-gated at every hop, depth-limited). There is no per-turn call-count budget; frequency is bounded by the turn token budget, not a count cap.
+- Delegated Agents re-derive registry, Tool/Skill view, permissions, and runtime-game WorkspaceView from the target Agent. Desktop tool filters, diagnostics/inspect/test ports, local files, and trusted authoring mutations must not be inherited. Delegated mutation adapters allow only the game-runtime save/platform envelope. They may use their own workspace operations, `use_skill`/`run_script`, and limited nested `agent_call` (contacts-gated at every hop, depth-limited).
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`. Each action specifies `{ name, description, inputSchema, outputSchema?, executor: { type: "browser_script", path, timeoutMs? } }`. `browser_script` is the only supported executor type; `builtin`/`platform_action`/`workspace_operation` are rejected at parse time and reported in `actionDeclarationErrors`. `path` resolves relative to the declaring Skill directory and must stay under that directory.
 - The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/glob/diff/patch/write/copy/move/delete/validate, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output. SDK `tsian.workspace` methods mirror the top-level workspace tools and must pass the same Agent `workspace_read`/`workspace_write` exposure gates — they must not bypass the operation allow-list or actor-level checks. The first slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs.
 - Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing/invalid `workspaceAccess.level` defaults to `1`. **Exception — desktop assistant**: its actor level is resolved live from `.tsian/local/assistant/agent.json` (default `4`), not from the runtime agent context. The `executePlatformAction` path must never hardcode `actorLevel`.
+- Every raw execution result is projected before it enters a model message: read/search/diagnostics preserve bounded evidence and continuation anchors, and a final valid-JSON cap applies after tool-specific projection. Native parallel calls remain one assistant tool-calls message followed by one independent `role:"tool"` message per provider `toolCallId`; role merging must never combine those messages.
 - Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds. Successful turns commit the staged state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
 - Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets — that is platform-owned metadata space.
 - Frontend bridge `platform.runAction` workspace actions remain immediate platform actions, not part of the Agent Runtime turn transaction.
@@ -559,7 +560,7 @@ await reloadAuthoritativeState()
 
 - Provider calls and unhandled frontend errors write the global `diagnosticRecords` IndexedDB table. Runtime Trace JSONL, AI Debug, and `runtime-diagnostics` are retired and must not be restored as writers, parsers, query resources, bridge methods, or UI inputs.
 - The monitor reads paged summaries and fetches full bodies only by ID. Overview and filter facets derive from the same unified summary projection.
-- Only trusted owner-facing hosts receive the on-demand `.tsian/local/diagnostics/**` virtual read adapter: the desktop assistant and the platform-owner resource manager. Runtime and delegated Agents receive no adapter, and the reserved prefix remains hidden/read-only even if an eager snapshot contains a colliding path.
+- Only platform-owner resource-management paths receive the on-demand `.tsian/local/diagnostics/**` virtual read adapter. The desktop assistant Agent uses the bounded `query_diagnostics` controlled port instead of ordinary workspace list/read/search. Runtime and delegated Agents receive neither the adapter nor that port, and the reserved prefix remains hidden/read-only even if an eager snapshot contains a colliding path.
 - Diagnostics list/read/search results carry generic `readOnly` view metadata. Copying a diagnostic file or directory to an ordinary writable path materializes a complete editable snapshot; copy-in and source-mutating operations remain forbidden.
 - Legacy trace paths may remain recognized only by save/checkpoint lifecycle cleanup. They are not active diagnostic data sources.
 
@@ -567,7 +568,7 @@ await reloadAuthoritativeState()
 
 - Provider request succeeds/fails/retries -> one unified AI request record contains the complete lifecycle and attempts.
 - Monitor list -> summary page only; selected detail -> one ID-scoped full read.
-- Trusted desktop assistant or platform-owner resource manager reads diagnostics -> virtual list/read/search resolves on demand.
+- Desktop assistant queries diagnostics -> bounded `query_diagnostics` list/search/read resolves on demand; platform-owner resource manager browsing/copy uses the virtual adapter.
 - Runtime/delegated Agent or snapshot collision -> diagnostics path is not visible.
 - Copy diagnostics source to an ordinary writable path -> complete snapshot is written after collision preflight.
 - Write/edit/delete/move or copy into the reserved diagnostics prefix -> `WORKSPACE_VIRTUAL_READ_ONLY`.
@@ -581,7 +582,9 @@ await reloadAuthoritativeState()
 ### Contracts
 
 - The tool loop has **no per-Agent round limit**. Termination conditions are: `finishReason === "stop"` / no tool calls; abort; and the mode-specific budget fallback.
-- Before every model call, the loop estimates runtime-message tokens. When tokens exceed the budget trigger threshold (85%), the loop branches on `compressionMode`:
+- Model context capacity and the product request-input consumption ceiling are separate Environment values. Before every model call, the loop estimates the merged, marker-stripped provider input; native estimates include tool schemas and tool-call arguments. The effective compression trigger is the lower applicable threshold.
+- After compression/merge/schema assembly, final preflight runs again before the provider callback (and therefore before provider diagnostics/fetch). An over-budget request returns the existing soft `ContextBudgetExhaustedError`; it must never create or send an oversized provider request.
+- When runtime messages exceed the effective trigger, the loop branches on `compressionMode`:
 
   **Narrative mode (formal player-turn entry Agent):**
   - First crossing: compress the narrative span (compress only the narrative summary + recent turns, preserve all tool interactions), update the agent-context snapshot in place, splice-replace the narrative span in the runtime messages, mark `compressedThisTurn = true`, continue the loop.
@@ -661,11 +664,11 @@ await reloadAuthoritativeState()
 - Cross-load recovery: the Dexie map (including `sessions/<id>/context.json`) restores on browser refresh/reopen; the next turn recovers the snapshot — the assistant does not lose context across loads.
 - Formal player-turn snapshots are now keyed by the card-configured entry Agent id. Older notes that name `master` refer only to historical default-template content, not a platform fallback.
 - AI-facing instructions should distinguish platform tool exposure gates from runtime callable tool names: `workspace_read`/`workspace_write`/`workspace_semantic_search` are `agent.json.platformTools` enablement keys, while models call short tools such as `read`, `list`, `search`, `semantic_search`, `write`, and `edit`.
-- **Tool-call + process-node cross-turn persistence (dual-layer, mirroring the model where UI render context ≠ agent context):**
-  - **Agent layer** (snapshot `recentTurns` → `context.json`): tool calls live with the prose, same compression lifespan (recent K rounds raw, earlier compressed into summary). Reconstruction is mode-split: native → structured messages (assistant.toolCalls + tool result role); text → Text Tool Protocol v2 non-executable call records (`<tsian-tool-call-records>`) + observations (`<tsian-tool-observations>`). Compression presents tool calls to the model (not "discard tool details"). Formal player-turn Agents do not fill tool calls.
-  - **UI layer** (session messages store): tool calls (agent-layer fallback) + process nodes (UI display: thought/tool/interim in occurrence order). Both not compressed, retained up to the message cap. The view reconstructs process nodes 1:1 into the timeline (preserves interleaved order, no type-grouping).
+- **Tool-call + process-node cross-turn persistence (separate consumers):**
+  - **Agent layer**: `AgentContextSnapshot.toolMemories` stores only bounded semantic tool-memory projections and anchors. Raw observations and UI presentations are not model-history sources.
+  - **UI layer**: session messages store thought/interim nodes and tool identity/name/status plus optional closed `UiToolPresentation` (currently `agent_call`). Ordinary arguments/results are not persisted, and readers ignore old extra fields without a migration pass.
   - **Process-node collection (eliminates double-write)**: both native + text loops accumulate process nodes (thought from delta accumulation, interim from tool_calls round content, tool from the tool callback). The host writes everything on the success path; the UI success path no longer calls `persistCurrentSession` (eliminates the host-write + UI-rewrite double-IO race). Catch paths (abort/error) still use `persistCurrentSession` as fallback.
-  - **Observation volume**: the persistence layer does not truncate — stores the tool-return-layer result as-is. `workspace_read` already truncates at the return layer (line limit + offset paging); the agent pages via `offset`. `agent_call`/`inspect_frontend` etc. have no paging yet (tool deficiency, to be patched later).
+  - **Observation volume**: model observations have a platform hard cap after tool-specific projection; read supports line or exact character paging, search/diagnostics return bounded snippets and anchors, and UI persistence is unaffected by observation size.
 
 ### Validation & Error Matrix
 
@@ -825,29 +828,92 @@ verifyEditableText(input, expected, "fill")
 - Malformed raw turn JSON -> chunker skips that file (no index crash).
 - `typeFilter` narrows corpus; omit to search all kinds.
 
-## Scenario: Turn-Tool Event Output And Tool Process Display
+## Scenario: Turn-Tool Presentation And Tool Process Display
 
-### Scope / Trigger
+### 1. Scope / Trigger
 
-- When platform-web changes the `turn-tool` event payload, tool output building, tool-card rendering, or how tool-call process data flows from runtime to UI.
+- When platform-web changes the `turn-tool` event payload, Agent/UI/audit projection, tool-card rendering, or tool-process persistence.
 
-### Contracts
+### 2. Signatures
 
-- **Two independent paths from the same observation**: (1) model path via the observation formatter — full `JSON.stringify(observations)`, fed back to the model, **never truncated, never touched by UI display changes**; (2) UI path via the tool-output builder → `onTool` → `turn-tool` event — for display only, does not enter model context.
-- **Truncation lives in UI, not runtime.** The tool-output builder returns complete output. The default game frontend and desktop assistant decide whether to display, fold, or length-limit. The old fixed-length truncation constant and summarizer are removed.
-- **agent_call structured output**: the builder detects `agent_call` and extracts `{type:"agent_call", targetAgent, response, status}` instead of `JSON.stringify`-ing the whole result. `response` is the delegated agent's final natural-language reply (player-readable), passed complete. Failure -> `{type:"agent_call", status:"failed", error}`.
-- **Ordinary tools**: the builder returns `JSON.stringify(result)` complete, no truncation. The default game frontend and desktop assistant **do not render ordinary tool output** — only tool name + success/failed status icon. This is a product decision (structured output is not player-readable), not a technical limitation.
-- **Process zone cross-turn retention (default game frontend only)**: an in-memory array accumulates completed turns' process nodes (`thought`/`tool`/`interim`), rendered in a process-history-zone before snapshot messages. **Not persisted** — page reload / save reload clears it (only snapshot text remains). The desktop assistant already had this via its reactive timeline array.
+```ts
+interface AgentRuntimeEnvironment {
+  workspace: { files: WorkspaceFile[]; trustBoundary: AgentWorkspaceTrustBoundary; mutations?: WorkspaceOperationMutationAdapter }
+  context: { requestInputBudgetTokens: number; observationCharBudget: number; /* capacity/compression fields omitted */ }
+  controlledTools: { inspectFrontend?: RuntimeInspectFrontendRunner; queryDiagnostics?: RuntimeDiagnosticsQueryRunner; testSkillScript?: RuntimeTestSkillScriptRunner }
+  // model/events/audit ports omitted
+}
+
+type UiToolPresentation = {
+  type: "agent_call"
+  targetAgent: { id: string; title: string; summary?: string }
+  response: string
+  responseTruncated?: boolean
+  status: "completed" | "failed"
+  error?: { code: string; message: string }
+}
+
+projectToolObservationForAgent(
+  observation: RuntimeWorkspaceToolObservation,
+  call?: RuntimeWorkspaceToolCall,
+  requestedBudget?: number,
+): RuntimeWorkspaceToolObservation
+
+buildToolPresentation(
+  call: RuntimeWorkspaceToolCall | undefined,
+  observation: RuntimeWorkspaceToolObservation,
+): UiToolPresentation | undefined
+```
+
+### 3. Contracts
+
+- **Three independent projections from one execution-local raw result**: bounded Agent observation for model messages/tool memory; optional `UiToolPresentation` for events/timeline; audit summary with call id, sizes, truncation and authoritative anchors. Raw output is released after projection and is not persisted generically.
+- **Agent observation cap lives in runtime.** Tool-specific read/search/diagnostics/agent-call/script projectors preserve useful evidence and continuation, then a final valid-JSON character cap applies. Circular/exceptional values normalize safely before serialization.
+- **agent_call presentation**: the UI projector extracts `{type:"agent_call", targetAgent, response, responseTruncated?, status, error?}`. Response is capped at the UI presentation limit; the bounded Agent observation remains a separate consumer.
+- **Ordinary tools**: no presentation payload. UI receives only call identity, name/displayName, status, round and agent id; arguments and results never enter bridge/timeline/session storage.
+- **Process retention**: formal turn history and assistant sessions persist presentation-only `thought`/`tool`/`interim` timeline nodes in occurrence order. Reload reconstructs the same display nodes without rebuilding model messages.
 - **ask_user rendering model (desktop assistant only)**: an active `ask_user` request does **not** render an interactive card in the timeline. Instead the view deforms the footer input area into a question surface (question + option buttons + optional custom input + cancel) — the normal textarea/send/stop are hidden, so only one input region exists at a time and the question stays pinned at the focus position regardless of scroll. The thinking bubble is gated off while ask is active. A read-only `ask` node is written into the timeline only *after* the player answers or cancels — preserving the Q&A as scrollable history. Re-introducing an interactive ask card in the timeline regresses the two-input-box / scrolling-question problem — don't.
-- **`TurnToolOutput` is a discriminated union**: frontends branch on `typeof output === "string"` (ordinary) vs object with `type === "agent_call"`. Old remote frontends receiving an object output worst-case skip rendering it — does not break RPC responses. Contract version stays tolerant (superset extension).
-- Runtime validation of `turn-tool` output belongs in platform-web, not in shared contracts (contracts only defines the type).
+- **`UiToolPresentation` is a closed discriminated union** shared through contracts/play-bridge. Add a variant only after a real UI consumer exists; do not add generic `resultRef` or raw-output fallback.
+- Storage readers normalize known timeline fields and ignore legacy extras. New writers never emit `toolCalls` or `output`; no migration scan/backfill is required.
 
-### Validation & Error Matrix
+### 4. Validation & Error Matrix
 
-- Builder with `call === undefined` (parse error) -> ordinary branch -> `result === undefined` -> returns `undefined` (failed tool card shows status only).
-- agent_call success with missing `targetAgent`/`response` -> degrades to empty strings (never throws).
-- agent_call failure (`ok === false`) -> structured `{type:"agent_call", status:"failed", error}`.
-- `JSON.stringify(result)` throws (cyclic) -> ordinary branch catch -> returns `undefined`.
+- Ordinary or parse-error tool -> `presentation === undefined`; failed card still shows status.
+- agent_call success/failure -> bounded structured presentation with stable target identity/error.
+- Oversized/circular result -> bounded valid Agent observation; no raw value reaches UI persistence.
+
+### 5. Good / Base / Bad Cases
+
+- Good: a 50-file search is reduced to bounded snippets plus path/count continuation, while the timeline persists only tool identity and terminal status.
+- Good: `agent_call` produces separate bounded Agent observation and 8-KiB UI presentation projections; neither becomes a generic raw-result copy.
+- Base: an old session contains `toolCalls` or timeline `output`; the reader ignores those extra fields and retains validated presentation nodes without migration/backfill.
+- Bad: pass `JSON.stringify(rawResult)` to both the model and UI, reconstruct native tool messages from UI history, or expose a controlled tool because its config flag is enabled when the Environment port is absent.
+
+### 6. Tests Required
+
+- Projector unit tests assert 50x50 aggregate results, huge single-line reads, circular/exceptional values, valid JSON, the 32-KiB final observation cap, the 24-KiB read cap, and exact continuation anchors.
+- Environment/schema tests assert desktop/game/delegated WorkspaceView, mutation, registry, and controlled-port isolation; absent ports must remove schemas and execution capability.
+- Timeline/storage tests assert ordinary tools have no presentation/raw output, bounded `agent_call` survives reload, and legacy `toolCalls`/`output` are not copied forward.
+- Native-provider tests assert one assistant tool-call message plus one independent tool result per `toolCallId`; Gemini `functionResponse.name` remains the originating function name.
+- Request-budget tests assert the final merged/marker-stripped request includes schemas and tool arguments and is rejected before provider tracing/fetch when over budget.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+timeline.push({ kind: "tool", output: JSON.stringify(rawResult) })
+messages.push({ role: "tool", content: JSON.stringify(rawResult) })
+```
+
+#### Correct
+
+```ts
+const agentObservation = projectToolObservationForAgent(observation, call, observationBudget)
+const presentation = buildToolPresentation(call, observation)
+emitTool({ callId, name, status, presentation })
+appendModelToolResult(call.id, formatNativeToolObservationContent(agentObservation))
+```
 
 ## Scenario: Registering A New Platform Agent Tool
 

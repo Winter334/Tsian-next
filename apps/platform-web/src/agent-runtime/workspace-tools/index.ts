@@ -7,6 +7,8 @@ export type {
   RuntimeActionExecutorReference,
   RuntimeAgentCallHistoryMode,
   RuntimeAgentCallArguments,
+  RuntimeDiagnosticsQueryInput,
+  RuntimeDiagnosticsQueryRunner,
   InspectDomActionType,
   InspectDomAction,
   InspectFrontendWaitMode,

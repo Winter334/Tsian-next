@@ -27,34 +27,27 @@ export interface ConversationMessageRecord {
   /** 附件元数据列表. 不持久化 Blob 本体(Blob 存 Dexie 表);
    *  这里只存引用路径,加载时按路径从附件表取回 Blob. */
   attachments?: AttachmentRef[]
-  /** assistant 消息的原始工具调用记录(仅助手填). UI/debug 层使用:
-   *  刷新/重进会话后可回看工具调用参数与 observation；不作为 agent
-   *  model context 的跨 turn 回放来源。模型可见的 task 工具历史使用
-   *  AgentContextSnapshot.toolMemories 的受预算投影。 */
-  toolCalls?: AgentContextToolCall[]
-  /** assistant 消息的过程节点 timeline(thought/tool/interim,按发生顺序). UI 层用:
-   *  刷新/重进会话后重建 timeline 历史节点(保留穿插顺序).与 toolCalls 分离——
-   *  toolCalls/timeline 服务 UI 与 debug 回溯,不压缩完整保留。 */
+  /** assistant 消息的过程节点 timeline(thought/tool/interim,按发生顺序).
+   *  只持久化 UI 渲染所需的调用身份、状态与声明过的 presentation。 */
   timeline?: TurnTimelineItem[]
 }
 
-/** 工具调用输出(喂 UI 渲染).string = 普通工具 observation;object = agent_call 结构化.
- *  定义在 runtime.ts(base 模块,无循环依赖),bridge.ts re-export 保持现有 import 路径. */
-export type TurnToolOutput =
-  | string
-  | {
-      type: "agent_call"
-      targetAgent: {
-        id: string
-        title: string
-        summary?: string
-      }
-      response: string
-      status: "completed" | "failed"
-      error?: {
-        code: string
-        message: string
-      }
+/** Closed UI-only presentation payload. Ordinary tools intentionally have no
+ * payload; their timeline node carries identity/name/status only. */
+export type UiToolPresentation = {
+  type: "agent_call"
+  targetAgent: {
+    id: string
+    title: string
+    summary?: string
+  }
+  response: string
+  responseTruncated?: boolean
+  status: "completed" | "failed"
+  error?: {
+    code: string
+    message: string
+  }
     }
 
 /** 单个 turn 的 token 消耗统计，供前端在正文末尾显示 meta 行。
@@ -94,7 +87,7 @@ export interface AssistantTurnTimelineItem {
  *  - user:      玩家输入正文.
  *  - assistant: AI 最终回复正文,带可选 stats(token 消耗).
  *  - thought:   tool_calls 轮的推理思维链,默认折叠.
- *  - tool:      工具调用节点,按 callId 去重,output 带 agent_call 结构化分支.
+ *  - tool:      工具调用节点,按 callId 去重,presentation 仅含声明过的 UI 展示负载.
  *  - interim:   tool_calls 轮模型在调用工具前输出的过渡文本(如"我先看一下…"),
  *               当正常可见回复处理,始终展开.
  *  - options:   legacy 剧情选项项。旧 turn 可包含 host 早期从 [[选项]] 块提取的选项；
@@ -120,32 +113,10 @@ export type TurnTimelineItem =
       /** Optional player-facing Tool title. Falls back to `name` when absent. */
       displayName?: string
       status: "loading" | "running" | "success" | "failed"
-      output?: TurnToolOutput
+      presentation?: UiToolPresentation
       collapsed: boolean
     }
   | { kind: "options"; items: string[] }
-
-/**
- * 单个工具调用记录(跨 turn/UI 保留的最小形态). observation 直接存工具返回层
- * 结果(持久化层不二次截断)——workspace_read 等有分页的工具返回层已截断
- * (DEFAULT_READ_LIMIT=2000 行)+ 带 truncated 元数据, agent 续读靠 offset;
- * agent_call/inspect_frontend 等无分页工具当前不截断(无分页是工具缺陷,后续补齐).
- * truncated 字段来自工具返回层(如 workspace_read),非持久化层造.
- */
-export interface AgentContextToolCall {
-  /** 工具调用 id(native: toolCallId; text: `tool-${index}`). UI 去重用. */
-  id: string
-  /** 工具名(workspace_read / agent_call / inspect_frontend …). */
-  name: string
-  /** 调用参数(JSON 序列化字符串). UI/debug 展示用. */
-  arguments: string
-  /** 工具返回 observation(文本化). 直接存工具返回层结果,持久化层不截断. */
-  observation: string
-  /** observation 是否被截断. 来自工具返回层(如 workspace_read 的 truncated). */
-  truncated?: boolean
-  /** 失败时填(observation 放 error.message). */
-  failed?: boolean
-}
 
 export type AgentContextToolMemoryVisibility = "summary" | "placeholder"
 export type AgentContextToolMemoryStatus = "success" | "failed"
@@ -218,7 +189,7 @@ export interface AgentContextSnapshot {
   summary: string | null
   /** 最近 K=5 轮正文(user+assistant 对,带 turn 索引,原文).按 turn 升序；不含工具原文. */
   recentTurns: AgentContextTurnEntry[]
-  /** task 模式 model-facing 工具记忆投影；raw/UI 工具记录仍在 ConversationMessageRecord.toolCalls. */
+  /** task 模式 model-facing 工具记忆投影；与 UI timeline 独立。 */
   toolMemories?: AgentContextToolMemory[]
   /** 上次压缩覆盖到第几轮(防重复压缩).null = 未压缩过. */
   lastCompressedTurn: number | null
@@ -283,6 +254,11 @@ export interface WorkspaceReadResult extends WorkspaceFile {
   offset?: number
   /** `true` when more lines remain beyond this slice. */
   truncated?: boolean
+  /** 0-based character range metadata when charOffset/charLimit mode is used. */
+  totalChars?: number
+  returnedChars?: number
+  charOffset?: number
+  nextCharOffset?: number
   /** `true` when `content` is a binary placeholder and `offset`/`limit`
    *  were not applied. Agents should not try to re-slice binary
    *  placeholders. */
@@ -330,6 +306,10 @@ export interface WorkspaceOperationRequest {
   /** Read: 1-based start line for line-level slicing. Default 1 (whole file
    *  when `limit` is also omitted). */
   offset?: number
+  /** Read: 0-based character start. Mutually exclusive with line offset/limit. */
+  charOffset?: number
+  /** Read: character count, capped by the Agent runtime at 24 KiB. */
+  charLimit?: number
   /** Search: context lines returned before and after each match. Default 0. */
   contextLines?: number
   /** Search: case-insensitive matching. `query` defaults to `true`
@@ -440,6 +420,7 @@ export type AgentPlatformToolName =
   | "workspace_semantic_search"
   | "ask_user"
   | "test_skill_script"
+  | "query_diagnostics"
 
 export interface AgentSkillConfig {
   enabled: string[]
@@ -902,7 +883,7 @@ export type AgentInvocationEvent =
       /** Optional player-facing Tool title. Falls back to `name` when absent. */
       displayName?: string
       status: "loading" | "running" | "success" | "failed"
-      output?: TurnToolOutput
+      presentation?: UiToolPresentation
     }
   | {
       type: "completed"

@@ -5,7 +5,7 @@ import type {
   TurnStats,
   TurnTimelineItem,
 } from "@tsian/contracts"
-import { runAgentRuntimeTurn } from "../agent-runtime"
+import { createGameRuntimeEnvironment, runAgentRuntimeTurn } from "../agent-runtime"
 import { resolveTokenBudget } from "../agent-runtime/context-lifecycle"
 import { enqueueStaleEmbeddings } from "../agent-runtime/semantic-index/staleness"
 import {
@@ -114,6 +114,11 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     // 过程节点累积器:从事件流累积 thought/tool/interim,turn 收尾写入 turn 文件.
     // 与前端 turnProcessLog 用同一份事件数据,节点带 agentId 区分 delegated agent.
     const timelineCollector = createTurnTimelineCollector()
+    const browserScriptRunners = createBrowserScriptRunners({
+      workspaceTransaction: activeWorkspaceTransaction,
+      signal: currentController.signal,
+      emitTrace: trace.emit,
+    })
     const result = await runAgentRuntimeTurn(
       {
         agentId: playerTurnAgentId,
@@ -121,34 +126,12 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
         injection: input.injection,
         recentHistory: historyBefore,
         turn: maxTurn,
-        workspaceFiles: workspaceTransaction.workspaceFiles,
-        workspaceTrustBoundary: "runtime-game-agent",
         signal: currentController.signal,
-        agentContext: agentContext ?? undefined,
-        contextTokenBudget,
-        // 玩家正式回合入口使用 narrative 压缩：one-shot narrative compression +
-        // ContextBudgetExhaustedError fallback (tool-token-budget R2, unchanged).
-        // No timeoutMs — narrative turns rely on one-shot compression + user abort;
-        // a timeout would mis-kill narrative deep thought (design §0/§1.3 约束8).
-        compressionMode: "narrative",
         traceContext,
-        // 三个回调同时 emit 事件(给前端实时渲染)+ 喂 collector(给 turn 文件持久化).
-        onDelta: (agentId, delta, round, kind) => {
-          emitTurnDelta(agentId, delta, nextTurn, round, kind)
-          timelineCollector.onDelta(agentId, delta, round, kind)
-        },
-        onRoundEnd: (agentId, round, finishReason) => {
-          emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason))
-          timelineCollector.onRoundEnd(agentId, round, finishReason)
-        },
-        onTool: (agentId, round, callId, name, status, output, displayName) => {
-          emitTurnTool(agentId, nextTurn, round, callId, name, status, output, displayName)
-          timelineCollector.onTool(agentId, round, callId, name, status, output, displayName)
-        },
-        onAskUser: (requestId, request) => emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
       },
-      {
-        callModel(messages, options) {
+      createGameRuntimeEnvironment({
+        model: {
+        callText(messages, options) {
           const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
           // Text-protocol streaming: stream when the caller wants deltas
           // AND the model opted into streaming. Falls back to one-shot
@@ -176,7 +159,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
               : undefined,
           })
         },
-        async callModelNative(messages, options, tools) {
+        async callNative(messages, options, tools) {
           const agentConfig = resolveAgentModelConfig(options.agentId, providerPresetMap)
           // Stream only when the caller wants deltas AND the model opted into
           // streaming. Both native and text modes support streaming; falls
@@ -211,13 +194,15 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
         toolCallMode: playerTurnConfig?.toolCallMode
           ?? getBrowserAiConfig()?.toolCallMode
           ?? DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
-        ...createBrowserScriptRunners({
-          workspaceTransaction: activeWorkspaceTransaction,
-          signal: currentController.signal,
-          emitTrace: trace.emit,
-        }),
+        },
+        controlledTools: {
+          browserScript: browserScriptRunners.runBrowserScript,
+          testSkillScript: browserScriptRunners.runTestSkillScript,
+        },
+        workspace: {
+        files: workspaceTransaction.workspaceFiles,
         semanticSearchOwnerId: activeSaveId,
-        workspaceMutations: {
+        mutations: {
           write: (writeInput) => {
             if (writeInput.scope === "platform-meta") {
               return activeWorkspaceTransaction.writePlatformFile({
@@ -245,8 +230,32 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
             }
           },
         },
-        emitTrace: trace.emit,
-      },
+        },
+        context: {
+          snapshot: agentContext ?? undefined,
+          compressionMode: "narrative",
+          contextCapacityTokens: contextTokenBudget,
+          requestInputBudgetTokens: Math.floor(contextTokenBudget * 0.85),
+          observationCharBudget: 32 * 1024,
+        },
+        events: {
+          onDelta: (agentId, delta, round, kind) => {
+            emitTurnDelta(agentId, delta, nextTurn, round, kind)
+            timelineCollector.onDelta(agentId, delta, round, kind)
+          },
+          onRoundEnd: (agentId, round, finishReason) => {
+            emitTurnRoundEnd(agentId, nextTurn, round, finishReasonToKind(finishReason))
+            timelineCollector.onRoundEnd(agentId, round, finishReason)
+          },
+          onTool: (agentId, round, callId, name, status, presentation, displayName) => {
+            emitTurnTool(agentId, nextTurn, round, callId, name, status, presentation, displayName)
+            timelineCollector.onTool(agentId, round, callId, name, status, presentation, displayName)
+          },
+          onAskUser: (requestId, request) =>
+            emitInteractionRequest(requestId, request.question, request.options, request.allowCustom),
+        },
+        audit: trace.emit,
+      }),
     )
 
     if (currentController.signal.aborted) {

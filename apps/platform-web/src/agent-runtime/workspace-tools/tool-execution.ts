@@ -14,15 +14,106 @@ import {
   type InspectFrontendWaitMode,
   type ParsedRuntimeWorkspaceToolCall,
   type RuntimeTestSkillScriptInput,
+  type RuntimeDiagnosticsQueryInput,
   type RuntimeWorkspaceToolCall,
   type RuntimeWorkspaceToolExecutionContext,
   type RuntimeWorkspaceToolObservation,
 } from "../workspace-tools-types"
 import { normalizeAgentCallArguments } from "./agent-call"
 import { executeUserTool } from "./action-executors"
-import { buildToolOutput } from "./observations"
+import { buildToolPresentation, projectToolObservationForAgent } from "./observations"
 import { activateSkillByName, executeRunScript } from "./skill-actions"
 import { isRecord, normalizeRequiredString, toolError } from "./shared"
+
+function normalizeDiagnosticsQueryArguments(
+  input: Record<string, unknown>,
+): RuntimeDiagnosticsQueryInput {
+  const operation = input.operation
+  if (operation !== "list" && operation !== "search" && operation !== "read") {
+    throw toolError(
+      "DIAGNOSTICS_OPERATION_INVALID",
+      "query_diagnostics operation must be list, search, or read.",
+    )
+  }
+  const allowed = new Set(operation === "list"
+    ? ["operation", "recordType", "status", "provider", "model", "operationId", "limit"]
+    : operation === "search"
+      ? ["operation", "query", "recordType", "limit"]
+      : ["operation", "id", "section", "offset", "limit"])
+  const unknown = Object.keys(input).find((key) => !allowed.has(key))
+  if (unknown) {
+    throw toolError(
+      "DIAGNOSTICS_ARGUMENT_UNKNOWN",
+      `query_diagnostics ${operation} received an unknown argument: ${unknown}.`,
+    )
+  }
+  if (
+    input.recordType !== undefined
+    && input.recordType !== "ai-request"
+    && input.recordType !== "frontend-error"
+  ) {
+    throw toolError("DIAGNOSTICS_RECORD_TYPE_INVALID", "query_diagnostics recordType is invalid.")
+  }
+  if (operation === "search") {
+    return {
+      operation,
+      query: normalizeRequiredString(
+        input.query,
+        "DIAGNOSTICS_QUERY_REQUIRED",
+        "query_diagnostics search query must be a non-empty string.",
+      ),
+      ...(input.recordType === "ai-request" || input.recordType === "frontend-error"
+        ? { recordType: input.recordType }
+        : {}),
+      ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+    }
+  }
+  if (operation === "read") {
+    const section = input.section
+    if (
+      section !== undefined
+      && section !== "summary"
+      && section !== "error"
+      && section !== "attempts"
+      && section !== "request"
+      && section !== "response"
+    ) {
+      throw toolError("DIAGNOSTICS_SECTION_INVALID", "query_diagnostics read section is invalid.")
+    }
+    return {
+      operation,
+      id: normalizeRequiredString(
+        input.id,
+        "DIAGNOSTICS_ID_REQUIRED",
+        "query_diagnostics read id must be a non-empty string.",
+      ),
+      ...(section ? { section } : {}),
+      ...(typeof input.offset === "number" ? { offset: input.offset } : {}),
+      ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+    }
+  }
+  if (
+    input.status !== undefined
+    && input.status !== "running"
+    && input.status !== "succeeded"
+    && input.status !== "failed"
+    && input.status !== "aborted"
+    && input.status !== "interrupted"
+  ) {
+    throw toolError("DIAGNOSTICS_STATUS_INVALID", "query_diagnostics status is invalid.")
+  }
+  return {
+    operation,
+    ...(input.recordType === "ai-request" || input.recordType === "frontend-error"
+      ? { recordType: input.recordType }
+      : {}),
+    ...(typeof input.status === "string" ? { status: input.status } : {}),
+    ...(typeof input.provider === "string" ? { provider: input.provider } : {}),
+    ...(typeof input.model === "string" ? { model: input.model } : {}),
+    ...(typeof input.operationId === "string" ? { operationId: input.operationId } : {}),
+    ...(typeof input.limit === "number" ? { limit: input.limit } : {}),
+  }
+}
 import { emitToolObservationTrace } from "./tracing"
 
 function normalizeTestSkillScriptArguments(
@@ -430,6 +521,21 @@ async function executeRuntimeWorkspaceToolCall(
           normalizeInspectFrontendArguments(call.arguments),
         ),
       }
+    } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.queryDiagnostics) {
+      if (!context.runQueryDiagnostics) {
+        throw toolError(
+          "QUERY_DIAGNOSTICS_UNAVAILABLE",
+          "query_diagnostics is not available in this Agent step.",
+        )
+      }
+      observation = {
+        index,
+        name: call.name,
+        ok: true,
+        result: await context.runQueryDiagnostics(
+          normalizeDiagnosticsQueryArguments(call.arguments),
+        ),
+      }
     } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.askUser) {
       if (!context.onAskUser) {
         throw toolError(
@@ -547,19 +653,29 @@ async function executeRuntimeWorkspaceToolCall(
     }
   }
 
-  emitToolObservationTrace(context, call, observation, Date.now() - toolStartedAt)
-  // Turn-tool event (子2b R2): report the final status + output.
-  // buildToolOutput 统一处理 success/failed：普通工具返回完整 string（不截断），
-  // agent_call 返回结构化 {type:"agent_call", targetAgent, response, status}。
+  const agentObservation = projectToolObservationForAgent(
+    call,
+    observation,
+    context.observationCharBudget,
+  )
+  emitToolObservationTrace(
+    context,
+    call,
+    observation,
+    agentObservation,
+    Date.now() - toolStartedAt,
+  )
+  // UI consumes only a closed presentation projection. Ordinary tool results
+  // never enter timeline/session storage.
   const status: "success" | "failed" = observation.ok ? "success" : "failed"
   context.onTool?.(
     callId,
     call.name,
     status,
-    buildToolOutput(call, observation),
+    buildToolPresentation(call, observation),
     displayName,
   )
-  return observation
+  return agentObservation
 }
 
 /**
@@ -583,6 +699,7 @@ const PARALLEL_TOOL_NAMES = new Set<string>([
   RUNTIME_WORKSPACE_TOOL_NAMES.search,
   RUNTIME_WORKSPACE_TOOL_NAMES.glob,
   RUNTIME_WORKSPACE_TOOL_NAMES.diff,
+  RUNTIME_WORKSPACE_TOOL_NAMES.queryDiagnostics,
 ])
 
 function isParallelizableToolCall(call: ParsedRuntimeWorkspaceToolCall): boolean {

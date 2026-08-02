@@ -2,7 +2,6 @@ import type {
   AgentRegistryEntry,
   AgentContextEntry,
   AgentContextSnapshot,
-  AgentContextToolCall,
   AgentContextToolMemory,
   TurnTimelineItem,
   AiChatMessage,
@@ -14,7 +13,7 @@ import type {
   AgentPlatformToolName,
   PlatformActionRequest,
   PlatformActionResult,
-  TurnToolOutput,
+  UiToolPresentation,
   WorkspaceFile,
   WorkspaceOperationName,
 } from "@tsian/contracts"
@@ -39,6 +38,7 @@ import {
   estimateAiChatMessagesTokens,
   estimateContextTokens,
   estimateRuntimeMessagesTokens,
+  estimateTokenCount,
   resolveTokenBudget,
   serializeAgentContext,
   TASK_COMPRESSION_STALL_RATIO,
@@ -127,6 +127,7 @@ import {
   injectActivatedSkillMessagesNative,
   injectActivatedSkillMessagesText,
 } from "./orchestration/skill-activation"
+import { deriveDelegatedWorkspaceMutations } from "./environment"
 
 // barrel re-export (public API — 8 types)
 export type {
@@ -135,6 +136,8 @@ export type {
   AgentRuntimeTurnResult,
   AgentRuntimeModelCallOptions,
   AgentRuntimeCapabilities,
+  AgentRuntimeEnvironment,
+  AgentRuntimeEventSink,
   AgentRuntimeCollaborationPolicy,
   AgentRuntimeCollaborationPolicyInput,
   RuntimeCompressionMode,
@@ -147,10 +150,16 @@ import type {
   AgentRuntimeTurnResult,
   AgentRuntimeModelCallOptions,
   AgentRuntimeCapabilities,
+  AgentRuntimeEnvironment,
   AgentRuntimeCollaborationPolicy,
   AgentRuntimeCollaborationPolicyInput,
   RuntimeCompressionMode,
 } from "./turn-types"
+export {
+  createDesktopAssistantEnvironment,
+  createGameRuntimeEnvironment,
+  deriveDelegatedEnvironment,
+} from "./environment"
 /** 解析 entry 路径压缩模式:未传默认 narrative(master 路径). */
 function resolveEntryCompressionMode(input: AgentRuntimeTurnInput): RuntimeCompressionMode {
   return input.compressionMode ?? "narrative"
@@ -206,6 +215,7 @@ interface WorkspaceToolLoopOptions {
   agentContextSnapshot?: AgentContextSnapshot
   /** token 预算(turn 开头已 resolve).达 85% 触发压缩/兜底.两模式共用. */
   contextTokenBudget?: number
+  requestInputBudgetTokens?: number
   /** 压缩用的 model 调用(复用 capabilities.callModel).两模式共用. */
   compressCallModel?: CompressCallModel
   /** task 模式:无响应超时起点 wall-clock(Date.now()).每次有活动(tool/round-end)更新.超 inactivityTimeoutMs 抛 TaskTimeoutError.narrative 不用. */
@@ -339,16 +349,31 @@ function platformToolEnabled(
   return tools.includes(tool)
 }
 
+function intersectExposedWorkspaceOperations(
+  agentOperations: WorkspaceOperationName[],
+  environmentOperations: Iterable<WorkspaceOperationName> | undefined,
+): WorkspaceOperationName[] {
+  if (!environmentOperations) return agentOperations
+  const allowed = new Set(environmentOperations)
+  return agentOperations.filter((operation) => allowed.has(operation))
+}
+
 function buildEnabledRuntimeToolSchemas(options: {
   agentContext: AgentContextEntry
   enabledPlatformTools: AgentPlatformToolName[]
   allowAgentCall: boolean
   visibleContacts: AgentRegistryEntry[]
+  inspectFrontendAvailable?: boolean
+  testSkillScriptAvailable?: boolean
+  queryDiagnosticsAvailable?: boolean
 }): ToolSchema[] {
   return buildEnabledToolSchemas({
     enabledPlatformTools: options.enabledPlatformTools,
     allowAgentCall: options.allowAgentCall,
     visibleContacts: options.visibleContacts,
+    inspectFrontendAvailable: options.inspectFrontendAvailable,
+    testSkillScriptAvailable: options.testSkillScriptAvailable,
+    queryDiagnosticsAvailable: options.queryDiagnosticsAvailable,
     // User Tools already filtered for this Agent by `filterToolsForAgent`
     // during context assembly (context.ts). Expose the same filtered list in
     // both native schema mode and Text Tool Protocol manifest mode.
@@ -362,6 +387,9 @@ function buildWorkspaceToolInstructions(
     visibleContacts: AgentRegistryEntry[]
     enabledPlatformTools: AgentPlatformToolName[]
     toolCallMode?: BrowserAiToolCallMode
+    inspectFrontendAvailable?: boolean
+    testSkillScriptAvailable?: boolean
+    queryDiagnosticsAvailable?: boolean
     tools: ToolSchema[]
   },
 ): string {
@@ -420,6 +448,9 @@ function buildWorkspaceAgentSystemPrompt(
     visibleContacts: AgentRegistryEntry[]
     enabledPlatformTools: AgentPlatformToolName[]
     toolCallMode?: BrowserAiToolCallMode
+    inspectFrontendAvailable?: boolean
+    testSkillScriptAvailable?: boolean
+    queryDiagnosticsAvailable?: boolean
   },
 ): string {
   const soulContent = context.soulFile?.content.trim()
@@ -428,6 +459,9 @@ function buildWorkspaceAgentSystemPrompt(
     enabledPlatformTools: options.enabledPlatformTools,
     allowAgentCall: options.allowAgentCall,
     visibleContacts: options.visibleContacts,
+    inspectFrontendAvailable: options.inspectFrontendAvailable,
+    testSkillScriptAvailable: options.testSkillScriptAvailable,
+    queryDiagnosticsAvailable: options.queryDiagnosticsAvailable,
   })
   return [
     context.agentFile.content.trim(),
@@ -538,6 +572,15 @@ function buildEntryAgentMessages(
         visibleContacts,
         enabledPlatformTools: permissions.enabledTools,
         toolCallMode,
+        inspectFrontendAvailable: input.controlledToolAvailability?.includes(
+          AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
+        ),
+        testSkillScriptAvailable: input.controlledToolAvailability?.includes(
+          AGENT_PLATFORM_TOOL_NAMES.testSkillScript,
+        ),
+        queryDiagnosticsAvailable: input.controlledToolAvailability?.includes(
+          AGENT_PLATFORM_TOOL_NAMES.queryDiagnostics,
+        ),
       }),
     },
     // prelude 段（背景层）：上下文元信息（Skill Index）+ prelude position 注入。
@@ -712,6 +755,9 @@ function buildDelegatedAgentMessages(
         visibleContacts,
         enabledPlatformTools: permissions.enabledTools,
         toolCallMode,
+        inspectFrontendAvailable: false,
+        testSkillScriptAvailable: false,
+        queryDiagnosticsAvailable: false,
       }),
     },
     // prelude 段（背景层）：元信息 + prelude 注入。system 之后、调用方信息之前。
@@ -809,7 +855,6 @@ function createAgentCallRunner(
     const targetContext = assembleAgentContext(delegatedInput.workspaceFiles!, {
       agentId: targetAgent.id,
       workspaceTrustBoundary: "runtime-game-agent",
-      toolFilter: input.toolFilter,
     })
     if (!targetContext) {
       throw agentCallError(
@@ -855,6 +900,13 @@ function createAgentCallRunner(
       [input.signal, timeoutController.signal].filter(Boolean) as AbortSignal[],
     )
     const lastActivityAt = Date.now()
+    const delegatedCapabilities: AgentRuntimeCapabilities = {
+      ...capabilities,
+      runInspectFrontend: undefined,
+      runQueryDiagnostics: undefined,
+      runTestSkillScript: undefined,
+      workspaceMutations: deriveDelegatedWorkspaceMutations(capabilities.workspaceMutations),
+    }
 
     try {
       const response = (await callAgentModelWithWorkspaceTools(
@@ -870,7 +922,7 @@ function createAgentCallRunner(
           capabilities.toolCallMode,
         ) as RuntimeChatMessage[],
         delegatedInput,
-        capabilities,
+        delegatedCapabilities,
         {
           debugLabel,
           signal: compositeSignal,
@@ -897,6 +949,7 @@ function createAgentCallRunner(
           // (host 层 callModelNative 闭包按 options.agentId resolve 真实 config,
           //  但预算是 runtime 估算用,256k 的 85% 足够大,不影响压缩触发判断).
           contextTokenBudget: resolveTokenBudget(undefined),
+          requestInputBudgetTokens: input.requestInputBudgetTokens,
           compressCallModel: capabilities.callModel,
           lastActivityAt,
           inactivityTimeoutMs,
@@ -985,54 +1038,6 @@ function nativeToolCallsToParsed(
   }))
 }
 
-function formatRawToolObservationForContext(observation: RuntimeWorkspaceToolObservation): string {
-  if (!observation.ok) {
-    return JSON.stringify(
-      observation.error ?? { code: "UNKNOWN", message: "Unknown error" },
-    )
-  }
-  if (typeof observation.result === "string") {
-    return observation.result
-  }
-  try {
-    return JSON.stringify(observation.result)
-  } catch {
-    return String(observation.result)
-  }
-}
-
-/**
- * 把本轮工具调用的 observations + toolCalls 转成 AgentContextToolCall[](raw/UI/debug 形态).
- * observation 直接取工具返回层完整结果,不走 model-facing compact；模型上下文使用
- * AgentContextToolMemory 投影与 format*ToolObservationMessage 的 compact 路径。
- */
-function collectToolCallsForContext(
-  toolCalls: { id?: string; name: string; arguments: Record<string, unknown> }[],
-  observations: RuntimeWorkspaceToolObservation[],
-  observationTextFn: (obs: RuntimeWorkspaceToolObservation) => string,
-): AgentContextToolCall[] {
-  const collected: AgentContextToolCall[] = []
-  for (let i = 0; i < toolCalls.length; i++) {
-    const call = toolCalls[i]
-    const obs = observations[i]
-    if (!obs) continue
-    const observationText = observationTextFn(obs)
-    // workspace_read 的 truncated 在 result 里(nested),这里尽力提取;无则 undefined.
-    const truncated = typeof obs.result === "object" && obs.result !== null
-      ? ((obs.result as { truncated?: boolean }).truncated)
-      : undefined
-    collected.push({
-      id: call.id ?? `tool-${i}`,
-      name: call.name,
-      arguments: JSON.stringify(call.arguments),
-      observation: observationText,
-      ...(truncated ? { truncated } : {}),
-      ...(obs.ok ? {} : { failed: true }),
-    })
-  }
-  return collected
-}
-
 async function callAgentModelWithWorkspaceToolsNative(
   messages: RuntimeChatMessage[],
   input: AgentRuntimeTurnInput,
@@ -1040,10 +1045,9 @@ async function callAgentModelWithWorkspaceToolsNative(
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry,
   toolOptions: WorkspaceToolLoopOptions,
-): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number }; collectedToolCalls?: AgentContextToolCall[]; collectedToolMemories?: AgentContextToolMemory[]; collectedTimelineItems?: TurnTimelineItem[] }> {
+): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number }; collectedToolMemories?: AgentContextToolMemory[]; collectedTimelineItems?: TurnTimelineItem[] }> {
   // messages 已是 RuntimeChatMessage[](buildEntryAgentMessages 产结构化,native 无需转换).
   let runtimeMessages = messages
-  const collectedToolCalls: AgentContextToolCall[] = []
   const collectedToolMemories: AgentContextToolMemory[] = []
   const collectedTimelineItems: TurnTimelineItem[] = []
   // 每轮 reasoning/content 文本累积器(供采集 thought/interim processNode).
@@ -1068,6 +1072,9 @@ async function callAgentModelWithWorkspaceToolsNative(
     enabledPlatformTools: permissions.enabledTools,
     allowAgentCall,
     visibleContacts,
+    inspectFrontendAvailable: capabilities.runInspectFrontend !== undefined,
+    testSkillScriptAvailable: capabilities.runTestSkillScript !== undefined,
+    queryDiagnosticsAvailable: capabilities.runQueryDiagnostics !== undefined,
   })
 
   // turn 内 token 预算 + 压缩(tool-token-budget R2 + 06-20-agent-task-compression).
@@ -1086,10 +1093,14 @@ async function callAgentModelWithWorkspaceToolsNative(
     && toolOptions.contextTokenBudget !== undefined
     && toolOptions.compressCallModel !== undefined
   const isTaskMode = toolOptions.compressionMode === "task"
-  const triggerThreshold =
-    toolOptions.contextTokenBudget !== undefined
-      ? toolOptions.contextTokenBudget * (isTaskMode ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
-      : 0
+  const schemaTokens = estimateTokenCount(JSON.stringify(tools))
+  const capacityThreshold = toolOptions.contextTokenBudget !== undefined
+    ? toolOptions.contextTokenBudget * (isTaskMode ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
+    : Number.POSITIVE_INFINITY
+  const consumptionThreshold = toolOptions.requestInputBudgetTokens !== undefined
+    ? Math.max(1, toolOptions.requestInputBudgetTokens - schemaTokens)
+    : Number.POSITIVE_INFINITY
+  const triggerThreshold = Math.min(capacityThreshold, consumptionThreshold)
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
   let lastRoundText = ""
@@ -1118,7 +1129,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 无工具交互段可压(异常,通常 round 0 不该触发)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1140,7 +1151,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             // 压不动(早期无可压内容,工具交互 ≤ N 轮)→ 走兜底
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1170,7 +1181,7 @@ async function callAgentModelWithWorkspaceToolsNative(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = lastRoundText.trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1236,6 +1247,26 @@ async function callAgentModelWithWorkspaceToolsNative(
     // 产出新数组传给 API，不 mutate runtimeMessages（工具循环的 splice-replace/
     // span 定位继续操作未整合的原始数组）。
     const mergedMessages = stripInternalMarkers(mergeConsecutiveRoleMessages(runtimeMessages))
+    const finalInputTokens = estimateRuntimeMessagesTokens(mergedMessages) + schemaTokens
+    capabilities.emitTrace?.({
+      type: "request_preflight",
+      agentId: agentContext.agent.id,
+      debugLabel: options.debugLabel,
+      ok: toolOptions.requestInputBudgetTokens === undefined
+        || finalInputTokens <= toolOptions.requestInputBudgetTokens,
+      data: {
+        round,
+        estimatedInputTokens: finalInputTokens,
+        requestInputBudgetTokens: toolOptions.requestInputBudgetTokens,
+        schemaTokens,
+      },
+    })
+    if (
+      toolOptions.requestInputBudgetTokens !== undefined
+      && finalInputTokens > toolOptions.requestInputBudgetTokens
+    ) {
+      throw new ContextBudgetExhaustedError()
+    }
     const result = await capabilities.callModelNative!(mergedMessages, callOptions, tools)
     assertNotAborted(options.signal)
     lastRoundText = result.text
@@ -1290,6 +1321,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       ok: true,
       data: {
         messageCount: mergedMessages.length,
+        estimatedInputTokens: finalInputTokens,
         outputLength: result.text.length,
         hasToolCalls: result.toolCalls.length > 0,
         toolCallCount: result.toolCalls.length,
@@ -1303,7 +1335,7 @@ async function callAgentModelWithWorkspaceToolsNative(
     })
 
     if (result.finishReason === "stop" || result.toolCalls.length === 0) {
-      return { text: result.text.trim(), usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+      return { text: result.text.trim(), usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
     }
 
     const observations = await executeRuntimeWorkspaceToolCalls({
@@ -1323,12 +1355,13 @@ async function callAgentModelWithWorkspaceToolsNative(
       runBrowserScript: capabilities.runBrowserScript,
       runTestSkillScript: capabilities.runTestSkillScript,
       runInspectFrontend: capabilities.runInspectFrontend,
+      runQueryDiagnostics: capabilities.runQueryDiagnostics,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
-      virtualWorkspaceReads: toolOptions.workspaceTrustBoundary === "trusted-authoring"
-        ? capabilities.virtualWorkspaceReads
-        : undefined,
-      exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
+      exposedWorkspaceOperations: intersectExposedWorkspaceOperations(
+        permissions.exposedWorkspaceOperations,
+        capabilities.exposedWorkspaceOperations,
+      ),
       workspaceFileFilter: workspaceFileFilterForAgentBoundary(
         toolOptions?.workspaceTrustBoundary,
       ),
@@ -1336,19 +1369,20 @@ async function callAgentModelWithWorkspaceToolsNative(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
+      observationCharBudget: input.observationCharBudget,
       // Tool process events (子2b R2): bind the current round and agentId here
       // so the executor's onTool stays callId/name/status only; the caller binds
       // turn. agentId is this loop's agent (entry or delegated target).
       onTool: options.onTool
-        ? (callId, name, status, output, displayName) => {
-            options.onTool!(agentContext.agent.id, round, callId, name, status, output, displayName)
+        ? (callId, name, status, presentation, displayName) => {
+            options.onTool!(agentContext.agent.id, round, callId, name, status, presentation, displayName)
             // 采集 tool processNode(按 callId 去重,与 UI onTool 回调同源,供持久化).
             const existing = collectedTimelineItems.find(
               (n): n is TurnTimelineItem & { kind: "tool" } => n.kind === "tool" && n.id === callId,
             )
             if (existing) {
               existing.status = status
-              if (output !== undefined) existing.output = output
+              if (presentation !== undefined) existing.presentation = presentation
               if (displayName !== undefined) existing.displayName = displayName
             } else {
               collectedTimelineItems.push({
@@ -1358,7 +1392,7 @@ async function callAgentModelWithWorkspaceToolsNative(
                 name,
                 status,
                 collapsed: true,
-                ...(output !== undefined ? { output } : {}),
+                ...(presentation !== undefined ? { presentation } : {}),
                 ...(displayName !== undefined ? { displayName } : {}),
               })
             }
@@ -1367,7 +1401,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             callId: string,
             name: string,
             status: "loading" | "running" | "success" | "failed",
-            output?: TurnToolOutput,
+            presentation?: UiToolPresentation,
             displayName?: string,
           ) => {
             // 无 UI onTool 时仍采集 processNode(按 callId 去重,供持久化).
@@ -1376,7 +1410,7 @@ async function callAgentModelWithWorkspaceToolsNative(
             )
             if (existing) {
               existing.status = status
-              if (output !== undefined) existing.output = output
+              if (presentation !== undefined) existing.presentation = presentation
               if (displayName !== undefined) existing.displayName = displayName
             } else {
               collectedTimelineItems.push({
@@ -1386,7 +1420,7 @@ async function callAgentModelWithWorkspaceToolsNative(
                 name,
                 status,
                 collapsed: true,
-                ...(output !== undefined ? { output } : {}),
+                ...(presentation !== undefined ? { presentation } : {}),
                 ...(displayName !== undefined ? { displayName } : {}),
               })
             }
@@ -1409,12 +1443,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       })
     }
 
-    // 采集本轮原始工具调用(供 UI/debug 会话消息完整保留)与 model-facing 工具记忆投影(供 task context).
-    collectedToolCalls.push(...collectToolCallsForContext(
-      result.toolCalls,
-      observations,
-      formatRawToolObservationForContext,
-    ))
+    // Task memory is generated from the bounded Agent observation projection.
     collectedToolMemories.push(...collectToolMemoriesForContext(
       result.toolCalls,
       observations,
@@ -1449,14 +1478,31 @@ async function callAgentModelWithWorkspaceTools(
   options: AgentRuntimeModelCallOptions,
   agentContext: AgentContextEntry | null,
   toolOptions?: WorkspaceToolLoopOptions,
-): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number }; collectedToolCalls?: AgentContextToolCall[]; collectedToolMemories?: AgentContextToolMemory[]; collectedTimelineItems?: TurnTimelineItem[] }> {
-  const collectedToolCalls: AgentContextToolCall[] = []
+): Promise<{ text: string; usage?: { input?: number; output?: number; total?: number }; collectedToolMemories?: AgentContextToolMemory[]; collectedTimelineItems?: TurnTimelineItem[] }> {
   const collectedToolMemories: AgentContextToolMemory[] = []
   const collectedTimelineItems: TurnTimelineItem[] = []
   if (!input.workspaceFiles || !agentContext) {
     // text 路径:messages 是 RuntimeChatMessage[](超集),text 模式无 role:tool,安全降级为 AiChatMessage[].
     // 整合器：合并连续相同 role 消息（Claude/Gemini API 硬要求），产出新数组传给 API。
     const mergedMessages = stripInternalMarkers(mergeConsecutiveRoleMessages(messages))
+    const finalInputTokens = estimateAiChatMessagesTokens(mergedMessages as AiChatMessage[])
+    capabilities.emitTrace?.({
+      type: "request_preflight",
+      debugLabel: options.debugLabel,
+      ok: input.requestInputBudgetTokens === undefined
+        || finalInputTokens <= input.requestInputBudgetTokens,
+      data: {
+        round: 0,
+        estimatedInputTokens: finalInputTokens,
+        requestInputBudgetTokens: input.requestInputBudgetTokens,
+      },
+    })
+    if (
+      input.requestInputBudgetTokens !== undefined
+      && finalInputTokens > input.requestInputBudgetTokens
+    ) {
+      throw new ContextBudgetExhaustedError()
+    }
     const response = await capabilities.callModel(mergedMessages as AiChatMessage[], options)
     capabilities.emitTrace?.({
       type: "model_call_completed",
@@ -1511,10 +1557,12 @@ async function callAgentModelWithWorkspaceTools(
     && toolOptions?.contextTokenBudget !== undefined
     && toolOptions?.compressCallModel !== undefined
   const isTaskMode = compressionMode === "task"
-  const triggerThreshold =
-    toolOptions?.contextTokenBudget !== undefined
-      ? toolOptions.contextTokenBudget * (isTaskMode ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
-      : 0
+  const capacityThreshold = toolOptions?.contextTokenBudget !== undefined
+    ? toolOptions.contextTokenBudget * (isTaskMode ? getTaskContextCompressTriggerRatio() : getNarrativeContextCompressTriggerRatio())
+    : Number.POSITIVE_INFINITY
+  const consumptionThreshold = toolOptions?.requestInputBudgetTokens
+    ?? Number.POSITIVE_INFINITY
+  const triggerThreshold = Math.min(capacityThreshold, consumptionThreshold)
   let compressedThisTurn = false // narrative:一次压缩标记.task 不用(可多次).
   let taskSummary: string | null = null // task:前次压缩摘要,供下次压缩作 oldSummary.
   let lastRoundText = ""
@@ -1545,7 +1593,7 @@ async function callAgentModelWithWorkspaceTools(
           if (interactionSpan.start < 0) {
             const finalText = stripThinkBlocks(stripTextProtocolArtifacts(lastRoundText)).trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1566,7 +1614,7 @@ async function callAgentModelWithWorkspaceTools(
           if (!result.compressed) {
             const finalText = stripThinkBlocks(stripTextProtocolArtifacts(lastRoundText)).trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1595,7 +1643,7 @@ async function callAgentModelWithWorkspaceTools(
           if (compressedThisTurn || !canCompressNarrative) {
             const finalText = stripThinkBlocks(stripTextProtocolArtifacts(lastRoundText)).trim()
             if (finalText) {
-              return { text: finalText, usage: lastRoundUsage, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+              return { text: finalText, usage: lastRoundUsage, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
             }
             throw new ContextBudgetExhaustedError()
           }
@@ -1648,6 +1696,25 @@ async function callAgentModelWithWorkspaceTools(
     // 产出新数组传给 API，不 mutate nextMessages（工具循环的 splice-replace/
     // span 定位继续操作未整合的原始数组）。
     const mergedMessages = stripInternalMarkers(mergeConsecutiveRoleMessages(nextMessages as RuntimeChatMessage[]))
+    const finalInputTokens = estimateAiChatMessagesTokens(mergedMessages as AiChatMessage[])
+    capabilities.emitTrace?.({
+      type: "request_preflight",
+      agentId: agentContext.agent.id,
+      debugLabel: options.debugLabel,
+      ok: toolOptions?.requestInputBudgetTokens === undefined
+        || finalInputTokens <= toolOptions.requestInputBudgetTokens,
+      data: {
+        round,
+        estimatedInputTokens: finalInputTokens,
+        requestInputBudgetTokens: toolOptions?.requestInputBudgetTokens,
+      },
+    })
+    if (
+      toolOptions?.requestInputBudgetTokens !== undefined
+      && finalInputTokens > toolOptions.requestInputBudgetTokens
+    ) {
+      throw new ContextBudgetExhaustedError()
+    }
     const response = await capabilities.callModel(mergedMessages as AiChatMessage[], callOptions)
     assertNotAborted(options.signal)
     lastRoundText = response
@@ -1668,6 +1735,7 @@ async function callAgentModelWithWorkspaceTools(
       ok: !isProtocolError,
       data: {
         messageCount: mergedMessages.length,
+        estimatedInputTokens: finalInputTokens,
         outputLength: response.length,
         hasToolCalls: toolCalls.length > 0,
         toolCallCount: toolCalls.length,
@@ -1701,7 +1769,7 @@ async function callAgentModelWithWorkspaceTools(
         const combinedThink = thinkBlocks.join("\n\n")
         collectedTimelineItems.push({ kind: "thought", id: `thought-r${round}`, round, text: combinedThink, collapsed: true })
       }
-      return { text: cleanContent, ...(collectedToolCalls.length > 0 ? { collectedToolCalls } : {}), ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
+      return { text: cleanContent, ...(collectedToolMemories.length > 0 ? { collectedToolMemories } : {}), ...(collectedTimelineItems.length > 0 ? { collectedTimelineItems } : {}) }
     }
 
     if (parseResult.kind === "protocol_error") {
@@ -1767,12 +1835,13 @@ async function callAgentModelWithWorkspaceTools(
       runBrowserScript: capabilities.runBrowserScript,
       runTestSkillScript: capabilities.runTestSkillScript,
       runInspectFrontend: capabilities.runInspectFrontend,
+      runQueryDiagnostics: capabilities.runQueryDiagnostics,
       actionExecutorPolicy: capabilities.actionExecutorPolicy,
       workspaceMutations: capabilities.workspaceMutations,
-      virtualWorkspaceReads: toolOptions?.workspaceTrustBoundary === "trusted-authoring"
-        ? capabilities.virtualWorkspaceReads
-        : undefined,
-      exposedWorkspaceOperations: permissions.exposedWorkspaceOperations,
+      exposedWorkspaceOperations: intersectExposedWorkspaceOperations(
+        permissions.exposedWorkspaceOperations,
+        capabilities.exposedWorkspaceOperations,
+      ),
       workspaceFileFilter: workspaceFileFilterForAgentBoundary(
         toolOptions?.workspaceTrustBoundary,
       ),
@@ -1780,11 +1849,12 @@ async function callAgentModelWithWorkspaceTools(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
+      observationCharBudget: input.observationCharBudget,
       // 采集 tool processNode + 透传 UI onTool(text 模式工具过程显示 + processNode 持久化).
       // entry 和 delegated 路径共用此绑定(C2 验证:无条件绑定,不区分 entry/delegated).
-      onTool: (callId, name, status, output, displayName) => {
+      onTool: (callId, name, status, presentation, displayName) => {
         if (options.onTool) {
-          options.onTool(agentContext.agent.id, round, callId, name, status, output, displayName)
+          options.onTool(agentContext.agent.id, round, callId, name, status, presentation, displayName)
         }
         // 采集 tool processNode(按 callId 去重) + 透传 UI onTool(text 模式工具过程显示 + 持久化).
         // entry 和 delegated 路径共用此绑定(C2 验证:无条件绑定,不区分 entry/delegated).
@@ -1793,7 +1863,7 @@ async function callAgentModelWithWorkspaceTools(
         )
         if (existing) {
           existing.status = status
-          if (output !== undefined) existing.output = output
+          if (presentation !== undefined) existing.presentation = presentation
           if (displayName !== undefined) existing.displayName = displayName
         } else {
           collectedTimelineItems.push({
@@ -1803,7 +1873,7 @@ async function callAgentModelWithWorkspaceTools(
             name,
             status,
             collapsed: true,
-            ...(output !== undefined ? { output } : {}),
+            ...(presentation !== undefined ? { presentation } : {}),
             ...(displayName !== undefined ? { displayName } : {}),
           })
         }
@@ -1853,11 +1923,6 @@ async function callAgentModelWithWorkspaceTools(
           alignedObservations.push(obs)
         }
       }
-      collectedToolCalls.push(...collectToolCallsForContext(
-        alignedToolCalls,
-        alignedObservations,
-        formatRawToolObservationForContext,
-      ))
       collectedToolMemories.push(...collectToolMemoriesForContext(
         alignedToolCalls,
         alignedObservations,
@@ -1879,17 +1944,53 @@ async function callAgentModelWithWorkspaceTools(
 
 export async function runAgentRuntimeTurn(
   rawInput: AgentRuntimeTurnInput,
-  capabilities: AgentRuntimeCapabilities,
+  environment: AgentRuntimeEnvironment,
 ): Promise<AgentRuntimeTurnResult> {
-  const input: AgentRuntimeTurnInput = rawInput.workspaceFiles
+  const environmentInput: AgentRuntimeTurnInput = {
+    ...rawInput,
+    workspaceFiles: environment.workspace.files,
+    workspaceTrustBoundary: environment.workspace.trustBoundary,
+    toolFilter: environment.workspace.toolFilter,
+    agentContext: environment.context.snapshot,
+    contextTokenBudget: environment.context.contextCapacityTokens,
+    requestInputBudgetTokens: environment.context.requestInputBudgetTokens,
+    observationCharBudget: environment.context.observationCharBudget,
+    controlledToolAvailability: [
+      ...(environment.controlledTools.inspectFrontend ? [AGENT_PLATFORM_TOOL_NAMES.inspectFrontend] : []),
+      ...(environment.controlledTools.queryDiagnostics ? [AGENT_PLATFORM_TOOL_NAMES.queryDiagnostics] : []),
+      ...(environment.controlledTools.testSkillScript ? [AGENT_PLATFORM_TOOL_NAMES.testSkillScript] : []),
+    ],
+    compressionMode: environment.context.compressionMode,
+    timeoutMs: environment.context.inactivityTimeoutMs,
+    onDelta: environment.events?.onDelta ?? rawInput.onDelta,
+    onRoundEnd: environment.events?.onRoundEnd ?? rawInput.onRoundEnd,
+    onTool: environment.events?.onTool ?? rawInput.onTool,
+    onAskUser: environment.events?.onAskUser ?? rawInput.onAskUser,
+  }
+  const capabilities: AgentRuntimeCapabilities = {
+    callModel: environment.model.callText,
+    callModelNative: environment.model.callNative,
+    toolCallMode: environment.model.toolCallMode,
+    runInspectFrontend: environment.controlledTools.inspectFrontend,
+    runQueryDiagnostics: environment.controlledTools.queryDiagnostics,
+    runBrowserScript: environment.controlledTools.browserScript,
+    runTestSkillScript: environment.controlledTools.testSkillScript,
+    actionExecutorPolicy: environment.controlledTools.actionExecutorPolicy,
+    workspaceMutations: environment.workspace.mutations,
+    exposedWorkspaceOperations: environment.workspace.exposedOperations,
+    collaborationPolicy: environment.collaborationPolicy,
+    emitTrace: environment.audit,
+    semanticSearchOwnerId: environment.workspace.semanticSearchOwnerId,
+  }
+  const input: AgentRuntimeTurnInput = environmentInput.workspaceFiles
     ? {
-        ...rawInput,
+        ...environmentInput,
         workspaceFiles: workspaceFilesForAgentBoundary(
-          rawInput.workspaceFiles,
-          rawInput.workspaceTrustBoundary,
+          environmentInput.workspaceFiles,
+          environmentInput.workspaceTrustBoundary,
         ),
       }
-    : rawInput
+    : environmentInput
   assertNotAborted(input.signal)
   const collaborationPolicy = normalizeAgentRuntimeCollaborationPolicy(
     capabilities.collaborationPolicy,
@@ -1984,8 +2085,7 @@ export async function runAgentRuntimeTurn(
 
   let replyText: string
   let turnUsage: { input?: number; output?: number; total?: number } | undefined
-  // 跨 turn 保留:原始工具调用(UI/debug)、model 工具记忆投影 + 过程节点从 loopResult 带回.
-  let collectedToolCalls: AgentContextToolCall[] | undefined
+  // 跨 turn 只保留 model 工具记忆投影 + UI presentation timeline.
   let collectedToolMemories: AgentContextToolMemory[] | undefined
   let collectedTimelineItems: TurnTimelineItem[] | undefined
   // turn 内压剧情就地把压缩结果写进 agentContext(对象引用),循环结束后
@@ -2024,6 +2124,7 @@ export async function runAgentRuntimeTurn(
         compressionMode: entryCompressionMode,
         agentContextSnapshot: agentContextSnapshotForLoop ?? undefined,
         contextTokenBudget: budget,
+        requestInputBudgetTokens: input.requestInputBudgetTokens,
         compressCallModel: capabilities.callModel,
         ...(entryCompressionMode === "task"
           ? {
@@ -2035,8 +2136,6 @@ export async function runAgentRuntimeTurn(
     )
     replyText = loopResult.text.trim()
     turnUsage = loopResult.usage
-    // 跨 turn 保留:原始工具调用(UI/debug)、model 工具记忆投影 + 过程节点从 loopResult 带回.
-    collectedToolCalls = loopResult.collectedToolCalls
     collectedToolMemories = loopResult.collectedToolMemories
     collectedTimelineItems = loopResult.collectedTimelineItems
     // 工具循环内若压过剧情,agentContextSnapshotForLoop 已被 Object.assign 就地更新;
@@ -2074,8 +2173,6 @@ export async function runAgentRuntimeTurn(
       user: input.userInput,
       assistant: replyText,
       compressedContext: compressedInTurn ? agentContextSnapshotForLoop! : compressedContext,
-      // 原始工具调用只供 UI/debug 会话消息完整保留；model context 使用 toolMemories 投影.
-      ...(collectedToolCalls && collectedToolCalls.length > 0 ? { toolCalls: collectedToolCalls } : {}),
       ...(collectedToolMemories && collectedToolMemories.length > 0 ? { toolMemories: collectedToolMemories } : {}),
       // 过程节点 timeline items(thought/tool/interim)供 host 写入会话消息存储 timeline,UI 重建 timeline.
       ...(collectedTimelineItems && collectedTimelineItems.length > 0 ? { timelineItems: collectedTimelineItems } : {}),

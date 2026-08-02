@@ -143,7 +143,7 @@ export function estimateRuntimeMessagesTokens(messages: RuntimeChatMessage[]): n
         tokens += estimateTokenCount(JSON.stringify(call.arguments))
       }
     }
-    return sum
+    return sum + tokens
   }, 0)
 }
 

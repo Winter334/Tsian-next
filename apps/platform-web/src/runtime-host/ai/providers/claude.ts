@@ -41,6 +41,30 @@ function buildClaudeNativeMessage(message: RuntimeChatMessage): Record<string, u
   return { role: "user", content: buildClaudeContent(message.content) }
 }
 
+function buildClaudeNativeMessages(messages: RuntimeChatMessage[]): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = []
+  for (let index = 0; index < messages.length;) {
+    const message = messages[index]!
+    if (message.role !== "tool") {
+      result.push(buildClaudeNativeMessage(message))
+      index += 1
+      continue
+    }
+    const content: Array<Record<string, unknown>> = []
+    while (index < messages.length && messages[index]!.role === "tool") {
+      const toolMessage = messages[index] as Extract<RuntimeChatMessage, { role: "tool" }>
+      content.push({
+        type: "tool_result",
+        tool_use_id: toolMessage.toolCallId,
+        content: toolMessage.content,
+      })
+      index += 1
+    }
+    result.push({ role: "user", content })
+  }
+  return result
+}
+
 function buildClaudeThinking(
   common: BrowserAiModelParameters["common"],
   provider: BrowserClaudeModelParameters,
@@ -155,7 +179,7 @@ export const claudeAdapter: ProviderAdapter = {
     return buildClaudeRequestBody({
       config,
       system,
-      messages: rest.map((message) => buildClaudeNativeMessage(message)),
+      messages: buildClaudeNativeMessages(rest),
       tools,
       forceToolName: options?.forceToolName,
     })

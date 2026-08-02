@@ -1,6 +1,7 @@
 import type { WorkspaceFile } from "@tsian/contracts"
 
 const FRONTEND_ACTION_ROOT = "frontend-actions"
+const DESKTOP_LOCAL_ROOT = ".tsian/local"
 
 /**
  * Host-selected Workspace boundary for an Agent Runtime entry.
@@ -24,13 +25,21 @@ export function withoutFrontendActionFiles(
   return files.filter((file) => !isFrontendActionPath(file.path))
 }
 
+function isDesktopLocalPath(path: string): boolean {
+  return path === DESKTOP_LOCAL_ROOT || path.startsWith(`${DESKTOP_LOCAL_ROOT}/`)
+}
+
+function isRuntimeGameAgentVisiblePath(path: string): boolean {
+  return !isFrontendActionPath(path) && !isDesktopLocalPath(path)
+}
+
 export function workspaceFilesForAgentBoundary(
   files: readonly WorkspaceFile[],
   boundary: AgentWorkspaceTrustBoundary = "runtime-game-agent",
 ): WorkspaceFile[] {
   return boundary === "trusted-authoring"
     ? Array.from(files)
-    : withoutFrontendActionFiles(files)
+    : files.filter((file) => isRuntimeGameAgentVisiblePath(file.path))
 }
 
 export function workspaceFileFilterForAgentBoundary(
@@ -38,5 +47,5 @@ export function workspaceFileFilterForAgentBoundary(
 ): ((file: WorkspaceFile) => boolean) | undefined {
   return boundary === "trusted-authoring"
     ? undefined
-    : (file) => !isFrontendActionPath(file.path)
+    : (file) => isRuntimeGameAgentVisiblePath(file.path)
 }

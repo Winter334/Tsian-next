@@ -30,11 +30,11 @@ describe("desktop assistant diagnostics knowledge", () => {
     expect(skill.indexOf("references/diagnostics.md")).toBeGreaterThan(
       skill.indexOf("references/workspace-and-authoring.md"),
     )
-    expect(diagnostics).toContain("`.tsian/local/diagnostics/`")
+    expect(diagnostics).toContain("`query_diagnostics`")
+    expect(diagnostics).not.toContain("`.tsian/local/diagnostics/`")
     expect(diagnostics).toContain("`operationId`")
     expect(diagnostics).toContain("后续请求")
     expect(diagnostics).toContain("只读")
-    expect(diagnostics).toContain("快照")
     expect(diagnostics).not.toMatch(/IndexedDB|Dexie|adapter|table|actor level/i)
 
     const installed = await loadLocalAssistantFiles()

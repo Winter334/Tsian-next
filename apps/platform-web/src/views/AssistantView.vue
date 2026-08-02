@@ -722,8 +722,8 @@ async function send() {
         contextUsed.value = result.usage.input
       }
     }
-    // 消息 + context + timeline 已由 host(runAssistantChat)同步写入(含 toolCalls +
-    // timeline).前端不再补写——runtime 层采集 thought/interim/tool 供 host 写入,
+    // 消息 + context + timeline 已由 host(runAssistantChat)同步写入。前端不再补写——
+    // runtime 层采集 thought/interim/tool presentation 供 host 写入,
     // 消除双写竞态.catch 路径仍保留前端持久化作兜底(host catch 不写消息).
   } catch (error) {
     const aborted = error instanceof Error && error.name === "AbortError"
@@ -787,7 +787,7 @@ async function send() {
     assistantTurns.delete(sessionId)
     runningSessionIds.delete(sessionId)
     // 持久化兜底(host catch 不写消息):前台用 persistCurrentSession(保留完整
-    // attachments/toolCalls/timeline),后台用 history 快照兜底(保住本轮半截正文)。
+    // attachments/timeline),后台用 history 快照兜底(保住本轮半截正文)。
     if (shouldPersistAfterFinalize) {
       if (sessionId === activeSessionId.value) {
         await persistCurrentSession()
@@ -807,7 +807,7 @@ async function send() {
  * 后台 turn 结束(abort/超时/错误)时的持久化兜底:用 send() 时刻的 history 快照 +
  * 本轮 user/assistant 构造完整消息写回 turn 的 sessionId。前台 turn 用
  * persistCurrentSession(更完整),本函数仅服务后台场景——host catch 不写消息,
- * 否则切回原会话会丢失本轮半截回复。history 快照不含历史 toolCalls/timeline,
+ * 否则切回原会话会丢失本轮半截回复。history 快照不含历史 timeline,
  * 但保住本轮正文已足够(中止/错误的半截回复本就是临时保留)。
  */
 async function persistTurnFallback(

@@ -4,12 +4,12 @@ import type {
   AttachmentRef,
   ContentPart,
   ConversationMessageRecord,
-  TurnToolOutput,
+  UiToolPresentation,
   TurnTimelineItem,
   ToolRegistryEntry,
   WorkspaceFile,
 } from "@tsian/contracts"
-import { runAgentRuntimeTurn } from "../agent-runtime"
+import { createDesktopAssistantEnvironment, runAgentRuntimeTurn } from "../agent-runtime"
 import {
   ASSISTANT_CONTEXT_AGENT_ID,
   ASSISTANT_CONTEXT_SCHEMA,
@@ -59,8 +59,8 @@ import {
 } from "../config/ai"
 import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
-import { createDiagnosticsWorkspaceAdapter } from "./diagnostics-workspace-adapter"
 import { createFrontendInspector } from "./frontend-inspector"
+import { createDiagnosticsQueryRunner } from "./diagnostics-query"
 import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
 import { emitTurnDebugReady } from "../debug-events"
 import {
@@ -248,7 +248,7 @@ export interface AssistantChatInput {
     callId: string,
     name: string,
     status: "loading" | "running" | "success" | "failed",
-    output?: TurnToolOutput,
+    presentation?: UiToolPresentation,
     displayName?: string,
   ) => void
   /**
@@ -459,6 +459,11 @@ export async function runAssistantChat(
   // Runtime events remain in-memory-only; provider requests use unified diagnostics.
   const traceCollector = createRuntimeTraceCollector(nextAssistantTurn)
   const traceContext = createAiTraceOperationContext()
+  const browserScriptRunners = createBrowserScriptRunners({
+    workspaceTransaction: activeWorkspaceTransaction,
+    signal: controller.signal,
+    emitTrace: traceCollector.emit,
+  })
 
   try {
     const result = await runAgentRuntimeTurn(
@@ -470,53 +475,12 @@ export async function runAssistantChat(
         // 修正 turn 号:传 nextAssistantTurn - 1,使 currentRuntimeTurnNumber 返回 nextAssistantTurn
         // (之前恒传 turn:0 → 每轮 turn=1,破坏 lastCompressedTurn 去重).
         turn: nextAssistantTurn - 1,
-        workspaceFiles: workspaceTransaction.workspaceFiles,
-        // Desktop assistant authoring is the sole trusted Agent Runtime entry.
-        // This is independent from its dynamically resolved workspace actor level;
-        // delegated card Agents are downgraded inside Agent Runtime.
-        workspaceTrustBoundary: "trusted-authoring",
-        toolFilter: localAssistantToolFilter,
         signal: compositeSignal,
-        // 注入持久化快照(任务摘要 + 最近 K 轮)+ token 预算(之前都不传,runtime
-        // 兜底初始化且 contextUpdate 被丢弃 → 无跨 turn 持久化).对称 master 路径.
-        agentContext: assistantContext,
-        contextTokenBudget: assistantContextTokenBudget,
-        // Assistant is a task-type agent (design §0): task compression mode
-        // (multi-compress tool interactions + timeout fallback + stall early-exit),
-        // distinct from master's narrative compression.
-        compressionMode: "task",
         traceContext,
-        timeoutMs: inactivityTimeoutMs,
-        onDelta: (agentId, ...args) => {
-          resetInactivityTimer()
-          input.onDelta?.(agentId, ...args)
-        },
-        // Desktop Assistant chat is in-process (not bridged), so round-end and
-        // tool process events go straight to the view. The view uses round +
-        // finishReason to classify thought vs final, and round to group tool
-        // calls under their originating thought round. agentId is passed through
-        // for signature uniformity (single-agent here).
-        onRoundEnd: (agentId, round, finishReason) => {
-          resetInactivityTimer()
-          input.onRoundEnd?.(agentId, round, finishReason)
-        },
-        onTool: input.onTool
-          ? (agentId, round, callId, name, status, output, displayName) => {
-              resetInactivityTimer()
-              input.onTool!(agentId, round, callId, name, status, output, displayName)
-            }
-          : undefined,
-        // ask_user 工具回调：复用进程内 interaction-events 总线（与游戏 host 同源），
-        // AssistantView 订阅 subscribeInteractionRequest 渲染 ask 卡片并回填答案。
-        // emit 前先通知调用方（onAskUserRequest）把 requestId 关联到本会话，
-        // 支持多会话并发时把 interaction-request 路由到正确的后台 turn。
-        onAskUser: (requestId, request) => {
-          input.onAskUserRequest?.(requestId)
-          return emitInteractionRequest(requestId, request.question, request.options, request.allowCustom)
-        },
       },
-      {
-        callModel(messages, options) {
+      createDesktopAssistantEnvironment({
+        model: {
+        callText(messages, options) {
           // 主 assistant agent 优先用用户在 header 手动选的 modelId(不走预设策略);
           // delegated/runtime agent 仍走 resolveAgentModelConfig(预设策略).
           // 修复:此前两处回调都重新 resolveAgentModelConfig,丢弃了 turn 开头按
@@ -548,7 +512,7 @@ export async function runAssistantChat(
               : undefined,
           })
         },
-        async callModelNative(messages, options, tools) {
+        async callNative(messages, options, tools) {
           // 主 assistant agent 优先用用户在 header 手动选的 modelId(不走预设策略);
           // delegated/runtime agent 仍走 resolveAgentModelConfig(预设策略).
           // 修复:此前两处回调都重新 resolveAgentModelConfig,丢弃了 turn 开头按
@@ -587,17 +551,20 @@ export async function runAssistantChat(
           })
         },
         toolCallMode: localAssistantToolCallMode,
-        runInspectFrontend: createFrontendInspector(),
-        ...createBrowserScriptRunners({
-          workspaceTransaction: activeWorkspaceTransaction,
-          signal: controller.signal,
-          emitTrace: traceCollector.emit,
-        }),
+        },
+        controlledTools: {
+          inspectFrontend: createFrontendInspector(),
+          queryDiagnostics: createDiagnosticsQueryRunner(),
+          browserScript: browserScriptRunners.runBrowserScript,
+          testSkillScript: browserScriptRunners.runTestSkillScript,
+        },
+        workspace: {
+        files: workspaceTransaction.workspaceFiles,
+        toolFilter: localAssistantToolFilter,
         // On-demand only: diagnostics never enter workspaceFiles or the turn's
         // initial context. Agent Runtime drops this capability for delegated
         // runtime game Agents.
-        virtualWorkspaceReads: createDiagnosticsWorkspaceAdapter(),
-        workspaceMutations: {
+        mutations: {
           write: (writeInput) => {
             // .tsian/local/assistant/* 是平台本地数据(不进存档/checkpoint/distribute),
             // 写入 bypass save 事务,直接落 Dexie(saveLocalAssistantFiles 合并模式).
@@ -747,8 +714,36 @@ export async function runAssistantChat(
             throw new Error(`Assistant workspace delete scope not supported: ${deleteInput.scope}`)
           },
         },
-        emitTrace: traceCollector.emit,
-      },
+        },
+        context: {
+          snapshot: assistantContext,
+          contextCapacityTokens: assistantContextTokenBudget,
+          requestInputBudgetTokens: Math.floor(Math.min(assistantContextTokenBudget, 256_000) * 0.45),
+          observationCharBudget: 32 * 1024,
+          inactivityTimeoutMs,
+        },
+        events: {
+          onDelta: (emittingAgentId, ...args) => {
+            resetInactivityTimer()
+            input.onDelta?.(emittingAgentId, ...args)
+          },
+          onRoundEnd: (emittingAgentId, round, finishReason) => {
+            resetInactivityTimer()
+            input.onRoundEnd?.(emittingAgentId, round, finishReason)
+          },
+          onTool: input.onTool
+            ? (emittingAgentId, round, callId, name, status, presentation, displayName) => {
+                resetInactivityTimer()
+                input.onTool!(emittingAgentId, round, callId, name, status, presentation, displayName)
+              }
+            : undefined,
+          onAskUser: (requestId, request) => {
+            input.onAskUserRequest?.(requestId)
+            return emitInteractionRequest(requestId, request.question, request.options, request.allowCustom)
+          },
+        },
+        audit: traceCollector.emit,
+      }),
     )
 
     // ── 消息 + context 同步写(原子性保证)──
@@ -758,9 +753,8 @@ export async function runAssistantChat(
     // 独立 IO 的竞态风险.前端正常 turn 结束不再调 persistCurrentSession.
     //
     // 组装完整消息列表:history(不含本轮)+ 本轮 user(带 attachments)+ 本轮 assistant.
-    // assistant 条带 toolCalls(UI/debug 层:不压缩完整保留,挂消息上不占条数名额,随消息截到 200 条).
+    // assistant 只持久化 presentation timeline，不保存原始工具结果。
     const inputAttachments = input.attachments
-    const turnToolCalls = result.contextUpdate?.toolCalls
     const turnToolMemories = result.contextUpdate?.toolMemories
     const turnTimelineItems = result.contextUpdate?.timelineItems
     const fullMessages: ConversationMessageRecord[] = [
@@ -773,7 +767,6 @@ export async function runAssistantChat(
       {
         role: "assistant",
         content: result.replyText,
-        ...(turnToolCalls && turnToolCalls.length > 0 ? { toolCalls: turnToolCalls } : {}),
         ...(turnTimelineItems && turnTimelineItems.length > 0 ? { timeline: turnTimelineItems } : {}),
       },
     ]
@@ -784,7 +777,7 @@ export async function runAssistantChat(
     // 是平台本地数据,不随存档 checkpoint/distribute.对称 master 的 stageAgentContextFile
     // (master 走 save 事务因 agents/master/context.json 属 save/).turn 失败走 catch
     // discard(事务),且不调本函数 → context 不写回.
-    // model-facing 工具记忆写入 top-level context.toolMemories；raw toolCalls 仅留在 UI 会话消息.
+    // model-facing 工具记忆写入 top-level context.toolMemories；UI timeline 独立持久化。
     const assistantContextUpdate = result.contextUpdate
     if (assistantContextUpdate) {
       await stageAssistantContextFile({

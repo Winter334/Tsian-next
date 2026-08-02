@@ -1,38 +1,35 @@
 import type {
-  AgentContextToolCall,
   ConversationMessageRecord,
   TurnTimelineItem,
-  TurnToolOutput,
+  UiToolPresentation,
 } from "@tsian/contracts"
 import type { ChatMessage, AssistantTimelineNode } from "@/composables/useAssistantTimeline"
 
 /**
  * 提取 agent_call 工具卡片的玩家可读内容（title + response）。
- * 普通 tool（output 为 string）返回 null —— 按需求统一不显 output，只显状态。
+ * 普通 tool 没有 presentation，只显示名称和状态。
  * agent_call 成功返回 { title, response }；失败返回 { title, error }。
  */
-export function agentCallDisplay(output: TurnToolOutput | undefined): {
+export function agentCallDisplay(presentation: UiToolPresentation | undefined): {
   title: string
   response: string
   failed: boolean
 } | null {
-  if (typeof output !== "object" || output.type !== "agent_call") {
+  if (!presentation || presentation.type !== "agent_call") {
     return null
   }
   return {
-    title: output.targetAgent.title || output.targetAgent.id || "agent_call",
-    response: output.status === "failed"
-      ? output.error?.message ?? "agent_call 失败"
-      : output.response,
-    failed: output.status === "failed",
+    title: presentation.targetAgent.title || presentation.targetAgent.id || "agent_call",
+    response: presentation.status === "failed"
+      ? presentation.error?.message ?? "agent_call 失败"
+      : presentation.response,
+    failed: presentation.status === "failed",
   }
 }
 
 /**
  * 把会话消息存储的 ConversationMessageRecord[] 映射为 ChatMessage[].
- * assistant 消息带 toolCalls 时,重建历史 tool 节点到 timeline(折叠态可展开),
- * 让玩家刷新/重进会话后能回看历史工具调用过程。
- * 数据源 = UI 会话消息存储(raw/debug 完整保留),非 context.json(模型上下文会压缩/投影).
+ * 从 presentation-only timeline 重建历史工具节点。
  * 历史节点 id 加 hist-tool- 前缀防与流式节点 callId 冲突.
  */
 export function mapStoredMessagesToChat(stored: ConversationMessageRecord[]): ChatMessage[] {
@@ -63,7 +60,7 @@ export function mapStoredMessagesToChat(stored: ConversationMessageRecord[]): Ch
             name: item.name,
             status: item.status,
             collapsed: item.collapsed,
-            ...(item.output !== undefined ? { output: item.output } : {}),
+            ...(item.presentation !== undefined ? { presentation: item.presentation } : {}),
           }
         })
     }
@@ -71,26 +68,10 @@ export function mapStoredMessagesToChat(stored: ConversationMessageRecord[]): Ch
   })
 }
 
-/** 尝试把 agent_call 工具的 observation(JSON 字符串)解析为 TurnToolOutput 结构化形态.
- *  解析失败则降级为字符串 output(普通 tool 渲染). */
-export function tryParseAgentCallOutput(call: AgentContextToolCall): { output: TurnToolOutput } {
-  try {
-    const parsed = JSON.parse(call.observation) as TurnToolOutput
-    if (typeof parsed === "object" && parsed !== null && parsed.type === "agent_call") {
-      return { output: parsed }
-    }
-  } catch {
-    // 降级
-  }
-  return { output: call.observation as TurnToolOutput }
-}
-
 /**
  * 把 ChatMessage[] 映射回 ConversationMessageRecord[](供 AssistantView 持久化).
  * assistant 消息的 timeline 节点转回 timeline(TurnTimelineItem 形态,process items)
- * + toolCalls(UI/debug raw 工具记录,从 tool 节点提取 observation).
- * turn 成功后 host 已写消息(含 toolCalls + timeline),AssistantView 再写一次补上 timeline
- * (host 不持有 thought/interim 采集,UI 层 timeline 是唯一源).后写覆盖,无竞态.
+ * 只写 timeline 展示投影，不从 UI 节点反造模型工具历史。
  */
 export function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRecord[] {
   return msgs.map((msg) => {
@@ -121,26 +102,9 @@ export function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRe
             name: node.name,
             status: node.status,
             collapsed: node.collapsed,
-            ...(node.output !== undefined ? { output: node.output } : {}),
+            ...(node.presentation !== undefined ? { presentation: node.presentation } : {}),
           }
         })
-      // toolCalls(UI/debug raw):从 tool 节点提取 observation 文本化.
-      const toolCalls: AgentContextToolCall[] = []
-      for (const node of msg.timeline) {
-        if (node.type === "tool") {
-          const observation = typeof node.output === "string"
-            ? node.output
-            : JSON.stringify(node.output)
-          toolCalls.push({
-            id: node.id.startsWith("hist-tool-") ? node.id.replace(/^hist-tool-\d+-/, "") : node.id,
-            name: node.name,
-            arguments: "",
-            observation,
-            ...(node.status === "failed" ? { failed: true } : {}),
-          })
-        }
-      }
-      if (toolCalls.length > 0) base.toolCalls = toolCalls
     }
     return base
   })

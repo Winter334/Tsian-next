@@ -106,20 +106,28 @@
                   </span>
                 </CollapsibleTrigger>
                 <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
-                  <div v-for="t in seg.tools" :key="t.id" class="flex items-center gap-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
-                    <Wrench class="h-2.5 w-2.5" aria-hidden="true" />
-                    <span>{{ agentCallDisplay(t.output)?.title ?? t.name }}</span>
-                    <span
-                      :class="{
-                        'text-neon/60': t.status === 'loading' || t.status === 'running',
-                        'text-neon': t.status === 'success',
-                        'text-red-400': t.status === 'failed',
-                      }"
+                  <div v-for="t in seg.tools" :key="t.id" class="py-0.5">
+                    <div class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
+                      <Wrench class="h-2.5 w-2.5" aria-hidden="true" />
+                      <span>{{ agentCallDisplay(t.presentation)?.title ?? t.name }}</span>
+                      <span
+                        :class="{
+                          'text-neon/60': t.status === 'loading' || t.status === 'running',
+                          'text-neon': t.status === 'success',
+                          'text-red-400': t.status === 'failed',
+                        }"
+                      >
+                        <Loader2 v-if="t.status === 'loading' || t.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
+                        <template v-else-if="t.status === 'success'">✓</template>
+                        <template v-else-if="t.status === 'failed'">✗</template>
+                      </span>
+                    </div>
+                    <p
+                      v-if="agentCallDisplay(t.presentation)?.response"
+                      class="mt-1 whitespace-pre-wrap text-xs normal-case tracking-normal text-text-main/80"
                     >
-                      <Loader2 v-if="t.status === 'loading' || t.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
-                      <template v-else-if="t.status === 'success'">✓</template>
-                      <template v-else-if="t.status === 'failed'">✗</template>
-                    </span>
+                      {{ agentCallDisplay(t.presentation)?.response }}
+                    </p>
                   </div>
                 </CollapsibleContent>
               </Collapsible>

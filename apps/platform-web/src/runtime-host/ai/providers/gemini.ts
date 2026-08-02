@@ -40,6 +40,39 @@ function buildGeminiNativeContent(message: RuntimeChatMessage): Record<string, u
   return { role: "user", parts: buildGeminiParts(message.content) }
 }
 
+function buildGeminiNativeContents(messages: RuntimeChatMessage[]): Record<string, unknown>[] {
+  const result: Record<string, unknown>[] = []
+  const toolNamesById = new Map<string, string>()
+  for (const message of messages) {
+    if (message.role !== "assistant") continue
+    for (const call of message.toolCalls ?? []) {
+      toolNamesById.set(call.id, call.name)
+    }
+  }
+  for (let index = 0; index < messages.length;) {
+    const message = messages[index]!
+    if (message.role !== "tool") {
+      result.push(buildGeminiNativeContent(message))
+      index += 1
+      continue
+    }
+    const parts: Array<Record<string, unknown>> = []
+    while (index < messages.length && messages[index]!.role === "tool") {
+      const toolMessage = messages[index] as Extract<RuntimeChatMessage, { role: "tool" }>
+      parts.push({
+        functionResponse: {
+          id: toolMessage.toolCallId,
+          name: toolNamesById.get(toolMessage.toolCallId) ?? toolMessage.toolCallId,
+          response: { result: toolMessage.content },
+        },
+      })
+      index += 1
+    }
+    result.push({ role: "user", parts })
+  }
+  return result
+}
+
 function buildGeminiGenerationConfig(parameters: BrowserAiModelParameters): Record<string, unknown> {
   const common = parameters.common
   const provider = providerParamsForKind(parameters, "gemini") as BrowserGeminiModelParameters
@@ -152,7 +185,7 @@ export const geminiAdapter: ProviderAdapter = {
     return buildGeminiRequestBody({
       config,
       system,
-      contents: rest.map((message) => buildGeminiNativeContent(message)),
+      contents: buildGeminiNativeContents(rest),
       tools,
       forceToolName: options?.forceToolName,
     })

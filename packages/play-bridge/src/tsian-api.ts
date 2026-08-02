@@ -28,7 +28,7 @@ import type {
   RemotePlayBridgeEventPayload,
   RuntimeWorkspaceMutationEvent,
   SessionHistoryEntry,
-  TurnToolOutput,
+  UiToolPresentation,
   UpdateCheckpointOptions,
   WorkspaceEntry,
   WorkspaceReadResult,
@@ -110,7 +110,7 @@ export interface ToolEvent {
   /** Optional opaque player-facing label. Render `name` when absent. */
   displayName?: string
   status: "loading" | "running" | "success" | "failed"
-  output?: TurnToolOutput
+  presentation?: UiToolPresentation
 }
 
 export interface AskRequest {
@@ -285,7 +285,9 @@ export function createTsian(): TsianApi {
             ? { displayName }
             : {}),
           status: (payload as { status?: ToolEvent["status"] }).status ?? "loading",
-          ...(payload && "output" in payload ? { output: (payload as { output?: TurnToolOutput }).output } : {}),
+          ...(payload && "presentation" in payload
+            ? { presentation: (payload as { presentation?: UiToolPresentation }).presentation }
+            : {}),
         }
         for (const cb of toolCallbacks) {
           try { cb(tool) } catch (err) { console.error("[tsian] onTool callback threw", err) }

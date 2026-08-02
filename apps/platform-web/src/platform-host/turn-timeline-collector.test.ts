@@ -6,7 +6,7 @@ describe("createTurnTimelineCollector tool display names", () => {
     const collector = createTurnTimelineCollector()
 
     collector.onTool("master", 2, "call-1", "read_entity", "loading", undefined, "读取实体")
-    collector.onTool("master", 2, "call-1", "read_entity", "success", "done")
+    collector.onTool("master", 2, "call-1", "read_entity", "success")
 
     expect(collector.getTimelineItems()).toEqual([
       {
@@ -17,7 +17,6 @@ describe("createTurnTimelineCollector tool display names", () => {
         name: "read_entity",
         displayName: "读取实体",
         status: "success",
-        output: "done",
         collapsed: true,
       },
     ])
@@ -27,7 +26,7 @@ describe("createTurnTimelineCollector tool display names", () => {
     const collector = createTurnTimelineCollector()
 
     collector.onTool("master", 1, "call-2", "roll_dice", "loading")
-    collector.onTool("master", 1, "call-2", "roll_dice", "failed", "failed", "掷骰")
+    collector.onTool("master", 1, "call-2", "roll_dice", "failed", undefined, "掷骰")
 
     expect(collector.getTimelineItems()[0]).toMatchObject({
       kind: "tool",

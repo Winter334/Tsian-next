@@ -232,10 +232,37 @@ const testSkillScriptSchema: ToolSchema = {
   },
 }
 
+const queryDiagnosticsSchema: ToolSchema = {
+  name: RUNTIME_WORKSPACE_TOOL_NAMES.queryDiagnostics,
+  description:
+    "Query platform diagnostics through bounded list/search/read operations. Start with list or search summaries, then read one record section by id and character range.",
+  parameters: {
+    type: "object",
+    required: ["operation"],
+    properties: {
+      operation: { type: "string", enum: ["list", "search", "read"] },
+      recordType: { type: "string", enum: ["ai-request", "frontend-error"] },
+      status: { type: "string" },
+      provider: { type: "string" },
+      model: { type: "string" },
+      operationId: { type: "string" },
+      query: { type: "string", description: "Required for search." },
+      id: { type: "string", description: "Required for read." },
+      section: {
+        type: "string",
+        enum: ["summary", "error", "attempts", "request", "response"],
+        description: "read defaults to summary. Request/response require explicit selection.",
+      },
+      offset: { type: "integer", description: "0-based character offset for read." },
+      limit: { type: "integer", description: "Maximum list records or read characters." },
+    },
+  },
+}
+
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
-    "Read one Runtime Workspace file by path. Use offset/limit for long files; results include totalLines, returnedLines, offset and truncated for paging.",
+    "Read one known Runtime Workspace file. Use line offset/limit or character charOffset/charLimit for long content; character ranges are recoverable even for a single very long line.",
   parameters: {
     type: "object",
     required: ["path"],
@@ -251,6 +278,14 @@ const workspaceReadSchema: ToolSchema = {
       limit: {
         type: "integer",
         description: "Maximum lines to return (default 2000, hard cap 5000). Omit to return the whole file.",
+      },
+      charOffset: {
+        type: "integer",
+        description: "0-based character start. Mutually exclusive with offset/limit.",
+      },
+      charLimit: {
+        type: "integer",
+        description: "Maximum characters to return (hard cap 24576). Mutually exclusive with offset/limit.",
       },
     },
   },
@@ -283,6 +318,10 @@ const workspaceSearchSchema: ToolSchema = {
       query: {
         type: "string",
         description: "Substring search text. Case-insensitive by default. Mutually exclusive with `pattern`.",
+      },
+      path: {
+        type: "string",
+        description: "Optional directory root. Search only this directory subtree when the likely location is known.",
       },
       pattern: {
         type: "string",
@@ -507,6 +546,9 @@ export function buildEnabledToolSchemas(options: {
    * it happens.
    */
   userTools?: ToolRegistryEntry[]
+  inspectFrontendAvailable?: boolean
+  testSkillScriptAvailable?: boolean
+  queryDiagnosticsAvailable?: boolean
 }): ToolSchema[] {
   const canCallAgents =
     options.allowAgentCall && options.visibleContacts.length > 0
@@ -561,20 +603,31 @@ export function buildEnabledToolSchemas(options: {
     schemas.push(workspaceSemanticSearchSchema)
   }
 
-  const canInspectFrontend = platformToolEnabled(
-    options.enabledPlatformTools,
-    AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
-  )
+  const canInspectFrontend = options.inspectFrontendAvailable === true
+    && platformToolEnabled(
+      options.enabledPlatformTools,
+      AGENT_PLATFORM_TOOL_NAMES.inspectFrontend,
+    )
   if (canInspectFrontend) {
     schemas.push(inspectFrontendSchema)
   }
 
-  const canTestSkillScript = platformToolEnabled(
-    options.enabledPlatformTools,
-    AGENT_PLATFORM_TOOL_NAMES.testSkillScript,
-  )
+  const canTestSkillScript = options.testSkillScriptAvailable === true
+    && platformToolEnabled(
+      options.enabledPlatformTools,
+      AGENT_PLATFORM_TOOL_NAMES.testSkillScript,
+    )
   if (canTestSkillScript) {
     schemas.push(testSkillScriptSchema)
+  }
+
+  const canQueryDiagnostics = options.queryDiagnosticsAvailable === true
+    && platformToolEnabled(
+      options.enabledPlatformTools,
+      AGENT_PLATFORM_TOOL_NAMES.queryDiagnostics,
+    )
+  if (canQueryDiagnostics) {
+    schemas.push(queryDiagnosticsSchema)
   }
 
   // Append user tools last. Names already emitted by the platform above win
