@@ -107,8 +107,6 @@ export interface AgentRuntimeTurnInput {
   contextTokenBudget?: number
   /** Product consumption ceiling checked against the final provider request. */
   requestInputBudgetTokens?: number
-  /** Final serialized Agent observation ceiling. */
-  observationCharBudget?: number
   /** Controlled platform tools physically supplied by the current Environment. */
   controlledToolAvailability?: AgentPlatformToolName[]
   /**
@@ -267,7 +265,6 @@ export interface AgentRuntimeEnvironment {
     compressionMode: RuntimeCompressionMode
     contextCapacityTokens: number
     requestInputBudgetTokens: number
-    observationCharBudget: number
     inactivityTimeoutMs?: number
   }
   model: {

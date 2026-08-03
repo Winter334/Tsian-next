@@ -236,7 +236,6 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
           compressionMode: "narrative",
           contextCapacityTokens: contextTokenBudget,
           requestInputBudgetTokens: Math.floor(contextTokenBudget * 0.85),
-          observationCharBudget: 32 * 1024,
         },
         events: {
           onDelta: (agentId, delta, round, kind) => {

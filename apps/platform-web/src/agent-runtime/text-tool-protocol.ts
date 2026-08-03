@@ -6,7 +6,6 @@ import type {
   RuntimeWorkspaceToolError,
   RuntimeWorkspaceToolObservation,
 } from "./workspace-tools-types"
-import { compactLargeValueForModel } from "./tool-memory"
 
 export const TEXT_TOOL_CALLS_TAG = "tsian-tool-calls"
 export const TEXT_TOOL_CALL_RECORDS_TAG = "tsian-tool-call-records"
@@ -290,18 +289,7 @@ export function formatTextToolCallRecords(
   return `<${TEXT_TOOL_CALL_RECORDS_TAG}>${JSON.stringify(records)}</${TEXT_TOOL_CALL_RECORDS_TAG}>`
 }
 
-function compactToolErrorForText(
-  error: RuntimeWorkspaceToolObservation["error"],
-): RuntimeWorkspaceToolError | undefined {
-  if (!error) return undefined
-  return {
-    code: error.code,
-    message: error.message,
-    ...(error.details === undefined ? {} : { details: compactLargeValueForModel(error.details) }),
-  }
-}
-
-function compactToolObservationForText(
+function toolObservationForText(
   call: RuntimeWorkspaceToolCall | undefined,
   observation: RuntimeWorkspaceToolObservation,
   index: number,
@@ -309,19 +297,18 @@ function compactToolObservationForText(
   const id = call?.id ?? `text-c${index}`
   const name = call?.name ?? observation.name
   if (!observation.ok) {
-    const error = compactToolErrorForText(observation.error)
     return {
       id,
       name,
       ok: false,
-      ...(error ? { error } : {}),
+      ...(observation.error ? { error: observation.error } : {}),
     }
   }
   return {
     id,
     name,
     ok: true,
-    ...(observation.result === undefined ? {} : { result: compactLargeValueForModel(observation.result) }),
+    ...(observation.result === undefined ? {} : { result: observation.result }),
   }
 }
 
@@ -330,7 +317,7 @@ export function formatTextToolObservations(
   observations: RuntimeWorkspaceToolObservation[],
 ): { text: string; imageParts: ContentPart[] } {
   const records = observations.map((observation, index) =>
-    compactToolObservationForText(calls[index], observation, index)
+    toolObservationForText(calls[index], observation, index)
   )
   const imageParts = observations.flatMap((observation) => observation.imageParts ?? [])
   return {

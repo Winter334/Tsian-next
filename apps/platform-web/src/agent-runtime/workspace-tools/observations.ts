@@ -1,5 +1,4 @@
 import type { UiToolPresentation } from "@tsian/contracts"
-import { compactLargeValueForModel } from "../tool-memory"
 import {
   RUNTIME_WORKSPACE_TOOL_NAMES,
   type RuntimeWorkspaceToolCall,
@@ -7,242 +6,165 @@ import {
 } from "../workspace-tools-types"
 import { isRecord } from "./shared"
 
-export const DEFAULT_AGENT_OBSERVATION_CHAR_BUDGET = 32 * 1024
-export const MAX_AGENT_OBSERVATION_CHAR_BUDGET = 32 * 1024
-export const MAX_AGENT_READ_CONTENT_CHARS = 24 * 1024
+export const MAX_AGENT_OBSERVATION_CHARS = 32 * 1024
 export const MAX_UI_AGENT_CALL_RESPONSE_CHARS = 8 * 1024
 
-const MAX_SEARCH_FILES = 10
-const MAX_SEARCH_MATCHES_PER_FILE = 5
-const MAX_SEARCH_SNIPPET_CHARS = 400
+const OBSERVATION_REMEDIATION =
+  "Return a concise summary, a bounded page with continuation, or a workspace artifact path that can be read separately."
 
-function jsonSafeValue(value: unknown, seen = new WeakSet<object>()): unknown {
-  if (
-    value === null
-    || typeof value === "string"
-    || typeof value === "boolean"
-    || typeof value === "undefined"
-  ) {
-    return value
+type JsonValidationFailure =
+  | "unsupported-type"
+  | "non-finite-number"
+  | "circular-reference"
+  | "sparse-array"
+  | "non-plain-object"
+  | "unsupported-property"
+  | "inspection-failed"
+
+function validateJsonValue(
+  value: unknown,
+  activeObjects = new WeakSet<object>(),
+): JsonValidationFailure | undefined {
+  if (value === null || typeof value === "string" || typeof value === "boolean") {
+    return undefined
   }
-  if (typeof value === "number") return Number.isFinite(value) ? value : null
-  if (typeof value === "bigint") return value.toString()
-  if (typeof value === "function" || typeof value === "symbol") return String(value)
-  if (seen.has(value)) return "[Circular]"
-  seen.add(value)
-  if (Array.isArray(value)) {
-    return value.map((item) => jsonSafeValue(item, seen))
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? undefined : "non-finite-number"
   }
+  if (typeof value !== "object") {
+    return "unsupported-type"
+  }
+  if (activeObjects.has(value)) {
+    return "circular-reference"
+  }
+
+  activeObjects.add(value)
   try {
-    return Object.fromEntries(Object.entries(value).map(([key, child]) => {
-      try {
-        return [key, jsonSafeValue(child, seen)]
-      } catch {
-        return [key, "[Unserializable]"]
-      }
-    }))
-  } catch {
-    return String(value)
-  }
-}
-
-function serialized(value: unknown): string {
-  if (typeof value === "string") return value
-  try {
-    return JSON.stringify(value) ?? String(value)
-  } catch {
-    return String(value)
-  }
-}
-
-function normalizedBudget(value: number | undefined): number {
-  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    return DEFAULT_AGENT_OBSERVATION_CHAR_BUDGET
-  }
-  return Math.min(MAX_AGENT_OBSERVATION_CHAR_BUDGET, Math.max(512, Math.floor(value)))
-}
-
-function previewEnvelope(value: unknown, budget: number, anchors: string[]): unknown {
-  const text = serialized(value)
-  let previewLimit = Math.max(32, budget - 320 - serialized(anchors).length)
-  let envelope: Record<string, unknown>
-  do {
-    envelope = {
-      preview: text.slice(0, previewLimit),
-      charCount: text.length,
-      truncatedForModel: true,
-      ...(anchors.length > 0 ? { anchors } : {}),
-      continuation: "Read the authoritative source by path/id with a narrower range.",
-    }
-    if (serialized(envelope).length <= budget || previewLimit <= 32) return envelope
-    previewLimit = Math.max(32, previewLimit - 128)
-  } while (previewLimit > 32)
-  return { preview: text.slice(0, 32), charCount: text.length, truncatedForModel: true }
-}
-
-function boundedValue(value: unknown, budget: number, anchors: string[] = []): unknown {
-  if (serialized(value).length <= budget) return value
-  const compacted = compactLargeValueForModel(value)
-  return serialized(compacted).length <= budget
-    ? compacted
-    : previewEnvelope(compacted, budget, anchors)
-}
-
-function snippet(value: unknown): string {
-  if (typeof value !== "string") return ""
-  return value.length <= MAX_SEARCH_SNIPPET_CHARS
-    ? value
-    : `${value.slice(0, MAX_SEARCH_SNIPPET_CHARS)}…`
-}
-
-function projectSearchResult(result: unknown, call: RuntimeWorkspaceToolCall | undefined): unknown {
-  if (!Array.isArray(result)) return result
-  const items = result.slice(0, MAX_SEARCH_FILES).map((item) => {
-    if (!isRecord(item)) return boundedValue(item, 1_000)
-    const matches = Array.isArray(item.matches) ? item.matches : []
-    return {
-      path: item.path,
-      name: item.name,
-      updatedAt: item.updatedAt,
-      score: item.score,
-      preview: snippet(item.preview),
-      matches: matches.slice(0, MAX_SEARCH_MATCHES_PER_FILE).map((match) => {
-        if (!isRecord(match)) return boundedValue(match, MAX_SEARCH_SNIPPET_CHARS)
-        return {
-          lineNumber: match.lineNumber,
-          line: snippet(match.line),
-          match: snippet(match.match),
-          contextBefore: Array.isArray(match.contextBefore)
-            ? match.contextBefore.map(snippet).slice(-2)
-            : [],
-          contextAfter: Array.isArray(match.contextAfter)
-            ? match.contextAfter.map(snippet).slice(0, 2)
-            : [],
+    if (Array.isArray(value)) {
+      if (Object.getPrototypeOf(value) !== Array.prototype) return "non-plain-object"
+      const ownKeys = Reflect.ownKeys(value)
+      for (const key of ownKeys) {
+        if (key === "length") continue
+        if (typeof key !== "string" || !/^(0|[1-9]\d*)$/.test(key)) {
+          return "unsupported-property"
         }
-      }),
-      omittedMatches: Math.max(0, matches.length - MAX_SEARCH_MATCHES_PER_FILE),
-      matchesTruncated: item.matchesTruncated === true
-        || matches.length > MAX_SEARCH_MATCHES_PER_FILE,
+        const index = Number(key)
+        if (!Number.isSafeInteger(index) || index < 0 || index >= value.length) {
+          return "unsupported-property"
+        }
+      }
+      for (let index = 0; index < value.length; index += 1) {
+        if (!Object.prototype.hasOwnProperty.call(value, index)) return "sparse-array"
+        const descriptor = Object.getOwnPropertyDescriptor(value, String(index))
+        if (!descriptor?.enumerable || !("value" in descriptor)) return "unsupported-property"
+        const failure = validateJsonValue(descriptor.value, activeObjects)
+        if (failure) return failure
+      }
+      return undefined
     }
-  })
-  const anchors = items.flatMap((item) =>
-    isRecord(item) && typeof item.path === "string" ? [item.path] : [])
+
+    const prototype = Object.getPrototypeOf(value)
+    if (prototype !== Object.prototype && prototype !== null) return "non-plain-object"
+    for (const key of Reflect.ownKeys(value)) {
+      if (typeof key !== "string") return "unsupported-property"
+      const descriptor = Object.getOwnPropertyDescriptor(value, key)
+      if (!descriptor?.enumerable || !("value" in descriptor)) return "unsupported-property"
+      const failure = validateJsonValue(descriptor.value, activeObjects)
+      if (failure) return failure
+    }
+    return undefined
+  } catch {
+    return "inspection-failed"
+  } finally {
+    activeObjects.delete(value)
+  }
+}
+
+function textObservation(
+  observation: RuntimeWorkspaceToolObservation,
+): Omit<RuntimeWorkspaceToolObservation, "imageParts"> {
+  if (observation.ok) {
+    return {
+      index: observation.index,
+      name: observation.name,
+      ok: true,
+      ...(observation.result === undefined ? {} : { result: observation.result }),
+    }
+  }
   return {
-    items,
-    totalFiles: result.length,
-    returnedFiles: items.length,
-    omittedFiles: Math.max(0, result.length - items.length),
-    truncated: result.length > items.length
-      || items.some((item) => isRecord(item) && item.matchesTruncated === true),
-    anchors,
-    continuation: {
-      ...(typeof call?.arguments.path === "string" ? { path: call.arguments.path } : {}),
-      hint: "Narrow path/query/pattern, then read an exact file range.",
-    },
+    index: observation.index,
+    name: observation.name,
+    ok: false,
+    ...(observation.error ? { error: observation.error } : {}),
   }
 }
 
-function projectReadResult(result: unknown): unknown {
-  if (!isRecord(result) || typeof result.content !== "string") return result
-  const content = result.content
-  const charOffset = typeof result.charOffset === "number" ? result.charOffset : 0
-  const returned = content.slice(0, MAX_AGENT_READ_CONTENT_CHARS)
-  const totalChars = typeof result.totalChars === "number" ? result.totalChars : content.length
-  const projectedTruncated = returned.length < content.length
-  const truncated = result.truncated === true || projectedTruncated
+function rejectedObservation(
+  observation: RuntimeWorkspaceToolObservation,
+  error: RuntimeWorkspaceToolObservation["error"],
+): RuntimeWorkspaceToolObservation {
   return {
-    ...result,
-    content: returned,
-    totalChars,
-    returnedChars: returned.length,
-    charOffset,
-    truncated,
-    ...(projectedTruncated
-      ? { nextCharOffset: charOffset + returned.length }
-      : typeof result.nextCharOffset === "number"
-        ? { nextCharOffset: result.nextCharOffset }
-        : {}),
+    index: observation.index,
+    name: observation.name,
+    ok: false,
+    error,
+    ...(observation.imageParts ? { imageParts: observation.imageParts } : {}),
   }
 }
 
-function anchorsFor(call: RuntimeWorkspaceToolCall | undefined, result: unknown): string[] {
-  const anchors = new Set<string>()
-  const add = (value: unknown) => {
-    if (typeof value === "string" && value.trim()) anchors.add(value.trim())
-  }
-  add(call?.arguments.path)
-  add(call?.arguments.id)
-  if (isRecord(result)) {
-    add(result.path)
-    add(result.id)
-    if (Array.isArray(result.anchors)) result.anchors.forEach(add)
-  }
-  return [...anchors].slice(0, 20)
-}
-
-/** Project one execution result into the only representation allowed to enter
- * model messages/tool memories. The returned value always fits the final
- * serialized observation budget and remains valid JSON when stringified. */
-export function projectToolObservationForAgent(
+/**
+ * Final acceptance gate for the only observation representation allowed into
+ * native/text model messages and Tool memory. Producers own pagination and
+ * summaries; this boundary never rewrites a successful result.
+ */
+export function acceptToolObservationForAgent(
   call: RuntimeWorkspaceToolCall | undefined,
   observation: RuntimeWorkspaceToolObservation,
-  requestedBudget?: number,
 ): RuntimeWorkspaceToolObservation {
-  const budget = normalizedBudget(requestedBudget)
-  const rawResult = jsonSafeValue(observation.result)
-  const anchors = anchorsFor(call, rawResult)
-  let result = rawResult
-  if (call?.name === RUNTIME_WORKSPACE_TOOL_NAMES.read) {
-    result = projectReadResult(rawResult)
-  } else if (call?.name === RUNTIME_WORKSPACE_TOOL_NAMES.search) {
-    result = projectSearchResult(rawResult, call)
+  const candidate = textObservation(observation)
+  const validationFailure = validateJsonValue(candidate)
+  const toolName = call?.name ?? observation.name
+  if (validationFailure) {
+    return rejectedObservation(observation, {
+      code: "TOOL_OBSERVATION_INVALID",
+      message: `Tool ${toolName} returned a result that is not safely JSON serializable.`,
+      details: {
+        toolName,
+        reason: validationFailure,
+        remediation: OBSERVATION_REMEDIATION,
+      },
+    })
   }
 
-  const projected: RuntimeWorkspaceToolObservation = observation.ok
-    ? {
-        index: observation.index,
-        name: observation.name,
-        ok: true,
-        ...(result === undefined ? {} : { result: boundedValue(result, budget, anchors) }),
-        ...(observation.imageParts ? { imageParts: observation.imageParts } : {}),
-      }
-    : {
-        index: observation.index,
-        name: observation.name,
-        ok: false,
-        ...(observation.error
-          ? {
-              error: {
-                code: observation.error.code,
-                message: observation.error.message,
-                ...(observation.error.details === undefined
-                  ? {}
-                  : { details: boundedValue(jsonSafeValue(observation.error.details), Math.floor(budget / 2), anchors) }),
-              },
-            }
-          : {}),
-      }
+  let serialized: string
+  try {
+    serialized = JSON.stringify(candidate)
+  } catch {
+    return rejectedObservation(observation, {
+      code: "TOOL_OBSERVATION_INVALID",
+      message: `Tool ${toolName} returned a result that is not safely JSON serializable.`,
+      details: {
+        toolName,
+        reason: "serialization-failed",
+        remediation: OBSERVATION_REMEDIATION,
+      },
+    })
+  }
 
-  const projectedText = { ...projected, imageParts: undefined }
-  if (serialized(projectedText).length <= budget) return projected
-  const fallback: RuntimeWorkspaceToolObservation = {
-    index: projected.index,
-    name: projected.name,
-    ok: projected.ok,
-    ...(projected.ok
-      ? { result: previewEnvelope(projected.result, Math.max(512, budget - 96), anchors) }
-      : {
-          error: {
-            code: projected.error?.code ?? "TOOL_FAILED",
-            message: snippet(projected.error?.message ?? "Tool failed."),
-            details: previewEnvelope(projected.error?.details, Math.max(512, budget - 256), anchors),
-          },
-        }),
+  if (serialized.length > MAX_AGENT_OBSERVATION_CHARS) {
+    return rejectedObservation(observation, {
+      code: "TOOL_OBSERVATION_TOO_LARGE",
+      message: `Tool ${toolName} returned ${serialized.length} characters; the maximum accepted observation is ${MAX_AGENT_OBSERVATION_CHARS}.`,
+      details: {
+        toolName,
+        actualChars: serialized.length,
+        maxChars: MAX_AGENT_OBSERVATION_CHARS,
+        remediation: OBSERVATION_REMEDIATION,
+      },
+    })
   }
-  return {
-    ...fallback,
-    ...(projected.imageParts ? { imageParts: projected.imageParts } : {}),
-  }
+
+  return observation
 }
 
 /** Build the closed UI projection. Ordinary tools intentionally return no
@@ -280,12 +202,6 @@ export function buildToolPresentation(
   }
 }
 
-export function compactToolObservationForModel(
-  observation: RuntimeWorkspaceToolObservation,
-): RuntimeWorkspaceToolObservation {
-  return projectToolObservationForAgent(undefined, observation)
-}
-
 export function formatNativeToolObservationContent(
   observation: RuntimeWorkspaceToolObservation,
 ): string {
@@ -294,5 +210,5 @@ export function formatNativeToolObservationContent(
   }
   return typeof observation.result === "string"
     ? observation.result
-    : JSON.stringify(observation.result)
+    : JSON.stringify(observation.result) ?? "null"
 }

@@ -46,7 +46,6 @@ describe("final provider request budget", () => {
         compressionMode: "task",
         contextCapacityTokens: 256_000,
         requestInputBudgetTokens: 100,
-        observationCharBudget: 32 * 1024,
       },
       model: { callText: vi.fn(), callNative, toolCallMode: "native" },
       controlledTools: {},

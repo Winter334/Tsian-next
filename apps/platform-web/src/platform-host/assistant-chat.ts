@@ -719,7 +719,6 @@ export async function runAssistantChat(
           snapshot: assistantContext,
           contextCapacityTokens: assistantContextTokenBudget,
           requestInputBudgetTokens: Math.floor(Math.min(assistantContextTokenBudget, 256_000) * 0.45),
-          observationCharBudget: 32 * 1024,
           inactivityTimeoutMs,
         },
         events: {

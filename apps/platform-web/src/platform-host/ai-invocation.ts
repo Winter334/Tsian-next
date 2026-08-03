@@ -386,7 +386,6 @@ export async function invokeAgent(input: InvokeAgentRequest): Promise<InvokeAgen
             compressionMode: "task",
             contextCapacityTokens: contextTokenBudget,
             requestInputBudgetTokens: Math.floor(contextTokenBudget * 0.7),
-            observationCharBudget: 32 * 1024,
             ...(shouldPersist ? { inactivityTimeoutMs: DEFAULT_TASK_INACTIVITY_TIMEOUT_MS } : {}),
           },
           events: {

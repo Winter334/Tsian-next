@@ -262,7 +262,7 @@ const queryDiagnosticsSchema: ToolSchema = {
 const workspaceReadSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.read,
   description:
-    "Read one known Runtime Workspace file. Use line offset/limit or character charOffset/charLimit for long content; character ranges are recoverable even for a single very long line.",
+    "Read one known Runtime Workspace file. Results are bounded to 24576 characters and include exact nextCharOffset when content remains. Continue with charOffset for lossless paging, including very long single lines.",
   parameters: {
     type: "object",
     required: ["path"],
@@ -277,7 +277,7 @@ const workspaceReadSchema: ToolSchema = {
       },
       limit: {
         type: "integer",
-        description: "Maximum lines to return (default 2000, hard cap 5000). Omit to return the whole file.",
+        description: "Maximum lines to request (default 2000, hard cap 5000). Delivery may stop within a long line; continue from nextCharOffset.",
       },
       charOffset: {
         type: "integer",
@@ -294,7 +294,7 @@ const workspaceReadSchema: ToolSchema = {
 const workspaceListSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.list,
   description:
-    "List direct child entries of a workspace directory by path. Returns entries without file contents. Omit path (or pass empty) to list the root.",
+    "List a bounded page of direct child entries without file contents. Omit path (or pass empty) to list the root; use nextOffset to continue when truncated.",
   parameters: {
     type: "object",
     required: [],
@@ -303,6 +303,17 @@ const workspaceListSchema: ToolSchema = {
         type: "string",
         description: "Optional directory path to list. Empty, omitted, or `.` means the workspace root.",
       },
+      offset: {
+        type: "integer",
+        minimum: 0,
+        description: "0-based entry offset. Defaults to 0.",
+      },
+      limit: {
+        type: "integer",
+        minimum: 1,
+        maximum: 50,
+        description: "Maximum entries in this page. Defaults to 50; maximum 50.",
+      },
     },
   },
 }
@@ -310,7 +321,7 @@ const workspaceListSchema: ToolSchema = {
 const workspaceSearchSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.search,
   description:
-    "Search workspace files and return per-file match lists (line number + matched line + context lines). Pass either `query` (substring, case-insensitive by default) or `pattern` (regex, case-sensitive by default) — not both. Empty/omitted query and pattern return no results. Use it to locate relevant files and lines before reading specific ones.",
+    "Search workspace files and return a bounded result page with at most 5 matches per file and explicit omission flags. Pass either `query` or `pattern`, not both. Search has no cursor: when hasMoreFiles is true, narrow path/query/pattern, then read authoritative files.",
   parameters: {
     type: "object",
     required: [],
@@ -329,7 +340,9 @@ const workspaceSearchSchema: ToolSchema = {
       },
       contextLines: {
         type: "integer",
-        description: "Context lines to return before and after each match (default 0).",
+        minimum: 0,
+        maximum: 2,
+        description: "Context lines before and after each match. Defaults to 0; maximum 2.",
       },
       ignoreCase: {
         type: "boolean",
@@ -337,7 +350,9 @@ const workspaceSearchSchema: ToolSchema = {
       },
       limit: {
         type: "integer",
-        description: "Optional maximum number of files to return.",
+        minimum: 1,
+        maximum: 10,
+        description: "Maximum files to return. Defaults to 10; maximum 10.",
       },
     },
   },
@@ -371,7 +386,7 @@ const workspaceSemanticSearchSchema: ToolSchema = {
 const workspaceGlobSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.glob,
   description:
-    "Recursively match workspace file paths by glob pattern and return the matching path list (no file contents). Use it to locate files by name pattern without walking directories one level at a time. Returns an array of matching file paths; empty array if no matches.",
+    "Recursively match workspace file paths and return a bounded path list without file contents. When truncated is true, narrow the glob pattern to retrieve omitted paths.",
   parameters: {
     type: "object",
     required: ["pattern"],
@@ -383,7 +398,9 @@ const workspaceGlobSchema: ToolSchema = {
       },
       limit: {
         type: "integer",
-        description: "Max matches to return. Default 50, max 200.",
+        minimum: 1,
+        maximum: 50,
+        description: "Maximum matches to return. Defaults to 50; maximum 50.",
       },
     },
   },
@@ -446,7 +463,7 @@ const workspaceEditSchema: ToolSchema = {
 const workspaceDiffSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.diff,
   description:
-    "Compute a diff between a workspace file's current content and a proposed next content, without persisting. Use it to preview a change before patching. Returns the diff between current and expected content, including whether content changed.",
+    "Compare a workspace file's current content with proposed next content without persisting. Small comparisons return inline contents; large comparisons return sizes and a read continuation instead of duplicating both bodies.",
   parameters: {
     type: "object",
     required: ["path", "expectedContent"],
@@ -466,7 +483,7 @@ const workspaceDiffSchema: ToolSchema = {
 const workspaceMoveSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.move,
   description:
-    "Move or rename a workspace file from one path to another. Use it only when a loaded Skill explicitly requires reorganizing runtime files. Returns the moved file paths. Returns an error if the source or target path is invalid or the actor cannot edit either path. The destination may be in a different workspace scope when the actor has access to both scopes.",
+    "Move or rename workspace files. Returns the exact moved count plus a bounded path sample with omission metadata. The destination may be in a different workspace scope when the actor has access to both scopes.",
   parameters: {
     type: "object",
     required: ["path", "targetPath"],
@@ -486,7 +503,7 @@ const workspaceMoveSchema: ToolSchema = {
 const workspaceCopySchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.copy,
   description:
-    "Copy a workspace file or directory prefix from one path to another while keeping the source. Use it for backups, template duplication, or installing content into another workspace scope. Returns the copied file paths. Returns an error if the source or target path is invalid, the actor cannot read the source or edit the target, or any target file already exists.",
+    "Copy a workspace file or directory prefix while keeping the source. Returns the exact copied count plus a bounded path sample with omission metadata.",
   parameters: {
     type: "object",
     required: ["path", "targetPath"],
@@ -506,7 +523,7 @@ const workspaceCopySchema: ToolSchema = {
 const workspaceDeleteSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.delete,
   description:
-    "Delete one or more workspace files matching a path prefix. Use it only when a loaded Skill explicitly requires removing runtime files. Returns the deleted file paths. Returns an error if the path is not deletable for the current Agent.",
+    "Delete one or more workspace files matching a path prefix. Returns the exact deleted count plus a bounded path sample with omission metadata.",
   parameters: {
     type: "object",
     required: ["path"],

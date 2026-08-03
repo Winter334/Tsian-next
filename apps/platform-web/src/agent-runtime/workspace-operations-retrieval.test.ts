@@ -1,7 +1,11 @@
 import type { WorkspaceFile } from "@tsian/contracts"
 import { describe, expect, it } from "vitest"
 import { executeWorkspaceOperation } from "./workspace-operations"
-import { MAX_AGENT_READ_CONTENT_CHARS, projectToolObservationForAgent } from "./workspace-tools/observations"
+import {
+  deliverWorkspaceOperationResultToAgent,
+  MAX_AGENT_READ_CONTENT_CHARS,
+  workspaceOperationRequestFromAgentTool,
+} from "./workspace-tools/workspace-delivery"
 
 function file(path: string, content: string): WorkspaceFile {
   return { path, content, createdAt: 1, updatedAt: 1 }
@@ -49,17 +53,37 @@ describe("workspace retrieval boundaries", () => {
     )).rejects.toMatchObject({ code: "WORKSPACE_READ_RANGE_MUTEX" })
   })
 
-  it("keeps an exact character continuation when a line-range projection is capped", async () => {
+  it("keeps the shared no-range read complete for direct consumers", async () => {
+    const result = await executeWorkspaceOperation(
+      { operation: "read", path: "docs/huge.txt" },
+      { workspaceFiles: files, actorLevel: 4 },
+    ) as Record<string, unknown>
+    expect((result.content as string).length).toBe(100_007)
+    expect(result.truncated).toBe(false)
+  })
+
+  it("keeps an exact character continuation when an Agent line range is capped", async () => {
+    const call = { name: "read", arguments: { path: "docs/huge.txt", offset: 2, limit: 1 } }
     const raw = await executeWorkspaceOperation(
-      { operation: "read", path: "docs/huge.txt", offset: 2, limit: 1 },
+      workspaceOperationRequestFromAgentTool(call),
       { workspaceFiles: files, actorLevel: 4 },
     ) as Record<string, unknown>
     expect(raw.charOffset).toBe(7)
-    const projected = projectToolObservationForAgent(
-      { name: "read", arguments: { path: "docs/huge.txt", offset: 2, limit: 1 } },
-      { index: 0, name: "read", ok: true, result: raw },
-    ).result as Record<string, unknown>
-    expect(projected.nextCharOffset).toBe(7 + MAX_AGENT_READ_CONTENT_CHARS)
-    expect(projected.totalChars).toBe(100_007)
+    const delivered = deliverWorkspaceOperationResultToAgent(call, raw) as Record<string, unknown>
+    expect((delivered.content as string).length).toBe(MAX_AGENT_READ_CONTENT_CHARS)
+    expect(delivered.nextCharOffset).toBe(7 + MAX_AGENT_READ_CONTENT_CHARS)
+    expect(delivered.totalChars).toBe(100_007)
+  })
+
+  it("bounds an Agent no-range read before the shared operation returns", async () => {
+    const call = { name: "read", arguments: { path: "docs/huge.txt" } }
+    const raw = await executeWorkspaceOperation(
+      workspaceOperationRequestFromAgentTool(call),
+      { workspaceFiles: files, actorLevel: 4 },
+    )
+    const delivered = deliverWorkspaceOperationResultToAgent(call, raw) as Record<string, unknown>
+    expect((delivered.content as string).length).toBe(MAX_AGENT_READ_CONTENT_CHARS)
+    expect(delivered.nextCharOffset).toBe(MAX_AGENT_READ_CONTENT_CHARS)
+    expect(delivered.totalChars).toBe(100_007)
   })
 })

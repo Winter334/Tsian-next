@@ -14,7 +14,6 @@ const model = { callText: vi.fn(), toolCallMode: "native" as const }
 const context = {
   contextCapacityTokens: 256_000,
   requestInputBudgetTokens: 100_000,
-  observationCharBudget: 32 * 1024,
 }
 
 describe("Agent runtime environment composition", () => {

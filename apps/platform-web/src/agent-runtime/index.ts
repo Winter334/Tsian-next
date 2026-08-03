@@ -1369,7 +1369,6 @@ async function callAgentModelWithWorkspaceToolsNative(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
-      observationCharBudget: input.observationCharBudget,
       // Tool process events (子2b R2): bind the current round and agentId here
       // so the executor's onTool stays callId/name/status only; the caller binds
       // turn. agentId is this loop's agent (entry or delegated target).
@@ -1443,7 +1442,7 @@ async function callAgentModelWithWorkspaceToolsNative(
       })
     }
 
-    // Task memory is generated from the bounded Agent observation projection.
+    // Task memory is generated only from the accepted Agent observation.
     collectedToolMemories.push(...collectToolMemoriesForContext(
       result.toolCalls,
       observations,
@@ -1849,7 +1848,6 @@ async function callAgentModelWithWorkspaceTools(
       signal: options.signal,
       debugLabel: options.debugLabel,
       emitTrace: capabilities.emitTrace,
-      observationCharBudget: input.observationCharBudget,
       // 采集 tool processNode + 透传 UI onTool(text 模式工具过程显示 + processNode 持久化).
       // entry 和 delegated 路径共用此绑定(C2 验证:无条件绑定,不区分 entry/delegated).
       onTool: (callId, name, status, presentation, displayName) => {
@@ -1905,7 +1903,7 @@ async function callAgentModelWithWorkspaceTools(
         }
       })(),
     ]
-    // 采集本轮工具调用(供 contextUpdate 跨 turn 保留).observation 取 text 文本化结果.
+    // 采集本轮工具调用(供 contextUpdate 跨 turn 保留).observation 已通过统一 acceptance gate.
     // toolCalls 是 ParsedRuntimeToolCall[],observations 按 index 与完整 calls 数组对齐
     // (executeRuntimeWorkspaceToolCalls 保证每条 call 都有对应 observation,含解析失败的).
     // 取 .call 非空的(解析失败的 p.call 为 undefined,跳过但保持 index 对齐).
@@ -1954,7 +1952,6 @@ export async function runAgentRuntimeTurn(
     agentContext: environment.context.snapshot,
     contextTokenBudget: environment.context.contextCapacityTokens,
     requestInputBudgetTokens: environment.context.requestInputBudgetTokens,
-    observationCharBudget: environment.context.observationCharBudget,
     controlledToolAvailability: [
       ...(environment.controlledTools.inspectFrontend ? [AGENT_PLATFORM_TOOL_NAMES.inspectFrontend] : []),
       ...(environment.controlledTools.queryDiagnostics ? [AGENT_PLATFORM_TOOL_NAMES.queryDiagnostics] : []),

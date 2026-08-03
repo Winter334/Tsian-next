@@ -1,8 +1,6 @@
 import type {
   AskUserRequest,
   ToolRegistryEntry,
-  WorkspaceOperationName,
-  WorkspaceOperationRequest,
 } from "@tsian/contracts"
 import { executeWorkspaceOperation } from "../workspace-operations"
 import {
@@ -21,9 +19,14 @@ import {
 } from "../workspace-tools-types"
 import { normalizeAgentCallArguments } from "./agent-call"
 import { executeUserTool } from "./action-executors"
-import { buildToolPresentation, projectToolObservationForAgent } from "./observations"
+import { acceptToolObservationForAgent, buildToolPresentation } from "./observations"
 import { activateSkillByName, executeRunScript } from "./skill-actions"
 import { isRecord, normalizeRequiredString, toolError } from "./shared"
+import { deliverInspectFrontendResultToAgent } from "./specialized-delivery"
+import {
+  deliverWorkspaceOperationResultToAgent,
+  workspaceOperationRequestFromAgentTool,
+} from "./workspace-delivery"
 
 function normalizeDiagnosticsQueryArguments(
   input: Record<string, unknown>,
@@ -408,20 +411,6 @@ function normalizeInspectFrontendArguments(
   return result
 }
 
-function workspaceOperationRequestFromToolCall(
-  call: RuntimeWorkspaceToolCall,
-): WorkspaceOperationRequest {
-  // Tool name equals operation name after the R1 rename (e.g. `read` → "read").
-  // The `workspace.` prefix was removed; the SDK RPC path in
-  // `browser-skill-script-executor.ts` / `platform-host/index.ts` still slices
-  // `workspace.` but that is a separate wire protocol, not this tool path.
-  const operation = call.name as WorkspaceOperationName
-  return {
-    ...call.arguments,
-    operation,
-  } as WorkspaceOperationRequest
-}
-
 /**
  * Look up a Tool visible to the Agent by wire name. Returns `undefined` when
  * no Tool exists — the caller can decide whether to fall through to the
@@ -442,17 +431,22 @@ async function executeRuntimeWorkspaceToolCall(
   index: number,
 ): Promise<RuntimeWorkspaceToolObservation> {
   if (parsed.error) {
-    return {
+    const observation: RuntimeWorkspaceToolObservation = {
       index,
       name: "invalid",
       ok: false,
       error: parsed.error,
     }
+    const accepted = acceptToolObservationForAgent(undefined, observation)
+    const invalidCall = { name: "invalid", arguments: {} }
+    emitToolObservationTrace(context, invalidCall, observation, accepted, 0)
+    context.onTool?.(`tool-${index}`, "invalid", "failed")
+    return accepted
   }
 
   const call = parsed.call
   if (!call) {
-    return {
+    const observation: RuntimeWorkspaceToolObservation = {
       index,
       name: "invalid",
       ok: false,
@@ -461,6 +455,11 @@ async function executeRuntimeWorkspaceToolCall(
         "Tool call was not parsed.",
       ),
     }
+    const accepted = acceptToolObservationForAgent(undefined, observation)
+    const invalidCall = { name: "invalid", arguments: {} }
+    emitToolObservationTrace(context, invalidCall, observation, accepted, 0)
+    context.onTool?.(`tool-${index}`, "invalid", "failed")
+    return accepted
   }
 
   // Turn-tool event (子2b R2): notify the caller the tool is about to run.
@@ -517,9 +516,9 @@ async function executeRuntimeWorkspaceToolCall(
         index,
         name: call.name,
         ok: true,
-        result: await context.runInspectFrontend(
+        result: deliverInspectFrontendResultToAgent(await context.runInspectFrontend(
           normalizeInspectFrontendArguments(call.arguments),
-        ),
+        )),
       }
     } else if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.queryDiagnostics) {
       if (!context.runQueryDiagnostics) {
@@ -575,7 +574,7 @@ async function executeRuntimeWorkspaceToolCall(
       }
     } else if (isWorkspaceOperationToolName(call.name)) {
       const opResult = await executeWorkspaceOperation(
-        workspaceOperationRequestFromToolCall(call),
+        workspaceOperationRequestFromAgentTool(call),
         {
           workspaceFiles: context.workspaceFiles,
           agentContext: context.agentContext,
@@ -586,25 +585,26 @@ async function executeRuntimeWorkspaceToolCall(
           virtualReads: context.virtualWorkspaceReads,
         },
       )
+      const deliveryResult = deliverWorkspaceOperationResultToAgent(call, opResult)
       // workspace_read 图片结果:提取 imageBase64 到 imageParts(多模态通道),
       // 从 result 清除 imageBase64(避免 base64 进 JSON text observation 爆上下文).
       observation = {
         index,
         name: call.name,
         ok: true,
-        result: opResult,
+        result: deliveryResult,
       }
       if (
         call.name === RUNTIME_WORKSPACE_TOOL_NAMES.read
-        && isRecord(opResult)
-        && typeof opResult.imageBase64 === "string"
-        && typeof opResult.imageMimeType === "string"
+        && isRecord(deliveryResult)
+        && typeof deliveryResult.imageBase64 === "string"
+        && typeof deliveryResult.imageMimeType === "string"
       ) {
         observation.imageParts = [
-          { type: "image", mimeType: opResult.imageMimeType as string, data: opResult.imageBase64 as string },
+          { type: "image", mimeType: deliveryResult.imageMimeType as string, data: deliveryResult.imageBase64 as string },
         ]
         // 从 result 里删掉 imageBase64 + binary(不进 JSON observation)
-        const stripped = { ...opResult }
+        const stripped = { ...deliveryResult }
         delete (stripped as Record<string, unknown>).imageBase64
         delete (stripped as Record<string, unknown>).binary
         observation.result = stripped
@@ -653,11 +653,7 @@ async function executeRuntimeWorkspaceToolCall(
     }
   }
 
-  const agentObservation = projectToolObservationForAgent(
-    call,
-    observation,
-    context.observationCharBudget,
-  )
+  const agentObservation = acceptToolObservationForAgent(call, observation)
   emitToolObservationTrace(
     context,
     call,
@@ -667,12 +663,12 @@ async function executeRuntimeWorkspaceToolCall(
   )
   // UI consumes only a closed presentation projection. Ordinary tool results
   // never enter timeline/session storage.
-  const status: "success" | "failed" = observation.ok ? "success" : "failed"
+  const status: "success" | "failed" = agentObservation.ok ? "success" : "failed"
   context.onTool?.(
     callId,
     call.name,
     status,
-    buildToolPresentation(call, observation),
+    buildToolPresentation(call, agentObservation),
     displayName,
   )
   return agentObservation

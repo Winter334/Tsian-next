@@ -533,13 +533,10 @@ export interface RuntimeWorkspaceToolExecutionContext {
   signal?: AbortSignal
   debugLabel?: RuntimeTraceDebugLabel
   emitTrace?: RuntimeTraceEmitter
-  /** Final serialized Agent observation budget. Values above the platform hard
-   * cap are clamped by the projector. */
-  observationCharBudget?: number
   /**
    * Tool process event callback (子2b R2). Invoked before/after each tool
    * executes with the tool's callId, name, status, and (for success/failed) a
-   * truncated output summary. `undefined` disables events (delegated agents,
+   * closed presentation. `undefined` disables events (delegated agents,
    * text-protocol entry path). Signature excludes turn/round — the caller binds
    * round before threading it in, and turn is bound at the platform-host layer.
    */

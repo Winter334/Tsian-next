@@ -304,7 +304,6 @@ describe("assistant-chat Frontend Action workspace boundary", () => {
         compressionMode: "task",
         contextCapacityTokens: 256_000,
         requestInputBudgetTokens: 100_000,
-        observationCharBudget: 32 * 1024,
       },
     }))
 
@@ -415,7 +414,6 @@ describe("assistant-chat Frontend Action workspace boundary", () => {
         compressionMode: "task",
         contextCapacityTokens: 256_000,
         requestInputBudgetTokens: 100_000,
-        observationCharBudget: 32 * 1024,
       },
     }))
 

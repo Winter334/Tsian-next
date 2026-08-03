@@ -20,6 +20,7 @@ function serializedLength(value: unknown): number {
 function countResultItems(result: unknown): number | undefined {
   if (Array.isArray(result)) return result.length
   if (isRecord(result) && Array.isArray(result.entries)) return result.entries.length
+  if (isRecord(result) && Array.isArray(result.items)) return result.items.length
   return undefined
 }
 
@@ -98,9 +99,13 @@ function emitWorkspaceToolTrace(
     if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.read) {
       data.result = summarizeWorkspaceReadResult(observation.result)
     }
-    if (call.name === RUNTIME_WORKSPACE_TOOL_NAMES.search && Array.isArray(observation.result)) {
+    if (
+      call.name === RUNTIME_WORKSPACE_TOOL_NAMES.search
+      && isRecord(observation.result)
+      && Array.isArray(observation.result.items)
+    ) {
       let totalMatches = 0
-      for (const file of observation.result) {
+      for (const file of observation.result.items) {
         if (isRecord(file) && Array.isArray(file.matches)) {
           totalMatches += file.matches.length
         }
@@ -213,10 +218,10 @@ export function emitToolObservationTrace(
   agentObservation: RuntimeWorkspaceToolObservation,
   durationMs?: number,
 ): void {
-  emitAgentCallTrace(context, call, rawObservation, durationMs)
-  emitWorkspaceToolTrace(context, call, rawObservation, durationMs)
-  emitActionCallTrace(context, call, rawObservation, durationMs)
-  const presentation = buildToolPresentation(call, rawObservation)
+  emitAgentCallTrace(context, call, agentObservation, durationMs)
+  emitWorkspaceToolTrace(context, call, agentObservation, durationMs)
+  emitActionCallTrace(context, call, agentObservation, durationMs)
+  const presentation = buildToolPresentation(call, agentObservation)
   const agentText = (() => {
     try {
       return JSON.stringify({ ...agentObservation, imageParts: undefined })
@@ -224,19 +229,21 @@ export function emitToolObservationTrace(
       return ""
     }
   })()
-  const result = isRecord(agentObservation.result) ? agentObservation.result : {}
+  const result = isRecord(rawObservation.result) ? rawObservation.result : {}
+  const accepted = agentObservation === rawObservation
   context.emitTrace?.({
     type: "tool_projected",
     ...traceBase(context),
-    ok: rawObservation.ok,
+    ok: agentObservation.ok,
     data: {
       tool: call.name,
       toolCallId: call.id,
-      rawChars: serializedLength(rawObservation),
+      producerChars: serializedLength(rawObservation),
       agentChars: agentText.length,
       uiChars: serializedLength(presentation),
-      truncated: agentText.includes('"truncatedForModel":true')
-        || result.truncated === true,
+      accepted,
+      rejectionCode: accepted ? undefined : agentObservation.error?.code,
+      truncated: result.truncated === true || result.hasMoreFiles === true,
       anchors: Array.isArray(result.anchors) ? result.anchors : undefined,
       ...(durationMs !== undefined ? { durationMs } : {}),
     },

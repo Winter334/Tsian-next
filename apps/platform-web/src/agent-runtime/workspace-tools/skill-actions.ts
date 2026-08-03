@@ -301,15 +301,6 @@ export function activateSkillByName(
   const file = loadSkillEntryFile(context.workspaceFiles, skill)
   const { actions, errors: actionDeclarationErrors } = parseActionDeclarations(file.content)
   registerLoadedSkill(context.sessionState, skill, actions)
-  // The full SKILL.md content + inputSchema are returned in the observation this
-  // round, so the model can call run_script immediately without waiting for the
-  // next-round injectActivatedSkillMessages. Mark the skill path as already
-  // injected so collectActivatedSkillContents skips it next round.
-  if (context.sessionState) {
-    if (!context.sessionState.injectedSkillPaths.includes(skill.path)) {
-      context.sessionState.injectedSkillPaths.push(skill.path)
-    }
-  }
   context.emitTrace?.({
     type: "skill_loaded",
     ...traceBase(context),
@@ -331,16 +322,18 @@ export function activateSkillByName(
       path: skill.path,
     },
     activated: true,
-    content: file.content,
-    actions: actions.map((action) => ({
-      name: action.name,
-      description: action.description,
-      ...(action.inputSchema ? { inputSchema: action.inputSchema } : {}),
-      executorType: action.executor.type,
-      executable: action.executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE,
-    })),
+    actionCount: actions.length,
+    executableActionCount: actions.filter((action) =>
+      action.executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE).length,
+    declarationErrorCount: actionDeclarationErrors.length,
     ...(actionDeclarationErrors.length
-      ? { actionDeclarationErrors: actionDeclarationErrors.map((error) => error.message) }
+      ? {
+          actionDeclarationErrors: actionDeclarationErrors.slice(0, 20).map((error) => ({
+            code: error.code,
+            message: error.message.slice(0, 500),
+          })),
+          declarationErrorsOmitted: Math.max(0, actionDeclarationErrors.length - 20),
+        }
       : {}),
   }
 }
