@@ -552,3 +552,39 @@ Separated Agent, UI, and audit projections; introduced shared runtime environmen
 ### Status
 
 [OK] **Completed**
+
+
+## Session 175: Agent Tool Observation 契约治理
+
+**Date**: 2026-08-03
+**Task**: Agent Tool Observation 契约治理
+**Branch**: `master`
+
+### Summary
+
+完成 Tool 生产者边界与 Runtime 32 KiB 严格接收门的实现和契约记录；任务保持进行中，等待生产部署后复测。
+
+### Main Changes
+
+- Tool 生产者负责分页、摘要、省略元数据与恢复入口，Runtime 不再做通用截断。
+- Runtime 对超出 32 KiB 或无效的 observation 返回稳定错误；use_skill 改为元数据回执并在下一轮注入完整内容。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `95608c4` | (see git log) |
+| `ee3c12a` | (see git log) |
+
+### Testing
+
+- [OK] 目标测试 15 个文件、46 项通过；npm run build:web 通过；git diff --check 通过。
+- [OK] 完整 npm test 为 745/750，通过项外的 5 项均来自未纳入本任务的 Spatial 并行工作。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 部署到生产环境后复测原始桌面助手流程，确认输入 token、工具调用顺序与 UI 更新恢复健康，再决定是否归档任务。
