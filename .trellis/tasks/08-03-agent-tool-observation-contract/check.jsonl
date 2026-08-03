@@ -1,0 +1,7 @@
+{"file":".trellis/tasks/08-03-agent-tool-observation-contract/research/findings.md","reason":"核对实现是否覆盖所有确认的截断路径、early return、协议和兼容风险。"}
+{"file":".trellis/spec/platform-web/frontend/type-safety.md","reason":"检查 Agent/UI/Environment 边界、Tool correlation 与 shared type 使用。"}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"检查 fail-loud、测试覆盖、结果不落 UI/session 和构建质量门。"}
+{"file":".trellis/spec/platform-web/storage/diagnostics.md","reason":"确认 diagnostics producer-owned bounds 未被破坏或重复裁剪。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"若 shared contract 变更，检查导出、可选字段和 consuming build。"}
+{"file":".trellis/spec/contracts/backend/error-handling.md","reason":"检查结构化错误 code/details 保持 JSON-compatible 且无原始内容泄漏。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 producer 到 model/memory/UI 的完整数据流和单一责任。"}

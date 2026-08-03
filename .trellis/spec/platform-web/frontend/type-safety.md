@@ -459,7 +459,7 @@ await reloadAuthoritativeState()
 - Effective runtime permissions are derived from the current Agent's `agent.json` (`platformTools` and `workspaceAccess`).
 - `use_skill`/`run_script` are available by default (Skill installation/enablement is player/card-author controlled). `ask_user` is on for the assistant by default, off for game agents by default. `agent_call` only with contacts + `agent_call` enabled. Workspace read tools under `workspace_read`; workspace write/delete/move/validate under `workspace_write`.
 - `workspace_read` maps to `list`, `search`, `read` (+ `semantic_search`). `workspace_write` maps to `diff`, `write`, `edit`, `move`, `delete`, `validate`.
-- **`use_skill` is the two-step flow's first step**: it declares intent, parses `tsian-actions` fenced JSON blocks from the `SKILL.md` body, and registers declared actions into the session state. Its observation returns only a lightweight confirmation (activated skill + action summaries) — it must NOT return the full `SKILL.md` content, a resource index, or resource file contents.
+- **`use_skill` is the two-step flow's first step**: it declares intent, parses `tsian-actions` fenced JSON blocks from the `SKILL.md` body, and registers declared actions into the session state. Its observation returns only lightweight activation/count/error metadata — it must NOT return the full `SKILL.md` content, action schemas, a resource index, or resource file contents.
 - After a round in which `use_skill` activated new skills, the framework injects each newly-activated skill's full `SKILL.md` as an extra user message (after that round's tool observations, before the next model call). Injection is de-duplicated so repeated `use_skill` on the same skill does not re-inject. The model sees the full SKILL.md in the next round's context without spending a tool-result round on it.
 - `use_skill` resolves only against the current Agent's visible `skillIndex` (a Skill on disk but removed by `disabledSkills` or a non-matching non-empty `enabledSkills` list cannot be activated). Match `name` first, then `id` for compatibility. If a local and shared Skill share a name, prefer the current Agent's local Skill. `use_skill` is parallel-safe (only mutates session state, not workspace).
 - Declared Skill action summaries (name + description + `browser_script` executor type) are parsed at registry build time into the Skill Index so the model can see which actions a Skill offers before `use_skill`. Full action declarations (inputSchema/outputSchema/executor path) are NOT in the eager Skill Index or `agent-context` — progressive disclosure is preserved.
@@ -470,19 +470,20 @@ await reloadAuthoritativeState()
 - `SKILL.md` action declarations use a fenced JSON block whose info string includes `tsian-actions`. Each action specifies `{ name, description, inputSchema, outputSchema?, executor: { type: "browser_script", path, timeoutMs? } }`. `browser_script` is the only supported executor type; `builtin`/`platform_action`/`workspace_operation` are rejected at parse time and reported in `actionDeclarationErrors`. `path` resolves relative to the declaring Skill directory and must stay under that directory.
 - The first browser script capability profile is a strong Tsian SDK, not raw browser/internal access. Scripts can use SDK workspace read/list/search/glob/diff/patch/write/copy/move/delete/validate, SDK fetch where browser policy permits, structured log/trace, timeout/abort, and JSON-compatible input/output. SDK `tsian.workspace` methods mirror the top-level workspace tools and must pass the same Agent `workspace_read`/`workspace_write` exposure gates — they must not bypass the operation allow-list or actor-level checks. The first slice must not expose raw DOM, `window`, internal bridge objects, Vue app state, or platform-host internals as supported script APIs.
 - Generic workspace operations pass two hard gates: the operation must be exposed in the current runtime context, and the actor level must satisfy the target read/edit level. Missing/invalid `workspaceAccess.level` defaults to `1`. **Exception — desktop assistant**: its actor level is resolved live from `.tsian/local/assistant/agent.json` (default `4`), not from the runtime agent context. The `executePlatformAction` path must never hardcode `actorLevel`.
-- Every raw execution result is projected before it enters a model message: read/search/diagnostics preserve bounded evidence and continuation anchors, and a final valid-JSON cap applies after tool-specific projection. Native parallel calls remain one assistant tool-calls message followed by one independent `role:"tool"` message per provider `toolCallId`; role merging must never combine those messages.
+- Every Tool producer owns its Agent delivery shape before the result enters a model message. Read/search/list/glob/diff/mutation/diagnostics/inspector producers return bounded pages, summaries, counts, IDs, paths, or honest narrowing hints. The shared acceptance gate only validates strict JSON compatibility and the fixed 32-KiB serialized ceiling; it never truncates, compacts, normalizes, or synthesizes a success preview. Native parallel calls remain one assistant tool-calls message followed by one independent `role:"tool"` message per provider `toolCallId`; role merging must never combine those messages.
 - Inside `interaction.sendMessage`, save-runtime workspace mutations run against a staged transaction. Same-turn tools and scripts must see staged writes/deletes, but ordinary workspace mutations persist only when the turn succeeds. Successful turns commit the staged state atomically with accepted snapshot/history and after-turn checkpoint creation. Failed or aborted turns discard ordinary staged mutations.
 - Ordinary Agent/Skill workspace mutations must reject `.tsian/*` targets — that is platform-owned metadata space.
 - Frontend bridge `platform.runAction` workspace actions remain immediate platform actions, not part of the Agent Runtime turn transaction.
 - Runtime prompts should display Skill Index entries as `name/description/triggers/applicability` (plus parsed `actions` summaries) and should not default to exposing `path=...`.
 - Use `workspace.read/list/search` for third-layer files only: files explicitly referenced by the injected `SKILL.md`, world data, memory, README files, or other current-task context.
-- Workspace path rules: normalize backslashes to slashes; trim leading slashes; reject empty file paths, trailing slash file paths, `.`, `..`, and empty path segments; allow empty directory path for root listing. `workspace.read` returns a superset of `WorkspaceFile` carrying line-slice metadata (`totalLines`/`returnedLines`/`offset`/`truncated`/`isBinaryPlaceholder`); binary files return the placeholder untouched and must not be sliced. `workspace.search` `query` (substring) and `pattern` (regex) are mutually exclusive; per-file matches are capped with `matchesTruncated`.
+- Workspace path rules: normalize backslashes to slashes; trim leading slashes; reject empty file paths, trailing slash file paths, `.`, `..`, and empty path segments; allow empty directory path for root listing. The Agent-facing `read` producer returns at most 24 KiB and an exact `nextCharOffset`; the shared workspace operation still retains its full-result semantics for Resource Manager/SDK callers. Agent `list` uses `offset/limit/nextOffset`; Agent `search` caps files, matches, snippets, and `contextLines` before shared execution and reports unknown remainder as `*AtLeast`; Agent `glob` reports truncation and narrowing rather than inventing a cursor. `workspace.search` `query` and `pattern` remain mutually exclusive.
 - Workspace tool payload names must match their executor fields. `diff` receives proposed next text as `expectedContent` (the operation executor may retain `content` only as an internal/browser-script compatibility fallback). `edit` keeps literal unique-match semantics, but when an exact multiline match fails it may treat LF/CRLF/CR as equivalent; the replacement adopts the matched file line ending. Indentation and all non-newline whitespace remain exact.
 - Tool observations are returned to the same Agent as a normal user message. Final entry agent output must strip tool-call blocks and must not expose tool observations to players.
 
 ### Validation & Error Matrix
 
 - Malformed/non-object tool payload, missing name, non-object arguments, or unknown tool name -> error observation.
+- Strict JSON-invalid Tool delivery -> `TOOL_OBSERVATION_INVALID`; oversized delivery -> `TOOL_OBSERVATION_TOO_LARGE` with `actualChars`/`maxChars` and remediation, without the rejected raw body. Both are failed observations and failed terminal Tool status.
 - Text Protocol v2 malformed executable block (missing close tag, multiple `<tsian-tool-calls>` blocks, invalid JSON, non-array content, or empty array) -> `protocol_error` observation and at most `TEXT_TOOL_PROTOCOL_MAX_RETRIES` retry.
 - Text Protocol v2 non-executable runtime-history tag echoed by the model (`<tsian-tool-call-records>`, `<tsian-tool-observations>`, `<tsian-tool-protocol-error>`) -> `TEXT_TOOL_PROTOCOL_NON_EXECUTABLE_TAG` protocol error + retry; do not strip it to an empty final reply.
 - `use_skill`: missing/blank name -> `SKILL_NAME_REQUIRED`; unknown/invisible Skill -> `SKILL_NOT_FOUND`; ambiguous after local/shared priority -> `SKILL_NAME_AMBIGUOUS`; missing `SKILL.md` after resolution -> `SKILL_DETAIL_NOT_FOUND`.
@@ -668,7 +669,7 @@ await reloadAuthoritativeState()
   - **Agent layer**: `AgentContextSnapshot.toolMemories` stores only bounded semantic tool-memory projections and anchors. Raw observations and UI presentations are not model-history sources.
   - **UI layer**: session messages store thought/interim nodes and tool identity/name/status plus optional closed `UiToolPresentation` (currently `agent_call`). Ordinary arguments/results are not persisted, and readers ignore old extra fields without a migration pass.
   - **Process-node collection (eliminates double-write)**: both native + text loops accumulate process nodes (thought from delta accumulation, interim from tool_calls round content, tool from the tool callback). The host writes everything on the success path; the UI success path no longer calls `persistCurrentSession` (eliminates the host-write + UI-rewrite double-IO race). Catch paths (abort/error) still use `persistCurrentSession` as fallback.
-  - **Observation volume**: model observations have a platform hard cap after tool-specific projection; read supports line or exact character paging, search/diagnostics return bounded snippets and anchors, and UI persistence is unaffected by observation size.
+  - **Observation volume**: each Tool producer owns a bounded delivery contract; the shared gate only accepts the value unchanged or fails loud. Read supports exact character continuation, search/list/diagnostics return explicit bounded envelopes, and UI persistence is unaffected by observation size.
 
 ### Validation & Error Matrix
 
@@ -839,7 +840,7 @@ verifyEditableText(input, expected, "fill")
 ```ts
 interface AgentRuntimeEnvironment {
   workspace: { files: WorkspaceFile[]; trustBoundary: AgentWorkspaceTrustBoundary; mutations?: WorkspaceOperationMutationAdapter }
-  context: { requestInputBudgetTokens: number; observationCharBudget: number; /* capacity/compression fields omitted */ }
+  context: { requestInputBudgetTokens: number; /* capacity/compression fields omitted */ }
   controlledTools: { inspectFrontend?: RuntimeInspectFrontendRunner; queryDiagnostics?: RuntimeDiagnosticsQueryRunner; testSkillScript?: RuntimeTestSkillScriptRunner }
   // model/events/audit ports omitted
 }
@@ -853,11 +854,15 @@ type UiToolPresentation = {
   error?: { code: string; message: string }
 }
 
-projectToolObservationForAgent(
+acceptToolObservationForAgent(
+  call: RuntimeWorkspaceToolCall | undefined,
   observation: RuntimeWorkspaceToolObservation,
-  call?: RuntimeWorkspaceToolCall,
-  requestedBudget?: number,
 ): RuntimeWorkspaceToolObservation
+
+deliverWorkspaceOperationResultToAgent(
+  call: RuntimeWorkspaceToolCall,
+  result: unknown,
+): unknown
 
 buildToolPresentation(
   call: RuntimeWorkspaceToolCall | undefined,
@@ -867,8 +872,11 @@ buildToolPresentation(
 
 ### 3. Contracts
 
-- **Three independent projections from one execution-local raw result**: bounded Agent observation for model messages/tool memory; optional `UiToolPresentation` for events/timeline; audit summary with call id, sizes, truncation and authoritative anchors. Raw output is released after projection and is not persisted generically.
-- **Agent observation cap lives in runtime.** Tool-specific read/search/diagnostics/agent-call/script projectors preserve useful evidence and continuation, then a final valid-JSON character cap applies. Circular/exceptional values normalize safely before serialization.
+- **Three independent consumers**: producer-owned Agent delivery for model messages/tool memory; optional closed `UiToolPresentation` for events/timeline; audit summary with call id, producer/accepted sizes and rejection code. Raw execution output is not persisted generically.
+- **Tool producer owns size and continuation.** Agent-facing workspace adapters bound read/search/list/glob/diff/mutation results without changing shared workspace-operation semantics. Diagnostics and inspector own their bounds. Script/custom Tools use a conservative inline contract and must return a summary/page/workspace path when their business output is large.
+- **Runtime acceptance is a strict fail-loud gate, not a projector.** `acceptToolObservationForAgent` accepts strict JSON-compatible values unchanged when the serialized observation is at most 32 KiB. It never compacts, slices, stringifies exotic values, or emits preview success. Invalid values return `TOOL_OBSERVATION_INVALID`; oversized values return `TOOL_OBSERVATION_TOO_LARGE` without the raw body. The Environment has no per-product observation budget knob.
+- **Protocol and memory consume the same accepted observation.** Native and Text Tool Protocol serialize that value directly; text mode must not run a second `compactLargeValueForModel` pass. Cross-turn `toolMemories` may still summarize accepted observations under its independent retention budget.
+- **Skill activation has one full-content channel.** `use_skill` returns counts/diagnostics only; newly activated `SKILL.md` content is injected once after Tool observations for the next model round.
 - **agent_call presentation**: the UI projector extracts `{type:"agent_call", targetAgent, response, responseTruncated?, status, error?}`. Response is capped at the UI presentation limit; the bounded Agent observation remains a separate consumer.
 - **Ordinary tools**: no presentation payload. UI receives only call identity, name/displayName, status, round and agent id; arguments and results never enter bridge/timeline/session storage.
 - **Process retention**: formal turn history and assistant sessions persist presentation-only `thought`/`tool`/`interim` timeline nodes in occurrence order. Reload reconstructs the same display nodes without rebuilding model messages.
@@ -880,18 +888,23 @@ buildToolPresentation(
 
 - Ordinary or parse-error tool -> `presentation === undefined`; failed card still shows status.
 - agent_call success/failure -> bounded structured presentation with stable target identity/error.
-- Oversized/circular result -> bounded valid Agent observation; no raw value reaches UI persistence.
+- Producer-bounded JSON result -> accepted by identity and serialized unchanged in native/text messages.
+- Oversized result -> failed `TOOL_OBSERVATION_TOO_LARGE`; circular/exotic/non-finite/sparse/accessor result -> failed `TOOL_OBSERVATION_INVALID`; rejected raw value is absent from model, trace summaries, Tool memory, and UI persistence.
+- `read` body remains -> exact `nextCharOffset`; broad search/list/glob -> explicit omission/truncation metadata and real continuation/narrowing semantics.
 
 ### 5. Good / Base / Bad Cases
 
-- Good: a 50-file search is reduced to bounded snippets plus path/count continuation, while the timeline persists only tool identity and terminal status.
+- Good: search caps `contextLines` before the shared operation, returns bounded files/matches/snippets plus `omitted*AtLeast`, and the timeline persists only tool identity and terminal status.
 - Good: `agent_call` produces separate bounded Agent observation and 8-KiB UI presentation projections; neither becomes a generic raw-result copy.
+- Good: Resource Manager reads a complete shared-operation file while the Agent `read` adapter returns a 24-KiB page with exact character continuation.
 - Base: an old session contains `toolCalls` or timeline `output`; the reader ignores those extra fields and retains validated presentation nodes without migration/backfill.
-- Bad: pass `JSON.stringify(rawResult)` to both the model and UI, reconstruct native tool messages from UI history, or expose a controlled tool because its config flag is enabled when the Environment port is absent.
+- Bad: truncate a successful result in a generic projector, label a limited search array as corpus total, run text-mode compaction after acceptance, pass raw output to both model and UI, or expose a controlled tool because its Environment port is absent.
 
 ### 6. Tests Required
 
-- Projector unit tests assert 50x50 aggregate results, huge single-line reads, circular/exceptional values, valid JSON, the 32-KiB final observation cap, the 24-KiB read cap, and exact continuation anchors.
+- Acceptance tests assert identity-preserving success, strict-JSON rejection, 32-KiB fail-loud behavior, rejected-body non-disclosure, and independent UI presentation limits.
+- Producer tests assert huge single-line/no-range/line-range read continuation; search file/match/snippet/context caps and truthful omission fields; list pagination; glob narrowing; diff/mutation summaries; inspector nested/optional-field bounds; and one-time Skill content injection.
+- Text-protocol tests assert accepted observations serialize without a second compaction pass; Tool memory tests consume accepted observations while retaining independent cross-turn summary limits.
 - Environment/schema tests assert desktop/game/delegated WorkspaceView, mutation, registry, and controlled-port isolation; absent ports must remove schemas and execution capability.
 - Timeline/storage tests assert ordinary tools have no presentation/raw output, bounded `agent_call` survives reload, and legacy `toolCalls`/`output` are not copied forward.
 - Native-provider tests assert one assistant tool-call message plus one independent tool result per `toolCallId`; Gemini `functionResponse.name` remains the originating function name.
@@ -909,10 +922,12 @@ messages.push({ role: "tool", content: JSON.stringify(rawResult) })
 #### Correct
 
 ```ts
-const agentObservation = projectToolObservationForAgent(observation, call, observationBudget)
-const presentation = buildToolPresentation(call, observation)
-emitTool({ callId, name, status, presentation })
-appendModelToolResult(call.id, formatNativeToolObservationContent(agentObservation))
+const delivery = deliverWorkspaceOperationResultToAgent(call, rawResult)
+const observation = { index, name: call.name, ok: true, result: delivery }
+const accepted = acceptToolObservationForAgent(call, observation)
+const presentation = buildToolPresentation(call, accepted)
+emitTool({ callId, name, status: accepted.ok ? "success" : "failed", presentation })
+appendModelToolResult(call.id, formatNativeToolObservationContent(accepted))
 ```
 
 ## Scenario: Registering A New Platform Agent Tool
