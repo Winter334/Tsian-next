@@ -5,6 +5,224 @@ export interface ScrollPosition {
   readonly top: number
 }
 
+export type ScrollbarDragAxis = "horizontal" | "vertical"
+
+export interface ScrollbarThumbGeometry {
+  readonly axis: ScrollbarDragAxis
+  readonly gutter: {
+    readonly left: number
+    readonly top: number
+    readonly width: number
+    readonly height: number
+  }
+  readonly trackStart: number
+  readonly trackLength: number
+  readonly thumbStart: number
+  readonly thumbLength: number
+  readonly thumbTravel: number
+  readonly scrollRange: number
+}
+
+export type ScrollbarThumbGeometryResult =
+  | { readonly status: "ready"; readonly geometry: ScrollbarThumbGeometry }
+  | { readonly status: "not-scrollable"; readonly reason: "not-overflowing" | "overflow-disabled" }
+  | {
+      readonly status: "unsupported"
+      readonly reason: "overlay-or-no-gutter" | "invalid-geometry" | "no-thumb-travel" | "rtl-horizontal"
+    }
+
+export interface ScrollbarThumbDragState {
+  readonly element: HTMLElement
+  readonly axis: ScrollbarDragAxis
+  readonly trackStart: number
+  readonly thumbTravel: number
+  readonly scrollRange: number
+  readonly pointerOffset: number
+}
+
+export type ScrollbarThumbDragStartResult =
+  | { readonly status: "started"; readonly state: ScrollbarThumbDragState }
+  | { readonly status: "track"; readonly axis: ScrollbarDragAxis }
+  | { readonly status: "not-scrollbar" }
+
+function numericCssPixel(value: string | undefined): number {
+  const parsed = Number.parseFloat(value ?? "")
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : 0
+}
+
+function pointInsideRect(point: SpatialPoint, rect: ScrollbarThumbGeometry["gutter"]): boolean {
+  return point.x >= rect.left && point.x <= rect.left + rect.width
+    && point.y >= rect.top && point.y <= rect.top + rect.height
+}
+
+/**
+ * Reconstruct the layout scrollbar track from the element's border box and
+ * client box. Overlay scrollbars expose no gutter in that geometry, so they
+ * remain explicit unsupported input instead of creating a broad edge target.
+ */
+export function scrollbarThumbGeometry(
+  element: HTMLElement,
+  axis: ScrollbarDragAxis,
+): ScrollbarThumbGeometryResult {
+  const style = element.ownerDocument.defaultView?.getComputedStyle(element)
+  const overflow = axis === "horizontal" ? style?.overflowX : style?.overflowY
+  if (!overflow || !["auto", "scroll"].includes(overflow)) {
+    return { status: "not-scrollable", reason: "overflow-disabled" }
+  }
+  if (axis === "horizontal" && style?.direction === "rtl") {
+    return { status: "unsupported", reason: "rtl-horizontal" }
+  }
+
+  const viewportLength = axis === "horizontal" ? element.clientWidth : element.clientHeight
+  const scrollLength = axis === "horizontal" ? element.scrollWidth : element.scrollHeight
+  const rect = element.getBoundingClientRect()
+  if (![viewportLength, scrollLength, rect.left, rect.top, rect.width, rect.height]
+    .every(Number.isFinite)
+    || viewportLength <= 0
+    || scrollLength < 0
+    || rect.width <= 0
+    || rect.height <= 0) {
+    return { status: "unsupported", reason: "invalid-geometry" }
+  }
+  if (!(scrollLength > viewportLength)) {
+    return { status: "not-scrollable", reason: "not-overflowing" }
+  }
+
+  const borderLeft = numericCssPixel(style?.borderLeftWidth)
+  const borderRight = numericCssPixel(style?.borderRightWidth)
+  const borderTop = numericCssPixel(style?.borderTopWidth)
+  const borderBottom = numericCssPixel(style?.borderBottomWidth)
+  const gutterThickness = axis === "vertical"
+    ? rect.width - borderLeft - borderRight - element.clientWidth
+    : rect.height - borderTop - borderBottom - element.clientHeight
+  if (!Number.isFinite(gutterThickness) || gutterThickness < 0) {
+    return { status: "unsupported", reason: "invalid-geometry" }
+  }
+  if (gutterThickness === 0) {
+    return { status: "unsupported", reason: "overlay-or-no-gutter" }
+  }
+
+  const trackLength = viewportLength
+  const minimumThumbLength = Math.min(trackLength, gutterThickness)
+  const thumbLength = Math.max(
+    minimumThumbLength,
+    trackLength * viewportLength / scrollLength,
+  )
+  const thumbTravel = trackLength - thumbLength
+  if (!(thumbTravel > 0)) {
+    return { status: "unsupported", reason: "no-thumb-travel" }
+  }
+
+  const scrollRange = scrollLength - viewportLength
+  const rawScrollPosition = axis === "horizontal" ? element.scrollLeft : element.scrollTop
+  const scrollPosition = Math.max(0, Math.min(scrollRange, rawScrollPosition))
+  const clientLeft = Number.isFinite(element.clientLeft) ? element.clientLeft : borderLeft
+  const clientTop = Number.isFinite(element.clientTop) ? element.clientTop : borderTop
+  const verticalScrollbarOnLeft = axis === "vertical"
+    && style?.direction === "rtl"
+    && clientLeft > borderLeft + 0.5
+  const gutter = axis === "vertical"
+    ? {
+        left: verticalScrollbarOnLeft
+          ? rect.left + borderLeft
+          : rect.left + rect.width - borderRight - gutterThickness,
+        top: rect.top + clientTop,
+        width: gutterThickness,
+        height: trackLength,
+      }
+    : {
+        left: rect.left + clientLeft,
+        top: rect.top + rect.height - borderBottom - gutterThickness,
+        width: trackLength,
+        height: gutterThickness,
+      }
+  const trackStart = axis === "horizontal" ? gutter.left : gutter.top
+  return {
+    status: "ready",
+    geometry: {
+      axis,
+      gutter,
+      trackStart,
+      trackLength,
+      thumbStart: trackStart + scrollPosition / scrollRange * thumbTravel,
+      thumbLength,
+      thumbTravel,
+      scrollRange,
+    },
+  }
+}
+
+export function beginScrollbarThumbDrag(
+  element: HTMLElement,
+  point: SpatialPoint,
+): ScrollbarThumbDragStartResult {
+  for (const axis of ["vertical", "horizontal"] as const) {
+    const result = scrollbarThumbGeometry(element, axis)
+    if (result.status !== "ready" || !pointInsideRect(point, result.geometry.gutter)) continue
+    const coordinate = axis === "horizontal" ? point.x : point.y
+    const thumbEnd = result.geometry.thumbStart + result.geometry.thumbLength
+    if (coordinate < result.geometry.thumbStart || coordinate > thumbEnd) {
+      return { status: "track", axis }
+    }
+    return {
+      status: "started",
+      state: {
+        element,
+        axis,
+        trackStart: result.geometry.trackStart,
+        thumbTravel: result.geometry.thumbTravel,
+        scrollRange: result.geometry.scrollRange,
+        pointerOffset: coordinate - result.geometry.thumbStart,
+      },
+    }
+  }
+  return { status: "not-scrollbar" }
+}
+
+export function findScrollbarThumbDrag(
+  start: Element,
+  sourceRoot: Element,
+  point: SpatialPoint,
+): ScrollbarThumbDragStartResult {
+  let current: Element | null = start
+  while (current && sourceRoot.contains(current)) {
+    if (current instanceof HTMLElement) {
+      const result = beginScrollbarThumbDrag(current, point)
+      if (result.status !== "not-scrollbar") return result
+    }
+    if (current === sourceRoot) break
+    current = current.parentElement
+  }
+  return { status: "not-scrollbar" }
+}
+
+function dispatchScrollEvent(element: HTMLElement): void {
+  const view = element.ownerDocument.defaultView
+  element.dispatchEvent(new (view?.Event ?? Event)("scroll", { bubbles: true, composed: true }))
+}
+
+export function updateScrollbarThumbDrag(
+  state: ScrollbarThumbDragState,
+  point: SpatialPoint,
+): { readonly changed: boolean; readonly position: ScrollPosition } {
+  const coordinate = state.axis === "horizontal" ? point.x : point.y
+  const thumbStart = Math.max(
+    state.trackStart,
+    Math.min(state.trackStart + state.thumbTravel, coordinate - state.pointerOffset),
+  )
+  const next = (thumbStart - state.trackStart) / state.thumbTravel * state.scrollRange
+  const previous = state.axis === "horizontal" ? state.element.scrollLeft : state.element.scrollTop
+  if (state.axis === "horizontal") state.element.scrollLeft = next
+  else state.element.scrollTop = next
+  const current = state.axis === "horizontal" ? state.element.scrollLeft : state.element.scrollTop
+  const changed = current !== previous
+  if (changed) dispatchScrollEvent(state.element)
+  return {
+    changed,
+    position: { left: state.element.scrollLeft, top: state.element.scrollTop },
+  }
+}
+
 export function clampScrollPosition(input: {
   readonly scrollLeft: number
   readonly scrollTop: number
@@ -65,10 +283,7 @@ export function scrollElementBy(
   const changed = position.left !== element.scrollLeft || position.top !== element.scrollTop
   element.scrollLeft = position.left
   element.scrollTop = position.top
-  if (changed) {
-    const view = element.ownerDocument.defaultView
-    element.dispatchEvent(new (view?.Event ?? Event)("scroll", { bubbles: true, composed: true }))
-  }
+  if (changed) dispatchScrollEvent(element)
   return { changed, position }
 }
 

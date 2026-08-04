@@ -14,6 +14,25 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
   - **JS asset URL imports need module-relative URL normalization for packaged iframes.** esbuild's file loader returns strings relative to the importing JS output (for example `./badge-HASH.svg`). If a Vue component puts that raw string in DOM (`<img :src>`), the browser resolves it relative to `frontend/dist/index.html`, not the JS module, and requests `frontend/dist/badge-HASH.svg` instead of `frontend/dist/assets/badge-HASH.svg`. This applies both to explicit `?url` imports and to ordinary JS static imports of file-loader assets (`import logo from "./logo.png"`); route ordinary static asset imports through the same `?url` wrapper at resolve time. Wrap URL imports as a JS module that imports the file through an internal file-loader query, strips any internal query/hash from the generated string, then exports `new URL(cleanAssetUrl, import.meta.url).href`. Apply the same rule inside Worker subbuilds; do not leak internal queries such as `?__tsian_url_asset` to DOM/runtime URLs.
 - After touching `src/frontend-build/`, use layered validation: each capability child passes focused fixtures/probes and hands off a browser matrix; a parent with several related children may run one consolidated source-package test through upload → IndexedDB → browser esbuild-wasm → dist write-back → SW → packaged iframe after all children finish. The parent remains incomplete until that full loop passes.
 
+## Test Maintenance Policy
+
+Tests protect live contracts; they are not an archive of every historical implementation shape.
+
+- Keep tests whose failure identifies a regression in public behavior, state transitions, boundary validation, lifecycle/resource cleanup, accessibility semantics, release gates, or a documented algorithmic invariant.
+- Exact numeric assertions are appropriate only when the number is itself an explicit compatibility, protocol, security, or calibrated product contract. For tunable geometry and rendering, assert monotonicity, symmetry, bounds, ordering, ownership, or another durable relationship instead of historical pixels or draw totals.
+- Delete tests that inspect raw Vue/TypeScript/CSS/shader source, pin formatting or selector text, snapshot tunable presentation, or duplicate behavior already covered at a stronger runtime boundary. Visual calibration belongs to the declared browser/manual gate.
+- When a broad suite exposes a stable legacy failure, reproduce it alone and classify the contract. Delete an obsolete test or rewrite it around the live invariant; do not preserve a permanently red baseline, blindly update expected values, or change production code only to satisfy a retired assertion.
+- After pruning, run the focused survivors plus the broader owning-package suite. The broader suite must prove that unique behavior coverage was not lost.
+
+```ts
+// Wrong: a harmless renderer refactor breaks an historical draw total.
+expect(drawCounts).toEqual([6, meshCount, meshCount, meshCount, 6])
+
+// Correct: protect the semantic contract that must survive refactors.
+expect(report.passes).toEqual(expectedPassOrder)
+expect(transparentDraws).toHaveLength(opaqueDraws.length - 1)
+```
+
 ## Browser `import.meta.glob` VFS Contract
 
 ### 1. Scope / Trigger

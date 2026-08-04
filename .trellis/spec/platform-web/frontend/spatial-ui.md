@@ -79,6 +79,8 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Upload during `paint` sees the current snapshot; a later upload may see the previous snapshot. `requestPaint()` is one-shot and an empty changed list only authorizes already-dirty initial/restore sources.
 - Product render order is fixed: WebGL-owned wallpaper + particles into the bounded environment target; environment-only Bloom/composite to the default framebuffer; GPU decoration ring; sharp low-z clock Source; Dock Sources; independent window Sources back to front; foreground markers. No Source texture may enter an environment target or global post-process.
 - Source input order is the reverse of painter order by the same scene z contract: highest-z windows resolve first, then lower-z shell background Sources. A Source that is visually occluded by a window must not steal the projected hit. Keep pointer capture bound to the selected Source/pose after pointer-down.
+- Projected activation follows browser cancellation boundaries: canceling routed `pointerdown` suppresses activation; canceling only compatibility `mousedown` suppresses its focus default but still permits the later click and remains visible in delivery diagnostics. Routed cancellation must be re-entrant and release logical/browser capture exactly once.
+- Projected native scrollbar dragging is limited to real layout gutters and the reconstructed thumb. Derive track geometry from the element border/client boxes in Source-local client coordinates, reject overlay/no-gutter, disabled/non-overflowing, invalid, track-only, and RTL-horizontal cases explicitly, and keep Chromium scrollbar width plus arrow-button removal aligned with that geometry. A captured thumb drag clamps and emits scroll only on change, dirties only its owning Source, requests a fresh paint, never clicks on release, and is canceled by pointer/source/controller teardown.
 - Product window presentation is transient state separate from session geometry and mounted application state: `capturing-open -> opening -> visible`, `visible -> guard-pending -> closing -> removed`, `visible -> minimizing -> minimized`, and `minimized -> capturing-restore -> restoring -> visible`. Mount a new Source at final geometry but omit it from drawing until its first successful upload. Reopening or focusing an existing visible id never replays presentation. Minimize retains DOM/texture until its exact-once completion; restore waits for a valid replacement upload before animation.
 - Every non-`visible` presentation phase is unavailable before projected candidate resolution. This exclusion also cancels a gesture captured before the phase changed; do not let pointer capture bypass lifecycle availability or add animated inverse math.
 - Close requests coalesce while the async guard is pending. A veto restores `visible` without changing session, route, focus, DOM lifetime, or texture ownership. Approval retains DOM and the current Source texture through the final closing render; only its exact-once completion removes the window, forgets the guard, selects the next eligible focus, synchronizes the route, and releases the texture.
@@ -98,6 +100,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Product window pose comes only from `windowGeometryToPose()`. The accepted baseline is `curveBow = 0.032` (about 24.9 CSS px at the default 778px height) and one-sided horizontal/vertical edge gains of `0.17`: the viewport-facing inner edge remains 1.00 while only the outer edge reaches about 1.17. Do not tune renderer uniforms independently from CPU projection/inversion.
 - Target resolution separates geometry from policy. `aria-hidden`, `aria-disabled`, and native disabled state do not erase hit geometry; activation policy suppresses disabled actions after resolution. Effective visibility and `pointer-events:none` remain geometric exclusions.
 - Routed pointer/mouse events are synthetic. Report event delivery separately from verified native state changes, caret placement, picker opening, or IME behavior.
+- Trusted browser pointer events target the full-screen input plane, not the Source-local element selected by inverse projection. A Source component's document-level outside-pointer handler must ignore those trusted plane events and decide inside/outside only from the router-generated synthetic event (`isTrusted === false`). Closing a listbox during the trusted capture phase removes it from geometry before projected target resolution can hit its option.
 - Keep real source DOM semantics and keyboard focus. Native select/file/context-menu/IME top-layer UI is a flat browser escape; themed curved selects use captured custom listboxes.
 - The obsolete `spatial-lab.html` and `src/spatial/lab/` surface do not exist. Product Spatial UI must not add a local diagnostics toggle/overlay to the right Dock; status text and typed fallback snapshots remain the engine observability boundary. Do not retain hidden Lab adapters, probe surfaces, dead Dock slots, or lab-specific capability messages.
 
@@ -116,6 +119,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 | Window blur or document hidden | Release capture/hover and recenter according to reduced-motion policy |
 | Native/ARIA disabled target hit | Preserve hover/geometry; suppress activation and report why |
 | Synthetic event dispatched | Record delivery/cancellation; do not infer trusted native success |
+| Trusted input-plane `pointerdown` arrives while a Source-local popup is open | Do not run Source outside-close logic before inverse projection; the later routed synthetic event decides inside/outside |
 | Reduced motion | Freeze particles and snap/reset movement without changing final hierarchy |
 | Reduced motion with environment effects | Freeze particle/ring/grain/refraction time; keep the static final composition |
 | Environment particle flow reaches a cell boundary | Keep the point core and halo inside the cell using radius-aware center bounds; no hard clipping/popping |
@@ -136,6 +140,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Good: a direct Canvas child changes, only its texture uploads, the environment continues animating deterministic non-rigid particles, and curved edge input maps back to the same source control.
 - Good: pointer-down snapshots browser Source/viewport rectangles into plain four-field geometry, and later captured moves continue producing non-zero Source-local deltas after the live DOM changes.
 - Good: a shell Dock has lower scene z than every window, renders before windows, and is visited after windows during projected hit resolution.
+- Good: a Select ignores the trusted input-plane `pointerdown`, then keeps open for a routed option event or closes for a routed Source-local outside target.
 - Good: a product image base is processed in bounded environment targets, then clock/Dock/window Source textures are drawn sharply afterward.
 - Base: a static wallpaper base and frozen particles/ring settle without further frames or Source uploads; generic renderer consumers retain procedural rendering.
 - Base: a failed wallpaper upload exposes the identical CSS fallback while the shell and Source compositor remain usable.
@@ -145,12 +150,14 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Bad: uploading the clock/ring every animation frame or placing any Source texture in the Bloom/composite chain softens text and breaks demand-driven uploads.
 - Bad: filtering `aria-hidden` or disabled controls out of geometry causes clicks to fall through to an element underneath.
 - Bad: focus or synthetic `.click()` alone is reported as proof that a caret, picker, or native default action succeeded.
+- Bad: a document-capture outside-click handler treats the trusted input plane as the Source target and hides a popup before the router resolves its option geometry.
 - Bad: `{ ...element.getBoundingClientRect() }` appears valid with plain-object test fixtures but can produce an empty/partial runtime snapshot, forcing captured input into zero-delta extrapolation.
 
 ### 6. Tests Required
 
 - Unit: WebGL2/current/legacy negotiation, unresolved state, paint changed/removed normalization, source eligibility/removal, and context restore.
-- Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates.
+- Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, native scrollbar geometry/drag cleanup, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates.
+- Unit: Source-local popup outside-pointer behavior distinguishes trusted input-plane events from routed synthetic inside/outside targets; a trusted plane event cannot close the popup before option hit resolution.
 - Unit: environment/effects/decoration/clock/Dock/window/foreground pass order, reverse-z projected input order, default-pose parsing, transparent/image failure fallback, framebuffer lifecycle, media cover math, particle/reduced-motion scheduling, deterministic flow/size ranges, radius-bounded centers, and static Source upload counts.
 - Unit: per-window presentation phase progression, first-upload gating/retry, concurrent progress, duration-zero completion, guard veto/coalescing, exact-once close/minimize/restore completion, captured-input exclusion, transition-only uniforms/draws, optional-program fallback, and context-loss/dispose settlement.
 - Package: complete Spatial Vitest suite, platform-web Vue type-check, `npm run build:web`, and `git diff --check`.
@@ -238,6 +245,196 @@ const capturedRect: ClientRectLike = {
   width: rect.width,
   height: rect.height,
 }
+```
+
+```ts
+// Wrong: the trusted event target is the full-screen input plane.
+if (!root.contains(event.target as Node)) closePopup()
+
+// Correct: Source-local outside behavior consumes only the routed event.
+if (!event.isTrusted && !root.contains(event.target as Node)) closePopup()
+```
+
+## Scenario: Spatial Application Presentation Primitives
+
+### 1. Scope / Trigger
+
+Use this contract when adding or changing a route presentation under `apps/platform-web/src/spatial/apps/**`, especially buttons with icons, themed selectors, focus treatment, Source-local overlays, or content transitions.
+
+The completed Spatial shell is the visual authority. Route presentations may change layout for readability and workflow density, but they do not invent a second palette, material system, focus language, or control family.
+
+### 2. Signatures
+
+```ts
+interface SpatialActionButtonProps {
+  variant?: "default" | "primary" | "danger"
+  iconOnly?: boolean
+  type?: "button" | "submit" | "reset"
+  disabled?: boolean
+}
+
+interface SpatialSelectOption {
+  value: string
+  label: string
+  disabled?: boolean
+}
+
+interface SpatialSelectProps {
+  modelValue: string
+  options: readonly SpatialSelectOption[]
+  ariaLabel?: string
+  placeholder?: string
+  disabled?: boolean
+}
+
+type SpatialSelectEmit =
+  | { event: "update:modelValue"; value: string }
+  | { event: "change"; value: string }
+```
+
+Shared local transition names are `spatial-pop`, `spatial-dialog`, and `spatial-list`. Dominant screen/tab content has no CSS transition name.
+
+Application Sources that use those CSS transitions opt into intermediate texture capture with `data-spatial-source-animation`. The engine tracks the existing `FrameReason` value `"animated-source"`; `SOURCE_TEXTURE_ANIMATION_MAX_MS` is the hard liveness bound for a missing transition completion event.
+
+```ts
+interface SourceTextureAnimationFrame {
+  readonly activeSourceIds: readonly string[]
+  readonly expiredSourceIds: readonly string[]
+}
+
+function shouldQueueNextSourceTexturePaint(
+  record: Pick<ElementTextureRecord, "dirty" | "released">,
+): boolean
+```
+
+### 3. Contracts
+
+- Text+icon and icon-only application actions use `SpatialActionButton`. The primitive owns one horizontal icon/text row, a fixed non-shrinking icon box, SVG size, gap, variant colors and disabled state. Callers do not size or position action icons themselves.
+- Icon-only actions require an accessible name and keep a square semantic hit box. Text-only semantic tabs, list/menu items and selection cards may remain native buttons when they are not action-button variants.
+- Themed Spatial selectors use `SpatialSelect`; product route presentations do not use native `<select>`. The listbox remains inside the owning Source so curvature, styling and projected input stay consistent.
+- `SpatialSelect` owns open/highlight/selected state and supports click, outside-pointer close, Escape, Tab, ArrowUp/Down, Home/End, Enter/Space, disabled options and all-disabled lists. Opening with an unknown/empty model value highlights the first enabled option. Escape closes and restores trigger focus; Tab closes without trapping focus.
+- Source-local listboxes, menus and dialogs disable pointer input during leave transitions and restore the appropriate invoker/trigger focus after close.
+- Spatial application controls do not draw outer focus rectangles, focus box-shadows or focus-only border-width changes. Keyboard feedback may change existing fill, text, underline or a fixed-width inner/bottom accent without changing geometry.
+- Market screen and Detail tab replacement is an immediate keyed DOM swap inside the existing Source texture. Do not wrap dominant content in Vue `Transition`, and do not apply `transform`, `opacity`, `filter`, `clip-path`, mask or related compositor-promoting animation properties to its entering/leaving subtree.
+- Flag Chromium may promote an animated descendant into a planar compositor layer outside HTML-in-Canvas capture. The symptom is decisive: content temporarily loses curvature, then snaps onto the curved Source when the CSS transition ends. Extra `requestPaint()` calls or Source texture uploads cannot repair a layer that escaped Source composition.
+- A true curved dominant-content transition requires renderer-owned old/new textures composed on the same WebGL mesh. The current renderer owns one texture per Source and has no reusable intra-Source dual-texture seam; do not add that capability from an application task.
+- Popovers, dialogs and useful list/card entry may use the shared bounded local transitions. They are event-driven, interruptible, use no infinite iteration and settle without a continuous Source dirty reason; disable them too if Flag Chromium shows planar escape.
+- Popovers, dialogs and list/card entries may still locally animate to/from zero opacity because the stable owning screen remains painted underneath; they do not use dominant replacement composition.
+- A Source containing shared application transitions must opt in with `data-spatial-source-animation`. CSS computed intermediate frames do not trigger `MutationObserver`, so the viewport listens for bubbling `transitionrun`, `transitionend`, and `transitioncancel` only under opted-in Sources and sustains the `animated-source` reason while at least one transition remains active.
+- The hard deadline is anchored to the first `transitionrun` in one continuously active Source batch. Later properties increment the active-transition count but must not extend that deadline; otherwise repeated transition starts can turn the bounded recapture contract into an unbounded loop.
+- Source animation capture is serialized per Source. If its texture record is already dirty (whether waiting for paint or paint-ready), do not call `markDirty()` again: that clears `paintReady` and can produce stale/final-frame flicker. After the current generation uploads and becomes clean, mark it dirty once and request the next paint snapshot.
+- The last matching end/cancel event requests one final capture. A missing completion event expires at `SOURCE_TEXTURE_ANIMATION_MAX_MS` and also requests a final capture. Source removal, release, context loss, disposal, document hiding and reduced-motion changes release or suspend the animation reason; no path may leave idle Source uploads running.
+- `prefers-reduced-motion: reduce` makes application transitions immediate, removes transition delay and preserves the same final DOM, focus and business state.
+- Application colors and surfaces derive from inherited `--spatial-*` shell variables. Route components do not hard-code a near-match palette or import `retro-*` chrome.
+- Spatial-only presentation work does not duplicate controller, platform-host, storage or event logic. RetroOS and Spatial presentations consume the same per-instance domain controllers.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Select model matches an enabled option | Opening highlights that option |
+| Select model is empty/unknown | Opening highlights the first enabled option |
+| Active option is disabled or disappears | Normalize to the selected/first enabled option |
+| All options are disabled | Trigger remains closed; no value emits |
+| Arrow navigation crosses a disabled option | Skip it and stop at the enabled boundary |
+| Escape while open | Close, emit no value, restore trigger focus |
+| Tab while open | Close without preventing normal focus traversal |
+| Select/menu/dialog begins leaving | It cannot receive pointer input |
+| Reduced motion is active | Transition duration/delay is effectively zero; final state is identical |
+| Market screen or Detail tab changes | Replace immediately within the Source texture; no descendant CSS compositor animation or temporary planar layer |
+| Dominant content needs animated handoff | Defer to a renderer-owned dual-texture/GPU design; do not simulate it with Source DOM CSS |
+| Popover/dialog/list item fades to zero | The owning screen remains painted underneath; no full-screen brightness valley |
+| Opted-in CSS transition is running | One paint generation at a time uploads computed intermediate frames under `animated-source` |
+| Another property starts while that Source batch is active | Increment its completion count without moving the batch's original hard deadline |
+| Texture record is already dirty or paint-ready | Preserve it; do not re-mark it or overwrite the pending snapshot |
+| Last transition ends or is canceled | Request one final texture capture, then stop `animated-source` |
+| Transition completion event is lost | Hard-expire below one second, request the final texture, and stop |
+| Source is removed/released or context is lost | Drop its animation tracking; do not retain a frame reason for it |
+| Icon-only action lacks visible text | Caller supplies `aria-label` |
+| Route layout changes | Every prior command, status and error remains discoverable |
+
+### 5. Good / Base / Bad Cases
+
+- Good: a Market sort selector opens a captured warm-gray listbox, skips disabled options with ArrowDown, closes on Escape and returns focus to its trigger.
+- Good: upload/export/delete actions share the same horizontal icon box and label baseline across My Apps, Market and Detail.
+- Good: Detail tabs replace immediately inside one curved Source texture and never appear as flat planar content.
+- Good: an opted-in Market Source serially uploads bounded Select/dialog computed frames, preserves an outstanding paint-ready generation, and becomes idle after the local transition settles.
+- Base: a text-only tab or menu item remains a semantic native button and uses shared Spatial app styles without being wrapped in `SpatialActionButton`.
+- Bad: native `<select>` opens a white/blue browser popup above the curved Source.
+- Bad: each page adds its own SVG margins, icon sizes, button grid, focus outline or animation timing.
+- Bad: an infinite pulse or long ambient animation keeps the HTML Source repainting while idle.
+- Bad: an animation-frame loop calls `requestSourcePaint()` every frame; repeated `markDirty()` clears `paintReady`, so old and new content appear as discrete flashes.
+- Bad: a dominant Market screen uses CSS opacity/transform; Chromium promotes it to a flat descendant layer that snaps back onto the curved Source only after transition completion.
+
+### 6. Tests Required
+
+- Unit-test durable behavior: Select state transitions and disabled-option navigation; bounded Source-animation counting/expiry, including proof that later properties cannot slide the first-event deadline; preservation of an already-dirty paint generation; reduced-motion suppression of `animated-source`; controller request sequencing/mutation guards; close guards; media object-URL ownership; registry readiness and the production release gate.
+- Run task-owned controller/Spatial-app tests, platform-web Vue type-check, `npm run build:web`, and `git diff --check`.
+- Manual Flag Chromium acceptance owns visual alignment, curved-edge input, transition quality, focus appearance, native file/IME escapes, minimum-size layouts and reduced motion.
+- Do not add exact CSS-value snapshots, animation-frame snapshots, screenshot unit tests or source-format substring tests for tunable presentation details. If a broad run exposes legacy shell/engine failures, audit their live contract: delete obsolete source/visual assertions, rewrite tunable numeric or draw-count checks as semantic invariants, and keep or repair only tests that still protect runtime behavior. Do not carry a permanently red baseline.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```vue
+<button class="upload"><Upload class="mt-[-4px]" />上传资源</button>
+<select v-model="sortMode"><option value="newest">最新</option></select>
+```
+
+```css
+.route-control:focus-visible {
+  outline: 2px solid red;
+  box-shadow: 0 0 8px red;
+}
+```
+
+#### Correct
+
+```vue
+<SpatialActionButton variant="primary" @click="openUpload">
+  <template #icon><Upload /></template>
+  上传资源
+</SpatialActionButton>
+
+<SpatialSelect
+  v-model="sortMode"
+  :options="sortOptions"
+  aria-label="排序"
+/>
+```
+
+```css
+.spatial-action-button:focus-visible .spatial-action-button__label {
+  color: var(--spatial-window-accent);
+  text-decoration: underline;
+}
+```
+
+```vue
+<!-- Wrong: dominant CSS animation may escape as a flat compositor layer. -->
+<Transition name="spatial-content">
+  <Screen :key="screen.kind" />
+</Transition>
+
+<!-- Correct: one immediate replacement remains inside the curved Source. -->
+<Screen :key="screen.kind" />
+```
+
+```ts
+// Wrong: every scheduler frame invalidates the pending paint generation.
+elementTextures.markDirty(source)
+capabilities.requestPaint()
+return { continueReasons: ["animated-source"] }
+
+// Correct: keep one snapshot outstanding and queue the next after upload.
+if (!record.dirty) {
+  elementTextures.markDirty(source)
+  capabilities.requestPaint()
+}
+return transitionTracker.has(sourceId)
+  ? { continueReasons: ["animated-source"] }
+  : { continueReasons: [] }
 ```
 
 ## Upstream Status

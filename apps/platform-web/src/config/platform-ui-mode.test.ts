@@ -1,9 +1,15 @@
 import { describe, expect, it, vi } from "vitest"
 import { clonePlatformConfig, DEFAULT_PLATFORM_CONFIG } from "./platform-config"
-import { canSelectSpatialMode, resolveUiMode, switchPlatformUiMode } from "./platform-ui-mode"
+import {
+  canSelectSpatialMode,
+  resolveUiMode,
+  SPATIAL_RELEASE_READY,
+  switchPlatformUiMode,
+} from "./platform-ui-mode"
 
 describe("platform UI mode", () => {
   it("keeps production behind the closed release gate", () => {
+    expect(SPATIAL_RELEASE_READY).toBe(false)
     expect(resolveUiMode({
       requested: "spatial",
       dev: false,

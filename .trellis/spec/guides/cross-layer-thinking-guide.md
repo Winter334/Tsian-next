@@ -74,6 +74,20 @@ For each boundary:
 
 **Good**: Define the plain boundary type and copy every required field explicitly. Make the boundary test use non-enumerable accessors, not only object literals.
 
+### Mistake 5: Treating a Browser Compositor Layer as Captured Source Content
+
+**Symptom**: Content inside an HTML-in-Canvas Source loses curvature only while a CSS transition runs, then snaps back onto the curved window when the transition ends.
+
+**Bad**: Tune duration/opacity or request more Source paint frames. A promoted descendant `transform`/`opacity` layer may be composited as a flat plane outside the Source texture, so repaint frequency cannot restore its curve.
+
+**Good**: Remove compositor-promoting animation from dominant Source content. Replace it inside the Source texture immediately, or design the transition in the renderer with old/new textures on the same curved mesh. Verify curvature during the animation, not only before and after it.
+
+### Mistake 6: Treating the Trusted Input Plane as the Projected DOM Target
+
+**Bad**: A Source component's document-capture outside-click handler consumes the trusted event, sees the full-screen input plane as `event.target`, and closes its popup before inverse projection runs.
+
+**Good**: Keep the input plane and Source event domains explicit. Source-local outside-pointer behavior ignores trusted plane events and acts on the router-generated synthetic event whose target is the resolved Source element.
+
 ---
 
 ## Checklist for Cross-Layer Features
@@ -90,6 +104,9 @@ After implementation:
 - [ ] Checked data survives round-trip
 - [ ] Replaced browser/runtime host objects with explicit plain snapshots before retaining them across events or frames
 - [ ] Tested the runtime property shape (including non-enumerable/prototype fields), not only convenient plain-object fixtures
+- [ ] For browser-rendered or captured UI, identified which layer owns every animated frame: DOM compositor, Source texture, or GPU renderer
+- [ ] Verified geometry/curvature during the transition; an animation that is correct only at its endpoints is not cross-layer correct
+- [ ] For projected input, distinguished the trusted full-screen input-plane event from the later synthetic Source-local event before running document-level outside/focus logic
 
 ---
 

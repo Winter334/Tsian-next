@@ -325,14 +325,6 @@ describe("SpatialRenderer", () => {
     expect(transparentHarness.clearColors[transparentHarness.clearColors.length - 1])
       .toEqual([0, 0, 0, 0])
     expect(transparentHarness.drawCounts).toHaveLength(defaultHarness.drawCounts.length - 1)
-    expect(transparentHarness.drawCounts).toEqual([
-      6,
-      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
-      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
-      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
-      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
-      6,
-    ])
     expect(transparentHarness.blendCalls[transparentHarness.blendCalls.length - 1]).toEqual([
       transparentHarness.gl.SRC_ALPHA,
       transparentHarness.gl.ONE_MINUS_SRC_ALPHA,

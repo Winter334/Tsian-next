@@ -79,6 +79,7 @@ export class PointerRouter<T extends object> {
     readonly target: T
     readonly activationAllowed: boolean
   }>()
+  private readonly cancelingPointers = new Set<number>()
 
   constructor(private readonly adapter: PointerRouterAdapter<T>) {}
 
@@ -98,8 +99,14 @@ export class PointerRouter<T extends object> {
     const pointerAllowed = this.adapter.dispatch(target, "pointerdown", sample, null)
     const mouseAllowed = this.adapter.dispatch(target, "mousedown", sample, null)
     const policy = this.adapter.activationPolicy?.(target) ?? { allowed: true, reason: null }
-    const activationAllowed = pointerAllowed && mouseAllowed && policy.allowed
-    if (activationAllowed) this.adapter.focus(target)
+    // Browser click synthesis is gated by pointerdown cancellation, but
+    // canceling mousedown alone does not suppress the later click. Keep the
+    // mousedown delivery result for diagnostics without turning it into a
+    // projected-activation gate.
+    const activationAllowed = pointerAllowed && policy.allowed
+    // mousedown cancellation preserves click synthesis but still suppresses
+    // the browser's ordinary focus default.
+    if (activationAllowed && mouseAllowed) this.adapter.focus(target)
     this.pressedTargets.set(sample.pointerId, {
       target,
       activationAllowed,
@@ -161,10 +168,18 @@ export class PointerRouter<T extends object> {
   }
 
   cancel(pointerId: number, sample: RoutedPointerSample): void {
+    if (this.cancelingPointers.has(pointerId)) return
     const target = this.captures.get(pointerId) ?? this.pressedTargets.get(pointerId)?.target
-    if (target) this.adapter.dispatch(target, "pointercancel", sample, null)
-    this.release(pointerId)
-    this.transitionHover(null, sample)
+    this.cancelingPointers.add(pointerId)
+    try {
+      if (target) this.adapter.dispatch(target, "pointercancel", sample, null)
+    } finally {
+      // Keep logical capture valid while pointercancel is delivered, then
+      // release exactly once even if a handler synchronously requests reset.
+      this.release(pointerId)
+      this.transitionHover(null, sample)
+      this.cancelingPointers.delete(pointerId)
+    }
   }
 
   contextMenu(target: T | null, sample: RoutedPointerSample): void {
@@ -235,6 +250,14 @@ export class PointerRouter<T extends object> {
 
   captureCount(): number {
     return this.captures.size
+  }
+
+  /** Marks an already-delivered pointer gesture as drag-owned, so release does not click. */
+  suppressActivation(pointerId: number): boolean {
+    const pressed = this.pressedTargets.get(pointerId)
+    if (!pressed || !pressed.activationAllowed) return false
+    this.pressedTargets.set(pointerId, { ...pressed, activationAllowed: false })
+    return true
   }
 
   private release(pointerId: number): void {

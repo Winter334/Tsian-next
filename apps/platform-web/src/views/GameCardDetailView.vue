@@ -100,11 +100,11 @@
               <button
                 type="button"
                 class="retro-button retro-focus inline-flex h-9 w-fit items-center gap-2 px-3 font-mono text-xs"
-                :disabled="isLoadedCard"
+                :disabled="isLoadedCard || loadingCard"
                 @click="loadCurrentCard"
               >
                 <CheckCircle2 class="h-3.5 w-3.5" aria-hidden="true" />
-                {{ isLoadedCard ? '已加载' : '加载游戏卡' }}
+                {{ isLoadedCard ? '已加载' : loadingCard ? '加载中…' : '加载游戏卡' }}
               </button>
             </div>
 
@@ -145,7 +145,7 @@
                       <button
                         type="button"
                         class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs"
-                        :disabled="card.source === 'builtin'"
+                        :disabled="propertiesSaving || card.source === 'builtin'"
                         @click="openCoverPicker"
                       >
                         <ImageUp class="h-3.5 w-3.5" aria-hidden="true" />
@@ -155,7 +155,7 @@
                         v-if="coverUrl"
                         type="button"
                         class="retro-button retro-focus inline-flex h-8 items-center gap-2 px-3 font-mono text-xs text-danger"
-                        :disabled="card.source === 'builtin'"
+                        :disabled="propertiesSaving || card.source === 'builtin'"
                         @click="applyCoverClearDraft"
                       >
                         <XCircle class="h-3.5 w-3.5" aria-hidden="true" />
@@ -168,13 +168,14 @@
                         <input
                           v-model="coverUrlDraft"
                           type="url"
+                          :disabled="propertiesSaving || card.source === 'builtin'"
                           class="retro-focus h-8 min-w-0 flex-1 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
                           placeholder="https://example.com/cover.png"
                         />
                         <button
                           type="button"
                           class="retro-button retro-focus inline-flex h-8 shrink-0 items-center gap-2 px-3 font-mono text-xs"
-                          :disabled="!coverUrlDraft.trim() || card.source === 'builtin'"
+                          :disabled="propertiesSaving || !coverUrlDraft.trim() || card.source === 'builtin'"
                           @click="applyCoverUrlDraft"
                         >
                           <Link2 class="h-3.5 w-3.5" aria-hidden="true" />
@@ -199,6 +200,7 @@
                 <input
                   v-model="metadataName"
                   type="text"
+                  :disabled="propertiesSaving || card.source === 'builtin'"
                   class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main"
                 />
               </label>
@@ -208,6 +210,7 @@
                 <textarea
                   v-model="metadataIntro"
                   rows="3"
+                  :disabled="propertiesSaving || card.source === 'builtin'"
                   class="retro-focus min-h-20 resize-y border border-neon-deep/55 bg-panel px-2 py-2 text-xs leading-5 text-text-main"
                 />
               </label>
@@ -218,6 +221,7 @@
                   <input
                     v-model="metadataAuthor"
                     type="text"
+                    :disabled="propertiesSaving || card.source === 'builtin'"
                     class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
                     placeholder="留空则不显示"
                   />
@@ -227,6 +231,7 @@
                   <input
                     v-model="metadataVersion"
                     type="text"
+                    :disabled="propertiesSaving || card.source === 'builtin'"
                     class="retro-focus h-8 min-w-0 border border-neon-deep/55 bg-panel px-2 font-mono text-xs text-text-main placeholder:text-text-dim/60"
                     placeholder="0.1.0"
                   />
@@ -288,6 +293,7 @@
                 <button
                   type="button"
                   class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
+                  :disabled="frontendSaving || frontendPackageSaving || card.source === 'builtin'"
                   :class="frontendMode === 'none' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
                   @click="setFrontendMode('none')"
                 >
@@ -298,6 +304,7 @@
                 <button
                   type="button"
                   class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
+                  :disabled="frontendSaving || frontendPackageSaving || card.source === 'builtin'"
                   :class="frontendMode === 'remote' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
                   @click="setFrontendMode('remote')"
                 >
@@ -308,6 +315,7 @@
                 <button
                   type="button"
                   class="retro-focus flex min-h-20 flex-col items-start gap-2 border p-3 text-left"
+                  :disabled="frontendSaving || frontendPackageSaving || card.source === 'builtin'"
                   :class="frontendMode === 'packaged' ? 'border-neon bg-neon/10 text-neon' : 'border-neon-deep/40 bg-panel/55 text-text-dim hover:text-text-main'"
                   @click="setFrontendMode('packaged')"
                 >
@@ -322,6 +330,7 @@
                 <input
                   v-model="remoteUrl"
                   type="url"
+                  :disabled="frontendSaving || frontendPackageSaving || card.source === 'builtin'"
                   class="retro-focus h-9 border border-neon-deep/55 bg-panel px-3 font-mono text-xs text-text-main placeholder:text-text-dim/60"
                   placeholder="https://example.com/tsian-game/"
                   @keyup.enter="applyFrontendBindingDraft"
@@ -394,16 +403,8 @@
 </template>
 
 <script setup lang="ts">
-import type { GameCardFrontendBinding } from "@tsian/contracts"
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { ref, watch } from "vue"
 import { useRouter } from "vue-router"
-import { confirm } from "@/composables/useConfirm"
-import { toast } from "@/composables/useToast"
-import { clearBeforeClose, setBeforeClose } from "@/composables/useDesktopWindows"
-import {
-  ACTIVE_CARD_CHANGED_EVENT,
-  isActiveCardChangedEvent,
-} from "@/lib/platform-events"
 import {
   CheckCircle2,
   Disc3,
@@ -419,34 +420,14 @@ import {
   XCircle,
 } from "lucide-vue-next"
 import type { Component } from "vue"
-import type { LocalGameCardRecord } from "@/storage/db"
 import {
-  getFrontendStatusLabel,
-  getGameCardAuthor,
-  getGameCardCoverUrl,
-  getGameCardDescription,
-  getGameCardTitle,
-} from "@/lib/game-card-display"
+  formatGameCardFileSize,
+  useGameCardDetailController,
+  type GameCardFrontendMode,
+} from "@/controllers/game-cards/use-game-card-detail-controller"
 import { inferMediaTypeFromPath } from "@/lib/media-type"
-import {
-  deletePlatformGameCard,
-  exportPlatformGameCardFrontendPackage,
-  exportPlatformGameCardPackage,
-  getPlatformActiveGameCardId,
-  getPlatformGameCard,
-  importPlatformGameCardFrontendPackage,
-  importPlatformGameCardPackage,
-  listPlatformGameCardFrontendFiles,
-  setPlatformActiveGameCard,
-  setPlatformGameCardCover,
-  updatePlatformGameCardMetadata,
-  updatePlatformGameCardFrontend,
-  type PlatformGameCardFrontendFileSummary,
-} from "../platform-host"
-import { detailWindowIdFor } from "../desktop-apps"
 
 type TabId = "overview" | "frontend"
-type FrontendMode = "none" | "remote" | "packaged"
 
 interface TabItem {
   id: TabId
@@ -465,528 +446,87 @@ const tabs: TabItem[] = [
 ]
 
 const activeTab = ref<TabId>("overview")
-const card = ref<LocalGameCardRecord | null>(null)
-const activeGameCardId = ref("")
-const frontendFiles = ref<PlatformGameCardFrontendFileSummary[]>([])
-const frontendMode = ref<FrontendMode>("none")
-const remoteUrl = ref("")
-const packagedEntry = ref("")
-const pendingFrontendPackageFile = ref<File | null>(null)
-const metadataName = ref("")
-const metadataIntro = ref("")
-const metadataAuthor = ref("")
-const metadataVersion = ref("")
-const coverUrlDraft = ref("")
 const coverInput = ref<HTMLInputElement | null>(null)
-const coverError = ref("")
-const loading = ref(false)
-const exporting = ref(false)
-const frontendSaving = ref(false)
 const frontendPackageInput = ref<HTMLInputElement | null>(null)
-const frontendPackageSaving = ref(false)
-const propertiesSaving = ref(false)
-const errorMessage = ref("")
-const feedback = ref("")
-
-type CoverDraft =
-  | { kind: "none" }
-  | { kind: "upload"; file: File; previewUrl: string }
-  | { kind: "url"; url: string }
-  | { kind: "clear" }
-
-const coverDraft = ref<CoverDraft>({ kind: "none" })
-
-const cardTitle = computed(() => getGameCardTitle(card.value))
-const cardDescription = computed(() => getGameCardDescription(card.value))
-const cardAuthor = computed(() => getGameCardAuthor(card.value))
-const coverUrl = computed(() => {
-  const draft = coverDraft.value
-  if (draft.kind === "upload") return draft.previewUrl
-  if (draft.kind === "url") return draft.url
-  if (draft.kind === "clear") return ""
-  return getGameCardCoverUrl(card.value)
-})
-const coverSourceLabel = computed(() => {
-  const draft = coverDraft.value
-  if (draft.kind === "upload") return "预览"
-  if (draft.kind === "url") return "URL*"
-  if (draft.kind === "clear") return "已移除*"
-  const cover = card.value?.manifest.cover
-  if (!cover) return ""
-  if (cover.url?.trim()) return "URL"
-  if (cover.workspacePath?.trim()) return "本地"
-  return ""
-})
-const frontendStatusLabel = computed(() => getFrontendStatusLabel(card.value))
-const isLoadedCard = computed(() => Boolean(card.value && activeGameCardId.value === card.value.id))
-const frontendDraftChanged = computed(() => {
-  const frontend = card.value?.manifest.frontend
-  if (pendingFrontendPackageFile.value) return true
-  if (frontendMode.value === "none") return Boolean(frontend)
-  if (frontendMode.value === "remote") {
-    return frontend?.kind !== "remote" || remoteUrl.value.trim() !== frontend.url
-  }
-  return frontend?.kind !== "packaged" || packagedEntry.value !== frontend.entry
-})
-const canApplyFrontendDraft = computed(() => {
-  if (!card.value || card.value.source === "builtin") return false
-  if (frontendSaving.value || frontendPackageSaving.value) return false
-  if (!frontendDraftChanged.value) return false
-  if (frontendMode.value === "remote") return Boolean(remoteUrl.value.trim())
-  if (frontendMode.value === "packaged") {
-    return Boolean(pendingFrontendPackageFile.value || packagedEntry.value)
-  }
-  return true
-})
-const frontendApplyLabel = computed(() => frontendSaving.value ? "应用中…" : "应用")
-const packageDraftLabel = computed(() => {
-  if (pendingFrontendPackageFile.value) {
-    return `待应用 ${pendingFrontendPackageFile.value.name}`
-  }
-  return packagedEntry.value
+const {
+  card,
+  frontendFiles,
+  frontendMode,
+  remoteUrl,
+  metadataName,
+  metadataIntro,
+  metadataAuthor,
+  metadataVersion,
+  coverUrlDraft,
+  coverError,
+  loading,
+  exporting,
+  frontendSaving,
+  frontendPackageSaving,
+  propertiesSaving,
+  loadingCard,
+  errorMessage,
+  feedback,
+  cardTitle,
+  cardDescription,
+  cardAuthor,
+  coverUrl,
+  coverSourceLabel,
+  frontendStatusLabel,
+  isLoadedCard,
+  canApplyFrontendDraft,
+  frontendApplyLabel,
+  packageDraftLabel,
+  hasUnsavedChanges,
+  setFrontendMode,
+  stageCoverUpload,
+  applyCoverUrlDraft,
+  applyCoverClearDraft,
+  saveProperties,
+  deleteCurrentCard,
+  exportCard,
+  applyFrontendBindingDraft,
+  stageFrontendPackage,
+  exportFrontendPackage,
+  loadCurrentCard,
+} = useGameCardDetailController({
+  cardId: () => props.cardId,
+  onDeleted: () => void router.push("/library"),
 })
 
-const hasUnsavedChanges = computed(() => {
-  if (!card.value) return false
-  if (metadataName.value.trim() !== card.value.manifest.name) return true
-  if (metadataIntro.value.trim() !== card.value.manifest.summary) return true
-  if (metadataAuthor.value.trim() !== (card.value.manifest.author?.name ?? "")) return true
-  if (metadataVersion.value.trim() !== card.value.manifest.version) return true
-  if (coverDraft.value.kind !== "none") return true
-  return false
-})
+const formatBytes = formatGameCardFileSize
 
-function defaultPackagedEntry(): string {
-  return frontendFiles.value.find((file) => file.path.endsWith(".html"))?.path
-    ?? frontendFiles.value[0]?.path
-    ?? ""
-}
-
-function setFrontendMode(mode: FrontendMode) {
-  frontendMode.value = mode
-  if (mode !== "packaged") {
-    pendingFrontendPackageFile.value = null
-  }
-  if (mode === "packaged" && !packagedEntry.value) {
-    packagedEntry.value = defaultPackagedEntry()
-  }
-  feedback.value = ""
-}
-
-function syncFrontendDraft(loadedCard: LocalGameCardRecord) {
-  const frontend = loadedCard.manifest.frontend
-  if (!frontend) {
-    frontendMode.value = "none"
-    remoteUrl.value = ""
-    packagedEntry.value = defaultPackagedEntry()
-    pendingFrontendPackageFile.value = null
-    return
-  }
-
-  if (frontend.kind === "remote") {
-    frontendMode.value = "remote"
-    remoteUrl.value = frontend.url
-    pendingFrontendPackageFile.value = null
-    return
-  }
-
-  frontendMode.value = "packaged"
-  packagedEntry.value = frontend.entry
-  pendingFrontendPackageFile.value = null
-}
-
-function syncMetadataDraft(loadedCard: LocalGameCardRecord) {
-  metadataName.value = loadedCard.manifest.name
-  metadataIntro.value = loadedCard.manifest.summary
-  metadataAuthor.value = loadedCard.manifest.author?.name ?? ""
-  metadataVersion.value = loadedCard.manifest.version
-  coverUrlDraft.value = loadedCard.manifest.cover?.url ?? ""
-  resetCoverDraft()
-}
-
-/** Replace the current cover draft, revoking any pending upload preview URL. */
-function setCoverDraft(next: CoverDraft) {
-  if (coverDraft.value.kind === "upload") {
-    URL.revokeObjectURL(coverDraft.value.previewUrl)
-  }
-  coverDraft.value = next
-}
-
-function resetCoverDraft() {
-  setCoverDraft({ kind: "none" })
-}
-
-function openCoverPicker() {
+function openCoverPicker(): void {
   coverError.value = ""
   coverInput.value?.click()
 }
 
-async function handleCoverSelected(event: Event) {
+function handleCoverSelected(event: Event): void {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ""
-  if (!file || !card.value) {
-    return
-  }
-  if (card.value.source === "builtin") {
-    coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
-    return
-  }
-  coverError.value = ""
-  setCoverDraft({ kind: "upload", file, previewUrl: URL.createObjectURL(file) })
+  if (file) stageCoverUpload(file)
 }
 
-async function applyCoverUrlDraft() {
-  const url = coverUrlDraft.value.trim()
-  if (!url || !card.value) {
-    return
-  }
-  if (card.value.source === "builtin") {
-    coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
-    return
-  }
-  coverError.value = ""
-  setCoverDraft({ kind: "url", url })
-}
-
-async function applyCoverClearDraft() {
-  if (!card.value) {
-    return
-  }
-  if (card.value.source === "builtin") {
-    coverError.value = "内置游戏卡不能直接修改封面，请先另存为本地副本。"
-    return
-  }
-  coverError.value = ""
-  setCoverDraft({ kind: "clear" })
-}
-
-async function refreshData() {
-  loading.value = true
-  errorMessage.value = ""
-
-  try {
-    const [loadedCard, loadedActiveGameCardId, loadedFrontendFiles] = await Promise.all([
-      getPlatformGameCard(props.cardId),
-      getPlatformActiveGameCardId(),
-      listPlatformGameCardFrontendFiles(props.cardId),
-    ])
-
-    if (!loadedCard) {
-      throw new Error(`未找到游戏卡「${props.cardId}」。`)
-    }
-
-    card.value = loadedCard
-    activeGameCardId.value = loadedActiveGameCardId ?? ""
-    frontendFiles.value = loadedFrontendFiles
-    syncFrontendDraft(loadedCard)
-    syncMetadataDraft(loadedCard)
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡详情。"
-  } finally {
-    loading.value = false
-  }
-}
-
-async function saveProperties() {
-  if (!card.value) {
-    return
-  }
-
-  propertiesSaving.value = true
-  feedback.value = ""
-  try {
-    const trimmedName = metadataName.value.trim()
-    const trimmedIntro = metadataIntro.value.trim()
-    if (!trimmedName || !trimmedIntro) {
-      throw new Error("名称和简介不能为空。")
-    }
-
-    await updatePlatformGameCardMetadata(card.value.id, {
-      name: trimmedName,
-      summary: trimmedIntro,
-      authorName: metadataAuthor.value,
-      version: metadataVersion.value,
-    })
-
-    const draft = coverDraft.value
-    if (draft.kind === "upload") {
-      const updated = await setPlatformGameCardCover(card.value.id, { kind: "upload", file: draft.file })
-      card.value = updated
-    } else if (draft.kind === "url") {
-      const updated = await setPlatformGameCardCover(card.value.id, { kind: "url", url: draft.url })
-      card.value = updated
-    } else if (draft.kind === "clear") {
-      const updated = await setPlatformGameCardCover(card.value.id, { kind: "clear" })
-      card.value = updated
-    }
-
-    resetCoverDraft()
-    toast.success("已保存属性")
-    feedback.value = "已保存属性。"
-    await refreshData()
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "保存属性失败。"
-  } finally {
-    propertiesSaving.value = false
-  }
-}
-
-async function deleteCurrentCard() {
-  if (!card.value || card.value.source === "builtin") {
-    return
-  }
-
-  const confirmed = await confirm({
-    message: `删除应用「${cardTitle.value}」？\n\n这会同时删除所有关联存档，无法撤销。`,
-    severity: "danger",
-    confirmText: "删除",
-  })
-  if (!confirmed) {
-    return
-  }
-
-  propertiesSaving.value = true
-  feedback.value = ""
-  try {
-    await deletePlatformGameCard(card.value.id)
-    toast.success(`已删除应用：${cardTitle.value}`)
-    router.push("/library")
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "删除应用失败。"
-  } finally {
-    propertiesSaving.value = false
-  }
-}
-
-function packageFilename(): string {
-  const name = cardTitle.value
-    .trim()
-    .replace(/[\\/:*?"<>|]+/g, "-")
-    .replace(/\s+/g, "-")
-    .replace(/^-+|-+$/g, "")
-    || "game-card"
-  return `${name}.tsian-card.zip`
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement("a")
-  link.href = url
-  link.download = filename
-  link.rel = "noopener"
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(url), 0)
-}
-
-async function exportCard() {
-  if (!card.value) {
-    return
-  }
-
-  exporting.value = true
-  feedback.value = ""
-  try {
-    const blob = await exportPlatformGameCardPackage(card.value.id)
-    downloadBlob(blob, packageFilename())
-    feedback.value = `已导出卡包：${packageFilename()}`
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "导出游戏卡包失败。"
-  } finally {
-    exporting.value = false
-  }
-}
-
-function frontendBindingDraft(): GameCardFrontendBinding | undefined {
-  if (frontendMode.value === "none") {
-    return undefined
-  }
-
-  if (frontendMode.value === "remote") {
-    return {
-      kind: "remote",
-      url: remoteUrl.value,
-      bridgeVersion: "tsian.play-bridge.v1",
-    }
-  }
-
-  return {
-    kind: "packaged",
-    entry: packagedEntry.value,
-    bridgeVersion: "tsian.play-bridge.v1",
-  }
-}
-
-async function saveFrontendBinding() {
-  if (!card.value) {
-    return
-  }
-
-  frontendSaving.value = true
-  feedback.value = ""
-  try {
-    const updated = await updatePlatformGameCardFrontend(card.value.id, frontendBindingDraft())
-    feedback.value = updated.manifest.frontend
-      ? "已保存前端绑定。"
-      : "已清除前端绑定。"
-    await refreshData()
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "保存前端绑定失败。"
-  } finally {
-    frontendSaving.value = false
-  }
-}
-
-async function applyFrontendBindingDraft() {
-  if (!card.value || !canApplyFrontendDraft.value) {
-    return
-  }
-
-  if (frontendMode.value === "none") {
-    await clearFrontendBinding()
-    return
-  }
-
-  if (frontendMode.value === "packaged" && pendingFrontendPackageFile.value) {
-    frontendSaving.value = true
-    feedback.value = ""
-    try {
-      await importPlatformGameCardFrontendPackage(card.value.id, pendingFrontendPackageFile.value)
-      pendingFrontendPackageFile.value = null
-      feedback.value = "已应用前端包。"
-      await refreshData()
-    } catch (error) {
-      feedback.value = error instanceof Error ? error.message : "应用前端包失败。"
-    } finally {
-      frontendSaving.value = false
-    }
-    return
-  }
-
-  await saveFrontendBinding()
-}
-
-async function clearFrontendBinding() {
-  if (!card.value?.manifest.frontend) {
-    return
-  }
-  const confirmed = await confirm({
-    message: "清除当前前端绑定？",
-    severity: "danger",
-    confirmText: "清除",
-  })
-  if (!confirmed) {
-    return
-  }
-
-  frontendMode.value = "none"
-  await saveFrontendBinding()
-}
-
-function openFrontendPackagePicker() {
+function openFrontendPackagePicker(): void {
   feedback.value = ""
   frontendPackageInput.value?.click()
 }
 
-function handleFrontendPackageSelected(event: Event) {
+function handleFrontendPackageSelected(event: Event): void {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ""
-  if (!file || !card.value) {
-    return
-  }
-  if (card.value.source === "builtin") {
-    feedback.value = "内置游戏卡不能直接替换前端，请先另存为本地副本。"
-    return
-  }
-
-  frontendMode.value = "packaged"
-  pendingFrontendPackageFile.value = file
-  feedback.value = ""
+  if (file) stageFrontendPackage(file)
 }
 
-async function handleExportFrontendPackage() {
-  if (!card.value || frontendFiles.value.length === 0) {
-    return
-  }
-  frontendPackageSaving.value = true
-  feedback.value = ""
-  try {
-    const blob = await exportPlatformGameCardFrontendPackage(card.value.id)
-    const filename = `${card.value.manifest.id}.tsian-frontend.zip`
-    downloadBlob(blob, filename)
-    feedback.value = `已导出前端包：${filename}`
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "导出前端包失败。"
-  } finally {
-    frontendPackageSaving.value = false
-  }
-}
-
-async function loadCurrentCard() {
-  if (!card.value || isLoadedCard.value) {
-    return
-  }
-
-  const loaded = await setPlatformActiveGameCard(card.value.id)
-  activeGameCardId.value = loaded.id
-  feedback.value = `已加载游戏卡：${loaded.manifest.name}`
-}
-
-function formatBytes(size: number): string {
-  if (!Number.isFinite(size) || size <= 0) {
-    return "0 B"
-  }
-  if (size < 1024) {
-    return `${size} B`
-  }
-  if (size < 1024 * 1024) {
-    return `${(size / 1024).toFixed(1)} KB`
-  }
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+async function handleExportFrontendPackage(): Promise<void> {
+  await exportFrontendPackage()
 }
 
 watch(() => props.cardId, () => {
   activeTab.value = "overview"
-  resetCoverDraft()
-  void refreshData()
 })
-
-let registeredWindowId = ""
-
-onMounted(() => {
-  registeredWindowId = detailWindowIdFor(props.cardId)
-  setBeforeClose(registeredWindowId, onBeforeClose)
-  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-  void refreshData()
-})
-
-onBeforeUnmount(() => {
-  clearBeforeClose(registeredWindowId)
-  registeredWindowId = ""
-  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-  resetCoverDraft()
-})
-
-function onActiveCardChanged(event: Event) {
-  if (!isActiveCardChangedEvent(event)) {
-    return
-  }
-  void refreshData()
-}
-
-async function onBeforeClose(): Promise<boolean> {
-  if (!hasUnsavedChanges.value) {
-    return true
-  }
-  return confirm({
-    message: "有未保存的改动，放弃并关闭？",
-    severity: "danger",
-    confirmText: "放弃",
-  })
-}
 </script>
 
 <style scoped>

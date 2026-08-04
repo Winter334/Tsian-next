@@ -91,6 +91,29 @@ describe("PointerRouter", () => {
     expect(router.captureCount()).toBe(0)
   })
 
+  it("lets an explicit drag owner suppress release activation after a valid down", () => {
+    const target = { name: "scrollbar" }
+    const events: string[] = []
+    const router = new PointerRouter<FakeTarget>({
+      chain: (value) => [value],
+      dispatch: (_target, type) => { events.push(type); return true },
+      focus: () => undefined,
+      activate: () => {
+        events.push("activate")
+        return { status: "requested", detail: "test" }
+      },
+      setCapture: () => undefined,
+      releaseCapture: () => undefined,
+    })
+
+    expect(router.down(target, sample)).toBe(true)
+    expect(router.suppressActivation(sample.pointerId)).toBe(true)
+    router.up(target, sample)
+
+    expect(events).toContain("pointerup")
+    expect(events).not.toContain("activate")
+  })
+
   it("cancel releases capture without activation", () => {
     const target = { name: "target" }
     const events: string[] = []
@@ -119,6 +142,31 @@ describe("PointerRouter", () => {
     expect(activeStates).toEqual([["target"], []])
   })
 
+  it("makes routed cancellation re-entrant without redispatching or leaking capture", () => {
+    const target = { name: "target" }
+    const events: string[] = []
+    let router: PointerRouter<FakeTarget>
+    router = new PointerRouter<FakeTarget>({
+      chain: (value) => [value],
+      dispatch: (_target, type, routedSample) => {
+        events.push(type)
+        if (type === "pointercancel") router.cancel(routedSample.pointerId, routedSample)
+        return true
+      },
+      focus: () => undefined,
+      activate: () => ({ status: "requested", detail: "test" }),
+      setCapture: () => undefined,
+      releaseCapture: () => events.push("release"),
+    })
+
+    router.down(target, sample)
+    router.cancel(sample.pointerId, sample)
+
+    expect(events.filter((event) => event === "pointercancel")).toHaveLength(1)
+    expect(events.filter((event) => event === "release")).toHaveLength(1)
+    expect(router.captureCount()).toBe(0)
+  })
+
   it("does not activate when pointerdown is canceled", () => {
     const target = { name: "target" }
     const events: string[] = []
@@ -136,6 +184,35 @@ describe("PointerRouter", () => {
     router.down(target, sample)
     router.up(target, sample)
     expect(events).toEqual([])
+  })
+
+  it("still activates when only mousedown is canceled and reports that cancellation", () => {
+    const target = { name: "target" }
+    const events: string[] = []
+    const reports: string[] = []
+    const router = new PointerRouter<FakeTarget>({
+      chain: (value) => [value],
+      dispatch: (_target, type) => type !== "mousedown",
+      focus: () => events.push("focus"),
+      activate: () => {
+        events.push("activate")
+        return { status: "requested", detail: "test" }
+      },
+      setCapture: () => undefined,
+      releaseCapture: () => undefined,
+      reportSyntheticDelivery: (report) => reports.push(
+        `${report.phase}:${report.canceled.join(",")}:${String(report.activationEligible)}`,
+      ),
+    })
+
+    expect(router.down(target, sample)).toBe(true)
+    router.up(target, sample)
+
+    expect(events).toEqual(["activate"])
+    expect(reports).toEqual([
+      "down:mousedown:true",
+      "up::true",
+    ])
   })
 
   it("reports synthetic delivery separately from activation-policy suppression", () => {

@@ -1,0 +1,9 @@
+{"file":".trellis/spec/platform-web/frontend/index.md","reason":"Platform-web ownership, required checks, and related frontend/storage routing."}
+{"file":".trellis/spec/platform-web/frontend/component-guidelines.md","reason":"Route-view boundaries, RetroOS behavior contracts, library/detail workflows, and render-tree preservation."}
+{"file":".trellis/spec/platform-web/frontend/hook-guidelines.md","reason":"Reusable controller/composable boundaries, explicit mutation commands, and lifecycle cleanup."}
+{"file":".trellis/tasks/07-31-spatial-library-market/research/current-library-market-evidence.md","reason":"Focused current-code evidence for registry readiness, controller seams, change events, close guards, and media lifecycle."}
+{"file":".trellis/spec/platform-web/frontend/spatial-ui.md","reason":"HTML-in-Canvas Source, projected input, lifecycle, native-control escape, and media constraints."}
+{"file":".trellis/spec/platform-web/frontend/quality-guidelines.md","reason":"Platform-web implementation and pre-commit quality expectations."}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"Prevents duplicating the existing business workflows across RetroOS and Spatial presentations."}
+{"file":".trellis/spec/guides/module-structure-guide.md","reason":"Guides splitting the large Market workflow along real responsibility seams."}
+{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Parent research for dual-shell extraction, first vertical slice, and privacy-preserving image policy."}

@@ -65,7 +65,7 @@ describe("FrameScheduler", () => {
 
   it("snaps motion continuations under reduced motion", () => {
     const harness = createHarness(() => ({
-      continueReasons: ["parallax", "particles", "animated-background", "dirty"],
+      continueReasons: ["parallax", "particles", "animated-background", "animated-source", "dirty"],
     }))
     harness.scheduler.setReducedMotion(true)
     harness.scheduler.request("parallax")

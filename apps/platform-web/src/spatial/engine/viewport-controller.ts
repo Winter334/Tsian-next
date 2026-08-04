@@ -9,10 +9,13 @@ import type { EnvironmentBaseProvider } from "./environment-base"
 import type { EnvironmentPostProcessingOptions } from "./environment-effects"
 import { FrameScheduler, type FrameReason, type ScheduledFrame } from "./frame-scheduler"
 import {
+  findScrollbarThumbDrag,
   findScrollableAncestor,
   openNativePicker,
   placeCaretAtPoint,
   scrollElementBy,
+  type ScrollbarThumbDragState,
+  updateScrollbarThumbDrag,
   updateRangeFromPoint,
 } from "./input/native-controls"
 import {
@@ -42,6 +45,12 @@ import {
   type SpatialWindowPresentationRenderOptions,
   type SpatialWindowRippleRenderOptions,
 } from "./source-presentation"
+import {
+  shouldQueueNextSourceTexturePaint,
+  SOURCE_TEXTURE_ANIMATION_SETTLE_MAX_MS,
+  sourceTextureAnimationSettlementAction,
+  SourceTextureAnimationTracker,
+} from "./source-texture-animation"
 import {
   capturedSceneScreenToLocalDifferential,
   captureSceneProjection,
@@ -133,6 +142,12 @@ interface CapturedSceneInput {
   extrapolating: boolean
 }
 
+interface CapturedScrollbarThumbDrag {
+  readonly sourceId: string
+  readonly sourceRoot: Element
+  readonly state: ScrollbarThumbDragState
+}
+
 const EMPTY_POINTER: SpatialPointerSnapshot = Object.freeze({
   trusted: null,
   curved: null,
@@ -200,7 +215,13 @@ export class SpatialViewportController {
   private readonly presentationInputUnavailableSourceIds = new Set<string>()
   private readonly presentationCapturePendingSourceIds = new Set<string>()
   private readonly readySourceIds = new Set<string>()
+  private readonly sourceTextureAnimations = new SourceTextureAnimationTracker()
+  private readonly settlingSourceTextureAnimations = new Map<string, {
+    finalRequested: boolean
+    expiresAt: number
+  }>()
   private readonly capturedSceneProjections = new Map<number, CapturedSceneInput>()
+  private readonly capturedScrollbarThumbDrags = new Map<number, CapturedScrollbarThumbDrag>()
   private capabilities: HtmlInCanvasCapabilities | null = null
   private renderer: SpatialRenderer | null = null
   private scheduler: FrameScheduler | null = null
@@ -319,6 +340,7 @@ export class SpatialViewportController {
         this.presentationCapturePendingSourceIds.add(presentation.sourceId)
       }
     }
+    this.cancelUnavailableScrollbarThumbDrags()
   }
 
   syncSources(): void {
@@ -326,6 +348,11 @@ export class SpatialViewportController {
     const current = [...this.options.canvas.querySelectorAll(":scope > [data-spatial-source]")]
     const result = this.renderer.elementTextures.synchronize(current)
     const currentIds = new Set(current.map((element) => element.getAttribute("data-spatial-source") ?? "unknown"))
+    this.cancelScrollbarThumbDragsOutsideSources(currentIds)
+    this.sourceTextureAnimations.retain(currentIds)
+    for (const sourceId of this.settlingSourceTextureAnimations.keys()) {
+      if (!currentIds.has(sourceId)) this.settlingSourceTextureAnimations.delete(sourceId)
+    }
     for (const sourceId of this.releasedSourceIds) {
       const source = current.find((element) => element.getAttribute("data-spatial-source") === sourceId)
       if (!source) {
@@ -358,12 +385,17 @@ export class SpatialViewportController {
   }
 
   releaseSource(sourceId: string): void {
+    // Teardown gesture ownership even if the Source was already detached or
+    // its renderer record disappeared before the explicit release arrived.
+    this.cancelScrollbarThumbDragsForSource(sourceId)
     const source = this.sourceRoots().find((candidate) => candidate.sourceId === sourceId)
     if (!source || !this.renderer) return
     this.releasedSourceIds.add(sourceId)
     this.restoringSourceIds.delete(sourceId)
     this.inputUnavailableSourceIds.add(sourceId)
     this.readySourceIds.delete(sourceId)
+    this.sourceTextureAnimations.settle(sourceId)
+    this.settlingSourceTextureAnimations.delete(sourceId)
     this.sourceCaptureRetryAttempts.delete(sourceId)
     const record = this.renderer.elementTextures.records()
       .find((candidate) => candidate.element === source.root)
@@ -471,6 +503,8 @@ export class SpatialViewportController {
     this.presentationCapturePendingSourceIds.clear()
     this.readySourceIds.clear()
     this.sourceCaptureRetryAttempts.clear()
+    this.sourceTextureAnimations.settleAll()
+    this.settlingSourceTextureAnimations.clear()
   }
 
   private applyUnsupported(result: Exclude<HtmlInCanvasCapabilityResult, { supported: true }>): void {
@@ -495,6 +529,8 @@ export class SpatialViewportController {
     if (this.reducedMotion) {
       this.scheduler?.release("particles")
       this.scheduler?.release("animated-background")
+      this.scheduler?.release("animated-source")
+      this.settleSourceTextureAnimations()
     } else {
       this.requestAmbientFrames()
     }
@@ -545,6 +581,7 @@ export class SpatialViewportController {
       freezeEnvironmentEffects: frame.reducedMotion || !this.pageVisible,
       sourcePresentations: hookResult?.sourcePresentations,
     })
+    this.advanceSourceTextureAnimations(frame, continueReasons)
     if (report.uploadBatch.failures.length > 0) {
       const message = report.uploadBatch.failures.map((failure) => failure.message).join("; ")
       this.metrics.recordFailure(`Element upload failed: ${message}`)
@@ -570,6 +607,92 @@ export class SpatialViewportController {
       if (!this.disposed) this.emitSnapshot()
     })
     return { continueReasons }
+  }
+
+  private advanceSourceTextureAnimations(
+    frame: ScheduledFrame,
+    continueReasons: FrameReason[],
+  ): void {
+    const animationFrame = this.sourceTextureAnimations.frame(frame.timestamp)
+    for (const sourceId of animationFrame.expiredSourceIds) {
+      this.queueSourceTextureAnimationSettlement(sourceId, frame.timestamp)
+    }
+    if (!frame.reducedMotion && this.pageVisible) {
+      let hasActiveSource = false
+      for (const sourceId of animationFrame.activeSourceIds) {
+        if (this.requestNextSourceTextureAnimationPaint(sourceId)) {
+          hasActiveSource = true
+        } else {
+          this.sourceTextureAnimations.settle(sourceId)
+        }
+      }
+      if (hasActiveSource) continueReasons.push("animated-source")
+    }
+    this.advanceSourceTextureAnimationSettlements(frame.timestamp)
+  }
+
+  /**
+   * Keep at most one paint snapshot outstanding per Source. Re-marking a
+   * dirty record here would clear paintReady and turn a smooth CSS transition
+   * into alternating stale/final texture uploads.
+   */
+  private requestNextSourceTextureAnimationPaint(sourceId: string): boolean {
+    const source = this.sourceRoots().find((candidate) => candidate.sourceId === sourceId)
+    const renderer = this.renderer
+    if (!source || !renderer || this.sourceInputUnavailable(sourceId)) return false
+    const record = renderer.elementTextures.records()
+      .find((candidate) => candidate.element === source.root)
+    if (!record || record.released) return false
+    if (shouldQueueNextSourceTexturePaint(record)) {
+      renderer.elementTextures.markDirty(source.root)
+      this.capabilities?.requestPaint()
+    }
+    return true
+  }
+
+  private queueSourceTextureAnimationSettlement(sourceId: string, timestamp: number): void {
+    this.settlingSourceTextureAnimations.set(sourceId, {
+      finalRequested: false,
+      expiresAt: timestamp + SOURCE_TEXTURE_ANIMATION_SETTLE_MAX_MS,
+    })
+    this.scheduler?.request("dirty")
+  }
+
+  private advanceSourceTextureAnimationSettlements(timestamp: number): void {
+    if (!this.pageVisible) return
+    for (const [sourceId, settlement] of this.settlingSourceTextureAnimations) {
+      if (timestamp >= settlement.expiresAt) {
+        this.settlingSourceTextureAnimations.delete(sourceId)
+        continue
+      }
+      const source = this.sourceRoots().find((candidate) => candidate.sourceId === sourceId)
+      const renderer = this.renderer
+      if (!source || !renderer || this.sourceInputUnavailable(sourceId)) {
+        this.settlingSourceTextureAnimations.delete(sourceId)
+        continue
+      }
+      const record = renderer.elementTextures.records()
+        .find((candidate) => candidate.element === source.root)
+      if (!record) {
+        this.settlingSourceTextureAnimations.delete(sourceId)
+        continue
+      }
+      const action = sourceTextureAnimationSettlementAction(record, settlement.finalRequested)
+      if (action === "wait") continue
+      if (action === "complete" || action === "drop") {
+        this.settlingSourceTextureAnimations.delete(sourceId)
+      } else {
+        renderer.elementTextures.markDirty(source.root)
+        this.capabilities?.requestPaint()
+        settlement.finalRequested = true
+      }
+    }
+  }
+
+  private settleSourceTextureAnimations(): void {
+    for (const sourceId of this.sourceTextureAnimations.settleAll()) {
+      this.queueSourceTextureAnimationSettlement(sourceId, performance.now())
+    }
   }
 
   private reportReadySources(): void {
@@ -717,6 +840,7 @@ export class SpatialViewportController {
       const resolved = this.resolveInput(pointer)
       const hasCapture = (this.router?.captureCount() ?? 0) > 0
       this.router?.move(resolved.target, resolved.sample)
+      this.updateCapturedScrollbarThumbDrag(resolved.sample)
       if (!hasCapture) this.syncProjectedCursor(resolved.target)
     })
     this.listen(this.options.inputPlane, "pointerdown", (event) => {
@@ -724,7 +848,8 @@ export class SpatialViewportController {
       pointer.preventDefault()
       const resolved = this.resolveInput(pointer)
       this.syncProjectedCursor(resolved.target)
-      this.router?.down(resolved.target, resolved.sample)
+      const activationAllowed = this.router?.down(resolved.target, resolved.sample) ?? false
+      if (activationAllowed) this.beginCapturedScrollbarThumbDrag(resolved)
       if (resolved.source && resolved.mapping
         && this.router?.capturedTarget(resolved.sample.pointerId)) {
         const projection = captureSceneProjection(
@@ -750,6 +875,7 @@ export class SpatialViewportController {
     this.listen(this.options.inputPlane, "pointerup", (event) => {
       const pointer = event as PointerEvent
       const resolved = this.resolveInput(pointer)
+      this.updateCapturedScrollbarThumbDrag(resolved.sample)
       this.router?.up(resolved.target, resolved.sample)
       this.clearCapturedInput(resolved.sample.pointerId)
       // Capture resolution intentionally targets the gesture owner. Once the
@@ -808,7 +934,14 @@ export class SpatialViewportController {
     for (const type of ["input", "change", "focusin", "focusout", "compositionupdate", "keyup"]) {
       this.listen(this.options.canvas, type, sourceMutation, true)
     }
-
+    this.listen(this.options.canvas, "transitionrun", (event) => {
+      this.beginSourceTextureAnimation(event)
+    }, true)
+    for (const type of ["transitionend", "transitioncancel"]) {
+      this.listen(this.options.canvas, type, (event) => {
+        this.endSourceTextureAnimation(event)
+      }, true)
+    }
     if (typeof MutationObserver === "function") {
       this.sourceObserver = new MutationObserver(() => this.syncSources())
       this.sourceObserver.observe(this.options.canvas, {
@@ -828,11 +961,13 @@ export class SpatialViewportController {
       if (!this.pageVisible) {
         this.scheduler?.release("particles")
         this.scheduler?.release("animated-background")
+        this.scheduler?.release("animated-source")
         this.resetParallax("document-hidden")
         this.cancelRoutedInput()
         return
       }
       if (this.distanceToParallaxTarget() > 0.0001) this.scheduler?.request("parallax")
+      if (this.sourceTextureAnimations.hasAny()) this.scheduler?.request("animated-source")
       this.requestAmbientFrames()
       this.scheduler?.request("dirty")
     })
@@ -843,6 +978,8 @@ export class SpatialViewportController {
       this.options.onContextLost?.()
       this.cancelSourceCaptureRetryTimer()
       this.sourceCaptureRetryAttempts.clear()
+      this.sourceTextureAnimations.settleAll()
+      this.settlingSourceTextureAnimations.clear()
       this.scheduler?.cancel()
       // Every context-specific texture generation is now invalid. Successful
       // replacement uploads must be reported again, especially for a
@@ -1287,6 +1424,89 @@ export class SpatialViewportController {
     this.scheduler?.request("dirty")
   }
 
+  private beginCapturedScrollbarThumbDrag(resolved: ResolvedInput): void {
+    if (!resolved.target || !resolved.source || !resolved.mapping || resolved.sample.button !== 0) return
+    const result = findScrollbarThumbDrag(
+      resolved.target,
+      resolved.source.root,
+      resolved.mapping.localClient,
+    )
+    if (result.status !== "started") return
+    if (!this.router?.suppressActivation(resolved.sample.pointerId)) return
+    this.capturedScrollbarThumbDrags.set(resolved.sample.pointerId, {
+      sourceId: resolved.source.sourceId,
+      sourceRoot: resolved.source.root,
+      state: result.state,
+    })
+    this.reportControl(
+      `${resolved.source.sourceId}:scrollbar`,
+      `${result.state.axis} thumb drag captured`,
+    )
+  }
+
+  private updateCapturedScrollbarThumbDrag(sample: RoutedPointerSample): void {
+    const captured = this.capturedScrollbarThumbDrags.get(sample.pointerId)
+    if (!captured) return
+    const sourceStillAvailable = captured.sourceRoot.parentElement === this.options.canvas
+      && !this.sourceInputUnavailable(captured.sourceId)
+      && captured.sourceRoot.contains(captured.state.element)
+    if (!sourceStillAvailable) {
+      this.cancelScrollbarThumbDrag(sample.pointerId)
+      return
+    }
+
+    const result = updateScrollbarThumbDrag(captured.state, {
+      x: sample.clientX,
+      y: sample.clientY,
+    })
+    if (!result.changed) return
+    this.reportControl(
+      `${captured.sourceId}:scrollbar`,
+      `scrollLeft=${result.position.left}, scrollTop=${result.position.top}`,
+    )
+    if (this.renderer?.elementTextures.markDirty(captured.sourceRoot)) {
+      this.capabilities?.requestPaint()
+      this.scheduler?.request("dirty")
+    }
+  }
+
+  private cancelScrollbarThumbDrag(pointerId: number): void {
+    if (!this.capturedScrollbarThumbDrags.delete(pointerId)) return
+    this.capturedSceneProjections.delete(pointerId)
+    this.router?.cancel(pointerId, {
+      pointerId,
+      pointerType: "mouse",
+      isPrimary: true,
+      button: 0,
+      buttons: 0,
+      clientX: this.lastMappedPoint.x,
+      clientY: this.lastMappedPoint.y,
+    })
+  }
+
+  private cancelScrollbarThumbDragsForSource(sourceId: string): void {
+    for (const [pointerId, captured] of [...this.capturedScrollbarThumbDrags]) {
+      if (captured.sourceId === sourceId) this.cancelScrollbarThumbDrag(pointerId)
+    }
+  }
+
+  private cancelScrollbarThumbDragsOutsideSources(currentSourceIds: ReadonlySet<string>): void {
+    for (const [pointerId, captured] of [...this.capturedScrollbarThumbDrags]) {
+      if (!currentSourceIds.has(captured.sourceId)
+        || captured.sourceRoot.parentElement !== this.options.canvas) {
+        this.cancelScrollbarThumbDrag(pointerId)
+      }
+    }
+  }
+
+  private cancelUnavailableScrollbarThumbDrags(): void {
+    for (const [pointerId, captured] of [...this.capturedScrollbarThumbDrags]) {
+      if (this.sourceInputUnavailable(captured.sourceId)) {
+        this.cancelScrollbarThumbDrag(pointerId)
+      }
+    }
+  }
+
   private syncRoutedState(
     attribute: "data-spatial-hover" | "data-spatial-active",
     current: Set<Element>,
@@ -1333,16 +1553,46 @@ export class SpatialViewportController {
     }
   }
 
+  private beginSourceTextureAnimation(event: Event): void {
+    if (this.reducedMotion || !this.pageVisible) return
+    const source = this.sourceTextureAnimationSource(event)
+    if (!source) return
+    this.settlingSourceTextureAnimations.delete(source.sourceId)
+    this.sourceTextureAnimations.begin(source.sourceId, performance.now())
+    if (!this.requestNextSourceTextureAnimationPaint(source.sourceId)) {
+      this.sourceTextureAnimations.settle(source.sourceId)
+      return
+    }
+    this.scheduler?.request("animated-source")
+  }
+
+  private endSourceTextureAnimation(event: Event): void {
+    const source = this.sourceTextureAnimationSource(event)
+    if (!source || !this.sourceTextureAnimations.has(source.sourceId)) return
+    if (!this.sourceTextureAnimations.end(source.sourceId)) {
+      this.queueSourceTextureAnimationSettlement(source.sourceId, performance.now())
+    }
+  }
+
+  private sourceTextureAnimationSource(event: Event): SpatialSourceRoot | null {
+    const target = event.target
+    if (!(target instanceof Element)
+      || !target.closest("[data-spatial-source-animation]")) return null
+    return this.sourceForElement(target)
+  }
+
   private sourceForElement(element: Element): SpatialSourceRoot | null {
     return this.sourceRoots().find(({ root }) => root === element || root.contains(element)) ?? null
   }
 
   private clearCapturedInput(pointerId: number): void {
     this.capturedSceneProjections.delete(pointerId)
+    this.capturedScrollbarThumbDrags.delete(pointerId)
   }
 
   private clearAllCapturedInput(): void {
     this.capturedSceneProjections.clear()
+    this.capturedScrollbarThumbDrags.clear()
   }
 
   private updateParallaxTarget(event: PointerEvent): void {
@@ -1436,6 +1686,8 @@ export class SpatialViewportController {
     this.metrics.recordFailure(message)
     this.cancelSourceCaptureRetryTimer()
     this.sourceCaptureRetryAttempts.clear()
+    this.sourceTextureAnimations.settleAll()
+    this.settlingSourceTextureAnimations.clear()
     this.scheduler?.cancel()
     this.emitSnapshot()
   }

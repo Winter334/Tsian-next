@@ -1,0 +1,618 @@
+.spatial-app {
+  --spatial-app-surface: var(--spatial-window-body);
+  --spatial-app-surface-muted: color-mix(in srgb, var(--spatial-window-frame) 72%, transparent);
+  --spatial-app-surface-strong: color-mix(in srgb, var(--spatial-window-tab) 9%, var(--spatial-window-body));
+  --spatial-app-border: color-mix(in srgb, var(--spatial-window-tab) 24%, transparent);
+  --spatial-app-border-strong: color-mix(in srgb, var(--spatial-window-tab) 44%, transparent);
+  --spatial-app-muted: color-mix(in srgb, var(--spatial-window-ink) 64%, transparent);
+  --spatial-app-accent-soft: color-mix(in srgb, var(--spatial-window-accent) 12%, transparent);
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  container-type: inline-size;
+  color: var(--spatial-window-ink);
+  background: var(--spatial-app-surface);
+  font-family: Inter, sans-serif;
+}
+
+.spatial-app button,
+.spatial-app input,
+.spatial-app textarea,
+.spatial-app select {
+  font: inherit;
+}
+
+.spatial-app button,
+.spatial-app select,
+.spatial-app input[type="file"] {
+  cursor: pointer;
+}
+
+.spatial-app button:disabled,
+.spatial-app input:disabled,
+.spatial-app textarea:disabled,
+.spatial-app select:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.spatial-app :where(button, input, textarea, select, [tabindex]):focus {
+  outline: none;
+}
+
+.spatial-app :where(button, input, textarea, [tabindex]):focus-visible {
+  background-color: var(--spatial-app-surface-strong);
+}
+
+.spatial-app :where(input, textarea):focus-visible {
+  border-bottom-color: var(--spatial-window-accent);
+}
+
+.spatial-app__header {
+  display: flex;
+  min-width: 0;
+  min-height: 54px;
+  padding: 10px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid var(--spatial-app-border);
+  background: var(--spatial-app-surface-muted);
+}
+
+.spatial-app__identity {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.spatial-app__eyebrow,
+.spatial-app__meta,
+.spatial-app__status {
+  color: var(--spatial-app-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.spatial-app__identity h1,
+.spatial-app__identity h2 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spatial-app__commands,
+.spatial-app__actions,
+.spatial-app__segments,
+.spatial-app__tags {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.spatial-app__button,
+.spatial-app__icon-button,
+.spatial-app__segment {
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid var(--spatial-app-border-strong);
+  color: var(--spatial-window-ink);
+  background: var(--spatial-app-surface);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+}
+
+.spatial-app__button:not(:disabled):hover,
+.spatial-app__button:not(:disabled)[data-spatial-hover],
+.spatial-app__icon-button:not(:disabled):hover,
+.spatial-app__icon-button:not(:disabled)[data-spatial-hover],
+.spatial-app__segment:not(:disabled):hover,
+.spatial-app__segment:not(:disabled)[data-spatial-hover] {
+  border-color: var(--spatial-window-tab);
+  color: var(--spatial-window-ink);
+  background: var(--spatial-app-surface-strong);
+}
+
+.spatial-app__button--primary,
+.spatial-action-button--primary,
+.spatial-app__segment[aria-pressed="true"] {
+  border-color: var(--spatial-window-tab);
+  color: var(--spatial-window-frame);
+  background: var(--spatial-window-tab);
+}
+
+.spatial-app__button--danger,
+.spatial-action-button--danger {
+  border-color: var(--spatial-window-accent);
+  color: var(--spatial-window-accent);
+  background: var(--spatial-app-accent-soft);
+}
+
+.spatial-action-button--primary:not(:disabled):focus-visible {
+  color: var(--spatial-window-frame);
+  background: var(--spatial-window-tab);
+}
+
+.spatial-action-button--danger:not(:disabled):focus-visible {
+  color: var(--spatial-window-accent);
+  background: var(--spatial-app-accent-soft);
+}
+
+.spatial-action-button--primary:not(:disabled):hover,
+.spatial-action-button--primary:not(:disabled)[data-spatial-hover] {
+  border-color: var(--spatial-window-tab);
+  color: var(--spatial-window-frame);
+  background: color-mix(in srgb, var(--spatial-window-tab) 88%, var(--spatial-window-frame));
+}
+
+.spatial-action-button--danger:not(:disabled):hover,
+.spatial-action-button--danger:not(:disabled)[data-spatial-hover] {
+  border-color: var(--spatial-window-accent);
+  color: var(--spatial-window-frame);
+  background: color-mix(in srgb, var(--spatial-window-tab) 86%, var(--spatial-window-accent));
+}
+
+.spatial-app__icon-button {
+  display: grid;
+  width: 32px;
+  padding: 0;
+  place-items: center;
+}
+
+.spatial-action-button {
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-template-columns: max-content minmax(0, max-content);
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.spatial-action-button--icon-only {
+  width: 32px;
+  padding: 0;
+  grid-template-columns: 14px;
+  gap: 0;
+}
+
+.spatial-action-button__icon {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  place-items: center;
+  color: currentColor;
+}
+
+.spatial-action-button__icon > svg {
+  display: block;
+  width: 14px;
+  height: 14px;
+  color: currentColor;
+}
+
+.spatial-action-button__label {
+  min-width: 0;
+  line-height: 1.2;
+}
+
+.spatial-action-button:focus-visible .spatial-action-button__label {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.spatial-app__icon-button svg,
+.spatial-app__button svg {
+  width: 14px;
+  height: 14px;
+}
+
+.spatial-app__scroll {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--spatial-app-border-strong) transparent;
+}
+
+/* Keep Chromium's visible scrollbar geometry aligned with projected thumb
+   hit-testing. Native arrow buttons have no CSSOM geometry, so omit them. */
+.spatial-app *::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.spatial-app *::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.spatial-app *::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  background: var(--spatial-app-border-strong);
+  background-clip: padding-box;
+}
+
+.spatial-app *::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.spatial-app__section {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--spatial-app-border);
+  background: var(--spatial-app-surface-muted);
+}
+
+.spatial-app__section h2,
+.spatial-app__section h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.spatial-app__field {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+  color: var(--spatial-app-muted);
+  font-size: 10px;
+}
+
+.spatial-app__field > span:first-child {
+  font-family: "JetBrains Mono", monospace;
+  letter-spacing: 0.06em;
+}
+
+.spatial-app__field input,
+.spatial-app__field textarea,
+.spatial-app__field select,
+.spatial-app__input {
+  min-width: 0;
+  min-height: 34px;
+  padding: 7px 9px;
+  border: 1px solid var(--spatial-app-border-strong);
+  border-radius: 0;
+  outline: none;
+  color: var(--spatial-window-ink);
+  background: var(--spatial-app-surface);
+  font-size: 11px;
+}
+
+.spatial-app__field textarea {
+  min-height: 78px;
+  resize: vertical;
+}
+
+.spatial-app__banner,
+.spatial-app__empty {
+  display: grid;
+  min-width: 0;
+  padding: 12px 14px;
+  gap: 5px;
+  border-left: 2px solid var(--spatial-app-border-strong);
+  color: var(--spatial-app-muted);
+  background: var(--spatial-app-surface-muted);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.spatial-app__banner--error {
+  border-left-color: var(--spatial-window-accent);
+  color: var(--spatial-window-accent);
+  background: var(--spatial-app-accent-soft);
+}
+
+.spatial-app__menu,
+.spatial-app__dialog {
+  position: absolute;
+  z-index: 40;
+  border: 1px solid var(--spatial-app-border-strong);
+  color: var(--spatial-window-ink);
+  background: var(--spatial-window-frame);
+}
+
+.spatial-select {
+  position: relative;
+  display: grid;
+  min-width: 112px;
+  align-content: start;
+  color: var(--spatial-window-ink);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+}
+
+.spatial-select--open {
+  z-index: 50;
+}
+
+.spatial-select__trigger {
+  display: grid;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 8px 0 10px;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  gap: 7px;
+  border: 1px solid var(--spatial-app-border-strong);
+  color: var(--spatial-window-ink);
+  background: var(--spatial-app-surface);
+  text-align: left;
+}
+
+.spatial-select__trigger:hover,
+.spatial-select__trigger[data-spatial-hover],
+.spatial-select--open .spatial-select__trigger {
+  background: var(--spatial-app-surface-strong);
+}
+
+.spatial-select__trigger:focus-visible .spatial-select__value {
+  color: var(--spatial-window-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.spatial-select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spatial-select__chevron {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  transition: transform 160ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.spatial-select__chevron svg,
+.spatial-select__option svg {
+  width: 12px;
+  height: 12px;
+}
+
+.spatial-select--open .spatial-select__chevron {
+  transform: rotate(180deg);
+}
+
+.spatial-select__listbox {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 4px);
+  left: 0;
+  display: grid;
+  min-width: 0;
+  width: 100%;
+  max-height: 220px;
+  padding: 4px;
+  gap: 2px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  border: 1px solid var(--spatial-app-border-strong);
+  background: var(--spatial-window-frame);
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.spatial-select--open .spatial-select__listbox {
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.spatial-select__option {
+  display: grid;
+  min-height: 30px;
+  padding: 0 8px;
+  align-items: center;
+  grid-template-columns: minmax(0, 1fr) 14px;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.spatial-select__option--active,
+.spatial-select__option[data-spatial-hover] {
+  color: var(--spatial-window-ink);
+  background: var(--spatial-app-surface-strong);
+}
+
+.spatial-select__option[aria-selected="true"] {
+  color: var(--spatial-window-accent);
+}
+
+.spatial-select__option[aria-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.spatial-transition-stack {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  background: var(--spatial-app-surface);
+}
+
+.spatial-transition-stack > * {
+  min-width: 0;
+  grid-area: 1 / 1;
+}
+
+.spatial-pop-enter-active {
+  transform-origin: top right;
+  transition:
+    opacity 160ms ease-out,
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.spatial-pop-leave-active {
+  pointer-events: none;
+  transform-origin: top right;
+  transition:
+    opacity 110ms ease-in,
+    transform 130ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.spatial-dialog-leave-active {
+  pointer-events: none;
+}
+
+.spatial-pop-enter-from,
+.spatial-pop-leave-to {
+  opacity: 0;
+  transform: translateY(-7px) scale(0.965);
+}
+
+.spatial-dialog-enter-active {
+  transition: opacity 190ms ease-out;
+}
+
+.spatial-dialog-leave-active {
+  transition: opacity 130ms ease-in;
+}
+
+.spatial-dialog-enter-active .spatial-app__dialog {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.spatial-dialog-leave-active .spatial-app__dialog {
+  transition: transform 140ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.spatial-dialog-enter-from,
+.spatial-dialog-leave-to {
+  opacity: 0;
+}
+
+.spatial-dialog-enter-from .spatial-app__dialog,
+.spatial-dialog-leave-to .spatial-app__dialog {
+  transform: translateY(14px) scale(0.975);
+}
+
+.spatial-list-enter-active {
+  transition:
+    opacity 190ms ease-out,
+    transform 230ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition-delay: calc(var(--spatial-entry-index, 0) * 24ms);
+}
+
+.spatial-list-leave-active {
+  pointer-events: none;
+  transition:
+    opacity 120ms ease-in,
+    transform 140ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.spatial-list-move {
+  transition: transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.spatial-list-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.975);
+}
+
+.spatial-list-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(0.985);
+}
+
+.spatial-app__menu {
+  display: grid;
+  min-width: 150px;
+  padding: 5px;
+  gap: 2px;
+}
+
+.spatial-app__menu button {
+  min-height: 30px;
+  padding: 0 9px;
+  border: 0;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+}
+
+.spatial-app__menu button:hover,
+.spatial-app__menu button[data-spatial-hover] {
+  background: var(--spatial-app-surface-strong);
+}
+
+.spatial-app__dialog-backdrop {
+  position: absolute;
+  z-index: 35;
+  inset: 0;
+  display: grid;
+  padding: 24px;
+  place-items: center;
+  background: color-mix(in srgb, var(--spatial-window-tab) 28%, transparent);
+}
+
+.spatial-app__dialog {
+  position: relative;
+  display: grid;
+  width: min(440px, 100%);
+  max-height: 100%;
+  padding: 16px;
+  gap: 12px;
+  overflow: auto;
+}
+
+.spatial-image {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  place-items: center;
+  color: var(--spatial-app-muted);
+  background: var(--spatial-app-surface-strong);
+}
+
+.spatial-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.spatial-image__fallback {
+  display: grid;
+  padding: 12px;
+  place-items: center;
+  gap: 8px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 9px;
+}
+
+.spatial-image__fallback svg {
+  width: 28px;
+  height: 28px;
+  color: var(--spatial-window-accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spatial-app *,
+  .spatial-app *::before,
+  .spatial-app *::after {
+    scroll-behavior: auto !important;
+    transition: none !important;
+    animation: none !important;
+    transition-delay: 0ms !important;
+  }
+
+}

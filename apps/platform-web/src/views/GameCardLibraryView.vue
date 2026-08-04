@@ -241,56 +241,46 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import { computed, ref } from "vue"
 import { useRouter } from "vue-router"
 import { CheckCircle2, Copy, Download, FolderOpen, Gamepad2, Plus, Store, Trash2 } from "lucide-vue-next"
-import { confirm } from "@/composables/useConfirm"
-import { toast } from "@/composables/useToast"
-import type { LocalGameCardRecord } from "@/storage/db"
-import {
-  getGameCardCoverUrl,
-  getGameCardSummary,
-  getGameCardTitle,
-} from "@/lib/game-card-display"
 import ViewActionBar, { type ViewActionBarAction } from "@/components/common/ViewActionBar.vue"
-import {
-  ACTIVE_CARD_CHANGED_EVENT,
-  GAME_CARDS_CHANGED_EVENT,
-  isActiveCardChangedEvent,
-  isGameCardsChangedEvent,
-} from "@/lib/platform-events"
-import {
-  copyPlatformGameCardAsLocal,
-  createDefaultPlatformGameCard,
-  deletePlatformGameCard,
-  getPlatformActiveGameCardId,
-  getWorkshopGameCardUpdate,
-  importPlatformGameCardPackage,
-  installWorkshopGameCardUpdate,
-  inspectPlatformGameCardPackage,
-  listPlatformGameCards,
-  listPlatformSaves,
-  refreshWorkshopGameCardUpdates,
-  setPlatformActiveGameCard,
-  type WorkshopGameCardUpdateInfo,
-} from "../platform-host"
+import { toast } from "@/composables/useToast"
+import { useGameCardLibraryController } from "@/controllers/game-cards/use-game-card-library-controller"
+import { getGameCardCoverUrl, getGameCardSummary, getGameCardTitle } from "@/lib/game-card-display"
+import type { LocalGameCardRecord } from "@/storage/db"
 
 const router = useRouter()
-const cards = ref<LocalGameCardRecord[]>([])
-const selectedCardId = ref("")
-const activeGameCardId = ref("")
-const loading = ref(false)
-const importing = ref(false)
-const deleting = ref(false)
-const loadingCard = ref(false)
-const creating = ref(false)
-const copyingId = ref("")
-const updatingCardId = ref("")
-const errorMessage = ref("")
-const importError = ref("")
-const feedback = ref("")
 const packageInput = ref<HTMLInputElement | null>(null)
 const libraryRef = ref<HTMLElement | null>(null)
+
+function openCard(cardId: string): void {
+  void router.push({ name: "game-card-detail", params: { cardId } })
+}
+
+const {
+  cards,
+  selectedCardId,
+  activeGameCardId,
+  loading,
+  importing,
+  loadingCard,
+  creating,
+  copyingId,
+  updatingCardId,
+  errorMessage,
+  actionError: importError,
+  feedback,
+  createDefaultCard,
+  canLoadCard,
+  canDeleteCard,
+  cardUpdateInfo,
+  loadCard,
+  copyCard,
+  updateCardFromWorkshop,
+  importPackage,
+  deleteCard,
+} = useGameCardLibraryController({ openCard })
 
 interface ContextMenuState {
   x: number
@@ -299,11 +289,6 @@ interface ContextMenuState {
 }
 
 const contextMenu = ref<ContextMenuState | null>(null)
-
-const selectedCard = computed(() =>
-  cards.value.find((card) => card.id === selectedCardId.value) ?? cards.value[0] ?? null
-)
-
 const toolbarActions = computed<ViewActionBarAction[]>(() => [
   {
     label: "创建游戏",
@@ -321,79 +306,16 @@ const toolbarActions = computed<ViewActionBarAction[]>(() => [
   },
 ])
 
-async function refreshCards() {
-  loading.value = true
-  errorMessage.value = ""
-
-  try {
-    const [loadedCards, loadedActiveGameCardId] = await Promise.all([
-      listPlatformGameCards(),
-      getPlatformActiveGameCardId(),
-    ])
-    cards.value = loadedCards.filter((card) => card.source !== "builtin")
-    activeGameCardId.value = loadedActiveGameCardId ?? ""
-    // 不默认选中第一张卡：选中只由 hover/focus/键盘导航驱动，列表加载时不应有"选中态"。
-    if (!cards.value.some((card) => card.id === selectedCardId.value)) {
-      selectedCardId.value = ""
-    }
-    void refreshWorkshopGameCardUpdates()
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "无法加载游戏卡。"
-  } finally {
-    loading.value = false
-  }
-}
-
-function openCard(cardId: string) {
-  router.push({ name: "game-card-detail", params: { cardId } })
-}
-
-async function createDefaultCard() {
-  if (creating.value) {
-    return
-  }
-  creating.value = true
-  importError.value = ""
-  feedback.value = ""
-  try {
-    const created = await createDefaultPlatformGameCard()
-    feedback.value = `已创建并加载：${getGameCardTitle(created)}`
-    toast.success(`已创建游戏卡：${getGameCardTitle(created)}`)
-    await refreshCards()
-    openCard(created.id)
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : "创建游戏卡失败。"
-  } finally {
-    creating.value = false
-  }
-}
-
-function openPackagePicker() {
+function openPackagePicker(): void {
   packageInput.value?.click()
 }
 
-function canLoadCard(card: LocalGameCardRecord): boolean {
-  return card.id !== activeGameCardId.value && !loadingCard.value
-}
-
-function canDeleteCard(card: LocalGameCardRecord): boolean {
-  return card.source !== "builtin" && !deleting.value
-}
-
-function cardUpdateInfo(card: LocalGameCardRecord): WorkshopGameCardUpdateInfo | null {
-  return getWorkshopGameCardUpdate(card.id)
-}
-
-function updateConfirmMessage(update: WorkshopGameCardUpdateInfo): string {
-  return `当前版本：${update.currentVersion}\n最新版本：${update.latestVersion}\n\n更新会替换本地游戏卡内容，已有存档会保留。`
-}
-
-function openCardContextMenu(card: LocalGameCardRecord, event: MouseEvent) {
+function openCardContextMenu(card: LocalGameCardRecord, event: MouseEvent): void {
   selectedCardId.value = card.id
   contextMenu.value = contextMenuStateFromMouse(event, card)
 }
 
-function openBlankContextMenu(event: MouseEvent) {
+function openBlankContextMenu(event: MouseEvent): void {
   contextMenu.value = contextMenuStateFromMouse(event, null)
 }
 
@@ -406,11 +328,9 @@ function contextMenuStateFromMouse(event: MouseEvent, card: LocalGameCardRecord 
     width: window.innerWidth,
     height: window.innerHeight,
   }
-  const rawX = event.clientX - rect.left
-  const rawY = event.clientY - rect.top
   return {
-    x: clampMenuCoordinate(rawX, rect.width, menuWidth),
-    y: clampMenuCoordinate(rawY, rect.height, menuHeight),
+    x: clampMenuCoordinate(event.clientX - rect.left, rect.width, menuWidth),
+    y: clampMenuCoordinate(event.clientY - rect.top, rect.height, menuHeight),
     card,
   }
 }
@@ -419,213 +339,49 @@ function clampMenuCoordinate(value: number, containerSize: number, menuSize: num
   return Math.min(Math.max(value, 8), Math.max(8, containerSize - menuSize - 8))
 }
 
-function openCardFromMenu(cardId: string) {
+function openCardFromMenu(cardId: string): void {
   contextMenu.value = null
   openCard(cardId)
 }
 
-async function loadCardFromMenu(card: LocalGameCardRecord) {
+async function loadCardFromMenu(card: LocalGameCardRecord): Promise<void> {
   contextMenu.value = null
   selectedCardId.value = card.id
-  await loadSelectedCard()
+  await loadCard(card)
 }
 
-async function deleteCardFromMenu(card: LocalGameCardRecord) {
+async function deleteCardFromMenu(card: LocalGameCardRecord): Promise<void> {
   contextMenu.value = null
   selectedCardId.value = card.id
-  await deleteSelectedCard()
+  await deleteCard(card)
 }
 
-function importFromMenu() {
+function importFromMenu(): void {
   contextMenu.value = null
   openPackagePicker()
 }
 
-function createCardFromMenu() {
+function createCardFromMenu(): void {
   contextMenu.value = null
   void createDefaultCard()
 }
 
-async function loadSelectedCard() {
-  const card = selectedCard.value
-  if (!card || activeGameCardId.value === card.id) {
-    return
-  }
-
-  loadingCard.value = true
-  importError.value = ""
-  feedback.value = ""
-  try {
-    const loaded = await setPlatformActiveGameCard(card.id)
-    activeGameCardId.value = loaded.id
-    feedback.value = `已加载：${getGameCardTitle(loaded)}`
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : "加载游戏卡失败。"
-  } finally {
-    loadingCard.value = false
-  }
+async function quickCopy(card: LocalGameCardRecord): Promise<void> {
+  await copyCard(card)
 }
 
-async function quickCopy(card: LocalGameCardRecord) {
-  if (copyingId.value) {
-    return
-  }
-  copyingId.value = card.id
-  feedback.value = ""
-  try {
-    const name = `${getGameCardTitle(card)} 副本`
-    const summary = getGameCardSummary(card)
-    const copied = await copyPlatformGameCardAsLocal(card.id, { name, summary })
-    toast.success(`已复制：${getGameCardTitle(copied)}`)
-    feedback.value = `已复制：${getGameCardTitle(copied)}`
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : "复制游戏卡失败。")
-  } finally {
-    copyingId.value = ""
-  }
-}
-
-async function quickLoad(card: LocalGameCardRecord) {
-  if (!canLoadCard(card)) {
-    return
-  }
+async function quickLoad(card: LocalGameCardRecord): Promise<void> {
   selectedCardId.value = card.id
-  await loadSelectedCard()
-  if (activeGameCardId.value === card.id) {
-    toast.success(`已加载：${getGameCardTitle(card)}`)
-  }
+  if (await loadCard(card)) toast.success(`已加载：${getGameCardTitle(card)}`)
 }
 
-async function updateCardFromWorkshop(card: LocalGameCardRecord) {
-  const update = cardUpdateInfo(card)
-  if (!update || updatingCardId.value) {
-    return
-  }
-
-  selectedCardId.value = card.id
-  const confirmed = await confirm({
-    title: "发现新版本",
-    message: updateConfirmMessage(update),
-    severity: "danger",
-    confirmText: "更新",
-  })
-  if (!confirmed) {
-    return
-  }
-
-  updatingCardId.value = card.id
-  importError.value = ""
-  feedback.value = ""
-  try {
-    const imported = await installWorkshopGameCardUpdate(update)
-    toast.success(`已更新：${getGameCardTitle(imported)}`)
-    feedback.value = `已更新：${getGameCardTitle(imported)}`
-    await refreshCards()
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : "更新游戏卡失败。"
-  } finally {
-    updatingCardId.value = ""
-  }
-}
-
-async function handlePackageSelected(event: Event) {
+async function handlePackageSelected(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement
   const file = input.files?.[0]
   input.value = ""
-  if (!file) {
-    return
-  }
-
-  importing.value = true
-  importError.value = ""
-  feedback.value = ""
-  try {
-    const inspection = await inspectPlatformGameCardPackage(file)
-    const incoming = inspection.manifest
-    const existing = cards.value.find((card) => card.manifest.id === incoming.id)
-    if (existing) {
-      const confirmed = await confirm({
-        title: "卡包已安装",
-        message: `本地已有「${existing.manifest.name || incoming.name || incoming.id}」。导入后将替换本地卡包，已有存档会保留。`,
-        severity: "danger",
-        confirmText: "覆盖",
-      })
-      if (!confirmed) {
-        return
-      }
-    }
-
-    const imported = await importPlatformGameCardPackage(file)
-    await refreshWorkshopGameCardUpdates({ force: true })
-    feedback.value = `已导入：${getGameCardTitle(imported)}`
-    toast.success(`已导入：${getGameCardTitle(imported)}`)
-    selectedCardId.value = imported.id
-    await refreshCards()
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : "导入游戏卡包失败。"
-  } finally {
-    importing.value = false
-  }
+  if (file) await importPackage(file)
 }
 
-async function deleteSelectedCard() {
-  const card = selectedCard.value
-  if (!card || card.source === "builtin") {
-    return
-  }
-
-  deleting.value = true
-  importError.value = ""
-  feedback.value = ""
-  try {
-    const saveCount = (await listPlatformSaves())
-      .filter((save) => save.gameCardId === card.manifest.id)
-      .length
-    const title = getGameCardTitle(card)
-    const confirmed = await confirm({
-      message: `删除应用「${title}」？\n\n这会同时删除 ${saveCount} 个关联存档，无法撤销。`,
-      severity: "danger",
-      confirmText: "删除",
-    })
-    if (!confirmed) {
-      return
-    }
-
-    await deletePlatformGameCard(card.id)
-    toast.success(`已删除应用：${title}`)
-    selectedCardId.value = ""
-    await refreshCards()
-  } catch (error) {
-    importError.value = error instanceof Error ? error.message : "删除应用失败。"
-  } finally {
-    deleting.value = false
-  }
-}
-
-onMounted(() => {
-  window.addEventListener(GAME_CARDS_CHANGED_EVENT, onGameCardsChanged)
-  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-  void refreshCards()
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener(GAME_CARDS_CHANGED_EVENT, onGameCardsChanged)
-  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-})
-
-function onGameCardsChanged(event: Event) {
-  if (!isGameCardsChangedEvent(event)) {
-    return
-  }
-  void refreshCards()
-}
-
-function onActiveCardChanged(event: Event) {
-  if (!isActiveCardChangedEvent(event)) {
-    return
-  }
-  void refreshCards()
-}
 </script>
 
 <style scoped>

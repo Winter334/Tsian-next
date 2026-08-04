@@ -121,25 +121,32 @@ const SettingsView = defineAsyncComponent(() => import("./views/SettingsView.vue
 const AccountView = defineAsyncComponent(() => import("./views/AccountView.vue"))
 const AnnouncementCenterView = defineAsyncComponent(() => import("./views/AnnouncementCenterView.vue"))
 const DebugView = defineAsyncComponent(() => import("./views/DebugView.vue"))
+const SpatialAppMarketView = defineAsyncComponent(() => import("./spatial/apps/market/SpatialAppMarketView.vue"))
+const SpatialGameCardLibraryView = defineAsyncComponent(() => import("./spatial/apps/library/SpatialGameCardLibraryView.vue"))
+const SpatialGameCardDetailView = defineAsyncComponent(() => import("./spatial/apps/game-card-detail/SpatialGameCardDetailView.vue"))
 
 function presentation(
   component: Component,
   defaultSize: PlatformWindowSize,
   minSize: PlatformWindowSize,
   fullscreenable = false,
+  spatialComponent?: Component,
 ): Pick<PlatformAppDefinition, "retro" | "spatial"> {
+  const spatialDefaultSize = {
+    width: Math.min(defaultSize.width, 760),
+    height: Math.min(defaultSize.height, 560),
+  }
+  const spatialMinSize = {
+    width: Math.min(minSize.width, 480),
+    height: Math.min(minSize.height, 320),
+  }
   return {
     retro: { component, defaultSize, minSize, fullscreenable },
     spatial: {
-      readiness: "pending",
-      defaultSize: {
-        width: Math.min(defaultSize.width, 760),
-        height: Math.min(defaultSize.height, 560),
-      },
-      minSize: {
-        width: Math.min(minSize.width, 480),
-        height: Math.min(minSize.height, 320),
-      },
+      readiness: spatialComponent ? "ready" : "pending",
+      ...(spatialComponent ? { component: spatialComponent } : {}),
+      defaultSize: spatialDefaultSize,
+      minSize: spatialMinSize,
     },
   }
 }
@@ -149,13 +156,13 @@ export const platformAppRegistry: readonly PlatformAppDefinition[] = Object.free
     appId: "market", launcher: true,
     route: { name: "app-market", path: "/market" }, identity: { kind: "singleton" },
     label: "创意工坊", shortLabel: "工坊", title: "创意工坊", caption: "分享与安装创意资源", icon: Store,
-    ...presentation(AppMarketView, { width: 980, height: 620 }, { width: 560, height: 420 }, true),
+    ...presentation(AppMarketView, { width: 980, height: 620 }, { width: 560, height: 420 }, true, SpatialAppMarketView),
   },
   {
     appId: "my-apps", launcher: true,
     route: { name: "library", path: "/library" }, identity: { kind: "singleton" },
     label: "我的应用", shortLabel: "应用", title: "我的应用", caption: "已安装的游戏卡", icon: FolderOpen,
-    ...presentation(GameCardLibraryView, { width: 1120, height: 680 }, { width: 620, height: 440 }, true),
+    ...presentation(GameCardLibraryView, { width: 1120, height: 680 }, { width: 620, height: 440 }, true, SpatialGameCardLibraryView),
   },
   {
     appId: "workspace-explorer", launcher: true,
@@ -191,7 +198,7 @@ export const platformAppRegistry: readonly PlatformAppDefinition[] = Object.free
     appId: "game-launcher", launcher: false,
     route: { name: "game-card-detail", path: "/cards/:cardId", props: true }, identity: { kind: "card-detail" },
     label: "应用属性", shortLabel: "属性", title: "应用属性", caption: "游戏卡属性与存档", icon: Gamepad2,
-    ...presentation(GameCardDetailView, { width: 1180, height: 720 }, { width: 720, height: 460 }, true),
+    ...presentation(GameCardDetailView, { width: 1180, height: 720 }, { width: 720, height: 460 }, true, SpatialGameCardDetailView),
   },
   {
     appId: "play", launcher: true,

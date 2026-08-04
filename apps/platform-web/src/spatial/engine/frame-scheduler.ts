@@ -32,6 +32,7 @@ const MOTION_REASONS = new Set<FrameReason>([
   "transition",
   "particles",
   "animated-background",
+  "animated-source",
 ])
 
 export class FrameScheduler {
