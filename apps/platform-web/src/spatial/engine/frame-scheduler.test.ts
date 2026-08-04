@@ -73,6 +73,14 @@ describe("FrameScheduler", () => {
     expect(harness.scheduler.reasons()).toEqual(["dirty"])
   })
 
+  it("keeps user-controlled animated media eligible under reduced motion", () => {
+    const harness = createHarness(() => ({ continueReasons: ["animated-media"] }))
+    harness.scheduler.setReducedMotion(true)
+    harness.scheduler.request("animated-media")
+    harness.flush()
+    expect(harness.scheduler.reasons()).toEqual(["animated-media"])
+  })
+
   it("releases the visible particle loop without canceling unrelated work", () => {
     const harness = createHarness(() => undefined)
     harness.scheduler.request("particles")

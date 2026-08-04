@@ -23,6 +23,8 @@ function createGlHarness(options: {
   const clearColors: Array<readonly [number, number, number, number]> = []
   const blendCalls: Array<readonly [number, number, number, number]> = []
   const uniform1fCalls: Array<readonly [string, number]> = []
+  const uniform4fCalls: Array<readonly [string, number, number, number, number]> = []
+  let videoUploads = 0
   const resource = () => ({ id: ++nextResourceId })
   const gl = {
     VERTEX_SHADER: 1,
@@ -53,6 +55,7 @@ function createGlHarness(options: {
     TEXTURE1: 28,
     RGBA8: 26,
     ONE: 27,
+    UNPACK_FLIP_Y_WEBGL: 29,
     createShader: resource,
     shaderSource: () => undefined,
     compileShader: () => undefined,
@@ -85,7 +88,8 @@ function createGlHarness(options: {
     },
     bindTexture: () => undefined,
     texParameteri: () => undefined,
-    texImage2D: () => undefined,
+    pixelStorei: () => undefined,
+    texImage2D: () => { videoUploads += 1 },
     deleteTexture: () => undefined,
     createFramebuffer: () => {
       createdFramebuffers += 1
@@ -112,7 +116,9 @@ function createGlHarness(options: {
     disable: () => undefined,
     useProgram: () => undefined,
     getUniformLocation: (_program: WebGLProgram, name: string) => ({ ...resource(), name }),
-    uniform4f: () => undefined,
+    uniform4f: (location: { name?: string } | null, x: number, y: number, z: number, w: number) => {
+      uniform4fCalls.push([location?.name ?? "unknown", x, y, z, w])
+    },
     uniform2f: () => undefined,
     uniform1f: (location: { name?: string } | null, value: number) => {
       uniform1fCalls.push([location?.name ?? "unknown", value])
@@ -132,6 +138,8 @@ function createGlHarness(options: {
     clearColors,
     blendCalls,
     uniform1fCalls,
+    uniform4fCalls,
+    videoUploads: () => videoUploads,
     createdTextures: () => createdTextures,
     createdFramebuffers: () => createdFramebuffers,
     deletedBuffers: () => deletedBuffers,
@@ -190,6 +198,51 @@ function registerCompositionSources(renderer: SpatialRenderer, canvas: HTMLCanva
 }
 
 describe("SpatialRenderer", () => {
+  it("uploads decoded video separately and maps it into the owning Source sub-surface", () => {
+    const canvas = createCanvas()
+    const harness = createGlHarness()
+    const created = SpatialRenderer.create(createCapabilities(canvas, harness.gl), new SpatialMetrics())
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    const source = createSource(canvas, {
+      "data-spatial-source": "window:media",
+      "data-spatial-window-active": "true",
+      "data-spatial-z": "100",
+      "data-spatial-scale": "1",
+    })
+    created.renderer.elementTextures.register(source)
+    const video = {
+      isConnected: true,
+      readyState: 2,
+      videoWidth: 1920,
+      videoHeight: 1080,
+      getBoundingClientRect: () => ({ left: 180, top: 150, width: 240, height: 180 }),
+    } as unknown as HTMLVideoElement
+    created.renderer.syncDynamicMedia([{
+      sourceId: "window:media",
+      source,
+      video,
+      frameGeneration: 1,
+      released: false,
+      fullscreen: false,
+    }])
+
+    created.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+    })
+
+    expect(harness.videoUploads()).toBe(1)
+    expect(harness.uniform4fCalls).toContainEqual([
+      "u_media_rect",
+      0.125,
+      0.22916666666666666,
+      0.5,
+      0.375,
+    ])
+  })
+
   it("releases a partially allocated mesh buffer when initialization fails", () => {
     const harness = createGlHarness({ failBufferAt: 2 })
     const created = SpatialRenderer.create(

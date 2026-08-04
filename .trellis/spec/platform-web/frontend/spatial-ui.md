@@ -59,6 +59,11 @@ interface EnvironmentPostProcessingOptions {
   atmosphericRefraction: { strengthPx: number; frequency: number; speed: number }
   decorationEnabled: boolean
 }
+
+function routedMouseEventDetail(
+  type: RoutedPointerEventType,
+  pointerDetail: number | undefined,
+): number
 ```
 
 Current upload call:
@@ -80,6 +85,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Product render order is fixed: WebGL-owned wallpaper + particles into the bounded environment target; environment-only Bloom/composite to the default framebuffer; GPU decoration ring; sharp low-z clock Source; Dock Sources; independent window Sources back to front; foreground markers. No Source texture may enter an environment target or global post-process.
 - Source input order is the reverse of painter order by the same scene z contract: highest-z windows resolve first, then lower-z shell background Sources. A Source that is visually occluded by a window must not steal the projected hit. Keep pointer capture bound to the selected Source/pose after pointer-down.
 - Projected activation follows browser cancellation boundaries: canceling routed `pointerdown` suppresses activation; canceling only compatibility `mousedown` suppresses its focus default but still permits the later click and remains visible in delivery diagnostics. Routed cancellation must be re-entrant and release logical/browser capture exactly once.
+- Compatibility mouse events normalize event-family semantics instead of copying every `PointerEvent` field verbatim. Browser `PointerEvent.detail` is normally `0`, while first-click `mousedown` / `mouseup` / `click` must expose `detail=1`; otherwise CodeMirror treats zero as a triple-click, selects the whole line, and the next typed character replaces it. Preserve positive click counts, use `2` for routed `dblclick`, and keep move/hover/context/wheel detail at `0`.
 - Projected native scrollbar dragging is limited to real layout gutters and the reconstructed thumb. Derive track geometry from the element border/client boxes in Source-local client coordinates, reject overlay/no-gutter, disabled/non-overflowing, invalid, track-only, and RTL-horizontal cases explicitly, and keep Chromium scrollbar width plus arrow-button removal aligned with that geometry. A captured thumb drag clamps and emits scroll only on change, dirties only its owning Source, requests a fresh paint, never clicks on release, and is canceled by pointer/source/controller teardown.
 - Product window presentation is transient state separate from session geometry and mounted application state: `capturing-open -> opening -> visible`, `visible -> guard-pending -> closing -> removed`, `visible -> minimizing -> minimized`, and `minimized -> capturing-restore -> restoring -> visible`. Mount a new Source at final geometry but omit it from drawing until its first successful upload. Reopening or focusing an existing visible id never replays presentation. Minimize retains DOM/texture until its exact-once completion; restore waits for a valid replacement upload before animation.
 - Every non-`visible` presentation phase is unavailable before projected candidate resolution. This exclusion also cancels a gesture captured before the phase changed; do not let pointer capture bypass lifecycle availability or add animated inverse math.
@@ -119,6 +125,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 | Window blur or document hidden | Release capture/hover and recenter according to reduced-motion policy |
 | Native/ARIA disabled target hit | Preserve hover/geometry; suppress activation and report why |
 | Synthetic event dispatched | Record delivery/cancellation; do not infer trusted native success |
+| Routed compatibility `mousedown` is derived from `PointerEvent.detail=0` | Normalize first-click mouse detail to `1`; do not expose zero to click-count consumers |
 | Trusted input-plane `pointerdown` arrives while a Source-local popup is open | Do not run Source outside-close logic before inverse projection; the later routed synthetic event decides inside/outside |
 | Reduced motion | Freeze particles and snap/reset movement without changing final hierarchy |
 | Reduced motion with environment effects | Freeze particle/ring/grain/refraction time; keep the static final composition |
@@ -141,6 +148,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Good: pointer-down snapshots browser Source/viewport rectangles into plain four-field geometry, and later captured moves continue producing non-zero Source-local deltas after the live DOM changes.
 - Good: a shell Dock has lower scene z than every window, renders before windows, and is visited after windows during projected hit resolution.
 - Good: a Select ignores the trusted input-plane `pointerdown`, then keeps open for a routed option event or closes for a routed Source-local outside target.
+- Good: a first projected pointer press emits `pointerdown.detail=0` and compatibility `mousedown.detail=1`, so CodeMirror creates a cursor instead of a whole-line selection.
 - Good: a product image base is processed in bounded environment targets, then clock/Dock/window Source textures are drawn sharply afterward.
 - Base: a static wallpaper base and frozen particles/ring settle without further frames or Source uploads; generic renderer consumers retain procedural rendering.
 - Base: a failed wallpaper upload exposes the identical CSS fallback while the shell and Source compositor remain usable.
@@ -151,6 +159,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Bad: filtering `aria-hidden` or disabled controls out of geometry causes clicks to fall through to an element underneath.
 - Bad: focus or synthetic `.click()` alone is reported as proof that a caret, picker, or native default action succeeded.
 - Bad: a document-capture outside-click handler treats the trusted input plane as the Source target and hides a popup before the router resolves its option geometry.
+- Bad: copying `PointerEvent.detail=0` into `mousedown` silently changes CodeMirror's click mode from single-click to whole-line selection.
 - Bad: `{ ...element.getBoundingClientRect() }` appears valid with plain-object test fixtures but can produce an empty/partial runtime snapshot, forcing captured input into zero-delta extrapolation.
 
 ### 6. Tests Required
@@ -158,6 +167,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Unit: WebGL2/current/legacy negotiation, unresolved state, paint changed/removed normalization, source eligibility/removal, and context restore.
 - Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, native scrollbar geometry/drag cleanup, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates.
 - Unit: Source-local popup outside-pointer behavior distinguishes trusted input-plane events from routed synthetic inside/outside targets; a trusted plane event cannot close the popup before option hit resolution.
+- Unit: routed event initialization asserts compatibility `mousedown` / `mouseup` / `click` normalize pointer detail zero to one, `dblclick` preserves two, and move/hover events remain zero.
 - Unit: environment/effects/decoration/clock/Dock/window/foreground pass order, reverse-z projected input order, default-pose parsing, transparent/image failure fallback, framebuffer lifecycle, media cover math, particle/reduced-motion scheduling, deterministic flow/size ranges, radius-bounded centers, and static Source upload counts.
 - Unit: per-window presentation phase progression, first-upload gating/retry, concurrent progress, duration-zero completion, guard veto/coalescing, exact-once close/minimize/restore completion, captured-input exclusion, transition-only uniforms/draws, optional-program fallback, and context-loss/dispose settlement.
 - Package: complete Spatial Vitest suite, platform-web Vue type-check, `npm run build:web`, and `git diff --check`.
@@ -253,6 +263,134 @@ if (!root.contains(event.target as Node)) closePopup()
 
 // Correct: Source-local outside behavior consumes only the routed event.
 if (!event.isTrusted && !root.contains(event.target as Node)) closePopup()
+```
+
+```ts
+// Wrong: PointerEvent detail is zero, which rich editors may read as a
+// non-single-click selection mode.
+const mouseDetail = pointerEvent.detail
+
+// Correct: compatibility mouse events own their click-count semantics.
+const mouseDetail = routedMouseEventDetail("mousedown", pointerEvent.detail) // 1
+```
+
+## Scenario: Renderer-Owned Dynamic Video
+
+### 1. Scope / Trigger
+
+Use this contract when a Spatial Source must display a playing workspace video. Ordinary HTML Source capture remains demand-driven; decoded video pixels use an opt-in renderer texture rather than repainting and uploading the whole window for every frame.
+
+### 2. Signatures
+
+```ts
+type FrameReason = /* existing reasons */ | "animated-media"
+
+interface SpatialDynamicMediaRecord {
+  readonly sourceId: string
+  readonly source: Element
+  readonly video: HTMLVideoElement
+  frameGeneration: number
+  released: boolean
+  fullscreen: boolean
+}
+
+interface SpatialDynamicMediaSurface {
+  readonly texture: WebGLTexture
+  readonly rect: {
+    readonly left: number
+    readonly top: number
+    readonly width: number
+    readonly height: number
+  }
+}
+```
+
+The product marker is:
+
+```html
+<video data-spatial-dynamic-media="video"></video>
+```
+
+The marked video remains inside the owning direct Canvas Source. It is the decoder, playback-state, Blob URL, and browser-fullscreen authority.
+
+### 3. Contracts
+
+- Discovery maps each marked video to exactly one ancestor Source id. The tracker owns media-event, `fullscreenchange`, decoded-frame, fallback-rAF, Source-release, visibility, context-loss, removal, and disposal cleanup.
+- A ready current frame increments `frameGeneration` and requests one `animated-media` scheduler frame. `requestVideoFrameCallback` is authoritative when available; fallback rAF runs only while the video is connected, playing, visible, not fullscreen, and Source-eligible.
+- `animated-media` is not reduced-motion suppressed because playback is user-controlled. It is one-shot per decoded frame: the viewport does not return it as a continuous scheduler reason.
+- Video frames never call `ElementTextureRegistry.markDirty()` or `requestPaint()`. Control text/progress remains ordinary Source DOM and follows normal demand-driven Source capture.
+- The GL registry allocates one `LINEAR`/`CLAMP_TO_EDGE` texture per live video, uploads only a newer generation with standard `texImage2D(video)`, and deletes or abandons it exactly once on removal/release/dispose/context loss.
+- The surface mesh uses a top-left Source convention: Source top maps to `v=0`. Standard video upload therefore sets `UNPACK_FLIP_Y_WEBGL=false`; forcing `true` inverts the video relative to its Source-local rectangle.
+- Contain geometry starts from explicit plain `left/top/width/height` snapshots, rejects non-finite/zero boxes or intrinsic sizes, normalizes the result against the owning Source, and draws immediately after that Source with the same pose, curve, parallax, and painter order.
+- Optional dynamic-media shader failure disables decoded-frame tracking and uploads for that renderer while leaving the shell and Source-local controls usable. A single video upload failure skips that generation and must not fail the shell.
+- Normal Spatial display keeps the decoder video transparent. Browser fullscreen calls the actual video's `requestFullscreen()` from the activation chain, makes that same element visible under `:fullscreen`, suspends renderer-owned frames, and resumes one current-frame upload after exit.
+- Page hiding, pause, end, empty source, Source release/minimize, fullscreen, context loss, element removal, and controller disposal cancel pending callbacks/rAF. A callback racing after cancellation must re-check playing and eligibility before requesting a frame.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Video lacks current decoded data | No generation, upload, draw, or continuous reason |
+| `requestVideoFrameCallback` exists | Schedule at most one pending callback per video |
+| Callback races after pause/end/release | Drop it without advancing generation |
+| API is unavailable | Use one bounded playing/visible rAF fallback; stop exactly on lifecycle exit |
+| Source is hidden/released/minimized or page is hidden | Cancel callback/rAF and suppress its surface |
+| Browser owns the video in fullscreen | Show the real video, suppress dynamic texture work, resume after exit |
+| Dynamic shader initialization fails | Keep shell/controls alive; perform no invisible per-frame upload loop |
+| `texImage2D(video)` throws | Record the failure, skip that generation, keep other Sources rendering |
+| Context is lost/restored | Stop callbacks, abandon context textures, recreate and upload the next/current generation after restore |
+| Video/Source is removed | Remove listeners and texture ownership exactly once |
+| Box or intrinsic geometry is zero/non-finite | Return no media surface |
+
+### 5. Good / Base / Bad Cases
+
+- Good: one decoded frame requests one renderer frame, uploads one video texture generation, and draws one contained sub-surface immediately after its Source.
+- Good: pause or fullscreen cancels the pending decoded-frame callback; a stale callback cannot revive `animated-media`.
+- Base: a paused video with a valid current frame displays its last uploaded frame and owns no scheduler reason.
+- Base: audio uses Source-local controls and browser media events but owns no renderer texture or frame reason.
+- Bad: a video `timeupdate`/rAF loop dirties the full HTML Source on every frame.
+- Bad: a flat DOM/video overlay sits above the Canvas and escapes curve, z-order, occlusion, and projected input.
+- Bad: the renderer keeps uploading video frames after its optional media shader failed or the Source was released.
+
+### 6. Tests Required
+
+- Tracker unit tests: discovery, current-frame generation, one pending callback, pause/end/hidden/release/removal/fullscreen/dispose cancellation, stale-callback rejection, and bounded fallback behavior.
+- Registry unit tests: generation dedupe, top-left upload orientation, contain math, Source ownership, zero/invalid geometry, upload failure isolation, exact deletion, and context restore.
+- Renderer tests: upload remains separate from Element Source textures; normalized media rect reaches the dynamic shader after its owner; optional-program failure does not fail the renderer.
+- Scheduler tests: `animated-media` remains allowed under reduced motion but does not persist without a new decoded frame.
+- Product tests: normal decoder opacity, `:fullscreen` visibility, Source-local play/seek/volume controls, direct fullscreen success/refusal, resize/curve-edge mapping, minimize/restore, simultaneous media windows, page visibility, and context loss/restore.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+video.requestVideoFrameCallback(() => {
+  elementTextures.markDirty(owningSource)
+  capabilities.requestPaint()
+  scheduler.request("animated-source")
+})
+```
+
+```ts
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true)
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video)
+```
+
+#### Correct
+
+```ts
+video.requestVideoFrameCallback(() => {
+  if (video.paused || video.ended || !sourceEligible()) return
+  record.frameGeneration += 1
+  scheduler.request("animated-media")
+})
+```
+
+```ts
+gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false)
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, video)
+drawContainedVideoAfterOwningSource(record)
 ```
 
 ## Scenario: Spatial Application Presentation Primitives

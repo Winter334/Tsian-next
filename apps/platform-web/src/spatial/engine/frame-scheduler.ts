@@ -7,6 +7,8 @@ export type FrameReason =
   | "particles"
   | "animated-background"
   | "animated-source"
+  /** Decoder-driven video work; intentionally not reduced-motion suppressed. */
+  | "animated-media"
   | "restore"
 
 export interface ScheduledFrame {

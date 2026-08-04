@@ -223,7 +223,7 @@
               </p>
             </div>
           </div>
-          <div v-else-if="directoryEntries.length === 0" class="grid min-h-[360px] place-items-center">
+          <div v-else-if="visibleEntries.length === 0" class="grid min-h-[360px] place-items-center">
             <p class="font-mono text-sm text-text-dim">这个目录是空的。</p>
           </div>
           <div v-else class="workspace-directory-table">
@@ -288,7 +288,7 @@
       @click.stop
     >
       <button
-        v-if="contextMenu.entry"
+        v-if="contextMenu.entry?.kind === 'directory'"
         type="button"
         class="block w-full px-3 py-1.5 text-left font-mono text-xs text-text-main hover:bg-neon/10 hover:text-neon"
         @click="activateEntry(contextMenu.entry)"
@@ -379,12 +379,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
-import { useRoute, useRouter } from "vue-router"
-
-// 桌面窗口透传:窗口最小化时为 true。全局 keydown 监听据此守卫,
-// 避免隐藏的资源管理器拦截 Delete(误删文件)/F2(重命名)/Ctrl+C 等。
-const props = defineProps<{ minimized?: boolean }>()
+import { nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import type { Component } from "vue"
+import type { WorkspaceEntry } from "@tsian/contracts"
 import {
   ChevronRight,
   ClipboardPaste,
@@ -403,39 +400,14 @@ import {
   Search,
   X,
 } from "lucide-vue-next"
-import type { Component } from "vue"
-import type {
-  WorkspaceEntry,
-  WorkspaceSearchResult,
-} from "@tsian/contracts"
+import { useWorkspaceExplorerController } from "@/controllers/workspace/use-workspace-explorer-controller"
+import {
+  clampWorkspaceMenuCoordinate,
+  splitWorkspaceNameExtension,
+} from "@/controllers/workspace/workspace-explorer-helpers"
 import { inferWorkspaceMediaType } from "@/lib/workspace-file-types"
-import {
-  canCopyWorkspaceEntry,
-  canCreateWorkspaceEntry,
-  canMutateWorkspaceEntry,
-} from "@/lib/workspace-readonly"
-import {
-  inferMediaTypeFromPath,
-  isImageMediaType,
-  isAudioMediaType,
-  isVideoMediaType,
-} from "@/lib/media-type"
-import { confirm } from "@/composables/useConfirm"
-import {
-  WORKSPACE_CONTENT_CHANGED_EVENT,
-  emitWorkspaceContentChanged,
-  isWorkspaceContentChangedEvent,
-} from "@/lib/workspace-events"
-import {
-  copyPlatformWorkspacePath,
-  deletePlatformWorkspacePath,
-  listPlatformWorkspaceDirectory,
-  listPlatformWorkspaceRoots,
-  movePlatformWorkspacePath,
-  searchPlatformWorkspace,
-  writePlatformWorkspaceFile,
-  type PlatformWorkspaceRootEntry,
-} from "../platform-host"
+
+const props = defineProps<{ minimized?: boolean }>()
 
 interface ContextMenuState {
   x: number
@@ -443,121 +415,63 @@ interface ContextMenuState {
   entry: WorkspaceEntry | null
 }
 
-interface ClipboardEntry {
-  kind: "copy" | "cut"
-  sourcePath: string
-  sourceName: string
-  sourceCardId?: string
-  isDirectory: boolean
-}
-
-const route = useRoute()
-const router = useRouter()
-
-const workspaceRoots = ref<PlatformWorkspaceRootEntry[]>([])
-const selectedRootCardId = ref("")
-const selectedRootKind = ref<"local" | "card">("card")
-const selectedCardId = ref("")
-const currentPath = ref("")
-const directoryEntries = ref<WorkspaceEntry[]>([])
-const currentDirectoryReadOnly = ref(false)
-const selectedEntryPath = ref("")
-const searchInput = ref("")
-const activeSearchQuery = ref("")
-const searchResults = ref<WorkspaceSearchResult[]>([])
-const renamingEntryPath = ref("")
-const renameDraft = ref("")
-const rootsLoading = ref(false)
-const directoryLoading = ref(false)
-const searchLoading = ref(false)
-const errorMessage = ref("")
-const feedback = ref("")
-const contextMenu = ref<ContextMenuState | null>(null)
-const clipboard = ref<ClipboardEntry | null>(null)
 const explorerRef = ref<HTMLElement | null>(null)
-let rootsRequestId = 0
-let directoryRequestId = 0
-let searchRequestId = 0
+const contextMenu = ref<ContextMenuState | null>(null)
 
-const selectedCard = computed(() =>
-  workspaceRoots.value.find((root) => root.cardId === selectedCardId.value && root.kind === "card") ?? null
-)
-
-const selectedLocalRoot = computed(() =>
-  workspaceRoots.value.find((root) => root.kind === "local") ?? null
-)
-
-const localBreadcrumbs = computed(() => {
-  if (!currentPath.value.startsWith(".tsian/")) return []
-  const segments = currentPath.value.split("/").filter(Boolean).slice(1)
-  return segments.map((name, index) => ({
-    name,
-    path: [".tsian", ...segments.slice(0, index + 1)].join("/"),
-  }))
-})
-
-const isBrowsing = computed(() =>
-  Boolean(selectedCardId.value) || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/"),
-)
-
-const workspaceBreadcrumbs = computed(() => {
-  const segments = currentPath.value.split("/").filter(Boolean)
-  return segments.map((name, index) => ({
-    name,
-    path: segments.slice(0, index + 1).join("/"),
-  }))
-})
-
-const selectedEntry = computed(() =>
-  directoryEntries.value.find((entry) => entry.path === selectedEntryPath.value) ?? null
-)
-
-const visibleEntries = computed(() =>
-  directoryEntries.value.filter((entry) => entry.name !== ".keep"),
-)
-
-const statusLabel = computed(() => {
-  if (!isBrowsing.value) {
-    return `${workspaceRoots.value.length} 个根`
-  }
-  if (activeSearchQuery.value) {
-    return `${searchResults.value.length} 个结果`
-  }
-  return `${directoryEntries.value.length} 项`
-})
-
-function routeQueryString(value: unknown): string {
-  return typeof value === "string" ? value : ""
-}
-
-function normalizeDisplayPath(value: string): string {
-  return value
-    .trim()
-    .replace(/\\/g, "/")
-    .replace(/^\/+/, "")
-    .replace(/\/+/g, "/")
-    .replace(/\/+$/, "")
-}
-
-function syncStateFromRoute() {
-  const nextCardId = routeQueryString(route.query.cardId)
-  const nextPath = normalizeDisplayPath(routeQueryString(route.query.path))
-  selectedCardId.value = nextCardId
-  // Support .tsian/ browsing with no cardId.
-  currentPath.value = nextCardId ? nextPath : (nextPath === ".tsian" || nextPath.startsWith(".tsian/") ? nextPath : "")
-}
-
-function syncRouteState() {
-  const query: Record<string, string> = {}
-  if (selectedCardId.value) {
-    query.cardId = selectedCardId.value
-  }
-  if (currentPath.value && (selectedCardId.value || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/"))) {
-    query.path = currentPath.value
-  }
-
-  void router.replace({ name: "workspace", query })
-}
+const {
+  workspaceRoots,
+  selectedRootCardId,
+  selectedRootKind,
+  selectedCardId,
+  currentPath,
+  directoryEntries,
+  selectedEntryPath,
+  searchInput,
+  activeSearchQuery,
+  searchResults,
+  renamingEntryPath,
+  renameDraft,
+  renameSelection,
+  rootsLoading,
+  directoryLoading,
+  searchLoading,
+  errorMessage,
+  feedback,
+  clipboard,
+  selectedCard,
+  selectedLocalRoot,
+  localBreadcrumbs,
+  isBrowsing,
+  workspaceBreadcrumbs,
+  selectedEntry,
+  visibleEntries,
+  statusLabel,
+  canDeleteEntry,
+  canRenameEntry,
+  canModifyEntry,
+  canCopyEntry,
+  canCreateHere,
+  canPasteHere,
+  refreshCurrentView,
+  selectRoot,
+  openRoot,
+  returnToRoot,
+  openPath,
+  activateEntry: activateEntryAction,
+  startRenameEntry: startRenameEntryAction,
+  cancelRename,
+  commitRename: commitRenameAction,
+  createNewFile: createNewFileAction,
+  createNewFolder: createNewFolderAction,
+  runSearch,
+  clearSearch,
+  openFile: openFileAction,
+  deleteEntry: deleteEntryAction,
+  copyEntry: copyEntryAction,
+  cutEntry: cutEntryAction,
+  pasteFromClipboard: pasteFromClipboardAction,
+  handleGlobalKeydown,
+} = useWorkspaceExplorerController()
 
 function formatDateTime(value: number): string {
   return new Intl.DateTimeFormat("zh-CN", {
@@ -569,19 +483,13 @@ function formatDateTime(value: number): string {
 }
 
 function formatFileSize(bytes: number): string {
-  if (bytes < 1024) {
-    return `${bytes} B`
-  }
-  if (bytes < 1024 * 1024) {
-    return `${(bytes / 1024).toFixed(1)} KB`
-  }
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
 }
 
 function entryIcon(entry: WorkspaceEntry): Component {
-  if (entry.kind === "directory") {
-    return FolderOpen
-  }
+  if (entry.kind === "directory") return FolderOpen
   const path = entry.path.toLowerCase()
   if (path.endsWith(".json") || path.endsWith(".jsonl")) return FileJson2
   if (path.endsWith(".ts") || path.endsWith(".tsx") || path.endsWith(".js") || path.endsWith(".jsx")) return Code2
@@ -590,235 +498,15 @@ function entryIcon(entry: WorkspaceEntry): Component {
 }
 
 function entryTypeLabel(entry: WorkspaceEntry): string {
-  if (entry.kind === "directory") {
-    return "文件夹"
-  }
-  return inferWorkspaceMediaType(entry.path)
+  return entry.kind === "directory" ? "文件夹" : inferWorkspaceMediaType(entry.path)
 }
 
 function entrySizeLabel(entry: WorkspaceEntry): string {
-  if (entry.kind === "directory") {
-    return `${entry.childCount ?? 0} 项`
-  }
-  return formatFileSize(entry.size ?? 0)
+  return entry.kind === "directory" ? `${entry.childCount ?? 0} 项` : formatFileSize(entry.size ?? 0)
 }
 
-function canDeleteEntry(entry: WorkspaceEntry): boolean {
-  return canMutateWorkspaceEntry({
-    entry,
-    currentDirectoryReadOnly: currentDirectoryReadOnly.value,
-    directoryLoading: directoryLoading.value,
-  })
-}
-
-function canRenameEntry(entry: WorkspaceEntry): boolean {
-  return canDeleteEntry(entry)
-}
-
-function canModifyEntry(entry: WorkspaceEntry): boolean {
-  return canDeleteEntry(entry)
-}
-
-function canCopyEntry(entry: WorkspaceEntry): boolean {
-  return !directoryLoading.value && canCopyWorkspaceEntry(entry)
-}
-
-function canCreateHere(): boolean {
-  return canCreateWorkspaceEntry({
-    isBrowsing: isBrowsing.value,
-    currentDirectoryReadOnly: currentDirectoryReadOnly.value,
-    directoryLoading: directoryLoading.value,
-    currentPath: currentPath.value,
-  })
-}
-
-function splitNameExt(name: string): { base: string; ext: string } {
-  const dotIndex = name.lastIndexOf(".")
-  if (dotIndex <= 0) {
-    // 无扩展名, 或以 . 开头的隐藏文件 (.keep / .gitignore) 视为无扩展名
-    return { base: name, ext: "" }
-  }
-  return { base: name.slice(0, dotIndex), ext: name.slice(dotIndex) }
-}
-
-function uniqueName(base: string, ext: string, existing: Set<string>): string {
-  const candidate = `${base}${ext}`
-  if (!existing.has(candidate)) {
-    return candidate
-  }
-  let index = 1
-  while (existing.has(`${base}(${index})${ext}`)) {
-    index += 1
-  }
-  return `${base}(${index})${ext}`
-}
-
-function currentEntryNames(): Set<string> {
-  return new Set(visibleEntries.value.map((entry) => entry.name))
-}
-
-function canPasteHere(): boolean {
-  return Boolean(clipboard.value)
-    && canCreateHere()
-}
-
-async function refreshRoots() {
-  const requestId = ++rootsRequestId
-  rootsLoading.value = true
-  errorMessage.value = ""
-
-  try {
-    workspaceRoots.value = await listPlatformWorkspaceRoots()
-    if (
-      selectedCardId.value
-      && !workspaceRoots.value.some((root) => root.cardId === selectedCardId.value)
-    ) {
-      selectedCardId.value = ""
-      currentPath.value = ""
-      directoryEntries.value = []
-      currentDirectoryReadOnly.value = false
-      syncRouteState()
-    }
-  } catch (error) {
-    if (requestId === rootsRequestId) {
-      errorMessage.value = error instanceof Error ? error.message : "无法加载工作区根目录。"
-    }
-  } finally {
-    if (requestId === rootsRequestId) {
-      rootsLoading.value = false
-    }
-  }
-}
-
-async function refreshDirectory() {
-  if (!selectedCardId.value && currentPath.value !== ".tsian" && !currentPath.value.startsWith(".tsian/")) {
-    directoryEntries.value = []
-    currentDirectoryReadOnly.value = false
-    return
-  }
-
-  const requestId = ++directoryRequestId
-  directoryLoading.value = true
-  errorMessage.value = ""
-
-  try {
-    const result = await listPlatformWorkspaceDirectory({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path: currentPath.value,
-    })
-    if (requestId !== directoryRequestId) {
-      return
-    }
-
-    currentPath.value = result.path
-    directoryEntries.value = result.entries
-    currentDirectoryReadOnly.value = result.readOnly === true
-    if (!result.entries.some((entry) => entry.path === selectedEntryPath.value)) {
-      selectedEntryPath.value = ""
-    }
-    if (!result.entries.some((entry) => entry.path === renamingEntryPath.value)) {
-      cancelRename()
-    }
-    syncRouteState()
-  } catch (error) {
-    if (requestId === directoryRequestId) {
-      directoryEntries.value = []
-      currentDirectoryReadOnly.value = false
-      errorMessage.value = error instanceof Error ? error.message : "无法读取工作区目录。"
-    }
-  } finally {
-    if (requestId === directoryRequestId) {
-      directoryLoading.value = false
-    }
-  }
-}
-
-function refreshCurrentView() {
-  if (selectedCardId.value || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/")) {
-    void refreshDirectory()
-    if (activeSearchQuery.value) {
-      void runSearch()
-    }
-    return
-  }
-
-  void refreshRoots()
-}
-
-function selectRoot(root: PlatformWorkspaceRootEntry) {
-  selectedRootCardId.value = root.cardId
-  selectedRootKind.value = root.kind
-}
-
-function openRoot(root: PlatformWorkspaceRootEntry) {
-  if (root.kind === "local") {
-    selectedCardId.value = ""
-    selectedRootCardId.value = root.cardId
-    selectedRootKind.value = "local"
-    currentPath.value = ".tsian"
-    selectedEntryPath.value = ""
-    clearSearch()
-    syncRouteState()
-    void refreshDirectory()
-    return
-  }
-  openCard(root.cardId)
-}
-
-function openCard(cardId: string) {
-  selectedCardId.value = cardId
-  selectedRootCardId.value = cardId
-  selectedRootKind.value = "card"
-  currentPath.value = ""
-  selectedEntryPath.value = ""
-  clearSearch()
-  syncRouteState()
-  void refreshDirectory()
-}
-
-function returnToRoot() {
-  selectedCardId.value = ""
-  currentPath.value = ""
-  directoryEntries.value = []
-  currentDirectoryReadOnly.value = false
-  selectedEntryPath.value = ""
-  clearSearch()
-  syncRouteState()
-}
-
-function openPath(path: string) {
-  currentPath.value = path
-  selectedEntryPath.value = ""
-  cancelRename()
-  syncRouteState()
-  void refreshDirectory()
-}
-
-function activateEntry(entry: WorkspaceEntry) {
-  contextMenu.value = null
-  selectedEntryPath.value = entry.path
-  if (entry.kind === "directory") {
-    openPath(entry.path)
-    return
-  }
-
-  void openFile(entry.path)
-}
-
-function openEntryContextMenu(entry: WorkspaceEntry, event: MouseEvent) {
-  selectedEntryPath.value = entry.path
-  contextMenu.value = contextMenuStateFromMouse(event, entry)
-}
-
-function openBlankContextMenu(event: MouseEvent) {
-  selectedEntryPath.value = ""
-  cancelRename()
-  contextMenu.value = contextMenuStateFromMouse(event, null)
-}
-
-function contextMenuStateFromMouse(event: MouseEvent, entry: WorkspaceEntry | null): ContextMenuState {
+function menuState(event: MouseEvent, entry: WorkspaceEntry | null): ContextMenuState {
   const menuWidth = 176
-  // 条目菜单: 打开/编辑/复制/剪切/重命名/删除 最多 6 项; 空白菜单: 新建文件/新建文件夹/粘贴/刷新 最多 4 项
   const menuHeight = entry ? 176 : 128
   const rect = explorerRef.value?.getBoundingClientRect() ?? {
     left: 0,
@@ -826,498 +514,108 @@ function contextMenuStateFromMouse(event: MouseEvent, entry: WorkspaceEntry | nu
     width: window.innerWidth,
     height: window.innerHeight,
   }
-  const rawX = event.clientX - rect.left
-  const rawY = event.clientY - rect.top
   return {
-    x: clampMenuCoordinate(rawX, rect.width, menuWidth),
-    y: clampMenuCoordinate(rawY, rect.height, menuHeight),
+    x: clampWorkspaceMenuCoordinate(event.clientX - rect.left, rect.width, menuWidth),
+    y: clampWorkspaceMenuCoordinate(event.clientY - rect.top, rect.height, menuHeight),
     entry,
   }
 }
 
-function clampMenuCoordinate(value: number, containerSize: number, menuSize: number): number {
-  return Math.min(Math.max(value, 8), Math.max(8, containerSize - menuSize - 8))
+function openEntryContextMenu(entry: WorkspaceEntry, event: MouseEvent): void {
+  selectedEntryPath.value = entry.path
+  contextMenu.value = menuState(event, entry)
 }
 
-function refreshFromContextMenu() {
+function openBlankContextMenu(event: MouseEvent): void {
+  selectedEntryPath.value = ""
+  cancelRename()
+  contextMenu.value = menuState(event, null)
+}
+
+function activateEntry(entry: WorkspaceEntry): void {
+  contextMenu.value = null
+  activateEntryAction(entry)
+}
+
+function openFile(path: string): void {
+  contextMenu.value = null
+  openFileAction(path)
+}
+
+function startRenameEntry(entry: WorkspaceEntry): void {
+  contextMenu.value = null
+  startRenameEntryAction(entry)
+}
+
+async function commitRename(entry: WorkspaceEntry): Promise<void> {
+  const result = await commitRenameAction(entry)
+  if (result === "refocus") focusRenameInput()
+}
+
+function focusRenameInput(): void {
+  void nextTick(() => explorerRef.value
+    ?.querySelector<HTMLInputElement>('[data-rename-input="true"]')
+    ?.focus())
+}
+
+async function createNewFileFromContextMenu(): Promise<void> {
+  contextMenu.value = null
+  await createNewFileAction()
+}
+
+async function createNewFolderFromContextMenu(): Promise<void> {
+  contextMenu.value = null
+  await createNewFolderAction()
+}
+
+function refreshFromContextMenu(): void {
   contextMenu.value = null
   refreshCurrentView()
 }
 
-function createNewFileFromContextMenu() {
+async function pasteFromContextMenu(): Promise<void> {
   contextMenu.value = null
-  void createNewFile()
+  await pasteFromClipboardAction()
 }
 
-function createNewFolderFromContextMenu() {
+async function deleteEntry(entry: WorkspaceEntry): Promise<void> {
   contextMenu.value = null
-  void createNewFolder()
+  await deleteEntryAction(entry)
 }
 
-function pasteFromContextMenu() {
+function copyEntry(entry: WorkspaceEntry): void {
   contextMenu.value = null
-  void pasteFromClipboard()
+  copyEntryAction(entry)
 }
 
-function enterRenameForNewEntry(entry: WorkspaceEntry) {
+function cutEntry(entry: WorkspaceEntry): void {
   contextMenu.value = null
-  selectedEntryPath.value = entry.path
-  renamingEntryPath.value = entry.path
-  renameDraft.value = entry.name
+  cutEntryAction(entry)
+}
+
+function onGlobalKeydown(event: KeyboardEvent): void {
+  if (props.minimized) return
+  if (event.key === "Escape") contextMenu.value = null
+  handleGlobalKeydown(event)
+}
+
+watch(renamingEntryPath, (path) => {
+  if (!path) return
   void nextTick(() => {
     const input = explorerRef.value?.querySelector<HTMLInputElement>('[data-rename-input="true"]')
-    if (!input) {
-      return
-    }
+    if (!input) return
     input.focus()
-    // 选中文件名主干(不含扩展名),对齐 Windows 新建后重命名体验
-    const { base } = splitNameExt(entry.name)
-    input.setSelectionRange(0, base.length)
-  })
-}
-
-async function createNewFile() {
-  if (!canCreateHere()) {
-    return
-  }
-
-  const name = uniqueName("新建文件", ".txt", currentEntryNames())
-  const path = currentPath.value ? `${currentPath.value}/${name}` : name
-  try {
-    await writePlatformWorkspaceFile({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path,
-      content: "",
-    })
-    emitWorkspaceContentChanged({ cardId: selectedCardId.value, path })
-    await refreshDirectory()
-    const created = directoryEntries.value.find((entry) => entry.path === path)
-    if (created) {
-      enterRenameForNewEntry(created)
-    }
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "无法新建文件。"
-  }
-}
-
-async function createNewFolder() {
-  if (!canCreateHere()) {
-    return
-  }
-
-  const name = uniqueName("新文件夹", "", currentEntryNames())
-  const dirPath = currentPath.value ? `${currentPath.value}/${name}` : name
-  // 工作区是文件式存储,空文件夹无法持久化。写入 .keep 锚点文件让目录出现,
-  // 列表渲染时隐藏 .keep,使文件夹显示为空。.keep 是持久锚点:单文件删移不影响它,
-  // 只随删/移整个目录消失。
-  const keepPath = `${dirPath}/.keep`
-  try {
-    await writePlatformWorkspaceFile({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path: keepPath,
-      content: "",
-    })
-    emitWorkspaceContentChanged({ cardId: selectedCardId.value, path: keepPath })
-    await refreshDirectory()
-    const created = directoryEntries.value.find((entry) => entry.path === dirPath)
-    if (created) {
-      enterRenameForNewEntry(created)
-    }
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "无法新建文件夹。"
-  }
-}
-
-function startRenameEntry(entry: WorkspaceEntry) {
-  if (!isBrowsing.value || !canRenameEntry(entry)) {
-    return
-  }
-
-  contextMenu.value = null
-  selectedEntryPath.value = entry.path
-  renamingEntryPath.value = entry.path
-  renameDraft.value = entry.name
-  void nextTick(() => {
-    const input = explorerRef.value?.querySelector<HTMLInputElement>('[data-rename-input="true"]')
-    input?.focus()
-    input?.select()
-  })
-}
-
-function cancelRename() {
-  renamingEntryPath.value = ""
-  renameDraft.value = ""
-}
-
-async function commitRename(entry: WorkspaceEntry) {
-  if (!isBrowsing.value || renamingEntryPath.value !== entry.path || !canRenameEntry(entry)) {
-    return
-  }
-
-  const nextName = renameDraft.value.trim()
-  if (nextName === entry.name) {
-    cancelRename()
-    return
-  }
-  if (!nextName) {
-    feedback.value = "名称不能为空。"
-    focusRenameInput()
-    return
-  }
-  if (/[\\/]/.test(nextName)) {
-    feedback.value = "重命名时只输入名称，不要输入路径。"
-    focusRenameInput()
-    return
-  }
-
-  // 扩展名变更风险提示(类似 Windows: 改后缀可能导致文件无法正确解析)
-  const oldExt = splitNameExt(entry.name).ext
-  const newExt = splitNameExt(nextName).ext
-  if (oldExt !== newExt) {
-    const confirmed = await confirm({
-      message: `改变扩展名「${oldExt || "无"} → ${newExt || "无"}」可能导致文件无法正确解析,确定吗?`,
-      confirmText: "确定",
-      severity: "danger",
-    })
-    if (!confirmed) {
-      focusRenameInput()
-      return
-    }
-  }
-
-  const targetPath = siblingPath(entry.path, nextName)
-  try {
-    const result = await movePlatformWorkspacePath({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path: entry.path,
-      targetPath,
-    })
-    cancelRename()
-    selectedEntryPath.value = result.toPath
-    feedback.value = `已重命名：${result.toPath}`
-    emitWorkspaceContentChanged({ cardId: selectedCardId.value, path: result.toPath })
-    await refreshDirectory()
-    if (activeSearchQuery.value) {
-      await runSearch()
-    }
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "无法重命名工作区路径。"
-    focusRenameInput()
-  }
-}
-
-function focusRenameInput() {
-  void nextTick(() => {
-    explorerRef.value?.querySelector<HTMLInputElement>('[data-rename-input="true"]')?.focus()
-  })
-}
-
-function siblingPath(path: string, nextName: string): string {
-  const segments = path.split("/").filter(Boolean)
-  segments.pop()
-  return [...segments, nextName].join("/")
-}
-
-async function runSearch() {
-  if (!isBrowsing.value) {
-    return
-  }
-
-  const query = searchInput.value.trim()
-  if (!query) {
-    clearSearch()
-    return
-  }
-
-  const requestId = ++searchRequestId
-  activeSearchQuery.value = query
-  searchLoading.value = true
-
-  try {
-    const results = await searchPlatformWorkspace({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      query,
-      path: currentPath.value || undefined,
-      limit: 100,
-    })
-    if (requestId === searchRequestId) {
-      searchResults.value = results
-    }
-  } catch (error) {
-    if (requestId === searchRequestId) {
-      searchResults.value = []
-      errorMessage.value = error instanceof Error ? error.message : "无法搜索工作区。"
-    }
-  } finally {
-    if (requestId === searchRequestId) {
-      searchLoading.value = false
-    }
-  }
-}
-
-function clearSearch() {
-  activeSearchQuery.value = ""
-  searchResults.value = []
-  searchLoading.value = false
-  searchRequestId += 1
-}
-
-function openFile(path: string) {
-  if (!isBrowsing.value) {
-    return
-  }
-
-  contextMenu.value = null
-  const mediaType = inferMediaTypeFromPath(path)
-  if (
-    mediaType !== "image/svg+xml"
-    && (isImageMediaType(mediaType) || isAudioMediaType(mediaType) || isVideoMediaType(mediaType))
-  ) {
-    openMediaRoute(path)
-  } else {
-    openEditorRoute(path)
-  }
-}
-
-function openMediaRoute(path: string) {
-  void router.push({
-    name: "workspace-media",
-    query: {
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path,
-    },
-  })
-}
-
-function openEditorRoute(path: string) {
-  void router.push({
-    name: "workspace-editor",
-    query: {
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path,
-      mode: "edit",
-      editorId: createEditorSessionId(),
-    },
-  })
-}
-
-function createEditorSessionId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`
-}
-
-async function deleteEntry(entry: WorkspaceEntry) {
-  if (!isBrowsing.value || !canDeleteEntry(entry)) {
-    return
-  }
-
-  contextMenu.value = null
-  cancelRename()
-  const confirmed = await confirm({
-    message: `删除「${entry.path}」？`,
-    severity: "danger",
-    confirmText: "删除",
-  })
-  if (!confirmed) {
-    return
-  }
-
-  try {
-    const result = await deletePlatformWorkspacePath({
-      ...(selectedCardId.value ? { cardId: selectedCardId.value } : {}),
-      path: entry.path,
-    })
-    feedback.value = `已删除 ${result.deletedPaths.length} 项。`
-    selectedEntryPath.value = ""
-    await refreshDirectory()
-    if (activeSearchQuery.value) {
-      await runSearch()
-    }
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "无法删除工作区路径。"
-  }
-}
-
-function copyEntry(entry: WorkspaceEntry) {
-  if (!isBrowsing.value || !canCopyEntry(entry)) {
-    return
-  }
-  contextMenu.value = null
-  clipboard.value = {
-    kind: "copy",
-    sourcePath: entry.path,
-    sourceName: entry.name,
-    ...(selectedCardId.value ? { sourceCardId: selectedCardId.value } : {}),
-    isDirectory: entry.kind === "directory",
-  }
-  feedback.value = `已复制：${entry.name}`
-}
-
-function cutEntry(entry: WorkspaceEntry) {
-  if (!isBrowsing.value || !canModifyEntry(entry)) {
-    return
-  }
-  contextMenu.value = null
-  clipboard.value = {
-    kind: "cut",
-    sourcePath: entry.path,
-    sourceName: entry.name,
-    ...(selectedCardId.value ? { sourceCardId: selectedCardId.value } : {}),
-    isDirectory: entry.kind === "directory",
-  }
-  feedback.value = `已剪切：${entry.name}`
-}
-
-async function pasteFromClipboard() {
-  const cb = clipboard.value
-  if (!cb || !canPasteHere()) {
-    return
-  }
-  contextMenu.value = null
-
-  const { base, ext } = splitNameExt(cb.sourceName)
-  // 剪切到同目录同名 = no-op
-  const sameDirSibling = siblingPath(cb.sourcePath, cb.sourceName)
-  const currentDirTarget = currentPath.value
-    ? `${currentPath.value}/${cb.sourceName}`
-    : cb.sourceName
-  if (cb.kind === "cut" && sameDirSibling === currentDirTarget) {
-    clipboard.value = null
-    return
-  }
-
-  // 复制: 基础名加 " - 副本"; 剪切: 保持原名, 冲突时递增
-  const targetBase = cb.kind === "copy" ? `${base} - 副本` : base
-  const targetName = uniqueName(targetBase, ext, currentEntryNames())
-  const targetPath = currentPath.value ? `${currentPath.value}/${targetName}` : targetName
-
-  try {
-    if (cb.kind === "cut") {
-      await movePlatformWorkspacePath({
-        ...(cb.sourceCardId ? { cardId: cb.sourceCardId } : {}),
-        ...(selectedCardId.value ? { targetCardId: selectedCardId.value } : {}),
-        path: cb.sourcePath,
-        targetPath,
-      })
-      clipboard.value = null
-      feedback.value = `已移动：${cb.sourceName} → ${targetName}`
+    if (renameSelection.value === "stem") {
+      const { base } = splitWorkspaceNameExtension(input.value)
+      input.setSelectionRange(0, base.length)
     } else {
-      await copyPlatformWorkspacePath({
-        ...(cb.sourceCardId ? { cardId: cb.sourceCardId } : {}),
-        ...(selectedCardId.value ? { targetCardId: selectedCardId.value } : {}),
-        path: cb.sourcePath,
-        targetPath,
-      })
-      // 复制保留 clipboard, 允许重复粘贴
-      feedback.value = `已粘贴：${targetName}`
+      input.select()
     }
-    emitWorkspaceContentChanged({ cardId: selectedCardId.value, path: targetPath })
-    await refreshDirectory()
-    if (activeSearchQuery.value) {
-      await runSearch()
-    }
-  } catch (error) {
-    feedback.value = error instanceof Error ? error.message : "无法粘贴。"
-  }
-}
-
-function onGlobalKeydown(event: KeyboardEvent) {
-  if (props.minimized) {
-    return
-  }
-  if (event.key === "Escape") {
-    contextMenu.value = null
-    cancelRename()
-    return
-  }
-
-  // 在可编辑元素内不触发资源管理器快捷键(保留浏览器原生文本操作)
-  if (isEditableKeyboardTarget(event.target)) {
-    return
-  }
-
-  if (event.key === "F2" && selectedEntry.value) {
-    event.preventDefault()
-    startRenameEntry(selectedEntry.value)
-    return
-  }
-
-  if (event.key === "Delete" && selectedEntry.value) {
-    event.preventDefault()
-    void deleteEntry(selectedEntry.value)
-    return
-  }
-
-  const ctrl = event.ctrlKey || event.metaKey
-  if (!ctrl) {
-    return
-  }
-
-  if (event.key === "c" || event.key === "C") {
-    if (selectedEntry.value) {
-      event.preventDefault()
-      copyEntry(selectedEntry.value)
-    }
-    return
-  }
-
-  if (event.key === "x" || event.key === "X") {
-    if (selectedEntry.value) {
-      event.preventDefault()
-      cutEntry(selectedEntry.value)
-    }
-    return
-  }
-
-  if (event.key === "v" || event.key === "V") {
-    if (canPasteHere()) {
-      event.preventDefault()
-      void pasteFromClipboard()
-    }
-  }
-}
-
-function isEditableKeyboardTarget(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-  return target.isContentEditable
-    || target.tagName === "INPUT"
-    || target.tagName === "TEXTAREA"
-    || target.tagName === "SELECT"
-}
-
-function onWorkspaceContentChanged(event: Event) {
-  if (!isWorkspaceContentChangedEvent(event) || event.detail.cardId !== selectedCardId.value) {
-    return
-  }
-
-  feedback.value = `已更新：${event.detail.path}`
-  void refreshDirectory()
-  if (activeSearchQuery.value) {
-    void runSearch()
-  }
-}
-
-watch(() => route.fullPath, () => {
-  if (route.name !== "workspace") {
-    return
-  }
-  syncStateFromRoute()
-  if (selectedCardId.value || currentPath.value === ".tsian" || currentPath.value.startsWith(".tsian/")) {
-    void refreshDirectory()
-  }
-}, { immediate: true })
-
-onMounted(() => {
-  window.addEventListener("keydown", onGlobalKeydown)
-  window.addEventListener(WORKSPACE_CONTENT_CHANGED_EVENT, onWorkspaceContentChanged)
-  void refreshRoots()
+  })
 })
 
-onBeforeUnmount(() => {
-  window.removeEventListener("keydown", onGlobalKeydown)
-  window.removeEventListener(WORKSPACE_CONTENT_CHANGED_EVENT, onWorkspaceContentChanged)
-})
+onMounted(() => window.addEventListener("keydown", onGlobalKeydown))
+onBeforeUnmount(() => window.removeEventListener("keydown", onGlobalKeydown))
 </script>
 
 <style scoped>

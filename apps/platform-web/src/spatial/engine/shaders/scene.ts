@@ -32,6 +32,28 @@ void main() {
 }
 `)
 
+/** Renderer-owned media uses the owning Source's full physical surface and
+ * remaps the shared mesh into one normalized Source-local sub-rectangle. */
+export const DYNAMIC_MEDIA_VERTEX_SHADER = composePhysicalSurfaceVertexShader(`
+in vec2 a_local;
+in vec2 a_uv;
+uniform vec4 u_media_rect;
+out vec2 v_uv;
+out float v_depth;
+`, `
+void main() {
+  vec2 unit = a_local * 0.5 + 0.5;
+  vec2 sourceUnit = u_media_rect.xy + unit * u_media_rect.zw;
+  vec2 sourceLocal = sourceUnit * 2.0 - 1.0;
+  vec2 halfSize = u_source_rect.zw * 0.5;
+  vec3 localSurface = spatialLocalSurface(sourceLocal, halfSize);
+  SpatialProjectedVertex projected = spatialProjectSurface(localSurface, 0.0);
+  gl_Position = spatialClipPosition(projected);
+  v_uv = a_uv;
+  v_depth = projected.cameraSpace.z;
+}
+`)
+
 /** Optional product-window aperture transform; stable Sources use the shader above. */
 export const SURFACE_PRESENTATION_VERTEX_SHADER = composePhysicalSurfaceVertexShader(`
 in vec2 a_local;

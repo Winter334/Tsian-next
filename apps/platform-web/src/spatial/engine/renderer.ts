@@ -1,4 +1,8 @@
 import type { HtmlInCanvasCapabilities } from "./capabilities"
+import {
+  SpatialDynamicMediaTextureRegistry,
+  type SpatialDynamicMediaRecord,
+} from "./dynamic-media"
 import { ElementTextureRegistry, type TextureUploadBatch } from "./element-textures"
 import {
   computeEnvironmentCoverUvScale,
@@ -51,6 +55,7 @@ import {
 } from "./shaders/environment"
 import {
   FOREGROUND_FRAGMENT_SHADER,
+  DYNAMIC_MEDIA_VERTEX_SHADER,
   SCREEN_VERTEX_SHADER,
   SOURCE_FRAGMENT_SHADER,
   SOURCE_PRESENTATION_FRAGMENT_SHADER,
@@ -71,6 +76,7 @@ interface RendererPrograms {
   readonly environmentComposite: WebGLProgram | null
   readonly environmentDecoration: WebGLProgram | null
   readonly source: WebGLProgram
+  readonly dynamicMedia: WebGLProgram | null
   readonly sourcePresentation: WebGLProgram | null
   readonly sourceRippleMask: WebGLProgram | null
   readonly sourceRippleParticles: WebGLProgram | null
@@ -171,6 +177,7 @@ function createSurfaceMesh(): Float32Array {
 
 export class SpatialRenderer {
   readonly elementTextures: ElementTextureRegistry
+  readonly dynamicMediaTextures: SpatialDynamicMediaTextureRegistry
   private readonly resources: ContextResourceRegistry
   private readonly environmentBase: EnvironmentBaseProvider
   private readonly environmentEffects: EnvironmentPostProcessingOptions
@@ -200,6 +207,7 @@ export class SpatialRenderer {
       (count) => this.metrics.recordDisposal(count),
     )
     this.elementTextures = new ElementTextureRegistry(capabilities, metrics)
+    this.dynamicMediaTextures = new SpatialDynamicMediaTextureRegistry(capabilities.gl, metrics)
     this.environmentBase = options.environmentBase ?? new StaticProceduralEnvironmentBase()
     this.environmentEffects = options.environmentEffects ?? DEFAULT_ENVIRONMENT_POST_PROCESSING
     this.windowPresentation = options.windowPresentation
@@ -236,6 +244,14 @@ export class SpatialRenderer {
 
   environmentFrameReason(): "animated-background" | null {
     return this.environmentBase.frameDemand === "animated" ? "animated-background" : null
+  }
+
+  syncDynamicMedia(records: readonly SpatialDynamicMediaRecord[]): void {
+    this.dynamicMediaTextures.sync(records)
+  }
+
+  supportsDynamicMedia(): boolean {
+    return Boolean(this.programs?.dynamicMedia)
   }
 
   supportsWindowPresentation(): boolean {
@@ -281,6 +297,7 @@ export class SpatialRenderer {
     }
 
     const uploadBatch = this.elementTextures.uploadDirty(this.effectiveRasterScale)
+    if (programs.dynamicMedia) this.dynamicMediaTextures.uploadReady()
     const passes: SpatialRenderPass[] = []
     const canvasRect = canvas.getBoundingClientRect()
     const environmentFrame = this.drawableEnvironmentFrame(this.environmentBase.frame(state.time))
@@ -377,12 +394,18 @@ export class SpatialRenderer {
     // before windows so painter order matches their Source z contract.
     for (const surface of shell) {
       this.drawTexturedSurface(programs.source, surface, canvasRect, state)
+      if (programs.dynamicMedia) {
+        this.drawDynamicMediaSurfaces(programs.dynamicMedia, surface, canvasRect, state)
+      }
     }
     passes.push("surface-shell")
 
     if (this.windowStyle === "diagnostic") {
       for (const surface of windows) {
         this.drawTexturedSurface(programs.source, surface, canvasRect, state)
+        if (programs.dynamicMedia) {
+          this.drawDynamicMediaSurfaces(programs.dynamicMedia, surface, canvasRect, state)
+        }
       }
       passes.push("surface-windows")
     } else {
@@ -443,6 +466,9 @@ export class SpatialRenderer {
           )
         } else {
           this.drawTexturedSurface(programs.source, surface, canvasRect, state)
+          if (programs.dynamicMedia) {
+            this.drawDynamicMediaSurfaces(programs.dynamicMedia, surface, canvasRect, state)
+          }
         }
       }
       passes.push("surface-windows")
@@ -458,6 +484,7 @@ export class SpatialRenderer {
     this.suspended = true
     this.resources.abandonForContextLoss()
     this.elementTextures.abandonForContextLoss()
+    this.dynamicMediaTextures.abandonForContextLoss()
     this.programs = null
     this.quadBuffer = null
     this.surfaceBuffer = null
@@ -483,6 +510,7 @@ export class SpatialRenderer {
         return initialized
       }
       this.elementTextures.restoreContext(capabilities)
+      this.dynamicMediaTextures.restoreContext(capabilities.gl)
       const rect = capabilities.canvas.getBoundingClientRect()
       this.resize(rect.width, rect.height, requestedDpr)
       return { ok: true, renderer: this }
@@ -501,6 +529,7 @@ export class SpatialRenderer {
   dispose(): void {
     if (this.disposed) return
     this.elementTextures.dispose()
+    this.dynamicMediaTextures.dispose()
     this.resources.releaseAll()
     this.programs = null
     this.quadBuffer = null
@@ -538,6 +567,7 @@ export class SpatialRenderer {
     const foreground = createGlProgram(gl, SCREEN_VERTEX_SHADER, FOREGROUND_FRAGMENT_SHADER)
     if (!foreground.ok) return { ok: false, failure: foreground }
     this.resources.trackProgram(foreground.program)
+    const dynamicMedia = this.initializeDynamicMediaProgram()
 
     const quadBuffer = gl.createBuffer()
     const surfaceBuffer = gl.createBuffer()
@@ -589,12 +619,27 @@ export class SpatialRenderer {
       environmentParticles: environmentParticles.program,
       ...environmentEffects,
       source: source.program,
+      dynamicMedia,
       sourcePresentation,
       sourceRippleMask,
       sourceRippleParticles,
       foreground: foreground.program,
     }
     return { ok: true, renderer: this }
+  }
+
+  private initializeDynamicMediaProgram(): WebGLProgram | null {
+    const { gl } = this.capabilities
+    try {
+      const result = createGlProgram(gl, DYNAMIC_MEDIA_VERTEX_SHADER, SOURCE_FRAGMENT_SHADER)
+      if (result.ok) return this.resources.trackProgram(result.program)
+      this.metrics.recordFailure(`Dynamic media disabled: ${result.message}`)
+    } catch (error) {
+      this.metrics.recordFailure(
+        `Dynamic media disabled: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    }
+    return null
   }
 
   private initializeWindowPresentationProgram(): WebGLProgram | null {
@@ -1046,6 +1091,37 @@ export class SpatialRenderer {
     })
   }
 
+  private drawDynamicMediaSurfaces(
+    program: WebGLProgram,
+    surface: RenderableSurface,
+    canvasRect: DOMRect,
+    state: SpatialRenderState,
+  ): void {
+    const { gl } = this.capabilities
+    const mediaSurfaces = this.dynamicMediaTextures.surfacesForSource(
+      surface.scene.sourceId,
+      surface.scene.rect,
+    )
+    for (const media of mediaSurfaces) {
+      this.drawSurface(program, surface.scene, canvasRect, state.parallax, () => {
+        gl.uniform4f(
+          gl.getUniformLocation(program, "u_media_rect"),
+          media.rect.left,
+          media.rect.top,
+          media.rect.width,
+          media.rect.height,
+        )
+        gl.activeTexture(gl.TEXTURE0)
+        gl.bindTexture(gl.TEXTURE_2D, media.texture)
+        gl.uniform1i(gl.getUniformLocation(program, "u_texture"), 0)
+        gl.uniform1f(gl.getUniformLocation(program, "u_depth_tint"), 0)
+        gl.uniform1f(gl.getUniformLocation(program, "u_active"), 0)
+        gl.uniform1f(gl.getUniformLocation(program, "u_transition"), 0)
+        gl.uniform1f(gl.getUniformLocation(program, "u_neutral_source"), 1)
+      })
+    }
+  }
+
   private drawPresentedSurface(
     program: WebGLProgram,
     surface: RenderableSurface,
@@ -1317,6 +1393,7 @@ export class SpatialRenderer {
 
   private cleanupFailedRestore(): void {
     this.elementTextures.releaseAfterRestoreFailure()
+    this.dynamicMediaTextures.abandonForContextLoss()
     this.resources.releaseAll()
     this.programs = null
     this.quadBuffer = null

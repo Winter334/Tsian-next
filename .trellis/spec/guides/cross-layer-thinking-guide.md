@@ -88,6 +88,12 @@ For each boundary:
 
 **Good**: Keep the input plane and Source event domains explicit. Source-local outside-pointer behavior ignores trusted plane events and acts on the router-generated synthetic event whose target is the resolved Source element.
 
+### Mistake 7: Copying Fields Across Browser Event Families
+
+**Bad**: Reuse every field from a trusted `PointerEvent` when constructing compatibility `MouseEvent`s. Fields with the same name can have different semantics; notably `PointerEvent.detail` is normally zero, while first-click `mousedown.detail` must be one.
+
+**Good**: Define and test the semantic translation at the event-family boundary. Preserve geometry/modifiers where their contracts match, but normalize compatibility click counts and any other family-specific fields explicitly.
+
 ---
 
 ## Checklist for Cross-Layer Features
@@ -107,6 +113,7 @@ After implementation:
 - [ ] For browser-rendered or captured UI, identified which layer owns every animated frame: DOM compositor, Source texture, or GPU renderer
 - [ ] Verified geometry/curvature during the transition; an animation that is correct only at its endpoints is not cross-layer correct
 - [ ] For projected input, distinguished the trusted full-screen input-plane event from the later synthetic Source-local event before running document-level outside/focus logic
+- [ ] When translating browser event families, verified same-named fields retain the destination event's semantics rather than being copied mechanically
 
 ---
 

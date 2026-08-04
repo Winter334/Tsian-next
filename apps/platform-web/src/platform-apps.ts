@@ -124,6 +124,9 @@ const DebugView = defineAsyncComponent(() => import("./views/DebugView.vue"))
 const SpatialAppMarketView = defineAsyncComponent(() => import("./spatial/apps/market/SpatialAppMarketView.vue"))
 const SpatialGameCardLibraryView = defineAsyncComponent(() => import("./spatial/apps/library/SpatialGameCardLibraryView.vue"))
 const SpatialGameCardDetailView = defineAsyncComponent(() => import("./spatial/apps/game-card-detail/SpatialGameCardDetailView.vue"))
+const SpatialWorkspaceExplorerView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceExplorerView.vue"))
+const SpatialWorkspaceEditorView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceEditorView.vue"))
+const SpatialWorkspaceMediaView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceMediaView.vue"))
 
 function presentation(
   component: Component,
@@ -168,19 +171,19 @@ export const platformAppRegistry: readonly PlatformAppDefinition[] = Object.free
     appId: "workspace-explorer", launcher: true,
     route: { name: "workspace", path: "/workspace" }, identity: { kind: "singleton" },
     label: "资源管理器", shortLabel: "资源管理器", title: "资源管理器", caption: "游戏卡内容与存档文件", icon: HardDrive,
-    ...presentation(WorkspaceExplorerView, { width: 1180, height: 720 }, { width: 720, height: 460 }, true),
+    ...presentation(WorkspaceExplorerView, { width: 1180, height: 720 }, { width: 720, height: 460 }, true, SpatialWorkspaceExplorerView),
   },
   {
     appId: "workspace-editor", launcher: false,
     route: { name: "workspace-editor", path: "/workspace/editor" }, identity: { kind: "workspace-editor" },
     label: "编辑器", shortLabel: "编辑", title: "编辑器", caption: "工作区文件", icon: FilePenLine,
-    ...presentation(WorkspaceEditorView, { width: 1040, height: 680 }, { width: 680, height: 460 }, true),
+    ...presentation(WorkspaceEditorView, { width: 1040, height: 680 }, { width: 680, height: 460 }, true, SpatialWorkspaceEditorView),
   },
   {
     appId: "workspace-media", launcher: false,
     route: { name: "workspace-media", path: "/workspace/media" }, identity: { kind: "workspace-media" },
     label: "媒体查看器", shortLabel: "媒体", title: "媒体查看器", caption: "图片 / 音频 / 视频", icon: Image,
-    ...presentation(WorkspaceMediaView, { width: 980, height: 640 }, { width: 520, height: 420 }, true),
+    ...presentation(WorkspaceMediaView, { width: 980, height: 640 }, { width: 520, height: 420 }, true, SpatialWorkspaceMediaView),
   },
   {
     appId: "studio", launcher: true,

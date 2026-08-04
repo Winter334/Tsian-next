@@ -52,15 +52,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
+import { computed, watch } from "vue"
 import { useRoute } from "vue-router"
-import {
-  inferMediaTypeFromPath,
-  isImageMediaType,
-  isAudioMediaType,
-  isVideoMediaType,
-} from "@/lib/media-type"
-import { readPlatformWorkspaceFile } from "../platform-host"
+import { useWorkspaceMediaController } from "@/controllers/workspace/use-workspace-media-controller"
 
 const props = withDefaults(defineProps<{
   cardId?: string
@@ -70,58 +64,15 @@ const props = withDefaults(defineProps<{
 })
 
 const route = useRoute()
-const loading = ref(false)
-const loadError = ref("")
-const blobUrl = ref("")
-const path = ref(props.path)
-const mediaType = computed(() => inferMediaTypeFromPath(path.value))
+const { loading, loadError, blobUrl, loadedPath: path, mediaType, isImage, isAudio, isVideo, load: loadMedia } = useWorkspaceMediaController({
+  cardId: () => props.cardId,
+  path: () => props.path,
+})
 const mediaTypeLabel = computed(() => mediaType.value)
-const isImage = computed(() => isImageMediaType(mediaType.value))
-const isAudio = computed(() => isAudioMediaType(mediaType.value))
-const isVideo = computed(() => isVideoMediaType(mediaType.value))
 
 function routeQueryString(value: unknown): string {
   return typeof value === "string" ? value : ""
 }
-
-function revokeUrl() {
-  if (blobUrl.value) {
-    URL.revokeObjectURL(blobUrl.value)
-    blobUrl.value = ""
-  }
-}
-
-async function loadMedia() {
-  revokeUrl()
-  const initialPath = props.path
-  path.value = initialPath
-  if (!initialPath) {
-    loadError.value = "文件路径不能为空。"
-    return
-  }
-
-  loading.value = true
-  loadError.value = ""
-  try {
-    const file = await readPlatformWorkspaceFile({
-      cardId: props.cardId,
-      path: initialPath,
-    })
-    if (!file.binary) {
-      loadError.value = "该文件不是可预览的媒体文件(无二进制数据)。"
-      return
-    }
-    blobUrl.value = URL.createObjectURL(file.binary)
-  } catch (error) {
-    loadError.value = error instanceof Error ? error.message : "无法打开媒体文件。"
-  } finally {
-    loading.value = false
-  }
-}
-
-watch(() => [props.cardId, props.path] as const, () => {
-  void loadMedia()
-})
 
 watch(() => route.fullPath, () => {
   // 同一组件实例复用时(route query 变化)重新加载
@@ -131,11 +82,4 @@ watch(() => route.fullPath, () => {
   }
 })
 
-onMounted(() => {
-  void loadMedia()
-})
-
-onBeforeUnmount(() => {
-  revokeUrl()
-})
 </script>

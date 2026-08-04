@@ -6,6 +6,7 @@ import {
   type HtmlInCanvasContextVariant,
 } from "./capabilities"
 import type { EnvironmentBaseProvider } from "./environment-base"
+import { SpatialDynamicMediaTracker } from "./dynamic-media"
 import type { EnvironmentPostProcessingOptions } from "./environment-effects"
 import { FrameScheduler, type FrameReason, type ScheduledFrame } from "./frame-scheduler"
 import {
@@ -204,6 +205,21 @@ function eventSample(
   }
 }
 
+/**
+ * PointerEvent.detail is normally zero. Compatibility mouse down/up/click
+ * events must still report a first-click count of one, or consumers such as
+ * CodeMirror interpret the zero as a triple-click and select the whole line.
+ */
+export function routedMouseEventDetail(
+  type: RoutedPointerEventType,
+  detail: number | undefined,
+): number {
+  if (detail !== undefined && detail > 0) return detail
+  if (type === "mousedown" || type === "mouseup" || type === "click") return 1
+  if (type === "dblclick") return 2
+  return 0
+}
+
 export class SpatialViewportController {
   private readonly metrics = new SpatialMetrics()
   private readonly ignoredElements: ReadonlySet<Element>
@@ -216,6 +232,9 @@ export class SpatialViewportController {
   private readonly presentationCapturePendingSourceIds = new Set<string>()
   private readonly readySourceIds = new Set<string>()
   private readonly sourceTextureAnimations = new SourceTextureAnimationTracker()
+  private readonly dynamicMedia = new SpatialDynamicMediaTracker({
+    requestFrame: (reason) => this.scheduler?.request(reason),
+  })
   private readonly settlingSourceTextureAnimations = new Map<string, {
     finalRequested: boolean
     expiresAt: number
@@ -346,6 +365,9 @@ export class SpatialViewportController {
   syncSources(): void {
     if (!this.renderer) return
     const current = [...this.options.canvas.querySelectorAll(":scope > [data-spatial-source]")]
+    this.dynamicMedia.setVisible(this.pageVisible && this.renderer.supportsDynamicMedia())
+    this.dynamicMedia.sync(current)
+    this.renderer.syncDynamicMedia(this.dynamicMedia.records())
     const result = this.renderer.elementTextures.synchronize(current)
     const currentIds = new Set(current.map((element) => element.getAttribute("data-spatial-source") ?? "unknown"))
     this.cancelScrollbarThumbDragsOutsideSources(currentIds)
@@ -388,6 +410,8 @@ export class SpatialViewportController {
     // Teardown gesture ownership even if the Source was already detached or
     // its renderer record disappeared before the explicit release arrived.
     this.cancelScrollbarThumbDragsForSource(sourceId)
+    this.dynamicMedia.releaseSource(sourceId)
+    this.renderer?.syncDynamicMedia(this.dynamicMedia.records())
     const source = this.sourceRoots().find((candidate) => candidate.sourceId === sourceId)
     if (!source || !this.renderer) return
     this.releasedSourceIds.add(sourceId)
@@ -409,6 +433,8 @@ export class SpatialViewportController {
     const source = this.sourceRoots().find((candidate) => candidate.sourceId === sourceId)
     if (!source || !this.renderer) return
     this.releasedSourceIds.delete(sourceId)
+    this.dynamicMedia.restoreSource(sourceId)
+    this.renderer?.syncDynamicMedia(this.dynamicMedia.records())
     let record = this.renderer.elementTextures.records()
       .find((candidate) => candidate.element === source.root)
     if (!record) {
@@ -493,6 +519,8 @@ export class SpatialViewportController {
     this.contextRestoreTimer = null
     this.cancelSourceCaptureRetryTimer()
     for (const clean of this.cleanup.splice(0)) clean()
+    this.dynamicMedia.dispose()
+    this.renderer?.syncDynamicMedia([])
     this.renderer?.dispose()
     this.renderer = null
     this.capabilities = null
@@ -962,12 +990,15 @@ export class SpatialViewportController {
         this.scheduler?.release("particles")
         this.scheduler?.release("animated-background")
         this.scheduler?.release("animated-source")
+        this.scheduler?.release("animated-media")
+        this.dynamicMedia.setVisible(false)
         this.resetParallax("document-hidden")
         this.cancelRoutedInput()
         return
       }
       if (this.distanceToParallaxTarget() > 0.0001) this.scheduler?.request("parallax")
       if (this.sourceTextureAnimations.hasAny()) this.scheduler?.request("animated-source")
+      this.dynamicMedia.setVisible(this.renderer?.supportsDynamicMedia() === true)
       this.requestAmbientFrames()
       this.scheduler?.request("dirty")
     })
@@ -979,6 +1010,7 @@ export class SpatialViewportController {
       this.cancelSourceCaptureRetryTimer()
       this.sourceCaptureRetryAttempts.clear()
       this.sourceTextureAnimations.settleAll()
+      this.dynamicMedia.setVisible(false)
       this.settlingSourceTextureAnimations.clear()
       this.scheduler?.cancel()
       // Every context-specific texture generation is now invalid. Successful
@@ -1015,6 +1047,8 @@ export class SpatialViewportController {
         ? "available"
         : "unavailable"
       this.capabilities.requestPaint()
+      this.dynamicMedia.setVisible(this.pageVisible && renderer.supportsDynamicMedia())
+      renderer.syncDynamicMedia(this.dynamicMedia.records())
       this.scheduler?.request("restore")
       this.options.onContextRestored?.()
       this.emitSnapshot()
@@ -1267,7 +1301,7 @@ export class SpatialViewportController {
       buttons: sample.buttons,
       clientX: sample.clientX,
       clientY: sample.clientY,
-      detail: sample.detail ?? 1,
+      detail: routedMouseEventDetail(type, sample.detail),
       relatedTarget,
       altKey: sample.altKey,
       ctrlKey: sample.ctrlKey,
@@ -1292,6 +1326,7 @@ export class SpatialViewportController {
     if (type.startsWith("pointer") && typeof view.PointerEvent === "function") {
       const dispatched = dispatch(new view.PointerEvent(type, {
         ...base,
+        detail: sample.detail ?? 0,
         pointerId: sample.pointerId,
         pointerType: sample.pointerType,
         isPrimary: sample.isPrimary,

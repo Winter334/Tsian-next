@@ -18,6 +18,7 @@ const props = defineProps<{
   path?: string
   mediaType?: string
   readonly?: boolean
+  variant?: "retro" | "spatial"
 }>()
 
 const emit = defineEmits<{
@@ -27,13 +28,14 @@ const emit = defineEmits<{
 const editorRoot = ref<HTMLElement | null>(null)
 const languageCompartment = new Compartment()
 const editableCompartment = new Compartment()
+const themeCompartment = new Compartment()
 let editorView: EditorView | null = null
 let applyingExternalUpdate = false
 
 const normalizedPath = computed(() => props.path?.toLowerCase() ?? "")
 const normalizedMediaType = computed(() => props.mediaType?.toLowerCase() ?? "")
 
-const editorTheme = EditorView.theme({
+const retroTheme = EditorView.theme({
   "&": {
     height: "100%",
     backgroundColor: "#101411",
@@ -67,6 +69,29 @@ const editorTheme = EditorView.theme({
     outline: "1px solid rgba(243, 197, 109, 0.72)",
   },
 }, { dark: true })
+
+const spatialTheme = EditorView.theme({
+  "&": {
+    height: "100%",
+    backgroundColor: "var(--spatial-app-surface)",
+    color: "var(--spatial-window-ink)",
+    fontSize: "12px",
+  },
+  ".cm-scroller": { fontFamily: "\"JetBrains Mono\", ui-monospace, SFMono-Regular, Menlo, monospace", lineHeight: "1.62" },
+  ".cm-content": { caretColor: "var(--spatial-window-accent)", padding: "12px 0" },
+  ".cm-gutters": {
+    backgroundColor: "var(--spatial-app-surface-muted)",
+    color: "var(--spatial-app-muted)",
+    borderRight: "1px solid var(--spatial-app-border)",
+  },
+  ".cm-activeLine": { backgroundColor: "var(--spatial-app-surface-strong)" },
+  ".cm-activeLineGutter": { backgroundColor: "var(--spatial-app-surface-strong)", color: "var(--spatial-window-accent)" },
+  ".cm-selectionBackground, &.cm-focused .cm-selectionBackground": { backgroundColor: "color-mix(in srgb, var(--spatial-window-accent) 24%, transparent)" },
+}, { dark: false })
+
+function themeExtension(): Extension {
+  return props.variant === "spatial" ? spatialTheme : retroTheme
+}
 
 function languageExtension(): Extension {
   const path = normalizedPath.value
@@ -154,7 +179,7 @@ function createEditor() {
     doc: props.modelValue,
     extensions: [
       basicSetup,
-      editorTheme,
+      themeCompartment.of(themeExtension()),
       languageCompartment.of(languageExtension()),
       editableCompartment.of(editableExtensions()),
       EditorView.lineWrapping,
@@ -200,6 +225,10 @@ watch(() => props.readonly, () => {
   editorView?.dispatch({
     effects: editableCompartment.reconfigure(editableExtensions()),
   })
+})
+
+watch(() => props.variant, () => {
+  editorView?.dispatch({ effects: themeCompartment.reconfigure(themeExtension()) })
 })
 
 onMounted(() => {
