@@ -609,3 +609,24 @@ Separated Agent, UI, and audit projections; introduced shared runtime environmen
 ### Status
 
 [OK] **Completed**
+
+
+## Session 177: Spatial workspace surfaces
+
+**Date**: 2026-08-04
+**Task**: Spatial workspace surfaces
+**Branch**: `master`
+
+### Summary
+
+Implemented and verified Spatial Explorer, Editor, and Media surfaces with shared workspace controllers, dynamic video textures, and the projected CodeMirror mouse-detail fix; user product testing passed.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c303f9e` | (see git log) |
+
+### Status
+
+[OK] **Completed**
