@@ -630,3 +630,24 @@ Implemented and verified Spatial Explorer, Editor, and Media surfaces with share
 ### Status
 
 [OK] **Completed**
+
+
+## Session 178: Spatial Confirm presentation
+
+**Date**: 2026-08-04
+**Task**: Spatial Confirm presentation
+**Branch**: `master`
+
+### Summary
+
+完成并验收 Spatial Confirm：Canvas overlay z-order、横向 GPU 开关动画、关闭后延迟 resolve、input-only 模态拦截层，以及黑屏闪烁修复；完整 Spatial 回归、类型检查和 web 构建通过。任务保留 in_progress，后续继续 Toast/Dialog/Splash/Play。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ba1a85f` | (see git log) |
+
+### Status
+
+[OK] **Completed**
