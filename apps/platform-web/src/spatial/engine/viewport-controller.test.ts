@@ -3,6 +3,7 @@ import type { SpatialSourceRoot } from "./input/target-resolver"
 import {
   routedMouseEventDetail,
   sourcesAvailableForProjectedInput,
+  sourcesAvailableForTextureCapture,
 } from "./viewport-controller"
 
 describe("Spatial viewport source availability", () => {
@@ -16,6 +17,27 @@ describe("Spatial viewport source availability", () => {
       sources,
       new Set(["window:front"]),
     ).map((source) => source.sourceId)).toEqual(["shell:launcher", "window:behind"])
+  })
+
+  it("keeps input-only Sources in projected input while excluding them from texture capture", () => {
+    const drawable = {
+      getAttribute: (name: string) => name === "data-spatial-source" ? "global:confirm" : null,
+    } as Element
+    const inputOnly = {
+      getAttribute: (name: string) => {
+        if (name === "data-spatial-source") return "global:modal-shield"
+        if (name === "data-spatial-render") return "none"
+        return null
+      },
+    } as Element
+    const sources = [drawable, inputOnly].map((root) => ({
+      sourceId: root.getAttribute("data-spatial-source") ?? "unknown",
+      root,
+    })) satisfies SpatialSourceRoot[]
+
+    expect(sourcesAvailableForProjectedInput(sources, new Set()).map(({ sourceId }) => sourceId))
+      .toEqual(["global:confirm", "global:modal-shield"])
+    expect(sourcesAvailableForTextureCapture([drawable, inputOnly])).toEqual([drawable])
   })
 })
 

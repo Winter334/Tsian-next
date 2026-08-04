@@ -124,6 +124,16 @@ export function sourcesAvailableForProjectedInput(
   return sources.filter((source) => !unavailableSourceIds.has(source.sourceId))
 }
 
+/**
+ * Input-only Sources retain their DOM geometry for inverse-projected hit
+ * testing, but never allocate or upload a GPU texture.
+ */
+export function sourcesAvailableForTextureCapture(
+  sources: readonly Element[],
+): Element[] {
+  return sources.filter((source) => source.getAttribute("data-spatial-render") !== "none")
+}
+
 interface ResolvedInput {
   readonly target: Element | null
   readonly source: SceneSourceSurface | null
@@ -365,18 +375,22 @@ export class SpatialViewportController {
   syncSources(): void {
     if (!this.renderer) return
     const current = [...this.options.canvas.querySelectorAll(":scope > [data-spatial-source]")]
+    const drawable = sourcesAvailableForTextureCapture(current)
     this.dynamicMedia.setVisible(this.pageVisible && this.renderer.supportsDynamicMedia())
-    this.dynamicMedia.sync(current)
+    this.dynamicMedia.sync(drawable)
     this.renderer.syncDynamicMedia(this.dynamicMedia.records())
-    const result = this.renderer.elementTextures.synchronize(current)
+    const result = this.renderer.elementTextures.synchronize(drawable)
     const currentIds = new Set(current.map((element) => element.getAttribute("data-spatial-source") ?? "unknown"))
+    const drawableIds = new Set(drawable.map((element) => (
+      element.getAttribute("data-spatial-source") ?? "unknown"
+    )))
     this.cancelScrollbarThumbDragsOutsideSources(currentIds)
-    this.sourceTextureAnimations.retain(currentIds)
+    this.sourceTextureAnimations.retain(drawableIds)
     for (const sourceId of this.settlingSourceTextureAnimations.keys()) {
-      if (!currentIds.has(sourceId)) this.settlingSourceTextureAnimations.delete(sourceId)
+      if (!drawableIds.has(sourceId)) this.settlingSourceTextureAnimations.delete(sourceId)
     }
     for (const sourceId of this.releasedSourceIds) {
-      const source = current.find((element) => element.getAttribute("data-spatial-source") === sourceId)
+      const source = drawable.find((element) => element.getAttribute("data-spatial-source") === sourceId)
       if (!source) {
         this.releasedSourceIds.delete(sourceId)
         continue
@@ -389,13 +403,13 @@ export class SpatialViewportController {
       if (!currentIds.has(sourceId)) this.inputUnavailableSourceIds.delete(sourceId)
     }
     for (const sourceId of this.restoringSourceIds) {
-      if (!currentIds.has(sourceId)) this.restoringSourceIds.delete(sourceId)
+      if (!drawableIds.has(sourceId)) this.restoringSourceIds.delete(sourceId)
     }
     for (const sourceId of this.readySourceIds) {
-      if (!currentIds.has(sourceId)) this.readySourceIds.delete(sourceId)
+      if (!drawableIds.has(sourceId)) this.readySourceIds.delete(sourceId)
     }
     for (const sourceId of this.sourceCaptureRetryAttempts.keys()) {
-      if (!currentIds.has(sourceId)) this.sourceCaptureRetryAttempts.delete(sourceId)
+      if (!drawableIds.has(sourceId)) this.sourceCaptureRetryAttempts.delete(sourceId)
     }
     if (result.ineligible.length > 0) {
       const reasons = result.ineligible.map(({ reason }) => reason).join(", ")
@@ -976,7 +990,7 @@ export class SpatialViewportController {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["class", "hidden", "style"],
+        attributeFilter: ["class", "hidden", "style", "data-spatial-render"],
       })
     }
 

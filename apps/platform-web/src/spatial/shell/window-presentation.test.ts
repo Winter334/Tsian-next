@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest"
 import { sourcePresentationBlocksInput } from "../engine/source-presentation"
+import {
+  SPATIAL_CONFIRM_PANEL_PRESENTATION_ID,
+  SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+} from "./spatial-confirm"
 import { SpatialWindowPresentationController } from "./window-presentation"
 
 describe("SpatialWindowPresentationController", () => {
@@ -15,6 +19,50 @@ describe("SpatialWindowPresentationController", () => {
     expect(presentation.advance(500).snapshots[0]).toMatchObject({ phase: "visible", progress: 1 })
     expect(presentation.mount("library")).toBe(false)
     expect(presentation.sourceReady("library", 600, true)).toEqual([])
+  })
+
+  it("retains custom Source presentation metadata while windows keep vertical defaults", () => {
+    const presentation = new SpatialWindowPresentationController()
+    presentation.mount("library")
+    presentation.mount(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, {
+      sourceId: SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+      apertureAxis: "horizontal",
+    })
+
+    expect(presentation.snapshots()).toEqual([
+      expect.objectContaining({
+        sourceId: "window:library",
+        apertureAxis: "vertical",
+      }),
+      expect.objectContaining({
+        sourceId: SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+        apertureAxis: "horizontal",
+      }),
+    ])
+  })
+
+  it("keeps the modal panel through its closing terminal frame", () => {
+    const presentation = new SpatialWindowPresentationController({ openMs: 400, closeMs: 300 })
+    presentation.mount(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, {
+      sourceId: SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+      apertureAxis: "horizontal",
+    })
+    presentation.sourceReady(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, 100, true)
+    expect(presentation.advance(500).snapshots.every(({ phase }) => phase === "visible")).toBe(true)
+
+    presentation.beginGuard(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID)
+    presentation.startClosing(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, 600, true)
+    expect(presentation.advance(750).snapshots[0].progress).toBeGreaterThan(0)
+
+    const terminal = presentation.advance(900)
+    expect(terminal.events).toEqual([
+      { kind: "close-ready", windowId: SPATIAL_CONFIRM_PANEL_PRESENTATION_ID },
+    ])
+    expect(terminal.snapshots).toEqual([
+      expect.objectContaining({ sourceId: SPATIAL_CONFIRM_PANEL_SOURCE_ID, phase: "closing", progress: 0 }),
+    ])
+    expect(presentation.completeClose(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID)).toBe(true)
+    expect(presentation.snapshots()).toHaveLength(0)
   })
 
   it("keeps guard veto stable and emits close completion exactly once", () => {

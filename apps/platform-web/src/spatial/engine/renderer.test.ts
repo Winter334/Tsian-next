@@ -197,6 +197,15 @@ function registerCompositionSources(renderer: SpatialRenderer, canvas: HTMLCanva
   }))
 }
 
+function registerOverlaySource(renderer: SpatialRenderer, canvas: HTMLCanvasElement): void {
+  renderer.elementTextures.register(createSource(canvas, {
+    "data-spatial-source": "global:confirm",
+    "data-spatial-layer": "overlay",
+    "data-spatial-z": "1000000",
+    "data-spatial-scale": "1",
+  }))
+}
+
 describe("SpatialRenderer", () => {
   it("uploads decoded video separately and maps it into the owning Source sub-surface", () => {
     const canvas = createCanvas()
@@ -441,6 +450,108 @@ describe("SpatialRenderer", () => {
       .toEqual([["u_neutral_source", 1], ["u_neutral_source", 1]])
   })
 
+  it("composes explicit overlay Sources after windows and foreground", () => {
+    const canvas = createCanvas()
+    const harness = createGlHarness()
+    const created = SpatialRenderer.create(
+      createCapabilities(canvas, harness.gl),
+      new SpatialMetrics(),
+      {
+        environmentBase: new TransparentEnvironmentBase(),
+        windowStyle: "flat-neutral",
+      },
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    registerCompositionSources(created.renderer, canvas)
+    registerOverlaySource(created.renderer, canvas)
+
+    const report = created.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+    })
+
+    expect(report.passes).toEqual([
+      "environment-base",
+      "environment-particles",
+      "surface-shell",
+      "surface-windows",
+      "surface-foreground",
+      "surface-overlays",
+    ])
+    expect(harness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+    ])
+  })
+
+  it("capture-gates overlays and animates their aperture on the requested horizontal axis", () => {
+    const canvas = createCanvas()
+    const harness = createGlHarness()
+    const created = SpatialRenderer.create(
+      createCapabilities(canvas, harness.gl),
+      new SpatialMetrics(),
+      {
+        environmentBase: new TransparentEnvironmentBase(),
+        windowStyle: "flat-neutral",
+        windowPresentation: {
+          ...DEFAULT_WINDOW_PRESENTATION_RENDER_OPTIONS,
+          enabled: true,
+        },
+      },
+    )
+    expect(created.ok).toBe(true)
+    if (!created.ok) return
+    registerCompositionSources(created.renderer, canvas)
+    registerOverlaySource(created.renderer, canvas)
+
+    const capturing = created.renderer.render({
+      time: 0,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+      sourcePresentations: [{
+        sourceId: "global:confirm",
+        phase: "capturing-open",
+        progress: 0,
+        apertureAxis: "horizontal",
+      }],
+    })
+    expect(capturing.passes[capturing.passes.length - 1]).toBe("surface-overlays")
+    expect(harness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+    ])
+
+    harness.drawCounts.length = 0
+    harness.uniform1fCalls.length = 0
+    created.renderer.render({
+      time: 100,
+      parallax: { x: 0, y: 0 },
+      transitionStrength: 0,
+      sourcePresentations: [{
+        sourceId: "global:confirm",
+        phase: "opening",
+        progress: 0.5,
+        apertureAxis: "horizontal",
+      }],
+    })
+    expect(harness.drawCounts).toEqual([
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+      6,
+      SURFACE_MESH_COLUMNS * SURFACE_MESH_ROWS * 6,
+    ])
+    expect(harness.uniform1fCalls).toContainEqual(["u_presentation_progress", 0.5])
+    expect(harness.uniform1fCalls).toContainEqual(["u_presentation_axis", 1])
+  })
+
   it("hides capturing product windows and uses aperture uniforms only while animated", () => {
     const canvas = createCanvas()
     const harness = createGlHarness()
@@ -496,6 +607,7 @@ describe("SpatialRenderer", () => {
       6,
     ])
     expect(harness.uniform1fCalls).toContainEqual(["u_presentation_progress", 0.5])
+    expect(harness.uniform1fCalls).toContainEqual(["u_presentation_axis", 0])
     expect(harness.uniform1fCalls.filter(([name]) => name === "u_neutral_source"))
       .toEqual([["u_neutral_source", 1]])
 

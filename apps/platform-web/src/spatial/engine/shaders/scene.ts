@@ -60,6 +60,7 @@ in vec2 a_local;
 in vec2 a_uv;
 uniform float u_presentation_progress;
 uniform float u_presentation_aperture_scale;
+uniform float u_presentation_axis;
 uniform float u_presentation_curve_depth_energy;
 uniform float u_presentation_depth_energy;
 out vec2 v_uv;
@@ -70,9 +71,16 @@ void main() {
   float progress = clamp(u_presentation_progress, 0.0, 1.0);
   float apertureScale = mix(u_presentation_aperture_scale, 1.0, progress);
   float transitionEnergy = 1.0 - progress;
-  float apertureProfile = 1.0 - a_local.x * a_local.x;
+  float horizontalAxis = step(0.5, u_presentation_axis);
+  float profileCoordinate = mix(a_local.x, a_local.y, horizontalAxis);
+  float apertureProfile = 1.0 - profileCoordinate * profileCoordinate;
   vec2 halfSize = u_source_rect.zw * 0.5;
-  vec2 apertureLocal = vec2(a_local.x, a_local.y * apertureScale);
+  vec2 closedScale = mix(
+    vec2(1.0, apertureScale),
+    vec2(apertureScale, 1.0),
+    horizontalAxis
+  );
+  vec2 apertureLocal = a_local * closedScale;
   vec3 localSurface = spatialLocalSurface(apertureLocal, halfSize);
   localSurface.z += u_presentation_curve_depth_energy
     * transitionEnergy * apertureProfile;
@@ -123,6 +131,7 @@ precision highp float;
 uniform sampler2D u_texture;
 uniform vec2 u_source_size;
 uniform float u_presentation_direction;
+uniform float u_presentation_axis;
 uniform float u_presentation_edge_energy;
 uniform float u_presentation_chromatic_px;
 in vec2 v_uv;
@@ -140,7 +149,8 @@ void main() {
   float blue = texture(u_texture, v_uv - vec2(separation, 0.0)).b;
   vec3 sourceRgb = vec3(red, center.g, blue);
 
-  float boundaryDistance = min(v_uv.y, 1.0 - v_uv.y);
+  float boundaryCoordinate = mix(v_uv.y, v_uv.x, step(0.5, u_presentation_axis));
+  float boundaryDistance = min(boundaryCoordinate, 1.0 - boundaryCoordinate);
   float boundary = 1.0 - smoothstep(0.0, 0.045, boundaryDistance);
   float edgeEnergy = boundary * transitionEnergy * u_presentation_edge_energy;
   vec3 warmWhite = vec3(1.0, 0.965, 0.91);

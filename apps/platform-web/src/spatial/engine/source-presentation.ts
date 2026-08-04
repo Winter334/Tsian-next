@@ -12,6 +12,7 @@ export type SpatialSourcePresentationPhase =
   | "restoring"
 
 export type SpatialSourcePresentationEffect = "stable" | "aperture" | "particle-ripple"
+export type SpatialSourcePresentationAxis = "vertical" | "horizontal"
 
 export interface SpatialSourcePresentationSnapshot {
   readonly sourceId: string
@@ -24,6 +25,8 @@ export interface SpatialSourcePresentationSnapshot {
   readonly effectId?: number
   /** Immutable Source-local origin used by particle-ripple presentation. */
   readonly originUv?: Readonly<SpatialPoint>
+  /** Aperture collapse axis. Product windows default to vertical. */
+  readonly apertureAxis?: SpatialSourcePresentationAxis
 }
 
 export interface SpatialWindowPresentationRenderOptions {

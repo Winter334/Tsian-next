@@ -23,6 +23,7 @@ export interface SceneSourceSurface {
   readonly parallaxFactor: number
   readonly pose: SpatialSurfacePose
   readonly window: boolean
+  readonly overlay: boolean
   readonly active: boolean
 }
 
@@ -85,6 +86,7 @@ export function sceneSourceForElement(
     parallaxFactor: numberAttribute(root, "data-spatial-parallax-factor", 1),
     pose: surfacePoseForElement(root),
     window: sourceId.startsWith("window:"),
+    overlay: root.getAttribute("data-spatial-layer") === "overlay",
     active: root.getAttribute("data-spatial-window-active") === "true",
   }
 }

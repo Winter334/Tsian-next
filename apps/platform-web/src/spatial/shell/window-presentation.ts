@@ -1,6 +1,7 @@
 import type { SpatialPoint } from "../engine/projection"
 import type {
   SpatialSourcePresentationEffect,
+  SpatialSourcePresentationAxis,
   SpatialSourcePresentationPhase,
   SpatialSourcePresentationSnapshot,
   SpatialWindowPresentationRenderOptions,
@@ -50,6 +51,7 @@ export interface SpatialWindowPresentationFrame {
 interface SpatialWindowPresentationEntry {
   readonly windowId: string
   readonly sourceId: string
+  readonly apertureAxis: SpatialSourcePresentationAxis
   phase: SpatialSourcePresentationPhase
   effect: SpatialSourcePresentationEffect
   effectId: number
@@ -59,6 +61,11 @@ interface SpatialWindowPresentationEntry {
   progress: number
   completionPending: boolean
   restoreAnimationAllowed: boolean
+}
+
+export interface SpatialWindowPresentationMountOptions {
+  readonly sourceId?: string
+  readonly apertureAxis?: SpatialSourcePresentationAxis
 }
 
 function clampUnit(value: number): number {
@@ -93,11 +100,12 @@ export class SpatialWindowPresentationController {
     })
   }
 
-  mount(windowId: string): boolean {
+  mount(windowId: string, options: SpatialWindowPresentationMountOptions = {}): boolean {
     if (this.entries.has(windowId)) return false
     this.entries.set(windowId, {
       windowId,
-      sourceId: `window:${windowId}`,
+      sourceId: options.sourceId ?? `window:${windowId}`,
+      apertureAxis: options.apertureAxis ?? "vertical",
       phase: "capturing-open",
       effect: "aperture",
       effectId: this.nextEffectId(),
@@ -346,6 +354,7 @@ export class SpatialWindowPresentationController {
       effect: entry.effect,
       effectId: entry.effectId,
       originUv: entry.originUv,
+      apertureAxis: entry.apertureAxis,
     }))
   }
 

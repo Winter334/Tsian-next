@@ -27,6 +27,7 @@ function source(
     pose,
     root: {} as Element,
     window: true,
+    overlay: false,
     active: false,
   }
 }
@@ -93,6 +94,25 @@ describe("spatial scene geometry", () => {
     expect(sceneSourceForElement(root).active).toBe(false)
     attributes.set("data-spatial-window-active", "true")
     expect(sceneSourceForElement(root).active).toBe(true)
+  })
+
+  it("classifies explicit overlay Sources independently from shell and window Sources", () => {
+    const attributes = new Map<string, string>([
+      ["data-spatial-source", "global:confirm"],
+      ["data-spatial-layer", "overlay"],
+      ["data-spatial-z", "1000000"],
+    ])
+    const root = {
+      getAttribute: (name: string) => attributes.get(name) ?? null,
+      getBoundingClientRect: () => ({ left: 280, top: 180, width: 480, height: 260 }),
+    } as unknown as Element
+
+    expect(sceneSourceForElement(root)).toMatchObject({
+      sourceId: "global:confirm",
+      zIndex: 1_000_000,
+      window: false,
+      overlay: true,
+    })
   })
 
   it("uses the default pose when a Source omits optional pose metadata", () => {

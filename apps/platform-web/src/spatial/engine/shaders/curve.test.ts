@@ -45,13 +45,17 @@ describe("per-surface curve shader geometry", () => {
   it("keeps curved-aperture geometry and edge treatment isolated to transition shaders", () => {
     expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("u_presentation_progress")
     expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("u_presentation_aperture_scale")
-    expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("a_local.y * apertureScale")
+    expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("u_presentation_axis")
+    expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("vec2(1.0, apertureScale)")
+    expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("vec2(apertureScale, 1.0)")
+    expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("a_local * closedScale")
     expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("u_presentation_curve_depth_energy")
     expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("u_presentation_depth_energy")
     expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("spatialProjectSurface")
     expect(SURFACE_PRESENTATION_VERTEX_SHADER).toContain("mix(u_presentation_aperture_scale, 1.0, progress)")
     expect(SOURCE_PRESENTATION_FRAGMENT_SHADER).toContain("u_presentation_edge_energy")
     expect(SOURCE_PRESENTATION_FRAGMENT_SHADER).toContain("u_presentation_chromatic_px")
+    expect(SOURCE_PRESENTATION_FRAGMENT_SHADER).toContain("u_presentation_axis")
     expect(SOURCE_PRESENTATION_FRAGMENT_SHADER).toContain("warmWhite")
     expect(SOURCE_PRESENTATION_FRAGMENT_SHADER).toContain("paleRed")
     expect(SOURCE_PRESENTATION_FRAGMENT_SHADER).toContain(

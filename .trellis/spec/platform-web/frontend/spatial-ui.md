@@ -84,6 +84,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Upload during `paint` sees the current snapshot; a later upload may see the previous snapshot. `requestPaint()` is one-shot and an empty changed list only authorizes already-dirty initial/restore sources.
 - Product render order is fixed: WebGL-owned wallpaper + particles into the bounded environment target; environment-only Bloom/composite to the default framebuffer; GPU decoration ring; sharp low-z clock Source; Dock Sources; independent window Sources back to front; foreground markers. No Source texture may enter an environment target or global post-process.
 - Source input order is the reverse of painter order by the same scene z contract: highest-z windows resolve first, then lower-z shell background Sources. A Source that is visually occluded by a window must not steal the projected hit. Keep pointer capture bound to the selected Source/pose after pointer-down.
+- A direct Canvas Source marked `data-spatial-render="none"` is input-only: keep it in Source geometry, projected hit resolution and z-order, but filter it out before dynamic-media discovery and `ElementTextureRegistry.synchronize()`. It must allocate, upload and draw no texture. Use this narrow escape for invisible modal input sinks; CSS transparency alone is insufficient because a full-screen transparent element snapshot can transiently upload or composite as black in the target Chromium implementation. `data-spatial-input="none"` is the inverse contract (drawable but not interactive) and must not be substituted.
 - Projected activation follows browser cancellation boundaries: canceling routed `pointerdown` suppresses activation; canceling only compatibility `mousedown` suppresses its focus default but still permits the later click and remains visible in delivery diagnostics. Routed cancellation must be re-entrant and release logical/browser capture exactly once.
 - Compatibility mouse events normalize event-family semantics instead of copying every `PointerEvent` field verbatim. Browser `PointerEvent.detail` is normally `0`, while first-click `mousedown` / `mouseup` / `click` must expose `detail=1`; otherwise CodeMirror treats zero as a triple-click, selects the whole line, and the next typed character replaces it. Preserve positive click counts, use `2` for routed `dblclick`, and keep move/hover/context/wheel detail at `0`.
 - Projected native scrollbar dragging is limited to real layout gutters and the reconstructed thumb. Derive track geometry from the element border/client boxes in Source-local client coordinates, reject overlay/no-gutter, disabled/non-overflowing, invalid, track-only, and RTL-horizontal cases explicitly, and keep Chromium scrollbar width plus arrow-button removal aligned with that geometry. A captured thumb drag clamps and emits scroll only on change, dirties only its owning Source, requests a fresh paint, never clicks on release, and is canceled by pointer/source/controller teardown.
@@ -136,6 +137,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 | Effect shader or framebuffer failure | Disable optional post-processing and use the direct environment path |
 | Source omits pose metadata | Use `DEFAULT_SURFACE_POSE`; omitted attributes never become numeric zero |
 | Window overlaps a lower-z shell Source | Draw and resolve input for the window first visually/front-to-back; the shell Source neither overlays nor steals the hit |
+| Input-only Source is added or removed | Preserve its projected geometry and z-order while texture count, uploads and renderer surfaces remain unchanged |
 | Initial window Source upload fails transiently | Keep `capturing-open`, request a fresh paint snapshot, and retry without drawing a full or empty window |
 | Close guard vetoes | Restore `visible`; no animation, session/route/focus/DOM/texture mutation |
 | Reduced motion or optional presentation program unavailable | Reach the same final open/close state immediately through the normal completion path |
@@ -145,6 +147,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 ### 5. Good / Base / Bad Cases
 
 - Good: a direct Canvas child changes, only its texture uploads, the environment continues animating deterministic non-rigid particles, and curved edge input maps back to the same source control.
+- Good: a full-viewport modal sink marked `data-spatial-render="none"` blocks projected pointer/wheel/contextmenu behind the modal while creating no texture or draw surface.
 - Good: pointer-down snapshots browser Source/viewport rectangles into plain four-field geometry, and later captured moves continue producing non-zero Source-local deltas after the live DOM changes.
 - Good: a shell Dock has lower scene z than every window, renders before windows, and is visited after windows during projected hit resolution.
 - Good: a Select ignores the trusted input-plane `pointerdown`, then keeps open for a routed option event or closes for a routed Source-local outside target.
@@ -156,6 +159,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Bad: tuning curve/edge uniforms only in GLSL makes the rendered window diverge from CPU projection and projected input.
 - Bad: preserving a hidden Lab page or local diagnostics overlay after product-shell adoption leaves an obsolete second UI/runtime contract.
 - Bad: uploading the clock/ring every animation frame or placing any Source texture in the Bloom/composite chain softens text and breaks demand-driven uploads.
+- Bad: capturing and drawing a CSS-transparent full-viewport modal Source; the browser may expose a transient black texture even though its final CSS color is transparent.
 - Bad: filtering `aria-hidden` or disabled controls out of geometry causes clicks to fall through to an element underneath.
 - Bad: focus or synthetic `.click()` alone is reported as proof that a caret, picker, or native default action succeeded.
 - Bad: a document-capture outside-click handler treats the trusted input plane as the Source target and hides a popup before the router resolves its option geometry.
@@ -164,7 +168,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 
 ### 6. Tests Required
 
-- Unit: WebGL2/current/legacy negotiation, unresolved state, paint changed/removed normalization, source eligibility/removal, and context restore.
+- Unit: WebGL2/current/legacy negotiation, unresolved state, paint changed/removed normalization, source eligibility/removal, context restore, and proof that input-only Sources remain projected-input candidates while being excluded from texture capture.
 - Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, native scrollbar geometry/drag cleanup, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates.
 - Unit: Source-local popup outside-pointer behavior distinguishes trusted input-plane events from routed synthetic inside/outside targets; a trusted plane event cannot close the popup before option hit resolution.
 - Unit: routed event initialization asserts compatibility `mousedown` / `mouseup` / `click` normalize pointer detail zero to one, `dblclick` preserves two, and move/hover events remain zero.
@@ -206,6 +210,18 @@ drawGpuDecorationRing()
 drawClockAndDockSourcesBackToFront()
 drawWindowsBackToFrontWithTheirOwnPoses()
 drawForegroundToScreen()
+```
+
+```ts
+// Wrong: CSS transparency still creates a full-screen texture candidate.
+element.style.background = "transparent"
+elementTextures.synchronize(allSources)
+
+// Correct: retain the Source for input, but exclude its explicit render-none marker from capture.
+const drawableSources = allSources.filter((source) => (
+  source.getAttribute("data-spatial-render") !== "none"
+))
+elementTextures.synchronize(drawableSources)
 ```
 
 ```ts

@@ -26,6 +26,12 @@
         @resize="resizeWindow"
         @settle="settleWindow"
       />
+      <SpatialConfirmHost
+        :interactive="confirmInteractive"
+        @sources-changed="handleGlobalSourcesChanged"
+        @source-dirty="handleGlobalSourceDirty"
+        @request-close="requestGlobalConfirmClose"
+      />
     </canvas>
 
     <div ref="inputPlaneRef" class="spatial-desktop-input-plane" aria-hidden="true" />
@@ -46,6 +52,7 @@ import {
   SPATIAL_MIN_VIEWPORT,
   switchPlatformUiMode,
 } from "@/config/platform-ui-mode"
+import { resolveConfirm } from "@/composables/useConfirm"
 import {
   INITIAL_VIEWPORT_SNAPSHOT,
   SpatialViewportController,
@@ -70,9 +77,16 @@ import { useSpatialWindowSession } from "./useSpatialWindowSession"
 import type { SpatialWindowState } from "./window-session"
 import type { SpatialShellFallback } from "./shell-types"
 import SpatialLauncherSurface from "./SpatialLauncherSurface.vue"
+import SpatialConfirmHost from "./SpatialConfirmHost.vue"
 import SpatialStatusSurface from "./SpatialStatusSurface.vue"
 import SpatialWallpaperClock from "./SpatialWallpaperClock.vue"
 import SpatialWindowSurface from "./SpatialWindowSurface.vue"
+import {
+  SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+  SPATIAL_CONFIRM_PANEL_PRESENTATION_ID,
+  SPATIAL_CONFIRM_SHIELD_SOURCE_ID,
+  spatialConfirmPanelLayout,
+} from "./spatial-confirm"
 import wallpaperUrl from "./assets/spatial-desktop-background.jpg"
 import "./spatial-shell.css"
 
@@ -84,6 +98,8 @@ const route = useRoute()
 const router = useRouter()
 const { session } = useSpatialWindowSession()
 const presentation = new SpatialWindowPresentationController()
+const confirmPresentation = new SpatialWindowPresentationController()
+const confirmInteractive = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const inputPlaneRef = ref<HTMLElement | null>(null)
@@ -97,6 +113,7 @@ let fallbackEmitted = false
 let pointerMedia: MediaQueryList | null = null
 const dirtyWindowSources = new Set<string>()
 const closeRequests = new Set<string>()
+let pendingConfirmResolution: { value: boolean | string | null } | null = null
 let presentationSupported = false
 let ripplePresentationSupported = false
 let reducedMotion = false
@@ -105,6 +122,13 @@ let shellDisposed = false
 let minimizeAllGroupCounter = 0
 const minimizeAllGroups = new Map<number, Set<string>>()
 const minimizeAllGroupByWindow = new Map<string, number>()
+const confirmPresentationIds = Object.freeze([
+  SPATIAL_CONFIRM_PANEL_PRESENTATION_ID,
+] as const)
+const confirmSourceIds = Object.freeze([
+  SPATIAL_CONFIRM_SHIELD_SOURCE_ID,
+  SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+] as const)
 
 function applyDockLayouts(): void {
   const canvas = canvasRef.value
@@ -149,6 +173,126 @@ function applyClockLayout(): void {
   const y = viewport.value.height - bottom - height
   const transform = `translate3d(${Math.round(x)}px, ${Math.round(y)}px, 0)`
   if (clock.style.transform !== transform) clock.style.transform = transform
+}
+
+function applyGlobalSurfaceLayouts(): void {
+  const canvas = canvasRef.value
+  if (!canvas) return
+  const shield = canvas.querySelector<HTMLElement>(
+    `[data-spatial-source="${SPATIAL_CONFIRM_SHIELD_SOURCE_ID}"]`,
+  )
+  if (shield) {
+    const width = `${Math.round(viewport.value.width)}px`
+    const height = `${Math.round(viewport.value.height)}px`
+    if (shield.style.width !== width) shield.style.width = width
+    if (shield.style.height !== height) shield.style.height = height
+    if (shield.style.transform !== "translate3d(0px, 0px, 0px)") {
+      shield.style.transform = "translate3d(0px, 0px, 0px)"
+    }
+  }
+
+  const panel = canvas.querySelector<HTMLElement>(
+    `[data-spatial-source="${SPATIAL_CONFIRM_PANEL_SOURCE_ID}"]`,
+  )
+  if (!panel) return
+  const initial = spatialConfirmPanelLayout(viewport.value, panel.offsetHeight)
+  const width = `${initial.width}px`
+  const maxHeight = `${initial.maxHeight}px`
+  if (panel.style.width !== width) panel.style.width = width
+  if (panel.style.maxHeight !== maxHeight) panel.style.maxHeight = maxHeight
+  const layout = spatialConfirmPanelLayout(viewport.value, panel.offsetHeight)
+  const transform = `translate3d(${layout.x}px, ${layout.y}px, 0)`
+  if (panel.style.transform !== transform) panel.style.transform = transform
+}
+
+function mountGlobalConfirmPresentation(): void {
+  const panelMounted = confirmPresentation.mount(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, {
+    sourceId: SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+    apertureAxis: "horizontal",
+  })
+  if (!panelMounted) return
+  pendingConfirmResolution = null
+  confirmInteractive.value = false
+  syncPresentationInput()
+}
+
+function resetGlobalConfirmPresentation(): void {
+  confirmPresentation.clear()
+  pendingConfirmResolution = null
+  confirmInteractive.value = false
+  syncPresentationInput()
+}
+
+function handleGlobalSourcesChanged(sourceIds: readonly string[]): void {
+  if (confirmSourceIds.every((sourceId) => sourceIds.includes(sourceId))) {
+    mountGlobalConfirmPresentation()
+  } else {
+    resetGlobalConfirmPresentation()
+  }
+  applyGlobalSurfaceLayouts()
+  viewportController?.syncSources()
+}
+
+function handleGlobalSourceDirty(sourceId: string): void {
+  applyGlobalSurfaceLayouts()
+  viewportController?.requestSourcePaint(sourceId)
+}
+
+function confirmPresentationIdForSource(sourceId: string): string | null {
+  if (sourceId === SPATIAL_CONFIRM_PANEL_SOURCE_ID) {
+    return SPATIAL_CONFIRM_PANEL_PRESENTATION_ID
+  }
+  return null
+}
+
+function handleGlobalConfirmSourceReady(sourceId: string): boolean {
+  const presentationId = confirmPresentationIdForSource(sourceId)
+  if (!presentationId) return false
+  if (confirmPresentation.phase(presentationId) !== "capturing-open") {
+    viewportController?.requestFrame("dirty")
+    return true
+  }
+
+  const timestamp = performance.now()
+  const events = confirmPresentation.sourceReady(
+    presentationId,
+    timestamp,
+    apertureMotionEnabled(),
+  )
+  syncPresentationInput()
+  if (events.length > 0) handleConfirmPresentationEvents(events)
+  if (confirmPresentationIds.some((id) => confirmPresentation.phase(id) === "opening")) {
+    viewportController?.requestFrame("transition")
+  } else {
+    viewportController?.requestFrame("dirty")
+  }
+  return true
+}
+
+function requestGlobalConfirmClose(value: boolean | string | null): void {
+  if (!confirmInteractive.value
+    || pendingConfirmResolution
+    || !confirmPresentation.allVisible(confirmPresentationIds)) return
+
+  pendingConfirmResolution = { value }
+  confirmInteractive.value = false
+  const guardsStarted = confirmPresentationIds.every((id) => confirmPresentation.beginGuard(id))
+  if (!guardsStarted) {
+    for (const id of confirmPresentationIds) confirmPresentation.cancelGuard(id)
+    pendingConfirmResolution = null
+    confirmInteractive.value = confirmPresentation.allVisible(confirmPresentationIds)
+    syncPresentationInput()
+    return
+  }
+
+  const timestamp = performance.now()
+  const events = confirmPresentationIds.flatMap((id) => (
+    confirmPresentation.startClosing(id, timestamp, apertureMotionEnabled())
+  ))
+  syncPresentationInput()
+  if (events.length > 0) handleConfirmPresentationEvents(events)
+  if (pendingConfirmResolution) viewportController?.requestFrame("transition")
+  else viewportController?.requestFrame("dirty")
 }
 
 watch(
@@ -446,6 +590,7 @@ function updateViewport(): void {
   session.clampAll(viewport.value)
   applyDockLayouts()
   applyClockLayout()
+  applyGlobalSurfaceLayouts()
   applyWindowLayouts()
   for (const window of session.windows) dirtyWindowSources.add(`window:${window.id}`)
   viewportController?.requestFrame("dirty")
@@ -471,17 +616,29 @@ function rippleMotionEnabled(): boolean {
 }
 
 function syncPresentationInput(): void {
-  viewportController?.updateSourcePresentations(presentation.snapshots())
+  viewportController?.updateSourcePresentations([
+    ...presentation.snapshots(),
+    ...confirmPresentation.snapshots(),
+  ])
 }
 
-function applyPresentationSettlement(frame: SpatialWindowPresentationFrame): void {
+function applyPresentationSettlement(
+  frame: SpatialWindowPresentationFrame,
+  confirmFrame?: SpatialWindowPresentationFrame,
+): void {
   syncPresentationInput()
   if (frame.events.length > 0) handlePresentationEvents(frame.events)
+  if (confirmFrame && confirmFrame.events.length > 0) {
+    handleConfirmPresentationEvents(confirmFrame.events)
+  }
   viewportController?.requestFrame("dirty")
 }
 
 function settleApertureMotion(): void {
-  applyPresentationSettlement(presentation.settleApertureMotion())
+  applyPresentationSettlement(
+    presentation.settleApertureMotion(),
+    confirmPresentation.settleApertureMotion(),
+  )
 }
 
 function settleRippleMotion(): void {
@@ -489,11 +646,43 @@ function settleRippleMotion(): void {
 }
 
 function settleAllPresentationMotion(): void {
-  applyPresentationSettlement(presentation.settleMotion())
+  applyPresentationSettlement(
+    presentation.settleMotion(),
+    confirmPresentation.settleMotion(),
+  )
 }
 
 function settlePresentationForContextLoss(): void {
-  applyPresentationSettlement(presentation.settleForContextLoss())
+  applyPresentationSettlement(
+    presentation.settleForContextLoss(),
+    confirmPresentation.settleForContextLoss(),
+  )
+}
+
+function handleConfirmPresentationEvents(
+  events: readonly SpatialWindowPresentationEvent[],
+): void {
+  let closeCompleted = false
+  for (const event of events) {
+    if (event.kind !== "close-ready") continue
+    if (!confirmPresentationIds.some((id) => id === event.windowId)) {
+      continue
+    }
+    if (confirmPresentation.completeClose(event.windowId)) {
+      closeCompleted = true
+    }
+  }
+
+  confirmInteractive.value = pendingConfirmResolution === null
+    && confirmPresentation.allVisible(confirmPresentationIds)
+  syncPresentationInput()
+
+  if (!pendingConfirmResolution || !closeCompleted) return
+  const { value } = pendingConfirmResolution
+  pendingConfirmResolution = null
+  confirmInteractive.value = false
+  syncPresentationInput()
+  resolveConfirm(value)
 }
 
 function handlePresentationEvents(events: readonly SpatialWindowPresentationEvent[]): void {
@@ -588,19 +777,36 @@ onMounted(async () => {
       if (snapshot.status === "error") emitFallback("renderer", snapshot.supportMessage)
     },
     beforeRender: (frame) => {
+      applyGlobalSurfaceLayouts()
       applyWindowLayouts()
       for (const sourceId of dirtyWindowSources) viewportController?.requestSourcePaint(sourceId)
       dirtyWindowSources.clear()
       const presentationFrame = presentation.advance(frame.timestamp)
+      const confirmPresentationFrame = confirmPresentation.advance(frame.timestamp)
+      const hasPresentationEvents = presentationFrame.events.length > 0
+        || confirmPresentationFrame.events.length > 0
       return {
-        continueReasons: presentationFrame.active ? ["transition"] : [],
-        sourcePresentations: presentationFrame.snapshots,
-        afterRender: presentationFrame.events.length > 0
-          ? () => handlePresentationEvents(presentationFrame.events)
+        continueReasons: presentationFrame.active || confirmPresentationFrame.active
+          ? ["transition"]
+          : [],
+        sourcePresentations: [
+          ...presentationFrame.snapshots,
+          ...confirmPresentationFrame.snapshots,
+        ],
+        afterRender: hasPresentationEvents
+          ? () => {
+              if (presentationFrame.events.length > 0) {
+                handlePresentationEvents(presentationFrame.events)
+              }
+              if (confirmPresentationFrame.events.length > 0) {
+                handleConfirmPresentationEvents(confirmPresentationFrame.events)
+              }
+            }
           : undefined,
       }
     },
     onSourceReady: (sourceId) => {
+      if (handleGlobalConfirmSourceReady(sourceId)) return
       if (!sourceId.startsWith("window:")) return
       const id = sourceId.slice("window:".length)
       const phase = presentation.phase(id)
@@ -659,6 +865,9 @@ onBeforeUnmount(() => {
   minimizeAllGroups.clear()
   minimizeAllGroupByWindow.clear()
   presentation.clear()
+  confirmPresentation.clear()
+  pendingConfirmResolution = null
+  confirmInteractive.value = false
   pointerMediaCleanup?.()
   resizeObserver?.disconnect()
   viewportController?.dispose()

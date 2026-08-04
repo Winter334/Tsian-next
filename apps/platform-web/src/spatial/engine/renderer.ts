@@ -121,6 +121,7 @@ export type SpatialRenderPass =
   | "surface-windows"
   | "surface-shell"
   | "surface-foreground"
+  | "surface-overlays"
 
 export interface SpatialRenderReport {
   readonly uploadBatch: TextureUploadBatch
@@ -384,8 +385,9 @@ export class SpatialRenderer {
         : [])
       .sort((left, right) => left.scene.zIndex - right.scene.zIndex
         || left.scene.sourceId.localeCompare(right.scene.sourceId))
-    const windows = renderable.filter((surface) => surface.scene.window)
-    const shell = renderable.filter((surface) => !surface.scene.window)
+    const windows = renderable.filter((surface) => surface.scene.window && !surface.scene.overlay)
+    const overlays = renderable.filter((surface) => surface.scene.overlay)
+    const shell = renderable.filter((surface) => !surface.scene.window && !surface.scene.overlay)
     const sourcePresentations = new Map(
       (state.sourcePresentations ?? []).map((snapshot) => [snapshot.sourceId, snapshot]),
     )
@@ -476,6 +478,34 @@ export class SpatialRenderer {
 
     this.drawForeground(programs.foreground, state.parallax)
     passes.push("surface-foreground")
+    if (overlays.length > 0) {
+      for (const surface of overlays) {
+        const presentation = sourcePresentations.get(surface.scene.sourceId)
+        if (presentation?.phase === "capturing-open"
+          || presentation?.phase === "capturing-restore"
+          || presentation?.phase === "minimized") {
+          continue
+        }
+        if (this.supportsWindowPresentation()
+          && presentation
+          && sourcePresentationIsAnimated(presentation)
+          && programs.sourcePresentation) {
+          this.drawPresentedSurface(
+            programs.sourcePresentation,
+            surface,
+            canvasRect,
+            state,
+            presentation,
+          )
+        } else {
+          this.drawTexturedSurface(programs.source, surface, canvasRect, state)
+          if (programs.dynamicMedia) {
+            this.drawDynamicMediaSurfaces(programs.dynamicMedia, surface, canvasRect, state)
+          }
+        }
+      }
+      passes.push("surface-overlays")
+    }
     return { uploadBatch, passes }
   }
 
@@ -1164,6 +1194,10 @@ export class SpatialRenderer {
     gl.uniform1f(
       gl.getUniformLocation(program, "u_presentation_direction"),
       presentation.phase === "closing" ? 1 : -1,
+    )
+    gl.uniform1f(
+      gl.getUniformLocation(program, "u_presentation_axis"),
+      presentation.apertureAxis === "horizontal" ? 1 : 0,
     )
     gl.uniform1f(
       gl.getUniformLocation(program, "u_presentation_aperture_scale"),
