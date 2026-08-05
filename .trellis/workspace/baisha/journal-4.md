@@ -651,3 +651,39 @@ Implemented and verified Spatial Explorer, Editor, and Media surfaces with share
 ### Status
 
 [OK] **Completed**
+
+
+## Session 179: Spatial Toast and Dialog Form
+
+**Date**: 2026-08-05
+**Task**: Spatial Toast and Dialog Form
+**Branch**: `master`
+
+### Summary
+
+完成并验收 Spatial Toast 与 Dialog Form；修复 Toast 触发时局部内容闪烁、退场横向滚动条及缺失动画，加入 Source 定向 mutation 路由与 capture-safe 布局动画。
+
+### Main Changes
+
+- 新增 Toast 与 Dialog Form 的 Spatial 呈现和交互。
+- 局部 DOM mutation 仅重绘所属 Source，Source/动态媒体拓扑变化仍执行完整同步。
+- Toast 入退场采用不依赖 opacity/transform 的 capture-safe 布局动画。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `43bc60f` | (see git log) |
+
+### Testing
+
+- [OK] Spatial：32 个文件、202 项测试通过。
+- [OK] Vue type-check、npm run build:web、lint（如存在）和 git diff --check 通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 继续 Spatial Splash 与 shell/launcher context menus；当前任务保持 in_progress。
