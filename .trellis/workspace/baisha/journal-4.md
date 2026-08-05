@@ -687,3 +687,24 @@ Implemented and verified Spatial Explorer, Editor, and Media surfaces with share
 ### Next Steps
 
 - 继续 Spatial Splash 与 shell/launcher context menus；当前任务保持 in_progress。
+
+
+## Session 180: 完成 Spatial Play 与全局界面
+
+**Date**: 2026-08-06
+**Task**: 完成 Spatial Play 与全局界面
+**Branch**: `master`
+
+### Summary
+
+完成共享 Play/save controllers、Spatial save launcher/Play host、通用窗口最大化与 ready iframe 原生全屏；Flag Chromium 手测及完整 Spatial/Play 自动质量门通过，生产 Spatial release gate 保持关闭。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9dbf047` | (see git log) |
+
+### Status
+
+[OK] **Completed**
