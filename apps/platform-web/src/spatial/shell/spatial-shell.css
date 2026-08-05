@@ -325,6 +325,11 @@
   pointer-events: none;
 }
 
+.spatial-window-surface--maximized .spatial-window-title-tab,
+.spatial-window-surface--maximized .spatial-window-top-drag-strip {
+  cursor: default;
+}
+
 .spatial-modal-shield-source,
 .spatial-modal-panel-source,
 .spatial-toast-source,
@@ -851,6 +856,12 @@
   background: rgb(52 54 59 / 95%);
   font: inherit;
   cursor: pointer;
+}
+
+.spatial-window-control-tab button > svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
 }
 
 .spatial-window-control-tab button:last-child {

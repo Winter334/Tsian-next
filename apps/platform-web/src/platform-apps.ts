@@ -61,6 +61,7 @@ export interface SpatialPresentationRegistration {
   readonly component?: Component
   readonly defaultSize: PlatformWindowSize
   readonly minSize: PlatformWindowSize
+  readonly fullscreenable: boolean
 }
 
 export interface PlatformAppDefinition {
@@ -127,6 +128,7 @@ const SpatialGameCardDetailView = defineAsyncComponent(() => import("./spatial/a
 const SpatialWorkspaceExplorerView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceExplorerView.vue"))
 const SpatialWorkspaceEditorView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceEditorView.vue"))
 const SpatialWorkspaceMediaView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceMediaView.vue"))
+const SpatialPlayView = defineAsyncComponent(() => import("./spatial/apps/play/SpatialPlayView.vue"))
 
 function presentation(
   component: Component,
@@ -150,6 +152,7 @@ function presentation(
       ...(spatialComponent ? { component: spatialComponent } : {}),
       defaultSize: spatialDefaultSize,
       minSize: spatialMinSize,
+      fullscreenable,
     },
   }
 }
@@ -207,7 +210,7 @@ export const platformAppRegistry: readonly PlatformAppDefinition[] = Object.free
     appId: "play", launcher: true,
     route: { name: "play", path: "/play" }, identity: { kind: "singleton" },
     label: "开始游戏", shortLabel: "游戏", title: "游戏前端", caption: "当前游戏卡的游玩窗口", icon: PlaySquare,
-    ...presentation(PlayView, { width: 1180, height: 720 }, { width: 680, height: 460 }, true),
+    ...presentation(PlayView, { width: 1180, height: 720 }, { width: 680, height: 460 }, true, SpatialPlayView),
   },
   {
     appId: "settings", launcher: true,

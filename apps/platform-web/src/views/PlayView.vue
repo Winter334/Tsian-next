@@ -135,321 +135,49 @@
 </template>
 
 <script setup lang="ts">
-import type { GameCardFrontendBinding } from "@tsian/contracts"
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue"
+import { ref } from "vue"
 import { useRouter } from "vue-router"
 import { ArrowLeft, FolderOpen, MonitorOff, Settings, Store } from "lucide-vue-next"
+import { mountRemoteIframeFrontend } from "@/bridge"
 import GameLauncherPanel from "@/components/play/GameLauncherPanel.vue"
-import { toast } from "@/composables/useToast"
+import { usePlayController } from "@/controllers/play/use-play-controller"
 
 // 桌面窗口透传:窗口最小化时为 true。全局 keydown 监听据此守卫,
 // 避免隐藏的游戏窗口拦截 Escape 把不可见的 iframe 退回启动器。
 const props = defineProps<{ minimized?: boolean }>()
-import {
-  ACTIVE_CARD_CHANGED_EVENT,
-  SAVES_CHANGED_EVENT,
-  FRONTEND_RELOAD_EVENT,
-  FRONTEND_REBUILDING_EVENT,
-  FRONTEND_REBUILD_SETTLED_EVENT,
-  isActiveCardChangedEvent,
-  isSavesChangedEvent,
-  isFrontendReloadEvent,
-  isFrontendRebuildingEvent,
-  isFrontendRebuildSettledEvent,
-} from "@/lib/platform-events"
-import {
-  mountRemoteIframeFrontend,
-  registerPlayFrontendTarget,
-  resolveRemoteFrontendUrl,
-  type MountedRemoteIframeFrontend,
-} from "../bridge"
-import { resolvePackagedFrontendUrl } from "../package-loader/packaged-frontend"
-import {
-  getPlatformActiveGameCard,
-  getPlatformActiveGameCardId,
-  getPlatformActiveSaveId,
-  listPlatformSaves,
-  playFrontendBridge,
-  selectPlatformSave,
-  waitForPlatformHostReady,
-} from "../platform-host"
-import type { LocalGameCardRecord, LocalSaveRecord } from "../storage/db"
-import { hasPlayableFrontend } from "@/lib/game-card-display"
-
-type PlayPhase =
-  | "resolving"
-  | "launcher"
-  | "no-card-guide"
-  | "unplayable-guide"
-  | "remote-loading"
-  | "remote-ready"
-  | "packaged-loading"
-  | "packaged-ready"
-  | "error"
 
 const router = useRouter()
 const frontendMount = ref<HTMLElement | null>(null)
-const phase = ref<PlayPhase>("resolving")
-const errorTitle = ref("")
-const errorMessage = ref("")
-const activeCard = ref<LocalGameCardRecord | null>(null)
-const activeGameCardId = ref("")
-const activeSaveId = ref("")
-const saves = ref<LocalSaveRecord[]>([])
-const packagedFrontendSandbox = "allow-scripts allow-same-origin allow-forms"
-// True while a frontend rebuild is in flight (assistant edited frontend/src).
-// Shows a non-blocking overlay so the player knows a reload is coming.
-const isRebuilding = ref(false)
-
-let frontendHandle: MountedRemoteIframeFrontend | null = null
-let unregisterFrontendTarget: (() => void) | null = null
-let isDisposed = false
-let mountVersion = 0
-
-const activeCardName = computed(() => activeCard.value?.manifest.name ?? "")
-const loadingLabel = computed(() =>
-  phase.value === "packaged-loading"
-    ? "正在加载打包前端"
-    : phase.value === "remote-loading"
-    ? "正在加载远程前端"
-    : "正在解析前端",
-)
-
-function unmountFrontend() {
-  unregisterFrontendTarget?.()
-  unregisterFrontendTarget = null
-  frontendHandle?.dispose()
-  frontendHandle = null
-}
-
-function setError(title: string, message: string) {
-  unmountFrontend()
-  phase.value = "error"
-  errorTitle.value = title
-  errorMessage.value = message
-}
-
-function setMissingFrontendError(cardName: string | undefined) {
-  setError(
-    "游戏前端未配置",
-    cardName
-      ? `游戏卡「${cardName}」尚未配置远程或打包前端。`
-      : "当前没有可用的游戏卡前端。请先导入或创建带远程/打包前端的游戏卡。",
-  )
-}
-
-function mountRemoteFrontend(
-  frontend: GameCardFrontendBinding & { kind: "remote" },
-  cardId: string,
-  title: string | undefined,
-  version: number,
-) {
-  const resolvedUrl = resolveRemoteFrontendUrl(frontend.url)
-  if (!resolvedUrl.ok) {
-    setError("远程前端被拒绝", resolvedUrl.error.message)
-    return
-  }
-
-  if (!frontendMount.value) {
-    setError("前端挂载失败", "游戏前端挂载点不可用。")
-    return
-  }
-
-  phase.value = "remote-loading"
-  frontendHandle = mountRemoteIframeFrontend(frontendMount.value, {
-    url: resolvedUrl.url,
-    bridge: playFrontendBridge,
-    gameCardId: cardId,
-    title,
-    onLoad() {
-      if (!isDisposed && mountVersion === version) {
-        phase.value = "remote-ready"
-      }
-    },
-    onError(message) {
-      if (!isDisposed && mountVersion === version) {
-        setError("远程前端加载失败", message)
-      }
-    },
-  })
-  unregisterFrontendTarget = registerPlayFrontendTarget({
-    kind: "remote",
-    gameCardId: cardId,
-    mount: frontendHandle,
-  })
-}
-
-async function mountPackagedFrontend(
-  frontend: GameCardFrontendBinding & { kind: "packaged" },
-  cardId: string,
-  title: string | undefined,
-  version: number,
-) {
-  if (!frontendMount.value) {
-    setError("前端挂载失败", "游戏前端挂载点不可用。")
-    return
-  }
-
-  phase.value = "packaged-loading"
-  const url = await resolvePackagedFrontendUrl({
-    gameCardId: cardId,
-    entry: frontend.entry,
-  })
-  if (isDisposed || mountVersion !== version || !frontendMount.value) {
-    return
-  }
-
-  frontendHandle = mountRemoteIframeFrontend(frontendMount.value, {
-    url,
-    bridge: playFrontendBridge,
-    gameCardId: cardId,
-    // Service Worker-backed virtual URLs need a same-origin controlled iframe client.
-    sandbox: packagedFrontendSandbox,
-    title,
-    onLoad() {
-      if (!isDisposed && mountVersion === version) {
-        phase.value = "packaged-ready"
-      }
-    },
-    onError(message) {
-      if (!isDisposed && mountVersion === version) {
-        setError("打包前端加载失败", message)
-      }
-    },
-  })
-  unregisterFrontendTarget = registerPlayFrontendTarget({
-    kind: "packaged",
-    gameCardId: cardId,
-    entry: frontend.entry,
-    mount: frontendHandle,
-  })
-}
-
-/** 挂载 active card 的前端。仅在选定存档后调用。 */
-async function mountActiveFrontend() {
-  const version = ++mountVersion
-  unmountFrontend()
-  phase.value = "resolving"
-  errorTitle.value = ""
-  errorMessage.value = ""
-
-  try {
-    await waitForPlatformHostReady()
-    if (isDisposed || mountVersion !== version) {
-      return
-    }
-
-    const activeCardRecord = await getPlatformActiveGameCard()
-    if (isDisposed || mountVersion !== version) {
-      return
-    }
-
-    const frontend = activeCardRecord?.manifest.frontend
-    if (!frontend) {
-      setMissingFrontendError(activeCardRecord?.manifest.name)
-      return
-    }
-
-    if (frontend.kind === "remote") {
-      mountRemoteFrontend(frontend, activeCardRecord.id, activeCardRecord.manifest.name, version)
-      return
-    }
-
-    if (frontend.kind === "packaged") {
-      if (!activeCardRecord) {
-        setMissingFrontendError(undefined)
-        return
-      }
-      await mountPackagedFrontend(frontend, activeCardRecord.id, activeCardRecord.manifest.name, version)
-      return
-    }
-
-    setError(
-      "不支持的游戏前端",
-      `当前游戏前端类型不受支持：${String((frontend as { kind?: unknown }).kind)}`,
-    )
-  } catch (error) {
-    if (!isDisposed && mountVersion === version) {
-      setError(
-        "前端解析失败",
-        error instanceof Error ? error.message : "解析游戏前端失败。",
-      )
-    }
-  }
-}
-
-/** 进入启动器：解析 active card，分流到 launcher 或 unplayable-guide。 */
-async function enterLauncher() {
-  phase.value = "resolving"
-  try {
-    await waitForPlatformHostReady()
-    if (isDisposed) {
-      return
-    }
-
-    const [card, cardId, saveId, allSaves] = await Promise.all([
-      getPlatformActiveGameCard(),
-      getPlatformActiveGameCardId(),
-      getPlatformActiveSaveId(),
-      listPlatformSaves(),
-    ])
-
-    if (isDisposed) {
-      return
-    }
-
-    activeCard.value = card
-    activeGameCardId.value = cardId ?? ""
-    activeSaveId.value = saveId ?? ""
-    saves.value = allSaves
-
-    if (!card) {
-      activeCard.value = null
-      activeGameCardId.value = ""
-      phase.value = "no-card-guide"
-      return
-    }
-
-    if (!hasPlayableFrontend(card)) {
-      phase.value = "unplayable-guide"
-      return
-    }
-
-    phase.value = "launcher"
-  } catch (error) {
-    setError(
-      "启动器初始化失败",
-      error instanceof Error ? error.message : "无法加载游戏启动器。",
-    )
-  }
-}
-
-async function refreshSaves() {
-  const [saveId, allSaves] = await Promise.all([
-    getPlatformActiveSaveId(),
-    listPlatformSaves(),
-  ])
-  activeSaveId.value = saveId ?? ""
-  saves.value = allSaves
-}
-
-async function onContinue(saveId: string) {
-  try {
-    await selectPlatformSave(saveId)
-    await mountActiveFrontend()
-  } catch (error) {
-    setError(
-      "切换存档失败",
-      error instanceof Error ? error.message : "无法切换到该存档。",
-    )
-  }
-}
-
-function returnToLauncher() {
-  mountVersion += 1
-  unmountFrontend()
-  void nextTick(() => enterLauncher())
-}
+const {
+  phase,
+  errorTitle,
+  errorMessage,
+  activeCard,
+  activeGameCardId,
+  activeSaveId,
+  activeCardName,
+  saves,
+  loadingLabel,
+  isRebuilding,
+  refreshSaves,
+  continueSave: onContinue,
+  returnToLauncher,
+} = usePlayController({
+  minimized: () => props.minimized,
+  isFrontendMountAvailable: () => frontendMount.value !== null,
+  mountFrontend(request) {
+    if (!frontendMount.value) return null
+    return mountRemoteIframeFrontend(frontendMount.value, {
+      url: request.url,
+      bridge: request.bridge,
+      gameCardId: request.gameCardId,
+      ...(request.sandbox ? { sandbox: request.sandbox } : {}),
+      title: request.title,
+      onLoad: request.onLoad,
+      onError: request.onError,
+    })
+  },
+})
 
 function goToLibrary() {
   void router.push("/library")
@@ -466,83 +194,4 @@ function goToCardDetail() {
     goToLibrary()
   }
 }
-
-function onSavesChanged(event: Event) {
-  if (!isSavesChangedEvent(event)) {
-    return
-  }
-  // launcher 态刷新存档列表；playing 态不打断游玩，仅更新缓存
-  if (phase.value === "launcher") {
-    void refreshSaves()
-  }
-}
-
-function onActiveCardChanged(event: Event) {
-  if (!isActiveCardChangedEvent(event)) {
-    return
-  }
-  // launcher 态重新解析（卡可能被换）；playing 态不打断
-  if (phase.value === "launcher" || phase.value === "unplayable-guide" || phase.value === "no-card-guide") {
-    void enterLauncher()
-  }
-}
-
-function onFrontendReload(event: Event) {
-  if (!isFrontendReloadEvent(event)) {
-    return
-  }
-  // Rebuild succeeded → remount picks up new dist; the rebuilding overlay is no
-  // longer needed (remount itself replaces the view).
-  isRebuilding.value = false
-  // 仅在已挂载前端态响应：助手改 frontend/src → 平台重建 → 此事件触发重挂，
-  // 拉取新构建的 dist。launcher/resolving 态不打断（会被后续 enterLauncher 覆盖）。
-  if (phase.value === "remote-ready" || phase.value === "packaged-ready") {
-    void mountActiveFrontend()
-  }
-}
-
-function onFrontendRebuilding(event: Event) {
-  if (isFrontendRebuildingEvent(event)) {
-    isRebuilding.value = true
-  }
-}
-
-function onFrontendRebuildSettled(event: Event) {
-  // Rebuild ended without a reload (i.e. failed — old dist kept). Just hide the
-  // overlay; the player keeps using the current frontend.
-  if (isFrontendRebuildSettledEvent(event)) {
-    isRebuilding.value = false
-  }
-}
-
-function onKeydown(event: KeyboardEvent) {
-  if (props.minimized) {
-    return
-  }
-  if (event.key === "Escape" && (phase.value === "remote-ready" || phase.value === "packaged-ready")) {
-    returnToLauncher()
-  }
-}
-
-onMounted(() => {
-  window.addEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
-  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-  window.addEventListener(FRONTEND_RELOAD_EVENT, onFrontendReload)
-  window.addEventListener(FRONTEND_REBUILDING_EVENT, onFrontendRebuilding)
-  window.addEventListener(FRONTEND_REBUILD_SETTLED_EVENT, onFrontendRebuildSettled)
-  window.addEventListener("keydown", onKeydown)
-  void enterLauncher()
-})
-
-onBeforeUnmount(() => {
-  isDisposed = true
-  mountVersion += 1
-  unmountFrontend()
-  window.removeEventListener(SAVES_CHANGED_EVENT, onSavesChanged)
-  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-  window.removeEventListener(FRONTEND_RELOAD_EVENT, onFrontendReload)
-  window.removeEventListener(FRONTEND_REBUILDING_EVENT, onFrontendRebuilding)
-  window.removeEventListener(FRONTEND_REBUILD_SETTLED_EVENT, onFrontendRebuildSettled)
-  window.removeEventListener("keydown", onKeydown)
-})
 </script>

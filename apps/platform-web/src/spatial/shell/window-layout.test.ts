@@ -4,6 +4,7 @@ import {
   clampSpatialGeometry,
   defaultSpatialWindowSize,
   edgeProgressForGeometry,
+  effectiveSpatialWindowGeometry,
   resizeSpatialGeometry,
   sideDepthForGeometry,
   sourceLocalDeltaToWorld,
@@ -15,6 +16,20 @@ const viewport = { width: 1200, height: 800 }
 const viewportRect = { left: 0, top: 0, ...viewport }
 
 describe("Spatial window layout", () => {
+  it("derives maximized viewport geometry without mutating retained window geometry", () => {
+    const retained = { worldX: 180, worldY: 120, width: 700, height: 520, sideDepth: 0.4 }
+    const before = structuredClone(retained)
+    expect(effectiveSpatialWindowGeometry(retained, true, viewport)).toEqual({
+      worldX: 0,
+      worldY: 0,
+      width: viewport.width,
+      height: viewport.height,
+      sideDepth: 0,
+    })
+    expect(retained).toEqual(before)
+    expect(effectiveSpatialWindowGeometry(retained, false, viewport)).toEqual(retained)
+  })
+
   it("keeps the central band nearly front-facing and poses side windows smoothly", () => {
     const center = { worldX: 350, worldY: 200, width: 500, height: 400, sideDepth: 0 }
     const left = { ...center, worldX: -280 }

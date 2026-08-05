@@ -3,10 +3,12 @@
     class="spatial-window-surface"
     :class="{
       'spatial-window-surface--hidden': window.minimized || window.textureState !== 'active',
+      'spatial-window-surface--maximized': window.maximized,
     }"
     :data-spatial-source="`window:${window.id}`"
     :data-spatial-z="window.zIndex"
     :data-spatial-window-active="active ? 'true' : undefined"
+    :data-spatial-window-maximized="window.maximized ? 'true' : undefined"
     :data-spatial-window-id="window.id"
     data-spatial-gesture-owner
     :aria-label="window.descriptor.title"
@@ -38,8 +40,23 @@
         data-spatial-minimize-control
         @pointerdown.stop
         @click.stop="emit('minimize', window.id)"
-      >—</button>
-      <button type="button" aria-label="关闭" @pointerdown.stop @click.stop="emit('close', window.id)">×</button>
+      >
+        <Minus aria-hidden="true" />
+      </button>
+      <button
+        v-if="window.descriptor.spatial.fullscreenable"
+        type="button"
+        :aria-label="window.maximized ? '还原窗口' : '最大化窗口'"
+        data-spatial-maximize-control
+        @pointerdown.stop
+        @click.stop="emit('maximize', window.id, !window.maximized)"
+      >
+        <Minimize2 v-if="window.maximized" aria-hidden="true" />
+        <Maximize2 v-else aria-hidden="true" />
+      </button>
+      <button type="button" aria-label="关闭" @pointerdown.stop @click.stop="emit('close', window.id)">
+        <X aria-hidden="true" />
+      </button>
     </div>
     <div
       class="spatial-window-top-drag-strip"
@@ -52,7 +69,7 @@
       <component
         :is="window.descriptor.spatial.component"
         v-if="window.descriptor.spatial.readiness === 'ready' && window.descriptor.spatial.component"
-        v-bind="window.descriptor.props"
+        v-bind="presentationProps(window)"
       />
       <SpatialPendingAppSurface
         v-else
@@ -62,22 +79,25 @@
       />
     </div>
 
-    <span
-      v-for="direction in resizeDirections"
-      :key="direction"
-      class="spatial-resize-handle"
-      :class="`spatial-resize-handle--${direction}`"
-      role="separator"
-      tabindex="0"
-      data-spatial-gesture-start
-      :aria-label="`向 ${direction} 调整窗口大小`"
-      @pointerdown.stop="beginResize(direction, $event)"
-      @keydown="resizeWithKeyboard(direction, $event)"
-    />
+    <template v-if="!window.maximized">
+      <span
+        v-for="direction in resizeDirections"
+        :key="direction"
+        class="spatial-resize-handle"
+        :class="`spatial-resize-handle--${direction}`"
+        role="separator"
+        tabindex="0"
+        data-spatial-gesture-start
+        :aria-label="`向 ${direction} 调整窗口大小`"
+        @pointerdown.stop="beginResize(direction, $event)"
+        @keydown="resizeWithKeyboard(direction, $event)"
+      />
+    </template>
   </article>
 </template>
 
 <script setup lang="ts">
+import { Maximize2, Minimize2, Minus, X } from "lucide-vue-next"
 import type { SpatialResizeDirection } from "./window-layout"
 import type { SpatialWindowState } from "./window-session"
 import SpatialPendingAppSurface from "./SpatialPendingAppSurface.vue"
@@ -90,6 +110,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (event: "focus", id: string): void
   (event: "minimize", id: string): void
+  (event: "maximize", id: string, maximized: boolean): void
   (event: "close", id: string): void
   (event: "move", id: string, delta: { x: number; y: number }): void
   (event: "resize", id: string, direction: SpatialResizeDirection, delta: { x: number; y: number }): void
@@ -107,13 +128,18 @@ let interaction: {
   screenY: number
 } | null = null
 
+function presentationProps(window: SpatialWindowState): Record<string, unknown> {
+  if (window.descriptor.appId !== "play") return window.descriptor.props
+  return { ...window.descriptor.props, minimized: window.minimized }
+}
+
 function beginSurfacePointerDown(event: PointerEvent): void {
   if (!isRoutedGestureEvent(event) || event.button !== 0) return
   emit("focus", props.window.id)
 }
 
 function beginDrag(event: PointerEvent): void {
-  if (!isRoutedGestureEvent(event) || event.button !== 0) return
+  if (props.window.maximized || !isRoutedGestureEvent(event) || event.button !== 0) return
   if ((event.target as Element).closest("button")) return
   emit("focus", props.window.id)
   const screen = routedScreenPoint(event)
@@ -129,6 +155,10 @@ function beginDrag(event: PointerEvent): void {
 
 function continueInteraction(event: PointerEvent): void {
   if (!isRoutedGestureEvent(event) || interaction?.pointerId !== event.pointerId) return
+  if (props.window.maximized) {
+    interaction = null
+    return
+  }
   if (interaction.kind === "move") {
     emitScreenDelta(event, (delta) => emit("move", props.window.id, delta))
     return
@@ -140,7 +170,7 @@ function continueInteraction(event: PointerEvent): void {
 }
 
 function beginResize(direction: SpatialResizeDirection, event: PointerEvent): void {
-  if (!isRoutedGestureEvent(event) || event.button !== 0) return
+  if (props.window.maximized || !isRoutedGestureEvent(event) || event.button !== 0) return
   emit("focus", props.window.id)
   const screen = routedScreenPoint(event)
   interaction = {
@@ -201,6 +231,7 @@ function isRoutedGestureEvent(event: PointerEvent): boolean {
 }
 
 function resizeWithKeyboard(direction: SpatialResizeDirection, event: KeyboardEvent): void {
+  if (props.window.maximized) return
   const amount = event.shiftKey ? 32 : 12
   const delta = {
     x: event.key === "ArrowLeft" ? -amount : event.key === "ArrowRight" ? amount : 0,

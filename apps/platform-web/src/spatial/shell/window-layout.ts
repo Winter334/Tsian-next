@@ -39,6 +39,21 @@ const DEFAULT_HEIGHT_RATIO = 0.72
 const DEFAULT_HORIZONTAL_RECOVERY_SPACE = RECOVERABLE_SURFACE_EDGE * 2
 const DEFAULT_VERTICAL_RECOVERY_SPACE = TOP_CHROME_RECOVERY_HEIGHT * 2
 
+export function effectiveSpatialWindowGeometry(
+  geometry: SpatialWindowGeometry,
+  maximized: boolean,
+  viewport: SpatialViewportSize,
+): SpatialWindowGeometry {
+  if (!maximized) return { ...geometry }
+  return {
+    worldX: 0,
+    worldY: 0,
+    width: viewport.width,
+    height: viewport.height,
+    sideDepth: 0,
+  }
+}
+
 export function defaultSpatialWindowSize(
   preferred: { readonly width: number; readonly height: number },
   viewport: SpatialViewportSize,
@@ -262,7 +277,7 @@ function titleLocalBounds(width: number, height: number) {
 }
 
 function controlLocalBounds(width: number, height: number) {
-  const controlWidth = 67
+  const controlWidth = 96
   return {
     left: clamp(1 - controlWidth * 2 / width, -1, 1),
     top: -1,

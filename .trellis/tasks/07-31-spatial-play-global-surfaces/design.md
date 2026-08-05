@@ -81,17 +81,39 @@ SpatialPlayView/SpatialGameLauncher -+
 
 DOM refs, native file picker activation, iframe mount element, route navigation and layout stay at the presentation boundary. Async mount commands carry generation/disposed guards so stale remote/packaged work cannot replace a newer phase.
 
-## 7. Iframe preflight
+## 7. Spatial maximize and Play fullscreen
 
-Before Spatial Play ready work, probe target Flag Chromium for remote and packaged iframe capture, pointer/keyboard/focus forwarding, resize, reload and fullscreen. The acceptable path must remain inside the Spatial source/compositor contract. If the probe fails, record evidence and return to design; ordinary DOM-over-Canvas iframe fallback is prohibited.
+Spatial window chrome exposes maximize/restore only when the shared descriptor is `fullscreenable`, matching Retro OS placement and semantics. `SpatialWindowState` retains ordinary geometry separately from a maximized flag/effective viewport geometry; maximizing does not overwrite the restore geometry or remount the application. Move and resize are unavailable while maximized. Viewport changes recompute only effective maximized geometry, and restore clamps the retained ordinary geometry to the current viewport.
 
-## 8. Compatibility and rollback
+The browser Fullscreen API remains presentation-owned. Extract the existing vendor-compatible request/current/exit adapter from Retro `DesktopShell` into a narrow shared browser helper, then keep Retro behavior unchanged while allowing Spatial shell to consume it. No fullscreen command enters `usePlayController`.
+
+The Spatial titlebar maximize click follows the same branch as Retro OS:
+
+```text
+fullscreenable non-Play window -> toggle Spatial maximized state
+Play without a ready iframe    -> toggle Spatial maximized state
+Play with a ready iframe       -> request fullscreen on that exact iframe
+  request succeeds             -> mark window maximized; browser owns display/input
+  request fails/unsupported    -> fall back to Spatial maximized state
+browser Escape/fullscreen exit -> clear maximized state; same iframe returns to Source
+```
+
+The Play iframe is not cloned, reparented, or remounted for fullscreen. Runtime/bridge/save identity survives entry and exit. Minimize, close, reload and controller disposal keep their existing resource ownership; fullscreen listeners are shell/presentation resources and clean up exactly once.
+
+## 8. Iframe preflight
+
+The target Flag Chromium matrix is intentionally asymmetric. Curved mode proves remote and packaged iframe capture, readable display, center/edge basic projected click and the maximize control's routed activation. Browser fullscreen proves real pointer, keyboard, focus, resize, reload and Escape exit while preserving the same iframe/runtime instance. Full curved gameplay parity is not a requirement.
+
+If curved capture/display/basic click fails, or the routed maximize click cannot enter native iframe fullscreen in the target browser, record evidence and return to design. Ordinary DOM-over-Canvas iframe fallback is prohibited. A rejected/unsupported Fullscreen API may use the documented Retro-compatible Spatial-window maximize fallback, but that fallback does not count as native-fullscreen acceptance.
+
+## 9. Compatibility and rollback
 
 - Retro is preserved by conditional host mounting and controller-first migration.
 - First-slice rollback removes `SpatialConfirmHost` and restores the unconditional Retro host without touching `useConfirm` callers.
 - Global Source failure must not silently resolve or lose a pending request; shell fallback to Retro retains the singleton state and lets the Retro host render it.
+- Spatial maximize can roll back by removing the generic session/chrome state; the shared browser fullscreen adapter must leave Retro behavior unchanged.
 - Play rollback sets its Spatial registrations back to pending; shared controllers remain valid Retro consumers.
 
-## 9. Verification strategy
+## 10. Verification strategy
 
-Unit tests cover durable state/result/focus/source-lifecycle behavior. Flag Chromium owns curve appearance, center/edge hit testing, keyboard/IME, modal isolation, native escapes and iframe evidence. Tests avoid exact CSS colors, pixel snapshots and animation intermediate frames.
+Unit tests cover durable state/result/focus/source-lifecycle behavior, maximize/restore geometry retention, viewport changes, move/resize exclusion, browser fullscreen success/failure/exit and exact listener cleanup. Flag Chromium owns curve appearance, center/edge basic iframe hit testing, routed fullscreen activation, real fullscreen input/focus/resize/reload and native Escape. Tests avoid exact CSS colors, pixel snapshots and animation intermediate frames.

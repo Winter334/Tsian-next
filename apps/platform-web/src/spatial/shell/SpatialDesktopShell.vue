@@ -34,6 +34,7 @@
         :active="window.id === session.activeWindowId"
         @focus="focusWindow"
         @minimize="minimizeWindow"
+        @maximize="setWindowMaximized"
         @close="closeWindow"
         @move="moveWindow"
         @resize="resizeWindow"
@@ -69,6 +70,7 @@ import {
 } from "@/config/platform-ui-mode"
 import { resolveConfirm } from "@/composables/useConfirm"
 import { resolveDialogForm } from "@/composables/useDialogForm"
+import { BrowserWindowFullscreenController } from "@/lib/browser-fullscreen"
 import {
   INITIAL_VIEWPORT_SNAPSHOT,
   SpatialViewportController,
@@ -85,9 +87,11 @@ import {
 } from "./window-presentation"
 import { resolveWindowMinimizeOriginUv } from "./window-ripple-origin"
 import {
+  effectiveSpatialWindowGeometry,
   windowGeometryToPose,
   type SpatialResizeDirection,
   type SpatialViewportSize,
+  type SpatialWindowGeometry,
 } from "./window-layout"
 import { useSpatialWindowSession } from "./useSpatialWindowSession"
 import type { SpatialWindowState } from "./window-session"
@@ -124,6 +128,9 @@ const emit = defineEmits<{
 const route = useRoute()
 const router = useRouter()
 const { session } = useSpatialWindowSession()
+const browserFullscreen = new BrowserWindowFullscreenController({
+  applyWindowFullscreen: applySpatialWindowFullscreen,
+})
 const presentation = new SpatialWindowPresentationController()
 const confirmPresentation = new SpatialWindowPresentationController()
 const globalModalCloseLifecycle = new SpatialGlobalModalCloseLifecycle()
@@ -419,11 +426,16 @@ watch(
 )
 
 function layoutStyle(window: SpatialWindowState): Record<string, string> {
+  const geometry = effectiveWindowGeometry(window)
   return {
-    width: `${window.width}px`,
-    height: `${window.height}px`,
-    transform: `translate3d(${window.worldX}px, ${window.worldY}px, 0)`,
+    width: `${geometry.width}px`,
+    height: `${geometry.height}px`,
+    transform: `translate3d(${geometry.worldX}px, ${geometry.worldY}px, 0)`,
   }
+}
+
+function effectiveWindowGeometry(window: SpatialWindowState): SpatialWindowGeometry {
+  return effectiveSpatialWindowGeometry(window, window.maximized, viewport.value)
 }
 
 function applyWindowLayouts(): void {
@@ -440,7 +452,7 @@ function applyWindowLayouts(): void {
     if (element.style.width !== style.width) element.style.width = style.width
     if (element.style.height !== style.height) element.style.height = style.height
     if (element.style.transform !== style.transform) element.style.transform = style.transform
-    const pose = windowGeometryToPose(window, viewport.value)
+    const pose = windowGeometryToPose(effectiveWindowGeometry(window), viewport.value)
     setDatasetValue(element, "spatialDepth", String(pose.depth))
     setDatasetValue(element, "spatialYaw", String(pose.yaw))
     setDatasetValue(element, "spatialPitch", String(pose.pitch))
@@ -508,6 +520,23 @@ function focusWindow(id: string): void {
     viewportController?.restoreSource(`window:${id}`)
   }
   viewportController?.requestFrame("dirty")
+  navigateTo(target.descriptor.routePath)
+}
+
+async function setWindowMaximized(id: string, maximized: boolean): Promise<void> {
+  if (!presentation.isCommandAvailable(id)) return
+  const target = session.get(id)
+  if (!target?.descriptor.spatial.fullscreenable) return
+  const iframe = maximized && target.descriptor.appId === "play"
+    ? windowSourceRoot(id)?.querySelector<HTMLIFrameElement>("iframe[data-spatial-play-ready='true']") ?? null
+    : null
+  await browserFullscreen.setWindowFullscreen(id, maximized, iframe)
+}
+
+function applySpatialWindowFullscreen(id: string, maximized: boolean): void {
+  const target = session.setMaximized(id, maximized)
+  if (!target) return
+  refreshWindowSource(id)
   navigateTo(target.descriptor.routePath)
 }
 
@@ -931,6 +960,7 @@ onMounted(async () => {
     },
   })
   viewportController.start()
+  browserFullscreen.start()
   updateClockTimestamp()
   clockTimer = window.setInterval(updateClockTimestamp, 1_000)
   resizeObserver = new ResizeObserver(updateViewport)
@@ -957,6 +987,7 @@ onBeforeUnmount(() => {
   confirmInteractive.value = false
   dialogInteractive.value = false
   pointerMediaCleanup?.()
+  browserFullscreen.dispose()
   resizeObserver?.disconnect()
   viewportController?.dispose()
   if (clockTimer !== null) window.clearInterval(clockTimer)

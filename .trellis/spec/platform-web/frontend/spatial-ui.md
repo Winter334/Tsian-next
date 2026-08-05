@@ -648,6 +648,98 @@ if (plan.synchronize) syncSources()
 markOwningSourcesDirty(plan.dirtySourceIds)
 ```
 
+## Scenario: Spatial Window Maximize and Play Fullscreen
+
+### 1. Scope / Trigger
+
+Use this contract when adding maximize/restore to Spatial window chrome or letting a captured Play iframe enter browser fullscreen. Window layout remains shell/session state; the browser Fullscreen API remains a presentation boundary.
+
+### 2. Signatures
+
+```ts
+interface SpatialWindowState extends SpatialWindowGeometry {
+  maximized: boolean
+  minimized: boolean
+}
+
+function effectiveSpatialWindowGeometry(
+  geometry: SpatialWindowGeometry,
+  maximized: boolean,
+  viewport: SpatialViewportSize,
+): SpatialWindowGeometry
+
+class BrowserWindowFullscreenController {
+  setWindowFullscreen(
+    id: string,
+    fullscreen: boolean,
+    nativeElement?: BrowserFullscreenRequestElement | null,
+  ): Promise<"native" | "window">
+}
+```
+
+A ready Spatial Play iframe carries `data-spatial-play-ready="true"`. The shell may request native fullscreen only from an iframe with that marker inside the matching window Source.
+
+### 3. Contracts
+
+- Expose maximize/restore only for descriptors whose shared Spatial registration is `fullscreenable`.
+- Store `maximized` separately from ordinary `worldX/worldY/width/height/sideDepth`. Effective maximized geometry fills the current viewport without overwriting restore geometry; viewport changes clamp only the retained ordinary geometry for a later restore.
+- Maximized windows remain mounted but cannot start or continue drag/resize gestures. Minimize clears maximized state while retaining ordinary geometry.
+- Retro and Spatial shells share one vendor-compatible browser fullscreen controller. Shells own window lookup and state application; domain controllers do not call Fullscreen APIs.
+- A Play maximize click may request fullscreen only on the same already-ready iframe in that window. Success marks the window maximized; unsupported/rejected/not-ready requests fall back to Spatial window maximize.
+- Browser fullscreen exit clears the window maximized state. Entry, exit, focus, occlusion, and restore never clone, reparent, or remount the iframe and never reset runtime/bridge/save identity.
+- Curved Play is a compatibility preview for capture/display/basic projected click. Primary gameplay uses native iframe fullscreen for real pointer, keyboard, focus, resize, and reload.
+- Do not add automatic fullscreen, a second content-area fullscreen command, a flat DOM-over-Canvas iframe, or implicit Retro fallback. Keep the production Spatial release gate independent.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Descriptor is not `fullscreenable` | No maximize control; session rejects the state change |
+| Generic Spatial window maximizes | Effective geometry fills viewport; ordinary geometry is unchanged |
+| Move/resize arrives while maximized | Reject without geometry mutation |
+| Play iframe is absent or not ready | Skip Fullscreen API and maximize the Spatial window |
+| Fullscreen request is unsupported or rejects | Maximize the Spatial window; keep the iframe/runtime alive |
+| Fullscreen request succeeds | Browser owns the exact iframe; window/button state is maximized |
+| Browser Escape exits fullscreen | Clear maximized state and reveal the same iframe in its Source |
+| Minimize occurs from maximized fallback | Clear maximized state, release texture as usual, retain restore geometry |
+| Fullscreen listeners/controller dispose | Remove every listener exactly once and retain no tracked window id |
+
+### 5. Good / Base / Bad Cases
+
+- Good: the Play titlebar command enters fullscreen on the ready iframe; Escape returns that exact element to the curved Source with its runtime and save unchanged.
+- Good: a rejected fullscreen request produces ordinary Spatial maximize and can restore to the retained geometry.
+- Base: a non-Play `fullscreenable` window uses only effective viewport geometry and never touches browser fullscreen.
+- Bad: maximizing overwrites ordinary geometry, leaves resize handles active, or rebuilds Play into a second iframe.
+- Bad: a flat iframe is placed above the Canvas to bypass capture/input limitations.
+
+### 6. Tests Required
+
+- Unit: effective maximized geometry, restore-geometry immutability, viewport clamp, move/resize rejection, minimize clearing, and non-fullscreenable rejection.
+- Unit: standard/vendor request/current/exit behavior, rejected fallback, native-exit synchronization, idempotent start/dispose, and exact listener cleanup.
+- Component/integration: accessible maximize/restore control, resize-handle removal, Play minimized propagation, ready-marker lifecycle, shared controller consumption, native file selection, and no Retro classes/imports in Spatial Play.
+- Package: focused Play/controller/registry tests, complete Spatial suite, Vue type-check, `npm run build:web`, and `git diff --check`.
+- Flag Chromium: remote and packaged curved center/edge display plus basic click; native fullscreen pointer/keyboard/focus/resize/reload/Escape; same-instance retention after exit.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+// Overwrites restore geometry and requests fullscreen before Play is ready.
+Object.assign(window, viewport)
+await windowRoot.querySelector("iframe")?.requestFullscreen()
+```
+
+#### Correct
+
+```ts
+const effective = effectiveSpatialWindowGeometry(window, window.maximized, viewport)
+const iframe = windowRoot.querySelector<HTMLIFrameElement>(
+  "iframe[data-spatial-play-ready='true']",
+)
+await browserFullscreen.setWindowFullscreen(window.id, true, iframe)
+```
+
 ## Upstream Status
 
 - Primary source: [WICG/html-in-canvas](https://github.com/WICG/html-in-canvas).

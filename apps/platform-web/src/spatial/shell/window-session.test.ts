@@ -49,6 +49,42 @@ describe("SpatialWindowSession", () => {
     expect(session.windows[0].textureState).toBe("active")
   })
 
+  it("keeps maximized state separate from ordinary geometry and blocks geometry mutations", () => {
+    const session = new SpatialWindowSession()
+    const opened = session.open(descriptor("settings"), viewport)
+    const ordinary = structuredClone({
+      worldX: opened.worldX,
+      worldY: opened.worldY,
+      width: opened.width,
+      height: opened.height,
+      sideDepth: opened.sideDepth,
+    })
+
+    expect(session.setMaximized("settings", true)).toMatchObject({ maximized: true })
+    expect(session.move("settings", { x: 100, y: 80 }, viewport)).toBeNull()
+    expect(session.resize("settings", "se", { x: 100, y: 80 }, viewport)).toBeNull()
+    session.settle("settings", viewport)
+    expect(session.get("settings")).toMatchObject(ordinary)
+
+    expect(session.setMaximized("settings", false)).toMatchObject({ maximized: false })
+    expect(session.get("settings")).toMatchObject(ordinary)
+    expect(session.move("settings", { x: 20, y: 10 }, viewport)).not.toBeNull()
+  })
+
+  it("clears maximized state on minimize while retaining ordinary geometry", () => {
+    const session = new SpatialWindowSession()
+    const opened = session.open(descriptor("settings"), viewport)
+    const ordinary = { worldX: opened.worldX, worldY: opened.worldY, width: opened.width, height: opened.height }
+    session.setMaximized("settings", true)
+    session.minimize("settings")
+    expect(session.get("settings")).toMatchObject({
+      ...ordinary,
+      maximized: false,
+      minimized: true,
+      textureState: "released",
+    })
+  })
+
   it("opens at about 58% by 72% on a 1920x1080 viewport", () => {
     const session = new SpatialWindowSession()
     const opened = session.open(descriptor("settings"), { width: 1920, height: 1080 })

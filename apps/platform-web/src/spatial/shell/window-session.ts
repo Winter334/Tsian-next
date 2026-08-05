@@ -18,6 +18,7 @@ export interface SpatialWindowState extends SpatialWindowGeometry {
   descriptor: PlatformWindowDescriptor
   zIndex: number
   minimized: boolean
+  maximized: boolean
   textureState: SpatialTextureState
 }
 
@@ -44,6 +45,7 @@ export class SpatialWindowSession {
     const existing = this.windows.find((window) => window.id === descriptor.id)
     if (existing) {
       existing.descriptor = descriptor
+      if (!descriptor.spatial.fullscreenable) existing.maximized = false
       return this.focus(existing.id) ?? existing
     }
     const size = defaultSpatialWindowSize(
@@ -64,6 +66,7 @@ export class SpatialWindowSession {
       descriptor,
       zIndex: this.nextZIndex(),
       minimized: false,
+      maximized: false,
       textureState: "active",
       ...geometry,
     }
@@ -89,6 +92,7 @@ export class SpatialWindowSession {
     const target = this.find(id)
     if (!target) return null
     target.minimized = true
+    target.maximized = false
     target.textureState = "released"
     if (this.activeWindowId === id) this.activateTopVisible(canActivate)
     return target
@@ -97,6 +101,7 @@ export class SpatialWindowSession {
   minimizeAll(): void {
     for (const window of this.windows) {
       window.minimized = true
+      window.maximized = false
       window.textureState = "released"
     }
     this.activeWindowId = ""
@@ -139,7 +144,7 @@ export class SpatialWindowSession {
     viewport: SpatialViewportSize,
   ): SpatialWindowState | null {
     const target = this.find(id)
-    if (!target) return null
+    if (!target || target.maximized) return null
     Object.assign(target, clampSpatialGeometry({
       ...target,
       worldX: target.worldX + screenDelta.x,
@@ -155,7 +160,7 @@ export class SpatialWindowSession {
     viewport: SpatialViewportSize,
   ): SpatialWindowState | null {
     const target = this.find(id)
-    if (!target) return null
+    if (!target || target.maximized) return null
     Object.assign(target, resizeSpatialGeometry({
       geometry: target,
       direction,
@@ -168,7 +173,14 @@ export class SpatialWindowSession {
 
   settle(id: string, viewport: SpatialViewportSize): void {
     const target = this.find(id)
-    if (target) target.sideDepth = sideDepthForGeometry(target, viewport)
+    if (target && !target.maximized) target.sideDepth = sideDepthForGeometry(target, viewport)
+  }
+
+  setMaximized(id: string, maximized: boolean): SpatialWindowState | null {
+    const target = this.find(id)
+    if (!target || !target.descriptor.spatial.fullscreenable) return null
+    target.maximized = maximized
+    return this.focus(id)
   }
 
   clampAll(viewport: SpatialViewportSize): void {

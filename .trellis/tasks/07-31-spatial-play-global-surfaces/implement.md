@@ -47,29 +47,38 @@ User correction (2026-08-05): removed the theme-specific Spatial splash; the neu
 
 ## Phase 4 — Shared Play/save controllers
 
-- [ ] Extract `use-play-controller` from `PlayView.vue`, preserving mount generations, bridge registration, events, ESC and cleanup.
-- [ ] Extract `use-game-launcher-controller` from `GameLauncherPanel.vue`, preserving save/cloud/import/export/confirm/toast semantics.
-- [ ] Migrate Retro presentations first and run their regressions before Spatial components.
-- [ ] Keep iframe mount refs, native file activation and downloads at presentation boundaries.
+- [x] Extract `use-play-controller` from `PlayView.vue`, preserving mount generations, bridge registration, events, ESC and cleanup.
+- [x] Extract `use-game-launcher-controller` from `GameLauncherPanel.vue`, preserving save/cloud/import/export/confirm/toast semantics.
+- [x] Migrate Retro presentations first and run their regressions before Spatial components.
+- [x] Keep iframe mount refs, native file activation and downloads at presentation boundaries.
+
+Phase 4 verification (2026-08-05): independent Phase 2.2 review fixed terminal mount-error generation invalidation and exception-safe presentation-owned Blob download cleanup. Focused Play/save controller, Retro integration and remote iframe bridge tests pass (20 tests); platform-web Vue type-check, `npm run build:web`, and `git diff --check` pass. Phase 5 remains untouched; no Spatial registration or production release-gate state changed in this phase.
 
 Rollback: Retro views can temporarily return to local scripts; no Spatial registration becomes ready.
 
 ## Phase 5 — Iframe probe and Spatial Play
 
-- [ ] Record target-browser remote/packaged iframe capture, input, focus, resize, reload and fullscreen evidence.
-- [ ] If any required path fails, return to design; do not add a flat iframe overlay.
-- [ ] Implement Spatial save launcher over the shared controller.
-- [ ] Implement Spatial Play host states/chrome over the shared controller and proven iframe path.
-- [ ] Verify minimize/restore/occlusion state retention, ESC, fullscreen and exact cleanup.
-- [ ] Mark `game-launcher` and `play` ready only after the complete matrix passes.
+- [x] Extract the current Retro browser-fullscreen adapter into a shared presentation helper without changing Retro behavior; cover request/current/exit/vendor fallback and listener cleanup.
+- [x] Add maximize/restore state and effective viewport geometry to Spatial window session/shell, expose the titlebar control only for `fullscreenable` descriptors, and disable move/resize while maximized.
+- [x] Implement Spatial save launcher over the shared controller.
+- [x] Implement Spatial Play host states/chrome over the shared controller with the real remote/packaged iframe retained inside its Source.
+- [x] Give the Play titlebar maximize control the Retro-compatible special path: request native fullscreen on the ready iframe, otherwise/failure fall back to Spatial window maximize; do not add auto-fullscreen or a content-area fullscreen button.
+- [x] Record target-browser evidence separately for curved remote/packaged capture/display/basic center+edge click and for native fullscreen pointer/keyboard/focus/resize/reload/Escape with same-instance retention.
+- [x] If curved display/basic click or routed native-fullscreen activation fails, return to design; do not add a flat iframe overlay or implicit Retro fallback.
+- [x] Verify maximize/restore viewport changes, minimize/restore/occlusion state retention, native fullscreen exit, fallback maximize and exact cleanup.
+- [x] Mark `game-launcher` and `play` ready only after the complete matrix passes.
+
+Phase 5 verification (2026-08-06): shared fullscreen helper, generic Spatial maximize/restore, save launcher and Play host are complete. Target Flag Chromium validation accepted generic maximize/restore, remote/packaged curved center+edge display and basic click, titlebar-routed native fullscreen pointer/keyboard/focus/resize/reload, Escape exit and same-iframe retention. No flat overlay, automatic fullscreen or implicit Retro fallback was added.
 
 ## Phase 6 — Consolidated verification
 
-- [ ] Confirm exact global host ownership by mode and no Retro imports/classes in Spatial global/Play presentations.
-- [ ] Run focused global/Play/controller/registry tests and the complete Spatial suite.
-- [ ] Run Vue type-check, `npm run build:web`, and `git diff --check`.
-- [ ] Run the Flag Chromium matrix for Confirm, Toast/Dialog/global context menus and Play center/edge input.
-- [ ] Keep production release gate false and unrelated registry readiness unchanged.
+- [x] Confirm exact global host ownership by mode and no Retro imports/classes in Spatial global/Play presentations.
+- [x] Run focused global/Play/controller/registry tests and the complete Spatial suite.
+- [x] Run Vue type-check, `npm run build:web`, and `git diff --check`.
+- [x] Run the Flag Chromium matrix for Confirm, Toast/Dialog/global context menus, generic Spatial maximize/restore, curved Play display/basic center+edge click and native fullscreen gameplay/exit.
+- [x] Keep production release gate false and unrelated registry readiness unchanged.
+
+Phase 6 verification (2026-08-06): complete Spatial suite passed (34 files / 212 tests); focused feedback, Play controllers/integrations, registry, release-gate and remote iframe bridge suite passed (7 files / 39 tests); platform-web Vue type-check, production web build and tracked/untracked whitespace checks passed. `SPATIAL_RELEASE_READY` remains false.
 
 Planned commands:
 

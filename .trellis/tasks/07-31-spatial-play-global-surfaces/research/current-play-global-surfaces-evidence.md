@@ -37,3 +37,13 @@
 ## Migration conclusion
 
 The correct first seam is presentation selection at the shell boundary: Retro global hosts stay in `App.vue` only for Retro, while Spatial global hosts become direct children of `SpatialDesktopShell`'s canvas and continue reading the existing composable stores. Play requires controller extraction before a second presentation.
+
+## Maximize and fullscreen evidence (2026-08-05)
+
+- `apps/platform-web/src/components/desktop/DesktopWindow.vue:44-53` exposes one titlebar maximize/restore control for `fullscreenable` windows; Play does not own a second content-area fullscreen button.
+- `apps/platform-web/src/components/desktop/DesktopShell.vue:289-331` special-cases Play: a maximize click first locates the real iframe and requests browser fullscreen, then falls back to ordinary window maximize when the iframe/API is unavailable or rejected.
+- `DesktopShell.vue:398-405` observes native fullscreen exit and clears the window fullscreen state, so browser Escape restores the titlebar state without remounting Play.
+- `apps/platform-web/src/spatial/shell/SpatialWindowSurface.vue` currently exposes minimize/close only, while `window-session.ts` has no maximized/fullscreen state. Adding parity therefore requires a real session/layout contract, not only another icon.
+- `apps/platform-web/src/platform-apps.ts:131-153` already derives Spatial presentation registration from definitions whose Retro presentation carries `fullscreenable`; current fullscreenable app definitions can supply the shared eligibility without a Play-only hard-coded visual control.
+
+Planning conclusion: mirror the Retro titlebar control for all existing fullscreenable Spatial windows. Keep native fullscreen presentation-owned, reuse the exact iframe instance for Play, and treat curved iframe operation as compatibility preview rather than the primary gameplay surface.
