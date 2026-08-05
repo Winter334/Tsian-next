@@ -26,11 +26,13 @@
         @resize="resizeWindow"
         @settle="settleWindow"
       />
-      <SpatialConfirmHost
-        :interactive="confirmInteractive"
+      <SpatialGlobalSurfaceHost
+        :confirm-interactive="confirmInteractive"
+        :dialog-interactive="dialogInteractive"
         @sources-changed="handleGlobalSourcesChanged"
         @source-dirty="handleGlobalSourceDirty"
-        @request-close="requestGlobalConfirmClose"
+        @request-confirm-close="requestGlobalConfirmClose"
+        @request-dialog-close="requestGlobalDialogClose"
       />
     </canvas>
 
@@ -53,6 +55,7 @@ import {
   switchPlatformUiMode,
 } from "@/config/platform-ui-mode"
 import { resolveConfirm } from "@/composables/useConfirm"
+import { resolveDialogForm } from "@/composables/useDialogForm"
 import {
   INITIAL_VIEWPORT_SNAPSHOT,
   SpatialViewportController,
@@ -77,16 +80,25 @@ import { useSpatialWindowSession } from "./useSpatialWindowSession"
 import type { SpatialWindowState } from "./window-session"
 import type { SpatialShellFallback } from "./shell-types"
 import SpatialLauncherSurface from "./SpatialLauncherSurface.vue"
-import SpatialConfirmHost from "./SpatialConfirmHost.vue"
+import SpatialGlobalSurfaceHost from "./SpatialGlobalSurfaceHost.vue"
 import SpatialStatusSurface from "./SpatialStatusSurface.vue"
 import SpatialWallpaperClock from "./SpatialWallpaperClock.vue"
 import SpatialWindowSurface from "./SpatialWindowSurface.vue"
 import {
   SPATIAL_CONFIRM_PANEL_SOURCE_ID,
   SPATIAL_CONFIRM_PANEL_PRESENTATION_ID,
-  SPATIAL_CONFIRM_SHIELD_SOURCE_ID,
   spatialConfirmPanelLayout,
 } from "./spatial-confirm"
+import {
+  SPATIAL_DIALOG_PANEL_PRESENTATION_ID,
+  SPATIAL_DIALOG_PANEL_SOURCE_ID,
+  SPATIAL_MODAL_SHIELD_SOURCE_ID,
+  SPATIAL_TOAST_SOURCE_ID,
+  spatialDialogPanelLayout,
+  spatialGlobalModalTakesInput,
+  spatialToastLayout,
+} from "./spatial-global-surfaces"
+import { SpatialGlobalModalCloseLifecycle } from "./spatial-global-modal-lifecycle"
 import wallpaperUrl from "./assets/spatial-desktop-background.jpg"
 import "./spatial-shell.css"
 
@@ -99,7 +111,9 @@ const router = useRouter()
 const { session } = useSpatialWindowSession()
 const presentation = new SpatialWindowPresentationController()
 const confirmPresentation = new SpatialWindowPresentationController()
+const globalModalCloseLifecycle = new SpatialGlobalModalCloseLifecycle()
 const confirmInteractive = ref(false)
+const dialogInteractive = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const inputPlaneRef = ref<HTMLElement | null>(null)
@@ -113,7 +127,6 @@ let fallbackEmitted = false
 let pointerMedia: MediaQueryList | null = null
 const dirtyWindowSources = new Set<string>()
 const closeRequests = new Set<string>()
-let pendingConfirmResolution: { value: boolean | string | null } | null = null
 let presentationSupported = false
 let ripplePresentationSupported = false
 let reducedMotion = false
@@ -125,10 +138,10 @@ const minimizeAllGroupByWindow = new Map<string, number>()
 const confirmPresentationIds = Object.freeze([
   SPATIAL_CONFIRM_PANEL_PRESENTATION_ID,
 ] as const)
-const confirmSourceIds = Object.freeze([
-  SPATIAL_CONFIRM_SHIELD_SOURCE_ID,
-  SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+const dialogPresentationIds = Object.freeze([
+  SPATIAL_DIALOG_PANEL_PRESENTATION_ID,
 ] as const)
+let activeGlobalSourceIds = new Set<string>()
 
 function applyDockLayouts(): void {
   const canvas = canvasRef.value
@@ -179,7 +192,7 @@ function applyGlobalSurfaceLayouts(): void {
   const canvas = canvasRef.value
   if (!canvas) return
   const shield = canvas.querySelector<HTMLElement>(
-    `[data-spatial-source="${SPATIAL_CONFIRM_SHIELD_SOURCE_ID}"]`,
+    `[data-spatial-source="${SPATIAL_MODAL_SHIELD_SOURCE_ID}"]`,
   )
   if (shield) {
     const width = `${Math.round(viewport.value.width)}px`
@@ -191,44 +204,78 @@ function applyGlobalSurfaceLayouts(): void {
     }
   }
 
-  const panel = canvas.querySelector<HTMLElement>(
+  const confirmPanel = canvas.querySelector<HTMLElement>(
     `[data-spatial-source="${SPATIAL_CONFIRM_PANEL_SOURCE_ID}"]`,
   )
-  if (!panel) return
-  const initial = spatialConfirmPanelLayout(viewport.value, panel.offsetHeight)
-  const width = `${initial.width}px`
-  const maxHeight = `${initial.maxHeight}px`
-  if (panel.style.width !== width) panel.style.width = width
-  if (panel.style.maxHeight !== maxHeight) panel.style.maxHeight = maxHeight
-  const layout = spatialConfirmPanelLayout(viewport.value, panel.offsetHeight)
-  const transform = `translate3d(${layout.x}px, ${layout.y}px, 0)`
-  if (panel.style.transform !== transform) panel.style.transform = transform
+  if (confirmPanel) {
+    const initial = spatialConfirmPanelLayout(viewport.value, confirmPanel.offsetHeight)
+    applyGlobalSurfaceLayout(confirmPanel, initial)
+    applyGlobalSurfaceLayout(
+      confirmPanel,
+      spatialConfirmPanelLayout(viewport.value, confirmPanel.offsetHeight),
+    )
+  }
+
+  const dialogPanel = canvas.querySelector<HTMLElement>(
+    `[data-spatial-source="${SPATIAL_DIALOG_PANEL_SOURCE_ID}"]`,
+  )
+  if (dialogPanel) {
+    const preferredWidth = Number(dialogPanel.dataset.spatialPreferredWidth)
+    const width = Number.isFinite(preferredWidth) && preferredWidth > 0 ? preferredWidth : 480
+    const initial = spatialDialogPanelLayout(viewport.value, dialogPanel.offsetHeight, width)
+    applyGlobalSurfaceLayout(dialogPanel, initial)
+    applyGlobalSurfaceLayout(
+      dialogPanel,
+      spatialDialogPanelLayout(viewport.value, dialogPanel.offsetHeight, width),
+    )
+  }
+
+  const toastPanel = canvas.querySelector<HTMLElement>(
+    `[data-spatial-source="${SPATIAL_TOAST_SOURCE_ID}"]`,
+  )
+  if (toastPanel) applyGlobalSurfaceLayout(toastPanel, spatialToastLayout(viewport.value))
 }
 
-function mountGlobalConfirmPresentation(): void {
-  const panelMounted = confirmPresentation.mount(SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, {
-    sourceId: SPATIAL_CONFIRM_PANEL_SOURCE_ID,
+function applyGlobalSurfaceLayout(
+  element: HTMLElement,
+  layout: { width: number; maxHeight: number; x: number; y: number },
+): void {
+  const width = `${layout.width}px`
+  const maxHeight = `${layout.maxHeight}px`
+  const transform = `translate3d(${layout.x}px, ${layout.y}px, 0)`
+  if (element.style.width !== width) element.style.width = width
+  if (element.style.maxHeight !== maxHeight) element.style.maxHeight = maxHeight
+  if (element.style.transform !== transform) element.style.transform = transform
+}
+
+function mountGlobalModalPresentation(presentationId: string, sourceId: string): void {
+  const panelMounted = confirmPresentation.mount(presentationId, {
+    sourceId,
     apertureAxis: "horizontal",
   })
   if (!panelMounted) return
-  pendingConfirmResolution = null
-  confirmInteractive.value = false
-  syncPresentationInput()
-}
-
-function resetGlobalConfirmPresentation(): void {
-  confirmPresentation.clear()
-  pendingConfirmResolution = null
-  confirmInteractive.value = false
-  syncPresentationInput()
+  syncGlobalModalInteractivity()
 }
 
 function handleGlobalSourcesChanged(sourceIds: readonly string[]): void {
-  if (confirmSourceIds.every((sourceId) => sourceIds.includes(sourceId))) {
-    mountGlobalConfirmPresentation()
-  } else {
-    resetGlobalConfirmPresentation()
+  const nextGlobalSourceIds = new Set(sourceIds)
+  if (spatialGlobalModalTakesInput(activeGlobalSourceIds, nextGlobalSourceIds)) {
+    viewportController?.cancelProjectedInput()
   }
+  activeGlobalSourceIds = nextGlobalSourceIds
+  const panels = [
+    [SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, SPATIAL_CONFIRM_PANEL_SOURCE_ID],
+    [SPATIAL_DIALOG_PANEL_PRESENTATION_ID, SPATIAL_DIALOG_PANEL_SOURCE_ID],
+  ] as const
+  for (const [presentationId, sourceId] of panels) {
+    if (activeGlobalSourceIds.has(sourceId)) {
+      mountGlobalModalPresentation(presentationId, sourceId)
+    } else {
+      confirmPresentation.forget(presentationId)
+      globalModalCloseLifecycle.forget(presentationId)
+    }
+  }
+  syncGlobalModalInteractivity()
   applyGlobalSurfaceLayouts()
   viewportController?.syncSources()
 }
@@ -238,15 +285,18 @@ function handleGlobalSourceDirty(sourceId: string): void {
   viewportController?.requestSourcePaint(sourceId)
 }
 
-function confirmPresentationIdForSource(sourceId: string): string | null {
+function globalPresentationIdForSource(sourceId: string): string | null {
   if (sourceId === SPATIAL_CONFIRM_PANEL_SOURCE_ID) {
     return SPATIAL_CONFIRM_PANEL_PRESENTATION_ID
+  }
+  if (sourceId === SPATIAL_DIALOG_PANEL_SOURCE_ID) {
+    return SPATIAL_DIALOG_PANEL_PRESENTATION_ID
   }
   return null
 }
 
-function handleGlobalConfirmSourceReady(sourceId: string): boolean {
-  const presentationId = confirmPresentationIdForSource(sourceId)
+function handleGlobalModalSourceReady(sourceId: string): boolean {
+  const presentationId = globalPresentationIdForSource(sourceId)
   if (!presentationId) return false
   if (confirmPresentation.phase(presentationId) !== "capturing-open") {
     viewportController?.requestFrame("dirty")
@@ -260,8 +310,8 @@ function handleGlobalConfirmSourceReady(sourceId: string): boolean {
     apertureMotionEnabled(),
   )
   syncPresentationInput()
-  if (events.length > 0) handleConfirmPresentationEvents(events)
-  if (confirmPresentationIds.some((id) => confirmPresentation.phase(id) === "opening")) {
+  if (events.length > 0) handleGlobalModalPresentationEvents(events)
+  if (confirmPresentation.phase(presentationId) === "opening") {
     viewportController?.requestFrame("transition")
   } else {
     viewportController?.requestFrame("dirty")
@@ -270,29 +320,44 @@ function handleGlobalConfirmSourceReady(sourceId: string): boolean {
 }
 
 function requestGlobalConfirmClose(value: boolean | string | null): void {
-  if (!confirmInteractive.value
-    || pendingConfirmResolution
-    || !confirmPresentation.allVisible(confirmPresentationIds)) return
-
-  pendingConfirmResolution = { value }
-  confirmInteractive.value = false
-  const guardsStarted = confirmPresentationIds.every((id) => confirmPresentation.beginGuard(id))
-  if (!guardsStarted) {
-    for (const id of confirmPresentationIds) confirmPresentation.cancelGuard(id)
-    pendingConfirmResolution = null
-    confirmInteractive.value = confirmPresentation.allVisible(confirmPresentationIds)
-    syncPresentationInput()
-    return
-  }
-
-  const timestamp = performance.now()
-  const events = confirmPresentationIds.flatMap((id) => (
-    confirmPresentation.startClosing(id, timestamp, apertureMotionEnabled())
+  if (!confirmInteractive.value) return
+  requestGlobalModalClose(globalModalCloseLifecycle.requestConfirm(
+    confirmPresentation,
+    value,
+    performance.now(),
+    apertureMotionEnabled(),
   ))
+}
+
+function requestGlobalDialogClose(confirm: boolean): void {
+  if (!dialogInteractive.value) return
+  requestGlobalModalClose(globalModalCloseLifecycle.requestDialog(
+    confirmPresentation,
+    confirm,
+    performance.now(),
+    apertureMotionEnabled(),
+  ))
+}
+
+function requestGlobalModalClose(
+  request: { accepted: boolean; events: readonly SpatialWindowPresentationEvent[] },
+): void {
+  if (!request.accepted) return
+  syncGlobalModalInteractivity()
+  if (request.events.length > 0) handleGlobalModalPresentationEvents(request.events)
+  viewportController?.requestFrame(globalModalCloseLifecycle.hasPending ? "transition" : "dirty")
+}
+
+function syncGlobalModalInteractivity(): void {
+  const confirmIsTop = activeGlobalSourceIds.has(SPATIAL_CONFIRM_PANEL_SOURCE_ID)
+  confirmInteractive.value = confirmIsTop
+    && !globalModalCloseLifecycle.confirmPending
+    && confirmPresentation.allVisible(confirmPresentationIds)
+  dialogInteractive.value = !confirmIsTop
+    && activeGlobalSourceIds.has(SPATIAL_DIALOG_PANEL_SOURCE_ID)
+    && !globalModalCloseLifecycle.dialogPending
+    && confirmPresentation.allVisible(dialogPresentationIds)
   syncPresentationInput()
-  if (events.length > 0) handleConfirmPresentationEvents(events)
-  if (pendingConfirmResolution) viewportController?.requestFrame("transition")
-  else viewportController?.requestFrame("dirty")
 }
 
 watch(
@@ -629,7 +694,7 @@ function applyPresentationSettlement(
   syncPresentationInput()
   if (frame.events.length > 0) handlePresentationEvents(frame.events)
   if (confirmFrame && confirmFrame.events.length > 0) {
-    handleConfirmPresentationEvents(confirmFrame.events)
+    handleGlobalModalPresentationEvents(confirmFrame.events)
   }
   viewportController?.requestFrame("dirty")
 }
@@ -659,30 +724,13 @@ function settlePresentationForContextLoss(): void {
   )
 }
 
-function handleConfirmPresentationEvents(
+function handleGlobalModalPresentationEvents(
   events: readonly SpatialWindowPresentationEvent[],
 ): void {
-  let closeCompleted = false
-  for (const event of events) {
-    if (event.kind !== "close-ready") continue
-    if (!confirmPresentationIds.some((id) => id === event.windowId)) {
-      continue
-    }
-    if (confirmPresentation.completeClose(event.windowId)) {
-      closeCompleted = true
-    }
-  }
-
-  confirmInteractive.value = pendingConfirmResolution === null
-    && confirmPresentation.allVisible(confirmPresentationIds)
-  syncPresentationInput()
-
-  if (!pendingConfirmResolution || !closeCompleted) return
-  const { value } = pendingConfirmResolution
-  pendingConfirmResolution = null
-  confirmInteractive.value = false
-  syncPresentationInput()
-  resolveConfirm(value)
+  const resolutions = globalModalCloseLifecycle.complete(confirmPresentation, events)
+  syncGlobalModalInteractivity()
+  if (resolutions.confirm) resolveConfirm(resolutions.confirm.value)
+  if (resolutions.dialog) resolveDialogForm(resolutions.dialog.confirm)
 }
 
 function handlePresentationEvents(events: readonly SpatialWindowPresentationEvent[]): void {
@@ -799,14 +847,14 @@ onMounted(async () => {
                 handlePresentationEvents(presentationFrame.events)
               }
               if (confirmPresentationFrame.events.length > 0) {
-                handleConfirmPresentationEvents(confirmPresentationFrame.events)
+                handleGlobalModalPresentationEvents(confirmPresentationFrame.events)
               }
             }
           : undefined,
       }
     },
     onSourceReady: (sourceId) => {
-      if (handleGlobalConfirmSourceReady(sourceId)) return
+      if (handleGlobalModalSourceReady(sourceId)) return
       if (!sourceId.startsWith("window:")) return
       const id = sourceId.slice("window:".length)
       const phase = presentation.phase(id)
@@ -866,8 +914,9 @@ onBeforeUnmount(() => {
   minimizeAllGroupByWindow.clear()
   presentation.clear()
   confirmPresentation.clear()
-  pendingConfirmResolution = null
+  globalModalCloseLifecycle.clear()
   confirmInteractive.value = false
+  dialogInteractive.value = false
   pointerMediaCleanup?.()
   resizeObserver?.disconnect()
   viewportController?.dispose()

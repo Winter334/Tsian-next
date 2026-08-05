@@ -34,9 +34,9 @@
       />
     </Transition>
 
-    <ToastHost />
+    <ToastHost v-if="shellMode === 'retro'" />
     <ConfirmHost v-if="shellMode === 'retro'" />
-    <FloatingWindow />
+    <FloatingWindow v-if="shellMode === 'retro'" />
   </div>
 </template>
 

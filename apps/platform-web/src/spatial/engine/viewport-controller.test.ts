@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import type { SpatialSourceRoot } from "./input/target-resolver"
 import {
   routedMouseEventDetail,
+  sourceAllowsProjectedInput,
   sourcesAvailableForProjectedInput,
   sourcesAvailableForTextureCapture,
 } from "./viewport-controller"
@@ -10,7 +11,7 @@ describe("Spatial viewport source availability", () => {
   it("keeps released and restoring sources from occluding projected input", () => {
     const sources = ["shell:launcher", "window:front", "window:behind"].map((sourceId) => ({
       sourceId,
-      root: {} as Element,
+      root: { getAttribute: () => null } as unknown as Element,
     })) satisfies SpatialSourceRoot[]
 
     expect(sourcesAvailableForProjectedInput(
@@ -38,6 +39,24 @@ describe("Spatial viewport source availability", () => {
     expect(sourcesAvailableForProjectedInput(sources, new Set()).map(({ sourceId }) => sourceId))
       .toEqual(["global:confirm", "global:modal-shield"])
     expect(sourcesAvailableForTextureCapture([drawable, inputOnly])).toEqual([drawable])
+  })
+
+  it("applies data-spatial-input none to both new hits and captured-input availability", () => {
+    const enabled = {
+      getAttribute: () => null,
+    } as unknown as Element
+    const disabled = {
+      getAttribute: (name: string) => name === "data-spatial-input" ? "none" : null,
+    } as unknown as Element
+    const sources = [
+      { sourceId: "global:confirm", root: enabled },
+      { sourceId: "global:dialog", root: disabled },
+    ] satisfies SpatialSourceRoot[]
+
+    expect(sourceAllowsProjectedInput(enabled)).toBe(true)
+    expect(sourceAllowsProjectedInput(disabled)).toBe(false)
+    expect(sourcesAvailableForProjectedInput(sources, new Set()).map(({ sourceId }) => sourceId))
+      .toEqual(["global:confirm"])
   })
 })
 

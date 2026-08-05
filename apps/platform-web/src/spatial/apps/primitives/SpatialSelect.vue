@@ -76,6 +76,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{
   "update:modelValue": [value: string]
   change: [value: string]
+  "openChange": [open: boolean]
 }>()
 
 const root = ref<HTMLElement | null>(null)
@@ -97,11 +98,15 @@ function optionId(index: number): string {
 function toggle(): void {
   if (props.disabled) return
   if (open.value) {
-    open.value = false
+    closeListbox()
     return
   }
-  activeIndex.value = spatialSelectSelectedIndex(props.options, props.modelValue)
+  const selectedIndex = spatialSelectSelectedIndex(props.options, props.modelValue)
+  activeIndex.value = selectedIndex >= 0
+    ? selectedIndex
+    : props.options.findIndex((option) => !option.disabled)
   open.value = activeIndex.value >= 0
+  emit("openChange", open.value)
 }
 
 function handleKeydown(event: KeyboardEvent): void {
@@ -114,6 +119,8 @@ function handleKeydown(event: KeyboardEvent): void {
   open.value = result.open
   activeIndex.value = result.activeIndex
   if (result.handled) event.preventDefault()
+  if (wasOpen && event.key === "Escape") event.stopPropagation()
+  if (wasOpen !== result.open) emit("openChange", result.open)
   if (result.selectedValue !== undefined && result.selectedValue !== props.modelValue) {
     emit("update:modelValue", result.selectedValue)
     emit("change", result.selectedValue)
@@ -132,6 +139,7 @@ function select(index: number): void {
   if (!option || option.disabled) return
   activeIndex.value = index
   open.value = false
+  emit("openChange", false)
   if (option.value !== props.modelValue) {
     emit("update:modelValue", option.value)
     emit("change", option.value)
@@ -142,19 +150,22 @@ function handleDocumentPointerDown(event: PointerEvent): void {
   // Trusted pointer input targets the full-screen Spatial input plane before
   // the router inverse-projects and dispatches the Source-local event. Closing
   // here would hide the listbox before its option can participate in hit-test.
-  if (shouldCloseSpatialSelectFromPointerDown(root.value, event)) open.value = false
+  if (open.value && shouldCloseSpatialSelectFromPointerDown(root.value, event)) {
+    open.value = false
+    emit("openChange", false)
+  }
 }
 
 function handleFocusOut(): void {
   void nextTick(() => {
-    if (!root.value?.contains(document.activeElement)) open.value = false
+    if (!root.value?.contains(document.activeElement)) closeListbox()
   })
 }
 
 watch(() => [props.modelValue, props.options, props.disabled] as const, () => {
   const selectedIndex = spatialSelectSelectedIndex(props.options, props.modelValue)
   if (props.disabled || selectedIndex < 0) {
-    open.value = false
+    closeListbox()
     activeIndex.value = selectedIndex
     return
   }
@@ -162,6 +173,12 @@ watch(() => [props.modelValue, props.options, props.disabled] as const, () => {
     activeIndex.value = selectedIndex
   }
 })
+
+function closeListbox(): void {
+  if (!open.value) return
+  open.value = false
+  emit("openChange", false)
+}
 
 onMounted(() => document.addEventListener("pointerdown", handleDocumentPointerDown, true))
 onBeforeUnmount(() => document.removeEventListener("pointerdown", handleDocumentPointerDown, true))

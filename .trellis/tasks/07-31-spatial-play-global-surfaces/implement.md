@@ -27,11 +27,13 @@ Rollback: remove Spatial Confirm roots and restore Retro Confirm mount for Spati
 
 ## Phase 2 — Toast and Dialog Form
 
-- [ ] Add Spatial Toast Source over `useToasts`, including dismiss/live region/bounded transitions.
-- [ ] Add Spatial Dialog Form Source over `useDialogForm`, built-in fields, SpatialSelect, validate/test/busy/result/error.
-- [ ] Share shield/panel/focus machinery without merging request stores or changing caller APIs.
-- [ ] Verify simultaneous request z-order, modal isolation, source removal and reduced motion.
-- [ ] Remove Retro Toast/form hosts from Spatial mode only.
+- [x] Add Spatial Toast Source over `useToasts`, including dismiss/live region/bounded transitions.
+- [x] Add Spatial Dialog Form Source over `useDialogForm`, built-in fields, SpatialSelect, validate/test/busy/result/error.
+- [x] Share shield/panel/focus machinery without merging request stores or changing caller APIs.
+- [x] Verify simultaneous request z-order, modal isolation, source removal and reduced motion.
+- [x] Remove Retro Toast/form hosts from Spatial mode only.
+- [x] Complete user Flag Chromium validation (accepted 2026-08-05): Dialog/Toast projected interaction works; Toast enter/leave animation is visible; final leave has no horizontal scrollbar; card version updates no longer flash My Apps or Game Card Detail.
+- [x] Route ordinary Source-local DOM mutations to the owning texture while preserving full synchronization for direct Source and dynamic-media topology changes; complete Spatial regression, type-check and web build.
 
 Rollback: switch Spatial mode back to Retro hosts; singleton state remains authoritative.
 

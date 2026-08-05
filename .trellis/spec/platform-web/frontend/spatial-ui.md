@@ -80,11 +80,13 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - `layoutSubtree` sources are direct Canvas children with a connected, non-zero rendered border box. A stale parent, `display:none`, disconnection, or zero box makes the source ineligible and releases its texture.
 - Direct Canvas Source placement must use explicit pixel geometry derived from the real shell/canvas viewport and the Source's rendered size, then write an authoritative `translate3d`. Do not rely on percentage positioning, `right`/`bottom`, or `vh`/`vw` for shell Sources: the experimental layout subtree's CSS containing block is not reliable in the target Chromium implementation.
 - Normalize `changedElements` and feature-detected `removedElements`. Explicit source synchronization remains required while upstream drafts/runtimes differ.
+- Mutation observation distinguishes registry changes from texture changes. Direct Canvas Source topology/eligibility and `data-spatial-dynamic-media` discovery/removal run full Source synchronization; descendant attributes, child/text changes and ordinary Vue updates dirty only their owning Source and request one paint batch. Do not run `syncSources()` for every subtree mutation: broad synchronization/paint requests can recapture unrelated changing Sources and produce visible flashes.
 - Do not rely on `UNPACK_FLIP_Y_WEBGL`; element uploads may ignore unpack state. Own orientation once in the source-texture UV convention and verify it in the flagged browser.
 - Upload during `paint` sees the current snapshot; a later upload may see the previous snapshot. `requestPaint()` is one-shot and an empty changed list only authorizes already-dirty initial/restore sources.
 - Product render order is fixed: WebGL-owned wallpaper + particles into the bounded environment target; environment-only Bloom/composite to the default framebuffer; GPU decoration ring; sharp low-z clock Source; Dock Sources; independent window Sources back to front; foreground markers. No Source texture may enter an environment target or global post-process.
 - Source input order is the reverse of painter order by the same scene z contract: highest-z windows resolve first, then lower-z shell background Sources. A Source that is visually occluded by a window must not steal the projected hit. Keep pointer capture bound to the selected Source/pose after pointer-down.
-- A direct Canvas Source marked `data-spatial-render="none"` is input-only: keep it in Source geometry, projected hit resolution and z-order, but filter it out before dynamic-media discovery and `ElementTextureRegistry.synchronize()`. It must allocate, upload and draw no texture. Use this narrow escape for invisible modal input sinks; CSS transparency alone is insufficient because a full-screen transparent element snapshot can transiently upload or composite as black in the target Chromium implementation. `data-spatial-input="none"` is the inverse contract (drawable but not interactive) and must not be substituted.
+- Whenever modal input ownership changes, cancel any capture held by the previously active background or modal before accepting further routed events. A newly opened higher modal or newly revealed lower modal must not inherit an in-progress gesture merely because pointer capture normally stays bound to its original Source.
+- A direct Canvas Source marked `data-spatial-render="none"` is input-only: keep it in Source geometry, projected hit resolution and z-order, but filter it out before dynamic-media discovery and `ElementTextureRegistry.synchronize()`. It must allocate, upload and draw no texture. Use this narrow escape for invisible modal input sinks; CSS transparency alone is insufficient because a full-screen transparent element snapshot can transiently upload or composite as black in the target Chromium implementation. `data-spatial-input="none"` is the inverse contract (drawable but not interactive) and must not be substituted. Input exclusion applies to both new hit resolution and a gesture captured before the attribute changed; the next routed event must cancel that capture instead of dispatching into the now-inert Source.
 - Projected activation follows browser cancellation boundaries: canceling routed `pointerdown` suppresses activation; canceling only compatibility `mousedown` suppresses its focus default but still permits the later click and remains visible in delivery diagnostics. Routed cancellation must be re-entrant and release logical/browser capture exactly once.
 - Compatibility mouse events normalize event-family semantics instead of copying every `PointerEvent` field verbatim. Browser `PointerEvent.detail` is normally `0`, while first-click `mousedown` / `mouseup` / `click` must expose `detail=1`; otherwise CodeMirror treats zero as a triple-click, selects the whole line, and the next typed character replaces it. Preserve positive click counts, use `2` for routed `dblclick`, and keep move/hover/context/wheel detail at `0`.
 - Projected native scrollbar dragging is limited to real layout gutters and the reconstructed thumb. Derive track geometry from the element border/client boxes in Source-local client coordinates, reject overlay/no-gutter, disabled/non-overflowing, invalid, track-only, and RTL-horizontal cases explicitly, and keep Chromium scrollbar width plus arrow-button removal aligned with that geometry. A captured thumb drag clamps and emits scroll only on change, dirties only its owning Source, requests a fresh paint, never clicks on release, and is canceled by pointer/source/controller teardown.
@@ -120,6 +122,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 | Current call fails with a negotiable signature error and six-argument call succeeds | `apiVariant="legacy"` |
 | Both upload shapes fail | Preserve/report the current-call failure; texture remains dirty |
 | Source removed or disconnected | Delete texture and registry record deterministically |
+| A captured Source changes to `data-spatial-input="none"` | Cancel capture on the next routed event; dispatch nothing further to that Source |
 | Source stale-parent, `display:none`, or zero-box | Diagnose ineligibility; do not retry as forced 1×1 |
 | Pointer outside curved domain | No DOM hit; retain viewport parallax target |
 | Captured projection receives browser `DOMRect` instances | Explicitly copy `left`, `top`, `width`, and `height`; captured inverse/differential must not observe missing or non-finite geometry |
@@ -169,7 +172,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 ### 6. Tests Required
 
 - Unit: WebGL2/current/legacy negotiation, unresolved state, paint changed/removed normalization, source eligibility/removal, context restore, and proof that input-only Sources remain projected-input candidates while being excluded from texture capture.
-- Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, native scrollbar geometry/drag cleanup, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates.
+- Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, native scrollbar geometry/drag cleanup, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates. Source-availability coverage must assert `data-spatial-input="none"` excludes both new candidates and captured-input continuation.
 - Unit: Source-local popup outside-pointer behavior distinguishes trusted input-plane events from routed synthetic inside/outside targets; a trusted plane event cannot close the popup before option hit resolution.
 - Unit: routed event initialization asserts compatibility `mousedown` / `mouseup` / `click` normalize pointer detail zero to one, `dblclick` preserves two, and move/hover events remain zero.
 - Unit: environment/effects/decoration/clock/Dock/window/foreground pass order, reverse-z projected input order, default-pose parsing, transparent/image failure fallback, framebuffer lifecycle, media cover math, particle/reduced-motion scheduling, deterministic flow/size ranges, radius-bounded centers, and static Source upload counts.
@@ -474,6 +477,7 @@ function shouldQueueNextSourceTexturePaint(
 - A true curved dominant-content transition requires renderer-owned old/new textures composed on the same WebGL mesh. The current renderer owns one texture per Source and has no reusable intra-Source dual-texture seam; do not add that capability from an application task.
 - Popovers, dialogs and useful list/card entry may use the shared bounded local transitions. They are event-driven, interruptible, use no infinite iteration and settle without a continuous Source dirty reason; disable them too if Flag Chromium shows planar escape.
 - Popovers, dialogs and list/card entries may still locally animate to/from zero opacity because the stable owning screen remains painted underneath; they do not use dominant replacement composition.
+- A standalone global Source whose entire visible body enters/leaves, such as Toast, has no stable owning screen behind its descendant. If Flag Chromium does not capture `opacity`/`transform` intermediates, use contained layout/paint transitions instead (measured height, bounded margin/padding/border), keep the Source eligible through the first frame and mounted through the final leave frame, and hide horizontal overflow. Reduced motion reaches the same terminal DOM immediately.
 - A Source containing shared application transitions must opt in with `data-spatial-source-animation`. CSS computed intermediate frames do not trigger `MutationObserver`, so the viewport listens for bubbling `transitionrun`, `transitionend`, and `transitioncancel` only under opted-in Sources and sustains the `animated-source` reason while at least one transition remains active.
 - The hard deadline is anchored to the first `transitionrun` in one continuously active Source batch. Later properties increment the active-transition count but must not extend that deadline; otherwise repeated transition starts can turn the bounded recapture contract into an unbounded loop.
 - Source animation capture is serialized per Source. If its texture record is already dirty (whether waiting for paint or paint-ready), do not call `markDirty()` again: that clears `paintReady` and can produce stale/final-frame flicker. After the current generation uploads and becomes clean, mark it dirty once and request the next paint snapshot.
@@ -506,6 +510,9 @@ function shouldQueueNextSourceTexturePaint(
 | Source is removed/released or context is lost | Drop its animation tracking; do not retain a frame reason for it |
 | Icon-only action lacks visible text | Caller supplies `aria-label` |
 | Route layout changes | Every prior command, status and error remains discoverable |
+| Ordinary descendant/text mutation inside one Source | Dirty and repaint only that Source; do not synchronize or recapture unrelated Sources |
+| Direct Source or dynamic-media topology changes | Synchronize the registry, then capture the affected Source generation |
+| Standalone Toast enters/leaves in target Flag Chromium | Visible bounded Source-local motion, no planar escape, horizontal scrollbar or unrelated Source flash |
 
 ### 5. Good / Base / Bad Cases
 
@@ -513,16 +520,18 @@ function shouldQueueNextSourceTexturePaint(
 - Good: upload/export/delete actions share the same horizontal icon box and label baseline across My Apps, Market and Detail.
 - Good: Detail tabs replace immediately inside one curved Source texture and never appear as flat planar content.
 - Good: an opted-in Market Source serially uploads bounded Select/dialog computed frames, preserves an outstanding paint-ready generation, and becomes idle after the local transition settles.
+- Good: a card-version update dirties My Apps and Detail exactly once each while the independent Toast Source animates with contained layout properties; other Sources retain their current textures.
 - Base: a text-only tab or menu item remains a semantic native button and uses shared Spatial app styles without being wrapped in `SpatialActionButton`.
 - Bad: native `<select>` opens a white/blue browser popup above the curved Source.
 - Bad: each page adds its own SVG margins, icon sizes, button grid, focus outline or animation timing.
 - Bad: an infinite pulse or long ambient animation keeps the HTML Source repainting while idle.
 - Bad: an animation-frame loop calls `requestSourcePaint()` every frame; repeated `markDirty()` clears `paintReady`, so old and new content appear as discrete flashes.
+- Bad: one descendant class/text mutation calls full `syncSources()`, causing every concurrently changing Source to be reconsidered and repainted.
 - Bad: a dominant Market screen uses CSS opacity/transform; Chromium promotes it to a flat descendant layer that snaps back onto the curved Source only after transition completion.
 
 ### 6. Tests Required
 
-- Unit-test durable behavior: Select state transitions and disabled-option navigation; bounded Source-animation counting/expiry, including proof that later properties cannot slide the first-event deadline; preservation of an already-dirty paint generation; reduced-motion suppression of `animated-source`; controller request sequencing/mutation guards; close guards; media object-URL ownership; registry readiness and the production release gate.
+- Unit-test durable behavior: Select state transitions and disabled-option navigation; bounded Source-animation counting/expiry, including proof that later properties cannot slide the first-event deadline; preservation of an already-dirty paint generation; reduced-motion suppression of `animated-source`; mutation routing that separates Source topology/dynamic-media sync from owning-Source descendant repaint; controller request sequencing/mutation guards; close guards; media object-URL ownership; registry readiness and the production release gate.
 - Run task-owned controller/Spatial-app tests, platform-web Vue type-check, `npm run build:web`, and `git diff --check`.
 - Manual Flag Chromium acceptance owns visual alignment, curved-edge input, transition quality, focus appearance, native file/IME escapes, minimum-size layouts and reduced motion.
 - Do not add exact CSS-value snapshots, animation-frame snapshots, screenshot unit tests or source-format substring tests for tunable presentation details. If a broad run exposes legacy shell/engine failures, audit their live contract: delete obsolete source/visual assertions, rewrite tunable numeric or draw-count checks as semantic invariants, and keep or repair only tests that still protect runtime behavior. Do not carry a permanently red baseline.
@@ -589,6 +598,16 @@ if (!record.dirty) {
 return transitionTracker.has(sourceId)
   ? { continueReasons: ["animated-source"] }
   : { continueReasons: [] }
+```
+
+```ts
+// Wrong: every local Vue update becomes a global registry/paint operation.
+new MutationObserver(() => syncSources())
+
+// Correct: topology/media changes synchronize; local content dirties its owner.
+const plan = planSpatialSourceMutations(canvas, records)
+if (plan.synchronize) syncSources()
+markOwningSourcesDirty(plan.dirtySourceIds)
 ```
 
 ## Upstream Status

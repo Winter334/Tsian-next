@@ -24,9 +24,11 @@ afterEach(() => {
   }
 })
 
-function mountSelect() {
-  const model = ref("newest")
+function mountSelect(initialValue = "newest") {
+  const model = ref(initialValue)
+  const disabled = ref(false)
   const emitted: Array<{ name: "update:modelValue" | "change"; value: string }> = []
+  const openChanges: boolean[] = []
   const host = document.createElement("div")
   document.body.append(host)
   const app = createApp({
@@ -35,17 +37,19 @@ function mountSelect() {
         modelValue: model.value,
         options,
         ariaLabel: "排序",
+        disabled: disabled.value,
         "onUpdate:modelValue": (value: string) => {
           emitted.push({ name: "update:modelValue", value })
           model.value = value
         },
         onChange: (value: string) => emitted.push({ name: "change", value }),
+        onOpenChange: (open: boolean) => openChanges.push(open),
       })
     },
   })
   app.mount(host)
   mountedApps.push({ app, host })
-  return { emitted, host, model }
+  return { disabled, emitted, host, model, openChanges }
 }
 
 describe("Spatial Select keyboard interaction", () => {
@@ -151,6 +155,17 @@ describe("Spatial Select mounted DOM", () => {
     expect([...host.querySelectorAll("[role=option]")]).toEqual(initialOptions)
   })
 
+  it("opens an unselected model from pointer input at the first enabled option", async () => {
+    const { host } = mountSelect("")
+    const trigger = host.querySelector<HTMLButtonElement>(".spatial-select__trigger")
+
+    trigger?.click()
+    await nextTick()
+
+    expect(trigger?.getAttribute("aria-expanded")).toBe("true")
+    expect(trigger?.getAttribute("aria-activedescendant")).toContain("option-0")
+  })
+
   it("selects a mounted option, emits both contracts, and closes without unmounting", async () => {
     const { emitted, host, model } = mountSelect()
     const trigger = host.querySelector<HTMLButtonElement>(".spatial-select__trigger")
@@ -213,5 +228,28 @@ describe("Spatial Select mounted DOM", () => {
     expect(listbox?.getAttribute("aria-hidden")).toBe("true")
     expect(host.querySelector("[role=listbox]")).toBe(listbox)
     expect([...host.querySelectorAll("[role=option]")]).toEqual(optionElements)
+  })
+
+  it("reports focus and prop-driven closes to Source capture consumers", async () => {
+    const first = mountSelect()
+    const firstTrigger = first.host.querySelector<HTMLButtonElement>(".spatial-select__trigger")!
+    const outside = document.createElement("button")
+    document.body.append(outside)
+    firstTrigger.focus()
+    firstTrigger.click()
+    await nextTick()
+    outside.focus()
+    await nextTick()
+    await nextTick()
+
+    expect(first.openChanges).toEqual([true, false])
+
+    const second = mountSelect()
+    second.host.querySelector<HTMLButtonElement>(".spatial-select__trigger")?.click()
+    await nextTick()
+    second.disabled.value = true
+    await nextTick()
+
+    expect(second.openChanges).toEqual([true, false])
   })
 })

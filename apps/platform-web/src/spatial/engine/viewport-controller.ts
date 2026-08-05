@@ -52,6 +52,7 @@ import {
   sourceTextureAnimationSettlementAction,
   SourceTextureAnimationTracker,
 } from "./source-texture-animation"
+import { planSpatialSourceMutations } from "./source-mutation-routing"
 import {
   capturedSceneScreenToLocalDifferential,
   captureSceneProjection,
@@ -121,7 +122,13 @@ export function sourcesAvailableForProjectedInput(
   sources: readonly SpatialSourceRoot[],
   unavailableSourceIds: ReadonlySet<string>,
 ): SpatialSourceRoot[] {
-  return sources.filter((source) => !unavailableSourceIds.has(source.sourceId))
+  return sources.filter((source) => (
+    !unavailableSourceIds.has(source.sourceId) && sourceAllowsProjectedInput(source.root)
+  ))
+}
+
+export function sourceAllowsProjectedInput(source: Element): boolean {
+  return source.getAttribute("data-spatial-input") !== "none"
 }
 
 /**
@@ -346,6 +353,10 @@ export class SpatialViewportController {
 
   requestFrame(reason: FrameReason): void {
     this.scheduler?.request(reason)
+  }
+
+  cancelProjectedInput(): void {
+    if (!this.disposed) this.cancelRoutedInput()
   }
 
   /**
@@ -985,12 +996,22 @@ export class SpatialViewportController {
       }, true)
     }
     if (typeof MutationObserver === "function") {
-      this.sourceObserver = new MutationObserver(() => this.syncSources())
+      this.sourceObserver = new MutationObserver((records) => {
+        this.handleSourceMutations(records)
+      })
       this.sourceObserver.observe(this.options.canvas, {
         childList: true,
         subtree: true,
         attributes: true,
-        attributeFilter: ["class", "hidden", "style", "data-spatial-render"],
+        characterData: true,
+        attributeFilter: [
+          "class",
+          "data-spatial-dynamic-media",
+          "hidden",
+          "style",
+          "data-spatial-input",
+          "data-spatial-render",
+        ],
       })
     }
 
@@ -1075,6 +1096,26 @@ export class SpatialViewportController {
       const resize = () => this.resize()
       window.addEventListener("resize", resize)
       this.cleanup.push(() => window.removeEventListener("resize", resize))
+    }
+  }
+
+  private handleSourceMutations(records: readonly MutationRecord[]): void {
+    const plan = planSpatialSourceMutations(this.options.canvas, records)
+    if (plan.synchronize) this.syncSources()
+
+    const sourcesById = new Map(this.sourceRoots().map((source) => [source.sourceId, source.root]))
+    let dirtied = false
+    for (const sourceId of plan.dirtySourceIds) {
+      if (this.sourceInputUnavailable(sourceId)) continue
+      const root = sourcesById.get(sourceId)
+      if (root && this.renderer?.elementTextures.markDirty(root)) dirtied = true
+    }
+
+    // syncSources already requests one paint. Source-local mutation batches
+    // take the narrow path and request only their owning texture generation.
+    if (!plan.synchronize && dirtied) {
+      this.capabilities?.requestPaint()
+      this.scheduler?.request("dirty")
     }
   }
 
@@ -1272,14 +1313,17 @@ export class SpatialViewportController {
   }
 
   private inputSourceRoots(): SpatialSourceRoot[] {
-    return sourcesAvailableForProjectedInput(this.sourceRoots(), this.inputUnavailableSourceIds)
-      .filter(({ sourceId }) => !this.sourceInputUnavailable(sourceId))
-      .filter(({ root }) => root.getAttribute("data-spatial-input") !== "none")
+    return sourcesAvailableForProjectedInput(this.sourceRoots(), new Set([
+      ...this.inputUnavailableSourceIds,
+      ...this.presentationInputUnavailableSourceIds,
+    ]))
   }
 
   private sourceInputUnavailable(sourceId: string): boolean {
+    const source = this.sourceRoots().find((candidate) => candidate.sourceId === sourceId)
     return this.inputUnavailableSourceIds.has(sourceId)
       || this.presentationInputUnavailableSourceIds.has(sourceId)
+      || Boolean(source && !sourceAllowsProjectedInput(source.root))
   }
 
   private sceneSources(sources: readonly SpatialSourceRoot[] = this.inputSourceRoots()): SceneSourceSurface[] {

@@ -1,24 +1,10 @@
 <template>
-  <div
-    v-if="state"
-    class="spatial-modal-shield-source"
-    :data-spatial-source="SPATIAL_CONFIRM_SHIELD_SOURCE_ID"
-    data-spatial-layer="overlay"
-    data-spatial-render="none"
-    :data-spatial-z="SPATIAL_CONFIRM_SHIELD_Z_INDEX"
-    data-spatial-parallax-factor="0"
-    data-spatial-curve-half-angle="0"
-    aria-hidden="true"
-    @pointerdown.stop
-    @click.stop="cancel"
-    @contextmenu.prevent.stop
-    @wheel.prevent.stop
-  />
+  <SpatialModalShield v-if="state && includeShield" @backdrop="cancel" />
 
   <section
     v-if="state"
     ref="panelRef"
-    class="spatial-confirm-source"
+    class="spatial-modal-panel-source spatial-confirm-source"
     :class="{ 'spatial-confirm-source--danger': isDanger }"
     :data-spatial-source="SPATIAL_CONFIRM_PANEL_SOURCE_ID"
     data-spatial-layer="overlay"
@@ -37,12 +23,12 @@
     tabindex="-1"
     @keydown="onPanelKeydown"
   >
-    <header class="spatial-confirm-source__header">
-      <span class="spatial-confirm-source__kind">{{ state.kind }}</span>
+    <header class="spatial-modal-panel-source__header">
+      <span class="spatial-modal-panel-source__kind">{{ state.kind }}</span>
       <h2 :id="titleId">{{ state.options.title }}</h2>
       <SpatialActionButton
         icon-only
-        class="spatial-confirm-source__close"
+        class="spatial-modal-panel-source__close"
         aria-label="取消并关闭"
         title="取消并关闭"
         :disabled="!interactive"
@@ -86,7 +72,7 @@
       </label>
     </div>
 
-    <footer class="spatial-confirm-source__actions">
+    <footer class="spatial-modal-panel-source__actions spatial-confirm-source__actions">
       <SpatialActionButton
         data-spatial-confirm-cancel
         :disabled="!interactive"
@@ -119,20 +105,22 @@
 import { computed, nextTick, ref, watch } from "vue"
 import { HelpCircle, TriangleAlert, X } from "lucide-vue-next"
 import SpatialActionButton from "../apps/primitives/SpatialActionButton.vue"
+import SpatialModalShield from "./SpatialModalShield.vue"
+import { useSpatialModalFocus } from "./use-spatial-modal-focus"
 import { useConfirmState } from "@/composables/useConfirm"
 import {
   SPATIAL_CONFIRM_PANEL_SOURCE_ID,
   SPATIAL_CONFIRM_PANEL_Z_INDEX,
-  SPATIAL_CONFIRM_SHIELD_SOURCE_ID,
-  SPATIAL_CONFIRM_SHIELD_Z_INDEX,
   SPATIAL_CONFIRM_SOURCE_IDS,
 } from "./spatial-confirm"
 import "../apps/spatial-apps.css"
 
 const props = withDefaults(defineProps<{
   interactive?: boolean
+  includeShield?: boolean
 }>(), {
   interactive: true,
+  includeShield: true,
 })
 
 const emit = defineEmits<{
@@ -146,7 +134,7 @@ const panelRef = ref<HTMLElement | null>(null)
 const promptInputRef = ref<HTMLInputElement | null>(null)
 const promptValue = ref("")
 const promptError = ref("")
-let focusReturnTarget: HTMLElement | null = null
+const modalFocus = useSpatialModalFocus(panelRef)
 
 const titleId = "spatial-confirm-title"
 const messageId = "spatial-confirm-message"
@@ -166,13 +154,12 @@ watch(
     promptError.value = ""
     if (current) {
       if (!previous) {
-        focusReturnTarget = document.activeElement instanceof HTMLElement
-          && document.activeElement !== document.body
-          ? document.activeElement
-          : null
+        modalFocus.captureInvoker()
       }
       promptValue.value = current.kind === "prompt" ? current.options.defaultValue : ""
-      emit("sourcesChanged", SPATIAL_CONFIRM_SOURCE_IDS)
+      emit("sourcesChanged", props.includeShield
+        ? SPATIAL_CONFIRM_SOURCE_IDS
+        : [SPATIAL_CONFIRM_PANEL_SOURCE_ID])
       void nextTick(() => {
         markPanelDirty()
         focusInitialControl()
@@ -181,9 +168,7 @@ watch(
     }
 
     emit("sourcesChanged", [])
-    const target = focusReturnTarget
-    focusReturnTarget = null
-    if (target?.isConnected) void nextTick(() => target.focus())
+    modalFocus.restoreInvoker()
   },
   { immediate: true, flush: "post" },
 )
@@ -199,28 +184,19 @@ watch(
   },
 )
 
-function focusableControls(): HTMLElement[] {
-  const panel = panelRef.value
-  if (!panel) return []
-  return [...panel.querySelectorAll<HTMLElement>(
-    'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
-  )]
-}
-
 function cancelButton(): HTMLButtonElement | null {
   return panelRef.value?.querySelector<HTMLButtonElement>("[data-spatial-confirm-cancel]") ?? null
 }
 
 function focusInitialControl(): void {
   if (!props.interactive) {
-    panelRef.value?.focus()
+    modalFocus.focusPanel()
     return
   }
   if (state.value?.kind === "prompt") {
-    promptInputRef.value?.focus()
-    promptInputRef.value?.select()
+    modalFocus.focusInitial(promptInputRef.value, true)
   } else {
-    cancelButton()?.focus()
+    modalFocus.focusInitial(cancelButton())
   }
 }
 
@@ -233,22 +209,7 @@ function onPanelKeydown(event: KeyboardEvent): void {
   }
   if (event.key !== "Tab") return
 
-  const controls = focusableControls()
-  const first = controls[0]
-  const last = controls[controls.length - 1]
-  if (!first || !last) {
-    event.preventDefault()
-    panelRef.value?.focus()
-    return
-  }
-  const active = document.activeElement
-  if (event.shiftKey && (active === first || !panelRef.value?.contains(active))) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && (active === last || !panelRef.value?.contains(active))) {
-    event.preventDefault()
-    first.focus()
-  }
+  modalFocus.trapTab(event)
 }
 
 function markPanelDirty(): void {
