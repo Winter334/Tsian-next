@@ -1,18 +1,31 @@
 <template>
   <section ref="shellRef" class="spatial-desktop-shell" @keydown="onShellKeydown">
     <canvas ref="canvasRef" layoutsubtree class="spatial-desktop-canvas">
+      <SpatialDesktopContextSurface
+        :viewport="viewport"
+        @minimize-all="minimizeAll"
+        @source-topology-changed="handleShellSourceTopologyChanged"
+        @source-dirty="handleGlobalSourceDirty"
+      />
       <SpatialWallpaperClock :timestamp="clockTimestamp" />
       <SpatialLauncherSurface
         :launchers="platformLaunchers"
         :active-app-id="session.activeWindow?.descriptor.appId ?? ''"
+        :viewport="viewport"
         @open="openLauncher"
+        @minimize-all="minimizeAll"
+        @source-topology-changed="handleShellSourceTopologyChanged"
+        @source-dirty="handleGlobalSourceDirty"
       />
       <SpatialStatusSurface
         :windows="session.windows"
         :active-window-id="session.activeWindowId"
+        :viewport="viewport"
         @focus="focusWindow"
         @minimize-all="minimizeAll"
         @return-retro="returnToRetro"
+        @source-topology-changed="handleShellSourceTopologyChanged"
+        @source-dirty="handleGlobalSourceDirty"
       />
       <SpatialWindowSurface
         v-for="window in session.windows"
@@ -80,6 +93,7 @@ import { useSpatialWindowSession } from "./useSpatialWindowSession"
 import type { SpatialWindowState } from "./window-session"
 import type { SpatialShellFallback } from "./shell-types"
 import SpatialLauncherSurface from "./SpatialLauncherSurface.vue"
+import SpatialDesktopContextSurface from "./SpatialDesktopContextSurface.vue"
 import SpatialGlobalSurfaceHost from "./SpatialGlobalSurfaceHost.vue"
 import SpatialStatusSurface from "./SpatialStatusSurface.vue"
 import SpatialWallpaperClock from "./SpatialWallpaperClock.vue"
@@ -101,6 +115,7 @@ import {
 import { SpatialGlobalModalCloseLifecycle } from "./spatial-global-modal-lifecycle"
 import wallpaperUrl from "./assets/spatial-desktop-background.jpg"
 import "./spatial-shell.css"
+import { SPATIAL_DESKTOP_INPUT_SOURCE_ID } from "./spatial-shell-context-menu"
 
 const emit = defineEmits<{
   (event: "fallback", fallback: SpatialShellFallback): void
@@ -172,6 +187,20 @@ function applyDockLayouts(): void {
   }
 }
 
+function applyDesktopInputLayout(): void {
+  const surface = canvasRef.value?.querySelector<HTMLElement>(
+    `[data-spatial-source="${SPATIAL_DESKTOP_INPUT_SOURCE_ID}"]`,
+  )
+  if (!surface) return
+  const width = `${Math.round(viewport.value.width)}px`
+  const height = `${Math.round(viewport.value.height)}px`
+  if (surface.style.width !== width) surface.style.width = width
+  if (surface.style.height !== height) surface.style.height = height
+  if (surface.style.transform !== "translate3d(0px, 0px, 0px)") {
+    surface.style.transform = "translate3d(0px, 0px, 0px)"
+  }
+}
+
 function applyClockLayout(): void {
   const clock = canvasRef.value?.querySelector<HTMLElement>('[data-spatial-source="shell:clock"]')
   if (!clock) return
@@ -234,6 +263,7 @@ function applyGlobalSurfaceLayouts(): void {
     `[data-spatial-source="${SPATIAL_TOAST_SOURCE_ID}"]`,
   )
   if (toastPanel) applyGlobalSurfaceLayout(toastPanel, spatialToastLayout(viewport.value))
+
 }
 
 function applyGlobalSurfaceLayout(
@@ -283,6 +313,13 @@ function handleGlobalSourcesChanged(sourceIds: readonly string[]): void {
 function handleGlobalSourceDirty(sourceId: string): void {
   applyGlobalSurfaceLayouts()
   viewportController?.requestSourcePaint(sourceId)
+}
+
+function handleShellSourceTopologyChanged(): void {
+  void nextTick(() => {
+    viewportController?.syncSources()
+    viewportController?.requestFrame("dirty")
+  })
 }
 
 function globalPresentationIdForSource(sourceId: string): string | null {
@@ -653,6 +690,7 @@ function updateViewport(): void {
     return
   }
   session.clampAll(viewport.value)
+  applyDesktopInputLayout()
   applyDockLayouts()
   applyClockLayout()
   applyGlobalSurfaceLayouts()
@@ -807,6 +845,7 @@ onMounted(async () => {
   }
   const shellRect = shellRef.value?.getBoundingClientRect()
   if (shellRect) viewport.value = { width: shellRect.width, height: shellRect.height }
+  applyDesktopInputLayout()
   applyDockLayouts()
   applyClockLayout()
   applyWindowLayouts()

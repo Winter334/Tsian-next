@@ -2,7 +2,7 @@
 
 ## Goal
 
-把 Play 启动器/宿主和平台级 Splash、Toast、Confirm、通用表单浮窗及桌面上下文交互迁移为独立 Spatial presentation，使这些界面进入 HTML-in-Canvas 的 Source、曲面合成与投影输入体系，同时保持 RetroOS、平台业务 API、Play runtime/bridge 和游戏卡 iframe 前端语义不变。
+把 Play 启动器/宿主和平台级 Toast、Confirm、通用表单浮窗及桌面上下文交互迁移为独立 Spatial presentation，使这些界面进入 HTML-in-Canvas 的 Source、曲面合成与投影输入体系，同时保持 RetroOS、平台业务 API、Play runtime/bridge、现有开屏画面和游戏卡 iframe 前端语义不变。
 
 本轮首先交付并由用户验证 Spatial Confirm；其余全局表面和 Play 在同一子任务后续阶段完成。
 
@@ -46,7 +46,7 @@
 - Spatial Dialog Form 复用 `useDialogForm`，支持 text/password/number/textarea、SpatialSelect、validate、async test、busy/result/error、取消与焦点恢复；遮罩外点击保持当前“阻断但不关闭”语义。
 - form-mode `FloatingWindow` 的全局能力由 Spatial Dialog Form 覆盖；仅在 Retro route presentation 使用的 slot-mode FloatingWindow 不进入 Spatial shell，Spatial route 自有对话框继续留在所属窗口 Source。
 - Spatial 桌面/launcher/status 的全局上下文菜单保留现有可用动作，并位于对应 shell Source 内；应用局部菜单仍由各应用子任务拥有。
-- Spatial Splash 使用独立 seen 状态，不影响 Retro Nyan Splash；中立 boot gate 可在 shell/capability 初始化前保持普通页面，Spatial 动画只在 renderer ready 后进入 Source。
+- Spatial 只是显示主题，不新增独立 Splash Source、动画或 seen 状态。shell/capability 初始化前继续使用中立 boot gate；现有 Retro Nyan Splash 是唯一产品开屏画面且保持原有挂载边界与状态。
 
 ### 4. Shared Play controllers and Retro migration
 
@@ -66,7 +66,7 @@
 ### 6. Testing and release boundary
 
 - 自动测试聚焦 global host mode ownership、Source lifecycle、modal isolation/focus、confirm state variants、toast/dialog behavior、Play controller races/cleanup、registry readiness 和 release gate。
-- Flag Chromium 手测覆盖 Confirm 第一切片，以及后续 Toast/Dialog/Splash/Play 的 center/edge projected input、键盘、原生 escape、minimize/restore 和 iframe matrix。
+- Flag Chromium 手测覆盖 Confirm 第一切片，以及后续 Toast/Dialog/全局上下文菜单/Play 的 center/edge projected input、键盘、原生 escape、minimize/restore 和 iframe matrix。
 - 只有该子任务全部验收后才把 `game-launcher` / `play` 置为 Spatial ready；其他 pending app 和生产 release gate 不变。
 
 ## Out of Scope
@@ -86,7 +86,7 @@
 - [ ] AC-05：modal 打开期间后方窗口、Dock、CodeMirror、wheel 和 contextmenu 均不可命中；取消后恢复正常。
 - [ ] AC-06：确认面板在默认/最小桌面尺寸及中心/可见曲面边缘可读、可点击，无 Retro chrome、外发光或焦点外框。
 - [ ] AC-07：Confirm Source 动态创建/销毁和每次状态变更均正确 capture；关闭后无纹理、输入、动画或 frame reason 泄漏。
-- [ ] AC-08：Spatial Toast、Dialog Form、全局上下文菜单和 Splash 完成 Source-local 适配并保留现有业务语义。
+- [ ] AC-08：Spatial Toast、Dialog Form 和全局上下文菜单完成 Source-local 适配并保留现有业务语义；Spatial 不新增主题专属开屏画面。
 - [ ] AC-09：Retro Play 和 Spatial Play 消费同一 Play/save controllers，平台 mutation、bridge、事件和竞态逻辑没有复制。
 - [ ] AC-10：Spatial save launcher 的创建、重命名、继续、导入/导出、云备份/同步和删除流程可用。
 - [ ] AC-11：Spatial Play host 的 remote/packaged、loading/error/guide/rebuild、ESC、fullscreen 和 cleanup 行为与 Retro 等价。

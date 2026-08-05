@@ -64,6 +64,24 @@ function routedMouseEventDetail(
   type: RoutedPointerEventType,
   pointerDetail: number | undefined,
 ): number
+
+interface SpatialShellMenuLayout {
+  readonly width: number
+  readonly height: number
+  readonly x: number
+  readonly y: number
+}
+
+function spatialShellMenuAnchorFromSourceClient(
+  sourceRect: Pick<DOMRect, "left" | "top" | "width" | "height">,
+  client: { readonly x: number; readonly y: number },
+): { readonly x: number; readonly y: number }
+
+function spatialShellMenuLayout(
+  viewport: { readonly width: number; readonly height: number },
+  anchor: { readonly x: number; readonly y: number },
+  itemCount: number,
+): SpatialShellMenuLayout
 ```
 
 Current upload call:
@@ -87,6 +105,8 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Source input order is the reverse of painter order by the same scene z contract: highest-z windows resolve first, then lower-z shell background Sources. A Source that is visually occluded by a window must not steal the projected hit. Keep pointer capture bound to the selected Source/pose after pointer-down.
 - Whenever modal input ownership changes, cancel any capture held by the previously active background or modal before accepting further routed events. A newly opened higher modal or newly revealed lower modal must not inherit an in-progress gesture merely because pointer capture normally stays bound to its original Source.
 - A direct Canvas Source marked `data-spatial-render="none"` is input-only: keep it in Source geometry, projected hit resolution and z-order, but filter it out before dynamic-media discovery and `ElementTextureRegistry.synchronize()`. It must allocate, upload and draw no texture. Use this narrow escape for invisible modal input sinks; CSS transparency alone is insufficient because a full-screen transparent element snapshot can transiently upload or composite as black in the target Chromium implementation. `data-spatial-input="none"` is the inverse contract (drawable but not interactive) and must not be substituted. Input exclusion applies to both new hit resolution and a gesture captured before the attribute changed; the next routed event must cancel that capture instead of dispatching into the now-inert Source.
+- Blank Spatial desktop interaction uses one full-viewport, low-z input-only Source. It catches background context-menu input behind every window/Dock without allocating a transparent texture; higher-z shell and window Sources remain authoritative for overlap hits.
+- A shell context menu is a temporary direct Canvas Source owned by its desktop/launcher/status presentation, not an overflowing descendant of a narrow Dock Source and not a global menu service. Derive its anchor from routed Source-local `clientX`/`clientY`, clamp explicit pixel geometry to the real shell viewport, synchronize on mount/removal, and restore the connected opener on Escape. Document-capture outside-pointer handling defers the trusted input-plane `pointerdown` through one microtask: a later synthetic hit inside the menu Source cancels dismissal, a hit on the owner or any other Source closes immediately, and no projected target closes at the deferred fallback. This preserves menu-option targeting while still dismissing on blank desktop.
 - Projected activation follows browser cancellation boundaries: canceling routed `pointerdown` suppresses activation; canceling only compatibility `mousedown` suppresses its focus default but still permits the later click and remains visible in delivery diagnostics. Routed cancellation must be re-entrant and release logical/browser capture exactly once.
 - Compatibility mouse events normalize event-family semantics instead of copying every `PointerEvent` field verbatim. Browser `PointerEvent.detail` is normally `0`, while first-click `mousedown` / `mouseup` / `click` must expose `detail=1`; otherwise CodeMirror treats zero as a triple-click, selects the whole line, and the next typed character replaces it. Preserve positive click counts, use `2` for routed `dblclick`, and keep move/hover/context/wheel detail at `0`.
 - Projected native scrollbar dragging is limited to real layout gutters and the reconstructed thumb. Derive track geometry from the element border/client boxes in Source-local client coordinates, reject overlay/no-gutter, disabled/non-overflowing, invalid, track-only, and RTL-horizontal cases explicitly, and keep Chromium scrollbar width plus arrow-button removal aligned with that geometry. A captured thumb drag clamps and emits scroll only on change, dirties only its owning Source, requests a fresh paint, never clicks on release, and is canceled by pointer/source/controller teardown.
@@ -141,6 +161,10 @@ The old six-argument call may exist only as a private temporary adapter fallback
 | Source omits pose metadata | Use `DEFAULT_SURFACE_POSE`; omitted attributes never become numeric zero |
 | Window overlaps a lower-z shell Source | Draw and resolve input for the window first visually/front-to-back; the shell Source neither overlays nor steals the hit |
 | Input-only Source is added or removed | Preserve its projected geometry and z-order while texture count, uploads and renderer surfaces remain unchanged |
+| Pointer targets blank Spatial desktop | Resolve the low-z input-only desktop Source; no texture exists and an overlapping higher-z Source still wins |
+| Shell menu opens from pointer or `Shift+F10` / Context Menu key | Mount one bounded direct menu Source, focus its first item, support arrow/Home/End/Escape, and restore the connected opener on Escape |
+| Shell viewport changes while a menu is open | Remove the stale menu Source; do not retain coordinates derived from the old Source/viewport geometry |
+| Trusted input-plane click produces no projected target while a shell menu is open | Close at the deferred post-projection fallback; do not leave the menu stuck on blank desktop |
 | Initial window Source upload fails transiently | Keep `capturing-open`, request a fresh paint snapshot, and retry without drawing a full or empty window |
 | Close guard vetoes | Restore `visible`; no animation, session/route/focus/DOM/texture mutation |
 | Reduced motion or optional presentation program unavailable | Reach the same final open/close state immediately through the normal completion path |
@@ -151,6 +175,8 @@ The old six-argument call may exist only as a private temporary adapter fallback
 
 - Good: a direct Canvas child changes, only its texture uploads, the environment continues animating deterministic non-rigid particles, and curved edge input maps back to the same source control.
 - Good: a full-viewport modal sink marked `data-spatial-render="none"` blocks projected pointer/wheel/contextmenu behind the modal while creating no texture or draw surface.
+- Good: a z=0 input-only desktop Source catches blank-area contextmenu while windows and Docks continue to win front-to-back hit resolution.
+- Good: a narrow Dock opens a separately captured menu Source at a clamped Source-local anchor, then removes it and restores keyboard focus without leaving a frame reason.
 - Good: pointer-down snapshots browser Source/viewport rectangles into plain four-field geometry, and later captured moves continue producing non-zero Source-local deltas after the live DOM changes.
 - Good: a shell Dock has lower scene z than every window, renders before windows, and is visited after windows during projected hit resolution.
 - Good: a Select ignores the trusted input-plane `pointerdown`, then keeps open for a routed option event or closes for a routed Source-local outside target.
@@ -163,6 +189,8 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Bad: preserving a hidden Lab page or local diagnostics overlay after product-shell adoption leaves an obsolete second UI/runtime contract.
 - Bad: uploading the clock/ring every animation frame or placing any Source texture in the Bloom/composite chain softens text and breaks demand-driven uploads.
 - Bad: capturing and drawing a CSS-transparent full-viewport modal Source; the browser may expose a transient black texture even though its final CSS color is transparent.
+- Bad: render a 184px context menu outside a 78px Dock Source's border box; the visible child can be clipped or absent from both captured geometry and projected hit testing.
+- Bad: use trusted input-plane screen coordinates or a document-global menu singleton as though they were routed Source-local coordinates and ownership.
 - Bad: filtering `aria-hidden` or disabled controls out of geometry causes clicks to fall through to an element underneath.
 - Bad: focus or synthetic `.click()` alone is reported as proof that a caret, picker, or native default action succeeded.
 - Bad: a document-capture outside-click handler treats the trusted input plane as the Source target and hides a popup before the router resolves its option geometry.
@@ -174,6 +202,7 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Unit: WebGL2/current/legacy negotiation, unresolved state, paint changed/removed normalization, source eligibility/removal, context restore, and proof that input-only Sources remain projected-input candidates while being excluded from texture capture.
 - Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, native scrollbar geometry/drag cleanup, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates. Source-availability coverage must assert `data-spatial-input="none"` excludes both new candidates and captured-input continuation.
 - Unit: Source-local popup outside-pointer behavior distinguishes trusted input-plane events from routed synthetic inside/outside targets; a trusted plane event cannot close the popup before option hit resolution.
+- Unit: shell context-menu placement clamps to the shell viewport; desktop/launcher/status menus cover pointer and keyboard opening, roving focus, action parity, Escape restoration, viewport-change removal, input-only desktop texture exclusion, and trusted-pointer deferral for inside/outside/no-target projection outcomes.
 - Unit: routed event initialization asserts compatibility `mousedown` / `mouseup` / `click` normalize pointer detail zero to one, `dblclick` preserves two, and move/hover events remain zero.
 - Unit: environment/effects/decoration/clock/Dock/window/foreground pass order, reverse-z projected input order, default-pose parsing, transparent/image failure fallback, framebuffer lifecycle, media cover math, particle/reduced-motion scheduling, deterministic flow/size ranges, radius-bounded centers, and static Source upload counts.
 - Unit: per-window presentation phase progression, first-upload gating/retry, concurrent progress, duration-zero completion, guard veto/coalescing, exact-once close/minimize/restore completion, captured-input exclusion, transition-only uniforms/draws, optional-program fallback, and context-loss/dispose settlement.
@@ -282,6 +311,15 @@ if (!root.contains(event.target as Node)) closePopup()
 
 // Correct: Source-local outside behavior consumes only the routed event.
 if (!event.isTrusted && !root.contains(event.target as Node)) closePopup()
+```
+
+```vue
+<!-- Wrong: a child outside this narrow Source is not a separate captured surface. -->
+<nav data-spatial-source="shell:launcher"><Menu class="outside-dock-box" /></nav>
+
+<!-- Correct: both fragment roots are direct Canvas Sources with explicit geometry. -->
+<nav data-spatial-source="shell:launcher">...</nav>
+<Menu v-if="open" data-spatial-source="shell:launcher-menu" :style="layout" />
 ```
 
 ```ts

@@ -37,12 +37,13 @@ Rollback: remove Spatial Confirm roots and restore Retro Confirm mount for Spati
 
 Rollback: switch Spatial mode back to Retro hosts; singleton state remains authoritative.
 
-## Phase 3 — Spatial splash and shell context menu
+## Phase 3 — Shell context menu
 
-- [ ] Add renderer-ready Spatial splash with independent seen state and exact timer/resource cleanup.
-- [ ] Keep the pre-renderer neutral boot gate and Retro Nyan Splash unchanged.
-- [ ] Implement launcher/desktop context actions inside shell Sources with Source-local coordinates and keyboard path.
-- [ ] Verify once/seen behavior, reduced motion, focus restoration and no idle Source animation.
+- [x] Keep the pre-renderer neutral boot gate and Retro Nyan Splash unchanged; do not add a Spatial-specific splash or seen state.
+- [x] Implement launcher/desktop context actions inside shell Sources with Source-local coordinates and keyboard path.
+- [x] Verify pointer/keyboard dismissal, focus restoration and no idle Source animation.
+
+User correction (2026-08-05): removed the theme-specific Spatial splash; the neutral boot gate and existing Retro Nyan splash remain authoritative. Flag Chromium accepted desktop/launcher/status context-menu interaction, blank-desktop dismissal and focus behavior on 2026-08-05.
 
 ## Phase 4 — Shared Play/save controllers
 
@@ -67,7 +68,7 @@ Rollback: Retro views can temporarily return to local scripts; no Spatial regist
 - [ ] Confirm exact global host ownership by mode and no Retro imports/classes in Spatial global/Play presentations.
 - [ ] Run focused global/Play/controller/registry tests and the complete Spatial suite.
 - [ ] Run Vue type-check, `npm run build:web`, and `git diff --check`.
-- [ ] Run the Flag Chromium matrix for Confirm, Toast/Dialog/Splash and Play center/edge input.
+- [ ] Run the Flag Chromium matrix for Confirm, Toast/Dialog/global context menus and Play center/edge input.
 - [ ] Keep production release gate false and unrelated registry readiness unchanged.
 
 Planned commands:

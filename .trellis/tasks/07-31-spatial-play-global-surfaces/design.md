@@ -2,7 +2,7 @@
 
 ## 1. Boundaries
 
-This child owns platform-level presentations that are not ordinary application content: Confirm, Toast, form dialogs, Spatial splash, shell context menus, save launcher, and Play host chrome. It may extract Play/save controllers from existing Retro components, but it does not change persistence, runtime/bridge contracts, game-card frontend code, projection math, or the production release gate.
+This child owns platform-level presentations that are not ordinary application content: Confirm, Toast, form dialogs, shell context menus, save launcher, and Play host chrome. It may extract Play/save controllers from existing Retro components, but it does not change persistence, runtime/bridge contracts, the existing Retro Nyan splash, game-card frontend code, projection math, or the production release gate.
 
 The approved first implementation slice is Spatial Confirm. Later phases remain in the same task and must keep the first slice green.
 
@@ -20,7 +20,6 @@ spatial -> SpatialDesktopShell
                  global:modal-shield
                  global:confirm | global:dialog
                  global:toast
-                 global:splash
 ```
 
 The Spatial host reads the same singleton composable state. It emits Source-set/state changes to `SpatialDesktopShell`; the shell alone calls `viewportController.syncSources()` and `requestSourcePaint()`. This keeps engine ownership out of presentation components.
@@ -31,7 +30,6 @@ The Spatial host reads the same singleton composable state. It emits Source-set/
 - `global:confirm`: centered readable panel, z=1,000,010, shallow local curve, warm-gray body, charcoal title structure and red severity accent.
 - `global:dialog`: same source family for `useDialogForm`, z ordered deterministically with Confirm if both stores are active. No new global request queue is introduced.
 - `global:toast`: top-right compact stack below the modal panel but above application windows.
-- `global:splash`: full viewport Source after renderer readiness; input is isolated to the splash while active.
 
 The shield and panel are separate Sources so the panel keeps a compact texture/curve while the input-only shield owns whole-desktop hit isolation without entering GPU composition. Closing removes both from Source synchronization and restores the prior connected focus target.
 
@@ -59,7 +57,7 @@ Dialog Form shares the modal shield/panel frame, renders built-in fields and `Sp
 
 Shell context menu state remains local to `SpatialDesktopShell`/dock presentation and uses mapped Source-local coordinates. No global context-menu service is added.
 
-Spatial splash receives a mode-specific seen key. The pre-shell neutral boot gate is intentionally not textured because renderer capability is not yet established.
+Spatial does not add a theme-specific splash or seen key. The pre-shell neutral boot gate remains an ordinary page because renderer capability is not yet established; the existing Retro Nyan splash remains the only product splash and is not duplicated inside Canvas.
 
 ## 6. Shared Play architecture
 
