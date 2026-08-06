@@ -708,3 +708,24 @@ Implemented and verified Spatial Explorer, Editor, and Media surfaces with share
 ### Status
 
 [OK] **Completed**
+
+
+## Session 181: Complete Spatial agent surfaces
+
+**Date**: 2026-08-06
+**Task**: Complete Spatial agent surfaces
+**Branch**: `master`
+
+### Summary
+
+Implemented and verified Spatial Assistant and Studio surfaces, shared controllers, ask_user custom input, tool process presentation, global draggable assistant configuration, unified Spatial scrollbars, and projected close-button activation; full tests and builds passed.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e5fd0ea` | (see git log) |
+
+### Status
+
+[OK] **Completed**

@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 180
+- **Total Sessions**: 181
 - **Last Active**: 2026-08-06
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~710 | Active |
+| `journal-4.md` | ~731 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 181 | 2026-08-06 | Complete Spatial agent surfaces | `e5fd0ea` | `master` |
 | 180 | 2026-08-06 | 完成 Spatial Play 与全局界面 | `9dbf047` | `master` |
 | 179 | 2026-08-05 | Spatial Toast and Dialog Form | `43bc60f` | `master` |
 | 178 | 2026-08-04 | Spatial Confirm presentation | `ba1a85f` | `master` |
