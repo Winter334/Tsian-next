@@ -128,6 +128,8 @@ const SpatialGameCardDetailView = defineAsyncComponent(() => import("./spatial/a
 const SpatialWorkspaceExplorerView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceExplorerView.vue"))
 const SpatialWorkspaceEditorView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceEditorView.vue"))
 const SpatialWorkspaceMediaView = defineAsyncComponent(() => import("./spatial/apps/workspace/SpatialWorkspaceMediaView.vue"))
+const SpatialStudioView = defineAsyncComponent(() => import("./spatial/apps/studio/SpatialStudioView.vue"))
+const SpatialAssistantView = defineAsyncComponent(() => import("./spatial/apps/assistant/SpatialAssistantView.vue"))
 const SpatialPlayView = defineAsyncComponent(() => import("./spatial/apps/play/SpatialPlayView.vue"))
 
 function presentation(
@@ -192,13 +194,13 @@ export const platformAppRegistry: readonly PlatformAppDefinition[] = Object.free
     appId: "studio", launcher: true,
     route: { name: "studio", path: "/studio" }, identity: { kind: "singleton" },
     label: "工作室", shortLabel: "工作室", title: "工作室", caption: "当前游戏卡的 Agent 配置", icon: Bot,
-    ...presentation(StudioView, { width: 1080, height: 680 }, { width: 680, height: 460 }, true),
+    ...presentation(StudioView, { width: 1080, height: 680 }, { width: 680, height: 460 }, true, SpatialStudioView),
   },
   {
     appId: "assistant", launcher: true,
     route: { name: "assistant", path: "/assistant" }, identity: { kind: "singleton" },
     label: "桌面助手", shortLabel: "助手", title: "桌面助手", caption: "游戏卡问答与编辑辅助", icon: MessagesSquare,
-    ...presentation(AssistantView, { width: 900, height: 640 }, { width: 600, height: 420 }, true),
+    ...presentation(AssistantView, { width: 900, height: 640 }, { width: 600, height: 420 }, true, SpatialAssistantView),
   },
   {
     appId: "game-launcher", launcher: false,

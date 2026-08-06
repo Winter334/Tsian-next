@@ -429,13 +429,8 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  AgentPlatformToolName,
-  AgentContextEntry,
-  AgentRegistryEntry,
-  SkillRegistryEntry,
-} from "@tsian/contracts"
-import { computed, onBeforeUnmount, onMounted, ref } from "vue"
+import type { RegistryDiagnostic } from "@tsian/contracts"
+import { computed, ref } from "vue"
 import { useRouter } from "vue-router"
 import {
   Bot,
@@ -447,7 +442,6 @@ import {
   Trash2,
   Wrench,
 } from "lucide-vue-next"
-import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
 import MessageSequenceEditor from "@/components/studio/MessageSequenceEditor.vue"
 import { ParamTip } from "@/components/ui/tip"
 import {
@@ -458,29 +452,11 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
-import { confirm } from "@/composables/useConfirm"
-import { ACTIVE_CARD_CHANGED_EVENT, isActiveCardChangedEvent } from "@/lib/platform-events"
-import { isAgentPlatformToolEnabled } from "../agent-runtime/permissions"
-import { PLATFORM_TOOL_CONTROL_GROUPS, PLATFORM_TOOL_CONTROLS, type PlatformToolControl } from "../agent-runtime/tool-controls"
-import { isSkillEnabledForAgent } from "../agent-runtime/registry"
+import WorkspaceCodeEditor from "@/components/workspace/WorkspaceCodeEditor.vue"
 import {
-  getPlatformStudioAgentContext,
-  getPlatformStudioSnapshot,
-  isPlatformStudioToolEnabledForAgent,
-  updatePlatformStudioAgentPlatformToolEnabled,
-  updatePlatformStudioAgentSkillEnabled,
-  updatePlatformStudioAgentToolEnabled,
-  deletePlatformStudioSkill,
-  updatePlatformStudioAgentWorkspaceAccess,
-  updatePlatformStudioAgentProviderPreset,
-  waitForPlatformHostReady,
-  type PlatformStudioSnapshot,
-  type PlatformStudioModuleInfo,
-} from "../platform-host"
-import type {
-  RegistryDiagnostic,
-  ToolRegistryEntry,
-} from "@tsian/contracts"
+  STUDIO_WORKSPACE_ACCESS_OPTIONS,
+  useStudioController,
+} from "@/controllers/studio/use-studio-controller"
 
 type StudioSection = "agent" | "soul" | "skills" | "sequence" | "tools"
 
@@ -496,496 +472,85 @@ const sections: Array<{
   { id: "tools", label: "运行配置", icon: SlidersHorizontal },
 ]
 
-type RuntimeCapability =
-  | {
-      kind: "platform"
-      key: string
-      title: string
-      description: string
-      badge: string
-      path?: string
-      enabled: boolean
-      disabled: boolean
-      tool: PlatformToolControl
-    }
-  | {
-      kind: "tool"
-      key: string
-      title: string
-      description: string
-      badge: string
-      path: string
-      enabled: boolean
-      disabled: boolean
-      tool: ToolRegistryEntry
-    }
-
-const workspaceAccessOptions = [
-  {
-    level: 0,
-    label: "只读",
-    description: "只能读取普通游戏卡和存档内容。",
-  },
-  {
-    level: 1,
-    label: "可维护存档",
-    description: "可以维护当前存档的运行时文件。",
-  },
-  {
-    level: 2,
-    label: "可编辑游戏卡",
-    description: "可以编辑游戏卡内容；当前运行时仍会优先限制普通写入到存档。",
-  },
-  {
-    level: 4,
-    label: "平台维护",
-    description: "允许访问平台元数据能力，仅适合受信任的维护 Agent。",
-  },
-]
-
 const router = useRouter()
-const snapshot = ref<PlatformStudioSnapshot | null>(null)
-const agentContext = ref<AgentContextEntry | null>(null)
-const loading = ref(false)
-const contextLoading = ref(false)
-const errorMessage = ref("")
-const feedbackMessage = ref("未加载游戏卡")
-const feedbackKind = ref<"idle" | "ok" | "error">("idle")
 const activeSection = ref<StudioSection>("agent")
-const selectedAgentId = ref("")
-const agentDraft = ref("")
-const soulDraft = ref("")
-const togglingSkillPath = ref("")
-const deletingSkillPath = ref("")
-const togglingPlatformTool = ref<AgentPlatformToolName | "">("")
-const updatingWorkspaceAccess = ref(false)
-const updatingProviderPreset = ref(false)
-
-const providerPresetOptions = computed(() => snapshot.value?.providerPresets ?? [])
-const providerPresetDescription = computed(() => {
-  const presetId = selectedAgent.value?.providerPresetId
-  if (!presetId) {
-    return "未选择时使用平台默认服务商。"
-  }
-  const preset = providerPresetOptions.value.find((item) => item.id === presetId)
-  return preset ? `当前使用：${preset.name}` : "所选预设已失效，将回退到平台默认服务商。"
-})
-
-const selectedAgent = computed(() =>
-  snapshot.value?.agents.find((agent) => agent.id === selectedAgentId.value) ?? null
-)
-const cardTitle = computed(() =>
-  snapshot.value?.card.manifest.name?.trim() || "工作室"
-)
-const agentFilePath = computed(() =>
-  agentContext.value?.agentFile.path ?? selectedAgent.value?.path ?? ""
-)
-const soulFilePath = computed(() => {
-  if (agentContext.value?.soulFile?.path) {
-    return agentContext.value.soulFile.path
-  }
-
-  const path = selectedAgent.value?.path ?? ""
-  return path.endsWith("/AGENT.md")
-    ? `${path.slice(0, -"/AGENT.md".length)}/SOUL.md`
-    : ""
-})
-const skillsForSelectedAgent = computed(() => {
-  if (!snapshot.value || !selectedAgent.value) {
-    return []
-  }
-
-  return snapshot.value.skills.filter((skill) =>
-    skill.scope === "shared" || skill.agentId === selectedAgent.value?.id
-  )
-})
-const selectedEnabledSkillCount = computed(() =>
-  skillsForSelectedAgent.value.filter(skillEnabled).length
-)
-const isNoCardError = computed(() => errorMessage.value === "当前没有加载游戏卡。")
-
-// Tools discoverable for the selected Agent: shared tools + this agent's
-// agent-local tools. Filtering here matches `filterToolsForAgent` scoping
-// (agent-local tools are private to their owner).
-const toolsForSelectedAgent = computed<ToolRegistryEntry[]>(() => {
-  if (!snapshot.value || !selectedAgent.value) {
-    return []
-  }
-  const tools = snapshot.value.tools ?? []
-  return tools.filter((tool) =>
-    tool.scope === "shared" || tool.agentId === selectedAgent.value?.id
-  )
-})
-
-// Rule modules owned by the selected Agent (`agents/<id>/modules/*.md` plus
-// `.tsian/local/<id>/modules/*.md`). Empty when the Agent has no modules
-// directory — the "规则模块" section is hidden via v-if in that case.
-const modulesForSelectedAgent = computed<PlatformStudioModuleInfo[]>(() => {
-  if (!snapshot.value || !selectedAgent.value) {
-    return []
-  }
-  const agentId = selectedAgent.value.id
-  return snapshot.value.modules.filter((module) => module.agentId === agentId)
-})
-const toolDiagnostics = computed<RegistryDiagnostic[]>(() =>
-  snapshot.value?.toolDiagnostics ?? []
-)
-const runtimeCapabilities = computed<RuntimeCapability[]>(() => {
-  const platformCapabilities = PLATFORM_TOOL_CONTROL_GROUPS.flatMap((group) =>
-    group.tools.map<RuntimeCapability>((tool) => ({
-      kind: "platform",
-      key: `platform:${tool.id}`,
-      title: tool.label,
-      description: tool.description,
-      badge: `平台能力 · ${group.title}`,
-      enabled: platformToolEnabled(tool.id),
-      disabled: togglingPlatformTool.value === tool.id,
-      tool,
-    })),
-  )
-  const userToolCapabilities = toolsForSelectedAgent.value.map<RuntimeCapability>((tool) => ({
-    kind: "tool",
-    key: `tool:${tool.path}`,
-    title: tool.name,
-    description: tool.description,
-    badge: `自定义 Tool · ${tool.scope === "agent-local" ? "私有" : "共享"}`,
-    path: tool.path,
-    enabled: toolEnabledForAgent(tool),
-    disabled: togglingToolName.value === tool.name,
-    tool,
-  }))
-
-  return [...platformCapabilities, ...userToolCapabilities]
-})
-const enabledRuntimeCapabilityCount = computed(() =>
-  runtimeCapabilities.value.filter((capability) => capability.enabled).length
-)
-const togglingToolName = ref<string | null>(null)
-function toolEnabledForAgent(tool: ToolRegistryEntry): boolean {
-  const agent = selectedAgent.value
-  return agent ? isPlatformStudioToolEnabledForAgent(tool, agent) : false
-}
-function diagLevelClass(level: RegistryDiagnostic["level"]): string {
-  if (level === "error") return "border-red-500/50 text-red-300"
-  if (level === "warn") return "border-yellow-500/50 text-yellow-200"
-  return "border-neon-deep/50 text-neon-muted"
-}
-async function toggleUserTool(tool: ToolRegistryEntry, enabled: boolean): Promise<void> {
-  const agent = selectedAgent.value
-  if (!agent || togglingToolName.value) return
-  togglingToolName.value = tool.name
-  try {
-    await updatePlatformStudioAgentToolEnabled({
-      agentId: agent.id,
-      toolName: tool.name,
-      enabled,
+const workspaceAccessOptions = STUDIO_WORKSPACE_ACCESS_OPTIONS
+const {
+  snapshot,
+  agentContext,
+  loading,
+  contextLoading,
+  errorMessage,
+  feedbackMessage,
+  feedbackKind,
+  selectedAgentId,
+  selectedAgent,
+  agentDraft,
+  soulDraft,
+  togglingSkillPath,
+  deletingSkillPath,
+  updatingWorkspaceAccess,
+  updatingProviderPreset,
+  providerPresetOptions,
+  providerPresetDescription,
+  cardTitle,
+  agentFilePath,
+  soulFilePath,
+  skillsForSelectedAgent,
+  selectedEnabledSkillCount,
+  toolsForSelectedAgent,
+  modulesForSelectedAgent,
+  toolDiagnostics,
+  runtimeCapabilities,
+  enabledRuntimeCapabilityCount,
+  workspaceAccessDescription,
+  statusLabel,
+  isNoCardError,
+  entrySummary,
+  skillEnabled,
+  enabledSkillCount,
+  refresh,
+  handleSequenceSaved,
+  handleSequenceError,
+  selectAgent,
+  selectAgentById,
+  toggleSkill,
+  deleteSkill,
+  toggleRuntimeCapability,
+  updateWorkspaceAccessLevel,
+  updateProviderPreset,
+  openWorkspace,
+  openPathDirectory,
+  goToLibrary,
+  goToMarket,
+} = useStudioController({
+  openWorkspace(input) {
+    void router.push({
+      name: "workspace",
+      query: {
+        cardId: input.cardId,
+        ...(input.path ? { path: input.path } : {}),
+      },
     })
-    await reloadSnapshotAndSelectedAgent()
-    setFeedback(enabled ? `已启用 Tool：${tool.name}` : `已禁用 Tool：${tool.name}`, "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "更新 Tool 状态失败。", "error")
-  } finally {
-    togglingToolName.value = null
-  }
-}
-
-function toggleRuntimeCapability(capability: RuntimeCapability, enabled: boolean): void {
-  if (capability.kind === "platform") {
-    void togglePlatformTool(capability.tool.id, enabled)
-    return
-  }
-  void toggleUserTool(capability.tool, enabled)
-}
-
-const workspaceAccessDescription = computed(() => {
-  const level = selectedAgent.value?.workspaceAccess.level ?? 1
-  return workspaceAccessOptions.find((option) => option.level === level)?.description
-    ?? "使用默认 Workspace 权限。"
+  },
+  openLibrary() {
+    void router.push("/library")
+  },
+  openMarket() {
+    void router.push("/market")
+  },
 })
-const statusLabel = computed(() => {
-  if (!snapshot.value) {
-    return "未加载游戏卡"
-  }
-  const toolCount = snapshot.value.tools?.length ?? 0
-  const diagCount = snapshot.value.toolDiagnostics?.length ?? 0
-  const base = `${snapshot.value.agents.length} 个 Agent · ${snapshot.value.skills.length} 个 Skill · ${toolCount} 个 Tool`
-  return diagCount > 0 ? `${base} · ⚠ ${diagCount} 条注册诊断` : base
-})
+
 const feedbackTone = computed(() => {
   if (feedbackKind.value === "ok") return "text-neon"
   if (feedbackKind.value === "error") return "text-danger"
   return "text-text-dim"
 })
 
-function entrySummary(value: string | undefined): string {
-  return value?.trim() || "暂无简介。"
-}
-
-function directoryOf(path: string): string {
-  const parts = path.split("/").filter(Boolean)
-  parts.pop()
-  return parts.join("/")
-}
-
-function setFeedback(message: string, kind: "idle" | "ok" | "error" = "idle") {
-  feedbackMessage.value = message
-  feedbackKind.value = kind
-}
-
-function skillEnabled(skill: SkillRegistryEntry): boolean {
-  return selectedAgent.value ? isSkillEnabledForAgent(skill, selectedAgent.value) : false
-}
-
-function platformToolEnabled(tool: AgentPlatformToolName): boolean {
-  return selectedAgent.value ? isAgentPlatformToolEnabled(selectedAgent.value, tool) : false
-}
-
-function enabledSkillCount(agent: AgentRegistryEntry): number {
-  const skills = snapshot.value?.skills ?? []
-  return skills.filter((skill) => isSkillEnabledForAgent(skill, agent)).length
-}
-
-async function refresh() {
-  loading.value = true
-  errorMessage.value = ""
-  try {
-    await waitForPlatformHostReady()
-    const next = await getPlatformStudioSnapshot()
-    snapshot.value = next
-    if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
-      selectedAgentId.value = next.agents[0]?.id ?? ""
-    }
-    await loadSelectedAgentContext()
-    setFeedback("工作室已刷新。", "ok")
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "无法读取工作室。"
-    setFeedback(errorMessage.value, "error")
-  } finally {
-    loading.value = false
-  }
-}
-
-async function reloadSnapshotAndSelectedAgent() {
-  const next = await getPlatformStudioSnapshot()
-  snapshot.value = next
-  if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
-    selectedAgentId.value = next.agents[0]?.id ?? ""
-  }
-  await loadSelectedAgentContext()
-}
-
-async function refreshSnapshotAfterSequenceSave(message: string) {
-  const next = await getPlatformStudioSnapshot()
-  snapshot.value = next
-  if (!next.agents.some((agent) => agent.id === selectedAgentId.value)) {
-    selectedAgentId.value = next.agents[0]?.id ?? ""
-  }
-  setFeedback(message, "ok")
-}
-
-function handleSequenceSaved(message: string) {
-  void refreshSnapshotAfterSequenceSave(message)
-}
-
-function handleSequenceError(message: string) {
-  setFeedback(message, "error")
-}
-
-async function loadSelectedAgentContext() {
-  const agentId = selectedAgentId.value
-  agentContext.value = null
-  agentDraft.value = ""
-  soulDraft.value = ""
-  if (!agentId) {
-    return
-  }
-
-  contextLoading.value = true
-  try {
-    const context = await getPlatformStudioAgentContext(agentId)
-    agentContext.value = context
-    agentDraft.value = context?.agentFile.content ?? ""
-    soulDraft.value = context?.soulFile?.content ?? ""
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "无法读取 Agent。", "error")
-  } finally {
-    contextLoading.value = false
-  }
-}
-
-async function selectAgent(agent: AgentRegistryEntry) {
-  selectedAgentId.value = agent.id
-  setFeedback(`已选择：${agent.title}`, "idle")
-  await loadSelectedAgentContext()
-}
-
-function selectAgentById(agentId: string) {
-  const agent = snapshot.value?.agents.find((candidate) => candidate.id === agentId)
-  if (agent) {
-    void selectAgent(agent)
-  }
-}
-
-async function toggleSkill(skill: SkillRegistryEntry, enabled: boolean) {
-  if (!selectedAgent.value) {
-    return
-  }
-
-  togglingSkillPath.value = skill.path
-  try {
-    await updatePlatformStudioAgentSkillEnabled({
-      agentId: selectedAgent.value.id,
-      skillPath: skill.path,
-      enabled,
-    })
-    await reloadSnapshotAndSelectedAgent()
-    setFeedback(`${enabled ? "已启用" : "已禁用"}：${skill.title}`, "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "无法更新 Skill。", "error")
-    await reloadSnapshotAndSelectedAgent()
-  } finally {
-    togglingSkillPath.value = ""
-  }
-}
-
-async function deleteSkill(skill: SkillRegistryEntry): Promise<void> {
-  if (deletingSkillPath.value) {
-    return
-  }
-
-  const confirmed = await confirm({
-    title: "删除 Skill",
-    message: `删除 Skill「${skill.title}」？\n\n这会删除 ${skill.path} 所在目录，并从当前游戏卡的 Agent 配置中移除引用，无法撤销。`,
-    severity: "danger",
-    confirmText: "删除",
-  })
-  if (!confirmed) {
-    return
-  }
-
-  deletingSkillPath.value = skill.path
-  try {
-    await deletePlatformStudioSkill({ skillPath: skill.path })
-    await reloadSnapshotAndSelectedAgent()
-    setFeedback(`已删除 Skill：${skill.title}`, "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "无法删除 Skill。", "error")
-    await reloadSnapshotAndSelectedAgent()
-  } finally {
-    deletingSkillPath.value = ""
-  }
-}
-
-async function togglePlatformTool(tool: AgentPlatformToolName, enabled: boolean) {
-  if (!selectedAgent.value) {
-    return
-  }
-
-  togglingPlatformTool.value = tool
-  try {
-    await updatePlatformStudioAgentPlatformToolEnabled({
-      agentId: selectedAgent.value.id,
-      tool,
-      enabled,
-    })
-    await reloadSnapshotAndSelectedAgent()
-    const label = PLATFORM_TOOL_CONTROLS.find((control) => control.id === tool)?.label ?? tool
-    setFeedback(`${enabled ? "已启用" : "已禁用"}：${label}`, "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "无法更新工具权限。", "error")
-    await reloadSnapshotAndSelectedAgent()
-  } finally {
-    togglingPlatformTool.value = ""
-  }
-}
-
-async function updateWorkspaceAccessLevel(level: number) {
-  if (!selectedAgent.value) {
-    return
-  }
-
-  updatingWorkspaceAccess.value = true
-  try {
-    await updatePlatformStudioAgentWorkspaceAccess({
-      agentId: selectedAgent.value.id,
-      level,
-    })
-    await reloadSnapshotAndSelectedAgent()
-    setFeedback("Workspace 权限已更新。", "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "无法更新 Workspace 权限。", "error")
-    await reloadSnapshotAndSelectedAgent()
-  } finally {
-    updatingWorkspaceAccess.value = false
-  }
-}
-
-async function updateProviderPreset(presetId: string) {
-  if (!selectedAgent.value) {
-    return
-  }
-
-  updatingProviderPreset.value = true
-  try {
-    await updatePlatformStudioAgentProviderPreset({
-      agentId: selectedAgent.value.id,
-      providerPresetId: presetId || null,
-    })
-    await reloadSnapshotAndSelectedAgent()
-    setFeedback(presetId ? "API 服务商已更新。" : "已清除服务商选择，使用平台默认。", "ok")
-  } catch (error) {
-    setFeedback(error instanceof Error ? error.message : "无法更新 API 服务商。", "error")
-    await reloadSnapshotAndSelectedAgent()
-  } finally {
-    updatingProviderPreset.value = false
-  }
-}
-
-function openWorkspace() {
-  if (!snapshot.value) {
-    return
-  }
-  router.push({
-    name: "workspace",
-    query: { cardId: snapshot.value.card.id },
-  })
-}
-
-function goToLibrary() {
-  router.push("/library")
-}
-
-function goToMarket() {
-  router.push("/market")
-}
-
-function openPathDirectory(path: string) {
-  if (!snapshot.value) {
-    return
-  }
-  router.push({
-    name: "workspace",
-    query: {
-      cardId: snapshot.value.card.id,
-      path: directoryOf(path),
-    },
-  })
-}
-
-onMounted(() => {
-  window.addEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-  void refresh()
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener(ACTIVE_CARD_CHANGED_EVENT, onActiveCardChanged)
-})
-
-function onActiveCardChanged(event: Event) {
-  if (!isActiveCardChangedEvent(event)) {
-    return
-  }
-  void refresh()
+function diagLevelClass(level: RegistryDiagnostic["level"]): string {
+  if (level === "error") return "border-red-500/50 text-red-300"
+  if (level === "warn") return "border-yellow-500/50 text-yellow-200"
+  return "border-neon-deep/50 text-neon-muted"
 }
 </script>
 

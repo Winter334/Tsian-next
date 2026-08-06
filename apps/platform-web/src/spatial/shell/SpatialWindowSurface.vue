@@ -98,6 +98,13 @@
 
 <script setup lang="ts">
 import { Maximize2, Minimize2, Minus, X } from "lucide-vue-next"
+import {
+  beginRoutedSpatialDrag,
+  isRoutedSpatialGestureEvent,
+  moveRoutedSpatialDrag,
+  routedSpatialDragMatches,
+  type SpatialRoutedDragState,
+} from "./spatial-routed-drag"
 import type { SpatialResizeDirection } from "./window-layout"
 import type { SpatialWindowState } from "./window-session"
 import SpatialPendingAppSurface from "./SpatialPendingAppSurface.vue"
@@ -118,15 +125,16 @@ const emit = defineEmits<{
 }>()
 
 const resizeDirections: readonly SpatialResizeDirection[] = ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
-let interaction: {
-  kind: "move" | "resize"
-  pointerId: number
-  direction?: SpatialResizeDirection
-  localX: number
-  localY: number
-  screenX: number
-  screenY: number
-} | null = null
+let interaction:
+  | { kind: "move"; drag: SpatialRoutedDragState }
+  | {
+      kind: "resize"
+      pointerId: number
+      direction: SpatialResizeDirection
+      localX: number
+      localY: number
+    }
+  | null = null
 
 function presentationProps(window: SpatialWindowState): Record<string, unknown> {
   if (window.descriptor.appId !== "play") return window.descriptor.props
@@ -134,58 +142,52 @@ function presentationProps(window: SpatialWindowState): Record<string, unknown> 
 }
 
 function beginSurfacePointerDown(event: PointerEvent): void {
-  if (!isRoutedGestureEvent(event) || event.button !== 0) return
+  if (!isRoutedSpatialGestureEvent(event) || event.button !== 0) return
   emit("focus", props.window.id)
 }
 
 function beginDrag(event: PointerEvent): void {
-  if (props.window.maximized || !isRoutedGestureEvent(event) || event.button !== 0) return
+  if (props.window.maximized) return
   if ((event.target as Element).closest("button")) return
+  const drag = beginRoutedSpatialDrag(event)
+  if (!drag) return
   emit("focus", props.window.id)
-  const screen = routedScreenPoint(event)
   interaction = {
     kind: "move",
-    pointerId: event.pointerId,
-    localX: event.clientX,
-    localY: event.clientY,
-    screenX: screen.x,
-    screenY: screen.y,
+    drag,
   }
 }
 
 function continueInteraction(event: PointerEvent): void {
-  if (!isRoutedGestureEvent(event) || interaction?.pointerId !== event.pointerId) return
+  if (!isRoutedSpatialGestureEvent(event) || !interaction) return
   if (props.window.maximized) {
     interaction = null
     return
   }
   if (interaction.kind === "move") {
-    emitScreenDelta(event, (delta) => emit("move", props.window.id, delta))
+    const delta = moveRoutedSpatialDrag(interaction.drag, event)
+    if (delta) emit("move", props.window.id, delta)
     return
   }
-  if (interaction.direction) {
-    const direction = interaction.direction
-    emitLocalDelta(event, (delta) => emit("resize", props.window.id, direction, delta))
-  }
+  if (interaction.pointerId !== event.pointerId) return
+  const direction = interaction.direction
+  emitLocalDelta(event, (delta) => emit("resize", props.window.id, direction, delta))
 }
 
 function beginResize(direction: SpatialResizeDirection, event: PointerEvent): void {
-  if (props.window.maximized || !isRoutedGestureEvent(event) || event.button !== 0) return
+  if (props.window.maximized || !isRoutedSpatialGestureEvent(event) || event.button !== 0) return
   emit("focus", props.window.id)
-  const screen = routedScreenPoint(event)
   interaction = {
     kind: "resize",
     pointerId: event.pointerId,
     direction,
     localX: event.clientX,
     localY: event.clientY,
-    screenX: screen.x,
-    screenY: screen.y,
   }
 }
 
 function emitLocalDelta(event: PointerEvent, dispatch: (delta: { x: number; y: number }) => void): void {
-  if (!interaction) return
+  if (!interaction || interaction.kind !== "resize") return
   const delta = {
     x: event.clientX - interaction.localX,
     y: event.clientY - interaction.localY,
@@ -195,39 +197,14 @@ function emitLocalDelta(event: PointerEvent, dispatch: (delta: { x: number; y: n
   dispatch(delta)
 }
 
-function emitScreenDelta(event: PointerEvent, dispatch: (delta: { x: number; y: number }) => void): void {
-  if (!interaction) return
-  const screen = routedScreenPoint(event)
-  const delta = {
-    x: screen.x - interaction.screenX,
-    y: screen.y - interaction.screenY,
-  }
-  interaction.screenX = screen.x
-  interaction.screenY = screen.y
-  dispatch(delta)
-}
-
-function routedScreenPoint(event: PointerEvent): { x: number; y: number } {
-  const routed = event as PointerEvent & {
-    readonly spatialScreenClientX?: number
-    readonly spatialScreenClientY?: number
-  }
-  return {
-    x: routed.spatialScreenClientX ?? event.clientX,
-    y: routed.spatialScreenClientY ?? event.clientY,
-  }
-}
-
 function endInteraction(event: PointerEvent): void {
-  if (!isRoutedGestureEvent(event) || interaction?.pointerId !== event.pointerId) return
+  if (!interaction) return
+  const matches = interaction.kind === "move"
+    ? routedSpatialDragMatches(interaction.drag, event)
+    : isRoutedSpatialGestureEvent(event) && interaction.pointerId === event.pointerId
+  if (!matches) return
   interaction = null
   emit("settle", props.window.id)
-}
-
-function isRoutedGestureEvent(event: PointerEvent): boolean {
-  // Trusted input belongs to the full-screen input plane. Source gestures use
-  // only router-generated events so visual and projected deltas cannot mix.
-  return !event.isTrusted
 }
 
 function resizeWithKeyboard(direction: SpatialResizeDirection, event: KeyboardEvent): void {

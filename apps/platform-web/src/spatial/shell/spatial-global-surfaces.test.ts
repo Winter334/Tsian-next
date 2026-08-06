@@ -15,11 +15,14 @@ import {
   SPATIAL_CONFIRM_PANEL_Z_INDEX,
 } from "./spatial-confirm"
 import {
+  SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID,
+  SPATIAL_ASSISTANT_CONFIG_SOURCE_ID,
   SPATIAL_DIALOG_PANEL_SOURCE_ID,
   SPATIAL_DIALOG_PANEL_PRESENTATION_ID,
   SPATIAL_DIALOG_PANEL_Z_INDEX,
   SPATIAL_MODAL_SHIELD_SOURCE_ID,
   SPATIAL_MODAL_SHIELD_Z_INDEX,
+  SpatialGlobalSurfacePositionController,
   spatialDialogPanelLayout,
   spatialGlobalModalTakesInput,
 } from "./spatial-global-surfaces"
@@ -124,7 +127,34 @@ describe("Spatial global modal ownership", () => {
     }
   })
 
+  it("retains moved global Source geometry across layout passes, clamps it, and resets on reopen", () => {
+    const position = new SpatialGlobalSurfacePositionController()
+    const viewport = { width: 1_000, height: 700 }
+    const centered = spatialDialogPanelLayout(viewport, 400, 600)
+
+    position.setOpen(true)
+    expect(position.place(viewport, centered, 400)).toEqual(centered)
+    expect(position.moveBy({ x: 80, y: 40 })).toBe(true)
+
+    const moved = position.place(viewport, centered, 400)
+    expect(moved).toEqual({ ...centered, x: centered.x + 80, y: centered.y + 40 })
+    expect(position.place(viewport, centered, 400)).toEqual(moved)
+
+    expect(position.moveBy({ x: 10_000, y: 10_000 })).toBe(true)
+    const clamped = position.place(viewport, centered, 400)
+    expect(clamped.x + clamped.width).toBe(viewport.width)
+    expect(clamped.y + 400).toBe(viewport.height)
+
+    position.setOpen(false)
+    position.setOpen(true)
+    expect(position.place(viewport, centered, 400)).toEqual(centered)
+  })
+
   it("cancels prior projected capture whenever modal input ownership advances", () => {
+    const assistantConfigSources = new Set([
+      SPATIAL_MODAL_SHIELD_SOURCE_ID,
+      SPATIAL_ASSISTANT_CONFIG_SOURCE_ID,
+    ])
     const dialogSources = new Set([
       SPATIAL_MODAL_SHIELD_SOURCE_ID,
       SPATIAL_DIALOG_PANEL_SOURCE_ID,
@@ -134,7 +164,8 @@ describe("Spatial global modal ownership", () => {
       SPATIAL_CONFIRM_PANEL_SOURCE_ID,
     ])
 
-    expect(spatialGlobalModalTakesInput(new Set(), dialogSources)).toBe(true)
+    expect(spatialGlobalModalTakesInput(new Set(), assistantConfigSources)).toBe(true)
+    expect(spatialGlobalModalTakesInput(assistantConfigSources, dialogSources)).toBe(true)
     expect(spatialGlobalModalTakesInput(dialogSources, confirmSources)).toBe(true)
     expect(spatialGlobalModalTakesInput(confirmSources, dialogSources)).toBe(true)
     expect(spatialGlobalModalTakesInput(dialogSources, new Set(dialogSources))).toBe(false)
@@ -185,5 +216,30 @@ describe("Spatial global modal ownership", () => {
     resolveDialogForm(completion.dialog!.confirm)
     await expect(result).resolves.toEqual({ name: "保留" })
     expect(settled).toBe(true)
+  })
+
+  it("retains the Assistant config source until its close presentation completes", () => {
+    const presentation = new SpatialWindowPresentationController({ openMs: 0, closeMs: 0 })
+    const lifecycle = new SpatialGlobalModalCloseLifecycle()
+    presentation.mount(SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID, {
+      sourceId: SPATIAL_ASSISTANT_CONFIG_SOURCE_ID,
+      apertureAxis: "horizontal",
+    })
+    presentation.sourceReady(SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID, 0, false)
+
+    const close = lifecycle.requestAssistantConfig(presentation, 100, false)
+
+    expect(close.accepted).toBe(true)
+    expect(lifecycle.assistantConfigPending).toBe(true)
+    expect(presentation.snapshots()).toEqual([
+      expect.objectContaining({
+        sourceId: SPATIAL_ASSISTANT_CONFIG_SOURCE_ID,
+        phase: "closing",
+        progress: 0,
+      }),
+    ])
+    expect(lifecycle.complete(presentation, close.events).assistantConfig).toBe(true)
+    expect(lifecycle.assistantConfigPending).toBe(false)
+    expect(presentation.snapshots()).toEqual([])
   })
 })

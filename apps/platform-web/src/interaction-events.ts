@@ -31,7 +31,11 @@ const interactionRequestListeners = new Set<InteractionRequestListener>()
 /** 等待表：requestId → pending Promise 的 resolve/reject。 */
 const pendingRequests = new Map<
   string,
-  { resolve: (result: AskUserResult) => void; reject: (reason: unknown) => void }
+  {
+    resolve: (result: AskUserResult) => void
+    reject: (reason: unknown) => void
+    cleanup: () => void
+  }
 >()
 
 export function subscribeInteractionRequest(cb: InteractionRequestListener): () => void {
@@ -50,9 +54,22 @@ export function emitInteractionRequest(
   question: string,
   options: string[] | undefined,
   allowCustom: boolean | undefined,
+  signal?: AbortSignal,
 ): Promise<AskUserResult> {
   return new Promise<AskUserResult>((resolve, reject) => {
-    pendingRequests.set(requestId, { resolve, reject })
+    if (signal?.aborted) {
+      reject(signal.reason ?? new DOMException("Interaction request aborted.", "AbortError"))
+      return
+    }
+    const onAbort = () => {
+      rejectInteractionRequest(
+        requestId,
+        signal?.reason ?? new DOMException("Interaction request aborted.", "AbortError"),
+      )
+    }
+    const cleanup = () => signal?.removeEventListener("abort", onAbort)
+    signal?.addEventListener("abort", onAbort, { once: true })
+    pendingRequests.set(requestId, { resolve, reject, cleanup })
     const listeners = [...interactionRequestListeners]
     for (const listener of listeners) {
       try {
@@ -73,7 +90,11 @@ export function resolveInteractionRequest(
   const pending = pendingRequests.get(requestId)
   if (!pending) return false
   pendingRequests.delete(requestId)
-  pending.resolve({ answer, cancelled })
+  pending.cleanup()
+  pending.resolve({
+    answer,
+    ...(cancelled !== undefined ? { cancelled } : {}),
+  })
   return true
 }
 
@@ -82,6 +103,7 @@ export function rejectInteractionRequest(requestId: string, reason: unknown): bo
   const pending = pendingRequests.get(requestId)
   if (!pending) return false
   pendingRequests.delete(requestId)
+  pending.cleanup()
   pending.reject(reason)
   return true
 }
@@ -89,7 +111,39 @@ export function rejectInteractionRequest(requestId: string, reason: unknown): bo
 /** reject 所有等待中的请求（turn abort 时批量清理）。 */
 export function rejectAllInteractionRequests(reason: unknown): void {
   for (const [, pending] of pendingRequests) {
+    pending.cleanup()
     pending.reject(reason)
   }
   pendingRequests.clear()
+}
+
+/** Owns only the interaction requests created by one concurrent runtime turn. */
+export function createInteractionRequestScope(signal?: AbortSignal): {
+  emit(
+    requestId: string,
+    question: string,
+    options: string[] | undefined,
+    allowCustom: boolean | undefined,
+  ): Promise<AskUserResult>
+  rejectAll(reason: unknown): void
+} {
+  const requestIds = new Set<string>()
+  return {
+    emit(requestId, question, options, allowCustom) {
+      requestIds.add(requestId)
+      return emitInteractionRequest(
+        requestId,
+        question,
+        options,
+        allowCustom,
+        signal,
+      ).finally(() => requestIds.delete(requestId))
+    },
+    rejectAll(reason) {
+      for (const requestId of requestIds) {
+        rejectInteractionRequest(requestId, reason)
+      }
+      requestIds.clear()
+    },
+  }
 }

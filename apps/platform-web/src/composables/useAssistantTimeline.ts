@@ -15,7 +15,7 @@ import type { AttachmentRef, UiToolPresentation } from "@tsian/contracts"
  */
 export type AssistantTimelineNode =
   | { type: "thought"; id: string; round: number; text: string; collapsed: boolean }
-  | { type: "tool"; id: string; round: number; name: string; status: "loading" | "running" | "success" | "failed"; presentation?: UiToolPresentation; collapsed: boolean }
+  | { type: "tool"; id: string; round: number; name: string; displayName?: string; status: "loading" | "running" | "success" | "failed"; presentation?: UiToolPresentation; collapsed: boolean }
   | { type: "interim"; id: string; round: number; text: string; collapsed: boolean }
   | {
       type: "ask"
@@ -44,6 +44,8 @@ export interface ChatMessage {
   attachments?: AttachmentRef[]
   // 过程事件(native 模式按发生顺序;不持久化,刷新后消失).
   timeline?: AssistantTimelineNode[]
+  /** 每条助手回复的总过程折叠状态；仅属于当前 UI 会话，历史加载默认折叠。 */
+  processCollapsed?: boolean
   // 当前轮 content 流式文本(可见回复 provisional;onRoundEnd stop→写入 content).
   // 不持久化——回合结束即清空,只作为流式期 UI 占位.
   streamingText?: string
@@ -113,6 +115,7 @@ export function useAssistantTimeline(
     name: string,
     status: "loading" | "running" | "success" | "failed",
     presentation?: UiToolPresentation,
+    displayName?: string,
   ) => {
     // 按 callId 去重:同一工具调用的 loading→success/failed 更新同一节点.
     const existing = timeline.find(
@@ -123,6 +126,9 @@ export function useAssistantTimeline(
       if (presentation !== undefined) {
         existing.presentation = presentation
       }
+      if (displayName !== undefined) {
+        existing.displayName = displayName
+      }
     } else {
       timeline.push({
         type: "tool",
@@ -132,6 +138,7 @@ export function useAssistantTimeline(
         status,
         collapsed: true,
         ...(presentation !== undefined ? { presentation } : {}),
+        ...(displayName !== undefined ? { displayName } : {}),
       })
     }
     onUpdate?.()

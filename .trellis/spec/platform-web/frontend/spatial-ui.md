@@ -485,6 +485,37 @@ interface SpatialSelectProps {
 type SpatialSelectEmit =
   | { event: "update:modelValue"; value: string }
   | { event: "change"; value: string }
+
+interface SpatialAssistantConfigSurfaceRequest {
+  readonly onChange?: () => void
+}
+
+function openSpatialAssistantConfig(request?: SpatialAssistantConfigSurfaceRequest): boolean
+function closeSpatialAssistantConfig(): void
+
+interface SpatialRoutedDragState {
+  readonly pointerId: number
+  screenX: number
+  screenY: number
+}
+
+function beginRoutedSpatialDrag(event: PointerEvent): SpatialRoutedDragState | null
+function moveRoutedSpatialDrag(
+  state: SpatialRoutedDragState,
+  event: PointerEvent,
+): { x: number; y: number } | null
+
+function gestureCaptureTargetForElement(target: Element, button: number): Element
+
+class SpatialGlobalSurfacePositionController {
+  setOpen(open: boolean): void
+  moveBy(delta: { x: number; y: number }): boolean
+  place(
+    viewport: { width: number; height: number },
+    centeredLayout: SpatialGlobalSurfaceLayout,
+    measuredHeight: number,
+  ): SpatialGlobalSurfaceLayout
+}
 ```
 
 Shared local transition names are `spatial-pop`, `spatial-dialog`, and `spatial-list`. Dominant screen/tab content has no CSS transition name.
@@ -507,6 +538,13 @@ function shouldQueueNextSourceTexturePaint(
 - Text+icon and icon-only application actions use `SpatialActionButton`. The primitive owns one horizontal icon/text row, a fixed non-shrinking icon box, SVG size, gap, variant colors and disabled state. Callers do not size or position action icons themselves.
 - Icon-only actions require an accessible name and keep a square semantic hit box. Text-only semantic tabs, list/menu items and selection cards may remain native buttons when they are not action-button variants.
 - Themed Spatial selectors use `SpatialSelect`; product route presentations do not use native `<select>`. The listbox remains inside the owning Source so curvature, styling and projected input stay consistent.
+- A feature configuration surface that must behave as a desktop modal is a direct global Canvas Source, not an absolute descendant inside its application window Source. The shell owns its input-only shield, explicit viewport layout, z-order, aperture presentation and terminal close; the feature store remains active until the closing frame completes. Higher global Dialog/Confirm Sources disable its projected input and restore its exact focus chain after they close.
+- Feature views open a global configuration Source through a small in-memory request boundary and may supply a change callback, but they do not mount the panel themselves. Minimize/focus/occlusion therefore keep the application controller mounted, while shell disposal clears any outstanding feature-modal request.
+- A movable direct Source marks its root `data-spatial-gesture-owner` and only its title drag region `data-spatial-gesture-start`. Routed pointer capture then delivers move/up/cancel to the Source root. Drag deltas come from the router-provided `spatialScreenClientX/Y`, never from Source-local `clientX/Y`; reuse `spatial-routed-drag.ts` so windows and feature modals cannot diverge.
+- The shell, not the feature component, owns movable global-Source position. It applies deltas only while that modal is top/interactive, preserves the position across dirty/layout passes, clamps the full measured panel to the real viewport after content or viewport changes, and resets the transient position on close/reopen.
+- Gesture capture preserves the original target for actionable descendants inside `data-spatial-gesture-start` (native controls, links/contenteditable and semantic action roles), including an SVG/icon hit inside a button. Only non-action primary-button chrome promotes to `data-spatial-gesture-owner`; non-primary input retains its target. This is required because `PointerRouter` activates only when pressed target and captured release target are identical. DOM `stopPropagation()` runs after capture-target selection and is not a substitute for this boundary.
+- Shared modal-header controls must beat `SpatialActionButton` base/hover/focus declarations by selector specificity while retaining the fixed 28px geometry. A close icon on the dark header uses the header foreground and translucent dark fill; page-load order must not turn it into a light content button.
+- Spatial application, modal and Toast scrollbars use the single skin in `spatial-apps.css`: inherited `--spatial-*` colors, a visible 10px Chromium gutter, rounded inset thumb, hover/active states, themed track/corner and no native arrow buttons. Do not add page-local `scrollbar-color` overrides. A compact auto-growing composer may intentionally hide only its own scrollbar while retaining keyboard/wheel scrolling after its maximum height.
 - `SpatialSelect` owns open/highlight/selected state and supports click, outside-pointer close, Escape, Tab, ArrowUp/Down, Home/End, Enter/Space, disabled options and all-disabled lists. Opening with an unknown/empty model value highlights the first enabled option. Escape closes and restores trigger focus; Tab closes without trapping focus.
 - Source-local listboxes, menus and dialogs disable pointer input during leave transitions and restore the appropriate invoker/trigger focus after close.
 - Spatial application controls do not draw outer focus rectangles, focus box-shadows or focus-only border-width changes. Keyboard feedback may change existing fill, text, underline or a fixed-width inner/bottom accent without changing geometry.
@@ -551,6 +589,17 @@ function shouldQueueNextSourceTexturePaint(
 | Ordinary descendant/text mutation inside one Source | Dirty and repaint only that Source; do not synchronize or recapture unrelated Sources |
 | Direct Source or dynamic-media topology changes | Synchronize the registry, then capture the affected Source generation |
 | Standalone Toast enters/leaves in target Flag Chromium | Visible bounded Source-local motion, no planar escape, horizontal scrollbar or unrelated Source flash |
+| Feature configuration opens from an application window | Mount one independently captured global Source above the shield; no panel/backdrop descendant exists inside the application Source |
+| Confirm opens from the feature configuration surface | Disable the configuration Source, route input only to Confirm, then restore the invoking configuration control after Confirm closes |
+| Feature configuration starts closing | Keep request, DOM and texture through the terminal close frame; clear them exactly once afterward |
+| Spatial content overflows | Use the shared track/thumb/hover/active skin while retaining the real gutter required by projected thumb geometry |
+| Assistant composer grows beyond its maximum height | Content remains wheel/keyboard scrollable, but its local scrollbar stays hidden |
+| Routed drag begins on a movable modal header | Capture the Source root and accumulate screen-coordinate deltas for the same pointer id |
+| Pointer starts on the modal close button or its SVG | Preserve that exact pressed/capture target; close activates once and no drag state or move event is created |
+| Non-primary pointer starts on a drag handle | Preserve the original target; do not promote it to the gesture owner |
+| Drag reaches or passes a viewport edge | Clamp the full measured panel inside the real shell viewport on the next layout pass |
+| Modal content repaints or shell layout runs while open | Preserve the moved position; do not recenter the Source |
+| Modal closes and a new request opens | Discard the prior transient position and start from the current centered layout |
 
 ### 5. Good / Base / Bad Cases
 
@@ -559,6 +608,10 @@ function shouldQueueNextSourceTexturePaint(
 - Good: Detail tabs replace immediately inside one curved Source texture and never appear as flat planar content.
 - Good: an opted-in Market Source serially uploads bounded Select/dialog computed frames, preserves an outstanding paint-ready generation, and becomes idle after the local transition settles.
 - Good: a card-version update dirties My Apps and Detail exactly once each while the independent Toast Source animates with contained layout properties; other Sources retain their current textures.
+- Good: Assistant settings open as their own curved global Source; an update confirmation opens above it and returns focus to the settings control after resolution.
+- Good: Studio, Assistant, global forms and Toast stacks share one Spatial scrollbar skin, while the compact Assistant composer alone hides its chrome.
+- Good: dragging Assistant configuration by its dark header follows the projected pointer in screen space, survives repaint, stays recoverable at every edge, and reopens centered.
+- Good: a routed press on the close icon retains the icon through pointerup, bubbles one click to its button, and closes the modal without starting drag.
 - Base: a text-only tab or menu item remains a semantic native button and uses shared Spatial app styles without being wrapped in `SpatialActionButton`.
 - Bad: native `<select>` opens a white/blue browser popup above the curved Source.
 - Bad: each page adds its own SVG margins, icon sizes, button grid, focus outline or animation timing.
@@ -566,10 +619,17 @@ function shouldQueueNextSourceTexturePaint(
 - Bad: an animation-frame loop calls `requestSourcePaint()` every frame; repeated `markDirty()` clears `paintReady`, so old and new content appear as discrete flashes.
 - Bad: one descendant class/text mutation calls full `syncSources()`, causing every concurrently changing Source to be reconsidered and repainted.
 - Bad: a dominant Market screen uses CSS opacity/transform; Chromium promotes it to a flat descendant layer that snaps back onto the curved Source only after transition completion.
+- Bad: a settings panel uses `position:absolute; inset:0` inside the Assistant Source, so it inherits the parent window curvature/geometry and reads as embedded content instead of a desktop modal.
+- Bad: one page restores browser-default gray scrollbars or changes gutter width independently from projected scrollbar hit-testing.
+- Bad: a modal computes movement from Source-local `clientX/Y`, writes its own transform, or lets its close button bubble into the drag handle; curvature makes local deltas unstable and the shell's next layout overwrites component-owned geometry.
+- Bad: capture promotion relies only on `@pointerdown.stop`; capture was already assigned to the gesture owner, so PointerRouter sees `pressed target !== release target` and correctly suppresses the click.
 
 ### 6. Tests Required
 
 - Unit-test durable behavior: Select state transitions and disabled-option navigation; bounded Source-animation counting/expiry, including proof that later properties cannot slide the first-event deadline; preservation of an already-dirty paint generation; reduced-motion suppression of `animated-source`; mutation routing that separates Source topology/dynamic-media sync from owning-Source descendant repaint; controller request sequencing/mutation guards; close guards; media object-URL ownership; registry readiness and the production release gate.
+- Unit-test feature-modal request ownership, view-to-global opening, modal input-priority changes and delayed terminal close. Component assertions verify the feature panel is a direct Source and absent from the invoking application subtree; scrollbar colors and radii remain manual visual tokens rather than source-string snapshots.
+- Unit-test routed screen-delta accumulation, pointer-id filtering, header-only start, close-control exclusion, position persistence, finite-delta rejection, viewport clamp and close/reopen reset. Re-run existing Spatial window tests because the shared helper also owns product-window move semantics.
+- Unit-test gesture capture with a plain title descendant, a button, an SVG inside that button and non-primary input. Route down/up through `PointerRouter` and assert the nested action activates exactly once while title chrome remains drag-owned.
 - Run task-owned controller/Spatial-app tests, platform-web Vue type-check, `npm run build:web`, and `git diff --check`.
 - Manual Flag Chromium acceptance owns visual alignment, curved-edge input, transition quality, focus appearance, native file/IME escapes, minimum-size layouts and reduced motion.
 - Do not add exact CSS-value snapshots, animation-frame snapshots, screenshot unit tests or source-format substring tests for tunable presentation details. If a broad run exposes legacy shell/engine failures, audit their live contract: delete obsolete source/visual assertions, rewrite tunable numeric or draw-count checks as semantic invariants, and keep or repair only tests that still protect runtime behavior. Do not carry a permanently red baseline.
@@ -646,6 +706,39 @@ new MutationObserver(() => syncSources())
 const plan = planSpatialSourceMutations(canvas, records)
 if (plan.synchronize) syncSources()
 markOwningSourcesDirty(plan.dirtySourceIds)
+```
+
+```vue
+<!-- Wrong: configuration is captured as a descendant of the Assistant window. -->
+<div class="assistant-modal-backdrop">
+  <AssistantConfigPanel />
+</div>
+
+<!-- Correct: the view opens state; the shell hosts an independent direct Source. -->
+<SpatialActionButton @click="openSpatialAssistantConfig()">配置</SpatialActionButton>
+<!-- SpatialGlobalSurfaceHost -->
+<SpatialAssistantConfigPanel data-spatial-source="global:assistant-config" />
+```
+
+```ts
+// Wrong: Source-local coordinates change as the curved Source moves, and the
+// feature component fights the shell's authoritative layout pass.
+panel.style.transform = `translate(${event.clientX - startX}px, ${event.clientY - startY}px)`
+
+// Correct: the component emits routed screen deltas; the shell owns placement.
+const drag = beginRoutedSpatialDrag(event)
+const delta = drag && moveRoutedSpatialDrag(drag, nextEvent)
+if (delta) assistantConfigPosition.moveBy(delta)
+applyGlobalSurfaceLayout(panel, assistantConfigPosition.place(viewport, centered, height))
+```
+
+```ts
+// Wrong: DOM propagation is too late to change the router's capture target.
+closeButton.addEventListener("pointerdown", (event) => event.stopPropagation())
+captureTarget = gestureStart.closest("[data-spatial-gesture-owner]")
+
+// Correct: actionable descendants retain the same target from down to up.
+captureTarget = gestureCaptureTargetForElement(pressedTarget, sample.button)
 ```
 
 ## Scenario: Spatial Window Maximize and Play Fullscreen

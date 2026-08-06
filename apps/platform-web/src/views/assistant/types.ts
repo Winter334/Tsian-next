@@ -18,7 +18,7 @@ export interface ActiveAskState {
   requestId: string
   question: string
   options?: string[]
-  allowCustom?: boolean
+  allowCustom: boolean
 }
 
 /** recordAskNode 回调入参类型(镜像 useAssistantTimeline.recordAskNode). */

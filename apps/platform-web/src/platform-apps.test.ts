@@ -83,13 +83,13 @@ describe("platform app registry", () => {
     expect(platformAppRegistry
       .filter((app) => app.spatial.readiness === "ready")
       .map((app) => app.appId))
-      .toEqual(["market", "my-apps", "workspace-explorer", "workspace-editor", "workspace-media", "game-launcher", "play"])
+      .toEqual(["market", "my-apps", "workspace-explorer", "workspace-editor", "workspace-media", "studio", "assistant", "game-launcher", "play"])
     expect(platformAppRegistry
       .filter((app) => app.spatial.readiness === "ready")
       .every((app) => Boolean(app.spatial.component)))
       .toBe(true)
     expect(platformAppRegistry
-      .filter((app) => !["market", "my-apps", "workspace-explorer", "workspace-editor", "workspace-media", "game-launcher", "play"].includes(app.appId))
+      .filter((app) => !["market", "my-apps", "workspace-explorer", "workspace-editor", "workspace-media", "studio", "assistant", "game-launcher", "play"].includes(app.appId))
       .every((app) => app.spatial.readiness === "pending" && !app.spatial.component))
       .toBe(true)
   })

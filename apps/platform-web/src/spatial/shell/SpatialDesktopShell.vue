@@ -41,12 +41,15 @@
         @settle="settleWindow"
       />
       <SpatialGlobalSurfaceHost
+        :assistant-config-interactive="assistantConfigInteractive"
         :confirm-interactive="confirmInteractive"
         :dialog-interactive="dialogInteractive"
         @sources-changed="handleGlobalSourcesChanged"
         @source-dirty="handleGlobalSourceDirty"
         @request-confirm-close="requestGlobalConfirmClose"
         @request-dialog-close="requestGlobalDialogClose"
+        @request-assistant-config-close="requestGlobalAssistantConfigClose"
+        @move-assistant-config="moveGlobalAssistantConfig"
       />
     </canvas>
 
@@ -70,6 +73,7 @@ import {
 } from "@/config/platform-ui-mode"
 import { resolveConfirm } from "@/composables/useConfirm"
 import { resolveDialogForm } from "@/composables/useDialogForm"
+import { closeSpatialAssistantConfig } from "../apps/assistant/spatial-assistant-config-surface"
 import { BrowserWindowFullscreenController } from "@/lib/browser-fullscreen"
 import {
   INITIAL_VIEWPORT_SNAPSHOT,
@@ -108,10 +112,13 @@ import {
   spatialConfirmPanelLayout,
 } from "./spatial-confirm"
 import {
+  SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID,
+  SPATIAL_ASSISTANT_CONFIG_SOURCE_ID,
   SPATIAL_DIALOG_PANEL_PRESENTATION_ID,
   SPATIAL_DIALOG_PANEL_SOURCE_ID,
   SPATIAL_MODAL_SHIELD_SOURCE_ID,
   SPATIAL_TOAST_SOURCE_ID,
+  SpatialGlobalSurfacePositionController,
   spatialDialogPanelLayout,
   spatialGlobalModalTakesInput,
   spatialToastLayout,
@@ -134,6 +141,8 @@ const browserFullscreen = new BrowserWindowFullscreenController({
 const presentation = new SpatialWindowPresentationController()
 const confirmPresentation = new SpatialWindowPresentationController()
 const globalModalCloseLifecycle = new SpatialGlobalModalCloseLifecycle()
+const assistantConfigInteractive = ref(false)
+const assistantConfigPosition = new SpatialGlobalSurfacePositionController()
 const confirmInteractive = ref(false)
 const dialogInteractive = ref(false)
 const shellRef = ref<HTMLElement | null>(null)
@@ -162,6 +171,9 @@ const confirmPresentationIds = Object.freeze([
 ] as const)
 const dialogPresentationIds = Object.freeze([
   SPATIAL_DIALOG_PANEL_PRESENTATION_ID,
+] as const)
+const assistantConfigPresentationIds = Object.freeze([
+  SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID,
 ] as const)
 let activeGlobalSourceIds = new Set<string>()
 
@@ -266,6 +278,33 @@ function applyGlobalSurfaceLayouts(): void {
     )
   }
 
+  const assistantConfigPanel = canvas.querySelector<HTMLElement>(
+    `[data-spatial-source="${SPATIAL_ASSISTANT_CONFIG_SOURCE_ID}"]`,
+  )
+  if (assistantConfigPanel) {
+    const preferredWidth = Number(assistantConfigPanel.dataset.spatialPreferredWidth)
+    const width = Number.isFinite(preferredWidth) && preferredWidth > 0 ? preferredWidth : 760
+    const initial = spatialDialogPanelLayout(
+      viewport.value,
+      assistantConfigPanel.offsetHeight,
+      width,
+    )
+    applyGlobalSurfaceDimensions(assistantConfigPanel, initial)
+    const centered = spatialDialogPanelLayout(
+      viewport.value,
+      assistantConfigPanel.offsetHeight,
+      width,
+    )
+    applyGlobalSurfaceLayout(
+      assistantConfigPanel,
+      assistantConfigPosition.place(
+        viewport.value,
+        centered,
+        assistantConfigPanel.offsetHeight,
+      ),
+    )
+  }
+
   const toastPanel = canvas.querySelector<HTMLElement>(
     `[data-spatial-source="${SPATIAL_TOAST_SOURCE_ID}"]`,
   )
@@ -277,12 +316,19 @@ function applyGlobalSurfaceLayout(
   element: HTMLElement,
   layout: { width: number; maxHeight: number; x: number; y: number },
 ): void {
+  applyGlobalSurfaceDimensions(element, layout)
+  const transform = `translate3d(${layout.x}px, ${layout.y}px, 0)`
+  if (element.style.transform !== transform) element.style.transform = transform
+}
+
+function applyGlobalSurfaceDimensions(
+  element: HTMLElement,
+  layout: { width: number; maxHeight: number },
+): void {
   const width = `${layout.width}px`
   const maxHeight = `${layout.maxHeight}px`
-  const transform = `translate3d(${layout.x}px, ${layout.y}px, 0)`
   if (element.style.width !== width) element.style.width = width
   if (element.style.maxHeight !== maxHeight) element.style.maxHeight = maxHeight
-  if (element.style.transform !== transform) element.style.transform = transform
 }
 
 function mountGlobalModalPresentation(presentationId: string, sourceId: string): void {
@@ -296,6 +342,7 @@ function mountGlobalModalPresentation(presentationId: string, sourceId: string):
 
 function handleGlobalSourcesChanged(sourceIds: readonly string[]): void {
   const nextGlobalSourceIds = new Set(sourceIds)
+  assistantConfigPosition.setOpen(nextGlobalSourceIds.has(SPATIAL_ASSISTANT_CONFIG_SOURCE_ID))
   if (spatialGlobalModalTakesInput(activeGlobalSourceIds, nextGlobalSourceIds)) {
     viewportController?.cancelProjectedInput()
   }
@@ -303,6 +350,7 @@ function handleGlobalSourcesChanged(sourceIds: readonly string[]): void {
   const panels = [
     [SPATIAL_CONFIRM_PANEL_PRESENTATION_ID, SPATIAL_CONFIRM_PANEL_SOURCE_ID],
     [SPATIAL_DIALOG_PANEL_PRESENTATION_ID, SPATIAL_DIALOG_PANEL_SOURCE_ID],
+    [SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID, SPATIAL_ASSISTANT_CONFIG_SOURCE_ID],
   ] as const
   for (const [presentationId, sourceId] of panels) {
     if (activeGlobalSourceIds.has(sourceId)) {
@@ -322,6 +370,12 @@ function handleGlobalSourceDirty(sourceId: string): void {
   viewportController?.requestSourcePaint(sourceId)
 }
 
+function moveGlobalAssistantConfig(delta: { x: number; y: number }): void {
+  if (!assistantConfigInteractive.value || !assistantConfigPosition.moveBy(delta)) return
+  applyGlobalSurfaceLayouts()
+  viewportController?.requestFrame("dirty")
+}
+
 function handleShellSourceTopologyChanged(): void {
   void nextTick(() => {
     viewportController?.syncSources()
@@ -335,6 +389,9 @@ function globalPresentationIdForSource(sourceId: string): string | null {
   }
   if (sourceId === SPATIAL_DIALOG_PANEL_SOURCE_ID) {
     return SPATIAL_DIALOG_PANEL_PRESENTATION_ID
+  }
+  if (sourceId === SPATIAL_ASSISTANT_CONFIG_SOURCE_ID) {
+    return SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID
   }
   return null
 }
@@ -383,6 +440,15 @@ function requestGlobalDialogClose(confirm: boolean): void {
   ))
 }
 
+function requestGlobalAssistantConfigClose(): void {
+  if (!assistantConfigInteractive.value) return
+  requestGlobalModalClose(globalModalCloseLifecycle.requestAssistantConfig(
+    confirmPresentation,
+    performance.now(),
+    apertureMotionEnabled(),
+  ))
+}
+
 function requestGlobalModalClose(
   request: { accepted: boolean; events: readonly SpatialWindowPresentationEvent[] },
 ): void {
@@ -401,6 +467,11 @@ function syncGlobalModalInteractivity(): void {
     && activeGlobalSourceIds.has(SPATIAL_DIALOG_PANEL_SOURCE_ID)
     && !globalModalCloseLifecycle.dialogPending
     && confirmPresentation.allVisible(dialogPresentationIds)
+  assistantConfigInteractive.value = !confirmIsTop
+    && !activeGlobalSourceIds.has(SPATIAL_DIALOG_PANEL_SOURCE_ID)
+    && activeGlobalSourceIds.has(SPATIAL_ASSISTANT_CONFIG_SOURCE_ID)
+    && !globalModalCloseLifecycle.assistantConfigPending
+    && confirmPresentation.allVisible(assistantConfigPresentationIds)
   syncPresentationInput()
 }
 
@@ -798,6 +869,7 @@ function handleGlobalModalPresentationEvents(
   syncGlobalModalInteractivity()
   if (resolutions.confirm) resolveConfirm(resolutions.confirm.value)
   if (resolutions.dialog) resolveDialogForm(resolutions.dialog.confirm)
+  if (resolutions.assistantConfig) closeSpatialAssistantConfig()
 }
 
 function handlePresentationEvents(events: readonly SpatialWindowPresentationEvent[]): void {
@@ -984,6 +1056,8 @@ onBeforeUnmount(() => {
   presentation.clear()
   confirmPresentation.clear()
   globalModalCloseLifecycle.clear()
+  assistantConfigInteractive.value = false
+  closeSpatialAssistantConfig()
   confirmInteractive.value = false
   dialogInteractive.value = false
   pointerMediaCleanup?.()

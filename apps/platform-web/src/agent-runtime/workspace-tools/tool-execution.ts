@@ -147,7 +147,7 @@ function normalizeAskUserArguments(input: Record<string, unknown>): AskUserReque
     "ASK_USER_QUESTION_REQUIRED",
     "ask_user question must be a non-empty string.",
   )
-  const request: AskUserRequest = { question }
+  const request: AskUserRequest = { question, allowCustom: true }
 
   if (input.options !== undefined) {
     if (!Array.isArray(input.options)) {

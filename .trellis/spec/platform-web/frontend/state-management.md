@@ -335,6 +335,131 @@ await marketApi.upload(blob, { resourceType: "game_card" })
 - Desktop Assistant streaming UI: push an empty reactive assistant placeholder before the await, append deltas into it, and reconcile with the final reply text after. Deltas are buffered in a queue and released on `requestAnimationFrame` (typewriter throttling) so a token burst does not thrash the renderer. Auto-scroll during streaming only scrolls when the user is pinned to the bottom; a user scrolling up freezes auto-scroll and surfaces the jump-to-bottom affordance — never yank the view. A "stop generating" button aborts the turn's `AbortController`; on abort, keep the partial text and append a `（已停止）` marker, or drop the placeholder if nothing streamed. Persistence runs only after the await resolves — never persist half-streamed text mid-flight. Tool process lines render transient status rows during the turn for both native and Text Tool Protocol modes and are cleared in `finally`; persisted process history comes from the runtime-collected timeline/tool records, not from transient UI rows.
 - **Play frontend turn rendering (timeline model)**: turn files use schema `tsian.airp.history.turn.v2` with a single ordered `timeline: TurnTimelineItem[]` array (user → interim/thought/tool process items → assistant with stats, plus legacy options when reading older turns), replacing the old split `messages + processNodes + stats` structure. `TurnTimelineItem` is a discriminated union with `kind` field (`user | assistant | interim | thought | tool | options`), where `options` is a legacy/backcompat item rather than a platform-owned requirement for new turns. The array order is the real occurrence order — renderers iterate items and don't need to understand `round` semantics or assemble `user → [processNodes block] → assistant`. `renderSessionHistory` and the streaming path (`beginTurn` + `renderProcessNodes` + `finalizeTurn`) both render from the same timeline model. `turn-completed` does in-place DOM correction via `finalizeTurn` (no `reloadHistory` rebuild needed since the timeline model makes rebuild order-correct too, but in-place is more efficient). `reloadHistory` is for reload/checkpoint-restore only. Historical story options may be present as `{kind:"options",items}` in the timeline and reload should keep restoring them for old saves; new gameplay/front-end markers should be parsed by the game frontend/default frontend, not by platform-host. `ask` nodes (ask_user interaction) are NOT in `TurnTimelineItem` — they exist only in the in-memory `AssistantTimelineNode` and are flattened to `interim` text at the persistence boundary. `TurnProcessNode` was deleted; the collector produces `TurnTimelineItem` directly. No backward compatibility for v1 turn files (parse returns null).
 
+## Scenario: Desktop Assistant Dual-Presentation Orchestration
+
+### 1. Scope / Trigger
+
+- Trigger: changing Desktop Assistant sessions, streaming, `ask_user`, Tool timeline projection, attachments, provider/model/config controls, RetroOS/Spatial presentations, or Assistant window lifecycle.
+- Purpose: keep one behavior/persistence contract while RetroOS and Spatial own independent DOM, focus, scroll, and visual layers.
+
+### 2. Signatures
+
+```ts
+interface AssistantControllerOptions {
+  scrollToBottom(force?: boolean): Promise<void> | void
+  restoreScrollTop(target: number): void
+  applySessionScrollTop?(target: number): Promise<void> | void
+  focusInput(): void
+  focusRenameInput(): void
+  resetInputHeight(): void
+  autoGrowInput(): void
+  onTimelineUpdate?(): void
+}
+
+function useAssistantController(options: AssistantControllerOptions): AssistantController
+
+function createInteractionRequestScope(signal?: AbortSignal): {
+  emit(
+    requestId: string,
+    question: string,
+    options: string[] | undefined,
+    allowCustom: boolean | undefined,
+  ): Promise<AskUserResult>
+  rejectAll(reason: unknown): void
+}
+
+type AssistantToolNode = {
+  type: "tool"
+  id: string
+  name: string
+  displayName?: string
+  status: "loading" | "running" | "success" | "failed"
+  presentation?: UiToolPresentation
+}
+```
+
+`normalizeAskUserArguments()` keeps the public `allowCustom?: boolean` input compatible but returns an `AskUserRequest` whose `allowCustom` is explicit: omitted means `true`; explicit `false` stays `false`.
+
+### 3. Contracts
+
+- `controllers/assistant/` owns sessions, active/background turn registries, ask routing, provider/model/config state, persistence mapping, attachment lifetime, and unmount cleanup. RetroOS and Spatial consume a fresh per-mounted-window controller instance; neither presentation duplicates host/storage mutations.
+- DOM refs, textarea growth, projected focus, drawer/modal layout, and scroll element geometry remain presentation-local callbacks. Switching sessions loads that session's persisted `scrollTop` and applies it to the newly rendered list; focus/minimize/occlusion retain the mounted controller and DOM. Only close/unmount calls `dispose()` and aborts active turns.
+- Each active turn is keyed by `sessionId`. Switching sessions never aborts it. A background turn keeps its reactive user/assistant messages and ask mapping; switching back reattaches those objects until the host persists the completed turn.
+- Every Assistant `runAssistantChat` creates one `createInteractionRequestScope(compositeSignal)`. Failure/abort rejects only request ids emitted by that turn. Never call the global `rejectAllInteractionRequests()` from one concurrent Assistant turn: that can cancel an unrelated background session's blocking ask.
+- `ask_user` producer normalization owns the default. Presentations receive explicit `allowCustom`; options and custom input coexist when true, explicit false renders options only, and an open question provides custom input. Option/custom/cancel resolve the same request and only then append a read-only ask record.
+- `resolveInteractionRequest` omits `cancelled` for ordinary answers and includes it only when defined. Returning `{ cancelled: undefined }` violates strict JSON observation serialization even though JavaScript permits the property.
+- Each assistant reply owns one default-closed process fold. Its body iterates the original timeline exactly once and keeps interim/thought/tool/ask order. Tool identity is `displayName ?? name`; status text is stable and accessible. `agent_call` may show only its bounded `UiToolPresentation` title/response/error.
+- Ordinary Tool arguments and raw results remain execution-local. Conversation storage receives prose, attachment refs, and presentation-only timeline fields (`id`, identity, display name, status, bounded presentation). UI timeline is never reconstructed into model Tool history.
+- Successful turn persistence remains host-owned. UI persistence is a fallback for abort/error and for read-only ask projection that exists only in the Assistant UI timeline. Do not add a second unconditional success write.
+- Image attachment object URLs belong to their presentation component/draft and are revoked on removal or unmount. Attachment Blobs remain session-owned storage records; switching/focusing a window does not delete them.
+- Spatial Studio/Assistant registration may become `ready` independently of the production Spatial release gate. `SPATIAL_RELEASE_READY` remains a separate release-integration decision.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| `ask_user` omits `allowCustom` | Normalize to `true`; options and custom input are both available |
+| `allowCustom: false` | Keep options-only behavior |
+| Custom answer is blank after trim | Do not resolve or append a record |
+| One of two concurrent turns aborts with an active ask | Reject only that turn's request; the other request remains resolvable |
+| Session switches while a turn streams | Turn continues in background; current session UI is not mutated by its scroll/error callbacks |
+| Window minimizes, loses focus, or is occluded | Keep controller, DOM, turn, ask, drafts, and scroll mounted |
+| Window closes/unmounts | Abort active turns, unsubscribe events, clear ask maps, revoke draft object URLs |
+| Tool update omits `displayName`/presentation after an earlier value | Preserve the earlier defined metadata |
+| Old stored Tool lacks `displayName` | Render `name`; no migration |
+| Ordinary answer resolves | Result has `{ answer }` and no own `cancelled` property |
+| Tool has no `UiToolPresentation` | Never show/store raw arguments or result as a substitute |
+
+### 5. Good / Base / Bad Cases
+
+- Good: session A waits on `ask_user`; the user starts a long turn in session B and stops B; A's question remains active and can still be answered.
+- Good: RetroOS and Spatial use the same controller/process helpers, but each owns its own components, focus refs, scrollbar and Spatial/Retro tokens.
+- Base: an old conversation Tool node has only `name`; both presentations render it in the one-fold process list.
+- Bad: Spatial mounts `AssistantView.vue`, imports Retro-styled leaf components, or adds a second ask/session state machine.
+- Bad: one turn catch block calls `rejectAllInteractionRequests(error)` and cancels every concurrent session ask.
+- Bad: a Tool row stores `arguments`, observation, debug trace, or an arbitrary result preview because no presentation exists.
+
+### 6. Tests Required
+
+- Tool normalization: omitted/true/false/invalid `allowCustom`, with and without options; ordinary answer strict-JSON serialization.
+- Controller: active/background turn switching, ask request-to-session routing, per-session scroll application, stop behavior, successful host persistence ownership, unmount-only abort, and attachment preview cleanup.
+- Interaction scope: two pending scopes where rejecting one leaves the other resolvable; abort signal rejects its own request and removes it from the pending table.
+- Timeline/mapper: call-id upsert, non-erasing `displayName`/presentation, status aggregation, original order, `agent_call` bounded display, old-history fallback, and raw Tool-data exclusion.
+- Presentation integration: RetroOS and Spatial render options+custom/open/options-only asks, one default-closed process fold, copy/edit-resend, config controls, and no native `<select>` in Spatial.
+- Registry/release: Studio and Assistant Spatial registrations are `ready`; production release gate remains false.
+- Run `npm run build:contracts`, `npm test`, `npm run build:web`, and `git diff --check`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+try {
+  await runAssistantChatTurn()
+} catch (error) {
+  rejectAllInteractionRequests(error) // also rejects asks owned by other sessions
+}
+
+pending.resolve({ answer, cancelled: undefined }) // fails strict JSON serialization
+```
+
+#### Correct
+
+```ts
+const interactionRequests = createInteractionRequestScope(compositeSignal)
+try {
+  await runAssistantChatTurn({ onAskUser: interactionRequests.emit })
+} catch (error) {
+  interactionRequests.rejectAll(error)
+  throw error
+}
+
+pending.resolve({
+  answer,
+  ...(cancelled !== undefined ? { cancelled } : {}),
+})
+```
+
 ## Scenario: Reply Projection And Projected Assistant Turn Results
 
 ### 1. Scope / Trigger

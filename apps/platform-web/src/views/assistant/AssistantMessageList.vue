@@ -16,124 +16,133 @@
         <Bot v-else class="h-3.5 w-3.5" aria-hidden="true" />
       </span>
       <div class="flex min-w-0 max-w-[calc(100%-2.75rem)] flex-col gap-1.5">
-        <!-- 过程节点(assistant):思考/工具按发生顺序纵向平铺,各独立折叠. -->
-        <template v-if="msg.role === 'assistant' && msg.timeline && msg.timeline.length > 0">
-          <div class="flex flex-col gap-1">
-            <template v-for="(seg, segIdx) in groupTimelineForRender(msg.timeline)" :key="segIdx">
-              <!-- 单个节点:interim / thought / ask -->
-              <template v-if="seg.kind === 'node'">
-                <!-- 过渡文本节点(tool_calls 轮模型在调用工具前输出的可见文本). -->
+        <!-- 每条助手回复只有一个总过程折叠；内部严格保持 timeline 原始顺序。 -->
+        <Collapsible
+          v-if="msg.role === 'assistant' && msg.timeline && msg.timeline.length > 0"
+          :open="msg.processCollapsed === false"
+          class="assistant-process"
+          @update:open="(open) => (msg.processCollapsed = !open)"
+        >
+          <CollapsibleTrigger class="assistant-process__trigger retro-focus">
+            <ChevronRight
+              class="assistant-process__chevron"
+              :class="{ 'assistant-process__chevron--open': msg.processCollapsed === false }"
+              aria-hidden="true"
+            />
+            <Wrench class="h-3 w-3 shrink-0" aria-hidden="true" />
+            <span class="assistant-process__label">执行过程</span>
+            <span
+              v-if="summarizeAssistantProcess(msg.timeline).toolCount > 0"
+              class="assistant-process__count"
+            >
+              {{ summarizeAssistantProcess(msg.timeline).toolCount }} 次工具调用
+            </span>
+            <span
+              v-if="summarizeAssistantProcess(msg.timeline).status !== 'idle'"
+              class="assistant-process__state"
+              :class="`assistant-process__state--${summarizeAssistantProcess(msg.timeline).status}`"
+              aria-live="polite"
+            >
+              <Loader2
+                v-if="summarizeAssistantProcess(msg.timeline).status === 'running'"
+                class="assistant-process__state-icon animate-spin"
+                aria-hidden="true"
+              />
+              <Check
+                v-else-if="summarizeAssistantProcess(msg.timeline).status === 'success'"
+                class="assistant-process__state-icon"
+                aria-hidden="true"
+              />
+              <CircleX v-else class="assistant-process__state-icon" aria-hidden="true" />
+              {{ assistantProcessStatusLabel(summarizeAssistantProcess(msg.timeline).status) }}
+            </span>
+          </CollapsibleTrigger>
+          <CollapsibleContent class="assistant-process__body">
+            <div class="assistant-process__inner">
+              <template v-for="node in msg.timeline" :key="node.id">
                 <div
-                  v-if="seg.node.type === 'interim'"
-                  class="prose-chat break-words text-sm leading-6"
-                  v-html="renderMarkdown(seg.node.text)"
+                  v-if="node.type === 'interim'"
+                  class="assistant-process__interim prose-chat break-words text-sm leading-6"
+                  v-html="renderMarkdown(node.text)"
                 />
-                <!-- 思考节点(tool_calls 轮的推理文本,默认折叠,可展开回看) -->
+
                 <Collapsible
-                  v-else-if="seg.node.type === 'thought'"
-                  :open="!seg.node.collapsed"
-                  @update:open="(v) => (seg.node.collapsed = !v)"
-                  class="border-l border-neon-deep/30 bg-panel/15"
+                  v-else-if="node.type === 'thought'"
+                  :open="!node.collapsed"
+                  class="assistant-process__thought"
+                  @update:open="(open) => (node.collapsed = !open)"
                 >
-                  <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
+                  <CollapsibleTrigger class="assistant-process__thought-trigger retro-focus">
                     <ChevronRight
                       class="h-3 w-3 transition-transform"
-                      :class="seg.node.collapsed ? 'rotate-0' : 'rotate-90'"
+                      :class="node.collapsed ? 'rotate-0' : 'rotate-90'"
                       aria-hidden="true"
                     />
                     <Brain class="h-3 w-3" aria-hidden="true" />
                     <span>思考</span>
                   </CollapsibleTrigger>
-                  <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
-                    <div class="prose-chat text-xs leading-5 text-text-dim" v-html="renderMarkdown(seg.node.text)" />
+                  <CollapsibleContent class="assistant-process__thought-body">
+                    <div class="prose-chat text-xs leading-5 text-text-dim" v-html="renderMarkdown(node.text)" />
                   </CollapsibleContent>
                 </Collapsible>
 
-                <!-- ask_user 节点：只读 Q&A 记录。 -->
-                <Collapsible
-                  v-else-if="seg.node.type === 'ask'"
-                  :open="!seg.node.collapsed"
-                  @update:open="(v) => (seg.node.collapsed = !v)"
-                  class="border border-neon-deep/40 bg-neon/5"
-                >
-                  <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
-                    <ChevronRight
-                      class="h-3 w-3 transition-transform"
-                      :class="seg.node.collapsed ? 'rotate-0' : 'rotate-90'"
-                      aria-hidden="true"
-                    />
+                <div v-else-if="node.type === 'ask'" class="assistant-process__ask">
+                  <div class="assistant-process__ask-title">
                     <HelpCircle class="h-3 w-3" aria-hidden="true" />
-                    <span>{{ seg.node.cancelled ? "已取消提问" : "已回答" }}</span>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent class="px-2.5 py-2">
-                    <p class="prose-chat text-sm leading-6 text-text-main" v-html="renderMarkdown(seg.node.question)" />
-                    <div class="mt-2 border-l border-neon-deep/30 bg-panel/30 px-2.5 py-1.5">
-                      <p v-if="seg.node.cancelled" class="text-xs italic text-text-dim">已取消</p>
-                      <template v-else>
-                        <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">你的回答</p>
-                        <p class="mt-0.5 prose-chat text-sm leading-6 text-text-main">{{ seg.node.answer }}</p>
-                      </template>
-                    </div>
-                  </CollapsibleContent>
-                </Collapsible>
-              </template>
+                    <span>{{ node.cancelled ? "已取消提问" : "已回答" }}</span>
+                  </div>
+                  <p class="prose-chat text-sm leading-6 text-text-main" v-html="renderMarkdown(node.question)" />
+                  <div class="assistant-process__ask-answer">
+                    <p v-if="node.cancelled" class="text-xs italic text-text-dim">已取消</p>
+                    <template v-else>
+                      <p class="font-mono text-[10px] uppercase tracking-wider text-text-dim">你的回答</p>
+                      <p class="mt-0.5 prose-chat text-sm leading-6 text-text-main">{{ node.answer }}</p>
+                    </template>
+                  </div>
+                </div>
 
-              <!-- 工具调用组:相邻 tool 节点合并成一行自然语言摘要. -->
-              <Collapsible
-                v-else
-                :open="!toolGroupCollapsed(`${index}-${segIdx}`)"
-                @update:open="(v) => setToolGroupOpen(`${index}-${segIdx}`, v)"
-                class="border-l border-neon-deep/30 bg-panel/15"
-              >
-                <CollapsibleTrigger class="retro-focus flex w-full items-center gap-1.5 px-2 py-1 font-mono text-[11px] uppercase tracking-wider text-text-dim transition-colors hover:text-neon">
-                  <ChevronRight
-                    class="h-3 w-3 transition-transform"
-                    :class="toolGroupCollapsed(`${index}-${segIdx}`) ? 'rotate-0' : 'rotate-90'"
-                    aria-hidden="true"
-                  />
-                  <Wrench class="h-3 w-3" aria-hidden="true" />
-                  <span>{{ seg.summary }}</span>
-                  <span
-                    :class="{
-                      'text-neon/60': seg.tools.some((t) => t.status === 'loading' || t.status === 'running'),
-                      'text-neon': seg.tools.every((t) => t.status === 'success'),
-                      'text-red-400': seg.tools.some((t) => t.status === 'failed'),
-                    }"
+                <div
+                  v-else
+                  class="assistant-process__tool"
+                  :class="`assistant-process__tool--${node.status}`"
+                  role="status"
+                  :aria-label="`${assistantToolLabel(node)}：${assistantToolStatusLabel(node.status)}`"
+                >
+                  <div class="assistant-process__tool-row">
+                    <span class="assistant-process__tool-name">
+                      <Wrench class="h-3 w-3 shrink-0" aria-hidden="true" />
+                      <span>{{ assistantToolLabel(node) }}</span>
+                    </span>
+                    <span
+                      class="assistant-process__tool-state"
+                      :class="`assistant-process__tool-state--${node.status}`"
+                      aria-live="polite"
                   >
-                    <Loader2 v-if="seg.tools.some((t) => t.status === 'loading' || t.status === 'running')" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
-                    <template v-else-if="seg.tools.every((t) => t.status === 'success')">✓</template>
-                    <template v-else-if="seg.tools.some((t) => t.status === 'failed')">✗</template>
-                  </span>
-                </CollapsibleTrigger>
-                <CollapsibleContent class="ml-0.5 border-l border-neon-deep/15 pl-2.5 py-1.5">
-                  <div v-for="t in seg.tools" :key="t.id" class="py-0.5">
-                    <div class="flex items-center gap-1.5 font-mono text-[10px] uppercase tracking-wider text-text-dim">
-                      <Wrench class="h-2.5 w-2.5" aria-hidden="true" />
-                      <span>{{ agentCallDisplay(t.presentation)?.title ?? t.name }}</span>
-                      <span
-                        :class="{
-                          'text-neon/60': t.status === 'loading' || t.status === 'running',
-                          'text-neon': t.status === 'success',
-                          'text-red-400': t.status === 'failed',
-                        }"
-                      >
-                        <Loader2 v-if="t.status === 'loading' || t.status === 'running'" class="inline h-3 w-3 animate-spin" aria-hidden="true" />
-                        <template v-else-if="t.status === 'success'">✓</template>
-                        <template v-else-if="t.status === 'failed'">✗</template>
-                      </span>
-                    </div>
-                    <p
-                      v-if="agentCallDisplay(t.presentation)?.response"
-                      class="mt-1 whitespace-pre-wrap text-xs normal-case tracking-normal text-text-main/80"
-                    >
-                      {{ agentCallDisplay(t.presentation)?.response }}
+                      <Loader2
+                        v-if="node.status === 'loading' || node.status === 'running'"
+                        class="assistant-process__state-icon animate-spin"
+                        aria-hidden="true"
+                      />
+                      <Check
+                        v-else-if="node.status === 'success'"
+                        class="assistant-process__state-icon"
+                        aria-hidden="true"
+                      />
+                      <CircleX v-else class="assistant-process__state-icon" aria-hidden="true" />
+                      {{ assistantToolStatusLabel(node.status) }}
+                    </span>
+                  </div>
+                  <div v-if="agentCallDisplay(node.presentation)" class="assistant-process__agent-detail">
+                    <strong>{{ agentCallDisplay(node.presentation)?.title }}</strong>
+                    <p v-if="agentCallDisplay(node.presentation)?.response">
+                      {{ agentCallDisplay(node.presentation)?.response }}
                     </p>
                   </div>
-                </CollapsibleContent>
-              </Collapsible>
+                </div>
             </template>
-          </div>
-        </template>
+            </div>
+          </CollapsibleContent>
+        </Collapsible>
 
         <!-- 回复正文泡:user 恒渲染;assistant 仅在有正文/流式、等待首 token、或无过程节点时渲染。 -->
         <div
@@ -148,7 +157,7 @@
             <div v-if="msg.streamingText" class="prose-chat" v-html="renderMarkdown(msg.streamingText)" />
             <!-- 最终回复 / 历史 / text 模式:无流式时展示 content -->
             <div v-else-if="msg.content" class="flex flex-col gap-2">
-              <template v-for="(part, partIdx) in renderAssistantContentSegments(msg.content)" :key="partIdx">
+              <template v-for="(part, partIdx) in assistantContentSegments(msg.content)" :key="partIdx">
                 <details v-if="part.kind === 'thought'" class="assistant-think rounded-sm border border-neon-deep/30 bg-panel/20 px-2 py-1">
                   <summary class="cursor-pointer select-none font-mono text-[11px] uppercase tracking-wider text-text-dim hover:text-neon">思考</summary>
                   <div class="prose-chat mt-1 text-xs leading-5 text-text-dim" v-html="renderMarkdown(part.text)" />
@@ -230,8 +239,8 @@
 
 <script setup lang="ts">
 import "highlight.js/styles/atom-one-dark.min.css"
-import { Bot, Brain, Check, ChevronRight, Copy, FileText, HelpCircle, Loader2, Pencil, User, Wrench } from "lucide-vue-next"
-import type { AssistantTimelineNode, ChatMessage } from "@/composables/useAssistantTimeline"
+import { Bot, Brain, Check, ChevronRight, CircleX, Copy, FileText, HelpCircle, Loader2, Pencil, User, Wrench } from "lucide-vue-next"
+import type { ChatMessage } from "@/composables/useAssistantTimeline"
 import AttachmentImage from "@/components/assistant/AttachmentImage.vue"
 import {
   Collapsible,
@@ -241,140 +250,278 @@ import {
 import { renderMarkdown } from "@/lib/markdown"
 import { agentCallDisplay } from "../assistant-message-mappers"
 import { formatFileSize } from "./format"
+import {
+  assistantContentSegments,
+  assistantProcessStatusLabel,
+  assistantToolLabel,
+  assistantToolStatusLabel,
+  summarizeAssistantProcess,
+} from "./process-presentation"
 import type { ActiveAskState } from "./types"
 
-const props = defineProps<{
+defineProps<{
   messages: ChatMessage[]
   sending: boolean
   activeAsk: ActiveAskState | null
   copiedIndex: number | null
   editingIndex: number | null
-  toolGroupCollapsedMap: Record<string, boolean>
 }>()
 
-const emit = defineEmits<{
+defineEmits<{
   copyMessage: [index: number]
   editUserMessage: [index: number]
-  updateToolGroupCollapsed: [key: string, collapsed: boolean]
 }>()
 
-const TOOL_LABEL: Record<string, { verb: string; noun: string; unit: string | null }> = {
-  read: { verb: "读取", noun: "文件", unit: "个" },
-  list: { verb: "列出", noun: "条目", unit: "项" },
-  search: { verb: "搜索", noun: "匹配", unit: "处" },
-  glob: { verb: "匹配", noun: "文件", unit: "个" },
-  diff: { verb: "比对", noun: "差异", unit: null },
-  write: { verb: "写入", noun: "文件", unit: null },
-  edit: { verb: "编辑", noun: "文件", unit: null },
-  copy: { verb: "复制", noun: "文件", unit: null },
-  move: { verb: "移动", noun: "文件", unit: null },
-  delete: { verb: "删除", noun: "文件", unit: null },
-  semantic_search: { verb: "语义检索", noun: "记忆", unit: null },
-  use_skill: { verb: "激活", noun: "技能", unit: null },
-  run_script: { verb: "执行", noun: "脚本", unit: null },
-  inspect_frontend: { verb: "自检", noun: "前端", unit: null },
-  test_skill_script: { verb: "测试", noun: "脚本", unit: null },
-  ask_user: { verb: "向玩家", noun: "提问", unit: null },
-}
-
-type ToolNode = Extract<AssistantTimelineNode, { type: "tool" }>
-type TimelineSegment =
-  | { kind: "node"; node: AssistantTimelineNode }
-  | { kind: "tool-group"; tools: ToolNode[]; summary: string }
-
-type AssistantContentSegment =
-  | { kind: "text"; text: string }
-  | { kind: "thought"; text: string }
-
-/** 一组相邻 tool 节点 → 自然语言摘要句（按工具名分组，合并同名工具计数）. */
-function toolGroupSummary(tools: ToolNode[]): string {
-  const byName = new Map<string, { count: number; status: string }>()
-  for (const t of tools) {
-    const key = t.name
-    const entry = byName.get(key)
-    if (entry) {
-      entry.count += 1
-      // 任一失败则整组标失败
-      if (t.status === "failed") entry.status = "failed"
-    } else {
-      byName.set(key, { count: 1, status: t.status })
-    }
-  }
-  const sentences: string[] = []
-  for (const [name, { count, status }] of byName) {
-    const label = TOOL_LABEL[name]
-    const verb = label?.verb ?? name
-    const noun = label?.noun ?? "操作"
-    if (status === "failed") {
-      sentences.push(`${verb}${noun}失败`)
-      continue
-    }
-    const unit = label?.unit ?? null
-    if (unit && count > 1) {
-      sentences.push(`${verb}了 ${count} ${unit}${noun}`)
-    } else {
-      sentences.push(`${verb}了${noun}`)
-    }
-  }
-  return sentences.join("、")
-}
-
-/** 把 timeline 分成渲染段：相邻 tool 合并，其余独立. */
-function groupTimelineForRender(timeline: AssistantTimelineNode[]): TimelineSegment[] {
-  const segments: TimelineSegment[] = []
-  let i = 0
-  while (i < timeline.length) {
-    const node = timeline[i]
-    if (node.type === "tool") {
-      // 收集连续的 tool 节点
-      const group: ToolNode[] = [node]
-      let j = i + 1
-      while (j < timeline.length && timeline[j].type === "tool") {
-        group.push(timeline[j] as ToolNode)
-        j += 1
-      }
-      segments.push({ kind: "tool-group", tools: group, summary: toolGroupSummary(group) })
-      i = j
-    } else {
-      segments.push({ kind: "node", node })
-      i += 1
-    }
-  }
-  return segments
-}
-
-function renderAssistantContentSegments(content: string): AssistantContentSegment[] {
-  const segments: AssistantContentSegment[] = []
-  const pattern = /<think>([\s\S]*?)(?:<\/think>|$)/gi
-  let cursor = 0
-  for (const match of content.matchAll(pattern)) {
-    const index = match.index ?? 0
-    if (index > cursor) {
-      const text = content.slice(cursor, index).trim()
-      if (text) segments.push({ kind: "text", text })
-    }
-    const thought = (match[1] ?? "").trim()
-    if (thought) segments.push({ kind: "thought", text: thought })
-    cursor = index + match[0].length
-  }
-  if (cursor < content.length) {
-    const text = content.slice(cursor).trim()
-    if (text) segments.push({ kind: "text", text })
-  }
-  return segments.length > 0 ? segments : [{ kind: "text", text: content }]
-}
-
-function toolGroupCollapsed(key: string): boolean {
-  // 默认折叠（true），只有显式设为 false 时展开
-  return props.toolGroupCollapsedMap[key] !== false
-}
-
-function setToolGroupOpen(key: string, open: boolean) {
-  emit("updateToolGroupCollapsed", key, !open)
-}
 </script>
 
 <style scoped>
+.assistant-process {
+  overflow: hidden;
+  border-left: 1px solid color-mix(in srgb, var(--color-neon) 30%, transparent);
+  background: color-mix(in srgb, var(--color-panel) 18%, transparent);
+}
+
+.assistant-process__trigger {
+  display: flex;
+  width: 100%;
+  min-height: 32px;
+  padding: 5px 8px;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  color: var(--color-text-dim);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-align: left;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+
+.assistant-process__trigger:hover {
+  color: var(--color-neon);
+  background: color-mix(in srgb, var(--color-neon) 4%, transparent);
+}
+
+.assistant-process__chevron,
+.assistant-process__state-icon {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+}
+
+.assistant-process__chevron {
+  transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.assistant-process__chevron--open {
+  transform: rotate(90deg);
+}
+
+.assistant-process__label {
+  color: var(--color-neon);
+  text-transform: uppercase;
+}
+
+.assistant-process__count {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-dim);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-process__state,
+.assistant-process__tool-state {
+  display: inline-flex;
+  width: 4.8rem;
+  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  flex-shrink: 0;
+  color: var(--color-text-dim);
+  font-size: 10px;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.assistant-process__state--running,
+.assistant-process__tool-state--loading,
+.assistant-process__tool-state--running {
+  color: color-mix(in srgb, var(--color-neon) 68%, transparent);
+}
+
+.assistant-process__state--success,
+.assistant-process__tool-state--success {
+  color: var(--color-neon);
+  animation: assistant-process-success 300ms ease-out both;
+}
+
+.assistant-process__state--failed,
+.assistant-process__tool-state--failed {
+  color: var(--color-danger);
+  animation: assistant-process-failed 260ms ease-out both;
+}
+
+.assistant-process__body {
+  overflow: hidden;
+}
+
+.assistant-process__body[data-state="open"] {
+  animation: assistant-process-open 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.assistant-process__body[data-state="closed"] {
+  animation: assistant-process-close 210ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.assistant-process__inner {
+  display: grid;
+  margin-left: 6px;
+  padding: 5px 8px 9px 12px;
+  gap: 5px;
+  border-left: 1px solid color-mix(in srgb, var(--color-neon) 14%, transparent);
+}
+
+.assistant-process__interim {
+  padding: 3px 1px 6px;
+  color: var(--color-text-dim);
+}
+
+.assistant-process__thought {
+  border-left: 1px solid color-mix(in srgb, var(--color-neon) 20%, transparent);
+  background: color-mix(in srgb, var(--color-panel) 14%, transparent);
+}
+
+.assistant-process__thought-trigger,
+.assistant-process__ask-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-dim);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.assistant-process__thought-trigger {
+  width: 100%;
+  padding: 5px 7px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.assistant-process__thought-trigger:hover {
+  color: var(--color-neon);
+}
+
+.assistant-process__thought-body {
+  overflow: hidden;
+  padding: 5px 9px 8px;
+  border-top: 1px solid color-mix(in srgb, var(--color-neon) 10%, transparent);
+}
+
+.assistant-process__ask {
+  display: grid;
+  padding: 8px 9px;
+  gap: 7px;
+  border: 1px solid color-mix(in srgb, var(--color-neon) 24%, transparent);
+  background: color-mix(in srgb, var(--color-neon) 3.5%, transparent);
+}
+
+.assistant-process__ask-answer {
+  padding: 6px 8px;
+  border-left: 1px solid color-mix(in srgb, var(--color-neon) 24%, transparent);
+  background: color-mix(in srgb, var(--color-panel) 20%, transparent);
+}
+
+.assistant-process__tool {
+  min-width: 0;
+  padding: 5px 1px 5px 9px;
+  border-left: 1px solid color-mix(in srgb, var(--color-neon) 22%, transparent);
+  animation: assistant-process-row-enter 190ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.assistant-process__tool-row {
+  display: flex;
+  min-height: 24px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.assistant-process__tool-name {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-dim);
+}
+
+.assistant-process__tool-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.assistant-process__agent-detail {
+  display: grid;
+  margin: 4px 0 2px 18px;
+  padding: 7px 9px;
+  gap: 4px;
+  border-left: 1px solid color-mix(in srgb, var(--color-neon) 20%, transparent);
+  color: color-mix(in srgb, var(--color-text-main) 82%, transparent);
+  background: color-mix(in srgb, var(--color-panel) 20%, transparent);
+  font-size: 11px;
+}
+
+.assistant-process__agent-detail strong {
+  color: var(--color-neon);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.assistant-process__agent-detail p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+@keyframes assistant-process-open {
+  from { height: 0; opacity: 0; }
+  to { height: var(--reka-collapsible-content-height); opacity: 1; }
+}
+
+@keyframes assistant-process-close {
+  from { height: var(--reka-collapsible-content-height); opacity: 1; }
+  to { height: 0; opacity: 0; }
+}
+
+@keyframes assistant-process-row-enter {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes assistant-process-success {
+  0% { filter: drop-shadow(0 0 0 transparent); }
+  45% { filter: drop-shadow(0 0 5px color-mix(in srgb, var(--color-neon) 50%, transparent)); }
+  100% { filter: drop-shadow(0 0 0 transparent); }
+}
+
+@keyframes assistant-process-failed {
+  0%, 100% { transform: translateX(0); }
+  35% { transform: translateX(-2px); }
+  65% { transform: translateX(2px); }
+}
+
 .typing-dot {
   width: 6px;
   height: 6px;
@@ -397,6 +544,26 @@ function setToolGroupOpen(key: string, open: boolean) {
   40% {
     opacity: 1;
     transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .assistant-process__body[data-state="open"],
+  .assistant-process__body[data-state="closed"],
+  .assistant-process__tool,
+  .assistant-process__state--success,
+  .assistant-process__state--failed,
+  .assistant-process__tool-state--success,
+  .assistant-process__tool-state--failed,
+  .assistant-process .animate-spin,
+  .typing-dot {
+    animation: none !important;
+  }
+
+  .assistant-process__trigger,
+  .assistant-process__chevron,
+  .assistant-process__thought-trigger svg {
+    transition-duration: 0.01ms !important;
   }
 }
 </style>

@@ -1,9 +1,10 @@
 import type { SpatialWindowPresentationEvent } from "./window-presentation"
 import { SpatialWindowPresentationController } from "./window-presentation"
+import { SPATIAL_CONFIRM_PANEL_PRESENTATION_ID } from "./spatial-confirm"
 import {
-  SPATIAL_CONFIRM_PANEL_PRESENTATION_ID,
-} from "./spatial-confirm"
-import { SPATIAL_DIALOG_PANEL_PRESENTATION_ID } from "./spatial-global-surfaces"
+  SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID,
+  SPATIAL_DIALOG_PANEL_PRESENTATION_ID,
+} from "./spatial-global-surfaces"
 
 export interface SpatialGlobalModalCloseRequest {
   readonly accepted: boolean
@@ -13,6 +14,7 @@ export interface SpatialGlobalModalCloseRequest {
 export interface SpatialGlobalModalCloseCompletions {
   readonly confirm?: { readonly value: boolean | string | null }
   readonly dialog?: { readonly confirm: boolean }
+  readonly assistantConfig?: true
 }
 
 /**
@@ -22,6 +24,7 @@ export interface SpatialGlobalModalCloseCompletions {
 export class SpatialGlobalModalCloseLifecycle {
   private pendingConfirm: { value: boolean | string | null } | null = null
   private pendingDialog: { confirm: boolean } | null = null
+  private pendingAssistantConfig = false
 
   get confirmPending(): boolean {
     return this.pendingConfirm !== null
@@ -31,8 +34,12 @@ export class SpatialGlobalModalCloseLifecycle {
     return this.pendingDialog !== null
   }
 
+  get assistantConfigPending(): boolean {
+    return this.pendingAssistantConfig
+  }
+
   get hasPending(): boolean {
-    return this.confirmPending || this.dialogPending
+    return this.confirmPending || this.dialogPending || this.assistantConfigPending
   }
 
   requestConfirm(
@@ -77,12 +84,33 @@ export class SpatialGlobalModalCloseLifecycle {
     }
   }
 
+  requestAssistantConfig(
+    presentation: SpatialWindowPresentationController,
+    timestamp: number,
+    animate: boolean,
+  ): SpatialGlobalModalCloseRequest {
+    if (this.pendingAssistantConfig) return { accepted: false, events: [] }
+    if (!presentation.beginGuard(SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID)) {
+      return { accepted: false, events: [] }
+    }
+    this.pendingAssistantConfig = true
+    return {
+      accepted: true,
+      events: presentation.startClosing(
+        SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID,
+        timestamp,
+        animate,
+      ),
+    }
+  }
+
   complete(
     presentation: SpatialWindowPresentationController,
     events: readonly SpatialWindowPresentationEvent[],
   ): SpatialGlobalModalCloseCompletions {
     let confirm: SpatialGlobalModalCloseCompletions["confirm"]
     let dialog: SpatialGlobalModalCloseCompletions["dialog"]
+    let assistantConfig: SpatialGlobalModalCloseCompletions["assistantConfig"]
     for (const event of events) {
       if (event.kind !== "close-ready") continue
       if (event.windowId === SPATIAL_CONFIRM_PANEL_PRESENTATION_ID) {
@@ -93,9 +121,13 @@ export class SpatialGlobalModalCloseLifecycle {
         if (!this.pendingDialog || !presentation.completeClose(event.windowId)) continue
         dialog = this.pendingDialog
         this.pendingDialog = null
+      } else if (event.windowId === SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID) {
+        if (!this.pendingAssistantConfig || !presentation.completeClose(event.windowId)) continue
+        assistantConfig = true
+        this.pendingAssistantConfig = false
       }
     }
-    return { confirm, dialog }
+    return { confirm, dialog, assistantConfig }
   }
 
   forget(presentationId: string): void {
@@ -103,11 +135,14 @@ export class SpatialGlobalModalCloseLifecycle {
       this.pendingConfirm = null
     } else if (presentationId === SPATIAL_DIALOG_PANEL_PRESENTATION_ID) {
       this.pendingDialog = null
+    } else if (presentationId === SPATIAL_ASSISTANT_CONFIG_PRESENTATION_ID) {
+      this.pendingAssistantConfig = false
     }
   }
 
   clear(): void {
     this.pendingConfirm = null
     this.pendingDialog = null
+    this.pendingAssistantConfig = false
   }
 }

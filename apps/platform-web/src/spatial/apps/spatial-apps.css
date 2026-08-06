@@ -18,6 +18,25 @@
   font-family: Inter, sans-serif;
 }
 
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) {
+  --spatial-scrollbar-track: color-mix(in srgb, var(--spatial-window-tab) 8%, transparent);
+  --spatial-scrollbar-thumb: color-mix(
+    in srgb,
+    var(--spatial-window-tab) 52%,
+    var(--spatial-app-surface, var(--spatial-window-body))
+  );
+  --spatial-scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--spatial-window-tab) 74%,
+    var(--spatial-app-surface, var(--spatial-window-body))
+  );
+  --spatial-scrollbar-thumb-active: color-mix(
+    in srgb,
+    var(--spatial-window-accent) 66%,
+    var(--spatial-window-tab)
+  );
+}
+
 .spatial-app button,
 .spatial-app input,
 .spatial-app textarea,
@@ -225,27 +244,52 @@
   min-height: 0;
   overflow: auto;
   overscroll-behavior: contain;
-  scrollbar-color: var(--spatial-app-border-strong) transparent;
 }
 
-/* Keep Chromium's visible scrollbar geometry aligned with projected thumb
-   hit-testing. Native arrow buttons have no CSSOM geometry, so omit them. */
-.spatial-app *::-webkit-scrollbar {
+/* Spatial Sources keep a real Chromium gutter so projected thumb hit-testing
+   can reconstruct the browser geometry. Only the visual skin is replaced. */
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source),
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--spatial-scrollbar-thumb) var(--spatial-scrollbar-track);
+}
+
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source)::-webkit-scrollbar,
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
 
-.spatial-app *::-webkit-scrollbar-track {
-  background: transparent;
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source)::-webkit-scrollbar-track,
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) *::-webkit-scrollbar-track {
+  background: var(--spatial-scrollbar-track);
 }
 
-.spatial-app *::-webkit-scrollbar-thumb {
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source)::-webkit-scrollbar-thumb,
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) *::-webkit-scrollbar-thumb {
   border: 2px solid transparent;
-  background: var(--spatial-app-border-strong);
+  border-radius: 999px;
+  background: var(--spatial-scrollbar-thumb);
   background-clip: padding-box;
 }
 
-.spatial-app *::-webkit-scrollbar-button {
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source)::-webkit-scrollbar-thumb:hover,
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) *::-webkit-scrollbar-thumb:hover {
+  background-color: var(--spatial-scrollbar-thumb-hover);
+}
+
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source)::-webkit-scrollbar-thumb:active,
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) *::-webkit-scrollbar-thumb:active {
+  background-color: var(--spatial-scrollbar-thumb-active);
+}
+
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source)::-webkit-scrollbar-corner,
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) *::-webkit-scrollbar-corner {
+  background: var(--spatial-scrollbar-track);
+}
+
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source)::-webkit-scrollbar-button,
+:where(.spatial-app, .spatial-modal-panel-source, .spatial-toast-source) *::-webkit-scrollbar-button {
   display: none;
   width: 0;
   height: 0;
@@ -739,8 +783,6 @@
   min-height: 0;
   padding: 12px;
   overflow: auto;
-  scrollbar-width: thin;
-  scrollbar-color: var(--spatial-app-border-strong) transparent;
 }
 
 .spatial-play-launcher__editor,

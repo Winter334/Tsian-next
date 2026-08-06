@@ -33,6 +33,7 @@ import {
 } from "./input/pointer-router"
 import {
   activationPolicyForElement,
+  gestureCaptureTargetForElement,
   resolveProjectedTarget,
   type DomTargetResolution,
   type SpatialSourceRoot,
@@ -846,11 +847,7 @@ export class SpatialViewportController {
       focus: (target) => (target as HTMLElement).focus?.({ preventScroll: true }),
       activate: (target, sample) => this.activateTarget(target, sample),
       activationPolicy: (target) => activationPolicyForElement(target),
-      captureTarget: (target, sample) => {
-        if (sample.button !== 0) return target
-        const gestureStart = target.closest("[data-spatial-gesture-start]")
-        return gestureStart?.closest("[data-spatial-gesture-owner]") ?? target
-      },
+      captureTarget: (target, sample) => gestureCaptureTargetForElement(target, sample.button),
       setCapture: (pointerId) => {
         try {
           this.options.inputPlane.setPointerCapture(pointerId)

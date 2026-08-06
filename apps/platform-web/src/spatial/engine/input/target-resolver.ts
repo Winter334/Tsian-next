@@ -174,6 +174,43 @@ export function activationPolicyForElement(element: Element): TargetActivationPo
   return { allowed: true, reason: null }
 }
 
+const GESTURE_ACTION_SELECTOR = [
+  "button",
+  "input",
+  "textarea",
+  "select",
+  "option",
+  "a[href]",
+  "summary",
+  "[contenteditable='true']",
+  "[contenteditable='plaintext-only']",
+  "[role='button']",
+  "[role='checkbox']",
+  "[role='combobox']",
+  "[role='link']",
+  "[role='menuitem']",
+  "[role='option']",
+  "[role='radio']",
+  "[role='slider']",
+  "[role='switch']",
+  "[role='tab']",
+].join(", ")
+
+/**
+ * Promotes a routed title/resize gesture to its stable owner without stealing
+ * pointerup from a nested action. PointerRouter activation requires the down
+ * and captured release targets to remain identical.
+ */
+export function gestureCaptureTargetForElement(
+  target: Element,
+  button: number,
+): Element {
+  if (button !== 0) return target
+  const gestureStart = target.closest("[data-spatial-gesture-start]")
+  if (!gestureStart || target.closest(GESTURE_ACTION_SELECTOR)) return target
+  return gestureStart.closest("[data-spatial-gesture-owner]") ?? target
+}
+
 export function resolveProjectedTarget(input: {
   readonly document: Document
   readonly point: SpatialPoint

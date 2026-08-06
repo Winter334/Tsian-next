@@ -450,12 +450,30 @@
   white-space: nowrap;
 }
 
-.spatial-modal-panel-source__close {
+.spatial-modal-panel-source__header > .spatial-modal-panel-source__close.spatial-action-button {
+  box-sizing: border-box;
   min-height: 28px;
+  height: 28px;
   width: 28px;
+  padding: 0;
+  grid-template-columns: 14px;
+  gap: 0;
   border-color: rgb(244 241 234 / 24%);
   color: #f4f1ea;
-  background: rgb(244 241 234 / 8%);
+  background-color: rgb(244 241 234 / 8%);
+}
+
+.spatial-modal-panel-source__header > .spatial-modal-panel-source__close.spatial-action-button:not(:disabled):hover,
+.spatial-modal-panel-source__header > .spatial-modal-panel-source__close.spatial-action-button:not(:disabled)[data-spatial-hover] {
+  border-color: rgb(244 241 234 / 58%);
+  color: #fff;
+  background-color: rgb(244 241 234 / 18%);
+}
+
+.spatial-modal-panel-source__header > .spatial-modal-panel-source__close.spatial-action-button:not(:disabled):focus-visible {
+  border-color: var(--spatial-window-accent);
+  color: #fff;
+  background-color: rgb(244 241 234 / 14%);
 }
 
 .spatial-modal-panel-source__actions {

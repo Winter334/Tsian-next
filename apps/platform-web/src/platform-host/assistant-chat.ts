@@ -61,7 +61,7 @@ import { blobToWorkspaceFile } from "@/lib/workspace-blob"
 import { createBrowserScriptRunners } from "./browser-skill-script-executor"
 import { createFrontendInspector } from "./frontend-inspector"
 import { createDiagnosticsQueryRunner } from "./diagnostics-query"
-import { emitInteractionRequest, rejectAllInteractionRequests } from "../interaction-events"
+import { createInteractionRequestScope } from "../interaction-events"
 import { emitTurnDebugReady } from "../debug-events"
 import {
   getPlatformActiveGameCard,
@@ -403,6 +403,7 @@ export async function runAssistantChat(
   }
   resetInactivityTimer()
   const compositeSignal = AbortSignal.any([controller.signal, timeoutController.signal])
+  const interactionRequests = createInteractionRequestScope(compositeSignal)
   const workspaceTransaction = createRuntimeWorkspaceTransaction(workspaceFiles)
   const activeWorkspaceTransaction = workspaceTransaction
   const providerPresetMap = buildAgentProviderPresetMap(
@@ -738,7 +739,12 @@ export async function runAssistantChat(
             : undefined,
           onAskUser: (requestId, request) => {
             input.onAskUserRequest?.(requestId)
-            return emitInteractionRequest(requestId, request.question, request.options, request.allowCustom)
+            return interactionRequests.emit(
+              requestId,
+              request.question,
+              request.options,
+              request.allowCustom,
+            )
           },
         },
         audit: traceCollector.emit,
@@ -807,9 +813,8 @@ export async function runAssistantChat(
     }
   } catch (error) {
     activeWorkspaceTransaction.discard()
-    // 清理 ask_user 等待表：turn 失败/abort/timeout 时若有挂起的 interaction-request，
-    // 必须 reject 防止 Promise 悬空（镜像游戏 host index.ts 的 rejectAllInteractionRequests）。
-    rejectAllInteractionRequests(error)
+    // 多个 Assistant 会话可以并发生成，只清理当前 turn 拥有的 ask_user。
+    interactionRequests.rejectAll(error)
     // 记录失败 trace 事件(若 runtime 未自己发 turn_failed),让 traces/ 里能看到失败原因.
     traceCollector.emit({
       type: "turn_failed",

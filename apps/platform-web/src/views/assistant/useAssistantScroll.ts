@@ -74,6 +74,16 @@ export function useAssistantScroll(activeSessionId: Ref<string | null>) {
     })
   }
 
+  async function applySessionScrollTop(target: number) {
+    await nextTick()
+    const el = messageListRef.value
+    if (!el) return
+    el.scrollTop = Math.max(0, target)
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+    userPinnedToBottom.value = distanceFromBottom < 80
+    showJumpToBottom.value = distanceFromBottom > 120
+  }
+
   return {
     messageListRef,
     showJumpToBottom,
@@ -81,5 +91,6 @@ export function useAssistantScroll(activeSessionId: Ref<string | null>) {
     scrollToBottom,
     maybeScrollToBottom,
     restoreScrollTop,
+    applySessionScrollTop,
   }
 }

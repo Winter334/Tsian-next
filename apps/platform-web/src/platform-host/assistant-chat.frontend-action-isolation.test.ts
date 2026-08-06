@@ -35,7 +35,8 @@ const mocks = vi.hoisted(() => ({
   deleteCardContentPathForActiveCard: vi.fn(),
   deleteFrontendPathForActiveCard: vi.fn(),
   deleteLocalAssistantPath: vi.fn(),
-  emitInteractionRequest: vi.fn(),
+  interactionRequestEmit: vi.fn(),
+  interactionRequestRejectAll: vi.fn(),
   emitTurnDebugReady: vi.fn(),
   executeWorkspaceMutation: vi.fn(),
   getActiveSaveId: vi.fn(),
@@ -48,7 +49,10 @@ const mocks = vi.hoisted(() => ({
   loadLocalAssistantFiles: vi.fn(),
   normalizeMessageContent: vi.fn((value: string) => value.trim()),
   readTextAttachment: vi.fn(),
-  rejectAllInteractionRequests: vi.fn(),
+  createInteractionRequestScope: vi.fn(() => ({
+    emit: mocks.interactionRequestEmit,
+    rejectAll: mocks.interactionRequestRejectAll,
+  })),
   resolveAgentModelConfig: vi.fn(),
   resolveBrowserAiConfigForModel: vi.fn(),
   saveAssistantSessionMessages: vi.fn(),
@@ -92,8 +96,7 @@ vi.mock("../config/ai", () => ({
 }))
 
 vi.mock("../interaction-events", () => ({
-  emitInteractionRequest: mocks.emitInteractionRequest,
-  rejectAllInteractionRequests: mocks.rejectAllInteractionRequests,
+  createInteractionRequestScope: mocks.createInteractionRequestScope,
 }))
 
 vi.mock("../debug-events", () => ({

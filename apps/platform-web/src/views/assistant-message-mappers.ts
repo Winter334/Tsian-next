@@ -58,11 +58,13 @@ export function mapStoredMessagesToChat(stored: ConversationMessageRecord[]): Ch
             id: item.id,
             round: item.round,
             name: item.name,
+            ...(item.displayName !== undefined ? { displayName: item.displayName } : {}),
             status: item.status,
             collapsed: item.collapsed,
             ...(item.presentation !== undefined ? { presentation: item.presentation } : {}),
           }
         })
+      base.processCollapsed = true
     }
     return base
   })
@@ -100,6 +102,7 @@ export function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRe
             id: node.id,
             round: node.round,
             name: node.name,
+            ...(node.displayName !== undefined ? { displayName: node.displayName } : {}),
             status: node.status,
             collapsed: node.collapsed,
             ...(node.presentation !== undefined ? { presentation: node.presentation } : {}),
@@ -108,4 +111,20 @@ export function chatToStoredMessages(msgs: ChatMessage[]): ConversationMessageRe
     }
     return base
   })
+}
+
+/**
+ * 组合一次 Assistant turn 的完整持久化快照。history 已是存储形态；本轮消息
+ * 继续走同一安全 mapper，因此只会带入 presentation-only timeline。
+ */
+export function buildStoredAssistantTurn(
+  history: readonly ConversationMessageRecord[],
+  userMessage: ChatMessage,
+  assistantMessage: ChatMessage,
+): ConversationMessageRecord[] {
+  const currentMessages: ChatMessage[] = [userMessage]
+  if (assistantMessage.content || (assistantMessage.timeline?.length ?? 0) > 0) {
+    currentMessages.push(assistantMessage)
+  }
+  return [...history, ...chatToStoredMessages(currentMessages)]
 }
