@@ -131,6 +131,10 @@ const SpatialWorkspaceMediaView = defineAsyncComponent(() => import("./spatial/a
 const SpatialStudioView = defineAsyncComponent(() => import("./spatial/apps/studio/SpatialStudioView.vue"))
 const SpatialAssistantView = defineAsyncComponent(() => import("./spatial/apps/assistant/SpatialAssistantView.vue"))
 const SpatialPlayView = defineAsyncComponent(() => import("./spatial/apps/play/SpatialPlayView.vue"))
+const SpatialSettingsView = defineAsyncComponent(() => import("./spatial/apps/settings/SpatialSettingsView.vue"))
+const SpatialAccountView = defineAsyncComponent(() => import("./spatial/apps/account/SpatialAccountView.vue"))
+const SpatialAnnouncementCenterView = defineAsyncComponent(() => import("./spatial/apps/announcements/SpatialAnnouncementCenterView.vue"))
+const SpatialSystemMonitorView = defineAsyncComponent(() => import("./spatial/apps/system-monitor/SpatialSystemMonitorView.vue"))
 
 function presentation(
   component: Component,
@@ -218,25 +222,25 @@ export const platformAppRegistry: readonly PlatformAppDefinition[] = Object.free
     appId: "settings", launcher: true,
     route: { name: "settings", path: "/settings" }, identity: { kind: "singleton" },
     label: "控制面板", shortLabel: "设置", title: "控制面板", caption: "平台设置", icon: Settings,
-    ...presentation(SettingsView, { width: 860, height: 600 }, { width: 520, height: 400 }, true),
+    ...presentation(SettingsView, { width: 860, height: 600 }, { width: 520, height: 400 }, true, SpatialSettingsView),
   },
   {
     appId: "account", launcher: true,
     route: { name: "account", path: "/account" }, identity: { kind: "singleton" },
     label: "账号中心", shortLabel: "账号", title: "账号中心", caption: "操作员身份", icon: CircleUser,
-    ...presentation(AccountView, { width: 720, height: 540 }, { width: 480, height: 420 }),
+    ...presentation(AccountView, { width: 720, height: 540 }, { width: 480, height: 420 }, false, SpatialAccountView),
   },
   {
     appId: "announcements", launcher: false,
     route: { name: "announcements", path: "/announcements" }, identity: { kind: "singleton" },
     label: "公告中心", shortLabel: "公告", title: "公告中心", caption: "平台消息与更新记录", icon: Bell,
-    ...presentation(AnnouncementCenterView, { width: 760, height: 560 }, { width: 460, height: 360 }),
+    ...presentation(AnnouncementCenterView, { width: 760, height: 560 }, { width: 460, height: 360 }, false, SpatialAnnouncementCenterView),
   },
   {
     appId: "debug", launcher: true,
     route: { name: "debug", path: "/debug" }, identity: { kind: "singleton" },
     label: "系统监视器", shortLabel: "监视器", title: "系统监视器", caption: "运行时诊断", icon: Activity,
-    ...presentation(DebugView, { width: 1180, height: 720 }, { width: 720, height: 460 }, true),
+    ...presentation(DebugView, { width: 1180, height: 720 }, { width: 720, height: 460 }, true, SpatialSystemMonitorView),
   },
 ])
 

@@ -298,12 +298,7 @@ import type {
   DiagnosticAiRequestRecord,
   DiagnosticAiRequestStatus,
   DiagnosticFrontendErrorRecord,
-  DiagnosticRecord,
-  DiagnosticRecordQuery,
   DiagnosticRecordSummary,
-  DiagnosticStoreHealth,
-  DiagnosticTraceFacets,
-  DiagnosticTraceOverview,
 } from "@tsian/contracts"
 import {
   AlertTriangle,
@@ -314,61 +309,44 @@ import {
   Download,
   RefreshCw,
 } from "lucide-vue-next"
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import FloatingWindow from "@/components/feedback/FloatingWindow.vue"
-import { toast } from "@/composables/useToast"
-import { playFrontendBridge } from "@/platform-host"
+import { createTraceController, traceFormatDuration, traceFormatTime, traceStatusLabel, traceSummaryTitle } from "@/controllers/system-monitor/trace-controller"
 import JsonBlock from "./JsonBlock.vue"
 import RawRecordSection from "./RawRecordSection.vue"
 
-const PAGE_SIZE = 30
-type TraceStatusFilter = "" | DiagnosticAiRequestStatus | "frontend-error"
-const EMPTY_HEALTH: DiagnosticStoreHealth = { lostRecordCount: 0 }
-const EMPTY_FACETS: DiagnosticTraceFacets = { providers: [], models: [] }
-const EMPTY_OVERVIEW: DiagnosticTraceOverview = {
-  totalRecords: 0,
-  aiRequestCount: 0,
-  frontendErrorCount: 0,
-  succeededCount: 0,
-  failedCount: 0,
-  abortedCount: 0,
-  runningCount: 0,
-  interruptedCount: 0,
-  retriedRequestCount: 0,
-  usage: { input: 0, output: 0, total: 0, cached: 0, cacheCreation: 0 },
-  providers: [],
-}
-
-const summaries = shallowRef<DiagnosticRecordSummary[]>([])
-const selectedRecord = shallowRef<DiagnosticRecord | null>(null)
-const facets = shallowRef<DiagnosticTraceFacets>(EMPTY_FACETS)
-const overview = shallowRef<DiagnosticTraceOverview>(EMPTY_OVERVIEW)
-const health = shallowRef<DiagnosticStoreHealth>(EMPTY_HEALTH)
-const selectedId = ref("")
-const pageOffset = ref(0)
-const hasMore = ref(false)
-const listLoading = ref(false)
-const detailLoading = ref(false)
-const errorMessage = ref("")
-const timeRange = ref<"all" | "hour" | "day" | "week">("all")
-const statusFilter = ref<TraceStatusFilter>("")
-const providerFilter = ref("")
-const modelFilter = ref("")
-const textFilter = ref("")
+const trace = createTraceController()
+const {
+  summaries,
+  selectedRecord,
+  facets,
+  overview,
+  health,
+  selectedId,
+  pageOffset,
+  hasMore,
+  listLoading,
+  detailLoading,
+  error: errorMessage,
+  timeRange,
+  status: statusFilter,
+  provider: providerFilter,
+  model: modelFilter,
+  text: textFilter,
+  currentPage,
+  rawJson,
+  canExport,
+  selectedIsFailure,
+  refresh: refreshAll,
+  select: selectRecord,
+  changePage,
+  scheduleFilterRefresh,
+  copyRaw: copyRawRecord,
+} = trace
 const exportDialogOpen = ref(false)
 const reproductionSteps = ref("")
 const exporting = ref(false)
 const exportError = ref("")
-let unsubscribe: (() => void) | null = null
-let filterTimer: ReturnType<typeof setTimeout> | null = null
-let updateTimer: ReturnType<typeof setTimeout> | null = null
-let listRequestSequence = 0
-let detailRequestSequence = 0
-let metadataRequestSequence = 0
-let pendingRecordRefresh = false
-const pendingDownloadUrls = new Set<string>()
-
-const currentPage = computed(() => Math.floor(pageOffset.value / PAGE_SIZE) + 1)
 const aiRecord = computed<DiagnosticAiRequestRecord | null>(() =>
   selectedRecord.value?.recordType === "ai-request" ? selectedRecord.value : null)
 const frontendError = computed<DiagnosticFrontendErrorRecord | null>(() =>
@@ -386,147 +364,18 @@ const requestJson = computed(() => {
     ...(record.request.body !== undefined ? { providerBody: record.request.body } : {}),
   }
 })
-const rawJson = computed(() => selectedRecord.value ? JSON.stringify(selectedRecord.value, null, 2) : "")
-const selectedIsFailure = computed(() => selectedRecord.value !== null && (
-  selectedRecord.value.recordType === "frontend-error"
-  || selectedRecord.value.status === "failed"
-  || selectedRecord.value.status === "interrupted"
-))
-const canExport = computed(() => selectedIsFailure.value || !!overview.value.latestFailureId)
 const exportAnchorDescription = computed(() => selectedIsFailure.value
   ? `锚点：已选失败记录 ${selectedRecord.value?.id}`
   : overview.value.latestFailureId
     ? `锚点：最新失败记录 ${overview.value.latestFailureId}`
     : "暂无失败记录")
 
-function buildQuery(): DiagnosticRecordQuery {
-  const rangeMs = timeRange.value === "hour"
-    ? 60 * 60 * 1000
-    : timeRange.value === "day"
-      ? 24 * 60 * 60 * 1000
-      : timeRange.value === "week"
-        ? 7 * 24 * 60 * 60 * 1000
-        : 0
-  return {
-    offset: pageOffset.value,
-    limit: PAGE_SIZE,
-    ...(rangeMs > 0 ? { fromTimestamp: Date.now() - rangeMs } : {}),
-    ...(statusFilter.value === "frontend-error"
-      ? { recordType: "frontend-error" as const }
-      : statusFilter.value
-        ? { status: statusFilter.value }
-        : {}),
-    ...(providerFilter.value ? { provider: providerFilter.value } : {}),
-    ...(modelFilter.value ? { model: modelFilter.value } : {}),
-    ...(textFilter.value.trim() ? { text: textFilter.value.trim() } : {}),
-  }
-}
-
-async function loadList(): Promise<boolean> {
-  const debug = playFrontendBridge.debug
-  if (!debug) throw new Error("当前环境未提供诊断查询接口。")
-  const requestSequence = ++listRequestSequence
-  const query = buildQuery()
-  listLoading.value = true
-  try {
-    const page = await debug.queryDiagnosticSummaries(query)
-    if (requestSequence !== listRequestSequence) return false
-    summaries.value = page.items
-    hasMore.value = page.hasMore
-    const nextId = summaries.value.some((summary) => summary.id === selectedId.value)
-      ? selectedId.value
-      : summaries.value[0]?.id ?? ""
-    if (nextId !== selectedId.value || selectedRecord.value?.id !== nextId) {
-      selectedId.value = nextId
-      await loadDetail(nextId)
-    }
-    return true
-  } catch (error) {
-    if (requestSequence !== listRequestSequence) return false
-    throw error
-  } finally {
-    if (requestSequence === listRequestSequence) listLoading.value = false
-  }
-}
-
-async function loadDetail(id: string): Promise<boolean> {
-  const requestSequence = ++detailRequestSequence
-  if (!id) {
-    selectedRecord.value = null
-    detailLoading.value = false
-    return true
-  }
-  const debug = playFrontendBridge.debug
-  if (!debug) return false
-  detailLoading.value = true
-  try {
-    const record = await debug.getDiagnosticRecord(id)
-    if (requestSequence !== detailRequestSequence || selectedId.value !== id) return false
-    selectedRecord.value = record
-    return true
-  } catch (error) {
-    if (requestSequence !== detailRequestSequence || selectedId.value !== id) return false
-    throw error
-  } finally {
-    if (requestSequence === detailRequestSequence) detailLoading.value = false
-  }
-}
-
-async function loadMetadata(): Promise<void> {
-  const debug = playFrontendBridge.debug
-  if (!debug) return
-  const requestSequence = ++metadataRequestSequence
-  const [nextFacets, nextOverview, nextHealth] = await Promise.all([
-    debug.getDiagnosticFacets(),
-    debug.getDiagnosticOverview(),
-    debug.getDiagnosticStoreHealth(),
-  ])
-  if (requestSequence !== metadataRequestSequence) return
-  facets.value = nextFacets
-  overview.value = nextOverview
-  health.value = nextHealth
-}
-
-async function refreshAll(): Promise<void> {
-  errorMessage.value = ""
-  try {
-    await Promise.all([loadList(), loadMetadata()])
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "刷新统一 Trace 时发生未知错误。"
-  }
-}
-
-async function selectRecord(id: string): Promise<void> {
-  if (selectedId.value === id && selectedRecord.value?.id === id) return
-  selectedId.value = id
-  try {
-    const applied = await loadDetail(id)
-    if (applied) errorMessage.value = ""
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "读取 Trace 详情失败。"
-  }
-}
-
-async function changePage(direction: -1 | 1): Promise<void> {
-  const previousOffset = pageOffset.value
-  pageOffset.value = Math.max(0, pageOffset.value + direction * PAGE_SIZE)
-  try {
-    const applied = await loadList()
-    if (applied) errorMessage.value = ""
-  } catch (error) {
-    pageOffset.value = previousOffset
-    errorMessage.value = error instanceof Error ? error.message : "翻页失败。"
-  }
-}
-
 function summaryTitle(summary: DiagnosticRecordSummary): string {
-  return summary.recordType === "frontend-error"
-    ? "前端错误"
-    : `${summary.provider ?? "unknown"} · ${summary.model ?? "unknown"}`
+  return traceSummaryTitle(summary)
 }
 
 function summaryStatusLabel(summary: DiagnosticRecordSummary): string {
-  return summary.recordType === "frontend-error" ? "error" : statusLabel(summary.status)
+  return summary.recordType === "frontend-error" ? "error" : traceStatusLabel(summary)
 }
 
 function summaryStatusClass(summary: DiagnosticRecordSummary): string {
@@ -536,12 +385,7 @@ function summaryStatusClass(summary: DiagnosticRecordSummary): string {
 }
 
 function statusLabel(status?: DiagnosticAiRequestStatus): string {
-  if (status === "running") return "进行中"
-  if (status === "succeeded") return "成功"
-  if (status === "failed") return "失败"
-  if (status === "aborted") return "已中止"
-  if (status === "interrupted") return "已中断"
-  return "unknown"
+  return traceStatusLabel({ recordType: "ai-request", status })
 }
 
 function recordStatusClass(status?: DiagnosticAiRequestStatus): string {
@@ -552,13 +396,11 @@ function recordStatusClass(status?: DiagnosticAiRequestStatus): string {
 }
 
 function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleString()
+  return traceFormatTime(timestamp)
 }
 
 function formatDuration(duration?: number): string {
-  if (duration === undefined) return "--"
-  if (duration < 1_000) return `${Math.round(duration)}ms`
-  return `${(duration / 1_000).toFixed(duration < 10_000 ? 1 : 0)}s`
+  return traceFormatDuration(duration)
 }
 
 function formatAttemptDuration(startedAt: number, endedAt?: number): string {
@@ -569,115 +411,38 @@ function formatTokens(value?: number): string {
   return value === undefined ? "--" : value.toLocaleString()
 }
 
-async function copyRawRecord(): Promise<void> {
-  if (!rawJson.value) return
-  try {
-    await navigator.clipboard.writeText(rawJson.value)
-    toast.success("已复制原始 JSON。")
-  } catch {
-    toast.error("复制失败，请手动选择文本。")
-  }
-}
-
 function closeExportDialog(): void {
   if (exporting.value) return
   exportDialogOpen.value = false
   exportError.value = ""
 }
 
-function scheduleDownloadUrlRevoke(url: string): void {
-  pendingDownloadUrls.add(url)
-  window.setTimeout(() => {
-    if (!pendingDownloadUrls.delete(url)) return
-    URL.revokeObjectURL(url)
-  }, 1_000)
-}
-
 async function downloadBundle(): Promise<void> {
-  const debug = playFrontendBridge.debug
-  if (!debug || !canExport.value) return
   exporting.value = true
   exportError.value = ""
-  let url: string | undefined
-  let link: HTMLAnchorElement | undefined
   try {
-    const result = await debug.exportDiagnosticBundle({
-      ...(selectedIsFailure.value && selectedRecord.value ? { selectedFailureId: selectedRecord.value.id } : {}),
-      reproductionSteps: reproductionSteps.value,
-    })
-    url = URL.createObjectURL(result.blob)
-    link = document.createElement("a")
-    link.href = url
-    link.download = result.fileName
-    link.rel = "noopener"
-    document.body.appendChild(link)
-    link.click()
-    exportDialogOpen.value = false
-    toast.success(`诊断包已生成，共 ${result.recordCount} 条记录。`)
-  } catch (error) {
-    exportError.value = error instanceof Error ? error.message : "生成诊断包失败。"
+    if (await trace.downloadBundle(reproductionSteps.value)) exportDialogOpen.value = false
+    else exportError.value = errorMessage.value || "生成诊断包失败。"
+  } catch (cause) {
+    exportError.value = cause instanceof Error ? cause.message : "生成诊断包失败。"
   } finally {
-    link?.remove()
-    if (url) scheduleDownloadUrlRevoke(url)
     exporting.value = false
   }
-}
-
-async function refreshFromChanges(refreshRecords: boolean): Promise<void> {
-  if (!refreshRecords) {
-    await loadMetadata()
-    return
-  }
-  const detailId = selectedId.value
-  await Promise.all([
-    loadList(),
-    loadMetadata(),
-    detailId ? loadDetail(detailId) : Promise.resolve(),
-  ])
 }
 
 defineExpose({ refresh: refreshAll })
 
 watch([timeRange, statusFilter, providerFilter, modelFilter, textFilter], () => {
-  if (filterTimer) clearTimeout(filterTimer)
-  filterTimer = setTimeout(() => {
-    pageOffset.value = 0
-    void loadList().then(
-      (applied) => { if (applied) errorMessage.value = "" },
-      (error) => {
-        errorMessage.value = error instanceof Error ? error.message : "筛选 Trace 失败。"
-      },
-    )
-  }, 250)
+  scheduleFilterRefresh()
 })
 
 onMounted(() => {
   void refreshAll()
-  const debug = playFrontendBridge.debug
-  unsubscribe = debug?.onDiagnosticRecordsChanged((change) => {
-    pendingRecordRefresh ||= change.type !== "health"
-    if (updateTimer) clearTimeout(updateTimer)
-    updateTimer = setTimeout(() => {
-      const refreshRecords = pendingRecordRefresh
-      pendingRecordRefresh = false
-      void refreshFromChanges(refreshRecords).catch((error) => {
-        errorMessage.value = error instanceof Error ? error.message : "刷新 Trace 更新失败。"
-      })
-    }, 100)
-  }) ?? null
+  trace.start()
 })
 
 onBeforeUnmount(() => {
-  unsubscribe?.()
-  unsubscribe = null
-  if (filterTimer) clearTimeout(filterTimer)
-  if (updateTimer) clearTimeout(updateTimer)
-  pendingRecordRefresh = false
-  listRequestSequence += 1
-  detailRequestSequence += 1
-  metadataRequestSequence += 1
-  for (const url of pendingDownloadUrls) URL.revokeObjectURL(url)
-  pendingDownloadUrls.clear()
+  trace.dispose()
 })
 </script>
 

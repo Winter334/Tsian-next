@@ -297,6 +297,24 @@
   isolation: isolate;
 }
 
+.spatial-status-surface__badge {
+  position: absolute;
+  z-index: 2;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  min-width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid rgb(255 248 242 / 78%);
+  padding: 0 3px;
+  color: #fff8f6;
+  background: rgb(211 75 85 / 96%);
+  font: 700 8px "JetBrains Mono", monospace;
+  line-height: 1;
+  pointer-events: none;
+}
+
 .spatial-status-surface__exit {
   border-color: var(--spatial-window-accent);
   color: #fff8f6;

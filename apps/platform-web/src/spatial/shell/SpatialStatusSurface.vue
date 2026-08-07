@@ -39,6 +39,17 @@
       <div class="spatial-status-surface__actions">
         <button
           type="button"
+          class="spatial-dock-button spatial-status-surface__announcements"
+          aria-label="打开公告中心"
+          title="公告中心"
+          @click="activateAnnouncements"
+          @keydown="openKeyboardMenu(null, $event)"
+        >
+          <Bell aria-hidden="true" />
+          <span v-if="(unreadCount ?? 0) > 0" class="spatial-status-surface__badge" :aria-label="`${unreadCount ?? 0} 条未读公告`">{{ unreadBadge }}</span>
+        </button>
+        <button
+          type="button"
           class="spatial-dock-button"
           aria-label="全部最小化"
           title="全部最小化"
@@ -75,7 +86,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue"
-import { Minimize2, RotateCcw } from "lucide-vue-next"
+import { Bell, Minimize2, RotateCcw } from "lucide-vue-next"
 import type { SpatialWindowState } from "./window-session"
 import SpatialShellContextMenu from "./SpatialShellContextMenu.vue"
 import {
@@ -89,12 +100,14 @@ const props = defineProps<{
   windows: readonly SpatialWindowState[]
   activeWindowId: string
   viewport: SpatialShellMenuViewport
+  unreadCount?: number
 }>()
 
 const emit = defineEmits<{
   focus: [id: string]
   minimizeAll: []
   returnRetro: []
+  announcements: []
   sourceTopologyChanged: []
   sourceDirty: [sourceId: string]
 }>()
@@ -119,6 +132,7 @@ const menuItems = computed<readonly SpatialShellMenuItem[]>(() => [
   { id: "desktop", label: "显示桌面" },
   { id: "retro", label: "返回 RetroOS", danger: true },
 ])
+const unreadBadge = computed(() => props.unreadCount && props.unreadCount > 99 ? "99+" : String(props.unreadCount ?? 0))
 
 function activateWindow(id: string): void {
   closeMenu(false)
@@ -133,6 +147,11 @@ function activateMinimizeAll(): void {
 function activateReturnRetro(): void {
   closeMenu(false)
   emit("returnRetro")
+}
+
+function activateAnnouncements(): void {
+  closeMenu(false)
+  emit("announcements")
 }
 
 function selectMenuItem(id: string): void {

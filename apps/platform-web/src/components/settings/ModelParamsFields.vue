@@ -500,15 +500,9 @@ import { Switch } from "@/components/ui/switch"
 import { ParamTip } from "@/components/ui/tip"
 import {
   cloneBrowserAiModelParameters,
-  createDefaultBrowserClaudeModelParameters,
-  createDefaultBrowserDeepSeekModelParameters,
-  createDefaultBrowserGeminiModelParameters,
-  createDefaultBrowserOpenAiCompatibleModelParameters,
-  createDefaultBrowserOpenAiResponsesModelParameters,
   type BrowserAiCommonModelParameters,
   type BrowserAiModelParameters,
   type BrowserAiProviderKind,
-  type BrowserAiReasoningEffort,
   type BrowserAiToolCallMode,
   type BrowserClaudeModelParameters,
   type BrowserClaudeServiceTier,
@@ -519,6 +513,30 @@ import {
   type BrowserOpenAiCompatibleModelParameters,
   type BrowserOpenAiResponsesModelParameters,
 } from "@/config/ai"
+import {
+  MODEL_PARAMETER_TIPS,
+  NO_REASONING_OPTION,
+  NO_SERVICE_TIER_OPTION,
+  activeCustomRequestParamsText as activeCustomRequestParamsTextForKind,
+  activeProviderTitleForKind,
+  claudeParams,
+  deepSeekParams,
+  geminiParams,
+  linesToText,
+  normalizeReasoningValue,
+  numToText,
+  openAiCompatibleParams,
+  openAiResponsesParams,
+  textToLines,
+  textToNum,
+  updateActiveCustomRequestParamsText as updateActiveCustomRequestParamsTextForKind,
+  updateClaudeParameters,
+  updateCommonParameters,
+  updateDeepSeekParameters,
+  updateGeminiParameters,
+  updateOpenAiCompatibleParameters,
+  updateOpenAiResponsesParameters,
+} from "@/controllers/settings/model-parameter-helpers"
 
 const props = withDefaults(defineProps<{
   parameters: BrowserAiModelParameters
@@ -548,33 +566,10 @@ const emit = defineEmits<{
   (e: "update:streaming", value: boolean): void
 }>()
 
-const NO_REASONING = "__none"
-const NO_SERVICE_TIER = "__none"
+const NO_REASONING = NO_REASONING_OPTION
+const NO_SERVICE_TIER = NO_SERVICE_TIER_OPTION
 
-// Parameter descriptions shown via the ⓘ tip buttons. Kept here so the
-// template stays compact; the original API field name is included for users
-// who need to map a label back to the request payload.
-const tips = {
-  contextWindow: "模型能处理的最大上下文长度（token 数）。用于在发送前截断过长的历史消息。",
-  maxOutputTokens: "模型单次回复的最大 token 数。值越大回复越长，但消耗更多额度。对应 max_tokens / max_output_tokens。",
-  temperature: "采样温度，控制输出随机性。0 更确定/聚焦，2 更发散/有创意，常见值 0.7。对应 temperature。",
-  topP: "核采样阈值：只从累计概率达到 top_p 的候选词中采样。与温度二选一调节即可。对应 top_p。",
-  toolCallMode: "模型调用工具的方式。原生 = 使用 API function calling 字段；文本协议 = 在普通聊天文本中承载 Tsian 工具调用协议。",
-  streaming: "开启后逐 token 流式返回回复，首字更快；关闭则一次性返回完整结果。",
-  frequencyPenalty: "对已出现的高频词施加惩罚以降低重复。正值减少重复，负值增加重复，范围 -2~2。对应 frequency_penalty。",
-  presencePenalty: "鼓励引入新话题。正值提升模型谈论新内容的概率，负值相反，范围 -2~2。对应 presence_penalty。",
-  reasoningEffort: "推理模型的思考强度，越高推理越深但更慢更贵。不发送 = 不向接口传该参数。对应 reasoning_effort。",
-  topK: "采样候选数量：每个位置只从概率最高的 K 个候选词中采样。越大越多样，越小越确定。对应 topK / top_k。",
-  responseMimeType: "强制指定响应的 MIME 类型，如 application/json 让模型直接返回 JSON。对应 responseMimeType。",
-  responseSchema: "用 JSON Schema 约束结构化输出的字段与类型，需配合响应类型 application/json。对应 responseSchema。",
-  stopSequences: "遇到这些字符串时立即停止生成，每行一个。对应 stop_sequences / stopSequences。",
-  thinkingBudget: "思考模式的最大思考 token 预算。留空 = 不限制/不发送。对应 thinkingBudget / budget_tokens。",
-  includeThoughts: "是否在响应中返回模型的思考过程内容。对应 includeThoughts。",
-  serviceTier: "服务等级，影响延迟与可用性。auto = 自动选择，standard_only = 仅标准。对应 service_tier。",
-  thinkingMode: "Claude 扩展思考开关。disabled = 关闭，adaptive = 自适应，enabled = 启用。对应 thinking.type。",
-  thinkingDisplay: "思考内容的展示方式。summarized = 摘要展示，omitted = 不返回思考内容。对应 thinking.display。",
-  customRequestParams: "以 JSON 形式追加任意请求参数，会合并到发送给接口的请求体中。适合配置未被面板覆盖的字段，如 { \"seed\": 42 }。",
-} as const
+const tips = MODEL_PARAMETER_TIPS
 
 const testingChat = ref(false)
 const testingToolCalling = ref(false)
@@ -590,52 +585,24 @@ watch(
 )
 
 const openaiCompatible = computed(
-  () => props.parameters.provider.openaiCompatible ?? createDefaultBrowserOpenAiCompatibleModelParameters(),
+  () => openAiCompatibleParams(props.parameters),
 )
 const openaiResponses = computed(
-  () => props.parameters.provider.openaiResponses ?? createDefaultBrowserOpenAiResponsesModelParameters(),
+  () => openAiResponsesParams(props.parameters),
 )
 const deepseek = computed(
-  () => props.parameters.provider.deepseek ?? createDefaultBrowserDeepSeekModelParameters(),
+  () => deepSeekParams(props.parameters),
 )
 const gemini = computed(
-  () => props.parameters.provider.gemini ?? createDefaultBrowserGeminiModelParameters(),
+  () => geminiParams(props.parameters),
 )
 const claude = computed(
-  () => props.parameters.provider.claude ?? createDefaultBrowserClaudeModelParameters(),
+  () => claudeParams(props.parameters),
 )
 
-const activeProviderTitle = computed(() => {
-  switch (props.kind) {
-    case "openai-responses":
-      return "OPENAI RESPONSES"
-    case "deepseek":
-      return "DEEPSEEK"
-    case "gemini":
-      return "GEMINI"
-    case "claude":
-      return "CLAUDE"
-    case "openai-compatible":
-    default:
-      return "OPENAI CHAT"
-  }
-})
+const activeProviderTitle = computed(() => activeProviderTitleForKind(props.kind))
 
-const activeCustomRequestParamsText = computed(() => {
-  switch (props.kind) {
-    case "openai-responses":
-      return openaiResponses.value.customRequestParamsText
-    case "deepseek":
-      return deepseek.value.customRequestParamsText
-    case "gemini":
-      return gemini.value.customRequestParamsText
-    case "claude":
-      return claude.value.customRequestParamsText
-    case "openai-compatible":
-    default:
-      return openaiCompatible.value.customRequestParamsText
-  }
-})
+const activeCustomRequestParamsText = computed(() => activeCustomRequestParamsTextForKind(props.parameters, props.kind))
 
 const streamingEffective = computed(() => props.streaming)
 
@@ -645,87 +612,31 @@ function emitParameters(value: BrowserAiModelParameters): void {
 }
 
 function updateCommon(patch: Partial<BrowserAiCommonModelParameters>): void {
-  emitParameters({
-    ...props.parameters,
-    common: { ...props.parameters.common, ...patch },
-    provider: { ...props.parameters.provider },
-  })
+  emitParameters(updateCommonParameters(props.parameters, patch))
 }
 
 function updateOpenAiCompatible(patch: Partial<BrowserOpenAiCompatibleModelParameters>): void {
-  emitParameters({
-    ...props.parameters,
-    provider: {
-      ...props.parameters.provider,
-      openaiCompatible: { ...openaiCompatible.value, ...patch },
-    },
-  })
+  emitParameters(updateOpenAiCompatibleParameters(props.parameters, patch))
 }
 
 function updateOpenAiResponses(patch: Partial<BrowserOpenAiResponsesModelParameters>): void {
-  emitParameters({
-    ...props.parameters,
-    provider: {
-      ...props.parameters.provider,
-      openaiResponses: { ...openaiResponses.value, ...patch },
-    },
-  })
+  emitParameters(updateOpenAiResponsesParameters(props.parameters, patch))
 }
 
 function updateDeepSeek(patch: Partial<BrowserDeepSeekModelParameters>): void {
-  emitParameters({
-    ...props.parameters,
-    provider: {
-      ...props.parameters.provider,
-      deepseek: { ...deepseek.value, ...patch },
-    },
-  })
+  emitParameters(updateDeepSeekParameters(props.parameters, patch))
 }
 
 function updateGemini(patch: Partial<BrowserGeminiModelParameters>): void {
-  emitParameters({
-    ...props.parameters,
-    provider: {
-      ...props.parameters.provider,
-      gemini: { ...gemini.value, ...patch },
-    },
-  })
+  emitParameters(updateGeminiParameters(props.parameters, patch))
 }
 
 function updateClaude(patch: Partial<BrowserClaudeModelParameters>): void {
-  emitParameters({
-    ...props.parameters,
-    provider: {
-      ...props.parameters.provider,
-      claude: { ...claude.value, ...patch },
-    },
-  })
-}
-
-function normalizeReasoningValue(value: unknown): BrowserAiReasoningEffort {
-  return typeof value === "string" && value !== NO_REASONING
-    ? value as BrowserAiReasoningEffort
-    : ""
+  emitParameters(updateClaudeParameters(props.parameters, patch))
 }
 
 function updateActiveCustomRequestParamsText(value: string): void {
-  switch (props.kind) {
-    case "openai-responses":
-      updateOpenAiResponses({ customRequestParamsText: value })
-      return
-    case "deepseek":
-      updateDeepSeek({ customRequestParamsText: value })
-      return
-    case "gemini":
-      updateGemini({ customRequestParamsText: value })
-      return
-    case "claude":
-      updateClaude({ customRequestParamsText: value })
-      return
-    case "openai-compatible":
-    default:
-      updateOpenAiCompatible({ customRequestParamsText: value })
-  }
+  emitParameters(updateActiveCustomRequestParamsTextForKind(props.parameters, props.kind, value))
 }
 
 function onToolCallModeChange(mode: BrowserAiToolCallMode): void {
@@ -796,29 +707,6 @@ async function runToolCallingProbe(): Promise<void> {
   }
 }
 
-function numToText(value: number | null): string {
-  return typeof value === "number" && Number.isFinite(value) ? String(value) : ""
-}
-
-function textToNum(value: string): number | null {
-  const trimmed = value.trim()
-  if (trimmed === "") {
-    return null
-  }
-  const num = Number(trimmed)
-  return Number.isFinite(num) ? num : null
-}
-
-function linesToText(value: string[]): string {
-  return value.join("\n")
-}
-
-function textToLines(value: string): string[] {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-}
 </script>
 
 <style scoped>

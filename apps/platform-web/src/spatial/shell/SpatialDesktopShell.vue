@@ -21,7 +21,9 @@
         :windows="session.windows"
         :active-window-id="session.activeWindowId"
         :viewport="viewport"
+        :unread-count="unreadCount"
         @focus="focusWindow"
+        @announcements="openAnnouncements"
         @minimize-all="minimizeAll"
         @return-retro="returnToRetro"
         @source-topology-changed="handleShellSourceTopologyChanged"
@@ -73,6 +75,7 @@ import {
 } from "@/config/platform-ui-mode"
 import { resolveConfirm } from "@/composables/useConfirm"
 import { resolveDialogForm } from "@/composables/useDialogForm"
+import { useAnnouncements } from "@/composables/useAnnouncements"
 import { closeSpatialAssistantConfig } from "../apps/assistant/spatial-assistant-config-surface"
 import { BrowserWindowFullscreenController } from "@/lib/browser-fullscreen"
 import {
@@ -134,6 +137,7 @@ const emit = defineEmits<{
 
 const route = useRoute()
 const router = useRouter()
+const { unreadCount } = useAnnouncements()
 const { session } = useSpatialWindowSession()
 const browserFullscreen = new BrowserWindowFullscreenController({
   applyWindowFullscreen: applySpatialWindowFullscreen,
@@ -575,6 +579,11 @@ function openDescriptor(descriptor: PlatformWindowDescriptor, navigate: boolean)
 
 function openLauncher(appId: PlatformAppId): void {
   const descriptor = platformWindowForLauncher(appId)
+  if (descriptor) openDescriptor(descriptor, true)
+}
+
+function openAnnouncements(): void {
+  const descriptor = platformWindowForRoute({ name: "announcements", fullPath: "/announcements", params: {}, query: {} })
   if (descriptor) openDescriptor(descriptor, true)
 }
 

@@ -482,6 +482,29 @@ interface SpatialSelectProps {
   disabled?: boolean
 }
 
+interface SpatialRangeSliderProps {
+  modelValue: number | null
+  min: number
+  max: number
+  step?: number
+  nullable?: boolean
+  label: string
+  unit?: string
+  tip?: string
+}
+
+interface SpatialParamTipProps {
+  label: string
+  tip: string
+}
+
+function spatialParamTipHorizontalLayout(
+  anchor: { left: number; width: number },
+  boundary: { left: number; right: number },
+  preferredWidth?: number,
+  gutter?: number,
+): { width: number; offsetX: number }
+
 type SpatialSelectEmit =
   | { event: "update:modelValue"; value: string }
   | { event: "change"; value: string }
@@ -538,6 +561,8 @@ function shouldQueueNextSourceTexturePaint(
 - Text+icon and icon-only application actions use `SpatialActionButton`. The primitive owns one horizontal icon/text row, a fixed non-shrinking icon box, SVG size, gap, variant colors and disabled state. Callers do not size or position action icons themselves.
 - Icon-only actions require an accessible name and keep a square semantic hit box. Text-only semantic tabs, list/menu items and selection cards may remain native buttons when they are not action-button variants.
 - Themed Spatial selectors use `SpatialSelect`; product route presentations do not use native `<select>`. The listbox remains inside the owning Source so curvature, styling and projected input stay consistent.
+- Spatial Settings range inputs use `SpatialRangeSlider`. A nullable range reserves internal index `0` for `null` and the Chinese readout “不发送”; indices `1..N` map exactly from the configured minimum through maximum. The minimum is a real API value and must not double as the unset sentinel. Non-nullable ranges still map their left edge directly to the configured minimum.
+- Dense parameter forms attach `SpatialParamTip` to the compact label and reuse the shared domain explanation when RetroOS and Spatial describe the same field. The trigger has the accessible name `${label}说明`, opens by pointer, click or focus, and closes on Escape/blur/pointer leave. An open Tip raises its local stacking order and clamps its painted width/offset inside the nearest Spatial scroll or Source boundary; `z-index` alone cannot escape an ancestor's `overflow` clipping. The Tip content explicitly restores normal whitespace so a `white-space: nowrap` field row cannot force long explanations outside the clamped box. Recompute on boundary scroll/resize and release listeners/observers on close or unmount.
 - A feature configuration surface that must behave as a desktop modal is a direct global Canvas Source, not an absolute descendant inside its application window Source. The shell owns its input-only shield, explicit viewport layout, z-order, aperture presentation and terminal close; the feature store remains active until the closing frame completes. Higher global Dialog/Confirm Sources disable its projected input and restore its exact focus chain after they close.
 - Feature views open a global configuration Source through a small in-memory request boundary and may supply a change callback, but they do not mount the panel themselves. Minimize/focus/occlusion therefore keep the application controller mounted, while shell disposal clears any outstanding feature-modal request.
 - A movable direct Source marks its root `data-spatial-gesture-owner` and only its title drag region `data-spatial-gesture-start`. Routed pointer capture then delivers move/up/cancel to the Source root. Drag deltas come from the router-provided `spatialScreenClientX/Y`, never from Source-local `clientX/Y`; reuse `spatial-routed-drag.ts` so windows and feature modals cannot diverge.
@@ -561,6 +586,9 @@ function shouldQueueNextSourceTexturePaint(
 - `prefers-reduced-motion: reduce` makes application transitions immediate, removes transition delay and preserves the same final DOM, focus and business state.
 - Application colors and surfaces derive from inherited `--spatial-*` shell variables. Route components do not hard-code a near-match palette or import `retro-*` chrome.
 - Spatial-only presentation work does not duplicate controller, platform-host, storage or event logic. RetroOS and Spatial presentations consume the same per-instance domain controllers.
+- Dense nested configuration domains use progressive disclosure. Spatial Settings keeps its outer section rail mounted, but AI configuration renders only one inner level at a time (`provider type + preset cards` → `selected preset models` → `selected model parameters`). Keep the provider workspace mounted with `v-show` when switching outer sections so its selected level survives; do not eagerly render every preset, model and provider-specific parameter form in one scroll surface.
+- Shared route controllers treat `dispose()` as terminal. Every public async action checks disposal before starting new bridge/storage work, while request generations still reject responses that race with disposal. This prevents a view that unmounts while awaiting host readiness from issuing work afterward.
+- Extracting domain orchestration does not remove presentation-owned composition. A route wrapper may still refresh a mounted child panel or preserve tab-local behavior after the shared controller refreshes its own state; keep that wiring in the presentation instead of pushing component refs into the controller.
 
 ### 4. Validation & Error Matrix
 
@@ -585,7 +613,15 @@ function shouldQueueNextSourceTexturePaint(
 | Transition completion event is lost | Hard-expire below one second, request the final texture, and stop |
 | Source is removed/released or context is lost | Drop its animation tracking; do not retain a frame reason for it |
 | Icon-only action lacks visible text | Caller supplies `aria-label` |
+| Nullable range is at internal index `0` | Emit `null` and expose “不发送” through the visible output and `aria-valuetext` |
+| Nullable range moves from index `0` to `1` | Emit the configured minimum, including when that minimum is `0` or negative |
+| Parameter Tip receives click/focus | Keep the explanation discoverable through its accessible trigger |
+| Centered parameter Tip would cross a Spatial scroll/Source edge | Shift it inside the boundary, narrow it when the available width is below the preferred width, and keep it Source-local |
+| Parameter Tip inherits `white-space: nowrap` from a compact field row | Restore normal whitespace on the Tip content; long copy wraps inside the clamped width |
 | Route layout changes | Every prior command, status and error remains discoverable |
+| Nested AI configuration opens | Render only the current preset/model/parameter level; provide explicit back navigation and retain the shared controller draft |
+| Route unmounts before host readiness or an async action starts | Controller disposal prevents any new bridge/storage call; in-flight responses cannot mutate state |
+| A shared-controller extraction leaves a presentation-owned child panel | Manual refresh/restore still invokes the child panel's public refresh seam when mounted |
 | Ordinary descendant/text mutation inside one Source | Dirty and repaint only that Source; do not synchronize or recapture unrelated Sources |
 | Direct Source or dynamic-media topology changes | Synchronize the registry, then capture the affected Source generation |
 | Standalone Toast enters/leaves in target Flag Chromium | Visible bounded Source-local motion, no planar escape, horizontal scrollbar or unrelated Source flash |
@@ -612,6 +648,11 @@ function shouldQueueNextSourceTexturePaint(
 - Good: Studio, Assistant, global forms and Toast stacks share one Spatial scrollbar skin, while the compact Assistant composer alone hides its chrome.
 - Good: dragging Assistant configuration by its dark header follows the projected pointer in screen space, survives repaint, stays recoverable at every edge, and reopens centered.
 - Good: a routed press on the close icon retains the icon through pointerup, bubbles one click to its button, and closes the modal without starting drag.
+- Good: RetroOS and Spatial monitor views share diagnostic controllers, while each presentation retains its own tab/child refresh wiring and stops new requests after unmount.
+- Good: Spatial Settings first shows compact provider preset cards, then one model list, then one model parameter page; switching to another outer settings section and back retains the selected inner level.
+- Good: an unset temperature slider sits at the dedicated leftmost stop and reads “不发送”; the next stop sends `0`, while its Tip explains temperature without adding paragraph copy to the form.
+- Good: a Tip beside the first column keeps its complete first sentence visible by shifting right within the current settings scroll area, then recalculates after resize or scroll.
+- Good: the longer “流式响应” explanation inherits from a nowrap field row but wraps inside its clamped Tip box without crossing the settings panel edge.
 - Base: a text-only tab or menu item remains a semantic native button and uses shared Spatial app styles without being wrapped in `SpatialActionButton`.
 - Bad: native `<select>` opens a white/blue browser popup above the curved Source.
 - Bad: each page adds its own SVG margins, icon sizes, button grid, focus outline or animation timing.
@@ -623,10 +664,18 @@ function shouldQueueNextSourceTexturePaint(
 - Bad: one page restores browser-default gray scrollbars or changes gutter width independently from projected scrollbar hit-testing.
 - Bad: a modal computes movement from Source-local `clientX/Y`, writes its own transform, or lets its close button bubble into the drag handle; curvature makes local deltas unstable and the shell's next layout overwrites component-owned geometry.
 - Bad: capture promotion relies only on `@pointerdown.stop`; capture was already assigned to the gesture owner, so PointerRouter sees `pressed target !== release target` and correctly suppresses the click.
+- Bad: one Spatial Settings page nests every provider preset, every model row and every provider-specific parameter form, forcing users to understand the entire configuration graph before completing one task.
+- Bad: a nullable slider maps its left edge to the numeric minimum and uses a separate checkbox/text field for unset, or places an info button inside the slider's native `<label>`.
+- Bad: a fixed-width Tip stays centered on a near-edge icon and relies on a larger `z-index`; the scroll ancestor still clips the beginning or end of its text.
+- Bad: a Tip content box inherits `white-space: nowrap` from a compact settings row, so its text paints past the otherwise clamped width and panel boundary.
+- Bad: an `onMounted` continuation resumes after the view closed and calls a controller whose `dispose()` only removed subscriptions but still permits new bridge requests.
 
 ### 6. Tests Required
 
 - Unit-test durable behavior: Select state transitions and disabled-option navigation; bounded Source-animation counting/expiry, including proof that later properties cannot slide the first-event deadline; preservation of an already-dirty paint generation; reduced-motion suppression of `animated-source`; mutation routing that separates Source topology/dynamic-media sync from owning-Source descendant repaint; controller request sequencing/mutation guards; close guards; media object-URL ownership; registry readiness and the production release gate.
+- For shared route controllers, assert subscribe-once/unsubscribe, debounce cancellation, stale-response rejection, object-URL cleanup where applicable, and zero new bridge/storage calls after `dispose()`. Presentation integration tests must cover any child refresh seam retained by the RetroOS or Spatial wrapper.
+- For dense nested settings, component-test the level transitions and assert model/parameter subtrees are absent until explicitly opened. Verify the outer view uses a retention-preserving mount strategy and that no native `<select>` appears in Spatial source.
+- Unit-test Spatial nullable ranges at internal indices `0` and `1`, moving back to `0`, visible/accessible “不发送” output, and Tip keyboard/click discovery. For Tip layout, assert the computed painted left/right edges remain inside both boundary sides and the width shrinks for a narrow boundary; cover a long explanation under a `white-space: nowrap` ancestor and assert the content restores wrapping inside that box. Do not snapshot exact tunable CSS values. Visual slider calibration remains in the manual Flag Chromium gate rather than CSS snapshots.
 - Unit-test feature-modal request ownership, view-to-global opening, modal input-priority changes and delayed terminal close. Component assertions verify the feature panel is a direct Source and absent from the invoking application subtree; scrollbar colors and radii remain manual visual tokens rather than source-string snapshots.
 - Unit-test routed screen-delta accumulation, pointer-id filtering, header-only start, close-control exclusion, position persistence, finite-delta rejection, viewport clamp and close/reopen reset. Re-run existing Spatial window tests because the shared helper also owns product-window move semantics.
 - Unit-test gesture capture with a plain title descendant, a button, an SVG inside that button and non-primary input. Route down/up through `PointerRouter` and assert the nested action activates exactly once while title chrome remains drag-owned.
@@ -680,6 +729,45 @@ function shouldQueueNextSourceTexturePaint(
 
 <!-- Correct: one immediate replacement remains inside the curved Source. -->
 <Screen :key="screen.kind" />
+```
+
+```vue
+<!-- Wrong: the API minimum is overloaded as “unset”, and the Tip button is nested in the label. -->
+<label>
+  Temperature <button type="button">?</button>
+  <input v-model.number="temperature" type="range" min="0" max="2">
+</label>
+
+<!-- Correct: the shared primitive owns a dedicated null stop and accessible explanation. -->
+<SpatialRangeSlider
+  v-model="temperature"
+  label="温度"
+  :min="0"
+  :max="2"
+  nullable
+  :tip="MODEL_PARAMETER_TIPS.temperature"
+/>
+```
+
+```ts
+// Wrong: stacking cannot bypass an overflow-clipping scroll ancestor.
+tooltip.style.zIndex = "9999"
+
+// Correct: keep the Tip Source-local and clamp its paint box to that boundary.
+const layout = spatialParamTipHorizontalLayout(anchorRect, scrollBoundaryRect)
+tooltip.style.width = `${layout.width}px`
+tooltip.style.transform = `translateX(calc(-50% + ${layout.offsetX}px))`
+```
+
+```css
+/* Wrong: a compact field row can force every descendant, including Tip copy, onto one line. */
+.spatial-param-tip__content { overflow-wrap: anywhere; }
+
+/* Correct: the Tip owns its wrapping behavior inside the clamped width. */
+.spatial-param-tip__content {
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 ```
 
 ```ts

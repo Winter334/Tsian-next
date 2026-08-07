@@ -169,17 +169,11 @@
 </template>
 
 <script setup lang="ts">
-import type {
-  DiagnosticStoreHealth,
-  DiagnosticTraceOverview,
-  PlatformContextShell,
-} from "@tsian/contracts"
 import { AlertTriangle, CheckCircle2, FileClock, RefreshCw, RotateCcw } from "lucide-vue-next"
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref } from "vue"
 import DiagnosticTracePanel from "@/components/debug/DiagnosticTracePanel.vue"
-import { confirm } from "@/composables/useConfirm"
-import { toast } from "@/composables/useToast"
-import { playFrontendBridge, waitForPlatformHostReady } from "../platform-host"
+import { createMonitorController } from "@/controllers/system-monitor/monitor-controller"
+import { waitForPlatformHostReady } from "../platform-host"
 
 type MonitorTab = "overview" | "trace" | "recovery"
 
@@ -188,36 +182,19 @@ const monitorTabs: Array<{ id: MonitorTab; code: string; label: string }> = [
   { id: "trace", code: "02", label: "Trace" },
   { id: "recovery", code: "03", label: "恢复" },
 ]
-const EMPTY_OVERVIEW: DiagnosticTraceOverview = {
-  totalRecords: 0,
-  aiRequestCount: 0,
-  frontendErrorCount: 0,
-  succeededCount: 0,
-  failedCount: 0,
-  abortedCount: 0,
-  runningCount: 0,
-  interruptedCount: 0,
-  retriedRequestCount: 0,
-  usage: { input: 0, output: 0, total: 0, cached: 0, cacheCreation: 0 },
-  providers: [],
-}
-
-const platformContext = shallowRef<PlatformContextShell | null>(null)
-const checkpointItems = shallowRef<unknown[]>([])
-const overview = shallowRef<DiagnosticTraceOverview>(EMPTY_OVERVIEW)
-const health = shallowRef<DiagnosticStoreHealth>({ lostRecordCount: 0 })
+const monitor = createMonitorController()
+const {
+  context: platformContext,
+  checkpoints: checkpointItems,
+  overview,
+  health,
+  loading,
+  error: errorMessage,
+  lastRefreshAt,
+  attentionCount,
+} = monitor
 const activeTab = ref<MonitorTab>("overview")
-const loading = ref(true)
-const errorMessage = ref("")
-const lastRefreshAt = ref("")
 const tracePanelRef = ref<{ refresh(): Promise<void> } | null>(null)
-let unsubscribeTurnReady: (() => void) | null = null
-let unsubscribeDiagnostics: (() => void) | null = null
-let metadataRefreshTimer: ReturnType<typeof setTimeout> | null = null
-let disposed = false
-let metadataRequestSequence = 0
-
-const attentionCount = computed(() => overview.value.failedCount + overview.value.interruptedCount + overview.value.frontendErrorCount)
 const cacheHitRate = computed(() => overview.value.usage.input > 0
   ? Math.round((overview.value.usage.cached / overview.value.usage.input) * 100)
   : null)
@@ -308,96 +285,22 @@ function checkpointWorkspaceFileCount(value: unknown): number {
   return (isRecord(value) ? readNumber(value.workspaceFileCount) : null) ?? 0
 }
 
-async function refreshDiagnosticsMetadata(): Promise<boolean> {
-  const debug = playFrontendBridge.debug
-  if (!debug) return false
-  const requestSequence = ++metadataRequestSequence
-  const [nextOverview, nextHealth] = await Promise.all([
-    debug.getDiagnosticOverview(),
-    debug.getDiagnosticStoreHealth(),
-  ])
-  if (requestSequence !== metadataRequestSequence) return false
-  overview.value = nextOverview
-  health.value = nextHealth
-  return true
-}
-
 async function refreshAll(): Promise<void> {
-  loading.value = true
-  errorMessage.value = ""
-  try {
-    const [context, checkpoints] = await Promise.all([
-      playFrontendBridge.platform.getPlatformContext(),
-      playFrontendBridge.query.query({ resource: "checkpoints" }),
-      refreshDiagnosticsMetadata(),
-    ])
-    platformContext.value = context
-    checkpointItems.value = Array.isArray(checkpoints?.items) ? checkpoints.items : []
-    if (activeTab.value === "trace") await tracePanelRef.value?.refresh()
-    lastRefreshAt.value = new Date().toLocaleTimeString()
-  } catch (error) {
-    errorMessage.value = error instanceof Error ? error.message : "刷新系统监视器时发生未知错误。"
-  } finally {
-    loading.value = false
-  }
+  await monitor.refreshAll()
+  if (activeTab.value === "trace") await tracePanelRef.value?.refresh()
 }
 
-async function refreshRecovery(): Promise<void> {
-  try {
-    const checkpoints = await playFrontendBridge.query.query({ resource: "checkpoints" })
-    checkpointItems.value = Array.isArray(checkpoints?.items) ? checkpoints.items : []
-  } catch {
-    // The explicit refresh action remains the visible error path.
-  }
-}
-
-async function restoreCheckpoint(checkpointIdValue: string): Promise<void> {
-  if (!checkpointIdValue) return
-  const confirmed = await confirm({
-    message: "恢复检查点会回滚当前存档的运行时状态。确认继续吗？",
-    severity: "danger",
-    confirmText: "恢复",
-  })
-  if (!confirmed) return
-
-  const result = await playFrontendBridge.platform.runAction({
-    action: "restore-checkpoint",
-    params: { checkpointId: checkpointIdValue },
-  })
-  if (!result.ok) {
-    toast.error(result.error?.message ?? "恢复检查点失败。")
-    return
-  }
-  await refreshAll()
+async function restoreCheckpoint(id: string): Promise<void> {
+  if (await monitor.restoreCheckpoint(id)) await tracePanelRef.value?.refresh()
 }
 
 onMounted(async () => {
   await waitForPlatformHostReady()
-  if (disposed) return
+  monitor.start()
   await refreshAll()
-  if (disposed) return
-  const debug = playFrontendBridge.debug
-  unsubscribeTurnReady = debug?.onTurnDebugReady(() => { void refreshRecovery() }) ?? null
-  unsubscribeDiagnostics = debug?.onDiagnosticRecordsChanged(() => {
-    if (metadataRefreshTimer) clearTimeout(metadataRefreshTimer)
-    metadataRefreshTimer = setTimeout(() => {
-      void refreshDiagnosticsMetadata().then(
-        (applied) => { if (applied) errorMessage.value = "" },
-        (error) => {
-          errorMessage.value = error instanceof Error ? error.message : "刷新诊断统计失败。"
-        },
-      )
-    }, 100)
-  }) ?? null
 })
 
 onBeforeUnmount(() => {
-  disposed = true
-  metadataRequestSequence += 1
-  unsubscribeTurnReady?.()
-  unsubscribeDiagnostics?.()
-  unsubscribeTurnReady = null
-  unsubscribeDiagnostics = null
-  if (metadataRefreshTimer) clearTimeout(metadataRefreshTimer)
+  monitor.dispose()
 })
 </script>

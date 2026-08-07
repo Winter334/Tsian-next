@@ -3,7 +3,6 @@
     class="grid h-full min-h-0 overflow-hidden"
     :class="screen.kind === 'hub' ? 'grid-rows-[minmax(0,1fr)]' : 'grid-rows-[auto_minmax(0,1fr)]'"
   >
-    <!-- Header only on non-hub screens; hub is a full-bleed card grid. -->
     <header
       v-if="screen.kind !== 'hub'"
       class="retro-toolbar flex flex-wrap items-center justify-between gap-2 border-b px-3 py-2"
@@ -41,7 +40,7 @@
 
       <AppearanceScreen
         v-else-if="screen.kind === 'appearance'"
-        :current-mode="getPlatformConfig().appearance.uiMode"
+        :current-mode="platformConfig.appearance.uiMode"
         @select="handleAppearanceSwitch"
       />
 
@@ -85,10 +84,7 @@
         @save="handleSaveTunables"
       />
 
-      <div
-        v-else
-        class="grid h-full place-items-center p-6"
-      >
+      <div v-else class="grid h-full place-items-center p-6">
         <p class="text-sm text-text-dim">未选择服务商预设。</p>
       </div>
     </main>
@@ -117,7 +113,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, ref } from "vue"
 import { ArrowLeft, Plus } from "lucide-vue-next"
 import SettingsHub from "@/components/settings/SettingsHub.vue"
 import ProviderManagementScreen from "@/components/settings/ProviderManagementScreen.vue"
@@ -128,41 +124,29 @@ import SemanticSearchScreen from "@/components/settings/SemanticSearchScreen.vue
 import CloudBackupScreen from "@/components/settings/CloudBackupScreen.vue"
 import PlatformTunablesScreen from "@/components/settings/PlatformTunablesScreen.vue"
 import AppearanceScreen from "@/components/settings/AppearanceScreen.vue"
-import { confirm } from "@/composables/useConfirm"
-import { openDialogForm } from "@/composables/useDialogForm"
 import { toast } from "@/composables/useToast"
 import {
-  type BrowserAiModelParameters,
-  type BrowserAiProviderKind,
-  type BrowserAiProviderPreset,
-  type BrowserAiToolCallMode,
-  type BrowserEmbeddingConfig,
-  type BrowserPlatformConfigDraft,
   DEFAULT_BROWSER_AI_STREAMING,
   DEFAULT_BROWSER_AI_TOOL_CALL_MODE,
   cloneBrowserAiModelParameters,
-  createBrowserAiModelConfig,
-  createBrowserAiProviderPreset,
   createDefaultBrowserAiModelParameters,
-  fetchBrowserAiProviderModels,
-  getBrowserPlatformConfigDraft,
-  normalizeBrowserAiProviderBaseUrl,
-  resolveBrowserAiConfigFromProviderPreset,
-  saveBrowserPlatformConfigDraftLenient,
-  saveEmbeddingConfig,
+  type BrowserAiModelParameters,
+  type BrowserAiToolCallMode,
+  type BrowserEmbeddingConfig,
 } from "@/config/ai"
-import {
-  type PlatformConfigAssistant,
-  type PlatformConfigCheckpointPrune,
-  type PlatformConfigContextCompression,
-  type PlatformConfigCloudBackup,
-  type PlatformConfigAi,
-  type PlatformUiMode,
-  getPlatformConfig,
-  savePlatformConfig,
+import type {
+  PlatformConfigAi,
+  PlatformConfigAssistant,
+  PlatformConfigCheckpointPrune,
+  PlatformConfigCloudBackup,
+  PlatformConfigContextCompression,
+  PlatformConfigRag,
+  PlatformUiMode,
 } from "@/config/platform-config"
-import { canSelectSpatialMode, switchPlatformUiMode } from "@/config/platform-ui-mode"
-import { generateAssistantReply, probeAssistantNativeToolCalling } from "@/runtime-host/ai"
+import {
+  type SettingsModelTestPayload,
+  useSettingsController,
+} from "@/controllers/settings/use-settings-controller"
 
 type Screen =
   | { kind: "hub" }
@@ -173,15 +157,29 @@ type Screen =
   | { kind: "tunables" }
   | { kind: "appearance" }
 
-const platformConfigDraft = ref<BrowserPlatformConfigDraft>(clonePlatformConfigDraft(getBrowserPlatformConfigDraft()))
+const screen = ref<Screen>({ kind: "hub" })
 const addModelOpen = ref(false)
 const editingModelId = ref("")
 const editParamsOpen = ref(false)
-const screen = ref<Screen>({ kind: "hub" })
-const appearanceSelectable = canSelectSpatialMode()
 
-const editingModel = computed(() =>
-  activePreset.value?.models.find((model) => model.id === editingModelId.value) ?? null,
+const settings = useSettingsController({
+  getActiveModelContext: () => screen.value.kind === "models"
+    ? { typeId: screen.value.typeId, presetId: screen.value.presetId }
+    : null,
+})
+
+const {
+  platformConfigDraft,
+  platformConfig,
+  activeTypeId,
+  activePreset,
+  activeTypeName,
+  activeTypeKind,
+  appearanceSelectable,
+} = settings
+
+const editingModel = computed(
+  () => activePreset.value?.models.find((model) => model.id === editingModelId.value) ?? null,
 )
 
 const editingModelParameters = computed<BrowserAiModelParameters>(
@@ -193,51 +191,6 @@ const editingModelToolCallMode = computed<BrowserAiToolCallMode>(
 )
 
 const editingModelStreaming = computed<boolean>(() => editingModel.value?.streaming ?? DEFAULT_BROWSER_AI_STREAMING)
-
-const activeTypeId = ref("")
-
-const activeType = computed(
-  () => platformConfigDraft.value.providerTypes.find((type) => type.id === activeTypeId.value) ?? null,
-)
-
-const activePreset = computed<BrowserAiProviderPreset | null>(() => {
-  const current = screen.value
-  if (current.kind !== "models") {
-    return null
-  }
-  const type = platformConfigDraft.value.providerTypes.find((item) => item.id === current.typeId)
-  return type?.presets.find((preset) => preset.id === current.presetId) ?? null
-})
-
-const activeTypeName = computed(() => {
-  const current = screen.value
-  if (current.kind !== "models") {
-    return ""
-  }
-  return platformConfigDraft.value.providerTypes.find((item) => item.id === current.typeId)?.name ?? ""
-})
-
-const activeTypeKind = computed<BrowserAiProviderKind>(() => {
-  const current = screen.value
-  if (current.kind !== "models") {
-    return "openai-compatible"
-  }
-  return platformConfigDraft.value.providerTypes.find((item) => item.id === current.typeId)?.kind ?? "openai-compatible"
-})
-
-/** Default baseUrl placeholder per provider kind, shown in the add-preset form. */
-function baseUrlPlaceholderForKind(kind: BrowserAiProviderKind): string {
-  if (kind === "gemini") {
-    return "https://generativelanguage.googleapis.com/v1beta"
-  }
-  if (kind === "claude") {
-    return "https://api.anthropic.com/v1"
-  }
-  if (kind === "deepseek") {
-    return "https://api.deepseek.com/v1"
-  }
-  return "https://api.openai.com/v1"
-}
 
 const headerTitle = computed(() => {
   switch (screen.value.kind) {
@@ -258,32 +211,9 @@ const headerTitle = computed(() => {
   }
 })
 
-function clonePreset(input: BrowserAiProviderPreset): BrowserAiProviderPreset {
-  return {
-    ...input,
-    models: input.models.map((model) => ({
-      ...model,
-      parameters: cloneBrowserAiModelParameters(model.parameters),
-    })),
-    fetchedModels: input.fetchedModels.map((model) => ({ ...model })),
-  }
-}
-
-function clonePlatformConfigDraft(input: BrowserPlatformConfigDraft): BrowserPlatformConfigDraft {
-  return {
-    activeProviderId: input.activeProviderId,
-    providerTypes: input.providerTypes.map((type) => ({
-      ...type,
-      presets: type.presets.map(clonePreset),
-    })),
-    embeddingConfig: { ...input.embeddingConfig },
-  }
-}
-
 function enterHubEntry(id: string): void {
   if (id === "ai-providers") {
     screen.value = { kind: "providers" }
-    // Default-select the first type, if any.
     activeTypeId.value = platformConfigDraft.value.providerTypes[0]?.id ?? ""
   } else if (id === "semantic-search") {
     screen.value = { kind: "semantic-search" }
@@ -291,7 +221,7 @@ function enterHubEntry(id: string): void {
     screen.value = { kind: "cloud-backup" }
   } else if (id === "platform-tunables") {
     screen.value = { kind: "tunables" }
-  } else if (id === "appearance" && appearanceSelectable) {
+  } else if (id === "appearance" && appearanceSelectable.value) {
     screen.value = { kind: "appearance" }
   }
 }
@@ -310,430 +240,111 @@ function goBack(): void {
   }
 }
 
-async function handleAppearanceSwitch(mode: PlatformUiMode): Promise<void> {
-  try {
-    await switchPlatformUiMode(mode)
-  } catch (error) {
-    toast.error(error instanceof Error ? error.message : "桌面模式保存失败。")
-  }
+function enterModels(typeId: string, presetId: string): void {
+  screen.value = { kind: "models", typeId, presetId }
 }
 
-async function handleSaveEmbeddingConfig(
-  config: BrowserEmbeddingConfig,
-  rag: { defaultLimit: number; maxLimit: number },
-): Promise<void> {
-  const current = getPlatformConfig()
-  // embedding 与 rag 同属语义检索屏保存：merge 到 provider（embedding）+ rag 段。
-  await savePlatformConfig({
-    ...current,
-    provider: {
-      ...current.provider,
-      embeddingConfig: config,
-    },
-    rag,
+function handleSelectType(typeId: string): void {
+  settings.selectType(typeId)
+}
+
+function handleAddPreset(typeId: string): Promise<void> {
+  return settings.openAddPreset(typeId)
+}
+
+function handleEditPreset(typeId: string, presetId: string): Promise<void> {
+  return settings.openEditPreset(typeId, presetId)
+}
+
+function handleDeletePreset(typeId: string, presetId: string): Promise<void> {
+  return settings.deletePreset(typeId, presetId)
+}
+
+function handlePatchPreset(payload: Parameters<typeof settings.patchPreset>[0]): void {
+  settings.patchPreset(payload)
+}
+
+function handleSetActivePreset(presetId: string): void {
+  settings.setActivePreset(presetId)
+}
+
+async function handleAddModelConfirm(payload: {
+  id: string
+  parameters: BrowserAiModelParameters
+  toolCallMode: BrowserAiToolCallMode
+  streaming: boolean
+}): Promise<void> {
+  await settings.addModelToActivePreset({
+    modelId: payload.id,
+    parameters: payload.parameters,
+    toolCallMode: payload.toolCallMode,
+    streaming: payload.streaming,
   })
-  // 同步本地 draft(embeddingConfig 是 draft 的一部分),让 hub 状态提示保持一致.
-  platformConfigDraft.value = clonePlatformConfigDraft(getBrowserPlatformConfigDraft())
 }
 
-async function handleSaveCloudBackupConfig(config: PlatformConfigCloudBackup): Promise<void> {
-  const current = getPlatformConfig()
-  await savePlatformConfig({
-    ...current,
-    cloudBackup: config,
+function handleDeleteModel(modelId: string): Promise<void> {
+  return settings.deleteActiveModel(modelId)
+}
+
+function handleMoveModel(payload: { id: string; direction: "up" | "down" }): void {
+  settings.moveActiveModel(payload)
+}
+
+function handlePatchModel(payload: { id: string; patch: Partial<{ enabled: boolean }> }): void {
+  settings.patchActiveModel(payload)
+}
+
+function handleEditModelParams(modelId: string): void {
+  const model = activePreset.value?.models.find((item) => item.id === modelId)
+  if (!model) return
+  editingModelId.value = modelId
+  editParamsOpen.value = true
+}
+
+function handleEditModelParamsConfirm(payload: {
+  parameters: BrowserAiModelParameters
+  toolCallMode: BrowserAiToolCallMode
+  streaming: boolean
+}): void {
+  const updated = settings.setActiveModelParameters({
+    modelId: editingModelId.value,
+    parameters: cloneBrowserAiModelParameters(payload.parameters),
+    toolCallMode: payload.toolCallMode,
+    streaming: payload.streaming,
   })
-  toast.success("云备份设置已保存。")
+  if (updated) toast.success("模型参数已更新。")
 }
 
-async function handleSaveTunables(input: {
+function handleSetStrategy(strategy: "primary-only" | "ordered"): void {
+  settings.setActiveStrategy(strategy)
+}
+
+function testActiveModel(payload: SettingsModelTestPayload): Promise<{ ok: boolean; message: string }> {
+  return settings.testActiveModel(payload)
+}
+
+function testActiveModelToolCalling(payload: SettingsModelTestPayload): Promise<{ ok: boolean; message: string }> {
+  return settings.testActiveModelToolCalling(payload)
+}
+
+function handleSaveEmbeddingConfig(config: BrowserEmbeddingConfig, rag: PlatformConfigRag): Promise<void> {
+  return settings.saveEmbeddingConfig(config, rag)
+}
+
+function handleSaveCloudBackupConfig(config: PlatformConfigCloudBackup): Promise<void> {
+  return settings.saveCloudBackupConfig(config)
+}
+
+function handleSaveTunables(input: {
   checkpointPrune: PlatformConfigCheckpointPrune
   contextCompression: PlatformConfigContextCompression
   ai: PlatformConfigAi
   assistant: PlatformConfigAssistant
 }): Promise<void> {
-  const current = getPlatformConfig()
-  await savePlatformConfig({
-    ...current,
-    checkpointPrune: input.checkpointPrune,
-    contextCompression: input.contextCompression,
-    ai: input.ai,
-    assistant: input.assistant,
-  })
-  toast.success("运行参数已保存。")
+  return settings.saveTunables(input)
 }
 
-function handleSelectType(typeId: string): void {
-  activeTypeId.value = typeId
+function handleAppearanceSwitch(mode: PlatformUiMode): Promise<void> {
+  return settings.switchAppearance(mode)
 }
-
-async function handleAddPreset(typeId: string): Promise<void> {
-  const type = platformConfigDraft.value.providerTypes.find((item) => item.id === typeId)
-  const kind: BrowserAiProviderKind = type?.kind ?? "openai-compatible"
-  const baseUrlPlaceholder = baseUrlPlaceholderForKind(kind)
-  const values = await openDialogForm({
-    title: "添加提供商预设",
-    widthClass: "max-w-md",
-    confirmText: "添加",
-    testLabel: "测试连通性",
-    test: async (vals) => {
-      const baseUrl = normalizeBrowserAiProviderBaseUrl(vals.baseUrl)
-      const apiKey = vals.apiKey.trim()
-      if (!baseUrl) {
-        return { ok: false, message: "请先填写接口地址。" }
-      }
-      if (!apiKey) {
-        return { ok: false, message: "请先填写 API 密钥。" }
-      }
-      try {
-        // Model list fetch doubles as a connectivity + auth probe.
-        const models = await fetchBrowserAiProviderModels({ baseUrl, apiKey, kind })
-        return { ok: true, message: `已连通，发现 ${models.length} 个模型。` }
-      } catch (e) {
-        return { ok: false, message: e instanceof Error ? e.message : "连通性测试失败。" }
-      }
-    },
-    fields: [
-      { name: "name", label: "预设名称", type: "text", placeholder: "例如 我的 OpenAI", defaultValue: "" },
-      { name: "baseUrl", label: "接口地址", type: "text", placeholder: baseUrlPlaceholder, mono: true, defaultValue: "" },
-      { name: "apiKey", label: "API 密钥", type: "password", placeholder: "sk-...", mono: true, defaultValue: "" },
-    ],
-    validate: (vals) => {
-      if (!vals.name.trim()) {
-        return "请填写预设名称。"
-      }
-      return null
-    },
-  })
-  if (!values) {
-    return
-  }
-  if (!type) {
-    return
-  }
-  const preset = createBrowserAiProviderPreset({
-    name: values.name.trim(),
-    baseUrl: normalizeBrowserAiProviderBaseUrl(values.baseUrl),
-    apiKey: values.apiKey.trim(),
-  })
-  type.presets.push(preset)
-  if (!platformConfigDraft.value.activeProviderId) {
-    platformConfigDraft.value.activeProviderId = preset.id
-  }
-  toast.success(`已添加预设：${preset.name}`)
-}
-
-async function handleEditPreset(typeId: string, presetId: string): Promise<void> {
-  const type = platformConfigDraft.value.providerTypes.find((item) => item.id === typeId)
-  const preset = type?.presets.find((item) => item.id === presetId)
-  if (!type || !preset) {
-    return
-  }
-  const kind: BrowserAiProviderKind = type.kind
-  const baseUrlPlaceholder = baseUrlPlaceholderForKind(kind)
-  const values = await openDialogForm({
-    title: `编辑预设：${preset.name || "未命名"}`,
-    widthClass: "max-w-md",
-    confirmText: "保存",
-    testLabel: "测试连通性",
-    test: async (vals) => {
-      const baseUrl = normalizeBrowserAiProviderBaseUrl(vals.baseUrl)
-      const apiKey = vals.apiKey.trim()
-      if (!baseUrl) {
-        return { ok: false, message: "请先填写接口地址。" }
-      }
-      if (!apiKey) {
-        return { ok: false, message: "请先填写 API 密钥。" }
-      }
-      try {
-        const models = await fetchBrowserAiProviderModels({ baseUrl, apiKey, kind })
-        return { ok: true, message: `已连通，发现 ${models.length} 个模型。` }
-      } catch (e) {
-        return { ok: false, message: e instanceof Error ? e.message : "连通性测试失败。" }
-      }
-    },
-    fields: [
-      { name: "name", label: "预设名称", type: "text", placeholder: "例如 我的 OpenAI", defaultValue: preset.name },
-      { name: "baseUrl", label: "接口地址", type: "text", placeholder: baseUrlPlaceholder, mono: true, defaultValue: preset.baseUrl },
-      { name: "apiKey", label: "API 密钥", type: "password", placeholder: "sk-...", mono: true, defaultValue: preset.apiKey },
-    ],
-    validate: (vals) => {
-      if (!vals.name.trim()) {
-        return "请填写预设名称。"
-      }
-      return null
-    },
-  })
-  if (!values) {
-    return
-  }
-  handlePatchPreset({
-    typeId,
-    presetId,
-    patch: {
-      name: values.name.trim(),
-      baseUrl: normalizeBrowserAiProviderBaseUrl(values.baseUrl),
-      apiKey: values.apiKey.trim(),
-    },
-  })
-  toast.success(`已更新预设：${values.name.trim()}`)
-}
-
-async function handleDeletePreset(typeId: string, presetId: string): Promise<void> {
-  const type = platformConfigDraft.value.providerTypes.find((item) => item.id === typeId)
-  const preset = type?.presets.find((item) => item.id === presetId)
-  if (!type || !preset) {
-    return
-  }
-  const confirmed = await confirm({
-    message: `删除预设「${preset.name || "未命名"}」？\n\n这会移除其全部模型配置，无法撤销。`,
-    severity: "danger",
-    confirmText: "删除",
-  })
-  if (!confirmed) {
-    return
-  }
-  type.presets = type.presets.filter((item) => item.id !== presetId)
-  if (platformConfigDraft.value.activeProviderId === presetId) {
-    platformConfigDraft.value.activeProviderId = ""
-  }
-  toast.success(`已移除预设：${preset.name || "未命名"}`)
-}
-
-function enterModels(typeId: string, presetId: string): void {
-  screen.value = { kind: "models", typeId, presetId }
-}
-
-function handleSetActivePreset(presetId: string): void {
-  if (platformConfigDraft.value.activeProviderId === presetId) {
-    return
-  }
-  platformConfigDraft.value.activeProviderId = presetId
-  const preset = findPresetById(presetId)
-  toast.success(`已设为默认服务商：${preset?.name || "未命名"}`)
-}
-
-function findPresetById(presetId: string): BrowserAiProviderPreset | undefined {
-  for (const type of platformConfigDraft.value.providerTypes) {
-    const preset = type.presets.find((item) => item.id === presetId)
-    if (preset) {
-      return preset
-    }
-  }
-  return undefined
-}
-
-function handlePatchPreset(payload: { typeId: string; presetId: string; patch: Partial<BrowserAiProviderPreset> }): void {
-  const preset = findPreset(payload.typeId, payload.presetId)
-  if (!preset) {
-    return
-  }
-  Object.assign(preset, payload.patch)
-}
-
-function handleAddModelConfirm(payload: { id: string; parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode; streaming: boolean }): void {
-  const preset = activePreset.value
-  if (!preset) {
-    return
-  }
-  const id = payload.id.trim()
-  if (!id) {
-    return
-  }
-  if (preset.models.some((model) => model.id === id)) {
-    toast.error("该模型已存在。")
-    return
-  }
-  preset.models.push(createBrowserAiModelConfig({
-    id,
-    parameters: cloneBrowserAiModelParameters(payload.parameters),
-    toolCallMode: payload.toolCallMode,
-    streaming: payload.streaming,
-  }))
-}
-
-async function handleDeleteModel(modelId: string): Promise<void> {
-  const preset = activePreset.value
-  if (!preset) {
-    return
-  }
-  if (preset.models.length <= 1) {
-    toast.error("每个预设至少保留一个模型。")
-    return
-  }
-  const confirmed = await confirm({
-    message: `删除模型「${modelId}」？`,
-    severity: "danger",
-    confirmText: "删除",
-  })
-  if (!confirmed) {
-    return
-  }
-  preset.models = preset.models.filter((model) => model.id !== modelId)
-}
-
-function handleMoveModel(payload: { id: string; direction: "up" | "down" }): void {
-  const preset = activePreset.value
-  if (!preset) {
-    return
-  }
-  const index = preset.models.findIndex((model) => model.id === payload.id)
-  if (index < 0) {
-    return
-  }
-  const target = payload.direction === "up" ? index - 1 : index + 1
-  if (target < 0 || target >= preset.models.length) {
-    return
-  }
-  const [moved] = preset.models.splice(index, 1)
-  preset.models.splice(target, 0, moved)
-}
-
-function handlePatchModel(payload: { id: string; patch: Partial<{ enabled: boolean }> }): void {
-  const preset = activePreset.value
-  if (!preset) {
-    return
-  }
-  const model = preset.models.find((item) => item.id === payload.id)
-  if (!model) {
-    return
-  }
-  if (payload.patch.enabled !== undefined) {
-    model.enabled = payload.patch.enabled
-  }
-}
-
-function handleEditModelParams(modelId: string): void {
-  const preset = activePreset.value
-  const model = preset?.models.find((item) => item.id === modelId)
-  if (!preset || !model) {
-    return
-  }
-  editingModelId.value = modelId
-  editParamsOpen.value = true
-}
-
-function handleEditModelParamsConfirm(payload: { parameters: BrowserAiModelParameters; toolCallMode: BrowserAiToolCallMode; streaming: boolean }): void {
-  const model = editingModel.value
-  if (!model) {
-    return
-  }
-  model.parameters = cloneBrowserAiModelParameters(payload.parameters)
-  model.toolCallMode = payload.toolCallMode
-  model.streaming = payload.streaming
-  toast.success("模型参数已更新。")
-}
-
-async function testActiveModel(payload: {
-  modelId: string
-  parameters: BrowserAiModelParameters
-  toolCallMode: BrowserAiToolCallMode
-  streaming: boolean
-}): Promise<{ ok: boolean; message: string }> {
-  const preset = activePreset.value
-  if (!preset) {
-    return { ok: false, message: "未选择服务商预设。" }
-  }
-  const modelId = payload.modelId.trim()
-  if (!modelId) {
-    return { ok: false, message: "请先填写模型 id。" }
-  }
-  const testPreset: BrowserAiProviderPreset = {
-    ...preset,
-    models: [
-      createBrowserAiModelConfig({
-        id: modelId,
-        parameters: cloneBrowserAiModelParameters(payload.parameters),
-        toolCallMode: payload.toolCallMode,
-        streaming: payload.streaming,
-        enabled: true,
-      }),
-    ],
-    fallbackStrategy: "primary-only",
-  }
-  const config = resolveBrowserAiConfigFromProviderPreset(testPreset, activeTypeKind.value, modelId)
-  if (!config) {
-    return { ok: false, message: "预设缺少接口地址、API 密钥或模型配置。" }
-  }
-  try {
-    const response = await generateAssistantReply(
-      [{ role: "user", content: "Reply with exactly OK." }],
-      { config: { ...config, streaming: false }, debugLabel: "settings-model-ping" },
-    )
-    const preview = response.trim().replace(/\s+/g, " ").slice(0, 80) || "(空响应)"
-    return { ok: true, message: `Chat ping 成功：${preview}` }
-  } catch (error) {
-    return {
-      ok: false,
-      message: error instanceof Error ? error.message : "Chat ping 失败。",
-    }
-  }
-}
-
-async function testActiveModelToolCalling(payload: {
-  modelId: string
-  parameters: BrowserAiModelParameters
-  toolCallMode: BrowserAiToolCallMode
-  streaming: boolean
-}): Promise<{ ok: boolean; message: string }> {
-  const preset = activePreset.value
-  if (!preset) {
-    return { ok: false, message: "未选择服务商预设。" }
-  }
-  const modelId = payload.modelId.trim()
-  if (!modelId) {
-    return { ok: false, message: "请先填写模型 id。" }
-  }
-  const testPreset: BrowserAiProviderPreset = {
-    ...preset,
-    models: [
-      createBrowserAiModelConfig({
-        id: modelId,
-        parameters: cloneBrowserAiModelParameters(payload.parameters),
-        toolCallMode: "native",
-        streaming: false,
-        enabled: true,
-      }),
-    ],
-    fallbackStrategy: "primary-only",
-  }
-  const config = resolveBrowserAiConfigFromProviderPreset(testPreset, activeTypeKind.value, modelId)
-  if (!config) {
-    return { ok: false, message: "预设缺少接口地址、API 密钥或模型配置。" }
-  }
-  return probeAssistantNativeToolCalling(config)
-}
-
-function handleSetStrategy(strategy: "primary-only" | "ordered"): void {
-  const preset = activePreset.value
-  if (!preset) {
-    return
-  }
-  preset.fallbackStrategy = strategy
-}
-
-function findPreset(typeId: string, presetId: string): BrowserAiProviderPreset | undefined {
-  const type = platformConfigDraft.value.providerTypes.find((item) => item.id === typeId)
-  return type?.presets.find((preset) => preset.id === presetId)
-}
-
-// Auto-save: persist the draft debounced after any deep change.
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-watch(
-  platformConfigDraft,
-  () => {
-    if (saveTimer) {
-      clearTimeout(saveTimer)
-    }
-    saveTimer = setTimeout(() => {
-      void saveBrowserPlatformConfigDraftLenient(platformConfigDraft.value).catch((error) => {
-        toast.error(error instanceof Error ? error.message : "自动保存失败。")
-      })
-    }, 800)
-  },
-  { deep: true },
-)
-
-onMounted(() => {
-  platformConfigDraft.value = clonePlatformConfigDraft(getBrowserPlatformConfigDraft())
-})
 </script>

@@ -255,4 +255,21 @@ describe("Spatial shell context menu", () => {
     host.querySelectorAll<HTMLButtonElement>('[role="menuitem"]')[1].click()
     expect(retroCount.value).toBe(1)
   })
+
+  it("shows a bounded unread badge and emits the announcement action", async () => {
+    const announcementCount = ref(0)
+    const host = mount(() => h(SpatialStatusSurface, {
+      windows: [],
+      activeWindowId: "",
+      viewport: { width: 1024, height: 640 },
+      unreadCount: 120,
+      onAnnouncements: () => { announcementCount.value += 1 },
+    }))
+
+    const button = host.querySelector<HTMLButtonElement>(".spatial-status-surface__announcements")!
+    expect(button.querySelector(".spatial-status-surface__badge")?.textContent).toBe("99+")
+    expect(button.querySelector(".spatial-status-surface__badge")?.getAttribute("aria-label")).toBe("120 条未读公告")
+    button.click()
+    expect(announcementCount.value).toBe(1)
+  })
 })
