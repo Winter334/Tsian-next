@@ -9,6 +9,7 @@
 - 当前前端只能直接读写 Workspace、调用 Agent 或调用平台硬编码 Action，不能调用卡自带的确定性能力。
 - Skill/Tool 都以 Agent 为调用方；把前端能力复用进现有 Registry 会扩大受众过滤、上下文注入和 Studio 语义。
 - 当前已提交装备 Schema 尚未上线，可直接切换，不需要兼容或迁移旧结构。
+- 正式卡 `frontend/**` 不在本任务树内直接同步；开发前端由用户独立打包上传。父任务只保证正式卡 Workspace 中的 Action、Skill、Schema 文档与 `workspaceFiles` 路径清单完整。
 - 本请求包含两个可独立验证的交付，因此拆为：
   1. `07-25-card-frontend-action-runtime`：通用 Frontend Action 平台能力。
   2. `07-25-deterministic-equipment-management`：装备 Schema、卡内 Action、场记 Skill 和换装 UI。
@@ -98,13 +99,13 @@ interface ItemEquipment {
 
 ## Cross-Child Acceptance Criteria
 
-- [ ] 游戏开发前端可通过 `tsian.card.runAction` 执行卡发布的 Frontend Action，且 Agent 无法发现该资源；正式 packaged frontend 在父任务 later import/build/export 后单独验收。
-- [ ] Frontend Action 的失败、超时、取消、输出非法或并发冲突均不留下 Workspace 部分写入。
-- [ ] 远程前端不能通过 `platform.runAction` 获得本地助手 Workspace 权限。
-- [ ] 装备 Schema 全链路切换为类型分组数组和 add/percent，无旧格式兼容残留。
-- [ ] UI preview/commit 与 Stage Manager Skill 对 shared equip/unequip 向量一致；Skill-only refresh 向量独立通过。
-- [ ] equip/unequip/refresh、库存数量、异常清槽、数据损坏和 attributeChanges 行为符合要求。
-- [ ] 两个子任务分别通过其构建/测试/规范门禁并归档后，父任务继续完成正式 frontend import/build/export 与最终浏览器集成验收。
+- [x] 游戏开发前端可通过 `tsian.card.runAction` 执行卡发布的 Frontend Action，且 Agent 无法发现该资源。
+- [x] Frontend Action 的失败、超时、取消、输出非法或并发冲突均不留下 Workspace 部分写入。
+- [x] 远程前端不能通过 `platform.runAction` 获得本地助手 Workspace 权限。
+- [x] 装备 Schema 全链路切换为类型分组数组和 add/percent，无旧格式兼容残留。
+- [x] UI preview/commit 与 Stage Manager Skill 对 shared equip/unequip 向量一致；Skill-only refresh 向量独立通过。
+- [x] equip/unequip/refresh、库存数量、异常清槽、数据损坏和 attributeChanges 行为符合要求。
+- [x] 两个子任务均已通过构建/测试/规范门禁并归档；正式卡 Workspace 的装备 Action、Stage Manager 装备 Skill、Schema 文档和 `workspaceFiles` 路径清单完整，无缺失、孤儿或重复项。
 
 ## Out of Scope
 
@@ -113,3 +114,12 @@ interface ItemEquipment {
 - 每次换装自动创建检查点。
 - 旧装备 Schema 兼容与迁移。
 - 将 Frontend Action 开放给 Agent 或动态枚举生成 UI。
+- 直接修改、导入、构建或导出正式卡 `frontend/**`；用户从开发前端独立打包上传。
+
+## Completion Review (2026-08-07)
+
+- `07-25-card-frontend-action-runtime` 与 `07-25-deterministic-equipment-management` 均已归档完成。
+- `npm run test:equipment` 通过：3 files / 256 tests。
+- 正式卡 Workspace 的 129 个实际文件与 `game-card.json.workspaceFiles` 的 129 条路径一一对应；无缺失、孤儿或重复。
+- 装备 Action/Skill 的 8 个必需文件全部存在，Stage Manager 已启用 `agents/stage-manager/skills/装备管理/SKILL.md`。
+- `workspaceFiles.size` 不作为本父任务归档门禁：仓库当前同时存在以 CRLF working-tree bytes 和 LF canonical bytes 记录的历史条目；本次按用户确认的产品边界只验证 Workspace 内容与路径完整性。
