@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 185
+- **Total Sessions**: 186
 - **Last Active**: 2026-08-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~815 | Active |
+| `journal-4.md` | ~836 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 186 | 2026-08-07 | 归档 AI API 请求自动重试 | `db5510d` | `master` |
 | 185 | 2026-08-07 | 归档确定性装备父任务 | - | `master` |
 | 184 | 2026-08-07 | 收尾已完成父任务 | - | `master` |
 | 183 | 2026-08-07 | 完成 Spatial Desktop 发布集成 | `67f45a4` | `master` |

@@ -813,3 +813,24 @@ Added shared settings and system-monitor controllers, Spatial account/announceme
 ### Status
 
 [OK] **Completed**
+
+
+## Session 186: 归档 AI API 请求自动重试
+
+**Date**: 2026-08-07
+**Task**: 归档 AI API 请求自动重试
+**Branch**: `master`
+
+### Summary
+
+复核 AI 请求传输层自动重试实现：网络/超时与 408/429/5xx 重试、abort 与流式首 delta 门禁保持生效；focused tests、web build 和 diff check 通过后归档任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `db5510d` | (see git log) |
+
+### Status
+
+[OK] **Completed**
