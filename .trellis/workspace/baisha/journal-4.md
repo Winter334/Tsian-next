@@ -729,3 +729,24 @@ Implemented and verified Spatial Assistant and Studio surfaces, shared controlle
 ### Status
 
 [OK] **Completed**
+
+
+## Session 182: Spatial system surfaces
+
+**Date**: 2026-08-07
+**Task**: Spatial system surfaces
+**Branch**: `master`
+
+### Summary
+
+Added shared settings and system-monitor controllers, Spatial account/announcement/settings/monitor surfaces, RetroOS-style provider drill-down, Spatial sliders and parameter Tips, including nowrap-safe Tip boundary handling; browser acceptance and automated checks passed.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `db809ab` | (see git log) |
+
+### Status
+
+[OK] **Completed**
