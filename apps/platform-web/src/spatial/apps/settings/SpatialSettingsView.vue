@@ -118,10 +118,13 @@
 
         <section v-if="section === 'appearance'" class="spatial-app__section">
           <div class="spatial-settings__heading">
-            <div><span class="spatial-app__eyebrow">实验功能</span><h2>桌面外观</h2></div>
+            <div><span class="spatial-app__eyebrow">运行环境</span><h2>桌面外观</h2></div>
           </div>
           <p class="spatial-settings__hint">
-            Spatial Desktop 仍为本地实验功能；正式发布门禁保持关闭。切换会先完整保存配置、保留当前页面，然后重新加载；窗口会话不会迁移。
+            {{ SPATIAL_ENVIRONMENT_GUIDANCE }}
+          </p>
+          <p class="spatial-settings__hint">
+            切换会先完整保存配置、保留当前页面，然后重新加载；窗口会话不会迁移。
           </p>
           <div class="spatial-settings__appearance">
             <article>
@@ -132,7 +135,7 @@
               >{{ settings.platformConfig.value.appearance.uiMode === "retro" ? "当前模式" : "切换并重新加载" }}</SpatialActionButton>
             </article>
             <article>
-              <strong>Spatial Desktop</strong><span>空间桌面（本地实验）</span>
+              <strong>Spatial Desktop</strong><span>空间多窗口桌面</span>
               <SpatialActionButton
                 :disabled="!settings.appearanceSelectable.value"
                 :aria-pressed="settings.platformConfig.value.appearance.uiMode === 'spatial'"
@@ -150,6 +153,7 @@
 <script setup lang="ts">
 import { ref } from "vue"
 import { Cloud, Cpu, Database, Palette, Settings2 } from "lucide-vue-next"
+import { SPATIAL_ENVIRONMENT_GUIDANCE } from "@/config/platform-ui-mode"
 import { formatCloudBackupBytes, useCloudBackupController } from "@/controllers/settings/use-cloud-backup-controller"
 import { useSettingsController } from "@/controllers/settings/use-settings-controller"
 import { formatDateTime } from "@/lib/game-card-display"

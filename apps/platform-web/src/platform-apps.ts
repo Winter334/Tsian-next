@@ -57,8 +57,7 @@ export interface PlatformRetroPresentation {
 }
 
 export interface SpatialPresentationRegistration {
-  readonly readiness: "pending" | "ready"
-  readonly component?: Component
+  readonly component: Component
   readonly defaultSize: PlatformWindowSize
   readonly minSize: PlatformWindowSize
   readonly fullscreenable: boolean
@@ -140,8 +139,8 @@ function presentation(
   component: Component,
   defaultSize: PlatformWindowSize,
   minSize: PlatformWindowSize,
-  fullscreenable = false,
-  spatialComponent?: Component,
+  fullscreenable: boolean,
+  spatialComponent: Component,
 ): Pick<PlatformAppDefinition, "retro" | "spatial"> {
   const spatialDefaultSize = {
     width: Math.min(defaultSize.width, 760),
@@ -154,8 +153,7 @@ function presentation(
   return {
     retro: { component, defaultSize, minSize, fullscreenable },
     spatial: {
-      readiness: spatialComponent ? "ready" : "pending",
-      ...(spatialComponent ? { component: spatialComponent } : {}),
+      component: spatialComponent,
       defaultSize: spatialDefaultSize,
       minSize: spatialMinSize,
       fullscreenable,

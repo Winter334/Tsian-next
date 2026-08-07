@@ -90,7 +90,7 @@ const entries = computed<HubEntry[]>(() => {
       id: "appearance",
       kind: "界面",
       title: "桌面外观",
-      subtitle: "RetroOS / Spatial Desktop（本地实验）",
+      subtitle: "RetroOS / Spatial Desktop",
       icon: MonitorCog,
     })
   }

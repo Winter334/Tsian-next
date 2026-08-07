@@ -68,14 +68,7 @@
     <div class="spatial-window-content">
       <component
         :is="window.descriptor.spatial.component"
-        v-if="window.descriptor.spatial.readiness === 'ready' && window.descriptor.spatial.component"
         v-bind="presentationProps(window)"
-      />
-      <SpatialPendingAppSurface
-        v-else
-        :title="window.descriptor.title"
-        :caption="window.descriptor.caption"
-        :icon="window.descriptor.icon"
       />
     </div>
 
@@ -107,7 +100,6 @@ import {
 } from "./spatial-routed-drag"
 import type { SpatialResizeDirection } from "./window-layout"
 import type { SpatialWindowState } from "./window-session"
-import SpatialPendingAppSurface from "./SpatialPendingAppSurface.vue"
 
 const props = defineProps<{
   window: SpatialWindowState

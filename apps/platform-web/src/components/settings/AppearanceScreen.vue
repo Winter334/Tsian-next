@@ -7,6 +7,7 @@
         type="button"
         class="retro-focus retro-inset grid gap-3 p-4 text-left transition-colors hover:border-neon/45"
         :class="{ 'border-neon/60': option.id === currentMode }"
+        :aria-pressed="option.id === currentMode"
         @click="emit('select', option.id)"
       >
         <div class="flex items-center justify-between gap-2">
@@ -24,6 +25,7 @@
 
 <script setup lang="ts">
 import type { PlatformUiMode } from "@/config/platform-config"
+import { SPATIAL_ENVIRONMENT_GUIDANCE } from "@/config/platform-ui-mode"
 
 defineProps<{ currentMode: PlatformUiMode }>()
 
@@ -33,6 +35,6 @@ const emit = defineEmits<{
 
 const options: readonly { id: PlatformUiMode; title: string; description: string }[] = [
   { id: "retro", title: "RetroOS", description: "稳定的平面多窗口桌面，包含当前全部平台功能。" },
-  { id: "spatial", title: "Spatial Desktop（本地实验）", description: "HTML-in-Canvas 空间桌面外壳；业务面板仍在逐项适配。" },
+  { id: "spatial", title: "Spatial Desktop", description: SPATIAL_ENVIRONMENT_GUIDANCE },
 ]
 </script>

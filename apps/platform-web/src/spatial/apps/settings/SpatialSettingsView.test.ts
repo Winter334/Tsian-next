@@ -7,10 +7,12 @@ import {
   createBrowserAiProviderType,
   type BrowserPlatformConfigDraft,
 } from "@/config/ai"
+import { SPATIAL_ENVIRONMENT_GUIDANCE } from "@/config/platform-ui-mode"
 import type { useSettingsController } from "@/controllers/settings/use-settings-controller"
 import modelParametersSource from "./SpatialModelParameters.vue?raw"
 import providerSettingsSource from "./SpatialProviderSettings.vue?raw"
 import SpatialProviderSettings from "./SpatialProviderSettings.vue"
+import SpatialSettingsView from "./SpatialSettingsView.vue"
 import settingsSource from "./SpatialSettingsView.vue?raw"
 
 type SettingsController = ReturnType<typeof useSettingsController>
@@ -74,6 +76,15 @@ function mountProvider(settings: SettingsController): HTMLElement {
   return host
 }
 
+function mountSettings(): HTMLElement {
+  const host = document.createElement("div")
+  document.body.append(host)
+  const app = createApp(SpatialSettingsView)
+  app.mount(host)
+  mounted.push({ app, host })
+  return host
+}
+
 async function settle(): Promise<void> {
   await nextTick()
   await nextTick()
@@ -89,6 +100,18 @@ afterEach(() => {
 })
 
 describe("Spatial settings presentation", () => {
+  it("presents the concise Spatial environment guidance without obsolete gate copy", async () => {
+    const host = mountSettings()
+    const appearanceButton = Array.from(host.querySelectorAll<HTMLButtonElement>(".spatial-settings__rail button"))
+      .find((button) => button.textContent?.includes("桌面外观"))
+
+    appearanceButton!.click()
+    await settle()
+
+    expect(host.textContent).toContain(SPATIAL_ENVIRONMENT_GUIDANCE)
+    expect(host.textContent).not.toMatch(/本地实验|正式发布门禁保持关闭/)
+  })
+
   it("uses Spatial selects instead of native select elements", () => {
     const sources = [settingsSource, providerSettingsSource, modelParametersSource]
     expect(sources.join("\n")).not.toMatch(/<select\b/i)

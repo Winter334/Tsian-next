@@ -829,6 +829,113 @@ captureTarget = gestureStart.closest("[data-spatial-gesture-owner]")
 captureTarget = gestureCaptureTargetForElement(pressedTarget, sample.button)
 ```
 
+## Scenario: Production Spatial Mode and Registry Completeness
+
+### 1. Scope / Trigger
+
+Use this contract when adding a platform application, changing either desktop's appearance settings, altering shell selection/fallback, or rolling Spatial production availability forward or back. Spatial is a released optional desktop, not a partial local-only shell; RetroOS remains the default and rollback environment.
+
+### 2. Signatures
+
+```ts
+interface SpatialPresentationRegistration {
+  readonly component: Component
+  readonly defaultSize: PlatformWindowSize
+  readonly minSize: PlatformWindowSize
+  readonly fullscreenable: boolean
+}
+
+const SPATIAL_RELEASE_READY: boolean
+const SPATIAL_MIN_VIEWPORT: Readonly<{ width: 1024; height: 640 }>
+const SPATIAL_ENVIRONMENT_GUIDANCE: string
+
+function resolveUiMode(input: {
+  readonly requested: "retro" | "spatial"
+  readonly dev: boolean
+  readonly releaseReady: boolean
+  readonly finePointer: boolean
+  readonly viewport: { readonly width: number; readonly height: number }
+}): {
+  readonly mode: "retro" | "spatial"
+  readonly requested: "retro" | "spatial"
+  readonly fallbackReason: "release-gate" | "coarse-pointer" | "viewport-too-small" | null
+}
+```
+
+`platformAppRegistry` requires a `spatial.component` for every application definition. There is no `pending` readiness state or production pending-application presentation.
+
+### 3. Contracts
+
+- The normalized platform-config default remains `appearance.uiMode="retro"`. Shell selection preheats that config before mounting either shell, so a saved Spatial preference does not flash RetroOS first.
+- `SPATIAL_RELEASE_READY=true` exposes Spatial in production. Setting only this constant to `false` is the immediate rollback: production resolves a saved Spatial request to RetroOS without migrating or deleting platform/business data.
+- Release readiness does not bypass environment checks. Spatial still requires a fine pointer, at least `1024×640`, WebGL2 and the experimental HTML-in-Canvas adapter; the engine capability gate owns the latter two after the shell loads.
+- Environment or renderer failure falls back the current launch to a complete RetroOS shell with a concrete reason. Preserve the saved Spatial preference so a later compatible launch can retry; do not silently rewrite platform config.
+- Every `PlatformAppDefinition` has both RetroOS and Spatial presentations over the same route identity and shared domain behavior. Adding a platform app without a Spatial component is a type/test failure, not a runtime placeholder page.
+- Both settings presentations consume the single concise `SPATIAL_ENVIRONMENT_GUIDANCE` value. It names desktop Chromium, the experimental HTML-in-Canvas Flag, mouse/trackpad input and automatic RetroOS fallback; detailed setup/version/known-limit copy belongs in release announcements, not duplicated settings prose.
+- Switching modes still performs a complete platform-config save followed by full reload. The current hash route and persisted business data survive; the in-memory window session is intentionally not converted between shells.
+- Spatial production/source isolation forbids `SpatialPendingAppSurface`, `spatial-pending-app` styles, local-lab markers and embedded RetroOS route presentations.
+
+### 4. Validation & Error Matrix
+
+| Condition | Required result |
+|---|---|
+| Requested mode is `retro` | Mount RetroOS regardless of Spatial capability or release state |
+| Production requests Spatial and release gate is false | Mount RetroOS with `fallbackReason="release-gate"`; preserve saved preference |
+| Production requests Spatial, gate is true, pointer is fine and viewport is at least `1024×640` | Load the Spatial shell, then run HTML-in-Canvas/WebGL capability validation |
+| Pointer is coarse or viewport is below either minimum | Mount complete RetroOS with the corresponding concise fallback reason |
+| Spatial lazy import, capability acquisition or renderer initialization fails | Fall back to RetroOS; do not mutate the saved mode or business data |
+| A registry entry omits its Spatial component | Type/test/build failure; never render a pending placeholder |
+| Either settings presentation describes Spatial | Reuse the concise shared guidance; no local-experiment or still-adapting copy |
+| User switches UI mode | Save the complete config before reload; retain route and persisted data, discard only live window-session state |
+
+### 5. Good / Base / Bad Cases
+
+- Good: production selects Spatial on a compatible flagged Chromium, exposes all registry applications and can switch back to RetroOS through the shared settings command.
+- Good: a saved Spatial preference opened on a narrow/coarse/unsupported environment receives usable RetroOS plus a reason, while the preference remains available for a later compatible launch.
+- Base: a new installation uses RetroOS until the user explicitly selects Spatial.
+- Bad: a new app supplies only a RetroOS component and falls through to a diagnostic/pending page inside Spatial.
+- Bad: settings contain a long Flag tutorial or two divergent compatibility descriptions, or shell fallback silently saves `uiMode="retro"`.
+
+### 6. Tests Required
+
+- Registry unit tests derive completeness from `platformAppRegistry`: every entry has a Spatial component; app/route ids remain unique; launcher order, detail/editor/media multi-instance identity and Play singleton behavior remain intact.
+- UI-mode unit tests cover production gate open and explicit rollback closed, RetroOS authority, exact minimum viewport, coarse pointer, complete-save-before-reload and the shared guidance contract.
+- Component tests assert both settings presentations expose the concise guidance and accessible selected-state (`aria-pressed`) without obsolete local-experiment copy.
+- Package checks: focused registry/UI-mode/settings tests, complete Spatial/release suite, controller/component/view suite, `npm test`, `npm run build:web`, source/output isolation searches and `git diff --check`.
+- Manual Flag Chromium remains required for curved rendering/input, multi-window workflows, reduced motion and no-Flag/narrow fallback before opening the production gate.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+interface SpatialPresentationRegistration {
+  readiness: "pending" | "ready"
+  component?: Component
+}
+
+if (!definition.spatial.component) return SpatialPendingAppSurface
+```
+
+```ts
+// A fallback changes product intent and risks losing a future compatible retry.
+await savePlatformConfig({ ...config, appearance: { uiMode: "retro" } })
+```
+
+#### Correct
+
+```ts
+interface SpatialPresentationRegistration {
+  component: Component
+  defaultSize: PlatformWindowSize
+  minSize: PlatformWindowSize
+  fullscreenable: boolean
+}
+
+const resolution = resolveUiMode({ requested, dev, releaseReady, finePointer, viewport })
+// Mount resolution.mode; report fallbackReason without rewriting requested.
+```
+
 ## Scenario: Spatial Window Maximize and Play Fullscreen
 
 ### 1. Scope / Trigger

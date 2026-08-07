@@ -5,9 +5,10 @@ import {
   type PlatformUiMode,
 } from "./platform-config"
 
-/** Closed until the release-integration task completes full panel parity. */
-export const SPATIAL_RELEASE_READY = false
+/** Production gate; set false for an immediate RetroOS rollback without data migration. */
+export const SPATIAL_RELEASE_READY = true
 export const SPATIAL_MIN_VIEWPORT = Object.freeze({ width: 1024, height: 640 })
+export const SPATIAL_ENVIRONMENT_GUIDANCE = "需要桌面版 Chromium、实验性 HTML-in-Canvas Flag 与鼠标或触控板；环境不兼容时会自动回退到 RetroOS。"
 
 export type UiModeFallbackReason =
   | "release-gate"
