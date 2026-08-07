@@ -36,15 +36,15 @@
 
 ## Acceptance Criteria
 
-- [ ] 非流式 text 请求遇到 `Failed to fetch` 时，最多自动重试 3 次；若后续成功，调用方收到成功结果而不是整个 turn 中断。
-- [ ] 非流式 native 请求具备同等重试行为。
-- [ ] 流式 text/native 请求在首个 delta 前失败时可以重试；首个 delta 后失败时不重试。
-- [ ] HTTP `408/429/500/502/503/504` 会重试；HTTP `400/401/403` 不重试。
-- [ ] 用户主动停止或上层 timeout abort 后不会继续重试。
-- [ ] `interaction.invokeAgent` 路径通过共享请求层获得同等重试能力。
-- [ ] `agent_call` delegated Agent 路径通过共享 `capabilities.callModel` / `callModelNative` 获得同等重试能力；重试耗时计入 delegated Agent 的 timeout。
-- [ ] `npm run build:web` 通过。
-- [ ] `git diff --check` 通过。
+- [x] 非流式 text 请求遇到 `Failed to fetch` 时，最多自动重试 3 次；若后续成功，调用方收到成功结果而不是整个 turn 中断。
+- [x] 非流式 native 请求具备同等重试行为。
+- [x] 流式 text/native 请求在首个 delta 前失败时可以重试；首个 delta 后失败时不重试。
+- [x] HTTP `408/429/500/502/503/504` 会重试；HTTP `400/401/403` 不重试。
+- [x] 用户主动停止或上层 timeout abort 后不会继续重试。
+- [x] `interaction.invokeAgent` 路径通过共享请求层获得同等重试能力。
+- [x] `agent_call` delegated Agent 路径通过共享 `capabilities.callModel` / `callModelNative` 获得同等重试能力；重试耗时计入 delegated Agent 的 timeout。
+- [x] `npm run build:web` 通过。
+- [x] `git diff --check` 通过。
 
 ## Out of Scope
 
@@ -56,3 +56,11 @@
 ## Open Questions
 
 - 无阻塞问题；用户已明确要求失败后自动重试 3 次并使用逐次变长退避。
+
+## Completion Review (2026-08-07)
+
+- Implementation commit: `db5510d fix: retry transient AI request failures`.
+- Current request layer retains `AI_REQUEST_MAX_RETRIES=3`, retryable transport/HTTP classification, abortable exponential backoff and first-delta streaming gating across text/native entry points.
+- Focused runtime-host AI tests passed: 3 files / 14 tests.
+- `npm run build:web` and `git diff --check` passed; only existing non-blocking Vite/Rollup warnings remain.
+- `.trellis/spec/platform-web/frontend/quality-guidelines.md` contains the executable retry contract.

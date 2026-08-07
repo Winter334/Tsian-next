@@ -28,3 +28,10 @@
 - Risk: duplicated streaming output if retry happens after first delta. Guard by tracking emitted delta and returning non-retryable after first output.
 - Risk: retrying user abort or delegated timeout. Guard by checking parent signal before sleeps and classifying non-timeout aborts as non-retryable.
 - Rollback: revert `fetch.ts` retry helper and `calls.ts` retry wrapping; no persisted schema or migration involved.
+
+## Verification Results (2026-08-07)
+
+- Implementation commit: `db5510d`.
+- Focused tests: 3 files / 14 tests passed.
+- Platform web type-check and production build passed (3,281 modules transformed).
+- `git diff --check` passed.
