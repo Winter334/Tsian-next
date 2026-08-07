@@ -39,14 +39,20 @@ Recommended order:
 
 ## Acceptance Criteria
 
-- [ ] Parent PRD records the shared decisions and links both child tasks.
-- [ ] Child PRDs capture their independent scope and acceptance criteria.
-- [ ] Child A can be implemented and verified without waiting for the full regex/projection system.
-- [ ] Child B can be designed without reintroducing platform-specialized options semantics.
-- [ ] Final integration review confirms that opening turn 0 semantics do not conflict with the projection-system direction.
+- [x] Parent PRD records the shared decisions and links both child tasks.
+- [x] Child PRDs capture their independent scope and acceptance criteria.
+- [x] Child A can be implemented and verified without waiting for the full regex/projection system.
+- [x] Child B can be designed without reintroducing platform-specialized options semantics.
+- [x] Final integration review confirms that opening turn 0 semantics do not conflict with the projection-system direction.
 
 ## Out of Scope
 
 - Implementing code directly in the parent task unless required for final integration cleanup.
 - Backward compatibility for old saves unless a child task explicitly reopens that scope.
 - Security/sanitizer/ReDoS defenses for user/community-authored regex or HTML/DSL rendering.
+
+## Completion Review (2026-08-07)
+
+- `07-15-opening-turn0-player-context` and `07-15-agent-reply-regex-projection` are both archived as completed.
+- Opening turn 0 now follows turn-history/context semantics, while generic reply projection preserves the separation between LLM-facing content and frontend display/projection data.
+- The child implementations retain the parent decision that options remain assistant-output/projection conventions rather than a platform-owned first-class timeline field.
