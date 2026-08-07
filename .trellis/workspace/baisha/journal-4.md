@@ -771,3 +771,26 @@ Added shared settings and system-monitor controllers, Spatial account/announceme
 ### Status
 
 [OK] **Completed**
+
+
+## Session 184: 收尾已完成父任务
+
+**Date**: 2026-08-07
+**Task**: 收尾已完成父任务
+**Branch**: `master`
+
+### Summary
+
+归档 Agent 回复投影与开局历史统一父任务；复核确定性装备父任务后发现正式 packaged frontend import/build/export 与端到端验收仍未完成，因此按既有门禁保持开放。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 决定是完成正式装备前端集成门禁，还是明确调整父任务范围后再归档。
