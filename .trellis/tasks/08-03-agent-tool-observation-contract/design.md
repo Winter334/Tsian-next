@@ -67,10 +67,18 @@ Search producer 接管现有 10 files、5 matches/file、snippet 限制并返回
 
 ### 3.5 Skill activation and scripts
 
-- `use_skill` 只返回 activation metadata、action count 和 declaration diagnostics，不返回完整 `SKILL.md` 正文或重复的大 schema 列表。
-- 新激活 Skill 的完整正文继续由现有 `injectActivatedSkillMessagesNative/Text` 在下一轮注入一次，作为唯一正文通道。
+- `use_skill` 的 Tool observation 直接返回 activation metadata、完整 `SKILL.md` 正文、action count 和 declaration diagnostics；不返回从正文重复展开的完整 action schema 列表。
+- 删除 `injectActivatedSkillMessagesNative/Text` synthetic `user` 注入路径及其 session 去重状态。Tool result 本身是唯一正文通道；模型仍在调用后的下一次模型请求看到结果，不增加额外模型轮次。
+- producer 在注册 activation 前按完整 result envelope 计算大小并预留 observation 外层空间；过大时返回 `SKILL_DETAIL_TOO_LARGE`，包含实际大小、上限和拆分 Skill/资源的建议，不依赖最终 Gate 改写正文。
 - `run_script` 与 custom Tool 默认是保守 inline contract：小结果原样交付；超限结果 fail loud。作者应让脚本返回摘要、cursor 或先写 workspace artifact 再返回 path。
 - MVP 不新增通用 artifact storage、统一 cursor schema 或 `tool.json` 迁移字段。未来确有跨 Tool 编排需求时，再引入显式 `inline | paged | artifact` manifest contract。
+
+### 3.7 Same-turn staged Workspace coherence
+
+- Host 创建的 `RuntimeWorkspaceTransaction.workspaceFiles` 是 turn 内唯一实时数据源。写入会替换/新增 staged file，删除会原地移除。
+- `runAgentRuntimeTurn` 不得先把该数组 `filter`/`Array.from` 成固定副本再交给 Tool loop。Agent context/registry 组装继续按 trust boundary 生成只读可见投影；workspace operation 继续通过 `workspaceFileFilter` 逐次过滤实时数组。
+- delegated Agent 的 registry/context 可以使用临时可见投影，但 delegated Tool loop 必须继续持有根 turn 的实时 staged 数组，以便看到 caller、兄弟步骤和自身此前写入。
+- custom Tool/Skill browser-script SDK 与顶层 workspace Tool 均读取同一个实时数组并使用同一个 mutation adapter。修复只改变 turn 内可见性，不改变最终 commit/rollback、权限或 UI presentation。
 
 ### 3.6 Existing specialized Tools
 
@@ -98,7 +106,8 @@ Search producer 接管现有 10 files、5 matches/file、snippet 限制并返回
 
 - 删除通用 fallback 后，任何遗漏的增长型 producer 会暴露为 `TOOL_OBSERVATION_TOO_LARGE`。实施时必须覆盖 research 中列出的 built-ins，并为每类加入超限测试。
 - Search 没有真实 cursor。MVP 必须使用诚实 narrowing，不制造不可兑现的 `nextCursor`。
-- `use_skill` 去重正文依赖下一轮 injection 路径；native/text 两路都必须有回归测试。
+- `use_skill` 直接结果必须在 native/text 两路保持同一 accepted observation；删除 synthetic user 注入后要反向断言没有第二份正文。
+- 若 trust-boundary 投影在 turn 入口复制实时数组，脚本写入会只对 custom Tool 自身可见、顶层 read 仍读旧快照。修复必须同时覆盖 entry 与 delegated、write 与 delete，并重跑隔离测试。
 - mutation path sample 不代表完整列表，必须返回 exact count 和 target root，避免 UI/Agent误解为完整结果。
 - 若 producer 改造范围导致不稳定，可先保留固定严格 Gate 与 read/search/use_skill，其他 producer 在合并前逐项补齐；不得恢复伪成功 preview。
 - 图片大小治理与通用 artifact 系统明确延期，不应顺手扩张本任务。

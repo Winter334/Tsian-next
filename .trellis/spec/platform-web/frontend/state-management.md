@@ -756,6 +756,7 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 - `move` is the only mutation that may write to a different scope than the source path. It resolves `fromScope = scopeForPath(path)` and `toScope = scopeForPath(targetPath)`, finds source files in `fromScope`, writes moved files through `toScope` (ownerContext from `toScope`), then deletes the source prefix through `fromScope` (ownerContext from `fromScope`). The request's explicit `scope` only validates the source via `pathMatchesScope(fromPath, scope)`; it must never force the target write/delete back into the source volume. The public routers `movePlatformWorkspacePath`/`copyPlatformWorkspacePath` branch on whether the operation **crosses stores** (`fromIsTsian !== toIsTsian`), not on `targetCardId ?? cardId` — the latter misrouted same-card `.tsian` ops to crossRoot, which forbids save paths and rejected legitimate ops. Cross-scope legality is enforced by `assertEditAccess(fromPath)` + `assertEditAccess(toPath)` against each path's own editLevel (level-1 agents can write save-runtime but are blocked from card-content(2)/platform-meta(4)); this cross-scope editLevel difference is a feature, not relaxed by the refactor.
 - `copy` shares `move`'s source/target scope resolution and directory-prefix traversal, but only writes targets and never deletes the source. It rejects if any target file already exists; callers that want overwrite semantics must add that contract explicitly instead of overloading `copy` silently.
 - **Known gap (unfixed, out of this refactor's scope):** `copyWorkspacePath`'s target-exists check uses `findScopedFile(files, toScope, nextPath)` where `files` is the caller-provided snapshot. In the studio card-content branch, `cardScopedFiles` contains only card-content + card-frontend + manifest — **not save-runtime**. A card-content → save-runtime copy inside Studio is not blocked by `assertCompatibleStudioMove` (which only guards save↔save slot mismatch), so the target-exists check runs against a snapshot that cannot see save-runtime targets and may silently overwrite an existing save file. The studio save-runtime branch uses `listEffectiveWorkspaceFilesForSave` (full union) and is not affected. Fix path: either include save-runtime files in the card-content branch snapshot, or load the toScope slice for the target-exists check.
+- `RuntimeWorkspaceTransaction.workspaceFiles` is the turn-local live source of truth. Environment construction and Agent/delegated Tool loops must retain the array by identity; do not pass a `filter(...)`/`Array.from(...)` snapshot as the Tool execution workspace. Context and registry assembly may use immutable visible projections, while every top-level Tool and browser-script SDK operation re-applies the Environment `workspaceFileFilter` to the current live array.
 - Assistant-chat mutations that bypass `RuntimeWorkspaceTransaction` (card-content, `.tsian/local/assistant/**`, temp) must also update `activeWorkspaceTransaction.workspaceFiles` in memory. Otherwise a `move` can persist correctly but same-turn `list`/`glob`/`read` observes the stale turn-start snapshot and falsely reports the target missing or source still present.
 
 ### Validation & Error Matrix
@@ -772,6 +773,8 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 - `copy({ path: "skills/foo", targetPath: ".tsian/local/assistant/skills/foo" })` at actorLevel 4 -> writes all matching target files and keeps the source files.
 - `move({ path: "world/foo.md", targetPath: "save/save-01/foo.md" })` in Studio -> writes the resolved save-runtime path using that save slot's `saveId`, then deletes card-content.
 - Assistant-chat `move({ path: "skills/foo/SKILL.md", targetPath: ".tsian/local/assistant/skills/foo/SKILL.md" })` -> writes local-assistant, syncs the target into `workspaceFiles`, deletes card-content, and prunes the source from `workspaceFiles` before any same-turn verification tools run.
+- Runtime custom Tool or Skill SDK write/delete through the transaction -> following same-turn top-level `read/list/search` and later scripts observe the new state; abort/discard leaves no persistent mutation.
+- Runtime game Agent Skill SDK read/list/search/glob -> receives the same `workspaceFileFilter` as top-level Tools, so retaining the live root array does not expose `frontend-actions/**` or `.tsian/local/**`.
 - `move` between two different Studio save aliases -> throws `WORKSPACE_MOVE_SAVE_SLOT_MISMATCH`.
 - Operation-level `scope` passed as a concrete value that does not match `scopeForPath(path)` -> throws `WORKSPACE_SCOPE_PATH_MISMATCH` (defensive constraint; the assertion is skipped when scope is `effective` or omitted). Mutation routing still uses `scopeForPath(path)`, so a matching explicit scope is redundant but allowed.
 - `move`/`copy` where `assertEditAccess(toPath)` fails the toScope editLevel (e.g. level-1 agent writing to card-content(2) or platform-meta(4)) -> throws the edit-access error. Cross-scope move/copy is only blocked by this path-based permission, never by a "from/to scope must match" rule (that rule was removed).
@@ -803,30 +806,77 @@ The setup wizard (`useSetupState`) consumes `onAgentInvocation` in two distinct 
 - Player saved an override for a key the skill later removed -> merge drops it (only declared keys survive); no stale value leaks into `tsian.config`.
 - Worker `message.config` missing or non-object -> `tsian.config = {}` (defensive guard in Worker source).
 
-## Scenario: Skill Index Presentation And SKILL.md Injection
+## Scenario: Skill Index Presentation And Direct SKILL.md Delivery
 
-### Scope / Trigger
+### 1. Scope / Trigger
 
-- When changing `formatSkillIndex` (Skill Index shown in system prompt before `use_skill`) or `formatActivatedSkillMessageBody` (SKILL.md content injected after `use_skill`).
+- Trigger: changing `formatSkillIndex`, `use_skill`, Skill action registration, native/text Tool result assembly, or the Skill description shown to an Agent before activation.
 
-### Skill Index (pre-use_skill)
+### 2. Signatures
 
-`formatSkillIndex` emits one line per visible Skill in the system prompt: `- name: description` (+ `triggers=...` if present). It does **not** list:
-- `scope` (`local`/`shared`) — internal path-resolution info, irrelevant to agent decisions.
-- `actions` list — action names + `inputSchema` are only useful after `use_skill` when the full SKILL.md is injected. Listing them pre-activation wastes system-prompt tokens every round.
-- `appliesTo` — the agent learns applicability from the SKILL.md content post-activation.
+```ts
+interface UseSkillResult {
+  skill: { name: string; title: string; path: string }
+  activated: true
+  content: string
+  actionCount: number
+  executableActionCount: number
+  declarationErrorCount: number
+  actionDeclarationErrors?: Array<{ code: string; message: string; details?: unknown }>
+}
+```
 
-### SKILL.md Injection (post-use_skill)
+### 3. Contracts
 
-`use_skill` returns the **full SKILL.md content** (`content` field) and each action's `inputSchema` directly in the tool observation. The agent sees the Skill text + script parameters in the same round it calls `use_skill`, and can call `run_script` / `test_skill_script` immediately in the next round — no extra round spent waiting for framework injection. The skill path is marked in `injectedSkillPaths` so `collectActivatedSkillContents` skips it (no duplicate injection next round).
+- `formatSkillIndex` emits one line per visible Skill in the stable prompt: `- name: description` plus `triggers=...` when present. It does not emit internal scope/path, full instructions, action schemas, resource contents, or `appliesTo`.
+- `use_skill` is the only full-instruction delivery channel. Its successful Tool observation returns one complete `SKILL.md` in `content`, activation metadata, action counts, and declaration diagnostics.
+- The `tsian-actions` declarations remain inside `content`; do not duplicate their full `inputSchema`/`outputSchema`/executor payload as a structured `actions` field. `run_script` uses the parsed declarations registered in session state, not a second model-facing copy.
+- Native and Text Tool Protocol consume the same accepted Tool result. Do not append a synthetic `user` message, maintain post-round injection de-dup state, collect activated Skill bodies after the round, or keep an injection fallback.
+- Compute the complete result-envelope size before registering activation. A Skill that cannot fit the producer budget remains inactive and must be split or move optional reference material into separately read resources.
+- Repeating an explicit `use_skill` call produces one complete body in that call's Tool result; no automatic extra copy is added in the same or next model request.
+- Skill `description` states what activation enables in one sentence. Keep implementation status, subject-name prefixes, frontend rendering details, and trigger conditions out; triggers belong in frontmatter.
 
-`formatActivatedSkillMessageBody` is retained as a compatibility fallback for any path that doesn't go through the new observation-based injection. When it does run, it injects the full SKILL.md as a user message with no truncation. Rationale: Skills are card-template-authored, carefully designed, and length-controlled. Truncation risks losing the `tsian-actions` JSON block's `inputSchema` — the agent would not know script parameters, a hard-to-detect failure. The old 6000/2000-char truncation was removed.
+### 4. Validation & Error Matrix
 
-### Convention: Skill Description Authoring
+| Condition | Required result |
+|---|---|
+| Visible Skill with bounded body | Return `UseSkillResult`, then register parsed actions |
+| Body contains malformed `tsian-actions` blocks | Return full body plus bounded declaration diagnostics; valid declarations may still register |
+| Complete result exceeds producer budget | `SKILL_DETAIL_TOO_LARGE` with path/actual/max/remediation; no activation |
+| Missing or invisible Skill | Existing `SKILL_*` failure; no body and no activation |
+| Native vs text mode | Same semantic Tool result; zero synthetic Skill message |
+| Repeated explicit activation | One body per Tool result; session registration remains an upsert |
 
-Skill `description` fields should state what the agent can accomplish by activating the Skill — one sentence. Avoid:
-- Implementation status notes ("当前模板不声明执行脚本") — useless to the agent.
-- Subject-name prefixes ("资料员按..."→"按...") — the Skill is already bound to an agent.
-- Frontend rendering details ("可被前端投影到状态栏") — the agent doesn't need to know how its output is consumed.
-- Trigger conditions ("当 X 时") — these belong in the `triggers` frontmatter field, not `description`.
+### 5. Good / Base / Bad Cases
+
+- Good: a Skill body contains its script schema once; `use_skill` returns that body and counts, and the next Agent round calls `run_script` from the parsed declaration.
+- Base: a prose-only Skill returns `actionCount: 0` with its complete instructions.
+- Bad: return the body, copy all action schemas into `result.actions`, then append the body again as a `user` message.
+- Bad: register an oversized Skill before discovering that the Tool result cannot be delivered, leaving `run_script` enabled behind a failed activation.
+
+### 6. Tests Required
+
+- Native and text loop tests assert the full Skill marker occurs exactly once after one `use_skill` call and the newest message is the Tool-result channel, not a synthetic `user` injection.
+- Producer tests assert normal direct delivery omits `actions`; oversized delivery returns `SKILL_DETAIL_TOO_LARGE` and leaves `loadedSkills` empty.
+- Action tests assert a valid declaration still executes through `run_script`, including propagation of the current Environment's `workspaceFileFilter` into the browser-script executor.
+- Grep the runtime for retired post-round Skill injection state, collectors, and formatters; none may remain live.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+registerLoadedSkill(sessionState, skill, actions)
+return { content, actions }
+// Later: messages.push({ role: "user", content })
+```
+
+#### Correct
+
+```ts
+const result = { skill: metadata, activated: true, content, ...counts }
+assertUseSkillResultFits(result)
+registerLoadedSkill(sessionState, skill, actions)
+return result // native/text Tool result is the only full-content channel
+```
 

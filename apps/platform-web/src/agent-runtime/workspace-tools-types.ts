@@ -501,12 +501,6 @@ export interface RuntimeLoadedSkill {
 
 export interface RuntimeWorkspaceToolSessionState {
   loadedSkills: RuntimeLoadedSkill[]
-  /**
-   * Skill paths whose full SKILL.md has already been injected as a context
-   * message in the current tool loop. Prevents re-injecting the same skill
-   * when use_skill is called repeatedly (registerLoadedSkill upserts by path).
-   */
-  injectedSkillPaths: string[]
 }
 
 export interface SkillActionParseResult {

@@ -37,7 +37,7 @@ function platformToolEnabled(
 const useSkillSchema: ToolSchema = {
   name: RUNTIME_WORKSPACE_TOOL_NAMES.useSkill,
   description:
-    "Activate a Skill from the current Agent's visible Skill Index. The next round receives the Skill's SKILL.md context and run_script can execute its declared browser_script actions.",
+    "Activate a Skill from the current Agent's visible Skill Index and return its complete SKILL.md instructions. After activation, run_script can execute its declared browser_script actions.",
   parameters: {
     type: "object",
     required: ["name"],

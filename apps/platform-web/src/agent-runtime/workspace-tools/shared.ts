@@ -40,7 +40,6 @@ export function toolError(
 export function createRuntimeWorkspaceToolSessionState(): RuntimeWorkspaceToolSessionState {
   return {
     loadedSkills: [],
-    injectedSkillPaths: [],
   }
 }
 

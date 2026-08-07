@@ -46,8 +46,6 @@ export {
 } from "./parsing"
 export {
   parseActionDeclarations,
-  collectActivatedSkillContents,
-  type ActivatedSkillContent,
 } from "./skill-actions"
 export {
   resolveBrowserScriptPath,

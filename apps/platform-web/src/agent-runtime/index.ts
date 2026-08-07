@@ -123,10 +123,6 @@ import {
   buildRuntimeMessages,
   contextInjectionsToMessages,
 } from "./orchestration/context-injections"
-import {
-  injectActivatedSkillMessagesNative,
-  injectActivatedSkillMessagesText,
-} from "./orchestration/skill-activation"
 import { deriveDelegatedWorkspaceMutations } from "./environment"
 
 // barrel re-export (public API — 8 types)
@@ -298,9 +294,13 @@ function currentRuntimeTurnNumber(input: AgentRuntimeTurnInput): number {
 function getVisibleAgentContacts(
   workspaceFiles: WorkspaceFile[],
   context: AgentContextEntry,
+  workspaceTrustBoundary: AgentWorkspaceTrustBoundary = "runtime-game-agent",
 ): AgentRegistryEntry[] {
   const agentsById = new Map(
-    buildAgentRegistry(workspaceFiles).map((agent) => [agent.id, agent]),
+    buildAgentRegistry(workspaceFilesForAgentBoundary(
+      workspaceFiles,
+      workspaceTrustBoundary,
+    )).map((agent) => [agent.id, agent]),
   )
   const seen = new Set<string>()
   const contacts: AgentRegistryEntry[] = []
@@ -529,7 +529,7 @@ function buildEntryAgentMessages(
 ): RuntimeChatMessage[] {
   const history = normalizeHistory(input.recentHistory)
   const visibleContacts = input.workspaceFiles
-    ? getVisibleAgentContacts(input.workspaceFiles, context)
+    ? getVisibleAgentContacts(input.workspaceFiles, context, input.workspaceTrustBoundary)
     : []
   const permissions = deriveAgentRuntimePermissionProfile(context.agent)
   const isAssistant = isAssistantEntryAgent(context.agent.path)
@@ -728,7 +728,7 @@ function buildDelegatedAgentMessages(
     collaborationPolicy,
   )
   const visibleContacts = input.workspaceFiles
-    ? getVisibleAgentContacts(input.workspaceFiles, targetContext)
+    ? getVisibleAgentContacts(input.workspaceFiles, targetContext, input.workspaceTrustBoundary)
     : []
   const permissions = deriveAgentRuntimePermissionProfile(targetContext.agent)
   // 固定层 role 配置（从目标 agent 的 messageLayers 读取）。
@@ -825,16 +825,20 @@ function createAgentCallRunner(
       )
     }
 
+    const delegatedVisibleFiles = workspaceFilesForAgentBoundary(
+      input.workspaceFiles,
+      "runtime-game-agent",
+    )
     const delegatedInput: AgentRuntimeTurnInput = {
       ...input,
       traceContext: forkAiTraceOperationContext(input.traceContext),
-      workspaceFiles: workspaceFilesForAgentBoundary(
-        input.workspaceFiles,
-        "runtime-game-agent",
-      ),
+      // The Tool loop must retain the root turn's live staged array. Registry
+      // and context discovery use delegatedVisibleFiles / trust-boundary
+      // assembly below; workspace operations apply the boundary fileFilter.
+      workspaceFiles: input.workspaceFiles,
       workspaceTrustBoundary: "runtime-game-agent",
     }
-    const registry = buildAgentRegistry(delegatedInput.workspaceFiles!)
+    const registry = buildAgentRegistry(delegatedVisibleFiles)
     const targetAgent = registry.find((agent) => agent.id === agentCall.agentId)
     if (!targetAgent) {
       throw agentCallError(
@@ -1056,7 +1060,7 @@ async function callAgentModelWithWorkspaceToolsNative(
   const workspaceToolSession = createRuntimeWorkspaceToolSessionState()
   const permissions = deriveAgentRuntimePermissionProfile(agentContext.agent)
   const visibleContacts = input.workspaceFiles
-    ? getVisibleAgentContacts(input.workspaceFiles, agentContext)
+    ? getVisibleAgentContacts(input.workspaceFiles, agentContext, input.workspaceTrustBoundary)
     : []
   const allowAgentCall =
     toolOptions.agentCallState !== undefined
@@ -1461,10 +1465,6 @@ async function callAgentModelWithWorkspaceToolsNative(
       })
     }
 
-    // Inject full SKILL.md for skills newly activated via use_skill this round,
-    // so the model sees them in the next round's context (B-scheme: declare
-    // intent -> framework injects content next round).
-    injectActivatedSkillMessagesNative(runtimeMessages, workspaceToolSession, input.workspaceFiles!)
   }
 
   throw new Error(`${options.debugLabel} failed to complete workspace tool handling.`)
@@ -1928,13 +1928,6 @@ async function callAgentModelWithWorkspaceTools(
         round,
       ))
     }
-    // Inject full SKILL.md for skills newly activated via use_skill this round
-    // (B-scheme: declare intent -> framework injects content next round).
-    nextMessages = injectActivatedSkillMessagesText(
-      nextMessages,
-      workspaceToolSession,
-      input.workspaceFiles,
-    )
   }
 
   throw new Error(`${options.debugLabel} failed to complete workspace tool handling.`)
@@ -1979,15 +1972,10 @@ export async function runAgentRuntimeTurn(
     emitTrace: environment.audit,
     semanticSearchOwnerId: environment.workspace.semanticSearchOwnerId,
   }
-  const input: AgentRuntimeTurnInput = environmentInput.workspaceFiles
-    ? {
-        ...environmentInput,
-        workspaceFiles: workspaceFilesForAgentBoundary(
-          environmentInput.workspaceFiles,
-          environmentInput.workspaceTrustBoundary,
-        ),
-      }
-    : environmentInput
+  // Keep the Environment's live staged workspace array. Agent context
+  // assembly and every Tool operation apply the trust-boundary view without
+  // detaching the Tool loop from later transaction writes/deletes.
+  const input: AgentRuntimeTurnInput = environmentInput
   assertNotAborted(input.signal)
   const collaborationPolicy = normalizeAgentRuntimeCollaborationPolicy(
     capabilities.collaborationPolicy,

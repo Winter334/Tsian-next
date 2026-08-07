@@ -27,9 +27,11 @@ import {
   toolError,
   traceBase,
 } from "./shared"
+import { MAX_AGENT_OBSERVATION_CHARS } from "./observations"
 
 const SKILL_ACTIONS_FENCE_PATTERN = /```([^\n`]*)\r?\n([\s\S]*?)```/g
 const SKILL_ACTIONS_FENCE_LABEL = "tsian-actions"
+const USE_SKILL_RESULT_CHAR_BUDGET = MAX_AGENT_OBSERVATION_CHARS - 512
 
 function normalizeSkillName(value: unknown): string {
   if (typeof value !== "string") {
@@ -300,28 +302,14 @@ export function activateSkillByName(
   const skill = resolveVisibleSkillByName(context.agentContext, input.name)
   const file = loadSkillEntryFile(context.workspaceFiles, skill)
   const { actions, errors: actionDeclarationErrors } = parseActionDeclarations(file.content)
-  registerLoadedSkill(context.sessionState, skill, actions)
-  context.emitTrace?.({
-    type: "skill_loaded",
-    ...traceBase(context),
-    ok: true,
-    data: {
-      skill: {
-        name: skill.name,
-        path: skill.path,
-      },
-      actionCount: actions.length,
-      declarationErrorCount: actionDeclarationErrors.length,
-    },
-  })
-
-  return {
+  const result = {
     skill: {
       name: skill.name,
       title: skill.title,
       path: skill.path,
     },
     activated: true,
+    content: file.content,
     actionCount: actions.length,
     executableActionCount: actions.filter((action) =>
       action.executor.type === BROWSER_SCRIPT_EXECUTOR_TYPE).length,
@@ -336,51 +324,42 @@ export function activateSkillByName(
         }
       : {}),
   }
-}
 
-export interface ActivatedSkillContent {
-  name: string
-  title: string
-  path: string
-  content: string
-}
-
-/**
- * Collect the full SKILL.md contents of skills activated via use_skill whose
- * content has not yet been injected into the model context this tool loop.
- * Marks each collected skill path as injected in `sessionState` so repeat
- * use_skill calls (registerLoadedSkill upserts by path) do not re-inject.
- *
- * The caller (index.ts tool loops) wraps each entry in a context user message
- * after the round's tool observations, so the model sees the full SKILL.md in
- * the next round without burning a tool-result round on the full text.
- */
-export function collectActivatedSkillContents(
-  sessionState: RuntimeWorkspaceToolSessionState | undefined,
-  workspaceFiles: WorkspaceFile[],
-): ActivatedSkillContent[] {
-  if (!sessionState) {
-    return []
+  const resultChars = JSON.stringify(result).length
+  if (resultChars > USE_SKILL_RESULT_CHAR_BUDGET) {
+    throw toolError(
+      "SKILL_DETAIL_TOO_LARGE",
+      `Skill detail is too large to return directly: ${skill.name}`,
+      {
+        skill: skill.name,
+        path: skill.path,
+        actualChars: resultChars,
+        maxChars: USE_SKILL_RESULT_CHAR_BUDGET,
+        remediation: "Split the Skill instructions or move optional reference material into separate resources.",
+      },
+    )
   }
 
-  const contents: ActivatedSkillContent[] = []
-  for (const entry of sessionState.loadedSkills) {
-    if (sessionState.injectedSkillPaths.includes(entry.skill.path)) {
-      continue
-    }
-    const file = workspaceFiles.find((candidate) => candidate.path === entry.skill.path)
-    if (!file) {
-      continue
-    }
-    contents.push({
-      name: entry.skill.name,
-      title: entry.skill.title,
-      path: entry.skill.path,
-      content: file.content,
-    })
-    sessionState.injectedSkillPaths.push(entry.skill.path)
-  }
-  return contents
+  // Activation becomes observable only after its complete Tool result is known
+  // to fit the producer contract. An oversized Skill must not leave run_script
+  // enabled behind a failed use_skill observation.
+  registerLoadedSkill(context.sessionState, skill, actions)
+  context.emitTrace?.({
+    type: "skill_loaded",
+    ...traceBase(context),
+    ok: true,
+    data: {
+      skill: {
+        name: skill.name,
+        path: skill.path,
+      },
+      actionCount: actions.length,
+      declarationErrorCount: actionDeclarationErrors.length,
+      resultChars,
+    },
+  })
+
+  return result
 }
 
 export async function executeRunScript(
@@ -456,6 +435,7 @@ export async function executeRunScript(
     workspaceMutations: context.workspaceMutations,
     virtualWorkspaceReads: context.virtualWorkspaceReads,
     exposedWorkspaceOperations: context.exposedWorkspaceOperations,
+    workspaceFileFilter: context.workspaceFileFilter,
     runBrowserScript: context.runBrowserScript,
     signal: context.signal,
   })

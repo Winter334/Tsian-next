@@ -37,7 +37,7 @@ Agent 调用 `workspace_search` 时，文件数、每文件匹配数、上下文
 
 ### R6. 其他内建 Tool 不得依赖全局兜底裁剪
 
-`list`、`glob`、`diff`、workspace mutation、`use_skill`、inspector 等可能增长的内建结果必须返回有界明细、明确摘要或可重读引用。`use_skill` 的完整 SKILL 内容只通过下一轮 Skill 注入进入 Agent 上下文一次，不再同时复制到 Tool observation。
+`list`、`glob`、`diff`、workspace mutation、`use_skill`、inspector 等可能增长的内建结果必须返回有界明细、明确摘要或可重读引用。`use_skill` 的核心交付物就是完整 `SKILL.md`，应在本次 Tool observation 中直接返回一次；不得再通过框架额外伪造 `user` 消息注入，也不得把正文中已有的完整 action schema 复制成第二份结构化列表。Skill producer 必须在激活时保证整个返回 envelope 能通过最终安全上限，过大时以 Skill 专用错误要求作者拆分。
 
 ### R7. 扩展 Tool 与 Skill action 使用保守交付契约
 
@@ -59,6 +59,10 @@ Tool memory 和 native/text Tool 消息必须消费同一个已通过最终校�
 
 项目仍在测试阶段，不为既有会话、旧 preview observation 或旧 registry 数据增加迁移与兼容读取。新代码只保证新请求的契约。
 
+### R12. 同一 turn 的 staged Workspace 必须一致可见
+
+顶层 workspace Tool、`run_script` 和卡级自定义 Tool 必须读写同一个实时 staged Workspace。任一 Tool/脚本成功写入或删除后，后续同 turn 的 `read/list/search/glob/diff`、Skill action 与自定义 Tool 必须立即看到该变化；失败或中止仍整体丢弃 staged mutation。Workspace trust boundary 可以过滤可见文件，但不得通过脱离事务的数组副本破坏写后读一致性。
+
 ## Acceptance Criteria
 
 - [x] AC1: 代码中不再存在把超限成功 Tool 结果替换成 `preview`、`truncatedForModel` 或通用压缩值后继续标记成功的路径。
@@ -68,13 +72,15 @@ Tool memory 和 native/text Tool 消息必须消费同一个已通过最终校�
 - [x] AC5: 通用 workspace operation 的完整读取能力与 Resource Manager 消费路径保持不变。
 - [x] AC6: `query_diagnostics` 现有 list/search/read 上限、cursor、section/range 行为和测试保持通过。
 - [x] AC7: `list`、`glob`、`diff`、workspace mutation 和 inspector 等内建 Tool 的增长型字段要么有界并报告遗漏，要么返回可重读摘要；不依赖最终安全校验生成伪成功预览。
-- [x] AC8: `use_skill` observation 不再携带完整 SKILL 正文；新激活 Skill 的正文仍在下一轮恰好注入一次，action 可正常解析和执行。
+- [x] AC8: `use_skill` 在对应 Tool observation 中直接返回完整 `SKILL.md` 一次，不额外注入 synthetic `user` 消息，不重复返回完整 action schema；action 仍可正常解析和执行。
 - [x] AC9: 自定义 Tool 或 Skill action 产生超限 inline 结果时显式失败；正常大小结果保持原值，不被压缩或重写。
 - [x] AC10: native 与 text 两种 Tool 协议都消费同一已接受 observation；text 协议不再二次压缩，每个已执行 Tool call 仍对应一个结果消息。
 - [x] AC11: Tool memory 只包含已接受的成功结果或结构化失败，不包含被拒绝原始正文或伪成功 preview；跨 turn memory 自身的摘要保留策略不变。
 - [x] AC12: UI 的 `agent_call` 展示投影仍可独立限制响应大小，普通 Tool 仍无原始结果 presentation；UI 无新增分页/裁剪业务。
 - [x] AC13: 桌面助手与游戏/委派 Agent 的 Tool 可见性和 diagnostics 隔离测试保持通过。
 - [ ] AC14: contracts、platform-web build 与相关 Tool/workspace/diagnostics/runtime 测试全部通过；部署更新后再复测旧生产请求中的 Tool call/result 关联问题。
+- [x] AC15: 卡级自定义 Tool 或 Skill action 在 staged save-runtime 中写入/删除后，下一轮顶层 workspace read/list/search 能看到新状态；后续脚本也看到同一状态，turn 失败/中止时仍不落盘。
+- [x] AC16: runtime-game 与 trusted-authoring 的 Workspace 可见性隔离保持不变；修复不得让 `frontend-actions/**` 或 `.tsian/local/**` 通过运行时读取边界泄漏。
 
 ## Out of Scope
 
@@ -84,3 +90,4 @@ Tool memory 和 native/text Tool 消息必须消费同一个已通过最终校�
 - UI 展示原始 Tool 参数/结果，或让 UI 参与结果分页与恢复。
 - 迁移既有会话、旧 observation、旧 Tool registry 缓存或旧生产前端包数据。
 - 在本任务中重新解决已经由当前源码修复、仅存在于旧生产包的 native Tool 关联问题。
+- 重构开局建模、游玩设定访谈、开局向导前端或相关提示词；这些在基础 Tool 契约稳定后另立任务处理。

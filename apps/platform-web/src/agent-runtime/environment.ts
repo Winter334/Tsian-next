@@ -1,7 +1,6 @@
 import type { WorkspaceFile } from "@tsian/contracts"
 import {
   workspaceFileFilterForAgentBoundary,
-  workspaceFilesForAgentBoundary,
 } from "./frontend-action-isolation"
 import type { AgentRuntimeEnvironment } from "./turn-types"
 import type { WorkspaceOperationMutationAdapter } from "./workspace-operations"
@@ -45,7 +44,11 @@ export function createDesktopAssistantEnvironment(
     ...input,
     workspace: {
       ...input.workspace,
-      files: workspaceFilesForAgentBoundary(input.workspace.files, "trusted-authoring"),
+      // Keep the host transaction's live array. Trust filtering belongs to
+      // context assembly and per-operation fileFilter; copying here would make
+      // later Tool reads miss same-turn staged writes/deletes.
+      files: input.workspace.files,
+      fileFilter: workspaceFileFilterForAgentBoundary("trusted-authoring"),
       trustBoundary: "trusted-authoring",
     },
     context: { ...input.context, compressionMode: "task" },
@@ -59,7 +62,8 @@ export function createGameRuntimeEnvironment(
     ...input,
     workspace: {
       ...input.workspace,
-      files: workspaceFilesForAgentBoundary(input.workspace.files, "runtime-game-agent"),
+      files: input.workspace.files,
+      fileFilter: workspaceFileFilterForAgentBoundary("runtime-game-agent"),
       trustBoundary: "runtime-game-agent",
     },
   }
@@ -76,7 +80,7 @@ export function deriveDelegatedEnvironment(
     ...environment,
     workspace: {
       ...environment.workspace,
-      files: workspaceFilesForAgentBoundary(files, "runtime-game-agent"),
+      files,
       trustBoundary: "runtime-game-agent",
       fileFilter: workspaceFileFilterForAgentBoundary("runtime-game-agent"),
       toolFilter: undefined,

@@ -43,8 +43,6 @@ export {
   parseActionDeclarations,
   resolveBrowserScriptPath,
   resolveHelperPath,
-  collectActivatedSkillContents,
   executeRuntimeWorkspaceToolCalls,
   formatNativeToolObservationContent,
-  type ActivatedSkillContent,
 } from "./workspace-tools/index"
