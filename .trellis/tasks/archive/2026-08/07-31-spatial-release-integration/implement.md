@@ -77,7 +77,7 @@ git diff --check
 - [x] 运行 `trellis-check`，修复 spec、lint/type、test、cross-layer flow 和 consistency drift。
 - [x] 使用 `trellis-update-spec` 记录最终 production release、required registry、concise guidance 与 rollback contract。
 - [x] 提交 release integration 代码与任务记录。
-- [ ] 归档 release child，再对父任务全部 acceptance criteria 做最终 review；全部通过后归档父任务。
+- [x] 归档 release child，再对父任务全部 acceptance criteria 做最终 review；全部通过后归档父任务。
 
 ## Expected Product Write Scope
 
