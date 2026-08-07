@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 182
+- **Total Sessions**: 183
 - **Last Active**: 2026-08-07
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~752 | Active |
+| `journal-4.md` | ~773 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 183 | 2026-08-07 | 完成 Spatial Desktop 发布集成 | `67f45a4` | `master` |
 | 182 | 2026-08-07 | Spatial system surfaces | `db809ab` | `master` |
 | 181 | 2026-08-06 | Complete Spatial agent surfaces | `e5fd0ea` | `master` |
 | 180 | 2026-08-06 | 完成 Spatial Play 与全局界面 | `9dbf047` | `master` |

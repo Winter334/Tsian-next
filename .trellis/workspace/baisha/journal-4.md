@@ -750,3 +750,24 @@ Added shared settings and system-monitor controllers, Spatial account/announceme
 ### Status
 
 [OK] **Completed**
+
+
+## Session 183: 完成 Spatial Desktop 发布集成
+
+**Date**: 2026-08-07
+**Task**: 完成 Spatial Desktop 发布集成
+**Branch**: `master`
+
+### Summary
+
+完成 Spatial production gate、13 应用 registry 强约束、简短环境提示、RetroOS 回退与发布验收；全仓 120 files / 899 tests、构建和浏览器矩阵通过，并归档 release 子任务与父任务。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `67f45a4` | (see git log) |
+
+### Status
+
+[OK] **Completed**
