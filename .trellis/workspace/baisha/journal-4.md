@@ -794,3 +794,22 @@ Added shared settings and system-monitor controllers, Spatial account/announceme
 ### Next Steps
 
 - 决定是完成正式装备前端集成门禁，还是明确调整父任务范围后再归档。
+
+
+## Session 185: 归档确定性装备父任务
+
+**Date**: 2026-08-07
+**Task**: 归档确定性装备父任务
+**Branch**: `master`
+
+### Summary
+
+按用户确认的发布边界，正式卡 frontend 由开发前端独立打包上传；父任务只验证正式卡 Workspace 完整性。装备测试 256/256 通过，129 个 Workspace 路径与清单一一对应，必需 Action/Skill 齐全并已归档。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**
