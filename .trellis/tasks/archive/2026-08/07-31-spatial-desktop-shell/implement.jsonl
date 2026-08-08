@@ -1,6 +1,6 @@
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/prd.md","reason":"Parent product boundary, visual direction, release gate, supported environment and full-parity requirements."}
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/design.md","reason":"Parent dual-shell, registry, Source DOM, camera/window, route and dependency architecture."}
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Original platform shell, route, storage and experimental API evidence."}
+{"file":".trellis/tasks/archive/2026-08/07-31-html-in-canvas-platform-ui/prd.md","reason":"Parent product boundary, visual direction, release gate, supported environment and full-parity requirements."}
+{"file":".trellis/tasks/archive/2026-08/07-31-html-in-canvas-platform-ui/design.md","reason":"Parent dual-shell, registry, Source DOM, camera/window, route and dependency architecture."}
+{"file":".trellis/tasks/archive/2026-08/07-31-html-in-canvas-platform-ui/research/current-architecture-and-api.md","reason":"Original platform shell, route, storage and experimental API evidence."}
 {"file":".trellis/tasks/07-31-spatial-desktop-shell/research/shell-evidence.md","reason":"Current boot/config/registry/session evidence and concrete shell planning conclusions."}
 {"file":".trellis/tasks/07-31-spatial-desktop-shell/research/spatial-effects-glass-transitions.md","reason":"Current renderer/FBO evidence, environment post-processing options, resource risks and the accepted no-glass staged recommendation."}
 {"file":".trellis/tasks/archive/2026-08/07-31-spatial-rendering-input-foundation/design.md","reason":"Implemented renderer, projection, input, scheduler, Source DOM and lifecycle contracts inherited by the shell."}

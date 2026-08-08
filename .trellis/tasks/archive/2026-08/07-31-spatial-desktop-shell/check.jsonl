@@ -1,5 +1,5 @@
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/prd.md","reason":"Verify inherited product behavior, no old-panel embedding and no partial production exposure."}
-{"file":".trellis/tasks/07-31-html-in-canvas-platform-ui/design.md","reason":"Verify registry, boot, window/camera, Source DOM and child-scope boundaries."}
+{"file":".trellis/tasks/archive/2026-08/07-31-html-in-canvas-platform-ui/prd.md","reason":"Verify inherited product behavior, no old-panel embedding and no partial production exposure."}
+{"file":".trellis/tasks/archive/2026-08/07-31-html-in-canvas-platform-ui/design.md","reason":"Verify registry, boot, window/camera, Source DOM and child-scope boundaries."}
 {"file":".trellis/tasks/07-31-spatial-desktop-shell/research/shell-evidence.md","reason":"Check the implementation against current code evidence and preserved historical behavior."}
 {"file":".trellis/tasks/07-31-spatial-desktop-shell/research/spatial-effects-glass-transitions.md","reason":"Verify environment-only effects, bounded render targets, Source sharpness and the explicit exclusion of backdrop/glass blur."}
 {"file":".trellis/tasks/archive/2026-08/07-31-spatial-rendering-input-foundation/verification.md","reason":"Ensure the accepted foundation browser/automated behavior remains green after controller extraction."}
