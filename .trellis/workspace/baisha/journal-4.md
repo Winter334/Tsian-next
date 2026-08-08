@@ -834,3 +834,24 @@ Added shared settings and system-monitor controllers, Spatial account/announceme
 ### Status
 
 [OK] **Completed**
+
+
+## Session 187: Consolidate repository smoke suite
+
+**Date**: 2026-08-08
+**Task**: Consolidate repository smoke suite
+**Branch**: `master`
+
+### Summary
+
+Reduced the product test inventory to three integration smoke files, aligned repository verification scripts and Trellis specs, and verified the full build, smoke, and production-browser gates with Edge.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bc0232d` | (see git log) |
+
+### Status
+
+[OK] **Completed**
