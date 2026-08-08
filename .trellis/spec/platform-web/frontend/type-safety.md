@@ -148,15 +148,11 @@ validateFrontendActionData(validator, value): FrontendActionDataValidationResult
 - Bad: let Action use generic effective-live Workspace during execution, allow actor level from request, or describe Worker as deterministic because it has no DOM.
 - Bad: implement card Action as `executePlatformAction({ action: actionId })`, or protect generic actions with a `workspace.*` prefix denylist rather than closed allowlist.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Registry/manifest: exact path/id, case/alias rejection, closed fields, root confinement, missing/duplicate/binary resources, timeout/helper/source/manifest limits.
-- Strict JSON/schema: primitives and nested object success; undefined/BigInt/non-finite/cycle/sparse/accessor/symbol/non-enumerable/exotic reject; Draft 2020-12 strict keyword/ref/dialect/limit/errors/cache table.
-- Runtime Agent isolation: direct read, list, search, glob, semantic/effective projection, contextPaths, macro expansion, Agent/Skill/Tool queries and model context cannot reveal `frontend-actions/**`; desktop assistant authoring remains available.
-- Worker: existing Skill/Tool parity; Action operation allowlist and scope enforcement; text-only reads; valid domain pass-through; invalid envelope/ordinary throw sanitization; malformed output; timeout; abort; cleanup. A real Chrome/Edge release gate must serve the production bundle, compile and validate representative Draft 2020-12 data through production Ajv, execute the actual default Action Worker, and prove opaque origin plus unavailable IndexedDB/Cache/nested Worker/storage-manager globals. Any card adapter that wraps an internal marked business failure must also run through this gate and prove the public domain code survives with zero writes; a harness whose `tsian.action.fail` merely rethrows the supplied object cannot cover strict Worker-envelope transport. Fake Worker or duplicated Ajv setup is insufficient.
-- Bridge/lifecycle: duplicate invocation, pre/active/late abort barriers, dispose/session replacement, stale traffic suppression, event-before-success ordering and callback isolation.
-- Privilege: table-drive every current platform action plus a synthetic future action; only explicit remote allowlist succeeds and no play-frontend request reaches assistant actor resolution.
-- Builds: `npm run build:contracts`, play-bridge tests/build, platform-web tests, `npm run build:web`.
+- Run `npm run build:contracts`, `npm run build:play-bridge`, `npm run build:web`, `npm run test:frontend-actions`, and `npm run test:frontend-actions:production-browser`.
+- The bridge smoke samples real lifecycle/service/transaction/Dexie success and CAS rollback. The production-browser gate owns production Ajv/Worker, opaque-origin, blocked ambient globals, and the equipment domain-failure sample.
+- Treat registry/schema/isolation/abort/privilege rows not sampled by those gates as manual review/verification inventory; do not restore their dedicated unit matrices.
 
 ### 7. Wrong vs Correct
 
@@ -252,14 +248,11 @@ interface DerivedActionClient {
 - Base: an unrelated mutation path does not invalidate the preview; a relevant path does.
 - Bad: compute a local projection for preview, rebuild `expectedCurrentRef` at commit time, or abort a pending commit when its own mutation event arrives first.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Coordinator unit tests with deferred promises: prior preview signal becomes aborted and its late response cannot publish.
-- Identity tests: selection/character changes reject a late preview; commit input exactly matches the accepted preview identity except commit mode.
-- Event-order test: mutation-before-success neither aborts nor retries commit and triggers one or more authoritative rereads until no relevant event occurred during the latest reread.
-- Conflict tests: expected-ref mismatch and Workspace conflict reread, clear preview, and issue no automatic retry.
-- Parser tests: closed output shape, safe integers, canonical refs, target-slot projection consistency, and request/output identity.
-- Component/browser checks: focus trap, initial/return focus, Escape, keyboard candidate navigation, readable unavailable candidates, live errors, and independent desktop/mobile scrolling.
+- Run `npm run build:web`; the production-browser preflight samples the real equipment Action failure and zero-write transport.
+- Manually verify preview cancellation/identity, mutation ordering, conflict reread, parser constraints, focus/keyboard/error UI, and independent scrolling.
+- Do not restore coordinator/parser/component test suites.
 
 ### 7. Wrong vs Correct
 
@@ -759,7 +752,7 @@ interface InspectFrontendInput {
 - Bad: creating an alternate iframe/session, running a private runtime turn, bypassing frontend UI to mutate runtime/storage, or returning success after a canceled/failed DOM edit.
 - Bad: using `HTMLElement.click()` alone for user activation-sensitive UI; use a browser-internal activation sequence and verify target/action state where possible.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - Build/type-check: `npm run build:web` after platform-web inspector changes; `npm run build:contracts` only if shared contract source changes.
 - Browser/manual matrix: no Play, launcher, remote, packaged, minimized, building/reload, build failed with old iframe still mounted.
@@ -902,16 +895,12 @@ buildToolPresentation(
 - Base: an old session contains `toolCalls` or timeline `output`; the reader ignores those extra fields and retains validated presentation nodes without migration/backfill.
 - Bad: truncate a successful result in a generic projector, label a limited search array as corpus total, run text-mode compaction after acceptance, pass raw output to both model and UI, or expose a controlled tool because its Environment port is absent.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Acceptance tests assert identity-preserving success, strict-JSON rejection, 32-KiB fail-loud behavior, rejected-body non-disclosure, and independent UI presentation limits.
-- Producer tests assert huge single-line/no-range/line-range read continuation; search file/match/snippet/context caps and truthful omission fields; list pagination; glob narrowing; diff/mutation summaries; inspector nested/optional-field bounds; and one complete Skill body in the `use_skill` Tool result with zero synthetic injection.
-- Text-protocol tests assert accepted observations serialize without a second compaction pass; Tool memory tests consume accepted observations while retaining independent cross-turn summary limits.
-- Environment/schema tests assert desktop/game/delegated WorkspaceView, mutation, registry, and controlled-port isolation; absent ports must remove schemas and execution capability.
-- Staged-coherence tests use a real `RuntimeWorkspaceTransaction` to assert custom Tool write/delete is visible to following `read/list/search`, and Skill-action tests assert `workspaceFileFilter` reaches the browser-script executor.
-- Timeline/storage tests assert ordinary tools have no presentation/raw output, bounded `agent_call` survives reload, and legacy `toolCalls`/`output` are not copied forward.
-- Native-provider tests assert one assistant tool-call message plus one independent tool result per `toolCallId`; Gemini `functionResponse.name` remains the originating function name.
-- Request-budget tests assert the final merged/marker-stripped request includes schemas and tool arguments and is rejected before provider tracing/fetch when over budget.
+- Run `npm run test:smoke:web` and `npm run build:web`.
+- The Assistant smoke samples native Tool write/read delivery, same-turn staged visibility, conversation/context persistence, raw-result exclusion, rollback, and diagnostic retention.
+- Manually verify strict observation limits, producer paging/narrowing, Text protocol, capability isolation, provider correlation, request budget, Skill delivery, and UI presentation when those contracts change.
+- Do not restore the retired acceptance/producer/protocol/environment/storage/provider/unit suites.
 
 ### 7. Wrong vs Correct
 

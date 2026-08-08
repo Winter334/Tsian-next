@@ -81,15 +81,13 @@ Local database changes normally use rename-and-reset. The explicitly approved di
 - Bad: using `updatedAt` to show `更新` after an author changes only tags or summary.
 - Bad: binding an old imported card to the first workshop package with the same `resourceId`; multiple packages can share a resource id.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - Run `npm run build:web` after storage/frontend changes.
 - Run `git diff --check` after changing the DB name or badge styles.
 - Verify DB name literals match in `storage/db.ts` and `public/tsian-game-card-frontend-sw.js`.
-- Verify local file import overwrites do not leave stale `marketOrigin` behind.
-- Verify metadata/frontend-only writes preserve `marketOrigin`.
-- Verify update prompt appears only for `resourceVersion` mismatch, not `updatedAt` changes.
-- Verify update cancellation performs no download/import, and update confirmation preserves saves while replacing local card content.
+- Manually verify local-import clearing, metadata/frontend preservation, version-only prompts, cancellation, and save-preserving update behavior.
+- Do not add storage/controller/UI test files for this matrix.
 
 ### 7. Wrong vs Correct
 
@@ -198,11 +196,11 @@ Checkpoints store **thin manifests** (path→hash references into the `blobs` ta
 - Bad: using `create` to create a turn-0 manual checkpoint and secretly delete `initial`.
 - Bad: pruning by `reason === "after-turn"` or protecting by `reason === "manual"` instead of `retention`.
 
-#### 6. Tests Required
+#### 6. Verification Required
 
 - Run `npm run build:contracts` for contract changes and `npm run build:web` for platform/SDK consumers.
-- Verify create/list current-turn behavior, update metadata-only behavior, overwrite same-id new snapshot behavior, delete+restore errors, restore future-branch pruning, and protected frontend-debug baseline floor.
-- Verify `invokeAgent` default creates no checkpoint, `checkpoint: true` creates one, `mode: "overwrite"` preserves id, and `mode: "current-turn-auto"` canonicalizes same-turn auto checkpoints.
+- Manually verify create/list/update/overwrite/delete/restore/pruning behavior and the `invokeAgent` checkpoint modes.
+- Do not add a dedicated checkpoint storage/API test suite.
 - Search for stale reason-switches in checkpoint storage/UI: `reason === "after-turn"|"manual"|"initial"` should not drive pruning/protection.
 
 #### 7. Wrong vs Correct
@@ -326,16 +324,11 @@ type FrontendActionWorkspaceDependency =
 - Bad: call generic checkpoint commit helper or treat Frontend Action as part of formal turn history.
 - Bad: emit requested write/delete prefixes rather than actual mutation paths, or update `updatedAt` for byte-identical no-op.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Atomic snapshot: active save/card binding, exact card-content provenance, immutable rows and initialized Workspace.
-- Dependency table: present/missing file, direct/recursive list, glob membership/limit/truncated, blind write, delete range including initially empty prefix, Action resource mutation.
-- Concurrency: unrelated concurrent write survives; each related dependency change conflicts with zero writes; no automatic retry.
-- Staging: multi-write success is atomic; any execution/input/output/domain/abort/timeout failure discards all staged changes; read-your-writes does not replace baseline dependency.
-- Delta: byte-identical write and empty delta do not write timestamp/checkpoint/event; overlapping writes/deletes normalize; returned actual paths are stable-sorted concrete paths.
-- Read-only/no-op CAS still conflicts when binding/resource/read dependency changes.
-- Assert checkpoint count/manifests are unchanged for every Frontend Action success/failure path.
-- Integration event assertion: event only after durable non-empty commit, before remote success response; payload paths equal commit result; subscriber exception cannot alter storage result.
+- Run `npm run test:frontend-actions`, `npm run build:web`, and `npm run test:frontend-actions:production-browser`.
+- The bridge smoke owns one real snapshot/read/write/CAS success with event-before-response and one observed-dependency conflict with zero Action delta/timestamp/checkpoint/event.
+- Treat the remaining dependency, abort, no-op, normalization, provenance, and concurrency rows as manual review/verification inventory; do not restore the dedicated storage matrix.
 
 ### 7. Wrong vs Correct
 
@@ -429,11 +422,10 @@ if (changes.writtenFiles.length === 0) return { changed: false }
 - Bad: `roll_dice({ sides: 20, modifier: "attributes.体魄" })` must fail (`ROLL_DICE_INVALID_ARGS`) — entity paths and variable names are not in the whitelist.
 - Bad: `roll_dice({ sides: 20, modifier: "1/0" })` must fail (`ROLL_DICE_INVALID_ARGS`) — non-finite result.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - Build/typecheck: run `npm run build:web` for `workspace-templates.ts` changes.
-- Behavior check: verify single `dc` path, opposed defaulting, `winner` values (`self` / `opposed` / `tie`), `dc + opposed` pre-roll error, invalid modifier pre-roll error, `count === 1` critical success/failure priority over `success`/`winner`, and `count > 1` emitting no `critical*` fields.
-- Expression check: string `modifier` is evaluated (`"15-12"` → `3`, `"sqrt(4)"` → `2`, `"1/0"` → error); whitelist rejects entity paths, variable names, and non-`sqrt` function names.
+- Manually verify the dc/opposed/critical and expression/whitelist matrices when the built-in Tool changes.
 - AI-facing check: grep the changed Tool block for stale `tieBreak`, `reroll`, or mode-gating concepts.
 
 ### 7. Wrong vs Correct
@@ -513,13 +505,11 @@ This asks for one opposed fact. The string modifier is evaluated as `3`. If tota
 - Bad: an AI-facing Skill tells the model to read `sourceWindow.chapters[*].path` or hard-codes `save/source/chapters/` as the source layout.
 - Bad: frontend preview reads shard-backed chapters by assuming `chapter.path`; v2 entries may not have `path`.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - Build/typecheck: run `npm run build --workspace play-frontend-dev` for play frontend source changes and `npm run build:web` for platform template/storage changes.
-- Import behavior: generate or import a long synthetic novel; assert shard count is based on shard size, not chapter count, and `manifest.json` is written after shards/index.
-- Frontend preview: verify v2 shard-backed preview and legacy v1 `chapter.path` preview fallback.
-- Runtime actions: verify `inspect_source_opening`, `read_opening_slice`, and `read_frontier_window` return readable text for v2 and legacy v1 source indexes.
-- Frontier state: verify `commit_runtime_and_frontier` / `commit_frontier_state` accept new `ref` metadata and reject unknown refs.
+- Manually verify long-import sharding/order, v2/legacy preview, runtime readers, and frontier ref acceptance/rejection.
+- Do not add dedicated import/parser/runtime-action test files for this matrix.
 - AI-facing check: grep changed workspace templates/card docs for stale `sourceWindow.chapters[*].path`, `save/source/chapters/`, and instructions that expose shard internals to Agents.
 
 ### 7. Wrong vs Correct

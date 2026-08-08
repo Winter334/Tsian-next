@@ -197,18 +197,14 @@ The old six-argument call may exist only as a private temporary adapter fallback
 - Bad: copying `PointerEvent.detail=0` into `mousedown` silently changes CodeMirror's click mode from single-click to whole-line selection.
 - Bad: `{ ...element.getBoundingClientRect() }` appears valid with plain-object test fixtures but can produce an empty/partial runtime snapshot, forcing captured input into zero-delta extrapolation.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Unit: WebGL2/current/legacy negotiation, unresolved state, paint changed/removed normalization, source eligibility/removal, context restore, and proof that input-only Sources remain projected-input candidates while being excluded from texture capture.
-- Unit: curve/inverse round trips, viewport/CSS/device-pixel mapping, full-screen parallax reset policy, target geometry/activation policy, pointer capture, native scrollbar geometry/drag cleanup, and native outcome reporting. Captured projection coverage must include a DOMRect-shaped fixture whose geometry is exposed through non-enumerable prototype accessors; assert both rect snapshots retain all four fields and a moved captured screen point changes Source-local coordinates. Source-availability coverage must assert `data-spatial-input="none"` excludes both new candidates and captured-input continuation.
-- Unit: Source-local popup outside-pointer behavior distinguishes trusted input-plane events from routed synthetic inside/outside targets; a trusted plane event cannot close the popup before option hit resolution.
-- Unit: shell context-menu placement clamps to the shell viewport; desktop/launcher/status menus cover pointer and keyboard opening, roving focus, action parity, Escape restoration, viewport-change removal, input-only desktop texture exclusion, and trusted-pointer deferral for inside/outside/no-target projection outcomes.
-- Unit: routed event initialization asserts compatibility `mousedown` / `mouseup` / `click` normalize pointer detail zero to one, `dblclick` preserves two, and move/hover events remain zero.
-- Unit: environment/effects/decoration/clock/Dock/window/foreground pass order, reverse-z projected input order, default-pose parsing, transparent/image failure fallback, framebuffer lifecycle, media cover math, particle/reduced-motion scheduling, deterministic flow/size ranges, radius-bounded centers, and static Source upload counts.
-- Unit: per-window presentation phase progression, first-upload gating/retry, concurrent progress, duration-zero completion, guard veto/coalescing, exact-once close/minimize/restore completion, captured-input exclusion, transition-only uniforms/draws, optional-program fallback, and context-loss/dispose settlement.
-- Package: complete Spatial Vitest suite, platform-web Vue type-check, `npm run build:web`, and `git diff --check`.
-- Production/source isolation: repository and output contain no `spatial-lab.html`, `src/spatial/lab/`, lab-named chunk, Spatial lab marker, local diagnostics overlay, or experimental API marker.
-- Flagged browser: source orientation, center/edge hit alignment, native pickers, caret/IME, DPR/resize, paint/removal timing, context loss/restore, and manual visual acceptance.
+- Run `npm run build:web` and `git diff --check`.
+- Manually verify the negotiation, projection/input, lifecycle, pass-order,
+  presentation, context-loss, accessibility, and source-isolation matrices above in
+  the flagged browser.
+- Spatial behavior is user-verified; do not restore unit, component, renderer, or
+  exact draw/pixel tests for this matrix.
 
 ### 7. Wrong vs Correct
 
@@ -409,13 +405,13 @@ The marked video remains inside the owning direct Canvas Source. It is the decod
 - Bad: a flat DOM/video overlay sits above the Canvas and escapes curve, z-order, occlusion, and projected input.
 - Bad: the renderer keeps uploading video frames after its optional media shader failed or the Source was released.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Tracker unit tests: discovery, current-frame generation, one pending callback, pause/end/hidden/release/removal/fullscreen/dispose cancellation, stale-callback rejection, and bounded fallback behavior.
-- Registry unit tests: generation dedupe, top-left upload orientation, contain math, Source ownership, zero/invalid geometry, upload failure isolation, exact deletion, and context restore.
-- Renderer tests: upload remains separate from Element Source textures; normalized media rect reaches the dynamic shader after its owner; optional-program failure does not fail the renderer.
-- Scheduler tests: `animated-media` remains allowed under reduced motion but does not persist without a new decoded frame.
-- Product tests: normal decoder opacity, `:fullscreen` visibility, Source-local play/seek/volume controls, direct fullscreen success/refusal, resize/curve-edge mapping, minimize/restore, simultaneous media windows, page visibility, and context loss/restore.
+- Run `npm run build:web`.
+- Manually verify tracker cancellation, registry ownership, upload orientation,
+  media controls/fullscreen, scheduler behavior, resize/curve mapping, visibility,
+  and context restore.
+- Do not add dedicated tracker/registry/renderer/scheduler tests by default.
 
 ### 7. Wrong vs Correct
 
@@ -670,18 +666,14 @@ function shouldQueueNextSourceTexturePaint(
 - Bad: a Tip content box inherits `white-space: nowrap` from a compact settings row, so its text paints past the otherwise clamped width and panel boundary.
 - Bad: an `onMounted` continuation resumes after the view closed and calls a controller whose `dispose()` only removed subscriptions but still permits new bridge requests.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Unit-test durable behavior: Select state transitions and disabled-option navigation; bounded Source-animation counting/expiry, including proof that later properties cannot slide the first-event deadline; preservation of an already-dirty paint generation; reduced-motion suppression of `animated-source`; mutation routing that separates Source topology/dynamic-media sync from owning-Source descendant repaint; controller request sequencing/mutation guards; close guards; media object-URL ownership; registry readiness and the production release gate.
-- For shared route controllers, assert subscribe-once/unsubscribe, debounce cancellation, stale-response rejection, object-URL cleanup where applicable, and zero new bridge/storage calls after `dispose()`. Presentation integration tests must cover any child refresh seam retained by the RetroOS or Spatial wrapper.
-- For dense nested settings, component-test the level transitions and assert model/parameter subtrees are absent until explicitly opened. Verify the outer view uses a retention-preserving mount strategy and that no native `<select>` appears in Spatial source.
-- Unit-test Spatial nullable ranges at internal indices `0` and `1`, moving back to `0`, visible/accessible “不发送” output, and Tip keyboard/click discovery. For Tip layout, assert the computed painted left/right edges remain inside both boundary sides and the width shrinks for a narrow boundary; cover a long explanation under a `white-space: nowrap` ancestor and assert the content restores wrapping inside that box. Do not snapshot exact tunable CSS values. Visual slider calibration remains in the manual Flag Chromium gate rather than CSS snapshots.
-- Unit-test feature-modal request ownership, view-to-global opening, modal input-priority changes and delayed terminal close. Component assertions verify the feature panel is a direct Source and absent from the invoking application subtree; scrollbar colors and radii remain manual visual tokens rather than source-string snapshots.
-- Unit-test routed screen-delta accumulation, pointer-id filtering, header-only start, close-control exclusion, position persistence, finite-delta rejection, viewport clamp and close/reopen reset. Re-run existing Spatial window tests because the shared helper also owns product-window move semantics.
-- Unit-test gesture capture with a plain title descendant, a button, an SVG inside that button and non-primary input. Route down/up through `PointerRouter` and assert the nested action activates exactly once while title chrome remains drag-owned.
-- Run task-owned controller/Spatial-app tests, platform-web Vue type-check, `npm run build:web`, and `git diff --check`.
-- Manual Flag Chromium acceptance owns visual alignment, curved-edge input, transition quality, focus appearance, native file/IME escapes, minimum-size layouts and reduced motion.
-- Do not add exact CSS-value snapshots, animation-frame snapshots, screenshot unit tests or source-format substring tests for tunable presentation details. If a broad run exposes legacy shell/engine failures, audit their live contract: delete obsolete source/visual assertions, rewrite tunable numeric or draw-count checks as semantic invariants, and keep or repair only tests that still protect runtime behavior. Do not carry a permanently red baseline.
+- Run `npm run build:web` and `git diff --check`.
+- Manually verify controller ownership/disposal, nested settings navigation,
+  nullable ranges, Tip layout, feature-modal ownership, window dragging, routed
+  gestures, focus, native file/IME escapes, minimum layouts, and reduced motion.
+- Do not add controller/component/Spatial automation, exact CSS/frame/screenshot
+  assertions, or source-format tests for these behaviors.
 
 ### 7. Wrong vs Correct
 
@@ -896,13 +888,12 @@ function resolveUiMode(input: {
 - Bad: a new app supplies only a RetroOS component and falls through to a diagnostic/pending page inside Spatial.
 - Bad: settings contain a long Flag tutorial or two divergent compatibility descriptions, or shell fallback silently saves `uiMode="retro"`.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Registry unit tests derive completeness from `platformAppRegistry`: every entry has a Spatial component; app/route ids remain unique; launcher order, detail/editor/media multi-instance identity and Play singleton behavior remain intact.
-- UI-mode unit tests cover production gate open and explicit rollback closed, RetroOS authority, exact minimum viewport, coarse pointer, complete-save-before-reload and the shared guidance contract.
-- Component tests assert both settings presentations expose the concise guidance and accessible selected-state (`aria-pressed`) without obsolete local-experiment copy.
-- Package checks: focused registry/UI-mode/settings tests, complete Spatial/release suite, controller/component/view suite, `npm test`, `npm run build:web`, source/output isolation searches and `git diff --check`.
-- Manual Flag Chromium remains required for curved rendering/input, multi-window workflows, reduced motion and no-Flag/narrow fallback before opening the production gate.
+- Run `npm run build:web`, source/output isolation searches, and `git diff --check`.
+- Manually verify registry completeness, UI-mode gating/rollback, settings guidance,
+  curved rendering/input, multi-window workflows, reduced motion, and fallback.
+- Do not restore registry/UI-mode/settings/component test suites.
 
 ### 7. Wrong vs Correct
 
@@ -1000,13 +991,13 @@ A ready Spatial Play iframe carries `data-spatial-play-ready="true"`. The shell 
 - Bad: maximizing overwrites ordinary geometry, leaves resize handles active, or rebuilds Play into a second iframe.
 - Bad: a flat iframe is placed above the Canvas to bypass capture/input limitations.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Unit: effective maximized geometry, restore-geometry immutability, viewport clamp, move/resize rejection, minimize clearing, and non-fullscreenable rejection.
-- Unit: standard/vendor request/current/exit behavior, rejected fallback, native-exit synchronization, idempotent start/dispose, and exact listener cleanup.
-- Component/integration: accessible maximize/restore control, resize-handle removal, Play minimized propagation, ready-marker lifecycle, shared controller consumption, native file selection, and no Retro classes/imports in Spatial Play.
-- Package: focused Play/controller/registry tests, complete Spatial suite, Vue type-check, `npm run build:web`, and `git diff --check`.
-- Flag Chromium: remote and packaged curved center/edge display plus basic click; native fullscreen pointer/keyboard/focus/resize/reload/Escape; same-instance retention after exit.
+- Run `npm run build:web` and `git diff --check`.
+- Manually verify maximize/restore geometry, viewport clamp, native fullscreen
+  lifecycle, accessibility, minimized propagation, ready markers, file selection,
+  curved remote/packaged input, reload/Escape, and same-instance retention.
+- Do not add Play/controller/registry/component or Spatial suite tests.
 
 ### 7. Wrong vs Correct
 

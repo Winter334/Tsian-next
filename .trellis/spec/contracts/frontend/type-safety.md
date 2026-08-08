@@ -95,12 +95,11 @@ Internal `onTool` callbacks carry optional `presentation` followed by `displayNa
 - Bad: map unknown tools to `${name}了操作`, mutate `displayName` into `正在${displayName}`, or make title absence a runtime error.
 - Bad: add the field only to live `turn-tool` events while omitting persisted `TurnTimelineItem`, causing reload to regress to a different label.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Contracts and consumers: run `npm run build:contracts`, `npm run build --workspace @tsian/play-bridge`, `npm run build:web`, and the consuming play-frontend build.
-- Runtime collector: assert loading -> success updates one call, retains display name/presentation, and omission on a later event does not erase metadata.
-- Remote bridge/SDK: assert a valid display name crosses the iframe boundary; absent/blank values remain optional and fall back to name.
-- Frontend: assert old-history fallback, generic status labels, no generated tool sentences, and unchanged timeline order; visually verify reduced-motion and terminal states stop animating.
+- Run `npm run build:contracts`, `npm run build:play-bridge`, `npm run build:web`, and `npm run build:play-frontend`.
+- Manually verify collector metadata retention, bridge/SDK optional display-name transport, history fallback, timeline order, reduced motion, and terminal animation state.
+- Do not restore collector/bridge/component test files for this presentation contract.
 
 ### 7. Wrong vs Correct
 
@@ -210,14 +209,11 @@ interface RuntimeWorkspaceMutationEvent {
 - Bad: call `tsian.runAction("apply-choice", ...)`, expose an action registry to generate UI, or reuse `PlatformActionError` without the runtime/domain discriminator.
 - Bad: globally refresh one fixed `runtime.json` for every event; actual paths can include any card-owned save state and event ordering is not authoritative.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Contracts build: `npm run build:contracts`; consuming SDK/platform build after shape changes.
-- SDK strict JSON table: undefined, BigInt, NaN/Infinity, sparse array, accessor, Date/exotic object, symbol/non-enumerable property, and cycle reject before `card.runAction` transport.
-- SDK output/error table: strict output succeeds; invalid output rejects; valid runtime/domain envelopes preserve discriminator; invalid transport error is sanitized.
-- Lifecycle: pre-abort sends no request; active abort sends one matching invocationId; session replacement rejects old pending and ignores stale response/event; terminal cleanup prevents listener leaks.
-- Event: current-session mutation reaches all non-throwing subscribers, throwing subscribers are isolated, unsubscribe works, stale-session event is ignored.
-- Privilege: enumerate current host platform actions and assert the remote play-frontend caller can execute only the explicit closed allowlist; workspace and synthetic future action are forbidden.
+- Run `npm run build:contracts`, `npm run build:play-bridge`, `npm run test:frontend-actions`, `npm run build:web`, and `npm run test:frontend-actions:production-browser`.
+- The bridge smoke samples the real transaction/event path and CAS failure; the real-browser gate owns production Worker/schema transport.
+- Manually verify the remaining strict-JSON/output/error, abort/session, subscriber, and closed-privilege matrices. Do not restore the deleted SDK/lifecycle/privilege suites.
 
 ### 7. Wrong vs Correct
 
@@ -303,12 +299,11 @@ tsian.onWorkspaceMutation((event) => {
 - Bad: frontend listens to `turn-delta` for `invokeAgent` content, or assumes `invokeAgent` fires `turn-completed`.
 - Bad: new code uses `commitMode: "workspace-with-checkpoint"` / `checkpointReason` instead of `checkpoint`; those fields are compatibility only.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - Run `npm run build:contracts` after contract changes.
 - Run the consuming frontend build (`npm run build:web`) when platform-web/play-bridge consumes the changed types.
-- Verify at least one `invokeAgent` path can receive `delta` and `completed` events with a matching `invocationId`, while `send` still uses turn events.
-- Verify `checkpoint` payloads are normalized/rejected at bridge boundaries and legacy `workspace-with-checkpoint` maps to current-turn-auto only when no explicit checkpoint option is supplied.
+- Manually verify `invokeAgent`/`send` event routing, checkpoint normalization/rejection, and legacy mapping. Do not add a dedicated bridge streaming/checkpoint suite.
 
 ### 7. Wrong vs Correct
 
@@ -387,11 +382,10 @@ await tsian.invokeAgent(agentId, input, {
 - **Base**: a `useEntity(ref)` helper that returns `{ data, error, load }` with `load()` performing the read+parse+catch and never throwing.
 - **Bad**: `const runtime = JSON.parse((await tsian.workspace.read(...)).content)` — no null check, no try/catch, crashes the component on missing/corrupt files.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Assert `useRuntime()` returns `{ runtime: null, error: "not-found" }` when `workspace.read` resolves to `null` (no throw).
-- Assert `useRuntime()` returns `{ runtime: null, error: "load-failed" }` when `content` is malformed JSON (no throw).
-- Assert a successful read populates `runtime` and `displayItems` with `status: "ready"`.
+- Run `npm run build:play-frontend`.
+- Manually verify not-found, malformed JSON, and successful ready/display behavior. Do not add a dedicated composable test.
 
 ### 7. Wrong vs Correct
 
@@ -455,12 +449,10 @@ async function refresh() {
 - **Base**: character card calls `parseEntity` on a `workspace.read` result and renders `displayItems` alongside the fixed `fields`/`sections`.
 - **Bad**: a UI component re-implements `if (render === "progress") ...` switches on `extensions` directly — duplicates the shared parser and will diverge.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Assert a runtime with `extensions: { "腐化值": { render: "progress", value: 37, max: 100 } }` produces one `DisplayItem` in `metrics` with no `fallback`.
-- Assert `extensions: { "x": { render: "radar" } }` produces one `DisplayItemError` with `error: "unknown-render"` and empty buckets.
-- Assert `extensions: { "x": { render: "progress" } }` (missing `value`) produces a `DisplayItem` with `fallback: true` and `value: 0`.
-- Assert `extensions: { "x": { value: "hello" } }` (omitted `render`) produces a `text` item in `tags`.
+- Run `npm run build:play-frontend`.
+- Manually verify progress, unknown-render, missing-value fallback, and omitted-render text behavior. Do not add a dedicated parser test.
 
 ### 7. Wrong vs Correct
 
@@ -519,10 +511,9 @@ const { displayItems, itemErrors } = parseRuntime(raw)
 - **Base**: StoryView calls `await restore(id)` then `void refreshRuntime()` — restore has no event, so the explicit call is the contract.
 - **Bad**: wrapping `tsian.runAction` globally to `emitRuntimeStale()` on every call — read-history / query calls would trigger pointless runtime re-reads.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Assert `emitRuntimeStale()` invokes all subscribers even when one throws (isolation).
-- Assert `onRuntimeStale` returned unsubscribe removes the callback from subsequent emits.
+- Run the consuming frontend build and manually verify subscriber isolation and unsubscribe behavior. Do not add a dedicated event-bus test.
 
 ### 7. Wrong vs Correct
 

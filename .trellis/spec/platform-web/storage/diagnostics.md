@@ -106,17 +106,13 @@ onDiagnosticRecordsChanged(cb: (change: DiagnosticRecordsChange) => void): () =>
 - Bad: call `getDiagnosticOverview()` by repeatedly loading every full record on each record-change event, or export persisted text without the second credential scrub.
 - Bad: append diagnostics to `workspaceFiles`, mount the adapter for runtime/delegated Agents, enumerate records while listing a diagnostics ancestor/root, copy ordinary files into diagnostics, or let level 4 mutate the reserved prefix.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- `npm run build:contracts` and `npm run build:web`.
-- Run storage, recorder, provider-boundary, and frontend-diagnostics tests.
-- Assert Dexie v1→v2 retains existing tables/data and adds `diagnosticRecords`.
-- Assert recursive persisted sanitization, binary metadata, cursor-bounded pagination, relation closure, 7-day/100-MiB oldest-first deletion, running exemption/completion eligibility, and interrupted recovery.
-- Assert a relation closure includes detached same-operation records and recursively linked cross-operation children.
-- Assert the bundle contains the fixed manifest/summary/reproduction/platform/configuration/index/per-record layout, exactly the ordinary anchor window plus closure, complete ordinary text, and no credentials from structured fields or embedded text.
-- Assert resource-manager virtual discovery/copy, bounded desktop `query_diagnostics`, ordinary-search exclusion, static ancestor/root lists, summary pagination, ID-scoped reads, cursor-bounded search, copy-in/source-mutation rejection, delegated-Agent stripping, and zero eager snapshot enumeration.
-- Assert success, HTTP, parse, SSE/provider-stream, partial stream, cancellation, timeout classification, retries, unique concurrent request IDs, and write-failure health.
-- Reverse-search both writer and reader symbols for retired Runtime Trace/AI Debug surfaces; only legacy save lifecycle path recognition may remain.
+- Run `npm run build:contracts`, `npm run test:smoke:web`, and `npm run build:web`.
+- The Assistant smoke samples succeeded/failed provider records, recursive credential removal, queryability, and diagnostic durability across workspace/session/context rollback.
+- Manually verify migrations, retention, pagination, relation closure, export layout/text scrub, virtual adapter/query bounds, full provider classification/retry/cancel matrix, and write-failure health when those paths change.
+- Reverse-search writer and reader symbols for retired Runtime Trace/AI Debug surfaces; only legacy save lifecycle path recognition may remain.
+- Do not restore storage/recorder/provider/frontend-diagnostics test suites.
 
 ### 7. Wrong vs Correct
 

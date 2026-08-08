@@ -114,14 +114,13 @@ Conventions:
 - Bad: A request builder reads old top-level `parameters.reasoningEffort` or reads the OpenAI-compatible branch for a Responses preset.
 - Bad: Custom JSON is shared at `parameters.customRequestParamsText` or can override `messages`, `tools`, `stream`, `store`, `thinking`, `model`, or auth fields.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - `npm run build:web` after any platform-web provider config/runtime/UI change.
-- For request-builder changes, assert or manually inspect that each provider maps common + active-branch fields correctly and that runtime-owned keys survive custom JSON.
-- For Settings UI changes, verify add/edit windows round-trip nested `common` and active provider branch values, hide irrelevant provider controls, and show model ping pass/fail.
+- Manually inspect that each provider maps common + active-branch fields correctly and that runtime-owned keys survive custom JSON.
+- Manually verify Settings add/edit windows, relevant provider controls, and model ping UI.
 - For Settings native tool-call probe changes, verify the probe is manual, model-level, non-streaming, native-mode-only for the probe call, and does not persist state or auto-switch `toolCallMode`.
-- For provider model-list changes, verify Gemini pagination and `generateContent` filtering while OpenAI-compatible `{ data: [...] }` extraction still works.
-- For provider config normalization changes, verify missing old flat parameter fields normalize to defaults rather than being migrated.
+- Manually verify provider model-list and config-normalization branches. Do not add dedicated request-builder, controller, or Settings tests.
 
 ### 7. Wrong vs Correct
 
@@ -231,13 +230,10 @@ const result = await probeAssistantNativeToolCalling({ ...config, toolCallMode: 
 - Bad: Market overwrite silently changes local card content and then the old save starts without any warning.
 - Bad: Market overwrite preemptively rewrites every affected save's `gameCardVersion`, hiding which saves the player has actually reviewed.
 
-#### 6. Tests Required
+#### 6. Verification Required
 
 - Run `npm run build:web` after changing this flow.
-- Verify launcher badge and confirmation for missing and mismatched `gameCardVersion`.
-- Verify cancel blocks frontend mount and leaves `gameCardVersion` unchanged.
-- Verify confirm updates `gameCardVersion`, preserves `updatedAt`, emits save refresh through platform-host, and allows start.
-- Verify same-id Market overwrite warning mentions affected saves but does not delete saves or update their versions.
+- Manually verify launcher badge/confirmation, cancel, confirm/save refresh, and same-id Market overwrite warning behavior. Do not add launcher/controller tests.
 
 #### 7. Wrong vs Correct
 
@@ -299,12 +295,11 @@ await mountActiveFrontend()
 - Bad: Edit a published package's version field without replacing the package, so Market shows `v1.1.0` while downloads still install `v1.0.0`.
 - Bad: Game Card overwrite warning uses stale `pkg.resourceVersion` instead of the downloaded package's manifest version.
 
-#### 6. Tests Required
+#### 6. Verification Required
 
 - Run `npm run build:web` after Market frontend changes.
-- Run platform-server Market tests after server upload/update changes.
-- Verify Game Card install warning uses downloaded package id/version.
-- Verify metadata-only edit cannot change version.
+- Run `npm run test:smoke:server` after server market transaction changes.
+- Manually verify Game Card install warning identity and metadata-only version rules.
 
 #### 7. Wrong vs Correct
 
@@ -419,15 +414,12 @@ type AssistantToolNode = {
 - Bad: one turn catch block calls `rejectAllInteractionRequests(error)` and cancels every concurrent session ask.
 - Bad: a Tool row stores `arguments`, observation, debug trace, or an arbitrary result preview because no presentation exists.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Tool normalization: omitted/true/false/invalid `allowCustom`, with and without options; ordinary answer strict-JSON serialization.
-- Controller: active/background turn switching, ask request-to-session routing, per-session scroll application, stop behavior, successful host persistence ownership, unmount-only abort, and attachment preview cleanup.
-- Interaction scope: two pending scopes where rejecting one leaves the other resolvable; abort signal rejects its own request and removes it from the pending table.
-- Timeline/mapper: call-id upsert, non-erasing `displayName`/presentation, status aggregation, original order, `agent_call` bounded display, old-history fallback, and raw Tool-data exclusion.
-- Presentation integration: RetroOS and Spatial render options+custom/open/options-only asks, one default-closed process fold, copy/edit-resend, config controls, and no native `<select>` in Spatial.
-- Registry/release: Studio and Assistant Spatial registrations are `ready`; production release gate remains false.
-- Run `npm run build:contracts`, `npm test`, `npm run build:web`, and `git diff --check`.
+- Run `npm run build:contracts`, `npm run test:smoke:web`, `npm run build:web`, and `git diff --check` when the owning layers change.
+- The Assistant smoke samples host persistence, context/workspace commit/rollback, raw Tool-data exclusion, and diagnostics.
+- Manually verify ask routing, concurrent sessions, scroll/stop/attachment lifecycle, timeline presentation, RetroOS/Spatial rendering, and registry/release state.
+- Do not restore controller, mapper, component, or presentation suites.
 
 ### 7. Wrong vs Correct
 
@@ -539,17 +531,18 @@ pending.resolve({
 - Bad: `invokeAgent` persistent context writes raw `replyText` while formal turns write projected content; side-channel persistent contexts must also use projected clean content when they persist assistant text.
 - Bad: exposing generic `platform.runAction` inside browser scripts just to project opening text grants unrelated platform capabilities; use narrow `tsian.reply.project`.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - Run `npm run build:contracts` after contract shape changes.
 - Run `npm run build:web` after platform-web / bridge / SDK / dev frontend changes.
 - Grep for stale new-path fields: `pendingOptions`, `TurnEndResult` with `options`, `result.options`, `pendingStats`, and unintended `result.stats` uses.
 - Grep validation frontend for stale parser use: `parseStoryOptions` under `tmp/沉浸阅读器/frontend/src` should have no hits after migration.
-- Verify formal turn files persist projected assistant item and future LLM history/context use projected clean `content`.
-- Verify semantic chunking extracts v2 timeline user/assistant `content`.
-- Verify `invokeAgent` persistent context path uses projected clean assistant content.
-- Verify opening turn 0 writes projected assistant item and seeds context with clean content.
-- Verify broken projection config does not fail a turn and emits diagnostics without content fragments.
+- Manually verify formal turn files persist projected assistant items and future LLM history/context uses projected clean `content`.
+- Manually verify semantic chunking extracts v2 timeline user/assistant `content`.
+- Manually verify `invokeAgent` persistent context uses projected clean assistant content.
+- Manually verify opening turn 0 writes the projected item and seeds clean context.
+- Manually verify broken projection config remains fail-soft and emits diagnostics without content fragments.
+- Do not add projection or mapper test files by default.
 
 ### 7. Wrong vs Correct
 
@@ -645,12 +638,11 @@ const projected = await tsian.reply.project(openingReply)
 - Base: UI ignores streaming and just awaits `invokeAgent`; final `response` still works.
 - Bad: UI stores partial streamed invocation content as durable history before the Promise resolves.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - Run `npm run build:contracts` when contracts are changed.
 - Run `npm run build:web` for platform-web/bridge/SDK changes.
-- Verify `send` still streams via `turn-delta` and completes via `turn-completed`.
-- Verify `invokeAgent` streams via `agent-invocation` and does not pollute the formal turn timeline.
+- Manually verify `send`/`invokeAgent` event routing and timeline isolation. Do not add a dedicated streaming/controller suite.
 
 ### 7. Wrong vs Correct
 
@@ -854,12 +846,11 @@ interface UseSkillResult {
 - Bad: return the body, copy all action schemas into `result.actions`, then append the body again as a `user` message.
 - Bad: register an oversized Skill before discovering that the Tool result cannot be delivered, leaving `run_script` enabled behind a failed activation.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Native and text loop tests assert the full Skill marker occurs exactly once after one `use_skill` call and the newest message is the Tool-result channel, not a synthetic `user` injection.
-- Producer tests assert normal direct delivery omits `actions`; oversized delivery returns `SKILL_DETAIL_TOO_LARGE` and leaves `loadedSkills` empty.
-- Action tests assert a valid declaration still executes through `run_script`, including propagation of the current Environment's `workspaceFileFilter` into the browser-script executor.
-- Grep the runtime for retired post-round Skill injection state, collectors, and formatters; none may remain live.
+- Run `npm run build:web` and grep the runtime for retired post-round Skill injection state, collectors, and formatters.
+- Manually inspect native/text direct delivery, oversize failure, activation state, `run_script`, and `workspaceFileFilter` propagation when these contracts change.
+- Do not restore the retired Skill-loop/producer/action unit files.
 
 ### 7. Wrong vs Correct
 

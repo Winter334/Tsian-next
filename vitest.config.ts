@@ -14,8 +14,5 @@ export default defineConfig({
   },
   test: {
     environment: "node",
-    environmentMatchGlobs: [
-      ["packages/play-bridge/**/*.test.ts", "happy-dom"],
-    ],
   },
 })

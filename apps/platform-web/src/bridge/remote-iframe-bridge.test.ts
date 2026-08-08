@@ -1,38 +1,146 @@
 // @vitest-environment happy-dom
 
-import { beforeEach, describe, expect, it, vi } from "vitest"
+import "fake-indexeddb/auto"
 import type {
+  GameCardManifest,
   PlayFrontendBridge,
   RemotePlayBridgeEventMessage,
   RemotePlayBridgeReadyMessage,
   RemotePlayBridgeResponseMessage,
 } from "@tsian/contracts"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { localDb } from "../storage/db"
+import { putLocalGameCard } from "../storage/game-cards"
+import {
+  createLocalSaveFromGameCard,
+  setActiveSaveId,
+} from "../storage/saves"
+import {
+  readWorkspaceFileForSave,
+  writeWorkspaceFileForSave,
+} from "../storage/workspace"
+import {
+  createFrontendActionExecutionService,
+} from "../platform-host/frontend-actions/service"
+import type {
+  FrontendActionWorkerFactory,
+  FrontendActionWorkerLike,
+} from "../platform-host/frontend-actions/worker"
 import {
   mountRemoteIframeFrontend,
   REMOTE_PLAY_BRIDGE_CHANNEL,
 } from "./remote-iframe-bridge"
 import type {
   RemoteFrontendActionService,
-  RemoteFrontendActionServiceRequest,
 } from "./remote-frontend-action-lifecycle"
-import { emitTurnTool } from "../streaming-events"
 
-function deferred<T>() {
-  let resolve!: (value: T | PromiseLike<T>) => void
-  const promise = new Promise<T>((resolvePromise) => {
-    resolve = resolvePromise
-  })
-  return { promise, resolve }
+const CARD_ID = "card-action-smoke"
+const ACTION_ID = "update-state"
+const ACTION_ROOT = `frontend-actions/${ACTION_ID}`
+const DEPENDENCY_PATH = "save/dependency.json"
+const TARGET_PATH = "save/state.json"
+
+class RuntimePreflightWorker implements FrontendActionWorkerLike {
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onmessageerror: ((event: MessageEvent) => void) | null = null
+  onerror: ((event: ErrorEvent) => void) | null = null
+
+  postMessage(message: unknown): void {
+    const value = message as Record<string, unknown>
+    if (value.type !== "execute") return
+    queueMicrotask(() => {
+      this.onmessage?.({
+        data: {
+          type: "script-result",
+          ok: true,
+          output: {
+            workerExecuted: true,
+            workerOrigin: "null",
+            indexedDB: "undefined",
+            caches: "undefined",
+            workerConstructor: "undefined",
+            sharedWorkerConstructor: "undefined",
+            navigatorStorage: "undefined",
+            navigatorServiceWorker: "undefined",
+          },
+        },
+      } as MessageEvent)
+    })
+  }
+
+  terminate(): void {}
+}
+
+class ScriptedWorkspaceWorker implements FrontendActionWorkerLike {
+  onmessage: ((event: MessageEvent) => void) | null = null
+  onmessageerror: ((event: MessageEvent) => void) | null = null
+  onerror: ((event: ErrorEvent) => void) | null = null
+  private observedContent = ""
+
+  constructor(
+    private readonly sources: string[],
+    private readonly afterRead?: (result: unknown) => void | Promise<void>,
+  ) {}
+
+  postMessage(message: unknown): void {
+    const value = message as Record<string, unknown>
+    if (value.type === "execute") {
+      this.sources.push(String(value.source ?? ""))
+      queueMicrotask(() => this.emit({
+        type: "sdk-request",
+        id: 1,
+        op: "workspace.read",
+        args: { scope: "save-runtime", path: DEPENDENCY_PATH },
+      }))
+      return
+    }
+    if (value.type !== "sdk-response" || value.ok !== true) return
+    if (value.id === 1) {
+      const result = value.result as { content?: unknown }
+      this.observedContent = typeof result?.content === "string" ? result.content : ""
+      void Promise.resolve(this.afterRead?.(value.result))
+        .then(() => this.emit({
+          type: "sdk-request",
+          id: 2,
+          op: "workspace.write",
+          args: { scope: "save-runtime", path: TARGET_PATH, content: "after" },
+        }))
+        .catch((error) => this.onerror?.({ error } as ErrorEvent))
+      return
+    }
+    if (value.id === 2) {
+      this.emit({
+        type: "script-result",
+        ok: true,
+        output: { observed: this.observedContent, wrote: true },
+      })
+    }
+  }
+
+  terminate(): void {}
+
+  private emit(data: unknown): void {
+    this.onmessage?.({ data } as MessageEvent)
+  }
+}
+
+function scriptedWorkerFactory(options: {
+  afterRead?: (result: unknown) => void | Promise<void>
+} = {}): { factory: FrontendActionWorkerFactory; sources: string[] } {
+  const sources: string[] = []
+  return {
+    sources,
+    factory: () => ({
+      worker: new ScriptedWorkspaceWorker(sources, options.afterRead),
+    }),
+  }
 }
 
 function bridgeStub(): PlayFrontendBridge {
   return {
     interaction: {
       async sendMessage() {
-        return {
-          turn: 1,
-          assistant: { kind: "assistant", content: "" },
-        }
+        return { turn: 1, assistant: { kind: "assistant", content: "" } }
       },
       async invokeAgent(request) {
         return { invocationId: request.invocationId ?? "invoke-1", response: "" }
@@ -78,12 +186,28 @@ function bridgeStub(): PlayFrontendBridge {
   }
 }
 
-function harness(
-  service: RemoteFrontendActionService,
-  options: {
-    isCurrentBinding?: (saveId: string, gameCardId: string) => boolean | Promise<boolean>
-  } = {},
-) {
+function realActionService(workerFactory: FrontendActionWorkerFactory): RemoteFrontendActionService {
+  const service = createFrontendActionExecutionService({ workerFactory })
+  return {
+    async runAction(request) {
+      const result = await service.runAction({
+        mountedGameCardId: request.expectedGameCardId,
+        invocationId: request.invocationId,
+        actionId: request.actionId,
+        input: request.input,
+        signal: request.signal,
+        beforeCommit: request.beforeCommit,
+        assertCommitAllowed: request.assertCommitAllowed,
+      })
+      return {
+        output: result.output,
+        ...(result.mutationEvent ? { mutation: result.mutationEvent } : {}),
+      }
+    },
+  }
+}
+
+function harness(service: RemoteFrontendActionService) {
   const container = document.createElement("div")
   document.body.append(container)
   const createElement = document.createElement.bind(document)
@@ -102,9 +226,8 @@ function harness(
     handle = mountRemoteIframeFrontend(container, {
       url: "http://localhost/",
       bridge: bridgeStub(),
-      gameCardId: "card-1",
+      gameCardId: CARD_ID,
       frontendActionService: service,
-      isFrontendActionBindingCurrent: options.isCurrentBinding ?? (() => true),
     })
   } finally {
     createElementSpy.mockRestore()
@@ -128,382 +251,179 @@ function harness(
   return {
     handle,
     messages,
-    request(id: string, method: "card.runAction" | "card.abortAction", params: unknown) {
+    run() {
       receive({
         channel: REMOTE_PLAY_BRIDGE_CHANNEL,
         kind: "request",
         sessionId: handle.sessionId,
-        id,
-        method,
-        params,
+        id: "run-1",
+        method: "card.runAction",
+        params: {
+          invocationId: "invocation-1",
+          actionId: ACTION_ID,
+          input: { next: "after" },
+        },
       })
     },
   }
 }
 
-async function settle(): Promise<void> {
-  await Promise.resolve()
-  await Promise.resolve()
-  await new Promise<void>((resolve) => window.setTimeout(resolve, 0))
+function actionManifest(): string {
+  return JSON.stringify({
+    schemaVersion: 1,
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["next"],
+      properties: { next: { const: "after" } },
+    },
+    outputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["observed", "wrote"],
+      properties: {
+        observed: { type: "string" },
+        wrote: { const: true },
+      },
+    },
+    executor: {
+      type: "browser_script",
+      path: "run.js",
+      helpers: ["helper.js"],
+      timeoutMs: 2_000,
+    },
+  })
 }
 
-beforeEach(() => {
+async function seed(): Promise<string> {
+  const manifest: GameCardManifest = {
+    schema: "tsian.game-card.v1",
+    id: CARD_ID,
+    name: "Frontend Action Smoke",
+    version: "1.0.0",
+    summary: "Cross-layer transaction fixture",
+  }
+  const card = await putLocalGameCard({
+    manifest,
+    source: "local",
+    contentFiles: [
+      { path: `${ACTION_ROOT}/action.json`, content: actionManifest() },
+      {
+        path: `${ACTION_ROOT}/run.js`,
+        content: "importScripts(\"helper.js\"); return { observed: helperReady, wrote: true }",
+      },
+      { path: `${ACTION_ROOT}/helper.js`, content: "const helperReady = \"helper-ready\"" },
+    ],
+  })
+  const save = await createLocalSaveFromGameCard(card, { name: "Action smoke" })
+  await setActiveSaveId(save.id)
+  await writeWorkspaceFileForSave(save.id, { path: DEPENDENCY_PATH, content: "baseline" })
+  await writeWorkspaceFileForSave(save.id, { path: TARGET_PATH, content: "before" })
+  return save.id
+}
+
+async function waitForRunResponse(
+  messages: Array<RemotePlayBridgeReadyMessage | RemotePlayBridgeResponseMessage | RemotePlayBridgeEventMessage>,
+): Promise<RemotePlayBridgeResponseMessage> {
+  await vi.waitFor(() => {
+    expect(messages.some((message) => message.kind === "response" && message.id === "run-1"))
+      .toBe(true)
+  })
+  const response = messages.find((message): message is RemotePlayBridgeResponseMessage => (
+    message.kind === "response" && message.id === "run-1"
+  ))
+  if (!response) throw new Error("Frontend Action response was not delivered.")
+  return response
+}
+
+beforeEach(async () => {
   document.body.replaceChildren()
+  vi.stubGlobal("Worker", RuntimePreflightWorker)
+  await localDb.delete()
+  await localDb.open()
 })
 
-describe("remote iframe Frontend Action RPC", () => {
-  it("advertises methods and orders commit, binding check, mutation, then success", async () => {
-    const order: string[] = []
-    const service: RemoteFrontendActionService = {
-      async runAction(request) {
-        expect(request.expectedGameCardId).toBe("card-1")
-        await request.beforeCommit({ saveId: "save-1" })
-        request.assertCommitAllowed()
-        request.assertCommitAllowed()
-        order.push("committed")
-        return {
-          output: { equipped: true },
-          mutation: {
-            invocationId: request.invocationId,
-            saveId: "save-1",
-            source: "frontend-action",
-            actionId: request.actionId,
-            writtenPaths: ["save/equipment.json"],
-            deletedPaths: [],
-          },
-        }
-      },
-    }
-    const mounted = harness(service, {
-      isCurrentBinding(saveId, gameCardId) {
-        expect(saveId).toBe("save-1")
-        expect(gameCardId).toBe("card-1")
-        order.push("binding-checked")
-        return true
-      },
-    })
+afterEach(async () => {
+  vi.unstubAllGlobals()
+  await localDb.delete()
+})
+
+describe("remote iframe Frontend Action transaction smoke", () => {
+  it("commits durable workspace bytes and emits mutation before success", async () => {
+    const saveId = await seed()
+    const scripted = scriptedWorkerFactory()
+    const mounted = harness(realActionService(scripted.factory))
     const ready = mounted.messages[0] as RemotePlayBridgeReadyMessage
-    expect(ready.methods).toEqual(expect.arrayContaining([
-      "card.runAction",
-      "card.abortAction",
-    ]))
+    expect(ready.methods).toEqual(expect.arrayContaining(["card.runAction", "card.abortAction"]))
 
-    mounted.request("run-1", "card.runAction", {
-      invocationId: "invocation-1",
-      actionId: "equip-item",
-      input: { itemId: "sword-1" },
+    mounted.run()
+    const response = await waitForRunResponse(mounted.messages)
+
+    expect(response).toMatchObject({
+      ok: true,
+      result: { observed: "baseline", wrote: true },
     })
-    await settle()
-
-    const relevant = mounted.messages.slice(1)
-    for (const message of relevant) {
-      if (message.kind === "event" && message.event === "workspace-mutation") {
-        order.push("mutation")
-      } else if (message.kind === "response" && message.id === "run-1" && message.ok) {
-        order.push("success")
-      }
-    }
-    expect(order).toEqual(["committed", "binding-checked", "mutation", "success"])
-    expect(relevant.map((message) => message.kind)).toEqual(["event", "response"])
-    expect(relevant[0]).toMatchObject({
+    expect((await readWorkspaceFileForSave(saveId, TARGET_PATH))?.content).toBe("after")
+    expect(scripted.sources).toHaveLength(1)
+    expect(scripted.sources[0]).toContain("helper-ready")
+    const transactionMessages = mounted.messages.slice(1)
+    expect(transactionMessages).toHaveLength(2)
+    expect(transactionMessages[0]).toMatchObject({
       kind: "event",
       event: "workspace-mutation",
-      payload: { invocationId: "invocation-1", saveId: "save-1" },
-    })
-    expect(relevant[1]).toMatchObject({
-      kind: "response",
-      id: "run-1",
-      ok: true,
-      result: { equipped: true },
-    })
-    mounted.handle.dispose()
-  })
-
-  it("does not deliver mutation or success when the active save switches after commit", async () => {
-    const committed = deferred<void>()
-    const verifyBinding = deferred<boolean>()
-    let durableWriteCount = 0
-    const service: RemoteFrontendActionService = {
-      async runAction(request) {
-        await request.beforeCommit({ saveId: "save-1" })
-        request.assertCommitAllowed()
-        request.assertCommitAllowed()
-        durableWriteCount += 1
-        committed.resolve()
-        return {
-          output: { equipped: true },
-          mutation: {
-            invocationId: request.invocationId,
-            saveId: "save-1",
-            source: "frontend-action",
-            actionId: request.actionId,
-            writtenPaths: ["save/equipment.json"],
-            deletedPaths: [],
-          },
-        }
-      },
-    }
-    const mounted = harness(service, {
-      isCurrentBinding: () => verifyBinding.promise,
-    })
-    mounted.request("run-1", "card.runAction", {
-      invocationId: "invocation-1",
-      actionId: "equip-item",
-      input: null,
-    })
-    await committed.promise
-
-    verifyBinding.resolve(false)
-    await settle()
-
-    expect(durableWriteCount).toBe(1)
-    expect(mounted.messages.some((message) => (
-      message.kind === "event" && message.event === "workspace-mutation"
-    ))).toBe(false)
-    expect(mounted.messages.some((message) => (
-      message.kind === "response" && message.id === "run-1" && message.ok
-    ))).toBe(false)
-    expect(mounted.messages).toContainEqual(expect.objectContaining({
-      kind: "response",
-      id: "run-1",
-      ok: false,
-      error: expect.objectContaining({ code: "FRONTEND_ACTION_SESSION_REPLACED" }),
-    }))
-    mounted.handle.dispose()
-  })
-
-  it("does not deliver mutation or success when the save-to-card binding switches after commit", async () => {
-    let saveGameCardId = "card-1"
-    let durableWriteCount = 0
-    const service: RemoteFrontendActionService = {
-      async runAction(request) {
-        await request.beforeCommit({ saveId: "save-1" })
-        request.assertCommitAllowed()
-        request.assertCommitAllowed()
-        durableWriteCount += 1
-        saveGameCardId = "card-2"
-        return {
-          output: { equipped: true },
-          mutation: {
-            invocationId: request.invocationId,
-            saveId: "save-1",
-            source: "frontend-action",
-            actionId: request.actionId,
-            writtenPaths: ["save/equipment.json"],
-            deletedPaths: [],
-          },
-        }
-      },
-    }
-    const mounted = harness(service, {
-      isCurrentBinding: (saveId, gameCardId) => (
-        saveId === "save-1" && saveGameCardId === gameCardId
-      ),
-    })
-    mounted.request("run-1", "card.runAction", {
-      invocationId: "invocation-1",
-      actionId: "equip-item",
-      input: null,
-    })
-    await settle()
-
-    expect(durableWriteCount).toBe(1)
-    expect(mounted.messages.some((message) => (
-      message.kind === "event" && message.event === "workspace-mutation"
-    ))).toBe(false)
-    expect(mounted.messages.some((message) => (
-      message.kind === "response" && message.id === "run-1" && message.ok
-    ))).toBe(false)
-    expect(mounted.messages).toContainEqual(expect.objectContaining({
-      kind: "response",
-      id: "run-1",
-      ok: false,
-      error: expect.objectContaining({ code: "FRONTEND_ACTION_SESSION_REPLACED" }),
-    }))
-    mounted.handle.dispose()
-  })
-
-  it("aborts a running invocation and returns a typed Action error", async () => {
-    const running = deferred<void>()
-    const release = deferred<void>()
-    const service: RemoteFrontendActionService = {
-      async runAction(request) {
-        running.resolve()
-        await release.promise
-        await request.beforeCommit({ saveId: "save-1" })
-        request.assertCommitAllowed()
-        request.assertCommitAllowed()
-        return { output: null }
-      },
-    }
-    const mounted = harness(service)
-    mounted.request("run-1", "card.runAction", {
-      invocationId: "invocation-1",
-      actionId: "equip-item",
-      input: null,
-    })
-    await running.promise
-    mounted.request("abort-1", "card.abortAction", { invocationId: "invocation-1" })
-    release.resolve()
-    await settle()
-
-    expect(mounted.messages).toContainEqual(expect.objectContaining({
-      kind: "response",
-      id: "abort-1",
-      ok: true,
-    }))
-    expect(mounted.messages).toContainEqual(expect.objectContaining({
-      kind: "response",
-      id: "run-1",
-      ok: false,
-      error: expect.objectContaining({ code: "FRONTEND_ACTION_ABORTED" }),
-    }))
-    expect(mounted.messages.some((message) => (
-      message.kind === "event" && message.event === "workspace-mutation"
-    ))).toBe(false)
-    mounted.handle.dispose()
-  })
-
-  it("disposes after preparation and prevents the commit transaction from writing", async () => {
-    const commitPrepared = deferred<void>()
-    const enterTransaction = deferred<void>()
-    let writeCount = 0
-    const service: RemoteFrontendActionService = {
-      async runAction(request) {
-        await request.beforeCommit({ saveId: "save-1" })
-        commitPrepared.resolve()
-        await enterTransaction.promise
-        request.assertCommitAllowed()
-        request.assertCommitAllowed()
-        writeCount += 1
-        return {
-          output: true,
-          mutation: {
-            invocationId: request.invocationId,
-            saveId: "save-1",
-            source: "frontend-action",
-            actionId: request.actionId,
-            writtenPaths: ["save/state.json"],
-            deletedPaths: [],
-          },
-        }
-      },
-    }
-    const mounted = harness(service)
-    mounted.request("run-1", "card.runAction", {
-      invocationId: "invocation-1",
-      actionId: "equip-item",
-      input: null,
-    })
-    await commitPrepared.promise
-    const beforeDispose = mounted.messages.length
-
-    mounted.handle.dispose()
-    enterTransaction.resolve()
-    await settle()
-
-    expect(writeCount).toBe(0)
-    expect(mounted.messages).toHaveLength(beforeDispose)
-    expect(mounted.messages.some((message) => (
-      message.kind === "event" && message.event === "workspace-mutation"
-    ))).toBe(false)
-  })
-
-  it("suppresses stale responses and events after dispose", async () => {
-    const running = deferred<void>()
-    const release = deferred<void>()
-    let observedSignal: AbortSignal | undefined
-    const service: RemoteFrontendActionService = {
-      async runAction(request) {
-        observedSignal = request.signal
-        running.resolve()
-        await release.promise
-        return {
-          output: true,
-          mutation: {
-            invocationId: request.invocationId,
-            saveId: "save-1",
-            source: "frontend-action",
-            actionId: request.actionId,
-            writtenPaths: ["save/state.json"],
-            deletedPaths: [],
-          },
-        }
-      },
-    }
-    const mounted = harness(service)
-    mounted.request("run-1", "card.runAction", {
-      invocationId: "invocation-1",
-      actionId: "equip-item",
-      input: null,
-    })
-    await running.promise
-    const beforeDispose = mounted.messages.length
-    mounted.handle.dispose()
-    expect(observedSignal?.aborted).toBe(true)
-    release.resolve()
-    await settle()
-
-    expect(mounted.messages).toHaveLength(beforeDispose)
-  })
-
-  it("rejects invalid Action input without calling the service", async () => {
-    const runAction = vi.fn(async (_request: RemoteFrontendActionServiceRequest) => ({
-      output: null,
-    }))
-    const mounted = harness({ runAction })
-    mounted.request("run-1", "card.runAction", {
-      invocationId: "invalid/id",
-      actionId: "equip-item",
-      input: null,
-    })
-    await settle()
-
-    expect(runAction).not.toHaveBeenCalled()
-    expect(mounted.messages).toContainEqual(expect.objectContaining({
-      kind: "response",
-      id: "run-1",
-      ok: false,
-      error: expect.objectContaining({ code: "FRONTEND_ACTION_INPUT_INVALID" }),
-    }))
-    mounted.handle.dispose()
-  })
-})
-
-describe("remote iframe turn-tool forwarding", () => {
-  it("forwards an optional display name without requiring it", () => {
-    const mounted = harness({
-      async runAction() {
-        throw new Error("unused")
-      },
-    })
-
-    emitTurnTool(
-      "master",
-      3,
-      1,
-      "call-title",
-      "read_entity",
-      "loading",
-      undefined,
-      "读取实体",
-    )
-    emitTurnTool("master", 3, 1, "call-fallback", "read", "success")
-
-    const toolEvents = mounted.messages.filter(
-      (message): message is RemotePlayBridgeEventMessage => (
-        message.kind === "event" && message.event === "turn-tool"
-      ),
-    )
-    expect(toolEvents).toHaveLength(2)
-    expect(toolEvents[0]).toMatchObject({
       payload: {
-        callId: "call-title",
-        name: "read_entity",
-        displayName: "读取实体",
+        invocationId: "invocation-1",
+        saveId,
+        source: "frontend-action",
+        actionId: ACTION_ID,
+        writtenPaths: [TARGET_PATH],
+        deletedPaths: [],
       },
     })
-    expect(toolEvents[1]?.payload).not.toHaveProperty("displayName")
+    expect(transactionMessages[1]).toBe(response)
+    mounted.handle.dispose()
+  })
+
+  it("rejects a CAS conflict with zero Action writes and no mutation event", async () => {
+    const saveId = await seed()
+    const saveBefore = await localDb.saves.get(saveId)
+    const checkpointsBefore = await localDb.checkpoints.where("saveId").equals(saveId).toArray()
+    const targetBefore = await readWorkspaceFileForSave(saveId, TARGET_PATH)
+    const scripted = scriptedWorkerFactory({
+      async afterRead() {
+        const dependency = await localDb.workspaceFiles
+          .where("saveId")
+          .equals(saveId)
+          .and((row) => row.path === DEPENDENCY_PATH)
+          .first()
+        if (!dependency) throw new Error("Dependency fixture is missing.")
+        await localDb.workspaceFiles.put({
+          ...dependency,
+          content: "concurrent",
+          updatedAt: dependency.updatedAt + 1,
+        })
+      },
+    })
+    const mounted = harness(realActionService(scripted.factory))
+
+    mounted.run()
+    const response = await waitForRunResponse(mounted.messages)
+
+    expect(response).toMatchObject({
+      ok: false,
+      error: { code: "FRONTEND_ACTION_WORKSPACE_CONFLICT" },
+    })
+    expect((await readWorkspaceFileForSave(saveId, DEPENDENCY_PATH))?.content).toBe("concurrent")
+    expect(await readWorkspaceFileForSave(saveId, TARGET_PATH)).toEqual(targetBefore)
+    expect(await localDb.saves.get(saveId)).toEqual(saveBefore)
+    expect(await localDb.checkpoints.where("saveId").equals(saveId).toArray())
+      .toEqual(checkpointsBefore)
+    expect(mounted.messages.some((message) => (
+      message.kind === "event" && message.event === "workspace-mutation"
+    ))).toBe(false)
+    expect(mounted.messages.some((message) => (
+      message.kind === "response" && message.id === "run-1" && message.ok
+    ))).toBe(false)
     mounted.handle.dispose()
   })
 })

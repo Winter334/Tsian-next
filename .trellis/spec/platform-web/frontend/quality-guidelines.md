@@ -12,17 +12,33 @@ Quality for `platform-web` is mostly type safety, build success, and preserving 
   - **esbuild `outputFiles[i].path` may carry a leading slash** (`/assets/stdin.js`). Concatenating a prefix (`frontend/dist/` + `/assets/...`) yields a double slash (`frontend/dist//assets/...`). The storage layer normalizes it on write, but any in-memory `Set` of "newly written paths" holds the un-normalized form — a later stale-file cleanup that compares against normalized stored paths won't match and will delete the freshly-written files. Strip the leading slash before concatenating. See `write-back.ts`.
   - **Keep import query/hash text in `OnResolveResult.suffix`, not `path`.** For VFS imports such as `logo.png?url`, return `{ path: "logo.png", suffix: "?url" }`; `onLoad` receives the pair as `args.path` + `args.suffix`. If the query is concatenated into `path`, esbuild's file loader may emit a stored filename containing `?url` while the browser/SW requests only the pathname, producing a packaged-iframe 404; extension/MIME inference can also degrade (for example SVG inline data becoming `text/plain`). Vue virtual style loaders must inspect `args.suffix` as well, or `?tsian-style=N` falls through and the raw SFC is compiled a second time. See `workspace-source-plugin.ts` and `sfc-plugin.ts`.
   - **JS asset URL imports need module-relative URL normalization for packaged iframes.** esbuild's file loader returns strings relative to the importing JS output (for example `./badge-HASH.svg`). If a Vue component puts that raw string in DOM (`<img :src>`), the browser resolves it relative to `frontend/dist/index.html`, not the JS module, and requests `frontend/dist/badge-HASH.svg` instead of `frontend/dist/assets/badge-HASH.svg`. This applies both to explicit `?url` imports and to ordinary JS static imports of file-loader assets (`import logo from "./logo.png"`); route ordinary static asset imports through the same `?url` wrapper at resolve time. Wrap URL imports as a JS module that imports the file through an internal file-loader query, strips any internal query/hash from the generated string, then exports `new URL(cleanAssetUrl, import.meta.url).href`. Apply the same rule inside Worker subbuilds; do not leak internal queries such as `?__tsian_url_asset` to DOM/runtime URLs.
-- After touching `src/frontend-build/`, use layered validation: each capability child passes focused fixtures/probes and hands off a browser matrix; a parent with several related children may run one consolidated source-package test through upload → IndexedDB → browser esbuild-wasm → dist write-back → SW → packaged iframe after all children finish. The parent remains incomplete until that full loop passes.
+- After touching `src/frontend-build/`, run `npm run build:web` and manually validate the affected browser matrix. A parent with several related children should perform one consolidated source-package browser pass through upload → IndexedDB → browser esbuild-wasm → dist write-back → SW → packaged iframe. Do not create per-capability fixture suites by default.
 
 ## Test Maintenance Policy
 
-Tests protect live contracts; they are not an archive of every historical implementation shape.
+The repository deliberately uses a smoke-only automated suite. Tests protect a few
+end-to-end product transactions; the specs below preserve the exhaustive behavior
+contracts without requiring one automated assertion per row.
 
-- Keep tests whose failure identifies a regression in public behavior, state transitions, boundary validation, lifecycle/resource cleanup, accessibility semantics, release gates, or a documented algorithmic invariant.
-- Exact numeric assertions are appropriate only when the number is itself an explicit compatibility, protocol, security, or calibrated product contract. For tunable geometry and rendering, assert monotonicity, symmetry, bounds, ordering, ownership, or another durable relationship instead of historical pixels or draw totals.
-- Delete tests that inspect raw Vue/TypeScript/CSS/shader source, pin formatting or selector text, snapshot tunable presentation, or duplicate behavior already covered at a stronger runtime boundary. Visual calibration belongs to the declared browser/manual gate.
-- When a broad suite exposes a stable legacy failure, reproduce it alone and classify the contract. Delete an obsolete test or rewrite it around the live invariant; do not preserve a permanently red baseline, blindly update expected values, or change production code only to satisfy a retired assertion.
-- After pruning, run the focused survivors plus the broader owning-package suite. The broader suite must prove that unique behavior coverage was not lost.
+- The only ordinary test files are `src/bridge/remote-iframe-bridge.test.ts`,
+  `src/integration/assistant-runtime.smoke.test.ts`, and
+  `apps/platform-server/internal/server/market_test.go`.
+- Each smoke owns one success and at most one critical failure/rollback scenario.
+  Unit, component, controller, validator, storage/host/bridge-seam, pure-algorithm,
+  and UI/Spatial tests are not retained independently.
+- `Validation & Error Matrix` and `Verification Required` sections are
+  implementation-review checklists. A row not sampled by a retained smoke is
+  verified manually when its owning behavior changes; it does not authorize a new
+  test file by itself.
+- UI, accessibility, text, focus, layout, rendering, and Spatial behavior are
+  user-verified manually. `npm run build:web` proves type/build integrity only.
+- The production-browser Frontend Action preflight is a separate mandatory gate.
+  Node, happy-dom, fake IndexedDB, and scripted Worker fixtures cannot replace its
+  production bundle, real Worker, or opaque-origin checks.
+- A new automated file requires an explicit scope/risk decision and an explicit
+  `test:smoke` entry. Prefer changing an existing smoke scenario when the contract
+  still belongs to one of the three main transactions.
+- Never change production behavior merely to preserve a retired assertion.
 
 ```ts
 // Wrong: a harmless renderer refactor breaks an historical draw total.
@@ -32,6 +48,82 @@ expect(drawCounts).toEqual([6, meshCount, meshCount, meshCount, 6])
 expect(report.passes).toEqual(expectedPassOrder)
 expect(transparentDraws).toHaveLength(opaqueDraws.length - 1)
 ```
+
+## Scenario: Repository Smoke-Only Verification Gate
+
+### 1. Scope / Trigger
+
+- Trigger: changing root verification scripts, adding/removing a test, changing one
+  of the three retained transactions, or deciding how a spec matrix is verified.
+
+### 2. Signatures
+
+```text
+npm test                  -> npm run test:smoke
+npm run test:smoke:web    -> two explicit Vitest files
+npm run test:smoke:server -> TestMarketSmoke only
+npm run build:all         -> every JS workspace plus Go server
+npm run verify            -> build:all + smoke + production-browser preflight
+```
+
+### 3. Contracts
+
+- Test discovery is explicit; naming a new file `*.test.ts` or `*_test.go` is not
+  sufficient to enter the authoritative gate.
+- The Web transaction smokes use real orchestration and persistence boundaries.
+  Only external HTTP, unavailable browser globals, and the Node-side Worker
+  primitive may be deterministic fakes.
+- The server smoke uses the production router, auth middleware, SQLite repository,
+  and filesystem blob store.
+- Builds and smoke tests do not claim UI behavior coverage. UI/Spatial acceptance
+  remains manual.
+
+### 4. Validation & Error Matrix
+
+| Change | Required verification |
+|---|---|
+| Platform/contract/storage/runtime code | Relevant build(s), retained owning smoke when sampled, manual matrix review |
+| Frontend Action Worker/schema/preflight | `test:frontend-actions:production-browser` in addition to builds/smoke |
+| UI/Spatial/controller/presentation | `build:web` plus manual user verification; no dedicated automated suite |
+| Server market/auth transaction | `test:smoke:server` plus `build:server` |
+| New proposed test file | Explicit user approval and explicit smoke-script admission |
+| Behavior not sampled by a smoke | Manual verification or accepted later-discovery risk |
+
+### 5. Good/Base/Bad Cases
+
+- Good: extend the Assistant smoke when a regression belongs to the same
+  host/runtime/transaction/persistence path.
+- Base: update a behavior matrix and verify it manually because no retained smoke
+  owns that low-level branch.
+- Bad: restore a validator/component/unit suite merely because its old file existed
+  or because a matrix contains many rows.
+
+### 6. Verification Required
+
+- Run `npm run verify` for repository-wide verification changes.
+- Confirm the test inventory remains exactly the three approved files.
+- Record any manual UI/Spatial verification separately; do not describe a build as
+  UI behavior evidence.
+- If the real-browser gate passes assertions but Windows profile cleanup reports a
+  transient `EBUSY`, rerun the unchanged gate; do not replace it with a fake Worker.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```json
+{ "test": "vitest run" }
+```
+
+This silently admits every new matching file and recreates test accumulation.
+
+#### Correct
+
+```json
+{ "test": "npm run test:smoke" }
+```
+
+The explicit smoke scripts remain the admission boundary.
 
 ## Browser `import.meta.glob` VFS Contract
 
@@ -81,11 +173,13 @@ interface GlobTransformResult {
 - Base: an ordinary TypeScript module bypasses parser/matcher loading.
 - Bad: `import.meta.glob(pattern)`, `import.meta["glob"]`, or `../../outside/*.ts` fails during build rather than in the iframe.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Pure transform fixtures: lazy/eager, relative/alias keys, ordering, empty/self exclusion, TS/JSX, Vue block offsets, and the error matrix.
-- Real Map VFS + esbuild-wasm fixture: root entry, nested module, Vue script, lazy chunks, eager root graph, CSS/assets, and metafile root selection.
-- `npm run build:web`, production lazy-chunk inspection, and the parent consolidated browser product loop.
+- Run `npm run build:web`.
+- Manually exercise the source-package browser build for the changed glob cases,
+  including lazy chunks, Vue blocks, assets, and root-entry selection.
+- Treat the error matrix above as review/manual verification inventory; do not add
+  a dedicated transform test file by default.
 
 ### 7. Wrong vs Correct
 
@@ -170,13 +264,14 @@ interface ReplaceLocalGameCardFrontendDistInput {
 - Bad: `new Worker(new URL("./worker.ts", import.meta.url), { type: "module" })` must fail during build rather than becoming a packaged-iframe 404.
 - Bad: `import textUrl from "./template.txt?url"` is valid inside a Worker, but `import text from "./template.txt"` must fail because unknown unqueried resources are not part of the Worker graph contract.
 
-### 6. Tests Required
+### 6. Verification Required
 
 - `npm run build:web` for any `src/frontend-build/**` or packaged-dist storage helper change.
 - `git diff --check`.
-- Focused Worker fixtures/probes: supported `?worker`, duplicate entry dedupe, two independent entries, Worker TS dependency, JSON, `?raw`/`?url`/`?inline`, dynamic import chunk, `import.meta.glob`, and the error matrix above.
-- Dist replacement check: successful rebuild replaces stale Worker outputs without deleting current main/Worker outputs; failed Worker build preserves old dist.
-- Parent/final browser product loop: packaged iframe Worker message round-trip plus Network evidence for SW-backed Worker entry/chunk/asset loads.
+- Manually verify the supported/forbidden Worker matrix, dist replacement, and a
+  packaged iframe Worker round-trip with Network evidence when this subsystem changes.
+- Do not create a dedicated Worker unit/fixture suite; the production-browser
+  Frontend Action preflight remains the repository's real-Worker automated gate.
 
 ### 7. Wrong vs Correct
 
@@ -247,11 +342,13 @@ interface StylePreprocessorResult {
 - Base: plain CSS bypasses the dispatcher.
 - Bad: `../../secret`, `pkg:theme`, a binary partial, or a Less plugin fails loudly.
 
-### 6. Tests Required
+### 6. Verification Required
 
-- Child: type-check/build, strict-VFS fixtures, compiler security/diagnostic probes, and production chunk inspection.
-- Parent: real source-package browser loop; assert styles/modules/assets, Console/Network, lazy isolation, warm reuse, failure status, and old-dist preservation.
-- Compiler upgrade: rerun production Sass and Less factory/global/DOM safety probes.
+- Run `npm run build:web` and `git diff --check`.
+- Manually run the real source-package browser loop for styles/modules/assets,
+  diagnostics, lazy isolation, warm reuse, and old-dist preservation.
+- On compiler upgrades, manually repeat Sass/Less factory, global, and DOM safety
+  probes; do not add a dedicated preprocessor test file by default.
 
 ### 7. Wrong vs Correct
 
