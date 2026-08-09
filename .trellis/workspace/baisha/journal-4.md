@@ -878,3 +878,25 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 189: 优化开局向导角色选择体验
+
+**Date**: 2026-08-09
+**Task**: 优化开局向导角色选择体验
+**Branch**: `chore/trellis-workflow-update-20260808`
+
+### Summary
+
+重写角色类型选择页玩家文案，美化暗金选项卡片并移除冗余操作提示；新增玩家可见产品文案指南，构建、源码包与独立质量检查通过。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `9dc6da9` | (see git log) |
+| `3c351ed` | (see git log) |
+
+### Status
+
+[OK] **Completed**

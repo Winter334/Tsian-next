@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-4.md`
-- **Total Sessions**: 188
+- **Total Sessions**: 189
 - **Last Active**: 2026-08-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-4.md` | ~880 | Active |
+| `journal-4.md` | ~902 | Active |
 | `journal-3.md` | ~1982 | Archived |
 | `journal-2.md` | ~1986 | Archived |
 | `journal-1.md` | ~1994 | Archived |
@@ -32,6 +32,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 189 | 2026-08-09 | 优化开局向导角色选择体验 | `9dc6da9`, `3c351ed` | `chore/trellis-workflow-update-20260808` |
 | 188 | 2026-08-09 | 访谈驱动的开局建模与游戏卡源码归属 | `6d624de`, `3862b55`, `6537890` | `chore/trellis-workflow-update-20260808` |
 | 187 | 2026-08-08 | Consolidate repository smoke suite | `bc0232d` | `master` |
 | 186 | 2026-08-07 | 归档 AI API 请求自动重试 | `db5510d` | `master` |
