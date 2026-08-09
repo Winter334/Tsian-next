@@ -900,3 +900,24 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 190: 沉浸阅读器整卡打包链
+
+**Date**: 2026-08-10
+**Task**: 沉浸阅读器整卡打包链
+**Branch**: `chore/trellis-workflow-update-20260808`
+
+### Summary
+
+新增 package:card 与兼容别名，使用隔离浏览器复用平台真实 frontend build/write-back/export 链；修正 UTF-8 inventory 字节数，加入权威输入校验、ZIP 回环验证和原子输出发布，并完成自动构建与浏览器验证。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `214d226` | (see git log) |
+
+### Status
+
+[OK] **Completed**
