@@ -1,0 +1,25 @@
+{
+  "schema": "tsian.game-card.v1",
+  "id": "local.game-card-2",
+  "name": "沉浸阅读器",
+  "version": "0.2.1",
+  "summary": "沉浸阅读器\n导入小说后Agent会提取小说中的内容为你构建一个世界，你可以选择扮演原著角色或者原创角色游玩。",
+  "author": {
+    "name": "流萤白沙"
+  },
+  "cover": {
+    "workspacePath": ".cover/cover.png"
+  },
+  "frontend": {
+    "kind": "packaged",
+    "entry": "frontend/dist/index.html",
+    "framework": "vue",
+    "bridgeVersion": "tsian.play-bridge.v1"
+  },
+  "runtime": {
+    "entrypoints": {
+      "playerTurn": "storyteller",
+      "postTurnMaintenance": "stage-manager"
+    }
+  }
+}

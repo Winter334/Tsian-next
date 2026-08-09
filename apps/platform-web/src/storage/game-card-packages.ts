@@ -691,7 +691,7 @@ export async function exportGameCardPackage(
     workspaceFiles: contentFiles.map((file) => ({
       path: `${WORKSPACE_PREFIX}${file.path}`,
       mediaType: inferMediaTypeFromPath(file.path),
-      size: file.data?.size ?? file.content.length,
+      size: file.data?.size ?? strToU8(file.content).byteLength,
     })),
     frontendFiles: frontendFiles.map((file) => ({
       path: file.path,

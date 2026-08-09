@@ -28,7 +28,9 @@
     "test:frontend-actions": "vitest run apps/platform-web/src/bridge/remote-iframe-bridge.test.ts",
     "test:frontend-actions:production-browser": "npm exec vite build -- --config apps/platform-web/vite.runtime-preflight.config.ts && node scripts/test-frontend-action-production-browser.mjs",
     "verify": "npm run build:all && npm run test:smoke && npm run test:frontend-actions:production-browser",
-    "package:frontend": "node scripts/package-play-frontend-source.mjs"
+    "package:frontend": "node scripts/package-play-frontend-source.mjs",
+    "package:card": "npm exec vite build -- --config apps/platform-web/vite.card-package.config.ts && node scripts/package-immersive-reader-card.mjs",
+    "repack:immersive-reader": "npm run package:card --"
   },
   "devDependencies": {
     "fake-indexeddb": "^6.2.5",

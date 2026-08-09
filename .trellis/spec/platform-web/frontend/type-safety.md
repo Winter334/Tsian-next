@@ -20,11 +20,20 @@
 
 ## Scenario: Game Card Package And Packaged Frontend
 
-### Scope / Trigger
+### 1. Scope / Trigger
 
 - When platform-web imports/exports Game Card packages, changes packaged-frontend storage, or loads a `packaged` frontend binding.
 
-### Contracts
+### 2. Signatures
+
+```ts
+exportGameCardPackage(cardId: string, options?: { version?: string }): Promise<Blob>
+importGameCardPackage(input: Blob | ArrayBuffer | Uint8Array): Promise<LocalGameCardRecord>
+```
+
+Package root: `game-card.json`, `workspace/**`, optional `frontend/**`, optional `cover/**`.
+
+### 3. Contracts
 
 - Game Card packages are reusable card-content packages, not Save Instance exports. They must not include save snapshots, save history, checkpoints, traces, or player-mutated save runtime files.
 - The package container is a zip with a `game-card.json` manifest, card-owned content under `workspace/*`, optional `frontend/*`, and reserved `cover/*`.
@@ -36,8 +45,10 @@
 - Packaged frontends are built static files; the platform must not run source builds, npm install, or framework-specific bundling on them. Their files are stored beside the reusable Game Card; saves created from a card do not copy those files or the card content files.
 - A `packaged` frontend must run in an iframe reusing the play-bridge protocol; it must not run in the platform JS realm.
 - Packaged frontends use a same-origin virtual resource URL backed by Service Worker/IndexedDB. Keep `allow-same-origin` in the iframe sandbox while the loader relies on Service Worker-controlled same-origin clients; sandboxed opaque-origin navigations bypass the local virtual resource layer. The virtual resource layer should return CORS-friendly headers for module chunks and built assets.
+- `GameCardPackageFileEntry.size` is always the extracted ZIP entry's `Uint8Array.byteLength`. Exported text workspace files must use UTF-8 encoded bytes (`strToU8(content).byteLength`), never UTF-16 code units from `content.length`; binary entries use their raw byte length.
+- Repository whole-card tooling must call the production `buildFrontend`, dist write-back, exporter, and importer inside an isolated temporary browser profile/origin. It must not reuse the user's platform IndexedDB or replace this chain with a development Vite `dist` copy.
 
-### Validation & Error Matrix
+### 4. Validation & Error Matrix
 
 - Missing/unsupported package schema -> reject import with a clear package error.
 - Missing or malformed embedded manifest -> reject import.
@@ -50,6 +61,38 @@
 - Importing a package creates or updates the reusable Game Card only; it does not create a Save Instance.
 - Importing card content under reserved `workspace/save/*` or `workspace/.tsian/*` must fail; those roots are runtime/platform-owned in effective workspaces.
 - Exporting a Game Card writes manifest, card content files, and stored packaged frontend files only.
+- Any inventory path missing from the ZIP, ZIP path missing from inventory, duplicate/case-conflicting/unsafe path, media-type mismatch, or `size !== entry.byteLength` -> reject the package.
+
+### 5. Good/Base/Bad Cases
+
+- Good: export workspace text `"中文 😀"` with `size` equal to its UTF-8 entry bytes, then import the generated archive successfully.
+- Good: build a source frontend in a temporary browser card, write back a fresh dist, export, and verify the package with the same importer used by the platform.
+- Base: a frontend-less content card imports without `frontendFiles`; play remains unavailable until a supported frontend is configured.
+- Bad: set text inventory size to `content.length`, copy repository Vite `dist`, or point automation at a user's existing platform origin/profile.
+
+### 6. Tests Required
+
+- Run `npm run build:web` after importer/exporter or browser-build changes.
+- Run the retained smoke suite and production-browser preflight required by the quality spec.
+- Whole-card verification must cover ASCII, Chinese, emoji, and binary entry sizes; exact inventory/ZIP path agreement; `frontend/dist/index.html`; platform import round trip; and absence of save/runtime paths.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```ts
+size: file.data?.size ?? file.content.length
+```
+
+This records UTF-16 code units while the ZIP stores UTF-8 bytes.
+
+#### Correct
+
+```ts
+size: file.data?.size ?? strToU8(file.content).byteLength
+```
+
+The manifest and extracted ZIP entry now share one byte-size contract.
 
 ## Scenario: Remote Iframe Play Frontend Bridge
 

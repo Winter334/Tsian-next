@@ -120,6 +120,18 @@ npm run build --workspace play-frontend-dev
 
 `vite.config.ts` 已设 `base: "./"`（相对路径，便于子路径部署）与 `minify: false`（可读 ESM，供助手在线编辑场景）。
 
+### 沉浸阅读器整卡打包
+
+```bash
+# 使用隔离浏览器执行平台真实的 frontend build/write-back/export 链
+npm run package:card
+
+# 显式发布到指定路径（已有文件会在新包验证完成后安全替换）
+npm run package:card -- --out tmp/card-packages/immersive-reader.tsian-card.zip
+```
+
+默认产物写入 `tmp/card-packages/沉浸阅读器-YYYYMMDD.tsian-card.zip`；同日重复运行会使用递增序号且不覆盖旧包。`npm run repack:immersive-reader` 是同一实现的兼容别名。卡元数据来自 `cards/沉浸阅读器.tsian-card/card-manifest.json`，卡内容、封面和前端分别来自其权威 workspace/cover 目录与 `apps/play-frontend-dev/src/`，不会回写提取卡目录中的历史 `frontend/` 或 `game-card.json`。
+
 ## 路线图
 
 ### MVP 基座（已完成）

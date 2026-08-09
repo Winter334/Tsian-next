@@ -46,7 +46,9 @@ Frontend/browser consumers should use shared contract types instead of redefinin
 Game-card frontend source: apps/play-frontend-dev/src/**
 Frontend build:            npm run build:play-frontend
 Frontend package:          npm run package:frontend
+Whole-card package:        npm run package:card
 Card content source:       cards/<card>.tsian-card/workspace/**
+Author card manifest:      cards/<card>.tsian-card/card-manifest.json
 Generated whole-card file: game-card.json inside the output ZIP
 ```
 
@@ -59,6 +61,10 @@ Generated whole-card file: game-card.json inside the output ZIP
 - Modify `apps/platform-web/**` only when the behavior is platform-owned, including automatic generation of save skeletons or package/import/build infrastructure. Platform built-in card/workspace templates are currently unmaintained and must not receive feature synchronization.
 - An extracted card directory may contain historical `frontend/src/**`, `frontend/dist/**`, and a package-wrapper `game-card.json`. Treat these as export residue, not parallel authoring sources; do not hand-maintain or manually synchronize them.
 - A whole-card packager must assemble canonical card workspace/cover content with a freshly built development frontend, generate the package-wrapper `game-card.json` from a small author-owned manifest input plus enumerated files, and write generated data only to the output archive/staging area.
+- The author-owned `card-manifest.json` contains only the stable `GameCardManifest`. It must not contain package inventory, exporter metadata, `exportedAt`, or generated frontend files; card version changes remain an explicit author edit.
+- Whole-card packaging must run `buildFrontend -> writeBackDist -> exportGameCardPackage` in a temporary browser profile and origin. It must never connect to the user's platform profile/IndexedDB, and it must not substitute the development Vite `dist` for the platform browser build.
+- Every package inventory `size` is the byte length of the corresponding ZIP entry. Text uses encoded UTF-8 bytes, not JavaScript `string.length`; cover and other binary files use their raw byte length.
+- Default whole-card output is non-clobbering. An explicit `--out` may replace a regular file only after the new archive passes validation, using a same-directory temporary file and rollback-safe publication.
 - Keep frontend-only and whole-card delivery as separate commands or explicit modes. Frontend-only upload is the fast path for UI work; whole-card output is for a complete installable card. Both must reuse the same media-type/path enumeration helpers rather than maintaining two manifest algorithms.
 
 ### 4. Validation & Error Matrix
@@ -73,13 +79,19 @@ Generated whole-card file: game-card.json inside the output ZIP
 | Frontend package manifest and source archive disagree | Packaging/validation fails before upload |
 | Whole-card package lacks built `frontend/dist/index.html` | Packaging fails; whole-card import does not build source automatically |
 | Generated `game-card.json` file index differs from archive entries | Packaging fails before delivery |
+| Workspace text contains Chinese or emoji | Inventory size equals the UTF-8 ZIP entry byte length |
+| Default dated output already exists | Choose a numeric suffix; never overwrite the existing package |
+| Explicit output is a directory or publication fails | Reject/restore the old regular file and remove temporary artifacts |
+| Browser build/export fails or times out | Close the temporary browser/server, preserve sources and existing output |
 
 ### 5. Good/Base/Bad Cases
 
 - Good: update setup UI under `apps/play-frontend-dev/src`, run its build and `package:frontend`, then upload the generated frontend package to the card.
 - Good: update `cards/沉浸阅读器.tsian-card/workspace/agents/.../SKILL.md` without copying it into a platform template.
+- Good: run `npm run package:card`; the isolated browser builds from `apps/play-frontend-dev/src/**`, exports through the platform package code, and publishes only after ZIP validation.
 - Base: a workspace-only change uses whole-card packaging when a complete installable package is needed; frontend-only upload is unnecessary.
 - Bad: edit `cards/.../frontend/src`, rebuild `cards/.../frontend/dist`, and manually rewrite hundreds of `game-card.json` file entries.
+- Bad: copy `apps/play-frontend-dev/dist/**` into a card ZIP or compute text inventory sizes with `content.length`.
 - Bad: copy every card workspace change into `apps/platform-web/src/storage/workspace-templates/**` even though built-in templates are no longer maintained.
 
 ### 6. Tests Required
@@ -87,6 +99,8 @@ Generated whole-card file: game-card.json inside the output ZIP
 - Frontend change: run `npm run build:play-frontend`, run `npm run package:frontend`, parse `frontend.json`, and assert every indexed `src/**` entry matches `apps/play-frontend-dev/src/**` by path, byte size, and byte content.
 - Workspace change: parse all changed JSON and `tsian-actions`; compile referenced browser scripts with helpers.
 - Whole-card packager: assert source-tree cleanliness, built entry presence, generated manifest schema, exact archive/index path agreement, and byte-for-byte ZIP round trip.
+- Exercise the real isolated-browser chain and platform import round trip. Include ASCII, Chinese, emoji, and binary inventory fixtures; assert every manifest size equals the extracted entry byte length.
+- Run whole-card packaging twice to prove non-clobbering output and semantic inventory stability, then verify explicit-output replacement and failure rollback preserve the previous bytes.
 - Scope audit must distinguish canonical product changes from historical extracted-card residue and must reject new manual synchronization edits.
 
 ### 7. Wrong vs Correct
@@ -105,7 +119,7 @@ copy workspace changes into platform built-in templates
 ```text
 UI:        edit apps/play-frontend-dev/src/** -> build -> package:frontend -> upload
 Card data: edit cards/foo.tsian-card/workspace/**
-Whole card: package:card assembles workspace + built frontend + generated manifest in ZIP
+Whole card: package:card -> isolated browser build/write-back/export -> validated ZIP
 Platform:  edit only platform-owned generators/infrastructure
 ```
 

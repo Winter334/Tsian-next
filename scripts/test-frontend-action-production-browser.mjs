@@ -1,9 +1,9 @@
-import { spawn, spawnSync } from "node:child_process"
-import { createServer } from "node:http"
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { extname, join, resolve, sep } from "node:path"
-import process from "node:process"
+import { join, resolve } from "node:path"
+import {
+  readRequestBytes,
+  runInIsolatedBrowser,
+  startStaticHarnessServer,
+} from "./lib/headless-browser.mjs"
 
 const root = resolve(import.meta.dirname, "..")
 const webRoot = join(root, "apps", "platform-web")
@@ -13,153 +13,39 @@ function fail(message) {
   throw new Error(message)
 }
 
-function commandAvailable(command) {
-  const probe = spawnSync(command, ["--version"], {
-    stdio: "ignore",
-    windowsHide: true,
-  })
-  return probe.status === 0
-}
-
-function browserCandidates() {
-  if (process.env.TSIAN_BROWSER_PATH) return [process.env.TSIAN_BROWSER_PATH]
-  if (process.platform === "win32") {
-    return [
-      join(process.env.PROGRAMFILES ?? "", "Google", "Chrome", "Application", "chrome.exe"),
-      join(process.env["PROGRAMFILES(X86)"] ?? "", "Google", "Chrome", "Application", "chrome.exe"),
-      join(process.env.LOCALAPPDATA ?? "", "Google", "Chrome", "Application", "chrome.exe"),
-      join(process.env.PROGRAMFILES ?? "", "Microsoft", "Edge", "Application", "msedge.exe"),
-      join(process.env["PROGRAMFILES(X86)"] ?? "", "Microsoft", "Edge", "Application", "msedge.exe"),
-    ]
-  }
-  if (process.platform === "darwin") {
-    return [
-      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-      "/Applications/Chromium.app/Contents/MacOS/Chromium",
-    ]
-  }
-  return ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge"]
-}
-
-async function findBrowser() {
-  for (const candidate of browserCandidates()) {
-    if (!candidate) continue
-    if (candidate.includes(sep)) {
-      try {
-        if ((await stat(candidate)).isFile()) return candidate
-      } catch {}
-    } else if (commandAvailable(candidate)) {
-      return candidate
-    }
-  }
-  fail("Chrome, Edge, or Chromium was not found. Set TSIAN_BROWSER_PATH to the browser executable.")
-}
-
-function contentType(pathname) {
-  switch (extname(pathname)) {
-    case ".html": return "text/html; charset=utf-8"
-    case ".js": return "text/javascript; charset=utf-8"
-    case ".css": return "text/css; charset=utf-8"
-    case ".json": return "application/json; charset=utf-8"
-    default: return "application/octet-stream"
-  }
-}
-
 async function serve() {
   let settleResult
   const result = new Promise((resolveResult) => { settleResult = resolveResult })
-  const server = createServer(async (request, response) => {
-    try {
-      const url = new URL(request.url ?? "/", "http://127.0.0.1")
+  const harnessServer = await startStaticHarnessServer({
+    distRoot,
+    handleRequest: async ({ request, response, url }) => {
       if (url.pathname === "/__preflight-result" && request.method === "POST") {
-        let body = ""
-        request.setEncoding("utf8")
-        for await (const chunk of request) body += chunk
-        settleResult(JSON.parse(body))
+        const body = await readRequestBytes(request)
+        settleResult(JSON.parse(body.toString("utf8")))
         response.writeHead(204).end()
-        return
+        return true
       }
-      const relativePath = url.pathname === "/" ? "index.html" : decodeURIComponent(url.pathname.slice(1))
-      const absolutePath = resolve(distRoot, relativePath)
-      if (absolutePath !== distRoot && !absolutePath.startsWith(`${distRoot}${sep}`)) {
-        response.writeHead(404).end()
-        return
-      }
-      const content = await readFile(absolutePath)
-      response.writeHead(200, {
-        "Content-Type": contentType(absolutePath),
-        "Cache-Control": "no-store",
-      })
-      response.end(content)
-    } catch {
-      response.writeHead(404).end()
-    }
+      return false
+    },
   })
-  await new Promise((resolveListen, reject) => {
-    server.once("error", reject)
-    server.listen(0, "127.0.0.1", resolveListen)
-  })
-  const address = server.address()
-  if (!address || typeof address === "string") fail("Could not determine preflight server address.")
-  return { server, result, url: `http://127.0.0.1:${address.port}/` }
-}
-
-function launchBrowser(browser, url, profile) {
-  const child = spawn(browser, [
-    "--headless=new",
-    "--disable-gpu",
-    "--no-first-run",
-    "--no-default-browser-check",
-    "--disable-background-networking",
-    "--disable-component-update",
-    `--user-data-dir=${profile}`,
-    url,
-  ], {
-    windowsHide: true,
-    stdio: ["ignore", "ignore", "pipe"],
-  })
-  let stderr = ""
-  child.stderr.setEncoding("utf8")
-  child.stderr.on("data", (chunk) => { stderr += chunk })
-  return {
-    child,
-    exited: new Promise((resolveExit, rejectExit) => {
-      child.once("error", rejectExit)
-      child.once("close", (code) => resolveExit({ code, stderr }))
-    }),
-  }
+  return { ...harnessServer, result }
 }
 
 async function main() {
-  const browser = await findBrowser()
-  const profile = await mkdtemp(join(tmpdir(), "tsian-frontend-action-preflight-"))
-  const { server, result: browserResult, url } = await serve()
-  let launched
+  const { close, result: browserResult, url } = await serve()
   try {
     const response = await fetch(url)
     if (!response.ok) {
       fail(`Browser harness returned HTTP ${response.status}.`)
     }
-    launched = launchBrowser(browser, url, profile)
-    let timeoutId
-    const timeout = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error("Headless browser timed out during Frontend Action preflight.")), 30_000)
+    const completed = await runInIsolatedBrowser({
+      url,
+      result: browserResult,
+      profilePrefix: "tsian-frontend-action-preflight-",
+      timeoutMs: 30_000,
+      timeoutMessage: "Headless browser timed out during Frontend Action preflight.",
     })
-    let completed
-    try {
-      completed = await Promise.race([
-        browserResult.then((value) => ({ kind: "result", value })),
-        launched.exited.then((value) => ({ kind: "exit", value })),
-        timeout,
-      ])
-    } finally {
-      clearTimeout(timeoutId)
-    }
-    if (completed.kind === "exit") {
-      fail(`Headless browser exited before reporting preflight result (code ${completed.value.code}).\n${completed.value.stderr}`)
-    }
-    const { status, payload } = completed.value
+    const { status, payload } = completed.result
     if (status !== "passed" || payload?.ok !== true) {
       fail(`Production browser preflight failed: ${JSON.stringify(payload)}`)
     }
@@ -189,12 +75,10 @@ async function main() {
     ]) {
       if (result[key] !== "undefined") fail(`Ambient capability ${key} remained available.`)
     }
-    process.stdout.write(`Frontend Action production browser preflight passed with ${browser}.\n`)
+    process.stdout.write(`Frontend Action production browser preflight passed with ${completed.browser}.\n`)
     process.stdout.write(`${JSON.stringify({ ...result, ...equipmentTransport })}\n`)
   } finally {
-    launched?.child.kill()
-    await new Promise((resolveClose) => server.close(resolveClose))
-    await rm(profile, { recursive: true, force: true })
+    await close()
   }
 }
 

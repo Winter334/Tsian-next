@@ -3,38 +3,13 @@ import { promises as fs } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { zipSync, strToU8 } from "fflate"
+import { listTreeFiles, mediaTypeForPath } from "./lib/source-package.mjs"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, "..")
 const defaultSourceDir = path.join(repoRoot, "apps/play-frontend-dev/src")
 const defaultOutDir = path.join(repoRoot, "tmp/frontend-packages")
 const defaultBaseName = "play-frontend-dev-source"
-
-const mediaTypes = new Map([
-  [".ts", "text/typescript; charset=utf-8"],
-  [".tsx", "text/typescript; charset=utf-8"],
-  [".js", "text/javascript; charset=utf-8"],
-  [".jsx", "text/javascript; charset=utf-8"],
-  [".vue", "text/plain; charset=utf-8"],
-  [".css", "text/css; charset=utf-8"],
-  [".scss", "text/x-scss; charset=utf-8"],
-  [".sass", "text/x-sass; charset=utf-8"],
-  [".less", "text/less; charset=utf-8"],
-  [".json", "application/json; charset=utf-8"],
-  [".png", "image/png"],
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".webp", "image/webp"],
-  [".gif", "image/gif"],
-  [".svg", "image/svg+xml"],
-  [".ico", "image/x-icon"],
-  [".woff", "font/woff"],
-  [".woff2", "font/woff2"],
-  [".ttf", "font/ttf"],
-  [".otf", "font/otf"],
-  [".eot", "application/vnd.ms-fontobject"],
-  [".wasm", "application/wasm"],
-])
 
 function usage() {
   return `Usage: node scripts/package-play-frontend-source.mjs [options]
@@ -95,10 +70,6 @@ function dateStamp(date = new Date()) {
   return `${year}${month}${day}`
 }
 
-function mediaTypeFor(filePath) {
-  return mediaTypes.get(path.extname(filePath).toLowerCase()) ?? "application/octet-stream"
-}
-
 async function exists(filePath) {
   try {
     await fs.access(filePath)
@@ -106,20 +77,6 @@ async function exists(filePath) {
   } catch {
     return false
   }
-}
-
-async function walk(dir) {
-  const entries = await fs.readdir(dir, { withFileTypes: true })
-  const files = []
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...await walk(fullPath))
-    } else if (entry.isFile()) {
-      files.push(fullPath)
-    }
-  }
-  return files
 }
 
 async function outputPathFor(options) {
@@ -138,18 +95,17 @@ async function packageSourceFrontend(options) {
     throw new Error(`Source frontend entry is missing: ${entryPath}`)
   }
 
-  const files = (await walk(sourceDir)).sort((left, right) => left.localeCompare(right))
+  const files = await listTreeFiles(sourceDir)
   const zipInput = {}
   const manifestFiles = []
 
-  for (const filePath of files) {
-    const relFromSrc = path.relative(sourceDir, filePath).split(path.sep).join("/")
-    const packagePath = `src/${relFromSrc}`
-    const data = new Uint8Array(await fs.readFile(filePath))
+  for (const file of files) {
+    const packagePath = `src/${file.relativePath}`
+    const data = new Uint8Array(await fs.readFile(file.absolutePath))
     zipInput[packagePath] = data
     manifestFiles.push({
       path: packagePath,
-      mediaType: mediaTypeFor(filePath),
+      mediaType: mediaTypeForPath(file.relativePath),
       size: data.byteLength,
     })
   }
