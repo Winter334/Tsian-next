@@ -1,4 +1,4 @@
-const OPENING_SCHEMA = 'tsian.opening.initial-understanding.v1';
+const OPENING_SCHEMA = 'novel-airp.opening-source.v1';
 const MANIFEST_PATH = 'save/source/manifest.json';
 const CHAPTER_INDEX_PATH = 'save/source/chapters.index.json';
 function isRecord(value) { return typeof value === 'object' && value !== null && !Array.isArray(value); }

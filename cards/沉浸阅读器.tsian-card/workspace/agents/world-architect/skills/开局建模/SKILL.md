@@ -1,103 +1,396 @@
 ---
 name: 开局建模
 title: 开局建模
-description: 为刚导入的小说建立开局世界资料（实体、场景、关系、runtime、frontier、understanding-summary）。
+description: 通过连续问答确定玩家角色与开局偏好，按需阅读小说，并一次提交首回合所需的最小世界模型。
 triggers:
-  - 小说导入后建立开局世界资料
+  - 小说导入后主持开局访谈
 appliesTo:
   - world-architect
 ---
 
 # 开局建模
 
-目标是建立后续常态流程能读到的正式路径。所有开局产物通过脚本校验写入——脚本返回错误时按错误修正后重试。
+你正在一个临时、可恢复的开局访谈中直接面对玩家。前端 injection 给出不可改写的 `sessionId`、`sourceHash`、`branch`、`basedOnRevision` 与 `attemptId`。当前 user input 是下列之一：
+
+- `opening-interview:start:<sessionId>`：第一次提问；
+- `opening-interview:answer:<attemptId>\n<玩家回答>`：处理一次玩家回答。
+
+## 每轮目标
+
+1. 从最近一条 assistant 消息的 `[[开局会话]]` 读取完整进度；首轮没有旧状态。
+2. 只在当前决策缺口需要小说证据时使用 `inspect_source_opening` 或 `read_opening_slice`。
+3. 原著分支先给小说相关候选，也接受玩家指定其他原著角色；原创分支从姓名、身份或切入点中最高价值的一项开始问，不要求表单。
+4. 小说已经明确的事实直接记入进度；只向玩家询问偏好、多种合理选择、冲突信息或阻塞开局且无法可靠推断的内容。
+5. 每轮优先只问一个问题，至多两个紧密相关的问题；给快捷选项时始终允许自由回答。
+6. 玩家明确确认开始，且最小依赖闭包满足后，调用一次 `commit_opening`。成功后不再提问。
+
+访谈中途只维护回复里的完整 `[[开局会话]]` 状态，不写 `save/entities`、scene、relationship、runtime、frontier、turn 或正式 Agent context。
+
+## 回复协议
+
+每个成功回复都必须包含一份完整状态，不是增量。自然语言问题在前，内部块在后：
+
+```text
+<给玩家的问题>
+
+[[开局会话]]
+{"schema":"novel-airp.opening-turn.v1","sessionId":"...","sourceHash":"...","branch":"canon","revision":1,"processedAttemptId":"start","readSlices":[],"decisions":{},"unresolved":{},"phase":"interviewing"}
+[[/开局会话]]
+
+[[开局选项]]
+- 选项一
+- 选项二
+[[/开局选项]]
+```
+
+状态约束：
+
+- 新 attempt 成功时 `revision = basedOnRevision + 1`，`processedAttemptId = attemptId`；首轮使用 `processedAttemptId:"start"`。
+- 如果当前 attemptId 已等于最近状态的 `processedAttemptId`，这是幂等重试：原样重放最近的问题、完整状态和选项，不增加 revision，不重复应用玩家回答。
+- `readSlices` 保存真实、不必连续的读取范围：`{ref,start?,end?,purpose}`；ref 必须来自章节索引。
+- `decisions` 与 `unresolved` 是稳定 key 的对象；新回答更新同 key，不追加冲突副本。
+- `protagonist` 只保存 `{mode,ref?,name?}` 摘要。
+- 状态及其子对象只使用本节示例列出的字段，不附加临时草稿字段。
+- 不把整段小说、完整 entity/scene/runtime 草稿或开发解释放进状态块。
+- 未完成用 `phase:"interviewing"` 或 `"ready-to-commit"`；`commit_opening` 成功后用 `"complete"`。
+- `[[开局会话]]` 与 `[[开局选项]]` 会从玩家界面隐藏，但会保留在本会话 context。不要改 marker 名称。
+
+## 阅读策略
+
+- 首轮原著分支先用 `inspect_source_opening` 获取开头结构和候选线索；原创分支只读取足以提出首问的内容。
+- 需要原文证据时用 `read_opening_slice`。把返回章节 ref 与实际范围写入 `readSlices`。
+- 玩家指定首批窗口之外的原著角色时，定向扩展读取；不要因为不在首批候选而拒绝。
+- 只使用已经读取范围内、在开局锚点时成立的事实。后续章节发生的关系变化、状态、目标和经历不得提前写入正式模型。
+
+## 完成条件
+
+只有同时满足以下条件才询问“直接开始”并提交：
+
+- 主角已明确，可构造一个有效 character；
+- 开局地点与至少一个 scene 成立，scene.present 至少包含一个本次实体；
+- 必要角色关系、traits、当前状态和处境已知；非阻塞细节不强问；
+- runtime protagonist/location/activeSceneRefs 可指向本次闭包；
+- frontier 窗口与首个 source anchor 可由已读章节构造；
+- 玩家已明确同意开始。
+
+MVP 开局只提交 `character` 与 `location` entity。不要创建 container/item，不写 character containers/equipment，也不要写未知 ref-bearing extension。
+
+组装 `commit_opening` 输入时：
+
+- 所有 `{ref,name}` 的 name 必须与本次闭包目标文档的 name 完全一致；active scene 中至少一个场景同时位于 runtime.location 并包含主角。
+- `sourceWindow.chapters` 是从 `startIndex` 到 `endIndex` 的完整连续窗口；从读取结果只取 `index/title/ref`（旧源取 `path`），不要带 `charactersRead/truncated` 等观察字段。`extractedThrough` 等于窗口末章 ref。
+- `timeline` 只传 source 锚点，`kind:"source"`，order 从 1 连续递增；第一个锚点 chapter 等于窗口起点且 time 为 `"元年"`。
+- `openingReply` 只含正式首回合正文和末尾 `[[选项]]`，不含开局会话块。实体、场景、关系、runtime 与 frontier 不接受 schema 之外的临时字段。
 
 ## 可用脚本（tsian-actions）
-
-用 `run_script` 执行下列 browser_script action；脚本校验输入并写入对应落点，失败时返回 code/message 供你修正重试。
 
 ```json tsian-actions
 [
   {
     "name": "inspect_source_opening",
-    "description": "观察导入源 manifest 与开头章节预览，选择开局阅读窗口。",
+    "description": "观察导入源 manifest 与开头章节预览，支持提出当前开局问题。",
     "inputSchema": { "type": "object", "properties": { "previewCount": { "type": "number" }, "previewCharacters": { "type": "number" } } },
     "outputSchema": { "type": "object" },
     "executor": { "type": "browser_script", "path": "scripts/inspect-source-opening.js", "timeoutMs": 10000, "helpers": ["_common.js"] }
   },
   {
     "name": "read_opening_slice",
-    "description": "连续读开头章节正文，返回拼接文本与窗口元信息。可多次调用。",
+    "description": "按章节范围读取小说正文与窗口元信息；只在当前问题需要证据时调用。",
     "inputSchema": { "type": "object", "properties": { "startIndex": { "type": "number" }, "endIndex": { "type": "number" }, "maxCharacters": { "type": "number" } } },
     "outputSchema": { "type": "object" },
     "executor": { "type": "browser_script", "path": "scripts/read-opening-slice.js", "timeoutMs": 10000, "helpers": ["_common.js"] }
   },
   {
-    "name": "commit_entities",
-    "description": "校验实体 id/必填字段并写入 save/entities/<type>/<localId>.json。先于 scenes/relationships/runtime 提交。",
-    "inputSchema": { "type": "object", "required": ["entities"], "properties": { "entities": { "type": "array" } } },
+    "name": "commit_opening",
+    "description": "在干净的新流程存档中校验并一次提交最小开局模型、frontier、setup summary、turn 0、正式玩家回合 context 与幂等 receipt。",
+    "inputSchema": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["session", "entities", "scenes", "relationships", "runtime", "frontier", "summary", "openingReply"],
+      "properties": {
+        "session": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sessionId", "sourceHash", "branch", "revision", "attemptId"],
+          "properties": {
+            "sessionId": { "type": "string" },
+            "sourceHash": { "type": "string" },
+            "branch": { "type": "string", "enum": ["canon", "original"] },
+            "revision": { "type": "integer", "minimum": 1 },
+            "attemptId": { "type": "string" }
+          }
+        },
+        "entities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "brief"],
+            "properties": {
+              "id": { "type": "string", "description": "仅 character:<localId> 或 location:<localId>。" },
+              "name": { "type": "string" },
+              "brief": { "type": "string" },
+              "gender": { "type": "string" },
+              "tags": { "type": "array", "items": { "type": "string" } },
+              "aliases": { "type": "array", "items": { "type": "string" } },
+              "visibility": { "type": "string", "enum": ["player-known", "hidden", "future-spoiler"] },
+              "lifecycle": { "type": "string", "enum": ["candidate", "active", "background", "retired"] },
+              "identity": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "age": { "anyOf": [{ "type": "integer" }, { "type": "string" }] },
+                  "gender": { "type": "string" },
+                  "role": { "type": "string" },
+                  "affiliation": { "type": "string" },
+                  "realm": { "type": "string" }
+                }
+              },
+              "appearance": { "type": "string" },
+              "attributes": { "type": "object", "minProperties": 6, "maxProperties": 6, "additionalProperties": { "type": "integer" } },
+              "gauges": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "name", "value"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "value": { "type": "integer" },
+                    "max": { "type": "integer" },
+                    "min": { "type": "integer" },
+                    "unit": { "type": "string" },
+                    "tone": { "type": "string", "enum": ["neutral", "accent", "success", "warning", "danger", "muted"] }
+                  }
+                }
+              },
+              "status": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "polarity": { "type": "string", "enum": ["positive", "negative", "neutral"] }
+                  }
+                }
+              },
+              "traits": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["id", "name"],
+                  "properties": {
+                    "id": { "type": "string" },
+                    "name": { "type": "string" },
+                    "description": { "type": "string" },
+                    "effects": { "type": "array", "items": { "type": "string" } }
+                  }
+                }
+              },
+              "goals": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "current": { "type": "string" },
+                  "shortTerm": { "type": "string" },
+                  "longTerm": { "type": "string" }
+                }
+              },
+              "background": { "type": "string" },
+              "history": {
+                "type": "array",
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["event"],
+                  "properties": { "event": { "type": "string" } }
+                }
+              },
+              "extensions": { "type": "object" }
+            }
+          }
+        },
+        "scenes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "name", "location", "present"],
+            "properties": {
+              "id": { "type": "string" },
+              "name": { "type": "string" },
+              "location": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["ref", "name"],
+                "properties": { "ref": { "type": "string" }, "name": { "type": "string" } }
+              },
+              "present": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["ref"],
+                  "properties": { "ref": { "type": "string" } }
+                }
+              },
+              "status": { "type": "string", "enum": ["active"] },
+              "extensions": { "type": "object" }
+            }
+          }
+        },
+        "relationships": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subject", "edges"],
+            "properties": {
+              "subject": { "type": "string" },
+              "edges": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 64,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["to", "type"],
+                  "properties": {
+                    "to": { "type": "string" },
+                    "type": { "type": "string" },
+                    "note": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "runtime": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["protagonistRef", "location", "activeSceneRefs"],
+          "properties": {
+            "protagonistRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ref", "name"],
+              "properties": { "ref": { "type": "string" }, "name": { "type": "string" } }
+            },
+            "location": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ref", "name"],
+              "properties": { "ref": { "type": "string" }, "name": { "type": "string" } }
+            },
+            "activeSceneRefs": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["ref", "name"],
+                "properties": { "ref": { "type": "string" }, "name": { "type": "string" } }
+              }
+            },
+            "worldTime": { "type": "string" },
+            "weather": { "type": "string" },
+            "extensions": { "type": "object" }
+          }
+        },
+        "frontier": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["sourceWindow", "extractedThrough", "timeline"],
+          "properties": {
+            "sourceWindow": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["startIndex", "endIndex", "reason", "chapters"],
+              "properties": {
+                "startIndex": { "type": "integer", "minimum": 1 },
+                "endIndex": { "type": "integer", "minimum": 1 },
+                "reason": { "type": "string" },
+                "chapters": {
+                  "type": "array",
+                  "minItems": 1,
+                  "maxItems": 64,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["index", "title"],
+                    "properties": {
+                      "index": { "type": "integer" },
+                      "title": { "type": "string" },
+                      "ref": { "type": "string" },
+                      "path": { "type": "string" }
+                    }
+                  }
+                }
+              }
+            },
+            "extractedThrough": { "type": "string" },
+            "timeline": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "order", "chapter", "time", "label"],
+                "properties": {
+                  "kind": { "type": "string", "enum": ["source"] },
+                  "order": { "type": "integer", "minimum": 1 },
+                  "chapter": { "type": "integer", "minimum": 1 },
+                  "time": { "type": "string" },
+                  "label": { "type": "string" }
+                }
+              }
+            },
+            "notes": { "type": "string" }
+          }
+        },
+        "summary": { "type": "string", "description": "供开局确认屏显示的玩家可读短摘要。" },
+        "openingReply": { "type": "string", "description": "正式首回合正文，末尾必须含 [[选项]] 块，不含开局访谈隐藏块。" }
+      }
+    },
     "outputSchema": { "type": "object" },
-    "executor": { "type": "browser_script", "path": "scripts/commit-entities.js", "timeoutMs": 10000, "helpers": ["_common.js", "_validation.js"] }
-  },
-  {
-    "name": "commit_scenes_and_relationships",
-    "description": "校验场景与人物关系 ref；场景写入 save/scenes/<localId>.json，人物关系写入 save/relationships/<scope>.json（subject/to 均必须是 character:<localId>）。共享一次 entity id 加载。",
-    "inputSchema": { "type": "object", "required": ["scenes", "relationships"], "properties": { "scenes": { "type": "array" }, "relationships": { "type": "array" } } },
-    "outputSchema": { "type": "object" },
-    "executor": { "type": "browser_script", "path": "scripts/commit-scenes-and-relationships.js", "timeoutMs": 10000, "helpers": ["_common.js", "_validation.js"] }
-  },
-  {
-    "name": "commit_runtime_and_frontier",
-    "description": "校验 runtime.activeSceneRefs 指向已写 scene、protagonistRef/location 指向已写 entity，接受 runtime.worldTime/weather 字符串（缺省为空），校验 frontier.sourceWindow 章节引用存在与 frontier.timeline 锚点格式，一次写入 runtime.json 与 frontier.json。",
-    "inputSchema": { "type": "object", "required": ["runtime", "frontier"], "properties": { "runtime": { "type": "object" }, "frontier": { "type": "object" } } },
-    "outputSchema": { "type": "object" },
-    "executor": { "type": "browser_script", "path": "scripts/commit-runtime-and-frontier.js", "timeoutMs": 10000, "helpers": ["_common.js", "_validation.js"] }
-  },
-  {
-    "name": "commit_understanding_summary",
-    "description": "校验 title 与 candidateCharacters 并写入 save/playthrough/understanding-summary.json 为 {status, title, candidateCharacters}。",
-    "inputSchema": { "type": "object", "required": ["title", "candidateCharacters"], "properties": { "title": { "type": "string" }, "candidateCharacters": { "type": "array" } } },
-    "outputSchema": { "type": "object" },
-    "executor": { "type": "browser_script", "path": "scripts/commit-understanding-summary.js", "timeoutMs": 10000, "helpers": ["_common.js", "_validation.js"] }
+    "executor": { "type": "browser_script", "path": "scripts/commit-opening.js", "timeoutMs": 20000, "helpers": ["_common.js", "_validation.js"] }
   }
-
 ]
 ```
 
-## 执行步骤
+## 最终提交
 
-1. `inspect_source_opening` → 观察导入源结构和章节预览。
-2. `read_opening_slice` → 连续阅读开头剧情（可多次调用）。读够的判据：主要角色登场、冲突建立、开局场景可定。
-3. `commit_entities` → 写入实体（先写，后续 ref 依赖）。每实体至少 `id` / `name` / `brief`，按需加 `gender` / `tags` / `aliases` / `identity` / `appearance` / `attributes`。character 的 `attributes` 按境界参照 schema guide 的示例刻度尺填写；没有剧情佐证时也要估算，不要全填基线或留空。实体只反映开局锚点这一刻为真的事实——开局锚点 = `timeline` 第一个锚点，对应 `sourceWindow.startIndex` 这一章、`time="元年"`；窗口里开局锚点之后章节才出现的关系变化、新状态、新目标、履历、新登场的关联，不要写入 entity（`history` / `status` / `goals` / `containers` 等）和 relationships 分片。具体判据和反例见末尾「spoiler-safe」。
-4. `commit_scenes_and_relationships` → 写入场景与人物关系（校验 present/location ref 指向已写实体；relationship subject/to 均必须是 `character:<localId>`；双向角色关系两边各写一条；非角色关联不要写入 relationships）。
-5. `commit_runtime_and_frontier` → 写入 runtime（校验 activeSceneRefs 指向已写 scene、protagonistRef/location 指向已写 entity；`worldTime` 传 `"元年"`，`weather` 写当前天气字符串，未知则留空）与 frontier（`sourceWindow` 传 `{ startIndex, endIndex, reason, chapters }`：`startIndex`/`endIndex`/`chapters` 复用 `read_opening_slice` 返回的窗口字段，`reason` 写一句话说明为何选此窗口；`timeline` 传第一个锚点 `[{ kind: "source", order: 1, chapter: <开局起始章>, time: "元年", label: "开局" }]`，`chapter` 用 `sourceWindow.startIndex` 的值。脚本会自动按数组顺序赋 `order`（从 1 递增），`kind` 固定为 `"source"`）。
-6. `commit_understanding_summary` → 写入理解摘要。`candidateCharacters` 从已写 character 类型 entity 提取 `{id, name, brief, gender?}`；无合适原著角色时给空数组。
+1. 必要时调用 storyteller 生成 `openingReply`：只要首回合正文和正式 `[[选项]]`，不要让它参与访谈状态。
+2. `session.revision` 使用本轮将要输出的 revision，`session.attemptId` 使用当前 answer marker id。
+3. 一次调用 `commit_opening`，输入本次最小闭包。脚本返回校验错误时按 code/message 修正同一 payload 后重试。
+4. action 成功后，回复一句自然语言完成提示，并输出 `phase:"complete"` 的完整 `[[开局会话]]`；不要附 `[[开局选项]]`。
 
-开局正文不在本 Skill 落盘；后续「游玩设定」Skill 会调用 storyteller 生成 openingReply，并通过 `commit_play_setup` 写入 turn 0 history 与玩家回合上下文。
+常见失败：
 
-## 产物落点（直接维护）
+- `OPENING_SESSION_MISMATCH`：session/source/branch/revision/attempt 与控制文件不一致；重新读取当前 injection 与最近状态。
+- `OPENING_SAVE_NOT_CLEAN`：检测到测试期旧状态或正式模型；停止提交，告知调用方需新存档，不删除旧文件。
+- `OPENING_REF_UNKNOWN`：ref 不在本次闭包；补入必要实体/scene 或修正引用。
+- `OPENING_SOURCE_REF_UNKNOWN`：frontier/read slice ref 不在当前章节索引；使用读取 action 返回的 ref。
+- `OPENING_ALREADY_COMMITTED`：已有完成信号但 receipt 不同或无法确认；停止提交，不得覆盖。
+- `OPENING_PLAY_ALREADY_STARTED`：正式游玩已开始或存在后续 turn；停止提交，不得重跑开局事务。
 
-- `save/schema/current.md` 与 `save/schema/changelog.md`：当前 schema 草案与变更理由。Markdown/text 文档维护可用 `text_edit`；JSON 局部修正可用 `json_edit`。开局实体、场景、关系、runtime、frontier 的主提交优先使用上方 commit_* action，以获得跨文件校验。
-
-## 重试策略
-
-脚本返回校验错误时按 code/message 修正后重试，不放弃。常见错误：
-
-- `OPENING_SOURCE_REF_UNKNOWN` — 窗口章节引用不存在 → 检查引用是否来自 `read_opening_slice` 结果。
-- `OPENING_WINDOW_REASON_REQUIRED` — `frontier.sourceWindow.reason` 缺失 → 补一句话窗口选择理由。
-- `OPENING_ENTITY_ID_INVALID` — id 格式错 → 改成 `<type>:<localId>`。
-- `OPENING_ENTITY_TYPE_INVALID` — `container` 实体需 `type="container"`；`item` 实体 `type` 需为 equipment/material/consumable/special/other 之一 → 补/改正 `type` 字段。
-- `OPENING_CANDIDATE_TYPE_INVALID` — 理解摘要候选角色 id 必须用 `character:<localId>` → 改成 character 类型。
-- `OPENING_REF_UNKNOWN` / `OPENING_RELATIONSHIP_SUBJECT_UNKNOWN` / `OPENING_RELATIONSHIP_TO_UNKNOWN` / `OPENING_RUNTIME_SCENE_UNKNOWN` / `OPENING_RUNTIME_PROTAGONIST_UNKNOWN` / `OPENING_RUNTIME_LOCATION_UNKNOWN` — ref 指向不存在的实体/场景 → 确认目标已在之前 commit 中写入或已存在。
-- `OPENING_RELATIONSHIP_SUBJECT_TYPE_INVALID` / `OPENING_RELATIONSHIP_TO_TYPE_INVALID` — relationships 只记录角色/人物关系，subject/to 必须是 `character:<localId>`；地点、组织、物品、事件、尸体/线索等非角色关联放到对应字段、已有 ref 结构或 `extensions.render="ref"`，不要写入 relationships。
-- `OPENING_SCENE_PRESENT_REQUIRED` — 场景 present 不能为空。
-- `OPENING_TIMELINE_ANCHOR_INVALID` / `OPENING_TIMELINE_TIME_REQUIRED` / `OPENING_TIMELINE_LABEL_REQUIRED` — frontier.timeline 锚点格式错 → 每项需为 `{ chapter: number, time: string, label: string }`（脚本自动补 `kind: "source"` 和 `order`），`chapter` 用 `sourceWindow.startIndex`。
-- 缺必填 → 补齐。
-
-## spoiler-safe
-
-只使用开头窗口中读到的内容。不推断、不剧透未来剧情。
-
-实体只反映开局锚点这一刻为真的事实。开局锚点 = `timeline` 第一个锚点，对应 `sourceWindow.startIndex` 这一章、`time="元年"`。窗口里开局锚点之后章节才出现的关系变化、新状态、新目标、履历、新登场的关联，不要写入 entity（`history` / `status` / `goals` / `containers` 等）和 relationships 分片——它们在开局时刻还没发生，只作为你理解世界的背景。
-
-例：窗口是第 1~6 章，开局锚点是第 1 章、元年。第 3 章角色 A 与 B 初次合作、第 5 章 A 与 B 反目——A 的 `history` 不写这两件事，A↔B 的 relationship 不写"合作"或"敌对"，A 的 `goals.current` 不写第 5 章之后的"修复与 B 的关系"。开局时刻 A 与 B 的关系只反映第 1 章已知的状态。
+所有脚本错误都必须原样保留 code 的含义，不要绕过脚本改写正式文件。

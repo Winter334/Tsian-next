@@ -1,167 +1,133 @@
-import { ref, readonly } from "vue"
+import { readonly, ref } from "vue"
 import { getTsianClient } from "./useTsian"
-import type { WorkspaceEntry } from "@tsian/play-bridge"
 import {
-  SOURCE_MANIFEST_PATH,
   CHAPTER_INDEX_PATH,
+  FRONTIER_PATH,
   INITIAL_SUMMARY_PATH,
   RUNTIME_PATH,
   SETUP_SUMMARY_PATH,
-  CHARACTER_ENTITIES_ROOT,
-  buildOpeningInitializationPrompt,
-  buildPlaySetupPrompt,
-  safeJsonParse,
-  isSourceManifest,
-  isOpeningUnderstandingSummary,
-  isSetupSummary,
+  SOURCE_MANIFEST_PATH,
   excerptText,
-  type SourceManifest,
-  type ChapterIndexFile,
-  type ChapterIndexEntry,
-  type LegacyChapterIndexEntry,
-  type ShardedChapterIndexEntry,
+  isSetupSummary,
+  isSourceManifest,
+  safeJsonParse,
   type BuiltSourceCorpus,
-  type OpeningUnderstandingSummary,
-  type ImportMode,
-  type CharacterBranch,
-  type SelectedCharacter,
-  type OriginalCharacterFormData,
-  type CharacterEntity,
-  type PlaySetupStatus,
+  type ChapterIndexEntry,
+  type ChapterIndexFile,
   type DialogMessage,
+  type ImportMode,
+  type LegacyChapterIndexEntry,
   type SetupSummary,
+  type ShardedChapterIndexEntry,
+  type SourceManifest,
 } from "../lib/source"
 import { buildSourceCorpusInWorker } from "../lib/source-import-worker"
 import { loadSourceChapterPreview, type SourceTextCache } from "../lib/source-reader"
+import {
+  OPENING_CONTROL_PATH,
+  buildOpeningInjection,
+  createAttemptId,
+  createOpeningControl,
+  openingAnswerMarker,
+  openingBootstrapMarker,
+  openingControlMatchesManifest,
+  openingControlMatchesSession,
+  openingInputHash,
+  openingRevisionContinues,
+  openingSession,
+  openingSourceIdentity,
+  parseOpeningAssistant,
+  parseOpeningControl,
+  parseOpeningUser,
+  sanitizeOpeningDisplay,
+  serializeOpeningControl,
+  type CharacterBranch,
+  type OpeningAttempt,
+  type OpeningInterviewControl,
+  type OpeningInterviewStatus,
+  type OpeningTurnState,
+} from "../lib/opening-interview"
 
-/**
- * useSetupState — 向导响应式状态机（替代 source-import.legacy.ts 闭包 state）。
- *
- * design §3：step/subView/understandingStatus/importData 全部 reactive，
- * 状态变 → Vue 响应式自动渲染（替代 legacy 手动 render() 重建 DOM）。
- *
- * 模块级单例共享（同 useTsian 模式），所有 setup 组件共用同一份状态。
- */
+export type SetupStep = 1 | 2 | 3
+export type SetupSubView =
+  | "choose"
+  | "paste"
+  | "file"
+  | "review"
+  | "branch-choice"
+  | "opening-interview"
+  | "opening-confirm"
+  | "legacy-state"
+  | "fatal-state"
 
-// ── 向导视图类型 ──
-export type SetupStep = 1 | 2 | 3 | 4 | 5
-export type SetupSubView = "choose" | "paste" | "file" | "review" | "understanding" | "character-setup" | "play-setup" | "opening-confirm" | "stub"
-export type UnderstandingStatus = "idle" | "running" | "ready" | "failed"
-export type CharacterSetupStatus = "selecting" | "confirmed"
-
-// ── 模块级共享响应式状态 ──
 const step = ref<SetupStep>(1)
 const subView = ref<SetupSubView>("choose")
-const understandingStatus = ref<UnderstandingStatus>("idle")
-
 const manifest = ref<SourceManifest | null>(null)
 const chapterIndex = ref<ChapterIndexFile | null>(null)
 const selectedChapter = ref(0)
-const understandingSummary = ref<OpeningUnderstandingSummary | null>(null)
-
 const busy = ref(false)
 const statusText = ref("等待选择导入方式")
 const errorText = ref("")
 const sourcePreviewCache: SourceTextCache = new Map()
 
-// ── 角色设定状态（Step 3）──
 const characterBranch = ref<CharacterBranch | null>(null)
-const selectedCharacter = ref<SelectedCharacter | null>(null)
-const characterSetupStatus = ref<CharacterSetupStatus>("selecting")
-
-// ── 游玩设定对话状态（Step 4）──
-const playSetupStatus = ref<PlaySetupStatus>("idle")
+const playSetupStatus = ref<OpeningInterviewStatus>("idle")
 const playSetupMessages = ref<DialogMessage[]>([])
 const playSetupError = ref("")
-// 流式文本累积：onAgentInvocation delta 按 invocationId 过滤后追加到这里，
-// PlaySetupDialog 在 running 态展示；落定后由 handleAgentResponse 清空。
 const playSetupStreamingText = ref("")
-let activeInvocationId: string | null = null
-let playSetupInvocationSubscribed = false
-
-// ── 开局确认状态（Step 5）──
 const playSetupSummary = ref<string | null>(null)
 
-// 初始化状态
 const initializing = ref(true)
 const initialized = ref(false)
+let activeInvocationId: string | null = null
+let invocationSubscribed = false
+let rawStreamingText = ""
+let dialogMessageSeq = 0
+let openingStartPending = false
 
-// ── understanding 阶段文案（Step 2）──
-// 阶段由 onAgentInvocation 的 tool 事件驱动（单调推进），替代旧的 STAGE_INTERVAL 时间硬切。
-// 0 = 观察，1 = 阅读，2 = 整理/写入。
-const understandingStage = ref(0)
-let understandingActiveInvocationId: string | null = null
-let understandingInvocationSubscribed = false
+function nextDialogId(): string {
+  dialogMessageSeq += 1
+  return `opening-dialog-${dialogMessageSeq}`
+}
 
-function ensurePlaySetupInvocationSubscription(tsian: ReturnType<typeof getTsianClient>): void {
-  if (playSetupInvocationSubscribed) return
-  playSetupInvocationSubscribed = true
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function ensureInvocationSubscription(tsian: ReturnType<typeof getTsianClient>): void {
+  if (invocationSubscribed) return
+  invocationSubscribed = true
   tsian.onAgentInvocation((event) => {
     if (!activeInvocationId || event.invocationId !== activeInvocationId) return
-    // MVP 只展示编排者（world-architect）的 content delta；
-    // delegated agent_call 产生的 delta（agentId !== "world-architect"）过滤掉，
-    // 其过程通过 tool 事件（name: "agent_call"）隐含感知。
     if (event.type === "delta" && event.kind === "content" && event.agentId === "world-architect") {
-      playSetupStreamingText.value += event.delta
+      rawStreamingText += event.delta
+      playSetupStreamingText.value = sanitizeOpeningDisplay(rawStreamingText)
     }
-    // completed/failed 由 Promise resolve/reject 驱动，不在此处理。
   })
 }
-
-function ensureUnderstandingInvocationSubscription(tsian: ReturnType<typeof getTsianClient>): void {
-  if (understandingInvocationSubscribed) return
-  understandingInvocationSubscribed = true
-  tsian.onAgentInvocation((event) => {
-    if (!understandingActiveInvocationId || event.invocationId !== understandingActiveInvocationId) return
-    if (event.type === "tool") {
-      understandingStage.value = Math.max(understandingStage.value, mapToolToStage(event))
-    }
-    // completed/failed 由 understandingStatus 驱动，不在此处理。
-  })
-}
-
-/** 工具事件 → 面向玩家的术式阶段文案（单调推进，不倒退）。 */
-function mapToolToStage(event: { name: string; status: string }): number {
-  // 只在 success/running 时推进；loading 与 failed 不影响阶段。
-  if (event.status !== "success" && event.status !== "running") return understandingStage.value
-  const name = event.name
-  // write/edit/copy/move/delete（落盘/整理）→ 阶段 2
-  if (name === "write" || name === "edit" || name === "copy" || name === "move" || name === "delete") return 2
-  // read/list/search/glob/diff/use_skill（观察/阅读）→ 阶段 1
-  if (name === "read" || name === "list" || name === "search" || name === "glob" || name === "diff" || name === "use_skill") return 1
-  // 未知工具不推进
-  return understandingStage.value
-}
-
-// ── workspace 读写（通过 bridge）──
 
 async function loadSourceManifest(tsian: ReturnType<typeof getTsianClient>): Promise<SourceManifest | null> {
   const file = await tsian.workspace.read(SOURCE_MANIFEST_PATH)
-  if (!file?.content) return null
+  if (!file) return null
+  if (!file.content) throw new Error("小说来源清单为空。")
   const data = safeJsonParse(file.content)
-  return isSourceManifest(data) ? data : null
+  if (isRecord(data) && data.status === "pending" && data.importedAt === null && data.chapterCount === 0) return null
+  if (!isSourceManifest(data)) throw new Error("小说来源清单格式无效。")
+  return data
 }
 
 async function loadChapterIndex(tsian: ReturnType<typeof getTsianClient>): Promise<ChapterIndexFile | null> {
   const file = await tsian.workspace.read(CHAPTER_INDEX_PATH)
-  if (!file?.content) return null
+  if (!file?.content) throw new Error("小说章节索引缺失。")
   const data = safeJsonParse(file.content)
-  if (!isRecord(data) || !Array.isArray(data.chapters)) {
-    return null
-  }
+  if (!isRecord(data) || !Array.isArray(data.chapters)) throw new Error("小说章节索引格式无效。")
 
   if (data.version === 2) {
     const chapters = data.chapters.flatMap((chapter): ShardedChapterIndexEntry[] => {
       if (!isRecord(chapter) || !isRecord(chapter.source)) return []
       const source = chapter.source
-      if (source.kind !== "shard"
-        || typeof source.shardId !== "string"
-        || typeof source.path !== "string"
-        || typeof source.start !== "number"
-        || typeof source.end !== "number"
-      ) {
-        return []
-      }
+      if (source.kind !== "shard" || typeof source.shardId !== "string" || typeof source.path !== "string"
+        || typeof source.start !== "number" || typeof source.end !== "number") return []
       const index = typeof chapter.index === "number" ? chapter.index : 0
       if (index <= 0 || typeof chapter.title !== "string") return []
       return [{
@@ -169,26 +135,15 @@ async function loadChapterIndex(tsian: ReturnType<typeof getTsianClient>): Promi
         ref: typeof chapter.ref === "string" && chapter.ref.trim() ? chapter.ref : `source:chapter-${String(index).padStart(4, "0")}`,
         title: chapter.title,
         characters: typeof chapter.characters === "number" ? chapter.characters : Math.max(0, source.end - source.start),
-        source: {
-          kind: "shard",
-          shardId: source.shardId,
-          path: source.path,
-          start: source.start,
-          end: source.end,
-        },
+        source: { kind: "shard", shardId: source.shardId, path: source.path, start: source.start, end: source.end },
       }]
     })
+    if (chapters.length !== data.chapters.length) throw new Error("小说章节索引包含无效章节。")
     const shards = Array.isArray(data.shards)
       ? data.shards.flatMap((shard) => {
-        if (!isRecord(shard)
-          || typeof shard.id !== "string"
-          || typeof shard.path !== "string"
-          || typeof shard.startChapter !== "number"
-          || typeof shard.endChapter !== "number"
-          || typeof shard.characters !== "number"
-        ) {
-          return []
-        }
+        if (!isRecord(shard) || typeof shard.id !== "string" || typeof shard.path !== "string"
+          || typeof shard.startChapter !== "number" || typeof shard.endChapter !== "number"
+          || typeof shard.characters !== "number") return []
         return [{ id: shard.id, path: shard.path, startChapter: shard.startChapter, endChapter: shard.endChapter, characters: shard.characters }]
       })
       : []
@@ -206,40 +161,23 @@ async function loadChapterIndex(tsian: ReturnType<typeof getTsianClient>): Promi
   }
 
   const chapters = data.chapters.flatMap((chapter): LegacyChapterIndexEntry[] => {
-    if (!isRecord(chapter)) return []
-    if (typeof chapter.title !== "string" || typeof chapter.path !== "string") return []
-    return [{
-      title: chapter.title,
-      path: chapter.path,
-      ...(typeof chapter.characters === "number" ? { characters: chapter.characters } : {}),
-    }]
+    if (!isRecord(chapter) || typeof chapter.title !== "string" || typeof chapter.path !== "string") return []
+    return [{ title: chapter.title, path: chapter.path, ...(typeof chapter.characters === "number" ? { characters: chapter.characters } : {}) }]
   })
+  if (chapters.length !== data.chapters.length) throw new Error("小说章节索引包含无效章节。")
   return { version: 1, chapters }
-}
-
-async function loadUnderstandingSummary(tsian: ReturnType<typeof getTsianClient>): Promise<OpeningUnderstandingSummary | null> {
-  const file = await tsian.workspace.read(INITIAL_SUMMARY_PATH)
-  if (!file?.content) return null
-  const data = safeJsonParse(file.content)
-  return isOpeningUnderstandingSummary(data) ? data : null
 }
 
 async function ensureChapterCharacters(
   tsian: ReturnType<typeof getTsianClient>,
   index: ChapterIndexFile | null,
 ): Promise<ChapterIndexFile | null> {
-  if (!index || index.version === 2 || index.chapters.every((ch) => typeof ch.characters === "number")) return index
-
-  const chapters = await Promise.all(
-    index.chapters.map(async (ch) => {
-      if (typeof ch.characters === "number") return ch
-      const file = await tsian.workspace.read(ch.path)
-      return {
-        ...ch,
-        characters: excerptText(file?.content ?? "", Number.MAX_SAFE_INTEGER).length,
-      }
-    }),
-  )
+  if (!index || index.version === 2 || index.chapters.every((chapter) => typeof chapter.characters === "number")) return index
+  const chapters = await Promise.all(index.chapters.map(async (chapter) => {
+    if (typeof chapter.characters === "number") return chapter
+    const file = await tsian.workspace.read(chapter.path)
+    return { ...chapter, characters: excerptText(file?.content ?? "", Number.MAX_SAFE_INTEGER).length }
+  }))
   const updated = { version: 1 as const, chapters }
   await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(updated, null, 2)}\n`)
   return updated
@@ -251,68 +189,153 @@ async function writeCorpus(
   onProgress?: (current: number, total: number) => void,
   onIndexWrite?: () => void,
 ): Promise<void> {
-  const total = corpus.shards.length
   for (let index = 0; index < corpus.shards.length; index += 1) {
     const shard = corpus.shards[index]!
     await tsian.workspace.write(shard.path, shard.content)
-    onProgress?.(index + 1, total)
+    onProgress?.(index + 1, corpus.shards.length)
   }
   onIndexWrite?.()
   await tsian.workspace.write(CHAPTER_INDEX_PATH, `${JSON.stringify(corpus.chapterIndex, null, 2)}\n`)
   await tsian.workspace.write(SOURCE_MANIFEST_PATH, `${JSON.stringify(corpus.manifest, null, 2)}\n`)
 }
 
-// ── 状态操作 ──
+async function loadSetupSummary(tsian: ReturnType<typeof getTsianClient>, required = false): Promise<SetupSummary | null> {
+  const file = await tsian.workspace.read(SETUP_SUMMARY_PATH)
+  if (!file?.content) {
+    if (required) throw new Error("开局完成状态文件缺失。")
+    return null
+  }
+  const data = safeJsonParse(file.content)
+  if (!isSetupSummary(data)) throw new Error("开局完成状态文件格式无效。")
+  return data
+}
+
+async function loadOpeningControl(tsian: ReturnType<typeof getTsianClient>): Promise<OpeningInterviewControl | null> {
+  const file = await tsian.workspace.read(OPENING_CONTROL_PATH)
+  if (!file) return null
+  if (!file.content) throw new Error("开局访谈控制文件为空。")
+  const control = parseOpeningControl(safeJsonParse(file.content))
+  if (!control) throw new Error("开局访谈控制文件格式无效。")
+  return control
+}
+
+async function writeOpeningControl(tsian: ReturnType<typeof getTsianClient>, control: OpeningInterviewControl): Promise<void> {
+  await tsian.workspace.write(OPENING_CONTROL_PATH, serializeOpeningControl(control))
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, keys: string[]): boolean {
+  const expected = new Set(keys)
+  return Object.keys(value).length === expected.size && Object.keys(value).every((key) => expected.has(key))
+}
+
+function isInitialPendingRuntime(value: unknown): boolean {
+  return isRecord(value)
+    && hasOnlyKeys(value, ["turn", "worldTime", "plotOrder", "location", "weather", "activeSceneRefs", "protagonistRef", "extensions", "updatedAtTurn", "updatedBy"])
+    && value.turn === 0
+    && value.worldTime === ""
+    && value.plotOrder === 1
+    && value.location === null
+    && value.weather === ""
+    && Array.isArray(value.activeSceneRefs) && value.activeSceneRefs.length === 0
+    && value.protagonistRef === null
+    && isRecord(value.extensions) && Object.keys(value.extensions).length === 0
+    && value.updatedAtTurn === 0
+    && value.updatedBy === null
+}
+
+function isInitialPendingFrontier(value: unknown): boolean {
+  if (!isRecord(value) || !hasOnlyKeys(value, ["sourceWindow", "extractedThrough", "timeline", "notes"])) return false
+  if (!isRecord(value.sourceWindow) || !hasOnlyKeys(value.sourceWindow, ["start", "end"])) return false
+  if (value.sourceWindow.start !== null || value.sourceWindow.end !== null || value.extractedThrough !== null) return false
+  if (typeof value.notes !== "string" || !Array.isArray(value.timeline) || value.timeline.length !== 1) return false
+  const anchor = value.timeline[0]
+  return isRecord(anchor)
+    && hasOnlyKeys(anchor, ["kind", "order", "chapter", "time", "label"])
+    && anchor.kind === "source"
+    && anchor.order === 1
+    && anchor.chapter === 1
+    && anchor.time === "元年"
+    && anchor.label === "开局"
+}
+
+function isInitialUnderstandingSummary(value: unknown): boolean {
+  return isRecord(value)
+    && value.status === "pending"
+    && value.title === null
+    && Array.isArray(value.candidateCharacters)
+    && value.candidateCharacters.length === 0
+}
+
+async function directoryContainsFormalData(tsian: ReturnType<typeof getTsianClient>, path: string): Promise<boolean> {
+  const entries = await tsian.workspace.list(path)
+  return entries.some((entry) => entry.name !== "README.md" && entry.name !== ".keep")
+}
+
+async function hasLegacyOpeningState(tsian: ReturnType<typeof getTsianClient>): Promise<boolean> {
+  const entrypoints = await tsian.card.entrypoints()
+  const playerTurnAgent = entrypoints.playerTurn
+  if (typeof playerTurnAgent !== "string" || !playerTurnAgent.trim()) {
+    throw new Error("当前卡缺少正式玩家回合入口。")
+  }
+  const [
+    understanding,
+    understandingContext,
+    playSetupContext,
+    runtimeFile,
+    frontierFile,
+    legacyOpeningNarrative,
+    playerContext,
+    entityData,
+    sceneData,
+    relationshipData,
+    turnData,
+  ] = await Promise.all([
+    tsian.workspace.read(INITIAL_SUMMARY_PATH),
+    tsian.workspace.read("save/agents/world-architect/context-understanding.json"),
+    tsian.workspace.read("save/agents/world-architect/context-play-setup.json"),
+    tsian.workspace.read(RUNTIME_PATH),
+    tsian.workspace.read(FRONTIER_PATH),
+    tsian.workspace.read("save/playthrough/opening-narrative.json"),
+    tsian.workspace.read(`save/agents/${playerTurnAgent}/context.json`),
+    directoryContainsFormalData(tsian, "save/entities"),
+    directoryContainsFormalData(tsian, "save/scenes"),
+    directoryContainsFormalData(tsian, "save/relationships"),
+    directoryContainsFormalData(tsian, "save/history/turns"),
+  ])
+  const understandingData = understanding?.content ? safeJsonParse(understanding.content) : null
+  if (!isInitialUnderstandingSummary(understandingData)) return true
+  if (understandingContext || playSetupContext || legacyOpeningNarrative || playerContext) return true
+  if (entityData || sceneData || relationshipData || turnData) return true
+  const runtime = runtimeFile?.content ? safeJsonParse(runtimeFile.content) : null
+  const frontier = frontierFile?.content ? safeJsonParse(frontierFile.content) : null
+  return !isInitialPendingRuntime(runtime) || !isInitialPendingFrontier(frontier)
+}
+
+function showFatalState(message: string): void {
+  playSetupStatus.value = "recovering"
+  playSetupError.value = message
+  setView("fatal-state")
+}
+
+function showInterviewRecovery(message: string): void {
+  playSetupStatus.value = "recovering"
+  playSetupError.value = message
+  setView("opening-interview")
+}
 
 function setView(view: SetupSubView): void {
   subView.value = view
   errorText.value = ""
+  if (view === "choose" || view === "paste" || view === "file" || view === "review") step.value = 1
+  else if (view === "opening-confirm") step.value = 3
+  else step.value = 2
   if (view === "choose") statusText.value = "等待选择导入方式"
-  // step 推进：understanding → step 2，其余 step1 子屏 → step 1
-  step.value = view === "understanding" ? 2 : 1
 }
 
-/** 推进到指定步骤。step1-2 有真实视图，step3 角色设定有独立子屏，
- *  step4 游玩设定对话，step5 开局确认过渡入口。 */
 function goToStep(target: SetupStep): void {
-  if (target <= 1) {
-    setView("choose")
-    return
-  }
-  if (target === 2) {
-    // 回到 understanding：已有 ready 状态则直接进，否则回 review
-    if (understandingStatus.value === "ready") {
-      subView.value = "understanding"
-      step.value = 2
-    } else {
-      setView("review")
-    }
-    return
-  }
-  if (target === 3) {
-    // Step 3 角色设定：已有确认角色则进确认屏，否则进选择/表单
-    subView.value = "character-setup"
-    step.value = 3
-    errorText.value = ""
-    return
-  }
-  if (target === 4) {
-    // Step 4 游玩设定对话：仅在从未开始时自动启动，已有消息则恢复
-    subView.value = "play-setup"
-    step.value = 4
-    errorText.value = ""
-    if (playSetupStatus.value === "idle" && playSetupMessages.value.length === 0) {
-      void startPlaySetupDialog()
-    } else if (playSetupStatus.value === "failed") {
-      // 失败状态回来时恢复为 idle，让玩家可以重试
-      playSetupStatus.value = "idle"
-    }
-    return
-  }
-  // Step 5 开局确认：设定卡片过渡入口，enterPlay 触发翻转
-  subView.value = "opening-confirm"
-  step.value = 5
-  errorText.value = ""
+  if (target === 1) setView(manifest.value ? "review" : "choose")
+  else if (target === 2) setView(playSetupMessages.value.length > 0 ? "opening-interview" : "branch-choice")
+  else setView("opening-confirm")
 }
 
 async function startImport(
@@ -325,7 +348,6 @@ async function startImport(
   errorText.value = ""
   sourcePreviewCache.clear()
   statusText.value = "读取文本…"
-
   try {
     const sourceFormat = mode === "file" && input.fileName?.toLowerCase().endsWith(".md") ? "md" : "txt"
     const corpus = await buildSourceCorpusInWorker({
@@ -339,7 +361,7 @@ async function startImport(
         ? `${progress.message.replace(/…$/, "")} ${progress.current}/${progress.total}…`
         : progress.message
     })
-    statusText.value = "写入源文本 0/" + corpus.shards.length + "…"
+    statusText.value = `写入源文本 0/${corpus.shards.length}…`
     await writeCorpus(tsian, corpus, (current, total) => {
       statusText.value = `写入源文本 ${current}/${total}…`
     }, () => {
@@ -348,13 +370,11 @@ async function startImport(
     manifest.value = corpus.manifest
     chapterIndex.value = corpus.chapterIndex
     selectedChapter.value = 0
-    understandingStatus.value = "idle"
-    understandingSummary.value = null
+    resetOpeningMemory()
     setView("review")
     statusText.value = "小说已导入"
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "导入失败"
-    errorText.value = message
+  } catch (error) {
+    errorText.value = error instanceof Error ? error.message : "导入失败"
     statusText.value = "导入失败"
   } finally {
     busy.value = false
@@ -362,605 +382,586 @@ async function startImport(
 }
 
 function confirmReimport(): void {
-  if (window.confirm("重新导入会覆盖当前小说文本与章节目录。确定要换源吗？")) {
-    manifest.value = null
-    chapterIndex.value = null
-    sourcePreviewCache.clear()
-    selectedChapter.value = 0
-    understandingStatus.value = "idle"
-    understandingSummary.value = null
-    statusText.value = "等待选择导入方式"
-    setView("choose")
-  }
-}
-
-async function startOpeningUnderstanding(): Promise<void> {
-  if (!manifest.value || busy.value) return
-  const tsian = getTsianClient()
-  busy.value = true
-  errorText.value = ""
-  understandingStatus.value = "running"
-  understandingStage.value = 0
-  setView("understanding")
-
-  // 事件驱动阶段文案：订阅 onAgentInvocation tool 事件，按 invocationId 过滤后映射成 STAGES。
-  const invocationId = `understanding-${Date.now().toString(36)}`
-  understandingActiveInvocationId = invocationId
-  ensureUnderstandingInvocationSubscription(tsian)
-
-  try {
-    const prompt = buildOpeningInitializationPrompt(manifest.value, chapterIndex.value)
-    const result = await tsian.invokeAgent("world-architect", prompt, {
-      invocationId,
-      purpose: "opening-understanding",
-      contextSlot: "understanding",
-      persist: false,
-    })
-    const summary = await loadUnderstandingSummary(tsian)
-    if (!summary) {
-      // agent 已返回但 summary 文件未找到——可能是平台侧写入失败。
-      // 用 agent 的回复文本作为错误信息，比"理解未完成"更准确。
-      throw new Error(result.response || "理解完成但写入存档失败，请重试。")
-    }
-    understandingSummary.value = summary
-    understandingStatus.value = "ready"
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "初始理解失败"
-    errorText.value = message
-    understandingStatus.value = "failed"
-  } finally {
-    understandingActiveInvocationId = null
-    busy.value = false
-  }
+  if (!window.confirm("重新导入会覆盖当前小说文本与章节目录。确定要换源吗？")) return
+  manifest.value = null
+  chapterIndex.value = null
+  selectedChapter.value = 0
+  sourcePreviewCache.clear()
+  resetOpeningMemory()
+  statusText.value = "等待选择导入方式"
+  setView("choose")
 }
 
 async function loadChapterPreview(chapter: ChapterIndexEntry): Promise<string> {
+  return loadSourceChapterPreview(getTsianClient(), chapter, sourcePreviewCache)
+}
+
+async function showBranchChoice(): Promise<void> {
+  if (!manifest.value) return
   const tsian = getTsianClient()
-  return loadSourceChapterPreview(tsian, chapter, sourcePreviewCache)
-}
-
-// ── 角色设定操作（Step 3）──
-
-/** Step 2 末尾选择分支后调用，存储分支并推进到 Step 3。 */
-function setCharacterBranch(branch: CharacterBranch): void {
-  characterBranch.value = branch
-  characterSetupStatus.value = "selecting"
-  selectedCharacter.value = null
-  goToStep(3)
-}
-
-/** 返回分支选择（回到 Step 2 understanding ready 视图）。 */
-function backToBranchChoice(): void {
-  characterBranch.value = null
-  selectedCharacter.value = null
-  characterSetupStatus.value = "selecting"
-  if (understandingStatus.value === "ready") {
-    subView.value = "understanding"
-    step.value = 2
-  }
-}
-
-/** 确认原著角色选择。写入 runtime.json 的 protagonistRef。 */
-async function confirmCanonCharacter(candidate: { id?: string; name: string; brief: string; gender?: string }): Promise<void> {
-  if (busy.value) return
-  const tsian = getTsianClient()
-  busy.value = true
-  errorText.value = ""
   try {
-    const ref = candidate.id || `character:${candidate.name}`
-    const charInfo: SelectedCharacter = { ref, name: candidate.name, brief: candidate.brief, ...(candidate.gender ? { gender: candidate.gender } : {}) }
-    await writePlayerCharacter(tsian, ref, candidate.name)
-    selectedCharacter.value = charInfo
-    characterSetupStatus.value = "confirmed"
-    statusText.value = `已选定角色：${candidate.name}`
-  } catch (err) {
-    errorText.value = err instanceof Error ? err.message : "确认角色失败"
-  } finally {
-    busy.value = false
-  }
-}
-
-/** 确认原创角色。创建实体文件 + 写入 runtime.json。 */
-async function confirmOriginalCharacter(form: OriginalCharacterFormData): Promise<void> {
-  if (busy.value) return
-  const tsian = getTsianClient()
-  busy.value = true
-  errorText.value = ""
-  try {
-    const localId = await ensureUniqueLocalId(tsian, form.name)
-    const ref = `character:${localId}`
-    const now = new Date().toISOString()
-    const entity: CharacterEntity = {
-      id: ref,
-      name: form.name,
-      brief: form.brief,
-      sourceRefs: [],
-      updatedBy: "player-setup",
-      updatedAt: now,
-    }
-    if (form.gender?.trim()) entity.gender = form.gender.trim()
-    if (form.appearance?.trim()) entity.appearance = form.appearance.trim()
-    if (form.personality?.trim()) entity.personality = form.personality.trim()
-    if (form.background?.trim()) entity.background = form.background.trim()
-
-    await tsian.workspace.write(
-      `${CHARACTER_ENTITIES_ROOT}${localId}.json`,
-      `${JSON.stringify(entity, null, 2)}\n`,
-    )
-    await writePlayerCharacter(tsian, ref, form.name)
-    selectedCharacter.value = { ref, name: form.name, brief: form.brief, ...(form.gender?.trim() ? { gender: form.gender.trim() } : {}) }
-    characterSetupStatus.value = "confirmed"
-    statusText.value = `已创建角色：${form.name}`
-  } catch (err) {
-    errorText.value = err instanceof Error ? err.message : "创建角色失败"
-  } finally {
-    busy.value = false
-  }
-}
-
-/** 返回修改角色（从确认屏回到选择/表单）。 */
-function resetCharacterSetup(): void {
-  selectedCharacter.value = null
-  characterSetupStatus.value = "selecting"
-}
-
-/** read-modify-write runtime.json 的 protagonistRef 字段。 */
-async function writePlayerCharacter(
-  tsian: ReturnType<typeof getTsianClient>,
-  ref: string,
-  name: string,
-): Promise<void> {
-  const file = await tsian.workspace.read(RUNTIME_PATH)
-  const runtime = file?.content ? safeJsonParse(file.content) : null
-  if (!runtime || typeof runtime !== "object") {
-    throw new Error("runtime.json 不存在或格式无效")
-  }
-  const updated = {
-    ...runtime,
-    protagonistRef: { ref, name },
-  }
-  await tsian.workspace.write(RUNTIME_PATH, `${JSON.stringify(updated, null, 2)}\n`)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-}
-
-interface ProjectedAssistantMessage {
-  content: string
-  displayContent?: string
-  projections?: Record<string, unknown>
-}
-
-async function projectAssistantMessage(
-  tsian: ReturnType<typeof getTsianClient>,
-  content: string,
-): Promise<ProjectedAssistantMessage> {
-  const result = await tsian.runAction("reply-project", { text: content })
-  if (isRecord(result) && result.ok === false) {
-    const error = isRecord(result.error) ? result.error : null
-    throw new Error(typeof error?.message === "string" ? error.message : "reply projection failed")
-  }
-  const projected = isRecord(result) && isRecord(result.item) ? result.item : result
-  if (isRecord(projected) && typeof projected.content === "string") {
-    return {
-      content: projected.content,
-      ...(typeof projected.displayContent === "string" ? { displayContent: projected.displayContent } : {}),
-      ...(isRecord(projected.projections) ? { projections: projected.projections } : {}),
-    }
-  }
-  return { content }
-}
-
-function displayAssistantContent(item: ProjectedAssistantMessage): string {
-  return item.displayContent ?? item.content
-}
-
-function projectedChoices(item: ProjectedAssistantMessage): string[] {
-  const choices = item.projections?.choices
-  return Array.isArray(choices) ? choices.filter((choice): choice is string => typeof choice === "string") : []
-}
-
-/** 兼容 workspace.list 的数组形态与旧 list result 对象形态。 */
-function normalizeWorkspaceListEntries(listResult: unknown): WorkspaceEntry[] {
-  const rawEntries = Array.isArray(listResult)
-    ? listResult
-    : isRecord(listResult) && Array.isArray(listResult.entries)
-      ? listResult.entries
-      : null
-
-  if (!rawEntries) {
-    throw new Error("workspace.list 返回格式无效")
-  }
-
-  return rawEntries.map((entry, index) => {
-    if (!isRecord(entry) || typeof entry.path !== "string") {
-      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].path`)
-    }
-    if (typeof entry.name !== "string") {
-      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].name`)
-    }
-    if (entry.kind !== "file" && entry.kind !== "directory") {
-      throw new Error(`workspace.list 返回条目格式无效：entries[${index}].kind`)
-    }
-    return {
-      path: entry.path,
-      name: entry.name,
-      kind: entry.kind,
-      ...(typeof entry.updatedAt === "number" ? { updatedAt: entry.updatedAt } : {}),
-      ...(typeof entry.size === "number" ? { size: entry.size } : {}),
-      ...(typeof entry.childCount === "number" ? { childCount: entry.childCount } : {}),
-    }
-  })
-}
-
-/** 生成唯一 localId：original-<name>，冲突加序号后缀。 */
-async function ensureUniqueLocalId(
-  tsian: ReturnType<typeof getTsianClient>,
-  name: string,
-): Promise<string> {
-  const base = `original-${name}`
-  const listResult = await tsian.workspace.list(CHARACTER_ENTITIES_ROOT)
-  const existing = new Set(
-    normalizeWorkspaceListEntries(listResult).map((f) => f.path.split("/").pop()?.replace(/\.json$/, "") ?? ""),
-  )
-  if (!existing.has(base)) return base
-  for (let i = 2; i < 100; i++) {
-    const candidate = `${base}-${i}`
-    if (!existing.has(candidate)) return candidate
-  }
-  return `${base}-${Date.now()}`
-}
-
-/** 读取 runtime.json 的 protagonistRef，用于重载恢复。 */
-async function loadPlayerCharacter(
-  tsian: ReturnType<typeof getTsianClient>,
-): Promise<SelectedCharacter | null> {
-  const file = await tsian.workspace.read(RUNTIME_PATH)
-  if (!file?.content) return null
-  const runtime = safeJsonParse(file.content)
-  if (!runtime || typeof runtime !== "object") return null
-  const protagonist = (runtime as Record<string, unknown>).protagonistRef
-  if (!protagonist || typeof protagonist !== "object") return null
-  const ref = (protagonist as Record<string, unknown>).ref
-  const name = (protagonist as Record<string, unknown>).name
-  if (typeof ref !== "string" || typeof name !== "string") return null
-  // brief + gender 从实体文件读取
-  const localId = ref.startsWith("character:") ? ref.slice("character:".length) : ref
-  const entityFile = await tsian.workspace.read(`${CHARACTER_ENTITIES_ROOT}${localId}.json`)
-  if (entityFile?.content) {
-    const entity = safeJsonParse(entityFile.content)
-    if (entity && typeof entity === "object") {
-      const brief = (entity as Record<string, unknown>).brief
-      const gender = (entity as Record<string, unknown>).gender
-      if (typeof brief === "string") {
-        return { ref, name, brief, ...(typeof gender === "string" ? { gender } : {}) }
-      }
-    }
-  }
-  return { ref, name, brief: "" }
-}
-
-// ── 游玩设定对话操作（Step 4）──
-
-let dialogMessageSeq = 0
-function nextDialogId(): string {
-  dialogMessageSeq += 1
-  return `dialog-${dialogMessageSeq}`
-}
-
-/** 读取 setup-summary.json 判断完成态。 */
-async function loadSetupSummary(
-  tsian: ReturnType<typeof getTsianClient>,
-): Promise<SetupSummary | null> {
-  const file = await tsian.workspace.read(SETUP_SUMMARY_PATH)
-  if (!file?.content) return null
-  const data = safeJsonParse(file.content)
-  return isSetupSummary(data) ? data : null
-}
-
-/** 从 context-play-setup.json 重建对话消息列表（刷新/返回后恢复）。
- *  context slot 文件存的是 AgentContextSnapshot，recentTurns 是 agent 侧
- *  user/assistant 交替记录。正常访谈场景不会触发压缩（token 远低于阈值），
- *  recentTurns 是完整的。 */
-const PLAY_SETUP_CONTEXT_PATH = "save/agents/world-architect/context-play-setup.json"
-
-async function restorePlaySetupMessages(
-  tsian: ReturnType<typeof getTsianClient>,
-): Promise<boolean> {
-  const file = await tsian.workspace.read(PLAY_SETUP_CONTEXT_PATH)
-  if (!file?.content) return false
-  const data = safeJsonParse(file.content)
-  if (!data || typeof data !== "object") return false
-  const recentTurns = (data as Record<string, unknown>).recentTurns
-  if (!Array.isArray(recentTurns) || recentTurns.length === 0) return false
-
-  const restored: DialogMessage[] = []
-  for (const entry of recentTurns) {
-    if (typeof entry !== "object" || entry === null) continue
-    const role = (entry as Record<string, unknown>).role
-    const content = (entry as Record<string, unknown>).content
-    if (typeof role !== "string" || typeof content !== "string") continue
-
-    if (role === "user") {
-      restored.push({ id: nextDialogId(), role: "user", content })
-    } else if (role === "assistant") {
-      const projected = await projectAssistantMessage(tsian, content)
-      const choices = projectedChoices(projected)
-      // 最后一条 agent 消息保留 choices（玩家可能还没选），
-      // 更早的 agent 消息选项已过期，不恢复
-      const isLast = restored.filter((m) => m.role === "agent").length
-        === recentTurns.filter((e) => typeof e === "object" && e !== null
-          && (e as Record<string, unknown>).role === "assistant").length - 1
-      restored.push({
-        id: nextDialogId(),
-        role: "agent",
-        content: displayAssistantContent(projected),
-        ...(isLast && choices.length > 0 ? { options: choices } : {}),
-      })
-    }
-  }
-
-  if (restored.length === 0) return false
-  playSetupMessages.value = restored
-  return true
-}
-
-/** 构造初始 prompt 并发起第一次 invokeAgent，激活 agent + skill。 */
-async function startPlaySetupDialog(): Promise<void> {
-  if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
-  const tsian = getTsianClient()
-
-  // 检查是否已完成（重载恢复）
-  const summary = await loadSetupSummary(tsian)
-  if (summary?.status === "complete") {
-    playSetupStatus.value = "complete"
-    playSetupSummary.value = summary.summary ?? null
-    return
-  }
-
-  // 尝试从 context slot 恢复已有对话（刷新/返回后回来）
-  if (playSetupMessages.value.length === 0) {
-    const restored = await restorePlaySetupMessages(tsian)
-    if (restored) {
-      // 已有对话历史，恢复为 idle 等待玩家继续，不重新发起
-      playSetupStatus.value = "idle"
+    if (await hasLegacyOpeningState(tsian)) {
+      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
+      setView("legacy-state")
       return
     }
-  }
-
-  // 构造初始 prompt：需要小说标题 + 玩家角色信息
-  const title = understandingSummary.value?.title ?? manifest.value?.title ?? "导入小说"
-  const character = selectedCharacter.value
-    ? { ref: selectedCharacter.value.ref, name: selectedCharacter.value.name }
-    : null
-  const prompt = buildPlaySetupPrompt(title, character)
-
-  playSetupStatus.value = "running"
-  playSetupError.value = ""
-  // 流式接入：生成 invocationId，订阅 onAgentInvocation delta，清空累积文本。
-  const invocationId = `play-setup-${Date.now().toString(36)}`
-  activeInvocationId = invocationId
-  playSetupStreamingText.value = ""
-  ensurePlaySetupInvocationSubscription(tsian)
-
-  try {
-    const result = await tsian.invokeAgent("world-architect", prompt, {
-      invocationId,
-      purpose: "opening-play-setup",
-      contextSlot: "play-setup",
-      persist: true,
-    })
-    handleAgentResponse(result.response)
-  } catch (err) {
-    playSetupStatus.value = "failed"
-    playSetupError.value = err instanceof Error ? err.message : "对话启动失败"
-  } finally {
-    playSetupStreamingText.value = ""
-    activeInvocationId = null
+    setView("branch-choice")
+    statusText.value = "选择本局角色类型"
+  } catch (error) {
+    showFatalState(error instanceof Error ? `无法确认开局存档状态：${error.message}` : "无法确认开局存档状态。")
   }
 }
 
-/** 玩家发送消息（选项点击或自由输入）→ 下一轮 invokeAgent。 */
-async function sendPlaySetupMessage(input: string): Promise<void> {
-  if (playSetupStatus.value === "running" || playSetupStatus.value === "complete") return
-  const tsian = getTsianClient()
-
-  // 清除最后一条 agent 消息的选项（已选中，不再显示）
-  const msgs = playSetupMessages.value
-  for (let i = msgs.length - 1; i >= 0; i--) {
-    const msg = msgs[i]
-    if (msg?.role === "agent" && msg.options && msg.options.length > 0) {
-      msgs[i] = { ...msg, options: undefined }
-      break
-    }
-  }
-
-  // push user message
-  playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: input })
-
-  playSetupStatus.value = "running"
-  playSetupError.value = ""
-  // 流式接入：新一轮调用，生成新 invocationId + 清空累积文本。
-  const invocationId = `play-setup-${Date.now().toString(36)}`
-  activeInvocationId = invocationId
-  playSetupStreamingText.value = ""
-  ensurePlaySetupInvocationSubscription(tsian)
-
-  try {
-    const result = await tsian.invokeAgent("world-architect", input, {
-      invocationId,
-      purpose: "opening-play-setup",
-      contextSlot: "play-setup",
-      persist: true,
-    })
-    handleAgentResponse(result.response)
-  } catch (err) {
-    playSetupStatus.value = "failed"
-    playSetupError.value = err instanceof Error ? err.message : "对话失败，请重试"
-  } finally {
-    playSetupStreamingText.value = ""
-    activeInvocationId = null
+function validateReadSliceRefs(state: OpeningTurnState): void {
+  const index = chapterIndex.value
+  if (!index) throw new Error("小说章节索引尚未就绪，无法校验访谈阅读范围。")
+  const sourceRefs = new Set(index.chapters.map((chapter) => "ref" in chapter ? chapter.ref : chapter.path))
+  if (state.readSlices.some((slice) => !sourceRefs.has(slice.ref))) {
+    throw new Error("访谈回复包含不属于当前小说的阅读引用，已停止继续写入。")
   }
 }
 
-/** 处理 agent 返回的 response：使用平台投影提取 display text + choices，push agent message，检查完成态。 */
-async function handleAgentResponse(response: string): Promise<void> {
-  const tsian = getTsianClient()
-  const projected = await projectAssistantMessage(tsian, response)
-  const choices = projectedChoices(projected)
-  // 落定：把完整文本 push 成 NarrativeMessage 落定消息，并清空流式累积。
-  // 流式和落定是两套渲染——这里切到落定消息后，流式块不再展示。
+function validateTurnState(control: OpeningInterviewControl, state: OpeningTurnState, expectedAttemptId: string, expectedRevision: number): void {
+  if (state.sessionId !== control.session.id || state.sourceHash !== control.source.hash || state.branch !== control.branch) {
+    throw new Error("访谈回复与当前小说会话不匹配，已停止继续写入。")
+  }
+  if (state.processedAttemptId !== expectedAttemptId || state.revision !== expectedRevision) {
+    throw new Error("访谈回复轮次无法确认，请重新读取会话状态。")
+  }
+  validateReadSliceRefs(state)
+}
+
+async function finishResolvedInvocation(
+  tsian: ReturnType<typeof getTsianClient>,
+  response: string,
+  control: OpeningInterviewControl,
+  expectedAttemptId: string,
+  expectedRevision: number,
+): Promise<void> {
+  const parsed = parseOpeningAssistant(response)
+  if (!parsed) throw new Error("访谈回复缺少有效的恢复信息。")
+  validateTurnState(control, parsed.state, expectedAttemptId, expectedRevision)
+
   playSetupStreamingText.value = ""
-  activeInvocationId = null
+  rawStreamingText = ""
   playSetupMessages.value.push({
     id: nextDialogId(),
     role: "agent",
-    content: displayAssistantContent(projected),
-    ...(choices.length > 0 ? { options: choices } : {}),
+    content: parsed.displayContent,
+    ...(parsed.choices.length > 0 ? { options: parsed.choices } : {}),
   })
 
-  // 检查 setup-summary 是否 complete
-  const summary = await loadSetupSummary(tsian)
+  const summary = await loadSetupSummary(tsian, true)
   if (summary?.status === "complete") {
     playSetupStatus.value = "complete"
     playSetupSummary.value = summary.summary ?? null
-  } else {
-    playSetupStatus.value = "idle"
+    characterBranch.value = control.branch
+    setView("opening-confirm")
+    statusText.value = "开局已准备完成"
+    return
+  }
+  if (parsed.state.phase === "complete") {
+    throw new Error("Agent 已声明完成，但正式开局文件尚未提交。")
+  }
+
+  const latestControl = await loadOpeningControl(tsian)
+  const nextControl: OpeningInterviewControl = latestControl?.status === "complete"
+    ? latestControl
+    : {
+      ...control,
+      session: { ...control.session, revision: parsed.state.revision },
+      status: "interviewing",
+      attempt: undefined,
+    }
+  if (nextControl.status !== "complete") await writeOpeningControl(tsian, nextControl)
+  playSetupStatus.value = "ready"
+  playSetupError.value = ""
+  statusText.value = "等待你的回答"
+}
+
+async function invokeOpening(
+  control: OpeningInterviewControl,
+  input: string,
+  expectedAttemptId: string,
+  expectedRevision: number,
+): Promise<void> {
+  const tsian = getTsianClient()
+  playSetupStatus.value = "running"
+  playSetupError.value = ""
+  rawStreamingText = ""
+  playSetupStreamingText.value = ""
+  const invocationId = `opening-interview-${Date.now().toString(36)}`
+  activeInvocationId = invocationId
+  ensureInvocationSubscription(tsian)
+
+  let response: string
+  try {
+    const result = await tsian.invokeAgent("world-architect", input, {
+      invocationId,
+      purpose: "opening-interview",
+      contextSlot: control.session.slot,
+      persist: true,
+      injection: [{ role: "user", position: "before-input", content: buildOpeningInjection(control) }],
+    })
+    response = result.response
+  } catch (error) {
+    const invocationMessage = error instanceof Error ? error.message : "访谈调用失败，请重试。"
+    try {
+      const latest = await loadOpeningControl(tsian)
+      if (control.attempt) {
+        if (!latest || latest.status !== "interviewing" || latest.attempt?.id !== control.attempt.id) {
+          throw new Error("无法确认待重试回答仍是当前 attempt。")
+        }
+        await writeOpeningControl(tsian, { ...latest, attempt: { ...latest.attempt, status: "failed" } })
+      }
+      playSetupStatus.value = "failed"
+      playSetupError.value = invocationMessage
+    } catch (persistenceError) {
+      playSetupStatus.value = "recovering"
+      const persistenceMessage = persistenceError instanceof Error ? persistenceError.message : "失败状态无法写入。"
+      playSetupError.value = `${invocationMessage} ${persistenceMessage}`
+    }
+    return
+  } finally {
+    activeInvocationId = null
+    playSetupStreamingText.value = ""
+    rawStreamingText = ""
+  }
+
+  try {
+    await finishResolvedInvocation(tsian, response, control, expectedAttemptId, expectedRevision)
+  } catch (error) {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = error instanceof Error ? error.message : "访谈已提交，但界面恢复失败。"
   }
 }
 
-/** 重置对话状态。 */
-function resetPlaySetupDialog(): void {
+async function startOpeningInterview(branch: CharacterBranch): Promise<void> {
+  if (!manifest.value || playSetupStatus.value === "running" || openingStartPending) return
+  openingStartPending = true
+  const tsian = getTsianClient()
+  try {
+    if (await hasLegacyOpeningState(tsian)) {
+      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
+      setView("legacy-state")
+      return
+    }
+    const control = createOpeningControl(manifest.value, branch)
+    await writeOpeningControl(tsian, control)
+    characterBranch.value = branch
+    playSetupMessages.value = []
+    setView("opening-interview")
+    statusText.value = "正在准备第一次问题…"
+    await invokeOpening(control, openingBootstrapMarker(control.session.id), "start", 1)
+  } catch (error) {
+    showFatalState(error instanceof Error ? `无法安全启动开局访谈：${error.message}` : "无法安全启动开局访谈。")
+  } finally {
+    openingStartPending = false
+  }
+}
+
+function clearLastOptions(): void {
+  for (let index = playSetupMessages.value.length - 1; index >= 0; index -= 1) {
+    const message = playSetupMessages.value[index]
+    if (message?.role === "agent" && message.options?.length) {
+      playSetupMessages.value[index] = { ...message, options: undefined }
+      return
+    }
+  }
+}
+
+async function sendPlaySetupMessage(input: string): Promise<void> {
+  const normalized = input.trim()
+  if (!normalized || playSetupStatus.value !== "ready") return
+  playSetupStatus.value = "running"
+  playSetupError.value = ""
+  const tsian = getTsianClient()
+  let current: OpeningInterviewControl | null
+  try {
+    current = await loadOpeningControl(tsian)
+  } catch (error) {
+    showInterviewRecovery(error instanceof Error ? error.message : "无法读取当前访谈状态。")
+    return
+  }
+  if (!current || current.status !== "interviewing" || !manifest.value || !openingControlMatchesManifest(current, manifest.value)) {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "当前访谈控制状态无效，无法安全发送。"
+    return
+  }
+  const attempt: OpeningAttempt = {
+    id: createAttemptId(),
+    input: normalized,
+    inputHash: openingInputHash(normalized),
+    basedOnRevision: current.session.revision,
+    status: "submitted",
+    createdAt: new Date().toISOString(),
+  }
+  const control = { ...current, attempt }
+  try {
+    await writeOpeningControl(tsian, control)
+  } catch (error) {
+    showInterviewRecovery(error instanceof Error ? `回答尚未发送：${error.message}` : "回答尚未发送，控制状态写入失败。")
+    return
+  }
+  clearLastOptions()
+  playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: normalized })
+  await invokeOpening(control, openingAnswerMarker(attempt.id, attempt.input), attempt.id, attempt.basedOnRevision + 1)
+}
+
+async function retryPlaySetupDialog(): Promise<void> {
+  if (playSetupStatus.value === "running") return
+  playSetupStatus.value = "running"
+  playSetupError.value = ""
+  const tsian = getTsianClient()
+  try {
+    const summary = await loadSetupSummary(tsian, true)
+    if (summary?.status === "complete") {
+      playSetupStatus.value = "complete"
+      playSetupSummary.value = summary.summary ?? null
+      setView("opening-confirm")
+      statusText.value = "开局已准备完成"
+      return
+    }
+    let control = await loadOpeningControl(tsian)
+    if (!control || control.status !== "interviewing") {
+      showInterviewRecovery("无法读取当前访谈状态。")
+      return
+    }
+    if (control.attempt) {
+      await restoreOpeningInterview(tsian, manifest.value)
+      control = await loadOpeningControl(tsian)
+      if (!control || control.status !== "interviewing") {
+        showInterviewRecovery("重新检查后无法确认当前访谈状态。")
+        return
+      }
+      if (!control.attempt) return
+      const submitted = { ...control, attempt: { ...control.attempt, status: "submitted" as const } }
+      await writeOpeningControl(tsian, submitted)
+      await invokeOpening(
+        submitted,
+        openingAnswerMarker(submitted.attempt.id, submitted.attempt.input),
+        submitted.attempt.id,
+        submitted.attempt.basedOnRevision + 1,
+      )
+      return
+    }
+    if (control.session.revision === 0) {
+      await invokeOpening(control, openingBootstrapMarker(control.session.id), "start", 1)
+      return
+    }
+    await restoreOpeningInterview(tsian, manifest.value)
+  } catch (error) {
+    showInterviewRecovery(error instanceof Error ? error.message : "重新检查访谈状态失败。")
+  }
+}
+
+async function restoreOpeningInterview(
+  tsian: ReturnType<typeof getTsianClient>,
+  currentManifest: SourceManifest | null,
+): Promise<boolean> {
+  if (!currentManifest) return false
+  const identity = openingSourceIdentity(currentManifest)
+  const session = openingSession(identity)
+  const control = await loadOpeningControl(tsian)
+  const controlMatchesSource = control ? openingControlMatchesManifest(control, currentManifest) : false
+  if (controlMatchesSource && control && !openingControlMatchesSession(control, currentManifest)) {
+    characterBranch.value = control.branch
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "访谈控制文件与当前小说会话不一致，请使用新存档重新开始。"
+    setView("opening-interview")
+    return true
+  }
+  const contextFile = await tsian.workspace.read(session.contextPath)
+  if (!contextFile?.content) {
+    if (control && controlMatchesSource) {
+      characterBranch.value = control.branch
+      if (control.status === "complete" || control.session.revision > 0) {
+        playSetupStatus.value = "recovering"
+        playSetupError.value = "访谈进度文件缺失，无法安全恢复。请使用新存档重新开始。"
+      } else {
+        playSetupStatus.value = "failed"
+        playSetupError.value = "第一次访谈尚未完成，可以原地重试。"
+      }
+      setView("opening-interview")
+      return true
+    }
+    return false
+  }
+
+  const snapshot = safeJsonParse(contextFile.content)
+  if (!isRecord(snapshot) || !Array.isArray(snapshot.recentTurns)) {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "访谈记录格式无效，请使用新存档重新开始。"
+    setView("opening-interview")
+    return true
+  }
+
+  const messages: DialogMessage[] = []
+  const shownAttempts = new Set<string>()
+  const assistantTurns = new Map<string, string>()
+  const processedAttemptRevisions = new Map<string, number>()
+  let pendingUser: ReturnType<typeof parseOpeningUser> = null
+  let latestState: OpeningTurnState | null = null
+  let restoredBranch: CharacterBranch | null = null
+
+  for (const entry of snapshot.recentTurns) {
+    if (!isRecord(entry) || typeof entry.role !== "string" || typeof entry.content !== "string") continue
+    if (entry.role === "user") {
+      if (pendingUser) {
+        playSetupStatus.value = "recovering"
+        playSetupError.value = "访谈记录包含连续的玩家轮次，已停止继续发送。"
+        setView("opening-interview")
+        return true
+      }
+      pendingUser = parseOpeningUser(entry.content)
+      if (!pendingUser || (pendingUser.kind === "start" && pendingUser.sessionId !== session.id)) {
+        playSetupStatus.value = "recovering"
+        playSetupError.value = "访谈记录包含无法识别的玩家轮次，请使用新存档重新开始。"
+        setView("opening-interview")
+        return true
+      }
+      if (pendingUser?.kind === "answer" && !shownAttempts.has(pendingUser.attemptId)) {
+        shownAttempts.add(pendingUser.attemptId)
+        messages.push({ id: nextDialogId(), role: "user", content: pendingUser.content })
+      }
+      continue
+    }
+    if (entry.role !== "assistant") continue
+    const parsed = parseOpeningAssistant(entry.content)
+    if (!parsed || parsed.state.sessionId !== session.id || parsed.state.sourceHash !== identity.hash) {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = "访谈记录无法通过会话校验，请使用新存档重新开始。"
+      setView("opening-interview")
+      return true
+    }
+    try {
+      validateReadSliceRefs(parsed.state)
+    } catch (error) {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = error instanceof Error ? error.message : "访谈阅读范围无法校验，已停止继续发送。"
+      setView("opening-interview")
+      return true
+    }
+    if (!pendingUser) {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = "访谈回复缺少对应的玩家轮次，已停止继续发送。"
+      setView("opening-interview")
+      return true
+    }
+    const expectedAttempt = pendingUser?.kind === "answer" ? pendingUser.attemptId : "start"
+    if (parsed.state.processedAttemptId !== expectedAttempt) {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = "访谈轮次无法确认，已停止继续发送。"
+      setView("opening-interview")
+      return true
+    }
+    if (latestState && pendingUser.kind === "start") {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = "访谈 bootstrap 轮次位置无效，已停止继续发送。"
+      setView("opening-interview")
+      return true
+    }
+    restoredBranch ??= parsed.state.branch
+    if (restoredBranch !== parsed.state.branch) {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = "访谈分支出现冲突，已停止继续发送。"
+      setView("opening-interview")
+      return true
+    }
+    const turnKey = `${parsed.state.revision}:${parsed.state.processedAttemptId}`
+    const turnSignature = JSON.stringify({ state: parsed.state, content: parsed.displayContent, choices: parsed.choices })
+    const previousSignature = assistantTurns.get(turnKey)
+    if (previousSignature !== undefined) {
+      if (previousSignature !== turnSignature || !latestState || latestState.revision !== parsed.state.revision
+        || latestState.processedAttemptId !== parsed.state.processedAttemptId) {
+        playSetupStatus.value = "recovering"
+        playSetupError.value = "同一访谈轮次出现冲突回复，已停止继续发送。"
+        setView("opening-interview")
+        return true
+      }
+      pendingUser = null
+      continue
+    }
+    const validFirstRevision = pendingUser.kind === "start"
+      ? parsed.state.revision === 1
+      : parsed.state.revision > 1
+    if ((!latestState && !validFirstRevision)
+      || (latestState && !openingRevisionContinues(latestState.revision, parsed.state.revision))) {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = latestState ? "访谈 revision 不连续，已停止继续发送。" : "访谈记录起始 revision 无效，已停止继续发送。"
+      setView("opening-interview")
+      return true
+    }
+    const previousAttemptRevision = processedAttemptRevisions.get(parsed.state.processedAttemptId)
+    if (previousAttemptRevision !== undefined && previousAttemptRevision !== parsed.state.revision) {
+      playSetupStatus.value = "recovering"
+      playSetupError.value = "同一 attemptId 被用于不同 revision，已停止继续发送。"
+      setView("opening-interview")
+      return true
+    }
+    assistantTurns.set(turnKey, turnSignature)
+    processedAttemptRevisions.set(parsed.state.processedAttemptId, parsed.state.revision)
+    latestState = parsed.state
+    messages.push({
+      id: nextDialogId(),
+      role: "agent",
+      content: parsed.displayContent,
+      ...(parsed.choices.length > 0 ? { options: parsed.choices } : {}),
+    })
+    pendingUser = null
+  }
+
+  if (pendingUser) {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "访谈记录末尾存在无法确认的玩家轮次，已停止继续发送。"
+    setView("opening-interview")
+    return true
+  }
+  if (!latestState || !restoredBranch) {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "访谈记录没有可恢复的有效回复，请使用新存档重新开始。"
+    setView("opening-interview")
+    return true
+  }
+  if (latestState.phase === "complete") {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "访谈已声明完成，但正式开局完成信号缺失。请使用新存档重新开始。"
+    setView("opening-interview")
+    return true
+  }
+  for (let index = 0; index < messages.length - 1; index += 1) {
+    if (messages[index]?.role === "agent" && messages[index]?.options) messages[index] = { ...messages[index]!, options: undefined }
+  }
+  playSetupMessages.value = messages
+  characterBranch.value = restoredBranch
+
+  if (control && controlMatchesSource && (control.status !== "interviewing" || control.branch !== restoredBranch
+    || control.session.revision > latestState.revision)) {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "访谈控制状态与持久会话冲突，已停止继续发送。"
+    setView("opening-interview")
+    return true
+  }
+  const reconciled: OpeningInterviewControl = control && controlMatchesSource
+    ? { ...control, session: { ...control.session, revision: latestState.revision } }
+    : {
+      ...createOpeningControl(currentManifest, restoredBranch),
+      session: { id: session.id, slot: session.slot, revision: latestState.revision },
+    }
+  const processedAttempt = reconciled.attempt?.id === latestState.processedAttemptId
+  if (reconciled.attempt && !processedAttempt && reconciled.attempt.basedOnRevision !== latestState.revision) {
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "待处理回答与当前访谈 revision 冲突，已停止继续发送。"
+    setView("opening-interview")
+    return true
+  }
+  const nextControl = processedAttempt ? { ...reconciled, attempt: undefined } : reconciled
+  await writeOpeningControl(tsian, nextControl)
+  setView("opening-interview")
+  if (nextControl.attempt) {
+    if (!shownAttempts.has(nextControl.attempt.id)) {
+      playSetupMessages.value.push({ id: nextDialogId(), role: "user", content: nextControl.attempt.input })
+    }
+    playSetupStatus.value = "recovering"
+    playSetupError.value = "上一条回答的提交结果尚未确认；可重新检查或使用同一回答重试。"
+  } else {
+    playSetupStatus.value = "ready"
+    playSetupError.value = ""
+  }
+  statusText.value = "访谈已恢复"
+  return true
+}
+
+function resetOpeningMemory(): void {
+  characterBranch.value = null
   playSetupStatus.value = "idle"
   playSetupMessages.value = []
   playSetupError.value = ""
   playSetupStreamingText.value = ""
+  playSetupSummary.value = null
   activeInvocationId = null
+  rawStreamingText = ""
 }
-
-/** 重试（从 failed 恢复）。 */
-async function retryPlaySetupDialog(): Promise<void> {
-  playSetupError.value = ""
-  // 如果有消息则重发最后一条 user 消息，否则重新启动
-  const lastUserMsg = [...playSetupMessages.value].reverse().find((m) => m.role === "user")
-  if (lastUserMsg) {
-    // 移除最后一条 agent 消息（如果有的话）
-    const lastIdx = playSetupMessages.value.length - 1
-    if (lastIdx >= 0 && playSetupMessages.value[lastIdx]?.role === "agent") {
-      playSetupMessages.value.splice(lastIdx, 1)
-    }
-    await sendPlaySetupMessage(lastUserMsg.content)
-  } else {
-    playSetupMessages.value = []
-    await startPlaySetupDialog()
-  }
-}
-
-// ── 初始化：从 workspace 加载已有数据 ──
 
 async function initialize(): Promise<void> {
   if (initialized.value) return
   const tsian = getTsianClient()
-
   try {
-    const existingManifest = await loadSourceManifest(tsian)
-    if (existingManifest) {
-      manifest.value = existingManifest
-      chapterIndex.value = await ensureChapterCharacters(tsian, await loadChapterIndex(tsian))
-      const summary = await loadUnderstandingSummary(tsian)
-      if (summary) {
-        understandingSummary.value = summary
-        understandingStatus.value = "ready"
-        // 检查是否已有 protagonistRef（重载恢复）
-        const existingCharacter = await loadPlayerCharacter(tsian)
-        if (existingCharacter) {
-          selectedCharacter.value = existingCharacter
-          characterSetupStatus.value = "confirmed"
-          characterBranch.value = existingCharacter.ref.startsWith("character:original-") ? "original" : "canon"
-          // 检查 setup-summary 是否完成（Step 4 重载恢复）
-          const setupSummary = await loadSetupSummary(tsian)
-          if (setupSummary?.status === "complete") {
-            playSetupStatus.value = "complete"
-            playSetupSummary.value = setupSummary.summary ?? null
-            subView.value = "opening-confirm"
-            step.value = 5
-            statusText.value = "游玩设定已完成"
-          } else {
-            subView.value = "character-setup"
-            step.value = 3
-            statusText.value = `已选定角色：${existingCharacter.name}`
-          }
-        } else {
-          subView.value = "understanding"
-          step.value = 2
-          statusText.value = "初始理解已完成"
-        }
-      } else {
-        subView.value = "review"
-        step.value = 1
-        statusText.value = "已导入小说"
+    await tsian.waitForReady()
+    const setupSummary = await loadSetupSummary(tsian, true)
+    if (setupSummary?.status === "complete") {
+      playSetupStatus.value = "complete"
+      playSetupSummary.value = setupSummary.summary ?? null
+      try {
+        manifest.value = await loadSourceManifest(tsian)
+      } catch {
+        // 完成信号优先；旧完成存档缺少有效来源清单时仍允许进入确认屏。
+        manifest.value = null
       }
-    } else {
-      subView.value = "choose"
-      step.value = 1
+      setView("opening-confirm")
+      statusText.value = "开局已准备完成"
+      return
     }
-  } catch {
-    // workspace 读取失败（bridge 未 ready 等）→ 默认 choose
-    subView.value = "choose"
-    step.value = 1
+    const existingManifest = await loadSourceManifest(tsian)
+    if (!existingManifest) {
+      if (await hasLegacyOpeningState(tsian)) {
+        playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
+        setView("legacy-state")
+        return
+      }
+      setView("choose")
+      return
+    }
+    manifest.value = existingManifest
+    const loadedChapterIndex = await ensureChapterCharacters(tsian, await loadChapterIndex(tsian))
+    if (!loadedChapterIndex || loadedChapterIndex.chapters.length !== existingManifest.chapterCount) {
+      throw new Error("小说来源清单与章节索引数量不一致。")
+    }
+    chapterIndex.value = loadedChapterIndex
+    if (await restoreOpeningInterview(tsian, existingManifest)) return
+    if (await hasLegacyOpeningState(tsian)) {
+      playSetupError.value = "检测到测试期旧开局进度。请创建新存档后重新导入小说。"
+      setView("legacy-state")
+      return
+    }
+    setView("review")
+    statusText.value = "已导入小说"
+  } catch (error) {
+    showFatalState(error instanceof Error ? `无法读取开局状态：${error.message}` : "无法读取开局状态。")
   } finally {
     initializing.value = false
     initialized.value = true
   }
 }
 
-// ── composable 入口 ──
-
 export function useSetupState() {
   return {
-    // 响应式状态（只读视图）
     step: readonly(step),
     subView: readonly(subView),
-    understandingStatus: readonly(understandingStatus),
     manifest: readonly(manifest),
     chapterIndex: readonly(chapterIndex),
     selectedChapter: readonly(selectedChapter),
-    understandingSummary: readonly(understandingSummary),
+    selectedChapterWritable: selectedChapter,
     busy: readonly(busy),
     statusText: readonly(statusText),
     errorText: readonly(errorText),
     initializing: readonly(initializing),
     initialized: readonly(initialized),
-    understandingStage: readonly(understandingStage),
     characterBranch: readonly(characterBranch),
-    selectedCharacter: readonly(selectedCharacter),
-    characterSetupStatus: readonly(characterSetupStatus),
     playSetupStatus: readonly(playSetupStatus),
     playSetupMessages: readonly(playSetupMessages),
     playSetupError: readonly(playSetupError),
     playSetupStreamingText: readonly(playSetupStreamingText),
     playSetupSummary: readonly(playSetupSummary),
-
-    // 可写状态（组件需直接改的）
-    selectedChapterWritable: selectedChapter,
-
-    // 操作方法
     initialize,
     setView,
     goToStep,
     startImport,
     confirmReimport,
-    startOpeningUnderstanding,
     loadChapterPreview,
-    setCharacterBranch,
-    backToBranchChoice,
-    confirmCanonCharacter,
-    confirmOriginalCharacter,
-    resetCharacterSetup,
-    startPlaySetupDialog,
+    showBranchChoice,
+    startOpeningInterview,
     sendPlaySetupMessage,
-    resetPlaySetupDialog,
     retryPlaySetupDialog,
   }
 }

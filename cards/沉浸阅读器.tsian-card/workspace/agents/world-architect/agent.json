@@ -1,7 +1,7 @@
 {
   "id": "world-architect",
   "title": "世界架构师",
-  "summary": "开局建模、schema/world model 设计与 pending patch；不维护每回合 runtime。",
+  "summary": "主持开局访谈并提交首回合世界模型；后续负责 schema/world model 与 frontier 素材。",
   "contacts": [
     "stage-manager",
     "storyteller"
@@ -51,7 +51,6 @@
   "skills": {
     "enabled": [
       "agents/world-architect/skills/开局建模/SKILL.md",
-      "agents/world-architect/skills/游玩设定/SKILL.md",
       "agents/world-architect/skills/frontier推进/SKILL.md"
     ],
     "disabled": []

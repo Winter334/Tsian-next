@@ -8,10 +8,10 @@ import EmberForge from "../../EmberForge.vue"
 import SetupComposer from "./SetupComposer.vue"
 
 /**
- * PlaySetupDialog — 游玩设定对话（Step 4）。
+ * PlaySetupDialog — 单一开局访谈。
  *
  * 向导内的轻量 Agent 对话界面。多轮 invokeAgent 驱动，
- * 助手回复通过平台 reply projection 提取 choices，复用 StoryView 的消息组件语言。
+ * 助手回复通过开局协议提取问题与选项，复用 StoryView 的消息组件语言。
  * 布局适配向导 720px 框架。
  */
 const {
@@ -82,7 +82,7 @@ onUnmounted(() => {
           <StoryOptions
             v-if="msg.options && msg.options.length > 0 && status !== 'complete'"
             :options="[...msg.options]"
-            :disabled="status === 'running'"
+            :disabled="status !== 'ready'"
             @select="onSelectOption"
           />
         </template>
@@ -97,17 +97,19 @@ onUnmounted(() => {
         </template>
 
         <!-- 错误态 -->
-        <div v-if="status === 'failed'" class="error-card">
+        <div v-if="status === 'failed' || status === 'recovering'" class="error-card">
           <div class="failed-mark">✕</div>
           <div class="failed-detail-scroll">{{ error }}</div>
-          <button class="retry-btn" @click="retryPlaySetupDialog">重试</button>
+          <button class="retry-btn" @click="retryPlaySetupDialog">
+            {{ status === "recovering" ? "重新检查" : "重试" }}
+          </button>
         </div>
       </div>
     </div>
 
     <!-- Composer -->
     <SetupComposer
-      :disabled="status === 'running' || status === 'complete'"
+      :disabled="status !== 'ready'"
       placeholder="说出你的想法…"
       @send="onSend"
     />
