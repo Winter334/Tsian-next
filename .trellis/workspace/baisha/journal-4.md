@@ -855,3 +855,26 @@ Reduced the product test inventory to three integration smoke files, aligned rep
 ### Status
 
 [OK] **Completed**
+
+
+## Session 188: 访谈驱动的开局建模与游戏卡源码归属
+
+**Date**: 2026-08-09
+**Task**: 访谈驱动的开局建模与游戏卡源码归属
+**Branch**: `chore/trellis-workflow-update-20260808`
+
+### Summary
+
+将小说开局收敛为可恢复的单一访谈会话与原子 commit_opening；前端实现迁移到 apps/play-frontend-dev 并生成可上传前端包；卡内容保留在 cards workspace，记录内置模板停维护及整卡打包器后续边界。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6d624de` | (see git log) |
+| `3862b55` | (see git log) |
+| `6537890` | (see git log) |
+
+### Status
+
+[OK] **Completed**
